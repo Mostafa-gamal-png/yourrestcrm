@@ -1,0 +1,17 @@
+{
+  "package": "org.yourrest.crm",
+  "versionCode": 4,
+  "versionName": "1.0.3",
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkSha256": "4d56e5be2d595fa266eeaa641603b9e6dc466a263a5530c224dfb00f16d973cb",
+  "apkBytes": 176885,
+  "sourceSha256": "44246ae3ba59525dfdf0356688dbc0363638ee187ca3583915062d7fa6d30e77",
+  "deviceTested": false,
+  "signatureVerified": true,
+  "signatureV2Verified": true,
+  "signatureV3Verified": true,
+  "alignmentVerified": true,
+  "signingCertificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+  "sameSigningCertificateAsPreviousRelease": true
+}

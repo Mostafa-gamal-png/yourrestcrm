@@ -1,0 +1,138 @@
+{
+  "project": "Yourrest CRM — consolidated rebuild",
+  "verificationDate": "2026-10-01",
+  "passed": true,
+  "scope": "Completed local source, controlled UI, built HTTP, real browser workflows with explicit runtime limits, native compilation/signing and isolated synthetic load. Deployment and physical-device acceptance are separate.",
+  "build": {
+    "productionBuild": "passed",
+    "typecheck": "passed",
+    "node": "24.19.0",
+    "files": 2809,
+    "manifestSha256": "242389eee58d614e92d3c24731d9b409b64f85d15b2a267660a14e08954e4e55",
+    "serverSha256": "79a9342ff9c5e2718a56c4a24abcd893248cd71faa8a523b9f4c4ac2760d6e9f",
+    "apkSha256": "c090d617728ca05ce1b3b4841c630bb608d99b43f55030ae18cfd6ece63f7df0",
+    "browserReleaseTreeSha256": "3d59d12c91afd06a35b8519b89097bd33d8215e35b4b3f515c7c39cefe8c15cb"
+  },
+  "android": {
+    "version": "1.0.6",
+    "versionCode": 7,
+    "bytes": 193269,
+    "sha256": "c090d617728ca05ce1b3b4841c630bb608d99b43f55030ae18cfd6ece63f7df0",
+    "sameSigningCertificate": true,
+    "signatureV2": true,
+    "signatureV3": true,
+    "nativeOutboxSchemaVersion": 2,
+    "localChecks": {
+      "routeRules": 37,
+      "outboxOrdering": 138,
+      "directions": 27,
+      "continuousPolicy": 4501,
+      "tripStart": 171,
+      "mapsLaunch": 120,
+      "activationRecovery": 51,
+      "accountRecovery": 68,
+      "sqliteUpgrade": 33
+    },
+    "actualPhoneVerified": false
+  },
+  "checks": {
+    "regressionSuites": 42,
+    "regressionAssertions": 4830,
+    "nativeTrackingUI": 541,
+    "browserJourneyControlledUI": 253,
+    "builtHTTP": 326,
+    "actualBrowserWorkflowAssertions": 192,
+    "mobileDialogGeometryCases": 21,
+    "postInputScrollCases": 4
+  },
+  "browser": {
+    "passed": true,
+    "cssInjectionUsed": false,
+    "widthsTested": [
+      320,
+      360,
+      412
+    ],
+    "languages": [
+      "Arabic",
+      "English"
+    ],
+    "headingAndSaveFooterRemainVisible": true,
+    "mapsCanonicalDestinationAndBlockedPopupFallbackVerified": true,
+    "actualMapsPopupVerified": false,
+    "externalGoogleMapsAppVerified": false,
+    "serviceWorkerBrowserTestVerified": false,
+    "workflows": [
+      "Fresh sign-in through real authentication UI and mock email, followed by session reload",
+      "Admin user activation through actual permissions form; newly activated account signs in",
+      "Representative bottom navigation, western customer scope, own activity visibility and server denial of management endpoints",
+      "Customer phone search and actual customer creation; SQLite confirms rep assignment and inherited western region",
+      "Visit customer selection, purpose and result, automatic controlled browser location and actual save; SQLite confirms precise coordinates and next action",
+      "Denied browser location blocks visit save; grant and retry succeed without reopening",
+      "Follow-up execution originates from previous visit; actual saved follow-up retains sourceId",
+      "Combined targets/performance page, actual manager target edit, invoice save and KPI review save; SQLite confirms invoice total and selected rep",
+      "Manager regional API payload excludes eastern rep; supervisor and manager targets are computed from their hierarchy",
+      "Actual Arabic and English installation-help fallback UI after authentication",
+      "All ten permitted administrator pages at360 px with no browser page errors or horizontal overflow",
+      "Customer, visit and follow-up fullscreen dialogs in Arabic and English at320/360/412 px",
+      "Post-input visit and follow-up inner scrolling keeps heading and save footer in360×800 viewport and outer dialog scrollTop0",
+      "Maps search selects correct factory; actual app tap requests canonical driving URL immediately in original user gesture, exposes same fallback href, and separately reports injected tracking failure"
+    ]
+  },
+  "syntheticLoad": {
+    "passed": true,
+    "durationSeconds": 61.97,
+    "representatives": 30,
+    "customers": 600,
+    "historicalVisits": 24000,
+    "requests": 1626,
+    "gpsRows": 876,
+    "visitRows": 180,
+    "errors": 0,
+    "noLostOrDuplicateAcknowledgedWrites": true,
+    "sqliteIntegrity": "ok",
+    "historicalRowsUnchanged": true,
+    "transport": "local loopback TCP; paced synthetic users",
+    "hostingCapacityCertified": false
+  },
+  "behavior": [
+    "Cold account hydration does not log out native tracking or clear its queue.",
+    "Foreground visit GPS is independent of background tracking activation.",
+    "Customer Directions opens through canonical navigation independently of recording synchronization.",
+    "Visit, service-intake and follow-up ambiguous retries reuse identical serialized requests.",
+    "New visits only link explicitly selected authorized stops; no implicit stale station timing.",
+    "Captured points and gaps retain original stop bindings and permission checks.",
+    "Same-owner scope/role recovery resets obsolete metadata only when no evidence is pending; old-scope evidence remains preserved and collection stops.",
+    "Role, region, own-entry and hierarchy permissions are maintained.",
+    "Route observation remains06:00 inclusive through18:00 exclusive Asia/Riyadh."
+  ],
+  "serverDatabaseMigrationAdded": false,
+  "deployedToNamecheapThisAttempt": false,
+  "productionDataUsedInTests": false,
+  "realEmailSentInTests": false,
+  "reports": [
+    "REBUILD-REGRESSION-VERIFICATION.json",
+    "ANDROID-REBUILD-VERIFICATION.json",
+    "rebuild-http-and-load.json",
+    "REBUILD-BROWSER-VERIFICATION.json"
+  ],
+  "limitations": [
+    "Physical Android installation, real GPS, Google Maps application handoff, lock-screen/background behavior and battery restrictions have not been verified on company phones.",
+    "Chromium content-shell popup crash was reproduced on a minimal page without CRM code; the actual UI test explicitly simulates a blocked popup and verifies the canonical fallback.",
+    "Content-shell service-worker promise failure prevented optional real PWA worker testing. Controlled worker privacy and installation UI checks passed.",
+    "Local synthetic load is not a Namecheap capacity or daily production reliability certification.",
+    "Unix-domain socket operations are blocked by the execution environment (EPERM); built HTTP used loopback TCP. Socket-aware entry configuration passed source tests.",
+    "A changed region or role with unacknowledged old-scope evidence stops collection and requires permission review before re-enrollment; normal visits and Maps remain independent."
+  ],
+  "packageVerification": {
+    "updatePreservationChecks": 33,
+    "actualFullZIPInstallRestartBackupChecks": 26,
+    "completeBuiltReleaseIncluded": true,
+    "verifiedAPKInEveryCopy": true,
+    "productionDatabaseSettingsSessionsAndCpanelEnvironmentPreserved": true,
+    "sha256ManifestVerified": true,
+    "noPrivateSigningKeyOrRuntimeConfigIncluded": true,
+    "actualInstallUsedIsolatedCopyOfInitialSeed": true,
+    "runtimeUnchangedAfterMetadataPackaging": true
+  }
+}

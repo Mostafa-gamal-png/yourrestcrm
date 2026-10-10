@@ -1,0 +1,40 @@
+// Real Web Request streams: limits must apply before JSON/multipart buffering.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+import ts from 'typescript';
+const work=fs.mkdtempSync(path.join(os.tmpdir(),'yourrest-body-'));let checks=0;
+const eq=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;};
+try{
+ const file=path.join(work,'body.mjs');fs.writeFileSync(file,ts.transpileModule(fs.readFileSync('lib/request-body.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
+ const {readRequestBytes,readRequestText,readRequestForm,jsonRequestLimit}=await import(pathToFileURL(file));
+ const make=(parts,headers={},url='https://crm.yourrest.org/api/crm')=>{let index=0,cancelled=false;const stream=new ReadableStream({pull(c){if(index<parts.length)c.enqueue(typeof parts[index]==='string'?new TextEncoder().encode(parts[index++]):parts[index++]);else c.close();},cancel(){cancelled=true;}},{highWaterMark:0});return{request:new Request(url,{method:'POST',headers,body:stream,duplex:'half'}),cancelled:()=>cancelled,read:()=>index};};
+ const rejects=async(p,status)=>{await assert.rejects(p,error=>error.status===status);checks++;};
+ let sample=make(['abc','de']);eq(new TextDecoder().decode(await readRequestBytes(sample.request,5)),'abcde');
+ sample=make(['abc','def','NEVER']);await rejects(readRequestBytes(sample.request,5),413);eq(sample.cancelled(),true);eq(sample.read(),2);
+ sample=make(['abcdef'],{'content-length':'2'});await rejects(readRequestBytes(sample.request,5),413);eq(sample.cancelled(),true);
+ sample=make(['NEVER'],{'content-length':'6'});await rejects(readRequestBytes(sample.request,5),413);eq(sample.read(),0);eq(sample.cancelled(),true);
+ for(const size of ['-1','x','1.2','9007199254740992'])await rejects(readRequestBytes(make(['a'],{'content-length':size}).request,5),400);
+ await rejects(readRequestBytes(make(['a'],{'content-encoding':'gzip'}).request,5),415);
+ eq(await readRequestText(make(['مصنع ','يورست']).request,50),'مصنع يورست');
+ sample=make(['أأأ']);await rejects(readRequestBytes(sample.request,5),413);
+ const utf8=new TextEncoder().encode('مصنع');eq(await readRequestText(make([...utf8].map(b=>new Uint8Array([b]))).request,8),'مصنع');
+ await rejects(readRequestText(make([new Uint8Array([0xc3,0x28])]).request,4),400);
+ eq((await readRequestBytes(new Request('https://crm.yourrest.org/api/crm'),1)).byteLength,0);
+ sample=make(Array.from({length:10000},()=>new Uint8Array([65])));eq((await readRequestBytes(sample.request,10000)).length,10000);
+ eq(jsonRequestLimit(new Request('https://crm.yourrest.org/api/mobile-route?x=1')),120000);
+ eq(jsonRequestLimit(new Request('https://crm.yourrest.org/api/customers/import')),1200000);
+ eq(jsonRequestLimit(new Request('https://crm.yourrest.org/api/unknown')),450000);
+ let stalledCancelled=false;const stalled=new Request('https://crm.yourrest.org/api/crm',{method:'POST',body:new ReadableStream({cancel(){stalledCancelled=true;}}),duplex:'half'});
+ await rejects(readRequestBytes(stalled,10,10),408);eq(stalledCancelled,true);
+ await rejects(readRequestBytes(new Request('https://crm.yourrest.org/api/crm',{method:'POST',body:new ReadableStream({start(c){c.error(Error('lost connection'));}}),duplex:'half'}),10),400);
+ const form=new FormData();form.set('customerId','factory');form.set('file',new File(['%PDF-1.4 data'],'quote.pdf',{type:'application/pdf'}));
+ const raw=new Request('https://crm.yourrest.org/api/visit-files',{method:'POST',body:form}),type=raw.headers.get('content-type'),bytes=new Uint8Array(await raw.arrayBuffer());
+ const parsed=await readRequestForm(make([bytes],{'content-type':type}).request,bytes.length);eq(parsed.get('customerId'),'factory');eq(await parsed.get('file').text(),'%PDF-1.4 data');
+ sample=make([bytes],{'content-type':type});await rejects(readRequestForm(sample.request,bytes.length-1),413);eq(sample.cancelled(),true);
+ await rejects(readRequestForm(make(['bad'],{'content-type':'application/json'}).request),415);
+ await rejects(readRequestForm(make(['bad'],{'content-type':'multipart/form-data; boundary=none'}).request),400);
+ console.log(JSON.stringify({ok:true,checks,coverage:'bounded chunked/declared/dishonest/multibyte/fragmented/timeout/broken streams and multipart parsing',productionDataUsed:false}));
+}finally{fs.rmSync(work,{recursive:true,force:true});}

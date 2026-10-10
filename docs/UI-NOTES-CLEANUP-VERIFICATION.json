@@ -1,0 +1,79 @@
+{
+  "feature": "Remove repetitive UI notes and instructional clutter",
+  "date": "2026-10-04",
+  "passed": true,
+  "scope": [
+    "Yourrest CRM only",
+    "Arabic and English UI",
+    "Page subtitles, redundant explanations and repeated help text"
+  ],
+  "changedApplicationFiles": [
+    "app/competitors-workspace.tsx",
+    "app/crm-app.tsx",
+    "app/customer-entry-fields.tsx",
+    "app/customer-followup-list.tsx",
+    "app/customer-followups.tsx",
+    "app/customer-machines.tsx",
+    "app/customer-map.tsx",
+    "app/customer-visits.tsx",
+    "app/email-login.tsx",
+    "app/erp-sales-import.tsx",
+    "app/followups.tsx",
+    "app/install-app.tsx",
+    "app/journey-report.tsx",
+    "app/kpi-performance.tsx",
+    "app/mobile-navigation.tsx",
+    "app/my-targets.tsx",
+    "app/sales-workspace.tsx",
+    "app/targets-performance-summary.tsx",
+    "app/targets-workspace.tsx",
+    "app/visit-customer-picker.tsx"
+  ],
+  "checks": {
+    "typescript": "pass",
+    "productionBuild": "pass",
+    "targetsPerformanceUi": 104,
+    "erpSalesMappingUi": 42,
+    "visitFieldsUi": 28,
+    "customerEntryFieldsUi": 68,
+    "customerMapUi": 195,
+    "existingTestTotal": 437,
+    "independentDiffReview": "pass"
+  },
+  "preserved": [
+    "User-entered notes and all saved data",
+    "Targets and ERP employee/category mappings",
+    "Inputs, buttons and cancellation controls",
+    "Validation, error, retry, discard and save status messages",
+    "Missing/incomplete-data reasons and route uncertainty",
+    "Location tracking disclosure and permissions",
+    "Quote closure and mold-compatibility caveats",
+    "Existing backend calculations, role and regional permissions"
+  ],
+  "visualVerification": {
+    "passed": true,
+    "cases": 4,
+    "viewports": [
+      320,
+      360
+    ],
+    "languages": [
+      "ar",
+      "en"
+    ],
+    "scope": "Targets summary actual React SSR components and final compiled CSS",
+    "syntheticFixtures": true,
+    "browser": "Chromium 153",
+    "horizontalOverflow": false,
+    "pageErrors": []
+  },
+  "noDatabaseMigration": true,
+  "backendUnchanged": true,
+  "androidUnchanged": true,
+  "deployedToNamecheap": false,
+  "productionDataUsedInTests": false,
+  "limitations": [
+    "This report covers local verification. This UI cleanup has not been deployed.",
+    "Visual check is limited to the targets summary; not a full physical-device or live-account acceptance test."
+  ]
+}

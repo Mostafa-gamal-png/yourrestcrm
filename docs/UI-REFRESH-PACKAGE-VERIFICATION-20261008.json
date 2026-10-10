@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "checks": 14429,
+  "archive": "/workspace/scratch/084c90fdfdf4/Yourrest-CRM-UI-Refresh-Update-20261008.zip",
+  "archiveBytes": 14850594,
+  "archiveSha256": "57407fb890e7449f781e164d9e513221e3186ea6f688c021a8915b2e17bd79a4",
+  "releaseFiles": 2864,
+  "archiveFiles": 2867,
+  "manifestSha256": "16cd8f5aa9f3e3951eab0360e067ac6aca45753635fbecd2fa6008b428b6bdd2",
+  "schemaBefore": 15,
+  "schemaAfter": 15,
+  "migrationFilesUnchanged": true,
+  "nativeApkUnchanged": true,
+  "apkCopiesVerified": 4,
+  "nativeApkSha256": "0595ccb1f134196e7632781d63899af2d228cbf4f17b9de47a6be906871f12d1",
+  "nativeVersion": "1.0.10",
+  "nativeVersionCode": 11,
+  "offlineRevision": "0d3daeadf5d842e25dc4635b6c5a810f39bb6aa1011b46e6daac1f53b6a6f9e6",
+  "previousOfflineRevision": "486f37b85ea9020d6c207c74555c19e00bd8dc1b8bda2dc75455e9571d44655c",
+  "offlineManifestAssets": 15,
+  "publicAndClientStaticCopiesMatch": true,
+  "rootSettingsIncluded": false,
+  "databaseIncluded": false,
+  "applicationOrDatabaseSeedsIncluded": false,
+  "frameworkCacheModulesWithSeedInName": [
+    "release/dist/server/_next/static/framework~index~layout~page~page~app-page-cache-render~app-page-cache~seed-cache~app-route-~k426j5p2-DI0zkhDa.js",
+    "release/dist/server/_next/static/seed-cache-D-B0lqPi.js",
+    "release/node_modules/vinext/dist/server/seed-cache.d.ts",
+    "release/node_modules/vinext/dist/server/seed-cache.js"
+  ],
+  "rootInstallerIncluded": false,
+  "existingRuntimeSetupUtilityIncluded": true,
+  "runtimeSetupInvokedByActivator": false,
+  "matchesCurrentStandalone": true,
+  "externalActivatorPinned": true,
+  "activationStage": "/home/youriedx/yourrest-ui-update-20261008",
+  "guide": "/workspace/scratch/084c90fdfdf4/UPDATE-UI-REFRESH-AR.txt",
+  "productionDeployed": false,
+  "limitations": [
+    "Structural verification of the actual ZIP; production activation and physical device verification were not performed."
+  ]
+}

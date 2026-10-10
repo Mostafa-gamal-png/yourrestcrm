@@ -1,0 +1,34 @@
+.crm-dialog.kpi-evidence-dialog{display:flex;flex-direction:column;gap:0;width:min(900px,calc(100% - 32px));max-width:900px!important;max-height:92dvh;overflow:hidden;padding:0!important;background:var(--card)}
+.kpi-evidence-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px 24px;border-bottom:1px solid var(--border);flex-shrink:0}
+.kpi-evidence-heading [data-slot=dialog-title]{display:flex;align-items:center;gap:9px;font-size:21px;padding:0}
+.kpi-evidence-heading [data-slot=dialog-description]{margin-top:5px;font-size:14px}
+.kpi-evidence-dialog>form{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.kpi-evidence-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 24px 18px}
+.kpi-evidence-dialog fieldset{min-width:0;border:0;padding:0;margin:0}
+.kpi-evidence-section{display:grid;gap:12px;padding:22px 0;border-bottom:1px solid var(--border)}
+.kpi-evidence-section h3{font-size:17px;font-weight:600;margin:0}
+.kpi-evidence-section .form-grid{margin:0}
+.kpi-evidence-section .field{margin:0;min-width:0}
+.kpi-evidence-section-heading,.kpi-evidence-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.kpi-evidence-actions{justify-content:flex-end}
+.kpi-evidence-actions>.btn{max-width:100%;white-space:normal;text-align:center}
+.kpi-evidence-hint,.kpi-evidence-period{font-size:12px;line-height:1.8;color:var(--muted-foreground);overflow-wrap:anywhere}
+.kpi-evidence-scroll>p{margin-top:15px}
+.kpi-evidence-notice{font-size:13px;line-height:1.8;border:1px solid var(--border);border-inline-start:3px solid var(--primary);border-radius:8px;padding:9px 12px;background:var(--muted);overflow-wrap:anywhere}
+.kpi-evidence-check{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.8;cursor:pointer}
+.kpi-evidence-check input{width:18px;height:18px;flex-shrink:0;margin-top:5px;accent-color:var(--primary)}
+.kpi-evidence-quote-list{display:grid;gap:10px;min-width:0}
+.kpi-evidence-quote-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:10px;align-items:end;border:1px solid var(--border);border-radius:10px;padding:13px;min-width:0}
+.kpi-evidence-quote-row>.icon-button{margin-bottom:2px}
+.kpi-evidence-quote-row>p{grid-column:1/-1}
+.kpi-evidence-row-warning{font-size:12px;line-height:1.8;color:var(--destructive);overflow-wrap:anywhere}
+.kpi-evidence-dialog select{width:100%;max-width:100%;min-width:0;min-height:44px;padding:9px 10px;border:1px solid var(--input);border-radius:8px;background:var(--card);color:var(--foreground);font:inherit;font-size:14px}
+.kpi-evidence-dialog select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.kpi-evidence-dialog fieldset:disabled{opacity:.8}
+.kpi-evidence-footer{flex-shrink:0;border-top:1px solid var(--border);padding:15px 24px;background:var(--card);max-height:40dvh;overflow:auto}
+.kpi-evidence-footer>div:last-child{display:flex;justify-content:flex-end;gap:10px}
+.kpi-evidence-footer>.form-error,.kpi-evidence-footer>.kpi-evidence-notice{margin:0 0 10px}
+.kpi-evidence-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:240px;padding:30px;text-align:center;font-size:14px;color:var(--muted-foreground)}
+.kpi-evidence-dialog .btn,.kpi-evidence-dialog .icon-button{min-height:44px}
+.kpi-not-applicable{color:var(--muted-foreground);font-weight:500}
+@media(max-width:640px){.crm-dialog.kpi-evidence-dialog{inset:0!important;--tw-translate-x:0!important;--tw-translate-y:0!important;transform:none!important;translate:none!important;width:100%!important;max-width:none!important;max-height:100dvh;height:100dvh;border-radius:0!important;animation:none!important}.kpi-evidence-heading{padding:calc(14px + env(safe-area-inset-top)) 16px 14px}.kpi-evidence-heading [data-slot=dialog-title]{font-size:19px}.kpi-evidence-dialog>form{flex:1}.kpi-evidence-scroll{flex:1;padding:0 16px 18px}.kpi-evidence-section{padding:18px 0}.kpi-evidence-section .form-grid{grid-template-columns:1fr}.kpi-evidence-quote-row{grid-template-columns:minmax(0,1fr) auto}.kpi-evidence-quote-row>.field{grid-column:1/-1}.kpi-evidence-quote-row>.icon-button{grid-column:2}.kpi-evidence-dialog select{font-size:16px}.kpi-evidence-footer{padding:12px 16px calc(12px + env(safe-area-inset-bottom))}.kpi-evidence-footer .btn.primary{flex:1;white-space:normal}.kpi-evidence-actions{width:100%;justify-content:flex-start}}

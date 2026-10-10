@@ -1,0 +1,1 @@
+ALTER TABLE `crm_members` ADD `region_scope` text DEFAULT 'all' NOT NULL;

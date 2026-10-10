@@ -1,0 +1,46 @@
+{
+  "package": "org.yourrest.crm",
+  "versionCode": 5,
+  "versionName": "1.0.4",
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkSha256": "bc73cad95047fdadaa0af1b4eee173e09f8a757a0d1b3099b45ddb5aec7662dc",
+  "apkBytes": 176885,
+  "sourceSha256": "1a32ac19f005295e1a9a0cde27787fcfac3747f8e157e7c83ea2f3eb5a3d84f5",
+  "buildConfigSha256": "db29e5171244da38e282af00821be4edd8def8d44dacc0c2c73d938af6c9821e",
+  "deviceTested": false,
+  "signatureVerified": true,
+  "signatureV2Verified": true,
+  "signatureV3Verified": true,
+  "alignmentVerified": true,
+  "signingCertificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+  "sameSigningCertificateAsPreviousRelease": true,
+  "trackingWindowUnchanged": {
+    "timeZone": "Asia/Riyadh",
+    "start": "06:00",
+    "endExclusive": "18:00"
+  },
+  "tripStart": {
+    "postSelectionOutboxDrain": false,
+    "authenticatedMemberScopeDeviceAndActiveStopVerified": true,
+    "serializedMutationWorker": true,
+    "scheduledSyncMaxOperations": 1,
+    "enrolledResumeSyncMaxOperations": 1,
+    "explicitEnrolledFlushMaxOperations": 12,
+    "trustedHiddenBridgeRequestsRespondImmediately": true,
+    "queuedPointBindingsUnchanged": true,
+    "pendingGapCountFromDurableStore": true,
+    "pendingGapCountSupportedModes": [
+      "continuous",
+      "legacy visit"
+    ]
+  },
+  "checks": {
+    "tripStartRegression": 169,
+    "routeRules": 37,
+    "continuousPolicy": 4501,
+    "directions": 27,
+    "outbox": 138
+  },
+  "actualPhoneTripStartTested": false
+}

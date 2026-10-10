@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "checks": 15,
+  "actualBuiltRelease": true,
+  "realSqlite": true,
+  "syntheticFixture": true,
+  "productionDataUsed": false,
+  "physicalDeviceTested": false,
+  "deployed": false,
+  "coverage": [
+    "admin delete button",
+    "cancel preserves visit",
+    "confirmation removes one visit",
+    "audit snapshot",
+    "rep delete hidden"
+  ],
+  "screenshots": [
+    "/workspace/scratch/084c90fdfdf4/yourrest-offline/package/source/docs/admin-delete-screenshots/admin-visits-after-delete.png"
+  ]
+}

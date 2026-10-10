@@ -1,0 +1,52 @@
+{
+  "release": "Yourrest customer entry 2026-10-03",
+  "features": [
+    "Automatic current device location on newcustomer open in directory and visitpicker",
+    "Customer type/status/factorycategory/regionradiochoices",
+    "Optional normalized short nationaladdress",
+    "Preserved scopedregions,ownership,idempotency andlegacy values",
+    "StaleGPS/addresscallback cancellation andmanualinput protection",
+    "Shortaddress included in customersearch/detail/managementCSV"
+  ],
+  "nationalAddress": {
+    "productionProviderConfigured": false,
+    "automaticLookupOperational": false,
+    "integrationPrepared": true,
+    "provider": "SPL official address-geocode v3.1",
+    "requires": "validsubscriptionkey andverified realresponse containingexplicitShortAddress",
+    "providerTests": "mockedresponses only",
+    "manualFallback": true,
+    "credentialsBundled": false
+  },
+  "tests": {
+    "customerEntryUI": 68,
+    "repCustomerUI": 103,
+    "visitMobileUX": 208,
+    "customerDirectoryMobile": 43,
+    "repCustomerCreateAndAddressAPI": 187,
+    "crmRegression": 289,
+    "mapSearch": 54,
+    "typescript": "passed",
+    "builtHTTP": {
+      "ok": true,
+      "checks": 352,
+      "literal_unix_socket": true,
+      "actual_built_release": true,
+      "production_data_used": false,
+      "actual_email_sent": false,
+      "real_hosting_tested": false
+    }
+  },
+  "unchangedSqlMigrations": 13,
+  "newMigrations": 0,
+  "android": {
+    "version": "1.0.7",
+    "versionCode": 8,
+    "changed": false,
+    "sha256": "75cbcaa4fa4f3bfce9c4c0122898c8e590cdfa05392e4b8c99c741e342b82d83"
+  },
+  "physicalPhoneTested": false,
+  "productionAuthenticatedWorkflowTested": false,
+  "webBuild": "passed",
+  "builtClientEntry": "index-BfMCHJEL.js"
+}

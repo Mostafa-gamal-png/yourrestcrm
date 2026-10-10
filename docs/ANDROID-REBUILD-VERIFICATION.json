@@ -1,0 +1,52 @@
+{
+  "package": "org.yourrest.crm",
+  "versionCode": 7,
+  "versionName": "1.0.6",
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkSha256": "c090d617728ca05ce1b3b4841c630bb608d99b43f55030ae18cfd6ece63f7df0",
+  "apkBytes": 193269,
+  "sourceSha256": "7fee97f0bf4a625326730ebb4972bee01393761ca6c062e1e0bd7cd18c54a3a1",
+  "buildConfigSha256": "594eb5c867d89be20c55f9c4cc94d87739a9a178f8adc556e2b679abab5dd983",
+  "build": "Standalone OSS AAPT2, javac, D8, apksig; no proprietary SDK",
+  "deviceTested": false,
+  "toolSha256": {
+    "android-all-15-robolectric-12650502.jar": "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b",
+    "aapt2-linux.jar": "ffb7b7d419c7341dd013f2f87bfb0148f8bff0a2a47c222f54935b3b8f233605",
+    "r8-8.9.35.jar": "204b2fc2b0f4e888dc0ef748b58090def1bf4185068d36abbb94841dbc7107a8",
+    "apksig-8.9.2.jar": "c070ed1394629d74641aa0906f60b2ffa1ee77e6366a1f93437f59717b1aeb89"
+  },
+  "signature": {
+    "v1": false,
+    "v2": true,
+    "v3": true,
+    "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+    "samePreviousSigningIdentity": true
+  },
+  "localChecks": {
+    "routeRules": 37,
+    "outboxOrdering": 138,
+    "directions": 27,
+    "continuousPolicy": 4501,
+    "tripStart": 171,
+    "mapsLaunch": 120,
+    "activationRecovery": 51,
+    "accountRecovery": 68,
+    "sqliteUpgrade": 33
+  },
+  "legacyAuthenticationQueueProtection": true,
+  "legacyUploadOwnerScopePreflight": true,
+  "emptyContextRecoveryVerified": true,
+  "nonemptyOldScopeQueuePreserved": true,
+  "permissionChangeStopsCollection": true,
+  "actualPhoneVerified": false,
+  "mapsLaunchOnPhoneVerified": false,
+  "hostDeployed": false,
+  "outboxSchemaVersion": 2,
+  "capabilities": [
+    "foregroundDirectionsSupported",
+    "immutableBindingSupported when all pending points and gaps are known",
+    "accountRecoverySupported"
+  ],
+  "sourceFrozen": true
+}

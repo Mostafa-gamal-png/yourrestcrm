@@ -1,0 +1,11 @@
+/* A small, native keyboard-operable switch inspired by ThreeUI's Modern toggle. */
+.theme-toggle{display:inline-flex;align-items:center;gap:7px;flex-shrink:0}
+.theme-toggle-control{position:relative;display:block;direction:ltr;width:60px;height:44px;flex:none;padding:0;border:0;border-radius:999px;background:transparent;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.theme-toggle-track{position:absolute;inset:6px 0;border:1px solid #bdcfc4;border-radius:999px;background:linear-gradient(180deg,#d7e1db,#edf2ee);box-shadow:inset 0 2px 4px #163e2520;transition:background .18s,border-color .18s}
+.theme-toggle-thumb{position:absolute;display:grid;place-items:center;top:10px;left:4px;width:24px;height:24px;border-radius:50%;background:linear-gradient(180deg,#fff,#eef4ef);color:#276447;box-shadow:0 1px 2px #0d382634,0 3px 6px #0d382624;transform:translateX(0);transition:transform .18s ease}
+.theme-toggle-control[aria-checked=true] .theme-toggle-track{background:linear-gradient(180deg,#1b6a49,#318461);border-color:#5a9b7b}
+.theme-toggle-control[aria-checked=true] .theme-toggle-thumb{transform:translateX(28px);color:#155a3e}
+.theme-toggle-control:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.theme-toggle-caption{color:var(--muted-foreground);font-size:11px;min-width:29px}
+@media(max-width:1023px){.theme-toggle-caption{display:none}.theme-toggle-control{width:56px}.theme-toggle-control[aria-checked=true] .theme-toggle-thumb{transform:translateX(24px)}}
+@media(prefers-reduced-motion:reduce){.theme-toggle-track,.theme-toggle-thumb{transition:none}}

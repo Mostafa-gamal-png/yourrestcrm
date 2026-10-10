@@ -1,0 +1,126 @@
+{
+  "ok": true,
+  "startedAt": "2026-10-01T08:24:15.611Z",
+  "finishedAt": "2026-10-01T08:25:17.605Z",
+  "elapsedSeconds": 61.99,
+  "fixture": {
+    "representatives": 30,
+    "territories": 2,
+    "factories": 600,
+    "historicalVisits": 24000
+  },
+  "workload": {
+    "durationSeconds": 60,
+    "perRepCycleMinimumMs": 2000,
+    "gpsSamplesPerCycle": 1,
+    "crmReadEveryCycles": 3,
+    "visitEveryCycles": 5,
+    "gpsReplayEveryCycles": 10,
+    "visitReplayed": true,
+    "cycles": 901,
+    "minCyclesPerRep": 30,
+    "maxCyclesPerRep": 31,
+    "requests": 1655,
+    "requestsPerSecond": 26.7
+  },
+  "metrics": {
+    "gpsSample": {
+      "count": 901,
+      "p50Ms": 17.13,
+      "p95Ms": 922.53,
+      "p99Ms": 1270.22,
+      "maxMs": 1557.39,
+      "statuses": {
+        "200": 901
+      },
+      "responseBytes": 479090
+    },
+    "gpsReplay": {
+      "count": 91,
+      "p50Ms": 5.41,
+      "p95Ms": 467.85,
+      "p99Ms": 571.1,
+      "maxMs": 571.1,
+      "statuses": {
+        "200": 91
+      },
+      "responseBytes": 48380
+    },
+    "crmRead": {
+      "count": 301,
+      "p50Ms": 252.35,
+      "p95Ms": 565.45,
+      "p99Ms": 739.61,
+      "maxMs": 807.67,
+      "statuses": {
+        "200": 301
+      },
+      "responseBytes": 270212376
+    },
+    "visitSave": {
+      "count": 181,
+      "p50Ms": 18.93,
+      "p95Ms": 473.96,
+      "p99Ms": 580.35,
+      "maxMs": 590.17,
+      "statuses": {
+        "200": 181
+      },
+      "responseBytes": 15385
+    },
+    "visitReplay": {
+      "count": 181,
+      "p50Ms": 9.83,
+      "p95Ms": 597.95,
+      "p99Ms": 718.56,
+      "maxMs": 720.3,
+      "statuses": {
+        "200": 181
+      },
+      "responseBytes": 16290
+    }
+  },
+  "integrity": {
+    "gpsRows": 901,
+    "visitRows": 181,
+    "gpsReplays": 91,
+    "visitReplays": 181,
+    "crmIsolationChecks": 331,
+    "gpsIsolationChecks": 901,
+    "crossMemberWriteDenials": 1,
+    "noLostOrDuplicateAcknowledgedWrites": true,
+    "sqliteIntegrity": "ok",
+    "foreignKeyViolations": 0,
+    "historicalRowsUnchanged": true
+  },
+  "errors": [],
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "osRelease": "6.18.44",
+    "cpus": 9,
+    "cpuModel": "AMD EPYC 9V74 80-Core Processor",
+    "availableParallelism": 8,
+    "memoryTotalBytes": 10451464192,
+    "cgroupCpuMax": "800000 100000",
+    "cgroupMemoryMaxBytes": "8589934592",
+    "peakServerRssMiB": null,
+    "transport": "loopback TCP",
+    "storage": "private local SQLite WAL, synchronous FULL",
+    "productionBuild": true,
+    "builtServerSha256": "3b2d7a7e21c5016062572e20f77cb84ae62bb3b6b2e2528d869be01372bd0938",
+    "serverEntrySha256": "861833a02e8e19ae827985f7526ef059c8986e8dce327790553aea7f36a9fca5"
+  },
+  "limits": [
+    "Synthetic local loopback workload; not a Namecheap hosting capacity certification.",
+    "Sessions were pre-issued only in this temporary database; OTP throughput is not measured.",
+    "Real phones, GPS sensors, battery behavior, mobile networks, reverse proxy, disk quota and hosting contention were not tested.",
+    "Paced closed-loop users wait for each operation; slower runs produce fewer requests. p99 measures observed completed requests, not an open-loop arrival queue.",
+    "The operating system memory figure may exceed the container quota; sampled server RSS excludes the load-generator process."
+  ],
+  "requestedWorkload": {
+    "durationSeconds": 60,
+    "perRepCycleMinimumMs": 2000
+  }
+}

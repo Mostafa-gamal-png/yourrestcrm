@@ -1,0 +1,186 @@
+{
+  "schema": 1,
+  "default": "All tests/**/*.mjs not explicitly excluded below, plus TypeScript. New .mjs tests are automatically included.",
+  "excluded": [
+    {
+      "file": "tests/activity-map-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/add-customer-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/admin-delete-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/app-browser-workflows.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/app-update-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser"
+    },
+    {
+      "file": "tests/app-update-preview.mjs",
+      "gate": "release-artifact",
+      "reason": "artifact generator or package argument"
+    },
+    {
+      "file": "tests/app-update-release.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/clients-map-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/competitor-intelligence-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/competitors-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/customer-edit-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/daily-report-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/erp-sales-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/erp-sales-parser.mjs",
+      "gate": "erp-workbook",
+      "reason": "Requires the original ERP workbook via ERP_TEST_WORKBOOK; synthetic data must not be reported as that fixture."
+    },
+    {
+      "file": "tests/erp-sales-server.mjs",
+      "gate": "erp-workbook",
+      "reason": "Requires the original ERP workbook via ERP_TEST_WORKBOOK; synthetic data must not be reported as that fixture."
+    },
+    {
+      "file": "tests/erp-sales-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/followups-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/journeys-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/kpi-evidence-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/maps-fix-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/mobile-navigation-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/mobile-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/my-targets-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/namecheap-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/offline-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/offline-outbox-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser"
+    },
+    {
+      "file": "tests/package-install.mjs",
+      "gate": "release-artifact",
+      "reason": "artifact generator or package argument"
+    },
+    {
+      "file": "tests/permissions-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/production-load.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/production-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/pwa-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/rebuild-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/session-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/tracking-hours-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/trip-start-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
+    },
+    {
+      "file": "tests/ui-refresh-browser.mjs",
+      "reason": "Requires the built standalone release and a prepared Chromium browser; runs against isolated fixtures.",
+      "gate": "browser"
+    }
+  ]
+}

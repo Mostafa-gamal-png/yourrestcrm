@@ -1,0 +1,59 @@
+{
+  "release": "Yourrest in-app updates",
+  "packageRevision": 49,
+  "status": "BUILT_AND_TESTED_NOT_DEPLOYED",
+  "android": {
+    "package": "org.yourrest.crm",
+    "versionCode": 11,
+    "versionName": "1.0.10",
+    "minSdk": 26,
+    "targetSdk": 35,
+    "apkSha256": "0595ccb1f134196e7632781d63899af2d228cbf4f17b9de47a6be906871f12d1",
+    "apkBytes": 230133,
+    "sourceSha256": "1061dc09f8601dc56754f021088b4aeaf1f2ca865db2e8ef01efb9a6b0a188ce",
+    "buildConfigSha256": "27c6a90d3cbc1729ab9ec3a01bfc531c647681051d8e5a193264950d62d6efc4",
+    "build": "Standalone OSS AAPT2, javac, D8, apksig; no proprietary SDK",
+    "deviceTested": false,
+    "toolSha256": {
+      "android-all-15-robolectric-12650502.jar": "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b",
+      "aapt2-linux.jar": "ffb7b7d419c7341dd013f2f87bfb0148f8bff0a2a47c222f54935b3b8f233605",
+      "r8-8.9.35.jar": "204b2fc2b0f4e888dc0ef748b58090def1bf4185068d36abbb94841dbc7107a8",
+      "apksig-8.9.2.jar": "c070ed1394629d74641aa0906f60b2ffa1ee77e6366a1f93437f59717b1aeb89"
+    },
+    "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50"
+  },
+  "tests": {
+    "typescript": true,
+    "productionBuild": true,
+    "builtHttpReleaseChecks": 14,
+    "webUpdateChecks": 92,
+    "nativeUpdateChecks": 95,
+    "nativeTrackingUiChecks": 608,
+    "pwaUiChecks": 83,
+    "emailAuthUiChecks": 18,
+    "nativeFullCompile": true,
+    "nativeRegressionChecksPassed": [
+      "MapsLaunch120",
+      "Activation51",
+      "Trip178",
+      "OfflineAuth146",
+      "Outbox138",
+      "Speech36",
+      "RouteRules37",
+      "Directions27",
+      "ContinuousPolicy30472"
+    ],
+    "deploymentSafetyChecks": 40
+  },
+  "scope": "Yourrest only",
+  "migrationsChanged": false,
+  "legacyPath": "An in-app update banner starts the existing browser download handler, then Android user confirmation; no administrator file distribution.",
+  "nativePath": "Protocol1 handles private download, progress, verification and PackageInstaller user confirmation.",
+  "knownPreExistingTestFailure": "AccountRecoveryCheck source-text assertion; the test and tracker/storage sources are byte-identical to baseline v48.",
+  "limitations": [
+    "No physical Android installation test",
+    "Browser rendering blocked by unavailable renderer and cloud file URL policy; no bypass attempted",
+    "Unsaved forms must be saved before OS installation; saved records and pending offline queues remain intact."
+  ],
+  "productionModified": false
+}

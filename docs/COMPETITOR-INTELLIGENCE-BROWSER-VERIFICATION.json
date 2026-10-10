@@ -1,0 +1,1352 @@
+{
+  "ok": true,
+  "checks": 146,
+  "firstClickDateFilterRegression": true,
+  "tabGeometryVerified": true,
+  "actualBuiltRelease": true,
+  "realAuthMockEmail": true,
+  "realSqlite": true,
+  "syntheticFixture": true,
+  "mockedDeviceLocation": true,
+  "mockedSpeechRecognition": true,
+  "realMicrophoneTested": false,
+  "productionDatabaseUsed": false,
+  "realEmailSent": false,
+  "physicalDeviceTested": false,
+  "deployedToNamecheap": false,
+  "features": [
+    "rep own-name suggestions",
+    "keyboard competitor selection",
+    "mocked editable dictation",
+    "actual private PDF upload",
+    "visit save/reload",
+    "fresh follow-up competitor",
+    "management consolidated profile",
+    "customer and unique quote tabs",
+    "observations timeline",
+    "scoped observed coverage",
+    "search-independent denominator",
+    "date and region filters",
+    "supervisor team boundaries",
+    "private file authorization",
+    "AR/EN 360px and 1280px"
+  ],
+  "geometry": [
+    {
+      "label": "competitor-visit-rep-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": [
+        {
+          "name": "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg crm-dialog customer-visit-dialog mobile-record-dialog",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 360,
+            "height": 800,
+            "top": 0,
+            "right": 360,
+            "bottom": 800,
+            "left": 0
+          }
+        },
+        {
+          "name": "competitor-fields full",
+          "rect": {
+            "x": 31,
+            "y": 195.09375,
+            "width": 298,
+            "height": 536.125,
+            "top": 195.09375,
+            "right": 329,
+            "bottom": 731.21875,
+            "left": 31
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-followup-rep-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": [
+        {
+          "name": "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg crm-dialog followup-record-dialog mobile-record-dialog",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 360,
+            "height": 800,
+            "top": 0,
+            "right": 360,
+            "bottom": 800,
+            "left": 0
+          }
+        },
+        {
+          "name": "competitor-fields full",
+          "rect": {
+            "x": 16,
+            "y": 171.078125,
+            "width": 328,
+            "height": 449.03125,
+            "top": 171.078125,
+            "right": 344,
+            "bottom": 620.109375,
+            "left": 16
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-profile-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [
+        {
+          "text": "نظرة عامة",
+          "rect": {
+            "x": 237.75,
+            "y": 268.9375,
+            "width": 96.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 314.9375,
+            "left": 237.75
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العملاء2",
+          "rect": {
+            "x": 170.5,
+            "y": 268.9375,
+            "width": 67.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 237.75,
+            "bottom": 314.9375,
+            "left": 170.5
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العروض2",
+          "rect": {
+            "x": 95.25,
+            "y": 268.9375,
+            "width": 75.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 170.5,
+            "bottom": 314.9375,
+            "left": 95.25
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "السجل3",
+          "rect": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 69.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 95.25,
+            "bottom": 314.9375,
+            "left": 26
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": -94.109375,
+            "width": 340,
+            "height": 2024.328125,
+            "top": -94.109375,
+            "right": 350,
+            "bottom": 1930.21875,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 84.15625,
+            "width": 340,
+            "height": 1824.0625,
+            "top": 84.15625,
+            "right": 350,
+            "bottom": 1908.21875,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-customers-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [
+        {
+          "text": "نظرة عامة",
+          "rect": {
+            "x": 246,
+            "y": 268.9375,
+            "width": 88,
+            "height": 46,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 314.9375,
+            "left": 246
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العملاء2",
+          "rect": {
+            "x": 172,
+            "y": 268.9375,
+            "width": 74,
+            "height": 46,
+            "top": 268.9375,
+            "right": 246,
+            "bottom": 314.9375,
+            "left": 172
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العروض2",
+          "rect": {
+            "x": 96,
+            "y": 268.9375,
+            "width": 76,
+            "height": 46,
+            "top": 268.9375,
+            "right": 172,
+            "bottom": 314.9375,
+            "left": 96
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "السجل3",
+          "rect": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 70,
+            "height": 46,
+            "top": 268.9375,
+            "right": 96,
+            "bottom": 314.9375,
+            "left": 26
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": -94.109375,
+            "width": 340,
+            "height": 1075.265625,
+            "top": -94.109375,
+            "right": 350,
+            "bottom": 981.15625,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 84.15625,
+            "width": 340,
+            "height": 875,
+            "top": 84.15625,
+            "right": 350,
+            "bottom": 959.15625,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-quotes-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [
+        {
+          "text": "نظرة عامة",
+          "rect": {
+            "x": 245.75,
+            "y": 268.9375,
+            "width": 88.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 314.9375,
+            "left": 245.75
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العملاء2",
+          "rect": {
+            "x": 177.5,
+            "y": 268.9375,
+            "width": 68.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 245.75,
+            "bottom": 314.9375,
+            "left": 177.5
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العروض2",
+          "rect": {
+            "x": 96.25,
+            "y": 268.9375,
+            "width": 81.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 177.5,
+            "bottom": 314.9375,
+            "left": 96.25
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "السجل3",
+          "rect": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 70.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 96.25,
+            "bottom": 314.9375,
+            "left": 26
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": -94.109375,
+            "width": 340,
+            "height": 860.609375,
+            "top": -94.109375,
+            "right": 350,
+            "bottom": 766.5,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 84.15625,
+            "width": 340,
+            "height": 660.34375,
+            "top": 84.15625,
+            "right": 350,
+            "bottom": 744.5,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-observations-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [
+        {
+          "text": "نظرة عامة",
+          "rect": {
+            "x": 246,
+            "y": 268.9375,
+            "width": 88,
+            "height": 46,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 314.9375,
+            "left": 246
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العملاء2",
+          "rect": {
+            "x": 178,
+            "y": 268.9375,
+            "width": 68,
+            "height": 46,
+            "top": 268.9375,
+            "right": 246,
+            "bottom": 314.9375,
+            "left": 178
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العروض2",
+          "rect": {
+            "x": 102,
+            "y": 268.9375,
+            "width": 76,
+            "height": 46,
+            "top": 268.9375,
+            "right": 178,
+            "bottom": 314.9375,
+            "left": 102
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "السجل3",
+          "rect": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 76,
+            "height": 46,
+            "top": 268.9375,
+            "right": 102,
+            "bottom": 314.9375,
+            "left": 26
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": -94.109375,
+            "width": 340,
+            "height": 1536.375,
+            "top": -94.109375,
+            "right": 350,
+            "bottom": 1442.265625,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 84.15625,
+            "width": 340,
+            "height": 1336.109375,
+            "top": 84.15625,
+            "right": 350,
+            "bottom": 1420.265625,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-profile-desktop-ar",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "clientWidth": 1280,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [
+        {
+          "text": "نظرة عامة",
+          "rect": {
+            "x": 488.25,
+            "y": 144.609375,
+            "width": 148.75,
+            "height": 46,
+            "top": 144.609375,
+            "right": 637,
+            "bottom": 190.609375,
+            "left": 488.25
+          },
+          "container": {
+            "x": 57,
+            "y": 144.609375,
+            "width": 580,
+            "height": 47,
+            "top": 144.609375,
+            "right": 637,
+            "bottom": 191.609375,
+            "left": 57
+          }
+        },
+        {
+          "text": "العملاء2",
+          "rect": {
+            "x": 347.5,
+            "y": 144.609375,
+            "width": 137.75,
+            "height": 46,
+            "top": 144.609375,
+            "right": 485.25,
+            "bottom": 190.609375,
+            "left": 347.5
+          },
+          "container": {
+            "x": 57,
+            "y": 144.609375,
+            "width": 580,
+            "height": 47,
+            "top": 144.609375,
+            "right": 637,
+            "bottom": 191.609375,
+            "left": 57
+          }
+        },
+        {
+          "text": "العروض2",
+          "rect": {
+            "x": 199.75,
+            "y": 144.609375,
+            "width": 144.75,
+            "height": 46,
+            "top": 144.609375,
+            "right": 344.5,
+            "bottom": 190.609375,
+            "left": 199.75
+          },
+          "container": {
+            "x": 57,
+            "y": 144.609375,
+            "width": 580,
+            "height": 47,
+            "top": 144.609375,
+            "right": 637,
+            "bottom": 191.609375,
+            "left": 57
+          }
+        },
+        {
+          "text": "السجل3",
+          "rect": {
+            "x": 57,
+            "y": 144.609375,
+            "width": 139.75,
+            "height": 46,
+            "top": 144.609375,
+            "right": 196.75,
+            "bottom": 190.609375,
+            "left": 57
+          },
+          "container": {
+            "x": 57,
+            "y": 144.609375,
+            "width": 580,
+            "height": 47,
+            "top": 144.609375,
+            "right": 637,
+            "bottom": 191.609375,
+            "left": 57
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 34,
+            "y": -173.015625,
+            "width": 964,
+            "height": 1678.796875,
+            "top": -173.015625,
+            "right": 998,
+            "bottom": 1505.78125,
+            "left": 34
+          }
+        },
+        {
+          "name": "competitors-list panel",
+          "rect": {
+            "x": 678,
+            "y": 45.625,
+            "width": 320,
+            "height": 837.875,
+            "top": 45.625,
+            "right": 998,
+            "bottom": 883.5,
+            "left": 678
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 34,
+            "y": 45.625,
+            "width": 626,
+            "height": 1438.15625,
+            "top": 45.625,
+            "right": 660,
+            "bottom": 1483.78125,
+            "left": 34
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-profile-desktop-en",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "clientWidth": 1280,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "en",
+      "tabs": [
+        {
+          "text": "Overview",
+          "rect": {
+            "x": 643,
+            "y": 625.609375,
+            "width": 135.75,
+            "height": 46,
+            "top": 625.609375,
+            "right": 778.75,
+            "bottom": 671.609375,
+            "left": 643
+          },
+          "container": {
+            "x": 643,
+            "y": 625.609375,
+            "width": 580,
+            "height": 47,
+            "top": 625.609375,
+            "right": 1223,
+            "bottom": 672.609375,
+            "left": 643
+          }
+        },
+        {
+          "text": "Customers2",
+          "rect": {
+            "x": 781.75,
+            "y": 625.609375,
+            "width": 160.75,
+            "height": 46,
+            "top": 625.609375,
+            "right": 942.5,
+            "bottom": 671.609375,
+            "left": 781.75
+          },
+          "container": {
+            "x": 643,
+            "y": 625.609375,
+            "width": 580,
+            "height": 47,
+            "top": 625.609375,
+            "right": 1223,
+            "bottom": 672.609375,
+            "left": 643
+          }
+        },
+        {
+          "text": "Quotes2",
+          "rect": {
+            "x": 945.5,
+            "y": 625.609375,
+            "width": 136.75,
+            "height": 46,
+            "top": 625.609375,
+            "right": 1082.25,
+            "bottom": 671.609375,
+            "left": 945.5
+          },
+          "container": {
+            "x": 643,
+            "y": 625.609375,
+            "width": 580,
+            "height": 47,
+            "top": 625.609375,
+            "right": 1223,
+            "bottom": 672.609375,
+            "left": 643
+          }
+        },
+        {
+          "text": "History3",
+          "rect": {
+            "x": 1085.25,
+            "y": 625.609375,
+            "width": 137.75,
+            "height": 46,
+            "top": 625.609375,
+            "right": 1223,
+            "bottom": 671.609375,
+            "left": 1085.25
+          },
+          "container": {
+            "x": 643,
+            "y": 625.609375,
+            "width": 580,
+            "height": 47,
+            "top": 625.609375,
+            "right": 1223,
+            "bottom": 672.609375,
+            "left": 643
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 282,
+            "y": 307.984375,
+            "width": 964,
+            "height": 1766.96875,
+            "top": 307.984375,
+            "right": 1246,
+            "bottom": 2074.953125,
+            "left": 282
+          }
+        },
+        {
+          "name": "competitors-list panel",
+          "rect": {
+            "x": 282,
+            "y": 526.625,
+            "width": 320,
+            "height": 858.265625,
+            "top": 526.625,
+            "right": 602,
+            "bottom": 1384.890625,
+            "left": 282
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 620,
+            "y": 526.625,
+            "width": 626,
+            "height": 1526.328125,
+            "top": 526.625,
+            "right": 1246,
+            "bottom": 2052.953125,
+            "left": 620
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-profile-mobile-en",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "en",
+      "tabs": [
+        {
+          "text": "Overview",
+          "rect": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 87.25,
+            "height": 46,
+            "top": 183.921875,
+            "right": 113.25,
+            "bottom": 229.921875,
+            "left": 26
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        },
+        {
+          "text": "Customers2",
+          "rect": {
+            "x": 113.25,
+            "y": 183.921875,
+            "width": 88.25,
+            "height": 46,
+            "top": 183.921875,
+            "right": 201.5,
+            "bottom": 229.921875,
+            "left": 113.25
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        },
+        {
+          "text": "Quotes2",
+          "rect": {
+            "x": 201.5,
+            "y": 183.921875,
+            "width": 66.25,
+            "height": 46,
+            "top": 183.921875,
+            "right": 267.75,
+            "bottom": 229.921875,
+            "left": 201.5
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        },
+        {
+          "text": "History3",
+          "rect": {
+            "x": 267.75,
+            "y": 183.921875,
+            "width": 66.25,
+            "height": 46,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 229.921875,
+            "left": 267.75
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": -351.109375,
+            "width": 340,
+            "height": 2300.171875,
+            "top": -351.109375,
+            "right": 350,
+            "bottom": 1949.0625,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": -0.859375,
+            "width": 340,
+            "height": 1927.921875,
+            "top": -0.859375,
+            "right": 350,
+            "bottom": 1927.0625,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-quotes-mobile-en",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "en",
+      "tabs": [
+        {
+          "text": "Overview",
+          "rect": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 79.75,
+            "height": 46,
+            "top": 183.921875,
+            "right": 105.75,
+            "bottom": 229.921875,
+            "left": 26
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        },
+        {
+          "text": "Customers2",
+          "rect": {
+            "x": 105.75,
+            "y": 183.921875,
+            "width": 88.75,
+            "height": 46,
+            "top": 183.921875,
+            "right": 194.5,
+            "bottom": 229.921875,
+            "left": 105.75
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        },
+        {
+          "text": "Quotes2",
+          "rect": {
+            "x": 194.5,
+            "y": 183.921875,
+            "width": 72.75,
+            "height": 46,
+            "top": 183.921875,
+            "right": 267.25,
+            "bottom": 229.921875,
+            "left": 194.5
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        },
+        {
+          "text": "History3",
+          "rect": {
+            "x": 267.25,
+            "y": 183.921875,
+            "width": 66.75,
+            "height": 46,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 229.921875,
+            "left": 267.25
+          },
+          "container": {
+            "x": 26,
+            "y": 183.921875,
+            "width": 308,
+            "height": 47,
+            "top": 183.921875,
+            "right": 334,
+            "bottom": 230.921875,
+            "left": 26
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": -351.109375,
+            "width": 340,
+            "height": 1032.59375,
+            "top": -351.109375,
+            "right": 350,
+            "bottom": 681.484375,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": -0.859375,
+            "width": 340,
+            "height": 660.34375,
+            "top": -0.859375,
+            "right": 350,
+            "bottom": 659.484375,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitor-supervisor-quotes-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [
+        {
+          "text": "نظرة عامة",
+          "rect": {
+            "x": 245.75,
+            "y": 268.9375,
+            "width": 88.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 314.9375,
+            "left": 245.75
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العملاء2",
+          "rect": {
+            "x": 177.5,
+            "y": 268.9375,
+            "width": 68.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 245.75,
+            "bottom": 314.9375,
+            "left": 177.5
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "العروض2",
+          "rect": {
+            "x": 96.25,
+            "y": 268.9375,
+            "width": 81.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 177.5,
+            "bottom": 314.9375,
+            "left": 96.25
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        },
+        {
+          "text": "السجل3",
+          "rect": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 70.25,
+            "height": 46,
+            "top": 268.9375,
+            "right": 96.25,
+            "bottom": 314.9375,
+            "left": 26
+          },
+          "container": {
+            "x": 26,
+            "y": 268.9375,
+            "width": 308,
+            "height": 47,
+            "top": 268.9375,
+            "right": 334,
+            "bottom": 315.9375,
+            "left": 26
+          }
+        }
+      ],
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": -94.109375,
+            "width": 340,
+            "height": 860.609375,
+            "top": -94.109375,
+            "right": 350,
+            "bottom": 766.5,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 84.15625,
+            "width": 340,
+            "height": 660.34375,
+            "top": 84.15625,
+            "right": 350,
+            "bottom": 744.5,
+            "left": 10
+          }
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-visit-rep-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-followup-rep-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-profile-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-customers-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-quotes-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-observations-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-profile-desktop-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-profile-desktop-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-profile-mobile-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-quotes-mobile-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-gauge/package/source/docs/competitor-intelligence-screenshots/competitor-supervisor-quotes-mobile-ar.png"
+  ]
+}

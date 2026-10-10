@@ -1,0 +1,391 @@
+{
+  "ok": true,
+  "checks": 95,
+  "actualBuiltRelease": true,
+  "realAuthMockEmail": true,
+  "realSqlite": true,
+  "syntheticFixture": true,
+  "mockedDeviceLocation": true,
+  "productionDatabaseUsed": false,
+  "realEmailSent": false,
+  "physicalDeviceTested": false,
+  "deployedToNamecheap": false,
+  "features": [
+    "management navigation",
+    "regional and team visibility",
+    "normalized competitor grouping",
+    "factory and representative search",
+    "newest-first history",
+    "customer card",
+    "original visit editing",
+    "new competitor call save",
+    "persistent reload",
+    "scoped name suggestions",
+    "private attachment permissions",
+    "AR and EN",
+    "360px and desktop geometry"
+  ],
+  "geometry": [
+    {
+      "label": "competitors-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 345,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "competitors-workspace",
+          "rect": {
+            "x": 10,
+            "y": 334.546875,
+            "width": 325,
+            "height": 755.765625,
+            "top": 334.546875,
+            "right": 335,
+            "bottom": 1090.3125,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-list panel",
+          "rect": {
+            "x": 10,
+            "y": 460.828125,
+            "width": 325,
+            "height": 607.484375,
+            "top": 460.828125,
+            "right": 335,
+            "bottom": 1068.3125,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitors-detail-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 345,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": 334.546875,
+            "width": 325,
+            "height": 967.359375,
+            "top": 334.546875,
+            "right": 335,
+            "bottom": 1301.90625,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 460.828125,
+            "width": 325,
+            "height": 819.078125,
+            "top": 460.828125,
+            "right": 335,
+            "bottom": 1279.90625,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitors-new-visit-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "competitors-workspace",
+          "rect": {
+            "x": 10,
+            "y": 241.546875,
+            "width": 325,
+            "height": 755.765625,
+            "top": 241.546875,
+            "right": 335,
+            "bottom": 997.3125,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-list panel",
+          "rect": {
+            "x": 10,
+            "y": 367.828125,
+            "width": 325,
+            "height": 607.484375,
+            "top": 367.828125,
+            "right": 335,
+            "bottom": 975.3125,
+            "left": 10
+          }
+        },
+        {
+          "name": "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg crm-dialog customer-visit-dialog mobile-record-dialog",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 360,
+            "height": 800,
+            "top": 0,
+            "right": 360,
+            "bottom": 800,
+            "left": 0
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitors-desktop-ar",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "clientWidth": 1265,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 34,
+            "y": 199.5625,
+            "width": 949,
+            "height": 822.875,
+            "top": 199.5625,
+            "right": 983,
+            "bottom": 1022.4375,
+            "left": 34
+          }
+        },
+        {
+          "name": "competitors-list panel",
+          "rect": {
+            "x": 663,
+            "y": 278.953125,
+            "width": 320,
+            "height": 721.484375,
+            "top": 278.953125,
+            "right": 983,
+            "bottom": 1000.4375,
+            "left": 663
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 34,
+            "y": 278.953125,
+            "width": 611,
+            "height": 671.5,
+            "top": 278.953125,
+            "right": 645,
+            "bottom": 950.453125,
+            "left": 34
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitors-desktop-en",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "clientWidth": 1265,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "en",
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 282,
+            "y": 334.5625,
+            "width": 949,
+            "height": 843.265625,
+            "top": 334.5625,
+            "right": 1231,
+            "bottom": 1177.828125,
+            "left": 282
+          }
+        },
+        {
+          "name": "competitors-list panel",
+          "rect": {
+            "x": 282,
+            "y": 413.953125,
+            "width": 320,
+            "height": 741.875,
+            "top": 413.953125,
+            "right": 602,
+            "bottom": 1155.828125,
+            "left": 282
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 620,
+            "y": 413.953125,
+            "width": 611,
+            "height": 730.28125,
+            "top": 413.953125,
+            "right": 1231,
+            "bottom": 1144.234375,
+            "left": 620
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitors-detail-mobile-en",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 345,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "en",
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": 354.9375,
+            "width": 325,
+            "height": 1117.328125,
+            "top": 354.9375,
+            "right": 335,
+            "bottom": 1472.265625,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 502.8125,
+            "width": 325,
+            "height": 947.453125,
+            "top": 502.8125,
+            "right": 335,
+            "bottom": 1450.265625,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitors-mobile-en",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 345,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "en",
+      "panels": [
+        {
+          "name": "competitors-workspace",
+          "rect": {
+            "x": 10,
+            "y": 354.9375,
+            "width": 325,
+            "height": 914.140625,
+            "top": 354.9375,
+            "right": 335,
+            "bottom": 1269.078125,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-list panel",
+          "rect": {
+            "x": 10,
+            "y": 502.8125,
+            "width": 325,
+            "height": 744.265625,
+            "top": 502.8125,
+            "right": 335,
+            "bottom": 1247.078125,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "competitors-supervisor-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 345,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "competitors-workspace has-selection",
+          "rect": {
+            "x": 10,
+            "y": 125.546875,
+            "width": 325,
+            "height": 967.359375,
+            "top": 125.546875,
+            "right": 335,
+            "bottom": 1092.90625,
+            "left": 10
+          }
+        },
+        {
+          "name": "competitors-detail panel",
+          "rect": {
+            "x": 10,
+            "y": 251.828125,
+            "width": 325,
+            "height": 819.078125,
+            "top": 251.828125,
+            "right": 335,
+            "bottom": 1070.90625,
+            "left": 10
+          }
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-detail-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-new-visit-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-desktop-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-desktop-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-detail-mobile-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-mobile-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/competitors-screenshots/competitors-supervisor-mobile-ar.png"
+  ]
+}

@@ -1,0 +1,25 @@
+.targets-performance-workspace .sales-toolbar{align-items:flex-start;gap:16px;margin-bottom:14px}
+.targets-performance-workspace .sales-toolbar-actions{flex-wrap:wrap;padding-top:24px}
+.targets-performance-jumps{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 26px;padding:4px;border-bottom:1px solid var(--border)}
+.targets-performance-jumps button{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:8px;color:var(--primary);font-size:14px;font-weight:600}
+.targets-performance-jumps button:hover{background:var(--accent)}
+.targets-performance-jumps button:disabled{opacity:.45;cursor:default}
+.targets-performance-section{scroll-margin-top:100px;min-width:0}
+.targets-performance-section+.targets-performance-section{margin-top:38px;padding-top:26px;border-top:1px solid var(--border)}
+.targets-performance-heading{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px}
+.targets-performance-heading>svg{color:var(--primary);margin-top:4px;flex-shrink:0}
+.targets-performance-heading h2{font-size:21px;font-weight:700;line-height:1.5}
+.targets-performance-heading p{font-size:14px;color:var(--muted-foreground);margin:4px 0 0;line-height:1.7}
+.targets-performance-section .targets-heading{justify-content:flex-end}
+.targets-performance-section .targets-heading .btn{margin-inline-start:auto}
+.targets-performance-future{display:flex;align-items:center;gap:14px;padding:24px;color:var(--muted-foreground);line-height:1.9}
+.targets-performance-future>svg{color:var(--primary);flex-shrink:0}
+.targets-performance-branch-note{border:1px solid var(--border);border-radius:10px;background:var(--card)}
+@media(max-width:760px){.targets-performance-workspace .sales-toolbar-actions{padding-top:0;width:100%}.targets-performance-workspace .sales-toolbar-actions .btn{flex:1;justify-content:center}.targets-performance-heading h2{font-size:19px}.targets-performance-section+.targets-performance-section{margin-top:28px;padding-top:22px}.targets-performance-future{align-items:flex-start;padding:18px}.targets-performance-jumps{margin-bottom:20px}.targets-performance-jumps button{flex:1;justify-content:center}.targets-performance-section .targets-heading .btn{margin-inline-start:0}}
+@media print{.targets-performance-section+.targets-performance-section{break-before:page}.targets-performance-heading,.targets-performance-future{break-inside:avoid}}
+
+.kpi-overview .kpi-target-gauge{display:flex;align-items:center;justify-content:center;padding:16px}.kpi-target-gauge .target-gauge-label{font-size:12px}
+
+.kpi-overview-with-gauge{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1000px){.kpi-overview-with-gauge{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi-overview-with-gauge>.panel:first-child{grid-column:auto}}
+@media(max-width:420px){.kpi-overview-with-gauge{grid-template-columns:1fr}.kpi-overview-with-gauge>.panel{min-width:0}}

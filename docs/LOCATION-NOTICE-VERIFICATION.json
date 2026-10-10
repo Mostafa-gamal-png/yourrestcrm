@@ -1,0 +1,12 @@
+{
+  "change": "Remove the low-location-accuracy UI notice",
+  "date": "2026-10-03",
+  "scope": "Yourrest CRM only",
+  "ui": ["Remove Arabic and English accuracy note", "No warning-only empty banner or compact warning state"],
+  "trackingUnchanged": true,
+  "locationValidationUnchanged": true,
+  "databaseMigrationAdded": false,
+  "androidBinaryChanged": false,
+  "checks": {"journeyUi": 257, "nativeTrackingUi": 546, "standaloneBuild": "passed"},
+  "limitations": ["Controlled UI tests; no physical handset test or real employee-account login performed"]
+}

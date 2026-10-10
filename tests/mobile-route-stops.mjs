@@ -1,0 +1,56 @@
+// Deterministic dwell evidence and the actual report markup; no live GPS is used.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import React from 'react';
+import * as jsx from 'react/jsx-runtime';
+import {renderToStaticMarkup} from 'react-dom/server';
+import ts from 'typescript';
+let checks=0;const eq=(actual,expected,label)=>{assert.deepEqual(JSON.parse(JSON.stringify(actual)),expected,label);checks++;},ok=(actual,label)=>{assert.ok(actual,label);checks++;};
+const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
+function load(file,require){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:compiler}).outputText,{exports,require,console,Date,Intl,structuredClone});return exports;}
+const policy=load('lib/tracking-window.ts',()=>({}));
+const journeys=load('lib/journeys.ts',name=>name==='./tracking-window'?policy:{});
+const detection=load('lib/mobile-route-stops.ts',name=>name==='./journeys'?journeys:{});
+const base=Date.parse('2026-10-01T09:00:00.000Z'),at=seconds=>new Date(base+seconds*1000).toISOString();
+const point=(seconds,meters=0,accuracy=10)=>({id:'p'+seconds,capturedAt:at(seconds),latitude:26.437341+meters/111194.9266,longitude:50.034499,accuracy,stopId:null});
+const sequence=(from=0,to=300,meters=0)=>Array.from({length:Math.floor((to-from)/60)+1},(_,i)=>point(from+i*60,meters));
+const source=(points,gaps=[],extra={})=>({id:'day-1',date:'2026-10-01',points,gaps,endedAt:null,...extra});
+const detect=(day,now=at(360))=>detection.detectMobileRouteStops(day,now);
+eq(detect(source(sequence(0,240))).length,0,'Less than five minutes is not a stop');
+let result=detect(source(sequence()));eq(result.length,1);eq(result[0].startedAt,at(0));eq(result[0].lastObservedAt,at(300));eq(result[0].observedDurationSeconds,300);eq(result[0].sampleCount,6);eq(result[0].status,'ongoing');eq(result[0].departureDetectedAt,null);
+result=detect(source([...sequence(),point(360,200)]));eq(result.length,1);eq(result[0].status,'departed');eq(result[0].departureDetectedAt,at(360));eq(result[0].lastObservedAt,at(300));eq(result[0].observedDurationSeconds,300,'Time until the first outside fix is never added to dwell');
+result=detect(source([...sequence(),point(360,100,20)]));eq(result[0].status,'interrupted');eq(result[0].endReason,'boundary_uncertain');eq(result[0].departureDetectedAt,null,'Uncertain radius crossing is not departure evidence');
+result=detect(source([...sequence(),point(360,0,100)]));eq(result[0].status,'interrupted');eq(result[0].endReason,'low_accuracy');eq(result[0].observedDurationSeconds,300);
+result=detect(source([...sequence(),point(360,30000)]));eq(result[0].endReason,'implausible_jump');eq(result[0].departureDetectedAt,null,'An implausible jump cannot confirm movement');
+eq(detect(source([...sequence(0,240),...sequence(420,660)]),at(660)).length,0,'A GPS time gap cannot connect two sub-threshold stays');
+result=detect(source([...sequence(),...sequence(480,780)]),at(780));eq(result.length,2);eq(result.map(stop=>stop.observedDurationSeconds),[300,300]);eq(result[0].endReason,'sample_gap');
+const explicit=[{from:at(180),to:at(240),reason:'service_stopped'}];eq(detect(source(sequence(),explicit)).length,0,'A reported interruption breaks otherwise frequent samples');
+result=detect(source(sequence(),[{from:at(300),to:at(360),reason:'permission_denied'}]));eq(result[0].endReason,'recorded_gap');eq(result[0].status,'interrupted');
+result=detect(source(sequence()),at(421));eq(result[0].endReason,'no_recent_location');eq(result[0].lastObservedAt,at(300),'Missing tail samples do not lengthen the observed stay');
+result=detect(source(sequence(),[],{endedAt:at(360)}),at(360));eq(result[0].endReason,'recording_ended');eq(result[0].departureDetectedAt,null,'Manual recording end does not prove departure');
+result=detect(source(sequence()),'2026-10-01T21:00:00.000Z');eq(result[0].endReason,'day_boundary');eq(result[0].observedDurationSeconds,300);
+const midnight=Date.parse('2026-10-01T21:00:00.000Z');const crossing=Array.from({length:7},(_,i)=>({...point(i*60),capturedAt:new Date(midnight-180000+i*60000).toISOString()}));eq(detect(source(crossing),'2026-10-01T21:03:00.000Z').length,0,'Samples across Riyadh midnight cannot create one dwell');
+const slowTravel=Array.from({length:11},(_,i)=>point(i*60,i*30));eq(detect(source(slowTravel),at(600)).length,0,'A fixed anchor prevents slowly moving clusters from becoming a false long stop');
+const jitter=sequence().map((p,i)=>({...p,latitude:p.latitude+(i%2?15:-15)/111194.9266}));eq(detect(source(jitter)).length,1,'Small accurate GPS jitter still permits a dwell observation');
+const copy=source(sequence().reverse()),before=JSON.stringify(copy);eq(detect(copy).length,1);eq(JSON.stringify(copy),before,'Detection does not mutate the authorized source payload');
+result=detect(source([...sequence(),point(300)]));eq(result[0].sampleCount,6,'Identical duplicate timestamps do not inflate samples');
+eq(detect(source([...sequence(0,120),{...point(180),accuracy:NaN},...sequence(240,480)]),at(480)).length,0,'Invalid evidence separates stays');
+eq(detect(source(sequence()),at(240)).length,0,'Future samples cannot create a dwell');
+eq(detect(source(sequence(),[],{endedAt:at(240)})),[],'Samples outside the recording window cannot create a dwell');
+
+const mobileRoute=load('lib/mobile-route.ts',name=>name==='./journeys'?journeys:name==='./mobile-route-stops'?detection:name==='./tracking-window'?policy:{});
+const projected=mobileRoute.mobileReportDay({...source(sequence()),memberId:'rep',deviceId:'private-device',regionScope:'eastern',startedAt:at(0),lastPointAt:at(300),lastPoint:point(300),expiresAt:'2026-10-01T21:00:00.000Z',version:1},sequence(),'Representative',at(360));
+eq(projected.automaticStops.length,1,'The real daily report projection includes automatic stop evidence');eq(projected.automaticStops[0].observedDurationSeconds,300);eq('deviceId' in projected,false,'Report projection does not expose the device identifier');
+
+let language='ar';const icon=()=>null,icons=new Proxy({},{get:()=>icon});
+const report=load('app/journey-report.tsx',name=>{if(name==='@/lib/client-submit')return load('lib/client-submit.ts',()=>({}));if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;if(name==='lucide-react')return icons;if(name==='@/lib/i18n')return {useLanguage:()=>({language})};if(name==='@/lib/journeys')return journeys;if(name==='@/lib/visits')return load('lib/visits.ts',name=>name==='./customer-map-search'?load('lib/customer-map-search.ts',()=>({})):{});if(name.endsWith('.css'))return {};throw Error('Unexpected report dependency '+name);});
+const day={...source(sequence()),memberId:'rep',memberName:'المندوب التجريبي',regionScope:'eastern',startedAt:at(0),lastPointAt:at(300),expiresAt:'2026-10-01T21:00:00.000Z',version:1,segments:[sequence()],automaticStops:detect(source(sequence()))};
+let html=renderToStaticMarkup(React.createElement(report.AutomaticLocationStops,{days:[day]}));ok(html.includes('توقف مرصود بالموقع'));ok(html.includes('المدة المرصودة'));ok(html.includes('أول رصد'));ok(html.includes('آخر رصد للتوقف'));ok(html.includes('لا يثبت زيارة عميل'),'Generic observed stop remains distinct from a customer visit');ok(html.includes('5 دقائق'));ok(html.includes('100 متر'));ok(html.includes('75 متر'));ok(html.includes('دقيقتين'));ok(!/<details[^>]*\bopen(?:[\s=>])/.test(html),'Compact details remain collapsed');
+language='en';html=renderToStaticMarkup(React.createElement(report.AutomaticLocationStops,{days:[day]}));ok(html.includes('GPS-observed stop'));ok(html.includes('Observed duration'));ok(html.includes('does not establish a customer visit'));ok(html.includes('5 min'));
+const payload={date:day.date,memberId:'rep',members:[],stops:[],communications:[],mobileDays:[day],serverTime:at(360)};
+html=renderToStaticMarkup(React.createElement(report.JourneyDayReport,{report:payload}));ok(html.includes('GPS-observed stops'));ok(html.includes('Day map'));ok(html.includes('observed stops'));ok(!html.includes('No activity recorded'),'A GPS-only day is a report even without customer visits');
+const emptyDay={...day,points:[],segments:[],automaticStops:[],lastPointAt:null,gaps:[{from:at(0),to:at(600),reason:'no_recent_location'}]};
+html=renderToStaticMarkup(React.createElement(report.JourneyDayReport,{report:{...payload,mobileDays:[emptyDay]}}));ok(html.includes('No location samples arrived'));ok(html.includes('Movement and stops cannot be determined'));ok(html.includes('No recent location sample'));ok(html.includes('No location samples are available to derive stops'));
+html=renderToStaticMarkup(React.createElement(report.JourneyDayReport,{report:{...payload,mobileDays:[]}}));ok(html.includes('a route cannot be inferred without samples'));
+console.log(JSON.stringify({ok:true,checks,type:'automatic GPS dwell boundaries, gaps, midnight, uncertainty and compact report SSR',realDevice:false}));

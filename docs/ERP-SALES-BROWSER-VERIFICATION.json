@@ -1,0 +1,237 @@
+{
+  "ok": true,
+  "checks": 112,
+  "actualBuiltRelease": true,
+  "realAuthMockEmail": true,
+  "realSqlite": true,
+  "actualWorkbookUsed": "Reports_Invoices_14480422_094904.xlsx",
+  "workbookSha256": "ed60d2506a3de5c0b3729d0f3cc7a696d56a007e243664629e5f9edd55216f2f",
+  "productionDatabaseUsed": false,
+  "realEmailSent": false,
+  "physicalDeviceTested": false,
+  "deployedToNamecheap": false,
+  "lostCommitResponseTested": true,
+  "postAckReadRecoveryTested": true,
+  "importedDocuments": 21,
+  "officeDocumentsExcluded": 11,
+  "blankEmployeeDocumentsSkipped": 1,
+  "months": [
+    "2026-09",
+    "2026-10"
+  ],
+  "geometry": [
+    {
+      "label": "erp-preview-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "dialog": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 800,
+        "top": 0,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "footer": {
+        "x": 0,
+        "y": 731,
+        "width": 360,
+        "height": 69,
+        "top": 731,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "language": "ar",
+      "opacity": "1"
+    },
+    {
+      "label": "erp-preview-desktop-ar",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "overflow": false,
+      "dialog": {
+        "x": 130,
+        "y": 36,
+        "width": 1020,
+        "height": 828,
+        "top": 36,
+        "right": 1150,
+        "bottom": 864,
+        "left": 130
+      },
+      "footer": {
+        "x": 131,
+        "y": 788.90625,
+        "width": 1018,
+        "height": 74.09375,
+        "top": 788.90625,
+        "right": 1149,
+        "bottom": 863,
+        "left": 131
+      },
+      "language": "ar",
+      "opacity": "1"
+    },
+    {
+      "label": "erp-import-confirmed",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "dialog": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 800,
+        "top": 0,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "footer": {
+        "x": 0,
+        "y": 630.625,
+        "width": 360,
+        "height": 169.375,
+        "top": 630.625,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "language": "ar",
+      "opacity": "1"
+    },
+    {
+      "label": "erp-preview-mobile-en",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "dialog": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 800,
+        "top": 0,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "footer": {
+        "x": 0,
+        "y": 731,
+        "width": 360,
+        "height": 69,
+        "top": 731,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "language": "en",
+      "opacity": "1"
+    },
+    {
+      "label": "erp-preview-desktop-en",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "overflow": false,
+      "dialog": {
+        "x": 130,
+        "y": 36,
+        "width": 1020,
+        "height": 828,
+        "top": 36,
+        "right": 1150,
+        "bottom": 864,
+        "left": 130
+      },
+      "footer": {
+        "x": 131,
+        "y": 788.90625,
+        "width": 1018,
+        "height": 74.09375,
+        "top": 788.90625,
+        "right": 1149,
+        "bottom": 863,
+        "left": 131
+      },
+      "language": "en",
+      "opacity": "1"
+    },
+    {
+      "label": "rep-progress-2026-09",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "opacity": null
+    },
+    {
+      "label": "rep-progress-2026-10",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "opacity": null
+    },
+    {
+      "label": "supervisor-import",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "dialog": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 800,
+        "top": 0,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "footer": {
+        "x": 0,
+        "y": 731,
+        "width": 360,
+        "height": 69,
+        "top": 731,
+        "right": 360,
+        "bottom": 800,
+        "left": 0
+      },
+      "language": "ar",
+      "opacity": "1"
+    }
+  ],
+  "screenshots": [
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/erp-preview-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/erp-preview-desktop-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/erp-import-confirmed.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/erp-preview-mobile-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/erp-preview-desktop-en.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/rep-progress-2026-09.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/rep-progress-2026-10.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-recovery/source/docs/erp-sales-screenshots/supervisor-import.png"
+  ],
+  "targetEnteredOnce": true,
+  "targetEffectiveMonth": "2026-09",
+  "targetInheritedInto": "2026-10"
+}

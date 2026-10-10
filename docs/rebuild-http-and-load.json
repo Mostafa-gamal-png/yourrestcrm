@@ -1,0 +1,232 @@
+{
+  "generatedAt": "2026-10-01T15:36:04.525925+00:00",
+  "build": {
+    "serverSha256": "79a9342ff9c5e2718a56c4a24abcd893248cd71faa8a523b9f4c4ac2760d6e9f",
+    "apkVersion": "1.0.6",
+    "apkVersionCode": 7,
+    "apkBytes": 193269,
+    "apkSha256": "c090d617728ca05ce1b3b4841c630bb608d99b43f55030ae18cfd6ece63f7df0"
+  },
+  "builtHttp": {
+    "ok": true,
+    "checks": 326,
+    "literal_unix_socket": false,
+    "unix_socket_environment_block": "EPERM",
+    "transport": "loopback TCP",
+    "actual_built_release": true,
+    "production_data_used": false,
+    "actual_email_sent": false,
+    "real_hosting_tested": false
+  },
+  "backendRoutes": {
+    "journeys": {
+      "checks": 315,
+      "passed": true
+    },
+    "mobileRoute": {
+      "checks": 324,
+      "passed": true
+    },
+    "trackingWindow": {
+      "checks": 109,
+      "passed": true
+    },
+    "crmRegression": {
+      "checks": 289,
+      "passed": true
+    },
+    "roleScope": {
+      "checks": 159,
+      "passed": true
+    },
+    "contextPerformance": {
+      "checks": 170,
+      "passed": true
+    },
+    "repNoEdit": {
+      "checks": 69,
+      "passed": true
+    },
+    "repCustomerCreate": {
+      "checks": 83,
+      "passed": true
+    },
+    "memberConcurrency": {
+      "checks": 111,
+      "passed": true
+    },
+    "emailAuth": {
+      "checks": 237,
+      "passed": true
+    },
+    "emailSession": {
+      "checks": 21,
+      "passed": true
+    },
+    "requestBody": {
+      "checks": 32,
+      "passed": true
+    },
+    "portableStorage": {
+      "checks": 35,
+      "passed": true
+    },
+    "startupUpgrade": {
+      "checks": 29,
+      "passed": true
+    },
+    "portableHosting": {
+      "checks": 22,
+      "passed": true
+    },
+    "productionBackup": {
+      "checks": 65,
+      "passed": true
+    }
+  },
+  "syntheticLoad": {
+    "ok": true,
+    "startedAt": "2026-10-01T15:33:45.975Z",
+    "finishedAt": "2026-10-01T15:34:47.944Z",
+    "elapsedSeconds": 61.97,
+    "fixture": {
+      "representatives": 30,
+      "territories": 2,
+      "factories": 600,
+      "historicalVisits": 24000
+    },
+    "workload": {
+      "durationSeconds": 60,
+      "perRepCycleMinimumMs": 2000,
+      "gpsSamplesPerCycle": 1,
+      "crmReadEveryCycles": 3,
+      "visitEveryCycles": 5,
+      "gpsReplayEveryCycles": 10,
+      "visitReplayed": true,
+      "cycles": 876,
+      "minCyclesPerRep": 28,
+      "maxCyclesPerRep": 30,
+      "requests": 1626,
+      "requestsPerSecond": 26.24
+    },
+    "metrics": {
+      "gpsSample": {
+        "count": 876,
+        "p50Ms": 287.47,
+        "p95Ms": 1042.3,
+        "p99Ms": 2541.12,
+        "maxMs": 3342.05,
+        "statuses": {
+          "200": 876
+        },
+        "responseBytes": 732072
+      },
+      "gpsReplay": {
+        "count": 90,
+        "p50Ms": 52.01,
+        "p95Ms": 617.57,
+        "p99Ms": 842.04,
+        "maxMs": 842.04,
+        "statuses": {
+          "200": 90
+        },
+        "responseBytes": 75210
+      },
+      "crmRead": {
+        "count": 300,
+        "p50Ms": 445.49,
+        "p95Ms": 1029.79,
+        "p99Ms": 1469.09,
+        "maxMs": 1664.74,
+        "statuses": {
+          "200": 300
+        },
+        "responseBytes": 269313123
+      },
+      "visitSave": {
+        "count": 180,
+        "p50Ms": 184.17,
+        "p95Ms": 943.41,
+        "p99Ms": 1353.56,
+        "maxMs": 1514.76,
+        "statuses": {
+          "200": 180
+        },
+        "responseBytes": 15300
+      },
+      "visitReplay": {
+        "count": 180,
+        "p50Ms": 50.95,
+        "p95Ms": 879.18,
+        "p99Ms": 946.01,
+        "maxMs": 1496.46,
+        "statuses": {
+          "200": 180
+        },
+        "responseBytes": 16200
+      }
+    },
+    "integrity": {
+      "gpsRows": 876,
+      "visitRows": 180,
+      "gpsReplays": 90,
+      "visitReplays": 180,
+      "crmIsolationChecks": 330,
+      "gpsIsolationChecks": 876,
+      "crossMemberWriteDenials": 1,
+      "noLostOrDuplicateAcknowledgedWrites": true,
+      "sqliteIntegrity": "ok",
+      "foreignKeyViolations": 0,
+      "historicalRowsUnchanged": true
+    },
+    "errors": [],
+    "environment": {
+      "node": "v24.19.0",
+      "platform": "linux",
+      "architecture": "x64",
+      "osRelease": "6.18.44",
+      "cpus": 9,
+      "cpuModel": "AMD EPYC 9V74 80-Core Processor",
+      "availableParallelism": 8,
+      "memoryTotalBytes": 10451464192,
+      "cgroupCpuMax": "800000 100000",
+      "cgroupMemoryMaxBytes": "8589934592",
+      "peakServerRssMiB": null,
+      "transport": "loopback TCP",
+      "storage": "private local SQLite WAL, synchronous FULL",
+      "productionBuild": true,
+      "captureClock": "test-only offset to 12:00 Asia/Riyadh; real elapsed time measured",
+      "builtServerSha256": "79a9342ff9c5e2718a56c4a24abcd893248cd71faa8a523b9f4c4ac2760d6e9f",
+      "serverEntrySha256": "861833a02e8e19ae827985f7526ef059c8986e8dce327790553aea7f36a9fca5"
+    },
+    "limits": [
+      "Synthetic local loopback workload; not a Namecheap hosting capacity certification.",
+      "Sessions were pre-issued only in this temporary database; OTP throughput is not measured.",
+      "Real phones, GPS sensors, battery behavior, mobile networks, reverse proxy, disk quota and hosting contention were not tested.",
+      "Paced closed-loop users wait for each operation; slower runs produce fewer requests. p99 measures observed completed requests, not an open-loop arrival queue.",
+      "The operating system memory figure may exceed the container quota; sampled server RSS excludes the load-generator process."
+    ],
+    "requestedWorkload": {
+      "durationSeconds": 60,
+      "perRepCycleMinimumMs": 2000
+    }
+  },
+  "verifiedBehaviors": [
+    "Accurate device GPS contact saves independently of route activation or an earlier selected stop.",
+    "New visits require an explicit authorized stop hint for geographic timing; no implicit stale stop inference.",
+    "Captured old customer_changed interval samples may refine only their authenticated original stop at or before the persisted closure boundary.",
+    "Captured gap binding remains with the original stop; explicit null stays unbound.",
+    "Completed or manually cancelled stops stay immutable; a switch or cutoff never fabricates departure.",
+    "Visit and scheduled follow-up lost-response retries keep a single persisted contact.",
+    "Current and snapshot regions, own recorder, role and transactional version guards remain enforced.",
+    "Tracking collection window remains 06:00 inclusive through 18:00 exclusive Asia/Riyadh."
+  ],
+  "limitations": [
+    "No production data or live host was accessed.",
+    "No real email was sent.",
+    "Actual phone GPS, Android Google Maps launch, background behavior and Namecheap deployment remain unverified.",
+    "This local synthetic paced loopback workload is not a Namecheap hosting capacity certification.",
+    "Unix socket listeners were unavailable in this execution environment; actual built HTTP used loopback TCP.",
+    "Server RSS sampling was unavailable; no memory-capacity conclusion is made."
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "ok": false,
+  "startedAt": "2026-10-01T07:58:36.182Z",
+  "finishedAt": "2026-10-01T07:59:50.110Z",
+  "error": "GPS write was stored without a verified acknowledgement",
+  "errors": [
+    {
+      "member": "load-rep-25",
+      "cycle": 0,
+      "message": "Request exceeded 30 seconds"
+    },
+    {
+      "member": "load-rep-26",
+      "cycle": 0,
+      "message": "Request exceeded 30 seconds"
+    },
+    {
+      "member": "load-rep-27",
+      "cycle": 0,
+      "message": "Request exceeded 30 seconds"
+    },
+    {
+      "member": "load-rep-28",
+      "cycle": 0,
+      "message": "Request exceeded 30 seconds"
+    },
+    {
+      "member": "load-rep-29",
+      "cycle": 0,
+      "message": "Request exceeded 30 seconds"
+    }
+  ],
+  "metrics": {
+    "gpsSample": {
+      "count": 151,
+      "p50Ms": 5094.09,
+      "p95Ms": 25028.45,
+      "p99Ms": 30001.57,
+      "maxMs": 30002.31,
+      "statuses": {
+        "0": 5,
+        "200": 146
+      },
+      "responseBytes": 77449
+    },
+    "gpsReplay": {
+      "count": 25,
+      "p50Ms": 2506.07,
+      "p95Ms": 4926.43,
+      "p99Ms": 5224.84,
+      "maxMs": 5224.84,
+      "statuses": {
+        "200": 25
+      },
+      "responseBytes": 13270
+    },
+    "crmRead": {
+      "count": 55,
+      "p50Ms": 4383.33,
+      "p95Ms": 6230.72,
+      "p99Ms": 6575.35,
+      "maxMs": 6575.35,
+      "statuses": {
+        "200": 55
+      },
+      "responseBytes": 49153651
+    },
+    "visitSave": {
+      "count": 41,
+      "p50Ms": 4864.08,
+      "p95Ms": 7187.35,
+      "p99Ms": 7679.75,
+      "maxMs": 7679.75,
+      "statuses": {
+        "200": 41
+      },
+      "responseBytes": 3485
+    },
+    "visitReplay": {
+      "count": 41,
+      "p50Ms": 6452.57,
+      "p95Ms": 8304.02,
+      "p99Ms": 8892.2,
+      "maxMs": 8892.2,
+      "statuses": {
+        "200": 41
+      },
+      "responseBytes": 3690
+    }
+  },
+  "serverDiagnostics": "[vinext] Production server running at http://127.0.0.1:33843\n"
+}

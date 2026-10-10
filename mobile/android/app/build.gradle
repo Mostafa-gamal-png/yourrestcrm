@@ -1,0 +1,17 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'org.yourrest.crm'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'org.yourrest.crm'
+        minSdk 26
+        targetSdk 35
+        versionCode 11
+        versionName '1.0.10'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildTypes {
+        debug { applicationIdSuffix '.dev'; versionNameSuffix '-dev' }
+        release { minifyEnabled false }
+    }
+}

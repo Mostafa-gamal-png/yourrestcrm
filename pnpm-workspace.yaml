@@ -1,0 +1,37 @@
+# Copied Sites are standalone projects and cannot inherit the monorepo policy.
+minimumReleaseAge: 10080
+minimumReleaseAgeIgnoreMissingTime: false
+trustLockfile: false
+strictDepBuilds: true
+allowBuilds:
+  esbuild: true
+  fsevents: true
+  sharp: true
+  unrs-resolver: true
+  workerd: true
+storeDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}
+cacheDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}/policy-cache
+enableGlobalVirtualStore: false
+# Reuse store files with clones or hardlinks before falling back to copies.
+packageImportMethod: auto
+# The explicit installer owns dependency setup, including restored workspaces.
+verifyDepsBeforeRun: false
+optimisticRepeatInstall: false
+overrides:
+  miniflare>sharp: 0.35.5
+  next>sharp: 0.35.5
+  miniflare>undici: 7.29.1
+  miniflare>ws: 8.21.0
+  "@cloudflare/vite-plugin>ws": 8.21.0
+  "@babel/core@7.29.0": 7.29.6
+  "brace-expansion@1.1.14": 1.1.21
+  "brace-expansion@5.0.6": 5.0.12
+  "js-yaml@4.1.1": 4.3.2
+  "browserslist@4.28.2": 4.28.7
+  "baseline-browser-mapping@2.10.30": 2.11.0
+  "fflate@0.7.4": 0.7.5
+  "image-size@2.0.2": 2.0.3
+  "fast-uri@3.1.7": 3.1.8
+  "esbuild@0.28.0": 0.28.1
+  "@esbuild-kit/core-utils@3.3.2>esbuild": 0.25.12
+  "wrangler@4.92.0>esbuild": 0.28.1

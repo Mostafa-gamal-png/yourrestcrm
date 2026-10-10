@@ -1,0 +1,37 @@
+/* The map owns the remaining viewport; only its panel and notices scroll. */
+.app-shell.app-shell--map{height:100vh;height:100dvh;min-height:0!important;overflow:hidden}
+.app-shell--map>.map-workspace{display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden}
+.map-workspace>.topbar{flex:0 0 60px;height:60px;padding-inline:20px}
+.map-workspace>.map-page{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;width:100%;max-width:none;margin:0;padding:12px;gap:8px;overflow:hidden}
+.map-page>.workspace-notices{flex:none;max-height:28%;overflow-y:auto;overscroll-behavior:contain}
+.map-page>.workspace-notices:empty{display:none}
+.map-page .pwa-install{margin:0}
+.map-page .pwa-install-simple .pwa-install-card{padding:4px 10px;gap:10px;border-radius:9px;min-height:48px}
+.map-page .pwa-install-icon,.map-page .pwa-install-copy p{display:none}
+.map-page .pwa-install-copy{flex:1;flex-basis:auto}
+.map-page .pwa-install-copy strong{font-size:12px}
+.map-page .pwa-install-simple .pwa-install-action{width:auto;min-width:0;min-height:40px;font-size:12px;padding:7px 12px}
+.map-page .pwa-install-status{margin:0}
+.map-page .journey-tracking-banner{margin:6px 0 0;padding:10px;gap:8px}
+.map-page>.error-banner{margin:0;padding:18px;overflow-y:auto}
+.map-page>.metrics{overflow-y:auto;margin:0}
+/* Embedded search, region and team controls fill the customer side panel. */
+.map-page .filterbar{display:flex;flex-direction:column;gap:10px;margin:0}
+.map-page .filterbar .search{width:100%;min-height:44px}
+.map-page .filterbar .search input{min-width:0;flex:1}
+.map-page .filterbar .filters{display:flex;flex-wrap:wrap;gap:8px}
+.map-page .filterbar .filters .pick{flex:1;min-width:120px;max-width:none;width:auto!important;min-height:44px}
+.map-page .filterbar .icon-button{width:44px;height:44px}
+.map-page .heading-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;width:100%}
+.map-page .heading-actions .btn{min-height:44px;flex:1;padding-inline:10px;font-size:12px;white-space:nowrap}
+@media(max-width:1023px){
+ .app-shell.app-shell--map>.map-workspace{padding-bottom:calc(80px + env(safe-area-inset-bottom))}
+ .app-shell.app-shell--map .topbar{flex-basis:calc(56px + env(safe-area-inset-top));height:calc(56px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+ .map-workspace>.map-page{padding:6px;gap:6px;padding-left:max(6px,env(safe-area-inset-left));padding-right:max(6px,env(safe-area-inset-right))}
+ .map-page .workspace-notices{max-height:25%}
+ .map-page .pwa-install-simple .pwa-install-card{padding:3px 8px}
+}
+@media print{
+ .app-shell.app-shell--map,.app-shell--map>.map-workspace,.map-workspace>.map-page{height:auto;min-height:0;overflow:visible}
+ .app-shell--map>.map-workspace{padding-bottom:0}
+}

@@ -1,0 +1,548 @@
+{
+  "date": "2026-10-01",
+  "node": "v24.19.0",
+  "productionDataUsed": false,
+  "realPhoneTested": false,
+  "results": [
+    {
+      "suite": "client-submit.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 46,
+        "coverage": "bounded save/JSON response, canceled requests, failed network/hosting/session, concurrency payload",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "context-performance.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "contextPerformanceQA": "passed",
+        "checks": 170,
+        "unrelatedHistoryRows": 24000,
+        "mobileRecordRows": 1,
+        "mobileRecordBytes": 135,
+        "productionDataUsed": false,
+        "loadCapacityClaim": false,
+        "mobileQueryPlan": [
+          "CO-ROUTINE permissionRoots",
+          "MERGE (UNION)",
+          "LEFT",
+          "MERGE (UNION)",
+          "LEFT",
+          "SEARCH crm_journey_stops USING INDEX crm_journey_one_open (member_id=?)",
+          "RIGHT",
+          "SEARCH crm_journey_stops USING INDEX sqlite_autoindex_crm_journey_stops_1 (id=?)",
+          "LIST SUBQUERY 2",
+          "SCAN json_each VIRTUAL TABLE INDEX 1:",
+          "USE TEMP B-TREE FOR ORDER BY",
+          "RIGHT",
+          "SEARCH crm_journey_stops USING INDEX crm_journey_day (date=? AND member_id=?)",
+          "SCALAR SUBQUERY 4",
+          "SEARCH crm_mobile_route_days USING INDEX sqlite_autoindex_crm_mobile_route_days_1 (id=?)",
+          "USE TEMP B-TREE FOR ORDER BY",
+          "SCAN permissionRoots",
+          "SEARCH crm_records USING INDEX sqlite_autoindex_crm_records_1 (id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ]
+      }
+    },
+    {
+      "suite": "crm-regression.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "fullQA": "passed",
+        "checks": 289,
+        "features": "auth, all roles, customer CRUD, quotes, sales cycles, data retries, assignment races, visit filters, service workflow, attachments, KPIs, region boundaries"
+      }
+    },
+    {
+      "suite": "customer-directory-mobile.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 43,
+        "type": "Mobile customer callbacks, authorization presentation, phone safety, activity, pagination, Arabic/English",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "customer-map-activity.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "result": "PASS",
+        "checks": 84
+      }
+    },
+    {
+      "suite": "customer-map-search.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 54,
+        "type": "authorized map autocomplete, Arabic normalization, phones, ranking and conservative typo tolerance"
+      }
+    },
+    {
+      "suite": "customer-map-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "result": "PASS",
+        "checks": 196,
+        "verification": "Controlled actual React/Leaflet, ranked AR/EN search, keyboard, explicit Directions with cancellation/retry, selected-only handoff, map lifecycle; no visual browser validation"
+      }
+    },
+    {
+      "suite": "email-auth-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 18,
+        "languages": [
+          "ar",
+          "en"
+        ],
+        "type": "server-rendered login/logout"
+      }
+    },
+    {
+      "suite": "email-auth.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 237,
+        "migrations": 12,
+        "real_email_sent": false,
+        "storage": "isolated SQLite",
+        "identity_headers_ignored": true
+      }
+    },
+    {
+      "suite": "email-session.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 21,
+        "type": "controlled client lifecycle",
+        "real_browser": false
+      }
+    },
+    {
+      "suite": "journeys.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 315,
+        "type": "real SQLite routes and deterministic GPS evidence",
+        "coverage": "arrival/exit confirmation, quality/gaps, replay/idempotency, clocks, result timing, self-only writes, hierarchy/current+snapshot regions and transactional revocation",
+        "realDevice": false
+      }
+    },
+    {
+      "suite": "map-directions-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 348,
+        "coverage": "actual map adapter and native capability parser with controlled React hooks; immediate canonical scoped Maps, independent acknowledged recording, API/offline/GPS/consent failures, old APK, popup retry, account/region/customer races and Saudi hours",
+        "realBrowser": false,
+        "realDevice": false,
+        "network": false
+      }
+    },
+    {
+      "suite": "map-workspace-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 94,
+        "type": "controlled CRM map slots, authorized scope filters, simplified actions, stale-query isolation and scope identity and viewport CSS contract",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "member-concurrency-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 55,
+        "coverage": "actual CRM member form: original token, preserved stale draft, blocked resubmit, explicit reload, failed reload retry, successful fresh save, role/session loss, Arabic/English",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "member-concurrency.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 111,
+        "coverage": "actual member update CAS, stale snapshots, interleaved writes, actor permission race, session revocation, admin-only snapshots, unchanged creation",
+        "productionData": false
+      }
+    },
+    {
+      "suite": "mobile-navigation-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 157,
+        "type": "real mobile navigation and CRM integration: role scope, tabs, overflow, account, keyboard and dialog handling, Arabic/English",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "mobile-route-stops.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 69,
+        "type": "automatic GPS dwell boundaries, gaps, midnight, uncertainty and compact report SSR",
+        "realDevice": false
+      }
+    },
+    {
+      "suite": "mobile-route.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "suite": "mobile-route",
+        "checks": 324,
+        "passed": true
+      }
+    },
+    {
+      "suite": "my-targets-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 45,
+        "type": "actual personal targets UI SSR and controlled fetch/identity lifecycle",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "own-targets.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 113,
+        "note": "Own monthly targets: real SQLite route, privacy, month provenance, revocation and unchanged management write gates."
+      }
+    },
+    {
+      "suite": "portable-hosting.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 22,
+        "exposes_business_data": false,
+        "real_hosting_tested": false
+      }
+    },
+    {
+      "suite": "portable-installer.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 55,
+        "canonical_settings": true,
+        "unrecognized_database_unchanged": true,
+        "no_clobber_publish": true,
+        "exclusive_setup_lock": true,
+        "production_data_used": false
+      }
+    },
+    {
+      "suite": "portable-local-mail.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 36,
+        "actual_email_sent": false,
+        "real_passenger_tested": false,
+        "shared_limiter_tested": true
+      }
+    },
+    {
+      "suite": "portable-storage.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 35,
+        "migrations": 12,
+        "actual_storage": "isolated temporary SQLite and files",
+        "production_data_used": false
+      }
+    },
+    {
+      "suite": "production-backup.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 65,
+        "scope": "real temporary SQLite + objects; online writes, overlap lock, exact references, restore, corruption, paths, scheduled status and safe retention",
+        "productionDataUsed": false
+      }
+    },
+    {
+      "suite": "pwa-foundation.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "summary": "PWA foundation: 66 checks passed."
+      }
+    },
+    {
+      "suite": "pwa-install-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 83,
+        "actual_component_source": true,
+        "actual_bootstrap_source": true,
+        "controlled_react_lifecycle": true,
+        "real_browser_tested": false,
+        "actual_device_installation_tested": false
+      }
+    },
+    {
+      "suite": "rep-customer-create.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "repCustomerCreateQA": "passed",
+        "checks": 83,
+        "features": "scoped customer creation, authenticated ownership, readonly edits, immediate map and visit use, retry identity, race revocation, duplicate-code protection, CS/admin regression"
+      }
+    },
+    {
+      "suite": "rep-customer-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 106,
+        "type": "real CRM and inline customer creation interaction, region locks, refresh retry, Arabic/English",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "rep-mobile-shell.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 480,
+        "type": "real CRM controlled interactions: rep Clients detail search with full results, no general search elsewhere, no export/edit, permitted readers and creation, manager controls, short customer creation, guarded discard, validation and offline notice; Arabic/English compact and desktop branches",
+        "realBrowser": false,
+        "network": false
+      }
+    },
+    {
+      "suite": "rep-no-edit.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "repEditPermissionsQA": "passed",
+        "checks": 69,
+        "productionDataUsed": false,
+        "features": "rep edit/delete denied across all record endpoints, append creation and retry preserved, request/adoption backdoor denied, history visible, journey automatic updates preserved, manager/supervisor rights and commit-time role/region race guards"
+      }
+    },
+    {
+      "suite": "rep-record-lists.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 57,
+        "type": "actual mobile visit and follow-up card callbacks, read-only/service workflows, status tabs, scoped filters and English",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "request-body.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 32,
+        "coverage": "bounded chunked/declared/dishonest/multibyte/fragmented/timeout/broken streams and multipart parsing",
+        "productionDataUsed": false
+      }
+    },
+    {
+      "suite": "role-scope.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "roleScopeQA": "passed",
+        "checks": 159,
+        "features": "immutable recorder, regional directory, own/direct-team/all-sales scopes, reports, readonly rep directory, forbidden management routes, attachments, customer reassignment, live team revocation and concurrent guards"
+      }
+    },
+    {
+      "suite": "role-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 160,
+        "type": "actual navigation, picker, readonly customer rows and CRM directory/map state SSR",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "startup-upgrade.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 29,
+        "upgradeFromElevenToTwelve": true,
+        "privateBackupVerified": true,
+        "existingDataAndSessionsPreserved": true,
+        "rollbackVerified": true,
+        "noProductionDataUsed": true
+      }
+    },
+    {
+      "suite": "targets-performance-summary-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 98,
+        "coverage": "actual per-member summary: finite/null/zero/decimal remaining, independent units and server scores, missing KPI names, future planning, authorized history, accessible Arabic/English cards",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "targets-performance-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 104,
+        "coverage": "actual combined workspace: one snapshot, shared filters, same-page target and KPI updates, future planning, export scope, stale identity requests, rep guard, preserved sales",
+        "realBrowser": false
+      }
+    },
+    {
+      "suite": "tracking-window-server.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "suite": "tracking-window-server",
+        "checks": 109,
+        "passed": true,
+        "window": "06:00-18:00 Asia/Riyadh",
+        "realDevice": false
+      }
+    },
+    {
+      "suite": "visit-fields-ui.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 28,
+        "coverage": "actual visit GPS section watchdog/retry, stale fixes, unmount, edit/read-only, foreground explanation",
+        "realBrowser": false,
+        "realDevice": false
+      }
+    },
+    {
+      "suite": "visit-location.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 33,
+        "coverage": "real GPS-only capture, exact timestamps, bad fix validation, missing callbacks/deadline, cancellation, permission retries",
+        "realDevice": false
+      }
+    },
+    {
+      "suite": "visit-mobile-ux.mjs",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "detail": {
+        "ok": true,
+        "checks": 198,
+        "coverage": "actual visit/follow-up forms: compact sections, unchanged payloads, retry keys, native journey linkage, save errors, read-only access, nested unsaved drafts, AR/EN and quick dates",
+        "realBrowser": false,
+        "realDevice": false
+      }
+    }
+  ],
+  "passed": true
+}

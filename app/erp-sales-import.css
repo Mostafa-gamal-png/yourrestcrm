@@ -1,0 +1,106 @@
+.crm-dialog.erp-import-dialog{display:flex;flex-direction:column;gap:0;max-width:1020px!important;max-height:92dvh;padding:0!important;overflow:hidden;min-width:0;background:var(--card)}
+.erp-import-heading{display:flex;justify-content:space-between;gap:12px;padding:20px 24px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.erp-import-heading>div{min-width:0}
+.erp-import-heading [data-slot=dialog-title]{display:flex;align-items:center;gap:9px;padding:0;font-size:21px;line-height:1.5}
+.erp-import-heading [data-slot=dialog-title] svg{color:var(--primary);flex-shrink:0}
+.erp-import-heading [data-slot=dialog-description]{margin:5px 0 0;line-height:1.7;font-size:13px}
+.erp-import-heading>.icon-button{flex-shrink:0;min-width:44px;min-height:44px;align-self:flex-start}
+.erp-import-scroll{min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;padding:18px 24px 24px;scroll-padding-block:18px;-webkit-overflow-scrolling:touch}
+.erp-import-dialog h3{font-size:16px;font-weight:700;line-height:1.7;margin:0 0 10px}
+.erp-import-dialog h3:focus{outline:none}
+.erp-import-office-note{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.8;background:var(--muted);border:1px solid var(--border);border-radius:9px;padding:11px 13px;margin:0 0 16px}
+.erp-import-office-note>svg{margin-top:4px;flex-shrink:0;color:var(--primary)}
+.erp-import-file{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;border:1px solid var(--border);border-radius:12px;padding:16px}
+.erp-import-file .field{margin:0;min-width:0}
+.erp-import-file .field>span{font-size:13px}
+.erp-import-file input[type=file]{width:100%;max-width:100%;font-size:13px;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--background);min-height:46px}
+.erp-import-file input[type=file]::file-selector-button{border:0;border-radius:5px;background:var(--muted);color:var(--foreground);padding:5px 9px;margin-inline-end:8px;cursor:pointer}
+.erp-import-filename{display:flex;align-items:center;gap:7px;grid-column:1/-1;grid-row:2;font-size:13px;min-width:0;overflow-wrap:anywhere;color:var(--muted-foreground)}
+.erp-import-filename>svg{flex-shrink:0}
+.erp-import-filename>bdi{min-width:0}
+.erp-import-filename>small{flex-shrink:0;margin-inline-start:auto}
+.erp-import-preview,.erp-import-mappings,.erp-import-documents{margin-top:22px;min-width:0}
+.erp-import-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.erp-import-counts>div{padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--background);display:flex;flex-direction:column;gap:4px;min-width:0}
+.erp-import-counts span{font-size:12px;color:var(--muted-foreground)}
+.erp-import-counts strong{font-size:23px;font-weight:700;line-height:1.4;font-variant-numeric:tabular-nums}
+.erp-import-summary{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.erp-import-summary>p{font-size:12px;color:var(--muted-foreground);margin:0;overflow-wrap:anywhere}
+.erp-import-summary strong{display:block;font-size:15px;color:var(--foreground);margin-top:3px;line-height:1.7}
+.erp-import-unassigned{margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--muted);font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.erp-import-unassigned strong{font-size:13px}
+.erp-import-unassigned p{margin:3px 0 0;color:var(--muted-foreground)}
+.erp-import-hint{font-size:12px;color:var(--muted-foreground);line-height:1.8;margin:8px 0}
+.erp-import-map-list{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.erp-import-map-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 20px;align-items:center;padding:12px 14px;min-width:0}
+.erp-import-map-row+.erp-import-map-row{border-top:1px solid var(--border)}
+.erp-import-map-row>span{min-width:0;overflow-wrap:anywhere}
+.erp-import-map-row strong{display:block;font-size:14px;font-weight:600;line-height:1.65}
+.erp-import-map-row small{display:block;font-size:12px;line-height:1.6;color:var(--muted-foreground)}
+.erp-import-map-hint{grid-column:1/-1}
+.erp-import-dialog select{border:1px solid var(--border);background:var(--background);color:var(--foreground);border-radius:8px;font-size:14px;min-height:44px;padding:8px 10px;max-width:100%;min-width:0;width:100%;cursor:pointer}
+.erp-import-dialog select:disabled{opacity:.6;cursor:default}
+.erp-import-dialog select:focus-visible,.erp-import-dialog input:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.erp-import-map-warning{grid-column:1/-1;color:var(--destructive)!important}
+.erp-import-notice,.erp-import-warnings{font-size:13px;line-height:1.8;border:1px solid var(--border);border-inline-start:3px solid #c78d22;background:var(--muted);padding:9px 12px;border-radius:7px;margin-top:12px;overflow-wrap:anywhere}
+.erp-import-warnings ul{list-style:disc;padding-inline-start:20px;margin:5px 0 0}
+.erp-import-skip{display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:9px;background:var(--muted);cursor:pointer}
+.erp-import-skip>input{width:19px;height:19px;min-width:19px;accent-color:var(--primary);margin-top:3px}
+.erp-import-skip strong{display:block;font-size:13px;line-height:1.8}
+.erp-import-skip small{display:block;font-size:12px;line-height:1.8;color:var(--muted-foreground)}
+.erp-import-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+.erp-import-section-heading h3{margin:0}
+.erp-import-filter{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}
+.erp-import-filter select{min-height:38px;font-size:12px;max-width:190px}
+.erp-import-table-wrap{border:1px solid var(--border);border-radius:9px;overflow:auto;max-width:100%}
+.erp-import-table{width:100%;border-collapse:collapse;font-size:13px;text-align:start}
+.erp-import-table th{text-align:start;font-size:12px;font-weight:600;background:var(--muted);padding:10px;white-space:nowrap}
+.erp-import-table td{padding:10px;border-top:1px solid var(--border);vertical-align:top;line-height:1.7;max-width:230px;overflow-wrap:anywhere}
+.erp-import-table td small{display:block;font-size:11px;color:var(--muted-foreground);line-height:1.7;margin-top:2px}
+.erp-import-table td strong{font-size:13px;font-weight:600}
+.erp-import-amount{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
+.erp-import-badge{display:inline-block;padding:3px 7px;border-radius:5px;font-size:11px;line-height:1.6;background:var(--muted);color:var(--muted-foreground);font-weight:600}
+.erp-import-badge.new{background:#087b7914;color:#087b79}
+.erp-import-badge.conflict,.erp-import-badge.unmapped,.erp-import-badge.out_of_scope{background:#b7701014;color:#965d0c}
+.dark .erp-import-badge.new{background:#51d4bd20;color:#7de1d2}
+.dark .erp-import-badge.conflict,.dark .erp-import-badge.unmapped,.dark .erp-import-badge.out_of_scope{background:#f6c87118;color:#efc672}
+.erp-import-cards{display:none}
+.erp-import-pagination{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px;font-size:13px}
+.erp-import-footer{flex-shrink:0;padding:14px 24px;border-top:1px solid var(--border);background:var(--card);max-height:44dvh;overflow:auto}
+.erp-import-footer .form-error{margin:0 0 10px;font-size:13px;line-height:1.7;max-height:100px;overflow:auto}
+.erp-import-footer .erp-import-notice{margin:0 0 10px}
+.erp-import-actions{display:flex;justify-content:flex-end;gap:10px;align-items:stretch}
+.erp-import-dialog .btn{min-height:44px}
+.erp-import-actions .btn.primary{min-width:165px;justify-content:center}
+.erp-import-success{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;line-height:1.7;color:var(--primary);font-size:14px}
+.erp-import-success>svg{margin-top:3px;flex-shrink:0}
+.erp-import-success p,.erp-import-success small{font-size:12px;color:var(--muted-foreground)}
+.erp-import-state{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:44px 18px;color:var(--muted-foreground);font-size:14px;text-align:center}
+@media(max-width:640px){
+ .crm-dialog.erp-import-dialog{inset:0!important;--tw-translate-x:0!important;--tw-translate-y:0!important;transform:none!important;translate:none!important;width:100%!important;max-width:none!important;height:100dvh;max-height:100dvh;border-radius:0!important;border:0;animation:none!important}
+ .erp-import-heading{padding:calc(12px + env(safe-area-inset-top)) 14px 12px;gap:7px}
+ .erp-import-heading [data-slot=dialog-title]{font-size:19px;gap:7px}
+ .erp-import-heading [data-slot=dialog-description]{font-size:12px;line-height:1.65}
+ .erp-import-scroll{flex:1;padding:14px 14px 20px}
+ .erp-import-file{grid-template-columns:minmax(0,1fr);padding:12px}
+ .erp-import-file>.btn{width:100%;justify-content:center}
+ .erp-import-filename{grid-row:auto}
+ .erp-import-counts{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .erp-import-counts>div{padding:10px 12px}
+ .erp-import-summary{grid-template-columns:1fr;gap:9px}
+ .erp-import-map-row{grid-template-columns:minmax(0,1fr);padding:11px 12px;gap:8px}
+ .erp-import-dialog select{font-size:16px;min-height:46px}
+ .erp-import-section-heading{align-items:flex-start;flex-direction:column;gap:7px}
+ .erp-import-filter{width:100%;justify-content:space-between}
+ .erp-import-filter select{max-width:none;width:auto;flex:1;font-size:14px}
+ .erp-import-table-wrap{display:none}
+ .erp-import-cards{display:grid;gap:9px}
+ .erp-import-document-card{border:1px solid var(--border);border-radius:9px;padding:11px 12px;line-height:1.7;overflow-wrap:anywhere}
+ .erp-import-document-card>div{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;font-size:14px}
+ .erp-import-document-card p{font-size:13px;margin-top:4px}
+ .erp-import-document-card small{display:block;font-size:11px;color:var(--muted-foreground);margin-top:3px}
+ .erp-import-document-card>.erp-import-amount{display:block;text-align:end;font-size:14px;margin-top:5px}
+ .erp-import-footer{padding:11px 14px calc(11px + env(safe-area-inset-bottom))}
+ .erp-import-actions .btn.primary{flex:1;min-width:0;font-size:14px}
+ .erp-import-actions .btn{min-height:46px}
+}

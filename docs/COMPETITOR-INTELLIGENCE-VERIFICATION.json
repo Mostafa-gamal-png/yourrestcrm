@@ -1,0 +1,199 @@
+{
+  "release": "Yourrest CRM competitor intelligence",
+  "status": "READY_NOT_DEPLOYED",
+  "verifiedAtUTC": "2026-10-04T14:04:02.699364+00:00",
+  "behavior": {
+    "competitorEntry": "Within the authorized customer visit or a fresh follow-up observation",
+    "nameReuse": "Authorized prior competitor names, selected customer first, or a new typed name",
+    "notes": "Optional editable Arabic/English speech-to-text or typed text; CRM does not archive audio",
+    "quotes": "Optional private PDF/JPEG/PNG/WebP up to 10 MiB, customer-bound upload and access checks",
+    "profileTabs": [
+      "overview",
+      "distinct customers",
+      "unique quote files",
+      "source observations"
+    ],
+    "analysis": "Observed-customer coverage and regional distribution scoped before search; not actual market share",
+    "permissions": "Representative input remains scoped to own records; consolidated workspace retains existing authorized management/team/region scope",
+    "followup": "No automatic copying of previous competitor notes/files into a new observation",
+    "mobile": "AR/EN compact tabs; fixed bottom-navigation interception of the first click after field blur"
+  },
+  "frontendBuildSucceeded": true,
+  "nativeBuildSucceeded": true,
+  "deploymentPerformed": false,
+  "databaseMigrationsAdded": 0,
+  "verificationSuites": [
+    {
+      "suite": "competitors",
+      "checks": 60,
+      "passed": true
+    },
+    {
+      "suite": "competitors-domain-expanded",
+      "checks": 58,
+      "passed": true
+    },
+    {
+      "suite": "competitors-ui",
+      "checks": 68,
+      "passed": true
+    },
+    {
+      "suite": "competitors-workspace-expanded-ui",
+      "checks": 127,
+      "passed": true
+    },
+    {
+      "suite": "competitor-fields-ui",
+      "checks": 49,
+      "passed": true
+    },
+    {
+      "suite": "competitor-followups",
+      "checks": 102,
+      "passed": true
+    },
+    {
+      "suite": "visit-mobile-ux",
+      "checks": 222,
+      "passed": true
+    },
+    {
+      "suite": "native-speech",
+      "checks": 68,
+      "passed": true
+    },
+    {
+      "suite": "native-tracking-ui",
+      "checks": 600,
+      "passed": true
+    },
+    {
+      "suite": "pwa-install-ui",
+      "checks": 83,
+      "passed": true
+    },
+    {
+      "suite": "role-scope",
+      "checks": 159,
+      "passed": true
+    },
+    {
+      "suite": "crm-regression",
+      "checks": 289,
+      "passed": true
+    },
+    {
+      "suite": "SpeechSessionCheck",
+      "checks": 36,
+      "passed": true
+    },
+    {
+      "suite": "MapsLaunchCheck",
+      "checks": 120,
+      "passed": true
+    },
+    {
+      "suite": "ActivationRecoveryCheck",
+      "checks": 51,
+      "passed": true
+    },
+    {
+      "suite": "AccountRecoveryCheck",
+      "checks": 68,
+      "passed": true
+    },
+    {
+      "suite": "mobile-navigation-ui",
+      "checks": 200,
+      "passed": true
+    }
+  ],
+  "localChecksExcludingBrowser": 2360,
+  "browser": {
+    "ok": true,
+    "checks": 146,
+    "firstClickDateFilterRegression": true,
+    "tabGeometryVerified": true,
+    "actualBuiltRelease": true,
+    "realAuthMockEmail": true,
+    "realSqlite": true,
+    "syntheticFixture": true,
+    "mockedDeviceLocation": true,
+    "mockedSpeechRecognition": true,
+    "realMicrophoneTested": false,
+    "productionDatabaseUsed": false,
+    "realEmailSent": false,
+    "physicalDeviceTested": false,
+    "deployedToNamecheap": false,
+    "features": [
+      "rep own-name suggestions",
+      "keyboard competitor selection",
+      "mocked editable dictation",
+      "actual private PDF upload",
+      "visit save/reload",
+      "fresh follow-up competitor",
+      "management consolidated profile",
+      "customer and unique quote tabs",
+      "observations timeline",
+      "scoped observed coverage",
+      "search-independent denominator",
+      "date and region filters",
+      "supervisor team boundaries",
+      "private file authorization",
+      "AR/EN 360px and 1280px"
+    ]
+  },
+  "firstClickAfterDateFilterVerified": true,
+  "fourTabsFitMobileArabicAndEnglish": true,
+  "screenshots": {
+    "count": 11,
+    "directory": "source/docs/competitor-intelligence-screenshots"
+  },
+  "totalLocalAssertions": 2506,
+  "typeCheckPassed": true,
+  "native": {
+    "package": "org.yourrest.crm",
+    "versionCode": 9,
+    "versionName": "1.0.8",
+    "minSdk": 26,
+    "targetSdk": 35,
+    "apkSha256": "fb402c3bc8b11f758364597c7ef2f99e060d70b04e09150eb4aec6e6b0ab04b3",
+    "apkBytes": 205557,
+    "sourceSha256": "84f85ce397e86dadb83236752c99188e2cc03eaad1d1bb835c46a69841f74fd9",
+    "buildConfigSha256": "bce486d9874bdfd3d2e3738c6c7aeaed50495e78bb1d8381acfc9d610506aa66",
+    "build": "Standalone OSS AAPT2, javac, D8, apksig; no proprietary SDK",
+    "deviceTested": false,
+    "toolSha256": {
+      "android-all-15-robolectric-12650502.jar": "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b",
+      "aapt2-linux.jar": "ffb7b7d419c7341dd013f2f87bfb0148f8bff0a2a47c222f54935b3b8f233605",
+      "r8-8.9.35.jar": "204b2fc2b0f4e888dc0ef748b58090def1bf4185068d36abbb94841dbc7107a8",
+      "apksig-8.9.2.jar": "c070ed1394629d74641aa0906f60b2ffa1ee77e6366a1f93437f59717b1aeb89"
+    },
+    "signature": {
+      "v2": true,
+      "v3": true,
+      "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+      "samePreviousSigningIdentity": true
+    },
+    "permissionsUnchanged": true,
+    "recordAudioPermissionAdded": false,
+    "microphoneTestedOnPhysicalDevice": false
+  },
+  "preservation": {
+    "migrationCount": 14,
+    "existingMigrationsUnchanged": true,
+    "protectedKpiSalesFilesUnchanged": 84,
+    "kpiMigrationSha256": "4354f5a03c7dfa61d89b3365446fa8d984ecdea9806f212cf8a955e3ce7bebd0",
+    "baselineLibraryVersion": 40,
+    "baselineZipSha256": "2b1d964d91ad7612907da3c207b76d3a9ee4c5f5bbaf0a1e24cc32827c22f425",
+    "signedNativeSourceMatchesCurrent": true
+  },
+  "limitations": [
+    "Not deployed to Namecheap in this task.",
+    "Browser fixtures use isolated synthetic data, mocked mail, mocked device location and mocked speech recognition.",
+    "Actual microphone recognition, OEM service availability and installation on a physical Android phone were not tested.",
+    "Native dictation requires installing the same-signed Android1.0.8/code9 over the existing Yourrest app after the server update.",
+    "Quote files are collected for review; competitor prices and market share are not extracted or inferred automatically."
+  ]
+}
