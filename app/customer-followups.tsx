@@ -21,6 +21,8 @@ import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
 function Pick({value,onChange,options,label}:{value:string;onChange:(value:string)=>void;options:Record<string,string>;label:string}){return <Select dir={direction()} value={value||undefined} onValueChange={onChange}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{Object.entries(options).map(([id,text])=><SelectItem key={id} value={id}>{t(text)}</SelectItem>)}</SelectContent></Select>;}
 export {CustomerFollowupsPage} from './customer-followup-list';
 type Props={initial?:Row;customerId?:string;records:Row[];me:Member;onClose:()=>void;onSaved:(queued?:boolean)=>Promise<void>};
+const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
+type FollowupData={[field:string]:unknown;type:string;date:string;result:string;salesStage:string;invoiceOutcome:string;nextAction:string;nextDate:string;lossReason:string;lossDetails:string;competitorObservation:CompetitorInput|null;hasQuotation?:boolean;hasCompetitor?:boolean};
 export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClose,onSaved}:Props){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
  const currentSource=(id:string)=>{const source=latestCustomerContact(id,records),intake=records.find(r=>r.id===id)?.data._serviceIntake;return intake?.createdAt&&source&&source.createdAt<intake.createdAt?undefined:source;};
@@ -28,7 +30,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
  const [customerId]=useState(seedCustomer||''),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState('');
  const defaults=(source?:Row,id=seedCustomer)=>({type:'visit',date:today(),result:'',salesStage:source?.data.salesStage||source?.data.stage||'',invoiceOutcome:source?.data.invoiceOutcome||'pending',nextAction:source?.data.nextAction||records.find(r=>r.id===id)?.data._serviceIntake?.nextAction||'',nextDate:today(),lossReason:'',lossDetails:'',competitorObservation:null});
  const [source]=useState(seedSource);
- const [data,setData]=useState<any>(initial?initial.data:defaults(seedSource)),[retryPending,setRetryPending]=useState(false);const lock=useRef(false),attempt=useRef<string|null>(null),savedReceipt=useRef(false),uploadLock=useRef(false),uploadVersion=useRef(0);
+ const [data,setData]=useState<FollowupData>(initial?initial.data:defaults(seedSource)),[retryPending,setRetryPending]=useState(false);const lock=useRef(false),attempt=useRef<string|null>(null),savedReceipt=useRef(false),uploadLock=useRef(false),uploadVersion=useRef(0);
  const [uploadState,setUploadState]=useState<UploadState|null>(null),uploadAttempt=useRef<{file:File;context:string;key:string}|null>(null);
  const observation:CompetitorInput=data.competitorObservation||emptyCompetitorInput(),competitorContext=useRef('');competitorContext.current=me.id+'\n'+customerId+'\n'+observation.competitorName;
  useEffect(()=>()=>{uploadVersion.current++;},[]);
@@ -41,12 +43,12 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
  useEffect(()=>{if(confirmLeave)keepRef.current?.focus();},[confirmLeave]);
  useEffect(()=>{if(!dirty)return;const protect=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',protect);return()=>window.removeEventListener('beforeunload',protect);},[dirty]);
  useEffect(()=>()=>{if(invalidFrame.current!==null)cancelAnimationFrame(invalidFrame.current);},[]);
- const change=(key:string,value:string)=>{if(savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData((d:any)=>({...d,[key]:value}));};
+ const change=(key:string,value:string)=>{if(savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData(d=>({...d,[key]:value}));};
  function requestClose(){if(busy||uploading||uploadLock.current)return;if((dirty||retryPending)&&!savedReceipt.current)setConfirmLeave(true);else onClose();}
  function revealInvalid(event:React.FormEvent<HTMLFormElement>){const target=event.target as HTMLElement;for(let element:HTMLElement|null=target;element;element=element.parentElement){if(element instanceof HTMLDetailsElement){element.open=true;if(element.classList.contains('visit-sales-details'))setSalesOpen(true);}}if(invalidFrame.current!==null)return;invalidFrame.current=requestAnimationFrame(()=>{invalidFrame.current=null;target.focus();target.scrollIntoView({block:'center',behavior:'smooth'});});}
 
- function stageChanged(stage:string){if(savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData((d:any)=>({...d,salesStage:stage,invoiceOutcome:followupClosed(stage)?d.invoiceOutcome:'pending'}));}
- function changeCompetitor(patch:Partial<CompetitorInput>){if(initial||savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData((previous:any)=>({...previous,competitorObservation:{...(previous.competitorObservation||emptyCompetitorInput()),...patch}}));}
+ function stageChanged(stage:string){if(savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData(d=>({...d,salesStage:stage,invoiceOutcome:followupClosed(stage)?d.invoiceOutcome:'pending'}));}
+ function changeCompetitor(patch:Partial<CompetitorInput>){if(initial||savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData(previous=>({...previous,competitorObservation:{...(previous.competitorObservation||emptyCompetitorInput()),...patch}}));}
  async function uploadCompetitor(file:File,retry=false){
   if(initial||savedReceipt.current||retryPending||lock.current||uploadLock.current)return;
   if(!customerId){setError(say('اختر العميل قبل رفع الملف.','Choose the customer before uploading.'));return;}
@@ -55,8 +57,8 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
   if(!retry)uploadAttempt.current={file,context,key:crypto.randomUUID()};const currentAttempt=uploadAttempt.current;if(!currentAttempt)return;
   uploadLock.current=true;const version=++uploadVersion.current;setUploading(true);setUploadState({phase:'reading'});setError('');
   const onUploadProgress=(progress:import('@/lib/client-submit').UploadProgress)=>{if(uploadVersion.current===version&&competitorContext.current===context)setUploadState(progress);};
-  try{const result=await uploadOfflineVisitFile(file,{me,customerId,language,uploadKey:currentAttempt.key,onUploadProgress});if(typeof result.id!=='string'||!result.id||typeof result.name!=='string')throw new Error(say('لم يؤكد الجهاز حفظ الملف. أعد المحاولة.','The device did not confirm saving the file. Retry.'));if(uploadVersion.current===version&&competitorContext.current===context&&!savedReceipt.current&&!retryPending&&!lock.current){setUploadState({phase:result.queued?'queued':'complete'});uploadAttempt.current=null;setDirty(true);setData((previous:any)=>({...previous,competitorObservation:{...(previous.competitorObservation||emptyCompetitorInput()),competitorFileId:result.id,competitorFileName:result.name}}));}}
-  catch(error:any){if(uploadVersion.current===version){setUploadState({phase:'error'});setError(error.message||say('تعذر رفع الملف.','Could not upload the file.'));}}
+  try{const result=await uploadOfflineVisitFile(file,{me,customerId,language,uploadKey:currentAttempt.key,onUploadProgress});if(typeof result.id!=='string'||!result.id||typeof result.name!=='string')throw new Error(say('لم يؤكد الجهاز حفظ الملف. أعد المحاولة.','The device did not confirm saving the file. Retry.'));if(uploadVersion.current===version&&competitorContext.current===context&&!savedReceipt.current&&!retryPending&&!lock.current){setUploadState({phase:result.queued?'queued':'complete'});uploadAttempt.current=null;setDirty(true);setData(previous=>({...previous,competitorObservation:{...(previous.competitorObservation||emptyCompetitorInput()),competitorFileId:result.id,competitorFileName:result.name}}));}}
+  catch(error){if(uploadVersion.current===version){setUploadState({phase:'error'});setError(messageOf(error)||say('تعذر رفع الملف.','Could not upload the file.'));}}
   finally{uploadLock.current=false;if(uploadVersion.current===version)setUploading(false);}
  }
  async function save(e:React.FormEvent){
@@ -67,15 +69,15 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
   try{
    if(!savedReceipt.current){
     if(!attempt.current){const stopId=journeyStopId();attempt.current=JSON.stringify({customerId,customerVersion:customer?.version,sourceId:source?.id,sourceVersion:source?.version,data:{...data,...(stopId?{journeyStopId:stopId}:{})},createKey:crypto.randomUUID()});}
-    const result:any=await offlineSubmit('/api/customer-followups',attempt.current,{me,language,label:customer?.data.name||say('متابعة','Follow-up'),kind:'followup'});
+    const result=await offlineSubmit('/api/customer-followups',attempt.current,{me,language,label:customer?.data.name||say('متابعة','Follow-up'),kind:'followup'});
     if(result.ok!==true||typeof result.id!=='string'||!result.id)throw new SubmitError(say('الخادم لم يؤكد حفظ المتابعة. أعد المحاولة بنفس البيانات.','The server did not confirm the follow-up. Retry with the same entries.'),200,result);
     savedReceipt.current=true;setRetryPending(false);setDirty(false);
     if(result.queued){void onSaved(true).catch(()=>{});onClose();return;}
    }
    await onSaved(false);onClose();
-  }catch(e:any){
+  }catch(e){
    if(!savedReceipt.current){if(definiteSubmitRejection(e)){attempt.current=null;setRetryPending(false);}else setRetryPending(true);}
-   setError(savedReceipt.current?say('تم حفظ المتابعة؛ تعذر تحديث الشاشة. اضغط تحديث السجل لعرضها.','The follow-up was saved, but the screen could not refresh. Tap Refresh history to view it.'):e.message||t('تعذر حفظ المتابعة'));
+   setError(savedReceipt.current?say('تم حفظ المتابعة؛ تعذر تحديث الشاشة. اضغط تحديث السجل لعرضها.','The follow-up was saved, but the screen could not refresh. Tap Refresh history to view it.'):messageOf(e)||t('تعذر حفظ المتابعة'));
   }finally{lock.current=false;setBusy(false);}
  }
  return <Dialog open onOpenChange={open=>{if(!open)requestClose();}}><DialogContent className="crm-dialog followup-record-dialog mobile-record-dialog" dir={direction()} showCloseButton={!busy&&!uploading} onOpenAutoFocus={event=>{event.preventDefault();titleRef.current?.focus();}} onEscapeKeyDown={event=>{if(busy||uploading||escapeBelongsToOpenPopup(event))event.preventDefault();}} onInteractOutside={event=>{if(busy||uploading)event.preventDefault();}}>
@@ -94,7 +96,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
     {!closed&&<section className="visit-form-section"><h3>{say('الخطوة الجاية','Next step')}</h3><div className="form-grid"><VoiceField label="الإجراء القادم" value={data.nextAction} onChange={value=>change('nextAction',value)} required/><FollowupDateField value={data.nextDate} min={data.date} onChange={value=>change('nextDate',value)}/></div></section>}
     <section className="visit-form-section"><CompetitorFields value={observation} records={records} customerId={customerId} identityKey={me.id} disabled={busy||uploading||savedReceipt.current||retryPending} uploading={uploading} uploadState={uploadAttempt.current?.context===competitorContext.current||observation.competitorFileId?uploadState:null} onUploadRetry={()=>{const retry=uploadAttempt.current;if(retry)void uploadCompetitor(retry.file,true);}} toggleLabel={say('تسجيل منافس في هذه المتابعة','Record a competitor in this follow-up')} onChange={changeCompetitor} onUpload={uploadCompetitor}/></section>
     <details className="visit-sales-details" open={salesOpen} onToggle={event=>setSalesOpen(event.currentTarget.open)}><summary><span>{say('مرحلة البيع وتفاصيل إضافية','Sales stage & more')}</span><span className="badge">{t(stageLabels[data.salesStage])||say('اختياري','Optional')}</span></summary><div className="form-grid visit-extended-fields">
-     {hasQuotation&&<label className="field"><span>{t('هل تحوّل عرض السعر إلى فاتورة؟')}</span><Pick label="هل تحوّل عرض السعر إلى فاتورة؟" value={data.invoiceOutcome} onChange={value=>{if(savedReceipt.current||retryPending||lock.current)return;setDirty(true);setData((previous:any)=>({...previous,invoiceOutcome:value,salesStage:value==='invoiced'?'won':value==='lost'?'lost':followupClosed(previous.salesStage)?'quoted':previous.salesStage}));}} options={invoiceOutcomes}/></label>}
+     {hasQuotation&&<label className="field"><span>{t('هل تحوّل عرض السعر إلى فاتورة؟')}</span><Pick label="هل تحوّل عرض السعر إلى فاتورة؟" value={data.invoiceOutcome} onChange={value=>{if(savedReceipt.current||retryPending||lock.current)return;setDirty(true);setData(previous=>({...previous,invoiceOutcome:value,salesStage:value==='invoiced'?'won':value==='lost'?'lost':followupClosed(previous.salesStage)?'quoted':previous.salesStage}));}} options={invoiceOutcomes}/></label>}
      <label className="field"><span>{t('مرحلة البيع بعد المتابعة')}</span><Pick label="مرحلة البيع بعد المتابعة" value={data.salesStage} onChange={stageChanged} options={hasQuotation?Object.fromEntries(Object.entries(stageLabels).filter(([id])=>!followupClosed(id)||id===data.salesStage)):stageLabels}/></label>
      {data.salesStage==='lost'&&<><label className="field"><span>{t('سبب الفقد')} <b>*</b></span><Pick label="اختر سبب الفقد" value={data.lossReason} onChange={value=>change('lossReason',value)} options={Object.fromEntries(followupLossReasons.map(reason=>[reason,reason]))}/></label><VoiceField label="تفاصيل سبب الفقد" value={data.lossDetails} onChange={value=>change('lossDetails',value)} required={data.lossReason==='أخرى'} multiline/></>}
      <label className="field"><span>{t('تاريخ المتابعة المنفذة')} <b>*</b></span><input type="date" required max={today()} value={data.date} onChange={event=>change('date',event.target.value)}/></label>

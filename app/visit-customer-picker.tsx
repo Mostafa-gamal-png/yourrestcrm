@@ -8,10 +8,11 @@ import { Plus, Loader2, CheckCircle2, Factory, ChevronDown } from 'lucide-react'
 import { Combobox, ComboboxInput, ComboboxList, ComboboxItem } from '@/components/ui/combobox';
 import { regionValue } from '@/lib/regions';
 import { CustomerRegionField } from './region-picker';
-import CustomerLocationFields,{CustomerClassificationFields} from './customer-entry-fields';
+import CustomerLocationFields,{CustomerClassificationFields,type CustomerData} from './customer-entry-fields';
 import { schemas, type Row, type Member } from '@/lib/crm';
 import './customer-picker-mobile.css';
 
+const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 const label = (r: Row) => [r.data.name, r.data.internalCode, r.data.code, r.data.region].filter(Boolean).join(' · ');
 const normalize = (s: string) => s.normalize('NFKD').replace(/[\u064b-\u065f\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/[·،,|]/g, ' ').replace(/[٠-٩]/g, c => String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g, c => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c))).toLowerCase().trim();
 const phoneSearchValues = (phone: unknown) => {
@@ -40,7 +41,7 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
     const nameInput = useRef<HTMLInputElement>(null);
     const [locationPending,setLocationPending]=useState(false);
     const [popupHost, setPopupHost] = useState<HTMLDivElement | null>(null);
-    const [draft, setDraft] = useState<Record<string,any>>({ name: '', code: '', region: regionValue(me), city: '', contact: '', phone: '', location: '', shortAddress: '', address: '', customerType: '', customerStatus: '', category: '' });
+    const [draft, setDraft] = useState<CustomerData>({ name: '', code: '', region: regionValue(me), city: '', contact: '', phone: '', location: '', shortAddress: '', address: '', customerType: '', customerStatus: '', category: '' });
     const selected = customers.find(r => r.id === value) || null;
     const canCreate = !me.readOnly && ['rep', 'supervisor', 'manager', 'admin', 'customer_service', 'customer_service_manager'].includes(me.role);
     const searchIndex = useMemo(() => customers.map(customer => ({
@@ -72,30 +73,30 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
         setError(''); setInvalidField('');
         const parsed = schemas.customer.safeParse({ ...draft, branch: me.branch, assignedTo: me.id });
         if (!savedId && !parsed.success) {
-            if (!draft.name.trim()) { setInvalidField('name'); nameInput.current?.focus(); }
-            setError(!draft.name.trim() ? t('اكتب اسم المصنع.') : parsed.error.issues.map(i => t(i.message)).join(' • '));
+            if (!draft.name?.trim()) { setInvalidField('name'); nameInput.current?.focus(); }
+            setError(!draft.name?.trim() ? t('اكتب اسم المصنع.') : parsed.error.issues.map(i => t(i.message)).join(' • '));
             return;
         }
         savingRef.current = true; setSaving(true); onSaving(true);
         try {
             let id = savedId;
             if (!id) {
-                const result:any = await offlineSubmit('/api/crm',JSON.stringify({ action: 'save', kind: 'customer', createKey: createKey.current, data: parsed.success ? parsed.data : {} }),{me,language:getLanguage(),label:draft.name,kind:'customer'});
+                const result = await offlineSubmit('/api/crm',JSON.stringify({ action: 'save', kind: 'customer', createKey: createKey.current, data: parsed.success ? parsed.data : {} }),{me,language:getLanguage(),label:draft.name ?? '',kind:'customer'});
                 if(typeof result.id!=='string'||!result.id.trim())throw new Error(t('الخادم لم يؤكد حفظ العميل. احتفظ بالبيانات وأعد المحاولة.'));
                 id = result.id; setSavedId(id);
             }
             // A refresh retry reuses the saved ID; it never creates the customer twice.
             const customer = await onCreated(id);
             onChange(id, customer); setQuery(''); setEditingSelection(false); setAdding(false); onCreating(false);
-        } catch (e: any) {
-            setError(e.message || t('تعذر تحميل العميل. حاول مرة أخرى.'));
+        } catch (e) {
+            setError(messageOf(e) || t('تعذر تحميل العميل. حاول مرة أخرى.'));
         } finally {
             savingRef.current = false; setSaving(false); onSaving(false);
         }
     }
     const showSearch = !locked && (!selected || editingSelection);
     const fieldDisabled = saving || !!savedId;
-    function updateDraft(key: keyof typeof draft, value: string) { setDraft(previous => ({ ...previous, [key]: value })); }
+    function updateDraft(key: string, value: string) { setDraft(previous => ({ ...previous, [key]: value })); }
     function preventFormSubmit(event: React.KeyboardEvent<HTMLInputElement>) {
         if (event.key !== 'Enter') return;
         // Mobile Next moves through the visible fields without submitting the visit.
@@ -138,7 +139,7 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
             <p className="form-note">{say('كود يورست يُنشأ تلقائيًا بعد المزامنة.','Yourrest code is assigned automatically after synchronization.')}</p>
             <div className="form-grid visit-new-customer-core">
                 <label className="field visit-new-customer-name"><span>{t('اسم المصنع *')}</span><input ref={nameInput} value={draft.name} maxLength={250} autoFocus autoComplete="organization" enterKeyHint="next" disabled={fieldDisabled} aria-required="true" aria-invalid={invalidField === 'name'} aria-describedby={invalidField === 'name' ? 'visit-new-customer-error' : undefined} onChange={e => updateDraft('name', e.target.value)} onKeyDown={preventFormSubmit}/></label>
-                <CustomerRegionField value={draft.region} onChange={region => updateDraft('region', region)} me={me} disabled={fieldDisabled}/>
+                <CustomerRegionField value={draft.region ?? ''} onChange={region => updateDraft('region', region)} me={me} disabled={fieldDisabled}/>
                 <CustomerClassificationFields data={draft} onChange={updateDraft} disabled={fieldDisabled}/>
                 <label className="field"><span>{t('رقم الجوال')}</span><input value={draft.phone} maxLength={250} type="tel" inputMode="tel" dir="ltr" autoComplete="tel" enterKeyHint="next" disabled={fieldDisabled} onChange={e => updateDraft('phone', e.target.value)} onKeyDown={preventFormSubmit}/></label>
                 <label className="field"><span>{t('مسؤول التواصل')}</span><input value={draft.contact} maxLength={250} autoComplete="name" enterKeyHint="next" disabled={fieldDisabled} onChange={e => updateDraft('contact', e.target.value)} onKeyDown={preventFormSubmit}/></label>
