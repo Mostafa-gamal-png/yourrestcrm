@@ -191,6 +191,11 @@
       "file": "tests/ui-refresh-browser.mjs",
       "reason": "Requires the built standalone release and a prepared Chromium browser; runs against isolated fixtures.",
       "gate": "browser"
+    },
+    {
+      "file": "tests/visit-files-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
     }
   ]
 }
