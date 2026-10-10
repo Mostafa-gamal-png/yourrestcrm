@@ -7,7 +7,8 @@ import {captureVisitLocation} from '@/lib/visit-location';
 import {customerTypes, customerStatuses, factoryCategories} from '@/lib/customer-options';
 import './customer-entry-fields.css';
 
-type CustomerData = Record<string, any>;
+const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
+export type CustomerData = { [field: string]: unknown; name?: string; code?: string; region?: string; city?: string; contact?: string; phone?: string; address?: string; location?: string; shortAddress?: string; customerType?: string; customerStatus?: string; category?: string };
 export type CustomerDataUpdate = (current:CustomerData) => CustomerData;
 type AddressResult = {status:'found'|'not_configured'|'not_found'|'unavailable'|'ambiguous';shortAddress?:string;address?:string;city?:string;message?:string};
 export function CustomerClassificationFields({data,onChange,disabled=false}:{data:CustomerData;onChange:(key:string,value:string)=>void;disabled?:boolean}){
@@ -71,9 +72,9 @@ export default function CustomerLocationFields({data,editing=false,disabled=fals
     }else setAddressStatus(result.status==='found'?'not_found':result.status);
    }catch{if(run===runRef.current&&!controller.signal.aborted)setAddressStatus('unavailable');}
    if(run===runRef.current&&!controller.signal.aborted)setPhase('done');
-  }catch(error:any){
+  }catch(error){
    if(run!==runRef.current||controller.signal.aborted)return;
-   setPhase('error');setLocationError(error?.message||say('تعذر تحديد الموقع. أعد المحاولة.','Could not get your location. Retry.'));
+   setPhase('error');setLocationError(messageOf(error)||say('تعذر تحديد الموقع. أعد المحاولة.','Could not get your location. Retry.'));
   }finally{if(run===runRef.current){pendingRef.current?.(false);abortRef.current=null;}}
  }
  const pending=phase==='locating'||phase==='address';

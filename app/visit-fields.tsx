@@ -11,17 +11,20 @@ export function FollowupDateField({value,onChange,min}:{value:string;onChange:(v
     const dateAfter=(days:number)=>{const date=new Date(today()+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);};
     return <div className="field visit-date-field"><label><span>{t('موعد المتابعة القادمة')} <b>*</b></span><input type="date" required value={value} min={min} onChange={event=>onChange(event.target.value)}/></label><div className="visit-date-shortcuts" role="group" aria-label={say('اختيار سريع لموعد المتابعة','Quick follow-up date')}>{[[0,say('اليوم','Today')],[1,say('بكرة','Tomorrow')],[3,say('بعد 3 أيام','In 3 days')]].map(([days,label])=>{const date=dateAfter(Number(days));return <button key={days} type="button" aria-pressed={value===date} disabled={!!min&&date<min} onClick={()=>onChange(date)}>{label}</button>;})}</div></div>;
 }
+const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
+export type VisitValue = string | number | boolean | null | undefined;
+export type VisitData = { [field: string]: unknown; type?: string; summary?: string; result?: string; date?: string; nextDate?: string; nextAction?: string; location?: string; locationCapturedAt?: string; locationAccuracy?: number | null; visitNumber?: number | string; syncFollowup?: boolean };
 type Props = {
     unified?: boolean;
     service?: boolean;
     readOnly?: boolean;
-    data: any;
+    data: VisitData;
     parentId: string;
     records: Row[];
     editing: boolean;
     busy: boolean;
     email: string;
-    onChange: (key: string, value: any) => void;
+    onChange: (key: string, value: VisitValue) => void;
     onParent: (id: string) => void;
     onLocationState?: (state:VisitLocationState) => void;
 };
@@ -44,8 +47,8 @@ export default function VisitFields({ unified = false, service = false, readOnly
         customer = records.find(r => r.id === customer?.parentId);
     const customers = records.filter(r => r.kind === 'customer' && (r.id === customer?.id || !query || [r.data.name, r.data.code, r.data.region].join(' ').toLowerCase().includes(query.toLowerCase())));
     const opportunities = records.filter(r => r.kind === 'opportunity' && (r.parentId === customer?.id || records.find(m => m.id === r.parentId)?.parentId === customer?.id));
-    const input = (key: string, label: string, type = 'text', required = false, full = false) => <label className={'field ' + (full ? 'full' : '')}><span>{t(label)}{required && <b> *</b>}</span>{type === 'textarea' ? <textarea rows={3} required={required} value={data[key] || ''} onChange={e => onChange(key, e.target.value)}/> : <input type={type} required={required} value={data[key] || ''} onChange={e => onChange(key, e.target.value)}/>}</label>;
-    const pick = (value: string, change: (v: string) => void, options: [
+    const input = (key: 'date' | 'nextDate' | 'nextAction', label: string, type = 'text', required = false, full = false) => <label className={'field ' + (full ? 'full' : '')}><span>{t(label)}{required && <b> *</b>}</span>{type === 'textarea' ? <textarea rows={3} required={required} value={data[key] || ''} onChange={e => onChange(key, e.target.value)}/> : <input type={type} required={required} value={data[key] || ''} onChange={e => onChange(key, e.target.value)}/>}</label>;
+    const pick = (value: string | undefined, change: (v: string) => void, options: [
         string,
         string
     ][], placeholder: string, disabled = false, required = false) => <Select dir={direction()} value={value || undefined} onValueChange={change} disabled={disabled||readOnly||busy} required={required}><SelectTrigger className="pick" aria-label={t(placeholder)}><SelectValue placeholder={t(placeholder)}/></SelectTrigger><SelectContent>{t(options.map(([id, label]) => <SelectItem key={id} value={id}>{t(label)}</SelectItem>))}</SelectContent></Select>;
@@ -58,9 +61,9 @@ export default function VisitFields({ unified = false, service = false, readOnly
             changeRef.current(key, value);
         stateRef.current?.({status:'captured',error:''});
     }
-    catch (e: any) {
+    catch (e) {
         if (run === captureRun.current)
-            {const message=e.message||'تعذر تحديد الموقع. أعد المحاولة.';setLocationError(message);stateRef.current?.({status:'error',error:message});}
+            {const message=messageOf(e)||'تعذر تحديد الموقع. أعد المحاولة.';setLocationError(message);stateRef.current?.({status:'error',error:message});}
     }
     finally {
         if (run === captureRun.current)
