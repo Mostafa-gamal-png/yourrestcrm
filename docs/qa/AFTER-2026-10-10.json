@@ -1,0 +1,194 @@
+{
+  "date": "2026-10-10",
+  "head": "c28cb65",
+  "node": "v22.22.0",
+  "typecheck": {
+    "passed": true,
+    "errors": 0
+  },
+  "lint": {
+    "errors": 96,
+    "warnings": 72,
+    "byRule": {
+      "@typescript-eslint/no-explicit-any": {
+        "error": 4,
+        "warning": 0
+      },
+      "react-hooks/refs": {
+        "error": 58,
+        "warning": 0
+      },
+      "react-hooks/preserve-manual-memoization": {
+        "error": 1,
+        "warning": 0
+      },
+      "react-hooks/exhaustive-deps": {
+        "error": 0,
+        "warning": 32
+      },
+      "@next/next/no-img-element": {
+        "error": 0,
+        "warning": 3
+      },
+      "react-hooks/set-state-in-effect": {
+        "error": 27,
+        "warning": 0
+      },
+      "@next/next/no-location-assign-relative-destination": {
+        "error": 0,
+        "warning": 1
+      },
+      "react-hooks/immutability": {
+        "error": 4,
+        "warning": 0
+      },
+      "@next/next/no-sync-scripts": {
+        "error": 2,
+        "warning": 0
+      },
+      "@typescript-eslint/no-unused-vars": {
+        "error": 0,
+        "warning": 36
+      }
+    },
+    "before": {
+      "errors": 356,
+      "warnings": 150
+    }
+  },
+  "defaultGate": {
+    "total": 103,
+    "passed": 103,
+    "failed": [],
+    "before": {
+      "total": 102,
+      "passed": 101,
+      "failed": [
+        "tests/portable-installer.mjs"
+      ]
+    }
+  },
+  "build": {
+    "passed": true
+  },
+  "releaseBuildGate": {
+    "tests/namecheap-http.mjs": {
+      "passed": true,
+      "checks": 381
+    },
+    "tests/app-update-release.mjs": {
+      "passed": true,
+      "checks": 14
+    },
+    "tests/server-authorization.mjs": {
+      "passed": true,
+      "checks": 252,
+      "added": true
+    },
+    "tests/sales-date-boundaries.mjs": {
+      "passed": true,
+      "checks": 36,
+      "added": true
+    },
+    "tests/visit-files-http.mjs": {
+      "passed": true,
+      "checks": 41,
+      "added": true
+    },
+    "tests/targets-attainment-http.mjs": {
+      "passed": true,
+      "checks": 26,
+      "added": true
+    }
+  },
+  "browserGate": {
+    "before": {
+      "passed": 6,
+      "failed": 7
+    },
+    "after": {
+      "passed": 9,
+      "failed": 4
+    },
+    "results": [
+      {
+        "test": "tests/admin-delete-browser.mjs",
+        "passed": true,
+        "seconds": 17
+      },
+      {
+        "test": "tests/app-browser-workflows.mjs",
+        "passed": false,
+        "seconds": 29,
+        "reason": "Reaches the permission-denial step: Chromium launched through Playwright does not apply the CDP Browser.setPermission override to its isolated context (expected denied, got granted). All earlier steps, including the read-only device location of new customers, pass."
+      },
+      {
+        "test": "tests/app-update-browser.mjs",
+        "passed": true,
+        "seconds": 3
+      },
+      {
+        "test": "tests/competitor-intelligence-browser.mjs",
+        "passed": true,
+        "seconds": 31
+      },
+      {
+        "test": "tests/competitors-browser.mjs",
+        "passed": true,
+        "seconds": 34
+      },
+      {
+        "test": "tests/customer-edit-browser.mjs",
+        "passed": true,
+        "seconds": 21
+      },
+      {
+        "test": "tests/daily-report-browser.mjs",
+        "passed": true,
+        "seconds": 12
+      },
+      {
+        "test": "tests/erp-sales-browser.mjs",
+        "passed": false,
+        "seconds": 0,
+        "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); not supplied."
+      },
+      {
+        "test": "tests/kpi-evidence-browser.mjs",
+        "passed": true,
+        "seconds": 25
+      },
+      {
+        "test": "tests/offline-browser.mjs",
+        "passed": false,
+        "seconds": 29,
+        "reason": "Cold offline reload: Playwright setOffline does not cover service-worker network in this Chromium, so the worker fetches the page from the real network. With the server actually stopped the offline shell boots and the bottom navigation renders (checked manually)."
+      },
+      {
+        "test": "tests/offline-outbox-browser.mjs",
+        "passed": true,
+        "seconds": 3
+      },
+      {
+        "test": "tests/pwa-browser.mjs",
+        "passed": false,
+        "seconds": 22,
+        "reason": "Same cold offline navigation limit as offline-browser; every earlier step (installability, worker activation, scope, anonymous isolation) passes."
+      },
+      {
+        "test": "tests/ui-refresh-browser.mjs",
+        "passed": true,
+        "seconds": 48
+      }
+    ]
+  },
+  "notRun": [
+    "browser gate (Playwright)",
+    "erp-workbook gate (original ERP file not supplied)",
+    "release-artifact Python gate (needs exported release archives)",
+    "production-load",
+    "Android/native checks"
+  ],
+  "productionDataUsed": false,
+  "deployed": false
+}
