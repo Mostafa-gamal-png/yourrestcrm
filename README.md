@@ -36,7 +36,7 @@ Playwright browser tests with `YR_BROWSER_EXECUTABLE` and `CODEX_PRIMARY_RUNTIME
 
 ## Operating, developing and updating
 
-- Arabic guide: `docs/دليل-التشغيل-والتطوير-AR.md`
+- Arabic guide: `docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md`
 - Release history: `docs/CHANGELOG-HISTORY.md`
 - Backups and restore: `docs/PRODUCTION-BACKUP-AR.md`
 - Hosting notes for Namecheap: `docs/NAMECHEAP-AR.md`
