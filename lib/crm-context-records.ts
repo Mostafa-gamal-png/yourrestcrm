@@ -3,7 +3,7 @@ import type {ServiceCase} from './customer-service';
 import {memberCanAccessRegion,regionScope,regionRecords} from './regions';
 import {salesRecordAccess} from './access';
 
-export type ContextLoad = {load?:'full'|'identity'|'customers'|'directory'} | {load:'mobile';stopIds?:string[];dayId?:string} | {load:'customer-graph';customerId?:string;recordIds?:string[]};
+export type ContextLoad = {load?:'full'|'identity'|'customers'|'directory'} | {load:'mobile';stopIds?:string[];dayId?:unknown} | {load:'customer-graph';customerId?:string;recordIds?:string[]};
 const recordColumns=`id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version,
  CASE WHEN kind='customer' THEN (SELECT printf('YR-C-%06d',number) FROM crm_customer_numbers WHERE customer_id=crm_records.id) END AS internalCode,
  CASE WHEN kind='customer' THEN (SELECT json_group_array(source_code) FROM crm_customer_code_aliases WHERE customer_id=crm_records.id) END AS erpCodeAliases`;

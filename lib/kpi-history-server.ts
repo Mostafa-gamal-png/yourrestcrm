@@ -19,12 +19,12 @@ export async function readKpiPurchaseHistory(c:Context,month:string){
    SUM(s.total_cents) AS net,MAX(CASE WHEN s.total_cents>0 THEN 1 ELSE 0 END) AS purchased
    FROM crm_sales s WHERE s.status='confirmed' AND s.date<=? AND s.rep_id IN (${placeholders})
    GROUP BY s.rep_id,s.customer_id,substr(s.date,1,7)`)
-   .bind(period.cutoff,...allowed).all<any>(),
+   .bind(period.cutoff,...allowed).all<{rep_id:string;customer_id:string;period:string;net:number;purchased:number}>(),
   c.db.prepare(`SELECT rep_id,customer_code,substr(date,1,7)||'-01' AS period,
    SUM(total_cents) AS net,MAX(CASE WHEN document_type='sale' AND total_cents>0 THEN 1 ELSE 0 END) AS purchased
    FROM crm_erp_sales WHERE date<=? AND rep_id IN (${placeholders}) AND (?='all' OR region_scope=?)
    GROUP BY rep_id,customer_code,substr(date,1,7)`)
-   .bind(period.cutoff,...allowed,regionScope(c.me),regionScope(c.me)).all<any>()
+   .bind(period.cutoff,...allowed,regionScope(c.me),regionScope(c.me)).all<{rep_id:string;customer_code:string;period:string;net:number;purchased:number}>()
  ]);
  const facts:PurchaseFact[]=[],unresolved=new Set<string>();
  const erpCodes=new Set(erp.results.map(r=>customerCodeKey(r.customer_code)).filter(Boolean));
