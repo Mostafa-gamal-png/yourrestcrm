@@ -1,4 +1,4 @@
-import {readJsonBody} from '@/lib/crm-server';
+import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {canUseSalesWorkspace,salesScopeMemberIds,recordAuthorId} from '@/lib/access';
 import {activeServiceCase,serviceHistoryLocked,isServiceRole,serviceVisitRecords,canReadService} from '@/lib/customer-service';
 import {requireSalesRole} from '@/lib/crm-server';
@@ -7,7 +7,7 @@ import {regionScopes,regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {validateFollowup,prepareContactEvidence,requireLegacyVisit,preserveRequestResponsible} from '@/lib/followups-server';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
 import {context,CRMError,replyError,checkOrigin,accessGuard,masterMutationGuard,customerDetailMutationGuard,recordEditGuard,requireRecordEdit} from '@/lib/crm-server';
-import {schemas,quoteTotals,isOpen,type Kind} from '@/lib/crm';
+import {schemas,quoteTotals,isOpen,type AuditEntry,type Kind} from '@/lib/crm';
 import {normalizeMemberEmail,memberEmailError} from '@/lib/member-email';
 import {memberEditToken} from '@/lib/member-edit';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
@@ -16,7 +16,7 @@ export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
  const names=new Set(c.members.filter(m=>scope.has(m.id)&&c.members.every(other=>other.name!==m.name||scope.has(other.id))).map(m=>m.name));
  const masterIds=new Set(c.visible.filter(r=>['customer','factory'].includes(r.kind)).map(r=>r.id)),activityIds=new Set(c.visible.filter(r=>r.kind==='activity').map(r=>r.id));
- const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حفظ متابعة','visit-receipt','service-receipt','crm-create-receipt') AND action NOT LIKE 'service:%' ORDER BY created_at DESC LIMIT 500").all<any>()).results.filter(a=>ids.has(a.recordId)&&(c.me.role==='rep'?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor)));
+ const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حفظ متابعة','visit-receipt','service-receipt','crm-create-receipt') AND action NOT LIKE 'service:%' ORDER BY created_at DESC LIMIT 500").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(c.me.role==='rep'?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor)));
  const projectMember=(member:typeof c.me)=>({...member,userId:undefined,target:canUseSalesWorkspace(c.me.role)?member.target:undefined,...(c.me.role==='admin'&&regionScope(c.me)==='all'?{editToken:memberEditToken(member)}:{})});
  const members=c.regionalMembers.filter(m=>isServiceRole(c.me.role)?m.id===c.me.id||m.supervisorId===c.me.id:scope.has(m.id)).map(projectMember),memberIds=new Set(members.map(m=>m.id));
  const authors=new Set(c.visible.filter(r=>['activity','opportunity','quote'].includes(r.kind)).map(r=>recordAuthorId(r,c.members)));
@@ -24,8 +24,9 @@ export async function GET(){try{
  return Response.json({records:serviceVisitRecords(c).map(r=>{const intake=r.kind==='customer'?activeServiceCase(r.id,c):undefined;return intake?.status==='assigned'&&canReadService(intake,c)?{...r,data:{...r.data,_serviceIntake:{id:intake.id,createdAt:intake.createdAt,products:intake.data.products,strength:intake.data.strength,needs:intake.data.needs,nextAction:intake.data.nextAction,nextDate:intake.data.nextDate}}}:r;}),me:projectMember(c.me),members,audits},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
- checkOrigin(req);const body:any=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;if(!serviceCustomerCreate)requireSalesRole(c.me);const now=new Date().toISOString();const mutation=crypto.randomUUID();const canManage=['admin','manager'].includes(c.me.role);
+ checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;if(!serviceCustomerCreate)requireSalesRole(c.me);const now=new Date().toISOString();const mutation=crypto.randomUUID();const canManage=['admin','manager'].includes(c.me.role);
  const offline=offlineCapture(body,c.me.id,now);if(offline&&(body.action!=='save'||body.kind!=='customer'||body.id||body.parentId||!body.createKey))throw new CRMError('هذا الإجراء يتطلب اتصالًا مباشرًا.');
+ const bodyData=isRecord(body.data)?body.data:undefined;
  if(body.action==='member'){
   if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('إدارة المستخدمين متاحة لمدير النظام فقط',403);
   const m=z.object({id:z.string().optional(),name:z.string().trim().min(1).max(100),email:z.string({required_error:memberEmailError,invalid_type_error:memberEmailError}).transform(normalizeMemberEmail).pipe(z.string().email(memberEmailError).max(200,memberEmailError)),role:z.enum(['admin','manager','supervisor','rep','customer_service_manager','customer_service']),branch:z.string().trim().min(1).max(100),supervisorId:z.string().default(''),regionScope:z.string().refine(v=>(regionScopes as readonly string[]).includes(v),'اختر منطقة البيانات المسموح بها').default('all'),active:z.coerce.number().int().min(0).max(1),target:z.coerce.number().finite().min(0).max(1000000000)}).parse(body.data);
@@ -68,10 +69,10 @@ export async function POST(req:Request){try{
  let requestFingerprint='';
  if(kind==='activity'&&body.action==='save'){
   const fields=['type','summary','result','outcome','notes','location','nextAction','nextDate',...(clockAction?[]:['date','startedAt','endedAt'])];
-  const input=JSON.stringify([body.parentId||'',clockAction||'',body.syncFollowup??null,...fields.map(key=>[key,body.data?.[key]??''])]);
+  const input=JSON.stringify([body.parentId||'',clockAction||'',body.syncFollowup??null,...fields.map(key=>[key,bodyData?.[key]??''])]);
   requestFingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input)))).map(n=>n.toString(16).padStart(2,'0')).join('');
  }
- const replayReply=(record:any,field:string)=>record.data[field]===requestFingerprint?Response.json({ok:true,id:record.id,alreadySaved:true}):Response.json({error:'الزيارة محفوظة بالفعل، لكن توجد تعديلات جديدة لم تُحفظ. راجعها واضغط حفظ مرة أخرى.',existingId:record.id,existingVersion:record.version},{status:409});
+ const replayReply=(record:{id:string;version:number;data:Record<string,unknown>},field:string)=>record.data[field]===requestFingerprint?Response.json({ok:true,id:record.id,alreadySaved:true}):Response.json({error:'الزيارة محفوظة بالفعل، لكن توجد تعديلات جديدة لم تُحفظ. راجعها واضغط حفظ مرة أخرى.',existingId:record.id,existingVersion:record.version},{status:409});
  const createKey=kind==='activity'&&!body.id&&body.createKey?z.string().uuid().parse(body.createKey):null;
  if(createKey){const existing=c.all.find(r=>r.id==='visit-'+createKey);if(existing){if(!c.visible.some(r=>r.id===existing.id))throw new CRMError('السجل غير متاح',404);return replayReply(existing,'_creationRequest');}}
  const projectedOld=body.id?c.visible.find(r=>r.id===body.id&&r.kind===kind):undefined;
@@ -102,11 +103,11 @@ export async function POST(req:Request){try{
  }
  if(body.action!=='save')throw new CRMError('عملية غير صحيحة');
  if(kind==='activity')requireLegacyVisit(body.data,old||undefined);
- if(repCustomerEdit&&old&&(body.data?.assignedTo!==undefined&&body.data.assignedTo!==old.assignedTo||body.data?.branch!==undefined&&body.data.branch!==old.branch))throw new CRMError('لا يمكنك تغيير مسؤول العميل أو فرعه',403);
- const input=repCustomerCreate&&body.data&&typeof body.data==='object'&&!Array.isArray(body.data)?{...body.data,assignedTo:c.me.id,branch:c.me.branch}:body.data;
+ if(repCustomerEdit&&old&&(bodyData?.assignedTo!==undefined&&bodyData.assignedTo!==old.assignedTo||bodyData?.branch!==undefined&&bodyData.branch!==old.branch))throw new CRMError('لا يمكنك تغيير مسؤول العميل أو فرعه',403);
+ const input=repCustomerCreate&&bodyData?{...bodyData,assignedTo:c.me.id,branch:c.me.branch}:body.data,inputData=isRecord(input)?input:undefined;
  // Existing routing is canonical on the record, including legacy blank assignees.
  // Do not force a detail correction to choose a new owner or silently repair one.
- const retainCustomerRouting=kind==='customer'&&!!old&&(input?.assignedTo===undefined||input.assignedTo===old.assignedTo)&&(input?.branch===undefined||input.branch===old.branch);
+ const retainCustomerRouting=kind==='customer'&&!!old&&(inputData?.assignedTo===undefined||inputData.assignedTo===old.assignedTo)&&(inputData?.branch===undefined||inputData.branch===old.branch);
  const schema=retainCustomerRouting?schemas.customer.omit({assignedTo:true,branch:true}):schemas[kind];
  const parsed=schema.safeParse(input);if(!parsed.success)throw new CRMError(parsed.error.issues.map(x=>x.message).join(' • '));const data:any=parsed.data;
  if(retainCustomerRouting){data.assignedTo=old!.assignedTo;data.branch=old!.branch;}
@@ -125,7 +126,7 @@ export async function POST(req:Request){try{
   if(old&&activeServiceCase(old.id,c)&&(data.assignedTo!==old.assignedTo||data.branch!==old.branch||data.region!==(old.data.region||'')))throw new CRMError('تغيير مسؤول العميل يتم من تكليف خدمة العملاء أثناء وجود طلب مفتوح',403);
   if(!memberCanAccessRegion(c.me,data.region))throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
   const locationError=prepareCustomerLocation(data,old?.data);if(locationError)throw new CRMError(locationError);
-  if(old&&body.data.shortAddress===undefined)data.shortAddress=old.data.shortAddress||'';
+  if(old&&bodyData?.shortAddress===undefined)data.shortAddress=old.data.shortAddress||'';
   if(old){for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId','_createdBy'])data[key]=old.data[key];}
   else {for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId'])delete data[key];data._createdBy=c.me.id;}
   if(!canManage){data.assignedTo=old?old.assignedTo:c.me.id;data.branch=old?old.branch:c.me.branch;}
@@ -179,6 +180,6 @@ export async function POST(req:Request){try{
  const detail=kind==='opportunity'?`${data.moldType} • ${data.stage}`:data.name||data.summary||data.number||kind;
  stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),id,c.me.name,old?'تعديل':'إضافة',detail,now,id,revision,mutation));
  if(genericCreateKey)stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(genericReceiptId,id,c.me.name,'crm-create-receipt',genericFingerprint,now,id,revision,mutation));
- const result=await c.db.batch(stmts);if(result[0].meta.changes!==1&&genericCreateKey){const repeated=await replayCreate();if(repeated)return repeated;}if(result[0].meta.changes!==1&&createKey){const replay=await c.db.prepare("SELECT id,data,version FROM crm_records WHERE id=? AND kind='activity' AND parent_id=? AND json_extract(data,'$.performedBy')=?").bind(id,parentId,c.me.id).first();if(replay)return replayReply({...replay,data:JSON.parse(String(replay.data))},'_creationRequest');}if(result[0].meta.changes!==1)throw new CRMError('تم تحديث السجل بالتزامن. أعد تحميل البيانات.',409);
+ const result=await c.db.batch(stmts);if(result[0].meta.changes!==1&&genericCreateKey){const repeated=await replayCreate();if(repeated)return repeated;}if(result[0].meta.changes!==1&&createKey){const replay=await c.db.prepare("SELECT id,data,version FROM crm_records WHERE id=? AND kind='activity' AND parent_id=? AND json_extract(data,'$.performedBy')=?").bind(id,parentId,c.me.id).first<{id:string;data:string;version:number}>();if(replay)return replayReply({...replay,data:JSON.parse(String(replay.data))},'_creationRequest');}if(result[0].meta.changes!==1)throw new CRMError('تم تحديث السجل بالتزامن. أعد تحميل البيانات.',409);
  return Response.json({ok:true,id});
  }catch(e){if(e instanceof z.ZodError)return Response.json({error:e.issues.map(x=>x.message).join(' • ')},{status:400});return replyError(e);}}
