@@ -1,0 +1,115 @@
+{
+  "date": "2026-10-10",
+  "node": "v22.22.0",
+  "pnpm": "11.25.0",
+  "source": "Yourrest-CRM-Full-Source-20261008.zip (baseline commit a48f406, unmodified)",
+  "install": {
+    "command": "pnpm install --frozen-lockfile",
+    "passed": true,
+    "seconds": 20
+  },
+  "typecheck": {
+    "command": "tsc --noEmit --incremental false",
+    "passed": true,
+    "errors": 0
+  },
+  "lint": {
+    "command": "eslint . (generated output ignored: dist, output, .sites-runtime, public/offline-app)",
+    "errors": 356,
+    "warnings": 150,
+    "byRule": {
+      "@typescript-eslint/no-explicit-any": {
+        "error": 211,
+        "warning": 0
+      },
+      "@typescript-eslint/no-unused-vars": {
+        "error": 0,
+        "warning": 113
+      },
+      "react-hooks/refs": {
+        "error": 58,
+        "warning": 0
+      },
+      "react-hooks/preserve-manual-memoization": {
+        "error": 1,
+        "warning": 0
+      },
+      "react-hooks/exhaustive-deps": {
+        "error": 0,
+        "warning": 32
+      },
+      "prefer-const": {
+        "error": 4,
+        "warning": 0
+      },
+      "@next/next/no-img-element": {
+        "error": 0,
+        "warning": 3
+      },
+      "react-hooks/set-state-in-effect": {
+        "error": 27,
+        "warning": 0
+      },
+      "@typescript-eslint/no-unused-expressions": {
+        "error": 0,
+        "warning": 1
+      },
+      "@next/next/no-location-assign-relative-destination": {
+        "error": 0,
+        "warning": 1
+      },
+      "react-hooks/immutability": {
+        "error": 4,
+        "warning": 0
+      },
+      "@next/next/no-sync-scripts": {
+        "error": 2,
+        "warning": 0
+      },
+      "@typescript-eslint/no-require-imports": {
+        "error": 41,
+        "warning": 0
+      },
+      "@next/next/no-assign-module-variable": {
+        "error": 8,
+        "warning": 0
+      }
+    },
+    "note": "No lint script existed; the ESLint 9 config was present. Before ignoring generated bundles ESLint reported 9661 extra warnings from public/offline-app."
+  },
+  "defaultGate": {
+    "command": "node scripts/check.mjs",
+    "total": 102,
+    "passed": 101,
+    "failed": [
+      {
+        "name": "tests/portable-installer.mjs",
+        "classification": "pre-existing test defect",
+        "cause": "Test merges stderr into stdout and JSON.parses it; Node 22.22 prints the node:sqlite ExperimentalWarning, so parsing fails at tests/portable-installer.mjs:37. Passes with NODE_NO_WARNINGS=1 (55 checks). Application code is not at fault."
+      }
+    ]
+  },
+  "build": {
+    "command": "pnpm build",
+    "passed": true,
+    "note": "Build deletes 8 stale generated bundles under public/offline-app that the archive carried; the 3 current bundles are byte-identical after rebuild."
+  },
+  "releaseBuildGate": {
+    "tests/app-update-release.mjs": {
+      "passed": true,
+      "checks": 14
+    },
+    "tests/namecheap-http.mjs": {
+      "passed": true,
+      "checks": 381
+    }
+  },
+  "notRun": [
+    "browser gate (Playwright)",
+    "erp-workbook gate (original ERP file not supplied)",
+    "release-artifact Python gate (needs exported release archives)",
+    "production-load",
+    "Android/native checks"
+  ],
+  "productionDataUsed": false
+}

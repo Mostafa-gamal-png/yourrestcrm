@@ -11,6 +11,8 @@
     "start": "node dist/standalone/app.cjs",
     "test:crm": "node tests/crm-regression.mjs",
     "test:auth": "node tests/email-auth.mjs",
+    "typecheck": "tsc --noEmit --incremental false",
+    "lint": "eslint .",
     "check": "node scripts/check.mjs",
     "check:erp": "node scripts/check.mjs --gate erp-workbook"
   },

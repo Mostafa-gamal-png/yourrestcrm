@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated output and runtime scratch space, not maintained source.
+    "dist/**",
+    "output/**",
+    ".sites-runtime/**",
+    "public/offline-app/**",
   ]),
   {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
