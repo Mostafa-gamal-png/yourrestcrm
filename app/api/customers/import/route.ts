@@ -21,7 +21,7 @@ async function importAccess(req:Request,sourceHash:string){
 }
 const batchSchema=z.object({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),sourceFile:z.string().max(250),rows:z.array(z.object({id:z.string().regex(/^yr-import-[a-f0-9]{32}$/),data:z.record(z.unknown())})).min(1).max(50)});
 export async function POST(req:Request){try{
- checkOrigin(req);await requireSession();const text=await readRequestText(req,1200000);if(text.length>400000)throw new CRMError('دفعة الاستيراد كبيرة');
+ checkOrigin(req);if(!req.headers.get('x-customer-import-token'))await requireSession();const text=await readRequestText(req,1200000);if(text.length>400000)throw new CRMError('دفعة الاستيراد كبيرة');
  const input=batchSchema.parse(parseJsonBody(text));const {db,owner,permission}=await importAccess(req,input.sourceHash);
  const now=new Date().toISOString(),mutation=crypto.randomUUID();const statements=[];
  for(const source of input.rows){

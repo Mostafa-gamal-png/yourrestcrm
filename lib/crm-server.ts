@@ -22,7 +22,7 @@ export async function context(options:ContextLoad={}){
 }
 export function replyError(error:unknown){if(error instanceof CRMError||error instanceof RequestBodyError)return Response.json({error:error.message},{status:error.status,...(error instanceof RequestBodyError?{headers:{'Cache-Control':'no-store','Connection':'close'}}:{})});console.error('CRM request failed',error);return Response.json({error:'تعذر إتمام العملية. بياناتك المدخلة لم تُمسح؛ حاول مرة أخرى.'},{status:500});}
 export function checkOrigin(req:Request){const origin=req.headers.get('origin');if(!env.YR_APP_ORIGIN||origin!==env.YR_APP_ORIGIN||req.headers.get('sec-fetch-site')==='cross-site')throw new CRMError('طلب غير مسموح',403);}
-/** Reject anonymous callers before any request body is read or validated, so they always receive 401 rather than a validation error. */
+/** Reject anonymous callers before any request body is read or validated, so they always receive 401 rather than a validation error. Token-authorized import routes call this only when no source token is presented. */
 export async function requireSession(){if(!await getApplicationUser())throw new CRMError('سجّل الدخول للوصول إلى التطبيق.',401);}
 
 type GuardContext={me:Member;members:Member[];all:Row[]};
