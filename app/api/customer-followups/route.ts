@@ -1,5 +1,5 @@
 import {loadAuthorizedVisitAttachment,visitAttachmentWriteGuard} from '@/lib/visit-file-access';
-import {readJsonBody} from '@/lib/crm-server';
+import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {activeServiceCase} from '@/lib/customer-service';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
@@ -11,8 +11,9 @@ import {prepareJourneyVisitLink} from '@/lib/journeys-server';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {riyadhDate} from '@/lib/visits';
 export const dynamic='force-dynamic';
+type FollowupData=Omit<z.infer<typeof customerFollowupSchema>,'competitorObservation'>&{visitWorkflow:string;summary:string;outcome:string;notes:string;hasQuotation:boolean;sourceId:string;requestId:string;responsibleId:string;performedBy:string;recordedByEmail:string;recordedByName:string;hasCompetitor?:boolean;competitorName?:string;competitorNotes?:string;competitorFileId?:string;competitorFileName?:string;serviceCaseId?:string};
 export async function POST(req:Request){try{
- checkOrigin(req);await requireSession();const body:any=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');
+ checkOrigin(req);await requireSession();const body=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');
  const key=z.string().uuid().parse(body.createKey),id='customer-followup-'+key,c=await context({load:'customer-graph',customerId:body.customerId,recordIds:[id]}),now=new Date().toISOString(),mutation=crypto.randomUUID();
  requireSalesRole(c.me);const customer=c.visible.find(r=>r.kind==='customer'&&r.id===body.customerId);if(!customer)throw new CRMError('اختر العميل',403);
  const offline=offlineCapture(body,c.me.id,now),occurredAt=offline?.capturedAt||now;
@@ -34,16 +35,16 @@ export async function POST(req:Request){try{
  if(hasQuotation&&input.invoiceOutcome==='invoiced'&&input.salesStage!=='won'||hasQuotation&&input.invoiceOutcome==='lost'&&input.salesStage!=='lost'||hasQuotation&&input.salesStage==='lost'&&input.invoiceOutcome!=='lost')throw new CRMError('نتيجة عرض السعر يجب أن تطابق مرحلة البيع');
  if(!hasQuotation&&input.invoiceOutcome!=='pending')throw new CRMError('لا يوجد عرض سعر مسجل لهذا العميل');
  const closed=followupClosed(input.salesStage),request=visitRequest(source,c.visible)||(source?.kind==='opportunity'?source:undefined);
- let data:any={...input,visitWorkflow:'followup-v1',summary:'متابعة العميل',outcome:'pending',notes:'',nextAction:closed?'':input.nextAction,nextDate:closed?'':input.nextDate,lossReason:input.salesStage==='lost'?input.lossReason:'',lossDetails:input.salesStage==='lost'?input.lossDetails:'',hasQuotation,sourceId:source?.id||'',requestId:request?.id||'',responsibleId:c.me.id,performedBy:c.me.id,recordedByEmail:c.user.email.toLowerCase(),recordedByName:c.me.name};
+ let data:FollowupData={...input,visitWorkflow:'followup-v1',summary:'متابعة العميل',outcome:'pending',notes:'',nextAction:closed?'':input.nextAction,nextDate:closed?'':input.nextDate,lossReason:input.salesStage==='lost'?input.lossReason:'',lossDetails:input.salesStage==='lost'?input.lossDetails:'',hasQuotation,sourceId:source?.id||'',requestId:request?.id||'',responsibleId:c.me.id,performedBy:c.me.id,recordedByEmail:c.user.email.toLowerCase(),recordedByName:c.me.name};
  Object.assign(data,offlineEvidence(offline));
  // Missing observations leave prior contacts alone and do not invent fresh evidence.
  if(competitorObservation)Object.assign(data,competitorObservation.hasCompetitor?competitorObservation:{hasCompetitor:false,competitorName:'',competitorNotes:'',competitorFileId:'',competitorFileName:''});
  const attachedFile=data.competitorFileId?await loadAuthorizedVisitAttachment(c,customer.id,data.competitorFileId):undefined;
  if(attachedFile)data.competitorFileName=attachedFile.name;
  else if(competitorObservation)data.competitorFileName='';
- if(service?.status==='assigned')(data as any).serviceCaseId=service.id;
+ if(service?.status==='assigned')data.serviceCaseId=service.id;
  const gate='EXISTS (SELECT 1 FROM crm_records WHERE id=? AND mutation_id=?)',ga=[id,mutation];
- const journey=await prepareJourneyVisitLink(c,customer.id,id,data,undefined,gate,ga,occurredAt,body.data?.journeyStopId);data=journey.data;
+ const journey=await prepareJourneyVisitLink(c,customer.id,id,data,undefined,gate,ga,occurredAt,isRecord(body.data)?body.data.journeyStopId:undefined);data=journey.data;
  const candidate:Row={id,kind:'activity',parentId:customer.id,assignedTo:customer.assignedTo,branch:customer.branch,data,createdAt:now,updatedAt:now,version:1};
  const latest=customerPlanSource(customer.id,[candidate,...c.all])!;
  let locks='EXISTS (SELECT 1 FROM crm_records WHERE id=? AND version=? AND assigned_to=? AND branch=?) AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role=? AND branch=? AND COALESCE(supervisor_id,\'\')=?)'+(source?' AND EXISTS (SELECT 1 FROM crm_records WHERE id=? AND version=?)':'');

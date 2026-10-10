@@ -1,7 +1,7 @@
 import type {Row} from './crm';
 
 export const machineTypeLabels:Record<string,string>={stationary:'ثابتة',mobile:'متحركة',unknown:'غير محدد'};
-export function hasMachineSource(data:any){return Number(data.machineCount)>0||Boolean(String(data.machineTypes||'').trim());}
+export function hasMachineSource(data:{machineCount?:number|null;machineTypes?:string}){return Number(data.machineCount)>0||Boolean(String(data.machineTypes||'').trim());}
 export function machineSourceData(customer:Row){
  const source=customer.data;
  const raw=String(source.machineTypes||'').trim();
@@ -14,4 +14,4 @@ export function machineSourceData(customer:Row){
   sourceMachineTypes:raw,sourceMachineCount:count,sourceFile:source.sourceFile||'',
   sourceRow:source.sourceRow,sourceKey:source.sourceKey||'',sourceHash:source.sourceHash||''};
 }
-export function completeMachineSpecs(data:any){return Boolean(data?.machineBrand?.trim()&&data?.machineModel?.trim()&&['stationary','mobile'].includes(data?.machineType));}
+export function completeMachineSpecs(data?:{machineBrand?:string;machineModel?:string;machineType?:string}|null){return Boolean(data?.machineBrand?.trim()&&data?.machineModel?.trim()&&(['stationary','mobile'] as (string|undefined)[]).includes(data?.machineType));}

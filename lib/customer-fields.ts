@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {coordinatesFromText} from './customer-location';
+import {coordinatesFromText,type LocationFields} from './customer-location';
 
 // Kept optional so existing customer imports and older installed clients remain compatible.
 export const customerAddressFields={
@@ -13,7 +13,7 @@ export const customerAddressFields={
 };
 
 /** Coordinates and capture metadata are one value; never relabel a manually changed point as an old GPS fix. */
-export function prepareCustomerLocation(data:Record<string,any>,old?:Record<string,any>,now=Date.now()):string|null{
+export function prepareCustomerLocation(data:LocationFields,old?:LocationFields,now=Date.now()):string|null{
  const point=coordinatesFromText(data.location||'');
  if(data.location&&!point)return 'أدخل اللوكيشن كخط عرض، خط طول، أو رابط خرائط يحتوي الإحداثيات.';
  const previous=old?coordinatesFromText(old.location||''):null;
@@ -24,7 +24,7 @@ export function prepareCustomerLocation(data:Record<string,any>,old?:Record<stri
   if(!Number.isFinite(captured)||captured>now+60000||!Number.isFinite(data.locationAccuracy))return 'بيانات التقاط الموقع غير مكتملة. حدّث موقع الجهاز ثم حاول مرة أخرى.';
   if(old?.locationSource==='device'&&!samePoint&&data.locationCapturedAt===old.locationCapturedAt)return 'تغيّر اللوكيشن بعد التقاطه. حدّث موقع الجهاز ثم حاول مرة أخرى.';
  }else if(samePoint&&old?.locationSource==='device'&&data.locationCapturedAt===undefined&&data.locationAccuracy===undefined){
-  for(const field of ['locationSource','locationCapturedAt','locationAccuracy'])data[field]=old[field];
+  Object.assign(data,{locationSource:old.locationSource,locationCapturedAt:old.locationCapturedAt,locationAccuracy:old.locationAccuracy});
  }else{
   delete data.locationSource;delete data.locationCapturedAt;delete data.locationAccuracy;
  }

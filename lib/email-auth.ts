@@ -64,7 +64,7 @@ export async function emailSession(headers:Headers,db:D1Database,c:EmailAuthConf
  if(!validConfig(c))return null;
  const token=readCookie(headers,authCookie);if(!token)return null;
  const hash=await digest(c,'session:'+token);
- const user:any=await db.prepare('SELECT u.id,u.user_id,u.email,u.name,u.auth_version FROM auth_sessions s JOIN crm_members u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND (s.expires_at=0 OR s.expires_at>?) AND u.active=1 AND u.auth_version=s.user_version AND u.email=s.email').bind(hash,milliseconds(c)).first();
+ const user=await db.prepare('SELECT u.id,u.user_id,u.email,u.name,u.auth_version FROM auth_sessions s JOIN crm_members u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND (s.expires_at=0 OR s.expires_at>?) AND u.active=1 AND u.auth_version=s.user_version AND u.email=s.email').bind(hash,milliseconds(c)).first<{id:string;user_id:string|null;email:string;name:string;auth_version:number}>();
  return user?{provider:'email-otp',memberId:user.id,memberVersion:user.auth_version,userId:user.user_id||'email-otp:'+user.id,email:user.email,displayName:user.name,fullName:user.name}:null;
 }
 export async function handleEmailAuth(request:Request,action:string,db:D1Database,c:EmailAuthConfig):Promise<Response>{
@@ -109,7 +109,7 @@ export async function handleEmailAuth(request:Request,action:string,db:D1Databas
    const deadline=Math.max(0,c.deliveryDeadlineMs??5000),started=Date.now();
    // Unknown, blocked and rate-limited addresses have the same response and cookie shape.
    if(permitted){
-    const user:any=await db.prepare('SELECT id,auth_version,email FROM crm_members WHERE email=? AND active=1').bind(email).first();
+    const user=await db.prepare('SELECT id,auth_version,email FROM crm_members WHERE email=? AND active=1').bind(email).first<{id:string;auth_version:number;email:string}>();
     const code=randomCode(),codeHash=await digest(c,'code:'+cid+':'+code);
     await db.prepare('INSERT INTO auth_challenges (id,subject_hash,code_hash,user_id,user_version,email,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(subject_hash) DO UPDATE SET id=excluded.id,code_hash=excluded.code_hash,user_id=excluded.user_id,user_version=excluded.user_version,email=excluded.email,created_at=excluded.created_at,expires_at=excluded.expires_at,ready=0,attempts=0,attempt_id=NULL,consumed=0').bind(cid,subject,codeHash,user?.id??null,user?.auth_version??null,email,stamp,stamp+10*minute).run();
     if(user){
