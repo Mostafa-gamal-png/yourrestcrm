@@ -56,8 +56,6 @@ const post=async(body,status=200)=>{
 };
 const create=code=>({action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Test factory',region:'الشرقية',location:'',code}});
 const edit=(id,changes)=>({action:'save',kind:'customer',id,version:raw(id).version,data:{...data(id),...changes}});
-const number=id=>sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(id)?.number;
-const auditCount=id=>sql.prepare('SELECT COUNT(*) n FROM crm_audit WHERE record_id=?').get(id).n;
 
 const first=(await post(create('ERP-OLD'))).id;
 sql.prepare('INSERT INTO crm_members(id,email,name,role,branch,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,1,0,?)').run('owner','owner@yourrest.org','Test admin','admin','HQ','all',now);

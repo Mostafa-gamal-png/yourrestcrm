@@ -5,8 +5,8 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),ts=require('typescript'),jsx=require('react/jsx-runtime');
 const compile=source=>ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 const controllerSource=await readFile(new URL('../lib/app-update.ts',import.meta.url),'utf8'),componentSource=await readFile(new URL('../app/app-update.tsx',import.meta.url),'utf8');
-const module={exports:{}};new Function('require','module','exports',compile(controllerSource))(name=>{if(name==='./native-tracking')return {};throw Error(name);},module,module.exports);
-const {createAppUpdateController,parseAppRelease,compareAppVersions}=module.exports;
+const loadedModule={exports:{}};new Function('require','module','exports',compile(controllerSource))(name=>{if(name==='./native-tracking')return {};throw Error(name);},loadedModule,loadedModule.exports);
+const {createAppUpdateController,parseAppRelease,compareAppVersions}=loadedModule.exports;
 let checks=0;const equal=(a,b,msg)=>{assert.deepEqual(a,b,msg);checks++;},truth=(a,msg)=>{assert(a,msg);checks++;};
 const release={schemaVersion:1,packageName:'org.yourrest.crm',versionName:'1.0.10',versionCode:11,apkUrl:'https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.10-11.apk',sizeBytes:230000,sha256:'a'.repeat(64),certificateSha256:'b'.repeat(64),releaseNotes:{ar:['تحديث من داخل التطبيق'],en:['In-app updates']}};
 const nativeState=(phase='available',patch={})=>({phase,installedVersionCode:10,installedVersionName:'1.0.9',availableVersionCode:11,availableVersionName:'1.0.10',downloadedBytes:0,totalBytes:230000,progress:0,releaseNotes:release.releaseNotes,...patch});
@@ -32,8 +32,8 @@ const failed=fixture({fetchFailure:true});await failed.controller.check(true);eq
 function componentHarness(controller,language='ar'){
  let hooks=[],effects=[],cleanups=[],cursor=0,dirty=true,tree,mounted=true,postUnmountUpdates=0;
  const React={useState(initial){const i=cursor++;if(!(i in hooks))hooks[i]=initial;return [hooks[i],next=>{if(!mounted)postUnmountUpdates++;hooks[i]=next;dirty=true;}];},useEffect(callback){const i=cursor++;if(!(i in hooks)){hooks[i]=true;effects.push(callback);}}};
- const module={exports:{}};new Function('require','module','exports',compile(componentSource))(name=>{if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;if(name==='lucide-react')return {Download:()=>null,RefreshCw:()=>null,Smartphone:()=>null};if(name==='@/lib/i18n')return {useLanguage:()=>({language})};if(name==='@/lib/app-update')return {appUpdateController:()=>controller};if(name.endsWith('.css'))return {};throw Error(name);},module,module.exports);
- const Component=module.exports.default;
+ const loadedModule={exports:{}};new Function('require','module','exports',compile(componentSource))(name=>{if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;if(name==='lucide-react')return {Download:()=>null,RefreshCw:()=>null,Smartphone:()=>null};if(name==='@/lib/i18n')return {useLanguage:()=>({language})};if(name==='@/lib/app-update')return {appUpdateController:()=>controller};if(name.endsWith('.css'))return {};throw Error(name);},loadedModule,loadedModule.exports);
+ const Component=loadedModule.exports.default;
  function flush(){for(let n=0;mounted&&dirty&&n<10;n++){dirty=false;cursor=0;tree=Component();for(const effect of effects.splice(0)){const cleanup=effect();if(cleanup)cleanups.push(cleanup);}}return tree;}
  function nodes(value=tree){if(Array.isArray(value))return value.flatMap(nodes);if(!value||typeof value!=='object')return [];return [value,...nodes(value.props?.children??null)];}
  function text(value=tree){if(Array.isArray(value))return value.map(text).join('');if(value===null||value===undefined||value===false)return '';if(typeof value!=='object')return String(value);return text(value.props?.children??null);}

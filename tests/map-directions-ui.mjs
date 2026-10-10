@@ -59,7 +59,6 @@ eq(locations.mapsLink(customer.data),url,'Every customer/visit Maps link uses th
 for(const data of [{name:'Factory',city:'Jeddah'},{location:'0,0'},{latitude:91,longitude:39},{location:'not a coordinate'}])eq(locations.mapsLink(data),null,'A generic customer or visit link never invents a destination');
 const canonicalLink=new URL(locations.mapsLink({location:'24,46'}));eq([...canonicalLink.searchParams.keys()],['api','destination','travelmode','dir_action'],'Shared link has exactly the native parser’s four supported fields');eq(canonicalLink.searchParams.get('destination'),'24,46');eq(canonicalLink.searchParams.get('travelmode'),'driving');eq(canonicalLink.searchParams.get('dir_action'),'navigate');
 const link=target=>({customerId:'factory',href:url,target,version:7});
-const catchMessage=async promise=>{try{await promise;return '';}catch(error){return error.message;}};
 for(const language of ['ar','en']){
  const gate=defer(),h=harness({language,select:()=>gate.promise});
  const pending=h.run();h.flush();

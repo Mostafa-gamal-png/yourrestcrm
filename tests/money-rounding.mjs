@@ -11,7 +11,7 @@ const root=process.cwd(),require=createRequire(import.meta.url),cache=new Map();
 const container=({children})=>React.createElement('div',null,children);
 function load(relative){
  const file=path.resolve(root,relative);if(cache.has(file))return cache.get(file).exports;
- const module={exports:{}};cache.set(file,module);
+ const loadedModule={exports:{}};cache.set(file,loadedModule);
  let source=fs.readFileSync(file,'utf8');
  if(relative==='app/sales-workspace.tsx')source+='\nexport {SaleEditor};';
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
@@ -27,8 +27,8 @@ function load(relative){
    return load(path.relative(root,resolved+(fs.existsSync(resolved+'.ts')?'.ts':'.tsx')));
   }
   return require(specifier);
- },module,module.exports);
- return module.exports;
+ },loadedModule,loadedModule.exports);
+ return loadedModule.exports;
 }
 const {salesTotals,saleSchema,salesProducts}=load('lib/sales.ts');
 const {quoteTotals,schemas}=load('lib/crm.ts');

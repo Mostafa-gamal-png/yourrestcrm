@@ -12,7 +12,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
-import {createHash,randomBytes,randomUUID} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import {sqliteDatabase,privateObjects} from '../portable/storage.mjs';
 
 const require=createRequire(import.meta.url),{chromium}=require(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES?path.join(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES,'playwright'):'playwright');

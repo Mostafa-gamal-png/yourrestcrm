@@ -19,6 +19,13 @@ const eslintConfig = defineConfig([
     "public/offline-app/**",
   ]),
   {
+    // CommonJS entry points (Passenger launcher, setup and activation helpers) must use require().
+    files: ["**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
     rules: {
       // These files are vendored verbatim from shadcn@4.17.0. Keep the

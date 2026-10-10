@@ -29,8 +29,8 @@ assert.equal(cjs.exports.result.region,'west');checks++;
 assert.equal(cjs.exports.result.count,4);checks++;
 assert(synchronous.map.sources.some(source=>source.endsWith('customer.cts')));checks++;
 const asynchronous=await utils.transform(code,'/ordinary/customer.mts');
-const module=await import('data:text/javascript;base64,'+Buffer.from(asynchronous.code).toString('base64'));
-assert.deepEqual(module.result,{region:'west',count:4});checks++;
+const loadedModule=await import('data:text/javascript;base64,'+Buffer.from(asynchronous.code).toString('base64'));
+assert.deepEqual(loadedModule.result,{region:'west',count:4});checks++;
 assert(asynchronous.map.sources.some(source=>source.endsWith('customer.mts')));checks++;
 
 const scratch=mkdtempSync(join(tmpdir(),'yourrest-drizzle-compat-'));

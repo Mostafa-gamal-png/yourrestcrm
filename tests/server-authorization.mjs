@@ -25,7 +25,7 @@ try {
   const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date()), month = day.slice(0, 7);
 
   // Role groups used by the expectation tables below.
-  const management = ['owner', 'mgr', 'mgrw', 'sup'], reps = ['rep1', 'rep2', 'repw'], service = ['csm', 'cs'], everyone = members.map(m => m.id);
+  const management = ['owner', 'mgr', 'mgrw', 'sup'], reps = ['rep1', 'rep2', 'repw'], everyone = members.map(m => m.id);
   const expect = (allowed, ok, denied) => Object.fromEntries(everyone.map(id => [id, allowed.includes(id) ? ok : denied]));
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.

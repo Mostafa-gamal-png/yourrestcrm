@@ -25,7 +25,6 @@ sql.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('company','u-owner')")
 const user=id=>{globalThis.testUser=id?{userId:'u-'+id,email:id+'@yourrest.org',fullName:id}:null;};
 const crm=await import(path.join(out,'app/api/crm/route.mjs'));
 const raw=id=>sql.prepare('SELECT * FROM crm_records WHERE id=?').get(id),row=id=>({...raw(id),data:JSON.parse(raw(id).data)});
-const count=()=>sql.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='customer'").get().n;
 let checks=0;
 const check=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
 const request=(body,origin='https://test.invalid')=>new Request('https://test.invalid/api/crm',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body)});

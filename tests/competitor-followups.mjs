@@ -63,7 +63,6 @@ const {buildCompetitors}=await import(path.join(out,'lib/competitors.mjs'));
 const {context}=await import(path.join(out,'lib/crm-server.mjs'));
 let checks=0;
 const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
-const ok=(value,message)=>{assert.ok(value,message);checks++;};
 function body(customerId,sourceId=customerId+'-source',observation){clock+=1000;return{createKey:crypto.randomUUID(),customerId,customerVersion:raw(customerId).version,sourceId,sourceVersion:raw(sourceId).version,data:{type:'call',date:day,result:'New customer follow-up',salesStage:'new',nextAction:'Request specifications',nextDate:day,...observation===undefined?{}:{competitorObservation:observation}}};}
 const observe=(extra={})=>({hasCompetitor:true,competitorName:' الفا ',competitorNotes:' Fresh details ',...extra});
 async function post(payload,status=200){const response=await route.POST(new Request('https://test.invalid/api/customer-followups',{method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:JSON.stringify(payload)}));const result=await response.json();eq(response.status,status,JSON.stringify(result));return result;}
