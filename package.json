@@ -9,6 +9,7 @@
     "dev": "vinext dev",
     "build": "node scripts/build-independent.mjs",
     "start": "node dist/standalone/app.cjs",
+    "demo": "node scripts/demo-local.mjs",
     "test:crm": "node tests/crm-regression.mjs",
     "test:auth": "node tests/email-auth.mjs",
     "typecheck": "tsc --noEmit --incremental false",

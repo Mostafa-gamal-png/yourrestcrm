@@ -24,9 +24,9 @@ const freePort = async () => {
 
 /**
  * @param {{members: {id: string, role: string, sup?: string, region?: string, branch?: string, name?: string}[]}} seed
- * @param {{tls?: boolean}} options tls=true fronts the app with HTTPS on crm.yourrest.org:<port>
+ * @param {{tls?: boolean, tlsPort?: number}} options tls=true fronts the app with HTTPS on crm.yourrest.org:<tlsPort> (random free port by default)
  */
-export async function bootBuiltApp(seed, {tls = false} = {}) {
+export async function bootBuiltApp(seed, {tls = false, tlsPort: requestedTlsPort = 0} = {}) {
   const work = await mkdtemp(path.join(os.tmpdir(), 'yourrest-built-'));
   const data = path.join(work, 'data'), objects = path.join(data, 'objects'), filename = path.join(data, 'database.sqlite');
   await mkdir(objects, {recursive: true, mode: 0o700});
@@ -46,7 +46,7 @@ export async function bootBuiltApp(seed, {tls = false} = {}) {
   const capture = path.join(work, 'mail.jsonl'), sendmail = path.join(work, 'sendmail.cjs');
   await writeFile(sendmail, '#!' + process.execPath + '\n' + `const fs=require('node:fs');let m='';process.stdin.on('data',b=>m+=b);process.stdin.on('end',()=>fs.appendFileSync(${JSON.stringify(capture)},JSON.stringify({to:process.argv.at(-1),message:m})+'\\n',{mode:0o600}));`, {mode: 0o700});
 
-  const backendPort = await freePort(), tlsPort = tls ? await freePort() : 0;
+  const backendPort = await freePort(), tlsPort = tls ? requestedTlsPort || await freePort() : 0;
   const origin = tls ? 'https://crm.yourrest.org:' + tlsPort : 'https://crm.yourrest.org', host = new URL(origin).host;
   let log = '', proxy;
   const child = spawn(process.execPath, ['app.cjs'], {
@@ -113,5 +113,5 @@ export async function bootBuiltApp(seed, {tls = false} = {}) {
   /** A request function bound to a session cookie (or anonymous when cookie is falsy). */
   const as = cookie => (url, options = {}) => request(url, {...options, headers: {Origin: origin, ...(cookie ? {Cookie: cookie} : {}), ...options.headers}});
 
-  return {origin, db, request, login, as, log: () => log, async stop() { child.kill(); proxy?.close(); await rm(work, {recursive: true, force: true}); }};
+  return {origin, db, request, login, as, work, mailFile: capture, log: () => log, async stop() { child.kill(); proxy?.close(); await rm(work, {recursive: true, force: true}); }};
 }
