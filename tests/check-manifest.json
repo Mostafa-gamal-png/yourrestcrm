@@ -163,6 +163,11 @@
       "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
     },
     {
+      "file": "tests/server-authorization.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/session-update-package.py",
       "gate": "release-artifact",
       "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
