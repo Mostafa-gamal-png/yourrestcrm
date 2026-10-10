@@ -8,6 +8,7 @@ export const salesProducts = [...visitProducts, 'خدمات صيانة'];
 export const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'اختر شهرًا صحيحًا');
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'أدخل تاريخًا صحيحًا').refine(v => Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v, 'أدخل تاريخًا صحيحًا');
 const amount = z.coerce.number().finite().min(0).max(1000000000);
+export type SaleRow = { id: string; customer_id: string; rep_id: string; branch: string; date: string; reference: string; data: string; total_cents: number; status: 'confirmed' | 'void'; void_reason: string; version: number; created_by: string; created_at: string; updated_at: string };
 export type SaleItem = { product: string; description: string; quantity: number; unitPrice: number };
 export function salesTotals(items: SaleItem[], discount: number) {
     const subtotalCents = items.reduce((n, item) => n + lineCents(item.quantity,item.unitPrice), 0);

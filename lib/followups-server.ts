@@ -1,20 +1,24 @@
 import {canReadService,isServiceRole} from './customer-service';
 import {salesScopeMemberIds,recordAuthorId} from './access';
-import {CRMError,context} from './crm-server';
+import {CRMError,context,isRecord} from './crm-server';
 import {completeMachineSpecs} from './machines';
-import {isSalesRequest,type Row} from './crm';
-import {coordinatesFromText} from './customer-location';
+import {isSalesRequest,type Row,type schemas} from './crm';
+import type {z} from 'zod';
+import {coordinatesFromText,type LocationFields} from './customer-location';
 import {durationSeconds,durationNeedsReview,riyadhDate,visitResult} from './visits';
 type Context=Awaited<ReturnType<typeof context>>;
-export function requireLegacyVisit(data:any,old?:Row){
+export type OpportunityData=z.infer<typeof schemas.opportunity>&Record<string,unknown>;
+export type ContactData=LocationFields&{startedAt?:string;endedAt?:string;result?:string;outcome?:string;performedBy?:string;recordedByEmail?:string;visitNumber?:number;durationSeconds?:number|null;durationReview?:boolean;date?:string;responsibleId?:string}&Record<string,unknown>;
+export function requireLegacyVisit(data:unknown,old?:Row){
  const keys=['visitWorkflow','responsibleId','customerStage','salesStage','strength','requestedProducts','hasCompetitor','competitorName','competitorNotes','competitorFileId','competitorFileName','customerNeeds','requestId','requestSnapshot'];
- if(old?.data.visitWorkflow||keys.some(k=>Array.isArray(data?.[k])?data[k].length>0:!!data?.[k]))throw new CRMError('استخدم قسم الزيارات لحفظ بيانات الزيارة والعميل.',400);
+ const fields:Record<string,unknown>=isRecord(data)?data:{};
+ if(old?.data.visitWorkflow||keys.some(k=>{const value=fields[k];return Array.isArray(value)?value.length>0:!!value;}))throw new CRMError('استخدم قسم الزيارات لحفظ بيانات الزيارة والعميل.',400);
 }
-export function preserveRequestResponsible(data:any,old?:Row){
+export function preserveRequestResponsible(data:{responsibleId?:string},old?:Row){
  if(data.responsibleId&&data.responsibleId!==(old?.data.responsibleId||''))throw new CRMError('حدّث مسؤول الطلب من قسم الزيارات.',400);
  data.responsibleId=old?.data.responsibleId||'';
 }
-export function validateFollowup(data:any,old:Row|undefined,parent:Row,c:Context,now:string){
+export function validateFollowup(data:OpportunityData,old:Row|undefined,parent:Row,c:Context,now:string){
  const canManage=['admin','manager'].includes(c.me.role);
  if(!data.hasRequest){
   if(old&&isSalesRequest(old))throw new CRMError('لا يمكن إخفاء طلب قالب مسجل من المتابعة. احتفظ بتفاصيله وحدّث مرحلة البيع.');
@@ -32,7 +36,7 @@ export function validateFollowup(data:any,old:Row|undefined,parent:Row,c:Context
 }
 /** Shared saved contact evidence for legacy and current visit endpoints.
  * Request responsibility and replay markers stay with their original workflows. */
-export function prepareContactEvidence(data:any,c:Context,now:string,clockAction?:string,old?:Row){
+export function prepareContactEvidence(data:ContactData,c:Context,now:string,clockAction?:string,old?:Row){
  if(clockAction==='start'){data.startedAt=now;data.endedAt='';}
  if(clockAction==='finish'){data.startedAt=old?.data.startedAt||data.startedAt;if(!data.startedAt)throw new CRMError('ابدأ الزيارة أولًا');data.endedAt=now;}
  if(data.endedAt&&!data.startedAt)throw new CRMError('حدد بداية الزيارة قبل نهايتها');
@@ -44,14 +48,14 @@ export function prepareContactEvidence(data:any,c:Context,now:string,clockAction
  data.durationSeconds=durationSeconds(data.startedAt,data.endedAt);data.durationReview=durationNeedsReview(data);if(data.startedAt)data.date=riyadhDate(data.startedAt);
 }
 
-export function prepareNewContact(data:any,c:Context,now:string,clockAction?:string,old?:Row){
+export function prepareNewContact(data:ContactData,c:Context,now:string,clockAction?:string,old?:Row){
  prepareContactEvidence(data,c,now,clockAction,old);
  data.responsibleId=old?old.data.responsibleId||recordAuthorId(old,c.members)||'':c.me.id;
  if(old)for(const key of ['_creationRequest','_startRequest','_finishRequest'])if(old.data[key])data[key]=old.data[key];
 }
 
 /** Location is captured by the client device once and locked after creation. */
-export function validateVisitLocation(data:any,old?:Row){
+export function validateVisitLocation(data:ContactData,old?:Row){
  if(old){
   if(data.location!==(old.data.location||''))throw new CRMError('لوكيشن الزيارة محفوظ ولا يمكن تعديله.');
   for(const key of ['location','latitude','longitude','locationSource','locationCapturedAt','locationAccuracy']){if(old.data[key]!==undefined)data[key]=old.data[key];else delete data[key];}
@@ -69,5 +73,5 @@ export function canAccessVisitFile(c:Context,file:{id:string;customer_id:string;
  if(c.me.role==='admin')return true;
  if(!isServiceRole(c.me.role))return salesScopeMemberIds(c.members,c.me).has(file.uploaded_by)||c.visible.some(r=>r.kind==='activity'&&r.data.competitorFileId===file.id);
  if(file.uploaded_by===c.me.id&&c.regionalRecords.some(r=>r.id===file.customer_id&&r.branch===c.me.branch))return true;
- return c.serviceCases.some(s=>s.customerId===file.customer_id&&canReadService(s,c)&&(s.data.registration?.competitorFileId===file.id||(s.data.registrations||[]).some((entry:any)=>entry.registration.competitorFileId===file.id)||c.all.some(r=>r.kind==='activity'&&r.data.serviceCaseId===s.id&&r.data.competitorFileId===file.id)));
+ return c.serviceCases.some(s=>s.customerId===file.customer_id&&canReadService(s,c)&&(s.data.registration?.competitorFileId===file.id||(s.data.registrations||[]).some(entry=>entry.registration.competitorFileId===file.id)||c.all.some(r=>r.kind==='activity'&&r.data.serviceCaseId===s.id&&r.data.competitorFileId===file.id)));
 }

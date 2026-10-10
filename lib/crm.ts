@@ -8,6 +8,7 @@ export const stageLabels:Record<string,string> = {new:'تحديد الاحتيا
 export const roles:Record<string,string> = {admin:'مدير النظام',manager:'مدير المبيعات',supervisor:'مشرف المبيعات',rep:'مندوب المبيعات',customer_service_manager:'مدير خدمة العملاء',customer_service:'ممثل خدمة العملاء'};
 export type Kind = 'customer'|'factory'|'opportunity'|'activity'|'quote';
 export type Row = {id:string;kind:Kind;parentId:string|null;assignedTo:string;branch:string;data:any;createdAt:string;updatedAt:string;version:number};
+export type AuditEntry = {id:string;recordId:string;actor:string;action:string;detail:string;createdAt:string};
 export type Member = {authVersion?:number;editToken?:string;id:string;userId?:string;email:string;name:string;role:string;branch:string;supervisorId?:string;regionScope?:string;readOnly?:boolean;active:number;target:number};
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export const money=(v:number)=>new Intl.NumberFormat('en-US',{maximumFractionDigits:2,minimumFractionDigits:0}).format(v||0);
