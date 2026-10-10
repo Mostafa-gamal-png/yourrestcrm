@@ -59,5 +59,9 @@ await post(crm,{...valid,id:saved.id,version:1,data:body(1000000000,1000000)},40
 assert.equal(raw(saved.id).version,1);assert.equal(row(saved.id).data.total,218.5);checks+=2;
 const maximum=await post(crm,quoteInput(body(1000000000)));
 assert.equal(row(maximum.id).data.total,1000000000);checks++;
+// The year in a new quote number follows Asia/Riyadh, not the zone of the server clock: 22:30 UTC on 31 December is already 2027 there.
+const RealDate=Date,newYearEve=RealDate.UTC(2026,11,31,22,30);
+globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[newYearEve]));}static now(){return newYearEve;}};
+try{const newYear=await post(crm,quoteInput(body(100)));assert.match(row(newYear.id).data.number,/^YR-2027-[0-9A-F]{8}$/);checks++;}finally{globalThis.Date=RealDate;}
 assert.equal(sql.prepare('PRAGMA integrity_check').get().integrity_check,'ok');checks++;
 console.log(JSON.stringify({ok:true,checks,scope:'Actual quote schema and authenticated SQLite API; computed caps, VAT, discounts, no partial writes, editing and replay'}));
