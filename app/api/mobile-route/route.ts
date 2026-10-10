@@ -2,15 +2,15 @@ import {z} from 'zod';
 import {context,checkOrigin,replyError,readJsonBody,CRMError,accessGuard,requireSalesRole} from '@/lib/crm-server';
 import {regionScope} from '@/lib/regions';
 import {journeyDate,applyJourneyPoint,journeyGap,closeJourney,closeJourneyAtWindowEnd,type JourneyStop} from '@/lib/journeys';
-import {activeJourney,ownJourney,canReadJourney,journeyGuard,journeyLinkedTimingStatement,journeyColumns,decodeJourney} from '@/lib/journeys-server';
+import {activeJourney,ownJourney,canReadJourney,journeyGuard,journeyLinkedTimingStatement,journeyColumns,decodeJourney,type JourneyRow} from '@/lib/journeys-server';
 import {mobileDayExpiry,mobileDayStart,mobileReplayableStop,replayMobileInterruptedStop,mobilePublicDay,mobileApplyPoint,mobileGap,type MobileRoutePoint,type MobileRouteStoredDay} from '@/lib/mobile-route';
-import {mobileContext,mobileColumns,decodeMobileDay,mobileData,ownMobileDay,mobileGuard} from '@/lib/mobile-route-server';
+import {mobileContext,mobileColumns,decodeMobileDay,mobileData,ownMobileDay,mobileGuard,type MobileDayRow} from '@/lib/mobile-route-server';
 import {trackingWindowOpen,trackingWindowEnd,trackingWindowStatus,trackingWorkingDay} from '@/lib/tracking-window';
 export const dynamic='force-dynamic';
 const identifier=z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/),iso=z.string().datetime({offset:true});
 const pointSchema=z.object({id:identifier,capturedAt:iso,latitude:z.number().finite().min(-90).max(90),longitude:z.number().finite().min(-180).max(180),accuracy:z.number().finite().min(0).max(10000),stopId:identifier.nullable()}).strict().refine(p=>p.latitude!==0||p.longitude!==0,'إحداثيات غير صالحة');
 async function response(c:Awaited<ReturnType<typeof context>>,day:MobileRouteStoredDay|null,now:string,extra:Record<string,unknown>={}){const active=await activeJourney(c,now);return Response.json({memberId:c.me.id,memberRole:c.me.role,regionScope:regionScope(c.me),day:day?mobilePublicDay(day,now):null,activeStop:active&&!active.closedAt?active:null,serverTime:now,trackingWindow:trackingWindowStatus(now),...extra},{headers:{'Cache-Control':'no-store'}});}
-export async function GET(){try{const c=await mobileContext();requireSalesRole(c.me);const now=new Date().toISOString(),row=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at DESC,id DESC LIMIT 1').bind(c.me.id,journeyDate(now),regionScope(c.me)).first<any>();return response(c,row?decodeMobileDay(row):null,now);}catch(e){return replyError(e);}}
+export async function GET(){try{const c=await mobileContext();requireSalesRole(c.me);const now=new Date().toISOString(),row=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at DESC,id DESC LIMIT 1').bind(c.me.id,journeyDate(now),regionScope(c.me)).first<MobileDayRow>();return response(c,row?decodeMobileDay(row):null,now);}catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>40000)throw new CRMError('حجم بيانات الموقع كبير');const c=await mobileContext(body);requireSalesRole(c.me);const now=new Date().toISOString(),date=journeyDate(now),deviceId=z.string().uuid().parse(body.deviceId),action=z.enum(['begin','samples','end','gap']).parse(body.action),mutation=crypto.randomUUID();
  if(action==='begin'){
@@ -28,7 +28,7 @@ export async function POST(req:Request){try{
   // Apply the schedule to the captured day, not the upload day: a Thursday
   // offline queue remains valid on Friday, while explicit Friday begins pause.
   if(!trackingWorkingDay(requestedDate)||start>=expiry||start>now||(!historical&&!trackingWindowOpen(now)&&body.date===undefined))return response(c,null,now);
-  const prior=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE id=?').bind(id).first<any>();
+  const prior=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE id=?').bind(id).first<MobileDayRow>();
   if(prior){const saved=await ownMobileDay(c,id,deviceId);if(body.date!==undefined&&saved.date!==requestedDate)throw new CRMError('عملية بدء التتبع محفوظة ليوم مختلف',409);return response(c,saved,now);}
   // Upload delay does not expire captured evidence. A new historical collector
   // can only start during this account's lifetime, never before enrollment.
@@ -39,10 +39,10 @@ export async function POST(req:Request){try{
   if(requestedDate<journeyDate(accountCreatedAt))throw new CRMError('يوم التتبع سابق لإنشاء الحساب',400);
   if(start<accountCreatedAt)start=accountCreatedAt;
   if(start>=expiry||start>now)return response(c,null,now);
-  const currentRaw=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND ended_at IS NULL').bind(c.me.id).first<any>(),current=currentRaw?decodeMobileDay(currentRaw):null;
+  const currentRaw=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND ended_at IS NULL').bind(c.me.id).first<MobileDayRow>(),current=currentRaw?decodeMobileDay(currentRaw):null;
   if(current&&current.date===requestedDate&&current.regionScope===regionScope(c.me)){if(current.deviceId!==deviceId)throw new CRMError('التتبع يعمل على جهاز آخر. تواصل مع الإدارة لتغيير الجهاز.',409);return response(c,current,now);}
   // A late offline day must not close or replace today's already-running collector.
-  const sameDate=(await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at,id').bind(c.me.id,requestedDate,regionScope(c.me)).all<any>()).results.map(decodeMobileDay);
+  const sameDate=(await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at,id').bind(c.me.id,requestedDate,regionScope(c.me)).all<MobileDayRow>()).results.map(decodeMobileDay);
   const covering=sameDate.find(day=>day.deviceId===deviceId&&day.startedAt<=start&&(!day.endedAt||day.endedAt>start));
   if(covering)return response(c,covering,now);
   if(sameDate.some(day=>!day.endedAt||day.endedAt>start))throw new CRMError('توجد فترة تتبع محفوظة لهذا اليوم أو لجهاز آخر.',409);
@@ -50,7 +50,7 @@ export async function POST(req:Request){try{
   permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND created_at=?)';permission.args.push(c.me.id,account.createdAt);
   permission.sql+=' AND (SELECT COUNT(*) FROM crm_mobile_route_days WHERE member_id=? AND date=?)<20 AND NOT EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? AND (ended_at IS NULL OR ended_at>?) AND id<>?)';permission.args.push(c.me.id,requestedDate,c.me.id,requestedDate,day.regionScope,start,current&&!historical?current.id:'');
   let rolloverStop:JourneyStop|null=null;
-  if(current&&!historical&&current.date<requestedDate){const raw=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE member_id=? AND date=? AND closed_at IS NULL').bind(c.me.id,current.date).first<any>();if(raw){const stop=decodeJourney(raw);if(canReadJourney(stop,c)){rolloverStop=stop;const guard=journeyGuard(c,stop);permission.sql+=' AND '+guard.sql+' AND EXISTS (SELECT 1 FROM crm_journey_stops WHERE id=? AND version=?)';permission.args.push(...guard.args,stop.id,stop.version);}}}
+  if(current&&!historical&&current.date<requestedDate){const raw=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE member_id=? AND date=? AND closed_at IS NULL').bind(c.me.id,current.date).first<JourneyRow>();if(raw){const stop=decodeJourney(raw);if(canReadJourney(stop,c)){rolloverStop=stop;const guard=journeyGuard(c,stop);permission.sql+=' AND '+guard.sql+' AND EXISTS (SELECT 1 FROM crm_journey_stops WHERE id=? AND version=?)';permission.args.push(...guard.args,stop.id,stop.version);}}}
   if(current&&!historical)statements.push(c.db.prepare(`UPDATE crm_mobile_route_days SET ended_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND ended_at IS NULL AND ${permission.sql}`).bind(current.date<requestedDate?trackingWindowEnd(current.date):now,mutation,current.id,current.version,...permission.args));
   // Dependency snapshots and an overlap predicate guard the entire new interval.
   if(current&&!historical){permission.sql+=' AND EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE id=? AND mutation_id=?)';permission.args.push(current.id,mutation);}
@@ -100,7 +100,7 @@ export async function POST(req:Request){try{
  if(action==='gap'&&mobileData(next)===mobileData(day))return response(c,day,now);
  const gate='EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE id=? AND version=? AND mutation_id=?)',args=[day.id,day.version+1,mutation],statements=[];
  let active:JourneyStop|null=capturedStop;
- if(capturedStopId===undefined){const activeRaw=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE member_id=? AND date=? AND (closed_at IS NULL OR closed_at=?) ORDER BY selected_at DESC LIMIT 1').bind(c.me.id,day.date,day.expiresAt).first<any>();active=activeRaw?decodeJourney(activeRaw):null;}
+ if(capturedStopId===undefined){const activeRaw=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE member_id=? AND date=? AND (closed_at IS NULL OR closed_at=?) ORDER BY selected_at DESC LIMIT 1').bind(c.me.id,day.date,day.expiresAt).first<JourneyRow>();active=activeRaw?decodeJourney(activeRaw):null;}
  if(active){
   const g=journeyGuard(c,active);permission.sql+=' AND '+g.sql+' AND EXISTS (SELECT 1 FROM crm_journey_stops WHERE id=? AND version=?)';permission.args.push(...g.args,active.id,active.version);
   const replayable=action==='gap'&&mobileReplayableStop(active)&&at<=active.closedAt!;
