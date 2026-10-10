@@ -5,7 +5,7 @@ import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {riyadhDate} from '@/lib/visits';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
 import {z} from 'zod';
-import {accessGuard,context,checkOrigin,CRMError,replyError} from '@/lib/crm-server';
+import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {schemas,type Member,type Row} from '@/lib/crm';
 import {activeServiceCase,canReadService,isServiceRole,serviceCandidates,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase} from '@/lib/customer-service';
@@ -25,7 +25,7 @@ export async function GET(){try{
  return Response.json({cases,canCreate,customers:canCreate?customerChoices(c).map(r=>({id:r.id,name:r.data.name,code:r.data.code,phone:r.data.phone,region:r.data.region,city:r.data.city,version:r.version})):[]},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
- checkOrigin(req);const body:any=await readJsonBody(req);if(JSON.stringify(body).length>18000)throw new CRMError('حجم البيانات كبير');
+ checkOrigin(req);await requireSession();const body:any=await readJsonBody(req);if(JSON.stringify(body).length>18000)throw new CRMError('حجم البيانات كبير');
  const requestId=z.string().uuid().parse(body.requestId);let action:string=z.enum(['create','edit','approve','return','assign','delegate','note','assist','reply']).parse(body.action);const c=await context(),now=new Date().toISOString();
  const offline=offlineCapture(body,c.me.id,now);if(offline&&(action!=='create'||!body.registration))throw new CRMError('هذا الإجراء يتطلب اتصالًا مباشرًا.');const occurredAt=offline?.capturedAt||now;
  const canonical=JSON.stringify(body),receiptId='service-receipt:'+c.me.id+':'+requestId,mutation=crypto.randomUUID();

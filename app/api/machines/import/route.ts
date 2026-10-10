@@ -3,7 +3,7 @@ import {parseJsonBody} from '@/lib/crm-server';
 import {regionScope} from '@/lib/regions';
 import {env} from 'cloudflare:workers';
 import {z} from 'zod';
-import {database,context,accessGuard,checkOrigin,CRMError,replyError} from '@/lib/crm-server';
+import {database,context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {schemas,type Row} from '@/lib/crm';
 import {machineSourceData,hasMachineSource} from '@/lib/machines';
 export const dynamic='force-dynamic';
@@ -17,7 +17,7 @@ async function access(req:Request,sourceHash:string){
  const c=await context({load:'identity'});if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('الاستيراد متاح لمدير النظام فقط',403);return{db:c.db,actor:c.me.name,permission:accessGuard(c)};
 }
 export async function POST(req:Request){try{
- checkOrigin(req);const text=await readRequestText(req,3000);if(text.length>1000)throw new CRMError('الطلب كبير');
+ checkOrigin(req);await requireSession();const text=await readRequestText(req,3000);if(text.length>1000)throw new CRMError('الطلب كبير');
  const input=z.object({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),afterId:z.string().max(150).default('')}).strict().parse(parseJsonBody(text));
  const {db,actor,permission}=await access(req,input.sourceHash);
  // Read only the authorized stored source. No customer fields are accepted from the caller.
