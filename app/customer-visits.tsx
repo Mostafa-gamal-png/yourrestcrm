@@ -21,6 +21,7 @@ import VisitCustomerPicker from './visit-customer-picker';
 import VisitsTable from './visits-table';
 import {useAutomaticJourney,JourneyFormNotice} from './journey-tracker';
 import './visit-mobile.css';
+import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
 function Pick({ value, onChange, options, label, disabled = false }: {
     value: string;
     onChange: (v: string) => void;
@@ -197,7 +198,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     return <Dialog open onOpenChange={open=>{if(!open)requestLeave();}}>
       <DialogContent showCloseButton={!busy&&!uploading&&!savingCustomer} className="crm-dialog customer-visit-dialog mobile-record-dialog" dir={direction()}
         onOpenAutoFocus={event=>{event.preventDefault();titleRef.current?.focus();}}
-        onEscapeKeyDown={event=>{if(busy||uploading||savingCustomer)event.preventDefault();}}
+        onEscapeKeyDown={event=>{if(busy||uploading||savingCustomer||escapeBelongsToOpenPopup(event))event.preventDefault();}}
         onInteractOutside={event=>{if(busy||uploading||savingCustomer)event.preventDefault();}}>
         <header className="visit-dialog-heading">
           <div className="visit-language"><LanguageSwitch/></div>
