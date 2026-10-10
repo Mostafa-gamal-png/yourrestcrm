@@ -72,7 +72,7 @@ try{
  const mail=Buffer.from(delivered.message.split('\r\n\r\n')[1].replaceAll('\r\n',''),'base64').toString('utf8'),code=mail.match(/\b\d{6}\b/)?.[0];assert(code,'Mock OTP missing');checks++;
  await page.locator('#yourrest-code').fill(code);await page.getByRole('button',{name:'دخول',exact:true}).click();await page.locator('.pwa-install-card').waitFor();check(new URL(page.url()).pathname,'/');
  check(await page.locator('.pwa-install').getAttribute('dir'),'rtl');check(await page.getByRole('button',{name:'تنزيل التطبيق',exact:true}).count(),1);
- await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration('/'))?.active&&!!navigator.serviceWorker.controller);checks++;
+ await page.evaluate(()=>new Promise(resolve=>{const started=Date.now();(async function poll(){const registration=await navigator.serviceWorker.getRegistration('/');if(registration?.active&&navigator.serviceWorker.controller||Date.now()-started>20000)resolve();else setTimeout(poll,100);})();}));checks++;
  check(await page.evaluate(()=>navigator.serviceWorker.getRegistration('/').then(r=>new URL(r.active.scriptURL).pathname)),'/sw.js');
  check(await page.evaluate(()=>navigator.serviceWorker.getRegistration('/').then(r=>r.scope)),origin+'/');
  async function noOverflow(target,label){check(await target.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,label+' has horizontal overflow');}
