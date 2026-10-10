@@ -1,0 +1,56 @@
+{
+  "passed": true,
+  "feature": "ERP report incomplete employee documents handled without blocking ready invoices",
+  "date": "2026-10-03",
+  "checks": {
+    "typescript": "pass",
+    "componentHooks": 42,
+    "kpiIntegration": 19,
+    "builtHttp": 352,
+    "backend": 367
+  },
+  "sourceWorkbook": {
+    "name": "Reports_Invoices_14480422_171212.xlsx",
+    "sha256": "0e4bf5da086d2662bf3adb8f6e9a0c0f7ef7462b0e75c7cb1d9ec3092cfadf8b",
+    "modified": false
+  },
+  "behavior": [
+    "Missing name or employee ID: transparent unassigned count and raw signed net; automatically not imported",
+    "No invoice/mapping/KPI writes for unassigned documents",
+    "Mixed invoice identity conflicts still block confirmation",
+    "Real unmapped employees/categories and access failures still require review",
+    "Mappings only relevant to non-automatically-skipped documents shown",
+    "Dirty preview can refresh using fixed footer action",
+    "Duplicate prevention and same-request retries preserved"
+  ],
+  "noDatabaseMigration": true,
+  "productionDataUsedInTests": false,
+  "authenticatedProductionImportTested": false,
+  "physicalPhoneTested": false,
+  "clientEntry": "index-C28iJ3Zu.js",
+  "android": {
+    "unchanged": true,
+    "version": "1.0.7",
+    "code": 8,
+    "sha256": "75cbcaa4fa4f3bfce9c4c0122898c8e590cdfa05392e4b8c99c741e342b82d83"
+  },
+  "actualWorkbookTest": {
+    "rows": 96,
+    "eligibleDocuments": 35,
+    "officeExcludedDocuments": 24,
+    "unassignedDocuments": 1,
+    "unassignedReference": "INV-270",
+    "unassignedRows": 4,
+    "unassignedTotalCents": 35720000,
+    "eligibleTotalCents": 38700000,
+    "months": [
+      "2026-08",
+      "2026-09",
+      "2026-10"
+    ],
+    "usesSyntheticTestCategoryMappings": true,
+    "productionCategoryMappingsInferred": false,
+    "isolatedDatabase": true,
+    "unassignedSalesMappingsAndKpiWrites": 0
+  }
+}

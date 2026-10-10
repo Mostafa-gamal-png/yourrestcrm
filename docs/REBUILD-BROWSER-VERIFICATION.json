@@ -1,0 +1,643 @@
+{
+  "verified_at_utc": "2026-10-01T15:55:50.972284+00:00",
+  "status": "passed_with_explicit_runtime_limits",
+  "test_file": "tests/app-browser-workflows.mjs",
+  "build": {
+    "release_tree_sha256": "3d59d12c91afd06a35b8519b89097bd33d8215e35b4b3f515c7c39cefe8c15cb",
+    "algorithm": "SHA256 of sorted relative path + NUL + per-file SHA256 + newline, excluding node_modules",
+    "release_files": 164,
+    "server_sha256": "861833a02e8e19ae827985f7526ef059c8986e8dce327790553aea7f36a9fca5"
+  },
+  "build_unchanged_during_verification": true,
+  "environment": {
+    "execution": "Local production build served over isolated HTTPS",
+    "browser": "Official Debian Chromium content shell 150.0.7871.100, CDP through Playwright",
+    "storage": "Temporary isolated SQLite with all application migrations",
+    "email": "Local mock sendmail captures authentication codes; no messages are delivered externally",
+    "data": "Synthetic QA factories and accounts only",
+    "fixture_hostname_routed_to_localhost": true,
+    "geolocation": "Chromium controlled coordinates and permission granted/denied states",
+    "clock": "Progressing client clock initialized to 13:00 Asia/Riyadh for route-window branch; server clock unchanged",
+    "map_tiles": "OpenStreetMap tile failure deliberately injected",
+    "route_failure": "Journey POST deliberately delayed 2500 ms then returns503",
+    "popup": "Explicitly simulated browser popup-blocked state (window.open returns null) only in content-shell Maps scenario"
+  },
+  "passed_workflows": [
+    "Fresh sign-in through real authentication UI and mock email, followed by session reload",
+    "Admin user activation through actual permissions form; newly activated account signs in",
+    "Representative bottom navigation, western customer scope, own activity visibility and server denial of management endpoints",
+    "Customer phone search and actual customer creation; SQLite confirms rep assignment and inherited western region",
+    "Visit customer selection, purpose and result, automatic controlled browser location and actual save; SQLite confirms precise coordinates and next action",
+    "Denied browser location blocks visit save; grant and retry succeed without reopening",
+    "Follow-up execution originates from previous visit; actual saved follow-up retains sourceId",
+    "Combined targets/performance page, actual manager target edit, invoice save and KPI review save; SQLite confirms invoice total and selected rep",
+    "Manager regional API payload excludes eastern rep; supervisor and manager targets are computed from their hierarchy",
+    "Actual Arabic and English installation-help fallback UI after authentication",
+    "All ten permitted administrator pages at360 px with no browser page errors or horizontal overflow",
+    "Customer, visit and follow-up fullscreen dialogs in Arabic and English at320/360/412 px",
+    "Post-input visit and follow-up inner scrolling keeps heading and save footer in360×800 viewport and outer dialog scrollTop0",
+    "Maps search selects correct factory; actual app tap requests canonical driving URL immediately in original user gesture, exposes same fallback href, and separately reports injected tracking failure"
+  ],
+  "results": {
+    "ok": true,
+    "checks": 192,
+    "browser": "Chromium content shell 150",
+    "actual_built_release": true,
+    "injected_dialog_fix": false,
+    "dialog_geometry": [
+      {
+        "label": "Rep Add customer 360 ar",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep visit 360 ar",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep follow-up 360 ar",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep Add customer ar 320",
+        "viewport": {
+          "width": 320,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 800,
+          "top": 0,
+          "right": 320,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep Add customer ar 360",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep Add customer ar 412",
+        "viewport": {
+          "width": 412,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 412,
+          "height": 800,
+          "top": 0,
+          "right": 412,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep Add customer en 320",
+        "viewport": {
+          "width": 320,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 800,
+          "top": 0,
+          "right": 320,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep Add customer en 360",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep Add customer en 412",
+        "viewport": {
+          "width": 412,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 412,
+          "height": 800,
+          "top": 0,
+          "right": 412,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep visit ar 320",
+        "viewport": {
+          "width": 320,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 800,
+          "top": 0,
+          "right": 320,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep visit ar 360",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep visit ar 412",
+        "viewport": {
+          "width": 412,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 412,
+          "height": 800,
+          "top": 0,
+          "right": 412,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep visit en 320",
+        "viewport": {
+          "width": 320,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 800,
+          "top": 0,
+          "right": 320,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep visit en 360",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep visit en 412",
+        "viewport": {
+          "width": 412,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 412,
+          "height": 800,
+          "top": 0,
+          "right": 412,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep follow-up ar 320",
+        "viewport": {
+          "width": 320,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 800,
+          "top": 0,
+          "right": 320,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep follow-up ar 360",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep follow-up ar 412",
+        "viewport": {
+          "width": 412,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 412,
+          "height": 800,
+          "top": 0,
+          "right": 412,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "rtl"
+      },
+      {
+        "label": "Rep follow-up en 320",
+        "viewport": {
+          "width": 320,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 800,
+          "top": 0,
+          "right": 320,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep follow-up en 360",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 800,
+          "top": 0,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      },
+      {
+        "label": "Rep follow-up en 412",
+        "viewport": {
+          "width": 412,
+          "height": 800
+        },
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 412,
+          "height": 800,
+          "top": 0,
+          "right": 412,
+          "bottom": 800,
+          "left": 0
+        },
+        "direction": "ltr"
+      }
+    ],
+    "dialog_scroll_layout": [
+      {
+        "label": "rep-visit",
+        "position": "top",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "dialogScrollTop": 0,
+        "heading": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 79.1875,
+          "top": 0,
+          "right": 360,
+          "bottom": 79.1875,
+          "left": 0
+        },
+        "footer": {
+          "x": 0,
+          "y": 731,
+          "width": 360,
+          "height": 69,
+          "top": 731,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "customer": {
+          "x": 31,
+          "y": 144.1875,
+          "width": 313,
+          "height": 82.5,
+          "top": 144.1875,
+          "right": 344,
+          "bottom": 226.6875,
+          "left": 31
+        },
+        "inner": {
+          "scrollTop": 0,
+          "clientHeight": 652,
+          "scrollHeight": 1371
+        }
+      },
+      {
+        "label": "rep-visit",
+        "position": "bottom",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "dialogScrollTop": 0,
+        "heading": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 79.1875,
+          "top": 0,
+          "right": 360,
+          "bottom": 79.1875,
+          "left": 0
+        },
+        "footer": {
+          "x": 0,
+          "y": 731,
+          "width": 360,
+          "height": 69,
+          "top": 731,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "customer": {
+          "x": 31,
+          "y": -574.8125,
+          "width": 313,
+          "height": 82.5,
+          "top": -574.8125,
+          "right": 344,
+          "bottom": -492.3125,
+          "left": 31
+        },
+        "inner": {
+          "scrollTop": 719,
+          "clientHeight": 652,
+          "scrollHeight": 1371
+        }
+      },
+      {
+        "label": "rep-followup",
+        "position": "top",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "dialogScrollTop": 0,
+        "heading": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 79.1875,
+          "top": 0,
+          "right": 360,
+          "bottom": 79.1875,
+          "left": 0
+        },
+        "footer": {
+          "x": 0,
+          "y": 731,
+          "width": 360,
+          "height": 69,
+          "top": 731,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "inner": {
+          "scrollTop": 0,
+          "clientHeight": 652,
+          "scrollHeight": 883
+        }
+      },
+      {
+        "label": "rep-followup",
+        "position": "bottom",
+        "viewport": {
+          "width": 360,
+          "height": 800
+        },
+        "dialogScrollTop": 0,
+        "heading": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 79.1875,
+          "top": 0,
+          "right": 360,
+          "bottom": 79.1875,
+          "left": 0
+        },
+        "footer": {
+          "x": 0,
+          "y": 731,
+          "width": 360,
+          "height": 69,
+          "top": 731,
+          "right": 360,
+          "bottom": 800,
+          "left": 0
+        },
+        "inner": {
+          "scrollTop": 231,
+          "clientHeight": 652,
+          "scrollHeight": 883
+        }
+      }
+    ],
+    "real_sqlite": true,
+    "real_auth_with_mock_mail": true,
+    "actual_install_fallback_ui_tested": true,
+    "real_https_service_worker_tested": false,
+    "controlled_browser_geolocation": true,
+    "controlled_rep_daytime_clock": true,
+    "recorded_maps_destination_requests": 0,
+    "maps_handoff_calls": [
+      {
+        "url": "https://www.google.com/maps/dir/?api=1&destination=21.5%2C39.2&travelmode=driving&dir_action=navigate",
+        "target": "_blank",
+        "at": 28297,
+        "userActivation": true
+      }
+    ],
+    "simulated_popup_blocked": true,
+    "actual_popup_opened": false,
+    "external_google_maps_application_tested": false,
+    "physical_device_tested": false,
+    "background_tracking_tested": false,
+    "real_hosting_tested": false,
+    "production_data_used": false,
+    "screenshots": [
+      "docs/rebuild-browser-screenshots/install-help-ar.png",
+      "docs/rebuild-browser-screenshots/install-help-en.png",
+      "docs/rebuild-browser-screenshots/rep-visit-form.png",
+      "docs/rebuild-browser-screenshots/rep-visit-form-next-step.png",
+      "docs/rebuild-browser-screenshots/rep-followup-form.png",
+      "docs/rebuild-browser-screenshots/rep-followup-form-next-step.png",
+      "docs/rebuild-browser-screenshots/rep-map-directions.png",
+      "docs/rebuild-browser-screenshots/rep-own-targets.png",
+      "docs/rebuild-browser-screenshots/manager-performance.png",
+      "docs/rebuild-browser-screenshots/admin-customer.png",
+      "docs/rebuild-browser-screenshots/admin-map.png",
+      "docs/rebuild-browser-screenshots/admin-activity.png",
+      "docs/rebuild-browser-screenshots/admin-followup.png",
+      "docs/rebuild-browser-screenshots/admin-targets.png",
+      "docs/rebuild-browser-screenshots/admin-dashboard.png",
+      "docs/rebuild-browser-screenshots/admin-journeys.png",
+      "docs/rebuild-browser-screenshots/admin-quote.png",
+      "docs/rebuild-browser-screenshots/admin-sales.png",
+      "docs/rebuild-browser-screenshots/admin-team.png"
+    ]
+  },
+  "runtime_limits": {
+    "actual_popup_or_google_maps_application": "Unverified: content-shell closes even on independent bare HTML button using window.open. Standard Chromium cannot start its profile singleton because local AF_UNIX socket is denied. The real CRM popup-blocked recovery branch and canonical destination were verified with the explicitly simulated block.",
+    "service_worker": "Additional tests/pwa-browser.mjs run blocked at navigator.serviceWorker.getRegistrations with Resulting promise was garbage collected in this embedder. No service-worker success, offline-cache behavior or actual installation is claimed by this browser report.",
+    "physical_device_and_background": "Actual Android/iPhone location permissions, installed app, Google Maps Intent handoff, locked-screen collection and battery behavior require device verification.",
+    "production_hosting": "Namecheap deployment, live email delivery and production customer data were not exercised."
+  },
+  "visual_inspection": {
+    "viewport_images_reviewed": [
+      "docs/rebuild-browser-screenshots/rep-visit-form.png",
+      "docs/rebuild-browser-screenshots/rep-visit-form-next-step.png",
+      "docs/rebuild-browser-screenshots/rep-map-directions.png"
+    ],
+    "note": "The initial full-page dialog image was misleading because a prior success toast covered the heading and the inner form was scrolled. Final viewport-only captures wait for toast dismissal and explicit scroll geometry assertions pass."
+  }
+}

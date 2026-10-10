@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "يورست للصناعات | Yourrest CRM",
+  "short_name": "Yourrest CRM",
+  "description": "إدارة العملاء والزيارات والمبيعات في يورست للصناعات",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6fa",
+  "theme_color": "#30328c",
+  "icons": [
+    { "src": "/icons/yourrest-company-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/yourrest-company-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/yourrest-company-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/yourrest-company-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

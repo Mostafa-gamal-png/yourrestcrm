@@ -1,0 +1,104 @@
+/* Local visit/follow-up forms: one scroll area with a reachable save action. */
+.crm-dialog.mobile-record-dialog{display:flex;flex-direction:column;gap:0;overflow:hidden;padding:0!important;max-height:92dvh;min-width:0;background:var(--card)}
+.mobile-record-dialog .visit-dialog-heading{position:relative;flex-shrink:0;padding:20px 24px 14px;border-bottom:1px solid var(--border)}
+.mobile-record-dialog .visit-dialog-heading [data-slot=dialog-title]{padding-inline-end:88px;padding-left:0;outline:none;font-size:21px}
+.mobile-record-dialog .visit-dialog-heading [data-slot=dialog-description]{margin:5px 0 0;line-height:1.65;padding-inline-end:22px}
+.mobile-record-dialog .visit-language{position:absolute;top:20px;inset-inline-end:56px;margin:0;z-index:1}
+.crm-dialog.mobile-record-dialog>[data-slot=dialog-close]{top:12px;left:auto;right:auto;inset-inline-start:auto;inset-inline-end:10px;width:44px;height:44px;display:grid;place-items:center;border-radius:10px}
+.mobile-record-dialog .visit-entry-form{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.mobile-record-dialog .visit-form-scroll{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;min-height:0;min-width:0;padding:18px 24px;scroll-padding-block:16px;-webkit-overflow-scrolling:touch}
+.mobile-record-dialog .visit-form-fields{min-width:0}
+.mobile-record-dialog .visit-form-section{padding-block:16px 2px;border-bottom:1px solid var(--border)}
+.mobile-record-dialog .visit-form-section>h3{font-size:15px;margin:0 0 12px;font-weight:700}
+.mobile-record-dialog .form-grid{gap:14px;margin:0 0 16px;min-width:0}
+.mobile-record-dialog .field{min-width:0}
+.mobile-record-dialog .field>span,.mobile-record-dialog .visit-date-field>label>span{font-size:13px;font-weight:600;line-height:1.6}
+.mobile-record-dialog input:not([type=checkbox]):not([type=radio]),.mobile-record-dialog textarea{font-size:16px;min-height:46px;max-width:100%;scroll-margin-block:24px}
+.mobile-record-dialog .pick{font-size:16px!important;min-height:46px;height:auto!important;min-width:0;white-space:normal;text-align:start;line-height:1.5;padding-block:10px}
+.mobile-record-dialog .pick>[data-slot=select-value]{overflow-wrap:anywhere;min-width:0}
+.mobile-record-dialog .voice-button{width:44px;min-width:44px;min-height:44px}
+.mobile-record-dialog .voice-field>div{min-width:0}
+.mobile-record-dialog .btn,.mobile-record-dialog .icon-button,.mobile-record-dialog .text-button{min-height:44px}
+.mobile-record-dialog .icon-button{min-width:44px}
+.mobile-record-dialog .visit-save-bar{flex-shrink:0;border-top:1px solid var(--border);padding:12px 24px;background:var(--card);box-shadow:0 -6px 20px #11182705}
+.mobile-record-dialog .visit-save-bar .form-footer{margin:0;padding:0;border:0;gap:10px;align-items:stretch}
+.mobile-record-dialog .visit-save-bar .btn{min-height:48px}
+.mobile-record-dialog .visit-save-bar .btn.primary{min-width:170px}
+.mobile-record-dialog .visit-save-bar .form-error{margin:0 0 10px;max-height:104px;overflow:auto;font-size:13px}
+.mobile-record-dialog .visit-save-hint{font-size:12px;color:var(--muted-foreground);margin:0 0 8px}
+.mobile-record-dialog .visit-discard-prompt p{font-size:14px;line-height:1.7;margin-bottom:10px}
+.mobile-record-dialog .visit-discard-prompt>div{display:flex;gap:8px;flex-wrap:wrap}
+.mobile-record-dialog .visit-selected-summary{display:flex;align-items:center;gap:10px;min-width:0;padding:12px 0 10px}
+.mobile-record-dialog .visit-selected-summary>svg{color:var(--primary);flex-shrink:0}
+.mobile-record-dialog .visit-selected-summary>div{flex:1;min-width:0}
+.mobile-record-dialog .visit-selected-summary strong{display:block;font-size:15px;line-height:1.7;overflow-wrap:anywhere}
+.mobile-record-dialog .visit-selected-summary small{display:block;font-size:12px;color:var(--muted-foreground)}
+.mobile-record-dialog .visit-selected-summary .btn{padding-inline:10px;flex-shrink:0;font-size:12px}
+.mobile-record-dialog .visit-context-disclosures{display:flex;flex-wrap:wrap;gap:0 18px;border-bottom:1px solid var(--border)}
+.mobile-record-dialog .visit-context-details{min-width:0;font-size:13px}
+.mobile-record-dialog .visit-context-details[open]{width:100%}
+.mobile-record-dialog .visit-context-details>summary{cursor:pointer;min-height:44px;align-content:center;color:var(--primary);font-weight:600;list-style:revert;line-height:1.6}
+.mobile-record-dialog .visit-context-details>summary svg{display:inline;vertical-align:middle;margin-inline:4px}
+.mobile-record-dialog .visit-context-details>summary bdi{font-size:12px;color:var(--muted-foreground);margin-inline-start:6px}
+.mobile-record-dialog .visit-context-body{padding:4px 0 14px;overflow-wrap:anywhere}
+.mobile-record-dialog .visit-context-body .customer-visit-history{margin:0;border:0;padding:0}
+.mobile-record-dialog .visit-context-body .customer-card-grid{margin:0 0 8px}
+.mobile-record-dialog .visit-context-body .visit-history-timeline{max-height:340px;overflow:auto;overscroll-behavior:contain}
+.mobile-record-dialog .followup-source-summary{border-bottom:1px solid var(--border)}
+.mobile-record-dialog .visit-sales-details{border:1px solid var(--border);border-radius:12px;margin-top:16px;overflow:hidden}
+.mobile-record-dialog .visit-sales-details>summary{cursor:pointer;padding:12px 14px;min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;font-weight:600;list-style:none}
+.mobile-record-dialog .visit-sales-details>summary::-webkit-details-marker{display:none}
+.mobile-record-dialog .visit-sales-details>summary:before{content:'+';font-size:20px;line-height:1;color:var(--primary);font-weight:400;flex-shrink:0}
+.mobile-record-dialog .visit-sales-details[open]>summary:before{content:'−'}
+.mobile-record-dialog .visit-sales-details>summary>span:first-of-type{flex:1;min-width:0}
+.mobile-record-dialog .visit-sales-details>summary small{display:block;font-size:11px;color:var(--muted-foreground);font-weight:400;margin-top:2px}
+.mobile-record-dialog .visit-sales-details>summary .badge{font-size:11px;white-space:normal;text-align:center;max-width:120px}
+.mobile-record-dialog .visit-extended-fields{padding:8px 14px 14px;margin-bottom:0}
+.mobile-record-dialog .requested-products{padding:10px;min-width:0}
+.mobile-record-dialog .requested-products>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.mobile-record-dialog .requested-products label{display:flex;align-items:center;min-height:46px;padding:8px;font-size:13px;gap:9px;cursor:pointer;line-height:1.65}
+.mobile-record-dialog .requested-products label:has(input:checked){background:var(--accent);border-radius:8px;color:var(--primary)}
+.mobile-record-dialog .requested-products input{width:19px;height:19px;min-width:19px;accent-color:var(--primary)}
+.mobile-record-dialog .visit-competitor-toggle{min-height:48px}
+.mobile-record-dialog .visit-competitor-toggle label{flex:1;align-content:center;min-height:44px;cursor:pointer}
+.mobile-record-dialog .visit-compact-location{display:block;margin:0;padding:8px 10px;border:0;border-radius:8px;background:var(--muted);font-size:12px}
+.mobile-record-dialog .visit-compact-location .location-status{margin:0;font-size:12px}
+.mobile-record-dialog .visit-compact-location .location-status>span{display:flex;align-items:center;gap:6px}
+.mobile-record-dialog .visit-compact-location p{margin-top:8px;line-height:1.7;color:var(--destructive)}
+.mobile-record-dialog .visit-location-details{margin-top:2px}
+.mobile-record-dialog .visit-location-details>summary{min-height:36px;align-content:center;cursor:pointer;color:var(--muted-foreground)}
+.mobile-record-dialog .visit-location-details input{font-size:14px!important}
+.mobile-record-dialog .visit-date-field>label{display:flex;flex-direction:column;gap:7px}
+.mobile-record-dialog .visit-date-shortcuts{display:flex;gap:6px;flex-wrap:wrap}
+.mobile-record-dialog .visit-date-shortcuts button{flex:1;min-height:44px;padding:6px 8px;border:1px solid var(--border);background:var(--card);border-radius:8px;font-size:12px;line-height:1.4;white-space:nowrap}
+.mobile-record-dialog .visit-date-shortcuts button[aria-pressed=true]{border-color:var(--primary);background:var(--accent);color:var(--primary);font-weight:700}
+.mobile-record-dialog .competitor-file input{font-size:13px!important}
+.mobile-record-dialog .competitor-file a{overflow-wrap:anywhere}
+.mobile-record-dialog summary:focus-visible{outline:2px solid var(--primary);outline-offset:-3px;border-radius:8px}
+@media(max-width:640px){
+ /* Tailwind uses individual translate via these variables. Build-time CSS
+    lowering can turn translate:none into transform only, so reset both. */
+ .crm-dialog.mobile-record-dialog{inset:0!important;--tw-translate-x:0!important;--tw-translate-y:0!important;transform:none!important;translate:none!important;width:100%!important;max-width:none!important;height:100dvh;max-height:100dvh;border-radius:0!important;border:0;animation:none!important}
+ .mobile-record-dialog .visit-dialog-heading{padding:calc(12px + env(safe-area-inset-top)) 16px 10px}
+ .mobile-record-dialog .visit-dialog-heading [data-slot=dialog-title]{font-size:20px;padding-inline-end:94px}
+ .mobile-record-dialog .visit-dialog-heading [data-slot=dialog-description]{font-size:12px;line-height:1.6;padding:0}
+ .mobile-record-dialog .visit-language{top:calc(12px + env(safe-area-inset-top));inset-inline-end:58px}
+ .crm-dialog.mobile-record-dialog>[data-slot=dialog-close]{top:calc(7px + env(safe-area-inset-top));left:auto;right:auto;inset-inline-start:auto;inset-inline-end:8px}
+ .mobile-record-dialog .visit-entry-form{flex:1}
+ .mobile-record-dialog .visit-form-scroll{flex:1;padding:12px 16px 20px}
+ .mobile-record-dialog .visit-save-bar{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+ .mobile-record-dialog .visit-save-bar .btn.primary{flex:1;min-width:0;font-size:15px}
+ .mobile-record-dialog .visit-save-bar .btn.subtle{min-width:68px}
+ .mobile-record-dialog .visit-discard-prompt>div{display:grid;grid-template-columns:1fr 1fr}
+ .mobile-record-dialog .visit-discard-prompt .btn{font-size:13px;padding-inline:8px;white-space:normal}
+ .mobile-record-dialog .form-grid{grid-template-columns:minmax(0,1fr);gap:14px}
+ .mobile-record-dialog .visit-form-section>h3{font-size:14px}
+ .mobile-record-dialog .visit-selected-summary strong{font-size:14px}
+ .mobile-record-dialog .visit-selected-summary{gap:8px}
+ .mobile-record-dialog .visit-selected-summary>svg{display:none}
+ .mobile-record-dialog .requested-products>div{grid-template-columns:minmax(0,1fr)}
+ .mobile-record-dialog .visit-context-body .customer-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .mobile-record-dialog .followup-detail-grid{grid-template-columns:minmax(0,1fr)}
+ .mobile-record-dialog .visit-sales-details>summary .badge{max-width:92px}
+}
+@media(prefers-reduced-motion:reduce){.mobile-record-dialog *{scroll-behavior:auto!important}}

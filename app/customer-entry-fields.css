@@ -1,0 +1,22 @@
+.customer-choice-field{min-width:0;margin:0;padding:0;border:0}
+.customer-choice-field>legend{font-size:14px;font-weight:500;margin-bottom:8px}
+.customer-choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.customer-choice{position:relative;min-width:0;cursor:pointer;display:flex}
+.customer-choice>input[type=radio]{position:absolute;opacity:0;width:1px!important;height:1px!important;min-height:0!important;margin:0;inset-inline-start:12px;top:22px}
+.customer-choice>span{display:flex;align-items:center;justify-content:center;flex:1;min-width:0;min-height:46px;padding:8px 6px;border:1px solid var(--border);border-radius:10px;background:var(--background);font-size:14px;line-height:1.5;text-align:center;overflow-wrap:anywhere}
+.customer-choice>input:checked+span{color:var(--primary);border-color:var(--primary);background:color-mix(in srgb,var(--primary) 10%,var(--background));font-weight:600}
+.customer-choice>input:focus-visible+span{outline:2px solid var(--ring,var(--primary));outline-offset:2px}
+.customer-choice-field:disabled .customer-choice{cursor:default}
+.customer-choice-field:disabled .customer-choice>input:not(:checked)+span{opacity:.55}
+.customer-choice-field>small{display:block;color:var(--muted-foreground);font-size:12px;line-height:1.6;margin-top:6px}
+.customer-auto-location{min-width:0;border:1px solid var(--border);border-radius:12px;padding:12px}
+.customer-auto-location-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.customer-auto-location-heading>span{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600}
+.customer-auto-location-heading>button{min-height:44px;flex-shrink:0}
+.customer-auto-location .form-grid{margin:0;gap:12px}
+.customer-auto-location input{min-width:0;width:100%;min-height:48px;font-size:16px}
+.customer-auto-location input[readonly]{background:var(--muted);color:var(--muted-foreground)}
+.customer-auto-location .customer-location-status,.customer-auto-location .customer-location-error{display:flex;align-items:center;gap:6px;margin:8px 0 0;font-size:12px;line-height:1.7;color:var(--muted-foreground);overflow-wrap:anywhere}
+.customer-auto-location .customer-location-error{color:#b44259}
+.customer-auto-location .customer-location-status>svg{flex-shrink:0}
+@media(max-width:600px){.customer-auto-location>.form-grid{grid-template-columns:minmax(0,1fr)}.customer-auto-location-heading{gap:6px}}

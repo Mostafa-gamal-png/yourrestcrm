@@ -1,0 +1,215 @@
+{
+  "date": "2026-10-04",
+  "application": "Yourrest CRM",
+  "status": "IMPLEMENTED_AND_LOCALLY_VERIFIED_READY_TO_DEPLOY",
+  "supersedesAudit": "TARGETS-PERFORMANCE-AUDIT.json (earlier version39 audit retained as history)",
+  "implementedIndicators": [
+    {
+      "id": "collection",
+      "weight": 20,
+      "calculation": "Collected / due; exact integer cents and required reference; confirmed zero due/zero collected is not applicable"
+    },
+    {
+      "id": "recovered",
+      "weight": 5,
+      "calculation": "Positive-net current-month buyers with older purchase evidence and no buying in the previous three full months / effective rep recovery target"
+    },
+    {
+      "id": "retention",
+      "weight": 5,
+      "calculation": "Prior-three-month buyers buying in the selected month / prior-three-month buyers"
+    },
+    {
+      "id": "orders",
+      "weight": 3,
+      "calculation": "Distinct assigned current-month issued quotes explicitly linked to eligible confirmed invoices / confirmed complete list of assigned quotes"
+    }
+  ],
+  "dataWorkflow": [
+    "Management selects month and rep then KPI evidence; saves due/collected and references",
+    "Confirm complete sales/returns for month and prior three months, with older customer purchases needed to identify recovery",
+    "Explicit quote-to-invoice assignments; same customer and rep, eligible positive nonreturn invoice, date bounds",
+    "Targets carry forward until changed; per-period actual evidence is distinct from persistent targets",
+    "Management conduct and record-quality assessment remain the existing input workflow"
+  ],
+  "calculations": {
+    "operationalIndicators": 18,
+    "totalDefinedWeights": 100,
+    "missingIndicatorsNowImplementedWeight": 33,
+    "missingData": "Remains incomplete; not replaced with invented zero",
+    "notApplicable": "Known zero denominator or zero-target product excluded from applicable weight; resolved indicator remains explicit N/A",
+    "overallScore": "Only when all indicators are resolved; earned points / applicable weight *100; all-N/A remains null",
+    "repTeamRollups": "Collection totals, deduplicated purchase cohorts and explicit quote assignments aggregate over authorized rep sources",
+    "returns": "Signed quantities/amounts; return-only activity is not a new purchase",
+    "historyIdentity": "CRM and ERP use verified unique customer codes; ambiguous/missing identities block customer-history completeness",
+    "freshness": "Source revision, identity scope and period cutoff are verified; relevant sales/quote/customer-code changes require completeness review"
+  },
+  "permissions": {
+    "writeEvidence": [
+      "admin",
+      "manager"
+    ],
+    "supervisor": "Read only for authorized team",
+    "rep": "Existing read-only own targets; management evidence endpoint denied",
+    "inactiveHistoricalReps": "Authorized management may complete evidence/assessments without activating account",
+    "commitChecks": [
+      "role",
+      "region",
+      "team",
+      "source snapshots",
+      "sales revision",
+      "global evidence revision",
+      "per-record version"
+    ],
+    "integrity": [
+      "transaction rollback",
+      "exact retry idempotence",
+      "duplicate quote/invoice assignment prevention",
+      "bounded requests",
+      "hidden existing assignment retention without authorizing new hidden links"
+    ]
+  },
+  "verification": {
+    "typescript": "pass",
+    "productionBuild": "pass",
+    "automatedChecks": {
+      "completeKpiDomain": 66,
+      "kpiEvidenceSQLiteServer": 300,
+      "completeKpiIntegration": 106,
+      "kpiEvidenceEditorUi": 162,
+      "kpiPerformanceEvidenceUi": 77,
+      "targetsPerformanceSummaryUi": 102,
+      "combinedTargetsPerformanceUi": 104,
+      "persistentTargetCarryForward": 93,
+      "erpKpiIntegration": 19,
+      "salesRoleScope": 159,
+      "databaseMigration": 39
+    },
+    "automatedCheckCount": 1227,
+    "migration": "13-to14 actual private SQLite upgrade; verified backup; all preexisting table rows/settings preserved; integrity; idempotent restart",
+    "browser": {
+      "ok": true,
+      "checks": 87,
+      "workflowPassed": true,
+      "actualBuiltRelease": true,
+      "realAuthMockEmail": true,
+      "realSqlite": true,
+      "syntheticFixture": true,
+      "productionDatabaseUsed": false,
+      "realEmailSent": false,
+      "physicalDeviceTested": false,
+      "deployedToNamecheap": false,
+      "features": [
+        "actual admin OTP login",
+        "mobile navigation and rep selection",
+        "collection exact cents",
+        "complete sales-history attestation",
+        "explicit quote and invoice assignment",
+        "HTTP save confirmation",
+        "database persistence and browser reload",
+        "KPI recalculation",
+        "supervisor read-only evidence",
+        "AR/EN mobile and desktop geometry"
+      ],
+      "geometry": [
+        {
+          "label": "kpi-evidence-mobile-ar",
+          "width": 360,
+          "height": 800,
+          "documentWidth": 360,
+          "overflow": false,
+          "language": "ar"
+        },
+        {
+          "label": "kpi-evidence-quotes-mobile-ar",
+          "width": 360,
+          "height": 800,
+          "documentWidth": 360,
+          "overflow": false,
+          "language": "ar"
+        },
+        {
+          "label": "kpi-evidence-desktop-ar",
+          "width": 1280,
+          "height": 900,
+          "documentWidth": 1280,
+          "overflow": false,
+          "language": "ar"
+        },
+        {
+          "label": "kpi-evidence-desktop-en",
+          "width": 1280,
+          "height": 900,
+          "documentWidth": 1280,
+          "overflow": false,
+          "language": "en"
+        },
+        {
+          "label": "kpi-evidence-mobile-en",
+          "width": 360,
+          "height": 800,
+          "documentWidth": 360,
+          "overflow": false,
+          "language": "en"
+        },
+        {
+          "label": "kpi-evidence-quotes-mobile-en",
+          "width": 360,
+          "height": 800,
+          "documentWidth": 360,
+          "overflow": false,
+          "language": "en"
+        },
+        {
+          "label": "kpi-evidence-supervisor-mobile-ar",
+          "width": 360,
+          "height": 800,
+          "documentWidth": 360,
+          "overflow": false,
+          "language": "ar"
+        }
+      ]
+    },
+    "browserFixes": [
+      "Mobile evidence dialog full-screen translation reset",
+      "English management-assessment button wraps within mobile viewport"
+    ],
+    "totalChecksIncludingBrowser": 1314
+  },
+  "migration": {
+    "newFile": "0013_kpi_evidence.sql",
+    "sha256": "4354f5a03c7dfa61d89b3365446fa8d984ecdea9806f212cf8a955e3ce7bebd0",
+    "previousMigrations": "All13 previous release SQL files are byte-identical to version39; new0013 only"
+  },
+  "deployment": {
+    "deployed": false,
+    "provider": "Namecheap",
+    "productionDatabaseAccessed": false,
+    "newAndroidApk": false,
+    "androidVersion": "1.0.7",
+    "androidVersionCode": 8
+  },
+  "limits": [
+    "Verification uses isolated synthetic local data, not production accounts/data",
+    "Real sales history, collection amounts/references, quote assignments and management assessment must be supplied before corresponding scores become complete",
+    "No new Android build or physical-phone/GPS validation in this change",
+    "ERP importer suite requiring the original unavailable workbook fixture is not claimed; controlled ERP-to-KPI integration passed",
+    "Production capacity/load was not remeasured for this change"
+  ],
+  "sourceSha256": {
+    "lib/kpis.ts": "9ad7b94014c52553264472d9d9aa3915f05321971fca801e63518873e7b060ea",
+    "lib/kpi-evidence.ts": "ab932fabe0062ab3a9ac5b9cc2b5866e7f08541e7e3dc8926a8d1ca43f671775",
+    "lib/kpi-evidence-server.ts": "0102c3756e34c956c1a6b1035d1dab259314380861180c4a87bcd2541b4dd5b9",
+    "lib/kpi-history-server.ts": "521be1d305937de21a6fb1d766da905f6012e85b04de866a9b623ff77bd483e4",
+    "lib/kpis-server.ts": "b211998999e7c27ed347dfa1f9e462ba1863869901f7bf5a236fc3e5673ee8f7",
+    "lib/targets.ts": "f85b5c45e4736735267405644bbaa8d24f03886418a9f3ac2e9caae3209a051d",
+    "app/api/kpi-evidence/route.ts": "11644e27ffc799b5d328ae69e062c0c20f44568f1bc834dbf84106a94434f9f5",
+    "app/api/sales/route.ts": "2c47c3647da06000061e6ce91348c0dc51d157e1741119cc366fd1d8de93d1a6",
+    "app/kpi-evidence-editor.tsx": "ac7586893363d383f5ab85a7bd5232ef5fa178dc48d934b369899ad4340ba43a",
+    "app/kpi-evidence-editor.css": "7457aca460859ee9f0eca820dcd5c89879a3de805658db6bbf2440a6b372eb16",
+    "app/kpi-performance.tsx": "23f3ebc94445e44aa08bed49b2f5d928ff04513c82be634a8f28cbd0815bcaab",
+    "app/targets-performance-summary.tsx": "c8ebbc592627bb3076ea398613a1ac189f22fe76d6f836688c0789ac7b69faf5",
+    "lib/targets-performance-summary.ts": "67bcbae44e68cfa7db88cbd533df399f64d764a96f472b7de40b6184a7e95650",
+    "app/sales-workspace.tsx": "f9534932a3c49381850a07a607972c39174be713f05ef0dd7381089c051e8a58"
+  }
+}

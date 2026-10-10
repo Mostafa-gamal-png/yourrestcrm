@@ -1,0 +1,49 @@
+{
+  "package": "org.yourrest.crm",
+  "versionCode": 6,
+  "versionName": "1.0.5",
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkSha256": "50f1e3be041b33f646b5830daf596c98bb7d760677f2e710d068125e3fc7e952",
+  "apkBytes": 180981,
+  "sourceSha256": "25c1933656e0e56439e18322958329ce2f8db8faf006c373f13554b216986904",
+  "buildConfigSha256": "ed979c3c678f8ad7b2e996edc3ca8cac0a1aaaefb5265b46943f1adb955606f0",
+  "deviceTested": false,
+  "signatureVerified": true,
+  "signatureV2Verified": true,
+  "signatureV3Verified": true,
+  "alignmentVerified": true,
+  "signingCertificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+  "sameSigningCertificateAsPreviousRelease": true,
+  "trackingWindowUnchanged": {
+    "timeZone": "Asia/Riyadh",
+    "start": "06:00",
+    "endExclusive": "18:00"
+  },
+  "mapsLaunch": {
+    "authenticatedBoundTrackerPreflightRetained": true,
+    "explicitNavigationScheme": "google.navigation",
+    "explicitPackage": "com.google.android.apps.maps",
+    "explicitMapsBrowsableCategory": false,
+    "packageVisibilityResolutionPreflight": false,
+    "fixedHttpsFallbackAttempts": 1,
+    "bothHandlersFailureDialog": true,
+    "postPreflightLaunchFailureMarker": "maps_launch_failed:",
+    "trustedMainFrameNonceAsyncHandoff": true,
+    "onlyFixedValidatedDirectionsUrls": true,
+    "generalExternalNavigationRequiresGesture": true,
+    "installedPackageVersionInState": true,
+    "mapsLaunchSupportedCapability": true,
+    "outboxAndGapSemanticsUnchanged": true
+  },
+  "checks": {
+    "mapsLauncher": 120,
+    "tripStartRegression": 169,
+    "routeRules": 37,
+    "continuousPolicy": 4501,
+    "directions": 27,
+    "outbox": 138
+  },
+  "actualPhoneMapsLaunchTested": false,
+  "actualPhoneBackgroundTested": false
+}

@@ -1,0 +1,37 @@
+.crm-desktop-navigation{display:contents}
+.mobile-bottom-navigation{display:none}
+.mobile-profile-trigger{border:1px solid var(--border);width:40px;height:40px;font-family:inherit;font-size:15px}
+.mobile-navigation-sheet{max-height:min(85dvh,740px);overflow-y:auto;overscroll-behavior:contain;border-radius:22px 22px 0 0;padding:10px 20px calc(20px + env(safe-area-inset-bottom));gap:16px!important;max-width:640px;margin-inline:auto;box-shadow:0 -12px 50px #151b3820}
+.mobile-sheet-handle{display:block;width:38px;height:4px;border-radius:99px;background:var(--border);margin:0 auto 2px;flex-shrink:0}
+.mobile-sheet-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.mobile-sheet-heading [data-slot=sheet-title]{font-size:19px;font-weight:700;line-height:1.7}
+.mobile-sheet-heading [data-slot=sheet-description]{font-size:13px;line-height:1.7;color:var(--muted-foreground);margin-top:3px}
+.mobile-overflow-pages{display:grid;gap:6px}
+.mobile-overflow-pages>button{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:10px 13px;border:1px solid transparent;border-radius:10px;background:var(--muted);text-align:start;color:var(--foreground);font-size:14px}
+.mobile-overflow-pages>button.is-active{background:var(--accent);color:var(--primary);border-color:var(--primary);font-weight:700}
+.mobile-menu-chevron{margin-inline-start:auto;color:var(--muted-foreground)}
+[dir=ltr] .mobile-menu-chevron{transform:rotate(180deg)}
+.mobile-account-card{display:flex;align-items:center;gap:12px;padding-top:16px;border-top:1px solid var(--border);min-width:0}
+.mobile-account-card>div{display:grid;min-width:0;gap:2px;overflow-wrap:anywhere}
+.mobile-account-card strong{font-size:15px;font-weight:600}.mobile-account-card small{font-size:12px;color:var(--muted-foreground)}
+.mobile-account-card>div>span{font-family:Arial,sans-serif;font-size:12px;color:var(--muted-foreground);text-align:start}
+.mobile-account-signout{position:relative;display:flex;align-items:center;justify-content:space-between;min-height:46px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;color:var(--destructive)}
+.mobile-account-signout>button{position:absolute;inset:0;width:100%;height:100%;display:flex;align-items:center;justify-content:flex-end;padding-inline:14px;background:transparent;border:0;border-radius:inherit}
+.mobile-account-signout>[role=alert]{position:relative;background:var(--card);max-width:70%;font-size:12px}
+@media(max-width:1023px){
+ .crm-desktop-navigation{display:none!important}
+ .app-shell>.workspace{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+ .mobile-bottom-navigation{position:fixed;inset-inline:0;bottom:0;z-index:30;display:grid;align-items:stretch;gap:2px;padding:7px max(8px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:var(--card);border-top:1px solid var(--border);box-shadow:0 -4px 24px #151b380b;isolation:isolate}
+ .mobile-bottom-navigation[hidden]{display:none}
+ .mobile-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;min-height:56px;padding:0 2px;border:0;border-radius:10px;background:transparent;color:var(--muted-foreground);font-size:11px;line-height:1.4;font-weight:500}
+ .mobile-tab-icon{display:flex;align-items:center;justify-content:center;width:48px;max-width:100%;height:29px;border-radius:10px;transition:background .15s,color .15s}
+ .mobile-tab.is-active{color:var(--primary);font-weight:700}
+ .mobile-tab.is-active .mobile-tab-icon{background:var(--accent)}
+ .mobile-tab-label{max-width:100%;white-space:nowrap}
+ .app-shell .menu-trigger{display:none!important}
+ .app-shell .breadcrumb{gap:8px;min-width:0}.app-shell .breadcrumb>span{display:none}.app-shell .breadcrumb>svg{display:none}.app-shell .breadcrumb strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .app-shell .topbar{padding-inline:16px;gap:10px}.app-shell .topbar-tools{gap:7px}.app-shell .topbar-tools .today{display:none}
+ body:has([data-slot=dialog-content][data-state=open]) .mobile-bottom-navigation,body:has([data-slot=sheet-content][data-state=open]) .mobile-bottom-navigation,body:has([data-slot=alert-dialog-content][data-state=open]) .mobile-bottom-navigation{visibility:hidden;pointer-events:none}
+}
+@media(min-width:1024px){.mobile-navigation-sheet{display:none}}
+@media print{.mobile-bottom-navigation,.mobile-profile-trigger,.mobile-navigation-sheet{display:none!important}.app-shell>.workspace{padding-bottom:0}}

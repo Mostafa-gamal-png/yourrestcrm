@@ -1,0 +1,88 @@
+{
+  "ok": true,
+  "verifiedAt": "2026-10-05T12:11:45.522801+00:00",
+  "feature": "Yourrest representative daily report completion",
+  "checks": 853,
+  "suites": [
+    {
+      "ok": true,
+      "checks": 87,
+      "type": "daily summary, conservative station attribution, offline times, duplicate sessions and evidence limits",
+      "realDevice": false
+    },
+    {
+      "ok": true,
+      "checks": 376,
+      "type": "real SQLite routes and deterministic GPS evidence",
+      "coverage": "arrival/exit confirmation, quality/gaps, replay/idempotency, clocks, result timing, self-only writes, hierarchy/current+snapshot regions, transactional revocation, read-only daily enrichment, offline event attribution, explicit products/competitor evidence and due followup scope/cutoff/supersession",
+      "realDevice": false
+    },
+    {
+      "ok": true,
+      "checks": 296,
+      "type": "actual controlled tracker/hooks and report SSR",
+      "coverage": "automatic selection, quiet healthy tracking, accessible stop control, actionable failure notices, fresh GPS, retries, queue bounds, role revocation, cleanup, report chronology and uncertain duration",
+      "realBrowser": false,
+      "realDevice": false
+    },
+    {
+      "ok": true,
+      "checks": 94,
+      "type": "actual built application in Chromium, isolated SQLite + HTTP",
+      "coverage": [
+        "actual HTTP daily enrichment",
+        "unique/ambiguous/unmatched GPS stops",
+        "saved visits versus observed presence",
+        "selected and automatic map marker details",
+        "explicit products and competitor quotation",
+        "due and overdue follow-up list",
+        "320px/360px and desktop layout",
+        "Arabic and English"
+      ]
+    }
+  ],
+  "typescript": {
+    "passed": true
+  },
+  "build": {
+    "passed": true,
+    "command": "node scripts/build-independent.mjs"
+  },
+  "changes": [
+    "Read-only conservative matching of GPS dwell to visible authorized customers; ambiguous/unknown remain explicit",
+    "Unified summary of first detected movement, latest recorded activity, unique recorded visits/contacts, reliable visit durations and observed movement",
+    "One chronological station timeline; map markers open and focus station details",
+    "Source-author scoped due followups with historical date filtering and safe authorized ancestry",
+    "Explicit products, needs and competitor observations plus protected quotation attachments",
+    "Original offline recording times; duplicate-session/result protection and explicit/inferred GPS gaps"
+  ],
+  "scheduleUnchanged": "06:00 <= Saudi time < 18:00 except Friday",
+  "newDatabaseMigration": false,
+  "newAndroidBuild": false,
+  "deployedToNamecheap": false,
+  "productionDataUsed": false,
+  "physicalDeviceTested": false,
+  "limitations": [
+    "Closed-app, locked-phone, battery and real GPS behavior require a physical company phone acceptance test.",
+    "Proximity never creates a completed visit or business result; ambiguous, outdated or unavailable location evidence stays unresolved.",
+    "Report uses currently saved contact fields; later record edits do not provide a full historical snapshot.",
+    "Browser tests block external network; Leaflet markers/interactions worked but OpenStreetMap tile delivery was not tested."
+  ],
+  "cumulativeIncludes": [
+    "Optional sales need defaults fix",
+    "Journey timing labels and transport-gap fix",
+    "Administrator deletion permissions",
+    "Offline entry and representative customer editing"
+  ],
+  "browserEvidence": "DAILY-REPORT-BROWSER-VERIFICATION.json",
+  "screenshots": [
+    "docs/daily-report-screenshots/daily-report-ar-360-selected.png",
+    "docs/daily-report-screenshots/daily-report-ar-360-automatic.png",
+    "docs/daily-report-screenshots/daily-report-ar-360-pending.png",
+    "docs/daily-report-screenshots/daily-report-ar-320-summary.png",
+    "docs/daily-report-screenshots/daily-report-en-320-summary.png",
+    "docs/daily-report-screenshots/daily-report-en-320-selected.png",
+    "docs/daily-report-screenshots/daily-report-en-desktop-summary.png",
+    "docs/daily-report-screenshots/daily-report-ar-desktop-summary.png"
+  ]
+}

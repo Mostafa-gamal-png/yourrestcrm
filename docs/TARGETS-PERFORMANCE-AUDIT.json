@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-04",
+  "application": "Yourrest CRM",
+  "status": "PARTIALLY_IMPLEMENTED",
+  "reviewScope": "Targets and performance, current source version38 plus corrected negative-net remaining quantity",
+  "working": [
+    "Persistent targets carry forward until explicitly overridden",
+    "Supervisor and manager sales targets aggregate team targets",
+    "ERP quantities and signed returns feed attainment",
+    "Role, region and team access restrictions",
+    "Month/member/branch filters and target-save flow"
+  ],
+  "missingIndicators": [
+    {
+      "id": "collection",
+      "weight": 20,
+      "needs": "Per-representative receivables and collections records, plus calculation integration"
+    },
+    {
+      "id": "recovered",
+      "weight": 5,
+      "needs": "Complete customer purchase history covering previous purchase, three full inactive months, and current-month return to buying, plus calculation integration"
+    },
+    {
+      "id": "retention",
+      "weight": 5,
+      "needs": "Complete customer purchases for current and preceding three months, plus calculation integration"
+    },
+    {
+      "id": "orders",
+      "weight": 3,
+      "needs": "Explicit quotation-to-actual-invoice links, plus calculation integration"
+    }
+  ],
+  "missingWeight": 33,
+  "maximumCurrentlyComputableCoverage": 67,
+  "overallPerformanceScore": "Remains null/incomplete because four indicators are currently hardcoded null and overall score requires all100% of weights. No reweighting or fabricated data was introduced.",
+  "predatesUiNotesCleanup": true,
+  "fixed": {
+    "file": "lib/targets-performance-summary.ts",
+    "issue": "Negative net actual quantity from returns caused manager summary remaining target to display unavailable",
+    "example": {
+      "target": 7,
+      "actual": -2,
+      "remaining": 9
+    },
+    "preserves": [
+      "Missing/nonfinite inputs remain unavailable",
+      "Negative targets remain invalid",
+      "Future months do not invent actual performance"
+    ]
+  },
+  "permissions": {
+    "targetsAndAssessmentsEditors": [
+      "admin",
+      "manager"
+    ],
+    "weightsAndBranchTargetsAlsoRequire": "all-region access",
+    "supervisor": "read-only targets and assessments",
+    "rep": "read-only own targets"
+  },
+  "verification": {
+    "typescript": "pass",
+    "productionBuild": "pass",
+    "targetCarryForward": 93,
+    "ownTargets": 141,
+    "erpKpiIntegration": 19,
+    "roleScope": 159,
+    "summaryUi": 102,
+    "combinedWorkspaceUi": 104,
+    "persistentTargetEditorUi": 45,
+    "personalTargetsUi": 68,
+    "totalChecks": 731
+  },
+  "limits": [
+    "Local tests with controlled/synthetic data; no production login or phone acceptance test in this review",
+    "Original ERP workbook-dependent importer suite not run because workbook fixture is unavailable"
+  ],
+  "deployment": {
+    "deployed": false,
+    "newMigration": false,
+    "newAndroidApk": false
+  }
+}

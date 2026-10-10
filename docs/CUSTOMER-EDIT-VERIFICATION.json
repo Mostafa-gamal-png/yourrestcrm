@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "date": "2026-10-05",
+  "application": "Yourrest CRM",
+  "changes": [
+    "Remove repeated route tracking workspace warning; retain consent/setup and compact tracking status",
+    "Regional rep customer detail editing with assignment and branch protected",
+    "Explicit GPS refresh in existing customer form",
+    "Reload saved customer coordinates into map and directions"
+  ],
+  "tests": {
+    "customer_api_sqlite": 201,
+    "customer_location_ui": 76,
+    "representative_ui": 104,
+    "role_scope_sqlite": 159,
+    "journeys_sqlite": 315,
+    "offline_server_sqlite": 97,
+    "offline_shell": 86,
+    "built_mobile_browser": 14,
+    "typescript": "passed",
+    "independent_build": "passed"
+  },
+  "databaseMigrationAdded": false,
+  "trackingEngineChanged": false,
+  "androidBinaryChanged": false,
+  "deployed": false,
+  "physicalDeviceTested": false,
+  "scope": "Yourrest only",
+  "existingCustomerEditRequiresConnection": true
+}

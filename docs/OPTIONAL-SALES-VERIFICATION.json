@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-05",
+  "deployed": false,
+  "change": "Remove automatic sales-stage, strength and product defaults from new visits; allow blank stage in dependent followups",
+  "tests": {
+    "sqliteCustomerAndVisitChecks": 235,
+    "controlledOfflineFormChecks": 139,
+    "competitorFollowupChecks": 102,
+    "offlineServerChecks": 97,
+    "typecheck": "passed"
+  },
+  "behavior": [
+    "New visits have empty sales stage and strength and no selected products.",
+    "Sales stage and strength can explicitly be cleared with Not specified.",
+    "Saving an ordinary visit does not require a buying need.",
+    "Followups preserve an absent source sales stage rather than defaulting to new.",
+    "Next action and followup date remain required.",
+    "Existing recorded selections are preserved; no historical database cleanup is performed.",
+    "Customer changes clear carried sales selections."
+  ],
+  "migrationAdded": false,
+  "physicalDeviceTested": false,
+  "productionDataModified": false
+}

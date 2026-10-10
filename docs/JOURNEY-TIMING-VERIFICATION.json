@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-05",
+  "change": "Journey visit timing display and transport gap correction",
+  "deployed": false,
+  "physicalDeviceTested": false,
+  "schemaChange": false,
+  "apkChanged": false,
+  "tests": {
+    "journeySqlite": {
+      "ok": true,
+      "checks": 315,
+      "type": "real SQLite routes and deterministic GPS evidence",
+      "coverage": "arrival/exit confirmation, quality/gaps, replay/idempotency, clocks, result timing, self-only writes, hierarchy/current+snapshot regions and transactional revocation",
+      "realDevice": false
+    },
+    "trackerAndReport": {
+      "ok": true,
+      "checks": 266,
+      "type": "actual controlled tracker/hooks and report SSR",
+      "coverage": "automatic selection, quiet healthy tracking, accessible stop control, actionable failure notices, fresh GPS, retries, queue bounds, role revocation, cleanup, report chronology and uncertain duration",
+      "realBrowser": false,
+      "realDevice": false
+    }
+  },
+  "behavior": [
+    "Existing geofence-confirmed arrival/departure continues to update linked visits after result saving.",
+    "Browser offline/hidden events no longer create missing-location evidence by themselves. Real sample gaps and GPS/permission failures remain tracked.",
+    "Confirmed start/end with uncertain continuity displays endpoint elapsed duration explicitly as estimated; stored verified duration and KPI eligibility are unchanged.",
+    "Healthy arrived visits awaiting departure display in progress without premature review notice.",
+    "Old incomplete records are not backfilled with invented timestamps."
+  ],
+  "limitations": [
+    "No live database or production phone tested.",
+    "Closed-app collection depends on installed native app, location permissions and operating-system execution.",
+    "Historical GPS gaps are preserved."
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "package": "org.yourrest.crm",
+  "versionCode": 10,
+  "versionName": "1.0.9",
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkSha256": "fc53e4aae44f78f58e181ded8915d7adbfda310cad238e953d77591eb199835f",
+  "apkBytes": 209653,
+  "sourceSha256": "ae489675f3a91795316e016c177c8c38ff03869d420dc3dfe60a47e0ccbb4293",
+  "buildConfigSha256": "1a314689f978dee1eedaf16711e52a00015819c2d1be0378953f1ba6435a5587",
+  "build": "Standalone OSS AAPT2, javac, D8, apksig; no proprietary SDK",
+  "deviceTested": false,
+  "toolSha256": {
+    "android-all-15-robolectric-12650502.jar": "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b",
+    "aapt2-linux.jar": "ffb7b7d419c7341dd013f2f87bfb0148f8bff0a2a47c222f54935b3b8f233605",
+    "r8-8.9.35.jar": "204b2fc2b0f4e888dc0ef748b58090def1bf4185068d36abbb94841dbc7107a8",
+    "apksig-8.9.2.jar": "c070ed1394629d74641aa0906f60b2ffa1ee77e6366a1f93437f59717b1aeb89"
+  },
+  "baseline": {
+    "package": "org.yourrest.crm",
+    "versionName": "1.0.8",
+    "versionCode": 9,
+    "apkSha256": "fb402c3bc8b11f758364597c7ef2f99e060d70b04e09150eb4aec6e6b0ab04b3",
+    "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+    "verifiedV2": true,
+    "verifiedV3": true
+  },
+  "signingCertificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+  "sameSigningIdentityAsBaseline": true,
+  "signatureVerifiedV2": true,
+  "signatureVerifiedV3": true,
+  "apkIdentityVerified": true,
+  "privateKeyIncluded": false,
+  "copiedToPublicDownload": true,
+  "newPermissions": false,
+  "storageRecoveryWarningsIncluded": true,
+  "note": "Physical Android GPS, offline restart, reconnect, background and OEM battery behavior still require device acceptance testing."
+}

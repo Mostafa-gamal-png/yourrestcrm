@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "application": "Yourrest CRM",
+  "date": "2026-10-05",
+  "deployed": false,
+  "changes": [
+    "Admin delete controls on visits, follow-up history, customer history and record lists",
+    "Explicit confirmation and server-side authorization",
+    "Prevent deletion of records with dependent records including source follow-ups",
+    "Transactional pre-deletion audit snapshot and stale plan pointer cleanup",
+    "Region/version/auth guards preserved"
+  ],
+  "tests": {
+    "customer_and_delete_sqlite": 218,
+    "role_scope_sqlite": 159,
+    "offline_server_sqlite": 97,
+    "offline_shell": 86,
+    "representative_ui": 104,
+    "built_mobile_browser": 15,
+    "typescript": "passed",
+    "build": "passed"
+  },
+  "limitations": [
+    "Linked records must be deleted first; no automatic cascade",
+    "Service intake workflow requests keep their own workflow controls",
+    "No production records were deleted",
+    "No physical device test"
+  ],
+  "databaseMigrationAdded": false
+}

@@ -1,0 +1,119 @@
+{
+  "ok": true,
+  "release": "Yourrest offline routes + daily report",
+  "date": "2026-10-05",
+  "android": {
+    "versionName": "1.0.9",
+    "versionCode": 10,
+    "apkSha256": "fc53e4aae44f78f58e181ded8915d7adbfda310cad238e953d77591eb199835f",
+    "sameSigningIdentity": true,
+    "signatureVerifiedV2": true,
+    "signatureVerifiedV3": true
+  },
+  "changes": [
+    "Offline service restart and next-workday collection can reuse a previous server-authorized member/region/role lease for up to seven days; first enrollment requires network.",
+    "Explicit authorization denials, logout, missing consent, permissions, invalid scope and expired leases stop collection. The Saudi 06:00 inclusive to 18:00 exclusive window excluding Friday remains enforced.",
+    "Pending GPS points and gaps have no automatic age expiry. Logout retains owner-bound evidence; only server-acknowledged data is removed after fresh current-owner authorization.",
+    "SQLite outboxes preserve existing points on capacity or disk-full failure; 100000 pending-point capacity rejects new fixes without eviction and records a gap when storage is available.",
+    "Authenticated historical replay retains original capture times and enforces ownership, region, role, account-creation boundary, schedule, future-time guards and idempotency.",
+    "An empty prior account can be safely replaced after server verification; pending prior-account evidence cannot be reassigned.",
+    "Service restart race and stale storage-error recovery fixed; build and download guidance are updated to Android 1.0.9."
+  ],
+  "verification": [
+    {
+      "suite": "TypeScript",
+      "passed": true
+    },
+    {
+      "suite": "mobile-route API with real isolated SQLite",
+      "checks": 387,
+      "passed": true
+    },
+    {
+      "suite": "offline native authorization policy and integration guards",
+      "checks": 146,
+      "passed": true
+    },
+    {
+      "suite": "native activation recovery",
+      "checks": 51,
+      "passed": true
+    },
+    {
+      "suite": "native trip start",
+      "checks": 178,
+      "passed": true
+    },
+    {
+      "suite": "store upgrade SQLite checks",
+      "checks": 33,
+      "passed": true
+    },
+    {
+      "suite": "actual Java route stores with real SQLite, capacity and disk-full rollback",
+      "checks": 37,
+      "passed": true
+    },
+    {
+      "suite": "native tracking UI",
+      "checks": 608,
+      "passed": true
+    },
+    {
+      "suite": "installation UI",
+      "checks": 83,
+      "passed": true
+    },
+    {
+      "suite": "daily report helpers",
+      "checks": 87,
+      "passed": true
+    },
+    {
+      "suite": "journeys API",
+      "checks": 376,
+      "passed": true
+    },
+    {
+      "suite": "journey UI",
+      "checks": 296,
+      "passed": true
+    },
+    {
+      "suite": "actual built daily report browser, Arabic/English and mobile widths",
+      "checks": 94,
+      "passed": true
+    },
+    {
+      "suite": "production web build",
+      "passed": true
+    },
+    {
+      "suite": "Android resource/Java/DEX build and same-key signature validation",
+      "passed": true
+    }
+  ],
+  "independentReview": {
+    "completed": true,
+    "resolved": [
+      "empty prior owner account lock",
+      "service stop/start race",
+      "misleading disk-full error message"
+    ]
+  },
+  "noNewDatabaseMigration": true,
+  "deployedToNamecheapThisTurn": false,
+  "productionDatabaseModified": false,
+  "physicalPhoneTested": false,
+  "realDataPreview": "Separate private read-only report preview uses actual authorized production data; no production report data or credentials are included in this software package.",
+  "limitations": [
+    "Background GPS depends on Android permission, location availability, battery restrictions and OS lifecycle; physical company-phone testing remains required.",
+    "Offline collection lease is limited to seven days after the last successful authenticated server check. Pending point capacity is 100000; new fixes may be missed after storage fills.",
+    "Previously unrecorded GPS cannot be reconstructed. Gaps remain explicit and do not become confirmed visits.",
+    "Web/PWA background behavior is not equivalent to the Android APK. Uploading the website alone does not update installed Android native code."
+  ],
+  "reports": [
+    "ANDROID-OFFLINE-BUILD-VERIFICATION.json",
+    "DAILY-REPORT-BROWSER-VERIFICATION.json"
+  ]
+}

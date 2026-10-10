@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "feature": "ERP representative matching by exact normalized full name",
+  "date": "2026-10-03",
+  "checks": {
+    "typescript": "pass",
+    "workbookParser": 73,
+    "kpiIntegration": 19,
+    "componentHooks": 20,
+    "builtHttp": 352,
+    "backend": 281
+  },
+  "behavior": [
+    "Unique eligible full-name match selected in preview",
+    "Saved employee ID mappings and explicit selections take priority",
+    "Office, missing, mixed, duplicate and out-of-scope names never guessed",
+    "Preview and transaction recheck names, role, region and team",
+    "Mapping persisted only at confirmed import",
+    "Same preview input preserved through confirm and retries"
+  ],
+  "noDatabaseMigration": true,
+  "productionDataUsedInTests": false,
+  "physicalPhoneTested": false,
+  "authenticatedProductionImportTested": false,
+  "clientEntry": "index-C0MzY02d.js",
+  "android": {
+    "unchanged": true,
+    "version": "1.0.7",
+    "code": 8,
+    "sha256": "75cbcaa4fa4f3bfce9c4c0122898c8e590cdfa05392e4b8c99c741e342b82d83"
+  },
+  "actualWorkbookAutoMatchedEmployees": 4
+}

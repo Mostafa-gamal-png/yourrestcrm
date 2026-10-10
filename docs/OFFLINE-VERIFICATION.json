@@ -1,0 +1,90 @@
+{
+  "ok": true,
+  "feature": "Yourrest offline business recording and reconnect synchronization",
+  "verifiedAt": "2026-10-05T08:32:28.382073+00:00",
+  "deployedToNamecheap": false,
+  "productionDataModified": false,
+  "physicalDeviceTested": false,
+  "typecheckPassed": true,
+  "productionBuildPassed": true,
+  "tests": [
+    {
+      "command": "node tests/offline-server.mjs",
+      "checks": 97,
+      "passed": true,
+      "actualSqlite": true
+    },
+    {
+      "command": "node tests/offline-forms-ui.mjs",
+      "checks": 122,
+      "passed": true
+    },
+    {
+      "command": "node tests/offline-shell.mjs",
+      "checks": 86,
+      "passed": true,
+      "generatedManifestAndBytesTested": true
+    },
+    {
+      "command": "node tests/offline-outbox-browser.mjs",
+      "checks": 49,
+      "passed": true,
+      "realIndexedDB": true
+    },
+    {
+      "command": "node tests/offline-browser.mjs",
+      "checks": 64,
+      "passed": true,
+      "actualBuiltRelease": true,
+      "realServiceWorker": true
+    }
+  ],
+  "targetedChecks": 418,
+  "regressionsPassed": [
+    "visit-mobile-ux",
+    "rep-customer-ui",
+    "customer-entry-fields-ui",
+    "competitor-fields-ui",
+    "competitor-followups",
+    "journeys",
+    "crm-regression",
+    "role-scope",
+    "rep-customer-create",
+    "email-session",
+    "email-auth-ui",
+    "pwa-install-ui",
+    "pwa-foundation"
+  ],
+  "features": [
+    "new customer, visit, service registration, and confirmed-source follow-up local save",
+    "private PDF/image blob retention",
+    "offline cold reload after online warmup",
+    "automatic foreground/reconnect synchronization",
+    "frozen request replay and atomic durable ACK",
+    "preserved device event time and separate server receipt time",
+    "account and scope checks before upload",
+    "explicit conflict review and retained local archive"
+  ],
+  "preservation": {
+    "baselineLibraryVersion": 41,
+    "baselineSha256": "cd710d0b59ee12aac452bffcb0bdec70cf0f37e01f9f9a2b86af2f92edfcac51",
+    "preservedFiles": 142,
+    "changedProtectedFiles": [],
+    "migrations": 14,
+    "apkSha256": "fb402c3bc8b11f758364597c7ef2f99e060d70b04e09150eb4aec6e6b0ab04b3",
+    "apkVersion": "1.0.8",
+    "apkVersionCode": 9,
+    "unchangedApk": true
+  },
+  "limitations": [
+    "First sign-in and initial device preparation need internet.",
+    "Business entry synchronization runs while the application UI is active or reopened; no closed-app background upload promise.",
+    "Maps, speech providers, and national address lookup may need internet. GPS requires a real permitted device fix.",
+    "Phone storage must remain available; clearing app/browser data before syncing loses device-only entries.",
+    "Physical Android/iOS behavior has not been tested here.",
+    "A tab interrupted while holding a synchronization lease may defer the next attempt until its bounded 90-second lease expires."
+  ],
+  "browserReport": "OFFLINE-BROWSER-VERIFICATION.json",
+  "nativeApkChanged": false,
+  "migrationsAdded": false
+}

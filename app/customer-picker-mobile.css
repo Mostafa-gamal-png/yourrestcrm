@@ -1,0 +1,51 @@
+/* The picker is shared by visits and followups; keep its touch layout self-contained. */
+.visit-customer-picker .visit-customer-field-label{font-size:14px;font-weight:500}
+.visit-customer-picker .visit-customer-picker-heading{gap:8px}
+.visit-customer-picker .visit-add-customer{min-height:44px;padding-inline:12px;gap:6px;white-space:nowrap}
+.visit-customer-picker .visit-customer-search{min-height:50px;height:auto;border-radius:12px}
+.visit-customer-picker .visit-customer-search input{font-size:16px;min-height:48px;padding-inline:12px}
+.visit-customer-picker .visit-customer-search [data-slot=combobox-clear]{width:44px;height:44px;min-width:44px;min-height:44px}
+.visit-customer-picker .visit-customer-search [data-slot=input-group-addon]{padding-inline:2px}
+.visit-customer-picker .visit-customer-search-hint{display:flex;align-items:center;gap:6px;color:var(--muted-foreground);font-size:12px;line-height:1.6;margin-top:5px}
+.visit-customer-search-hint>svg{flex-shrink:0}
+.visit-customer-picker .visit-customer-search-hint>button{margin-inline-start:auto;color:var(--primary);min-height:44px;padding-inline:10px}
+.visit-customer-picker .visit-customer-positioner{z-index:30}
+.visit-customer-picker .visit-customer-popup{border-radius:12px;display:flex;flex-direction:column;max-height:var(--available-height)}
+.visit-customer-picker .visit-customer-option{min-height:58px;padding-block:10px;padding-inline-start:36px;padding-inline-end:12px;text-align:start;line-height:1.5;border-radius:8px}
+.visit-customer-picker .visit-customer-option [data-slot=combobox-item-indicator]{right:auto;inset-inline-start:10px}
+.visit-customer-picker .visit-customer-option>span{min-width:0;overflow-wrap:anywhere}
+.visit-customer-picker .visit-customer-option strong{font-size:15px;font-weight:600}
+.visit-customer-picker .visit-customer-option small{font-size:12px;line-height:1.5}
+.visit-customer-picker .visit-customer-popup [data-slot=combobox-list]{overscroll-behavior:contain;max-height:min(320px,var(--available-height));scrollbar-width:thin;min-height:0;flex:1 1 auto}
+.visit-customer-picker .visit-customer-popup>.visit-customer-no-results{flex-shrink:0}
+.visit-customer-picker .visit-selected-customer{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--muted);min-width:0}
+.visit-selected-customer>svg{flex-shrink:0;color:var(--primary)}
+.visit-selected-customer>div{flex:1;min-width:0}
+.visit-selected-customer strong{display:block;font-size:15px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
+.visit-selected-customer small{display:block;font-size:12px;line-height:1.5;color:var(--muted-foreground);margin-top:2px;overflow-wrap:anywhere}
+.visit-customer-picker .visit-selected-customer>button{min-height:44px;min-width:52px;padding:7px 10px;border:1px solid var(--border);border-radius:9px;color:var(--primary);background:var(--background);font-size:13px;font-weight:600;flex-shrink:0}
+.visit-customer-picker .visit-new-customer{margin-top:4px;padding:14px;border-radius:12px}
+.visit-customer-picker .visit-new-customer .form-grid{gap:12px;margin-bottom:0}
+.visit-new-customer .visit-new-customer-name{grid-column:1/-1}
+.visit-customer-picker .visit-new-customer input,.visit-customer-picker .visit-new-customer select{min-height:48px;font-size:16px;border-radius:9px;min-width:0;width:100%}
+.visit-customer-picker .visit-new-customer input[aria-invalid=true]{border-color:#be334f;outline-color:#be334f}
+.visit-customer-picker .visit-new-customer .field{min-width:0}
+.visit-customer-picker .visit-new-customer .field>span{font-size:13px;font-weight:500}
+.visit-customer-picker .visit-new-customer .field>small{font-size:11px;line-height:1.5}
+.visit-new-customer-extra{margin-top:14px;border-top:1px solid var(--border)}
+.visit-new-customer-extra>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;cursor:pointer;color:var(--primary);font-size:13px;font-weight:600;list-style:none}
+.visit-new-customer-extra>summary::-webkit-details-marker{display:none}
+.visit-new-customer-extra>summary>svg{flex-shrink:0;transition:transform .15s}
+.visit-new-customer-extra[open]>summary>svg{transform:rotate(180deg)}
+.visit-new-customer-extra>p{font-size:12px;line-height:1.7;color:var(--muted-foreground);margin-top:8px}
+.visit-customer-picker .visit-new-customer-actions{display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.visit-customer-picker .visit-new-customer-actions .btn{min-height:48px;white-space:normal;line-height:1.5}
+.visit-customer-picker .visit-new-customer-actions .primary{flex:1}
+.visit-customer-picker button:disabled{cursor:not-allowed}
+@media(max-width:600px){
+ .visit-customer-picker .visit-new-customer{padding:12px}
+ .visit-customer-picker .visit-new-customer .form-grid{grid-template-columns:minmax(0,1fr)}
+ .visit-customer-picker .visit-customer-popup [data-slot=combobox-list]{max-height:min(280px,var(--available-height))}
+ .visit-customer-picker .visit-customer-no-results{font-size:13px;line-height:1.7}
+}
+@media(prefers-reduced-motion:reduce){.visit-new-customer-extra>summary>svg{transition:none}}

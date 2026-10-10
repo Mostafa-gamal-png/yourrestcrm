@@ -1,0 +1,84 @@
+{
+  "release": "Yourrest weekdays 2026-10-03",
+  "schedule": {
+    "timeZone": "Asia/Riyadh",
+    "startInclusive": "06:00",
+    "endExclusive": "18:00",
+    "workingDaysJs": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      6
+    ],
+    "excludedDay": "Friday",
+    "thursdayAfterCloseNextStart": "Saturday 06:00",
+    "captureTimestampControlsAcceptance": true,
+    "lateUploadOfEligibleObservationsAllowed": true
+  },
+  "android": {
+    "package": "org.yourrest.crm",
+    "versionCode": 8,
+    "versionName": "1.0.7",
+    "minSdk": 26,
+    "targetSdk": 35,
+    "apkSha256": "75cbcaa4fa4f3bfce9c4c0122898c8e590cdfa05392e4b8c99c741e342b82d83",
+    "apkBytes": 197365,
+    "sourceSha256": "193e17d117de6354488b21d41e3975e8aa024b8fc88b2fd69d7183e49825af52",
+    "buildConfigSha256": "5f6f7a190df443e91d5a57c6eb9633d44c1957466335fa56443df061a51f2d0c",
+    "build": "Standalone OSS AAPT2, javac, D8, apksig; no proprietary SDK",
+    "deviceTested": false,
+    "toolSha256": {
+      "android-all-15-robolectric-12650502.jar": "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b",
+      "aapt2-linux.jar": "ffb7b7d419c7341dd013f2f87bfb0148f8bff0a2a47c222f54935b3b8f233605",
+      "r8-8.9.35.jar": "204b2fc2b0f4e888dc0ef748b58090def1bf4185068d36abbb94841dbc7107a8",
+      "apksig-8.9.2.jar": "c070ed1394629d74641aa0906f60b2ffa1ee77e6366a1f93437f59717b1aeb89"
+    }
+  },
+  "sameSigningCertificateAsPrevious": true,
+  "signingCertificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+  "tests": {
+    "jvm": {
+      "checks": 31091,
+      "suites": 8
+    },
+    "trackingWindowServer": 219,
+    "nativeTrackingUI": 600,
+    "journeyUI": 260,
+    "directionsUI": 348,
+    "pwaInstallUI": 83,
+    "journeys": 315,
+    "mobileRoute": 324,
+    "typescript": "passed",
+    "builtHttp": {
+      "ok": true,
+      "checks": 340,
+      "literal_unix_socket": true,
+      "actual_built_release": true,
+      "production_data_used": false,
+      "actual_email_sent": false,
+      "real_hosting_tested": false
+    }
+  },
+  "legacyFridayOutbox": {
+    "preservedLocally": true,
+    "originalTimesAndBindingsUnchanged": true,
+    "excludedFromUploadSelectors": true,
+    "eligibleDaysContinue": true,
+    "normalRetentionHours": 48,
+    "existingCapacityLimitsApply": true,
+    "noticeDoesNotBlockTracking": true
+  },
+  "serverMigrationsAdded": 0,
+  "existingSqlMigrationsUnchanged": 13,
+  "physicalPhoneTested": false,
+  "limitations": [
+    "Phone must install same-signed Android1.0.7/code8 and be opened once after update.",
+    "Background collection requires disclosed enrollment, precise/background location permissions and foreground notification.",
+    "Force stop, revoked permissions, powered-off device and OEM/battery restrictions can stop collection.",
+    "Mobile browser/PWA alone cannot guarantee background capture."
+  ],
+  "deployment": "Package verification; production deployment recorded separately.",
+  "webBuild": "passed"
+}

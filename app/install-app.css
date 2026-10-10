@@ -1,0 +1,5 @@
+.pwa-install-simple .pwa-install-card{padding:14px 16px;padding-inline:16px;gap:12px}
+.pwa-install-simple .pwa-install-action{min-height:44px;min-width:142px;flex-shrink:0}
+.pwa-install-simple .pwa-install-action[aria-busy=true]{opacity:.7;cursor:wait}
+.pwa-install-simple .pwa-install-status{padding:7px 3px 0;color:var(--muted-foreground);font-size:12px;line-height:1.7}
+@media(max-width:600px){.pwa-install-simple .pwa-install-card{gap:9px;padding:12px}.pwa-install-simple .pwa-install-copy{flex-basis:calc(100% - 54px)}.pwa-install-simple .pwa-install-copy strong{font-size:14px}.pwa-install-simple .pwa-install-copy p{font-size:12px}.pwa-install-simple .pwa-install-action{width:100%}}

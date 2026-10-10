@@ -1,0 +1,755 @@
+{
+  "ok": true,
+  "checks": 94,
+  "actualBuiltRelease": true,
+  "realSqlite": true,
+  "mockedDeviceLocation": true,
+  "blockedExternalNetwork": true,
+  "physicalDeviceTested": false,
+  "deployedToNamecheap": false,
+  "coverage": [
+    "actual HTTP daily enrichment",
+    "unique/ambiguous/unmatched GPS stops",
+    "saved visits versus observed presence",
+    "selected and automatic map marker details",
+    "explicit products and competitor quotation",
+    "due and overdue follow-up list",
+    "320px/360px and desktop layout",
+    "Arabic and English"
+  ],
+  "summary": {
+    "firstMovementAt": "2026-10-04T07:01:00.000Z",
+    "lastActivityAt": "2026-10-04T08:00:00.000Z",
+    "recordedVisits": 2,
+    "recordedCommunications": 1,
+    "confirmedVisitSeconds": 600,
+    "observedMovementSeconds": 180,
+    "matchedCustomers": 3,
+    "missingResults": 1,
+    "gapCount": 3
+  },
+  "geometry": [
+    {
+      "label": "daily-report-ar-360-selected",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 10,
+            "y": -2038.109375,
+            "width": 340,
+            "height": 3577.203125,
+            "top": -2038.109375,
+            "right": 350,
+            "bottom": 1539.09375,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 10,
+            "y": -2038.109375,
+            "width": 340,
+            "height": 132.921875,
+            "top": -2038.109375,
+            "right": 350,
+            "bottom": -1905.1875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 10,
+            "y": -1885.1875,
+            "width": 340,
+            "height": 342.140625,
+            "top": -1885.1875,
+            "right": 350,
+            "bottom": -1543.046875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 10,
+            "y": -1479.046875,
+            "width": 340,
+            "height": 453.875,
+            "top": -1479.046875,
+            "right": 350,
+            "bottom": -1025.171875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-stop journey-station-active",
+          "rect": {
+            "x": 10,
+            "y": -0.140625,
+            "width": 340,
+            "height": 990.15625,
+            "top": -0.140625,
+            "right": 350,
+            "bottom": 990.015625,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 10,
+            "y": 1285.984375,
+            "width": 340,
+            "height": 139.71875,
+            "top": 1285.984375,
+            "right": 350,
+            "bottom": 1425.703125,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "daily-report-ar-360-automatic",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 10,
+            "y": -718.109375,
+            "width": 340,
+            "height": 3782.359375,
+            "top": -718.109375,
+            "right": 350,
+            "bottom": 3064.25,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 10,
+            "y": -718.109375,
+            "width": 340,
+            "height": 132.921875,
+            "top": -718.109375,
+            "right": 350,
+            "bottom": -585.1875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 10,
+            "y": -565.1875,
+            "width": 340,
+            "height": 342.140625,
+            "top": -565.1875,
+            "right": 350,
+            "bottom": -223.046875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 10,
+            "y": -159.046875,
+            "width": 340,
+            "height": 453.875,
+            "top": -159.046875,
+            "right": 350,
+            "bottom": 294.828125,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-stop",
+          "rect": {
+            "x": 10,
+            "y": 1525.015625,
+            "width": 340,
+            "height": 990.15625,
+            "top": 1525.015625,
+            "right": 350,
+            "bottom": 2515.171875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 10,
+            "y": 2811.140625,
+            "width": 340,
+            "height": 139.71875,
+            "top": 2811.140625,
+            "right": 350,
+            "bottom": 2950.859375,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "daily-report-ar-360-pending",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 10,
+            "y": -3134.109375,
+            "width": 340,
+            "height": 3782.359375,
+            "top": -3134.109375,
+            "right": 350,
+            "bottom": 648.25,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 10,
+            "y": -3134.109375,
+            "width": 340,
+            "height": 132.921875,
+            "top": -3134.109375,
+            "right": 350,
+            "bottom": -3001.1875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 10,
+            "y": -2981.1875,
+            "width": 340,
+            "height": 342.140625,
+            "top": -2981.1875,
+            "right": 350,
+            "bottom": -2639.046875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 10,
+            "y": -2575.046875,
+            "width": 340,
+            "height": 453.875,
+            "top": -2575.046875,
+            "right": 350,
+            "bottom": -2121.171875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-stop",
+          "rect": {
+            "x": 10,
+            "y": -890.984375,
+            "width": 340,
+            "height": 990.15625,
+            "top": -890.984375,
+            "right": 350,
+            "bottom": 99.171875,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 10,
+            "y": 395.140625,
+            "width": 340,
+            "height": 139.71875,
+            "top": 395.140625,
+            "right": 350,
+            "bottom": 534.859375,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "daily-report-ar-320-summary",
+      "viewport": {
+        "width": 320,
+        "height": 760
+      },
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 10,
+            "y": -31.109375,
+            "width": 300,
+            "height": 4156.6875,
+            "top": -31.109375,
+            "right": 310,
+            "bottom": 4125.578125,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 10,
+            "y": -31.109375,
+            "width": 300,
+            "height": 220.359375,
+            "top": -31.109375,
+            "right": 310,
+            "bottom": 189.25,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 10,
+            "y": 209.25,
+            "width": 300,
+            "height": 342.140625,
+            "top": 209.25,
+            "right": 310,
+            "bottom": 551.390625,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 10,
+            "y": 615.390625,
+            "width": 300,
+            "height": 453.875,
+            "top": 615.390625,
+            "right": 310,
+            "bottom": 1069.265625,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-stop",
+          "rect": {
+            "x": 10,
+            "y": 2429.46875,
+            "width": 300,
+            "height": 1094.84375,
+            "top": 2429.46875,
+            "right": 310,
+            "bottom": 3524.3125,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 10,
+            "y": 3841.875,
+            "width": 300,
+            "height": 170.3125,
+            "top": 3841.875,
+            "right": 310,
+            "bottom": 4012.1875,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "daily-report-en-320-summary",
+      "viewport": {
+        "width": 320,
+        "height": 760
+      },
+      "overflow": false,
+      "language": "en",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 10,
+            "y": 50.890625,
+            "width": 300,
+            "height": 4438.390625,
+            "top": 50.890625,
+            "right": 310,
+            "bottom": 4489.28125,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 10,
+            "y": 50.890625,
+            "width": 300,
+            "height": 220.359375,
+            "top": 50.890625,
+            "right": 310,
+            "bottom": 271.25,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 10,
+            "y": 291.25,
+            "width": 300,
+            "height": 468.484375,
+            "top": 291.25,
+            "right": 310,
+            "bottom": 759.734375,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 10,
+            "y": 823.734375,
+            "width": 300,
+            "height": 462.671875,
+            "top": 823.734375,
+            "right": 310,
+            "bottom": 1286.40625,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-stop",
+          "rect": {
+            "x": 10,
+            "y": 2729.53125,
+            "width": 300,
+            "height": 1138.234375,
+            "top": 2729.53125,
+            "right": 310,
+            "bottom": 3867.765625,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 10,
+            "y": 4213.375,
+            "width": 300,
+            "height": 139.71875,
+            "top": 4213.375,
+            "right": 310,
+            "bottom": 4353.09375,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "daily-report-en-320-selected",
+      "viewport": {
+        "width": 320,
+        "height": 760
+      },
+      "overflow": false,
+      "language": "en",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 10,
+            "y": -2679.109375,
+            "width": 300,
+            "height": 4438.390625,
+            "top": -2679.109375,
+            "right": 310,
+            "bottom": 1759.28125,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 10,
+            "y": -2679.109375,
+            "width": 300,
+            "height": 220.359375,
+            "top": -2679.109375,
+            "right": 310,
+            "bottom": -2458.75,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 10,
+            "y": -2438.75,
+            "width": 300,
+            "height": 468.484375,
+            "top": -2438.75,
+            "right": 310,
+            "bottom": -1970.265625,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 10,
+            "y": -1906.265625,
+            "width": 300,
+            "height": 462.671875,
+            "top": -1906.265625,
+            "right": 310,
+            "bottom": -1443.59375,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-stop journey-station-active",
+          "rect": {
+            "x": 10,
+            "y": -0.46875,
+            "width": 300,
+            "height": 1138.234375,
+            "top": -0.46875,
+            "right": 310,
+            "bottom": 1137.765625,
+            "left": 10
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 10,
+            "y": 1483.375,
+            "width": 300,
+            "height": 139.71875,
+            "top": 1483.375,
+            "right": 310,
+            "bottom": 1623.09375,
+            "left": 10
+          }
+        }
+      ]
+    },
+    {
+      "label": "daily-report-en-desktop-summary",
+      "viewport": {
+        "width": 1365,
+        "height": 900
+      },
+      "overflow": false,
+      "language": "en",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 282,
+            "y": 250.984375,
+            "width": 1049,
+            "height": 3233.015625,
+            "top": 250.984375,
+            "right": 1331,
+            "bottom": 3484,
+            "left": 282
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 282,
+            "y": 250.984375,
+            "width": 1049,
+            "height": 71.4375,
+            "top": 250.984375,
+            "right": 1331,
+            "bottom": 322.421875,
+            "left": 282
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 282,
+            "y": 342.421875,
+            "width": 1049,
+            "height": 215.75,
+            "top": 342.421875,
+            "right": 1331,
+            "bottom": 558.171875,
+            "left": 282
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 282,
+            "y": 622.171875,
+            "width": 1049,
+            "height": 485.890625,
+            "top": 622.171875,
+            "right": 1331,
+            "bottom": 1108.0625,
+            "left": 282
+          }
+        },
+        {
+          "name": "journey-stop journey-station-active",
+          "rect": {
+            "x": 282,
+            "y": 2098.953125,
+            "width": 1049,
+            "height": 836.765625,
+            "top": 2098.953125,
+            "right": 1331,
+            "bottom": 2935.71875,
+            "left": 282
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 282,
+            "y": 3251.6875,
+            "width": 1049,
+            "height": 141.71875,
+            "top": 3251.6875,
+            "right": 1331,
+            "bottom": 3393.40625,
+            "left": 282
+          }
+        }
+      ]
+    },
+    {
+      "label": "daily-report-ar-desktop-summary",
+      "viewport": {
+        "width": 1365,
+        "height": 900
+      },
+      "overflow": false,
+      "language": "ar",
+      "panels": [
+        {
+          "name": "journey-report",
+          "rect": {
+            "x": 34,
+            "y": 307.984375,
+            "width": 1049,
+            "height": 3188.625,
+            "top": 307.984375,
+            "right": 1083,
+            "bottom": 3496.609375,
+            "left": 34
+          }
+        },
+        {
+          "name": "journey-toolbar",
+          "rect": {
+            "x": 34,
+            "y": 307.984375,
+            "width": 1049,
+            "height": 71.4375,
+            "top": 307.984375,
+            "right": 1083,
+            "bottom": 379.421875,
+            "left": 34
+          }
+        },
+        {
+          "name": "journey-overview",
+          "rect": {
+            "x": 34,
+            "y": 399.421875,
+            "width": 1049,
+            "height": 215.75,
+            "top": 399.421875,
+            "right": 1083,
+            "bottom": 615.171875,
+            "left": 34
+          }
+        },
+        {
+          "name": "journey-map-panel",
+          "rect": {
+            "x": 34,
+            "y": 679.171875,
+            "width": 1049,
+            "height": 485.890625,
+            "top": 679.171875,
+            "right": 1083,
+            "bottom": 1165.0625,
+            "left": 34
+          }
+        },
+        {
+          "name": "journey-stop journey-station-active",
+          "rect": {
+            "x": 34,
+            "y": 2134.359375,
+            "width": 1049,
+            "height": 836.765625,
+            "top": 2134.359375,
+            "right": 1083,
+            "bottom": 2971.125,
+            "left": 34
+          }
+        },
+        {
+          "name": "journey-pending",
+          "rect": {
+            "x": 34,
+            "y": 3287.09375,
+            "width": 1049,
+            "height": 141.71875,
+            "top": 3287.09375,
+            "right": 1083,
+            "bottom": 3428.8125,
+            "left": 34
+          }
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "docs/daily-report-screenshots/daily-report-ar-360-selected.png",
+    "docs/daily-report-screenshots/daily-report-ar-360-automatic.png",
+    "docs/daily-report-screenshots/daily-report-ar-360-pending.png",
+    "docs/daily-report-screenshots/daily-report-ar-320-summary.png",
+    "docs/daily-report-screenshots/daily-report-en-320-summary.png",
+    "docs/daily-report-screenshots/daily-report-en-320-selected.png",
+    "docs/daily-report-screenshots/daily-report-en-desktop-summary.png",
+    "docs/daily-report-screenshots/daily-report-ar-desktop-summary.png"
+  ]
+}

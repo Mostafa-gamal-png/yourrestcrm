@@ -1,0 +1,101 @@
+{
+  "ok": true,
+  "checks": 64,
+  "actualBuiltRelease": true,
+  "realSqlite": true,
+  "realIndexedDB": true,
+  "realServiceWorker": true,
+  "realAuthMockEmail": true,
+  "syntheticFixture": true,
+  "mockedDeviceLocation": true,
+  "productionDatabaseUsed": false,
+  "realEmailSent": false,
+  "physicalDeviceTested": false,
+  "deployedToNamecheap": false,
+  "offlineTests": [
+    "durable visit and competitor notes",
+    "PDF blob retention and upload",
+    "offline shell reload",
+    "existing visit follow-up source preservation",
+    "new customer and dependent visit",
+    "automatic reconnect drain",
+    "parallel-tab and repeated reconnect exact-once",
+    "committed response loss replay",
+    "account-switch isolation and owner resume"
+  ],
+  "droppedResponses": 1,
+  "writeRequests": 17,
+  "geometry": [
+    {
+      "label": "offline-visit-with-quote-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": [
+        {
+          "name": "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg crm-dialog customer-visit-dialog mobile-record-dialog",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 360,
+            "height": 800,
+            "top": 0,
+            "right": 360,
+            "bottom": 800,
+            "left": 0
+          }
+        },
+        {
+          "name": "competitor-fields full",
+          "rect": {
+            "x": 31,
+            "y": 472.09375,
+            "width": 298,
+            "height": 536.125,
+            "top": 472.09375,
+            "right": 329,
+            "bottom": 1008.21875,
+            "left": 31
+          }
+        }
+      ]
+    },
+    {
+      "label": "offline-restored-shell-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": []
+    },
+    {
+      "label": "offline-synced-mobile-ar",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": []
+    }
+  ],
+  "screenshots": [
+    "/workspace/scratch/084c90fdfdf4/yourrest-offline/package/source/docs/offline-browser-screenshots/offline-visit-with-quote-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-offline/package/source/docs/offline-browser-screenshots/offline-restored-shell-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-offline/package/source/docs/offline-browser-screenshots/offline-synced-mobile-ar.png"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "ok": true,
+  "scope": "Independent Yourrest in-app update web/native contract and lifecycle review",
+  "actualControllerAndComponentTests": {
+    "command": "node tests/app-update-ui.mjs",
+    "checks": 92,
+    "passed": true
+  },
+  "browserHarness": {
+    "path": "tests/app-update-browser.mjs",
+    "compiled": true,
+    "executed": false,
+    "reason": "No Chromium executable in runtime. Browser download approval cancelled; no retry or bypass attempted."
+  },
+  "standalonePreview": {
+    "path": "docs/app-update-screenshots/Yourrest-In-App-Update-QA.html",
+    "actualComponent": true,
+    "actualController": true,
+    "mockedAndroidBridge": true,
+    "networkRequests": false,
+    "rendered": false,
+    "reason": "Root reported cloud-browser local file URL is blocked by tool policy. No workaround attempted."
+  },
+  "nativeContractReviewed": {
+    "methods": [
+      "updateStatus",
+      "checkAppUpdate",
+      "downloadAppUpdate",
+      "installAppUpdate"
+    ],
+    "event": "yourrest:app-update",
+    "protocol": 1,
+    "methodNamesMatch": true,
+    "fixedOrigin": true,
+    "apkSizeHashPackageVersionAndSignerChecked": true,
+    "installerConfirmationRequired": true,
+    "explicitNonExportedReceiver": true,
+    "existingRouteAndOutboxStorageUntouched": true
+  },
+  "findings": [
+    {
+      "issue": "Corrupt saved manifest with persisted installing phase could leave invisible cancelled status and inhibit future checks",
+      "resolution": "Native agent added AppUpdateLifecycle guard; restored installing requires valid manifest."
+    },
+    {
+      "issue": "Legacy APK uses an external-browser confirmation dialog before downloading, so notification-only instruction skips a step",
+      "resolution": "Sent to web agent for wording correction."
+    },
+    {
+      "issue": "Downloaded and queued data are retained, but unsaved React input cannot be promised to survive actual APK process replacement",
+      "resolution": "Sent to root/web agent; UI should ask to save open entries before installing. Test fixture only checks no clearing during update events, never actual OS replacement."
+    }
+  ],
+  "remainingCodeBlockers": [],
+  "physicalAndroidInstallationTested": false,
+  "productionDataUsed": false,
+  "productionModified": false
+}

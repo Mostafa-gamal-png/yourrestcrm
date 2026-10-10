@@ -1,0 +1,839 @@
+{
+  "ok": true,
+  "checks": 105,
+  "actualBuiltRelease": true,
+  "realSqlite": true,
+  "syntheticFixturesOnly": true,
+  "mockedEmail": true,
+  "mockedLocation": true,
+  "productionDatabaseUsed": false,
+  "physicalDeviceTested": false,
+  "deployed": false,
+  "coverage": [
+    "four role scopes",
+    "circular actual 150 percent with capped ring",
+    "zero and missing target labels",
+    "unchanged target/KPI responses across themes",
+    "persisted light/dark mode overriding system preference",
+    "Arabic and English",
+    "desktop/mobile geometry",
+    "real ERP parser/commit",
+    "processing without premature success",
+    "lost acknowledgement identical retry without duplicate invoice",
+    "scoped customer editing and location map",
+    "double click customer and visit save"
+  ],
+  "geometry": [
+    {
+      "label": "manager-targets-desktop-ar-light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 150%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: لا ينطبق",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "manager-gauges-desktop-ar-light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 150%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: لا ينطبق",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "manager-targets-desktop-ar-dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": true,
+      "gauges": [
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 150%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: لا ينطبق",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "manager-targets-desktop-en-dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "overflow": false,
+      "language": "en",
+      "direction": "ltr",
+      "dark": true,
+      "gauges": [
+        {
+          "label": "Weighted target attainment: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: 150%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: Incomplete",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: Incomplete",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: Incomplete",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: Not applicable",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: Target is zero",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "manager-targets-mobile-en-dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "language": "en",
+      "direction": "ltr",
+      "dark": true,
+      "gauges": [
+        {
+          "label": "Weighted target attainment: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: 150%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: Incomplete",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: Incomplete",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: Incomplete",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Weighted target attainment: Not applicable",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Product attainment · Molds for mobile block machines: Target is zero",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "manager-targets-mobile-ar-light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 150%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: لا ينطبق",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "manager-target-zero-mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك الثابتة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 50%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك الثابتة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك الثابتة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك الثابتة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك الثابتة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: لا ينطبق",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك الثابتة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "erp-processing-mobile-ar",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": []
+    },
+    {
+      "label": "erp-failed-ack-mobile-ar",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": []
+    },
+    {
+      "label": "erp-complete-mobile-ar",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": []
+    },
+    {
+      "label": "rep-targets-mobile-ar-light",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "نسبة التحقيق · قوالب البلوك المتحركة: 170%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · قوالب البلوك الثابتة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · لمامة البلوك: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · ماكينة إنتاج البلوكة المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · قطع غيار المكائن المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · خلاطات البلوك: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · خلاطات الخرسانة الجاهزة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · خدمات صيانة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "rep-gauges-mobile-ar-light",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "نسبة التحقيق · قوالب البلوك المتحركة: 170%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · قوالب البلوك الثابتة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · لمامة البلوك: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · ماكينة إنتاج البلوكة المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · قطع غيار المكائن المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · خلاطات البلوك: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · خلاطات الخرسانة الجاهزة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة التحقيق · خدمات صيانة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "rep-targets-mobile-en-dark",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "en",
+      "direction": "ltr",
+      "dark": true,
+      "gauges": [
+        {
+          "label": "Achievement · Molds for mobile block machines: 170%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Molds for stationary block machines: Target is zero",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Block stacker: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Mobile block-making machine: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Mobile machine spare parts: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Block mixers: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Ready-mix concrete mixers: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Maintenance services: No target set",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "rep-gauges-mobile-en-dark",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "en",
+      "direction": "ltr",
+      "dark": true,
+      "gauges": [
+        {
+          "label": "Achievement · Molds for mobile block machines: 170%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Molds for stationary block machines: Target is zero",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Block stacker: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Mobile block-making machine: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Mobile machine spare parts: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Block mixers: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Ready-mix concrete mixers: No target set",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "Achievement · Maintenance services: No target set",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "rep-customer-edit-mobile-dark",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": true,
+      "gauges": []
+    },
+    {
+      "label": "rep-map-mobile-dark",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": true,
+      "gauges": []
+    },
+    {
+      "label": "rep-map-mobile-light",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": []
+    },
+    {
+      "label": "rep-visit-save-mobile-light",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": []
+    },
+    {
+      "label": "supervisor-targets-desktop-ar",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "التحقيق المرجح للمستهدف: 56.67%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 56.666667%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 170%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    },
+    {
+      "label": "owner-targets-desktop-ar",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "overflow": false,
+      "language": "ar",
+      "direction": "rtl",
+      "dark": false,
+      "gauges": [
+        {
+          "label": "التحقيق المرجح للمستهدف: 56.67%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 56.666667%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 56.67%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 56.666667%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: 100%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: 170%",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: لم يُحدد مستهدف",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "التحقيق المرجح للمستهدف: لا ينطبق",
+          "viewBox": "0 0 216 216"
+        },
+        {
+          "label": "نسبة تحقيق الصنف · قوالب البلوك المتحركة: المستهدف صفر",
+          "viewBox": "0 0 216 216"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/manager-targets-desktop-ar-light.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/manager-gauges-desktop-ar-light.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/manager-targets-desktop-ar-dark.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/manager-targets-desktop-en-dark.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/manager-targets-mobile-en-dark.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/manager-targets-mobile-ar-light.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/manager-target-zero-mobile.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/erp-processing-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/erp-failed-ack-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/erp-complete-mobile-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-targets-mobile-ar-light.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-gauges-mobile-ar-light.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-targets-mobile-en-dark.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-gauges-mobile-en-dark.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-customer-edit-mobile-dark.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-map-mobile-dark.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-map-mobile-light.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/rep-visit-save-mobile-light.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/supervisor-targets-desktop-ar.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-ui/output/ui-refresh/screenshots/owner-targets-desktop-ar.png"
+  ]
+}

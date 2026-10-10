@@ -1,0 +1,615 @@
+{
+  "feature": "Target attainment semicircle gauges",
+  "date": "2026-10-04",
+  "passed": true,
+  "clientEntry": "index-BB5Nvmsi.js",
+  "checks": {
+    "typescript": "pass",
+    "build": "pass",
+    "personalTargetsUi": 70,
+    "summaryUi": 98,
+    "combinedWorkspaceUi": 104
+  },
+  "scope": [
+    "Management member summary: existing weighted attainment score",
+    "Representative own targets: individual product attainment",
+    "Selected member KPI overview: existing weighted attainment score"
+  ],
+  "preserved": [
+    "Backend calculations and target weights",
+    "Negative and above-target percentage text",
+    "Missing and future data availability",
+    "Regions, hierarchy and role permissions",
+    "ERP sales mapping and existing data"
+  ],
+  "noDatabaseMigration": true,
+  "androidUnchanged": true,
+  "deployedToNamecheap": false,
+  "productionDataUsedInTests": false,
+  "limitations": [
+    "Visual checks use synthetic fixture data",
+    "Production deployment requires cPanel sign-in"
+  ],
+  "visualVerification": {
+    "actualComponents": true,
+    "realBrowser": "Chromium 153",
+    "syntheticFixtures": true,
+    "initialCases": 24,
+    "viewports": [
+      320,
+      360,
+      1280
+    ],
+    "languages": [
+      "ar",
+      "en"
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "finalFocusedChecks": {
+      "ok": true,
+      "type": "Actual React components SSR plus exact final compiled CSS, local Chromium synthetic fixtures; no production login or real data",
+      "browser": "Chromium 153",
+      "cssFiles": [
+        "index.pI_zH7AT.css",
+        "crm-app.C9_jCTCL.css"
+      ],
+      "values": [
+        0,
+        56.7,
+        100,
+        125,
+        -20,
+        null
+      ],
+      "errors": [],
+      "results": [
+        {
+          "name": "summary-320-ar-light",
+          "screenshot": "/workspace/scratch/084c90fdfdf4/yourrest-gauge/visual-qa/summary-320-ar-light.png",
+          "viewport": 320,
+          "scrollWidth": 320,
+          "bodyWidth": 320,
+          "kpiNumbers": [
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            }
+          ],
+          "overflow": false,
+          "gauges": [
+            {
+              "label": "التحقيق المرجح للمستهدف: 0%",
+              "tone": "low",
+              "rect": {
+                "x": 157.5625,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 34,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: 56.7%",
+              "tone": "progress",
+              "rect": {
+                "x": 157.5625,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 70,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: 100%",
+              "tone": "complete",
+              "rect": {
+                "x": 157.5625,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 62,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: 125%",
+              "tone": "complete",
+              "rect": {
+                "x": 157.5625,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 62,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: -20%",
+              "tone": "low",
+              "rect": {
+                "x": 157.5625,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 56,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+              "tone": "empty",
+              "rect": {
+                "x": 157.5625,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 20,
+              "textInsideSvg": true
+            }
+          ]
+        },
+        {
+          "name": "summary-320-en-light",
+          "screenshot": "/workspace/scratch/084c90fdfdf4/yourrest-gauge/visual-qa/summary-320-en-light.png",
+          "viewport": 320,
+          "scrollWidth": 320,
+          "bodyWidth": 320,
+          "kpiNumbers": [
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 95.546875,
+              "height": 19.5,
+              "fontSize": "15px",
+              "lineHeight": "19.5px",
+              "fitsParent": true,
+              "oneLine": true
+            }
+          ],
+          "overflow": false,
+          "gauges": [
+            {
+              "label": "Weighted target attainment: 0%",
+              "tone": "low",
+              "rect": {
+                "x": 33,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 34,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: 56.7%",
+              "tone": "progress",
+              "rect": {
+                "x": 33,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 70,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: 100%",
+              "tone": "complete",
+              "rect": {
+                "x": 33,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 62,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: 125%",
+              "tone": "complete",
+              "rect": {
+                "x": 33,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 62,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: -20%",
+              "tone": "low",
+              "rect": {
+                "x": 33,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 56,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: Incomplete",
+              "tone": "empty",
+              "rect": {
+                "x": 33,
+                "width": 129.4375
+              },
+              "svgWidth": 129.4375,
+              "textWidth": 20,
+              "textInsideSvg": true
+            }
+          ]
+        },
+        {
+          "name": "summary-360-ar-light",
+          "screenshot": "/workspace/scratch/084c90fdfdf4/yourrest-gauge/visual-qa/summary-360-ar-light.png",
+          "viewport": 360,
+          "scrollWidth": 360,
+          "bodyWidth": 360,
+          "kpiNumbers": [
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            }
+          ],
+          "overflow": false,
+          "gauges": [
+            {
+              "label": "التحقيق المرجح للمستهدف: 0%",
+              "tone": "low",
+              "rect": {
+                "x": 176.171875,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 41,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: 56.7%",
+              "tone": "progress",
+              "rect": {
+                "x": 176.171875,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 84,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: 100%",
+              "tone": "complete",
+              "rect": {
+                "x": 176.171875,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 75,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: 125%",
+              "tone": "complete",
+              "rect": {
+                "x": 176.171875,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 75,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: -20%",
+              "tone": "low",
+              "rect": {
+                "x": 176.171875,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 68,
+              "textInsideSvg": true
+            },
+            {
+              "label": "التحقيق المرجح للمستهدف: غير مكتمل",
+              "tone": "empty",
+              "rect": {
+                "x": 176.171875,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 24,
+              "textInsideSvg": true
+            }
+          ]
+        },
+        {
+          "name": "summary-360-en-light",
+          "screenshot": "/workspace/scratch/084c90fdfdf4/yourrest-gauge/visual-qa/summary-360-en-light.png",
+          "viewport": 360,
+          "scrollWidth": 360,
+          "bodyWidth": 360,
+          "kpiNumbers": [
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            },
+            {
+              "text": "88.13 / 100",
+              "direction": "ltr",
+              "whiteSpace": "nowrap",
+              "width": 114.15625,
+              "height": 21.0625,
+              "fontSize": "16.2px",
+              "lineHeight": "21.06px",
+              "fitsParent": true,
+              "oneLine": true
+            }
+          ],
+          "overflow": false,
+          "gauges": [
+            {
+              "label": "Weighted target attainment: 0%",
+              "tone": "low",
+              "rect": {
+                "x": 33,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 41,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: 56.7%",
+              "tone": "progress",
+              "rect": {
+                "x": 33,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 84.00000762939453,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: 100%",
+              "tone": "complete",
+              "rect": {
+                "x": 33,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 75.00000762939453,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: 125%",
+              "tone": "complete",
+              "rect": {
+                "x": 33,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 75.00000762939453,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: -20%",
+              "tone": "low",
+              "rect": {
+                "x": 33,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 67.99999237060547,
+              "textInsideSvg": true
+            },
+            {
+              "label": "Weighted target attainment: Incomplete",
+              "tone": "empty",
+              "rect": {
+                "x": 33,
+                "width": 150.828125
+              },
+              "svgWidth": 150.828125,
+              "textWidth": 24.00000762939453,
+              "textInsideSvg": true
+            }
+          ]
+        }
+      ]
+    },
+    "values": [
+      0,
+      56.7,
+      100,
+      125,
+      -20,
+      null
+    ],
+    "pageOverflow": false,
+    "gaugeTextClipped": false,
+    "browserErrors": 0
+  }
+}

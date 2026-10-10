@@ -1,0 +1,67 @@
+{
+  "ok": true,
+  "checks": 54,
+  "actualBuiltRelease": true,
+  "realSqlite": true,
+  "mockedDeviceLocation": true,
+  "physicalDeviceTested": false,
+  "deployedToNamecheap": false,
+  "coverage": [
+    "representative edits regional customer assigned to global administrator",
+    "sales manager edits same retained customer",
+    "phone and location changes persist to SQLite",
+    "assignment and branch remain unchanged",
+    "manager routing fields are read-only",
+    "explicit GPS refresh",
+    "manual coordinate save",
+    "fresh map coordinates for both roles",
+    "delete and add-machine permissions are not expanded",
+    "repeated banner removed"
+  ],
+  "geometry": [
+    {
+      "label": "rep-updated-customer-map",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": []
+    },
+    {
+      "label": "manager-customer-edit-routing-read-only",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": []
+    },
+    {
+      "label": "manager-updated-customer-map",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "clientWidth": 360,
+      "clientLeft": 0,
+      "overflow": false,
+      "language": "ar",
+      "tabs": [],
+      "panels": []
+    }
+  ],
+  "screenshots": [
+    "/workspace/scratch/084c90fdfdf4/yourrest-refactor/output/customer-edit-fix/browser/rep-updated-customer-map.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-refactor/output/customer-edit-fix/browser/manager-customer-edit-routing-read-only.png",
+    "/workspace/scratch/084c90fdfdf4/yourrest-refactor/output/customer-edit-fix/browser/manager-updated-customer-map.png"
+  ]
+}

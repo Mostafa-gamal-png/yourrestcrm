@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "packageName": "org.yourrest.crm",
+  "versionName": "1.0.10",
+  "versionCode": 11,
+  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.10-11.apk",
+  "sizeBytes": 230133,
+  "sha256": "0595ccb1f134196e7632781d63899af2d228cbf4f17b9de47a6be906871f12d1",
+  "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+  "releaseNotes": {
+    "ar": [
+      "ظهور التحديثات المتاحة داخل التطبيق عند فتحه أو العودة إليه.",
+      "تنزيل التحديث مع عرض التقدم ثم تأكيد التثبيت من أندرويد.",
+      "التحقق من سلامة التحديث والتوقيع مع الحفاظ على بياناتك المحفوظة."
+    ],
+    "en": [
+      "Available updates appear inside the app when opened or resumed.",
+      "Download progress and Android installation confirmation.",
+      "Verified update integrity and signing while keeping saved app data."
+    ]
+  },
+  "publishedAt": "2026-10-06T05:58:46.971Z"
+}
