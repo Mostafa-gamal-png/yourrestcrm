@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {type Member,type Row,today} from './crm';
 import {type Sale} from './sales';
 import {type ActivityTargets,type quantityAttainment} from './targets';
-import {customerVisits,customerPlanSource,visitCustomer,visitOrder} from './customer-visits';
+import {customerVisits,customerPlanSource,visitOrder} from './customer-visits';
 import {type KpiEvidenceContext} from './kpi-evidence';
 export const operationalIndicators=[
  {id:'attainment',name:'تحقيق المستهدف البيعي',weight:25,axis:'sales'},

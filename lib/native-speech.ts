@@ -24,15 +24,15 @@ export function cleanSpeechText(value:unknown):string{
 export function startSpeech(callbacks:SpeechCallbacks):SpeechTask{
  active?.cancel();
  const generation=nativeTrackingGeneration(),scope=typeof window!=='undefined'?window.__yourrestNativeScope:undefined;
- const sessionId=globalThis.crypto.randomUUID();let finished=false,providerClosed=false,nativeBridge:SpeechBridge|null=null,recognition:any=null,timer:ReturnType<typeof setTimeout>|undefined,identityTimer:ReturnType<typeof setInterval>|undefined;
+ const sessionId=globalThis.crypto.randomUUID();let finished=false,providerClosed=false,nativeBridge:SpeechBridge|null=null,recognition:any=null;const timers:{timeout?:ReturnType<typeof setTimeout>;identity?:ReturnType<typeof setInterval>}={};
  const sameSession=()=>!finished&&generation===nativeTrackingGeneration()&&scope===window.__yourrestNativeScope;
  const closeProvider=()=>{if(providerClosed)return;providerClosed=true;if(recognition){recognition.onresult=null;recognition.onerror=null;recognition.onend=null;try{recognition.abort();}catch{}}if(nativeBridge)void nativeBridge.request('speechCancel',{sessionId}).catch(()=>{});};
- const finish=(error?:string)=>{if(finished)return;finished=true;if(timer!==undefined)clearTimeout(timer);if(identityTimer!==undefined)clearInterval(identityTimer);if(active===task)active=null;window.removeEventListener('pagehide',cancel);window.removeEventListener('popstate',cancel);closeProvider();if(error)callbacks.onError(error);callbacks.onEnd();};
+ const finish=(error?:string)=>{if(finished)return;finished=true;if(timers.timeout!==undefined)clearTimeout(timers.timeout);if(timers.identity!==undefined)clearInterval(timers.identity);if(active===task)active=null;window.removeEventListener('pagehide',cancel);window.removeEventListener('popstate',cancel);closeProvider();if(error)callbacks.onError(error);callbacks.onEnd();};
  const cancel=()=>{if(finished)return;finish();closeProvider();};
  const task:SpeechTask={cancel};active=task;
  window.addEventListener('pagehide',cancel);window.addEventListener('popstate',cancel);
- timer=setTimeout(()=>{finish('speech_timeout');closeProvider();},TIMEOUT);
- identityTimer=setInterval(()=>{if(!sameSession())cancel();},250);
+ timers.timeout=setTimeout(()=>{finish('speech_timeout');closeProvider();},TIMEOUT);
+ timers.identity=setInterval(()=>{if(!sameSession())cancel();},250);
  const deliver=(value:unknown)=>{if(!sameSession()){cancel();return;}try{const text=cleanSpeechText(value);if(!text)throw Error('speech_no_match');callbacks.onText(text);finish();closeProvider();}catch(error){finish(error instanceof Error?error.message:'speech_failed');}};
  void (async()=>{
   let mode:SpeechAvailability;

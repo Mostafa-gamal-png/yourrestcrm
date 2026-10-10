@@ -8,7 +8,7 @@ export async function getApplicationUser(){
  // Incoming oai-authenticated-* headers are never used in this distribution.
  return emailSession(new Headers(await headers()),authDatabase(),emailAuthConfig());
 }
-export async function requireApplicationUser(returnTo:string){
+export async function requireApplicationUser(){
  const user=await getApplicationUser();if(user)return user;
- redirect('/login?return_to='+encodeURIComponent(safeAuthReturn(returnTo)));
+ redirect('/login?return_to='+encodeURIComponent(safeAuthReturn()));
 }

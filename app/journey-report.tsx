@@ -1,13 +1,13 @@
 'use client';
 import {durationLabel} from '@/lib/visits';
 import {journeyVisitTiming} from '@/lib/journeys';
-import {submitJson,SubmitError} from '@/lib/client-submit';
+import {submitJson} from '@/lib/client-submit';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import type * as Leaflet from 'leaflet';
 import {AlertCircle,CalendarDays,CheckCircle2,Clock,FileText,Flag,Loader2,MapPin,Maximize,RefreshCw,Route,Users} from 'lucide-react';
 import type {Member} from '@/lib/crm';
 import {useLanguage} from '@/lib/i18n';
-import {JOURNEY_MAX_ACCURACY,journeyDate,type JourneyPoint,type JourneyStop,type JourneyReportStop,type JourneyReportData,type JourneyCommunication,type JourneyResult} from '@/lib/journeys';
+import {JOURNEY_MAX_ACCURACY,journeyDate,type JourneyStop,type JourneyReportStop,type JourneyReportData,type JourneyCommunication,type JourneyResult} from '@/lib/journeys';
 import type {MobileRouteObservedStop} from '@/lib/mobile-route-stops';
 import type {AutoStation,DailyFollowup,DailySummary} from '@/lib/daily-report';
 import './journey-report.css';

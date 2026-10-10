@@ -10,7 +10,7 @@ import {visitCustomer} from '@/lib/customer-visits';
 import {salesScopeMemberIds,recordAuthorId} from '@/lib/access';
 import {journeyDate,initialJourneyData,applyJourneyPoint,closeJourney,journeyGap,journeySegments,projectJourneyWindow,journeyRecordingBoundary,closeJourneyAtWindowEnd,JOURNEY_REPLAY_MS,JOURNEY_GAP_MS,type JourneyPoint,type JourneyStop} from '@/lib/journeys';
 import {journeyColumns,decodeJourney,canReadJourney,ownJourney,activeJourney,journeyGuard,journeyLinkedTimingStatement,requireJourneyReport} from '@/lib/journeys-server';
-import {trackingWindowOpen,trackingWindowEnd,trackingWindowStatus} from '@/lib/tracking-window';
+import {trackingWindowOpen,trackingWindowStatus} from '@/lib/tracking-window';
 export const dynamic='force-dynamic';
 const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v);
 const identifier=z.string().min(1).max(150).regex(/^[a-zA-Z0-9_-]+$/);

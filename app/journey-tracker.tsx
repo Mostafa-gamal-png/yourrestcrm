@@ -1,6 +1,6 @@
 'use client';
 import React,{createContext,useCallback,useContext,useEffect,useMemo,useRef,useState} from 'react';
-import {MapPin,PauseCircle,RefreshCw,AlertTriangle,Loader2} from 'lucide-react';
+import {MapPin,PauseCircle,AlertTriangle,Loader2} from 'lucide-react';
 import type {Member} from '@/lib/crm';
 import type {JourneyStop} from '@/lib/journeys';
 import {journeyDay,positionSample,trimJourneyBuffer,shouldStartJourney,type QueuedJourneyPoint} from '@/lib/journey-client';
@@ -8,6 +8,7 @@ import {useLanguage} from '@/lib/i18n';
 import {isNativeTrackingApp,nativeTrackingRequest,nativeTrackingGeneration,subscribeNativeTracking,nativeScheduleSupported,type NativeTrackingState} from '@/lib/native-tracking';
 import {trackingWindowOpen,trackingWindowStatus} from '@/lib/tracking-window';
 import './journey-tracker.css';
+import {omit} from '@/lib/omit';
 
 type TrackerError='permission'|'unavailable'|'unsupported'|'sync'|'expired'|'invalid'|'native'|'';
 type JourneyResponse={active:JourneyStop|null;stop:JourneyStop|null;serverTime:string};
@@ -214,7 +215,7 @@ export function BrowserJourneyTrackerProvider({me,children}:{me:Member|null;chil
   if(generation.current!==epoch||!enabledRef.current)return;
   const trimmed=trimJourneyBuffer(queue.current);queue.current=trimmed.points;setPendingCount(queue.current.length);if(trimmed.dropped){pendingGaps.current.add('buffer_expired');setError('expired');}
   while(queue.current.length&&generation.current===epoch){const stopId=queue.current[0].stopId,batch=queue.current.filter(point=>point.stopId===stopId).slice(0,50),ids=new Set(batch.map(point=>point.id));
-   try{const result=await request({action:'samples',stopId,points:batch.map(({stopId:_,...point})=>point)});if(generation.current!==epoch)return;queue.current=queue.current.filter(point=>!ids.has(point.id));apply(result,epoch);}
+   try{const result=await request({action:'samples',stopId,points:batch.map(sample=>omit(sample,'stopId'))});if(generation.current!==epoch)return;queue.current=queue.current.filter(point=>!ids.has(point.id));apply(result,epoch);}
    catch(failure){if(generation.current!==epoch)return;const status=(failure as Error&{status?:number}).status;
     if(status===400){queue.current=queue.current.filter(point=>!ids.has(point.id));pendingGaps.current.add('tracking_paused');setError('invalid');}
     else if(status===409){const current=await request();if(generation.current!==epoch)return;apply(current,epoch);const last=Date.parse(current.active?.data.lastPoint?.capturedAt||'');queue.current=queue.current.filter(point=>point.stopId!==stopId||current.active?.id===stopId&&(!Number.isFinite(last)||Date.parse(point.capturedAt)>last));if(queue.current.some(point=>ids.has(point.id)))queue.current=queue.current.filter(point=>!ids.has(point.id));pendingGaps.current.add('tracking_paused');setError('invalid');}

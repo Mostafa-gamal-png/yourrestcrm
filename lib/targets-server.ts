@@ -2,7 +2,7 @@ import {regionScope} from './regions';
 import {kpiPeriod} from './kpis';
 import {context,CRMError,accessGuard} from './crm-server';
 import {salesReadMemberIds,salesReportingRecords,type Sale} from './sales';
-import {type TargetSet,type TargetState,type TargetKind,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets} from './targets';
+import {type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets} from './targets';
 import {readErpSales} from './erp-sales-server';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function targetState(c:Context,month:string,sales:Sale[]=[]):Promise<TargetState>{
