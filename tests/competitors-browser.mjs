@@ -109,7 +109,8 @@ try{
   const delivered=(await readFile(capture,'utf8')).trim().split('\n').map(JSON.parse).filter(row=>row.to===user+'@yourrest.org').at(-1);ok(delivered,'Mock email '+user);const mail=Buffer.from(delivered.message.split('\r\n\r\n')[1].replaceAll('\r\n',''),'base64').toString('utf8'),code=mail.match(/\b\d{6}\b/)?.[0];ok(code,'Mock OTP '+user);await target.locator('#yourrest-code').fill(code);await target.getByRole('button',{name:'دخول',exact:true}).click();await target.locator('.workspace').waitFor();await target.locator('.mobile-bottom-navigation').waitFor();
  }
  async function nav(target,id){lastPage=target;await target.evaluate(()=>document.activeElement instanceof HTMLElement&&document.activeElement.blur());const button=target.locator('.mobile-bottom-navigation [data-page='+id+']');if(await button.count())await button.click();else{await target.getByRole('button',{name:/^(المزيد من الصفحات|More pages)$/,exact:true}).click();await target.locator('.mobile-overflow-pages [data-page='+id+']').click();}await target.locator('.page-heading').waitFor();}
- async function snapshot(target,label){
+ const competitorInput=dialog=>dialog.getByRole('combobox',{name:/اسم المنافس/});
+async function snapshot(target,label){
   await target.evaluate(async()=>{await Promise.all([...document.querySelectorAll('[role=dialog]')].flatMap(el=>el.getAnimations()).map(animation=>animation.finished.catch(()=>{})));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
   const layout=await target.evaluate(()=>({viewport:{width:innerWidth,height:innerHeight},clientWidth:document.documentElement.clientWidth,clientLeft:document.documentElement.clientLeft,overflow:document.documentElement.scrollWidth>innerWidth+1,language:document.documentElement.lang,panels:[...document.querySelectorAll('.competitors-workspace,.competitors-list,.competitors-detail,.customer-visit-dialog')].filter(el=>el.getClientRects().length).map(el=>({name:el.className,rect:el.getBoundingClientRect().toJSON()}))}));
   eq(layout.overflow,false,label+' no horizontal overflow');for(const panel of layout.panels)ok(panel.rect.left>=-1&&panel.rect.right<=layout.viewport.width+1,label+' '+panel.name+' stays horizontally in viewport');geometry.push({label,...layout});const filename=path.join(screenshots,label+'.png');await target.screenshot({path:filename,fullPage:false});saved.push(filename);
@@ -139,9 +140,9 @@ try{
  // Existing visits remain the single source of competitor information.
  await page.locator('.competitors-contact').filter({hasText:'obs-one'}).locator('.competitors-open-visit').click();
  let dialog=page.locator('.customer-visit-dialog');await dialog.waitFor();
- eq(await dialog.locator('input[list=visit-competitor-names]').inputValue(),'ألـفا للصناعة','Original visit opens with stored competitor spelling');
- eq(await dialog.locator('.competitor-file a').getAttribute('href'),'/api/visit-files?id=quote-one','Original attachment kept in edit form');
- await dialog.getByLabel('ملاحظات المنافس',{exact:true}).fill('مراجعة المنافس من مدير المبيعات');
+ eq(await competitorInput(dialog).inputValue(),'ألـفا للصناعة','Original visit opens with stored competitor spelling');
+ eq(await dialog.locator('.competitor-file-current a').getAttribute('href'),'/api/visit-files?id=quote-one','Original attachment kept in edit form');
+ await dialog.getByLabel(/^ملاحظات المنافس/).fill('مراجعة المنافس من مدير المبيعات');
  let pending=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/visits'&&r.request().method()==='POST');
  await dialog.getByRole('button',{name:'حفظ التعديلات',exact:true}).click();let response=await pending;eq(response.status(),200,'Manager edits subordinate competitor visit with attachment');await dialog.waitFor({state:'detached'});
  eq(await page.locator('.competitors-contact').filter({hasText:'مراجعة المنافس من مدير المبيعات'}).count(),1,'Competitor history refreshes from edited visit');
@@ -153,23 +154,29 @@ try{
  await page.keyboard.press('Escape');await page.locator('.crm-sheet').waitFor({state:'detached'});
  // Adding an observation from an existing competitor prefills the toggle and name.
  await page.locator('.competitors-detail').getByRole('button',{name:'إضافة زيارة',exact:true}).click();dialog=page.locator('.customer-visit-dialog');await dialog.waitFor();
- eq(await dialog.locator('#visit-has-competitor').getAttribute('aria-checked'),'true','Existing competitor CTA enables competitor information');
- eq(await dialog.locator('input[list=visit-competitor-names]').inputValue(),'الفا للصناعة','Existing competitor CTA prefills name');
+ eq(await dialog.locator('.competitor-fields').getByRole('switch').getAttribute('aria-checked'),'true','Existing competitor CTA enables competitor information');
+ eq(await competitorInput(dialog).inputValue(),'الفا للصناعة','Existing competitor CTA prefills name');
  eq(await dialog.locator('.visit-sales-details').getAttribute('open'),'','Sales section already expanded');
- const suggestions=await dialog.locator('#visit-competitor-names option').evaluateAll(options=>options.map(o=>o.value));
- eq(suggestions.length,4,'Visit suggestions reuse visible competitor set');eq(suggestions.includes('منافس خارج المنطقة'),false,'Suggestions cannot reveal other regions');
+ await competitorInput(dialog).press('ArrowDown');await dialog.locator('.competitor-suggestions').waitFor();
+ const suggestions=await dialog.locator('.competitor-suggestions [role=option]').evaluateAll(options=>options.map(o=>o.textContent.trim()));
+ eq(suggestions.length,4,'Visit suggestions reuse visible competitor set');eq(suggestions.some(text=>text.includes('منافس خارج المنطقة')),false,'Suggestions cannot reveal other regions');
+ // Escape belongs to the open suggestion list: it must not dismiss the visit dialog or prompt to discard it.
+ await competitorInput(dialog).press('Escape');await page.waitForTimeout(300);
+ eq(await dialog.locator('.competitor-suggestions').count(),0,'Escape closes the suggestion list');
+ eq(await page.locator('.customer-visit-dialog').count(),1,'Escape inside the competitor combobox keeps the visit dialog open');
+ eq(await competitorInput(dialog).inputValue(),'الفا للصناعة','Escape keeps the entered competitor name');
  await dialog.getByRole('button',{name:'إلغاء',exact:true}).click();await dialog.waitFor({state:'detached'});
  await page.locator('.competitors-back').click();eq(await page.locator('.competitors-list').isVisible(),true,'Mobile back restores list');
  await page.locator('#competitors-query').fill('not-existing-customer');await page.locator('.competitors-no-results').waitFor();eq(await page.locator('.competitors-item').count(),0,'Unmatched query shows empty search state');
  await page.getByRole('button',{name:'عرض كل المنافسين',exact:true}).click();eq(await page.locator('.competitors-item').count(),4,'Reset search restores all visible competitors');
  // Register a new competitor via a real call visit; synthetic geolocation only.
  await page.getByRole('button',{name:'تسجيل منافس في زيارة',exact:true}).click();dialog=page.locator('.customer-visit-dialog');await dialog.waitFor();
- eq(await dialog.locator('#visit-has-competitor').getAttribute('aria-checked'),'true','New competitor CTA enables competitor fields');
- eq(await dialog.locator('input[list=visit-competitor-names]').inputValue(),'','New competitor has no preselected name');
+ eq(await dialog.locator('.competitor-fields').getByRole('switch').getAttribute('aria-checked'),'true','New competitor CTA enables competitor fields');
+ eq(await competitorInput(dialog).inputValue(),'','New competitor has no preselected name');
  await pick(dialog,'نوع التواصل','اتصال');await dialog.locator('#visit-customer-search').click();await dialog.locator('#visit-customer-search').fill('W101');await page.getByRole('option').filter({hasText:'مصنع الاختبار الأول'}).waitFor();await dialog.locator('#visit-customer-search').press('Enter');await dialog.locator('.visit-selected-customer').waitFor();
  await pick(dialog,'اختر الهدف من الزيارة','تعريف بمنتجات الشركة');await pick(dialog,'نتيجة الزيارة','متابعة العميل');
  await dialog.getByRole('textbox',{name:/^الإجراء القادم/}).fill('مراجعة سعر المنافس');
- await dialog.locator('input[list=visit-competitor-names]').fill('منافس جديد QA');await dialog.getByLabel('ملاحظات المنافس',{exact:true}).fill('عرض منافس جديد من الاتصال');
+ await competitorInput(dialog).fill('منافس جديد QA');await dialog.getByLabel(/^ملاحظات المنافس/).fill('عرض منافس جديد من الاتصال');
  await dialog.locator('.location-status').filter({hasText:'تم تحديد الموقع تلقائيًا'}).waitFor();await snapshot(page,'competitors-new-visit-mobile-ar');
  pending=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/visits'&&r.request().method()==='POST');await dialog.getByRole('button',{name:'حفظ الزيارة',exact:true}).click();response=await pending;const result=await response.json();eq(response.status(),200,'Real competitor call saves: '+JSON.stringify(result));ok(result.id,'New visit has persisted ID');await dialog.waitFor({state:'detached'});
  eq(await page.locator('.competitors-item').count(),5,'New competitor appears automatically after save');
