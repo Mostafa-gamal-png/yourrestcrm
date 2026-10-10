@@ -2,12 +2,12 @@ import {regionScope} from './regions';
 import {kpiPeriod} from './kpis';
 import {context,CRMError,accessGuard} from './crm-server';
 import {salesReadMemberIds,salesReportingRecords,type Sale} from './sales';
-import {type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets} from './targets';
+import {type TargetKind,type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets} from './targets';
 import {readErpSales} from './erp-sales-server';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function targetState(c:Context,month:string,sales:Sale[]=[]):Promise<TargetState>{
  const roleAllowed=salesReadMemberIds(c.members,c.me),allowed=new Set(c.regionalMembers.filter(m=>roleAllowed.has(m.id)).map(m=>m.id)),global=regionScope(c.me)==='all',manage=['admin','manager'].includes(c.me.role);
- const raw=(await c.db.prepare('SELECT * FROM crm_target_sets WHERE month<=? ORDER BY month DESC').bind(month).all<any>()).results;
+ const raw=(await c.db.prepare('SELECT * FROM crm_target_sets WHERE month<=? ORDER BY month DESC').bind(month).all<{kind:TargetKind;scope_id:string;month:string;data:string;version:number;updated_at:string}>()).results;
  const branches=Array.from(new Set([...c.regionalMembers.map(m=>m.branch),...c.visible.filter(r=>r.kind==='customer').map(r=>r.branch)])).filter(Boolean).filter(b=>manage||b===c.me.branch).sort();
  const seen=new Set<string>();const sets:TargetSet[]=[];
  for(const r of raw){if(r.kind!=='weights'&&!allowed.has(r.scope_id)&&!(manage&&global&&r.kind==='sales'&&branches.some(b=>'branch:'+b===r.scope_id)))continue;const key=r.kind+':'+r.scope_id;if(seen.has(key))continue;seen.add(key);sets.push({kind:r.kind,scopeId:r.scope_id,month:r.month,data:JSON.parse(r.data),version:r.version,updatedAt:r.updated_at});}

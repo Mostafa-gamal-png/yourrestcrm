@@ -20,6 +20,7 @@ const categorySchema=z.object({category:z.string().trim().min(1).max(300),produc
 const inputSchema=z.object({action:z.enum(['preview','commit']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),employeeMappings:z.array(mappingSchema).max(5000).default([]),categoryMappings:z.array(categorySchema).max(500).default([]),allowSkipped:z.boolean().default(false),previewToken:z.string().max(1024).optional(),requestId:z.string().uuid().optional()});
 type Input=z.infer<typeof inputSchema>;
 export type ErpDocumentPreview={key:string;reference:string;date:string;documentType:'sale'|'return';customerName:string;employeeId:string;employeeName:string;repId:string;repName:string;lineCount:number;totalCents:number;status:'new'|'duplicate'|'conflict'|'excluded'|'unassigned'|'unmapped'|'out_of_scope';reason:string};
+export type ErpSaleRow={id:string;rep_id:string;branch:string;date:string;reference:string;document_type:'sale'|'return';customer_code:string;customer_name:string;data:string;total_cents:number;created_by:string;created_at:string;region_scope:string};
 type PreparedDocument={preview:ErpDocumentPreview;rows:ErpRow[];items:SaleItem[];contentHash:string;mappedHash:string;rep?:Member};
 function missingEmployee(row:ErpRow){return !normalize(row.employeeName)||!normalize(row.employeeId);}
 function mixedDocument(rows:ErpRow[]){const first=rows[0];return rows.some(r=>r.date!==first.date||normalize(r.employeeId)!==normalize(first.employeeId)||normalize(r.employeeName)!==normalize(first.employeeName)||normalize(r.customerCode)!==normalize(first.customerCode)||normalize(r.customerName)!==normalize(first.customerName));}
@@ -65,7 +66,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const nameRosterSnapshot=nameInferenceUsed?sorted(nameRoster,m=>m.id).map(snapshot):null;
  for(const [id,m] of categoryChanges)if(categoryIds.has(id)){if(c.me.role==='supervisor'&&categoryMap.has(id)&&categoryMap.get(id)!==m.product)throw new CRMError('تعديل ربط فئة محفوظة متاح لمدير المبيعات أو مدير النظام فقط',403);categoryMap.set(id,m.product);}
  for(const category of categoryIds)if(!categoryMap.has(category)&&salesProducts.includes(category))categoryMap.set(category,category);
- const existing=(await c.db.prepare('SELECT document_key,content_hash,mapped_hash,rep_id,region_scope FROM crm_erp_sales').all<any>()).results;const stored=new Map(existing.map(r=>[r.document_key,r]));
+ const existing=(await c.db.prepare('SELECT document_key,content_hash,mapped_hash,rep_id,region_scope FROM crm_erp_sales').all<{document_key:string;content_hash:string;mapped_hash:string;rep_id:string;region_scope:string}>()).results;const stored=new Map(existing.map(r=>[r.document_key,r]));
  const manual=(await c.db.prepare("SELECT reference,date FROM crm_sales WHERE status='confirmed'").all<{reference:string;date:string}>()).results;
  const manualKeys=new Set(manual.map(r=>JSON.stringify([r.date.slice(0,4),canonicalInvoiceReference(r.reference)])));
  const documents:PreparedDocument[]=[];
@@ -104,7 +105,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
 export async function importErpSales(c:Context,body:unknown){
  requireSalesWorkspace(c.me);
  const {input,bytes}=parseInput(body),fingerprint=await hash(c.me.id+':'+canonicalInput(input));
- const replay=async()=>{if(input.action!=='commit'||!input.requestId)return null;const row=await c.db.prepare('SELECT actor_id,fingerprint,result FROM crm_erp_imports WHERE id=?').bind('erp-import-'+input.requestId).first<any>();if(!row)return null;if(row.actor_id!==c.me.id)throw new CRMError('طلب الاستيراد غير متاح',404);if(row.fingerprint!==fingerprint)throw new CRMError('تم حفظ الطلب ببيانات مختلفة؛ ارفع الملف للمعاينة من جديد',409);return {...JSON.parse(row.result),alreadySaved:true};};
+ const replay=async()=>{if(input.action!=='commit'||!input.requestId)return null;const row=await c.db.prepare('SELECT actor_id,fingerprint,result FROM crm_erp_imports WHERE id=?').bind('erp-import-'+input.requestId).first<{actor_id:string;fingerprint:string;result:string}>();if(!row)return null;if(row.actor_id!==c.me.id)throw new CRMError('طلب الاستيراد غير متاح',404);if(row.fingerprint!==fingerprint)throw new CRMError('تم حفظ الطلب ببيانات مختلفة؛ ارفع الملف للمعاينة من جديد',409);return {...JSON.parse(row.result),alreadySaved:true};};
  const prior=await replay();if(prior)return prior;
  const prepared=await prepare(c,input,bytes);
  if(input.action==='preview'){
@@ -161,7 +162,7 @@ export async function importErpSales(c:Context,body:unknown){
 /** Financial projections always require the same region and author-team boundary as CRM sales. */
 export async function readErpSales(c:Context,month:string):Promise<Sale[]>{
  requireSalesWorkspace(c.me);const allowed=salesReadMemberIds(c.members,c.me);
- const rows=(await c.db.prepare('SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND (?=\'all\' OR region_scope=?) ORDER BY date DESC,created_at DESC,id').bind(month+'-01',month+'-31',regionScope(c.me),regionScope(c.me)).all<any>()).results;
+ const rows=(await c.db.prepare('SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND (?=\'all\' OR region_scope=?) ORDER BY date DESC,created_at DESC,id').bind(month+'-01',month+'-31',regionScope(c.me),regionScope(c.me)).all<ErpSaleRow>()).results;
  return rows.filter(r=>allowed.has(r.rep_id)).map(r=>({...JSON.parse(r.data),id:r.id,customerId:'erp-customer:'+r.customer_code,customerName:r.customer_name,repId:r.rep_id,branch:r.branch,date:r.date,reference:r.reference,totalCents:r.total_cents,status:'confirmed',voidReason:'',version:1,createdBy:r.created_by,createdAt:r.created_at,updatedAt:r.created_at,source:'erp',documentType:r.document_type}));
 }
 /** Reps receive only their product quantities; no invoice, customer, price or colleague data. */

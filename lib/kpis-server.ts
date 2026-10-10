@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {regionScope} from './regions';
 import {context,CRMError,accessGuard} from './crm-server';
 import {today} from './crm';
-import {type Sale,monthSchema,salesReadMemberIds,salesReportingRecords} from './sales';
+import {type Sale,type SaleRow,monthSchema,salesReadMemberIds,salesReportingRecords} from './sales';
 import {calculateKpis,prepareKpiRecords,kpiPeriod,kpiInputSchema,type KpiAssessment,type KpiData,type KpiPerformance} from './kpis';
 import {readErpSales} from './erp-sales-server';
 import {readKpiEvidenceRows,readSalesRevision} from './kpi-evidence-server';
@@ -15,8 +15,8 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
  const salesRevision=await readSalesRevision(c);
  const evidenceRevision=(await c.db.prepare("SELECT revision FROM crm_kpi_evidence_state WHERE id='company'").first<{revision:number}>())?.revision||0;
  const [assessmentRows,saleRows,currentErp,previousErp,evidenceRows]=await Promise.all([
-  c.db.prepare('SELECT a.*,m.name AS author FROM crm_kpi_assessments a LEFT JOIN crm_members m ON m.id=a.updated_by WHERE a.month=?').bind(month).all<any>(),
-  c.db.prepare("SELECT * FROM crm_sales WHERE date>=? AND date<=? AND status='confirmed'").bind(period.previousFirst,period.cutoff).all<any>(),
+  c.db.prepare('SELECT a.*,m.name AS author FROM crm_kpi_assessments a LEFT JOIN crm_members m ON m.id=a.updated_by WHERE a.month=?').bind(month).all<{member_id:string;month:string;input:string;version:number;updated_at:string;author:string|null}>(),
+  c.db.prepare("SELECT * FROM crm_sales WHERE date>=? AND date<=? AND status='confirmed'").bind(period.previousFirst,period.cutoff).all<SaleRow>(),
   readErpSales(c,month),readErpSales(c,period.previousFirst.slice(0,7)),readKpiEvidenceRows(c,month)
  ]);
  const sales:Sale[]=[...saleRows.results.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(r=>({...JSON.parse(r.data),id:r.id,repId:r.rep_id,customerId:r.customer_id,totalCents:r.total_cents,status:r.status,date:r.date})),...currentErp,...previousErp].filter(s=>s.date>=period.previousFirst&&s.date<=period.cutoff);
