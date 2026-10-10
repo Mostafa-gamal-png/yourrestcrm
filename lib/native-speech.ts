@@ -6,7 +6,10 @@ type SpeechCallbacks={language:'ar-SA'|'en-US';onText:(text:string)=>void;onErro
 export type SpeechTask={cancel:()=>void};
 const MAX_TEXT=5000,TIMEOUT=80000;
 let active:SpeechTask|null=null;
-const engine=()=>typeof window==='undefined'?null:(window as any).SpeechRecognition||(window as any).webkitSpeechRecognition;
+type SpeechResultItem={isFinal?:boolean;[index:number]:{transcript?:unknown}|undefined};
+type SpeechRecognitionLike={lang:string;interimResults:boolean;continuous:boolean;maxAlternatives:number;onresult:((event:{resultIndex?:number;results:ArrayLike<SpeechResultItem>})=>void)|null;onerror:((event:{error?:string})=>void)|null;onend:(()=>void)|null;start:()=>void;abort:()=>void};
+declare global {interface Window {SpeechRecognition?:new()=>SpeechRecognitionLike;webkitSpeechRecognition?:new()=>SpeechRecognitionLike;}}
+const engine=()=>typeof window==='undefined'?null:window.SpeechRecognition||window.webkitSpeechRecognition;
 const bridgeCast=(value:unknown)=>value as SpeechBridge;
 export async function speechAvailability():Promise<SpeechAvailability>{
  if(isNativeTrackingApp()){
@@ -24,7 +27,7 @@ export function cleanSpeechText(value:unknown):string{
 export function startSpeech(callbacks:SpeechCallbacks):SpeechTask{
  active?.cancel();
  const generation=nativeTrackingGeneration(),scope=typeof window!=='undefined'?window.__yourrestNativeScope:undefined;
- const sessionId=globalThis.crypto.randomUUID();let finished=false,providerClosed=false,nativeBridge:SpeechBridge|null=null,recognition:any=null;const timers:{timeout?:ReturnType<typeof setTimeout>;identity?:ReturnType<typeof setInterval>}={};
+ const sessionId=globalThis.crypto.randomUUID();let finished=false,providerClosed=false,nativeBridge:SpeechBridge|null=null,recognition:SpeechRecognitionLike|null=null;const timers:{timeout?:ReturnType<typeof setTimeout>;identity?:ReturnType<typeof setInterval>}={};
  const sameSession=()=>!finished&&generation===nativeTrackingGeneration()&&scope===window.__yourrestNativeScope;
  const closeProvider=()=>{if(providerClosed)return;providerClosed=true;if(recognition){recognition.onresult=null;recognition.onerror=null;recognition.onend=null;try{recognition.abort();}catch{}}if(nativeBridge)void nativeBridge.request('speechCancel',{sessionId}).catch(()=>{});};
  const finish=(error?:string)=>{if(finished)return;finished=true;if(timers.timeout!==undefined)clearTimeout(timers.timeout);if(timers.identity!==undefined)clearInterval(timers.identity);if(active===task)active=null;window.removeEventListener('pagehide',cancel);window.removeEventListener('popstate',cancel);closeProvider();if(error)callbacks.onError(error);callbacks.onEnd();};
@@ -52,13 +55,13 @@ export function startSpeech(callbacks:SpeechCallbacks):SpeechTask{
   }
   if(mode!=='browser'){finish(mode==='upgrade'?'speech_upgrade':'speech_unsupported');return;}
   try{
-   const Engine=engine();recognition=new Engine();recognition.lang=callbacks.language;recognition.interimResults=false;recognition.continuous=false;recognition.maxAlternatives=1;
-   recognition.onresult=(event:any)=>{
+   const Engine=engine();recognition=new Engine!();recognition.lang=callbacks.language;recognition.interimResults=false;recognition.continuous=false;recognition.maxAlternatives=1;
+   recognition.onresult=event=>{
     if(!sameSession()){cancel();return;}
     try{const texts:string[]=[];for(let index=event.resultIndex||0;index<Math.min(event.results.length,20);index++){const result=event.results[index];if(result.isFinal!==false&&typeof result[0]?.transcript==='string')texts.push(result[0].transcript);}if(texts.length)deliver(texts.join(' '));}
     catch{finish('speech_invalid');}
    };
-   recognition.onerror=(event:any)=>{if(!sameSession()){cancel();return;}finish(event.error==='not-allowed'||event.error==='service-not-allowed'?'speech_permission':event.error==='network'?'speech_network':event.error==='no-speech'?'speech_no_match':event.error==='language-not-supported'?'speech_language':event.error==='aborted'?undefined:'speech_failed');};
+   recognition.onerror=event=>{if(!sameSession()){cancel();return;}finish(event.error==='not-allowed'||event.error==='service-not-allowed'?'speech_permission':event.error==='network'?'speech_network':event.error==='no-speech'?'speech_no_match':event.error==='language-not-supported'?'speech_language':event.error==='aborted'?undefined:'speech_failed');};
    recognition.onend=()=>{if(sameSession())finish();else cancel();};recognition.start();
   }catch(error){finish(error instanceof Error&&error.name==='NotAllowedError'?'speech_permission':'speech_failed');}
  })();
