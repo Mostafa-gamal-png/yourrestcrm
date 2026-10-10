@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "output/**",
     ".sites-runtime/**",
     "public/offline-app/**",
+    ".claude/**",
   ]),
   {
     // CommonJS entry points (Passenger launcher, setup and activation helpers) must use require().

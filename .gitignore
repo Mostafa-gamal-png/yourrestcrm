@@ -8,3 +8,8 @@ output/
 settings.cjs
 
 .sites-runtime/
+
+!.env.example
+
+# Agent worktrees and local assistant state
+.claude/
