@@ -2,13 +2,13 @@ import {recordAuthorId} from '@/lib/access';
 import {readJsonBody} from '@/lib/crm-server';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
-import {accessGuard,recordEditGuard,requireRecordEdit,context,CRMError,checkOrigin,replyError} from '@/lib/crm-server';
+import {accessGuard,recordEditGuard,requireRecordEdit,context,CRMError,checkOrigin,requireSession,replyError} from '@/lib/crm-server';
 import {schemas,type Row} from '@/lib/crm';
 import {riyadhDate} from '@/lib/visits';
 import {validateFollowup,prepareNewContact,requireLegacyVisit,preserveRequestResponsible} from '@/lib/followups-server';
 export const dynamic='force-dynamic';
 export async function POST(req:Request){try{
- checkOrigin(req);const body=await readJsonBody(req) as any;if(JSON.stringify(body).length>80000)throw new CRMError('حجم الطلب كبير');
+ checkOrigin(req);await requireSession();const body=await readJsonBody(req) as any;if(JSON.stringify(body).length>80000)throw new CRMError('حجم الطلب كبير');
  const key=z.string().uuid().parse(body.createKey);const c=await context();requireSalesRole(c.me);const now=new Date().toISOString(),mutation=crypto.randomUUID();
  const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([body.id||'',body.parentId,body.adoptId||'',body.data,body.contact||null,body.clockAction||'']))))).map(n=>n.toString(16).padStart(2,'0')).join('');
  const id=body.id|| (body.adoptId?'followup-'+body.adoptId:'followup-'+key);

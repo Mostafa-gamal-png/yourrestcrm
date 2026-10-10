@@ -4,7 +4,7 @@ import {readJsonBody} from '@/lib/crm-server';
 import {activeServiceCase,serviceHistoryLocked} from '@/lib/customer-service';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
-import {accessGuard,recordEditGuard,requireRecordEdit,context,checkOrigin,CRMError,replyError} from '@/lib/crm-server';
+import {accessGuard,recordEditGuard,requireRecordEdit,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {schemas,today,isSalesRequest,type Row} from '@/lib/crm';
 import {visitCustomer,visitRequest,customerVisits,visitOrder,visitProducts} from '@/lib/customer-visits';
 import {riyadhDate} from '@/lib/visits';
@@ -13,7 +13,7 @@ import {prepareJourneyVisitLink} from '@/lib/journeys-server';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 export const dynamic='force-dynamic';
 export async function POST(req:Request){try{
- checkOrigin(req);const body:any=await readJsonBody(req);if(JSON.stringify(body).length>90000)throw new CRMError('حجم البيانات كبير');
+ checkOrigin(req);await requireSession();const body:any=await readJsonBody(req);if(JSON.stringify(body).length>90000)throw new CRMError('حجم البيانات كبير');
  const key=z.string().uuid().parse(body.createKey),id=body.id||'customer-visit-'+key,c=await context({load:'customer-graph',customerId:body.customerId,recordIds:[id]}),now=new Date().toISOString(),mutation=crypto.randomUUID();
  requireSalesRole(c.me);
  const offline=offlineCapture(body,c.me.id,now);if(offline&&body.id)throw new CRMError('تعديل الزيارات المحفوظة يتطلب اتصالًا مباشرًا.');const occurredAt=offline?.capturedAt||now;

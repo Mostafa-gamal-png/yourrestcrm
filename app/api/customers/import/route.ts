@@ -3,7 +3,7 @@ import {parseJsonBody} from '@/lib/crm-server';
 import {regionScope} from '@/lib/regions';
 import {env} from 'cloudflare:workers';
 import {z} from 'zod';
-import {database,context,accessGuard,checkOrigin,CRMError,replyError} from '@/lib/crm-server';
+import {database,context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {schemas} from '@/lib/crm';
 import {coordinatesFromText} from '@/lib/customer-location';
 export const dynamic='force-dynamic';
@@ -21,7 +21,7 @@ async function importAccess(req:Request,sourceHash:string){
 }
 const batchSchema=z.object({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),sourceFile:z.string().max(250),rows:z.array(z.object({id:z.string().regex(/^yr-import-[a-f0-9]{32}$/),data:z.record(z.unknown())})).min(1).max(50)});
 export async function POST(req:Request){try{
- checkOrigin(req);const text=await readRequestText(req,1200000);if(text.length>400000)throw new CRMError('دفعة الاستيراد كبيرة');
+ checkOrigin(req);await requireSession();const text=await readRequestText(req,1200000);if(text.length>400000)throw new CRMError('دفعة الاستيراد كبيرة');
  const input=batchSchema.parse(parseJsonBody(text));const {db,owner,permission}=await importAccess(req,input.sourceHash);
  const now=new Date().toISOString(),mutation=crypto.randomUUID();const statements=[];
  for(const source of input.rows){

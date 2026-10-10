@@ -3,7 +3,7 @@ import {readJsonBody} from '@/lib/crm-server';
 import {activeServiceCase} from '@/lib/customer-service';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
-import {accessGuard,context,checkOrigin,CRMError,replyError} from '@/lib/crm-server';
+import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {type Row} from '@/lib/crm';
 import {customerPlanSource,visitCustomer,visitRequest} from '@/lib/customer-visits';
 import {customerFollowupSchema,customerHasQuotation,latestCustomerContact,followupClosed,canExecuteCustomerFollowup} from '@/lib/customer-followups';
@@ -12,7 +12,7 @@ import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {riyadhDate} from '@/lib/visits';
 export const dynamic='force-dynamic';
 export async function POST(req:Request){try{
- checkOrigin(req);const body:any=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');
+ checkOrigin(req);await requireSession();const body:any=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');
  const key=z.string().uuid().parse(body.createKey),id='customer-followup-'+key,c=await context({load:'customer-graph',customerId:body.customerId,recordIds:[id]}),now=new Date().toISOString(),mutation=crypto.randomUUID();
  requireSalesRole(c.me);const customer=c.visible.find(r=>r.kind==='customer'&&r.id===body.customerId);if(!customer)throw new CRMError('اختر العميل',403);
  const offline=offlineCapture(body,c.me.id,now),occurredAt=offline?.capturedAt||now;

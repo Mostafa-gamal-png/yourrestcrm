@@ -22,6 +22,8 @@ export async function context(options:ContextLoad={}){
 }
 export function replyError(error:unknown){if(error instanceof CRMError||error instanceof RequestBodyError)return Response.json({error:error.message},{status:error.status,...(error instanceof RequestBodyError?{headers:{'Cache-Control':'no-store','Connection':'close'}}:{})});console.error('CRM request failed',error);return Response.json({error:'تعذر إتمام العملية. بياناتك المدخلة لم تُمسح؛ حاول مرة أخرى.'},{status:500});}
 export function checkOrigin(req:Request){const origin=req.headers.get('origin');if(!env.YR_APP_ORIGIN||origin!==env.YR_APP_ORIGIN||req.headers.get('sec-fetch-site')==='cross-site')throw new CRMError('طلب غير مسموح',403);}
+/** Reject anonymous callers before any request body is read or validated, so they always receive 401 rather than a validation error. */
+export async function requireSession(){if(!await getApplicationUser())throw new CRMError('سجّل الدخول للوصول إلى التطبيق.',401);}
 
 type GuardContext={me:Member;members:Member[];all:Row[]};
 function recordCustomer(c:GuardContext,record:Row){const indexed=new Map(c.all.map(r=>[r.id,r])),seen=new Set<string>();let root:Row|undefined=record;while(root&&root.kind!=='customer'&&!seen.has(root.id)){seen.add(root.id);root=root.parentId?indexed.get(root.parentId):undefined;}return root?.kind==='customer'?root:undefined;}
