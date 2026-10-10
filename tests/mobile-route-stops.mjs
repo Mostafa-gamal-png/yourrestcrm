@@ -39,7 +39,7 @@ eq(detect(source([...sequence(0,120),{...point(180),accuracy:NaN},...sequence(24
 eq(detect(source(sequence()),at(240)).length,0,'Future samples cannot create a dwell');
 eq(detect(source(sequence(),[],{endedAt:at(240)})),[],'Samples outside the recording window cannot create a dwell');
 
-const mobileRoute=load('lib/mobile-route.ts',name=>name==='./journeys'?journeys:name==='./mobile-route-stops'?detection:name==='./tracking-window'?policy:{});
+const mobileRoute=load('lib/mobile-route.ts',name=>name==='./journeys'?journeys:name==='./mobile-route-stops'?detection:name==='./tracking-window'?policy:name==='./omit'?load('lib/omit.ts',()=>({})):{});
 const projected=mobileRoute.mobileReportDay({...source(sequence()),memberId:'rep',deviceId:'private-device',regionScope:'eastern',startedAt:at(0),lastPointAt:at(300),lastPoint:point(300),expiresAt:'2026-10-01T21:00:00.000Z',version:1},sequence(),'Representative',at(360));
 eq(projected.automaticStops.length,1,'The real daily report projection includes automatic stop evidence');eq(projected.automaticStops[0].observedDurationSeconds,300);eq('deviceId' in projected,false,'Report projection does not expose the device identifier');
 

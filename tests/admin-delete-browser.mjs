@@ -13,7 +13,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
-import {createHash,randomBytes,randomUUID} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import {sqliteDatabase,privateObjects} from '../portable/storage.mjs';
 
 const require=createRequire(import.meta.url),{chromium}=require(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES?path.join(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES,'playwright'):'playwright');
@@ -117,7 +117,6 @@ try{
   return ctx;
  }
  async function firstPage(ctx){return contentShell?ctx.pages()[0]:await ctx.newPage();}
- async function request(target,pathname,body){return target.evaluate(async({pathname,body})=>{const reply=await fetch(pathname,body===undefined?{cache:'no-store'}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return {status:reply.status,data:await reply.json()};},{pathname,body});}
  const signinRequestedAt=new Map();
  async function signin(target,user){lastPage=target;target.setDefaultTimeout(18000);await target.goto(origin+'/');await target.locator('#yourrest-email').waitFor();await target.locator('#yourrest-email').fill(user);
   const cooldown=(signinRequestedAt.get(user)||0)-Date.now();if(cooldown>0)await delay(cooldown);signinRequestedAt.set(user,Date.now()+61000);
@@ -130,16 +129,12 @@ try{
   const layout=await target.evaluate(()=>({viewport:{width:innerWidth,height:innerHeight},clientWidth:document.documentElement.clientWidth,clientLeft:document.documentElement.clientLeft,overflow:document.documentElement.scrollWidth>innerWidth+1,language:document.documentElement.lang,tabs:[...document.querySelectorAll('.competitors-profile-tabs [role=tab]')].filter(el=>el.getClientRects().length).map(el=>({text:el.textContent,rect:el.getBoundingClientRect().toJSON(),container:el.parentElement.getBoundingClientRect().toJSON()})),panels:[...document.querySelectorAll('.competitors-workspace,.competitors-list,.competitors-detail,.customer-visit-dialog,.followup-record-dialog,.competitor-fields,.offline-status')].filter(el=>el.getClientRects().length).map(el=>({name:el.className,rect:el.getBoundingClientRect().toJSON()}))}));
   eq(layout.overflow,false,label+' no horizontal overflow');for(const panel of layout.panels)ok(panel.rect.left>=-1&&panel.rect.right<=layout.viewport.width+1,label+' '+panel.name+' stays horizontally in viewport');for(const tab of layout.tabs)ok(tab.rect.left>=tab.container.left-1&&tab.rect.right<=tab.container.right+1,label+' tab '+tab.text+' fits profile tab row');geometry.push({label,...layout});const filename=path.join(screenshots,label+'.png');await target.screenshot({path:filename,fullPage:false});saved.push(filename);
  }
- async function download(target,id){return target.evaluate(async id=>{const response=await fetch('/api/visit-files?id='+encodeURIComponent(id));return {status:response.status,mime:response.headers.get('content-type'),cache:response.headers.get('cache-control'),body:await response.text()};},id);}
- async function competitors(target){await nav(target,'competitors');await target.locator('.competitors-workspace').waitFor();}
  async function pick(target,name,option){await target.getByRole('combobox',{name,exact:true}).click();await (target.page?target.page():target).getByRole('option',{name:option,exact:true}).click();await (target.page?target.page():target).getByRole('option').first().waitFor({state:'hidden'});}
 
 
 
  async function idbStore(target,name){return target.evaluate(name=>new Promise((resolve,reject)=>{const opened=indexedDB.open('yourrest-offline-v1');opened.onerror=()=>reject(opened.error);opened.onsuccess=()=>{const database=opened.result;if(!database.objectStoreNames.contains(name)){database.close();resolve([]);return;}const transaction=database.transaction(name,'readonly'),read=transaction.objectStore(name).getAll();read.onerror=()=>reject(read.error);read.onsuccess=()=>{const values=read.result;database.close();resolve(values);};};}),name);}
- async function queue(target){return idbStore(target,'outbox');}
  async function eventually(check,message,timeout=25000){const started=Date.now();let value;while(Date.now()-started<timeout){value=await check();if(value){checks++;return value;}await delay(150);}throw Error(message+' (timed out)');}
- async function coldReload(target){await target.reload({waitUntil:'domcontentloaded'});await target.locator('.workspace').waitFor({timeout:25000});await target.locator('.mobile-bottom-navigation').waitFor();}
  async function freshVisit(target,customerName='مصنع الاختبار الأول'){
   await nav(target,'activity');await target.getByRole('button',{name:'زيارة جديدة',exact:true}).first().click();const dialog=target.locator('.customer-visit-dialog');await dialog.waitFor();await pick(dialog,'نوع التواصل','اتصال');
   if(customerName){await dialog.locator('#visit-customer-search').fill(customerName);await target.getByRole('option').filter({hasText:customerName}).waitFor();await dialog.locator('#visit-customer-search').press('Enter');}
@@ -151,7 +146,6 @@ try{
   if(quote){await fields.locator('.competitor-file-input input').setInputFiles({name:'offline-competitor.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\n% Synthetic offline competitor evidence\n%%EOF')});await fields.locator('.competitor-file-current').waitFor();}
   await dialog.locator('.location-status').filter({hasText:'تم تحديد الموقع تلقائيًا'}).waitFor();return fields;
  }
- async function saveVisit(dialog){await dialog.getByRole('button',{name:'حفظ الزيارة',exact:true}).click();await dialog.waitFor({state:'detached',timeout:25000});}
  async function rows(){const result=await db.prepare("SELECT id,parent_id,assigned_to,data,created_at FROM crm_records WHERE kind='activity'").all();return (result.results||result).map(row=>({...row,data:JSON.parse(row.data)}));}
  const ctx=await context(),page=await firstPage(ctx);await signin(page,'owner');await nav(page,'activity');
  const before=await rows();const deleteButtons=page.locator('.rep-mobile-records').getByRole('button',{name:'حذف الزيارة',exact:true});ok(await deleteButtons.count()>0,'Admin sees visit delete buttons on mobile');

@@ -38,8 +38,8 @@ export default {fetch(request: Request) {return Response.json({region:Region.Wes
  const built=readFileSync(join(out,'worker.js'),'utf8');
  assert.match(built,/west/);checks++;
  assert.doesNotMatch(built,/from ['"]\.\/values/);checks++;
- const module=await import(pathToFileURL(join(out,'worker.js')).href);
- const response=await module.default.fetch(new Request('https://example.invalid/customer'));
+ const loadedModule=await import(pathToFileURL(join(out,'worker.js')).href);
+ const response=await loadedModule.default.fetch(new Request('https://example.invalid/customer'));
  assert.equal(response.status,200);checks++;
  assert.deepEqual(await response.json(),{region:'west',count:4,path:'/customer'});checks++;
  console.log(JSON.stringify({ok:true,checks,versions,compatibilityOnly:process.argv.includes('--compatibility-only'),dryRun:true,deployed:false,exploitReproduction:false}));

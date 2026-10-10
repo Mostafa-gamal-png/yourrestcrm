@@ -44,7 +44,6 @@ const NativeDate=Date;let clock=NativeDate.parse('2026-09-30T09:00:00.000Z');
 globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
 process.on('exit',()=>{globalThis.Date=NativeDate;});
 const iso=offset=>new Date(clock+(offset||0)).toISOString();
-const advance=milliseconds=>{clock+=milliseconds;};
 
 function member(id,role,supervisor='',region='eastern',active=1){sql.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,?,?,?,0,?)').run(id,'u-'+id,id+'@yourrest.org',id,role,'الرئيسي',supervisor||null,region,active,iso());}
 member('owner','admin','','all');member('manager','manager');member('other-manager','manager');member('supervisor','supervisor','manager');member('other-supervisor','supervisor','other-manager');member('rep','rep','supervisor');member('peer','rep','supervisor');member('outsider','rep','other-supervisor');member('western','rep','supervisor','western');member('inactive','rep','supervisor','eastern',0);member('service','customer_service');

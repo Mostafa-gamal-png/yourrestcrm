@@ -8,13 +8,13 @@ const require = createRequire(import.meta.url), xml = require('fast-xml-parser')
 class ObservedParser extends xml.XMLParser {
     parse(text, ...args) { const result = super.parse(text, ...args); trees.push(result); return result; }
 }
-const module = { exports: {} };
+const loadedModule = { exports: {} };
 const code = ts.transpileModule(fs.readFileSync('lib/erp-sales.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 new Function('require', 'module', 'exports', code)(name => name === 'fast-xml-parser'
-    ? { ...xml, XMLParser: ObservedParser } : require(name), module, module.exports);
-const { parseErpWorkbook, ErpWorkbookError } = module.exports;
+    ? { ...xml, XMLParser: ObservedParser } : require(name), loadedModule, loadedModule.exports);
+const { parseErpWorkbook, ErpWorkbookError } = loadedModule.exports;
 let checks = 0;
 function equal(actual, expected, message) { assert.deepEqual(actual, expected, message); checks++; }
 function rejects(parts, pattern) {

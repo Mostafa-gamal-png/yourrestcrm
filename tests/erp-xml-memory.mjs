@@ -5,9 +5,9 @@ import ts from 'typescript';
 import {zipSync,strToU8} from 'fflate';
 const require=createRequire(import.meta.url),realXml=require('fast-xml-parser'),parsed=[],trees=[];
 class ObservedParser extends realXml.XMLParser { parse(text,...args){parsed.push(text);const result=super.parse(text,...args);trees.push(result);return result;} }
-const module={exports:{}},code=ts.transpileModule(fs.readFileSync('lib/erp-sales.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-new Function('require','module','exports',code)(name=>name==='fast-xml-parser'?{...realXml,XMLParser:ObservedParser}:require(name),module,module.exports);
-const {parseErpWorkbook,ErpWorkbookError}=module.exports;
+const loadedModule={exports:{}},code=ts.transpileModule(fs.readFileSync('lib/erp-sales.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+new Function('require','module','exports',code)(name=>name==='fast-xml-parser'?{...realXml,XMLParser:ObservedParser}:require(name),loadedModule,loadedModule.exports);
+const {parseErpWorkbook,ErpWorkbookError}=loadedModule.exports;
 let checks=0;function equal(actual,expected,message){assert.deepEqual(actual,expected,message);checks++;}
 function rejects(bytes,pattern){assert.throws(()=>parseErpWorkbook(bytes),error=>error instanceof ErpWorkbookError&&pattern.test(error.message));checks++;}
 const encoder = value => strToU8(value);

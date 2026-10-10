@@ -13,7 +13,6 @@ const root=process.cwd(),nativeRequire=createRequire(import.meta.url),cache=new 
 const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
 let checks=0,language='ar';
 const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
-const ok=(value,message)=>{assert.ok(value,message);checks++;};
 const noop=()=>{},pass=({children})=>typeof children==='function'?null:children;
 const mock=new Proxy({},{get:()=>pass});
 const dictionary=JSON.parse(fs.readFileSync(path.join(root,'lib/locales/en.json'),'utf8'));
