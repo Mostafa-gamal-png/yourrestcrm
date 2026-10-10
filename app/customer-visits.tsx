@@ -11,17 +11,19 @@ import { contactTypes, visitPurposes, visitResult, formatVisitTime} from '@/lib/
 import {isServiceRole,serviceStatusLabels} from '@/lib/customer-service';
 import {filterVisitRows} from '@/lib/visit-list';
 import LanguageSwitch from './language-switch';
-import VisitFields, {FollowupDateField,type VisitLocationState} from './visit-fields';
+import VisitFields, {FollowupDateField,type VisitLocationState,type VisitData,type VisitValue} from './visit-fields';
 import {submitJson,SubmitError,definiteSubmitRejection} from '@/lib/client-submit';
 import {offlineSubmit,uploadOfflineVisitFile} from '@/lib/offline-submit';
 import VoiceField from './voice-field';
-import CompetitorFields from './competitor-fields';
+import CompetitorFields,{type CompetitorInput} from './competitor-fields';
 import type {UploadState} from './upload-status';
 import VisitCustomerPicker from './visit-customer-picker';
 import VisitsTable from './visits-table';
 import {useAutomaticJourney,JourneyFormNotice} from './journey-tracker';
 import './visit-mobile.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
+const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
+type VisitForm = VisitData & CompetitorInput & { type: string; requestedProducts: string[]; salesStage: string; strength: string; customerNeeds: string; nextAction: string; nextDate: string; responsibleId: string };
 function Pick({ value, onChange, options, label, disabled = false }: {
     value: string;
     onChange: (v: string) => void;
@@ -116,7 +118,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     const intake=initialCustomer?.data._serviceIntake;
     const service=initial?initial.data.visitWorkflow==='service-intake-v1':isServiceRole(me.role), readOnly=!!initial&&(me.role==='rep'||!!initial.data._readOnly), workflow=initial?.data._serviceWorkflow;
     const [customerId, setCustomerId] = useState(initialCustomer?.id || ''), [creatingCustomer, setCreatingCustomer] = useState(false), [savingCustomer, setSavingCustomer] = useState(false), [requestId, setRequestId] = useState(originalRequest?.id || '');
-    const [data, setData] = useState<any>({ type: 'visit', date: today(), summary: '', result: '', outcome: 'pending', notes: '', location: '', startedAt: '', endedAt: '', nextAction: intake?.nextAction||'', nextDate: intake?.nextDate&&intake.nextDate>=today()?intake.nextDate:today(), salesStage: originalRequest?.data.stage || '', strength: '', requestedProducts: [], hasCompetitor: showCompetitor || !!seedCompetitorName, competitorName: seedCompetitorName, competitorNotes: '', competitorFileId: '', competitorFileName: '', customerNeeds: intake?.needs||'', ...initial?.data, responsibleId: initial ? (initial.data.responsibleId || initial.data.performedBy || '') : me.id });
+    const [data, setData] = useState<VisitForm>({ type: 'visit', date: today(), summary: '', result: '', outcome: 'pending', notes: '', location: '', startedAt: '', endedAt: '', nextAction: intake?.nextAction||'', nextDate: intake?.nextDate&&intake.nextDate>=today()?intake.nextDate:today(), salesStage: originalRequest?.data.stage || '', strength: '', requestedProducts: [], hasCompetitor: showCompetitor || !!seedCompetitorName, competitorName: seedCompetitorName, competitorNotes: '', competitorFileId: '', competitorFileName: '', customerNeeds: intake?.needs||'', ...initial?.data, responsibleId: initial ? (initial.data.responsibleId || initial.data.performedBy || '') : me.id });
     const [busy, setBusy] = useState(false), [uploading, setUploading] = useState(false), [error, setError] = useState(''), [key] = useState(() => crypto.randomUUID()), [formOpenedTick] = useState(() => performance.now());
     const [locationState,setLocationState]=useState<VisitLocationState>({status:'idle',error:''});
     const [retryPending,setRetryPending]=useState(false);
@@ -133,12 +135,12 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     useEffect(()=>()=>{uploadVersion.current++;},[]);
     const customer = records.find(r => r.id === customerId);
     const journeyStopId=useAutomaticJourney({customerId,type:data.type,enabled:!initial&&!service&&!readOnly});
-    const change = (k: string, v: any) => {if(readOnly||savedReceipt.current||retryPending||saveLock.current)return;if(!['location','latitude','longitude','locationSource','locationCapturedAt','locationAccuracy'].includes(k))setDirty(true);setData((d: any) => ({ ...d, [k]: v }));};
+    const change = (k: string, v: VisitValue | string[]) => {if(readOnly||savedReceipt.current||retryPending||saveLock.current)return;if(!['location','latitude','longitude','locationSource','locationCapturedAt','locationAccuracy'].includes(k))setDirty(true);setData(d => ({ ...d, [k]: v }));};
     function requestLeave(action=onClose){if(busy||uploading||uploadLock.current||savingCustomer)return;if(!savedReceipt.current&&(retryPending||dirty||creatingCustomer)){leaveAction.current=action;setConfirmLeave(true);}else action();}
     function revealInvalid(event:React.FormEvent<HTMLFormElement>){const target=event.target as HTMLElement;for(let element:HTMLElement|null=target;element;element=element.parentElement){if(element instanceof HTMLDetailsElement){element.open=true;if(element.classList.contains('visit-sales-details'))setSalesOpen(true);}}if(invalidFrame.current!==null)return;invalidFrame.current=requestAnimationFrame(()=>{invalidFrame.current=null;target.focus();target.scrollIntoView({block:'center',behavior:'smooth'});});}
     const productOptions = [...visitProducts,'خدمات صيانة'];
     function selectCustomer(id: string) { if (id === customerId)
-        return; if(retryPending||saveLock.current||savedReceipt.current||uploadLock.current)return;setCustomerId(id); setRequestId(''); setData((previous:any)=>({...previous,salesStage:'',strength:'',requestedProducts:[],customerNeeds:''})); change('competitorFileId', ''); change('competitorFileName', ''); }
+        return; if(retryPending||saveLock.current||savedReceipt.current||uploadLock.current)return;setCustomerId(id); setRequestId(''); setData(previous=>({...previous,salesStage:'',strength:'',requestedProducts:[],customerNeeds:''})); change('competitorFileId', ''); change('competitorFileName', ''); }
     async function upload(file: File | undefined, retry = false) { if (!file||readOnly||retryPending||saveLock.current||savedReceipt.current||uploadLock.current)
         return; if (!customerId) {
         setError('اختر العميل قبل رفع الملف');
@@ -152,17 +154,17 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     uploadLock.current=true;const uploadId=++uploadVersion.current;setUploading(true);setUploadState({phase:'reading'}); setError('');
     const onUploadProgress=(progress:import('@/lib/client-submit').UploadProgress)=>{if(uploadVersion.current===uploadId&&competitorContext.current===context)setUploadState(progress);};
     try {
-        let result:any;
+        let result:{id:string;name:string;queued?:boolean};
         if(initial){
             if(navigator.onLine===false)throw new Error(say('تعديل الزيارات القديمة وملفاتها يحتاج اتصالًا بالإنترنت. يمكنك تسجيل زيارة جديدة بدون شبكة.','Editing existing visits and their files needs an internet connection. You can record a new visit offline.'));
             const form = new FormData();form.set('file', file);form.set('customerId', customerId);form.set('uploadKey',currentAttempt.key);form.set('memberId',me.id);
-            result=await submitJson('/api/visit-files', { method: 'POST', body: form },{language,timeout:45000,onUploadProgress});
+            result=await submitJson<{id:string;name:string;queued?:boolean}>('/api/visit-files', { method: 'POST', body: form },{language,timeout:45000,onUploadProgress});
         }else result=await uploadOfflineVisitFile(file,{me,customerId,language,uploadKey:currentAttempt.key,onUploadProgress});
         if(typeof result.id!=='string'||!result.id||typeof result.name!=='string')throw new Error(say('لم يؤكد الخادم رفع الملف. أعد المحاولة.','The server did not confirm the file upload. Retry.'));
-        if(uploadVersion.current===uploadId&&competitorContext.current===context&&!retryPending&&!saveLock.current&&!savedReceipt.current){setUploadState({phase:result.queued?'queued':'complete'});uploadAttempt.current=null;setDirty(true);setData((previous:any)=>({...previous,competitorFileId:result.id,competitorFileName:result.name}));}
+        if(uploadVersion.current===uploadId&&competitorContext.current===context&&!retryPending&&!saveLock.current&&!savedReceipt.current){setUploadState({phase:result.queued?'queued':'complete'});uploadAttempt.current=null;setDirty(true);setData(previous=>({...previous,competitorFileId:result.id,competitorFileName:result.name}));}
     }
-    catch (e: any) {
-        if(uploadVersion.current===uploadId){setUploadState({phase:'error'});setError(e.message);}
+    catch (e) {
+        if(uploadVersion.current===uploadId){setUploadState({phase:'error'});setError(messageOf(e));}
     }
     finally {
         uploadLock.current=false;if(uploadVersion.current===uploadId)setUploading(false);
@@ -174,7 +176,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     } saveLock.current=true;setBusy(true); setError(''); elapsedAtSave.current ??= Math.max(0,Math.round(performance.now()-formOpenedTick)); try {
         if(savedReceipt.current){await onSaved();onClose();return;}
         if(!attempt.current){const stopId=!initial?journeyStopId():undefined;const payload=service?{action:initial?'edit':'create',id:initial?.data.serviceIntakeId,version:initial?.version,customerId,customerVersion:customer?.version,registration:data,elapsedMilliseconds:elapsedAtSave.current,requestId:crypto.randomUUID()}:{createKey:key,id:initial?.id,version:initial?.version,customerId,customerVersion:customer?.version,data:{...data,...(stopId?{journeyStopId:stopId}:{})},requestId,timingMode:'automatic',elapsedMilliseconds:elapsedAtSave.current};attempt.current={body:JSON.stringify(payload),url:service?'/api/customer-service':'/api/visits'};}
-        const result:any=initial
+        const result=initial
             ?await submitJson(attempt.current.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: attempt.current.body },{language})
             :await offlineSubmit(attempt.current.url,attempt.current.body,{me,language,label:customer?.data.name||say('زيارة جديدة','New visit'),kind:service?'service':'visit'});
         if(result.ok!==true||typeof result.id!=='string'||!result.id)throw new SubmitError(say('الخادم لم يؤكد حفظ الزيارة. أعد المحاولة بنفس البيانات.','The server did not confirm the visit. Retry with the same entries.'),200,result);
@@ -184,9 +186,9 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
         await onSaved(false);
         onClose();
     }
-    catch (e: any) {
+    catch (e) {
         if(!savedReceipt.current){if(definiteSubmitRejection(e)){elapsedAtSave.current=null;attempt.current=null;setRetryPending(false);}else setRetryPending(true);}
-        setError(savedReceipt.current?say('تم حفظ الزيارة؛ تعذر تحديث الشاشة. اضغط تحديث السجل لعرضها.','The visit was saved, but the screen could not refresh. Tap Refresh history to view it.'):e.message||say('تعذر حفظ الزيارة. أعد المحاولة.','The visit could not be saved. Retry.'));
+        setError(savedReceipt.current?say('تم حفظ الزيارة؛ تعذر تحديث الشاشة. اضغط تحديث السجل لعرضها.','The visit was saved, but the screen could not refresh. Tap Refresh history to view it.'):messageOf(e)||say('تعذر حفظ الزيارة. أعد المحاولة.','The visit could not be saved. Retry.'));
     }
     finally {
         saveLock.current=false;setBusy(false);
@@ -229,7 +231,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
                   <label className="field"><span>{t('مرحلة البيع')}</span><Pick value={data.salesStage||'__unset'} onChange={value=>change('salesStage',value==='__unset'?'':value)} label="مرحلة البيع" options={[[ '__unset',say('غير محددة','Not specified')],...Object.entries(stageLabels)]} disabled={service||readOnly}/></label>
                   <label className="field"><span>{t('قوة الفرصة')}{service?' *':''}</span><Pick value={data.strength||'__unset'} onChange={value=>change('strength',value==='__unset'?'':value)} label="قوة الفرصة" options={[[ '__unset',say('غير محددة','Not specified')],...Object.entries(strengthLabels)]} disabled={readOnly}/></label>
                   <fieldset className="full requested-products"><legend>{t('الأصناف المطلوبة')}</legend><div>{productOptions.map(product=><label key={product}><input type="checkbox" checked={data.requestedProducts.includes(product)} onChange={event=>change('requestedProducts',event.target.checked?[...data.requestedProducts,product]:data.requestedProducts.filter((value:string)=>value!==product))}/>{t(product)}</label>)}</div>{initial&&data.requestedProducts.some((product:string)=>!visitProducts.includes(product))&&<p className="muted">{t('أصناف مسجلة سابقًا: ')}{t(data.requestedProducts.filter((product:string)=>!visitProducts.includes(product)).join('، '))}</p>}</fieldset>
-                  <CompetitorFields value={data} records={records} members={members} customerId={customerId} identityKey={me.id} disabled={busy||uploading||savingCustomer||creatingCustomer||savedReceipt.current||retryPending} readOnly={readOnly} uploading={uploading} uploadState={uploadAttempt.current?.context===competitorContext.current||data.competitorFileId?uploadState:null} onUploadRetry={()=>{const retry=uploadAttempt.current;if(retry)void upload(retry.file,true);}} onChange={patch=>{if(readOnly||savedReceipt.current||retryPending||saveLock.current||uploadLock.current)return;setDirty(true);setData((previous:any)=>({...previous,...patch}));}} onUpload={upload}/>
+                  <CompetitorFields value={data} records={records} members={members} customerId={customerId} identityKey={me.id} disabled={busy||uploading||savingCustomer||creatingCustomer||savedReceipt.current||retryPending} readOnly={readOnly} uploading={uploading} uploadState={uploadAttempt.current?.context===competitorContext.current||data.competitorFileId?uploadState:null} onUploadRetry={()=>{const retry=uploadAttempt.current;if(retry)void upload(retry.file,true);}} onChange={patch=>{if(readOnly||savedReceipt.current||retryPending||saveLock.current||uploadLock.current)return;setDirty(true);setData(previous=>({...previous,...patch}));}} onUpload={upload}/>
                   <VoiceField label={t('احتياج العميل')} value={data.customerNeeds||''} onChange={value=>change('customerNeeds',value)} multiline/>
                 </div>
               </details>
