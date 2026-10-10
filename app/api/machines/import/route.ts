@@ -21,7 +21,7 @@ export async function POST(req:Request){try{
  const input=z.object({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),afterId:z.string().max(150).default('')}).strict().parse(parseJsonBody(text));
  const {db,actor,permission}=await access(req,input.sourceHash);
  // Read only the authorized stored source. No customer fields are accepted from the caller.
- const rows=(await db.prepare("SELECT id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version FROM crm_records WHERE kind='customer' AND json_extract(data,'$.sourceHash')=? AND id>? AND (COALESCE(json_extract(data,'$.machineCount'),0)>0 OR LENGTH(TRIM(COALESCE(json_extract(data,'$.machineTypes'),'')))>0) ORDER BY id LIMIT 51").bind(input.sourceHash,input.afterId).all<any>()).results;
+ const rows=(await db.prepare("SELECT id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version FROM crm_records WHERE kind='customer' AND json_extract(data,'$.sourceHash')=? AND id>? AND (COALESCE(json_extract(data,'$.machineCount'),0)>0 OR LENGTH(TRIM(COALESCE(json_extract(data,'$.machineTypes'),'')))>0) ORDER BY id LIMIT 51").bind(input.sourceHash,input.afterId).all<Omit<Row,'data'>&{data:string}>()).results;
  const selected=rows.slice(0,50);const statements=[];const now=new Date().toISOString(),mutation=crypto.randomUUID();
  for(const raw of selected){const parent:Row={...raw,data:JSON.parse(raw.data)};if(!hasMachineSource(parent.data))continue;
   const id=parent.id+':source-machines-v1';const data=schemas.factory.parse(machineSourceData(parent));

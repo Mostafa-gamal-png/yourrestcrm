@@ -9,7 +9,7 @@ import {customerRegionScope} from '@/lib/regions';
 import {visitCustomer} from '@/lib/customer-visits';
 import {salesScopeMemberIds,recordAuthorId} from '@/lib/access';
 import {journeyDate,initialJourneyData,applyJourneyPoint,closeJourney,journeyGap,journeySegments,projectJourneyWindow,journeyRecordingBoundary,closeJourneyAtWindowEnd,JOURNEY_REPLAY_MS,JOURNEY_GAP_MS,type JourneyPoint,type JourneyStop} from '@/lib/journeys';
-import {journeyColumns,decodeJourney,canReadJourney,ownJourney,activeJourney,journeyGuard,journeyLinkedTimingStatement,requireJourneyReport} from '@/lib/journeys-server';
+import {journeyColumns,decodeJourney,canReadJourney,ownJourney,activeJourney,journeyGuard,journeyLinkedTimingStatement,requireJourneyReport,type JourneyRow} from '@/lib/journeys-server';
 import {trackingWindowOpen,trackingWindowStatus} from '@/lib/tracking-window';
 export const dynamic='force-dynamic';
 const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v);
@@ -23,7 +23,7 @@ export async function GET(req:Request){try{
  if(!url.searchParams.has('date'))return response(await activeJourney(c,now),now);
  requireJourneyReport(c);const date=dateSchema.parse(url.searchParams.get('date')),scope=salesScopeMemberIds(c.members,c.me),memberId=url.searchParams.get('memberId')||c.me.id;
  if(memberId!=='all'&&!scope.has(memberId))throw new CRMError('الموظف خارج نطاق فريقك',403);
- const raw=(await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE date=? ORDER BY selected_at,id').bind(date).all<any>()).results;
+ const raw=(await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE date=? ORDER BY selected_at,id').bind(date).all<JourneyRow>()).results;
  const availableStops=raw.map(decodeJourney).filter(stop=>canReadJourney(stop,c)),stops=availableStops.filter(stop=>memberId==='all'||stop.memberId===memberId);
  const visibleRecords=new Map(c.visible.map(row=>[row.id,row]));
  const projected=[],linkedIds=new Set<string>();
@@ -50,9 +50,9 @@ export async function POST(req:Request){try{
  if(action==='select'){
   const key=z.string().uuid().parse(body.createKey),customerId=identifier.parse(body.customerId),customer=c.visible.find(row=>row.id===customerId&&row.kind==='customer');if(!customer)throw new CRMError('العميل خارج نطاق منطقتك',403);
   if(!trackingWindowOpen(now))return response(null,now);
-  const id='journey-'+c.me.id+'-'+key,prior=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE id=? AND member_id=?').bind(id,c.me.id).first<any>();
+  const id='journey-'+c.me.id+'-'+key,prior=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE id=? AND member_id=?').bind(id,c.me.id).first<JourneyRow>();
   if(prior){const stop=decodeJourney(prior);if(stop.customerId!==customer.id)throw new CRMError('عملية الاختيار محفوظة لعميل آخر',409);if(!canReadJourney(stop,c))throw new CRMError('خط السير غير متاح',403);return response(stop,now);}
-  const currentRaw=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE member_id=? AND closed_at IS NULL').bind(c.me.id).first<any>(),current=currentRaw?decodeJourney(currentRaw):null;
+  const currentRaw=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE member_id=? AND closed_at IS NULL').bind(c.me.id).first<JourneyRow>(),current=currentRaw?decodeJourney(currentRaw):null;
   if(current&&current.customerId===customer.id&&current.date===date&&canReadJourney(current,c))return response(current,now);
   const count=await c.db.prepare('SELECT COUNT(*) AS count FROM crm_journey_stops WHERE member_id=? AND date=?').bind(c.me.id,date).first<{count:number}>();if((count?.count||0)>=200)throw new CRMError('وصلت للحد اليومي لتغييرات العميل',429);
   const coords=customerCoordinates(customer.data),stop:JourneyStop={id,memberId:c.me.id,date,customerId:customer.id,regionScope:customerRegionScope(customer.data.region),snapshot:{customerName:customer.data.name,region:customer.data.region||'',latitude:coords?.latitude??null,longitude:coords?.longitude??null},selectedAt:now,closedAt:null,state:'en_route',data:{...initialJourneyData(now),trackingWindow:'06-18'},version:1};
