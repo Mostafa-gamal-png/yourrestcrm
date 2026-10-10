@@ -48,19 +48,20 @@ try{
   },{protocol,options});
   const page=await ctx.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);await page.locator('#draft').waitFor();return{page,ctx};
  }
+ async function actionDisabled(page,expected,message){/* The native bridge answers asynchronously after the click; wait for the state instead of racing it. */await page.waitForFunction(value=>document.querySelector('.app-update-actions button')?.disabled===value,expected,{timeout:5000}).catch(()=>{});check(await page.locator('.app-update-actions button').isDisabled(),expected,message);}
  async function shot(page,name){check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,name+' fits 360px');const action=page.locator('.app-update-actions .btn');if(await action.count())check((await action.boundingBox()).height>=44,true,name+' touch target');const file=path.join(shots,name+'.png');await page.screenshot({path:file,fullPage:true});saved.push(file);}
  async function preserved(page){check(await page.locator('#draft').inputValue(),'زيارة لم تُحفظ بعد','Update leaves current form intact');check(await page.evaluate(()=>localStorage.getItem('qa-offline-outbox')),'[{"id":"unchanged-pending-visit"}]','Update leaves queued data intact');}
  const {page,ctx}=await scenario();await page.locator('.app-update-banner').waitFor();check(await page.locator('.app-update-banner').getAttribute('dir'),'rtl');
  await page.locator('#draft').fill('زيارة لم تُحفظ بعد');await shot(page,'update-available-mobile-ar');
  await page.getByRole('button',{name:'تحديث التطبيق',exact:true}).click();await page.getByRole('progressbar').waitFor();
- await page.evaluate(()=>window.__emit({phase:'downloading',progress:53,downloadedBytes:212000}));check(await page.getByRole('progressbar').getAttribute('value'),'53');check(await page.locator('.app-update-actions button').isDisabled(),true);await shot(page,'update-progress-mobile-ar');await preserved(page);
+ await page.evaluate(()=>window.__emit({phase:'downloading',progress:53,downloadedBytes:212000}));check(await page.getByRole('progressbar').getAttribute('value'),'53');await actionDisabled(page,true,'Action button state');await shot(page,'update-progress-mobile-ar');await preserved(page);
  await page.evaluate(()=>window.__emit({phase:'ready',progress:100,downloadedBytes:400000}));await page.getByRole('button',{name:'تثبيت التحديث',exact:true}).waitFor();
- await page.getByRole('button',{name:'تثبيت التحديث',exact:true}).click();check(await page.locator('.app-update-actions button').isDisabled(),true);await preserved(page);
- await page.evaluate(()=>window.__emit({phase:'cancelled'}));await page.getByRole('button',{name:'تثبيت التحديث',exact:true}).waitFor();check(await page.locator('.app-update-actions button').isDisabled(),false,'Cancellation can be retried');
+ await page.getByRole('button',{name:'تثبيت التحديث',exact:true}).click();await actionDisabled(page,true,'Action button state');await preserved(page);
+ await page.evaluate(()=>window.__emit({phase:'cancelled'}));await page.getByRole('button',{name:'تثبيت التحديث',exact:true}).waitFor();await actionDisabled(page,false,'Cancellation can be retried');
  await page.evaluate(()=>window.__emit({phase:'permissionRequired'}));await shot(page,'update-permission-mobile-ar');
  await page.locator('#language').click();check(await page.locator('.app-update-banner').getAttribute('dir'),'ltr');await shot(page,'update-permission-mobile-en');
  await page.evaluate(()=>window.__emit({phase:'error',error:'simulated'}));await page.getByRole('button',{name:'Retry',exact:true}).waitFor();await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByRole('button',{name:'Update app',exact:true}).waitFor();check(await page.locator('.app-update-banner').count(),1,'Retry never claims completion');await preserved(page);
- await ctx.setOffline(true);await page.getByRole('status').filter({hasText:'reconnect'}).waitFor();check(await page.locator('.app-update-actions button').isDisabled(),true);await shot(page,'update-offline-mobile-en');
+ await ctx.setOffline(true);await page.getByRole('status').filter({hasText:'reconnect'}).waitFor();await actionDisabled(page,true,'Action button state');await shot(page,'update-offline-mobile-en');
  await page.evaluate(()=>window.__emit({phase:'ready'}));check(await page.getByRole('button',{name:'Install update',exact:true}).isDisabled(),false,'Previously downloaded update remains installable offline');
  await ctx.setOffline(false);await page.evaluate(()=>window.__emit({phase:'upToDate',installedVersionCode:10}));check(await page.locator('.app-update-banner').count(),1,'Unchanged installed code cannot claim update success');
  await page.evaluate(()=>window.__emit({phase:'upToDate',installedVersionCode:11,installedVersionName:'1.0.10'}));await page.locator('.app-update-banner').waitFor({state:'detached'});await preserved(page);await ctx.close();
