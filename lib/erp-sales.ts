@@ -52,7 +52,13 @@ function salesXmlParser() {
         },
     });
 }
-type XmlNode = Record<string, any>;
+type XmlNodes = XmlNode | XmlNode[];
+interface XmlNode {
+    '#text'?: unknown; '@_r'?: unknown; '@_t'?: unknown; '@_id'?: unknown; '@_Id'?: unknown; '@_Type'?: unknown; '@_Target'?: unknown; '@_ContentType'?: unknown; '@_date1904'?: unknown;
+    t?: unknown; f?: unknown; v?: unknown; is?: XmlNode; r?: XmlNodes; c?: XmlNodes; row?: XmlNodes;
+    worksheet?: XmlNode; sheetData?: XmlNode; workbook?: XmlNode; workbookPr?: XmlNode; sheets?: XmlNode; sheet?: XmlNodes;
+    Types?: XmlNode; Default?: XmlNodes; Override?: XmlNodes; Relationships?: XmlNode; Relationship?: XmlNodes; sst?: XmlNode; si?: XmlNodes;
+}
 type Cell = { text: string; type: string };
 type SheetRow = { rowNumber: number; cells: Cell[] };
 
