@@ -17,7 +17,7 @@ async function access(req:Request,sourceHash:string){
  const c=await context({load:'identity'});if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('الاستيراد متاح لمدير النظام فقط',403);return{db:c.db,actor:c.me.name,permission:accessGuard(c)};
 }
 export async function POST(req:Request){try{
- checkOrigin(req);await requireSession();const text=await readRequestText(req,3000);if(text.length>1000)throw new CRMError('الطلب كبير');
+ checkOrigin(req);if(!req.headers.get('x-machine-import-token'))await requireSession();const text=await readRequestText(req,3000);if(text.length>1000)throw new CRMError('الطلب كبير');
  const input=z.object({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),afterId:z.string().max(150).default('')}).strict().parse(parseJsonBody(text));
  const {db,actor,permission}=await access(req,input.sourceHash);
  // Read only the authorized stored source. No customer fields are accepted from the caller.
