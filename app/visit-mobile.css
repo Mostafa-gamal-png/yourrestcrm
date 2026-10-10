@@ -72,8 +72,8 @@
 .mobile-record-dialog .visit-date-shortcuts{display:flex;gap:6px;flex-wrap:wrap}
 .mobile-record-dialog .visit-date-shortcuts button{flex:1;min-height:44px;padding:6px 8px;border:1px solid var(--border);background:var(--card);border-radius:8px;font-size:12px;line-height:1.4;white-space:nowrap}
 .mobile-record-dialog .visit-date-shortcuts button[aria-pressed=true]{border-color:var(--primary);background:var(--accent);color:var(--primary);font-weight:700}
-.mobile-record-dialog .competitor-file input{font-size:13px!important}
-.mobile-record-dialog .competitor-file a{overflow-wrap:anywhere}
+
+
 .mobile-record-dialog summary:focus-visible{outline:2px solid var(--primary);outline-offset:-3px;border-radius:8px}
 @media(max-width:640px){
  /* Tailwind uses individual translate via these variables. Build-time CSS
