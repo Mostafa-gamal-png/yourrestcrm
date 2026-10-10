@@ -7,6 +7,7 @@ import { definiteSubmitRejection, submitJson, SubmitError } from '@/lib/client-s
 import { t, useLanguage } from '@/lib/i18n';
 import UploadStatus, {type UploadState} from './upload-status';
 import './erp-sales-import.css';
+const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 
 type Member = { id: string; name: string; branch: string };
 type EmployeeMapping = { employeeId: string; repId: string };
@@ -164,8 +165,8 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
       if (!live.current) return;
       setUploadState(null); setPreview(result); setPreviewBody(body); setDirty(false); setFilter('all'); setPage(1);
       requestAnimationFrame(() => previewHeading.current?.focus());
-    } catch (e: any) {
-      if (live.current) { setUploadState({phase:'error'}); setPreviewBody(null); setDirty(true); setError(e.message); }
+    } catch (e) {
+      if (live.current) { setUploadState({phase:'error'}); setPreviewBody(null); setDirty(true); setError(messageOf(e)); }
     } finally { lock.current = false; if (live.current) setBusy(null); }
   }
 
@@ -193,13 +194,13 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
       if(!['importedCount','duplicateCount','excludedCount'].every(key=>Number.isSafeInteger(result[key as keyof Receipt])&&Number(result[key as keyof Receipt])>=0)||!Array.isArray(result.months))throw new SubmitError(say('الخادم لم يؤكد نتيجة الاستيراد. أعد المحاولة بنفس البيانات.','The server did not confirm the import result. Retry with the same entries.'));
       saved.current = true; acknowledged = true; attempt.current = null;
       if (live.current) { setUploadState({phase:'complete'}); setReceipt(result); setPending(false); }
-    } catch (e: any) {
+    } catch (e) {
       if (!live.current) return;
       setUploadState({phase:'error'});
       if (definiteSubmitRejection(e)) {
         attempt.current = null; setPending(false); setDirty(true); setPreviewBody(null);
       } else setPending(true);
-      setError(e.message);
+      setError(messageOf(e));
     } finally { lock.current = false; if (live.current) setBusy(null); }
     // Once the server acknowledges the write, only a read/refresh may be retried.
     if (acknowledged && live.current) await refreshAfterImport();

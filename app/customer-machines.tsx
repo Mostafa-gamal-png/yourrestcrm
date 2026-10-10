@@ -108,7 +108,7 @@ function CustomerRows({ customer, linked, canEdit, open, onToggle, sourceCount, 
     linked: Row[];
     open: boolean;
     onToggle: () => void;
-    sourceCount: any;
+    sourceCount: number | null | undefined;
     visitCount: number;
     memberName: string;
 } & Pick<Props, 'canEdit' | 'onOpen' | 'onHistory' | 'onEdit' | 'onAddMachine' | 'onAddOpportunity' | 'onMap'>) {

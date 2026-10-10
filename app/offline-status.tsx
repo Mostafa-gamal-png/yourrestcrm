@@ -8,15 +8,18 @@ import {listOutbox,listOfflineArchive,archiveOfflineJob,subscribeOffline,type Of
 import {flushOutbox,retryOutbox} from '@/lib/offline-submit';
 import './offline-status.css';
 
+const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
+type JobFields={name?:string;summary?:string;result?:string;nextAction?:string;nextDate?:string;customerNeeds?:string;location?:string;competitorName?:string;competitorNotes?:string;competitorFileName?:string;competitorObservation?:JobFields};
+type JobPayload={customerId?:string;data?:JobFields;registration?:JobFields};
 /** Device-only entries stay visibly separate from confirmed server records. */
 export default function OfflineStatus({me,offline}:{me:Member;offline:boolean}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='en'?en:ar;
  const [jobs,setJobs]=useState<OfflineJob[]>([]),[archive,setArchive]=useState<OfflineJob[]>([]),[showArchive,setShowArchive]=useState(false),[archiveId,setArchiveId]=useState(''),[open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  useEffect(()=>{let alive=true;setJobs([]);setArchive([]);setArchiveId('');const read=()=>{void Promise.all([listOutbox(me),listOfflineArchive(me)]).then(([rows,archived])=>{if(alive){setJobs(rows);setArchive(archived);}}).catch(()=>{if(alive)setError(say('تعذر قراءة الإدخالات المحفوظة على الجهاز.','Could not read entries saved on this device.'));});};read();const unsub=subscribeOffline(read);return()=>{alive=false;unsub();};},[me.id,me.authVersion,me.role,me.regionScope,language]);
  const blocked=jobs.filter(job=>job.status==='blocked').length,syncing=busy||jobs.some(job=>job.status==='syncing');
- async function sync(id?:string){if(busy||offline)return;setBusy(true);setError('');try{if(id)await retryOutbox(id,me);else await flushOutbox(me);}catch(e:any){setError(e.message||say('تعذرت المزامنة؛ الإدخالات محفوظة.','Sync failed; your entries are still saved.'));}finally{setBusy(false);}}
- async function archiveEntry(job:OfflineJob){if(busy)return;setBusy(true);setError('');try{await archiveOfflineJob(job.id,me);setArchiveId('');}catch(e:any){setError(e.message);}finally{setBusy(false);}}
- function details(job:OfflineJob){let payload:any={};try{payload=JSON.parse(job.body||'{}');}catch{}const data=payload.data||payload.registration||{},observation=data.competitorObservation||data;return [
+ async function sync(id?:string){if(busy||offline)return;setBusy(true);setError('');try{if(id)await retryOutbox(id,me);else await flushOutbox(me);}catch(e){setError(messageOf(e)||say('تعذرت المزامنة؛ الإدخالات محفوظة.','Sync failed; your entries are still saved.'));}finally{setBusy(false);}}
+ async function archiveEntry(job:OfflineJob){if(busy)return;setBusy(true);setError('');try{await archiveOfflineJob(job.id,me);setArchiveId('');}catch(e){setError(messageOf(e));}finally{setBusy(false);}}
+ function details(job:OfflineJob){let payload:JobPayload={};try{payload=JSON.parse(job.body||'{}');}catch{}const data=payload.data||payload.registration||{},observation=data.competitorObservation||data;return [
   [say('العميل','Customer'),data.name||payload.customerId],
   [say('الهدف','Purpose'),data.summary],
   [say('النتيجة','Outcome'),data.result],
