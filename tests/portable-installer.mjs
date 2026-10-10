@@ -27,6 +27,8 @@ function fixture(name){
  return{parent,app,seed,checksum,snapshot,migrations:path.join(app,'release/drizzle'),filename:path.join(parent,'yourrest-crm-data/database.sqlite')};
 }
 function writeSeed(snapshot,seed,checksum){const text=JSON.stringify(snapshot);fs.writeFileSync(seed,text,{mode:0o600});fs.writeFileSync(checksum,createHash('sha256').update(text).digest('hex'),{mode:0o600});}
+/** Node prints an ExperimentalWarning for node:sqlite on stderr; the machine-readable summary is the last JSON line. */
+function lastJson(output){const line=output.split('\n').map(row=>row.trim()).filter(row=>row.startsWith('{')).at(-1);assert(line,'No JSON summary in output: '+output);return JSON.parse(line);}
 function options(f,filename=f.filename){return{filename,migrations:f.migrations,seed:f.seed,checksum:f.checksum,appRoot:f.app};}
 function start(f,args=['setup.cjs'],extra={},nodeArgs=[]){const child=spawn(process.execPath,[...nodeArgs,...args],{cwd:f.app,env:{...cleanEnv,...extra},stdio:['ignore','pipe','pipe']});let output='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);return{child,result:once(child,'exit').then(([code])=>({code,output}))};}
 const run=async(f,args,extra,nodeArgs)=>start(f,args,extra,nodeArgs).result;
@@ -34,14 +36,14 @@ function settings(f){const file=path.join(f.app,'settings.cjs');return JSON.pars
 function writeSettings(f,config){fs.writeFileSync(path.join(f.app,'settings.cjs'),'module.exports='+JSON.stringify(config)+';\n',{mode:0o600});}
 function hash(file){return createHash('sha256').update(fs.readFileSync(file)).digest('hex');}
 try{
- const first=fixture('normal');let result=await run(first);check(result.code,0,result.output);let summary=JSON.parse(result.output.trim());check(summary.newDatabase,true);check(summary.migrations,fs.readdirSync('drizzle').filter(name=>name.endsWith('.sql')).length);check(summary.counts.crm_members,1);
+ const first=fixture('normal');let result=await run(first);check(result.code,0,result.output);let summary=lastJson(result.output);check(summary.newDatabase,true);check(summary.migrations,fs.readdirSync('drizzle').filter(name=>name.endsWith('.sql')).length);check(summary.counts.crm_members,1);
  const config=settings(first),secret=config.YR_AUTH_SECRET,settingsBefore=fs.readFileSync(path.join(first.app,'settings.cjs'),'utf8');assert(!result.output.includes(secret));checks++;
  const persisted=new DatabaseSync(first.filename);persisted.exec("UPDATE crm_members SET name='Preserved owner' WHERE id='owner'");persisted.close();
- result=await run(first);check(result.code,0,result.output);check(JSON.parse(result.output.trim()).newDatabase,false);check(fs.readFileSync(path.join(first.app,'settings.cjs'),'utf8'),settingsBefore);const read=new DatabaseSync(first.filename,{readOnly:true});check(read.prepare("SELECT name FROM crm_members WHERE id='owner'").get().name,'Preserved owner');read.close();
- result=await run(first,['app.cjs']);check(result.code,0,result.output);check(JSON.parse(result.output.trim()).origin,config.YR_APP_ORIGIN);
+ result=await run(first);check(result.code,0,result.output);check(lastJson(result.output).newDatabase,false);check(fs.readFileSync(path.join(first.app,'settings.cjs'),'utf8'),settingsBefore);const read=new DatabaseSync(first.filename,{readOnly:true});check(read.prepare("SELECT name FROM crm_members WHERE id='owner'").get().name,'Preserved owner');read.close();
+ result=await run(first,['app.cjs']);check(result.code,0,result.output);check(lastJson(result.output).origin,config.YR_APP_ORIGIN);
  const backup=path.join(first.parent,'backup');result=await run(first,['release/operations/backup.mjs',backup]);check(result.code,0,result.output);assert(fs.existsSync(path.join(backup,'database.sqlite')));checks++;
  const originalHash=hash(first.filename),conflict=path.join(first.parent,'other.sqlite');
- for(const args of [['setup.cjs'],['app.cjs'],['release/operations/backup.mjs',path.join(first.parent,'bad-backup')]]){result=await run(first,args,{YR_DATABASE_PATH:conflict});check(result.code,1);if(args[0].includes('backup.mjs')){check(JSON.parse(result.output.trim()),{ok:false,errorCode:'BACKUP_OPERATION_FAILED'});assert(!result.output.includes(conflict)&&!result.output.includes(secret));checks++;}else{assert.match(result.output,/Conflicting YR_DATABASE_PATH/);checks++;}check(hash(first.filename),originalHash);assert(!fs.existsSync(conflict));checks++;}
+ for(const args of [['setup.cjs'],['app.cjs'],['release/operations/backup.mjs',path.join(first.parent,'bad-backup')]]){result=await run(first,args,{YR_DATABASE_PATH:conflict});check(result.code,1);if(args[0].includes('backup.mjs')){check(lastJson(result.output),{ok:false,errorCode:'BACKUP_OPERATION_FAILED'});assert(!result.output.includes(conflict)&&!result.output.includes(secret));checks++;}else{assert.match(result.output,/Conflicting YR_DATABASE_PATH/);checks++;}check(hash(first.filename),originalHash);assert(!fs.existsSync(conflict));checks++;}
  assert(!fs.existsSync(path.join(first.parent,'bad-backup')));checks++;
  result=await run(first,['app.cjs'],{YR_APP_ORIGIN:config.YR_APP_ORIGIN});check(result.code,0,result.output);
  const rejected=fixture('existing-unrecognized');fs.mkdirSync(path.dirname(rejected.filename),{mode:0o700});
@@ -67,6 +69,6 @@ try{
  const running=start(concurrent,['setup.cjs'],{},['--require',preload]);let held=false;for(let i=0;i<80;i++){if(fs.existsSync(marker)){held=true;break;}await new Promise(resolve=>setTimeout(resolve,25));}assert(held);checks++;
  result=await run(concurrent);check(result.code,1);assert.match(result.output,/already running/);checks++;
  result=await running.result;check(result.code,0,result.output);check(fs.existsSync(path.join(concurrent.app,'.setup.lock')),false);
- const after=await run(concurrent);check(after.code,0,after.output);check(JSON.parse(after.output.trim()).newDatabase,false);
+ const after=await run(concurrent);check(after.code,0,after.output);check(lastJson(after.output).newDatabase,false);
  console.log(JSON.stringify({ok:true,checks,canonical_settings:true,unrecognized_database_unchanged:true,no_clobber_publish:true,exclusive_setup_lock:true,production_data_used:false}));
 }finally{fs.rmSync(work,{recursive:true,force:true});}
