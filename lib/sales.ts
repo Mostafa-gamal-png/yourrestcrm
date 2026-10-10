@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {lineCents,moneyCents} from './decimal-money';
 import {salesScopeMemberIds,recordAuthorId} from './access';
-import { type Member, type Row, today } from './crm';
+import { type Member, type Row} from './crm';
 import { visitCustomer, visitProducts } from './customer-visits';
 
 export const salesProducts = [...visitProducts, 'خدمات صيانة'];

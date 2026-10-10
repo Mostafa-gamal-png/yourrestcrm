@@ -1,5 +1,5 @@
 'use client';
-import {submitJson,SubmitError} from '@/lib/client-submit';
+import {submitJson} from '@/lib/client-submit';
 import {useEffect,useState} from 'react';
 import {AlertCircle,CalendarDays,Loader2,LockKeyhole,RefreshCw,Target} from 'lucide-react';
 import type {Member} from '@/lib/crm';

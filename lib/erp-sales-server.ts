@@ -6,6 +6,7 @@ import {salesMemberIds,salesReadMemberIds,salesProducts,type Sale,type SaleItem}
 import {regionScope} from './regions';
 import {today,type Member} from './crm';
 import {parseErpWorkbook,ErpWorkbookError,type ErpRow} from './erp-sales';
+import {omit} from './omit';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const namespace='yourrest-industries';
@@ -70,7 +71,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const documents:PreparedDocument[]=[];
  for(const [identity,rows] of groups){
   const first=rows[0],key=await hash(identity),repId=employeeMap.get(normalize(first.employeeId))||'',rep=allowed.get(repId),p:ErpDocumentPreview={key,reference:first.reference,date:first.date,documentType:first.documentType,customerName:first.customerName,employeeId:first.employeeId,employeeName:first.employeeName,repId,repName:rep?.name||'',lineCount:rows.length,totalCents:0,status:'new',reason:''};
-  const contentHash=await hash(JSON.stringify(rows.map(({rowNumber,...row})=>JSON.stringify(row)).sort()));
+  const contentHash=await hash(JSON.stringify(rows.map(row=>JSON.stringify(omit(row,'rowNumber'))).sort()));
   const items:SaleItem[]=[];let unmappedCategory=false;
   for(const row of rows){const product=categoryMap.get(normalize(row.category));if(!product){unmappedCategory=true;continue;}if(product==='exclude')continue;const sign=row.documentType==='return'?-1:1,quantity=Math.abs(row.quantity)*sign,totalCents=Math.abs(row.totalCents)*sign;p.totalCents+=totalCents;items.push({product,description:row.itemName,quantity,unitPrice:quantity?Math.abs(totalCents/100/quantity):Math.abs(row.unitPrice)});}
   const mappedHash=await hash(JSON.stringify({repId,items:items.map(i=>JSON.stringify(i)).sort(),totalCents:p.totalCents}));
@@ -122,7 +123,6 @@ export async function importErpSales(c:Context,body:unknown){
  const now=new Date().toISOString(),id='erp-import-'+input.requestId;
  const result={ok:true,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months};
  const guard=accessGuard(c),usedReps=new Map<string,Member>();
- const valid=prepared.documents.filter(d=>['new','duplicate'].includes(d.preview.status));
  const mappingDocuments=prepared.documents.filter(d=>['new','duplicate','excluded'].includes(d.preview.status)&&d.rep&&!office(d.preview.employeeName));
  for(const document of mappingDocuments)if(document.rep)usedReps.set(document.rep.id,document.rep);
  const mappingEmployeeIds=new Set(mappingDocuments.map(d=>normalize(d.preview.employeeId)));

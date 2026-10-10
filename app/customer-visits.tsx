@@ -1,13 +1,13 @@
 'use client';
-import {t,useLanguage,direction,getLanguage,setLanguage} from "@/lib/i18n";
+import {t,useLanguage,direction} from "@/lib/i18n";
 import React, { useState, useRef, useEffect } from 'react';
-import { Building2, History, MapPin, Plus, Loader2, CheckCircle2, Trash2 } from 'lucide-react';
+import { History, MapPin, Plus, Loader2, CheckCircle2, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { type Row, type Member, isSalesRequest, money, today, stageLabels } from '@/lib/crm';
-import { visitCustomer, visitRequest, customerVisits, strengthLabels, visitOrder, visitProducts } from '@/lib/customer-visits';
+import { visitCustomer, visitRequest, customerVisits, strengthLabels, visitProducts } from '@/lib/customer-visits';
 import { mapsLink } from '@/lib/customer-location';
-import { contactTypes, visitPurposes, visitResult, formatVisitTime, durationLabel } from '@/lib/visits';
+import { contactTypes, visitPurposes, visitResult, formatVisitTime} from '@/lib/visits';
 import {isServiceRole,serviceStatusLabels} from '@/lib/customer-service';
 import {filterVisitRows} from '@/lib/visit-list';
 import LanguageSwitch from './language-switch';
@@ -32,11 +32,9 @@ function Pick({ value, onChange, options, label, disabled = false }: {
     label: string;
     disabled?: boolean;
 }) { useLanguage(); return <Select dir={direction()} value={value || undefined} onValueChange={onChange} disabled={disabled}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{t(options.map(([id, text]) => <SelectItem key={id} value={id}>{t(text)}</SelectItem>))}</SelectContent></Select>; }
-export function CustomerVisitHistory({ customer, records, members, audits, onVisit, onNew, onQuote, canEdit = true, onDelete }: {
+export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuote, canEdit = true, onDelete }: {
     customer: Row;
     records: Row[];
-    members: Member[];
-    audits: any[];
     onVisit: (r: Row) => void;
     onNew?: (request?: Row) => void;
     onQuote?: (id: string) => void;
@@ -102,7 +100,6 @@ type Props = {
     records: Row[];
     members: Member[];
     me: Member;
-    audits: any[];
     onClose: () => void;
     onSaved: (queued?: boolean) => Promise<void>;
     onCustomerCreated: (id: string) => Promise<Row>;
@@ -113,7 +110,7 @@ type Props = {
     onDelete: (r: Row) => void;
     onWorkflow: (id:string) => void;
 };
-export function CustomerVisitDialog({ initial, competitorName: seedCompetitorName = '', showCompetitor = false, customerId: seedCustomerId, requestId: seedRequestId, records, members, me, audits, onClose, onSaved, onCustomerCreated, onOpenVisit, onNewVisit, onOpenCustomer, onOpenQuote, onDelete, onWorkflow }: Props) {
+export function CustomerVisitDialog({ initial, competitorName: seedCompetitorName = '', showCompetitor = false, customerId: seedCustomerId, requestId: seedRequestId, records, members, me, onClose, onSaved, onCustomerCreated, onOpenVisit, onNewVisit, onOpenCustomer, onOpenQuote, onDelete, onWorkflow }: Props) {
     const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
     const initialCustomer = initial ? visitCustomer(initial, records) : records.find(r => r.id === seedCustomerId), originalRequest = initial ? visitRequest(initial, records) : records.find(r => r.id === seedRequestId);
     const intake=initialCustomer?.data._serviceIntake;
@@ -170,7 +167,6 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     finally {
         uploadLock.current=false;if(uploadVersion.current===uploadId)setUploading(false);
     } }
-    const field = (k: string, label: string, type = 'text', required = false) => <label className="field"><span>{t(label)}{required && <b> *</b>}</span><input type={type} required={required} value={data[k] ?? ''} onChange={e => change(k, e.target.value)}/></label>;
     async function save(e: React.FormEvent) { e.preventDefault(); if (readOnly || saveLock.current || busy || uploading || uploadLock.current || savingCustomer || creatingCustomer)
         return; if(initial&&navigator.onLine===false){setError(say('تعديل الزيارات القديمة يحتاج اتصالًا بالإنترنت. يمكنك تسجيل زيارة جديدة بدون شبكة.','Editing existing visits needs an internet connection. You can record a new visit offline.'));return;}if(!savedReceipt.current&&!retryPending&&!customer){setError(say('اختر العميل أولًا، ثم سجّل الزيارة.','Choose a customer before recording the visit.'));return;}if (!savedReceipt.current&&!retryPending&&!initial && (locationState.status==='locating'||!data.locationCapturedAt)) {
         setError(locationState.error||say('انتظر تحديد موقع الجهاز أو اضغط إعادة المحاولة في قسم الموقع.','Wait for the device location, or tap Retry in the location section.'));
@@ -215,7 +211,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
                   <div className="customer-card-grid">{Object.entries({'المنطقة / المدينة':[customer.data.region,customer.data.city].filter(Boolean).join(' · '),'نوع العميل':customer.data.customerType,'مسؤول التواصل':customer.data.contact||customer.data.contact2,'رقم التواصل':customer.data.phone||customer.data.phone2,'حالة التعامل / السحب':customer.data.customerStatus,'الماكينات':customer.data.machineTypes||'','عدد الماكينات':customer.data.machineCount??''}).map(([label,value])=><div key={label}><span>{t(label)}</span><strong>{t(String(value||'غير مسجل'))}</strong></div>)}</div>
                   {customer.data.notes&&<p>{customer.data.notes}</p>}<button type="button" className="text-button" onClick={()=>requestLeave(()=>onOpenCustomer(customer.id))}>{say('فتح بطاقة العميل','Open customer card')}</button>
                 </div></details>
-                <details className="visit-context-details"><summary><History size={16}/>{t('سجل الزيارات')} <span className="count-badge">{customerVisits(customer.id,records).length}</span></summary><div className="visit-context-body"><CustomerVisitHistory key={customer.id} customer={customer} records={records} members={members} audits={audits} canEdit={me.role!=='rep'} onVisit={row=>requestLeave(()=>onOpenVisit(row))} onNew={customer.data._readOnly&&!isServiceRole(me.role)?undefined:row=>requestLeave(()=>onNewVisit(customer.id,row))} onQuote={id=>requestLeave(()=>onOpenQuote(id))}/></div></details>
+                <details className="visit-context-details"><summary><History size={16}/>{t('سجل الزيارات')} <span className="count-badge">{customerVisits(customer.id,records).length}</span></summary><div className="visit-context-body"><CustomerVisitHistory key={customer.id} customer={customer} records={records} canEdit={me.role!=='rep'} onVisit={row=>requestLeave(()=>onOpenVisit(row))} onNew={customer.data._readOnly&&!isServiceRole(me.role)?undefined:row=>requestLeave(()=>onNewVisit(customer.id,row))} onQuote={id=>requestLeave(()=>onOpenQuote(id))}/></div></details>
                 {mapsLink(customer.data)&&<a className="text-button visit-customer-map-link" href={mapsLink(customer.data)!} target="_blank" rel="noopener noreferrer"><MapPin size={16}/>{say('موقع العميل','Customer map')}</a>}
               </div>
             </section>}

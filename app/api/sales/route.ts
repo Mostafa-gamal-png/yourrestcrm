@@ -16,7 +16,7 @@ function saleRow(r: any): Sale { return { ...JSON.parse(r.data), id:r.id, custom
 function errorResponse(e: unknown) { if(e instanceof z.ZodError) return Response.json({error:e.issues.map(i=>i.message).join(' • ')},{status:400}); if(String(e).includes('crm_sales.customer_id, crm_sales.reference_key')) return Response.json({error:'مرجع البيع مسجل بالفعل لهذا العميل'},{status:409}); return replyError(e); }
 export async function GET(req:Request){try{
  const c=await context(), month=monthSchema.parse(new URL(req.url).searchParams.get('month') || today().slice(0,7));
- requireSalesWorkspace(c.me);const allowed=salesReadMemberIds(c.members,c.me), manage=['admin','manager'].includes(c.me.role);
+ requireSalesWorkspace(c.me);const allowed=salesReadMemberIds(c.members,c.me);
  const raw=(await c.db.prepare(selectSales+' WHERE s.date>=? AND s.date<=? ORDER BY s.date DESC,s.created_at DESC,s.id').bind(month+'-01',month+'-31').all<any>()).results;
  const salesForPerformance=[...raw.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(saleRow),...await readErpSales(c,month)].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));
  const sales=salesForPerformance;

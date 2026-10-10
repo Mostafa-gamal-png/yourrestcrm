@@ -27,7 +27,8 @@ function validConfig(c:EmailAuthConfig){
 export function sameOriginMutation(request:Request,origin:string){
  return request.headers.get('origin')===origin&&!['cross-site','none'].includes(request.headers.get('sec-fetch-site')||'');
 }
-export function safeAuthReturn(value:string|null|undefined){return '/';}
+/** Return targets are deliberately ignored: everyone lands on '/', which closes every open-redirect path. */
+export function safeAuthReturn(){return '/';}
 function cookie(name:string,value:string,seconds:number){return `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${seconds}`;}
 function readCookie(headers:Headers,name:string){
  const values=(headers.get('cookie')||'').split(';').map(s=>s.trim()).filter(s=>s.startsWith(name+'='));
@@ -136,7 +137,7 @@ export async function handleEmailAuth(request:Request,action:string,db:D1Databas
   ]);
   const session=await db.prepare('SELECT token_hash FROM auth_sessions WHERE token_hash=?').bind(hash).first();
   if(!session){await event(db,null,'login_failed',stamp).run();return json({error:invalidCode},400);}
-  return json({ok:true,return_to:safeAuthReturn(input.return_to)},200,{'Set-Cookie':cookie(authCookie,token,deviceCookieSeconds)});
+  return json({ok:true,return_to:safeAuthReturn()},200,{'Set-Cookie':cookie(authCookie,token,deviceCookieSeconds)});
  }catch{
   const requestId=crypto.randomUUID();console.error(JSON.stringify({event:'auth_failure',request_id:requestId,action}));
   return json({error:'تعذر إتمام الدخول. حاول مجددًا.',request_id:requestId},503);

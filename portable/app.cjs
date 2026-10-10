@@ -23,7 +23,7 @@ try{
  // Check the original Host before vinext consumes any forwarded headers. Do not allow
  // public callers to select another origin through Host or X-Forwarded-Host.
  const http=require('node:http'),emit=http.Server.prototype.emit,expectedHost=origin.host.toLowerCase();
- http.Server.prototype.emit=function(event,req,res,...args){
+ http.Server.prototype.emit=function(event,req,res){
   if(event==='request'){
    // Apply to documents, API errors and public assets, including Host rejection.
    // These directives isolate the app from framing without changing React's

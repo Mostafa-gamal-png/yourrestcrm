@@ -11,12 +11,12 @@ export function definiteSubmitRejection(error:unknown){
 export async function submitJson<T=Record<string,unknown>>(url:string,init:RequestInit,{language='ar',timeout=30000,onUploadProgress}:SubmitOptions={}):Promise<T>{
  const say=(ar:string,en:string)=>language==='en'?en:ar,controller=new AbortController();
  const canceled=()=>{const error=new Error('Request canceled');error.name='AbortError';return error;};
- let timer:ReturnType<typeof setTimeout>|undefined,rejectBoundary:(error:Error)=>void=()=>{};
+ let rejectBoundary:(error:Error)=>void=()=>{};
  const boundary=new Promise<never>((_,reject)=>{rejectBoundary=reject;});
  const cancel=()=>{controller.abort();rejectBoundary(canceled());};
  init.signal?.addEventListener('abort',cancel,{once:true});
  if(init.signal?.aborted){init.signal.removeEventListener('abort',cancel);throw canceled();}
- timer=setTimeout(()=>{controller.abort();rejectBoundary(new SubmitError(say('انتهت مهلة الاتصال. البيانات موجودة في النموذج؛ أعد المحاولة بنفس البيانات للتأكد من الحفظ.','The request timed out. Your entries remain in the form; retry with the same entries to confirm the save.')));},timeout);
+ const timer=setTimeout(()=>{controller.abort();rejectBoundary(new SubmitError(say('انتهت مهلة الاتصال. البيانات موجودة في النموذج؛ أعد المحاولة بنفس البيانات للتأكد من الحفظ.','The request timed out. Your entries remain in the form; retry with the same entries to confirm the save.')));},timeout);
  const request=async()=>{
   try{
   const response=await (onUploadProgress&&typeof XMLHttpRequest!=='undefined'?uploadResponse(url,init,controller.signal,onUploadProgress):fetch(url,{...init,signal:controller.signal}));

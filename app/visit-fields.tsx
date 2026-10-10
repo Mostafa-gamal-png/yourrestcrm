@@ -1,5 +1,5 @@
 'use client';
-import {t,useLanguage,direction,getLanguage,setLanguage} from "@/lib/i18n";
+import {t,useLanguage,direction} from "@/lib/i18n";
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';

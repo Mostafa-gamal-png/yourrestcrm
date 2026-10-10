@@ -1,7 +1,7 @@
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
-import {cpSync,copyFileSync,writeFileSync,readFileSync,mkdirSync,readdirSync} from 'node:fs';
+import {cpSync,copyFileSync,writeFileSync,readFileSync,readdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const offline=spawnSync(process.execPath,[path.join(root,'scripts/build-offline-shell.mjs')],{cwd:root,stdio:'inherit'});
