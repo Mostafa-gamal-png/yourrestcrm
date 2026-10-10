@@ -7,7 +7,7 @@ import {regionScopes,regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {validateFollowup,prepareContactEvidence,requireLegacyVisit,preserveRequestResponsible} from '@/lib/followups-server';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
 import {context,CRMError,replyError,checkOrigin,accessGuard,masterMutationGuard,customerDetailMutationGuard,recordEditGuard,requireRecordEdit} from '@/lib/crm-server';
-import {schemas,quoteTotals,isOpen,type AuditEntry,type Kind} from '@/lib/crm';
+import {schemas,quoteTotals,isOpen,today,type AuditEntry,type Kind} from '@/lib/crm';
 import {normalizeMemberEmail,memberEmailError} from '@/lib/member-email';
 import {memberEditToken} from '@/lib/member-edit';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
@@ -154,7 +154,7 @@ export async function POST(req:Request){try{
 
  if(kind==='quote'){
   if(parent?.data.technicalStatus!=='approved')throw new CRMError('يجب اعتماد مواصفات القالب فنيًا قبل إنشاء عرض السعر');
-  data.number=old?.data.number||`YR-${new Date().getFullYear()}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;Object.assign(data,quoteTotals(data.items,data.discount,data.taxRate));
+  data.number=old?.data.number||`YR-${today().slice(0,4)}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;Object.assign(data,quoteTotals(data.items,data.discount,data.taxRate));
  }
  const permission=kind==='customer'&&old&&!customerRoutingChanged?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
  // ERP source references may belong to several factories. The immutable CRM
