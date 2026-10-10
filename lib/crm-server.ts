@@ -76,5 +76,5 @@ export function requireSalesRole(me:Member){if(isServiceRole(me.role))throw new 
 
 export const isRecord=(value:unknown):value is Record<string,unknown>=>typeof value==='object'&&value!==null&&!Array.isArray(value);
 /** Reject broken or non-object JSON before route handlers read its fields. */
-export function parseJsonBody(text:string):Record<string,any>{let body:any;try{body=JSON.parse(text);}catch{throw new CRMError('صيغة البيانات غير صحيحة. أعد المحاولة.');}if(!body||typeof body!=='object'||Array.isArray(body))throw new CRMError('صيغة البيانات غير صحيحة. أعد المحاولة.');return body;}
+export function parseJsonBody(text:string):Record<string,unknown>{let body:unknown;try{body=JSON.parse(text);}catch{throw new CRMError('صيغة البيانات غير صحيحة. أعد المحاولة.');}if(!isRecord(body))throw new CRMError('صيغة البيانات غير صحيحة. أعد المحاولة.');return body;}
 export async function readJsonBody(req:Request){return parseJsonBody(await readRequestText(req));}
