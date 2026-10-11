@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-11",
+  "builtFromCommit": "b21fdea",
+  "package": {
+    "file": "Yourrest-CRM-Update-20261011.zip",
+    "bytes": 12253149,
+    "sha256": "90f683d77b075b2b770afa523425d1ed5b5c723818ab4ae3670ee6bac97f31dd",
+    "releaseFiles": 2849,
+    "manifestSha256": "9e37e28181d06dc5337f76dd867481584ccb530e377e80da942b8cc098cef618",
+    "helper": "yourrest-activate-update.cjs",
+    "guide": "UPDATE-20261011-AR.txt",
+    "stageDir": "yourrest-crm-update-20261011",
+    "schemaBefore": 15,
+    "schemaAfter": 15,
+    "settingsOrProductionDataIncluded": false,
+    "seedSnapshotIncluded": false,
+    "customerPhoneNumbersFromSeedFound": 0,
+    "databaseIncluded": false,
+    "newMigrations": 0,
+    "newApk": false,
+    "nativeVersion": "1.0.10 / code 11 (unchanged)"
+  },
+  "tests": {
+    "tests/ui-refresh-deployment.mjs": {
+      "passed": true,
+      "checks": 265
+    },
+    "tests/activate-customer-edit-update.mjs": {
+      "passed": true,
+      "checks": 55,
+      "inheritedChecks": 69
+    },
+    "tests/activate-security-update.mjs": {
+      "passed": true,
+      "checks": 69
+    },
+    "tests/daily-deploy-backup.mjs": {
+      "passed": true,
+      "checks": 122
+    },
+    "tests/update-package-parameters.mjs": {
+      "passed": true,
+      "checks": 19
+    }
+  },
+  "rehearsal": {
+    "script": "scripts/rehearse-update.mjs",
+    "runAs": "unprivileged user (nobody), as on the hosting account",
+    "previousRelease": "original source, commit a48f406, built unmodified",
+    "ok": true,
+    "steps": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while the app is still running",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "command-line usage and failure output behave as the guide describes",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ],
+    "verifyOutput": [
+      "MIGRATIONS: 15 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "anonymousVisitsPost": {
+      "before": 400,
+      "after": 401
+    },
+    "productionDataUsed": false,
+    "hostingAccessed": false
+  },
+  "notVerifiedHere": [
+    "Passenger on cPanel (the rehearsal runs the app directly with Node 22 on Linux)",
+    "real sendmail delivery of sign-in codes",
+    "a physical phone: sign-in, visit with GPS, upload, offline mode",
+    "the hosting account paths and Node binary (/opt/alt/alt-nodejs22/root/usr/bin/node)",
+    "automatic restore after an injected switch failure is covered by the inherited activator tests (69 checks), not repeated in the rehearsal"
+  ],
+  "productionModified": false,
+  "deployed": false
+}

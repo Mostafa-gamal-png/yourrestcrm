@@ -138,6 +138,29 @@ node /home/ACCOUNT/yourrest-crm/release/operations/restore.mjs restore /home/ACC
 
 ثم وجّه `YR_DATABASE_PATH` و`YR_OBJECTS_PATH` في `settings.cjs` إلى المجلد المسترجع وشغّل التطبيق. لا تحذف قاعدة البيانات الأصلية قبل التأكد من سلامة المسترجعة.
 
+## 9-ب. بناء حزمة التحديث وبروفتها قبل الرفع
+
+حزمة الاستضافة التي تُرفع على cPanel تُبنى من `dist/standalone` بسكربت التغليف الذي يثبّت بصمة كل ملف داخل مُفعِّل مستقل. لا تُرفع حزمة السورس نفسها.
+
+```bash
+pnpm install --frozen-lockfile && pnpm build
+python3 scripts/package-ui-refresh-update.py \
+  --release dist/standalone --output /مسار/خارج/المستودع/Yourrest-CRM-Update-YYYYMMDD.zip \
+  --release-name update --release-date YYYYMMDD \
+  --stage-name yourrest-crm-update-YYYYMMDD --helper-name yourrest-activate-update.cjs \
+  --guide docs/UPDATE-YYYYMMDD-AR.txt
+```
+
+الدليل يجب أن يذكر اسم مجلد الرفع واسم المُفعِّل وإلا يرفض السكربت. الحزمة تشترط 15 ترحيلًا، فإن أضفت ترحيلًا جديدًا فلا تستخدمها دون مراجعة المُفعِّل.
+
+**بروفة كاملة قبل الرفع** (ببيانات اصطناعية، دون أي اتصال بالاستضافة): ابنِ الإصدار المثبّت حاليًا في مجلد منفصل ثم نفّذ بحساب غير مميز كما على الاستضافة:
+
+```bash
+node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-القديم --package /مسار/Yourrest-CRM-Update-YYYYMMDD.zip --out report.json
+```
+
+تُنشئ البروفة موقعًا مثبّتًا كالاستضافة، وتشغّل الإصدار القديم وتنشئ بيانات عبر واجهته، ثم تتبع خطوات الدليل: `--check` والتطبيق يعمل، رفض التبديل والتطبيق يعمل، الإيقاف والتبديل، التشغيل و`--verify`، ثم تثبت أن كل جدول ومرفق والإعدادات والواجهات لكل دور متطابقة، وأن حزمة معطوبة تُرفض دون لمس شيء. المُفعِّل يشترط أصل الموقع `https://crm.yourrest.org` تمامًا، لذلك تحتاج البروفة المنفذ 443 (صلاحية ربط المنافذ المنخفضة فقط).
+
 ## 10. حل المشكلات الشائعة
 
 | العَرَض | السبب والحل |
