@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// Standalone UI refresh deployment template. Package with scripts/package-ui-refresh-update.py.
+// Standalone release deployment template. Package with scripts/package-ui-refresh-update.py,
+// which pins the manifest and injects the release name, date and upload folder below.
 // No network downloads, setup, migrations, database writes, or service starts.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,6 +11,12 @@ const {pathToFileURL} = require('node:url');
 const {createInterface} = require('node:readline');
 const PIN = '__UI_REFRESH_MANIFEST_SHA256__';
 const RELEASE_FILES = 0; // __UI_REFRESH_RELEASE_FILES__
+const RELEASE_NAME = 'ui-refresh'; // __UI_REFRESH_RELEASE_NAME__
+const RELEASE_DATE = '20261008'; // __UI_REFRESH_RELEASE_DATE__
+const STAGE_DIR = 'yourrest-ui-update-20261008'; // __UI_REFRESH_STAGE_DIR__
+const ACTIVATION_FORMAT = 'yourrest-' + RELEASE_NAME + '-activation-' + RELEASE_DATE;
+// Same-day backups written by earlier activators remain reusable alongside this release's own.
+const BACKUP_TRANSACTION = new RegExp('^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008|' + (RELEASE_NAME + '-activation-' + RELEASE_DATE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')-[A-Za-z0-9-]+$');
 const fail = code => { throw Object.assign(new Error(code), {code}); };
 const exists = p => { try { fs.lstatSync(p); return true; } catch(e) { if(e.code === 'ENOENT') return false; throw e; } };
 const inside = (p, root) => p === root || p.startsWith(root + path.sep);
@@ -22,10 +29,10 @@ function riyadhDay(value) {
 }
 function timestamp(value) { const parsed = typeof value === 'string' ? Date.parse(value) : NaN; if(!Number.isFinite(parsed)) fail('INVALID_BACKUP_DATE'); return parsed; }
 function pathsFor(home) {
-  const app = path.join(home, 'yourrest-crm'), stage = path.join(home, 'yourrest-ui-update-20261008');
+  const app = path.join(home, 'yourrest-crm'), stage = path.join(home, STAGE_DIR);
   return {home, app, data:path.join(home,'yourrest-crm-data'), stage, current:path.join(app,'release'),
     newRelease:path.join(stage,'release'), manifest:path.join(stage,'RELEASE-SHA256SUMS.txt'),
-    state:path.join(stage,'ui-refresh-activation-state.json'), lock:path.join(stage,'ui-refresh-activation.lock'),
+    state:path.join(stage,RELEASE_NAME + '-activation-state.json'), lock:path.join(stage,RELEASE_NAME + '-activation.lock'),
     dailyRoot:path.join(home,'yourrest-crm-daily-backups'), dailyLock:path.join(home,'yourrest-crm-daily-backups.lock')};
 }
 function noLinks(p) {
@@ -200,7 +207,7 @@ function dailyPaths(config,p) {
 }
 function checkDailyShape(p,index,day,config,now) {
   const relative = dailyPaths(config,p);
-  if(!index || index.format !== 'yourrest-daily-backup-v1' || index.home !== p.home || index.day !== day || ![14,15].includes(index.backupSchema) || typeof index.transaction !== 'string' || path.dirname(index.transaction) !== p.home || !/^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008)-[A-Za-z0-9-]+$/.test(path.basename(index.transaction)) || index.databaseRelative !== relative.databaseRelative || index.objectsRelative !== relative.objectsRelative || !/^[a-f0-9]{64}$/.test(index.applicationSeal || '') || !/^[a-f0-9]{64}$/.test(index.dataSeal || '')) fail('INVALID_DAILY_BACKUP_INDEX');
+  if(!index || index.format !== 'yourrest-daily-backup-v1' || index.home !== p.home || index.day !== day || ![14,15].includes(index.backupSchema) || typeof index.transaction !== 'string' || path.dirname(index.transaction) !== p.home || !BACKUP_TRANSACTION.test(path.basename(index.transaction)) || index.databaseRelative !== relative.databaseRelative || index.objectsRelative !== relative.objectsRelative || !/^[a-f0-9]{64}$/.test(index.applicationSeal || '') || !/^[a-f0-9]{64}$/.test(index.dataSeal || '')) fail('INVALID_DAILY_BACKUP_INDEX');
   if(timestamp(index.createdAt) > timestamp(index.verifiedAt) || timestamp(index.verifiedAt) > now().getTime() || riyadhDay(index.createdAt) !== day || riyadhDay(index.verifiedAt) !== day) fail('INVALID_DAILY_BACKUP_DATE');
   directory(index.transaction,true); directory(path.join(index.transaction,'application')); directory(path.join(index.transaction,'data'),true);
 }
@@ -286,7 +293,7 @@ function readState(p) {
   noLinks(p.state); const s = fs.lstatSync(p.state);
   if(!s.isFile() || s.uid !== process.getuid() || (s.mode & 0o077) || s.size > 1024 * 1024) fail('UNSAFE_ACTIVATION_STATE');
   const value = JSON.parse(fs.readFileSync(p.state,'utf8'));
-  if(value.format !== 'yourrest-ui-refresh-activation-20261008' || value.home !== p.home || typeof value.transaction !== 'string' || path.dirname(value.transaction) !== p.home || !path.basename(value.transaction).startsWith('yourrest-ui-refresh-activation-20261008-')) fail('INVALID_ACTIVATION_STATE');
+  if(value.format !== ACTIVATION_FORMAT || value.home !== p.home || typeof value.transaction !== 'string' || path.dirname(value.transaction) !== p.home || !path.basename(value.transaction).startsWith(ACTIVATION_FORMAT + '-')) fail('INVALID_ACTIVATION_STATE');
   return value;
 }
 async function verifyRunning(p, state, log) {
@@ -356,9 +363,9 @@ async function run(p, mode = 'apply', {log = console.log, stopped = ensureStoppe
     stopped(p);
     const startedAt = now(), day = riyadhDay(startedAt), dailyFile = path.join(p.dailyRoot,day + '.json');
     const sameDay = () => { if(riyadhDay(now()) !== day) fail('RIYADH_DAY_CHANGED_RETRY_REQUIRED'); };
-    const tx = fs.mkdtempSync(path.join(p.home,'yourrest-ui-refresh-activation-20261008-')); fs.chmodSync(tx,0o700);
-    ownState = {format:'yourrest-ui-refresh-activation-20261008',home:p.home,transaction:tx,phase:'preflight',createdAt:startedAt.toISOString(),rootHashes:{}};
-    const writeState = update => { ownState = {...ownState,...update}; saveJson(p.state,ownState); saveJson(path.join(tx,'ui-refresh-activation-state.json'),ownState); };
+    const tx = fs.mkdtempSync(path.join(p.home,ACTIVATION_FORMAT + '-')); fs.chmodSync(tx,0o700);
+    ownState = {format:ACTIVATION_FORMAT,home:p.home,transaction:tx,phase:'preflight',createdAt:startedAt.toISOString(),rootHashes:{}};
+    const writeState = update => { ownState = {...ownState,...update}; saveJson(p.state,ownState); saveJson(path.join(tx,RELEASE_NAME + '-activation-state.json'),ownState); };
     writeState({phase:'preflight'});
     log('1/4 APP STOPPED. VALIDATING CURRENT DATA AND TODAY\'S BACKUP...');
     // Read-only SQLite probes may touch SHM. Complete them before sealing the
@@ -410,11 +417,11 @@ async function run(p, mode = 'apply', {log = console.log, stopped = ensureStoppe
     throw e;
   } finally { if(ownDailyLock) fs.rmdirSync(p.dailyLock); fs.rmdirSync(p.lock); }
 }
-module.exports = {pathsFor,manifestFiles,inventory,assertSameInventory,ensureStopped,switchRelease,run,riyadhDay,PIN,RELEASE_FILES};
+module.exports = {pathsFor,manifestFiles,inventory,assertSameInventory,ensureStopped,switchRelease,run,riyadhDay,PIN,RELEASE_FILES,RELEASE_NAME,RELEASE_DATE,STAGE_DIR,ACTIVATION_FORMAT};
 if(require.main === module) {
   process.umask(0o077);
   const args = process.argv.slice(2), modes = {'--check':'check','--verify':'verify'};
-  if(args.length > 1 || (args.length && !modes[args[0]])) { console.error('Usage: node yourrest-activate-ui-refresh.cjs [--check|--verify]'); process.exitCode = 1; }
+  if(args.length > 1 || (args.length && !modes[args[0]])) { console.error('Usage: node ' + path.basename(__filename) + ' [--check|--verify]'); process.exitCode = 1; }
   else run(pathsFor('/home/youriedx'),modes[args[0]] || 'apply').catch(e => {
     console.error('STOP: ' + (/^[A-Z][A-Z0-9_]{1,90}$/.test(e.code || '') ? e.code : 'ACTIVATION_CHECK_FAILED'));
     console.error('Keep the output for review. Do not delete state/lock files or restore old data.');

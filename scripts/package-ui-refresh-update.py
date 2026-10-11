@@ -15,9 +15,16 @@ import zipfile
 SOURCE = Path(__file__).resolve().parent.parent
 PIN_TOKEN = "__UI_REFRESH_MANIFEST_SHA256__"
 COUNT_TOKEN = "const RELEASE_FILES = 0; // __UI_REFRESH_RELEASE_FILES__"
+NAME_TOKEN = "const RELEASE_NAME = 'ui-refresh'; // __UI_REFRESH_RELEASE_NAME__"
+DATE_TOKEN = "const RELEASE_DATE = '20261008'; // __UI_REFRESH_RELEASE_DATE__"
+STAGE_TOKEN = "const STAGE_DIR = 'yourrest-ui-update-20261008'; // __UI_REFRESH_STAGE_DIR__"
+DEFAULTS = {"name": "ui-refresh", "date": "20261008", "stage": "yourrest-ui-update-20261008", "helper": "yourrest-activate-ui-refresh.cjs", "guide_name": "UPDATE-UI-REFRESH-AR.txt"}
+SAFE_NAME = __import__("re").compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 
 
-def package(release, archive):
+def package(release, archive, release_name=DEFAULTS["name"], date=DEFAULTS["date"], stage=DEFAULTS["stage"], helper_name=DEFAULTS["helper"], guide_text=None, guide_name=DEFAULTS["guide_name"]):
+    if not SAFE_NAME.match(release_name) or not date.isdigit() or len(date) != 8 or not SAFE_NAME.match(stage.replace("yourrest-", "", 1)) or "/" in helper_name or not helper_name.endswith(".cjs"):
+        raise RuntimeError("Unsafe release name, date, stage folder or helper name")
     for name in ["app.cjs", "server.js", "package.json", "operations/config.cjs", "operations/initialize.mjs", "drizzle/manifest.json"]:
         if not (release / name).is_file():
             raise RuntimeError("Incomplete standalone build: " + name)
@@ -43,10 +50,12 @@ def package(release, archive):
     manifest = "".join(hashlib.sha256(item.read_bytes()).hexdigest() + "  " + name + "\n" for item, name in files).encode()
     pin = hashlib.sha256(manifest).hexdigest()
     helper = (SOURCE / "portable/activate-ui-refresh-update.cjs").read_text()
-    if helper.count(PIN_TOKEN) != 1 or helper.count(COUNT_TOKEN) != 1:
+    if any(helper.count(token) != 1 for token in (PIN_TOKEN, COUNT_TOKEN, NAME_TOKEN, DATE_TOKEN, STAGE_TOKEN)):
         raise RuntimeError("Unexpected activator template")
-    helper = helper.replace(PIN_TOKEN, pin).replace(COUNT_TOKEN, "const RELEASE_FILES = " + str(len(files)) + ";")
-    guide = """تحديث واجهة يورست CRM — العدادات والرفع والوضع الليلي والأزرار
+    helper = (helper.replace(PIN_TOKEN, pin).replace(COUNT_TOKEN, "const RELEASE_FILES = " + str(len(files)) + ";")
+              .replace(NAME_TOKEN, "const RELEASE_NAME = " + json.dumps(release_name) + ";").replace(DATE_TOKEN, "const RELEASE_DATE = " + json.dumps(date) + ";")
+              .replace(STAGE_TOKEN, "const STAGE_DIR = " + json.dumps(stage) + ";"))
+    guide = guide_text if guide_text is not None else """تحديث واجهة يورست CRM — العدادات والرفع والوضع الليلي والأزرار
 
 الحزمة تخص crm.yourrest.org فقط وتتطلب تفعيل تحديث الأمان السابق بنجاح (15 ترحيلًا).
 لا تشغّل setup.cjs ولا تنسخ الملفات فوق التطبيق الحالي. الحزمة لا تحتوي إعدادات أو بيانات تشغيل أو حسابات أو نسخة APK جديدة.
@@ -78,8 +87,8 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
             for item, name in files:
                 result.write(item, name)
             result.writestr("RELEASE-SHA256SUMS.txt", manifest)
-            result.writestr("yourrest-activate-ui-refresh.cjs", helper)
-            result.writestr("UPDATE-UI-REFRESH-AR.txt", guide)
+            result.writestr(helper_name, helper)
+            result.writestr(guide_name, guide)
         with zipfile.ZipFile(temporary) as result:
             if result.testzip():
                 raise RuntimeError("ZIP integrity failure")
@@ -100,12 +109,26 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
             temporary.unlink()
     return {"archive": str(archive), "bytes": archive.stat().st_size, "files": len(files), "manifestSha256": pin,
             "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "schemaBefore": 15, "schemaAfter": 15,
-            "settingsOrProductionDataIncluded": False, "standaloneModified": False}
+            "settingsOrProductionDataIncluded": False, "standaloneModified": False,
+            "releaseName": release_name, "releaseDate": date, "stageDir": stage, "helper": helper_name, "guide": guide_name}
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--release", type=Path, default=SOURCE / "dist/standalone")
     parser.add_argument("--output", type=Path, default=SOURCE.parent / "Yourrest-CRM-UI-Refresh-Update-20261008.zip")
+    parser.add_argument("--release-name", default=DEFAULTS["name"])
+    parser.add_argument("--release-date", default=DEFAULTS["date"])
+    parser.add_argument("--stage-name", default=DEFAULTS["stage"], help="folder under the hosting home where the package is unpacked")
+    parser.add_argument("--helper-name", default=DEFAULTS["helper"])
+    parser.add_argument("--guide", type=Path, help="Arabic guide text file to embed; must mention the stage folder and helper name")
+    parser.add_argument("--guide-name", default=None)
     args = parser.parse_args()
-    print(json.dumps(package(args.release.absolute(), args.output.absolute())))
+    guide_text = None
+    guide_name = args.guide_name or DEFAULTS["guide_name"]
+    if args.guide:
+        guide_text = args.guide.read_text(encoding="utf-8")
+        if args.stage_name not in guide_text or args.helper_name not in guide_text:
+            raise SystemExit("The guide must mention the stage folder and the helper file name")
+        guide_name = args.guide_name or "UPDATE-" + args.release_date + "-AR.txt"
+    print(json.dumps(package(args.release.absolute(), args.output.absolute(), args.release_name, args.release_date, args.stage_name, args.helper_name, guide_text, guide_name)))
