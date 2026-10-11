@@ -1,0 +1,314 @@
+// Full rehearsal of a hosting update on a throwaway "home" folder, before anything is uploaded.
+//
+//   node scripts/rehearse-update.mjs --old-release <previous dist/standalone> --package <update.zip> [--out report.json] [--keep]
+//
+// It lays out an installed site exactly like the hosting account (root launcher, private settings.cjs, release/,
+// data folder), runs the PREVIOUS release with synthetic data created through its own API, then follows the
+// upgrade guide step by step with the packaged activator: --check while the app runs, refusal while it is still
+// running, stop, switch, start, --verify. It then proves that data, settings and API results are unchanged and that
+// a tampered package is refused without touching the live release.
+//
+// Only temporary folders and loopback sockets are used. No production data, DNS, mailbox or hosting access.
+import assert from 'node:assert/strict';
+import {spawn, spawnSync, execFileSync} from 'node:child_process';
+import {request as httpRequest} from 'node:http';
+import {createServer as createHttpsServer} from 'node:https';
+import {createServer} from 'node:net';
+import {once} from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {createHash, randomBytes} from 'node:crypto';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+import {DatabaseSync} from 'node:sqlite';
+
+// Verification fetches https://<site origin>; resolve it to loopback and accept the throwaway certificate.
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const realFetch = globalThis.fetch;
+globalThis.fetch = (input, init) => {
+  const url = new URL(typeof input === 'string' ? input : input.url);
+  if (url.hostname === 'crm.yourrest.org') url.hostname = '127.0.0.1';
+  return realFetch(url, init);
+};
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const argv = process.argv.slice(2);
+const option = name => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+const oldRelease = option('--old-release') && path.resolve(option('--old-release'));
+const packageZip = option('--package') && path.resolve(option('--package'));
+if (!oldRelease || !packageZip) { console.error('Usage: node scripts/rehearse-update.mjs --old-release DIR --package ZIP [--out FILE] [--keep]'); process.exit(2); }
+for (const required of ['app.cjs', 'server.js', 'operations/config.cjs', 'drizzle']) assert(fs.existsSync(path.join(oldRelease, required)), 'Previous release is incomplete: ' + required);
+
+const steps = [];
+const note = (name, detail = {}) => { steps.push({step: name, ...detail}); console.error('[ok] ' + name); };
+const sha = value => createHash('sha256').update(value).digest('hex');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const freePort = async () => { const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve)); const {port} = probe.address(); await new Promise(resolve => probe.close(resolve)); return port; };
+const stable = value => JSON.stringify(value, (key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+
+/** One installed site, laid out like the hosting account. */
+/** `exactOrigin` serves https://crm.yourrest.org on port 443, which the activator's site guard requires. */
+async function installSite(work, label, {exactOrigin = false} = {}) {
+  const home = path.join(work, label);
+  fs.mkdirSync(home, {mode: 0o700});
+  const app = path.join(home, 'yourrest-crm'), data = path.join(home, 'yourrest-crm-data'), objects = path.join(data, 'objects');
+  for (const dir of [app, data, objects]) fs.mkdirSync(dir, {recursive: true, mode: 0o700});
+  fs.cpSync(oldRelease, path.join(app, 'release'), {recursive: true});
+  fs.copyFileSync(path.join(root, 'portable/launcher.cjs'), path.join(app, 'app.cjs'));
+  const sendmail = path.join(home, 'sendmail.cjs'), mailFile = path.join(home, 'mail.jsonl');
+  fs.writeFileSync(sendmail, '#!' + process.execPath + '\n' + `const fs=require('node:fs');let m='';process.stdin.on('data',b=>m+=b);process.stdin.on('end',()=>fs.appendFileSync(${JSON.stringify(mailFile)},JSON.stringify({to:process.argv.at(-1),message:m})+'\\n'));`, {mode: 0o700});
+  const backend = await freePort(), front = exactOrigin ? 443 : await freePort(), hostHeader = exactOrigin ? 'crm.yourrest.org' : 'crm.yourrest.org:' + front, origin = 'https://' + hostHeader;
+  const settings = {YR_APP_ORIGIN: origin, YR_AUTH_SECRET: randomBytes(32).toString('hex'), YR_DATABASE_PATH: path.join(data, 'database.sqlite'), YR_OBJECTS_PATH: objects, YR_MAIL_TRANSPORT: 'sendmail', YR_MAIL_FROM: 'noreply@yourrest.org', YR_SENDMAIL_PATH: sendmail};
+  fs.writeFileSync(path.join(app, 'settings.cjs'), 'module.exports=' + JSON.stringify(settings, null, 2) + ';\n', {mode: 0o600});
+  const db = new DatabaseSync(settings.YR_DATABASE_PATH);
+  fs.chmodSync(settings.YR_DATABASE_PATH, 0o600);
+  db.exec('PRAGMA foreign_keys=ON; CREATE TABLE yr_schema_migrations(name TEXT PRIMARY KEY NOT NULL,sha256 TEXT NOT NULL,applied_at TEXT NOT NULL)');
+  const migrations = fs.readdirSync(path.join(oldRelease, 'drizzle')).filter(name => /^\d+.*\.sql$/.test(name)).sort();
+  assert.equal(migrations.length, 15, 'the previous release must carry the 15-migration schema');
+  for (const name of migrations) { const sql = fs.readFileSync(path.join(oldRelease, 'drizzle', name), 'utf8'); db.exec(sql); db.prepare('INSERT INTO yr_schema_migrations VALUES(?,?,?)').run(name, sha(sql), '2026-10-07T00:00:00Z'); }
+  const members = [['owner', 'admin', null, 'all'], ['mgr', 'manager', null, 'all'], ['sup', 'supervisor', 'mgr', 'all'], ['rep1', 'rep', 'sup', 'eastern'], ['repw', 'rep', 'mgr', 'western']];
+  for (const [id, role, supervisor, region] of members) db.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,active,target,created_at,region_scope) VALUES(?,?,?,?,?,?,?,1,0,?,?)').run(id, 'opaque-' + id, id + '@yourrest.org', id, role, 'الرئيسي', supervisor, '2026-10-07T00:00:00Z', region);
+  db.prepare('INSERT INTO crm_settings(id,owner_id) VALUES(?,?)').run('company', 'opaque-owner');
+  db.close();
+  fs.chmodSync(settings.YR_DATABASE_PATH, 0o600);
+
+  const key = path.join(home, 'key.pem'), cert = path.join(home, 'cert.pem');
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost'], {stdio: 'ignore'});
+  const proxy = createHttpsServer({key: fs.readFileSync(key), cert: fs.readFileSync(cert)}, (incoming, outgoing) => {
+    const forwarded = httpRequest({host: '127.0.0.1', port: backend, path: incoming.url, method: incoming.method, headers: {...incoming.headers, host: hostHeader, 'x-forwarded-proto': 'https'}}, response => { outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing); });
+    forwarded.on('error', () => { outgoing.writeHead(502); outgoing.end('app stopped'); });
+    incoming.pipe(forwarded);
+  });
+  proxy.listen(front, '127.0.0.1');
+  await once(proxy, 'listening');
+
+  let child, log = '';
+  const site = {home, app, data, settings, origin, mailFile, proxy, get log() { return log; },
+    async start() {
+      child = spawn(process.execPath, ['app.cjs'], {cwd: app, env: {PATH: process.env.PATH, PORT: String(backend)}, stdio: ['ignore', 'pipe', 'pipe']});
+      child.stdout.on('data', chunk => log += chunk); child.stderr.on('data', chunk => log += chunk);
+      for (let attempt = 0; attempt < 150; attempt++) {
+        if (child.exitCode !== null || child.signalCode !== null) throw Error('The app exited while starting: ' + log.slice(-600));
+        try { if ((await site.request('/login')).status === 200) return; } catch { /* not listening yet */ }
+        await sleep(100);
+      }
+      throw Error('The app did not start: ' + log.slice(-600));
+    },
+    // A child ended by a signal has exitCode null, so signalCode must be checked too or stop() would wait for an event that already fired.
+    async stop() { if (!site.running) return; child.kill('SIGTERM'); await once(child, 'exit'); await sleep(300); },
+    get running() { return !!child && child.exitCode === null && child.signalCode === null; },
+    request(url, {method = 'GET', headers = {}, body} = {}) {
+      let payload = body;
+      const merged = {Host: hostHeader, 'X-Forwarded-Proto': 'https', ...headers};
+      if (payload !== undefined && !Buffer.isBuffer(payload)) { payload = Buffer.from(JSON.stringify(payload)); merged['Content-Type'] = 'application/json'; }
+      if (payload !== undefined) merged['Content-Length'] = String(payload.length);
+      return new Promise((resolve, reject) => {
+        const req = httpRequest({host: '127.0.0.1', port: backend, path: url, method, headers: merged, timeout: 20000}, res => {
+          const parts = []; res.on('data', part => parts.push(part));
+          res.on('end', () => { const bytes = Buffer.concat(parts), text = bytes.toString('utf8'); resolve({status: res.statusCode, headers: res.headers, bytes, text, json: () => JSON.parse(text)}); });
+        });
+        req.on('error', reject); req.on('timeout', () => req.destroy(Error('timeout ' + url)));
+        if (payload !== undefined) req.write(payload);
+        req.end();
+      });
+    },
+    async login(id) {
+      const email = id + '@yourrest.org', db = new DatabaseSync(settings.YR_DATABASE_PATH);
+      try { db.exec('DELETE FROM auth_limits'); } finally { db.close(); }
+      const challenge = await site.request('/api/auth/request', {method: 'POST', headers: {Origin: origin}, body: {email}});
+      assert.equal(challenge.status, 200, 'sign-in code request');
+      const cookie = name => (challenge.headers['set-cookie'] || []).find(c => c.startsWith(name + '='))?.split(';')[0];
+      let mail;
+      for (let attempt = 0; attempt < 60 && !mail; attempt++) { try { mail = fs.readFileSync(mailFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(m => m.to === email).at(-1); } catch { /* not yet */ } if (!mail) await sleep(100); }
+      assert(mail, 'a sign-in code mail reached the mocked sendmail');
+      const code = Buffer.from(mail.message.split('\r\n\r\n')[1].replaceAll('\r\n', ''), 'base64').toString('utf8').match(/\b\d{6}\b/)[0];
+      const verified = await site.request('/api/auth/verify', {method: 'POST', headers: {Origin: origin, Cookie: cookie('__Host-yourrest_challenge')}, body: {code, return_to: '/'}});
+      assert.equal(verified.status, 200, 'sign-in code verification');
+      const session = (verified.headers['set-cookie'] || []).find(c => c.startsWith('__Host-yourrest_session='))?.split(';')[0];
+      return (url, options = {}) => site.request(url, {...options, headers: {Origin: origin, Cookie: session, ...options.headers}});
+    },
+    close() { proxy.close(); proxy.closeAllConnections?.(); }};
+  return site;
+}
+
+function tables(site) {
+  // Every business table, in a stable order. Authentication tables change with sign-ins and are excluded.
+  const db = new DatabaseSync(site.settings.YR_DATABASE_PATH, {readOnly: true});
+  try {
+    const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'auth_%' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(row => row.name);
+    return Object.fromEntries(names.map(name => [name, sha(JSON.stringify(db.prepare('SELECT * FROM ' + name).all().map(row => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'bigint' ? String(v) : v]))).sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))) + ':' + db.prepare('SELECT COUNT(*) n FROM ' + name).get().n]));
+  } finally { db.close(); }
+}
+const fileHash = file => sha(fs.readFileSync(file));
+function treeHash(dir) { return sha(fs.readdirSync(dir, {recursive: true, withFileTypes: true}).filter(entry => entry.isFile()).map(entry => path.relative(dir, path.join(entry.parentPath, entry.name)) + ':' + sha(fs.readFileSync(path.join(entry.parentPath, entry.name)))).sort().join('\n')); }
+
+const work = fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-rehearsal-'));
+const sites = [];
+const report = {date: new Date().toISOString(), node: process.version, oldRelease: path.basename(path.dirname(oldRelease)) === 'dist' ? path.relative(root, oldRelease) : oldRelease, package: path.basename(packageZip), packageSha256: sha(fs.readFileSync(packageZip)), productionDataUsed: false, hostingAccessed: false};
+try {
+  // ── Site A: the full upgrade ────────────────────────────────────────────────────────────────
+  const a = await installSite(work, 'home-a', {exactOrigin: true});
+  sites.push(a);
+  await a.start();
+  note('previous release installed and serving', {origin: a.origin});
+
+  const owner = await a.login('owner');
+  const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date()), month = day.slice(0, 7);
+  const customers = {};
+  for (const [key, name, region, rep] of [['e1', 'مصنع الشرق', 'الشرقية', 'rep1'], ['w1', 'مصنع الغرب', 'الغربية', 'repw']]) {
+    const created = await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region, city: 'x', code: key, branch: 'الرئيسي', assignedTo: rep, phone: '0500000000', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
+    assert.equal(created.status, 200, created.text);
+    customers[key] = created.json().id;
+  }
+  const products = ['قوالب البلوك المتحركة', 'قوالب البلوك الثابتة', 'لمامة البلوك', 'ماكينة إنتاج البلوكة المتحركة', 'قطع غيار المكائن المتحركة', 'خلاطات البلوك', 'خلاطات الخرسانة الجاهزة', 'خدمات صيانة'];
+  const saveTarget = (kind, scopeId, data) => owner('/api/targets', {method: 'POST', body: {kind, scopeId, month, version: 0, inheritedFrom: null, requestId: crypto.randomUUID(), data}});
+  assert.equal((await saveTarget('weights', 'company', {products: products.map((product, index) => ({product, weight: [40, 20, 10, 10, 10, 5, 5, 0][index]}))})).status, 200);
+  assert.equal((await saveTarget('sales', 'rep1', {products: products.map((product, index) => ({product, quantity: index === 0 ? 10 : index === 1 ? 4 : 0}))})).status, 200);
+  for (const [key, rep, reference, quantity] of [['e1', 'rep1', 'INV-1', 5], ['w1', 'repw', 'INV-2', 2]]) {
+    const sale = await owner('/api/sales', {method: 'POST', body: {action: 'save', createKey: crypto.randomUUID(), data: {customerId: customers[key], repId: rep, date: day, reference, items: [{product: products[0], description: '', quantity, unitPrice: 1000}, {product: products[1], description: '', quantity: 8, unitPrice: 50}], discount: 0, notes: ''}}});
+    assert.equal(sale.status, 200, sale.text);
+  }
+  const form = new FormData();
+  form.set('customerId', customers.e1); form.set('file', new File([Buffer.from('%PDF-1.4\n%rehearsal\n%%EOF')], 'quote.pdf'));
+  const encoded = new Response(form);
+  const upload = await owner('/api/visit-files', {method: 'POST', body: Buffer.from(await encoded.arrayBuffer()), headers: {'Content-Type': encoded.headers.get('content-type')}});
+  assert.equal(upload.status, 200, upload.text);
+  const fileId = upload.json().id;
+  {
+    const db = new DatabaseSync(a.settings.YR_DATABASE_PATH), now = new Date().toISOString();
+    for (const [id, customer, who] of [['v-1', customers.e1, 'rep1'], ['v-2', customers.w1, 'repw']]) db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'activity',?,?,'الرئيسي',?,?,?,1,'rehearsal')").run(id, customer, who, JSON.stringify({type: 'visit', date: day, summary: 's', result: 'تم الشراء', salesStage: 'new', visitWorkflow: 'visit-v2', performedBy: who, responsibleId: who, recordedByEmail: who + '@yourrest.org'}), now, now);
+    db.close();
+  }
+  const views = async () => {
+    const result = {};
+    for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) {
+      const call = who === 'owner' ? owner : await a.login(who);
+      const crm = await call('/api/crm'); assert.equal(crm.status, 200, who + ' /api/crm');
+      result[who] = {crm: crm.json()};
+      if (['owner', 'mgr', 'sup'].includes(who)) { const sales = await call('/api/sales?month=' + month); assert.equal(sales.status, 200); const body = sales.json(); result[who].sales = {references: body.sales.map(s => s.reference).sort(), performance: body.performance.map(p => [p.member.id, p.invoices, p.attainment.score, p.attainment.status]).sort()}; }
+      if (who === 'rep1') { const own = await call('/api/targets?month=' + month); assert.equal(own.status, 200); result[who].targets = own.json(); }
+    }
+    const download = await owner('/api/visit-files?id=' + fileId);
+    result.file = {status: download.status, sha: sha(download.bytes)};
+    const anonymous = await a.request('/api/visits', {method: 'POST', headers: {Origin: a.origin}, body: {}});
+    result.anonymousVisitsPost = anonymous.status;
+    return result;
+  };
+  const before = await views();
+  note('synthetic data created through the previous release and read back', {customers: 2, sales: 2, visits: 2, attachment: 1, anonymousVisitsPostBefore: before.anonymousVisitsPost});
+
+  // Unpack the package exactly as the guide says.
+  const listing = execFileSync('python3', ['-c', 'import zipfile,sys;print("\\n".join(i.filename for i in zipfile.ZipFile(sys.argv[1]).infolist() if "/" not in i.filename.rstrip("/")))', packageZip], {encoding: 'utf8'}).split('\n').filter(Boolean);
+  const helperName = listing.find(name => name.endsWith('.cjs'));
+  assert(helperName, 'the package carries one activator at its top level');
+  const helperSource = execFileSync('python3', ['-c', 'import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode())', packageZip, helperName], {encoding: 'utf8'});
+  const stageName = /const STAGE_DIR = "([^"]+)";/.exec(helperSource)?.[1];
+  assert(stageName, 'the activator carries the injected upload folder name');
+  const stageA = path.join(a.home, stageName);
+  fs.mkdirSync(stageA, {mode: 0o700});
+  execFileSync('python3', ['-c', 'import zipfile,sys;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', packageZip, stageA]);
+  const helper = require(path.join(stageA, helperName));
+  const paths = helper.pathsFor(a.home);
+  const baseline = {settings: fileHash(path.join(a.app, 'settings.cjs')), launcher: fileHash(path.join(a.app, 'app.cjs')), oldRelease: treeHash(path.join(a.app, 'release')), objects: treeHash(a.settings.YR_OBJECTS_PATH)};
+  note('package unpacked into the guide folder', {stage: stageName, helper: helperName, releaseFiles: helper.RELEASE_FILES});
+
+  const quiet = () => {};
+  const lines = [];
+  const log = line => { lines.push(line); console.error('    ' + line); };
+  await helper.run(paths, 'check', {log});
+  assert(lines.some(line => line.startsWith('PACKAGE AND CONFIGURATION: READY')), '--check reports READY');
+  assert(a.running, '--check leaves the app running');
+  note('--check passes while the app is still serving');
+
+  let refused;
+  try { await helper.run(paths, 'apply', {log: quiet}); } catch (error) { refused = error.code; }
+  assert.equal(refused, 'APP_OR_DATA_STILL_IN_USE', 'the activator refuses to switch while the app is running');
+  assert.equal(treeHash(path.join(a.app, 'release')), baseline.oldRelease, 'a refused attempt leaves the live release untouched');
+  assert.equal(fs.existsSync(paths.state), false, 'a refused attempt writes no state');
+  note('switching is refused while the app is still running', {code: refused});
+
+  await a.stop();
+  const dataBeforeSwitch = tables(a);
+  lines.length = 0;
+  const state = await helper.run(paths, 'apply', {log});
+  assert(lines.includes('START APP IN CPANEL'), 'the activator asks for Start App');
+  assert.equal(state.phase, 'switched');
+  const dataAfterSwitch = tables(a);
+  assert.deepEqual(dataAfterSwitch, dataBeforeSwitch, 'every business table is identical after the switch');
+  assert.equal(fileHash(path.join(a.app, 'settings.cjs')), baseline.settings, 'settings.cjs untouched');
+  assert.equal(fileHash(path.join(a.app, 'app.cjs')), baseline.launcher, 'root launcher untouched');
+  assert.equal(treeHash(a.settings.YR_OBJECTS_PATH), baseline.objects, 'uploaded files untouched');
+  assert.notEqual(treeHash(path.join(a.app, 'release')), baseline.oldRelease, 'the live release is now the new one');
+  assert.equal(helper.manifestFiles(paths.manifest).size, helper.RELEASE_FILES);
+  {
+    // The live release must now equal the pinned manifest, file for file. (The unpacked copy was moved into place.)
+    const expected = helper.manifestFiles(paths.manifest), live = [...helper.inventory(paths.current)].filter(([, entry]) => entry.type === 'file');
+    assert.equal(live.length, expected.size, 'the live release has exactly the packaged files');
+    assert(live.every(([name, entry]) => expected.get(name) === entry.sha256), 'every live file matches its packaged SHA-256');
+  }
+  assert(fs.existsSync(path.join(state.transaction, 'old-release')) || fs.existsSync(path.join(state.transaction, 'application')), 'the previous release and a full backup are kept');
+  note('stopped, backed up and switched; data, settings, launcher and uploads are byte-identical', {phase: state.phase, backupKept: path.basename(state.transaction)});
+
+  await a.start();
+  lines.length = 0;
+  await helper.run(paths, 'verify', {log});
+  assert(lines.includes('DEPLOYMENT VERIFIED'), '--verify ends with DEPLOYMENT VERIFIED');
+  note('new release started; --verify prints DEPLOYMENT VERIFIED', {verifyOutput: lines.slice()});
+
+  const after = await views();
+  const differences = [];
+  for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) for (const part of Object.keys(before[who])) if (stable(before[who][part]) !== stable(after[who][part])) differences.push(who + '.' + part);
+  if (stable(before.file) !== stable(after.file)) differences.push('file');
+  assert.deepEqual(differences, [], 'API results are identical for every role before and after the update');
+  note('every role sees identical records, sales, performance and attachment after the update', {roles: 5});
+  assert.equal(before.anonymousVisitsPost, 400);
+  assert.equal(after.anonymousVisitsPost, 401, 'the new release answers an anonymous POST with 401');
+  note('behaviour that is meant to change did change', {anonymousVisitsPost: {before: before.anonymousVisitsPost, after: after.anonymousVisitsPost}});
+
+  // Command-line wiring of the activator (the hosting home is fixed at /home/youriedx, which does not exist here).
+  const cli = spawnSync(process.execPath, [path.join(stageA, helperName), '--bogus'], {encoding: 'utf8'});
+  assert.equal(cli.status, 1); assert.match(cli.stderr, /Usage: node .*\.cjs \[--check\|--verify\]/);
+  const missingHome = spawnSync(process.execPath, [path.join(stageA, helperName), '--check'], {encoding: 'utf8'});
+  assert.equal(missingHome.status, 1); assert.match(missingHome.stderr, /^STOP: [A-Z0-9_]+/m);
+  note('command-line usage and failure output behave as the guide describes');
+  await a.stop();
+
+  // ── Site B: a damaged package is refused and the live release is untouched ──────────────────
+  const b = await installSite(work, 'home-b');
+  sites.push(b);
+  const stageB = path.join(b.home, stageName);
+  fs.mkdirSync(stageB, {mode: 0o700});
+  execFileSync('python3', ['-c', 'import zipfile,sys;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', packageZip, stageB]);
+  const helperB = require(path.join(stageB, helperName));
+  const pathsB = helperB.pathsFor(b.home);
+  const liveBefore = treeHash(path.join(b.app, 'release')), dataB = tables(b);
+  fs.appendFileSync(path.join(stageB, 'release', 'server.js'), '\n// tampered\n');
+  for (const mode of ['check', 'apply']) {
+    let code;
+    try { await helperB.run(pathsB, mode, {log: () => {}}); } catch (error) { code = error.code; }
+    assert.equal(code, 'RELEASE_CHECKSUM_MISMATCH', mode + ' refuses a modified file');
+  }
+  assert.equal(treeHash(path.join(b.app, 'release')), liveBefore, 'the live release is untouched');
+  assert.deepEqual(tables(b), dataB, 'the data is untouched');
+  assert.equal(fs.existsSync(pathsB.state), false, 'no activation state was written');
+  note('a tampered package is refused by --check and by the switch; live release, data and state unchanged', {code: 'RELEASE_CHECKSUM_MISMATCH'});
+
+  report.ok = true;
+  report.steps = steps;
+} catch (error) {
+  report.ok = false;
+  report.steps = steps;
+  report.failure = String(error?.stack || error).split('\n').slice(0, 6).join('\n');
+  console.error('REHEARSAL FAILED: ' + report.failure);
+  process.exitCode = 1;
+} finally {
+  for (const site of sites) { await site.stop?.().catch(() => {}); site.close?.(); }
+  if (argv.includes('--keep')) report.keptAt = work; else fs.rmSync(work, {recursive: true, force: true});
+  const out = option('--out');
+  if (out) fs.writeFileSync(out, JSON.stringify(report, null, 2) + '\n');
+  console.log(JSON.stringify({ok: report.ok, steps: steps.length, packageSha256: report.packageSha256}));
+  // Keep-alive sockets from the verification fetches would otherwise hold the process open.
+  process.exit(report.ok ? 0 : 1);
+}
