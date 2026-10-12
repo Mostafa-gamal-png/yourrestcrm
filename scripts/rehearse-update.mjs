@@ -8,6 +8,11 @@
 // running, stop, switch, start, --verify. It then proves that data, settings and API results are unchanged and that
 // a tampered package is refused without touching the live release.
 //
+// When the package declares a database migration (activator constant NEW_MIGRATIONS) the rehearsal also proves that the
+// activator leaves the database at the old schema, that --verify refuses before the application has started, that the
+// application's first start applies the migration after a private schema backup, that every pre-existing table is
+// byte-identical afterwards, and that the new feature works for the right roles on the upgraded database.
+//
 // Only temporary folders and loopback sockets are used. No production data, DNS, mailbox or hosting access.
 import assert from 'node:assert/strict';
 import {spawn, spawnSync, execFileSync} from 'node:child_process';
@@ -133,9 +138,9 @@ async function installSite(work, label, {exactOrigin = false} = {}) {
   return site;
 }
 
-function tables(site) {
+function tables(site, file = site.settings.YR_DATABASE_PATH) {
   // Every business table, in a stable order. Authentication tables change with sign-ins and are excluded.
-  const db = new DatabaseSync(site.settings.YR_DATABASE_PATH, {readOnly: true});
+  const db = new DatabaseSync(file, {readOnly: true});
   try {
     const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'auth_%' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(row => row.name);
     return Object.fromEntries(names.map(name => [name, sha(JSON.stringify(db.prepare('SELECT * FROM ' + name).all().map(row => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'bigint' ? String(v) : v]))).sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))) + ':' + db.prepare('SELECT COUNT(*) n FROM ' + name).get().n]));
@@ -194,6 +199,7 @@ try {
     result.file = {status: download.status, sha: sha(download.bytes)};
     const anonymous = await a.request('/api/visits', {method: 'POST', headers: {Origin: a.origin}, body: {}});
     result.anonymousVisitsPost = anonymous.status;
+    result.anonymousDeviceStatus = (await a.request('/api/device-status')).status;
     return result;
   };
   const before = await views();
@@ -219,6 +225,7 @@ try {
   const log = line => { lines.push(line); console.error('    ' + line); };
   await helper.run(paths, 'check', {log});
   assert(lines.some(line => line.startsWith('PACKAGE AND CONFIGURATION: READY')), '--check reports READY');
+  for (const name of helper.NEW_MIGRATIONS) assert(lines.some(line => line.includes('SCHEMA CHANGE: ') && line.includes(name)), '--check announces the schema change ' + name);
   assert(a.running, '--check leaves the app running');
   note('--check passes while the app is still serving');
 
@@ -237,6 +244,16 @@ try {
   assert.equal(state.phase, 'switched');
   const dataAfterSwitch = tables(a);
   assert.deepEqual(dataAfterSwitch, dataBeforeSwitch, 'every business table is identical after the switch');
+  if (helper.NEW_MIGRATIONS.length) {
+    assert(lines.some(line => line.startsWith('THE FIRST START APPLIES ' + helper.NEW_MIGRATIONS.join(', '))), 'the activator says the first start applies the migration');
+    const ledger = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true});
+    try { assert.equal(ledger.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n, helper.SCHEMA_BEFORE, 'the activator leaves the database at the old schema'); } finally { ledger.close(); }
+    assert.equal(fs.existsSync(path.join(a.data, 'schema-backups')) && fs.readdirSync(path.join(a.data, 'schema-backups')).length > 0 && fs.readdirSync(path.join(a.data, 'schema-backups')).some(name => name.startsWith('before-' + helper.NEW_MIGRATIONS[0].replace(/\.sql$/, '') + '-')), false, 'the schema backup does not exist before the application starts');
+    let early;
+    try { await helper.run(paths, 'verify', {log: quiet}); } catch (error) { early = error.code; }
+    assert.equal(early, 'MIGRATION_NOT_APPLIED_START_APP_FIRST', '--verify before the application started says so plainly');
+    note('the activator never touches the database; --verify refuses until the application has started', {code: early});
+  }
   assert.equal(fileHash(path.join(a.app, 'settings.cjs')), baseline.settings, 'settings.cjs untouched');
   assert.equal(fileHash(path.join(a.app, 'app.cjs')), baseline.launcher, 'root launcher untouched');
   assert.equal(treeHash(a.settings.YR_OBJECTS_PATH), baseline.objects, 'uploaded files untouched');
@@ -256,6 +273,25 @@ try {
   await helper.run(paths, 'verify', {log});
   assert(lines.includes('DEPLOYMENT VERIFIED'), '--verify ends with DEPLOYMENT VERIFIED');
   note('new release started; --verify prints DEPLOYMENT VERIFIED', {verifyOutput: lines.slice()});
+  if (helper.NEW_MIGRATIONS.length) {
+    const first = helper.NEW_MIGRATIONS[0];
+    assert(lines.includes('MIGRATION APPLIED: ' + first), '--verify names the applied migration');
+    for (const [route, expected] of helper.EXTRA_ROUTES) assert(lines.some(line => line.includes(route + ': ' + expected)), '--verify probed ' + route);
+    const afterStart = tables(a), unchanged = Object.keys(dataBeforeSwitch).filter(name => name !== 'yr_schema_migrations');
+    assert.deepEqual(Object.fromEntries(unchanged.map(name => [name, afterStart[name]])), Object.fromEntries(unchanged.map(name => [name, dataBeforeSwitch[name]])), 'every pre-existing table is byte-identical after the first start');
+    const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true});
+    try {
+      const ledger = db.prepare('SELECT name FROM yr_schema_migrations ORDER BY name').all().map(row => row.name);
+      assert.equal(ledger.length, helper.SCHEMA_AFTER, 'the ledger holds every migration');
+      assert.equal(ledger.at(-1), first, 'the new migration is the last one');
+      assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0, 'foreign keys are intact');
+    } finally { db.close(); }
+    const backups = fs.readdirSync(path.join(a.data, 'schema-backups')).filter(name => name.startsWith('before-' + first.replace(/\.sql$/, '') + '-'));
+    assert.equal(backups.length, 1, 'exactly one private schema backup was taken by the first start');
+    assert.equal(fs.statSync(path.join(a.data, 'schema-backups', backups[0])).mode & 0o077, 0, 'the schema backup is private');
+    assert.deepEqual(tables(a, path.join(a.data, 'schema-backups', backups[0])), dataBeforeSwitch, 'the schema backup equals the database as it was before the migration');
+    note('the first start applied ' + first + ' after a private schema backup; every earlier table is byte-identical', {ledger: ledger.length, backup: backups[0]});
+  }
 
   const after = await views();
   const differences = [];
@@ -263,9 +299,33 @@ try {
   if (stable(before.file) !== stable(after.file)) differences.push('file');
   assert.deepEqual(differences, [], 'API results are identical for every role before and after the update');
   note('every role sees identical records, sales, performance and attachment after the update', {roles: 5});
-  assert.equal(before.anonymousVisitsPost, 400);
   assert.equal(after.anonymousVisitsPost, 401, 'the new release answers an anonymous POST with 401');
-  note('behaviour that is meant to change did change', {anonymousVisitsPost: {before: before.anonymousVisitsPost, after: after.anonymousVisitsPost}});
+  // A previous release that already carries the 401 guard answers 401 before as well; one that does not answers 400.
+  assert([400, 401].includes(before.anonymousVisitsPost));
+  if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/device-status')) {
+    assert.equal(before.anonymousDeviceStatus, 404, 'the previous release has no device-status route');
+    assert.equal(after.anonymousDeviceStatus, 401, 'the new release protects it');
+  }
+  note('behaviour that is meant to change did change', {anonymousVisitsPost: {before: before.anonymousVisitsPost, after: after.anonymousVisitsPost}, anonymousDeviceStatus: {before: before.anonymousDeviceStatus, after: after.anonymousDeviceStatus}});
+
+  if (helper.NEW_MIGRATIONS.includes('0015_member_devices.sql')) {
+    // The new feature on the upgraded database, for the right people only.
+    const body = {platform: 'android-app', deviceClass: 'android', gate: 'ok', missing: [], appVersion: '1.0.10', tracking: true, windowActive: true, enrolled: true, consent: true, foreground: 'granted', fineLocation: 'granted', notifications: 'granted', background: 'granted', locationServices: true, lastFixAt: '', accuracy: null, pendingCount: 0, pendingGapCount: 0, quarantinedCount: 0, error: '', syncError: ''};
+    const rep1 = await a.login('rep1'), repw = await a.login('repw'), sup = await a.login('sup');
+    assert.equal((await rep1('/api/device-status', {method: 'POST', body})).status, 200, 'a representative reports their phone');
+    assert.equal((await owner('/api/device-status', {method: 'POST', body})).status, 403, 'an administrator does not');
+    const seen = await sup('/api/device-status');
+    assert.equal(seen.status, 200);
+    assert.deepEqual(seen.json().members.map(member => member.memberId), ['rep1'], 'the supervisor sees only their own representative');
+    assert.deepEqual(seen.json().members[0].devices.map(device => [device.platform, device.gate]), [['android-app', 'ok']], 'with the phone report');
+    assert.equal((await repw('/api/device-status')).status, 403, 'a representative cannot read tracking state');
+    const everyone = await owner('/api/device-status');
+    assert.deepEqual(everyone.json().members.map(member => member.memberId).sort(), ['rep1', 'repw'], 'an administrator sees every representative');
+    const today = await sup('/api/journeys?date=' + day + '&memberId=rep1');
+    assert.equal(today.status, 200, 'the daily report still loads');
+    assert(Array.isArray(today.json().tracking) && today.json().tracking.length === 1, 'and carries the tracking coverage');
+    note('device status works on the upgraded database for the right roles', {supervisorSees: 1, administratorSees: 2});
+  }
 
   // Command-line wiring of the activator (the hosting home is fixed at /home/youriedx, which does not exist here).
   const cli = spawnSync(process.execPath, [path.join(stageA, helperName), '--bogus'], {encoding: 'utf8'});

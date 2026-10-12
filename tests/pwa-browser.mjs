@@ -13,6 +13,7 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {createHash,randomBytes} from 'node:crypto';
 import {sqliteDatabase} from '../portable/storage.mjs';
+import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
 const require=createRequire(import.meta.url),{chromium}=require('playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),release=path.join(root,'dist/standalone');
 const work=await mkdtemp(path.join(os.tmpdir(),'yourrest-pwa-browser-')),data=path.join(work,'data'),capture=path.join(work,'mail.jsonl');
@@ -100,6 +101,8 @@ try{
  const standalone=await context();await standalone.addCookies(cookies);await standalone.addInitScript(()=>{const original=window.matchMedia.bind(window);window.matchMedia=query=>{const result=original(query);if(query==='(display-mode: standalone)')Object.defineProperty(result,'matches',{value:true});return result;};});const appWindow=await firstPage(standalone);await appWindow.goto(origin+'/');await appWindow.locator('.workspace').waitFor();await appWindow.waitForFunction(()=>!!navigator.serviceWorker.controller);check(await appWindow.locator('.pwa-install').count(),0,'Installed standalone window must not show an install banner');await standalone.close();
  // A separate signed-in rep verifies the compact navigation's real permission boundary.
  const rep=await context(),repPage=await firstPage(rep);
+ // Representatives use the system only from the Android app (mandatory route tracking); the app is emulated for this page.
+ await installNativeBridge(repPage,{memberId:'rep',regionScope:'western'});
  await repPage.goto(origin+'/');await repPage.locator('#yourrest-email').fill('rep');await repPage.getByRole('button',{name:'إرسال رمز الدخول',exact:true}).click();await repPage.locator('#yourrest-code').waitFor();
  const repMail=(await readFile(capture,'utf8')).trim().split('\n').map(JSON.parse).filter(row=>row.to==='rep@yourrest.org').at(-1);
  const repCode=Buffer.from(repMail.message.split('\r\n\r\n')[1].replaceAll('\r\n',''),'base64').toString('utf8').match(/\b\d{6}\b/)?.[0];assert(repCode,'Rep fixture OTP missing');checks++;

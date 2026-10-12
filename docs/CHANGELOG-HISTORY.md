@@ -4,6 +4,15 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mandatory route tracking for representatives (2026-10-12, schema 16)
+
+- A representative uses the system only from the Android app with consent, precise location, notifications, all-the-time location and the phone location service on, and the phone enrolled for the account. Browsers, iPhone, old apps and a silent app bridge get a full-page block that names what is missing and the action that fixes it; other roles are unchanged and daytime trouble (GPS wait, no network, queued points) never blocks work. `lib/tracking-gate.ts`, `app/tracking-gate.tsx`.
+- The phone reports its own tracking state (`POST /api/device-status`, table `crm_member_devices`, migration `0015_member_devices`). Supervisors, managers and administrators read it for the representatives they already see in the daily report; it is diagnostic only and never counts as movement, a visit, a target or an evaluation figure.
+- The daily route report says why a day has no GPS (never activated / no points that day / a tracking day opened without points) together with the phone's last report, and the team page has a Tracking column. Fridays and the hours before 06:00 are not failures.
+- Update activator and packager can ship a declared database migration (`--new-migration`, `--verify-route`); the application applies it on first start after its own private schema backup, and `--verify` states plainly when the application has not started yet.
+- Fixed: in the Android app a stray "update the app" notice flashed at every launch (and raised a React hydration error) before the app had reported its capabilities.
+- Tests: `tests/tracking-gate*.mjs`, `tests/device-status*.mjs`, `tests/tracking-coverage.mjs`, `tests/schema-update-activation.mjs`, `tests/tracking-gate-browser.mjs`; browser tests that sign in as a representative now run inside the emulated Android app (`scripts/lib/native-bridge.mjs`). Arabic operating guide: `docs/UPDATE-2026-10-12-AR.txt`; plan: `docs/qa/PLAN-TRACKING-ENFORCEMENT-AR.md`.
+
 ## Current update at the time: offline recording
 
 New customers, visits, service registrations, confirmed-source follow-ups and competitor attachments can be saved locally and synchronized when connectivity returns while the application is active. Open online once after deployment to prepare the public shell and authorized snapshot. See docs/UPDATE-OFFLINE-AR.txt and docs/OFFLINE-VERIFICATION.json. No new migration or native APK.

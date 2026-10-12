@@ -80,8 +80,10 @@ function Frame({state,reason,member,say,language,children}:{state:'checking'|'bl
 function BlockedScreen({reason,missing,member}:{reason:GateReason;missing:GateRequirement[];member:Member|null}){
  const tracker=useJourneyTracker(),{language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const android=useSyncExternalStore(noSubscription,androidBrowser,()=>false);
- const {busy,errorMessage,appVersion}=tracker;
- const failure=errorMessage?trackingFailureText(errorMessage,language):'';
+ const {busy,operationError,appVersion}=tracker,device=tracker.gate.device;
+ // What the last tap did wrong, or what the app itself reports (for instance that the server stopped this phone).
+ // A standing permission state is not repeated: the checklist already shows it, and a first run has not been asked yet.
+ const failureSource=operationError||device?.error||device?.syncError||'',failure=failureSource?trackingFailureText(failureSource,language):'';
  const showList=reason==='setup'||reason==='permission'||reason==='location_services';
  const steps=REQUIREMENT_ORDER.filter(item=>missing.includes(item)&&requirementStep(item,say)).map(item=>({item,text:requirementStep(item,say)}));
  const download=reason==='upgrade'||reason==='browser'&&android;

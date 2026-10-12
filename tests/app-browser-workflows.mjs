@@ -15,6 +15,7 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {createHash,randomBytes} from 'node:crypto';
 import {sqliteDatabase} from '../portable/storage.mjs';
+import {installNativeBridge,nativeControl} from '../scripts/lib/native-bridge.mjs';
 const require=createRequire(import.meta.url),{chromium}=require('playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),release=path.join(root,'dist/standalone');
 const work=await mkdtemp(path.join(os.tmpdir(),'yourrest-workflow-browser-')),data=path.join(work,'data'),capture=path.join(work,'mail.jsonl');
@@ -82,6 +83,8 @@ try{
  async function noOverflow(target,label){check(await target.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,label+' has horizontal overflow');}
  async function shot(target,name){await noOverflow(target,name);const filename=path.join(screenshots,name+'.png');await target.screenshot({path:filename,fullPage:await target.getByRole('dialog').count()===0});saved.push(filename);}
  async function signin(target,user){lastPage=target;
+  // A representative uses the system only from the Android app (mandatory route tracking); the app is emulated for this page.
+  if(['rep','blocked'].includes(user))await installNativeBridge(target,{memberId:user,regionScope:'western'});
   await target.goto(origin+'/');await target.locator('#yourrest-email').waitFor();await target.locator('#yourrest-email').fill(user);
   const request=target.waitForResponse(r=>new URL(r.url()).pathname==='/api/auth/request'&&r.request().method()==='POST');
   await target.getByRole('button',{name:'إرسال رمز الدخول',exact:true}).click();check((await request).status(),200,'Sign-in request '+user);await target.locator('#yourrest-code').waitFor();
@@ -121,12 +124,13 @@ try{
    if(await target.locator('html').getAttribute('lang')!==language)await target.locator('.topbar-tools .language-switch').click();
    await target.waitForFunction(language=>document.documentElement.lang===language,language);await open();const modal=target.getByRole('dialog');await modal.waitFor();
    for(const width of [320,360,412]){await target.setViewportSize({width,height:800});await dialogBounds(modal,label+' '+language+' '+width);}
-   await modal.locator('[data-slot=dialog-close]').click();if(await modal.getByRole('button',{name:/^(خروج بدون حفظ|Discard changes)$/}).count())await modal.getByRole('button',{name:/^(خروج بدون حفظ|Discard changes)$/}).click();await modal.waitFor({state:'detached'});
+   // The unsaved-changes confirmation can appear a moment after the close tap (the device fix arrives asynchronously), so wait for it briefly.
+   await modal.locator('[data-slot=dialog-close]').click();const discard=target.getByRole('button',{name:/^(خروج بدون حفظ|تجاهل التعديلات|Discard changes)$/});await discard.waitFor({timeout:1500}).then(()=>discard.click(),()=>{});await modal.waitFor({state:'detached'});
   }
   await target.setViewportSize({width:360,height:800});await target.locator('.topbar-tools .language-switch').click();await target.waitForFunction(()=>document.documentElement.lang==='ar');
  }
  async function chooseCustomer(dialog,name){await dialog.locator('#visit-customer-search').fill(name);await dialog.getByRole('option').filter({hasText:name}).click();check(await dialog.locator('.visit-selected-customer').innerText().then(text=>text.includes(name)),true,'Selected factory '+name);}
- async function closeDirty(dialog){await dialog.getByRole('button',{name:'إلغاء',exact:true}).click();if(await dialog.getByRole('button',{name:'خروج بدون حفظ',exact:true}).count())await dialog.getByRole('button',{name:'خروج بدون حفظ',exact:true}).click();await dialog.waitFor({state:'detached'});}
+ async function closeDirty(dialog){await dialog.getByRole('button',{name:'إلغاء',exact:true}).click();const discard=dialog.page().getByRole('button',{name:/^(خروج بدون حفظ|تجاهل التعديلات)$/});await discard.waitFor({timeout:1500}).then(()=>discard.click(),()=>{});await dialog.waitFor({state:'detached'});}
  await signin(page,'ceo');await page.reload();await page.locator('.workspace').waitFor();check(await page.locator('#yourrest-code').count(),0,'Reload keeps the verified account signed in');
  // Actual installation fallback UI is reachable after authentication in both languages.
  // Service worker and physical installation are verified separately, never inferred here.
@@ -162,24 +166,39 @@ try{
  await nav(repPage,'customer');await languageGeometry(repPage,()=>repPage.locator('.heading-actions .btn.subtle').click(),'Rep Add customer');
  await nav(repPage,'activity');await languageGeometry(repPage,()=>repPage.locator('.heading-actions .btn.primary').click(),'Rep visit');
  await nav(repPage,'followup');await languageGeometry(repPage,()=>repPage.locator('.rep-mobile-records .rep-record-card').filter({hasText:'QA WEST FACTORY'}).locator('.rep-record-actions .btn.primary').click(),'Rep follow-up');
- // Direction handoff must happen before a deliberately failing tracking request.
- await nav(repPage,'map');await repPage.route('**/api/journeys**',async route=>{if(route.request().method()==='POST'){await new Promise(resolve=>setTimeout(resolve,2500));try{await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'QA TRACKING UNAVAILABLE'})});}catch{}return;}await route.continue();});
- const mapSearch=repPage.getByRole('combobox',{name:'ابحث عن عميل',exact:true});await mapSearch.fill('QA WEST FACTORY');await repPage.getByRole('option').filter({hasText:'QA WEST FACTORY'}).click();check(await repPage.locator('.cm-selected-card h2').innerText(),'QA WEST FACTORY','Map resolves selected scoped customer');
- const requestedMaps=[];await rep.route('https://www.google.com/maps/**',route=>{requestedMaps.push({url:route.request().url(),at:Date.now()});return route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><title>Maps URL handoff test</title><p>Isolated destination capture</p>'});});
- let mapsUrl,actualPopupOpened=false,mapsHandoffCalls=[];
- if(contentShell){
-  // This embedder closes even on a bare window.open button, independently of CRM.
-  // Exercise the real app's blocked-popup recovery without claiming a popup opened.
-  await repPage.evaluate(()=>{window.__qaMapsCalls=[];window.open=(...args)=>{window.__qaMapsCalls.push({url:args[0],target:args[1],at:performance.now(),userActivation:navigator.userActivation.isActive});return null;};});
-  const tapped=await repPage.evaluate(()=>performance.now());await repPage.getByRole('button',{name:'الاتجاهات',exact:true}).click();mapsHandoffCalls=await repPage.evaluate(()=>window.__qaMapsCalls);check(mapsHandoffCalls.length,1,'Actual directions click requests exactly one Maps handoff');check(mapsHandoffCalls[0].at-tapped<2000,true,'Maps handoff requested before tracking response');check(mapsHandoffCalls[0].userActivation,true,'Maps handoff stays in the original user gesture');mapsUrl=new URL(mapsHandoffCalls[0].url);await repPage.locator('.cm-selected-card').getByRole('alert').filter({hasText:'المتصفح منع فتح نافذة الخرائط'}).waitFor();checks++;
- }else{
-  const tapped=Date.now(),popupPromise=repPage.waitForEvent('popup',{timeout:12000}).catch(error=>({error}));await repPage.getByRole('button',{name:'الاتجاهات',exact:true}).click();const popup=await popupPromise;if(popup.error)throw popup.error;await popup.waitForLoadState('domcontentloaded');assert(requestedMaps.length,'Maps destination requested');checks++;mapsUrl=new URL(requestedMaps[0].url);check(requestedMaps[0].at-tapped<2000,true,'Maps opens before blocked route recording completes');actualPopupOpened=true;await popup.close();
+ // Direction handoff must happen before a deliberately failing tracking request. A representative works inside the Android
+ // app, so for them the handoff is a native request; the browser behaviour (popup, blocked-popup recovery, user gesture)
+ // is exercised for the manager, who still uses a browser.
+ let actualPopupOpened=false;const requestedMaps=[];
+ async function directionsFlow(page,browserContext,{native,label}){
+  await nav(page,'map');await page.route('**/api/journeys**',async route=>{if(route.request().method()==='POST'){await new Promise(resolve=>setTimeout(resolve,2500));try{await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'QA TRACKING UNAVAILABLE'})});}catch{}return;}await route.continue();});
+  const mapSearch=page.getByRole('combobox',{name:'ابحث عن عميل',exact:true});await mapSearch.fill('QA WEST FACTORY');await page.getByRole('option').filter({hasText:'QA WEST FACTORY'}).click();check(await page.locator('.cm-selected-card h2').innerText(),'QA WEST FACTORY','Map resolves selected scoped customer ('+label+')');
+  let mapsUrl;
+  if(native){
+   const tapped=await page.evaluate(()=>Date.now());await page.getByRole('button',{name:'الاتجاهات',exact:true}).click();
+   await page.waitForFunction(()=>window.__nativeMock.calls.some(call=>call.method==='openDirections'),null,{timeout:12000});
+   const handoffs=(await nativeControl(page).calls()).filter(call=>call.method==='openDirections');
+   check(handoffs.length,1,'Actual directions tap requests exactly one native Maps handoff');check(handoffs[0].at-tapped<2000,true,'Maps handoff requested before tracking response');check(handoffs[0].userActivation,true,'Maps handoff stays in the original user gesture');
+   check([handoffs[0].payload.latitude,handoffs[0].payload.longitude],[21.5,39.2],'The native handoff carries the selected customer destination');
+   mapsUrl=new URL(await page.getByRole('link',{name:'فتح Google Maps',exact:true}).getAttribute('href'));
+  }else{
+   await browserContext.route('https://www.google.com/maps/**',route=>{requestedMaps.push({url:route.request().url(),at:Date.now()});return route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><title>Maps URL handoff test</title><p>Isolated destination capture</p>'});});
+   if(contentShell){
+    // This embedder closes even on a bare window.open button, independently of CRM.
+    // Exercise the real app's blocked-popup recovery without claiming a popup opened.
+    await page.evaluate(()=>{window.__qaMapsCalls=[];window.open=(...args)=>{window.__qaMapsCalls.push({url:args[0],target:args[1],at:performance.now(),userActivation:navigator.userActivation.isActive});return null;};});
+    const tapped=await page.evaluate(()=>performance.now());await page.getByRole('button',{name:'الاتجاهات',exact:true}).click();const mapsHandoffCalls=await page.evaluate(()=>window.__qaMapsCalls);check(mapsHandoffCalls.length,1,'Actual directions click requests exactly one Maps handoff');check(mapsHandoffCalls[0].at-tapped<2000,true,'Maps handoff requested before tracking response');check(mapsHandoffCalls[0].userActivation,true,'Maps handoff stays in the original user gesture');mapsUrl=new URL(mapsHandoffCalls[0].url);await page.locator('.cm-selected-card').getByRole('alert').filter({hasText:'المتصفح منع فتح نافذة الخرائط'}).waitFor();checks++;
+   }else{
+    const tapped=Date.now(),popupPromise=page.waitForEvent('popup',{timeout:12000}).catch(error=>({error}));await page.getByRole('button',{name:'الاتجاهات',exact:true}).click();const popup=await popupPromise;if(popup.error)throw popup.error;await popup.waitForLoadState('domcontentloaded');assert(requestedMaps.length,'Maps destination requested');checks++;mapsUrl=new URL(requestedMaps[0].url);check(requestedMaps[0].at-tapped<2000,true,'Maps opens before blocked route recording completes');actualPopupOpened=true;await popup.close();
+   }
+  }
+  check(mapsUrl.hostname,'www.google.com');check(mapsUrl.pathname,'/maps/dir/');check(mapsUrl.searchParams.get('destination'),'21.5,39.2','Correct selected customer destination');check(mapsUrl.searchParams.get('travelmode'),'driving');check(await page.getByRole('link',{name:'فتح Google Maps',exact:true}).getAttribute('href'),mapsUrl.href,'Same destination remains retryable');
+  await page.locator('.cm-selected-card').getByRole('alert').filter({hasText:'لم يتم تأكيد تسجيل الرحلة'}).waitFor();checks++;await shot(page,label+'-map-directions');
  }
- check(mapsUrl.hostname,'www.google.com');check(mapsUrl.pathname,'/maps/dir/');check(mapsUrl.searchParams.get('destination'),'21.5,39.2','Correct selected customer destination');check(mapsUrl.searchParams.get('travelmode'),'driving');check(await repPage.getByRole('link',{name:'فتح Google Maps',exact:true}).getAttribute('href'),mapsUrl.href,'Same destination remains retryable');
- await repPage.locator('.cm-selected-card').getByRole('alert').filter({hasText:'لم يتم تأكيد تسجيل الرحلة'}).waitFor();checks++;await shot(repPage,'rep-map-directions');
+ await directionsFlow(repPage,rep,{native:true,label:'rep'});
  await nav(repPage,'targets');await repPage.locator('.my-targets').waitFor();check(await repPage.getByRole('button',{name:'أوزان التقييم',exact:true}).count(),0,'Rep own-targets page exposes no target edits');await shot(repPage,'rep-own-targets');
  // Manager pages load and persist targets, an actual invoice and KPI assessment.
- const manager=await context(),managerPage=await firstPage(manager);managerPage.setDefaultTimeout(12000);await signin(managerPage,'manager');await nav(managerPage,'targets');await managerPage.locator('.quantity-targets-table').waitFor();check(await managerPage.locator('.targets-performance-workspace .targets-workspace').count(),1,'Combined page includes team targets');check(await managerPage.locator('.targets-performance-workspace .kpi-workspace').count(),1,'Combined page includes KPI evaluation');
+ const manager=await context({geolocation:{latitude:21.5123456,longitude:39.2123456,accuracy:7},permissions:['geolocation']}),managerPage=await firstPage(manager);managerPage.setDefaultTimeout(12000);await managerPage.clock.setSystemTime(new Date(Math.min(Date.parse(day+'T10:00:00Z'),Date.now()-120000)));await signin(managerPage,'manager');await directionsFlow(managerPage,manager,{native:false,label:'manager'});await nav(managerPage,'targets');await managerPage.locator('.quantity-targets-table').waitFor();check(await managerPage.locator('.targets-performance-workspace .targets-workspace').count(),1,'Combined page includes team targets');check(await managerPage.locator('.targets-performance-workspace .kpi-workspace').count(),1,'Combined page includes KPI evaluation');
  let repHeader=managerPage.locator('.quantity-targets-table th').filter({hasText:'QA western rep'});await repHeader.getByRole('button',{name:'تعديل',exact:true}).click();dialog=managerPage.getByRole('dialog');await dialog.waitFor();const quantityInputs=dialog.locator('input[type=number]');for(let index=0;index<await quantityInputs.count();index++)await quantityInputs.nth(index).fill(index===0?'10':'0');responsePromise=managerPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/targets'&&r.request().method()==='POST');await dialog.getByRole('button',{name:'حفظ المستهدفات',exact:true}).click();response=await responsePromise;check(response.status(),200,'Manager quantity targets persist');await dialog.waitFor({state:'detached'});
  await nav(managerPage,'sales');await managerPage.getByRole('button',{name:'تسجيل بيع',exact:true}).waitFor();await managerPage.getByRole('button',{name:'تسجيل بيع',exact:true}).click();dialog=managerPage.getByRole('dialog');await chooseCustomer(dialog,'QA WEST FACTORY');await labelInput(dialog,'مرجع البيع').fill('QA-INVOICE-01');await pick(dialog,'مندوب المبيعات','QA western rep');await labelInput(dialog,'الكمية').fill('2');await labelInput(dialog,'سعر الوحدة').fill('500');responsePromise=managerPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/sales'&&r.request().method()==='POST');await dialog.getByRole('button',{name:'حفظ البيع',exact:true}).click();response=await responsePromise;const salesReply=await response.json();check(response.status(),200,'Manager invoice saves: '+JSON.stringify(salesReply));await dialog.waitFor({state:'detached'});await managerPage.getByText('QA-INVOICE-01',{exact:true}).waitFor();const invoice=await db.prepare('SELECT total_cents,rep_id FROM crm_sales WHERE reference=?').bind('QA-INVOICE-01').first();check(invoice.total_cents,100000,'Invoice arithmetic persisted');check(invoice.rep_id,'rep','Invoice belongs to the selected rep');
  await nav(managerPage,'targets');await managerPage.locator('.kpi-workspace table').waitFor();const kpiRow=managerPage.locator('.kpi-workspace table tr').filter({hasText:'QA western rep'});await kpiRow.getByRole('button',{name:'عرض المؤشرات',exact:true}).click();await managerPage.getByRole('button',{name:'تقييم الإدارة وتدقيق البيانات',exact:true}).click();dialog=managerPage.getByRole('dialog');await labelInput(dialog,'عدد السجلات التي تمت مراجعتها').fill('10');await labelInput(dialog,'عدد السجلات الصحيحة والمكتملة').fill('9');responsePromise=managerPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/kpis'&&r.request().method()==='POST');await dialog.getByRole('button',{name:'حفظ التقييم',exact:true}).click();response=await responsePromise;check(response.status(),200,'Manager KPI assessment persists');await dialog.waitFor({state:'detached'});await managerPage.locator('.kpi-axis').first().waitFor();await shot(managerPage,'manager-performance');
