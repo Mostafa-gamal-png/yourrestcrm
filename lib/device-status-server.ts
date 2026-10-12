@@ -2,12 +2,13 @@ import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {regionScope} from './regions';
 import {cleanStatusText,deviceReportSchema,type DeviceReport,type DeviceStatusPublic} from './device-status';
+import type {TrackingOverview} from './tracking-coverage';
 
 /** Two reports from one phone closer than this are the client misbehaving, not news. */
 export const DEVICE_REPORT_MIN_GAP_MS=30_000;
 type Db=D1Database;
 type ScopeContext={me:Member;members:Member[]};
-export type TrackingOverview={memberId:string;memberName:string;devices:DeviceStatusPublic[];lastPointAt:string|null;dayStartedAt:string|null;pointsOnDate:number;tripsOnDate:number};
+export type {TrackingOverview};
 
 /** The server never trusts text or clocks from a phone. */
 export function normalizeDeviceReport(report:DeviceReport,nowMs:number):DeviceReport{

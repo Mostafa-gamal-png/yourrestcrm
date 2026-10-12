@@ -1,5 +1,7 @@
 import {mobileReportDays} from '@/lib/mobile-route-server';
 import {buildDailyReport} from '@/lib/daily-report';
+import {trackingOverview} from '@/lib/device-status-server';
+import {buildTrackingCoverage} from '@/lib/tracking-coverage';
 import {dailyPendingFollowups} from '@/lib/daily-followups';
 import type {JourneyReportData} from '@/lib/journeys';
 import {z} from 'zod';
@@ -42,6 +44,9 @@ export async function GET(req:Request){try{
  const eligible=new Set([...availableStops.map(stop=>stop.memberId),...communications.map(row=>row.memberId),...mobileDays.map(day=>day.memberId),...pendingFollowups.map(plan=>plan.memberId)]);for(const member of c.members)if(scope.has(member.id)&&member.active&&(c.me.regionScope==='all'||member.id===c.me.id||member.regionScope===c.me.regionScope||member.regionScope==='all'))eligible.add(member.id);
  const report:JourneyReportData={date,memberId,members:c.members.filter(m=>eligible.has(m.id)&&scope.has(m.id)).map(m=>({id:m.id,name:m.name,role:m.role,active:m.active})),stops:projected,mobileDays,communications:communications.filter(row=>memberId==='all'||row.memberId===memberId).sort((a,b)=>(a.recordedAt||a.createdAt).localeCompare(b.recordedAt||b.createdAt)),serverTime:now};
  report.daily=buildDailyReport(report,c.visible.filter(row=>row.kind==='customer'),report.communications,pendingFollowups);
+ // Why a day has no GPS: what reached the server for the representatives in view, and what their phones last reported.
+ const overview=await trackingOverview(c,date);
+ report.tracking=buildTrackingCoverage(memberId==='all'?overview:overview.filter(entry=>entry.memberId===memberId),date,now);
  return Response.json(report,{headers:{'Cache-Control':'no-store'}});
  }catch(error){if(error instanceof z.ZodError)return Response.json({error:'بيانات تقرير خط السير غير صحيحة'},{status:400});return replyError(error);}}
 export async function POST(req:Request){try{

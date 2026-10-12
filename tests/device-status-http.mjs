@@ -97,8 +97,9 @@ try {
   check(overview.members.find(m => m.memberId === 'rep2').devices.length, 1, 'a representative with one phone report');
 
   // ---- last point and the day's counts come from the tracking tables
+  const dayData = JSON.stringify({gaps: [], trackingWindow: '06-18'});
   const stamp = offset => new Date(Date.parse(day + 'T06:00:00+03:00') + offset * 60_000).toISOString();
-  await app.db.prepare('INSERT INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,last_point_at,data,version) VALUES(?,?,?,?,?,?,?,?,1)').bind('day-1', 'rep1', 'device-1', day, 'eastern', stamp(0), stamp(30), '{}').run();
+  await app.db.prepare('INSERT INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,last_point_at,data,version) VALUES(?,?,?,?,?,?,?,?,1)').bind('day-1', 'rep1', 'device-1', day, 'eastern', stamp(0), stamp(30), dayData).run();
   for (let i = 0; i < 3; i++) await app.db.prepare('INSERT INTO crm_mobile_route_points(day_id,point_id,captured_at,received_at,latitude,longitude,accuracy) VALUES(?,?,?,?,?,?,?)').bind('day-1', 'p' + i, stamp(10 * i), stamp(10 * i), 26.43, 50.03, 8).run();
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES('c1','customer',NULL,'rep2','الرئيسي','{}',?,?,1)").bind(stamp(0), stamp(0)).run();
   await app.db.prepare("INSERT INTO crm_journey_stops(id,member_id,date,customer_id,region_scope,snapshot,selected_at,state,data,version) VALUES('stop-1','rep2',?,'c1','eastern','{}',?,'completed',?,1)").bind(day, stamp(5), JSON.stringify({lastPoint: {capturedAt: stamp(45)}})).run();
@@ -111,6 +112,38 @@ try {
   check([other.pointsOnDate, other.tripsOnDate, other.dayStartedAt, other.lastPointAt], [0, 0, null, stamp(30)], 'another day has no points but the newest point ever is unchanged');
   await app.db.prepare("UPDATE crm_mobile_route_days SET last_point_at=? WHERE id='day-1'").bind('2026-10-11T16:00:00+03:00').run();
   check((await as('sup')('/api/device-status').then(r => r.json())).members.find(m => m.memberId === 'rep1').lastPointAt, '2026-10-11T13:00:00.000Z', 'timestamps with an offset are compared as instants, not as text');
+
+  // ---- the daily report explains a day without GPS
+  const wed = '2026-10-07', thu = '2026-10-08', fri = '2026-10-09', at = (date, hhmm) => new Date(date + 'T' + hhmm + ':00+03:00').toISOString();
+  await app.db.prepare('INSERT INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,ended_at,last_point_at,data,version) VALUES(?,?,?,?,?,?,?,?,?,1)').bind('day-wed-1', 'rep1', 'device-1', wed, 'eastern', at(wed, '06:00'), at(wed, '18:00'), at(wed, '09:10'), dayData).run();
+  for (let i = 0; i < 2; i++) await app.db.prepare('INSERT INTO crm_mobile_route_points(day_id,point_id,captured_at,received_at,latitude,longitude,accuracy) VALUES(?,?,?,?,?,?,?)').bind('day-wed-1', 'q' + i, at(wed, '09:0' + i), at(wed, '09:0' + i), 26.43, 50.03, 8).run();
+  await app.db.prepare('INSERT INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,ended_at,data,version) VALUES(?,?,?,?,?,?,?,?,1)').bind('day-wed-2', 'rep2', 'device-2', wed, 'eastern', at(wed, '06:10'), at(wed, '18:00'), dayData).run();
+  const journeys = async (id, date, memberId) => { const response = await as(id)('/api/journeys?date=' + date + '&memberId=' + memberId); check(response.status, 200, `${id} reads the ${date} report`); return response.json(); };
+  const pick = (report, id) => report.tracking.find(entry => entry.memberId === id);
+
+  let report = await journeys('sup', wed, 'rep1');
+  check(report.tracking.map(e => [e.memberId, e.status, e.pointsOnDate]), [['rep1', 'tracked', 2]], 'a representative whose points arrived is tracked');
+  report = await journeys('sup', wed, 'rep2');
+  check(report.tracking.map(e => [e.memberId, e.status, e.dayStartedAt]), [['rep2', 'day_without_points', at(wed, '06:10')]], 'a tracking day with no points is named');
+  report = await journeys('sup', thu, 'rep2');
+  check([pick(report, 'rep2').status, pick(report, 'rep2').lastPointAt], ['no_points_today', stamp(45)], 'a day without points shows the last point that ever arrived');
+  report = await journeys('sup', wed, 'all');
+  check(report.tracking.map(e => [e.memberId, e.status]), [['rep1', 'tracked'], ['rep2', 'day_without_points']], 'the all-team view covers every representative of the supervisor');
+  check(pick(report, 'rep1').phone.gate, 'permission', 'the phone report rides along');
+  check(pick(report, 'rep1').browser.platform, 'browser', 'and so does the browser attempt');
+  check(typeof report.members.length + typeof report.serverTime, 'numberstring', 'the rest of the report is unchanged');
+  report = await journeys('supb', wed, 'all');
+  check(report.tracking.map(e => [e.memberId, e.status, e.phone, e.browser]), [['repb', 'never_tracked', null, null]], 'never activated, never reported');
+  check((await post('repb', {...base(), platform: 'browser', deviceClass: 'iphone', gate: 'browser', appVersion: '', tracking: false, windowActive: false, enrolled: false, consent: null, foreground: null, fineLocation: null, notifications: null, background: null, locationServices: null, lastFixAt: '', accuracy: null, pendingGapCount: null})).status, 200, 'the representative tries the browser');
+  report = await journeys('supb', wed, 'repb');
+  check([pick(report, 'repb').status, pick(report, 'repb').phone, pick(report, 'repb').browser.deviceClass, pick(report, 'repb').browser.gate], ['never_tracked', null, 'iphone', 'browser'], 'the supervisor can see why: a browser on an iPhone');
+  report = await journeys('sup', fri, 'rep1');
+  check(report.tracking.map(e => [e.memberId, e.status]), [['rep1', 'rest_day']], 'Friday is a rest day, not a failure');
+  report = await journeys('sup', wed, 'sup');
+  check(report.tracking, [], 'a non-representative has no tracking coverage');
+  report = await journeys('mgrw', wed, 'all');
+  check(report.tracking.map(e => e.memberId), ['repw'], 'a regional manager sees coverage only for their region');
+  check(pick(await journeys('owner', wed, 'all'), 'repb').status, 'never_tracked', 'an administrator sees every representative');
 
   // ---- stored rows that cannot be trusted are skipped, not shown
   await app.db.prepare("UPDATE crm_member_devices SET data='{' WHERE member_id='rep1' AND platform='browser'").run();
