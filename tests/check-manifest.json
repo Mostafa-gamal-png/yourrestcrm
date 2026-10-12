@@ -211,6 +211,11 @@
       "file": "tests/visit-files-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
+    },
+    {
+      "file": "tests/service-queue-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
     }
   ]
 }

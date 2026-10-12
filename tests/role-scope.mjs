@@ -163,8 +163,10 @@ for(const id of ['rep','outside']){
  sql.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').run('service-note-'+id,'service-fixture',id,'service:note',JSON.stringify({note:'private-service-note-'+id}),now);
 }
 user('rep');payload=await read();assert.ok(!payload.records.some(r=>r.id==='intake-service-fixture'));assert.ok(!JSON.stringify(payload.records).includes('private-service-registration'));checks+=2;
+assert.ok(Array.isArray(payload.serviceQueue)&&payload.serviceQueue.length===1&&payload.serviceQueue[0].id==='service-fixture'&&payload.serviceQueue[0].assignedTo==='rep');assert.ok(!JSON.stringify(payload.serviceQueue).includes('private-service'));assert.deepEqual([payload.serviceQueue[0].stage,payload.serviceQueue[0].awaiting],['follow_up',null]);checks+=3;
 let servicePayload=await list(),serviceCase=servicePayload.cases.find(s=>s.id==='service-fixture');assert.ok(serviceCase);assert.deepEqual(serviceCase.contacts.map(r=>r.id),['contact-rep']);assert.equal(serviceCase.data.registration,undefined);assert.ok(!JSON.stringify(serviceCase).includes('private-service-note-outside'));assert.ok(!JSON.stringify(serviceCase).includes('private-service-filename'));checks+=5;
 user('sup');servicePayload=await list();serviceCase=servicePayload.cases.find(s=>s.id==='service-fixture');assert.deepEqual(serviceCase.contacts.map(r=>r.id),['contact-rep']);assert.ok(!JSON.stringify(serviceCase).includes('private-service-note-outside'));checks+=2;
+payload=await read();assert.ok(payload.serviceQueue.some(item=>item.id==='service-fixture'));assert.ok(!JSON.stringify(payload.serviceQueue).includes('private-service'));checks+=2;
 // Losing a direct report between reading an assigned service case and saving a note revokes the write.
 const caseBefore=sql.prepare("SELECT * FROM crm_service_cases WHERE id='service-fixture'").get();
 const auditBefore=sql.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE record_id='service-fixture'").get().n;

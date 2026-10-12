@@ -1,6 +1,7 @@
 import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {canUseSalesWorkspace,salesScopeMemberIds,recordAuthorId} from '@/lib/access';
 import {activeServiceCase,serviceHistoryLocked,isServiceRole,serviceVisitRecords,canReadService} from '@/lib/customer-service';
+import {serviceQueue} from '@/lib/service-queue';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
 import {regionScopes,regionScope,memberCanAccessRegion} from '@/lib/regions';
@@ -21,7 +22,7 @@ export async function GET(){try{
  const members=c.regionalMembers.filter(m=>isServiceRole(c.me.role)?m.id===c.me.id||m.supervisorId===c.me.id:scope.has(m.id)).map(projectMember),memberIds=new Set(members.map(m=>m.id));
  const authors=new Set(c.visible.filter(r=>['activity','opportunity','quote'].includes(r.kind)).map(r=>recordAuthorId(r,c.members)));
  for(const member of c.members)if(scope.has(member.id)&&authors.has(member.id)&&!memberIds.has(member.id))members.push({...projectMember(member),userId:undefined,authVersion:undefined,target:undefined,readOnly:true});
- return Response.json({records:serviceVisitRecords(c).map(r=>{const intake=r.kind==='customer'?activeServiceCase(r.id,c):undefined;return intake?.status==='assigned'&&canReadService(intake,c)?{...r,data:{...r.data,_serviceIntake:{id:intake.id,createdAt:intake.createdAt,products:intake.data.products,strength:intake.data.strength,needs:intake.data.needs,nextAction:intake.data.nextAction,nextDate:intake.data.nextDate}}}:r;}),me:projectMember(c.me),members,audits},{headers:{'Cache-Control':'no-store'}});
+ return Response.json({records:serviceVisitRecords(c).map(r=>{const intake=r.kind==='customer'?activeServiceCase(r.id,c):undefined;return intake?.status==='assigned'&&canReadService(intake,c)?{...r,data:{...r.data,_serviceIntake:{id:intake.id,createdAt:intake.createdAt,products:intake.data.products,strength:intake.data.strength,needs:intake.data.needs,nextAction:intake.data.nextAction,nextDate:intake.data.nextDate}}}:r;}),me:projectMember(c.me),members,audits,serviceQueue:serviceQueue(c)},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;if(!serviceCustomerCreate)requireSalesRole(c.me);const now=new Date().toISOString();const mutation=crypto.randomUUID();const canManage=['admin','manager'].includes(c.me.role);
