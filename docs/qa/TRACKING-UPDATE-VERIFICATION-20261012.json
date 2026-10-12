@@ -231,5 +231,33 @@
     "iPhone and desktop browsers beyond what Chromium emulates"
   ],
   "productionModified": false,
-  "deployed": false
+  "deployed": false,
+  "deployedNote": "false at packaging time, from this session. The site owner deployed the package afterwards; see ownerDeployment.",
+  "ownerDeployment": {
+    "date": "2026-10-12",
+    "by": "the site owner, following docs/UPDATE-2026-10-12-AR.txt in the cPanel Terminal",
+    "source": "screenshots of the Terminal output sent by the owner",
+    "sequence": [
+      "--check: SCHEMA CHANGE announced, PACKAGE AND CONFIGURATION: READY, application still running",
+      "first activator run: STOP APP_OR_DATA_STILL_IN_USE because the application had not stopped yet; nothing was changed",
+      "second activator run after Stop App: 1/4 to 4/4 RELEASE SWITCHED, daily backup and activation checkpoint created, START APP IN CPANEL",
+      "--verify before Start App: STOP MIGRATION_NOT_APPLIED_START_APP_FIRST (expected: the first start had not happened)",
+      "--verify after Start App: DEPLOYMENT VERIFIED"
+    ],
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "MIGRATION APPLIED: 0015_member_devices.sql",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/device-status: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "manualChecksPending": [
+      "team page Tracking column and the daily report coverage panel, signed in as a manager or supervisor",
+      "the phone of an already active representative opens the workspace without the gate",
+      "the phone of a representative who never activated shows the activation screen and can complete it",
+      "a representative opening the CRM in a phone browser sees the Android-app-only screen",
+      "the next working day: points arrive for activated representatives"
+    ],
+    "rollbackMaterial": "kept by the activator in the activation checkpoint folder next to the application folder; do not delete it until the release has run stably for several days"
+  }
 }
