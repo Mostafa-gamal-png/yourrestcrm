@@ -1,0 +1,235 @@
+{
+  "date": "2026-10-12",
+  "builtFromCommit": "900eef5",
+  "headAtVerification": "bbd5816",
+  "package": {
+    "file": "Yourrest-CRM-Update-20261012.zip",
+    "bytes": 12297298,
+    "sha256": "031e0d21d843643cd302f4492ae393f8b9f1cfc4dabb99ebcf913191b3425ed4",
+    "releaseFiles": 2852,
+    "manifestSha256": "5b3091ac4971ec0c101f707a114922963a1e480f136bc987a263aeb321300120",
+    "helper": "yourrest-activate-update.cjs",
+    "guide": "UPDATE-20261012-AR.txt",
+    "stageDir": "yourrest-crm-update-20261012",
+    "schemaBefore": 15,
+    "schemaAfter": 16,
+    "newMigrations": [
+      "0015_member_devices.sql"
+    ],
+    "verifyRoutes": [
+      [
+        "/api/device-status",
+        401
+      ]
+    ],
+    "settingsOrProductionDataIncluded": false,
+    "databaseIncluded": false,
+    "seedSnapshotIncluded": false,
+    "forbiddenFileNames": 0,
+    "secretPatternHits": 0,
+    "sqliteFilesInside": 0,
+    "customerPhoneNumbersFromSeedChecked": 206,
+    "customerPhoneNumbersFromSeedFound": 0,
+    "allReleaseFilesMatchManifest": true,
+    "newApk": false,
+    "nativeVersion": "1.0.10 / code 11 (unchanged)"
+  },
+  "comparedWithDeployedPackage": {
+    "file": "Yourrest-CRM-Update-20261011.zip",
+    "sha256": "90f683d77b075b2b770afa523425d1ed5b5c723818ab4ae3670ee6bac97f31dd",
+    "filesBefore": 2852,
+    "filesAfter": 2855,
+    "added": 37,
+    "removed": 34,
+    "changed": 21,
+    "unchanged": 2797,
+    "nodeModulesChanged": false,
+    "note": "Added/removed are renamed content-hashed bundle chunks, the new guide, one new migration and the new offline-shell bundles; changed are bundles, the migration manifest, the activator and the offline shell index."
+  },
+  "releaseFolder": {
+    "files": 2852,
+    "treeSha256": "1c46a75e460be5544aa4a3bc136d3fe3c1fb98d616d07261068a1842658e467d",
+    "unchangedByTheTestRunsThatFollowedThePackaging": true
+  },
+  "gates": {
+    "typescript": {
+      "passed": true,
+      "errors": 0
+    },
+    "eslint": {
+      "errors": 96,
+      "warnings": 72,
+      "note": "identical to the count recorded after the 2026-10-10 pass (96 errors, 72 warnings); none of the files added for this release has a finding"
+    },
+    "defaultGate": {
+      "passed": true,
+      "tests": 109,
+      "testsReportingChecks": 105,
+      "checks": 11100,
+      "before": {
+        "tests": 103
+      }
+    },
+    "releaseBuildGate": {
+      "tests/app-update-release.mjs": {
+        "passed": true,
+        "checks": 14
+      },
+      "tests/device-status-http.mjs": {
+        "passed": true,
+        "checks": 86
+      },
+      "tests/namecheap-http.mjs": {
+        "passed": true,
+        "checks": 381
+      },
+      "tests/sales-date-boundaries.mjs": {
+        "passed": true,
+        "checks": 36
+      },
+      "tests/server-authorization.mjs": {
+        "passed": true,
+        "checks": 273
+      },
+      "tests/targets-attainment-http.mjs": {
+        "passed": true,
+        "checks": 26
+      },
+      "tests/visit-files-http.mjs": {
+        "passed": true,
+        "checks": 41
+      }
+    },
+    "browserGate": {
+      "tests/admin-delete-browser.mjs": {
+        "passed": true,
+        "checks": 15,
+        "seconds": 19
+      },
+      "tests/app-browser-workflows.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 29,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Reaches the permission-denial step: Chromium started through Playwright does not apply the browser permission override in this context (expected denied, got granted). The unmodified baseline fails at the same step with the same message."
+      },
+      "tests/app-update-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 4
+      },
+      "tests/competitor-intelligence-browser.mjs": {
+        "passed": true,
+        "checks": 146,
+        "seconds": 33
+      },
+      "tests/competitors-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 36
+      },
+      "tests/customer-edit-browser.mjs": {
+        "passed": true,
+        "checks": 54,
+        "seconds": 23
+      },
+      "tests/daily-report-browser.mjs": {
+        "passed": true,
+        "checks": 94,
+        "seconds": 13
+      },
+      "tests/erp-sales-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 1,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); it was never supplied. The unmodified baseline fails identically."
+      },
+      "tests/kpi-evidence-browser.mjs": {
+        "passed": true,
+        "checks": 87,
+        "seconds": 26
+      },
+      "tests/offline-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 32,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline reload: Playwright setOffline does not cover the service worker network in this Chromium. The unmodified baseline times out at the same wait."
+      },
+      "tests/offline-outbox-browser.mjs": {
+        "passed": true,
+        "checks": 49,
+        "seconds": 3
+      },
+      "tests/pwa-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 24,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline navigation uses the data-free client shell: same cause as offline-browser. The unmodified baseline fails at the same assertion."
+      },
+      "tests/tracking-gate-browser.mjs": {
+        "passed": true,
+        "checks": 95,
+        "seconds": 117
+      },
+      "tests/ui-refresh-browser.mjs": {
+        "passed": true,
+        "checks": 105,
+        "seconds": 50
+      }
+    },
+    "browserNotes": "tracking-gate-browser is new (95 checks). Ten of the fourteen browser tests pass. app-browser-workflows, erp-sales-browser, offline-browser and pwa-browser fail at exactly the point where the unmodified baseline fails (environment limits listed per test); no test was disabled or loosened to hide them. offline-outbox-browser needs CODEX_PRIMARY_RUNTIME_NODE_MODULES to point at a Playwright install."
+  },
+  "rehearsal": {
+    "script": "scripts/rehearse-update.mjs",
+    "runAs": "unprivileged user (nobody) with only net_bind_service, as on the hosting account",
+    "previousRelease": "the release folder of the package that was deployed on 2026-10-11 (Yourrest-CRM-Update-20261011.zip, sha256 90f683d7...)",
+    "ok": true,
+    "steps": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while the app is still running",
+      "the activator never touches the database; --verify refuses until the application has started",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "the first start applied 0015_member_devices.sql after a private schema backup; every earlier table is byte-identical",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "device status works on the upgraded database for the right roles",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after the migration works: the previous release refuses the migrated database; restoring the private schema backup and the previous release returns the exact earlier state",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ],
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "MIGRATION APPLIED: 0015_member_devices.sql",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/device-status: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "goingBack": {
+      "refusalOfTheMigratedDatabaseByThePreviousRelease": "Existing migration history is missing, changed or newer than this package.",
+      "walFilesThatRemainAfterStop": [
+        "database.sqlite-shm",
+        "database.sqlite-wal"
+      ]
+    },
+    "productionDataUsed": false,
+    "hostingAccessed": false
+  },
+  "notVerifiedHere": [
+    "a physical Android phone running the installed 1.0.10 app: permission dialogs, the always-on notification, background collection (tests emulate the app bridge inside Chromium)",
+    "Passenger on cPanel (the rehearsal runs the app directly with Node 22 on Linux)",
+    "real sendmail delivery of sign-in codes",
+    "the hosting account paths and Node binary (/opt/alt/alt-nodejs22/root/usr/bin/node)",
+    "the production database: the schema backup size and migration time on real data (the migration creates one empty table)",
+    "iPhone and desktop browsers beyond what Chromium emulates"
+  ],
+  "productionModified": false,
+  "deployed": false
+}
