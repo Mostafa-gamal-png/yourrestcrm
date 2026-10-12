@@ -46,6 +46,15 @@ const packageZip = option('--package') && path.resolve(option('--package'));
 if (!oldRelease || !packageZip) { console.error('Usage: node scripts/rehearse-update.mjs --old-release DIR --package ZIP [--out FILE] [--keep]'); process.exit(2); }
 for (const required of ['app.cjs', 'server.js', 'operations/config.cjs', 'drizzle']) assert(fs.existsSync(path.join(oldRelease, required)), 'Previous release is incomplete: ' + required);
 
+// The package's own constants, read from its activator before anything is installed: the schema the live database must hold,
+// and the anonymous probes the verification adds for routes this release introduces.
+const listing = execFileSync('python3', ['-c', 'import zipfile,sys;print("\\n".join(i.filename for i in zipfile.ZipFile(sys.argv[1]).infolist() if "/" not in i.filename.rstrip("/")))', packageZip], {encoding: 'utf8'}).split('\n').filter(Boolean);
+const helperName = listing.find(name => name.endsWith('.cjs'));
+assert(helperName, 'the package carries one activator at its top level');
+const helperSource = execFileSync('python3', ['-c', 'import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode())', packageZip, helperName], {encoding: 'utf8'});
+const constant = name => { const found = new RegExp('const ' + name + ' = (.+?);').exec(helperSource); assert(found, 'the activator carries ' + name); return JSON.parse(found[1]); };
+const schemaBefore = constant('SCHEMA_BEFORE'), extraRoutes = constant('EXTRA_ROUTES');
+
 const steps = [];
 const note = (name, detail = {}) => { steps.push({step: name, ...detail}); console.error('[ok] ' + name); };
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -71,9 +80,9 @@ async function installSite(work, label, {exactOrigin = false} = {}) {
   fs.chmodSync(settings.YR_DATABASE_PATH, 0o600);
   db.exec('PRAGMA foreign_keys=ON; CREATE TABLE yr_schema_migrations(name TEXT PRIMARY KEY NOT NULL,sha256 TEXT NOT NULL,applied_at TEXT NOT NULL)');
   const migrations = fs.readdirSync(path.join(oldRelease, 'drizzle')).filter(name => /^\d+.*\.sql$/.test(name)).sort();
-  assert.equal(migrations.length, 15, 'the previous release must carry the 15-migration schema');
+  assert.equal(migrations.length, schemaBefore, 'the previous release must carry the ' + schemaBefore + '-migration schema the package expects');
   for (const name of migrations) { const sql = fs.readFileSync(path.join(oldRelease, 'drizzle', name), 'utf8'); db.exec(sql); db.prepare('INSERT INTO yr_schema_migrations VALUES(?,?,?)').run(name, sha(sql), '2026-10-07T00:00:00Z'); }
-  const members = [['owner', 'admin', null, 'all'], ['mgr', 'manager', null, 'all'], ['sup', 'supervisor', 'mgr', 'all'], ['rep1', 'rep', 'sup', 'eastern'], ['repw', 'rep', 'mgr', 'western']];
+  const members = [['owner', 'admin', null, 'all'], ['mgr', 'manager', null, 'all'], ['sup', 'supervisor', 'mgr', 'all'], ['rep1', 'rep', 'sup', 'eastern'], ['repw', 'rep', 'mgr', 'western'], ['csm', 'customer_service_manager', 'mgr', 'all'], ['cs', 'customer_service', 'csm', 'all']];
   for (const [id, role, supervisor, region] of members) db.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,active,target,created_at,region_scope) VALUES(?,?,?,?,?,?,?,1,0,?,?)').run(id, 'opaque-' + id, id + '@yourrest.org', id, role, 'الرئيسي', supervisor, '2026-10-07T00:00:00Z', region);
   db.prepare('INSERT INTO crm_settings(id,owner_id) VALUES(?,?)').run('company', 'opaque-owner');
   db.close();
@@ -187,11 +196,13 @@ try {
     db.close();
   }
   const views = async () => {
-    const result = {};
+    const result = {queues: {}};
     for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) {
       const call = who === 'owner' ? owner : await a.login(who);
       const crm = await call('/api/crm'); assert.equal(crm.status, 200, who + ' /api/crm');
-      result[who] = {crm: crm.json()};
+      // The queue field is new in some releases: it is compared separately, never as a difference in the records.
+      const {serviceQueue, ...records} = crm.json();
+      result[who] = {crm: records}; result.queues[who] = Array.isArray(serviceQueue) ? serviceQueue.length : null;
       if (['owner', 'mgr', 'sup'].includes(who)) { const sales = await call('/api/sales?month=' + month); assert.equal(sales.status, 200); const body = sales.json(); result[who].sales = {references: body.sales.map(s => s.reference).sort(), performance: body.performance.map(p => [p.member.id, p.invoices, p.attainment.score, p.attainment.status]).sort()}; }
       if (who === 'rep1') { const own = await call('/api/targets?month=' + month); assert.equal(own.status, 200); result[who].targets = own.json(); }
     }
@@ -200,16 +211,14 @@ try {
     const anonymous = await a.request('/api/visits', {method: 'POST', headers: {Origin: a.origin}, body: {}});
     result.anonymousVisitsPost = anonymous.status;
     result.anonymousDeviceStatus = (await a.request('/api/device-status')).status;
+    result.extra = {};
+    for (const [route] of extraRoutes) result.extra[route] = (await a.request(route)).status;
     return result;
   };
   const before = await views();
   note('synthetic data created through the previous release and read back', {customers: 2, sales: 2, visits: 2, attachment: 1, anonymousVisitsPostBefore: before.anonymousVisitsPost});
 
   // Unpack the package exactly as the guide says.
-  const listing = execFileSync('python3', ['-c', 'import zipfile,sys;print("\\n".join(i.filename for i in zipfile.ZipFile(sys.argv[1]).infolist() if "/" not in i.filename.rstrip("/")))', packageZip], {encoding: 'utf8'}).split('\n').filter(Boolean);
-  const helperName = listing.find(name => name.endsWith('.cjs'));
-  assert(helperName, 'the package carries one activator at its top level');
-  const helperSource = execFileSync('python3', ['-c', 'import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode())', packageZip, helperName], {encoding: 'utf8'});
   const stageName = /const STAGE_DIR = "([^"]+)";/.exec(helperSource)?.[1];
   assert(stageName, 'the activator carries the injected upload folder name');
   const stageA = path.join(a.home, stageName);
@@ -304,11 +313,15 @@ try {
   assert.equal(after.anonymousVisitsPost, 401, 'the new release answers an anonymous POST with 401');
   // A previous release that already carries the 401 guard answers 401 before as well; one that does not answers 400.
   assert([400, 401].includes(before.anonymousVisitsPost));
-  if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/device-status')) {
-    assert.equal(before.anonymousDeviceStatus, 404, 'the previous release has no device-status route');
-    assert.equal(after.anonymousDeviceStatus, 401, 'the new release protects it');
+  for (const [route, expected] of helper.EXTRA_ROUTES) {
+    assert.equal(before.extra[route], 404, 'the previous release has no ' + route);
+    assert.equal(after.extra[route], expected, 'the new release answers ' + route + ' with ' + expected + ' without a session');
   }
-  note('behaviour that is meant to change did change', {anonymousVisitsPost: {before: before.anonymousVisitsPost, after: after.anonymousVisitsPost}, anonymousDeviceStatus: {before: before.anonymousDeviceStatus, after: after.anonymousDeviceStatus}});
+  if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts')) {
+    assert(Object.values(before.queues).every(count => count === null), 'the previous release sends no serviceQueue field');
+    assert(Object.values(after.queues).every(count => count === 0), 'the new release sends an empty queue to every role while no request exists');
+  }
+  note('behaviour that is meant to change did change', {anonymousVisitsPost: {before: before.anonymousVisitsPost, after: after.anonymousVisitsPost}, newRoutes: {before: before.extra, after: after.extra}});
 
   if (helper.NEW_MIGRATIONS.includes('0015_member_devices.sql')) {
     // The new feature on the upgraded database, for the right people only.
@@ -327,6 +340,40 @@ try {
     assert.equal(today.status, 200, 'the daily report still loads');
     assert(Array.isArray(today.json().tracking) && today.json().tracking.length === 1, 'and carries the tracking coverage');
     note('device status works on the upgraded database for the right roles', {supervisorSees: 1, administratorSees: 2});
+  }
+
+  if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts')) {
+    // The customer-service queue, the phone alert feed and the monthly report on the upgraded database, for the right people only.
+    const calls = {};
+    for (const who of ['csm', 'cs', 'mgr', 'sup', 'rep1', 'repw']) calls[who] = await a.login(who);
+    const getCase = async (call, id) => (await call('/api/customer-service')).json().cases.find(item => item.id === id);
+    const act = async (call, id, body) => { const item = await getCase(call, id); return call('/api/customer-service', {method: 'POST', body: {requestId: crypto.randomUUID(), id, version: item?.version, ...body}}); };
+    const customerVersion = (() => { const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true}); try { return db.prepare('SELECT version FROM crm_records WHERE id=?').get(customers.e1).version; } finally { db.close(); } })();
+    const registration = {type: 'call', summary: 'PRIVATE-REGISTRATION-SUMMARY', result: 'متابعة العميل', salesStage: 'new', strength: 'strong', requestedProducts: [products[0]], nextAction: 'اتصال بالعميل', nextDate: day, location: '26.437341, 50.034499', locationSource: 'device', locationCapturedAt: new Date().toISOString(), locationAccuracy: 12, customerNeeds: 'قالب جديد', hasCompetitor: true, competitorName: 'Competitor', competitorNotes: 'PRIVATE-COMPETITOR-NOTE'};
+    const created = await calls.cs('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: customers.e1, customerVersion, registration, elapsedMilliseconds: 2200}});
+    assert.equal(created.status, 200, 'customer service registers a request on the upgraded database: ' + created.text.slice(0, 120));
+    const caseId = created.json().id;
+    assert.equal((await act(calls.csm, caseId, {action: 'approve', targetId: 'mgr'})).status, 200, 'the customer-service manager approves it to the sales manager');
+    assert.equal((await act(calls.mgr, caseId, {action: 'assign', targetId: 'rep1', note: 'ابدأ بالاتصال'})).status, 200, 'the sales manager assigns it with an instruction');
+    const alertsOf = async call => (await call('/api/service-queue/alerts')).json().alerts.map(item => [item.id, item.awaiting, item.seen]);
+    assert.deepEqual(await alertsOf(calls.rep1), [[caseId, 'first_contact', false]], 'the representative is told: the request waits for their first contact');
+    for (const who of ['mgr', 'sup', 'repw', 'cs', 'csm']) assert.deepEqual(await alertsOf(calls[who]), [], who + ' is not told');
+    assert.deepEqual(await alertsOf(owner), [], 'the administrator is not personally waited for');
+    assert.equal((await a.request('/api/service-queue/alerts')).status, 401, 'an anonymous caller is refused');
+    const queueOf = async call => (await call('/api/crm')).json().serviceQueue;
+    const repQueue = await queueOf(calls.rep1);
+    assert.deepEqual([repQueue.length, repQueue[0].stage, repQueue[0].awaiting, repQueue[0].assignmentNote], [1, 'first_contact', 'first_contact', 'ابدأ بالاتصال'], 'the same request sits in the representative\'s queue with the instruction');
+    assert.equal((await queueOf(calls.mgr)).length, 1, 'and in the manager\'s');
+    assert.equal((await queueOf(calls.repw)).length, 0, 'but not in another representative\'s');
+    assert.equal(JSON.stringify([repQueue, await alertsOf(calls.rep1)]).includes('PRIVATE-'), false, 'no registration text or competitor note reaches the representative');
+    assert.equal((await act(calls.rep1, caseId, {action: 'seen'})).status, 200, 'the representative opens it');
+    assert.deepEqual(await alertsOf(calls.rep1), [[caseId, 'first_contact', true]], 'once opened, the feed says so');
+    const reports = {};
+    for (const [who, call] of [['owner', owner], ['mgr', calls.mgr], ['csm', calls.csm], ['sup', calls.sup], ['rep1', calls.rep1], ['repw', calls.repw], ['cs', calls.cs]]) reports[who] = await call('/api/service-report');
+    assert.deepEqual(Object.fromEntries(Object.entries(reports).map(([who, response]) => [who, response.status])), {owner: 200, mgr: 200, csm: 200, sup: 403, rep1: 403, repw: 403, cs: 403}, 'the monthly report opens for the administrator, the sales manager and the customer-service manager only');
+    assert.deepEqual([reports.owner.json().total, reports.mgr.json().total, reports.csm.json().total], [1, 1, 1], 'each sees the one request they may read');
+    assert.equal(reports.owner.text.includes('PRIVATE-') || reports.owner.text.includes('مصنع'), false, 'and no customer name or private text');
+    note('the customer-service queue, the phone alert feed and the monthly report work on the upgraded database for the right roles', {request: caseId});
   }
 
   // Command-line wiring of the activator (the hosting home is fixed at /home/youriedx, which does not exist here).
@@ -365,6 +412,33 @@ try {
     assert.deepEqual(drift, [], 'every role sees what it saw before the update');
     assert.equal(restored.anonymousDeviceStatus, 404, 'the previous release has no device-status route again');
     note('going back after the migration works: the previous release refuses the migrated database; restoring the private schema backup and the previous release returns the exact earlier state', {walFilesMovedAside: walFiles, oldReleaseRefusal: (/Existing migration history[^\n]*/.exec(oldRefusal) || [''])[0].slice(0, 200)});
+    await a.stop();
+  } else {
+    // Nothing in the database changed shape, so going back is only the release: the previous one must run on the data the
+    // new one wrote, including a request in the new form. The steps below are the ones the guide gives.
+    const previousRelease = path.join(state.transaction, 'old-release');
+    fs.renameSync(path.join(a.app, 'release'), path.join(a.app, 'release-failed-' + helper.RELEASE_DATE));
+    fs.renameSync(previousRelease, path.join(a.app, 'release'));
+    assert.equal(treeHash(path.join(a.app, 'release')), baseline.oldRelease, 'the restored release is byte-identical to the one that was installed');
+    await a.start();
+    const restored = {};
+    for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) {
+      const call = await a.login(who);
+      const crm = await call('/api/crm'), cases = await call('/api/customer-service');
+      assert.deepEqual([who, crm.status, cases.status], [who, 200, 200], 'the previous release serves ' + who + ' on the same database');
+      restored[who] = {crm: crm.json(), cases: cases.json().cases};
+    }
+    assert.equal(restored.owner.crm.serviceQueue, undefined, 'the previous release knows nothing of the new queue field');
+    for (const who of ['owner', 'mgr', 'rep1']) assert.equal(restored[who].cases.length, helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts') ? 1 : 0, who + ' still sees the request the new release recorded');
+    if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts')) {
+      assert.equal(restored.rep1.cases[0].status, 'assigned', 'it keeps its status');
+      assert.equal(restored.repw.cases.length, 0, 'and stays hidden from others');
+      assert.equal((await a.request('/api/service-queue/alerts')).status, 404, 'the new routes are gone again with the new release');
+    }
+    const back = await views();
+    assert.deepEqual(['owner', 'mgr', 'sup', 'rep1', 'repw'].map(who => (back[who].crm.records || []).filter(record => record.kind === 'customer').length), ['owner', 'mgr', 'sup', 'rep1', 'repw'].map(who => (before[who].crm.records || []).filter(record => record.kind === 'customer').length), 'every role still sees the same customers');
+    assert.equal(stable(back.file), stable(before.file), 'the attachment is intact');
+    note('going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to', {restoredStatuses: Object.keys(restored).length});
     await a.stop();
   }
   a.close();
