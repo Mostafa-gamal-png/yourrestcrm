@@ -1,6 +1,7 @@
 import type {Coordinates} from './customer-location';
 import type {MobileRouteReportDay} from './mobile-route';
 import type {DailyReportEnhancement} from './daily-report';
+import type {TrackingCoverage} from './tracking-coverage';
 import {trackingWindowEnd} from './tracking-window';
 export const JOURNEY_ENTER_METERS=150,JOURNEY_EXIT_METERS=225,JOURNEY_MAX_ACCURACY=75,JOURNEY_CONFIRM_MS=15000,JOURNEY_GAP_MS=120000,JOURNEY_REPLAY_MS=15*60000;
 export type JourneyPoint={id:string;capturedAt:string;receivedAt?:string;latitude:number;longitude:number;accuracy:number};
@@ -11,7 +12,7 @@ export type JourneyStop={id:string;memberId:string;date:string;customerId:string
 export type JourneyResult={id:string;date:string;createdAt:string;recordedAt?:string;type:string;summary:string;result:string;nextAction:string;nextDate:string;requestedProducts?:string[];hasCompetitor?:boolean;competitorName?:string;competitorNotes?:string;competitorFileId?:string;competitorFileName?:string;customerNeeds?:string;salesStage?:string;strength?:string};
 export type JourneyCommunication=JourneyResult & {memberId:string;memberName:string;customerId:string;customerName:string};
 export type JourneyReportStop=JourneyStop & {memberName:string;points:JourneyPoint[];segments:JourneyPoint[][];results:JourneyResult[]};
-export type JourneyReportData={date:string;memberId:string;members:{id:string;name:string;role:string;active:number}[];stops:JourneyReportStop[];communications:JourneyCommunication[];mobileDays?:MobileRouteReportDay[];daily?:DailyReportEnhancement;serverTime:string};
+export type JourneyReportData={date:string;memberId:string;members:{id:string;name:string;role:string;active:number}[];stops:JourneyReportStop[];communications:JourneyCommunication[];mobileDays?:MobileRouteReportDay[];daily?:DailyReportEnhancement;tracking?:TrackingCoverage[];serverTime:string};
 export function journeyDate(at:string|number=Date.now()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at));}
 export function initialJourneyData(at:string):JourneyData{return{arrivalAt:null,departureAt:null,durationSeconds:null,durationUncertain:false,observedSeconds:0,gaps:[],events:[{type:'selected',at}]};}
 export function distanceMeters(a:Coordinates,b:Coordinates){const rad=Math.PI/180,dlat=(b.latitude-a.latitude)*rad,dlon=(b.longitude-a.longitude)*rad,h=Math.sin(dlat/2)**2+Math.cos(a.latitude*rad)*Math.cos(b.latitude*rad)*Math.sin(dlon/2)**2;return 6371000*2*Math.atan2(Math.sqrt(h),Math.sqrt(Math.max(0,1-h)));}

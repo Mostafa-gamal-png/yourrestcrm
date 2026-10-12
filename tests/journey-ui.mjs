@@ -117,7 +117,8 @@ const formKey=crypto.randomUUID(),keySelection=trackerHarness();keySelection.flu
 // Report markup preserves the difference between exact evidence, gaps and calls.
 const visits=load('lib/visits.ts',()=>({}));
 let reportLanguage='ar';const journeyEngine=load('lib/journeys.ts',()=>({}));
-const reportModule=load('app/journey-report.tsx',name=>name==='react'?React:name==='react/jsx-runtime'?jsx:name==='lucide-react'?icons:name==='@/lib/i18n'?{useLanguage:()=>({language:reportLanguage})}:name==='@/lib/journeys'?journeyEngine:name==='@/lib/visits'?visits:{});
+const coverageWindow=load('lib/tracking-window.ts',()=>({})),coverageEngine=load('lib/tracking-coverage.ts',name=>name==='./tracking-window'?coverageWindow:{}),coverageText=load('lib/tracking-coverage-text.ts',name=>name==='./tracking-coverage'?coverageEngine:{});
+const reportModule=load('app/journey-report.tsx',name=>name==='react'?React:name==='react/jsx-runtime'?jsx:name==='lucide-react'?icons:name==='@/lib/i18n'?{useLanguage:()=>({language:reportLanguage})}:name==='@/lib/journeys'?journeyEngine:name==='@/lib/visits'?visits:name==='@/lib/tracking-coverage'?coverageEngine:name==='@/lib/tracking-coverage-text'?coverageText:{});
 const reportBase={date:'2026-09-30',memberId:'rep',members:[{id:'rep',name:'Representative',role:'rep',active:1}],stops:[],communications:[],serverTime:new Date(base).toISOString()};
 const renderReport=report=>renderToStaticMarkup(React.createElement(reportModule.JourneyDayReport,{report}));
 let html=renderReport(reportBase);ok(html.includes('لا يوجد نشاط مسجل لهذا اليوم'));ok(!html.includes('journey-map-canvas'));
@@ -175,5 +176,43 @@ for(const hidden of ['HIDDEN INACTIVE COMPETITOR','HIDDEN NOTE','hidden-file','E
 html=renderReport({...reportBase,daily:{...daily,automaticStations:[]}});ok(html.includes('Due customer'),'A due-followup-only day is useful, not empty');ok(!html.includes('No activity recorded for this day'));
 reportLanguage='ar';html=renderReport({...reportBase,stops:[detailed],mobileDays:[mobileDay],daily});
 for(const phrase of ['أول حركة مرصودة','محطات بدون نتيجة','متابعات مستحقة','متأخرة','Explicit product only','Explicit competitor'])ok(html.includes(phrase),'Arabic enriched report '+phrase);
+
+// Tracking coverage panel: shown only when a working day has a gap, and it says why in the supervisor's own words.
+{
+ const entry=(patch={})=>({memberId:'rep',memberName:'مندوب المنطقة الشرقية',status:'never_tracked',pointsOnDate:0,tripsOnDate:0,dayStartedAt:null,lastPointAt:null,phone:null,browser:null,...patch});
+ const device=(patch={})=>({platform:'android-app',deviceClass:'android',gate:'ok',missing:[],appVersion:'1.0.10',tracking:true,windowActive:true,enrolled:true,consent:true,foreground:'granted',fineLocation:'granted',notifications:'granted',background:'granted',locationServices:true,lastFixAt:'',accuracy:null,pendingCount:0,pendingGapCount:0,quarantinedCount:0,error:'',syncError:'',reportedAt:'2026-10-07T07:30:00.000Z',...patch});
+ const withTracking=(tracking,extra={})=>renderReport({...reportBase,date:'2026-10-07',communications:[],...extra,tracking});
+ reportLanguage='ar';
+ html=withTracking([entry()]);
+ ok(html.includes('data-coverage-panel="problems"'),'A representative who never activated tracking gets the panel');
+ ok(html.includes('لم يُفعَّل تتبع المسار على هاتف المندوب قط'),'Never-tracked sentence');
+ ok(html.includes('لم يصل أي تقرير من هاتف المندوب بعد'),'No phone report yet');
+ ok(html.includes('لا يوجد نشاط مسجل لهذا اليوم'),'The empty-day explanation remains next to the panel');
+ ok(html.indexOf('data-coverage-panel')<html.indexOf('لا يوجد نشاط مسجل لهذا اليوم'),'The cause is shown before the empty-day text');
+ html=withTracking([entry()],{communications:[communication]});
+ ok(html.includes('data-coverage-panel="problems"')&&html.includes('Review mold requirements'),'With visits recorded, the panel still explains the missing GPS');
+ ok(html.indexOf('data-coverage-panel')<html.indexOf('journey-summary'),'The panel comes before the day summary');
+ for(const status of ['tracked','rest_day','not_started','future']){html=withTracking([entry({status,pointsOnDate:status==='tracked'?40:0})]);ok(!html.includes('data-coverage-panel'),'No panel for '+status);}
+ html=withTracking([entry({status:'no_points_today',lastPointAt:'2026-10-05T11:15:00.000Z'})]);
+ ok(html.includes('آخر موقع وصل: 2026-10-05 14:15'),'The last location is shown in Riyadh time');
+ html=withTracking([entry({status:'day_without_points',dayStartedAt:'2026-10-07T03:10:00.000Z'})]);
+ ok(html.includes('فُتح يوم تتبع الساعة 06:10 لكن لم تصل نقاط موقع'),'A day opened without points');
+ html=withTracking([entry({phone:device({gate:'permission',missing:['background_location','notifications']})})]);
+ ok(html.includes('أذونات ناقصة')&&html.includes('الموقع طوال الوقت')&&html.includes('الإشعارات')&&html.includes('الإصدار 1.0.10'),'The phone says which permissions are missing');
+ html=withTracking([entry({phone:device({gate:'upgrade',appVersion:'1.0.6'})})]);
+ ok(html.includes('إصدار التطبيق قديم ويحتاج تحديثًا'),'An outdated app is named');
+ html=withTracking([entry({status:'no_points_today',lastPointAt:'2026-10-05T11:15:00.000Z',phone:device({pendingCount:12})})]);
+ ok(html.includes('التتبع يعمل')&&html.includes('12 نقطة محفوظة على الهاتف لم تُرفع بعد'),'A healthy phone with a queue: the points are waiting to upload');
+ html=withTracking([entry({browser:device({platform:'browser',deviceClass:'iphone',gate:'browser',appVersion:''})})]);
+ ok(html.includes('فتح المندوب النظام من المتصفح')&&html.includes('آيفون'),'A browser-only representative is called out with the device');
+ html=withTracking([entry({memberId:'a',memberName:'مندوب أ',status:'tracked',pointsOnDate:12}),entry({memberId:'b',memberName:'مندوب ب'})],{memberId:'all'});
+ ok(html.includes('1 من 2 مندوبين وصلت نقاطهم')&&html.includes('مندوب ب')&&!html.includes('مندوب أ</strong>'),'The all-team view lists only the problems and counts the rest');
+ reportLanguage='en';
+ html=withTracking([entry({status:'no_points_today',lastPointAt:'2026-10-05T11:15:00.000Z',phone:device({gate:'location_services'})})]);
+ ok(html.includes('No location arrived from the representative’s phone on this day. The last location arrived: 2026-10-05 14:15.')&&html.includes('Last report from the phone 2026-10-07 10:30')&&html.includes('phone location is off'),'English panel');
+ html=withTracking([entry()]);
+ ok(html.includes('has never been activated')&&html.includes('Route tracking coverage'),'English never-tracked');
+ reportLanguage='ar';
+}
 
 console.log(JSON.stringify({ok:true,checks,type:'actual controlled tracker/hooks and report SSR',coverage:'automatic selection, quiet healthy tracking, accessible stop control, actionable failure notices, fresh GPS, retries, queue bounds, role revocation, cleanup, report chronology and uncertain duration',realBrowser:false,realDevice:false}));
