@@ -15,6 +15,7 @@ import {createRequire} from 'node:module';
 import {createHash,randomBytes} from 'node:crypto';
 import {sqliteDatabase,privateObjects} from '../portable/storage.mjs';
 
+import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
 const require=createRequire(import.meta.url),{chromium}=require(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES?path.join(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES,'playwright'):'playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const release=path.join(root,'dist/standalone');
@@ -45,6 +46,8 @@ try{
   {id:'outsider',name:'QA outside team',role:'rep',supervisor:null,region:'western'},
   {id:'eastrep',name:'QA other region',role:'rep',supervisor:'supervisor',region:'eastern'}
  ];
+ // A representative uses the system only from the Android app (mandatory route tracking); the app is emulated for their pages.
+ const nativeReps=Object.fromEntries(members.filter(member=>member.role==='rep').map(member=>[member.id,member.region||'all']));
  for(const m of members)await db.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,active,target,created_at,region_scope) VALUES(?,?,?,?,?,?,?,1,0,?,?)').bind(m.id,'opaque-'+m.id,m.id+'@yourrest.org',m.name,m.role,'Main',m.supervisor,created,m.region).run();
  await db.prepare('INSERT INTO crm_settings(id,owner_id) VALUES(?,?)').bind('company','opaque-owner').run();
  async function record(id,kind,parent,assigned,payload,at){await db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id,kind,parent,assigned,'Main',JSON.stringify(payload),at||created,at||created).run();}
@@ -110,7 +113,7 @@ try{
  }
  async function firstPage(ctx){return contentShell?ctx.pages()[0]:await ctx.newPage();}
  async function request(target,pathname,body){return target.evaluate(async({pathname,body})=>{const reply=await fetch(pathname,body===undefined?{cache:'no-store'}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return {status:reply.status,data:await reply.json()};},{pathname,body});}
- async function signin(target,user){lastPage=target;target.setDefaultTimeout(18000);await target.goto(origin+'/');await target.locator('#yourrest-email').waitFor();await target.locator('#yourrest-email').fill(user);
+ async function signin(target,user){lastPage=target;target.setDefaultTimeout(18000);if(nativeReps[user])await installNativeBridge(target,{memberId:user,regionScope:nativeReps[user]});await target.goto(origin+'/');await target.locator('#yourrest-email').waitFor();await target.locator('#yourrest-email').fill(user);
   const pending=target.waitForResponse(r=>new URL(r.url()).pathname==='/api/auth/request'&&r.request().method()==='POST');await target.getByRole('button',{name:/^(إرسال رمز الدخول|Send sign-in code)$/}).click();eq((await pending).status(),200,'OTP request '+user);await target.locator('#yourrest-code').waitFor();
   const delivered=(await readFile(capture,'utf8')).trim().split('\n').map(JSON.parse).filter(row=>row.to===user+'@yourrest.org').at(-1);ok(delivered,'Mock email '+user);const mail=Buffer.from(delivered.message.split('\r\n\r\n')[1].replaceAll('\r\n',''),'base64').toString('utf8'),code=mail.match(/\b\d{6}\b/)?.[0];ok(code,'Mock OTP '+user);await target.locator('#yourrest-code').fill(code);await target.getByRole('button',{name:/^(دخول|Sign in)$/}).click();await target.locator('.workspace').waitFor();await target.locator('.mobile-bottom-navigation').waitFor();
  }
@@ -133,7 +136,7 @@ try{
  for(const id of ['quote-peer','quote-east'])eq((await download(page,id)).status,404,'Representative cannot download '+id);
  await nav(page,'activity');await page.getByRole('button',{name:'زيارة جديدة',exact:true}).click();
  let dialog=page.locator('.customer-visit-dialog');await dialog.waitFor();
- await pick(dialog,'نوع التواصل','اتصال');await dialog.locator('#visit-customer-search').fill('W101');await page.getByRole('option').filter({hasText:'مصنع الاختبار الأول'}).waitFor();await dialog.locator('#visit-customer-search').press('Enter');
+ await pick(dialog,'نوع التواصل','اتصال');await dialog.locator('#visit-customer-search').fill('W101');await page.getByRole('option').filter({hasText:'مصنع الاختبار الأول'}).click();
  await pick(dialog,'اختر الهدف من الزيارة','تعريف بمنتجات الشركة');await pick(dialog,'نتيجة الزيارة','متابعة العميل');await dialog.getByRole('textbox',{name:/^الإجراء القادم/}).fill('مراجعة عرض المنافس التوضيحي');
  await dialog.locator('.visit-sales-details>summary').click();
  let fields=dialog.locator('.competitor-fields');await fields.getByRole('switch',{name:'يوجد منافس',exact:true}).click();

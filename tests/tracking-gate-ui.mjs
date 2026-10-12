@@ -90,9 +90,19 @@ ok(html.includes('إصدار التطبيق: ') && html.includes('1.0.10'), 'The
 tracker = reasons.find(r => r[0] === 'browser')[1]; html = render();
 ok(html.includes('لا يعمل من المتصفح') || html.includes('ويعمل على هواتف أندرويد فقط'), 'The browser block explains why');
 no(html.includes('data-requirement'), 'A browser has no checklist');
-tracker = trackerWith(reasons.find(r => r[0] === 'permission')[1].gate, {busy: true, errorMessage: 'background_permission_required'}); html = render();
+tracker = trackerWith(reasons.find(r => r[0] === 'permission')[1].gate, {busy: true, operationError: 'background_permission_required'}); html = render();
 ok(html.includes('disabled') && html.includes('جارٍ التفعيل'), 'The button is disabled while an activation is running');
 ok(html.includes('role="alert"') && html.includes('background_permission_required'), 'A tracker failure is shown as an alert');
+
+// What the last tap did wrong, or what the app itself reports, is shown. A standing permission state is not repeated.
+tracker = trackerWith(reasons.find(r => r[0] === 'setup')[1].gate, {operationError: 'لم يبدأ التسجيل؛ يلزم الموافقة على تسجيل الموقع في ساعات العمل', errorMessage: 'fine_location_permission_required'}); html = render();
+ok(html.includes('يلزم الموافقة على تسجيل الموقع') && !html.includes('fine_location_permission_required'), 'A declined consent shows its own reason');
+tracker = trackerWith(reasons.find(r => r[0] === 'setup')[1].gate, {operationError: '', errorMessage: 'fine_location_permission_required'}); html = render();
+no(html.includes('role="alert"') || html.includes('fine_location_permission_required') || html.includes('إذن الموقع الدقيق غير متاح'), 'A first run, not yet asked, shows no standing permission error');
+tracker = trackerWith(gateOf({enrolled: false, memberId: null, error: 'توقف التسجيل؛ سجّل الدخول مجددًا للحساب نفسه لرفع النقاط المحفوظة'})); html = render();
+ok(html.includes('role="alert"') && html.includes('سجّل الدخول مجددًا للحساب نفسه'), 'A stop reported by the app itself is shown');
+tracker = trackerWith(gateOf({backgroundPermission: 'denied'}), {operationError: '', errorMessage: 'background_permission_required'}); html = render();
+no(html.includes('role="alert"'), 'The checklist already says which permission is missing');
 
 // Checking is neutral, not an error.
 tracker = trackerWith({native: true, loading: true, failed: false, upgradeRequired: false, device: null}); html = render();

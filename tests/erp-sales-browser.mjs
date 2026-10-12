@@ -15,6 +15,7 @@ import {createRequire} from 'node:module';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {sqliteDatabase} from '../portable/storage.mjs';
 
+import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
 const require=createRequire(import.meta.url),{chromium}=require('playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const release=path.join(root,'dist/standalone');
@@ -74,7 +75,7 @@ try{
  }
  async function firstPage(ctx){return contentShell?ctx.pages()[0]:await ctx.newPage();}
  async function request(target,pathname,body){return target.evaluate(async({pathname,body})=>{const reply=await fetch(pathname,body===undefined?{cache:'no-store'}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return {status:reply.status,data:await reply.json()};},{pathname,body});}
- async function signin(target,user){lastPage=target;target.setDefaultTimeout(18000);await target.goto(origin+'/');await target.locator('#yourrest-email').waitFor();await target.locator('#yourrest-email').fill(user);
+ async function signin(target,user){lastPage=target;target.setDefaultTimeout(18000);if(/^(rep\d+|outsider)$/.test(user))await installNativeBridge(target,{memberId:user,regionScope:'all'});await target.goto(origin+'/');await target.locator('#yourrest-email').waitFor();await target.locator('#yourrest-email').fill(user);
   const pending=target.waitForResponse(r=>new URL(r.url()).pathname==='/api/auth/request'&&r.request().method()==='POST');await target.getByRole('button',{name:'إرسال رمز الدخول',exact:true}).click();eq((await pending).status(),200,'OTP request '+user);await target.locator('#yourrest-code').waitFor();
   const delivered=(await readFile(capture,'utf8')).trim().split('\n').map(JSON.parse).filter(row=>row.to===user+'@yourrest.org').at(-1);ok(delivered,'Mock email '+user);const mail=Buffer.from(delivered.message.split('\r\n\r\n')[1].replaceAll('\r\n',''),'base64').toString('utf8'),code=mail.match(/\b\d{6}\b/)?.[0];ok(code,'Mock OTP '+user);await target.locator('#yourrest-code').fill(code);await target.getByRole('button',{name:'دخول',exact:true}).click();await target.locator('.workspace').waitFor();await target.locator('.mobile-bottom-navigation').waitFor();
  }
