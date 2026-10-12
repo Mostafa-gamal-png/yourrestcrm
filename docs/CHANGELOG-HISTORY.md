@@ -4,6 +4,17 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Customer-service requests reach sales and are followed to the first contact (2026-10-13, schema 16, no migration)
+
+- Sales roles receive a `serviceQueue` list in `/api/crm`: each customer-service request they may already read, its stage (approval, assignment, delegation, first contact, follow-up), who it waits for, and whether it is late against its target in working hours (Saturday to Thursday, 08:00-18:00 Riyadh): 4 h to approve, assign or delegate, 24 h to the first contact. A request late with one person is flagged for those above. It is built from the existing read and permission functions and never carries the registration text, attachments or notes.
+- The Visits page shows the queue to managers, supervisors and representatives, the Visits entry carries a count of what waits for the reader, and a representative sees a banner on every page while an assigned request waits for the first contact; it leaves with that contact. A signed-in idle user is refreshed every ten minutes, never under an open editor or sheet.
+- Case actions: `reassign` (the routed sales manager and administrators; the current holder is not a valid target; the customer moves to the new holder, who starts afresh), `seen` (the holder's first opening, recorded once), and an optional note written with every assignment or delegation that the holder reads on arrival. The customer's current representative is suggested when assigning. A returned request restarts the approval clock when resubmitted.
+- A request's history is visible along its own chain (registrar, customer-service manager, sales manager, supervisor, holder); a previous holder's contacts and notes stay out of the new holder's view.
+- Monthly customer-service report (administrator, sales manager, customer-service manager): requests by channel and current state, time per stage in working hours against the targets (median, average, over target), win rate and loss reasons. Aggregate only and never part of a target, evaluation or movement calculation.
+- The team page warns when a customer-service member is not linked to a customer-service manager, or a customer-service manager not to a sales manager, since such a request cannot be approved or routed.
+- No migration: the new facts live in the request's `data`. Going back to the previous release needs no database restore.
+- Tests: `tests/service-queue.mjs`, `tests/service-queue-ui.mjs`, `tests/service-report.mjs`, `tests/role-scope.mjs` (extended), `tests/service-queue-http.mjs`, `tests/service-report-http.mjs`, `tests/service-queue-browser.mjs`. Arabic description of the whole customer-service role: `docs/CUSTOMER-SERVICE-WORKFLOW-AR.md`.
+
 ## Mandatory route tracking for representatives (2026-10-12, schema 16)
 
 - A representative uses the system only from the Android app with consent, precise location, notifications, all-the-time location and the phone location service on, and the phone enrolled for the account. Browsers, iPhone, old apps and a silent app bridge get a full-page block that names what is missing and the action that fixes it; other roles are unchanged and daytime trouble (GPS wait, no network, queued points) never blocks work. `lib/tracking-gate.ts`, `app/tracking-gate.tsx`.

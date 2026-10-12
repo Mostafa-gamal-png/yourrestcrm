@@ -48,6 +48,12 @@ export function queueStage(item:ServiceCase,state:string,contactsSinceDispatch:n
  return {stage:'follow_up',since:item.updatedAt};
 }
 const targetFor=(stage:QueueStage):number|null=>stage==='approval'||stage==='assignment'||stage==='delegation'||stage==='first_contact'?SERVICE_TARGET_HOURS[stage]:null;
+/** Where a case stands against its response target; shared by the queue and the monthly report. */
+export function caseProgress(item:ServiceCase,state:string,contacts:Row[],assigneeRole:string,now:string){
+ const dispatchedAt=latest(item.data.assignedAt,item.data.delegatedAt,item.data.reassignedAt),contactsSinceDispatch=contacts.filter(r=>!dispatchedAt||r.createdAt>=dispatchedAt).length;
+ const {stage,since}=queueStage(item,state,contactsSinceDispatch,assigneeRole),targetHours=targetFor(stage),stageHours=workingHoursBetween(since,now);
+ return {stage,since,contactsSinceDispatch,targetHours,stageHours,late:targetHours!==null&&stageHours>targetHours};
+}
 function ownerFor(item:ServiceCase,stage:QueueStage):string|null{
  if(stage==='approval')return item.serviceManagerId;
  if(stage==='returned')return item.creatorId;
@@ -78,8 +84,7 @@ export function serviceQueue(c:QueueContext,now:string=new Date().toISOString())
   const customer=customers.get(item.customerId);
   if(!customer||!canReadService(item,c))continue;
   const state=serviceState(item,contactRecords,c.members),contacts=serviceContacts(item,contactRecords),assignee=member(item.assignedTo);
-  const dispatchedAt=latest(item.data.assignedAt,item.data.delegatedAt,item.data.reassignedAt),contactsSinceDispatch=contacts.filter(r=>!dispatchedAt||r.createdAt>=dispatchedAt).length;
-  const {stage,since}=queueStage(item,state,contactsSinceDispatch,assignee?.role||''),targetHours=targetFor(stage),stageHours=workingHoursBetween(since,now),late=targetHours!==null&&stageHours>targetHours;
+  const {stage,since,contactsSinceDispatch,targetHours,stageHours,late}=caseProgress(item,state,contacts,assignee?.role||'',now);
   const permissions=servicePermissions(item,c),ownerId=ownerFor(item,stage),mine=item.assignedTo===c.me.id;
   const awaiting:QueueAwaiting=stage==='approval'&&permissions.approve?'approve':stage==='assignment'&&permissions.assign?'assign':stage==='delegation'&&mine?'delegate':stage==='first_contact'&&mine?'first_contact':null;
   const currentRep=member(customer.assignedTo),currentRepId=currentRep&&['rep','supervisor'].includes(currentRep.role)?currentRep.id:'';
