@@ -122,7 +122,16 @@ ok(button(cardsIn(tree)[0],'Assign')!==undefined,'English action');
 tree=expand(ServiceQueuePanel({entries:[note],me:rep,...handlers}));
 ok(button(cardsIn(tree)[0],'Record a visit')!==undefined&&text(cardsIn(tree)[0]).includes('Instruction from مدير المبيعات: ركّز على قطع الغيار'),'English representative card');
 eq(tree.props.dir,'ltr','English panel is left to right');
+// Everything the components themselves write is English; only the people's own data may stay as typed.
+const plain=(o={})=>entry({customerName:'Plant A',customerCity:'Dammam',needs:'Needs mould maintenance',nextAction:'Technical visit',creatorName:'Agent',serviceManagerName:'Service manager',salesManagerName:'Sales manager',assignedName:'Holder',supervisorName:'Supervisor',currentRepName:'Holder',assignmentNote:'Focus on spare parts',assignmentNoteBy:'Sales manager',seenByName:'Holder',products:['خدمات صيانة','قوالب البلوك المتحركة'],strength:'strong',source:'whatsapp',salesStage:'needs',...o});
+const arabicLeft=tree=>(text(tree).match(/[\u0600-\u06ff]+/g)||[]);
+language='en';
+const englishCases=[plain({id:'e1',stage:'assignment',status:'pending_assignment',state:'pending_assignment',awaiting:'assign',ownerId:'sm',stageHours:6,targetHours:4,late:true,permissions:{...toAssign.permissions}}),plain({id:'e2',stage:'delegation',awaiting:null,late:true,escalated:true,stageHours:6,targetHours:4}),plain({id:'e3',stage:'first_contact',awaiting:'first_contact',assignedTo:'rep',ownerId:'rep',seenAt:''}),plain({id:'e4',stage:'follow_up',awaiting:null,targetHours:null,seenAt:'2026-10-11T08:00:00.000Z'}),plain({id:'e5',stage:'closed',state:'won',awaiting:null,targetHours:null}),plain({id:'e6',stage:'closed',state:'lost',awaiting:null,targetHours:null}),plain({id:'e7',stage:'approval',status:'pending_approval',state:'pending_approval',awaiting:'approve'}),plain({id:'e8',stage:'returned',status:'returned',state:'returned'})];
+for(const who of [manager,sup,rep,admin])eq(arabicLeft(expand(ServiceQueuePanel({entries:englishCases,me:who,...handlers}))),[],'English panel for '+who.role+' has no untranslated wording');
+eq(arabicLeft(expand(ServiceQueueBanner({entries:[englishCases[2]],...handlers}))),[],'English banner has no untranslated wording');
+for(const key of ['quoted','needs','negotiation'])eq(arabicLeft(expand(ServiceQueuePanel({entries:[plain({id:'s',stage:'follow_up',awaiting:null,salesStage:key})],me:manager,...handlers}))),[],'English sales stage '+key);
 language='ar';
+ok(arabicLeft(expand(ServiceQueuePanel({entries:[plain({id:'e1'})],me:manager,...handlers}))).length>10,'control: the same detector finds the wording in the Arabic panel');
 
 // ---- the banner
 eq(ServiceQueueBanner({entries:[older,toAssign],...handlers}),null,'no banner without a case waiting for his first contact');
@@ -184,7 +193,7 @@ select.props.onChange({target:{value:'2026-08'}});eq(months,['2026-08'],'choosin
 eq(text(expand(ServiceReportView({report:{...report,total:0,bySource:[],byState:{},lossReasons:[],timing:{...report.timing}},say:(ar)=>ar}))).includes('لا طلبات في هذا الشهر ضمن نطاقك.'),true,'an empty month says so');
 eq(nodes(expand(ServiceReportView({report:{...report,total:0},say:(ar)=>ar})),node=>node.type==='table').length,0,'and shows no tables');
 ok(!JSON.stringify(report).includes('مصنع'),'the report carries no customer names');
-language='en';view=expand(ServiceReportView({report,say:(ar,en)=>en}));ok(text(view).includes('Win rate')&&text(view).includes('Time per stage, in working hours')&&text(view).includes('Working hours are Saturday to Thursday'),'English report');language='ar';
+language='en';eq(arabicLeft(expand(ServiceReportView({report:{...report,lossReasons:[]},say:(ar,en)=>en}))),[],'English report has no untranslated wording');view=expand(ServiceReportView({report,say:(ar,en)=>en}));ok(text(view).includes('Win rate')&&text(view).includes('Time per stage, in working hours')&&text(view).includes('Working hours are Saturday to Thursday'),'English report');language='ar';
 
 // ---- the new strings are translated
 for(const key of ['المسؤول الجديد','ملاحظة للمكلَّف (اختياري)','تأكيد إعادة التكليف','المندوب الحالي للعميل','لم يُفتح بعد','توجيه المدير','وقت فتح المكلَّف للطلب','اكتب توجيهًا يصل للمكلَّف مع الطلب','ينتقل العميل وسجلاته إلى المكلَّف الجديد، وتبقى زيارات المكلَّف السابق باسمه.','إعادة تكليف','فتح الطلب','لا تملك صلاحية إعادة التكليف في هذه المرحلة','اختر عضوًا آخر غير المكلَّف الحالي','فتح الطلب متاح للمكلَّف به فقط'])ok(typeof dictionary[key]==='string'&&dictionary[key].length>0&&dictionary[key]!==key,'translated: '+key);

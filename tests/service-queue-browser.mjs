@@ -63,7 +63,15 @@ try {
   const pick = async (page, scope, name, option) => { await scope.getByRole('combobox', {name, exact: true}).click(); await page.getByRole('option', {name: option, exact: true}).click(); await page.getByRole('option').first().waitFor({state: 'hidden'}); };
   const layoutOk = async (page, label) => { const geometry = await page.evaluate(() => ({overflow: document.documentElement.scrollWidth > innerWidth + 1, width: innerWidth})); check(geometry.overflow, false, label + ': no horizontal overflow at ' + geometry.width + 'px'); };
   const goDesktop = async (page, label) => { await page.locator('button.nav-item', {hasText: label}).first().click(); await page.locator('.page-heading h1', {hasText: label}).waitFor(); };
-  const goPhone = async (page, id) => { await page.locator('.mobile-tab[data-page="' + id + '"]').click(); await page.locator('.mobile-tab[data-page="' + id + '"][aria-current="page"]').waitFor(); };
+  const goPhone = async (page, id) => {
+    await page.locator('.mobile-bottom-navigation').waitFor();
+    const tab = page.locator('.mobile-tab[data-page="' + id + '"]');
+    if (await tab.count()) { await tab.click(); await page.locator('.mobile-tab[data-page="' + id + '"][aria-current="page"]').waitFor(); return; }
+    await page.getByRole('button', {name: /^(المزيد من الصفحات|More pages)$/}).click();
+    await page.locator('.mobile-overflow-pages [data-page=' + id + ']').click();
+    await page.locator('.mobile-navigation-sheet').waitFor({state: 'detached'});
+    await page.locator('.page-heading').waitFor();
+  };
   // Ten minutes pass for the page's timers; its wall clock stays on real time so that everything it records is stamped honestly.
   const tenMinutes = async page => { await page.clock.fastForward(601000); await page.clock.setSystemTime(new Date()); };
   const badgeOf = async locator => (await locator.count()) ? (await locator.first().innerText()).trim() : '';
@@ -183,6 +191,7 @@ try {
     await sheet.waitFor();
     const opened = await eventually(async () => { const row = await caseRow(caseId); return row.data.seenAt && row; }, 'the opening is recorded');
     check([opened.data.seenBy, opened.assignedTo], ['rep', 'rep'], 'by the holder');
+    await rep.locator('.service-sheet', {hasText: 'توجيه المدير'}).waitFor();
     text = await sheet.innerText();
     ok(text.includes('ابدأ بالاتصال') && text.includes('توجيه المدير') && !private_(text), 'the sheet shows the instruction and no private text');
     await rep.keyboard.press('Escape');
@@ -214,6 +223,7 @@ try {
     await rep.evaluate(id => window.dispatchEvent(new CustomEvent('yourrest:open-service-case', {detail: {id}})), secondId);
     const named = rep.locator('.service-sheet');
     await named.waitFor();
+    await rep.locator('.service-sheet', {hasText: CUSTOMER_2}).waitFor();
     ok((await named.innerText()).includes(CUSTOMER_2), 'a tapped notification opens that request on the running page');
     const namedRow = await eventually(async () => { const row = await caseRow(secondId); return row.data.seenAt && row; }, 'the opening through the notification is recorded');
     check(namedRow.data.seenBy, 'rep', 'by the holder');
@@ -225,6 +235,7 @@ try {
     // a cold start from a notification or a link carries the request in its address and consumes it
     const cold = await open('rep', {native: {memberId: 'rep', regionScope: 'all'}, hash: '#service-case=' + caseId});
     await cold.locator('.service-sheet').waitFor();
+    await cold.locator('.service-sheet', {hasText: CUSTOMER}).waitFor();
     ok((await cold.locator('.service-sheet').innerText()).includes(CUSTOMER), 'a cold start opens the request named in the address');
     check(await cold.evaluate(() => location.hash), '#activity', 'and leaves the address on the Visits page');
     await cold.keyboard.press('Escape');
@@ -301,6 +312,26 @@ try {
     await csm.context().close();
     await manager.context().close();
     await supervisor.context().close();
+  }
+
+  // ---- 5. A manager on a phone, then in English: nothing widens the page, every new text is translated
+  {
+    const phone = await open('sm', {viewport: PHONE});
+    await goPhone(phone, 'activity');
+    const panel = phone.locator('.service-queue');
+    await panel.waitFor();
+    await layoutOk(phone, 'manager panel on a phone'); await shot(phone, 'queue-manager-panel-phone');
+    await phone.locator('details.service-report > summary').click();
+    await phone.locator('.service-report-kpis').waitFor();
+    await layoutOk(phone, 'manager report on a phone'); await shot(phone, 'queue-manager-report-phone');
+    await phone.getByRole('button', {name: 'English'}).first().click();
+    await phone.locator('.service-queue h2', {hasText: 'Customer-service requests'}).waitFor();
+    const english = await phone.locator('.service-queue, .service-report').allInnerTexts();
+    ok(english.join(' ').includes('Monthly customer-service report') && english.join(' ').includes('Win rate') && english.join(' ').includes('Time per stage, in working hours'), 'the report is in English');
+    const leftover = english.join(' ').replace(new RegExp(CUSTOMER + '|' + CUSTOMER_2 + '|ريم خدمة العملاء|منى مديرة الخدمة|أحمد المندوب|سالم المندوب|ماجد المشرف|سعد مدير المبيعات|قالب جديد وصيانة للقالب الحالي|عرض سعر لخلاط|اتصال أول بالعميل لتحديد موعد|زيارة فنية|الدمام|الخبر', 'g'), '').match(/[\u0600-\u06ff][\u0600-\u06ff\s]*/g) || [];
+    check(leftover, [], 'no Arabic wording is left in the English panel and report (names and customer data aside)');
+    await layoutOk(phone, 'manager report on a phone in English'); await shot(phone, 'queue-manager-report-phone-en');
+    await phone.context().close();
   }
 
   check(errors, [], 'no page errors in any browser');

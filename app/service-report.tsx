@@ -2,7 +2,7 @@
 import {useState} from 'react';
 import {BarChart3} from 'lucide-react';
 import {submitJson} from '@/lib/client-submit';
-import {getLanguage,useLanguage} from '@/lib/i18n';
+import {getLanguage,t,useLanguage} from '@/lib/i18n';
 import {serviceSources,serviceStatusLabels} from '@/lib/customer-service';
 import {serviceReportAllowed,type ReportTiming,type ServiceReport} from '@/lib/service-report';
 import type {Member} from '@/lib/crm';
@@ -22,9 +22,9 @@ export function ServiceReportView({report,say,onMonth}:{report:ServiceReport;say
   <div className="service-report-kpis">{[[say('الطلبات','Requests'),String(report.total)],[say('مفتوحة','Open'),String(report.open)],[say('فاز','Won'),String(report.won)],[say('فُقد','Lost'),String(report.lost)],[say('نسبة الفوز','Win rate'),percent(report.winRate)],[say('مفتوحة وتجاوزت هدفها','Open past target'),String(report.openOverTarget)]].map(([label,value])=><div key={label} className="service-report-kpi"><b>{value}</b><span>{label}</span></div>)}</div>
   {report.total===0?<p className="muted">{say('لا طلبات في هذا الشهر ضمن نطاقك.','No requests this month in your scope.')}</p>:<>
    <h3>{say('بحسب قناة التواصل','By channel')}</h3>
-   <table className="service-report-table"><thead><tr>{[say('القناة','Channel'),say('الطلبات','Requests'),say('فاز','Won'),say('فُقد','Lost'),say('مفتوح','Open'),say('نسبة الفوز','Win rate')].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{report.bySource.map(row=><tr key={row.source}><td>{serviceSources[row.source]||row.source}</td><td>{row.total}</td><td>{row.won}</td><td>{row.lost}</td><td>{row.open}</td><td>{percent(row.winRate)}</td></tr>)}</tbody></table>
+   <table className="service-report-table"><thead><tr>{[say('القناة','Channel'),say('الطلبات','Requests'),say('فاز','Won'),say('فُقد','Lost'),say('مفتوح','Open'),say('نسبة الفوز','Win rate')].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{report.bySource.map(row=><tr key={row.source}><td>{t(serviceSources[row.source]||row.source)}</td><td>{row.total}</td><td>{row.won}</td><td>{row.lost}</td><td>{row.open}</td><td>{percent(row.winRate)}</td></tr>)}</tbody></table>
    <h3>{say('الحالة الحالية','Current state')}</h3>
-   <div className="service-report-states">{Object.entries(report.byState).map(([state,count])=><span key={state} className="service-queue-chip">{serviceStatusLabels[state]||state}: {count}</span>)}</div>
+   <div className="service-report-states">{Object.entries(report.byState).map(([state,count])=><span key={state} className="service-queue-chip">{t(serviceStatusLabels[state]||state)}: {count}</span>)}</div>
    <h3>{say('زمن كل مرحلة بساعات العمل','Time per stage, in working hours')}</h3>
    <table className="service-report-table"><thead><tr>{[say('المرحلة','Stage'),say('طلبات','Cases'),say('الوسيط','Median'),say('المتوسط','Average'),say('الهدف','Target'),say('تجاوزت الهدف','Over target')].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{stages.map(([label,timing])=><tr key={label}><td>{label}</td><td>{timing.n}</td><td>{hours(timing.median,say)}</td><td>{hours(timing.average,say)}</td><td>{timing.target===null?'—':timing.target+' '+say('س','h')}</td><td>{timing.target===null?'—':timing.overTarget}</td></tr>)}</tbody></table>
    {report.lossReasons.length>0&&<><h3>{say('أسباب الفقد','Loss reasons')}</h3><ul className="service-report-reasons">{report.lossReasons.map(item=><li key={item.reason}><span>{item.reason}</span><b>{item.count}</b></li>)}</ul></>}
