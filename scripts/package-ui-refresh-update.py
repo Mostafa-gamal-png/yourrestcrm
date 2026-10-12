@@ -18,11 +18,18 @@ COUNT_TOKEN = "const RELEASE_FILES = 0; // __UI_REFRESH_RELEASE_FILES__"
 NAME_TOKEN = "const RELEASE_NAME = 'ui-refresh'; // __UI_REFRESH_RELEASE_NAME__"
 DATE_TOKEN = "const RELEASE_DATE = '20261008'; // __UI_REFRESH_RELEASE_DATE__"
 STAGE_TOKEN = "const STAGE_DIR = 'yourrest-ui-update-20261008'; // __UI_REFRESH_STAGE_DIR__"
+SCHEMA_TOKEN = "const SCHEMA_AFTER = 15; // __UI_REFRESH_SCHEMA_AFTER__"
+MIGRATIONS_TOKEN = "const NEW_MIGRATIONS = []; // __UI_REFRESH_NEW_MIGRATIONS__"
+ROUTES_TOKEN = "const EXTRA_ROUTES = []; // __UI_REFRESH_EXTRA_ROUTES__"
+BASELINE_MIGRATIONS = 15
 DEFAULTS = {"name": "ui-refresh", "date": "20261008", "stage": "yourrest-ui-update-20261008", "helper": "yourrest-activate-ui-refresh.cjs", "guide_name": "UPDATE-UI-REFRESH-AR.txt"}
-SAFE_NAME = __import__("re").compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
+RE = __import__("re")
+SAFE_NAME = RE.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
+MIGRATION_NAME = RE.compile(r"^\d{4}_[a-z0-9_]{1,60}\.sql$")
+ROUTE_PATH = RE.compile(r"^/[A-Za-z0-9/_-]{1,80}$")
 
 
-def package(release, archive, release_name=DEFAULTS["name"], date=DEFAULTS["date"], stage=DEFAULTS["stage"], helper_name=DEFAULTS["helper"], guide_text=None, guide_name=DEFAULTS["guide_name"]):
+def package(release, archive, release_name=DEFAULTS["name"], date=DEFAULTS["date"], stage=DEFAULTS["stage"], helper_name=DEFAULTS["helper"], guide_text=None, guide_name=DEFAULTS["guide_name"], new_migrations=(), verify_routes=()):
     if not SAFE_NAME.match(release_name) or not date.isdigit() or len(date) != 8 or not SAFE_NAME.match(stage.replace("yourrest-", "", 1)) or "/" in helper_name or not helper_name.endswith(".cjs"):
         raise RuntimeError("Unsafe release name, date, stage folder or helper name")
     for name in ["app.cjs", "server.js", "package.json", "operations/config.cjs", "operations/initialize.mjs", "drizzle/manifest.json"]:
@@ -33,9 +40,24 @@ def package(release, archive, release_name=DEFAULTS["name"], date=DEFAULTS["date
             raise RuntimeError("Incomplete standalone build: " + name)
     if release.is_symlink() or any(p.is_symlink() for p in release.parents):
         raise RuntimeError("Standalone path must not contain symlinks")
+    new_migrations = list(new_migrations)
+    if any(not MIGRATION_NAME.match(name) for name in new_migrations) or len(set(new_migrations)) != len(new_migrations):
+        raise RuntimeError("Unsafe migration name")
+    routes = []
+    for route in verify_routes:
+        path_part, _, status = route.partition("=")
+        if not ROUTE_PATH.match(path_part) or not status.isdigit() or not 100 <= int(status) <= 599:
+            raise RuntimeError("Unsafe verification route: " + route)
+        routes.append([path_part, int(status)])
+    schema_after = BASELINE_MIGRATIONS + len(new_migrations)
     migrations = json.loads((release / "drizzle/manifest.json").read_text())
-    if migrations.get("format") != "yourrest-migrations-v1" or len(migrations.get("files", [])) != 15:
-        raise RuntimeError("This update requires the already activated 15-migration security release")
+    names = sorted(entry.get("name", "") for entry in migrations.get("files", []))
+    # The live database must already hold the baseline; the package may add only the migrations it declares.
+    if migrations.get("format") != "yourrest-migrations-v1" or len(names) != schema_after or names[BASELINE_MIGRATIONS:] != sorted(new_migrations):
+        raise RuntimeError("This update requires the activated 15-migration release plus exactly the declared new migrations")
+    for name in new_migrations:
+        if not (release / "drizzle" / name).is_file():
+            raise RuntimeError("Declared migration is missing from the build: " + name)
     files = []
     for item in sorted(release.rglob("*")):
         if item.is_symlink():
@@ -50,11 +72,12 @@ def package(release, archive, release_name=DEFAULTS["name"], date=DEFAULTS["date
     manifest = "".join(hashlib.sha256(item.read_bytes()).hexdigest() + "  " + name + "\n" for item, name in files).encode()
     pin = hashlib.sha256(manifest).hexdigest()
     helper = (SOURCE / "portable/activate-ui-refresh-update.cjs").read_text()
-    if any(helper.count(token) != 1 for token in (PIN_TOKEN, COUNT_TOKEN, NAME_TOKEN, DATE_TOKEN, STAGE_TOKEN)):
+    if any(helper.count(token) != 1 for token in (PIN_TOKEN, COUNT_TOKEN, NAME_TOKEN, DATE_TOKEN, STAGE_TOKEN, SCHEMA_TOKEN, MIGRATIONS_TOKEN, ROUTES_TOKEN)):
         raise RuntimeError("Unexpected activator template")
     helper = (helper.replace(PIN_TOKEN, pin).replace(COUNT_TOKEN, "const RELEASE_FILES = " + str(len(files)) + ";")
               .replace(NAME_TOKEN, "const RELEASE_NAME = " + json.dumps(release_name) + ";").replace(DATE_TOKEN, "const RELEASE_DATE = " + json.dumps(date) + ";")
-              .replace(STAGE_TOKEN, "const STAGE_DIR = " + json.dumps(stage) + ";"))
+              .replace(STAGE_TOKEN, "const STAGE_DIR = " + json.dumps(stage) + ";").replace(SCHEMA_TOKEN, "const SCHEMA_AFTER = " + str(schema_after) + ";")
+              .replace(MIGRATIONS_TOKEN, "const NEW_MIGRATIONS = " + json.dumps(sorted(new_migrations)) + ";").replace(ROUTES_TOKEN, "const EXTRA_ROUTES = " + json.dumps(routes) + ";"))
     guide = guide_text if guide_text is not None else """تحديث واجهة يورست CRM — العدادات والرفع والوضع الليلي والأزرار
 
 الحزمة تخص crm.yourrest.org فقط وتتطلب تفعيل تحديث الأمان السابق بنجاح (15 ترحيلًا).
@@ -108,7 +131,8 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
         if temporary.exists():
             temporary.unlink()
     return {"archive": str(archive), "bytes": archive.stat().st_size, "files": len(files), "manifestSha256": pin,
-            "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "schemaBefore": 15, "schemaAfter": 15,
+            "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "schemaBefore": BASELINE_MIGRATIONS, "schemaAfter": schema_after,
+            "newMigrations": sorted(new_migrations), "verifyRoutes": routes,
             "settingsOrProductionDataIncluded": False, "standaloneModified": False,
             "releaseName": release_name, "releaseDate": date, "stageDir": stage, "helper": helper_name, "guide": guide_name}
 
@@ -123,6 +147,8 @@ if __name__ == "__main__":
     parser.add_argument("--helper-name", default=DEFAULTS["helper"])
     parser.add_argument("--guide", type=Path, help="Arabic guide text file to embed; must mention the stage folder and helper name")
     parser.add_argument("--guide-name", default=None)
+    parser.add_argument("--new-migration", action="append", default=[], help="a migration this release adds after the 15-migration baseline (repeatable)")
+    parser.add_argument("--verify-route", action="append", default=[], help="PATH=STATUS probed anonymously by --verify, for routes the release introduces (repeatable)")
     args = parser.parse_args()
     guide_text = None
     guide_name = args.guide_name or DEFAULTS["guide_name"]
@@ -131,4 +157,4 @@ if __name__ == "__main__":
         if args.stage_name not in guide_text or args.helper_name not in guide_text:
             raise SystemExit("The guide must mention the stage folder and the helper file name")
         guide_name = args.guide_name or "UPDATE-" + args.release_date + "-AR.txt"
-    print(json.dumps(package(args.release.absolute(), args.output.absolute(), args.release_name, args.release_date, args.stage_name, args.helper_name, guide_text, guide_name)))
+    print(json.dumps(package(args.release.absolute(), args.output.absolute(), args.release_name, args.release_date, args.stage_name, args.helper_name, guide_text, guide_name, args.new_migration, args.verify_route)))

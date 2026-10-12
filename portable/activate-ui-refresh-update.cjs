@@ -2,7 +2,9 @@
 'use strict';
 // Standalone release deployment template. Package with scripts/package-ui-refresh-update.py,
 // which pins the manifest and injects the release name, date and upload folder below.
-// No network downloads, setup, migrations, database writes, or service starts.
+// No network downloads, setup, database writes, or service starts. A schema change shipped by the release is
+// applied by the application itself on its first start, after its own private schema backup; this helper only
+// proves the database is in the exact expected state before the switch and after the start.
 const fs = require('node:fs');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
@@ -14,9 +16,16 @@ const RELEASE_FILES = 0; // __UI_REFRESH_RELEASE_FILES__
 const RELEASE_NAME = 'ui-refresh'; // __UI_REFRESH_RELEASE_NAME__
 const RELEASE_DATE = '20261008'; // __UI_REFRESH_RELEASE_DATE__
 const STAGE_DIR = 'yourrest-ui-update-20261008'; // __UI_REFRESH_STAGE_DIR__
+// The live database must hold exactly SCHEMA_BEFORE migrations; the release carries SCHEMA_AFTER, and the ones
+// beyond SCHEMA_BEFORE are NEW_MIGRATIONS, which the application applies on its first start.
+const SCHEMA_BEFORE = 15;
+const SCHEMA_AFTER = 15; // __UI_REFRESH_SCHEMA_AFTER__
+const NEW_MIGRATIONS = []; // __UI_REFRESH_NEW_MIGRATIONS__
+// Anonymous probes the verification adds for routes introduced by the release: [path, expected status].
+const EXTRA_ROUTES = []; // __UI_REFRESH_EXTRA_ROUTES__
 const ACTIVATION_FORMAT = 'yourrest-' + RELEASE_NAME + '-activation-' + RELEASE_DATE;
 // Same-day backups written by earlier activators remain reusable alongside this release's own.
-const BACKUP_TRANSACTION = new RegExp('^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008|' + (RELEASE_NAME + '-activation-' + RELEASE_DATE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')-[A-Za-z0-9-]+$');
+const BACKUP_TRANSACTION = new RegExp('^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008|update-activation-20261011|' + (RELEASE_NAME + '-activation-' + RELEASE_DATE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')-[A-Za-z0-9-]+$');
 const fail = code => { throw Object.assign(new Error(code), {code}); };
 const exists = p => { try { fs.lstatSync(p); return true; } catch(e) { if(e.code === 'ENOENT') return false; throw e; } };
 const inside = (p, root) => p === root || p.startsWith(root + path.sep);
@@ -90,6 +99,21 @@ function assertSameInventory(a, b) {
   if(a.size !== b.size) fail('BACKUP_INVENTORY_MISMATCH');
   for(const [name, value] of a) if(JSON.stringify(value) !== JSON.stringify(b.get(name))) fail('BACKUP_CONTENT_MISMATCH');
 }
+/** Ordered migration names of a release whose files were already verified against the pinned manifest. */
+function releaseMigrations(release) {
+  noLinks(path.join(release,'drizzle/manifest.json'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(release,'drizzle/manifest.json'),'utf8'));
+  if(!manifest || manifest.format !== 'yourrest-migrations-v1' || !Array.isArray(manifest.files)) fail('INVALID_MIGRATION_MANIFEST');
+  const names = manifest.files.map(file => file && file.name);
+  if(names.some(name => typeof name !== 'string' || !/^\d+[a-zA-Z0-9_-]*\.sql$/.test(name)) || new Set(names).size !== names.length) fail('INVALID_MIGRATION_MANIFEST');
+  return names.sort();
+}
+/** The package must carry exactly the migrations it declares, on top of the baseline schema. */
+function assertDeclaredMigrations(release) {
+  const names = releaseMigrations(release);
+  if(names.length !== SCHEMA_AFTER || names.slice(SCHEMA_BEFORE).join(',') !== NEW_MIGRATIONS.join(',')) fail('UNEXPECTED_MIGRATION_HISTORY');
+  return names;
+}
 function verifyRelease(p, release) {
   directory(release); const expected = manifestFiles(p.manifest), actual = inventory(release);
   const files = [...actual].filter(([,s]) => s.type === 'file');
@@ -158,7 +182,7 @@ function configFor(p, release) {
   }
   return {c,check:validatePrivatePath};
 }
-async function inspect(p, release, config, backup, upgraded = false, expectedSchema = 15) {
+async function inspect(p, release, config, backup, upgraded = false, expectedSchema = SCHEMA_BEFORE) {
   const {DatabaseSync} = require('node:sqlite');
   const {inspectInitializedDatabase} = await import(pathToFileURL(path.join(release,'operations/initialize.mjs')).href);
   const map = original => backup ? path.join(backup,'data',path.relative(p.data,original)) : original;
@@ -166,7 +190,9 @@ async function inspect(p, release, config, backup, upgraded = false, expectedSch
   const objects = config.check(map(config.c.YR_OBJECTS_PATH),{directory:true});
   for(const suffix of ['-wal','-shm','-journal']) if(exists(filename + suffix)) config.check(filename + suffix);
   const result = inspectInitializedDatabase({filename,migrations:path.join(release,'drizzle'),appRoot:p.app});
-  if(result.migrations !== 15 || result.pending.join(',') !== (expectedSchema === 14 ? '0014_customer_identities.sql' : '')) fail('UNEXPECTED_MIGRATION_HISTORY');
+  // A database that holds `expectedSchema` migrations still lacks exactly the later ones of this release.
+  const names = assertDeclaredMigrations(release);
+  if(result.migrations !== SCHEMA_AFTER || !Number.isInteger(expectedSchema) || expectedSchema < 14 || expectedSchema > SCHEMA_AFTER || result.pending.join(',') !== names.slice(expectedSchema).join(',')) fail('UNEXPECTED_MIGRATION_HISTORY');
   const db = new DatabaseSync(filename,{readOnly:true});
   try {
     db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;');
@@ -182,7 +208,7 @@ async function inspect(p, release, config, backup, upgraded = false, expectedSch
     }
     const counts = {};
     for(const table of RECORD_TABLES) counts[table] = db.prepare('SELECT COUNT(*) n FROM ' + table).get().n;
-    if(expectedSchema === 15 && db.prepare("SELECT COUNT(*) n FROM crm_records r LEFT JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.kind='customer' AND n.customer_id IS NULL").get().n) fail('CUSTOMER_CODES_MISSING');
+    if(expectedSchema >= 15 && db.prepare("SELECT COUNT(*) n FROM crm_records r LEFT JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.kind='customer' AND n.customer_id IS NULL").get().n) fail('CUSTOMER_CODES_MISSING');
     return {attachments,counts,migrations:expectedSchema};
   } finally { db.close(); }
 }
@@ -207,7 +233,7 @@ function dailyPaths(config,p) {
 }
 function checkDailyShape(p,index,day,config,now) {
   const relative = dailyPaths(config,p);
-  if(!index || index.format !== 'yourrest-daily-backup-v1' || index.home !== p.home || index.day !== day || ![14,15].includes(index.backupSchema) || typeof index.transaction !== 'string' || path.dirname(index.transaction) !== p.home || !BACKUP_TRANSACTION.test(path.basename(index.transaction)) || index.databaseRelative !== relative.databaseRelative || index.objectsRelative !== relative.objectsRelative || !/^[a-f0-9]{64}$/.test(index.applicationSeal || '') || !/^[a-f0-9]{64}$/.test(index.dataSeal || '')) fail('INVALID_DAILY_BACKUP_INDEX');
+  if(!index || index.format !== 'yourrest-daily-backup-v1' || index.home !== p.home || index.day !== day || ![14,SCHEMA_BEFORE].includes(index.backupSchema) || typeof index.transaction !== 'string' || path.dirname(index.transaction) !== p.home || !BACKUP_TRANSACTION.test(path.basename(index.transaction)) || index.databaseRelative !== relative.databaseRelative || index.objectsRelative !== relative.objectsRelative || !/^[a-f0-9]{64}$/.test(index.applicationSeal || '') || !/^[a-f0-9]{64}$/.test(index.dataSeal || '')) fail('INVALID_DAILY_BACKUP_INDEX');
   if(timestamp(index.createdAt) > timestamp(index.verifiedAt) || timestamp(index.verifiedAt) > now().getTime() || riyadhDay(index.createdAt) !== day || riyadhDay(index.verifiedAt) !== day) fail('INVALID_DAILY_BACKUP_DATE');
   directory(index.transaction,true); directory(path.join(index.transaction,'application')); directory(path.join(index.transaction,'data'),true);
 }
@@ -301,7 +327,14 @@ async function verifyRunning(p, state, log) {
   directory(state.transaction,true);
   verifyRelease(p,p.current);
   for(const name of ['settings.cjs','app.cjs']) if(digest(path.join(p.app,name)) !== state.rootHashes[name]) fail('ROOT_CONFIGURATION_CHANGED');
-  const config = configFor(p,p.current), summary = await inspect(p,p.current,config,null,true);
+  const config = configFor(p,p.current);
+  if(NEW_MIGRATIONS.length) {
+    // The application applies the new migrations when it starts. Say so plainly if it has not.
+    const {inspectInitializedDatabase} = await import(pathToFileURL(path.join(p.current,'operations/initialize.mjs')).href);
+    const pending = inspectInitializedDatabase({filename:config.check(config.c.YR_DATABASE_PATH),migrations:path.join(p.current,'drizzle'),appRoot:p.app}).pending;
+    if(pending.join(',') === NEW_MIGRATIONS.join(',')) fail('MIGRATION_NOT_APPLIED_START_APP_FIRST');
+  }
+  const summary = await inspect(p,p.current,config,null,true,SCHEMA_AFTER);
   const {DatabaseSync} = require('node:sqlite');
   const after = new DatabaseSync(config.c.YR_DATABASE_PATH,{readOnly:true});
   let before, missing = {};
@@ -319,13 +352,14 @@ async function verifyRunning(p, state, log) {
       }
     }
   } finally { before?.close(); after.close(); }
-  for(const [route,expected] of [['/login',200],['/api/crm',401]]) {
+  for(const [route,expected] of [['/login',200],['/api/crm',401],...EXTRA_ROUTES]) {
     const response = await fetch(config.c.YR_APP_ORIGIN + route,{redirect:'manual',signal:AbortSignal.timeout(15000),headers:{'Cache-Control':'no-cache'}});
     await response.body?.cancel();
     if(response.status !== expected) fail('HTTP_VERIFICATION_FAILED');
   }
-  log('MIGRATIONS: 15 / DATABASE: OK / CUSTOMER CODES: OK');
-  log('LOGIN HTTP: 200 / ANONYMOUS CRM API: 401');
+  log('MIGRATIONS: ' + SCHEMA_AFTER + ' / DATABASE: OK / CUSTOMER CODES: OK');
+  for(const name of NEW_MIGRATIONS) log('MIGRATION APPLIED: ' + name);
+  log('LOGIN HTTP: 200 / ANONYMOUS CRM API: 401' + EXTRA_ROUTES.map(([route,expected]) => ' / ' + route + ': ' + expected).join(''));
   if(Object.keys(missing).length) { log('RECORDS NO LONGER PRESENT: ' + JSON.stringify(missing)); fail('RECORD_CHANGES_REQUIRE_REVIEW_NO_ROLLBACK'); }
   log('PREVIOUS RECORD IDS: PRESERVED');
   log('DEPLOYMENT VERIFIED');
@@ -347,7 +381,10 @@ async function run(p, mode = 'apply', {log = console.log, stopped = ensureStoppe
   verifyRelease(p,p.newRelease);
   directory(p.current);
   const config = configFor(p,p.newRelease);
-  if(mode === 'check') { log('PACKAGE AND CONFIGURATION: READY. APP MAY REMAIN RUNNING.'); log('BACKUP POLICY: ONE VERIFIED FULL BACKUP PER RIYADH CALENDAR DAY; EACH UPDATE RETAINS ITS OWN RECORD-ID CHECK.'); return; }
+  assertDeclaredMigrations(p.newRelease);
+  if(mode === 'check') {
+    if(NEW_MIGRATIONS.length) log('SCHEMA CHANGE: ' + NEW_MIGRATIONS.join(', ') + ' WILL BE APPLIED BY THE APPLICATION ON ITS FIRST START, AFTER ITS OWN PRIVATE SCHEMA BACKUP.');
+    log('PACKAGE AND CONFIGURATION: READY. APP MAY REMAIN RUNNING.'); log('BACKUP POLICY: ONE VERIFIED FULL BACKUP PER RIYADH CALENDAR DAY; EACH UPDATE RETAINS ITS OWN RECORD-ID CHECK.'); return; }
   stopped(p);
   // mkdir is exclusive. A stale lock is deliberately not deleted automatically.
   try { fs.mkdirSync(p.lock,{mode:0o700}); } catch(e) { if(e.code === 'EEXIST') fail('ACTIVATION_LOCK_EXISTS'); throw e; }
@@ -408,7 +445,9 @@ async function run(p, mode = 'apply', {log = console.log, stopped = ensureStoppe
     stopped(p);
     sameDay();
     switchRelease(p,tx,writeState);
-    log('4/4 RELEASE SWITCHED'); log('DAILY BACKUP: ' + daily.transaction); log('ACTIVATION CHECKPOINT: ' + tx); log('START APP IN CPANEL');
+    log('4/4 RELEASE SWITCHED'); log('DAILY BACKUP: ' + daily.transaction); log('ACTIVATION CHECKPOINT: ' + tx);
+    if(NEW_MIGRATIONS.length) log('THE FIRST START APPLIES ' + NEW_MIGRATIONS.join(', ') + ' AFTER A PRIVATE SCHEMA BACKUP, SO IT MAY TAKE A FEW SECONDS LONGER.');
+    log('START APP IN CPANEL');
     return ownState;
   } catch(e) {
     // Preserve the last durable phase for interruption diagnosis. Never undo
@@ -417,7 +456,7 @@ async function run(p, mode = 'apply', {log = console.log, stopped = ensureStoppe
     throw e;
   } finally { if(ownDailyLock) fs.rmdirSync(p.dailyLock); fs.rmdirSync(p.lock); }
 }
-module.exports = {pathsFor,manifestFiles,inventory,assertSameInventory,ensureStopped,switchRelease,run,riyadhDay,PIN,RELEASE_FILES,RELEASE_NAME,RELEASE_DATE,STAGE_DIR,ACTIVATION_FORMAT};
+module.exports = {pathsFor,manifestFiles,inventory,assertSameInventory,ensureStopped,switchRelease,run,riyadhDay,PIN,RELEASE_FILES,RELEASE_NAME,RELEASE_DATE,STAGE_DIR,ACTIVATION_FORMAT,SCHEMA_BEFORE,SCHEMA_AFTER,NEW_MIGRATIONS,EXTRA_ROUTES};
 if(require.main === module) {
   process.umask(0o077);
   const args = process.argv.slice(2), modes = {'--check':'check','--verify':'verify'};
