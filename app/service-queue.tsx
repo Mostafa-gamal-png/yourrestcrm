@@ -1,6 +1,6 @@
 'use client';
 import {BellRing,ClipboardList,Clock3,PhoneCall} from 'lucide-react';
-import {useLanguage} from '@/lib/i18n';
+import {t,useLanguage} from '@/lib/i18n';
 import {stageLabels,type Member} from '@/lib/crm';
 import {strengthLabels} from '@/lib/customer-visits';
 import {serviceSources,serviceStatusLabels} from '@/lib/customer-service';
@@ -41,16 +41,16 @@ function QueueCard({entry,me,say,onOpen,onVisit}:{entry:ServiceQueueEntry;me:Mem
  const action=entry.awaiting?ACTION_TEXT[entry.awaiting]:undefined;
  return <article className="service-queue-card" data-case={entry.id} data-stage={entry.stage} data-awaiting={entry.awaiting||'none'} data-late={entry.late?'true':'false'}>
   <header><div><h4>{entry.customerName}</h4>{(entry.customerPhone||entry.customerCity)&&<span className="service-queue-phone" dir="ltr">{[entry.customerPhone,entry.customerCity].filter(Boolean).join(' · ')}</span>}</div>
-   <span className="badge pending">{stage?stage:say(STAGE_TEXT[entry.stage][0],STAGE_TEXT[entry.stage][1])}</span></header>
+   <span className="badge pending">{stage?t(stage):say(STAGE_TEXT[entry.stage][0],STAGE_TEXT[entry.stage][1])}</span></header>
   <div className="service-queue-meta">
-   {entry.source&&<span className="service-queue-chip">{serviceSources[entry.source]||entry.source}</span>}
-   {entry.strength&&<span className="service-queue-chip" data-kind={entry.strength==='strong'?'strong':undefined}>{strengthLabels[entry.strength]||entry.strength}</span>}
+   {entry.source&&<span className="service-queue-chip">{t(serviceSources[entry.source]||entry.source)}</span>}
+   {entry.strength&&<span className="service-queue-chip" data-kind={entry.strength==='strong'?'strong':undefined}>{t(strengthLabels[entry.strength]||entry.strength)}</span>}
    {entry.stage!=='closed'&&entry.stage!=='follow_up'&&<span className="service-queue-chip"><Clock3 size={12} aria-hidden="true"/> {hoursText(entry.stageHours,say)}</span>}
    {entry.late&&<span className="service-queue-chip" data-kind="late">{say('متأخر عن هدف '+entry.targetHours+' ساعات عمل','Late against a '+entry.targetHours+'-working-hour target')}</span>}
    {entry.escalated&&<span className="service-queue-chip" data-kind="escalated">{say('تأخر عند '+(entry.assignedName||entry.salesManagerName),'Late with '+(entry.assignedName||entry.salesManagerName))}</span>}
-   {entry.salesStage&&entry.stage==='follow_up'&&stageLabels[entry.salesStage]&&<span className="service-queue-chip">{stageLabels[entry.salesStage]}</span>}
+   {entry.salesStage&&entry.stage==='follow_up'&&stageLabels[entry.salesStage]&&<span className="service-queue-chip">{t(stageLabels[entry.salesStage])}</span>}
   </div>
-  {entry.products.length>0&&<p><b>{say('الأصناف: ','Products: ')}</b>{entry.products.join(' · ')}</p>}
+  {entry.products.length>0&&<p><b>{say('الأصناف: ','Products: ')}</b>{entry.products.map(product=>t(product)).join(' · ')}</p>}
   {entry.needs&&<p><b>{say('الاحتياج: ','Need: ')}</b>{entry.needs}</p>}
   {(entry.nextAction||entry.nextDate)&&<p><b>{say('الخطوة القادمة: ','Next step: ')}</b>{[entry.nextAction,entry.nextDate].filter(Boolean).join(' · ')}</p>}
   {holderView&&entry.assignmentNote&&<p className="service-queue-note"><b>{say('توجيه من '+(entry.assignmentNoteBy||'المدير')+': ','Instruction from '+(entry.assignmentNoteBy||'your manager')+': ')}</b>{entry.assignmentNote}</p>}
