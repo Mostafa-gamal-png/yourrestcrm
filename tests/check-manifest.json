@@ -178,6 +178,21 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/service-queue-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/service-queue-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/service-report-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/session-update-package.py",
       "gate": "release-artifact",
       "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
@@ -209,11 +224,6 @@
     },
     {
       "file": "tests/visit-files-http.mjs",
-      "gate": "release-build",
-      "reason": "requires independent build"
-    },
-    {
-      "file": "tests/service-queue-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
     }

@@ -8,6 +8,7 @@ import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import React from 'react';
 import * as jsx from 'react/jsx-runtime';
+import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
 const root=process.cwd(),nativeRequire=createRequire(import.meta.url),cache=new Map();
 const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
@@ -45,6 +46,7 @@ const button=(tree,label)=>nodes(tree,node=>node.type==='button'&&text(node).tri
 const groups=tree=>nodes(tree,node=>node.props?.['data-group']!==undefined);
 const cardsIn=tree=>nodes(tree,node=>node.type==='article'&&hasClass(node,'service-queue-card'));
 const {ServiceQueuePanel,ServiceQueueBanner,QueueBadge,RoleWarning,hoursText}=load('app/service-queue.tsx');
+const {ServiceReportView,ServiceReportSection}=load('app/service-report.tsx');
 
 const entry=(o={})=>({id:'case-1',customerId:'c-1',customerName:'مصنع الأمل',customerPhone:'0551234567',customerCity:'الدمام',customerRegion:'الشرقية',customerVersion:1,source:'call',products:['خدمات صيانة'],strength:'strong',needs:'يحتاج صيانة القالب',nextAction:'زيارة فنية',nextDate:'2026-10-14',status:'assigned',state:'assigned',salesStage:'new',creatorId:'cs',creatorName:'ممثل الخدمة',serviceManagerName:'مدير الخدمة',salesManagerId:'sm',salesManagerName:'مدير المبيعات',assignedTo:'rep',assignedName:'المندوب',assignedRole:'rep',supervisorName:'المشرف',currentRepId:'rep',currentRepName:'المندوب',assignmentNote:'',assignmentNoteBy:'',contactCount:0,contactsSinceDispatch:0,lastContactAt:'',seenAt:'',seenByName:'',stage:'first_contact',stageSince:'2026-10-12T05:00:00.000Z',stageHours:3,targetHours:24,late:false,ownerId:'rep',awaiting:'first_contact',escalated:false,permissions:{},createdAt:'',updatedAt:'',version:2,...o});
 
@@ -153,6 +155,36 @@ warning=RoleWarning({member:{id:'csm2',role:'customer_service_manager',superviso
 ok(text(warning).includes('غير مرتبط بمدير مبيعات'),'unlinked manager');
 language='en';warning=RoleWarning({member:{id:'csm2',role:'customer_service_manager',supervisorId:'',active:1},members});ok(text(warning).includes('Not linked to a sales manager'),'English warning');language='ar';
 eq(RoleWarning({member:{id:'rep',role:'rep',supervisorId:'',active:1},members}),null,'other roles never warn');
+
+// ---- the monthly report section and view
+const timing=(n,median,average,target,overTarget)=>({n,median,average,target,overTarget});
+const report={month:'2026-09',months:['2026-09','2026-08'],generatedAt:'2026-10-12T12:00:00.000Z',total:5,open:3,won:1,lost:1,winRate:50,byState:{won:1,lost:1,pending_assignment:1,pending_approval:2},
+ bySource:[{source:'call',total:2,won:1,lost:0,open:1,winRate:100},{source:'whatsapp',total:1,won:0,lost:1,open:0,winRate:0},{source:'website',total:1,won:0,lost:0,open:1,winRate:null}],
+ timing:{approval:timing(3,1,2.67,4,1),assignment:timing(2,1.5,1.5,4,0),firstContact:timing(2,7,7,24,0),totalToFirstContact:timing(2,12,12,null,0)},
+ openOverTarget:3,lossReasons:[{reason:'السعر أعلى من المنافس',count:1}],targets:{approval:4,assignment:4,delegation:4,first_contact:24}};
+for(const role of ['rep','supervisor','customer_service','unknown'])eq(ServiceReportSection({me:{role}}),null,role+' gets no report section');
+for(const role of ['admin','manager','customer_service_manager'])eq(ServiceReportSection({me:{role}}).type.name,'ServiceReportPanel',role+' gets the report section');
+const closedHtml=renderToStaticMarkup(React.createElement(ServiceReportSection,{me:{role:'manager'}}));
+ok(closedHtml.startsWith('<details')&&closedHtml.includes('التقرير الشهري لطلبات خدمة العملاء')&&!/<details[^>]* open/.test(closedHtml),'the section starts collapsed with its title and loads nothing until opened');
+const months=[];
+let view=expand(ServiceReportView({report,say:(ar)=>ar,onMonth:value=>months.push(value)}));
+const viewText=text(view);
+ok(['5','3','1','50%'].every(value=>nodes(view,node=>hasClass(node,'service-report-kpi')&&text(node).startsWith(value)).length>0),'the headline figures');
+ok(viewText.includes('نسبة الفوز')&&viewText.includes('مفتوحة وتجاوزت هدفها'),'their labels');
+const tables=nodes(view,node=>node.type==='table');
+eq(tables.length,2,'a channel table and a timing table');
+eq(nodes(tables[0],node=>node.type==='tr').map(row=>text(row)),['القناةالطلباتفازفُقدمفتوحنسبة الفوز','اتصال2101100%','واتساب10100%','عن طريق الويبسايت1001—'],'channels with their win rates, and a dash where nothing closed');
+eq(nodes(tables[1],node=>node.type==='tr').map(row=>text(row))[1],'الاعتماد31.0 س2.7 س4 س1','approval: three cases, median 1.0 h, average 2.7 h, target 4, one over');
+eq(nodes(tables[1],node=>node.type==='tr').map(row=>text(row))[4],'من التسجيل إلى أول تواصل212.0 س12.0 س——','the whole wait to first contact has no target');
+ok(viewText.includes('السعر أعلى من المنافس')&&viewText.includes('ساعات العمل من السبت إلى الخميس'),'loss reasons and the working-hours note');
+ok(viewText.includes('بانتظار تكليف المبيعات: 1')&&viewText.includes('تم الفوز: 1'),'states in words');
+const select=nodes(view,node=>node.type==='select')[0];
+eq(nodes(select,node=>node.type==='option').map(option=>option.props.value),['2026-09','2026-08'],'the months the reader can choose, newest first');
+select.props.onChange({target:{value:'2026-08'}});eq(months,['2026-08'],'choosing a month asks for it');
+eq(text(expand(ServiceReportView({report:{...report,total:0,bySource:[],byState:{},lossReasons:[],timing:{...report.timing}},say:(ar)=>ar}))).includes('لا طلبات في هذا الشهر ضمن نطاقك.'),true,'an empty month says so');
+eq(nodes(expand(ServiceReportView({report:{...report,total:0},say:(ar)=>ar})),node=>node.type==='table').length,0,'and shows no tables');
+ok(!JSON.stringify(report).includes('مصنع'),'the report carries no customer names');
+language='en';view=expand(ServiceReportView({report,say:(ar,en)=>en}));ok(text(view).includes('Win rate')&&text(view).includes('Time per stage, in working hours')&&text(view).includes('Working hours are Saturday to Thursday'),'English report');language='ar';
 
 // ---- the new strings are translated
 for(const key of ['المسؤول الجديد','ملاحظة للمكلَّف (اختياري)','تأكيد إعادة التكليف','المندوب الحالي للعميل','لم يُفتح بعد','توجيه المدير','وقت فتح المكلَّف للطلب','اكتب توجيهًا يصل للمكلَّف مع الطلب','ينتقل العميل وسجلاته إلى المكلَّف الجديد، وتبقى زيارات المكلَّف السابق باسمه.','إعادة تكليف','فتح الطلب','لا تملك صلاحية إعادة التكليف في هذه المرحلة','اختر عضوًا آخر غير المكلَّف الحالي','فتح الطلب متاح للمكلَّف به فقط'])ok(typeof dictionary[key]==='string'&&dictionary[key].length>0&&dictionary[key]!==key,'translated: '+key);
