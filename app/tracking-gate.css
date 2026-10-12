@@ -1,0 +1,20 @@
+.tracking-gate{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;gap:16px;overflow-y:auto;padding:16px;background:var(--background,#fff);color:var(--foreground,#18221c)}
+.tracking-gate-top{width:100%;max-width:560px;display:flex;align-items:center;justify-content:space-between;gap:12px}.tracking-gate-logo{height:38px;width:150px;background:url(/yourrest-logo.png) center/contain no-repeat}
+.tracking-gate-card{width:100%;max-width:560px;margin-block:auto;border:1px solid var(--border,#d6e0d9);border-radius:16px;padding:22px 20px;background:var(--card,var(--background,#fff));box-shadow:0 8px 28px rgba(15,40,25,.08);display:flex;flex-direction:column;gap:12px}
+.tracking-gate-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:#dcefe4;color:#1b7750}
+.tracking-gate h1{font-size:19px;line-height:1.5;font-weight:700;margin:0}
+.tracking-gate-body{font-size:14px;line-height:1.9;margin:0;color:var(--foreground,#18221c)}
+.tracking-gate-list{list-style:none;margin:2px 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.tracking-gate-list li{display:flex;align-items:center;gap:10px;font-size:13px;line-height:1.7;padding:9px 12px;border-radius:10px;border:1px solid var(--border,#d6e0d9)}
+.tracking-gate-list li span{flex:1;min-width:0}.tracking-gate-list li b{font-size:12px;font-weight:600;white-space:nowrap}
+.tracking-gate-list li[data-needed=yes]{background:#fff5f2;border-color:#efc4b8;color:#8f2f19}.tracking-gate-list li[data-needed=no]{background:#f0faf4;border-color:#b9dcca;color:#1b6a47}
+.tracking-gate-steps{margin:0;padding-inline-start:20px;font-size:13px;line-height:1.9;display:flex;flex-direction:column;gap:4px}
+.tracking-gate-error{margin:0;padding:10px 12px;border-radius:10px;background:#fff1f1;color:#a52828;font-size:13px;line-height:1.8}
+.tracking-gate-version{font-size:12px;color:var(--muted-foreground,#5a6b60)}
+.tracking-gate-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}.tracking-gate-actions .btn{flex:1 1 200px;justify-content:center;text-align:center}
+.tracking-gate-foot{width:100%;max-width:560px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted-foreground,#5a6b60)}
+.tracking-gate-signout{display:inline-flex;align-items:center;gap:6px}
+.dark .tracking-gate-icon{background:#204a38;color:#8bd0ad}.dark .tracking-gate-card{box-shadow:none}
+.dark .tracking-gate-list li[data-needed=yes]{background:#3a1f19;border-color:#7a3a2b;color:#ffb4a1}.dark .tracking-gate-list li[data-needed=no]{background:#142e26;border-color:#2f5542;color:#8bd0ad}
+.dark .tracking-gate-error{background:#3a1f19;color:#ffb4a1}
+@media(max-width:480px){.tracking-gate{padding:12px}.tracking-gate-card{padding:18px 14px}.tracking-gate h1{font-size:17px}}
