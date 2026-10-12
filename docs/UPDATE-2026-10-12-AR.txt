@@ -65,7 +65,16 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
 - أ) التطبيق لم يعمل بعد Start App والقاعدة ما زالت 15 ترحيلًا (الترحيل يُلغى كاملًا إن فشل): أوقف التطبيق، ثم أعد المجلد القديم الذي حفظه المُفعِّل داخل مجلد النقطة الاحتياطية:
   cd /home/youriedx/yourrest-crm && mv release release-failed-20261012 && mv /home/youriedx/yourrest-update-activation-20261012-XXXXXX/old-release release
   (استبدل XXXXXX بالاسم الفعلي للمجلد الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT) ثم Start App. البيانات لم تتغير.
-- ب) الترحيل تم وتريد العودة: أوقف التطبيق، أعد القاعدة من النسخة الخاصة التي أُخذت قبل الترحيل مباشرة (yourrest-crm-data/schema-backups/before-0015_member_devices-….sqlite) ثم أعد المجلد القديم كما في (أ). أي بيانات أُدخلت بعد بدء التطبيق الجديد تضيع، فتواصل معي قبل التنفيذ.
+- ب) الترحيل تم (التطبيق الجديد بدأ) وتريد العودة: أي بيانات أُدخلت بعد بدء التطبيق الجديد تضيع، فتواصل معي قبل التنفيذ. الخطوات التي جُرّبت في البروفة بالترتيب:
+  1) Stop App ثم أعد المجلد القديم كما في (أ).
+  2) أعد القاعدة من النسخة الخاصة التي أُخذت قبل الترحيل مباشرة. ملفا -wal و -shm يبقيان بعد الإيقاف ويجب إزاحتهما أيضًا وإلا اختلطا بالقاعدة المستعادة:
+  cd /home/youriedx/yourrest-crm-data && ls schema-backups
+  mv database.sqlite database.sqlite.migrated-20261012
+  mv database.sqlite-wal database.sqlite-wal.migrated-20261012
+  mv database.sqlite-shm database.sqlite-shm.migrated-20261012
+  cp schema-backups/before-0015_member_devices-XXXXXX.sqlite database.sqlite && chmod 600 database.sqlite
+  (استبدل الاسم بالملف الذي يبدأ بـ before-0015_member_devices- كما ظهر في ls. إن قالت mv إن ملف -wal أو -shm غير موجود فلا مشكلة. لا تحذف الملفات التي أُزيحت.)
+  3) Start App. تعود القاعدة 15 ترحيلًا كما كانت قبل التحديث بالضبط.
 
 ملاحظات تشغيل
 - مندوب يبدّل هاتفه في منتصف اليوم: يوم التتبع مرتبط بالجهاز الأول، فقد يظهر على الهاتف الجديد «توقف التسجيل؛ يوم العمل مرتبط بجهاز آخر» ويبقى محجوبًا حتى اليوم التالي. هذه حالة نادرة؛ إن أصبحت تتكرر نضيف استثناءً مؤقتًا بتوقيع الإدارة.
