@@ -119,4 +119,27 @@ const sorted=queue.sortQueue([{id:'b',awaiting:null,late:false,strength:'strong'
 eq(sorted.map(e=>e.id),['a','c','d','b'],'mine, then late, then strength, then oldest');
 eq(queue.SERVICE_TARGET_HOURS,{approval:4,assignment:4,delegation:4,first_contact:24},'targets as decided');
 
+// ---- panel sections per role
+const ids=groups=>groups.map(g=>g.id+':'+g.entries.map(e=>e.id).join('+'));
+eq(ids(queue.queueGroups(sm,'manager')),['mine:case-1','late:case-2','active:case-4+case-3+case-8','closed:'],'manager sections: his to-do, what is late below him, the rest');
+eq(ids(queue.queueGroups(sup,'supervisor')),['mine:case-2','late:','active:case-4+case-3+case-8','closed:'],'supervisor sections');
+eq(ids(queue.queueGroups(rep,'rep')),['new:case-3+case-8','active:','closed:'],'representative sections: new first');
+eq(ids(queue.queueGroups(owner,'admin')).slice(0,2),['mine:case-6+case-1+case-5','late:case-2'],'administrator: approvals and assignments first (late, strong and oldest first), then every other late case');
+const closedEntry={...byId(sm,'case-4'),id:'done',stage:'closed',awaiting:null,late:false,escalated:false};
+eq(ids(queue.queueGroups([closedEntry],'manager')),['mine:','late:','active:','closed:done'],'closed cases are kept apart');
+eq(ids(queue.queueGroups([closedEntry],'rep')),['new:','active:','closed:done'],'also for a representative');
+
+// ---- reporting-line warnings on the team page
+const warn=(member)=>queue.serviceRoleWarning(member,members);
+eq(warn(members.find(x=>x.id==='cs')),'','a linked representative has no warning');
+eq(warn({id:'cs3',role:'customer_service',supervisorId:'',active:1}),'no_service_manager','a representative without a manager');
+eq(warn({id:'cs4',role:'customer_service',supervisorId:'sm',active:1}),'no_service_manager','a representative under a sales manager (not a customer-service manager)');
+eq(warn({id:'cs5',role:'customer_service',supervisorId:'ghost',active:1}),'no_service_manager','a representative under an unknown member');
+eq(warn(members.find(x=>x.id==='csm')),'','a linked customer-service manager has no warning');
+eq(warn({id:'csm2',role:'customer_service_manager',supervisorId:'',active:1}),'no_sales_manager','a customer-service manager without a sales manager');
+eq(warn({id:'csm3',role:'customer_service_manager',supervisorId:'sup',active:1}),'no_sales_manager','under a supervisor is not a manager');
+eq(warn({id:'cs6',role:'customer_service',supervisorId:'',active:0}),'','a disabled member needs no warning');
+eq(queue.serviceRoleWarning({id:'cs7',role:'customer_service',supervisorId:'csm-off',active:1},[...members,{id:'csm-off',role:'customer_service_manager',active:0}]),'no_service_manager','a disabled manager does not count');
+eq(warn(members.find(x=>x.id==='rep')),'','other roles never warn');
+
 console.log(JSON.stringify({ok:true,checks,pureFunctions:true,productionDataUsed:false}));
