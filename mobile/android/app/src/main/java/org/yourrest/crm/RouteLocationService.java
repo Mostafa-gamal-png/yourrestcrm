@@ -27,7 +27,7 @@ public final class RouteLocationService extends Service implements LocationListe
     private boolean continuous,foreground;
     private long authorizedWindowStart,scheduledAt;
     private final Runnable boundary=new Runnable(){public void run(){scheduledAt=0;refreshWindow();}};
-    private final Runnable heartbeat=new Runnable(){public void run(){refreshWindow();if(continuous)ContinuousRouteTracker.get(RouteLocationService.this).tick();else RouteTracker.get(RouteLocationService.this).tick();handler.postDelayed(this,30000);}};
+    private final Runnable heartbeat=new Runnable(){public void run(){refreshWindow();if(continuous)ContinuousRouteTracker.get(RouteLocationService.this).tick();else RouteTracker.get(RouteLocationService.this).tick();ServiceAlerts.poll(RouteLocationService.this,false);handler.postDelayed(this,30000);}};
     @Override public void onCreate(){super.onCreate();current=this;locations=(LocationManager)getSystemService(LOCATION_SERVICE);
         NotificationChannel channel=new NotificationChannel(CHANNEL,"تسجيل موقع يورست",NotificationManager.IMPORTANCE_LOW);
         channel.setDescription("إشعار ظاهر لخدمة تسجيل الموقع من 6 صباحًا إلى 6 مساءً بتوقيت المملكة، ما عدا الجمعة؛ جمع الموقع يتوقف خارج هذه الفترة");channel.setShowBadge(false);getSystemService(NotificationManager.class).createNotificationChannel(channel);

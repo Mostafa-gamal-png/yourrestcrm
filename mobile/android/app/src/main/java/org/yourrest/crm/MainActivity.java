@@ -102,7 +102,23 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
             if(url.startsWith("https://"))new AlertDialog.Builder(this).setMessage("فتح رابط التنزيل في المتصفح؟ قد يطلب تسجيل الدخول.").setPositiveButton("فتح",(dialog,which)->external(Uri.parse(url))).setNegativeButton("إلغاء",null).show();
             else new AlertDialog.Builder(this).setMessage("لتنزيل الملف استخدم صفحة CRM في المتصفح.").setPositiveButton("حسنًا",null).show();
         });
-        web.loadUrl(RouteRules.ORIGIN+"/");
+        String requested=requestedCase(getIntent());
+        web.loadUrl(RouteRules.ORIGIN+"/"+(requested==null?"":"#service-case="+requested));
+        getIntent().removeExtra(ServiceAlerts.EXTRA_CASE);
+    }
+    /** A tapped notification names a request; only the app's own action and a plain identifier are accepted. */
+    private String requestedCase(Intent intent){
+        if(intent==null||!ServiceAlerts.OPEN.equals(intent.getAction()))return null;
+        String id=intent.getStringExtra(ServiceAlerts.EXTRA_CASE);
+        return RouteRules.identifier(id)?id:null;
+    }
+    @Override protected void onNewIntent(Intent intent){
+        super.onNewIntent(intent);setIntent(intent);
+        String id=requestedCase(intent);intent.removeExtra(ServiceAlerts.EXTRA_CASE);
+        if(id==null||web==null)return;
+        // A running page is told directly (it never replaces unsaved work); a page that is not ready loads with the request in its address.
+        if(!pageNonce.isEmpty()&&RouteRules.trusted(web.getUrl()))web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:open-service-case',{detail:{id:"+JSONObject.quote(id)+"}}))",null);
+        else web.loadUrl(RouteRules.ORIGIN+"/?notification="+System.currentTimeMillis()+"#service-case="+id);
     }
     private String external(Uri uri){
         if(MapsLauncher.destination(uri.toString())!=null)return launchMaps(uri.toString());
@@ -263,7 +279,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
     @Override public void updateChanged(JSONObject state){if(web!=null&&!pageNonce.isEmpty()&&RouteRules.trusted(web.getUrl()))web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:app-update',{detail:"+state.toString()+"}))",null);}
     @Override public void installPermission(){startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())));}
     @Override public void confirmInstall(Intent intent){startActivity(intent);}
-    @Override protected void onResume(){super.onResume();resumed=true;if(updater!=null){updater.attach(this);updater.resume();}ContinuousRouteTracker.get(this).resumeFromActivity();RouteTracker.get(this).addListener(this);RouteTracker.get(this).flush(null);if(awaitingBackgroundSettings){awaitingBackgroundSettings=false;prepared(ContinuousRouteTracker.backgroundGranted(this)&&RouteTracker.get(this).permission()?null:"لم يتم منح الموقع الدقيق طوال الوقت؛ فعّله من إعدادات التطبيق");}}
+    @Override protected void onResume(){super.onResume();resumed=true;ServiceAlerts.poll(this,true);if(updater!=null){updater.attach(this);updater.resume();}ContinuousRouteTracker.get(this).resumeFromActivity();RouteTracker.get(this).addListener(this);RouteTracker.get(this).flush(null);if(awaitingBackgroundSettings){awaitingBackgroundSettings=false;prepared(ContinuousRouteTracker.backgroundGranted(this)&&RouteTracker.get(this).permission()?null:"لم يتم منح الموقع الدقيق طوال الوقت؛ فعّله من إعدادات التطبيق");}}
     @Override protected void onPause(){resumed=false;RouteTracker.get(this).removeListener(this);CookieManager.getInstance().flush();super.onPause();}
     @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
     @Override protected void onDestroy(){if(updater!=null)updater.detach(this);if(speech!=null)speech.invalidate();RouteTracker.get(this).removeListener(this);completeForegroundGeolocation(false);prepared("تم إغلاق نافذة التطبيق؛ افتحه ثم حاول مجددًا");if(files!=null)files.onReceiveValue(null);if(web!=null){pageNonce="";mapsHandoff=null;web.removeJavascriptInterface("YourrestNativeChannel");web.destroy();web=null;}super.onDestroy();}

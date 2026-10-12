@@ -106,6 +106,11 @@ async function request<T = OfflineSnapshot>(body?: Record<string, unknown>) { tr
 function downloadCsv(name: string, headers: string[], rows: unknown[][]) { const esc = (x: unknown) => { let s = String(x ?? ''); if (/^[=+\-@\t\r]/.test(s))
     s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; }; const a = document.createElement('a'); const url = URL.createObjectURL(new Blob(['\ufeff' + [headers.map(t), ...rows].map(r => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' })); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }
 function normalizeSearch(value:string){return value.normalize('NFKD').replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).toLowerCase().trim();}
+/** The holder's first opening of an assigned request is recorded once. Resolves true when something was sent. */
+function recordSeen(entry: ServiceQueueEntry): Promise<boolean> {
+    if (!entry.permissions.seen || entry.seenAt) return Promise.resolve(false);
+    return submitJson('/api/customer-service', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'seen', id: entry.id, version: entry.version, requestId: crypto.randomUUID() }) }, { language: getLanguage() }).then(() => true);
+}
 export default function CRM() {
     const {language}=useLanguage();const say=(ar:string,en:string)=>language==='ar'?ar:en;
     const [view, setView] = useState('dashboard'), [records, setRecords] = useState<Row[]>([]), [members, setMembers] = useState<Member[]>([]), [me, setMe] = useState<Member | null>(null), [audits, setAudits] = useState<Audit[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [auth, setAuth] = useState(false), [busy, setBusy] = useState(false);
@@ -132,6 +137,8 @@ export default function CRM() {
     const [offlineStorageError,setOfflineStorageError]=useState('');
     const snapshotRef=useRef<OfflineSnapshot|null>(null),loadGeneration=useRef(0),snapshotGeneration=useRef(0);
     const [serviceDetailId,setServiceDetailId]=useState(''),[serviceFilter,setServiceFilter]=useState('all'),[serviceQueue,setServiceQueue]=useState<ServiceQueueEntry[]>([]);
+    // A request named by a notification or a link, opened once the account's data is in hand.
+    const pendingServiceCase=useRef('');
     const [followupEditor,setFollowupEditor]=useState<{initial?:Row;customerId?:string;key:string}|null>(null);
     const [visitEditor, setVisitEditor] = useState<{
         initial?: Row;
@@ -150,6 +157,7 @@ export default function CRM() {
             setVisitEditor(null);setFollowupEditor(null);setForm(null);setRawDetailId(null);setMobileAccountOpen(false);setCustomerIdentitiesOpen(false);setDeleting(null);setPrintQuote(null);setServiceDetailId('');setDiscardForm(false);setFormDirty(false);
         }
         snapshotRef.current=d;setRecords(d.records);setMembers(d.members);setMe(d.me);setAudits(d.audits);setServiceQueue(Array.isArray(d.serviceQueue)?d.serviceQueue as ServiceQueueEntry[]:[]);
+        if(pendingServiceCase.current){const id=pendingServiceCase.current;pendingServiceCase.current='';const entry=(d.serviceQueue as ServiceQueueEntry[]|undefined)?.find(item=>item.id===id);if(entry)void recordSeen(entry).catch(()=>{});setVisitEditor(null);setServiceDetailId(id);}
         setView(current=>resolveCRMPage(d.me.role,current));setAuth(false);setError('');
     },[]);
     const clearSession=useCallback(()=>{
@@ -204,6 +212,20 @@ export default function CRM() {
         const timer=window.setInterval(()=>{if(document.visibilityState==='visible'&&navigator.onLine!==false&&!editorOpenRef.current)void load().catch(()=>{});},600000);
         return()=>window.clearInterval(timer);
     },[signedIn,load]);
+    // The Android app announces a tapped notification; a screen with unsaved work is never replaced underneath the person.
+    useEffect(()=>{
+        const open=(event:Event)=>{
+            const id=(event as CustomEvent<{id?:unknown}>).detail?.id;
+            if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(id))return;
+            if(!snapshotRef.current){pendingServiceCase.current=id;return;}
+            if(editorOpenRef.current){toast.info(getLanguage()==='ar'?'وصلك طلب من خدمة العملاء. أنهِ ما بين يديك ثم افتحه من الزيارات.':'A customer-service request arrived. Finish what you are doing, then open it from Visits.');return;}
+            const entry=(snapshotRef.current.serviceQueue as ServiceQueueEntry[]|undefined)?.find(item=>item.id===id);
+            if(entry)void recordSeen(entry).catch(()=>{});
+            go('activity');setServiceDetailId(id);
+        };
+        window.addEventListener('yourrest:open-service-case',open);
+        return()=>window.removeEventListener('yourrest:open-service-case',open);
+    },[go]);
     const createdCustomer=useCallback(async(id:string)=>{
         let d=await refreshLocal();let customer=d?.records.find(r=>r.id===id&&r.kind==='customer');
         if(!customer){await load();d=snapshotRef.current;customer=d?.records.find(r=>r.id===id&&r.kind==='customer');}
@@ -213,7 +235,7 @@ export default function CRM() {
     useEffect(()=>{const query=window.matchMedia('(max-width: 1023px)');const update=()=>{setCompactNavigation(query.matches);if(!query.matches)setMobileAccountOpen(false);};update();query.addEventListener('change',update);return()=>query.removeEventListener('change',update);},[]);
     useEffect(()=>{const update=()=>setOffline(navigator.onLine===false);update();window.addEventListener('online',update);window.addEventListener('offline',update);return()=>{window.removeEventListener('online',update);window.removeEventListener('offline',update);};},[]);
     useEffect(() => { const after = () => setPrintQuote(null); window.addEventListener('afterprint', after); return () => window.removeEventListener('afterprint', after); }, []);
-    useEffect(() => { load(); const hash = window.location.hash.slice(1); const v = hash === 'factory' ? 'customer' : (hash === 'opportunity'||hash === 'service') ? 'activity' : hash; if (v==='reports'||nav.some(n => n[0] === v))
+    useEffect(() => { load(); const hash = window.location.hash.slice(1), link = /^service-case=([A-Za-z0-9_-]{1,200})$/.exec(hash); if (link) { pendingServiceCase.current = link[1]; window.history.replaceState(null, '', '#activity'); } const v = link ? 'activity' : hash === 'factory' ? 'customer' : (hash === 'opportunity'||hash === 'service') ? 'activity' : hash; if (v==='reports'||nav.some(n => n[0] === v))
         setView(v); }, [load]);
     useEffect(() => { const context = (document as Document & { modelContext?: ModelContext }).modelContext; if (!context?.registerTool)
         return; const lifecycle = new AbortController(); for (const tool of [{ name: 'read_crm_summary', title: 'قراءة ملخص يورست', description: 'Read the currently authorized CRM totals without modifying data.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true }, execute: async (input: Record<string, unknown>) => { if (!input || Object.keys(input).length)
@@ -268,8 +290,7 @@ export default function CRM() {
     function openFollowup(customerId?:string,initial?:Row,sourceId?:string){if(initial?.data._offlineState){toast.info(say('المتابعة محفوظة على الجهاز. راجع حالة المزامنة.','This follow-up is saved on the device. Check sync status.'));return;}if(!initial){const source=latestCustomerContact(customerId||'',salesRecords);if(source?.data._offlineState||source?.data._offlineAcknowledged){toast.info(say('انتظر تأكيد رفع الزيارة السابقة قبل تنفيذ متابعتها.','Wait for the previous visit to sync before recording its follow-up.'));return;}if(!source||sourceId&&source.id!==sourceId||!canExecuteCustomerFollowup(source)){toast.error(t('افتح الزيارة السابقة وحدد الإجراء القادم وموعد المتابعة أولًا.'));return;}}setRawDetailId(null);setForm(null);setVisitEditor(null);setFollowupEditor({customerId,initial,key:crypto.randomUUID()});}
     // The holder's first opening of an assigned case is recorded once; a failure never blocks opening it.
     function markSeen(entry: ServiceQueueEntry) {
-        if (!entry.permissions.seen || entry.seenAt) return;
-        void submitJson('/api/customer-service', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'seen', id: entry.id, version: entry.version, requestId: crypto.randomUUID() }) }, { language: getLanguage() }).then(() => load()).catch(() => {});
+        void recordSeen(entry).then(sent => { if (sent) return load(); }).catch(() => {});
     }
     function openServiceCase(entry: ServiceQueueEntry) { markSeen(entry); setVisitEditor(null); setServiceDetailId(entry.id); }
     function visitFromQueue(entry: ServiceQueueEntry) { markSeen(entry); openVisit(undefined, entry.customerId); }

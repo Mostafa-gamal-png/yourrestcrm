@@ -45,7 +45,7 @@ try {
   }
 
   /** A signed-in page. native: false = plain browser, object = the Android app emulator (the phone is set up for that account). */
-  async function open(memberId, {native = false, viewport = PHONE, clock = false} = {}) {
+  async function open(memberId, {native = false, viewport = PHONE, clock = false, hash = ''} = {}) {
     const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', geolocation: {latitude: 26.437341, longitude: 50.034499, accuracy: 8}, permissions: ['geolocation']});
     const cookie = await app.login(memberId), [name, ...value] = cookie.split('=');
     await context.addCookies([{name, value: value.join('='), url: app.origin, httpOnly: true, secure: true, sameSite: 'Lax'}]);
@@ -54,7 +54,7 @@ try {
     page.on('pageerror', error => errors.push(memberId + ': ' + error.message));
     if (clock) await page.clock.install();
     if (native) await installNativeBridge(page, native === true ? {} : native);
-    await page.goto(app.origin + '/');
+    await page.goto(app.origin + '/' + hash);
     await page.locator('.workspace').waitFor();
     return page;
   }
@@ -210,6 +210,27 @@ try {
     ok((await banner.innerText()).includes('و1 أخرى'), 'the banner says there is another');
     check(await badgeOf(tab), '2', 'and the tab counts two');
 
+    // a tapped notification: the app tells the running page, which opens that request and records the opening
+    await rep.evaluate(id => window.dispatchEvent(new CustomEvent('yourrest:open-service-case', {detail: {id}})), secondId);
+    const named = rep.locator('.service-sheet');
+    await named.waitFor();
+    ok((await named.innerText()).includes(CUSTOMER_2), 'a tapped notification opens that request on the running page');
+    const namedRow = await eventually(async () => { const row = await caseRow(secondId); return row.data.seenAt && row; }, 'the opening through the notification is recorded');
+    check(namedRow.data.seenBy, 'rep', 'by the holder');
+    await rep.keyboard.press('Escape');
+    await named.waitFor({state: 'detached'});
+    await rep.evaluate(() => { for (const id of ['', 'a b', '"><x>', 'x'.repeat(201), 42, null]) window.dispatchEvent(new CustomEvent('yourrest:open-service-case', {detail: {id}})); });
+    await pause(600);
+    check(await rep.locator('.service-sheet').count(), 0, 'an identifier that is not plain opens nothing');
+    // a cold start from a notification or a link carries the request in its address and consumes it
+    const cold = await open('rep', {native: {memberId: 'rep', regionScope: 'all'}, hash: '#service-case=' + caseId});
+    await cold.locator('.service-sheet').waitFor();
+    ok((await cold.locator('.service-sheet').innerText()).includes(CUSTOMER), 'a cold start opens the request named in the address');
+    check(await cold.evaluate(() => location.hash), '#activity', 'and leaves the address on the Visits page');
+    await cold.keyboard.press('Escape');
+    await cold.locator('.service-sheet').waitFor({state: 'detached'});
+    await cold.context().close();
+
     // an open editor is never reloaded underneath the person typing
     await banner.getByRole('button', {name: 'تسجيل زيارة'}).click();
     const dialog = rep.locator('.customer-visit-dialog');
@@ -219,6 +240,9 @@ try {
     const next = dialog.getByRole('textbox', {name: /^الإجراء القادم/});
     check(await next.inputValue(), 'اتصال بالعميل', 'the next step comes from the request');
     await next.fill('اتصال أول بالعميل لتحديد موعد');
+    await rep.evaluate(id => window.dispatchEvent(new CustomEvent('yourrest:open-service-case', {detail: {id}})), secondId);
+    await rep.locator('[data-sonner-toast]', {hasText: 'أنهِ ما بين يديك'}).waitFor();
+    check([await rep.locator('.service-sheet').count(), await next.inputValue(), await dialog.count()], [0, 'اتصال أول بالعميل لتحديد موعد', 1], 'a notification tapped while a visit is being written never replaces it: a notice only');
     const mid = crmGets;
     await tenMinutes(rep);
     await pause(1500);
