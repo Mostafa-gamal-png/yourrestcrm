@@ -18,6 +18,16 @@ export type GateDevice={
  notifications:GatePermission|null;
  background:GatePermission;
  locationServices:boolean|null;
+ /** Collector facts that never affect the decision; they feed the status report only. */
+ tracking:boolean;
+ windowActive:boolean;
+ lastFixAt:string;
+ accuracy:number|null;
+ pendingCount:number;
+ pendingGapCount:number|null;
+ quarantinedCount:number;
+ error:string;
+ syncError:string;
 };
 /** What the tracker knows before any decision is made. `failed` means the
  * Android bridge could not be read at all; it is not a permission problem. */
@@ -43,7 +53,16 @@ export function gateDeviceFrom(state:NativeTrackingState,memberId:string|undefin
   fineLocation:state.fineLocationPermission,
   notifications:state.notificationPermission,
   background:state.backgroundPermission,
-  locationServices:state.locationServicesEnabled
+  locationServices:state.locationServicesEnabled,
+  tracking:state.tracking,
+  windowActive:state.trackingWindowActive,
+  lastFixAt:state.lastFixAt,
+  accuracy:state.accuracy,
+  pendingCount:state.pendingCount,
+  pendingGapCount:state.pendingGapCount,
+  quarantinedCount:state.quarantinedCount??0,
+  error:state.error,
+  syncError:state.syncError
  };
 }
 

@@ -63,6 +63,11 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/device-status-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/erp-sales-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

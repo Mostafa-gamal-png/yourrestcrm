@@ -8,6 +8,7 @@ import {useLanguage} from '@/lib/i18n';
 import {isNativeTrackingApp,nativeTrackingRequest,nativeTrackingGeneration,subscribeNativeTracking,nativeScheduleSupported,type NativeTrackingState} from '@/lib/native-tracking';
 import {trackingWindowOpen,trackingWindowStatus} from '@/lib/tracking-window';
 import {gateDeviceFrom,type GateSource} from '@/lib/tracking-gate';
+import {cleanTrackerText} from '@/lib/tracker-text';
 import './journey-tracker.css';
 import {omit} from '@/lib/omit';
 
@@ -19,11 +20,7 @@ const nativeFailureKind=(message:string,fallback:TrackerError='native'):TrackerE
 const blockingNativeError=(state:NativeTrackingState)=>!!state.error&&!['sync','unavailable','invalid'].includes(nativeFailureKind(state.error));
 const nativeSyncProblem=(state:NativeTrackingState)=>state.syncError||(state.error&&nativeFailureKind(state.error)==='sync'?state.error:'');
 const memberTrackerScope=(me:Member|null)=>[me?.id,me?.role,me?.active,me?.regionScope,me?.authVersion,me?.supervisorId,me?.branch].join(':');
-/** Return only a human error/code, never a bridge payload, stack or credentials. */
-const selectFailureMessage=(failure:unknown,fallback:string)=>{
- const message=typeof failure==='string'?failure:failure&&typeof failure==='object'&&'message' in failure&&typeof failure.message==='string'?failure.message:fallback;
- return message.split(/\r?\n/,1)[0].replace(/https?:\/\/[^\s]+/gi,'[link]').replace(/\bBearer\s+[^\s,;]+/gi,'Bearer [redacted]').replace(/((?:token|password|secret|api[_-]?key|authorization|cookie|session(?:_id)?|otp)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,'$1[redacted]').replace(/\beyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2}\b/g,'[redacted]').trim().slice(0,240)||fallback;
-};
+const selectFailureMessage=(failure:unknown,fallback:string)=>cleanTrackerText(failure,fallback);
 type ContinuousStatus='disabled'|'loading'|'upgrade'|'setup'|'ready'|'browser';
 type SelectionOptions={createKey?:string};
 type TrackerContext={isRep:boolean;continuousStatus:ContinuousStatus;setupContinuous:()=>Promise<void>;active:JourneyStop|null;lastStop:JourneyStop|null;loading:boolean;busy:boolean;error:TrackerError;errorMessage:string;pendingCount:number;quarantinedCount?:number;quarantinedGapCount?:number;hidden:boolean;paused:boolean;outsideTrackingHours:boolean;lastFixAt:string;accuracy:number|null;native:boolean;appVersion:string;mapsLaunchSupported:boolean;foregroundDirectionsSupported:boolean;tracking:boolean;gate:GateSource;selectCustomer:(id:string,signal?:AbortSignal,options?:SelectionOptions)=>Promise<JourneyStop|null>;selectFailure:()=>string;cancelSelection:(id:string,reason?:string,stopId?:string)=>Promise<void>;stopDay:()=>Promise<void>;retry:()=>void;stopFor:(customerId:string)=>JourneyStop|null};
