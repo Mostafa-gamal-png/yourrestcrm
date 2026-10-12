@@ -92,6 +92,20 @@ try {
   refuseFor(grown, ['--new-migration', '0015_Member.sql'], 'a malformed migration name');
   for (const route of ['api/device-status=401', '/api/device-status', '/api/device-status=abc', '/api/device-status=99', '/api/x?y=1=401', '/api/../x=401', '/=200=200'])
     refuseFor(grown, ['--new-migration', newest, '--verify-route', route], 'an unsafe verification route: ' + route);
+  // A release that changes no schema on top of an already migrated database states its baseline instead.
+  const flat = JSON.parse(execFileSync('python3', [script, '--release', grown, '--output', path.join(work, 'flat.zip'), '--release-name', 'update', '--release-date', '20261013', '--stage-name', 'yourrest-crm-update-20261013', '--helper-name', helperName, '--schema-baseline', '16', '--verify-route', '/api/service-report=401', '--verify-route', '/api/service-queue/alerts=401'], {encoding: 'utf8'}));
+  eq([flat.schemaBefore, flat.schemaAfter, flat.newMigrations, flat.verifyRoutes], [16, 16, [], [['/api/service-report', 401], ['/api/service-queue/alerts', 401]]], 'the report states a 16-migration baseline with nothing new');
+  const flatDir = path.join(work, 'flat-extracted');
+  execFileSync('python3', ['-c', 'import zipfile,sys;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', path.join(work, 'flat.zip'), flatDir]);
+  const flatHelper = require(path.join(flatDir, helperName));
+  eq([flatHelper.SCHEMA_BEFORE, flatHelper.SCHEMA_AFTER, flatHelper.NEW_MIGRATIONS, flatHelper.EXTRA_ROUTES], [16, 16, [], [['/api/service-report', 401], ['/api/service-queue/alerts', 401]]], 'the pinned activator carries the baseline and the extra probes');
+  eq(fs.readFileSync(path.join(flatDir, helperName), 'utf8').includes('__UI_REFRESH_'), false, 'no template token left in the 16-baseline activator');
+  eq(fs.readFileSync(path.join(flatDir, 'UPDATE-UI-REFRESH-AR.txt'), 'utf8').includes('(16 ترحيلًا)'), true, 'the default guide names the baseline');
+  refuseFor(build, ['--schema-baseline', '16'], 'a build with fewer migrations than the stated baseline');
+  refuseFor(grown, ['--schema-baseline', '15'], 'a build with an undeclared migration beyond the baseline');
+  refuseFor(grown, ['--schema-baseline', '17'], 'a baseline above what the build carries');
+  refuseFor(grown, ['--schema-baseline', '16', '--new-migration', newest], 'a declared migration that is part of the baseline');
+  for (const baseline of ['14', '0', '-1', '100', '15.5', 'abc', '']) refuseFor(grown, ['--schema-baseline', baseline], 'an unusable baseline: ' + JSON.stringify(baseline));
   fs.rmSync(path.join(grown, 'drizzle', newest));
   refuseFor(grown, ['--new-migration', newest], 'a manifest entry whose file is missing from the build');
 

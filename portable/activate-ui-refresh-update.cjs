@@ -18,14 +18,14 @@ const RELEASE_DATE = '20261008'; // __UI_REFRESH_RELEASE_DATE__
 const STAGE_DIR = 'yourrest-ui-update-20261008'; // __UI_REFRESH_STAGE_DIR__
 // The live database must hold exactly SCHEMA_BEFORE migrations; the release carries SCHEMA_AFTER, and the ones
 // beyond SCHEMA_BEFORE are NEW_MIGRATIONS, which the application applies on its first start.
-const SCHEMA_BEFORE = 15;
+const SCHEMA_BEFORE = 15; // __UI_REFRESH_SCHEMA_BEFORE__
 const SCHEMA_AFTER = 15; // __UI_REFRESH_SCHEMA_AFTER__
 const NEW_MIGRATIONS = []; // __UI_REFRESH_NEW_MIGRATIONS__
 // Anonymous probes the verification adds for routes introduced by the release: [path, expected status].
 const EXTRA_ROUTES = []; // __UI_REFRESH_EXTRA_ROUTES__
 const ACTIVATION_FORMAT = 'yourrest-' + RELEASE_NAME + '-activation-' + RELEASE_DATE;
 // Same-day backups written by earlier activators remain reusable alongside this release's own.
-const BACKUP_TRANSACTION = new RegExp('^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008|update-activation-20261011|' + (RELEASE_NAME + '-activation-' + RELEASE_DATE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')-[A-Za-z0-9-]+$');
+const BACKUP_TRANSACTION = new RegExp('^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008|update-activation-20261011|update-activation-20261012|' + (RELEASE_NAME + '-activation-' + RELEASE_DATE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')-[A-Za-z0-9-]+$');
 const fail = code => { throw Object.assign(new Error(code), {code}); };
 const exists = p => { try { fs.lstatSync(p); return true; } catch(e) { if(e.code === 'ENOENT') return false; throw e; } };
 const inside = (p, root) => p === root || p.startsWith(root + path.sep);
@@ -233,7 +233,7 @@ function dailyPaths(config,p) {
 }
 function checkDailyShape(p,index,day,config,now) {
   const relative = dailyPaths(config,p);
-  if(!index || index.format !== 'yourrest-daily-backup-v1' || index.home !== p.home || index.day !== day || ![14,SCHEMA_BEFORE].includes(index.backupSchema) || typeof index.transaction !== 'string' || path.dirname(index.transaction) !== p.home || !BACKUP_TRANSACTION.test(path.basename(index.transaction)) || index.databaseRelative !== relative.databaseRelative || index.objectsRelative !== relative.objectsRelative || !/^[a-f0-9]{64}$/.test(index.applicationSeal || '') || !/^[a-f0-9]{64}$/.test(index.dataSeal || '')) fail('INVALID_DAILY_BACKUP_INDEX');
+  if(!index || index.format !== 'yourrest-daily-backup-v1' || index.home !== p.home || index.day !== day || !Number.isInteger(index.backupSchema) || index.backupSchema < 14 || index.backupSchema > SCHEMA_BEFORE || typeof index.transaction !== 'string' || path.dirname(index.transaction) !== p.home || !BACKUP_TRANSACTION.test(path.basename(index.transaction)) || index.databaseRelative !== relative.databaseRelative || index.objectsRelative !== relative.objectsRelative || !/^[a-f0-9]{64}$/.test(index.applicationSeal || '') || !/^[a-f0-9]{64}$/.test(index.dataSeal || '')) fail('INVALID_DAILY_BACKUP_INDEX');
   if(timestamp(index.createdAt) > timestamp(index.verifiedAt) || timestamp(index.verifiedAt) > now().getTime() || riyadhDay(index.createdAt) !== day || riyadhDay(index.verifiedAt) !== day) fail('INVALID_DAILY_BACKUP_DATE');
   directory(index.transaction,true); directory(path.join(index.transaction,'application')); directory(path.join(index.transaction,'data'),true);
 }
