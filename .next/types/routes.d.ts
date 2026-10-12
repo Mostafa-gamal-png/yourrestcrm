@@ -22,8 +22,8 @@ declare global {
 declare namespace VinextRouteTypes {
   type PageRoute = "/" | "/login";
   type LayoutRoute = "/";
-  type RouteHandlerRoute = "/api/app-update" | "/api/auth/[action]" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/sales" | "/api/sales/import" | "/api/targets" | "/api/visit-files" | "/api/visits";
-  type AppRoute = "/" | "/api/app-update" | "/api/auth/[action]" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/sales" | "/api/sales/import" | "/api/targets" | "/api/visit-files" | "/api/visits" | "/login";
+  type RouteHandlerRoute = "/api/app-update" | "/api/auth/[action]" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/device-status" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/sales" | "/api/sales/import" | "/api/targets" | "/api/visit-files" | "/api/visits";
+  type AppRoute = "/" | "/api/app-update" | "/api/auth/[action]" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/device-status" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/sales" | "/api/sales/import" | "/api/targets" | "/api/visit-files" | "/api/visits" | "/login";
 
   interface ParamMap {
     "/": {};
@@ -35,6 +35,7 @@ declare namespace VinextRouteTypes {
     "/api/customer-identities": {};
     "/api/customer-service": {};
     "/api/customers/import": {};
+    "/api/device-status": {};
     "/api/followups": {};
     "/api/journeys": {};
     "/api/kpi-evidence": {};
