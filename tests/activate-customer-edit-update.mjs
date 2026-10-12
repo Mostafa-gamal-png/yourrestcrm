@@ -23,7 +23,8 @@ try{
  for(const name of ['app.cjs','server.js'])put(path.join(build,name),'// isolated release fixture\n');
  put(path.join(build,'package.json'),'{}\n');
  for(const name of ['config.cjs','initialize.mjs'])fs.copyFileSync(path.join(root,'portable',name),path.join(build,'operations',name));
- const migrations=fs.readdirSync(path.join(root,'drizzle')).filter(name=>name.endsWith('.sql')).sort();
+ // This historical activator belongs to the release whose schema ended at 0014; later migrations are not part of its fixture.
+ const migrations=fs.readdirSync(path.join(root,'drizzle')).filter(name=>name.endsWith('.sql')&&name<='0014_customer_identities.sql').sort();
  eq(migrations.length,15);
  for(const name of migrations)fs.copyFileSync(path.join(root,'drizzle',name),path.join(build,'drizzle',name));
  put(path.join(build,'drizzle/manifest.json'),JSON.stringify({format:'yourrest-migrations-v1',files:migrations.map(name=>({name,sha256:hash(fs.readFileSync(path.join(build,'drizzle',name)))}))}));
