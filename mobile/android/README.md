@@ -1,4 +1,4 @@
-# Yourrest CRM Android 1.0.10 (versionCode 11)
+# Yourrest CRM Android 1.0.11 (versionCode 12)
 
 ## Updates inside the app
 
@@ -19,6 +19,16 @@ Public update metadata is generated from the verified APK build report using
 `/api/app-update`. Do not change the APK without regenerating this metadata.
 
 Native Android 8+ container for `https://crm.yourrest.org`, targeting API 35. Install the matching CRM server update before this APK. The Android package and signing identity remain unchanged from earlier releases.
+
+## Customer-service request notifications in 1.0.11
+
+Version 1.0.11 tells a representative when customer service assigns a request to them, even while Yourrest is closed or the phone is locked. The tracking foreground service (working hours: 06:00 to 18:00 Asia/Riyadh, never Friday) asks `GET /api/service-queue/alerts` every ten minutes through the signed-in session; opening or returning to the app asks at most once a minute. The server answers with the requests that wait for that member personally: identifier, customer name, a one-line need, what is expected (first contact, assign, delegate or approve), whether it was already opened and when it began waiting. No registration text, attachment, note, phone number or location is part of the answer, and the session cookie never leaves native memory.
+
+A request is announced once per start (`id@since`); a re-assignment is a new start. Announced keys are kept per member in private preferences for 30 days (at most 300) and another member signing in on the same phone starts clean. `ServiceAlertPolicy` also skips requests already opened, skips announcing while the person is looking at the app (the page already shows the request) and folds more than three new requests into one summary. The lock screen shows only a generic title; the customer and need appear after unlocking. The channel is "طلبات خدمة العملاء" (high importance); on Android 13+ the notification permission is the one the tracking setup already asks for. Tapping a notification opens that request in the CRM: a running page receives `yourrest:open-service-case`, a cold start loads `#service-case=ID`, and a screen with unsaved work is never replaced.
+
+Managers and supervisors, who do not run the tracking service, see the same requests in the Visits badge, panel and banner when they open the app or the website; this release has no background polling for them. Installed apps older than 1.0.11 keep working and receive requests in the page without the phone notification.
+
+Not verified here: delivery on a real phone, Doze and battery-optimisation behaviour, and notification permission prompts on Android 13+. Test on company phones before relying on it.
 
 ## Offline route recovery in 1.0.9
 
@@ -80,5 +90,7 @@ The Maps launcher has 120 executable parser/transport and integration-source che
 Before rollout, verify on actual representative devices: first consent and permissions; start a selected customer's trip with a queued GPS backlog; launch installed Google Maps during and outside tracking hours; test HTTPS fallback with Maps disabled and a clear error if no browser is enabled; return to the CRM after Maps while sync is active; foreground/background transitions during a start request; collection while locked and using Maps; stationary stops; lost GPS and internet; 06:00 start and 18:00 pause while locked; Thursday-to-Saturday scheduling and no Friday GPS subscriptions; timezone/clock changes; offline reconnect after 18:00; reboot/package update; system stop; permission removal; logout/account switching; same-account recovery of queued data after logout; offline reboot/new-workday recovery with a valid lease; rejection and lease-expiry cases; queues older than 48 hours; storage-full behavior; and scoped supervisor reports. OEM battery settings may affect restart reliability.
 
 Standard build: AGP 8.9.2, Gradle 8.13, JDK 17, SDK 35. Debug builds have `.dev` appended to the package. The alternative pinned open-source build is described in `tools/README.md`; it does not auto-accept an Android SDK license. Keep the private signing key outside the source package and use the same certificate for all APK updates. A signed APK is not evidence of store review or device testing.
+
+The notification rules have their own check (`ServiceAlertCheck`, 75 checks: cadence, validity of what the server sends, news and de-duplication, retention, wording, summary, and source guards for the fixed origin, bounded answer, private lock screen and the single-top activity). With a plain JDK: `javac -d out RouteRules.java ServiceAlertPolicy.java ServiceAlertCheck.java`, then `java -cp out org.yourrest.crm.ServiceAlertCheck <main Java source directory>`.
 
 Run pure Java checks with JDK 17, compiling `RouteRules.java`, `OutboxDrain.java`, `ContinuousPolicy.java`, `MapsLauncher.java` and their corresponding test classes in `app/src/test/java/org/yourrest/crm`, then run `RouteRulesCheck`, `OutboxDrainCheck`, `DirectionsCheck`, `ContinuousPolicyCheck`, `TripStartCheck` and `MapsLaunchCheck`. For the last two checks, pass the main Java source directory as their first argument when running outside the CRM project root. The full source compile additionally requires an Android 35 API classpath and generated Android resources.

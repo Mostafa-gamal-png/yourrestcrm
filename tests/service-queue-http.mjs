@@ -29,12 +29,15 @@ try {
   const getCase = async (id, caseId) => (await cases(id)).cases.find(item => item.id === caseId);
   const act = async (id, caseId, body) => { const item = await getCase(id, caseId); return as(id)('/api/customer-service', {method: 'POST', body: {requestId: crypto.randomUUID(), id: caseId, version: item?.version, ...body}}); };
   const entry = (list, caseId) => list.find(item => item.id === caseId);
+  const alerts = async id => (await as(id)('/api/service-queue/alerts')).json();
+  const alertRows = async id => (await alerts(id)).alerts.map(item => [item.id, item.awaiting, item.seen]);
   const registration = {type: 'call', summary: 'PRIVATE-REGISTRATION-SUMMARY', result: 'متابعة العميل', salesStage: 'won', strength: 'strong', requestedProducts: ['قوالب البلوك المتحركة', 'خدمات صيانة'], nextAction: 'متابعة الاحتياج', nextDate: day, location: '26.437341, 50.034499', locationSource: 'device', locationCapturedAt: now, locationAccuracy: 12, customerNeeds: 'طلب صيانة وقالب', hasCompetitor: true, competitorName: 'Competitor', competitorNotes: 'PRIVATE-COMPETITOR-NOTE'};
 
   // ---- the field exists for everyone; customer service gets an empty list
   for (const id of ['owner', 'sm', 'sup', 'rep', 'cs', 'csm']) check(Array.isArray((await crm(id)).serviceQueue), true, id + ' receives a serviceQueue list');
   check([(await queue('cs')).length, (await queue('csm')).length], [0, 0], 'customer service has its own rows, not a queue');
-
+  check((await app.request('/api/service-queue/alerts')).status, 401, 'anonymous callers get 401 from the alerts endpoint too');
+  for (const id of ['owner', 'sm', 'sup', 'rep', 'cs', 'csm']) { const answer = await as(id)('/api/service-queue/alerts'); check([id, answer.status, answer.headers['cache-control'], answer.json().alerts, answer.json().memberId], [id, 200, 'no-store', [], id], id + ' asks the app endpoint: nothing waits, never cached'); }
   // ---- registration by customer service, with a private registration text
   const created = await as('cs')('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'f1', customerVersion: 1, registration, elapsedMilliseconds: 2200}});
   check(created.status, 200, 'customer service registers a request: ' + created.text.slice(0, 100));
@@ -45,7 +48,11 @@ try {
 
   // ---- approval routes it to the manager, whose queue now carries it
   check((await act('csm', id1, {action: 'approve', targetId: 'sm'})).status, 200, 'the customer-service manager approves to the sales manager');
-  check((await queue('sm2')).length, 0, 'another manager does not see it');
+  check([await alertRows('sm'), await alertRows('csm'), await alertRows('cs'), await alertRows('sup')], [[[id1, 'assign', false]], [], [], []], 'the app is told only for the manager the request now waits for');
+  const managerAlert = (await alerts('sm')).alerts[0];
+  check([managerAlert.customerName, managerAlert.need, Object.keys(managerAlert).sort()], ['مصنع f1', 'طلب صيانة وقالب', ['awaiting', 'customerName', 'id', 'need', 'seen', 'since']], 'with the customer, the short need and nothing else');
+  check(JSON.stringify(await alerts('sm')).includes('PRIVATE-') || JSON.stringify(await alerts('owner')).includes('PRIVATE-'), false, 'no registration text or competitor note in any alert');
+  check((await alerts('owner')).alerts, [], 'the administrator is not personally waited for');  check((await queue('sm2')).length, 0, 'another manager does not see it');
   check((await queue('sup')).length, 0, 'a supervisor does not see a case still waiting for the manager');
   let smEntry = entry(await queue('sm'), id1);
   check([smEntry.stage, smEntry.awaiting, smEntry.ownerId, smEntry.late, smEntry.currentRepId, smEntry.permissions.assign], ['assignment', 'assign', 'sm', false, 'rep', true], 'the manager sees it awaiting his assignment, with the customer\'s current representative');
@@ -58,12 +65,13 @@ try {
 
   // ---- assignment to a supervisor with a note, then delegation to a representative with another
   check((await act('sm', id1, {action: 'assign', targetId: 'sup', note: 'ركّز على قطع الغيار'})).status, 200, 'the manager assigns to a supervisor with an instruction');
-  let supEntry = entry(await queue('sup'), id1);
+  check([await alertRows('sm'), await alertRows('sup')], [[], [[id1, 'delegate', false]]], 'the request moves from the manager\'s alerts to the supervisor\'s');  let supEntry = entry(await queue('sup'), id1);
   check([supEntry.stage, supEntry.awaiting, supEntry.assignmentNote, supEntry.assignmentNoteBy, supEntry.permissions.delegate], ['delegation', 'delegate', 'ركّز على قطع الغيار', 'sm', true], 'the supervisor sees it awaiting delegation with the instruction');
   check(entry(await queue('sm'), id1).stage, 'delegation', 'the manager follows it');
   check((await queue('rep')).length, 0, 'the representative does not see it yet');
   check((await act('sup', id1, {action: 'delegate', targetId: 'rep2', note: 'ابدأ بالاتصال'})).status, 200, 'the supervisor delegates to a representative with a note');
-  check((await act('sup', id1, {action: 'delegate', targetId: 'rep2'})).status, 403, 'delegating to the current holder again is refused');
+  check([await alertRows('sup'), await alertRows('rep2'), await alertRows('rep')], [[], [[id1, 'first_contact', false]], []], 'then to the representative it reaches, unopened');
+  const firstSince = (await alerts('rep2')).alerts[0].since;  check((await act('sup', id1, {action: 'delegate', targetId: 'rep2'})).status, 403, 'delegating to the current holder again is refused');
   check((await act('sup', id1, {action: 'delegate', targetId: 'repw'})).status, 403, 'delegating outside the region is refused');
 
   // ---- the representative: brief, instruction, chain history, never the private registration
@@ -94,7 +102,7 @@ try {
   check((await act('rep2', id1, {action: 'seen'})).status, 200, 'the holder marks the case opened');
   const again = await act('rep2', id1, {action: 'seen'});
   check([again.status, again.json().alreadySeen], [200, true], 'opening twice records once');
-  check((await act('sup', id1, {action: 'seen'})).status, 403, 'only the holder can mark it opened');
+  check(await alertRows('rep2'), [[id1, 'first_contact', true]], 'once opened, the alert says so and the app stays silent');  check((await act('sup', id1, {action: 'seen'})).status, 403, 'only the holder can mark it opened');
   check((await act('cs', id1, {action: 'seen'})).status, 403, 'customer service cannot either');
   const seenEntry = entry(await queue('sm'), id1);
   check([seenEntry.seenByName, seenEntry.seenAt.length > 10], ['rep2', true], 'the manager sees who opened it and when');
@@ -108,7 +116,8 @@ try {
   check((await act('sm', id1, {action: 'reassign', targetId: 'rep2'})).status, 403, 'the current holder is not a valid target');
   check((await act('sm', id1, {action: 'reassign', targetId: 'repw'})).status, 403, 'nor is someone from another region');
   check((await act('sm', id1, {action: 'reassign', targetId: 'rep', note: 'انتقل إليك بدل زميلك'})).status, 200, 'the manager re-assigns to another representative with a note');
-  const owned = await app.db.prepare("SELECT assigned_to AS a FROM crm_records WHERE id='f1'").first();
+  const moved = await alerts('rep');
+  check([await alertRows('rep2'), moved.alerts.map(item => [item.id, item.awaiting, item.seen]), moved.alerts[0].since > firstSince], [[], [[id1, 'first_contact', false]], true], 'a re-assignment tells the new holder afresh, with a newer start');  const owned = await app.db.prepare("SELECT assigned_to AS a FROM crm_records WHERE id='f1'").first();
   check(owned.a, 'rep', 'the customer moved with the case');
   const newHolder = entry(await queue('rep'), id1);
   check([newHolder.stage, newHolder.awaiting, newHolder.seenAt, newHolder.contactsSinceDispatch, newHolder.assignmentNote], ['first_contact', 'first_contact', '', 0, 'انتقل إليك بدل زميلك'], 'the new holder starts afresh: not opened, no contact, the manager\'s note');
@@ -127,7 +136,7 @@ try {
   const visit = await as('rep')('/api/visits', {method: 'POST', body: {createKey: crypto.randomUUID(), customerId: 'f1', customerVersion: (await app.db.prepare("SELECT version FROM crm_records WHERE id='f1'").first()).version, timingMode: 'automatic', elapsedMilliseconds: 2000, data: {type: 'call', date: day, summary: 'تواصل مع العميل', result: 'تم التواصل', salesStage: 'new', strength: 'medium', nextAction: 'زيارة فنية', nextDate: day, location: '26.43, 50.03', locationSource: 'device', locationCapturedAt: new Date().toISOString(), locationAccuracy: 10}}});
   check(visit.status, 200, 'the representative records the first contact: ' + visit.text.slice(0, 120));
   const contacted = entry(await queue('rep'), id1);
-  check([contacted.stage, contacted.awaiting, contacted.contactsSinceDispatch, contacted.targetHours, contacted.late], ['follow_up', null, 1, null, false], 'the case is now in follow-up and no longer awaits him');
+  check([await alertRows('rep'), (await alerts('rep')).count], [[], 0], 'after the first contact nothing waits for him and the count clears');  check([contacted.stage, contacted.awaiting, contacted.contactsSinceDispatch, contacted.targetHours, contacted.late], ['follow_up', null, 1, null, false], 'the case is now in follow-up and no longer awaits him');
   check(entry(await queue('sm'), id1).stage, 'follow_up', 'the manager sees the same stage');
   check((await getCase('cs', id1)).contacts.length, 1, 'customer service sees the contact');
   check((await act('sm', id1, {action: 'reassign', targetId: 'rep2'})).status, 200, 'a case with contacts can still be re-assigned');

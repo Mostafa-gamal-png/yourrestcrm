@@ -206,6 +206,8 @@ node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-الق�
 | `app/service-queue.tsx` و`app/service-queue.css` | اللوحة في صفحة «الزيارات»، وشريط المندوب، وشارة العدّاد، وتنبيه ارتباط الموظف بمديره في صفحة الفريق |
 | `app/crm-app.tsx` | يحمل `serviceQueue` من `/api/crm` ويعيد التحميل كل عشر دقائق للمتصل الخامل (لا يعيد التحميل تحت محرر أو نافذة مفتوحة) |
 | `lib/service-report.ts` و`app/api/service-report/route.ts` و`app/service-report.tsx` | التقرير الشهري لمدير النظام والمدير ومدير خدمة العملاء: أعداد بالقناة والحالة، أزمنة المراحل بساعات العمل، نسبة الفوز وأسباب الفقد. أرقام مجمّعة لما يقرؤه القارئ أصلًا، تُجلب عند فتح القسم فقط |
+| `lib/service-alerts.ts` و`app/api/service-queue/alerts/route.ts` | ما يسأله تطبيق أندرويد: الطلبات التي تنتظر القارئ شخصيًا (المعرّف واسم العميل والاحتياج في سطر ومرحلة الانتظار وهل فُتح ومنذ متى) بالحد الأقصى عشرين، من القائمة نفسها ولا شيء غيرها؛ اختباره `tests/service-alerts.mjs` |
+| `mobile/android` (الإصدار 1.0.11، رمز 12) | `ServiceAlertPolicy` (قواعد خالصة) و`ServiceAlerts` و`ServiceAlertApi` و`ServiceAlertStore`؛ تسأل خدمة التتبع كل عشر دقائق في ساعات العمل ويسأل التطبيق عند الفتح؛ الضغط على الإشعار يفتح الطلب عبر `yourrest:open-service-case` أو `#service-case=` في `app/crm-app.tsx`. الوصف في `mobile/android/README.md` وفحصه `ServiceAlertCheck` |
 
 لا ترحيل في هذا التحديث: الوقائع الجديدة (`assignmentNote` و`seenAt` و`reassignedAt` و`previousAssignees` و`resubmittedAt`) تُحفظ داخل `data` لصف الطلب، فالرجوع إلى الإصدار السابق لا يتطلب استعادة قاعدة البيانات.
 

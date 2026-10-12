@@ -30,7 +30,7 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x'];
+  const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import'];
@@ -49,7 +49,9 @@ try {
     '/api/mobile-route': expect([...management, ...reps], 200, 403),
     '/api/device-status': expect(management, 200, 403),
     '/api/customer-identities': expect(['owner'], 200, 403),
-    '/api/sales/import': expect(management, 200, 403)
+    '/api/sales/import': expect(management, 200, 403),
+    '/api/service-report': expect(['owner', 'mgr', 'mgrw', 'csm'], 200, 403),
+    '/api/service-queue/alerts': expect(everyone, 200, 0)
   };
   for (const [url, byRole] of Object.entries(getMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url)).status, byRole[id], `GET ${url} as ${id}`);
   // KPI evidence is read per member; ask each management role about a member inside its own scope.
