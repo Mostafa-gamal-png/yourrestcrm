@@ -99,3 +99,24 @@ export function serviceQueue(c:QueueContext,now:string=new Date().toISOString())
  }
  return sortQueue(entries);
 }
+
+/** The panel's sections for a reader, in display order. Empty sections are kept so the caller can decide what to hide. */
+export type QueueGroupId='mine'|'late'|'new'|'active'|'closed';
+export function queueGroups(entries:ServiceQueueEntry[],role:string):{id:QueueGroupId;entries:ServiceQueueEntry[]}[]{
+ const open=entries.filter(entry=>entry.stage!=='closed'),closed=entries.filter(entry=>entry.stage==='closed');
+ if(role==='rep'){
+  const fresh=open.filter(entry=>entry.awaiting==='first_contact');
+  return [{id:'new',entries:fresh},{id:'active',entries:open.filter(entry=>!fresh.includes(entry))},{id:'closed',entries:closed}];
+ }
+ const mine=open.filter(entry=>entry.awaiting),late=open.filter(entry=>!mine.includes(entry)&&(entry.escalated||role==='admin'&&entry.late));
+ return [{id:'mine',entries:mine},{id:'late',entries:late},{id:'active',entries:open.filter(entry=>!mine.includes(entry)&&!late.includes(entry))},{id:'closed',entries:closed}];
+}
+
+/** A customer-service role whose reporting line cannot carry a request: shown beside the member on the team page. */
+export function serviceRoleWarning(member:Pick<Member,'id'|'role'|'supervisorId'|'active'>,members:Pick<Member,'id'|'role'|'active'>[]):''|'no_service_manager'|'no_sales_manager'{
+ if(!member.active)return '';
+ const boss=members.find(other=>other.id===member.supervisorId&&other.active);
+ if(member.role==='customer_service')return boss?.role==='customer_service_manager'?'':'no_service_manager';
+ if(member.role==='customer_service_manager')return boss?.role==='manager'?'':'no_sales_manager';
+ return '';
+}
