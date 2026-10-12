@@ -280,8 +280,10 @@ try {
     const afterStart = tables(a), unchanged = Object.keys(dataBeforeSwitch).filter(name => name !== 'yr_schema_migrations');
     assert.deepEqual(Object.fromEntries(unchanged.map(name => [name, afterStart[name]])), Object.fromEntries(unchanged.map(name => [name, dataBeforeSwitch[name]])), 'every pre-existing table is byte-identical after the first start');
     const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true});
+    let ledgerCount = 0;
     try {
       const ledger = db.prepare('SELECT name FROM yr_schema_migrations ORDER BY name').all().map(row => row.name);
+      ledgerCount = ledger.length;
       assert.equal(ledger.length, helper.SCHEMA_AFTER, 'the ledger holds every migration');
       assert.equal(ledger.at(-1), first, 'the new migration is the last one');
       assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0, 'foreign keys are intact');
@@ -290,7 +292,7 @@ try {
     assert.equal(backups.length, 1, 'exactly one private schema backup was taken by the first start');
     assert.equal(fs.statSync(path.join(a.data, 'schema-backups', backups[0])).mode & 0o077, 0, 'the schema backup is private');
     assert.deepEqual(tables(a, path.join(a.data, 'schema-backups', backups[0])), dataBeforeSwitch, 'the schema backup equals the database as it was before the migration');
-    note('the first start applied ' + first + ' after a private schema backup; every earlier table is byte-identical', {ledger: ledger.length, backup: backups[0]});
+    note('the first start applied ' + first + ' after a private schema backup; every earlier table is byte-identical', {ledger: ledgerCount, backup: backups[0]});
   }
 
   const after = await views();
@@ -334,6 +336,62 @@ try {
   assert.equal(missingHome.status, 1); assert.match(missingHome.stderr, /^STOP: [A-Z0-9_]+/m);
   note('command-line usage and failure output behave as the guide describes');
   await a.stop();
+
+  // ── Going back after the migration (guide, case B) ─────────────────────────────────────────
+  // The previous release must refuse the migrated database, and restoring the private schema backup plus the previous
+  // release must bring back exactly the state before the update. The steps below are the ones the guide gives.
+  if (helper.NEW_MIGRATIONS.length) {
+    const previousRelease = path.join(state.transaction, 'old-release');
+    fs.renameSync(path.join(a.app, 'release'), path.join(a.app, 'release-failed-' + helper.RELEASE_DATE));
+    fs.renameSync(previousRelease, path.join(a.app, 'release'));
+    assert.equal(treeHash(path.join(a.app, 'release')), baseline.oldRelease, 'the restored release is byte-identical to the one that was installed');
+    let oldRefusal = '';
+    try { await a.start(); } catch (error) { oldRefusal = String(error.message); }
+    assert.match(oldRefusal, /newer than/, 'the previous release refuses a database that carries a newer migration');
+    assert.equal(a.running, false);
+    const walFiles = fs.readdirSync(a.data).filter(name => /^database\.sqlite-(wal|shm)$/.test(name));
+    const schemaBackup = fs.readdirSync(path.join(a.data, 'schema-backups')).find(name => name.startsWith('before-' + helper.NEW_MIGRATIONS[0].replace(/\.sql$/, '') + '-'));
+    for (const name of ['database.sqlite', ...walFiles]) fs.renameSync(path.join(a.data, name), path.join(a.data, name + '.migrated-' + helper.RELEASE_DATE));
+    fs.copyFileSync(path.join(a.data, 'schema-backups', schemaBackup), path.join(a.data, 'database.sqlite'));
+    fs.chmodSync(path.join(a.data, 'database.sqlite'), 0o600);
+    await a.start();
+    assert.deepEqual(tables(a), dataBeforeSwitch, 'after restoring the schema backup every table, and the migration ledger, equal their state before the update');
+    const restoredDb = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true});
+    try { assert.equal(restoredDb.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n, helper.SCHEMA_BEFORE); assert.equal(restoredDb.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='crm_member_devices'").get().n, 0); } finally { restoredDb.close(); }
+    const restored = await views();
+    const drift = [];
+    for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) for (const part of Object.keys(before[who])) if (stable(before[who][part]) !== stable(restored[who][part])) drift.push(who + '.' + part);
+    if (stable(before.file) !== stable(restored.file)) drift.push('file');
+    assert.deepEqual(drift, [], 'every role sees what it saw before the update');
+    assert.equal(restored.anonymousDeviceStatus, 404, 'the previous release has no device-status route again');
+    note('going back after the migration works: the previous release refuses the migrated database; restoring the private schema backup and the previous release returns the exact earlier state', {walFilesMovedAside: walFiles, oldReleaseRefusal: (/Existing migration history[^\n]*/.exec(oldRefusal) || [''])[0].slice(0, 200)});
+    await a.stop();
+  }
+  a.close();
+
+  // ── Going back before the first start (guide, case A) ──────────────────────────────────────
+  {
+    const c = await installSite(work, 'home-c', {exactOrigin: true});
+    sites.push(c);
+    const stageC = path.join(c.home, stageName);
+    fs.mkdirSync(stageC, {mode: 0o700});
+    execFileSync('python3', ['-c', 'import zipfile,sys;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', packageZip, stageC]);
+    const helperC = require(path.join(stageC, helperName)), pathsC = helperC.pathsFor(c.home);
+    await c.start();
+    const installedRelease = treeHash(path.join(c.app, 'release')), installedData = tables(c);
+    await c.stop();
+    const switched = await helperC.run(pathsC, 'apply', {log: () => {}});
+    assert.equal(switched.phase, 'switched');
+    assert.notEqual(treeHash(path.join(c.app, 'release')), installedRelease);
+    fs.renameSync(path.join(c.app, 'release'), path.join(c.app, 'release-failed-' + helper.RELEASE_DATE));
+    fs.renameSync(path.join(switched.transaction, 'old-release'), path.join(c.app, 'release'));
+    assert.equal(treeHash(path.join(c.app, 'release')), installedRelease, 'the previous release is back, byte for byte');
+    await c.start();
+    assert.deepEqual(tables(c), installedData, 'the database was never touched');
+    note('going back before the first start works: the previous release returns and runs on the untouched database');
+    await c.stop();
+    c.close();
+  }
 
   // ── Site B: a damaged package is refused and the live release is untouched ──────────────────
   const b = await installSite(work, 'home-b');
