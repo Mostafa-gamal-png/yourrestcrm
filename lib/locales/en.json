@@ -1214,5 +1214,10 @@
   "عرض السعر غير متاح أو ليس عرضًا صادرًا خلال شهر التقييم. راجع الربط.": "The quote is unavailable or was not issued during the evaluation month. Review the link.",
   "اختر فاتورة بيع مؤكدة لنفس المندوب والعميل، بتاريخ العرض أو بعده وضمن فترة التقييم.": "Choose a confirmed sales invoice for the same rep and customer, dated on or after the quote and within the evaluation period.",
   "اختر مندوبًا؛ بيانات المدير والمشرف محسوبة من الفريق.": "Choose a rep; manager and supervisor evidence is calculated from the team.",
-  "عرض السعر خارج منطقة المندوب المحدد.": "This quote is outside the selected rep’s region."
+  "عرض السعر خارج منطقة المندوب المحدد.": "This quote is outside the selected rep’s region.",
+  "إعادة تكليف": "Re-assignment",
+  "فتح الطلب": "Request opened",
+  "لا تملك صلاحية إعادة التكليف في هذه المرحلة": "You cannot re-assign at this stage",
+  "اختر عضوًا آخر غير المكلَّف الحالي": "Choose someone other than the current holder",
+  "فتح الطلب متاح للمكلَّف به فقط": "Only the holder can open the request"
 }

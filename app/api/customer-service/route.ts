@@ -8,7 +8,7 @@ import {z} from 'zod';
 import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {schemas,type AuditEntry,type Member,type Row} from '@/lib/crm';
-import {activeServiceCase,canReadService,isServiceRole,serviceCandidates,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase,type ServiceCaseData,type ServiceRegistration} from '@/lib/customer-service';
+import {activeServiceCase,canReadService,isServiceRole,serviceCandidates,serviceChainIds,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase,type ServiceCaseData,type ServiceRegistration} from '@/lib/customer-service';
 export const dynamic='force-dynamic';
 type Context=Awaited<ReturnType<typeof context>>;
 type RegistrationData=Omit<z.infer<typeof schemas.activity>,'type'|'visitWorkflow'|'customerStage'>&{type:'visit'|'call'|'email'|'whatsapp'|'website'|'social';visitWorkflow?:string;customerStage?:string};
@@ -19,15 +19,22 @@ export async function GET(){try{
  const canReadRegistration=(registration:ServiceRegistration|undefined,creator:string)=>!salesReader||canReadSalesRecord({kind:'activity',assignedTo:creator,data:registration||{performedBy:creator}} as Row,c.members,c.me);
  const visibleData=(item:ServiceCase)=>{const data={...item.data};if(!canReadRegistration(data.registration,item.creatorId))delete data.registration;if(data.registrations)data.registrations=data.registrations.filter(entry=>canReadRegistration(entry.registration,item.creatorId));return data;};
  const ids=new Set(rows.map(s=>s.id));
- const history=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action LIKE 'service:%' ORDER BY created_at,id").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(!salesReader||c.me.role==='admin'||c.members.filter(m=>m.name===a.actor).length===1&&c.members.some(m=>m.name===a.actor&&allowedMembers.has(m.id)))).map(a=>({...a,detail:JSON.parse(a.detail)}));
+ const history=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action LIKE 'service:%' ORDER BY created_at,id").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)).map(a=>({...a,detail:JSON.parse(a.detail)}));
+ const actorOf=(actor:string)=>{const matches=c.members.filter(m=>m.name===actor);return matches.length===1?matches[0]:undefined;};
+ // A sales reader sees what their own team wrote and what the case's own chain (registrar, both managers, supervisor, holder) wrote on it; other recorders stay private.
+ const historyVisible=(entry:{actor:string},item:ServiceCase)=>{if(!salesReader||c.me.role==='admin')return true;const actor=actorOf(entry.actor);return !!actor&&(allowedMembers.has(actor.id)||serviceChainIds(item).includes(actor.id));};
  const name=(id:string|null)=>c.members.find(m=>m.id===id)?.name||'';
- const cases=rows.map(s=>{const customer=c.all.find(r=>r.id===s.customerId)!,contacts=serviceContacts(s,contactRecords),permissions=servicePermissions(s,c),latest=contacts[0];return{...s,data:visibleData(s),customer:{id:customer.id,name:customer.data.name,phone:customer.data.phone,contact:customer.data.contact,city:customer.data.city,region:customer.data.region,version:customer.version},state:serviceState(s,contactRecords,c.members),stage:latest?.data.salesStage||'new',nextAction:latest?.data.nextAction??s.data.nextAction,nextDate:latest?.data.nextDate??s.data.nextDate,creatorName:name(s.creatorId),serviceManagerName:name(s.serviceManagerId),salesManagerName:name(s.salesManagerId),assignedName:name(s.assignedTo),supervisorName:name(s.supervisorId),permissions,candidates:(permissions.approve?serviceCandidates(s,c,'approve'):permissions.assign?serviceCandidates(s,c,'assign'):permissions.delegate?serviceCandidates(s,c,'delegate'):[]).map(m=>({id:m.id,name:m.name,role:m.role})),history:history.filter(a=>a.recordId===s.id),contacts:contacts.map(r=>({id:r.id,date:r.data.date,type:r.data.type,result:r.data.result,summary:r.data.summary,salesStage:r.data.salesStage,nextAction:r.data.nextAction,nextDate:r.data.nextDate,lossReason:r.data.lossReason,competitorFileId:r.data.competitorFileId,competitorFileName:r.data.competitorFileName,actor:name(recordAuthorId(r,c.members)||''),createdAt:r.createdAt}))};});
+ const cases=rows.map(s=>{const customer=c.all.find(r=>r.id===s.customerId)!,contacts=serviceContacts(s,contactRecords),permissions=servicePermissions(s,c),latest=contacts[0];
+  const dispatch=permissions.approve?'approve':permissions.assign?'assign':permissions.reassign?'reassign':permissions.delegate?'delegate':'',candidates=dispatch?serviceCandidates(s,c,dispatch):[];
+  // The customer's current holder is offered first, so the usual assignment is one tap.
+  const suggestedId=(dispatch==='assign'||dispatch==='reassign')&&candidates.some(m=>m.id===customer.assignedTo)?customer.assignedTo:'';
+  return{...s,data:visibleData(s),customer:{id:customer.id,name:customer.data.name,phone:customer.data.phone,contact:customer.data.contact,city:customer.data.city,region:customer.data.region,version:customer.version},state:serviceState(s,contactRecords,c.members),stage:latest?.data.salesStage||'new',nextAction:latest?.data.nextAction??s.data.nextAction,nextDate:latest?.data.nextDate??s.data.nextDate,creatorName:name(s.creatorId),serviceManagerName:name(s.serviceManagerId),salesManagerName:name(s.salesManagerId),assignedName:name(s.assignedTo),supervisorName:name(s.supervisorId),permissions,candidates:candidates.map(m=>({id:m.id,name:m.name,role:m.role})),suggestedId,history:history.filter(a=>a.recordId===s.id&&historyVisible(a,s)),contacts:contacts.map(r=>({id:r.id,date:r.data.date,type:r.data.type,result:r.data.result,summary:r.data.summary,salesStage:r.data.salesStage,nextAction:r.data.nextAction,nextDate:r.data.nextDate,lossReason:r.data.lossReason,competitorFileId:r.data.competitorFileId,competitorFileName:r.data.competitorFileName,actor:name(recordAuthorId(r,c.members)||''),createdAt:r.createdAt}))};});
  const canCreate=c.me.role==='admin'||isServiceRole(c.me.role);
  return Response.json({cases,canCreate,customers:canCreate?customerChoices(c).map(r=>({id:r.id,name:r.data.name,code:r.data.code,phone:r.data.phone,region:r.data.region,city:r.data.city,version:r.version})):[]},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);await requireSession();const body=await readJsonBody(req);if(JSON.stringify(body).length>18000)throw new CRMError('حجم البيانات كبير');
- const requestId=z.string().uuid().parse(body.requestId);let action:string=z.enum(['create','edit','approve','return','assign','delegate','note','assist','reply']).parse(body.action);const c=await context(),now=new Date().toISOString();
+ const requestId=z.string().uuid().parse(body.requestId);let action:string=z.enum(['create','edit','approve','return','assign','delegate','reassign','seen','note','assist','reply']).parse(body.action);const c=await context(),now=new Date().toISOString();
  const offline=offlineCapture(body,c.me.id,now);if(offline&&(action!=='create'||!body.registration))throw new CRMError('هذا الإجراء يتطلب اتصالًا مباشرًا.');const occurredAt=offline?.capturedAt||now;
  const canonical=JSON.stringify(body),receiptId='service-receipt:'+c.me.id+':'+requestId,mutation=crypto.randomUUID();
  const replay=async()=>{const r=await c.db.prepare('SELECT record_id,detail FROM crm_audit WHERE id=?').bind(receiptId).first<{record_id:string;detail:string}>();if(!r)return null;const fresh=await context(),item=fresh.serviceCases.find(s=>s.id===r.record_id);if(!item||!canReadService(item,fresh))throw new CRMError('الطلب غير متاح',403);if(r.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);return Response.json({ok:true,id:r.record_id,alreadySaved:true});};
@@ -51,20 +58,34 @@ export async function POST(req:Request){try{
   if(c.me.role==='customer_service_manager'){const creator=c.members.find(m=>m.id===item.creatorId);if(creator)requireMember(creator);}
   if(body.version!==item.version)throw new CRMError('تغيّر الطلب. حدّث البيانات قبل إعادة المحاولة.',409);
   data={...item.data};status=item.status;const allowed=servicePermissions(item,c);
-  if(action==='edit'){if(item.data.registration&&!body.registration)throw new CRMError('استخدم قسم الزيارات لحفظ بيانات الزيارة والعميل.');if(!allowed.edit)throw new CRMError('لا يمكن تعديل الطلب بعد اعتماده',403);data={...data,...(body.registration?{}:serviceIntakeSchema.parse(body.data))};status='pending_approval';}
+  if(action==='edit'){if(item.data.registration&&!body.registration)throw new CRMError('استخدم قسم الزيارات لحفظ بيانات الزيارة والعميل.');if(!allowed.edit)throw new CRMError('لا يمكن تعديل الطلب بعد اعتماده',403);data={...data,...(body.registration?{}:serviceIntakeSchema.parse(body.data))};if(item.status==='returned')data.resubmittedAt=now;status='pending_approval';}
   if(action==='approve'||action==='return'){
    if(!allowed.approve)throw new CRMError('الاعتماد متاح لمدير خدمة العملاء المسؤول فقط',403);
    const creator=c.members.find(m=>m.id===item.creatorId);if(creator)requireMember(creator);
    if(action==='approve'){target=serviceCandidates(item,c,'approve').find(m=>m.id===body.targetId);if(!target)throw new CRMError('حدد مدير المبيعات المرتبط بمدير خدمة العملاء',403);status='pending_assignment';data.approvedBy=c.me.id;data.approvedAt=now;}
    else{note=z.string().trim().min(3,'اكتب سبب إعادة الطلب').max(2000).parse(body.note);status='returned';}
   }
-  if(action==='assign'||action==='delegate'){
-   if(!(action==='assign'?allowed.assign:allowed.delegate))throw new CRMError('لا تملك صلاحية التكليف في هذه المرحلة',403);
+  if(action==='assign'||action==='delegate'||action==='reassign'){
+   if(!(action==='assign'?allowed.assign:action==='delegate'?allowed.delegate:allowed.reassign))throw new CRMError(action==='reassign'?'لا تملك صلاحية إعادة التكليف في هذه المرحلة':'لا تملك صلاحية التكليف في هذه المرحلة',403);
+   if(item.assignedTo&&body.targetId===item.assignedTo)throw new CRMError('اختر عضوًا آخر غير المكلَّف الحالي',403);
    target=serviceCandidates(item,c,action).find(m=>m.id===body.targetId);if(!target)throw new CRMError('اختر مندوبًا أو مشرفًا من فريقك وفي منطقة العميل وفرعه',403);
    if(action==='delegate'&&target.supervisorId!==c.me.id)throw new CRMError('المندوب ليس ضمن فريقك',403);
    // Freeze every reporting link used to authorize dispatch, including intermediate supervisors.
    let link:Member|undefined=target;const seen=new Set<string>();while(link&&!seen.has(link.id)){seen.add(link.id);requireMember(link);link=c.members.find(m=>m.id===link!.supervisorId);if(link?.id===c.me.id)break;}
-   status='assigned';data[action==='assign'?'assignedAt':'delegatedAt']=now;data[action==='assign'?'assignedBy':'delegatedBy']=c.me.id;
+   status='assigned';
+   if(action==='assign'){data.assignedAt=now;data.assignedBy=c.me.id;}
+   else if(action==='delegate'){data.delegatedAt=now;data.delegatedBy=c.me.id;}
+   else{data.reassignedAt=now;data.reassignedBy=c.me.id;}
+   // A case that already had a holder keeps their name for the record; the new holder's clock and first opening start afresh.
+   if(item.assignedTo){data.previousAssignees=[...(data.previousAssignees||[]),item.assignedTo];delete data.seenAt;delete data.seenBy;}
+   // An optional instruction for the new holder; it also goes into the case history.
+   note=z.string().trim().max(2000).default('').parse(body.note??'');
+   if(note){data.assignmentNote=note;data.assignmentNoteBy=c.me.id;}
+  }
+  if(action==='seen'){
+   if(!allowed.seen)throw new CRMError('فتح الطلب متاح للمكلَّف به فقط',403);
+   if(data.seenAt&&data.seenBy===c.me.id)return Response.json({ok:true,id,customerId:customer.id,alreadySeen:true});
+   data.seenAt=now;data.seenBy=c.me.id;
   }
   if(['note','assist','reply'].includes(action)){
    if(!allowed.note)throw new CRMError('المتابعة الداخلية غير متاحة',403);
@@ -97,14 +118,14 @@ export async function POST(req:Request){try{
  const condition=guards.join(' AND '),gate='EXISTS(SELECT 1 FROM crm_service_cases WHERE id=? AND version=? AND mutation_id=?)',ga=[id,revision,mutation];
  if(newCustomer)statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'customer',NULL,?,?,?,?,?,1,? WHERE ${condition}`).bind(customer.id,c.me.id,customer.branch,JSON.stringify(customer.data),now,now,mutation,...args));
  if(action==='create')statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_service_cases(id,customer_id,status,creator_id,service_manager_id,sales_manager_id,assigned_to,supervisor_id,data,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,?,NULL,NULL,NULL,?,?,?,1,? WHERE ${newCustomer?'EXISTS(SELECT 1 FROM crm_records WHERE id=? AND mutation_id=?)':condition}`).bind(id,customer.id,status,item.creatorId,item.serviceManagerId,JSON.stringify(data),now,now,mutation,...(newCustomer?[customer.id,mutation]:args)));
- else statements.push(c.db.prepare(`UPDATE crm_service_cases SET status=?,sales_manager_id=?,assigned_to=?,supervisor_id=?,data=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND ${condition}`).bind(status,action==='approve'?target!.id:item.salesManagerId,['assign','delegate'].includes(action)?target!.id:item.assignedTo,action==='assign'&&target!.role==='supervisor'?target!.id:item.supervisorId,JSON.stringify(data),now,mutation,id,item.version,...args));
+ else statements.push(c.db.prepare(`UPDATE crm_service_cases SET status=?,sales_manager_id=?,assigned_to=?,supervisor_id=?,data=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND ${condition}`).bind(status,action==='approve'?target!.id:item.salesManagerId,['assign','delegate','reassign'].includes(action)?target!.id:item.assignedTo,action==='assign'&&target!.role==='supervisor'?target!.id:action==='reassign'?(target!.role==='supervisor'?target!.id:target!.supervisorId||null):item.supervisorId,JSON.stringify(data),now,mutation,id,item.version,...args));
  if(body.registration&&['create','edit','contact'].includes(action)){
   const visitId=action==='contact'?'service-visit-'+requestId:'intake-'+id, path=action==='contact'?'$.registrations['+(data.registrations!.length-1)+'].registration.visitNumber':'$.registration.visitNumber';
   statements.push(c.db.prepare(`INSERT INTO crm_visit_numbers(record_id) SELECT ? WHERE ${gate} AND NOT EXISTS(SELECT 1 FROM crm_visit_numbers WHERE record_id=?)`).bind(visitId,...ga,visitId));
   statements.push(c.db.prepare(`UPDATE crm_service_cases SET data=json_set(data,?,(SELECT number FROM crm_visit_numbers WHERE record_id=?)) WHERE id=? AND ${gate}`).bind(path,visitId,id,...ga));
  }
  if(['create','contact'].includes(action)&&!newCustomer)statements.push(c.db.prepare(`UPDATE crm_records SET version=version+1,updated_at=? WHERE id=? AND ${gate}`).bind(now,customer.id,...ga));
- if(action==='assign'||action==='delegate'){
+ if(action==='assign'||action==='delegate'||action==='reassign'){
   statements.push(c.db.prepare(`UPDATE crm_records SET assigned_to=?,data=json_set(data,'$.assignedTo',?),updated_at=?,version=version+1 WHERE id=? AND ${gate}`).bind(target!.id,target!.id,now,customer.id,...ga));
   statements.push(c.db.prepare(`WITH RECURSIVE descendants(id) AS (SELECT id FROM crm_records WHERE parent_id=? UNION SELECT r.id FROM crm_records r JOIN descendants d ON r.parent_id=d.id) UPDATE crm_records SET assigned_to=?,updated_at=?,version=version+1 WHERE id IN(SELECT id FROM descendants) AND ${gate}`).bind(customer.id,target!.id,now,...ga));
  }
