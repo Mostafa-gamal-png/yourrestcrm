@@ -376,6 +376,60 @@ try {
     note('the customer-service queue, the phone alert feed and the monthly report work on the upgraded database for the right roles', {request: caseId});
   }
 
+  if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/support')) {
+    // Customer-service assistance, a missed visit and the manager's approval count on the upgraded database, for the right people only.
+    const calls = {};
+    for (const who of ['csm', 'cs', 'mgr', 'sup', 'rep1', 'repw']) calls[who] = await a.login(who);
+    const readDb = (sql, ...args) => { const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true}); try { return db.prepare(sql).get(...args); } finally { db.close(); } };
+    const versionOf = id => readDb('SELECT version FROM crm_records WHERE id=?', id).version;
+    const support = async call => (await call('/api/support')).json();
+    const post = (call, body) => call('/api/support', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
+    assert.equal((await a.request('/api/support')).status, 401, 'an anonymous caller is refused');
+    for (const who of ['csm', 'cs', 'mgr', 'sup', 'rep1', 'repw']) { const answer = await support(calls[who]); assert.deepEqual([answer.requests.length, answer.missed.length], [0, 0], who + ' starts with nothing'); }
+    const asked = await post(calls.rep1, {action: 'request', customerId: customers.e1, customerVersion: versionOf(customers.e1), note: 'يرجى التواصل مع العميل لمعرفة سبب التأخر', channel: 'call'});
+    assert.equal(asked.status, 200, 'a representative asks for help with their customer on the upgraded database: ' + asked.text.slice(0, 120));
+    const requestId = asked.json().id;
+    assert.equal((await post(calls.repw, {action: 'request', customerId: customers.e1, customerVersion: versionOf(customers.e1), note: 'ليس عميلي'})).status, 403, 'another representative cannot');
+    const ids = async who => (await support(calls[who])).requests.map(item => item.id);
+    for (const who of ['rep1', 'sup', 'mgr', 'cs', 'csm']) assert.deepEqual(await ids(who), [requestId], who + ' sees it');
+    assert.deepEqual(await ids('repw'), [], 'another representative does not');
+    assert.deepEqual((await support(owner)).requests.map(item => item.id), [requestId], 'the administrator sees it');
+    const waiting = (await support(calls.cs)).requests[0];
+    assert.deepEqual([waiting.state, waiting.awaiting, waiting.permissions.take], ['waiting', 'take', true], 'the representative for every region may take it');
+    assert.equal((await post(calls.cs, {action: 'take', id: requestId, version: waiting.version})).status, 200, 'customer service takes it');
+    assert.equal((await post(calls.cs, {action: 'result', id: requestId, version: waiting.version + 1, outcome: 'wants_visit', note: 'العميل يطلب زيارة', nextDate: day})).status, 200, 'and answers it');
+    const answer = (await support(calls.rep1)).requests[0];
+    assert.deepEqual([answer.state, answer.awaiting, answer.result.outcome, answer.result.nextDate], ['done', 'answer', 'wants_visit', day], 'the representative reads the answer');
+    assert.equal((await post(calls.rep1, {action: 'seen', id: requestId, version: answer.version})).status, 200, 'and opens it');
+    assert.equal((await support(calls.rep1)).counts.badge, 0, 'which clears the count');
+    // A visit that went unanswered, two days past its follow-up date, is customer service's to contact.
+    {
+      const db = new DatabaseSync(a.settings.YR_DATABASE_PATH), at = new Date(Date.now() - 9 * 86400000).toISOString(), due = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date(Date.now() - 5 * 86400000));
+      db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('v-missed','activity',?,'repw','الرئيسي',?,?,?,1,'rehearsal')").run(customers.w1, JSON.stringify({type: 'visit', date: at.slice(0, 10), startedAt: at, endedAt: at, summary: 'PRIVATE-VISIT-SUMMARY', result: 'سلبية', salesStage: 'new', nextAction: 'زيارة متابعة', nextDate: due, visitWorkflow: 'customer-v1', performedBy: 'repw', responsibleId: 'repw', recordedByEmail: 'repw@yourrest.org'}), at, at);
+      db.close();
+    }
+    const missed = (await support(calls.cs)).missed;
+    assert.deepEqual(missed.map(item => [item.customerId, item.visitId, item.overdueDays, item.permissions.take]), [[customers.w1, 'v-missed', 5, true]], 'customer service has the missed visit');
+    assert.equal(JSON.stringify(await support(calls.cs)).includes('PRIVATE-'), false, 'without the visit text');
+    for (const who of ['rep1', 'repw', 'sup', 'mgr']) assert.deepEqual((await support(calls[who])).missed, [], who + ' receives no missed visits');
+    const took = await post(calls.cs, {action: 'request', origin: 'missed_visit', customerId: customers.w1, customerVersion: missed[0].customerVersion, visitId: 'v-missed'});
+    assert.equal(took.status, 200, 'customer service takes it: ' + took.text.slice(0, 120));
+    assert.deepEqual([(await support(calls.cs)).missed.length, (await support(calls.repw)).requests.map(item => item.state)], [0, ['in_progress']], 'it leaves the list and the representative sees customer service has it');
+    // Nothing of it reached the records, the cases or the visits.
+    const crm = (await owner('/api/crm')).json();
+    assert.equal(crm.records.some(record => record.kind === 'support') || JSON.stringify(crm.audits).includes('support'), false, 'the administrator\'s records and history carry no assistance request');
+    assert.deepEqual((await owner('/api/customer-service')).json().cases, [], 'and no customer-service case was made');
+    // The customer-service manager sees what waits for his approval, and the representative registering it sees none.
+    const serviceRegistration = {type: 'call', summary: 'PRIVATE-REGISTRATION-SUMMARY', result: 'متابعة العميل', salesStage: 'new', strength: 'strong', requestedProducts: [products[0]], nextAction: 'اتصال بالعميل', nextDate: day, location: '26.437341, 50.034499', locationSource: 'device', locationCapturedAt: new Date().toISOString(), locationAccuracy: 12, customerNeeds: 'قالب جديد', hasCompetitor: false};
+    const registered = await calls.cs('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: customers.e1, customerVersion: versionOf(customers.e1), registration: serviceRegistration, elapsedMilliseconds: 2200}});
+    assert.equal(registered.status, 200, 'customer service registers a request while an assistance request exists for the same customer: ' + registered.text.slice(0, 120));
+    const queueOf = async call => (await call('/api/crm')).json().serviceQueue;
+    const waitingForHim = await queueOf(calls.csm);
+    assert.deepEqual([waitingForHim.length, waitingForHim[0].stage, waitingForHim[0].awaiting, waitingForHim[0].late], [1, 'approval', 'approve', false], 'the customer-service manager is shown the approval that waits for him');
+    assert.deepEqual([(await queueOf(calls.cs)).length, (await queueOf(calls.rep1)).length], [0, 0], 'the registrar and the representative have none');
+    note('assistance requests, missed visits and the manager\'s approval queue work on the upgraded database for the right roles', {request: requestId});
+  }
+
   // Command-line wiring of the activator (the hosting home is fixed at /home/youriedx, which does not exist here).
   const cli = spawnSync(process.execPath, [path.join(stageA, helperName), '--bogus'], {encoding: 'utf8'});
   assert.equal(cli.status, 1); assert.match(cli.stderr, /Usage: node .*\.cjs \[--check\|--verify\]/);
@@ -428,9 +482,21 @@ try {
       assert.deepEqual([who, crm.status, cases.status], [who, 200, 200], 'the previous release serves ' + who + ' on the same database');
       restored[who] = {crm: crm.json(), cases: cases.json().cases};
     }
-    assert.equal(restored.owner.crm.serviceQueue, undefined, 'the previous release knows nothing of the new queue field');
-    for (const who of ['owner', 'mgr', 'rep1']) assert.equal(restored[who].cases.length, helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts') ? 1 : 0, who + ' still sees the request the new release recorded');
-    if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts')) {
+    const queueIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts'), supportIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/support');
+    if (queueIntroduced) assert.equal(restored.owner.crm.serviceQueue, undefined, 'the previous release knows nothing of the new queue field');
+    else assert(Array.isArray(restored.owner.crm.serviceQueue), 'the previous release already has the queue field');
+    // The administrator's case: the request customer service registered during the new release's use (the assistance block); the manager and the representative have no case yet.
+    const expectedCases = queueIntroduced ? {owner: 1, mgr: 1, rep1: 1} : supportIntroduced ? {owner: 1, mgr: 0, rep1: 0} : {owner: 0, mgr: 0, rep1: 0};
+    for (const who of ['owner', 'mgr', 'rep1']) assert.equal(restored[who].cases.length, expectedCases[who], who + ' sees what the new release recorded, as before');
+    if (supportIntroduced) {
+      // Assistance requests are records of a kind the previous release does not know: it serves everyone on them, they are no case and no visit, and nobody but the administrator's raw record list could carry them.
+      const supportRows = (() => { const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true}); try { return db.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='support'").get().n; } finally { db.close(); } })();
+      assert(supportRows >= 2, 'the database still holds the assistance requests the new release wrote');
+      assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'support').length), [0, 0, 0, 0], 'no one but the administrator\'s raw record list could carry them');
+      assert.equal(restored.owner.cases.some(item => String(item.id).startsWith('support-')), false, 'they are not customer-service cases');
+      assert.equal((await a.request('/api/support')).status, 404, 'the new route is gone again with the new release');
+    }
+    if (queueIntroduced) {
       assert.equal(restored.rep1.cases[0].status, 'assigned', 'it keeps its status');
       assert.equal(restored.repw.cases.length, 0, 'and stays hidden from others');
       assert.equal((await a.request('/api/service-queue/alerts')).status, 404, 'the new routes are gone again with the new release');
