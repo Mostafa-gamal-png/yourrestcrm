@@ -155,6 +155,7 @@ const byId=(list,id)=>list.find(e=>e.id===id);
  eq(seeIds('csm_b'),['s-11'],'and its manager');
  eq(ids(S.supportQueue(scoped('csm',{me:{...members.find(x=>x.id==='csm'),regionScope:'eastern'}}),now)).sort(),['s-1','s-10','s-2','s-9'],'a manager limited to one region sees that region only');
  eq(S.supportQueue({...scoped('rep'),support:[]},now),[],'no requests, no entries');
+ eq([S.supportQueue(scoped('owner'),now,2).map(e=>e.id),S.supportQueue(scoped('owner'),now,Infinity).length,queue('owner').length>2],[queue('owner').slice(0,2).map(e=>e.id),queue('owner').length,true],'a limit keeps the first entries in order, and asking for all of them loses none');
  eq(S.supportQueue({...scoped('rep'),all:records.filter(r=>r.id!=='c-1')},now).map(e=>e.id).includes('s-1'),false,'a request whose customer is gone is not shown');
  const stranger=S.supportQueue(scoped('owner',{me:{...members.find(x=>x.id==='owner'),role:'unknown'}}),now);
  eq(stranger,[],'an unknown role sees nothing');
@@ -277,6 +278,17 @@ const byId=(list,id)=>list.find(e=>e.id===id);
  const inactive=members.map(x=>x.id==='cs_east'?{...x,active:0}:x);
  eq(missed('csm',now,{members:inactive}).map(e=>[e.customerId,e.routedToId,e.unrouted]),[['c-4','',false],['c-15','',false],['c-12','',false]],'with the representative of a region away, the shared representative takes over without a name');
  eq(missed('owner').length,5,'the same answer on every read');
+ // a list is cut for display, but its true size stays knowable and the most overdue come first
+ const full=S.missedVisits(scoped('owner'),now,Infinity);
+ eq(S.missedVisits(scoped('owner'),now,2).map(e=>e.id),full.slice(0,2).map(e=>e.id),'a limit keeps the most overdue ones, in the same order');
+ eq([full.length,S.missedVisits(scoped('owner'),now).length,S.SUPPORT_LIST_LIMIT],[5,5,300],'by default a list holds up to three hundred');
+ const crowd=Array.from({length:305},(_,n)=>customer('bulk-'+n,'rep',region.east)),crowdVisits=crowd.map((x,n)=>visit(x.id,'rep',{startedAt:at('2026-10-0'+(1+n%5)),nextDate:'2026-10-0'+(1+n%9)}));
+ const crowded={all:[...records,...crowd,...crowdVisits]};
+ const every=S.missedVisits({...scoped('csm'),...crowded},now,Infinity),listed=missed('csm',now,crowded);
+ eq([listed.length,every.length],[300,308],'over three hundred missed visits: three hundred are listed and all of them are still there to count');
+ eq(listed.map(e=>e.id),every.slice(0,300).map(e=>e.id),'the listed ones are the first of the whole, in the same order');
+ ok(every.slice(300).every(e=>e.overdueDays<=listed[299].overdueDays),'nothing left out is more overdue than what is listed');
+ eq(S.supportBadge([],S.missedVisits({...scoped('cs_east'),...crowded},now,Infinity),'customer_service'),307,'the badge counts the whole, not only what is listed');
 }
 
 // ---- nothing is invented for a role that has no business here

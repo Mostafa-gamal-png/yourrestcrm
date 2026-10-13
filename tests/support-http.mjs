@@ -217,8 +217,23 @@ try {
   for (let n = 0; n < 320; n++) await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'support',NULL,'rep','الرئيسي',?,?,?,1,'fixture')")
     .bind('support-bulk-' + n, JSON.stringify({kind: 'support', customerId: 'f1', origin: 'rep', status: 'done', requestedBy: 'rep', requestedAt: now, repId: 'rep', note: 'x', channel: 'any', handlerId: 'cs_east', handlerAt: now, handlerBy: 'rep', result: {outcome: 'other', note: 'x', nextDate: '', by: 'cs_east', at: now}}), now, now).run();
   check([(await get('owner')).requests.length, (await get('cs_east')).requests.length], [300, 300], 'a list never grows past three hundred entries');
+  const cutRequests = (await get('owner')).counts.requests;
+  ok(cutRequests > 300, 'but the count reports every request, not only the three hundred listed: ' + cutRequests);
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('support-odd',?,NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind('support', '{"kind":"support"}', now, now).run();
   const odd = await as('owner')('/api/support');
   check([odd.status, odd.json().requests.some(item => item.id === 'support-odd')], [200, false], 'a row that is not a well-formed request is left out instead of breaking the list');
+
+  // ---- more missed visits than a page holds: the list is cut, the count is not, and any of them can still be taken
+  for (let n = 0; n < 305; n++) { await customer('m' + n, 'rep', 'الشرقية'); await seedVisit('visit-m' + n, 'm' + n, {nextDate: dayOf(-3 - (n % 25))}); }
+  const crowded = await get('cs_east'), crowdedWhole = crowded.counts.missed;
+  check([crowded.missed.length, crowdedWhole >= 305, crowded.counts.badge >= 305], [300, true, true], 'three hundred missed visits are listed while the count and the badge cover all of them: ' + crowdedWhole);
+  check(crowded.missed.every((item, at) => at === 0 || crowded.missed[at - 1].overdueDays >= item.overdueDays), true, 'the most overdue are the ones listed');
+  const listedIds = new Set(crowded.missed.map(item => item.visitId)), hidden = Array.from({length: 305}, (_, n) => 'visit-m' + n).find(id => !listedIds.has(id));
+  ok(hidden, 'some visit is left out of the three hundred listed');
+  const hiddenCustomer = 'm' + hidden.slice('visit-m'.length);
+  const takeHidden = await post('cs_east', {action: 'request', origin: 'missed_visit', customerId: hiddenCustomer, customerVersion: await version(hiddenCustomer), visitId: hidden});
+  check(takeHidden.status, 200, 'a missed visit that is not in the listed three hundred can still be taken: ' + takeHidden.text.slice(0, 120));
+  const afterTake = await get('cs_east');
+  check([afterTake.counts.missed, afterTake.missed.length], [crowdedWhole - 1, 300], 'and the count drops by one while the list stays full');
   console.log(JSON.stringify({ok: true, checks, builtRelease: true, productionDataUsed: false}));
 } finally { await app.stop(); }

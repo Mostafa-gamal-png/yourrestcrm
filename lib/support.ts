@@ -20,6 +20,7 @@ export const MISSED_VISIT_GRACE_DAYS=2;
 export const MISSED_VISIT_WINDOW_DAYS=30;
 /** Finished requests stay in the lists for this long. */
 export const SUPPORT_HISTORY_DAYS=30;
+/** A list holds this many entries unless its caller asks for all of them; the route always reports the true total beside it. */
 export const SUPPORT_LIST_LIMIT=300;
 export const SUPPORT_NOTE_MAX=2000;
 export const supportOutcomes:Record<string,string>={reached_interested:'تم التواصل والعميل مهتم',reached_not_interested:'تم التواصل والعميل غير مهتم',wants_visit:'العميل يطلب زيارة في موعد',no_answer:'لم يرد العميل',wrong_number:'الرقم غير صحيح أو غير متاح',other:'أخرى'};
@@ -143,7 +144,7 @@ const finishedRecently=(row:SupportRow,now:string)=>row.data.status==='open'||Da
 export function sortSupport(entries:SupportEntry[]){
  return [...entries].sort((a,b)=>Number(!!b.awaiting)-Number(!!a.awaiting)||Number(b.late)-Number(a.late)||Number(a.state==='done'||a.state==='cancelled')-Number(b.state==='done'||b.state==='cancelled')||(a.state==='done'||a.state==='cancelled'?b.updatedAt.localeCompare(a.updatedAt):a.createdAt.localeCompare(b.createdAt))||a.id.localeCompare(b.id));
 }
-export function supportQueue(c:SupportContext,now:string=new Date().toISOString()):SupportEntry[]{
+export function supportQueue(c:SupportContext,now:string=new Date().toISOString(),limit:number=SUPPORT_LIST_LIMIT):SupportEntry[]{
  const reader=supportReader(c),member=(id:string|null|undefined)=>id?c.members.find(m=>m.id===id):undefined,name=(id:string|null|undefined)=>member(id)?.name||'';
  if(!reader.admin&&!reader.service&&!reader.lead&&!reader.sales)return [];
  const customers=new Map(c.all.filter(row=>row.kind==='customer').map(row=>[row.id,row])),entries:SupportEntry[]=[];
@@ -165,7 +166,7 @@ export function supportQueue(c:SupportContext,now:string=new Date().toISOString(
    candidates:permissions.assign?[...staff.reps,...staff.leads].filter(m=>m.id!==row.data.handlerId).map(m=>({id:m.id,name:m.name,role:m.role})):[]
   });
  }
- return sortSupport(entries).slice(0,SUPPORT_LIST_LIMIT);
+ return sortSupport(entries).slice(0,limit);
 }
 
 /** Every record under its customer, in one pass: each customer's own slice is then read with the same rule the follow-up
@@ -182,8 +183,9 @@ export function groupByCustomer(all:Row[]){
  return groups;
 }
 /** Visits whose last result was negative and whose follow-up date is two days behind us with no contact since, for the customers
- * customer service covers (an administrator: all). They are derived on read: nothing is stored until someone takes one. */
-export function missedVisits(c:{me:Member;members:Member[];all:Row[];support:SupportRow[]},now:string=new Date().toISOString()):MissedEntry[]{
+ * customer service covers (an administrator: all). They are derived on read: nothing is stored until someone takes one.
+ * The most overdue come first; `limit` cuts the list for display, and `Infinity` returns every one for counting and for taking. */
+export function missedVisits(c:{me:Member;members:Member[];all:Row[];support:SupportRow[]},now:string=new Date().toISOString(),limit:number=SUPPORT_LIST_LIMIT):MissedEntry[]{
  const me=c.me,admin=me.role==='admin',service=me.role==='customer_service',lead=me.role==='customer_service_manager';
  if(!admin&&!service&&!lead)return [];
  const day=riyadhDate(now),member=(id:string|null|undefined)=>id?c.members.find(m=>m.id===id):undefined;
@@ -206,7 +208,7 @@ export function missedVisits(c:{me:Member;members:Member[];all:Row[];support:Sup
    permissions:{take:lead||admin||service&&(!routed||routed.id===me.id)}
   });
  }
- return entries.sort((a,b)=>b.overdueDays-a.overdueDays||a.customerName.localeCompare(b.customerName)||a.id.localeCompare(b.id)).slice(0,SUPPORT_LIST_LIMIT);
+ return entries.sort((a,b)=>b.overdueDays-a.overdueDays||a.customerName.localeCompare(b.customerName)||a.id.localeCompare(b.id)).slice(0,limit);
 }
 
 /** The number on the Visits entry of the navigation. A representative of customer service counts what waits for them and

@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
 import {today,type Member} from '@/lib/crm';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
-import {SUPPORT_NOTE_MAX,canReadSupport,canRequestSupport,missedVisits,supportActions,supportBadge,supportOutcomes,supportPermissions,supportQueue,supportReader,supportState,supportStaff,type SupportData,type SupportRow} from '@/lib/support';
+import {SUPPORT_LIST_LIMIT,SUPPORT_NOTE_MAX,canReadSupport,canRequestSupport,missedVisits,supportActions,supportBadge,supportOutcomes,supportPermissions,supportQueue,supportReader,supportState,supportStaff,type SupportData,type SupportRow} from '@/lib/support';
 export const dynamic='force-dynamic';
 
 type Raw={id:string;branch:string;assignedTo:string;data:string;createdAt:string;updatedAt:string;version:number};
@@ -30,8 +30,9 @@ export async function GET(){try{
  const probe=await context({load:'identity'});
  const c=['admin','customer_service','customer_service_manager'].includes(probe.me.role)?await context():await context({load:'directory'});
  const now=new Date().toISOString(),support=await loadSupport(c.db,now),scope={me:c.me,members:c.members,all:c.all,visible:c.visible,support};
- const requests=supportQueue(scope,now),missed=missedVisits(scope,now);
- return Response.json({generatedAt:now,requests,missed,counts:{requests:requests.length,missed:missed.length,badge:supportBadge(requests,missed,c.me.role)}},{headers:{'Cache-Control':'no-store'}});
+ // Each list is cut to what a page can show, but the counts and the badge are taken from the whole of it.
+ const everyRequest=supportQueue(scope,now,Infinity),everyMissed=missedVisits(scope,now,Infinity);
+ return Response.json({generatedAt:now,requests:everyRequest.slice(0,SUPPORT_LIST_LIMIT),missed:everyMissed.slice(0,SUPPORT_LIST_LIMIT),counts:{requests:everyRequest.length,missed:everyMissed.length,badge:supportBadge(everyRequest,everyMissed,c.me.role)}},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 
 const requestId=z.string().uuid(),idText=z.string().min(1).max(200),version=z.number().int().positive();
@@ -79,7 +80,7 @@ export async function POST(req:Request){try{
    if(!reader.service&&!reader.lead&&!reader.admin)throw new CRMError('تولّي الزيارات المفقودة لخدمة العملاء فقط',403);
    if(!memberCanAccessRegion(c.me,customer.data.region)||!reader.admin&&customer.branch!==c.me.branch)throw new CRMError('العميل خارج نطاق صلاحيتك',403);
    if(!input.visitId)throw new CRMError('حدد الزيارة المفقودة');
-   const entry=missedVisits({me:c.me,members:c.members,all:c.all,support:await loadSupport(c.db,now)},now).find(item=>item.visitId===input.visitId&&item.customerId===customer.id);
+   const entry=missedVisits({me:c.me,members:c.members,all:c.all,support:await loadSupport(c.db,now)},now,Infinity).find(item=>item.visitId===input.visitId&&item.customerId===customer.id);
    if(!entry)throw new CRMError('لم تعد هذه الزيارة ضمن الزيارات المفقودة. حدّث القائمة.',409);
    if(!entry.permissions.take)throw new CRMError('هذه الزيارة مسندة لممثل آخر لخدمة العملاء',403);
    id='support-missed-'+entry.visitId;note=input.note;
