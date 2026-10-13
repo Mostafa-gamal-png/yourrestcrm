@@ -257,5 +257,41 @@
     "iPhone and desktop browsers beyond what Chromium emulates"
   ],
   "productionModified": false,
-  "deployed": false
+  "deployed": true,
+  "ownerDeployment": {
+    "date": "2026-10-13",
+    "by": "the site owner, following docs/UPDATE-2026-10-13-AR.txt in the cPanel File Manager and Terminal",
+    "source": "screenshots of the upload page, the extracted folder and the Terminal output sent by the owner",
+    "package": {
+      "file": "Yourrest-CRM-Update-20261013.zip",
+      "sha256": "9b6c348ec07b1a65de91ba420a0ebd51ff05c3660f00371aecbc572320ed9ec1",
+      "uploadedTo": "/home/youriedx/yourrest-crm-update-20261013",
+      "extractedContents": [
+        "release",
+        "RELEASE-SHA256SUMS.txt",
+        "UPDATE-20261013-AR.txt",
+        "yourrest-activate-update.cjs"
+      ]
+    },
+    "sequence": [
+      "--check: PACKAGE AND CONFIGURATION: READY, no SCHEMA CHANGE line, application still running",
+      "first activator run: STOP APP_OR_DATA_STILL_IN_USE because the application had not stopped yet; nothing was changed",
+      "second activator run after Stop App: 1/4 to 4/4 RELEASE SWITCHED; no verified backup existed for that Riyadh day, so a full application and data copy was made; activation checkpoint yourrest-update-activation-20261013-k8l61q; START APP IN CPANEL",
+      "--verify after Start App: DEPLOYMENT VERIFIED"
+    ],
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/service-report: 401 / /api/service-queue/alerts: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "manualChecksPending": [
+      "a real request from registration to the representative's first contact: the sales manager's count and assignment, the supervisor's delegation, the representative's banner, opening and first visit, the banner leaving",
+      "the sales manager sees who opened the request and when",
+      "the monthly report opens for the administrator, the sales manager and the customer-service manager, and is absent for a supervisor, a representative and customer service",
+      "requests that already existed before the update appear in the lists in the right stage",
+      "the team page warns about a customer-service member who is not linked to a manager"
+    ],
+    "rollbackMaterial": "kept by the activator in the activation checkpoint folder next to the application folder; no database restore is needed because this release changed no schema; do not delete the folder until the release has run stably for several days"
+  }
 }
