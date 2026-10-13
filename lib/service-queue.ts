@@ -1,10 +1,12 @@
 import type {Member,Row} from './crm';
-import {canReadService,isServiceRole,serviceContacts,servicePermissions,serviceState,type ServiceCase,type ServiceContext} from './customer-service';
+import {canReadService,serviceContacts,servicePermissions,serviceState,type ServiceCase,type ServiceContext} from './customer-service';
 import {workingHoursBetween} from './working-hours';
 
 /** What a sales reader (administrator, manager, supervisor or representative) needs about each customer-service
  * case they may read: the brief, where it stands, who must act next and whether that stage is late. It never carries
  * the customer-service registration text, its attachments or internal notes; those stay behind the case API's rules.
+ * A customer-service manager receives only the approvals that wait for him, so a late approval is flagged to the one
+ * who owes it; a customer-service representative receives nothing here and works from the visits list.
  * The figures feed no target, evaluation or movement calculation. */
 export const SERVICE_TARGET_HOURS={approval:4,assignment:4,delegation:4,first_contact:24} as const;
 export type QueueStage='approval'|'returned'|'assignment'|'delegation'|'first_contact'|'follow_up'|'closed';
@@ -76,9 +78,11 @@ export function sortQueue(entries:ServiceQueueEntry[]){
 export const serviceQueueBadge=(entries:ServiceQueueEntry[])=>entries.filter(entry=>entry.awaiting||entry.escalated).length;
 
 export function serviceQueue(c:QueueContext,now:string=new Date().toISOString()):ServiceQueueEntry[]{
- if(isServiceRole(c.me.role))return [];
+ if(c.me.role==='customer_service')return [];
+ const approver=c.me.role==='customer_service_manager';
  const member=(id:string|null|undefined)=>id?c.members.find(m=>m.id===id):undefined,name=(id:string|null|undefined)=>member(id)?.name||'';
- const contactRecords=c.me.role==='admin'?c.all:c.visible,customers=new Map(c.all.filter(r=>r.kind==='customer').map(r=>[r.id,r]));
+ // Service roles see no sales records, so their contact history comes from the whole context, as in the case API.
+ const contactRecords=c.me.role==='admin'||approver?c.all:c.visible,customers=new Map(c.all.filter(r=>r.kind==='customer').map(r=>[r.id,r]));
  const entries:ServiceQueueEntry[]=[];
  for(const item of c.serviceCases){
   const customer=customers.get(item.customerId);
@@ -86,6 +90,7 @@ export function serviceQueue(c:QueueContext,now:string=new Date().toISOString())
   const state=serviceState(item,contactRecords,c.members),contacts=serviceContacts(item,contactRecords),assignee=member(item.assignedTo);
   const {stage,since,contactsSinceDispatch,targetHours,stageHours,late}=caseProgress(item,state,contacts,assignee?.role||'',now);
   const permissions=servicePermissions(item,c),ownerId=ownerFor(item,stage),mine=item.assignedTo===c.me.id;
+  if(approver&&!(stage==='approval'&&permissions.approve))continue;
   const awaiting:QueueAwaiting=stage==='approval'&&permissions.approve?'approve':stage==='assignment'&&permissions.assign?'assign':stage==='delegation'&&mine?'delegate':stage==='first_contact'&&mine?'first_contact':null;
   const currentRep=member(customer.assignedTo),currentRepId=currentRep&&['rep','supervisor'].includes(currentRep.role)?currentRep.id:'';
   entries.push({

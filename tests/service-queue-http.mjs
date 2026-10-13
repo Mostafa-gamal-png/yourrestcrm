@@ -33,9 +33,9 @@ try {
   const alertRows = async id => (await alerts(id)).alerts.map(item => [item.id, item.awaiting, item.seen]);
   const registration = {type: 'call', summary: 'PRIVATE-REGISTRATION-SUMMARY', result: 'متابعة العميل', salesStage: 'won', strength: 'strong', requestedProducts: ['قوالب البلوك المتحركة', 'خدمات صيانة'], nextAction: 'متابعة الاحتياج', nextDate: day, location: '26.437341, 50.034499', locationSource: 'device', locationCapturedAt: now, locationAccuracy: 12, customerNeeds: 'طلب صيانة وقالب', hasCompetitor: true, competitorName: 'Competitor', competitorNotes: 'PRIVATE-COMPETITOR-NOTE'};
 
-  // ---- the field exists for everyone; customer service gets an empty list
+  // ---- the field exists for everyone; with nothing registered yet, nobody has anything waiting
   for (const id of ['owner', 'sm', 'sup', 'rep', 'cs', 'csm']) check(Array.isArray((await crm(id)).serviceQueue), true, id + ' receives a serviceQueue list');
-  check([(await queue('cs')).length, (await queue('csm')).length], [0, 0], 'customer service has its own rows, not a queue');
+  check([(await queue('cs')).length, (await queue('csm')).length], [0, 0], 'nothing waits yet for either customer-service role');
   check((await app.request('/api/service-queue/alerts')).status, 401, 'anonymous callers get 401 from the alerts endpoint too');
   for (const id of ['owner', 'sm', 'sup', 'rep', 'cs', 'csm']) { const answer = await as(id)('/api/service-queue/alerts'); check([id, answer.status, answer.headers['cache-control'], answer.json().alerts, answer.json().memberId], [id, 200, 'no-store', [], id], id + ' asks the app endpoint: nothing waits, never cached'); }
   // ---- registration by customer service, with a private registration text
@@ -45,6 +45,20 @@ try {
   check((await queue('sm')).length + (await queue('sup')).length + (await queue('rep')).length, 0, 'an unapproved request is not in any sales queue');
   const adminFirst = entry(await queue('owner'), id1);
   check([adminFirst.stage, adminFirst.awaiting, adminFirst.ownerId, adminFirst.targetHours], ['approval', 'approve', 'csm', 4], 'the administrator sees it waiting for the customer-service manager');
+  // ---- the customer-service manager sees the same wait on his own screen, and a late one is marked for him
+  const csmFirst = entry(await queue('csm'), id1);
+  check([csmFirst.stage, csmFirst.awaiting, csmFirst.ownerId, csmFirst.late, csmFirst.escalated, csmFirst.permissions.approve], ['approval', 'approve', 'csm', false, false, true], 'the customer-service manager sees the request waiting for his approval, not late yet');
+  check([(await queue('csm')).length, (await queue('cs')).length], [1, 0], 'his queue holds only that approval; the registrar who typed it receives no queue');
+  check([await alertRows('csm'), (await alerts('csm')).count, await alertRows('cs')], [[[id1, 'approve', false]], 1, []], 'the app is told of it for the manager it waits for, and not for the registrar');
+  check(JSON.stringify(await queue('csm')).includes('PRIVATE-'), false, 'his queue carries no registration text');
+  const originalCreatedAt = await app.db.prepare('SELECT created_at FROM crm_service_cases WHERE id=?').bind(id1).first('created_at');
+  await app.db.prepare('UPDATE crm_service_cases SET created_at=? WHERE id=?').bind(new Date(Date.now() - 30 * 86400000).toISOString(), id1).run();
+  const csmLate = entry(await queue('csm'), id1);
+  check([csmLate.late, csmLate.stageHours > 4, csmLate.escalated, csmLate.targetHours], [true, true, false, 4], 'left for a month it is marked late for the one who owes the approval');
+  const adminLate = entry(await queue('owner'), id1);
+  check([adminLate.late, adminLate.escalated], [true, true], 'and escalated to the administrator as before');
+  check([(await queue('sm')).length, (await queue('sup')).length, (await queue('rep')).length], [0, 0, 0], 'while no sales role can see a request that has not been approved');
+  await app.db.prepare('UPDATE crm_service_cases SET created_at=? WHERE id=?').bind(originalCreatedAt, id1).run();
 
   // ---- approval routes it to the manager, whose queue now carries it
   check((await act('csm', id1, {action: 'approve', targetId: 'sm'})).status, 200, 'the customer-service manager approves to the sales manager');

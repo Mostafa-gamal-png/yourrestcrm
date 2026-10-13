@@ -66,7 +66,9 @@ eq(rep.alerts.map(a=>a.since),['2026-10-11T07:00:00.000Z','2026-10-12T06:00:00.0
 eq(ask('rep2').alerts,[],'a representative who holds nothing waiting is told nothing (his follow-up case is not a first contact)');
 const owner=ask('owner');
 eq([owner.alerts,owner.count>0],[[],true],'the administrator may act on any case, but is not personally waited for: no alerts, the badge still counts');
-eq([ask('cs'),ask('csm')].map(a=>[a.alerts,a.count]),[[[],0],[[],0]],'customer service has its own screens: nothing');
+eq([ask('cs')].map(a=>[a.alerts,a.count]),[[[],0]],'a customer-service representative works from the visits list: nothing');
+eq(ask('csm').alerts.map(brief3),[['case-6','approve',false]],'the customer-service manager is told of the request waiting for his approval');
+eq([ask('csm').count,ask('csm').alerts[0].since],[1,'2026-10-12T05:00:00.000Z'],'his badge counts it, and the alert carries when it began waiting for him');
 eq(ask('outside').alerts,[],'a representative outside the case chain is told nothing');
 
 // ---- time moves the same request on without repeating it
