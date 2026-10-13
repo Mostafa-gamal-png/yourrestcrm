@@ -41,7 +41,8 @@ export function quoteTotals(items:{quantity:number;price:number}[],discount:numb
 export function scopeRecords(all:Row[],members:Member[],me:Member){
  all=regionRecords(all,me);
  if(['customer_service','customer_service_manager'].includes(me.role))return [];
- if(me.role==='admin')return all;
+ // Customer-service assistance requests are not sales records: they have their own route and never travel with the records.
+ if(me.role==='admin')return all.filter(row=>(row.kind as string)!=='support');
  const indexed=new Map(all.map(row=>[row.id,row])),access=salesRecordAccess(members,me);
  const allowed=all.filter(row=>access.canRead(row)),ids=new Set(allowed.map(row=>row.id));
  const rootCustomer=(row:Row)=>{let current:Row|undefined=row;const seen=new Set<string>();while(current&&current.kind!=='customer'&&!seen.has(current.id)){seen.add(current.id);current=current.parentId?indexed.get(current.parentId):undefined;}return current?.kind==='customer'?current:undefined;};
