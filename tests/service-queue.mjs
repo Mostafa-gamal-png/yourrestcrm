@@ -66,9 +66,26 @@ const now='2026-10-12T12:00:00.000Z'; // Monday 15:00 Riyadh
 const run=(id)=>queue.serviceQueue(scoped(members.find(x=>x.id===id)),now);
 const byId=(entries,id)=>entries.find(e=>e.id===id);
 
-// -- customer service never gets a queue (they have their rows)
+// -- a customer-service representative gets no queue (they have their rows)
 eq(run('cs'),[],'a customer-service representative gets no queue');
-eq(run('csm'),[],'nor a customer-service manager');
+// -- the customer-service manager gets only the approvals that wait for him, with the same clock and the same late mark
+let csm=run('csm');
+eq(csm.map(e=>e.id),['case-6'],'the customer-service manager receives the one case waiting for his approval, not the cases that already left customer service, nor a returned one');
+eq([byId(csm,'case-6').stage,byId(csm,'case-6').awaiting,byId(csm,'case-6').ownerId,byId(csm,'case-6').targetHours,byId(csm,'case-6').stageHours,byId(csm,'case-6').late,byId(csm,'case-6').escalated],['approval','approve','csm',4,7,true,false],'case-6 waits for him since Monday 08:00, 7 working hours against a target of 4: late, and never "escalated" to himself');
+eq([byId(csm,'case-6').permissions.approve,byId(csm,'case-6').permissions.assign,byId(csm,'case-6').permissions.reassign,byId(csm,'case-6').permissions.followup],[true,false,false,false],'he may approve or return it; nothing else');
+eq(queue.serviceQueueBadge(csm),1,'his badge counts the approval that waits for him');
+eq(JSON.stringify(csm).includes('PRIVATE'),false,'his queue carries no registration text either');
+eq(run('csm').length,1,'the same answer on every read');
+const soon=queue.serviceQueue(scoped(members.find(x=>x.id==='csm')),'2026-10-12T08:00:00.000Z'); // 11:00 Riyadh, 3 working hours in
+eq([byId(soon,'case-6').stageHours,byId(soon,'case-6').late,queue.serviceQueueBadge(soon)],[3,false,1],'within the 4 hours it is not late, and it still counts: it waits for him');
+const approvedAlready=cases.map(item=>item.id==='case-6'?{...item,status:'pending_assignment',data:{...item.data,approvedAt:'2026-10-12T09:00:00.000Z'}}:item);
+eq(queue.serviceQueue({...scoped(members.find(x=>x.id==='csm')),serviceCases:approvedAlready},now),[],'once he approves, the request leaves his queue');
+const resubmitted=cases.map(item=>item.id==='case-6'?{...item,data:{...item.data,resubmittedAt:'2026-10-12T11:00:00.000Z'}}:item);
+eq([byId(queue.serviceQueue({...scoped(members.find(x=>x.id==='csm')),serviceCases:resubmitted},now),'case-6').stageHours,byId(queue.serviceQueue({...scoped(members.find(x=>x.id==='csm')),serviceCases:resubmitted},now),'case-6').late],[1,false],'a resubmitted request restarts his clock');
+const stillHis=cases.map(item=>item.id==='case-6'?{...item,serviceManagerId:'csm-other'}:item);
+eq(queue.serviceQueue({...scoped(members.find(x=>x.id==='csm')),serviceCases:stillHis},now).map(e=>e.id),['case-6'],'a registrar who still reports to him keeps the request in his queue, whoever it was routed to when it was registered');
+const otherManager=cases.map(item=>item.id==='case-6'?{...item,creatorId:'cs-other',serviceManagerId:'csm-other'}:item);
+eq(queue.serviceQueue({...scoped(members.find(x=>x.id==='csm')),serviceCases:otherManager},now),[],'a request of another manager\'s team is not in his queue');
 
 // -- the sales manager
 let sm=run('sm');
@@ -124,6 +141,7 @@ const ids=groups=>groups.map(g=>g.id+':'+g.entries.map(e=>e.id).join('+'));
 eq(ids(queue.queueGroups(sm,'manager')),['mine:case-1','late:case-2','active:case-4+case-3+case-8','closed:'],'manager sections: his to-do, what is late below him, the rest');
 eq(ids(queue.queueGroups(sup,'supervisor')),['mine:case-2','late:','active:case-4+case-3+case-8','closed:'],'supervisor sections');
 eq(ids(queue.queueGroups(rep,'rep')),['new:case-3+case-8','active:','closed:'],'representative sections: new first');
+eq(ids(queue.queueGroups(csm,'customer_service_manager')),['mine:case-6','late:','active:','closed:'],'customer-service manager sections: only what waits for his approval');
 eq(ids(queue.queueGroups(owner,'admin')).slice(0,2),['mine:case-6+case-1+case-5','late:case-2'],'administrator: approvals and assignments first (late, strong and oldest first), then every other late case');
 const closedEntry={...byId(sm,'case-4'),id:'done',stage:'closed',awaiting:null,late:false,escalated:false};
 eq(ids(queue.queueGroups([closedEntry],'manager')),['mine:','late:','active:','closed:done'],'closed cases are kept apart');

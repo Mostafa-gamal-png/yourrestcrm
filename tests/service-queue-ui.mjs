@@ -58,7 +58,7 @@ eq([hoursText(1,(ar,en)=>en),hoursText(7,(ar,en)=>en),hoursText(0.2,(ar,en)=>en)
 // ---- the panel
 const opened=[],visited=[];
 const handlers={onOpen:e=>opened.push(e.id),onVisit:e=>visited.push(e.id)};
-const manager={id:'sm',role:'manager',name:'مدير'},rep={id:'rep',role:'rep',name:'مندوب'},admin={id:'owner',role:'admin',name:'مدير النظام'},sup={id:'sup',role:'supervisor',name:'مشرف'};
+const manager={id:'sm',role:'manager',name:'مدير'},rep={id:'rep',role:'rep',name:'مندوب'},admin={id:'owner',role:'admin',name:'مدير النظام'},sup={id:'sup',role:'supervisor',name:'مشرف'},approver={id:'csm',role:'customer_service_manager',name:'مديرة الخدمة'};
 eq(ServiceQueuePanel({entries:[],me:manager,...handlers}),null,'an empty queue renders nothing');
 const toAssign=entry({id:'a',customerName:'مصنع للتكليف',stage:'assignment',status:'pending_assignment',state:'pending_assignment',awaiting:'assign',ownerId:'sm',assignedTo:null,assignedName:'',stageHours:6.5,targetHours:4,late:true,permissions:{assign:true}});
 const escalated=entry({id:'b',customerName:'مصنع متأخر',stage:'delegation',assignedTo:'sup',assignedName:'المشرف',assignedRole:'supervisor',awaiting:null,stageHours:6,targetHours:4,late:true,escalated:true});
@@ -113,6 +113,22 @@ tree=expand(ServiceQueuePanel({entries:[entry({id:'y',awaiting:'approve',stage:'
 eq(text(groups(tree)[0]).startsWith('بانتظار اعتماد أو تكليف'),true,'administrator\'s section covers approvals and assignments');
 ok(button(cardsIn(tree)[0],'اعتماد أو إعادة')!==undefined,'approve or return');
 
+// ---- the customer-service manager: the approvals that wait for him, late ones marked
+const waitingApproval=entry({id:'z',customerName:'مصنع بانتظار الاعتماد',stage:'approval',status:'pending_approval',state:'pending_approval',awaiting:'approve',ownerId:'csm',assignedTo:null,assignedName:'',stageHours:6.5,targetHours:4,late:true,permissions:{approve:true}});
+const freshApproval=entry({id:'z2',customerName:'مصنع جديد',stage:'approval',status:'pending_approval',state:'pending_approval',awaiting:'approve',ownerId:'csm',assignedTo:null,assignedName:'',stageHours:1,targetHours:4,late:false,permissions:{approve:true}});
+tree=expand(ServiceQueuePanel({entries:[freshApproval,waitingApproval],me:approver,...handlers}));
+eq(groups(tree).map(g=>g.props['data-group']),['mine'],'the customer-service manager has the one section, with what waits for his approval');
+ok(text(groups(tree)[0]).startsWith('بانتظار اعتمادي'),'titled for his approval');
+ok(text(tree).includes('طلبات بانتظار اعتمادك')&&text(tree).includes('4 ساعات عمل'),'the heading says what the panel is and when a request is marked late');
+eq(cardsIn(tree).map(c=>[c.props['data-awaiting'],c.props['data-late']]),[['approve','false'],['approve','true']],'both cards wait for his approval; only the second is late');
+ok(text(cardsIn(tree)[1]).includes('متأخر عن هدف 4 ساعات عمل')&&!text(cardsIn(tree)[0]).includes('متأخر'),'only the late one carries the late mark');
+ok(button(cardsIn(tree)[1],'اعتماد أو إعادة')!==undefined&&button(cardsIn(tree)[1],'تسجيل زيارة')===undefined,'he approves or returns; he records no visit from here');
+eq(QueueBadge({entries:[freshApproval,waitingApproval]}).props.children,2,'his navigation badge counts both approvals');
+language='en';
+tree=expand(ServiceQueuePanel({entries:[waitingApproval],me:approver,...handlers}));
+ok(text(tree).includes('Waiting for my approval')&&text(tree).includes('Requests waiting for your approval')&&text(cardsIn(tree)[0]).includes('Late against a 4-working-hour target'),'English headings and late mark for the customer-service manager');
+language='ar';
+
 // ---- English
 language='en';
 tree=expand(ServiceQueuePanel({entries:[toAssign],me:manager,...handlers}));
@@ -127,7 +143,7 @@ const plain=(o={})=>entry({customerName:'Plant A',customerCity:'Dammam',needs:'N
 const arabicLeft=tree=>(text(tree).match(/[\u0600-\u06ff]+/g)||[]);
 language='en';
 const englishCases=[plain({id:'e1',stage:'assignment',status:'pending_assignment',state:'pending_assignment',awaiting:'assign',ownerId:'sm',stageHours:6,targetHours:4,late:true,permissions:{...toAssign.permissions}}),plain({id:'e2',stage:'delegation',awaiting:null,late:true,escalated:true,stageHours:6,targetHours:4}),plain({id:'e3',stage:'first_contact',awaiting:'first_contact',assignedTo:'rep',ownerId:'rep',seenAt:''}),plain({id:'e4',stage:'follow_up',awaiting:null,targetHours:null,seenAt:'2026-10-11T08:00:00.000Z'}),plain({id:'e5',stage:'closed',state:'won',awaiting:null,targetHours:null}),plain({id:'e6',stage:'closed',state:'lost',awaiting:null,targetHours:null}),plain({id:'e7',stage:'approval',status:'pending_approval',state:'pending_approval',awaiting:'approve'}),plain({id:'e8',stage:'returned',status:'returned',state:'returned'})];
-for(const who of [manager,sup,rep,admin])eq(arabicLeft(expand(ServiceQueuePanel({entries:englishCases,me:who,...handlers}))),[],'English panel for '+who.role+' has no untranslated wording');
+for(const who of [manager,sup,rep,admin,approver])eq(arabicLeft(expand(ServiceQueuePanel({entries:englishCases,me:who,...handlers}))),[],'English panel for '+who.role+' has no untranslated wording');
 eq(arabicLeft(expand(ServiceQueueBanner({entries:[englishCases[2]],...handlers}))),[],'English banner has no untranslated wording');
 for(const key of ['quoted','needs','negotiation'])eq(arabicLeft(expand(ServiceQueuePanel({entries:[plain({id:'s',stage:'follow_up',awaiting:null,salesStage:key})],me:manager,...handlers}))),[],'English sales stage '+key);
 language='ar';

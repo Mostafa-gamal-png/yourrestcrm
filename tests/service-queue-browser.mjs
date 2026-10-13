@@ -87,6 +87,41 @@ try {
   const created = await as('cs')('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'f1', customerVersion: 1, registration, elapsedMilliseconds: 2200}});
   check(created.status, 200, 'customer service registers a request: ' + created.text.slice(0, 100));
   const caseId = created.json().id;
+
+  // ---- 0. The customer-service manager: the approval waiting for him is counted and listed, and marked late once it passes 4 working hours
+  {
+    const approver = await open('csm', {viewport: DESKTOP});
+    const badge = approver.locator('button.nav-item .nav-badge');
+    await badge.first().waitFor();
+    check([await badgeOf(badge), (await badge.first().getAttribute('aria-label')).includes('1')], ['1', true], 'the Visits entry counts the approval waiting for the customer-service manager');
+    const panel = approver.locator('.service-queue');
+    await panel.waitFor();
+    check(await panel.getAttribute('data-role'), 'customer_service_manager', 'the panel knows whose it is');
+    const card = panel.locator(`.service-queue-group[data-group="mine"] [data-case="${caseId}"]`);
+    await card.waitFor();
+    check([await card.getAttribute('data-stage'), await card.getAttribute('data-awaiting'), await card.getAttribute('data-late')], ['approval', 'approve', 'false'], 'waiting for his approval, within target');
+    ok((await panel.locator('.service-queue-group h3').first().innerText()).includes('بانتظار اعتمادي'), 'the section is titled for his approval');
+    ok((await card.innerText()).includes(CUSTOMER) && (await card.innerText()).includes('بانتظار اعتماد خدمة العملاء'), 'the card names the customer and the stage');
+    check(await card.getByRole('button', {name: 'تسجيل زيارة'}).count(), 0, 'no visit button: he approves or returns');
+    // His own team's registrations are legitimately in the visits list below; the panel itself carries only the brief.
+    ok(!private_(await panel.innerText()), 'the registration text and competitor notes are not in the panel');
+    await layoutOk(approver, 'customer-service manager panel');
+    // Left for a month the request is late for the one who owes the approval; the mark is on his own screen.
+    const startedAt = await app.db.prepare('SELECT created_at FROM crm_service_cases WHERE id=?').bind(caseId).first('created_at');
+    await app.db.prepare('UPDATE crm_service_cases SET created_at=? WHERE id=?').bind(new Date(Date.now() - 30 * 86400000).toISOString(), caseId).run();
+    await approver.reload();
+    const late = approver.locator(`.service-queue-group[data-group="mine"] [data-case="${caseId}"]`);
+    await late.waitFor();
+    check(await late.getAttribute('data-late'), 'true', 'after a month without a decision the card is late');
+    ok((await late.innerText()).includes('متأخر عن هدف 4 ساعات عمل'), 'and says against which target');
+    check((await approver.locator('button.nav-item .nav-badge').first().innerText()).trim(), '1', 'the count still stands for the same request');
+    await shot(approver, 'queue-approver-late');
+    await app.db.prepare('UPDATE crm_service_cases SET created_at=? WHERE id=?').bind(startedAt, caseId).run();
+    await approver.context().close();
+    const registrar = await open('cs', {viewport: DESKTOP});
+    check([await registrar.locator('.service-queue').count(), await registrar.locator('button.nav-item .nav-badge').count()], [0, 0], 'the registrar who typed the request has no queue and no count');
+    await registrar.context().close();
+  }
   check((await act('csm', caseId, {action: 'approve', targetId: 'sm'})).status, 200, 'the customer-service manager approves it to the sales manager');
 
   // ---- 1. The manager: a count on Visits, the request waiting for his assignment, the sheet, the instruction
@@ -308,7 +343,7 @@ try {
     const csm = await open('csm', {viewport: DESKTOP});
     await goDesktop(csm, 'الزيارات');
     await csm.locator('details.service-report').waitFor();
-    check(await csm.locator('.service-queue').count(), 0, 'the customer-service manager gets the report but not the sales queue');
+    check(await csm.locator('.service-queue').count(), 0, 'with nothing left to approve the customer-service manager has the report and no panel');
     await csm.context().close();
     await manager.context().close();
     await supervisor.context().close();

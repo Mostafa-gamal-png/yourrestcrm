@@ -18,7 +18,7 @@ const STAGE_TEXT:Record<QueueStage,[string,string]>={
  closed:['منتهي','Closed']
 };
 const GROUP_TEXT:Record<QueueGroupId,Record<string,[string,string]>>={
- mine:{default:['بانتظار إجرائي','Waiting for my action'],admin:['بانتظار اعتماد أو تكليف','Waiting for approval or assignment'],manager:['بانتظار تكليفي','Waiting for my assignment']},
+ mine:{default:['بانتظار إجرائي','Waiting for my action'],admin:['بانتظار اعتماد أو تكليف','Waiting for approval or assignment'],manager:['بانتظار تكليفي','Waiting for my assignment'],customer_service_manager:['بانتظار اعتمادي','Waiting for my approval']},
  late:{default:['تأخرت عند فريقك','Late with your team'],admin:['متأخرة عن هدفها','Late against target']},
  new:{default:['جديد: طلبات محالة إليك','New: requests assigned to you']},
  active:{default:['قيد المتابعة','In progress']},
@@ -69,7 +69,7 @@ export function ServiceQueuePanel({entries,me,onOpen,onVisit}:{entries:ServiceQu
  if(!entries.length)return null;
  const groups=queueGroups(entries,me.role).filter(group=>group.entries.length),open=entries.filter(entry=>entry.stage!=='closed').length;
  return <section className="service-queue panel" aria-label={say('طلبات خدمة العملاء','Customer-service requests')} data-role={me.role} dir={language==='en'?'ltr':'rtl'}>
-  <div className="service-queue-heading"><div><h2><ClipboardList size={18} aria-hidden="true"/> {say('طلبات خدمة العملاء','Customer-service requests')}</h2><p>{me.role==='rep'?say('طلبات أحالتها خدمة العملاء إليك لمتابعة العميل.','Requests customer service has assigned to you to follow up with the customer.'):say('طلبات خدمة العملاء في نطاقك وما ينتظر إجراءك فيها.','Customer-service requests in your scope and what waits for you.')}</p></div><span className="service-queue-count">{open}</span></div>
+  <div className="service-queue-heading"><div><h2><ClipboardList size={18} aria-hidden="true"/> {say('طلبات خدمة العملاء','Customer-service requests')}</h2><p>{me.role==='rep'?say('طلبات أحالتها خدمة العملاء إليك لمتابعة العميل.','Requests customer service has assigned to you to follow up with the customer.'):me.role==='customer_service_manager'?say('طلبات بانتظار اعتمادك، وتظهر عليها علامة «متأخر» إن مرّت 4 ساعات عمل دون اعتماد أو إعادة.','Requests waiting for your approval. They are marked late once 4 working hours pass without approval or return.'):say('طلبات خدمة العملاء في نطاقك وما ينتظر إجراءك فيها.','Customer-service requests in your scope and what waits for you.')}</p></div><span className="service-queue-count">{open}</span></div>
   {groups.map(group=>{
    const cards=group.entries.map(entry=><QueueCard key={entry.id} entry={entry} me={me} say={say} onOpen={onOpen} onVisit={onVisit}/>);
    if(group.id==='closed')return <details key={group.id} className="service-queue-closed" data-group={group.id}><summary>{groupTitle(group.id,me.role,say)} <span className="service-queue-count">{group.entries.length}</span></summary><div className="service-queue-cards">{cards}</div></details>;
