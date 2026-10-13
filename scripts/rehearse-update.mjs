@@ -488,6 +488,7 @@ try {
     // The administrator's case: the request customer service registered during the new release's use (the assistance block); the manager and the representative have no case yet.
     const expectedCases = queueIntroduced ? {owner: 1, mgr: 1, rep1: 1} : supportIntroduced ? {owner: 1, mgr: 0, rep1: 0} : {owner: 0, mgr: 0, rep1: 0};
     for (const who of ['owner', 'mgr', 'rep1']) assert.equal(restored[who].cases.length, expectedCases[who], who + ' sees what the new release recorded, as before');
+    let supportAuditLines = null;
     if (supportIntroduced) {
       // Assistance requests are records of a kind the previous release does not know: it serves everyone on them, they are no case and no visit, and nobody but the administrator's raw record list could carry them.
       const supportRows = (() => { const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true}); try { return db.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='support'").get().n; } finally { db.close(); } })();
@@ -495,6 +496,8 @@ try {
       assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'support').length), [0, 0, 0, 0], 'no one but the administrator\'s raw record list could carry them');
       assert.equal(restored.owner.cases.some(item => String(item.id).startsWith('support-')), false, 'they are not customer-service cases');
       assert.equal((await a.request('/api/support')).status, 404, 'the new route is gone again with the new release');
+      // Recorded, not judged: the previous release has no rule to leave the assistance audit lines out of the administrator's history.
+      supportAuditLines = (restored.owner.crm.audits || []).filter(item => /^support/.test(String(item.action))).length;
     }
     if (queueIntroduced) {
       assert.equal(restored.rep1.cases[0].status, 'assigned', 'it keeps its status');
@@ -504,7 +507,7 @@ try {
     const back = await views();
     assert.deepEqual(['owner', 'mgr', 'sup', 'rep1', 'repw'].map(who => (back[who].crm.records || []).filter(record => record.kind === 'customer').length), ['owner', 'mgr', 'sup', 'rep1', 'repw'].map(who => (before[who].crm.records || []).filter(record => record.kind === 'customer').length), 'every role still sees the same customers');
     assert.equal(stable(back.file), stable(before.file), 'the attachment is intact');
-    note('going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to', {restoredStatuses: Object.keys(restored).length});
+    note('going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to', {restoredStatuses: Object.keys(restored).length, ...(supportAuditLines === null ? {} : {assistanceAuditLinesInTheAdministratorsHistoryOfThePreviousRelease: supportAuditLines})});
     await a.stop();
   }
   a.close();
