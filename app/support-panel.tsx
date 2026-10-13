@@ -23,18 +23,20 @@ const stateText=(entry:SupportEntry,say:Say)=>entry.state==='waiting'?say('با�
 
 /** The assistance data of the signed-in member, loaded beside the page and refreshed with it and every ten minutes. */
 export function useSupport({me,records,members}:{me:Member|null;records:Row[];members:Member[]}){
- const [loaded,setLoaded]=useState<{identity:string;data:SupportData}|null>(null),generation=useRef(0);
+ const [loaded,setLoaded]=useState<{identity:string;data:SupportData}|null>(null),generation=useRef(0),lastLoad=useRef({identity:'',at:0});
  const identity=me?[me.id,me.role,me.authVersion,me.regionScope,me.branch].join(':'):'';
  // What was loaded for another account, or before signing out, is never shown.
  const data=loaded&&loaded.identity===identity?loaded.data:null;
- const refresh=useCallback(async()=>{
+ // A change the member just made always reloads; the page's own reloads (focus, visibility, a refreshed snapshot) are at most one per fifteen seconds.
+ const refresh=useCallback(async(force:boolean=true)=>{
   if(!identity||typeof navigator!=='undefined'&&navigator.onLine===false)return;
+  if(!force&&lastLoad.current.identity===identity&&Date.now()-lastLoad.current.at<15000)return;
   const current=++generation.current;
-  try{const next=await submitJson<SupportData>('/api/support',{cache:'no-store'},{language:getLanguage()});if(current===generation.current)setLoaded({identity,data:next});}catch{/* the page works without it */}
+  try{const next=await submitJson<SupportData>('/api/support',{cache:'no-store'},{language:getLanguage()});if(current===generation.current){lastLoad.current={identity,at:Date.now()};setLoaded({identity,data:next});}}catch{/* the page works without it */}
  },[identity]);
  useEffect(()=>{
   if(!identity)return;
-  const timer=window.setTimeout(()=>{void refresh();},0);
+  const timer=window.setTimeout(()=>{void refresh(false);},0);
   return()=>window.clearTimeout(timer);
  },[identity,refresh,records]);
  useEffect(()=>{
