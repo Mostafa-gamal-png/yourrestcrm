@@ -261,5 +261,43 @@
     "iPhone and desktop browsers beyond what Chromium emulates"
   ],
   "productionModified": false,
-  "deployed": false
+  "deployed": true,
+  "ownerDeployment": {
+    "date": "2026-10-13",
+    "by": "the site owner, following docs/UPDATE-2026-10-14-AR.txt in the cPanel File Manager and Terminal, walked through step by step in the conversation",
+    "source": "screenshots of the upload page, the extracted folder, the Node.js application page and the Terminal output sent by the owner",
+    "package": {
+      "file": "Yourrest-CRM-Update-20261014.zip",
+      "sha256": "3bd2ce48047916e5f2297f478923d538234d7ffee72967a0c41e1a7fc9501df5",
+      "uploadedTo": "/home/youriedx/yourrest-crm-update-20261014",
+      "extractedContents": [
+        "release",
+        "RELEASE-SHA256SUMS.txt",
+        "UPDATE-20261014-AR.txt",
+        "yourrest-activate-update.cjs"
+      ],
+      "sizesMatchThePackage": true
+    },
+    "sequence": [
+      "--check: PACKAGE AND CONFIGURATION: READY. APP MAY REMAIN RUNNING., no SCHEMA CHANGE line, application still running",
+      "first activator run right after Stop App: STOP APP_OR_DATA_STILL_IN_USE although cPanel already showed the application as stopped (a process was still ending); nothing was changed",
+      "second activator run about a minute later: 1/4 to 4/4 RELEASE SWITCHED; today's verified full backup (the 2026-10-13 activation's, yourrest-update-activation-20261013-k8l61q) was reused so no new full copy was made; activation checkpoint yourrest-update-activation-20261014-g2TOok; START APP IN CPANEL",
+      "--verify after Start App: DEPLOYMENT VERIFIED"
+    ],
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/support: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "manualChecksPending": [
+      "customer-service members do not exist yet (the owner said so before activating): create the customer-service manager and a representative per region in the team page, with the manager linked to the sales manager and each representative to the manager",
+      "a representative asks for assistance beside the latest visit; the region's representative sees it, takes it and records an outcome; the representative reads it and the count on Visits clears",
+      "a missed visit that meets the rule appears for the region's representative and one member takes it",
+      "the customer-service manager sees 'waiting for my approval' with the late mark for an approval older than four working hours",
+      "the supervisor and the sales manager see their team's requests without take buttons",
+      "how many missed visits appear on the first day (up to thirty days of them) is as expected"
+    ],
+    "rollbackMaterial": "kept by the activator in the activation checkpoint folder next to the application folder; no database restore is needed because this release changed no schema; do not delete the folder until the release has run stably for several days"
+  }
 }
