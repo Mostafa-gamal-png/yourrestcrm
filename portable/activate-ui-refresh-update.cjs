@@ -25,7 +25,7 @@ const NEW_MIGRATIONS = []; // __UI_REFRESH_NEW_MIGRATIONS__
 const EXTRA_ROUTES = []; // __UI_REFRESH_EXTRA_ROUTES__
 const ACTIVATION_FORMAT = 'yourrest-' + RELEASE_NAME + '-activation-' + RELEASE_DATE;
 // Same-day backups written by earlier activators remain reusable alongside this release's own.
-const BACKUP_TRANSACTION = new RegExp('^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008|update-activation-20261011|update-activation-20261012|' + (RELEASE_NAME + '-activation-' + RELEASE_DATE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')-[A-Za-z0-9-]+$');
+const BACKUP_TRANSACTION = new RegExp('^yourrest-(?:activation-20261007|customer-edit-activation-20261007|ui-refresh-activation-20261008|update-activation-20261011|update-activation-20261012|update-activation-20261013|' + (RELEASE_NAME + '-activation-' + RELEASE_DATE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')-[A-Za-z0-9-]+$');
 const fail = code => { throw Object.assign(new Error(code), {code}); };
 const exists = p => { try { fs.lstatSync(p); return true; } catch(e) { if(e.code === 'ENOENT') return false; throw e; } };
 const inside = (p, root) => p === root || p.startsWith(root + path.sep);

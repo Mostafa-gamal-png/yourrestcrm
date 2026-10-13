@@ -45,7 +45,9 @@ try {
   }
   const earlier = packageIt('earlier', build('build-earlier', 'earlier'), ['--release-name', 'update', '--release-date', '20261012', '--stage-name', 'yourrest-crm-update-20261012', '--new-migration', NEWEST, '--verify-route', '/api/device-status=401']);
   const later = packageIt('later', build('build-later', 'later'), ['--release-name', 'update', '--release-date', '20261013', '--stage-name', 'yourrest-crm-update-20261013', '--schema-baseline', '16', '--verify-route', '/api/service-report=401', '--verify-route', '/api/service-queue/alerts=401']);
+  const newest = packageIt('newest', build('build-newest', 'newest'), ['--release-name', 'update', '--release-date', '20261014', '--stage-name', 'yourrest-crm-update-20261014', '--schema-baseline', '16', '--verify-route', '/api/support=401']);
   eq([earlier.report.schemaBefore, earlier.report.schemaAfter, earlier.report.newMigrations], [15, 16, [NEWEST]], 'the earlier package adds the migration');
+  eq([newest.report.schemaBefore, newest.report.schemaAfter, newest.report.newMigrations, newest.helper.EXTRA_ROUTES], [16, 16, [], [['/api/support', 401]]], 'the package after that states the same baseline, adds nothing and checks its own route');
   eq([later.report.schemaBefore, later.report.schemaAfter, later.report.newMigrations], [16, 16, []], 'the later package states the baseline and adds nothing');
   const helper = later.helper;
   eq([helper.SCHEMA_BEFORE, helper.SCHEMA_AFTER, helper.NEW_MIGRATIONS, helper.EXTRA_ROUTES], [16, 16, [], [['/api/service-report', 401], ['/api/service-queue/alerts', 401]]], 'the pinned activator carries them');
@@ -76,7 +78,7 @@ try {
   const options = (iso, extra = {}) => ({log: quiet, stopped, now: () => new Date(iso), ...extra});
   const probes = [];
   globalThis.fetch = async (url, settings) => { probes.push(url); eq(settings.redirect, 'manual'); return new Response('', {status: statuses[new URL(url).pathname] ?? 404}); };
-  const healthy = {'/login': 200, '/api/crm': 401, '/api/device-status': 401, '/api/service-report': 401, '/api/service-queue/alerts': 401};
+  const healthy = {'/login': 200, '/api/crm': 401, '/api/device-status': 401, '/api/service-report': 401, '/api/service-queue/alerts': 401, '/api/support': 401};
   const rows = (file, sql) => { const db = new DatabaseSync(file, {readOnly: true}); try { return db.prepare(sql).all(); } finally { db.close(); } };
   const databaseOf = p => path.join(p.data, 'database.sqlite');
 
@@ -148,6 +150,22 @@ try {
     eq(read(path.join(pl.current, 'app.cjs')), '// isolated release fixture later\n', 'the later release is live');
     statuses = {...healthy};
     await helper.run(pl, 'verify', {log: quiet, stopped});
+    eq(logs.length > 0, true); checks--;
+  }
+
+  // ---- the release after that, on the same Saudi day as the one before it: that day's full backup is reused again
+  {
+    const dir = home('same-day-next', 16, later, newest), pl = later.helper.pathsFor(dir), pn = newest.helper.pathsFor(dir), database = databaseOf(pn), logs = [], collect = message => logs.push(message);
+    const first = await later.helper.run(pl, 'apply', {log: quiet, stopped: paths => later.helper.ensureStopped(paths, emptyProc), now: () => new Date('2026-10-14T05:00:00Z')});
+    statuses = {...healthy};
+    await later.helper.run(pl, 'verify', {log: quiet, stopped: paths => later.helper.ensureStopped(paths, emptyProc)});
+    const second = await newest.helper.run(pn, 'apply', {log: collect, stopped: paths => newest.helper.ensureStopped(paths, emptyProc), now: () => new Date('2026-10-14T09:00:00Z')});
+    eq(logs.includes('2/4 TODAY\'S VERIFIED FULL BACKUP REUSED. NO NEW FULL COPY.'), true, 'the next activator reuses the backup the 2026-10-13 activator took that day');
+    eq([second.phase, second.baseline.migrations, second.dailyBackup.transaction], ['switched', 16, first.transaction], 'it switches on the 16-migration database, citing that backup');
+    eq(rows(database, 'SELECT COUNT(*) n FROM yr_schema_migrations')[0].n, 16, 'the database is untouched');
+    eq(read(path.join(pn.current, 'app.cjs')), '// isolated release fixture newest\n', 'the newest release is live');
+    statuses = {...healthy};
+    await newest.helper.run(pn, 'verify', {log: quiet, stopped: paths => newest.helper.ensureStopped(paths, emptyProc)});
     eq(logs.length > 0, true); checks--;
   }
 
