@@ -51,7 +51,7 @@ const noop=async()=>{};
 const permissions=(o={})=>({take:false,assign:false,result:false,cancel:false,seen:false,...o});
 const entry=(o={})=>({id:'support-1',customerId:'c-1',customerName:'مصنع الأمل',customerPhone:'0551234567',customerCity:'الدمام',customerRegion:'الشرقية',customerVersion:3,origin:'rep',state:'waiting',note:'العميل لا يرد على اتصالاتي',channel:'call',plan:null,requestedBy:'rep',requestedByName:'أحمد المندوب',repId:'rep',repName:'أحمد المندوب',handlerId:'',handlerName:'',result:null,answerSeen:false,cancelReason:'',cancelledByName:'',createdAt:'2026-10-14T05:00:00.000Z',updatedAt:'2026-10-14T05:00:00.000Z',version:1,stageHours:2,targetHours:4,late:false,unrouted:false,awaiting:null,permissions:permissions(),candidates:[],...o});
 const missedEntry=(o={})=>({id:'missed-v-1',visitId:'v-1',customerId:'c-2',customerName:'مصنع النور',customerPhone:'0561234567',customerCity:'الخبر',customerRegion:'الشرقية',customerVersion:2,repId:'rep',repName:'أحمد المندوب',plan:{visitId:'v-1',visitDate:'2026-10-06',result:'سلبية',nextAction:'زيارة متابعة',nextDate:'2026-10-10'},overdueDays:4,missedSince:'2026-10-11T21:00:00.000Z',routedToId:'',routedToName:'',unrouted:false,permissions:{take:true},...o});
-const data=(requests=[],missed=[])=>({generatedAt:'2026-10-14T09:00:00.000Z',requests,missed,counts:{requests:requests.length,missed:missed.length,badge:0}});
+const data=(requests=[],missed=[],counts={})=>({generatedAt:'2026-10-14T09:00:00.000Z',requests,missed,counts:{requests:requests.length,missed:missed.length,badge:0,...counts}});
 const me=(role,id=role)=>({id,role,name:id,email:id+'@x.org',branch:'الرئيسي',active:1,target:0});
 const panel=(who,payload)=>html(React.createElement(SupportPanel,{data:payload,me:who,onOpen:()=>{},onChanged:noop}));
 
@@ -149,6 +149,14 @@ const panel=(who,payload)=>html(React.createElement(SupportPanel,{data:payload,m
  const many=Array.from({length:11},(_,n)=>missedEntry({id:'missed-m'+n,visitId:'m'+n,customerName:'مصنع '+n}));
  markup=panel(me('customer_service'),data([],many));
  eq([count(markup,'data-missed="'),count(markup,'عرض الباقي (3)')],[11,1],'eleven missed visits: eight at once, three behind "show the rest"');
+ eq(count(markup,'support-cut'),0,'nothing is said while nothing is cut');
+ // a list cut at its fixed size says so, and the heading counts all of it
+ markup=panel(me('customer_service'),data([waiting],many,{missed:111}));
+ ok(markup.includes('support-cut')&&markup.includes('تُعرض 11 من أصل 111 زيارة مفقودة، الأكثر تأخرًا أولًا، وتظهر البقية كلما عولجت هذه.'),'a cut list says how many of how many are shown');
+ ok(markup.includes('<span class="support-count">112</span></div>'),'and the heading counts the open requests and every missed visit');
+ markup=panel(me('customer_service'),data([waiting,held],[],{requests:350}));
+ ok(markup.includes('تُعرض 2 من أصل 350 طلبًا.'),'the same for requests');
+ eq(count(panel(me('rep'),data([entry({id:'a',state:'waiting'})],[],{missed:0})),'support-cut'),0,'a sales member is told nothing about missed visits');
  // English: nothing the components write is Arabic
  language='en';
  const latin=o=>entry({customerName:'Plant A',customerCity:'Dammam',customerRegion:'Eastern',requestedByName:'Agent',repName:'Agent',handlerName:'Holder',note:'Customer does not answer',...o});
@@ -158,6 +166,8 @@ const panel=(who,payload)=>html(React.createElement(SupportPanel,{data:payload,m
  markup=panel(me('customer_service'),data(englishRequests,englishMissed));
  ok(markup.includes('Customer contact')&&markup.includes('Waiting for you to take')&&markup.includes('Missed visits in your region')&&markup.includes('Behind by 4 days')&&markup.includes('Late against a 4-working-hour target'),'English headings, chips and the late mark');
  ok(arabicLeft(panel(me('rep'),data(englishRequests))).length===0&&panel(me('rep'),data(englishRequests)).includes('Customer-service assistance'),'English representative panel');
+ markup=panel(me('customer_service'),data(englishRequests,englishMissed,{missed:500,requests:400}));
+ ok(markup.includes('Showing 2 of 500 missed visits, the most overdue first. The rest appear as these are handled.')&&markup.includes('Showing 6 of 400 requests.')&&arabicLeft(markup).length===0,'English note for a cut list, without Arabic');
  language='ar';
 }
 

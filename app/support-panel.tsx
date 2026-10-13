@@ -150,12 +150,16 @@ export function SupportPanel({data,me,onOpen,onChanged}:{data:SupportData|null;m
  if(!data)return null;
  const groups=supportGroups(data.requests,data.missed,me.role);
  if(!groups.length)return null;
- const staff=isStaff(me.role),count=data.requests.filter(entry=>entry.state==='waiting'||entry.state==='in_progress').length+(staff?data.missed.length:0);
+ // The lists are cut at a fixed size; the counts come from the whole of them so nothing is hidden without being said.
+ const missedTotal=Math.max(data.counts?.missed??0,data.missed.length),requestTotal=Math.max(data.counts?.requests??0,data.requests.length);
+ const staff=isStaff(me.role),count=data.requests.filter(entry=>entry.state==='waiting'||entry.state==='in_progress').length+(staff?missedTotal:0);
+ const cut=[missedTotal>data.missed.length?say('تُعرض '+data.missed.length+' من أصل '+missedTotal+' زيارة مفقودة، الأكثر تأخرًا أولًا، وتظهر البقية كلما عولجت هذه.','Showing '+data.missed.length+' of '+missedTotal+' missed visits, the most overdue first. The rest appear as these are handled.'):'',requestTotal>data.requests.length?say('تُعرض '+data.requests.length+' من أصل '+requestTotal+' طلبًا.','Showing '+data.requests.length+' of '+requestTotal+' requests.'):''].filter(Boolean);
  const takeRequest=(entry:SupportEntry)=>void action.run({action:'take',id:entry.id,version:entry.version});
  const takeMissed=(entry:MissedEntry)=>void action.run({action:'request',origin:'missed_visit',customerId:entry.customerId,customerVersion:entry.customerVersion,visitId:entry.visitId});
  return <section className="support-panel panel" aria-label={staff?say('التواصل مع العملاء','Customer contact'):say('مساندة خدمة العملاء','Customer-service assistance')} data-role={me.role} dir={language==='en'?'ltr':'rtl'}>
   <div className="support-heading"><div><h2><LifeBuoy size={18} aria-hidden="true"/> {staff?say('التواصل مع العملاء','Customer contact'):say('مساندة خدمة العملاء','Customer-service assistance')}</h2><p>{staff?say('طلبات المساندة من المبيعات والزيارات المفقودة في نطاقك.','Assistance requests from sales and missed visits in your scope.'):me.role==='rep'?say('طلباتك لخدمة العملاء وردودها.','Your requests to customer service and their replies.'):say('طلبات فريقك لخدمة العملاء وردودها.','Your team\'s requests to customer service and their replies.')}</p></div><span className="support-count">{count}</span></div>
   {action.error&&<div className="form-error" role="alert">{t(action.error)}</div>}
+  {cut.length>0&&<p className="support-cut" role="note">{cut.join(' ')}</p>}
   {groups.map(group=>{
    const cards=[...group.requests.map(entry=><RequestCard key={entry.id} entry={entry} me={me} say={say} busy={action.busy} onOpen={onOpen} onTake={takeRequest}/>),...group.missed.slice(0,VISIBLE_MISSED).map(entry=><MissedCard key={entry.id} entry={entry} say={say} busy={action.busy} onTake={takeMissed}/>)];
    const rest=group.missed.slice(VISIBLE_MISSED);
