@@ -1,0 +1,26 @@
+.support-panel{display:grid;gap:14px;margin-bottom:18px}
+.support-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.support-heading h2{margin:0;font-size:19px;display:flex;align-items:center;gap:8px}.support-heading p{margin:2px 0 0;color:var(--muted-foreground);font-size:14px}
+.support-count{font-size:13px;font-weight:700;min-width:24px;text-align:center;padding:1px 8px;border-radius:999px;background:#dcefe4;color:#1b6a47}
+.support-group{display:grid;gap:10px}.support-group>h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}
+.support-group[data-group=decide]>h3 .support-count,.support-group[data-group=take]>h3 .support-count,.support-group[data-group=answered]>h3 .support-count{background:#fde4df;color:#8f2f19}.support-group[data-group=missed]>h3 .support-count{background:#f5e9c8;color:#7a5410}
+.support-folded>summary,.support-more>summary{cursor:pointer;font-weight:600;padding:6px 0}
+.support-cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))}
+.support-card{display:grid;gap:8px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);min-width:0}.support-card[data-awaiting]:not([data-awaiting=none]){border-color:#d98b79;box-shadow:0 0 0 1px #f0c7bd inset}.support-card[data-late=true]{border-color:#d4a53a}
+.support-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.support-card h4{margin:0;font-size:16px;overflow-wrap:anywhere}.support-phone{font-size:13px;color:var(--muted-foreground)}
+.support-meta{display:flex;flex-wrap:wrap;gap:6px}
+.support-chip-static{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px;background:#e7edf3;color:#34475c}.support-chip-static[data-kind=late]{background:#f5e9c8;color:#7a5410}.support-chip-static[data-kind=escalated]{background:#fde4df;color:#8f2f19}.support-chip-static[data-kind=done]{background:#dcefe4;color:#1b6a47}
+.support-card p{margin:0;font-size:14px;line-height:1.7;overflow-wrap:anywhere}.support-card .support-result{padding:8px 10px;border-radius:10px;background:#eaf4ee;color:#25503a}.support-card small{font-size:12.5px;color:var(--muted-foreground);line-height:1.6}
+.support-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.support-links{display:inline-flex;flex-wrap:wrap;gap:8px}.support-link{display:inline-flex;align-items:center;gap:5px;font-size:13.5px;font-weight:600;padding:5px 11px;border:1px solid var(--border);border-radius:999px;color:inherit;text-decoration:none;background:var(--card)}.support-link:hover{background:var(--muted)}
+.support-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:5px 12px;border:1px solid #c9d6e2;border-radius:999px;background:#eef3f8;color:#34475c}.support-chip[data-state=waiting],.support-chip[data-state=in_progress]{border-color:#d4a53a;background:#f8efd6;color:#7a5410}.support-chip[data-state=done]{border-color:#9ccab0;background:#e4f2ea;color:#1b6a47}.support-chip[data-unseen=true]{border-color:#d98b79;background:#fde4df;color:#8f2f19}
+.support-request-button{display:inline-flex;align-items:center;gap:6px}
+.support-dialog{max-width:520px!important}.support-form{display:grid;gap:12px;border:0;padding:0;margin:0;min-width:0}.support-form textarea,.support-form select{width:100%}
+.support-sheet .service-actions{border:0;padding:0;margin:0;min-width:0}
+.dark .support-count{background:#244936;color:#a0e0be}.dark .support-group[data-group=decide]>h3 .support-count,.dark .support-group[data-group=take]>h3 .support-count,.dark .support-group[data-group=answered]>h3 .support-count{background:#5a2b22;color:#f7c2b6}.dark .support-group[data-group=missed]>h3 .support-count{background:#4a3d20;color:#e7c77c}
+.dark .support-card[data-awaiting]:not([data-awaiting=none]){border-color:#a45a49;box-shadow:0 0 0 1px #5a2b22 inset}.dark .support-card[data-late=true]{border-color:#9a7a2a}
+.dark .support-chip-static{background:#2a3644;color:#c4d3e3}.dark .support-chip-static[data-kind=late]{background:#4a3d20;color:#e7c77c}.dark .support-chip-static[data-kind=escalated]{background:#5a2b22;color:#f7c2b6}.dark .support-chip-static[data-kind=done]{background:#244936;color:#a0e0be}
+.dark .support-card .support-result{background:#1f3329;color:#bfe6cf}
+.dark .support-chip{background:#2a3644;border-color:#3b4b5e;color:#c4d3e3}.dark .support-chip[data-state=waiting],.dark .support-chip[data-state=in_progress]{background:#4a3d20;border-color:#9a7a2a;color:#e7c77c}.dark .support-chip[data-state=done]{background:#244936;border-color:#3f7a5a;color:#a0e0be}.dark .support-chip[data-unseen=true]{background:#5a2b22;border-color:#a45a49;color:#f7c2b6}
+@media (max-width:640px){.support-cards{grid-template-columns:1fr}.support-actions .btn{flex:1}.support-request-button{width:100%;justify-content:center}}
+/* In a visit card the help button or chip takes its own row, so the card's main button keeps its width. */
+.rep-record-actions{flex-wrap:wrap}.rep-record-actions>.support-request-button,.rep-record-actions>.support-chip{flex:1 1 100%;justify-content:center}

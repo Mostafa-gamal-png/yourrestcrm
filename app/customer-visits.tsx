@@ -19,6 +19,7 @@ import CompetitorFields,{type CompetitorInput} from './competitor-fields';
 import type {UploadState} from './upload-status';
 import VisitCustomerPicker from './visit-customer-picker';
 import VisitsTable from './visits-table';
+import {SupportButton,type SupportBinding} from './support-panel';
 import {useAutomaticJourney,JourneyFormNotice} from './journey-tracker';
 import './visit-mobile.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
@@ -34,8 +35,9 @@ function Pick({ value, onChange, options, label, disabled = false }: {
     label: string;
     disabled?: boolean;
 }) { useLanguage(); return <Select dir={direction()} value={value || undefined} onValueChange={onChange} disabled={disabled}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{t(options.map(([id, text]) => <SelectItem key={id} value={id}>{t(text)}</SelectItem>))}</SelectContent></Select>; }
-export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuote, canEdit = true, onDelete }: {
+export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuote, canEdit = true, onDelete, support }: {
     customer: Row;
+    support?: SupportBinding;
     records: Row[];
     onVisit: (r: Row) => void;
     onNew?: (request?: Row) => void;
@@ -48,7 +50,7 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
     const [order, setOrder] = useState('newest');
     const orderedVisits = order === 'newest' ? visits : [...visits].reverse();
     return <section className="customer-visit-history">
-        <div className="history-title"><h3><History size={18}/>{t("سجل الزيارات")}</h3><span className="count-badge">{visits.length} {t("زيارة / اتصال")}</span></div>
+        <div className="history-title"><h3><History size={18}/>{t("سجل الزيارات")}</h3><span className="count-badge">{visits.length} {t("زيارة / اتصال")}</span><SupportButton customerId={customer.id} support={support}/></div>
         <div className="visit-history-toolbar"><label><span>{t("ترتيب الزيارات")}</span><select value={order} onChange={e => setOrder(e.target.value)}><option value="newest">{t("الأحدث أولًا")}</option><option value="oldest">{t("الأقدم أولًا")}</option></select></label></div>
         {!visits.length && <p className="muted">{t("لا توجد زيارات سابقة لهذا العميل.")}</p>}
         <ol className="visit-history-timeline">{orderedVisits.map(v => {
@@ -71,7 +73,8 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
             </article></li>;
         })}</ol>{requests.length > 0 && <details className="previous-requests"><summary>{t("طلبات القوالب وعروض الأسعار (")}{t(requests.length)})</summary>{t(requests.map(r => { const linked = visits.filter(v => visitRequest(v, records)?.id === r.id), quotes = records.filter(q => q.kind === 'quote' && q.parentId === r.id); return <article key={r.id}><strong>{r.data.moldType} · {t(stageLabels[r.data.stage])} · {r.data.value == null ? t('غير مسعّر') : t(money(r.data.value)) + t(' ر.س')}</strong><small>{linked.length ? t(`${linked.length} زيارة مرتبطة`) : t('طلب قالب سابق — لا توجد زيارة مسجلة')}{r.data.lossReason ? t(' · ') + r.data.lossReason : t('')}</small>{onNew && <button type="button" className="text-button" onClick={() => onNew(r)}>{t("تسجيل زيارة لهذا الطلب")}</button>}{t(quotes.map(q => <button type="button" className="text-button" key={q.id} onClick={() => onQuote?.(q.id)}>{q.data.number} · {t(money(q.data.total))}{t(" ر.س")}</button>))}</article>; }))}</details>}</section>;
 }
-export function VisitsPage({ records, members, query, staff, stage, onOpen, onNew, onCustomer, onWorkflow, workflow, onWorkflowFilter, canEdit = true, onDelete }: {
+export function VisitsPage({ records, members, query, staff, stage, onOpen, onNew, onCustomer, onWorkflow, workflow, onWorkflowFilter, canEdit = true, onDelete, support }: {
+    support?: SupportBinding;
     records: Row[];
     members: Member[];
     query: string;
@@ -91,7 +94,7 @@ export function VisitsPage({ records, members, query, staff, stage, onOpen, onNe
     const rows = filterVisitRows(records,{query,staff,stage,workflow});
     const pages = Math.max(1, Math.ceil(rows.length / 30)), current = Math.min(page, pages);
     return <section className="panel">{records.some(r=>r.data.serviceIntakeId)&&<div className="panel-heading followup-list-heading"><div className="followup-list-filters" role="group" aria-label={t('حالة الاعتماد والتكليف')}>{[['all','كل الزيارات'],['mine','بانتظار إجرائي'],...Object.entries(serviceStatusLabels),['assistance','طلبات المساعدة']].map(([id,label])=><button key={id} className={'followup-list-filter '+(workflow===id?'selected':'')} aria-pressed={workflow===id} onClick={()=>{onWorkflowFilter(id);setPage(1);}}>{t(label)}</button>)}</div></div>}<div className="panel-heading"><h2>{t("سجل الزيارات ")}<span className="inline-count">{t(rows.length)}</span></h2><span className="muted">{t("كل زيارة مرتبطة بالعميل وسجله السابق")}</span></div>{rows.length ? <><VisitsTable onDelete={onDelete} rows={rows.slice((current - 1) * 30, current * 30)} customerFor={r => visitCustomer(r, records)} onOpen={id => { const r = records.find(r => r.id === id); if (r)
-        onOpen(r); }} onEdit={onOpen} onCustomer={onCustomer} canEdit={canEdit} expanded members={members} onWorkflow={onWorkflow}/><div className="table-paging"><button className="btn subtle small" disabled={current === 1} onClick={() => setPage(current - 1)}>{t("السابق")}</button><span>{t(current)} / {t(pages)}</span><button className="btn subtle small" disabled={current === pages} onClick={() => setPage(current + 1)}>{t("التالي")}</button></div></> : <div className="followup-empty"><History size={30}/><h3>{query ? t('لا توجد نتائج مطابقة') : t('لا توجد زيارات مسجلة')}</h3><button className="btn primary" onClick={onNew}><Plus size={18}/>{t("زيارة جديدة")}</button></div>}</section>;
+        onOpen(r); }} onEdit={onOpen} onCustomer={onCustomer} canEdit={canEdit} expanded members={members} onWorkflow={onWorkflow} support={support}/><div className="table-paging"><button className="btn subtle small" disabled={current === 1} onClick={() => setPage(current - 1)}>{t("السابق")}</button><span>{t(current)} / {t(pages)}</span><button className="btn subtle small" disabled={current === pages} onClick={() => setPage(current + 1)}>{t("التالي")}</button></div></> : <div className="followup-empty"><History size={30}/><h3>{query ? t('لا توجد نتائج مطابقة') : t('لا توجد زيارات مسجلة')}</h3><button className="btn primary" onClick={onNew}><Plus size={18}/>{t("زيارة جديدة")}</button></div>}</section>;
 }
 type Props = {
     initial?: Row;

@@ -27,6 +27,7 @@ function mockedRequire(name){
  if(name==='@/lib/customer-map-search')return mapSearch;
  if(name==='@/lib/i18n')return i18n;
  if(name==='@/lib/regions')return {regionValue:()=> 'الشرقية'};
+ if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return {...Object.fromEntries(['SidebarMenu','SidebarMenuItem','SidebarMenuButton'].map(key=>[key,pass])),useSidebar:()=>({setOpenMobile:noop})};
  if(name==='@base-ui/react')return {Combobox:mock};
  return mock;
@@ -73,6 +74,7 @@ let cursor=0,seed={},captured={};
 const hookReact={...React,useState:initial=>{const name=stateNames[cursor++];return[Object.hasOwn(seed,name)?seed[name]:typeof initial==='function'?initial():initial,noop];},useEffect:noop,useCallback:callback=>callback,useMemo:compute=>compute};
 function crmRequire(name){
  if(name==='react')return hookReact;
+ if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='@/lib/crm')return {stages:[],stageLabels:{},roles:{rep:'مندوب المبيعات'},today:()=> '2026-09-30',money:String,isOpen:()=>false,isSalesRequest:r=>r.kind==='opportunity',followupTitle:r=>r.data.name||''};
  if(name==='@/lib/customer-service')return {isServiceRole:role=>role.startsWith('customer_service')};

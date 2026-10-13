@@ -109,7 +109,7 @@ export function canReadSupport(row:SupportRow,customer:Row|undefined,reader:Supp
  return reader.sales&&[row.data.requestedBy,row.data.repId,customer.assignedTo].some(id=>!!id&&reader.team.has(id));
 }
 /** Customers the reader has a visit record under: a representative asks for help with a customer they have visited. */
-function visitedCustomers(visible:Row[]){
+export function visitedCustomers(visible:Row[]){
  const indexed=new Map(visible.map(row=>[row.id,row])),found=new Set<string>();
  for(const row of visible){
   if(row.kind!=='activity')continue;
@@ -216,4 +216,51 @@ export function supportBadge(entries:SupportEntry[],missed:MissedEntry[],role:st
  if(role==='customer_service')return entries.filter(entry=>entry.awaiting).length+missed.filter(entry=>entry.permissions.take).length;
  if(role==='customer_service_manager'||role==='admin')return entries.filter(entry=>entry.awaiting==='assign'||entry.awaiting==='contact').length;
  return entries.filter(entry=>entry.awaiting==='answer').length;
+}
+
+/** English wording for the outcomes and channels, keyed like `supportOutcomes` and `supportChannels`. */
+export const supportOutcomesEn:Record<string,string>={reached_interested:'Reached, customer is interested',reached_not_interested:'Reached, customer is not interested',wants_visit:'Customer asks for a visit on a date',no_answer:'Customer did not answer',wrong_number:'Wrong or unavailable number',other:'Other'};
+export const supportChannelsEn:Record<string,string>={any:'Any way',call:'Phone call',whatsapp:'WhatsApp'};
+
+export type SupportGroupId='decide'|'take'|'mine'|'missed'|'missed_others'|'others'|'waiting'|'answered'|'finished';
+export type SupportGroup={id:SupportGroupId;requests:SupportEntry[];missed:MissedEntry[]};
+/** How long a sales member keeps seeing an answer among the recent ones. */
+export const SUPPORT_RECENT_ANSWER_DAYS=7;
+/** The panel's sections for a reader, in display order, without the empty ones. */
+export function supportGroups(requests:SupportEntry[],missed:MissedEntry[],role:string,now:string=new Date().toISOString()):SupportGroup[]{
+ const open=requests.filter(entry=>entry.state==='waiting'||entry.state==='in_progress'),finished=requests.filter(entry=>entry.state==='done'||entry.state==='cancelled');
+ const groups:SupportGroup[]=[];
+ const add=(id:SupportGroupId,list:SupportEntry[],visits:MissedEntry[]=[])=>{if(list.length||visits.length)groups.push({id,requests:list,missed:visits});};
+ if(role==='customer_service'){
+  add('take',open.filter(entry=>entry.awaiting==='take'));
+  add('mine',open.filter(entry=>entry.awaiting==='contact'));
+  add('missed',[],missed.filter(entry=>entry.permissions.take));
+  add('others',open.filter(entry=>!entry.awaiting));
+  add('missed_others',[],missed.filter(entry=>!entry.permissions.take));
+  add('finished',finished);
+ }else if(role==='customer_service_manager'||role==='admin'){
+  add('decide',open.filter(entry=>entry.awaiting==='assign'));
+  add('mine',open.filter(entry=>entry.awaiting==='contact'));
+  add('others',open.filter(entry=>!entry.awaiting));
+  add('missed',[],missed);
+  add('finished',finished);
+ }else{
+  const recent=(entry:SupportEntry)=>Date.parse(now)-Date.parse(entry.updatedAt)<=SUPPORT_RECENT_ANSWER_DAYS*DAY;
+  const answered=finished.filter(entry=>entry.state==='done'&&(recent(entry)||entry.awaiting==='answer'));
+  add('waiting',open);
+  add('answered',[...answered].sort((a,b)=>Number(b.awaiting==='answer')-Number(a.awaiting==='answer')||b.updatedAt.localeCompare(a.updatedAt)));
+  add('finished',finished.filter(entry=>!answered.includes(entry)));
+ }
+ return groups;
+}
+/** The request a sales row shows beside a customer: the open one, else an answer from the last week. */
+export function supportByCustomer(requests:SupportEntry[],now:string=new Date().toISOString()){
+ const found:Record<string,SupportEntry|undefined>={};
+ for(const entry of requests){
+  const open=entry.state==='waiting'||entry.state==='in_progress',recent=entry.state==='done'&&(Date.parse(now)-Date.parse(entry.updatedAt)<=SUPPORT_RECENT_ANSWER_DAYS*DAY||entry.awaiting==='answer');
+  if(!open&&!recent)continue;
+  const current=found[entry.customerId];
+  if(!current||open&&current.state!=='waiting'&&current.state!=='in_progress'||open===(current.state==='waiting'||current.state==='in_progress')&&entry.updatedAt>current.updatedAt)found[entry.customerId]=entry;
+ }
+ return found;
 }

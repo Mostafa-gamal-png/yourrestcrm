@@ -35,6 +35,7 @@ function commonRequire(name){
  if(name==='@/lib/i18n')return i18n;
  if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
  if(name==='@base-ui/react')return {Combobox:mock};
+ if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='./region-picker')return load('app/region-picker.tsx',commonRequire);
  if(name==='./customer-entry-fields')return {__esModule:true,default:function CustomerLocationFields(){},CustomerClassificationFields:function CustomerClassificationFields(){}};
