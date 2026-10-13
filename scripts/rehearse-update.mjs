@@ -402,10 +402,11 @@ try {
     assert.deepEqual([answer.state, answer.awaiting, answer.result.outcome, answer.result.nextDate], ['done', 'answer', 'wants_visit', day], 'the representative reads the answer');
     assert.equal((await post(calls.rep1, {action: 'seen', id: requestId, version: answer.version})).status, 200, 'and opens it');
     assert.equal((await support(calls.rep1)).counts.badge, 0, 'which clears the count');
-    // A visit that went unanswered, two days past its follow-up date, is customer service's to contact.
+    // A visit that went unanswered, two days past its follow-up date, is customer service's to contact. It must be the customer's
+    // latest visit (the fixtures already gave this customer one dated today), so it is stamped now; only its follow-up date is old.
     {
-      const db = new DatabaseSync(a.settings.YR_DATABASE_PATH), at = new Date(Date.now() - 9 * 86400000).toISOString(), due = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date(Date.now() - 5 * 86400000));
-      db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('v-missed','activity',?,'repw','الرئيسي',?,?,?,1,'rehearsal')").run(customers.w1, JSON.stringify({type: 'visit', date: at.slice(0, 10), startedAt: at, endedAt: at, summary: 'PRIVATE-VISIT-SUMMARY', result: 'سلبية', salesStage: 'new', nextAction: 'زيارة متابعة', nextDate: due, visitWorkflow: 'customer-v1', performedBy: 'repw', responsibleId: 'repw', recordedByEmail: 'repw@yourrest.org'}), at, at);
+      const db = new DatabaseSync(a.settings.YR_DATABASE_PATH), at = new Date().toISOString(), due = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date(Date.now() - 5 * 86400000));
+      db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('v-missed','activity',?,'repw','الرئيسي',?,?,?,1,'rehearsal')").run(customers.w1, JSON.stringify({type: 'visit', date: day, startedAt: at, endedAt: at, summary: 'PRIVATE-VISIT-SUMMARY', result: 'سلبية', salesStage: 'new', nextAction: 'زيارة متابعة', nextDate: due, visitWorkflow: 'customer-v1', performedBy: 'repw', responsibleId: 'repw', recordedByEmail: 'repw@yourrest.org'}), at, at);
       db.close();
     }
     const missed = (await support(calls.cs)).missed;
