@@ -92,8 +92,8 @@ export function ServiceQueueBanner({entries,onOpen,onVisit}:{entries:ServiceQueu
 }
 
 /** The count on the Visits entry of the navigation. */
-export function QueueBadge({entries}:{entries:ServiceQueueEntry[]}){
- const {language}=useLanguage(),count=serviceQueueBadge(entries);
+export function QueueBadge({entries,extra=0}:{entries:ServiceQueueEntry[];extra?:number}){
+ const {language}=useLanguage(),count=serviceQueueBadge(entries)+extra;
  if(!count)return null;
  return <span className="nav-badge" role="img" aria-label={language==='en'?count+' customer-service requests need your action':count+' من طلبات خدمة العملاء تنتظر إجراءك'}>{count}</span>;
 }

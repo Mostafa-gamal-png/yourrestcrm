@@ -37,6 +37,7 @@ function commonRequire(name){
  if(name==='./offline-status')return {__esModule:true,default:OfflineStatus};
  if(name==='./my-targets')return {__esModule:true,default:MyTargets};
  if(name==='./region-picker')return load('app/region-picker.tsx',commonRequire);
+ if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='sonner')return {Toaster:pass,toast:{success:noop,error:noop}};
  if(name.endsWith('.css'))return {};return mocks;

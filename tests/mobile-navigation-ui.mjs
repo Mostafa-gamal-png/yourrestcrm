@@ -24,6 +24,7 @@ function baseRequire(name){
  if(name==='@/lib/i18n')return i18n;if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
  if(name==='@/components/ui/sheet')return {Sheet,SheetContent,SheetTitle:pass,SheetDescription:pass};
  if(name==='./email-login')return {EmailLogout};if(name.endsWith('.css'))return {};
+ if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({Sidebar,useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='sonner')return {Toaster:pass,toast:{success:noop,error:noop}};
  return icons;
