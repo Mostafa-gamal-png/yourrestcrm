@@ -10,6 +10,7 @@ import { regionValue } from '@/lib/regions';
 import { CustomerRegionField } from './region-picker';
 import CustomerLocationFields,{CustomerClassificationFields,type CustomerData} from './customer-entry-fields';
 import { schemas, type Row, type Member } from '@/lib/crm';
+import { customerLocationProblem } from '@/lib/customer-fields';
 import './customer-picker-mobile.css';
 
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
@@ -77,6 +78,9 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
             setError(!draft.name?.trim() ? t('اكتب اسم المصنع.') : parsed.error.issues.map(i => t(i.message)).join(' • '));
             return;
         }
+        // A typed or chosen location is checked before it can be queued without a network.
+        const locationError = !savedId && parsed.success ? customerLocationProblem(parsed.data) : null;
+        if (locationError) { setError(t(locationError)); return; }
         savingRef.current = true; setSaving(true); onSaving(true);
         try {
             let id = savedId;

@@ -20,3 +20,9 @@
 .customer-auto-location .customer-location-error{color:#b44259}
 .customer-auto-location .customer-location-status>svg{flex-shrink:0}
 @media(max-width:600px){.customer-auto-location>.form-grid{grid-template-columns:minmax(0,1fr)}.customer-auto-location-heading{gap:6px}}
+.customer-auto-location-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.customer-auto-location-actions>button{min-height:44px;flex-shrink:0}
+.customer-location-modes{margin:0 0 12px}
+.customer-location-modes .customer-choice-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.customer-location-modes .customer-choice>span{gap:6px}
+.customer-auto-location input[aria-invalid=true]{border-color:#b44259}
