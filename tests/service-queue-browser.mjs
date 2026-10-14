@@ -320,7 +320,7 @@ try {
 
   // ---- 4. The monthly report: for the people who run the service, nobody else
   {
-    const section = manager.locator('details.service-report');
+    const section = manager.locator('details.service-report:not(.complaint-report)');
     await section.waitFor();
     check(await section.evaluate(element => element.open), false, 'collapsed until opened');
     await section.locator('summary').click();
@@ -336,13 +336,13 @@ try {
     ok((await section.locator('.service-report-states').innerText()).includes('قيد متابعة المبيعات: 2'), 'both are in sales follow-up');
     ok(!private_(await section.innerText()) && !(await section.innerText()).includes(CUSTOMER), 'no customer name and no private text in the report');
     await layoutOk(manager, 'manager report'); await shot(manager, 'queue-manager-report');
-    check(await supervisor.locator('details.service-report').count(), 0, 'a supervisor has no report section');
+    check(await supervisor.locator('details.service-report:not(.complaint-report)').count(), 0, 'a supervisor has no report section');
     const service = await open('cs', {viewport: DESKTOP});
     check([await service.locator('.service-queue').count(), await service.locator('button.nav-item .nav-badge').count()], [0, 0], 'customer service has its own screens, not the sales queue');
     await service.context().close();
     const csm = await open('csm', {viewport: DESKTOP});
     await goDesktop(csm, 'الزيارات');
-    await csm.locator('details.service-report').waitFor();
+    await csm.locator('details.service-report:not(.complaint-report)').waitFor();
     check(await csm.locator('.service-queue').count(), 0, 'with nothing left to approve the customer-service manager has the report and no panel');
     await csm.context().close();
     await manager.context().close();
@@ -356,12 +356,12 @@ try {
     const panel = phone.locator('.service-queue');
     await panel.waitFor();
     await layoutOk(phone, 'manager panel on a phone'); await shot(phone, 'queue-manager-panel-phone');
-    await phone.locator('details.service-report > summary').click();
+    await phone.locator('details.service-report:not(.complaint-report) > summary').click();
     await phone.locator('.service-report-kpis').waitFor();
     await layoutOk(phone, 'manager report on a phone'); await shot(phone, 'queue-manager-report-phone');
     await phone.getByRole('button', {name: 'English'}).first().click();
     await phone.locator('.service-queue h2', {hasText: 'Customer-service requests'}).waitFor();
-    const english = await phone.locator('.service-queue, .service-report').allInnerTexts();
+    const english = await phone.locator('.service-queue, .service-report:not(.complaint-report)').allInnerTexts();
     ok(english.join(' ').includes('Monthly customer-service report') && english.join(' ').includes('Win rate') && english.join(' ').includes('Time per stage, in working hours'), 'the report is in English');
     const leftover = english.join(' ').replace(new RegExp(CUSTOMER + '|' + CUSTOMER_2 + '|ريم خدمة العملاء|منى مديرة الخدمة|أحمد المندوب|سالم المندوب|ماجد المشرف|سعد مدير المبيعات|قالب جديد وصيانة للقالب الحالي|عرض سعر لخلاط|اتصال أول بالعميل لتحديد موعد|زيارة فنية|الدمام|الخبر', 'g'), '').match(/[\u0600-\u06ff][\u0600-\u06ff\s]*/g) || [];
     check(leftover, [], 'no Arabic wording is left in the English panel and report (names and customer data aside)');
