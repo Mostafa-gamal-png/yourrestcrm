@@ -101,6 +101,14 @@ user('owner');
 const report=await (await sales.GET(new Request('https://test.invalid/api/sales?month='+day.slice(0,7)+'&kpis=1'))).json();assert.equal(report.members.some(m=>m.role.startsWith('customer_service')),false);assert.equal(report.targets.sets.some(s=>s.teamMemberIds?.some(id=>['cs','csm'].includes(id))),false);checks+=2;
 await post(crm,{action:'member',data:{name:'UI CSR',email:'ui@yourrest.org',role:'customer_service',branch:'الرئيسي',regionScope:'eastern',supervisorId:'csm',active:1,target:0}});
 await post(crm,{action:'member',data:{name:'Invalid CSR',email:'bad@yourrest.org',role:'customer_service',branch:'الرئيسي',regionScope:'eastern',supervisorId:'sup',active:1,target:0}},400);
+// A member may be given several regions: stored as the canonical text whatever the order or the shape sent; nothing known is refused.
+// (Service members, so the team targets asserted below keep their representatives.)
+await post(crm,{action:'member',data:{name:'Two regions',email:'two@yourrest.org',role:'customer_service',branch:'الرئيسي',regionScope:['eastern','central'],supervisorId:'csm',active:1,target:0}});
+assert.equal(sql.prepare('SELECT region_scope FROM crm_members WHERE email=?').get('two@yourrest.org').region_scope,'central,eastern');checks++;
+await post(crm,{action:'member',data:{name:'Two regions text',email:'two-text@yourrest.org',role:'customer_service',branch:'الرئيسي',regionScope:'eastern, central',supervisorId:'csm',active:1,target:0}});
+assert.equal(sql.prepare('SELECT region_scope FROM crm_members WHERE email=?').get('two-text@yourrest.org').region_scope,'central,eastern');checks++;
+await post(crm,{action:'member',data:{name:'No region',email:'none@yourrest.org',role:'customer_service',branch:'الرئيسي',regionScope:['mars'],supervisorId:'csm',active:1,target:0}},400);
+await post(crm,{action:'member',data:{name:'Empty region',email:'empty@yourrest.org',role:'customer_service',branch:'الرئيسي',regionScope:'',supervisorId:'csm',active:1,target:0}},400);
 assert.equal(sql.prepare('PRAGMA foreign_key_check').all().length,0);checks++;
 // Upload permission shares the narrow CSR customer scope, without widening attachment reads.
 user('cs');globalThis.testEnv.FILES.put=async()=>{};globalThis.testEnv.FILES.delete=async()=>{};

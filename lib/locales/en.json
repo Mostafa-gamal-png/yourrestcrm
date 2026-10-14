@@ -1229,5 +1229,8 @@
   "وقت فتح المكلَّف للطلب": "When the holder opened the request",
   "لم يُفتح بعد": "Not opened yet",
   "توجيه المدير": "Manager's instruction",
-  "ينتقل العميل وسجلاته إلى المكلَّف الجديد، وتبقى زيارات المكلَّف السابق باسمه.": "The customer and its records move to the new holder; the previous holder's visits stay under their name."
+  "ينتقل العميل وسجلاته إلى المكلَّف الجديد، وتبقى زيارات المكلَّف السابق باسمه.": "The customer and its records move to the new holder; the previous holder's visits stay under their name.",
+  "المناطق المختارة": "Selected regions",
+  "اختر منطقة واحدة على الأقل": "Choose at least one region",
+  "يرى كل المناطق": "Sees every region"
 }

@@ -3,7 +3,7 @@ import {canonicalInvoiceReference} from './invoice-reference';
 import {z} from 'zod';
 import {context,CRMError,requireSalesWorkspace,accessGuard} from './crm-server';
 import {salesMemberIds,salesReadMemberIds,salesProducts,type Sale,type SaleItem} from './sales';
-import {regionScope} from './regions';
+import {regionScope,regionScopeSql,regionScopesOverlap} from './regions';
 import {today,type Member} from './crm';
 import {parseErpWorkbook,ErpWorkbookError,type ErpRow} from './erp-sales';
 import {omit} from './omit';
@@ -87,7 +87,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   else if(unmappedCategory){p.status='unmapped';p.reason='حدد صنف المستهدف المقابل لكل فئة في الفاتورة';}
   else if(!items.length){p.status='excluded';p.reason='كل فئات هذا المستند مستبعدة من اختيارك';}
   else if(first.documentType==='sale'&&manualKeys.has(JSON.stringify([first.date.slice(0,4),canonicalInvoiceReference(first.reference)]))){p.status='conflict';p.reason='رقم الفاتورة موجود في المبيعات اليدوية في نفس السنة؛ راجع السجل قبل الاستيراد لمنع التكرار';}
-  else if(old){if(old.rep_id!==repId||(regionScope(c.me)!=='all'&&old.region_scope!==regionScope(c.me))){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
+  else if(old){if(old.rep_id!==repId||!regionScopesOverlap(old.region_scope,regionScope(c.me))){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
   documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'?undefined:rep});
  }
  const summary={newCount:0,duplicateCount:0,conflictCount:0,excludedCount:0,unassignedCount:0,unassignedTotalCents:0,unmappedCount:0,outOfScopeCount:0,officeExcludedCount:0,skippedCount:0,autoMatchedCount:[...mappingSources.values()].filter(source=>source==='name').length,totalCents:0,months:[...new Set(documents.filter(d=>d.preview.status==='new'||d.preview.status==='duplicate').map(d=>d.preview.date.slice(0,7)))].sort()};
@@ -162,12 +162,12 @@ export async function importErpSales(c:Context,body:unknown){
 /** Financial projections always require the same region and author-team boundary as CRM sales. */
 export async function readErpSales(c:Context,month:string):Promise<Sale[]>{
  requireSalesWorkspace(c.me);const allowed=salesReadMemberIds(c.members,c.me);
- const rows=(await c.db.prepare('SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND (?=\'all\' OR region_scope=?) ORDER BY date DESC,created_at DESC,id').bind(month+'-01',month+'-31',regionScope(c.me),regionScope(c.me)).all<ErpSaleRow>()).results;
+ const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND '+scope.sql+' ORDER BY date DESC,created_at DESC,id').bind(month+'-01',month+'-31',...scope.args).all<ErpSaleRow>()).results;
  return rows.filter(r=>allowed.has(r.rep_id)).map(r=>({...JSON.parse(r.data),id:r.id,customerId:'erp-customer:'+r.customer_code,customerName:r.customer_name,repId:r.rep_id,branch:r.branch,date:r.date,reference:r.reference,totalCents:r.total_cents,status:'confirmed',voidReason:'',version:1,createdBy:r.created_by,createdAt:r.created_at,updatedAt:r.created_at,source:'erp',documentType:r.document_type}));
 }
 /** Reps receive only their product quantities; no invoice, customer, price or colleague data. */
 export async function readOwnErpSales(c:Context,month:string):Promise<{items:{product:string;quantity:number}[]}[]>{
  if(c.me.role!=='rep')throw new CRMError('هذا العرض خاص بالمندوب',403);
- const rows=(await c.db.prepare('SELECT data FROM crm_erp_sales WHERE rep_id=? AND date>=? AND date<=? AND (?=\'all\' OR region_scope=?)').bind(c.me.id,month+'-01',month+'-31',regionScope(c.me),regionScope(c.me)).all<{data:string}>()).results;
+ const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT data FROM crm_erp_sales WHERE rep_id=? AND date>=? AND date<=? AND '+scope.sql).bind(c.me.id,month+'-01',month+'-31',...scope.args).all<{data:string}>()).results;
  return rows.map(row=>({items:(JSON.parse(row.data).items as SaleItem[]).map(item=>({product:item.product,quantity:item.quantity}))}));
 }

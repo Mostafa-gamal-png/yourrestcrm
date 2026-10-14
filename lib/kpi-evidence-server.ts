@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {context,CRMError,accessGuard,requireSalesWorkspace} from './crm-server';
 import {type Member,type Row,today} from './crm';
 import {recordAuthorId} from './access';
-import {regionScope,memberCanAccessRegion} from './regions';
+import {regionScope,regionScopeSql,memberCanAccessRegion} from './regions';
 import {monthSchema,salesReadMemberIds,type Sale,type SaleRow} from './sales';
 import {visitCustomer} from './customer-visits';
 import {targetState} from './targets-server';
@@ -36,10 +36,10 @@ export async function readKpiEvidenceRows(c:Context,month:string):Promise<KpiEvi
 
 /** Customer identity is a persisted CRM ID; ERP codes are accepted only when globally unique. */
 async function invoiceRecords(c:Context,memberIds:Set<string>,month:string,through:string):Promise<InvoiceRecord[]>{
- const codes=uniqueCustomerCodes(c.all,c.customerIdentityState?.mappings);
+ const codes=uniqueCustomerCodes(c.all,c.customerIdentityState?.mappings),erpScope=regionScopeSql('region_scope',c.me);
  const [manual,erp]=await Promise.all([
   c.db.prepare("SELECT s.*,c.data AS customer_data FROM crm_sales s JOIN crm_records c ON c.id=s.customer_id AND c.kind='customer' WHERE s.date>=? AND s.date<=? AND s.status='confirmed' AND s.total_cents>0").bind(month+'-01',through).all<SaleRow&{customer_data:string}>(),
-  c.db.prepare("SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND document_type='sale' AND total_cents>0 AND (?='all' OR region_scope=?)").bind(month+'-01',through,regionScope(c.me),regionScope(c.me)).all<ErpSaleRow>()
+  c.db.prepare("SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND document_type='sale' AND total_cents>0 AND "+erpScope.sql).bind(month+'-01',through,...erpScope.args).all<ErpSaleRow>()
  ]);
  const result:InvoiceRecord[]=manual.results.filter(row=>memberIds.has(row.rep_id)&&c.regionCustomerIds.has(row.customer_id)).map(row=>({id:row.id,reference:row.reference,customerId:row.customer_id,customerName:JSON.parse(row.customer_data).name||'',date:row.date,repId:row.rep_id,source:'crm',version:row.version,regionScope:'',customerCode:'',documentType:'sale',status:row.status}));
  for(const row of erp.results){
