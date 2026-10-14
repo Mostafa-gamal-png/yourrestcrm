@@ -4,6 +4,18 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Another location for a new customer (2026-10-14, second release of the day, schema 16, no migration)
+
+- A new customer still starts on the phone's own position. "Another location" lets the member type coordinates (the Arabic comma is read) or paste a full maps link, or tap the place on a map and drag the pin; nothing changes until "Confirm location". It is in the customer form and in the visit form's inline "Add customer"; an existing customer keeps its editable field and gains the map button.
+- A phone that never answers no longer holds saving: choosing "Another location" ends the wait, and the message about the phone points to it.
+- A hand-placed point is stored as numbers the server works out from the text, with no source, time or accuracy. A device claim that no longer matches the text is refused, never relabelled. The server is unchanged.
+- A pasted maps link is replaced by the plain coordinates it points to when the field is left, and at submit for a new customer (Enter never leaves the field): links outgrow the 250-character field. A pair typed by hand, text that is not coordinates and an existing customer's untouched text stay as they are.
+- The national address of a typed place is looked up when the field is left and does not hold saving, so the tap on Save that ends the typing is not lost; a place chosen on the map holds saving until its address arrives, like a captured one. Only empty fields are filled, addresses filled for a previous place are cleared, a late answer never replaces later typing, and offline the lookup is skipped.
+- Text that is not coordinates (a place name, a short maps link) is explained at once and refused before anything is saved or queued, offline too (`customerLocationProblem`: the server's rules on a copy, without judging the phone's clock, since positioning time may differ from it).
+- The map is Leaflet with OpenStreetMap tiles (as the customer map): it needs the network for streets only; without it the dialog says so and the pin and the typed coordinates still work.
+- The activator now knows the previous release's activation name, so a second release of the same Saudi day, packaged under its own name and stage folder, reuses that day's full backup; the activation test proves it, and the refusal without the entry.
+- Tests: `tests/customer-entry-fields-ui.mjs` (extended), `tests/customer-location-rules.mjs` and `tests/location-picker-browser.mjs` (new; the latter in the browser gate), `tests/rep-customer-create.mjs` and `tests/baseline-update-activation.mjs` extended.
+
 ## Customer-service assistance, missed visits and the manager's late mark (2026-10-14, schema 16, no migration)
 
 - A representative (or supervisor, sales manager, administrator) asks customer service to contact a customer from a button beside the customer's latest visit (Visits, Follow-ups, the customer's visit history). The request carries a reason and a preferred channel, never counts as a visit and never changes the follow-up plan. One open request per customer.
