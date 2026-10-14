@@ -1,6 +1,6 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {CheckCircle2,Clock3,Loader2,MessageCircle,MessageSquareWarning,PhoneCall,Plus,Search} from 'lucide-react';
+import {CheckCircle2,Clock3,Loader2,MessageCircle,MessageSquareWarning,PhoneCall,Search} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {t,useLanguage,direction,getLanguage} from '@/lib/i18n';
@@ -25,7 +25,6 @@ const closureText=(key:string,say:Say)=>label(closureOutcomes,closureOutcomesEn,
 /** Where the complaint stands, in words: the status, refined while the representative holds it. */
 const stateText=(entry:ComplaintEntry,say:Say)=>entry.status==='assigned'?(entry.stage==='delegation'?say('لدى مشرف المبيعات','With the sales supervisor'):entry.stage==='first_contact'?say('بانتظار أول تواصل من المندوب','Waiting for the representative\'s first contact'):say('قيد الحل مع المندوب','Being resolved by the representative')):label(complaintStatusLabels,complaintStatusLabelsEn,entry.status,say);
 const askText=(entry:ComplaintEntry,say:Say)=>entry.awaiting==='review'?say('مراجعة الشكوى','Review the complaint'):entry.awaiting==='fix'?say('تعديل وإعادة الإرسال','Correct and resend'):entry.awaiting==='assign'?say('تكليف مندوب','Assign a representative'):entry.awaiting==='delegate'?say('تفويض مندوب','Delegate to a representative'):entry.awaiting==='contact'?say('تسجيل التواصل','Record the contact'):entry.awaiting==='resolve'?say('تسجيل الحل','Record the resolution'):entry.awaiting==='close'?say('تأكيد الإغلاق','Confirm the closure'):say('التفاصيل','Details');
-const canRegisterAny=(role:string)=>role==='customer_service'||role==='customer_service_manager'||role==='admin';
 
 /** The complaints of the signed-in member, loaded beside the page and refreshed with it and every ten minutes. */
 export function useComplaints({me,records}:{me:Member|null;records:Row[]}){
@@ -97,7 +96,7 @@ function ComplaintCard({entry,say,onOpen}:{entry:ComplaintEntry;say:Say;onOpen:(
 }
 
 /** The complaints list: the page for customer service and administrators, the panel on the Visits page for sales members. */
-export function ComplaintsList({data,me,mode,onOpen,onRegister}:{data:ComplaintsData|null;me:Member;mode:'page'|'panel';onOpen:(entry:ComplaintEntry)=>void;onRegister?:()=>void}){
+export function ComplaintsList({data,me,mode,onOpen}:{data:ComplaintsData|null;me:Member;mode:'page'|'panel';onOpen:(entry:ComplaintEntry)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const groups=data?complaintGroups(data.complaints):[];
  if(mode==='panel'&&!groups.length)return null;
@@ -105,7 +104,7 @@ export function ComplaintsList({data,me,mode,onOpen,onRegister}:{data:Complaints
  const cut=data&&total>data.complaints.length?say('تُعرض '+data.complaints.length+' من أصل '+total+' شكوى، ما ينتظرك أولًا.','Showing '+data.complaints.length+' of '+total+' complaints, what waits for you first.'):'';
  const intro=me.role==='customer_service'?say('ما سجّلته أنت وزملاؤك في منطقتك، وأين وصلت كل شكوى.','What you and your colleagues registered in your region, and where each complaint stands.'):me.role==='customer_service_manager'?say('شكاوى فريقك: راجعها وأحلها إلى المبيعات وتابع حلها حتى الإغلاق.','Your team\'s complaints: review them, hand them to sales and follow them to closure.'):me.role==='admin'?say('كل الشكاوى وأين وصلت.','Every complaint and where it stands.'):me.role==='rep'?say('الشكاوى المكلَّف بها: تواصل مع العميل وسجّل ما فعلت ثم الحل.','The complaints assigned to you: contact the customer, record what you did, then the resolution.'):say('شكاوى العملاء التي أُحيلت إليك أو يحملها فريقك.','Customer complaints handed to you or held by your team.');
  return <section className={mode==='page'?'complaints-page':'complaints-panel panel'} aria-label={say('شكاوى العملاء','Customer complaints')} data-role={me.role} dir={language==='en'?'ltr':'rtl'}>
-  <div className="support-heading"><div><h2><MessageSquareWarning size={18} aria-hidden="true"/> {say('شكاوى العملاء','Customer complaints')}</h2><p>{intro}</p></div><div className="complaints-heading-tools">{mode==='page'&&onRegister&&canRegisterAny(me.role)&&<button type="button" className="btn primary complaint-register-button" onClick={onRegister}><Plus size={17} aria-hidden="true"/>{say('تسجيل شكوى','Register a complaint')}</button>}<span className="support-count">{openCount}</span></div></div>
+  <div className="support-heading"><div><h2><MessageSquareWarning size={18} aria-hidden="true"/> {say('شكاوى العملاء','Customer complaints')}</h2><p>{intro}</p></div><span className="support-count" title={say('الشكاوى المفتوحة','Open complaints')}>{openCount}</span></div>
   {cut&&<p className="support-cut" role="note">{cut}</p>}
   {!data&&<p className="form-note" role="status">{say('جارٍ تحميل الشكاوى','Loading complaints')}</p>}
   {data&&!groups.length&&<p className="form-note complaints-empty">{say('لا شكاوى.','No complaints.')}</p>}

@@ -70,13 +70,13 @@ const rows=[
 const list=me=>C.complaintQueue({me:members.find(member=>member.id===me),members,all:customers,complaints:rows},now,Infinity);
 const data=me=>{const complaints=list(me);return {generatedAt:now,complaints,counts:{complaints:complaints.length,open:complaints.filter(entry=>C.isOpenComplaint(entry)).length,badge:C.complaintBadge(complaints)}};};
 const me=id=>members.find(member=>member.id===id);
-const page=(id,mode='page')=>html(React.createElement(ComplaintsList,{data:data(id),me:me(id),mode,onOpen:noop,onRegister:noop}));
+const page=(id,mode='page')=>html(React.createElement(ComplaintsList,{data:data(id),me:me(id),mode,onOpen:noop}));
 
 // ---- the page and the panel, per role
 let out=page('csm');
 eq([count(out,'class="complaint-card"'),count(out,'data-group="act"'),count(out,'data-group="open"'),count(out,'data-group="finished"')],[8,1,1,1],'the manager\'s page: every complaint in the three sections');
 ok(out.includes('بانتظار إجرائك')&&out.includes('شكاوى مفتوحة')&&out.includes('مغلقة وملغاة خلال 30 يومًا'),'with the section titles');
-ok(out.includes('مراجعة الشكوى')&&out.includes('تسجيل شكوى'),'the review button on what waits for him, and the registration button on the page');
+ok(out.includes('مراجعة الشكوى'),'the review button on what waits for him');
 ok(out.includes('data-late="true"')&&out.includes('متأخر عن هدف 4 ساعة عمل'),'the late one is marked against its target');
 ok(out.includes('data-severity="high"')&&out.includes('أهمية عالية'),'the high one is marked');
 ok(out.includes('بانتظار مراجعة مدير خدمة العملاء')&&out.includes('مطلوب تعديل')&&out.includes('بانتظار تكليف المبيعات')&&out.includes('بانتظار أول تواصل من المندوب')&&out.includes('قيد الحل مع المندوب')&&out.includes('بانتظار تأكيد الإغلاق')&&out.includes('مغلقة'),'each card says where it stands');
@@ -89,15 +89,15 @@ out=page('cs_west');
 eq(count(out,'class="complaint-card"'),1,'the west sees only its own');
 out=page('sm','panel');
 eq([count(out,'class="complaint-card"'),count(out,'complaints-panel')],[5,1],'the sales manager\'s panel on the Visits page: what came to him and what his people hold');
-ok(out.includes('تكليف مندوب')&&!out.includes('تسجيل شكوى'),'asked to assign; sales does not register complaints');
+ok(out.includes('تكليف مندوب'),'asked to assign');
 out=page('rep','panel');
 eq(count(out,'class="complaint-card"'),4,'the representative\'s panel: what he holds, resolved and closed');
 ok(out.includes('تسجيل التواصل')&&out.includes('تسجيل الحل'),'asked to contact on one and to resolve the other');
 eq(html(React.createElement(ComplaintsList,{data:{generatedAt:now,complaints:[],counts:{complaints:0,open:0,badge:0}},me:me('rep2'),mode:'panel',onOpen:noop})),'','a sales member with nothing sees no panel');
-ok(html(React.createElement(ComplaintsList,{data:{generatedAt:now,complaints:[],counts:{complaints:0,open:0,badge:0}},me:me('cs_west'),mode:'page',onOpen:noop,onRegister:noop})).includes('لا شكاوى'),'the page says when there is nothing');
-ok(html(React.createElement(ComplaintsList,{data:null,me:me('csm'),mode:'page',onOpen:noop,onRegister:noop})).includes('جارٍ تحميل الشكاوى'),'and while loading');
+ok(html(React.createElement(ComplaintsList,{data:{generatedAt:now,complaints:[],counts:{complaints:0,open:0,badge:0}},me:me('cs_west'),mode:'page',onOpen:noop})).includes('لا شكاوى'),'the page says when there is nothing');
+ok(html(React.createElement(ComplaintsList,{data:null,me:me('csm'),mode:'page',onOpen:noop})).includes('جارٍ تحميل الشكاوى'),'and while loading');
 const cutData={...data('csm'),counts:{complaints:900,open:600,badge:2}};
-ok(html(React.createElement(ComplaintsList,{data:cutData,me:me('csm'),mode:'page',onOpen:noop,onRegister:noop})).includes('تُعرض 8 من أصل 900 شكوى'),'a cut list says how many of how many');
+ok(html(React.createElement(ComplaintsList,{data:cutData,me:me('csm'),mode:'page',onOpen:noop})).includes('تُعرض 8 من أصل 900 شكوى'),'a cut list says how many of how many');
 
 // ---- the registration form
 out=html(React.createElement(ComplaintRegisterDialog,{me:me('cs_east'),records:customers,complaints:list('cs_east'),onClose:noop,onSaved:noop}));
@@ -148,7 +148,7 @@ ok(!out.includes('data-page="complaints"')&&/data-page="activity"[^]*?nav-badge[
 // ---- English, with no Arabic left behind
 language='en';
 out=page('csm');
-ok(out.includes('Customer complaints')&&out.includes('Waiting for your action')&&out.includes('Review the complaint')&&out.includes('Register a complaint')&&out.includes('Late against a 4-working-hour target')&&out.includes('High')&&out.includes('Customer satisfied'),'the English page');
+ok(out.includes('Customer complaints')&&out.includes('Waiting for your action')&&out.includes('Review the complaint')&&out.includes('Late against a 4-working-hour target')&&out.includes('High')&&out.includes('Customer satisfied'),'the English page');
 eq(arabicLeft(out),[],'with no Arabic');
 out=sheet('complaint-5','rep');
 ok(out.includes('Record a contact with the customer')&&out.includes('Record the resolution')&&/The complaint(&#x27;|')s story/.test(out)&&out.includes('Assigned to sales · Rep One'),'the English sheet');

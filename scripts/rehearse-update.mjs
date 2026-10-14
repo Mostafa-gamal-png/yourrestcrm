@@ -431,6 +431,43 @@ try {
     note('assistance requests, missed visits and the manager\'s approval queue work on the upgraded database for the right roles', {request: requestId});
   }
 
+  if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaints')) {
+    // A customer complaint runs its whole course on the upgraded database, for the right people only.
+    const calls = {};
+    for (const who of ['csm', 'cs', 'mgr', 'sup', 'rep1', 'repw']) calls[who] = await a.login(who);
+    const readDb = (sql, ...args) => { const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true}); try { return db.prepare(sql).get(...args); } finally { db.close(); } };
+    const versionOf = id => readDb('SELECT version FROM crm_records WHERE id=?', id).version;
+    const complaints = async call => (await call('/api/complaints')).json();
+    const post = (call, body) => call('/api/complaints', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
+    const act = (call, id, body) => post(call, {id, version: versionOf(id), ...body});
+    const report = {channel: 'call', category: 'product_quality', severity: 'high', description: 'القالب يخرج منتجًا مكسورًا من جهة واحدة', demand: 'استبدال القالب', reference: 'INV-1'};
+    assert.equal((await a.request('/api/complaints')).status, 401, 'an anonymous caller is refused');
+    for (const who of ['csm', 'cs', 'mgr', 'sup', 'rep1', 'repw']) assert.deepEqual((await complaints(calls[who])).complaints, [], who + ' starts with no complaint');
+    assert.equal((await post(calls.rep1, {action: 'register', customerId: customers.e1, customerVersion: versionOf(customers.e1), ...report})).status, 403, 'sales does not register complaints');
+    const registered = await post(calls.cs, {action: 'register', customerId: customers.e1, customerVersion: versionOf(customers.e1), ...report});
+    assert.equal(registered.status, 200, 'customer service registers a complaint on the upgraded database: ' + registered.text.slice(0, 120));
+    const complaintId = registered.json().id, row = () => JSON.parse(readDb('SELECT data FROM crm_records WHERE id=?', complaintId).data);
+    assert.deepEqual([row().status, row().serviceManagerId, readDb('SELECT kind,parent_id FROM crm_records WHERE id=?', complaintId)], ['submitted', 'csm', {kind: 'complaint', parent_id: null}], 'stored as its own kind with no parent, waiting for the manager');
+    const ids = async who => (await complaints(calls[who])).complaints.map(item => item.id);
+    assert.deepEqual([await ids('cs'), await ids('csm'), await ids('mgr'), await ids('rep1'), await ids('repw')], [[complaintId], [complaintId], [], [], []], 'customer service and its manager see it; sales not yet');
+    assert.equal((await complaints(calls.csm)).counts.badge, 1, 'the manager is asked to review it');
+    assert.equal((await act(calls.csm, complaintId, {action: 'forward', targetId: 'mgr'})).status, 200, 'the manager hands it to the sales manager');
+    const toAssign = (await complaints(calls.mgr)).complaints[0];
+    assert.deepEqual([toAssign.awaiting, toAssign.suggestedId], ['assign', 'rep1'], 'the sales manager is asked to assign it, the customer\'s representative suggested');
+    assert.equal((await act(calls.mgr, complaintId, {action: 'assign', targetId: 'rep1', note: 'تابعه اليوم'})).status, 200, 'he assigns it');
+    assert.deepEqual([await ids('rep1'), await ids('sup'), await ids('repw')], [[complaintId], [complaintId], []], 'the representative and his supervisor see it; the western one does not');
+    assert.equal((await act(calls.rep1, complaintId, {action: 'update', channel: 'visit', text: 'زرت المصنع وفحصت القالب', date: day})).status, 200, 'the representative records his contact');
+    assert.equal((await act(calls.rep1, complaintId, {action: 'resolve', outcome: 'solved', note: 'استُبدل القالب'})).status, 200, 'and the resolution');
+    assert.equal((await complaints(calls.cs)).complaints[0].awaiting, 'close', 'customer service is asked to confirm the closure');
+    assert.equal((await act(calls.cs, complaintId, {action: 'close', outcome: 'satisfied', note: 'أكد العميل'})).status, 200, 'and closes it');
+    assert.deepEqual([row().status, row().events.map(event => event.action)], ['closed', ['register', 'forward', 'assign', 'resolve', 'close']], 'closed with its story');
+    // Nothing of it reached the records, the cases, the assistance or the visits.
+    const crm = (await owner('/api/crm')).json();
+    assert.equal(crm.records.some(record => record.kind === 'complaint') || JSON.stringify(crm.audits).includes('complaint'), false, 'the administrator\'s records and history carry no complaint');
+    assert.equal((await owner('/api/customer-service')).json().cases.some(item => String(item.id).startsWith('complaint')), false, 'no customer-service case was made of it');
+    note('a customer complaint runs its whole course on the upgraded database for the right roles', {complaint: complaintId});
+  }
+
   // Command-line wiring of the activator (the hosting home is fixed at /home/youriedx, which does not exist here).
   const cli = spawnSync(process.execPath, [path.join(stageA, helperName), '--bogus'], {encoding: 'utf8'});
   assert.equal(cli.status, 1); assert.match(cli.stderr, /Usage: node .*\.cjs \[--check\|--verify\]/);
@@ -483,7 +520,7 @@ try {
       assert.deepEqual([who, crm.status, cases.status], [who, 200, 200], 'the previous release serves ' + who + ' on the same database');
       restored[who] = {crm: crm.json(), cases: cases.json().cases};
     }
-    const queueIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts'), supportIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/support');
+    const queueIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts'), supportIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/support'), complaintsIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaints');
     if (queueIntroduced) assert.equal(restored.owner.crm.serviceQueue, undefined, 'the previous release knows nothing of the new queue field');
     else assert(Array.isArray(restored.owner.crm.serviceQueue), 'the previous release already has the queue field');
     // The administrator's case: the request customer service registered during the new release's use (the assistance block); the manager and the representative have no case yet.
@@ -499,6 +536,13 @@ try {
       assert.equal((await a.request('/api/support')).status, 404, 'the new route is gone again with the new release');
       // Recorded, not judged: the previous release has no rule to leave the assistance audit lines out of the administrator's history.
       supportAuditLines = (restored.owner.crm.audits || []).filter(item => /^support/.test(String(item.action))).length;
+    }
+    if (complaintsIntroduced) {
+      // Complaints are records of a kind the previous release does not know: it serves everyone on them, and nobody but the administrator's raw record list could carry them.
+      const complaintRows = (() => { const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true}); try { return db.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='complaint'").get().n; } finally { db.close(); } })();
+      assert(complaintRows >= 1, 'the database still holds the complaint the new release wrote');
+      assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'complaint').length), [0, 0, 0, 0], 'no one but the administrator\'s raw record list could carry it');
+      assert.equal((await a.request('/api/complaints')).status, 404, 'the complaints route is gone again with the new release');
     }
     if (queueIntroduced) {
       assert.equal(restored.rep1.cases[0].status, 'assigned', 'it keeps its status');
