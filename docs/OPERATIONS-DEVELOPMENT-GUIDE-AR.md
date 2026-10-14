@@ -258,6 +258,28 @@ node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-الق�
 
 **الاختبارات:** `tests/customer-entry-fields-ui.mjs` (الواجهة)، `tests/customer-location-rules.mjs` (القواعد)، `tests/rep-customer-create.mjs` (الخادم)، `tests/location-picker-browser.mjs` (Chromium على النسخة المبنية، بوابة `browser`).
 
+## 9-ز. شكاوى العملاء: من خدمة العملاء إلى المندوب حتى الإغلاق
+
+**القاعدة:** الشكوى سجل مستقل من النوع `complaint` في `crm_records` بلا أب، بلا ترحيل، كالمساندة. يسجّلها ممثل خدمة العملاء، يراجعها مديره ويحيلها إلى مدير المبيعات المرتبط به، فيكلّف مندوبًا أو مشرفًا في فرع العميل يغطي منطقته (المندوب الحالي للعميل مقترح أولًا)، يسجّل المندوب تواصلاته داخل الشكوى ثم الحل، وتتأكد خدمة العملاء من العميل وتغلقها أو تعيدها. الوصف الكامل في `docs/CUSTOMER-SERVICE-WORKFLOW-AR.md` (القسم 10).
+
+| الملف | الدور |
+|---|---|
+| `lib/complaints.ts` | المنطق الخالص: الثوابت (`COMPLAINT_TARGET_HOURS` المراجعة 4، التكليف 4، التفويض 4، أول تواصل 24، الحل 50، تأكيد الإغلاق 24؛ `COMPLAINT_REOPEN_DAYS=14`؛ `COMPLAINT_HISTORY_DAYS=30`؛ `COMPLAINT_LIST_LIMIT=300`)، القوائم المترجمة، المرحلة والتأخر (`complaintProgress`)، من يقرأ (`canReadComplaint`) ومن يسجّل (`canRegisterComplaint`) ومن يتصرف (`complaintPermissions`)، المرشحون (`complaintCandidates`)، ما يُطلب من القارئ (`complaintAwaiting`)، القائمة (`complaintQueue`) والعدّاد والأقسام وشكاوى العميل |
+| `app/api/complaints/route.ts` | `GET` (ما يحق للقارئ، بحد 300 وعدد حقيقي وعدّاد) و`POST` بإجراءات `register` و`edit` و`forward` و`return` و`assign` و`delegate` و`reassign` و`seen` و`update` و`resolve` و`reject` و`close` و`reopen` و`cancel` و`note`، بإيصالات `complaint-receipt` وفحص النسخة وإعادة فحص الأعضاء عند الحفظ وتدقيق `complaint:<action>`. اختباره `tests/complaints-http.mjs` |
+| `app/complaints-panel.tsx` و`app/complaints-panel.css` | `useComplaints` (يحمّل بعد لقطة الصفحة وكل 10 دقائق وفور أي تغيير)، `ComplaintsList` بوضعي `page` و`panel`، `ComplaintRegisterDialog`، `ComplaintSheet`، `CustomerComplaints` |
+| `app/crm-app.tsx` و`app/mobile-navigation.tsx` و`lib/access.ts` | صفحة «الشكاوى» لأدوار الخدمة ومدير النظام (`canViewPage`)، اللوحة على «الزيارات» للمبيعات، العدّاد على عنصر الصفحة أو على «الزيارات»، زر «تسجيل شكوى»، تبويب الشكاوى في ورقة العميل |
+| `lib/crm.ts` و`app/api/crm/route.ts` | إخفاء النوع من قائمة سجلات مدير النظام واستبعاد أسطر `complaint` من سجل التدقيق المعروض |
+
+**من يرى:** مدير النظام الكل. ممثل الخدمة شكاوى فرعه في المناطق التي يغطيها. مدير الخدمة ما سجّله فريقه وما أحاله، وما لا مدير له. مدير المبيعات ما أُحيل إليه وما يحمله أي مندوب أو مشرف (نطاق مدير المبيعات في `salesScopeMemberIds` يشمل كل المناديب والمشرفين، كما في الطلبات). المشرف ما يحمله هو أو مندوبوه. المندوب ما يحمله.
+
+**من يُسأل (`awaiting`):** مدير الخدمة المراجعة؛ الممثل التعديل بعد الإعادة وتأكيد الإغلاق بعد الحل؛ مدير المبيعات التكليف؛ المشرف التفويض؛ المندوب أول تواصل ثم الحل. مدير النظام لا يُسأل إلا حين لا يوجد من يُسأل (مسجِّل بلا مدير، أو مسجِّل لم يعد نشطًا عند الإغلاق). العدّاد هو عدد ما يُسأل عنه القارئ.
+
+**ما يُخزَّن:** كل شيء في `data` (الحالة من `submitted` إلى `closed` أو `cancelled`، الأطراف، التقرير، أختام كل انتقال، `resolution` و`closure`، `updates` و`notes` و`events` لسير الشكوى، `previousAssignees`). الأرقام للعرض فقط.
+
+**الحدود:** لا تقرير شهري ولا مرفقات ولا إشعار هاتف في هذا الإصدار. العمل متصلًا فقط. لا يُحتسب تواصل المندوب زيارة.
+
+**الاختبارات:** `tests/complaints.mjs` و`tests/complaints-ui.mjs` (البوابة الافتراضية)، `tests/complaints-http.mjs` (بوابة البناء)، `tests/complaints-browser.mjs` (بوابة المتصفح)، و`tests/role-ui.mjs` و`tests/mobile-navigation-ui.mjs` و`tests/server-authorization.mjs` و`tests/baseline-update-activation.mjs` محدَّثة.
+
 ## 10. حل المشكلات الشائعة
 
 | العَرَض | السبب والحل |
