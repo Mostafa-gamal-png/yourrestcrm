@@ -182,6 +182,7 @@ try {
     await withdraw({fineLocationPermission: 'denied'}, 'permission', 'الموقع الدقيق', 'precise location withdrawn');
     await withdraw({locationServicesEnabled: false}, 'location_services', 'الموقع (GPS)', 'phone GPS switched off');
     await withdraw({appVersion: '1.0.6'}, 'upgrade', 'حدّث تطبيق', 'outdated app version');
+    await withdraw({appVersion: '1.0.7'}, 'upgrade', 'أقدم من الإصدار المطلوب 1.0.10', 'app older than the served version');
     await withdraw({enrolled: false, memberId: null}, 'setup', 'تسجيل هذا الهاتف', 'enrolment lost');
     // Trouble during the day is not a block: GPS waits, queued points, no network, a paused collector.
     for (const patch of [{error: 'بانتظار موقع حديث؛ الفترة غير المؤكدة تظهر في التقرير'}, {syncError: 'لا يوجد اتصال بالخادم؛ يجري حفظ الموقع على الجهاز لحين عودة الشبكة', pendingCount: 400, pendingGapCount: 3}, {lastFixAt: '2026-10-12T05:00:00.000Z', accuracy: 900}]) {

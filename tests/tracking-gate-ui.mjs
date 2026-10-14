@@ -9,12 +9,15 @@ import * as jsx from 'react/jsx-runtime';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
 const compiler = {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true};
-function load(file, require) { const exports = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {compilerOptions: compiler}).outputText, {exports, require, console, Date, Intl, navigator: {userAgent: 'test'}}); return exports; }
+function load(file, require) { const exports = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {compilerOptions: compiler}).outputText, {exports, require, console, Date, Intl, URL, navigator: {userAgent: 'test'}}); return exports; }
 let checks = 0;
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const no = (value, message) => { assert.ok(!value, message); checks++; };
 const native = load('lib/native-tracking.ts', () => ({}));
-const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : {});
+const update = load('lib/app-update.ts', name => name === './native-tracking' ? native : {});
+const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : name === './app-update' ? update : {});
+const release = JSON.parse(fs.readFileSync('lib/app-update-release.json', 'utf8'));
+let updateState = null;
 const icon = () => null, icons = new Proxy({}, {get: () => icon});
 let language = 'ar', tracker;
 const component = load('app/tracking-gate.tsx', name => {
@@ -23,6 +26,9 @@ const component = load('app/tracking-gate.tsx', name => {
   if (name === 'lucide-react') return icons;
   if (name === '@/lib/i18n') return {useLanguage: () => ({language})};
   if (name === '@/lib/tracking-gate') return gate;
+  if (name === '@/lib/app-update') return {appUpdateController: () => ({snapshot: () => updateState, subscribe(listener) { listener(updateState); return () => {}; }})};
+  if (name === '@/lib/app-update-release.json') return release;
+  if (name === './app-update') return {__esModule: true, default: () => React.createElement('section', {className: 'app-update-banner'}, 'IN-APP-UPDATE')};
   if (name === './email-login') return {authRequest: async () => ({ok: true})};
   if (name === './journey-tracker') return {useJourneyTracker: () => tracker, trackingFailureText: message => message};
   if (name === './language-switch') return {__esModule: true, default: () => React.createElement('button', {className: 'language-switch'}, 'lang')};
@@ -72,6 +78,22 @@ for (const [reason, context, title] of reasons) {
   ok(html.includes('dir="ltr"') && html.includes('Sign out'), reason + ': English layout');
 }
 language = 'ar';
+
+// The served version is mandatory: the screen names both versions and offers the file, or the in-app flow where the app has one.
+tracker = trackerWith(gateOf({appVersion: '1.0.7'}), {appVersion: '1.0.7'}); html = render();
+ok(html.includes('data-gate-reason="upgrade"') && html.includes('حدّث تطبيق يورست للمتابعة'), 'An app older than the served version is blocked with the update title');
+ok(html.includes('الإصدار المثبت على هاتفك 1.0.7 أقدم من الإصدار المطلوب ' + release.versionName) && html.includes('المطلوب: ' + release.versionName), 'and the body names the installed and the required versions');
+ok(html.includes('href="' + new URL(release.apkUrl).pathname + '"') && html.includes('تحديث تطبيق أندرويد') && !html.includes('IN-APP-UPDATE'), 'an app without the update protocol gets the served file');
+updateState = {native: true, protocol: 1, phase: 'available', installedVersionCode: 8, installedVersionName: '1.0.7', availableVersionCode: 11, availableVersionName: release.versionName, downloadedBytes: 0, totalBytes: 1, progress: 0, error: '', offline: false, legacyUrl: '', legacyStarted: false, releaseNotes: {ar: [], en: []}};
+html = render();
+ok(html.includes('IN-APP-UPDATE') && !html.includes('href="' + new URL(release.apkUrl).pathname + '"'), 'an app with the update protocol gets the in-app flow instead of the file');
+updateState = null;
+for (const role of ['admin', 'manager', 'supervisor']) { html = render({...rep, role}); ok(!html.includes('WORKSPACE') && html.includes('data-gate-reason="upgrade"'), role + ' in an outdated app is blocked too'); }
+tracker = trackerWith(gateOf({appVersion: '1.0.6'}), {appVersion: '1.0.6'}); language = 'en'; html = render();
+ok(html.includes('Update the Yourrest app to continue') && html.includes('older than the required version ' + release.versionName), 'English wording');
+language = 'ar';
+tracker = trackerWith(gateOf({appVersion: release.versionName, continuousSupported: false}), {appVersion: release.versionName}); html = render();
+ok(html.includes('حدّث تطبيق يورست لتفعيل تتبع خط السير') && !html.includes('أقدم من الإصدار المطلوب'), 'a current app that lacks a capability keeps the capability wording');
 
 // Content details that matter to the person at the screen.
 tracker = reasons.find(r => r[0] === 'setup')[1]; html = render();

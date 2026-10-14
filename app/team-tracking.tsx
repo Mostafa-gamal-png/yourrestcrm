@@ -5,6 +5,7 @@ import {canUseSalesWorkspace} from '@/lib/access';
 import {useLanguage} from '@/lib/i18n';
 import {buildTrackingCoverage,type TrackingCoverage,type TrackingOverview} from '@/lib/tracking-coverage';
 import {coverageLabel,phoneBrief,riyadhStamp} from '@/lib/tracking-coverage-text';
+import release from '@/lib/app-update-release.json';
 import './team-tracking.css';
 
 type State={status:'loading'|'ready'|'error';byMember:Map<string,TrackingCoverage>};
@@ -37,6 +38,6 @@ export function TeamTrackingCell({member}:{member:Member}){
   <span className="team-tracking-badge">{coverageLabel(entry.status,language)}</span>
   {entry.lastPointAt&&entry.status!=='tracked'&&<small>{language==='en'?'Last location: ':'آخر موقع: '}{riyadhStamp(entry.lastPointAt)}</small>}
   {entry.status==='tracked'&&<small>{language==='en'?`${entry.pointsOnDate} points today`:`${entry.pointsOnDate} نقطة اليوم`}</small>}
-  <small>{phoneBrief(entry,language)}</small>
+  <small>{phoneBrief(entry,language,release.versionName)}</small>
  </div>;
 }

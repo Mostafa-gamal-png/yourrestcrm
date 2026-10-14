@@ -7,7 +7,8 @@ import ts from 'typescript';
 const compiler = {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true};
 function load(file, require) { const exports = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {compilerOptions: compiler}).outputText, {exports, require, console, Date, Intl}); return exports; }
 const native = load('lib/native-tracking.ts', () => ({}));
-const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : {});
+const update = load('lib/app-update.ts', name => name === './native-tracking' ? native : {});
+const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : name === './app-update' ? update : {});
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message); checks++; };
 
@@ -18,7 +19,7 @@ const ready = {tracking: true, permission: 'granted', pendingCount: 0, pendingGa
 const device = (patch = {}, memberId = 'rep-1') => gate.gateDeviceFrom(native.normalizeNativeState({...ready, ...patch}), memberId);
 const rep = {role: 'rep', active: 1};
 const source = (patch = {}) => ({native: true, loading: false, failed: false, upgradeRequired: false, device: device(), ...patch});
-const decide = (input = {}) => gate.trackingGateDecision({...rep, ...source(), ...input});
+const decide = (input = {}) => gate.trackingGateDecision({...rep, ...source(), requiredVersion: '1.0.10', ...input});
 const blocked = (reason, missing = []) => ({status: 'blocked', reason, missing});
 
 // Only an active representative is gated; everyone else, and an unknown member, passes through untouched.
@@ -43,11 +44,28 @@ eq(decide({loading: true}), {status: 'allowed'}, 'A known healthy phone is allow
 // Old or incomplete app.
 eq(decide({upgradeRequired: true}), blocked('upgrade'), 'The app asked for an upgrade');
 eq(decide({device: device({appVersion: '1.0.6'})}), blocked('upgrade'), 'Version 1.0.6 has no work-hours schedule');
-eq(decide({device: device({appVersion: '1.0.7'})}), {status: 'allowed'}, 'Version 1.0.7 is the first supported');
+eq(decide({device: device({appVersion: '1.0.7'}), requiredVersion: '1.0.7'}), {status: 'allowed'}, 'Version 1.0.7 is the first supported, when it is the served one');
 eq(decide({device: device({continuousSupported: false})}), blocked('upgrade'), 'No continuous support');
 eq(decide({device: device({workHoursSupported: false})}), blocked('upgrade'), 'No work-hours support');
 eq(decide({device: device({fridayExclusionSupported: false})}), blocked('upgrade'), 'No Friday exclusion');
 eq(decide({device: device({pendingGapCount: null})}), blocked('upgrade'), 'Unknown gap queue');
+
+// The served version is mandatory for everyone who opens the app; the comparison never judges an unknown version.
+eq(decide({device: device({appVersion: '1.0.7'})}), blocked('upgrade'), 'An app older than the served version is blocked for a representative');
+eq(decide({device: device({appVersion: '1.0.9'})}), blocked('upgrade'), 'however close to it');
+for (const role of ['admin', 'manager', 'supervisor']) {
+  eq(decide({role, device: device({appVersion: '1.0.7'})}), blocked('upgrade'), role + ' in an outdated app is blocked as well');
+  eq(decide({role, device: device({appVersion: '1.0.10', continuousConsent: false, enrolled: false})}), {status: 'allowed'}, role + ' in the served version passes whatever the tracking state');
+  eq(decide({role, native: false, device: null}), {status: 'allowed'}, role + ' in a browser is not gated');
+}
+eq(decide({role: 'manager', active: 0, device: device({appVersion: '1.0.7'})}), {status: 'allowed'}, 'A deactivated account sees the account error, not the update screen');
+eq(decide({device: device({appVersion: '1.0.11'})}), {status: 'allowed'}, 'A newer app than the served one is not asked to downgrade');
+eq(decide({device: device({appVersion: ''})}), blocked('upgrade'), 'An app that reports no version is judged on its capabilities only, and an app that old lacks the work-hours schedule');
+eq(decide({role: 'manager', device: device({appVersion: ''})}), {status: 'allowed'}, 'For another role an unknown version is not judged at all');
+eq(decide({device: device({appVersion: '1.0.7'}), requiredVersion: undefined}), {status: 'allowed'}, 'Without a served version nothing is judged');
+eq(decide({device: device({appVersion: '1.0.7'}), requiredVersion: 'later'}), {status: 'allowed'}, 'A malformed served version judges nothing');
+eq(decide({device: device({appVersion: '1.0.7', backgroundPermission: 'denied'})}), blocked('upgrade'), 'The outdated app is reported before any permission problem');
+eq([gate.appOutdated('1.0.7', '1.0.10'), gate.appOutdated('1.0.10', '1.0.10'), gate.appOutdated('1.0.11', '1.0.10'), gate.appOutdated('', '1.0.10'), gate.appOutdated('1.0.7', undefined)], [true, false, false, false, false], 'appOutdated');
 
 // First activation: consent not given, nothing enrolled or granted.
 const fresh = {continuousConsent: false, enrolled: false, memberId: null, enrolledRole: null, tracking: false, permission: 'denied', fineLocationPermission: 'denied', notificationPermission: 'denied', backgroundPermission: 'prompt'};
