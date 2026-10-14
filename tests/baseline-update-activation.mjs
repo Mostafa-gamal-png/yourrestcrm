@@ -46,6 +46,9 @@ try {
   const earlier = packageIt('earlier', build('build-earlier', 'earlier'), ['--release-name', 'update', '--release-date', '20261012', '--stage-name', 'yourrest-crm-update-20261012', '--new-migration', NEWEST, '--verify-route', '/api/device-status=401']);
   const later = packageIt('later', build('build-later', 'later'), ['--release-name', 'update', '--release-date', '20261013', '--stage-name', 'yourrest-crm-update-20261013', '--schema-baseline', '16', '--verify-route', '/api/service-report=401', '--verify-route', '/api/service-queue/alerts=401']);
   const newest = packageIt('newest', build('build-newest', 'newest'), ['--release-name', 'update', '--release-date', '20261014', '--stage-name', 'yourrest-crm-update-20261014', '--schema-baseline', '16', '--verify-route', '/api/support=401']);
+  // A second release on the same day needs a name and a stage folder of its own, since the first one's are already on the hosting.
+  const located = packageIt('located', build('build-located', 'located'), ['--release-name', 'update-location', '--release-date', '20261014', '--stage-name', 'yourrest-crm-update-location-20261014', '--schema-baseline', '16']);
+  eq([located.report.schemaBefore, located.report.schemaAfter, located.report.newMigrations, located.helper.RELEASE_NAME, located.helper.STAGE_DIR, located.helper.EXTRA_ROUTES], [16, 16, [], 'update-location', 'yourrest-crm-update-location-20261014', []], 'a second package of the same day carries its own name and stage folder and no new routes');
   eq([earlier.report.schemaBefore, earlier.report.schemaAfter, earlier.report.newMigrations], [15, 16, [NEWEST]], 'the earlier package adds the migration');
   eq([newest.report.schemaBefore, newest.report.schemaAfter, newest.report.newMigrations, newest.helper.EXTRA_ROUTES], [16, 16, [], [['/api/support', 401]]], 'the package after that states the same baseline, adds nothing and checks its own route');
   eq([later.report.schemaBefore, later.report.schemaAfter, later.report.newMigrations], [16, 16, []], 'the later package states the baseline and adds nothing');
@@ -167,6 +170,21 @@ try {
     statuses = {...healthy};
     await newest.helper.run(pn, 'verify', {log: quiet, stopped: paths => newest.helper.ensureStopped(paths, emptyProc)});
     eq(logs.length > 0, true); checks--;
+  }
+
+  // ---- a second release on the same Saudi day, under its own name: it reuses the backup the first release of that day took
+  {
+    const dir = home('same-day-second', 16, newest, located), pn = newest.helper.pathsFor(dir), pw = located.helper.pathsFor(dir), database = databaseOf(pw), logs = [], collect = message => logs.push(message);
+    const first = await newest.helper.run(pn, 'apply', {log: quiet, stopped: paths => newest.helper.ensureStopped(paths, emptyProc), now: () => new Date('2026-10-14T05:00:00Z')});
+    statuses = {...healthy};
+    await newest.helper.run(pn, 'verify', {log: quiet, stopped: paths => newest.helper.ensureStopped(paths, emptyProc)});
+    const second = await located.helper.run(pw, 'apply', {log: collect, stopped: paths => located.helper.ensureStopped(paths, emptyProc), now: () => new Date('2026-10-14T09:00:00Z')});
+    eq(logs.includes('2/4 TODAY\'S VERIFIED FULL BACKUP REUSED. NO NEW FULL COPY.'), true, 'the second release of the day reuses the backup the first one took');
+    eq([second.phase, second.baseline.migrations, second.dailyBackup.transaction], ['switched', 16, first.transaction], 'it switches on the 16-migration database, citing that backup');
+    eq(rows(database, 'SELECT COUNT(*) n FROM yr_schema_migrations')[0].n, 16, 'the database is untouched');
+    eq(read(path.join(pw.current, 'app.cjs')), '// isolated release fixture located\n', 'the second release is live');
+    statuses = {...healthy};
+    await located.helper.run(pw, 'verify', {log: quiet, stopped: paths => located.helper.ensureStopped(paths, emptyProc)});
   }
 
   // ---- a stale or foreign daily backup is still refused
