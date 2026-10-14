@@ -41,13 +41,14 @@ eq([eastern,central,western,blank].map(c=>R.memberCanAccessRegion(member('all'),
 eq([eastern,western].map(c=>R.memberCanAccessRegion(member('eastern'),c.region)),[true,false],'one region as before');
 eq([R.memberCanAccessRegion(member('central,eastern'),'eastern'),R.memberCanAccessRegion(member('central,eastern'),'المنطقة الشرقية'),R.memberCanAccessRegion(member('unassigned'),'')],[true,true,true],'by id, by label with the prefix, and the unassigned bucket');
 eq([['all','western'],['western','all'],['central,eastern','eastern'],['central,eastern','western'],['central,eastern','eastern,western'],['mars','mars'],['central','central']].map(([a,b])=>R.regionScopesOverlap(a,b)),[true,true,true,false,true,false,true],'overlap: all with anything, otherwise a shared region');
+eq([['all','western'],['all','all'],['western','all'],['central,eastern','eastern'],['central,eastern','western'],['central,eastern','eastern,western'],['eastern','central,eastern'],['mars','mars']].map(([a,b])=>R.regionScopeAdmits(a,b)),[true,true,false,true,false,true,true,false],'admits: a global reader everything, a regional reader what names one of its regions and never a global one');
 
 // ---- who sees whom
 const team=[member('all','owner'),member('eastern','east'),member('central,eastern','two'),member('western','west'),member('unassigned','none')];
-eq(R.regionMembers(team,member('central,eastern','me')).map(m=>m.id),['owner','east','two'],'a member of two regions sees the global members and those sharing a region');
-eq(R.regionMembers(team,member('western','me')).map(m=>m.id),['owner','west'],'one region as before');
+eq(R.regionMembers(team,member('central,eastern','me')).map(m=>m.id),['east','two'],'a member of two regions sees those sharing a region, and not the global members (as before)');
+eq(R.regionMembers(team,member('western','me')).map(m=>m.id),['west'],'one region as before');
 eq(R.regionMembers(team,member('all','me')).map(m=>m.id),['owner','east','two','west','none'],'all sees everyone');
-eq(R.regionMembers(team,team[3]).map(m=>m.id),['owner','west'],'and always themself');
+eq(R.regionMembers(team,team[3]).map(m=>m.id),['west'],'and always themself');
 
 // ---- the SQL that admits rows of an overlapping scope, on real SQLite
 const db=new DatabaseSync(':memory:');
@@ -56,10 +57,11 @@ for(const [id,scope] of [['a','all'],['b','eastern'],['c','central,eastern'],['d
 const admitted=me=>{const scope=R.regionScopeSql('region_scope',member(me));return db.prepare('SELECT id FROM rows WHERE '+scope.sql+' ORDER BY id').all(...scope.args).map(row=>row.id);};
 eq(R.regionScopeSql('region_scope',member('all')),{sql:'1=1',args:[]},'all needs no filter');
 eq(admitted('all'),['a','b','c','d','e','f'],'all admits every row');
-eq(admitted('eastern'),['a','b','c'],'one region admits global rows, its own and the sets holding it');
-eq(admitted('central,eastern'),['a','b','c','e'],'two regions admit the rows of either');
-eq(admitted('western'),['a','d'],'another region');
-eq(admitted('unassigned'),['a','f'],'the unassigned bucket');
+eq(admitted('eastern'),['b','c'],'one region admits its own rows and the sets holding it, not the global rows (as before)');
+eq(admitted('central,eastern'),['b','c','e'],'two regions admit the rows of either');
+eq(admitted('western'),['d'],'another region');
+eq(admitted('unassigned'),['f'],'the unassigned bucket');
+eq(R.regionScopeSql('region_scope',member('mars')),{sql:'1=0',args:[]},'an unknown scope admits nothing');
 eq(R.regionScopeSql('region_scope',member('central,eastern')).args,['%,central,%','%,eastern,%'],'the patterns match whole ids only');
 db.exec("INSERT INTO rows VALUES('g','northeastern')");
 eq(admitted('eastern').includes('g'),false,'a region id inside another word is not a match');

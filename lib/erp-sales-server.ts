@@ -3,7 +3,7 @@ import {canonicalInvoiceReference} from './invoice-reference';
 import {z} from 'zod';
 import {context,CRMError,requireSalesWorkspace,accessGuard} from './crm-server';
 import {salesMemberIds,salesReadMemberIds,salesProducts,type Sale,type SaleItem} from './sales';
-import {regionScope,regionScopeSql,regionScopesOverlap} from './regions';
+import {regionScope,regionScopeAdmits,regionScopeSql} from './regions';
 import {today,type Member} from './crm';
 import {parseErpWorkbook,ErpWorkbookError,type ErpRow} from './erp-sales';
 import {omit} from './omit';
@@ -87,7 +87,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   else if(unmappedCategory){p.status='unmapped';p.reason='حدد صنف المستهدف المقابل لكل فئة في الفاتورة';}
   else if(!items.length){p.status='excluded';p.reason='كل فئات هذا المستند مستبعدة من اختيارك';}
   else if(first.documentType==='sale'&&manualKeys.has(JSON.stringify([first.date.slice(0,4),canonicalInvoiceReference(first.reference)]))){p.status='conflict';p.reason='رقم الفاتورة موجود في المبيعات اليدوية في نفس السنة؛ راجع السجل قبل الاستيراد لمنع التكرار';}
-  else if(old){if(old.rep_id!==repId||!regionScopesOverlap(old.region_scope,regionScope(c.me))){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
+  else if(old){if(old.rep_id!==repId||!regionScopeAdmits(regionScope(c.me),old.region_scope)){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
   documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'?undefined:rep});
  }
  const summary={newCount:0,duplicateCount:0,conflictCount:0,excludedCount:0,unassignedCount:0,unassignedTotalCents:0,unmappedCount:0,outOfScopeCount:0,officeExcludedCount:0,skippedCount:0,autoMatchedCount:[...mappingSources.values()].filter(source=>source==='name').length,totalCents:0,months:[...new Set(documents.filter(d=>d.preview.status==='new'||d.preview.status==='duplicate').map(d=>d.preview.date.slice(0,7)))].sort()};
