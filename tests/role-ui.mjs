@@ -28,16 +28,17 @@ function mockedRequire(name){
  if(name==='@/lib/i18n')return i18n;
  if(name==='@/lib/regions')return {regionValue:()=> 'الشرقية'};
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
+ if(name==='./complaints-panel')return new Proxy({useComplaints:()=>({data:null,refresh:async()=>{},forCustomer:()=>[],badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return {...Object.fromEntries(['SidebarMenu','SidebarMenuItem','SidebarMenuButton'].map(key=>[key,pass])),useSidebar:()=>({setOpenMobile:noop})};
  if(name==='@base-ui/react')return {Combobox:mock};
  return mock;
 }
 const {NavMenu}=moduleFrom('app/crm-app.tsx',mockedRequire,'\nexport {NavMenu};\n');
 const {default:Picker}=moduleFrom('app/visit-customer-picker.tsx',mockedRequire);
-const pages=[['activity','الزيارات'],['followup','المتابعات'],['journeys','تقرير يوم المندوب'],['targets','المستهدفات وتقييم الأداء'],['sales','المبيعات'],['quote','عروض الأسعار'],['reports','تقييم أداء المناديب'],['customer','العملاء'],['map','خريطة المصانع'],['team','الفريق والصلاحيات'],['dashboard','لوحة المتابعة']];
+const pages=[['activity','الزيارات'],['complaints','الشكاوى'],['followup','المتابعات'],['journeys','تقرير يوم المندوب'],['targets','المستهدفات وتقييم الأداء'],['sales','المبيعات'],['quote','عروض الأسعار'],['reports','تقييم أداء المناديب'],['customer','العملاء'],['map','خريطة المصانع'],['team','الفريق والصلاحيات'],['dashboard','لوحة المتابعة']];
 for(const role of ['rep','supervisor','manager','admin','customer_service','customer_service_manager','unknown']){
  const html=renderToStaticMarkup(React.createElement(NavMenu,{view:'activity',role,go:noop}));
- for(const [id,label] of pages){const expected=role==='rep'?['customer','map','activity','followup','targets'].includes(id):role.startsWith('customer_service')?id==='activity':role==='admin'?id!=='reports':['manager','supervisor'].includes(role)?!['team','reports'].includes(id):false;check(html.includes('>'+(role==='rep'&&id==='targets'?'مستهدفي':label)+'<'),expected,role+' navigation '+id);}
+ for(const [id,label] of pages){const expected=role==='rep'?['customer','map','activity','followup','targets'].includes(id):role.startsWith('customer_service')?id==='activity'||id==='complaints':role==='admin'?id!=='reports':['manager','supervisor'].includes(role)?!['team','reports','complaints'].includes(id):false;check(html.includes('>'+(role==='rep'&&id==='targets'?'مستهدفي':label)+'<'),expected,role+' navigation '+id);}
 }
 for(const role of ['rep','supervisor','manager','admin','customer_service']){
  const html=renderToStaticMarkup(React.createElement(Picker,{customers:[],value:'',me:{id:'test',role,branch:'الرئيسي',regionScope:'eastern'},disabled:false,locked:false,onChange:noop,onCreated:noop,onCreating:noop,onSaving:noop}));
@@ -75,6 +76,7 @@ const hookReact={...React,useState:initial=>{const name=stateNames[cursor++];ret
 function crmRequire(name){
  if(name==='react')return hookReact;
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
+ if(name==='./complaints-panel')return new Proxy({useComplaints:()=>({data:null,refresh:async()=>{},forCustomer:()=>[],badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='@/lib/crm')return {stages:[],stageLabels:{},roles:{rep:'مندوب المبيعات'},today:()=> '2026-09-30',money:String,isOpen:()=>false,isSalesRequest:r=>r.kind==='opportunity',followupTitle:r=>r.data.name||''};
  if(name==='@/lib/customer-service')return {isServiceRole:role=>role.startsWith('customer_service')};

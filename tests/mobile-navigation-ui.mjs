@@ -25,6 +25,7 @@ function baseRequire(name){
  if(name==='@/components/ui/sheet')return {Sheet,SheetContent,SheetTitle:pass,SheetDescription:pass};
  if(name==='./email-login')return {EmailLogout};if(name.endsWith('.css'))return {};
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
+ if(name==='./complaints-panel')return new Proxy({useComplaints:()=>({data:null,refresh:async()=>{},forCustomer:()=>[],badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({Sidebar,useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='sonner')return {Toaster:pass,toast:{success:noop,error:noop}};
  return icons;
@@ -62,12 +63,12 @@ for(const locale of ['ar','en']){
  props.blocked=true;tree=h.render();eq(nav(tree).props.hidden,true,'Editing dialog hides navigation');eq(nodes(tree,node=>node.type===Sheet)[0].props.open,false,'An open form blocks navigation sheets');
 }
 language='ar';
-const allowed={admin:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','team'],manager:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors'],supervisor:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors'],customer_service:['activity'],customer_service_manager:['activity'],unknown:[]};
+const allowed={admin:['customer','map','activity','followup','targets','complaints','dashboard','journeys','quote','sales','competitors','team'],manager:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors'],supervisor:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors'],customer_service:['activity','complaints'],customer_service_manager:['activity','complaints'],unknown:[]};
 for(const role of Object.keys(allowed)){
  const navigated=[],props={me:{...me,role},view:'targets',onNavigate:value=>navigated.push(value),accountOpen:false,onAccountOpenChange:noop};const h=harness('app/mobile-navigation.tsx',props);let tree=h.render();
  if(role==='unknown'){eq(tree,null,'Unknown role has no navigation');continue;}
  eq(nodes(tree,node=>node.type==='button'&&!!node.props['data-page']).map(node=>node.props['data-page']),allowed[role],role+' exposes exactly authorized pages across bottom bar and overflow');
- if(role.startsWith('customer_service')){eq(tabs(tree).length,1,role+' keeps Visits and account access without management pages');continue;}
+ if(role.startsWith('customer_service')){eq(tabs(tree).length,2,role+' keeps Visits and Complaints with account access, without management pages');continue;}
  eq(pageIds(tree),['customer','map','activity','followup'],role+' keeps frequent pages in bottom bar');
  eq(byPage(tree,'reports'),undefined,role+' has no duplicate performance navigation item');eq(text(byPage(tree,'targets')),'المستهدفات وتقييم الأداء',role+' unified navigation label');
  const more=tabs(tree).find(node=>!node.props['data-page']);eq(more.props['aria-haspopup'],'dialog','More declares its sheet');ok(more.props.className.includes('is-active'),'Overflow current page highlights More');more.props.onClick();tree=h.render();eq(h.state.moreOpen,true,'More opens');eq(nodes(tree,node=>node.type===Sheet)[0].props.open,true,'Overflow is visible');

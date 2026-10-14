@@ -1,0 +1,248 @@
+'use client';
+import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {CheckCircle2,Clock3,Loader2,MessageCircle,MessageSquareWarning,PhoneCall,Plus,Search} from 'lucide-react';
+import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
+import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
+import {t,useLanguage,direction,getLanguage} from '@/lib/i18n';
+import {definiteSubmitRejection,submitJson} from '@/lib/client-submit';
+import {roles,today,type Member,type Row} from '@/lib/crm';
+import {COMPLAINT_DEMAND_MAX,COMPLAINT_TEXT_MAX,canRegisterComplaint,closureOutcomes,closureOutcomesEn,complaintActions,complaintActionsEn,complaintCategories,complaintCategoriesEn,complaintChannels,complaintChannelsEn,complaintGroups,complaintSeverities,complaintSeveritiesEn,complaintStatusLabels,complaintStatusLabelsEn,complaintsOfCustomer,isOpenComplaint,resolutionOutcomes,resolutionOutcomesEn,type ComplaintEntry,type ComplaintGroupId} from '@/lib/complaints';
+import {contactLinks} from '@/lib/support';
+import {hoursText} from './service-queue';
+import './complaints-panel.css';
+
+type Say=(ar:string,en:string)=>string;
+export type ComplaintsData={generatedAt:string;complaints:ComplaintEntry[];counts:{complaints:number;open:number;badge:number}};
+const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message' in error&&typeof (error as {message:unknown}).message==='string'?(error as {message:string}).message:'';
+const stamp=(iso:string)=>iso?new Date(iso).toLocaleString('en-GB',{timeZone:'Asia/Riyadh'}):'—';
+const label=(ar:Record<string,string>,en:Record<string,string>,key:string,say:Say)=>say(ar[key]||key,en[key]||key);
+const categoryText=(key:string,say:Say)=>label(complaintCategories,complaintCategoriesEn,key,say);
+const channelText=(key:string,say:Say)=>label(complaintChannels,complaintChannelsEn,key,say);
+const severityText=(key:string,say:Say)=>label(complaintSeverities,complaintSeveritiesEn,key,say);
+const actionText=(key:string,say:Say)=>label(complaintActions,complaintActionsEn,key,say);
+const resolutionText=(key:string,say:Say)=>label(resolutionOutcomes,resolutionOutcomesEn,key,say);
+const closureText=(key:string,say:Say)=>label(closureOutcomes,closureOutcomesEn,key,say);
+/** Where the complaint stands, in words: the status, refined while the representative holds it. */
+const stateText=(entry:ComplaintEntry,say:Say)=>entry.status==='assigned'?(entry.stage==='delegation'?say('لدى مشرف المبيعات','With the sales supervisor'):entry.stage==='first_contact'?say('بانتظار أول تواصل من المندوب','Waiting for the representative\'s first contact'):say('قيد الحل مع المندوب','Being resolved by the representative')):label(complaintStatusLabels,complaintStatusLabelsEn,entry.status,say);
+const askText=(entry:ComplaintEntry,say:Say)=>entry.awaiting==='review'?say('مراجعة الشكوى','Review the complaint'):entry.awaiting==='fix'?say('تعديل وإعادة الإرسال','Correct and resend'):entry.awaiting==='assign'?say('تكليف مندوب','Assign a representative'):entry.awaiting==='delegate'?say('تفويض مندوب','Delegate to a representative'):entry.awaiting==='contact'?say('تسجيل التواصل','Record the contact'):entry.awaiting==='resolve'?say('تسجيل الحل','Record the resolution'):entry.awaiting==='close'?say('تأكيد الإغلاق','Confirm the closure'):say('التفاصيل','Details');
+const canRegisterAny=(role:string)=>role==='customer_service'||role==='customer_service_manager'||role==='admin';
+
+/** The complaints of the signed-in member, loaded beside the page and refreshed with it and every ten minutes. */
+export function useComplaints({me,records}:{me:Member|null;records:Row[]}){
+ const [loaded,setLoaded]=useState<{identity:string;data:ComplaintsData}|null>(null),generation=useRef(0),lastLoad=useRef({identity:'',at:0});
+ const identity=me?[me.id,me.role,me.authVersion,me.regionScope,me.branch].join(':'):'';
+ // What was loaded for another account, or before signing out, is never shown.
+ const data=loaded&&loaded.identity===identity?loaded.data:null;
+ // A change the member just made always reloads; the page's own reloads (focus, visibility, a refreshed snapshot) are at most one per fifteen seconds.
+ const refresh=useCallback(async(force:boolean=true)=>{
+  if(!identity||typeof navigator!=='undefined'&&navigator.onLine===false)return;
+  if(!force&&lastLoad.current.identity===identity&&Date.now()-lastLoad.current.at<15000)return;
+  const current=++generation.current;
+  try{const next=await submitJson<ComplaintsData>('/api/complaints',{cache:'no-store'},{language:getLanguage()});if(current===generation.current){lastLoad.current={identity,at:Date.now()};setLoaded({identity,data:next});}}catch{/* the page works without it */}
+ },[identity]);
+ useEffect(()=>{
+  if(!identity)return;
+  const timer=window.setTimeout(()=>{void refresh(false);},0);
+  return()=>window.clearTimeout(timer);
+ },[identity,refresh,records]);
+ useEffect(()=>{
+  if(!identity)return;
+  const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh();},600000);
+  return()=>window.clearInterval(timer);
+ },[identity,refresh]);
+ const forCustomer=useCallback((customerId:string)=>complaintsOfCustomer(data?.complaints||[],customerId),[data]);
+ return {data,refresh,forCustomer,badge:data?.counts.badge||0};
+}
+
+/** One write to the complaints route. A retry after an unclear failure keeps its identifier, so it can never save twice. */
+function useAction(onDone:()=>Promise<void>|void){
+ const lock=useRef(false),attempt=useRef<{body:string;key:string}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const run=useCallback(async(body:Record<string,unknown>)=>{
+  if(lock.current)return false;
+  lock.current=true;setBusy(true);setError('');
+  const text=JSON.stringify(body);if(attempt.current?.body!==text)attempt.current={body:text,key:crypto.randomUUID()};
+  try{
+   await submitJson('/api/complaints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:attempt.current.key})},{language:getLanguage()});
+   attempt.current=null;await onDone();return true;
+  }catch(failure){setError(messageOf(failure));if(definiteSubmitRejection(failure))attempt.current=null;return false;}
+  finally{lock.current=false;setBusy(false);}
+ },[onDone]);
+ return {run,busy,error};
+}
+
+function ContactLinks({phone,say}:{phone:string;say:Say}){
+ const links=contactLinks(phone);
+ if(!links.tel)return null;
+ return <span className="support-links"><a className="support-link" href={links.tel}><PhoneCall size={14} aria-hidden="true"/>{say('اتصال','Call')}</a>{links.whatsapp&&<a className="support-link" href={links.whatsapp} target="_blank" rel="noopener noreferrer"><MessageCircle size={14} aria-hidden="true"/>{say('واتساب','WhatsApp')}</a>}</span>;
+}
+
+const GROUP_TEXT:Record<ComplaintGroupId,[string,string]>={act:['بانتظار إجرائك','Waiting for your action'],open:['شكاوى مفتوحة','Open complaints'],finished:['مغلقة وملغاة خلال 30 يومًا','Closed and cancelled in the last 30 days']};
+
+function ComplaintCard({entry,say,onOpen}:{entry:ComplaintEntry;say:Say;onOpen:(entry:ComplaintEntry)=>void}){
+ const open=isOpenComplaint(entry);
+ return <article className="complaint-card" data-complaint={entry.id} data-status={entry.status} data-stage={entry.stage} data-awaiting={entry.awaiting||'none'} data-late={entry.late?'true':'false'} data-severity={entry.severity}>
+  <header><div><h4>{entry.customerName}</h4>{(entry.contactPhone||entry.customerCity)&&<span className="support-phone" dir="ltr">{[entry.contactPhone,entry.customerCity].filter(Boolean).join(' · ')}</span>}</div><span className="badge pending">{stateText(entry,say)}</span></header>
+  <div className="support-meta">
+   <span className="support-chip-static">{categoryText(entry.category,say)}</span>
+   {entry.severity==='high'&&<span className="support-chip-static" data-kind="escalated">{say('أهمية عالية','High')}</span>}
+   {open&&entry.targetHours!==null&&<span className="support-chip-static"><Clock3 size={12} aria-hidden="true"/> {hoursText(entry.stageHours,say)}</span>}
+   {entry.late&&<span className="support-chip-static" data-kind="late">{say('متأخر عن هدف '+entry.targetHours+' ساعة عمل','Late against a '+entry.targetHours+'-working-hour target')}</span>}
+   {entry.unrouted&&<span className="support-chip-static" data-kind="escalated">{say('بلا مدير لخدمة العملاء','No customer-service manager')}</span>}
+   {entry.closure&&<span className="support-chip-static" data-kind="done">{closureText(entry.closure.outcome,say)}</span>}
+  </div>
+  <p>{entry.description}</p>
+  <small>{say('سجّلها: ','Registered by: ')}{entry.registrarName||'—'}{entry.assigneeName?' · '+say('يحملها: ','Held by: ')+entry.assigneeName:entry.salesManagerName?' · '+say('لدى مدير المبيعات: ','With the sales manager: ')+entry.salesManagerName:''}</small>
+  <div className="support-actions"><button type="button" className={'btn '+(entry.awaiting?'primary':'subtle')} onClick={()=>onOpen(entry)}>{askText(entry,say)}</button></div>
+ </article>;
+}
+
+/** The complaints list: the page for customer service and administrators, the panel on the Visits page for sales members. */
+export function ComplaintsList({data,me,mode,onOpen,onRegister}:{data:ComplaintsData|null;me:Member;mode:'page'|'panel';onOpen:(entry:ComplaintEntry)=>void;onRegister?:()=>void}){
+ const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
+ const groups=data?complaintGroups(data.complaints):[];
+ if(mode==='panel'&&!groups.length)return null;
+ const total=Math.max(data?.counts.complaints??0,data?.complaints.length??0),openCount=data?.counts.open??0;
+ const cut=data&&total>data.complaints.length?say('تُعرض '+data.complaints.length+' من أصل '+total+' شكوى، ما ينتظرك أولًا.','Showing '+data.complaints.length+' of '+total+' complaints, what waits for you first.'):'';
+ const intro=me.role==='customer_service'?say('ما سجّلته أنت وزملاؤك في منطقتك، وأين وصلت كل شكوى.','What you and your colleagues registered in your region, and where each complaint stands.'):me.role==='customer_service_manager'?say('شكاوى فريقك: راجعها وأحلها إلى المبيعات وتابع حلها حتى الإغلاق.','Your team\'s complaints: review them, hand them to sales and follow them to closure.'):me.role==='admin'?say('كل الشكاوى وأين وصلت.','Every complaint and where it stands.'):me.role==='rep'?say('الشكاوى المكلَّف بها: تواصل مع العميل وسجّل ما فعلت ثم الحل.','The complaints assigned to you: contact the customer, record what you did, then the resolution.'):say('شكاوى العملاء التي أُحيلت إليك أو يحملها فريقك.','Customer complaints handed to you or held by your team.');
+ return <section className={mode==='page'?'complaints-page':'complaints-panel panel'} aria-label={say('شكاوى العملاء','Customer complaints')} data-role={me.role} dir={language==='en'?'ltr':'rtl'}>
+  <div className="support-heading"><div><h2><MessageSquareWarning size={18} aria-hidden="true"/> {say('شكاوى العملاء','Customer complaints')}</h2><p>{intro}</p></div><div className="complaints-heading-tools">{mode==='page'&&onRegister&&canRegisterAny(me.role)&&<button type="button" className="btn primary complaint-register-button" onClick={onRegister}><Plus size={17} aria-hidden="true"/>{say('تسجيل شكوى','Register a complaint')}</button>}<span className="support-count">{openCount}</span></div></div>
+  {cut&&<p className="support-cut" role="note">{cut}</p>}
+  {!data&&<p className="form-note" role="status">{say('جارٍ تحميل الشكاوى','Loading complaints')}</p>}
+  {data&&!groups.length&&<p className="form-note complaints-empty">{say('لا شكاوى.','No complaints.')}</p>}
+  {groups.map(group=>{
+   const cards=group.entries.map(entry=><ComplaintCard key={entry.id} entry={entry} say={say} onOpen={onOpen}/>);
+   if(group.id==='finished')return <details key={group.id} className="support-folded" data-group={group.id}><summary>{say(...GROUP_TEXT[group.id])} <span className="support-count">{group.entries.length}</span></summary><div className="support-cards">{cards}</div></details>;
+   return <div key={group.id} className="support-group" data-group={group.id}><h3>{say(...GROUP_TEXT[group.id])} <span className="support-count">{group.entries.length}</span></h3><div className="support-cards">{cards}</div></div>;
+  })}
+ </section>;
+}
+
+/** A customer's complaints inside the customer's own sheet. */
+export function CustomerComplaints({entries,onOpen}:{entries:ComplaintEntry[];onOpen:(entry:ComplaintEntry)=>void}){
+ const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
+ if(!entries.length)return <p className="form-note">{say('لا شكاوى لهذا العميل.','No complaints for this customer.')}</p>;
+ return <div className="support-cards customer-complaints">{entries.map(entry=><ComplaintCard key={entry.id} entry={entry} say={say} onOpen={onOpen}/>)}</div>;
+}
+
+type Report={channel:string;category:string;severity:'normal'|'high';description:string;demand:string;reference:string;contactName:string;contactPhone:string};
+const emptyReport:Report={channel:'call',category:'product_quality',severity:'normal',description:'',demand:'',reference:'',contactName:'',contactPhone:''};
+/** The complaint's own fields, shared by the registration and the correction. */
+function ReportFields({value,onChange,say}:{value:Report;onChange:(next:Report)=>void;say:Say}){
+ const set=(key:keyof Report,next:string)=>onChange({...value,[key]:next});
+ return <>
+  <div className="form-grid">
+   <label className="field"><span>{say('وصلت الشكوى عن طريق','The complaint came by')}</span><select value={value.channel} onChange={event=>set('channel',event.target.value)}>{Object.keys(complaintChannels).map(key=><option key={key} value={key}>{channelText(key,say)}</option>)}</select></label>
+   <label className="field"><span>{say('تصنيف الشكوى','Category')}</span><select value={value.category} onChange={event=>set('category',event.target.value)}>{Object.keys(complaintCategories).map(key=><option key={key} value={key}>{categoryText(key,say)}</option>)}</select></label>
+  </div>
+  <fieldset className="customer-choice-field complaint-severity"><legend>{say('الأهمية','Severity')}</legend><div className="customer-choice-grid">{(['normal','high'] as const).map(key=><label className="customer-choice" key={key}><input type="radio" name="complaint-severity" value={key} checked={value.severity===key} onChange={event=>{if(event.target.checked)set('severity',key);}}/><span>{severityText(key,say)}</span></label>)}</div></fieldset>
+  <label className="field"><span>{say('وصف الشكوى','What the customer complains about')} <b>*</b></span><textarea value={value.description} onChange={event=>set('description',event.target.value)} maxLength={COMPLAINT_TEXT_MAX} rows={4} placeholder={say('ما الذي حدث، ومتى، وما المنتج أو الخدمة المعنية','What happened, when, and which product or service')}/></label>
+  <label className="field"><span>{say('ما يطلبه العميل','What the customer asks for')}</span><textarea value={value.demand} onChange={event=>set('demand',event.target.value)} maxLength={COMPLAINT_DEMAND_MAX} rows={2} placeholder={say('مثال: استبدال القالب أو تعويض عن التأخر','For example: replace the mold, or compensate the delay')}/></label>
+  <div className="form-grid">
+   <label className="field"><span>{say('مرجع: رقم طلب أو فاتورة أو قالب','Reference: order, invoice or mold')}</span><input value={value.reference} maxLength={250} onChange={event=>set('reference',event.target.value)}/></label>
+   <label className="field"><span>{say('المتصل','Contact person')}</span><input value={value.contactName} maxLength={250} onChange={event=>set('contactName',event.target.value)}/></label>
+   <label className="field"><span>{say('رقم التواصل','Contact phone')}</span><input value={value.contactPhone} maxLength={100} type="tel" inputMode="tel" dir="ltr" onChange={event=>set('contactPhone',event.target.value)}/></label>
+  </div>
+ </>;
+}
+const normalize=(value:string)=>value.normalize('NFKD').replace(/[ً-ٰٟـ]/g,'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).toLowerCase().trim();
+
+/** Customer service registers a complaint for a customer of its branch and region. */
+export function ComplaintRegisterDialog({me,records,complaints,onClose,onSaved}:{me:Member;records:Row[];complaints:ComplaintEntry[];onClose:()=>void;onSaved:()=>Promise<void>|void}){
+ const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
+ const [query,setQuery]=useState(''),[customerId,setCustomerId]=useState(''),[report,setReport]=useState<Report>(emptyReport);
+ const action=useAction(async()=>{await onSaved();onClose();});
+ const customers=useMemo(()=>records.filter(row=>row.kind==='customer'&&canRegisterComplaint(row,{me})),[records,me]);
+ const matches=useMemo(()=>{const needle=normalize(query);if(!needle)return customers.slice(0,12);return customers.filter(row=>[row.data.name,row.data.code,row.data.internalCode,row.data.phone,row.data.city].some(value=>normalize(String(value||'')).includes(needle))).slice(0,12);},[customers,query]);
+ const customer=customers.find(row=>row.id===customerId);
+ const openOnes=customer?complaints.filter(entry=>entry.customerId===customer.id&&isOpenComplaint(entry)):[];
+ const choose=(row:Row)=>{setCustomerId(row.id);setReport(current=>({...current,contactName:current.contactName||String(row.data.contact||''),contactPhone:current.contactPhone||String(row.data.phone||'')}));};
+ const ready=!!customer&&report.description.trim().length>=10;
+ return <Dialog open onOpenChange={open=>{if(!open&&!action.busy)onClose();}}><DialogContent className="crm-dialog complaint-dialog" dir={direction()}>
+  <DialogTitle>{say('تسجيل شكوى','Register a complaint')}</DialogTitle>
+  <DialogDescription>{say('تصل الشكوى إلى مدير خدمة العملاء، ثم إلى مدير المبيعات الذي يكلّف مندوبًا بحلها مع العميل.','The complaint goes to the customer-service manager, then to the sales manager, who assigns a representative to put it right with the customer.')}</DialogDescription>
+  <fieldset disabled={action.busy} className="support-form complaint-form">
+   {!customer?<div className="complaint-customer-search"><label className="field"><span>{say('العميل','Customer')} <b>*</b></span><span className="search"><Search size={16} aria-hidden="true"/><input type="search" value={query} autoFocus enterKeyHint="search" aria-label={say('بحث عن العميل','Search for the customer')} placeholder={say('اسم المصنع أو رقم العميل أو الجوال','Factory name, customer code or phone')} onChange={event=>setQuery(event.target.value)}/></span></label>
+    <div className="complaint-customer-matches" role="listbox" aria-label={say('العملاء','Customers')}>{matches.map(row=><button type="button" role="option" aria-selected={false} key={row.id} data-customer={row.id} onClick={()=>choose(row)}><strong>{row.data.name}</strong><small dir="ltr">{[row.data.internalCode,row.data.phone,row.data.city].filter(Boolean).join(' · ')}</small></button>)}{!matches.length&&<p className="form-note">{say('لا عميل بهذا الاسم في نطاقك.','No customer by that name in your scope.')}</p>}</div></div>
+   :<div className="complaint-customer-chosen"><div><strong>{customer.data.name}</strong><small dir="ltr">{[customer.data.internalCode,customer.data.phone,customer.data.city,customer.data.region].filter(Boolean).join(' · ')}</small></div><button type="button" className="btn subtle small" onClick={()=>setCustomerId('')}>{say('تغيير العميل','Change the customer')}</button></div>}
+   {openOnes.length>0&&<p className="form-note complaint-open-warning" role="status">{say('لهذا العميل '+openOnes.length+' شكوى مفتوحة بالفعل: '+openOnes.map(entry=>categoryText(entry.category,say)).join('، ')+'. سجّل الشكوى الجديدة إن كانت مختلفة.','This customer already has '+openOnes.length+' open complaint(s): '+openOnes.map(entry=>categoryText(entry.category,say)).join(', ')+'. Register the new one if it is a different matter.')}</p>}
+   {customer&&<ReportFields value={report} onChange={setReport} say={say}/>}
+   {action.error&&<div className="form-error" role="alert">{t(action.error)}</div>}
+   <div className="service-button-row"><button type="button" className="btn primary" disabled={!ready} onClick={()=>{if(!customer)return;void action.run({action:'register',customerId:customer.id,customerVersion:customer.version,...report,description:report.description.trim(),demand:report.demand.trim(),reference:report.reference.trim(),contactName:report.contactName.trim(),contactPhone:report.contactPhone.trim()});}}>{action.busy?<Loader2 className="spin" size={16}/>:<MessageSquareWarning size={16} aria-hidden="true"/>}{say('تسجيل الشكوى','Register the complaint')}</button><button type="button" className="btn subtle" onClick={onClose}>{say('إلغاء','Cancel')}</button></div>
+  </fieldset>
+ </DialogContent></Dialog>;
+}
+
+type Moment={id:string;at:string;title:string;actor:string;text:string;kind:'event'|'update'|'note'};
+/** One complaint: the report, where it stands, its story, and what the reader may do with it. */
+export function ComplaintSheet({entry,onClose,onChanged}:{entry:ComplaintEntry;onClose:()=>void;onChanged:()=>Promise<void>}){
+ const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
+ const action=useAction(onChanged),{run}=action;
+ const [target,setTarget]=useState(entry.suggestedId||entry.candidates[0]?.id||''),[note,setNote]=useState(''),[text,setText]=useState(''),[channel,setChannel]=useState('call'),[date,setDate]=useState(today()),[outcome,setOutcome]=useState(''),[reason,setReason]=useState(''),[editing,setEditing]=useState(false),[report,setReport]=useState<Report>({channel:entry.channel,category:entry.category,severity:entry.severity,description:entry.description,demand:entry.demand,reference:entry.reference,contactName:entry.contactName,contactPhone:entry.contactPhone});
+ const opened=useRef('');
+ useEffect(()=>{
+  if(!entry.permissions.seen||opened.current===entry.id+':'+entry.version)return;
+  opened.current=entry.id+':'+entry.version;void run({action:'seen',id:entry.id,version:entry.version});
+ },[entry.id,entry.version,entry.permissions.seen,run]);
+ const perform=(body:Record<string,unknown>)=>void run({...body,id:entry.id,version:entry.version});
+ const p=entry.permissions,open=isOpenComplaint(entry);
+ const handing=p.assign?'assign':p.reassign?'reassign':p.delegate?'delegate':p.forward?'forward':null;
+ const story:Moment[]=[
+  ...entry.events.map((event,index)=>({id:'e'+index,at:event.at,title:actionText(event.action,say)+(event.targetName?' · '+event.targetName:'')+(event.outcome?' · '+(event.action==='close'?closureText(event.outcome,say):resolutionText(event.outcome,say)):''),actor:event.byName,text:event.text||'',kind:'event' as const})),
+  ...entry.updates.map(update=>({id:update.id,at:update.at,title:say('تواصل مع العميل','Contact with the customer')+' · '+channelText(update.channel,say)+(update.date?' · '+update.date:''),actor:update.byName,text:update.text,kind:'update' as const})),
+  ...entry.notes.map(item=>({id:item.id,at:item.at,title:say('ملاحظة داخلية','Internal note'),actor:item.byName,text:item.text,kind:'note' as const}))
+ ].sort((a,b)=>b.at.localeCompare(a.at)||a.id.localeCompare(b.id));
+ const facts:[string,React.ReactNode][]=[
+  [say('العميل','Customer'),entry.customerName],
+  [say('المتصل ورقمه','Contact'),<span key="c" dir="ltr">{[entry.contactName,entry.contactPhone].filter(Boolean).join(' · ')||'—'}{entry.contactPhone&&<> <ContactLinks phone={entry.contactPhone} say={say}/></>}</span>],
+  [say('المدينة والمنطقة','City and region'),[entry.customerCity,entry.customerRegion?t(entry.customerRegion):''].filter(Boolean).join(' · ')||'—'],
+  [say('وصلت عن طريق','Came by'),channelText(entry.channel,say)],
+  [say('التصنيف والأهمية','Category and severity'),categoryText(entry.category,say)+' · '+severityText(entry.severity,say)],
+  [say('وصف الشكوى','Description'),entry.description],
+  ...(entry.demand?[[say('ما يطلبه العميل','What the customer asks for'),entry.demand] as [string,React.ReactNode]]:[]),
+  ...(entry.reference?[[say('المرجع','Reference'),entry.reference] as [string,React.ReactNode]]:[]),
+  [say('سجّلها','Registered by'),(entry.registrarName||'—')+' · '+stamp(entry.createdAt)],
+  [say('مدير خدمة العملاء','Customer-service manager'),entry.serviceManagerName||say('بلا مدير: تنتظر مدير النظام','None: waits for an administrator')],
+  ...(entry.salesManagerName?[[say('مدير المبيعات','Sales manager'),entry.salesManagerName] as [string,React.ReactNode]]:[]),
+  ...(entry.assigneeName?[[say('يحملها','Held by'),entry.assigneeName+(entry.assigneeRole?' · '+t(roles[entry.assigneeRole]):'')+(entry.supervisorName&&entry.assigneeRole==='rep'?' · '+say('المشرف: ','Supervisor: ')+entry.supervisorName:'')] as [string,React.ReactNode]]:[]),
+  ...(entry.assignmentNote?[[say('ملاحظة التكليف','Assignment note'),entry.assignmentNote] as [string,React.ReactNode]]:[]),
+  ...(entry.returnNote&&entry.status==='returned'?[[say('سبب الإعادة للتعديل','Why it was returned'),entry.returnNote] as [string,React.ReactNode]]:[]),
+  ...(entry.rejectReason&&entry.status==='assigned'?[[say('أُعيدت إلى المندوب لأن','Returned to the representative because'),entry.rejectReason] as [string,React.ReactNode]]:[]),
+  ...(open&&entry.targetHours!==null?[[say('في هذه المرحلة منذ','At this stage for'),hoursText(entry.stageHours,say)+' · '+say('الهدف '+entry.targetHours+' ساعة عمل','target '+entry.targetHours+' working hours')+(entry.late?' · '+say('متأخر','late'):'')] as [string,React.ReactNode]]:[]),
+  ...(entry.resolution?[[say('الحل','Resolution'),resolutionText(entry.resolution.outcome,say)+' · '+entry.resolution.note+' · '+(entry.resolution.byName||'—')+' · '+stamp(entry.resolution.at)] as [string,React.ReactNode]]:[]),
+  ...(entry.closure?[[say('الإغلاق','Closure'),closureText(entry.closure.outcome,say)+(entry.closure.note?' · '+entry.closure.note:'')+' · '+(entry.closure.byName||'—')+' · '+stamp(entry.closure.at)] as [string,React.ReactNode]]:[]),
+  ...(entry.status==='cancelled'?[[say('سبب الإلغاء','Cancellation reason'),entry.cancelReason||'—'] as [string,React.ReactNode]]:[])
+ ];
+ return <Sheet open onOpenChange={value=>{if(!value)onClose();}}><SheetContent side={direction()==='rtl'?'left':'right'} className="crm-sheet service-sheet support-sheet complaint-sheet" dir={direction()}>
+  <SheetTitle>{say('شكوى عميل','Customer complaint')}</SheetTitle><SheetDescription>{entry.customerName}</SheetDescription>
+  <div className="service-detail">
+   <div className="service-status"><span className="badge pending">{stateText(entry,say)}</span>{entry.severity==='high'&&<span className="support-chip-static" data-kind="escalated">{say('أهمية عالية','High')}</span>}{entry.late&&<span className="support-chip-static" data-kind="late">{say('متأخر','Late')}</span>}</div>
+   {editing?<fieldset disabled={action.busy} className="support-form complaint-form"><ReportFields value={report} onChange={setReport} say={say}/><div className="service-button-row"><button type="button" className="btn primary" disabled={report.description.trim().length<10} onClick={()=>perform({action:'edit',...report,description:report.description.trim(),demand:report.demand.trim(),reference:report.reference.trim(),contactName:report.contactName.trim(),contactPhone:report.contactPhone.trim()})}><CheckCircle2 size={16} aria-hidden="true"/>{say('حفظ وإعادة الإرسال','Save and resend')}</button><button type="button" className="btn subtle" onClick={()=>setEditing(false)}>{say('رجوع','Back')}</button></div></fieldset>
+   :<dl className="service-facts">{facts.map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>}
+   {!editing&&<fieldset disabled={action.busy} className="service-actions">
+    {p.edit&&<div className="service-button-row"><button type="button" className="btn subtle" onClick={()=>setEditing(true)}>{say('تعديل الشكوى','Correct the complaint')}</button></div>}
+    {handing&&<div className="service-routing"><label className="field"><span>{handing==='forward'?say('إحالة إلى مدير المبيعات','Hand to the sales manager'):handing==='delegate'?say('تفويض مندوب من فريقك','Delegate to one of your representatives'):handing==='reassign'?say('نقل الشكوى إلى','Move the complaint to'):say('تكليف مندوب أو مشرف','Assign a representative or supervisor')}</span><select value={target} onChange={event=>setTarget(event.target.value)}><option value="">{say('اختر','Choose')}</option>{entry.candidates.map(person=><option key={person.id} value={person.id}>{person.name} · {t(roles[person.role])}{person.id===entry.suggestedId?' · '+say('المندوب الحالي للعميل','the customer\'s current representative'):''}</option>)}</select></label>
+     {handing!=='forward'&&<label className="field"><span>{say('ملاحظة للمكلَّف (اختياري)','A note for the assignee (optional)')}</span><input type="text" value={note} maxLength={COMPLAINT_TEXT_MAX} onChange={event=>setNote(event.target.value)}/></label>}
+     {!entry.candidates.length&&<p className="form-note">{handing==='forward'?say('لا مدير مبيعات مرتبط بك يغطي منطقة العميل. راجع صفحة الفريق.','No sales manager linked to you covers the customer\'s region. Check the team page.'):say('لا أحد في فرع العميل يغطي منطقته.','Nobody in the customer\'s branch covers its region.')}</p>}
+     <button type="button" className="btn primary" disabled={!target} onClick={()=>perform(handing==='forward'?{action:'forward',targetId:target}:{action:handing,targetId:target,note:note.trim()})}>{handing==='forward'?say('إحالة الشكوى','Forward the complaint'):handing==='delegate'?say('تفويض','Delegate'):handing==='reassign'?say('نقل الشكوى','Move the complaint'):say('تكليف','Assign')}</button></div>}
+    {p.return&&<div className="service-routing"><label className="field"><span>{say('إعادة للتعديل: ما الذي يلزم؟','Return for correction: what is missing?')}</span><input type="text" value={reason} maxLength={COMPLAINT_TEXT_MAX} onChange={event=>setReason(event.target.value)}/></label><button type="button" className="btn subtle" disabled={reason.trim().length<3} onClick={()=>perform({action:'return',note:reason.trim()})}>{say('إعادة للتعديل','Return for correction')}</button></div>}
+    {p.update&&<div className="service-internal complaint-update"><h3>{say('تسجيل تواصل مع العميل','Record a contact with the customer')}</h3><div className="form-grid"><label className="field"><span>{say('الوسيلة','How')}</span><select value={channel} onChange={event=>setChannel(event.target.value)}>{Object.keys(complaintChannels).map(key=><option key={key} value={key}>{channelText(key,say)}</option>)}</select></label><label className="field"><span>{say('التاريخ','Date')}</span><input type="date" max={today()} value={date} onChange={event=>setDate(event.target.value)}/></label></div>
+     <label className="field"><span>{say('ما حدث','What happened')}</span><textarea value={text} onChange={event=>setText(event.target.value)} maxLength={COMPLAINT_TEXT_MAX} rows={3} placeholder={say('ما قاله العميل وما فعلته وما اتُّفق عليه','What the customer said, what you did and what was agreed')}/></label>
+     <p className="form-note">{say('يُحفظ داخل الشكوى ولا يُحتسب زيارة.','Kept inside the complaint; it does not count as a visit.')}</p>
+     <button type="button" className="btn subtle" disabled={text.trim().length<3} onClick={()=>{void run({action:'update',id:entry.id,version:entry.version,channel,text:text.trim(),date}).then(done=>{if(done)setText('');});}}>{say('حفظ التواصل','Save the contact')}</button></div>}
+    {p.resolve&&<div className="service-internal complaint-resolve"><h3>{say('تسجيل الحل','Record the resolution')}</h3><label className="field"><span>{say('النتيجة','Outcome')}</span><select value={outcome} onChange={event=>setOutcome(event.target.value)}><option value="">{say('اختر','Choose')}</option>{Object.keys(resolutionOutcomes).map(key=><option key={key} value={key}>{resolutionText(key,say)}</option>)}</select></label>
+     <label className="field"><span>{say('ما تم','What was done')}</span><textarea value={note} onChange={event=>setNote(event.target.value)} maxLength={COMPLAINT_TEXT_MAX} rows={3}/></label>
+     <p className="form-note">{say('تذهب إلى خدمة العملاء لتتأكد من العميل وتغلق الشكوى.','It goes to customer service to confirm with the customer and close the complaint.')}</p>
+     <button type="button" className="btn primary" disabled={!outcome||note.trim().length<3} onClick={()=>perform({action:'resolve',outcome,note:note.trim()})}><CheckCircle2 size={16} aria-hidden="true"/>{say('تسجيل الحل','Record the resolution')}</button></div>}
+    {p.close&&<div className="service-internal complaint-close"><h3>{say('تأكيد الإغلاق مع العميل','Confirm the closure with the customer')}</h3><label className="field"><span>{say('نتيجة الإغلاق','Closure outcome')}</span><select value={outcome} onChange={event=>setOutcome(event.target.value)}><option value="">{say('اختر','Choose')}</option>{Object.keys(closureOutcomes).map(key=><option key={key} value={key}>{closureText(key,say)}</option>)}</select></label>
+     <label className="field"><span>{say('ما قاله العميل (اختياري)','What the customer said (optional)')}</span><textarea value={note} onChange={event=>setNote(event.target.value)} maxLength={COMPLAINT_TEXT_MAX} rows={2}/></label>
+     <div className="service-button-row"><button type="button" className="btn primary" disabled={!outcome} onClick={()=>perform({action:'close',outcome,note:note.trim()})}><CheckCircle2 size={16} aria-hidden="true"/>{say('إغلاق الشكوى','Close the complaint')}</button></div>
+     {p.reject&&<><label className="field"><span>{say('أو إعادتها إلى المندوب: لماذا؟','Or return it to the representative: why?')}</span><input type="text" value={reason} maxLength={COMPLAINT_TEXT_MAX} onChange={event=>setReason(event.target.value)}/></label><button type="button" className="btn subtle" disabled={reason.trim().length<3} onClick={()=>perform({action:'reject',reason:reason.trim()})}>{say('إعادة إلى المندوب','Return to the representative')}</button></>}</div>}
+    {p.reopen&&<div className="service-routing"><label className="field"><span>{say('إعادة فتح الشكوى: لماذا؟','Reopen the complaint: why?')}</span><input type="text" value={reason} maxLength={COMPLAINT_TEXT_MAX} onChange={event=>setReason(event.target.value)}/></label><button type="button" className="btn subtle" disabled={reason.trim().length<3} onClick={()=>perform({action:'reopen',reason:reason.trim()})}>{say('إعادة فتح','Reopen')}</button><p className="form-note">{say('متاحة حتى '+stamp(entry.reopenUntil)+'؛ بعدها تُسجَّل شكوى جديدة.','Available until '+stamp(entry.reopenUntil)+'; after that a new complaint is registered.')}</p></div>}
+    {p.note&&<div className="service-internal"><label className="field"><span>{say('ملاحظة داخلية','Internal note')}</span><textarea value={text} onChange={event=>setText(event.target.value)} maxLength={COMPLAINT_TEXT_MAX} rows={2} placeholder={say('تظهر لمن يرى الشكوى ولا تُرسل إلى العميل','Shown to those who see the complaint; never sent to the customer')}/></label><button type="button" className="btn subtle" disabled={text.trim().length<3} onClick={()=>{void run({action:'note',id:entry.id,version:entry.version,text:text.trim()}).then(done=>{if(done)setText('');});}}>{say('إضافة الملاحظة','Add the note')}</button></div>}
+    {p.cancel&&<div className="service-routing"><label className="field"><span>{say('إلغاء الشكوى (اختياري: السبب)','Cancel the complaint (optional reason)')}</span><input type="text" value={reason} maxLength={500} onChange={event=>setReason(event.target.value)}/></label><button type="button" className="btn subtle danger" onClick={()=>perform({action:'cancel',reason:reason.trim()})}>{say('إلغاء الشكوى','Cancel the complaint')}</button></div>}
+   </fieldset>}
+   {action.busy&&<p role="status">{say('جارٍ الحفظ','Saving')}</p>}{action.error&&<div className="form-error" role="alert">{t(action.error)}</div>}
+   <section className="service-history complaint-story"><h3>{say('سير الشكوى','The complaint\'s story')}</h3>{story.map(moment=><article key={moment.id} data-kind={moment.kind}><header><strong>{moment.title}</strong><time>{stamp(moment.at)}</time></header><small>{moment.actor}</small>{moment.text&&<p>{moment.text}</p>}</article>)}</section>
+  </div>
+ </SheetContent></Sheet>;
+}
