@@ -7,7 +7,7 @@ export class RequestBodyError extends Error {
 // unit preserves Arabic inputs while placing a real bound on buffered bytes.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
- '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,
+ '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
  '/api/kpis':60_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
  '/api/customers/import':1_200_000,'/api/machines/import':3_000,
