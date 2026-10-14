@@ -447,7 +447,8 @@ try {
     const registered = await post(calls.cs, {action: 'register', customerId: customers.e1, customerVersion: versionOf(customers.e1), ...report});
     assert.equal(registered.status, 200, 'customer service registers a complaint on the upgraded database: ' + registered.text.slice(0, 120));
     const complaintId = registered.json().id, row = () => JSON.parse(readDb('SELECT data FROM crm_records WHERE id=?', complaintId).data);
-    assert.deepEqual([row().status, row().serviceManagerId, readDb('SELECT kind,parent_id FROM crm_records WHERE id=?', complaintId)], ['submitted', 'csm', {kind: 'complaint', parent_id: null}], 'stored as its own kind with no parent, waiting for the manager');
+    const shape = readDb('SELECT kind,parent_id FROM crm_records WHERE id=?', complaintId);
+    assert.deepEqual([row().status, row().serviceManagerId, shape.kind, shape.parent_id], ['submitted', 'csm', 'complaint', null], 'stored as its own kind with no parent, waiting for the manager');
     const ids = async who => (await complaints(calls[who])).complaints.map(item => item.id);
     assert.deepEqual([await ids('cs'), await ids('csm'), await ids('mgr'), await ids('rep1'), await ids('repw')], [[complaintId], [complaintId], [], [], []], 'customer service and its manager see it; sales not yet');
     assert.equal((await complaints(calls.csm)).counts.badge, 1, 'the manager is asked to review it');
