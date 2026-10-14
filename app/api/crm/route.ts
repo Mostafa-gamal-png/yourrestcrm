@@ -4,7 +4,7 @@ import {activeServiceCase,serviceHistoryLocked,isServiceRole,serviceVisitRecords
 import {serviceQueue} from '@/lib/service-queue';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
-import {regionScopes,regionScope,memberCanAccessRegion} from '@/lib/regions';
+import {canonicalRegionScope,regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {validateFollowup,prepareContactEvidence,requireLegacyVisit,preserveRequestResponsible} from '@/lib/followups-server';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
 import {context,CRMError,replyError,checkOrigin,accessGuard,masterMutationGuard,customerDetailMutationGuard,recordEditGuard,requireRecordEdit} from '@/lib/crm-server';
@@ -30,7 +30,7 @@ export async function POST(req:Request){try{
  const bodyData=isRecord(body.data)?body.data:undefined;
  if(body.action==='member'){
   if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('إدارة المستخدمين متاحة لمدير النظام فقط',403);
-  const m=z.object({id:z.string().optional(),name:z.string().trim().min(1).max(100),email:z.string({required_error:memberEmailError,invalid_type_error:memberEmailError}).transform(normalizeMemberEmail).pipe(z.string().email(memberEmailError).max(200,memberEmailError)),role:z.enum(['admin','manager','supervisor','rep','customer_service_manager','customer_service']),branch:z.string().trim().min(1).max(100),supervisorId:z.string().default(''),regionScope:z.string().refine(v=>(regionScopes as readonly string[]).includes(v),'اختر منطقة البيانات المسموح بها').default('all'),active:z.coerce.number().int().min(0).max(1),target:z.coerce.number().finite().min(0).max(1000000000)}).parse(body.data);
+  const m=z.object({id:z.string().optional(),name:z.string().trim().min(1).max(100),email:z.string({required_error:memberEmailError,invalid_type_error:memberEmailError}).transform(normalizeMemberEmail).pipe(z.string().email(memberEmailError).max(200,memberEmailError)),role:z.enum(['admin','manager','supervisor','rep','customer_service_manager','customer_service']),branch:z.string().trim().min(1).max(100),supervisorId:z.string().default(''),regionScope:z.union([z.string(),z.array(z.string().max(40)).max(10)]).default('all').transform(canonicalRegionScope).refine(v=>v.length>0,'اختر منطقة البيانات المسموح بها'),active:z.coerce.number().int().min(0).max(1),target:z.coerce.number().finite().min(0).max(1000000000)}).parse(body.data);
   if(!m.email.endsWith('@yourrest.org'))throw new CRMError('استخدم بريد الشركة @yourrest.org');
   if(m.id==='owner'&&(m.role!=='admin'||!m.active||m.regionScope!=='all'))throw new CRMError('لا يمكن تعطيل مدير النظام الأساسي أو تغيير دوره');
   if(m.supervisorId&&(m.supervisorId===m.id||!c.members.find(x=>x.id===m.supervisorId&&(m.role==='customer_service'?['customer_service_manager']:m.role==='customer_service_manager'?['manager']:['supervisor','manager','admin']).includes(x.role))))throw new CRMError('اختر مشرفًا صحيحًا');
