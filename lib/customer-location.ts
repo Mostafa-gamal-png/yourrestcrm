@@ -7,6 +7,13 @@ export function coordinatesFromText(text?:string):Coordinates|null{
  if(!pair)return null;const latitude=Number(pair[1]),longitude=Number(pair[2]);
  return Number.isFinite(latitude)&&Number.isFinite(longitude)&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180&&!(latitude===0&&longitude===0)?{latitude,longitude}:null;
 }
+const plainPair=/^\s*-?\d+(?:\.\d+)?\s*[,،]\s*-?\d+(?:\.\d+)?\s*$/;
+/** A pasted maps link is long (the field holds 250 characters) and says little: keep the place it points to as plain coordinates.
+ * Text that already is a pair, or is not coordinates at all, stays as typed. */
+export function tidyLocationText(text:string):string{
+ const point=coordinatesFromText(text);
+ return point&&!plainPair.test(text)?`${point.latitude.toFixed(7)}, ${point.longitude.toFixed(7)}`:text;
+}
 type LocatedData=Pick<LocationFields,'latitude'|'longitude'|'location'>;
 export function customerCoordinates(data:LocatedData):Coordinates|null{
  if(typeof data.latitude==='number'&&typeof data.longitude==='number'&&Number.isFinite(data.latitude)&&Number.isFinite(data.longitude)&&Math.abs(data.latitude)<=90&&Math.abs(data.longitude)<=180&&!(data.latitude===0&&data.longitude===0))return {latitude:data.latitude,longitude:data.longitude};
