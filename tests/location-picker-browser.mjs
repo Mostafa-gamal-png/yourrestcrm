@@ -200,15 +200,34 @@ try {
   check(await place.getAttribute('aria-invalid'), null, 'a full maps link with coordinates is accepted');
   await place.press('Tab');
   await eventually(() => addressCalls.length === beforeLink + 1 && addressCalls.at(-1).latitude === 21.5433, 'and looked up as that place');
+  check(await place.inputValue(), '21.5433000, 39.1728000', 'the pasted link is replaced by the plain coordinates it points to');
   await save(dialog).click();
   await dialog.waitFor({state: 'detached'});
   const linked = await customerNamed('مصنع رابط الخرائط');
-  check([linked.data.latitude, linked.data.longitude, linked.data.locationSource, linked.data.location], [21.5433, 39.1728, undefined, 'https://www.google.com/maps/place/Jeddah/@21.5433,39.1728,17z'], 'the link\'s coordinates are stored');
+  check([linked.data.latitude, linked.data.longitude, linked.data.locationSource, linked.data.location], [21.5433, 39.1728, undefined, '21.5433000, 39.1728000'], 'the link\'s coordinates are stored, not the link');
+
+  // a long link (the field holds 250 characters) pasted and sent with Enter, the keyboard's Go: the field is never left, so it is tidied at submit
+  dialog = await addCustomer(admin);
+  place = placeField(dialog);
+  await eventually(async () => (await place.inputValue()) === '26.4373410, 50.0344990', 'a fourth new customer starts on the phone');
+  await mode(dialog, OTHER).click();
+  await labelled(dialog, 'اسم المصنع').fill('مصنع الرابط الطويل');
+  await region(dialog, 'الغربية');
+  const longLink = 'https://www.google.com/maps/place/' + encodeURIComponent('مصنع '.repeat(30)) + '/@21.4858,39.1925,17z/data=!3m1!4b1!4m6!3m5!1s0x15c3d0f0f0f0f0f0:0x1234567890abcdef!8m2!3d21.4858!4d39.1925';
+  ok(longLink.length > 250, 'the link is longer than the field allows');
+  await place.fill(longLink);
+  check(await place.getAttribute('aria-invalid'), null, 'it is accepted');
+  const entered = admin.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'POST');
+  await place.press('Enter');
+  check((await entered).status(), 200, 'Enter saves it');
+  await dialog.waitFor({state: 'detached'});
+  const long = await customerNamed('مصنع الرابط الطويل');
+  check([long.data.location, long.data.latitude, long.data.longitude], ['21.4858000, 39.1925000', 21.4858, 39.1925], 'as the coordinates it points to');
 
   // back to the phone: its position replaces the typed one
   dialog = await addCustomer(admin);
   place = placeField(dialog);
-  await eventually(async () => (await place.inputValue()) === '26.4373410, 50.0344990', 'a third new customer starts on the phone');
+  await eventually(async () => (await place.inputValue()) === '26.4373410, 50.0344990', 'a fifth new customer starts on the phone');
   await mode(dialog, OTHER).click();
   await place.fill('24.7136, 46.6753');
   await mode(dialog, DEVICE).click();

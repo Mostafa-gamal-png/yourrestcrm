@@ -26,6 +26,15 @@ for (const text of ['', '   ', 'الدمام', 'abc', '26.4373', '26.4373; 50.03
 eq(place.customerCoordinates({location: 'الدمام', latitude: 26.4, longitude: 50.1}), {latitude: 26.4, longitude: 50.1}, 'stored numbers win over the text');
 eq(place.customerCoordinates({location: '26.5, 50.2'}), {latitude: 26.5, longitude: 50.2}, 'and the text is read when there are no numbers');
 
+// A pasted maps link outgrows the 250-character field: it is kept as the plain coordinates it points to, other text as typed
+const longLink = 'https://www.google.com/maps/place/' + encodeURIComponent('مصنع '.repeat(30)) + '/@21.4858,39.1925,17z/data=!3m1!4b1!4m6!3m5!1s0x15c3d0f0f0f0f0f0:0x1234567890abcdef!8m2!3d21.4858!4d39.1925';
+eq(longLink.length > 250, true, 'the fixture link is longer than the field');
+eq(place.tidyLocationText(longLink), '21.4858000, 39.1925000', 'a long link becomes its coordinates');
+eq(place.tidyLocationText('https://www.google.com/maps/@24.7136,46.6753,17z'), '24.7136000, 46.6753000', 'a short one too');
+eq(place.tidyLocationText('https://www.google.com/maps?q=26.4373,50.0344'), '26.4373000, 50.0344000', 'and a q= link');
+for (const text of ['24.7136, 46.6753', '21.4858، 39.1925', '  -33.86 , 151.2  ', 'الدمام', '', 'https://maps.app.goo.gl/AbCdEf123', '0, 0']) eq(place.tidyLocationText(text), text, 'left as typed: ' + JSON.stringify(text));
+eq(place.coordinatesFromText(place.tidyLocationText(longLink)), place.coordinatesFromText(longLink), 'the tidied text reads back as the same place');
+
 // A point placed by hand is stored as numbers worked out from the text, never as a phone capture
 const byHand = (location, extra = {}) => ({location, latitude: null, longitude: null, ...extra});
 const placed = text => { const data = byHand(text, {locationSource: undefined, locationCapturedAt: undefined, locationAccuracy: undefined}); return {problem: fields.prepareCustomerLocation(data), data}; };

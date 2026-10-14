@@ -67,11 +67,15 @@ h.requests[0].resolve({status:'found',shortAddress:'abcd1234',address:'Street C'
 eq([h.props.data.shortAddress,h.props.data.address,h.props.data.city,h.pending.at(-1)],['ABCD1234','Street C','City C',false],'which fills only the empty address fields');
 input(tree,LOCATION).props.onBlur();await settle();eq(h.requests.length,1,'the same place is not looked up twice');
 input(tree,LOCATION).props.onChange({target:{value:'https://www.google.com/maps/@24.7136,46.6753,17z'}});tree=h.render();eq(input(tree,LOCATION).props['aria-invalid'],undefined,'a full maps link with coordinates is accepted');
-input(tree,LOCATION).props.onBlur();await settle();eq([h.requests.length,h.requests[1].body.latitude],[2,24.7136],'and looked up as that place');h.requests[1].resolve({status:'not_found'});await settle();
+input(tree,LOCATION).props.onBlur();await settle();eq([h.requests.length,h.requests[1].body.latitude],[2,24.7136],'and looked up as that place');h.requests[1].resolve({status:'not_found'});await settle();tree=h.render();
+eq(input(tree,LOCATION).props.value,'24.7136000, 46.6753000','the pasted link is replaced by the plain coordinates it points to (a link outgrows the 250-character field)');
+input(tree,LOCATION).props.onBlur();await settle();eq(h.requests.length,2,'and the tidied place is not looked up again');
 eq(h.props.data.shortAddress,'','the previous place\'s address is cleared when the place changes');
+input(tree,LOCATION).props.onChange({target:{value:'21.4858، 39.1925'}});tree=h.render();input(tree,LOCATION).props.onBlur();await settle();tree=h.render();
+eq([input(tree,LOCATION).props.value,h.requests.length,h.requests[2].body.latitude],['21.4858، 39.1925',3,21.4858],'a pair typed with the Arabic comma stays as typed and is looked up');h.requests[2].resolve({status:'not_found'});await settle();
 input(tree,LOCATION).props.onChange({target:{value:'الدمام'}});tree=h.render();
 eq(input(tree,LOCATION).props['aria-invalid'],true,'text that is not coordinates is marked');ok(text(tree).includes('اكتب الإحداثيات هكذا'),'and explained at once');
-input(tree,LOCATION).props.onBlur();await settle();eq(h.requests.length,2,'with no lookup for it');
+input(tree,LOCATION).props.onBlur();await settle();eq(h.requests.length,3,'with no lookup for it');eq(input(h.render(),LOCATION).props.value,'الدمام','and left as typed');
 input(tree,LOCATION).props.onChange({target:{value:''}});tree=h.render();eq(input(tree,LOCATION).props['aria-invalid'],undefined,'an empty location is allowed');
 // the map: opens on what is typed, closes on cancel, and a confirmed place replaces the field
 input(tree,LOCATION).props.onChange({target:{value:'26.4373, 50.0344'}});tree=h.render();
@@ -96,6 +100,8 @@ eq([h.requests.length,h.pending.at(-1)],[0,false],'offline skips the address loo
 h=setup({editing:true,data:{location:'21.5, 39.2',latitude:21.5,longitude:39.2,locationSource:'device',locationAccuracy:4,locationCapturedAt:'2026-10-03T12:00:00Z',shortAddress:'OLDD1234',region:'الشرقية'}});tree=h.render();
 eq([radios(tree).length,input(tree,LOCATION).props.readOnly],[0,false],'editing has no source switch and an editable field');ok(button(tree,'اختيار على الخريطة'),'but offers the map');ok(button(tree,'تحديث من موقعي الحالي'),'beside the phone update');
 input(tree,LOCATION).props.onBlur();await settle();eq(h.requests.length,0,'leaving an unchanged location looks nothing up');
+{const link='https://maps.google.com/?q=21.5,39.2',kept=setup({editing:true,data:{location:link,latitude:21.5,longitude:39.2,region:'الشرقية'}}),shown=kept.render();input(shown,LOCATION).props.onBlur();await settle();eq([kept.props.data.location,kept.requests.length],[link,0],'an existing link is not rewritten just because the field was visited');
+ input(shown,LOCATION).props.onChange({target:{value:link+'&z=17'}});const edited=kept.render();input(edited,LOCATION).props.onBlur();await settle();eq([kept.props.data.location,kept.requests.length],['21.5000000, 39.2000000',1],'but one the member changed is tidied like a new one');kept.unmount();}
 button(tree,'اختيار على الخريطة').props.onClick();tree=h.render();eq(plain([picker(tree).props.initial,picker(tree).props.region]),[{latitude:21.5,longitude:39.2},'الشرقية'],'the map opens on the saved place in its region');
 picker(tree).props.onPick({latitude:26,longitude:50});await settle();h.requests[0].resolve({status:'not_found'});await settle();eq([h.props.data.location,h.props.data.locationSource,h.props.data.locationCapturedAt,h.props.data.shortAddress],['26.0000000, 50.0000000',undefined,undefined,'OLDD1234'],'a corrected place drops the phone metadata and keeps the typed address');
 h=setup({},'en');tree=h.render();eq(modeChoices(tree).map(text),['My current location','Another location'],'English labels');choose(tree,1);tree=h.render();ok(button(tree,'Choose on the map'));input(tree,'Location (latitude, longitude)').props.onChange({target:{value:'abc'}});tree=h.render();ok(text(tree).includes('Enter coordinates like 26.4373, 50.0344'),'English hint');h.unmount();
