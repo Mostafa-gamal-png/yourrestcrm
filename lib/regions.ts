@@ -26,14 +26,18 @@ export function customerRegionScope(value:unknown){const label=String(value||'')
 /** The region a new customer of this member is filled with: the member's only region, or nothing when they choose among several or see all. */
 export const regionValue=(member:Member)=>{const regions=scopeRegions(regionScope(member));return regions.length===1&&regions[0]!=='unassigned'?regionLabel(regions[0]):'';};
 export const memberCanAccessRegion=(member:Member,value:unknown)=>regionScope(member)==='all'||scopeRegions(regionScope(member)).includes(customerRegionScope(value));
-/** Whether two scopes share a region, `all` sharing with every scope. */
+/** Whether two scopes share a region, `all` sharing with every scope (the tracking list, which always showed all-region representatives). */
 export const regionScopesOverlap=(a:string,b:string)=>a==='all'||b==='all'||scopeRegions(a).some(id=>scopeRegions(b).includes(id));
-export const regionMembers=(members:Member[],me:Member)=>members.filter(m=>regionScope(me)==='all'||m.id===me.id||regionScopesOverlap(regionScope(m),regionScope(me)));
-/** SQL that admits a row whose `region_scope` column shares a region with the reader's scope; `all` on either side admits it. */
+/** Whether a reader's scope admits a row or a member of another scope: a global reader admits everything; a regional one admits
+ * what names one of its regions, and nothing marked `all` (as before, when only an equal scope was admitted). */
+export const regionScopeAdmits=(reader:string,other:string)=>reader==='all'||scopeRegions(reader).some(id=>scopeRegions(other).includes(id));
+export const regionMembers=(members:Member[],me:Member)=>members.filter(m=>m.id===me.id||regionScopeAdmits(regionScope(me),regionScope(m)));
+/** SQL that admits a row whose `region_scope` column names one of the reader's regions; a global reader admits every row. */
 export function regionScopeSql(column:string,me:Member):{sql:string;args:string[]}{
  const regions=scopeRegions(regionScope(me));
  if(regionScope(me)==='all')return {sql:'1=1',args:[]};
- return {sql:'('+[column+"='all'",...regions.map(()=>"(','||"+column+"||',') LIKE ?")].join(' OR ')+')',args:regions.map(id=>'%,'+id+',%')};
+ if(!regions.length)return {sql:'1=0',args:[]};
+ return {sql:'('+regions.map(()=>"(','||"+column+"||',') LIKE ?").join(' OR ')+')',args:regions.map(id=>'%,'+id+',%')};
 }
 export function regionRecords(all:Row[],me:Member){
  if(regionScope(me)==='all')return all;
