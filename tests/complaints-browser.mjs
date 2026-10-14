@@ -119,6 +119,7 @@ try {
     await card(cs, complaintId).waitFor();
     check([await card(cs, complaintId).getAttribute('data-severity'), (await card(cs, complaintId).innerText()).includes('أهمية عالية')], ['high', true], 'the new card is marked high');
     await layoutOk(cs, 'customer service: complaints page'); await shot(cs, 'complaints-cs-page');
+    check(await cs.locator('details.complaint-report').count(), 0, 'customer service gets no monthly report');
   }
 
   // ---- 2. The manager returns it, customer service corrects it, the manager hands it to sales
@@ -132,6 +133,17 @@ try {
     check([await card(csm, 'complaint-old').getAttribute('data-late'), (await card(csm, 'complaint-old').innerText()).includes('متأخر عن هدف 4 ساعة عمل')], ['true', true], 'the old one is late against the review target');
     check(await act.locator('.complaint-card').first().getAttribute('data-complaint'), 'complaint-old', 'and comes first');
     await layoutOk(csm, 'manager: complaints page'); await shot(csm, 'complaints-manager-page');
+    // The monthly report at the top of his page: collapsed until opened, then the figures of this month's complaints in his scope
+    const monthReport = csm.locator('details.complaint-report');
+    check([await monthReport.count(), await monthReport.locator('.service-report-kpis').count()], [1, 0], 'the manager has the monthly report, collapsed and unloaded');
+    const monthNow = dayOf(0).slice(0, 7), riyadhMonth = at => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date(at)).slice(0, 7);
+    const inMonth = (await app.db.prepare("SELECT data,created_at AS createdAt FROM crm_records WHERE kind='complaint'").all()).results.filter(row => JSON.parse(row.data).serviceManagerId === 'csm' && riyadhMonth(row.createdAt) === monthNow).length;
+    await monthReport.locator('summary').click();
+    await monthReport.locator('.service-report-kpis').waitFor();
+    check(await monthReport.locator('.service-report-kpi b').first().innerText(), String(inMonth), 'opened, it counts this month\'s complaints of his team (' + inMonth + ')');
+    ok(inMonth >= 1 && (await monthReport.innerText()).includes('بحسب التصنيف') && (await monthReport.innerText()).includes('زمن كل مرحلة بساعات العمل'), 'with its tables');
+    await layoutOk(csm, 'manager: monthly report'); await shot(csm, 'complaints-report');
+    await monthReport.locator('summary').click();
     await card(csm, complaintId).getByRole('button', {name: 'مراجعة الشكوى', exact: true}).click();
     const sheet = sheetOf(csm);
     await sheet.waitFor();
@@ -189,6 +201,12 @@ try {
     await panel.waitFor();
     check(await panel.locator('.complaint-card').count(), 1, 'the panel shows the complaint that came to him');
     await layoutOk(sm, 'sales manager: Visits with the complaints panel'); await shot(sm, 'complaints-sales-manager');
+    const salesReport = sm.locator('details.complaint-report');
+    check(await salesReport.count(), 1, 'the sales manager gets the monthly report on Visits');
+    await salesReport.locator('summary').click();
+    await salesReport.locator('.service-report-kpis').waitFor();
+    check(await salesReport.locator('.service-report-kpi b').first().innerText(), '1', 'with the one complaint that reached him this month');
+    await salesReport.locator('summary').click();
     await card(sm, complaintId).getByRole('button', {name: 'تكليف مندوب', exact: true}).click();
     const sheet = sheetOf(sm);
     await sheet.waitFor();
@@ -293,7 +311,7 @@ try {
   }
 
   check(errors, [], 'no page error was raised');
-  console.log(JSON.stringify({ok: true, checks, screenshots, scope: 'complaints in real Chromium on the built release: registration on the customer-service page, return and correction, forward, assignment from the Visits panel with the suggested representative, the representative on the Android emulator with the Visits count, contact and resolution, closure, late mark, the customer sheet, English', realBrowser: true, realDevice: false}));
+  console.log(JSON.stringify({ok: true, checks, screenshots, scope: 'complaints in real Chromium on the built release: registration on the customer-service page, return and correction, forward, assignment from the Visits panel with the suggested representative, the representative on the Android emulator with the Visits count, contact and resolution, closure, late mark, the monthly report for the customer-service manager and the sales manager and not for the representative, the customer sheet, English', realBrowser: true, realDevice: false}));
 } finally {
   await browser?.close();
   await app?.stop();
