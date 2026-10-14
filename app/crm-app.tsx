@@ -36,6 +36,7 @@ import DeviceStatusReporter from './device-status-reporter';
 import {TeamTrackingCell,TeamTrackingData,canSeeTeamTracking} from './team-tracking';
 import {isServiceRole} from '@/lib/customer-service';
 import { schemas, stages, stageLabels, roles, today, money, isOpen, isSalesRequest, followupTitle, quoteTotals, type Row, type Member } from '@/lib/crm';
+import { customerLocationProblem } from '@/lib/customer-fields';
 import {regionScope,regionLabel,regionValue} from '@/lib/regions';
 import {MemberRegionField,CustomerRegionField} from './region-picker';
 import CustomerLocationFields,{CustomerClassificationFields} from './customer-entry-fields';
@@ -355,7 +356,9 @@ export default function CRM() {
         return; masterSaveLock.current=true; setBusy(true); setFormError(''); const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null; const clockAction = submitter?.name === 'clockAction' ? submitter.value : undefined; try {
         const d = form.kind === 'team' ? { ...form.data, email: normalizeMemberEmail(form.data.email || ''), supervisorId: form.data.supervisorId === 'none' ? '' : form.data.supervisorId || '' } : form.data;
         const payload={ action: form.kind === 'team' ? 'member' : 'save', kind: form.kind, id: form.row?.id, version: form.row?.version, parentId: form.parentId, data: d, createKey: form.createKey, memberSnapshot: form.kind==='team'?form.memberSnapshot:undefined, clockAction, syncFollowup: form.data.syncFollowup };
-        if(form.kind==='customer'&&!form.row){const parsed=schemas.customer.safeParse(d);if(!parsed.success)throw new Error(parsed.error.issues.map(issue=>t(issue.message)).join(' • '));payload.data=parsed.data;}
+        if(form.kind==='customer'&&!form.row){const parsed=schemas.customer.safeParse(d);if(!parsed.success)throw new Error(parsed.error.issues.map(issue=>t(issue.message)).join(' • '));
+        // A typed or chosen location is checked here too: a customer queued without a network is checked by the server only at sync, too late to correct.
+        const locationError=customerLocationProblem(parsed.data);if(locationError)throw new Error(t(locationError));payload.data=parsed.data;}
         const result:SaveResult = form.kind==='customer'&&!form.row&&me ? await offlineSubmit('/api/crm',JSON.stringify(payload),{me,language,label:d.name||say('عميل جديد','New customer'),kind:'customer'}) : await request<SaveResult>(payload);
         setForm(null);
         await load();

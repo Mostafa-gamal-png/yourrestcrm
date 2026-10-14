@@ -31,3 +31,8 @@ export function prepareCustomerLocation(data:LocationFields,old?:LocationFields,
  data.latitude=point?.latitude??null;data.longitude=point?.longitude??null;
  return null;
 }
+
+/** What a form can check before a customer is saved or queued on the phone, so a wrong place is corrected at once and not at some
+ * later sync. It applies the server's rules to a copy, except the clock: the capture time comes from the phone's positioning and may
+ * differ from the phone's own clock, so only the server's clock may judge it. */
+export function customerLocationProblem(data:LocationFields):string|null{return prepareCustomerLocation({...data},undefined,Number.POSITIVE_INFINITY);}

@@ -1,0 +1,11 @@
+.crm-dialog.location-picker-dialog{width:min(760px,calc(100vw - 24px))!important;max-width:760px!important;max-height:calc(100dvh - 24px);overflow:auto;display:grid;gap:12px;padding:18px!important}
+.location-picker-map-wrap{position:relative;isolation:isolate}
+.location-picker-map{height:min(56dvh,460px);min-height:300px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--muted);touch-action:none}
+.location-picker-note{position:absolute;inset-inline:10px;top:10px;z-index:500;margin:0;padding:8px 12px;border-radius:10px;background:color-mix(in srgb,var(--background) 94%,transparent);border:1px solid var(--border);font-size:13px;line-height:1.7;color:var(--foreground)}
+.location-picker-pin{background:none!important;border:0!important;color:var(--primary,#1b6a47);filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
+.location-picker-pin svg{display:block}
+.location-picker-center{justify-self:start;min-height:44px}
+.location-picker-point{margin:0;font-size:14px;font-weight:600;color:var(--muted-foreground);text-align:start}
+.location-picker-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.location-picker-actions .btn{min-height:46px}
+@media(max-width:600px){.crm-dialog.location-picker-dialog{width:calc(100vw - 12px)!important;max-height:calc(100dvh - 12px);padding:12px!important}.location-picker-map{height:min(52dvh,420px)}.location-picker-actions .btn{flex:1}}
