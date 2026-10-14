@@ -4,6 +4,13 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mandatory app version and several regions for a member (2026-10-14, fifth release of the day, schema 16, no migration)
+
+- The version the site serves (`lib/app-update-release.json`, 1.0.10 today) is mandatory inside the Android app: an installed app that reports an older version is blocked for every role before any tracking check, with a screen that names the installed and the required versions and offers the in-app update flow (apps with the update protocol) or the served file (older apps); an unknown version is still judged by its capabilities only, and a deactivated account still sees the account error. The gate's APK path is read from the release file instead of a constant. The team page marks a phone whose last report predates the served version as outdated. No APK change; publishing a new APK makes it required at once.
+- A member may be given several regions: the team form ticks regions (or all of them), the table lists them, and the scope is stored as one canonical text in the same column (`central,eastern`), so existing members and the commit guards are untouched. A member of several regions reaches the customers of each, is offered for cases, assistance and complaints in any of them, sees the members whose regions overlap, and chooses a new customer's region among their own; ERP sales, KPI history and KPI evidence admit rows whose region overlaps the reader's instead of matching it exactly. Going back to an earlier release leaves such a member without visible customers until their scope is set to one region or all again.
+- The activator also accepts the complaints-report release's same-day backup.
+- Tests: `tests/regions.mjs`, `tests/member-regions-browser.mjs` (new); `tests/tracking-gate.mjs`, `tests/tracking-gate-ui.mjs`, `tests/tracking-coverage.mjs`, `tests/tracking-gate-browser.mjs`, `tests/crm-regression.mjs`, `tests/baseline-update-activation.mjs` extended.
+
 ## Monthly complaints report (2026-10-14, fourth release of the day, schema 16, no migration)
 
 - A collapsed "Monthly complaints report" at the top of the Complaints page for customer-service managers and administrators, and of the Visits page for sales managers; fetched when opened, with a month to choose (by registration date, Riyadh time). Each reader gets the figures of the complaints they may already read; representatives, supervisors and customer-service representatives do not get it.
