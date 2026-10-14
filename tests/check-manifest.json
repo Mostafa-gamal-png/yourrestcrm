@@ -43,6 +43,11 @@
       "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
     },
     {
+      "file": "tests/complaints-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
       "file": "tests/complaints-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"

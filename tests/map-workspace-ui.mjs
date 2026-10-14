@@ -33,6 +33,7 @@ function commonRequire(name){
  if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
  if(name==='@base-ui/react')return {Combobox:mock};
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
+ if(name==='./complaints-panel')return new Proxy({useComplaints:()=>({data:null,refresh:async()=>{},forCustomer:()=>[],badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='./region-picker')return load('app/region-picker.tsx',commonRequire);
  if(name==='sonner')return {Toaster:pass,toast:{success:noop,error:noop}};

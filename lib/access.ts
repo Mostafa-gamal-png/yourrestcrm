@@ -4,9 +4,10 @@ import type {Member,Row} from './crm';
 export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'].includes(role);
 export function canViewPage(role:string,view:string){
  if(role==='rep')return ['customer','map','activity','followup','targets'].includes(view);
- if(['customer_service','customer_service_manager'].includes(role))return view==='activity';
+ // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
+ if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints';
  if(!canUseSalesWorkspace(role))return false;
- if(view==='team')return role==='admin';
+ if(view==='team'||view==='complaints')return role==='admin';
  return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets'].includes(view);
 }
 
