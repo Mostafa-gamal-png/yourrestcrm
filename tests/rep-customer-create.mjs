@@ -89,6 +89,22 @@ check(gpsRow.data.shortAddress,'ABCD1234');check(gpsRow.data.locationSource,'dev
 for(const bad of [{shortAddress:'12345'},{shortAddress:'ABC12345'},{shortAddress:'العنوان'},{locationAccuracy:-1},{latitude:28},{longitude:51},{locationCapturedAt:'invalid'},{locationCapturedAt:new Date(Date.now()+600000).toISOString()},{locationSource:'device',locationCapturedAt:undefined},{locationSource:'device',locationAccuracy:undefined}])await post(create({...gps,...bad}),400);
 // GPS denial still permits a deliberate save without an invented point/address.
 const noGps=await post(create({location:'',customerType:'مصنع',category:'Imported custom category'}));check(row(noGps.id).data.latitude,null);check(row(noGps.id).data.shortAddress,'');check(row(noGps.id).data.category,'Imported custom category');
+// A place typed or chosen on a map instead of the phone's position (the body the form sends in that mode): the server works the numbers out and never calls it a phone capture.
+const byHand={latitude:null,longitude:null,locationSource:undefined,locationCapturedAt:undefined,locationAccuracy:undefined};
+const handPlaces=[['24.7136, 46.6753',24.7136,46.6753],['21.4858، 39.1925',21.4858,39.1925],['https://www.google.com/maps/place/Jeddah/@21.5433,39.1728,17z',21.5433,39.1728],['https://www.google.com/maps?q=26.4373,50.0344',26.4373,50.0344],['21.5432000, 39.1728000',21.5432,39.1728]];
+for(const [text,latitude,longitude] of handPlaces){
+ const placed=row((await post(create({...byHand,location:text,shortAddress:'dmma1234'}))).id).data;
+ check([placed.location,placed.latitude,placed.longitude,placed.locationSource,placed.locationCapturedAt,placed.locationAccuracy,placed.shortAddress],[text,latitude,longitude,undefined,undefined,undefined,'DMMA1234'],'a hand-placed point: '+text);
+}
+// ...even when the form still carries the phone's capture from before the place was changed: the stale claim is refused, never relabelled
+await post(create({...gps,location:'24.7136, 46.6753'}),400);
+const staleNumbers=row((await post(create({...gps,location:'24.7136, 46.6753',locationSource:undefined}))).id).data;
+check([staleNumbers.latitude,staleNumbers.longitude,staleNumbers.locationSource,staleNumbers.locationCapturedAt,staleNumbers.locationAccuracy],[24.7136,46.6753,undefined,undefined,undefined],'a point without the device source takes its numbers from the typed place and is never stored as a capture');
+// text that is not coordinates, a pair outside the globe and the null island are refused with the sentence the form shows
+for(const text of ['الدمام','abc','91, 50','26, 181','0, 0','26.4373','26.4373; 50.0344']){
+ const refused=await post(create({...byHand,location:text}),400);
+ check(JSON.stringify(refused).includes('أدخل اللوكيشن'),true,'refused: '+text);
+}
 user('owner');const oldClient={...gpsRow.data};for(const field of ['shortAddress','locationSource','locationCapturedAt','locationAccuracy'])delete oldClient[field];
 await post({action:'save',kind:'customer',id:gpsSaved.id,version:raw(gpsSaved.id).version,data:{...oldClient,name:'old client edit'}});check(row(gpsSaved.id).data.shortAddress,'ABCD1234');check(row(gpsSaved.id).data.locationCapturedAt,capturedAt);
 await post({action:'save',kind:'customer',id:gpsSaved.id,version:raw(gpsSaved.id).version,data:{...row(gpsSaved.id).data,location:'26.45,50.05',latitude:26.45,longitude:50.05}},400);
