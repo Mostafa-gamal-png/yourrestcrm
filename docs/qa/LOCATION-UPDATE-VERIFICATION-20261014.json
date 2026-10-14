@@ -1,0 +1,262 @@
+{
+  "date": "2026-10-14",
+  "builtFromCommit": "4a81bd8",
+  "headAtVerification": "9dc1ec4",
+  "package": {
+    "file": "Yourrest-CRM-Update-Location-20261014.zip",
+    "bytes": 12378018,
+    "sha256": "20e602d688725d3609e6b34d641a01559094b4ef43d8d879001256f081934291",
+    "releaseFiles": 2857,
+    "manifestSha256": "93abee9513c1aaaa73aa30b3206a29e29c939a5db699f9ea57b189a2fb1d9be6",
+    "helper": "yourrest-activate-update-location.cjs",
+    "guide": "UPDATE-20261014-AR.txt",
+    "stageDir": "yourrest-crm-update-location-20261014",
+    "releaseName": "update-location",
+    "releaseDate": "20261014",
+    "schemaBefore": 16,
+    "schemaAfter": 16,
+    "newMigrations": [],
+    "verifyRoutes": [],
+    "settingsOrProductionDataIncluded": false,
+    "databaseIncluded": false,
+    "seedSnapshotIncluded": false,
+    "forbiddenFileNames": 0,
+    "secretPatternHits": 0,
+    "sqliteFilesInside": 0,
+    "customerPhoneNumbersFromSeedChecked": 206,
+    "customerPhoneNumbersFromSeedFound": 0,
+    "allReleaseFilesMatchManifest": true,
+    "newApk": false,
+    "nativeVersionServedByTheSite": "1.0.10 / code 11 (unchanged)",
+    "nativeVersionInSource": "1.0.11 / code 12 (not built or signed here)"
+  },
+  "comparedWithDeployedPackage": {
+    "file": "Yourrest-CRM-Update-20261014.zip",
+    "sha256": "3bd2ce48047916e5f2297f478923d538234d7ffee72967a0c41e1a7fc9501df5",
+    "filesBefore": 2860,
+    "filesAfter": 2860,
+    "added": 22,
+    "removed": 22,
+    "changed": 20,
+    "unchanged": 2818,
+    "note": "Added and removed are renamed content-hashed bundle chunks, the guide and the activator under its own name; changed are the bundles and the offline shell index. The server routes, the migrations and node_modules did not change."
+  },
+  "releaseFolder": {
+    "files": 2857,
+    "treeSha256": "a43efe934ad2a5f84fbe4c60ea804400a987fd761b8c81064b3b83624bb13077",
+    "unchangedByTheTestRunsThatFollowedThePackaging": true
+  },
+  "gates": {
+    "typescript": {
+      "passed": true,
+      "errors": 0
+    },
+    "eslint": {
+      "errors": 96,
+      "warnings": 72,
+      "note": "identical to the count recorded after the previous release (96 errors, 72 warnings), file by file; the two new application files and the new tests have no finding"
+    },
+    "defaultGate": {
+      "passed": true,
+      "tests": 117,
+      "testsReportingChecks": 113,
+      "checks": 11933,
+      "before": {
+        "tests": 116
+      }
+    },
+    "releaseBuildGate": {
+      "tests/app-update-release.mjs": {
+        "passed": true,
+        "checks": 16
+      },
+      "tests/device-status-http.mjs": {
+        "passed": true,
+        "checks": 86
+      },
+      "tests/namecheap-http.mjs": {
+        "passed": true,
+        "checks": 381
+      },
+      "tests/production-load.mjs": {
+        "passed": true,
+        "checks": null
+      },
+      "tests/sales-date-boundaries.mjs": {
+        "passed": true,
+        "checks": 36
+      },
+      "tests/server-authorization.mjs": {
+        "passed": true,
+        "checks": 314
+      },
+      "tests/service-queue-http.mjs": {
+        "passed": true,
+        "checks": 101
+      },
+      "tests/service-report-http.mjs": {
+        "passed": true,
+        "checks": 45
+      },
+      "tests/support-http.mjs": {
+        "passed": true,
+        "checks": 124
+      },
+      "tests/targets-attainment-http.mjs": {
+        "passed": true,
+        "checks": 26
+      },
+      "tests/visit-files-http.mjs": {
+        "passed": true,
+        "checks": 41
+      }
+    },
+    "browserGate": {
+      "tests/admin-delete-browser.mjs": {
+        "passed": true,
+        "checks": 15,
+        "seconds": 23
+      },
+      "tests/app-browser-workflows.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 31,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Reaches the permission-denial step: Chromium started through Playwright does not apply the browser permission override in this context (expected denied, got granted). The unmodified baseline fails at the same step with the same message."
+      },
+      "tests/app-update-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 5
+      },
+      "tests/competitor-intelligence-browser.mjs": {
+        "passed": true,
+        "checks": 146,
+        "seconds": 38
+      },
+      "tests/competitors-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 37
+      },
+      "tests/customer-edit-browser.mjs": {
+        "passed": true,
+        "checks": 54,
+        "seconds": 30
+      },
+      "tests/daily-report-browser.mjs": {
+        "passed": true,
+        "checks": 94,
+        "seconds": 15
+      },
+      "tests/erp-sales-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 0,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); it was never supplied. The unmodified baseline fails identically."
+      },
+      "tests/kpi-evidence-browser.mjs": {
+        "passed": true,
+        "checks": 87,
+        "seconds": 31
+      },
+      "tests/location-picker-browser.mjs": {
+        "passed": true,
+        "checks": 79,
+        "seconds": 46
+      },
+      "tests/offline-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 32,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline reload: Playwright setOffline does not cover the service worker network in this Chromium. The unmodified baseline times out at the same wait."
+      },
+      "tests/offline-outbox-browser.mjs": {
+        "passed": true,
+        "checks": 49,
+        "seconds": 3
+      },
+      "tests/pwa-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 25,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline navigation uses the data-free client shell: same cause as offline-browser. The unmodified baseline fails at the same assertion."
+      },
+      "tests/service-queue-browser.mjs": {
+        "passed": true,
+        "checks": 99,
+        "seconds": 100
+      },
+      "tests/support-browser.mjs": {
+        "passed": true,
+        "checks": 74,
+        "seconds": 94
+      },
+      "tests/tracking-gate-browser.mjs": {
+        "passed": true,
+        "checks": 95,
+        "seconds": 120
+      },
+      "tests/ui-refresh-browser.mjs": {
+        "passed": true,
+        "checks": 105,
+        "seconds": 52
+      }
+    },
+    "browserNotes": "location-picker-browser is new. app-browser-workflows, erp-sales-browser, offline-browser and pwa-browser fail at exactly the point where the unmodified baseline fails (environment limits listed per test); the new-customer form steps of app-browser-workflows and pwa-browser run before that point and pass."
+  },
+  "androidJvmChecks": {
+    "unchanged": true,
+    "note": "No Android source changed in this release; the 1.0.11 checks recorded earlier still apply and the APK is still to be built and signed by the key owner."
+  },
+  "commitsAfterTheGateRun": {
+    "headAtGate": "4a81bd8",
+    "applicationCodeChanged": false,
+    "changedApplicationFiles": [],
+    "filesChanged": [
+      "docs/qa/PLAN-COMPLAINTS-AR.md"
+    ]
+  },
+  "rehearsal": {
+    "script": "scripts/rehearse-update.mjs",
+    "runAs": "unprivileged user (nobody) with only net_bind_service, as on the hosting account",
+    "previousRelease": "the release folder of the package deployed earlier today (Yourrest-CRM-Update-20261014.zip, sha256 3bd2ce48...)",
+    "ok": true,
+    "steps": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while the app is still running",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ],
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "productionDataUsed": false,
+    "hostingAccessed": false,
+    "sameDayBackupReuse": "proved by tests/baseline-update-activation.mjs on real SQLite with a second same-day package (and refused without the activator entry); the rehearsal installs the previous release directly, so it does not run the previous activator"
+  },
+  "notVerifiedHere": [
+    "a physical Android phone: the GPS, the keyboard's Go key and the touch behaviour of the map (the representative flow ran in the emulated Android bridge inside a real Chromium, with the phone's position set by the browser)",
+    "the real OpenStreetMap tile servers and the real national-address provider (both answered locally; the provider is not configured on the hosting)",
+    "Passenger on cPanel (the rehearsal runs the app directly with Node 22 on Linux)",
+    "the hosting account paths and Node binary (/opt/alt/alt-nodejs22/root/usr/bin/node)",
+    "iPhone and desktop browsers beyond what Chromium emulates"
+  ],
+  "productionModified": false,
+  "deployed": false
+}
