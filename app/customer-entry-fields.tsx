@@ -4,7 +4,7 @@ import {Loader2, LocateFixed, MapPin, MapPinned, RefreshCw} from 'lucide-react';
 import {t, useLanguage} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
 import {captureVisitLocation} from '@/lib/visit-location';
-import {coordinatesFromText} from '@/lib/customer-location';
+import {coordinatesFromText, tidyLocationText} from '@/lib/customer-location';
 import {customerTypes, customerStatuses, factoryCategories} from '@/lib/customer-options';
 import LocationPicker from './location-picker';
 import './customer-entry-fields.css';
@@ -117,10 +117,13 @@ export default function CustomerLocationFields({data,editing=false,disabled=fals
   // Leaving the phone's position: stop waiting for it, so a slow or refused fix never holds back saving.
   runRef.current++;abortRef.current?.abort();abortRef.current=null;pendingRef.current?.(false);setPhase('idle');setLocationError('');
  }
+ /** Leaving the field after the place was typed or pasted: a pasted link becomes the plain coordinates it points to, and the place gets its address. */
  function lookAtTyped(){
   if(!manual||disabledRef.current)return;
   const text=String(dataRef.current.location||''),point=coordinatesFromText(text);
-  if(point&&text!==lookedUp.current)void applyPoint(point,{},false);
+  if(!point||text===lookedUp.current)return;
+  const tidy=tidyLocationText(text);
+  void applyPoint(point,tidy===text?{}:{location:tidy,...byHand},false);
  }
  const pending=phase==='locating'||phase==='address';
  const addressUnavailable=!!addressStatus&&addressStatus!=='found';

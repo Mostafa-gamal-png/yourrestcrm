@@ -37,6 +37,7 @@ import {TeamTrackingCell,TeamTrackingData,canSeeTeamTracking} from './team-track
 import {isServiceRole} from '@/lib/customer-service';
 import { schemas, stages, stageLabels, roles, today, money, isOpen, isSalesRequest, followupTitle, quoteTotals, type Row, type Member } from '@/lib/crm';
 import { customerLocationProblem } from '@/lib/customer-fields';
+import { tidyLocationText } from '@/lib/customer-location';
 import {regionScope,regionLabel,regionValue} from '@/lib/regions';
 import {MemberRegionField,CustomerRegionField} from './region-picker';
 import CustomerLocationFields,{CustomerClassificationFields} from './customer-entry-fields';
@@ -354,7 +355,8 @@ export default function CRM() {
     }
     async function save(e: React.FormEvent) { e.preventDefault(); if (!form || masterSaveLock.current || busy || form.memberConflict || (form.kind==='customer'&&customerLocationPending))
         return; masterSaveLock.current=true; setBusy(true); setFormError(''); const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null; const clockAction = submitter?.name === 'clockAction' ? submitter.value : undefined; try {
-        const d = form.kind === 'team' ? { ...form.data, email: normalizeMemberEmail(form.data.email || ''), supervisorId: form.data.supervisorId === 'none' ? '' : form.data.supervisorId || '' } : form.data;
+        // Enter in the location field submits without leaving it: a pasted maps link is tidied here too, before the 250-character limit judges it.
+        const d = form.kind === 'team' ? { ...form.data, email: normalizeMemberEmail(form.data.email || ''), supervisorId: form.data.supervisorId === 'none' ? '' : form.data.supervisorId || '' } : form.kind === 'customer' && !form.row ? { ...form.data, location: tidyLocationText(String(form.data.location || '')) } : form.data;
         const payload={ action: form.kind === 'team' ? 'member' : 'save', kind: form.kind, id: form.row?.id, version: form.row?.version, parentId: form.parentId, data: d, createKey: form.createKey, memberSnapshot: form.kind==='team'?form.memberSnapshot:undefined, clockAction, syncFollowup: form.data.syncFollowup };
         if(form.kind==='customer'&&!form.row){const parsed=schemas.customer.safeParse(d);if(!parsed.success)throw new Error(parsed.error.issues.map(issue=>t(issue.message)).join(' • '));
         // A typed or chosen location is checked here too: a customer queued without a network is checked by the server only at sync, too late to correct.
