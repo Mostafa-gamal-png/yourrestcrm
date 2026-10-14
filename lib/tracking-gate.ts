@@ -1,4 +1,5 @@
 import {nativeScheduleSupported,type NativeTrackingState} from './native-tracking';
+import {compareAppVersions} from './app-update';
 
 /** A representative may use the CRM only while route tracking is active on the
  * installed Android app. This module decides that from facts the app already
@@ -35,7 +36,8 @@ export type GateSource={native:boolean;loading:boolean;failed:boolean;upgradeReq
 export type GateRequirement='consent'|'enrollment'|'fine_location'|'notifications'|'background_location'|'location_services';
 export type GateReason='browser'|'upgrade'|'setup'|'permission'|'location_services'|'bridge';
 export type GateDecision={status:'allowed'}|{status:'checking'}|{status:'blocked';reason:GateReason;missing:GateRequirement[]};
-export type GateInput=GateSource&{role?:string;active?:number;checkingExpired?:boolean};
+/** `requiredVersion` is the app version the site serves; an installed app that reports an older one is blocked for every role. */
+export type GateInput=GateSource&{role?:string;active?:number;checkingExpired?:boolean;requiredVersion?:string};
 
 export const REQUIREMENT_ORDER:readonly GateRequirement[]=['consent','fine_location','notifications','background_location','location_services','enrollment'];
 
@@ -79,10 +81,16 @@ export function missingRequirements(device:GateDevice):GateRequirement[]{
  return REQUIREMENT_ORDER.filter(item=>missing.includes(item));
 }
 
+/** An app that reports a version older than the one the site serves. An unknown or malformed version is never judged. */
+export const appOutdated=(installedVersion:string,requiredVersion:string|undefined)=>!!requiredVersion&&compareAppVersions(installedVersion,requiredVersion)===-1;
+
 export function trackingGateDecision(input:GateInput):GateDecision{
- // Only an active representative is subject to the gate. Every other role, and
- // an unknown member (the CRM is still loading), is unaffected.
- if(input.role!=='rep'||input.active!==1)return {status:'allowed'};
+ // A deactivated account and an unknown member (the CRM is still loading) are never gated here.
+ if(input.active!==1)return {status:'allowed'};
+ // Whoever opens the Android app must run the version the site serves: an older app is blocked, whatever the role, until it is updated.
+ if(input.native&&input.device&&appOutdated(input.device.appVersion,input.requiredVersion))return {status:'blocked',reason:'upgrade',missing:[]};
+ // Beyond that, only a representative is subject to the gate.
+ if(input.role!=='rep')return {status:'allowed'};
  if(!input.native)return {status:'blocked',reason:'browser',missing:[]};
  const device=input.device;
  if(!device){

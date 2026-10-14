@@ -78,11 +78,20 @@ export function phoneSentence(entry:TrackingCoverage,language:string){
  if(browser)return say(`فتح المندوب النظام من المتصفح (${deviceName(browser.deviceClass,say)}) آخر مرة ${riyadhStamp(browser.reportedAt)}؛ التتبع لا يعمل من المتصفح، ولن يتمكن من العمل إلا من تطبيق أندرويد.`,`The representative last opened the system from a browser (${deviceName(browser.deviceClass,say)}) at ${riyadhStamp(browser.reportedAt)}; tracking does not work from a browser, so they can only work from the Android app.`);
  return say('لم يصل أي تقرير من هاتف المندوب بعد؛ لم يفتح النظام منذ تفعيل إلزام التتبع.','No report has arrived from the representative’s phone yet; they have not opened the system since mandatory tracking was enabled.');
 }
-/** One short line about the phone for a table cell. The full sentence is `phoneSentence`. */
-export function phoneBrief(entry:TrackingCoverage,language:string){
+/** A reported app version older than the one the site serves; an unknown or malformed version is never judged. */
+export function appVersionBehind(installed:string,required:string){
+ const parse=(value:string)=>/^\d+\.\d+\.\d+$/.test(value)?value.split('.').map(Number):null,a=parse(installed),b=parse(required);
+ if(!a||!b)return false;
+ for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]<b[i];
+ return false;
+}
+/** One short line about the phone for a table cell. The full sentence is `phoneSentence`. With `requiredVersion`, a phone
+ * whose last report predates the served app is marked outdated even if that report still said tracking was working. */
+export function phoneBrief(entry:TrackingCoverage,language:string,requiredVersion=''){
  const say=sayFor(language),phone=entry.phone;
  if(phone){
-  const state=phone.gate==='ok'?gateName('ok',say):gateName(phone.gate,say);
+  const behind=!!requiredVersion&&appVersionBehind(phone.appVersion,requiredVersion);
+  const state=behind&&phone.gate==='ok'?say('إصدار قديم؛ المطلوب '+requiredVersion,'outdated; '+requiredVersion+' required'):gateName(phone.gate,say);
   return `${phone.appVersion?say('التطبيق ','App ')+phone.appVersion+' · ':''}${state} · ${riyadhStamp(phone.reportedAt)}`;
  }
  if(entry.browser)return say(`متصفح (${deviceName(entry.browser.deviceClass,say)}) · ${riyadhStamp(entry.browser.reportedAt)}`,`Browser (${deviceName(entry.browser.deviceClass,say)}) · ${riyadhStamp(entry.browser.reportedAt)}`);

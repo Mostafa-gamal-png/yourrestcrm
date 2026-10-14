@@ -71,4 +71,9 @@ eq(text.phoneSentence({...built[0], phone: null, browser: null}, 'ar'), 'لم ي
 eq(text.phoneBrief(phone({gate: 'ok'}), 'ar'), 'التطبيق 1.0.10 · التتبع يعمل · 2026-10-07 10:30', 'Short line');
 eq(text.phoneBrief({...built[0], phone: null, browser: report('browser', '2026-10-07T07:00:00.000Z')}, 'ar'), 'متصفح (حاسوب) · 2026-10-07 10:00', 'Short browser line');
 eq(text.phoneBrief({...built[0], phone: null, browser: null}, 'en'), 'No phone report yet', 'Short empty line');
+eq(text.phoneBrief(phone({gate: 'ok', appVersion: '1.0.7'}), 'ar', '1.0.10'), 'التطبيق 1.0.7 · إصدار قديم؛ المطلوب 1.0.10 · 2026-10-07 10:30', 'A phone whose last report predates the served app is marked outdated');
+eq(text.phoneBrief(phone({gate: 'ok', appVersion: '1.0.7'}), 'en', '1.0.10'), 'App 1.0.7 · outdated; 1.0.10 required · 2026-10-07 10:30', 'in English too');
+eq(text.phoneBrief(phone({gate: 'ok'}), 'ar', '1.0.10'), 'التطبيق 1.0.10 · التتبع يعمل · 2026-10-07 10:30', 'A current app keeps its state');
+eq(text.phoneBrief(phone({gate: 'permission', appVersion: '1.0.7'}), 'ar', '1.0.10'), 'التطبيق 1.0.7 · أذونات ناقصة · 2026-10-07 10:30', 'A reported problem is not replaced by the version mark');
+eq([text.appVersionBehind('1.0.7', '1.0.10'), text.appVersionBehind('1.0.10', '1.0.10'), text.appVersionBehind('2.0.0', '1.0.10'), text.appVersionBehind('', '1.0.10'), text.appVersionBehind('1.0.7', '')], [true, false, false, false, false], 'appVersionBehind');
 console.log(JSON.stringify({ok: true, checks}));
