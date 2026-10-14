@@ -313,8 +313,12 @@ try {
   assert.equal(after.anonymousVisitsPost, 401, 'the new release answers an anonymous POST with 401');
   // A previous release that already carries the 401 guard answers 401 before as well; one that does not answers 400.
   assert([400, 401].includes(before.anonymousVisitsPost));
+  // A route the package declares is new to the previous release (404 before), or carried over from an earlier package of the
+  // same day that the previous release already is; either way the new release must answer it as declared.
+  const introducedRoute = route => helper.EXTRA_ROUTES.some(([declared]) => declared === route) && before.extra[route] === 404;
   for (const [route, expected] of helper.EXTRA_ROUTES) {
-    assert.equal(before.extra[route], 404, 'the previous release has no ' + route);
+    if (introducedRoute(route)) assert.equal(before.extra[route], 404, 'the previous release has no ' + route);
+    else assert.equal(before.extra[route], expected, 'the previous release already answers ' + route + ' with ' + expected + ' without a session');
     assert.equal(after.extra[route], expected, 'the new release answers ' + route + ' with ' + expected + ' without a session');
   }
   if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts')) {
@@ -531,7 +535,7 @@ try {
       assert.deepEqual([who, crm.status, cases.status], [who, 200, 200], 'the previous release serves ' + who + ' on the same database');
       restored[who] = {crm: crm.json(), cases: cases.json().cases};
     }
-    const queueIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-queue/alerts'), supportIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/support'), complaintsIntroduced = helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaints');
+    const queueIntroduced = introducedRoute('/api/service-queue/alerts'), supportIntroduced = introducedRoute('/api/support'), complaintsIntroduced = introducedRoute('/api/complaints'), complaintsCarried = helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaints') && !complaintsIntroduced, reportIntroduced = introducedRoute('/api/complaint-report');
     if (queueIntroduced) assert.equal(restored.owner.crm.serviceQueue, undefined, 'the previous release knows nothing of the new queue field');
     else assert(Array.isArray(restored.owner.crm.serviceQueue), 'the previous release already has the queue field');
     // The administrator's case: the request customer service registered during the new release's use (the assistance block); the manager and the representative have no case yet.
@@ -554,8 +558,15 @@ try {
       assert(complaintRows >= 1, 'the database still holds the complaint the new release wrote');
       assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'complaint').length), [0, 0, 0, 0], 'no one but the administrator\'s raw record list could carry it');
       assert.equal((await a.request('/api/complaints')).status, 404, 'the complaints route is gone again with the new release');
-      if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaint-report')) assert.equal((await a.request('/api/complaint-report')).status, 404, 'and so is the report route');
     }
+    if (complaintsCarried) {
+      // The previous release already knows complaints: the one the new release wrote is served to the right people again, and hidden from the rest as before.
+      assert.equal((await a.request('/api/complaints')).status, 401, 'the previous release still serves the complaints route');
+      const list = (await (await a.login('csm'))('/api/complaints')).json();
+      assert.equal(list.complaints.filter(item => item.status === 'closed').length, 1, 'the customer-service manager sees the complaint closed on the new release');
+      assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'complaint').length), [0, 0, 0, 0], 'and it is in nobody\'s record list');
+    }
+    if (reportIntroduced) assert.equal((await a.request('/api/complaint-report')).status, 404, 'the report route is gone again with the new release');
     if (queueIntroduced) {
       assert.equal(restored.rep1.cases[0].status, 'assigned', 'it keeps its status');
       assert.equal(restored.repw.cases.length, 0, 'and stays hidden from others');
