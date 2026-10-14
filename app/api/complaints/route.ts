@@ -2,24 +2,10 @@ import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
 import {today,type Member} from '@/lib/crm';
 import {regionScope} from '@/lib/regions';
-import {COMPLAINT_DEMAND_MAX,COMPLAINT_LIST_LIMIT,COMPLAINT_SHORT_MAX,COMPLAINT_TEXT_MAX,canReadComplaint,canRegisterComplaint,closureOutcomes,complaintActions,complaintBadge,complaintCandidates,complaintCategories,complaintChannels,complaintPermissions,complaintQueue,complaintReader,isOpenComplaint,registrarManager,resolutionOutcomes,type ComplaintData,type ComplaintRow} from '@/lib/complaints';
+import {COMPLAINT_DEMAND_MAX,COMPLAINT_LIST_LIMIT,COMPLAINT_SHORT_MAX,COMPLAINT_TEXT_MAX,canReadComplaint,canRegisterComplaint,closureOutcomes,complaintActions,complaintBadge,complaintCandidates,complaintCategories,complaintChannels,complaintPermissions,complaintQueue,complaintReader,isOpenComplaint,registrarManager,resolutionOutcomes,type ComplaintData} from '@/lib/complaints';
+import {loadComplaint,loadComplaints} from '@/lib/complaint-rows';
 export const dynamic='force-dynamic';
 
-type Raw={id:string;branch:string;assignedTo:string;data:string;createdAt:string;updatedAt:string;version:number};
-const columns='id,branch,assigned_to AS assignedTo,data,created_at AS createdAt,updated_at AS updatedAt,version';
-function decode(rows:Raw[]):ComplaintRow[]{
- const found:ComplaintRow[]=[];
- for(const row of rows){
-  try{const data=JSON.parse(row.data);if(data&&data.kind==='complaint'&&typeof data.customerId==='string')found.push({...row,data});}catch{/* a damaged row is left out, never shown */}
- }
- return found;
-}
-/** Open complaints and whatever changed in the last 45 days: enough for every list, the reopening window and the recent history. */
-async function loadComplaints(db:D1Database,now:string){
- const since=new Date(Date.parse(now)-45*86400000).toISOString();
- return decode((await db.prepare(`SELECT ${columns} FROM crm_records WHERE kind='complaint' AND (updated_at>=? OR json_extract(data,'$.status') NOT IN ('closed','cancelled')) ORDER BY created_at DESC,id DESC`).bind(since).all<Raw>()).results);
-}
-async function loadOne(db:D1Database,id:string){return decode((await db.prepare(`SELECT ${columns} FROM crm_records WHERE kind='complaint' AND id=?`).bind(id).all<Raw>()).results)[0];}
 /** Re-checks at commit that a member named in the change is still who they were when it was decided. */
 function memberGate(m:Member){return{sql:"EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND active=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=?)",args:[m.id,m.role,m.active,m.branch,m.supervisorId||'',regionScope(m)]};}
 
@@ -94,7 +80,7 @@ export async function POST(req:Request){try{
   state=data.status;
   statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'complaint',NULL,?,?,?,?,?,1,? WHERE ${guards.join(' AND ')} AND ${rootGuard}`).bind(id,by,customer.branch,JSON.stringify(data),now,now,mutation,...args,customer.id,customer.version));
  }else{
-  const found=await loadOne(c.db,input.id);
+  const found=await loadComplaint(c.db,input.id);
   const customer=found&&c.all.find(row=>row.id===found.data.customerId&&row.kind==='customer');
   if(!found||!customer||!canReadComplaint(found,customer,reader,c.members))throw new CRMError('الشكوى غير متاحة',403);
   if(input.version!==found.version)throw new CRMError('تغيّرت الشكوى. حدّث البيانات قبل إعادة المحاولة.',409);

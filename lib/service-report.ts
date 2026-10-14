@@ -2,11 +2,12 @@ import {canReadService,serviceContacts,serviceState,type ServiceCase,type Servic
 import {caseProgress,SERVICE_TARGET_HOURS} from './service-queue';
 import {workingHoursBetween} from './working-hours';
 import {riyadhDate} from './visits';
+import {REPORT_MONTH,reportRate,reportTiming,type ReportTiming} from './report-timing';
 
 /** Monthly view of customer-service requests for the people who run the service: how many came by each channel, how
  * quickly each stage moved in working hours, how many ended in a sale. It is aggregate only (no customer, no text) and
  * feeds no target, evaluation or movement calculation. */
-export type ReportTiming={n:number;median:number|null;average:number|null;target:number|null;overTarget:number};
+export {REPORT_MONTH,type ReportTiming};
 export type ReportSource={source:string;total:number;won:number;lost:number;open:number;winRate:number|null};
 export type ServiceReport={
  month:string;months:string[];generatedAt:string;
@@ -18,13 +19,8 @@ export type ServiceReport={
 };
 /** Administrators, sales managers and customer-service managers; each sees only the cases they may already read. */
 export const serviceReportAllowed=(role:string)=>role==='admin'||role==='manager'||role==='customer_service_manager';
-export const REPORT_MONTH=/^\d{4}-(0[1-9]|1[0-2])$/;
-const round=(value:number)=>Math.round(value*100)/100;
-const rate=(won:number,lost:number)=>won+lost?Math.round(won/(won+lost)*1000)/10:null;
-function timing(values:number[],target:number|null):ReportTiming{
- const sorted=[...values].sort((a,b)=>a-b),mid=Math.floor(sorted.length/2);
- return {n:sorted.length,median:sorted.length?round(sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2):null,average:sorted.length?round(sorted.reduce((sum,value)=>sum+value,0)/sorted.length):null,target,overTarget:target===null?0:sorted.filter(value=>value>target).length};
-}
+const rate=(won:number,lost:number)=>reportRate(won,won+lost);
+const timing=reportTiming;
 export function serviceReport(c:ServiceContext,month:string,now:string=new Date().toISOString()):ServiceReport{
  const readable=c.serviceCases.filter(item=>canReadService(item,c)),monthOf=(item:ServiceCase)=>riyadhDate(item.createdAt).slice(0,7);
  const months=[...new Set(readable.map(monthOf))].sort().reverse().slice(0,24);
