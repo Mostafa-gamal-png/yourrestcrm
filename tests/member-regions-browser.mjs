@@ -21,7 +21,6 @@ fs.mkdirSync(screenshots, {recursive: true});
 let checks = 0, browser, app;
 const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
-const ok = (value, message) => { assert.ok(value, message); checks++; };
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const PHONE = {width: 360, height: 800}, DESKTOP = {width: 1280, height: 900};
 const EAST = 'مصنع الشرق للبلوك', CENTRAL = 'مصنع الوسط للخرسانة', WEST = 'مصنع الغرب للطوب';
