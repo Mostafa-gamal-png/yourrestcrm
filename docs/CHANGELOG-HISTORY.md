@@ -4,6 +4,14 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Monthly complaints report (2026-10-14, fourth release of the day, schema 16, no migration)
+
+- A collapsed "Monthly complaints report" at the top of the Complaints page for customer-service managers and administrators, and of the Visits page for sales managers; fetched when opened, with a month to choose (by registration date, Riyadh time). Each reader gets the figures of the complaints they may already read; representatives, supervisors and customer-service representatives do not get it.
+- Headline: registered in the month, open now, closed, cancelled, customer satisfaction (closed as "customer satisfied" over all closed), open past their stage target now, high severity, customers with more than one complaint. Tables by category, channel and region with open, closed, satisfied and the satisfied share; severity and current state; what went a step back (returned for correction, sent back to the representative, reassigned, reopened); resolution and closure outcomes; time per stage in working hours (review from the last submission, assignment, first contact after the dispatch, resolution from the last dispatch, closure confirmation, registration to closure) with median, average, target and how many went over.
+- Aggregate only: no customer, text or name leaves `GET /api/complaint-report` (403 for other roles, 400 for a bad month, never cached). The figures feed no target, evaluation or movement calculation.
+- The complaints route and the report share one row reader (`lib/complaint-rows.ts`); the two monthly reports share the timing arithmetic (`lib/report-timing.ts`). The activator also accepts the complaints release's same-day backup; the rehearsal reads the report after the complaint it runs and checks the route is gone after a rollback.
+- Tests: `tests/complaint-report.mjs`, `tests/complaint-report-ui.mjs`, `tests/complaint-report-http.mjs` (new); `tests/complaints-browser.mjs`, `tests/server-authorization.mjs`, `tests/baseline-update-activation.mjs` extended.
+
 ## Customer complaints, from customer service to the representative until closure (2026-10-14, third release of the day, schema 16, no migration)
 
 - Customer service (a representative, the manager or an administrator) registers a customer's complaint for a customer of its branch and region: the channel it came by, a category, a severity, the description, what the customer asks for, a reference, and the contact person and phone taken from the customer. A second open complaint for the same customer is allowed, with a warning.

@@ -269,6 +269,8 @@ node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-الق�
 | `app/complaints-panel.tsx` و`app/complaints-panel.css` | `useComplaints` (يحمّل بعد لقطة الصفحة وكل 10 دقائق وفور أي تغيير)، `ComplaintsList` بوضعي `page` و`panel`، `ComplaintRegisterDialog`، `ComplaintSheet`، `CustomerComplaints` |
 | `app/crm-app.tsx` و`app/mobile-navigation.tsx` و`lib/access.ts` | صفحة «الشكاوى» لأدوار الخدمة ومدير النظام (`canViewPage`)، اللوحة على «الزيارات» للمبيعات، العدّاد على عنصر الصفحة أو على «الزيارات»، زر «تسجيل شكوى»، تبويب الشكاوى في ورقة العميل |
 | `lib/crm.ts` و`app/api/crm/route.ts` | إخفاء النوع من قائمة سجلات مدير النظام واستبعاد أسطر `complaint` من سجل التدقيق المعروض |
+| `lib/complaint-report.ts` و`lib/report-timing.ts` و`lib/complaint-rows.ts` | التقرير الشهري الخالص (`complaintReport`: الأعداد بالتصنيف والوسيلة والمنطقة والأهمية، الحالة الحالية، ما عاد خطوة إلى الوراء، نتائج الحل والإغلاق ونسبة الرضا، أزمنة المراحل بساعات العمل من آخر تكليف أو إعادة، المفتوحة المتأخرة الآن؛ `complaintReportAllowed` لمدير النظام ومدير المبيعات ومدير خدمة العملاء)؛ حساب الوسيط والمتوسط والتجاوز المشترك مع تقرير الطلبات؛ قراءة صفوف الشكاوى من `crm_records` المشتركة بين المسارين |
+| `app/api/complaint-report/route.ts` و`app/complaint-report.tsx` | `GET /api/complaint-report?month=YYYY-MM`: أرقام مجمّعة لما يقرؤه القارئ (كل صفوف الشكاوى تُقرأ عند الطلب، لا تخزين مؤقت، 403 لغير المخوَّل، 400 لشهر غير صحيح)، والقسم المطوي «التقرير الشهري للشكاوى» أعلى صفحة «الشكاوى» (مدير الخدمة ومدير النظام) وأعلى «الزيارات» (مدير المبيعات)، يُجلب عند فتحه. اختباراته `tests/complaint-report.mjs` و`tests/complaint-report-ui.mjs` و`tests/complaint-report-http.mjs` |
 
 **من يرى:** مدير النظام الكل. ممثل الخدمة شكاوى فرعه في المناطق التي يغطيها. مدير الخدمة ما سجّله فريقه وما أحاله، وما لا مدير له. مدير المبيعات ما أُحيل إليه وما يحمله أي مندوب أو مشرف (نطاق مدير المبيعات في `salesScopeMemberIds` يشمل كل المناديب والمشرفين، كما في الطلبات). المشرف ما يحمله هو أو مندوبوه. المندوب ما يحمله.
 
@@ -276,9 +278,9 @@ node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-الق�
 
 **ما يُخزَّن:** كل شيء في `data` (الحالة من `submitted` إلى `closed` أو `cancelled`، الأطراف، التقرير، أختام كل انتقال، `resolution` و`closure`، `updates` و`notes` و`events` لسير الشكوى، `previousAssignees`). الأرقام للعرض فقط.
 
-**الحدود:** لا تقرير شهري ولا مرفقات ولا إشعار هاتف في هذا الإصدار. العمل متصلًا فقط. لا يُحتسب تواصل المندوب زيارة.
+**الحدود:** لا مرفقات ولا إشعار هاتف. العمل متصلًا فقط. لا يُحتسب تواصل المندوب زيارة. التقرير الشهري يقرأ كل صفوف الشكاوى عند فتحه (أعدادها صغيرة؛ لا حد) ولا يُحدَّث تلقائيًا؛ إن كثرت الشكاوى على مدى سنوات فحدّه بالأشهر الأخيرة.
 
-**الاختبارات:** `tests/complaints.mjs` و`tests/complaints-ui.mjs` (البوابة الافتراضية)، `tests/complaints-http.mjs` (بوابة البناء)، `tests/complaints-browser.mjs` (بوابة المتصفح)، و`tests/role-ui.mjs` و`tests/mobile-navigation-ui.mjs` و`tests/server-authorization.mjs` و`tests/baseline-update-activation.mjs` محدَّثة.
+**الاختبارات:** `tests/complaints.mjs` و`tests/complaints-ui.mjs` و`tests/complaint-report.mjs` و`tests/complaint-report-ui.mjs` (البوابة الافتراضية)، `tests/complaints-http.mjs` و`tests/complaint-report-http.mjs` (بوابة البناء)، `tests/complaints-browser.mjs` (بوابة المتصفح)، و`tests/role-ui.mjs` و`tests/mobile-navigation-ui.mjs` و`tests/server-authorization.mjs` و`tests/baseline-update-activation.mjs` محدَّثة.
 
 ## 10. حل المشكلات الشائعة
 
