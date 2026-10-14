@@ -467,6 +467,16 @@ try {
     assert.equal(crm.records.some(record => record.kind === 'complaint') || JSON.stringify(crm.audits).includes('complaint'), false, 'the administrator\'s records and history carry no complaint');
     assert.equal((await owner('/api/customer-service')).json().cases.some(item => String(item.id).startsWith('complaint')), false, 'no customer-service case was made of it');
     note('a customer complaint runs its whole course on the upgraded database for the right roles', {complaint: complaintId});
+    if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaint-report')) {
+      // The monthly report counts what just happened, for the managers only.
+      assert.equal((await a.request('/api/complaint-report')).status, 401, 'an anonymous caller is refused the report');
+      assert.deepEqual([(await calls.rep1('/api/complaint-report')).status, (await calls.sup('/api/complaint-report')).status, (await calls.cs('/api/complaint-report')).status], [403, 403, 403], 'the representative, the supervisor and customer service are refused the report');
+      const monthly = (await calls.csm('/api/complaint-report')).json(), sales = (await calls.mgr('/api/complaint-report')).json();
+      assert.deepEqual([monthly.total, monthly.closed, monthly.satisfied, monthly.satisfactionRate, monthly.closureOutcomes, monthly.timing.review.n, monthly.timing.closure.n], [1, 1, 1, 100, [{key: 'satisfied', count: 1}], 1, 1], 'the customer-service manager\'s report counts the closed, satisfied complaint of this month: ' + JSON.stringify(monthly).slice(0, 200));
+      assert.deepEqual([sales.total, sales.closed, sales.byCategory.map(row => row.key)], [1, 1, ['product_quality']], 'the sales manager\'s report counts it too');
+      assert.equal(/مصنع|القالب|INV-|complaint-/.test(JSON.stringify(monthly) + JSON.stringify(sales)), false, 'and neither carries a customer, a text, a reference or an identifier');
+      note('the monthly complaints report counts the complaint for the managers only', {total: monthly.total});
+    }
   }
 
   // Command-line wiring of the activator (the hosting home is fixed at /home/youriedx, which does not exist here).
@@ -544,6 +554,7 @@ try {
       assert(complaintRows >= 1, 'the database still holds the complaint the new release wrote');
       assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'complaint').length), [0, 0, 0, 0], 'no one but the administrator\'s raw record list could carry it');
       assert.equal((await a.request('/api/complaints')).status, 404, 'the complaints route is gone again with the new release');
+      if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaint-report')) assert.equal((await a.request('/api/complaint-report')).status, 404, 'and so is the report route');
     }
     if (queueIntroduced) {
       assert.equal(restored.rep1.cases[0].status, 'assigned', 'it keeps its status');

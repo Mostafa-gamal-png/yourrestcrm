@@ -51,6 +51,8 @@ try {
   eq([located.report.schemaBefore, located.report.schemaAfter, located.report.newMigrations, located.helper.RELEASE_NAME, located.helper.STAGE_DIR, located.helper.EXTRA_ROUTES], [16, 16, [], 'update-location', 'yourrest-crm-update-location-20261014', []], 'a second package of the same day carries its own name and stage folder and no new routes');
   const third = packageIt('third', build('build-third', 'third'), ['--release-name', 'update-complaints', '--release-date', '20261014', '--stage-name', 'yourrest-crm-update-complaints-20261014', '--schema-baseline', '16', '--verify-route', '/api/complaints=401']);
   eq([third.helper.RELEASE_NAME, third.helper.EXTRA_ROUTES], ['update-complaints', [['/api/complaints', 401]]], 'a third package of the same day, with the route it introduces');
+  const fourth = packageIt('fourth', build('build-fourth', 'fourth'), ['--release-name', 'update-complaints-report', '--release-date', '20261014', '--stage-name', 'yourrest-crm-update-complaints-report-20261014', '--schema-baseline', '16', '--verify-route', '/api/complaints=401', '--verify-route', '/api/complaint-report=401']);
+  eq([fourth.helper.RELEASE_NAME, fourth.helper.EXTRA_ROUTES], ['update-complaints-report', [['/api/complaints', 401], ['/api/complaint-report', 401]]], 'a fourth package of the same day, with both routes it must find');
   eq([earlier.report.schemaBefore, earlier.report.schemaAfter, earlier.report.newMigrations], [15, 16, [NEWEST]], 'the earlier package adds the migration');
   eq([newest.report.schemaBefore, newest.report.schemaAfter, newest.report.newMigrations, newest.helper.EXTRA_ROUTES], [16, 16, [], [['/api/support', 401]]], 'the package after that states the same baseline, adds nothing and checks its own route');
   eq([later.report.schemaBefore, later.report.schemaAfter, later.report.newMigrations], [16, 16, []], 'the later package states the baseline and adds nothing');
@@ -83,7 +85,7 @@ try {
   const options = (iso, extra = {}) => ({log: quiet, stopped, now: () => new Date(iso), ...extra});
   const probes = [];
   globalThis.fetch = async (url, settings) => { probes.push(url); eq(settings.redirect, 'manual'); return new Response('', {status: statuses[new URL(url).pathname] ?? 404}); };
-  const healthy = {'/login': 200, '/api/crm': 401, '/api/device-status': 401, '/api/service-report': 401, '/api/service-queue/alerts': 401, '/api/support': 401};
+  const healthy = {'/login': 200, '/api/crm': 401, '/api/device-status': 401, '/api/service-report': 401, '/api/service-queue/alerts': 401, '/api/support': 401, '/api/complaints': 401, '/api/complaint-report': 401};
   const rows = (file, sql) => { const db = new DatabaseSync(file, {readOnly: true}); try { return db.prepare(sql).all(); } finally { db.close(); } };
   const databaseOf = p => path.join(p.data, 'database.sqlite');
 
@@ -199,6 +201,18 @@ try {
     eq(logs.includes('2/4 TODAY\'S VERIFIED FULL BACKUP REUSED. NO NEW FULL COPY.'), true, 'the third release reuses the backup ' + label + ' release of the day took');
     eq([next.phase, next.dailyBackup.transaction], ['switched', first.transaction], 'and switches citing it');
     eq(read(path.join(pt.current, 'app.cjs')), '// isolated release fixture third\n', 'the third release is live');
+  }
+
+  // ---- a fourth release on the same Saudi day reuses the backup whichever earlier activator of that day took it, the third's included
+  for (const [label, earlierOne] of [['the first', newest], ['the second', located], ['the third', third]]) {
+    const dir = home('same-day-fourth-after-' + earlierOne.helper.RELEASE_NAME, 16, earlierOne, fourth), pe = earlierOne.helper.pathsFor(dir), pf = fourth.helper.pathsFor(dir), logs = [], collect = message => logs.push(message);
+    const first = await earlierOne.helper.run(pe, 'apply', {log: quiet, stopped: paths => earlierOne.helper.ensureStopped(paths, emptyProc), now: () => new Date('2026-10-14T05:00:00Z')});
+    statuses = {...healthy};
+    await earlierOne.helper.run(pe, 'verify', {log: quiet, stopped: paths => earlierOne.helper.ensureStopped(paths, emptyProc)});
+    const next = await fourth.helper.run(pf, 'apply', {log: collect, stopped: paths => fourth.helper.ensureStopped(paths, emptyProc), now: () => new Date('2026-10-14T13:00:00Z')});
+    eq(logs.includes('2/4 TODAY\'S VERIFIED FULL BACKUP REUSED. NO NEW FULL COPY.'), true, 'the fourth release reuses the backup ' + label + ' release of the day took');
+    eq([next.phase, next.dailyBackup.transaction], ['switched', first.transaction], 'and switches citing it');
+    eq(read(path.join(pf.current, 'app.cjs')), '// isolated release fixture fourth\n', 'the fourth release is live');
   }
 
   // ---- a stale or foreign daily backup is still refused
