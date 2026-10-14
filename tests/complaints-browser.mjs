@@ -268,7 +268,8 @@ try {
     await cs.getByRole('button', {name: 'Switch to English', exact: true}).click();
     await cs.locator('html[lang=en]').waitFor();
     const text = await cs.locator('.complaints-page').innerText();
-    ok(text.includes('Customer complaints') && text.includes('Register a complaint') && text.includes('Closed and cancelled in the last 30 days'), 'the English page');
+    ok(text.includes('Customer complaints') && text.includes('Closed and cancelled in the last 30 days'), 'the English page');
+    check(await cs.locator('.heading-actions').getByRole('button', {name: 'Register a complaint', exact: true}).count(), 1, 'with its registration button among the page actions');
     check(/[؀-ۿ]/.test(text.replace(/مصنع الأمل للبلاستيك|ريم الشرقية|منى مديرة الخدمة|أحمد المندوب|سعد مدير المبيعات|[؀-ۿ\s،.:]+?(?=\n|$)/g, '')) && !/Waiting|Closed/.test(text), false, 'without Arabic apart from the names and the typed text');
     await cs.context().close();
   }
