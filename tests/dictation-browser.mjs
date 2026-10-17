@@ -273,6 +273,8 @@ try {
     const submit = dialog.getByRole('button', {name: 'تسجيل الشكوى', exact: true});
     check(await submit.isEnabled(), true, 'the dictated description enables the registration');
     await submit.click();
+    await dialog.locator('.complaint-notify-step').waitFor();
+    await dialog.getByRole('button', {name: 'لاحقًا', exact: true}).click();
     await dialog.waitFor({state: 'detached'});
     const stored = await eventually(async () => (await app.db.prepare("SELECT data FROM crm_records WHERE kind='complaint'").first()), 'the complaint is stored');
     check([JSON.parse(stored.data).description, JSON.parse(stored.data).demand], ['القالب يخرج بلوكًا مكسورًا من الجهة اليمنى', 'استبدال القالب'], 'the complaint holds the dictated text');

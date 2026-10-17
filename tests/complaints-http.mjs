@@ -65,10 +65,13 @@ try {
   let stored = await row(id1);
   check([stored.kind, stored.parent_id, stored.assigned_to, stored.branch, stored.version], ['complaint', null, 'cs_east', 'الرئيسي', 1], 'it is stored as a record of its own kind, with no parent');
   check([stored.data.status, stored.data.registrarId, stored.data.serviceManagerId, stored.data.salesManagerId, stored.data.assigneeId, stored.data.category, stored.data.severity, stored.data.contactName, stored.data.contactPhone, stored.data.events.map(event => event.action)], ['submitted', 'cs_east', 'csm', '', '', 'product_quality', 'normal', 'أبو خالد', '0551234567', ['register']], 'waiting for the registrar\'s manager, with the customer\'s contact filled in');
+  check([stored.data.complaintNumber, stored.data.contactWhatsapp, stored.data.contactEmail, stored.data.notifiedAt], [1, '0551234567', '', undefined], 'the first complaint is number 1, with the customer\'s phone as the WhatsApp number by default, and no e-mail where the customer has none');
+  check(first.json().complaintNumber, 1, 'and the reply names the number');
   const sameBody = {action: 'register', customerId: 'f1', customerVersion: await version('f1'), ...report}, key = crypto.randomUUID();
   const once = await as('cs_east')('/api/complaints', {method: 'POST', body: {requestId: key, ...sameBody}});
   const twice = await as('cs_east')('/api/complaints', {method: 'POST', body: {requestId: key, ...sameBody}});
   check([once.status, twice.status, twice.json().alreadySaved, twice.json().id === once.json().id], [200, 200, true, true], 'a retry with the same identifier saves nothing twice');
+  check([once.json().complaintNumber, twice.json().complaintNumber], [2, 2], 'and takes one number, which the retry\'s reply repeats');
   check((await as('cs_east')('/api/complaints', {method: 'POST', body: {requestId: key, ...sameBody, demand: 'غير ذلك'}})).status, 409, 'and the same identifier with another body is refused');
   const duplicate = once.json().id;
   check((await act('cs_east', duplicate, {action: 'cancel', reason: 'سُجّلت مرتين'})).status, 200, 'the registrar cancels the double');
@@ -213,7 +216,67 @@ try {
   check([counts.complaints, counts.open, counts.badge], [6, 3, 0], 'the administrator counts every complaint, the open ones, and is asked for nothing');
   check((await app.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE action LIKE 'complaint:%'").first()).n > 20, true, 'every action left its audit line');
 
-  console.log(JSON.stringify({ok: true, checks, scope: 'complaints over HTTP on the built release: door, registration rights, return and correction, forward, assignment and delegation, opening, updates, resolution, rejection, closure, reopening, cancellation, reassignment, notes, another branch, no manager, no leak', realBrowser: false, realDevice: false}));
+  // ---- the customer's WhatsApp number and e-mail, the sequence number, and telling the customer
+  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('f6','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')")
+    .bind(JSON.stringify({name: 'مصنع f6', region: 'الشرقية', city: 'الدمام', contact: 'أبو سعد', email: 'f6@example.com', code: 'f6', branch: 'الرئيسي', assignedTo: 'rep'}), now, now).run();
+  check([(await register('cs_east', 'f1', {contactWhatsapp: 'abc'})).status, (await register('cs_east', 'f1', {contactWhatsapp: '123'})).status, (await register('cs_east', 'f1', {contactWhatsapp: '1'.repeat(16)})).status, (await register('cs_east', 'f1', {contactEmail: 'not-an-email'})).status, (await register('cs_east', 'f1', {contactEmail: 'a@b'})).status], [400, 400, 400, 400, 400], 'a WhatsApp number that is not 7 to 15 digits, and an e-mail that is not one, are refused');
+  const refusal = (await register('cs_east', 'f1', {contactWhatsapp: 'abc'})).json().error;
+  ok(refusal.includes('رقم واتساب غير صالح'), 'with the words that say what is wrong: ' + refusal);
+  const before = (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='complaint'").first()).n;
+  const withDetails = await register('cs_east', 'f1', {contactName: 'خالد', contactPhone: '0501112222', contactWhatsapp: '+966 50 333 4444', contactEmail: 'khaled@example.com'});
+  check(withDetails.status, 200, 'details written by hand are accepted: ' + withDetails.text.slice(0, 100));
+  check([(await row(withDetails.json().id)).data.contactPhone, (await row(withDetails.json().id)).data.contactWhatsapp, (await row(withDetails.json().id)).data.contactEmail], ['0501112222', '+966 50 333 4444', 'khaled@example.com'], 'and kept as written, the WhatsApp number apart from the phone');
+  const noPhone = await register('cs_east', 'f6');
+  check([(await row(noPhone.json().id)).data.contactPhone, (await row(noPhone.json().id)).data.contactWhatsapp, (await row(noPhone.json().id)).data.contactEmail], ['', '', 'f6@example.com'], 'a customer with no phone gives none, and gives the e-mail on the card');
+  const listed = await seen('csm', withDetails.json().id);
+  check([listed.contactWhatsapp, listed.contactEmail, listed.complaintNumber, listed.notifiedAt, listed.permissions.notify], ['+966 50 333 4444', 'khaled@example.com', before + 1, '', true], 'the list carries them, the number and that the customer was not told');
+
+  // numbers: sequential, and distinct when registrations arrive together
+  const together = await Promise.all(['cs_east', 'cs_all', 'csm', 'owner', 'cs_east', 'cs_all', 'csm', 'owner'].map((who, index) => register(who, 'f1', {description: 'شكوى متزامنة رقم ' + index + ' عن القالب الجديد'})));
+  check(together.map(answer => answer.status), Array(8).fill(200), 'eight registrations at once are all saved');
+  const taken = together.map(answer => answer.json().complaintNumber).sort((a, b) => a - b);
+  check(taken, Array.from({length: 8}, (_, index) => before + 3 + index), 'each with a number of its own, one after the other');
+  const all = (await app.db.prepare("SELECT json_extract(data,'$.complaintNumber') AS n FROM crm_records WHERE kind='complaint'").all()).results.map(r => r.n).sort((a, b) => a - b);
+  check([new Set(all).size === all.length, all[0], all.at(-1) === all.length], [true, 1, true], 'no number is taken twice, none is skipped, from 1 to the last');
+  check((await app.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE id LIKE 'complaint-number:%'").first()).n, all.length, 'and each number left its unique audit line, the second guard');
+
+  // telling the customer: the registrar, the manager who reviews it, an administrator; once; while it is open
+  const tell = (await register('cs_east', 'f1', {description: 'العميل يشتكي من اهتزاز القالب أثناء التشغيل', contactWhatsapp: '0551234567'})).json().id;
+  check([(await act('cs_all', tell, {action: 'notify'})).status, (await act('rep', tell, {action: 'notify'})).status, (await act('sm', tell, {action: 'notify'})).status, (await act('cs_west', tell, {action: 'notify'})).status], [403, 403, 403, 403], 'a colleague, a representative, a sales manager and customer service of another region cannot');
+  const openedAt = Date.now();
+  const told = await act('cs_east', tell, {action: 'notify'});
+  check(told.status, 200, 'the registrar can: ' + told.text);
+  stored = await row(tell);
+  check([stored.data.notifiedBy, !!stored.data.notifiedAt && Date.parse(stored.data.notifiedAt) >= openedAt - 5000, stored.data.events.map(event => event.action), stored.data.status, stored.version], ['cs_east', true, ['register', 'notify'], 'submitted', 2], 'which is stamped with who and when, kept in the story, and changes nothing else');
+  const afterTell = await seen('csm', tell);
+  check([afterTell.notifiedAt === stored.data.notifiedAt, afterTell.notifiedByName, afterTell.permissions.notify, afterTell.events.at(-1).action, afterTell.awaiting], [true, 'cs_east', false, 'notify', 'review'], 'the manager reads it, nothing more is offered, and the review still waits for him');
+  check([(await act('cs_east', tell, {action: 'notify'})).status, (await act('csm', tell, {action: 'notify'})).status, (await act('owner', tell, {action: 'notify'})).status], [403, 403, 403], 'the customer is told once: nobody tells again');
+  const keyed = crypto.randomUUID(), tellTwo = (await register('cs_east', 'f1', {description: 'العميل يشتكي من تأخر الاتصال به بعد الشكوى', contactWhatsapp: '0551234567'})).json().id;
+  const body = {action: 'notify', id: tellTwo, version: await version(tellTwo), requestId: keyed};
+  check([(await as('csm')('/api/complaints', {method: 'POST', body})).status, (await as('csm')('/api/complaints', {method: 'POST', body})).json().alreadySaved], [200, true], 'the manager can too, and a retry of the same request stamps nothing twice');
+  check((await row(tellTwo)).data.events.filter(event => event.action === 'notify').length, 1, 'one line in the story');
+  const byOwner = (await register('cs_east', 'f1', {description: 'الفاتورة تحمل سعرًا غير الذي اتفقنا عليه', contactWhatsapp: '0551234567'})).json().id;
+  check((await act('owner', byOwner, {action: 'notify'})).status, 200, 'and an administrator');
+  const landline = (await register('cs_east', 'f1', {description: 'العميل لم يستلم الطلبية في الموعد المحدد', contactWhatsapp: '0112345678'})).json().id;
+  const unreachable = await act('cs_east', landline, {action: 'notify'});
+  check([unreachable.status, unreachable.json().error.includes('لا رقم واتساب صالح')], [400, true], 'a number WhatsApp cannot open is refused, and the registrar is told to correct the complaint');
+  check((await row(landline)).data.notifiedAt, undefined, 'and nothing is stamped');
+  check((await act('cs_east', landline, {action: 'edit', ...report, contactWhatsapp: '0551234567'})).status, 200, 'she corrects the number');
+  check([(await row(landline)).data.contactWhatsapp, (await act('cs_east', landline, {action: 'notify'})).status], ['0551234567', 200], 'and can then tell the customer');
+  const cleared = (await register('cs_east', 'f1', {description: 'تغيّر عنوان التسليم ولم يصل الإشعار للعميل', contactWhatsapp: '0551234567', contactEmail: 'old@example.com'})).json().id;
+  check((await act('cs_east', cleared, {action: 'edit', ...report, contactWhatsapp: '', contactEmail: ''})).status, 200, 'a correction may clear the WhatsApp number and the e-mail');
+  check([(await row(cleared)).data.contactWhatsapp, (await row(cleared)).data.contactEmail, (await row(cleared)).data.complaintNumber > 0], ['', '', true], 'which are then empty, the number unchanged');
+  check([(await act('cs_east', cleared, {action: 'edit', ...report, contactWhatsapp: 'abc'})).status, (await act('cs_east', cleared, {action: 'edit', ...report, contactEmail: 'nope'})).status], [400, 400], 'and a correction is checked like a registration');
+  const cancelledOne = (await register('cs_east', 'f1', {description: 'سُجّلت هذه الشكوى بالخطأ وستُلغى', contactWhatsapp: '0551234567'})).json().id;
+  await act('cs_east', cancelledOne, {action: 'cancel', reason: 'خطأ'});
+  check((await act('cs_east', cancelledOne, {action: 'notify'})).status, 403, 'a cancelled complaint is not told');
+  check((await act('cs_east', id1, {action: 'notify'})).status, 403, 'nor a closed one');
+  for (const who of ['owner', 'csm', 'cs_east']) {
+    const crm = (await as(who)('/api/crm')).json();
+    check([who, JSON.stringify(crm.audits || []).includes('complaint')], [who, false], who + ': the number guard and the notices never appear among the history of the records');
+  }
+
+  console.log(JSON.stringify({ok: true, checks, scope: 'complaints over HTTP on the built release: door, registration rights, return and correction, forward, assignment and delegation, opening, updates, resolution, rejection, closure, reopening, cancellation, reassignment, notes, another branch, no manager, no leak, the customer\'s WhatsApp number and e-mail, sequential numbering under concurrent registrations, and telling the customer once', realBrowser: false, realDevice: false}));
 } finally {
   await app.stop();
 }

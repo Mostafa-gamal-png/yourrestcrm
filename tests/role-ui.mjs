@@ -19,11 +19,13 @@ function moduleFrom(filename,require,extra=''){
 }
 const access=moduleFrom('lib/access.ts',()=>({}));
 const mapSearch=moduleFrom('lib/customer-map-search.ts',()=>({}));
+const wording=moduleFrom('lib/service-wording.ts',name=>name==='./customer-service'?{isServiceRole:role=>role==='customer_service'||role==='customer_service_manager'}:{});
 const i18n={t:value=>value,useLanguage:()=>({language:'ar'}),direction:()=> 'rtl',getLanguage:()=> 'ar'};
 function mockedRequire(name){
  if(name==='react')return React;
  if(name==='react/jsx-runtime')return jsx;
  if(name==='@/lib/access')return access;
+ if(name==='@/lib/service-wording')return wording;
  if(name==='@/lib/customer-map-search')return mapSearch;
  if(name==='@/lib/i18n')return i18n;
  if(name==='@/lib/regions')return {regionValue:()=> 'الشرقية'};
@@ -38,7 +40,7 @@ const {default:Picker}=moduleFrom('app/visit-customer-picker.tsx',mockedRequire)
 const pages=[['activity','الزيارات'],['complaints','الشكاوى'],['followup','المتابعات'],['journeys','تقرير يوم المندوب'],['targets','المستهدفات وتقييم الأداء'],['sales','المبيعات'],['quote','عروض الأسعار'],['reports','تقييم أداء المناديب'],['customer','العملاء'],['map','خريطة المصانع'],['team','الفريق والصلاحيات'],['dashboard','لوحة المتابعة']];
 for(const role of ['rep','supervisor','manager','admin','customer_service','customer_service_manager','unknown']){
  const html=renderToStaticMarkup(React.createElement(NavMenu,{view:'activity',role,go:noop}));
- for(const [id,label] of pages){const expected=role==='rep'?['customer','map','activity','followup','targets'].includes(id):role.startsWith('customer_service')?id==='activity'||id==='complaints':role==='admin'?id!=='reports':['manager','supervisor'].includes(role)?!['team','reports','complaints'].includes(id):false;check(html.includes('>'+(role==='rep'&&id==='targets'?'مستهدفي':label)+'<'),expected,role+' navigation '+id);}
+ for(const [id,label] of pages){const expected=role==='rep'?['customer','map','activity','followup','targets'].includes(id):role.startsWith('customer_service')?id==='activity'||id==='complaints':role==='admin'?id!=='reports':['manager','supervisor'].includes(role)?!['team','reports','complaints'].includes(id):false;check(html.includes('>'+(role==='rep'&&id==='targets'?'مستهدفي':role.startsWith('customer_service')&&id==='activity'?'الفرص':label)+'<'),expected,role+' navigation '+id);}
 }
 for(const role of ['rep','supervisor','manager','admin','customer_service']){
  const html=renderToStaticMarkup(React.createElement(Picker,{customers:[],value:'',me:{id:'test',role,branch:'الرئيسي',regionScope:'eastern'},disabled:false,locked:false,onChange:noop,onCreated:noop,onCreating:noop,onSaving:noop}));
