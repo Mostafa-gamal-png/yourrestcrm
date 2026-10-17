@@ -75,13 +75,18 @@ export function MetricsTable({card,role,say,nameOf,loading,defaultOpen=''}:{card
   })}</tbody></table></div>;
 }
 
-export function CardView({card,role,say,open,onToggle,nameOf,loading,defaultOpen}:{card:KpiCardOut;role:'rep'|'manager';say:Say;open:boolean;onToggle:()=>void;nameOf:(id:string)=>string;loading:boolean;defaultOpen?:string}){
+/** The last three months as short text: the month's number and the score, oldest first. */
+export const trendText=(months:string[],scores:(number|null)[])=>months.map((month,index)=>month.slice(5)+': '+(scores[index]==null?'—':(scores[index] as number).toFixed(1))).join(' · ');
+/** A trend is worth showing only when a month before the last has a figure; with none it would repeat the month's own score. */
+const hasHistory=(scores:(number|null)[])=>scores.slice(0,-1).some(score=>score!==null);
+export function CardView({card,role,say,open,onToggle,nameOf,loading,defaultOpen,trend}:{card:KpiCardOut;role:'rep'|'manager';say:Say;open:boolean;onToggle:()=>void;nameOf:(id:string)=>string;loading:boolean;defaultOpen?:string;trend?:{months:string[];scores:(number|null)[]}}){
  const note=card.score===null?say('لا بيانات كافية','Not enough data'):card.measuredWeight<100?say(`قيست على ${card.measuredWeight} من 100`,`Measured on ${card.measuredWeight} of 100`):'';
  return <article className="sk-card" data-member={card.memberId} data-level={levelOf(card.score)} data-role={role} data-open={open}>
   <button type="button" className="sk-card-head" aria-expanded={open} onClick={onToggle}>
    <span className="sk-name">{role==='manager'&&<small>{say('بطاقة المدير','Manager')} · </small>}{card.name||card.memberId}</span>
    <span className="sk-score" data-level={levelOf(card.score)}>{card.score===null?'—':card.score.toFixed(1)}</span>
    {note&&<span className="sk-measured">{note}</span>}
+   {trend&&hasHistory(trend.scores)&&<span className="sk-trend" title={say('درجات آخر ثلاثة أشهر','Scores of the last three months')}>{say('آخر 3 أشهر: ','Last 3 months: ')}{trendText(trend.months,trend.scores)}</span>}
   </button>
   {open&&<div className="sk-card-body"><MetricsTable card={card} role={role} say={say} nameOf={nameOf} loading={loading} defaultOpen={defaultOpen}/></div>}
  </article>;
@@ -238,14 +243,16 @@ function SettingsDialog({data,say,onClose,onSaved}:{data:ServiceKpiResponse;say:
  </DialogContent></Dialog>;
 }
 
-function GroupView({group,graceDays,say,month,detail,onDetail,loading,run,busy}:{group:KpiGroupOut;graceDays:number;say:Say;month:string;detail:string;onDetail:(id:string)=>void;loading:boolean;run:(body:Record<string,unknown>)=>Promise<boolean>;busy:boolean}){
+function GroupView({group,graceDays,say,month,detail,onDetail,loading,run,busy,trend}:{group:KpiGroupOut;graceDays:number;say:Say;month:string;detail:string;onDetail:(id:string)=>void;loading:boolean;run:(body:Record<string,unknown>)=>Promise<boolean>;busy:boolean;trend:ServiceKpiResponse['trend']}){
  const [confirming,setConfirming]=useState('');
  const names=new Map<string,string>(group.reps.map(card=>[card.memberId,card.name]));
  const nameOf=(id:string)=>names.get(id)||id;
+ const median=trend.medians[group.managerId||'none']||[];
  const toggle=(id:string)=>onDetail(detail===id?'':id);
  return <section className="sk-group" data-group={group.managerId||'none'} data-closed={group.closed} aria-label={group.managerName||say('بلا مدير','No manager')}>
   <header className="sk-group-head">
    <h3>{group.managerId?say('فريق ','Team of ')+group.managerName:say('ممثلون بلا مدير','Representatives without a manager')}</h3>
+   {median.some(value=>value!==null)&&<small className="sk-trend">{say('وسيط الفريق: ','Team median: ')}{hasHistory(median)?trendText(trend.months,median):(median[median.length-1] as number).toFixed(1)}</small>}
    {group.closed&&<span className="sk-chip" data-kind="closed"><Lock size={13} aria-hidden="true"/>{say('مقفل','Closed')}{group.closedByName?' · '+group.closedByName:''}{group.closedAt?' · '+stamp(group.closedAt):''}</span>}
    {group.closed&&group.drift&&<span className="sk-chip" data-kind="drift">{say('تغيّرت الأرقام بعد الإقفال','The figures changed after closing')}</span>}
    {group.canClose&&confirming!=='close'&&<button type="button" className="btn subtle small" disabled={busy} onClick={()=>setConfirming('close')}><Lock size={14} aria-hidden="true"/>{say('إقفال الشهر','Close the month')}</button>}
@@ -255,10 +262,10 @@ function GroupView({group,graceDays,say,month,detail,onDetail,loading,run,busy}:
   {confirming&&<div className="sk-confirm" role="alert"><span>{confirming==='close'?say('تُحفظ الدرجات والإعدادات ولا تُسجَّل تدقيقات جديدة لهذا الفريق في هذا الشهر. تأكيد الإقفال؟','The scores and settings are kept and no new audits are recorded for this team in this month. Close it?'):say('يعود الشهر إلى الحساب المباشر وتُفتح التدقيقات. تأكيد إعادة الفتح؟','The month goes back to live figures and audits open again. Reopen it?')}</span>
    <button type="button" className="btn primary small" disabled={busy} onClick={()=>{void run({action:confirming==='close'?'close_month':'reopen_month',month,managerId:group.managerId}).then(done=>{if(done)setConfirming('');});}}>{say('تأكيد','Confirm')}</button>
    <button type="button" className="btn subtle small" disabled={busy} onClick={()=>setConfirming('')}>{say('تراجع','Back')}</button></div>}
-  {group.manager&&<CardView card={group.manager} role="manager" say={say} open={detail===group.manager.memberId} onToggle={()=>toggle(group.manager!.memberId)} nameOf={nameOf} loading={loading}/>}
+  {group.manager&&<CardView card={group.manager} role="manager" say={say} open={detail===group.manager.memberId} onToggle={()=>toggle(group.manager!.memberId)} nameOf={nameOf} loading={loading} trend={{months:trend.months,scores:trend.scores[group.manager.memberId]||[]}}/>}
   <Comparison group={group} say={say} onOpen={id=>onDetail(id)}/>
   {group.reps.length===0&&<p className="sk-muted">{say('لا ممثلين في هذا الفريق.','No representatives in this team.')}</p>}
-  {group.reps.map(card=><CardView key={card.memberId} card={card} role="rep" say={say} open={detail===card.memberId} onToggle={()=>toggle(card.memberId)} nameOf={nameOf} loading={loading}/>)}
+  {group.reps.map(card=><CardView key={card.memberId} card={card} role="rep" say={say} open={detail===card.memberId} onToggle={()=>toggle(card.memberId)} nameOf={nameOf} loading={loading} trend={{months:trend.months,scores:trend.scores[card.memberId]||[]}}/>)}
  </section>;
 }
 
@@ -285,7 +292,7 @@ export function ServiceKpiView({data,error,loading,month,detail,say,busy,actionE
   {actionError&&<div className="form-error" role="alert">{t(actionError)}</div>}
   {!data&&loading&&<p role="status">{say('جارٍ تحميل التقييم','Loading the evaluation')}</p>}
   {data&&<div aria-busy={loading}>
-   {data.groups.length===0?<p className="sk-muted">{say('لا بطاقات لهذا الشهر ضمن نطاقك.','No cards for this month in your scope.')}</p>:data.groups.map(group=><GroupView key={group.managerId||'none'} group={group} graceDays={data.settings.closeGraceDays} say={say} month={data.month} detail={detail} onDetail={onDetail} loading={loading} run={run} busy={busy}/>)}
+   {data.groups.length===0?<p className="sk-muted">{say('لا بطاقات لهذا الشهر ضمن نطاقك.','No cards for this month in your scope.')}</p>:data.groups.map(group=><GroupView key={group.managerId||'none'} group={group} graceDays={data.settings.closeGraceDays} say={say} month={data.month} detail={detail} onDetail={onDetail} loading={loading} run={run} busy={busy} trend={data.trend}/>)}
    <section className="sk-audits"><h3>{say('تدقيق الجودة','Quality audits')}</h3>
     {data.me.canAudit&&Object.values(data.sample).some(list=>list.length>0)&&<div className="sk-sample"><h4>{say('عيّنة مقترحة هذا الشهر','Suggested sample this month')}</h4>
      {Object.entries(data.sample).filter(([,list])=>list.length>0).map(([repId,list])=><div key={repId} className="sk-sample-rep"><strong>{names.get(repId)||repId}</strong>
@@ -316,7 +323,7 @@ export function MyScoreBody({data,error,loading,say,onMonth,onRetry,month}:{data
   {data&&<div aria-busy={loading}>
    <MonthSelect data={data} value={month} onChange={onMonth} say={say}/>
    {data.groups[0]?.closed&&<p className="sk-chip" data-kind="closed"><Lock size={13} aria-hidden="true"/>{say('الشهر مقفل: درجتك محفوظة','The month is closed: your score is kept')}</p>}
-   {card?<CardView card={card} role="rep" say={say} open onToggle={()=>{}} nameOf={id=>id} loading={loading}/>:<p className="sk-muted">{say('لا بطاقة لك في هذا الشهر.','You have no card in this month.')}</p>}
+   {card?<CardView card={card} role="rep" say={say} open onToggle={()=>{}} nameOf={id=>id} loading={loading} trend={{months:data.trend.months,scores:data.trend.scores[card.memberId]||[]}}/>:<p className="sk-muted">{say('لا بطاقة لك في هذا الشهر.','You have no card in this month.')}</p>}
    <h3>{say('تدقيقات جودة أدائي','Audits of my work')}</h3>
    <AuditList data={data} say={say} busy={false}/>
    <p className="service-report-note">{note(say)}</p>

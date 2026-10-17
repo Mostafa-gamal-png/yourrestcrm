@@ -386,6 +386,31 @@ const closedView=view('csm',{closed:[row]});
 eq([closedView.groups[0].closed,closedView.groups[0].canClose,closedView.groups[0].closedByName,closedView.sample,view('owner',{closed:[row]}).groups[0].canReopen],[true,false,'عضو owner',{},true],'a closed group has nothing to close, shows who closed it, offers no sample, and an administrator may reopen it');
 eq(view('sm').groups,[],'a sales member has no view');
 
+// ---- the last three months beside each card, and the team's median
+eq([K.prevMonth('2026-01'),K.prevMonth('2026-03'),K.trailingMonths('2026-02',3),K.trailingMonths('2026-12',3),K.trailingMonths('2026-09',1)],['2025-12','2026-02',['2025-12','2026-01','2026-02'],['2026-10','2026-11','2026-12'],['2026-09']],'the months before a month cross the year, oldest first');
+const trendOf=(id,over={},month='2026-09')=>K.serviceKpiView(input(over),month,NOW,members.find(x=>x.id===id),{customerName:cname,settingsVersion:3}).trend;
+const ta=trendOf('owner');
+eq(ta.months,['2026-07','2026-08','2026-09'],'September and the two months before it, oldest first');
+eq(ta.scores.cs1,[null,33.3,73.9],'a representative: nothing in July; August is one audit of 50 (8.33 of 15) and one request left open past its time (0 of 10), 8.33 of 25 points; September\'s 73.9');
+eq(ta.scores.csm,[null,34.1,82.9],'a manager: July\'s empty backlog alone is no result; August is a team average of 33.3 (9.79 of 25), a quality of 50 (5.56 of 10) and the open request (0 of 10), 15.35 of 45');
+eq([ta.scores.cs2,ta.scores.cs_idle,ta.scores.csm3],[[null,null,100],[null,null,null],[null,null,0]],'a card with no work in a month has no score in it; the other branch\'s manager has only September\'s open request, and that is his 0');
+eq(ta.medians,{csm:[null,33.3,87],csm2:[null,null,98.2],csm3:[null,null,null],none:[null,null,89.7]},'each team\'s median of its representatives\' scores: one in August; 73.9 and 100 average 86.95, 87.0; 100 and 96.3 average 98.15, 98.2; nobody, and the lone representative');
+const tl=trendOf('csm');
+eq([Object.keys(tl.scores).sort(),Object.keys(tl.medians),tl.scores.cs1],[['cs1','cs2','cs_idle','csm'],['csm'],[null,33.3,73.9]],'a manager gets the trend of his own group only, with his team\'s median');
+const tr=trendOf('cs1');
+eq([tr.months,tr.scores,tr.medians],[['2026-07','2026-08','2026-09'],{cs1:[null,33.3,73.9]},{}],'a representative gets their own trend and no median');
+eq(trendOf('sm'),{months:['2026-07','2026-08','2026-09'],scores:{},medians:{}},'a sales member gets nothing to show');
+// a finished month keeps the settings it was closed with, so the months beside the current one do not move when the targets do
+const looser=structuredClone(S1);looser.rep.support_response.target=50;
+eq(trendOf('owner',{settings:looser,closed:[row]},'2026-10').scores.cs1.slice(0,2),[33.3,73.9],'a closed September keeps 73.9 under looser live settings, and August is untouched by them');
+eq(trendOf('owner',{settings:looser},'2026-10').scores.cs1.slice(0,2),[33.3,80.5],'while an open September follows them: the request target met, 15 of 15 instead of 8.33');
+// an empty backlog is full marks only beside something that was measured
+const lone={members:[m('mg','customer_service_manager'),m('r1','customer_service','mg')],complaints:[],support:[],serviceCases:[],audits:[],closed:[],settings:S1};
+const quiet=group(K.serviceKpiMonth(lone,'2026-06',NOW),'mg');
+eq([quiet.manager.score,quiet.manager.measuredWeight,metric(quiet.manager,'backlog').empty,metric(quiet.manager,'backlog').measured,quiet.reps[0].score],[null,0,true,true,null],'a month with nothing in it gives its manager no score: the empty backlog alone says nothing');
+const worked=group(K.serviceKpiMonth({...lone,audits:[audit('MA','r1','2026-06',90,{at:'2026-06-10T06:00:00.000Z'})]},'2026-06',NOW),'mg');
+eq([worked.reps[0].score,worked.manager.score,worked.manager.measuredWeight],[100,100,45],'beside a measured figure it counts: a team average (25), a quality (10) and the empty backlog (10)');
+
 // ---- the new record kinds never travel with the sales records
 const kindsRows=['service_audit','service_kpi_month','service_kpi_settings','support','complaint'].map(kind=>({id:kind+'-1',kind,parentId:null,assignedTo:'csm',branch:'الرئيسي',data:{kind},createdAt:T(1,5),updatedAt:T(1,5),version:1}));
 eq(CRM.scopeRecords(kindsRows,members,members.find(x=>x.id==='owner')).length,0,'the administrator\'s record list leaves all five out');
