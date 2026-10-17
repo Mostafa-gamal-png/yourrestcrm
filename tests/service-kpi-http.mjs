@@ -129,6 +129,7 @@ try {
   const csm = group(a, 'csm').manager;
   check([csm.score, Object.fromEntries(csm.metrics.map(x => [x.key, [x.numerator, x.denominator]]))], [82.9, {team_average: [173.9, 2], review_timing: [6, 7], life_timing: [2, 3], team_rating: [12, 3], team_support_response: [3, 6], team_quality: [272, 3], backlog: [2, 5], repeat_complaints: [5, 6]}], 'the manager\'s card');
   check([group(a, 'csm2').reps.map(c => [c.memberId, c.score]), group(a, 'csm3').reps, group(a, 'csm3').manager.score, group(a, '').reps.map(c => [c.memberId, c.score])], [[['cs_left', 100], ['cs3', 96.3]], [], 0, [['cs_free', 89.7]]], 'the other teams, the other branch\'s manager whose one overdue request is his whole backlog, and the representative nobody manages');
+  check([a.trend.months, a.trend.scores.cs1, a.trend.scores.csm, a.trend.medians], [['2026-07', '2026-08', '2026-09'], [null, 33.3, 73.9], [null, 34.1, 82.9], {csm: [null, 33.3, 87], csm2: [null, null, 98.2], csm3: [null, null, null], none: [null, null, 89.7]}], 'the last three months beside each card and each team\'s median, worked out by hand in tests/service-kpi.mjs: August is one audit and one request left open at its end, July nothing');
   check(group(a, 'csm').reps.flatMap(c => c.metrics).every(x => x.items.length === 0) && cs1.metrics.map(x => x.itemCount).join() === '4,4,2,2,2,6,13,3', true, 'cases are not sent until a card is opened, but the counts are');
   const opened = (await kpi('owner', '2026-09', '&member=cs1')).json();
   const items = metric(card(opened, 'csm', 'cs1'), 'closure_timing').items;
@@ -152,7 +153,8 @@ try {
     const text = (await kpi(id, '2026-09', '&member=cs1')).text;
     check([id, /PRIVATE-(?!AUDIT-NOTE)|@yourrest|sendmail|opaque-/.test(text)], [id, false], id + ' receives no complaint text, request note, contact, email or internal identifier (an audit\'s own note is meant to be seen)');
   }
-  check(Object.keys(asLead).sort(), ['audits', 'generatedAt', 'groups', 'me', 'month', 'months', 'sample', 'settings', 'settingsVersion'], 'the shape of the answer');
+  check(Object.keys(asLead).sort(), ['audits', 'generatedAt', 'groups', 'me', 'month', 'months', 'sample', 'settings', 'settingsVersion', 'trend'], 'the shape of the answer');
+  check([Object.keys(asLead.trend.scores).sort(), Object.keys(asLead.trend.medians), Object.keys(mine.trend.scores), mine.trend.medians], [['cs1', 'cs2', 'cs_idle', 'csm'], ['csm'], ['cs1'], {}], 'a manager gets the trend of his own group and his team\'s median; a representative gets their own trend and no median');
 
   // ---- audits: who may record them, what they must carry, and what they change
   const full = {greeting: 10, understanding: 15, accuracy: 20, ownership: 15, communication: 15, resolution: 15, closing: 10};

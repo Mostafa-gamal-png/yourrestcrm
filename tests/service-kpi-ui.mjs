@@ -40,7 +40,7 @@ function load(filename){
 const html=element=>renderToStaticMarkup(element);
 const arabicLeft=markup=>(markup.match(/[؀-ۿ]+/g)||[]);
 const count=(markup,needle)=>markup.split(needle).length-1;
-const {ServiceKpiView,MyServiceScore,MyScoreBody,CardView,metricValueText,problemText,closeNote}=load('app/service-kpi.tsx');
+const {ServiceKpiView,MyServiceScore,MyScoreBody,CardView,metricValueText,problemText,closeNote,trendText}=load('app/service-kpi.tsx');
 const K=library('lib/service-kpi.ts');
 const clone=value=>JSON.parse(JSON.stringify(value));
 
@@ -167,6 +167,24 @@ ok(html(React.createElement(MyScoreBody,{data:null,error:'',loading:true,say:say
 const failed=html(React.createElement(MyScoreBody,{data:null,error:'تقييم خدمة العملاء لمدير النظام ومدير خدمة العملاء وممثليها فقط',loading:false,say:sayFor('ar'),month:'',onMonth:noop,onRetry:noop}));
 ok(failed.includes('role="alert"')&&failed.includes('إعادة المحاولة'),'a failure is shown with a retry');
 
+// ---- the last three months beside a card, and the team's median
+const flat=markup=>markup.replace(/<!-- -->/g,'');
+eq(trendText(['2026-07','2026-08','2026-09'],[null,55.6,73.94]),'07: — · 08: 55.6 · 09: 73.9','the trend: the month\'s number and the score to one decimal, a dash where there is none');
+eq(owner.trend.months,['2026-07','2026-08','2026-09'],'the page is given the month and the two before it');
+ok(!flat(admin).includes('آخر 3 أشهر')&&!flat(body).includes('آخر 3 أشهر'),'with nothing before the month a card shows no trend: it would only repeat its score');
+ok(flat(admin).includes('وسيط الفريق: '+owner.trend.medians.csm[2].toFixed(1)+'<'),'but the team\'s median of the month is shown on its own');
+const augustAudit={...audit('AU5','cs1',50),data:{...audit('AU5','cs1',50).data,month:'2026-08',at:'2026-08-20T06:00:00.000Z'}};
+const history=kpi('owner',{audits:[...audits,augustAudit]});
+eq([history.trend.scores.cs1,history.trend.medians.csm.slice(0,2)],[[null,55.6,cs1Card.score],[null,55.6]],'one audit of 50 in August is 50 of 90 on the one figure measured: 55.6, and the team\'s median that month');
+const cs1Trend='07: — · 08: 55.6 · 09: '+cs1Card.score.toFixed(1),historyHtml=flat(page(history));
+ok(historyHtml.includes('آخر 3 أشهر: '+cs1Trend)&&historyHtml.includes('title="درجات آخر ثلاثة أشهر"'),'cs1\'s card shows the last three months');
+eq(count(historyHtml,'آخر 3 أشهر: '),2,'on the two cards that have an earlier month: cs1\'s and the manager\'s, and not on cs2\'s');
+ok(historyHtml.includes('وسيط الفريق: 07: — · 08: 55.6 · 09: '+history.trend.medians.csm[2].toFixed(1)),'and the team\'s median over the same months');
+const mineHistory=flat(mineHtml('ar',kpi('cs1',{audits:[...audits,augustAudit]})));
+ok(mineHistory.includes('آخر 3 أشهر: '+cs1Trend)&&!mineHistory.includes('وسيط الفريق'),'a representative sees their own trend and no median');
+const historyEn=flat(page(history,'en'));
+ok(historyEn.includes('Last 3 months: '+cs1Trend)&&historyEn.includes('Team median: 07: — · 08: 55.6 · 09: '),'in English');
+
 // ---- loading, failing and empty
 ok(page(null,'ar',{loading:true}).includes('جارٍ تحميل التقييم'),'the page says it is loading');
 ok(page(null,'ar',{error:'تعذر تحميل التقييم.'}).includes('إعادة المحاولة'),'and offers a retry when it failed');
@@ -208,7 +226,7 @@ eq(arabicLeft(settingsEn),[],'the English settings dialog has no Arabic left');
 
 // ---- English wording everywhere, without Arabic left over
 ok(arabicLeft(page(owner,'ar')).length>0&&arabicLeft(page(owner,'ar',{detail:'cs1'})).length>10,'(the detector does see Arabic when there is some)');
-for(const [name,data] of [['administrator',owner],['manager',lead],['closed',closed],['drifted',drifted],['running',clone(K.serviceKpiView(make(),'2026-10',NOW,members.find(x=>x.id==='csm'),{customerName:cname,settingsVersion:2}))]]){
+for(const [name,data] of [['administrator',owner],['manager',lead],['closed',closed],['drifted',drifted],['history',history],['running',clone(K.serviceKpiView(make(),'2026-10',NOW,members.find(x=>x.id==='csm'),{customerName:cname,settingsVersion:2}))]]){
  const english=page(data,'en',{detail:'cs1'});
  eq(arabicLeft(english),[],`the ${name} page in English has no Arabic left`);
 }

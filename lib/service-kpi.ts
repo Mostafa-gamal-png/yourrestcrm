@@ -116,6 +116,9 @@ export const monthStart=(month:string)=>new Date(Date.parse(month+'-01T00:00:00Z
 export const nextMonth=(month:string)=>{const [year,index]=month.split('-').map(Number);return index===12?`${year+1}-01`:`${year}-${String(index+1).padStart(2,'0')}`;};
 /** The first instant after the month (exclusive end). */
 export const monthEnd=(month:string)=>monthStart(nextMonth(month));
+export const prevMonth=(month:string)=>{const [year,index]=month.split('-').map(Number);return index===1?`${year-1}-12`:`${year}-${String(index-1).padStart(2,'0')}`;};
+/** The month and the ones before it, oldest first. */
+export const trailingMonths=(month:string,count:number)=>{const found=[month];while(found.length<count)found.unshift(prevMonth(found[0]));return found;};
 const round1=(value:number)=>Math.round(value*10)/10,round2=(value:number)=>Math.round(value*100)/100;
 const lifeTarget=(settings:ServiceKpiSettings,severity:string)=>severity==='high'?settings.life.high:settings.life.normal;
 
@@ -203,7 +206,8 @@ function metric(key:string,kind:KpiMetric['kind'],setting:MetricSetting,numerato
  return {key,kind,target:setting.target,weight:setting.weight,min:setting.min,numerator,denominator,actual,enough,measured,empty,achieved,points:measured?achieved*setting.weight:0,items};
 }
 function scorecard(memberId:string,role:'rep'|'manager',metrics:KpiMetric[]):Scorecard{
- const measured=metrics.filter(one=>one.measured),weight=measured.reduce((sum,one)=>sum+one.weight,0),points=measured.reduce((sum,one)=>sum+one.points,0);
+ // "Nothing is open" counts as full marks only beside something that was measured: on its own it says nothing about the month.
+ const counted=metrics.filter(one=>one.measured),measured=counted.some(one=>!one.empty)?counted:[],weight=measured.reduce((sum,one)=>sum+one.weight,0),points=measured.reduce((sum,one)=>sum+one.points,0);
  return {memberId,role,score:weight>0?round1(points/weight*100):null,measuredWeight:weight,metrics};
 }
 const share=(items:KpiItem[])=>({numerator:items.filter(item=>item.ok).length,denominator:items.length});
@@ -456,7 +460,10 @@ export type ServiceKpiResponse={
  month:string;months:string[];generatedAt:string;settings:ServiceKpiSettings;settingsVersion:number;
  me:{id:string;role:string;canAudit:boolean;canSettings:boolean};
  groups:KpiGroupOut[];audits:KpiAuditOut[];sample:Record<string,KpiSampleOut[]>;
+ /** The selected month and the two before it, oldest first, with each visible card's score in them; and, for the people who manage, each team's median ('none' for those without a manager). */
+ trend:{months:string[];scores:Record<string,(number|null)[]>;medians:Record<string,(number|null)[]>};
 };
+const median=(values:number[])=>{if(!values.length)return null;const sorted=[...values].sort((a,b)=>a-b),mid=Math.floor(sorted.length/2);return round1(sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2);};
 /** The month as the reader may see it: their cards, the figures' cases only for the one card they opened (a representative's own is always open),
  * the audits of the cards they see, the suggested sample for those a manager can still audit, and what they may do. */
 export function serviceKpiView(input:KpiInput,month:string,now:string,me:Member,options:{customerName:(id:string)=>string;detail?:string;settingsVersion:number}):ServiceKpiResponse{
@@ -485,5 +492,13 @@ export function serviceKpiView(input:KpiInput,month:string,now:string,me:Member,
  });
  const sample:Record<string,KpiSampleOut[]>={};
  if(admin||lead)for(const group of visible.groups)if(!group.closed)for(const card of group.reps)sample[card.memberId]=auditSample(input,month,card.memberId,now).map(item=>({ref:item.ref,type:item.type,customerName:options.customerName(item.customerId),at:item.at,tag:item.tag}));
- return {month,months:kpiMonths(input,now),generatedAt:now,settings:normalizeSettings(input.settings),settingsVersion:options.settingsVersion,me:{id:me.id,role:me.role,canAudit:admin||lead,canSettings:admin},groups,audits,sample};
+ // One month alone is noisy for a small team, so each card shows its last three months; a finished month answers the same however late it is asked.
+ const months=trailingMonths(month,3),computed=months.map(one=>one===month?all:serviceKpiMonth(input,one,now));
+ const scoreIn=(result:KpiMonth,id:string)=>{for(const group of result.groups){const found=group.reps.find(card=>card.memberId===id)||(group.manager&&group.manager.memberId===id?group.manager:undefined);if(found)return found.score;}return null;};
+ const scores:Record<string,(number|null)[]>={},medians:Record<string,(number|null)[]>={};
+ for(const group of visible.groups){
+  for(const card of [...group.reps,...(group.manager?[group.manager]:[])])scores[card.memberId]=computed.map(result=>scoreIn(result,card.memberId));
+  if(admin||lead)medians[group.managerId||'none']=computed.map(result=>median((result.groups.find(other=>other.managerId===group.managerId)?.reps||[]).map(card=>card.score).filter((value):value is number=>value!==null)));
+ }
+ return {month,months:kpiMonths(input,now),generatedAt:now,settings:normalizeSettings(input.settings),settingsVersion:options.settingsVersion,me:{id:me.id,role:me.role,canAudit:admin||lead,canSettings:admin},groups,audits,sample,trend:{months,scores,medians}};
 }

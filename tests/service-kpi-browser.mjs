@@ -84,9 +84,10 @@ try {
     await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'support',NULL,?,'الرئيسي',?,?,?,1,'fixture')").bind('support-' + id, handler, JSON.stringify(data), requestedAt, result || requestedAt).run();
   };
   await support('S1', 'cs1', T(6, 5), T(6, 7)); await support('S2', 'cs1', T(7, 5), T(7, 12), 'rep', 'f2'); await support('M1', 'cs1', T(9, 5), T(9, 7), 'missed_visit', 'f3'); await support('S4', 'cs2', T(29, 5), '', 'rep', 'f2');
-  const audit = async (id, repId, total, note) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'service_audit',NULL,'csm','الرئيسي',?,?,?,1,'fixture')")
-    .bind('service-audit-' + id, JSON.stringify({kind: 'service_audit', repId, month: SEPT, date: '', reference: {type: '', id: ''}, scores: {greeting: 8, understanding: 12, accuracy: 18, ownership: 12, communication: 12, resolution: 12, closing: 8}, total, result: total >= 90 ? 'pass' : total >= 80 ? 'coach' : 'fail', verification: {called: false, rating: null}, note, auditorId: 'csm', at: T(20, 6)}), T(20, 6), T(20, 6)).run();
+  const audit = async (id, repId, total, note, auditMonth = SEPT) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'service_audit',NULL,'csm','الرئيسي',?,?,?,1,'fixture')")
+    .bind('service-audit-' + id, JSON.stringify({kind: 'service_audit', repId, month: auditMonth, date: '', reference: {type: '', id: ''}, scores: {greeting: 8, understanding: 12, accuracy: 18, ownership: 12, communication: 12, resolution: 12, closing: 8}, total, result: total >= 90 ? 'pass' : total >= 80 ? 'coach' : 'fail', verification: {called: false, rating: null}, note, auditorId: 'csm', at: T(20, 6)}), T(20, 6), T(20, 6)).run();
   await audit('AU1', 'cs1', 88, 'لم يؤكد الموعد مع العميل'); await audit('AU2', 'cs2', 94, 'أداء ممتاز');
+  await audit('AU5', 'cs1', 50, 'تدقيق أغسطس', '2026-08'); // the one figure of cs1's August: 50 of 90, a score of 55.6, for the trend beside her card
   const settings = {...(await (async () => (await api('owner', SEPT)).settings)())};
   for (const part of [settings.rep, settings.manager]) for (const key of Object.keys(part)) part[key].min = 1;
   settings.manager.backlog.min = 0; settings.closeGraceDays = 0;
@@ -136,6 +137,7 @@ try {
     check(await mine.locator('.sk-card').count(), 1, 'and no one else\'s card');
     await mine.locator('.sk-month select').selectOption(SEPT);
     await eventually(async () => (await mine.locator('.sk-card .sk-score').innerText()).trim() === String((scoreOf(await api('cs1', SEPT), 'cs1')).toFixed(1)), 'September\'s score is the route\'s');
+    check((await mine.locator('.sk-trend').allInnerTexts()).map(text => text.trim().replace(/9: [\d.]+$/, '9: x')), ['آخر 3 أشهر: 07: — · 08: 55.6 · 09: x'], 'her own last three months, and nothing else: no team median');
     await mine.locator('tr[data-figure="closure_timing"] .sk-toggle').click();
     const items = mine.locator('.sk-items[data-figure="closure_timing"] li');
     check(await items.count(), 3, 'a figure opens onto its cases: A\'s closure, B\'s send-back and B\'s closure');
@@ -167,6 +169,11 @@ try {
     for (const id of ['cs1', 'cs2']) check((await group.locator('.sk-card[data-member="' + id + '"] .sk-score').innerText()).trim(), scoreOf(answer, id).toFixed(1), id + '\'s score on the page is the route\'s');
     check((await group.locator('.sk-card[data-role=manager] .sk-score').innerText()).trim(), scoreOf(answer, 'csm').toFixed(1), 'and his own');
     ok(await group.locator('.sk-compare').isVisible(), 'the two representatives are compared side by side');
+    const trendLine = (trend, id) => trend.months.map((name, index) => name.slice(5) + ': ' + (trend.scores[id][index] === null ? '—' : trend.scores[id][index].toFixed(1))).join(' · ');
+    check(answer.trend.scores.cs1[1], 55.6, 'August is one audit of 50, 55.6 on the one figure measured');
+    check((await group.locator('.sk-card[data-member="cs1"] .sk-trend').innerText()).trim(), 'آخر 3 أشهر: ' + trendLine(answer.trend, 'cs1'), 'cs1\'s card shows her last three months, from the route');
+    check(await group.locator('.sk-card[data-member="cs2"] .sk-trend').count(), 0, 'cs2 has no earlier month, so nothing is shown beside her card');
+    ok((await group.locator('.sk-group-head .sk-trend').innerText()).startsWith('وسيط الفريق: 07: — · 08: 55.6 · 09: '), 'and the team\'s median over the same months');
     await group.locator('.sk-card[data-member="cs1"] .sk-card-head').click();
     const table = group.locator('.sk-card[data-member="cs1"] .sk-table');
     await table.waitFor();
@@ -316,6 +323,7 @@ try {
     await csm.locator('.sk-group').first().waitFor();
     const text = await csm.locator('.service-kpi-page').innerText();
     ok(text.includes('Team of') && text.includes('Quality audits') && text.includes('Close the month'), 'the English page');
+    ok(text.includes('Last 3 months: 07: — · 08: 55.6 · 09: ') && text.includes('Team median: 07: — · 08: 55.6 · 09: '), 'with the last three months and the team median');
     check((await csm.locator('.page-heading h1').innerText()).trim(), 'Customer-service evaluation', 'with its title');
     check(/[؀-ۿ]/.test(text.replace(/منى مديرة الخدمة|ريم ممثلة الخدمة|هند ممثلة الخدمة|مصنع [؀-ۿ ]+|[؀-ۿ ]+(?=\n|$)/g, '')), false, 'without Arabic apart from the names and what was typed');
     await shot(csm, 'service-kpi-english');
