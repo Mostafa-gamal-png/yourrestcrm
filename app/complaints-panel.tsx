@@ -9,7 +9,7 @@ import {roles,today,type Member,type Row} from '@/lib/crm';
 import {COMPLAINT_DEMAND_MAX,COMPLAINT_TEXT_MAX,canRegisterComplaint,closureOutcomes,closureOutcomesEn,complaintActions,complaintActionsEn,complaintCategories,complaintCategoriesEn,complaintChannels,complaintChannelsEn,complaintGroups,complaintSeverities,complaintSeveritiesEn,complaintStatusLabels,complaintStatusLabelsEn,complaintsOfCustomer,isOpenComplaint,resolutionOutcomes,resolutionOutcomesEn,type ComplaintEntry,type ComplaintGroupId} from '@/lib/complaints';
 import {contactLinks} from '@/lib/support';
 import {trackedComplaint} from '@/lib/service-tracking';
-import {complaintMessage,validContactNumber,whatsappNumber,whatsappUrl} from '@/lib/whatsapp';
+import {complaintMessage,complaintMessageParts,validContactNumber,whatsappNumber,whatsappUrl} from '@/lib/whatsapp';
 import {hoursText} from './service-queue';
 import {TrackingSheetSteps} from './service-tracking';
 import VoiceField from './voice-field';
@@ -81,8 +81,14 @@ function ContactLinks({phone,say}:{phone:string;say:Say}){
 
 const GROUP_TEXT:Record<ComplaintGroupId,[string,string]>={act:['بانتظار إجرائك','Waiting for your action'],open:['شكاوى مفتوحة','Open complaints'],finished:['مغلقة وملغاة خلال 30 يومًا','Closed and cancelled in the last 30 days']};
 
-/** The Arabic words the customer is told, with the complaint's own number, date and category. */
-const messageFor=(entry:Pick<ComplaintEntry,'complaintNumber'|'createdAt'|'category'>)=>complaintMessage({number:entry.complaintNumber,createdAt:entry.createdAt,category:complaintCategories[entry.category]||''});
+/** The words the customer is told, in Arabic and in English, with the complaint's own number, date and category. */
+const messageInput=(entry:Pick<ComplaintEntry,'complaintNumber'|'createdAt'|'category'>)=>({number:entry.complaintNumber,createdAt:entry.createdAt,category:complaintCategories[entry.category]||'',categoryEn:complaintCategoriesEn[entry.category]||''});
+const messageFor=(entry:Pick<ComplaintEntry,'complaintNumber'|'createdAt'|'category'>)=>complaintMessage(messageInput(entry));
+/** The same message as the employee reads it before WhatsApp opens: each language in its own paragraph and direction. */
+function MessagePreview({entry}:{entry:Pick<ComplaintEntry,'complaintNumber'|'createdAt'|'category'>}){
+ const parts=complaintMessageParts(messageInput(entry));
+ return <blockquote className="complaint-message"><p dir="rtl" lang="ar">{parts.ar}</p><p dir="ltr" lang="en">{parts.en}</p></blockquote>;
+}
 /** Opens WhatsApp on the customer's number with the message ready; the employee reviews and sends it. A link, not a request, so the browser
  * and the app open it as they open any link; `onOpen` stamps the complaint's story. */
 function NotifyLink({url,onOpen,say,primary=true}:{url:string;onOpen:()=>void;say:Say;primary?:boolean}){
@@ -190,7 +196,7 @@ export function ComplaintRegisterDialog({me,records,complaints,onClose,onSaved,o
    <p className="form-note" role="status"><CheckCircle2 size={16} aria-hidden="true"/> {saved.number?say('سُجّلت الشكوى رقم '+saved.number+' ووصلت إلى مدير خدمة العملاء.','Complaint no. '+saved.number+' is registered and reached the customer-service manager.'):say('سُجّلت الشكوى ووصلت إلى مدير خدمة العملاء.','The complaint is registered and reached the customer-service manager.')}</p>
    {whatsappNumber(saved.whatsapp)?<>
     <p>{say('هذه الرسالة ستُفتح في واتساب على رقم العميل لتراجعها وترسلها من هاتفك:','This message opens in WhatsApp on the customer\'s number for you to review and send from your phone:')}</p>
-    <blockquote className="complaint-message" dir="rtl" lang="ar">{messageFor({complaintNumber:saved.number,createdAt:saved.createdAt,category:saved.category})}</blockquote>
+    <MessagePreview entry={{complaintNumber:saved.number,createdAt:saved.createdAt,category:saved.category}}/>
     {notify.error&&<div className="form-error" role="alert">{t(notify.error)}</div>}
     {saved.notified&&<p className="form-note" role="status" data-notified="true">{say('فُتحت رسالة واتساب للعميل وسُجّل ذلك في سير الشكوى.','The WhatsApp message was opened and the complaint\'s story says so.')}</p>}
     <div className="service-button-row">{!saved.notified&&<NotifyLink url={whatsappUrl(saved.whatsapp,messageFor({complaintNumber:saved.number,createdAt:saved.createdAt,category:saved.category}))} say={say} onOpen={()=>{setSaved(current=>current&&{...current,notified:true});void notify.run({action:'notify',id:saved.id,version:1});}}/>}<button type="button" className={'btn '+(saved.notified?'primary':'subtle')} onClick={onClose}>{saved.notified?say('تم','Done'):say('لاحقًا','Later')}</button></div>

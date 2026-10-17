@@ -137,12 +137,12 @@ ok(out.includes('إعادة فتح الشكوى: لماذا؟')&&out.includes('�
 ok(!sheet('complaint-8','rep').includes('إعادة فتح'),'not by the representative');
 
 // ---- the number, the contact details and the message to the customer
-const MESSAGE='السلام عليكم. شركة يورست للصناعات: تم تسجيل شكواكم رقم 124 بتاريخ 13/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.';
+const MESSAGE='شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى برقم 124 بتاريخ 13/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.\n\nYourrest Industries welcomes you: a complaint has been registered under number 124 on 13/10/2026 regarding “Product or mold quality”, and we will contact you to follow up until it is resolved. We appreciate your trust in us.';
 const hrefsOf=source=>[...source.matchAll(/data-notify="open" href="([^"]+)"/g)].map(match=>match[1].replace(/&amp;/g,'&'));
 out=page('cs_east');
 ok(out.includes('<bdi class="complaint-number">#124 </bdi>'),'the numbered complaint shows its number on its card');
 eq(hrefsOf(out).map(href=>href.split('?')[0]),['https://wa.me/966551234567'],'the registrar has the message button on the card of the open complaint whose customer was not told and whose number WhatsApp can open (the one already told and the ones with no number have none)');
-eq(decodeURIComponent(hrefsOf(out)[0].split('?text=')[1]),MESSAGE,'and it carries the complaint\'s own number, date and category, word for word');
+eq(decodeURIComponent(hrefsOf(out)[0].split('?text=')[1]),MESSAGE,'and it carries the complaint\'s own number, date and category, in Arabic and in English, word for word');
 ok(out.includes('data-notified="true"')&&out.includes('فُتحت رسالة واتساب للعميل'),'the complaint whose customer was told says so on its card');
 out=page('csm');
 eq(hrefsOf(out).length,1,'the manager has the same button, and not for the landline');

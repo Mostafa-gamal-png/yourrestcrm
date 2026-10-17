@@ -1,6 +1,7 @@
 // The WhatsApp link and the message to the customer, as pure functions: Saudi numbers in every way they are written (05..., 5..., 966...,
 // +966..., 00966..., Arabic digits) reach the same chat, numbers WhatsApp cannot open are refused, the message is encoded whole, and the
-// words of the complaint message are fixed (with and without a number) so that every employee sends the same ones. No browser, no network.
+// words of the complaint message are fixed, in Arabic and in English (with and without a number), so that every employee sends the same ones. No
+// browser, no network.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,17 +54,33 @@ eq(W.whatsappUrl('', text), '', 'or for none');
 // ---- the date as the customer reads it, in Riyadh
 eq([W.messageDate('2026-10-17T05:00:00.000Z'), W.messageDate('2026-10-17T22:30:00.000Z'), W.messageDate('2026-01-05T00:00:00.000Z')], ['17/10/2026', '18/10/2026', '05/01/2026'], 'day, month, year; 22:30 UTC is already the next day in Riyadh');
 
-// ---- the words of the message
+// ---- the words of the message: Arabic first, the same words in English after a blank line
 const when = '2026-10-17T05:00:00.000Z';
-eq(W.COMPANY_NAME, 'شركة يورست للصناعات', 'the company as the customer reads it');
-eq(W.complaintMessage({number: 124, createdAt: when, category: C.complaintCategories.product_quality}),
-  'السلام عليكم. شركة يورست للصناعات: تم تسجيل شكواكم رقم 124 بتاريخ 17/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.',
-  'the message of a numbered complaint, word for word');
-eq(W.complaintMessage({number: null, createdAt: when, category: C.complaintCategories.delivery_delay}),
-  'السلام عليكم. شركة يورست للصناعات: تم تسجيل شكواكم بتاريخ 17/10/2026 بخصوص «التأخر في التسليم»، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.',
-  'a complaint registered before numbering began says no number');
-eq(W.complaintMessage({number: 3, createdAt: when, category: ''}),
-  'السلام عليكم. شركة يورست للصناعات: تم تسجيل شكواكم رقم 3 بتاريخ 17/10/2026، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.',
-  'and one with no category names none');
-eq(Object.keys(C.complaintCategories).every(key => W.complaintMessage({number: 1, createdAt: when, category: C.complaintCategories[key]}).includes('«' + C.complaintCategories[key] + '»')), true, 'every category of the complaint form fits the sentence');
+eq([W.COMPANY_NAME, W.COMPANY_NAME_EN], ['شركة يورست للصناعات', 'Yourrest Industries'], 'the company as the customer reads it, in each language');
+const AR124 = 'شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى برقم 124 بتاريخ 17/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.';
+const EN124 = 'Yourrest Industries welcomes you: a complaint has been registered under number 124 on 17/10/2026 regarding “Product or mold quality”, and we will contact you to follow up until it is resolved. We appreciate your trust in us.';
+const numbered = {number: 124, createdAt: when, category: C.complaintCategories.product_quality, categoryEn: C.complaintCategoriesEn.product_quality};
+eq(W.complaintMessageParts(numbered), {ar: AR124, en: EN124}, 'the message of a numbered complaint, word for word, in both languages');
+eq(W.complaintMessage(numbered), AR124 + '\n\n' + EN124, 'sent as one message: the Arabic paragraph, a blank line, the English paragraph');
+eq(W.complaintMessageParts({number: null, createdAt: when, category: C.complaintCategories.delivery_delay, categoryEn: C.complaintCategoriesEn.delivery_delay}),
+  {ar: 'شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى بتاريخ 17/10/2026 بخصوص «التأخر في التسليم»، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.',
+   en: 'Yourrest Industries welcomes you: a complaint has been registered on 17/10/2026 regarding “Delivery delay”, and we will contact you to follow up until it is resolved. We appreciate your trust in us.'},
+  'a complaint registered before numbering began says no number, in either language');
+eq(W.complaintMessageParts({number: 3, createdAt: when, category: '', categoryEn: ''}),
+  {ar: 'شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى برقم 3 بتاريخ 17/10/2026، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.',
+   en: 'Yourrest Industries welcomes you: a complaint has been registered under number 3 on 17/10/2026, and we will contact you to follow up until it is resolved. We appreciate your trust in us.'},
+  'and one with no category names none, in either language');
+eq(W.complaintMessageParts({number: 3, createdAt: when, category: 'جودة المنتج أو القالب'}).en.includes('regarding'), false, 'an English label that is missing leaves the English sentence whole rather than naming a topic in Arabic');
+eq(Object.keys(C.complaintCategories).every(key => {
+  const parts = W.complaintMessageParts({number: 1, createdAt: when, category: C.complaintCategories[key], categoryEn: C.complaintCategoriesEn[key]});
+  return parts.ar.includes('«' + C.complaintCategories[key] + '»') && parts.en.includes('“' + C.complaintCategoriesEn[key] + '”');
+}), true, 'every category of the complaint form fits the sentence, named in Arabic and in English');
+eq(Object.keys(C.complaintCategories).sort(), Object.keys(C.complaintCategoriesEn).sort(), 'and every category has its English label');
+// each paragraph keeps to its own language, so that WhatsApp sets each in its own direction
+const sample = W.complaintMessageParts(numbered);
+eq([/[A-Za-z]/.test(sample.ar), /[\u0600-\u06FF]/.test(sample.en)], [false, false], 'no English letter in the Arabic paragraph and no Arabic letter in the English one');
+// the link carries all of it, nothing a link could break on, and stays far below what browsers and WhatsApp accept
+const whole = W.whatsappUrl('0551234567', W.complaintMessage(numbered));
+eq(decodeURIComponent(whole.slice(whole.indexOf('=') + 1)), AR124 + '\n\n' + EN124, 'the link decodes back to both paragraphs exactly, the blank line included');
+eq([/[^A-Za-z0-9%._~*'()!-]/.test(whole.slice(whole.indexOf('=') + 1)), whole.length < 2000], [false, true], 'safe characters only, and a length well within what a link may be');
 console.log(JSON.stringify({ok: true, checks, pureFunctions: true, productionDataUsed: false}));
