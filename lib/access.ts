@@ -5,9 +5,10 @@ export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'
 export function canViewPage(role:string,view:string){
  if(role==='rep')return ['customer','map','activity','followup','targets'].includes(view);
  // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
- if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints';
+ // The customer-service evaluation has one for the manager and the administrator; a representative meets theirs on the Complaints page.
+ if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints'||view==='service-kpi'&&role==='customer_service_manager';
  if(!canUseSalesWorkspace(role))return false;
- if(view==='team'||view==='complaints')return role==='admin';
+ if(view==='team'||view==='complaints'||view==='service-kpi')return role==='admin';
  return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets'].includes(view);
 }
 

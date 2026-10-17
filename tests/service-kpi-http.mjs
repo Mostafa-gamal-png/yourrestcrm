@@ -78,7 +78,6 @@ try {
   const audit = async (id, repId, month, total, at = T(20, 6), auditor = 'csm') => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'service_audit',NULL,?,'الرئيسي',?,?,?,1,'fixture')")
     .bind('service-audit-' + id, auditor, JSON.stringify({kind: 'service_audit', repId, month, date: '', reference: {type: '', id: ''}, scores: {}, total, result: total >= 90 ? 'pass' : total >= 80 ? 'coach' : 'fail', verification: {called: false, rating: null}, note: 'PRIVATE-AUDIT-NOTE', auditorId: auditor, at}), at, at).run();
   await audit('AU1', 'cs1', '2026-09', 88); await audit('AU2', 'cs1', '2026-09', 94); await audit('AU3', 'cs2', '2026-09', 90); await audit('AU4', 'cs3', '2026-09', 70); await audit('AU5', 'cs1', '2026-08', 50);
-  const before = await count();
 
   const metric = (card, key) => card.metrics.find(x => x.key === key);
   const nd = (card, key) => [metric(card, key).numerator, metric(card, key).denominator];

@@ -9,8 +9,8 @@ import {workingHoursBetween} from './working-hours';
 /** Customer-service assistance: a sales member asks customer service to contact a customer, and a visit that went
  * unanswered is routed to customer service on its own. A request is a `crm_records` row of kind `support` with no
  * parent (so no customer-tree rule, deletion rule or older release ever treats it as a visit or a case); everything it
- * carries is in `data`. Nothing here feeds a target, an evaluation, a KPI or a movement calculation: the figures are
- * for follow-up only. */
+ * carries is in `data`. Nothing here feeds a sales target, a sales evaluation or a movement calculation: the figures are
+ * for follow-up, and the customer-service evaluation (`lib/service-kpi.ts`) reads the requests to evaluate customer service itself. */
 export const SUPPORT_KIND='support';
 /** Working hours customer service has to answer a request that is waiting, from the moment it was made. */
 export const SUPPORT_TARGET_HOURS=4;

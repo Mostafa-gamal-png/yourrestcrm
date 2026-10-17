@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,FileText,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,X} from 'lucide-react';
+import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,FileText,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,X} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {canViewPage} from '@/lib/access';
 import {roles,type Member} from '@/lib/crm';
@@ -18,6 +18,7 @@ const pages=[
  {id:'targets',ar:'المستهدفات وتقييم الأداء',en:'Targets & performance',Icon:Target},
  // After the frequent sales pages, so an administrator's bottom bar keeps them; customer service has only Visits and this, both in the bar.
  {id:'complaints',ar:'الشكاوى',en:'Complaints',Icon:MessageSquareWarning},
+ {id:'service-kpi',ar:'تقييم الخدمة',en:'Service evaluation',Icon:Gauge},
  {id:'dashboard',ar:'لوحة المتابعة',en:'Dashboard',Icon:LayoutDashboard},
  {id:'journeys',ar:'تقرير يوم المندوب',en:'Daily route',Icon:MapPinned},
  {id:'quote',ar:'عروض الأسعار',en:'Quotations',Icon:FileText},

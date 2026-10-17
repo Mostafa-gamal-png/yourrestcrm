@@ -8,8 +8,9 @@ import {workingHoursBetween} from './working-hours';
  * and hands it to a sales manager, who assigns a representative to put it right with the customer; the representative records
  * each contact and the resolution, and customer service confirms with the customer and closes it. A complaint is a `crm_records`
  * row of kind `complaint` with no parent (so no customer-tree rule, deletion rule, visit rule or older release ever treats it as
- * anything else); everything it carries is in `data`. Nothing here feeds a target, an evaluation, a KPI or a movement calculation:
- * the figures are for follow-up only. */
+ * anything else); everything it carries is in `data`. Nothing here feeds a sales target, a sales evaluation or a movement calculation:
+ * the figures are for follow-up, and the customer-service evaluation (`lib/service-kpi.ts`) reads a complaint's events to evaluate
+ * customer service itself. */
 export const COMPLAINT_KIND='complaint';
 /** Working hours each stage may take before it is shown as late: the manager's review, the sales manager's assignment, a
  * supervisor's delegation, the representative's first contact and resolution (both from the assignment), and customer
