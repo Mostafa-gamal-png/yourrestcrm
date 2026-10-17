@@ -203,6 +203,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/service-kpi-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/service-queue-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

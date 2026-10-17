@@ -39,7 +39,7 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('update'),requestId,id:idText,version,channel:keysOf(complaintChannels),text:said(3,'اكتب ما حدث في التواصل في 3 أحرف على الأقل'),date:z.union([day,z.literal('')]).default('')}).strict(),
  z.object({action:z.literal('resolve'),requestId,id:idText,version,outcome:keysOf(resolutionOutcomes),note:said(3,'اكتب ما تم لحل الشكوى في 3 أحرف على الأقل')}).strict(),
  z.object({action:z.literal('reject'),requestId,id:idText,version,reason:said(3,'اكتب سبب الإعادة في 3 أحرف على الأقل')}).strict(),
- z.object({action:z.literal('close'),requestId,id:idText,version,outcome:keysOf(closureOutcomes),note:longText.default('')}).strict(),
+ z.object({action:z.literal('close'),requestId,id:idText,version,outcome:keysOf(closureOutcomes),note:longText.default(''),rating:z.number().int().min(1,'التقييم من 1 إلى 5').max(5,'التقييم من 1 إلى 5').optional()}).strict(),
  z.object({action:z.literal('reopen'),requestId,id:idText,version,reason:said(3,'اكتب سبب إعادة الفتح في 3 أحرف على الأقل')}).strict(),
  z.object({action:z.literal('cancel'),requestId,id:idText,version,reason:z.string().trim().max(500).default('')}).strict(),
  z.object({action:z.literal('note'),requestId,id:idText,version,text:said(3,'اكتب الملاحظة في 3 أحرف على الأقل')}).strict()
@@ -86,7 +86,7 @@ export async function POST(req:Request){try{
   if(input.version!==found.version)throw new CRMError('تغيّرت الشكوى. حدّث البيانات قبل إعادة المحاولة.',409);
   const allowed=complaintPermissions(found,customer,reader,c.members,now),data:ComplaintData={...found.data,previousAssignees:[...(found.data.previousAssignees||[])],updates:[...(found.data.updates||[])],notes:[...(found.data.notes||[])],events:[...(found.data.events||[])]};
   id=found.id;revision=found.version+1;
-  const event=(extra:{text?:string;targetId?:string;outcome?:string}={})=>data.events.push({at:now,by,action:input.action,...extra});
+  const event=(extra:{text?:string;targetId?:string;outcome?:string;rating?:number}={})=>data.events.push({at:now,by,action:input.action,...extra});
   const hand=(target:Member,stamp:'assignedAt'|'delegatedAt'|'reassignedAt',noteText:string)=>{
    requireMember(target);targetName=target.name;
    if(data.assigneeId&&data.assigneeId!==target.id)data.previousAssignees.push(data.assigneeId);
@@ -128,7 +128,10 @@ export async function POST(req:Request){try{
    note=input.reason;data.status='assigned';data.rejectedAt=now;data.rejectReason=input.reason;delete data.resolution;event({text:input.reason});
   }else if(input.action==='close'){
    if(!allowed.close)throw new CRMError('إغلاق الشكوى لمن سجّلها أو لمدير خدمة العملاء بعد تأكيد العميل',403);
-   note=input.note;data.status='closed';data.closedAt=now;data.closure={outcome:input.outcome,note:input.note,by,at:now};event({outcome:input.outcome,text:input.note});
+   // The customer's rating out of 5 is optional, and only a customer who was reached and gave an opinion can give one.
+   if(input.rating&&!['satisfied','not_satisfied'].includes(input.outcome))throw new CRMError('تقييم العميل متاح عند رضاه أو عدم رضاه فقط',400);
+   const rated=input.rating?{rating:input.rating}:{};
+   note=input.note;data.status='closed';data.closedAt=now;data.closure={outcome:input.outcome,note:input.note,by,at:now,...rated};event({outcome:input.outcome,text:input.note,...rated});
   }else if(input.action==='reopen'){
    if(!allowed.reopen)throw new CRMError('إعادة فتح الشكوى لخدمة العملاء خلال 14 يومًا من إغلاقها',403);
    note=input.reason;data.status='assigned';data.reopenedAt=now;delete data.closure;delete data.resolution;data.rejectReason='';event({text:input.reason});

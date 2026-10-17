@@ -3,23 +3,9 @@ import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,rep
 import {today,type Member} from '@/lib/crm';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {SUPPORT_LIST_LIMIT,SUPPORT_NOTE_MAX,canReadSupport,canRequestSupport,missedVisits,supportActions,supportBadge,supportOutcomes,supportPermissions,supportQueue,supportReader,supportState,supportStaff,type SupportData,type SupportRow} from '@/lib/support';
+import {loadSupport,loadSupportRow as loadOne} from '@/lib/support-rows';
 export const dynamic='force-dynamic';
 
-type Raw={id:string;branch:string;assignedTo:string;data:string;createdAt:string;updatedAt:string;version:number};
-const columns='id,branch,assigned_to AS assignedTo,data,created_at AS createdAt,updated_at AS updatedAt,version';
-function decode(rows:Raw[]):SupportRow[]{
- const found:SupportRow[]=[];
- for(const row of rows){
-  try{const data=JSON.parse(row.data);if(data&&data.kind==='support'&&typeof data.customerId==='string')found.push({...row,data});}catch{/* a damaged row is left out, never shown */}
- }
- return found;
-}
-/** Open requests and whatever changed in the last 45 days: enough for every list and for "this visit was already handled". */
-async function loadSupport(db:D1Database,now:string){
- const since=new Date(Date.parse(now)-45*86400000).toISOString();
- return decode((await db.prepare(`SELECT ${columns} FROM crm_records WHERE kind='support' AND (updated_at>=? OR json_extract(data,'$.status')='open') ORDER BY created_at DESC,id DESC`).bind(since).all<Raw>()).results);
-}
-async function loadOne(db:D1Database,id:string){return decode((await db.prepare(`SELECT ${columns} FROM crm_records WHERE kind='support' AND id=?`).bind(id).all<Raw>()).results)[0];}
 /** Re-checks at commit that a member named in the change is still who they were when it was decided. */
 function memberGate(m:Member){return{sql:"EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND active=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=?)",args:[m.id,m.role,m.active,m.branch,m.supervisorId||'',regionScope(m)]};}
 
