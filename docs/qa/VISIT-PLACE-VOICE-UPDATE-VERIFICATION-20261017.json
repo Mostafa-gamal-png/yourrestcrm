@@ -1,0 +1,389 @@
+{
+  "date": "2026-10-17",
+  "builtFromCommit": "aee75b2 (the code of c7aaf9d, the bilingual customer message, and the generated files)",
+  "headAtVerification": "aee75b2",
+  "package": {
+    "file": "Yourrest-CRM-Update-Visit-Place-Voice-20261017.zip",
+    "bytes": 12559159,
+    "sha256": "9b7de60a1d412c1ec74d0591892878d3f0619e2bc735b07cc13e0ce7f79c1efe",
+    "releaseFiles": 2866,
+    "manifestSha256": "a76656d43d2ca845d4870920f657167a3215951f0f59314c95f27539b0909c58",
+    "helper": "yourrest-activate-update-visit-place-voice.cjs",
+    "guide": "UPDATE-20261017-AR.txt",
+    "stageDir": "yourrest-crm-update-visit-place-voice-20261017",
+    "releaseName": "update-visit-place-voice",
+    "releaseDate": "20261017",
+    "schemaBefore": 16,
+    "schemaAfter": 16,
+    "newMigrations": [],
+    "verifyRoutes": [
+      [
+        "/api/complaints",
+        401
+      ],
+      [
+        "/api/complaint-report",
+        401
+      ],
+      [
+        "/api/service-kpi",
+        401
+      ]
+    ],
+    "settingsOrProductionDataIncluded": false,
+    "databaseIncluded": false,
+    "seedSnapshotIncluded": false,
+    "forbiddenFileNames": 0,
+    "secretPatternHits": 0,
+    "sqliteFilesInside": 0,
+    "customerPhoneNumbersFromSeedChecked": 206,
+    "customerPhoneNumbersFromSeedFound": 0,
+    "allReleaseFilesMatchManifest": true,
+    "newApk": false,
+    "nativeVersionServedByTheSite": "1.0.10 / code 11 (unchanged)",
+    "nativeVersionInSource": "1.0.11 / code 12 (not built or signed here)"
+  },
+  "comparedWithPreviousPackage": {
+    "file": "Yourrest-CRM-Update-Service-KPI-20261017.zip",
+    "sha256": "afb77dd39452f22696cff879b4a650eb24647e534304a970c7adc0a670cc346a",
+    "entriesBefore": 2866,
+    "entriesAfter": 2869,
+    "added": 50,
+    "removed": 47,
+    "changed": 19,
+    "unchanged": 2800,
+    "note": "Added and removed are renamed content-hashed bundle chunks, the guide and the activator under its own name; changed are the bundles' manifests, the offline shell and its manifest, the service worker, the sums and the guide. No file of node_modules is touched."
+  },
+  "releaseFolder": {
+    "files": 2866,
+    "treeSha256": "61a8f6e3564a608e8752eaf8e972ad4621d163845c68129647bfe452d558ede3",
+    "unchangedByTheTestRunsThatFollowedThePackaging": true
+  },
+  "gates": {
+    "typescript": {
+      "passed": true,
+      "errors": 0
+    },
+    "eslint": {
+      "errors": 96,
+      "warnings": 72,
+      "note": "identical to the count recorded after the previous release (96 errors, 72 warnings), file by file, measured on the whole repository now and on the commit before this update; no file is worse"
+    },
+    "defaultGate": {
+      "passed": true,
+      "tests": 132,
+      "testsReportingChecks": 128,
+      "checks": 13043,
+      "before": {
+        "tests": 125,
+        "checks": 12620
+      }
+    },
+    "releaseBuildGate": {
+      "tests/app-update-release.mjs": {
+        "passed": true,
+        "checks": 16
+      },
+      "tests/complaint-report-http.mjs": {
+        "passed": true,
+        "checks": 51
+      },
+      "tests/complaints-http.mjs": {
+        "passed": true,
+        "checks": 156
+      },
+      "tests/device-status-http.mjs": {
+        "passed": true,
+        "checks": 86
+      },
+      "tests/namecheap-http.mjs": {
+        "passed": true,
+        "checks": 381
+      },
+      "tests/production-load.mjs": {
+        "passed": true,
+        "checks": null
+      },
+      "tests/sales-date-boundaries.mjs": {
+        "passed": true,
+        "checks": 36
+      },
+      "tests/server-authorization.mjs": {
+        "passed": true,
+        "checks": 366
+      },
+      "tests/service-kpi-http.mjs": {
+        "passed": true,
+        "checks": 115
+      },
+      "tests/service-queue-http.mjs": {
+        "passed": true,
+        "checks": 120
+      },
+      "tests/service-report-http.mjs": {
+        "passed": true,
+        "checks": 45
+      },
+      "tests/support-http.mjs": {
+        "passed": true,
+        "checks": 124
+      },
+      "tests/targets-attainment-http.mjs": {
+        "passed": true,
+        "checks": 26
+      },
+      "tests/visit-files-http.mjs": {
+        "passed": true,
+        "checks": 41
+      },
+      "tests/visit-place-http.mjs": {
+        "passed": true,
+        "checks": 44
+      }
+    },
+    "browserGate": {
+      "tests/admin-delete-browser.mjs": {
+        "passed": true,
+        "checks": 15,
+        "seconds": 19
+      },
+      "tests/app-browser-workflows.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 29,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Reaches the permission-denial step: Chromium started through Playwright does not apply the browser permission override in this context (expected denied, got granted). The unmodified baseline fails at the same step with the same message."
+      },
+      "tests/app-update-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 4
+      },
+      "tests/competitor-intelligence-browser.mjs": {
+        "passed": true,
+        "checks": 146,
+        "seconds": 29,
+        "passedInFullRun": false,
+        "reasonInFullRun": "the native-app emulator now answers dictation itself (speechProtocol 1), so the test's mocked browser recognition was never used; the test now announces an app without the speech service",
+        "rerunAfterTheTestFix": {
+          "passed": true,
+          "checks": 146
+        }
+      },
+      "tests/competitors-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 35
+      },
+      "tests/complaints-browser.mjs": {
+        "passed": true,
+        "checks": 80,
+        "seconds": 64
+      },
+      "tests/customer-edit-browser.mjs": {
+        "passed": true,
+        "checks": 54,
+        "seconds": 22
+      },
+      "tests/daily-report-browser.mjs": {
+        "passed": true,
+        "checks": 94,
+        "seconds": 13
+      },
+      "tests/dictation-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 52
+      },
+      "tests/erp-sales-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 0,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); it was never supplied. The unmodified baseline fails identically."
+      },
+      "tests/kpi-evidence-browser.mjs": {
+        "passed": true,
+        "checks": 87,
+        "seconds": 26
+      },
+      "tests/location-picker-browser.mjs": {
+        "passed": true,
+        "checks": 79,
+        "seconds": 64,
+        "passedInFullRun": false,
+        "reasonInFullRun": "the city field's accessible name now carries the dictation button's label, so an exact-name lookup found nothing; the test now looks it up by the start of its name",
+        "rerunAfterTheTestFix": {
+          "passed": true,
+          "checks": 79
+        }
+      },
+      "tests/member-regions-browser.mjs": {
+        "passed": true,
+        "checks": 13,
+        "seconds": 20
+      },
+      "tests/offline-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 30,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline reload: Playwright setOffline does not cover the service worker network in this Chromium. The unmodified baseline times out at the same wait."
+      },
+      "tests/offline-outbox-browser.mjs": {
+        "passed": true,
+        "checks": 49,
+        "seconds": 3
+      },
+      "tests/pwa-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 23,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline navigation uses the data-free client shell: same cause as offline-browser. The unmodified baseline fails at the same assertion."
+      },
+      "tests/service-kpi-browser.mjs": {
+        "passed": true,
+        "checks": 83,
+        "seconds": 75
+      },
+      "tests/service-queue-browser.mjs": {
+        "passed": true,
+        "checks": 162,
+        "seconds": 124
+      },
+      "tests/support-browser.mjs": {
+        "passed": true,
+        "checks": 74,
+        "seconds": 92
+      },
+      "tests/tracking-gate-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 117
+      },
+      "tests/ui-refresh-browser.mjs": {
+        "passed": true,
+        "checks": 105,
+        "seconds": 49
+      },
+      "tests/visit-place-browser.mjs": {
+        "passed": true,
+        "checks": 37,
+        "seconds": 49
+      }
+    },
+    "browserNotes": "Four tests fail exactly as before this update, at the same step, for the same reasons (Playwright cannot deny a permission or work offline in this Chromium, and the original ERP workbook is not in the test environment). competitor-intelligence-browser and location-picker-browser failed in the full run for the two reasons given with each, both in the tests and not in the application, and pass after the test-only fix (commit 274a37a), run on the same built release."
+  },
+  "newTests": {
+    "tests/visit-place.mjs": {
+      "gate": "default",
+      "checks": 29
+    },
+    "tests/dictation-coverage.mjs": {
+      "gate": "default",
+      "checks": 26
+    },
+    "tests/followup-place-ui.mjs": {
+      "gate": "default",
+      "checks": 29
+    },
+    "tests/whatsapp.mjs": {
+      "gate": "default",
+      "checks": 42
+    },
+    "tests/service-wording.mjs": {
+      "gate": "default",
+      "checks": 154
+    },
+    "tests/service-tracking.mjs": {
+      "gate": "default",
+      "checks": 125
+    },
+    "tests/service-tracking-ui.mjs": {
+      "gate": "default",
+      "checks": 90
+    },
+    "tests/visit-place-http.mjs": {
+      "gate": "release-build",
+      "checks": 44
+    },
+    "tests/visit-place-browser.mjs": {
+      "gate": "browser",
+      "checks": 37
+    },
+    "tests/dictation-browser.mjs": {
+      "gate": "browser",
+      "checks": 46
+    }
+  },
+  "extendedTests": {
+    "tests/complaints.mjs": 90,
+    "tests/complaints-ui.mjs": 69,
+    "tests/complaints-http.mjs": 156,
+    "tests/complaints-browser.mjs": 80,
+    "tests/service-queue-http.mjs": 120,
+    "tests/service-queue-browser.mjs": 162,
+    "tests/visit-mobile-ux.mjs": 245,
+    "tests/native-speech.mjs": "passes (reports no count)",
+    "tests/server-authorization.mjs": 366
+  },
+  "androidJvmChecks": {
+    "unchanged": true,
+    "note": "No Android source changed in this release; the 1.0.11 checks recorded earlier still apply and the APK is still to be built and signed by the key holder."
+  },
+  "commitsAfterTheGateRun": {
+    "headAtGate": "aee75b2",
+    "applicationCodeChanged": false,
+    "filesChanged": [
+      "tests/competitor-intelligence-browser.mjs",
+      "tests/location-picker-browser.mjs (tests only)",
+      "docs/qa (this record, the report and the screenshots)",
+      "docs/CHANGELOG-HISTORY.md"
+    ]
+  },
+  "rehearsal": {
+    "script": "scripts/rehearse-update.mjs",
+    "runAs": "unprivileged user (nobody) with only net_bind_service, as on the hosting account",
+    "previousRelease": "the release folder of the package built just before this one (Yourrest-CRM-Update-Service-KPI-20261017.zip, sha256 afb77dd3...)",
+    "ok": true,
+    "steps": 16,
+    "packageSha256": "9b7de60a1d412c1ec74d0591892878d3f0619e2bc735b07cc13e0ce7f79c1efe",
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "productionDataUsed": false,
+    "hostingAccessed": false,
+    "stepNames": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while the app is still running",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "a customer complaint runs its whole course on the upgraded database for the right roles",
+      "the monthly complaints report counts the complaint for the managers only",
+      "the customer-service evaluation counts the closure, its rating and the registration, takes an audit and the settings, for the right roles only",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ]
+  },
+  "notVerifiedHere": [
+    "a physical Android phone: the visit place rule, dictation and the WhatsApp link were run in a real Chromium with an emulated device location and an emulated app bridge, not on a device",
+    "a real GPS fix, a real microphone and the phone's speech service",
+    "WhatsApp itself: the link and its text were checked; opening WhatsApp, and sending, are the employee's",
+    "Passenger on cPanel (the rehearsal runs the app directly with Node 22 on Linux)",
+    "real data: every test and screenshot uses synthetic customers, complaints and requests",
+    "the English wording of the customer message by a native speaker"
+  ],
+  "productionModified": false,
+  "deployed": false
+}
