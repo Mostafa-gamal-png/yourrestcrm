@@ -9,6 +9,7 @@ import React from 'react';
 import * as jsx from 'react/jsx-runtime';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
+import {makeVoiceField,expandVoiceFields} from '../scripts/lib/voice-field-stub.mjs';
 
 const root=process.cwd(),nativeRequire=createRequire(import.meta.url),cache=new Map();
 const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
@@ -19,7 +20,8 @@ const dictionary=JSON.parse(fs.readFileSync('lib/locales/en.json','utf8'));
 const i18n={t:value=>language==='en'?(dictionary[value]||value):value,useLanguage:()=>({language}),getLanguage:()=>language};
 function load(file,require,globals={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:compiler}).outputText,{exports,require,Error,TypeError,Intl,console,crypto:globalThis.crypto,structuredClone,AbortController,DOMException,URL,setTimeout,clearTimeout,...globals});return exports;}
 function library(file){if(cache.has(file))return cache.get(file);const result=load(file,name=>name.startsWith('.')?library(path.join(path.dirname(file),name)+'.ts'):nativeRequire(name));cache.set(file,result);return result;}
-function nodes(tree,predicate){if(!tree||typeof tree!=='object')return [];if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate)];}
+function nodes(tree,predicate){if(!tree||typeof tree!=='object')return [];if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));tree=expandVoiceFields(tree);return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate)];}
+const VoiceFieldStub=makeVoiceField(value=>i18n.t(value));
 function text(tree){if(tree===null||tree===undefined||typeof tree==='boolean')return '';if(typeof tree!=='object')return String(tree);return Array.isArray(tree)?tree.map(text).join(''):text(tree.props?.children);}
 const copy=value=>JSON.parse(JSON.stringify(value));
 function options(memberId='rep',month='2026-10'){
@@ -40,7 +42,7 @@ function harness(initial={}){
  const hooksReact={...React,useState(initial){const index=cursor++;if(!hooks[index])hooks[index]={value:typeof initial==='function'?initial():initial};return [hooks[index].value,value=>{hooks[index].value=typeof value==='function'?value(hooks[index].value):value;dirty=true;}];},useRef(initial){const index=cursor++;return hooks[index]||(hooks[index]={current:initial});},useMemo(compute,deps){const index=cursor++;if(!hooks[index]||changed(hooks[index].deps,deps))hooks[index]={value:compute(),deps};return hooks[index].value;},useCallback(callback,deps){return hooksReact.useMemo(()=>callback,deps);},useEffect(effect,deps){const index=cursor++,previous=hooks[index];if(!previous||changed(previous.deps,deps)){hooks[index]={deps,cleanup:previous?.cleanup};effects.push(()=>{hooks[index].cleanup?.();hooks[index].cleanup=effect();});}}};
  const fetch=(url,config={})=>new Promise((resolve,reject)=>requests.push({url,config,body:config.body?JSON.parse(config.body):undefined,resolve:(body,status=200)=>resolve({ok:status>=200&&status<300,status,json:async()=>body}),reject,invalid:(status=200)=>resolve({ok:status>=200&&status<300,status,json:async()=>{throw new SyntaxError('invalid JSON');}})}));
  const globals={fetch,setTimeout:(callback,delay)=>{const id=++nextTimer;timers.set(id,{callback,delay});return id;},clearTimeout:id=>timers.delete(id),window:{confirm:message=>{confirms.push(message);return confirmResult;},location:{origin:'https://crm.yourrest.org'}}};
- function require(name){if(name==='react')return hooksReact;if(name==='react/jsx-runtime')return jsx;if(name==='@/lib/i18n')return i18n;if(name==='@/lib/client-submit')return load('lib/client-submit.ts',nativeRequire,globals);if(name==='lucide-react')return icons;if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');if(name.startsWith('@/components/'))return new Proxy({},{get:()=>pass});if(name==='sonner')return {toast:{success:noop,error:noop}};if(name.endsWith('.css'))return {};throw Error('Unexpected evidence editor dependency '+name);}
+ function require(name){if(name==='react')return hooksReact;if(name==='react/jsx-runtime')return jsx;if(name==='./voice-field')return {__esModule:true,default:VoiceFieldStub};if(name==='@/lib/i18n')return i18n;if(name==='@/lib/client-submit')return load('lib/client-submit.ts',nativeRequire,globals);if(name==='lucide-react')return icons;if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');if(name.startsWith('@/components/'))return new Proxy({},{get:()=>pass});if(name==='sonner')return {toast:{success:noop,error:noop}};if(name.endsWith('.css'))return {};throw Error('Unexpected evidence editor dependency '+name);}
  const exports=load('app/kpi-evidence-editor.tsx',require,globals),Component=exports.default;
  const render=()=>{dirty=false;cursor=0;tree=Component(props);return tree;};
  const commit=()=>{for(const effect of effects.splice(0))effect();};
@@ -54,7 +56,7 @@ const input=(h,label,value)=>{const control=field(h,label);assert(control,'Missi
 const submit=h=>form(h).props.onSubmit({preventDefault:noop});
 async function ready(value=options(),initial={}){const h=harness(initial);h.render();h.commit();h.requests[0].resolve(value);await h.settle();return h;}
 function disabled(h,control){
- function visit(tree,inherited=false){if(!tree||typeof tree!=='object')return false;if(Array.isArray(tree))return tree.some(node=>visit(node,inherited));const current=inherited||tree.type==='fieldset'&&tree.props.disabled;return tree===control?!!(current||tree.props.disabled||tree.props.readOnly):visit(tree.props?.children,current);}
+ function visit(tree,inherited=false){if(!tree||typeof tree!=='object')return false;if(Array.isArray(tree))return tree.some(node=>visit(node,inherited));tree=expandVoiceFields(tree);const current=inherited||tree.type==='fieldset'&&tree.props.disabled;return tree===control?!!(current||tree.props.disabled||tree.props.readOnly):visit(tree.props?.children,current);}
  return visit(h.tree());
 }
 const optionValues=control=>nodes(control,node=>node.type==='option').map(node=>node.props.value);

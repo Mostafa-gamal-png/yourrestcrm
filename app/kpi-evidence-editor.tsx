@@ -6,6 +6,7 @@ import {definiteSubmitRejection,submitJson} from '@/lib/client-submit';
 import {t,useLanguage} from '@/lib/i18n';
 import {emptyKpiEvidenceInput,kpiEvidenceInputSchema,type KpiEvidenceInput,type KpiEvidenceOptions} from '@/lib/kpi-evidence';
 import './kpi-evidence-editor.css';
+import VoiceField from './voice-field';
 
 type Props={memberId:string;memberName:string;month:string;identityKey:string;onClose:()=>void;onSaved:()=>void};
 type Draft={due:string;collected:string;collectionReference:string;historyComplete:boolean;historyReference:string;quotationsComplete:boolean;quotations:KpiEvidenceInput['quotations']};
@@ -87,11 +88,11 @@ export default function KpiEvidenceEditor({memberId,memberName,month,identityKey
      <section className="kpi-evidence-section" aria-labelledby="kpi-collection-title"><h3 id="kpi-collection-title">{say('التحصيل الشهري','Monthly collection')}</h3><div className="form-grid">
       <label className="field"><span>{say('المستحق · ر.س','Due · SAR')}</span><input name="due" type="text" inputMode="decimal" dir="ltr" maxLength={24} aria-label={say('المستحق · ر.س','Due · SAR')} value={draft.due} onChange={event=>update({due:event.target.value})}/></label>
       <label className="field"><span>{say('المحصل · ر.س','Collected · SAR')}</span><input name="collected" type="text" inputMode="decimal" dir="ltr" maxLength={24} aria-label={say('المحصل · ر.س','Collected · SAR')} value={draft.collected} onChange={event=>update({collected:event.target.value})}/></label>
-      <label className="field full"><span>{say('مرجع بيانات التحصيل','Collection source reference')}</span><textarea name="collectionReference" rows={2} maxLength={2000} value={draft.collectionReference} onChange={event=>update({collectionReference:event.target.value})}/></label>
+      <VoiceField label={say('مرجع بيانات التحصيل','Collection source reference')} multiline full rows={2} value={draft.collectionReference} onChange={value=>update({collectionReference:value})} contextKey="kpi-evidence-collection" inputProps={{name:'collectionReference',maxLength:2000}}/>
      </div><p className="kpi-evidence-hint">{say('الخانة الفارغة تعني بيانات غير مكتملة؛ الصفر مبلغ مؤكد.','Blank means incomplete data; zero is a confirmed amount.')}</p></section>
      <section className="kpi-evidence-section" aria-labelledby="kpi-history-title"><h3 id="kpi-history-title">{say('اكتمال سجل المبيعات','Sales-history coverage')}</h3><p className="kpi-evidence-period"><bdi>{options.period.from}</bdi> — <bdi>{options.period.through}</bdi></p>
       <label className="kpi-evidence-check"><input name="historyComplete" type="checkbox" checked={draft.historyComplete} onChange={event=>update({historyComplete:event.target.checked})}/><span>{say('أؤكد اكتمال مبيعات الفترة ومرتجعاتها، وإدراج تاريخ الشراء الأقدم للعملاء لتحديد المستردين.','I confirm this period’s sales and returns are complete, with older customer purchases included to identify recovered customers.')}</span></label>
-      <label className="field"><span>{say('مرجع اكتمال سجل المبيعات','Sales-history source reference')}</span><textarea name="historyReference" rows={2} maxLength={2000} value={draft.historyReference} onChange={event=>update({historyReference:event.target.value})}/></label>
+      <VoiceField label={say('مرجع اكتمال سجل المبيعات','Sales-history source reference')} multiline rows={2} value={draft.historyReference} onChange={value=>update({historyReference:value})} contextKey="kpi-evidence-history" inputProps={{name:'historyReference',maxLength:2000}}/>
      </section>
      <section className="kpi-evidence-section" aria-labelledby="kpi-quotes-title"><div className="kpi-evidence-section-heading"><h3 id="kpi-quotes-title">{say('عروض الأسعار والفواتير','Quotes and invoices')}</h3>{editable&&<button type="button" className="btn subtle small" disabled={immutable||draft.quotations.length>=200} onClick={()=>update({quotations:[...draft.quotations,{quoteId:'',saleId:null}]})}><Plus size={16}/>{say('إضافة عرض','Add quote')}</button>}</div>
       {!draft.quotations.length&&<p className="kpi-evidence-hint">{say(draft.quotationsComplete?'لا توجد عروض في هذا الشهر.':'لم يُؤكد سجل العروض لهذا الشهر.',draft.quotationsComplete?'No quotes for this month.':'The quote list for this month has not been confirmed.')}</p>}

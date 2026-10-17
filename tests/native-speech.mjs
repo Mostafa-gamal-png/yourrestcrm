@@ -42,18 +42,40 @@ const older=harness({native:true,browser:false,protocol:0});eq(await older.api.s
 const fallback=harness({native:true,browser:true,supported:false});eq(await fallback.api.speechAvailability(),'browser');fallback.start();await settle();eq(fallback.engines.length,1);eq(fallback.calls.length,0);
 ok(browser.api.speechErrorMessage('speech_permission','en').includes('microphone'));ok(browser.api.speechErrorMessage('speech_unsupported','ar').includes('لوحة المفاتيح'));
 
-function fieldHarness(){
- let props={label:'ملاحظات المنافس',value:'existing',onChange:value=>changes.push(value),contextKey:'rep:customer:a'},language='ar',cursor=0,dirty=true,tree;
- const hooks=[],effects=[],changes=[],sessions=[];const window=new EventTarget();
+function fieldHarness(component='default',extra={}){
+ const changes=[];let props={label:'ملاحظات المنافس',value:'existing',onChange:value=>changes.push(value),onText:text=>changes.push(text),contextKey:'rep:customer:a',...extra},language='ar',cursor=0,dirty=true,tree;
+ const hooks=[],effects=[],sessions=[];const window=new EventTarget();
  const different=(a,b)=>!a||!b||a.length!==b.length||a.some((v,i)=>!Object.is(v,b[i]));
  const react={...React,useRef(initial){const i=cursor++;if(!hooks[i])hooks[i]={current:initial};return hooks[i];},useState(initial){const i=cursor++;if(!hooks[i])hooks[i]={value:initial};return [hooks[i].value,value=>{hooks[i].value=typeof value==='function'?value(hooks[i].value):value;dirty=true;}];},useEffect(effect,deps){const i=cursor++;if(!hooks[i]||different(hooks[i].deps,deps)){const before=hooks[i];hooks[i]={deps,cleanup:before?.cleanup};effects.push(()=>{hooks[i].cleanup?.();hooks[i].cleanup=effect();});}}};
  const speech={speechAvailability:()=>Promise.resolve('browser'),speechErrorMessage:(code)=>code,startSpeech(options){const task={options,cancels:0,cancel(){this.cancels++;options.onEnd();}};sessions.push(task);return task;}};
  const mod=load('app/voice-field.tsx',name=>name==='react'?react:name==='react/jsx-runtime'?jsx:name==='lucide-react'?{Mic:()=>null,Square:()=>null}:name==='@/lib/i18n'?{t:value=>value,useLanguage:()=>language,getLanguage:()=>language}:speech,{window});
- const flush=()=>{for(let n=0;dirty&&n<20;n++){dirty=false;cursor=0;tree=mod.default(props);effects.splice(0).forEach(effect=>effect());}return tree;};
+ const flush=()=>{for(let n=0;dirty&&n<20;n++){dirty=false;cursor=0;tree=mod[component](props);effects.splice(0).forEach(effect=>effect());}return tree;};
  const visit=node=>{if(!node||typeof node!=='object')return [];return [node,...(Array.isArray(node.props?.children)?node.props.children:[node.props?.children]).flatMap(child=>Array.isArray(child)?child.flatMap(visit):visit(child))];};
  const button=()=>visit(tree).find(node=>node.type==='button');
  return {flush,settle:async()=>{await settle();flush();},sessions,changes,click:()=>{button().props.onClick();flush();},button,update:patch=>{props={...props,...patch};dirty=true;flush();},language:value=>{language=value;dirty=true;flush();},unmount:()=>hooks.forEach(hook=>hook.cleanup?.()),nodes:()=>visit(tree)};
 }
 const field=fieldHarness();field.flush();await field.settle();eq(field.sessions.length,0);field.click();eq(field.sessions.length,1);field.update({value:'typed while listening'});field.sessions[0].options.onText('spoken');eq(field.changes,['typed while listening spoken'],'Dictation appends to latest editable text');field.update({contextKey:'rep:customer:b'});field.sessions[0].options.onText('stale');eq(field.changes.length,1);ok(field.sessions[0].cancels>0);field.click();field.update({disabled:true});field.sessions[1].options.onText('during save');eq(field.changes.length,1);eq(field.button().props.disabled,true);ok(field.nodes().find(node=>node.type==='input').props.disabled);field.update({disabled:false});field.click();field.unmount();field.sessions[2].options.onText('after close');eq(field.changes.length,1);
+
+// ---- the standard field passes its own attributes to the input, marks a required field, and keeps dictated text inside the length limit
+const rich=fieldHarness('default',{value:'ab',full:true,marked:true,inputProps:{maxLength:8,placeholder:'مثال',autoComplete:'off','aria-invalid':true,id:'note'}});rich.flush();await rich.settle();
+const richInput=rich.nodes().find(node=>node.type==='input');
+eq([richInput.props.placeholder,richInput.props.maxLength,richInput.props.autoComplete,richInput.props['aria-invalid'],richInput.props.id,richInput.props.required],['مثال',8,'off',true,'note',false],'The input receives the attributes handed to the field and is not made required by the mark');
+ok(rich.nodes().find(node=>node.type==='label').props.className.split(' ').includes('full'),'A single-line field can take the full row');
+ok(rich.nodes().some(node=>node.type==='b'),'A marked field shows the required mark');
+rich.click();rich.sessions[0].options.onText('0123456789');eq(rich.changes,['ab 01234'],'What is dictated never passes the field\'s own length limit');
+const area=fieldHarness('default',{multiline:true,rows:5,value:'',required:true,inputProps:{placeholder:'اكتب'}});area.flush();await area.settle();
+const areaNode=area.nodes().find(node=>node.type==='textarea');
+eq([areaNode.props.rows,areaNode.props.placeholder,areaNode.props.required],[5,'اكتب',true],'A text area takes its rows, its attributes and the real required');
+ok(area.nodes().find(node=>node.type==='label').props.className.split(' ').includes('full'),'and always the full row');
+area.click();area.sessions[0].options.onText('first');eq(area.changes,['first'],'Dictation into an empty field adds no leading space');
+const helper=load('app/voice-field.tsx',name=>name==='react'?React:name==='react/jsx-runtime'?jsx:name==='lucide-react'?{Mic:()=>null,Square:()=>null}:name==='@/lib/i18n'?{t:value=>value,useLanguage:()=>'ar',getLanguage:()=>'ar'}:{speechAvailability:()=>Promise.resolve('browser'),speechErrorMessage:code=>code,startSpeech:()=>({cancel(){}})},{window:new EventTarget()});
+eq([helper.appendDictation('','one'),helper.appendDictation('  one  ','two'),helper.appendDictation('one','two',5),helper.appendDictation('one','two',0)],['one','one two','one t','one two'],'appendDictation: nothing before, one space between, cut at the limit, no limit when none is given');
+// ---- the button alone, for a control that keeps its own markup
+const alone=fieldHarness('DictationButton',{label:'الهدف الآخر من الزيارة'});alone.flush();await alone.settle();
+eq(alone.sessions.length,0,'The button alone opens no session until it is tapped');
+ok(alone.button().props['aria-label'].includes('الهدف الآخر من الزيارة'),'and names the field it dictates into');
+alone.click();eq(alone.sessions.length,1);alone.sessions[0].options.onText('spoken goal');eq(alone.changes,['spoken goal'],'What is said goes to the caller, who decides where it is added');
+alone.update({contextKey:'rep:customer:b'});alone.sessions[0].options.onText('stale');eq(alone.changes,['spoken goal'],'A change of context cancels the session and drops a late result');
+alone.click();alone.update({disabled:true});alone.sessions[1].options.onText('while disabled');eq(alone.changes,['spoken goal'],'A disabled button ignores what arrives');eq(alone.button().props.disabled,true);
 const english=fieldHarness();english.flush();await english.settle();english.language('en');english.click();eq(english.sessions[0].options.language,'en-US');eq(english.button().props['aria-label'],'Cancel dictation');english.language('ar');english.sessions[0].options.onText('old language');eq(english.changes,[]);english.unmount();
 console.log(`Native/browser speech and VoiceField checks passed: ${checks}`);

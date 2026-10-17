@@ -8,6 +8,7 @@ import type {Member} from '@/lib/crm';
 import {AUDIT_CRITERIA,AUDIT_NOTE_MAX,DEFAULT_SERVICE_KPI_SETTINGS,MANAGER_METRICS,REP_METRICS,auditCriterionLabels,auditCriterionLabelsEn,auditResult,auditResultLabels,auditResultLabelsEn,auditTotal,managerMetricLabels,managerMetricLabelsEn,repMetricLabels,repMetricLabelsEn,settingsProblem,type AuditCriterion,type KpiAuditOut,type KpiCardOut,type KpiGroupOut,type KpiItemOut,type KpiMetricOut,type ManagerMetric,type MetricSetting,type RepMetric,type ServiceKpiResponse,type ServiceKpiSettings} from '@/lib/service-kpi';
 import './service-report.css';
 import './service-kpi.css';
+import VoiceField from './voice-field';
 
 type Say=(ar:string,en:string)=>string;
 const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message' in error&&typeof (error as {message:unknown}).message==='string'?(error as {message:string}).message:'';
@@ -177,7 +178,7 @@ function AuditDialog({data,say,seed,onClose,onSaved}:{data:ServiceKpiResponse;sa
    <p className="sk-total" role="status">{say('المجموع: ','Total: ')}<b>{total}</b> / 100{checked.ok&&<span className="sk-chip" data-kind={auditResult(checked.total,settings)}>{resultName(auditResult(checked.total,settings),say)}</span>}</p>
    <label className="sk-check"><input type="checkbox" checked={called} onChange={event=>{setCalled(event.target.checked);if(!event.target.checked)setRating('');}}/><span>{say('اتصلت بالعميل للتحقق مما سُجّل','I called the customer to verify what was recorded')}</span></label>
    {called&&<label className="field"><span>{say('تقييم العميل كما قاله لك','The rating the customer gave you')}</span><select value={rating} onChange={event=>setRating(event.target.value)}><option value="">{say('بلا تقييم','No rating')}</option>{[1,2,3,4,5].map(value=><option key={value} value={value}>{value}</option>)}</select></label>}
-   <label className="field"><span>{say('ملاحظات المدقّق','Auditor\'s notes')}</span><textarea value={note} rows={3} maxLength={AUDIT_NOTE_MAX} onChange={event=>setNote(event.target.value)}/></label>
+   <VoiceField label={say('ملاحظات المدقّق','Auditor\'s notes')} multiline value={note} onChange={setNote} contextKey="service-kpi-audit" inputProps={{maxLength:AUDIT_NOTE_MAX}}/>
   </fieldset>
   {!checked.ok&&Object.keys(marks).length>0&&<p className="form-note">{say('أدخل درجة كل معيار ضمن حدّه الأعلى.','Enter a mark for every criterion, within its maximum.')}</p>}
   {action.error&&<div className="form-error" role="alert">{t(action.error)}</div>}

@@ -32,6 +32,7 @@ function load(filename){
   if(name==='react')return React;
   if(name==='react/jsx-runtime')return jsx;
   if(name==='@/lib/i18n')return i18n;
+  if(name==='./voice-field')return load('app/voice-field.tsx');
   if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
   return mock;
  },console,Date,Intl,crypto,URL,Promise,setTimeout,clearTimeout,window:undefined,navigator:undefined});

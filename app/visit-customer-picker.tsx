@@ -11,6 +11,7 @@ import { CustomerRegionField } from './region-picker';
 import CustomerLocationFields,{CustomerClassificationFields,type CustomerData} from './customer-entry-fields';
 import { schemas, type Row, type Member } from '@/lib/crm';
 import { customerLocationProblem } from '@/lib/customer-fields';
+import VoiceField from './voice-field';
 import './customer-picker-mobile.css';
 
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
@@ -142,19 +143,19 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
             <h3>{t('إضافة عميل')}</h3>
             <p className="form-note">{say('كود يورست يُنشأ تلقائيًا بعد المزامنة.','Yourrest code is assigned automatically after synchronization.')}</p>
             <div className="form-grid visit-new-customer-core">
-                <label className="field visit-new-customer-name"><span>{t('اسم المصنع *')}</span><input ref={nameInput} value={draft.name} maxLength={250} autoFocus autoComplete="organization" enterKeyHint="next" disabled={fieldDisabled} aria-required="true" aria-invalid={invalidField === 'name'} aria-describedby={invalidField === 'name' ? 'visit-new-customer-error' : undefined} onChange={e => updateDraft('name', e.target.value)} onKeyDown={preventFormSubmit}/></label>
+                <VoiceField className="visit-new-customer-name" label="اسم المصنع *" value={draft.name ?? ''} onChange={value => updateDraft('name', value)} disabled={fieldDisabled} contextKey="new-customer" inputRef={nameInput} inputProps={{maxLength: 250, autoFocus: true, autoComplete: 'organization', enterKeyHint: 'next', 'aria-required': true, 'aria-invalid': invalidField === 'name', 'aria-describedby': invalidField === 'name' ? 'visit-new-customer-error' : undefined, onKeyDown: preventFormSubmit}}/>
                 <CustomerRegionField value={draft.region ?? ''} onChange={region => updateDraft('region', region)} me={me} disabled={fieldDisabled}/>
                 <CustomerClassificationFields data={draft} onChange={updateDraft} disabled={fieldDisabled}/>
                 <label className="field"><span>{t('رقم الجوال')}</span><input value={draft.phone} maxLength={250} type="tel" inputMode="tel" dir="ltr" autoComplete="tel" enterKeyHint="next" disabled={fieldDisabled} onChange={e => updateDraft('phone', e.target.value)} onKeyDown={preventFormSubmit}/></label>
-                <label className="field"><span>{t('مسؤول التواصل')}</span><input value={draft.contact} maxLength={250} autoComplete="name" enterKeyHint="next" disabled={fieldDisabled} onChange={e => updateDraft('contact', e.target.value)} onKeyDown={preventFormSubmit}/></label>
-                <label className="field"><span>{t('المدينة')}</span><input value={draft.city} maxLength={250} autoComplete="address-level2" enterKeyHint="done" disabled={fieldDisabled} onChange={e => updateDraft('city', e.target.value)} onKeyDown={preventFormSubmit}/></label>
+                <VoiceField label="مسؤول التواصل" value={draft.contact ?? ''} onChange={value => updateDraft('contact', value)} disabled={fieldDisabled} contextKey="new-customer" inputProps={{maxLength: 250, autoComplete: 'name', enterKeyHint: 'next', onKeyDown: preventFormSubmit}}/>
+                <VoiceField label="المدينة" value={draft.city ?? ''} onChange={value => updateDraft('city', value)} disabled={fieldDisabled} contextKey="new-customer" inputProps={{maxLength: 250, autoComplete: 'address-level2', enterKeyHint: 'done', onKeyDown: preventFormSubmit}}/>
             </div>
             <CustomerLocationFields key={createKey.current} data={draft} disabled={fieldDisabled} onUpdate={setDraft} onPendingChange={setLocationPending}/>
             <details className="visit-new-customer-extra" open={extraOpen} onToggle={e => setExtraOpen(e.currentTarget.open)}>
                 <summary><span>{say('كود ERP والعنوان (اختياري)', 'ERP code and address (optional)')}</span><ChevronDown size={18}/></summary>
                 <div className="form-grid">
                     <label className="field"><span>{say('كود العميل في ERP','Customer ERP code')}</span><input value={draft.code} maxLength={250} autoComplete="off" disabled={fieldDisabled} onChange={e => updateDraft('code', e.target.value)} onKeyDown={preventFormSubmit}/></label>
-                    <label className="field"><span>{t('العنوان')}</span><input value={draft.address} maxLength={250} autoComplete="street-address" disabled={fieldDisabled} onChange={e => updateDraft('address', e.target.value)} onKeyDown={preventFormSubmit}/></label>
+                    <VoiceField label="العنوان" value={draft.address ?? ''} onChange={value => updateDraft('address', value)} disabled={fieldDisabled} contextKey="new-customer" inputProps={{maxLength: 250, autoComplete: 'street-address', onKeyDown: preventFormSubmit}}/>
                 </div>
             </details>
             {error && <p className="form-error" id="visit-new-customer-error" role="alert">{savedId ? t('تم حفظ العميل؛ تعذر تحميل بياناته. اضغط إعادة المحاولة.') : t(error)}</p>}
