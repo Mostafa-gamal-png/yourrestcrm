@@ -27,7 +27,7 @@ const crm=await api('crm'),service=await api('customer-service'),followups=await
 let checks=0;
 const req=body=>new Request('https://test.invalid/api/test',{method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:JSON.stringify(body)});
 async function post(route,body,status=200){const res=await route.POST(req(body)),data=await res.json();assert.equal(res.status,status,JSON.stringify(data));checks++;return data;}
-async function list(){const r=await service.GET();assert.equal(r.status,200);checks++;return r.json();}
+async function list(){const r=await service.GET(new Request('https://test.invalid/api/customer-service'));assert.equal(r.status,200);checks++;return r.json();}
 await crm.GET();
 const member=(id,role,supervisor='',region='eastern',branch='الرئيسي')=>sql.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,?,?,1,0,?)').run(id,'u-'+id,id+'@yourrest.org',id,role,branch,supervisor||null,region,new Date().toISOString());
 member('sm','manager');member('other-sm','manager');member('sup','supervisor','sm');member('rep','rep','sup');member('rep2','rep','sm');member('outside','rep','other-sm');member('west','rep','sm','western');member('csm','customer_service_manager','sm');member('cs','customer_service','csm');member('cs2','customer_service','csm');member('other-csm','customer_service_manager','other-sm');member('csw','customer_service','other-csm','western');member('unrouted','customer_service');
