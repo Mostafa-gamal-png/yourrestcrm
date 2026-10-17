@@ -464,7 +464,7 @@ try {
     assert.equal((await act(calls.rep1, complaintId, {action: 'update', channel: 'visit', text: 'زرت المصنع وفحصت القالب', date: day})).status, 200, 'the representative records his contact');
     assert.equal((await act(calls.rep1, complaintId, {action: 'resolve', outcome: 'solved', note: 'استُبدل القالب'})).status, 200, 'and the resolution');
     assert.equal((await complaints(calls.cs)).complaints[0].awaiting, 'close', 'customer service is asked to confirm the closure');
-    assert.equal((await act(calls.cs, complaintId, {action: 'close', outcome: 'satisfied', note: 'أكد العميل'})).status, 200, 'and closes it');
+    assert.equal((await act(calls.cs, complaintId, {action: 'close', outcome: 'satisfied', rating: 4, note: 'أكد العميل'})).status, 200, 'and closes it, with the customer\'s rating');
     assert.deepEqual([row().status, row().events.map(event => event.action)], ['closed', ['register', 'forward', 'assign', 'resolve', 'close']], 'closed with its story');
     // Nothing of it reached the records, the cases, the assistance or the visits.
     const crm = (await owner('/api/crm')).json();
@@ -480,6 +480,27 @@ try {
       assert.deepEqual([sales.total, sales.closed, sales.byCategory.map(row => row.key)], [1, 1, ['product_quality']], 'the sales manager\'s report counts it too');
       assert.equal(/مصنع|القالب|INV-|complaint-/.test(JSON.stringify(monthly) + JSON.stringify(sales)), false, 'and neither carries a customer, a text, a reference or an identifier');
       note('the monthly complaints report counts the complaint for the managers only', {total: monthly.total});
+    }
+    if (helper.EXTRA_ROUTES.some(([route]) => route === '/api/service-kpi')) {
+      // The customer-service evaluation counts what just happened (the closure, its rating, the registration), takes an audit and the settings, for the right roles only.
+      assert.equal((await a.request('/api/service-kpi')).status, 401, 'an anonymous caller is refused the evaluation');
+      assert.deepEqual([(await calls.rep1('/api/service-kpi')).status, (await calls.sup('/api/service-kpi')).status, (await calls.mgr('/api/service-kpi')).status], [403, 403, 403], 'the representative, the supervisor and the sales manager are refused the evaluation');
+      const evaluation = (await calls.csm('/api/service-kpi')).json(), mine = (await calls.cs('/api/service-kpi')).json();
+      const cardOf = answer => answer.groups.flatMap(group => group.reps).find(item => item.memberId === 'cs');
+      const figure = (answer, key) => cardOf(answer).metrics.find(item => item.key === key);
+      const pair = (answer, key) => [figure(answer, key).numerator, figure(answer, key).denominator];
+      assert.deepEqual([evaluation.groups.map(group => group.managerId), pair(evaluation, 'customer_rating'), pair(evaluation, 'registration_accuracy'), figure(evaluation, 'closure_timing').denominator], [['csm'], [4, 1], [1, 1], 1], 'the manager\'s evaluation counts the closure, the customer\'s 4 and the first-time review of the complaint: ' + JSON.stringify(evaluation.groups.map(group => group.reps.map(item => item.metrics.map(metric => [metric.key, metric.numerator, metric.denominator])))));
+      assert.deepEqual([mine.groups.length, mine.groups[0].reps.map(item => item.memberId), mine.groups[0].manager], [1, ['cs'], null], 'a representative gets only their own card');
+      const audit = await calls.csm('/api/service-kpi', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'audit', repId: 'cs', month: evaluation.month, scores: {greeting: 10, understanding: 15, accuracy: 20, ownership: 15, communication: 15, resolution: 15, closing: 10}, note: 'أداء ممتاز'}});
+      assert.equal(audit.status, 200, 'the manager records a quality audit on the upgraded database: ' + audit.text.slice(0, 120));
+      assert.deepEqual(pair((await calls.csm('/api/service-kpi')).json(), 'audit_quality'), [100, 1], 'and the figure follows');
+      assert.equal((await calls.csm('/api/service-kpi', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'settings', version: evaluation.settingsVersion, settings: evaluation.settings}})).status, 403, 'a manager cannot change the settings');
+      const saved = await owner('/api/service-kpi', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'settings', version: evaluation.settingsVersion, settings: evaluation.settings}});
+      assert.equal(saved.status, 200, 'the administrator can: ' + saved.text.slice(0, 120));
+      assert.equal((await calls.csm('/api/service-kpi', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'close_month', month: evaluation.month, managerId: 'csm'}})).status, 400, 'the running month cannot be closed');
+      const afterCrm = (await owner('/api/crm')).json();
+      assert.equal(afterCrm.records.some(record => ['service_audit', 'service_kpi_month', 'service_kpi_settings'].includes(record.kind)) || /service-kpi/.test(JSON.stringify(afterCrm.audits)), false, 'the administrator\'s records and history carry no audit, setting or receipt');
+      note('the customer-service evaluation counts the closure, its rating and the registration, takes an audit and the settings, for the right roles only', {month: evaluation.month});
     }
   }
 
@@ -567,6 +588,13 @@ try {
       assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'complaint').length), [0, 0, 0, 0], 'and it is in nobody\'s record list');
     }
     if (reportIntroduced) assert.equal((await a.request('/api/complaint-report')).status, 404, 'the report route is gone again with the new release');
+    if (introducedRoute('/api/service-kpi')) {
+      // The evaluation's rows are records of kinds the previous release does not know: it serves everyone on them, and nobody but the administrator's raw record list could carry them.
+      const kpiRows = (() => { const db = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true}); try { return db.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind IN ('service_audit','service_kpi_settings')").get().n; } finally { db.close(); } })();
+      assert(kpiRows >= 2, 'the database still holds the audit and the settings the new release wrote');
+      assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => ['service_audit', 'service_kpi_month', 'service_kpi_settings'].includes(record.kind)).length), [0, 0, 0, 0], 'no one but the administrator\'s raw record list could carry them');
+      assert.equal((await a.request('/api/service-kpi')).status, 404, 'the evaluation route is gone again with the new release');
+    }
     if (queueIntroduced) {
       assert.equal(restored.rep1.cases[0].status, 'assigned', 'it keeps its status');
       assert.equal(restored.repw.cases.length, 0, 'and stays hidden from others');

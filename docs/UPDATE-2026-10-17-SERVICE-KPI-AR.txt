@@ -51,7 +51,7 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
 5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
 cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-service-kpi-20261017/yourrest-activate-update-service-kpi.cjs --verify
 
-النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK وسطر LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/service-kpi: 401.
+النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK وسطر LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401.
 لا يظهر MIGRATION APPLIED لأن لا ترحيل. إن ظهر STOP فاحتفظ بالناتج وأرسله لي قبل أي خطوة أخرى.
 
 6. بعد النجاح افتح crm.yourrest.org وأعد تحميل الصفحة، ثم جرّب بحسابات حقيقية:
@@ -69,7 +69,7 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
 2) cd /home/youriedx/yourrest-crm && mv release release-failed-20261017-service-kpi && mv /home/youriedx/yourrest-update-service-kpi-activation-20261017-XXXXXX/old-release release
 (استبدل XXXXXX بالاسم الفعلي للمجلد الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT.)
 3) Start App.
-التراجع لا يفقد بيانات. التدقيقات والإقفالات والإعدادات وتقييمات العملاء المسجَّلة تبقى في القاعدة دون أن يعرضها الإصدار الأقدم.
+التراجع لا يفقد بيانات. التدقيقات والإقفالات والإعدادات وتقييمات العملاء المسجَّلة تبقى في القاعدة دون أن يعرضها الإصدار الأقدم لأي دور ودون أن تؤثر فيه؛ وقد يرى مدير النظام وحده في قائمة السجلات الخام وفي سجل التدقيق أسطرًا بأسماء تقنية تبدأ بـ service. ولا تعد تشغيل مُفعِّل أي حزمة أقدم.
 
 ملاحظات تشغيل
 - التقييم يُحسب عند فتح الصفحة أو تغيير الشهر ولا يُحدَّث وحده؛ أعد فتحها لرؤية آخر الأرقام.
