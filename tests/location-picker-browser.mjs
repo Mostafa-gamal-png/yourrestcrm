@@ -336,7 +336,7 @@ try {
   await inline.waitFor();
   await region(inline, 'الغربية');
   await inline.locator('.visit-new-customer-name input').fill('مصنع الزيارة الجديد');
-  await inline.getByRole('textbox', {name: 'المدينة', exact: true}).fill('جدة');
+  await inline.getByRole('textbox', {name: /^المدينة/}).fill('جدة');
   const create = inline.getByRole('button', {name: 'حفظ واختيار العميل', exact: true});
   check(await create.isDisabled(), true, 'inline, saving waits while the phone is still locating');
   await mode(inline, OTHER).click();
