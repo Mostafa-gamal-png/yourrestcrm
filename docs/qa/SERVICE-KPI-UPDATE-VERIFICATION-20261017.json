@@ -1,0 +1,387 @@
+{
+  "date": "2026-10-17",
+  "builtFromCommit": "54a6c27",
+  "headAtVerification": "54a6c27",
+  "package": {
+    "file": "Yourrest-CRM-Update-Service-KPI-20261017.zip",
+    "bytes": 12493554,
+    "sha256": "afb77dd39452f22696cff879b4a650eb24647e534304a970c7adc0a670cc346a",
+    "releaseFiles": 2863,
+    "manifestSha256": "ef3be05b46730d0ccf266acfafff2c1ee9d264c66f80695e6c5b1ecf8aab2400",
+    "helper": "yourrest-activate-update-service-kpi.cjs",
+    "guide": "UPDATE-20261017-AR.txt",
+    "stageDir": "yourrest-crm-update-service-kpi-20261017",
+    "releaseName": "update-service-kpi",
+    "releaseDate": "20261017",
+    "schemaBefore": 16,
+    "schemaAfter": 16,
+    "newMigrations": [],
+    "verifyRoutes": [
+      [
+        "/api/complaints",
+        401
+      ],
+      [
+        "/api/complaint-report",
+        401
+      ],
+      [
+        "/api/service-kpi",
+        401
+      ]
+    ],
+    "settingsOrProductionDataIncluded": false,
+    "databaseIncluded": false,
+    "seedSnapshotIncluded": false,
+    "forbiddenFileNames": 0,
+    "secretPatternHits": 0,
+    "sqliteFilesInside": 0,
+    "customerPhoneNumbersFromSeedChecked": 206,
+    "customerPhoneNumbersFromSeedFound": 0,
+    "allReleaseFilesMatchManifest": true,
+    "newApk": false,
+    "nativeVersionServedByTheSite": "1.0.10 / code 11 (unchanged)",
+    "nativeVersionInSource": "1.0.11 / code 12 (not built or signed here)"
+  },
+  "comparedWithPreviousPackage": {
+    "file": "Yourrest-CRM-Update-Regions-20261014.zip",
+    "sha256": "a70255804a3feaf50f7aa7739941a3f2946f9d4ae361b2a09c59dccf3836762f",
+    "filesBefore": 2864,
+    "filesAfter": 2866,
+    "added": 73,
+    "removed": 71,
+    "changed": 19,
+    "unchanged": 2774,
+    "note": "Added and removed are renamed content-hashed bundle chunks, the guide and the activator under its own name; changed are the bundles and the offline shell index. The migrations and node_modules did not change; the server gains the /api/service-kpi route."
+  },
+  "releaseFolder": {
+    "files": 2863,
+    "treeSha256": "26cb543910a49bdec3ea0be951f95bb267598b73cbf48652660a68abda807082",
+    "unchangedByTheTestRunsThatFollowedThePackaging": true
+  },
+  "gates": {
+    "typescript": {
+      "passed": true,
+      "errors": 0
+    },
+    "eslint": {
+      "errors": 96,
+      "warnings": 72,
+      "note": "identical to the count recorded after the previous release (96 errors, 72 warnings), file by file; the new application files and the new tests have no finding"
+    },
+    "defaultGate": {
+      "passed": true,
+      "tests": 125,
+      "testsReportingChecks": 121,
+      "checks": 12620,
+      "before": {
+        "tests": 122
+      }
+    },
+    "releaseBuildGate": {
+      "tests/app-update-release.mjs": {
+        "passed": true,
+        "checks": 16
+      },
+      "tests/complaint-report-http.mjs": {
+        "passed": true,
+        "checks": 51
+      },
+      "tests/complaints-http.mjs": {
+        "passed": true,
+        "checks": 123
+      },
+      "tests/device-status-http.mjs": {
+        "passed": true,
+        "checks": 86
+      },
+      "tests/namecheap-http.mjs": {
+        "passed": true,
+        "checks": 381
+      },
+      "tests/production-load.mjs": {
+        "passed": true,
+        "checks": null
+      },
+      "tests/sales-date-boundaries.mjs": {
+        "passed": true,
+        "checks": 36
+      },
+      "tests/server-authorization.mjs": {
+        "passed": true,
+        "checks": 366
+      },
+      "tests/service-kpi-http.mjs": {
+        "passed": true,
+        "checks": 115
+      },
+      "tests/service-queue-http.mjs": {
+        "passed": true,
+        "checks": 101
+      },
+      "tests/service-report-http.mjs": {
+        "passed": true,
+        "checks": 45
+      },
+      "tests/support-http.mjs": {
+        "passed": true,
+        "checks": 124
+      },
+      "tests/targets-attainment-http.mjs": {
+        "passed": true,
+        "checks": 26
+      },
+      "tests/visit-files-http.mjs": {
+        "passed": true,
+        "checks": 41
+      }
+    },
+    "browserGate": {
+      "tests/admin-delete-browser.mjs": {
+        "passed": true,
+        "checks": 15,
+        "seconds": 21
+      },
+      "tests/app-browser-workflows.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 30,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Reaches the permission-denial step: Chromium started through Playwright does not apply the browser permission override in this context (expected denied, got granted). The unmodified baseline fails at the same step with the same message."
+      },
+      "tests/app-update-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 4
+      },
+      "tests/competitor-intelligence-browser.mjs": {
+        "passed": true,
+        "checks": 146,
+        "seconds": 36
+      },
+      "tests/competitors-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 37
+      },
+      "tests/complaints-browser.mjs": {
+        "passed": true,
+        "checks": 67,
+        "seconds": 63
+      },
+      "tests/customer-edit-browser.mjs": {
+        "passed": true,
+        "checks": 54,
+        "seconds": 26
+      },
+      "tests/daily-report-browser.mjs": {
+        "passed": true,
+        "checks": 94,
+        "seconds": 15
+      },
+      "tests/erp-sales-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 0,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); it was never supplied. The unmodified baseline fails identically."
+      },
+      "tests/kpi-evidence-browser.mjs": {
+        "passed": true,
+        "checks": 87,
+        "seconds": 29
+      },
+      "tests/location-picker-browser.mjs": {
+        "passed": true,
+        "checks": 79,
+        "seconds": 44
+      },
+      "tests/member-regions-browser.mjs": {
+        "passed": true,
+        "checks": 13,
+        "seconds": 21
+      },
+      "tests/offline-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 33,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline reload: Playwright setOffline does not cover the service worker network in this Chromium. The unmodified baseline times out at the same wait."
+      },
+      "tests/offline-outbox-browser.mjs": {
+        "passed": true,
+        "checks": 49,
+        "seconds": 3
+      },
+      "tests/pwa-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 25,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline navigation uses the data-free client shell: same cause as offline-browser. The unmodified baseline fails at the same assertion."
+      },
+      "tests/service-kpi-browser.mjs": {
+        "passed": true,
+        "checks": 83,
+        "seconds": 76
+      },
+      "tests/service-queue-browser.mjs": {
+        "passed": true,
+        "checks": 99,
+        "seconds": 99
+      },
+      "tests/support-browser.mjs": {
+        "passed": true,
+        "checks": 74,
+        "seconds": 92
+      },
+      "tests/tracking-gate-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 120
+      },
+      "tests/ui-refresh-browser.mjs": {
+        "passed": true,
+        "checks": 105,
+        "seconds": 52
+      }
+    },
+    "browserNotes": "service-kpi-browser is new. app-browser-workflows, erp-sales-browser, offline-browser and pwa-browser fail at exactly the point where the unmodified baseline fails (environment limits listed per test); the evaluation does not appear in them."
+  },
+  "newTests": {
+    "tests/service-kpi.mjs": {
+      "gate": "default",
+      "checks": 210
+    },
+    "tests/service-kpi-ui.mjs": {
+      "gate": "default",
+      "checks": 137
+    },
+    "tests/service-kpi-http.mjs": {
+      "gate": "release-build",
+      "checks": 115
+    },
+    "tests/service-kpi-browser.mjs": {
+      "gate": "browser",
+      "checks": 83
+    },
+    "tests/working-hours.mjs": {
+      "gate": "default",
+      "checks": 11,
+      "note": "new: the week by hand and the production function against a calendar-asking reference"
+    }
+  },
+  "extendedTests": {
+    "tests/server-authorization.mjs": 366,
+    "tests/mobile-navigation-ui.mjs": 205
+  },
+  "androidJvmChecks": {
+    "unchanged": true,
+    "note": "No Android source changed in this release; the 1.0.11 checks recorded earlier still apply and the APK is still to be built and signed by the key owner."
+  },
+  "commitsAfterTheGateRun": {
+    "headAtGate": "54a6c27",
+    "applicationCodeChanged": false,
+    "changedApplicationFiles": [],
+    "filesChanged": []
+  },
+  "rehearsal": {
+    "script": "scripts/rehearse-update.mjs",
+    "runAs": "unprivileged user (nobody) with only net_bind_service, as on the hosting account",
+    "previousRelease": "the release folder of the package built just before this one (Yourrest-CRM-Update-Regions-20261014.zip, sha256 a7025580...)",
+    "ok": true,
+    "steps": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while the app is still running",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "a customer complaint runs its whole course on the upgraded database for the right roles",
+      "the monthly complaints report counts the complaint for the managers only",
+      "the customer-service evaluation counts the closure, its rating and the registration, takes an audit and the settings, for the right roles only",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ],
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "productionDataUsed": false,
+    "hostingAccessed": false,
+    "dailyBackup": "this package is the first of its day, so the activator takes its own verified full backup (the rehearsal shows NO VERIFIED BACKUP TODAY. COPYING APPLICATION AND DATA); the regions activation is added to the names a later same-day package may reuse"
+  },
+  "notVerifiedHere": [
+    "real data: the evaluation was run on synthetic complaints, assistance requests and audits; the first weeks on the hosting will show how many figures reach their least number of cases and whether the targets fit",
+    "a physical Android phone (the evaluation page was run at a 360px phone width in a real Chromium, not on a device)",
+    "Passenger on cPanel (the rehearsal runs the app directly with Node 22 on Linux)",
+    "the hosting account paths and Node binary (/opt/alt/alt-nodejs22/root/usr/bin/node)",
+    "iPhone and desktop browsers beyond what Chromium emulates",
+    "the load of the evaluation page over a large history (GET reads every complaint, assistance request and service request)"
+  ],
+  "productionModified": false,
+  "deployed": false,
+  "performance": {
+    "what": "cost of the evaluation page over two years of synthetic history, measured on the test machine",
+    "scale": {
+      "complaints": 6000,
+      "assistanceRequests": 12000,
+      "serviceRequests": 2000,
+      "audits": 500,
+      "representatives": 16,
+      "managers": 4,
+      "customers": 900,
+      "monthsOfHistory": 24
+    },
+    "inMemory": {
+      "oneMonthMs": {
+        "beforeWorkingHoursChange": 295,
+        "after": 206
+      },
+      "administratorViewMs": {
+        "beforeWorkingHoursChange": 1052,
+        "after": 737
+      },
+      "note": "the view computes the month and the two before it"
+    },
+    "endToEndGetMsOnTheBuiltRelease": {
+      "administrator": [
+        1762,
+        1720,
+        1552,
+        1523
+      ],
+      "manager": [
+        1173,
+        1164,
+        1409,
+        1662
+      ],
+      "representative": [
+        1155,
+        1142,
+        1214,
+        1280
+      ],
+      "responseBytes": {
+        "administrator": 63346,
+        "manager": 18165,
+        "representative": 46316
+      }
+    },
+    "workingHoursBetween": {
+      "change": "the weekday is read by arithmetic instead of building a Date for every day between the two instants",
+      "spansComparedWithTheCalendarAskingVersion": 21963,
+      "different": 0,
+      "test": "tests/working-hours.mjs"
+    },
+    "note": "synthetic data on one machine; the real account holds far fewer rows today, and the account's CPU is unmeasured. If the page reaches two seconds there, limit the rows read to two years or keep the answer of finished months."
+  }
+}
