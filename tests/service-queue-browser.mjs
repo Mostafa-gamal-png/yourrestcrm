@@ -369,6 +369,152 @@ try {
     await phone.context().close();
   }
 
+  // ---- 6. The tracking board at the top of the Opportunities page: what customer service registered, where it stands, who holds it
+  {
+    const version = id => app.db.prepare('SELECT version FROM crm_records WHERE id=?').bind(id).first('version');
+    const complaintPost = (who, body) => as(who)('/api/complaints', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
+    const report = {channel: 'call', category: 'product_quality', severity: 'normal', description: 'القالب يخرج منتجًا مكسورًا من الجهة اليمنى', demand: 'استبدال القالب', reference: 'INV-100'};
+    const register = async (customerId, extra = {}) => { const answer = await complaintPost('cs', {action: 'register', customerId, customerVersion: await version(customerId), ...report, ...extra}); check(answer.status, 200, 'a complaint is registered: ' + answer.text.slice(0, 80)); return answer.json(); };
+    const complaintAct = async (who, id, body) => complaintPost(who, {id, version: await version(id), ...body});
+    const waiting = await register('f1', {description: 'العميل ينتظر ردًا على شكواه منذ أسابيع'});
+    const handed = await register('f2', {category: 'delivery_delay', severity: 'high', description: 'التسليم تأخر عن الموعد المتفق عليه بأسبوع'});
+    check((await complaintAct('csm', handed.id, {action: 'forward', targetId: 'sm'})).status, 200, 'the manager forwards the second complaint');
+    check((await complaintAct('sm', handed.id, {action: 'assign', targetId: 'rep'})).status, 200, 'the sales manager assigns it to the representative');
+    const mistaken = await register('f1', {description: 'سُجّلت هذه الشكوى بالخطأ وستُلغى بعد قليل'});
+    check((await complaintAct('cs', mistaken.id, {action: 'cancel', reason: 'سُجّلت بالخطأ'})).status, 200, 'and a third, registered by mistake, is cancelled');
+    await app.db.prepare("UPDATE crm_records SET data=json_set(data,'$.submittedAt',?) WHERE id=?").bind(new Date(Date.now() - 30 * 86400000).toISOString(), waiting.id).run();
+    const secondId = (await cases('cs')).cases.map(item => item.id).find(id => id !== caseId);
+    const cardOf = (page, kind, id) => page.locator(`[data-tracking-card="${kind}:${id}"]`);
+    const countOf = async (page, filter) => Number((await page.locator(`.tracking-tab[data-filter="${filter}"] .tracking-count`).innerText()).trim());
+    const namesToStrip = new RegExp([CUSTOMER, CUSTOMER_2, ...members.map(member => member.name), 'القالب يخرج منتجًا مكسورًا من الجهة اليمنى', 'العميل ينتظر ردًا على شكواه منذ أسابيع', 'التسليم تأخر عن الموعد المتفق عليه بأسبوع', 'سُجّلت هذه الشكوى بالخطأ وستُلغى بعد قليل', 'عرض سعر لخلاط', 'قالب جديد وصيانة للقالب الحالي', 'اتصلت بالعميل وأبلغته أن الشكوى عند المدير', 'تم التواصل', 'متابعة العميل'].join('|'), 'g');
+
+    // the representative who registered everything
+    const rep = await open('cs', {viewport: DESKTOP});
+    await goDesktop(rep, 'الفرص');
+    const board = rep.locator('.tracking-board');
+    await board.waitFor();
+    await eventually(async () => (await countOf(rep, 'all')) === 5, 'the board counts the two opportunities and the three complaints');
+    check(await board.locator('h2').innerText(), 'متابعة ما سجّلته', 'the representative\'s heading');
+    ok((await board.locator('.tracking-heading p').innerText()).includes('ولا تدخل في التقييم'), 'and the line that says the figures feed no evaluation');
+    const box = await board.boundingBox();
+    ok(box && box.y < 420, 'the board is at the top of the page');
+    check([await countOf(rep, 'late'), await countOf(rep, 'service'), await countOf(rep, 'sales'), await countOf(rep, 'finished')], [1, 1, 3, 1], 'one late, one with customer service, three with sales, one finished');
+    // the late complaint waits for the manager's review
+    const review = cardOf(rep, 'complaint', waiting.id);
+    check([await review.getAttribute('data-late'), await review.getAttribute('data-side'), await review.getAttribute('data-stage')], ['true', 'service', 'review'], 'the old complaint is late at the manager\'s review');
+    const reviewText = await review.innerText();
+    ok(reviewText.includes('#' + waiting.complaintNumber) && reviewText.includes('جودة المنتج أو القالب') && reviewText.includes('بانتظار مراجعة المدير'), 'it carries its number, category and stage');
+    ok(reviewText.includes('عند: منى مديرة الخدمة (مدير خدمة العملاء)') && reviewText.includes('متأخر عن هدف 4 ساعات عمل'), 'who holds it, and that it is late against 4 working hours');
+    check(await review.locator('.tracking-steps li[data-state="current"]').getAttribute('data-step'), 'review', 'the bar marks the review as the current step');
+    check(await review.locator('.tracking-steps li[data-state="done"]').count(), 1, 'only the registration is done');
+    // the other complaint is with the representative of sales
+    const handedCard = cardOf(rep, 'complaint', handed.id);
+    check([await handedCard.getAttribute('data-side'), await handedCard.getAttribute('data-stage'), await handedCard.getAttribute('data-severity')], ['sales', 'first_contact', 'high'], 'the assigned complaint waits on sales for the first contact, marked high');
+    ok((await handedCard.innerText()).includes('عند: أحمد المندوب (مندوب المبيعات)') && (await handedCard.innerText()).includes('التأخر في التسليم'), 'the representative of sales holds it');
+    // the opportunities: one passed through the supervisor, one went straight to the representative
+    const first = cardOf(rep, 'opportunity', caseId), second = cardOf(rep, 'opportunity', secondId);
+    check([await first.getAttribute('data-stage'), await first.getAttribute('data-side')], ['follow_up', 'sales'], 'the first opportunity is in sales follow-up');
+    ok((await first.innerText()).includes(CUSTOMER) && (await first.innerText()).includes('قيد متابعة المبيعات') && (await first.innerText()).includes('عند: أحمد المندوب (مندوب المبيعات)'), 'with its customer, stage and holder');
+    check([await first.locator('.tracking-steps li').count(), await first.locator('.tracking-steps li[data-step="delegation"]').getAttribute('data-state')], [7, 'done'], 'its bar shows the supervisor\'s delegation, done');
+    check(await second.locator('.tracking-steps li').count(), 6, 'the one assigned straight to the representative has no delegation step');
+    ok((await first.innerText()).includes('آخر ما سُجّل: تواصل'), 'and the last contact recorded');
+    ok(!(await board.innerText()).includes('سجّلها: '), 'a representative\'s cards do not name the registrar');
+    ok(!private_(await board.innerText()), 'the registration text is not on the board (the registrar reads her own registration in the list below, not here)');
+    // the rest of the page speaks of opportunities too
+    check((await rep.locator('.heading-actions button.primary').first().innerText()).trim(), 'فرصة جديدة', 'the page\'s action reads New opportunity');
+    const listFilters = await rep.locator('.followup-list-filters').innerText();
+    ok(listFilters.includes('كل الفرص') && !listFilters.includes('كل الزيارات'), 'the list\'s filters say All opportunities');
+    check(await rep.locator('.panel-heading h2', {hasText: 'سجل الفرص'}).count(), 1, 'and its heading says Opportunity history');
+    ok(!(await rep.locator('.visits-table, .rep-desktop-records').first().innerText()).includes('الزيارة'), 'no column or button of the list says visit');
+    await layoutOk(rep, 'tracking board, representative on a desktop'); await shot(rep, 'tracking-rep-desktop');
+
+    // the filters
+    const shown = async () => rep.locator('[data-tracking-card]').evaluateAll(cards => cards.map(card => card.getAttribute('data-tracking-card')));
+    await rep.locator('.tracking-tab[data-filter="late"]').click();
+    check([await shown(), await rep.locator('.tracking-tab[data-filter="late"]').getAttribute('aria-pressed')], [['complaint:' + waiting.id], 'true'], 'the late filter shows the old complaint alone');
+    await rep.locator('.tracking-tab[data-filter="service"]').click();
+    check(await shown(), ['complaint:' + waiting.id], 'with customer service: the complaint waiting for review');
+    await rep.locator('.tracking-tab[data-filter="sales"]').click();
+    check((await shown()).sort(), ['complaint:' + handed.id, 'opportunity:' + caseId, 'opportunity:' + secondId].sort(), 'with sales: the assigned complaint and the two opportunities');
+    await rep.locator('.tracking-tab[data-filter="finished"]').click();
+    check(await shown(), ['complaint:' + mistaken.id], 'finished: the cancelled complaint');
+    const cancelled = cardOf(rep, 'complaint', mistaken.id);
+    ok((await cancelled.innerText()).includes('ملغاة') && (await cancelled.innerText()).includes('انتهت') && (await cancelled.locator('.tracking-steps').count()) === 0, 'it says it was cancelled and has no bar');
+    await shot(rep, 'tracking-rep-finished');
+    await rep.locator('.tracking-tab[data-filter="all"]').click();
+    check((await shown()).length, 5, 'all shows all five');
+    check((await shown())[0], 'complaint:' + waiting.id, 'the late one comes first');
+    check((await shown()).at(-1), 'complaint:' + mistaken.id, 'the finished one comes last');
+
+    // the sheets carry the bar, and what is done in them reaches the board
+    await review.getByRole('button', {name: 'فتح الشكوى', exact: true}).click();
+    const complaintSheet = rep.locator('.complaint-sheet');
+    await complaintSheet.waitFor();
+    ok((await complaintSheet.locator('[role="heading"], h2').first().innerText()).includes('رقم ' + waiting.complaintNumber), 'the complaint sheet opens from the board');
+    check([await complaintSheet.locator('.tracking-sheet-steps .tracking-steps li').count(), await complaintSheet.locator('.tracking-sheet-steps li[data-state="current"]').getAttribute('data-step')], [6, 'review'], 'with the stage bar inside it');
+    await complaintSheet.locator('label.voice-field', {hasText: 'ملاحظة داخلية'}).locator('textarea').fill('اتصلت بالعميل وأبلغته أن الشكوى عند المدير');
+    await complaintSheet.getByRole('button', {name: 'إضافة الملاحظة', exact: true}).click();
+    await eventually(async () => (await app.db.prepare("SELECT json_array_length(data,'$.notes') AS n FROM crm_records WHERE id=?").bind(waiting.id).first('n')) === 1, 'the note is saved');
+    await rep.keyboard.press('Escape');
+    await complaintSheet.waitFor({state: 'detached'});
+    await eventually(async () => (await review.innerText()).includes('اتصلت بالعميل وأبلغته أن الشكوى عند المدير'), 'the board shows the note as the last thing recorded without a reload');
+    await first.getByRole('button', {name: 'فتح الفرصة', exact: true}).click();
+    const serviceSheet = rep.locator('.service-sheet');
+    await serviceSheet.waitFor();
+    check(await serviceSheet.locator('.tracking-sheet-steps .tracking-steps li[data-state="current"]').getAttribute('data-step'), 'follow_up', 'the opportunity sheet carries the bar with follow-up current');
+    ok((await serviceSheet.locator('.tracking-sheet-holder').innerText()).includes('عند: أحمد المندوب (مندوب المبيعات)'), 'and says who holds it');
+    await shot(rep, 'tracking-opportunity-sheet');
+    await rep.keyboard.press('Escape');
+    await serviceSheet.waitFor({state: 'detached'});
+
+    // English
+    await rep.getByRole('button', {name: 'English'}).first().click();
+    await board.locator('h2', {hasText: 'Tracking what you registered'}).waitFor();
+    const english = await board.innerText();
+    ok(['All', 'Late', 'With customer service', 'With sales', 'Finished (30 days)', 'With: ', 'Late against a 4-working-hour target', 'Open the complaint', 'Open the opportunity', 'Last recorded'].every(word => english.includes(word)), 'the board is in English');
+    check(english.replace(namesToStrip, ' ').match(/[؀-ۿ]+/g) || [], [], 'no Arabic wording is left in the English board (names and the text people typed aside)');
+    check((await rep.locator('.heading-actions button.primary').first().innerText()).trim(), 'New opportunity', 'the page\'s action in English');
+    const englishFilters = await rep.locator('.followup-list-filters').innerText();
+    ok(englishFilters.includes('All opportunities') && !/visit/i.test(englishFilters), 'the list\'s filters in English');
+    check(await rep.locator('.panel-heading h2', {hasText: 'Opportunity history'}).count(), 1, 'and its heading');
+    await layoutOk(rep, 'tracking board in English'); await shot(rep, 'tracking-rep-desktop-en');
+    await rep.context().close();
+
+    // on a phone: the bar is dots, the sheet's bar is a list, and nothing widens the page
+    const phone = await open('cs', {viewport: PHONE});
+    await goPhone(phone, 'activity');
+    const phoneBoard = phone.locator('.tracking-board');
+    await phoneBoard.waitFor();
+    await eventually(async () => (await countOf(phone, 'all')) === 5, 'the phone board loads');
+    check(await phoneBoard.locator('[data-tracking-card]').count(), 5, 'five cards, under the six that are shown');
+    check(await phoneBoard.locator('.tracking-steps[data-layout="card"] .tracking-step-label').first().evaluate(label => label.getBoundingClientRect().width <= 1), true, 'a card\'s bar is dots only on a phone: its labels are left to screen readers');
+    ok(await phoneBoard.locator('.badge').first().isVisible(), 'the stage is named in the badge above it');
+    await layoutOk(phone, 'tracking board on a phone'); await shot(phone, 'tracking-rep-phone');
+    await cardOf(phone, 'complaint', waiting.id).getByRole('button', {name: 'فتح الشكوى', exact: true}).click();
+    const phoneSheet = phone.locator('.complaint-sheet');
+    await phoneSheet.waitFor();
+    check(await phoneSheet.locator('.tracking-steps[data-layout="sheet"] .tracking-step-label').first().evaluate(label => label.getBoundingClientRect().width > 20), true, 'in a sheet every step is named, as a list');
+    await layoutOk(phone, 'complaint sheet with its bar on a phone'); await shot(phone, 'tracking-complaint-sheet-phone');
+    await phone.context().close();
+
+    // the manager sees the team's, with who registered each; a sales manager has no board
+    const lead = await open('csm', {viewport: DESKTOP});
+    await goDesktop(lead, 'الفرص');
+    const leadBoard = lead.locator('.tracking-board');
+    await leadBoard.waitFor();
+    await eventually(async () => (await countOf(lead, 'all')) === 5, 'the manager\'s board counts the same five');
+    check(await leadBoard.locator('h2').innerText(), 'متابعة ما سجّله فريقك وما سجّلته', 'the manager\'s heading');
+    ok((await leadBoard.innerText()).includes('سجّلها: ريم خدمة العملاء'), 'each card names who registered it');
+    check([await countOf(lead, 'late'), await countOf(lead, 'service'), await countOf(lead, 'sales'), await countOf(lead, 'finished')], [1, 1, 3, 1], 'the same counts');
+    await layoutOk(lead, 'tracking board, manager'); await shot(lead, 'tracking-manager-desktop');
+    await lead.context().close();
+    const sales = await open('sm', {viewport: DESKTOP});
+    await goDesktop(sales, 'الزيارات');
+    await sales.locator('.service-queue, .page-heading').first().waitFor();
+    check(await sales.locator('.tracking-board').count(), 0, 'a sales manager has no tracking board');
+    await sales.context().close();
+  }
+
   check(errors, [], 'no page errors in any browser');
   console.log(JSON.stringify({ok: true, checks, builtRelease: true, browser: 'chromium', androidApp: 'emulated bridge', physicalDevice: false, productionDataUsed: false, screenshots}));
 } finally {

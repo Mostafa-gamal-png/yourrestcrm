@@ -1,6 +1,7 @@
 // The customer-service case from registration to first contact, over real HTTP against the BUILT release (run `pnpm build`
 // first): what each role receives in /api/crm, who may act, history visibility along the case's chain, re-assignment,
-// the optional note, first opening, and that the customer-service registration text never reaches a sales reader.
+// the optional note, first opening, and that the customer-service registration text never reaches a sales reader. The case API also
+// carries each case's progress (stage, since when, working hours, target, late, the holder's role) and a lighter scope for the tracking board.
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -55,6 +56,10 @@ try {
   await app.db.prepare('UPDATE crm_service_cases SET created_at=? WHERE id=?').bind(new Date(Date.now() - 30 * 86400000).toISOString(), id1).run();
   const csmLate = entry(await queue('csm'), id1);
   check([csmLate.late, csmLate.stageHours > 4, csmLate.escalated, csmLate.targetHours], [true, true, false, 4], 'left for a month it is marked late for the one who owes the approval');
+  const lateCase = await getCase('csm', id1);
+  check([lateCase.progress.stage, lateCase.progress.late, lateCase.progress.stageHours > 4, lateCase.progress.targetHours, lateCase.progress.assigneeRole, lateCase.progress.finishedAt], ['approval', true, true, 4, '', ''], 'the case API carries the same progress for the board: the approval is late, nobody holds it in sales, nothing finished');
+  const registrarCase = await getCase('cs', id1);
+  check([registrarCase.progress.stage, registrarCase.progress.late, registrarCase.progress.since.length > 10], ['approval', true, true], 'the registrar reads it too');
   const adminLate = entry(await queue('owner'), id1);
   check([adminLate.late, adminLate.escalated], [true, true], 'and escalated to the administrator as before');
   check([(await queue('sm')).length, (await queue('sup')).length, (await queue('rep')).length], [0, 0, 0], 'while no sales role can see a request that has not been approved');
@@ -70,6 +75,7 @@ try {
   check((await queue('sup')).length, 0, 'a supervisor does not see a case still waiting for the manager');
   let smEntry = entry(await queue('sm'), id1);
   check([smEntry.stage, smEntry.awaiting, smEntry.ownerId, smEntry.late, smEntry.currentRepId, smEntry.permissions.assign], ['assignment', 'assign', 'sm', false, 'rep', true], 'the manager sees it awaiting his assignment, with the customer\'s current representative');
+  check([(await getCase('sm', id1)).progress.stage, (await getCase('cs', id1)).progress.stage, (await getCase('cs', id1)).progress.targetHours, (await getCase('cs', id1)).progress.late], ['assignment', 'assignment', 4, false], 'the board reads assignment, within its target, for the registrar as for the manager');
   check([smEntry.customerName, smEntry.source, smEntry.strength, smEntry.creatorName, smEntry.serviceManagerName], ['مصنع f1', 'call', 'strong', 'cs', 'csm'], 'the brief and the people');
   const smCase = await getCase('sm', id1);
   check([smCase.suggestedId, smCase.candidates.map(m => m.id).sort()], ['rep', ['outside', 'rep', 'rep2', 'sup', 'sup2']], 'the assignment sheet offers every supervisor and representative of the customer\'s region and branch (a manager\'s scope is all of sales), the current representative suggested');
@@ -82,6 +88,8 @@ try {
   check([await alertRows('sm'), await alertRows('sup')], [[], [[id1, 'delegate', false]]], 'the request moves from the manager\'s alerts to the supervisor\'s');  let supEntry = entry(await queue('sup'), id1);
   check([supEntry.stage, supEntry.awaiting, supEntry.assignmentNote, supEntry.assignmentNoteBy, supEntry.permissions.delegate], ['delegation', 'delegate', 'ركّز على قطع الغيار', 'sm', true], 'the supervisor sees it awaiting delegation with the instruction');
   check(entry(await queue('sm'), id1).stage, 'delegation', 'the manager follows it');
+  const delegationView = (await getCase('cs', id1)).progress;
+  check([delegationView.stage, delegationView.assigneeRole, delegationView.targetHours], ['delegation', 'supervisor', 4], 'the registrar sees it with the supervisor, awaiting delegation');
   check((await queue('rep')).length, 0, 'the representative does not see it yet');
   check((await act('sup', id1, {action: 'delegate', targetId: 'rep2', note: 'ابدأ بالاتصال'})).status, 200, 'the supervisor delegates to a representative with a note');
   check([await alertRows('sup'), await alertRows('rep2'), await alertRows('rep')], [[], [[id1, 'first_contact', false]], []], 'then to the representative it reaches, unopened');
@@ -93,6 +101,8 @@ try {
   check([repEntry.stage, repEntry.awaiting, repEntry.assignmentNote, repEntry.seenAt, repEntry.permissions.followup, repEntry.permissions.seen], ['first_contact', 'first_contact', 'ابدأ بالاتصال', '', true, true], 'the representative sees a new case with the latest instruction');
   check((await queue('rep')).length, 0, 'another representative sees nothing');
   const repCase = await getCase('rep2', id1);
+  check([repCase.progress.stage, repCase.progress.assigneeRole, repCase.progress.targetHours, repCase.progress.contactsSinceDispatch], ['first_contact', 'rep', 24, 0], 'the holder\'s own view carries the progress: first contact, 24 hours');
+  check([(await getCase('cs', id1)).progress.stage, (await getCase('cs', id1)).progress.assigneeRole], ['first_contact', 'rep'], 'and the registrar\'s');
   const labels = repCase.history.map(h => h.actor + ':' + h.detail.label);
   check(labels, ['cs:تسجيل طلب خدمة العملاء', 'csm:اعتماد وإحالة للمبيعات', 'sm:تكليف المبيعات', 'sup:تكليف مندوب'], 'the case history reaches the representative along the case\'s own chain');
   check(repCase.history.filter(h => h.detail.note).map(h => h.detail.note), ['ركّز على قطع الغيار', 'ابدأ بالاتصال'], 'including the instructions written for him');
@@ -152,6 +162,8 @@ try {
   const contacted = entry(await queue('rep'), id1);
   check([await alertRows('rep'), (await alerts('rep')).count], [[], 0], 'after the first contact nothing waits for him and the count clears');  check([contacted.stage, contacted.awaiting, contacted.contactsSinceDispatch, contacted.targetHours, contacted.late], ['follow_up', null, 1, null, false], 'the case is now in follow-up and no longer awaits him');
   check(entry(await queue('sm'), id1).stage, 'follow_up', 'the manager sees the same stage');
+  const followCase = (await getCase('cs', id1)).progress;
+  check([followCase.stage, followCase.contactsSinceDispatch, followCase.targetHours, followCase.late, followCase.finishedAt], ['follow_up', 1, null, false, ''], 'the registrar\'s board reads follow-up, with no target and so never late');
   check((await getCase('cs', id1)).contacts.length, 1, 'customer service sees the contact');
   check((await act('sm', id1, {action: 'reassign', targetId: 'rep2'})).status, 200, 'a case with contacts can still be re-assigned');
   const afterMove = entry(await queue('rep2'), id1);
@@ -174,6 +186,30 @@ try {
   const resubmitted = entry(await queue('owner'), id2);
   check([resubmitted.stage, resubmitted.awaiting], ['approval', 'approve'], 'back to approval');
   check(Date.parse((await getCase('owner', id2)).data.resubmittedAt) > Date.now() - 60000, true, 'the approval clock restarted at resubmission');
+
+  // ---- what the tracking board asks for: the open cases and those finished within thirty days, without the routing candidates
+  const progressOf = async (id, caseId, scope = '') => (await (await as(id)('/api/customer-service' + scope)).json()).cases.find(item => item.id === caseId);
+  await customer('f4', 'rep');
+  const third = await as('cs')('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'f4', customerVersion: 1, data: {source: 'call', products: ['خدمات صيانة'], strength: 'medium', needs: 'صيانة قالب', nextAction: 'اتصال', nextDate: day}}});
+  const id3 = third.json().id;
+  check((await act('csm', id3, {action: 'approve', targetId: 'sm'})).status, 200, 'a third request is approved');
+  check((await act('sm', id3, {action: 'assign', targetId: 'rep'})).status, 200, 'and assigned to a representative');
+  const won = await as('rep')('/api/visits', {method: 'POST', body: {createKey: crypto.randomUUID(), customerId: 'f4', customerVersion: (await app.db.prepare("SELECT version FROM crm_records WHERE id='f4'").first()).version, timingMode: 'automatic', elapsedMilliseconds: 2000, data: {type: 'call', date: day, summary: 'تواصل مع العميل', result: 'تم التعاقد', salesStage: 'won', strength: 'strong', nextAction: 'تسليم', nextDate: day, location: '26.43, 50.03', locationSource: 'device', locationCapturedAt: new Date().toISOString(), locationAccuracy: 10}}});
+  check(won.status, 200, 'the representative wins it: ' + won.text.slice(0, 100));
+  const finished = await progressOf('cs', id3);
+  check([finished.state, finished.progress.stage, finished.progress.late, finished.progress.targetHours, Date.now() - Date.parse(finished.progress.finishedAt) < 60000], ['won', 'closed', false, null, true], 'a won case: closed, never late, finished a moment ago');
+  check([!!(await progressOf('cs', id3, '?scope=board')), !!(await progressOf('csm', id3, '?scope=board'))], [true, true], 'the board asks for it and gets it, for the registrar and the manager');
+  const boardOpen = await progressOf('csm', id2, '?scope=board'), fullOpen = await progressOf('csm', id2);
+  check([fullOpen.candidates.length > 0, boardOpen.candidates, boardOpen.suggestedId, boardOpen.progress.stage, boardOpen.permissions.approve], [true, [], '', 'approval', true], 'the board scope drops the routing candidates it never uses and keeps the rest');
+  await app.db.prepare('UPDATE crm_service_cases SET updated_at=? WHERE id=?').bind(new Date(Date.now() - 40 * 86400000).toISOString(), id3).run();
+  await app.db.prepare("UPDATE crm_records SET created_at=? WHERE kind='activity' AND json_extract(data,'$.serviceCaseId')=?").bind(new Date(Date.now() - 40 * 86400000).toISOString(), id3).run();
+  check([!!(await progressOf('cs', id3, '?scope=board')), !!(await progressOf('csm', id3, '?scope=board'))], [false, false], 'forty days after it finished, the board no longer asks for it');
+  const history = await progressOf('cs', id3);
+  check([history.state, history.progress.stage, Date.now() - Date.parse(history.progress.finishedAt) > 39 * 86400000], ['won', 'closed', true], 'while the case itself keeps its history, finish date included');
+  check([(await progressOf('cs', id1, '?scope=board')).progress.stage, (await progressOf('cs', id2, '?scope=board')).progress.stage], ['first_contact', 'approval'], 'open cases stay on the board however old (the first was moved to another holder, who owes a first contact)');
+  check((await app.request('/api/customer-service?scope=board')).status, 401, 'the board scope needs a session like the rest');
+  check((await progressOf('rep2', id1, '?scope=board')).progress.stage, 'first_contact', 'a sales reader gets the progress of their case too');
+  check(JSON.stringify(await cases('rep2')).includes('PRIVATE-') || JSON.stringify((await as('rep2')('/api/customer-service?scope=board')).json()).includes('PRIVATE-'), false, 'and still no registration text');
 
   console.log(JSON.stringify({ok: true, checks, builtRelease: true, productionDataUsed: false}));
 } finally { await app.stop(); }

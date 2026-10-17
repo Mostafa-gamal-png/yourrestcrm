@@ -1,0 +1,50 @@
+/* The tracking board at the top of the Opportunities page for customer-service members, and the stage bar it shares with the sheets. */
+.tracking-board{display:grid;gap:14px;margin-bottom:18px;padding:16px}
+.tracking-heading h2{margin:0;font-size:19px;display:flex;align-items:center;gap:8px}.tracking-heading p{margin:2px 0 0;color:var(--muted-foreground);font-size:14px;line-height:1.7}
+.tracking-tabs{display:flex;flex-wrap:wrap;gap:8px}
+.tracking-tab{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:inherit;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.tracking-tab[aria-pressed=true]{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 10%,var(--background));color:var(--primary)}
+.tracking-count{font-size:12.5px;font-weight:700;min-width:22px;text-align:center;padding:1px 7px;border-radius:999px;background:#dcefe4;color:#1b6a47}
+.tracking-tab[data-late-tab=true] .tracking-count{background:#f5e9c8;color:#7a5410}
+.tracking-cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr))}
+.tracking-card{display:grid;gap:9px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);min-width:0;align-content:start}
+.tracking-card[data-late=true]{border-color:#d4a53a;box-shadow:0 0 0 1px #f0dfb0 inset}
+.tracking-card[data-side=done]{opacity:.88}
+.tracking-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.tracking-card h4{margin:2px 0 0;font-size:16px;overflow-wrap:anywhere}
+.tracking-kind{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:#e1ecf5;color:#24517a}.tracking-kind[data-kind=complaint]{background:#fde4df;color:#8f2f19}
+.tracking-subject{margin:0;font-size:14px;line-height:1.7;overflow-wrap:anywhere}.tracking-number{font-weight:700;color:var(--primary)}
+.tracking-card[data-severity=high] .tracking-subject::before{content:"!";display:inline-grid;place-items:center;width:18px;height:18px;margin-inline-end:6px;border-radius:50%;background:#c8412b;color:#fff;font-size:12px;font-weight:700}
+.tracking-holder{margin:0;display:flex;align-items:flex-start;flex-wrap:wrap;gap:6px 8px;font-size:14px;line-height:1.7}.tracking-holder>svg{flex:none;margin-top:5px;color:var(--muted-foreground)}
+.tracking-late{display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px;background:#f5e9c8;color:#7a5410}
+.tracking-last,.tracking-registered{font-size:12.5px;color:var(--muted-foreground);line-height:1.6;overflow-wrap:anywhere}
+.tracking-actions{display:flex;flex-wrap:wrap;gap:8px}
+.tracking-empty{margin:0;padding:12px 4px;color:var(--muted-foreground)}
+.tracking-more{justify-self:start}
+/* The stage bar: a dot per step joined by a line, filled up to the current step. */
+.tracking-steps{list-style:none;margin:0;padding:0;display:flex;align-items:flex-start}
+.tracking-steps li{flex:1 1 0;min-width:0;display:grid;justify-items:center;align-content:start;gap:5px;position:relative;text-align:center;font-size:11.5px;line-height:1.35;color:var(--muted-foreground)}
+.tracking-steps li::before{content:"";position:absolute;top:7px;inset-inline-start:-50%;width:100%;height:2px;background:var(--border)}
+.tracking-steps li:first-child::before{display:none}
+.tracking-dot{position:relative;z-index:1;width:16px;height:16px;border-radius:50%;border:2px solid var(--border);background:var(--background)}
+.tracking-steps li[data-state=done]::before,.tracking-steps li[data-state=current]::before{background:#1b6a47}
+.tracking-steps li[data-state=done] .tracking-dot{background:#1b6a47;border-color:#1b6a47}
+.tracking-steps li[data-state=current]{color:var(--foreground);font-weight:700}.tracking-steps li[data-state=current] .tracking-dot{border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent)}
+.tracking-card[data-late=true] .tracking-steps li[data-state=current] .tracking-dot{border-color:#c8412b;box-shadow:0 0 0 3px #f6d2c9}
+.tracking-steps li[data-returned=true] .tracking-dot{border-color:#c8412b}
+.dark .tracking-count{background:#244936;color:#a0e0be}.dark .tracking-tab[data-late-tab=true] .tracking-count{background:#4a3d20;color:#e7c77c}
+.dark .tracking-card[data-late=true]{border-color:#9a7a2a;box-shadow:0 0 0 1px #4a3d20 inset}
+.dark .tracking-kind{background:#22384c;color:#b6d3ee}.dark .tracking-kind[data-kind=complaint]{background:#5a2b22;color:#f7c2b6}
+.dark .tracking-late{background:#4a3d20;color:#e7c77c}
+.dark .tracking-steps li[data-state=done]::before,.dark .tracking-steps li[data-state=current]::before{background:#2d8a62}.dark .tracking-steps li[data-state=done] .tracking-dot{background:#2d8a62;border-color:#2d8a62}
+.dark .tracking-card[data-late=true] .tracking-steps li[data-state=current] .tracking-dot{box-shadow:0 0 0 3px #5a2b22}
+@media (max-width:640px){
+ .tracking-board{padding:12px}
+ .tracking-cards{grid-template-columns:1fr}
+ .tracking-tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin-inline:-2px}.tracking-tab{flex:none}
+ /* On a phone a card's bar is dots only (the stage is in the badge above it); a sheet's bar becomes a list with every step named. */
+ .tracking-steps[data-layout=card] li .tracking-step-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+ .tracking-steps[data-layout=sheet]{flex-direction:column;gap:8px}
+ .tracking-steps[data-layout=sheet] li{display:flex;align-items:center;gap:10px;text-align:start;font-size:13px}.tracking-steps[data-layout=sheet] li::before{display:none}
+ .tracking-actions .btn{flex:1}
+}
+.tracking-sheet-steps{display:grid;gap:8px;margin:0 0 4px}.tracking-sheet-steps h3{margin:0;font-size:15px}

@@ -8,14 +8,18 @@ import {z} from 'zod';
 import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {schemas,type AuditEntry,type Member,type Row} from '@/lib/crm';
+import {caseProgress} from '@/lib/service-queue';
+import {TRACKING_FINISHED_DAYS} from '@/lib/service-tracking';
 import {activeServiceCase,canReadService,isServiceRole,serviceCandidates,serviceChainIds,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase,type ServiceCaseData,type ServiceRegistration} from '@/lib/customer-service';
 export const dynamic='force-dynamic';
 type Context=Awaited<ReturnType<typeof context>>;
 type RegistrationData=Omit<z.infer<typeof schemas.activity>,'type'|'visitWorkflow'|'customerStage'>&{type:'visit'|'call'|'email'|'whatsapp'|'website'|'social';visitWorkflow?:string;customerStage?:string};
 const customerChoices=(c:Context)=>c.regionalRecords.filter(r=>r.kind==='customer'&&(c.me.role==='admin'||r.branch===c.me.branch));
 function memberGate(m:Member){return{sql:"EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND active=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=?)",args:[m.id,m.role,m.active,m.branch,m.supervisorId||'',regionScope(m)]};}
-export async function GET(){try{
- const c=await context(),rows=c.serviceCases.filter(s=>canReadService(s,c)),salesReader=!isServiceRole(c.me.role),allowedMembers=salesScopeMemberIds(c.members,c.me),contactRecords=salesReader?c.visible:c.all;
+export async function GET(req:Request){try{
+ // The tracking board asks for the open cases and those finished within its window, without the routing candidates.
+ const board=new URL(req.url).searchParams.get('scope')==='board';
+ const c=await context(),now=new Date().toISOString(),rows=c.serviceCases.filter(s=>canReadService(s,c)),salesReader=!isServiceRole(c.me.role),allowedMembers=salesScopeMemberIds(c.members,c.me),contactRecords=salesReader?c.visible:c.all;
  const canReadRegistration=(registration:ServiceRegistration|undefined,creator:string)=>!salesReader||canReadSalesRecord({kind:'activity',assignedTo:creator,data:registration||{performedBy:creator}} as Row,c.members,c.me);
  const visibleData=(item:ServiceCase)=>{const data={...item.data};if(!canReadRegistration(data.registration,item.creatorId))delete data.registration;if(data.registrations)data.registrations=data.registrations.filter(entry=>canReadRegistration(entry.registration,item.creatorId));return data;};
  const ids=new Set(rows.map(s=>s.id));
@@ -24,11 +28,13 @@ export async function GET(){try{
  // A sales reader sees what their own team wrote and what the case's own chain (registrar, both managers, supervisor, holder) wrote on it; other recorders stay private.
  const historyVisible=(entry:{actor:string},item:ServiceCase)=>{if(!salesReader||c.me.role==='admin')return true;const actor=actorOf(entry.actor);return !!actor&&(allowedMembers.has(actor.id)||serviceChainIds(item).includes(actor.id));};
  const name=(id:string|null)=>c.members.find(m=>m.id===id)?.name||'';
- const cases=rows.map(s=>{const customer=c.all.find(r=>r.id===s.customerId)!,contacts=serviceContacts(s,contactRecords),permissions=servicePermissions(s,c),latest=contacts[0];
-  const dispatch=permissions.approve?'approve':permissions.assign?'assign':permissions.reassign?'reassign':permissions.delegate?'delegate':'',candidates=dispatch?serviceCandidates(s,c,dispatch):[];
+ const cases=rows.flatMap(s=>{const customer=c.all.find(r=>r.id===s.customerId)!,contacts=serviceContacts(s,contactRecords),permissions=servicePermissions(s,c),latest=contacts[0],state=serviceState(s,contactRecords,c.members),assignee=c.members.find(m=>m.id===s.assignedTo),progress=caseProgress(s,state,contacts,assignee?.role||'',now);
+  const finishedAt=state==='won'||state==='lost'?[latest?.createdAt,s.updatedAt].filter(Boolean).sort().at(-1)||'':'';
+  if(board&&finishedAt&&Date.parse(now)-Date.parse(finishedAt)>TRACKING_FINISHED_DAYS*86400000)return [];
+  const dispatch=permissions.approve?'approve':permissions.assign?'assign':permissions.reassign?'reassign':permissions.delegate?'delegate':'',candidates=dispatch&&!board?serviceCandidates(s,c,dispatch):[];
   // The customer's current holder is offered first, so the usual assignment is one tap.
   const suggestedId=(dispatch==='assign'||dispatch==='reassign')&&candidates.some(m=>m.id===customer.assignedTo)?customer.assignedTo:'';
-  return{...s,data:visibleData(s),customer:{id:customer.id,name:customer.data.name,phone:customer.data.phone,contact:customer.data.contact,city:customer.data.city,region:customer.data.region,version:customer.version},state:serviceState(s,contactRecords,c.members),stage:latest?.data.salesStage||'new',nextAction:latest?.data.nextAction??s.data.nextAction,nextDate:latest?.data.nextDate??s.data.nextDate,creatorName:name(s.creatorId),serviceManagerName:name(s.serviceManagerId),salesManagerName:name(s.salesManagerId),assignedName:name(s.assignedTo),supervisorName:name(s.supervisorId),permissions,candidates:candidates.map(m=>({id:m.id,name:m.name,role:m.role})),suggestedId,history:history.filter(a=>a.recordId===s.id&&historyVisible(a,s)),contacts:contacts.map(r=>({id:r.id,date:r.data.date,type:r.data.type,result:r.data.result,summary:r.data.summary,salesStage:r.data.salesStage,nextAction:r.data.nextAction,nextDate:r.data.nextDate,lossReason:r.data.lossReason,competitorFileId:r.data.competitorFileId,competitorFileName:r.data.competitorFileName,actor:name(recordAuthorId(r,c.members)||''),createdAt:r.createdAt}))};});
+  return[{...s,data:visibleData(s),customer:{id:customer.id,name:customer.data.name,phone:customer.data.phone,contact:customer.data.contact,city:customer.data.city,region:customer.data.region,version:customer.version},state,progress:{...progress,assigneeRole:assignee?.role||'',finishedAt},stage:latest?.data.salesStage||'new',nextAction:latest?.data.nextAction??s.data.nextAction,nextDate:latest?.data.nextDate??s.data.nextDate,creatorName:name(s.creatorId),serviceManagerName:name(s.serviceManagerId),salesManagerName:name(s.salesManagerId),assignedName:name(s.assignedTo),supervisorName:name(s.supervisorId),permissions,candidates:candidates.map(m=>({id:m.id,name:m.name,role:m.role})),suggestedId,history:history.filter(a=>a.recordId===s.id&&historyVisible(a,s)),contacts:contacts.map(r=>({id:r.id,date:r.data.date,type:r.data.type,result:r.data.result,summary:r.data.summary,salesStage:r.data.salesStage,nextAction:r.data.nextAction,nextDate:r.data.nextDate,lossReason:r.data.lossReason,competitorFileId:r.data.competitorFileId,competitorFileName:r.data.competitorFileName,actor:name(recordAuthorId(r,c.members)||''),createdAt:r.createdAt}))}];});
  const canCreate=c.me.role==='admin'||isServiceRole(c.me.role);
  return Response.json({cases,canCreate,customers:canCreate?customerChoices(c).map(r=>({id:r.id,name:r.data.name,code:r.data.code,phone:r.data.phone,region:r.data.region,city:r.data.city,version:r.version})):[]},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return replyError(e);}}
