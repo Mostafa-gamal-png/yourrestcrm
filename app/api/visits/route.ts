@@ -11,6 +11,7 @@ import {riyadhDate} from '@/lib/visits';
 import {prepareNewContact,validateFollowup,type ContactData,type OpportunityData} from '@/lib/followups-server';
 import {prepareJourneyVisitLink} from '@/lib/journeys-server';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
+import {enforceVisitPlace,adoptCustomerPlace} from '@/lib/visit-place-server';
 export const dynamic='force-dynamic';
 type VisitData=Omit<z.infer<typeof schemas.activity>,'customerStage'>&{customerStage?:string}&ContactData;
 export async function POST(req:Request){try{
@@ -85,6 +86,10 @@ export async function POST(req:Request){try{
  // The link is guarded together with this record so switching a destination cannot
  // attach a visit to a different stop while the activity is being saved.
  const journey=await prepareJourneyVisitLink(c,customer.id,id,data,old,gate,ga,occurredAt,isRecord(body.data)?body.data.journeyStopId:undefined);data=journey.data;
+ // A new physical visit is recorded where the customer is: a representative anywhere else is refused with the distance, the others are marked.
+ const place=old?undefined:await enforceVisitPlace(c,customer,data,{stop:journey.stop,now,memberId:c.me.id});
+ if(place){if(place.distance!==null)data.placeDistance=Math.round(place.distance);if(place.outside)data.placeOutside=true;}
+ if(old)for(const key of ['placeDistance','placeOutside'])if(old.data[key]!==undefined)data[key]=old.data[key];
  const priorVisits=customerVisits(customer.id,c.all),latest=priorVisits[0];
  const candidate={...customer,id,kind:'activity' as const,data,createdAt:old?.createdAt||occurredAt};
  const priorPlan=priorVisits.find(v=>v.id!==id),planVisit=!priorPlan||visitOrder(candidate).localeCompare(visitOrder(priorPlan))>=0?candidate:priorPlan;
@@ -104,6 +109,7 @@ export async function POST(req:Request){try{
  if(old)statements.push(c.db.prepare(`UPDATE crm_records SET data=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND ${locks}`).bind(JSON.stringify(data),now,mutation,id,old.version,...lockArgs));
  else statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_records (id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'activity',?,?,?,?,?,?,1,? WHERE ${locks}`).bind(id,customer.id,customer.assignedTo,customer.branch,JSON.stringify(data),now,now,mutation,...lockArgs));
  statements.push(...journey.statements);
+ if(place?.adopt)statements.push(...adoptCustomerPlace(c,customer,data,id,now,gate,ga));
  statements.push(c.db.prepare(`INSERT INTO crm_visit_numbers (record_id) SELECT ? WHERE ${gate} AND NOT EXISTS (SELECT 1 FROM crm_visit_numbers WHERE record_id=?)`).bind(id,...ga,id));
  statements.push(c.db.prepare(`UPDATE crm_records SET data=json_set(data,'$.visitNumber',(SELECT number FROM crm_visit_numbers WHERE record_id=?)) WHERE id=? AND ${gate}`).bind(id,id,...ga));
  if(writingRequest){

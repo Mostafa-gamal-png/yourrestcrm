@@ -1263,5 +1263,13 @@
   "ينتقل العميل وسجلاته إلى المكلَّف الجديد، وتبقى زيارات المكلَّف السابق باسمه.": "The customer and its records move to the new holder; the previous holder's visits stay under their name.",
   "المناطق المختارة": "Selected regions",
   "اختر منطقة واحدة على الأقل": "Choose at least one region",
-  "يرى كل المناطق": "Sees every region"
+  "يرى كل المناطق": "Sees every region",
+  "لا يمكن تسجيل الزيارة إلا عند العميل. أنت على بعد {0} متر من موقع «{1}» (الدقة ±{2} متر). انتقل إلى موقع العميل ثم اضغط تحديث موقع الجهاز.": "A visit can only be recorded at the customer's place. You are {0} meters from «{1}» (accuracy ±{2} meters). Go to the customer's place, then tap Refresh device location.",
+  "دقة الموقع ضعيفة (±{0} متر) فلا يمكن التأكد أنك عند «{1}». اخرج إلى مكان مكشوف أو شغّل GPS ثم اضغط تحديث موقع الجهاز.": "The location accuracy is weak (±{0} meters), so it cannot be confirmed that you are at «{1}». Go outdoors or turn on GPS, then tap Refresh device location.",
+  "محاولة تسجيل زيارة بعيدة عن العميل": "Attempt to record a visit away from the customer",
+  "على بعد {0} متر والمسموح {1} متر": "{0} meters away; {1} meters allowed",
+  "تسجيل موقع العميل من زيارة": "Customer location recorded from a visit",
+  "لم يكن للعميل موقع مسجل؛ اعتُمد موقع هذه الزيارة": "The customer had no recorded location; this visit's location was adopted",
+  "يلزم السماح بالموقع لحفظ المتابعة.": "Allow location access to save the follow-up.",
+  "تعذر تحديد الموقع. أعد المحاولة.": "Could not determine the location. Try again."
 }

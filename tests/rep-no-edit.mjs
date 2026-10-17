@@ -88,7 +88,8 @@ const linked=await post({...visitBody(),requestId:requested.requestId},200,visit
 // Viewing the same history and recording a physical journey remains available.
 const payload=await read();for(const id of [customer.id,visit.id,followed.id,requested.id,linked.id])check(payload.records.some(r=>r.id===id),true);
 const selected=await post({action:'select',createKey:crypto.randomUUID(),customerId:customer.id},200,journeys);check(selected.stop.memberId,'rep');
-const physical=await post({...visitBody(),data:{...contactData,type:'visit',journeyStopId:selected.stop.id}},200,visits);check(row(physical.id).data.journeyStopId,selected.stop.id);
+// A physical visit is recorded where the customer is, which by now is the point the edit above gave it.
+const physical=await post({...visitBody(),data:{...contactData,type:'visit',journeyStopId:selected.stop.id,location:'26.44, 50.04'}},200,visits);check(row(physical.id).data.journeyStopId,selected.stop.id);
 await post({action:'end',stopId:selected.stop.id,reason:'contact_type_changed'},200,journeys);check(!!sql.prepare('SELECT closed_at FROM crm_journey_stops WHERE id=?').get(selected.stop.id).closed_at,true);
 // Managers and supervisors keep team edit rights. A role change before commit blocks
 // the edit atomically, and a regional change before an append blocks that new entry.
