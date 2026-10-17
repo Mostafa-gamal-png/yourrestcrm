@@ -46,8 +46,8 @@ export type ComplaintAwaiting='review'|'fix'|'assign'|'delegate'|'contact'|'reso
 export type ComplaintUpdate={id:string;at:string;by:string;channel:string;date:string;text:string};
 export type ComplaintNote={id:string;at:string;by:string;text:string};
 /** One step of the complaint's life, kept on the row so the page can tell its story without the audit table. */
-export type ComplaintEvent={at:string;by:string;action:string;text?:string;targetId?:string;outcome?:string};
-export type ComplaintOutcome={outcome:string;note:string;by:string;at:string};
+export type ComplaintEvent={at:string;by:string;action:string;text?:string;targetId?:string;outcome?:string;rating?:number};
+export type ComplaintOutcome={outcome:string;note:string;by:string;at:string;/** The customer's rating out of 5, entered with the closure when the representative asked for it. */rating?:number};
 export type ComplaintData={
  kind:'complaint';customerId:string;status:ComplaintStatus;
  /** Who registered it, the customer-service manager it waits for, the sales manager it was handed to, the supervisor it passed through and who holds it now. */
