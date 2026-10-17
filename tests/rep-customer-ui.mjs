@@ -7,6 +7,7 @@ import {createRequire} from 'node:module';
 import React from 'react';
 import * as jsx from 'react/jsx-runtime';
 import ts from 'typescript';
+import {makeVoiceField,expandVoiceFields} from '../scripts/lib/voice-field-stub.mjs';
 
 const root=process.cwd(),nativeRequire=createRequire(import.meta.url),cache=new Map();
 const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
@@ -30,7 +31,7 @@ function library(filename){
 function commonRequire(name){
  if(name==='react')return React;
  if(name==='react/jsx-runtime')return jsx;
- if(name==='@/lib/i18n')return i18n;
+ if(name==='./voice-field')return {__esModule:true,default:VoiceFieldStub};if(name==='@/lib/i18n')return i18n;
  if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
  if(name==='@base-ui/react')return {Combobox:mock};
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
@@ -44,8 +45,10 @@ function commonRequire(name){
 function nodes(tree,predicate){
  if(!tree||typeof tree!=='object')return [];
  if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));
+ tree=expandVoiceFields(tree);
  return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate),...nodes(tree.props?.actions,predicate),...nodes(tree.props?.filters,predicate)];
 }
+const VoiceFieldStub=makeVoiceField(value=>i18n.t(value));
 function text(tree){if(tree===null||tree===undefined||typeof tree==='boolean')return '';if(typeof tree!=='object')return String(tree);if(Array.isArray(tree))return tree.map(text).join('');return text(tree.props?.children);}
 function button(tree,label){return nodes(tree,node=>node.type==='button'&&text(node)===label)[0];}
 function stateNames(filename){

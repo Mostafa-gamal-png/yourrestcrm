@@ -9,6 +9,7 @@ import React from 'react';
 import * as jsx from 'react/jsx-runtime';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
+import {makeVoiceField,expandVoiceFields} from '../scripts/lib/voice-field-stub.mjs';
 
 const root=process.cwd(),nativeRequire=createRequire(import.meta.url),cache=new Map();
 const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
@@ -21,7 +22,8 @@ const i18n={t:translate,useLanguage:()=>({language}),getLanguage:()=>language,di
 function load(file,require){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:compiler}).outputText,{exports,require,console,Intl,crypto:globalThis.crypto,structuredClone,AbortController,URL,setTimeout,clearTimeout});return exports;}
 function library(file){if(cache.has(file))return cache.get(file);const value=load(file,name=>name.startsWith('.')?library(path.join(path.dirname(file),name)+'.ts'):nativeRequire(name));cache.set(file,value);return value;}
 const {operationalIndicators}=library('lib/kpis.ts'),{targetProducts}=library('lib/targets.ts');
-function nodes(tree,predicate){if(!tree||typeof tree!=='object')return [];if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate)];}
+function nodes(tree,predicate){if(!tree||typeof tree!=='object')return [];if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));tree=expandVoiceFields(tree);return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate)];}
+const VoiceFieldStub=makeVoiceField(value=>i18n.t(value));
 function text(tree){if(tree===null||tree===undefined||typeof tree==='boolean')return '';if(typeof tree!=='object')return String(tree);return Array.isArray(tree)?tree.map(text).join(''):text(tree.props?.children);}
 const button=(tree,label)=>nodes(tree,node=>node.type==='button'&&text(node).trim()===label)[0];
 const classNode=(tree,name)=>nodes(tree,node=>node.props?.className?.split(' ').includes(name))[0];
@@ -29,7 +31,7 @@ const indicator=(tree,id)=>nodes(tree,node=>node.props?.className==='kpi-indicat
 function KpiEvidenceEditor(){return null;}
 const table=Object.fromEntries(Object.entries({Table:'table',TableHeader:'thead',TableHead:'th',TableRow:'tr',TableBody:'tbody',TableCell:'td'}).map(([name,tag])=>[name,({children,...props})=>React.createElement(tag,props,children)]));
 function imports(name,hooks=React){
- if(name==='react')return hooks;if(name==='react/jsx-runtime')return jsx;if(name==='@/lib/i18n')return i18n;if(name==='lucide-react')return icons;
+ if(name==='react')return hooks;if(name==='react/jsx-runtime')return jsx;if(name==='./voice-field')return {__esModule:true,default:VoiceFieldStub};if(name==='@/lib/i18n')return i18n;if(name==='lucide-react')return icons;
  if(name==='./target-gauge')return load('app/target-gauge.tsx',entry=>imports(entry,hooks));
  if(name==='./kpi-evidence-editor')return {__esModule:true,default:KpiEvidenceEditor};
  if(name==='@/components/ui/table')return table;

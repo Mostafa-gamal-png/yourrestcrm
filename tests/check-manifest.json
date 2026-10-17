@@ -83,6 +83,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/dictation-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
       "file": "tests/erp-sales-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

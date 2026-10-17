@@ -14,9 +14,11 @@ export const NATIVE_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) Apple
  *  state: fields merged over the initial state. grant: what the person accepts when the app asks
  *  ({consent, fine, notifications, background}, all true by default). lateBridgeMs: the bridge appears after a delay.
  *  noBridge: the page runs inside the app's user agent but the bridge never appears.
+ *  speech: what dictation answers, as the app's speech service (protocol 1, since app 1.0.8) would: {text} says that text, {error} fails with
+ *  that code (speech_permission, speech_network, ...), {hold: true} waits until cancelled. speech: false announces an app without the service.
  */
 export function nativeBridgeSource(options = {}) {
-  const config = {regionScope: 'all', appVersion: '1.0.10', latencyMs: 0, lateBridgeMs: 0, noBridge: false, userAgent: NATIVE_USER_AGENT, state: {}, ...options, grant: {consent: true, fine: true, notifications: true, background: true, ...(options.grant || {})}};
+  const config = {regionScope: 'all', appVersion: '1.0.10', latencyMs: 0, lateBridgeMs: 0, noBridge: false, userAgent: NATIVE_USER_AGENT, state: {}, speech: {text: 'نص مُملى بالصوت'}, ...options, grant: {consent: true, fine: true, notifications: true, background: true, ...(options.grant || {})}};
   return `(() => {
   const config = ${JSON.stringify(config)};
   try { Object.defineProperty(Navigator.prototype, 'userAgent', {get: () => config.userAgent, configurable: true}); } catch {}
@@ -65,10 +67,21 @@ export function nativeBridgeSource(options = {}) {
     logout() { Object.assign(state, {enrolled: false, memberId: null, enrolledRole: null, regionScope: null, stopId: null}); mock.changed(); },
     refreshAccount(payload) { state.memberId = payload.memberId || state.memberId; state.regionScope = config.regionScope; mock.changed(); }
   };
+  // Dictation as the app's speech service answers it: one session at a time, ended by speechCancel, with what the test says it heard.
+  const speech = {plan: config.speech || {}, queue: [], held: new Map()};
+  mock.speech = speech;
+  const answer = async payload => {
+    const plan = speech.queue.length ? speech.queue.shift() : speech.plan;
+    if (plan.hold) return new Promise(resolve => speech.held.set(payload.sessionId, resolve));
+    if (plan.error) throw new Error(plan.error);
+    return {sessionId: payload.sessionId, cancelled: false, text: plan.text || ''};
+  };
   const bridge = {
-    speechProtocol: 0, speechSupported: false,
+    speechProtocol: config.speech === false ? 0 : 1, speechSupported: config.speech !== false,
     async request(method, payload = {}) {
       mock.calls.push({method, payload: clone(payload), at: Date.now(), userActivation: navigator.userActivation ? navigator.userActivation.isActive : null});
+      if (method === 'speechStart') return answer(payload);
+      if (method === 'speechCancel') { speech.held.get(payload.sessionId)?.({sessionId: payload.sessionId, cancelled: true, text: ''}); speech.held.delete(payload.sessionId); return {sessionId: payload.sessionId, cancelled: true, text: ''}; }
       if (config.latencyMs) await new Promise(resolve => setTimeout(resolve, config.latencyMs)); else await Promise.resolve();
       if (mock.failures.has(method)) { const message = mock.failures.get(method); mock.failures.delete(method); throw new Error(message); }
       const handler = handlers[method];
@@ -94,6 +107,9 @@ export function nativeControl(page) {
     grant: grant => page.evaluate(value => Object.assign(window.__nativeMock.grant, value), grant),
     calls: () => page.evaluate(() => window.__nativeMock.calls.slice()),
     clearCalls: () => page.evaluate(() => { window.__nativeMock.calls.length = 0; }),
-    failNext: (method, message) => page.evaluate(([name, text]) => window.__nativeMock.failNext(name, text), [method, message])
+    failNext: (method, message) => page.evaluate(([name, text]) => window.__nativeMock.failNext(name, text), [method, message]),
+    /** What dictation answers from now on: {text}, {error}, or {hold: true}; `once` answers only the next session. */
+    speech: (plan, {once = false} = {}) => page.evaluate(([value, single]) => { if (single) window.__nativeMock.speech.queue.push(value); else window.__nativeMock.speech.plan = value; }, [plan, once]),
+    speechCalls: () => page.evaluate(() => window.__nativeMock.calls.filter(call => call.method.startsWith('speech')))
   };
 }

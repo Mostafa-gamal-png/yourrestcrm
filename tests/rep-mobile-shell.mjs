@@ -7,6 +7,7 @@ import {createRequire} from 'node:module';
 import React from 'react';
 import * as jsx from 'react/jsx-runtime';
 import ts from 'typescript';
+import {makeVoiceField,expandVoiceFields} from '../scripts/lib/voice-field-stub.mjs';
 
 const root=process.cwd(),nativeRequire=createRequire(import.meta.url),cache=new Map();
 const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
@@ -25,7 +26,7 @@ function load(filename,require,globals={}){const exports={};vm.runInNewContext(t
 function library(filename){if(cache.has(filename))return cache.get(filename);const exports={};cache.set(filename,exports);const require=name=>name.startsWith('.')?library(path.join(path.dirname(filename),name)+'.ts'):nativeRequire(name);vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,filename),'utf8'),{compilerOptions:compiler}).outputText,{exports,require,console,Intl});return exports;}
 function commonRequire(name){
  if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;
- if(name==='@/lib/i18n')return i18n;if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
+ if(name==='./voice-field')return {__esModule:true,default:VoiceFieldStub};if(name==='@/lib/i18n')return i18n;if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
  if(name==='@/components/ui/dialog')return {...mocks,Dialog,DialogContent:pass,DialogTitle:pass,DialogDescription:pass};
  if(name==='@/components/ui/alert-dialog')return new Proxy({AlertDialog,AlertDialogAction},{get:(target,key)=>target[key]||pass});
  if(name==='./customer-identities')return {__esModule:true,default:CustomerIdentities};
@@ -43,7 +44,8 @@ function commonRequire(name){
  if(name==='sonner')return {Toaster:pass,toast:{success:noop,error:noop}};
  if(name.endsWith('.css'))return {};return mocks;
 }
-function nodes(tree,predicate){if(!tree||typeof tree!=='object')return [];if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate),...nodes(tree.props?.actions,predicate),...nodes(tree.props?.filters,predicate)];}
+function nodes(tree,predicate){if(!tree||typeof tree!=='object')return [];if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));tree=expandVoiceFields(tree);return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate),...nodes(tree.props?.actions,predicate),...nodes(tree.props?.filters,predicate)];}
+const VoiceFieldStub=makeVoiceField(value=>i18n.t(value));
 function text(tree){if(tree===null||tree===undefined||typeof tree==='boolean')return '';if(typeof tree!=='object')return String(tree);return Array.isArray(tree)?tree.map(text).join(''):text(tree.props?.children);}
 const button=(tree,label)=>nodes(tree,node=>node.type==='button'&&text(node).trim()===label)[0];
 const byClass=(tree,className)=>nodes(tree,node=>node.props?.className?.split(' ').includes(className))[0];

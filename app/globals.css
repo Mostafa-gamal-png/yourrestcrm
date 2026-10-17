@@ -157,3 +157,9 @@
 .dark .cm-canvas .leaflet-marker-icon:focus-visible,.dark .journey-map-station-marker:focus-visible{outline-color:var(--ring)}
 @media(prefers-reduced-motion:reduce){.btn,.btn::before,.btn::after{transition:none!important}.btn.primary:hover:not(:disabled){transform:none}.animate-spin{animation:none!important}}
 @media print{.dark .leaflet-tile-pane{filter:none}.theme-toggle{display:none!important}}
+
+/* A control that keeps its own markup carries the dictation button beside it, in a row that lets the button's notes wrap underneath. */
+.dictation-row{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px;min-width:0}
+.dictation-row>input,.dictation-row>textarea{flex:1;min-width:0}
+.dictation-row>small{flex-basis:100%;color:#b43b3b}
+.dark .dictation-row>small{color:#ffb5c2}
