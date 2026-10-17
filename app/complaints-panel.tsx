@@ -8,8 +8,10 @@ import {definiteSubmitRejection,submitJson} from '@/lib/client-submit';
 import {roles,today,type Member,type Row} from '@/lib/crm';
 import {COMPLAINT_DEMAND_MAX,COMPLAINT_TEXT_MAX,canRegisterComplaint,closureOutcomes,closureOutcomesEn,complaintActions,complaintActionsEn,complaintCategories,complaintCategoriesEn,complaintChannels,complaintChannelsEn,complaintGroups,complaintSeverities,complaintSeveritiesEn,complaintStatusLabels,complaintStatusLabelsEn,complaintsOfCustomer,isOpenComplaint,resolutionOutcomes,resolutionOutcomesEn,type ComplaintEntry,type ComplaintGroupId} from '@/lib/complaints';
 import {contactLinks} from '@/lib/support';
+import {trackedComplaint} from '@/lib/service-tracking';
 import {complaintMessage,validContactNumber,whatsappNumber,whatsappUrl} from '@/lib/whatsapp';
 import {hoursText} from './service-queue';
+import {TrackingSheetSteps} from './service-tracking';
 import VoiceField from './voice-field';
 import './complaints-panel.css';
 
@@ -255,6 +257,7 @@ export function ComplaintSheet({entry,onClose,onChanged}:{entry:ComplaintEntry;o
   <SheetTitle>{say('شكوى عميل','Customer complaint')}{entry.complaintNumber?' · '+say('رقم ','No. ')+entry.complaintNumber:''}</SheetTitle><SheetDescription>{entry.customerName}</SheetDescription>
   <div className="service-detail">
    <div className="service-status"><span className="badge pending">{stateText(entry,say)}</span>{entry.severity==='high'&&<span className="support-chip-static" data-kind="escalated">{say('أهمية عالية','High')}</span>}{entry.late&&<span className="support-chip-static" data-kind="late">{say('متأخر','Late')}</span>}</div>
+   {!editing&&<TrackingSheetSteps item={trackedComplaint(entry)}/>}
    {editing?<fieldset disabled={action.busy} className="support-form complaint-form"><ReportFields value={report} onChange={setReport} say={say}/><div className="service-button-row"><button type="button" className="btn primary" disabled={report.description.trim().length<10||!!contactProblem(report,say)} onClick={()=>perform({action:'edit',...report,description:report.description.trim(),demand:report.demand.trim(),reference:report.reference.trim(),contactName:report.contactName.trim(),contactPhone:report.contactPhone.trim(),contactWhatsapp:report.contactWhatsapp.trim(),contactEmail:report.contactEmail.trim()})}><CheckCircle2 size={16} aria-hidden="true"/>{say('حفظ وإعادة الإرسال','Save and resend')}</button><button type="button" className="btn subtle" onClick={()=>setEditing(false)}>{say('رجوع','Back')}</button></div></fieldset>
    :<dl className="service-facts">{facts.map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>}
    {!editing&&<fieldset disabled={action.busy} className="service-actions">

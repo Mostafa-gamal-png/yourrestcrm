@@ -1,0 +1,204 @@
+// The tracking board customer service follows on the Opportunities page, as pure functions: the stage bar of an opportunity and of a
+// complaint (the supervisor's step only when it applies, a returned item marked, a finished one complete, a cancelled one without a bar),
+// the side each stage waits on, who holds it, the late flag and the last thing recorded, what each member follows (a representative what
+// they registered, a manager what the team registered), the thirty-day window for finished items, the order, the filters and their counts.
+// The stages the real queue and complaint functions can produce are all covered by the board. No browser, no network.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import ts from 'typescript';
+
+const root = process.cwd(), runtime = path.join(root, '.sites-runtime');
+fs.mkdirSync(runtime, {recursive: true});
+const out = fs.mkdtempSync(path.join(runtime, 'service-tracking-')), seen = new Set();
+process.on('exit', () => fs.rmSync(out, {recursive: true, force: true}));
+function compile(relative) {
+  if (seen.has(relative)) return; seen.add(relative);
+  const src = path.join(root, relative), dest = path.join(out, relative.replace(/\.tsx?$/, '.mjs')); fs.mkdirSync(path.dirname(dest), {recursive: true});
+  let code = ts.transpileModule(fs.readFileSync(src, 'utf8'), {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText;
+  code = code.replace(/from (['"])([^'"]+)\1/g, (match, quote, imported) => {
+    if (!imported.startsWith('.') && !imported.startsWith('@/')) return match;
+    let child = imported.startsWith('@/') ? imported.slice(2) : path.relative(root, path.resolve(path.dirname(src), imported));
+    if (!/\.tsx?$/.test(child)) child += fs.existsSync(path.join(root, child + '.ts')) ? '.ts' : '.tsx';
+    compile(child); return 'from ' + JSON.stringify(path.join(out, child.replace(/\.tsx?$/, '.mjs')));
+  });
+  fs.writeFileSync(dest, code);
+}
+for (const file of ['lib/service-tracking.ts', 'lib/service-queue.ts', 'lib/complaints.ts']) compile(file);
+const T = await import(path.join(out, 'lib/service-tracking.mjs')), Q = await import(path.join(out, 'lib/service-queue.mjs')), C = await import(path.join(out, 'lib/complaints.mjs'));
+let checks = 0;
+const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
+const ids = steps => steps.map(step => step.id), states = steps => steps.map(step => step.state);
+const NOW = '2026-10-17T09:00:00.000Z', daysAgo = days => new Date(Date.parse(NOW) - days * 86400000).toISOString();
+
+// ---- the bar of an opportunity
+const OPP = ['registered', 'approval', 'assignment', 'first_contact', 'follow_up', 'finished'];
+eq(ids(T.trackingSteps('opportunity', 'approval', false)), OPP, 'an opportunity passes registration, approval, assignment, first contact, follow-up and its end; no supervisor step unless it applies');
+eq(states(T.trackingSteps('opportunity', 'approval', false)), ['done', 'current', 'upcoming', 'upcoming', 'upcoming', 'upcoming'], 'at approval: registered is done, approval is the current step');
+eq(T.trackingSteps('opportunity', 'returned', false).map(step => [step.id, step.state, step.returned]).filter(([, state]) => state === 'current'), [['approval', 'current', true]], 'returned for correction: still the approval step, marked as returned');
+eq(states(T.trackingSteps('opportunity', 'assignment', false)), ['done', 'done', 'current', 'upcoming', 'upcoming', 'upcoming'], 'at assignment');
+eq([ids(T.trackingSteps('opportunity', 'delegation', false)), states(T.trackingSteps('opportunity', 'delegation', false))], [['registered', 'approval', 'assignment', 'delegation', 'first_contact', 'follow_up', 'finished'], ['done', 'done', 'done', 'current', 'upcoming', 'upcoming', 'upcoming']], 'with a supervisor, the delegation step appears and is current');
+eq(states(T.trackingSteps('opportunity', 'first_contact', true)), ['done', 'done', 'done', 'done', 'current', 'upcoming', 'upcoming'], 'after a delegation the step stays, done');
+eq(states(T.trackingSteps('opportunity', 'first_contact', false)), ['done', 'done', 'done', 'current', 'upcoming', 'upcoming'], 'without one it never appears');
+eq(states(T.trackingSteps('opportunity', 'follow_up', false)), ['done', 'done', 'done', 'done', 'current', 'upcoming'], 'at follow-up');
+eq(states(T.trackingSteps('opportunity', 'closed', false)), ['done', 'done', 'done', 'done', 'done', 'done'], 'a finished opportunity has every step done');
+eq(states(T.trackingSteps('opportunity', 'something-new', false)), ['done', 'upcoming', 'upcoming', 'upcoming', 'upcoming', 'upcoming'], 'an unknown stage still shows the registration as done and marks nothing current');
+eq(T.trackingSteps('opportunity', 'approval', false).every(step => step.returned === false), true, 'nothing is marked returned unless it is');
+
+// ---- the bar of a complaint
+const CMP = ['registered', 'review', 'assignment', 'first_contact', 'resolution', 'closure'];
+eq(ids(T.trackingSteps('complaint', 'review', false)), CMP, 'a complaint passes registration, review, assignment, first contact, resolution and closure');
+eq(states(T.trackingSteps('complaint', 'review', false)), ['done', 'current', 'upcoming', 'upcoming', 'upcoming', 'upcoming'], 'at review');
+eq(T.trackingSteps('complaint', 'fix', false).filter(step => step.state === 'current').map(step => [step.id, step.returned]), [['review', true]], 'returned for correction is the review step, marked');
+eq(states(T.trackingSteps('complaint', 'assignment', false)), ['done', 'done', 'current', 'upcoming', 'upcoming', 'upcoming'], 'at assignment');
+eq(ids(T.trackingSteps('complaint', 'delegation', false)), ['registered', 'review', 'assignment', 'delegation', 'first_contact', 'resolution', 'closure'], 'with a supervisor the delegation step appears');
+eq(states(T.trackingSteps('complaint', 'resolution', true)), ['done', 'done', 'done', 'done', 'done', 'current', 'upcoming'], 'at resolution after a delegation');
+eq(states(T.trackingSteps('complaint', 'closure', false)), ['done', 'done', 'done', 'done', 'done', 'current'], 'waiting for the closure');
+eq(states(T.trackingSteps('complaint', 'closed', false)), ['done', 'done', 'done', 'done', 'done', 'done'], 'a closed complaint is complete');
+eq(T.trackingSteps('complaint', 'cancelled', false), [], 'a cancelled complaint has no bar');
+
+// ---- the side each stage waits on
+eq(['approval', 'returned', 'review', 'fix', 'closure'].map(T.trackingSide), Array(5).fill('service'), 'approval, review, correction and closure wait on customer service');
+eq(['assignment', 'delegation', 'first_contact', 'follow_up', 'resolution'].map(T.trackingSide), Array(5).fill('sales'), 'assignment, delegation, contacts and resolution wait on sales');
+eq(['closed', 'cancelled'].map(T.trackingSide), ['done', 'done'], 'closed and cancelled are finished');
+
+// ---- every stage the real functions can produce is on the board
+const queueStages = new Set(), complaintStages = new Set();
+for (const status of ['pending_approval', 'returned', 'pending_assignment', 'assigned', 'other'])
+  for (const state of ['won', 'lost', status])
+    for (const contacts of [0, 1])
+      for (const role of ['supervisor', 'rep', ''])
+        queueStages.add(Q.queueStage({status, updatedAt: '2026-10-01T00:00:00Z', createdAt: '2026-10-01T00:00:00Z', data: {assignedAt: '2026-10-02T00:00:00Z'}}, state, contacts, role).stage);
+for (const status of ['submitted', 'returned', 'pending_assignment', 'assigned', 'resolved', 'closed', 'cancelled'])
+  for (const role of ['supervisor', 'rep', ''])
+    for (const updates of [[], [{at: '2026-10-05T00:00:00Z'}]])
+      complaintStages.add(C.complaintStage({status, updates, submittedAt: '2026-10-01T00:00:00Z', assignedAt: '2026-10-02T00:00:00Z'}, role).stage);
+eq([...queueStages].sort(), ['approval', 'assignment', 'closed', 'delegation', 'first_contact', 'follow_up', 'returned'], 'the queue produces exactly these stages');
+eq([...complaintStages].sort(), ['assignment', 'cancelled', 'closed', 'closure', 'delegation', 'first_contact', 'fix', 'resolution', 'review'], 'the complaint functions produce exactly these stages');
+for (const [kind, stages] of [['opportunity', queueStages], ['complaint', complaintStages]])
+  for (const stage of stages) {
+    eq(Object.keys(T.trackingStageText).includes(stage), true, kind + ' stage ' + stage + ' has its words');
+    const steps = T.trackingSteps(kind, stage, false);
+    eq(stage === 'cancelled' ? steps.length === 0 : steps.filter(step => step.state === 'current').length === (stage === 'closed' ? 0 : 1), true, kind + ' stage ' + stage + ' marks exactly one current step, or none when finished');
+    eq(['service', 'sales', 'done'].includes(T.trackingSide(stage)), true, kind + ' stage ' + stage + ' has a side');
+  }
+eq(Object.keys(T.trackingStepLabels).sort(), [...new Set([...OPP, ...CMP, 'delegation'])].sort(), 'every step has its label, Arabic and English');
+eq(Object.values({...T.trackingStepLabels, ...T.trackingHolderLabels, ...T.trackingStageText, ...T.trackingFilterLabels, ...T.trackingOpportunityOutcomes}).every(pair => pair.length === 2 && pair.every(word => typeof word === 'string' && word.length > 0)), true, 'every label has both languages');
+eq(/[؀-ۿ]/.test(Object.values({...T.trackingStepLabels, ...T.trackingHolderLabels, ...T.trackingStageText, ...T.trackingFilterLabels}).map(pair => pair[1]).join(' ')), false, 'and the English has no Arabic letter');
+
+// ---- fixtures
+const progress = (o = {}) => ({stage: 'approval', since: daysAgo(0.5), stageHours: 3, targetHours: 4, late: false, assigneeRole: '', finishedAt: '', ...o});
+const opportunity = (o = {}) => ({
+  id: 'service-1', state: 'pending_approval', creatorId: 'rep-1', creatorName: 'ريم', serviceManagerName: 'منى', salesManagerName: 'خالد', assignedName: '', createdAt: daysAgo(1), updatedAt: daysAgo(1),
+  data: {products: ['قوالب'], needs: 'قالب علب 500 جم', delegatedAt: ''}, customer: {id: 'c-1', name: 'مصنع الأمل'}, progress: progress(), contacts: [], history: [], ...o
+});
+const complaint = (o = {}) => ({
+  id: 'complaint-1', customerId: 'c-2', customerName: 'مصنع النور', complaintNumber: 7, category: 'product_quality', severity: 'normal', description: 'بلوك مكسور', status: 'submitted', stage: 'review',
+  stageSince: daysAgo(0.4), stageHours: 3, targetHours: 4, late: false, createdAt: daysAgo(1), updatedAt: daysAgo(1), registrarId: 'rep-1', registrarName: 'ريم', serviceManagerName: 'منى', salesManagerName: 'خالد',
+  assigneeName: '', assigneeRole: '', events: [], updates: [], notes: [], closure: null, ...o
+});
+
+// ---- an opportunity as a board row
+const waiting = T.trackedOpportunity(opportunity());
+eq([waiting.key, waiting.kind, waiting.customerName, waiting.products, waiting.needs, waiting.side, waiting.stage], ['opportunity:service-1', 'opportunity', 'مصنع الأمل', ['قوالب'], 'قالب علب 500 جم', 'service', 'approval'], 'the row names the customer, the products and where it waits');
+eq([waiting.holder, waiting.late, waiting.stageHours, waiting.targetHours, waiting.finishedAt, waiting.outcome], [{name: 'منى', role: 'service_manager'}, false, 3, 4, '', ''], 'the service manager holds it, within its target, unfinished');
+eq(T.trackedOpportunity(opportunity({serviceManagerName: ''})).holder, {name: '', role: 'admin'}, 'with no manager an administrator holds the approval');
+eq(T.trackedOpportunity(opportunity({progress: progress({stage: 'returned'})})).holder, {name: 'ريم', role: 'registrar'}, 'returned for correction: the registrar holds it');
+eq(T.trackedOpportunity(opportunity({progress: progress({stage: 'assignment', late: true, stageHours: 6})})).holder, {name: 'خالد', role: 'sales_manager'}, 'at assignment the sales manager holds it');
+const late = T.trackedOpportunity(opportunity({progress: progress({stage: 'assignment', late: true, stageHours: 6})}));
+eq([late.late, late.stageHours, late.side], [true, 6, 'sales'], 'late at assignment, six working hours');
+eq(T.trackedOpportunity(opportunity({assignedName: 'سالم', progress: progress({stage: 'delegation', assigneeRole: 'supervisor'})})).holder, {name: 'سالم', role: 'supervisor'}, 'a supervisor holds it for delegation');
+eq([['rep'], ['supervisor'], ['']].map(([role]) => T.trackedOpportunity(opportunity({assignedName: 'سالم', progress: progress({stage: 'first_contact', assigneeRole: role})})).holder.role), ['rep', 'supervisor', 'sales'], 'the first contact is held by a representative, a supervisor, or a sales owner of unknown role');
+eq(T.trackedOpportunity(opportunity({assignedName: 'سالم', data: {delegatedAt: daysAgo(1)}, progress: progress({stage: 'follow_up', assigneeRole: 'rep'})})).delegated, true, 'a delegation date marks the delegation step');
+const won = T.trackedOpportunity(opportunity({state: 'won', progress: progress({stage: 'closed', finishedAt: daysAgo(2), late: true})}));
+eq([won.side, won.outcome, won.finishedAt, won.holder, won.late, won.steps.every(step => step.state === 'done')], ['done', 'won', daysAgo(2), null, false, true], 'a won opportunity is finished, has no holder and is never late');
+eq(T.trackedOpportunity(opportunity({state: 'lost', progress: progress({stage: 'closed'}), updatedAt: daysAgo(3)})).finishedAt, daysAgo(3), 'without a finish date the update time stands in');
+const bare = T.trackedOpportunity(opportunity({progress: undefined}));
+eq([bare.stage, bare.stageHours, bare.late, bare.stageSince], ['approval', 0, false, bare.registeredAt], 'a case without its progress is placed at approval and never late');
+eq(T.trackedOpportunity(opportunity({data: {}})).products, [], 'no products is an empty list');
+// the last thing recorded: the newest of a contact and an internal note
+const withLast = T.trackedOpportunity(opportunity({
+  contacts: [{createdAt: daysAgo(3), result: 'تم الاتصال', summary: 'x', actor: 'سالم'}, {createdAt: daysAgo(2), result: '', summary: 'زيارة أولى', actor: 'سالم'}],
+  history: [{createdAt: daysAgo(1), actor: 'منى', action: 'service:note', detail: {note: 'يلزم عرض سعر'}}, {createdAt: daysAgo(0.5), actor: 'منى', action: 'service:approve', detail: {note: 'اعتماد'}}, {createdAt: daysAgo(0.2), actor: 'منى', action: 'service:note', detail: {note: ''}}]
+}));
+eq(withLast.last, {kind: 'note', at: daysAgo(1), by: 'منى', text: 'يلزم عرض سعر'}, 'the newest note counts, a movement of the case or an empty note does not');
+eq(T.trackedOpportunity(opportunity({contacts: [{createdAt: daysAgo(3), result: 'تم الاتصال', actor: 'سالم'}, {createdAt: daysAgo(2), summary: 'زيارة أولى', actor: 'سالم'}]})).last, {kind: 'contact', at: daysAgo(2), by: 'سالم', text: 'زيارة أولى'}, 'a contact reads its result, or its summary when there is no result');
+eq(T.trackedOpportunity(opportunity()).last, null, 'nothing recorded is null');
+
+// ---- a complaint as a board row
+const review = T.trackedComplaint(complaint());
+eq([review.key, review.kind, review.complaintNumber, review.category, review.severity, review.side, review.holder, review.late], ['complaint:complaint-1', 'complaint', 7, 'product_quality', 'normal', 'service', {name: 'منى', role: 'service_manager'}, false], 'a complaint waits for the manager\'s review');
+eq(T.trackedComplaint(complaint({serviceManagerName: ''})).holder, {name: '', role: 'admin'}, 'unrouted: an administrator reviews');
+eq([['fix', 'registrar'], ['closure', 'registrar'], ['assignment', 'sales_manager']].map(([stage, role]) => [T.trackedComplaint(complaint({stage})).holder.role === role, T.trackedComplaint(complaint({stage})).holder.name]), [[true, 'ريم'], [true, 'ريم'], [true, 'خالد']], 'correction and closure are the registrar\'s, assignment the sales manager\'s');
+eq([['delegation', 'supervisor', 'supervisor'], ['first_contact', 'rep', 'rep'], ['resolution', 'rep', 'rep'], ['resolution', 'supervisor', 'supervisor'], ['first_contact', '', 'sales']].map(([stage, assigneeRole, expected]) => T.trackedComplaint(complaint({stage, assigneeName: 'سالم', assigneeRole})).holder.role === expected), Array(5).fill(true), 'the holder of a sales stage follows the role of the assignee');
+eq(T.trackedComplaint(complaint({stage: 'resolution', assigneeName: 'سالم', assigneeRole: 'rep', events: [{action: 'register'}, {action: 'delegate'}]})).delegated, true, 'a delegate event marks the delegation step');
+eq(T.trackedComplaint(complaint({stage: 'resolution', assigneeName: 'سالم', assigneeRole: 'rep', events: [{action: 'register'}, {action: 'assign'}]})).delegated, false, 'an assignment alone does not');
+eq(T.trackedComplaint(complaint({late: true, stage: 'review'})).late, true, 'a late review is late');
+const closed = T.trackedComplaint(complaint({status: 'closed', stage: 'closed', late: true, stageSince: daysAgo(4), closure: {outcome: 'satisfied'}}));
+eq([closed.side, closed.outcome, closed.finishedAt, closed.holder, closed.late, closed.steps.every(step => step.state === 'done')], ['done', 'satisfied', daysAgo(4), null, false, true], 'a closed complaint: finished, its closure outcome, no holder, not late');
+const cancelled = T.trackedComplaint(complaint({status: 'cancelled', stage: 'cancelled', stageSince: daysAgo(5)}));
+eq([cancelled.side, cancelled.outcome, cancelled.steps, cancelled.finishedAt], ['done', 'cancelled', [], daysAgo(5)], 'a cancelled complaint: finished, cancelled, no bar');
+eq(T.trackedComplaint(complaint({severity: 'high', complaintNumber: null})).severity, 'high', 'importance rides along');
+eq(T.trackedComplaint(complaint({complaintNumber: null})).complaintNumber, null, 'a complaint registered before numbering has none');
+eq(T.trackedComplaint(complaint({
+  updates: [{at: daysAgo(3), byName: 'سالم', text: 'اتصلت بالعميل'}, {at: daysAgo(1), byName: 'سالم', text: 'زرت المصنع'}],
+  notes: [{at: daysAgo(2), byName: 'منى', text: 'ملاحظة قديمة'}]
+})).last, {kind: 'update', at: daysAgo(1), by: 'سالم', text: 'زرت المصنع'}, 'the newest update or note is the last thing recorded');
+eq(T.trackedComplaint(complaint({updates: [{at: daysAgo(3), byName: 'سالم', text: 'اتصلت'}], notes: [{at: daysAgo(1), byName: 'منى', text: 'يلزم تصعيد'}]})).last.kind, 'note', 'a newer note wins over an older update');
+
+// ---- what each member follows
+const items = {
+  cases: [
+    opportunity({id: 'o-own-late', creatorId: 'rep-1', progress: progress({stage: 'assignment', late: true, stageHours: 9})}),
+    opportunity({id: 'o-own-open', creatorId: 'rep-1', createdAt: daysAgo(2), progress: progress({stage: 'approval', stageHours: 2})}),
+    opportunity({id: 'o-other', creatorId: 'rep-2', creatorName: 'هدى', createdAt: daysAgo(3), progress: progress({stage: 'follow_up', stageHours: 40, assigneeRole: 'rep'}), assignedName: 'سالم'}),
+    opportunity({id: 'o-own-done', creatorId: 'rep-1', state: 'won', progress: progress({stage: 'closed', finishedAt: daysAgo(29)})}),
+    opportunity({id: 'o-own-old', creatorId: 'rep-1', state: 'lost', progress: progress({stage: 'closed', finishedAt: daysAgo(31)})})
+  ],
+  complaints: [
+    complaint({id: 'k-own', registrarId: 'rep-1', stage: 'assignment', stageHours: 5, late: true}),
+    complaint({id: 'k-other', registrarId: 'rep-2', registrarName: 'هدى', stage: 'resolution', stageHours: 20, assigneeName: 'سالم', assigneeRole: 'rep'}),
+    complaint({id: 'k-closed', registrarId: 'rep-1', status: 'closed', stage: 'closed', stageSince: daysAgo(10), closure: {outcome: 'satisfied'}}),
+    complaint({id: 'k-cancelled', registrarId: 'rep-1', status: 'cancelled', stage: 'cancelled', stageSince: daysAgo(40)})
+  ]
+};
+const mine = T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, ...items, now: NOW});
+eq(mine.map(item => item.key), ['opportunity:o-own-late', 'complaint:k-own', 'opportunity:o-own-open', 'complaint:k-closed', 'opportunity:o-own-done'], 'a representative follows only what they registered: the late first, then the open, then what finished within thirty days, the latest first (the 31-day and 40-day ones are gone)');
+const team = T.trackingItems({me: {id: 'csm-1', role: 'customer_service_manager'}, ...items, now: NOW});
+eq(team.map(item => item.key), ['opportunity:o-own-late', 'complaint:k-own', 'opportunity:o-other', 'complaint:k-other', 'opportunity:o-own-open', 'complaint:k-closed', 'opportunity:o-own-done'], 'a manager follows everything the routes give them, the team\'s and their own, in the same order');
+eq(T.trackingItems({me: {id: 'admin-1', role: 'admin'}, ...items, now: NOW}), [], 'the board is for customer-service members');
+eq(T.trackingItems({me: {id: 'rep-1', role: 'rep'}, ...items, now: NOW}), [], 'and not for sales members');
+eq(T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, cases: null, complaints: undefined, now: NOW}), [], 'nothing loaded is an empty board');
+eq(T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, cases: [], complaints: [], now: NOW}), [], 'and so is nothing registered');
+eq(T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, ...items}).length > 0, true, 'without a given time the present is used');
+
+// ---- the order: late first, then the longest waiting in their stage, then the newest, then the key
+const order = T.sortTracking([
+  T.trackedOpportunity(opportunity({id: 'a', createdAt: daysAgo(5), progress: progress({stage: 'follow_up', stageHours: 30})})),
+  T.trackedOpportunity(opportunity({id: 'b', createdAt: daysAgo(4), progress: progress({stage: 'follow_up', stageHours: 30})})),
+  T.trackedOpportunity(opportunity({id: 'c', createdAt: daysAgo(3), progress: progress({stage: 'first_contact', stageHours: 10, late: true})})),
+  T.trackedOpportunity(opportunity({id: 'd', createdAt: daysAgo(2), progress: progress({stage: 'first_contact', stageHours: 26, late: true})})),
+  T.trackedOpportunity(opportunity({id: 'e', createdAt: daysAgo(4), progress: progress({stage: 'follow_up', stageHours: 30})})),
+  T.trackedOpportunity(opportunity({id: 'f', state: 'won', progress: progress({stage: 'closed', finishedAt: daysAgo(9)})})),
+  T.trackedOpportunity(opportunity({id: 'g', state: 'lost', progress: progress({stage: 'closed', finishedAt: daysAgo(2)})}))
+]).map(item => item.id);
+eq(order, ['d', 'c', 'b', 'e', 'a', 'g', 'f'], 'late first (the longer wait first), then the open by wait then newest then key, then the finished, the latest first');
+
+// ---- the filters and their counts
+const board = team;
+eq(T.filterTracking(board, 'all').length, 7, 'all is everything on the board');
+eq(T.filterTracking(board, 'late').map(item => item.key), ['opportunity:o-own-late', 'complaint:k-own'], 'late: the open ones past their target');
+eq(T.filterTracking(board, 'service').map(item => item.key), ['opportunity:o-own-open'], 'with customer service: waiting on its approval, review, correction or closure');
+eq(T.filterTracking(board, 'sales').map(item => item.key), ['opportunity:o-own-late', 'complaint:k-own', 'opportunity:o-other', 'complaint:k-other'], 'with sales: assignment, delegation, contacts, resolution');
+eq(T.filterTracking(board, 'finished').map(item => item.key), ['complaint:k-closed', 'opportunity:o-own-done'], 'finished within thirty days');
+eq(T.trackingCounts(board), {all: 7, late: 2, service: 1, sales: 4, finished: 2}, 'the count beside each filter');
+eq(T.trackingCounts([]), {all: 0, late: 0, service: 0, sales: 0, finished: 0}, 'an empty board counts zero everywhere');
+eq(T.trackingFilters, ['all', 'late', 'service', 'sales', 'finished'], 'the filters in display order');
+eq(T.filterTracking([{...board[0], side: 'done', late: true}], 'late'), [], 'a finished item is never counted late');
+eq(T.TRACKING_FINISHED_DAYS, 30, 'the window is thirty days');
+// the boundary of the window
+const edge = days => T.trackingItems({me: {id: 'csm-1', role: 'customer_service_manager'}, cases: [opportunity({id: 'x', state: 'won', progress: progress({stage: 'closed', finishedAt: daysAgo(days)})})], complaints: [], now: NOW}).length;
+eq([edge(29.9), edge(30), edge(30.1)], [1, 1, 0], 'a finished item stays for thirty days exactly');
+eq(T.trackingItems({me: {id: 'csm-1', role: 'customer_service_manager'}, cases: [opportunity({id: 'x', state: 'won', updatedAt: 'not a date', progress: progress({stage: 'closed', finishedAt: ''})})], complaints: [], now: NOW}).length, 0, 'a finished item with no usable date is not kept');
+
+console.log(JSON.stringify({ok: true, checks, pureFunctions: true, productionDataUsed: false}));

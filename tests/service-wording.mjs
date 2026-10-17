@@ -42,6 +42,7 @@ function load(filename) {
 const W = library('lib/service-wording.ts');
 const html = element => renderToStaticMarkup(element);
 const arabicLeft = source => (source.replace(/<[^>]+>/g, ' ').match(/[؀-ۿ]+/g) || []);
+const plain = source => source.replace(/<[^>]+>/g, ' ');
 
 // ---- who reads the opportunity's words
 eq(['customer_service', 'customer_service_manager', 'rep', 'supervisor', 'manager', 'admin', '', null, undefined].map(W.serviceWording), [true, true, false, false, false, false, false, false, false], 'customer service and its manager; nobody else');
@@ -101,6 +102,22 @@ out = history('rep');
 ok(out.includes('سجل الزيارات') && out.includes('زيارة / اتصال') && out.includes('ترتيب الزيارات') && !out.includes('الفرص'), 'and in the words of sales');
 out = html(React.createElement(CustomerVisitHistory, {customer, records: [customer], onVisit: noop, onNew: noop, canEdit: true, role: 'customer_service'}));
 ok(out.includes('لا توجد فرص سابقة لهذا العميل.'), 'with nothing yet, it says so in the same words');
+// the page itself: its filters, heading, table and empty state
+const {VisitsPage} = load('app/customer-visits.tsx');
+const intake = {...row, id: 'intake-1', data: {...row.data, serviceIntakeId: 'svc-1', visitWorkflow: 'service-intake-v1', _serviceWorkflow: {id: 'svc-1', state: 'pending_approval', permissions: {approve: false, assign: false, delegate: false, reassign: false}, assistanceOpen: false}}};
+const pageOf = (role, records = [customer, intake]) => html(React.createElement(VisitsPage, {records, members: [], query: '', staff: 'all', stage: 'all', workflow: 'all', onWorkflowFilter: noop, onWorkflow: noop, onOpen: noop, onNew: noop, onCustomer: noop, canEdit: true, role}));
+out = pageOf('customer_service');
+ok(out.includes('كل الفرص') && out.includes('سجل الفرص') && out.includes('كل فرصة مرتبطة بالعميل وسجله السابق'), 'the page of customer service: the filter, the heading and its line say opportunities');
+ok(!out.includes('كل الزيارات') && !out.includes('سجل الزيارات') && !out.includes('كل زيارة مرتبطة') && !out.includes('رقم الزيارة') && !out.includes('تعديل الزيارة'), 'with no visit word left on it, the table and its cards included');
+ok(out.includes('رقم الفرصة') && out.includes('عرض / تعديل الفرصة'), 'the table and the card button inside it follow');
+out = pageOf('customer_service_manager');
+ok(out.includes('كل الفرص') && out.includes('سجل الفرص'), 'the manager of customer service reads the same page');
+out = pageOf('manager');
+ok(out.includes('كل الزيارات') && out.includes('سجل الزيارات') && out.includes('كل زيارة مرتبطة بالعميل وسجله السابق') && !out.includes('كل الفرص') && !out.includes('سجل الفرص') && !out.includes('رقم الفرصة') && !out.includes('تعديل الفرصة'), 'a sales manager\'s page keeps the visits (the opportunity\'s strength is a sales column and stays)');
+out = pageOf('customer_service', [customer]);
+ok(out.includes('لا توجد فرص مسجلة') && out.includes('فرصة جديدة') && !out.includes('زيارة'), 'with nothing yet, customer service is told so, and offered a new opportunity');
+out = pageOf('rep', [customer]);
+ok(out.includes('لا توجد زيارات مسجلة') && out.includes('زيارة جديدة') && !out.includes('فرص'), 'and a representative a new visit');
 const {default: VisitFields} = load('app/visit-fields.tsx');
 const fields = (role, over = {}) => html(React.createElement(VisitFields, {unified: true, service: role.startsWith('customer_service'), role, data: {type: 'call', date: '2026-10-01', summary: '', result: '', location: '', ...over}, parentId: 'c-1', records: [customer], editing: false, busy: false, email: 'x@yourrest.org', onChange: noop, onParent: noop}));
 out = fields('customer_service');
@@ -126,6 +143,14 @@ out = fields('customer_service');
 ok(out.includes('Contact purpose *') && out.includes('Contact outcome') && !out.includes('Visit purpose'), 'the English form');
 out = bar('customer_service_manager');
 ok(/data-page="activity"[^]*?Opportunities/.test(out) && !out.includes('Visits'), 'the English bottom bar');
+out = pageOf('customer_service');
+ok(out.includes('All opportunities') && out.includes('Opportunity history') && out.includes('Every opportunity is linked to the customer and their history') && out.includes('Opportunity number'), 'the English page of customer service');
+eq(arabicLeft(out).filter(word => /زيار|فرص|تواصل/.test(word)), [], 'with no Arabic visit word');
+ok(!/\bvisits?\b/i.test(plain(out).replace(/Visit details/g, '')), 'and no English visit word either');
+out = pageOf('customer_service', [customer]);
+ok(out.includes('No opportunities recorded') && out.includes('New opportunity'), 'its empty state in English');
+out = pageOf('rep');
+ok(out.includes('All visits') && out.includes('Visit history') && !/All opportunities|Opportunity history|Opportunity number|Contact purpose/.test(out), 'a representative\'s page keeps the visits in English');
 out = fields('manager');
 ok(out.includes('Visit purpose *') && out.includes('Visit outcome'), 'sales keep the visit in English too');
 language = 'ar';
