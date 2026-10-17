@@ -98,7 +98,7 @@ try {
   const cs = await open('cs1');
   {
     await cs.locator('button.nav-item', {hasText: 'الشكاوى'}).waitFor();
-    check(await cs.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.split('\n')[0].trim())), ['الزيارات', 'الشكاوى'], 'a representative has the Visits and Complaints pages, and no evaluation page');
+    check(await cs.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.split('\n')[0].trim())), ['الفرص', 'الشكاوى'], 'a representative has the Opportunities and Complaints pages, and no evaluation page');
     await goDesktop(cs, 'الشكاوى');
     const mine = cs.locator('details.service-kpi-mine');
     check([await mine.count(), await mine.locator('.sk-card').count()], [1, 0], '"My evaluation" is there, folded and unloaded');
@@ -154,7 +154,7 @@ try {
   let auditId;
   {
     await csm.locator('button.nav-item', {hasText: 'تقييم خدمة العملاء'}).waitFor();
-    check(await csm.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.split('\n')[0].trim())), ['الزيارات', 'الشكاوى', 'تقييم خدمة العملاء'], 'the manager has the evaluation page beside Complaints');
+    check(await csm.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.split('\n')[0].trim())), ['الفرص', 'الشكاوى', 'تقييم خدمة العملاء'], 'the manager has the evaluation page beside Complaints');
     await goDesktop(csm, 'تقييم خدمة العملاء');
     const pageRoot = csm.locator('.service-kpi-page');
     await pageRoot.waitFor();

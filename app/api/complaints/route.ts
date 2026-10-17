@@ -4,6 +4,7 @@ import {today,type Member} from '@/lib/crm';
 import {regionScope} from '@/lib/regions';
 import {COMPLAINT_DEMAND_MAX,COMPLAINT_LIST_LIMIT,COMPLAINT_SHORT_MAX,COMPLAINT_TEXT_MAX,canReadComplaint,canRegisterComplaint,closureOutcomes,complaintActions,complaintBadge,complaintCandidates,complaintCategories,complaintChannels,complaintPermissions,complaintQueue,complaintReader,isOpenComplaint,registrarManager,resolutionOutcomes,type ComplaintData} from '@/lib/complaints';
 import {loadComplaint,loadComplaints} from '@/lib/complaint-rows';
+import {validContactNumber,whatsappNumber} from '@/lib/whatsapp';
 export const dynamic='force-dynamic';
 
 /** Re-checks at commit that a member named in the change is still who they were when it was decided. */
@@ -25,7 +26,9 @@ const longText=z.string().trim().max(COMPLAINT_TEXT_MAX),shortText=z.string().tr
 const said=(min:number,message:string)=>longText.pipe(z.string().min(min,message));
 const day=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'اختر تاريخًا صحيحًا').refine(value=>Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value,'التاريخ غير صالح');
 const keysOf=(table:Record<string,string>)=>z.enum(Object.keys(table) as [string,...string[]]);
-const report={channel:keysOf(complaintChannels),category:keysOf(complaintCategories),severity:z.enum(['normal','high']).default('normal'),description:said(10,'اكتب وصف الشكوى في 10 أحرف على الأقل'),demand:z.string().trim().max(COMPLAINT_DEMAND_MAX).default(''),reference:shortText,contactName:shortText,contactPhone:z.string().trim().max(100).default('')};
+const report={channel:keysOf(complaintChannels),category:keysOf(complaintCategories),severity:z.enum(['normal','high']).default('normal'),description:said(10,'اكتب وصف الشكوى في 10 أحرف على الأقل'),demand:z.string().trim().max(COMPLAINT_DEMAND_MAX).default(''),reference:shortText,contactName:shortText,contactPhone:z.string().trim().max(100).default(''),
+ contactWhatsapp:z.string().trim().max(100).default('').refine(value=>!value||validContactNumber(value),'رقم واتساب غير صالح: اكتب من 7 إلى 15 رقمًا'),
+ contactEmail:z.string().trim().max(250).default('').refine(value=>!value||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),'البريد الإلكتروني غير صالح')};
 const handing={requestId,id:idText,version,targetId:idText,note:z.string().trim().max(COMPLAINT_TEXT_MAX).default('')};
 const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('register'),requestId,customerId:idText,customerVersion:version,...report}).strict(),
@@ -42,7 +45,8 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('close'),requestId,id:idText,version,outcome:keysOf(closureOutcomes),note:longText.default(''),rating:z.number().int().min(1,'التقييم من 1 إلى 5').max(5,'التقييم من 1 إلى 5').optional()}).strict(),
  z.object({action:z.literal('reopen'),requestId,id:idText,version,reason:said(3,'اكتب سبب إعادة الفتح في 3 أحرف على الأقل')}).strict(),
  z.object({action:z.literal('cancel'),requestId,id:idText,version,reason:z.string().trim().max(500).default('')}).strict(),
- z.object({action:z.literal('note'),requestId,id:idText,version,text:said(3,'اكتب الملاحظة في 3 أحرف على الأقل')}).strict()
+ z.object({action:z.literal('note'),requestId,id:idText,version,text:said(3,'اكتب الملاحظة في 3 أحرف على الأقل')}).strict(),
+ z.object({action:z.literal('notify'),requestId,id:idText,version}).strict()
 ]);
 
 export async function POST(req:Request){try{
@@ -50,11 +54,17 @@ export async function POST(req:Request){try{
  const input=schema.parse(await readJsonBody(req));
  const c=await context(),now=new Date().toISOString(),mutation=crypto.randomUUID(),reader=complaintReader(c);
  const canonical=JSON.stringify(input),receiptId='complaint-receipt:'+c.me.id+':'+input.requestId;
+ // A registration answers with the number the complaint was given, the first time and on a retry.
+ const numbered=async(recordId:string)=>{
+  if(input.action!=='register')return {};
+  const found=await c.db.prepare("SELECT json_extract(data,'$.complaintNumber') AS number FROM crm_records WHERE id=?").bind(recordId).first<{number:number|null}>();
+  return found?.number?{complaintNumber:found.number}:{};
+ };
  const replay=async()=>{
   const saved=await c.db.prepare('SELECT record_id,detail FROM crm_audit WHERE id=?').bind(receiptId).first<{record_id:string;detail:string}>();
   if(!saved)return null;
   if(saved.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);
-  return Response.json({ok:true,id:saved.record_id,alreadySaved:true});
+  return Response.json({ok:true,id:saved.record_id,alreadySaved:true,...await numbered(saved.record_id)});
  };
  const repeated=await replay();if(repeated)return repeated;
  const permission=accessGuard(c),guards=[permission.sql],args:(string|number)[]=[...permission.args];
@@ -73,12 +83,16 @@ export async function POST(req:Request){try{
   const manager=serviceManagerId&&serviceManagerId!==c.me.id?c.members.find(member=>member.id===serviceManagerId):undefined;
   if(manager)requireMember(manager);
   id='complaint-'+input.requestId;note=input.description;
+  const contactPhone=input.contactPhone||String(customer.data.phone||'');
   const data:ComplaintData={kind:'complaint',customerId:customer.id,status:'submitted',registrarId:by,serviceManagerId,salesManagerId:'',supervisorId:'',assigneeId:'',
-   channel:input.channel,category:input.category,severity:input.severity,description:input.description,demand:input.demand,reference:input.reference,contactName:input.contactName||String(customer.data.contact||''),contactPhone:input.contactPhone||String(customer.data.phone||''),
+   channel:input.channel,category:input.category,severity:input.severity,description:input.description,demand:input.demand,reference:input.reference,contactName:input.contactName||String(customer.data.contact||''),contactPhone,contactWhatsapp:input.contactWhatsapp||(validContactNumber(contactPhone)?contactPhone:''),contactEmail:input.contactEmail||String(customer.data.email||''),
    submittedAt:now,forwardedAt:'',returnedAt:'',assignedAt:'',delegatedAt:'',reassignedAt:'',rejectedAt:'',reopenedAt:'',resolvedAt:'',closedAt:'',cancelledAt:'',seenAt:'',
    returnNote:'',assignmentNote:'',rejectReason:'',cancelReason:'',previousAssignees:[],updates:[],notes:[],events:[{at:now,by,action:'register'}]};
   state=data.status;
-  statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'complaint',NULL,?,?,?,?,?,1,? WHERE ${guards.join(' AND ')} AND ${rootGuard}`).bind(id,by,customer.branch,JSON.stringify(data),now,now,mutation,...args,customer.id,customer.version));
+  // The sequence number is taken by the statement that saves the complaint, so two registrations cannot take the same one; the audit line named
+  // after the number is a second guard (its id is unique) that fails the whole batch if they ever did.
+  statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'complaint',NULL,?,?,json_set(?,'$.complaintNumber',(SELECT COALESCE(MAX(json_extract(data,'$.complaintNumber')),0)+1 FROM crm_records WHERE kind='complaint')),?,?,1,? WHERE ${guards.join(' AND ')} AND ${rootGuard}`).bind(id,by,customer.branch,JSON.stringify(data),now,now,mutation,...args,customer.id,customer.version));
+  statements.push(c.db.prepare("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT 'complaint-number:'||json_extract(data,'$.complaintNumber'),id,?,'complaint:number','',? FROM crm_records WHERE id=? AND version=1 AND mutation_id=?").bind(c.me.name,now,id,mutation));
  }else{
   const found=await loadComplaint(c.db,input.id);
   const customer=found&&c.all.find(row=>row.id===found.data.customerId&&row.kind==='customer');
@@ -95,7 +109,7 @@ export async function POST(req:Request){try{
   };
   if(input.action==='edit'){
    if(!allowed.edit)throw new CRMError('تعديل الشكوى لمن سجّلها ما دامت لم تُحل بعد',403);
-   Object.assign(data,{channel:input.channel,category:input.category,severity:input.severity,description:input.description,demand:input.demand,reference:input.reference,contactName:input.contactName||data.contactName,contactPhone:input.contactPhone||data.contactPhone});
+   Object.assign(data,{channel:input.channel,category:input.category,severity:input.severity,description:input.description,demand:input.demand,reference:input.reference,contactName:input.contactName||data.contactName,contactPhone:input.contactPhone||data.contactPhone,contactWhatsapp:input.contactWhatsapp,contactEmail:input.contactEmail});
    if(data.status==='returned'){data.status='submitted';data.submittedAt=now;data.returnNote='';}
    note=input.description;event();
   }else if(input.action==='forward'){
@@ -138,6 +152,10 @@ export async function POST(req:Request){try{
   }else if(input.action==='cancel'){
    if(!allowed.cancel)throw new CRMError('إلغاء الشكوى لمن سجّلها أو لمدير خدمة العملاء ما دامت لم تُكلَّف بعد',403);
    note=input.reason;data.status='cancelled';data.cancelledAt=now;data.cancelReason=input.reason;event({text:input.reason});
+  }else if(input.action==='notify'){
+   if(!allowed.notify)throw new CRMError('إبلاغ العميل لمن سجّل الشكوى ولمدير خدمة العملاء، مرة واحدة، ما دامت الشكوى مفتوحة',403);
+   if(!whatsappNumber(data.contactWhatsapp))throw new CRMError('لا رقم واتساب صالح للعميل في هذه الشكوى. أضفه من تعديل الشكوى.',400);
+   data.notifiedAt=now;data.notifiedBy=by;event();
   }else{
    if(!allowed.note)throw new CRMError('الملاحظة لمن يرى الشكوى ما دامت مفتوحة',403);
    note=input.text;data.notes.push({id:'n-'+input.requestId,at:now,by,text:input.text});
@@ -154,5 +172,5 @@ export async function POST(req:Request){try{
   if(input.action==='register'&&await c.db.prepare('SELECT 1 AS found FROM crm_records WHERE id=?').bind(id).first())throw new CRMError('سبق تسجيل هذه الشكوى. حدّث القائمة.',409);
   throw new CRMError('تغيّرت البيانات أو الصلاحيات أثناء الحفظ. حدّث الصفحة.',409);
  }
- return Response.json({ok:true,id});
+ return Response.json({ok:true,id,...await numbered(id)});
 }catch(e){if(e instanceof z.ZodError)return Response.json({error:e.issues.map(issue=>issue.message).join(' • ')},{status:400});return replyError(e);}}

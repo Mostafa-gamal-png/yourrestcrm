@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { type Row, isOpen, today } from '@/lib/crm';
 import { captureVisitLocation } from '@/lib/visit-location';
 import VoiceField,{DictationButton,appendDictation} from './voice-field';
+import {serviceText} from '@/lib/service-wording';
 import { contactTypes, visitPurposes, visitResults } from '@/lib/visits';
 export function FollowupDateField({value,onChange,min}:{value:string;onChange:(value:string)=>void;min?:string}){
     const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
@@ -18,6 +19,8 @@ export type VisitData = { [field: string]: unknown; type?: string; summary?: str
 type Props = {
     unified?: boolean;
     service?: boolean;
+    /** The member's role: customer service reads the record as an opportunity and its details as the contact. */
+    role?: string;
     readOnly?: boolean;
     data: VisitData;
     parentId: string;
@@ -30,8 +33,9 @@ type Props = {
     onLocationState?: (state:VisitLocationState) => void;
 };
 export type VisitLocationState={status:'idle'|'locating'|'captured'|'error';error:string};
-export default function VisitFields({ unified = false, service = false, readOnly = false, data, parentId, records, editing, busy, onChange, onParent,onLocationState }: Props) {
+export default function VisitFields({ unified = false, service = false, role, readOnly = false, data, parentId, records, editing, busy, onChange, onParent,onLocationState }: Props) {
     const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
+    const w=(text:string)=>serviceText(role,text),tw=(text:string)=>t(w(text));
     const captureRun = useRef(0), changeRef = useRef(onChange),stateRef=useRef(onLocationState),captureAbort=useRef<AbortController|null>(null);
     changeRef.current = onChange;
     stateRef.current=onLocationState;
@@ -71,20 +75,20 @@ export default function VisitFields({ unified = false, service = false, readOnly
             setLocating(false);
     } }
     return <>
-  {editing && data.visitNumber && <div className="visit-identity full"><span>{t("رقم الزيارة: ")}<strong>{t(data.visitNumber)}</strong></span></div>}
+  {editing && data.visitNumber && <div className="visit-identity full"><span>{tw("رقم الزيارة: ")}<strong>{t(data.visitNumber)}</strong></span></div>}
   {!unified && <><label className="field full"><span>{t("اسم العميل *")}</span>{!editing && <input type="search" placeholder={t("ابحث باسم المصنع أو رقمه أو المنطقة")} value={query} onChange={e => setQuery(e.target.value)}/>} {t(pick(customer?.id || '', onParent, customers.map(r => [r.id, `${r.data.name} · ${r.data.code || 'بدون رقم'} · ${r.data.region || ''}`]), 'اختر العميل', editing))}</label>
   <label className="field full"><span>{t("متابعة العميل المرتبطة")}</span>{t(pick(parent?.kind === 'opportunity' ? parent.id : 'none', v => onParent(v === 'none' ? customer?.id || '' : v), [['none', 'زيارة على العميل مباشرة'], ...opportunities.map(r => [r.id, `${r.data.followupTitle || r.data.moldType} · ${records.find(m => m.id === r.parentId)?.data.name || ''}`] as [
                 string,
                 string
             ])], 'المتابعة المرتبطة', editing || !customer))}</label></>}
   <label className="field"><span>{t("نوع التواصل")}</span>{t(pick(data.type, v => onChange('type', v), Object.entries(contactTypes).filter(([id])=>(service?['visit','call','email','whatsapp','website','social']:['visit','call','email','whatsapp']).includes(id)), 'نوع التواصل'))}</label>
-  <label className="field"><span>{t("الهدف من الزيارة *")}</span>{t(pick(customGoal ? 'other' : data.summary || '', v => { setCustomGoal(v === 'other'); onChange('summary', v === 'other' ? '' : v); }, [...visitPurposes.map(p => [p, p] as [
+  <label className="field"><span>{tw("الهدف من الزيارة *")}</span>{t(pick(customGoal ? 'other' : data.summary || '', v => { setCustomGoal(v === 'other'); onChange('summary', v === 'other' ? '' : v); }, [...visitPurposes.map(p => [p, p] as [
             string,
             string
-        ]), ['other', 'هدف آخر']], 'اختر الهدف من الزيارة',false,true))}{customGoal && <div className="dictation-row"><input aria-label={t("الهدف الآخر من الزيارة")} required value={data.summary || ''} onChange={e => onChange('summary', e.target.value)} placeholder={t("اكتب هدف التواصل")}/><DictationButton label="الهدف الآخر من الزيارة" disabled={busy||readOnly} contextKey={'goal:' + parentId} onText={text => onChange('summary', appendDictation(data.summary || '', text))}/></div>}</label>
-  {!unified && t(input('date', 'تاريخ الزيارة', 'date', true))}
-  <label className="field full"><span>{t('نتيجة الزيارة')}{!editing && <b> *</b>}</span><Select dir={direction()} value={resultValue || undefined} onValueChange={value => onChange('result', value)} required={!editing} disabled={busy||readOnly}><SelectTrigger className="pick" aria-label={t('نتيجة الزيارة')}><SelectValue placeholder={t('اختر نتيجة الزيارة')}/></SelectTrigger><SelectContent>{resultOptions.map(result => <SelectItem key={result} value={result}>{t(result)}</SelectItem>)}</SelectContent></Select></label>
-  <div className="visit-location full automatic-location visit-compact-location" id="visit-device-location"><div className="location-status" aria-live="polite">{locating ? <span><Loader2 className="spin" size={16}/>{t('جارٍ تحديد الموقع…')}</span> : data.location ? <span><MapPin size={16}/>{say('تم تحديد الموقع تلقائيًا','Location captured automatically')}</span> : editing ? <span>{t('الموقع غير مسجل في هذه الزيارة القديمة.')}</span> : <span><MapPin size={16}/>{t('يلزم السماح بالموقع لحفظ الزيارة.')}</span>}</div>{locating&&<small>{say('وافق على إذن الموقع أثناء استخدام التطبيق. تفعيل خط السير المستمر إجراء مستقل.','Allow location while using the app. Continuous route activation is a separate step.')}</small>}{data.location&&<details className="visit-location-details"><summary>{say('تفاصيل الموقع','Location details')}</summary><label className="field"><input aria-label={t('لوكيشن الزيارة التلقائي')} readOnly dir="ltr" value={data.location}/></label>{data.locationAccuracy!=null&&<small>{t(`دقة الجهاز ±${data.locationAccuracy} متر`)}</small>}</details>}{locationError&&<p role="alert">{t(locationError)}</p>}{!editing&&!readOnly&&!locating&&<button type="button" className="btn subtle small" disabled={busy} onClick={()=>void locate()}>{data.location?t('تحديث موقع الجهاز'):t('إعادة المحاولة')}</button>}</div>
+        ]), ['other', 'هدف آخر']], w('اختر الهدف من الزيارة'),false,true))}{customGoal && <div className="dictation-row"><input aria-label={tw("الهدف الآخر من الزيارة")} required value={data.summary || ''} onChange={e => onChange('summary', e.target.value)} placeholder={t("اكتب هدف التواصل")}/><DictationButton label={w('الهدف الآخر من الزيارة')} disabled={busy||readOnly} contextKey={'goal:' + parentId} onText={text => onChange('summary', appendDictation(data.summary || '', text))}/></div>}</label>
+  {!unified && t(input('date', w('تاريخ الزيارة'), 'date', true))}
+  <label className="field full"><span>{tw('نتيجة الزيارة')}{!editing && <b> *</b>}</span><Select dir={direction()} value={resultValue || undefined} onValueChange={value => onChange('result', value)} required={!editing} disabled={busy||readOnly}><SelectTrigger className="pick" aria-label={tw('نتيجة الزيارة')}><SelectValue placeholder={tw('اختر نتيجة الزيارة')}/></SelectTrigger><SelectContent>{resultOptions.map(result => <SelectItem key={result} value={result}>{t(result)}</SelectItem>)}</SelectContent></Select></label>
+  <div className="visit-location full automatic-location visit-compact-location" id="visit-device-location"><div className="location-status" aria-live="polite">{locating ? <span><Loader2 className="spin" size={16}/>{t('جارٍ تحديد الموقع…')}</span> : data.location ? <span><MapPin size={16}/>{say('تم تحديد الموقع تلقائيًا','Location captured automatically')}</span> : editing ? <span>{tw('الموقع غير مسجل في هذه الزيارة القديمة.')}</span> : <span><MapPin size={16}/>{tw('يلزم السماح بالموقع لحفظ الزيارة.')}</span>}</div>{locating&&<small>{say('وافق على إذن الموقع أثناء استخدام التطبيق. تفعيل خط السير المستمر إجراء مستقل.','Allow location while using the app. Continuous route activation is a separate step.')}</small>}{data.location&&<details className="visit-location-details"><summary>{say('تفاصيل الموقع','Location details')}</summary><label className="field"><input aria-label={tw('لوكيشن الزيارة التلقائي')} readOnly dir="ltr" value={data.location}/></label>{data.locationAccuracy!=null&&<small>{t(`دقة الجهاز ±${data.locationAccuracy} متر`)}</small>}</details>}{locationError&&<p role="alert">{t(locationError)}</p>}{!editing&&!readOnly&&!locating&&<button type="button" className="btn subtle small" disabled={busy} onClick={()=>void locate()}>{data.location?t('تحديث موقع الجهاز'):t('إعادة المحاولة')}</button>}</div>
   {!unified && <>{t(input('nextDate', 'موعد المتابعة', 'date'))}
   {t(input('nextAction', 'الإجراء القادم', 'text', false, true))}
   </>}{!unified && parent?.kind === 'opportunity' && isOpen(parent) && <label className="visit-sync full"><input type="checkbox" checked={!!data.syncFollowup} onChange={e => onChange('syncFollowup', e.target.checked)}/><span>{t("تحديث الإجراء وموعد المتابعة في المتابعة عند الحفظ أو الإنهاء")}</span></label>}

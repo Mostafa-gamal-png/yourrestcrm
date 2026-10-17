@@ -5,6 +5,7 @@ import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sh
 import {canViewPage} from '@/lib/access';
 import {roles,type Member} from '@/lib/crm';
 import {t,useLanguage} from '@/lib/i18n';
+import {serviceText} from '@/lib/service-wording';
 import {EmailLogout} from './email-login';
 import {QueueBadge} from './service-queue';
 import type {ServiceQueueEntry} from '@/lib/service-queue';
@@ -62,7 +63,7 @@ export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccou
  const primary=allowed.length>5?allowed.slice(0,4):allowed;
  const overflow=allowed.filter(page=>!primary.some(item=>item.id===page.id));
  const overflowActive=overflow.some(page=>page.id===view);
- const label=(page:typeof pages[number])=>page.id==='targets'&&me.role==='rep'?say('مستهدفي','My targets'):say(page.ar,page.en);
+ const label=(page:typeof pages[number])=>page.id==='targets'&&me.role==='rep'?say('مستهدفي','My targets'):serviceText(me.role,say(page.ar,page.en));
  const navigate=(id:string)=>{if(!canViewPage(me.role,id))return;setMoreOpen(false);onAccountOpenChange(false);onNavigate(id);if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'auto'});};
  if(!allowed.length)return null;
  return <>

@@ -46,6 +46,7 @@ try {
     const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', geolocation: {latitude: 26.437341, longitude: 50.034499, accuracy: 8}, permissions: ['geolocation']});
     const cookie = await app.login(memberId), [name, ...value] = cookie.split('=');
     await context.addCookies([{name, value: value.join('='), url: app.origin, httpOnly: true, secure: true, sameSite: 'Lax'}]);
+    await context.route('https://wa.me/**', route => route.fulfill({status: 200, contentType: 'text/html', body: '<title>WhatsApp</title>'}));
     const page = await context.newPage();
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => errors.push(memberId + ': ' + error.message));
@@ -74,7 +75,7 @@ try {
   // ---- fixtures: an eastern customer of the representative, a western one, and a complaint registered three days ago that waits late for its review
   const created = new Date().toISOString();
   const customer = (id, name, region, assignedTo = 'rep') => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')")
-    .bind(id, assignedTo, JSON.stringify({name, region, city: 'الدمام', phone: '0551234567', contact: 'أبو خالد', code: id, branch: 'الرئيسي', assignedTo}), created, created).run();
+    .bind(id, assignedTo, JSON.stringify({name, region, city: 'الدمام', phone: '0551234567', contact: 'أبو خالد', email: 'abukhaled@example.com', code: id, branch: 'الرئيسي', assignedTo}), created, created).run();
   await customer('f1', CUSTOMER, 'الشرقية'); await customer('f2', OTHER, 'الغربية', 'rep2');
   const old = dayOf(-3) + 'T05:00:00.000Z';
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('complaint-old','complaint',NULL,'cs_east','الرئيسي',?,?,?,1,'fixture')")
@@ -85,7 +86,7 @@ try {
   let complaintId;
   {
     await cs.locator('button.nav-item', {hasText: 'الشكاوى'}).waitFor();
-    check(await cs.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.trim())), ['الزيارات', 'الشكاوى'], 'customer service has the Visits page and the Complaints page');
+    check(await cs.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.trim())), ['الفرص', 'الشكاوى'], 'customer service has the Opportunities page (the Visits page, in its words) and the Complaints page');
     await goDesktop(cs, 'الشكاوى');
     const page = cs.locator('.complaints-page');
     await page.waitFor();
@@ -109,15 +110,42 @@ try {
     await dialog.locator('textarea').nth(1).fill('استبدال القالب');
     await dialog.locator('label.field').filter({hasText: 'مرجع'}).locator('input').fill('INV-2026-100');
     check(await dialog.locator('label.field').filter({hasText: 'رقم التواصل'}).locator('input').inputValue(), '0551234567', 'the customer\'s phone is filled in');
+    const whatsapp = dialog.locator('label.field').filter({hasText: 'واتساب العميل'}).locator('input'), mail = dialog.locator('label.field').filter({hasText: 'البريد الإلكتروني'}).locator('input');
+    check([await whatsapp.inputValue(), await mail.inputValue()], ['0551234567', 'abukhaled@example.com'], 'and so are the WhatsApp number and the e-mail of the customer\'s card');
+    await whatsapp.fill('abc');
+    check([await submit.isDisabled(), await dialog.locator('p.form-error[role=alert]').innerText()], [true, 'رقم واتساب غير صالح: اكتب من 7 إلى 15 رقمًا.'], 'a WhatsApp number that is not one holds the registration and says why');
+    await whatsapp.fill('0551234567');
     check(await submit.isDisabled(), false, 'then it is enabled');
     await layoutOk(cs, 'customer service: registration'); await shot(cs, 'complaints-register');
     await submit.click();
-    await dialog.waitFor({state: 'detached'});
+    // saved, the dialog stays on the step that tells the customer
+    const step = dialog.locator('.complaint-notify-step');
+    await step.waitFor();
     const stored = await eventually(async () => { const found = await rowFor('f1'); return found && found.id !== 'complaint-old' ? found : null; }, 'the complaint is stored');
     complaintId = stored.id;
+    check([stored.data.complaintNumber, stored.data.contactWhatsapp, stored.data.contactEmail, stored.data.notifiedAt], [1, '0551234567', 'abukhaled@example.com', undefined], 'the complaint is number 1, with the WhatsApp number and the e-mail, and the customer is not told yet');
+    ok((await step.innerText()).includes('سُجّلت الشكوى رقم 1'), 'the dialog says it is registered, with its number');
+    const day = new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Riyadh', day: '2-digit', month: '2-digit', year: 'numeric'}).format(new Date(stored.data.submittedAt));
+    const message = 'السلام عليكم. شركة يورست للصناعات: تم تسجيل شكواكم رقم 1 بتاريخ ' + day + ' بخصوص «جودة المنتج أو القالب»، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.';
+    check((await step.locator('blockquote.complaint-message').innerText()).trim(), message, 'it shows the message that will be sent, word for word');
+    const link = step.locator('a[data-notify="open"]');
+    const href = await link.getAttribute('href');
+    check([href.split('?text=')[0], decodeURIComponent(href.split('?text=')[1])], ['https://wa.me/966551234567', message], 'the button is a link to WhatsApp on the customer\'s number with that message');
+    await layoutOk(cs, 'customer service: the step that tells the customer'); await shot(cs, 'complaints-notify-step');
+    const [popup] = await Promise.all([cs.waitForEvent('popup'), link.click()]);
+    ok(popup.url().startsWith('https://wa.me/966551234567?text='), 'tapping it opens WhatsApp on that number');
+    await popup.close();
+    await eventually(async () => (await rowFor('f1')).data.events.some(event => event.action === 'notify'), 'the complaint\'s story records that the message was opened');
+    const told = await rowFor('f1');
+    check([told.data.notifiedBy, !!told.data.notifiedAt, told.data.events.map(event => event.action)], ['cs_east', true, ['register', 'notify']], 'by whom, and when');
+    await step.locator('[data-notified="true"]').waitFor();
+    check(await step.locator('a[data-notify="open"]').count(), 0, 'the dialog says so, and offers the message no more');
+    await step.getByRole('button', {name: 'تم', exact: true}).click();
+    await dialog.waitFor({state: 'detached'});
     check([stored.data.status, stored.data.registrarId, stored.data.serviceManagerId, stored.data.severity, stored.data.category, stored.data.description, stored.data.demand, stored.data.reference, stored.data.contactPhone], ['submitted', 'cs_east', 'csm', 'high', 'product_quality', DESCRIPTION, 'استبدال القالب', 'INV-2026-100', '0551234567'], 'with everything typed, waiting for the manager');
     await card(cs, complaintId).waitFor();
     check([await card(cs, complaintId).getAttribute('data-severity'), (await card(cs, complaintId).innerText()).includes('أهمية عالية')], ['high', true], 'the new card is marked high');
+    ok((await card(cs, complaintId).innerText()).includes('#1') && (await card(cs, complaintId).locator('[data-notified="true"]').count()) === 1 && (await card(cs, complaintId).locator('a[data-notify="open"]').count()) === 0, 'it carries its number and says that the customer was told, with no second button');
     await layoutOk(cs, 'customer service: complaints page'); await shot(cs, 'complaints-cs-page');
     check(await cs.locator('details.complaint-report').count(), 0, 'customer service gets no monthly report');
   }
@@ -274,7 +302,7 @@ try {
     await close.locator('textarea').fill('أكد العميل أن المشكلة انتهت');
     await close.getByRole('button', {name: 'إغلاق الشكوى', exact: true}).click();
     const closed = await eventually(async () => { const found = await rowFor('f1'); return found.data.status === 'closed' ? found : null; }, 'closed');
-    check([closed.data.closure.outcome, closed.data.events.map(event => event.action)], ['satisfied', ['register', 'return', 'edit', 'forward', 'assign', 'resolve', 'close']], 'with its whole story');
+    check([closed.data.closure.outcome, closed.data.events.map(event => event.action)], ['satisfied', ['register', 'notify', 'return', 'edit', 'forward', 'assign', 'resolve', 'close']], 'with its whole story, the message to the customer included');
     await sheet.getByText('إعادة فتح الشكوى: لماذا؟').waitFor();
     checks++;
     await shot(cs, 'complaints-closed');

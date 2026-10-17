@@ -100,18 +100,27 @@ eq(everyone.filter(id=>C.canRegisterComplaint(customers[4],{me:members.find(memb
 
 // ---- who may do what, at every step
 const permissionsOf=(entry,me)=>trueKeys(perms(entry,me));
-eq([permissionsOf(submitted(),'cs_east'),permissionsOf(submitted(),'csm'),permissionsOf(submitted(),'owner'),permissionsOf(submitted(),'cs_all')],[['cancel','edit','note'],['cancel','forward','note','return'],['cancel','edit','forward','note','return'],['note']],'just registered: the registrar corrects or cancels, the manager forwards, returns or cancels, a colleague may only note');
-eq([permissionsOf(submitted(RECENT,{registrarId:'cs_lone',serviceManagerId:''}),'csm2'),permissionsOf(submitted(),'csm2')],[['cancel','forward','note','return'],[]],'a manager reviews what has no manager, and nothing of another manager\'s team');
-eq([permissionsOf(returned(),'cs_east'),permissionsOf(returned(),'csm'),permissionsOf(returned(),'cs_all')],[['cancel','edit','note'],['cancel','note'],['note']],'returned: the registrar corrects it');
-eq([permissionsOf(pending(),'sm'),permissionsOf(pending(),'owner'),permissionsOf(pending(),'csm'),permissionsOf(pending(),'cs_east'),permissionsOf(pending(),'sm2')],[['assign','note'],['assign','cancel','note'],['note'],['note'],[]],'waiting for assignment: the sales manager it went to assigns; the other does not see it');
+eq([permissionsOf(submitted(),'cs_east'),permissionsOf(submitted(),'csm'),permissionsOf(submitted(),'owner'),permissionsOf(submitted(),'cs_all')],[['cancel','edit','note','notify'],['cancel','forward','note','notify','return'],['cancel','edit','forward','note','notify','return'],['note']],'just registered: the registrar corrects, cancels or tells the customer, the manager forwards, returns, cancels or tells, a colleague may only note');
+eq([permissionsOf(submitted(RECENT,{registrarId:'cs_lone',serviceManagerId:''}),'csm2'),permissionsOf(submitted(),'csm2')],[['cancel','forward','note','notify','return'],[]],'a manager reviews what has no manager, and nothing of another manager\'s team');
+eq([permissionsOf(returned(),'cs_east'),permissionsOf(returned(),'csm'),permissionsOf(returned(),'cs_all')],[['cancel','edit','note','notify'],['cancel','note','notify'],['note']],'returned: the registrar corrects it');
+eq([permissionsOf(pending(),'sm'),permissionsOf(pending(),'owner'),permissionsOf(pending(),'csm'),permissionsOf(pending(),'cs_east'),permissionsOf(pending(),'sm2')],[['assign','note'],['assign','cancel','note','notify'],['note','notify'],['note','notify'],[]],'waiting for assignment: the sales manager it went to assigns; the other does not see it');
 eq([permissionsOf(assigned(),'rep'),permissionsOf(assigned(),'sup'),permissionsOf(assigned(),'sm'),permissionsOf(assigned(),'sm2'),permissionsOf(assigned(),'owner'),permissionsOf(assigned(),'csm'),permissionsOf(assigned(),'cs_east'),permissionsOf(assigned(),'rep2')],
- [['note','resolve','seen','update'],['delegate','note'],['note','reassign'],['note'],['cancel','note','reassign','resolve','update'],['note'],['note'],[]],'assigned: the holder opens, updates and resolves; his supervisor may delegate; the sales manager it went to may reassign');
+ [['note','resolve','seen','update'],['delegate','note'],['note','reassign'],['note'],['cancel','note','notify','reassign','resolve','update'],['note','notify'],['note','notify'],[]],'assigned: the holder opens, updates and resolves; his supervisor may delegate; the sales manager it went to may reassign');
 eq(permissionsOf(assigned(RECENT,{seenAt:RECENT}),'rep'),['note','resolve','update'],'once opened it is not opened again');
 eq(permissionsOf(assigned(RECENT,{seenAt:LATE4,reassignedAt:RECENT,assignedAt:LATE4}),'rep'),['note','resolve','seen','update'],'but a new dispatch is opened anew');
 eq([permissionsOf(assigned(RECENT,{assigneeId:'sup'}),'sup'),permissionsOf(assigned(RECENT,{assigneeId:'sup'}),'rep')],[['delegate','note','resolve','seen','update'],[]],'a supervisor holding it may delegate or work it himself');
-eq([permissionsOf(resolved(),'cs_east'),permissionsOf(resolved(),'csm'),permissionsOf(resolved(),'owner'),permissionsOf(resolved(),'rep'),permissionsOf(resolved(),'sm'),permissionsOf(resolved(),'cs_all')],[['close','note','reject'],['close','note','reject'],['cancel','close','note','reject'],['note'],['note'],['note']],'resolved: the registrar or the manager closes it or sends it back');
+eq([permissionsOf(resolved(),'cs_east'),permissionsOf(resolved(),'csm'),permissionsOf(resolved(),'owner'),permissionsOf(resolved(),'rep'),permissionsOf(resolved(),'sm'),permissionsOf(resolved(),'cs_all')],[['close','note','notify','reject'],['close','note','notify','reject'],['cancel','close','note','notify','reject'],['note'],['note'],['note']],'resolved: the registrar or the manager closes it or sends it back');
 eq([permissionsOf(closed(),'cs_east'),permissionsOf(closed(),'csm'),permissionsOf(closed(),'owner'),permissionsOf(closed(),'rep'),permissionsOf(closed('2026-09-20T09:00:00.000Z'),'cs_east')],[['reopen'],['reopen'],['reopen'],[],[]],'closed: reopened by customer service for fourteen days, then never');
 eq(permissionsOf(row({status:'cancelled',cancelledAt:RECENT}),'owner'),[],'cancelled: nothing');
+
+// ---- who may tell the customer: the registrar, the manager who reviews the complaint, an administrator; once, while it is open
+const notifiers=entry=>everyone.filter(id=>canRead(entry,id)&&perms(entry,id).notify);
+eq(notifiers(submitted()),['owner','csm','cs_east'],'a new complaint: its registrar, the manager who reviews it, the administrator; not a colleague');
+eq(notifiers(assigned()),['owner','csm','cs_east'],'and still while a representative holds it; the sales side never tells the customer');
+eq(notifiers(resolved()),['owner','csm','cs_east'],'and while it waits to be closed');
+eq(notifiers(submitted(RECENT,{registrarId:'cs_lone',serviceManagerId:''})),['owner','csm','csm2','cs_lone'],'with no manager of its own, any manager of the branch may');
+eq(notifiers(submitted(RECENT,{notifiedAt:RECENT,notifiedBy:'cs_east'})),[],'once the customer was told, nobody tells again');
+eq([notifiers(closed()),notifiers(row({status:'cancelled',cancelledAt:RECENT}))],[[],[]],'a closed or cancelled complaint is not told');
 
 // ---- what each reader is asked to do
 eq([awaiting(submitted(),'csm'),awaiting(submitted(),'owner'),awaiting(submitted(),'cs_east'),awaiting(submitted(RECENT,{registrarId:'cs_lone',serviceManagerId:''}),'owner'),awaiting(submitted(RECENT,{registrarId:'cs_lone',serviceManagerId:''}),'csm2')],['review',null,null,'review','review'],'the review waits for the manager; for the administrator only when there is no manager');
@@ -159,6 +168,13 @@ eq(C.complaintsOfCustomer(csmList,'c-6').map(entry=>entry.severity),['high'],'a 
 eq(list('owner',[submitted(RECENT,{registrarId:'cs_lone',serviceManagerId:''})]).map(entry=>[entry.unrouted,entry.awaiting]),[[true,'review']],'a complaint with no manager is marked and goes to the administrator');
 const detailed=list('rep',[assigned(LATE24,{updates:[update('rep',LATE4,'زرت المصنع')],notes:[{id:'n1',at:LATE4,by:'csm',text:'العميل مهم جدًا'}],events:[{at:LATE50,by:'cs_east',action:'register'},{at:LATE24,by:'sm',action:'assign',targetId:'rep',text:'العميل مهم'}]})])[0];
 eq([detailed.updates.map(update=>[update.text,update.byName]),detailed.notes.map(note=>note.byName),detailed.events.map(event=>[event.action,event.byName,event.targetName])],[[['زرت المصنع','الاسم rep']],['الاسم csm'],[['register','الاسم cs_east',''],['assign','الاسم sm','الاسم rep']]],'updates, notes and the story carry names');
+
+// ---- the contact details, the number and the notice travel with the entry; a complaint from before them has none
+const legacy=list('csm',[submitted()])[0];
+eq([legacy.complaintNumber,legacy.contactWhatsapp,legacy.contactEmail,legacy.notifiedAt,legacy.notifiedByName],[null,'','','',''],'a complaint registered before numbering began has no number, no WhatsApp, no e-mail and no notice');
+const numbered=list('csm',[submitted(RECENT,{complaintNumber:124,contactWhatsapp:'0551234501',contactEmail:'khaled@example.com',notifiedAt:RECENT,notifiedBy:'cs_east'})])[0];
+eq([numbered.complaintNumber,numbered.contactWhatsapp,numbered.contactEmail,numbered.notifiedAt,numbered.notifiedByName],[124,'0551234501','khaled@example.com',RECENT,'الاسم cs_east'],'a complaint since then carries its number, its details and who opened the message');
+eq(list('csm',[submitted(RECENT,{complaintNumber:0}),submitted(RECENT,{complaintNumber:'7'})]).map(entry=>entry.complaintNumber),[null,null],'a number that is not a positive number is not shown');
 
 // ---- a complaint never travels with the sales records
 const complaintAsRecord={...assigned(),kind:'complaint'};

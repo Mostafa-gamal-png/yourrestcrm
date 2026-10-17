@@ -58,13 +58,13 @@ const base={kind:'complaint',customerId:'c-1',status:'submitted',registrarId:'cs
 let serial=0;
 const row=data=>{serial++;const merged={...base,...data};return {id:'complaint-'+serial,branch:'Main',assignedTo:merged.registrarId,data:merged,createdAt:merged.submittedAt,updatedAt:merged.closedAt||merged.submittedAt,version:3};};
 const rows=[
- row({submittedAt:LATE}),                                                                                          // 1: late review
- row({customerId:'c-2',severity:'high'}),                                                                           // 2: high, western
+ row({submittedAt:LATE,complaintNumber:124,contactWhatsapp:'0551234567',contactEmail:'khaled@example.com'}),         // 1: late review, numbered, with WhatsApp and e-mail
+ row({customerId:'c-2',severity:'high',contactWhatsapp:'0112345678'}),                                               // 2: high, western, a landline in the WhatsApp box
  row({status:'returned',submittedAt:OLD,returnedAt:RECENT,returnNote:'Add the invoice number'}),                     // 3
  row({status:'pending_assignment',submittedAt:OLD,forwardedAt:RECENT,salesManagerId:'sm'}),                        // 4
  row({status:'assigned',submittedAt:OLD,forwardedAt:OLD,assignedAt:LATE,salesManagerId:'sm',assigneeId:'rep',assignmentNote:'Important customer',events:[{at:OLD,by:'cs_east',action:'register'},{at:OLD,by:'csm',action:'forward',targetId:'sm'},{at:LATE,by:'sm',action:'assign',targetId:'rep',text:'Important customer'}]}), // 5
  row({status:'assigned',submittedAt:OLD,forwardedAt:OLD,assignedAt:OLD,salesManagerId:'sm',assigneeId:'rep',updates:[{id:'u1',at:LATE,by:'rep',channel:'visit',date:'2026-10-13',text:'Visited the factory and checked the mold'}],notes:[{id:'n1',at:LATE,by:'csm',text:'The customer called twice'}]}), // 6
- row({status:'resolved',submittedAt:OLD,forwardedAt:OLD,assignedAt:OLD,salesManagerId:'sm',assigneeId:'rep',updates:[{id:'u2',at:OLD,by:'rep',channel:'call',date:'2026-10-08',text:'Called the customer'}],resolvedAt:RECENT,resolution:{outcome:'solved',note:'Replaced the mold',by:'rep',at:RECENT}}), // 7
+ row({status:'resolved',submittedAt:OLD,forwardedAt:OLD,assignedAt:OLD,salesManagerId:'sm',assigneeId:'rep',updates:[{id:'u2',at:OLD,by:'rep',channel:'call',date:'2026-10-08',text:'Called the customer'}],resolvedAt:RECENT,resolution:{outcome:'solved',note:'Replaced the mold',by:'rep',at:RECENT},contactWhatsapp:'0551234567',notifiedAt:RECENT,notifiedBy:'cs_east'}), // 7: the customer was told
  row({status:'closed',submittedAt:OLD,forwardedAt:OLD,assignedAt:OLD,salesManagerId:'sm',assigneeId:'rep',resolvedAt:LATE,resolution:{outcome:'solved',note:'Replaced the mold',by:'rep',at:LATE},closedAt:RECENT,closure:{outcome:'satisfied',note:'Customer confirmed',by:'cs_east',at:RECENT}}) // 8
 ];
 const list=me=>C.complaintQueue({me:members.find(member=>member.id===me),members,all:customers,complaints:rows},now,Infinity);
@@ -136,6 +136,35 @@ out=sheet('complaint-8','cs_east');
 ok(out.includes('إعادة فتح الشكوى: لماذا؟')&&out.includes('العميل راضٍ · Customer confirmed'),'a closed one may be reopened, and shows its closure');
 ok(!sheet('complaint-8','rep').includes('إعادة فتح'),'not by the representative');
 
+// ---- the number, the contact details and the message to the customer
+const MESSAGE='السلام عليكم. شركة يورست للصناعات: تم تسجيل شكواكم رقم 124 بتاريخ 13/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.';
+const hrefsOf=source=>[...source.matchAll(/data-notify="open" href="([^"]+)"/g)].map(match=>match[1].replace(/&amp;/g,'&'));
+out=page('cs_east');
+ok(out.includes('<bdi class="complaint-number">#124 </bdi>'),'the numbered complaint shows its number on its card');
+eq(hrefsOf(out).map(href=>href.split('?')[0]),['https://wa.me/966551234567'],'the registrar has the message button on the card of the open complaint whose customer was not told and whose number WhatsApp can open (the one already told and the ones with no number have none)');
+eq(decodeURIComponent(hrefsOf(out)[0].split('?text=')[1]),MESSAGE,'and it carries the complaint\'s own number, date and category, word for word');
+ok(out.includes('data-notified="true"')&&out.includes('فُتحت رسالة واتساب للعميل'),'the complaint whose customer was told says so on its card');
+out=page('csm');
+eq(hrefsOf(out).length,1,'the manager has the same button, and not for the landline');
+out=page('sm','panel');
+eq(hrefsOf(out),[],'the sales manager\'s panel never offers it');
+out=page('rep','panel');
+eq(hrefsOf(out),[],'nor the representative\'s');
+out=sheet('complaint-1','csm');
+ok(out.includes('رقم 124'),'the sheet\'s title carries the number');
+ok(out.includes('href="https://wa.me/966551234567"')&&out.includes('href="mailto:khaled@example.com"')&&out.includes('khaled@example.com'),'the sheet links the customer\'s WhatsApp chat and e-mail');
+eq(hrefsOf(out).length,1,'with the message button, once');
+ok(out.includes('تُفتح الرسالة في واتساب لتراجعها وترسلها من هاتفك'),'and says what it does');
+out=sheet('complaint-2','csm');
+ok(out.includes('لا رقم واتساب صالح للعميل في هذه الشكوى')&&hrefsOf(out).length===0&&!/wa\.me\/(966)?112345678/.test(out),'a number WhatsApp cannot open gets no button and no link, and the sheet says why');
+out=sheet('complaint-7','cs_east');
+ok(out.includes('إبلاغ العميل')&&out.includes('فُتحت رسالة واتساب للعميل')&&out.includes('CS East'),'once told, the sheet says by whom');
+eq(hrefsOf(out),[],'and offers the button no more');
+out=sheet('complaint-6','rep');
+ok(!out.includes('إرسال رسالة واتساب للعميل')&&hrefsOf(out).length===0,'a representative is never offered it');
+out=sheet('complaint-5','csm');
+ok(!/شكوى عميل · رقم/.test(out),'a complaint from before numbering has no number in its title');
+
 // ---- the customer's own list and the navigation count
 out=html(React.createElement(CustomerComplaints,{entries:C.complaintsOfCustomer(list('owner'),'c-1'),onOpen:noop}));
 eq(count(out,'class="complaint-card"'),7,'a customer\'s sheet lists his complaints');
@@ -155,6 +184,12 @@ ok(out.includes('Record a contact with the customer')&&out.includes('Record the 
 eq(arabicLeft(out),[],'with no Arabic');
 out=html(React.createElement(ComplaintRegisterDialog,{me:me('cs_east'),records:customers,complaints:[],onClose:noop,onSaved:noop}));
 ok(out.includes('Register a complaint')&&out.includes('Search for the customer'),'the English form');
+eq(arabicLeft(out),[],'with no Arabic');
+out=sheet('complaint-1','csm');
+ok(out.includes('Send a WhatsApp message to the customer')&&out.includes('No. 124')&&out.includes('E-mail'),'the English sheet offers the message and carries the number');
+eq(arabicLeft(out),[],'with no Arabic');
+out=page('cs_east');
+ok(out.includes('Send a WhatsApp message to the customer')&&out.includes('WhatsApp message opened for the customer'),'the English card');
 eq(arabicLeft(out),[],'with no Arabic');
 language='ar';
 ok(arabicLeft(page('csm')).length>20,'the Arabic control is Arabic');

@@ -22,6 +22,7 @@ import VisitsTable from './visits-table';
 import {SupportButton,type SupportBinding} from './support-panel';
 import {useAutomaticJourney,useJourneyTracker,JourneyFormNotice} from './journey-tracker';
 import VisitPlaceStatus from './visit-place-status';
+import {serviceText} from '@/lib/service-wording';
 import {visitPlaceView} from '@/lib/visit-place';
 import './visit-mobile.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
@@ -37,7 +38,7 @@ function Pick({ value, onChange, options, label, disabled = false }: {
     label: string;
     disabled?: boolean;
 }) { useLanguage(); return <Select dir={direction()} value={value || undefined} onValueChange={onChange} disabled={disabled}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{t(options.map(([id, text]) => <SelectItem key={id} value={id}>{t(text)}</SelectItem>))}</SelectContent></Select>; }
-export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuote, canEdit = true, onDelete, support }: {
+export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuote, canEdit = true, onDelete, support, role }: {
     customer: Row;
     support?: SupportBinding;
     records: Row[];
@@ -46,23 +47,25 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
     onQuote?: (id: string) => void;
     canEdit?: boolean;
     onDelete?: (row:Row)=>void;
+    role?: string;
 }) {
     useLanguage();
+    const tw=(text:string)=>t(serviceText(role,text));
     const visits = customerVisits(customer.id, records), requests = records.filter(r => isSalesRequest(r) && visitCustomer(r, records)?.id === customer.id);
     const [order, setOrder] = useState('newest');
     const orderedVisits = order === 'newest' ? visits : [...visits].reverse();
     return <section className="customer-visit-history">
-        <div className="history-title"><h3><History size={18}/>{t("سجل الزيارات")}</h3><span className="count-badge">{visits.length} {t("زيارة / اتصال")}</span><SupportButton customerId={customer.id} support={support}/></div>
-        <div className="visit-history-toolbar"><label><span>{t("ترتيب الزيارات")}</span><select value={order} onChange={e => setOrder(e.target.value)}><option value="newest">{t("الأحدث أولًا")}</option><option value="oldest">{t("الأقدم أولًا")}</option></select></label></div>
-        {!visits.length && <p className="muted">{t("لا توجد زيارات سابقة لهذا العميل.")}</p>}
+        <div className="history-title"><h3><History size={18}/>{tw("سجل الزيارات")}</h3><span className="count-badge">{visits.length} {tw("زيارة / اتصال")}</span><SupportButton customerId={customer.id} support={support}/></div>
+        <div className="visit-history-toolbar"><label><span>{tw("ترتيب الزيارات")}</span><select value={order} onChange={e => setOrder(e.target.value)}><option value="newest">{t("الأحدث أولًا")}</option><option value="oldest">{t("الأقدم أولًا")}</option></select></label></div>
+        {!visits.length && <p className="muted">{tw("لا توجد زيارات سابقة لهذا العميل.")}</p>}
         <ol className="visit-history-timeline">{orderedVisits.map(v => {
             const hasTime = !!v.data.startedAt && Number.isFinite(Date.parse(v.data.startedAt));
             const date = hasTime ? formatVisitTime(v.data.startedAt) : v.data.date || (Number.isFinite(Date.parse(v.createdAt)) ? new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Riyadh'}).format(new Date(v.createdAt)) : '—');
             return <li key={v.id}><article className="visit-history-entry">
-                <header><strong>{v.data.visitWorkflow==='followup-v1'&&<span className="badge">{t('متابعة')}</span>} {t(contactTypes[v.data.type]) || t('زيارة')} {v.data.visitNumber ? <bdi>#{v.data.visitNumber}</bdi> : ''}</strong><div className="visit-history-date"><span dir="ltr">{date}</span>{!hasTime && <small>{t("الوقت غير مسجل")}</small>}</div></header>
+                <header><strong>{v.data.visitWorkflow==='followup-v1'&&<span className="badge">{t('متابعة')}</span>} {t(contactTypes[v.data.type]) || tw('زيارة')} {v.data.visitNumber ? <bdi>#{v.data.visitNumber}</bdi> : ''}</strong><div className="visit-history-date"><span dir="ltr">{date}</span>{!hasTime && <small>{t("الوقت غير مسجل")}</small>}</div></header>
                 <dl className="visit-history-facts">
-                    <div><dt>{t("الهدف من الزيارة")}</dt><dd>{visitPurposes.includes(v.data.summary) ? t(v.data.summary) : v.data.summary || '—'}</dd></div>
-                    <div><dt>{t("نتيجة الزيارة")}</dt><dd>{t(visitResult(v.data)) || t('لم تسجل نتيجة')}</dd></div>
+                    <div><dt>{tw("الهدف من الزيارة")}</dt><dd>{visitPurposes.includes(v.data.summary) ? t(v.data.summary) : v.data.summary || '—'}</dd></div>
+                    <div><dt>{tw("نتيجة الزيارة")}</dt><dd>{t(visitResult(v.data)) || t('لم تسجل نتيجة')}</dd></div>
                     <div><dt>{t("مرحلة البيع")}</dt><dd>{t(stageLabels[v.data.salesStage]) || t('مرحلة البيع غير مسجلة')}</dd></div>
                     <div><dt>{t("موعد المتابعة")}</dt><dd>{v.data.nextDate || '—'}</dd></div>
                     <div className="full"><dt>{t("الإجراء القادم")}</dt><dd>{v.data.nextAction || '—'}</dd></div>
@@ -70,10 +73,10 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
                 </dl>
                 {v.data.requestSnapshot?.lossReason && <p>{t('سبب فقد الطلب')}: {v.data.requestSnapshot.lossReason}</p>}
                 {v.data.recordedByEmail && <small className="visit-history-recorder"><bdi>{v.data.recordedByEmail}</bdi></small>}
-                <button type="button" className="text-button" onClick={() => onVisit(v)}>{t(!canEdit||v.data._readOnly?'عرض التفاصيل':v.data.visitWorkflow==='followup-v1'?'تفاصيل المتابعة':'عرض / تعديل الزيارة')}</button>
+                <button type="button" className="text-button" onClick={() => onVisit(v)}>{tw(!canEdit||v.data._readOnly?'عرض التفاصيل':v.data.visitWorkflow==='followup-v1'?'تفاصيل المتابعة':'عرض / تعديل الزيارة')}</button>
                 {onDelete&&v.data.visitWorkflow!=='service-intake-v1'&&!v.data._offlineState&&!v.data._offlineAcknowledged&&<button type="button" className="btn subtle small danger" onClick={()=>onDelete(v)}>{t("حذف السجل")}</button>}
             </article></li>;
-        })}</ol>{requests.length > 0 && <details className="previous-requests"><summary>{t("طلبات القوالب وعروض الأسعار (")}{t(requests.length)})</summary>{t(requests.map(r => { const linked = visits.filter(v => visitRequest(v, records)?.id === r.id), quotes = records.filter(q => q.kind === 'quote' && q.parentId === r.id); return <article key={r.id}><strong>{r.data.moldType} · {t(stageLabels[r.data.stage])} · {r.data.value == null ? t('غير مسعّر') : t(money(r.data.value)) + t(' ر.س')}</strong><small>{linked.length ? t(`${linked.length} زيارة مرتبطة`) : t('طلب قالب سابق — لا توجد زيارة مسجلة')}{r.data.lossReason ? t(' · ') + r.data.lossReason : t('')}</small>{onNew && <button type="button" className="text-button" onClick={() => onNew(r)}>{t("تسجيل زيارة لهذا الطلب")}</button>}{t(quotes.map(q => <button type="button" className="text-button" key={q.id} onClick={() => onQuote?.(q.id)}>{q.data.number} · {t(money(q.data.total))}{t(" ر.س")}</button>))}</article>; }))}</details>}</section>;
+        })}</ol>{requests.length > 0 && <details className="previous-requests"><summary>{t("طلبات القوالب وعروض الأسعار (")}{t(requests.length)})</summary>{t(requests.map(r => { const linked = visits.filter(v => visitRequest(v, records)?.id === r.id), quotes = records.filter(q => q.kind === 'quote' && q.parentId === r.id); return <article key={r.id}><strong>{r.data.moldType} · {t(stageLabels[r.data.stage])} · {r.data.value == null ? t('غير مسعّر') : t(money(r.data.value)) + t(' ر.س')}</strong><small>{linked.length ? t(`${linked.length} زيارة مرتبطة`) : tw('طلب قالب سابق — لا توجد زيارة مسجلة')}{r.data.lossReason ? t(' · ') + r.data.lossReason : t('')}</small>{onNew && <button type="button" className="text-button" onClick={() => onNew(r)}>{tw("تسجيل زيارة لهذا الطلب")}</button>}{t(quotes.map(q => <button type="button" className="text-button" key={q.id} onClick={() => onQuote?.(q.id)}>{q.data.number} · {t(money(q.data.total))}{t(" ر.س")}</button>))}</article>; }))}</details>}</section>;
 }
 export function VisitsPage({ records, members, query, staff, stage, onOpen, onNew, onCustomer, onWorkflow, workflow, onWorkflowFilter, canEdit = true, onDelete, support }: {
     support?: SupportBinding;
@@ -118,7 +121,8 @@ type Props = {
     onWorkflow: (id:string) => void;
 };
 export function CustomerVisitDialog({ initial, competitorName: seedCompetitorName = '', showCompetitor = false, customerId: seedCustomerId, requestId: seedRequestId, records, members, me, onClose, onSaved, onCustomerCreated, onOpenVisit, onNewVisit, onOpenCustomer, onOpenQuote, onDelete, onWorkflow }: Props) {
-    const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
+    const {language}=useLanguage(),say=(ar:string,en:string)=>serviceText(me.role,language==='ar'?ar:en);
+    const tw=(text:string)=>t(serviceText(me.role,text));
     const initialCustomer = initial ? visitCustomer(initial, records) : records.find(r => r.id === seedCustomerId), originalRequest = initial ? visitRequest(initial, records) : records.find(r => r.id === seedRequestId);
     const intake=initialCustomer?.data._serviceIntake;
     const service=initial?initial.data.visitWorkflow==='service-intake-v1':isServiceRole(me.role), readOnly=!!initial&&(me.role==='rep'||!!initial.data._readOnly), workflow=initial?.data._serviceWorkflow;
@@ -208,7 +212,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
         onInteractOutside={event=>{if(busy||uploading||savingCustomer)event.preventDefault();}}>
         <header className="visit-dialog-heading">
           <div className="visit-language"><LanguageSwitch/></div>
-          <DialogTitle ref={titleRef} tabIndex={-1}>{initial ? t(readOnly?'تفاصيل الزيارة #':'تعديل الزيارة #') + (t(initial.data.visitNumber) || t('—')) : t('زيارة جديدة')}</DialogTitle>
+          <DialogTitle ref={titleRef} tabIndex={-1}>{initial ? tw(readOnly?'تفاصيل الزيارة #':'تعديل الزيارة #') + (t(initial.data.visitNumber) || t('—')) : tw('زيارة جديدة')}</DialogTitle>
           <DialogDescription className="sr-only">{readOnly?say('بيانات الزيارة ونتيجتها والخطوة القادمة.','Recorded visit, outcome and next step.'):say('اختار العميل، سجّل نتيجة التواصل وحدّد الخطوة الجاية.','Choose a customer, record the outcome, and set the next step.')}</DialogDescription>
         </header>
         <form onSubmit={save} onInvalidCapture={revealInvalid} className="visit-entry-form">
@@ -221,14 +225,14 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
                   <div className="customer-card-grid">{Object.entries({'المنطقة / المدينة':[customer.data.region,customer.data.city].filter(Boolean).join(' · '),'نوع العميل':customer.data.customerType,'مسؤول التواصل':customer.data.contact||customer.data.contact2,'رقم التواصل':customer.data.phone||customer.data.phone2,'حالة التعامل / السحب':customer.data.customerStatus,'الماكينات':customer.data.machineTypes||'','عدد الماكينات':customer.data.machineCount??''}).map(([label,value])=><div key={label}><span>{t(label)}</span><strong>{t(String(value||'غير مسجل'))}</strong></div>)}</div>
                   {customer.data.notes&&<p>{customer.data.notes}</p>}<button type="button" className="text-button" onClick={()=>requestLeave(()=>onOpenCustomer(customer.id))}>{say('فتح بطاقة العميل','Open customer card')}</button>
                 </div></details>
-                <details className="visit-context-details"><summary><History size={16}/>{t('سجل الزيارات')} <span className="count-badge">{customerVisits(customer.id,records).length}</span></summary><div className="visit-context-body"><CustomerVisitHistory key={customer.id} customer={customer} records={records} canEdit={me.role!=='rep'} onVisit={row=>requestLeave(()=>onOpenVisit(row))} onNew={customer.data._readOnly&&!isServiceRole(me.role)?undefined:row=>requestLeave(()=>onNewVisit(customer.id,row))} onQuote={id=>requestLeave(()=>onOpenQuote(id))}/></div></details>
+                <details className="visit-context-details"><summary><History size={16}/>{tw('سجل الزيارات')} <span className="count-badge">{customerVisits(customer.id,records).length}</span></summary><div className="visit-context-body"><CustomerVisitHistory key={customer.id} customer={customer} records={records} role={me.role} canEdit={me.role!=='rep'} onVisit={row=>requestLeave(()=>onOpenVisit(row))} onNew={customer.data._readOnly&&!isServiceRole(me.role)?undefined:row=>requestLeave(()=>onNewVisit(customer.id,row))} onQuote={id=>requestLeave(()=>onOpenQuote(id))}/></div></details>
                 {mapsLink(customer.data)&&<a className="text-button visit-customer-map-link" href={mapsLink(customer.data)!} target="_blank" rel="noopener noreferrer"><MapPin size={16}/>{say('موقع العميل','Customer map')}</a>}
               </div>
             </section>}
             {workflow&&<div className="service-button-row"><span className="badge pending">{t(serviceStatusLabels[workflow.state])}</span><button type="button" className="btn subtle small" onClick={()=>requestLeave(()=>onWorkflow(workflow.id))}>{t('الاعتماد والتكليف')}</button></div>}
             <fieldset disabled={readOnly} className="visit-form-fields">
               <section className="visit-form-section"><h3>{say('التواصل والنتيجة','Contact & outcome')}</h3><div className="form-grid">
-                <VisitFields unified service={service} readOnly={readOnly} data={data} parentId={customerId} records={records} editing={!!initial} busy={busy||uploading||creatingCustomer||savedReceipt.current||retryPending} email={me.email} onChange={change} onParent={()=>{}} onLocationState={setLocationState}/>
+                <VisitFields unified service={service} role={me.role} readOnly={readOnly} data={data} parentId={customerId} records={records} editing={!!initial} busy={busy||uploading||creatingCustomer||savedReceipt.current||retryPending} email={me.email} onChange={change} onParent={()=>{}} onLocationState={setLocationState}/>
                 <VisitPlaceStatus view={place}/>
               </div></section>
               <section className="visit-form-section"><h3>{say('الخطوة الجاية','Next step')}</h3><div className="form-grid">
@@ -254,7 +258,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
               {!initial&&!readOnly&&(locationState.status==='locating'||!data.locationCapturedAt)&&<p className="visit-save-hint" role={locationState.status==='error'?'alert':'status'}>{locationState.error?t(locationState.error):locationState.status==='locating'?say('جارٍ تحديد موقع الجهاز… وافق على إذن الموقع أثناء الاستخدام.','Getting the device location… allow location while using the app.'):say('السماح بالموقع مطلوب لحفظ الزيارة. اضغط إعادة المحاولة في قسم الموقع.','Location access is required. Tap Retry in the location section.')}</p>}
               {!initial&&!readOnly&&place.blocked&&<p className="visit-save-hint" role="alert">{place.message}</p>}
               {creatingCustomer&&<p className="visit-save-hint">{say('احفظ العميل أو ألغِ إضافته للمتابعة.','Save the customer or cancel adding to continue.')}</p>}
-              <div className="form-footer">{initial&&!readOnly&&!service&&!savedReceipt.current&&!retryPending&&<button type="button" className="icon-button danger" onClick={()=>requestLeave(()=>onDelete(initial))} aria-label={t('حذف الزيارة')} disabled={busy||uploading||savingCustomer}><Trash2 size={17}/></button>}<button type="button" className="btn subtle" onClick={()=>requestLeave()} disabled={busy||uploading||savingCustomer}>{t(readOnly||savedReceipt.current?'إغلاق':'إلغاء')}</button>{!readOnly&&<button type="submit" className="btn primary" aria-busy={busy} disabled={busy||uploading||savingCustomer||creatingCustomer||(!retryPending&&!savedReceipt.current&&(!customerId||!initial&&(locationState.status==='locating'||!data.locationCapturedAt||place.blocked)))}>{busy?<Loader2 size={18} className="spin"/>:<CheckCircle2 size={18}/>} {savedReceipt.current?say('تحديث السجل','Refresh history'):retryPending?say('تأكيد الحفظ','Confirm save'):initial?t('حفظ التعديلات'):t('حفظ الزيارة')}</button>}</div>
+              <div className="form-footer">{initial&&!readOnly&&!service&&!savedReceipt.current&&!retryPending&&<button type="button" className="icon-button danger" onClick={()=>requestLeave(()=>onDelete(initial))} aria-label={tw('حذف الزيارة')} disabled={busy||uploading||savingCustomer}><Trash2 size={17}/></button>}<button type="button" className="btn subtle" onClick={()=>requestLeave()} disabled={busy||uploading||savingCustomer}>{t(readOnly||savedReceipt.current?'إغلاق':'إلغاء')}</button>{!readOnly&&<button type="submit" className="btn primary" aria-busy={busy} disabled={busy||uploading||savingCustomer||creatingCustomer||(!retryPending&&!savedReceipt.current&&(!customerId||!initial&&(locationState.status==='locating'||!data.locationCapturedAt||place.blocked)))}>{busy?<Loader2 size={18} className="spin"/>:<CheckCircle2 size={18}/>} {savedReceipt.current?say('تحديث السجل','Refresh history'):retryPending?say('تأكيد الحفظ','Confirm save'):initial?t('حفظ التعديلات'):tw('حفظ الزيارة')}</button>}</div>
             </>}
           </footer>
         </form>

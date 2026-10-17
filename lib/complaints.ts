@@ -31,7 +31,7 @@ export const complaintSeverities:Record<string,string>={normal:'عادية',high
 export const resolutionOutcomes:Record<string,string>={solved:'حُلّت',partially_solved:'حُلّت جزئيًا',not_solvable:'تعذر الحل',customer_withdrew:'العميل تنازل عن الشكوى'};
 export const closureOutcomes:Record<string,string>={satisfied:'العميل راضٍ',not_satisfied:'أُغلقت دون رضا العميل',withdrawn:'تنازل العميل',unreachable:'تعذر الوصول إلى العميل'};
 export const complaintStatusLabels:Record<string,string>={submitted:'بانتظار مراجعة مدير خدمة العملاء',returned:'مطلوب تعديل',pending_assignment:'بانتظار تكليف المبيعات',assigned:'مكلّف بها',resolved:'بانتظار تأكيد الإغلاق',closed:'مغلقة',cancelled:'ملغاة'};
-export const complaintActions:Record<string,string>={register:'تسجيل شكوى',edit:'تعديل الشكوى وإعادة إرسالها',forward:'إحالة الشكوى إلى مدير المبيعات',return:'إعادة الشكوى للتعديل',assign:'تكليف المبيعات بالشكوى',delegate:'تكليف مندوب بالشكوى',reassign:'إعادة تكليف الشكوى',seen:'فتح الشكوى',update:'تحديث على الشكوى',resolve:'تسجيل حل الشكوى',reject:'إعادة الشكوى إلى المندوب',close:'إغلاق الشكوى',reopen:'إعادة فتح الشكوى',cancel:'إلغاء الشكوى',note:'ملاحظة داخلية على الشكوى'};
+export const complaintActions:Record<string,string>={register:'تسجيل شكوى',edit:'تعديل الشكوى وإعادة إرسالها',forward:'إحالة الشكوى إلى مدير المبيعات',return:'إعادة الشكوى للتعديل',assign:'تكليف المبيعات بالشكوى',delegate:'تكليف مندوب بالشكوى',reassign:'إعادة تكليف الشكوى',seen:'فتح الشكوى',update:'تحديث على الشكوى',resolve:'تسجيل حل الشكوى',reject:'إعادة الشكوى إلى المندوب',close:'إغلاق الشكوى',reopen:'إعادة فتح الشكوى',cancel:'إلغاء الشكوى',note:'ملاحظة داخلية على الشكوى',notify:'فُتحت رسالة واتساب للعميل'};
 /** English wording, keyed like the Arabic tables. */
 export const complaintChannelsEn:Record<string,string>={visit:'Visit',call:'Phone call',email:'Email',whatsapp:'WhatsApp',website:'Website',social:'Social media'};
 export const complaintCategoriesEn:Record<string,string>={product_quality:'Product or mold quality',delivery_delay:'Delivery delay',invoice_price:'Invoice or price',service_conduct:'Service or conduct',maintenance_support:'Maintenance and technical support',other:'Other'};
@@ -39,7 +39,7 @@ export const complaintSeveritiesEn:Record<string,string>={normal:'Normal',high:'
 export const resolutionOutcomesEn:Record<string,string>={solved:'Solved',partially_solved:'Partly solved',not_solvable:'Could not be solved',customer_withdrew:'Customer withdrew the complaint'};
 export const closureOutcomesEn:Record<string,string>={satisfied:'Customer satisfied',not_satisfied:'Closed without the customer\'s satisfaction',withdrawn:'Customer withdrew',unreachable:'Customer could not be reached'};
 export const complaintStatusLabelsEn:Record<string,string>={submitted:'Waiting for the customer-service manager\'s review',returned:'Needs correction',pending_assignment:'Waiting for sales assignment',assigned:'Assigned',resolved:'Waiting for closure confirmation',closed:'Closed',cancelled:'Cancelled'};
-export const complaintActionsEn:Record<string,string>={register:'Complaint registered',edit:'Complaint corrected and resent',forward:'Forwarded to the sales manager',return:'Returned for correction',assign:'Assigned to sales',delegate:'Delegated to a representative',reassign:'Reassigned',seen:'Opened',update:'Update',resolve:'Resolution recorded',reject:'Returned to the representative',close:'Closed',reopen:'Reopened',cancel:'Cancelled',note:'Internal note'};
+export const complaintActionsEn:Record<string,string>={register:'Complaint registered',edit:'Complaint corrected and resent',forward:'Forwarded to the sales manager',return:'Returned for correction',assign:'Assigned to sales',delegate:'Delegated to a representative',reassign:'Reassigned',seen:'Opened',update:'Update',resolve:'Resolution recorded',reject:'Returned to the representative',close:'Closed',reopen:'Reopened',cancel:'Cancelled',note:'Internal note',notify:'WhatsApp message opened for the customer'};
 
 export type ComplaintStatus='submitted'|'returned'|'pending_assignment'|'assigned'|'resolved'|'closed'|'cancelled';
 export type ComplaintStage='review'|'fix'|'assignment'|'delegation'|'first_contact'|'resolution'|'closure'|'closed'|'cancelled';
@@ -54,6 +54,10 @@ export type ComplaintData={
  /** Who registered it, the customer-service manager it waits for, the sales manager it was handed to, the supervisor it passed through and who holds it now. */
  registrarId:string;serviceManagerId:string;salesManagerId:string;supervisorId:string;assigneeId:string;
  channel:string;category:string;severity:'normal'|'high';description:string;demand:string;reference:string;contactName:string;contactPhone:string;
+ /** The customer's WhatsApp number and e-mail, and the sequence number of a complaint registered since numbering began; older complaints have none of them. */
+ contactWhatsapp?:string;contactEmail?:string;complaintNumber?:number;
+ /** When and by whom the WhatsApp message to the customer was opened; the system cannot know whether it was sent. */
+ notifiedAt?:string;notifiedBy?:string;
  submittedAt:string;forwardedAt:string;returnedAt:string;assignedAt:string;delegatedAt:string;reassignedAt:string;rejectedAt:string;reopenedAt:string;resolvedAt:string;closedAt:string;cancelledAt:string;seenAt:string;
  returnNote:string;assignmentNote:string;rejectReason:string;cancelReason:string;
  resolution?:ComplaintOutcome;closure?:ComplaintOutcome;
@@ -61,12 +65,16 @@ export type ComplaintData={
 };
 export type ComplaintRow={id:string;branch:string;assignedTo:string;data:ComplaintData;createdAt:string;updatedAt:string;version:number};
 export type ComplaintContext={me:Member;members:Member[];all:Row[];complaints:ComplaintRow[]};
-export type ComplaintPermissions={edit:boolean;forward:boolean;return:boolean;assign:boolean;delegate:boolean;reassign:boolean;seen:boolean;update:boolean;resolve:boolean;close:boolean;reject:boolean;reopen:boolean;cancel:boolean;note:boolean};
+export type ComplaintPermissions={edit:boolean;forward:boolean;return:boolean;assign:boolean;delegate:boolean;reassign:boolean;seen:boolean;update:boolean;resolve:boolean;close:boolean;reject:boolean;reopen:boolean;cancel:boolean;note:boolean;notify:boolean};
 export type ComplaintPerson={id:string;name:string;role:string};
 export type ComplaintEntry={
  id:string;customerId:string;customerName:string;customerPhone:string;customerCity:string;customerRegion:string;customerVersion:number;
  status:ComplaintStatus;stage:ComplaintStage;stageSince:string;stageHours:number;targetHours:number|null;late:boolean;awaiting:ComplaintAwaiting;ownerId:string;
- channel:string;category:string;severity:'normal'|'high';description:string;demand:string;reference:string;contactName:string;contactPhone:string;
+ channel:string;category:string;severity:'normal'|'high';description:string;demand:string;reference:string;contactName:string;contactPhone:string;contactWhatsapp:string;contactEmail:string;
+ /** The complaint's sequence number; null for one registered before numbering began. */
+ complaintNumber:number|null;
+ /** When the WhatsApp message to the customer was opened, and by whom; empty until then. */
+ notifiedAt:string;notifiedByName:string;
  registrarId:string;registrarName:string;serviceManagerId:string;serviceManagerName:string;salesManagerId:string;salesManagerName:string;supervisorName:string;assigneeId:string;assigneeName:string;assigneeRole:string;
  /** The representative or supervisor who owns the customer today, offered first when assigning. */
  currentRepId:string;currentRepName:string;
@@ -178,7 +186,8 @@ export function complaintPermissions(row:ComplaintRow,customer:Row,reader:Compla
   reject:status==='resolved'&&closer,
   reopen:status==='closed'&&closer&&now<=reopenUntil(data),
   cancel:isOpenComplaint(data)&&(admin||pending&&(registrar||reviews(data,reader,members))),
-  note:isOpenComplaint(data)&&canReadComplaint(row,customer,reader,members)
+  note:isOpenComplaint(data)&&canReadComplaint(row,customer,reader,members),
+  notify:isOpenComplaint(data)&&!data.notifiedAt&&(admin||registrar&&(reader.service||reader.lead)||reviews(data,reader,members))
  };
 }
 /** What the reader themself must do about it, if anything. */
@@ -228,7 +237,8 @@ export function complaintQueue(c:ComplaintContext,now:string=new Date().toISOStr
   entries.push({
    id:row.id,customerId:customer.id,customerName:String(customer.data.name||''),customerPhone:String(customer.data.phone||''),customerCity:String(customer.data.city||''),customerRegion:String(customer.data.region||''),customerVersion:customer.version,
    status:data.status,stage:progress.stage,stageSince:progress.since,stageHours:progress.stageHours,targetHours:progress.targetHours,late:progress.late,awaiting,ownerId:complaintOwner(data,progress.stage),
-   channel:data.channel,category:data.category,severity:data.severity==='high'?'high':'normal',description:data.description,demand:data.demand||'',reference:data.reference||'',contactName:data.contactName||'',contactPhone:data.contactPhone||'',
+   channel:data.channel,category:data.category,severity:data.severity==='high'?'high':'normal',description:data.description,demand:data.demand||'',reference:data.reference||'',contactName:data.contactName||'',contactPhone:data.contactPhone||'',contactWhatsapp:data.contactWhatsapp||'',contactEmail:data.contactEmail||'',
+   complaintNumber:typeof data.complaintNumber==='number'&&data.complaintNumber>0?data.complaintNumber:null,notifiedAt:data.notifiedAt||'',notifiedByName:name(data.notifiedBy),
    registrarId:data.registrarId,registrarName:name(data.registrarId),serviceManagerId:data.serviceManagerId||'',serviceManagerName:name(data.serviceManagerId),salesManagerId:data.salesManagerId||'',salesManagerName:name(data.salesManagerId),supervisorName:name(data.supervisorId),assigneeId:data.assigneeId||'',assigneeName:name(data.assigneeId),assigneeRole:assignee?.role||'',
    currentRepId:current?.id||'',currentRepName:current?.name||'',
    returnNote:data.returnNote||'',assignmentNote:data.assignmentNote||'',rejectReason:data.rejectReason||'',cancelReason:data.cancelReason||'',

@@ -341,7 +341,7 @@ try {
     check([await service.locator('.service-queue').count(), await service.locator('button.nav-item .nav-badge').count()], [0, 0], 'customer service has its own screens, not the sales queue');
     await service.context().close();
     const csm = await open('csm', {viewport: DESKTOP});
-    await goDesktop(csm, 'الزيارات');
+    await goDesktop(csm, 'الفرص');
     await csm.locator('details.service-report:not(.complaint-report)').waitFor();
     check(await csm.locator('.service-queue').count(), 0, 'with nothing left to approve the customer-service manager has the report and no panel');
     await csm.context().close();
