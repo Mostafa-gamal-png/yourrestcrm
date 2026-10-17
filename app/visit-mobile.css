@@ -102,3 +102,12 @@
  .mobile-record-dialog .visit-sales-details>summary .badge{max-width:92px}
 }
 @media(prefers-reduced-motion:reduce){.mobile-record-dialog *{scroll-behavior:auto!important}}
+
+.mobile-record-dialog .visit-place,.visit-place{display:flex;align-items:flex-start;gap:8px;margin:0;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--muted);font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.visit-place>svg{flex-shrink:0;margin-top:4px}
+.visit-place[data-state=near],.visit-place[data-state=journey]{border-color:#9ccfae;background:#eef8f1;color:#1f6a3a}
+.visit-place[data-state=far],.visit-place[data-state=uncertain]{border-color:#e3b3ac;background:#fdf1ef;color:#9c2f22}
+.visit-place[data-state=far][data-blocked=false],.visit-place[data-state=uncertain][data-blocked=false]{border-color:#e0cc8c;background:#fbf6e4;color:#7a5d00}
+.dark .visit-place[data-state=near],.dark .visit-place[data-state=journey]{border-color:#2d6b45;background:#17301f;color:#9be0bb}
+.dark .visit-place[data-state=far],.dark .visit-place[data-state=uncertain]{border-color:#7a3a33;background:#3a1d1a;color:#ffb9ad}
+.dark .visit-place[data-state=far][data-blocked=false],.dark .visit-place[data-state=uncertain][data-blocked=false]{border-color:#7a6320;background:#33290f;color:#e7c77c}
