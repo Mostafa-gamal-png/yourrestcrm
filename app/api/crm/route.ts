@@ -12,6 +12,7 @@ import {schemas,quoteTotals,isOpen,today,type AuditEntry,type Kind} from '@/lib/
 import {normalizeMemberEmail,memberEmailError} from '@/lib/member-email';
 import {memberEditToken} from '@/lib/member-edit';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
+import {enforceVisitPlace} from '@/lib/visit-place-server';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
@@ -128,8 +129,10 @@ export async function POST(req:Request){try{
   if(!memberCanAccessRegion(c.me,data.region))throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
   const locationError=prepareCustomerLocation(data,old?.data);if(locationError)throw new CRMError(locationError);
   if(old&&bodyData?.shortAddress===undefined)data.shortAddress=old.data.shortAddress||'';
-  if(old){for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId','_createdBy'])data[key]=old.data[key];}
+  if(old){for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId','_createdBy','_locationFromVisit'])data[key]=old.data[key];}
   else {for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId'])delete data[key];data._createdBy=c.me.id;}
+  // The note that the place came from a visit belongs to that point: a point someone else sets drops it.
+  if(old?.data._locationFromVisit&&(Math.abs((data.latitude??NaN)-(old.data.latitude??NaN))>0.000001||Math.abs((data.longitude??NaN)-(old.data.longitude??NaN))>0.000001))delete data._locationFromVisit;
   if(!canManage){data.assignedTo=old?old.assignedTo:c.me.id;data.branch=old?old.branch:c.me.branch;}
   customerRoutingChanged=!old||data.assignedTo!==old.assignedTo||data.branch!==old.branch||data.region!==(old.data.region||'');
   if(customerRoutingChanged){
@@ -150,6 +153,9 @@ export async function POST(req:Request){try{
   if(!old)data._creationRequest=requestFingerprint;
   if(clockAction)data[clockAction==='start'?'_startRequest':'_finishRequest']=requestFingerprint;
   prepareContactEvidence(data,c,now,clockAction,old||undefined);
+  // The older entry point holds to the same place rule as the visits page: no route around it for a representative.
+  if(!old&&serviceCustomer){const place=await enforceVisitPlace(c,serviceCustomer,data,{stop:null,now,memberId:c.me.id});if(place.distance!==null)data.placeDistance=Math.round(place.distance);if(place.outside)data.placeOutside=true;}
+  if(old)for(const key of ['placeDistance','placeOutside'])if(old.data[key]!==undefined)data[key]=old.data[key];
   if(syncFollowup&&(!data.nextAction||!data.nextDate))throw new CRMError('حدد الإجراء القادم وموعد متابعة العميل');
  }
 
