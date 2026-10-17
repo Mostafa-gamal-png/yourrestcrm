@@ -339,6 +339,53 @@ const shuffled=complaint('Z','c1','cs1',[[T(3,6),'cs1','close',{rating:4}],[T(2,
 eq(nd(card(group(run('2026-09',NOW,{complaints:[shuffled]}),'csm'),'cs1'),'customer_rating'),[4,1],'events are read in the order they happened, not the order they were stored');
 eq(K.complaintTimeline(shuffled).acts.map(a=>[a.at,a.since]),[[T(3,6),T(3,5)]],'a closure is measured from the resolution before it');
 
+// ---- who reports to whom, and which certificate closes a representative's month
+eq([K.kpiManagerOf(members.find(x=>x.id==='cs1'),members),K.kpiManagerOf(members.find(x=>x.id==='cs3'),members),K.kpiManagerOf(members.find(x=>x.id==='cs_free'),members),K.kpiManagerOf({supervisorId:'sm'},members),K.kpiManagerOf({supervisorId:'ghost'},members)],['csm','csm2','','','']," a representative's manager is a customer-service manager they report to, or nobody");
+eq([K.closedMonthFor('cs1','csm','2026-09',[row])?.id,K.closedMonthFor('cs3','csm2','2026-09',[row])?.id,K.closedMonthFor('cs1','csm','2026-08',[row])?.id,K.closedMonthFor('cs1','csm','2026-09',[reopenedRow])?.id],[row.id,null,null,null],'a certificate closes the team\'s representatives in its own month, unless it was reopened');
+eq(K.closedMonthFor('cs1','csm2','2026-09',[row])?.id,row.id,'and a representative who moved to another manager after the month was closed is still closed in it');
+
+// ---- the page's view of the month
+const cname=id=>id?'اسم-'+id:'';
+const view=(id,over={},options={})=>K.serviceKpiView(input(over),'2026-09',NOW,members.find(x=>x.id===id),{customerName:cname,settingsVersion:3,...options});
+const va=view('owner');
+eq([va.month,va.groups.map(g=>g.managerId),va.settingsVersion,va.me],['2026-09',['csm','csm2','csm3',''],3,{id:'owner',role:'admin',canAudit:true,canSettings:true}],'the administrator\'s view: all four groups, and what they may do');
+eq(va.groups.flatMap(g=>[g.manager,...g.reps]).filter(Boolean).every(c=>c.metrics.every(x=>x.items.length===0)),true,'no card carries its cases until one is opened');
+eq(va.groups[0].reps.find(c=>c.memberId==='cs1').metrics.map(x=>x.itemCount),[4,4,2,2,2,6,13,3],'but each says how many cases it has');
+eq(va.groups[0].reps.find(c=>c.memberId==='cs1').name,'عضو cs1','a card carries the name');
+const opened=view('owner',{},{detail:'cs1'}).groups[0].reps.find(c=>c.memberId==='cs1');
+eq([opened.metrics.find(x=>x.key==='closure_timing').items.length,opened.metrics.find(x=>x.key==='closure_timing').items[0].customerName],[4,'اسم-c1'],'the opened card carries its cases with the customers\' names');
+eq(view('owner',{},{detail:'cs1'}).groups[0].reps.find(c=>c.memberId==='cs2').metrics.every(x=>x.items.length===0),true,'and only that card');
+eq(view('owner',{},{detail:'csm'}).groups[0].manager.metrics.find(x=>x.key==='backlog').items.length,5,'a manager\'s card opens the same way');
+eq(view('owner',{},{customerName:()=>''}).groups.length,4,'a name the reader may not see comes back empty');
+eq(view('owner',{},{detail:'cs1',customerName:()=>''}).groups[0].reps.find(c=>c.memberId==='cs1').metrics.find(x=>x.key==='closure_timing').items.every(i=>i.customerName===''),true,'on every case');
+eq(va.groups.map(g=>[g.managerId,g.canClose,g.closeProblem,g.canReopen,g.closed]),[['csm',true,'',false,false],['csm2',true,'',false,false],['csm3',true,'',false,false],['',true,'',false,false]],'September can be closed by an administrator, for every group, now');
+const vl=view('csm');
+eq([vl.groups.map(g=>g.managerId),vl.groups[0].canClose,vl.me],[['csm'],true,{id:'csm',role:'customer_service_manager',canAudit:true,canSettings:false}],'a manager sees only his group and may close it');
+eq(Object.keys(vl.sample).sort(),['cs1','cs2','cs_idle'],'and the suggested sample for each of his representatives');
+eq(vl.sample.cs1.length,3,'three for the one with work');
+eq([vl.sample.cs1[0].customerName.startsWith('اسم-'),vl.sample.cs1.every(s=>['complaint','support'].includes(s.type))],[true,true],'each with the customer and what it is');
+eq([vl.sample.cs2,vl.sample.cs_idle],[[],[]],'none for those who finished nothing');
+const vr=view('cs1');
+eq([vr.groups.length,vr.groups[0].manager,vr.groups[0].reps.map(c=>c.memberId),vr.me,vr.sample],[1,null,['cs1'],{id:'cs1',role:'customer_service',canAudit:false,canSettings:false},{}],'a representative sees their own card, no manager\'s, no sample, and may do nothing');
+eq(vr.groups[0].reps[0].metrics.find(x=>x.key==='customer_rating').items.map(i=>i.value).sort(),[3,4,5],'and always with their own cases open');
+eq([vr.groups[0].canClose,vr.groups[0].closeProblem,vr.groups[0].canReopen],[false,'',false],'but not the buttons');
+eq(view('cs1',{},{}).audits.map(a=>a.id),['audit-AU2','audit-AU1'],'they see their own audits, newest first');
+eq(view('cs2').audits.map(a=>a.id),['audit-AU3'],'and not a colleague\'s');
+eq(va.audits.map(a=>a.id),['audit-AU4','audit-AU3','audit-AU2','audit-AU1'],'the administrator sees all of September\'s, and not August\'s');
+eq(vl.audits.map(a=>a.id),['audit-AU3','audit-AU2','audit-AU1'],'a manager those of his team');
+eq(va.audits.find(a=>a.id==='audit-AU1').repName,'عضو cs1','an audit names the representative');
+eq(va.audits.find(a=>a.id==='audit-AU1').auditorName,'عضو csm','and the auditor');
+eq([va.audits.every(a=>a.canDelete),vl.audits.every(a=>!a.canDelete)],[true,true],'an administrator may delete any; the auditor may not after a week');
+const fresh=audit('AU9','cs1','2026-09',70,{at:'2026-10-10T06:00:00.000Z',ref:'complaint-A',refType:'complaint'});
+const vf=view('csm',{audits:[...audits,fresh]});
+eq([vf.audits.find(a=>a.id==='audit-AU9').canDelete,vf.audits.find(a=>a.id==='audit-AU9').reference],[true,{type:'complaint',id:'complaint-A',customerName:'اسم-c1'}],'the auditor may delete within a week; the reference names the customer');
+eq(view('csm',{audits:[...audits,fresh],closed:[row]}).audits.every(a=>!a.canDelete),true,'but not once the month is closed');
+const current=K.serviceKpiView(input(),'2026-10',NOW,members.find(x=>x.id==='owner'),{customerName:cname,settingsVersion:0});
+eq(current.groups.map(g=>[g.managerId,g.canClose,g.closeProblem]).slice(0,2),[['csm',false,'لا يُقفل الشهر قبل مرور 5 أيام على انتهائه'],['csm2',false,'لا يُقفل الشهر قبل مرور 5 أيام على انتهائه']],'a running month cannot be closed, and says why');
+const closedView=view('csm',{closed:[row]});
+eq([closedView.groups[0].closed,closedView.groups[0].canClose,closedView.groups[0].closedByName,closedView.sample,view('owner',{closed:[row]}).groups[0].canReopen],[true,false,'عضو owner',{},true],'a closed group has nothing to close, shows who closed it, offers no sample, and an administrator may reopen it');
+eq(view('sm').groups,[],'a sales member has no view');
+
 // ---- the new record kinds never travel with the sales records
 const kindsRows=['service_audit','service_kpi_month','service_kpi_settings','support','complaint'].map(kind=>({id:kind+'-1',kind,parentId:null,assignedTo:'csm',branch:'الرئيسي',data:{kind},createdAt:T(1,5),updatedAt:T(1,5),version:1}));
 eq(CRM.scopeRecords(kindsRows,members,members.find(x=>x.id==='owner')).length,0,'the administrator\'s record list leaves all five out');

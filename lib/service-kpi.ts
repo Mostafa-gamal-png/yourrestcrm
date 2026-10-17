@@ -354,13 +354,17 @@ export const serviceKpiAllowed=(role:string)=>role==='admin'||role==='customer_s
 const hasData=(card:Scorecard)=>card.metrics.some(one=>one.denominator>0);
 const byScore=(a:Scorecard,b:Scorecard,names:Map<string,Member>)=>(b.score??-1)-(a.score??-1)||(names.get(a.memberId)?.name||'').localeCompare(names.get(b.memberId)?.name||'')||a.memberId.localeCompare(b.memberId);
 
+/** The customer-service manager a representative reports to; empty when nobody does, and then they are evaluated apart. */
+export const kpiManagerOf=(rep:Pick<Member,'supervisorId'>,members:Member[])=>members.find(member=>member.id===rep.supervisorId&&member.role==='customer_service_manager')?.id||'';
+/** The certificate that closes this representative's month, if one does: their manager's team's, or any that names them. */
+export const closedMonthFor=(repId:string,managerId:string,month:string,rows:ServiceKpiMonthRow[])=>rows.find(row=>row.data&&row.data.month===month&&!row.data.reopened&&(row.data.managerId===managerId||row.data.team.includes(repId)));
+
 export function serviceKpiMonth(input:KpiInput,month:string,now:string=new Date().toISOString()):KpiMonth{
  const facts=buildFacts(input),from=monthStart(month),to=monthEnd(month),clip=now<to?now:to;
  const reps=input.members.filter(member=>member.role==='customer_service'),managers=input.members.filter(member=>member.role==='customer_service_manager');
  const closedBy=new Map(input.closed.filter(row=>row.data&&row.data.month===month&&!row.data.reopened).map(row=>[row.data.managerId,row]));
  const live=normalizeSettings(input.settings);
  const groups:KpiGroup[]=[];
- const managerOf=(rep:Member)=>managers.find(manager=>manager.id===rep.supervisorId)?.id||'';
  const ids=new Set(['',...managers.map(manager=>manager.id),...closedBy.keys()]);
  for(const managerId of ids){
   const certificate=closedBy.get(managerId),settings=certificate?normalizeSettings(certificate.data.settings):live;
@@ -368,7 +372,7 @@ export function serviceKpiMonth(input:KpiInput,month:string,now:string=new Date(
   const manager=managerId?facts.byId.get(managerId):undefined;
   let team:Member[];
   if(certificate)team=certificate.data.team.map(id=>facts.byId.get(id)).filter((member):member is Member=>!!member);
-  else team=reps.filter(rep=>managerOf(rep)===managerId);
+  else team=reps.filter(rep=>kpiManagerOf(rep,input.members)===managerId);
   const cards:Scorecard[]=[];
   for(const rep of team){const card=scorecard(rep.id,'rep',repMetrics(ctx,rep));if(certificate||rep.active||hasData(card))cards.push(card);}
   cards.sort((a,b)=>byScore(a,b,facts.byId));
@@ -439,4 +443,47 @@ export function auditSample(input:KpiInput,month:string,repId:string,now:string=
  const audited=new Set(input.audits.filter(row=>!row.data.deleted&&row.data.repId===repId&&row.data.month===month).map(row=>row.data.reference.id));
  const size=normalizeSettings(input.settings).audit.sample;
  return auditCandidates(input,month,repId,now).filter(item=>!audited.has(item.ref)).map(item=>({item,order:sampleOrder(`${repId}|${month}|${item.ref}|${item.tag}|${item.at}`)})).sort((a,b)=>a.order-b.order||a.item.ref.localeCompare(b.item.ref)).slice(0,size).map(entry=>entry.item).sort((a,b)=>a.at.localeCompare(b.at));
+}
+
+// ---- what the route sends to the page
+export type KpiItemOut=KpiItem&{customerName:string};
+export type KpiMetricOut=Omit<KpiMetric,'items'>&{items:KpiItemOut[];itemCount:number};
+export type KpiCardOut=Omit<Scorecard,'metrics'>&{name:string;metrics:KpiMetricOut[]};
+export type KpiGroupOut=Omit<KpiGroup,'manager'|'reps'|'closedBy'>&{closedByName:string;canClose:boolean;closeProblem:string;canReopen:boolean;manager:KpiCardOut|null;reps:KpiCardOut[]};
+export type KpiAuditOut={id:string;repId:string;repName:string;month:string;date:string;reference:{type:string;id:string;customerName:string};scores:Partial<Record<AuditCriterion,number>>;total:number;result:string;verification:{called:boolean;rating:number|null};note:string;auditorId:string;auditorName:string;at:string;canDelete:boolean};
+export type KpiSampleOut={ref:string;type:'complaint'|'support';customerName:string;at:string;tag:string};
+export type ServiceKpiResponse={
+ month:string;months:string[];generatedAt:string;settings:ServiceKpiSettings;settingsVersion:number;
+ me:{id:string;role:string;canAudit:boolean;canSettings:boolean};
+ groups:KpiGroupOut[];audits:KpiAuditOut[];sample:Record<string,KpiSampleOut[]>;
+};
+/** The month as the reader may see it: their cards, the figures' cases only for the one card they opened (a representative's own is always open),
+ * the audits of the cards they see, the suggested sample for those a manager can still audit, and what they may do. */
+export function serviceKpiView(input:KpiInput,month:string,now:string,me:Member,options:{customerName:(id:string)=>string;detail?:string;settingsVersion:number}):ServiceKpiResponse{
+ const all=serviceKpiMonth(input,month,now),visible=visibleKpi(all,me),names=new Map(input.members.map(member=>[member.id,member.name]));
+ const admin=me.role==='admin',lead=me.role==='customer_service_manager',name=(id:string)=>names.get(id)||'';
+ const cardOut=(card:Scorecard):KpiCardOut=>{
+  const open=me.role==='customer_service'||card.memberId===options.detail;
+  return {...card,name:name(card.memberId),metrics:card.metrics.map(one=>({...one,itemCount:one.items.length,items:open?one.items.slice(0,KPI_ITEM_LIMIT).map(item=>({...item,customerName:item.customerId?options.customerName(item.customerId):''})):[]}))};
+ };
+ const groups=visible.groups.map(group=>{
+  const {closedBy,manager,reps,...rest}=group;
+  const mayClose=admin||lead&&group.managerId===me.id,problem=mayClose&&!group.closed?monthCloseProblem(month,now,group.settings):'';
+  return {...rest,closedByName:name(closedBy),canClose:mayClose&&!group.closed&&problem==='',closeProblem:problem,canReopen:admin&&group.closed,manager:manager?cardOut(manager):null,reps:reps.map(cardOut)};
+ });
+ const groupOf=new Map<string,KpiGroup>();
+ for(const group of all.groups)for(const card of group.reps)groupOf.set(card.memberId,group);
+ const seen=new Set(visible.groups.flatMap(group=>group.reps.map(card=>card.memberId)));
+ const customerOf=new Map<string,string>();
+ for(const row of input.complaints)customerOf.set(row.id,row.data.customerId);
+ for(const row of input.support)customerOf.set(row.id,row.data.customerId);
+ for(const row of input.serviceCases)customerOf.set(row.id,row.customerId);
+ const audits=input.audits.filter(row=>!row.data.deleted&&row.data.month===month&&seen.has(row.data.repId)).sort((a,b)=>b.data.at.localeCompare(a.data.at)||b.id.localeCompare(a.id)).map(row=>{
+  const data=row.data,reference=data.reference&&data.reference.id?data.reference:{type:'' as const,id:''};
+  return {id:row.id,repId:data.repId,repName:name(data.repId),month:data.month,date:data.date||'',reference:{type:reference.type,id:reference.id,customerName:reference.id?options.customerName(customerOf.get(reference.id)||''):''},scores:data.scores,total:data.total,result:data.result,verification:data.verification,note:data.note,auditorId:data.auditorId,auditorName:name(data.auditorId),at:data.at,
+   canDelete:!groupOf.get(data.repId)?.closed&&(admin||data.auditorId===me.id&&Date.parse(now)-Date.parse(data.at)<=AUDIT_DELETE_DAYS*DAY)};
+ });
+ const sample:Record<string,KpiSampleOut[]>={};
+ if(admin||lead)for(const group of visible.groups)if(!group.closed)for(const card of group.reps)sample[card.memberId]=auditSample(input,month,card.memberId,now).map(item=>({ref:item.ref,type:item.type,customerName:options.customerName(item.customerId),at:item.at,tag:item.tag}));
+ return {month,months:kpiMonths(input,now),generatedAt:now,settings:normalizeSettings(input.settings),settingsVersion:options.settingsVersion,me:{id:me.id,role:me.role,canAudit:admin||lead,canSettings:admin},groups,audits,sample};
 }
