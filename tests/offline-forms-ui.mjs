@@ -40,7 +40,8 @@ function setup(file,name,overrides={},seed={}){
  const exports=load(file,name=>{
   if(name==='react')return hooks;if(name==='react/jsx-runtime')return jsx;if(name==='@/lib/i18n')return i18n;if(name==='@/lib/offline-submit')return offline;
   if(name==='@/lib/client-submit')return{...submit,submitJson:async(url,config,options)=>{onlineCalls.push({url,config,options});if(onlineError)throw onlineError;return onlineReply;}};
-  if(name==='./journey-tracker')return{useAutomaticJourney:()=>()=>undefined,JourneyFormNotice:component('JourneyFormNotice')};
+  if(name==='./journey-tracker')return{useAutomaticJourney:()=>()=>undefined,useJourneyTracker:()=>({active:null}),JourneyFormNotice:component('JourneyFormNotice')};
+  if(name==='./followup-place')return{useFollowupPlace:()=>({wants:false,fix:null,locating:false,error:'',locate:()=>{},view:{status:'idle',blocked:false,message:'',distance:null}}),FollowupPlace:component('FollowupPlace')};
   if(name==='./competitor-fields')return{__esModule:true,default:component('CompetitorFields'),emptyCompetitorInput:()=>({hasCompetitor:false,competitorName:'',competitorNotes:'',competitorFileId:'',competitorFileName:''})};
   if(name==='./visit-fields')return{__esModule:true,default:component('VisitFields'),FollowupDateField:component('FollowupDateField')};
   if(name==='./visit-customer-picker')return{__esModule:true,default:component('VisitCustomerPicker')};

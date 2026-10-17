@@ -20,7 +20,7 @@ function load(file,require,globals={}){const exports={};vm.runInNewContext(compi
 function library(file){if(cache.has(file))return cache.get(file);const result=load(file,name=>name==='./i18n'?i18n:name.startsWith('.')?library(path.join(path.dirname(file),name)+'.ts'):nativeRequire(name));cache.set(file,result);return result;}
 const components=new Map();function component(name){if(!components.has(name))components.set(name,Object.defineProperty(({children})=>children||null,'name',{value:name}));return components.get(name);}
 const ui=new Proxy({},{get:(_,key)=>component(key)});
-function shared(name){if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;if(name==='@/lib/i18n')return i18n;if(name.startsWith('@/lib/'))return library(name.slice(2)+'.ts');if(name.endsWith('.css'))return {};if(name==='./competitor-fields')return {__esModule:true,default:component('CompetitorFields'),emptyCompetitorInput:()=>({hasCompetitor:false,competitorName:'',competitorNotes:'',competitorFileId:'',competitorFileName:''})};if(name==='./voice-field')return {__esModule:true,default:component('VoiceField')};if(name==='./visit-fields')return {__esModule:true,default:component('VisitFields'),FollowupDateField:component('FollowupDateField')};if(name==='./visit-customer-picker')return {__esModule:true,default:component('VisitCustomerPicker')};return ui;}
+function shared(name){if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;if(name==='@/lib/i18n')return i18n;if(name.startsWith('@/lib/'))return library(name.slice(2)+'.ts');if(name.endsWith('.css'))return {};if(name==='./competitor-fields')return {__esModule:true,default:component('CompetitorFields'),emptyCompetitorInput:()=>({hasCompetitor:false,competitorName:'',competitorNotes:'',competitorFileId:'',competitorFileName:''})};if(name==='./voice-field')return {__esModule:true,default:component('VoiceField')};if(name==='./visit-place-status')return {__esModule:true,default:component('VisitPlaceStatus')};if(name==='./visit-fields')return {__esModule:true,default:component('VisitFields'),FollowupDateField:component('FollowupDateField')};if(name==='./visit-customer-picker')return {__esModule:true,default:component('VisitCustomerPicker')};return ui;}
 function nodes(tree,predicate){if(!tree||typeof tree!=='object')return [];if(Array.isArray(tree))return tree.flatMap(node=>nodes(node,predicate));return [...(predicate(tree)?[tree]:[]),...nodes(tree.props?.children,predicate)];}
 function text(tree){if(tree==null||typeof tree==='boolean')return '';if(typeof tree!=='object')return String(tree);return Array.isArray(tree)?tree.map(text).join(''):text(tree.props?.children);}
 const byClass=(tree,name)=>nodes(tree,node=>node.props?.className?.split(' ').includes(name));
@@ -45,13 +45,17 @@ function harness(file,componentName,props={},seed={}){
  // retain the frozen-payload/error regression checks. Offline acceptance and
  // auto-close are exercised separately in offline-forms-ui.mjs.
  const offline={offlineSubmit:(url,body,options)=>submit.submitJson(url,{method:'POST',headers:{'Content-Type':'application/json'},body},options),uploadOfflineVisitFile:async()=>{throw Error('Upload not exercised here');}};
- const exports=load(file,name=>name==='react'?hooks:name==='@/lib/client-submit'?submit:name==='@/lib/offline-submit'?offline:name==='./journey-tracker'?{useAutomaticJourney:input=>{journeys.push(input);return()=>input.enabled?stopId:undefined;},JourneyFormNotice:component('JourneyFormNotice')}:shared(name),{window:events,navigator:{onLine:true},fetch,AbortController,requestAnimationFrame:callback=>{callback();return 1;},cancelAnimationFrame:noop});
+ const exports=load(file,name=>name==='react'?hooks:name==='@/lib/client-submit'?submit:name==='@/lib/offline-submit'?offline:name==='./journey-tracker'?{useAutomaticJourney:input=>{journeys.push(input);return()=>input.enabled?stopId:undefined;},useJourneyTracker:()=>({active:trackerActive}),JourneyFormNotice:component('JourneyFormNotice')}:name==='./followup-place'?{useFollowupPlace:()=>followupPlace,FollowupPlace:component('FollowupPlace')}:shared(name),{window:events,navigator:{onLine:true},fetch,AbortController,requestAnimationFrame:callback=>{callback();return 1;},cancelAnimationFrame:noop});
  function render(){for(let guard=0;guard<10;guard++){changed=false;cursor=refCursor=effectCursor=0;tree=exports[componentName](trackedProps);for(const effect of pending.splice(0))effect();if(!changed)return tree;}throw Error('Render loop');}
  return {render,state,calls,journeys,props:trackedProps,closeCount:()=>closeCount,saved:()=>saved,status:value=>status=value,mode:value=>responseMode=value,journeyStop:value=>stopId=value,commits:()=>commits,submit:async()=>{await nodes(render(),node=>node.type==='form')[0].props.onSubmit({preventDefault:noop});return render();}};
 }
 const me={id:'rep',name:'Rep',role:'rep',email:'rep@yourrest.org',regionScope:'western',branch:'HQ',active:1};
 const customer={id:'factory',kind:'customer',parentId:null,assignedTo:'rep',branch:'HQ',version:3,data:{name:'Factory',code:'F-1',region:'الغربية',location:'21.5,39.2',_masterReadOnly:true},createdAt:'2026-09-30T08:00:00Z',updatedAt:'2026-09-30T08:00:00Z'};
 const visitFile='app/customer-visits.tsx',followupFile='app/customer-followups.tsx';
+// What the route tracking says about the representative's arrival, and what a follow-up's own place section reports (it is tested on its own in followup-place-ui.mjs).
+let trackerActive=null;
+const idlePlace={status:'idle',blocked:false,message:'',distance:null};
+let followupPlace={wants:false,fix:null,locating:false,error:'',locate:noop,view:idlePlace};
 let h=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id}),tree=h.render();
 eq(byClass(tree,'visit-sales-details')[0].props.open,false,'New visit sales extras start collapsed');
 eq(byClass(tree,'visit-context-details').every(node=>!node.props.open),true,'History and factory details no longer precede input as expanded content');
@@ -133,4 +137,66 @@ const sourceWithCompetitor={...competitorVisit,data:{...competitorVisit.data,sal
 const freshFollowup=harness(followupFile,'CustomerFollowupDialog',{customerId:customer.id,records:[customer,sourceWithCompetitor]});let followupView=freshFollowup.render();let followupFields=named(followupView,'CompetitorFields')[0];eq(freshFollowup.state.data.competitorObservation,null,'New follow-up makes no competitor assertion by default');eq(followupFields.props.value.hasCompetitor,false);eq(followupFields.props.value.competitorNotes,'');eq(followupFields.props.value.competitorFileId,'');eq(followupFields.props.records,freshFollowup.props.records,'Follow-up uses the same authorized suggestion scope');
 followupFields.props.onChange({hasCompetitor:true,competitorName:'شركة المثال',competitorNotes:'Observed today'});followupView=freshFollowup.render();followupFields=named(followupView,'CompetitorFields')[0];eq(followupFields.props.value.competitorNotes,'Observed today');eq(followupFields.props.value.competitorFileId,'','Choosing a prior name does not copy a prior attachment');freshFollowup.mode('network');await freshFollowup.submit();const evidenceBody=freshFollowup.calls[0].rawBody;eq(freshFollowup.calls[0].body.data.competitorObservation.competitorNotes,'Observed today');eq(freshFollowup.calls[0].body.sourceId,sourceWithCompetitor.id,'Competitor evidence keeps its follow-up source link');followupFields=named(freshFollowup.render(),'CompetitorFields')[0];eq(followupFields.props.disabled,true,'Uncertain follow-up save locks competitor controls');followupFields.props.onChange({competitorNotes:'Late dictation'});eq(freshFollowup.state.data.competitorObservation.competitorNotes,'Observed today','Late competitor callback cannot alter uncertain save');freshFollowup.mode('normal');await freshFollowup.submit();eq(freshFollowup.calls[1].rawBody,evidenceBody,'Retry retains the exact competitor observation');
 const savedFollowup=harness(followupFile,'CustomerFollowupDialog',{initial:{...sourceWithCompetitor,data:{...sourceWithCompetitor.data,visitWorkflow:'followup-v1'}},records:[customer,sourceWithCompetitor]});const savedFields=named(savedFollowup.render(),'CompetitorFields')[0];eq(savedFields.props.readOnly,true,'Saved follow-up evidence remains read-only');eq(savedFields.props.value.competitorFileId,'previous-private-file','Saved follow-up retains its own private attachment');
+// ---- a new visit is recorded where the customer is: the factory sits at 21.5, 39.2, and 0.0005 degrees of latitude is 55.6 metres
+const fixAt=(latitude,accuracy=12)=>({location:latitude.toFixed(7)+', 39.2000000',latitude,longitude:39.2,locationSource:'device',locationCapturedAt:'2026-10-01T09:00:00.000Z',locationAccuracy:accuracy});
+const giveFix=(harnessed,fix)=>{const fields=named(harnessed.render(),'VisitFields')[0];for(const [key,value] of Object.entries(fix))fields.props.onChange(key,value);return harnessed.render();};
+let place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id});place.render();
+place.state.customerId=customer.id;
+tree=giveFix(place,fixAt(21.52));
+let view=named(tree,'VisitPlaceStatus')[0].props.view;
+eq([view.status,view.blocked,Math.round(view.distance)],['far',true,2224],'a representative 2.2 km from the customer is told so, and held');
+eq(button(tree,'حفظ الزيارة').props.disabled,true,'Save is closed while the visit is away');
+ok(text(byClass(tree,'visit-save-hint')).includes('لا يمكن تسجيل الزيارة إلا عند العميل. أنت على بعد 2224 متر من موقع «Factory» (الدقة ±12 متر)'),'and the reason sits beside Save, with the distance and the customer');
+const callsBefore=place.calls.length;await place.submit();
+eq([place.calls.length,place.state.error.startsWith('لا يمكن تسجيل الزيارة إلا عند العميل')],[callsBefore,true],'a forced submit sends nothing and shows the same words');
+tree=giveFix(place,fixAt(21.5005));view=named(tree,'VisitPlaceStatus')[0].props.view;
+eq([view.status,view.blocked,Math.round(view.distance),button(tree,'حفظ الزيارة').props.disabled],['near',false,56,false],'moving to the customer, 55.6 metres away, opens Save again with no new capture of the customer');
+language='en';place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id});tree=giveFix(place,fixAt(21.52,300));view=named(tree,'VisitPlaceStatus')[0].props.view;language='ar';
+eq([view.status,view.message],['far','A visit can only be recorded at the customer\'s place. You are 2224 meters from «Factory» (accuracy ±300 meters). Go to the customer\'s place, then tap Refresh device location.'],'in English, with the accuracy of 300 still judged');
+place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id});tree=giveFix(place,fixAt(21.5005,450));view=named(tree,'VisitPlaceStatus')[0].props.view;
+eq([view.status,view.blocked],['uncertain',true],'a fix with an accuracy of 450, 56 metres away, is not accepted either: too weak to judge, and the representative is held');
+place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id,me:{...me,role:'supervisor'}});tree=giveFix(place,fixAt(21.52));view=named(tree,'VisitPlaceStatus')[0].props.view;
+eq([view.status,view.blocked,button(tree,'حفظ الزيارة').props.disabled],['far',false,false],'a supervisor away from the customer is told the visit will be marked, and is not held');
+ok(view.message.includes('تُوسم «سُجّلت بعيدًا عن العميل»'),'in those words');
+trackerActive={customerId:customer.id,closedAt:null,data:{arrivalAt:'2026-10-01T08:59:00.000Z',departureAt:null}};
+place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id});tree=giveFix(place,fixAt(21.52));view=named(tree,'VisitPlaceStatus')[0].props.view;
+eq([view.status,view.blocked,button(tree,'حفظ الزيارة').props.disabled],['journey',false,false],'arrival the route tracking confirmed at this customer settles it, wherever the fix is');
+trackerActive={customerId:customer.id,closedAt:null,data:{arrivalAt:'2026-10-01T08:59:00.000Z',departureAt:'2026-10-01T09:30:00.000Z'}};
+place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id});tree=giveFix(place,fixAt(21.52));
+eq(named(tree,'VisitPlaceStatus')[0].props.view.status,'far','a stop already left does not');
+trackerActive={customerId:'someone-else',closedAt:null,data:{arrivalAt:'2026-10-01T08:59:00.000Z',departureAt:null}};
+place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id});tree=giveFix(place,fixAt(21.52));
+eq(named(tree,'VisitPlaceStatus')[0].props.view.status,'far','nor does arrival at another customer');
+trackerActive=null;
+place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id});place.render();place.state.data={...place.state.data,type:'call'};tree=giveFix(place,fixAt(21.52));
+eq(named(tree,'VisitPlaceStatus')[0].props.view.status,'idle','a call has no place');
+place=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id,records:[{...customer,data:{...customer.data,location:''}}]});tree=giveFix(place,fixAt(21.52));view=named(tree,'VisitPlaceStatus')[0].props.view;
+eq([view.status,view.blocked],['adopt',false],'a customer with no place of their own takes the visit\'s point, and says so');
+// the older visits page and the reading roles
+const edited=harness(visitFile,'CustomerVisitDialog',{initial:{...ownVisit,data:{...ownVisit.data,type:'visit',...fixAt(21.52)}},records:[customer,ownVisit]});
+eq(named(edited.render(),'VisitPlaceStatus')[0].props.view.status,'idle','a saved visit opened for editing is not judged again');
+
+// ---- a follow-up that is a visit carries the device's point and waits for a good one
+const farFollowup={wants:true,fix:null,locating:false,error:'',locate:noop,view:idlePlace};
+const followupSource={...ownVisit,data:{...ownVisit.data,salesStage:'new'}};
+followupPlace={wants:true,fix:fixAt(21.5005),locating:false,error:'',locate:noop,view:{status:'near',blocked:false,message:'near',distance:55.6}};
+let follow=harness(followupFile,'CustomerFollowupDialog',{customerId:customer.id,records:[customer,followupSource]});tree=follow.render();
+named(tree,'VoiceField').find(node=>node.props.label==='ما نتيجة المتابعة؟').props.onChange('اتفقنا على إرسال العرض');named(tree,'VoiceField').find(node=>node.props.label==='الإجراء القادم').props.onChange('إرسال العرض');follow.state.data.nextDate='2026-10-02';
+ok(named(tree,'FollowupPlace').length===1,'the follow-up form has its place section');
+await follow.submit();
+eq([follow.calls.length,follow.calls[0].body.data.latitude,follow.calls[0].body.data.locationSource,follow.calls[0].body.data.locationAccuracy,follow.calls[0].body.data.location],[1,21.5005,'device',12,'21.5005000, 39.2000000'],'a follow-up that is a visit sends the device\'s point with it');
+followupPlace={...farFollowup,locating:true};
+follow=harness(followupFile,'CustomerFollowupDialog',{customerId:customer.id,records:[customer,followupSource]});tree=follow.render();
+eq(button(tree,'حفظ المتابعة').props.disabled,true,'Save waits while the point is being taken');
+followupPlace={...farFollowup};follow=harness(followupFile,'CustomerFollowupDialog',{customerId:customer.id,records:[customer,followupSource]});tree=follow.render();
+eq(button(tree,'حفظ المتابعة').props.disabled,true,'and while there is none');
+named(tree,'VoiceField').find(node=>node.props.label==='ما نتيجة المتابعة؟').props.onChange('x');await follow.submit();eq(follow.calls.length,0,'a forced submit without the point sends nothing');
+followupPlace={wants:true,fix:fixAt(21.52),locating:false,error:'',locate:noop,view:{status:'far',blocked:true,message:'بعيد',distance:2224}};
+follow=harness(followupFile,'CustomerFollowupDialog',{customerId:customer.id,records:[customer,followupSource]});tree=follow.render();
+eq(button(tree,'حفظ المتابعة').props.disabled,true,'a far follow-up cannot be saved');
+await follow.submit();eq([follow.calls.length,follow.state.error],[0,'بعيد'],'and says why');
+followupPlace={wants:false,fix:null,locating:false,error:'',locate:noop,view:idlePlace};
+follow=harness(followupFile,'CustomerFollowupDialog',{customerId:customer.id,records:[customer,followupSource]});tree=follow.render();
+named(tree,'VoiceField').find(node=>node.props.label==='ما نتيجة المتابعة؟').props.onChange('اتصلنا بالعميل');named(tree,'VoiceField').find(node=>node.props.label==='الإجراء القادم').props.onChange('إرسال العرض');follow.state.data.nextDate='2026-10-02';follow.state.data.type='call';await follow.submit();
+eq([follow.calls.length,follow.calls[0].body.data.latitude,follow.calls[0].body.data.location],[1,undefined,undefined],'any other kind of follow-up sends no place');
 console.log(JSON.stringify({ok:true,checks,coverage:'actual visit/follow-up forms: compact sections, unchanged payloads, retry keys, native journey linkage, save errors, read-only access, nested unsaved drafts, AR/EN and quick dates',realBrowser:false,realDevice:false}));

@@ -13,6 +13,7 @@ import type {UploadState} from './upload-status';
 import {useAutomaticJourney,JourneyFormNotice} from './journey-tracker';
 import {isServiceRole} from '@/lib/customer-service';
 import {FollowupDateField} from './visit-fields';
+import {FollowupPlace,useFollowupPlace} from './followup-place';
 import {SubmitError,definiteSubmitRejection} from '@/lib/client-submit';
 import {offlineSubmit,uploadOfflineVisitFile} from '@/lib/offline-submit';
 import './visit-mobile.css';
@@ -36,6 +37,8 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
  useEffect(()=>()=>{uploadVersion.current++;},[]);
  const customer=records.find(r=>r.id===customerId),closed=followupClosed(data.salesStage),hasQuotation=!!customer&&(customerHasQuotation(customer.id,records)||data.type==='quote'||data.salesStage==='quoted');
  const journeyStopId=useAutomaticJourney({customerId,type:data.type,date:data.date,enabled:!initial&&canExecuteCustomerFollowup(source)&&!isServiceRole(me.role)});
+ // A follow-up that is a visit is recorded where the customer is, like any visit; the other kinds have no place.
+ const place=useFollowupPlace({enabled:!initial&&!isServiceRole(me.role),customer,type:data.type,role:me.role});
  const [dirty,setDirty]=useState(false),[confirmLeave,setConfirmLeave]=useState(false),[salesOpen,setSalesOpen]=useState(!!seedSource&&followupClosed(seedSource.data.salesStage));
  const titleRef=useRef<HTMLHeadingElement>(null),errorRef=useRef<HTMLDivElement>(null),keepRef=useRef<HTMLButtonElement>(null),invalidFrame=useRef<number|null>(null);
  useEffect(()=>{if(hasQuotation)setSalesOpen(true);},[hasQuotation]);
@@ -65,10 +68,11 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
   e.preventDefault();if(lock.current||initial||uploadLock.current)return;
   if(!savedReceipt.current&&!retryPending&&!customer){setError(say('العميل غير متاح. أعد فتح المتابعة من قائمته.','The customer is unavailable. Reopen the follow-up from the list.'));return;}
   if(!savedReceipt.current&&!retryPending&&!canExecuteCustomerFollowup(source)){setError('افتح الزيارة السابقة وحدد الإجراء القادم وموعد المتابعة أولًا.');return;}
+  if(!savedReceipt.current&&!retryPending&&place.wants&&(!place.fix||place.view.blocked)){setError(place.view.message||place.error||say('انتظر تحديد موقع الجهاز أو اضغط تحديث موقع الجهاز.','Wait for the device location, or tap Refresh device location.'));return;}
   lock.current=true;setBusy(true);setError('');
   try{
    if(!savedReceipt.current){
-    if(!attempt.current){const stopId=journeyStopId();attempt.current=JSON.stringify({customerId,customerVersion:customer?.version,sourceId:source?.id,sourceVersion:source?.version,data:{...data,...(stopId?{journeyStopId:stopId}:{})},createKey:crypto.randomUUID()});}
+    if(!attempt.current){const stopId=journeyStopId();attempt.current=JSON.stringify({customerId,customerVersion:customer?.version,sourceId:source?.id,sourceVersion:source?.version,data:{...data,...(place.wants&&place.fix?place.fix:{}),...(stopId?{journeyStopId:stopId}:{})},createKey:crypto.randomUUID()});}
     const result=await offlineSubmit('/api/customer-followups',attempt.current,{me,language,label:customer?.data.name||say('متابعة','Follow-up'),kind:'followup'});
     if(result.ok!==true||typeof result.id!=='string'||!result.id)throw new SubmitError(say('الخادم لم يؤكد حفظ المتابعة. أعد المحاولة بنفس البيانات.','The server did not confirm the follow-up. Retry with the same entries.'),200,result);
     savedReceipt.current=true;setRetryPending(false);setDirty(false);
@@ -91,6 +95,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
     {!isServiceRole(me.role)&&data.type==='visit'&&data.date===today()&&<JourneyFormNotice/>}
     <section className="visit-form-section"><h3>{say('التواصل والنتيجة','Contact & outcome')}</h3><div className="form-grid">
      <label className="field full"><span>{t('نوع المتابعة')}</span><Pick label="نوع المتابعة" value={data.type} onChange={value=>change('type',value)} options={followupTypes}/></label>
+     <FollowupPlace place={place} busy={busy||uploading||retryPending}/>
      <VoiceField label="ما نتيجة المتابعة؟" value={data.result} onChange={value=>change('result',value)} required multiline/>
     </div></section>
     {!closed&&<section className="visit-form-section"><h3>{say('الخطوة الجاية','Next step')}</h3><div className="form-grid"><VoiceField label="الإجراء القادم" value={data.nextAction} onChange={value=>change('nextAction',value)} required/><FollowupDateField value={data.nextDate} min={data.date} onChange={value=>change('nextDate',value)}/></div></section>}
@@ -103,7 +108,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
      {hasQuotation&&data.invoiceOutcome==='invoiced'&&<p className="form-note full">{me.role==='rep'?say('اطلب من المشرف تسجيل الفاتورة لاحتساب المبيعات.','Ask your supervisor to record the invoice to count the sale.'):say('سجّل الفاتورة في المبيعات لاحتسابها في الأداء.','Record the invoice in Sales to include it in performance.')}</p>}
     </div></details>
    </fieldset>
-   <footer className="visit-save-bar">{error&&<div ref={errorRef} tabIndex={-1} className="form-error" role="alert">{t(error)}</div>}{retryPending&&<p className="visit-save-hint" role="status">{say('حالة الحفظ غير مؤكدة. البيانات مقفولة مؤقتًا؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب بدون متابعة مكررة.','The save is unconfirmed. Entries are temporarily locked; tap Confirm save to retry the identical request without creating a duplicate follow-up.')}</p>}{confirmLeave?<div className="visit-discard-prompt" role="alert"><p>{retryPending?say('الحفظ غير مؤكد. لو خرجت راجع سجل العميل قبل تسجيل متابعة أخرى.','The save is unconfirmed. If you leave, check the customer history before recording another follow-up.'):say('فيه بيانات لسه ما اتحفظتش. تخرج من غير حفظ؟','You have unsaved changes. Leave without saving?')}</p><div><button ref={keepRef} type="button" className="btn primary" onClick={()=>setConfirmLeave(false)}>{say('أكمل التسجيل','Keep editing')}</button><button type="button" className="btn subtle danger" onClick={onClose}>{retryPending?say('إغلاق ومراجعة السجل','Close and check history'):say('خروج بدون حفظ','Discard changes')}</button></div></div>:<div className="form-footer"><button type="button" className="btn subtle" disabled={busy||uploading} onClick={requestClose}>{t(savedReceipt.current?'إغلاق':'إلغاء')}</button><button type="submit" className="btn primary" aria-busy={busy} disabled={busy||uploading||!retryPending&&!savedReceipt.current&&(!customer||!canExecuteCustomerFollowup(source))}>{busy?<Loader2 size={18} className="spin"/>:<CheckCircle2 size={18}/>} {savedReceipt.current?say('تحديث السجل','Refresh history'):retryPending?say('تأكيد الحفظ','Confirm save'):t('حفظ المتابعة')}</button></div>}</footer>
+   <footer className="visit-save-bar">{error&&<div ref={errorRef} tabIndex={-1} className="form-error" role="alert">{t(error)}</div>}{retryPending&&<p className="visit-save-hint" role="status">{say('حالة الحفظ غير مؤكدة. البيانات مقفولة مؤقتًا؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب بدون متابعة مكررة.','The save is unconfirmed. Entries are temporarily locked; tap Confirm save to retry the identical request without creating a duplicate follow-up.')}</p>}{confirmLeave?<div className="visit-discard-prompt" role="alert"><p>{retryPending?say('الحفظ غير مؤكد. لو خرجت راجع سجل العميل قبل تسجيل متابعة أخرى.','The save is unconfirmed. If you leave, check the customer history before recording another follow-up.'):say('فيه بيانات لسه ما اتحفظتش. تخرج من غير حفظ؟','You have unsaved changes. Leave without saving?')}</p><div><button ref={keepRef} type="button" className="btn primary" onClick={()=>setConfirmLeave(false)}>{say('أكمل التسجيل','Keep editing')}</button><button type="button" className="btn subtle danger" onClick={onClose}>{retryPending?say('إغلاق ومراجعة السجل','Close and check history'):say('خروج بدون حفظ','Discard changes')}</button></div></div>:<div className="form-footer"><button type="button" className="btn subtle" disabled={busy||uploading} onClick={requestClose}>{t(savedReceipt.current?'إغلاق':'إلغاء')}</button><button type="submit" className="btn primary" aria-busy={busy} disabled={busy||uploading||!retryPending&&!savedReceipt.current&&(!customer||!canExecuteCustomerFollowup(source)||place.wants&&(place.locating||!place.fix||place.view.blocked))}>{busy?<Loader2 size={18} className="spin"/>:<CheckCircle2 size={18}/>} {savedReceipt.current?say('تحديث السجل','Refresh history'):retryPending?say('تأكيد الحفظ','Confirm save'):t('حفظ المتابعة')}</button></div>}</footer>
   </form>}
  </DialogContent></Dialog>;
 }

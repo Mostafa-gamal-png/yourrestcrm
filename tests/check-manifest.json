@@ -271,6 +271,16 @@
       "file": "tests/visit-files-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
+    },
+    {
+      "file": "tests/visit-place-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/visit-place-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
     }
   ]
 }
