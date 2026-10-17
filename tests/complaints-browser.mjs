@@ -126,8 +126,11 @@ try {
     check([stored.data.complaintNumber, stored.data.contactWhatsapp, stored.data.contactEmail, stored.data.notifiedAt], [1, '0551234567', 'abukhaled@example.com', undefined], 'the complaint is number 1, with the WhatsApp number and the e-mail, and the customer is not told yet');
     ok((await step.innerText()).includes('سُجّلت الشكوى رقم 1'), 'the dialog says it is registered, with its number');
     const day = new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Riyadh', day: '2-digit', month: '2-digit', year: 'numeric'}).format(new Date(stored.data.submittedAt));
-    const message = 'السلام عليكم. شركة يورست للصناعات: تم تسجيل شكواكم رقم 1 بتاريخ ' + day + ' بخصوص «جودة المنتج أو القالب»، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.';
-    check((await step.locator('blockquote.complaint-message').innerText()).trim(), message, 'it shows the message that will be sent, word for word');
+    const arabic = 'شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى برقم 1 بتاريخ ' + day + ' بخصوص «جودة المنتج أو القالب»، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.';
+    const english = 'Yourrest Industries welcomes you: a complaint has been registered under number 1 on ' + day + ' regarding “Product or mold quality”, and we will contact you to follow up until it is resolved. We appreciate your trust in us.';
+    const message = arabic + '\n\n' + english;
+    check((await step.locator('blockquote.complaint-message').innerText()).trim(), message, 'it shows the message that will be sent, in Arabic and in English, word for word');
+    check(await step.locator('blockquote.complaint-message p').evaluateAll(nodes => nodes.map(node => [node.getAttribute('lang'), getComputedStyle(node).direction])), [['ar', 'rtl'], ['en', 'ltr']], 'each language in its own paragraph and direction');
     const link = step.locator('a[data-notify="open"]');
     const href = await link.getAttribute('href');
     check([href.split('?text=')[0], decodeURIComponent(href.split('?text=')[1])], ['https://wa.me/966551234567', message], 'the button is a link to WhatsApp on the customer\'s number with that message');

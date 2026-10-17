@@ -21,4 +21,5 @@
 /* The step after a complaint is saved: tell the customer, with the words that will be sent. */
 .complaint-notify-step{display:grid;gap:12px}.complaint-notify-step p{margin:0}.complaint-message{margin:0;padding:12px 14px;border:1px solid var(--border);border-inline-start:4px solid #1b6a47;border-radius:10px;background:var(--muted);font-size:14px;line-height:1.9;overflow-wrap:anywhere}
 .complaint-number{font-weight:700;color:var(--primary)}.complaint-notify{display:grid;gap:8px}.complaint-notify a.btn{display:inline-flex;align-items:center;gap:6px;justify-content:center;min-height:44px;text-decoration:none}.complaint-card .support-actions a.btn{display:inline-flex;align-items:center;gap:6px;min-height:40px;text-decoration:none}
+.complaint-message p+p{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
 .dark .complaint-message{border-inline-start-color:#2d8a62}

@@ -1,7 +1,8 @@
 import {contactLinks} from './support';
 
-/** The company's name as the customer reads it in the message. */
+/** The company's name as the customer reads it in the message, in each language. */
 export const COMPANY_NAME='شركة يورست للصناعات';
+export const COMPANY_NAME_EN='Yourrest Industries';
 const WA='https://wa.me/';
 const asciiDigits=(value:string)=>value.replace(/[٠-٩]/g,digit=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
 
@@ -24,9 +25,19 @@ export function whatsappUrl(value:unknown,text:string=''):string{
 /** A date as the customer reads it: day, month, year, in Riyadh. */
 export const messageDate=(iso:string)=>new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(iso));
 
-/** What the customer is told when a complaint is registered. Always Arabic and fixed here, so that every employee sends the same words; the
- * number is left out for a complaint registered before numbering began. */
-export function complaintMessage(input:{number?:number|null;createdAt:string;category:string}):string{
- const number=input.number?` رقم ${input.number}`:'',topic=input.category?` بخصوص «${input.category}»`:'';
- return `السلام عليكم. ${COMPANY_NAME}: تم تسجيل شكواكم${number} بتاريخ ${messageDate(input.createdAt)}${topic}، وسيتواصل معكم فريقنا للمتابعة حتى الحل. نشكر لكم ثقتكم.`;
+/** What the customer is told when a complaint is registered: the Arabic words and the same words in English. Fixed here, so that every employee
+ * sends the same message whatever language the employee's screen is in; the number is left out for a complaint registered before numbering
+ * began, and the topic when the complaint has none. */
+export function complaintMessageParts(input:{number?:number|null;createdAt:string;category:string;categoryEn?:string}):{ar:string;en:string}{
+ const date=messageDate(input.createdAt),number=input.number?` برقم ${input.number}`:'',topic=input.category?` بخصوص «${input.category}»`:'';
+ const numberEn=input.number?` under number ${input.number}`:'',topicEn=input.category&&input.categoryEn?` regarding “${input.categoryEn}”`:'';
+ return {
+  ar:`${COMPANY_NAME} ترحب بكم: تم تسجيل شكوى${number} بتاريخ ${date}${topic}، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.`,
+  en:`${COMPANY_NAME_EN} welcomes you: a complaint has been registered${numberEn} on ${date}${topicEn}, and we will contact you to follow up until it is resolved. We appreciate your trust in us.`
+ };
+}
+/** The whole message as it is sent in one WhatsApp message: the Arabic paragraph, then the English one. */
+export function complaintMessage(input:Parameters<typeof complaintMessageParts>[0]):string{
+ const {ar,en}=complaintMessageParts(input);
+ return ar+'\n\n'+en;
 }
