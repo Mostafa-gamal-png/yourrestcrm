@@ -411,6 +411,22 @@ eq([quiet.manager.score,quiet.manager.measuredWeight,metric(quiet.manager,'backl
 const worked=group(K.serviceKpiMonth({...lone,audits:[audit('MA','r1','2026-06',90,{at:'2026-06-10T06:00:00.000Z'})]},'2026-06',NOW),'mg');
 eq([worked.reps[0].score,worked.manager.score,worked.manager.measuredWeight],[100,100,45],'beside a measured figure it counts: a team average (25), a quality (10) and the empty backlog (10)');
 
+// ---- a request that goes on to the sales side after customer service's contact: the first submission is what is measured
+{
+ const staged=(id,status,requestedAt,result,extra={})=>{const row=support(id,{handler:'cs1',requestedAt,result});row.data.status=status;if(result)row.data.submittedAt=result;return {...row,data:{...row.data,...extra}};};
+ // three requests contacted within the hour, now at different stages beyond customer service, and one that has not been contacted for days
+ const chainSupports=[staged('K1','submitted',T(14,5),T(14,6)),staged('K2','assigned',T(15,5),T(15,6),{assigneeId:'rep',salesManagerId:'sm'}),staged('K3','resolved',T(16,5),T(16,6),{assigneeId:'rep'}),staged('K4','returned',T(17,5),T(17,6),{returnNote:'x'}),support('K5',{handler:'cs1',requestedAt:T(21,5)})];
+ const month=run('2026-09',NOW,{support:chainSupports,complaints:[],serviceCases:[],audits:[]});
+ const lead=group(month,'csm'),rep=card(lead,'cs1'),manager=lead.manager;
+ eq(nd(rep,'support_response'),[4,4],'a request that has gone on to the manager, to sales or back for correction counts as answered at its first submission');
+ eq(metric(rep,'support_response').items.map(item=>item.ref).sort(),['support-K1','support-K2','support-K3','support-K4'],'each one, by its first submission');
+ eq(nd(manager,'team_support_response'),[4,4],'the manager\'s figure counts them the same way');
+ eq(metric(manager,'backlog').items.filter(item=>item.type==='support').map(item=>item.ref),['support-K5'],'only what customer service has not yet contacted is left in the backlog');
+ eq(['support-K1','support-K2','support-K3','support-K4','support-K5'].map(ref=>metric(rep,'clearance').items.find(item=>item.ref===ref)?.ok),[true,true,true,true,false],'the representative\'s clearance finds the four in time and the untouched one not cleared');
+ const sample=K.auditCandidates(input({support:chainSupports,complaints:[],serviceCases:[],audits:[]}),'2026-09','cs1',NOW).filter(item=>item.type==='support').map(item=>item.ref).sort();
+ eq(sample,['support-K1','support-K2','support-K3','support-K4'],'every contact customer service made is a candidate for a quality audit, whatever became of the request after');
+}
+
 // ---- the new record kinds never travel with the sales records
 const kindsRows=['service_audit','service_kpi_month','service_kpi_settings','support','complaint'].map(kind=>({id:kind+'-1',kind,parentId:null,assignedTo:'csm',branch:'الرئيسي',data:{kind},createdAt:T(1,5),updatedAt:T(1,5),version:1}));
 eq(CRM.scopeRecords(kindsRows,members,members.find(x=>x.id==='owner')).length,0,'the administrator\'s record list leaves all five out');

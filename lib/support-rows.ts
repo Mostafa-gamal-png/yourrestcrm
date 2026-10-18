@@ -11,10 +11,10 @@ export function decodeSupport(rows:Raw[]):SupportRow[]{
  }
  return found;
 }
-/** Open requests and whatever changed in the last 45 days: enough for every list and for "this visit was already handled". */
+/** Every request that has not ended, however old, and whatever changed in the last 45 days: enough for every list and for "this visit was already handled". */
 export async function loadSupport(db:D1Database,now:string){
  const since=new Date(Date.parse(now)-45*86400000).toISOString();
- return decodeSupport((await db.prepare(`SELECT ${columns} FROM crm_records WHERE kind='support' AND (updated_at>=? OR json_extract(data,'$.status')='open') ORDER BY created_at DESC,id DESC`).bind(since).all<Raw>()).results);
+ return decodeSupport((await db.prepare(`SELECT ${columns} FROM crm_records WHERE kind='support' AND (updated_at>=? OR json_extract(data,'$.status') NOT IN ('done','cancelled')) ORDER BY created_at DESC,id DESC`).bind(since).all<Raw>()).results);
 }
 export async function loadSupportRow(db:D1Database,id:string){return decodeSupport((await db.prepare(`SELECT ${columns} FROM crm_records WHERE kind='support' AND id=?`).bind(id).all<Raw>()).results)[0];}
 /** Every request there is, oldest first: the evaluation of a month counts requests answered however long ago they were made. */

@@ -163,8 +163,8 @@ const byId=(list,id)=>list.find(e=>e.id===id);
 
 // ---- what each reader may do with each request
 {
- const perm=(id,requestId)=>{const e=byId(queue(id),requestId);return e&&['take','assign','result','cancel','seen'].map(key=>e.permissions[key]);};
- //            take   assign result cancel seen
+ const perm=(id,requestId)=>{const e=byId(queue(id),requestId);return e&&['take','assign','submit','cancel','seen'].map(key=>e.permissions[key]);};
+ //            take   assign submit cancel seen
  eq(perm('rep','s-1'),[false,false,false,true,false],'the asker may only cancel an open request');
  eq(perm('sup','s-1'),[false,false,false,true,false],'so may their supervisor');
  eq(perm('sm','s-1'),[false,false,false,true,false],'and the sales manager');
@@ -289,6 +289,127 @@ const byId=(list,id)=>list.find(e=>e.id===id);
  eq(listed.map(e=>e.id),every.slice(0,300).map(e=>e.id),'the listed ones are the first of the whole, in the same order');
  ok(every.slice(300).every(e=>e.overdueDays<=listed[299].overdueDays),'nothing left out is more overdue than what is listed');
  eq(S.supportBadge([],S.missedVisits({...scoped('cs_east'),...crowded},now,Infinity),'customer_service'),307,'the badge counts the whole, not only what is listed');
+}
+
+// ---- the chain: a contact submitted for approval, handed to sales, assigned, delegated, recorded by the representative and closed
+{
+ const submitted='2026-10-14T05:30:00.000Z';
+ const held={handlerId:'cs_east',handlerAt:'2026-10-14T04:30:00.000Z',handlerBy:'cs_east',serviceManagerId:'csm',result:{outcome:'reached_interested',note:'العميل مهتم ويطلب زيارة',nextDate:'',by:'cs_east',at:submitted}};
+ const chain=[
+  row('h-sub','c-1','submitted',{createdAt:'2026-10-14T04:00:00.000Z',updatedAt:submitted},{...held,submittedAt:submitted}),
+  row('h-ret','c-4','returned',{createdAt:'2026-10-14T04:00:00.000Z',updatedAt:'2026-10-14T06:00:00.000Z'},{...held,handlerId:'cs_all',handlerBy:'cs_all',submittedAt:submitted,returnedAt:'2026-10-14T06:00:00.000Z',returnNote:'أضف رقم المسؤول'}),
+  row('h-pen','c-6','pending_assignment',{createdAt:'2026-10-12T04:00:00.000Z',updatedAt:'2026-10-13T06:00:00.000Z'},{...held,submittedAt:'2026-10-12T08:00:00.000Z',forwardedAt:'2026-10-13T06:00:00.000Z',salesManagerId:'sm'}),
+  row('h-sup','c-7','assigned',{createdAt:'2026-10-13T04:00:00.000Z',updatedAt:'2026-10-14T05:00:00.000Z'},{...held,forwardedAt:'2026-10-13T08:00:00.000Z',salesManagerId:'sm',assigneeId:'sup',supervisorId:'sup',assignedAt:'2026-10-14T05:00:00.000Z',assignmentNote:'يرجى الزيارة هذا الأسبوع'}),
+  row('h-rep','c-8','assigned',{createdAt:'2026-10-12T04:00:00.000Z',updatedAt:'2026-10-13T05:00:00.000Z'},{...held,forwardedAt:'2026-10-12T08:00:00.000Z',salesManagerId:'sm',assigneeId:'rep2',supervisorId:'sup',assignedAt:'2026-10-13T05:00:00.000Z'}),
+  row('h-res','c-9','resolved',{createdAt:'2026-10-12T04:00:00.000Z',updatedAt:'2026-10-14T06:00:00.000Z'},{...held,salesManagerId:'sm',assigneeId:'rep2',supervisorId:'sup',assignedAt:'2026-10-13T05:00:00.000Z',resolvedAt:'2026-10-14T06:00:00.000Z',resolution:{outcome:'reached_interested',note:'زرته واتفقنا على عرض',nextDate:'',by:'rep2',at:'2026-10-14T06:00:00.000Z',channel:'visit'}}),
+  row('h-done','c-10','done',{createdAt:'2026-10-10T04:00:00.000Z',updatedAt:'2026-10-13T08:00:00.000Z'},{...held,salesManagerId:'sm',assigneeId:'rep2',supervisorId:'sup',closedAt:'2026-10-13T08:00:00.000Z',resolution:{outcome:'wants_visit',note:'طلب موعدًا',nextDate:'2026-10-20',by:'rep2',at:'2026-10-13T07:00:00.000Z',channel:'call'},closure:{note:'تم',by:'cs_east',at:'2026-10-13T08:00:00.000Z'}})
+ ];
+ const q=(id,rows=chain,when=now)=>S.supportQueue({...scoped(id),support:rows},when);
+ const mine=(id,requestId,rows=chain)=>byId(q(id,rows),requestId);
+ const can=(id,requestId)=>{const e=mine(id,requestId);return e&&Object.entries(e.permissions).filter(([,value])=>value).map(([key])=>key);};
+ const wait=(id,requestId)=>mine(id,requestId)?.awaiting;
+
+ // stages, clocks and who holds each
+ const stage=id=>{const e=mine('owner',id);return [e.stage,e.stageHours,e.targetHours,e.late,e.ownerId];};
+ eq(stage('h-sub'),['review',3.5,4,false,'csm'],'a submitted contact waits for the manager within four working hours');
+ eq(stage('h-ret'),['fix',3,null,false,'cs_all'],'a returned one waits for the member who submitted it, with no target');
+ eq(stage('h-pen'),['assignment',13,4,true,'sm'],'handed to the sales manager a working day ago: late');
+ eq(stage('h-sup'),['delegation',4,4,false,'sup'],'with a supervisor, four working hours exactly is not late');
+ eq(stage('h-rep'),['first_contact',14,24,false,'rep2'],'with a representative the target is twenty-four working hours');
+ eq(stage('h-res'),['closure',3,24,false,'cs_east'],'a recorded contact waits for the member who took it');
+ eq(stage('h-done'),['closed',0,null,false,''],'a closed request has no clock and nobody to act');
+ eq([mine('owner','h-sup').assigneeRole,mine('owner','h-rep').assigneeRole,mine('owner','h-sup').assigneeName,mine('owner','h-pen').salesManagerName,mine('owner','h-sub').serviceManagerName],['supervisor','rep','sup','sm','csm'],'the people on the way are named');
+ eq(S.SUPPORT_STAGE_HOURS,{review:4,assignment:4,delegation:4,first_contact:24,closure:24},'the decided stage targets');
+ eq(['open','submitted','returned','pending_assignment','assigned','resolved'].map(status=>S.isOpenSupport({status})),[true,true,true,true,true,true],'every stage before the end is open');
+ eq(['done','cancelled'].map(status=>S.isOpenSupport({status})),[false,false],'closing and cancelling end it');
+ eq(['submitted','returned','pending_assignment','assigned','resolved'].map(status=>S.supportState({status,handlerId:'cs'})),['submitted','returned','pending_assignment','assigned','resolved'],'the state of a request beyond customer service is its status');
+
+ // who may do what at each stage
+ eq(can('cs_east','h-sub'),[],'the member who took it waits while the manager decides');
+ eq(can('csm','h-sub'),['forward','return','cancel'],'the manager approves, returns or cancels what waits for them');
+ eq(can('owner','h-sub'),['forward','return','cancel'],'an administrator may do the same');
+ eq(can('rep','h-sub'),['cancel'],'the representative who asked may still cancel before sales has it');
+ eq(can('sm','h-sub'),['cancel'],'and so may their sales manager');
+ eq(can('rep2','h-sub'),undefined,'another representative does not even see it');
+ eq(can('cs_all','h-ret'),['submit'],'the member who submitted corrects and submits again');
+ eq(can('csm','h-ret'),['cancel'],'the manager may cancel a returned one but not correct it for the member');
+ eq(can('owner','h-ret'),['submit','cancel'],'an administrator may do both');
+ eq(can('sm','h-pen'),['allocate','cancel'],'the sales manager it was handed to assigns it');
+ eq(can('sm2','h-pen'),['cancel'],'another sales manager reads the sales team\'s requests but cannot assign what was handed to a colleague');
+ eq(can('sup','h-pen'),['cancel'],'a supervisor sees their team\'s request but does not assign it');
+ eq(can('csm','h-pen'),[],'the customer-service manager has handed it over');
+ eq(can('owner','h-pen'),['allocate','cancel'],'an administrator may assign');
+ eq(can('sup','h-sup'),['delegate','resolve'],'a supervisor it was assigned to delegates or contacts the customer themselves');
+ eq(can('sm','h-sup'),['reassign'],'the sales manager may move it to someone else');
+ eq(can('rep','h-sup'),[],'the representative who asked only watches');
+ eq(can('rep2','h-sup'),undefined,'a representative of the same supervisor who was not asked sees nothing of it');
+ eq(can('rep2','h-rep'),['resolve'],'the representative it was assigned to records the contact');
+ eq(can('sup','h-rep'),['delegate'],'their supervisor may delegate it to someone else');
+ eq(can('sm','h-rep'),['reassign'],'and the sales manager reassign it');
+ eq(can('cs_east','h-res'),['reject','close'],'the member who took it closes it or returns it to the representative');
+ eq(can('csm','h-res'),['reject','close'],'the manager may as well');
+ eq(can('cs_all','h-res'),[],'a colleague who did not take it may not');
+ eq(can('owner','h-res'),['reject','close','cancel'],'an administrator may');
+ eq(can('rep2','h-res'),[],'the representative has done their part');
+ eq(can('rep2','h-done'),['seen'],'the representative it was assigned to opens the closed request once');
+ eq(can('rep','h-done'),['seen'],'so does the one who asked');
+ eq(can('cs_east','h-done'),[],'a closed request is closed for customer service');
+ eq(can('csm','h-done'),[],'and for its manager');
+ // a request in another branch, or another region, is not theirs
+ for(const [id,requestId] of [['cs_b','h-sub'],['csm_b','h-pen'],['cs_west','h-sub']])eq(can(id,requestId),undefined,id+' (another branch or region) reads nothing of '+requestId);
+
+ // what each is asked to do
+ eq([wait('cs_east','h-res'),wait('cs_east','h-sub'),wait('csm','h-sub'),wait('cs_all','h-ret'),wait('sm','h-pen'),wait('sup','h-sup'),wait('rep2','h-rep'),wait('rep2','h-done'),wait('rep','h-done')],['close','null','review','fix','allocate','delegate','resolve','answer','answer'].map(x=>x==='null'?null:x),'each is asked only for their own step');
+ eq([wait('sup','h-rep'),wait('csm','h-res'),wait('owner','h-sub'),wait('owner','h-pen'),wait('owner','h-res'),wait('sm','h-sup'),wait('rep','h-sup')],[null,null,null,null,null,null,null],'those who may act but are not the ones asked wait for nothing');
+ const handlerAway=members.map(x=>x.id==='cs_east'?{...x,active:0}:x);
+ eq(S.supportQueue({...scoped('csm'),members:handlerAway,support:chain},now).find(e=>e.id==='h-res').awaiting,'close','the manager is asked to close when the member who took it is away');
+ const unmanaged=[{...chain[0],data:{...chain[0].data,serviceManagerId:''}}];
+ eq([S.supportQueue({...scoped('csm'),support:unmanaged},now)[0].awaiting,S.supportQueue({...scoped('owner'),support:unmanaged},now)[0].awaiting,S.supportQueue({...scoped('csm'),support:unmanaged},now)[0].noManager],['review','review',true],'with nobody managing the member who submitted it, any manager of the branch and an administrator review it');
+
+ // whom each step may hand it to
+ const people=(id,requestId)=>mine(id,requestId).candidates.map(x=>x.id);
+ eq(people('csm','h-sub'),['sm'],'the manager forwards to the sales manager they report to');
+ eq(people('owner','h-sub'),['sm','sm2'],'an administrator to any sales manager');
+ eq(people('sm','h-pen'),['rep','outside','rep2','sup'],'the sales manager assigns to any representative or supervisor of the branch, the customer\'s own representative first');
+ eq(mine('sm','h-pen').suggestedId,'rep','and that one is suggested');
+ eq(people('sup','h-sup'),['rep','rep2'],'the supervisor delegates to their own representatives');
+ eq(people('sm','h-sup'),['rep','outside','rep2'],'a reassignment leaves out the current holder');
+ eq(people('sm','h-rep'),['rep','outside','sup'],'whoever holds it is left out');
+ eq(people('rep2','h-rep'),[],'a representative has no one to hand it to');
+ eq(people('sm2','h-pen'),[],'a sales manager it was not handed to has no one to assign to');
+ eq(people('csm','h-res'),[],'closing hands it to no one');
+ const allocate=S.supportCandidates(chain[2],customers.find(x=>x.id==='c-6'),{me:members.find(x=>x.id==='sm'),members},'allocate').map(x=>[x.id,x.role]);
+ eq(allocate,[['rep','rep'],['outside','rep'],['rep2','rep'],['sup','supervisor']],'candidates carry their role');
+ const inactive=members.map(x=>x.id==='rep2'?{...x,active:0}:x);
+ eq(S.supportCandidates(chain[2],customers.find(x=>x.id==='c-6'),{me:members.find(x=>x.id==='sm'),members:inactive},'allocate').map(x=>x.id),['rep','outside','sup'],'a member who is away is not offered');
+
+ // the story
+ const story=mine('csm','h-sub').events;
+ eq(story.map(e=>[e.action,e.byName]),[['request','rep'],['take','cs_east'],['result','cs_east']],'a request made before steps were recorded tells its story from its stamps');
+ const recorded=[{...chain[0],data:{...chain[0].data,events:[{at:'2026-10-14T04:00:00.000Z',by:'rep',action:'request',text:'اتصلوا به'},{at:submitted,by:'cs_east',action:'submit',outcome:'reached_interested',text:'العميل مهتم'},{at:'2026-10-14T06:00:00.000Z',by:'csm',action:'forward',targetId:'sm'}]}}];
+ eq(q('csm',recorded)[0].events.map(e=>[e.action,e.byName,e.targetName,e.outcome||'',e.text||'']),[['request','rep','','','اتصلوا به'],['submit','cs_east','','reached_interested','العميل مهتم'],['forward','csm','sm','','']],'recorded steps carry who did them, whom they were handed to, the outcome and the text');
+ eq([mine('rep2','h-res').resolution,mine('csm','h-res').closure],[{outcome:'reached_interested',note:'زرته واتفقنا على عرض',nextDate:'',by:'rep2',byName:'rep2',at:'2026-10-14T06:00:00.000Z',channel:'visit'},null],'the representative\'s contact keeps its channel; an open request has no closure');
+ eq(mine('csm','h-done').closure,{note:'تم',by:'cs_east',byName:'cs_east',at:'2026-10-13T08:00:00.000Z'},'a closed request keeps who closed it and when');
+
+ // the panel's sections and the badge
+ const groupsOf=(id,role,rows=chain)=>S.supportGroups(q(id,rows),S.missedVisits({...scoped(id),support:rows},now),role,now,id).map(g=>[g.id,g.requests.map(e=>e.id).sort(),g.missed.map(e=>e.customerId)]);
+ eq(groupsOf('cs_east','customer_service'),[['close',['h-res'],[]],['missed',[],['c-10','c-15','c-12']],['following',['h-pen','h-rep','h-sub','h-sup'],[]],['finished',['h-done'],[]]],'a customer-service member: what waits for them, the missed visits they may take, what they sent on its way, then the finished');
+ eq(groupsOf('cs_all','customer_service'),[['fix',['h-ret'],[]],['others',['h-pen','h-rep','h-res','h-sub','h-sup'],[]],['missed_others',[],['c-10','c-15','c-12']],['finished',['h-done'],[]]],'a colleague: the one to correct, what others hold, and the missed visits routed to others');
+ eq(groupsOf('csm','customer_service_manager'),[['review',['h-sub'],[]],['others',['h-pen','h-rep','h-res','h-ret','h-sup'],[]],['missed',[],['c-10','c-15','c-12']],['finished',['h-done'],[]]],'the manager: what waits for their review first');
+ eq(groupsOf('sm','manager'),[['allocate',['h-pen'],[]],['waiting',['h-rep','h-res','h-ret','h-sub','h-sup'],[]],['answered',['h-done'],[]]],'a sales manager: what waits for their assignment, the rest of their team\'s, and the recent answers');
+ eq(groupsOf('sup','supervisor'),[['delegate',['h-sup'],[]],['waiting',['h-pen','h-rep','h-res','h-ret','h-sub'],[]],['answered',['h-done'],[]]],'a supervisor: what waits for their delegation');
+ eq(groupsOf('rep2','rep'),[['resolve',['h-rep'],[]],['waiting',['h-res'],[]],['answered',['h-done'],[]]],'a representative: what was assigned to them to contact, what is still on its way, the answers they have not opened');
+ const badge=(id,role)=>S.supportBadge(q(id),[],role);
+ eq([badge('cs_east','customer_service'),badge('cs_all','customer_service'),badge('csm','customer_service_manager'),badge('sm','manager'),badge('sup','supervisor'),badge('rep2','rep'),badge('rep','rep'),badge('owner','admin')],[1,1,1,1,1,2,1,0],'the badge counts what waits for the reader in any role');
+
+ // one request open per customer, all the way to the end; a finished plan is not routed again
+ const missed=(rows,id='csm')=>S.missedVisits({...scoped(id),support:rows},now).map(e=>e.customerId);
+ const without=support.filter(x=>x.id!=='s-1');
+ ok(missed(without).includes('c-1'),'without a request, c-1 is a missed visit');
+ for(const status of ['open','submitted','returned','pending_assignment','assigned','resolved'])ok(!missed([...without,row('x-1','c-1',status,{},{origin:'missed_visit',handlerId:'cs_east'})]).includes('c-1'),'a request '+status+' takes the customer out of the list');
+ const byCustomer=S.supportByCustomer(q('rep'),now);
+ eq([byCustomer['c-1']?.id,byCustomer['c-6']?.id,byCustomer['c-8']?.id,byCustomer['c-9']?.id],['h-sub','h-pen','h-rep','h-res'],'a sales row shows the request that is still on its way, at whatever stage');
+ eq(byCustomer['c-10']?.state,'done','and a recent answer');
 }
 
 // ---- nothing is invented for a role that has no business here
