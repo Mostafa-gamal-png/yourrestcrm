@@ -1,5 +1,5 @@
 // The tracking board customer service follows on the Opportunities page, as pure functions: the stage bar of an opportunity and of a
-// complaint (the supervisor's step only when it applies, a returned item marked, a finished one complete, a cancelled one without a bar),
+// complaint and of an assistance request (the supervisor's step only when it applies, a returned item marked, a finished one complete, a cancelled one without a bar),
 // the side each stage waits on, who holds it, the late flag and the last thing recorded, what each member follows (a representative what
 // they registered, a manager what the team registered), the thirty-day window for finished items, the order, the filters and their counts.
 // The stages the real queue and complaint functions can produce are all covered by the board. No browser, no network.
@@ -24,8 +24,8 @@ function compile(relative) {
   });
   fs.writeFileSync(dest, code);
 }
-for (const file of ['lib/service-tracking.ts', 'lib/service-queue.ts', 'lib/complaints.ts']) compile(file);
-const T = await import(path.join(out, 'lib/service-tracking.mjs')), Q = await import(path.join(out, 'lib/service-queue.mjs')), C = await import(path.join(out, 'lib/complaints.mjs'));
+for (const file of ['lib/service-tracking.ts', 'lib/service-queue.ts', 'lib/complaints.ts', 'lib/support.ts']) compile(file);
+const T = await import(path.join(out, 'lib/service-tracking.mjs')), Q = await import(path.join(out, 'lib/service-queue.mjs')), C = await import(path.join(out, 'lib/complaints.mjs')), S = await import(path.join(out, 'lib/support.mjs'));
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ids = steps => steps.map(step => step.id), states = steps => steps.map(step => step.state);
@@ -57,6 +57,21 @@ eq(states(T.trackingSteps('complaint', 'closure', false)), ['done', 'done', 'don
 eq(states(T.trackingSteps('complaint', 'closed', false)), ['done', 'done', 'done', 'done', 'done', 'done'], 'a closed complaint is complete');
 eq(T.trackingSteps('complaint', 'cancelled', false), [], 'a cancelled complaint has no bar');
 
+// ---- the bar of an assistance request or a missed visit
+const SUP = ['registered', 'contact', 'review', 'assignment', 'first_contact', 'closure'];
+eq(ids(T.trackingSteps('support', 'contact', false)), SUP, 'a request passes the opening, customer service\'s contact, the manager\'s review, the sales assignment, the sales contact and the closure');
+eq(states(T.trackingSteps('support', 'contact', false)), ['done', 'current', 'upcoming', 'upcoming', 'upcoming', 'upcoming'], 'in the customer-service member\'s contact');
+eq(states(T.trackingSteps('support', 'take', false)), ['done', 'current', 'upcoming', 'upcoming', 'upcoming', 'upcoming'], 'waiting to be taken is the same step, not yet begun by anyone');
+eq(states(T.trackingSteps('support', 'review', false)), ['done', 'done', 'current', 'upcoming', 'upcoming', 'upcoming'], 'at the manager\'s review');
+eq(T.trackingSteps('support', 'fix', false).filter(step => step.state === 'current').map(step => [step.id, step.returned]), [['review', true]], 'returned for correction is the review step, marked');
+eq(states(T.trackingSteps('support', 'assignment', false)), ['done', 'done', 'done', 'current', 'upcoming', 'upcoming'], 'at the sales assignment');
+eq([ids(T.trackingSteps('support', 'delegation', false)), states(T.trackingSteps('support', 'delegation', false))], [['registered', 'contact', 'review', 'assignment', 'delegation', 'first_contact', 'closure'], ['done', 'done', 'done', 'done', 'current', 'upcoming', 'upcoming']], 'with a supervisor the delegation step appears');
+eq(states(T.trackingSteps('support', 'first_contact', true)), ['done', 'done', 'done', 'done', 'done', 'current', 'upcoming'], 'at the sales contact after a delegation');
+eq(states(T.trackingSteps('support', 'closure', false)), ['done', 'done', 'done', 'done', 'done', 'current'], 'waiting for customer service to close it');
+eq(states(T.trackingSteps('support', 'closed', false)), ['done', 'done', 'done', 'done', 'done', 'done'], 'a closed request is complete');
+eq(T.trackingSteps('support', 'cancelled', false), [], 'a cancelled request has no bar');
+eq(['take', 'contact'].map(T.trackingSide), ['service', 'service'], 'waiting to be taken and the contact wait on customer service');
+
 // ---- the side each stage waits on
 eq(['approval', 'returned', 'review', 'fix', 'closure'].map(T.trackingSide), Array(5).fill('service'), 'approval, review, correction and closure wait on customer service');
 eq(['assignment', 'delegation', 'first_contact', 'follow_up', 'resolution'].map(T.trackingSide), Array(5).fill('sales'), 'assignment, delegation, contacts and resolution wait on sales');
@@ -73,18 +88,24 @@ for (const status of ['submitted', 'returned', 'pending_assignment', 'assigned',
   for (const role of ['supervisor', 'rep', ''])
     for (const updates of [[], [{at: '2026-10-05T00:00:00Z'}]])
       complaintStages.add(C.complaintStage({status, updates, submittedAt: '2026-10-01T00:00:00Z', assignedAt: '2026-10-02T00:00:00Z'}, role).stage);
+const supportStages = new Set();
+for (const status of ['open', 'submitted', 'returned', 'pending_assignment', 'assigned', 'resolved', 'done', 'cancelled'])
+  for (const role of ['supervisor', 'rep', ''])
+    for (const handlerId of ['', 'cs'])
+      supportStages.add(S.supportStage({data: {status, handlerId, submittedAt: '2026-10-01T00:00:00Z', assignedAt: '2026-10-02T00:00:00Z'}, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-03T00:00:00Z'}, role).stage);
+eq([...supportStages].sort(), ['assignment', 'cancelled', 'closed', 'closure', 'contact', 'delegation', 'first_contact', 'fix', 'review', 'take'], 'the support functions produce exactly these stages');
 eq([...queueStages].sort(), ['approval', 'assignment', 'closed', 'delegation', 'first_contact', 'follow_up', 'returned'], 'the queue produces exactly these stages');
 eq([...complaintStages].sort(), ['assignment', 'cancelled', 'closed', 'closure', 'delegation', 'first_contact', 'fix', 'resolution', 'review'], 'the complaint functions produce exactly these stages');
-for (const [kind, stages] of [['opportunity', queueStages], ['complaint', complaintStages]])
+for (const [kind, stages] of [['opportunity', queueStages], ['complaint', complaintStages], ['support', supportStages]])
   for (const stage of stages) {
-    eq(Object.keys(T.trackingStageText).includes(stage), true, kind + ' stage ' + stage + ' has its words');
+    eq(Object.keys(T.trackingStageText).includes(stage) || (kind === 'support' && Object.keys(T.trackingSupportStageText).includes(stage)), true, kind + ' stage ' + stage + ' has its words');
     const steps = T.trackingSteps(kind, stage, false);
     eq(stage === 'cancelled' ? steps.length === 0 : steps.filter(step => step.state === 'current').length === (stage === 'closed' ? 0 : 1), true, kind + ' stage ' + stage + ' marks exactly one current step, or none when finished');
     eq(['service', 'sales', 'done'].includes(T.trackingSide(stage)), true, kind + ' stage ' + stage + ' has a side');
   }
-eq(Object.keys(T.trackingStepLabels).sort(), [...new Set([...OPP, ...CMP, 'delegation'])].sort(), 'every step has its label, Arabic and English');
-eq(Object.values({...T.trackingStepLabels, ...T.trackingHolderLabels, ...T.trackingStageText, ...T.trackingFilterLabels, ...T.trackingOpportunityOutcomes}).every(pair => pair.length === 2 && pair.every(word => typeof word === 'string' && word.length > 0)), true, 'every label has both languages');
-eq(/[؀-ۿ]/.test(Object.values({...T.trackingStepLabels, ...T.trackingHolderLabels, ...T.trackingStageText, ...T.trackingFilterLabels}).map(pair => pair[1]).join(' ')), false, 'and the English has no Arabic letter');
+eq(Object.keys(T.trackingStepLabels).sort(), [...new Set([...OPP, ...CMP, ...SUP, 'delegation'])].sort(), 'every step has its label, Arabic and English');
+eq(Object.values({...T.trackingStepLabels, ...T.trackingHolderLabels, ...T.trackingStageText, ...T.trackingSupportStageText, ...T.trackingFilterLabels, ...T.trackingOpportunityOutcomes}).every(pair => pair.length === 2 && pair.every(word => typeof word === 'string' && word.length > 0)), true, 'every label has both languages');
+eq(/[؀-ۿ]/.test(Object.values({...T.trackingStepLabels, ...T.trackingHolderLabels, ...T.trackingStageText, ...T.trackingSupportStageText, ...T.trackingFilterLabels}).map(pair => pair[1]).join(' ')), false, 'and the English has no Arabic letter');
 
 // ---- fixtures
 const progress = (o = {}) => ({stage: 'approval', since: daysAgo(0.5), stageHours: 3, targetHours: 4, late: false, assigneeRole: '', finishedAt: '', ...o});
@@ -146,6 +167,55 @@ eq(T.trackedComplaint(complaint({
 })).last, {kind: 'update', at: daysAgo(1), by: 'سالم', text: 'زرت المصنع'}, 'the newest update or note is the last thing recorded');
 eq(T.trackedComplaint(complaint({updates: [{at: daysAgo(3), byName: 'سالم', text: 'اتصلت'}], notes: [{at: daysAgo(1), byName: 'منى', text: 'يلزم تصعيد'}]})).last.kind, 'note', 'a newer note wins over an older update');
 
+// ---- an assistance request as a board row
+const supportEntry = (o = {}) => ({
+  id: 'support-1', customerId: 'c-3', customerName: 'مصنع الريان', origin: 'rep', state: 'in_progress', status: 'open', note: 'العميل لا يرد على المندوب', plan: null, requestedByName: 'محمد',
+  handlerId: 'rep-1', handlerName: 'ريم', serviceManagerName: 'منى', salesManagerName: 'خالد', assigneeName: '', assigneeRole: '', result: null, resolution: null,
+  stage: 'contact', stageSince: daysAgo(0.3), stageHours: 2, targetHours: 4, late: false, createdAt: daysAgo(1), updatedAt: daysAgo(1), events: [], ...o
+});
+const event = (action, at, byName, extra = {}) => ({at, by: byName, byName, action, targetName: '', ...extra});
+const contact = T.trackedSupport(supportEntry());
+eq([contact.key, contact.kind, contact.origin, contact.customerName, contact.needs, contact.side, contact.stage, contact.registrarId, contact.registrarName, contact.holder, contact.late], ['support:support-1', 'support', 'rep', 'مصنع الريان', 'العميل لا يرد على المندوب', 'service', 'contact', 'rep-1', 'ريم', {name: 'ريم', role: 'registrar'}, false], 'the row names the customer and the reason; the member who took it holds it');
+eq([contact.products, contact.category, contact.complaintNumber, contact.severity, contact.trail, contact.last], [[], '', null, 'normal', [], null], 'it has no products, category or number, and nothing recorded yet');
+const untaken = T.trackedSupport(supportEntry({state: 'waiting', stage: 'take', handlerId: '', handlerName: ''}));
+eq([untaken.holder, untaken.registrarName, untaken.registrarId, untaken.side], [{name: '', role: 'registrar'}, 'محمد', '', 'service'], 'a request nobody took is held by customer service, named after who asked');
+const missedRow = T.trackedSupport(supportEntry({origin: 'missed_visit', note: '', plan: {visitId: 'v', visitDate: '2026-10-05', result: 'سلبية', nextAction: 'زيارة متابعة', nextDate: '2026-10-10'}}));
+eq([missedRow.origin, missedRow.needs], ['missed_visit', 'زيارة متابعة · 2026-10-10'], 'a missed visit reads its planned visit where there is no reason');
+eq([['review', 'منى', 'service_manager'], ['fix', 'ريم', 'registrar'], ['closure', 'ريم', 'registrar'], ['assignment', 'خالد', 'sales_manager']].map(([stage, name, role]) => {const holder = T.trackedSupport(supportEntry({stage})).holder; return [holder.name === name, holder.role === role];}), Array(4).fill([true, true]), 'the manager reviews, the member who took it corrects and closes, the sales manager assigns');
+eq(T.trackedSupport(supportEntry({stage: 'review', serviceManagerName: ''})).holder, {name: '', role: 'admin'}, 'with nobody managing the member, an administrator reviews');
+eq([['delegation', 'supervisor', 'supervisor'], ['first_contact', 'rep', 'rep'], ['first_contact', 'supervisor', 'supervisor'], ['first_contact', '', 'sales']].map(([stage, assigneeRole, expected]) => T.trackedSupport(supportEntry({stage, assigneeName: 'سالم', assigneeRole})).holder.role === expected), [true, true, true, true], 'the supervisor delegates; the sales member contacts the customer');
+eq([T.trackedSupport(supportEntry({stage: 'first_contact', assigneeName: 'سالم', assigneeRole: 'rep', events: [event('request', daysAgo(2), 'محمد'), event('delegate', daysAgo(1), 'عمر')]})).delegated, T.trackedSupport(supportEntry({stage: 'first_contact', assigneeName: 'سالم', assigneeRole: 'rep', events: [event('allocate', daysAgo(1), 'خالد')]})).delegated], [true, false], 'a delegate event marks the delegation step, an assignment alone does not');
+eq([['review', 3.5, 4, true]].map(([stage, hours, target, late]) => { const row = T.trackedSupport(supportEntry({stage, stageHours: hours, targetHours: target, late})); return [row.late, row.stageHours, row.targetHours]; }), [[true, 3.5, 4]], 'lateness, hours and target come with the stage');
+const trailed = T.trackedSupport(supportEntry({stage: 'closure', events: [
+  event('request', daysAgo(5), 'محمد', {text: 'العميل لا يرد'}), event('assign', daysAgo(5), '', {targetName: 'ريم'}), event('submit', daysAgo(4), 'ريم', {outcome: 'reached_interested', text: 'العميل مهتم'}),
+  event('forward', daysAgo(3), 'منى', {targetName: 'خالد'}), event('allocate', daysAgo(2), 'خالد', {targetName: 'سالم', text: 'الزيارة هذا الأسبوع'}), event('resolve', daysAgo(1), 'سالم', {outcome: 'reached_interested', text: 'زرته واتفقنا'}), event('seen', daysAgo(0.5), 'محمد')
+]}));
+eq(trailed.trail.map(step => [step.action, step.by, step.outcome, step.text, step.target]), [['request', 'محمد', '', 'العميل لا يرد', ''], ['assign', '', '', '', 'ريم'], ['submit', 'ريم', 'reached_interested', 'العميل مهتم', ''], ['forward', 'منى', '', '', 'خالد'], ['allocate', 'خالد', '', 'الزيارة هذا الأسبوع', 'سالم'], ['resolve', 'سالم', 'reached_interested', 'زرته واتفقنا', '']], 'the trail tells each step with who did it, what they chose or wrote and whom they handed it to; opening the answer is left out');
+eq(trailed.last, {kind: 'contact', at: daysAgo(1), by: 'سالم', text: 'زرته واتفقنا'}, 'the last thing recorded is the newest step that carries a result or a text');
+const finishedSupport = T.trackedSupport(supportEntry({state: 'done', status: 'done', stage: 'closed', stageSince: daysAgo(4), late: true, result: {outcome: 'wants_visit'}, resolution: {outcome: 'reached_interested'}}));
+eq([finishedSupport.side, finishedSupport.outcome, finishedSupport.finishedAt, finishedSupport.holder, finishedSupport.late, finishedSupport.steps.every(step => step.state === 'done')], ['done', 'reached_interested', daysAgo(4), null, false, true], 'a closed request: finished, the outcome the sales member recorded, nobody holds it, never late');
+eq(T.trackedSupport(supportEntry({state: 'done', status: 'done', stage: 'closed', stageSince: daysAgo(4), result: {outcome: 'no_answer'}, resolution: null})).outcome, 'no_answer', 'one closed before the chain existed keeps customer service\'s own outcome');
+const cancelledSupport = T.trackedSupport(supportEntry({state: 'cancelled', status: 'cancelled', stage: 'cancelled', stageSince: daysAgo(5)}));
+eq([cancelledSupport.side, cancelledSupport.outcome, cancelledSupport.steps, cancelledSupport.finishedAt], ['done', 'cancelled', [], daysAgo(5)], 'a cancelled request: finished, cancelled, no bar');
+eq(['take', 'contact', 'review', 'assignment', 'delegation', 'first_contact', 'closure'].map(stage => T.trackingStageLabel('support', stage)[0]), ['بانتظار تولّي خدمة العملاء', 'قيد تواصل خدمة العملاء', 'بانتظار مراجعة المدير', 'بانتظار تكليف المبيعات', 'لدى المشرف بانتظار التفويض', 'بانتظار تواصل المندوب مع العميل', 'بانتظار إغلاق خدمة العملاء'], 'a request\'s stages have their own words where they differ');
+eq([T.trackingStageLabel('complaint', 'closure')[0], T.trackingStageLabel('opportunity', 'first_contact')[0], T.trackingStageLabel('support', 'nonsense')], ['بانتظار تأكيد الإغلاق مع العميل', 'بانتظار أول تواصل', ['nonsense', 'nonsense']], 'a complaint and an opportunity keep theirs; an unknown stage is its own name');
+
+// ---- what each member follows in assistance requests
+const supports = [
+  supportEntry({id: 's-own-late', handlerId: 'rep-1', late: true, stageHours: 6, stage: 'review', serviceManagerName: 'منى'}),
+  supportEntry({id: 's-own-open', handlerId: 'rep-1', createdAt: daysAgo(2)}),
+  supportEntry({id: 's-other', handlerId: 'rep-2', handlerName: 'هدى', createdAt: daysAgo(3), stage: 'first_contact', assigneeName: 'سالم', assigneeRole: 'rep', stageHours: 30}),
+  supportEntry({id: 's-untaken', handlerId: '', handlerName: '', stage: 'take', state: 'waiting', createdAt: daysAgo(0.5)}),
+  supportEntry({id: 's-own-done', handlerId: 'rep-1', state: 'done', status: 'done', stage: 'closed', stageSince: daysAgo(29), resolution: {outcome: 'reached_interested'}}),
+  supportEntry({id: 's-own-old', handlerId: 'rep-1', state: 'done', status: 'done', stage: 'closed', stageSince: daysAgo(31), resolution: {outcome: 'reached_interested'}})
+];
+const mineSupport = T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, cases: [], complaints: [], support: supports, now: NOW});
+eq(mineSupport.map(item => item.key), ['support:s-own-late', 'support:s-own-open', 'support:s-own-done'], 'a representative follows only what they took: the late first, then the open, then what finished within thirty days; what nobody took and a colleague\'s are not theirs');
+const teamSupport = T.trackingItems({me: {id: 'csm-1', role: 'customer_service_manager'}, cases: [], complaints: [], support: supports, now: NOW});
+eq(teamSupport.map(item => item.key), ['support:s-own-late', 'support:s-other', 'support:s-untaken', 'support:s-own-open', 'support:s-own-done'], 'a manager follows every request the route gives them, including what nobody has taken yet');
+eq(T.trackingItems({me: {id: 'admin-1', role: 'admin'}, cases: [], complaints: [], support: supports, now: NOW}), [], 'the board is still for customer-service members');
+eq(T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, cases: [], complaints: [], support: null, now: NOW}), [], 'nothing loaded is an empty board');
+
 // ---- what each member follows
 const items = {
   cases: [
@@ -166,6 +236,8 @@ const mine = T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, ...it
 eq(mine.map(item => item.key), ['opportunity:o-own-late', 'complaint:k-own', 'opportunity:o-own-open', 'complaint:k-closed', 'opportunity:o-own-done'], 'a representative follows only what they registered: the late first, then the open, then what finished within thirty days, the latest first (the 31-day and 40-day ones are gone)');
 const team = T.trackingItems({me: {id: 'csm-1', role: 'customer_service_manager'}, ...items, now: NOW});
 eq(team.map(item => item.key), ['opportunity:o-own-late', 'complaint:k-own', 'opportunity:o-other', 'complaint:k-other', 'opportunity:o-own-open', 'complaint:k-closed', 'opportunity:o-own-done'], 'a manager follows everything the routes give them, the team\'s and their own, in the same order');
+const mixed = T.trackingItems({me: {id: 'csm-1', role: 'customer_service_manager'}, ...items, support: supports, now: NOW});
+eq([mixed.filter(item => item.kind === 'support').length, mixed.length, T.trackingCounts(mixed)], [5, 12, {all: 12, late: 3, service: 4, sales: 5, finished: 3}], 'opportunities, complaints and assistance requests share one board, one order and one set of counts');
 eq(T.trackingItems({me: {id: 'admin-1', role: 'admin'}, ...items, now: NOW}), [], 'the board is for customer-service members');
 eq(T.trackingItems({me: {id: 'rep-1', role: 'rep'}, ...items, now: NOW}), [], 'and not for sales members');
 eq(T.trackingItems({me: {id: 'rep-1', role: 'customer_service'}, cases: null, complaints: undefined, now: NOW}), [], 'nothing loaded is an empty board');
