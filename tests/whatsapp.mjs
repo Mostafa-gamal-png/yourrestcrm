@@ -57,18 +57,18 @@ eq([W.messageDate('2026-10-17T05:00:00.000Z'), W.messageDate('2026-10-17T22:30:0
 // ---- the words of the message: Arabic first, the same words in English after a blank line
 const when = '2026-10-17T05:00:00.000Z';
 eq([W.COMPANY_NAME, W.COMPANY_NAME_EN], ['شركة يورست للصناعات', 'Yourrest Industries'], 'the company as the customer reads it, in each language');
-const AR124 = 'شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى برقم 124 بتاريخ 17/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.';
-const EN124 = 'Yourrest Industries welcomes you: a complaint has been registered under number 124 on 17/10/2026 regarding “Product or mold quality”, and we will contact you to follow up until it is resolved. We appreciate your trust in us.';
+const AR124 = 'شركة يورست للصناعات ترحب بكم : تم تسجيل شكوى برقم 124 بتاريخ 17/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتم التواصل معكم للمتابعة حتى الحل. نشكر لكم ثقتكم.';
+const EN124 = 'Yourrest Industries welcomes you: a complaint has been registered under number 124 on 17/10/2026 regarding “Product or mold quality”, and we will contact you to follow up until it is resolved. We thank you for your trust.';
 const numbered = {number: 124, createdAt: when, category: C.complaintCategories.product_quality, categoryEn: C.complaintCategoriesEn.product_quality};
 eq(W.complaintMessageParts(numbered), {ar: AR124, en: EN124}, 'the message of a numbered complaint, word for word, in both languages');
 eq(W.complaintMessage(numbered), AR124 + '\n\n' + EN124, 'sent as one message: the Arabic paragraph, a blank line, the English paragraph');
 eq(W.complaintMessageParts({number: null, createdAt: when, category: C.complaintCategories.delivery_delay, categoryEn: C.complaintCategoriesEn.delivery_delay}),
-  {ar: 'شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى بتاريخ 17/10/2026 بخصوص «التأخر في التسليم»، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.',
-   en: 'Yourrest Industries welcomes you: a complaint has been registered on 17/10/2026 regarding “Delivery delay”, and we will contact you to follow up until it is resolved. We appreciate your trust in us.'},
+  {ar: 'شركة يورست للصناعات ترحب بكم : تم تسجيل شكوى بتاريخ 17/10/2026 بخصوص «التأخر في التسليم»، وسيتم التواصل معكم للمتابعة حتى الحل. نشكر لكم ثقتكم.',
+   en: 'Yourrest Industries welcomes you: a complaint has been registered on 17/10/2026 regarding “Delivery delay”, and we will contact you to follow up until it is resolved. We thank you for your trust.'},
   'a complaint registered before numbering began says no number, in either language');
 eq(W.complaintMessageParts({number: 3, createdAt: when, category: '', categoryEn: ''}),
-  {ar: 'شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى برقم 3 بتاريخ 17/10/2026، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.',
-   en: 'Yourrest Industries welcomes you: a complaint has been registered under number 3 on 17/10/2026, and we will contact you to follow up until it is resolved. We appreciate your trust in us.'},
+  {ar: 'شركة يورست للصناعات ترحب بكم : تم تسجيل شكوى برقم 3 بتاريخ 17/10/2026، وسيتم التواصل معكم للمتابعة حتى الحل. نشكر لكم ثقتكم.',
+   en: 'Yourrest Industries welcomes you: a complaint has been registered under number 3 on 17/10/2026, and we will contact you to follow up until it is resolved. We thank you for your trust.'},
   'and one with no category names none, in either language');
 eq(W.complaintMessageParts({number: 3, createdAt: when, category: 'جودة المنتج أو القالب'}).en.includes('regarding'), false, 'an English label that is missing leaves the English sentence whole rather than naming a topic in Arabic');
 eq(Object.keys(C.complaintCategories).every(key => {
