@@ -1,0 +1,333 @@
+{
+  "date": "2026-10-18",
+  "builtFromCommit": "020f0d2 (the chain code, the documents and the generated files)",
+  "gateRunAtCommit": "020f0d2",
+  "headAtPackaging": "01340e2",
+  "package": {
+    "file": "Yourrest-CRM-Update-Support-Chain-20261018.zip",
+    "bytes": 12578546,
+    "sha256": "ac00c6685fedaff2f22d19f6fbf2d980ddbef85d40e7a0f1c615e967dd80e6d5",
+    "releaseFiles": 2867,
+    "manifestSha256": "19582862e477f46f5868ff05ad3357a29179070835921cd995bb188496f8958b",
+    "helper": "yourrest-activate-update-support-chain.cjs",
+    "guide": "UPDATE-20261018-AR.txt",
+    "stageDir": "yourrest-crm-update-support-chain-20261018",
+    "releaseName": "update-support-chain",
+    "releaseDate": "20261018",
+    "schemaBefore": 16,
+    "schemaAfter": 16,
+    "newMigrations": [],
+    "verifyRoutes": [
+      [
+        "/api/support",
+        401
+      ],
+      [
+        "/api/complaints",
+        401
+      ],
+      [
+        "/api/complaint-report",
+        401
+      ],
+      [
+        "/api/service-kpi",
+        401
+      ]
+    ],
+    "settingsOrProductionDataIncluded": false,
+    "databaseIncluded": false,
+    "seedSnapshotIncluded": false,
+    "forbiddenFileNames": 0,
+    "secretPatternHits": 0,
+    "sqliteFilesInside": 0,
+    "customerPhoneNumbersFromSeedChecked": 206,
+    "customerPhoneNumbersFromSeedFound": 0,
+    "allReleaseFilesMatchManifest": true,
+    "newApk": false,
+    "identityNote": "A new release name, date, upload folder and activator name, because the activator keeps its state and lock files under names derived from them; the package deploys whether or not the package of the customer message was deployed.",
+    "rebuiltBeforeDelivery": "A first build of the same release tree (sha256 33245c8e8e97397c5a2deaf5f16d8b147706b03514001e2eebf84f85b16fabe5) was never delivered: it carried a rollback sentence in the guide that was wrong about how the earlier release shows a request in the chain, and the rehearsal script still walked the old short course. Both were corrected and the package rebuilt from the same release tree."
+  },
+  "comparedWithPreviousPackage": {
+    "file": "Yourrest-CRM-Update-Customer-Message-20261018.zip",
+    "sha256": "f64434df43eb66dbbc1c821fcc180f8bce4404e982ec948beee655f296b35ad9",
+    "entriesBefore": 2869,
+    "entriesAfter": 2870,
+    "added": 31,
+    "removed": 30,
+    "changed": 19,
+    "unchanged": 2820,
+    "note": "Added and removed are renamed content-hashed bundle chunks, the guide and the activator under their own names; changed are the bundle manifests, the offline shell and its manifest, the service worker and the sums. No file under node_modules was touched."
+  },
+  "releaseFolder": {
+    "files": 2867,
+    "treeSha256": "1831a8d74f01f1a1639e6baf5feba8733b012e695898431ebdfea9056b0b3eb5",
+    "unchangedByTheTestRunsThatFollowedThePackaging": true
+  },
+  "gates": {
+    "typescript": {
+      "passed": true,
+      "errors": 0
+    },
+    "eslint": {
+      "errors": 96,
+      "warnings": 72,
+      "note": "identical to the base commit and to the previous release after one unused binding in tests/service-tracking-ui.mjs was removed (it had made 73 warnings); measured on the whole repository"
+    },
+    "defaultGate": {
+      "passed": true,
+      "tests": 132,
+      "testsReportingChecks": 128,
+      "checks": 13278,
+      "before": {
+        "tests": 132,
+        "checks": 13043
+      }
+    },
+    "releaseBuildGate": {
+      "tests/app-update-release.mjs": {
+        "passed": true,
+        "checks": 16
+      },
+      "tests/complaint-report-http.mjs": {
+        "passed": true,
+        "checks": 51
+      },
+      "tests/complaints-http.mjs": {
+        "passed": true,
+        "checks": 156
+      },
+      "tests/device-status-http.mjs": {
+        "passed": true,
+        "checks": 86
+      },
+      "tests/namecheap-http.mjs": {
+        "passed": true,
+        "checks": 381
+      },
+      "tests/production-load.mjs": {
+        "passed": true,
+        "checks": null
+      },
+      "tests/sales-date-boundaries.mjs": {
+        "passed": true,
+        "checks": 36
+      },
+      "tests/server-authorization.mjs": {
+        "passed": true,
+        "checks": 366
+      },
+      "tests/service-kpi-http.mjs": {
+        "passed": true,
+        "checks": 115
+      },
+      "tests/service-queue-http.mjs": {
+        "passed": true,
+        "checks": 120
+      },
+      "tests/service-report-http.mjs": {
+        "passed": true,
+        "checks": 45
+      },
+      "tests/support-http.mjs": {
+        "passed": true,
+        "checks": 230
+      },
+      "tests/targets-attainment-http.mjs": {
+        "passed": true,
+        "checks": 26
+      },
+      "tests/visit-files-http.mjs": {
+        "passed": true,
+        "checks": 41
+      },
+      "tests/visit-place-http.mjs": {
+        "passed": true,
+        "checks": 44
+      }
+    },
+    "browserGate": {
+      "tests/admin-delete-browser.mjs": {
+        "passed": true,
+        "checks": 15,
+        "seconds": 18
+      },
+      "tests/app-browser-workflows.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 29,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Reaches the permission-denial step: Chromium started through Playwright does not apply the browser permission override in this context (expected denied, got granted). The unmodified baseline fails at the same step with the same message."
+      },
+      "tests/app-update-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 3
+      },
+      "tests/competitor-intelligence-browser.mjs": {
+        "passed": true,
+        "checks": 146,
+        "seconds": 33
+      },
+      "tests/competitors-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 34
+      },
+      "tests/complaints-browser.mjs": {
+        "passed": true,
+        "checks": 80,
+        "seconds": 64
+      },
+      "tests/customer-edit-browser.mjs": {
+        "passed": true,
+        "checks": 54,
+        "seconds": 21
+      },
+      "tests/daily-report-browser.mjs": {
+        "passed": true,
+        "checks": 94,
+        "seconds": 13
+      },
+      "tests/dictation-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 51
+      },
+      "tests/erp-sales-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 0,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); it was never supplied. The unmodified baseline fails identically."
+      },
+      "tests/kpi-evidence-browser.mjs": {
+        "passed": true,
+        "checks": 87,
+        "seconds": 25
+      },
+      "tests/location-picker-browser.mjs": {
+        "passed": true,
+        "checks": 79,
+        "seconds": 43
+      },
+      "tests/member-regions-browser.mjs": {
+        "passed": true,
+        "checks": 13,
+        "seconds": 20
+      },
+      "tests/offline-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 30,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline reload: Playwright setOffline does not cover the service worker network in this Chromium. The unmodified baseline times out at the same wait (locator.waitFor, 18000 ms)."
+      },
+      "tests/offline-outbox-browser.mjs": {
+        "passed": true,
+        "checks": 49,
+        "seconds": 3
+      },
+      "tests/pwa-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 22,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline navigation uses the data-free client shell: same cause as offline-browser. The unmodified baseline fails at the same assertion."
+      },
+      "tests/service-kpi-browser.mjs": {
+        "passed": true,
+        "checks": 83,
+        "seconds": 74
+      },
+      "tests/service-queue-browser.mjs": {
+        "passed": true,
+        "checks": 162,
+        "seconds": 123
+      },
+      "tests/support-browser.mjs": {
+        "passed": true,
+        "checks": 125,
+        "seconds": 116
+      },
+      "tests/tracking-gate-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 116
+      },
+      "tests/ui-refresh-browser.mjs": {
+        "passed": true,
+        "checks": 105,
+        "seconds": 48
+      },
+      "tests/visit-place-browser.mjs": {
+        "passed": true,
+        "checks": 37,
+        "seconds": 49
+      }
+    },
+    "browserNotes": "Four tests fail exactly as before this update and as on the base commit, at the same step, for the same reasons (Playwright cannot deny a permission or work offline in this Chromium, and the original ERP workbook is not available here); the eighteen others pass, among them support-browser (125), tracking-gate-browser (98), service-queue-browser (162), complaints-browser (80), service-kpi-browser (83)."
+  },
+  "extendedTests": {
+    "tests/support.mjs": 361,
+    "tests/support-http.mjs": 230,
+    "tests/support-ui.mjs": 137,
+    "tests/support-browser.mjs": 125,
+    "tests/service-tracking.mjs": 189,
+    "tests/service-tracking-ui.mjs": 116,
+    "tests/service-kpi.mjs": 216
+  },
+  "commitsAfterTheGateRun": {
+    "headAtGate": "020f0d2",
+    "applicationCodeChanged": false,
+    "filesChanged": [
+      "tests/service-tracking-ui.mjs (an unused binding removed; the test was run again, 116 checks)",
+      "scripts/rehearse-update.mjs (walks the new course)",
+      "docs/UPDATE-2026-10-18-SUPPORT-CHAIN-AR.txt and docs/CHANGELOG-HISTORY.md (the rollback sentence)",
+      "docs/qa (this record, the report, the screenshots)"
+    ]
+  },
+  "rehearsal": {
+    "script": "scripts/rehearse-update.mjs",
+    "runAs": "unprivileged user (nobody) with only net_bind_service, as on the hosting account",
+    "previousRelease": "the release folder of the package of the customer message (Yourrest-CRM-Update-Customer-Message-20261018.zip, sha256 f64434df43eb66dbbc1c821fcc180f8bce4404e982ec948beee655f296b35ad9)",
+    "ok": true,
+    "steps": 17,
+    "packageSha256": "ac00c6685fedaff2f22d19f6fbf2d980ddbef85d40e7a0f1c615e967dd80e6d5",
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/support: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "productionDataUsed": false,
+    "hostingAccessed": false,
+    "stepNames": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while the app is still running",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "assistance requests, missed visits and the manager's approval queue work on the upgraded database for the right roles",
+      "a customer complaint runs its whole course on the upgraded database for the right roles",
+      "the monthly complaints report counts the complaint for the managers only",
+      "the customer-service evaluation counts the closure, its rating and the registration, takes an audit and the settings, for the right roles only",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ]
+  },
+  "notVerifiedHere": [
+    "a physical Android phone",
+    "Passenger on cPanel (the rehearsal runs the app directly with Node 22 on Linux)",
+    "real data: every test and screenshot uses synthetic customers and requests",
+    "a real customer-service team using the chain with the real manager links (representative to service manager, service manager to sales manager); the chain needs those links set in the team page"
+  ],
+  "productionModified": false,
+  "deployed": false
+}
