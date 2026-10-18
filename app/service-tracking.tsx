@@ -1,11 +1,12 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {Clock3,Flag,MessageSquareWarning,Route,Sparkles} from 'lucide-react';
+import {Clock3,Flag,LifeBuoy,MessageSquareWarning,Route,Sparkles} from 'lucide-react';
 import {t,useLanguage,getLanguage} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
 import {closureOutcomes,closureOutcomesEn,complaintCategories,complaintCategoriesEn,type ComplaintEntry} from '@/lib/complaints';
-import {filterTracking,trackingCounts,trackingFilterLabels,trackingFilters,trackingHolderLabels,trackingItems,trackingOpportunityOutcomes,trackingStageText,trackingStepLabels,type TrackedCase,type TrackingFilter,type TrackingItem} from '@/lib/service-tracking';
+import {supportActions,supportActionsEn,supportOutcomes,supportOutcomesEn,type SupportEntry} from '@/lib/support';
+import {filterTracking,trackingCounts,trackingFilterLabels,trackingFilters,trackingHolderLabels,trackingItems,trackingOpportunityOutcomes,trackingStageLabel,trackingStageText,trackingStepLabels,type TrackedCase,type TrackingFilter,type TrackingItem} from '@/lib/service-tracking';
 import {hoursText} from './service-queue';
 import './service-tracking.css';
 
@@ -47,7 +48,7 @@ export function TrackingSteps({item,say,layout='card'}:{item:Pick<TrackingItem,'
  const outcome=item.kind==='opportunity'?trackingOpportunityOutcomes[item.outcome]:undefined;
  return <ol className="tracking-steps" data-layout={layout} aria-label={say('مراحل المتابعة','Stages')}>
   {item.steps.map(step=>{
-   const [ar,en]=step.id==='finished'&&step.state==='done'&&outcome?outcome:trackingStepLabels[step.id],state=step.state==='done'?say('تمّت','done'):step.state==='current'?say('المرحلة الحالية','current stage'):say('لاحقة','upcoming');
+   const [ar,en]=step.id==='finished'&&step.state==='done'&&outcome?outcome:step.id==='registered'&&item.kind==='support'?['فتح الطلب','Opened']:trackingStepLabels[step.id],state=step.state==='done'?say('تمّت','done'):step.state==='current'?say('المرحلة الحالية','current stage'):say('لاحقة','upcoming');
    return <li key={step.id} data-step={step.id} data-state={step.state} data-returned={step.returned?'true':undefined} aria-current={step.state==='current'?'step':undefined}>
     <span className="tracking-dot" aria-hidden="true"/><span className="tracking-step-label">{say(ar,en)}</span><span className="sr-only"> ({state})</span>
    </li>;
@@ -67,33 +68,40 @@ export function TrackingSheetSteps({item,caption=false}:{item:TrackingItem;capti
  </section>;
 }
 
+const supportOutcomeText=(key:string,say:Say)=>say(supportOutcomes[key]||key,supportOutcomesEn[key]||key);
 function outcomeText(item:TrackingItem,say:Say){
  if(item.outcome==='cancelled')return pair(trackingStageText,'cancelled',say);
+ if(item.kind==='support')return supportOutcomes[item.outcome]?supportOutcomeText(item.outcome,say):pair(trackingStageText,'closed',say);
  if(item.kind==='opportunity')return trackingOpportunityOutcomes[item.outcome]?say(...trackingOpportunityOutcomes[item.outcome]):pair(trackingStageText,'closed',say);
  return closureOutcomes[item.outcome]?say(closureOutcomes[item.outcome],closureOutcomesEn[item.outcome]||item.outcome):pair(trackingStageText,'closed',say);
 }
 const LAST_KIND:Record<string,[string,string]>={contact:['تواصل','Contact'],update:['تحديث','Update'],note:['ملاحظة','Note']};
+/** The steps of an assistance request that the card tells, newest last: the few most recent. */
+const TRAIL_VISIBLE=3;
+const trailLine=(step:TrackingItem['trail'][number],say:Say)=>[step.by,step.target?say('إلى ','to ')+step.target:'',step.outcome?supportOutcomeText(step.outcome,say):'',step.text?clip(step.text,100):''].filter(Boolean).join(' · ');
 
 function TrackingCard({item,say,showRegistrar,onOpen}:{item:TrackingItem;say:Say;showRegistrar:boolean;onOpen:(item:TrackingItem)=>void}){
  const open=item.side!=='done',holder=item.holder,role=holder?trackingHolderLabels[holder.role]:null;
- const category=item.category?say(complaintCategories[item.category]||item.category,complaintCategoriesEn[item.category]||item.category):'';
+ const category=item.category?say(complaintCategories[item.category]||item.category,complaintCategoriesEn[item.category]||item.category):'',trail=item.trail.slice(-TRAIL_VISIBLE);
  return <article className="tracking-card" data-tracking-card={item.key} data-kind={item.kind} data-stage={item.stage} data-side={item.side} data-late={item.late?'true':'false'} data-severity={item.severity}>
   <header>
    <div>
-    <span className="tracking-kind" data-kind={item.kind}>{item.kind==='complaint'?<MessageSquareWarning size={13} aria-hidden="true"/>:<Sparkles size={13} aria-hidden="true"/>}{item.kind==='complaint'?say('شكوى','Complaint'):say('فرصة','Opportunity')}</span>
+    <span className="tracking-kind" data-kind={item.kind}>{item.kind==='complaint'?<MessageSquareWarning size={13} aria-hidden="true"/>:item.kind==='support'?<LifeBuoy size={13} aria-hidden="true"/>:<Sparkles size={13} aria-hidden="true"/>}{item.kind==='complaint'?say('شكوى','Complaint'):item.kind==='support'?(item.origin==='missed_visit'?say('زيارة مفقودة','Missed visit'):say('مساندة','Support')):say('فرصة','Opportunity')}</span>
     <h4>{item.customerName}</h4>
    </div>
-   <span className="badge pending">{open?pair(trackingStageText,item.stage,say):outcomeText(item,say)}</span>
+   <span className="badge pending">{open?say(...trackingStageLabel(item.kind,item.stage)):outcomeText(item,say)}</span>
   </header>
   {item.kind==='complaint'
    ?<p className="tracking-subject">{item.complaintNumber&&<bdi className="tracking-number">#{item.complaintNumber} </bdi>}{category}{item.needs&&<span> · {clip(item.needs,110)}</span>}</p>
+   :item.kind==='support'?<p className="tracking-subject">{item.needs?clip(item.needs,140):'—'}</p>
    :<p className="tracking-subject">{item.products.map(product=>t(product)).join(' · ')}{item.needs&&<span>{item.products.length?' · ':''}{clip(item.needs,110)}</span>}</p>}
   <TrackingSteps item={item} say={say}/>
   {open&&role&&<p className="tracking-holder"><Clock3 size={14} aria-hidden="true"/><span><b>{say('عند: ','With: ')}</b>{holder?.name?holder.name+' ('+say(role[0],role[1])+')':say(role[0],role[1])} · {say('منذ '+hoursText(item.stageHours,say),'for '+hoursText(item.stageHours,say))}</span>{item.late&&<span className="tracking-late">{say('متأخر عن هدف '+item.targetHours+' ساعات عمل','Late against a '+item.targetHours+'-working-hour target')}</span>}</p>}
   {!open&&<p className="tracking-holder"><Flag size={14} aria-hidden="true"/><span>{say('انتهت ','Finished ')}{stamp(item.finishedAt)} · {outcomeText(item,say)}</span></p>}
-  {item.last&&<small className="tracking-last"><b>{say('آخر ما سُجّل: ','Last recorded: ')}</b>{pair(LAST_KIND,item.last.kind,say)} · {stamp(item.last.at)}{item.last.by?' · '+item.last.by:''}{item.last.text?': '+clip(item.last.text,140):''}</small>}
+  {item.kind==='support'&&trail.length>0&&<ul className="tracking-trail" aria-label={say('ما سُجّل في كل مرحلة','What each stage recorded')}>{trail.map((step,index)=><li key={index+':'+step.at}><b>{say(supportActions[step.action]||step.action,supportActionsEn[step.action]||step.action)}</b>{' · '}{stamp(step.at)}{trailLine(step,say)?' · '+trailLine(step,say):''}</li>)}</ul>}
+  {item.last&&item.kind!=='support'&&<small className="tracking-last"><b>{say('آخر ما سُجّل: ','Last recorded: ')}</b>{pair(LAST_KIND,item.last.kind,say)} · {stamp(item.last.at)}{item.last.by?' · '+item.last.by:''}{item.last.text?': '+clip(item.last.text,140):''}</small>}
   <small className="tracking-registered">{say('سُجّلت ','Registered ')}{stamp(item.registeredAt)}{showRegistrar&&item.registrarName?' · '+say('سجّلها: ','by ')+item.registrarName:''}</small>
-  <div className="tracking-actions"><button type="button" className="btn subtle" onClick={()=>onOpen(item)}>{item.kind==='complaint'?say('فتح الشكوى','Open the complaint'):say('فتح الفرصة','Open the opportunity')}</button></div>
+  <div className="tracking-actions"><button type="button" className="btn subtle" onClick={()=>onOpen(item)}>{item.kind==='complaint'?say('فتح الشكوى','Open the complaint'):item.kind==='support'?say('فتح الطلب','Open the request'):say('فتح الفرصة','Open the opportunity')}</button></div>
  </article>;
 }
 
@@ -104,13 +112,13 @@ export function TrackingBoardView({items,filter,onFilter,expanded,onExpand,role,
  return <section className="tracking-board panel" aria-label={say('متابعة ما سُجّل','Tracking what was registered')} data-role={role} dir={language==='en'?'ltr':'rtl'}>
   <div className="tracking-heading"><div>
    <h2><Route size={18} aria-hidden="true"/> {manager?say('متابعة ما سجّله فريقك وما سجّلته','Tracking what your team and you registered'):say('متابعة ما سجّلته','Tracking what you registered')}</h2>
-   <p>{say('الفرص التي سلّمتها للمبيعات والشكاوى التي سجّلتها: أين وصلت، ومن يحملها الآن، ومنذ متى. الأرقام للمتابعة فقط ولا تدخل في التقييم.','The opportunities handed to sales and the complaints registered: where each stands, who holds it now and since when. The figures are for follow-up only and feed no evaluation.')}</p>
+   <p>{say('الفرص التي سلّمتها للمبيعات والشكاوى التي سجّلتها وطلبات المساندة والزيارات المفقودة التي تولّيتها: أين وصلت، ومن يحملها الآن، ومنذ متى، وما سُجّل في كل مرحلة. الأرقام للمتابعة فقط ولا تدخل في التقييم.','The opportunities handed to sales, the complaints registered and the assistance requests and missed visits taken: where each stands, who holds it now, since when, and what each stage recorded. The figures are for follow-up only and feed no evaluation.')}</p>
   </div></div>
   <div className="tracking-tabs" role="group" aria-label={say('تصنيف المتابعة','Tracking filter')}>
    {trackingFilters.map(id=><button key={id} type="button" className="tracking-tab" data-filter={id} data-late-tab={id==='late'&&counts.late>0?'true':undefined} aria-pressed={filter===id} onClick={()=>onFilter(id)}>{say(trackingFilterLabels[id][0],trackingFilterLabels[id][1])} <span className="tracking-count">{counts[id]}</span></button>)}
   </div>
   {!items.length
-   ?<p className="tracking-empty" role="status">{loaded?say('لا فرص ولا شكاوى مسجّلة بعد. ما تسجّله يظهر هنا مع مرحلته.','Nothing registered yet. What you register appears here with its stage.'):say('جارٍ تحميل المتابعة','Loading the tracking')}</p>
+   ?<p className="tracking-empty" role="status">{loaded?say('لا فرص ولا شكاوى ولا طلبات مساندة بعد. ما تسجّله أو تتولّاه يظهر هنا مع مرحلته.','No opportunities, complaints or assistance requests yet. What you register or take appears here with its stage.'):say('جارٍ تحميل المتابعة','Loading the tracking')}</p>
    :!shown.length?<p className="tracking-empty" role="status">{say('لا شيء في هذا التصنيف.','Nothing in this filter.')}</p>
    :<div className="tracking-cards">{cards.map(item=><TrackingCard key={item.key} item={item} say={say} showRegistrar={manager} onOpen={onOpen}/>)}</div>}
   {shown.length>TRACKING_VISIBLE&&<button type="button" className="btn subtle tracking-more" aria-expanded={expanded} onClick={()=>onExpand(!expanded)}>{expanded?say('عرض أقل','Show fewer'):say('عرض الكل ('+shown.length+')','Show all ('+shown.length+')')}</button>}
@@ -118,9 +126,9 @@ export function TrackingBoardView({items,filter,onFilter,expanded,onExpand,role,
 }
 
 /** The board at the top of the Opportunities page for customer-service members. */
-export function ServiceTrackingBoard({me,cases,complaints,onOpenCase,onOpenComplaint}:{me:Member;cases:TrackedCase[]|null;complaints:ComplaintEntry[]|null|undefined;onOpenCase:(id:string)=>void;onOpenComplaint:(id:string)=>void}){
+export function ServiceTrackingBoard({me,cases,complaints,support,onOpenCase,onOpenComplaint,onOpenSupport}:{me:Member;cases:TrackedCase[]|null;complaints:ComplaintEntry[]|null|undefined;support?:SupportEntry[]|null;onOpenCase:(id:string)=>void;onOpenComplaint:(id:string)=>void;onOpenSupport?:(id:string)=>void}){
  const [filter,setFilter]=useState<TrackingFilter>('all'),[expanded,setExpanded]=useState(false);
- const items=useMemo(()=>trackingItems({me,cases,complaints}),[me,cases,complaints]);
+ const items=useMemo(()=>trackingItems({me,cases,complaints,support}),[me,cases,complaints,support]);
  if(me.role!=='customer_service'&&me.role!=='customer_service_manager')return null;
- return <TrackingBoardView items={items} filter={filter} onFilter={next=>{setFilter(next);setExpanded(false);}} expanded={expanded} onExpand={setExpanded} role={me.role} loaded={cases!==null} onOpen={item=>item.kind==='complaint'?onOpenComplaint(item.id):onOpenCase(item.id)}/>;
+ return <TrackingBoardView items={items} filter={filter} onFilter={next=>{setFilter(next);setExpanded(false);}} expanded={expanded} onExpand={setExpanded} role={me.role} loaded={cases!==null} onOpen={item=>item.kind==='complaint'?onOpenComplaint(item.id):item.kind==='support'?onOpenSupport?.(item.id):onOpenCase(item.id)}/>;
 }

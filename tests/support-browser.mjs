@@ -1,9 +1,11 @@
 // Customer-service assistance in a real Chromium against the BUILT release (run `pnpm build` first): a representative, on the
 // Android app emulator, asks for help beside a visit; the customer-service member of the region sees it and a missed visit on
-// the Visits page, takes the visit, answers the request; the representative reads the answer and the count clears; a late
-// request nobody covers reaches the customer-service manager, who assigns it; a supervisor reads their team's requests without
-// being able to act on them. The phone's consent, permissions and enrolment are the emulator's (scripts/lib/native-bridge.mjs):
-// no device, GPS or OS claim is made.
+// the Visits page, takes the visit and submits the contact for approval; the manager returns it for correction, the member
+// corrects it, the manager approves it; the sales manager assigns a supervisor, who delegates to a representative; that
+// representative, on the app emulator, records the visit; customer service reviews it and closes the request; the representative
+// who asked reads the answer and the count clears; the member follows each step, with its result, on the board. A late request
+// nobody covers reaches the customer-service manager, who assigns it; a supervisor reads their team's requests. The phone's
+// consent, permissions and enrolment are the emulator's (scripts/lib/native-bridge.mjs): no device, GPS or OS claim is made.
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -29,7 +31,7 @@ const ok = (value, message) => { assert.ok(value, message); checks++; };
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const PHONE = {width: 360, height: 800}, DESKTOP = {width: 1280, height: 900};
 const CUSTOMER = 'مصنع الأمل للبلاستيك', MISSED = 'مصنع النور للخرسانة', CENTRAL = 'مصنع الوسط للبلوك';
-const NOTE = 'العميل لا يرد على اتصالاتي، اسألوه عن موعد مناسب للزيارة', ANSWER = 'العميل مهتم ويطلب زيارة فنية يوم الأحد';
+const NOTE = 'العميل لا يرد على اتصالاتي، اسألوه عن موعد مناسب للزيارة', ANSWER = 'العميل مهتم ويطلب زيارة فنية يوم الأحد', RETURN = 'أضف اسم المسؤول عن الشراء في النتيجة', FIXED = 'المسؤول عن الشراء السيد خالد وهو مهتم بزيارة فنية', ASSIGNED_NOTE = 'يرجى الزيارة هذا الأسبوع', DELEGATED_NOTE = 'تواصل معه اليوم', VISITED = 'زرت المصنع واتفقنا على تقديم عرض سعر', CLOSED = 'راجعت النتيجة وهي كافية';
 
 try {
   app = await bootBuiltApp({members}, {tls: true});
@@ -86,7 +88,7 @@ try {
 
   // ---- 1. The representative, on the Android app emulator, asks for help beside the visit
   const rep = await open('rep', {native: {memberId: 'rep', regionScope: 'all'}});
-  let requestId;
+  let requestId, firstAt = '';
   {
     await goPhone(rep, 'activity');
     const cards = rep.locator('.rep-mobile-records .rep-record-card');
@@ -160,30 +162,205 @@ try {
     await panel.locator('[data-missed]').first().waitFor({state: 'detached'});
     check(await panel.locator(`.support-group[data-group="mine"] [data-request]`).count(), 2, 'it leaves the missed list and joins the ones they hold');
     check(await badgeOf(badge), '2', 'two to answer now');
-    // answer the request: the customer asks for a visit
-    await mine.getByRole('button', {name: 'تسجيل النتيجة'}).click();
+    // contact the customer, then submit the result for approval: the customer asks for a visit
+    await mine.getByRole('button', {name: 'تسجيل النتيجة ورفعها'}).click();
     const sheet = east.locator('.support-sheet');
     await sheet.waitFor();
     ok((await sheet.innerText()).includes(NOTE) && (await sheet.innerText()).includes('أحمد المندوب'), 'the sheet shows the facts');
-    const record = sheet.getByRole('button', {name: 'تسجيل النتيجة'});
-    check(await record.isDisabled(), true, 'recording stays disabled until the outcome and a few words are given');
+    check(await sheet.locator('.tracking-steps li').count(), 6, 'and the stage bar of a request');
+    const submit = sheet.getByRole('button', {name: 'رفع للاعتماد'});
+    check(await submit.isDisabled(), true, 'submitting stays disabled until the outcome and a few words are given');
     await sheet.locator('.service-internal select').selectOption('wants_visit');
     check(await sheet.locator('input[type=date]').count(), 1, 'a visit the customer asks for needs its date');
     await sheet.locator('textarea').fill(ANSWER);
-    check(await record.isDisabled(), true, 'still disabled without the date');
+    check(await submit.isDisabled(), true, 'still disabled without the date');
     await sheet.locator('input[type=date]').fill(dayOf(3));
-    check(await record.isDisabled(), false, 'enabled once complete');
+    check(await submit.isDisabled(), false, 'enabled once complete');
     await shot(east, 'support-cs-sheet');
-    await record.click();
-    const answered = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'done' && row; }, 'the request is answered');
-    check([answered.data.result.outcome, answered.data.result.note, answered.data.result.nextDate, answered.data.result.by, answered.data.handlerId, answered.version], ['wants_visit', ANSWER, dayOf(3), 'cs_east', 'cs_east', 2], 'recorded with the outcome, the words, the date the customer asked for and who answered');
+    await submit.click();
+    const submitted = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'submitted' && row; }, 'the request is submitted for approval');
+    check([submitted.data.result.outcome, submitted.data.result.note, submitted.data.result.nextDate, submitted.data.result.by, submitted.data.handlerId, submitted.data.serviceManagerId, submitted.version], ['wants_visit', ANSWER, dayOf(3), 'cs_east', 'cs_east', 'csm', 2], 'recorded with the outcome, the words, the date the customer asked for, and the manager it waits for');
+    firstAt = submitted.data.result.at;
     await east.keyboard.press('Escape');
     await sheet.waitFor({state: 'detached'});
-    await eventually(async () => (await panel.locator(`.support-group[data-group="mine"] [data-request="${requestId}"]`).count()) === 0, 'the answered request leaves the ones they hold');
-    await eventually(async () => (await panel.locator('details[data-group="finished"] [data-request]').count()) === 1, 'and is among the finished ones');
+    await eventually(async () => (await panel.locator(`.support-group[data-group="mine"] [data-request="${requestId}"]`).count()) === 0, 'the submitted request leaves the ones they hold');
+    const following = panel.locator(`.support-group[data-group="following"] [data-request="${requestId}"]`);
+    await following.waitFor();
+    check([await following.getAttribute('data-stage'), (await following.innerText()).includes('بانتظار مراجعة المدير')], ['review', true], 'and is among those on their way, waiting for the manager');
     await eventually(async () => (await badgeOf(badge)) === '1', 'one left to answer: the visit they took');
+    // the board follows it
+    const board = east.locator('.tracking-board');
+    await board.waitFor();
+    const card = board.locator(`[data-tracking-card="support:${requestId}"]`);
+    await card.waitFor();
+    check([await card.getAttribute('data-kind'), await card.getAttribute('data-stage'), await card.getAttribute('data-side')], ['support', 'review', 'service'], 'the board has the request, waiting with customer service for the manager\'s review');
+    ok((await card.innerText()).includes('منى مديرة الخدمة') && (await card.innerText()).includes('رفع نتيجة التواصل للاعتماد') && (await card.innerText()).includes('العميل يطلب زيارة في موعد'), 'with the manager who holds it and what was submitted');
+    check(await card.locator('.tracking-steps li[data-state="done"]').count(), 2, 'two steps done: the opening and customer service\'s contact');
+    await shot(east, 'support-chain-board-review');
     // the old cases and records are untouched
     check((await (await as('owner')('/api/customer-service')).json()).cases, [], 'no customer-service case was made');
+  }
+
+  // ---- 2b. The manager returns it for correction; the member corrects it and submits again; the manager approves it
+  const csm = await open('csm', {viewport: DESKTOP});
+  {
+    const panel = csm.locator('.support-panel');
+    await panel.waitFor();
+    const review = panel.locator(`.support-group[data-group="review"] [data-request="${requestId}"]`);
+    await review.waitFor();
+    check([await review.getAttribute('data-awaiting'), await review.getAttribute('data-stage')], ['review', 'review'], 'the manager is asked to review it');
+    check(await badgeOf(csm.locator('button.nav-item .nav-badge')), '1', 'the Visits entry counts it');
+    await shot(csm, 'support-chain-manager-review');
+    await review.getByRole('button', {name: 'مراجعة الطلب'}).click();
+    const sheet = csm.locator('.support-sheet');
+    await sheet.waitFor();
+    ok((await sheet.innerText()).includes(ANSWER) && (await sheet.innerText()).includes('ريم الشرقية'), 'the sheet shows what customer service found, and who');
+    const forwardSelect = sheet.locator('.service-routing select').first();
+    check(await forwardSelect.locator('option').evaluateAll(options => options.map(option => option.value).filter(Boolean)), ['sm'], 'only the sales manager they report to is offered');
+    const returnButton = sheet.getByRole('button', {name: 'إعادة للتعديل', exact: true});
+    check(await returnButton.isDisabled(), true, 'returning needs the reason');
+    await sheet.locator('label.voice-field', {hasText: 'إعادة للتعديل: ما الذي يلزم؟'}).locator('input').fill(RETURN);
+    await returnButton.click();
+    const returned = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'returned' && row; }, 'the request is returned for correction');
+    check([returned.data.returnNote, returned.data.serviceManagerId], [RETURN, 'csm'], 'with the reason');
+    await csm.keyboard.press('Escape');
+    await sheet.waitFor({state: 'detached'});
+  }
+  {
+    await east.reload();
+    await east.locator('.support-panel').waitFor();
+    const fix = east.locator(`.support-panel .support-group[data-group="fix"] [data-request="${requestId}"]`);
+    await fix.waitFor();
+    ok((await fix.innerText()).includes(RETURN), 'the member sees why it came back');
+    check(await badgeOf(east.locator('button.nav-item .nav-badge')), '2', 'the Visits entry counts it with the visit they took');
+    await fix.getByRole('button', {name: 'تعديل وإعادة الرفع'}).click();
+    const sheet = east.locator('.support-sheet');
+    await sheet.waitFor();
+    check(await sheet.locator('textarea').inputValue(), ANSWER, 'the earlier result is there to correct');
+    await sheet.locator('textarea').fill(FIXED);
+    await sheet.getByRole('button', {name: 'إعادة الرفع للاعتماد'}).click();
+    const resubmitted = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'submitted' && row.data.result.note === FIXED && row; }, 'the corrected result is submitted again');
+    check([resubmitted.data.returnNote, resubmitted.data.result.outcome], ['', 'wants_visit'], 'the reason is cleared');
+    await east.keyboard.press('Escape');
+    await sheet.waitFor({state: 'detached'});
+  }
+  {
+    await csm.reload();
+    await csm.locator('.support-panel').waitFor();
+    const review = csm.locator(`.support-panel .support-group[data-group="review"] [data-request="${requestId}"]`);
+    await review.waitFor();
+    await review.getByRole('button', {name: 'مراجعة الطلب'}).click();
+    const sheet = csm.locator('.support-sheet');
+    await sheet.waitFor();
+    ok((await sheet.innerText()).includes(FIXED), 'the corrected result');
+    await sheet.locator('.service-routing select').first().selectOption('sm');
+    await sheet.getByRole('button', {name: 'اعتماد وإحالة', exact: true}).click();
+    const forwarded = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'pending_assignment' && row; }, 'the request is approved and handed to the sales manager');
+    check([forwarded.data.salesManagerId, forwarded.data.serviceManagerId], ['sm', 'csm'], 'the sales manager it waits for');
+    await csm.keyboard.press('Escape');
+    await sheet.waitFor({state: 'detached'});
+    await eventually(async () => (await csm.locator(`.support-group[data-group="review"] [data-request="${requestId}"]`).count()) === 0, 'it leaves the manager\'s review');
+  }
+
+  // ---- 2c. The sales manager assigns a supervisor, who delegates to a representative
+  {
+    const salesManager = await open('sm', {viewport: DESKTOP});
+    await goDesktop(salesManager, 'الزيارات');
+    const panel = salesManager.locator('.support-panel');
+    await panel.waitFor();
+    check(await panel.getAttribute('data-role'), 'manager', 'a sales manager has the panel');
+    const card = panel.locator(`.support-group[data-group="allocate"] [data-request="${requestId}"]`);
+    await card.waitFor();
+    check([await card.getAttribute('data-awaiting'), await card.getAttribute('data-stage')], ['allocate', 'assignment'], 'the request waits for their assignment');
+    check(await badgeOf(salesManager.locator('button.nav-item .nav-badge')), '1', 'their Visits entry counts it');
+    await shot(salesManager, 'support-chain-sales-allocate');
+    await card.getByRole('button', {name: 'تكليف مندوب'}).click();
+    const sheet = salesManager.locator('.support-sheet');
+    await sheet.waitFor();
+    const select = sheet.locator('.service-routing select').first();
+    check(await select.inputValue(), 'rep', 'the customer\'s own representative is offered first');
+    await select.selectOption('sup');
+    await sheet.locator('label.voice-field', {hasText: 'ملاحظة للمكلَّف'}).locator('input').fill(ASSIGNED_NOTE);
+    await sheet.getByRole('button', {name: 'تكليف', exact: true}).click();
+    const assigned = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'assigned' && row; }, 'the supervisor is assigned');
+    check([assigned.data.assigneeId, assigned.data.supervisorId, assigned.data.assignmentNote], ['sup', 'sup', ASSIGNED_NOTE], 'with the note');
+    await salesManager.context().close();
+    const supervisor = await open('sup', {viewport: DESKTOP});
+    await goDesktop(supervisor, 'الزيارات');
+    const delegateCard = supervisor.locator(`.support-panel .support-group[data-group="delegate"] [data-request="${requestId}"]`);
+    await delegateCard.waitFor();
+    check(await delegateCard.getAttribute('data-stage'), 'delegation', 'the supervisor is asked to delegate');
+    await delegateCard.getByRole('button', {name: 'تفويض مندوب'}).click();
+    const delegateSheet = supervisor.locator('.support-sheet');
+    await delegateSheet.waitFor();
+    ok((await delegateSheet.innerText()).includes(ASSIGNED_NOTE), 'they read the sales manager\'s note');
+    check(await delegateSheet.locator('.service-routing select').first().locator('option').evaluateAll(options => options.map(option => option.value).filter(Boolean).sort()), ['rep', 'rep2'], 'their own representatives are offered');
+    await delegateSheet.locator('.service-routing select').first().selectOption('rep2');
+    await delegateSheet.locator('label.voice-field', {hasText: 'ملاحظة للمكلَّف'}).locator('input').fill(DELEGATED_NOTE);
+    await delegateSheet.getByRole('button', {name: 'تفويض', exact: true}).click();
+    const delegated = await eventually(async () => { const row = await rowFor('f1'); return row.data.assigneeId === 'rep2' && row; }, 'the representative is delegated');
+    check([delegated.data.supervisorId, delegated.data.assignmentNote, !!delegated.data.delegatedAt], ['sup', DELEGATED_NOTE, true], 'under the supervisor, with the note');
+    await supervisor.context().close();
+  }
+
+  // ---- 2d. The representative contacts the customer and records the result; customer service reviews it and closes the request
+  {
+    const seller = await open('rep2', {native: {memberId: 'rep2', regionScope: 'all'}});
+    await goPhone(seller, 'activity');
+    const card = seller.locator(`.support-group[data-group="resolve"] [data-request="${requestId}"]`);
+    await card.waitFor();
+    check([await card.getAttribute('data-awaiting'), await card.getAttribute('data-stage')], ['resolve', 'first_contact'], 'the representative is asked to contact the customer');
+    check(await badgeOf(seller.locator('.mobile-tab[data-page="activity"] .nav-badge')), '1', 'their Visits tab counts it');
+    await layoutOk(seller, 'representative assigned a request'); await shot(seller, 'support-chain-rep-resolve');
+    await card.getByRole('button', {name: 'تسجيل نتيجة التواصل'}).click();
+    const sheet = seller.locator('.support-sheet');
+    await sheet.waitFor();
+    const sheetText = await sheet.innerText();
+    ok(sheetText.includes(DELEGATED_NOTE) && sheetText.includes(FIXED) && sheetText.includes(NOTE), 'they read the delegation note, what customer service found and why it was asked');
+    const record = sheet.getByRole('button', {name: 'تسجيل النتيجة'});
+    check(await record.isDisabled(), true, 'recording stays disabled until the result and a few words are given');
+    const selects = sheet.locator('.service-internal select');
+    check(await selects.nth(0).locator('option').count(), 5, 'five ways to have reached the customer');
+    await selects.nth(0).selectOption('visit');
+    await selects.nth(1).selectOption('reached_interested');
+    await sheet.locator('textarea').fill(VISITED);
+    check(await record.isDisabled(), false, 'enabled once complete');
+    await record.click();
+    const resolved = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'resolved' && row; }, 'the contact is recorded');
+    check([resolved.data.resolution.channel, resolved.data.resolution.outcome, resolved.data.resolution.note, resolved.data.resolution.by], ['visit', 'reached_interested', VISITED, 'rep2'], 'with the way, the result and who');
+    await seller.keyboard.press('Escape');
+    await sheet.waitFor({state: 'detached'});
+    await seller.context().close();
+  }
+  {
+    await east.reload();
+    await east.locator('.support-panel').waitFor();
+    const panel = east.locator('.support-panel');
+    const close = panel.locator(`.support-group[data-group="close"] [data-request="${requestId}"]`);
+    await close.waitFor();
+    ok((await close.innerText()).includes(VISITED) && (await close.innerText()).includes('زيارة'), 'the member sees what the representative did, on the card');
+    check(await close.getAttribute('data-stage'), 'closure', 'it waits for their closure');
+    const card = east.locator(`.tracking-board [data-tracking-card="support:${requestId}"]`);
+    await card.waitFor();
+    check([await card.getAttribute('data-stage'), await card.getAttribute('data-side'), await card.locator('.tracking-steps li[data-state="done"]').count()], ['closure', 'service', 6], 'on the board it is back with customer service, six steps done (the supervisor\'s delegation among them)');
+    const trail = await card.locator('.tracking-trail').innerText();
+    ok(trail.includes('تكليف المبيعات') && trail.includes('تفويض مندوب') && trail.includes('تسجيل نتيجة تواصل المندوب') && trail.includes(VISITED.slice(0, 20)), 'and its trail tells the assignment, the delegation and the representative\'s result');
+    await shot(east, 'support-chain-board-closure');
+    await close.getByRole('button', {name: 'تأكيد الإغلاق'}).click();
+    const sheet = east.locator('.support-sheet');
+    await sheet.waitFor();
+    await sheet.locator('label.voice-field', {hasText: 'ملاحظة الإغلاق'}).locator('textarea').fill(CLOSED);
+    await sheet.getByRole('button', {name: 'إغلاق الطلب', exact: true}).click();
+    const answered = await eventually(async () => { const row = await rowFor('f1'); return row.data.status === 'done' && row; }, 'the request is closed');
+    check([answered.data.closure.by, answered.data.closure.note, answered.data.result.outcome, answered.data.result.at === firstAt, answered.data.resolution.channel], ['cs_east', CLOSED, 'wants_visit', true, 'visit'], 'closed by the member who took it; the first submission\'s time, which the evaluation measures, is kept');
+    check(answered.data.events.map(event => event.action), ['request', 'assign', 'submit', 'return', 'submit', 'forward', 'allocate', 'delegate', 'resolve', 'close'], 'its whole course is in its story');
+    await east.keyboard.press('Escape');
+    await sheet.waitFor({state: 'detached'});
+    await eventually(async () => (await panel.locator(`.support-group[data-group="close"] [data-request="${requestId}"]`).count()) === 0, 'the closed request leaves the ones they must close');
+    await eventually(async () => (await panel.locator('details[data-group="finished"] [data-request]').count()) === 1, 'and is among the finished ones');
+    await eventually(async () => (await east.locator(`.tracking-board [data-tracking-card="support:${requestId}"]`).getAttribute('data-side')) === 'done', 'on the board it is finished');
+    check(await east.locator(`.tracking-board [data-tracking-card="support:${requestId}"] .tracking-steps li[data-state="done"]`).count(), 7, 'every step done, seven with the supervisor\'s delegation');
+    await shot(east, 'support-chain-board-done');
   }
 
   // ---- 3. The representative reads the answer; the count clears once it is opened
@@ -200,13 +377,13 @@ try {
     const card = rep.locator(`.support-group[data-group="answered"] [data-request="${requestId}"]`);
     await card.waitFor();
     const text = await card.innerText();
-    ok(text.includes(ANSWER) && text.includes(dayOf(3)) && text.includes('ريم الشرقية'), 'the card carries the answer, the date and who gave it');
+    ok(text.includes(FIXED) && text.includes(VISITED) && text.includes(dayOf(3)) && text.includes('ريم الشرقية') && text.includes('زيارة'), 'the card carries what customer service found, what the representative did, the date and who took it');
     await layoutOk(rep, 'rep answer'); await shot(rep, 'support-rep-answer');
     await chip.click();
     const sheet = rep.locator('.support-sheet');
     await sheet.waitFor();
     const sheetText = await sheet.innerText();
-    ok(sheetText.includes('العميل يطلب زيارة في موعد') && sheetText.includes(ANSWER) && sheetText.includes(dayOf(3)), 'opening it shows the outcome, the words and the date');
+    ok(sheetText.includes('العميل يطلب زيارة في موعد') && sheetText.includes(FIXED) && sheetText.includes(dayOf(3)) && sheetText.includes(VISITED) && sheetText.includes(CLOSED), 'opening it shows both contacts, the date and the closing note');
     ok(!(await sheet.getByRole('button', {name: 'تسجيل النتيجة'}).count()) && !(await sheet.getByRole('button', {name: 'تولّي التواصل'}).count()), 'a sales member cannot answer or take');
     const opened = await eventually(async () => { const row = await rowFor('f1'); return row.data.answerSeenAt && row; }, 'opening is recorded');
     check(opened.data.answerSeenBy, 'rep', 'by the one who asked');
@@ -222,8 +399,9 @@ try {
   const centralId = request3.json().id;
   check((await rowFor('f3')).data.handlerId, '', 'nobody is named for the center, so it waits');
   await app.db.prepare('UPDATE crm_records SET created_at=? WHERE id=?').bind(new Date(Date.now() - 30 * 86400000).toISOString(), centralId).run();
-  const csm = await open('csm', {viewport: DESKTOP});
   {
+    await csm.reload();
+    await csm.locator('.workspace').waitFor();
     const panel = csm.locator('.support-panel');
     await panel.waitFor();
     const late = panel.locator(`.support-group[data-group="decide"] [data-request="${centralId}"]`);
@@ -235,11 +413,11 @@ try {
     check(await badgeOf(badge), '1', 'the Visits entry counts it');
     ok(await panel.locator('.support-group[data-group="missed"] [data-missed]').count() === 0, 'the missed visit that was taken is not offered again');
     await shot(csm, 'support-manager-late');
-    await late.getByRole('button', {name: 'التفاصيل'}).click();
+    await late.getByRole('button', {name: 'تكليف ممثل'}).click();
     const sheet = csm.locator('.support-sheet');
     await sheet.waitFor();
     const select = sheet.locator('.service-routing select').first();
-    check(await select.locator('option').evaluateAll(options => options.map(option => option.value).sort()), ['cs_all', 'csm'], 'only those who cover the center are offered: the representative for every region, and himself');
+    check(await select.locator('option').evaluateAll(options => options.map(option => option.value).filter(Boolean).sort()), ['cs_all', 'csm'], 'only those who cover the center are offered: the representative for every region, and himself');
     await select.selectOption('cs_all');
     await sheet.getByRole('button', {name: 'تأكيد التكليف'}).click();
     const assigned = await eventually(async () => { const row = await rowFor('f3'); return row.data.handlerId === 'cs_all' && row; }, 'the request is assigned');
@@ -260,14 +438,15 @@ try {
     const panel = supervisor.locator('.support-panel');
     await panel.waitFor();
     check(await panel.getAttribute('data-role'), 'supervisor', 'a supervisor has the panel');
-    ok((await panel.innerText()).includes('طلبات فريقك لخدمة العملاء وردودها.'), 'for their team');
+    ok((await panel.innerText()).includes('طلبات فريقك لخدمة العملاء وردودها وما أُسند إليك منها.'), 'for their team');
     check([await panel.locator('.support-group[data-group="waiting"] [data-request]').count(), await panel.locator('.support-group[data-group="answered"] [data-request]').count()], [2, 1], 'all three of their team\'s requests: the two still open and the one answered');
     check(await panel.getByRole('button', {name: 'تولّي التواصل'}).count(), 0, 'with no way to take one');
     await supervisor.context().close();
     const other = await open('rep2', {native: {memberId: 'rep2', regionScope: 'all'}});
     await goPhone(other, 'activity');
     await pause(800);
-    check(await other.locator('.support-panel').count(), 0, 'another representative sees none of it');
+    await other.locator('.support-panel').waitFor();
+    check([await other.locator('.support-panel [data-request]').count(), await other.locator(`.support-panel [data-request="${requestId}"]`).count()], [1, 1], 'another representative sees only the request that was assigned to them, none of the others');
     await other.context().close();
   }
 
