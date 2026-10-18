@@ -137,7 +137,7 @@ ok(out.includes('إعادة فتح الشكوى: لماذا؟')&&out.includes('�
 ok(!sheet('complaint-8','rep').includes('إعادة فتح'),'not by the representative');
 
 // ---- the number, the contact details and the message to the customer
-const MESSAGE='شركة يورست للصناعات ترحب بكم: تم تسجيل شكوى برقم 124 بتاريخ 13/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.\n\nYourrest Industries welcomes you: a complaint has been registered under number 124 on 13/10/2026 regarding “Product or mold quality”, and we will contact you to follow up until it is resolved. We appreciate your trust in us.';
+const MESSAGE='شركة يورست للصناعات ترحب بكم : تم تسجيل شكوى برقم 124 بتاريخ 13/10/2026 بخصوص «جودة المنتج أو القالب»، وسيتم التواصل معكم للمتابعة حتى الحل. نشكر لكم ثقتكم.\n\nYourrest Industries welcomes you: a complaint has been registered under number 124 on 13/10/2026 regarding “Product or mold quality”, and we will contact you to follow up until it is resolved. We thank you for your trust.';
 const hrefsOf=source=>[...source.matchAll(/data-notify="open" href="([^"]+)"/g)].map(match=>match[1].replace(/&amp;/g,'&'));
 out=page('cs_east');
 ok(out.includes('<bdi class="complaint-number">#124 </bdi>'),'the numbered complaint shows its number on its card');

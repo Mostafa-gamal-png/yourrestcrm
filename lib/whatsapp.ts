@@ -32,8 +32,8 @@ export function complaintMessageParts(input:{number?:number|null;createdAt:strin
  const date=messageDate(input.createdAt),number=input.number?` برقم ${input.number}`:'',topic=input.category?` بخصوص «${input.category}»`:'';
  const numberEn=input.number?` under number ${input.number}`:'',topicEn=input.category&&input.categoryEn?` regarding “${input.categoryEn}”`:'';
  return {
-  ar:`${COMPANY_NAME} ترحب بكم: تم تسجيل شكوى${number} بتاريخ ${date}${topic}، وسيتم التواصل معكم للمتابعة حتى الحل. نقدر ثقتكم بنا.`,
-  en:`${COMPANY_NAME_EN} welcomes you: a complaint has been registered${numberEn} on ${date}${topicEn}, and we will contact you to follow up until it is resolved. We appreciate your trust in us.`
+  ar:`${COMPANY_NAME} ترحب بكم : تم تسجيل شكوى${number} بتاريخ ${date}${topic}، وسيتم التواصل معكم للمتابعة حتى الحل. نشكر لكم ثقتكم.`,
+  en:`${COMPANY_NAME_EN} welcomes you: a complaint has been registered${numberEn} on ${date}${topicEn}, and we will contact you to follow up until it is resolved. We thank you for your trust.`
  };
 }
 /** The whole message as it is sent in one WhatsApp message: the Arabic paragraph, then the English one. */
