@@ -258,7 +258,6 @@ const MANAGER_ORDER = [...REP_ORDER, 'complaint:k-closed'];
 // ---- assistance requests and missed visits on the board
 {
   language = 'ar';
-  const SP = library('lib/support.ts');
   const hours = n => new Date(BASE - n * 3600000).toISOString();
   const event = (action, at, byName, extra = {}) => ({at, by: byName, byName, action, targetName: '', ...extra});
   const request = (o = {}) => ({
