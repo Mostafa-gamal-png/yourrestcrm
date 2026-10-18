@@ -4,6 +4,11 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The customer message in the owner's final wording (2026-10-18, schema 16, no migration)
+
+- The message a complaint's customer is sent now closes with «نشكر لكم ثقتكم.» (English: "We thank you for your trust.") instead of «نقدر ثقتكم بنا.», and its first sentence keeps the owner's separator («ترحب بكم : تم تسجيل»). Only `lib/whatsapp.ts` and its tests change.
+- A package of its own (`Yourrest-CRM-Update-Customer-Message-20261018.zip`, release name `update-customer-message`) that carries everything of the 2026-10-17 package, so it can be deployed whether or not that one was.
+
 ## Visits only at the customer's place, dictation on every form, and customer-service updates (2026-10-17, second release of the day, schema 16, no migration)
 
 - A representative's physical visit (and a follow-up that is a visit) is saved only when the phone is within 300 m of the customer's point, widened by the phone's own accuracy up to 100 m more; a fix worse than 300 m accuracy is neither accepted nor refused as far; arrival the route tracking confirmed settles it; a customer with no point takes the first visit's point (noted on their sheet); supervisors, managers and administrators are not stopped, their visit is marked "outside the customer's place"; each refused attempt is kept in the customer's history once per ten minutes. Calls, e-mails and messages have no place. The refusal reads the distance and the allowance and disables the save button. Pure rule `lib/visit-place.ts`, server `lib/visit-place-server.ts`, in `/api/visits`, `/api/customer-followups` and the older `/api/crm` entry.
