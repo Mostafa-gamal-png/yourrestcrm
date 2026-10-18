@@ -329,5 +329,17 @@
     "a real customer-service team using the chain with the real manager links (representative to service manager, service manager to sales manager); the chain needs those links set in the team page"
   ],
   "productionModified": false,
-  "deployed": false
+  "deployed": false,
+  "packageB": {
+    "why": "The first package (release name update-support-chain, sha256 ac00c6685fedaff2f22d19f6fbf2d980ddbef85d40e7a0f1c615e967dd80e6d5) passed --check on the hosting account but the switch stopped at the preflight with STOP: INVALID_DAILY_BACKUP_INDEX, before any change: the activator reuses the day's backup only when the folder that holds it carries a name on its fixed list, and that list did not know the customer-message release of the same day, which had taken the backup. Nothing was switched; the first package's folder is left untouched on the account.",
+    "fix": "portable/activate-ui-refresh-update.cjs lists the activation names of the service-kpi, visit-place-voice and customer-message releases; tests/baseline-update-activation.mjs now packages those releases and the support chain one and checks that the second update of a day reuses the backup the first took (152 checks; the unfixed activator fails the new block with INVALID_DAILY_BACKUP_INDEX).",
+    "file": "Yourrest-CRM-Update-Support-Chain-B-20261018.zip",
+    "releaseName": "update-support-chain-b",
+    "stageDir": "yourrest-crm-update-support-chain-b-20261018",
+    "helper": "yourrest-activate-update-support-chain-b.cjs",
+    "bytes": 12578763,
+    "sha256": "cabc31293732d84a26a8ee34438470e7e33c57ab7437b85028d3ca68f1718864",
+    "sameReleaseTree": "1831a8d74f01f1a1639e6baf5feba8733b012e695898431ebdfea9056b0b3eb5 (the application files are byte-identical to the first package; only the activator, the guide and the sums differ)",
+    "rehearsal": "17/17 steps again from the customer-message release folder (scripts/rehearse-update.mjs); the rehearsal cannot reproduce the same-day-backup case itself, the baseline test does"
+  }
 }
