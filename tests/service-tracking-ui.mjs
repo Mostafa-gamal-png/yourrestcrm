@@ -184,7 +184,7 @@ const MANAGER_ORDER = [...REP_ORDER, 'complaint:k-closed'];
 {
   language = 'ar';
   const render = (items, loaded) => html(React.createElement(TrackingBoardView, {items, filter: 'all', onFilter: noop, expanded: false, onExpand: noop, role: rep.role, loaded, onOpen: noop}));
-  ok(plain(render([], true)).includes('لا فرص ولا شكاوى مسجّلة بعد'), 'nothing registered: the board says so and explains');
+  ok(plain(render([], true)).includes('لا فرص ولا شكاوى ولا طلبات مساندة بعد'), 'nothing registered: the board says so and explains');
   ok(plain(render([], false)).includes('جارٍ تحميل المتابعة'), 'not loaded yet: the board says it is loading');
   ok(/data-filter="all"[^>]*aria-pressed="true">[^<]*<span class="tracking-count">0<\/span>/.test(render([], true)), 'the filters still show, at zero');
   ok(!render([], true).includes('عرض الكل'), 'and no "show all" with nothing to show');
@@ -250,8 +250,75 @@ const MANAGER_ORDER = [...REP_ORDER, 'complaint:k-closed'];
   ok(plain(markup).includes('Last recorded: Update') && plain(markup).includes('Customer asked for a quote'), 'the last thing recorded');
   eq(arabicLeft(markup), [], 'English leaves no Arabic');
   const rep2 = html(React.createElement(TrackingBoardView, {items: [], filter: 'all', onFilter: noop, expanded: false, onExpand: noop, role: rep.role, loaded: true, onOpen: noop}));
-  ok(plain(rep2).includes('Tracking what you registered') && plain(rep2).includes('Nothing registered yet'), 'the representative\'s English heading and empty line');
+  ok(plain(rep2).includes('Tracking what you registered') && plain(rep2).includes('No opportunities, complaints or assistance requests yet'), 'the representative\'s English heading and empty line');
   eq(arabicLeft(rep2), [], 'without Arabic');
+  language = 'ar';
+}
+
+// ---- assistance requests and missed visits on the board
+{
+  language = 'ar';
+  const SP = library('lib/support.ts');
+  const hours = n => new Date(BASE - n * 3600000).toISOString();
+  const event = (action, at, byName, extra = {}) => ({at, by: byName, byName, action, targetName: '', ...extra});
+  const request = (o = {}) => ({
+    id: 'support-1', customerId: 'c-3', customerName: 'Al Rayyan Factory', origin: 'rep', state: 'in_progress', status: 'open', note: 'The customer does not answer our representative', plan: null, requestedByName: 'Mohammed',
+    handlerId: 'rep-1', handlerName: 'Reem', serviceManagerName: 'Mona', salesManagerName: 'Khaled', assigneeName: '', assigneeRole: '', result: null, resolution: null,
+    stage: 'contact', stageSince: hours(3), stageHours: 3, targetHours: 4, late: false, createdAt: hours(40), updatedAt: hours(3), events: [], ...o
+  });
+  const supports = [
+    request({id: 's-contact', createdAt: hours(30), events: [event('request', hours(30), 'Mohammed', {text: 'The customer does not answer our representative'}), event('assign', hours(30), '', {targetName: 'Reem'})]}),
+    request({id: 's-review', state: 'submitted', status: 'submitted', stage: 'review', stageHours: 6, targetHours: 4, late: true, createdAt: hours(50), result: {outcome: 'reached_interested', note: 'Interested in an offer'}, events: [event('request', hours(50), 'Mohammed'), event('submit', hours(8), 'Reem', {outcome: 'reached_interested', text: 'Interested in an offer'})]}),
+    request({id: 's-sales', origin: 'missed_visit', note: '', plan: {visitId: 'v-1', visitDate: '2026-10-01', result: 'x', nextAction: 'Follow-up visit', nextDate: '2026-10-05'}, state: 'assigned', status: 'assigned', stage: 'first_contact', stageHours: 14, targetHours: 24, assigneeName: 'Salem', assigneeRole: 'rep', createdAt: hours(70), events: [event('request', hours(70), 'Reem'), event('submit', hours(60), 'Reem', {outcome: 'no_answer', text: 'No reply after three tries'}), event('forward', hours(50), 'Mona', {targetName: 'Khaled'}), event('allocate', hours(40), 'Khaled', {targetName: 'Salem', text: 'Visit this week'}), event('seen', hours(35), 'Salem')]}),
+    request({id: 's-closure', state: 'resolved', status: 'resolved', stage: 'closure', stageHours: 2, targetHours: 24, assigneeName: 'Salem', assigneeRole: 'rep', createdAt: hours(90), result: {outcome: 'reached_interested', note: 'x'}, resolution: {outcome: 'wants_visit', note: 'Wants a visit', channel: 'call'}, events: [event('request', hours(90), 'Mohammed'), event('resolve', hours(2), 'Salem', {outcome: 'wants_visit', text: 'Wants a visit'})]}),
+    request({id: 's-done', state: 'done', status: 'done', stage: 'closed', stageSince: hours(48), stageHours: 0, targetHours: null, createdAt: hours(120), assigneeName: 'Salem', assigneeRole: 'rep', resolution: {outcome: 'reached_interested', note: 'ok', channel: 'visit'}, events: [event('request', hours(120), 'Mohammed'), event('close', hours(48), 'Reem', {text: 'Reviewed'})]}),
+    request({id: 's-other', handlerId: 'rep-2', handlerName: 'Huda', createdAt: hours(33)}),
+    request({id: 's-untaken', handlerId: '', handlerName: '', state: 'waiting', stage: 'take', createdAt: hours(10)})
+  ];
+  const mineRows = T.trackingItems({me: rep, cases: [], complaints: [], support: supports});
+  eq(mineRows.map(item => item.key), ['support:s-review', 'support:s-sales', 'support:s-contact', 'support:s-closure', 'support:s-done'], 'a representative: only what they took, the late first, then by wait, then the finished');
+  const teamRows = T.trackingItems({me: manager, cases: [], complaints: [], support: supports});
+  eq(teamRows.length, 7, 'a manager: every request the route gave them, taken or not');
+  const render = (items, role = rep.role) => html(React.createElement(TrackingBoardView, {items, filter: 'all', onFilter: noop, expanded: true, onExpand: noop, role, loaded: true, onOpen: noop}));
+  let markup = render(mineRows);
+  eq(keysOf(markup), [...mineRows.map(item => item.key)], 'one card per request');
+  ok(plain(markup).includes('وطلبات المساندة والزيارات المفقودة التي تولّيتها') && plain(markup).includes('وما سُجّل في كل مرحلة'), 'the heading line says the board also follows assistance requests and what each stage recorded');
+  const review = cardOf(markup, 'support:s-review');
+  ok(/data-kind="support"/.test(review) && /data-stage="review"/.test(review) && /data-side="service"/.test(review) && /data-late="true"/.test(review), 'a request waiting for the manager\'s review is with customer service and late');
+  ok(review.includes('مساندة') && review.includes('بانتظار مراجعة المدير') && review.includes('Al Rayyan Factory') && review.includes('The customer does not answer our representative'), 'the card names the kind, the stage, the customer and the reason');
+  ok(review.includes('Mona') && review.includes('مدير خدمة العملاء') && review.includes('متأخر عن هدف 4 ساعات عمل'), 'the manager holds it, and the late mark says against which target');
+  eq(count(review, 'data-step='), 6, 'the bar has the six steps of a request');
+  ok(review.includes('فتح الطلب') && review.includes('تواصل خدمة العملاء') && review.includes('مراجعة المدير') && review.includes('تكليف المبيعات') && review.includes('أول تواصل') && review.includes('الإغلاق'), 'named for a request, the first step as the opening');
+  ok(review.includes('class="tracking-trail"') && review.includes('رفع نتيجة التواصل للاعتماد') && review.includes('تم التواصل والعميل مهتم') && review.includes('Interested in an offer'), 'what the stage recorded is on the card: the submission, its outcome and its words');
+  ok(!review.includes('tracking-last'), 'the trail replaces the single last line');
+  ok(review.includes('فتح الطلب') && /data-tracking-open|class="btn subtle"/.test(review), 'and a button to open the request');
+  const sales = cardOf(markup, 'support:s-sales');
+  ok(sales.includes('زيارة مفقودة') && sales.includes('Follow-up visit · 2026-10-05') && sales.includes('بانتظار تواصل المندوب مع العميل') && /data-side="sales"/.test(sales), 'a missed visit with sales reads its planned visit, and says the representative is to contact the customer');
+  ok(sales.includes('Salem') && sales.includes('مندوب المبيعات') && sales.includes('تكليف المبيعات') && sales.includes('Visit this week') && sales.includes('اعتماد وإحالة إلى مدير المبيعات'), 'the representative holds it, and the trail tells the approval and the assignment with its note');
+  ok(!sales.includes('الاطلاع على الرد'), 'opening the answer is not a step of the story');
+  const contactCard = cardOf(markup, 'support:s-contact');
+  ok(contactCard.includes('قيد تواصل خدمة العملاء') && contactCard.includes('Reem') && /data-side="service"/.test(contactCard) && /data-late="false"/.test(contactCard), 'in the member\'s contact: with customer service, not late');
+  ok(contactCard.includes('تكليف ممثل خدمة العملاء') && contactCard.includes('إلى Reem'), 'the routing to the member is on the trail, with the name');
+  const closure = cardOf(markup, 'support:s-closure');
+  ok(closure.includes('بانتظار إغلاق خدمة العملاء') && closure.includes('Wants a visit') && /data-side="service"/.test(closure), 'a request waiting for closure is with customer service again, and shows what the representative recorded');
+  const done = cardOf(markup, 'support:s-done');
+  ok(done.includes('تم التواصل والعميل مهتم') && done.includes('انتهت') && /data-side="done"/.test(done) && !done.includes('tracking-late'), 'a closed request is finished, with the outcome the representative recorded');
+  eq(count(done, 'data-state="done"'), 6, 'every step done');
+  // the managers' board names who took each request
+  markup = render(teamRows, manager.role);
+  ok(keysOf(markup).includes('support:s-untaken') && keysOf(markup).includes('support:s-other') && cardOf(markup, 'support:s-other').includes('Huda'), 'the manager sees the request nobody took and the colleague\'s, with the name of who took it');
+  ok(cardOf(markup, 'support:s-untaken').includes('بانتظار تولّي خدمة العملاء') && /data-stage="take"/.test(cardOf(markup, 'support:s-untaken')), 'a request nobody took waits to be taken');
+  // the open button of a card hands over the item itself, so the page opens the request, not a case or a complaint
+  const opened = [];
+  const tree = expand(React.createElement(TrackingBoardView, {items: mineRows, filter: 'all', onFilter: noop, expanded: true, onExpand: noop, role: rep.role, loaded: true, onOpen: item => opened.push(item.kind + ':' + item.id)})), buttons = nodes(tree, node => node.type === 'button' && /فتح الطلب/.test(text(node)));
+  buttons[0].props.onClick(); buttons[buttons.length - 1].props.onClick();
+  eq(opened, ['support:s-review', 'support:s-done'], 'the open button of a card opens that request');
+  eq(keysOf(html(React.createElement(ServiceTrackingBoard, {me: rep, cases: [], complaints: [], support: null, onOpenCase: noop, onOpenComplaint: noop}))), [], 'with nothing loaded the board is empty');
+  // English: no Arabic is left on a request's card
+  language = 'en';
+  const english = render(mineRows);
+  eq(arabicLeft(english), [], 'English cards of requests have no untranslated wording');
+  ok(english.includes('Support') && english.includes('Missed visit') && english.includes('Awaiting customer-service closure') && english.includes('Awaiting the representative&#x27;s contact with the customer') && english.includes('Opened') && english.includes('Contact result submitted for approval') && english.includes('Reached, customer is interested'), 'English kind, stages, first step and trail');
   language = 'ar';
 }
 
