@@ -5,6 +5,7 @@
 لا تشغّل setup.cjs ولا تنسخ الملفات فوق التطبيق الحالي ولا تعدّل settings.cjs أو مجلد البيانات yourrest-crm-data.
 الرفع والفحص يمكن تنفيذهما والتطبيق يعمل. يلزم إيقاف يورست فقط أثناء تبديل مجلد release والتحقق؛ لا توقف أي تطبيق آخر.
 هذه الحزمة تشمل كل ما في حزمة «رسالة العميل» التي رفعتها (2026-10-18) وكل ما قبلها، وتزيد عليها تغييرًا واحدًا: مسار طلبات المساندة. لها مجلد رفع واسم مُفعِّل جديدان؛ لا تستخدم مجلدات الحزم السابقة.
+ملاحظة: هذه هي النسخة B من الحزمة. النسخة الأولى (مجلد yourrest-crm-update-support-chain-20261018) رفضها المُفعِّل في الفحص الأولي برسالة STOP: INVALID_DAILY_BACKUP_INDEX قبل أي تغيير، لأن قائمة أسماء التحديثات السابقة داخله لم تكن تعرف تحديث رسالة العميل الذي أخذ نسخة اليوم الاحتياطية. صُحّح ذلك. لا تستخدم المجلد القديم ولا تحذفه ولا تلمس ما فيه.
 
 ما الذي يتغيّر
 كل طلب مساندة، سواء فتحه مندوب المبيعات لعميله بزر «طلب مساندة خدمة العملاء» أو تولّاه ممثل خدمة العملاء من «زيارة مفقودة»، صار يسير المسار نفسه الذي تسير عليه الشكاوى:
@@ -33,22 +34,22 @@
 1. نسخة احتياطية لليوم: إن وُجدت نسخة سليمة لليوم بتوقيت السعودية فتُستخدم ولا يُنشأ غيرها، وإلا أخذ المُفعِّل واحدة جديدة قبل أي تغيير. لا تنفذ شيئًا هنا.
 
 2. والتطبيق يعمل، ارفع الحزمة وافكها داخل:
-/home/youriedx/yourrest-crm-update-support-chain-20261018
-يجب أن يظهر مجلد release والملف yourrest-activate-update-support-chain.cjs مباشرة داخل هذا المسار. (مجلد جديد غير مجلدات الحزم السابقة؛ لا تفكّ فوق أي مجلد قديم.)
+/home/youriedx/yourrest-crm-update-support-chain-b-20261018
+يجب أن يظهر مجلد release والملف yourrest-activate-update-support-chain-b.cjs مباشرة داخل هذا المسار. (مجلد جديد غير مجلدات الحزم السابقة؛ لا تفكّ فوق أي مجلد قديم.)
 
 3. افحص الحزمة دون إيقاف التطبيق:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-support-chain-20261018/yourrest-activate-update-support-chain.cjs --check
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-support-chain-b-20261018/yourrest-activate-update-support-chain-b.cjs --check
 
 يجب أن يظهر PACKAGE AND CONFIGURATION: READY، ولا يظهر سطر SCHEMA CHANGE لأن لا ترحيل في هذه الحزمة. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله لي.
 
 4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، وانتظر دقيقة، ثم نفّذ:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-support-chain-20261018/yourrest-activate-update-support-chain.cjs
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-support-chain-b-20261018/yourrest-activate-update-support-chain-b.cjs
 
 الأمر يتحقق من توقف التطبيق، ويفحص البيانات الحالية (يجب أن تكون 16 ترحيلًا؛ غير ذلك يتوقف دون تغيير) ويسجل معرّف أحدث سجلات، ثم يبدّل مجلد release.
 إن ظهر STOP APP_OR_DATA_STILL_IN_USE فالتطبيق ما زال ينتهي: انتظر دقيقة وأعد الأمر نفسه؛ لم يتغير شيء.
 
 5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-support-chain-20261018/yourrest-activate-update-support-chain.cjs --verify
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-support-chain-b-20261018/yourrest-activate-update-support-chain-b.cjs --verify
 
 النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK وسطر LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/support: 401 / /api/complaints: 401 / /api/service-kpi: 401.
 لا يظهر MIGRATION APPLIED لأن لا ترحيل. إن ظهر STOP فاحتفظ بالناتج وأرسله لي قبل أي خطوة أخرى.
@@ -65,7 +66,7 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
 التراجع (لا تنفذه قبل أن تراسلني)
 هذا التحديث لا يغيّر شكل قاعدة البيانات، فالتراجع هو إعادة مجلد release القديم فقط، في أي وقت:
 1) Stop App.
-2) cd /home/youriedx/yourrest-crm && mv release release-failed-20261018-support-chain && mv /home/youriedx/yourrest-update-support-chain-activation-20261018-XXXXXX/old-release release
+2) cd /home/youriedx/yourrest-crm && mv release release-failed-20261018-support-chain-b && mv /home/youriedx/yourrest-update-support-chain-b-activation-20261018-XXXXXX/old-release release
 (استبدل XXXXXX بالاسم الفعلي للمجلد الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT.)
 3) Start App.
 التراجع لا يفقد بيانات. الطلبات التي بلغت مراحل المسار تبقى في القاعدة، ويعرضها الإصدار الأقدم بحالة «بانتظار التولّي» أو «قيد التواصل» دون أزرار المراحل، ولا يمنع وجودها فتح طلب جديد لنفس العميل؛ وتعود كاملة بمراحلها حين ترجع إلى هذا الإصدار.
