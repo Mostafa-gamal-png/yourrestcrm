@@ -401,9 +401,20 @@ try {
     const waiting = (await support(calls.cs)).requests[0];
     assert.deepEqual([waiting.state, waiting.awaiting, waiting.permissions.take], ['waiting', 'take', true], 'the representative for every region may take it');
     assert.equal((await post(calls.cs, {action: 'take', id: requestId, version: waiting.version})).status, 200, 'customer service takes it');
-    assert.equal((await post(calls.cs, {action: 'result', id: requestId, version: waiting.version + 1, outcome: 'wants_visit', note: 'العميل يطلب زيارة', nextDate: day})).status, 200, 'and answers it');
-    const answer = (await support(calls.rep1)).requests[0];
-    assert.deepEqual([answer.state, answer.awaiting, answer.result.outcome, answer.result.nextDate], ['done', 'answer', 'wants_visit', day], 'the representative reads the answer');
+    // The course after taking it: contact and submit, approval, assignment, the sales member's contact, closure, the representative opens the answer.
+    const current = async who => (await support(calls[who])).requests.find(item => item.id === requestId);
+    const advance = async (who, body, what) => { const found = await current(who); const response = await post(calls[who], {id: requestId, version: found.version, ...body}); assert.equal(response.status, 200, what + ': ' + response.text.slice(0, 160)); };
+    await advance('cs', {action: 'submit', outcome: 'wants_visit', note: 'العميل يطلب زيارة', nextDate: day}, 'customer service submits its contact for approval');
+    assert.deepEqual(await (async () => { const found = await current('cs'); return [found.state, found.stage, found.awaiting]; })(), ['submitted', 'review', null], 'and sees it wait for its manager');
+    assert.deepEqual(await (async () => { const found = await current('csm'); return [found.awaiting, found.permissions.forward]; })(), ['review', true], 'the manager has it to approve');
+    await advance('csm', {action: 'forward', targetId: 'mgr'}, 'the customer-service manager approves it to the sales manager');
+    await advance('mgr', {action: 'allocate', targetId: 'rep1', note: 'يرجى زيارة العميل'}, 'the sales manager assigns the representative');
+    assert.equal((await current('rep1')).awaiting, 'resolve', 'the representative is asked to contact the customer');
+    await advance('rep1', {action: 'resolve', channel: 'visit', outcome: 'reached_interested', note: 'زرت العميل'}, 'the representative records the visit');
+    assert.equal((await current('cs')).awaiting, 'close', 'customer service has it to close');
+    await advance('cs', {action: 'close', note: 'تم التأكد من العميل'}, 'customer service closes it');
+    const answer = await current('rep1');
+    assert.deepEqual([answer.state, answer.awaiting, answer.result.outcome, answer.result.nextDate, answer.resolution.channel], ['done', 'answer', 'wants_visit', day, 'visit'], 'the representative reads the answer');
     assert.equal((await post(calls.rep1, {action: 'seen', id: requestId, version: answer.version})).status, 200, 'and opens it');
     assert.equal((await support(calls.rep1)).counts.badge, 0, 'which clears the count');
     // A visit that went unanswered, two days past its follow-up date, is customer service's to contact. It must be the customer's
@@ -556,11 +567,11 @@ try {
       assert.deepEqual([who, crm.status, cases.status], [who, 200, 200], 'the previous release serves ' + who + ' on the same database');
       restored[who] = {crm: crm.json(), cases: cases.json().cases};
     }
-    const queueIntroduced = introducedRoute('/api/service-queue/alerts'), supportIntroduced = introducedRoute('/api/support'), complaintsIntroduced = introducedRoute('/api/complaints'), complaintsCarried = helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaints') && !complaintsIntroduced, reportIntroduced = introducedRoute('/api/complaint-report');
+    const queueIntroduced = introducedRoute('/api/service-queue/alerts'), supportIntroduced = introducedRoute('/api/support'), complaintsIntroduced = introducedRoute('/api/complaints'), supportCarried = helper.EXTRA_ROUTES.some(([route]) => route === '/api/support') && !supportIntroduced, complaintsCarried = helper.EXTRA_ROUTES.some(([route]) => route === '/api/complaints') && !complaintsIntroduced, reportIntroduced = introducedRoute('/api/complaint-report');
     if (queueIntroduced) assert.equal(restored.owner.crm.serviceQueue, undefined, 'the previous release knows nothing of the new queue field');
     else assert(Array.isArray(restored.owner.crm.serviceQueue), 'the previous release already has the queue field');
     // The administrator's case: the request customer service registered during the new release's use (the assistance block); the manager and the representative have no case yet.
-    const expectedCases = queueIntroduced ? {owner: 1, mgr: 1, rep1: 1} : supportIntroduced ? {owner: 1, mgr: 0, rep1: 0} : {owner: 0, mgr: 0, rep1: 0};
+    const expectedCases = queueIntroduced ? {owner: 1, mgr: 1, rep1: 1} : supportIntroduced || supportCarried ? {owner: 1, mgr: 0, rep1: 0} : {owner: 0, mgr: 0, rep1: 0};
     for (const who of ['owner', 'mgr', 'rep1']) assert.equal(restored[who].cases.length, expectedCases[who], who + ' sees what the new release recorded, as before');
     let supportAuditLines = null;
     if (supportIntroduced) {
@@ -572,6 +583,14 @@ try {
       assert.equal((await a.request('/api/support')).status, 404, 'the new route is gone again with the new release');
       // Recorded, not judged: the previous release has no rule to leave the assistance audit lines out of the administrator's history.
       supportAuditLines = (restored.owner.crm.audits || []).filter(item => /^support/.test(String(item.action))).length;
+    }
+    if (supportCarried) {
+      // The previous release already knows assistance requests: it serves the route again, shows the ones the new release moved along the course as plain requests in hand, and they stay out of every record list and every case.
+      assert.equal((await a.request('/api/support')).status, 401, 'the previous release still serves the assistance route');
+      const list = (await (await a.login('csm'))('/api/support')).json();
+      assert(list.requests.length >= 1, 'the customer-service manager still sees the requests written on the new release');
+      assert.deepEqual(['mgr', 'sup', 'rep1', 'repw'].map(who => restored[who].crm.records.filter(record => record.kind === 'support').length), [0, 0, 0, 0], 'and they are in nobody\'s record list');
+      assert.equal(restored.owner.cases.some(item => String(item.id).startsWith('support-')), false, 'nor in the cases');
     }
     if (complaintsIntroduced) {
       // Complaints are records of a kind the previous release does not know: it serves everyone on them, and nobody but the administrator's raw record list could carry them.
