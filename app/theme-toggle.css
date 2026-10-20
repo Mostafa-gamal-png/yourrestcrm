@@ -6,6 +6,6 @@
 .theme-toggle-control[aria-checked=true] .theme-toggle-track{background:linear-gradient(180deg,#1b6a49,#318461);border-color:#5a9b7b}
 .theme-toggle-control[aria-checked=true] .theme-toggle-thumb{transform:translateX(28px);color:#155a3e}
 .theme-toggle-control:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
-.theme-toggle-caption{color:var(--muted-foreground);font-size:11px;min-width:29px}
+.theme-toggle-caption{color:var(--muted-foreground);font-size:12px;min-width:29px}
 @media(max-width:1023px){.theme-toggle-caption{display:none}.theme-toggle-control{width:56px}.theme-toggle-control[aria-checked=true] .theme-toggle-thumb{transform:translateX(24px)}}
 @media(prefers-reduced-motion:reduce){.theme-toggle-track,.theme-toggle-thumb{transition:none}}

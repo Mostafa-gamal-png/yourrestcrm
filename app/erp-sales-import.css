@@ -56,10 +56,10 @@
 .erp-import-table{width:100%;border-collapse:collapse;font-size:13px;text-align:start}
 .erp-import-table th{text-align:start;font-size:12px;font-weight:600;background:var(--muted);padding:10px;white-space:nowrap}
 .erp-import-table td{padding:10px;border-top:1px solid var(--border);vertical-align:top;line-height:1.7;max-width:230px;overflow-wrap:anywhere}
-.erp-import-table td small{display:block;font-size:11px;color:var(--muted-foreground);line-height:1.7;margin-top:2px}
+.erp-import-table td small{display:block;font-size:12px;color:var(--muted-foreground);line-height:1.7;margin-top:2px}
 .erp-import-table td strong{font-size:13px;font-weight:600}
 .erp-import-amount{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
-.erp-import-badge{display:inline-block;padding:3px 7px;border-radius:5px;font-size:11px;line-height:1.6;background:var(--muted);color:var(--muted-foreground);font-weight:600}
+.erp-import-badge{display:inline-block;padding:3px 7px;border-radius:5px;font-size:12px;line-height:1.6;background:var(--muted);color:var(--muted-foreground);font-weight:600}
 .erp-import-badge.new{background:#087b7914;color:#087b79}
 .erp-import-badge.conflict,.erp-import-badge.unmapped,.erp-import-badge.out_of_scope{background:#b7701014;color:#965d0c}
 .dark .erp-import-badge.new{background:#51d4bd20;color:#7de1d2}
@@ -98,7 +98,7 @@
  .erp-import-document-card{border:1px solid var(--border);border-radius:9px;padding:11px 12px;line-height:1.7;overflow-wrap:anywhere}
  .erp-import-document-card>div{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;font-size:14px}
  .erp-import-document-card p{font-size:13px;margin-top:4px}
- .erp-import-document-card small{display:block;font-size:11px;color:var(--muted-foreground);margin-top:3px}
+ .erp-import-document-card small{display:block;font-size:12px;color:var(--muted-foreground);margin-top:3px}
  .erp-import-document-card>.erp-import-amount{display:block;text-align:end;font-size:14px;margin-top:5px}
  .erp-import-footer{padding:11px 14px calc(11px + env(safe-area-inset-bottom))}
  .erp-import-actions .btn.primary{flex:1;min-width:0;font-size:14px}

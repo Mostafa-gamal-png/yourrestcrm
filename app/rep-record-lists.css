@@ -18,7 +18,7 @@
  .dark .rep-record-next.is-overdue>div>span{color:#ffa5b9}
  .rep-record-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;font-size:12px}
  .rep-record-badges:empty{display:none}
- .rep-record-badges .badge{font-size:11px;padding:3px 7px}
+ .rep-record-badges .badge{font-size:12px;padding:3px 7px}
  .rep-record-owner{margin-inline-start:auto;color:var(--muted-foreground);overflow-wrap:anywhere}
  .rep-record-warning{display:inline-flex;gap:4px;align-items:center;color:#916218;font-size:12px}
  .dark .rep-record-warning{color:#efd08c}

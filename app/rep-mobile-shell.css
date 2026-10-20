@@ -38,7 +38,7 @@
  .app-shell .panel-heading{padding:14px;gap:8px;flex-wrap:wrap;align-items:center}
  .app-shell .panel-heading h2{font-size:17px}
  .app-shell .table-paging,.app-shell .customer-page-controls{padding:12px;gap:12px;flex-wrap:wrap}
- .app-shell .page-footer{flex-wrap:wrap;gap:6px;line-height:1.5;font-size:10px}
+ .app-shell .page-footer{flex-wrap:wrap;gap:6px;line-height:1.5;font-size:12px}
  .crm-sheet .detail-actions{gap:8px}.crm-sheet .detail-actions .btn,.crm-sheet .detail-actions .icon-button{min-height:44px}
  .crm-sheet .detail-actions .icon-button{min-width:44px}.crm-sheet{max-width:100vw!important}
  .crm-dialog.crm-master-dialog{display:flex;flex-direction:column;gap:8px;inset:0!important;--tw-translate-x:0!important;--tw-translate-y:0!important;transform:none!important;translate:none!important;width:100%!important;max-width:none!important;height:100dvh;max-height:100dvh;border-radius:0!important;padding:calc(18px + env(safe-area-inset-top)) 16px 0!important;overflow:hidden}
@@ -52,6 +52,8 @@
  .crm-master-dialog .form-footer .btn{min-height:48px;justify-content:center;font-size:15px}.crm-master-dialog .form-footer .primary{flex:1}
  .crm-dialog [data-slot=dialog-close]{min-width:44px;min-height:44px;width:44px;height:44px;top:5px;left:auto;right:auto;inset-inline-end:6px;display:grid;place-items:center}
  .crm-master-dialog>[data-slot=dialog-close]{top:calc(5px + env(safe-area-inset-top))}
+ .crm-sheet>[data-slot=sheet-close]{display:grid;place-items:center;width:44px;height:44px;top:6px;right:auto;left:auto;inset-inline-end:6px;border-radius:10px;opacity:1}
+ .crm-sheet>[data-slot=sheet-close] svg{width:22px;height:22px}
  .discard-customer-dialog{width:calc(100vw - 28px)!important;max-width:420px!important;border-radius:16px;padding:22px}
  .discard-customer-dialog button{min-height:46px;font-size:15px}
 }
