@@ -9,6 +9,8 @@ import {customerDirectionsLink} from '@/lib/customer-directions';
 import {searchMapCustomers} from '@/lib/customer-map-search';
 import {mapActivity,activityOptions,groupMapActivities} from '@/lib/customer-map-activity';
 import {DIRECTIONS_START_TIMEOUT_MS,waitForDirectionsStep} from '@/lib/directions-attempt';
+import {kingdomBounds} from '@/lib/kingdom';
+import {addKingdomLayer} from './kingdom-layer';
 import './customer-map.css';
 
 type ActivityKey=(typeof activityOptions)[number]['key'];
@@ -77,9 +79,10 @@ export default function CustomerMap({customers,onDirections,directionsReady,reco
   void import('leaflet').then(mod=>{
    if(!alive||!container.current)return;
    const L=mod.default||mod;leaflet.current=L;
-   const m=L.map(container.current,{preferCanvas:true,center:[24,45],zoom:5,minZoom:5,maxZoom:19,maxBounds:[[15.3,34.3],[32.4,55.8]],maxBoundsViscosity:1,zoomControl:false});map.current=m;
+   const m=L.map(container.current,{preferCanvas:true,center:[24,45],zoom:5,minZoom:5,maxZoom:19,maxBounds:kingdomBounds,maxBoundsViscosity:1,zoomControl:false});map.current=m;
    L.control.zoom({position:'bottomleft',zoomInTitle:say('تكبير','Zoom in'),zoomOutTitle:say('تصغير','Zoom out')}).addTo(m);
    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'}).on('tileerror',()=>{if(alive)setTileFailed(true);}).on('tileload',()=>{if(alive)setTilesLoaded(true);}).addTo(m);
+   addKingdomLayer(L,m);
    layer.current=L.layerGroup().addTo(m);
    resize=new ResizeObserver(()=>m.invalidateSize({pan:false}));resize.observe(container.current);setReady(true);
   }).catch(()=>{if(alive)setFailed(true);});

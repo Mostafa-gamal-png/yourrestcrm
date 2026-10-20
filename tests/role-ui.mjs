@@ -53,7 +53,7 @@ for(const role of ['rep','supervisor','manager','admin','customer_service']){
 const location=moduleFrom('lib/customer-location.ts',()=>({}));
 const {CustomerRows}=moduleFrom('app/customer-machines.tsx',name=>{
  if(name==='@/lib/customer-location')return location;
- if(name==='@/lib/machines')return {machineTypeLabels:{mobile:'متحركة'},machineConditionLabels:{'':'غير محدد',new:'جديد',old:'قديم'},completeMachineSpecs:()=>true};
+ if(name==='@/lib/machines')return {machineTypeLabels:{mobile:'متحركة'},machineConditionLabels:{'':'غير محدد',new:'جديد',old:'قديم'},machineModelText:(data,tr=text=>text)=>[data?.modelCondition==='new'?tr('جديد'):data?.modelCondition==='old'?tr('قديم'):'',data?.machineModel||''].filter(Boolean).join(' · '),completeMachineSpecs:()=>true};
  return mockedRequire(name);
 },'\nexport {CustomerRows};\n');
 const customer={id:'factory',kind:'customer',assignedTo:'owner',branch:'الرئيسي',data:{name:'Regional factory',region:'الغربية',location:'21.5, 39.2',_masterReadOnly:true}};
@@ -70,7 +70,7 @@ for(const text of ['إضافة ماكينة','>تعديل<'])check(html.includes
 {
  const own={...rowProps,canEdit:false,canAddMachine:true,canEditMachine:true,customer:{...customer,data:{...customer.data,_masterReadOnly:false}},linked:[{...machine,data:{...machine.data,_masterReadOnly:false,modelCondition:'new',bushingCondition:'old'}}]};
  html=renderToStaticMarkup(React.createElement(CustomerRows,own));
- for(const text of ['إضافة ماكينة','>تعديل<','الموديل جديد أم قديم','نوع الجلب','>جديد<','>قديم<'])check(html.includes(text),true,'representative sees on their own customer '+text);
+ for(const text of ['إضافة ماكينة','>تعديل<','>جديد · M1<','نوع الجلب','>قديم<'])check(html.includes(text),true,'representative sees on their own customer '+text);
  for(const text of ['رقم الماكينة','موقع الماكينة'])check(html.includes(text),false,'the machine card no longer shows '+text);
  html=renderToStaticMarkup(React.createElement(CustomerRows,{...own,canAddMachine:false,linked:[{...own.linked[0],data:{...own.linked[0].data,_masterReadOnly:true}}]}));
  for(const text of ['إضافة ماكينة','>تعديل<'])check(html.includes(text),false,'representative has no '+text+' on a customer or machine that is not theirs');
