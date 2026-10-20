@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const offline=spawnSync(process.execPath,[path.join(root,'scripts/build-offline-shell.mjs')],{cwd:root,stdio:'inherit'});
 if(offline.status!==0)process.exit(offline.status||1);
-const result=spawnSync(process.execPath,[path.join(root,'node_modules/vinext/dist/cli.js'),'build'],{cwd:root,stdio:'inherit'});
+const result=spawnSync(process.execPath,[path.join(root,'node_modules/vinext/dist/cli.js'),'build','--precompress'],{cwd:root,stdio:'inherit'});
 if(result.status!==0)process.exit(result.status||1);
 const output=path.join(root,'dist/standalone');
 copyFileSync(path.join(root,'portable/app.cjs'),path.join(output,'app.cjs'));
