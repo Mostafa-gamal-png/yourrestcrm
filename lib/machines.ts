@@ -16,4 +16,11 @@ export function machineSourceData(customer:Row){
   sourceMachineTypes:raw,sourceMachineCount:count,sourceFile:source.sourceFile||'',
   sourceRow:source.sourceRow,sourceKey:source.sourceKey||'',sourceHash:source.sourceHash||''};
 }
-export function completeMachineSpecs(data?:{machineBrand?:string;machineModel?:string;machineType?:string}|null){return Boolean(data?.machineBrand?.trim()&&data?.machineModel?.trim()&&(['stationary','mobile'] as (string|undefined)[]).includes(data?.machineType));}
+/** The model is chosen as new or old; the model name typed before that question existed stays on the machines that have it. Either one completes the model. */
+export const hasMachineModel=(data?:{machineModel?:string;modelCondition?:string}|null)=>Boolean(data?.machineModel?.trim()||data?.modelCondition==='new'||data?.modelCondition==='old');
+/** What to show for the model: «جديد» or «قديم», then the older typed name when there is one. `tr` translates the condition. */
+export function machineModelText(data?:{machineModel?:string;modelCondition?:string}|null,tr:(text:string)=>string=text=>text){
+ const condition=data?.modelCondition==='new'||data?.modelCondition==='old'?tr(machineConditionLabels[data.modelCondition]):'';
+ return [condition,String(data?.machineModel||'').trim()].filter(Boolean).join(' · ');
+}
+export function completeMachineSpecs(data?:{machineBrand?:string;machineModel?:string;modelCondition?:string;machineType?:string}|null){return Boolean(data?.machineBrand?.trim()&&hasMachineModel(data)&&(['stationary','mobile'] as (string|undefined)[]).includes(data?.machineType));}

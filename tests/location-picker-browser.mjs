@@ -146,6 +146,7 @@ try {
   await picker.locator('.location-picker-pin').waitFor();
   const opened = await label(picker);
   check([opened.latitude, opened.longitude], [24.7136, 46.6753], 'the pin starts on the typed place');
+  check([await map.locator('path.kingdom-mask').count(), await map.locator('path.kingdom-border').count()], [1, 1], 'the map greys out everything beyond the Kingdom\'s border and draws the border');
   await shot(admin, 'location-desktop-map');
   const box = await map.boundingBox();
   await map.click({position: {x: box.width / 2 + 120, y: box.height / 2 + 60}});

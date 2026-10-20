@@ -1,0 +1,4 @@
+.kingdom-mask{fill:#dde4e0;fill-opacity:1;stroke:none;pointer-events:none}
+.kingdom-border{fill:none;stroke:#2f7a5b;stroke-opacity:.8;pointer-events:none}
+:root.dark .kingdom-mask{fill:#0b1311}
+:root.dark .kingdom-border{stroke:#5fb28f}

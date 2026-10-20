@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {coordinatesFromText,type LocationFields} from './customer-location';
+import {insideKingdom} from './kingdom';
 
 // Kept optional so existing customer imports and older installed clients remain compatible.
 export const customerAddressFields={
@@ -18,6 +19,8 @@ export function prepareCustomerLocation(data:LocationFields,old?:LocationFields,
  if(data.location&&!point)return 'أدخل اللوكيشن كخط عرض، خط طول، أو رابط خرائط يحتوي الإحداثيات.';
  const previous=old?coordinatesFromText(old.location||''):null;
  const samePoint=!!point&&!!previous&&Math.abs(point.latitude-previous.latitude)<0.000001&&Math.abs(point.longitude-previous.longitude)<0.000001;
+ // A customer's place is within the Kingdom (a few kilometres of the border allowed for the phone's fix); a point saved earlier is kept as it is.
+ if(point&&!samePoint&&!insideKingdom(point.latitude,point.longitude))return 'موقع العميل خارج حدود المملكة العربية السعودية. اختر نقطة داخلها.';
  if(data.locationSource==='device'){
   if(!point||typeof data.latitude!=='number'||typeof data.longitude!=='number'||Math.abs(data.latitude-point.latitude)>0.000001||Math.abs(data.longitude-point.longitude)>0.000001)return 'تغيّر اللوكيشن بعد التقاطه. حدّث موقع الجهاز ثم حاول مرة أخرى.';
   const captured=Date.parse(data.locationCapturedAt||'');

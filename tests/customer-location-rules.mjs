@@ -7,9 +7,11 @@ import {createRequire} from 'node:module';
 import ts from 'typescript';
 const require = createRequire(import.meta.url);
 const compile = file => ts.transpileModule(fs.readFileSync(file, 'utf8'), {compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS}}).outputText;
-const place = {}, fields = {};
+const place = {}, fields = {}, border = {}, kingdom = {};
 vm.runInNewContext(compile('lib/customer-location.ts'), {exports: place});
-vm.runInNewContext(compile('lib/customer-fields.ts'), {exports: fields, require: name => name === 'zod' ? require('zod') : name === './customer-location' ? place : (() => { throw Error('unexpected import ' + name); })(), Date, Number, Math, Object});
+vm.runInNewContext(compile('lib/kingdom-border.ts'), {exports: border});
+vm.runInNewContext(compile('lib/kingdom.ts'), {exports: kingdom, require: name => name === './kingdom-border' ? border : (() => { throw Error('unexpected import ' + name); })()});
+vm.runInNewContext(compile('lib/customer-fields.ts'), {exports: fields, require: name => name === 'zod' ? require('zod') : name === './customer-location' ? place : name === './kingdom' ? kingdom : (() => { throw Error('unexpected import ' + name); })(), Date, Number, Math, Object});
 // Objects built in the compiled modules belong to another realm: compare them by value.
 const plain = value => JSON.parse(JSON.stringify(value ?? null));
 let checks = 0;
@@ -68,4 +70,23 @@ const before = JSON.stringify(original);
 fields.customerLocationProblem(original);
 eq(JSON.stringify(original), before, 'the data the form sends is never changed by the check: the server works the numbers out itself');
 
+
+// The Kingdom's border: a customer's place is inside it (a few kilometres of the border allowed), and the neighbours are out
+const inside = (lat, lng, margin) => kingdom.insideKingdom(lat, lng, margin);
+for (const [name, lat, lng] of [['Riyadh', 24.71, 46.68], ['Dammam', 26.43, 50.1], ['Jeddah', 21.54, 39.17], ['Tabuk', 28.38, 36.57], ['Arar (the north)', 30.97, 41.02], ['Sakaka', 29.97, 40.2], ['Hail', 27.52, 41.69], ['Abha', 18.22, 42.5], ['Najran', 17.49, 44.13], ['Jazan', 16.89, 42.55], ['Farasan island', 16.7, 42.1], ['Khafji', 28.43, 48.5], ['Haql', 29.28, 34.94], ['Hofuf', 25.38, 49.59], ['Sharurah', 17.47, 47.1], ['Yanbu', 24.09, 38.06]])
+  eq(inside(lat, lng, 0), true, name + ' is inside the Kingdom');
+for (const [name, lat, lng] of [['Doha', 25.29, 51.53], ['Dubai', 25.2, 55.27], ['Abu Dhabi', 24.45, 54.38], ['Manama', 26.22, 50.58], ['Kuwait City', 29.37, 47.98], ['Amman', 31.95, 35.93], ['Aqaba', 29.53, 35.0], ['Cairo', 30.04, 31.24], ['Sanaa', 15.37, 44.19], ['Baghdad', 33.3, 44.4], ['Muscat', 23.59, 58.41]])
+  eq([inside(lat, lng, 0), inside(lat, lng)], [false, false], name + ' is outside the Kingdom, with and without the margin');
+eq(inside(Number.NaN, 46), false, 'no point, no place');
+eq([inside(24.75, 50.8, 0), inside(24.75, 50.8)], [false, true], 'a point on the Qatari border is taken in by the margin only');
+// the form and the server refuse a place outside, unless it is the one already saved
+eq(fields.customerLocationProblem(byHand('25.2854, 51.5310')), 'موقع العميل خارج حدود المملكة العربية السعودية. اختر نقطة داخلها.', 'a place in Doha is refused');
+eq(fields.customerLocationProblem(byHand('25.2048, 55.2708')), 'موقع العميل خارج حدود المملكة العربية السعودية. اختر نقطة داخلها.', 'a place in Dubai is refused');
+eq(fields.customerLocationProblem(byHand('29.5, 35.0')), 'موقع العميل خارج حدود المملكة العربية السعودية. اختر نقطة داخلها.', 'a place in Aqaba is refused');
+eq(fields.customerLocationProblem(byHand('26.4373, 50.0344')), null, 'a place in Dammam passes');
+{
+  const kept = {location: '25.2854, 51.5310', latitude: 25.2854, longitude: 51.5310};
+  eq(fields.prepareCustomerLocation({...kept}, kept), null, 'a place saved earlier outside the Kingdom is kept as it is');
+  eq(fields.prepareCustomerLocation({...kept, location: '25.2900, 51.5400'}, kept), 'موقع العميل خارج حدود المملكة العربية السعودية. اختر نقطة داخلها.', 'but moving it to another place outside is refused');
+}
 console.log(JSON.stringify({ok: true, checks, coverage: 'coordinate text formats (Arabic comma, maps links, query links) and refusals; hand-placed points stored as numbers without capture metadata; stale capture claims refused; the form check without the clock and without side effects', realBrowser: false, realDevice: false}));
