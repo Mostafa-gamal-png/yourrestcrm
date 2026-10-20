@@ -67,3 +67,7 @@
 }
 
 .voice-field.keyboard-input input,.voice-field.keyboard-input textarea{padding-inline:12px!important}
+@media(min-width:768px) and (max-width:1023px){
+ .app-shell .page-heading{align-items:flex-start}
+ .app-shell .heading-actions{width:auto;flex:0 1 auto;justify-content:flex-end}
+}

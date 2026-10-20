@@ -23,9 +23,8 @@ const check = (actual, expected, message) => { assert.deepEqual(actual, expected
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const SCREENS = [{label: 'phone-360', width: 360, height: 800}, {label: 'phone-412', width: 412, height: 860}, {label: 'tablet-768', width: 768, height: 1100}, {label: 'tablet-820', width: 820, height: 1100}, {label: 'tablet-landscape-1024', width: 1024, height: 768}];
 const VIEWS = {rep: ['customer', 'activity', 'followup', 'targets', 'map'], sm: ['dashboard', 'customer', 'activity', 'quote', 'targets']};
-const LEGAL = 'leaflet-control-attribution';
 
-// What the audit reads from a rendered page: width past the screen, controls under 40px, text under 12px (the map's legal credit is excluded).
+// What the audit reads from a rendered page: width past the screen, controls under 40px, text under 12px (the map's legal credit is excluded), titles squeezed onto two lines.
 const measure = () => {
   const visible = el => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0' && r.bottom > 0 && r.right > 0 && r.left < innerWidth; };
   const name = el => (el.tagName.toLowerCase() + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/)[0] : '') + ' ' + (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 24)).trim();
@@ -34,7 +33,8 @@ const measure = () => {
     .filter(visible).filter(el => !legal(el)).filter(el => { const r = el.getBoundingClientRect(); return Math.min(r.width, r.height) < 40; }).map(el => name(el) + ' ' + Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height));
   const tiny = [...document.querySelectorAll('body *')].filter(el => [...el.childNodes].some(node => node.nodeType === 3 && node.textContent.trim()) && visible(el) && !legal(el) && !el.closest('.sr-only') && !el.classList.contains('sr-only'))
     .filter(el => parseFloat(getComputedStyle(el).fontSize) < 12).map(el => name(el) + ' ' + getComputedStyle(el).fontSize);
-  return {overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, small, tiny};
+  const wrapped = [...document.querySelectorAll('.page-heading h1')].filter(visible).filter(el => el.getBoundingClientRect().height > 1.4 * parseFloat(getComputedStyle(el).lineHeight)).map(el => el.innerText.trim());
+  return {overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, small, tiny, wrapped};
 };
 
 try {
@@ -82,6 +82,7 @@ try {
       check(result.overflow <= 0, true, where + ' does not widen beyond the screen (' + result.overflow + 'px)');
       check(result.small, [], where + ' has no control under 40px');
       check(result.tiny, [], where + ' has no text under 12px');
+      if (screen.width >= 768) check(result.wrapped, [], where + ' keeps its title on one line beside the header actions');
     }
     await page.context().close();
   }
@@ -96,7 +97,7 @@ try {
     await page.waitForTimeout(400);
     const info = await sheet.evaluate(node => {
       const close = node.querySelector('[data-slot=sheet-close]').getBoundingClientRect(), box = node.getBoundingClientRect();
-      const tabs = [...node.querySelectorAll('[role=tab]')].map(tab => tab.getBoundingClientRect()), list = node.querySelector('[role=tablist]');
+      const tabs = [...node.querySelectorAll('[role=tab]')].map(tab => tab.getBoundingClientRect());
       return {closeW: Math.round(close.width), closeH: Math.round(close.height), closeAtEnd: (getComputedStyle(node).direction === 'rtl') === (close.left - box.left < box.right - close.right), direction: getComputedStyle(node).direction, listDir: getComputedStyle(node.querySelector('[data-slot=tabs]')).direction,
         oneRow: tabs.every(rect => Math.abs(rect.top - tabs[0].top) < 3), tabsHeight: Math.round(Math.min(...tabs.map(rect => rect.height))), firstTabAtStart: node.querySelector('[role=tab]').getBoundingClientRect().left > box.left + box.width / 2, tabCount: tabs.length,
         small: [...node.querySelectorAll('button, a[href], [role=tab], summary')].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && Math.min(r.width, r.height) < 40; }).map(el => (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 20))};
