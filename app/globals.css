@@ -163,3 +163,5 @@
 .dictation-row>input,.dictation-row>textarea{flex:1;min-width:0}
 .dictation-row>small{flex-basis:100%;color:#b43b3b}
 .dark .dictation-row>small{color:#ffb5c2}
+
+.related-list .related-add{width:100%;min-height:46px;margin-bottom:12px;justify-content:center}

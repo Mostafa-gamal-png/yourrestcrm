@@ -1388,5 +1388,7 @@
   "ماكينات العميل يسجّلها مسؤوله فقط": "Only the customer's responsible member records its machines",
   "أدخل الشركة المصنعة واختر الموديل جديد أم قديم": "Enter the manufacturer and choose whether the model is new or old",
   "موقع العميل خارج حدود المملكة العربية السعودية. اختر نقطة داخلها.": "The customer's location is outside the Kingdom of Saudi Arabia. Choose a point inside it.",
-  "الموديل غير مسجل": "Model not recorded"
+  "الموديل غير مسجل": "Model not recorded",
+  "لا توجد ماكينات لهذا العميل": "This customer has no machines",
+  "سجّل ماكينات العميل لتظهر هنا وعند طلب القالب.": "Record the customer's machines so they show here and when requesting a mold."
 }
