@@ -5,7 +5,7 @@ import {isServiceRole} from './customer-service';
 import { env } from 'cloudflare:workers';
 import {getApplicationUser} from '@/app/application-auth';
 import {regionRecords,regionMembers,regionScope,memberCanAccessRegion} from './regions';
-import {canReadSalesRecord,canUseSalesWorkspace,recordAuthorId,canManageMasterRecord,canEditCustomerDetails} from './access';
+import {canReadSalesRecord,canUseSalesWorkspace,recordAuthorId,canManageMasterRecord,canEditCustomerDetails,canEditMachineRecord} from './access';
 import { scopeRecords, type Row, type Member } from './crm';
 import {loadContextRecords,type ContextLoad} from './crm-context-records';
 export class CRMError extends Error { constructor(message:string,public status=400){super(message);} }
@@ -38,6 +38,7 @@ export function requireRecordEdit(me:Member){if(me.role==='rep')throw new CRMErr
 export function recordEditGuard(c:GuardContext,record:Row){requireRecordEdit(c.me);return accessGuard(c,record);}
 /** Master edits need team ownership in addition to the regional visit-selection scope. */
 export function masterMutationGuard(c:GuardContext,record:Row){
+ if(c.me.role==='rep'&&record.kind==='factory'){if(!canEditMachineRecord(record,c.members,c.me))throw new CRMError('ماكينات العميل يسجّلها مسؤوله فقط',403);return accessGuard(c,record);}
  if(!canManageMasterRecord(record,c.members,c.me))throw new CRMError('تعديل بيانات العميل متاح للمسؤول وفريقه فقط',403);
  if(c.me.role==='rep'&&record.kind==='customer')return accessGuard(c,record);
  const permission=recordEditGuard(c,record);

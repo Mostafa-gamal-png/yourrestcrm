@@ -232,10 +232,11 @@ try {
   // ---- the releases of 2026-10-17 and 2026-10-18: a release reuses the day's backup whichever earlier release of the day took it (an update refused for this on the hosting account, so every earlier name is listed here)
   {
     const named = (key, name, date, extra = []) => packageIt(key, build('build-' + key, key), ['--release-name', name, '--release-date', date, '--stage-name', 'yourrest-crm-' + name + '-' + date, '--schema-baseline', '16', ...extra]);
-    const kpi = named('kpi', 'update-service-kpi', '20261017'), voice = named('voice', 'update-visit-place-voice', '20261017'), message = named('message', 'update-customer-message', '20261018'), chain = named('chain', 'update-support-chain', '20261018', ['--verify-route', '/api/support=401']);
+    const kpi = named('kpi', 'update-service-kpi', '20261017'), voice = named('voice', 'update-visit-place-voice', '20261017'), message = named('message', 'update-customer-message', '20261018'), chain = named('chain', 'update-support-chain', '20261018', ['--verify-route', '/api/support=401']), chainB = named('chainb', 'update-support-chain-b', '20261018', ['--verify-route', '/api/support=401']), machines = named('machines', 'update-machines', '20261020');
     for (const [label, first, second, d1, d2] of [
       ['the KPI release', kpi, voice, new Date('2026-10-17T05:00:00Z'), new Date('2026-10-17T10:00:00Z')],
-      ['the customer-message release', message, chain, new Date('2026-10-18T05:00:00Z'), new Date('2026-10-18T10:00:00Z')]
+      ['the customer-message release', message, chain, new Date('2026-10-18T05:00:00Z'), new Date('2026-10-18T10:00:00Z')],
+      ['the support-chain release (B)', chainB, machines, new Date('2026-10-20T05:00:00Z'), new Date('2026-10-20T10:00:00Z')]
     ]) {
       const dir = home('same-day-' + second.helper.RELEASE_NAME + '-after-' + first.helper.RELEASE_NAME, 16, first, second), pe = first.helper.pathsFor(dir), pn = second.helper.pathsFor(dir), logs = [], collect = text => logs.push(text);
       const took = await first.helper.run(pe, 'apply', {log: quiet, stopped: paths => first.helper.ensureStopped(paths, emptyProc), now: () => d1});

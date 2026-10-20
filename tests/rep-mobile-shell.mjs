@@ -118,7 +118,10 @@ for(const locale of ['ar','en'])for(const compactNavigation of [true,false]){
   if(view==='customer'){
    const directory=child(tree,CustomerMachines);eq(directory.props.canEdit,false,context+' directory denies changes to own unflagged saved rows');eq(directory.props.customers.length,1,context+' Clients shows supplied customer with empty search');
    directory.props.onEdit(ownCustomer);eq(h.state.form.row.id,ownCustomer.id,context+' customer edit opens the authorized correction form');h.state.form=null;
-   directory.props.onAddMachine(ownCustomer.id);eq(h.state.form,null,context+' root rejects a retained Add machine callback');
+   // A representative records the machines of their own customers (the form opens for one) and of nobody else's.
+   directory.props.onAddMachine(ownCustomer.id);eq([h.state.form?.kind,h.state.form?.parentId],['factory',ownCustomer.id],context+' root opens the machine form for the representative\'s own customer');h.state.form=null;
+   directory.props.onAddMachine(records[1].id);eq(h.state.form,null,context+' root rejects a retained Add machine callback for another member\'s customer');
+   eq([directory.props.canEditMachine,directory.props.canAddMachineTo(ownCustomer),directory.props.canAddMachineTo(records[1])],[true,true,false],context+' directory offers machines on own customers only');
    directory.props.onOpen(ownCustomer.id);tree=h.render();eq(h.state.detailId,ownCustomer.id,context+' customer details remain available');
    const detail=byClass(tree,'detail-actions');eq(nodes(detail,deniedAction).map(text).join(','),tr('تعديل'),context+' customer card allows correction but not deletion or export');
    ok(text(byClass(tree,'detail-grid')).includes(ownCustomer.data.name)||text(tree).includes(ownCustomer.data.name),context+' existing customer data remains readable');
