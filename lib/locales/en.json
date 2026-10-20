@@ -1381,5 +1381,11 @@
   "محاولة تسجيل فرصة بعيدة عن العميل": "Attempt to record an opportunity away from the customer",
   "تسجيل موقع العميل من فرصة": "Customer location recorded from an opportunity",
   "لم يكن للعميل موقع مسجل؛ اعتُمد موقع هذه الفرصة": "The customer had no recorded location; this opportunity's location was adopted",
-  "الفرصة": "The opportunity"
+  "الفرصة": "The opportunity",
+  "الموديل جديد أم قديم": "Model: new or old",
+  "نوع الجلب جديد أم قديم": "Bushing type: new or old",
+  "نوع الجلب": "Bushing type",
+  "جديد": "New",
+  "قديم": "Old",
+  "ماكينات العميل يسجّلها مسؤوله فقط": "Only the customer's responsible member records its machines"
 }

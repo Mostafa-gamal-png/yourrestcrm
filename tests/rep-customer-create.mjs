@@ -53,7 +53,9 @@ await post(editCustomer(saved.id,{branch:'forged'}),403);
 await post(editCustomer(saved.id,{region:'الغربية'}),403);
 await post(editCustomer(saved.id,{location:'999,999',latitude:null,longitude:null}),400);
 await post({action:'delete',kind:'customer',id:saved.id,version:row(saved.id).version},403);
-for(const kind of ['factory','opportunity','quote'])await post({...create(),kind,parentId:saved.id},403);
+for(const kind of ['opportunity','quote'])await post({...create(),kind,parentId:saved.id},403);
+// A machine of the representative's own customer is theirs to record, so a customer's fields offered as a machine fail on the machine's own rules, not on the role.
+await post({...create(),kind:'factory',parentId:saved.id},400);
 user('peer');await post(editCustomer(saved.id,{contact:'Regional correction'}));check(row(saved.id).assigned_to,'rep');check(row(saved.id).data.contact,'Regional correction');
 user('west');await post(editCustomer(saved.id,{contact:'Forbidden'}),404);check(row(saved.id).data.contact,'Regional correction');
 user('rep');const beforeRace=row(saved.id).version;race=()=>sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='rep'").run();await post(editCustomer(saved.id,{contact:'Race'}),409);check(row(saved.id).version,beforeRace);sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='rep'").run();

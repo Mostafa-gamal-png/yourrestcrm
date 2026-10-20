@@ -59,7 +59,9 @@ export async function POST(req:Request){try{
  // Customer detail edits are regional; reps cannot delete, reassign, or edit commercial records.
  const repCustomerCreate=c.me.role==='rep'&&kind==='customer'&&body.action==='save'&&!body.id&&!body.parentId;
  const repCustomerEdit=c.me.role==='rep'&&kind==='customer'&&body.action==='save'&&!!body.id&&!body.parentId;
- if(c.me.role==='rep'&&['customer','factory','opportunity','quote'].includes(kind)&&!repCustomerCreate&&!repCustomerEdit)throw new CRMError('يمكنك إضافة عميل جديد وتسجيل الزيارات والمتابعات؛ تعديل بيانات العملاء متاح للإدارة فقط',403);
+ // A representative also adds and corrects the machines of their own customers (never deletes them); the ownership is checked below and again at commit.
+ const repMachineSave=c.me.role==='rep'&&kind==='factory'&&body.action==='save';
+ if(c.me.role==='rep'&&['customer','factory','opportunity','quote'].includes(kind)&&!repCustomerCreate&&!repCustomerEdit&&!repMachineSave)throw new CRMError('يمكنك إضافة عميل جديد وتسجيل الزيارات والمتابعات؛ تعديل بيانات العملاء متاح للإدارة فقط',403);
  if(repCustomerCreate&&!body.createKey)throw new CRMError('تعذر تحديد عملية إضافة العميل. أعد فتح النموذج ثم حاول مرة أخرى.');
  const genericCreateKey=kind!=='activity'&&body.action==='save'&&!body.id&&body.createKey?z.string().uuid().parse(body.createKey):null;
  const genericId=genericCreateKey?'crm-'+c.me.id+'-'+genericCreateKey:'';
@@ -80,7 +82,7 @@ export async function POST(req:Request){try{
  const projectedOld=body.id?c.visible.find(r=>r.id===body.id&&r.kind===kind):undefined;
  const old=projectedOld?c.all.find(r=>r.id===projectedOld.id):null;
  if(body.id&&!old)throw new CRMError('السجل غير موجود أو ليس لديك صلاحية',404);
- if(old&&!repCustomerEdit)requireRecordEdit(c.me);
+ if(old&&!repCustomerEdit&&!repMachineSave)requireRecordEdit(c.me);
  if(old&&clockAction&&((clockAction==='start'&&old.data.startedAt)||(clockAction==='finish'&&old.data.endedAt)))return replayReply(old,clockAction==='start'?'_startRequest':'_finishRequest');
  if(old&&serviceHistoryLocked(old,c)&&!(c.me.role==='admin'&&body.action==='delete'))throw new CRMError('سجل هذا الطلب محفوظ بعد فتح طلب أحدث للعميل. سجّل المتابعة في الطلب الحالي.',409);
  if(old&&body.version!==old.version)throw new CRMError('تغيّر السجل بواسطة مستخدم آخر. حدّث الصفحة ثم أعد التعديل.',409);
@@ -106,6 +108,7 @@ export async function POST(req:Request){try{
  if(body.action!=='save')throw new CRMError('عملية غير صحيحة');
  if(kind==='activity')requireLegacyVisit(body.data,old||undefined);
  if(repCustomerEdit&&old&&(bodyData?.assignedTo!==undefined&&bodyData.assignedTo!==old.assignedTo||bodyData?.branch!==undefined&&bodyData.branch!==old.branch))throw new CRMError('لا يمكنك تغيير مسؤول العميل أو فرعه',403);
+ if(repMachineSave){const owner=old?old.assignedTo:c.all.find(r=>r.id===body.parentId&&r.kind==='customer')?.assignedTo;if(owner!==c.me.id)throw new CRMError('ماكينات العميل يسجّلها مسؤوله فقط',403);}
  const input=repCustomerCreate&&bodyData?{...bodyData,assignedTo:c.me.id,branch:c.me.branch}:body.data,inputData=isRecord(input)?input:undefined;
  // Existing routing is canonical on the record, including legacy blank assignees.
  // Do not force a detail correction to choose a new owner or silently repair one.
@@ -142,7 +145,10 @@ export async function POST(req:Request){try{
   }
   assignedTo=data.assignedTo;branch=data.branch;
  }
- if(kind==='factory'){for(const key of ['sourceMachineTypes','sourceMachineCount','sourceFile','sourceRow','sourceKey','sourceHash']){if(old)data[key]=old.data[key];else delete data[key];}}
+ if(kind==='factory'){
+  // The machine's place in the factory and its number are no longer asked for: what an earlier save recorded stays as it was, and a new machine has neither.
+  for(const key of ['sourceMachineTypes','sourceMachineCount','sourceFile','sourceRow','sourceKey','sourceHash','machineSerial','location']){if(old&&old.data[key]!==undefined)data[key]=old.data[key];else delete data[key];}
+ }
  if(kind==='opportunity'){preserveRequestResponsible(data,old||undefined);validateFollowup(data,old||undefined,parent!,c,now);}
  if(kind==='opportunity'||kind==='quote'){data.performedBy=old?recordAuthorId(old,c.members)||'':c.me.id;data.recordedByEmail=old?old.data.recordedByEmail||'':c.user.email.toLowerCase();}
 
@@ -180,7 +186,7 @@ export async function POST(req:Request){try{
  if(kind==='customer'&&old&&(old.assignedTo!==assignedTo||old.branch!==branch)){
   stmts.push(c.db.prepare(`WITH RECURSIVE descendants(id) AS (SELECT id FROM crm_records WHERE parent_id=? UNION ALL SELECT r.id FROM crm_records r JOIN descendants d ON r.parent_id=d.id) UPDATE crm_records SET assigned_to=?,branch=?,updated_at=?,version=version+1 WHERE id IN (SELECT id FROM descendants) AND ${gate}`).bind(id,assignedTo,branch,now,id,revision,mutation));
  }
- if(kind==='factory'&&old&&['machineBrand','machineModel','machineType','machineSerial','boardDimensions','quantity','name'].some(k=>old.data[k]!==data[k])){
+ if(kind==='factory'&&old&&['machineBrand','machineModel','machineType','modelCondition','bushingCondition','boardDimensions','quantity','name'].some(k=>old.data[k]!==data[k])){
   stmts.push(c.db.prepare(`UPDATE crm_records SET data=json_set(data,'$.technicalStatus','pending','$.technicalBy','','$.technicalAt','','$.stage',CASE WHEN json_extract(data,'$.stage') IN ('quoted','negotiation') THEN 'technical' ELSE json_extract(data,'$.stage') END),updated_at=?,version=version+1 WHERE parent_id=? AND kind='opportunity' AND json_extract(data,'$.stage') NOT IN ('won','lost') AND ${gate}`).bind(now,id,id,revision,mutation));
  }
  if(syncFollowup)stmts.push(c.db.prepare(`UPDATE crm_records SET data=json_set(data,'$.nextAction',?,'$.nextDate',?),updated_at=?,version=version+1 WHERE id=? AND version=? AND json_extract(data,'$.stage') NOT IN ('won','lost') AND ${gate}`).bind(data.nextAction,data.nextDate,now,parent!.id,parent!.version,id,revision,mutation));

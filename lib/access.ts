@@ -51,6 +51,7 @@ export function salesRecordAccess(members:Member[],me:Member){
   },
   canManageMaster(row:Row){return me.role==='rep'&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo));},
   canEditCustomerDetails(row:Row){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo));},
+  canEditMachine(row:Row){return row.kind==='factory'&&(me.role==='rep'?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo)));},
  };
 }
 
@@ -63,6 +64,9 @@ export function canReadSalesRecord(row:Row,members:Member[],me:Member){
  const author=recordAuthorId(row,members);
  return !!author&&salesScopeMemberIds(members,me).has(author);
 }
+
+/** A machine belongs to its customer's responsible member: a representative adds and corrects the machines of their own customers (never deletes them), the sales roles those of their team. */
+export function canEditMachineRecord(row:Row,members:Member[],me:Member){return row.kind==='factory'&&(me.role==='rep'?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||salesScopeMemberIds(members,me).has(row.assignedTo)));}
 
 /** Regional reps may edit customer details; assignment and deletion remain restricted by the route. */
 export function canManageMasterRecord(row:Row,members:Member[],me:Member){return me.role==='rep'&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||salesScopeMemberIds(members,me).has(row.assignedTo));}

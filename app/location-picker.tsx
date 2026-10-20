@@ -9,8 +9,10 @@ import './location-picker.css';
 export type PickedPoint={latitude:number;longitude:number};
 type View={center:[number,number];zoom:number};
 /** Where the map opens when the customer has no location yet: its region, else the whole kingdom. */
-const regionViews:Record<string,View>={'الشرقية':{center:[26.43,50.1],zoom:8},'الغربية':{center:[21.54,39.17],zoom:8},'الوسطى':{center:[24.71,46.67],zoom:8},'الشمالية':{center:[28.4,36.57],zoom:7},'الجنوبية':{center:[18.22,42.5],zoom:8}};
+const regionViews:Record<string,View>={'الشرقية':{center:[26.4,49.7],zoom:9},'الغربية':{center:[21.54,39.17],zoom:8},'الوسطى':{center:[24.71,46.67],zoom:8},'الشمالية':{center:[28.4,36.57],zoom:7},'الجنوبية':{center:[18.22,42.5],zoom:8}};
 const kingdom:View={center:[24,45],zoom:5};
+/** The Kingdom's envelope: the map cannot be dragged away from it, and the eastern region opens close enough that its neighbours are out of the frame. */
+const kingdomBounds:[[number,number],[number,number]]=[[15.3,34.3],[32.4,55.8]];
 const pinHtml='<svg viewBox="0 0 24 24" width="38" height="38" aria-hidden="true"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" fill="currentColor" stroke="#fff" stroke-width="1.4"/><circle cx="12" cy="10" r="3" fill="#fff"/></svg>';
 const toPoint=(latlng:Leaflet.LatLng):PickedPoint=>{const wrapped=latlng.wrap();return{latitude:Number(wrapped.lat.toFixed(7)),longitude:Number(wrapped.lng.toFixed(7))};};
 export const pointLabel=(value:PickedPoint)=>`${value.latitude.toFixed(7)}, ${value.longitude.toFixed(7)}`;
@@ -29,7 +31,7 @@ function PickerMap({initial,region,onChange}:{initial:PickedPoint|null;region:st
    if(!alive||!container.current)return;
    const L=mod.default||mod;
    const view:View=first?{center:[first.latitude,first.longitude],zoom:16}:regionViews[where]||kingdom;
-   const m=L.map(container.current,{center:view.center,zoom:view.zoom,minZoom:2,maxZoom:19,zoomControl:false});map.current=m;
+   const m=L.map(container.current,{center:view.center,zoom:view.zoom,minZoom:5,maxZoom:19,maxBounds:kingdomBounds,maxBoundsViscosity:1,zoomControl:false});map.current=m;
    L.control.zoom({position:'bottomleft',zoomInTitle:tr('تكبير','Zoom in'),zoomOutTitle:tr('تصغير','Zoom out')}).addTo(m);
    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'}).on('tileerror',()=>{if(alive)setTilesFailed(true);}).on('tileload',()=>{if(alive)setTilesFailed(false);}).addTo(m);
    const place=(latlng:Leaflet.LatLng)=>{

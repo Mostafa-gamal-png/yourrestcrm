@@ -87,6 +87,27 @@ for(const kind of ['customer','factory','opportunity','quote']){
 }
 await post(crm,{action:'save',kind:'customer',id:'factory',version:raw('factory').version,data:row('factory').data},200);
 await post(crm,{action:'delete',kind:'factory',id:'machine',version:raw('machine').version},403);
+// A representative records the machines of their own customers: model and bushings new or old, no place and no number; never deletes, never touches another's.
+{
+ record('own-customer','customer',null,null,{name:'Own customer',phone:'0552222222',region:'الشرقية',branch:'الرئيسي',assignedTo:'rep'},'rep');
+ record('peer-customer','customer',null,null,{name:'Peer customer',phone:'0553333333',region:'الشرقية',branch:'الرئيسي',assignedTo:'peer'},'peer');
+ record('peer-machine','factory','peer-customer',null,{name:'Peer machine',machineBrand:'QA',machineModel:'P1',machineType:'mobile'},'peer');
+ record('own-machine','factory','own-customer',null,{name:'Own machine',machineBrand:'QA',machineModel:'O1',machineType:'mobile',machineSerial:'OLD-SERIAL-7',location:'old place',modelCondition:''},'rep');
+ const specs=(extra={})=>({name:'خط إنتاج 1',recordType:'machine',quantity:1,machineBrand:'Besser',machineModel:'V3',machineType:'stationary',modelCondition:'new',bushingCondition:'old',...extra});
+ const created=await post(crm,{action:'save',kind:'factory',createKey:crypto.randomUUID(),parentId:'own-customer',data:specs({machineSerial:'FORGED-1',location:'forged place'})});
+ const made=row(created.id);
+ assert.deepEqual([made.assigned_to,made.data.modelCondition,made.data.bushingCondition,made.data.machineSerial,made.data.location],['rep','new','old',undefined,undefined]);checks++;
+ await post(crm,{action:'save',kind:'factory',createKey:crypto.randomUUID(),parentId:'peer-customer',data:specs()},403);
+ await post(crm,{action:'save',kind:'factory',createKey:crypto.randomUUID(),parentId:'own-customer',data:specs({modelCondition:'broken'})},400);
+ await post(crm,{action:'save',kind:'factory',createKey:crypto.randomUUID(),parentId:'own-customer',data:specs({machineModel:''})},400);
+ await post(crm,{action:'save',kind:'factory',id:'own-machine',version:raw('own-machine').version,data:specs({name:'Own machine',machineModel:'O2',machineSerial:'FORGED-2',location:'forged'})});
+ const edited=row('own-machine').data;
+ assert.deepEqual([edited.machineModel,edited.modelCondition,edited.bushingCondition,edited.machineSerial,edited.location],['O2','new','old','OLD-SERIAL-7','old place']);checks++;
+ await post(crm,{action:'save',kind:'factory',id:'peer-machine',version:raw('peer-machine').version,data:specs({name:'Peer machine'})},403);
+ await post(crm,{action:'delete',kind:'factory',id:'own-machine',version:raw('own-machine').version},403);
+ const projection=(await (await crm.GET()).json()).records;
+ assert.deepEqual([projection.find(r=>r.id==='own-machine')?.data._masterReadOnly,projection.find(r=>r.id==='peer-machine')?.data._masterReadOnly],[undefined,true]);checks++;
+}
 await post(crm,{action:'delete',kind:'activity',id:'contact-outside',version:raw('contact-outside').version},404);
 // Shared regional customers remain available for visits, even assigned to another team.
 const visitBody=(customerId='factory',extra={})=>({createKey:crypto.randomUUID(),customerId,customerVersion:raw(customerId).version,timingMode:'automatic',elapsedMilliseconds:2300,data:{...baseContact,performedBy:'outside',responsibleId:'outside',recordedByEmail:'outside@yourrest.org'},...extra});

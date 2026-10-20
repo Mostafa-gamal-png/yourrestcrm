@@ -53,7 +53,7 @@ for(const role of ['rep','supervisor','manager','admin','customer_service']){
 const location=moduleFrom('lib/customer-location.ts',()=>({}));
 const {CustomerRows}=moduleFrom('app/customer-machines.tsx',name=>{
  if(name==='@/lib/customer-location')return location;
- if(name==='@/lib/machines')return {machineTypeLabels:{mobile:'متحركة'},completeMachineSpecs:()=>true};
+ if(name==='@/lib/machines')return {machineTypeLabels:{mobile:'متحركة'},machineConditionLabels:{'':'غير محدد',new:'جديد',old:'قديم'},completeMachineSpecs:()=>true};
  return mockedRequire(name);
 },'\nexport {CustomerRows};\n');
 const customer={id:'factory',kind:'customer',assignedTo:'owner',branch:'الرئيسي',data:{name:'Regional factory',region:'الغربية',location:'21.5, 39.2',_masterReadOnly:true}};
@@ -66,6 +66,15 @@ html=renderToStaticMarkup(React.createElement(CustomerRows,{...rowProps,customer
 check(html.includes('إضافة ماكينة'),true,'authorized master controls retained');check(html.includes('>تعديل<'),true,'authorized machine edit retained');
 html=renderToStaticMarkup(React.createElement(CustomerRows,{...rowProps,canEdit:false,customer:{...customer,data:{...customer.data,_masterReadOnly:false}},linked:[{...machine,data:{...machine.data,_masterReadOnly:false}}]}));
 for(const text of ['إضافة ماكينة','>تعديل<'])check(html.includes(text),false,'rep role forbids own unflagged saved-row action '+text);
+// A representative adds and corrects the machines of their own customers while the customer's own details stay closed to them.
+{
+ const own={...rowProps,canEdit:false,canAddMachine:true,canEditMachine:true,customer:{...customer,data:{...customer.data,_masterReadOnly:false}},linked:[{...machine,data:{...machine.data,_masterReadOnly:false,modelCondition:'new',bushingCondition:'old'}}]};
+ html=renderToStaticMarkup(React.createElement(CustomerRows,own));
+ for(const text of ['إضافة ماكينة','>تعديل<','الموديل جديد أم قديم','نوع الجلب','>جديد<','>قديم<'])check(html.includes(text),true,'representative sees on their own customer '+text);
+ for(const text of ['رقم الماكينة','موقع الماكينة'])check(html.includes(text),false,'the machine card no longer shows '+text);
+ html=renderToStaticMarkup(React.createElement(CustomerRows,{...own,canAddMachine:false,linked:[{...own.linked[0],data:{...own.linked[0].data,_masterReadOnly:true}}]}));
+ for(const text of ['إضافة ماكينة','>تعديل<'])check(html.includes(text),false,'representative has no '+text+' on a customer or machine that is not theirs');
+}
 for(const text of ['زيارة جديدة','سجل الزيارات','بيانات العميل','موقع المصنع','التفاصيل والمتابعات'])check(html.includes(text),true,'rep role keeps own saved-row reader/creation action '+text);
 // Render the real CRM with a retained Visits staff filter; directory and map must ignore it.
 // Seed hook state by its declared name, so this exercises the component's filtering and controls.
