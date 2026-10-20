@@ -21,7 +21,7 @@ let checks = 0, browser, app;
 const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
-const DESKTOP = {width: 1280, height: 900};
+const DESKTOP = {width: 1280, height: 900}, PHONE = {width: 390, height: 844};
 const OWN = 'مصنع المندوب الأول', OTHER = 'مصنع الزميل';
 
 try {
@@ -35,8 +35,8 @@ try {
     .bind(JSON.stringify({name: 'خط الزميل', recordType: 'machine', quantity: 1, machineBrand: 'Besser', machineModel: 'V1', machineType: 'stationary', modelCondition: 'old', bushingCondition: 'new', machineSerial: 'HIDDEN-SERIAL-9', location: 'HIDDEN-PLACE'}), now, now).run();
   const machineRows = async () => (await app.db.prepare("SELECT id,assigned_to,data,version FROM crm_records WHERE kind='factory' ORDER BY created_at,id").all()).results.map(row => ({...row, data: JSON.parse(row.data)}));
 
-  async function open(memberId, {native = false} = {}) {
-    const context = await browser.newContext({ignoreHTTPSErrors: true, viewport: DESKTOP, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', geolocation: {latitude: 26.437341, longitude: 50.034499, accuracy: 8}, permissions: ['geolocation']});
+  async function open(memberId, {native = false, viewport = DESKTOP} = {}) {
+    const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', geolocation: {latitude: 26.437341, longitude: 50.034499, accuracy: 8}, permissions: ['geolocation']});
     const cookie = await app.login(memberId), [name, ...value] = cookie.split('=');
     await context.addCookies([{name, value: value.join('='), url: app.origin, httpOnly: true, secure: true, sameSite: 'Lax'}]);
     const page = await context.newPage();
@@ -131,6 +131,41 @@ try {
   await enDialog.waitFor({state: 'detached'});
   await shot(rep, 'machines-card-rep-en');
   await rep.context().close();
+
+  // ---- the representative on the phone: the customer's sheet itself offers adding a machine (its «Machines» tab says where)
+  {
+    const phone = await open('rep', {native: {memberId: 'rep', regionScope: 'eastern'}, viewport: PHONE});
+    await phone.locator('.mobile-tab[data-page="customer"]').click();
+    await phone.locator('article.customer-mobile-card').first().waitFor();
+    const cardOf = name => phone.locator('article.customer-mobile-card').filter({hasText: name}).first();
+    await cardOf(OWN).getByRole('button', {name: /^بيانات العميل/}).first().click();
+    const sheet = phone.locator('[data-slot=sheet-content]');
+    await sheet.waitFor();
+    check(await sheet.locator('.detail-actions').getByRole('button', {name: 'إضافة ماكينة / خط إنتاج'}).count(), 1, 'the sheet of their own customer offers adding a machine at the top');
+    await sheet.getByRole('tab', {name: 'الماكينات'}).click();
+    const inTab = sheet.locator('.related-list').getByRole('button', {name: 'إضافة ماكينة / خط إنتاج'});
+    check(await inTab.count(), 1, 'and the Machines tab, which is empty for this customer, offers it too');
+    await shot(phone, 'machines-sheet-phone');
+    await inTab.click();
+    const form = phone.locator('[data-slot=dialog-content]');
+    await form.waitFor();
+    await form.locator('label.voice-field', {hasText: 'اسم / رقم الماكينة أو خط الإنتاج'}).locator('input').fill('خط الهاتف 2');
+    await form.locator('label.voice-field', {hasText: 'الشركة المصنعة للماكينة'}).locator('input').fill('Hess');
+    await pick(form, 'الموديل', 'قديم');
+    const savedPhone = phone.waitForResponse(response => response.url().endsWith('/api/crm') && response.request().method() === 'POST');
+    await form.getByRole('button', {name: /^حفظ /}).click();
+    check((await savedPhone).status(), 200, 'a machine added from the phone\'s sheet is saved');
+    const made = (await machineRows()).find(row => row.data.name === 'خط الهاتف 2');
+    check([made.assigned_to, made.data.modelCondition], ['rep', 'old'], 'for the representative\'s own customer');
+    await form.waitFor({state: 'detached'});
+    await phone.locator('[data-slot=sheet-content]').getByRole('button', {name: 'Close'}).click();
+    await phone.locator('[data-slot=sheet-content]').waitFor({state: 'detached'});
+    await cardOf(OTHER).getByRole('button', {name: /^بيانات العميل/}).first().click();
+    const otherSheet = phone.locator('[data-slot=sheet-content]');
+    await otherSheet.waitFor();
+    check(await otherSheet.getByRole('button', {name: 'إضافة ماكينة / خط إنتاج'}).count(), 0, 'a colleague\'s customer offers no machine to add');
+    await phone.context().close();
+  }
 
   // ---- the sales manager reads it
   const manager = await open('sm');
