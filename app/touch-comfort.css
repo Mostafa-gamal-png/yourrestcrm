@@ -1,0 +1,11 @@
+/* What a finger needs on every touch screen, including tablets wide enough for the desktop layout. */
+@media(pointer:coarse){
+ .app-shell .btn,.app-shell .btn.small,.app-shell .icon-button,.app-shell .text-button,.app-shell .visit-customer,.app-shell .visit-number,.app-shell .support-link,.app-shell .support-chip{min-height:44px}
+ .app-shell .icon-button,.app-shell .visit-number{min-width:44px}
+ .app-shell .profile button{display:grid;place-items:center;min-width:44px;min-height:44px}
+ .app-shell input:not([type=checkbox]):not([type=radio]),.app-shell select{min-height:44px}
+ .app-shell details>summary{min-height:44px;align-content:center}
+ .cm-canvas .leaflet-control-zoom a,.leaflet-touch .leaflet-bar a{width:40px;height:40px;line-height:40px}
+ .app-shell .filters .btn{min-width:44px}
+ .cm-legend button{min-height:40px}
+}

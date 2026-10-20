@@ -23,7 +23,7 @@
 .tracking-more{justify-self:start}
 /* The stage bar: a dot per step joined by a line, filled up to the current step. */
 .tracking-steps{list-style:none;margin:0;padding:0;display:flex;align-items:flex-start}
-.tracking-steps li{flex:1 1 0;min-width:0;display:grid;justify-items:center;align-content:start;gap:5px;position:relative;text-align:center;font-size:11.5px;line-height:1.35;color:var(--muted-foreground)}
+.tracking-steps li{flex:1 1 0;min-width:0;display:grid;justify-items:center;align-content:start;gap:5px;position:relative;text-align:center;font-size:12px;line-height:1.35;color:var(--muted-foreground)}
 .tracking-steps li::before{content:"";position:absolute;top:7px;inset-inline-start:-50%;width:100%;height:2px;background:var(--border)}
 .tracking-steps li:first-child::before{display:none}
 .tracking-dot{position:relative;z-index:1;width:16px;height:16px;border-radius:50%;border:2px solid var(--border);background:var(--background)}

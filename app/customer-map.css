@@ -17,7 +17,7 @@
 .cm-search-result>svg{flex:none;color:var(--muted-foreground);margin-top:4px}
 .cm-search-result>span{flex:1;min-width:0}
 .cm-search-result strong{display:block;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
-.cm-search-result small{display:block;font-size:11px;line-height:1.65;color:var(--muted-foreground);overflow-wrap:anywhere;margin-top:2px}
+.cm-search-result small{display:block;font-size:12px;line-height:1.65;color:var(--muted-foreground);overflow-wrap:anywhere;margin-top:2px}
 .cm-search-result>i{width:9px;height:9px;flex:none;border-radius:50%;margin-top:8px}
 .cm-search-result .cm-result-unmapped{color:var(--muted-foreground)}
 .cm-search-empty{padding:22px 18px;font-size:13px;color:var(--muted-foreground);line-height:1.8;margin:0}
@@ -27,12 +27,12 @@
 .cm-control:disabled{opacity:.55;cursor:not-allowed}
 .cm-control[aria-expanded=true]{background:var(--accent);border-color:var(--primary);color:var(--primary)}
 .cm-filter-dot{height:7px;width:7px;border-radius:50%;background:var(--primary);position:absolute;top:6px;inset-inline-end:6px}
-.cm-map-count{font-size:11px;font-weight:600;white-space:nowrap;padding:5px 8px;border-radius:12px;background:var(--card);color:var(--muted-foreground);box-shadow:0 2px 9px #15203812;font-variant-numeric:tabular-nums}
+.cm-map-count{font-size:12px;font-weight:600;white-space:nowrap;padding:5px 8px;border-radius:12px;background:var(--card);color:var(--muted-foreground);box-shadow:0 2px 9px #15203812;font-variant-numeric:tabular-nums}
 .cm-panel{position:absolute;inset-inline-start:14px;top:132px;bottom:18px;display:flex;flex-direction:column;min-height:0;width:min(360px,calc(100% - 28px));background:var(--card);border:1px solid var(--border);border-radius:16px;outline:none;z-index:5;box-shadow:0 6px 24px #15203826;visibility:hidden;pointer-events:none;opacity:0;transform:translateY(8px);transition:opacity .15s ease,transform .15s ease,visibility .15s ease;overflow:hidden}
 .cm-panel.is-open{visibility:visible;pointer-events:auto;opacity:1;transform:translateY(0)}
 .cm-panel-header{display:flex;align-items:center;justify-content:space-between;padding:13px 14px 12px;gap:10px;border-bottom:1px solid var(--border);flex:none}
 .cm-panel-header strong{display:block;font-size:16px}
-.cm-panel-header small{display:block;color:var(--muted-foreground);font-size:11px;line-height:1.6;margin-top:4px}
+.cm-panel-header small{display:block;color:var(--muted-foreground);font-size:12px;line-height:1.6;margin-top:4px}
 .cm-panel-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
 .cm-list-summary{display:flex;flex-direction:column;gap:7px;padding:13px 15px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
 .cm-list-summary strong{color:var(--foreground);font-size:13px;line-height:1.6}
@@ -43,9 +43,9 @@
 .cm-customer-select:hover{background:var(--accent)}
 .cm-customer-top{display:flex;align-items:start;gap:7px;width:100%;min-width:0}
 .cm-customer-top>strong{font-size:14px;line-height:1.7;flex:1;min-width:0;overflow-wrap:anywhere}
-.cm-activity-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:11px;line-height:1.6;background:var(--muted);border:1px solid var(--border);border-radius:20px;padding:3px 8px;overflow-wrap:anywhere;text-align:start}
+.cm-activity-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:12px;line-height:1.6;background:var(--muted);border:1px solid var(--border);border-radius:20px;padding:3px 8px;overflow-wrap:anywhere;text-align:start}
 .cm-customer-top .cm-activity-badge{max-width:40%}
-.cm-customer-meta,.cm-customer-place{font-size:11px;color:var(--muted-foreground);line-height:1.7;overflow-wrap:anywhere}
+.cm-customer-meta,.cm-customer-place{font-size:12px;color:var(--muted-foreground);line-height:1.7;overflow-wrap:anywhere}
 .cm-customer-place{display:flex;align-items:start;gap:4px}
 .cm-customer-place svg{flex:none;margin-top:2px}
 .cm-list-empty{padding:28px 16px;text-align:center;color:var(--muted-foreground);font-size:13px}
@@ -73,7 +73,7 @@
 .cm-selected-heading h2{flex:1;min-width:0;margin:6px 0 4px;font-size:16px;font-weight:700;line-height:1.6;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cm-selected-heading .cm-close{margin-inline-end:-7px;margin-top:-4px}
 .cm-selected-meta{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:4px 0 9px}
-.cm-selected-code{max-width:100%;font-size:11px;color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cm-selected-code{max-width:100%;font-size:12px;color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cm-selected-location{display:flex;align-items:flex-start;gap:5px;margin:0 0 12px;color:var(--muted-foreground);font-size:12px;line-height:1.7;min-width:0}
 .cm-selected-location>svg{flex:none;margin-top:3px}
 .cm-selected-location>span{min-width:0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -83,7 +83,7 @@
 .cm-directions-error{color:var(--destructive,#b43636)}
 .cm-directions-ready{color:var(--muted-foreground)}
 .cm-legend{position:absolute;bottom:26px;inset-inline-end:12px;max-width:calc(100% - 75px);display:flex;flex-wrap:wrap;justify-content:center;gap:2px 7px;border:1px solid var(--border);border-radius:13px;background:var(--card);padding:2px 9px;box-shadow:0 3px 14px #15203814;z-index:2}
-.cm-legend button{display:flex;align-items:center;gap:5px;border:0;border-radius:5px;background:transparent;padding:4px 1px;font-size:11px;color:var(--foreground);min-height:38px}
+.cm-legend button{display:flex;align-items:center;gap:5px;border:0;border-radius:5px;background:transparent;padding:4px 1px;font-size:12px;color:var(--foreground);min-height:38px}
 .cm-legend button[aria-pressed=true]{font-weight:700;text-decoration:underline;text-underline-offset:4px}
 .cm-legend i,.cm-activity-filter i,.cm-activity-badge i{width:9px;height:9px;display:inline-block;flex:none;border-radius:50%;box-shadow:0 0 0 1px #0001}
 .cm-message{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;z-index:1;padding:145px 25px 75px;text-align:center;background:#edf0f5e6;color:#354054;font-size:14px;pointer-events:none}
@@ -93,7 +93,7 @@
 .cm-map-marker{border:0;background:none}
 .cm-pin{width:23px;height:23px;margin:3.5px;display:flex;align-items:center;justify-content:center;border:2.5px solid white;border-radius:50%;box-shadow:0 1px 5px #13284070}
 .cm-pin-group{width:30px;height:30px;margin:0;padding:3px}
-.cm-pin-group>span{display:flex;align-items:center;justify-content:center;background:#fff;color:#243146;font-size:11px;font-weight:700;width:100%;height:100%;border-radius:50%;font-family:Arial,sans-serif}
+.cm-pin-group>span{display:flex;align-items:center;justify-content:center;background:#fff;color:#243146;font-size:12px;font-weight:700;width:100%;height:100%;border-radius:50%;font-family:Arial,sans-serif}
 .cm-tooltip{white-space:pre-line;display:block;max-width:260px;max-height:200px;overflow:auto;text-align:start;font-family:Tahoma,Arial,sans-serif;line-height:1.8}
 .cm-canvas .leaflet-marker-icon:focus-visible{outline:3px solid #142c71;outline-offset:3px;border-radius:50%}
 .cm-canvas .leaflet-control-zoom a{width:38px;height:38px;line-height:38px}
@@ -108,15 +108,15 @@
  .cm-floating-toolbar{margin-top:9px;gap:7px}
  .cm-control{font-size:12px;padding:8px 11px;gap:5px}
  .cm-map-controls{gap:6px}
- .cm-map-count{font-size:10px;padding:5px 7px}
+ .cm-map-count{font-size:12px;padding:5px 7px}
  .cm-panel{inset-inline:10px;top:123px;bottom:18px;width:auto;max-width:440px}
  .cm-selected-card{inset-inline:10px;bottom:24px;width:auto;max-width:460px;max-height:calc(100% - 149px);padding:10px 13px 13px;border-radius:17px}
  .cm-selected-heading h2{font-size:16px}
  .cm-selected-meta{margin-bottom:7px}
  .cm-selected-location{margin-bottom:10px}
  .cm-legend{inset-inline-end:9px;bottom:27px;max-width:calc(100% - 70px);gap:0 6px;padding:1px 7px}
- .cm-legend button{font-size:10px;min-height:36px;gap:4px}
- .cm-warning{top:126px;font-size:11px}
+ .cm-legend button{font-size:12px;min-height:40px;gap:4px}
+ .cm-warning{top:126px;font-size:12px}
  .cm-canvas .leaflet-control-zoom{margin-bottom:28px}
  .cm-shell.has-selection .leaflet-control-zoom{display:none}
 }

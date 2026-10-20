@@ -4,7 +4,7 @@
 .target-gauge-track,.target-gauge-fill{fill:none;stroke-width:14}.target-gauge-track{stroke:var(--border)}.target-gauge-fill{stroke:var(--gauge-color);stroke-linecap:round;transition:stroke-dasharray 180ms ease-out}
 .target-gauge .target-gauge-value{fill:var(--foreground);font-weight:750;font-variant-numeric:tabular-nums;font-family:inherit}
 .target-gauge .target-gauge-label{font-size:12px;line-height:1.7;color:var(--muted-foreground)}
-.target-gauge .target-gauge-empty{font-size:11px;line-height:1.6;color:var(--muted-foreground);font-weight:400;white-space:normal}
+.target-gauge .target-gauge-empty{font-size:12px;line-height:1.6;color:var(--muted-foreground);font-weight:400;white-space:normal}
 .target-gauge-compact{width:112px;max-width:100%;gap:0}.target-gauge-compact svg{width:112px}.target-gauge-compact .target-gauge-value{font-weight:700}
 @media(max-width:600px){.target-gauge svg{width:132px}.target-gauge-compact svg{width:108px}}
 @media(prefers-reduced-motion:reduce){.target-gauge-fill{transition:none}}

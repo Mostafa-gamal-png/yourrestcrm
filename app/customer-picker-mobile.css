@@ -31,7 +31,7 @@
 .visit-customer-picker .visit-new-customer input[aria-invalid=true]{border-color:#be334f;outline-color:#be334f}
 .visit-customer-picker .visit-new-customer .field{min-width:0}
 .visit-customer-picker .visit-new-customer .field>span{font-size:13px;font-weight:500}
-.visit-customer-picker .visit-new-customer .field>small{font-size:11px;line-height:1.5}
+.visit-customer-picker .visit-new-customer .field>small{font-size:12px;line-height:1.5}
 .visit-new-customer-extra{margin-top:14px;border-top:1px solid var(--border)}
 .visit-new-customer-extra>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;cursor:pointer;color:var(--primary);font-size:13px;font-weight:600;list-style:none}
 .visit-new-customer-extra>summary::-webkit-details-marker{display:none}

@@ -51,8 +51,8 @@
 .mobile-record-dialog .visit-sales-details>summary:before{content:'+';font-size:20px;line-height:1;color:var(--primary);font-weight:400;flex-shrink:0}
 .mobile-record-dialog .visit-sales-details[open]>summary:before{content:'−'}
 .mobile-record-dialog .visit-sales-details>summary>span:first-of-type{flex:1;min-width:0}
-.mobile-record-dialog .visit-sales-details>summary small{display:block;font-size:11px;color:var(--muted-foreground);font-weight:400;margin-top:2px}
-.mobile-record-dialog .visit-sales-details>summary .badge{font-size:11px;white-space:normal;text-align:center;max-width:120px}
+.mobile-record-dialog .visit-sales-details>summary small{display:block;font-size:12px;color:var(--muted-foreground);font-weight:400;margin-top:2px}
+.mobile-record-dialog .visit-sales-details>summary .badge{font-size:12px;white-space:normal;text-align:center;max-width:120px}
 .mobile-record-dialog .visit-extended-fields{padding:8px 14px 14px;margin-bottom:0}
 .mobile-record-dialog .requested-products{padding:10px;min-width:0}
 .mobile-record-dialog .requested-products>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}

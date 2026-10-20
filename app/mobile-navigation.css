@@ -23,7 +23,7 @@
  .app-shell>.workspace{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
  .mobile-bottom-navigation{position:fixed;inset-inline:0;bottom:0;z-index:30;display:grid;align-items:stretch;gap:2px;padding:7px max(8px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:var(--card);border-top:1px solid var(--border);box-shadow:0 -4px 24px #151b380b;isolation:isolate}
  .mobile-bottom-navigation[hidden]{display:none}
- .mobile-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;min-height:56px;padding:0 2px;border:0;border-radius:10px;background:transparent;color:var(--muted-foreground);font-size:11px;line-height:1.4;font-weight:500}
+ .mobile-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;min-height:56px;padding:0 2px;border:0;border-radius:10px;background:transparent;color:var(--muted-foreground);font-size:12px;line-height:1.4;font-weight:500}
  .mobile-tab-icon{display:flex;align-items:center;justify-content:center;width:48px;max-width:100%;height:29px;border-radius:10px;transition:background .15s,color .15s}
  .mobile-tab.is-active{color:var(--primary);font-weight:700}
  .mobile-tab.is-active .mobile-tab-icon{background:var(--accent)}
