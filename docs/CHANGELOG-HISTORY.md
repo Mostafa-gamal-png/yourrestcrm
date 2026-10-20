@@ -4,6 +4,17 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Phone and tablet comfort: touch targets, readable text, a working customer sheet, a lighter first load (2026-10-20, second release of the day, schema 16, no migration)
+
+- **Touch targets.** Every control a finger must hit is at least 44 px on every touch screen, tablets wide enough for the desktop layout (1024 px and up) included: buttons, links, chips, the disclosure rows of the folded sections, the inputs, the map's zoom buttons, the logout button, the table links. The same 18 pages at 360 px: 88 controls under 40 px before, none after (the map's legal credit link excepted).
+- **Text.** Nothing visible is under 12 px any more (556 occurrences on the same 18 pages at 360 px before: the bottom-bar labels, the customer card's chips, the tracking step labels, badges, captions; the map's legal credit excepted).
+- **The customer sheet.** The close button is 44 px (it was 16 px) at the reading end so it no longer crowds the title; the tabs sit in one scrollable row 44 px tall (on a 360 px phone the last tab, «سجل التغييرات», fell out of its bar onto the fields below); and the sheet's tabs and fields now follow the reading direction (Radix forced left-to-right on the whole sheet: the labels, values and the tab order were mirrored in Arabic).
+- **Tablets (768–1023 px).** The page header's actions wrapped past the screen edge by 63–120 px; they now wrap onto a second line. 17 of the 18 pages overflowed at 768, 820, 900 and 1023 px; none overflows at 360, 412, 768, 820, 1023, 1024 and 1180 px, with and without the phone's emulation.
+- **A lighter first load.** The build now precompresses the scripts and styles (`--precompress`), which the server serves directly: the first load of a phone is about 0.6 MB instead of about 2.2 MB; later visits download nothing (the files are cached as immutable).
+- Also in this release: the representative's «add machine» button in the customer sheet (top and the Machines tab) that the machines release missed.
+- Changed: `app/touch-comfort.css` (new), `app/globals.css`, `app/rep-mobile-shell.css`, twenty other stylesheets (font sizes only), `app/crm-app.tsx`, `components/ui/sheet.tsx`, `scripts/build-independent.mjs`, `portable/activate-ui-refresh-update.cjs` (the machines release's activation name, so the day's backup is reused). Test: `tests/mobile-comfort-browser.mjs` (177 checks); `tests/baseline-update-activation.mjs` covers the new same-day pair.
+- No migration. A package of its own (`update-mobile-comfort`) carrying everything of the machines package. Going back to an earlier release changes only the look.
+
 ## Machines recorded by the representative, model and bushings as lists, the Kingdom's border on the maps (2026-10-20, schema 16, no migration)
 
 - A representative adds and corrects the machines of **their own customers** (the customer's responsible member owns the machine record); a colleague's customer offers neither, the server refuses it (403) before any field is judged, and deleting stays with the administrator. Supervisors, managers and the administrator are as before.
