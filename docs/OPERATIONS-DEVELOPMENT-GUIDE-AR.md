@@ -372,6 +372,24 @@ node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-الق�
 
 **الاختبارات:** `tests/whatsapp.mjs` و`tests/service-wording.mjs` و`tests/service-tracking.mjs` و`tests/service-tracking-ui.mjs` و`tests/complaints.mjs` و`tests/complaints-ui.mjs` (البوابة الافتراضية)، `tests/complaints-http.mjs` و`tests/service-queue-http.mjs` (بوابة البناء)، `tests/complaints-browser.mjs` و`tests/service-queue-browser.mjs` و`tests/service-kpi-browser.mjs` و`tests/support-browser.mjs` و`tests/dictation-browser.mjs` (بوابة المتصفح).
 
+## 9-م. الماكينات: المندوب يسجّل ماكينات عملائه، والموديل والجلب
+
+**القاعدة:** سجل الماكينة (`factory`) يتبع مسؤول عميله (`assigned_to` = مسؤول العميل). **المندوب** يضيف ويعدّل ماكينات **عملائه هو** فقط ولا يحذف؛ المشرف ومدير المبيعات ومدير النظام كما كانوا (فريقهم). لا يرى موظف خدمة العملاء الماكينات.
+
+| الموضع | ما فيه |
+|---|---|
+| `lib/access.ts` | `canEditMachine` (داخل `salesRecordAccess`) و`canEditMachineRecord`: المندوب `row.assignedTo===me.id`، والبقية فريقهم. تسقط عنهما `_masterReadOnly` في `scopeRecords` (`lib/crm.ts`) |
+| `lib/crm-server.ts` `masterMutationGuard` | فرع للمندوب على `factory`: يرفض ماكينة غير عميله (403) ثم `accessGuard` يعيد فحص الإسناد عند الحفظ |
+| `app/api/crm/route.ts` | `repMachineSave`: يمرّ حفظ المندوب لـ`factory` فقط (الحذف يبقى مرفوضًا)، ويتحقق من مسؤول العميل (أو مسؤول الماكينة عند التعديل) **قبل** فحص الحقول، ولا يمر عبر `requireRecordEdit` |
+| `app/crm-app.tsx` و`app/customer-machines.tsx` | `canAddMachineTo(customer)` و`canEditMachine`: زر «إضافة ماكينة» و«تعديل» للمندوب على عملائه وحدهم؛ `start('factory')` يفتح النموذج لهم |
+| `lib/crm.ts` مخطط `factory` | الحقلان الجديدان `modelCondition` و`bushingCondition` (`''` أو `new` أو `old`، في `machineConditionLabels` بـ`lib/machines.ts`)، وحذف `machineSerial` و`location` من المخطط |
+
+- **الموديل جديد أم قديم، ونوع الجلب جديد أم قديم** (الجلب = Bushings في الإنجليزية): يظهران في النموذج والبطاقة وورقة التفاصيل؛ تغييرهما يُعيد الاعتماد الفني لطلبات القالب المفتوحة على الماكينة كبقية المواصفات. لا يدخلان في اكتمال المواصفات (`completeMachineSpecs`).
+- **موقع الماكينة ورقمها:** رُفع الحقلان من النموذج والتفاصيل والبحث. القيم المحفوظة قبل ذلك تبقى في السجل وتُحفظ كما هي عند أي تعديل (`route.ts` ينسخها من السجل القديم)، ولا تُكتب في ماكينة جديدة. لا ترحيل.
+- **عدد الماكينة** يبقى 1 للماكينة المفردة؛ حقل العدد للمجموعات المستوردة من الشيت فقط.
+- **الخريطة:** خريطتا موقع العميل والعملاء مقيّدتان بإطار المملكة (`maxBounds`، أقل تقريب 5)، والشرقية تفتح بتقريب أقرب. **حد معروف:** بلاط OpenStreetMap يرسم الدول المجاورة عند حدود الإطار ولا يمكن إخفاؤها؛ ولا يُرفض إحداثي خارج المملكة في الخادم لأن حدود المملكة لا تُختزل في مستطيل بلا خطأ.
+- **اختباراتها:** `tests/role-scope.mjs` (الصلاحية والحفظ والإسناد والإبقاء على الحقلين القديمين)، `tests/role-ui.mjs` و`tests/rep-mobile-shell.mjs` (الأزرار والبطاقة)، `tests/context-performance.mjs` (التطابق مع المرجع)، `tests/machines-browser.mjs` (متصفح حقيقي).
+
 ## 10. حل المشكلات الشائعة
 
 | العَرَض | السبب والحل |
