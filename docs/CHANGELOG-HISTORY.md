@@ -4,6 +4,15 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## "An app update is available, reload" notice (2026-10-21, schema 16, no migration)
+
+- A page opened before a release was deployed kept running the old code until it was closed and opened again, so representatives did not see new buttons (the add-machine button after the machines update) and had to be told to close the app. The page now notices a newer release by itself and says so: a notice at the top, «يوجد تحديث للتطبيق», with a reload button.
+- **How it knows.** Every deployment renames the hashed scripts under `/_next/static/`, so the page asks the server with a HEAD request (no body, `no-store`) whether the scripts it runs still exist: a 404/410 means a newer release. A 5xx or a network failure proves nothing and raises no notice (a release being switched answers 5xx). The offline shell's script is judged from the server's shell manifest. It asks when the page opens, every ten minutes, and when the user returns after a minute or more; never offline and never while the page is hidden. A known newer release stays known until the page reloads.
+- **Nothing reloads by itself**, so a half-written visit is never lost. The button first asks the service worker holding a newer offline shell to take over (the worker never calls `skipWaiting` on its own: only on the page's explicit message), then reloads.
+- Not covered: pages already open on the old code (they predate the check) need one close-and-open; a deployment that changes no client script shows nothing (correctly).
+- Changed: `lib/build-freshness.ts` and `app/build-notice.tsx`/`.css` (new), `app/crm-app.tsx`, `public/sw.js` (message handler), `tests/offline-shell.mjs`, `portable/activate-ui-refresh-update.cjs` (the comfort release's activation name). Tests: `tests/build-freshness.mjs` (68), `tests/build-notice-browser.mjs` (16), `tests/baseline-update-activation.mjs` (the new same-day pair).
+- No migration. A package of its own (`update-reload-notice`) carrying everything of the comfort package. Going back to an earlier release only removes the notice.
+
 ## Phone and tablet comfort: touch targets, readable text, a working customer sheet, a lighter first load (2026-10-20, second release of the day, schema 16, no migration)
 
 - **Touch targets.** Every control a finger must hit is at least 44 px on every touch screen, tablets wide enough for the desktop layout (1024 px and up) included: buttons, links, chips, the disclosure rows of the folded sections, the inputs, the map's zoom buttons, the logout button, the table links. The same 18 pages at 360 px: 88 controls under 40 px before, none after (the map's legal credit link excepted).
