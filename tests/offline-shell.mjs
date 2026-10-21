@@ -55,7 +55,10 @@ for(const mutate of [m=>({...m,revision:'d'.repeat(64)}),m=>({...m,assets:[...m.
 for(const response of [new Response('missing',{status:404}),{ok:true,redirected:true,type:'basic',url:'https://crm.yourrest.org/login'},{ok:true,redirected:false,type:'opaque',url:'https://crm.yourrest.org/offline-app.html'},{ok:true,redirected:false,type:'basic',url:'https://other.example/offline-app.html'}]){
  const invalid=worker({alterResponse:async()=>response});await assert.rejects(invalid.event('install'));checks++;equal(invalid.stores.size,0,'Invalid asset response removes incomplete cache');
 }
-ok(!/skipWaiting|location\.reload/.test(original),'Updates do not force unsaved open pages to reload');
+ok(!/location\.reload/.test(original),'The worker never reloads a page');
+{const uses=[...original.matchAll(/skipWaiting/g)].length,handler=original.match(/addEventListener\('message'[\s\S]*?\n\}\);/);
+ ok(uses===1&&handler&&/skipWaiting/.test(handler[0])&&/yourrest-activate-update/.test(handler[0]),'A newer worker takes over only when the page asks, in its explicit reload message');
+ ok(!/addEventListener\('install'[\s\S]*?skipWaiting[\s\S]*?addEventListener\('activate'/.test(original),'Install does not skip waiting: an open page keeps its code until the user reloads');}
 const entry=await readFile(path.join(root,'app/offline-entry.tsx'),'utf8');ok(entry.includes('createRoot')&&entry.includes('CRM'),'Public shell mounts same CRM client');ok(!entry.includes('requireApplicationUser'),'Public shell contains no server-auth HTML');
 const install=await readFile(path.join(root,'app/install-app.tsx'),'utf8');ok(install.indexOf('registerInstallWorker();')<install.indexOf('if(isNativeTrackingApp())'),'Android registers the offline shell before hiding install UI');
 
