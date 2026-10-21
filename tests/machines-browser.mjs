@@ -22,7 +22,7 @@ const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const DESKTOP = {width: 1280, height: 900}, PHONE = {width: 390, height: 844};
-const OWN = 'مصنع المندوب الأول', OTHER = 'مصنع الزميل';
+const OWN = 'مصنع المندوب الأول', OTHER = 'مصنع الزميل', OTHER_EMPTY = 'مصنع الزميل الفارغ';
 
 try {
   app = await bootBuiltApp({members}, {tls: true});
@@ -30,7 +30,7 @@ try {
   const now = new Date().toISOString();
   const customer = (id, name, assignedTo) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')")
     .bind(id, assignedTo, JSON.stringify({name, code: id, region: 'الشرقية', city: 'الدمام', phone: '0551234567', contact: 'م', branch: 'الرئيسي', assignedTo}), now, now).run();
-  await customer('own', OWN, 'rep'); await customer('other', OTHER, 'rep2');
+  await customer('own', OWN, 'rep'); await customer('other', OTHER, 'rep2'); await customer('other-empty', OTHER_EMPTY, 'rep2');
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('other-machine','factory','other','rep2','الرئيسي',?,?,?,1,'fixture')")
     .bind(JSON.stringify({name: 'خط الزميل', recordType: 'machine', quantity: 1, machineBrand: 'Besser', machineModel: 'V1', machineType: 'stationary', modelCondition: 'old', bushingCondition: 'new', machineSerial: 'HIDDEN-SERIAL-9', location: 'HIDDEN-PLACE'}), now, now).run();
   const machineRows = async () => (await app.db.prepare("SELECT id,assigned_to,data,version FROM crm_records WHERE kind='factory' ORDER BY created_at,id").all()).results.map(row => ({...row, data: JSON.parse(row.data)}));
@@ -110,7 +110,7 @@ try {
   // ---- the same screens in English: nothing of the interface is left in Arabic (the names are data)
   await rep.getByRole('button', {name: 'Switch to English', exact: true}).click();
   await rep.locator('html[lang=en]').waitFor();
-  const arabic = /[\u0600-\u06FF]/, dataNames = [OWN, OTHER, 'خط الزميل', 'خط البلوك 1', 'أحمد المندوب', 'سالم المندوب', 'ماجد المشرف', 'سعد مدير المبيعات'];
+  const arabic = /[\u0600-\u06FF]/, dataNames = [OWN, OTHER_EMPTY, OTHER, 'خط الزميل', 'خط البلوك 1', 'أحمد المندوب', 'سالم المندوب', 'ماجد المشرف', 'سعد مدير المبيعات'];
   const bare = text => dataNames.reduce((out, name) => out.split(name).join(' '), text);
   if (!(await rep.locator('.machines-expanded').count())) await rowOf(rep, OWN).locator('.customer-expand').click();
   const enPanel = rep.locator('.machines-expanded', {hasText: 'Add machine'});
@@ -164,6 +164,19 @@ try {
     const otherSheet = phone.locator('[data-slot=sheet-content]');
     await otherSheet.waitFor();
     check(await otherSheet.getByRole('button', {name: 'إضافة ماكينة / خط إنتاج'}).count(), 0, 'a colleague\'s customer offers no machine to add');
+    await otherSheet.getByRole('tab', {name: 'الماكينات'}).click();
+    await otherSheet.getByText('خط الزميل').first().waitFor();
+    check(await otherSheet.getByRole('button', {name: 'إضافة ماكينة / خط إنتاج'}).count(), 0, 'nor does its Machines tab, which lists the colleague\'s machine');
+    await otherSheet.getByRole('button', {name: 'Close'}).click();
+    await otherSheet.waitFor({state: 'detached'});
+    await cardOf(OTHER_EMPTY).getByRole('button', {name: /^بيانات العميل/}).first().click();
+    const emptySheet = phone.locator('[data-slot=sheet-content]');
+    await emptySheet.waitFor();
+    await emptySheet.getByRole('tab', {name: 'الماكينات'}).click();
+    await emptySheet.getByText('لا توجد ماكينات لهذا العميل').waitFor();
+    check(await emptySheet.getByRole('button', {name: 'إضافة ماكينة / خط إنتاج'}).count(), 0, 'a colleague\'s customer with no machines offers no add button either');
+    ok((await emptySheet.innerText()).includes('تُضاف ماكينات العميل من مندوبه المسؤول عنه.'), 'and says why: the responsible representative adds them');
+    ok(!(await emptySheet.innerText()).includes('أضف السجل التالي من الأزرار بالأعلى'), 'instead of pointing to buttons that are not there');
     await phone.context().close();
   }
 
