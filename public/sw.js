@@ -3,7 +3,7 @@
 // Only a generated public shell and its exact, integrity-checked assets enter
 // Cache Storage. Private HTML, API responses, attachments and map tiles never do.
 const CACHE_PREFIX = 'yourrest-crm-offline-';
-const BUILD_REVISION = '816e6b31f262ccde9bf88e26cfe6aef82f32de5e0aeaa2f0206f8890f1ff99e6';
+const BUILD_REVISION = 'eb7572fb8e3efab5361ca68c74e1b2e816da430c30aaaf8d91ac45d00133b4f2';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_REVISION}`;
 const MANIFEST_URL = '/offline-shell-manifest.json';
 const SHELL_URL = '/offline-app.html';
@@ -75,6 +75,12 @@ self.addEventListener('activate', (event) => {
     await Promise.all(names.filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME).map((name) => caches.delete(name)));
     await self.clients.claim();
   })());
+});
+
+self.addEventListener('message', (event) => {
+  // Only the page's own "reload now" asks a newer worker already installed to take over; a worker never activates by itself
+  // while a page with unsaved work could still be open.
+  if (event.data && event.data.type === 'yourrest-activate-update') event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('fetch', (event) => {
