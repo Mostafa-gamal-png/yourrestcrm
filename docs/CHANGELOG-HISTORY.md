@@ -4,6 +4,14 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The activator stops the Node.js server the host restarts after Stop App (2026-10-27, schema 16, no migration)
+
+- The cPanel Node.js host starts the application again when a phone's request arrives (the representatives' route tracking sends requests all day), so **Stop App** did not always leave it stopped and the activator refused with `APP_OR_DATA_STILL_IN_USE`; the way round was a manual `kill` and the activator straight after (the 2026-10-21 deployment).
+- **Now** the activator stops the application's own `lsnode`/`node` processes itself: SIGTERM first (15 s), SIGKILL for what does not leave (5 s), up to three rounds if the host starts it anew. It prints `APP STILL RUNNING (PROCESS ...): STOPPING IT NOW...` and `APP PROCESSES STOPPED: n`.
+- **Narrow on purpose.** Only a Node.js server holding the application or data folder (working directory, command line, or an open file under the data folder) is stopped. Never the helper itself, the shell/terminal chain that ran it, a shell sitting in the folder, or any other program: those still end in `APP_OR_DATA_STILL_IN_USE` as before. Run once, before any lock or checkpoint exists, and never for `--check`/`--verify`; the later checks stay strict.
+- Changed: `portable/activate-ui-refresh-update.cjs` (`appServerProcesses`, `terminateApp`, the single call in `run()`, the update-notice release's activation name), `scripts/rehearse-update.mjs` (refusal now proven with a real `sleep` holding the folder; then the application started again as the host does and stopped by the activator), `tests/activate-auto-stop.mjs` (31), `tests/baseline-update-activation.mjs` (169), guide §9-ع.
+- No migration, no application change: the release is the one deployed on 2026-10-21 plus the activator copy under `operations/`. A package of its own (`update-auto-stop`).
+
 ## "An app update is available, reload" notice (2026-10-21, schema 16, no migration)
 
 - A page opened before a release was deployed kept running the old code until it was closed and opened again, so representatives did not see new buttons (the add-machine button after the machines update) and had to be told to close the app. The page now notices a newer release by itself and says so: a notice at the top, «يوجد تحديث للتطبيق», with a reload button.
