@@ -4,8 +4,9 @@
 //
 // It lays out an installed site exactly like the hosting account (root launcher, private settings.cjs, release/,
 // data folder), runs the PREVIOUS release with synthetic data created through its own API, then follows the
-// upgrade guide step by step with the packaged activator: --check while the app runs, refusal while it is still
-// running, stop, switch, start, --verify. It then proves that data, settings and API results are unchanged and that
+// upgrade guide step by step with the packaged activator: --check while the app runs, refusal while another program
+// still holds the application folder, the application started again as the host does after Stop App (the activator stops that
+// Node.js server itself), switch, start, --verify. It then proves that data, settings and API results are unchanged and that
 // a tampered package is refused without touching the live release.
 //
 // When the package declares a database migration (activator constant NEW_MIGRATIONS) the rehearsal also proves that the
@@ -238,17 +239,27 @@ try {
   assert(a.running, '--check leaves the app running');
   note('--check passes while the app is still serving');
 
+  // A program that is not the Node.js server and still holds the application folder blocks the switch, and nothing changes.
+  await a.stop();
+  const holder = spawn('sleep', ['300'], {cwd: a.app, stdio: 'ignore'});
   let refused;
-  try { await helper.run(paths, 'apply', {log: quiet}); } catch (error) { refused = error.code; }
-  assert.equal(refused, 'APP_OR_DATA_STILL_IN_USE', 'the activator refuses to switch while the app is running');
+  try {
+    try { await helper.run(paths, 'apply', {log: quiet}); } catch (error) { refused = error.code; }
+  } finally { holder.kill('SIGKILL'); await once(holder, 'exit'); }
+  assert.equal(refused, 'APP_OR_DATA_STILL_IN_USE', 'the activator refuses to switch while another program holds the application folder');
   assert.equal(treeHash(path.join(a.app, 'release')), baseline.oldRelease, 'a refused attempt leaves the live release untouched');
   assert.equal(fs.existsSync(paths.state), false, 'a refused attempt writes no state');
-  note('switching is refused while the app is still running', {code: refused});
+  note('switching is refused while another program holds the application folder', {code: refused});
 
-  await a.stop();
+  // The host starts the application again after Stop App: the activator stops that Node.js server itself and goes on.
+  await a.start();
+  assert(a.running, 'the application is serving again, as the host does after Stop App');
   const dataBeforeSwitch = tables(a);
   lines.length = 0;
   const state = await helper.run(paths, 'apply', {log});
+  assert(lines.some(line => line.includes('STOPPING IT NOW')) && lines.some(line => line.startsWith('APP PROCESSES STOPPED: ')), 'the activator says it stopped the running application');
+  assert.equal(a.running, false, 'the running application was stopped by the activator');
+  note('the application was running again; the activator stopped it itself and switched', {stopped: lines.filter(line => line.includes('STOPPING IT NOW') || line.startsWith('APP PROCESSES STOPPED'))});
   assert(lines.includes('START APP IN CPANEL'), 'the activator asks for Start App');
   assert.equal(state.phase, 'switched');
   const dataAfterSwitch = tables(a);
