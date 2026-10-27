@@ -139,6 +139,56 @@ function ensureStopped(p, procRoot = '/proc') {
   if(active.size) fail('APP_OR_DATA_STILL_IN_USE');
   if(exists(path.join(p.data,'.yourrest-backup.lock'))) fail('BACKUP_LOCK_EXISTS');
 }
+/** The Node.js host answers a phone's request by starting the application again, so "Stop App" in cPanel does not always
+ * leave it stopped. These are the processes of this account that hold the application or its data AND are the Node.js
+ * server itself (lsnode or node): a shell sitting in the folder, or this helper and the terminal that started it, are never
+ * touched. Whatever else holds the folder still blocks the activation in ensureStopped. */
+const SERVER_PROCESS = /^(?:lsnode\b|(?:.*\/)?node(?:js)?\d*$)/;
+function processState(procRoot, id) {
+  try { const stat = fs.readFileSync(path.join(procRoot,id,'stat'),'utf8'); return {state:stat.slice(stat.lastIndexOf(')') + 2,stat.lastIndexOf(')') + 3), parent:Number(stat.slice(stat.lastIndexOf(')') + 4).split(' ')[0])}; }
+  catch { return null; }
+}
+function appServerProcesses(p, procRoot = '/proc') {
+  const protectedIds = new Set([String(process.pid)]);
+  for(let id = String(process.ppid), hops = 0; /^\d+$/.test(id) && Number(id) > 1 && hops < 64 && !protectedIds.has(id); hops++) {
+    protectedIds.add(id); const info = processState(procRoot,id); if(!info) break; id = String(info.parent);
+  }
+  const found = [];
+  for(const id of fs.readdirSync(procRoot).filter(n => /^\d+$/.test(n))) {
+    if(protectedIds.has(id)) continue;
+    const base = path.join(procRoot,id), info = processState(procRoot,id);
+    if(!info || info.state === 'Z' || info.state === 'X') continue; // already exited, only waiting to be collected
+    try {
+      if(fs.statSync(base).uid !== process.getuid()) continue;
+      const argv = fs.readFileSync(path.join(base,'cmdline'),'utf8').split('\0');
+      let comm = ''; try { comm = fs.readFileSync(path.join(base,'comm'),'utf8').trim(); } catch { /* the process may have just ended */ }
+      if(!SERVER_PROCESS.test(argv[0]) && !SERVER_PROCESS.test(comm)) continue;
+      const cwd = fs.readlinkSync(path.join(base,'cwd')), cmd = argv.join(' ');
+      let holds = inside(cwd,p.app) || inside(cwd,p.data) || cmd.includes(p.app + '/') || cmd.includes(p.data + '/');
+      if(!holds) for(const fd of fs.readdirSync(path.join(base,'fd'))) { try { if(inside(fs.readlinkSync(path.join(base,'fd',fd)),p.data)) { holds = true; break; } } catch { /* closed meanwhile */ } }
+      if(holds) found.push(id);
+    } catch { /* gone, or not ours to inspect: ensureStopped decides afterwards */ }
+  }
+  return found;
+}
+/** Stops the application's own Node.js processes, politely first and then by force, again if the host started it anew. */
+async function terminateApp(p, {procRoot = '/proc', kill = process.kill, sleep = ms => new Promise(resolve => setTimeout(resolve,ms)), log = console.log, graceMs = 15000, forceMs = 5000, pollMs = 250, rounds = 3} = {}) {
+  const alive = id => { const info = processState(procRoot,id); return !!info && info.state !== 'Z' && info.state !== 'X'; };
+  const send = (id, signal) => { try { kill(Number(id),signal); } catch(e) { if(e.code !== 'ESRCH') log('COULD NOT SIGNAL PROCESS ' + id + ': ' + e.code); } };
+  const waitGone = async (ids, ms) => { for(let waited = 0; waited < ms && ids.some(alive); waited += pollMs) await sleep(pollMs); return ids.filter(alive); };
+  let stoppedCount = 0;
+  for(let round = 0; round < rounds; round++) {
+    const ids = appServerProcesses(p,procRoot);
+    if(!ids.length) break;
+    log('APP STILL RUNNING (PROCESS ' + ids.join(', ') + '): STOPPING IT NOW...');
+    for(const id of ids) send(id,'SIGTERM');
+    let left = await waitGone(ids,graceMs);
+    if(left.length) { for(const id of left) send(id,'SIGKILL'); left = await waitGone(left,forceMs); }
+    stoppedCount += ids.length - left.length;
+  }
+  if(stoppedCount) log('APP PROCESSES STOPPED: ' + stoppedCount);
+  return stoppedCount;
+}
 function syncDir(p) { const fd = fs.openSync(p,'r'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
 function saveJson(filename, value) {
   const temp = filename + '.tmp-' + process.pid;
@@ -365,7 +415,7 @@ async function verifyRunning(p, state, log) {
   log('DEPLOYMENT VERIFIED');
   return summary;
 }
-async function run(p, mode = 'apply', {log = console.log, stopped = ensureStopped, copy, afterCopy, afterInspect, now = () => new Date()} = {}) {
+async function run(p, mode = 'apply', {log = console.log, stopped = ensureStopped, terminate = stopped === ensureStopped ? terminateApp : null, copy, afterCopy, afterInspect, now = () => new Date()} = {}) {
   const major = Number(process.versions.node.split('.')[0]);
   if(major < 22 || (major === 22 && Number(process.versions.node.split('.')[1]) < 16)) fail('NODE_22_16_OR_NEWER_REQUIRED');
   for(const q of [p.home,p.app,p.stage]) directory(q);
@@ -385,6 +435,8 @@ async function run(p, mode = 'apply', {log = console.log, stopped = ensureStoppe
   if(mode === 'check') {
     if(NEW_MIGRATIONS.length) log('SCHEMA CHANGE: ' + NEW_MIGRATIONS.join(', ') + ' WILL BE APPLIED BY THE APPLICATION ON ITS FIRST START, AFTER ITS OWN PRIVATE SCHEMA BACKUP.');
     log('PACKAGE AND CONFIGURATION: READY. APP MAY REMAIN RUNNING.'); log('BACKUP POLICY: ONE VERIFIED FULL BACKUP PER RIYADH CALENDAR DAY; EACH UPDATE RETAINS ITS OWN RECORD-ID CHECK.'); return; }
+  // Only here, before any lock or checkpoint exists: the later checks stay strict and fail rather than stop anything.
+  if(terminate) await terminate(p,{log});
   stopped(p);
   // mkdir is exclusive. A stale lock is deliberately not deleted automatically.
   try { fs.mkdirSync(p.lock,{mode:0o700}); } catch(e) { if(e.code === 'EEXIST') fail('ACTIVATION_LOCK_EXISTS'); throw e; }
@@ -456,7 +508,7 @@ async function run(p, mode = 'apply', {log = console.log, stopped = ensureStoppe
     throw e;
   } finally { if(ownDailyLock) fs.rmdirSync(p.dailyLock); fs.rmdirSync(p.lock); }
 }
-module.exports = {pathsFor,manifestFiles,inventory,assertSameInventory,ensureStopped,switchRelease,run,riyadhDay,PIN,RELEASE_FILES,RELEASE_NAME,RELEASE_DATE,STAGE_DIR,ACTIVATION_FORMAT,SCHEMA_BEFORE,SCHEMA_AFTER,NEW_MIGRATIONS,EXTRA_ROUTES};
+module.exports = {pathsFor,manifestFiles,inventory,assertSameInventory,ensureStopped,appServerProcesses,terminateApp,switchRelease,run,riyadhDay,PIN,RELEASE_FILES,RELEASE_NAME,RELEASE_DATE,STAGE_DIR,ACTIVATION_FORMAT,SCHEMA_BEFORE,SCHEMA_AFTER,NEW_MIGRATIONS,EXTRA_ROUTES};
 if(require.main === module) {
   process.umask(0o077);
   const args = process.argv.slice(2), modes = {'--check':'check','--verify':'verify'};
