@@ -1,0 +1,436 @@
+{
+  "release": {
+    "name": "update-fast-open",
+    "date": "20261029",
+    "stage": "yourrest-crm-update-fast-open-20261029",
+    "helper": "yourrest-activate-update-fast-open.cjs",
+    "package": "Yourrest-CRM-Update-Fast-Open-20261029.zip",
+    "bytes": 14285620,
+    "sha256": "6082832678086b1b21df6ed1276ae7a3b2c3be2f62ceb93db236e1f716492613",
+    "files": 2903,
+    "schemaBefore": 16,
+    "schemaAfter": 16,
+    "newMigrations": [],
+    "verifyRoutes": [
+      [
+        "/api/support",
+        401
+      ],
+      [
+        "/api/complaints",
+        401
+      ],
+      [
+        "/api/complaint-report",
+        401
+      ],
+      [
+        "/api/service-kpi",
+        401
+      ]
+    ],
+    "settingsOrProductionDataIncluded": false
+  },
+  "head": "1c213fa",
+  "releaseTree": {
+    "files": 2903,
+    "tree": "7976ffb0cb228207fc2cef3653945eb8615d1143ff43e4bf13b2f677cf6a81cb"
+  },
+  "typescript": "tsc exit 0",
+  "eslint": {
+    "errors": 96,
+    "warnings": 72
+  },
+  "defaultGate": {
+    "passed": true,
+    "files": 138,
+    "failed": []
+  },
+  "releaseBuildGate": {
+    "tests/app-update-release.mjs": {
+      "passed": true,
+      "checks": 16,
+      "seconds": 0
+    },
+    "tests/complaint-report-http.mjs": {
+      "passed": true,
+      "checks": 51,
+      "seconds": 76
+    },
+    "tests/complaints-http.mjs": {
+      "passed": true,
+      "checks": 156,
+      "seconds": 87
+    },
+    "tests/device-status-http.mjs": {
+      "passed": true,
+      "checks": 86,
+      "seconds": 57
+    },
+    "tests/namecheap-http.mjs": {
+      "passed": true,
+      "checks": 381,
+      "seconds": 21
+    },
+    "tests/production-load.mjs": {
+      "passed": true,
+      "checks": null,
+      "seconds": 71
+    },
+    "tests/sales-date-boundaries.mjs": {
+      "passed": true,
+      "checks": 36,
+      "seconds": 6
+    },
+    "tests/server-authorization.mjs": {
+      "passed": true,
+      "checks": 366,
+      "seconds": 47
+    },
+    "tests/service-kpi-http.mjs": {
+      "passed": true,
+      "checks": 115,
+      "seconds": 62
+    },
+    "tests/service-queue-http.mjs": {
+      "passed": true,
+      "checks": 120,
+      "seconds": 57
+    },
+    "tests/service-report-http.mjs": {
+      "passed": true,
+      "checks": 45,
+      "seconds": 51
+    },
+    "tests/support-http.mjs": {
+      "passed": true,
+      "checks": 230,
+      "seconds": 73
+    },
+    "tests/targets-attainment-http.mjs": {
+      "passed": true,
+      "checks": 26,
+      "seconds": 36
+    },
+    "tests/visit-files-http.mjs": {
+      "passed": true,
+      "checks": 41,
+      "seconds": 36
+    },
+    "tests/visit-place-http.mjs": {
+      "passed": true,
+      "checks": 44,
+      "seconds": 31
+    }
+  },
+  "browserGate": {
+    "tests/admin-delete-browser.mjs": {
+      "passed": true,
+      "checks": 15,
+      "seconds": 18
+    },
+    "tests/app-browser-workflows.mjs": {
+      "passed": false,
+      "checks": null,
+      "seconds": 29,
+      "sameFailureAsUnmodifiedBaseline": true,
+      "reason": "Reaches the permission-denial step: Chromium started through Playwright does not apply the browser permission override in this context (expected denied, got granted). The speed release fails at the same step with the same message."
+    },
+    "tests/app-update-browser.mjs": {
+      "passed": true,
+      "checks": 46,
+      "seconds": 3
+    },
+    "tests/build-notice-browser.mjs": {
+      "passed": true,
+      "checks": 18,
+      "seconds": 35
+    },
+    "tests/competitor-intelligence-browser.mjs": {
+      "passed": true,
+      "checks": 146,
+      "seconds": 33
+    },
+    "tests/competitors-browser.mjs": {
+      "passed": true,
+      "checks": 98,
+      "seconds": 33
+    },
+    "tests/complaints-browser.mjs": {
+      "passed": true,
+      "checks": 80,
+      "seconds": 62
+    },
+    "tests/customer-edit-browser.mjs": {
+      "passed": true,
+      "checks": 54,
+      "seconds": 22
+    },
+    "tests/daily-report-browser.mjs": {
+      "passed": true,
+      "checks": 94,
+      "seconds": 13
+    },
+    "tests/dictation-browser.mjs": {
+      "passed": true,
+      "checks": 46,
+      "seconds": 51
+    },
+    "tests/erp-sales-browser.mjs": {
+      "passed": false,
+      "checks": null,
+      "seconds": 0,
+      "sameFailureAsUnmodifiedBaseline": true,
+      "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); it was never supplied. The speed release fails identically."
+    },
+    "tests/kpi-evidence-browser.mjs": {
+      "passed": true,
+      "checks": 87,
+      "seconds": 25
+    },
+    "tests/location-picker-browser.mjs": {
+      "passed": true,
+      "checks": 80,
+      "seconds": 43
+    },
+    "tests/machines-browser.mjs": {
+      "passed": true,
+      "checks": 31,
+      "seconds": 29
+    },
+    "tests/member-regions-browser.mjs": {
+      "passed": true,
+      "checks": 13,
+      "seconds": 20
+    },
+    "tests/mobile-comfort-browser.mjs": {
+      "passed": true,
+      "checks": 207,
+      "seconds": 130
+    },
+    "tests/offline-browser.mjs": {
+      "passed": false,
+      "checks": null,
+      "seconds": 30,
+      "sameFailureAsUnmodifiedBaseline": true,
+      "reason": "Cold offline reload: Playwright setOffline does not cover the service worker network in this Chromium. The speed release times out at the same wait (locator.waitFor, 18000 ms)."
+    },
+    "tests/offline-outbox-browser.mjs": {
+      "passed": true,
+      "checks": 49,
+      "seconds": 3
+    },
+    "tests/open-cached-browser.mjs": {
+      "passed": true,
+      "checks": 19,
+      "seconds": 20
+    },
+    "tests/perf-budget-browser.mjs": {
+      "passed": true,
+      "checks": 23,
+      "seconds": 51
+    },
+    "tests/pwa-browser.mjs": {
+      "passed": false,
+      "checks": null,
+      "seconds": 10,
+      "sameFailureAsUnmodifiedBaseline": true,
+      "reason": "Cold offline navigation uses the data-free client shell: same cause as offline-browser; the speed release fails at the same assertion. Before reaching it the test now waits for the English switch, which follows the dictionary download."
+    },
+    "tests/service-kpi-browser.mjs": {
+      "passed": true,
+      "checks": 83,
+      "seconds": 73
+    },
+    "tests/service-queue-browser.mjs": {
+      "passed": true,
+      "checks": 162,
+      "seconds": 122
+    },
+    "tests/support-browser.mjs": {
+      "passed": true,
+      "checks": 125,
+      "seconds": 116
+    },
+    "tests/tracking-gate-browser.mjs": {
+      "passed": true,
+      "checks": 98,
+      "seconds": 115
+    },
+    "tests/ui-refresh-browser.mjs": {
+      "passed": true,
+      "checks": 105,
+      "seconds": 48
+    },
+    "tests/visit-place-browser.mjs": {
+      "passed": true,
+      "checks": 37,
+      "seconds": 47
+    }
+  },
+  "rehearsal": {
+    "ok": true,
+    "steps": 18,
+    "oldRelease": "update-speed 20261029 (the package deployed at 17:00 Riyadh)",
+    "stepNames": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while another program holds the application folder",
+      "the application was running again; the activator stopped it itself and switched",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "assistance requests, missed visits and the manager's approval queue work on the upgraded database for the right roles",
+      "a customer complaint runs its whole course on the upgraded database for the right roles",
+      "the monthly complaints report counts the complaint for the managers only",
+      "the customer-service evaluation counts the closure, its rating and the registration, takes an audit and the settings, for the right roles only",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ],
+    "productionDataUsed": false,
+    "hostingAccessed": false
+  },
+  "packageInspection": [
+    "entries 2906 forbidden-names []",
+    "top-level ['RELEASE-SHA256SUMS.txt', 'UPDATE-20261029-AR.txt', 'release', 'yourrest-activate-update-fast-open.cjs']",
+    "secret-pattern hits [] 0",
+    "sqlite files []",
+    "seed phone numbers checked 206 hits outside node_modules []",
+    "migrations 16 ['release/drizzle/0014_customer_identities.sql', 'release/drizzle/0015_member_devices.sql']"
+  ],
+  "diffAgainstSpeedPackage": "old files 2900 new files 2906 added 42 removed 36 changed 19 unchanged 2845",
+  "measurements": {
+    "conditions": "built app in Chromium, 390 px phone, CPU 4x slower, slow 4G (1.6 Mbit/s down, 150 ms or 600 ms latency), representative (one region) with 2,300 customers and 6,000 visits; cold = first opening on the device, warm = reload with the device copy and the HTTP cache",
+    "speedRelease": {
+      "latency150": {
+        "coldShownMs": 4438,
+        "coldScriptBytes": 441953,
+        "warmShownMs": [
+          1882,
+          1845,
+          1807
+        ],
+        "warmScriptBytes": [
+          112033,
+          112033,
+          112033
+        ]
+      },
+      "latency600": {
+        "coldShownMs": 5957,
+        "coldScriptBytes": 441953,
+        "warmShownMs": [
+          3256,
+          3143,
+          3250
+        ],
+        "warmScriptBytes": [
+          112033,
+          112033,
+          112033
+        ]
+      }
+    },
+    "phase2": {
+      "latency150": {
+        "coldShownMs": 4381,
+        "coldScriptBytes": 442397,
+        "warmShownMs": [
+          1084,
+          1271,
+          1211
+        ],
+        "warmScriptBytes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "latency600": {
+        "coldShownMs": 6121,
+        "coldScriptBytes": 442397,
+        "warmShownMs": [
+          1414,
+          1320,
+          1455
+        ],
+        "warmScriptBytes": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "phase2and3Delivered": {
+      "latency150": {
+        "coldShownMs": 4253,
+        "coldScriptBytes": 411270,
+        "warmShownMs": [
+          1144,
+          894
+        ],
+        "warmScriptBytes": [
+          0,
+          0
+        ]
+      },
+      "latency600": {
+        "coldShownMs": 5789,
+        "coldScriptBytes": 411270,
+        "warmShownMs": [
+          1425,
+          1400
+        ],
+        "warmScriptBytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "lazyPagesTriedNotKept": {
+      "latency150": {
+        "coldShownMs": 4469,
+        "coldScriptBytes": 392243,
+        "warmShownMs": [
+          1166,
+          1025
+        ],
+        "warmScriptBytes": [
+          0,
+          0
+        ]
+      },
+      "latency600": {
+        "coldShownMs": 6807,
+        "coldScriptBytes": 392243,
+        "warmShownMs": [
+          1613,
+          1510
+        ],
+        "warmScriptBytes": [
+          0,
+          0
+        ]
+      }
+    },
+    "scriptEvictionExperiment": "One HEAD request with cache no-store at the address of a cached script made the next reload download it again (crm-app 283,943 bytes); a HEAD at the same address with ?release-check did not.",
+    "customersPageElements": {
+      "before": 4853,
+      "after": 2841,
+      "mainThreadWorkMs": {
+        "before": 541,
+        "after": 584
+      }
+    }
+  },
+  "limitations": [
+    "Synthetic data on a throttled desktop Chromium, not a real phone or the Android WebView.",
+    "The test server speaks HTTP/1.1; production may use HTTP/2.",
+    "Cold offline navigation and the browser permission denial cannot be exercised in this Chromium (the same four browser tests fail on the speed release)."
+  ]
+}
