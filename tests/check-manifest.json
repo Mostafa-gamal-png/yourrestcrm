@@ -38,14 +38,14 @@
       "reason": "requires independent build"
     },
     {
-      "file": "tests/clients-map-update-package.py",
-      "gate": "release-artifact",
-      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
-    },
-    {
       "file": "tests/build-notice-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/clients-map-update-package.py",
+      "gate": "release-artifact",
+      "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
     },
     {
       "file": "tests/competitor-intelligence-browser.mjs",
@@ -186,6 +186,11 @@
       "file": "tests/package-install.mjs",
       "gate": "release-artifact",
       "reason": "artifact generator or package argument"
+    },
+    {
+      "file": "tests/perf-budget-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
     },
     {
       "file": "tests/permissions-update-package.py",
