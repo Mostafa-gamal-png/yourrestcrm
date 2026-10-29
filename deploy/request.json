@@ -1,0 +1,7 @@
+{
+  "mode": "check",
+  "package": "deploy/packages/Yourrest-CRM-Update-Speed-20261029.zip",
+  "sha256": "c03d535764a92a3a6da8a56a3cfb337ff663dd88ad761562032bd56623628845",
+  "stage": "yourrest-crm-update-speed-20261029",
+  "helper": "yourrest-activate-update-speed.cjs"
+}
