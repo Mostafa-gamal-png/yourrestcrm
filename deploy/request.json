@@ -1,7 +1,7 @@
 {
   "mode": "check",
-  "package": "deploy/packages/Yourrest-CRM-Update-Speed-20261029.zip",
-  "sha256": "c03d535764a92a3a6da8a56a3cfb337ff663dd88ad761562032bd56623628845",
-  "stage": "yourrest-crm-update-speed-20261029",
-  "helper": "yourrest-activate-update-speed.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-Fast-Open-20261029.zip",
+  "sha256": "6082832678086b1b21df6ed1276ae7a3b2c3be2f62ceb93db236e1f716492613",
+  "stage": "yourrest-crm-update-fast-open-20261029",
+  "helper": "yourrest-activate-update-fast-open.cjs"
 }
