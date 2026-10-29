@@ -57,7 +57,7 @@ function stateNames(filename){
 }
 function harness(filename,seed={},props={},globals={}){
  const names=stateNames(filename),state={...seed},refs=[];let cursor=0,refCursor=0,tree;
- const hooks={...React,useState(initial){const name=names[cursor++];if(!Object.hasOwn(state,name))state[name]=typeof initial==='function'?initial():initial;return[state[name],value=>{state[name]=typeof value==='function'?value(state[name]):value;}];},useRef(value){const index=refCursor++;return refs[index]||(refs[index]={current:value});},useEffect:noop,useCallback:callback=>callback,useMemo:compute=>compute()};
+ const hooks={...React,useState(initial){const name=names[cursor++];if(!Object.hasOwn(state,name))state[name]=typeof initial==='function'?initial():initial;return[state[name],value=>{state[name]=typeof value==='function'?value(state[name]):value;}];},useRef(value){const index=refCursor++;return refs[index]||(refs[index]={current:value});},useEffect:noop,useCallback:callback=>callback,useMemo:compute=>compute(),useDeferredValue:value=>value};
  const component=load(filename,name=>name==='react'?hooks:commonRequire(name),{window:{history:{replaceState:noop}},...globals}).default;
  return {state,render(){cursor=refCursor=0;tree=component(props);return tree;},tree:()=>tree};
 }
