@@ -21,7 +21,9 @@ export function durationLabel(data:VisitTiming,language='ar'){
  return estimated?`${label} · ${say('تقديرية','Estimated')}`:label;
 }
 export function durationNeedsReview(data:VisitTiming){if(data.timingSource==='journey'&&data.startedAt&&!data.endedAt&&!data.journeyDurationUncertain)return false;return data.timingSource==='journey'?!!data.journeyDurationUncertain||!!data.durationReview||(observedJourneySeconds(data)??0)>86400:(durationSeconds(data.startedAt,data.endedAt)??0)>86400;}
-export function riyadhDate(value:string){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));}
-export function formatVisitTime(value?:string){return value&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(value)):'—';}
+// Made once and reused: these run for every visit drawn in a list.
+const riyadhDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}),visitTime=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+export function riyadhDate(value:string){return riyadhDay.format(new Date(value));}
+export function formatVisitTime(value?:string){return value&&Number.isFinite(Date.parse(value))?visitTime.format(new Date(value)):'—';}
 export function toRiyadhInput(value?:string){if(!value)return '';const n=Date.parse(value);return Number.isFinite(n)?new Date(n+3*3600000).toISOString().slice(0,19):'';}
 export function fromRiyadhInput(value:string){if(!value)return '';const n=Date.parse(value+(value.length===16?':00':'')+'+03:00');return Number.isFinite(n)?new Date(n).toISOString():'';}

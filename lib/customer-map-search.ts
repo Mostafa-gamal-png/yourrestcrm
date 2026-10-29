@@ -53,6 +53,22 @@ function oneNameEdit(a: string, b: string): boolean {
 }
 
 type RankedCustomer = { row: Row; rank: number; field: number; order: number };
+type Prepared = { name: string; codes: string[]; code: string; phones: string[]; fields: string[]; nonemptyFields: string[]; words: string[]; nameWords: string[] };
+// What a customer is searched by, normalized once per customer row instead of once per letter typed. Rows are snapshots that are
+// never changed in place, so a row's prepared fields stay true for as long as the row lives.
+const prepared = new WeakMap<Row, Prepared>();
+function prepare(row: Row): Prepared {
+    const known = prepared.get(row);
+    if (known) return known;
+    const data = row.data && typeof row.data === 'object' ? row.data : {};
+    const name = text(data.name), codes = [text(data.internalCode), text(data.code)].filter(Boolean), code = codes.join(' ');
+    const phones = [...phoneVariants(data.phone), ...phoneVariants(data.phone2)];
+    const fields = [name, code, phones.join(' '), [text(data.contact), text(data.contact2)].filter(Boolean).join(' '), text(data.city), text(data.region), text(data.address), text(data.shortAddress)];
+    const nonemptyFields = fields.filter(Boolean);
+    const result = { name, codes, code, phones, fields, nonemptyFields, words: nonemptyFields.flatMap(field => field.split(' ')), nameWords: name.split(' ') };
+    prepared.set(row, result);
+    return result;
+}
 
 /**
  * Search only the supplied, already-authorized customers. The original rows are
@@ -68,11 +84,7 @@ export function searchMapCustomers(customers: Row[], query: string, limit = 8): 
     for (let order = 0; order < customers.length; order++) {
         const row = customers[order];
         if (row.kind !== 'customer') continue;
-        const data = row.data && typeof row.data === 'object' ? row.data : {};
-        const name = text(data.name), codes = [text(data.internalCode), text(data.code)].filter(Boolean), code = codes.join(' ');
-        const phones = [...phoneVariants(data.phone), ...phoneVariants(data.phone2)];
-        const fields = [name, code, phones.join(' '), [text(data.contact), text(data.contact2)].filter(Boolean).join(' '), text(data.city), text(data.region), text(data.address), text(data.shortAddress)];
-        const nonemptyFields = fields.filter(Boolean);
+        const { name, codes, code, phones, fields, nonemptyFields, words, nameWords } = prepare(row);
         if (!nonemptyFields.length) continue;
         const phoneExact = numericQuery.some(needle => phones.includes(needle));
         if (name === normalized || codes.includes(normalized) || phoneExact) {
@@ -81,7 +93,6 @@ export function searchMapCustomers(customers: Row[], query: string, limit = 8): 
         }
         const phonePrefix = numericQuery.some(needle => phones.some(phone => phone.startsWith(needle)));
         const phoneContains = numericQuery.some(needle => phones.some(phone => phone.includes(needle)));
-        const words = nonemptyFields.flatMap(field => field.split(' '));
         const allPrefix = terms.every(term => words.some(word => word.startsWith(term)));
         const allContained = terms.every(term => nonemptyFields.some(field => field.includes(term)));
         if (allPrefix || phonePrefix || allContained || phoneContains) {
@@ -94,7 +105,6 @@ export function searchMapCustomers(customers: Row[], query: string, limit = 8): 
         }
         // Fuzzy matching applies to one factory-name word only. Codes, phones,
         // addresses, and short terms must still match literally.
-        const nameWords = name.split(' ');
         let correctedTerms = 0;
         const fuzzy = terms.every(term => {
             if (nonemptyFields.some(field => field.includes(term))) return true;
