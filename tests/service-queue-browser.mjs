@@ -35,6 +35,13 @@ try {
   const sessions = {};
   for (const member of members) sessions[member.id] = await app.login(member.id);
   const as = id => app.as(sessions[id]);
+  // Since 2026-10-29 an opening shows the device's copy first and the server's answer a moment later: a check that needs what the
+  // server changed meanwhile waits for that answer to be on screen.
+  const reloadFresh = async page => {
+    const answered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'GET');
+    await page.reload(); await answered;
+    await page.waitForFunction(() => !document.querySelector('.refresh-notice'));
+  };
   const cases = async id => (await as(id)('/api/customer-service')).json();
   const getCase = async (id, caseId) => (await cases(id)).cases.find(item => item.id === caseId);
   const act = async (id, caseId, body) => { const item = await getCase(id, caseId); return as(id)('/api/customer-service', {method: 'POST', body: {requestId: crypto.randomUUID(), id: caseId, version: item?.version, ...body}}); };
@@ -109,7 +116,7 @@ try {
     // Left for a month the request is late for the one who owes the approval; the mark is on his own screen.
     const startedAt = await app.db.prepare('SELECT created_at FROM crm_service_cases WHERE id=?').bind(caseId).first('created_at');
     await app.db.prepare('UPDATE crm_service_cases SET created_at=? WHERE id=?').bind(new Date(Date.now() - 30 * 86400000).toISOString(), caseId).run();
-    await approver.reload();
+    await reloadFresh(approver);
     const late = approver.locator(`.service-queue-group[data-group="mine"] [data-case="${caseId}"]`);
     await late.waitFor();
     check(await late.getAttribute('data-late'), 'true', 'after a month without a decision the card is late');
@@ -232,7 +239,7 @@ try {
     await rep.keyboard.press('Escape');
     await sheet.waitFor({state: 'detached'});
     check(await banner.count(), 1, 'opening is not a contact: the banner stays');
-    await manager.reload();
+    await reloadFresh(manager);
     await manager.locator('.workspace').waitFor();
     await goDesktop(manager, 'الزيارات');
     const watched = manager.locator(`.service-queue [data-case="${caseId}"]`);
