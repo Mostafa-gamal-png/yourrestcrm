@@ -17,7 +17,7 @@ let checks = 0, browser, app;
 const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
-const SCRIPT = /\/_next\/static\/chunks\/index-[A-Za-z0-9_-]+\.js$/;
+const SCRIPT = /\/_next\/static\/chunks\/index-[A-Za-z0-9_-]+\.js(\?release-check)?$/;
 const PHONE = {width: 390, height: 844};
 
 try {
@@ -31,7 +31,7 @@ try {
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => errors.push(error.message));
     const heads = [];
-    page.on('request', request => { if (request.method() === 'HEAD') heads.push({url: new URL(request.url()).pathname}); });
+    page.on('request', request => { if (request.method() === 'HEAD') heads.push({url: new URL(request.url()).pathname, search: new URL(request.url()).search}); });
     return {page, context, heads};
   }
   const notice = page => page.locator('.build-notice');
@@ -42,8 +42,14 @@ try {
     await page.goto(app.origin + '/'); await page.locator('.workspace').waitFor(); await page.evaluate(() => { window.__noReload = 1; }); await page.waitForTimeout(2500);
     ok(heads.length >= 1 && heads.every(item => item.url.startsWith('/_next/static/')), 'the page asks the server about its own scripts, with HEAD: ' + heads.map(item => item.url).join(', '));
     ok(heads.some(item => SCRIPT.test(item.url)), 'including the page entry script, the one whose name changes with every release');
+    check([...new Set(heads.map(item => item.search))], ['?release-check'], 'asked at an address of their own, never the address the page loaded them from');
     check(await notice(page).count(), 0, 'a current page shows no notice');
     check(await page.evaluate(() => window.__noReload), 1, 'and reloaded nothing');
+    // A HEAD request for the very address of a cached script makes Chromium drop that copy: the next opening must still find the
+    // page's scripts in the cache, not download them again.
+    await page.reload(); await page.locator('.workspace').waitFor(); await page.waitForTimeout(1500);
+    const downloaded = await page.evaluate(() => performance.getEntriesByType('resource').filter(entry => /\/_next\/static\/chunks\/[^?]+\.js$/.test(entry.name) && entry.initiatorType !== 'fetch' && entry.transferSize > 0).map(entry => entry.name.split('/').pop()));
+    check(downloaded, [], 'the next opening takes every script from the cache');
     await context.close();
   }
 
