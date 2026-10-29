@@ -10,6 +10,9 @@ export const FRESHNESS_RESUME_GAP_MS=60000; // returning to the app after at lea
 export const FRESHNESS_HEAD_LIMIT=6; // the page loads three scripts; the limit guards against a page that loads many
 export const SHELL_MANIFEST_URL='/offline-shell-manifest.json';
 export const ACTIVATE_UPDATE_MESSAGE='yourrest-activate-update';
+// The scripts are asked about at an address of their own: Chromium (and the Android WebView) drops its cached copy of a script after a
+// HEAD request for that very address, so asking the plain address made every opening download the page's scripts again (2026-10-29).
+export const RELEASE_CHECK_QUERY='?release-check';
 const SERVER_SCRIPTS='/_next/static/',SHELL_SCRIPTS='/offline-app/assets/';
 
 type Doc={scripts:ArrayLike<{src:string}>};
@@ -93,7 +96,7 @@ export function buildFreshness():FreshnessController{
  singleton=createBuildFreshness({
   document:()=>typeof document==='undefined'?null:document,
   origin:()=>window.location.origin,
-  fetch:async(url,init)=>{const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),10000);try{return await fetch(url,{method:init.method,cache:'no-store',credentials:'same-origin',signal:abort.signal});}finally{clearTimeout(timeout);}},
+  fetch:async(url,init)=>{const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),10000);try{return await fetch(init.method==='HEAD'?url+RELEASE_CHECK_QUERY:url,{method:init.method,cache:'no-store',credentials:'same-origin',signal:abort.signal});}finally{clearTimeout(timeout);}},
   online:()=>navigator.onLine!==false,
   visible:()=>document.visibilityState==='visible',
   now:Date.now,
