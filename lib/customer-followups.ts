@@ -1,6 +1,6 @@
 import {z} from 'zod';
-import {type Row,stages,today} from './crm';
-import {customerPlanSource,visitCustomer,visitRequest,visitOrder} from './customer-visits';
+import {type Row,stages,today,isSalesRequest} from './crm';
+import {customerPlanSource,customerPlanSources,visitOrder} from './customer-visits';
 
 export const followupTypes:Record<string,string>={visit:'زيارة',call:'اتصال',whatsapp:'واتساب',quote:'عرض سعر',meeting:'اجتماع',followup:'متابعة'};
 export const invoiceOutcomes:Record<string,string>={pending:'لم يتحول بعد — المتابعة مستمرة',invoiced:'نعم، تحوّل إلى فاتورة',lost:'لا، فُقد عرض السعر'};
@@ -9,23 +9,27 @@ export const isCustomerFollowup=(r:Row|undefined)=>r?.kind==='activity'&&r.data.
 export const followupClosed=(stage:string)=>['won','lost'].includes(stage);
 /** Quote evidence belongs to the current request or sales cycle, never the customer's lifetime. */
 export function customerHasQuotation(customerId:string,records:Row[],service?:{id:string;createdAt:string}){
- const active=service||records.find(r=>r.id===customerId)?.data._serviceIntake;
+ // One index for this call: the customer and the request of each record without a scan of every record per record.
+ const indexed=new Map<string,Row>();for(const row of records)if(!indexed.has(row.id))indexed.set(row.id,row);
+ const customerOf=(row:Row|undefined)=>{for(let i=0;row&&i<5;i++){if(row.kind==='customer')return row;row=row.parentId!==null&&row.parentId!==undefined?indexed.get(row.parentId):undefined;}return undefined;};
+ const requestOf=(row:Row|undefined)=>{if(!row)return;const candidate=indexed.get(row.data.requestId||row.parentId);return candidate&&isSalesRequest(candidate)?candidate:undefined;};
+ const active=service||indexed.get(customerId)?.data._serviceIntake;
  const since=active?.id&&active?.createdAt?active.createdAt:'';
- const contacts=records.filter(r=>r.kind==='activity'&&r.data.visitWorkflow!=='service-intake-v1'&&visitCustomer(r,records)?.id===customerId&&(!since||r.createdAt>=since)).sort((a,b)=>visitOrder(b).localeCompare(visitOrder(a)));
+ const contacts=records.filter(r=>r.kind==='activity'&&r.data.visitWorkflow!=='service-intake-v1'&&customerOf(r)?.id===customerId&&(!since||r.createdAt>=since)).map(row=>({row,order:visitOrder(row)})).sort((a,b)=>b.order.localeCompare(a.order));
  let source:Row|undefined=customerPlanSource(customerId,records);if(since&&source&&source.createdAt<since)source=undefined;
- const request=source?.kind==='opportunity'?source:visitRequest(source,records);
+ const request=source?.kind==='opportunity'?source:requestOf(source);
  const evidence=(r:Row)=>r.kind==='quote'||r.data.type==='quote'||r.data.salesStage==='quoted'||r.data.stage==='quoted'||r.data.hasQuotation===true;
- if(request)return records.some(r=>(!since||r.createdAt>=since)&&(r.id===request.id||r.kind==='quote'&&r.parentId===request.id||r.kind==='activity'&&visitRequest(r,records)?.id===request.id)&&evidence(r));
- const current=contacts[0],previousClose=contacts.find(r=>r.id!==current?.id&&followupClosed(r.data.salesStage));
- const boundary=previousClose?visitOrder(previousClose):'';
- return contacts.some(r=>(!boundary||visitOrder(r)>boundary)&&evidence(r))||records.some(r=>r.kind==='quote'&&visitCustomer(r,records)?.id===customerId&&(!since||r.createdAt>=since)&&(!boundary||visitOrder(r)>boundary));
+ if(request)return records.some(r=>(!since||r.createdAt>=since)&&(r.id===request.id||r.kind==='quote'&&r.parentId===request.id||r.kind==='activity'&&requestOf(r)?.id===request.id)&&evidence(r));
+ const current=contacts[0]?.row,previousClose=contacts.find(({row})=>row.id!==current?.id&&followupClosed(row.data.salesStage));
+ const boundary=previousClose?previousClose.order:'';
+ return contacts.some(({row,order})=>(!boundary||order>boundary)&&evidence(row))||records.some(r=>r.kind==='quote'&&customerOf(r)?.id===customerId&&(!since||r.createdAt>=since)&&(!boundary||visitOrder(r)>boundary));
 }
 
 export const latestCustomerContact=customerPlanSource;
 /** Only an open, scheduled previous contact can be executed as a follow-up. */
 export function canExecuteCustomerFollowup(source:Row|undefined){return !!source&&!source.data._offlineState&&!source.data._offlineAcknowledged&&['activity','opportunity'].includes(source.kind)&&source.data.visitWorkflow!=='service-intake-v1'&&!followupClosed(source.data.salesStage||source.data.stage||'new')&&source.data.followupStatus!=='closed'&&!!source.data.nextAction?.trim()&&!!source.data.nextDate;}
 
-export function customerFollowupPlans(records:Row[]){return records.filter(r=>r.kind==='customer').flatMap(customer=>{const source=latestCustomerContact(customer.id,records);if(!source)return[];const stage=source.data.salesStage||source.data.stage||'';return[{customer,source,stage,nextDate:source.data.nextDate||'',nextAction:source.data.nextAction||'',responsibleId:customer.assignedTo,closed:followupClosed(stage)||source.data.followupStatus==='closed'}];}).sort((a,b)=>(a.nextDate||'0000').localeCompare(b.nextDate||'0000')||a.customer.data.name.localeCompare(b.customer.data.name));}
+export function customerFollowupPlans(records:Row[],plans:Map<string,Row|undefined>=customerPlanSources(records)){return records.filter(r=>r.kind==='customer').flatMap(customer=>{const source=plans.get(customer.id);if(!source)return[];const stage=source.data.salesStage||source.data.stage||'';return[{customer,source,stage,nextDate:source.data.nextDate||'',nextAction:source.data.nextAction||'',responsibleId:customer.assignedTo,closed:followupClosed(stage)||source.data.followupStatus==='closed'}];}).sort((a,b)=>(a.nextDate||'0000').localeCompare(b.nextDate||'0000')||a.customer.data.name.localeCompare(b.customer.data.name));}
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'أدخل تاريخًا صحيحًا').refine(v=>Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'أدخل تاريخًا صحيحًا');
 const competitorText=z.string().trim().max(250).default('');
 /** An explicit observation belongs only to the contact being saved, never its source. */
