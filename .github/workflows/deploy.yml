@@ -1,0 +1,171 @@
+# Deploys crm.yourrest.org from a commit of this repository, the way the update guides do it by hand, and only after a person approves.
+# Started by a push that changes deploy/request.json (the release and the mode to run), or by hand from the Actions tab.
+# 1. package: install, run the default test gate, build, and package the release with the pinned activator (scripts/package-ui-refresh-update.py).
+# 2. hosting: waits for approval in the `production` environment (Settings > Environments > production > Required reviewers), then copies the
+#    package over SSH and runs scripts/hosting-deploy.sh on the hosting account: check | deploy | verify.
+# The SSH secrets live in the `production` environment only, so no job reaches them before that approval. Nothing here touches the database
+# directly: the packaged activator takes the day's backup, switches the release and verifies, exactly as in the guides.
+name: Deploy to crm.yourrest.org
+
+on:
+  push:
+    branches: ['main', 'claude/**']
+    paths: ['deploy/request.json']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check = unpack and --check only (the app keeps running); deploy = stop, switch, start, verify; verify = --verify only"
+        type: choice
+        options: [check, deploy, verify]
+        default: check
+        required: true
+      release_name:
+        description: "Release name, e.g. update-speed (upload folder yourrest-crm-<name>-<date>, activator yourrest-activate-<name>.cjs)"
+        required: true
+      release_date:
+        description: "Release date, YYYYMMDD"
+        required: true
+      guide:
+        description: "The update guide for this release, e.g. docs/UPDATE-2026-10-29-SPEED-AR.txt"
+        required: true
+      schema_baseline:
+        description: "Migrations the live database already holds"
+        default: "16"
+        required: true
+      verify_routes:
+        description: "Routes --verify probes without a session, space separated PATH=STATUS"
+        default: "/api/support=401 /api/complaints=401 /api/complaint-report=401 /api/service-kpi=401"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  request:
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.read.outputs.mode }}
+      name: ${{ steps.read.outputs.name }}
+      date: ${{ steps.read.outputs.date }}
+      guide: ${{ steps.read.outputs.guide }}
+      baseline: ${{ steps.read.outputs.baseline }}
+      routes: ${{ steps.read.outputs.routes }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read and check the request
+        id: read
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_MODE: ${{ inputs.mode }}
+          IN_NAME: ${{ inputs.release_name }}
+          IN_DATE: ${{ inputs.release_date }}
+          IN_GUIDE: ${{ inputs.guide }}
+          IN_BASELINE: ${{ inputs.schema_baseline }}
+          IN_ROUTES: ${{ inputs.verify_routes }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            read_field() { python3 -c 'import json,sys;v=json.load(open("deploy/request.json"))[sys.argv[1]];print(" ".join(v) if isinstance(v,list) else v)' "$1"; }
+            MODE=$(read_field mode); NAME=$(read_field release_name); DATE=$(read_field release_date); GUIDE=$(read_field guide); BASELINE=$(read_field schema_baseline); ROUTES=$(read_field verify_routes)
+          else
+            MODE=$IN_MODE; NAME=$IN_NAME; DATE=$IN_DATE; GUIDE=$IN_GUIDE; BASELINE=$IN_BASELINE; ROUTES=$IN_ROUTES
+          fi
+          [[ "$MODE" =~ ^(check|deploy|verify)$ ]] || { echo "mode: check, deploy or verify"; exit 1; }
+          [[ "$NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || { echo "release_name: lower-case words joined by -"; exit 1; }
+          [[ "$DATE" =~ ^20[0-9]{6}$ ]] || { echo "release_date: YYYYMMDD"; exit 1; }
+          [[ "$GUIDE" =~ ^docs/UPDATE-[A-Za-z0-9-]+\.txt$ && -f "$GUIDE" ]] || { echo "guide: an existing docs/UPDATE-*.txt"; exit 1; }
+          [[ "$BASELINE" =~ ^[0-9]+$ ]] || { echo "schema_baseline: a number"; exit 1; }
+          for route in $ROUTES; do [[ "$route" =~ ^/api/[a-z0-9/-]+=[0-9]{3}$ ]] || { echo "bad route $route"; exit 1; }; done
+          { echo "mode=$MODE"; echo "name=$NAME"; echo "date=$DATE"; echo "guide=$GUIDE"; echo "baseline=$BASELINE"; echo "routes=$ROUTES"; } >> "$GITHUB_OUTPUT"
+          echo "Request: $MODE $NAME $DATE ($GUIDE)"
+
+  package:
+    needs: request
+    if: needs.request.outputs.mode != 'verify'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      STAGE: yourrest-crm-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}
+      HELPER: yourrest-activate-${{ needs.request.outputs.name }}.cjs
+      ZIP: Yourrest-CRM-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}.zip
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Default test gate
+        run: node scripts/check.mjs
+      - name: Build
+        run: pnpm build
+      - name: Package
+        id: pack
+        env:
+          NAME: ${{ needs.request.outputs.name }}
+          DATE: ${{ needs.request.outputs.date }}
+          GUIDE: ${{ needs.request.outputs.guide }}
+          BASELINE: ${{ needs.request.outputs.baseline }}
+          ROUTES: ${{ needs.request.outputs.routes }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/package"
+          routes=(); for route in $ROUTES; do routes+=(--verify-route "$route"); done
+          python3 scripts/package-ui-refresh-update.py --release dist/standalone --output "$RUNNER_TEMP/package/$ZIP" \
+            --release-name "$NAME" --release-date "$DATE" --stage-name "$STAGE" --helper-name "$HELPER" \
+            --guide "$GUIDE" --schema-baseline "$BASELINE" "${routes[@]}"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/package/$ZIP" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: ${{ runner.temp }}/package/
+          retention-days: 30
+
+  hosting:
+    needs: [request, package]
+    if: always() && needs.request.result == 'success' && (needs.package.result == 'success' || needs.request.outputs.mode == 'verify')
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 40
+    env:
+      MODE: ${{ needs.request.outputs.mode }}
+      STAGE: yourrest-crm-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}
+      HELPER: yourrest-activate-${{ needs.request.outputs.name }}.cjs
+      ZIP: Yourrest-CRM-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}.zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        if: needs.request.outputs.mode != 'verify'
+        with:
+          name: package
+          path: ${{ runner.temp }}/package
+      - name: SSH key and host
+        env:
+          KEY: ${{ secrets.YR_SSH_KEY }}
+          HOST: ${{ secrets.YR_SSH_HOST }}
+          PORT: ${{ secrets.YR_SSH_PORT }}
+          KNOWN: ${{ secrets.YR_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          if [ -n "$KNOWN" ]; then printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+          else ssh-keyscan -p "$PORT" "$HOST" > ~/.ssh/known_hosts 2>/dev/null; echo "Host key not pinned yet; its fingerprints:"; ssh-keygen -lf ~/.ssh/known_hosts; fi
+      - name: Upload the package
+        if: needs.request.outputs.mode != 'verify'
+        env:
+          HOST: ${{ secrets.YR_SSH_HOST }}
+          PORT: ${{ secrets.YR_SSH_PORT }}
+          USER_NAME: ${{ secrets.YR_SSH_USER }}
+        run: scp -i ~/.ssh/deploy -P "$PORT" -o BatchMode=yes "$RUNNER_TEMP/package/$ZIP" "$USER_NAME@$HOST:"
+      - name: Run on the hosting account
+        env:
+          HOST: ${{ secrets.YR_SSH_HOST }}
+          PORT: ${{ secrets.YR_SSH_PORT }}
+          USER_NAME: ${{ secrets.YR_SSH_USER }}
+          SHA: ${{ needs.package.outputs.sha256 }}
+        run: ssh -i ~/.ssh/deploy -p "$PORT" -o BatchMode=yes "$USER_NAME@$HOST" bash -s -- "$MODE" "$ZIP" "$STAGE" "$HELPER" "${SHA:-none}" < scripts/hosting-deploy.sh
