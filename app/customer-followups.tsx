@@ -1,5 +1,5 @@
 'use client';
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Loader2,CheckCircle2} from 'lucide-react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
@@ -35,7 +35,9 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
  const [uploadState,setUploadState]=useState<UploadState|null>(null),uploadAttempt=useRef<{file:File;context:string;key:string}|null>(null);
  const observation:CompetitorInput=data.competitorObservation||emptyCompetitorInput(),competitorContext=useRef('');competitorContext.current=me.id+'\n'+customerId+'\n'+observation.competitorName;
  useEffect(()=>()=>{uploadVersion.current++;},[]);
- const customer=records.find(r=>r.id===customerId),closed=followupClosed(data.salesStage),hasQuotation=!!customer&&(customerHasQuotation(customer.id,records)||data.type==='quote'||data.salesStage==='quoted');
+ const customer=records.find(r=>r.id===customerId),closed=followupClosed(data.salesStage);
+ // Read from the records once per snapshot, not on every letter typed into the form.
+ const quoted=useMemo(()=>!!customer&&customerHasQuotation(customer.id,records),[customer,records]),hasQuotation=!!customer&&(quoted||data.type==='quote'||data.salesStage==='quoted');
  const journeyStopId=useAutomaticJourney({customerId,type:data.type,date:data.date,enabled:!initial&&canExecuteCustomerFollowup(source)&&!isServiceRole(me.role)});
  // A follow-up that is a visit is recorded where the customer is, like any visit; the other kinds have no place.
  const place=useFollowupPlace({enabled:!initial&&!isServiceRole(me.role),customer,type:data.type,role:me.role});
