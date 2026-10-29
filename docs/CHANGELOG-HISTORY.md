@@ -4,6 +4,14 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Lists, search and page switches at production size on phones and tablets (2026-10-29, schema 16, no migration)
+
+- **Measured first.** The built app on a 390 px phone four times slower than the test machine, slow 4G, 2,300 customers and 6,000 visits: a manager waited about 39 s for the data, about 40 s for each page switch and about 21 s for each letter typed in the customer search; any tap froze the screen for more than 30 s. On a tablet (twice slower): 18 s, 15 s and 8 s. The cause was not the network or the bundle but computations that scanned every record once per row, on every screen update.
+- **What changed.** `lib/record-index.ts` (lookups built once per snapshot); `customerPlanSources` (every customer's latest plan in one pass, used by the due-for-follow-up list and the follow-up plans); `visitCustomer`/`visitRequest` through a per-array id lookup; memoised derived lists, per-snapshot search text and `useDeferredValue` in `app/crm-app.tsx`; customer search fields prepared once per row; one module-level `Intl` formatter per format (`today`, `money`, `riyadhDate`, `formatVisitTime`, `journeyDate`, `quantityNumber`); one index and one order key per call in `filterVisitRows` and `customerHasQuotation`.
+- **After, same conditions.** Manager on the phone: data about 7 s, page switches 0.8 to 1.3 s, a letter about 0.3 s, opening a customer under 1 s. Manager on the tablet: data about 2.3 s, page switches 0.4 to 1.1 s, a letter about 0.1 s. A representative's letter went from 0.45 to about 0.25 s; the representative's first load (about 5 s on slow 4G) is unchanged and is the next phase.
+- **Same results.** `tests/record-index.mjs` (25,001 checks) compares every replaced computation with the scan it replaced on random snapshots; `tests/perf-budget-browser.mjs` (browser gate) keeps the timings inside a budget. The UI harnesses learnt `useDeferredValue`.
+- No migration, no change to permissions or screens. The activator accepts the auto-stop release's activation name. A package of its own (`update-speed`).
+
 ## The activator stops the Node.js server the host restarts after Stop App (2026-10-27, schema 16, no migration)
 
 - The cPanel Node.js host starts the application again when a phone's request arrives (the representatives' route tracking sends requests all day), so **Stop App** did not always leave it stopped and the activator refused with `APP_OR_DATA_STILL_IN_USE`; the way round was a manual `kill` and the activator straight after (the 2026-10-21 deployment).
