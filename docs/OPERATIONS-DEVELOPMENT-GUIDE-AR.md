@@ -459,18 +459,24 @@ node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-الق�
 - **ميزانية الأداء:** `tests/perf-budget-browser.mjs` (بوابة المتصفح بعد `pnpm build`): المدير والمندوب على موبايل 390 بمعالج أبطأ 4 مرات و2300 عميل و6000 زيارة، وكل خطوة تحت حد (البيانات 20 ث، التنقّل 3.5 ث، الحرف 0.8 ث وثلاثة من أربعة 0.45 ث، فتح العميل 3.5 ث). الحدود واسعة عمدًا لتلتقط عودة المسح لكل صف لا تذبذب الجهاز.
 - **ما بقي (المرحلتان 2 و3 من الخطة):** الفتح ينتظر السيرفر والحفظ على الجهاز قبل العرض رغم وجود نسخة محفوظة؛ الكروت والجدول يُرسمان معًا ويُخفى أحدهما بالتنسيق؛ وكل الصفحات في ملف واحد.
 
-## 9-ص. الرفع إلى الاستضافة من GitHub بموافقة المالك
+## 9-ص. الرفع إلى الاستضافة من GitHub بتوكن cPanel (كما في سديم)
 
-بدل تنفيذ خطوات دليل التحديث يدويًا في Terminal cPanel، يمكن أن ينفّذها GitHub نفسه بعد موافقة المالك: `.github/workflows/deploy.yml` و`scripts/hosting-deploy.sh`.
+بدل تنفيذ خطوات دليل التحديث يدويًا في Terminal cPanel، ينفّذها GitHub نفسه بنفس المُفعِّل وبنفس الترتيب، بطريقة نظام سديم: توكن API من cPanel، بلا مفتاح SSH. الملفات: `.github/workflows/deploy.yml` و`scripts/deploy-cpanel.mjs` و`scripts/hosting-cron.sh` و`scripts/hosting-deploy.sh`.
 
-- **التشغيل:** دفع ملف `deploy/request.json` إلى `main` أو فرع `claude/**`، أو يدويًا من تبويب Actions. الملف: `{"mode": "check", "release_name": "update-speed", "release_date": "20261029", "guide": "docs/UPDATE-2026-10-29-SPEED-AR.txt", "schema_baseline": "16", "verify_routes": ["/api/support=401", "/api/complaints=401", "/api/complaint-report=401", "/api/service-kpi=401"]}`.
-- **المهام:** `request` (قراءة الطلب والتحقق من صيغته) ثم `package` (تثبيت، البوابة الافتراضية، `pnpm build`، التغليف بالمُفعِّل المثبَّت) ثم `hosting` الذي **ينتظر موافقة** بيئة `production` (Required reviewers)، ثم يرفع الحزمة بـ`scp` وينفّذ على الحساب:
-  - `check`: فكّ الحزمة في مجلدها و`--check`، والتطبيق يعمل؛ ويطبع هل `cloudlinux-selector` متاح.
-  - `deploy`: `--check`، إيقاف التطبيق بـ`cloudlinux-selector stop` إن وُجد (وإلا يوقفه المُفعِّل بنفسه)، المُفعِّل (النسخة الاحتياطية والتبديل)، التشغيل بـ`cloudlinux-selector start`، ثم `--verify` حتى ست محاولات. إن لم يوجد `cloudlinux-selector` يتوقف بعد التبديل ويطلب Start App يدويًا ثم `mode=verify`.
-  - `verify`: `--verify` فقط.
-- **الأسرار في بيئة `production` فقط** (لا في أسرار الريبو): `YR_SSH_KEY` (مفتاح خاص مخصص للرفع ومعتمد Authorize في SSH Access)، `YR_SSH_KEY_PASSPHRASE` (كلمة مرور المفتاح؛ cPanel يرفض مفتاحًا بلا كلمة مرور، فيفكّها المشغّل على نسخته المؤقتة فقط)، `YR_SSH_HOST`، `YR_SSH_PORT` (Namecheap: 21098)، `YR_SSH_USER`، واختياريًا `YR_SSH_KNOWN_HOSTS` لتثبيت مفتاح السيرفر (بدونه يُقرأ بـ`ssh-keyscan` وتُطبع بصمته في السجل).
-- **الحدود:** الحزمة تُبنى على GitHub من الالتزام نفسه، فلا تطابق الحزمة المبنية محليًا بالبايت (معرّف البناء وأسماء الملفات المجزّأة تختلف)، ويُعاد عليها الفحص المضمّن في المُفعِّل. لا يُحذف شيء ولا يُسترجع: أي `STOP` من المُفعِّل يُنهي التشغيل بمخرجاته. لا يمس السكربت مجلدات حزم سابقة؛ مجلد الحزمة نفسها يُعاد استعماله إن كان بنفس `RELEASE-SHA256SUMS.txt` ويُرفض إن اختلف.
-- **اختبار السكربت محليًا:** `HOME=<مجلد مؤقت> YR_HOSTING_NODE=$(command -v node) bash scripts/hosting-deploy.sh check <zip> <stage> <helper> <sha256>` (يفكّ الحزمة ثم يتوقف المُفعِّل لغياب التطبيق).
+- **الإعداد مرة واحدة (المالك):** cPanel ← Security ← Manage API Tokens ← Create، ثم في GitHub: Settings ← Secrets and variables ← Actions ← New repository secret باسم `CPANEL_API_TOKEN`. هذا هو السر الوحيد اللازم؛ `CPANEL_HOST` و`CPANEL_USER` اختياريان (الافتراضي `premium137.web-hosting.com` و`youriedx`). القيمة تُنظَّف من المسافات وعلامات الاتجاه التي يجلبها النسخ من رسالة عربية، والتوكن لا يُطبع أبدًا.
+- **الحزمة:** تُبنى وتُجرَّب البروفة الكاملة هنا كالمعتاد، ثم تُلتزم الحزمة نفسها (نفس SHA256 المسلَّم) في `deploy/packages/`، فما يُرفع هو ما جُرِّب بالبايت. احذف الحزمة السابقة من المجلد عند إضافة الجديدة.
+- **التشغيل:** دفع `deploy/request.json` إلى `main` أو فرع `claude/**`، أو يدويًا من تبويب Actions بعد وصول الـworkflow إلى `main` (GitHub لا يعرض التشغيل اليدوي إلا لما في الفرع الافتراضي؛ الوضع المختار هناك يحل محل وضع الملف):
+  `{"mode": "check", "package": "deploy/packages/Yourrest-CRM-Update-Speed-20261029.zip", "sha256": "c03d…", "stage": "yourrest-crm-update-speed-20261029", "helper": "yourrest-activate-update-speed.cjs"}`.
+  الخطوة الأولى تتحقق من الطلب: SHA256 الحزمة الملتزمة يطابق الطلب، وفيها `release/` و`RELEASE-SHA256SUMS.txt` والمُفعِّل في جذرها، والأسماء كما في دليل التحديث.
+- **كيف يُنفَّذ على الاستضافة:** واجهة cPanel تنقل الملفات لكنها لا تنفّذ أوامر. لذلك `deploy-cpanel.mjs`: يتأكد أن التوكن يفتح الحساب وأن `yourrest-crm` موجود؛ يرفع الحزمة إلى مجلد البيت (كما في الدليل) والسكربتين إلى `~/yourrest-deploy`؛ يكتب ملف الطلب؛ ثم يضيف **سطر cron مؤقتًا** كل دقيقة يشغّل `hosting-cron.sh`، الذي يأخذ الطلب مرة واحدة (`mv` ذري) ويشغّل `hosting-deploy.sh` ويكتب الناتج في `log-<run>` ورمز الخروج في `done-<run>`. الـworkflow يقرأ الناتج أولًا بأول ويعرضه، ثم **يحذف سطر cron** في كل الأحوال، ويحذف أي طلب لم يُؤخذ، فلا يعمل طلب لاحقًا وحده. علامة `running-<run>` تمنع تشغيلين معًا (تُتجاهل إن زاد عمرها عن ساعتين).
+- **الأوضاع (`hosting-deploy.sh`):**
+  - `check`: فكّ الحزمة في مجلدها و`--check`، والتطبيق يعمل؛ ويطبع هل `cloudlinux-selector` متاح وحالة التطبيق فيه (دون متغيرات البيئة).
+  - `deploy`: `--check`، إيقاف التطبيق بـ`cloudlinux-selector stop` إن وُجد (وإلا يوقفه المُفعِّل بنفسه)، المُفعِّل (النسخة الاحتياطية والتبديل)، التشغيل بـ`cloudlinux-selector start`، ثم `--verify` حتى ست محاولات. إن توقف المُفعِّل **قبل** التبديل يُعاد تشغيل التطبيق القديم كما هو ويفشل التشغيل بمخرجات المُفعِّل. دون `cloudlinux-selector` يشغّل المضيف التطبيق مع أول طلب؛ إن لم يُجب ينتهي برمز 4: Start App يدويًا ثم `mode=verify`.
+  - `verify`: `--verify` فقط، ولا تُرفع حزمة.
+- **الموافقة:** Claude لا يدفع طلب `deploy` إلا بعد موافقة المالك في المحادثة. الـjob يعمل في بيئة `production`؛ إضافة Required reviewers لها تجعل كل تشغيل ينتظر ضغطة Approve إن أراد المالك ذلك.
+- **القراءة:** ناتج الاستضافة كاملًا في سجل الـjob وفي ملخص التشغيل، وأهم أسطره في annotation واحدة (`hosting said`)، والخطوات في annotations (`deploy`).
+- **الحدود:** لا يُحذف شيء ولا يُسترجع: أي `STOP` من المُفعِّل يُنهي التشغيل بمخرجاته. لا يمس السكربت مجلدات حزم سابقة؛ مجلد الحزمة نفسها يُعاد استعماله إن كان بنفس `RELEASE-SHA256SUMS.txt` ويُرفض إن اختلف. يلزم أن يسمح الحساب بـcron (cPanel ← Cron Jobs)؛ إن لم يبدأ السطر خلال 6 دقائق يتوقف الـworkflow ويحذف الطلب والسطر.
+- **الاختبار:** `node tests/deploy-cpanel.mjs` (البوابة الافتراضية) يشغّل السكربتات الحقيقية على cPanel وهمي في مجلد مؤقت بـcron يشغّل bash فعلًا. وباليد: `HOME=<مجلد مؤقت> YR_HOSTING_NODE=$(command -v node) bash scripts/hosting-deploy.sh check <zip> <stage> <helper> <sha256>`.
 
 ## 10. حل المشكلات الشائعة
 
