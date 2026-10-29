@@ -1,8 +1,17 @@
 import {type Row,type Member,isSalesRequest,scopeRecords} from './crm';
 export const visitProducts=['قوالب البلوك المتحركة','قوالب البلوك الثابتة','لمامة البلوك','ماكينة إنتاج البلوكة المتحركة','قطع غيار المكائن المتحركة','خلاطات البلوك','خلاطات الخرسانة الجاهزة'];
 export const strengthLabels:Record<string,string>={weak:'ضعيفة',medium:'متوسطة',strong:'قوية'};
-export function visitCustomer(row:Row|undefined,records:Row[]):Row|undefined{for(let i=0;row&&i<5;i++){if(row.kind==='customer')return row;row=records.find(r=>r.id===row?.parentId);}return undefined;}
-export function visitRequest(row:Row|undefined,records:Row[]):Row|undefined{if(!row)return;const candidate=records.find(r=>r.id===(row.data.requestId||row.parentId));return candidate&&isSalesRequest(candidate)?candidate:undefined;}
+// A lookup by id for each records array, kept while the array lives, so the two helpers below cost one lookup per step instead of
+// a scan of every record (they run once per visit in lists of thousands). Records arrays are snapshots that are never changed in
+// place; the length check still rebuilds the lookup if one ever grows or shrinks. The first record of an id wins, as with find().
+const lookups=new WeakMap<readonly Row[],{length:number;byId:Map<unknown,Row>}>();
+function byIdOf(records:readonly Row[]){
+ let entry=lookups.get(records);
+ if(!entry||entry.length!==records.length){const byId=new Map<unknown,Row>();for(const row of records)if(!byId.has(row.id))byId.set(row.id,row);entry={length:records.length,byId};lookups.set(records,entry);}
+ return entry.byId;
+}
+export function visitCustomer(row:Row|undefined,records:Row[]):Row|undefined{const byId=byIdOf(records);for(let i=0;row&&i<5;i++){if(row.kind==='customer')return row;row=byId.get(row.parentId);}return undefined;}
+export function visitRequest(row:Row|undefined,records:Row[]):Row|undefined{if(!row)return;const candidate=byIdOf(records).get(row.data.requestId||row.parentId);return candidate&&isSalesRequest(candidate)?candidate:undefined;}
 export function customerVisits(customerId:string,records:Row[]){
  // Build an index for this invocation only. Preserve first-match semantics and
  // the legacy five-level ancestry limit without a full scan for every activity.

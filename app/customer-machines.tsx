@@ -31,8 +31,7 @@ export default function CustomerMachines({ customers, records, members, canEdit 
     const say = (ar:string,en:string) => language === 'ar' ? ar : en;
     const [expanded, setExpanded] = useState<string | null>(null);
     const machines = useMemo(() => { const map = new Map<string, Row[]>(); for (const row of records)
-        if (row.kind === 'factory' && row.parentId)
-            map.set(row.parentId, [...(map.get(row.parentId) || []), row]); return map; }, [records]);
+        if (row.kind === 'factory' && row.parentId) { const list = map.get(row.parentId); if (list) list.push(row); else map.set(row.parentId, [row]); } return map; }, [records]);
     const visitCounts = useMemo(() => { const counts = new Map<string, number>(); for (const record of records) { if (record.kind !== 'activity') continue; const customer = visitCustomer(record, records); if (customer) counts.set(customer.id, (counts.get(customer.id) || 0) + 1); } return counts; }, [records]);
     const sourceCustomers = customers.filter(r => r.data.machineCount !== null && r.data.machineCount !== undefined || r.data.machineTypes);
     const sourceTotal = customers.reduce((n, r) => n + (typeof r.data.machineCount === 'number' ? r.data.machineCount : 0), 0);

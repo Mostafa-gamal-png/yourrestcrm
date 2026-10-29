@@ -32,6 +32,7 @@ const V = await import(path.join(out, 'lib/customer-visits.mjs'));
 const F = await import(path.join(out, 'lib/customer-followups.mjs'));
 const L = await import(path.join(out, 'lib/visit-list.mjs'));
 const S = await import(path.join(out, 'lib/customer-service.mjs'));
+const C = await import(path.join(out, 'lib/crm.mjs'));
 
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
@@ -89,6 +90,22 @@ for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
   for (const row of [...rows, undefined]) { same(index.ancestor(row, 'customer', 5), walk(row, 'customer', 5), 'customer of ' + row?.id); same(index.ancestor(row, 'factory', 4), walk(row, 'factory', 4), 'machine of ' + row?.id); }
   // The same arrays come back for the same question, and a snapshot is never changed.
   same(index.children(rows[0].id, 'activity'), index.children(rows[0].id, 'activity'), 'children are kept per snapshot');
+}
+
+// 1b. visitCustomer and visitRequest look parents up through a lookup kept per records array: the same answers as the scans.
+{
+  const customerOf = (row, records) => { for (let i = 0; row && i < 5; i++) { if (row.kind === 'customer') return row; row = records.find(r => r.id === row?.parentId); } return undefined; };
+  const requestOf = (row, records) => { if (!row) return; const candidate = records.find(r => r.id === (row.data.requestId || row.parentId)); return candidate && C.isSalesRequest(candidate) ? candidate : undefined; };
+  for (const seed of [51, 52, 53, 54, 55, 56]) {
+    const rows = snapshot(seed, 220);
+    for (const row of [...rows, undefined]) {
+      same(V.visitCustomer(row, rows), customerOf(row, rows), `visitCustomer ${row?.id} (seed ${seed})`);
+      same(V.visitRequest(row, rows), requestOf(row, rows), `visitRequest ${row?.id}`);
+    }
+    // A records array that grows (never done by the app) gets a fresh lookup.
+    const grown = [...rows], orphan = rows.find(r => r.kind === 'activity' && r.parentId && !rows.some(p => p.id === r.parentId));
+    if (orphan) { same(V.visitCustomer(orphan, grown), undefined, 'an orphan has no customer'); grown.push({id: orphan.parentId, kind: 'customer', parentId: null, data: {}, assignedTo: 'rep', branch: 'b', createdAt: '', updatedAt: '', version: 1}); same(V.visitCustomer(orphan, grown)?.id, orphan.parentId, 'the lookup follows a grown array'); }
+  }
 }
 
 // 2. One pass for every customer = customerPlanSource customer by customer.

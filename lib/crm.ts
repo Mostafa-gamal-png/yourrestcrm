@@ -10,8 +10,10 @@ export type Kind = 'customer'|'factory'|'opportunity'|'activity'|'quote';
 export type Row = {id:string;kind:Kind;parentId:string|null;assignedTo:string;branch:string;data:any;createdAt:string;updatedAt:string;version:number};
 export type AuditEntry = {id:string;recordId:string;actor:string;action:string;detail:string;createdAt:string};
 export type Member = {authVersion?:number;editToken?:string;id:string;userId?:string;email:string;name:string;role:string;branch:string;supervisorId?:string;regionScope?:string;readOnly?:boolean;active:number;target:number};
-export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-export const money=(v:number)=>new Intl.NumberFormat('en-US',{maximumFractionDigits:2,minimumFractionDigits:0}).format(v||0);
+// One formatter each, made once: today() and money() run for every row of every list, and making a formatter costs far more than using one.
+const riyadhDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}),moneyFormat=new Intl.NumberFormat('en-US',{maximumFractionDigits:2,minimumFractionDigits:0});
+export const today=()=>riyadhDay.format(new Date());
+export const money=(v:number)=>moneyFormat.format(v||0);
 export const isSalesRequest=(r:Row)=>r.kind==='opportunity'&&r.data.hasRequest!==false;
 export const isOpen=(r:Row)=>r.kind==='opportunity'&&(isSalesRequest(r)?!['won','lost'].includes(r.data.stage):r.data.followupStatus!=='closed');
 export const followupTitle=(r:Row)=>r.kind==='activity'?r.data.summary:(r.data.followupTitle||r.data.moldType||'متابعة العميل');

@@ -13,7 +13,8 @@ export type JourneyResult={id:string;date:string;createdAt:string;recordedAt?:st
 export type JourneyCommunication=JourneyResult & {memberId:string;memberName:string;customerId:string;customerName:string};
 export type JourneyReportStop=JourneyStop & {memberName:string;points:JourneyPoint[];segments:JourneyPoint[][];results:JourneyResult[]};
 export type JourneyReportData={date:string;memberId:string;members:{id:string;name:string;role:string;active:number}[];stops:JourneyReportStop[];communications:JourneyCommunication[];mobileDays?:MobileRouteReportDay[];daily?:DailyReportEnhancement;tracking?:TrackingCoverage[];serverTime:string};
-export function journeyDate(at:string|number=Date.now()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at));}
+const journeyDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'});
+export function journeyDate(at:string|number=Date.now()){return journeyDay.format(new Date(at));}
 export function initialJourneyData(at:string):JourneyData{return{arrivalAt:null,departureAt:null,durationSeconds:null,durationUncertain:false,observedSeconds:0,gaps:[],events:[{type:'selected',at}]};}
 export function distanceMeters(a:Coordinates,b:Coordinates){const rad=Math.PI/180,dlat=(b.latitude-a.latitude)*rad,dlon=(b.longitude-a.longitude)*rad,h=Math.sin(dlat/2)**2+Math.cos(a.latitude*rad)*Math.cos(b.latitude*rad)*Math.sin(dlon/2)**2;return 6371000*2*Math.atan2(Math.sqrt(h),Math.sqrt(Math.max(0,1-h)));}
 export function implausibleJourneyJump(a:JourneyPoint,b:JourneyPoint){const seconds=(Date.parse(b.capturedAt)-Date.parse(a.capturedAt))/1000;return seconds>0&&distanceMeters(a,b)-a.accuracy-b.accuracy>seconds*100;}
