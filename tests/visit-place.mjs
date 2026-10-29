@@ -28,10 +28,10 @@ compile('lib/visit-place.ts');
 const P = await import(path.join(out, 'lib/visit-place.mjs'));
 // The English dictionary's own translation function, with the dictionary read from its file.
 const dictionary = fs.readFileSync(path.join(root, 'lib/locales/en.json'), 'utf8');
-const i18nCode = ts.transpileModule(fs.readFileSync(path.join(root, 'lib/i18n.ts'), 'utf8'), {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText
-  .replace(/import english from ['"]\.\/locales\/en\.json['"];?/, 'const english=JSON.parse(' + JSON.stringify(dictionary) + ');');
+const i18nCode = ts.transpileModule(fs.readFileSync(path.join(root, 'lib/i18n.ts'), 'utf8'), {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText;
 fs.writeFileSync(path.join(out, 'i18n.mjs'), i18nCode);
-const {translateText} = await import(path.join(out, 'i18n.mjs'));
+const {translateText, installEnglish} = await import(path.join(out, 'i18n.mjs'));
+installEnglish(JSON.parse(dictionary)); // downloaded on demand in the app; handed over here
 
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
