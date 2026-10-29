@@ -85,7 +85,7 @@ try{
  await page.getByRole('button',{name:'تنزيل التطبيق',exact:true}).click();await page.getByRole('dialog').waitFor();check(await page.getByRole('dialog').getAttribute('dir'),'rtl');assert.match(await page.getByRole('dialog').innerText(),/افتح قائمة المتصفح/);checks++;await noOverflow(page,'Arabic install help');await page.getByRole('button',{name:'تمام',exact:true}).click();
  check(await page.locator('.pwa-install-dismiss,.pwa-install-link').count(),0,'The install card presents a single permanent install action');
  await page.reload();await page.locator('.pwa-install-action').waitFor();checks++;
- await page.getByRole('button',{name:'Switch to English',exact:true}).click();check(await page.locator('.pwa-install').getAttribute('dir'),'ltr');check(await page.getByRole('button',{name:'Install app',exact:true}).count(),1);
+ await page.getByRole('button',{name:'Switch to English',exact:true}).click();await page.locator('.pwa-install[dir="ltr"]').waitFor();check(await page.locator('.pwa-install').getAttribute('dir'),'ltr');check(await page.getByRole('button',{name:'Install app',exact:true}).count(),1);
  await shot(page,'pwa-mobile-en');
  await page.getByRole('button',{name:'Install app',exact:true}).click();await page.getByRole('dialog').waitFor();assert.match(await page.getByRole('dialog').innerText(),/Open your browser menu/);checks++;await noOverflow(page,'English install help');await page.getByRole('button',{name:'Got it',exact:true}).click();
  async function offer(outcome){return page.evaluate(outcome=>{window.__promptCalls=0;window.__choice=undefined;const event=new Event('beforeinstallprompt',{cancelable:true});Object.assign(event,{__testEvent:true,prompt:async()=>{window.__promptCalls++;window.__promptHadUserActivation=navigator.userActivation.isActive;if(outcome==='error')throw Error('Simulated browser rejection');},userChoice:outcome==='pending'?new Promise(resolve=>window.__choice=resolve):Promise.resolve({outcome})});window.dispatchEvent(event);return event.defaultPrevented;},outcome);}
@@ -113,7 +113,7 @@ try{
  for(const [id,title] of [['customer','العملاء'],['map','خريطة المصانع'],['activity','الزيارات'],['followup','المتابعات'],['targets','مستهدفي']]){
   await repTabs.locator('[data-page='+id+']').click();if(id==='map')await repPage.locator('.cm-shell').waitFor();else await repPage.locator('.page-heading h1').filter({hasText:title}).waitFor();check(await repTabs.locator('[aria-current=page]').getAttribute('data-page'),id,'Active mobile page '+id);await noOverflow(repPage,'Rep page '+id);
  }
- await repPage.getByRole('button',{name:'Switch to English',exact:true}).click();check(await repTabs.getAttribute('dir'),'ltr');check(await repTabs.locator('[data-page=targets]').innerText(),'My targets');await shot(repPage,'rep-mobile-en');
+ await repPage.getByRole('button',{name:'Switch to English',exact:true}).click();await repPage.waitForFunction(()=>document.documentElement.dir==='ltr');check(await repTabs.getAttribute('dir'),'ltr');check(await repTabs.locator('[data-page=targets]').innerText(),'My targets');await shot(repPage,'rep-mobile-en');
  await repPage.getByRole('button',{name:'التبديل إلى العربية',exact:true}).click();await shot(repPage,'rep-mobile-ar');
  await repTabs.locator('[data-page=customer]').click();await repPage.locator('.heading-actions').getByRole('button',{name:'إضافة عميل',exact:true}).click();
  const customerDialog=repPage.getByRole('dialog');await customerDialog.waitFor();check(await repTabs.isVisible(),false,'Customer form hides navigation behind it');
