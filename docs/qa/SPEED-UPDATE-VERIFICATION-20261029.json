@@ -1,0 +1,567 @@
+{
+  "date": "2026-10-29",
+  "builtFromCommit": "71ade7b (the record index, the one-pass plans, the memoised lists and search, the shared formatters, their tests, the documents and the build)",
+  "gateRunAtCommit": "71ade7b",
+  "headAtPackaging": "71ade7b",
+  "package": {
+    "file": "Yourrest-CRM-Update-Speed-20261029.zip",
+    "bytes": 14313940,
+    "sha256": "c03d535764a92a3a6da8a56a3cfb337ff663dd88ad761562032bd56623628845",
+    "releaseFiles": 2897,
+    "manifestSha256": "ff45af9a578c48c84cac7ced3116983c22be766fe1c58196c1277cf2efcc361a",
+    "helper": "yourrest-activate-update-speed.cjs",
+    "guide": "UPDATE-20261029-AR.txt",
+    "stageDir": "yourrest-crm-update-speed-20261029",
+    "releaseName": "update-speed",
+    "releaseDate": "20261029",
+    "schemaBefore": 16,
+    "schemaAfter": 16,
+    "newMigrations": [],
+    "verifyRoutes": [
+      [
+        "/api/support",
+        401
+      ],
+      [
+        "/api/complaints",
+        401
+      ],
+      [
+        "/api/complaint-report",
+        401
+      ],
+      [
+        "/api/service-kpi",
+        401
+      ]
+    ],
+    "settingsOrProductionDataIncluded": false,
+    "databaseIncluded": false,
+    "seedSnapshotIncluded": false,
+    "forbiddenFileNames": 0,
+    "secretPatternHits": 0,
+    "sqliteFilesInside": 0,
+    "customerPhoneNumbersFromSeedChecked": 206,
+    "customerPhoneNumbersFromSeedFound": 0,
+    "allReleaseFilesMatchManifest": true,
+    "newApk": false,
+    "identityNote": "A new release name, date, upload folder and activator name (update-speed, 20261029). The activator lists the activation names of every earlier release, including the auto-stop release of 2026-10-27, so it reuses a same-day full backup instead of refusing it.",
+    "rebuiltBeforeDelivery": "No: built once from the release tree verified by the runs below."
+  },
+  "comparedWithPreviousPackage": {
+    "file": "Yourrest-CRM-Update-Auto-Stop-20261027.zip",
+    "sha256": "161894085e083056dc0c4a7d63638af386a01b2c3fb0e1e57ae9558e97e36c85",
+    "entriesBefore": 2900,
+    "entriesAfter": 2900,
+    "added": 66,
+    "removed": 66,
+    "changed": 19,
+    "unchanged": 2815,
+    "note": "Added and removed are the content-hashed bundle chunks and server modules the changed code renames, the offline shell assets, the guide and the activator under their own names; changed are the bundle and server manifests, the build id, the offline shell and its manifest, the service worker, the activator copy under operations/ and the sums. No file under node_modules was touched."
+  },
+  "releaseFolder": {
+    "files": 2897,
+    "treeSha256": "93740df4ba8ac75e6cf2711c4685d7427e3696cc8b0f703e11bc627229f82dc6",
+    "unchangedByTheTestRunsThatFollowedThePackaging": true
+  },
+  "gates": {
+    "typescript": {
+      "passed": true,
+      "errors": 0
+    },
+    "eslint": {
+      "errors": 96,
+      "warnings": 72,
+      "note": "identical to the base commit and to the previous release; measured on the whole repository"
+    },
+    "defaultGate": {
+      "passed": true,
+      "tests": 135,
+      "testsReportingChecks": 130,
+      "checks": 38438,
+      "before": {
+        "tests": 134,
+        "checks": 13433
+      },
+      "firstRun": {
+        "passed": false,
+        "failed": [
+          "tests/visit-file-concurrency.mjs"
+        ],
+        "note": "tests/visit-file-concurrency.mjs timed out at its own 3 s fixture limit while the gate ran its tests in parallel; it passed 5 times out of 5 alone and the whole gate passed 135/135 on the rerun recorded here. The test exercises upload admission, which this update does not touch."
+      }
+    },
+    "releaseBuildGate": {
+      "tests/app-update-release.mjs": {
+        "passed": true,
+        "checks": 16
+      },
+      "tests/complaint-report-http.mjs": {
+        "passed": true,
+        "checks": 51
+      },
+      "tests/complaints-http.mjs": {
+        "passed": true,
+        "checks": 156
+      },
+      "tests/device-status-http.mjs": {
+        "passed": true,
+        "checks": 86
+      },
+      "tests/namecheap-http.mjs": {
+        "passed": true,
+        "checks": 381
+      },
+      "tests/production-load.mjs": {
+        "passed": true,
+        "checks": null
+      },
+      "tests/sales-date-boundaries.mjs": {
+        "passed": true,
+        "checks": 36
+      },
+      "tests/server-authorization.mjs": {
+        "passed": true,
+        "checks": 366
+      },
+      "tests/service-kpi-http.mjs": {
+        "passed": true,
+        "checks": 115
+      },
+      "tests/service-queue-http.mjs": {
+        "passed": true,
+        "checks": 120
+      },
+      "tests/service-report-http.mjs": {
+        "passed": true,
+        "checks": 45
+      },
+      "tests/support-http.mjs": {
+        "passed": true,
+        "checks": 230
+      },
+      "tests/targets-attainment-http.mjs": {
+        "passed": true,
+        "checks": 26
+      },
+      "tests/visit-files-http.mjs": {
+        "passed": true,
+        "checks": 41
+      },
+      "tests/visit-place-http.mjs": {
+        "passed": true,
+        "checks": 44
+      }
+    },
+    "browserGate": {
+      "tests/admin-delete-browser.mjs": {
+        "passed": true,
+        "checks": 15,
+        "seconds": 19
+      },
+      "tests/app-browser-workflows.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 28,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Reaches the permission-denial step: Chromium started through Playwright does not apply the browser permission override in this context (expected denied, got granted). The unmodified baseline fails at the same step with the same message."
+      },
+      "tests/app-update-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 3
+      },
+      "tests/build-notice-browser.mjs": {
+        "passed": true,
+        "checks": 16,
+        "seconds": 35
+      },
+      "tests/competitor-intelligence-browser.mjs": {
+        "passed": true,
+        "checks": 146,
+        "seconds": 31
+      },
+      "tests/competitors-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 34
+      },
+      "tests/complaints-browser.mjs": {
+        "passed": true,
+        "checks": 80,
+        "seconds": 62
+      },
+      "tests/customer-edit-browser.mjs": {
+        "passed": true,
+        "checks": 54,
+        "seconds": 22
+      },
+      "tests/daily-report-browser.mjs": {
+        "passed": true,
+        "checks": 94,
+        "seconds": 11
+      },
+      "tests/dictation-browser.mjs": {
+        "passed": true,
+        "checks": 46,
+        "seconds": 52
+      },
+      "tests/erp-sales-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 0,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Needs the original ERP workbook (ENOENT /home/upload/Reports_Invoices_14480422_094904.xlsx); it was never supplied. The unmodified baseline fails identically."
+      },
+      "tests/kpi-evidence-browser.mjs": {
+        "passed": true,
+        "checks": 87,
+        "seconds": 24
+      },
+      "tests/location-picker-browser.mjs": {
+        "passed": true,
+        "checks": 80,
+        "seconds": 42
+      },
+      "tests/machines-browser.mjs": {
+        "passed": true,
+        "checks": 31,
+        "seconds": 28
+      },
+      "tests/member-regions-browser.mjs": {
+        "passed": true,
+        "checks": 13,
+        "seconds": 20
+      },
+      "tests/mobile-comfort-browser.mjs": {
+        "passed": true,
+        "checks": 207,
+        "seconds": 130
+      },
+      "tests/offline-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 30,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline reload: Playwright setOffline does not cover the service worker network in this Chromium. The unmodified baseline times out at the same wait (locator.waitFor, 18000 ms)."
+      },
+      "tests/offline-outbox-browser.mjs": {
+        "passed": true,
+        "checks": 49,
+        "seconds": 3
+      },
+      "tests/perf-budget-browser.mjs": {
+        "passed": true,
+        "checks": 23,
+        "seconds": 46
+      },
+      "tests/pwa-browser.mjs": {
+        "passed": false,
+        "checks": null,
+        "seconds": 22,
+        "sameFailureAsUnmodifiedBaseline": true,
+        "reason": "Cold offline navigation uses the data-free client shell: same cause as offline-browser. The unmodified baseline fails at the same assertion."
+      },
+      "tests/service-kpi-browser.mjs": {
+        "passed": true,
+        "checks": 83,
+        "seconds": 74
+      },
+      "tests/service-queue-browser.mjs": {
+        "passed": true,
+        "checks": 162,
+        "seconds": 123
+      },
+      "tests/support-browser.mjs": {
+        "passed": true,
+        "checks": 125,
+        "seconds": 116
+      },
+      "tests/tracking-gate-browser.mjs": {
+        "passed": true,
+        "checks": 98,
+        "seconds": 116
+      },
+      "tests/ui-refresh-browser.mjs": {
+        "passed": true,
+        "checks": 105,
+        "seconds": 48
+      },
+      "tests/visit-place-browser.mjs": {
+        "passed": true,
+        "checks": 37,
+        "seconds": 47
+      }
+    },
+    "browserNotes": "Four tests fail exactly as before this update and as on the base commit, at the same step, for the same reasons (Playwright cannot deny a permission or work offline in this Chromium, and the original ERP workbook is not available here); the twenty-two others pass, among them the new perf-budget-browser (23 checks), build-notice-browser (16) and mobile-comfort-browser (207)."
+  },
+  "extendedTests": {
+    "tests/record-index.mjs": 25001,
+    "tests/perf-budget-browser.mjs": 23,
+    "tests/baseline-update-activation.mjs": 173,
+    "tests/customer-map-search.mjs": 54,
+    "tests/customer-map-ui.mjs": 195,
+    "tests/customer-map-activity.mjs": 84
+  },
+  "commitsAfterTheGateRun": {
+    "headAtGate": "71ade7b",
+    "applicationCodeChanged": false,
+    "filesChanged": [
+      "docs/qa (this record and the report)"
+    ]
+  },
+  "rehearsal": {
+    "script": "scripts/rehearse-update.mjs",
+    "runAs": "unprivileged user (nobody) with only net_bind_service, as on the hosting account",
+    "previousRelease": "the release folder of the auto-stop package (Yourrest-CRM-Update-Auto-Stop-20261027.zip, sha256 161894085e083056dc0c4a7d63638af386a01b2c3fb0e1e57ae9558e97e36c85); its application code equals the update-notice release deployed on 2026-10-21",
+    "ok": true,
+    "steps": 18,
+    "packageSha256": "c03d535764a92a3a6da8a56a3cfb337ff663dd88ad761562032bd56623628845",
+    "verifyOutput": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/support: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ],
+    "productionDataUsed": false,
+    "hostingAccessed": false,
+    "stepNames": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while another program holds the application folder",
+      "the application was running again; the activator stopped it itself and switched",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "assistance requests, missed visits and the manager's approval queue work on the upgraded database for the right roles",
+      "a customer complaint runs its whole course on the upgraded database for the right roles",
+      "the monthly complaints report counts the complaint for the managers only",
+      "the customer-service evaluation counts the closure, its rating and the registration, takes an audit and the settings, for the right roles only",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ]
+  },
+  "notVerifiedHere": [
+    "a physical Android phone or tablet: the slow phone is Chromium with the processor slowed four times (twice for the tablet) and the network shaped to slow 4G, on synthetic data the size of production",
+    "production data: 2,300 synthetic customers and 6,000 synthetic visits cloned from the demo records",
+    "Passenger/lsnode on cPanel (the rehearsal runs the application with Node 22 on Linux)"
+  ],
+  "performance": {
+    "conditions": {
+      "data": {
+        "customers": 2300,
+        "visits": 6000
+      },
+      "phone": "390x844, CPU 4x slower, 150 ms RTT, 1.6 Mbit/s down",
+      "tablet": "820x1180, CPU 2x slower, 70 ms RTT, 9 Mbit/s down",
+      "roles": {
+        "sm": "manager, every customer",
+        "rep": "representative, eastern region only"
+      }
+    },
+    "before": {
+      "phone:rep": {
+        "dataVisibleMs": 5409,
+        "settledMs": 6525,
+        "loadBlockingMs": 1906,
+        "warmDataMs": 5290,
+        "pageSwitchMs": {
+          "customer": 1346,
+          "activity": 1641,
+          "followup": 1425,
+          "map": 1736,
+          "targets": 910
+        },
+        "searchLetterMs": {
+          "p75": 448,
+          "max": 552
+        },
+        "transferredKB": 678
+      },
+      "phone:sm": {
+        "dataVisibleMs": 39376,
+        "settledMs": 57604,
+        "loadBlockingMs": 52741,
+        "warmDataMs": 40663,
+        "pageSwitchMs": {
+          "dashboard": 39405,
+          "customer": 40520,
+          "activity": 41822,
+          "followup": 59729,
+          "quote": 43032,
+          "targets": 41369,
+          "map": 43267
+        },
+        "searchLetterMs": {
+          "p75": 20680,
+          "max": 21096
+        },
+        "transferredKB": 753
+      },
+      "tablet:rep": {
+        "dataVisibleMs": 2006,
+        "settledMs": 2631,
+        "loadBlockingMs": 939,
+        "warmDataMs": 1670,
+        "pageSwitchMs": {
+          "customer": 797,
+          "activity": 894,
+          "followup": 829,
+          "map": 805,
+          "targets": 592
+        },
+        "searchLetterMs": {
+          "p75": 256,
+          "max": 336
+        },
+        "transferredKB": 677
+      },
+      "tablet:sm": {
+        "dataVisibleMs": 17999,
+        "settledMs": 25288,
+        "loadBlockingMs": 24101,
+        "warmDataMs": 24105,
+        "pageSwitchMs": {
+          "dashboard": 16124,
+          "customer": 15029,
+          "activity": 15090,
+          "followup": 22216,
+          "quote": 15574,
+          "targets": 16046,
+          "map": 14870
+        },
+        "searchLetterMs": {
+          "p75": 7680,
+          "max": 8784
+        },
+        "transferredKB": 753
+      }
+    },
+    "after": {
+      "phone:rep": {
+        "dataVisibleMs": 5330,
+        "settledMs": 5926,
+        "loadBlockingMs": 1206,
+        "warmDataMs": 5309,
+        "pageSwitchMs": {
+          "customer": 1295,
+          "activity": 1125,
+          "followup": 788,
+          "map": 1461,
+          "targets": 662
+        },
+        "searchLetterMs": {
+          "p75": 240,
+          "max": 416
+        },
+        "transferredKB": 679
+      },
+      "phone:sm": {
+        "dataVisibleMs": 6650,
+        "settledMs": 7179,
+        "loadBlockingMs": 1366,
+        "warmDataMs": 6566,
+        "pageSwitchMs": {
+          "dashboard": 1018,
+          "customer": 795,
+          "activity": 1349,
+          "followup": 974,
+          "quote": 1221,
+          "targets": 1034,
+          "map": 1259
+        },
+        "searchLetterMs": {
+          "p75": 288,
+          "max": 384
+        },
+        "transferredKB": 777
+      },
+      "tablet:rep": {
+        "dataVisibleMs": 1539,
+        "settledMs": 1833,
+        "loadBlockingMs": 328,
+        "warmDataMs": 1588,
+        "pageSwitchMs": {
+          "customer": 782,
+          "activity": 538,
+          "followup": 476,
+          "map": 633,
+          "targets": 306
+        },
+        "searchLetterMs": {
+          "p75": 120,
+          "max": 168
+        },
+        "transferredKB": 678
+      },
+      "tablet:sm": {
+        "dataVisibleMs": 2277,
+        "settledMs": 2625,
+        "loadBlockingMs": 432,
+        "warmDataMs": 2283,
+        "pageSwitchMs": {
+          "dashboard": 364,
+          "customer": 819,
+          "activity": 835,
+          "followup": 609,
+          "quote": 962,
+          "targets": 1085,
+          "map": 548
+        },
+        "searchLetterMs": {
+          "p75": 112,
+          "max": 128
+        },
+        "transferredKB": 772
+      }
+    },
+    "budgetTest": {
+      "ok": true,
+      "checks": 23,
+      "measured": {
+        "manager": {
+          "data": 2260,
+          "pages": {
+            "customer": 1037,
+            "activity": 850,
+            "followup": 678
+          },
+          "letterMax": 208,
+          "letterP75": 176,
+          "sheet": 919
+        },
+        "representative": {
+          "data": 1696,
+          "pages": {
+            "customer": 1025,
+            "activity": 527,
+            "followup": 540
+          },
+          "letterMax": 200,
+          "letterP75": 144,
+          "sheet": 548
+        }
+      },
+      "budget": {
+        "data": 20000,
+        "pageSwitch": 3500,
+        "letter": 800,
+        "letterP75": 450,
+        "sheet": 3500
+      },
+      "data": {
+        "customers": 2300,
+        "visits": 6000,
+        "cpuSlowdown": 4
+      }
+    },
+    "note": "The probe clicks the first customer-name button on the rep list to open a customer; for the manager it opened the add-customer form, so the manager figure for opening a customer comes from the budget test (CPU 4x, no network shaping)."
+  },
+  "productionModified": false,
+  "deployed": false
+}
