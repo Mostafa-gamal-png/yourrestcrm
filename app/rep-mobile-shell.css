@@ -71,3 +71,9 @@
  .app-shell .page-heading{align-items:flex-start}
  .app-shell .heading-actions{width:auto;flex:0 1 auto;justify-content:flex-end}
 }
+/* Opening the app on the device's copy: a quiet line until the server's answer replaces it. */
+.refresh-notice{display:flex;align-items:center;gap:6px;margin:6px 0;padding:6px 10px;width:fit-content;max-width:100%;border-radius:999px;background:#eff6ff;color:#223b60;font-size:12px;line-height:1.6}
+.refresh-notice>svg{flex-shrink:0;animation:refresh-notice-spin 1.2s linear infinite}
+.dark .refresh-notice{background:#142334;color:#dceaff}
+@keyframes refresh-notice-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.refresh-notice>svg{animation:none}}
