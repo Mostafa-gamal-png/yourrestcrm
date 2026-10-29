@@ -147,12 +147,15 @@ jobs:
       - name: SSH key and host
         env:
           KEY: ${{ secrets.YR_SSH_KEY }}
+          PASS: ${{ secrets.YR_SSH_KEY_PASSPHRASE }}
           HOST: ${{ secrets.YR_SSH_HOST }}
           PORT: ${{ secrets.YR_SSH_PORT }}
           KNOWN: ${{ secrets.YR_SSH_KNOWN_HOSTS }}
         run: |
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KEY" | tr -d '\r' > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          # cPanel refuses a key without a password: the runner's own copy drops it, so the later steps run without a prompt.
+          if [ -n "$PASS" ]; then ssh-keygen -p -P "$PASS" -N '' -f ~/.ssh/deploy > /dev/null || { echo "YR_SSH_KEY_PASSPHRASE does not open YR_SSH_KEY"; exit 1; }; fi
           if [ -n "$KNOWN" ]; then printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
           else ssh-keyscan -p "$PORT" "$HOST" > ~/.ssh/known_hosts 2>/dev/null; echo "Host key not pinned yet; its fingerprints:"; ssh-keygen -lf ~/.ssh/known_hosts; fi
       - name: Upload the package
