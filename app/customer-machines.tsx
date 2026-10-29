@@ -1,6 +1,6 @@
 'use client';
 import {t,useLanguage} from "@/lib/i18n";
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { Building2, ChevronDown, Factory, Plus, Pencil, MapPinned, History, Phone, MapPin, ChevronLeft, ChevronRight, ClipboardPlus, CircleHelp } from 'lucide-react';
 import { type Row, type Member } from '@/lib/crm';
 import { machineTypeLabels, machineConditionLabels, machineModelText, completeMachineSpecs } from '@/lib/machines';
@@ -26,10 +26,17 @@ type Props = {
     onAddOpportunity: (id: string) => void;
     onMap: (id: string) => void;
 };
+// The cards and the table answer the breakpoint of customer-directory-mobile.css: only the one on screen is drawn (drawing both and
+// hiding one doubled the work of every page of 50 customers). Where the screen size is unknown (the server, a test without
+// matchMedia) both are drawn and the stylesheet decides, as before.
+const COMPACT_QUERY='(max-width: 1023px)';
+function subscribeCompact(change:()=>void){if(typeof window==='undefined'||typeof window.matchMedia!=='function')return()=>{};const query=window.matchMedia(COMPACT_QUERY);query.addEventListener('change',change);return()=>query.removeEventListener('change',change);}
+const compactNow=()=>typeof window==='undefined'||typeof window.matchMedia!=='function'?null:window.matchMedia(COMPACT_QUERY).matches;
 export default function CustomerMachines({ customers, records, members, canEdit = true, canEditMachine = canEdit, canAddMachineTo = () => canEdit, page, onPage, onOpen, onHistory, onEdit, onAddMachine, onAddOpportunity, onMap }: Props) {
     const {language} = useLanguage();
     const say = (ar:string,en:string) => language === 'ar' ? ar : en;
     const [expanded, setExpanded] = useState<string | null>(null);
+    const compact = useSyncExternalStore(subscribeCompact, compactNow, () => null);
     const machines = useMemo(() => { const map = new Map<string, Row[]>(); for (const row of records)
         if (row.kind === 'factory' && row.parentId) { const list = map.get(row.parentId); if (list) list.push(row); else map.set(row.parentId, [row]); } return map; }, [records]);
     const visitCounts = useMemo(() => { const counts = new Map<string, number>(); for (const record of records) { if (record.kind !== 'activity') continue; const customer = visitCustomer(record, records); if (customer) counts.set(customer.id, (counts.get(customer.id) || 0) + 1); } return counts; }, [records]);
@@ -41,12 +48,12 @@ export default function CustomerMachines({ customers, records, members, canEdit 
   <div className="customer-mobile-count"><span>{say('العملاء','Customers')}</span><strong>{customers.length.toLocaleString('en-US')}</strong></div>
   <div className="machine-summary"><div><strong>{t(customers.length.toLocaleString('en-US'))}</strong><span>{t("مصنع مطابق")}</span></div><div><strong>{t(sourceCustomers.length.toLocaleString('en-US'))}</strong><span>{t("مصنع لديه بيانات ماكينات في الشيت")}</span></div><div><strong>{t(sourceTotal.toLocaleString('en-US'))}</strong><span>{t("إجمالي العدد المسجل في الشيت")}</span></div></div>
   <section className="panel unified-customers"><div className="panel-heading customer-directory-desktop"><h2>{t("العملاء والماكينات")}</h2></div>
-   {!customers.length ? <div className="machines-empty">{t("لا توجد مصانع مطابقة للبحث.")}</div> : <><div className="customer-mobile-list">{shown.map(customer => <CustomerMobileCard key={customer.id} canEdit={canEdit} canAddMachine={canEditMachine&&canAddMachineTo(customer)} customer={customer} linked={machines.get(customer.id) || []} visitCount={visitCounts.get(customer.id) || 0} onOpen={onOpen} onHistory={onHistory} onAddMachine={onAddMachine} onAddOpportunity={onAddOpportunity} onMap={onMap}/>)}</div><div className="customer-directory-desktop"><Table><TableHeader><TableRow>{t(['المصنع', 'المنطقة / المدينة', 'مسؤول التواصل', 'الماكينات حسب الشيت', 'المندوب', ''].map((h, i) => <TableHead key={i}>{t(h)}</TableHead>))}</TableRow></TableHeader><TableBody>{t(shown.map(customer => {
+   {!customers.length ? <div className="machines-empty">{t("لا توجد مصانع مطابقة للبحث.")}</div> : <>{compact !== false && <div className="customer-mobile-list">{shown.map(customer => <CustomerMobileCard key={customer.id} canEdit={canEdit} canAddMachine={canEditMachine&&canAddMachineTo(customer)} customer={customer} linked={machines.get(customer.id) || []} visitCount={visitCounts.get(customer.id) || 0} onOpen={onOpen} onHistory={onHistory} onAddMachine={onAddMachine} onAddOpportunity={onAddOpportunity} onMap={onMap}/>)}</div>}{compact !== true && <div className="customer-directory-desktop"><Table><TableHeader><TableRow>{t(['المصنع', 'المنطقة / المدينة', 'مسؤول التواصل', 'الماكينات حسب الشيت', 'المندوب', ''].map((h, i) => <TableHead key={i}>{t(h)}</TableHead>))}</TableRow></TableHeader><TableBody>{t(shown.map(customer => {
                 const linked = machines.get(customer.id) || [];
                 const open = expanded === customer.id;
                 const sourceCount = customer.data.machineCount;
                 return <CustomerRows key={customer.id} canEdit={canEdit} canAddMachine={canEditMachine&&canAddMachineTo(customer)} canEditMachine={canEditMachine} customer={customer} linked={linked} open={open} onToggle={() => setExpanded(open ? null : customer.id)} sourceCount={sourceCount} visitCount={visitCounts.get(customer.id) || 0} memberName={members.find(m => m.id === customer.assignedTo)?.name || '—'} onOpen={onOpen} onHistory={onHistory} onEdit={onEdit} onAddMachine={onAddMachine} onAddOpportunity={onAddOpportunity} onMap={onMap}/>;
-            }))}</TableBody></Table></div></>}
+            }))}</TableBody></Table></div>}</>}
    {maxPage > 1 && <div className="customer-page-controls"><button className="btn subtle small" disabled={currentPage === 1} onClick={() => onPage(currentPage - 1)}>{t("السابق")}</button><span>{t("صفحة ")}{t(currentPage)}{t(" من ")}{t(maxPage)} · {t(customers.length)}{t(" مصنع")}</span><button className="btn subtle small" disabled={currentPage === maxPage} onClick={() => onPage(currentPage + 1)}>{t("التالي")}</button></div>}
   </section>
  </section>;

@@ -8,7 +8,7 @@ import React from 'react';
 import * as jsx from 'react/jsx-runtime';
 import ts from 'typescript';
 const root=process.cwd(),nativeRequire=createRequire(import.meta.url),cache=new Map();
-let language='ar',checks=0;
+let language='ar',checks=0,screen;
 const eq=(actual,expected,label)=>{assert.deepEqual(actual,expected,label);checks++;};
 const ok=(actual,label)=>{assert.ok(actual,label);checks++;};
 const noop=()=>{},pass=({children})=>children;
@@ -19,7 +19,7 @@ function load(filename){
  if(cache.has(filename))return cache.get(filename);
  const exports={};cache.set(filename,exports);
  const require=name=>{
-  if(name==='react')return {...React,useState:v=>[v,noop],useMemo:fn=>fn()};
+  if(name==='react')return {...React,useState:v=>[v,noop],useMemo:fn=>fn(),useSyncExternalStore:(subscribe,client)=>screen===undefined?client():screen};
   if(name==='react/jsx-runtime')return jsx;
   if(name==='@/lib/i18n')return i18n;
   if(name==='lucide-react')return new Proxy({},{get:()=>()=>null});
@@ -43,6 +43,12 @@ const props={customers:[customer],records:[customer,machine,visit],members:[],pa
 const Directory=load('app/customer-machines.tsx').default;
 function render(values={}){const tree=Directory({...props,...values});return {tree,cards:nodes(tree,n=>typeof n.type==='function'&&n.type.name==='CustomerMobileCard').map(n=>n.type(n.props))};}
 let {tree,cards}=render(),card=cards[0];
+// Only the layout on screen is drawn; where the screen size is unknown (no matchMedia) both are, and the stylesheet decides.
+const layouts=()=>{const t=render().tree;return [cls(t,'customer-mobile-list').length,cls(t,'customer-directory-desktop').filter(n=>n.props.className==='customer-directory-desktop').length];};
+eq(layouts(),[1,1],'Without a known screen size both layouts are drawn and the stylesheet hides one');
+screen=true;eq(layouts(),[1,0],'A phone or tablet (up to 1023 px) draws only the cards');
+screen=false;eq(layouts(),[0,1],'A wider screen draws only the table');
+screen=undefined;
 ok(text(card).includes('كود يورست YR-C-000123')&&text(card).includes('كود ERP 123'),'Mobile card distinguishes internal and ERP customer codes');
 eq(tree.props.dir,'rtl','Arabic directory is RTL');eq(cards.length,1,'Only supplied authorized customers render');
 ok(text(card).includes('Western factory')&&text(card).includes('123')&&text(card).includes('جدة'),'Factory identity is visible without opening details');
