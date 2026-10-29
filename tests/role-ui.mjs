@@ -14,6 +14,8 @@ const check=(a,b,message)=>{assert.deepEqual(a,b,message);checks++;};
 const noop=()=>{},pass=({children,...props})=>React.createElement('div',{'aria-label':props['aria-label']},typeof children==='function'?null:children);
 const mock=new Proxy({},{get:()=>pass});
 const compiler={module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true};
+// The record index is the real one: the page's lists are built on it.
+const recordIndexModule=(()=>{const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,'lib/record-index.ts'),'utf8'),{compilerOptions:compiler}).outputText,{exports,require:()=>({})});return exports;})();
 function moduleFrom(filename,require,extra=''){
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,filename),'utf8')+extra,{compilerOptions:compiler}).outputText,{exports,require,crypto:globalThis.crypto,console,structuredClone,window:{},setTimeout,clearTimeout});return exports;
 }
@@ -83,7 +85,7 @@ const tree=ts.createSourceFile('crm-app.tsx',source,ts.ScriptTarget.Latest,true,
 function collect(node){if(ts.isVariableDeclaration(node)&&ts.isArrayBindingPattern(node.name)&&node.initializer&&ts.isCallExpression(node.initializer)&&node.initializer.expression.getText(tree)==='useState')stateNames.push(node.name.elements[0].name.getText(tree));ts.forEachChild(node,collect);}collect(tree);
 const me={id:'rep',name:'Rep',role:'rep',regionScope:'western',branch:'الرئيسي'},records=[customer,machine,{id:'visit',kind:'activity',parentId:customer.id,assignedTo:'owner',data:{performedBy:'rep',summary:'My visit',date:'2026-09-30'}}];
 let cursor=0,seed={},captured={};
-const hookReact={...React,useState:initial=>{const name=stateNames[cursor++];return[Object.hasOwn(seed,name)?seed[name]:typeof initial==='function'?initial():initial,noop];},useEffect:noop,useCallback:callback=>callback,useMemo:compute=>compute};
+const hookReact={...React,useState:initial=>{const name=stateNames[cursor++];return[Object.hasOwn(seed,name)?seed[name]:typeof initial==='function'?initial():initial,noop];},useEffect:noop,useCallback:callback=>callback,useMemo:compute=>compute(),useDeferredValue:value=>value};
 function crmRequire(name){
  if(name==='react')return hookReact;
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
@@ -91,7 +93,8 @@ function crmRequire(name){
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
  if(name==='@/lib/crm')return {stages:[],stageLabels:{},roles:{rep:'مندوب المبيعات'},today:()=> '2026-09-30',money:String,isOpen:()=>false,isSalesRequest:r=>r.kind==='opportunity',followupTitle:r=>r.data.name||''};
  if(name==='@/lib/customer-service')return {isServiceRole:role=>role.startsWith('customer_service')};
- if(name==='@/lib/customer-visits')return {customerVisitDue:()=>[],visitCustomer:r=>r?.kind==='customer'?r:records.find(c=>c.id===r?.parentId),visitRequest:()=>undefined,strengthLabels:{}};
+ if(name==='@/lib/record-index')return recordIndexModule;
+ if(name==='@/lib/customer-visits')return {customerVisitDue:()=>[],customerPlanSources:()=>new Map(),visitCustomer:r=>r?.kind==='customer'?r:records.find(c=>c.id===r?.parentId),visitRequest:()=>undefined,strengthLabels:{}};
  if(name==='@/lib/regions')return {regionScope:m=>m.regionScope,regionLabel:()=> 'الغربية',regionValue:()=> 'الغربية'};
  if(name==='./customer-machines')return {__esModule:true,default:props=>{captured.directory=props;return React.createElement('section',{'data-directory-count':props.customers.length},props.customers.map(r=>r.data.name).join(' · '));}};
  if(name==='./customer-journey-map')return {__esModule:true,default:props=>{captured.map=props;return React.createElement('section',{'data-map-count':props.customers.length},props.filters,props.actions,props.customers.map(r=>r.data.name).join(' · '));}};

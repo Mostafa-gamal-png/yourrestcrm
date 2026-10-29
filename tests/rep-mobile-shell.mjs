@@ -53,7 +53,7 @@ function stateNames(filename){const source=ts.createSourceFile(filename,fs.readF
 class FakeDetails{constructor(parentElement=null){this.parentElement=parentElement;this.open=false;}}
 function harness(seed={},options={}){
  const filename='app/crm-app.tsx',names=stateNames(filename),state={...seed},refs=[],effects=[];let cursor=0,refCursor=0;
- const hooks={...React,useState(initial){const name=names[cursor++];if(!Object.hasOwn(state,name))state[name]=typeof initial==='function'?initial():initial;return[state[name],value=>{state[name]=typeof value==='function'?value(state[name]):value;}];},useRef(value){const index=refCursor++;return refs[index]||(refs[index]={current:value});},useEffect:callback=>effects.push(callback),useCallback:callback=>callback,useMemo:callback=>callback()};
+ const hooks={...React,useState(initial){const name=names[cursor++];if(!Object.hasOwn(state,name))state[name]=typeof initial==='function'?initial():initial;return[state[name],value=>{state[name]=typeof value==='function'?value(state[name]):value;}];},useRef(value){const index=refCursor++;return refs[index]||(refs[index]={current:value});},useEffect:callback=>effects.push(callback),useCallback:callback=>callback,useMemo:callback=>callback(),useDeferredValue:value=>value};
  const component=load(filename,name=>name==='react'?hooks:options.modules?.[name]||commonRequire(name),{window:{history:{replaceState:noop}},HTMLDetailsElement:FakeDetails,...options.globals}).default;
  return {state,effects,render(){cursor=refCursor=0;effects.length=0;return component({});}};
 }
