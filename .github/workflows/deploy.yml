@@ -1,10 +1,15 @@
-# Deploys crm.yourrest.org from a commit of this repository, the way the update guides do it by hand, and only after a person approves.
-# Started by a push that changes deploy/request.json (the release and the mode to run), or by hand from the Actions tab.
-# 1. package: install, run the default test gate, build, and package the release with the pinned activator (scripts/package-ui-refresh-update.py).
-# 2. hosting: waits for approval in the `production` environment (Settings > Environments > production > Required reviewers), then copies the
-#    package over SSH and runs scripts/hosting-deploy.sh on the hosting account: check | deploy | verify.
-# The SSH secrets live in the `production` environment only, so no job reaches them before that approval. Nothing here touches the database
-# directly: the packaged activator takes the day's backup, switches the release and verifies, exactly as in the guides.
+# Deploys crm.yourrest.org the way the update guides do it by hand, from a package that was built and rehearsed before it was committed,
+# the way the Sadeem CRM is updated: cPanel's API with a token, no SSH key.
+# Started by a push that changes deploy/request.json, or by hand from the Actions tab (the mode chosen there replaces the file's):
+#   {"mode": "check", "package": "deploy/packages/<zip>", "sha256": "<hex>", "stage": "yourrest-crm-<name>-<date>", "helper": "yourrest-activate-<name>.cjs"}
+#   check   unpack the package beside the app and run the activator's --check: the app keeps running and nothing changes
+#   deploy  check, stop the app, the activator (the day's backup and the switch), start the app, --verify
+#   verify  --verify only (after Start App was pressed in cPanel)
+# scripts/deploy-cpanel.mjs uploads through the API and runs scripts/hosting-deploy.sh on the account through a temporary cron line.
+# Claude pushes a deploy request only after the owner said so. Settings > Secrets and variables > Actions > Repository secrets:
+#   CPANEL_API_TOKEN   cPanel > Security > Manage API Tokens > Create (the only one needed)
+#   CPANEL_HOST, CPANEL_USER   optional: premium137.web-hosting.com and youriedx when not set
+# The job runs in the `production` environment: Required reviewers there make every run wait for an approval, if that is wanted.
 name: Deploy to crm.yourrest.org
 
 on:
@@ -19,23 +24,6 @@ on:
         options: [check, deploy, verify]
         default: check
         required: true
-      release_name:
-        description: "Release name, e.g. update-speed (upload folder yourrest-crm-<name>-<date>, activator yourrest-activate-<name>.cjs)"
-        required: true
-      release_date:
-        description: "Release date, YYYYMMDD"
-        required: true
-      guide:
-        description: "The update guide for this release, e.g. docs/UPDATE-2026-10-29-SPEED-AR.txt"
-        required: true
-      schema_baseline:
-        description: "Migrations the live database already holds"
-        default: "16"
-        required: true
-      verify_routes:
-        description: "Routes --verify probes without a session, space separated PATH=STATUS"
-        default: "/api/support=401 /api/complaints=401 /api/complaint-report=401 /api/service-kpi=401"
-        required: true
 
 permissions:
   contents: read
@@ -45,130 +33,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  request:
+  deploy:
     runs-on: ubuntu-24.04
-    outputs:
-      mode: ${{ steps.read.outputs.mode }}
-      name: ${{ steps.read.outputs.name }}
-      date: ${{ steps.read.outputs.date }}
-      guide: ${{ steps.read.outputs.guide }}
-      baseline: ${{ steps.read.outputs.baseline }}
-      routes: ${{ steps.read.outputs.routes }}
+    environment: production
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Read and check the request
-        id: read
-        env:
-          EVENT: ${{ github.event_name }}
-          IN_MODE: ${{ inputs.mode }}
-          IN_NAME: ${{ inputs.release_name }}
-          IN_DATE: ${{ inputs.release_date }}
-          IN_GUIDE: ${{ inputs.guide }}
-          IN_BASELINE: ${{ inputs.schema_baseline }}
-          IN_ROUTES: ${{ inputs.verify_routes }}
-        run: |
-          if [ "$EVENT" = push ]; then
-            read_field() { python3 -c 'import json,sys;v=json.load(open("deploy/request.json"))[sys.argv[1]];print(" ".join(v) if isinstance(v,list) else v)' "$1"; }
-            MODE=$(read_field mode); NAME=$(read_field release_name); DATE=$(read_field release_date); GUIDE=$(read_field guide); BASELINE=$(read_field schema_baseline); ROUTES=$(read_field verify_routes)
-          else
-            MODE=$IN_MODE; NAME=$IN_NAME; DATE=$IN_DATE; GUIDE=$IN_GUIDE; BASELINE=$IN_BASELINE; ROUTES=$IN_ROUTES
-          fi
-          [[ "$MODE" =~ ^(check|deploy|verify)$ ]] || { echo "mode: check, deploy or verify"; exit 1; }
-          [[ "$NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || { echo "release_name: lower-case words joined by -"; exit 1; }
-          [[ "$DATE" =~ ^20[0-9]{6}$ ]] || { echo "release_date: YYYYMMDD"; exit 1; }
-          [[ "$GUIDE" =~ ^docs/UPDATE-[A-Za-z0-9-]+\.txt$ && -f "$GUIDE" ]] || { echo "guide: an existing docs/UPDATE-*.txt"; exit 1; }
-          [[ "$BASELINE" =~ ^[0-9]+$ ]] || { echo "schema_baseline: a number"; exit 1; }
-          for route in $ROUTES; do [[ "$route" =~ ^/api/[a-z0-9/-]+=[0-9]{3}$ ]] || { echo "bad route $route"; exit 1; }; done
-          { echo "mode=$MODE"; echo "name=$NAME"; echo "date=$DATE"; echo "guide=$GUIDE"; echo "baseline=$BASELINE"; echo "routes=$ROUTES"; } >> "$GITHUB_OUTPUT"
-          echo "Request: $MODE $NAME $DATE ($GUIDE)"
-
-  package:
-    needs: request
-    if: needs.request.outputs.mode != 'verify'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    env:
-      STAGE: yourrest-crm-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}
-      HELPER: yourrest-activate-${{ needs.request.outputs.name }}.cjs
-      ZIP: Yourrest-CRM-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}.zip
-    outputs:
-      sha256: ${{ steps.pack.outputs.sha256 }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Default test gate
-        run: node scripts/check.mjs
-      - name: Build
-        run: pnpm build
-      - name: Package
-        id: pack
+      - name: Read and check the request
+        id: request
         env:
-          NAME: ${{ needs.request.outputs.name }}
-          DATE: ${{ needs.request.outputs.date }}
-          GUIDE: ${{ needs.request.outputs.guide }}
-          BASELINE: ${{ needs.request.outputs.baseline }}
-          ROUTES: ${{ needs.request.outputs.routes }}
+          IN_MODE: ${{ inputs.mode }}
         run: |
-          mkdir -p "$RUNNER_TEMP/package"
-          routes=(); for route in $ROUTES; do routes+=(--verify-route "$route"); done
-          python3 scripts/package-ui-refresh-update.py --release dist/standalone --output "$RUNNER_TEMP/package/$ZIP" \
-            --release-name "$NAME" --release-date "$DATE" --stage-name "$STAGE" --helper-name "$HELPER" \
-            --guide "$GUIDE" --schema-baseline "$BASELINE" "${routes[@]}"
-          echo "sha256=$(sha256sum "$RUNNER_TEMP/package/$ZIP" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: package
-          path: ${{ runner.temp }}/package/
-          retention-days: 30
-
-  hosting:
-    needs: [request, package]
-    if: always() && needs.request.result == 'success' && (needs.package.result == 'success' || needs.request.outputs.mode == 'verify')
-    runs-on: ubuntu-24.04
-    environment: production
-    timeout-minutes: 40
-    env:
-      MODE: ${{ needs.request.outputs.mode }}
-      STAGE: yourrest-crm-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}
-      HELPER: yourrest-activate-${{ needs.request.outputs.name }}.cjs
-      ZIP: Yourrest-CRM-${{ needs.request.outputs.name }}-${{ needs.request.outputs.date }}.zip
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        if: needs.request.outputs.mode != 'verify'
-        with:
-          name: package
-          path: ${{ runner.temp }}/package
-      - name: SSH key and host
+          python3 - <<'EOF'
+          import hashlib, json, os, re, sys, zipfile
+          def stop(message):
+              print(f"::error title=deploy request::{message}"); sys.exit(1)
+          r = json.load(open("deploy/request.json"))
+          mode = os.environ.get("IN_MODE") or r.get("mode", "")
+          package, sha, stage, helper = (str(r.get(k, "")) for k in ("package", "sha256", "stage", "helper"))
+          if mode not in ("check", "deploy", "verify"): stop("mode: check, deploy or verify")
+          if not re.fullmatch(r"yourrest-crm-[a-z0-9-]+", stage): stop("stage: yourrest-crm-<name>-<date>, as the update guide names the folder")
+          if not re.fullmatch(r"yourrest-activate-[a-z0-9-]+\.cjs", helper): stop("helper: yourrest-activate-<name>.cjs, as the update guide names it")
+          if not re.fullmatch(r"deploy/packages/[A-Za-z0-9._-]+\.zip", package) or not os.path.isfile(package): stop("package: a zip committed under deploy/packages/")
+          with open(package, "rb") as f: actual = hashlib.sha256(f.read()).hexdigest()
+          if actual != sha: stop(f"sha256: the committed package is {actual}, not the one the request names")
+          names = set(zipfile.ZipFile(package).namelist())
+          if helper not in names or "RELEASE-SHA256SUMS.txt" not in names or not any(n.startswith("release/") for n in names): stop("the package has no release/, RELEASE-SHA256SUMS.txt or the helper at its root")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"mode={mode}\npackage={package}\nsha256={sha}\nstage={stage}\nhelper={helper}\n")
+          print(f"Request: {mode} {package} ({sha[:12]}) into {stage}")
+          EOF
+      - name: Run it on the hosting account through cPanel
         env:
-          KEY: ${{ secrets.YR_SSH_KEY }}
-          PASS: ${{ secrets.YR_SSH_KEY_PASSPHRASE }}
-          HOST: ${{ secrets.YR_SSH_HOST }}
-          PORT: ${{ secrets.YR_SSH_PORT }}
-          KNOWN: ${{ secrets.YR_SSH_KNOWN_HOSTS }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST || 'premium137.web-hosting.com' }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER || 'youriedx' }}
+          MODE: ${{ steps.request.outputs.mode }}
+          PACKAGE: ${{ steps.request.outputs.package }}
+          SHA: ${{ steps.request.outputs.sha256 }}
+          STAGE: ${{ steps.request.outputs.stage }}
+          HELPER: ${{ steps.request.outputs.helper }}
         run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$KEY" | tr -d '\r' > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
-          # cPanel refuses a key without a password: the runner's own copy drops it, so the later steps run without a prompt.
-          if [ -n "$PASS" ]; then ssh-keygen -p -P "$PASS" -N '' -f ~/.ssh/deploy > /dev/null || { echo "YR_SSH_KEY_PASSPHRASE does not open YR_SSH_KEY"; exit 1; }; fi
-          if [ -n "$KNOWN" ]; then printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
-          else ssh-keyscan -p "$PORT" "$HOST" > ~/.ssh/known_hosts 2>/dev/null; echo "Host key not pinned yet; its fingerprints:"; ssh-keygen -lf ~/.ssh/known_hosts; fi
-      - name: Upload the package
-        if: needs.request.outputs.mode != 'verify'
-        env:
-          HOST: ${{ secrets.YR_SSH_HOST }}
-          PORT: ${{ secrets.YR_SSH_PORT }}
-          USER_NAME: ${{ secrets.YR_SSH_USER }}
-        run: scp -i ~/.ssh/deploy -P "$PORT" -o BatchMode=yes "$RUNNER_TEMP/package/$ZIP" "$USER_NAME@$HOST:"
-      - name: Run on the hosting account
-        env:
-          HOST: ${{ secrets.YR_SSH_HOST }}
-          PORT: ${{ secrets.YR_SSH_PORT }}
-          USER_NAME: ${{ secrets.YR_SSH_USER }}
-          SHA: ${{ needs.package.outputs.sha256 }}
-        run: ssh -i ~/.ssh/deploy -p "$PORT" -o BatchMode=yes "$USER_NAME@$HOST" bash -s -- "$MODE" "$ZIP" "$STAGE" "$HELPER" "${SHA:-none}" < scripts/hosting-deploy.sh
+          if [ -z "$CPANEL_API_TOKEN" ]; then echo "::error title=deploy failed::the repository secret CPANEL_API_TOKEN is not set"; exit 1; fi
+          node scripts/deploy-cpanel.mjs --mode "$MODE" --package "$PACKAGE" --sha256 "$SHA" --stage "$STAGE" --helper "$HELPER" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
