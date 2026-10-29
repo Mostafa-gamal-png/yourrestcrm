@@ -183,6 +183,11 @@
       "reason": "requires browser"
     },
     {
+      "file": "tests/open-cached-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
       "file": "tests/package-install.mjs",
       "gate": "release-artifact",
       "reason": "artifact generator or package argument"

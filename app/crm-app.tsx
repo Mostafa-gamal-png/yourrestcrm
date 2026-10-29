@@ -3,6 +3,7 @@ import {lineCents} from '@/lib/decimal-money';
 import {submitJson,SubmitError} from '@/lib/client-submit';
 import {saveOfflineSnapshot,loadOfflineSnapshot,augmentOfflineSnapshot,subscribeOffline,lockOfflineSession,offlineSessionGeneration,offlineOwner,type OfflineSnapshot} from '@/lib/offline-store';
 import {offlineSubmit,flushOutbox} from '@/lib/offline-submit';
+import {sameSnapshot} from '@/lib/same-snapshot';
 import {isOfflineLogoutPending,finishPendingOfflineLogout} from '@/lib/offline-auth';
 import OfflineStatus from './offline-status';
 import {t,useLanguage,direction,getLanguage} from "@/lib/i18n";
@@ -152,7 +153,7 @@ export default function CRM() {
     const canManageCustomerIdentities=me?.role==='admin'&&regionScope(me)==='all';
     const customerIdentitiesVisible=customerIdentitiesOpen&&canManageCustomerIdentities;
     useEffect(()=>{if(!canManageCustomerIdentities)setCustomerIdentitiesOpen(false);},[canManageCustomerIdentities]);
-    const [offlineStorageError,setOfflineStorageError]=useState('');
+    const [offlineStorageError,setOfflineStorageError]=useState(''),[refreshing,setRefreshing]=useState(false);
     const snapshotRef=useRef<OfflineSnapshot|null>(null),loadGeneration=useRef(0),snapshotGeneration=useRef(0);
     const [serviceDetailId,setServiceDetailId]=useState(''),[serviceFilter,setServiceFilter]=useState('all'),[serviceQueue,setServiceQueue]=useState<ServiceQueueEntry[]>([]);
     // Customer-service assistance: its data, and the request form or the request being read.
@@ -177,7 +178,8 @@ export default function CRM() {
         if(previous&&offlineOwner(previous).stamp!==offlineOwner(d.me).stamp){
             setVisitEditor(null);setFollowupEditor(null);setForm(null);setRawDetailId(null);setMobileAccountOpen(false);setCustomerIdentitiesOpen(false);setDeleting(null);setPrintQuote(null);setServiceDetailId('');setSupportDialog(null);setDiscardForm(false);setFormDirty(false);
         }
-        snapshotRef.current=d;setRecords(d.records);setMembers(d.members);setMe(d.me);setAudits(d.audits);setServiceQueue(Array.isArray(d.serviceQueue)?d.serviceQueue as ServiceQueueEntry[]:[]);
+        // The same data again (the server confirming the device's copy, or that copy announced once more after saving) leaves the screen as it is.
+        if(!snapshotRef.current||!sameSnapshot(snapshotRef.current,d)){snapshotRef.current=d;setRecords(d.records);setMembers(d.members);setMe(d.me);setAudits(d.audits);setServiceQueue(Array.isArray(d.serviceQueue)?d.serviceQueue as ServiceQueueEntry[]:[]);}
         if(pendingServiceCase.current){const id=pendingServiceCase.current;pendingServiceCase.current='';const entry=(d.serviceQueue as ServiceQueueEntry[]|undefined)?.find(item=>item.id===id);if(entry)void recordSeen(entry).catch(()=>{});setVisitEditor(null);setServiceDetailId(id);}
         setView(current=>resolveCRMPage(d.me.role,current));setAuth(false);setError('');
     },[]);
@@ -197,18 +199,24 @@ export default function CRM() {
         try{
             if(isOfflineLogoutPending()){await finishPendingOfflineLogout().catch(()=>{});clearSession();setError(getLanguage()==='ar'?'سجّل الدخول لفتح بياناتك.':'Sign in to open your data.');return;}
             if(navigator.onLine===false){const cached=await refreshLocal();if(!cached)throw new Error(getLanguage()==='ar'?'افتح التطبيق وسجّل الدخول مرة بالإنترنت أولًا لتجهيز بياناتك للعمل بدون شبكة.':'Open the app and sign in online once to prepare offline data.');return;}
+            const stale=()=>generation!==loadGeneration.current||sessionGeneration!==offlineSessionGeneration()||isOfflineLogoutPending();
+            // Opening the app: this account's copy on the device is on screen at once, and the server's answer replaces it when it comes.
+            const first=!snapshotRef.current;
+            if(first){const cached=await refreshLocal().catch(()=>null);if(generation!==loadGeneration.current)return;if(cached){setLoading(false);setRefreshing(true);}}
             const d=await request();
-            if(generation!==loadGeneration.current||sessionGeneration!==offlineSessionGeneration()||isOfflineLogoutPending())return;
+            if(stale())return;
+            const augmented=await augmentOfflineSnapshot(d);if(stale())return;applySnapshot(augmented);setLoading(false);setRefreshing(false);
+            // Saved for working offline after it is on screen, not before.
             try{await saveOfflineSnapshot(d,sessionGeneration);setOfflineStorageError('');}catch{setOfflineStorageError(getLanguage()==='ar'?'تعذر تجهيز الحفظ على الجهاز. تحقق من مساحة التخزين قبل العمل بدون شبكة.':'Device storage is unavailable. Check storage before working offline.');}
-            if(generation!==loadGeneration.current||sessionGeneration!==offlineSessionGeneration()||isOfflineLogoutPending())return;
-            const augmented=await augmentOfflineSnapshot(d);if(generation!==loadGeneration.current||sessionGeneration!==offlineSessionGeneration()||isOfflineLogoutPending())return;applySnapshot(augmented);
+            // The first save of a session unlocks the device's queue: what waited in it is sent now, not at the next half-minute.
+            if(first&&!stale())void flushOutbox(d.me).catch(()=>{});
         }catch(e){
             if(generation!==loadGeneration.current)return;
             const failure=crmFailure(e);
             if(failure.status===401||failure.status===403){await lockOfflineSession();clearSession();setError(failure.message||'');return;}
             const cached=await refreshLocal().catch(()=>null);
             if(!cached){setError(failure.message||'');setAuth(failure.status===401);}
-        }finally{if(generation===loadGeneration.current)setLoading(false);}
+        }finally{if(generation===loadGeneration.current){setLoading(false);setRefreshing(false);}}
     },[applySnapshot,clearSession,refreshLocal]);
     useEffect(()=>subscribeOffline(()=>{const generation=++snapshotGeneration.current;void (async()=>{
         const cached=await loadOfflineSnapshot().catch(()=>null);
@@ -466,7 +474,7 @@ export default function CRM() {
     return <JourneyTrackerProvider me={me}><Toaster position="top-center" richColors dir={direction()}/><DeviceStatusReporter me={me}/><TrackingGate me={me}><SidebarProvider style={{ '--sidebar-width': '248px' } as React.CSSProperties} className={view==='map'?'app-shell app-shell--map':'app-shell'}>
  {!compactNavigation&&<div className="crm-desktop-navigation"><Sidebar side={direction()==='rtl'?'right':'left'} className="app-sidebar"><SidebarHeader className="brand"><img src="/yourrest-logo.png" alt={t("YOUR REST INDUSTRIES")}/><div className="brand-divider"/><span>{t("إدارة علاقات العملاء")}</span></SidebarHeader><SidebarContent className="nav-content"><p className="nav-label">{t("مساحة العمل")}</p><NavMenu view={view} go={go} role={me?.role} queue={serviceQueue} extra={support.badge+(complaintsPage?0:complaints.badge)} complaints={complaintsPage?complaints.badge:0}/></SidebarContent><SidebarFooter><div className="sidebar-footnote"><ShieldCheck size={17}/><span>{t("يورست للصناعات")}</span><small>CRM</small></div><div className="profile"><span className="avatar">{t(me?.name?.slice(0, 1)) || (getLanguage()==='ar'?'ي':'Y')}</span><div><strong>{me?.name || t('يورست للصناعات')}</strong><small>{me ? t(roles[me.role]) : t('تسجيل دخول آمن')}</small></div>{me && <EmailLogout/>}</div></SidebarFooter></Sidebar></div>}
  <main className={(view==='map'?'workspace map-workspace':'workspace')+(me?.role==='rep'?' representative-workspace':'')}><header className="topbar no-print"><div className="breadcrumb"><span>{t("يورست للصناعات")}</span><ChevronLeft size={15}/><strong>{t(currentTitle)}</strong></div><div className="topbar-tools"><JourneyTrackingBanner compact/><LanguageSwitch/><span className="today"><CalendarDays size={16}/>{t(today())}</span><ThemeToggle/><span className="desktop-top-avatar" hidden={compactNavigation}><span className="top-avatar">YR</span></span>{compactNavigation&&me&&<button type="button" className="top-avatar mobile-profile-trigger" aria-label={getLanguage()==='ar'?'حسابي':'My account'} aria-haspopup="dialog" aria-expanded={mobileAccountOpen} onClick={()=>setMobileAccountOpen(true)}>{me.name?.slice(0,1)||'Y'}</button>}</div></header>
- <div className={view==='map'?'page map-page':'page'}><div className="workspace-notices"><AppUpdate/><BuildNotice/><InstallApp/><JourneyTrackingBanner/>{me&&<OfflineStatus me={me} offline={offline}/>} {offlineStorageError&&<p className="mobile-offline-notice" role="alert">{offlineStorageError}</p>}</div>{me?.role==='rep'&&<ServiceQueueBanner entries={serviceQueue} onOpen={openServiceCase} onVisit={visitFromQueue}/>}{view!=='map'&&<section className="page-heading"><div><span className="eyebrow">YOUR REST INDUSTRIES</span><h1>{t(currentTitle)}</h1></div>{pageActions}</section>}
+ <div className={view==='map'?'page map-page':'page'}><div className="workspace-notices"><AppUpdate/><BuildNotice/><InstallApp/><JourneyTrackingBanner/>{me&&<OfflineStatus me={me} offline={offline}/>}{refreshing&&!offline&&<p className="refresh-notice" role="status"><RefreshCw size={14} aria-hidden/>{say('يتم تحديث البيانات…','Updating your data…')}</p>} {offlineStorageError&&<p className="mobile-offline-notice" role="alert">{offlineStorageError}</p>}</div>{me?.role==='rep'&&<ServiceQueueBanner entries={serviceQueue} onOpen={openServiceCase} onVisit={visitFromQueue}/>}{view!=='map'&&<section className="page-heading"><div><span className="eyebrow">YOUR REST INDUSTRIES</span><h1>{t(currentTitle)}</h1></div>{pageActions}</section>}
  {error ? <div className="error-banner"><strong>{t(error)}</strong>{auth ? <a className="btn primary" href="/login" target="_top">{t("تسجيل الدخول")}</a> : <button className="btn subtle" onClick={() => { setLoading(true); load(); }}>{t("إعادة المحاولة")}</button>}</div> : loading || !permittedView ? <div className="metrics">{t([1, 2, 3, 4].map(n => <Skeleton className="h-36 rounded-xl" key={n}/>))}</div> : <>
  {!['map','team','sales','reports','targets','journeys','competitors','complaints','service-kpi'].includes(view) && pageFilters}
  {view==='competitors'&&salesWorkspace&&me&&<CompetitorsWorkspace key={[me.id,me.role,me.regionScope,me.supervisorId,me.authVersion].join(':')} records={salesRecords.filter(r=>!r.data._offlineState&&!r.data._offlineAcknowledged)} members={members} onCustomer={setDetailId} onVisit={r=>openVisit(r)} onNew={openCompetitorVisit} onRefresh={load}/>}
