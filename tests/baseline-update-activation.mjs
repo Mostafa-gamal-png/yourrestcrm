@@ -229,10 +229,10 @@ try {
     eq(read(path.join(pv.current, 'app.cjs')), '// isolated release fixture fifth\n', 'the fifth release is live');
   }
 
-  // ---- the releases of 2026-10-17 to 2026-10-29: a release reuses the day's backup whichever earlier release of the day took it (an update refused for this on the hosting account, so every earlier name is listed here)
+  // ---- the releases of 2026-10-17 to 2026-10-31: a release reuses the day's backup whichever earlier release of the day took it (an update refused for this on the hosting account, so every earlier name is listed here)
   {
     const named = (key, name, date, extra = []) => packageIt(key, build('build-' + key, key), ['--release-name', name, '--release-date', date, '--stage-name', 'yourrest-crm-' + name + '-' + date, '--schema-baseline', '16', ...extra]);
-    const kpi = named('kpi', 'update-service-kpi', '20261017'), voice = named('voice', 'update-visit-place-voice', '20261017'), message = named('message', 'update-customer-message', '20261018'), chain = named('chain', 'update-support-chain', '20261018', ['--verify-route', '/api/support=401']), chainB = named('chainb', 'update-support-chain-b', '20261018', ['--verify-route', '/api/support=401']), machines = named('machines', 'update-machines', '20261020'), mobile = named('mobile', 'update-mobile-comfort', '20261020'), notice = named('notice', 'update-reload-notice', '20261021'), autostop = named('autostop', 'update-auto-stop', '20261027'), speed = named('speed', 'update-speed', '20261029'), fast = named('fast', 'update-fast-open', '20261029');
+    const kpi = named('kpi', 'update-service-kpi', '20261017'), voice = named('voice', 'update-visit-place-voice', '20261017'), message = named('message', 'update-customer-message', '20261018'), chain = named('chain', 'update-support-chain', '20261018', ['--verify-route', '/api/support=401']), chainB = named('chainb', 'update-support-chain-b', '20261018', ['--verify-route', '/api/support=401']), machines = named('machines', 'update-machines', '20261020'), mobile = named('mobile', 'update-mobile-comfort', '20261020'), notice = named('notice', 'update-reload-notice', '20261021'), autostop = named('autostop', 'update-auto-stop', '20261027'), speed = named('speed', 'update-speed', '20261029'), fast = named('fast', 'update-fast-open', '20261029'), digits = named('digits', 'update-digits-signin', '20261031'), android = named('android', 'update-android-1011', '20261031');
     for (const [label, first, second, d1, d2] of [
       ['the KPI release', kpi, voice, new Date('2026-10-17T05:00:00Z'), new Date('2026-10-17T10:00:00Z')],
       ['the customer-message release', message, chain, new Date('2026-10-18T05:00:00Z'), new Date('2026-10-18T10:00:00Z')],
@@ -241,7 +241,8 @@ try {
       ['the phone and tablet comfort release', mobile, notice, new Date('2026-10-21T05:00:00Z'), new Date('2026-10-21T10:00:00Z')],
       ['the update-notice release', notice, autostop, new Date('2026-10-27T05:00:00Z'), new Date('2026-10-27T10:00:00Z')],
       ['the auto-stop release', autostop, speed, new Date('2026-10-29T05:00:00Z'), new Date('2026-10-29T10:00:00Z')],
-      ['the speed release', speed, fast, new Date('2026-10-29T05:00:00Z'), new Date('2026-10-29T10:00:00Z')]
+      ['the speed release', speed, fast, new Date('2026-10-29T05:00:00Z'), new Date('2026-10-29T10:00:00Z')],
+      ['the digits and sign-in release', digits, android, new Date('2026-10-31T05:00:00Z'), new Date('2026-10-31T10:00:00Z')]
     ]) {
       const dir = home('same-day-' + second.helper.RELEASE_NAME + '-after-' + first.helper.RELEASE_NAME, 16, first, second), pe = first.helper.pathsFor(dir), pn = second.helper.pathsFor(dir), logs = [], collect = text => logs.push(text);
       const took = await first.helper.run(pe, 'apply', {log: quiet, stopped: paths => first.helper.ensureStopped(paths, emptyProc), now: () => d1});
