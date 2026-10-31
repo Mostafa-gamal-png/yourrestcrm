@@ -4,6 +4,11 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## ESLint at zero errors and part of the default gate (2026-10-31, no change to the app)
+
+- **Reviewed first.** The 96 errors and the 32 missing-dependency warnings were read one by one in the visits, follow-ups, route tracking and map screens and the rest: no bug among them. Every ref read while rendering changes together with a state update; every state set in an effect resets or loads on purpose; the four "immutability" reports are refs the React Compiler rules did not recognise; the two synchronous scripts in `app/layout.tsx` must run before the first paint; the four `any` are the per-kind JSON of a record, a target set and the CRM route's parsed body.
+- **What changed.** `eslint.config.mjs` makes the four React Compiler rules (this project does not use the compiler) warnings and records the two other exceptions with their reasons; `npm run check` now runs ESLint and fails on any error (146 checks). Rewriting working code in the most used screens to satisfy those rules was judged riskier than useful. 0 errors, 162 warnings.
+
 ## Arabic digits in invoice numbers and customer codes; invisible characters in member and sign-in emails; the day report on a 360 px phone (2026-10-31, package update-digits-signin, schema 16, no migration)
 
 - **The gap.** The invoice key (`lib/invoice-reference.ts`) and the customer-code key (`lib/customer-identity.ts`) folded marks, wide letters, spaces and case, but not the digits of an Arabic keyboard: "INV-١٠٢٣" and "INV-1023" were two invoices (a manual sale and its ERP twin both counted), and "C-١٠٢" and "C-102" two codes (ERP sales reaching no customer). Both keys now fold Arabic-Indic (٠-٩) and Persian (۰-۹) digits; display text is unchanged.
