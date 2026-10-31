@@ -12,7 +12,7 @@ fs.mkdirSync(runtime, {recursive: true});
 const out = fs.mkdtempSync(path.join(runtime, 'member-email-'));
 process.on('exit', () => fs.rmSync(out, {recursive: true, force: true}));
 const load = async name => { fs.writeFileSync(path.join(out, name + '.mjs'), ts.transpileModule(fs.readFileSync(path.join(root, 'lib', name + '.ts'), 'utf8'), {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText); return import(path.join(out, name + '.mjs')); };
-const {normalizeMemberEmail: email, memberEmailError} = await load('member-email');
+const {normalizeMemberEmail: email, invisibleEmailMarks, memberEmailError} = await load('member-email');
 const {memberEditToken: token} = await load('member-edit');
 
 let checks = 0;
@@ -32,6 +32,8 @@ eq(email('\u2060rep@yourrest.org\ufeff'), 'rep@yourrest.org', 'a word joiner and
 eq(email('\u00a0rep@yourrest.org\u00a0'), 'rep@yourrest.org', 'non-breaking spaces around it are dropped');
 eq(email('rep @yourrest.org'), 'rep @yourrest.org', 'an inner space is kept, so the format check still refuses it');
 eq(email(''), '', 'an empty email stays empty');
+eq('\u200fRep\u200c@yourrest.org\u200e'.replace(invisibleEmailMarks, ''), 'Rep@yourrest.org', 'the sign-in field drops only the invisible marks as they are pasted (case and spaces wait for sending)');
+eq(['a\u200f', 'b\u200f'].map(value => value.replace(invisibleEmailMarks, '')), ['a', 'b'], 'the shared pattern is safe to reuse');
 eq(memberEmailError.includes('name@yourrest.org'), true, 'the error shows the expected form');
 
 // ---- the edit snapshot

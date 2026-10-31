@@ -1,5 +1,6 @@
 /** Runtime-neutral email OTP. No email provider, network or platform identity trust here. */
 import {readRequestBytes} from './request-body';
+import {normalizeMemberEmail} from './member-email';
 export type EmailIdentity = {provider:'email-otp';memberId:string;memberVersion:number;userId:string;email:string;displayName:string;fullName:string};
 export type EmailAuthConfig = {
  origin:string; secret:string;
@@ -99,7 +100,7 @@ export async function handleEmailAuth(request:Request,action:string,db:D1Databas
   const clientHash=await digest(c,'client:'+client);
   if(!await permit(db,action+':client:'+clientHash,stamp,minute,action==='request'?10:30)||!await permit(db,action+':global',stamp,minute,1000))return json({error:'محاولات كثيرة. حاول بعد دقيقة.'},429,{'Retry-After':'60'});
   if(action==='request'){
-   const email=typeof input.email==='string'?input.email.trim().toLowerCase():'';
+   const email=typeof input.email==='string'?normalizeMemberEmail(input.email):'';
    if(email.length>254||!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@yourrest\.org$/.test(email))return json({error:'اكتب بريد الشركة الصحيح المنتهي بـ @yourrest.org.'},400);
    const subject=await digest(c,'subject:'+email);
    const permitted=await permit(db,'send-minute:'+subject,stamp,minute,1)&&await permit(db,'send-hour:'+subject,stamp,hour,5);

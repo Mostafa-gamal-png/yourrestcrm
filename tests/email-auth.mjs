@@ -20,8 +20,8 @@ const db={prepare:query=>new Statement(query),async batch(statements){sql.exec('
 let checks=0;
 const check=(actual,expected)=>{assert.deepEqual(actual,expected);checks++;};
 try{
- for(const name of ['request-body','email-auth']){
-  const compiled=ts.transpileModule(fs.readFileSync(path.join(root,'lib',name+'.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './request-body'","from './request-body.mjs'");
+ for(const name of ['request-body','member-email','email-auth']){
+  const compiled=ts.transpileModule(fs.readFileSync(path.join(root,'lib',name+'.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './request-body'","from './request-body.mjs'").replace("from './member-email'","from './member-email.mjs'");
   fs.writeFileSync(path.join(work,name+'.mjs'),compiled);
  }
  const {handleEmailAuth,emailSession,safeAuthReturn}=await import(pathToFileURL(path.join(work,'email-auth.mjs')));
@@ -139,7 +139,9 @@ try{
  request=await begin();signed=await verify(request);setExpiry(signed,now+3_600_000);
  const concurrent=await Promise.all([call('refresh',{},signed.cookie,[200,401]),call('logout',{},signed.cookie)]);
  check(concurrent[1].value,{ok:true});check(await session(signed),null);await call('refresh',{},signed.cookie,401);
- request=await begin('new@yourrest.org');signed=await verify(request);check((await session(signed)).userId,'email-otp:new');check(sql.prepare("SELECT user_id FROM crm_members WHERE id='new'").get().user_id,null);
+ // An email pasted from an Arabic chat brings direction marks and zero-width characters: it reaches the same member.
+request=await begin('\u200fNew@yourrest.org\u200c\u200e');check(mail.at(-1).to,'new@yourrest.org');
+request=await begin('new@yourrest.org');signed=await verify(request);check((await session(signed)).userId,'email-otp:new');check(sql.prepare("SELECT user_id FROM crm_members WHERE id='new'").get().user_id,null);
  request=await begin('ceo@yourrest.org');signed=await verify(request);check((await session(signed)).userId,'existing-platform-owner');check(sql.prepare("SELECT owner_id FROM crm_settings WHERE id='company'").get().owner_id,'existing-platform-owner');
  mode='failure';request=await begin();await verify(request,400);mode='success';assert(sql.prepare("SELECT COUNT(*) n FROM auth_events WHERE event='otp_delivery_failed'").get().n>0);checks++;
  mode='timeout';advance();const timed=await call('request',{email:'rep@yourrest.org'},'',200,{}, {deliveryDeadlineMs:5});mode='success';await verify(timed,400);
