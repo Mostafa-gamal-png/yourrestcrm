@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
-import {installNativeBridge, nativeControl} from '../scripts/lib/native-bridge.mjs';
+import {SERVED_APP_VERSION, installNativeBridge, nativeControl} from '../scripts/lib/native-bridge.mjs';
 
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
 const members = [
@@ -118,7 +118,7 @@ try {
     await app.db.prepare("UPDATE crm_member_devices SET reported_at=? WHERE member_id='rep4' AND platform='android-app'").bind(new Date(Date.now() - 61000).toISOString()).run();
     await page.clock.fastForward(61000);
     const settled = await waitReport('rep4', 'android-app', report => report.gate === 'ok');
-    check([settled.enrolled, settled.consent, settled.background, settled.fineLocation, settled.notifications, settled.missing, settled.appVersion], [true, true, 'granted', 'granted', 'granted', [], '1.0.10'], 'the server learns the phone is set up');
+    check([settled.enrolled, settled.consent, settled.background, settled.fineLocation, settled.notifications, settled.missing, settled.appVersion], [true, true, 'granted', 'granted', 'granted', [], SERVED_APP_VERSION], 'the server learns the phone is set up');
     await page.context().close();
   }
 
@@ -182,7 +182,7 @@ try {
     await withdraw({fineLocationPermission: 'denied'}, 'permission', 'الموقع الدقيق', 'precise location withdrawn');
     await withdraw({locationServicesEnabled: false}, 'location_services', 'الموقع (GPS)', 'phone GPS switched off');
     await withdraw({appVersion: '1.0.6'}, 'upgrade', 'حدّث تطبيق', 'outdated app version');
-    await withdraw({appVersion: '1.0.7'}, 'upgrade', 'أقدم من الإصدار المطلوب 1.0.10', 'app older than the served version');
+    await withdraw({appVersion: '1.0.7'}, 'upgrade', 'أقدم من الإصدار المطلوب ' + SERVED_APP_VERSION, 'app older than the served version');
     await withdraw({enrolled: false, memberId: null}, 'setup', 'تسجيل هذا الهاتف', 'enrolment lost');
     // Trouble during the day is not a block: GPS waits, queued points, no network, a paused collector.
     for (const patch of [{error: 'بانتظار موقع حديث؛ الفترة غير المؤكدة تظهر في التقرير'}, {syncError: 'لا يوجد اتصال بالخادم؛ يجري حفظ الموقع على الجهاز لحين عودة الشبكة', pendingCount: 400, pendingGapCount: 3}, {lastFixAt: '2026-10-12T05:00:00.000Z', accuracy: 900}]) {
@@ -231,7 +231,7 @@ try {
     ok((await coverage('rep3')).text.includes('آيفون'), 'rep3: an iPhone');
     ok((await coverage('rep4')).text.includes('التتبع يعمل'), 'rep4 set up tracking: the phone says it is working even though no point arrived yet');
     const sixth = (await coverage('rep6')).text;
-    ok(sixth.includes('آخر تقرير من الهاتف') && sixth.includes('1.0.10'), 'rep6: the last phone report with its version: ' + sixth);
+    ok(sixth.includes('آخر تقرير من الهاتف') && sixth.includes(SERVED_APP_VERSION), 'rep6: the last phone report with its version: ' + sixth);
     ok((await coverage('rep7')).text.includes('الناقص'), 'rep7 refused a permission: the report names what is missing');
     const silent = (await coverage('rep5')).text;
     ok(silent.includes('آخر تقرير من الهاتف'), 'rep5 declined consent and said so: ' + silent);
@@ -256,7 +256,7 @@ try {
 
   // ---- 8. The app launches cleanly: no hydration error, and no "update the app" notice before the app has reported itself
   {
-    const notice = page => page.locator('.journey-form-notice', {hasText: 'حدّث تطبيق أندرويد إلى 1.0.10'});
+    const notice = page => page.locator('.journey-form-notice', {hasText: 'حدّث تطبيق أندرويد إلى ' + SERVED_APP_VERSION});
     const slow = await open('sup', {native: {lateBridgeMs: 2500}, viewport: DESKTOP});
     await waitWorkspace(slow);
     await pause(900);

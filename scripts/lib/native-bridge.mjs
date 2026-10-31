@@ -6,10 +6,15 @@
 //   await installNativeBridge(page | context, {memberId: 'rep1', regionScope: 'western'})   // a set-up phone
 //   await installNativeBridge(page, {})                                                      // a freshly installed app
 //   const phone = nativeControl(page); await phone.set({backgroundPermission: 'denied'});   // the user changes settings
+import {readFileSync} from 'node:fs';
+
+// The Android version the site serves (and requires): a phone set up by a test runs it unless the test says otherwise.
+const SERVED = JSON.parse(readFileSync(new URL('../../lib/app-update-release.json', import.meta.url), 'utf8'));
+export const SERVED_APP_VERSION = SERVED.versionName;
 export const NATIVE_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 YourrestCRM-Android/1';
 
 /**
- * @param {{memberId?: string, regionScope?: string, appVersion?: string, state?: object, grant?: object, latencyMs?: number, lateBridgeMs?: number, noBridge?: boolean, userAgent?: string}} options
+ * @param {{memberId?: string, regionScope?: string, appVersion?: string, versionCode?: number, state?: object, grant?: object, latencyMs?: number, lateBridgeMs?: number, noBridge?: boolean, userAgent?: string}} options
  *  memberId: the phone is already set up for this account (consent, every permission, enrolled).
  *  state: fields merged over the initial state. grant: what the person accepts when the app asks
  *  ({consent, fine, notifications, background}, all true by default). lateBridgeMs: the bridge appears after a delay.
@@ -18,7 +23,7 @@ export const NATIVE_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) Apple
  *  that code (speech_permission, speech_network, ...), {hold: true} waits until cancelled. speech: false announces an app without the service.
  */
 export function nativeBridgeSource(options = {}) {
-  const config = {regionScope: 'all', appVersion: '1.0.10', latencyMs: 0, lateBridgeMs: 0, noBridge: false, userAgent: NATIVE_USER_AGENT, state: {}, speech: {text: 'نص مُملى بالصوت'}, ...options, grant: {consent: true, fine: true, notifications: true, background: true, ...(options.grant || {})}};
+  const config = {regionScope: 'all', appVersion: SERVED.versionName, versionCode: SERVED.versionCode, latencyMs: 0, lateBridgeMs: 0, noBridge: false, userAgent: NATIVE_USER_AGENT, state: {}, speech: {text: 'نص مُملى بالصوت'}, ...options, grant: {consent: true, fine: true, notifications: true, background: true, ...(options.grant || {})}};
   return `(() => {
   const config = ${JSON.stringify(config)};
   try { Object.defineProperty(Navigator.prototype, 'userAgent', {get: () => config.userAgent, configurable: true}); } catch {}
@@ -28,7 +33,7 @@ export function nativeBridgeSource(options = {}) {
   const windowOpen = () => { const p = Object.fromEntries(riyadh.formatToParts(new Date()).map(part => [part.type, part.value])); return new Date(p.year + '-' + p.month + '-' + p.day + 'T00:00:00Z').getUTCDay() !== 5 && Number(p.hour) >= 6 && Number(p.hour) < 18; };
   const state = {tracking: false, permission: 'denied', pendingCount: 0, pendingGapCount: 0, quarantinedCount: 0, quarantinedGapCount: 0, lastFixAt: null, accuracy: null, error: null, syncError: null, quarantineNotice: null, dayId: null, date: null,
     memberId: null, regionScope: null, enrolledRole: null, stopId: null, workHoursSupported: true, trackingWindowActive: false, trackingWindowStart: '06:00', trackingWindowEnd: '18:00', trackingTimeZone: 'Asia/Riyadh', nextTrackingWindowAt: null,
-    directionsSupported: true, continuousSupported: true, enrolled: false, backgroundPermission: 'prompt', appVersion: config.appVersion, installedVersionName: config.appVersion, installedVersionCode: 11, mapsLaunchSupported: true,
+    directionsSupported: true, continuousSupported: true, enrolled: false, backgroundPermission: 'prompt', appVersion: config.appVersion, installedVersionName: config.appVersion, installedVersionCode: config.versionCode, mapsLaunchSupported: true,
     foregroundDirectionsSupported: true, accountRecoverySupported: true, fridayExclusionSupported: true, workWeekSupported: true, fineLocationPermission: 'denied', notificationPermission: 'denied', locationServicesEnabled: true, continuousConsent: false, immutableBindingSupported: true};
   if (config.memberId) Object.assign(state, {enrolled: true, memberId: config.memberId, enrolledRole: 'rep', regionScope: config.regionScope, continuousConsent: true, fineLocationPermission: 'granted', notificationPermission: 'granted', backgroundPermission: 'granted'});
   Object.assign(state, config.state);

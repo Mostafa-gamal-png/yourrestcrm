@@ -5,6 +5,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage} from '@/lib/i18n';
 import {installController,registerInstallWorker,type InstallSnapshot} from '@/lib/pwa-install';
 import {isNativeTrackingApp} from '@/lib/native-tracking';
+import release from '@/lib/app-update-release.json';
 import './install-app.css';
 
 export default function InstallApp(){
@@ -41,7 +42,7 @@ export default function InstallApp(){
   <section className="pwa-install-card" aria-label={label('تطبيق يورست','Yourrest app')}>
    <span className="pwa-install-icon"><Smartphone size={24}/></span>
    <div className="pwa-install-copy"><strong>{label('تطبيق يورست على موبايلك','Yourrest on your phone')}</strong></div>
-   {android?<a href="/downloads/yourrest-crm-android-v1.0.10-11.apk" download="Yourrest-CRM.apk" className="btn primary pwa-install-action"><Download size={18}/>{label('تنزيل تطبيق أندرويد','Download Android app')}</a>:<button ref={installButton} type="button" className="btn primary pwa-install-action" disabled={state.busy} aria-busy={state.busy} onClick={()=>void install()}><Download size={18}/>{label('تنزيل التطبيق','Install app')}</button>}
+   {android?<a href={new URL(release.apkUrl).pathname} download="Yourrest-CRM.apk" className="btn primary pwa-install-action"><Download size={18}/>{label('تنزيل تطبيق أندرويد','Download Android app')}</a>:<button ref={installButton} type="button" className="btn primary pwa-install-action" disabled={state.busy} aria-busy={state.busy} onClick={()=>void install()}><Download size={18}/>{label('تنزيل التطبيق','Install app')}</button>}
   </section>
   {notice&&<p className="pwa-install-status" role="status">{notice==='accepted'?label('تم قبول طلب التثبيت. انتظر حتى يكمله المتصفح.','Installation accepted. Wait for your browser to finish.'):label('يمكنك تنزيل التطبيق لاحقًا من الزر أو قائمة المتصفح.','You can install later using this button or your browser menu.')}</p>}
   <Dialog open={help} onOpenChange={setHelp}><DialogContent className="pwa-install-dialog" dir={en?'ltr':'rtl'} showCloseButton={false} onCloseAutoFocus={event=>{event.preventDefault();installButton.current?.focus();}}>
