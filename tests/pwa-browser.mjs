@@ -19,7 +19,11 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),relea
 const work=await mkdtemp(path.join(os.tmpdir(),'yourrest-pwa-browser-')),data=path.join(work,'data'),capture=path.join(work,'mail.jsonl');
 const screenshots=process.env.YR_PWA_SCREENSHOT_DIR?path.resolve(process.env.YR_PWA_SCREENSHOT_DIR):path.join(work,'screenshots');
 const contentShell=process.env.YR_BROWSER_CONTENT_SHELL==='1',shells=[];
-let child,db,browser,proxy,log='',checks=0;const errors=[],saved=[];
+let child,db,browser,proxy,log='',checks=0,networkDown=false;
+// Playwright's setOffline reaches the page but not the service worker's own fetch() in this Chromium (proved 2026-10-31: offline,
+// the worker still got "/" from the server). offline() also cuts the test's front server, as a phone without signal would.
+async function offline(ctx,down){networkDown=down;await ctx.setOffline(down);}
+const errors=[],saved=[];
 const check=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
 async function freePort(){const server=createNetServer();server.listen(0,'127.0.0.1');await once(server,'listening');const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port;}
 try{
@@ -40,6 +44,7 @@ try{
  child=spawn(process.execPath,['app.cjs'],{cwd:release,env:{PATH:process.env.PATH,NODE_ENV:'production',PORT:String(backend),HOST:'127.0.0.1',YR_APP_ORIGIN:origin,YR_AUTH_SECRET:randomBytes(32).toString('hex'),YR_DATABASE_PATH:filename,YR_OBJECTS_PATH:objects,YR_MAIL_TRANSPORT:'sendmail',YR_MAIL_FROM:'noreply@yourrest.org',YR_SENDMAIL_PATH:sendmail},stdio:['ignore','pipe','pipe']});
  child.stdout.on('data',b=>log+=b);child.stderr.on('data',b=>log+=b);
  proxy=createHttpsServer({key:await readFile(key),cert:await readFile(cert)},(incoming,outgoing)=>{
+  if(networkDown){incoming.socket.destroy();return;}
   const forwarded=httpRequest({host:'127.0.0.1',port:backend,path:incoming.url,method:incoming.method,headers:{...incoming.headers,host:'crm.yourrest.org:'+tlsPort,'x-forwarded-proto':'https'}},response=>{outgoing.writeHead(response.statusCode,response.headers);response.pipe(outgoing);});
   forwarded.on('error',()=>{outgoing.writeHead(502);outgoing.end('Isolated backend is starting');});incoming.pipe(forwarded);
  });proxy.listen(tlsPort,'127.0.0.1');await once(proxy,'listening');
@@ -124,8 +129,8 @@ try{
  const publicAssets=await page.evaluate(async()=>{const result=[];for(const name of await caches.keys())for(const request of await(await caches.open(name)).keys())result.push(new URL(request.url).pathname);return result;});
  assert(publicAssets.includes('/offline-app.html')&&publicAssets.includes('/offline-shell-manifest.json'));checks++;
  check(publicAssets.some(url=>url==='/'||url==='/login'||url.startsWith('/api/')||url.startsWith('/files/')),false,'Worker stores public shell assets, never private HTML or API responses');
- await ctx.setOffline(true);await page.goto(origin+'/');await page.locator('.workspace').waitFor();check(await page.evaluate(()=>!!document.getElementById('yourrest-offline-app')),true,'Cold offline navigation uses the data-free client shell');check(await page.evaluate(()=>fetch('/api/crm').then(()=>false,()=>true)),true,'Offline API requests must not be turned into successful cached responses');
- await ctx.setOffline(false);await page.reload();await page.locator('.pwa-install-card').waitFor();check(new URL(page.url()).pathname,'/');
+ await offline(ctx,true);await page.goto(origin+'/');await page.locator('.workspace').waitFor();check(await page.evaluate(()=>!!document.getElementById('yourrest-offline-app')),true,'Cold offline navigation uses the data-free client shell');check(await page.evaluate(()=>fetch('/api/crm').then(()=>false,()=>true)),true,'Offline API requests must not be turned into successful cached responses');
+ await offline(ctx,false);await page.reload();await page.locator('.pwa-install-card').waitFor();check(new URL(page.url()).pathname,'/');
  check(errors,[],'Unexpected browser page errors');
  console.log(JSON.stringify({ok:true,checks,browser:contentShell?'Chromium content shell 150':'Chromium',actual_built_release:true,real_https_service_worker:true,real_auth_with_mock_mail:true,simulated_install_events:true,simulated_ios_user_agent:true,actual_device_installation_tested:false,production_data_used:false,...(process.env.YR_PWA_SCREENSHOT_DIR?{screenshots:saved}:{})}));
 }catch(error){console.error('PWA browser test failed:',error.stack);if(log)console.error('Server diagnostics:',log.replace(/[a-f0-9]{64}/gi,'[redacted]'));process.exitCode=1;}
