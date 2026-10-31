@@ -9,7 +9,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {deploy, DeployError, CRON_COMMAND, SCRIPTS, cleanSetting, cpanelBase, accountHints} from '../scripts/deploy-cpanel.mjs';
+import {deploy, DeployError, CRON_COMMAND, SCRIPTS, cleanSetting, cpanelBase, accountHints, dailyBackupTime} from '../scripts/deploy-cpanel.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOKEN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345', USER = 'youriedx', STAGE = 'yourrest-crm-update-test-20261029', HELPER = 'yourrest-activate-update-test.cjs';
@@ -102,8 +102,10 @@ function cpanel({env = {}, selector = false, cronRuns = true, token = TOKEN, app
         if (call === 'Fileman::fileop') { assert.equal(q.get('op'), 'unlink'); fs.rmSync(local(q.get('sourcefiles'))); return api2([{result: 1}]); }
         if (call === 'Cron::listcron') return api2([...state.cron.map((row, i) => ({...row, commandnumber: i + 1})), {count: state.cron.length}]);
         if (call === 'Cron::add_line') {
-          for (const key of ['minute', 'hour', 'day', 'month', 'weekday']) assert.equal(q.get(key), '*');
-          state.cron.push({command: q.get('command'), linekey: 'k' + (state.cron.length + 1)}); return api2([{status: 1, linekey: 'k' + state.cron.length}]);
+          // The deploy's temporary line runs every minute; the daily backup line once a day at the time it was given.
+          const daily = q.get('command').includes('backup-scheduled.mjs');
+          for (const key of daily ? ['day', 'month', 'weekday'] : ['minute', 'hour', 'day', 'month', 'weekday']) assert.equal(q.get(key), '*');
+          state.cron.push({command: q.get('command'), linekey: 'k' + (state.cron.length + 1), ...(daily ? {minute: q.get('minute'), hour: q.get('hour')} : {})}); return api2([{status: 1, linekey: 'k' + state.cron.length}]);
         }
         if (call === 'Cron::remove_line') { state.cron = state.cron.filter(row => row.linekey !== q.get('linekey')); return api2([{status: 1}]); }
         return api2([], 'unknown call ' + call);
@@ -268,6 +270,45 @@ try {
     await assert.rejects(s.run('diagnose'), /diagnose needs the check script/); checks++;
     check([s.calls, s.uploads], [[], []], 'no check script: refused before any call');
   }
+
+  // ---- 12c. the daily backup: a backup now with the live release's own tools, verified, then the daily line, added once
+  {
+    const tools = (s, {backupFails = false} = {}) => {
+      const ops = path.join(s.home, 'yourrest-crm', 'release', 'operations');
+      fs.mkdirSync(ops, {recursive: true});
+      // backup-scheduled.mjs ROOT 14, restore.mjs verify DIR, backup-cron.mjs ROOT 14, as the release ships them (pretend versions).
+      fs.writeFileSync(path.join(ops, 'backup-scheduled.mjs'), backupFails
+        ? "console.error(JSON.stringify({ok:false,errorCode:'DISK_FULL'}));process.exitCode=1;\n"
+        : "import fs from 'node:fs';fs.mkdirSync(process.argv[2]+'/yourrest-backup-20261031T001500000Z-1a2b',{recursive:true});fs.appendFileSync(process.env.HOME+'/backup.log','backup '+process.argv.slice(2).join(' ')+'\\n');console.log(JSON.stringify({ok:true,state:'ok',backupName:'yourrest-backup-20261031T001500000Z-1a2b',objects:3,bytes:1000}));\n");
+      fs.writeFileSync(path.join(ops, 'restore.mjs'), "import fs from 'node:fs';fs.appendFileSync(process.env.HOME+'/backup.log','restore '+process.argv.slice(2).join(' ')+'\\n');if(process.argv[2]!=='verify'||!fs.existsSync(process.argv[3]))process.exit(1);console.log(JSON.stringify({ok:true,objects:3,liveDataModified:false}));\n");
+      fs.writeFileSync(path.join(ops, 'backup-cron.mjs'), "console.log(JSON.stringify({enabled:false,command:\"true # '\"+process.argv[2]+\"' backup-scheduled.mjs 14\"}));\n");
+    };
+    const s = cpanel({env: {TZ: 'Asia/Riyadh'}});
+    tools(s);
+    const result = await s.run('backup', {stage: 'ignored', helper: 'ignored'});
+    check(result.code, 0, 'the backup run ends well');
+    check(s.uploads, ['hosting-deploy.sh', 'hosting-cron.sh'], 'only the two scripts are uploaded: the backup tools are the live release\'s');
+    check(s.file('backup.log'), `backup ${s.home}/yourrest-crm-backups 14\nrestore verify ${s.home}/yourrest-crm-backups/yourrest-backup-20261031T001500000Z-1a2b\n`, 'one backup into yourrest-crm-backups keeping 14, then that very backup verified');
+    ok(lines(result.output).includes('BACKUP VERIFIED: yourrest-backup-20261031T001500000Z-1a2b'), 'the hosting account says it verified');
+    check(s.cron.map(({command, minute, hour}) => ({command, minute, hour})), [{command: `true # '${s.home}/yourrest-crm-backups' backup-scheduled.mjs 14`, minute: '15', hour: '3'}], 'the temporary line is gone and one daily backup line stays, at 03:15 on a server that keeps Riyadh time');
+    ok(s.logs.some(line => line.startsWith('the daily backup is scheduled every day at 03:15 server time (UTC +0300)')), 'the workflow says when it runs');
+    check(fs.existsSync(path.join(s.home, 'selector.log')), false, 'the app is neither stopped nor started');
+    const again = await s.run('backup', {stage: 'ignored', helper: 'ignored'});
+    check([again.code, s.cron.filter(row => row.command.includes('backup-scheduled.mjs')).length], [0, 1], 'a second run takes another backup but does not add a second daily line');
+    ok(s.logs.some(line => line.startsWith('the daily backup was already scheduled')), 'and says so');
+  }
+  {
+    const s = cpanel();
+    const ops = path.join(s.home, 'yourrest-crm', 'release', 'operations');
+    fs.mkdirSync(ops, {recursive: true});
+    fs.writeFileSync(path.join(ops, 'backup-scheduled.mjs'), "console.error(JSON.stringify({ok:false,errorCode:'DISK_FULL'}));process.exitCode=1;\n");
+    const result = await s.run('backup', {stage: 'ignored', helper: 'ignored'});
+    check(result.code, 3, 'a backup that fails ends the run with code 3');
+    ok(lines(result.output).includes('BACKUP STOP: the backup did not finish (code 1)'), 'and says why, after the tool\'s own answer');
+    check(s.cron, [], 'no daily line is added after a failed backup');
+  }
+  check([dailyBackupTime('+0000'), dailyBackupTime('-0400'), dailyBackupTime('+0530')], [{minute: '15', hour: '0'}, {minute: '15', hour: '20'}, {minute: '45', hour: '5'}], '03:15 Riyadh on a server in UTC, in New York summer time, in India');
+  assert.throws(() => dailyBackupTime('EDT'), /UTC offset could not be read/); checks++;
 
   // ---- 13. what this side refuses before calling cPanel
   for (const [extra, pattern] of [[{mode: 'install'}, /mode must be/], [{stage: '../yourrest-crm'}, /stage must be a plain file name/], [{helper: 'a/b.cjs'}, /helper must be/], [{run: 'x y'}, /run must be/], [{sha256: 'abc'}, /sha256 must be/], [{zip: null}, /package is needed/], [{user: 'me@example.com'}, /account name/]]) {
