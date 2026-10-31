@@ -1,5 +1,5 @@
 {
-  "mode": "check",
+  "mode": "deploy",
   "package": "deploy/packages/Yourrest-CRM-Update-Digits-Signin-20261031.zip",
   "sha256": "ffe3e2e4bd7ac3bcdc34b5beab9136a652623b190b6452da43c3237102b6c09f",
   "stage": "yourrest-crm-update-digits-signin-20261031",
