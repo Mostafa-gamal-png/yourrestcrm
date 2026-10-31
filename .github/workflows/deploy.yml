@@ -39,10 +39,13 @@ jobs:
     environment: production
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5 of both run on Node 24 (GitHub retires Node 20 for actions). setup-node v5 would cache the package
+      # manager named in package.json (pnpm, not installed here); this job installs nothing, so that is off.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
       - name: Read and check the request
         id: request
         env:
