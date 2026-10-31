@@ -41,7 +41,7 @@ user('owner');
 const input=(reference,extra={})=>({action:'save',createKey:crypto.randomUUID(),data:{customerId:'factory',repId:'rep',date:day,reference,items:[{product:'قوالب البلوك المتحركة',quantity:1,unitPrice:100}],discount:0,...extra}});
 const count=()=>sql.prepare('SELECT COUNT(*) n FROM crm_sales').get().n;
 const base=input('INV-123'),saved=await post(sales,base);
-for(const reference of ['INV-\u200f123','ＩＮＶ-１２３','inv-123'])await post(sales,input(reference),409);
+for(const reference of ['INV-\u200f123','ＩＮＶ-１２３','inv-123','INV-\u0661\u0662\u0663','inv-\u06f1\u06f2\u06f3'])await post(sales,input(reference),409);
 assert.equal(count(),1);checks++;
 assert.equal((await post(sales,base)).alreadySaved,true);checks++;
 await post(sales,{...base,data:{...base.data,reference:'ＩＮＶ-１２３'}},409);
@@ -55,6 +55,8 @@ function legacy(id,reference,customerId='factory'){
  sql.prepare("INSERT INTO crm_sales(id,customer_id,rep_id,branch,date,reference,reference_key,data,total_cents,status,void_reason,version,mutation_id,create_fingerprint,created_by,created_at,updated_at) VALUES(?,?,'rep','الرئيسي',?,?,?,?,10000,'confirmed','',1,'fixture',?,'owner',?,?)").run(id,customerId,day,reference,reference.toUpperCase(),JSON.stringify(data),JSON.stringify(data),now,now);
 }
 legacy('legacy','ＬＥＧＡＣＹ-７');await post(sales,input('LEGACY-7'),409);
+// A row saved before Arabic digits were folded (2026-10-31) kept them in its key; its plain twin is still refused.
+legacy('legacy-arabic','LEGACY-\u0668');await post(sales,input('LEGACY-8'),409);
 assert.equal(sql.prepare("SELECT reference FROM crm_sales WHERE id='legacy'").get().reference,'ＬＥＧＡＣＹ-７');checks++;
 await post(sales,{...input('legacy-7'),id:'legacy',version:1});
 assert.equal(sql.prepare("SELECT reference_key FROM crm_sales WHERE id='legacy'").get().reference_key,'LEGACY-7');checks++;
@@ -79,5 +81,6 @@ legacy('racing-update','TEMP-ALIAS');race=()=>sql.prepare("UPDATE crm_sales SET 
 await post(sales,input('RACE-2'),409);
 const {erpInvoiceKey}=await import(path.join(out,'lib/erp-sales-server.mjs'));
 assert.equal(await erpInvoiceKey('INV-123',day),await erpInvoiceKey('ＩＮＶ-\u200f１２３',day));checks++;
+assert.equal(await erpInvoiceKey('INV-123',day),await erpInvoiceKey('inv-\u0661\u0662\u0663',day));checks++;
 assert.equal(sql.prepare('PRAGMA integrity_check').get().integrity_check,'ok');checks++;
 console.log(JSON.stringify({ok:true,checks,scope:'Actual authenticated sales route + real SQLite; canonical refs, legacy rows, optimistic edits, replays and races'}));

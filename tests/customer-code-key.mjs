@@ -24,6 +24,10 @@ const ids = map => Object.fromEntries([...map].map(([code, rows]) => [code, rows
 eq(key('c-102'), 'C-102', 'upper case');
 eq(key('  C-102 '), 'C-102', 'spaces around it do not matter');
 eq(key('Ｃ－１０２'), 'C-102', 'wide letters and digits (NFKC) become plain ones');
+eq(key('c-\u0661\u0660\u0662'), 'C-102', 'Arabic-Indic digits become plain ones (since 2026-10-31)');
+eq(key('C-\u06f1\u06f0\u06f2'), 'C-102', 'Persian digits too');
+eq(key('\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669'), '0123456789', 'every digit to its own');
+eq(key('\u0639-\u0661\u0662'), '\u0639-12', 'an Arabic letter stays, its digits become plain');
 eq(key(102), '102', 'a number from a spreadsheet cell becomes its text');
 eq([key(null), key(undefined), key('')], ['', '', ''], 'nothing is an empty key');
 eq(key('C 102'), 'C 102', 'an inner space is kept: "C 102" and "C102" are different codes');
@@ -46,6 +50,8 @@ const records = [
   {id: 'visit', kind: 'activity', parentId: 'north', data: {code: 'C-1'}}
 ];
 eq(ids(customerCodeCandidates(records)), {'C-1': ['north'], 'C-2': ['north', 'south'], 'C-3': ['east']}, 'only customers; a code shared by two customers points to both; spellings of one code count once per customer');
+eq(ids(customerCodeCandidates([customer('typed', 'C-\u0667'), customer('imported', 'C-8', ['C-\u06f9'])])), {'C-7': ['typed'], 'C-8': ['imported'], 'C-9': ['imported']}, 'a code typed in Arabic digits meets the ERP file\'s plain one');
+eq(ids(customerCodeCandidates([customer('a', 'C-\u0665'), customer('b', 'C-5')])), {'C-5': ['a', 'b']}, 'two customers whose codes differ only in the digits share one code, and the reconciliation screen offers both');
 
 // ---- the reconciliation: an explicit choice, never a new association
 eq(ids(uniqueCustomerCodes(records)), ids(customerCodeCandidates(records)), 'without choices nothing changes');

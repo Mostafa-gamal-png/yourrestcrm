@@ -25,8 +25,7 @@ eq(email('  rep@yourrest.org \n'), 'rep@yourrest.org', 'spaces and a line break 
 eq(email('\u200frep@yourrest.org\u200e'), 'rep@yourrest.org', 'right-to-left and left-to-right marks from an Arabic message are dropped');
 eq(email('\u061crep@yourrest.org'), 'rep@yourrest.org', 'the Arabic letter mark is dropped');
 eq(email('rep\u200b@yourrest.org'), 'rep@yourrest.org', 'a zero-width space inside is dropped');
-// The zero-width non-joiner and joiner (U+200C, U+200D) are not in the list today: such an email is refused by the format check
-// rather than cleaned (reported to the owner on 2026-10-31; not asserted here either way).
+eq(email('rep\u200c@yourrest.org\u200d'), 'rep@yourrest.org', 'a zero-width non-joiner and joiner are dropped (since 2026-10-31)');
 eq(email('\u202brep@yourrest.org\u202c'), 'rep@yourrest.org', 'embedding controls are dropped');
 eq(email('\u2066rep@yourrest.org\u2069'), 'rep@yourrest.org', 'isolate controls are dropped');
 eq(email('\u2060rep@yourrest.org\ufeff'), 'rep@yourrest.org', 'a word joiner and a byte-order mark are dropped');

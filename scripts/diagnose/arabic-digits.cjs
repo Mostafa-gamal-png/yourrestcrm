@@ -2,6 +2,8 @@
 // Read-only check (2026-10-31): do invoice numbers or customer codes written with Arabic digits (١٢٣ or ۱۲۳) keep the same invoice or
 // the same customer apart from its ERP twin? The keys the application compares (lib/invoice-reference.ts, lib/customer-identity.ts)
 // fold marks, wide letters, spaces and case, but not Arabic digits: "INV-١٠٢٣" and "INV-1023" are two invoices to them.
+// Run on 2026-10-31: none in the live data. The keys fold Arabic digits since then; invoiceKey and codeKey below stay the keys as
+// they were, so the check still finds what was saved before the fix reached the server.
 // It opens the database read-only, changes nothing, and prints counts, totals and record ids only: no names, phones or references.
 //   node arabic-digits.cjs            on the hosting account (finds the database through yourrest-crm/settings.cjs)
 //   YR_DIAG_DATABASE=<file> node ...  on a copy
@@ -10,7 +12,7 @@ const {DatabaseSync} = require('node:sqlite');
 
 const ARABIC = /[٠-٩۰-۹]/;
 const fold = value => value.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x6f0));
-// The application's keys, as they are today, and the same keys with Arabic digits folded.
+// The application's keys as they were before 2026-10-31, and the same keys with Arabic digits folded.
 const invoiceKey = value => String(value ?? '').normalize('NFKC').replace(/[​-‏‪-‮⁦-⁩﻿]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 const codeKey = value => String(value ?? '').normalize('NFKC').trim().toUpperCase();
 const SAMPLE = 5;

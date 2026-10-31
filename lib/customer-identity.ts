@@ -1,7 +1,7 @@
 import type {Row} from './crm';
 
-/** The same key is used by imports, customer writes and ERP/KPI matching. */
-export const customerCodeKey=(value:unknown)=>String(value??'').normalize('NFKC').trim().toUpperCase();
+/** The same key is used by imports, customer writes and ERP/KPI matching; Arabic-Indic digits are plain ones (C-١٠٢ is C-102). */
+export const customerCodeKey=(value:unknown)=>String(value??'').normalize('NFKC').replace(/[\u0660-\u0669\u06f0-\u06f9]/g,digit=>String(digit.charCodeAt(0)-(digit>='\u06f0'?0x6f0:0x660))).trim().toUpperCase();
 export type CustomerCodeMapping={codeKey:string;customerId:string;version:number};
 export type CustomerIdentityState={revision:number;mappings:CustomerCodeMapping[]};
 export function customerErpCodes(row:Row):string[]{
