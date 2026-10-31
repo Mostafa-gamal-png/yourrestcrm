@@ -4,6 +4,13 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Arabic digits in invoice numbers and customer codes; zero-width joiners in member emails (2026-10-31, rides the next package, schema 16, no migration)
+
+- **The gap.** The invoice key (`lib/invoice-reference.ts`) and the customer-code key (`lib/customer-identity.ts`) folded marks, wide letters, spaces and case, but not the digits of an Arabic keyboard: "INV-١٠٢٣" and "INV-1023" were two invoices (a manual sale and its ERP twin both counted), and "C-١٠٢" and "C-102" two codes (ERP sales reaching no customer). Both keys now fold Arabic-Indic (٠-٩) and Persian (۰-۹) digits; display text is unchanged.
+- **The live data, checked first.** `scripts/diagnose/arabic-digits.cjs` ran read-only on the hosting account (2026-10-31, `deploy.yml` diagnose mode): 0 manual sales, 54 ERP sales, 2,229 customers, and no Arabic digit in any reference, code, alias or mapping. So no stored key (`crm_sales.reference_key`, `crm_customer_code_mappings.code_key`, ERP `document_key`) changes and nothing is recomputed. Run the same check again just before the package that carries this fix is deployed.
+- **Member emails.** `normalizeMemberEmail` (`lib/member-email.ts`) now also drops the zero-width non-joiner and joiner (U+200C, U+200D) a paste from a chat can carry.
+- **Tests.** `tests/invoice-reference-key.mjs`, `tests/customer-code-key.mjs`, `tests/member-email.mjs`, and `tests/invoice-reference.mjs` (the sales route: an invoice already entered is refused in Arabic or Persian digits, a row saved before the fix still blocks its plain twin, the ERP key meets the manual one); each fails without the fix.
+
 ## Opening the app on the device's copy, scripts kept in the cache, the English dictionary on demand (2026-10-29, second package, schema 16, no migration)
 
 - **Measured first.** On the same throttled phone and slow 4G, a representative's usual opening (the app opened before on that device) took about 1.85 s, and 3.25 s when the server answered in 600 ms: the page waited for `/api/crm`, then for the IndexedDB write, before drawing anything, and asked for support and complaints only afterwards. And every opening downloaded 112 KB of scripts again.
