@@ -5,6 +5,7 @@
 #   check   unpack the package beside the app and run the activator's --check (the app keeps running; nothing changes)
 #   deploy  check, stop the Node.js app, run the activator (backup + switch), start the app, run --verify
 #   verify  run --verify only (after a person pressed Start App in cPanel)
+#   diagnose  run the read-only check uploaded as yourrest-deploy/<HELPER> (no package, the app keeps running)
 # Every STOP from the activator ends the run with the activator's own output; nothing is retried, deleted or restored here. One thing is
 # put back: when the activator stops BEFORE the switch, the app this script stopped through the selector is started again, unchanged.
 set -euo pipefail
@@ -92,6 +93,10 @@ case "$MODE" in
     ;;
   verify)
     activator --verify
+    ;;
+  diagnose)
+    # A read-only check uploaded beside this script (scripts/diagnose/*.cjs); it prints what it found and changes nothing.
+    "$NODE" "$HOME/yourrest-deploy/$HELPER"
     ;;
   *) echo "DEPLOY STOP: unknown mode $MODE"; exit 2;;
 esac
