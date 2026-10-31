@@ -1,4 +1,3 @@
 {
-  "mode": "diagnose",
-  "script": "scripts/diagnose/backups.cjs"
+  "mode": "backup"
 }
