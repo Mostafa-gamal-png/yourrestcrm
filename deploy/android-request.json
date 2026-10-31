@@ -1,3 +1,4 @@
 {
-  "mode": "verify-key"
+  "mode": "verify-key",
+  "note": "second check, with pasted spaces ignored"
 }
