@@ -4,6 +4,12 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Daily backups on crm.yourrest.org (2026-10-31, no change to the app)
+
+- **Found.** A read-only check (`scripts/diagnose/backups.cjs`) showed no daily backup: no cron line, no `~/yourrest-crm-backups`, only the activators' 15 checkpoints taken on the 10 days an update was applied (13.6 GB), the longest gap 8 days. The live database is about 78 MB.
+- **Done.** `mode=backup` of the deploy workflow takes a backup with the live release's own `backup-scheduled.mjs`, verifies it with `restore.mjs verify`, and adds the command `backup-cron.mjs` prints as a daily cron line at 03:15 Riyadh (20:15 server time, UTC-4), once, only after a verified backup. First backup: 74 MB in 4 s while the app ran; the recheck says DAILY BACKUPS RUNNING. `tests/deploy-cpanel.mjs` (93 checks) and `tests/diagnose-backups.mjs` (16) cover both.
+- **Still open.** Every copy lives on the same hosting account; the old activation checkpoints are not pruned yet (kept until the daily backups have run for a few days, and only with the owner's go).
+
 ## The deploy workflow on Node 24 actions (2026-10-31, no change to the app)
 
 - `.github/workflows/deploy.yml` uses `actions/checkout@v5` and `actions/setup-node@v5` (Node 24) instead of v4 (Node 20, deprecated by GitHub and already forced onto Node 24 with a warning). setup-node v5 would cache the package manager named in `package.json` (pnpm, never installed by this job), so `package-manager-cache: false`. Proved with a read-only diagnose run (Actions 41207163499): green, and the Node 20 warning is gone.
