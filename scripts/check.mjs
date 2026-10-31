@@ -35,6 +35,8 @@ function run(name,commandArgs,heap=512,timeout=120000){
 }
 console.log(`Gate: ${gate}; ${selected.length} test files; sequential processes; 512 MiB JS heap per test.`);
 if(gate==='default')run('typescript',['node_modules/typescript/bin/tsc','--noEmit','--incremental','false'],768,180000);
+// ESLint errors fail the gate (warnings do not); the reviewed exceptions and their reasons are in eslint.config.mjs.
+if(gate==='default')run('eslint',['node_modules/eslint/bin/eslint.js','.'],2048,300000);
 for(const file of selected)run(file,[file]);
 const report={gate,passed:results.every(row=>row.passed),results,excluded:gate==='default'?manifest.excluded:[],limitations:['Controlled UI component tests are not real browser or device tests.','Default gate does not execute release, archive, browser or original-workbook gates.']};
 fs.writeFileSync(path.join(output,gate+'-results.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
