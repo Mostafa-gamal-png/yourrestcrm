@@ -4,6 +4,12 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Android 1.0.11 published and required (2026-10-31, second package of the day, package update-android-1011, schema 16, no migration)
+
+- **Built and signed on GitHub.** `.github/workflows/android.yml` opens the owner's key from the repository secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`), checks that its certificate is the installed app's (`1d49b33c…`, the one recorded in `scripts/publish-android-release.mjs` and carried by the served 1.0.10 APK), builds with `mobile/android/tools/build-oss.py`, reads the signer back with apksigner, and commits the APK and its report to `deploy/android/`. The key exists on the runner only during the job.
+- **Published.** `scripts/publish-android-release.mjs` put 1.0.11 (code 12, 242,509 bytes, sha256 `246ce417…`) in `public/downloads`, `public/app-update.json` and `lib/app-update-release.json`, with notes that describe the request notifications. As the forced update was designed, the served version is the required one: a phone on 1.0.10 is asked to update before it continues. The owner chose this over a pilot on one phone first; 1.0.11 was not tried on a real phone before.
+- **Same day.** The activator accepts `update-fast-open-activation-20261029` and `update-digits-signin-activation-20261031`, so this second package of the day reuses the morning's backup (`tests/baseline-update-activation.mjs`, 181 checks).
+
 ## Daily backups on crm.yourrest.org (2026-10-31, no change to the app)
 
 - **Found.** A read-only check (`scripts/diagnose/backups.cjs`) showed no daily backup: no cron line, no `~/yourrest-crm-backups`, only the activators' 15 checkpoints taken on the 10 days an update was applied (13.6 GB), the longest gap 8 days. The live database is about 78 MB.
