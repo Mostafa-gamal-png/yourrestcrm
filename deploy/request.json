@@ -1,3 +1,5 @@
 {
-  "mode": "backup"
+  "mode": "diagnose",
+  "script": "scripts/diagnose/backups.cjs",
+  "note": "read-only: is the daily backup line there and the first backup counted"
 }
