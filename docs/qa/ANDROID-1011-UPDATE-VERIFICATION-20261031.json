@@ -1,0 +1,123 @@
+{
+  "release": {
+    "name": "update-android-1011",
+    "date": "20261031",
+    "package": "deploy/packages/Yourrest-CRM-Update-Android-1011-20261031.zip",
+    "bytes": 14572398,
+    "sha256": "7debe20e7e5f323408c24a976f9fc012bfa06e8aafbbec3b7ded67cd32026a8c",
+    "stage": "yourrest-crm-update-android-1011-20261031",
+    "helper": "yourrest-activate-update-android-1011.cjs",
+    "schema": 16,
+    "newMigrations": []
+  },
+  "android": {
+    "versionName": "1.0.11",
+    "versionCode": 12,
+    "apkBytes": 242509,
+    "apkSha256": "246ce41714a8ea78bc86c02dc031cde6ed928c5a391cd2d1e2d4b548a55b7faa",
+    "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+    "builtOn": "GitHub Actions (android.yml), signer read back with apksigner",
+    "deviceTested": false
+  },
+  "builtFrom": "8a291ff (code) + d713348 (generated offline app)",
+  "releaseTreeBefore": "{\"files\":2905,\"tree\":\"a4976b4f81f0f9ca58530662011684fbf0c03087389b3e687b584a5b71577759\"}",
+  "releaseTreeAfterPackaging": "{\"files\":2905,\"tree\":\"a4976b4f81f0f9ca58530662011684fbf0c03087389b3e687b584a5b71577759\"}",
+  "typescript": "0 errors",
+  "eslint": "0 errors",
+  "defaultGate": {
+    "passed": 147,
+    "total": 148,
+    "failed": [
+      "tests/service-wording.mjs: the test's own screen loader could not read the JSON journey-tracker now imports; fixed in 6f8d373, rerun 154 checks ok"
+    ]
+  },
+  "releaseBuildGate": [
+    "app-update-release.mjs exit=0 \"checks\":16 1s",
+    "complaint-report-http.mjs exit=0 \"checks\":51 76s",
+    "complaints-http.mjs exit=0 \"checks\":156 88s",
+    "device-status-http.mjs exit=0 \"checks\":86 56s",
+    "namecheap-http.mjs exit=0 \"checks\":381 23s",
+    "production-load.mjs exit=0  73s",
+    "sales-date-boundaries.mjs exit=0 \"checks\":36 6s",
+    "server-authorization.mjs exit=0 \"checks\":366 48s",
+    "service-kpi-http.mjs exit=0 \"checks\":115 62s",
+    "service-queue-http.mjs exit=0 \"checks\":120 57s",
+    "service-report-http.mjs exit=0 \"checks\":45 51s",
+    "support-http.mjs exit=0 \"checks\":230 74s",
+    "targets-attainment-http.mjs exit=0 \"checks\":26 36s",
+    "visit-files-http.mjs exit=0 \"checks\":41 36s",
+    "visit-place-http.mjs exit=0 \"checks\":44 31s"
+  ],
+  "browserGate": [
+    "admin-delete-browser.mjs exit=0 \"checks\":15 18s",
+    "app-browser-workflows.mjs exit=0 \"checks\":206 77s",
+    "app-update-browser.mjs exit=0 \"checks\":46 3s",
+    "build-notice-browser.mjs exit=0 \"checks\":18 36s",
+    "competitor-intelligence-browser.mjs exit=0 \"checks\":146 33s",
+    "competitors-browser.mjs exit=0 \"checks\":98 34s",
+    "complaints-browser.mjs exit=0 \"checks\":80 64s",
+    "customer-edit-browser.mjs exit=0 \"checks\":54 22s",
+    "daily-report-browser.mjs exit=0 \"checks\":94 13s",
+    "dictation-browser.mjs exit=0 \"checks\":46 52s",
+    "erp-sales-browser.mjs exit=1  0s",
+    "kpi-evidence-browser.mjs exit=0 \"checks\":87 27s",
+    "location-picker-browser.mjs exit=0 \"checks\":80 44s",
+    "machines-browser.mjs exit=0 \"checks\":31 28s",
+    "member-regions-browser.mjs exit=0 \"checks\":13 21s",
+    "mobile-comfort-browser.mjs exit=0 \"checks\":207 133s",
+    "offline-browser.mjs exit=0 \"checks\":64 69s",
+    "offline-outbox-browser.mjs exit=0 \"checks\":49 4s",
+    "open-cached-browser.mjs exit=0 \"checks\":19 22s",
+    "perf-budget-browser.mjs exit=0 \"checks\":23 59s",
+    "pwa-browser.mjs exit=0 \"checks\":71 26s",
+    "service-kpi-browser.mjs exit=0 \"checks\":83 76s",
+    "service-queue-browser.mjs exit=0 \"checks\":162 125s",
+    "support-browser.mjs exit=0 \"checks\":125 119s",
+    "tracking-gate-browser.mjs exit=0 \"checks\":98 117s",
+    "ui-refresh-browser.mjs exit=0 \"checks\":106 49s",
+    "visit-place-browser.mjs exit=0 \"checks\":37 49s"
+  ],
+  "rehearsal": {
+    "ok": true,
+    "steps": 18,
+    "oldRelease": "update-digits-signin 20261031 (what production runs)",
+    "stepNames": [
+      "previous release installed and serving",
+      "synthetic data created through the previous release and read back",
+      "package unpacked into the guide folder",
+      "--check passes while the app is still serving",
+      "switching is refused while another program holds the application folder",
+      "the application was running again; the activator stopped it itself and switched",
+      "stopped, backed up and switched; data, settings, launcher and uploads are byte-identical",
+      "new release started; --verify prints DEPLOYMENT VERIFIED",
+      "every role sees identical records, sales, performance and attachment after the update",
+      "behaviour that is meant to change did change",
+      "assistance requests, missed visits and the manager's approval queue work on the upgraded database for the right roles",
+      "a customer complaint runs its whole course on the upgraded database for the right roles",
+      "the monthly complaints report counts the complaint for the managers only",
+      "the customer-service evaluation counts the closure, its rating and the registration, takes an audit and the settings, for the right roles only",
+      "command-line usage and failure output behave as the guide describes",
+      "going back after use works with no database step: the previous release returns and serves every role from the database the new release wrote to",
+      "going back before the first start works: the previous release returns and runs on the untouched database",
+      "a tampered package is refused by --check and by the switch; live release, data and state unchanged"
+    ]
+  },
+  "packageInspection": [
+    "entries 2908 forbidden-names []",
+    "top-level ['RELEASE-SHA256SUMS.txt', 'UPDATE-20261031-AR.txt', 'release', 'yourrest-activate-update-android-1011.cjs']",
+    "secret-pattern hits [] 0",
+    "sqlite files []",
+    "seed phone numbers checked 206 hits outside node_modules []",
+    "migrations 16 ['release/drizzle/0014_customer_identities.sql', 'release/drizzle/0015_member_devices.sql']",
+    "sums entries 2905 release files 2905 missing 0 hash mismatches 0",
+    "drizzle manifest files 16 format yourrest-migrations-v1",
+    "activator files ['yourrest-activate-update-android-1011.cjs']"
+  ],
+  "diffAgainstDigitsSigninPackage": "old files 2906 new files 2908 added 31 removed 29 changed 24 unchanged 2853",
+  "hostingCheck": "run 41216396637: PACKAGE AND CONFIGURATION: READY. APP MAY REMAIN RUNNING.",
+  "limitations": [
+    "Android 1.0.11 was not tried on a real phone before it was made required; the owner chose to publish it as required at once.",
+    "ERP real-workbook test not run (file absent).",
+    "Browser tests run on desktop Chromium with an emulated Android bridge."
+  ]
+}
