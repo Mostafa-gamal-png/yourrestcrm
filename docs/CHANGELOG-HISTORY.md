@@ -4,7 +4,7 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
-## Arabic digits in invoice numbers and customer codes; invisible characters in member and sign-in emails; the day report on a 360 px phone (2026-10-31, rides the next package, schema 16, no migration)
+## Arabic digits in invoice numbers and customer codes; invisible characters in member and sign-in emails; the day report on a 360 px phone (2026-10-31, package update-digits-signin, schema 16, no migration)
 
 - **The gap.** The invoice key (`lib/invoice-reference.ts`) and the customer-code key (`lib/customer-identity.ts`) folded marks, wide letters, spaces and case, but not the digits of an Arabic keyboard: "INV-١٠٢٣" and "INV-1023" were two invoices (a manual sale and its ERP twin both counted), and "C-١٠٢" and "C-102" two codes (ERP sales reaching no customer). Both keys now fold Arabic-Indic (٠-٩) and Persian (۰-۹) digits; display text is unchanged.
 - **The live data, checked first.** `scripts/diagnose/arabic-digits.cjs` ran read-only on the hosting account (2026-10-31, `deploy.yml` diagnose mode): 0 manual sales, 54 ERP sales, 2,229 customers, and no Arabic digit in any reference, code, alias or mapping. So no stored key (`crm_sales.reference_key`, `crm_customer_code_mappings.code_key`, ERP `document_key`) changes and nothing is recomputed. Run the same check again just before the package that carries this fix is deployed.
