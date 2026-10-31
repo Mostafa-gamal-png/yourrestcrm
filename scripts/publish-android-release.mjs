@@ -20,13 +20,13 @@ const manifest={schemaVersion:1,packageName:report.package,versionName,versionCo
  apkUrl:`https://crm.yourrest.org/downloads/${name}`,sizeBytes:bytes.length,sha256,
  certificateSha256,
  releaseNotes:{ar:[
-  'ظهور التحديثات المتاحة داخل التطبيق عند فتحه أو العودة إليه.',
-  'تنزيل التحديث مع عرض التقدم ثم تأكيد التثبيت من أندرويد.',
-  'التحقق من سلامة التحديث والتوقيع مع الحفاظ على بياناتك المحفوظة.'
+  'إشعار على الهاتف عند تحويل طلب من خدمة العملاء إليك، حتى والتطبيق مغلق أو الشاشة مقفلة.',
+  'يتحقق التطبيق من الطلبات الجديدة كل عشر دقائق في ساعات العمل (6 صباحًا إلى 6 مساءً عدا الجمعة) وعند فتحه.',
+  'تبقى بياناتك والزيارات المحفوظة على الجهاز كما هي بعد التحديث.'
  ],en:[
-  'Available updates appear inside the app when opened or resumed.',
-  'Download progress and Android installation confirmation.',
-  'Verified update integrity and signing while keeping saved app data.'
+  'A phone notification when customer service assigns a request to you, even with the app closed or the screen locked.',
+  'The app checks for new requests every ten minutes in working hours (6 a.m. to 6 p.m. except Friday) and when opened.',
+  'Your data and the visits saved on the phone stay as they are after the update.'
  ]},publishedAt:new Date().toISOString()};
 const serialized=JSON.stringify(manifest,null,2)+'\n';
 fs.mkdirSync(path.join(root,'public/downloads'),{recursive:true});
