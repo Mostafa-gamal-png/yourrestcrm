@@ -4,6 +4,7 @@ import {LogOut,ShieldCheck} from 'lucide-react';
 import {useLanguage} from '@/lib/i18n';
 import {logoutNativeTracking} from '@/lib/native-tracking';
 import {lockOfflineSession} from '@/lib/offline-store';
+import {invisibleEmailMarks,normalizeMemberEmail} from '@/lib/member-email';
 import {prepareOfflineLogout,finishPendingOfflineLogout,confirmOfflineSignIn,isOfflineLogoutPending} from '@/lib/offline-auth';
 import AppUpdate from './app-update';
 
@@ -52,7 +53,7 @@ export default function EmailLogin({returnTo}:{returnTo:string}){
  async function submit(action:'request'|'verify'){
   if(lock.current)return;lock.current=true;setBusy(true);setError('');
   try{
-   const local=username.trim().toLowerCase().replace(/@yourrest\.org$/i,'');
+   const local=normalizeMemberEmail(username).replace(/@yourrest\.org$/i,'');
    if(action==='request'&&!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local))throw Error('اكتب بريد الشركة الصحيح المنتهي بـ @yourrest.org.');
    const result=await authRequest(action,action==='request'?{email:local+'@yourrest.org'}:{code,return_to:returnTo});
    if(action==='request'){setUsername(local);setSent(true);setCode('');setMessage(result.message||'');setSeconds(60);}
@@ -68,7 +69,7 @@ export default function EmailLogin({returnTo}:{returnTo:string}){
  <p style={{color:'#68766c',margin:'10px 0 24px'}}>{label('إدارة علاقات العملاء · يورست للصناعات','Yourrest Industries · Customer Relationship Management')}</p>
  <AppUpdate/>
  <form style={{display:'grid',gap:16}} onSubmit={event=>{event.preventDefault();void submit(sent?'verify':'request');}}>
- <label htmlFor="yourrest-email" style={{display:'grid',gap:8,fontWeight:600}}>{label('بريد الشركة','Company email')}<span dir="ltr" style={{display:'flex',alignItems:'center',border:'1px solid #ced8d4',borderRadius:10,overflow:'hidden'}}><input id="yourrest-email" name="username" type="text" inputMode="email" autoCapitalize="none" spellCheck={false} autoComplete="username" required maxLength={241} disabled={busy||sent} value={username} onChange={event=>setUsername(event.target.value.replace(/@yourrest\.org$/i,''))} placeholder="name" style={{...inputStyle,border:0,minWidth:0}}/><span style={{paddingInlineEnd:12,color:'#68766c',fontWeight:400}}>@yourrest.org</span></span></label>
+ <label htmlFor="yourrest-email" style={{display:'grid',gap:8,fontWeight:600}}>{label('بريد الشركة','Company email')}<span dir="ltr" style={{display:'flex',alignItems:'center',border:'1px solid #ced8d4',borderRadius:10,overflow:'hidden'}}><input id="yourrest-email" name="username" type="text" inputMode="email" autoCapitalize="none" spellCheck={false} autoComplete="username" required maxLength={241} disabled={busy||sent} value={username} onChange={event=>setUsername(event.target.value.replace(invisibleEmailMarks,'').replace(/@yourrest\.org$/i,''))} placeholder="name" style={{...inputStyle,border:0,minWidth:0}}/><span style={{paddingInlineEnd:12,color:'#68766c',fontWeight:400}}>@yourrest.org</span></span></label>
  {sent&&<><label htmlFor="yourrest-code" style={{display:'grid',gap:8,fontWeight:600}}>{label('رمز الدخول','Sign-in code')}<input id="yourrest-code" name="code" type="text" dir="ltr" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required autoFocus value={code} disabled={busy} onChange={event=>setCode(event.target.value.replace(/[^0-9]/g,''))} style={{...inputStyle,letterSpacing:8,textAlign:'center',fontSize:25}}/></label><p style={{fontSize:13,color:'#68766c',margin:0}}>{label('الرمز صالح لمدة 10 دقائق.','Your code is valid for 10 minutes.')}</p></>}
  <p style={{fontSize:13,lineHeight:1.8,color:'#68766c',margin:0}}>{label('سيُحفظ تسجيل الدخول على هذا المتصفح.','Sign-in will be remembered on this browser.')}</p>
  {message&&<p role="status" style={{fontSize:13,lineHeight:1.8,color:'#526456',margin:0}}>{t(message)}</p>}{error&&<p role="alert" style={{fontSize:14,padding:12,borderRadius:8,background:'#fff1f1',color:'#a52828',margin:0}}>{t(error)}</p>}
