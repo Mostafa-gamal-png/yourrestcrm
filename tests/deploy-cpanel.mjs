@@ -123,11 +123,18 @@ function cpanel({env = {}, selector = false, cronRuns = true, token = TOKEN, app
   state.now = () => state.clock;
   state.logs = []; state.lines = [];
   state.run = (mode, extra = {}) => deploy({host: 'premium137.web-hosting.com', user: USER, token: TOKEN, mode, stage: STAGE, helper: HELPER, run: '900-1', scripts,
-    ...(mode === 'verify' ? {} : PACKAGE), ...extra}, {fetch: state.fetch, sleep: state.sleep, now: state.now, log: line => state.logs.push(line), out: line => state.lines.push(line), pollMs: 10_000, ...extra.deps});
+    ...(mode === 'check' || mode === 'deploy' ? PACKAGE : {}), ...extra}, {fetch: state.fetch, sleep: state.sleep, now: state.now, log: line => state.logs.push(line), out: line => state.lines.push(line), pollMs: 10_000, ...extra.deps});
   state.file = name => fs.readFileSync(path.join(home, name), 'utf8');
   return state;
 }
 const lines = text => text.trim().split('\n');
+function check_(result, s) {
+  check(result.code, 0, 'the check ends well');
+  check(lines(result.output), ['MANUAL SALES WITH ARABIC DIGITS: 2', 'DONE with HOME'], 'its output comes back as it printed it, run in the account\'s home');
+  check(s.uploads, ['hosting-deploy.sh', 'hosting-cron.sh', 'diagnose.cjs'], 'the two scripts and the check script are uploaded, no package');
+  check(fs.existsSync(path.join(s.home, 'selector.log')), false, 'the app is neither stopped nor started');
+  check(s.cron, [], 'and no cron line stays');
+}
 
 try {
   // ---- small parts
@@ -249,6 +256,19 @@ try {
     check(s.cron, [], 'both lines are removed');
     check(s.file('activator.log'), '--check\n', 'the second start found the request taken');
   }
+  // ---- 12b. a read-only check of the live data: the check script is uploaded and run with the account's node, no package, no stop
+  {
+    const s = cpanel({selector: true});
+    const check = new Blob(["console.log('MANUAL SALES WITH ARABIC DIGITS: 2'); console.log('DONE ' + (process.env.HOME ? 'with HOME' : 'without HOME'));\n"]);
+    const result = await s.run('diagnose', {diagnose: check, stage: 'ignored', helper: 'ignored'});
+    check_(result, s);
+  }
+  {
+    const s = cpanel();
+    await assert.rejects(s.run('diagnose'), /diagnose needs the check script/); checks++;
+    check([s.calls, s.uploads], [[], []], 'no check script: refused before any call');
+  }
+
   // ---- 13. what this side refuses before calling cPanel
   for (const [extra, pattern] of [[{mode: 'install'}, /mode must be/], [{stage: '../yourrest-crm'}, /stage must be a plain file name/], [{helper: 'a/b.cjs'}, /helper must be/], [{run: 'x y'}, /run must be/], [{sha256: 'abc'}, /sha256 must be/], [{zip: null}, /package is needed/], [{user: 'me@example.com'}, /account name/]]) {
     const s = cpanel();

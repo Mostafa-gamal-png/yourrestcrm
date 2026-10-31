@@ -7,13 +7,14 @@
 // The token travels in a header only; nothing here prints it.
 //
 //   node scripts/deploy-cpanel.mjs --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>
+//   node scripts/deploy-cpanel.mjs --mode diagnose --script scripts/diagnose/<name>.cjs --run <id>   (a read-only check, no package)
 //
 // The account comes from CPANEL_HOST, CPANEL_USER and CPANEL_API_TOKEN.
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-export const WORK = 'yourrest-deploy', APP_ROOT = 'yourrest-crm', SCRIPTS = ['hosting-deploy.sh', 'hosting-cron.sh'];
+export const WORK = 'yourrest-deploy', APP_ROOT = 'yourrest-crm', SCRIPTS = ['hosting-deploy.sh', 'hosting-cron.sh'], DIAGNOSE = 'diagnose.cjs';
 export const CRON_COMMAND = `/bin/bash $HOME/${WORK}/hosting-cron.sh >/dev/null 2>&1`;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, RUN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/, STALE_RUNNING_MS = 2 * 3600_000;
 
@@ -39,12 +40,13 @@ export function accountHints(user, token) {
 }
 
 function checkConfig(c) {
-  if (!['check', 'deploy', 'verify'].includes(c.mode)) throw new DeployError('mode must be check, deploy or verify');
+  if (!['check', 'deploy', 'verify', 'diagnose'].includes(c.mode)) throw new DeployError('mode must be check, deploy, verify or diagnose');
+  if (c.mode === 'diagnose' && !c.diagnose) throw new DeployError('diagnose needs the check script');
   if (!c.user || !c.token) throw new DeployError('CPANEL_USER and CPANEL_API_TOKEN are needed');
   if (!/^[a-z][a-z0-9]{0,31}$/.test(c.user)) throw new DeployError('CPANEL_USER must be the cPanel account name (small letters and digits)');
   for (const [label, value] of [['stage', c.stage], ['helper', c.helper]]) if (!NAME.test(value ?? '')) throw new DeployError(`${label} must be a plain file name`);
   if (!RUN.test(c.run ?? '')) throw new DeployError('run must be letters, digits and -');
-  if (c.mode !== 'verify') {
+  if (c.mode === 'check' || c.mode === 'deploy') {
     if (!NAME.test(c.zipName ?? '') || !c.zip) throw new DeployError('the package is needed for check and deploy');
     if (!/^[0-9a-f]{64}$/.test(c.sha256 ?? '')) throw new DeployError('sha256 must be the 64 hex digits of the package');
   }
@@ -61,7 +63,10 @@ export async function deploy(given, deps) {
   const marked = ['host', 'user', 'token'].filter(key => /\p{Cf}/u.test(given[key] ?? ''));
   if (marked.length) deps.log(`invisible marks of direction were taken out of ${marked.join(', ')}`);
   const c = {...given, host: cleanSetting(given.host), user: cleanSetting(given.user).toLowerCase(), token: cleanSetting(given.token)};
+  // A diagnose run carries no package: hosting-deploy.sh runs the uploaded check script in place of an activator.
+  if (c.mode === 'diagnose') Object.assign(c, {stage: 'none', helper: DIAGNOSE});
   checkConfig(c);
+  const packaged = c.mode === 'check' || c.mode === 'deploy';
   const {fetch, sleep, log, out = () => {}, now = Date.now, pollMs = 10_000, claimMs = 6 * 60_000, runMs = 45 * 60_000} = deps;
   const base = cpanelBase(c.host), home = `/home/${c.user}`, dir = `${home}/${WORK}`;
   const auth = {Authorization: `cpanel ${c.user}:${c.token}`};
@@ -119,17 +124,17 @@ export async function deploy(given, deps) {
   }
 
   // 1. The package beside the app (as the guide uploads it), and the two scripts.
-  if (c.mode !== 'verify') {
+  if (packaged) {
     await upload(home, [[c.zipName, c.zip]], 'the upload of the package');
     log(`uploaded ${c.zipName} (${Math.round(c.zip.size / 1024 / 1024)} MB)`);
   }
-  await upload(dir, SCRIPTS.map(name => [name, c.scripts[name]]), 'the upload of the scripts');
+  await upload(dir, [...SCRIPTS.map(name => [name, c.scripts[name]]), ...(c.mode === 'diagnose' ? [[DIAGNOSE, c.diagnose]] : [])], 'the upload of the scripts');
 
   // 2. The request, then the cron line that runs it. The request goes last: a line left from before must not find half of it.
   const output = [];
   let result, streamed = 0;
   try {
-    await uapi('save_file_content', null, 'writing the request', {method: 'POST', body: new URLSearchParams({dir, file: 'request', content: [c.run, c.mode, c.mode === 'verify' ? 'none' : c.zipName, c.stage, c.helper, c.mode === 'verify' ? 'none' : c.sha256].join(' ') + '\n'})});
+    await uapi('save_file_content', null, 'writing the request', {method: 'POST', body: new URLSearchParams({dir, file: 'request', content: (packaged ? [c.run, c.mode, c.zipName, c.stage, c.helper, c.sha256] : [c.run, c.mode, 'none', c.stage, c.helper, 'none']).join(' ') + '\n'})});
     if (!(await ourLines()).length) {
       const added = await api2('Cron', 'add_line', {command: CRON_COMMAND, minute: '*', hour: '*', day: '*', month: '*', weekday: '*'}, 'adding the cron line');
       if (added.some(row => row?.status === 0)) throw new DeployError(`adding the cron line refused by cPanel: ${added.map(row => row.statusmsg).filter(Boolean).join('; ') || 'no reason given'}`);
@@ -182,16 +187,17 @@ async function main() {
   const args = new Map();
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i += 2) {
-    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>`);
+    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>, or --mode diagnose --script <file> --run <id>`);
     args.set(argv[i].slice(2), argv[i + 1]);
   }
-  const mode = args.get('mode'), pkg = args.get('package');
+  const mode = args.get('mode'), pkg = args.get('package'), packaged = mode === 'check' || mode === 'deploy';
   const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
   const scripts = Object.fromEntries(await Promise.all(SCRIPTS.map(async name => [name, await fs.openAsBlob(path.join(scriptsDir, name))])));
   const result = await deploy({
     host: process.env.CPANEL_HOST ?? '', user: process.env.CPANEL_USER ?? '', token: process.env.CPANEL_API_TOKEN ?? '',
     mode, stage: args.get('stage'), helper: args.get('helper'), run: args.get('run'), scripts,
-    zip: mode === 'verify' ? null : await fs.openAsBlob(pkg), zipName: mode === 'verify' ? null : path.basename(pkg), sha256: args.get('sha256'),
+    zip: packaged ? await fs.openAsBlob(pkg) : null, zipName: packaged ? path.basename(pkg) : null, sha256: args.get('sha256'),
+    diagnose: mode === 'diagnose' ? await fs.openAsBlob(args.get('script')) : null,
   }, {
     fetch, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
     log: line => console.log(`::notice title=deploy::${annotation(line)}`), out: line => console.log(line),

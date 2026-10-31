@@ -5,6 +5,7 @@
 #   check   unpack the package beside the app and run the activator's --check: the app keeps running and nothing changes
 #   deploy  check, stop the app, the activator (the day's backup and the switch), start the app, --verify
 #   verify  --verify only (after Start App was pressed in cPanel)
+#   diagnose  a read-only check of the live data: {"mode": "diagnose", "script": "scripts/diagnose/<name>.cjs"}; no package, the app keeps running
 # scripts/deploy-cpanel.mjs uploads through the API and runs scripts/hosting-deploy.sh on the account through a temporary cron line.
 # Claude pushes a deploy request only after the owner said so. Settings > Secrets and variables > Actions > Repository secrets:
 #   CPANEL_API_TOKEN   cPanel > Security > Manage API Tokens > Create (the only one needed)
@@ -21,7 +22,7 @@ on:
       mode:
         description: "check = unpack and --check only (the app keeps running); deploy = stop, switch, start, verify; verify = --verify only"
         type: choice
-        options: [check, deploy, verify]
+        options: [check, deploy, verify, diagnose]
         default: check
         required: true
 
@@ -53,8 +54,13 @@ jobs:
               print(f"::error title=deploy request::{message}"); sys.exit(1)
           r = json.load(open("deploy/request.json"))
           mode = os.environ.get("IN_MODE") or r.get("mode", "")
+          if mode == "diagnose":
+              script = str(r.get("script", ""))
+              if not re.fullmatch(r"scripts/diagnose/[a-z0-9-]+\.cjs", script) or not os.path.isfile(script): stop("script: a read-only check committed under scripts/diagnose/")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out: out.write(f"mode=diagnose\nscript={script}\n")
+              print(f"Request: diagnose {script}"); sys.exit(0)
           package, sha, stage, helper = (str(r.get(k, "")) for k in ("package", "sha256", "stage", "helper"))
-          if mode not in ("check", "deploy", "verify"): stop("mode: check, deploy or verify")
+          if mode not in ("check", "deploy", "verify"): stop("mode: check, deploy, verify or diagnose")
           if not re.fullmatch(r"yourrest-crm-[a-z0-9-]+", stage): stop("stage: yourrest-crm-<name>-<date>, as the update guide names the folder")
           if not re.fullmatch(r"yourrest-activate-[a-z0-9-]+\.cjs", helper): stop("helper: yourrest-activate-<name>.cjs, as the update guide names it")
           if not re.fullmatch(r"deploy/packages/[A-Za-z0-9._-]+\.zip", package) or not os.path.isfile(package): stop("package: a zip committed under deploy/packages/")
@@ -76,6 +82,8 @@ jobs:
           SHA: ${{ steps.request.outputs.sha256 }}
           STAGE: ${{ steps.request.outputs.stage }}
           HELPER: ${{ steps.request.outputs.helper }}
+          SCRIPT: ${{ steps.request.outputs.script }}
         run: |
           if [ -z "$CPANEL_API_TOKEN" ]; then echo "::error title=deploy failed::the repository secret CPANEL_API_TOKEN is not set"; exit 1; fi
+          if [ "$MODE" = diagnose ]; then node scripts/deploy-cpanel.mjs --mode diagnose --script "$SCRIPT" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
           node scripts/deploy-cpanel.mjs --mode "$MODE" --package "$PACKAGE" --sha256 "$SHA" --stage "$STAGE" --helper "$HELPER" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
