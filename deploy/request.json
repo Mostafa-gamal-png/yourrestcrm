@@ -1,5 +1,5 @@
 {
-  "mode": "check",
+  "mode": "deploy",
   "package": "deploy/packages/Yourrest-CRM-Update-Android-1011-20261031.zip",
   "sha256": "7debe20e7e5f323408c24a976f9fc012bfa06e8aafbbec3b7ded67cd32026a8c",
   "stage": "yourrest-crm-update-android-1011-20261031",
