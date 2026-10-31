@@ -63,15 +63,23 @@ jobs:
           for name in KEYSTORE_BASE64 STOREPASS ALIAS; do [ -n "${!name}" ] || { echo "::error title=android key::a secret is empty or missing: $name"; exit 1; }; done
           umask 077; dir="$RUNNER_TEMP/signing"; mkdir -p "$dir"
           printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$dir/key.p12" || { echo "::error title=android key::ANDROID_KEYSTORE_BASE64 is not base64 text of the file"; exit 1; }
+          # A value pasted from Notepad can bring a line break or spaces around it; the password itself has none.
+          trimmed=$(printf '%s' "$STOREPASS" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          [ "$trimmed" = "$STOREPASS" ] || echo "::notice title=android key::spaces or a line break around ANDROID_KEYSTORE_PASSWORD were ignored"
+          STOREPASS="$trimmed"; export STOREPASS
           printf '%s' "$STOREPASS" > "$dir/storepass"
-          ALIAS=$(printf '%s' "$ALIAS" | tr -d '\r\n' | sed 's/^ *//;s/ *$//')
+          ALIAS=$(printf '%s' "$ALIAS" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          bytes=$(stat -c %s "$dir/key.p12"); header=$(head -c 2 "$dir/key.p12" | od -An -tx1 | tr -d ' ')
+          echo "The key file decoded from ANDROID_KEYSTORE_BASE64: $bytes bytes, $( [ "$header" = 3082 ] && echo 'a PKCS12 file as expected' || echo "NOT a PKCS12 file (starts with $header)")"
           if ! keytool -list -keystore "$dir/key.p12" -storetype PKCS12 -storepass:env STOREPASS > "$dir/list.txt" 2>&1; then
-            echo "::error title=android key::the key file does not open with ANDROID_KEYSTORE_PASSWORD (or ANDROID_KEYSTORE_BASE64 is not the whole .p12 file)"; exit 1
+            echo "keytool said: $(grep -m1 -i 'exception\|error\|incorrect\|invalid' "$dir/list.txt" | cut -c1-200)"
+            echo "::error title=android key::the key file does not open with ANDROID_KEYSTORE_PASSWORD (or ANDROID_KEYSTORE_BASE64 is not the whole .p12 file): see the line keytool said"; exit 1
           fi
           echo "Aliases in the key file:"; grep -i 'PrivateKeyEntry' "$dir/list.txt" | cut -d, -f1 | sed 's/^/  /'
           if ! keytool -list -v -keystore "$dir/key.p12" -storetype PKCS12 -storepass:env STOREPASS -alias "$ALIAS" > "$dir/cert.txt" 2>&1; then
             echo "::error title=android key::ANDROID_KEY_ALIAS is not an alias of the key file (the aliases are listed above)"; exit 1
           fi
+          KEYPASS=$(printf '%s' "$KEYPASS" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           if [ -n "$KEYPASS" ] && [ "$KEYPASS" != "$STOREPASS" ]; then echo "::warning title=android key::ANDROID_KEY_PASSWORD differs from ANDROID_KEYSTORE_PASSWORD; the build signs with the store password, as a .p12 key uses one password"; fi
           actual=$(grep -m1 'SHA256:' "$dir/cert.txt" | sed 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')
           echo "Certificate SHA-256 of the key: $actual"
