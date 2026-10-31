@@ -1,7 +1,4 @@
 {
-  "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-Fast-Open-20261029.zip",
-  "sha256": "6082832678086b1b21df6ed1276ae7a3b2c3be2f62ceb93db236e1f716492613",
-  "stage": "yourrest-crm-update-fast-open-20261029",
-  "helper": "yourrest-activate-update-fast-open.cjs"
+  "mode": "diagnose",
+  "script": "scripts/diagnose/arabic-digits.cjs"
 }
