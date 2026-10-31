@@ -1,0 +1,116 @@
+# Builds and signs the Yourrest Android app on GitHub with the private key held in the repository's secrets, so no one has to build it on
+# a computer. Started by a push that changes deploy/android-request.json, or by hand from the Actions tab:
+#   {"mode": "verify-key"}  open the key with its password and alias, and compare its certificate with the one every installed app was
+#                           signed with (the SHA-256 recorded in scripts/publish-android-release.mjs). Nothing is built.
+#   {"mode": "build"}       the same check, then mobile/android/tools/build-oss.py builds and signs the APK of mobile/android; its
+#                           signer is checked again and the APK with its build report is committed to deploy/android/ on this branch.
+# Settings > Secrets and variables > Actions > Repository secrets: ANDROID_KEYSTORE_BASE64 (the .p12 file, base64), ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. The key is written to the runner's temporary folder only for this job and removed after;
+# no password is passed on a command line or printed. A certificate's SHA-256 is public (every APK carries it) and is printed.
+name: Android APK
+
+on:
+  push:
+    branches: ['main', 'claude/**']
+    paths: ['deploy/android-request.json']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "verify-key = check the key only; build = build, sign and commit the APK"
+        type: choice
+        options: [verify-key, build]
+        default: verify-key
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-build
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Read the request
+        id: request
+        env:
+          IN_MODE: ${{ inputs.mode }}
+        run: |
+          mode="${IN_MODE:-$(python3 -c 'import json;print(json.load(open("deploy/android-request.json")).get("mode",""))')}"
+          case "$mode" in verify-key|build) ;; *) echo "::error title=android request::mode must be verify-key or build"; exit 1;; esac
+          expected=$(grep -o "certificateSha256='[0-9a-f]\{64\}'" scripts/publish-android-release.mjs | cut -d"'" -f2)
+          [ ${#expected} = 64 ] || { echo "::error title=android request::the recorded certificate SHA-256 was not found"; exit 1; }
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"; echo "expected=$expected" >> "$GITHUB_OUTPUT"
+          echo "Request: $mode; the installed app's certificate SHA-256 is $expected"
+      - name: Open the key and compare its certificate
+        id: key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STOREPASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          EXPECTED: ${{ steps.request.outputs.expected }}
+        run: |
+          for name in KEYSTORE_BASE64 STOREPASS ALIAS; do [ -n "${!name}" ] || { echo "::error title=android key::a secret is empty or missing: $name"; exit 1; }; done
+          umask 077; dir="$RUNNER_TEMP/signing"; mkdir -p "$dir"
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$dir/key.p12" || { echo "::error title=android key::ANDROID_KEYSTORE_BASE64 is not base64 text of the file"; exit 1; }
+          printf '%s' "$STOREPASS" > "$dir/storepass"
+          ALIAS=$(printf '%s' "$ALIAS" | tr -d '\r\n' | sed 's/^ *//;s/ *$//')
+          if ! keytool -list -keystore "$dir/key.p12" -storetype PKCS12 -storepass:env STOREPASS > "$dir/list.txt" 2>&1; then
+            echo "::error title=android key::the key file does not open with ANDROID_KEYSTORE_PASSWORD (or ANDROID_KEYSTORE_BASE64 is not the whole .p12 file)"; exit 1
+          fi
+          echo "Aliases in the key file:"; grep -i 'PrivateKeyEntry' "$dir/list.txt" | cut -d, -f1 | sed 's/^/  /'
+          if ! keytool -list -v -keystore "$dir/key.p12" -storetype PKCS12 -storepass:env STOREPASS -alias "$ALIAS" > "$dir/cert.txt" 2>&1; then
+            echo "::error title=android key::ANDROID_KEY_ALIAS is not an alias of the key file (the aliases are listed above)"; exit 1
+          fi
+          if [ -n "$KEYPASS" ] && [ "$KEYPASS" != "$STOREPASS" ]; then echo "::warning title=android key::ANDROID_KEY_PASSWORD differs from ANDROID_KEYSTORE_PASSWORD; the build signs with the store password, as a .p12 key uses one password"; fi
+          actual=$(grep -m1 'SHA256:' "$dir/cert.txt" | sed 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "Certificate SHA-256 of the key: $actual"
+          echo "Certificate SHA-256 of the installed app: $EXPECTED"
+          if [ "$actual" != "$EXPECTED" ]; then echo "::error title=android key::the key is not the one the installed app was signed with: phones would refuse the update"; exit 1; fi
+          echo "alias=$ALIAS" >> "$GITHUB_OUTPUT"; echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "::notice title=android key::THE KEY MATCHES THE INSTALLED APP ($actual)"
+      - name: Build and sign the APK
+        if: steps.request.outputs.mode == 'build'
+        env:
+          DIR: ${{ steps.key.outputs.dir }}
+          ALIAS: ${{ steps.key.outputs.alias }}
+          EXPECTED: ${{ steps.request.outputs.expected }}
+        run: |
+          out="$RUNNER_TEMP/android-out"
+          python3 mobile/android/tools/build-oss.py --jdk "$JAVA_HOME" --cache "$RUNNER_TEMP/android-tools" --out "$out" --keystore "$DIR/key.p12" --storepass-file "$DIR/storepass" --alias "$ALIAS"
+          # The signer of the APK itself, read back with the Android SDK's apksigner (preinstalled on the runner).
+          apksigner=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          [ -n "$apksigner" ] || { echo "::error title=android build::apksigner not found on the runner"; exit 1; }
+          "$apksigner" verify --print-certs "$out/Yourrest-CRM-Android.apk" > "$out/signers.txt"
+          signer=$(grep -m1 'certificate SHA-256 digest:' "$out/signers.txt" | sed 's/.*digest: *//' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "APK signer certificate SHA-256: $signer"
+          [ "$signer" = "$EXPECTED" ] || { echo "::error title=android build::the APK is not signed with the installed app's certificate"; exit 1; }
+          python3 - "$out/build-verification.json" "$signer" <<'EOF'
+          import json, sys
+          path, signer = sys.argv[1], sys.argv[2]
+          report = json.load(open(path)); report['certificateSha256'] = signer; report['signerCheckedWith'] = 'apksigner verify --print-certs'
+          open(path, 'w').write(json.dumps(report, indent=2) + '\n')
+          EOF
+          version=$(python3 -c 'import json,sys;r=json.load(open(sys.argv[1]));print(str(r["versionName"])+"-"+str(r["versionCode"]))' "$out/build-verification.json")
+          mkdir -p deploy/android
+          cp "$out/Yourrest-CRM-Android.apk" "deploy/android/Yourrest-CRM-Android-$version.apk"
+          cp "$out/build-verification.json" "deploy/android/build-verification-$version.json"
+          cp "$out/apk-badging.txt" "deploy/android/apk-badging-$version.txt"
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/android
+          git commit -q -m "android: the signed APK $version built on GitHub (signer $signer)"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+          echo "::notice title=android build::APK $version BUILT, SIGNED WITH THE INSTALLED APP'S KEY AND COMMITTED TO deploy/android/"
+      - name: Remove the key from the runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"
