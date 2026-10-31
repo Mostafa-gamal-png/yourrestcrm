@@ -1,4 +1,5 @@
 {
   "mode": "diagnose",
-  "script": "scripts/diagnose/arabic-digits.cjs"
+  "script": "scripts/diagnose/arabic-digits.cjs",
+  "note": "read-only recheck right before the 2026-10-31 upload"
 }
