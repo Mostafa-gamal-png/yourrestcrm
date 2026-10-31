@@ -35,10 +35,10 @@ const component = load('app/tracking-gate.tsx', name => {
   return {};
 }).default;
 const ready = {tracking: true, permission: 'granted', pendingCount: 0, pendingGapCount: 0, lastFixAt: '', accuracy: null, error: null, syncError: null, memberId: 'rep-1', regionScope: 'all', enrolledRole: 'rep', stopId: null,
-  workHoursSupported: true, fridayExclusionSupported: true, trackingWindowActive: true, nextTrackingWindowAt: '', continuousSupported: true, enrolled: true, backgroundPermission: 'granted', appVersion: '1.0.10',
+  workHoursSupported: true, fridayExclusionSupported: true, trackingWindowActive: true, nextTrackingWindowAt: '', continuousSupported: true, enrolled: true, backgroundPermission: 'granted', appVersion: release.versionName,
   fineLocationPermission: 'granted', notificationPermission: 'granted', locationServicesEnabled: true, continuousConsent: true};
 const gateOf = (patch = {}, extra = {}) => ({native: true, loading: false, failed: false, upgradeRequired: false, device: gate.gateDeviceFrom(native.normalizeNativeState({...ready, ...patch}), 'rep-1'), ...extra});
-const trackerWith = (source, extra = {}) => ({gate: source, busy: false, errorMessage: '', appVersion: '1.0.10', retry() {}, setupContinuous: async () => {}, ...extra});
+const trackerWith = (source, extra = {}) => ({gate: source, busy: false, errorMessage: '', appVersion: release.versionName, retry() {}, setupContinuous: async () => {}, ...extra});
 const rep = {id: 'rep-1', name: 'مندوب تجريبي', role: 'rep', active: 1};
 const app = React.createElement('div', {id: 'workspace'}, 'WORKSPACE');
 const render = (member = rep) => renderToStaticMarkup(React.createElement(component, {me: member}, app));
@@ -107,8 +107,8 @@ tracker = trackerWith(gateOf({fineLocationPermission: 'denied', notificationPerm
 ok(html.includes('الإشعارات ← السماح') && html.includes('الموقع ← السماح، مع تفعيل') && html.includes('الموقع ← «السماح طوال الوقت»'), 'Three missing permissions give three steps');
 ok(html.includes('إعادة الفحص'), 'A re-check button exists once permissions were refused');
 tracker = reasons.find(r => r[0] === 'upgrade')[1]; html = render();
-ok(html.includes('/downloads/yourrest-crm-android-v1.0.10-11.apk') && html.includes('تحديث تطبيق أندرويد'), 'An old app is offered the update');
-ok(html.includes('إصدار التطبيق: ') && html.includes('1.0.10'), 'The installed version is shown');
+ok(html.includes(new URL(release.apkUrl).pathname) && html.includes('تحديث تطبيق أندرويد'), 'An old app is offered the update');
+ok(html.includes('إصدار التطبيق: ') && html.includes(release.versionName), 'The installed version is shown');
 tracker = reasons.find(r => r[0] === 'browser')[1]; html = render();
 ok(html.includes('لا يعمل من المتصفح') || html.includes('ويعمل على هواتف أندرويد فقط'), 'The browser block explains why');
 no(html.includes('data-requirement'), 'A browser has no checklist');
