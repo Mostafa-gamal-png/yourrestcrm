@@ -1,5 +1,4 @@
 {
   "mode": "diagnose",
-  "script": "scripts/diagnose/arabic-digits.cjs",
-  "note": "read-only run to prove the deploy workflow on the v5 actions"
+  "script": "scripts/diagnose/backups.cjs"
 }
