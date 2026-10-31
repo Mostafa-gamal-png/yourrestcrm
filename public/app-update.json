@@ -1,23 +1,23 @@
 {
   "schemaVersion": 1,
   "packageName": "org.yourrest.crm",
-  "versionName": "1.0.10",
-  "versionCode": 11,
-  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.10-11.apk",
-  "sizeBytes": 230133,
-  "sha256": "0595ccb1f134196e7632781d63899af2d228cbf4f17b9de47a6be906871f12d1",
+  "versionName": "1.0.11",
+  "versionCode": 12,
+  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.11-12.apk",
+  "sizeBytes": 242509,
+  "sha256": "246ce41714a8ea78bc86c02dc031cde6ed928c5a391cd2d1e2d4b548a55b7faa",
   "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
   "releaseNotes": {
     "ar": [
-      "ظهور التحديثات المتاحة داخل التطبيق عند فتحه أو العودة إليه.",
-      "تنزيل التحديث مع عرض التقدم ثم تأكيد التثبيت من أندرويد.",
-      "التحقق من سلامة التحديث والتوقيع مع الحفاظ على بياناتك المحفوظة."
+      "إشعار على الهاتف عند تحويل طلب من خدمة العملاء إليك، حتى والتطبيق مغلق أو الشاشة مقفلة.",
+      "يتحقق التطبيق من الطلبات الجديدة كل عشر دقائق في ساعات العمل (6 صباحًا إلى 6 مساءً عدا الجمعة) وعند فتحه.",
+      "تبقى بياناتك والزيارات المحفوظة على الجهاز كما هي بعد التحديث."
     ],
     "en": [
-      "Available updates appear inside the app when opened or resumed.",
-      "Download progress and Android installation confirmation.",
-      "Verified update integrity and signing while keeping saved app data."
+      "A phone notification when customer service assigns a request to you, even with the app closed or the screen locked.",
+      "The app checks for new requests every ten minutes in working hours (6 a.m. to 6 p.m. except Friday) and when opened.",
+      "Your data and the visits saved on the phone stay as they are after the update."
     ]
   },
-  "publishedAt": "2026-10-06T05:58:46.971Z"
+  "publishedAt": "2026-10-31T15:26:06.399Z"
 }
