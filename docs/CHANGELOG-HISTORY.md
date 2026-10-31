@@ -4,6 +4,10 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The deploy workflow on Node 24 actions (2026-10-31, no change to the app)
+
+- `.github/workflows/deploy.yml` uses `actions/checkout@v5` and `actions/setup-node@v5` (Node 24) instead of v4 (Node 20, deprecated by GitHub and already forced onto Node 24 with a warning). setup-node v5 would cache the package manager named in `package.json` (pnpm, never installed by this job), so `package-manager-cache: false`. Proved with a read-only diagnose run (Actions 41207163499): green, and the Node 20 warning is gone.
+
 ## ESLint at zero errors and part of the default gate (2026-10-31, no change to the app)
 
 - **Reviewed first.** The 96 errors and the 32 missing-dependency warnings were read one by one in the visits, follow-ups, route tracking and map screens and the rest: no bug among them. Every ref read while rendering changes together with a state update; every state set in an effect resets or loads on purpose; the four "immutability" reports are refs the React Compiler rules did not recognise; the two synchronous scripts in `app/layout.tsx` must run before the first paint; the four `any` are the per-kind JSON of a record, a target set and the CRM route's parsed body.
