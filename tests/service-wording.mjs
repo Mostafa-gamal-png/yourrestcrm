@@ -33,6 +33,7 @@ function load(filename) {
     if (name === 'react') return React;
     if (name === 'react/jsx-runtime') return jsx;
     if (name === '@/lib/i18n') return i18n;
+    if (name.startsWith('@/lib/') && name.endsWith('.json')) return JSON.parse(fs.readFileSync(path.join(root, name.replace('@/', '')), 'utf8'));
     if (name.startsWith('@/lib/')) return library(name.replace('@/', '') + '.ts');
     if (name.startsWith('./') && !name.endsWith('.css') && fs.existsSync(path.join(root, 'app', name.slice(2) + '.tsx'))) return load('app/' + name.slice(2) + '.tsx');
     return mock;
