@@ -119,5 +119,17 @@
     "Android 1.0.11 was not tried on a real phone before it was made required; the owner chose to publish it as required at once.",
     "ERP real-workbook test not run (file absent).",
     "Browser tests run on desktop Chromium with an emulated Android bridge."
-  ]
+  ],
+  "deployment": {
+    "run": 41219208124,
+    "at": "2026-10-31T16:22:55Z",
+    "dailyBackupReused": "/home/youriedx/yourrest-update-digits-signin-activation-20261031-eukmcA",
+    "activationCheckpoint": "/home/youriedx/yourrest-update-android-1011-activation-20261031-hFZIvL",
+    "verify": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/support: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ]
+  }
 }

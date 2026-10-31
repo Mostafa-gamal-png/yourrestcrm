@@ -30,6 +30,8 @@
 - **مجلد الإصدار** بنفس التجزئة قبل التغليف وبعده.
 - **على الاستضافة:** `--check` نجح والتطبيق شغال (`PACKAGE AND CONFIGURATION: READY`).
 
+- **الرفع:** 2026-10-31 الساعة 19:22 بتوقيت الرياض (تشغيل GitHub رقم 41219208124): المُفعِّل استعمل نسخة الصبح الاحتياطية (`yourrest-update-digits-signin-activation-20261031-eukmcA`)، وبدّل الإصدار، ونقطة التراجع `yourrest-update-android-1011-activation-20261031-hFZIvL`؛ ثم `MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK`، `LOGIN HTTP: 200`، كل المسارات المحمية 401، `PREVIOUS RECORD IDS: PRESERVED`، `DEPLOYMENT VERIFIED`. التطبيق وقف حوالي دقيقتين.
+
 سجل التحقق بآلة: `docs/qa/ANDROID-1011-UPDATE-VERIFICATION-20261031.json`.
 
 ## 4. حدود
