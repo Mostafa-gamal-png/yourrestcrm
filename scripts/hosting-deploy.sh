@@ -6,6 +6,7 @@
 #   deploy  check, stop the Node.js app, run the activator (backup + switch), start the app, run --verify
 #   verify  run --verify only (after a person pressed Start App in cPanel)
 #   diagnose  run the read-only check uploaded as yourrest-deploy/<HELPER> (no package, the app keeps running)
+#   backup  take a daily backup with the live release's own tools, verify it, and print the command of the daily cron job
 # Every STOP from the activator ends the run with the activator's own output; nothing is retried, deleted or restored here. One thing is
 # put back: when the activator stops BEFORE the switch, the app this script stopped through the selector is started again, unchanged.
 set -euo pipefail
@@ -97,6 +98,23 @@ case "$MODE" in
   diagnose)
     # A read-only check uploaded beside this script (scripts/diagnose/*.cjs); it prints what it found and changes nothing.
     "$NODE" "$HOME/yourrest-deploy/$HELPER"
+    ;;
+  backup)
+    # docs/PRODUCTION-BACKUP-AR.md by hand: the first backup, its verification, then the command the daily cron job runs. The app keeps
+    # running; the backup tool removes only its own older backups beyond the 14 it keeps, after verifying them.
+    OPS="$HOME/$APP_ROOT/release/operations" ROOT="$HOME/yourrest-crm-backups"
+    json_field() { "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s.trim().split("\n").pop())[process.argv[1]];if(typeof v!=="string"||!v)process.exit(1);console.log(v);})' "$1"; }
+    set +e; taken=$("$NODE" "$OPS/backup-scheduled.mjs" "$ROOT" 14 2>&1); code=$?; set -e
+    echo "$taken"
+    [ "$code" = 0 ] || { echo "BACKUP STOP: the backup did not finish (code $code)"; exit 3; }
+    name=$(printf '%s' "$taken" | json_field backupName) || { echo "BACKUP STOP: the backup gave no name"; exit 3; }
+    case "$name" in yourrest-backup-*) ;; *) echo "BACKUP STOP: unexpected backup name"; exit 3;; esac
+    case "$name" in *[!A-Za-z0-9-]*) echo "BACKUP STOP: unexpected backup name"; exit 3;; esac
+    "$NODE" "$OPS/restore.mjs" verify "$ROOT/$name" || { echo "BACKUP STOP: the new backup did not verify"; exit 3; }
+    echo "BACKUP VERIFIED: $name"
+    echo "SERVER UTC OFFSET: $(date +%z)"
+    command=$("$NODE" "$OPS/backup-cron.mjs" "$ROOT" 14 | json_field command) || { echo "BACKUP STOP: the cron command could not be made"; exit 3; }
+    echo "BACKUP CRON COMMAND: $command"
     ;;
   *) echo "DEPLOY STOP: unknown mode $MODE"; exit 2;;
 esac

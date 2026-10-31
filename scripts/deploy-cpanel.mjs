@@ -8,6 +8,7 @@
 //
 //   node scripts/deploy-cpanel.mjs --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>
 //   node scripts/deploy-cpanel.mjs --mode diagnose --script scripts/diagnose/<name>.cjs --run <id>   (a read-only check, no package)
+//   node scripts/deploy-cpanel.mjs --mode backup --run <id>   (a verified backup now, then the daily backup cron line, added once)
 //
 // The account comes from CPANEL_HOST, CPANEL_USER and CPANEL_API_TOKEN.
 import fs from 'node:fs';
@@ -31,6 +32,14 @@ export function cpanelBase(value) {
   return text.includes(':') ? `https://${text}` : `https://${text}:2083`;
 }
 
+/** The daily backup runs at 03:15 Riyadh (00:15 UTC); cron reads the server's own clock, whose offset the hosting run printed (+hhmm). */
+export function dailyBackupTime(offset) {
+  const m = /^([+-])(\d\d)(\d\d)$/.exec(offset ?? '');
+  if (!m) throw new DeployError(`the server's UTC offset could not be read (${offset})`);
+  const local = ((15 + (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]))) % 1440 + 1440) % 1440;
+  return {minute: String(local % 60), hour: String(Math.floor(local / 60))};
+}
+
 /** What can be said about a refused token without saying it: the shape of the two values. */
 export function accountHints(user, token) {
   const hints = [];
@@ -40,7 +49,7 @@ export function accountHints(user, token) {
 }
 
 function checkConfig(c) {
-  if (!['check', 'deploy', 'verify', 'diagnose'].includes(c.mode)) throw new DeployError('mode must be check, deploy, verify or diagnose');
+  if (!['check', 'deploy', 'verify', 'diagnose', 'backup'].includes(c.mode)) throw new DeployError('mode must be check, deploy, verify, diagnose or backup');
   if (c.mode === 'diagnose' && !c.diagnose) throw new DeployError('diagnose needs the check script');
   if (!c.user || !c.token) throw new DeployError('CPANEL_USER and CPANEL_API_TOKEN are needed');
   if (!/^[a-z][a-z0-9]{0,31}$/.test(c.user)) throw new DeployError('CPANEL_USER must be the cPanel account name (small letters and digits)');
@@ -65,6 +74,8 @@ export async function deploy(given, deps) {
   const c = {...given, host: cleanSetting(given.host), user: cleanSetting(given.user).toLowerCase(), token: cleanSetting(given.token)};
   // A diagnose run carries no package: hosting-deploy.sh runs the uploaded check script in place of an activator.
   if (c.mode === 'diagnose') Object.assign(c, {stage: 'none', helper: DIAGNOSE});
+  // A backup run carries nothing either: hosting-deploy.sh runs the live release's own backup tools.
+  if (c.mode === 'backup') Object.assign(c, {stage: 'none', helper: 'none'});
   checkConfig(c);
   const packaged = c.mode === 'check' || c.mode === 'deploy';
   const {fetch, sleep, log, out = () => {}, now = Date.now, pollMs = 10_000, claimMs = 6 * 60_000, runMs = 45 * 60_000} = deps;
@@ -176,6 +187,19 @@ export async function deploy(given, deps) {
       else log('the cron line was removed');
     } catch (error) { log(`could not remove the cron line (${error.message}): remove it in cPanel > Cron Jobs (it does nothing without a request)`); }
   }
+  // 4. After a verified backup, the daily backup line: once, at 03:15 Riyadh, with the command the release's backup-cron.mjs made.
+  if (c.mode === 'backup' && result.code === 0) {
+    const command = /^BACKUP CRON COMMAND: (.+)$/m.exec(result.output)?.[1], offset = /^SERVER UTC OFFSET: (\S+)$/m.exec(result.output)?.[1];
+    if (!command || !command.includes('backup-scheduled.mjs') || /[\r\n]/.test(command)) throw new DeployError('the backup was verified but the hosting account gave no daily backup command');
+    const {minute, hour} = dailyBackupTime(offset);
+    const daily = (await api2('Cron', 'listcron', {}, 'reading the cron jobs')).filter(row => typeof row?.command === 'string' && row.command.includes('backup-scheduled.mjs'));
+    if (daily.length) log(`the daily backup was already scheduled (${daily.length} line): nothing added`);
+    else {
+      const added = await api2('Cron', 'add_line', {command, minute, hour, day: '*', month: '*', weekday: '*'}, 'adding the daily backup line');
+      if (added.some(row => row?.status === 0)) throw new DeployError(`adding the daily backup line refused by cPanel: ${added.map(row => row.statusmsg).filter(Boolean).join('; ') || 'no reason given'}`);
+      log(`the daily backup is scheduled every day at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')} server time (UTC ${offset}), 03:15 Riyadh, keeping the last 14`);
+    }
+  }
   return result;
 }
 
@@ -187,7 +211,7 @@ async function main() {
   const args = new Map();
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i += 2) {
-    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>, or --mode diagnose --script <file> --run <id>`);
+    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>, --mode diagnose --script <file> --run <id>, or --mode backup --run <id>`);
     args.set(argv[i].slice(2), argv[i + 1]);
   }
   const mode = args.get('mode'), pkg = args.get('package'), packaged = mode === 'check' || mode === 'deploy';
