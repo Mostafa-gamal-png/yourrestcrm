@@ -171,7 +171,7 @@ try{
  // Direction handoff must happen before a deliberately failing tracking request. A representative works inside the Android
  // app, so for them the handoff is a native request; the browser behaviour (popup, blocked-popup recovery, user gesture)
  // is exercised for the manager, who still uses a browser.
- let actualPopupOpened=false;const requestedMaps=[];
+ let actualPopupOpened=false,mapsHandoffCalls=[];const requestedMaps=[];
  async function directionsFlow(page,browserContext,{native,label}){
   await nav(page,'map');await page.route('**/api/journeys**',async route=>{if(route.request().method()==='POST'){await new Promise(resolve=>setTimeout(resolve,2500));try{await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'QA TRACKING UNAVAILABLE'})});}catch{}return;}await route.continue();});
   const mapSearch=page.getByRole('combobox',{name:'ابحث عن عميل',exact:true});await mapSearch.fill('QA WEST FACTORY');await page.getByRole('option').filter({hasText:'QA WEST FACTORY'}).click();check(await page.locator('.cm-selected-card h2').innerText(),'QA WEST FACTORY','Map resolves selected scoped customer ('+label+')');
@@ -189,7 +189,7 @@ try{
     // This embedder closes even on a bare window.open button, independently of CRM.
     // Exercise the real app's blocked-popup recovery without claiming a popup opened.
     await page.evaluate(()=>{window.__qaMapsCalls=[];window.open=(...args)=>{window.__qaMapsCalls.push({url:args[0],target:args[1],at:performance.now(),userActivation:navigator.userActivation.isActive});return null;};});
-    const tapped=await page.evaluate(()=>performance.now());await page.getByRole('button',{name:'الاتجاهات',exact:true}).click();const mapsHandoffCalls=await page.evaluate(()=>window.__qaMapsCalls);check(mapsHandoffCalls.length,1,'Actual directions click requests exactly one Maps handoff');check(mapsHandoffCalls[0].at-tapped<2000,true,'Maps handoff requested before tracking response');check(mapsHandoffCalls[0].userActivation,true,'Maps handoff stays in the original user gesture');mapsUrl=new URL(mapsHandoffCalls[0].url);await page.locator('.cm-selected-card').getByRole('alert').filter({hasText:'المتصفح منع فتح نافذة الخرائط'}).waitFor();checks++;
+    const tapped=await page.evaluate(()=>performance.now());await page.getByRole('button',{name:'الاتجاهات',exact:true}).click();mapsHandoffCalls=await page.evaluate(()=>window.__qaMapsCalls);check(mapsHandoffCalls.length,1,'Actual directions click requests exactly one Maps handoff');check(mapsHandoffCalls[0].at-tapped<2000,true,'Maps handoff requested before tracking response');check(mapsHandoffCalls[0].userActivation,true,'Maps handoff stays in the original user gesture');mapsUrl=new URL(mapsHandoffCalls[0].url);await page.locator('.cm-selected-card').getByRole('alert').filter({hasText:'المتصفح منع فتح نافذة الخرائط'}).waitFor();checks++;
    }else{
     const tapped=Date.now(),popupPromise=page.waitForEvent('popup',{timeout:12000}).catch(error=>({error}));await page.getByRole('button',{name:'الاتجاهات',exact:true}).click();const popup=await popupPromise;if(popup.error)throw popup.error;await popup.waitForLoadState('domcontentloaded');assert(requestedMaps.length,'Maps destination requested');checks++;mapsUrl=new URL(requestedMaps[0].url);check(requestedMaps[0].at-tapped<2000,true,'Maps opens before blocked route recording completes');actualPopupOpened=true;await popup.close();
    }
