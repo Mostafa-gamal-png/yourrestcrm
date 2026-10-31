@@ -1,4 +1,3 @@
 {
-  "mode": "verify-key",
-  "note": "third check, after the password was pasted again"
+  "mode": "build"
 }
