@@ -310,6 +310,26 @@ try {
   check([dailyBackupTime('+0000'), dailyBackupTime('-0400'), dailyBackupTime('+0530')], [{minute: '15', hour: '0'}, {minute: '15', hour: '20'}, {minute: '45', hour: '5'}], '03:15 Riyadh on a server in UTC, in New York summer time, in India');
   assert.throws(() => dailyBackupTime('EDT'), /UTC offset could not be read/); checks++;
 
+  // ---- 12d. freeing space: the prune tool and its list are uploaded and run with the account's node, the list beside it; no package, no stop
+  {
+    const s = cpanel({selector: true});
+    const tool = new Blob(["const fs = require('fs'), list = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));\nconsole.log('LIST ' + list.remove.join(',') + ' ' + list.dryRun);\nif (list.remove.includes('yourrest-crm-data')) { console.log('PRUNE STOP NOT_AN_OLD_COPY: yourrest-crm-data'); process.exit(2); }\nconsole.log('PRUNE DRY RUN: 1 WOULD BE REMOVED');\n"]);
+    const list = remove => new Blob([JSON.stringify({remove, dryRun: true})]);
+    const result = await s.run('prune', {prune: tool, pruneList: list(['yourrest-update-activation-20261013-k8l61q']), stage: 'ignored', helper: 'ignored'});
+    check(result.code, 0, 'the prune run ends well');
+    check(lines(result.output), ['LIST yourrest-update-activation-20261013-k8l61q true', 'PRUNE DRY RUN: 1 WOULD BE REMOVED'], 'the tool ran with the list uploaded beside it');
+    check(s.uploads, ['hosting-deploy.sh', 'hosting-cron.sh', 'prune.cjs', 'prune.json'], 'the two scripts, the tool and its list are uploaded, no package');
+    check(fs.existsSync(path.join(s.home, 'selector.log')), false, 'the app is neither stopped nor started');
+    check(s.cron, [], 'and no cron line stays');
+    const refused = await s.run('prune', {prune: tool, pruneList: list(['yourrest-crm-data']), stage: 'ignored', helper: 'ignored'});
+    check([refused.code, lines(refused.output).at(-1)], [2, 'PRUNE STOP NOT_AN_OLD_COPY: yourrest-crm-data'], 'a refusal of the tool comes back with its code and reason');
+  }
+  {
+    const s = cpanel();
+    await assert.rejects(s.run('prune', {prune: new Blob(['x'])}), /prune needs the tool and its list/); checks++;
+    check([s.calls, s.uploads], [[], []], 'no list: refused before any call');
+  }
+
   // ---- 13. what this side refuses before calling cPanel
   for (const [extra, pattern] of [[{mode: 'install'}, /mode must be/], [{stage: '../yourrest-crm'}, /stage must be a plain file name/], [{helper: 'a/b.cjs'}, /helper must be/], [{run: 'x y'}, /run must be/], [{sha256: 'abc'}, /sha256 must be/], [{zip: null}, /package is needed/], [{user: 'me@example.com'}, /account name/]]) {
     const s = cpanel();

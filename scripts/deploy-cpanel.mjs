@@ -9,13 +9,14 @@
 //   node scripts/deploy-cpanel.mjs --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>
 //   node scripts/deploy-cpanel.mjs --mode diagnose --script scripts/diagnose/<name>.cjs --run <id>   (a read-only check, no package)
 //   node scripts/deploy-cpanel.mjs --mode backup --run <id>   (a verified backup now, then the daily backup cron line, added once)
+//   node scripts/deploy-cpanel.mjs --mode prune --list <prune.json> --run <id>   (old copies removed by scripts/prune/old-copies.cjs)
 //
 // The account comes from CPANEL_HOST, CPANEL_USER and CPANEL_API_TOKEN.
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-export const WORK = 'yourrest-deploy', APP_ROOT = 'yourrest-crm', SCRIPTS = ['hosting-deploy.sh', 'hosting-cron.sh'], DIAGNOSE = 'diagnose.cjs';
+export const WORK = 'yourrest-deploy', APP_ROOT = 'yourrest-crm', SCRIPTS = ['hosting-deploy.sh', 'hosting-cron.sh'], DIAGNOSE = 'diagnose.cjs', PRUNE = 'prune.cjs', PRUNE_LIST = 'prune.json';
 export const CRON_COMMAND = `/bin/bash $HOME/${WORK}/hosting-cron.sh >/dev/null 2>&1`;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, RUN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/, STALE_RUNNING_MS = 2 * 3600_000;
 
@@ -49,8 +50,9 @@ export function accountHints(user, token) {
 }
 
 function checkConfig(c) {
-  if (!['check', 'deploy', 'verify', 'diagnose', 'backup'].includes(c.mode)) throw new DeployError('mode must be check, deploy, verify, diagnose or backup');
+  if (!['check', 'deploy', 'verify', 'diagnose', 'backup', 'prune'].includes(c.mode)) throw new DeployError('mode must be check, deploy, verify, diagnose, backup or prune');
   if (c.mode === 'diagnose' && !c.diagnose) throw new DeployError('diagnose needs the check script');
+  if (c.mode === 'prune' && (!c.prune || !c.pruneList)) throw new DeployError('prune needs the tool and its list');
   if (!c.user || !c.token) throw new DeployError('CPANEL_USER and CPANEL_API_TOKEN are needed');
   if (!/^[a-z][a-z0-9]{0,31}$/.test(c.user)) throw new DeployError('CPANEL_USER must be the cPanel account name (small letters and digits)');
   for (const [label, value] of [['stage', c.stage], ['helper', c.helper]]) if (!NAME.test(value ?? '')) throw new DeployError(`${label} must be a plain file name`);
@@ -76,6 +78,8 @@ export async function deploy(given, deps) {
   if (c.mode === 'diagnose') Object.assign(c, {stage: 'none', helper: DIAGNOSE});
   // A backup run carries nothing either: hosting-deploy.sh runs the live release's own backup tools.
   if (c.mode === 'backup') Object.assign(c, {stage: 'none', helper: 'none'});
+  // A prune run carries the tool and the list of old copies it may remove; hosting-deploy.sh runs the tool with the list.
+  if (c.mode === 'prune') Object.assign(c, {stage: 'none', helper: PRUNE});
   checkConfig(c);
   const packaged = c.mode === 'check' || c.mode === 'deploy';
   const {fetch, sleep, log, out = () => {}, now = Date.now, pollMs = 10_000, claimMs = 6 * 60_000, runMs = 45 * 60_000} = deps;
@@ -139,7 +143,7 @@ export async function deploy(given, deps) {
     await upload(home, [[c.zipName, c.zip]], 'the upload of the package');
     log(`uploaded ${c.zipName} (${Math.round(c.zip.size / 1024 / 1024)} MB)`);
   }
-  await upload(dir, [...SCRIPTS.map(name => [name, c.scripts[name]]), ...(c.mode === 'diagnose' ? [[DIAGNOSE, c.diagnose]] : [])], 'the upload of the scripts');
+  await upload(dir, [...SCRIPTS.map(name => [name, c.scripts[name]]), ...(c.mode === 'diagnose' ? [[DIAGNOSE, c.diagnose]] : []), ...(c.mode === 'prune' ? [[PRUNE, c.prune], [PRUNE_LIST, c.pruneList]] : [])], 'the upload of the scripts');
 
   // 2. The request, then the cron line that runs it. The request goes last: a line left from before must not find half of it.
   const output = [];
@@ -204,14 +208,14 @@ export async function deploy(given, deps) {
 }
 
 // What the hosting account said that matters at a glance: one annotation, since the session that asked reads annotations first.
-const KEY_LINE = /STOP|READY|VERIFIED|SWITCHED|SELECTOR|START APP|STARTED|STOPPED|MIGRATIONS|DATABASE|CUSTOMER CODES|LOGIN HTTP|ANONYMOUS|BACKUP|CHECKPOINT|UNPACKED|ATTEMPT/;
+const KEY_LINE = /STOP|READY|VERIFIED|SWITCHED|SELECTOR|START APP|STARTED|STOPPED|MIGRATIONS|DATABASE|CUSTOMER CODES|LOGIN HTTP|ANONYMOUS|BACKUP|CHECKPOINT|UNPACKED|ATTEMPT|PRUNE|REMOVE|ALREADY GONE/;
 const annotation = text => text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 
 async function main() {
   const args = new Map();
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i += 2) {
-    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>, --mode diagnose --script <file> --run <id>, or --mode backup --run <id>`);
+    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>, --mode diagnose --script <file> --run <id>, --mode backup --run <id>, or --mode prune --list <prune.json> --run <id>`);
     args.set(argv[i].slice(2), argv[i + 1]);
   }
   const mode = args.get('mode'), pkg = args.get('package'), packaged = mode === 'check' || mode === 'deploy';
@@ -222,6 +226,8 @@ async function main() {
     mode, stage: args.get('stage'), helper: args.get('helper'), run: args.get('run'), scripts,
     zip: packaged ? await fs.openAsBlob(pkg) : null, zipName: packaged ? path.basename(pkg) : null, sha256: args.get('sha256'),
     diagnose: mode === 'diagnose' ? await fs.openAsBlob(args.get('script')) : null,
+    prune: mode === 'prune' ? await fs.openAsBlob(path.join(scriptsDir, 'prune', 'old-copies.cjs')) : null,
+    pruneList: mode === 'prune' ? await fs.openAsBlob(args.get('list')) : null,
   }, {
     fetch, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
     log: line => console.log(`::notice title=deploy::${annotation(line)}`), out: line => console.log(line),
