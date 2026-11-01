@@ -26,22 +26,22 @@
 1. نسخة احتياطية لليوم: أُخذت مع حزمة الصباح؛ المُفعِّل يعيد استعمالها. لا تنفذ شيئًا هنا.
 
 2. والتطبيق يعمل، ارفع الحزمة وافكها داخل:
-/home/youriedx/yourrest-crm-update-tablet-20261101
+/home/youriedx/yourrest-crm-update-tablet2-20261101
 يجب أن يظهر مجلد release والملف yourrest-activate-update-tablet.cjs مباشرة داخل هذا المسار. (مجلد جديد غير مجلدات الحزم السابقة؛ لا تفكّ فوق أي مجلد قديم.)
 
 3. افحص الحزمة دون إيقاف التطبيق:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-tablet-20261101/yourrest-activate-update-tablet.cjs --check
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-tablet2-20261101/yourrest-activate-update-tablet.cjs --check
 
 يجب أن يظهر PACKAGE AND CONFIGURATION: READY، ولا يظهر سطر SCHEMA CHANGE لأن لا ترحيل في هذه الحزمة. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله لي.
 
 4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ مباشرة (لا حاجة للانتظار ولا لأمر kill):
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-tablet-20261101/yourrest-activate-update-tablet.cjs
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-tablet2-20261101/yourrest-activate-update-tablet.cjs
 
 الأمر يوقف ما أعاد المضيف تشغيله (إن وجد)، ويفحص البيانات الحالية (يجب أن تكون 16 ترحيلًا؛ غير ذلك يتوقف دون تغيير)، ويعيد استعمال نسخة اليوم، ثم يبدّل مجلد release.
 إن ظهر STOP APP_OR_DATA_STILL_IN_USE فهناك برنامج آخر (غير خادم التطبيق) يمسك مجلد التطبيق أو البيانات، مثل طرفية مفتوحة داخل مجلد yourrest-crm أو سكربت فحص يعمل. أغلقه وأعد الأمر نفسه؛ لم يتغير شيء. للبحث عنه: ps -u youriedx -o pid,etime,args
 
 5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-tablet-20261101/yourrest-activate-update-tablet.cjs --verify
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-tablet2-20261101/yourrest-activate-update-tablet.cjs --verify
 
 النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK وسطر LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/mobile-route: 401 / /api/support: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401.
 لا يظهر MIGRATION APPLIED لأن لا ترحيل. إن ظهر STOP فاحتفظ بالناتج وأرسله لي قبل أي خطوة أخرى.
