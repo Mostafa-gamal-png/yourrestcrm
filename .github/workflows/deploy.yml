@@ -10,6 +10,9 @@
 #   prune   {"mode": "prune", "dryRun": true, "remove": ["<old copy in the home folder>", ...]}: scripts/prune/old-copies.cjs checks the
 #           whole list (old copies of ours, nothing recent or in use, last night's backup verified) and removes it, or with dryRun only says
 #           what it would remove. A run asked for by hand from the Actions tab takes the file's list.
+#   mold-link  {"mode": "mold-link", "dryRun": true}: scripts/mold-link/legacy-link.cjs links the earlier mold requests to CRM requests
+#           with what the owner confirmed (the Yourrest code, the salesmen listed in it); with dryRun it only says what it would link,
+#           the database read-only and production not called. The app keeps running.
 # scripts/deploy-cpanel.mjs uploads through the API and runs scripts/hosting-deploy.sh on the account through a temporary cron line.
 # Claude pushes a deploy request only after the owner said so. Settings > Secrets and variables > Actions > Repository secrets:
 #   CPANEL_API_TOKEN   cPanel > Security > Manage API Tokens > Create (the only one needed)
@@ -26,7 +29,7 @@ on:
       mode:
         description: "check = unpack and --check only (the app keeps running); deploy = stop, switch, start, verify; verify = --verify only"
         type: choice
-        options: [check, deploy, verify, diagnose, backup, prune]
+        options: [check, deploy, verify, diagnose, backup, prune, mold-link]
         default: check
         required: true
 
@@ -75,11 +78,18 @@ jobs:
               with open(listed, "w") as f: json.dump({"remove": remove, "dryRun": dry}, f)
               with open(os.environ["GITHUB_OUTPUT"], "a") as out: out.write(f"mode=prune\nlist={listed}\n")
               print(f"Request: prune {len(remove)} old copies{' (dry run)' if dry else ''}"); sys.exit(0)
+          if mode == "mold-link":
+              dry = r.get("dryRun")
+              if not isinstance(dry, bool): stop("dryRun: true (say what would be linked) or false (link)")
+              listed = os.path.join(os.environ["RUNNER_TEMP"], "mold-link.json")
+              with open(listed, "w") as f: json.dump({"dryRun": dry}, f)
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out: out.write(f"mode=mold-link\nlist={listed}\n")
+              print(f"Request: mold-link{' (dry run)' if dry else ''}"); sys.exit(0)
           if mode == "backup":
               with open(os.environ["GITHUB_OUTPUT"], "a") as out: out.write("mode=backup\n")
               print("Request: backup"); sys.exit(0)
           package, sha, stage, helper = (str(r.get(k, "")) for k in ("package", "sha256", "stage", "helper"))
-          if mode not in ("check", "deploy", "verify"): stop("mode: check, deploy, verify, diagnose, backup or prune")
+          if mode not in ("check", "deploy", "verify"): stop("mode: check, deploy, verify, diagnose, backup, prune or mold-link")
           if not re.fullmatch(r"yourrest-crm-[a-z0-9-]+", stage): stop("stage: yourrest-crm-<name>-<date>, as the update guide names the folder")
           if not re.fullmatch(r"yourrest-activate-[a-z0-9-]+\.cjs", helper): stop("helper: yourrest-activate-<name>.cjs, as the update guide names it")
           if not re.fullmatch(r"deploy/packages/[A-Za-z0-9._-]+\.zip", package) or not os.path.isfile(package): stop("package: a zip committed under deploy/packages/")
@@ -108,4 +118,5 @@ jobs:
           if [ "$MODE" = diagnose ]; then node scripts/deploy-cpanel.mjs --mode diagnose --script "$SCRIPT" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
           if [ "$MODE" = backup ]; then node scripts/deploy-cpanel.mjs --mode backup --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
           if [ "$MODE" = prune ]; then node scripts/deploy-cpanel.mjs --mode prune --list "$LIST" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
+          if [ "$MODE" = mold-link ]; then node scripts/deploy-cpanel.mjs --mode mold-link --list "$LIST" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
           node scripts/deploy-cpanel.mjs --mode "$MODE" --package "$PACKAGE" --sha256 "$SHA" --stage "$STAGE" --helper "$HELPER" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"

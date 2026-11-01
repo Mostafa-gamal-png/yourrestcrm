@@ -330,6 +330,26 @@ try {
     check([s.calls, s.uploads], [[], []], 'no list: refused before any call');
   }
 
+  // ---- 12e. linking the earlier mold requests: the link tool and its request are uploaded and run with the account's node; no package,
+  // the app neither stopped nor started
+  {
+    const s = cpanel({selector: true});
+    const tool = new Blob(["const fs = require('fs'), request = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));\nif (request.dryRun !== true) { console.log('MOLD LINK STOP: not a dry run'); process.exit(2); }\nconsole.log('MOLD LINK DRY RUN: ROWS 3: TO LINK 2');\n"]);
+    const request = dryRun => new Blob([JSON.stringify({dryRun})]);
+    const result = await s.run('mold-link', {moldLink: tool, moldLinkRequest: request(true), stage: 'ignored', helper: 'ignored'});
+    check([result.code, lines(result.output)], [0, ['MOLD LINK DRY RUN: ROWS 3: TO LINK 2']], 'the link tool ran with its request uploaded beside it');
+    check(s.uploads, ['hosting-deploy.sh', 'hosting-cron.sh', 'mold-link.cjs', 'mold-link.json'], 'the two scripts, the tool and its request are uploaded, no package');
+    check(fs.existsSync(path.join(s.home, 'selector.log')), false, 'the app is neither stopped nor started');
+    check(s.cron, [], 'and no cron line stays');
+    const refused = await s.run('mold-link', {moldLink: tool, moldLinkRequest: request(false), stage: 'ignored', helper: 'ignored'});
+    check([refused.code, lines(refused.output).at(-1)], [2, 'MOLD LINK STOP: not a dry run'], 'a stop of the tool comes back with its code and reason');
+  }
+  {
+    const s = cpanel();
+    await assert.rejects(s.run('mold-link', {moldLink: new Blob(['x'])}), /mold-link needs the tool and its request/); checks++;
+    check([s.calls, s.uploads], [[], []], 'no request: refused before any call');
+  }
+
   // ---- 13. what this side refuses before calling cPanel
   for (const [extra, pattern] of [[{mode: 'install'}, /mode must be/], [{stage: '../yourrest-crm'}, /stage must be a plain file name/], [{helper: 'a/b.cjs'}, /helper must be/], [{run: 'x y'}, /run must be/], [{sha256: 'abc'}, /sha256 must be/], [{zip: null}, /package is needed/], [{user: 'me@example.com'}, /account name/]]) {
     const s = cpanel();
