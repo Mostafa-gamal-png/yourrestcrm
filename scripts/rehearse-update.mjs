@@ -554,13 +554,14 @@ try {
     await a.start();
     assert.deepEqual(tables(a), dataBeforeSwitch, 'after restoring the schema backup every table, and the migration ledger, equal their state before the update');
     const restoredDb = new DatabaseSync(a.settings.YR_DATABASE_PATH, {readOnly: true});
-    try { assert.equal(restoredDb.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n, helper.SCHEMA_BEFORE); assert.equal(restoredDb.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='crm_member_devices'").get().n, 0); } finally { restoredDb.close(); }
+    try { assert.equal(restoredDb.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n, helper.SCHEMA_BEFORE); for (const migration of helper.NEW_MIGRATIONS) for (const [, table] of execFileSync('python3', ['-c', 'import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode())', packageZip, 'release/drizzle/' + migration], {encoding: 'utf8'}).matchAll(/CREATE TABLE (?:IF NOT EXISTS )?["`]?(\w+)/gi)) assert.equal(restoredDb.prepare('SELECT COUNT(*) n FROM sqlite_master WHERE name=?').get(table).n, 0, 'the restored database has no table of ' + migration); } finally { restoredDb.close(); }
     const restored = await views();
     const drift = [];
     for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) for (const part of Object.keys(before[who])) if (stable(before[who][part]) !== stable(restored[who][part])) drift.push(who + '.' + part);
     if (stable(before.file) !== stable(restored.file)) drift.push('file');
     assert.deepEqual(drift, [], 'every role sees what it saw before the update');
-    assert.equal(restored.anonymousDeviceStatus, 404, 'the previous release has no device-status route again');
+    assert.deepEqual(restored.extra, before.extra, 'the previous release answers every checked route as it did before the update (a route the update added is gone again)');
+    assert.equal(restored.anonymousDeviceStatus, before.anonymousDeviceStatus, 'and the device-status route as before');
     note('going back after the migration works: the previous release refuses the migrated database; restoring the private schema backup and the previous release returns the exact earlier state', {walFilesMovedAside: walFiles, oldReleaseRefusal: (/Existing migration history[^\n]*/.exec(oldRefusal) || [''])[0].slice(0, 200)});
     await a.stop();
   } else {
