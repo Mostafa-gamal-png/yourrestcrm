@@ -98,7 +98,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map()};
   const riyadh = () => new Date(now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00';
   /** Every change: a new revision, and the wait restarts only when the step changes (yr_mreq_state_set). */
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
@@ -177,6 +177,30 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     return {status: 200, body: {request: statusObject(row)}};
   }
 
+  /** The customers route: the CRM's list (upsert, or full which also deactivates whoever is missing; nobody is deleted). */
+  function customers(body) {
+    const bad = [], mode = choice(body.mode, ['full', 'upsert'], true, 'mode', bad), list = body.customers;
+    if (!Array.isArray(list) || list.length > 20000) bad.push('customers');
+    const seen = new Set(), entries = [];
+    for (const [index, item] of (Array.isArray(list) ? list : []).entries()) {
+      const at = 'customers.' + index + '.', entry = item && typeof item === 'object' ? item : {};
+      const crmNumber = int(entry.crmNumber, 1, 2147483647, true, at + 'crmNumber', bad);
+      const name = clean(entry.name, 200, true, at + 'name', bad), address = clean(entry.address, 300, false, at + 'address', bad), city = clean(entry.city, 100, false, at + 'city', bad);
+      if (entry.active !== undefined && typeof entry.active !== 'boolean') bad.push(at + 'active');
+      if (crmNumber !== null && seen.has(crmNumber)) bad.push(at + 'crmNumber');
+      seen.add(crmNumber); entries.push({crmNumber, name, address, city, active: entry.active !== false});
+    }
+    if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)].slice(0, 30));
+    let inserted = 0, updated = 0, deactivated = 0;
+    for (const entry of entries) {
+      const before = state.customers.get(entry.crmNumber);
+      if (!before) inserted++; else if (JSON.stringify(before) !== JSON.stringify(entry)) updated++;
+      state.customers.set(entry.crmNumber, entry);
+    }
+    if (mode === 'full') for (const [number, entry] of state.customers) if (!seen.has(number) && entry.active) { state.customers.set(number, {...entry, active: false}); deactivated++; }
+    return {status: 200, body: {received: entries.length, inserted, updated, deactivated, activeCustomers: [...state.customers.values()].filter(entry => entry.active).length}};
+  }
+
   /** yr_mreq_crm_pending: every request waiting for the sales manager, the longest waiting first (up to 500); no production data. */
   function pending() {
     const rows = [...state.byOrder.values()].filter(row => waitingStep(row) === 'sales').sort((a, b) => String(a.waitingSince).localeCompare(String(b.waitingSince)) || a.orderNo - b.orderNo).slice(0, 500);
@@ -198,11 +222,11 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
     try {
       if (req.method !== 'POST') throw new ApiError('method_not_allowed', 405, 'Use POST.');
-      if (!['requests', 'status', 'cancel', 'approval', 'pending'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
+      if (!['requests', 'status', 'cancel', 'approval', 'pending', 'customers'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
       if (state.notConfigured) throw new ApiError('not_configured', 503, 'The integration secret is not configured.');
       const timestamp = String(req.headers['x-yr-timestamp'] || ''), signature = String(req.headers['x-yr-signature'] || '');
       if (!/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) throw new ApiError('invalid_signature', 401, 'Missing or malformed signature headers.');
-      if (raw.length > 64 * 1024) throw new ApiError('payload_too_large', 413, 'The body is larger than 64 KB.');
+      if (raw.length > (route === 'customers' ? 2 * 1024 * 1024 : 64 * 1024)) throw new ApiError('payload_too_large', 413, route === 'customers' ? 'The body is larger than 2 MB.' : 'The body is larger than 64 KB.');
       if (Math.abs(Math.floor(now() / 1000) - Number(timestamp)) > 300) throw new ApiError('stale_timestamp', 401, 'The timestamp is more than 300 seconds from the server clock.');
       const expected = createHmac('sha256', state.secret).update(timestamp + '\n' + req.method + '\n' + route + '\n' + createHash('sha256').update(raw).digest('hex')).digest('hex');
       if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) { state.badSignatures++; throw new ApiError('invalid_signature', 401, 'The signature does not match.'); }
@@ -210,7 +234,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       let body;
       try { body = JSON.parse(raw.toString('utf8')); } catch { throw new ApiError('invalid_payload', 400, 'The body is not valid JSON.', ['body']); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('invalid_payload', 400, 'The body must be a JSON object.', ['body']);
-      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : cancel(body);
+      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'customers' ? customers(body) : cancel(body);
       reply(result.status, result.body);
     } catch (error) {
       if (!(error instanceof ApiError)) { reply(500, {error: {code: 'server_error', message: 'Unexpected server error.'}}); return; }

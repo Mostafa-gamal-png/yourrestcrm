@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText} from '../portable/mold-rules.mjs';
+import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText, sheetCity, moldCustomerEntry, moldCustomerCalls} from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 
@@ -101,6 +101,20 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq([readMoldAnswer(503, {error: {code: 'not_configured'}}).kind, readMoldAnswer(401, {error: {code: 'stale_timestamp'}}).kind, readMoldAnswer(500, null).kind, readMoldAnswer(502, null).code], ['retry', 'retry', 'retry', 'http_502'], 'everything else is tried again');
 }
 
+// ---- the customers route: the CRM's list, the cities as the production sheet writes them
+{
+  eq(['الدمام', 'دمام', 'Dammam', 'Damam - الدمام', ' الرياض ', 'جدة', 'جده', 'مكة المكرمة', 'المدينة المنورة', 'جازان', 'خميس مشيط', 'الطايف', 'القصيم'].map(sheetCity),
+    ['Damam - الدمام', 'Damam - الدمام', 'Damam - الدمام', 'Damam - الدمام', 'Riyadh - الرياض', 'Jeddah - جده', 'Jeddah - جده', 'MAkkah - مكة', 'Madina - المدينة', 'Jizan - جيزان', 'Khames - خميس مشيط', 'Taif - الطائف', 'Qassem - القصيم'], 'the sheet\'s cities by their Arabic or English names');
+  eq([sheetCity('الخبر'), sheetCity('بريدة'), sheetCity(''), sheetCity(null), sheetCity('x'.repeat(120)).length], ['الخبر', 'بريدة', '', '', 100], 'any other city as it is: nothing guessed (Buraydah is not made Qassim)');
+  eq(moldCustomerEntry({crmNumber: 27, name: ' مصنع  زايد ', address: 'حي الصناعية', city: 'الدمام'}), {crmNumber: 27, name: 'مصنع زايد', address: 'حي الصناعية', city: 'Damam - الدمام', active: true}, 'a customer of the list');
+  eq(moldCustomerEntry({crmNumber: 28, name: 'مصنع', address: '', city: ''}), {crmNumber: 28, name: 'مصنع', active: true}, 'empty address and city left out');
+  eq([moldCustomerEntry({crmNumber: 0, name: 'x'}), moldCustomerEntry({crmNumber: 5, name: '  '}), moldCustomerEntry({crmNumber: '5', name: 'x'})], [null, null, null], 'no number or no name: not sent');
+  const many = Array.from({length: 20001}, (_, i) => ({crmNumber: i + 1, name: 'مصنع ' + i, active: true}));
+  const calls = moldCustomerCalls(many);
+  eq([moldCustomerCalls(many.slice(0, 3)).map(call => [call.mode, call.customers.length]), calls.every(call => call.mode === 'upsert'), calls.reduce((n, call) => n + call.customers.length, 0)], [[['full', 3]], true, 20001], 'one full call when it fits; over the limits, upsert batches carrying everyone');
+  ok(calls.every(call => call.customers.length <= 20000 && new TextEncoder().encode(JSON.stringify(call)).length <= MOLD_CUSTOMERS_BODY_LIMIT), 'each batch within 20000 customers and 2 MB');
+}
+
 // ---- §6: 1 minute, 5, 30, 2 hours, then every 2 hours up to 24 hours
 {
   const first = '2026-11-01T08:00:00.000Z', at = minutes => new Date(Date.parse(first) + minutes * 60_000).toISOString();
@@ -157,6 +171,16 @@ try {
   eq([answer.kind, answer.json.request.crmRequestId, answer.json.request.waitingStep], ['ok', null, 'production'], 'approved by its orderNo: it waits for production');
   eq((await call('pending', {})).json.requests.map(item => item.orderNo), [mock.row('mr-wait').orderNo], 'and leaves the pending list');
   eq((await call('approval', moldApprovalBody({orderNo: 9999, action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'an unknown order: 404');
+  // the customers route: full deactivates whoever is missing (nobody deleted); upsert only adds or changes; 2 MB allowed
+  answer = await call('customers', {mode: 'full', customers: [moldCustomerEntry({crmNumber: 1, name: 'أ', city: 'الدمام'}), moldCustomerEntry({crmNumber: 2, name: 'ب'})]});
+  eq([answer.kind, answer.json], ['ok', {received: 2, inserted: 2, updated: 0, deactivated: 0, activeCustomers: 2}], 'a full list');
+  eq(mock.state.customers.get(1).city, 'Damam - الدمام', 'the city as the sheet writes it');
+  eq((await call('customers', {mode: 'upsert', customers: [moldCustomerEntry({crmNumber: 3, name: 'ج'})]})).json, {received: 1, inserted: 1, updated: 0, deactivated: 0, activeCustomers: 3}, 'upsert adds only');
+  eq((await call('customers', {mode: 'full', customers: [moldCustomerEntry({crmNumber: 1, name: 'أ معدّل', city: 'الدمام'})]})).json, {received: 1, inserted: 0, updated: 1, deactivated: 2, activeCustomers: 1}, 'full: the missing two deactivated');
+  const big = Array.from({length: 9000}, (_, i) => moldCustomerEntry({crmNumber: i + 10, name: 'مصنع رقم ' + i, address: 'عنوان طويل نسبيًا للاختبار ' + i, city: 'الرياض'}));
+  ok(new TextEncoder().encode(JSON.stringify({mode: 'full', customers: big})).length > 64 * 1024, 'a list well over the 64 KB of the other routes');
+  eq((await call('customers', {mode: 'full', customers: big})).json.received, 9000, 'is accepted on this route (up to 2 MB)');
+  eq((await call('customers', {mode: 'full', customers: [{crmNumber: 1, name: ''}]})).kind, 'rejected', 'a customer without a name: refused');
   mock.produce('mr-1', {stages: ['laserCutting', 'box'], moldSerial: '093', productionDate: '2026-11-01'});
   answer = await call('requests', {...body, specs: {...body.specs, quantity: 3}});
   eq([answer.kind, answer.code, answer.request.status, answer.request.editable, answer.request.stagesDone], ['locked', 'request_locked', 'in_production', false, 2], 'production started: 409 request_locked with the current state');

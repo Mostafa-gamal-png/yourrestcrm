@@ -2,7 +2,7 @@
 // private settings (YR_PRODUCTS_API_URL, YR_PRODUCTS_SECRET), every call is a signed HTTPS POST with a 10-second limit, and the bytes
 // sent are the bytes signed. The secret is never returned, logged or put in an error. Used by the server and the import tool.
 import {createHash, createHmac} from 'node:crypto';
-import {MOLD_BODY_LIMIT, MOLD_TIMEOUT_MS, moldStatusObject, readMoldAnswer} from './mold-rules.mjs';
+import {MOLD_BODY_LIMIT, MOLD_CUSTOMERS_BODY_LIMIT, MOLD_TIMEOUT_MS, moldStatusObject, readMoldAnswer} from './mold-rules.mjs';
 
 /** X-YR-Signature: lower-case hex HMAC-SHA256 of "<timestamp>\n<METHOD>\n<route>\n<sha256-hex(body as sent)>" with the secret. */
 export function moldSignature(secret, timestamp, method, route, body) {
@@ -27,12 +27,13 @@ export function moldConfig(source) {
   return {ok: true, url: parsed.href, secret};
 }
 
-const routes = new Set(['requests', 'status', 'cancel', 'approval', 'pending']);
+const routes = new Set(['requests', 'status', 'cancel', 'approval', 'pending', 'customers']);
 /** The success body each route must carry; anything else is read as a failed call, to be tried again. */
 function wellFormed(route, json) {
   if (!json || typeof json !== 'object') return false;
   if (route === 'status') return Array.isArray(json.requests) && Array.isArray(json.unknown);
   if (route === 'pending') return Array.isArray(json.requests);
+  if (route === 'customers') return ['received', 'inserted', 'updated', 'deactivated', 'activeCustomers'].every(key => Number.isInteger(json[key]));
   // An approval of a request registered in the products application answers without a crmRequestId.
   return !!moldStatusObject(json.request, {manual: route === 'approval'});
 }
@@ -42,7 +43,7 @@ function wellFormed(route, json) {
  * retry/network, retry/timeout and retry/bad_response for calls that did not get a contract answer.
  * @typedef {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], http: number, json?: any, request?: any}} MoldCallAnswer
  * @param {{ok: true, url: string, secret: string} | {ok: false, reason: string}} config
- * @param {'requests'|'status'|'cancel'|'approval'|'pending'} route
+ * @param {'requests'|'status'|'cancel'|'approval'|'pending'|'customers'} route
  * @param {object} payload
  * @param {{fetch?: typeof globalThis.fetch, now?: () => number, timeoutMs?: number}} [options]
  * @returns {Promise<MoldCallAnswer>}
@@ -51,7 +52,7 @@ export async function callProducts(config, route, payload, {fetch: send = global
   if (!config?.ok) return {kind: 'retry', code: config?.reason || 'not_configured', fields: [], http: 0};
   if (!routes.has(route)) throw new Error('unknown route');
   const body = Buffer.from(JSON.stringify(payload), 'utf8');
-  if (body.length > MOLD_BODY_LIMIT) return {kind: 'rejected', code: 'payload_too_large', fields: [], http: 0};
+  if (body.length > (route === 'customers' ? MOLD_CUSTOMERS_BODY_LIMIT : MOLD_BODY_LIMIT)) return {kind: 'rejected', code: 'payload_too_large', fields: [], http: 0};
   const timestamp = String(Math.floor(now() / 1000));
   let response;
   try {
