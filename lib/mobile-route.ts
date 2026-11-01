@@ -11,6 +11,18 @@ export const mobileDayStart=trackingWindowStart;
 export const mobileLegacyDayExpiry=(date:string)=>date+'T21:00:00.000Z';
 export function mobilePublicDay(day:MobileRouteStoredDay,now:string):MobileRouteDay{const publicDay=omit(day,'lastPoint');const expiry=day.trackingWindow==='06-18'||day.date===journeyDate(now)?mobileDayExpiry(day.date):day.expiresAt;return {...publicDay,expiresAt:expiry,endedAt:day.endedAt||(now>=expiry?expiry:null)};}
 export function mobileGap(day:MobileRouteStoredDay,at:string,reason:string){const next=structuredClone(day),from=day.lastPointAt||day.startedAt,last=next.gaps.at(-1);if(last&&last.reason===reason&&last.from===from){if(at>last.to)last.to=at;}else if(!next.gaps.some(g=>g.from===from&&g.to===at&&g.reason===reason))next.gaps.push({from,to:at,reason});if(next.gaps.length>256){const old=next.gaps.splice(0,128);next.gaps.unshift({from:old[0].from,to:old.at(-1)!.to,reason:'multiple_tracking_gaps'});}return next;}
+/** A collector the server has not heard from for this long no longer holds its open day: another phone of the same
+ * representative may take the day over when the representative enables tracking there (a reinstalled app, a new phone). */
+export const MOBILE_SILENT_AFTER_MS=30*60_000;
+/** The newest moment this day's collector is known to have been alive: its start, its newest sample (captured, or received
+ * when that is known) and its newest recorded interruption. */
+export function mobileDayHeardAt(day:Pick<MobileRouteDay,'startedAt'|'lastPointAt'|'gaps'>,receivedAt?:string|null):string{
+ let latest=Date.parse(day.startedAt);
+ for(const value of [day.lastPointAt,receivedAt,...day.gaps.map(gap=>gap.to)]){const at=Date.parse(value||'');if(Number.isFinite(at)&&at>latest)latest=at;}
+ return new Date(latest).toISOString();
+}
+/** An open day whose collector has gone quiet. A closed day is never quiet: it is simply over. */
+export const mobileDaySilent=(day:Pick<MobileRouteDay,'startedAt'|'lastPointAt'|'gaps'|'endedAt'>,now:string,receivedAt?:string|null)=>!day.endedAt&&Date.parse(now)-Date.parse(mobileDayHeardAt(day,receivedAt))>=MOBILE_SILENT_AFTER_MS;
 export function mobileApplyPoint(day:MobileRouteStoredDay,point:MobileRoutePoint){let next=structuredClone(day);const prior=next.lastPoint;if(Date.parse(point.capturedAt)-Date.parse(prior?.capturedAt||next.startedAt)>JOURNEY_GAP_MS)next=mobileGap(next,point.capturedAt,prior?'tracking_gap':'tracking_not_started');if(point.accuracy>JOURNEY_MAX_ACCURACY)next=mobileGap(next,point.capturedAt,'low_accuracy');if(prior&&implausibleJourneyJump(prior,point))next=mobileGap(next,point.capturedAt,'implausible_location_jump');next.lastPoint=point;next.lastPointAt=point.capturedAt;return next;}
 export function mobileReportDay(day:MobileRouteStoredDay,points:MobileRoutePoint[],memberName:string,now:string):MobileRouteReportDay{let publicDay=mobilePublicDay(day,now);const end=publicDay.endedAt||now;const missingExpected=(!day.trackingWindow&&day.date<journeyDate(now))||(!publicDay.endedAt&&trackingWindowOpen(now))||!!day.endedAt&&day.endedAt<mobileDayExpiry(day.date);if(missingExpected&&Date.parse(end)-Date.parse(day.lastPointAt||day.startedAt)>JOURNEY_GAP_MS)publicDay=mobilePublicDay(mobileGap(day,end,'no_recent_location'),now);const safe=omit(publicDay,'deviceId');return {...safe,memberName,points,segments:journeySegments(points,safe.gaps),automaticStops:detectMobileRouteStops({...safe,points},now)};}
 

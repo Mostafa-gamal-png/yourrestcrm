@@ -3,14 +3,17 @@ import {context,checkOrigin,replyError,readJsonBody,CRMError,accessGuard,require
 import {regionScope} from '@/lib/regions';
 import {journeyDate,applyJourneyPoint,journeyGap,closeJourney,closeJourneyAtWindowEnd,type JourneyStop} from '@/lib/journeys';
 import {activeJourney,ownJourney,canReadJourney,journeyGuard,journeyLinkedTimingStatement,journeyColumns,decodeJourney,type JourneyRow} from '@/lib/journeys-server';
-import {mobileDayExpiry,mobileDayStart,mobileReplayableStop,replayMobileInterruptedStop,mobilePublicDay,mobileApplyPoint,mobileGap,type MobileRoutePoint,type MobileRouteStoredDay} from '@/lib/mobile-route';
-import {mobileContext,mobileColumns,decodeMobileDay,mobileData,ownMobileDay,mobileGuard,type MobileDayRow} from '@/lib/mobile-route-server';
+import {mobileDayExpiry,mobileDayStart,mobileReplayableStop,replayMobileInterruptedStop,mobilePublicDay,mobileApplyPoint,mobileGap,mobileDayHeardAt,type MobileRoutePoint,type MobileRouteStoredDay} from '@/lib/mobile-route';
+import {mobileContext,mobileColumns,decodeMobileDay,mobileData,ownMobileDay,mobileGuard,mobileDayQuiet,type MobileDayRow} from '@/lib/mobile-route-server';
 import {trackingWindowOpen,trackingWindowEnd,trackingWindowStatus,trackingWorkingDay} from '@/lib/tracking-window';
 export const dynamic='force-dynamic';
 const identifier=z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/),iso=z.string().datetime({offset:true});
 const pointSchema=z.object({id:identifier,capturedAt:iso,latitude:z.number().finite().min(-90).max(90),longitude:z.number().finite().min(-180).max(180),accuracy:z.number().finite().min(0).max(10000),stopId:identifier.nullable()}).strict().refine(p=>p.latitude!==0||p.longitude!==0,'إحداثيات غير صالحة');
 async function response(c:Awaited<ReturnType<typeof context>>,day:MobileRouteStoredDay|null,now:string,extra:Record<string,unknown>={}){const active=await activeJourney(c,now);return Response.json({memberId:c.me.id,memberRole:c.me.role,regionScope:regionScope(c.me),day:day?mobilePublicDay(day,now):null,activeStop:active&&!active.closedAt?active:null,serverTime:now,trackingWindow:trackingWindowStatus(now),...extra},{headers:{'Cache-Control':'no-store'}});}
-export async function GET(){try{const c=await mobileContext();requireSalesRole(c.me);const now=new Date().toISOString(),row=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at DESC,id DESC LIMIT 1').bind(c.me.id,journeyDate(now),regionScope(c.me)).first<MobileDayRow>();return response(c,row?decodeMobileDay(row):null,now);}catch(e){return replyError(e);}}
+// A representative's app refuses to enroll while this answers with another device's day. An open day whose collector has
+// gone quiet is therefore not reported to a representative, so a new or reinstalled app can take the day over. Other roles
+// (the manual tracker of supervisors and managers) are answered exactly as before.
+export async function GET(){try{const c=await mobileContext();requireSalesRole(c.me);const now=new Date().toISOString(),row=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at DESC,id DESC LIMIT 1').bind(c.me.id,journeyDate(now),regionScope(c.me)).first<MobileDayRow>(),day=row?decodeMobileDay(row):null;return response(c,day&&c.me.role==='rep'&&!day.endedAt&&await mobileDayQuiet(c.db,day,now)?null:day,now);}catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>40000)throw new CRMError('حجم بيانات الموقع كبير');const c=await mobileContext(body);requireSalesRole(c.me);const now=new Date().toISOString(),date=journeyDate(now),deviceId=z.string().uuid().parse(body.deviceId),action=z.enum(['begin','samples','end','gap']).parse(body.action),mutation=crypto.randomUUID();
  if(action==='begin'){
@@ -40,18 +43,25 @@ export async function POST(req:Request){try{
   if(start<accountCreatedAt)start=accountCreatedAt;
   if(start>=expiry||start>now)return response(c,null,now);
   const currentRaw=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND ended_at IS NULL').bind(c.me.id).first<MobileDayRow>(),current=currentRaw?decodeMobileDay(currentRaw):null;
-  if(current&&current.date===requestedDate&&current.regionScope===regionScope(c.me)){if(current.deviceId!==deviceId)throw new CRMError('التتبع يعمل على جهاز آخر. تواصل مع الإدارة لتغيير الجهاز.',409);return response(c,current,now);}
+  // One phone records a representative's day. Another phone takes the day over only once the first has gone quiet (an
+  // uninstalled app, a phone left off): the quiet day closes where it was last heard and the new one starts from there.
+  let takeover:MobileRouteStoredDay|null=null,takeoverEnd='';
+  if(current&&current.date===requestedDate&&current.regionScope===regionScope(c.me)){
+   if(current.deviceId===deviceId)return response(c,current,now);
+   if(historical||body.continuous!==true||!await mobileDayQuiet(c.db,current,now))throw new CRMError('خط السير يُسجَّل الآن من جهاز آخر على حسابك. يمكن نقله إلى هذا الجهاز بعد أن يتوقف الجهاز الآخر عن الإرسال نصف ساعة.',409);
+   takeover=current;takeoverEnd=mobileDayHeardAt(current);if(start<takeoverEnd)start=takeoverEnd;if(start>=expiry||start>now)return response(c,null,now);
+  }
   // A late offline day must not close or replace today's already-running collector.
   const sameDate=(await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at,id').bind(c.me.id,requestedDate,regionScope(c.me)).all<MobileDayRow>()).results.map(decodeMobileDay);
   const covering=sameDate.find(day=>day.deviceId===deviceId&&day.startedAt<=start&&(!day.endedAt||day.endedAt>start));
   if(covering)return response(c,covering,now);
-  if(sameDate.some(day=>!day.endedAt||day.endedAt>start))throw new CRMError('توجد فترة تتبع محفوظة لهذا اليوم أو لجهاز آخر.',409);
+  if(sameDate.some(day=>day.id!==takeover?.id&&(!day.endedAt||day.endedAt>start)))throw new CRMError('توجد فترة تتبع محفوظة لهذا اليوم أو لجهاز آخر.',409);
   const day:MobileRouteStoredDay={id,memberId:c.me.id,deviceId,date:requestedDate,regionScope:regionScope(c.me),startedAt:start,endedAt:elapsed?expiry:null,expiresAt:expiry,lastPointAt:null,version:1,gaps:[],trackingWindow:'06-18'},permission=accessGuard(c),statements=[];
   permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND created_at=?)';permission.args.push(c.me.id,account.createdAt);
   permission.sql+=' AND (SELECT COUNT(*) FROM crm_mobile_route_days WHERE member_id=? AND date=?)<20 AND NOT EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? AND (ended_at IS NULL OR ended_at>?) AND id<>?)';permission.args.push(c.me.id,requestedDate,c.me.id,requestedDate,day.regionScope,start,current&&!historical?current.id:'');
   let rolloverStop:JourneyStop|null=null;
   if(current&&!historical&&current.date<requestedDate){const raw=await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE member_id=? AND date=? AND closed_at IS NULL').bind(c.me.id,current.date).first<JourneyRow>();if(raw){const stop=decodeJourney(raw);if(canReadJourney(stop,c)){rolloverStop=stop;const guard=journeyGuard(c,stop);permission.sql+=' AND '+guard.sql+' AND EXISTS (SELECT 1 FROM crm_journey_stops WHERE id=? AND version=?)';permission.args.push(...guard.args,stop.id,stop.version);}}}
-  if(current&&!historical)statements.push(c.db.prepare(`UPDATE crm_mobile_route_days SET ended_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND ended_at IS NULL AND ${permission.sql}`).bind(current.date<requestedDate?trackingWindowEnd(current.date):now,mutation,current.id,current.version,...permission.args));
+  if(current&&!historical)statements.push(c.db.prepare(`UPDATE crm_mobile_route_days SET ended_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND ended_at IS NULL AND ${permission.sql}`).bind(takeover?takeoverEnd:current.date<requestedDate?trackingWindowEnd(current.date):now,mutation,current.id,current.version,...permission.args));
   // Dependency snapshots and an overlap predicate guard the entire new interval.
   if(current&&!historical){permission.sql+=' AND EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE id=? AND mutation_id=?)';permission.args.push(current.id,mutation);}
   statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,ended_at,last_point_at,data,version,mutation_id) SELECT ?,?,?,?,?,?,?,NULL,?,1,? WHERE (?=1 OR NOT EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE member_id=? AND ended_at IS NULL)) AND NOT EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? AND (ended_at IS NULL OR ended_at>?)) AND (SELECT COUNT(*) FROM crm_mobile_route_days WHERE member_id=? AND date=?)<20 AND ${permission.sql}`).bind(id,c.me.id,deviceId,requestedDate,day.regionScope,start,day.endedAt,mobileData(day),mutation,Number(historical),c.me.id,c.me.id,requestedDate,day.regionScope,start,c.me.id,requestedDate,...permission.args));
@@ -69,6 +79,7 @@ export async function POST(req:Request){try{
    if(!trackingWindowOpen(point.capturedAt)){if(point.stopId)await ownJourney(c,point.stopId);ignoredIds.push(point.id);continue;}points.push(point);
   }
   if(!points.length)return response(c,day,now,{acknowledgedIds:incoming.map(p=>p.id),ignoredIds});
+  if(day.endedAt&&points.some(p=>p.capturedAt>day.endedAt!)&&await c.db.prepare('SELECT 1 AS moved FROM crm_mobile_route_days WHERE member_id=? AND date=? AND device_id<>? AND started_at>=? LIMIT 1').bind(c.me.id,day.date,deviceId,day.endedAt).first())throw new CRMError('انتقل تسجيل خط السير إلى جهاز آخر على حسابك.',409);
   let next:MobileRouteStoredDay={...day,trackingWindow:'06-18',expiresAt:mobileDayExpiry(day.date)};const originals=new Map<string,JourneyStop>(),updated=new Map<string,JourneyStop>(),stopPoints=new Map<string,MobileRoutePoint[]>();
   for(const point of points){const at=Date.parse(point.capturedAt);if(at>Date.parse(now)+5000||at<Date.parse(day.startedAt)||at>=Date.parse(day.expiresAt)||day.endedAt&&at>Date.parse(day.endedAt)||journeyDate(point.capturedAt)!==day.date)throw new CRMError('وقت عينة الموقع خارج يوم التتبع',400);if(next.lastPointAt&&at<=Date.parse(next.lastPointAt))throw new CRMError('عينات الموقع غير مرتبة. أعد إرسال العينات بالترتيب.',409);
    if(point.stopId){let stop=updated.get(point.stopId);if(!stop){stop=await ownJourney(c,point.stopId);if(stop.date!==day.date||at<Date.parse(stop.selectedAt))throw new CRMError('عينة الموقع لا تتبع وقت اختيار العميل',400);originals.set(stop.id,stop);updated.set(stop.id,stop);}if(!stop.closedAt||mobileReplayableStop(stop)&&point.capturedAt<=stop.closedAt){if(stop.data.lastPoint&&at<=Date.parse(stop.data.lastPoint.capturedAt))throw new CRMError('توجد عينات أحدث لهذا العميل. أوقف جامع الموقع المكرر.',409);if(!stop.closedAt)stop=applyJourneyPoint(stop,point);updated.set(stop.id,stop);const list=stopPoints.get(stop.id)||[];list.push(point);stopPoints.set(stop.id,list);}}
