@@ -2,7 +2,7 @@ import {CRMError,accessGuard,context} from './crm-server';
 import {salesScopeMemberIds} from './access';
 import {regionScope} from './regions';
 import type {JourneyContext} from './journeys-server';
-import {mobileDayExpiry,mobileLegacyDayExpiry,mobileReportDay,type MobileRouteStoredDay,type MobileRoutePoint,type MobileRouteReportDay} from './mobile-route';
+import {mobileDayExpiry,mobileLegacyDayExpiry,mobileReportDay,mobileDaySilent,type MobileRouteStoredDay,type MobileRoutePoint,type MobileRouteReportDay} from './mobile-route';
 export const mobileColumns='id,member_id AS memberId,device_id AS deviceId,date,region_scope AS regionScope,started_at AS startedAt,ended_at AS endedAt,last_point_at AS lastPointAt,data,version';
 /** Frequent GPS requests need customer permission roots, never CRM activity history. */
 export function mobileContext(body:Record<string,unknown>={}){const stopIds=Array.isArray(body.points)?body.points.slice(0,50).map(point=>point?.stopId).filter((id):id is string=>typeof id==='string'):[];if(typeof body.stopId==='string')stopIds.push(body.stopId);return context({load:'mobile',dayId:body.dayId,stopIds});}
@@ -13,3 +13,10 @@ export function canReadMobileDay(day:MobileRouteStoredDay,c:JourneyContext){cons
 export async function ownMobileDay(c:JourneyContext,id:string,deviceId:string){const raw=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE id=? AND member_id=?').bind(id,c.me.id).first<MobileDayRow>();if(!raw)throw new CRMError('يوم التتبع غير متاح',404);const day=decodeMobileDay(raw);if(day.deviceId!==deviceId)throw new CRMError('التتبع مسجل على جهاز آخر',409);if(day.regionScope!==regionScope(c.me))throw new CRMError('تغيرت منطقة الحساب. ابدأ يوم تتبع جديد.',403);return day;}
 export function mobileGuard(c:JourneyContext,day:MobileRouteStoredDay){if(day.memberId!==c.me.id||day.regionScope!==regionScope(c.me))throw new CRMError('يوم التتبع خارج صلاحياتك',403);return accessGuard(c);}
 export async function mobileReportDays(c:JourneyContext,date:string,memberId:string,now:string){const rows=(await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE date=? ORDER BY started_at,id').bind(date).all<MobileDayRow>()).results;const result:MobileRouteReportDay[]=[];for(const day of rows.map(decodeMobileDay).filter(d=>canReadMobileDay(d,c)&&(memberId==='all'||d.memberId===memberId))){const points=(await c.db.prepare('SELECT point_id AS id,captured_at AS capturedAt,received_at AS receivedAt,latitude,longitude,accuracy,stop_id AS stopId FROM crm_mobile_route_points WHERE day_id=? ORDER BY captured_at,point_id').bind(day.id).all<MobileRoutePoint>()).results;result.push(mobileReportDay(day,points,c.members.find(m=>m.id===day.memberId)?.name||'',now));}return result;}
+/** Whether an open day's collector has gone quiet. When the day itself looks quiet, the newest received sample decides too:
+ * a phone uploading a long offline backlog is alive even though the samples it sends are old. */
+export async function mobileDayQuiet(db:D1Database,day:MobileRouteStoredDay,now:string){
+ if(!mobileDaySilent(day,now))return false;
+ const row=await db.prepare('SELECT MAX(received_at) AS at FROM crm_mobile_route_points WHERE day_id=?').bind(day.id).first<{at:string|null}>();
+ return mobileDaySilent(day,now,row?.at);
+}

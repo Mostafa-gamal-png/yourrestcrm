@@ -4,6 +4,13 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## A representative's day moves to a new phone (2026-11-01, server only)
+
+- **Problem.** A representative's route day is bound to the phone that started it. After reinstalling the app (or moving to another phone) the same day, the new phone was refused until the end of the day ("التسجيل مرتبط بجهاز آخر"): the phone's app refuses to enroll while `GET /api/mobile-route` answers with another device's open day, and `begin` refused another device with 409.
+- **Change.** `app/api/mobile-route/route.ts`, `lib/mobile-route.ts` (`MOBILE_SILENT_AFTER_MS` = 30 minutes, `mobileDayHeardAt`, `mobileDaySilent`), `lib/mobile-route-server.ts` (`mobileDayQuiet`, which also reads the newest received sample). For a representative, an open day whose collector has not been heard for half an hour (no sample, no recorded interruption, nothing received) is no longer reported by `GET`, and a continuous `begin` from another phone takes it over: the quiet day closes at the last moment it was heard, the new day starts from there, in one guarded batch. While the first phone is heard, the second is refused with a clearer message. The first phone, if it comes back, gets 409 for samples after the handover, so its app re-checks and stops instead of retrying. Supervisors and managers (the manual tracker) are answered exactly as before. No migration; no new Android app.
+- **Tests.** `tests/mobile-route-devices.mjs` (62 checks); `tests/mobile-route.mjs` unchanged and green (387).
+- **Not in this update.** A tablet used beside the work phone at the same time (one device records, the other works without recording) comes next.
+
 ## Space freed on the hosting account (2026-11-01, no change to the app)
 
 - **Found.** A read-only inventory (`scripts/diagnose/space.cjs`, mode=diagnose) counted 27.62 GB in the account's home: 16 activation checkpoints (12.71 GB, a full copy of the data on each day an update was applied), 34 copies from 2026-10-03 to 10-07 made before the current tools (12.77 GB), 20 unpacked update packages, the app (0.12 GB), the live data (1.14 GB) and the nightly backups (2 kept, 74 MB each, the last at 03:15 Riyadh, verified).
