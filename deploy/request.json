@@ -1,5 +1,5 @@
 {
   "mode": "diagnose",
-  "script": "scripts/diagnose/mold-link-dry-run.cjs",
-  "note": "read-only dry run of linking the 91 earlier mold requests with the Yourrest code (the owner approved the code): order numbers and reasons only, nothing written, production not called"
+  "script": "scripts/diagnose/mold-reps.cjs",
+  "note": "read-only: the link dry run found no CRM representative for the 91 earlier mold requests; which members come close and how the names differ, member ids and counts only"
 }
