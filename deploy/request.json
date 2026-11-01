@@ -1,4 +1,5 @@
 {
-  "mode": "backup",
-  "note": "a verified backup before the real link of the earlier mold requests (the owner added the production link settings)"
+  "mode": "mold-link",
+  "dryRun": false,
+  "note": "the real link of the earlier mold requests (the owner approved it explicitly; the production link settings added; verified backup yourrest-backup-20261101T120911289Z taken just before)"
 }
