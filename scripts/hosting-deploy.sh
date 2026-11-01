@@ -9,6 +9,8 @@
 #   backup  take a daily backup with the live release's own tools, verify it, and print the command of the daily cron job
 #   prune   remove the old copies named in yourrest-deploy/prune.json, after scripts/prune/old-copies.cjs checked each one (or only
 #           say what it would remove: a dry run)
+#   mold-link  link the earlier mold requests with what the owner confirmed (scripts/mold-link/legacy-link.cjs), or only say what it
+#           would link (yourrest-deploy/mold-link.json says which); the app keeps running
 # Every STOP from the activator ends the run with the activator's own output; nothing is retried, deleted or restored here. One thing is
 # put back: when the activator stops BEFORE the switch, the app this script stopped through the selector is started again, unchanged.
 set -euo pipefail
@@ -122,6 +124,11 @@ case "$MODE" in
     # The tool checks the whole list (old copies of ours only, nothing recent or in use, last night's backup verified) before it removes
     # anything; a refusal removes nothing and ends with its reason.
     "$NODE" "$HOME/yourrest-deploy/$HELPER" "$HOME/yourrest-deploy/prune.json"
+    ;;
+  mold-link)
+    # The tool checks the owner's confirmed list against the live data before anything; a dry run opens the database read-only and
+    # calls nobody; a link calls production first and saves each accepted order once. A stop links nothing and ends with its reason.
+    "$NODE" "$HOME/yourrest-deploy/$HELPER" "$HOME/yourrest-deploy/mold-link.json"
     ;;
   *) echo "DEPLOY STOP: unknown mode $MODE"; exit 2;;
 esac
