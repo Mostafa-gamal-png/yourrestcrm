@@ -6,6 +6,8 @@
 // no names), which also carries the last fingerprint across a restart. Nothing here throws into a caller: a failed send waits for the
 // next check.
 import {createHash} from 'node:crypto';
+import {database} from './crm-server';
+import {productsLink} from './mold-requests-server';
 import {callProducts,moldConfig} from '@/portable/mold-client.mjs';
 import {moldCustomerCalls,moldCustomerEntry,MOLD_SHEET_CITIES} from '@/portable/mold-rules.mjs';
 
@@ -76,3 +78,6 @@ export function keepMoldCustomersSynced(db:D1Database,link:()=>Config,{soon=fals
   state.settle=setTimeout(()=>{state.settle=undefined;check();},MOLD_CUSTOMERS_SETTLE_MS);state.settle.unref?.();
  }
 }
+
+/** The entry the routes use (through lib/mold-customers-hook.ts): the live database and the link as the settings say now. */
+export function nudgeMoldCustomers({soon=false}:{soon?:boolean}={}){keepMoldCustomersSynced(database(),productsLink,{soon});}
