@@ -13,7 +13,7 @@ import {SERVED_APP_VERSION, installNativeBridge, nativeControl} from '../scripts
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
 const members = [
   {id: 'owner', role: 'admin', name: 'QA admin'}, {id: 'mgr', role: 'manager', name: 'QA manager'}, {id: 'sup', role: 'supervisor', sup: 'mgr', name: 'QA supervisor', region: 'western'},
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => ({id: 'rep' + n, role: 'rep', sup: 'sup', region: 'western', name: 'مندوب ' + n}))
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(n => ({id: 'rep' + n, role: 'rep', sup: 'sup', region: 'western', name: 'مندوب ' + n}))
 ];
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-gate-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
@@ -270,6 +270,30 @@ try {
     await notice(old).waitFor();
     check(await notice(old).count(), 1, 'an app without foreground directions is still told to update, once it has reported itself');
     await old.context().close();
+  }
+
+  // ---- 9. A tablet beside the work phone: while the phone records today's route, the tablet works without recording;
+  // once the phone has been quiet for half an hour, the tablet is gated again and says where the route was recorded.
+  {
+    const today = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date());
+    const {scope} = await app.db.prepare('SELECT region_scope AS scope FROM crm_members WHERE id=?').bind('rep11').first();
+    const ago = minutes => new Date(Date.now() - minutes * 60_000).toISOString();
+    await app.db.prepare('INSERT INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,ended_at,last_point_at,data,version,mutation_id) VALUES(?,?,?,?,?,?,NULL,?,?,1,?)')
+      .bind('mobile-rep11-phone', 'rep11', crypto.randomUUID(), today, scope, ago(20), ago(1), JSON.stringify({gaps: [], trackingWindow: '06-18'}), 'seed').run();
+    const tablet = await open('rep11', {native: {regionScope: 'western'}, viewport: {width: 800, height: 1280}});
+    await waitWorkspace(tablet);
+    await tablet.locator('[data-tracking="companion"]').first().waitFor();
+    check(await gateOf(tablet).count(), 0, 'a tablet that records nothing is not gated while the phone records');
+    await layoutOk(tablet, 'companion tablet'); await shot(tablet, 'gate-companion-tablet');
+    await pause(2500);
+    check(await reportOf('rep11', 'android-app'), null, 'the tablet does not overwrite the phone status report');
+    await app.db.prepare('UPDATE crm_mobile_route_days SET started_at=?,last_point_at=? WHERE id=?').bind(ago(90), ago(45), 'mobile-rep11-phone').run();
+    await tablet.reload();
+    await waitGate(tablet, 'setup');
+    await tablet.locator('[data-companion="lost"]').waitFor();
+    ok((await texts(tablet)).includes('جهازك الآخر'), 'the setup screen says the route was recorded by the other device');
+    await layoutOk(tablet, 'companion lost'); await shot(tablet, 'gate-companion-lost');
+    await tablet.context().close();
   }
 
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));
