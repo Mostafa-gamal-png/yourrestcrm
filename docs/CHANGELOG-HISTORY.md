@@ -4,6 +4,12 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Space freed on the hosting account (2026-11-01, no change to the app)
+
+- **Found.** A read-only inventory (`scripts/diagnose/space.cjs`, mode=diagnose) counted 27.62 GB in the account's home: 16 activation checkpoints (12.71 GB, a full copy of the data on each day an update was applied), 34 copies from 2026-10-03 to 10-07 made before the current tools (12.77 GB), 20 unpacked update packages, the app (0.12 GB), the live data (1.14 GB) and the nightly backups (2 kept, 74 MB each, the last at 03:15 Riyadh, verified).
+- **Removed (the owner agreed).** mode=prune (`scripts/prune/old-copies.cjs`, `tests/prune-old-copies.mjs` 36 checks) removed the 13 checkpoints and 11 unpacked packages of 2026-10-07 to 10-21: 24 folders, 10.25 GB, after a dry run and after it verified last night's backup with the live release's `restore.mjs` (run 41277937755). The checkpoints of 10-29 and 10-31 (the way back from the last three updates and yesterday's full copy), their packages, the nightly backups and everything not ours stay.
+- **Not removed yet.** The early-October copies (34 folders, 12.77 GB) passed the dry run; they wait for the owner's decision.
+
 ## Android 1.0.11 published and required (2026-10-31, second package of the day, package update-android-1011, schema 16, no migration)
 
 - **Built and signed on GitHub.** `.github/workflows/android.yml` opens the owner's key from the repository secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`), checks that its certificate is the installed app's (`1d49b33c…`, the one recorded in `scripts/publish-android-release.mjs` and carried by the served 1.0.10 APK), builds with `mobile/android/tools/build-oss.py`, reads the signer back with apksigner, and commits the APK and its report to `deploy/android/`. The key exists on the runner only during the job.

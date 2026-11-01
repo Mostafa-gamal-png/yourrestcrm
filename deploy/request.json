@@ -1,31 +1,5 @@
 {
-  "mode": "prune",
-  "dryRun": false,
-  "note": "the update copies before 2026-10-29 (activation checkpoints and unpacked packages), agreed with the owner; the copies of 10-29 and 10-31 stay",
-  "remove": [
-    "yourrest-activation-20261007-AMTAs2",
-    "yourrest-customer-edit-activation-20261007-nZVBXZ",
-    "yourrest-update-activation-20261011-1joSm2",
-    "yourrest-update-activation-20261012-vlrO70",
-    "yourrest-update-activation-20261013-k8l61q",
-    "yourrest-update-activation-20261014-g2TOok",
-    "yourrest-update-complaints-report-activation-20261014-QMJxiL",
-    "yourrest-update-customer-message-activation-20261018-PiRwCT",
-    "yourrest-update-support-chain-activation-20261018-ghEDQp",
-    "yourrest-update-support-chain-b-activation-20261018-s3jJSX",
-    "yourrest-update-machines-activation-20261020-zOYtoM",
-    "yourrest-update-mobile-comfort-activation-20261020-MAvxZF",
-    "yourrest-update-reload-notice-activation-20261021-XjrWeW",
-    "yourrest-crm-update-20261011",
-    "yourrest-crm-update-20261012",
-    "yourrest-crm-update-20261013",
-    "yourrest-crm-update-20261014",
-    "yourrest-crm-update-complaints-report-20261014",
-    "yourrest-crm-update-customer-message-20261018",
-    "yourrest-crm-update-support-chain-20261018",
-    "yourrest-crm-update-support-chain-b-20261018",
-    "yourrest-crm-update-machines-20261020",
-    "yourrest-crm-update-mobile-comfort-20261020",
-    "yourrest-crm-update-reload-notice-20261021"
-  ]
+  "mode": "diagnose",
+  "script": "scripts/diagnose/space.cjs",
+  "note": "read-only inventory after the old update copies were removed, with the live data folder by name and size"
 }
