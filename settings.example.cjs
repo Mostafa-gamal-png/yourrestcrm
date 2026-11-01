@@ -29,4 +29,10 @@ module.exports = {
 
   // Optional: key for the National Address (short address) lookup. Leave unset to disable the lookup.
   // YR_NATIONAL_ADDRESS_API_KEY: '',
+
+  // Optional: the production (products) application that receives mold manufacturing requests (docs/MOLD-REQUESTS-CONTRACT-AR.md).
+  // The exact HTTPS address of crm-api.php without ?route=, and the shared secret (32 characters or more) that the products server
+  // keeps in its private crm-integration.php. Without both, requests are saved in the CRM and wait; nothing is sent.
+  // YR_PRODUCTS_API_URL: 'https://yourrest.org/products/crm-api.php',
+  // YR_PRODUCTS_SECRET: '',
 };

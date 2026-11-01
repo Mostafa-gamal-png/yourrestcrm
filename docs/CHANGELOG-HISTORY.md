@@ -4,6 +4,13 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mold manufacturing requests, linked to the products application (prepared 2026-11-01, migration 0016)
+
+- **Screen.** «طلبات تصنيع القوالب» (`app/mold-requests.tsx`): a representative asks for a mold for a customer of their own (search and choose; the contract fields with the usual widths and gelba sizes), the request is saved in the CRM first (`crm_mold_requests`, `drizzle/0016_mold_requests.sql`) and then signed and sent to the products application (contract v1, `docs/MOLD-REQUESTS-CONTRACT-AR.md` and its addendum) with the customer's Yourrest number. The list and each request pull the status in one call (seven stages with dates, production order, serial, production and delivery dates), cached a minute, with the last known state and its reason on failure. Failed sends wait on the §6 timetable with «إعادة الإرسال»; edit and cancel only while received, a 409 explained. Supervisors, sales managers and administrators follow in their scope; customer service has no page. On the phone the page opens from «حسابي» so the representative keeps the same five tabs. No export, notifications or files.
+- **Server.** `app/api/mold-requests/route.ts`, `lib/mold-requests.ts`, `lib/mold-requests-server.ts`, `portable/mold-rules.mjs`, `portable/mold-client.mjs`. Settings `YR_PRODUCTS_API_URL` and `YR_PRODUCTS_SECRET` from `settings.cjs`; without them sending is off and the rest of the CRM is unchanged. The secret never reaches a page, a log or the package.
+- **Earlier requests.** `portable/mold-import.mjs` links the 91 requests the products application imported with their order numbers 1–91: `--compare` (Yourrest number or ERP code?), `--dry-run`, `--apply`; production first, nothing guessed, reruns change nothing.
+- **Tests.** `tests/mold-requests.mjs` (64), `tests/mold-requests-http.mjs` (42, built release), `tests/mold-requests-browser.mjs` (25, Chromium), `tests/mold-import.mjs` (30); `tests/mobile-navigation-ui.mjs`, `tests/server-authorization.mjs` updated; the historical package tests pin their 16 migrations. Not tested against the real products application from here.
+
 ## A tablet beside the work phone (2026-11-01, second package of the day)
 
 - **Asked.** Representatives will carry a tablet and a work phone and use the app on both at once, one of them recording the route.
