@@ -39,6 +39,8 @@ const isWhole = value => typeof value === 'number' && Number.isInteger(value);
 /**
  * Checks what a representative typed. Returns {specs, errors}: specs with every field normalized, errors as field -> Arabic message.
  * Numbers arrive as JSON numbers or as digit strings from a form; anything else, or a fraction, is refused (the addendum).
+ * @param {unknown} input
+ * @returns {{specs: Record<string, any>, errors: Record<string, string>}}
  */
 export function validateMoldSpecs(input) {
   const source = input && typeof input === 'object' ? input : {}, errors = {}, specs = {};
@@ -88,6 +90,7 @@ export function riyadhIso(value) {
 /**
  * The body of the `requests` route (§2), keys in a fixed order so a retry sends the very same bytes. Optional texts are left out
  * when empty; `customer.crmNumber` is always there (the addendum). Throws when a value would be refused by production.
+ * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any}} request
  */
 export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs}) {
   if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
@@ -120,10 +123,12 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
 
 const dateOrNull = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 40) : null;
 const shortOrNull = (value, max) => typeof value === 'string' ? value.slice(0, max) : null;
-/** A status object (§3) as received, reduced to the fields the contract names; null when it is not one. */
+/** A status object (§3) as received, reduced to the fields the contract names; null when it is not one.
+ * @param {any} value */
 export function moldStatusObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   if (!MOLD_ID.test(value.crmRequestId || '') || !MOLD_STATUSES.includes(value.status) || typeof value.editable !== 'boolean') return null;
+  /** @type {Record<string, {done: boolean, at: string|null}>} */
   const stages = {};
   for (const key of MOLD_STAGES) { const stage = value.stages?.[key]; stages[key] = {done: stage?.done === true, at: dateOrNull(stage?.at)}; }
   return {
@@ -138,6 +143,9 @@ export function moldStatusObject(value) {
  * What an answer means for the CRM (§4): ok (the request object came back), locked (409 request_locked: production started),
  * not_found (404 on cancel), rejected (400/413: the data must change before a retry helps) or retry (anything else: network, timeout,
  * 401, 503 not_configured, 5xx, a reply that is not the contract's).
+ * @param {number} httpStatus
+ * @param {any} json
+ * @returns {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], request?: any}}
  */
 export function readMoldAnswer(httpStatus, json) {
   const error = json && typeof json === 'object' && json.error && typeof json.error === 'object' ? json.error : null;

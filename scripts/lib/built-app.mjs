@@ -24,9 +24,10 @@ const freePort = async () => {
 
 /**
  * @param {{members: {id: string, role: string, sup?: string, region?: string, branch?: string, name?: string}[]}} seed
- * @param {{tls?: boolean, tlsPort?: number}} options tls=true fronts the app with HTTPS on crm.yourrest.org:<tlsPort> (random free port by default)
+ * @param {{tls?: boolean, tlsPort?: number, env?: Record<string, string>}} options tls=true fronts the app with HTTPS on crm.yourrest.org:<tlsPort> (random free port by default);
+ *   env adds settings for the release process (the production link of mold requests, a CA for a test server)
  */
-export async function bootBuiltApp(seed, {tls = false, tlsPort: requestedTlsPort = 0} = {}) {
+export async function bootBuiltApp(seed, {tls = false, tlsPort: requestedTlsPort = 0, env: extraEnv = {}} = {}) {
   const work = await mkdtemp(path.join(os.tmpdir(), 'yourrest-built-'));
   const data = path.join(work, 'data'), objects = path.join(data, 'objects'), filename = path.join(data, 'database.sqlite');
   await mkdir(objects, {recursive: true, mode: 0o700});
@@ -51,7 +52,7 @@ export async function bootBuiltApp(seed, {tls = false, tlsPort: requestedTlsPort
   let log = '', proxy;
   const child = spawn(process.execPath, ['app.cjs'], {
     cwd: path.join(root, 'dist/standalone'),
-    env: {PATH: process.env.PATH, NODE_ENV: 'production', PORT: String(backendPort), HOST: '127.0.0.1', YR_APP_ORIGIN: origin, YR_AUTH_SECRET: randomBytes(32).toString('hex'), YR_NATIONAL_ADDRESS_API_KEY: '', YR_DATABASE_PATH: filename, YR_OBJECTS_PATH: objects, YR_MAIL_TRANSPORT: 'sendmail', YR_MAIL_FROM: 'noreply@yourrest.org', YR_SENDMAIL_PATH: sendmail},
+    env: {PATH: process.env.PATH, NODE_ENV: 'production', PORT: String(backendPort), HOST: '127.0.0.1', YR_APP_ORIGIN: origin, YR_AUTH_SECRET: randomBytes(32).toString('hex'), YR_NATIONAL_ADDRESS_API_KEY: '', YR_DATABASE_PATH: filename, YR_OBJECTS_PATH: objects, YR_MAIL_TRANSPORT: 'sendmail', YR_MAIL_FROM: 'noreply@yourrest.org', YR_SENDMAIL_PATH: sendmail, ...extraEnv},
     stdio: ['ignore', 'pipe', 'pipe']
   });
   child.stdout.on('data', chunk => log += chunk);

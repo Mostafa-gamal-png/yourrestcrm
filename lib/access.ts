@@ -3,13 +3,13 @@ import type {Member,Row} from './crm';
 /** Commercial reporting and pricing are management workspaces. */
 export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'].includes(role);
 export function canViewPage(role:string,view:string){
- if(role==='rep')return ['customer','map','activity','followup','targets'].includes(view);
+ if(role==='rep')return ['customer','map','activity','followup','targets','mold-requests'].includes(view);
  // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
  // The customer-service evaluation has one for the manager and the administrator; a representative meets theirs on the Complaints page.
  if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints'||view==='service-kpi'&&role==='customer_service_manager';
  if(!canUseSalesWorkspace(role))return false;
  if(view==='team'||view==='complaints'||view==='service-kpi')return role==='admin';
- return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets'].includes(view);
+ return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets','mold-requests'].includes(view);
 }
 
 /** Preserve old bookmarks without granting access to a management workspace. */

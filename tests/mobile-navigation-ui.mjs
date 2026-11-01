@@ -49,6 +49,8 @@ for(const locale of ['ar','en']){
  language=locale;const navigated=[],accountChanges=[],props={me,view:'activity',onNavigate:value=>navigated.push(value),accountOpen:false,onAccountOpenChange:value=>accountChanges.push(value)};
  const scrolls=[],h=harness('app/mobile-navigation.tsx',props,{}, {window:{scrollTo:options=>scrolls.push(options)}});let tree=h.render();
  eq(pageIds(tree),['customer','map','activity','followup','targets'],'Rep has exactly the five allowed bottom pages');eq(tabs(tree).length,5,'Rep needs no overflow tab');
+ eq(nodes(tree,node=>node.type==='button'&&node.props['data-page']==='mold-requests').length,0,'Mold requests take no tab from the representative\'s bar');
+ {const sheet=harness('app/mobile-navigation.tsx',{...props,accountOpen:true}).render();const extra=nodes(sheet,node=>node.type==='button'&&node.props['data-page']==='mold-requests');eq(extra.length,1,'The account sheet opens mold requests for a representative');eq(text(extra[0]).includes(locale==='ar'?'طلبات تصنيع القوالب':'Mold requests'),true,'Its label is translated');}
  eq(tabs(tree).map(text),locale==='ar'?['العملاء','الخريطة','الزيارات','المتابعات','مستهدفي']:['Customers','Map','Visits','Follow-ups','My targets'],'Short labels are translated');
  eq(nav(tree).props.dir,locale==='ar'?'rtl':'ltr','Language direction honored');
  eq(tabs(tree).filter(node=>node.props['aria-current']==='page').map(node=>node.props['data-page']),['activity'],'Only current page is active');
@@ -63,7 +65,7 @@ for(const locale of ['ar','en']){
  props.blocked=true;tree=h.render();eq(nav(tree).props.hidden,true,'Editing dialog hides navigation');eq(nodes(tree,node=>node.type===Sheet)[0].props.open,false,'An open form blocks navigation sheets');
 }
 language='ar';
-const allowed={admin:['customer','map','activity','followup','targets','complaints','service-kpi','dashboard','journeys','quote','sales','competitors','team'],manager:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors'],supervisor:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors'],customer_service:['activity','complaints'],customer_service_manager:['activity','complaints','service-kpi'],unknown:[]};
+const allowed={admin:['customer','map','activity','followup','targets','complaints','service-kpi','dashboard','journeys','quote','sales','competitors','team','mold-requests'],manager:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests'],supervisor:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests'],customer_service:['activity','complaints'],customer_service_manager:['activity','complaints','service-kpi'],unknown:[]};
 for(const role of Object.keys(allowed)){
  const navigated=[],props={me:{...me,role},view:'targets',onNavigate:value=>navigated.push(value),accountOpen:false,onAccountOpenChange:noop};const h=harness('app/mobile-navigation.tsx',props);let tree=h.render();
  if(role==='unknown'){eq(tree,null,'Unknown role has no navigation');continue;}

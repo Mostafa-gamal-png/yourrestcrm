@@ -29,7 +29,7 @@ function fixture(name, count) {
   return build;
 }
 try {
-  eq(allMigrations.length, 16, 'the repository carries the 15-migration baseline plus 0015');
+  eq(allMigrations.length >= 16, true, 'the repository carries the 15-migration baseline plus 0015 (and any later migration, not used here)');
   eq(allMigrations[15], '0015_member_devices.sql', 'the newest migration is the device status table');
   const build = fixture('build', 15);
   const script = path.join(root, 'scripts/package-ui-refresh-update.py');

@@ -23,8 +23,9 @@ const rejects = async (fn, code, message) => { await assert.rejects(fn, {code}, 
 const NEWEST = '0015_member_devices.sql', oldFetch = globalThis.fetch;
 let statuses = {};
 try {
-  const migrations = fs.readdirSync(path.join(root, 'drizzle')).filter(name => name.endsWith('.sql')).sort();
-  eq([migrations.length, migrations[15]], [16, NEWEST], 'the repository ships 16 migrations');
+  // The fixtures are the 16-migration releases of October 2026 (0000 to 0015); later migrations of the repository are not part of them.
+  const shipped = fs.readdirSync(path.join(root, 'drizzle')).filter(name => name.endsWith('.sql')).sort(), migrations = shipped.slice(0, 16);
+  eq([shipped.length >= 16, migrations[15]], [true, NEWEST], 'the repository ships the 16 migrations of these releases, in order');
 
   /** A standalone build fixture, differing between packages only by its launcher text. */
   function build(name, marker) {

@@ -13,6 +13,8 @@ export function moldSignature(secret, timestamp, method, route, body) {
 /**
  * The connection settings, or why there are none. reason: not_configured (a value is missing), invalid_url (not an exact HTTPS address
  * without credentials, query or fragment), short_secret (fewer than 32 characters). Nothing secret is in the answer.
+ * @param {Record<string, unknown> | null | undefined} source
+ * @returns {{ok: true, url: string, secret: string} | {ok: false, reason: string}}
  */
 export function moldConfig(source) {
   const url = typeof source?.YR_PRODUCTS_API_URL === 'string' ? source.YR_PRODUCTS_API_URL.trim() : '';
@@ -36,6 +38,12 @@ function wellFormed(route, json) {
 /**
  * One signed call. Resolves (never throws) with {kind, code, fields, http, request?, json?}: kind as readMoldAnswer says, plus
  * retry/network, retry/timeout and retry/bad_response for calls that did not get a contract answer.
+ * @typedef {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], http: number, json?: any, request?: any}} MoldCallAnswer
+ * @param {{ok: true, url: string, secret: string} | {ok: false, reason: string}} config
+ * @param {'requests'|'status'|'cancel'} route
+ * @param {object} payload
+ * @param {{fetch?: typeof globalThis.fetch, now?: () => number, timeoutMs?: number}} [options]
+ * @returns {Promise<MoldCallAnswer>}
  */
 export async function callProducts(config, route, payload, {fetch: send = globalThis.fetch, now = Date.now, timeoutMs = MOLD_TIMEOUT_MS} = {}) {
   if (!config?.ok) return {kind: 'retry', code: config?.reason || 'not_configured', fields: [], http: 0};
