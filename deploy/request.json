@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-MoldApprovals-20261101.zip",
-  "sha256": "ab14eaaf295d39a1742da7133fcdc50670de10212f9247c09e8b6c3ed7d0811a",
-  "stage": "yourrest-crm-update-mold-approvals-20261101",
-  "helper": "yourrest-activate-update-mold-approvals.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldCustomers-20261101.zip",
+  "sha256": "f3fc5bfc2aee4617fd7837498d8551118ccf7e43348436d0a3daaff1cd0bc6c7",
+  "stage": "yourrest-crm-update-mold-customers-20261101",
+  "helper": "yourrest-activate-update-mold-customers.cjs"
 }
