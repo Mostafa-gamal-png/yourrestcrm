@@ -27,12 +27,14 @@ export function moldConfig(source) {
   return {ok: true, url: parsed.href, secret};
 }
 
-const routes = new Set(['requests', 'status', 'cancel', 'approval']);
+const routes = new Set(['requests', 'status', 'cancel', 'approval', 'pending']);
 /** The success body each route must carry; anything else is read as a failed call, to be tried again. */
 function wellFormed(route, json) {
   if (!json || typeof json !== 'object') return false;
   if (route === 'status') return Array.isArray(json.requests) && Array.isArray(json.unknown);
-  return !!moldStatusObject(json.request);
+  if (route === 'pending') return Array.isArray(json.requests);
+  // An approval of a request registered in the products application answers without a crmRequestId.
+  return !!moldStatusObject(json.request, {manual: route === 'approval'});
 }
 
 /**
@@ -40,7 +42,7 @@ function wellFormed(route, json) {
  * retry/network, retry/timeout and retry/bad_response for calls that did not get a contract answer.
  * @typedef {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], http: number, json?: any, request?: any}} MoldCallAnswer
  * @param {{ok: true, url: string, secret: string} | {ok: false, reason: string}} config
- * @param {'requests'|'status'|'cancel'|'approval'} route
+ * @param {'requests'|'status'|'cancel'|'approval'|'pending'} route
  * @param {object} payload
  * @param {{fetch?: typeof globalThis.fetch, now?: () => number, timeoutMs?: number}} [options]
  * @returns {Promise<MoldCallAnswer>}

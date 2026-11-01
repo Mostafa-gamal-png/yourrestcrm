@@ -2,9 +2,10 @@ import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,database} from '@/lib/crm-server';
 import {validateMoldSpecs,moldApprovalBody,moldStatusObject,MOLD_LIMITS} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldEditable,moldErrorText,moldPermissions,moldSendingState,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestView,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldEditable,moldErrorText,moldPermissions,moldSendingState,yourrestNumber,type MoldPendingAnswer,type MoldRequestData,type MoldRequestRow,type MoldRequestView,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
-import {loadMoldRequest,loadMoldRequests,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,type SendOutcome} from '@/lib/mold-requests-server';
+import {forgetPendingApprovals,loadMoldRequest,loadMoldRequests,productsLink,pullMoldStatuses,pullPendingApprovals,requestedNow,sendDueMoldRequests,sendMoldRequest,type SendOutcome} from '@/lib/mold-requests-server';
 import type {Member} from '@/lib/crm';
 export const dynamic='force-dynamic';
 
@@ -29,6 +30,20 @@ const askable=(c:Awaited<ReturnType<typeof reader>>,customerId:string)=>isServic
  ?c.regionalRecords.find(row=>row.id===customerId&&row.kind==='customer'&&row.branch===c.me.branch)
  :c.visible.find(row=>row.id===customerId&&row.kind==='customer');
 
+/** The sales manager's «طلبات بانتظار اعتمادي»: every request production holds at the sales step (the CRM's and those registered in
+ * production), within the manager's regions when they do not cover all (by the customer's Yourrest number); null for anyone else. */
+async function pendingFor(c:Awaited<ReturnType<typeof reader>>,link:ReturnType<typeof productsLink>,{force=false}:{force?:boolean}={}):Promise<MoldPendingAnswer|null>{
+ if(!canApproveMoldRequests(c.me))return null;
+ const pulled=await pullPendingApprovals({link,force});
+ const own=new Set((await c.db.prepare('SELECT id FROM crm_mold_requests').all<{id:string}>()).results.map(row=>row.id));
+ let inRegion:(number:number|null)=>boolean=()=>true;
+ if(regionScope(c.me)!=='all'){
+  const byNumber=new Map((await c.db.prepare('SELECT customer_id AS id,number FROM crm_customer_numbers').all<{id:string;number:number}>()).results.map(row=>[row.number,row.id]));
+  inRegion=number=>number!==null&&c.regionCustomerIds.has(byNumber.get(number)||'');
+ }
+ return {items:pulled.items.filter(item=>inRegion(item.customer.crmNumber)).map(item=>({...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId)})),error:pulled.error,at:pulled.at};
+}
+
 /** The requests the reader may see, with their status pulled once (one call for all of them, or for the one asked for by ?id=). */
 export async function GET(req:Request){try{
  const c=await reader(),link=productsLink(),id=new URL(req.url).searchParams.get('id');
@@ -36,7 +51,7 @@ export async function GET(req:Request){try{
  const rows=(id?[await loadMoldRequest(c.db,id)].filter((row):row is MoldRequestRow=>!!row):await loadMoldRequests(c.db)).filter(row=>canReadMoldRequest(row,c));
  if(id&&!rows.length)throw new CRMError('الطلب غير متاح',404);
  const statusError=await pullMoldStatuses(c.db,rows,{link});
- const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>view(row,c.me,c.members,link.ok)),statusError,canCreate:canCreateMoldRequest(c.me)};
+ const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>view(row,c.me,c.members,link.ok)),statusError,canCreate:canCreateMoldRequest(c.me),pending:id?null:await pendingFor(c,link)};
  return Response.json(answer,{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 
@@ -49,8 +64,11 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('resend'),requestId,id}).strict(),
  z.object({action:z.literal('approve'),requestId,id}).strict(),
  z.object({action:z.literal('withdraw'),requestId,id}).strict(),
+ // The sales manager's waiting list names a request by production's order number: the CRM's own, or one registered in production.
+ z.object({action:z.literal('approve-order'),requestId,orderNo:z.number().int().positive()}).strict(),
+ z.object({action:z.literal('withdraw-order'),requestId,orderNo:z.number().int().positive()}).strict(),
 ]);
-const labels={create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
+const labels={create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب','approve-order':'اعتماد مدير المبيعات لطلب تصنيع قالب','withdraw-order':'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
 function checkedSpecs(input:Record<string,unknown>){
  const {specs,errors}=validateMoldSpecs(input);
  if(Object.keys(errors).length)throw Object.assign(new CRMError(Object.values(errors).join(' • '),400),{fields:errors});
@@ -78,6 +96,36 @@ export async function POST(req:Request){try{
   if(saved.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);
   return answer(saved.record_id,null);
  };
+ if(input.action==='approve-order'||input.action==='withdraw-order'){
+  if(!canApproveMoldRequests(c.me))throw new CRMError('اعتماد طلبات القوالب لمدير المبيعات',403);
+  const approving=input.action==='approve-order',orderNo=input.orderNo;
+  const saved=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receiptId).first<{detail:string}>();
+  if(saved){if(saved.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);return Response.json({ok:true,status:null,pending:await pendingFor(c,link)});}
+  if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل',503);
+  // The CRM's own request (it holds that order number) goes by its crmRequestId, with the CRM's own checks; one registered in
+  // production by its orderNo, approved only while production still lists it as waiting within the manager's regions.
+  const own=(await loadMoldRequests(c.db,"json_extract(remote,'$.orderNo')=?",[orderNo]))[0];
+  let listed=null;
+  if(own){
+   if(!canReadMoldRequest(own,c))throw new CRMError('الطلب غير متاح',404);
+   if(own.cancelledAt||own.outbox)throw new CRMError(own.cancelledAt?'الطلب ملغى':'في تغيير على الطلب لسه ما وصلش للإنتاج؛ استنى لما يوصل',409);
+  }else if(approving){
+   listed=(await pendingFor(c,link,{force:true}))!.items.find(item=>item.orderNo===orderNo&&!item.crmRequestId);
+   if(!listed)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',409);
+  }else if(regionScope(c.me)!=='all')throw new CRMError('سحب اعتماد طلب مسجّل في الإنتاج لمدير مبيعات كل المناطق',403);
+  const by={name:c.me.name,email:c.me.email},call=await callProducts(link,'approval',moldApprovalBody(own?{id:own.id,action:approving?'approve':'withdraw',by}:{orderNo,action:approving?'approve':'withdraw',by}));
+  const status=call.kind==='ok'?moldStatusObject(call.json?.request,{manual:!own}):call.kind==='locked'?call.request:null,at=new Date().toISOString();
+  if(own&&status)await c.db.prepare('UPDATE crm_mold_requests SET remote=?,remote_at=? WHERE id=?').bind(JSON.stringify(status),at,own.id).run();
+  forgetPendingApprovals();
+  if(call.kind==='locked')return Response.json({ok:false,status,pending:await pendingFor(c,link),error:approving?'الطلب لم يعد بانتظار اعتماد مدير المبيعات.':'اعتمد الإنتاج الطلب؛ لم يعد سحب اعتماد مدير المبيعات ممكنًا.'},{status:409});
+  if(call.kind!=='ok'||!status)throw new CRMError(call.kind==='not_found'?'الطلب غير موجود لدى الإنتاج':moldErrorText(call.code,ar=>ar)+'. حاول مرة أخرى.',call.kind==='not_found'?409:502);
+  const recordId=own?.id||'mold-order:'+orderNo,detail={label:labels[input.action],customerName:own?.data.customer.name||listed?.customer.name||'',orderNo,source:own?'crm':'manual',waitingStep:status.waitingStep};
+  await c.db.batch([
+   c.db.prepare('INSERT OR IGNORE INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(receiptId,recordId,c.me.name,'mold-request-receipt',canonical,at),
+   c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),recordId,c.me.name,'mold-request:'+(approving?'approve':'withdraw'),JSON.stringify(detail),at),
+  ]);
+  return Response.json({ok:true,status,request:own?view((await loadMoldRequest(c.db,own.id))!,c.me,c.members,link.ok):null,pending:await pendingFor(c,link)});
+ }
  const repeated=await replay();if(repeated)return repeated;
  const permission=accessGuard(c);
  let rowId:string,statement,detail:Record<string,unknown>;
@@ -105,6 +153,7 @@ export async function POST(req:Request){try{
    const call=await callProducts(link,'approval',moldApprovalBody({id:row.id,action:input.action,by:{name:c.me.name,email:c.me.email}}));
    const remote=call.kind==='ok'?moldStatusObject(call.json?.request):call.kind==='locked'?call.request:null,at=new Date().toISOString();
    if(remote)await c.db.prepare('UPDATE crm_mold_requests SET remote=?,remote_at=? WHERE id=?').bind(JSON.stringify(remote),at,row.id).run();
+   forgetPendingApprovals();
    if(call.kind==='locked')return Response.json({ok:false,request:view((await loadMoldRequest(c.db,row.id))!,c.me,c.members,link.ok),error:approving?'الطلب لم يعد بانتظار اعتماد مدير المبيعات.':'اعتمد الإنتاج الطلب؛ لم يعد سحب اعتماد مدير المبيعات ممكنًا.'},{status:409});
    if(call.kind!=='ok'||!remote)throw new CRMError(call.kind==='not_found'?'الطلب غير موجود لدى الإنتاج':moldErrorText(call.code,ar=>ar)+'. حاول مرة أخرى.',call.kind==='not_found'?409:502);
    const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=?)',detail={label:labels[input.action],customerName:row.data.customer.name,orderNo:remote.orderNo,waitingStep:remote.waitingStep};

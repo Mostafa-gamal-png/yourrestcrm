@@ -149,16 +149,19 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
 
   /** yr_mreq_crm_approval: the sales manager's approval given in the CRM, or withdrawn; repeating either changes nothing. */
   function approval(body) {
-    const bad = [], id = body.crmRequestId;
-    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) bad.push('crmRequestId');
+    const bad = [], id = body.crmRequestId ?? null, orderNo = body.orderNo ?? null;
+    if (id !== null && (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id))) bad.push('crmRequestId');
+    if (orderNo !== null && (!Number.isInteger(orderNo) || orderNo < 1)) bad.push('orderNo');
+    // One of them only: the crmRequestId of a request from the CRM, or the orderNo of one registered in the products application.
+    if ((id === null) === (orderNo === null)) bad.push(id === null ? 'crmRequestId' : 'orderNo');
     const action = choice(body.action, ['approve', 'withdraw'], true, 'action', bad);
     const by = body.by && typeof body.by === 'object' && !Array.isArray(body.by) ? body.by : null;
     if (!by) bad.push('by');
     const name = clean(by?.name, 160, true, 'by.name', bad), email = clean(by?.email, 190, false, 'by.email', bad);
     if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad.push('by.email');
     if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)]);
-    const row = state.rows.get(id);
-    if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
+    const row = id !== null ? state.rows.get(id) : state.byOrder.get(orderNo);
+    if (!row) throw new ApiError('not_found', 404, id !== null ? 'No request has this crmRequestId.' : 'No request has this orderNo.');
     const locked = message => new ApiError('request_locked', 409, message, [], {request: statusObject(row)});
     if (row.cancelled) throw locked('The request is cancelled.');
     if (row.approvals.legacy) throw locked('This request predates the approval chain and needs no approval.');
@@ -174,6 +177,16 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     return {status: 200, body: {request: statusObject(row)}};
   }
 
+  /** yr_mreq_crm_pending: every request waiting for the sales manager, the longest waiting first (up to 500); no production data. */
+  function pending() {
+    const rows = [...state.byOrder.values()].filter(row => waitingStep(row) === 'sales').sort((a, b) => String(a.waitingSince).localeCompare(String(b.waitingSince)) || a.orderNo - b.orderNo).slice(0, 500);
+    return {status: 200, body: {requests: rows.map(row => ({orderNo: row.orderNo, crmRequestId: row.crmRequestId, source: row.source, requestedAt: row.requestedAt, waitingSince: row.waitingSince,
+      enteredBy: row.source === 'manual' ? row.createdBy : null, customer: {crmNumber: row.customerNo, name: row.customerName, address: row.customerAddress, city: row.customerCity},
+      salesman: {crmMemberId: row.salesmanId, name: row.salesmanName},
+      specs: {description: row.description, core: row.core, vibrators: row.vibrators, model: row.model, halfBlock: row.halfBlock, moldWidth: row.moldWidth, gelbaSize: row.gelbaSize, moldNo: row.moldNo, quantity: row.quantity, designUrl: row.designUrl, notes: row.notes},
+      revision: row.revision}))}};
+  }
+
   const server = createServer({key: readFileSync(key), cert: readFileSync(cert)}, async (req, res) => {
     if (state.down) { req.socket.destroy(); return; }
     const parts = [];
@@ -185,7 +198,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
     try {
       if (req.method !== 'POST') throw new ApiError('method_not_allowed', 405, 'Use POST.');
-      if (!['requests', 'status', 'cancel', 'approval'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
+      if (!['requests', 'status', 'cancel', 'approval', 'pending'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
       if (state.notConfigured) throw new ApiError('not_configured', 503, 'The integration secret is not configured.');
       const timestamp = String(req.headers['x-yr-timestamp'] || ''), signature = String(req.headers['x-yr-signature'] || '');
       if (!/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) throw new ApiError('invalid_signature', 401, 'Missing or malformed signature headers.');
@@ -197,7 +210,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       let body;
       try { body = JSON.parse(raw.toString('utf8')); } catch { throw new ApiError('invalid_payload', 400, 'The body is not valid JSON.', ['body']); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('invalid_payload', 400, 'The body must be a JSON object.', ['body']);
-      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : cancel(body);
+      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : cancel(body);
       reply(result.status, result.body);
     } catch (error) {
       if (!(error instanceof ApiError)) { reply(500, {error: {code: 'server_error', message: 'Unexpected server error.'}}); return; }
@@ -214,6 +227,14 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     url: `https://localhost:${port}/products/crm-api.php`, ca: cert, state,
     /** Historical rows of the sheet, as the production app imports them (orderNo 1..n, source import, not linked). */
     seedLegacy(count) { for (let n = 1; n <= count; n++) state.byOrder.set(n, {crmRequestId: null, orderNo: n, source: 'import', stages: blankStages(), approvals: {...noApprovals(), legacy: true}, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 1, updatedAt: null, waitingStep: 'manufacturing', waitingSince: '2026-04-19T13:45:47+03:00', ...Object.fromEntries(COLUMNS.map(c => [c, null]))}); },
+    /** A request registered directly in the products application (source manual, no crmRequestId), waiting for the sales manager. */
+    registerManual({customerNo = null, customerName = 'مصنع مسجّل في الإنتاج', salesmanName = 'مندوب', createdBy = 'staff@yourrest.org', description = 'manual mold', quantity = 1} = {}) {
+      const row = {crmRequestId: null, orderNo: state.nextOrder++, source: 'manual', createdBy, stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null,
+        ...Object.fromEntries(COLUMNS.map(c => [c, null])), requestedAt: new Date(now()).toISOString(), customerNo, customerName, customerAddress: '', customerCity: 'الدمام', salesmanId: '', salesmanName, salesmanEmail: '',
+        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: ''};
+      touch(row); state.byOrder.set(row.orderNo, row);
+      return row;
+    },
     /** An approval given in the production app (production, or the system administrator; the sales manager's too, outside the CRM). */
     approve(crmRequestId, step, by = 'staff@yourrest.org') {
       const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);

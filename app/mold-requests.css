@@ -70,3 +70,17 @@
 .dark .mold-chip[data-mine]{background:#3a3014;color:#f2dca0}
 .dark .mold-approvals li[data-done="true"]{background:#183a2b;border-color:#2c6b4a}
 .dark .mold-approvals li[data-done="true"] svg{color:#bfe8d2}
+/* The sales manager's «طلبات بانتظار اعتمادي» (every request production holds for them, those registered in production too). */
+.mold-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border,#e3e3e3);padding-bottom:6px}
+.mold-tabs button{border:1px solid transparent;background:none;border-radius:999px;padding:8px 14px;font:inherit;cursor:pointer;color:inherit;min-height:44px}
+.mold-tabs button.is-active{background:var(--secondary,#eef1f6);border-color:var(--border,#d9dee8);font-weight:600}
+.mold-count{display:inline-block;min-width:22px;padding:0 6px;border-radius:999px;background:#f2c46d;color:#4a2f00;font-size:.8rem;text-align:center}
+.mold-pending-list{display:grid;gap:10px}
+.mold-pending{border:1px solid var(--border,#e3e3e3);border-radius:14px;padding:12px 14px;display:grid;gap:8px;background:var(--card,#fff)}
+.mold-pending header{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap}
+.mold-pending[data-done]{opacity:.85;border-style:dashed}
+.mold-pending .mold-chip[data-source=manual]{background:#efe3ff;color:#4b2a85}
+.mold-pending-specs,.mold-pending-notes{margin:0;color:var(--muted-foreground,#555);font-size:.9rem;overflow-wrap:anywhere}
+.mold-pending-done{display:inline-flex;align-items:center;gap:6px;color:#1f7a44;font-weight:600}
+.dark .mold-pending .mold-chip[data-source=manual]{background:#33284d;color:#e1d4ff}
+.dark .mold-count{background:#5a4510;color:#f6e3b0}

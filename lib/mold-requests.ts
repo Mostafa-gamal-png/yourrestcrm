@@ -26,7 +26,14 @@ export type MoldSendingState='sent'|'waiting'|'rejected'|'off';
 export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;cancelled:boolean;cancelReason:string;
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null};
  remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean};version:number};
-export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean};
+/** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
+export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm'|'manual';requestedAt:string|null;waitingSince:string|null;enteredBy:string|null;
+ customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;revision:number|null};
+/** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it also shows in the list below). */
+export type MoldPendingAnswer={items:(MoldPendingItem&{inCrm:boolean})[];error:MoldError|null;at:string|null};
+export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null};
+/** How often the sales manager's open page asks for the waiting list again. */
+export const MOLD_PENDING_REFRESH_MS=3*60_000;
 
 /** Every role has the page and asks (the owner, 2026-11-01: «الكل بيعمل طلب», customer service too). */
 export const MOLD_ROLES=['rep','supervisor','manager','admin','customer_service','customer_service_manager'];
