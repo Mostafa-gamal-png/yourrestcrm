@@ -134,9 +134,21 @@ try {
 
   // ---- 3b. The sales manager approves from the request, and may withdraw until production approves
   const second = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).crmRequestId;
+  const manual = mock.registerManual({customerName: 'مصنع مسجّل في الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'manual mold'});
   const sm = await open('sm');
   await goMolds(sm);
+  // «طلبات بانتظار اعتمادي» first: the CRM's request and the one registered in production
+  const pendingCard = sm.locator('.mold-pending', {hasText: 'مصنع مسجّل في الإنتاج'});
+  await pendingCard.waitFor();
+  check([await sm.locator('.mold-tabs [aria-selected="true"]').innerText(), await sm.locator('.mold-pending').count()], ['طلبات بانتظار اعتمادي 2', 2], 'the sales manager opens on the requests waiting for them, both kinds');
+  ok((await pendingCard.innerText()).includes('مسجّل في تطبيق الإنتاج') && (await pendingCard.innerText()).includes('prod@yourrest.org'), 'registered in production, and by whom');
+  await shot(sm, 'mold-pending-manager');
+  await pendingCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await sm.locator('.mold-pending[data-done]', {hasText: 'مصنع مسجّل في الإنتاج'}).waitFor();
+  check([mock.state.byOrder.get(manual.orderNo).approvals.sales?.via, await sm.locator('.mold-pending:not([data-done])').count()], ['crm', 1], 'approved at production by its order number; one left waiting');
+  await sm.locator('.mold-tabs button', {hasText: 'كل الطلبات'}).click();
   const waitingCard = sm.locator('.mold-card', {hasText: 'مصنع east2'});
+  await waitingCard.waitFor();
   check(await waitingCard.locator('.mold-chip').innerText(), 'بانتظار اعتمادك', 'the sales manager reads «waiting for you»');
   await waitingCard.click();
   await sheet(sm).getByRole('button', {name: 'اعتماد', exact: true}).click();

@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,moldApprovalNames,moldErrorText,moldFieldNames,moldHasApprovals,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,moldApprovalNames,moldErrorText,moldFieldNames,moldHasApprovals,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_LIMITS,MOLD_USUAL,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import './mold-requests.css';
@@ -109,6 +109,10 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  const list=useMemo(()=>{const needle=query.trim().toLowerCase();return (data?.requests||[]).filter(view=>!needle||[view.customerName,view.specs.description,view.specs.moldNo,String(view.remote?.orderNo||''),view.memberName].some(text=>String(text||'').toLowerCase().includes(needle)));},[data,query]);
  const open=data?.requests.find(view=>view.id===openId)||null;
  const changed=useCallback(()=>{void refresh();},[refresh]);
+ // The sales manager's waiting list comes with the page and is asked for again every few minutes while the page is open.
+ const approver=data?.pending!==null&&data?.pending!==undefined,[tab,setTab]=useState<'pending'|'all'>('pending');
+ useEffect(()=>{if(!approver)return;const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh();},MOLD_PENDING_REFRESH_MS);return()=>window.clearInterval(timer);},[approver,refresh]);
+ const showPending=approver&&tab==='pending';
  return <section className="mold-page" dir={direction()}>
   <div className="mold-heading"><div><p>{say('يصل الطلب لتطبيق الإنتاج تلقائيًا، وتظهر هنا مراحل التصنيع حتى التسليم.','Requests reach the production application automatically; production stages show here until delivery.')}</p></div>
    <div className="mold-heading-tools"><button type="button" className="btn subtle" onClick={()=>void refresh()} disabled={loading} aria-label={say('تحديث','Refresh')}>{loading?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>}</button>
@@ -116,13 +120,70 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
   {data&&!data.linkReady&&<p className="mold-banner" data-kind="off" role="status"><Lock size={16} aria-hidden="true"/>{say('الربط مع الإنتاج غير مفعَّل. الطلبات تُحفظ هنا وتنتظر الإرسال.','The production link is off. Requests are saved here and wait to be sent.')}</p>}
   {data?.statusError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {moldErrorText(data.statusError.code,say)}. {say('المعروض آخر حالة معروفة، ويتحدث عند الفتح التالي.','Showing the last known status; it refreshes next time.')}</p>}
   {error&&<p className="form-error" role="alert">{error}</p>}
+  {approver&&<div className="mold-tabs" role="tablist">
+   <button type="button" role="tab" aria-selected={tab==='pending'} className={tab==='pending'?'is-active':''} onClick={()=>setTab('pending')}>{say('طلبات بانتظار اعتمادي','Waiting for my approval')} <span className="mold-count">{data!.pending!.items.length}</span></button>
+   <button type="button" role="tab" aria-selected={tab==='all'} className={tab==='all'?'is-active':''} onClick={()=>setTab('all')}>{say('كل الطلبات','All requests')}</button>
+  </div>}
+  {showPending&&<MoldPendingList pending={data!.pending!} say={say} onOpen={id=>setOpenId(id)} onChanged={changed}/>}
+  {!showPending&&<>
   {!!data?.requests.length&&<label className="mold-search"><Search size={16} aria-hidden="true"/><input type="search" value={query} onChange={event=>setQuery(event.target.value)} placeholder={say('ابحث بالعميل أو الوصف أو رقم أمر الإنتاج','Search by customer, description or order')}/></label>}
   {data&&!list.length&&<p className="empty mold-empty">{data.requests.length?say('لا نتائج','No results'):say('لا توجد طلبات تصنيع قوالب بعد.','No mold requests yet.')}</p>}
   {!data&&!error&&<p className="empty"><Loader2 className="spin" size={16}/> {say('جارٍ التحميل…','Loading…')}</p>}
   <div className="mold-list">{list.map(view=><MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
+  </>}
   {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} linkReady={!!data?.linkReady} statusAt={open.remoteAt} customers={customers} onClose={()=>setOpenId(null)} onChanged={changed}/>}
   {creating&&<MoldRequestDialog customers={customers} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
  </section>;
+}
+
+/** «طلبات بانتظار اعتمادي»: every request production holds for the sales manager, the CRM's and those registered in production, the
+ * longest waiting first, each with what was asked for and an Approve button. Approved here, a request leaves the list; until the page
+ * is refreshed it stays below with Withdraw approval, in case it was a mistake. */
+function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnswer;say:Say;onOpen:(id:string)=>void;onChanged:()=>void}){
+ const [busy,setBusy]=useState<number|null>(null),[errors,setErrors]=useState<Record<number,string>>({}),[approved,setApproved]=useState<MoldPendingAnswer['items']>([]);
+ const keys=useRef(new Map<string,string>());
+ const run=async(item:MoldPendingAnswer['items'][number],action:'approve-order'|'withdraw-order')=>{
+  if(busy!==null)return;
+  setBusy(item.orderNo);setErrors(previous=>({...previous,[item.orderNo]:''}));
+  // A retry after an unclear failure keeps its identifier, so production is asked once.
+  const name=action+':'+item.orderNo;if(!keys.current.has(name))keys.current.set(name,crypto.randomUUID());
+  try{
+   await submitJson('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,orderNo:item.orderNo,requestId:keys.current.get(name)})},{language:getLanguage()});
+   keys.current.delete(name);
+   setApproved(previous=>action==='approve-order'?[...previous.filter(other=>other.orderNo!==item.orderNo),item]:previous.filter(other=>other.orderNo!==item.orderNo));
+   onChanged();
+  }catch(failure){if(definiteSubmitRejection(failure))keys.current.delete(name);setErrors(previous=>({...previous,[item.orderNo]:messageOf(failure)}));if(failure instanceof SubmitError&&failure.status===409)onChanged();}
+  finally{setBusy(null);}
+ };
+ const waiting=pending.items.filter(item=>!approved.some(other=>other.orderNo===item.orderNo));
+ const card=(item:MoldPendingAnswer['items'][number],done:boolean)=>{
+  const specs=item.specs,choice=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
+  return <article key={item.orderNo} className="mold-pending" data-source={item.source} data-done={done||undefined}>
+   <header><strong>{item.customer.name||'—'}</strong><span className="mold-chip" data-source={item.source}>{item.source==='manual'?say('مسجّل في تطبيق الإنتاج','Registered in production'):say('من الـCRM','From the CRM')}</span></header>
+   <p dir="auto">{specs.description}</p>
+   <div className="mold-card-facts">
+    <span>{say('رقم أمر الإنتاج','Production order')}: <b>{item.orderNo}</b></span><span>{say('الكمية','Quantity')}: <b>{specs.quantity??'—'}</b></span>
+    <span>{say('المندوب','Salesman')}: {item.salesman.name||'—'}</span>{item.enteredBy&&<span>{say('سجّله في الإنتاج','Entered in production by')}: <bdi>{item.enteredBy}</bdi></span>}
+    <span>{say('تاريخ الطلب','Requested')}: {stamp(item.requestedAt)}</span>{!done&&item.waitingSince&&<span><Hourglass size={13} aria-hidden="true"/> {say('بانتظارك من ','Waiting for you since ')+stamp(item.waitingSince)}</span>}
+   </div>
+   <p className="mold-pending-specs">{[choice(MOLD_CORES,specs.core),specs.vibrators?say('رجاجات: ','Vibrators: ')+specs.vibrators:'',choice(MOLD_MODELS,specs.model),choice(MOLD_HALF_BLOCKS,specs.halfBlock),specs.moldWidth?say('عرض ','Width ')+specs.moldWidth:'',specs.gelbaSize?say('جلب ','Gelba ')+specs.gelbaSize:'',specs.moldNo?say('قالب ','Mold ')+specs.moldNo:''].filter(Boolean).join(' · ')}</p>
+   {specs.notes&&<p className="mold-pending-notes" dir="auto">{specs.notes}</p>}
+   {errors[item.orderNo]&&<p className="form-error" role="alert">{errors[item.orderNo]}</p>}
+   <div className="mold-actions">
+    {done?<><span className="mold-pending-done"><BadgeCheck size={16} aria-hidden="true"/>{say('اعتمدته الآن','You approved it')}</span><button type="button" className="btn subtle" disabled={busy!==null} onClick={()=>void run(item,'withdraw-order')}>{busy===item.orderNo?<Loader2 className="spin" size={16}/>:<Undo2 size={16}/>}{say('سحب الاعتماد','Withdraw approval')}</button></>
+     :<button type="button" className="btn primary" disabled={busy!==null} onClick={()=>void run(item,'approve-order')}>{busy===item.orderNo?<Loader2 className="spin" size={16}/>:<BadgeCheck size={16}/>}{say('اعتماد','Approve')}</button>}
+    {item.inCrm&&item.crmRequestId&&<button type="button" className="btn subtle" onClick={()=>onOpen(item.crmRequestId!)}>{say('فتح الطلب','Open request')}</button>}
+    {specs.designUrl&&<a className="btn subtle" href={specs.designUrl} target="_blank" rel="noopener noreferrer">{say('رابط التصميم','Design link')}</a>}
+   </div>
+  </article>;
+ };
+ return <div className="mold-pending-list">
+  {pending.error&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث القائمة الآن','The list could not be refreshed now')}: {moldErrorText(pending.error.code,say)}</p>}
+  {!waiting.length&&!pending.error&&<p className="empty mold-empty">{say('لا توجد طلبات بانتظار اعتمادك.','Nothing is waiting for your approval.')}</p>}
+  {waiting.map(item=>card(item,false))}
+  {!!approved.length&&<h3 className="mold-subtitle">{say('اعتمدتها الآن','Approved just now')}</h3>}
+  {approved.map(item=>card(item,true))}
+ </div>;
 }
 
 /** One request: where production is, what was asked for, what waits to be sent, and the representative's actions while allowed. */

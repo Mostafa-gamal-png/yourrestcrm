@@ -142,6 +142,27 @@ try {
   check([approved.remote.status, approved.remote.waitingStep, approved.editable, approved.can.edit], ['confirmed', 'manufacturing', false, false], 'all three approvals: confirmed, in manufacturing, no more changes');
   ok(/^\d{4}-\d{2}-\d{2}T/.test(approved.remote.waitingSince), 'since when it waits');
 
+  // ---- «طلبات بانتظار اعتمادي»: every request production holds for the sales manager, those registered in production too
+  const manual = mock.registerManual({customerNo: await number('east2'), customerName: 'مصنع مسجّل في الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org'});
+  const fifth = (await (await create('rep', 'east1', {description: 'fifth mold'})).json()).request;
+  let waitingList = (await list('sm')).pending;
+  check(waitingList.items.map(item => [item.orderNo, item.source, item.inCrm]).filter(([orderNo]) => [manual.orderNo, fifth.remote.orderNo].includes(orderNo)), [[manual.orderNo, 'manual', false], [fifth.remote.orderNo, 'crm', true]], 'the sales manager sees both, the longest waiting first');
+  check([waitingList.items.find(item => item.orderNo === manual.orderNo).enteredBy, waitingList.error], ['prod@yourrest.org', null], 'who entered it in production');
+  check([(await list('rep')).pending, (await list('owner')).pending, (await list('sup')).pending], [null, null, null], 'nobody else gets the list');
+  check((await post('rep', {action: 'approve-order', orderNo: manual.orderNo})).status, 403, 'a representative cannot approve by order number');
+  const byOrder = {action: 'approve-order', orderNo: manual.orderNo, requestId: crypto.randomUUID()}, approvalCalls = calls('approval');
+  res = await as('sm')('/api/mold-requests', {method: 'POST', body: byOrder});
+  body = await res.json();
+  check([res.status, body.status.waitingStep, body.status.crmRequestId, body.pending.items.some(item => item.orderNo === manual.orderNo)], [200, 'production', null, false], 'approved by its order number: it waits for production and leaves the list');
+  check(JSON.parse(mock.state.calls.findLast(call => call.route === 'approval').body), {orderNo: manual.orderNo, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}, 'production asked by orderNo only');
+  check([(await as('sm')('/api/mold-requests', {method: 'POST', body: byOrder})).status, calls('approval') - approvalCalls], [200, 1], 'the same tap twice: production asked once');
+  check((await app.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE record_id=? AND action='mold-request:approve'").bind('mold-order:' + manual.orderNo).first()).n, 1, 'audited under its order number');
+  check((await post('sm', {action: 'approve-order', orderNo: manual.orderNo})).status, 409, 'no longer waiting: refused');
+  body = await (await post('sm', {action: 'withdraw-order', orderNo: manual.orderNo})).json();
+  check([body.status.waitingStep, body.pending.items.some(item => item.orderNo === manual.orderNo)], ['sales', true], 'withdrawn: back on the list');
+  body = await (await post('sm', {action: 'approve-order', orderNo: fifth.remote.orderNo})).json();
+  check([JSON.parse(mock.state.calls.findLast(call => call.route === 'approval').body).crmRequestId, body.request.remote.waitingStep, body.request.can.withdraw], [fifth.id, 'production', true], 'the CRM\'s own request goes by its crmRequestId, and the CRM keeps its new status');
+
   // ---- everyone asks: customer service from its branch's customers, a supervisor, the administrator
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('other1','customer',NULL,'rep2','فرع آخر',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع other1', region: 'الشرقية', city: 'الخبر'}), now, now).run();
   res = await create('cs', 'west1', {halfBlock: 'three'});

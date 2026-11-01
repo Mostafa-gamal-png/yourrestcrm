@@ -3,8 +3,8 @@
 // a pull; the last known status is shown with its time). Sending is off, never the rest of the CRM, while the settings are missing.
 import {env} from 'cloudflare:workers';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
-import {moldRequestBody,moldNextAttempt,moldStatusObject,riyadhIso,MOLD_STATUS_BATCH} from '@/portable/mold-rules.mjs';
-import type {MoldError,MoldRemote,MoldRequestData,MoldRequestRow} from './mold-requests';
+import {moldRequestBody,moldNextAttempt,moldPendingItem,moldStatusObject,riyadhIso,MOLD_STATUS_BATCH} from '@/portable/mold-rules.mjs';
+import type {MoldError,MoldPendingItem,MoldRemote,MoldRequestData,MoldRequestRow} from './mold-requests';
 
 type Config=ReturnType<typeof moldConfig>;
 /** Read on every use, so a change of the private settings needs no rebuild; the secret stays in this module's caller only. */
@@ -96,8 +96,25 @@ export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link
   const received=now(),statements=[];
   for(const item of answer.json!.requests){const status=moldStatusObject(item);if(status&&ids.includes(status.crmRequestId))statements.push(db.prepare('UPDATE crm_mold_requests SET remote=?,remote_at=? WHERE id=?').bind(JSON.stringify(status),received,status.crmRequestId));}
   if(statements.length)await db.batch(statements);
-  for(const row of stale.slice(start,start+MOLD_STATUS_BATCH)){const fresh=(answer.json!.requests as unknown[]).map(moldStatusObject).find(item=>item?.crmRequestId===row.id);if(fresh){row.remote=fresh;row.remoteAt=received;}}
+  for(const row of stale.slice(start,start+MOLD_STATUS_BATCH)){const fresh=(answer.json!.requests as unknown[]).map(item=>moldStatusObject(item)).find(item=>item?.crmRequestId===row.id);if(fresh){row.remote=fresh;row.remoteAt=received;}}
  }
  lastPullFailure=null;
  return null;
+}
+
+/** The requests waiting for the sales manager (production's pending route, every request, the CRM's and those registered in
+ * production), kept a minute so a busy page or several managers do not ask production for each one; a failed call waits half that
+ * long before the next. A change of approval empties it. */
+let pendingCache:{at:string;items:MoldPendingItem[]}|null=null,pendingFailure:MoldError|null=null;
+export function forgetPendingApprovals(){pendingCache=null;}
+export async function pullPendingApprovals({link=productsLink(),now=()=>new Date().toISOString(),fetch,force=false}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;force?:boolean}={}):Promise<{items:MoldPendingItem[];error:MoldError|null;at:string|null}>{
+ if(!link.ok)return {items:[],error:{code:link.reason,at:now()},at:null};
+ const at=now();
+ if(!force&&pendingCache&&Date.parse(at)-Date.parse(pendingCache.at)<MOLD_STATUS_TTL_MS)return {items:pendingCache.items,error:null,at:pendingCache.at};
+ if(!force&&pendingFailure&&Date.parse(at)-Date.parse(pendingFailure.at)<MOLD_STATUS_TTL_MS/2)return {items:pendingCache?.items||[],error:pendingFailure,at:pendingCache?.at||null};
+ const answer=await callProducts(link,'pending',{},fetch?{fetch}:{});
+ if(answer.kind!=='ok'){pendingFailure={code:answer.code,http:answer.http||0,at};return {items:pendingCache?.items||[],error:pendingFailure,at:pendingCache?.at||null};}
+ const items=(answer.json!.requests as unknown[]).map(item=>moldPendingItem(item)).filter((item):item is MoldPendingItem=>!!item);
+ pendingCache={at,items};pendingFailure=null;
+ return {items,error:null,at};
 }

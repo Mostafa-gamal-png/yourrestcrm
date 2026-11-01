@@ -143,11 +143,13 @@ function approvalsOf(value) {
   }
   return out;
 }
-/** A status object (§3) as received, reduced to the fields the contract names; null when it is not one.
- * @param {any} value */
-export function moldStatusObject(value) {
+/** A status object (§3) as received, reduced to the fields the contract names; null when it is not one. manual: a request registered
+ * in the products application itself (its approval answer), which has no crmRequestId.
+ * @param {any} value
+ * @param {{manual?: boolean}} [options] */
+export function moldStatusObject(value, {manual = false} = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  if (!MOLD_ID.test(value.crmRequestId || '') || !MOLD_STATUSES.includes(value.status) || typeof value.editable !== 'boolean') return null;
+  if (!(MOLD_ID.test(value.crmRequestId || '') || manual && value.crmRequestId === null) || !MOLD_STATUSES.includes(value.status) || typeof value.editable !== 'boolean') return null;
   /** @type {Record<string, {done: boolean, at: string|null}>} */
   const stages = {};
   for (const key of MOLD_STAGES) { const stage = value.stages?.[key]; stages[key] = {done: stage?.done === true, at: dateOrNull(stage?.at)}; }
@@ -161,17 +163,44 @@ export function moldStatusObject(value) {
 }
 
 /**
- * The body of the `approval` route: the sales manager's approval in the CRM, or its withdrawal. Throws on a value production refuses.
- * @param {{id: string, action: string, by: {name?: string, email?: string}}} input
+ * The body of the `approval` route: the sales manager's approval in the CRM, or its withdrawal. The request is named by its
+ * crmRequestId when it came from the CRM, or by its orderNo when it was registered in the products application: one of them only.
+ * Throws on a value production refuses.
+ * @param {{id?: string|null, orderNo?: number|null, action: string, by: {name?: string, email?: string}}} input
  */
-export function moldApprovalBody({id, action, by}) {
-  if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
+export function moldApprovalBody({id = null, orderNo = null, action, by}) {
+  if ((id === null) === (orderNo === null)) throw new Error(id === null ? 'crmRequestId' : 'orderNo');
+  if (id !== null && !MOLD_ID.test(id)) throw new Error('crmRequestId');
+  if (orderNo !== null && (!isWhole(orderNo) || orderNo < 1)) throw new Error('orderNo');
   if (!MOLD_APPROVAL_ACTIONS.includes(action)) throw new Error('action');
   const name = moldText(by?.name), email = moldText(by?.email);
   if (!name || length(name) > MOLD_LIMITS.salesmanName) throw new Error('by.name');
-  const body = {crmRequestId: id, action, by: {name}};
+  /** @type {{crmRequestId?: string, orderNo?: number, action: string, by: {name: string, email?: string}}} */
+  const body = id !== null ? {crmRequestId: id, action, by: {name}} : {orderNo: /** @type {number} */ (orderNo), action, by: {name}};
   if (email && length(email) <= MOLD_LIMITS.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) body.by.email = email;
   return body;
+}
+
+const textOf = (value, max) => typeof value === 'string' ? value.replace(/[ \t ]+/g, ' ').trim().slice(0, max) : '';
+const wholeOrNull = value => isWhole(value) ? value : null;
+/**
+ * One request waiting for the sales manager, as the `pending` route lists it (from the CRM or registered in the products application),
+ * reduced to the fields the contract names; null when it is not one. No production data travels in it.
+ * @param {any} value
+ */
+export function moldPendingItem(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !isWhole(value.orderNo) || value.orderNo < 1) return null;
+  if (!(value.crmRequestId === null || MOLD_ID.test(value.crmRequestId || '')) || !['crm', 'manual'].includes(value.source)) return null;
+  const c = value.customer && typeof value.customer === 'object' ? value.customer : {}, s = value.salesman && typeof value.salesman === 'object' ? value.salesman : {}, p = value.specs && typeof value.specs === 'object' ? value.specs : {};
+  return {
+    orderNo: value.orderNo, crmRequestId: value.crmRequestId, source: value.source, requestedAt: dateOrNull(value.requestedAt), waitingSince: dateOrNull(value.waitingSince),
+    enteredBy: value.source === 'manual' ? textOf(value.enteredBy, 190) || null : null,
+    customer: {crmNumber: wholeOrNull(c.crmNumber), name: textOf(c.name, 200), address: textOf(c.address, 300), city: textOf(c.city, 100)},
+    salesman: {crmMemberId: textOf(s.crmMemberId, 64), name: textOf(s.name, 160)},
+    specs: {description: textOf(p.description, 200), core: textOf(p.core, 20), vibrators: wholeOrNull(p.vibrators), model: textOf(p.model, 20), halfBlock: textOf(p.halfBlock, 20),
+      moldWidth: wholeOrNull(p.moldWidth), gelbaSize: wholeOrNull(p.gelbaSize), moldNo: textOf(p.moldNo, 40), quantity: wholeOrNull(p.quantity), designUrl: /^https:\/\/\S+$/i.test(p.designUrl || '') ? String(p.designUrl).slice(0, 1000) : '', notes: textOf(p.notes, 2000)},
+    revision: wholeOrNull(value.revision),
+  };
 }
 
 /**

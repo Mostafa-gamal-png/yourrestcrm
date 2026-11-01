@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText} from '../portable/mold-rules.mjs';
+import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText} from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 
@@ -85,6 +85,14 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(moldStatusObject({...raw, approvals: {required: false, sales: null, production: null, admin: null}}).approvals.required, false, 'a historical request needs no approval');
   eq(moldApprovalBody({id: 'rec-9f3a', action: 'approve', by: {name: ' مدير  المبيعات ', email: 'manager@yourrest.org'}}), {crmRequestId: 'rec-9f3a', action: 'approve', by: {name: 'مدير المبيعات', email: 'manager@yourrest.org'}}, 'the approval body');
   eq(moldApprovalBody({id: 'r', action: 'withdraw', by: {name: 'm', email: 'bad'}}).by, {name: 'm'}, 'a bad email is left out');
+  eq(moldApprovalBody({orderNo: 101, action: 'approve', by: {name: 'm'}}), {orderNo: 101, action: 'approve', by: {name: 'm'}}, 'a request registered in production: by its orderNo');
+  for (const input of [{action: 'approve', by: {name: 'm'}}, {id: 'r', orderNo: 1, action: 'approve', by: {name: 'm'}}, {orderNo: 0, action: 'approve', by: {name: 'm'}}]) { assert.throws(() => moldApprovalBody(input), /crmRequestId|orderNo/); checks++; }
+  eq(moldStatusObject({...raw, crmRequestId: null}), null, 'a status without crmRequestId is not one of the CRM\'s requests');
+  eq(moldStatusObject({...raw, crmRequestId: null}, {manual: true}).crmRequestId, null, 'but is read as the answer to an approval by orderNo');
+  const manualItem = moldPendingItem({orderNo: 101, crmRequestId: null, source: 'manual', requestedAt: '2026-11-01T10:00:00+03:00', waitingSince: '2026-11-01T10:00:00+03:00', enteredBy: 'staff@yourrest.org', customer: {crmNumber: 27, name: ' مصنع  الأمل ', city: 'الدمام'}, salesman: {name: 'أحمد'}, specs: {description: 'x', quantity: 2, designUrl: 'http://not-https', moldStage: 'internal'}, revision: 3, stages: {box: {done: true}}});
+  eq([manualItem.orderNo, manualItem.source, manualItem.enteredBy, manualItem.customer.name, manualItem.specs.quantity, manualItem.specs.designUrl, manualItem.revision, 'stages' in manualItem, 'moldStage' in manualItem.specs], [101, 'manual', 'staff@yourrest.org', 'مصنع الأمل', 2, '', 3, false, false], 'a pending item: the contract fields only, texts tidied, only an https design link');
+  eq([moldPendingItem({orderNo: 1, crmRequestId: 'r', source: 'erp'}), moldPendingItem({orderNo: 'x', crmRequestId: null, source: 'manual'}), moldPendingItem({orderNo: 2, crmRequestId: 'bad id', source: 'crm'})], [null, null, null], 'not a pending item');
+  eq(moldPendingItem({orderNo: 3, crmRequestId: 'r', source: 'crm', enteredBy: 'someone'}).enteredBy, null, 'enteredBy only for a request registered in production');
   for (const [input, field] of [[{id: 'r 1', action: 'approve', by: {name: 'm'}}, /crmRequestId/], [{id: 'r', action: 'approved', by: {name: 'm'}}, /action/], [{id: 'r', action: 'approve', by: {name: ' '}}, /by.name/]]) { assert.throws(() => moldApprovalBody(input), field); checks++; }
   eq(readMoldAnswer(201, {request: raw}).kind, 'ok');
   eq(readMoldAnswer(409, {error: {code: 'request_locked', details: {request: raw}}}).request.orderNo, 92, '409 carries the current state');
@@ -138,6 +146,17 @@ try {
   mock.approve('mr-1', 'admin');
   eq((await call('status', {ids: ['mr-1']})).json.requests[0].status, 'confirmed', 'all three approvals: confirmed');
   eq((await call('approval', moldApprovalBody({id: 'mr-none', action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'an unknown request: 404');
+  // the sales manager approves every request, those registered in production too: the pending route, then the approval by orderNo
+  const manual = mock.registerManual({customerNo: 27, customerName: 'مصنع مسجّل', enteredBy: 'x'});
+  await call('requests', moldRequestBody({id: 'mr-wait', requestedAt: riyadhIso(Date.now()), customer, salesman, specs}));
+  answer = await call('pending', {});
+  const waiting = answer.json.requests.map(item => moldPendingItem(item));
+  eq(waiting.map(item => [item.orderNo, item.source, item.crmRequestId]), [[manual.orderNo, 'manual', null], [mock.row('mr-wait').orderNo, 'crm', 'mr-wait']], 'pending: both, the longest waiting first');
+  eq([waiting[0].enteredBy, waiting[0].customer.crmNumber, waiting[0].specs.halfBlock], ['staff@yourrest.org', 27, 'two'], 'who entered it in production, the customer, the specifications');
+  answer = await call('approval', moldApprovalBody({orderNo: manual.orderNo, action: 'approve', by: {name: 'مدير المبيعات'}}));
+  eq([answer.kind, answer.json.request.crmRequestId, answer.json.request.waitingStep], ['ok', null, 'production'], 'approved by its orderNo: it waits for production');
+  eq((await call('pending', {})).json.requests.map(item => item.orderNo), [mock.row('mr-wait').orderNo], 'and leaves the pending list');
+  eq((await call('approval', moldApprovalBody({orderNo: 9999, action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'an unknown order: 404');
   mock.produce('mr-1', {stages: ['laserCutting', 'box'], moldSerial: '093', productionDate: '2026-11-01'});
   answer = await call('requests', {...body, specs: {...body.specs, quantity: 3}});
   eq([answer.kind, answer.code, answer.request.status, answer.request.editable, answer.request.stagesDone], ['locked', 'request_locked', 'in_production', false, 2], 'production started: 409 request_locked with the current state');
