@@ -1,7 +1,9 @@
 import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,database} from '@/lib/crm-server';
-import {validateMoldSpecs,MOLD_LIMITS} from '@/portable/mold-rules.mjs';
-import {canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldEditable,moldPermissions,moldSendingState,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestView,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {validateMoldSpecs,moldApprovalBody,moldStatusObject,MOLD_LIMITS} from '@/portable/mold-rules.mjs';
+import {callProducts} from '@/portable/mold-client.mjs';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldEditable,moldErrorText,moldPermissions,moldSendingState,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestView,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {isServiceRole} from '@/lib/customer-service';
 import {loadMoldRequest,loadMoldRequests,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,type SendOutcome} from '@/lib/mold-requests-server';
 import type {Member} from '@/lib/crm';
 export const dynamic='force-dynamic';
@@ -20,7 +22,12 @@ function view(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean):M
   sending:{state:moldSendingState(row,linkReady),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
   remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me),version:row.version};
 }
-const reader=async()=>{const c=await context({load:'customers'});if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب لفريق المبيعات',403);return c;};
+const reader=async()=>{const c=await context({load:'customers'});if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);return c;};
+/** The customers a member may ask a mold for: their own scope, or for customer service the customers of their branch in their regions
+ * (the same ones their visits page lists, lib/customer-service.ts serviceVisitRecords). */
+const askable=(c:Awaited<ReturnType<typeof reader>>,customerId:string)=>isServiceRole(c.me.role)
+ ?c.regionalRecords.find(row=>row.id===customerId&&row.kind==='customer'&&row.branch===c.me.branch)
+ :c.visible.find(row=>row.id===customerId&&row.kind==='customer');
 
 /** The requests the reader may see, with their status pulled once (one call for all of them, or for the one asked for by ?id=). */
 export async function GET(req:Request){try{
@@ -40,8 +47,10 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('update'),requestId,id,version,specs:specsInput}).strict(),
  z.object({action:z.literal('cancel'),requestId,id,version,reason:z.string().trim().max(MOLD_LIMITS.cancelReason,'سبب الإلغاء حتى 500 حرف').default('')}).strict(),
  z.object({action:z.literal('resend'),requestId,id}).strict(),
+ z.object({action:z.literal('approve'),requestId,id}).strict(),
+ z.object({action:z.literal('withdraw'),requestId,id}).strict(),
 ]);
-const labels={create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب'};
+const labels={create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
 function checkedSpecs(input:Record<string,unknown>){
  const {specs,errors}=validateMoldSpecs(input);
  if(Object.keys(errors).length)throw Object.assign(new CRMError(Object.values(errors).join(' • '),400),{fields:errors});
@@ -51,6 +60,7 @@ function checkedSpecs(input:Record<string,unknown>){
 /**
  * create, update, cancel, resend. The change is saved in the CRM first (with its audit entry, as a receipt that makes a repeated
  * tap harmless), then sent; the answer carries the request as it now stands and what the send gave.
+ * approve, withdraw (the sales manager): production's approval route is called first, and only its answer is saved, with the receipt.
  */
 export async function POST(req:Request){try{
  checkOrigin(req);await requireSession();
@@ -72,9 +82,9 @@ export async function POST(req:Request){try{
  const permission=accessGuard(c);
  let rowId:string,statement,detail:Record<string,unknown>;
  if(input.action==='create'){
-  if(!canCreateMoldRequest(c.me))throw new CRMError('طلب تصنيع القالب للمندوب لعملائه',403);
-  const customer=c.visible.find(row=>row.id===input.customerId&&row.kind==='customer');
-  if(!customer)throw new CRMError('اختر عميلًا من عملائك',404);
+  if(!canCreateMoldRequest(c.me))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
+  const customer=askable(c,input.customerId);
+  if(!customer)throw new CRMError('اختر عميلًا من العملاء المتاحين لك',404);
   const crmNumber=yourrestNumber(customer.data.internalCode);
   if(!crmNumber)throw new CRMError('كود يورست للعميل غير متاح. حدّث الصفحة.',409);
   const name=String(customer.data.name||'').trim();
@@ -87,16 +97,33 @@ export async function POST(req:Request){try{
   const row=await loadMoldRequest(c.db,input.id);
   if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
   const allowed=moldPermissions(row,c.me);rowId=row.id;
+  if(input.action==='approve'||input.action==='withdraw'){
+   const approving=input.action==='approve';
+   if(!canApproveMoldRequests(c.me))throw new CRMError('اعتماد طلبات القوالب لمدير المبيعات',403);
+   if(approving?!allowed.approve:!allowed.withdraw)throw new CRMError(row.cancelledAt?'الطلب ملغى':row.outbox?'في تغيير على الطلب لسه ما وصلش للإنتاج؛ استنى لما يوصل':approving?'الطلب مش بانتظار اعتماد مدير المبيعات. حدّث الصفحة.':'لا يوجد اعتماد يمكن سحبه. حدّث الصفحة.',409);
+   if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل',503);
+   const call=await callProducts(link,'approval',moldApprovalBody({id:row.id,action:input.action,by:{name:c.me.name,email:c.me.email}}));
+   const remote=call.kind==='ok'?moldStatusObject(call.json?.request):call.kind==='locked'?call.request:null,at=new Date().toISOString();
+   if(remote)await c.db.prepare('UPDATE crm_mold_requests SET remote=?,remote_at=? WHERE id=?').bind(JSON.stringify(remote),at,row.id).run();
+   if(call.kind==='locked')return Response.json({ok:false,request:view((await loadMoldRequest(c.db,row.id))!,c.me,c.members,link.ok),error:approving?'الطلب لم يعد بانتظار اعتماد مدير المبيعات.':'اعتمد الإنتاج الطلب؛ لم يعد سحب اعتماد مدير المبيعات ممكنًا.'},{status:409});
+   if(call.kind!=='ok'||!remote)throw new CRMError(call.kind==='not_found'?'الطلب غير موجود لدى الإنتاج':moldErrorText(call.code,ar=>ar)+'. حاول مرة أخرى.',call.kind==='not_found'?409:502);
+   const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=?)',detail={label:labels[input.action],customerName:row.data.customer.name,orderNo:remote.orderNo,waitingStep:remote.waitingStep};
+   await c.db.batch([
+    c.db.prepare(`INSERT OR IGNORE INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,row.id,c.me.name,'mold-request-receipt',canonical,at,row.id),
+    c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),row.id,c.me.name,'mold-request:'+input.action,JSON.stringify(detail),at,row.id),
+   ]);
+   return answer(row.id,null);
+  }
   if(input.action!=='resend'&&input.version!==row.version)throw new CRMError('تغيّر الطلب. حدّث الصفحة.',409);
   const guard=`id=? AND version=? AND member_id=? AND ${permission.sql}`,guardArgs=[row.id,row.version,c.me.id,...permission.args];
   if(input.action==='update'){
-   if(!allowed.edit)throw new CRMError(row.cancelledAt?'الطلب ملغى':row.memberId!==c.me.id||c.me.role!=='rep'?'تعديل الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد التعديل ممكنًا',row.memberId!==c.me.id?403:409);
+   if(!allowed.edit)throw new CRMError(row.cancelledAt?'الطلب ملغى':row.memberId!==c.me.id?'تعديل الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد التعديل ممكنًا',row.memberId!==c.me.id?403:409);
    const specs=checkedSpecs(input.specs);
    if(JSON.stringify(specs)===JSON.stringify(row.data.specs))return answer(row.id,null);
    detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity};
    statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard}`).bind(JSON.stringify({...row.data,specs}),now,now,mutation,...guardArgs);
   }else if(input.action==='cancel'){
-   if(!allowed.cancel)throw new CRMError(row.cancelledAt?'الطلب ملغى من قبل':row.memberId!==c.me.id||c.me.role!=='rep'?'إلغاء الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا',row.memberId!==c.me.id?403:409);
+   if(!allowed.cancel)throw new CRMError(row.cancelledAt?'الطلب ملغى من قبل':row.memberId!==c.me.id?'إلغاء الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا',row.memberId!==c.me.id?403:409);
    detail={label:labels.cancel,customerName:row.data.customer.name,reason:input.reason};
    statement=c.db.prepare(`UPDATE crm_mold_requests SET cancelled_at=?,cancel_reason=?,outbox='cancel',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard}`).bind(now,input.reason,now,now,mutation,...guardArgs);
   }else{

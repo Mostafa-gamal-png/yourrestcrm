@@ -6,7 +6,8 @@ export function canViewPage(role:string,view:string){
  if(role==='rep')return ['customer','map','activity','followup','targets','mold-requests'].includes(view);
  // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
  // The customer-service evaluation has one for the manager and the administrator; a representative meets theirs on the Complaints page.
- if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints'||view==='service-kpi'&&role==='customer_service_manager';
+ // Mold requests are for every role (the owner, 2026-11-01), customer service included.
+ if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints'||view==='mold-requests'||view==='service-kpi'&&role==='customer_service_manager';
  if(!canUseSalesWorkspace(role))return false;
  if(view==='team'||view==='complaints'||view==='service-kpi')return role==='admin';
  return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets','mold-requests'].includes(view);

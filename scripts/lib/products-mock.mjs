@@ -1,6 +1,7 @@
 // A stand-in for the production application's mold requests API (yourrest-products, crm-api.php) for tests: HTTPS with a throwaway
 // self-signed certificate, the same signature check, clock window, routes, field checks, linking, locking and answers as the PHP of
-// contract version 1 and its addendum. Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
+// contract version 1, its addendum and the approval chain of 2026-11-01 (three approvals in order: the sales manager, in the CRM
+// through the approval route, then production, then the system administrator; any change from the CRM undoes them). Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
 // production step on a request (start / deliver), historical rows to link. No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
@@ -57,7 +58,7 @@ export function validateRequest(body, now = Date.now()) {
     salesmanId: clean(ss.crmMemberId, 64, false, 'salesman.crmMemberId', bad), salesmanName: clean(ss.name, 160, true, 'salesman.name', bad), salesmanEmail: email,
     description: clean(pp.description, 200, true, 'specs.description', bad), core: choice(pp.core, ['open', 'closed'], true, 'specs.core', bad),
     vibrators: int(pp.vibrators, 2, 4, true, 'specs.vibrators', bad), model: choice(pp.model, ['old', 'gelba_new', 'new'], true, 'specs.model', bad),
-    halfBlock: choice(pp.halfBlock, ['none', 'one'], true, 'specs.halfBlock', bad), moldWidth: int(pp.moldWidth, 1000, 2000, true, 'specs.moldWidth', bad),
+    halfBlock: choice(pp.halfBlock, ['none', 'one', 'two', 'three'], true, 'specs.halfBlock', bad), moldWidth: int(pp.moldWidth, 1000, 2000, true, 'specs.moldWidth', bad),
     gelbaSize: int(pp.gelbaSize, 500, 1200, true, 'specs.gelbaSize', bad), moldNo: clean(pp.moldNo, 40, false, 'specs.moldNo', bad),
     quantity: int(pp.quantity, 1, 100, true, 'specs.quantity', bad), designUrl: designUrl === '' ? null : designUrl, notes: clean(pp.notes, 2000, false, 'specs.notes', bad),
   };
@@ -66,14 +67,27 @@ export function validateRequest(body, now = Date.now()) {
 }
 
 const blankStages = () => Object.fromEntries(STAGES.map(key => [key, {done: false, at: null}]));
+const APPROVAL_STEPS = ['sales', 'production', 'admin'];
+const noApprovals = () => ({legacy: false, sales: null, production: null, admin: null});
+const approved = row => row.approvals.legacy || row.approvals.admin !== null;
 function derive(row) {
   const done = STAGES.filter(key => row.stages[key].done).length;
-  return row.cancelled ? 'cancelled' : row.delivered ? 'delivered' : done >= STAGES.length ? 'produced' : done > 0 || row.productionDate ? 'in_production' : row.confirmed ? 'confirmed' : 'received';
+  return row.cancelled ? 'cancelled' : row.delivered ? 'delivered' : done >= STAGES.length ? 'produced' : done > 0 || row.productionDate ? 'in_production' : approved(row) ? 'confirmed' : 'received';
+}
+/** yr_mreq_waiting_step: where the request waits now. */
+function waitingStep(row) {
+  const status = derive(row);
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'delivered') return 'done';
+  if (!approved(row)) return APPROVAL_STEPS.find(step => row.approvals[step] === null);
+  return status === 'produced' ? 'delivery' : 'manufacturing';
 }
 function statusObject(row) {
-  const status = derive(row);
+  const status = derive(row), a = row.approvals;
+  const approvals = {required: !a.legacy, ...Object.fromEntries(APPROVAL_STEPS.map(step => [step, a[step] ? {at: a[step].at, ...(a[step].via === 'crm' ? {by: a[step].by} : {})} : null]))};
   return {crmRequestId: row.crmRequestId, orderNo: row.orderNo, status, editable: status === 'received', moldSerial: row.moldSerial, productionDate: row.productionDate, stages: structuredClone(row.stages),
-    stagesDone: STAGES.filter(key => row.stages[key].done).length, stagesTotal: STAGES.length, delivered: row.delivered, deliveryDate: row.deliveryDate, updatedAt: row.updatedAt, revision: row.revision};
+    stagesDone: STAGES.filter(key => row.stages[key].done).length, stagesTotal: STAGES.length, delivered: row.delivered, deliveryDate: row.deliveryDate,
+    waitingStep: row.waitingStep, waitingSince: row.waitingSince, approvals, updatedAt: row.updatedAt, revision: row.revision};
 }
 const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null, b = p[column] ?? null; return (a === null) === (b === null) && (a === null || String(a) === String(b)); });
 
@@ -85,7 +99,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0};
-  const touch = row => { row.revision++; row.updatedAt = new Date(now()).toISOString().slice(0, 19) + '+03:00'; };
+  const riyadh = () => new Date(now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00';
+  /** Every change: a new revision, and the wait restarts only when the step changes (yr_mreq_state_set). */
+  const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
 
   function upsert(body) {
     const p = validateRequest(body, now());
@@ -97,7 +113,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       legacy.crmRequestId = p.crmRequestId; legacy.salesmanId = p.salesmanId; legacy.salesmanEmail = p.salesmanEmail; touch(legacy);
       state.rows.set(p.crmRequestId, legacy); row = legacy; linked = true;
     } else if (!row) {
-      row = {crmRequestId: p.crmRequestId, orderNo: state.nextOrder++, source: 'crm', stages: blankStages(), confirmed: false, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null};
+      row = {crmRequestId: p.crmRequestId, orderNo: state.nextOrder++, source: 'crm', stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null};
       for (const column of COLUMNS) row[column] = p[column];
       touch(row); state.rows.set(row.crmRequestId, row); state.byOrder.set(row.orderNo, row); created = true;
     } else {
@@ -105,6 +121,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       if (!linkRetry && !same(row, p)) {
         if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'Production has started; the request can no longer be changed.', [], {request: statusObject(row)});
         for (const column of COLUMNS) row[column] = p[column];
+        // A change from the CRM during the approvals undoes the ones given: the request goes back to the sales manager.
+        if (!row.approvals.legacy && APPROVAL_STEPS.some(step => row.approvals[step])) row.approvals = noApprovals();
         touch(row);
       }
     }
@@ -129,6 +147,33 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     return {status: 200, body: {request: statusObject(row)}};
   }
 
+  /** yr_mreq_crm_approval: the sales manager's approval given in the CRM, or withdrawn; repeating either changes nothing. */
+  function approval(body) {
+    const bad = [], id = body.crmRequestId;
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) bad.push('crmRequestId');
+    const action = choice(body.action, ['approve', 'withdraw'], true, 'action', bad);
+    const by = body.by && typeof body.by === 'object' && !Array.isArray(body.by) ? body.by : null;
+    if (!by) bad.push('by');
+    const name = clean(by?.name, 160, true, 'by.name', bad), email = clean(by?.email, 190, false, 'by.email', bad);
+    if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad.push('by.email');
+    if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)]);
+    const row = state.rows.get(id);
+    if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
+    const locked = message => new ApiError('request_locked', 409, message, [], {request: statusObject(row)});
+    if (row.cancelled) throw locked('The request is cancelled.');
+    if (row.approvals.legacy) throw locked('This request predates the approval chain and needs no approval.');
+    if (action === 'approve') {
+      if (row.approvals.sales) return {status: 200, body: {request: statusObject(row)}};
+      row.approvals.sales = {by: email !== '' ? email + ' (' + name + ')' : name, at: riyadh(), via: 'crm'};
+    } else {
+      if (!row.approvals.sales) return {status: 200, body: {request: statusObject(row)}};
+      if (row.approvals.production || row.approvals.admin) throw locked('Production has already approved; the sales approval can no longer be withdrawn.');
+      row.approvals.sales = null;
+    }
+    touch(row);
+    return {status: 200, body: {request: statusObject(row)}};
+  }
+
   const server = createServer({key: readFileSync(key), cert: readFileSync(cert)}, async (req, res) => {
     if (state.down) { req.socket.destroy(); return; }
     const parts = [];
@@ -140,7 +185,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
     try {
       if (req.method !== 'POST') throw new ApiError('method_not_allowed', 405, 'Use POST.');
-      if (!['requests', 'status', 'cancel'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
+      if (!['requests', 'status', 'cancel', 'approval'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
       if (state.notConfigured) throw new ApiError('not_configured', 503, 'The integration secret is not configured.');
       const timestamp = String(req.headers['x-yr-timestamp'] || ''), signature = String(req.headers['x-yr-signature'] || '');
       if (!/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) throw new ApiError('invalid_signature', 401, 'Missing or malformed signature headers.');
@@ -152,7 +197,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       let body;
       try { body = JSON.parse(raw.toString('utf8')); } catch { throw new ApiError('invalid_payload', 400, 'The body is not valid JSON.', ['body']); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('invalid_payload', 400, 'The body must be a JSON object.', ['body']);
-      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : cancel(body);
+      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : cancel(body);
       reply(result.status, result.body);
     } catch (error) {
       if (!(error instanceof ApiError)) { reply(500, {error: {code: 'server_error', message: 'Unexpected server error.'}}); return; }
@@ -168,12 +213,19 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   return {
     url: `https://localhost:${port}/products/crm-api.php`, ca: cert, state,
     /** Historical rows of the sheet, as the production app imports them (orderNo 1..n, source import, not linked). */
-    seedLegacy(count) { for (let n = 1; n <= count; n++) state.byOrder.set(n, {crmRequestId: null, orderNo: n, source: 'import', stages: blankStages(), confirmed: true, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 1, updatedAt: null, ...Object.fromEntries(COLUMNS.map(c => [c, null]))}); },
-    /** Production work on a request: marks stages done (with dates), a serial, a production date, delivery. */
+    seedLegacy(count) { for (let n = 1; n <= count; n++) state.byOrder.set(n, {crmRequestId: null, orderNo: n, source: 'import', stages: blankStages(), approvals: {...noApprovals(), legacy: true}, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 1, updatedAt: null, waitingStep: 'manufacturing', waitingSince: '2026-04-19T13:45:47+03:00', ...Object.fromEntries(COLUMNS.map(c => [c, null]))}); },
+    /** An approval given in the production app (production, or the system administrator; the sales manager's too, outside the CRM). */
+    approve(crmRequestId, step, by = 'staff@yourrest.org') {
+      const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
+      row.approvals[step] = {by, at: riyadh()}; touch(row);
+    },
+    /** Production work on a request: marks stages done (with dates), a serial, a production date, delivery. confirmed: the three
+     *  approvals are given first (production may record nothing before them). */
     produce(crmRequestId, {stages = [], moldSerial = null, productionDate = null, delivered = false, deliveryDate = null, confirmed = true} = {}) {
       const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
+      if (confirmed) for (const step of APPROVAL_STEPS) row.approvals[step] ||= {by: 'staff@yourrest.org', at: riyadh()};
       for (const [index, stage] of stages.entries()) row.stages[stage] = {done: true, at: '2026-11-0' + (index + 1)};
-      Object.assign(row, {moldSerial, productionDate, delivered, deliveryDate, confirmed}); touch(row);
+      Object.assign(row, {moldSerial, productionDate, delivered, deliveryDate}); touch(row);
     },
     row: id => state.rows.get(id),
     async stop() { server.closeAllConnections?.(); server.close(); rmSync(work, {recursive: true, force: true}); },

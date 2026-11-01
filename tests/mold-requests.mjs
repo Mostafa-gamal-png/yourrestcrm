@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {MOLD_STAGES, MOLD_LIMITS, validateMoldSpecs, moldRequestBody, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText} from '../portable/mold-rules.mjs';
+import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText} from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 
@@ -40,8 +40,10 @@ const specs = {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2
 {
   eq(validateMoldSpecs(specs).errors, {}, 'the contract example passes');
   eq(validateMoldSpecs({...specs, vibrators: '3', moldWidth: '1375', gelbaSize: ' 800 ', quantity: '2'}).specs.vibrators, 3, 'digits from a form become numbers');
-  const wrong = validateMoldSpecs({description: '  ', core: 'half', vibrators: 5, model: 'newest', halfBlock: 'two', moldWidth: 1380.5, gelbaSize: 499, quantity: 0, designUrl: 'http://x.com', moldNo: 'x'.repeat(41), notes: 'a\u0007'});
+  const wrong = validateMoldSpecs({description: '  ', core: 'half', vibrators: 5, model: 'newest', halfBlock: 'four', moldWidth: 1380.5, gelbaSize: 499, quantity: 0, designUrl: 'http://x.com', moldNo: 'x'.repeat(41), notes: 'a\u0007'});
   eq(Object.keys(wrong.errors).sort(), ['core', 'description', 'designUrl', 'gelbaSize', 'halfBlock', 'model', 'moldNo', 'moldWidth', 'notes', 'quantity', 'vibrators'], 'every wrong field is named');
+  eq(Object.keys(MOLD_HALF_BLOCKS), ['none', 'one', 'two', 'three'], 'half blocks: none to three, as the sheet (No H.B to 3 H.B)');
+  for (const halfBlock of ['two', 'three']) eq(validateMoldSpecs({...specs, halfBlock}).errors, {}, 'half block ' + halfBlock + ' is accepted');
   ok(Object.values(wrong.errors).every(message => /[؀-ۿ]/.test(message)), 'in Arabic');
   eq(validateMoldSpecs({...specs, description: 'x'.repeat(200)}).errors, {}, '200 characters of description pass');
   ok(validateMoldSpecs({...specs, description: 'x'.repeat(201)}).errors.description, '201 do not');
@@ -75,6 +77,15 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq([read.stagesDone, read.stagesTotal, read.stages.coreConnector], [2, 7, {done: false, at: null}], 'counted from the stages themselves; a missing stage is not done');
   ok(!('productionNotes' in read) && !('workers' in read), 'nothing but the contract fields is kept');
   eq([moldStatusObject({...raw, status: 'lost'}), moldStatusObject({...raw, editable: 'no'}), moldStatusObject(null)], [null, null, null], 'not a status object');
+  eq([read.waitingStep, read.waitingSince, read.approvals], [null, null, null], 'an older production app without the approval chain: nothing to show, nothing refused');
+  const chain = moldStatusObject({...raw, status: 'received', editable: true, waitingStep: 'production', waitingSince: '2026-11-01T15:10:00+03:00',
+    approvals: {required: true, sales: {at: '2026-11-01T15:10:00+03:00', by: 'manager@yourrest.org (مدير)', extra: 'x'}, production: null, admin: null}});
+  eq([chain.waitingStep, chain.waitingSince, chain.approvals], ['production', '2026-11-01T15:10:00+03:00', {required: true, sales: {at: '2026-11-01T15:10:00+03:00', by: 'manager@yourrest.org (مدير)'}, production: null, admin: null}], 'where it waits, since when, and the approvals given');
+  eq(moldStatusObject({...raw, waitingStep: 'lunch', approvals: {sales: null}}).waitingStep, null, 'an unknown step is not shown; approvals without required are not read');
+  eq(moldStatusObject({...raw, approvals: {required: false, sales: null, production: null, admin: null}}).approvals.required, false, 'a historical request needs no approval');
+  eq(moldApprovalBody({id: 'rec-9f3a', action: 'approve', by: {name: ' مدير  المبيعات ', email: 'manager@yourrest.org'}}), {crmRequestId: 'rec-9f3a', action: 'approve', by: {name: 'مدير المبيعات', email: 'manager@yourrest.org'}}, 'the approval body');
+  eq(moldApprovalBody({id: 'r', action: 'withdraw', by: {name: 'm', email: 'bad'}}).by, {name: 'm'}, 'a bad email is left out');
+  for (const [input, field] of [[{id: 'r 1', action: 'approve', by: {name: 'm'}}, /crmRequestId/], [{id: 'r', action: 'approved', by: {name: 'm'}}, /action/], [{id: 'r', action: 'approve', by: {name: ' '}}, /by.name/]]) { assert.throws(() => moldApprovalBody(input), field); checks++; }
   eq(readMoldAnswer(201, {request: raw}).kind, 'ok');
   eq(readMoldAnswer(409, {error: {code: 'request_locked', details: {request: raw}}}).request.orderNo, 92, '409 carries the current state');
   eq(readMoldAnswer(404, {error: {code: 'not_found'}}).kind, 'not_found');
@@ -107,11 +118,26 @@ try {
   const body = moldRequestBody({id: 'mr-1', requestedAt: riyadhIso(Date.now()), customer, salesman, specs});
   let answer = await call('requests', body);
   eq([answer.kind, answer.http, answer.json.created, answer.json.request.orderNo, answer.json.request.status, answer.json.request.editable], ['ok', 201, true, 92, 'received', true], 'a new request: 201, order 92, received and editable');
+  eq([answer.json.request.waitingStep, moldStatusObject(answer.json.request).approvals], ['sales', {required: true, sales: null, production: null, admin: null}], 'it waits for the sales manager first');
   ok(mock.state.calls.at(-1).signed && mock.state.calls.at(-1).headers['content-type'] === 'application/json; charset=utf-8', 'signed, JSON in UTF-8');
   answer = await call('requests', body);
   eq([answer.http, answer.json.created, answer.json.request.revision], [200, false, 1], 'the same request again: 200, no change (idempotent)');
+  // the approval chain: the sales manager in the CRM (the approval route), then production and the system administrator
+  const approve = (action, id = 'mr-1') => call('approval', moldApprovalBody({id, action, by: {name: 'مدير المبيعات', email: 'manager@yourrest.org'}}));
+  answer = await approve('approve');
+  eq([answer.kind, answer.json.request.waitingStep, answer.json.request.approvals.sales.by, answer.json.request.status], ['ok', 'production', 'manager@yourrest.org (مدير المبيعات)', 'received'], 'approved by the sales manager: it waits for production, still received');
+  eq((await approve('approve')).json.request.revision, answer.json.request.revision, 'approving again changes nothing');
+  eq((await approve('withdraw')).json.request.waitingStep, 'sales', 'withdrawn: back to the sales manager');
+  eq((await approve('withdraw')).kind, 'ok', 'withdrawing again is safe');
+  await approve('approve');
   answer = await call('requests', {...body, specs: {...body.specs, quantity: 2}});
-  eq([answer.http, answer.json.request.revision], [200, 2], 'an edit while received: 200, revision up');
+  eq([answer.http, answer.json.request.revision, answer.json.request.waitingStep, answer.json.request.approvals.sales], [200, 5, 'sales', null], 'an edit while received: 200, revision up, the approvals given are undone');
+  await approve('approve'); mock.approve('mr-1', 'production');
+  answer = await approve('withdraw');
+  eq([answer.kind, answer.code, answer.request.waitingStep], ['locked', 'request_locked', 'admin'], 'after production approved: the withdrawal is refused with the current state');
+  mock.approve('mr-1', 'admin');
+  eq((await call('status', {ids: ['mr-1']})).json.requests[0].status, 'confirmed', 'all three approvals: confirmed');
+  eq((await call('approval', moldApprovalBody({id: 'mr-none', action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'an unknown request: 404');
   mock.produce('mr-1', {stages: ['laserCutting', 'box'], moldSerial: '093', productionDate: '2026-11-01'});
   answer = await call('requests', {...body, specs: {...body.specs, quantity: 3}});
   eq([answer.kind, answer.code, answer.request.status, answer.request.editable, answer.request.stagesDone], ['locked', 'request_locked', 'in_production', false, 2], 'production started: 409 request_locked with the current state');
@@ -130,6 +156,8 @@ try {
   const legacy = moldRequestBody({id: 'mr-legacy-2', legacyOrderNo: 2, requestedAt: '2025-03-01T09:00:00+03:00', customer, salesman, specs});
   answer = await call('requests', legacy);
   eq([answer.http, answer.json.created, answer.json.linked, answer.json.request.orderNo], [200, false, true, 2], 'a historical row is linked, not created');
+  eq([answer.json.request.waitingStep, answer.json.request.approvals.required], ['manufacturing', false], 'a historical request needs no approval');
+  eq((await call('approval', moldApprovalBody({id: 'mr-legacy-2', action: 'approve', by: {name: 'm'}}))).kind, 'locked', 'and cannot be approved');
   answer = await call('requests', {...legacy, specs: {...legacy.specs, quantity: 9}});
   eq([answer.http, answer.json.linked], [200, false], 'linking again is safe even when the CRM data differ');
   eq((await call('requests', {...legacy, crmRequestId: 'mr-other'})).kind, 'locked', 'a row linked to another CRM id: 409');

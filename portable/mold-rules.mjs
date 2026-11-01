@@ -11,7 +11,13 @@ export const MOLD_STATUSES = ['received', 'confirmed', 'in_production', 'produce
 export const MOLD_CORES = {open: 'مفتوح', closed: 'مغلق'};
 export const MOLD_VIBRATORS = [2, 3, 4];
 export const MOLD_MODELS = {old: 'موديل قديم', gelba_new: 'جلبة موديل جديد', new: 'موديل جديد'};
-export const MOLD_HALF_BLOCKS = {none: 'بدون بلوكة نص', one: 'بلوكة نص واحدة'};
+export const MOLD_HALF_BLOCKS = {none: 'بدون بلوكة نص', one: 'بلوكة نص واحدة', two: 'بلوكتين نص', three: '3 بلوكات نص'};
+/** Where a request waits now (the contract's waitingStep, 2026-11-01): the three approvals in order (sales manager, production, system
+ *  administrator), then manufacturing, delivery, done or cancelled. */
+export const MOLD_WAITING_STEPS = ['sales', 'production', 'admin', 'manufacturing', 'delivery', 'done', 'cancelled'];
+export const MOLD_APPROVAL_STEPS = ['sales', 'production', 'admin'];
+/** The `approval` route's actions: the sales manager approves a request in the CRM, or withdraws the approval. */
+export const MOLD_APPROVAL_ACTIONS = ['approve', 'withdraw'];
 export const MOLD_RANGES = {moldWidth: [1000, 2000], gelbaSize: [500, 1200], quantity: [1, 100]};
 export const MOLD_USUAL = {moldWidth: [1380, 1375], gelbaSize: [795, 800]};
 /** Text limits in characters: the stricter of the contract (§2, other texts 160) and the addendum (customer name 200, city 100, email 190). */
@@ -123,6 +129,20 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
 
 const dateOrNull = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 40) : null;
 const shortOrNull = (value, max) => typeof value === 'string' ? value.slice(0, max) : null;
+/** The approvals as the status object carries them: when each was given (null: not yet) and, for the sales manager's approval given
+ *  in the CRM only, by whom. required false: a historical request that needs none. null when production sent none (an older app). */
+function approvalsOf(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.required !== 'boolean') return null;
+  /** @type {{required: boolean, sales: {at: string|null, by?: string}|null, production: {at: string|null}|null, admin: {at: string|null}|null}} */
+  const out = {required: value.required, sales: null, production: null, admin: null};
+  for (const step of MOLD_APPROVAL_STEPS) {
+    const given = value[step];
+    if (!given || typeof given !== 'object') continue;
+    out[step] = {at: dateOrNull(given.at)};
+    if (step === 'sales' && typeof given.by === 'string' && given.by.trim()) out.sales = {at: out.sales.at, by: given.by.trim().slice(0, 200)};
+  }
+  return out;
+}
 /** A status object (§3) as received, reduced to the fields the contract names; null when it is not one.
  * @param {any} value */
 export function moldStatusObject(value) {
@@ -136,7 +156,22 @@ export function moldStatusObject(value) {
     moldSerial: shortOrNull(value.moldSerial, 40), productionDate: dateOrNull(value.productionDate), stages,
     stagesDone: MOLD_STAGES.filter(key => stages[key].done).length, stagesTotal: MOLD_STAGES.length,
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
+    waitingStep: MOLD_WAITING_STEPS.includes(value.waitingStep) ? value.waitingStep : null, waitingSince: dateOrNull(value.waitingSince), approvals: approvalsOf(value.approvals),
   };
+}
+
+/**
+ * The body of the `approval` route: the sales manager's approval in the CRM, or its withdrawal. Throws on a value production refuses.
+ * @param {{id: string, action: string, by: {name?: string, email?: string}}} input
+ */
+export function moldApprovalBody({id, action, by}) {
+  if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
+  if (!MOLD_APPROVAL_ACTIONS.includes(action)) throw new Error('action');
+  const name = moldText(by?.name), email = moldText(by?.email);
+  if (!name || length(name) > MOLD_LIMITS.salesmanName) throw new Error('by.name');
+  const body = {crmRequestId: id, action, by: {name}};
+  if (email && length(email) <= MOLD_LIMITS.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) body.by.email = email;
+  return body;
 }
 
 /**
