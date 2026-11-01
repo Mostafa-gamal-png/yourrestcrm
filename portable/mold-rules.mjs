@@ -26,6 +26,11 @@ export const MOLD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 export const MOLD_TIMEOUT_MS = 10_000;
 export const MOLD_STATUS_BATCH = 200;
 export const MOLD_BODY_LIMIT = 64 * 1024;
+/** The customers route takes up to 2 MB and 20000 customers in one call (the contract, «customers»). */
+export const MOLD_CUSTOMERS_BODY_LIMIT = 2 * 1024 * 1024;
+export const MOLD_CUSTOMERS_MAX = 20000;
+/** The cities as the production sheet writes them; a CRM city that is one of them is sent this way so production fills it in itself. */
+export const MOLD_SHEET_CITIES = ['Damam - الدمام', 'Riyadh - الرياض', 'Qassem - القصيم', 'Madina - المدينة', 'Jeddah - جده', 'MAkkah - مكة', 'Taif - الطائف', 'Khames - خميس مشيط', 'Jizan - جيزان'];
 /** §6: after a failed send, the next try waits 1 minute, then 5, then 30, then 2 hours, then every 2 hours until 24 hours have passed. */
 export const MOLD_RETRY_MINUTES = [1, 5, 30, 120];
 export const MOLD_RETRY_WINDOW_MS = 24 * 3600_000;
@@ -231,4 +236,68 @@ export function moldNextAttempt(failures, firstFailedAt, now) {
   const next = Date.parse(now) + minutes * 60_000, first = Date.parse(firstFailedAt);
   if (!Number.isFinite(first) || next > first + MOLD_RETRY_WINDOW_MS) return null;
   return new Date(next).toISOString();
+}
+
+/** Arabic written loosely: no marks or tatweel, one alef, ى as ي, ة as ه, no «ال» at the start, single spaces. */
+const looseArabic = value => String(value ?? '').normalize('NFC').replace(/[\u0640\u064B-\u065F\u0670]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+  .replace(/\s+/g, ' ').trim().toLowerCase().replace(/^ال/, '');
+/** The other spellings each sheet city goes by in the CRM (its English name, the full Arabic name), loosely written. */
+const CITY_NAMES = {
+  'Damam - الدمام': ['دمام', 'damam', 'dammam'], 'Riyadh - الرياض': ['رياض', 'riyadh'], 'Qassem - القصيم': ['قصيم', 'qassem', 'qassim'],
+  'Madina - المدينة': ['مدينه', 'مدينه المنوره', 'madina', 'madinah', 'medina'], 'Jeddah - جده': ['جده', 'jeddah', 'jedda'],
+  'MAkkah - مكة': ['مكه', 'مكه المكرمه', 'makkah', 'mecca', 'makka'], 'Taif - الطائف': ['طائف', 'طايف', 'taif'],
+  'Khames - خميس مشيط': ['خميس مشيط', 'خميس', 'khamis mushait', 'khames'], 'Jizan - جيزان': ['جيزان', 'جازان', 'jizan', 'jazan'],
+};
+/**
+ * A CRM customer's city as production's sheet writes it when it is one of the sheet's cities (by its Arabic or English name, or the
+ * sheet's own form); any other city is sent as it is, trimmed to 100 characters. Nothing is guessed beyond the names listed.
+ * @param {unknown} city
+ */
+export function sheetCity(city) {
+  const text = String(city ?? '').replace(/[ \t ]+/g, ' ').trim();
+  if (!text) return '';
+  const loose = looseArabic(text);
+  for (const [sheet, names] of Object.entries(CITY_NAMES)) if (loose === looseArabic(sheet) || names.includes(loose)) return sheet;
+  return [...text].slice(0, 100).join('');
+}
+
+/**
+ * One customer of the customers route from a CRM customer: its Yourrest number, name (required, 200), address (300) and city (100).
+ * null when it cannot be sent (no number or no name).
+ * @param {{crmNumber: unknown, name: unknown, address?: unknown, city?: unknown, active?: boolean}} input
+ */
+export function moldCustomerEntry({crmNumber, name, address, city, active = true}) {
+  if (!isWhole(crmNumber) || crmNumber < 1 || crmNumber > 2147483647) return null;
+  const clean = (value, max) => { const text = moldText(String(value ?? '')); return text ? [...text].slice(0, max).join('') : ''; };
+  const customerName = clean(name, 200);
+  if (!customerName) return null;
+  /** @type {{crmNumber: number, name: string, address?: string, city?: string, active: boolean}} */
+  const entry = {crmNumber, name: customerName};
+  const customerAddress = clean(address, 300), customerCity = clean(sheetCity(city), 100);
+  if (customerAddress) entry.address = customerAddress;
+  if (customerCity) entry.city = customerCity;
+  entry.active = active !== false;
+  return entry;
+}
+
+const jsonBytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
+/**
+ * The calls of the customers route that carry the whole list: one `full` call when it fits production's limits (20000 customers,
+ * 2 MB), else `upsert` batches each within them (no final `full`, which would be refused: nobody is deactivated that time).
+ * @template T
+ * @param {T[]} customers
+ * @returns {{mode: 'full'|'upsert', customers: T[]}[]}
+ */
+export function moldCustomerCalls(customers) {
+  if (customers.length <= MOLD_CUSTOMERS_MAX && jsonBytes({mode: 'full', customers}) <= MOLD_CUSTOMERS_BODY_LIMIT) return [{mode: 'full', customers}];
+  /** @type {{mode: 'full'|'upsert', customers: T[]}[]} */
+  const calls = [];
+  let batch = [], size = 64;
+  for (const entry of customers) {
+    const one = jsonBytes(entry) + 1;
+    if (batch.length && (batch.length >= MOLD_CUSTOMERS_MAX || size + one > MOLD_CUSTOMERS_BODY_LIMIT - 1024)) { calls.push({mode: 'upsert', customers: batch}); batch = []; size = 64; }
+    batch.push(entry); size += one;
+  }
+  if (batch.length) calls.push({mode: 'upsert', customers: batch});
+  return calls;
 }
