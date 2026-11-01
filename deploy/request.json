@@ -1,8 +1,5 @@
 {
-  "mode": "verify",
-  "package": "deploy/packages/Yourrest-CRM-Update-Android-1011-20261031.zip",
-  "sha256": "7debe20e7e5f323408c24a976f9fc012bfa06e8aafbbec3b7ded67cd32026a8c",
-  "stage": "yourrest-crm-update-android-1011-20261031",
-  "helper": "yourrest-activate-update-android-1011.cjs",
-  "note": "the live app still verifies after the old copies were removed"
+  "mode": "diagnose",
+  "script": "scripts/diagnose/app-versions.cjs",
+  "note": "read-only: which Android version the phones run since 1.0.11 was made required (counts only)"
 }
