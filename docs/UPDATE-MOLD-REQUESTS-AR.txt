@@ -32,21 +32,21 @@
 1. نسخة احتياطية لليوم: يأخذها المُفعِّل في الخطوة 4 إن لم توجد نسخة سليمة لليوم. لا تنفذ شيئًا هنا.
 
 2. والتطبيق يعمل، ارفع الحزمة وافكها داخل:
-/home/youriedx/yourrest-crm-update-molds-YYYYMMDD
+/home/youriedx/yourrest-crm-update-molds-20261101
 يجب أن يظهر مجلد release والملف yourrest-activate-update-molds.cjs مباشرة داخل هذا المسار.
 
 3. افحص الحزمة دون إيقاف التطبيق:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-molds-YYYYMMDD/yourrest-activate-update-molds.cjs --check
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-molds-20261101/yourrest-activate-update-molds.cjs --check
 
 يجب أن يظهر: SCHEMA CHANGE: 0016_mold_requests.sql WILL BE APPLIED… ثم PACKAGE AND CONFIGURATION: READY. إن ظهر STOP فلا تكمل، واحتفظ بالناتج.
 
 4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-molds-YYYYMMDD/yourrest-activate-update-molds.cjs
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-molds-20261101/yourrest-activate-update-molds.cjs
 
 الأمر يتحقق من توقف التطبيق، ويفحص البيانات الحالية (يجب أن تكون 16 ترحيلًا)، ويستخدم نسخة اليوم السليمة أو ينشئ نسخة جديدة، ثم يبدّل مجلد release. المُفعِّل لا يكتب في قاعدة البيانات ولا يشغّل الترحيل.
 
 5. عند ظهور START APP IN CPANEL اضغط Start App. أول تشغيل يطبّق الترحيل 0016 بنفسه بعد نسخة خاصة من القاعدة في yourrest-crm-data/schema-backups. ثم:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-molds-YYYYMMDD/yourrest-activate-update-molds.cjs --verify
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-molds-20261101/yourrest-activate-update-molds.cjs --verify
 
 النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 17 و MIGRATION APPLIED: 0016_mold_requests.sql و /api/mold-requests: 401.
 إن ظهر STOP: MIGRATION_NOT_APPLIED_START_APP_FIRST فالتطبيق لم يبدأ بعد: تأكد من Start App وافتح الموقع مرة ثم أعد الأمر.
@@ -74,7 +74,7 @@ cd /home/youriedx/yourrest-crm && /opt/alt/alt-nodejs22/root/usr/bin/node releas
 التراجع (لا تنفذه قبل أن تراسلني)
 هذا التحديث يضيف ترحيلًا: الإصدار القديم يرفض قاعدة فيها ترحيل أحدث. لذلك للتراجع حالتان:
 - أ) التطبيق لم يعمل بعد Start App والقاعدة ما زالت 16 ترحيلًا: أوقف التطبيق، ثم أعد المجلد القديم الذي حفظه المُفعِّل:
-  cd /home/youriedx/yourrest-crm && mv release release-failed-molds && mv /home/youriedx/yourrest-update-molds-activation-YYYYMMDD-XXXXXX/old-release release
+  cd /home/youriedx/yourrest-crm && mv release release-failed-molds && mv /home/youriedx/yourrest-update-molds-activation-20261101-XXXXXX/old-release release
   (استبدل XXXXXX بالاسم الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT) ثم Start App. البيانات لم تتغير.
 - ب) الترحيل تم وتريد العودة: الطلبات التي أُدخلت بعد التحديث تضيع من الـCRM (تبقى في تطبيق المنتجات)، فتواصل معي قبل التنفيذ:
   1) Stop App ثم أعد المجلد القديم كما في (أ).
