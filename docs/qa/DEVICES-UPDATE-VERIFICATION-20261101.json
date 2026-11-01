@@ -1,0 +1,44 @@
+{
+  "release": {
+    "name": "update-devices",
+    "date": "20261101",
+    "package": "deploy/packages/Yourrest-CRM-Update-Devices-20261101.zip",
+    "bytes": 14579511,
+    "sha256": "75228b3f7c0bb3ed10df7a738629e1393773a3462b8d452b8742e086a99df45e",
+    "stage": "yourrest-crm-update-devices-20261101",
+    "helper": "yourrest-activate-update-devices.cjs",
+    "schema": 16,
+    "newMigrations": []
+  },
+  "builtFrom": "a1f647e (code) + 6e5c212 (generated offline app)",
+  "releaseTreeBefore": "{\"files\":2907,\"tree\":\"92d79dc115cc5b103110b1e5631b48004a20e45097c0bcd2c4c013c04ea4e3be\"}",
+  "releaseTreeAfterPackaging": "{\"files\":2907,\"tree\":\"92d79dc115cc5b103110b1e5631b48004a20e45097c0bcd2c4c013c04ea4e3be\"}",
+  "typescript": "0 errors",
+  "eslint": "0 errors",
+  "defaultGate": {
+    "passed": "153/153",
+    "note": "147/153 in the gate script run; the six activation and backup tests failed only because the script exported YR_BROWSER_EXECUTABLE, which the activator refuses as a conflicting setting; rerun without it, all six passed (activate-customer-edit-update 55, baseline-update-activation 181, daily-deploy-backup 122, production-backup 65, schema-update-activation 62, ui-refresh-deployment 265)",
+    "new": "tests/mobile-route-devices.mjs 62 checks",
+    "unchanged": "tests/mobile-route.mjs 387 checks"
+  },
+  "releaseBuildGate": "15/15",
+  "browserGate": "26/27 (erp-sales-browser needs the original ERP workbook, absent here)",
+  "rehearsal": "18/18 on top of the Android 1.0.11 release, as an unprivileged user",
+  "packageInspection": "no secrets, no SQLite files, no seed phone numbers outside node_modules, 2907 release files all hashed, 16 migrations",
+  "limitations": [
+    "Not tried on a real phone before the deploy: the handover is tested on the real route handlers with isolated SQLite.",
+    "The old phone, if it comes back after a handover, stops on the server's 409; points it captured offline after its last upload stay on that phone."
+  ],
+  "deployment": {
+    "run": 41285997943,
+    "at": "2026-11-01T07:46:56Z",
+    "dailyBackup": "/home/youriedx/yourrest-update-devices-activation-20261101-UIhoIA",
+    "activationCheckpoint": "/home/youriedx/yourrest-update-devices-activation-20261101-UIhoIA",
+    "verify": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/mobile-route: 401 / /api/support: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ]
+  }
+}
