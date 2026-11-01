@@ -41,6 +41,9 @@ Playwright browser tests with `YR_BROWSER_EXECUTABLE` and `CODEX_PRIMARY_RUNTIME
 - Backups and restore: `docs/PRODUCTION-BACKUP-AR.md`
 - Hosting notes for Namecheap: `docs/NAMECHEAP-AR.md`
 - Test, fix and refactor report for this revision: `docs/qa/REPORT-AR.md`
+- Mold manufacturing requests and the link to the products application: contract `docs/MOLD-REQUESTS-CONTRACT-AR.md` and its
+  addendum, update guide `docs/UPDATE-MOLD-REQUESTS-AR.txt` (settings `YR_PRODUCTS_API_URL`, `YR_PRODUCTS_SECRET`), and the tool
+  that links the earlier requests, `portable/mold-import.mjs` (`--compare`, then `--dry-run`, then `--apply`)
 
 Configuration is read from a private `settings.cjs` kept outside the release (template: `settings.example.cjs`,
 environment template: `.env.example`). No credentials, database or signing key are part of this repository.
