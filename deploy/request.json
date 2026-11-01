@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-Tablet-20261101.zip",
-  "sha256": "570a60b9609f454f168745bb8c7a97c59e5128587fe8b8865f274355df8bfa64",
-  "stage": "yourrest-crm-update-tablet-20261101",
+  "package": "deploy/packages/Yourrest-CRM-Update-Tablet2-20261101.zip",
+  "sha256": "857a6c0de55d5c0e6f26883fff470b809f58114cc59710b799f454902421e838",
+  "stage": "yourrest-crm-update-tablet2-20261101",
   "helper": "yourrest-activate-update-tablet.cjs"
 }
