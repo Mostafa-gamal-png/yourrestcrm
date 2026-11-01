@@ -43,5 +43,32 @@
     "verdict": "ROWS 91: YOURREST CODE 91, ERP CODE 54, BOTH 54, NEITHER 0, ERP AMBIGUOUS 15",
     "onlyErp": [],
     "firstRun": "41293932200 stopped before reading anything: the script set a YR_* variable, refused by the settings check; fixed in 1ed815a's parent"
+  },
+  "legacyLink": {
+    "date": "2026-11-01",
+    "customerKey": "yourrest (91 of 91 matched; read-only comparison)",
+    "salesmen": "the sheet writes each salesman shorter than the CRM; scripts/diagnose/mold-reps.cjs found one CRM representative holding each name; the owner confirmed the five and chose to leave the head office orders unlinked",
+    "dryRun": "ROWS 91: LEFT OUT (HEAD OFFICE) 12, TO LINK 79, DESIGN LINKS NOT KEPT 69",
+    "backupBefore": "yourrest-backup-20261101T120911289Z (verified)",
+    "applied": "ROWS 91: LEFT OUT (HEAD OFFICE) 12, LINKED 79, FAILED 0",
+    "leftOutOrders": [
+      1,
+      12,
+      13,
+      14,
+      27,
+      31,
+      59,
+      60,
+      71,
+      72,
+      84,
+      87
+    ],
+    "runs": {
+      "dryRun": 41302944252,
+      "backup": 41304987705,
+      "apply": 41305375066
+    }
   }
 }
