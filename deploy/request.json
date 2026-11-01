@@ -1,5 +1,5 @@
 {
   "mode": "diagnose",
-  "script": "scripts/diagnose/mold-compare.cjs",
-  "note": "read-only (second run, the script no longer sets a YR_ variable): is the customer number of the 91 earlier mold requests a Yourrest code or an ERP code? counts and order numbers only (asked by the owner)"
+  "script": "scripts/diagnose/mold-link-dry-run.cjs",
+  "note": "read-only dry run of linking the 91 earlier mold requests with the Yourrest code (the owner approved the code): order numbers and reasons only, nothing written, production not called"
 }
