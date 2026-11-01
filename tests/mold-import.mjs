@@ -45,7 +45,7 @@ fs.writeFileSync(bad, JSON.stringify({requests: [row(1, 1, 'x'), row(1, 2, 'x')]
 assert.throws(() => readSource(bad), /distinct legacyOrderNo/);checks++;
 
 // ---- compare: which code the sheet's customer number is
-process.env.YR_IMPORT_DATABASE = database;
+process.env.MOLD_IMPORT_DATABASE = database;
 const quiet = {log: () => {}};
 const compared = await main(['--source', sourceFile, '--compare'], quiet);
 eq([compared.readOnly, compared.rows, compared.yourrest, compared.erp, compared.both], [true, 9, 7, 2, 2], 'counts by code');
@@ -73,7 +73,7 @@ const fetch = (url, init) => new Promise((resolve, reject) => {
   req.on('error', reject); req.end(init.body);
 });
 try {
-  process.env.YR_PRODUCTS_API_URL = mock.url; process.env.YR_PRODUCTS_SECRET = mock.state.secret;
+  process.env.MOLD_IMPORT_PRODUCTS_URL = mock.url; process.env.MOLD_IMPORT_PRODUCTS_SECRET = mock.state.secret;
   // Order 3 was linked by someone else already: production refuses (409), nothing is saved for it.
   mock.state.byOrder.get(3).crmRequestId = 'mr-elsewhere';
   const applied = await main(['--source', sourceFile, '--key', 'yourrest', '--apply'], {fetch, ...quiet});
@@ -110,7 +110,7 @@ try {
   // ---- refusals before anything happens
   await assert.rejects(main(['--source', sourceFile, '--key', 'yourrest'], quiet), /--dry-run or --apply/);checks++;
   await assert.rejects(main(['--source', sourceFile, '--key', 'name', '--dry-run'], quiet), /--key yourrest or --key erp/);checks++;
-  delete process.env.YR_PRODUCTS_SECRET;
+  delete process.env.MOLD_IMPORT_PRODUCTS_SECRET;
   await assert.rejects(main(['--source', sourceFile, '--key', 'yourrest', '--apply'], {fetch, ...quiet}), /not configured/);checks++;
   const crm = readCrm(new DatabaseSync(database, {readOnly: true}));
   eq(plan(readSource(sourceFile), crm, 'yourrest').filter(item => item.skip === 'already_linked').map(item => item.legacy), [1, 2, 3, 5], 'the plan sees the linked orders');
