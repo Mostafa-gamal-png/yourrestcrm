@@ -1,5 +1,7 @@
 {
-  "mode": "mold-link",
-  "dryRun": false,
-  "note": "the real link of the earlier mold requests (the owner approved it explicitly; the production link settings added; verified backup yourrest-backup-20261101T120911289Z taken just before)"
+  "mode": "deploy",
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldApprovals-20261101.zip",
+  "sha256": "ab14eaaf295d39a1742da7133fcdc50670de10212f9247c09e8b6c3ed7d0811a",
+  "stage": "yourrest-crm-update-mold-approvals-20261101",
+  "helper": "yourrest-activate-update-mold-approvals.cjs"
 }
