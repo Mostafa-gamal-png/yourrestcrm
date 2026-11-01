@@ -13,7 +13,8 @@ const currentDeviceClass=():DeviceClass=>detectDeviceClass(navigator.userAgent,n
 export default function DeviceStatusReporter({me}:{me:Member|null}){
  const {gate}=useJourneyTracker(),deviceClass=useSyncExternalStore(noSubscription,currentDeviceClass,()=>'other' as DeviceClass);
  const memberId=me?.role==='rep'&&me.active===1?me.id:'';
- const report=useMemo(()=>memberId?buildDeviceReport(trackingGateDecision({role:'rep',active:1,...gate}),gate,deviceClass):null,[memberId,gate,deviceClass]);
+ // A companion device (a tablet beside the phone that records the route) does not report: the recording phone's report stands.
+ const report=useMemo(()=>memberId&&!gate.companion?buildDeviceReport(trackingGateDecision({role:'rep',active:1,...gate}),gate,deviceClass):null,[memberId,gate,deviceClass]);
  const reporter=useRef<DeviceReporter|null>(null);
  useEffect(()=>{
   if(!memberId)return;

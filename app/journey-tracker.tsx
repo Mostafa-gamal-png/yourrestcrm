@@ -8,6 +8,7 @@ import {useLanguage} from '@/lib/i18n';
 import {isNativeTrackingApp,nativeTrackingRequest,nativeTrackingGeneration,subscribeNativeTracking,nativeScheduleSupported,type NativeTrackingState} from '@/lib/native-tracking';
 import {trackingWindowOpen,trackingWindowStatus} from '@/lib/tracking-window';
 import {gateDeviceFrom,type GateSource} from '@/lib/tracking-gate';
+import {COMPANION_MEMORY_MS,companionDecision,readCompanionMemory,writeCompanionMemory,type CompanionServerDay} from '@/lib/tracking-companion';
 import {cleanTrackerText} from '@/lib/tracker-text';
 import './journey-tracker.css';
 import {omit} from '@/lib/omit';
@@ -25,12 +26,16 @@ const blockingNativeError=(state:NativeTrackingState)=>!!state.error&&!['sync','
 const nativeSyncProblem=(state:NativeTrackingState)=>state.syncError||(state.error&&nativeFailureKind(state.error)==='sync'?state.error:'');
 const memberTrackerScope=(me:Member|null)=>[me?.id,me?.role,me?.active,me?.regionScope,me?.authVersion,me?.supervisorId,me?.branch].join(':');
 const selectFailureMessage=(failure:unknown,fallback:string)=>cleanTrackerText(failure,fallback);
-type ContinuousStatus='disabled'|'loading'|'upgrade'|'setup'|'ready'|'browser';
+type ContinuousStatus='disabled'|'loading'|'upgrade'|'setup'|'ready'|'browser'|'companion';
 type SelectionOptions={createKey?:string};
-type TrackerContext={isRep:boolean;continuousStatus:ContinuousStatus;setupContinuous:()=>Promise<void>;active:JourneyStop|null;lastStop:JourneyStop|null;loading:boolean;busy:boolean;error:TrackerError;errorMessage:string;operationError:string;pendingCount:number;quarantinedCount?:number;quarantinedGapCount?:number;hidden:boolean;paused:boolean;outsideTrackingHours:boolean;lastFixAt:string;accuracy:number|null;native:boolean;appVersion:string;mapsLaunchSupported:boolean;foregroundDirectionsSupported:boolean;tracking:boolean;gate:GateSource;selectCustomer:(id:string,signal?:AbortSignal,options?:SelectionOptions)=>Promise<JourneyStop|null>;selectFailure:()=>string;cancelSelection:(id:string,reason?:string,stopId?:string)=>Promise<void>;stopDay:()=>Promise<void>;retry:()=>void;stopFor:(customerId:string)=>JourneyStop|null};
+type TrackerContext={isRep:boolean;continuousStatus:ContinuousStatus;setupContinuous:()=>Promise<void>;active:JourneyStop|null;lastStop:JourneyStop|null;loading:boolean;busy:boolean;error:TrackerError;errorMessage:string;operationError:string;pendingCount:number;quarantinedCount?:number;quarantinedGapCount?:number;hidden:boolean;paused:boolean;outsideTrackingHours:boolean;lastFixAt:string;accuracy:number|null;native:boolean;appVersion:string;mapsLaunchSupported:boolean;foregroundDirectionsSupported:boolean;tracking:boolean;gate:GateSource;selectCustomer:(id:string,signal?:AbortSignal,options?:SelectionOptions)=>Promise<JourneyStop|null>;selectFailure:()=>string;cancelSelection:(id:string,reason?:string,stopId?:string)=>Promise<void>;stopDay:()=>Promise<void>;retry:()=>void;stopFor:(customerId:string)=>JourneyStop|null;
+ /** Another device of this representative records the route; this one works without recording (lib/tracking-companion.ts). */
+ companion:boolean;
+ /** This device was such a companion within the last week: a blocked screen then says where the route is recorded. */
+ companionRemembered:boolean};
 /** Outside the Android app there is no native collector, so a representative is gated as a browser. */
 const BROWSER_GATE:GateSource={native:false,loading:false,failed:false,upgradeRequired:false,device:null};
-const empty:TrackerContext={isRep:false,continuousStatus:'disabled',setupContinuous:async()=>{},active:null,lastStop:null,loading:false,busy:false,error:'',errorMessage:'',operationError:'',pendingCount:0,hidden:false,paused:false,outsideTrackingHours:false,lastFixAt:'',accuracy:null,native:false,appVersion:'',mapsLaunchSupported:false,foregroundDirectionsSupported:false,tracking:false,gate:BROWSER_GATE,selectCustomer:async()=>null,selectFailure:()=>'',cancelSelection:async()=>{},stopDay:async()=>{},retry:()=>{},stopFor:()=>null};
+const empty:TrackerContext={isRep:false,continuousStatus:'disabled',setupContinuous:async()=>{},active:null,lastStop:null,loading:false,busy:false,error:'',errorMessage:'',operationError:'',pendingCount:0,hidden:false,paused:false,outsideTrackingHours:false,lastFixAt:'',accuracy:null,native:false,appVersion:'',mapsLaunchSupported:false,foregroundDirectionsSupported:false,tracking:false,gate:BROWSER_GATE,selectCustomer:async()=>null,selectFailure:()=>'',cancelSelection:async()=>{},stopDay:async()=>{},retry:()=>{},stopFor:()=>null,companion:false,companionRemembered:false};
 const Tracker=createContext<TrackerContext>(empty);
 export const useJourneyTracker=()=>useContext(Tracker);
 
@@ -55,7 +60,8 @@ export function JourneyTrackerProvider({me,children}:{me:Member|null;children:Re
 /** The Android service owns GPS, persistence and uploading, including screen-off.
  * UI unmounts only release UI subscriptions; they must never stop the working day. */
 export function NativeJourneyTrackerProvider({me,children}:{me:Member|null;children:React.ReactNode}){
- const [active,setActive]=useState<JourneyStop|null>(null),[lastStop,setLastStop]=useState<JourneyStop|null>(null),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[syncError,setSyncError]=useState<TrackerError>(''),[operationError,setOperationError]=useState(''),[nativeState,setNativeState]=useState<NativeTrackingState|null>(null);
+ const [active,setActive]=useState<JourneyStop|null>(null),[lastStop,setLastStop]=useState<JourneyStop|null>(null),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[syncError,setSyncError]=useState<TrackerError>(''),[operationError,setOperationError]=useState(''),[nativeState,setNativeState]=useState<NativeTrackingState|null>(null),[companion,setCompanion]=useState(false),[companionRemembered,setCompanionRemembered]=useState(false),[companionChecked,setCompanionChecked]=useState(false);
+ const companionRef=useRef(false);
  const activeRef=useRef<JourneyStop|null>(null),lastRef=useRef<JourneyStop|null>(null),nativeRef=useRef<NativeTrackingState|null>(null),generation=useRef(0),chain=useRef<Promise<unknown>>(Promise.resolve()),controllers=useRef(new Set<AbortController>()),desired=useRef(''),selectionRequest=useRef(0),selectionKeys=useRef(new Map<string,string>()),member=useRef(me),pendingEnd=useRef<{customerId:string;reason:string;stopId?:string}|null>(null),polling=useRef(false);
  const selectionFailure=useRef(''),selectFailure=useCallback(()=>selectionFailure.current,[]),setupFlight=useRef<{epoch:number;promise:Promise<void>}|null>(null);
  member.current=me;
@@ -98,6 +104,26 @@ export function NativeJourneyTrackerProvider({me,children}:{me:Member|null;child
   if(generation.current===epoch&&!blockingNativeError(state)){setSyncError(previous=>previous==='sync'||state.tracking?'':previous);if(state.tracking)setOperationError('');}
  },[apply,applyNative,finishCancelledStop,request]);
  const continuousReady=useCallback((state:NativeTrackingState)=>state.continuousSupported&&nativeScheduleSupported(state)&&state.pendingGapCount!==null&&state.enrolled&&state.memberId===member.current?.id&&state.permission==='granted'&&state.backgroundPermission==='granted'&&(!trackingWindowOpen()||state.tracking)&&!blockingNativeError(state),[]);
+ // A representative's second device (a tablet beside the work phone) works without recording while the other one records:
+ // the server reports today's day only while its collector is heard, so another device's open day means recording is on.
+ const refreshCompanion=useCallback(async(epoch:number)=>{
+  const me=member.current,state=nativeRef.current;if(!me||me.role!=='rep'||generation.current!==epoch)return;
+  // Whatever the answer (or none), the first attempt ends the wait: the gate then decides as usual.
+  const checked=()=>{if(generation.current===epoch)setCompanionChecked(true);};
+  if(state&&continuousReady(state)){companionRef.current=false;setCompanion(false);checked();return;}
+  let serverDay:CompanionServerDay;
+  try{
+   const response=await fetch('/api/mobile-route',{cache:'no-store',credentials:'same-origin'});if(!response.ok){checked();return;}
+   const body=await response.json() as {memberId?:string;day?:{id?:unknown;endedAt?:unknown}|null};
+   if(body.memberId!==me.id){checked();return;}
+   serverDay=body.day&&typeof body.day.id==='string'?{id:body.day.id,endedAt:typeof body.day.endedAt==='string'?body.day.endedAt:null}:null;
+  }catch{checked();return;}
+  if(generation.current!==epoch||member.current?.id!==me.id)return;
+  const now=Date.now(),decision=companionDecision({role:me.role,native:true,ownDayId:nativeRef.current?.dayId??null,serverDay,serverKnown:true,windowOpen:trackingWindowOpen(now),rememberedAt:readCompanionMemory(me.id),now});
+  if(decision.remember)writeCompanionMemory(me.id,now);
+  const remembered=readCompanionMemory(me.id);
+  companionRef.current=decision.companion;setCompanion(decision.companion);setCompanionRemembered(remembered!==null&&now-remembered<COMPANION_MEMORY_MS);setCompanionChecked(true);
+ },[continuousReady]);
  const prepareContinuous=useCallback(async(epoch:number,nativeEpoch:number,signal?:AbortSignal,freshState?:NativeTrackingState)=>{
   const current=()=>!signal?.aborted&&generation.current===epoch&&nativeTrackingGeneration()===nativeEpoch&&enabledRef.current&&member.current?.role==='rep';
   if(!current())return null;
@@ -130,6 +156,8 @@ export function NativeJourneyTrackerProvider({me,children}:{me:Member|null;child
     let ready=await nativeTrackingRequest('status');ready=await reconcileAccount(ready,epoch);applyNative(ready,epoch);if(!current())return null;
     if(!nativeScheduleSupported(ready)||ready.pendingGapCount===null)throw Error('native_upgrade_required');
     const rep=member.current?.role==='rep',healthy=rep?continuousReady(ready):ready.permission==='granted'&&ready.tracking&&ready.memberId===member.current?.id&&!blockingNativeError(ready);
+    // A companion device does not take the route over to start a trip: the device that records it keeps it.
+    if(rep&&!healthy&&companionRef.current){clearDesired();if(selectionRequest.current===selection)selectionFailure.current='companion_device';return null;}
     const activeStop=activeRef.current;
     if(healthy&&!pendingEnd.current&&(ready.immutableBindingSupported||ready.pendingCount===0&&ready.pendingGapCount===0)&&activeStop?.customerId===customerId&&activeStop.date===journeyDay()&&!activeStop.closedAt&&ready.stopId===activeStop.id){clearDesired();setSyncError('');setOperationError('');return activeStop;}
     // Preparing permissions precedes creating a stop, including the first selection.
@@ -170,6 +198,8 @@ export function NativeJourneyTrackerProvider({me,children}:{me:Member|null;child
  const stopFor=useCallback((id:string)=>{const stop=activeRef.current?.customerId===id?activeRef.current:lastRef.current?.customerId===id?lastRef.current:null;return stop?.date===journeyDay()?stop:null;},[]);
  useEffect(()=>{
   const epoch=++generation.current,nativeEpoch=nativeTrackingGeneration();activeRef.current=null;lastRef.current=null;nativeRef.current=null;desired.current='';selectionFailure.current='';selectionKeys.current.clear();pendingEnd.current=null;polling.current=false;setActive(null);setLastStop(null);setNativeState(null);setSyncError('');setOperationError('');setBusy(false);setLoading(enabled);
+  // Until the server answers, a device that was a companion recently is taken as one, so it does not flash the blocked screen.
+  const rememberedAt=me?.role==='rep'?readCompanionMemory(me.id):null,recent=rememberedAt!==null&&Date.now()-rememberedAt<COMPANION_MEMORY_MS;companionRef.current=recent;setCompanion(recent);setCompanionRemembered(recent);setCompanionChecked(me?.role!=='rep');
   // CRM first renders with me=null while /api/crm is still loading. Unknown
   // authentication must never disable enrollment or erase a device's outbox.
   // Explicit logout is handled by authRequest before invalidating the session;
@@ -185,19 +215,26 @@ export function NativeJourneyTrackerProvider({me,children}:{me:Member|null;child
      if(generation.current!==epoch||nativeTrackingGeneration()!==nativeEpoch)return;state=await nativeTrackingRequest('enroll',{memberId:member.current.id});if(generation.current!==epoch||nativeTrackingGeneration()!==nativeEpoch)return;applyNative(state,epoch);
     }
     try{apply(await request(undefined,state.stopId||undefined),epoch);}catch(failure){if((failure as Error&{status?:number}).status!==404)throw failure;apply(await request(),epoch);}}else delete window.__yourrestNativeScope;
-  }catch(failure){failed(failure,epoch);}finally{if(generation.current===epoch)setLoading(false);}});
+  }catch(failure){failed(failure,epoch);}finally{if(generation.current===epoch)setLoading(false);}
+  if(enabled)await refreshCompanion(epoch);});
   const poll=()=>{if(!enabled||document.hidden||polling.current)return;polling.current=true;void serial(async()=>{try{if(generation.current!==epoch)return;await refresh(epoch);}catch(failure){failed(failure,epoch,'sync');}finally{if(generation.current===epoch)polling.current=false;}});};
   const visibility=()=>{if(!document.hidden)poll();};
-  const interval=enabled?setInterval(poll,10000):undefined;document.addEventListener('visibilitychange',visibility);window.addEventListener('online',poll);window.addEventListener('focus',poll);window.addEventListener('yourrest:native-ready',poll);
-  return()=>{generation.current++;selectionFailure.current='';unsubscribe();if(interval!==undefined)clearInterval(interval);document.removeEventListener('visibilitychange',visibility);window.removeEventListener('online',poll);window.removeEventListener('focus',poll);window.removeEventListener('yourrest:native-ready',poll);for(const controller of controllers.current)controller.abort();controllers.current.clear();};
- },[scope,enabled,apply,applyNative,failed,reconcileAccount,refresh,request,serial]);
+  const interval=enabled?setInterval(poll,10000):undefined,companionTimer=enabled&&me.role==='rep'?setInterval(()=>{if(!document.hidden)void refreshCompanion(epoch);},60000):undefined;document.addEventListener('visibilitychange',visibility);window.addEventListener('online',poll);window.addEventListener('focus',poll);window.addEventListener('yourrest:native-ready',poll);
+  return()=>{generation.current++;selectionFailure.current='';unsubscribe();if(interval!==undefined)clearInterval(interval);if(companionTimer!==undefined)clearInterval(companionTimer);document.removeEventListener('visibilitychange',visibility);window.removeEventListener('online',poll);window.removeEventListener('focus',poll);window.removeEventListener('yourrest:native-ready',poll);for(const controller of controllers.current)controller.abort();controllers.current.clear();};
+ },[scope,enabled,apply,applyNative,failed,reconcileAccount,refresh,refreshCompanion,request,serial]);
  const isRep=enabled&&me?.role==='rep';
- const continuousStatus:ContinuousStatus=!enabled?'disabled':loading?'loading':operationError==='native_upgrade_required'||nativeState&&(!nativeScheduleSupported(nativeState)||nativeState.pendingGapCount===null)?'upgrade':!isRep?'disabled':nativeState&&!nativeState.continuousSupported?'upgrade':!nativeState?.enrolled||nativeState.memberId!==me?.id||nativeState.permission!=='granted'||nativeState.backgroundPermission!=='granted'?'setup':'ready';
+ // A device that stops being enrolled (the other device keeps the day and this app stood down) asks at once whether it is now
+ // a companion, instead of showing the setup screen until the next periodic check.
+ const nativeEnrolled=nativeState?nativeState.enrolled:null;
+ useEffect(()=>{if(nativeEnrolled===false&&member.current?.role==='rep')void refreshCompanion(generation.current);},[nativeEnrolled,refreshCompanion]);
+ const continuousStatus:ContinuousStatus=!enabled?'disabled':loading?'loading':operationError==='native_upgrade_required'||nativeState&&(!nativeScheduleSupported(nativeState)||nativeState.pendingGapCount===null)?'upgrade':!isRep?'disabled':nativeState&&!nativeState.continuousSupported?'upgrade':!nativeState?.enrolled||nativeState.memberId!==me?.id||nativeState.permission!=='granted'||nativeState.backgroundPermission!=='granted'?(companion?'companion':'setup'):'ready';
  const nativeError:TrackerError=nativeState?.permission==='denied'||isRep&&nativeState?.backgroundPermission==='denied'?'permission':nativeState?.locationServicesEnabled===false?'unavailable':nativeState?.error?nativeFailureKind(nativeState.error):nativeState?.syncError?'sync':windowOpen&&(active||continuousStatus==='ready')&&!loading&&!busy&&nativeState&&!nativeState.tracking?'native':'';
  const permissionError=nativeState?.fineLocationPermission==='denied'?'fine_location_permission_required':nativeState?.notificationPermission==='denied'?'notification_permission_required':isRep&&nativeState?.backgroundPermission==='denied'?'background_permission_required':'';
  const errorMessage=selectFailureMessage(permissionError||(nativeState?.locationServicesEnabled===false?'location_services_disabled':'')||operationError||nativeState?.error||nativeState?.syncError,'');
- const memberId=me?.id,gate=useMemo<GateSource>(()=>({native:true,loading,failed:!loading&&!nativeState&&!!operationError,upgradeRequired:operationError==='native_upgrade_required',device:nativeState?gateDeviceFrom(nativeState,memberId):null}),[loading,nativeState,operationError,memberId]);
- const value=useMemo<TrackerContext>(()=>({isRep,continuousStatus,setupContinuous,active,lastStop,loading,busy,error:syncError||nativeError,errorMessage,operationError,pendingCount:nativeState?.pendingCount||0,quarantinedCount:nativeState?.quarantinedCount||0,quarantinedGapCount:nativeState?.quarantinedGapCount||0,hidden:false,paused:windowOpen&&!!active&&!!nativeState&&!nativeState.tracking,outsideTrackingHours:enabled&&!windowOpen,lastFixAt:nativeState?.lastFixAt||'',accuracy:nativeState?.accuracy??null,native:true,appVersion:nativeState?.appVersion||'',mapsLaunchSupported:nativeState?.mapsLaunchSupported===true,foregroundDirectionsSupported:nativeState?.foregroundDirectionsSupported===true,tracking:windowOpen&&!!nativeState?.tracking,gate,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor}),[isRep,continuousStatus,setupContinuous,active,lastStop,loading,busy,syncError,nativeError,errorMessage,operationError,nativeState,enabled,windowOpen,gate,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor]);
+ const memberId=me?.id,gate=useMemo<GateSource>(()=>({native:true,loading,failed:!loading&&!nativeState&&!!operationError,upgradeRequired:operationError==='native_upgrade_required',device:nativeState?gateDeviceFrom(nativeState,memberId):null,companion,companionPending:!companionChecked}),[loading,nativeState,operationError,memberId,companion,companionChecked]);
+ // A companion's own collector state (not enrolled, refused because the other device records) is not a problem to show.
+ const quiet=continuousStatus==='companion';
+ const value=useMemo<TrackerContext>(()=>({isRep,continuousStatus,setupContinuous,active,lastStop,loading,busy,error:quiet?'':syncError||nativeError,errorMessage:quiet?'':errorMessage,operationError,pendingCount:nativeState?.pendingCount||0,quarantinedCount:nativeState?.quarantinedCount||0,quarantinedGapCount:nativeState?.quarantinedGapCount||0,hidden:false,paused:windowOpen&&!!active&&!!nativeState&&!nativeState.tracking,outsideTrackingHours:enabled&&!windowOpen,lastFixAt:nativeState?.lastFixAt||'',accuracy:nativeState?.accuracy??null,native:true,appVersion:nativeState?.appVersion||'',mapsLaunchSupported:nativeState?.mapsLaunchSupported===true,foregroundDirectionsSupported:nativeState?.foregroundDirectionsSupported===true,tracking:windowOpen&&!!nativeState?.tracking,gate,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor,companion:quiet,companionRemembered}),[isRep,continuousStatus,setupContinuous,active,lastStop,loading,busy,syncError,nativeError,errorMessage,operationError,nativeState,enabled,windowOpen,gate,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor,quiet,companionRemembered]);
  return <Tracker.Provider value={value}>{children}</Tracker.Provider>;
 }
 
@@ -304,7 +341,7 @@ export function BrowserJourneyTrackerProvider({me,children}:{me:Member|null;chil
   document.addEventListener('visibilitychange',visibility);window.addEventListener('offline',offline);window.addEventListener('online',online);setHidden(document.hidden);
   return()=>{document.removeEventListener('visibilitychange',visibility);window.removeEventListener('offline',offline);window.removeEventListener('online',online);};
  },[scheduleFlush]);
- const value=useMemo<TrackerContext>(()=>({isRep:enabled&&me?.role==='rep',continuousStatus:enabled&&me?.role==='rep'?'browser':'disabled',setupContinuous:empty.setupContinuous,active,lastStop,loading,busy,error,errorMessage:selectionFailure.current,operationError:'',pendingCount,hidden,paused,outsideTrackingHours:enabled&&!windowOpen,lastFixAt,accuracy,native:false,appVersion:'',mapsLaunchSupported:false,foregroundDirectionsSupported:false,tracking:windowOpen&&!!active&&!paused,gate:BROWSER_GATE,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor}),[enabled,me?.role,active,lastStop,loading,busy,error,pendingCount,hidden,paused,windowOpen,lastFixAt,accuracy,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor]);
+ const value=useMemo<TrackerContext>(()=>({isRep:enabled&&me?.role==='rep',continuousStatus:enabled&&me?.role==='rep'?'browser':'disabled',setupContinuous:empty.setupContinuous,active,lastStop,loading,busy,error,errorMessage:selectionFailure.current,operationError:'',pendingCount,hidden,paused,outsideTrackingHours:enabled&&!windowOpen,lastFixAt,accuracy,native:false,appVersion:'',mapsLaunchSupported:false,foregroundDirectionsSupported:false,tracking:windowOpen&&!!active&&!paused,gate:BROWSER_GATE,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor,companion:false,companionRemembered:false}),[enabled,me?.role,active,lastStop,loading,busy,error,pendingCount,hidden,paused,windowOpen,lastFixAt,accuracy,selectCustomer,selectFailure,cancelSelection,stopDay,retry,stopFor]);
  return <Tracker.Provider value={value}>{children}</Tracker.Provider>;
 }
 
@@ -345,6 +382,7 @@ function retainedFridayNotice(state:TrackerContext,language:string){
 
 function continuousSetup(state:TrackerContext,language:string){
  const label=(ar:string,en:string)=>language==='en'?en:ar,status=state.continuousStatus;
+ if(status==='companion')return <div className="journey-form-notice no-print" role="status" data-tracking="companion"><MapPin size={16}/><span>{label('خط السير يُسجَّل من جهازك الآخر على حسابك. هذا الجهاز يعمل بدون تسجيل الموقع.','Your route is recorded by your other device. This device works without recording location.')}</span></div>;
  const version=state.native&&state.appVersion?label('الإصدار الحالي: ','Current version: ')+state.appVersion:'';
  // Only judge the installed app once it has reported itself; before that the capabilities are unknown, and rendering a notice would flash on every launch and differ from the server-rendered page.
  const mapsUpdate=state.native&&!!state.appVersion&&!state.foregroundDirectionsSupported&&(status==='ready'||status==='disabled'),retained=retainedFridayNotice(state,language);
@@ -374,8 +412,10 @@ export function JourneyTrackingBanner({compact=false}:{compact?:boolean}={}){
  const stopLabel=label('إنهاء تسجيل اليوم','End today’s tracking');
  const scheduleLabel=label('تسجيل خط السير متوقف الآن؛ يعمل من 6 صباحًا إلى 6 مساءً بتوقيت السعودية ماعدا الجمعة','Route recording is paused; it runs from 6 AM to 6 PM Saudi time except Friday');
  if(compact&&state.outsideTrackingHours&&(state.isRep||state.active))return <span className="icon-button journey-tracking-control journey-tracking-control-scheduled" role="img" aria-label={scheduleLabel} title={scheduleLabel}><MapPin size={18}/></span>;
+ if(compact&&state.isRep&&state.companion){const text=label('خط السير يُسجَّل من جهازك الآخر','Route recorded by your other device');return <span className="icon-button journey-tracking-control journey-tracking-control-scheduled" role="img" data-tracking="companion" aria-label={text} title={text}><MapPin size={18}/></span>;}
  if(compact&&state.isRep)return state.active||state.tracking?<span className={'icon-button journey-tracking-control'+(problem?' journey-tracking-control-warning':'')} role="img" aria-label={label(problem?'تسجيل الموقع يحتاج مراجعة':'تسجيل الموقع مفعّل',problem?'Location recording needs attention':'Location recording is enabled')} title={label(problem?'تسجيل الموقع يحتاج مراجعة':'تسجيل الموقع مفعّل',problem?'Location recording needs attention':'Location recording is enabled')}><MapPin size={18}/><span className="journey-tracking-dot" aria-hidden="true"/></span>:null;
  if(compact)return state.active||state.tracking?<button type="button" className={'icon-button journey-tracking-control'+(problem?' journey-tracking-control-warning':'')} disabled={state.busy} aria-label={stopLabel} title={stopLabel} onClick={()=>void state.stopDay()}>{state.busy?<Loader2 className="spin" size={18}/>:<PauseCircle size={18}/>}<span className="journey-tracking-dot" aria-hidden="true"/></button>:null;
- // Keep explicit setup/consent and the compact status, without repeated workspace warnings.
+ // Keep explicit setup/consent and the compact status, without repeated workspace warnings. A companion stays quiet here.
+ if(state.companion)return null;
  return continuousSetup(state,language);
 }

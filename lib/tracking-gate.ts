@@ -32,7 +32,11 @@ export type GateDevice={
 };
 /** What the tracker knows before any decision is made. `failed` means the
  * Android bridge could not be read at all; it is not a permission problem. */
-export type GateSource={native:boolean;loading:boolean;failed:boolean;upgradeRequired:boolean;device:GateDevice|null};
+export type GateSource={native:boolean;loading:boolean;failed:boolean;upgradeRequired:boolean;device:GateDevice|null;
+ /** Another device of this representative records the route (lib/tracking-companion.ts): this one may work without recording. */
+ companion?:boolean;
+ /** The server has not answered yet whether another device records: a device that is not set up waits instead of being blocked. */
+ companionPending?:boolean};
 export type GateRequirement='consent'|'enrollment'|'fine_location'|'notifications'|'background_location'|'location_services';
 export type GateReason='browser'|'upgrade'|'setup'|'permission'|'location_services'|'bridge';
 export type GateDecision={status:'allowed'}|{status:'checking'}|{status:'blocked';reason:GateReason;missing:GateRequirement[]};
@@ -100,6 +104,9 @@ export function trackingGateDecision(input:GateInput):GateDecision{
  if(input.upgradeRequired||!device.continuousSupported||!device.scheduleSupported||!device.gapCountKnown)return {status:'blocked',reason:'upgrade',missing:[]};
  const missing=missingRequirements(device);
  if(!missing.length)return {status:'allowed'};
+ // A companion device (a tablet beside the phone that records the route) needs no tracking of its own.
+ if(input.companion)return {status:'allowed'};
+ if(input.companionPending)return {status:'checking'};
  // A first activation has not been consented to yet; afterwards, a denied
  // permission needs different guidance because Android may not ask again.
  const reason:GateReason=missing.includes('consent')?'setup':missing.some(item=>item==='fine_location'||item==='notifications'||item==='background_location')?'permission':missing.includes('location_services')?'location_services':'setup';

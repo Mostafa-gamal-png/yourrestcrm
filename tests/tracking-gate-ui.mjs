@@ -130,4 +130,13 @@ no(html.includes('role="alert"'), 'The checklist already says which permission i
 tracker = trackerWith({native: true, loading: true, failed: false, upgradeRequired: false, device: null}); html = render();
 ok(html.includes('data-gate="checking"') && html.includes('جارٍ التحقق من تتبع خط السير'), 'Waiting for the app is a checking screen');
 no(html.includes('WORKSPACE') || html.includes('data-gate="blocked"'), 'Checking shows neither the workspace nor a block');
+// A companion device (a tablet beside the phone that records the route) gets the workspace; once the other device stops
+// recording, the setup screen says where the route was recorded and that enabling here moves it to this device.
+const setupGate = reasons.find(r => r[0] === 'setup')[1].gate;
+tracker = trackerWith({...setupGate, companion: true}); html = render();
+ok(html.includes('WORKSPACE') && !html.includes('data-gate'), 'A companion sees the workspace');
+tracker = trackerWith(setupGate, {companionRemembered: true}); html = render();
+ok(html.includes('data-gate-reason="setup"') && html.includes('data-companion="lost"') && html.includes('جهازك الآخر') && html.includes('ليصبح هذا الجهاز هو الذي يسجّل'), 'A former companion is told where the route was recorded');
+tracker = trackerWith(setupGate); html = render();
+no(html.includes('data-companion'), 'A device that never was a companion sees the usual setup screen');
 console.log(JSON.stringify({ok: true, checks}));

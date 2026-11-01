@@ -106,4 +106,22 @@ eq(decide({device: device({syncError: 'لا يوجد اتصال بالخادم'}
 // The checklist helper is stable and ordered.
 eq(gate.missingRequirements(device({backgroundPermission: 'denied', fineLocationPermission: 'denied', permission: 'denied'})), ['fine_location', 'background_location'], 'Requirements follow the fixed display order');
 eq(gate.REQUIREMENT_ORDER, ['consent', 'fine_location', 'notifications', 'background_location', 'location_services', 'enrollment'], 'Fixed display order');
+// A companion device (a tablet beside the phone that records the route) works without tracking of its own.
+const tablet = device({enrolled: false, continuousConsent: null, backgroundPermission: 'prompt', notificationPermission: 'prompt', tracking: false});
+eq(decide({device: tablet}), blocked('permission', ['background_location', 'enrollment']), 'A device that records nothing is blocked on its own');
+eq(decide({device: tablet, companion: true}), {status: 'allowed'}, 'The same device is allowed while another device records the route');
+eq(decide({device: device({backgroundPermission: 'denied', locationServicesEnabled: false}), companion: true}), {status: 'allowed'}, 'A companion needs none of the tracking permissions');
+eq(decide({device: tablet, companion: false}), blocked('permission', ['background_location', 'enrollment']), 'companion false changes nothing');
+eq(decide({device: device({appVersion: '1.0.9'}), companion: true}), blocked('upgrade'), 'A companion must still run the served app version');
+eq(decide({device: tablet, companion: true, upgradeRequired: true}), blocked('upgrade'), 'A companion on an app without continuous support is still told to update');
+eq(decide({native: false, device: null, companion: true}), blocked('browser'), 'A browser never becomes a companion');
+eq(decide({device: null, companion: true}), {status: 'checking'}, 'Before the app answers, a companion is still being checked');
+eq(decide({device: null, failed: true, companion: true}), blocked('bridge'), 'A broken bridge is reported even for a companion');
+for (const role of ['admin', 'manager', 'supervisor']) eq(decide({role, device: tablet, companion: true}), {status: 'allowed'}, 'Other roles are unchanged: ' + role);
+// Until the server has answered whether another device records, a device that is not set up waits (nothing is reported).
+eq(decide({device: tablet, companionPending: true}), {status: 'checking'}, 'Not set up, server not answered yet: still checking');
+eq(decide({device: tablet, companionPending: true, companion: true}), {status: 'allowed'}, 'Known companion: allowed');
+eq(decide({device: device(), companionPending: true}), {status: 'allowed'}, 'A phone that is set up never waits for the answer');
+eq(decide({device: device({appVersion: '1.0.9'}), companionPending: true}), blocked('upgrade'), 'An outdated app is told to update at once');
+eq(decide({role: 'supervisor', device: tablet, companionPending: true}), {status: 'allowed'}, 'Other roles never wait');
 console.log(JSON.stringify({ok: true, checks}));

@@ -68,6 +68,9 @@ export default function CustomerJourneyMap(props:Props){
   try{
    if(!trackingWindowOpen()){
     notice(say('الاتجاهات متاحة. تسجيل خط السير يعمل من 6 صباحًا إلى 6 مساءً بتوقيت السعودية ماعدا الجمعة.','Directions are available. Route recording runs from 6 a.m. to 6 p.m. Saudi time except Friday.'));
+   }else if(tracker.companion){
+    // The other device records the route; this one only opens the way there.
+    notice(say('الاتجاهات متاحة. خط السير يُسجَّل من جهازك الآخر، فلا تُسجَّل هذه الرحلة من هذا الجهاز.','Directions are available. Your route is recorded by your other device, so this trip is not recorded from this one.'));
    }else{
     notice(say('جارٍ تأكيد تسجيل الرحلة؛ يمكنك فتح الخرائط الآن.','Confirming trip recording; you can open Maps now.'));
     try{

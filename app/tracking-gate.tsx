@@ -111,6 +111,7 @@ function BlockedScreen({reason,missing,member}:{reason:GateReason;missing:GateRe
   <span className="tracking-gate-icon"><MapPin size={26}/></span>
   <h1>{titleFor(reason,say,outdated)}</h1>
   <p className="tracking-gate-body">{bodyFor(reason,say,android,appVersion)}</p>
+  {reason==='setup'&&tracker.companionRemembered&&<p className="tracking-gate-body" data-companion="lost">{say('لا يُسجَّل خط السير الآن من جهازك الآخر. افتح التطبيق على الجهاز الذي يسجّل خط السير، أو فعّل التتبع هنا ليصبح هذا الجهاز هو الذي يسجّل.','Your route is not being recorded by your other device right now. Open the app on the device that records your route, or enable tracking here so this device records it.')}</p>}
   {showList&&<ul className="tracking-gate-list" aria-label={say('متطلبات التتبع','Tracking requirements')}>
    {REQUIREMENT_ORDER.map(item=>{const needed=missing.includes(item);return <li key={item} data-requirement={item} data-needed={needed?'yes':'no'}>{needed?<XCircle size={18} aria-hidden="true"/>:<CheckCircle2 size={18} aria-hidden="true"/>}<span>{requirementLabel(item,say)}</span><b>{needed?say('مطلوب','Required'):say('تم','Done')}</b></li>;})}
   </ul>}
