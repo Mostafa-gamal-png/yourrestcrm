@@ -52,6 +52,7 @@ try {
   ok(added.id, 'saved');
   await until(() => sends().length === 2, 'the list after the new customer');
   const second = JSON.parse(sends()[1].body);
+  await until(async () => (await audit()).length === 2, 'the second audit entry');
   check([second.mode, second.customers.length, second.customers.find(item => item.name === 'مصنع الرياض الجديد')?.city], ['full', 4, 'Riyadh - الرياض'], 'the new customer goes with the whole list');
 
   // ---- a customer deleted: deactivated by the next full list (production deletes nobody)
@@ -60,6 +61,7 @@ try {
   await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع آخر', city: 'جازان', region: 'الشرقية', assignedTo: 'rep', branch: 'الرئيسي'}}});
   await until(() => sends().length === 3, 'the list after the deletion');
   check([mock.state.customers.get(gone).active, mock.state.customers.size], [false, 5], 'the deleted customer is deactivated there, not deleted');
+  await until(async () => (await audit()).length === 3, 'the third audit entry');
   check((await audit()).at(-1).deactivated, 1, 'and the audit says so');
 } finally { await app.stop(); }
 
