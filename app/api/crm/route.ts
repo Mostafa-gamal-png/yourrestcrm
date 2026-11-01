@@ -13,14 +13,12 @@ import {normalizeMemberEmail,memberEmailError} from '@/lib/member-email';
 import {memberEditToken} from '@/lib/member-edit';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {enforceVisitPlace} from '@/lib/visit-place-server';
-import {database} from '@/lib/crm-server';
-import {productsLink} from '@/lib/mold-requests-server';
-import {keepMoldCustomersSynced} from '@/lib/mold-customers-server';
+import {nudgeMoldCustomers} from '@/lib/mold-customers-hook';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
  // The products application's customer list follows the CRM's (lib/mold-customers-server.ts): started by the page everyone loads.
- keepMoldCustomersSynced(c.db,productsLink);
+ nudgeMoldCustomers();
  const names=new Set(c.members.filter(m=>scope.has(m.id)&&c.members.every(other=>other.name!==m.name||scope.has(other.id))).map(m=>m.name));
  const masterIds=new Set(c.visible.filter(r=>['customer','factory'].includes(r.kind)).map(r=>r.id)),activityIds=new Set(c.visible.filter(r=>r.kind==='activity').map(r=>r.id));
  const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حفظ متابعة','visit-receipt','service-receipt','support-receipt','complaint-receipt','service-kpi-receipt','crm-create-receipt','mold-request-receipt') AND action NOT LIKE 'mold-request:%' AND action NOT LIKE 'service:%' AND action NOT LIKE 'support:%' AND action NOT LIKE 'complaint:%' AND action NOT LIKE 'service-kpi:%' ORDER BY created_at DESC LIMIT 500").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(c.me.role==='rep'?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor)));
@@ -31,7 +29,7 @@ export async function GET(){try{
  return Response.json({records:serviceVisitRecords(c).map(r=>{const intake=r.kind==='customer'?activeServiceCase(r.id,c):undefined;return intake?.status==='assigned'&&canReadService(intake,c)?{...r,data:{...r.data,_serviceIntake:{id:intake.id,createdAt:intake.createdAt,products:intake.data.products,strength:intake.data.strength,needs:intake.data.needs,nextAction:intake.data.nextAction,nextDate:intake.data.nextDate}}}:r;}),me:projectMember(c.me),members,audits,serviceQueue:serviceQueue(c)},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 /** A write that went through may have added, edited or deleted a customer: the products application's list is checked shortly after. */
-export async function POST(req:Request){const response=await savePost(req);if(response.ok)keepMoldCustomersSynced(database(),productsLink,{soon:true});return response;}
+export async function POST(req:Request){const response=await savePost(req);if(response.ok)nudgeMoldCustomers({soon:true});return response;}
 async function savePost(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;if(!serviceCustomerCreate)requireSalesRole(c.me);const now=new Date().toISOString();const mutation=crypto.randomUUID();const canManage=['admin','manager'].includes(c.me.role);
  const offline=offlineCapture(body,c.me.id,now);if(offline&&(body.action!=='save'||body.kind!=='customer'||body.id||body.parentId||!body.createKey))throw new CRMError('هذا الإجراء يتطلب اتصالًا مباشرًا.');
