@@ -25,6 +25,8 @@ const STAYS_TYPED = [
   {file: 'app/kpi-evidence-editor.tsx', snippet: 'name="due"', reason: 'an amount in riyals: digits are typed, dictating them makes more errors than it saves'},
   {file: 'app/kpi-evidence-editor.tsx', snippet: 'name="collected"', reason: 'an amount in riyals: digits are typed, dictating them makes more errors than it saves'},
   {file: 'app/sales-workspace.tsx', snippet: "mode==='sales'?'العميل أو مرجع البيع'", reason: 'a search box'},
+  {file: 'app/mold-requests.tsx', snippet: "<input type={type} maxLength={max} dir=\"ltr\"", reason: 'the mold description is dimensions (200*400*27.5TH MM OPEN), the mold number a code and the design link a URL; the notes are dictated'},
+  {file: 'app/mold-requests.tsx', snippet: 'inputMode="numeric" dir="ltr"', reason: 'mold width, gelba size and quantity are numbers with ranges, picked from the usual sizes or typed'},
   {file: 'app/sales-workspace.tsx', snippet: 'maxLength={100} value={data.reference}', reason: 'the sale reference is a code from the invoice'},
   {file: 'app/visit-customer-picker.tsx', snippet: 'value={draft.code}', reason: 'the ERP customer code is a code'},
   // The shared helpers hand text and text areas to VoiceField and keep only the other types for themselves; the guard is checked below.
