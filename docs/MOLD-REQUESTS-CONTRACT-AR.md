@@ -1,0 +1,156 @@
+# عقد الواجهة: طلبات القوالب بين yourrestcrm وyourrest-products (الإصدار 1)
+
+يربط هذا العقد برنامجين مستقلين لا يدخل مستخدمو أحدهما الآخر:
+
+- **yourrestcrm** (Namecheap، Node/SQLite): يدخل فيه **المندوب** طلب القالب ويرى حالته. هو **المالك** لبيانات الطلب.
+- **yourrest-products** (cPanel، PHP/MySQL، `https://yourrest.org/products/`): يعمل فيه **موظفو الإنتاج** على الطلب. هو **المالك** لبيانات الإنتاج والتسليم.
+
+الـ CRM هو من يتصل بتطبيق المنتجات دائمًا (يرسل الطلب ويسحب الحالة). تطبيق المنتجات لا يتصل بالـ CRM إطلاقًا.
+
+## 1) العنوان والمصادقة
+
+العنوان: `https://yourrest.org/products/crm-api.php?route=<route>` والمسارات: `requests` و`status` و`cancel`. كلها `POST` بجسم JSON بترميز UTF-8 وترويسة `Content-Type: application/json; charset=utf-8`. HTTPS فقط.
+
+لا توجد جلسات ولا كوكيز. كل طلب يُوقَّع بمفتاح سري مشترك (32 حرفًا عشوائيًا على الأقل، يُحفظ خارج الكود في إعداد كل طرف ولا يصل للمتصفح أبدًا):
+
+- `X-YR-Timestamp`: ثواني Unix (UTC) وقت الإرسال. يُرفض الطلب إن زاد الفرق عن الخادم على 300 ثانية.
+- `X-YR-Signature`: HMAC-SHA256 بحروف hex صغيرة للنص التالي، بالمفتاح السري:
+
+```
+<timestamp>\n<METHOD>\n<route>\n<sha256-hex(جسم الطلب كما أُرسل بالضبط)>
+```
+
+مثال: `1767225600\nPOST\nrequests\n<sha256>`. المسار `route` هو اسم المسار فقط دون `?route=`. جسم فارغ يعني sha256 للنص الفارغ.
+
+**متجه اختبار** (يجب أن يطابقه التنفيذان):
+
+- المفتاح: `test-secret-for-contract-vector-0123456789abcdef`
+- الوقت: `1767225600`، الطريقة `POST`، المسار `requests`
+- الجسم (UTF-8 بالضبط): `{"crmRequestId":"rec-1","specs":{"notes":"طلب تجريبي"}}`
+- sha256 للجسم: `c7f373832a49548ba96241f5284c065765fb871add3a3c32adbf9be6e8d2b19a`
+- التوقيع المتوقع: `d52d43c3f895c07a5a1c8ffddebc6a1a3e7f819df32b6c06c8cf3f104777a3f1`
+
+## 2) المسارات
+
+### `requests` — إنشاء أو تعديل أو ربط طلب (آمن للتكرار)
+
+الجسم:
+
+```json
+{
+  "crmRequestId": "rec-9f3a",
+  "legacyOrderNo": 12,
+  "requestedAt": "2026-10-29T10:15:00+03:00",
+  "customer": { "crmNumber": 27, "name": "مصنع زايد للطابوق", "address": "الدمام", "city": "Damam - الدمام" },
+  "salesman": { "crmMemberId": "mem-1", "name": "أحمد عبد العزيز", "email": "name@yourrest.org" },
+  "specs": {
+    "description": "200*400*27.5TH MM OPEN",
+    "core": "open", "vibrators": 2, "model": "old", "halfBlock": "none",
+    "moldWidth": 1380, "gelbaSize": 795, "moldNo": "YR099-9",
+    "quantity": 1, "designUrl": "https://drive.google.com/...", "notes": ""
+  }
+}
+```
+
+- `crmRequestId` (إلزامي): معرّف الطلب في الـ CRM، حروف وأرقام و`_` و`-` حتى 64. هو مفتاح عدم التكرار.
+- `legacyOrderNo` (اختياري): للطلبات التاريخية فقط (الفقرة 5).
+- `requestedAt`: ISO مع إزاحة المنطقة. `salesman.email` اختياري. `designUrl` اختياري ويجب أن يبدأ بـ `https://`.
+- حدود الحروف: `notes` حتى 2000، `address` حتى 300، `description` حتى 200، `moldNo` حتى 40، بقية النصوص حتى 160، `designUrl` حتى 1000.
+
+القيم المسموحة (نفس القوائم في كلا الطرفين):
+
+| الحقل | القيم | التسمية العربية |
+|---|---|---|
+| `core` | `open` / `closed` | مفتوح / مغلق |
+| `vibrators` | `2` / `3` / `4` | عدد الرجاجات |
+| `model` | `old` / `gelba_new` / `new` | موديل قديم / جلبة موديل جديد / موديل جديد |
+| `halfBlock` | `none` / `one` | بدون بلوكة نص / بلوكة نص واحدة |
+| `moldWidth` | عدد صحيح 1000 إلى 2000 (مم). المعتاد 1380 و1375 | عرض القالب |
+| `gelbaSize` | عدد صحيح 500 إلى 1200. المعتاد 795 و800 | مقاس الجلب |
+| `quantity` | عدد صحيح 1 إلى 100 | الكمية |
+
+السلوك:
+
+- طلب جديد: يُنشأ بحالة `received` ويُعطى `orderNo` تسلسليًا. الرد `201` و`created: true`.
+- الطلب موجود وما زال `editable`: تُستبدل حقول الطلب (لا حقول الإنتاج). الرد `200` و`created: false`. إن تطابقت البيانات فلا أثر.
+- الطلب موجود وغير `editable`: `409` برمز `request_locked`، وفي `error.details.request` الحالة الحالية.
+
+الرد:
+
+```json
+{ "request": <كائن الحالة>, "created": true, "linked": false }
+```
+
+### `status` — سحب الحالة
+
+الجسم: `{ "ids": ["rec-9f3a", "rec-2b"] }` (حتى 200). الرد:
+
+```json
+{ "requests": [ <كائن الحالة> ], "unknown": ["معرّفات غير موجودة"] }
+```
+
+### `cancel` — إلغاء طلب
+
+الجسم: `{ "crmRequestId": "rec-9f3a", "reason": "..." }`. يُنفَّذ فقط إن كان الطلب `editable`، وإلا `409 request_locked`. تكراره على طلب ملغى يرجع `200` بحالته.
+
+## 3) كائن الحالة (يملكه تطبيق المنتجات)
+
+```json
+{
+  "crmRequestId": "rec-9f3a",
+  "orderNo": 92,
+  "status": "in_production",
+  "editable": false,
+  "moldSerial": "093",
+  "productionDate": "2026-10-30",
+  "stages": {
+    "laserCutting":  { "done": true,  "at": "2026-10-30" },
+    "box":           { "done": true,  "at": "2026-10-31" },
+    "coreConnector": { "done": false, "at": null },
+    "lowerMold":     { "done": false, "at": null },
+    "tempershoe":    { "done": false, "at": null },
+    "alignment":     { "done": false, "at": null },
+    "paint":         { "done": false, "at": null }
+  },
+  "stagesDone": 2,
+  "stagesTotal": 7,
+  "delivered": false,
+  "deliveryDate": null,
+  "updatedAt": "2026-10-31T09:00:00+03:00",
+  "revision": 5
+}
+```
+
+ترتيب المراحل ثابت: `laserCutting` ثم `box` ثم `coreConnector` ثم `lowerMold` ثم `tempershoe` ثم `alignment` ثم `paint`. تُعرض بأسمائها الإنجليزية كما في الشيت: Laser Cutting، BOX، Core and Connector، Lower Mold، Tempershoe، Alignment، Paint. `at` تاريخ إتمام المرحلة إن عُرف وإلا `null` (الطلبات التاريخية لا تاريخ لمراحلها).
+
+`status` يحسبه تطبيق المنتجات بهذا الترتيب: `cancelled` ثم `delivered` (سُلّم) ثم `produced` (المراحل السبع كلها منتهية ولم يُسلَّم) ثم `in_production` (مرحلة منتهية أو تاريخ إنتاج) ثم `confirmed` (اعتُمد) ثم `received`. و`editable` تساوي `true` فقط حين تكون الحالة `received`.
+
+**لا يُرجع تطبيق المنتجات أبدًا**: ملاحظات الإنتاج الداخلية، العمال، المشرفين، أي بيانات إنتاج أخرى.
+**لا يرسل الـ CRM أبدًا** غير الحقول المذكورة أعلاه: لا هواتف ولا بريد العميل ولا بيانات زيارات ولا مبيعات.
+
+## 4) الأخطاء
+
+أي خطأ: `{ "error": { "code": "...", "message": "...", "fields": [...]?, "details": {...}? } }`
+
+| الرمز | HTTP | المعنى |
+|---|---|---|
+| `invalid_signature` | 401 | توقيع خاطئ أو ترويسات ناقصة |
+| `stale_timestamp` | 401 | فرق الوقت أكبر من 300 ثانية |
+| `not_configured` | 503 | المفتاح السري غير مضبوط في تطبيق المنتجات |
+| `invalid_payload` | 400 | بيانات غير صحيحة، و`fields` تسمي الحقول |
+| `request_locked` | 409 | الإنتاج قبل الطلب فلا تعديل ولا إلغاء |
+| `not_found` | 404 | طلب غير موجود (في `cancel`) |
+| `payload_too_large` | 413 | الجسم أكبر من 64 كيلوبايت |
+| `method_not_allowed` | 405 | غير POST |
+
+## 5) الطلبات التاريخية (91 طلبًا في الشيت)
+
+ملف `mold-requests-source.json` فيه الطلبات الـ 91 بصيغ موحّدة (`legacyOrderNo` من 1 إلى 91). يستورد تطبيق المنتجات بيانات الإنتاج والتسليم والمراحل منه. ثم يُنشئ الـ CRM سجلاته للطلبات نفسها (العميل بـ `customer.crmNumber`، والمندوب باسمه) ويرسل كل طلب إلى `requests` بـ `crmRequestId` الجديد و`legacyOrderNo`: عندها **يربط** تطبيق المنتجات الصف المستورد بالمعرّف (`linked: true`) دون المساس ببيانات الإنتاج، وتكراره بلا أثر.
+
+حقل `dataIssues` في كل صف يصف أخطاء الشيت الأصلية (مثل تاريخ إنتاج قبل تاريخ الطلب). لا تُصحَّح تلقائيًا بل تُعرض في تقرير.
+
+## 6) السلوك المطلوب من الـ CRM عند تعذر الاتصال
+
+- إرسال الطلب أو تعديله أو إلغاؤه: يُحفظ في الـ CRM أولًا ثم يُرسل. عند الفشل يبقى «بانتظار الإرسال» ويُعاد بتباعد متزايد (دقيقة ثم 5 دقائق ثم 30 دقيقة ثم ساعتان ثم كل ساعتين حتى 24 ساعة) وبزر «إعادة الإرسال» للمندوب. التكرار آمن لأن `requests` idempotent.
+- سحب الحالة: بلا إعادة محاولة. يُعرض آخر ما عُرف مع «آخر تحديث» ويُحدَّث عند الفتح التالي.
+- مهلة كل طلب 10 ثوانٍ.
