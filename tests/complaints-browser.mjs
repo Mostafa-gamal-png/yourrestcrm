@@ -86,7 +86,7 @@ try {
   let complaintId;
   {
     await cs.locator('button.nav-item', {hasText: 'الشكاوى'}).waitFor();
-    check(await cs.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.trim())), ['الفرص', 'الشكاوى'], 'customer service has the Opportunities page (the Visits page, in its words) and the Complaints page');
+    check(await cs.locator('button.nav-item').allInnerTexts().then(texts => texts.map(text => text.trim())), ['الفرص', 'الشكاوى', 'طلبات تصنيع القوالب'], 'customer service has the Opportunities page (the Visits page, in its words), the Complaints page and, since 2026-11-01, mold requests');
     await goDesktop(cs, 'الشكاوى');
     const page = cs.locator('.complaints-page');
     await page.waitFor();
