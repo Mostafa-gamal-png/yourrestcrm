@@ -1,0 +1,42 @@
+{
+  "release": {
+    "name": "update-tablet",
+    "date": "20261101",
+    "package": "deploy/packages/Yourrest-CRM-Update-Tablet2-20261101.zip",
+    "bytes": 14587403,
+    "sha256": "857a6c0de55d5c0e6f26883fff470b809f58114cc59710b799f454902421e838",
+    "stage": "yourrest-crm-update-tablet2-20261101",
+    "helper": "yourrest-activate-update-tablet.cjs",
+    "schema": 16,
+    "newMigrations": []
+  },
+  "builtFrom": "5505021 (code) + 57026ff (generated offline app); activator a027419",
+  "releaseTree": "{\"files\":2907,\"tree\":\"f24050ce51299d75c5e1aa6df3877c0dedc7c5ed22afe9fdafa8bc97c91d3724\"}",
+  "typescript": "0 errors",
+  "eslint": "0 errors",
+  "defaultGate": "154/154",
+  "releaseBuildGate": "15/15",
+  "browserGate": "26/27 (erp-sales-browser needs the original ERP workbook, absent here); tracking-gate-browser 104 checks with the tablet beside a recording phone",
+  "rehearsal": "18/18 on top of the devices release, as an unprivileged user (both packages)",
+  "firstAttempt": {
+    "run": 41288705795,
+    "result": "STOP: INVALID_DAILY_BACKUP_INDEX before the switch; the app restarted unchanged",
+    "cause": "the activator's list of known activation names did not include update-devices-activation-20261101, the morning's daily backup",
+    "fix": "a027419 adds the Android 1.0.11, devices and tablet activation names; package rebuilt into a new stage folder (identical release tree)"
+  },
+  "limitations": [
+    "Not tried on a real tablet and phone before the deploy: tested in Chromium with the Android app emulated."
+  ],
+  "deployment": {
+    "run": 41289265007,
+    "at": "2026-11-01T08:34:46Z",
+    "dailyBackupReused": "/home/youriedx/yourrest-update-devices-activation-20261101-UIhoIA",
+    "activationCheckpoint": "/home/youriedx/yourrest-update-tablet-activation-20261101-1sMIfd",
+    "verify": [
+      "MIGRATIONS: 16 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/mobile-route: 401 / /api/support: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "PREVIOUS RECORD IDS: PRESERVED",
+      "DEPLOYMENT VERIFIED"
+    ]
+  }
+}
