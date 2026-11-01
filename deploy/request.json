@@ -1,5 +1,4 @@
 {
-  "mode": "mold-link",
-  "dryRun": true,
-  "note": "dry run of linking the earlier mold requests with what the owner confirmed (the Yourrest code, the five salesmen, the head office left out): read-only, production not called"
+  "mode": "backup",
+  "note": "a verified backup before the real link of the earlier mold requests (the owner added the production link settings)"
 }
