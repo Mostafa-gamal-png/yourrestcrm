@@ -45,12 +45,14 @@ function run() {
     .sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name));
   // ---- the daily index: which checkpoint holds each day's full copy
   const indexRoot = path.join(home, 'yourrest-crm-daily-backups');
-  report.dailyIndex = parts(indexRoot).filter(p => /^\d{8}\.json$/.test(p.name)).map(p => { const index = readJson(path.join(indexRoot, p.name)); return {day: p.name.slice(0, 8), checkpoint: index && typeof index.transaction === 'string' ? path.basename(index.transaction) : null, verifiedAt: index?.verifiedAt || null}; });
+  report.dailyIndex = parts(indexRoot).filter(p => /^\d{4}-\d{2}-\d{2}\.json$/.test(p.name)).map(p => { const index = readJson(path.join(indexRoot, p.name)); return {day: p.name.slice(0, 10), checkpoint: index && typeof index.transaction === 'string' ? path.basename(index.transaction) : null, verifiedAt: index?.verifiedAt || null}; });
   // ---- the unpacked packages and the uploaded zips
   report.stages = entries.filter(e => e.kind === 'unpacked update package').map(e => ({name: e.name, day: e.name.match(STAGE)[1], bytes: e.bytes, holds: parts(path.join(home, e.name)).map(p => p.name)})).sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name));
   report.packages = entries.filter(e => e.kind === 'uploaded update package').map(e => ({name: e.name, bytes: e.bytes, modified: e.modified}));
   // ---- inside the app folder: the live release and anything left beside it (an older release kept by hand, a failed one)
   report.app = parts(path.join(home, 'yourrest-crm')).map(p => ({name: p.name, bytes: p.bytes}));
+  // ---- the live data folder, by name and size only (the database and the attachments; nothing in it is opened)
+  report.liveData = parts(path.join(home, 'yourrest-crm-data')).map(p => ({name: p.name, bytes: p.bytes, files: p.files}));
   // ---- the nightly backups
   const nightly = path.join(home, 'yourrest-crm-backups'), status = readJson(path.join(nightly, 'status.json'));
   report.nightly = {exists: fs.existsSync(nightly), state: status?.state || null, completedAt: status?.completedAt || null, backupName: status?.backupName || null,

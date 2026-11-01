@@ -7,6 +7,8 @@
 #   verify  run --verify only (after a person pressed Start App in cPanel)
 #   diagnose  run the read-only check uploaded as yourrest-deploy/<HELPER> (no package, the app keeps running)
 #   backup  take a daily backup with the live release's own tools, verify it, and print the command of the daily cron job
+#   prune   remove the old copies named in yourrest-deploy/prune.json, after scripts/prune/old-copies.cjs checked each one (or only
+#           say what it would remove: a dry run)
 # Every STOP from the activator ends the run with the activator's own output; nothing is retried, deleted or restored here. One thing is
 # put back: when the activator stops BEFORE the switch, the app this script stopped through the selector is started again, unchanged.
 set -euo pipefail
@@ -115,6 +117,11 @@ case "$MODE" in
     echo "SERVER UTC OFFSET: $(date +%z)"
     command=$("$NODE" "$OPS/backup-cron.mjs" "$ROOT" 14 | json_field command) || { echo "BACKUP STOP: the cron command could not be made"; exit 3; }
     echo "BACKUP CRON COMMAND: $command"
+    ;;
+  prune)
+    # The tool checks the whole list (old copies of ours only, nothing recent or in use, last night's backup verified) before it removes
+    # anything; a refusal removes nothing and ends with its reason.
+    "$NODE" "$HOME/yourrest-deploy/$HELPER" "$HOME/yourrest-deploy/prune.json"
     ;;
   *) echo "DEPLOY STOP: unknown mode $MODE"; exit 2;;
 esac
