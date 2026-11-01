@@ -1,0 +1,47 @@
+{
+  "release": {
+    "name": "update-molds",
+    "date": "20261101",
+    "package": "deploy/packages/Yourrest-CRM-Update-Molds-20261101.zip",
+    "bytes": 14661570,
+    "sha256": "22ae52adb074fe7b69df80a51dbe301d260832b00cb0465db1a35ca9ceb804ac",
+    "stage": "yourrest-crm-update-molds-20261101",
+    "helper": "yourrest-activate-update-molds.cjs",
+    "schemaBefore": 16,
+    "schemaAfter": 17,
+    "newMigrations": [
+      "0016_mold_requests.sql"
+    ]
+  },
+  "releaseTree": "{\"files\":2910,\"tree\":\"b06c756a50f8ca6e60daa300045d5818a700bdf2c5d3449307156ed64304eb3b\"}",
+  "typescript": "0 errors",
+  "eslint": "0 errors",
+  "defaultGate": "156/156",
+  "releaseBuildGate": "16/16 (mold-requests-http 42, server-authorization 387)",
+  "browserGate": "27/28 (erp-sales-browser needs the original ERP workbook, absent here); mold-requests-browser 25; pwa-browser updated for the account-sheet entry and passing (71); service-queue-browser timed out once under the load of the full run and passed twice alone (162)",
+  "rehearsal": "20/20 on top of the tablet release, as an unprivileged user, including going back after the migration (the rehearsal's rollback checks were generalised from the 0015 migration)",
+  "packageInspection": "no secrets, no SQLite files, no seed phone numbers outside node_modules, no settings or source sheet; 2910 release files all hashed, 17 migrations",
+  "limitations": [
+    "The products application itself was not reached from here: tested against a stand-in that applies its checks, plus the contract's signature test vector.",
+    "Whether YR_PRODUCTS_API_URL and YR_PRODUCTS_SECRET are in settings.cjs is not shown by --verify; the page says «الربط مع الإنتاج غير مفعَّل» when they are not."
+  ],
+  "deployment": {
+    "run": 41293691437,
+    "at": "2026-11-01T09:36:47Z",
+    "dailyBackupReused": "/home/youriedx/yourrest-update-devices-activation-20261101-UIhoIA",
+    "activationCheckpoint": "/home/youriedx/yourrest-update-molds-activation-20261101-1Rqo5S",
+    "verify": [
+      "first attempt: MIGRATION_NOT_APPLIED_START_APP_FIRST (the app was still starting), then:",
+      "MIGRATIONS: 17 / DATABASE: OK / CUSTOMER CODES: OK",
+      "LOGIN HTTP: 200 / ANONYMOUS CRM API: 401 / /api/mold-requests: 401 / /api/mobile-route: 401 / /api/support: 401 / /api/complaints: 401 / /api/complaint-report: 401 / /api/service-kpi: 401",
+      "DEPLOYMENT VERIFIED"
+    ]
+  },
+  "earlierRequestsComparison": {
+    "run": 41294170879,
+    "readOnly": true,
+    "verdict": "ROWS 91: YOURREST CODE 91, ERP CODE 54, BOTH 54, NEITHER 0, ERP AMBIGUOUS 15",
+    "onlyErp": [],
+    "firstRun": "41293932200 stopped before reading anything: the script set a YR_* variable, refused by the settings check; fixed in 1ed815a's parent"
+  }
+}
