@@ -16,6 +16,9 @@ export const env={
  get YR_APP_ORIGIN(){return process.env.YR_APP_ORIGIN;},
  get YR_AUTH_SECRET(){return process.env.YR_AUTH_SECRET;},
  get YR_NATIONAL_ADDRESS_API_KEY(){return process.env.YR_NATIONAL_ADDRESS_API_KEY;},
+ // The production application's mold requests API (docs/MOLD-REQUESTS-CONTRACT-AR.md): server-side only, never sent to a browser.
+ get YR_PRODUCTS_API_URL(){return process.env.YR_PRODUCTS_API_URL;},
+ get YR_PRODUCTS_SECRET(){return process.env.YR_PRODUCTS_SECRET;},
  get DB(){return database();},
  get FILES(){return objects();},
  get YR_SEND_OTP(){return configuredLocalMailer();},

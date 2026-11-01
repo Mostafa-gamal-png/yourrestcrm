@@ -28,8 +28,9 @@ try {
   for (const name of ['app.cjs', 'server.js']) put(path.join(build, name), '// isolated release fixture\n');
   put(path.join(build, 'package.json'), '{}\n');
   for (const name of ['config.cjs', 'initialize.mjs', 'upgrade.mjs']) fs.copyFileSync(path.join(root, 'portable', name), path.join(build, 'operations', name));
-  const migrations = fs.readdirSync(path.join(root, 'drizzle')).filter(name => name.endsWith('.sql')).sort();
-  eq([migrations.length, migrations[15]], [16, NEWEST], 'the repository ships 16 migrations');
+  // The fixture is the 15-to-16 release of 2026-10-12 (0000 to 0015); later migrations of the repository are not part of it.
+  const shipped = fs.readdirSync(path.join(root, 'drizzle')).filter(name => name.endsWith('.sql')).sort(), migrations = shipped.slice(0, 16);
+  eq([shipped.length >= 16, migrations[15]], [true, NEWEST], 'the repository ships the 16 migrations of this release, in order');
   for (const name of migrations) fs.copyFileSync(path.join(root, 'drizzle', name), path.join(build, 'drizzle', name));
   put(path.join(build, 'drizzle/manifest.json'), JSON.stringify({format: 'yourrest-migrations-v1', files: migrations.map(name => ({name, sha256: hash(fs.readFileSync(path.join(build, 'drizzle', name)))}))}));
   const archive = path.join(work, 'update.zip');
