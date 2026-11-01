@@ -4,6 +4,8 @@
 // and who may change it; a repeated tap; edits while received; production starting first (409, the edit withdrawn); cancelling;
 // production unreachable (kept waiting on the §6 timetable, resend, the last known status with its reason); production without its
 // secret; a release without the link settings (sending off, the rest of the CRM unaffected); the secret never in a page or answer.
+// Since 2026-11-01: every role asks (customer service from its branch's customers), and the sales manager alone approves a request
+// waiting for them, or withdraws the approval until production approves (production's approval route, the approval chain).
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -41,16 +43,17 @@ try {
 
   // ---- who reaches the page
   check((await app.request('/api/mold-requests')).status, 401, 'anonymous: 401');
-  check([(await get('cs')).status, (await get('csm')).status], [403, 403], 'customer service has no sales scope: 403');
+  check([(await get('cs')).status, (await get('csm')).status], [200, 200], 'customer service has the page too');
   check((await app.request('/api/mold-requests', {method: 'POST', headers: {Cookie: sessions.rep}, body: {action: 'create'}})).status, 403, 'no origin: refused');
   const empty = await list('rep');
   check([empty.requests, empty.linkReady, empty.canCreate, empty.statusError], [[], true, true, null], 'a representative: an empty list, the link ready, may ask');
-  check((await list('sup')).canCreate, false, 'a supervisor follows, does not ask');
+  check([(await list('sup')).canCreate, (await list('cs')).canCreate, (await list('owner')).canCreate], [true, true, true], 'everyone asks');
 
   // ---- a request: saved, then signed and sent
   let res = await create('rep', 'east1');
   let body = await res.json();
   check([res.status, body.send.kind, body.request.sending.state, body.request.remote.orderNo, body.request.remote.status, body.request.editable], [200, 'ok', 'sent', 92, 'received', true], 'saved and delivered: order 92, received, still editable');
+  check([body.request.remote.waitingStep, body.request.remote.approvals], ['sales', {required: true, sales: null, production: null, admin: null}], 'it waits for the sales manager\'s approval');
   const first = body.request.id;
   ok(/^mr-[0-9a-f-]{36}$/.test(first), 'the CRM request id is the contract crmRequestId');
   const sent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
@@ -62,7 +65,6 @@ try {
 
   // ---- what may not be asked
   check((await create('rep', 'west1')).status, 404, 'a customer outside the representative\'s region: 404');
-  check((await create('sup', 'east1')).status, 403, 'a supervisor cannot ask');
   res = await create('rep', 'east1', {moldWidth: 999, core: 'half', designUrl: 'http://x'});
   body = await res.json();
   check([res.status, Object.keys(body.fields).sort()], [400, ['core', 'designUrl', 'moldWidth']], 'wrong fields: 400 naming each one');
@@ -89,7 +91,7 @@ try {
   await age(first);
   const statusCalls = calls('status');
   const opened = (await list('rep')).requests.find(item => item.id === first);
-  check([calls('status') - statusCalls, opened.remote.status, opened.remote.stagesDone, opened.remote.moldSerial, opened.remote.stages.box, opened.editable, opened.can], [1, 'in_production', 2, '093', {done: true, at: '2026-11-02'}, false, {edit: false, cancel: false, resend: false}], 'one status call; stages with dates, the serial; edit and cancel closed');
+  check([calls('status') - statusCalls, opened.remote.status, opened.remote.stagesDone, opened.remote.moldSerial, opened.remote.stages.box, opened.editable, opened.can], [1, 'in_production', 2, '093', {done: true, at: '2026-11-02'}, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false}], 'one status call; stages with dates, the serial; edit and cancel closed');
   await list('rep');
   check(calls('status') - statusCalls, 1, 'opened again within a minute: the stored status, no new call');
   res = await post('rep', {action: 'update', id: first, version: (await stored(first)).version, specs: {...specs, quantity: 3}});
@@ -109,6 +111,49 @@ try {
   body = await res.json();
   check([res.status, body.request.cancelled, body.request.remote.status, body.request.can.edit], [200, true, 'cancelled', false], 'cancelled in production too');
   check((await post('rep', {action: 'cancel', id: third.id, version: body.request.version, reason: ''})).status, 409, 'cancelled already');
+
+  // ---- the sales manager approves; production and the administrator follow in their application
+  const fourth = (await (await create('rep', 'east1', {description: 'fourth mold'})).json()).request;
+  const can = async (who, id) => (await list(who)).requests.find(item => item.id === id)?.can;
+  check([(await can('sm', fourth.id)).approve, (await can('rep', fourth.id)).approve, (await can('owner', fourth.id)).approve, (await can('sup', fourth.id)).approve], [true, false, false, false], 'only the sales manager approves');
+  for (const who of ['rep', 'sup', 'owner']) check((await post(who, {action: 'approve', id: fourth.id})).status, 403, who + ' cannot approve');
+  const approvals = calls('approval'), approveOnce = {action: 'approve', id: fourth.id, requestId: crypto.randomUUID()};
+  res = await as('sm')('/api/mold-requests', {method: 'POST', body: approveOnce});
+  body = await res.json();
+  check([res.status, body.request.remote.waitingStep, body.request.remote.status, body.request.remote.approvals.sales.by, body.request.can.approve, body.request.can.withdraw], [200, 'production', 'received', 'sm@yourrest.org (sm)', false, true], 'approved: it waits for production, still received; withdrawable');
+  check(JSON.parse(mock.state.calls.findLast(call => call.route === 'approval').body), {crmRequestId: fourth.id, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}, 'production\'s approval route, signed, with the sales manager\'s name and email');
+  check((await app.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE record_id=? AND action='mold-request:approve'").bind(fourth.id).first()).n, 1, 'audited');
+  check([(await as('sm')('/api/mold-requests', {method: 'POST', body: approveOnce})).status, calls('approval') - approvals], [200, 1], 'the same tap twice: production asked once');
+  check((await post('sm', {action: 'approve', id: fourth.id})).status, 409, 'approved already: not waiting for the sales manager');
+  body = await (await post('sm', {action: 'withdraw', id: fourth.id})).json();
+  check([body.request.remote.waitingStep, body.request.remote.approvals.sales, body.request.can.approve], ['sales', null, true], 'withdrawn: back to the sales manager');
+  await post('sm', {action: 'approve', id: fourth.id});
+  body = await (await post('rep', {action: 'update', id: fourth.id, version: fourth.version, specs: {...specs, description: 'fourth mold', quantity: 5}})).json();
+  check([body.request.remote.waitingStep, body.request.remote.approvals.sales, body.request.can.edit], ['sales', null, true], 'an edit while received undoes the approvals: back to the sales manager');
+  await post('sm', {action: 'approve', id: fourth.id});
+  mock.approve(fourth.id, 'production');
+  res = await post('sm', {action: 'withdraw', id: fourth.id});
+  body = await res.json();
+  check([res.status, body.request.remote.waitingStep, body.request.can.withdraw], [409, 'admin', false], 'production approved first: the withdrawal is refused and the request shows where it waits');
+  ok(/اعتمد الإنتاج/.test(body.error), 'with a clear message');
+  mock.approve(fourth.id, 'admin');
+  await age(fourth.id);
+  const approved = (await list('rep')).requests.find(item => item.id === fourth.id);
+  check([approved.remote.status, approved.remote.waitingStep, approved.editable, approved.can.edit], ['confirmed', 'manufacturing', false, false], 'all three approvals: confirmed, in manufacturing, no more changes');
+  ok(/^\d{4}-\d{2}-\d{2}T/.test(approved.remote.waitingSince), 'since when it waits');
+
+  // ---- everyone asks: customer service from its branch's customers, a supervisor, the administrator
+  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('other1','customer',NULL,'rep2','فرع آخر',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع other1', region: 'الشرقية', city: 'الخبر'}), now, now).run();
+  res = await create('cs', 'west1', {halfBlock: 'three'});
+  body = await res.json();
+  check([res.status, body.request.memberId, body.request.can.edit], [200, 'cs', true], 'customer service asks for a customer of its branch');
+  const fromService = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
+  check([fromService.salesman, fromService.specs.halfBlock], [{crmMemberId: 'cs', name: 'cs', email: 'cs@yourrest.org'}, 'three'], 'under its own name; three half blocks');
+  check((await create('cs', 'other1')).status, 404, 'not for another branch\'s customer');
+  check([(await create('sup', 'east1')).status, (await create('owner', 'other1')).status], [200, 200], 'a supervisor and the administrator ask too');
+  check([(await ids('csm')).length, (await ids('cs')).length, (await ids('rep2')).length], [1, 1, 0], 'the customer-service manager sees their team\'s, customer service their own, another representative none');
+  ok((await ids('sm')).includes(body.request.id), 'the sales manager sees every request to approve, whoever asked');
+  check((await post('cs', {action: 'approve', id: body.request.id})).status, 403, 'customer service does not approve');
 
   // ---- production unreachable: saved, waiting, tried again on the timetable, resent by hand
   mock.state.down = true;

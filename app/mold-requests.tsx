@@ -1,12 +1,12 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {Factory,Loader2,Lock,RefreshCw,Search,Send,TriangleAlert,Wrench} from 'lucide-react';
+import {BadgeCheck,Factory,Hourglass,Loader2,Lock,RefreshCw,Search,Send,TriangleAlert,Undo2,Wrench} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {useLanguage,direction,getLanguage} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,moldErrorText,moldFieldNames,moldSendingNames,moldStatusNames,yourrestNumber,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,moldApprovalNames,moldErrorText,moldFieldNames,moldHasApprovals,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_LIMITS,MOLD_USUAL,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import './mold-requests.css';
@@ -15,7 +15,11 @@ type Say=(ar:string,en:string)=>string;
 const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message' in error&&typeof (error as {message:unknown}).message==='string'?(error as {message:string}).message:'';
 const stamp=(iso:string|null|undefined)=>iso?new Date(iso).toLocaleString('en-GB',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'}):'—';
 const day=(value:string|null|undefined)=>value?value.slice(0,10):'—';
-const statusText=(view:MoldRequestView,say:Say)=>view.remote?say(...moldStatusNames[view.remote.status]):view.cancelled?say('ملغى','Cancelled'):say('لم يصل للإنتاج بعد','Not in production yet');
+/** Where the request is: the step it waits at (since the approval chain), else production's status; the sales manager reads «waiting
+ * for you» on what they can approve. */
+const statusText=(view:MoldRequestView,say:Say)=>view.can.approve?say('بانتظار اعتمادك','Waiting for your approval')
+ :view.remote?.waitingStep?say(...moldWaitingNames[view.remote.waitingStep]):view.remote?say(...moldStatusNames[view.remote.status]):view.cancelled?say('ملغى','Cancelled'):say('لم يصل للإنتاج بعد','Not in production yet');
+const waitingSince=(view:MoldRequestView,say:Say)=>view.remote?.waitingSince&&!['done','cancelled'].includes(view.remote.waitingStep||'')?say('من ','Since ')+stamp(view.remote.waitingSince):'';
 
 /** The mold requests the reader may see, with their status as pulled by the server when the list opens. */
 export function useMoldRequests(me:Member|null){
@@ -83,19 +87,20 @@ function SendingState({view,linkReady,say}:{view:MoldRequestView;linkReady:boole
 function MoldCard({view,linkReady,onOpen,say}:{view:MoldRequestView;linkReady:boolean;onOpen:()=>void;say:Say}){
  const remote=view.remote;
  return <button type="button" className="mold-card" data-status={remote?.status||(view.cancelled?'cancelled':'local')} data-sending={view.sending.state} onClick={onOpen}>
-  <header><strong>{view.customerName}</strong><span className="mold-chip" data-status={remote?.status||'local'}>{statusText(view,say)}</span></header>
+  <header><strong>{view.customerName}</strong><span className="mold-chip" data-status={remote?.status||'local'} data-step={remote?.waitingStep||undefined} data-mine={view.can.approve||undefined}>{statusText(view,say)}</span></header>
+  {waitingSince(view,say)&&<small className="mold-card-since"><Hourglass size={13} aria-hidden="true"/>{waitingSince(view,say)}</small>}
   <p dir="auto">{view.specs.description}</p>
   <div className="mold-card-facts">
    <span>{say('رقم أمر الإنتاج','Production order')}: <b>{remote?.orderNo??'—'}</b></span>
    <span>{say('الكمية','Quantity')}: <b>{view.specs.quantity}</b></span>
    <span>{say('المراحل','Stages')}: <b>{remote?remote.stagesDone+'/'+remote.stagesTotal:'—'}</b></span>
-   <span>{say('المندوب','Representative')}: {view.memberName}</span>
+   <span>{say('مقدّم الطلب','Requested by')}: {view.memberName}</span>
   </div>
   {view.sending.state!=='sent'&&<small className="mold-card-sending" data-state={view.sending.state}>{say(...moldSendingNames[linkReady?view.sending.state:'off'])}</small>}
  </button>;
 }
 
-/** The page: the requests the reader may see, the representative's button to ask for a mold, the link's state. */
+/** The page: the requests the reader may see, the button to ask for a mold, the link's state. */
 export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const {data,error,loading,refresh}=useMoldRequests(me);
@@ -132,7 +137,7 @@ function MoldRequestSheet({view:initial,linkReady,statusAt,customers,onClose,onC
  const facts:[string,React.ReactNode][]=[
   [say('رقم أمر الإنتاج','Production order'),remote?.orderNo??'—'],[say('السريال','Serial'),remote?.moldSerial||'—'],[say('تاريخ الإنتاج','Production date'),day(remote?.productionDate)],
   [say('التسليم','Delivery'),remote?.delivered?say('سُلِّم','Delivered')+' · '+day(remote.deliveryDate):say('لم يُسلَّم','Not delivered')],[say('كود يورست','Yourrest code'),'YR-C-'+String(view.crmNumber).padStart(6,'0')],
-  [say('تاريخ الطلب','Requested'),stamp(view.requestedAt)],[say('المندوب','Representative'),view.memberName],
+  [say('تاريخ الطلب','Requested'),stamp(view.requestedAt)],[say('مقدّم الطلب','Requested by'),view.memberName],
  ];
  const asked:[string,React.ReactNode][]=[
   [say('الوصف','Description'),<span dir="auto" key="d">{specs.description}</span>],[say('العلب','Core'),say(MOLD_CORES[specs.core as keyof typeof MOLD_CORES]||specs.core,specs.core)],[say('الرجاجات','Vibrators'),specs.vibrators],
@@ -147,14 +152,18 @@ function MoldRequestSheet({view:initial,linkReady,statusAt,customers,onClose,onC
    <SendingState view={view} linkReady={linkReady} say={say}/>
    {pullError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {pullError}</p>}
    {view.cancelled&&<p className="mold-banner" data-kind="cancelled">{say('أُلغي الطلب','The request was cancelled')}{view.cancelReason?': '+view.cancelReason:''}</p>}
+   {remote?.waitingStep&&<p className="mold-waiting" data-step={remote.waitingStep}><Hourglass size={15} aria-hidden="true"/><strong>{say(...moldWaitingNames[remote.waitingStep])}</strong>{waitingSince(view,say)&&<span>{waitingSince(view,say)}</span>}</p>}
+   <MoldApprovals view={view} say={say}/>
    <MoldStages view={view} say={say}/>
    <p className="mold-updated">{say('آخر تحديث للحالة','Status last updated')}: {stamp(view.remoteAt||statusAt)}</p>
    <dl className="mold-facts">{facts.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
    <h3 className="mold-subtitle">{say('المواصفات','Specifications')}</h3>
    <dl className="mold-facts">{asked.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
-   {!view.editable&&!view.cancelled&&view.can&&!view.can.edit&&remote&&<p className="mold-locked"><Lock size={14} aria-hidden="true"/>{say('بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.','Production has started; the request can no longer be changed or cancelled.')}</p>}
+   {!view.editable&&!view.cancelled&&view.can&&!view.can.edit&&remote&&<p className="mold-locked"><Lock size={14} aria-hidden="true"/>{remote.status==='confirmed'?say('اكتملت الاعتمادات؛ لم يعد التعديل أو الإلغاء ممكنًا.','All approvals are in; the request can no longer be changed or cancelled.'):say('بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.','Production has started; the request can no longer be changed or cancelled.')}</p>}
    {action.error&&<p className="form-error" role="alert">{action.error}</p>}
    <div className="mold-actions">
+    {view.can.approve&&<button type="button" className="btn primary" disabled={action.busy} onClick={()=>void action.run({action:'approve',id:view.id})}>{action.busy?<Loader2 className="spin" size={16}/>:<BadgeCheck size={16}/>}{say('اعتماد','Approve')}</button>}
+    {view.can.withdraw&&<button type="button" className="btn subtle" disabled={action.busy} onClick={()=>void action.run({action:'withdraw',id:view.id})}>{action.busy?<Loader2 className="spin" size={16}/>:<Undo2 size={16}/>}{say('سحب الاعتماد','Withdraw approval')}</button>}
     {view.can.resend&&<button type="button" className="btn primary" disabled={action.busy||!linkReady} onClick={()=>void action.run({action:'resend',id:view.id})}>{action.busy?<Loader2 className="spin" size={16}/>:<Send size={16}/>}{say('إعادة الإرسال','Resend')}</button>}
     {view.can.edit&&<button type="button" className="btn subtle" disabled={action.busy} onClick={()=>setEditing(true)}>{say('تعديل الطلب','Edit request')}</button>}
     {view.can.cancel&&!cancelling&&<button type="button" className="btn danger-outline" disabled={action.busy} onClick={()=>setCancelling(true)}>{say('إلغاء الطلب','Cancel request')}</button>}
@@ -168,10 +177,21 @@ function MoldRequestSheet({view:initial,linkReady,statusAt,customers,onClose,onC
  </Sheet>;
 }
 
+/** The three approvals in order, each with when it was given (and, for the sales manager's, by whom); none for a historical request. */
+function MoldApprovals({view,say}:{view:MoldRequestView;say:Say}){
+ const approvals=view.remote?.approvals;
+ if(!approvals?.required)return null;
+ return <ol className="mold-approvals" aria-label={say('الاعتمادات','Approvals')}>{(['sales','production','admin'] as const).map(step=>{
+  const given=approvals[step];
+  return <li key={step} data-done={!!given}><BadgeCheck size={15} aria-hidden="true"/><span>{say('اعتماد ','Approval: ')+say(...moldApprovalNames[step])}</span>
+   <small>{given?say('تم','Done')+(given.at?' · '+stamp(given.at):'')+(step==='sales'&&approvals.sales?.by?' · '+approvals.sales.by:''):say('لم يتم بعد','Not yet')}</small></li>;
+ })}</ol>;
+}
+
 const blank:Record<string,string>={description:'',core:'',vibrators:'',model:'',halfBlock:'',moldWidth:'',gelbaSize:'',moldNo:'',quantity:'1',designUrl:'',notes:''};
 const asForm=(specs:MoldSpecs)=>Object.fromEntries(Object.entries(blank).map(([key])=>[key,specs[key as keyof MoldSpecs]===null||specs[key as keyof MoldSpecs]===undefined?'':String(specs[key as keyof MoldSpecs])]));
 
-/** Ask for a mold (a customer of the representative's, then the specifications), or change one while production has not started. */
+/** Ask for a mold (a customer the member can see, then the specifications), or change one while it is still `received`. */
 function MoldRequestDialog({customers,editing,onClose,onSaved}:{customers:Row[];editing?:MoldRequestView;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const [customerId,setCustomerId]=useState(editing?.customerId||''),[search,setSearch]=useState(''),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs):blank),[shown,setShown]=useState<Record<string,string>>({});
@@ -197,6 +217,7 @@ function MoldRequestDialog({customers,editing,onClose,onSaved}:{customers:Row[];
   <DialogContent className="mold-dialog" dir={direction()}>
    <DialogTitle>{editing?say('تعديل طلب تصنيع القالب','Edit mold request'):say('طلب تصنيع قالب','Request a mold')}</DialogTitle>
    <DialogDescription>{say('يُحفظ الطلب في الـCRM ثم يُرسل لتطبيق الإنتاج تلقائيًا.','The request is saved in the CRM, then sent to production automatically.')}</DialogDescription>
+   {editing&&moldHasApprovals(editing.remote)&&<p className="mold-banner" data-kind="stale" role="note"><TriangleAlert size={16} aria-hidden="true"/>{say('أي تعديل هيلغي الاعتمادات اللي تمت، ويرجع الطلب لمدير المبيعات من الأول.','Any change undoes the approvals given so far; the request goes back to the sales manager.')}</p>}
    <form className="mold-form" onSubmit={submit} noValidate>
     {editing?<p className="mold-customer-chosen"><Factory size={16} aria-hidden="true"/>{editing.customerName}</p>:chosen?<div className="mold-customer-chosen"><span><Factory size={16} aria-hidden="true"/>{String(chosen.data.name||'')}<small>{String(chosen.data.internalCode||'')}{chosen.data.city?' · '+String(chosen.data.city):''}</small></span><button type="button" className="btn small subtle" onClick={()=>setCustomerId('')}>{say('تغيير','Change')}</button></div>
      :<div className="mold-customer-search" aria-invalid={!!errors.customer}><label>{say('العميل','Customer')}<span className="search"><Search size={16} aria-hidden="true"/><input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder={say('ابحث باسم العميل أو كوده أو مدينته','Search by name, code or city')}/></span></label>

@@ -55,3 +55,18 @@
  .mold-stages{grid-template-columns:repeat(4,minmax(0,1fr))}
  .mold-sheet{width:100vw!important;padding:16px}
 }
+
+/* Where the request waits and since when; the approvals in order (the approval chain, 2026-11-01). */
+.mold-card-since,.mold-waiting{display:flex;align-items:center;gap:6px;color:var(--muted-foreground,#555);font-size:.86rem}
+.mold-waiting{margin:4px 0 8px;flex-wrap:wrap}
+.mold-waiting strong{color:var(--foreground,#111)}
+.mold-chip[data-mine]{background:#fff4d6;color:#7a4b00;border-color:#f2c46d}
+.mold-approvals{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}
+.mold-approvals li{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border:1px solid var(--border,#e3e3e3);border-radius:10px;font-size:.9rem}
+.mold-approvals li small{margin-inline-start:auto;color:var(--muted-foreground,#555)}
+.mold-approvals li[data-done="true"]{border-color:#9fd3b1;background:#f1faf4}
+.mold-approvals li[data-done="true"] svg{color:#1f7a44}
+.mold-approvals li[data-done="false"] svg{color:#9aa0a6}
+.dark .mold-chip[data-mine]{background:#3a3014;color:#f2dca0}
+.dark .mold-approvals li[data-done="true"]{background:#183a2b;border-color:#2c6b4a}
+.dark .mold-approvals li[data-done="true"] svg{color:#bfe8d2}
