@@ -10,7 +10,8 @@
 //   node mold-import.mjs --source <file> --key yourrest|erp --apply                 links and saves (after the owner confirmed)
 //
 // The database and the production link come from yourrest-crm/settings.cjs (YR_DATABASE_PATH, YR_PRODUCTS_API_URL,
-// YR_PRODUCTS_SECRET); YR_IMPORT_DATABASE and YR_IMPORT_APP point elsewhere for a copy or a test. The report is JSON with order
+// YR_PRODUCTS_SECRET); MOLD_IMPORT_DATABASE and MOLD_IMPORT_APP point elsewhere for a copy or a test (never a YR_* variable:
+// the settings check refuses any YR_* value beside settings.cjs). The report is JSON with order
 // numbers, counts and reasons only: no customer or representative names unless --show-names is given (for the owner's terminal).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -135,10 +136,10 @@ export async function main(argv = process.argv.slice(2), {fetch = globalThis.fet
   if (!source) throw new Error('--source <mold-requests-source.json> is required');
   if (!argv.includes('--compare') && !['yourrest', 'erp'].includes(key)) throw new Error('--key yourrest or --key erp (after --compare)');
   if (!argv.includes('--compare') && apply === dryRun) throw new Error('choose --dry-run or --apply');
-  const app = process.env.YR_IMPORT_APP || path.join(process.env.HOME || '/home/youriedx', 'yourrest-crm');
+  const app = process.env.MOLD_IMPORT_APP || path.join(process.env.HOME || '/home/youriedx', 'yourrest-crm');
   let settings = {};
-  if (!process.env.YR_IMPORT_DATABASE) settings = require(path.join(app, 'release', 'operations', 'config.cjs')).loadSettings(app);
-  const database = process.env.YR_IMPORT_DATABASE || settings.YR_DATABASE_PATH;
+  if (!process.env.MOLD_IMPORT_DATABASE) settings = require(path.join(app, 'release', 'operations', 'config.cjs')).loadSettings(app);
+  const database = process.env.MOLD_IMPORT_DATABASE || settings.YR_DATABASE_PATH;
   const rows = readSource(source);
   const db = new DatabaseSync(database, {readOnly: !apply});
   try {
@@ -146,7 +147,7 @@ export async function main(argv = process.argv.slice(2), {fetch = globalThis.fet
     if (argv.includes('--compare')) { const report = {mode: 'compare', readOnly: true, ...compare(rows, crm)}; log(JSON.stringify(report, null, 1)); return report; }
     const items = plan(rows, crm, key);
     if (dryRun) { const report = {mode: 'dry-run', readOnly: true, key, rows: rows.length, ...summary(items, showNames)}; log(JSON.stringify(report, null, 1)); return report; }
-    const config = moldConfig(process.env.YR_IMPORT_DATABASE ? {YR_PRODUCTS_API_URL: process.env.YR_PRODUCTS_API_URL, YR_PRODUCTS_SECRET: process.env.YR_PRODUCTS_SECRET} : settings);
+    const config = moldConfig(process.env.MOLD_IMPORT_DATABASE ? {YR_PRODUCTS_API_URL: process.env.MOLD_IMPORT_PRODUCTS_URL, YR_PRODUCTS_SECRET: process.env.MOLD_IMPORT_PRODUCTS_SECRET} : settings);
     if (!config.ok) throw new Error('the production link is not configured (' + config.reason + ') in settings.cjs');
     const results = [];
     for (const item of items.filter(item => !item.skip)) results.push(await link(db, config, item, {fetch, now}));
