@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
 import {validateMoldSpecs,moldApprovalBody,moldApprovalRefusal,moldStatusObject,moldRequestCity,MOLD_LIMITS} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldDesignInFlight,moldErrorText,moldPermissions,moldRequestView,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldDesignInFlight,moldDesignStopped,moldErrorText,moldPermissions,moldRequestView,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
 import {forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldDesignFilesByRequest,moldPendingFor as pendingFor,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_STOPPED_SQL,type SendOutcome} from '@/lib/mold-requests-server';
@@ -151,7 +151,8 @@ export async function POST(req:Request){try{
    detail={label:labels.cancel,customerName:row.data.customer.name,reason:input.reason};
    statement=c.db.prepare(`UPDATE crm_mold_requests SET cancelled_at=?,cancel_reason=?,outbox='cancel',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard}`).bind(now,input.reason,now,now,mutation,...guardArgs);
   }else{
-   const waiting=row.outbox||files.some(file=>file.outbox);
+   // Something the resend would start: the request's own change, or a design file whose sending or deletion stopped (not one refused).
+   const waiting=!!row.outbox||files.some(moldDesignStopped);
    if(!allowed.resend)throw new CRMError(waiting?'إعادة الإرسال لمن طلبه':'وصل الطلب للإنتاج؛ لا شيء ينتظر الإرسال',waiting?403:409);
    if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل. الطلب محفوظ وينتظر الإرسال.',503);
    detail={label:labels.resend,customerName:row.data.customer.name};

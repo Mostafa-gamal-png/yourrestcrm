@@ -97,6 +97,30 @@ try{
  const withDesigns=path.join(work,'backup-designs');check((await createBackup({config,appRoot,destination:withDesigns})).objects,3);check((await verifyBackup({directory:withDesigns,appRoot})).objects,3);
  check((await fs.readdir(path.join(withDesigns,'objects'))).includes(hash('mold-design/mr-1/mdf-1/a')),true);
  const designsRestored=path.join(work,'designs-restored');await restoreBackup({directory:withDesigns,destination:designsRestored,appRoot});check(await fs.readFile(path.join(designsRestored,'objects',hash('mold-design/mr-1/mdf-1/a')),'utf8'),'%PDF-design');
+ // A design file deleted while a backup runs: after the snapshot its row lets the key go (object_key NULL), then its bytes leave the
+ // store (lib/mold-requests-server.ts). The backup takes the row as it now stands, without the bytes, and still verifies and restores.
+ const duringCopy=async(key,act,destination)=>{
+  const source=path.join(objectsPath,hash(key)),original=fs.open;let acted=false;
+  fs.open=async function(filename,...args){if(filename===source&&!acted){acted=true;await act();}return original.call(this,filename,...args);};
+  try{return await createBackup({config,appRoot,destination});}finally{fs.open=original;}
+ };
+ const deletedKey='mold-design/mr-1/mdf-3/b',deletedBytes=Buffer.from('%PDF-deleted-during-backup');await objects.put(deletedKey,deletedBytes);await design('mdf-3',deletedKey,deletedBytes);
+ const raced=path.join(work,'backup-design-deleted');
+ const racedResult=await duringCopy(deletedKey,async()=>{await db.prepare("UPDATE crm_mold_design_files SET deleted_at='2026-11-02T10:00:00Z',outbox=NULL,next_attempt_at=NULL,object_key=NULL,version=version+1 WHERE id='mdf-3'").run();await objects.delete(deletedKey);},raced);
+ check(racedResult.objects,3);check((await verifyBackup({directory:raced,appRoot})).objects,3);check((await fs.readdir(path.join(raced,'objects'))).includes(hash(deletedKey)),false);
+ const racedDb=new DatabaseSync(path.join(raced,'database.sqlite'),{readOnly:true});
+ check({...racedDb.prepare("SELECT object_key,deleted_at,version FROM crm_mold_design_files WHERE id='mdf-3'").get()},{object_key:null,deleted_at:'2026-11-02T10:00:00Z',version:2});racedDb.close();
+ check((await restoreBackup({directory:raced,destination:path.join(work,'raced-restored'),appRoot})).objects,3);
+ // The same with its request removed meanwhile (its files go with it): the row leaves this backup.
+ await db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,created_by,created_at,updated_at) VALUES('mr-2','rep','factory','{}','rep','2026-11-02','2026-11-02')").run();
+ const removedKey='mold-design/mr-2/mdf-4/c',removedBytes=Buffer.from('%PDF-request-removed');await objects.put(removedKey,removedBytes);
+ await db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at) VALUES('mdf-4','mr-2','rep','c.pdf','pdf','application/pdf',?,?,?,'2026-11-02')").bind(removedBytes.length,hash(removedBytes),removedKey).run();
+ const removed=path.join(work,'backup-request-removed');
+ check((await duringCopy(removedKey,async()=>{await db.prepare("DELETE FROM crm_mold_requests WHERE id='mr-2'").run();await objects.delete(removedKey);},removed)).objects,3);
+ const removedDb=new DatabaseSync(path.join(removed,'database.sqlite'),{readOnly:true});check([removedDb.prepare("SELECT COUNT(*) n FROM crm_mold_design_files WHERE id='mdf-4'").get().n,removedDb.prepare("SELECT COUNT(*) n FROM crm_mold_requests WHERE id='mr-2'").get().n],[0,1]);removedDb.close();
+ // A design object missing while its row still names it fails the backup, as any missing object does.
+ await objects.delete('mold-design/mr-1/mdf-1/a');await rejects(()=>createBackup({config,appRoot,destination:path.join(work,'backup-design-missing')}));await rejects(()=>fs.stat(path.join(work,'backup-design-missing')));
+ await objects.put('mold-design/mr-1/mdf-1/a',Buffer.from('%PDF-design'));
  await db.prepare('DELETE FROM crm_mold_requests').run();await objects.delete('mold-design/mr-1/mdf-1/a');check(await db.prepare('SELECT COUNT(*) n FROM crm_mold_design_files').first('n'),0);
  // Execute the exact deployed CLIs from a release/operations layout.
  const operations=path.join(appRoot,'release','operations');await fs.mkdir(operations,{recursive:true,mode:0o700});
