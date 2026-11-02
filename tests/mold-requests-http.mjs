@@ -8,7 +8,11 @@
 // waiting for them, or withdraws the approval until production approves (production's approval route, the approval chain).
 // Since 2026-11-02: a request's city as the sheet writes it, customer names up to 200 characters, a request deleted in production read as
 // cancelled, the real reason when production refuses an approval (cancelled there, 404), and a request that waited through a restart
-// sent as soon as any page loads.
+// sent as soon as any page loads. And once sent (accepted, or an attempt that may have arrived) a request's data is edited by the
+// production manager only: the update is refused with production_only's text and production is not asked; a request production never
+// stored (refused at its door, or never attempted) is still edited before its first send; a change queued by the earlier release that
+// meets 409 production_only is final, shown with the reason, never sent again, and production's status from the answer is stored; the
+// stand-in answers the same data again with 200 created:false; cancelling and design files are as before.
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -92,10 +96,30 @@ try {
   const long = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).customer;
   check([res.status, body.send.kind, [...long.name].length, long.city], [200, 'ok', 195, 'الخبر'], 'a 195-character customer name is asked for and sent whole; another city as it is');
 
-  // ---- an edit while received
+  // ---- once sent, the production manager alone edits it: the CRM refuses the update and production is not asked
+  const PRODUCTION_ONLY = 'بيانات الطلب يعدّلها مدير الإنتاج فقط؛ الطلب أُرسل للإنتاج، فتعديله من تطبيق المنتجات.';
+  const audits = async (id, action) => (await app.db.prepare('SELECT COUNT(*) AS n FROM crm_audit WHERE record_id=? AND action=?').bind(id, 'mold-request:' + action).first()).n;
+  const sentRevision = mock.row(first).revision, requestsBefore = calls('requests');
+  check((await list('rep')).requests.find(item => item.id === first).can, {edit: false, cancel: true, resend: false, approve: false, withdraw: false, attach: true, deleteFile: true}, 'sent, approvals pending: no edit; cancelling and design files as before');
   res = await post('rep', {action: 'update', id: first, version: 1, specs: {...specs, quantity: 2}});
   body = await res.json();
-  check([res.status, body.request.specs.quantity, body.request.remote.revision, body.request.sending.state], [200, 2, 2, 'sent'], 'the edit reaches production: revision 2');
+  check([res.status, body.error, calls('requests') - requestsBefore, JSON.parse((await stored(first)).data).specs.quantity, (await stored(first)).version, mock.row(first).revision, await audits(first, 'update')],
+    [409, PRODUCTION_ONLY, 0, 1, 1, sentRevision, 0], 'the update of a sent request: 409 with production_only\'s text; nothing saved, audited or sent');
+  check((await post('rep', {action: 'update', id: first, version: 99, specs: {...specs, quantity: 2}})).status, 409, 'whatever copy the screen held');
+  // The same data again (a retry whose answer was lost): the stand-in answers 200 created:false, as production does, and nothing changes.
+  await app.db.prepare("UPDATE crm_mold_requests SET outbox='send',next_attempt_at=? WHERE id=?").bind(new Date().toISOString(), first).run();
+  body = await (await post('rep', {action: 'resend', id: first})).json();
+  check([body.send.kind, body.request.sending.state, body.request.can.edit, mock.row(first).revision, calls('requests') - requestsBefore], ['ok', 'sent', false, sentRevision, 1], 'a retry of the same data: 200 created false at production, nothing changes there');
+
+  // ---- a request production never stored is still the requester's to edit, until its first send reaches production
+  mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
+  const unsent = (await (await create('rep', 'east2', {description: 'refused first'})).json()).request;
+  check([unsent.sending.state, unsent.sending.error.code, unsent.sending.error.notStored, unsent.remote, unsent.can.edit, unsent.can.cancel], ['rejected', 'invalid_payload', true, null, true, true], 'refused at production\'s door (400) before it stored it: still editable');
+  res = await post('rep', {action: 'update', id: unsent.id, version: unsent.version, specs: {...specs, description: 'refused first', notes: 'بدون ملاحظات خاصة'}});
+  body = await res.json();
+  check([res.status, body.send.kind, body.request.sending.state, body.request.specs.notes, body.request.remote.status, body.request.can.edit, await audits(unsent.id, 'update')], [200, 'ok', 'sent', 'بدون ملاحظات خاصة', 'received', false, 1], 'the edit is saved and sent; production holds it now, so no more edits');
+  check(JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).specs.notes, 'بدون ملاحظات خاصة', 'production received the edited data');
+  check((await post('rep', {action: 'update', id: unsent.id, version: body.request.version, specs: {...specs, description: 'refused first'}})).status, 409, 'and the next edit is refused');
 
   // ---- production starts: the status is pulled once when the list opens
   mock.produce(first, {stages: ['laserCutting', 'box'], moldSerial: '093', productionDate: '2026-11-01'});
@@ -108,13 +132,36 @@ try {
   res = await post('rep', {action: 'update', id: first, version: (await stored(first)).version, specs: {...specs, quantity: 3}});
   check(res.status, 409, 'the CRM itself refuses an edit once production has started');
 
-  // ---- production starts before the CRM knows: the edit comes back 409 and is withdrawn
+  // ---- a change the earlier release queued (saved while it was editable) meets 409 production_only: final, shown, never sent again
   const second = (await (await create('rep', 'east2', {description: 'second mold'})).json()).request;
-  mock.produce(second.id, {stages: ['laserCutting']});
-  res = await post('rep', {action: 'update', id: second.id, version: second.version, specs: {...specs, description: 'second mold', quantity: 7}});
+  check((await post('sm', {action: 'approve', id: second.id})).status, 200, 'the sales manager approves it');
+  await app.db.prepare("UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL,version=version+1 WHERE id=?")
+    .bind(JSON.stringify({...JSON.parse((await stored(second.id)).data), specs: {...specs, description: 'second mold', quantity: 7}}), new Date().toISOString(), second.id).run();
+  mock.approve(second.id, 'production');
+  const queued = calls('requests');
+  res = await post('rep', {action: 'resend', id: second.id});
   body = await res.json();
-  check([res.status, body.request.specs.quantity, body.request.remote.status, body.request.editable, body.request.sending.error.code], [409, 1, 'in_production', false, 'request_locked'], '409: the edit is withdrawn, the request shows what production holds');
-  ok(/بدأ الإنتاج/.test(body.error), 'with a clear message');
+  check([res.status, body.send.kind, body.request.specs.quantity, body.request.sending.state, body.request.sending.error.code, body.request.sending.error.reason, body.request.remote.waitingStep, body.request.can.edit, body.request.can.resend],
+    [409, 'locked', 1, 'sent', 'request_locked', 'production_only', 'admin', false, false], '409 production_only: final; the data back to what production accepted; production\'s status from the answer stored (production approved meanwhile)');
+  ok(body.error.startsWith('بيانات الطلب يعدّلها مدير الإنتاج فقط') && body.error.includes('ولن يُعاد إرساله') && body.error.includes('نسخة الـCRM'), 'said with production_only\'s text, never claiming the data shown is production\'s: ' + body.error);
+  let settled = await stored(second.id);
+  check([settled.outbox, settled.next_attempt_at, JSON.parse(settled.last_error).reason, calls('requests') - queued, mock.row(second.id).quantity], [null, null, 'production_only', 1, 1], 'nothing waits, nothing is tried again; production keeps its data');
+  await list('owner'); await new Promise(resolve => setTimeout(resolve, 300));
+  check([calls('requests') - queued, (await list('rep')).requests.find(item => item.id === second.id).sending.error.reason], [1, 'production_only'], 'a page load later: still not sent again, and the request still says why');
+  // The same where the earlier attempt's answer was lost (the CRM never learned production stored it): the CRM keeps its copy and says
+  // plainly that production's may differ; production holds the request, so its status is pulled from now on.
+  const lost = (await (await create('rep', 'east1', {description: 'answer lost'})).json()).request, lostAt = new Date().toISOString();
+  await app.db.prepare("UPDATE crm_mold_requests SET data=?,accepted=NULL,remote=NULL,remote_at=NULL,outbox='send',attempts=1,first_failed_at=?,next_attempt_at=?,last_attempt_at=?,last_error=?,version=version+1 WHERE id=?")
+    .bind(JSON.stringify({...JSON.parse((await stored(lost.id)).data), specs: {...specs, description: 'answer lost', quantity: 4}}), lostAt, lostAt, lostAt, JSON.stringify({code: 'timeout', http: 0, at: lostAt}), lost.id).run();
+  check((await list('rep')).requests.find(item => item.id === lost.id).can.edit, false, 'an attempt whose answer was lost: no edit');
+  res = await post('rep', {action: 'resend', id: lost.id});
+  body = await res.json();
+  settled = await stored(lost.id);
+  check([res.status, body.request.specs.quantity, body.request.remote.orderNo, body.request.sending.error.reason, settled.outbox, !!settled.accepted], [409, 4, lost.remote.orderNo, 'production_only', null, true], 'final too: the CRM\'s copy stays with the reason, and production holds it');
+  await age(lost.id);
+  const pulls = calls('status');
+  await list('rep');
+  check(calls('status') - pulls, 1, 'its status is pulled again');
 
   // ---- cancelling while received
   const third = (await (await create('rep', 'east1', {description: 'third mold'})).json()).request;
@@ -130,12 +177,12 @@ try {
   const gone = (await list('rep')).requests.find(item => item.id === removed.id);
   check([gone.remote.status, gone.remote.waitingStep, gone.cancelled, gone.editable, gone.can], ['cancelled', 'cancelled', false, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false, attach: false, deleteFile: false}], 'deleted in production: cancelled there; no edit, cancel or approval');
   check((await post('rep', {action: 'update', id: removed.id, version: removed.version, specs: {...specs, quantity: 9}})).status, 409, 'an edit is refused');
-  // deleted there while the CRM still showed it received: the edit goes, production refuses, the reason is the real one
+  // deleted there while the CRM still showed it received: the CRM refuses the edit itself, production is not asked
   const eighth = (await (await create('rep', 'east1', {description: 'eighth mold'})).json()).request;
   mock.remove(eighth.id);
+  const beforeEighth = calls('requests');
   res = await post('rep', {action: 'update', id: eighth.id, version: eighth.version, specs: {...specs, description: 'eighth mold', quantity: 6}});
-  body = await res.json();
-  check([res.status, body.error, body.request.remote.status, body.request.editable, body.request.specs.quantity], [409, 'أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.', 'cancelled', false, 1], 'an edit reaching a request deleted in production: «cancelled in production», not «production started»; the edit withdrawn');
+  check([res.status, (await res.json()).error, calls('requests') - beforeEighth, JSON.parse((await stored(eighth.id)).data).specs.quantity], [409, PRODUCTION_ONLY, 0, 1], 'an edit of a sent request deleted in production meanwhile: refused here, nothing sent');
 
   // ---- the sales manager approves; production and the administrator follow in their application
   const fourth = (await (await create('rep', 'east1', {description: 'fourth mold'})).json()).request;
@@ -153,9 +200,8 @@ try {
   body = await (await post('sm', {action: 'withdraw', id: fourth.id})).json();
   check([body.request.remote.waitingStep, body.request.remote.approvals.sales, body.request.can.approve], ['sales', null, true], 'withdrawn: back to the sales manager');
   await post('sm', {action: 'approve', id: fourth.id});
-  body = await (await post('rep', {action: 'update', id: fourth.id, version: fourth.version, specs: {...specs, description: 'fourth mold', quantity: 5}})).json();
-  check([body.request.remote.waitingStep, body.request.remote.approvals.sales, body.request.can.edit], ['sales', null, true], 'an edit while received undoes the approvals: back to the sales manager');
-  await post('sm', {action: 'approve', id: fourth.id});
+  res = await post('rep', {action: 'update', id: fourth.id, version: fourth.version, specs: {...specs, description: 'fourth mold', quantity: 5}});
+  check([res.status, (await res.json()).error, mock.row(fourth.id).quantity, !!mock.row(fourth.id).approvals.sales], [409, PRODUCTION_ONLY, 1, true], 'an edit during the approvals is refused: production keeps its data and the sales manager\'s approval');
   mock.approve(fourth.id, 'production');
   res = await post('sm', {action: 'withdraw', id: fourth.id});
   body = await res.json();
@@ -216,7 +262,7 @@ try {
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('other1','customer',NULL,'rep2','فرع آخر',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع other1', region: 'الشرقية', city: 'الخبر'}), now, now).run();
   res = await create('cs', 'west1', {halfBlock: 'three'});
   body = await res.json();
-  check([res.status, body.request.memberId, body.request.can.edit], [200, 'cs', true], 'customer service asks for a customer of its branch');
+  check([res.status, body.request.memberId, body.request.can.edit, body.request.can.cancel], [200, 'cs', false, true], 'customer service asks for a customer of its branch (sent: no edit, cancel as before)');
   const fromService = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
   check([fromService.salesman, fromService.specs.halfBlock], [{crmMemberId: 'cs', name: 'cs', email: 'cs@yourrest.org'}, 'three'], 'under its own name; three half blocks');
   check((await create('cs', 'other1')).status, 404, 'not for another branch\'s customer');
@@ -231,6 +277,9 @@ try {
   body = await res.json();
   const waiting = body.request;
   check([res.status, body.send.kind, waiting.sending.state, waiting.sending.attempts, waiting.sending.error.code], [200, 'retry', 'waiting', 1, 'network'], 'saved in the CRM, waiting to be sent');
+  check([waiting.can.edit, waiting.can.cancel, waiting.can.resend], [false, true, true], 'an attempt without an answer may have arrived: no edit; cancel and resend');
+  res = await post('rep', {action: 'update', id: waiting.id, version: waiting.version, specs: {...specs, description: 'while down', quantity: 2}});
+  check([res.status, (await res.json()).error], [409, PRODUCTION_ONLY], 'the update is refused with production_only\'s text');
   const due = Date.parse(waiting.sending.nextAttemptAt) - Date.parse(waiting.sending.lastAttemptAt);
   ok(due >= 55_000 && due <= 65_000, 'next try in one minute');
   await age(first);
@@ -246,10 +295,10 @@ try {
   check([row.outbox, row.attempts, JSON.parse(row.remote).status], [null, 0, 'received'], 'when its time came the next page open sent it');
   mock.state.notConfigured = true;
   body = await (await create('rep', 'east1', {description: 'secret missing there'})).json();
-  check([body.request.sending.state, body.request.sending.error.code], ['waiting', 'not_configured'], 'production without its secret (503): kept waiting');
+  check([body.request.sending.state, body.request.sending.error.code, body.request.can.edit], ['waiting', 'not_configured', true], 'production without its secret (503 not_configured, refused before storing): kept waiting, still editable');
   mock.state.notConfigured = false;
   body = await (await post('rep', {action: 'resend', id: body.request.id})).json();
-  check(body.request.sending.state, 'sent', 'resend once it is set');
+  check([body.request.sending.state, body.request.can.edit], ['sent', false], 'resend once it is set; sent, so no more edits');
 
   // ---- the secret never leaves the server
   for (const who of ['rep', 'owner']) {
@@ -284,7 +333,7 @@ try {
   const listed = (await as('/api/mold-requests')).json();
   check([listed.linkReady, listed.linkProblem], [false, 'not_configured'], 'the screen says the link is off');
   const created = await (await as('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'e1', specs}})).json();
-  check([created.request.sending.state, created.send.kind], ['off', 'off'], 'a request is still saved, waiting while the link is off');
+  check([created.request.sending.state, created.send.kind, created.request.can.edit], ['off', 'off', true], 'a request is still saved, waiting while the link is off (never attempted: still editable)');
   check((await as('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: created.request.id}})).status, 503, 'resend says the link is off');
   check([(await as('/api/crm')).status, mock.state.calls.length - calls], [200, 0], 'the rest of the CRM works; nothing was sent');
 } finally { await plain.stop(); await mock.stop(); }

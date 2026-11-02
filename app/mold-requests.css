@@ -25,7 +25,7 @@
 .mold-stage-dot{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;font-size:12px;font-weight:700;background:var(--border);color:var(--foreground)}
 .mold-stages li[data-done=true] .mold-stage-dot{background:#1b6a47;color:#fff}
 .mold-stage-name{font-size:11px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}.mold-stages small{font-size:11px;color:var(--muted-foreground)}
-.mold-updated{margin:0;font-size:12px;color:var(--muted-foreground)}
+.mold-updated,.mold-specs-note{margin:0;font-size:12px;color:var(--muted-foreground)}
 .mold-subtitle{margin:6px 0 0;font-size:15px}
 .mold-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;margin:0}.mold-facts div{min-width:0}.mold-facts dt{font-size:12px;color:var(--muted-foreground)}.mold-facts dd{margin:2px 0 0;font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .mold-locked{display:flex;align-items:center;gap:6px;margin:0;font-size:14px;color:#7a2c1f}
