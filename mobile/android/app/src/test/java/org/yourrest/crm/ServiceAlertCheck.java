@@ -110,7 +110,8 @@ public final class ServiceAlertCheck {
         check(show.contains("IMPORTANCE_HIGH") && show.contains("VISIBILITY_PRIVATE") && show.contains("setPublicVersion(lockScreen)") && show.contains("FLAG_IMMUTABLE") && show.contains("setAutoCancel(true)") && show.contains("notice.publicTitle"), "A high-importance channel, private on the lock screen, with an immutable pending intent");
         check(!alerts.contains("customerPhone") && !alerts.contains("location") && !alerts.contains("registration"), "Nothing but the customer name and the short need can reach a notification");
         check(manifest.contains("android:launchMode=\"singleTop\"") && manifest.contains("android.permission.POST_NOTIFICATIONS") && !manifest.contains("android.permission.USE_FULL_SCREEN_INTENT"), "The activity is reused by a tapped notification; the notification permission is declared; nothing intrusive is requested");
-        check(gradle.contains("versionCode 12") && gradle.contains("versionName '1.0.11'"), "The build that announces requests is the newer version, so installed apps accept it as an update");
+        java.util.regex.Matcher code = java.util.regex.Pattern.compile("versionCode (\\d+)").matcher(gradle), name = java.util.regex.Pattern.compile("versionName '1\\.0\\.(\\d+)'").matcher(gradle);
+        check(code.find() && Integer.parseInt(code.group(1)) >= 12 && name.find() && Integer.parseInt(name.group(1)) >= 11, "The build that announces requests (1.0.11, versionCode 12) or a later one, so installed apps accept it as an update");
         System.out.println("Native service alerts: " + checks + " checks passed (actual policy and integration guards; no device notification verification)");
     }
 }

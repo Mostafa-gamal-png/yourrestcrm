@@ -1,4 +1,4 @@
-# Yourrest CRM Android 1.0.11 (versionCode 12)
+# Yourrest CRM Android 1.0.12 (versionCode 13)
 
 ## Updates inside the app
 
@@ -19,6 +19,21 @@ Public update metadata is generated from the verified APK build report using
 `/api/app-update`. Do not change the APK without regenerating this metadata.
 
 Native Android 8+ container for `https://crm.yourrest.org`, targeting API 35. Install the matching CRM server update before this APK. The Android package and signing identity remain unchanged from earlier releases.
+
+## Design files in 1.0.12
+
+Version 1.0.12 lets a representative work with a mold request's design files («ملفات التصميم») inside the app, without the browser:
+
+- **Choosing files.** The file picker follows the page's `accept` list (`FileChooserRules`). An input that names no types keeps the old list (images, PDF, CSV, Excel); MIME types are kept and known extensions (pdf, png, jpg/jpeg, webp, gif, svg, csv, xlsx, xls, doc/docx, txt, zip) become MIME types. When any entry has no type Android's picker can filter by (DWG, DXF, STEP/STP, IGS/IGES, STL, SLDPRT/SLDASM/SLDDRW, NC1, DSTV, AI, EPS, CDR, PSD, RAR, 7Z, ...) the picker shows every file; the page and the server still check extension, size and content.
+- **Opening («عرض») and saving («تنزيل»).** Only `https://crm.yourrest.org/api/mold-requests/design-file?...` is handled (`DesignFileRules`); every other link and download keeps its earlier behaviour. A main-frame navigation to it (the «عرض» link) is intercepted so the page stays, and a download of it (the «تنزيل» link) is taken from the download listener. The app fetches the same URL natively, one file at a time and off the UI thread, sending the WebView session cookie for that origin and the app's user agent, without following redirects, with a 130-second read timeout (production may take 120 s), a ten-minute overall limit and a hard cap of 26 MiB (on Content-Length and while reading). The name comes from Content-Disposition (`filename*` UTF-8 first, else `filename`) and is made safe (no path separators, control or direction characters or leading dots; at most 180 UTF-8 bytes with the extension kept; otherwise `design-file`).
+- «عرض» (a navigation, or `inline=1`) writes the file to the private cache folder `cache/design-files/<random>/` and opens it with `ACTION_VIEW`, the answer's MIME type and a `content://org.yourrest.crm.designfiles/...` URI from the app's own read-only `DesignFileProvider` (not exported, per-URI read grant only, serves only that folder, guarded against path traversal). If no app can open the type (for example DWG) the app says so and offers «حفظ».
+- «تنزيل» asks where to save with the system picker (`ACTION_CREATE_DOCUMENT`, no storage permission on any Android version), writes the bytes there and shows «تم حفظ الملف». Cancelling the picker saves nothing.
+- Errors: 401 reads «انتهت جلسة الدخول؛ سجّل الدخول مرة أخرى»; any other non-200 answer shows the CRM's own Arabic `{"error": ...}` text, else a general message; a lost connection reads «تعذّر تنزيل الملف؛ تحقق من الاتصال».
+- Cached copies older than a day are removed when the app starts. The session cookie is never logged, never put in an intent, and never given to another app or the system DownloadManager. No Android permission is added.
+
+The provider's authority is the literal `org.yourrest.crm.designfiles` in `AndroidManifest.xml` because `tools/build-oss.py` links the manifest as written (no `${applicationId}` placeholder). A Gradle debug build (`org.yourrest.crm.dev`) declares the same authority, so it cannot be installed next to the release app on one phone.
+
+Checks: `FileChooserCheck` (accept-list rules and picker source guards) and `DesignFileCheck` (link allowlist, inline flag, Content-Disposition names, size cap, error wording, provider path guard, plus source and manifest guards). A «تنزيل» tap costs two requests on the server: WebView reads the answer's headers before it hands the download to the app, then the app fetches the file. Not verified here: opening and saving on a real phone, viewer apps, the save picker, and very slow networks.
 
 ## Customer-service request notifications in 1.0.11
 
@@ -79,7 +94,7 @@ Successful requests return `{tracking,permission,pendingCount,pendingGapCount,la
 
 Async ordinary directions links (including outside tracking hours) can use the same launcher from the currently trusted CRM main frame. This exception accepts only HTTPS `www.google.com/maps/dir/` URLs with `api=1`, one finite in-range coordinate pair, `travelmode=driving` and `dir_action=navigate`, with no extra or duplicate parameters, userinfo, arbitrary port or fragment. It requires a genuine gesture or the current nonempty injected navigation nonce, while the activity is resumed. This preserves the legitimate handoff when WebView no longer reports a gesture after an awaited CRM request. Subframes and other external URLs retain the ordinary gesture requirement. The adapter constructs both intents from validated coordinates; it never launches a supplied arbitrary intent or custom scheme.
 
-WebView authentication stays in the cookie jar. Native requests obtain current HttpOnly cookies directly through `CookieManager`; cookies never enter JavaScript or the outbox. The low-level bridge requires a per-main-navigation nonce and exact trusted HTTPS page. Mixed HTTP, file URLs, SSL bypass, third-party cookies and WebView debugging are disabled. Ordinary external navigation still requires a user gesture. File uploads use Android's document picker; browser-generated blob downloads currently instruct the user to use the browser.
+WebView authentication stays in the cookie jar. Native requests obtain current HttpOnly cookies directly through `CookieManager`; cookies never enter JavaScript or the outbox. The low-level bridge requires a per-main-navigation nonce and exact trusted HTTPS page. Mixed HTTP, file URLs, SSL bypass, third-party cookies and WebView debugging are disabled. Ordinary external navigation still requires a user gesture. File uploads use Android's document picker, following the input's accept list since 1.0.12; design files open and save inside the app (see "Design files in 1.0.12"); other browser-generated downloads still instruct the user to use the browser.
 
 ## Verification and builds
 
