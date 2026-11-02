@@ -1,7 +1,4 @@
 {
-  "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-ErpCode-20261102.zip",
-  "sha256": "c69ab70f0b5750d62c707bdaa4200dae11ef265648240ecc7ef8be096bc721aa",
-  "stage": "yourrest-crm-update-erp-code-20261102",
-  "helper": "yourrest-activate-update-erp-code.cjs"
+  "mode": "diagnose",
+  "script": "scripts/diagnose/mold-customers.cjs"
 }
