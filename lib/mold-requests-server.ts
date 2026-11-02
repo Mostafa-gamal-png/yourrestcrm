@@ -2,6 +2,7 @@
 // again on the §6 timetable while they wait, and their status pulled in one call when a list or a request is opened (§6: no retry for
 // a pull; the last known status is shown with its time). Sending is off, never the rest of the CRM, while the settings are missing.
 import {env} from 'cloudflare:workers';
+import {database} from './crm-server';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
 import {moldRequestBody,moldNextAttempt,moldPendingItem,moldStatusObject,riyadhIso,MOLD_STATUS_BATCH} from '@/portable/mold-rules.mjs';
 import type {MoldError,MoldPendingItem,MoldRemote,MoldRequestData,MoldRequestRow} from './mold-requests';
@@ -73,6 +74,21 @@ export async function sendDueMoldRequests(db:D1Database,{limit=5,now=()=>new Dat
  let sent=0;
  for(const {id} of due){const outcome=await sendMoldRequest(db,id,{link,now,fetch});if(outcome.kind==='ok')sent++;}
  return sent;
+}
+
+/**
+ * While the server runs, requests waiting to be sent are tried on the §6 timetable: a check every minute, and one right away when the
+ * timer starts, so a request that waited through a restart goes as soon as the server is used again. Started by the first page any
+ * member loads (lib/mold-customers-hook.ts) and by the mold requests page; never twice in one process. The claim in sendMoldRequest
+ * keeps two checks from sending the same request.
+ */
+export function keepMoldRetrying(){
+ const holder=globalThis as typeof globalThis&{__yourrestMoldRetry?:ReturnType<typeof setInterval>};
+ if(holder.__yourrestMoldRetry)return;
+ const check=()=>{void sendDueMoldRequests(database()).catch(()=>{});};
+ holder.__yourrestMoldRetry=setInterval(check,60_000);
+ holder.__yourrestMoldRetry.unref?.();
+ check();
 }
 
 /** A pull younger than this is shown as it is; a failed pull waits this long before the next one, so an unreachable production

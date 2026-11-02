@@ -4,6 +4,19 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mold requests: fixes from the review of the products link (2026-11-02, no migration)
+
+- **Asked.** The owner asked for a review of the whole integration with yourrest-products, then approved fixing what it found («تمام نفذ»): items 7, 8, 10, 14 and 20 of the review, tests for 23, 25 and 26, and a read-only check of production's `pending` and `status` routes on the live account.
+- **Customer name 200.** `MOLD_LIMITS.customerName` 160 → 200 (`portable/mold-rules.mjs`): production takes 200 in both the requests and customers routes, so any customer the list carries can be asked for.
+- **City as the sheet writes it.** `moldRequestCity` (`portable/mold-rules.mjs`): a new request stores and sends one of the sheet's nine cities in the sheet's form (`Damam - الدمام`), any other city untouched; existing requests keep their bytes (`app/api/mold-requests/route.ts`).
+- **Retries after a restart.** `keepMoldRetrying` (`lib/mold-requests-server.ts`) checks at once, then every minute; started by the CRM page every member loads (`wakeMoldRetries` in `lib/mold-customers-hook.ts`, `app/api/crm/route.ts`) as well as by the mold requests page, so a request that waited through a restart goes without anyone opening that page.
+- **Cancelled in production.** A request deleted or cancelled in the products application reads «أُلغي الطلب في تطبيق الإنتاج» on its sheet, not «production has started», and no stage is marked current (`app/mold-requests.tsx`).
+- **Refusal reasons.** `moldApprovalRefusal` (`portable/mold-rules.mjs`) names the real reason production refused an approval or its withdrawal (cancelled there, a historical request, production approved first); 404 says production does not know the request.
+- **Contract copy.** `docs/MOLD-REQUESTS-CONTRACT-AR.md` brought in line with yourrest-products (a deleted request is returned `cancelled`).
+- **Stand-in production.** `scripts/lib/products-mock.mjs`: `remove` (deleted there, read as cancelled) and `forget` (a 404).
+- **Tests.** `tests/mold-requests.mjs` (124), `tests/mold-requests-http.mjs` (84: the sheet city, a 195-character name, deleted in production, the cancelled refusal, the 404, a request sent after a restart), `tests/mold-requests-browser.mjs` (the cancelled-in-production sheet), `tests/mold-customers-http.mjs` (27: an edited name and city, production down while a customer is saved, the daily list after 24 hours and not before, across a restart).
+- **Operations.** `docs/UPDATE-2026-11-02-MOLD-FIXES-AR.txt`.
+
 ## The CRM's customers in the products application (2026-11-01, fifth package of the day, no migration)
 
 - **Asked.** Requests registered directly in the products application choose the customer from the CRM's list only (the contract's signed `customers` route: `full` deactivates whoever is missing, `upsert` adds or changes; up to 2 MB and 20000 customers a call; answer `{received, inserted, updated, deactivated, activeCustomers}`).

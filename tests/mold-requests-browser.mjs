@@ -4,7 +4,8 @@
 // (stages done, locked); production unreachable (kept waiting, resend); the form refuses an incomplete request; the phone keeps the
 // representative's five tabs and opens the page from the account sheet. Since 2026-11-01: each request says where it waits and since
 // when, with the three approvals; the sales manager approves (and withdraws) from the request; an edit warns that it undoes the
-// approvals; four half-block choices; a supervisor and customer service ask too. Screenshots for the report. Synthetic fixtures only: temporary SQLite, no production data, no real production app.
+// approvals; four half-block choices; a supervisor and customer service ask too. Since 2026-11-02: a request deleted in production reads
+// «cancelled in production», with no «production has started» note. Screenshots for the report. Synthetic fixtures only: temporary SQLite, no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -178,6 +179,22 @@ try {
   await shot(editor, 'mold-edit-warning');
   await edit.getByRole('button', {name: 'إلغاء', exact: true}).click();
   await editor.context().close();
+
+  // ---- 3d. Deleted in the products application: the representative reads it cancelled there, not «production has started»
+  mock.remove(second);
+  await stale();
+  const reader = await open('rep');
+  await goMolds(reader);
+  const removedCard = reader.locator('.mold-card', {hasText: 'مصنع east2'});
+  await removedCard.locator('.mold-chip', {hasText: 'ملغى'}).waitFor();
+  await removedCard.click();
+  await sheet(reader).locator('.mold-banner[data-kind="cancelled"]').waitFor();
+  ok((await sheet(reader).locator('.mold-banner[data-kind="cancelled"]').innerText()).includes('أُلغي الطلب في تطبيق الإنتاج'), 'the sheet says it was cancelled in production');
+  check(await sheet(reader).locator('.mold-stages li[aria-current]').count(), 0, 'no stage is marked as the current one');
+  check([await sheet(reader).locator('.mold-locked').count(), await sheet(reader).getByRole('button', {name: 'تعديل الطلب'}).count(), await sheet(reader).getByRole('button', {name: 'إلغاء الطلب'}).count()], [0, 0, 0], 'no «production has started» note, no edit or cancel');
+  await reader.waitForTimeout(400);
+  await shot(reader, 'mold-sheet-cancelled-in-production');
+  await reader.context().close();
 
   // ---- 4. The phone keeps the representative's five tabs; the page opens from the account sheet
   const phone = await open('rep', {viewport: PHONE});

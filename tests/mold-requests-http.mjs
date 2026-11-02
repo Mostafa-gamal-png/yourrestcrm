@@ -6,6 +6,9 @@
 // secret; a release without the link settings (sending off, the rest of the CRM unaffected); the secret never in a page or answer.
 // Since 2026-11-01: every role asks (customer service from its branch's customers), and the sales manager alone approves a request
 // waiting for them, or withdraws the approval until production approves (production's approval route, the approval chain).
+// Since 2026-11-02: a request's city as the sheet writes it, customer names up to 200 characters, a request deleted in production read as
+// cancelled, the real reason when production refuses an approval (cancelled there, 404), and a request that waited through a restart
+// sent as soon as any page loads.
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -57,7 +60,8 @@ try {
   const first = body.request.id;
   ok(/^mr-[0-9a-f-]{36}$/.test(first), 'the CRM request id is the contract crmRequestId');
   const sent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
-  check(sent.customer, {crmNumber: await number('east1'), name: 'مصنع east1', address: 'حي الصناعية', city: 'الدمام'}, 'the customer by its Yourrest number, never its ERP code, phone or email');
+  check(sent.customer, {crmNumber: await number('east1'), name: 'مصنع east1', address: 'حي الصناعية', city: 'Damam - الدمام'}, 'the customer by its Yourrest number, never its ERP code, phone or email; one of the sheet\'s cities as the sheet writes it');
+  check(JSON.parse((await stored(first)).data).customer.city, 'Damam - الدمام', 'and stored that way, so a resend sends the same bytes');
   check(sent.salesman, {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, 'the representative');
   ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+03:00$/.test(sent.requestedAt), 'requestedAt in Riyadh time with its offset');
   ok(mock.state.calls.every(call => call.signed || call.route === ''), 'every call was signed with the shared secret');
@@ -80,6 +84,13 @@ try {
   check(await ids('rep2'), [], 'another representative: none');
   check([(await ids('sup')).length, (await ids('sm')).length, (await ids('owner')).length, (await ids('sup2')).length], [2, 2, 2, 0], 'his supervisor, the manager and the administrator: both; another supervisor: none');
   check((await post('sup', {action: 'update', id: first, version: 1, specs})).status, 403, 'only the representative who asked may change it');
+
+  // ---- a customer name up to 200 characters, as production and the customers list take it
+  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('long1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع ' + 'ط'.repeat(190), region: 'الشرقية', city: 'الخبر'}), now, now).run();
+  res = await create('rep', 'long1', {description: 'long name'});
+  body = await res.json();
+  const long = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).customer;
+  check([res.status, body.send.kind, [...long.name].length, long.city], [200, 'ok', 195, 'الخبر'], 'a 195-character customer name is asked for and sent whole; another city as it is');
 
   // ---- an edit while received
   res = await post('rep', {action: 'update', id: first, version: 1, specs: {...specs, quantity: 2}});
@@ -112,6 +123,14 @@ try {
   check([res.status, body.request.cancelled, body.request.remote.status, body.request.can.edit], [200, true, 'cancelled', false], 'cancelled in production too');
   check((await post('rep', {action: 'cancel', id: third.id, version: body.request.version, reason: ''})).status, 409, 'cancelled already');
 
+  // ---- deleted in the products application: read as cancelled there, nothing left to change
+  const removed = (await (await create('rep', 'east1', {description: 'removed in production'})).json()).request;
+  mock.remove(removed.id);
+  await age(removed.id);
+  const gone = (await list('rep')).requests.find(item => item.id === removed.id);
+  check([gone.remote.status, gone.remote.waitingStep, gone.cancelled, gone.editable, gone.can], ['cancelled', 'cancelled', false, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false}], 'deleted in production: cancelled there; no edit, cancel or approval');
+  check((await post('rep', {action: 'update', id: removed.id, version: removed.version, specs: {...specs, quantity: 9}})).status, 409, 'an edit is refused');
+
   // ---- the sales manager approves; production and the administrator follow in their application
   const fourth = (await (await create('rep', 'east1', {description: 'fourth mold'})).json()).request;
   const can = async (who, id) => (await list(who)).requests.find(item => item.id === id)?.can;
@@ -136,6 +155,20 @@ try {
   body = await res.json();
   check([res.status, body.request.remote.waitingStep, body.request.can.withdraw], [409, 'admin', false], 'production approved first: the withdrawal is refused and the request shows where it waits');
   ok(/اعتمد الإنتاج/.test(body.error), 'with a clear message');
+
+  // ---- approved, then deleted in production before the CRM knew: refused for the real reason, and the CRM catches up
+  const sixth = (await (await create('rep', 'east1', {description: 'sixth mold'})).json()).request;
+  check((await post('sm', {action: 'approve', id: sixth.id})).status, 200, 'the sales manager approves');
+  mock.remove(sixth.id);
+  res = await post('sm', {action: 'withdraw', id: sixth.id});
+  body = await res.json();
+  check([res.status, body.error, body.request.remote.status, body.request.can.withdraw], [409, 'الطلب ملغى في تطبيق الإنتاج.', 'cancelled', false], 'cancelled in production: said so, not «production approved»; now shown cancelled');
+  // ---- a request production does not know (404): said plainly, nothing saved
+  const seventh = (await (await create('rep', 'east1', {description: 'seventh mold'})).json()).request;
+  mock.forget(seventh.id);
+  const audited = async id => (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE record_id=? AND action='mold-request:approve'").bind(id).first()).n;
+  res = await post('sm', {action: 'approve', id: seventh.id});
+  check([res.status, (await res.json()).error, await audited(seventh.id)], [409, 'الطلب غير موجود لدى الإنتاج', 0], 'unknown to production: said so, no approval recorded');
   mock.approve(fourth.id, 'admin');
   await age(fourth.id);
   const approved = (await list('rep')).requests.find(item => item.id === fourth.id);
@@ -209,6 +242,22 @@ try {
   }
   ok(!app.log().includes(mock.state.secret), 'not in the server log');
 } finally { await app.stop(); }
+
+// ---- a request that waited through a restart goes as soon as any page loads, the mold requests page unopened
+const restarted = await bootBuiltApp({members}, {env: settings});
+try {
+  const now = new Date().toISOString(), id = 'mr-' + crypto.randomUUID(), sentRequests = () => mock.state.calls.filter(call => call.route === 'requests').length;
+  await restarted.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('r1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع r1', region: 'الشرقية', city: 'الدمام'}), now, now).run();
+  const crmNumber = (await restarted.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='r1'").first()).number;
+  const data = {requestedAt: '2026-11-01T10:00:00+03:00', customer: {crmNumber, name: 'مصنع r1', address: '', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs};
+  await restarted.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,attempts,first_failed_at,next_attempt_at,last_error,created_by,created_at,updated_at,version) VALUES(?,'rep','r1',?,'send',1,?,?,?,'rep',?,?,1)")
+    .bind(id, JSON.stringify(data), now, now, JSON.stringify({code: 'network', http: 0, at: now}), now, now).run();
+  const before = sentRequests();
+  check((await restarted.as(await restarted.login('owner'))('/api/crm')).status, 200, 'after a restart someone opens the CRM, not the mold requests page');
+  let waited;
+  for (let n = 0; n < 100 && (waited = await restarted.db.prepare('SELECT outbox,accepted FROM crm_mold_requests WHERE id=?').bind(id).first()).outbox; n++) await new Promise(resolve => setTimeout(resolve, 100));
+  check([waited.outbox, !!waited.accepted, sentRequests() - before], [null, true, 1], 'the request that waited went at once, once');
+} finally { await restarted.stop(); }
 
 // ---- a release without the link settings: sending is off, the CRM works
 const plain = await bootBuiltApp({members}, {env: {NODE_EXTRA_CA_CERTS: mock.ca}});
