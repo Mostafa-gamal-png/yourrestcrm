@@ -1,4 +1,7 @@
 {
-  "mode": "diagnose",
-  "script": "scripts/diagnose/mold-products.cjs"
+  "mode": "deploy",
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldFixes-20261102.zip",
+  "sha256": "c841a07924b662193b2e0e8850a6259bb0137c7fa58f4eeb3c7905d95331aa1b",
+  "stage": "yourrest-crm-update-mold-fixes-20261102",
+  "helper": "yourrest-activate-update-mold-fixes.cjs"
 }
