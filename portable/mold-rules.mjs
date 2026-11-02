@@ -1,7 +1,8 @@
 // The mold requests contract with yourrest-products, version 1 (docs/MOLD-REQUESTS-CONTRACT-AR.md and its addendum
-// docs/MOLD-REQUESTS-CONTRACT-ADDENDUM-AR.md): the values and limits both sides accept, the request body the CRM sends, the status
-// object it receives, how an answer is read and when a failed send is tried again. Pure functions, no I/O and no secret: the server,
-// the browser form and the historical import tool (release/operations) share them.
+// docs/MOLD-REQUESTS-CONTRACT-ADDENDUM-AR.md, with the design files of 2026-11-02): the values and limits both sides accept, the request
+// body the CRM sends, the design files it attaches, the status object it receives, how an answer is read and when a failed send is
+// tried again. Pure functions, no I/O and no secret: the server, the browser form and the historical import tool (release/operations)
+// share them.
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -321,7 +322,8 @@ function approvalsOf(value) {
   return out;
 }
 /** A status object (§3) as received, reduced to the fields the contract names; null when it is not one. manual: a request registered
- * in the products application itself (its approval answer), which has no crmRequestId.
+ * in the products application itself (its approval answer), which has no crmRequestId. designFiles: the request's design files, the
+ * CRM's and production's (null from an application older than the addition of 2026-11-02).
  * @param {any} value
  * @param {{manual?: boolean}} [options] */
 export function moldStatusObject(value, {manual = false} = {}) {
@@ -336,6 +338,7 @@ export function moldStatusObject(value, {manual = false} = {}) {
     stagesDone: MOLD_STAGES.filter(key => stages[key].done).length, stagesTotal: MOLD_STAGES.length,
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
     waitingStep: MOLD_WAITING_STEPS.includes(value.waitingStep) ? value.waitingStep : null, waitingSince: dateOrNull(value.waitingSince), approvals: approvalsOf(value.approvals),
+    designFiles: designFilesOf(value.designFiles),
   };
 }
 
@@ -377,7 +380,8 @@ const textOf = (value, max) => typeof value === 'string' ? value.replace(/[ \t ]
 const wholeOrNull = value => isWhole(value) ? value : null;
 /**
  * One request waiting for the sales manager, as the `pending` route lists it (from the CRM or registered in the products application),
- * reduced to the fields the contract names; null when it is not one. No production data travels in it.
+ * reduced to the fields the contract names, with its design files (none when production sent none); null when it is not one. No
+ * production data travels in it.
  * @param {any} value
  */
 export function moldPendingItem(value) {
@@ -391,18 +395,19 @@ export function moldPendingItem(value) {
     salesman: {crmMemberId: textOf(s.crmMemberId, 64), name: textOf(s.name, 160)},
     specs: {description: textOf(p.description, 200), core: textOf(p.core, 20), vibrators: wholeOrNull(p.vibrators), model: textOf(p.model, 20), halfBlock: textOf(p.halfBlock, 20),
       moldWidth: wholeOrNull(p.moldWidth), gelbaSize: wholeOrNull(p.gelbaSize), moldNo: textOf(p.moldNo, 40), quantity: wholeOrNull(p.quantity), designUrl: /^https:\/\/\S+$/i.test(p.designUrl || '') ? String(p.designUrl).slice(0, 1000) : '', notes: textOf(p.notes, 2000)},
-    revision: wholeOrNull(value.revision),
+    revision: wholeOrNull(value.revision), designFiles: designFilesOf(value.designFiles) || [],
   };
 }
 
 /**
- * What an answer means for the CRM (§4): ok (the request object came back), locked (409 request_locked: production started),
- * not_found (404 on cancel), rejected (400/413: the data must change before a retry helps) or retry (anything else: network, timeout,
- * 401, 503 not_configured, 5xx, a reply that is not the contract's).
+ * What an answer means for the CRM (§4): ok (the request object came back), locked (409 request_locked: production started, or the
+ * approvals are complete), not_found (404), rejected (400/413: the data must change before a retry helps; reason: why production refused
+ * a design file's bytes, details.reason) or retry (anything else: network, timeout, 401, 503 not_configured, 5xx, a reply that is not
+ * the contract's).
  * @param {number} httpStatus
  * @param {any} json
  * @param {{manual?: boolean}} [options] manual: the call may be about a request registered in production (the approval route)
- * @returns {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], request?: any}}
+ * @returns {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], reason?: string, request?: any}}
  */
 export function readMoldAnswer(httpStatus, json, {manual = false} = {}) {
   const error = json && typeof json === 'object' && json.error && typeof json.error === 'object' ? json.error : null;
@@ -412,7 +417,8 @@ export function readMoldAnswer(httpStatus, json, {manual = false} = {}) {
   // An approval answer may be about a request registered in production (crmRequestId null): manual reads that one too.
   if (httpStatus === 409 && code === 'request_locked') return {kind: 'locked', code, fields, request: moldStatusObject(error.details?.request, {manual})};
   if (httpStatus === 404 && code === 'not_found') return {kind: 'not_found', code, fields};
-  if (httpStatus === 400 || httpStatus === 413) return {kind: 'rejected', code: code || 'http_' + httpStatus, fields};
+  const reason = typeof error?.details?.reason === 'string' && /^[a-z_]{1,40}$/.test(error.details.reason) ? error.details.reason : '';
+  if (httpStatus === 400 || httpStatus === 413) return {kind: 'rejected', code: code || 'http_' + httpStatus, fields, ...(reason ? {reason} : {})};
   return {kind: 'retry', code: code || 'http_' + httpStatus, fields};
 }
 

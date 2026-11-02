@@ -1,12 +1,14 @@
 // The mold requests contract, version 1 (docs/MOLD-REQUESTS-CONTRACT-AR.md and its addendum), on the CRM side: the signature against
 // the contract's test vector, the settings check, the form checks, the request body, the status object, how answers are read, the
-// §6 retry timetable, and every route against a stand-in production API that applies the same checks as the PHP. No real account.
+// §6 retry timetable, the design files of 2026-11-02 (names, bytes, pixels, the body, designFiles), and every route against a stand-in
+// production API that applies the same checks as the PHP. Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldApprovalRefusal, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText, sheetCity, moldRequestCity, moldCustomerEntry, moldCustomerCalls} from '../portable/mold-rules.mjs';
-import {moldSignature, moldConfig, callProducts} from '../portable/mold-client.mjs';
+import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldApprovalRefusal, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText, sheetCity, moldRequestCity, moldCustomerEntry, moldCustomerCalls,
+  MOLD_DESIGN_EXTENSIONS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, moldDesignName, moldDesignDisplayName, moldImageSize, moldDesignFileCheck, moldDesignContentType, moldDispositionName, moldContentDisposition, moldDesignFileBody, moldDesignFileEntry} from '../portable/mold-rules.mjs';
+import {moldSignature, moldConfig, callProducts, moldRouteTimeout} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 
 let checks = 0;
@@ -140,12 +142,70 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(moldNextAttempt(10, first, at(23 * 60)), null, 'nothing after 24 hours: the resend button is the way on');
 }
 
+// ---- design files (the addition of 2026-11-02): synthetic image headers, built here byte by byte
+const u32be = value => [value >>> 24 & 255, value >>> 16 & 255, value >>> 8 & 255, value & 255], u16le = value => [value & 255, value >>> 8 & 255], u24le = value => [value & 255, value >>> 8 & 255, value >>> 16 & 255];
+const ascii = text => [...text].map(char => char.charCodeAt(0));
+const png = (width, height) => Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, ...ascii('IHDR'), ...u32be(width), ...u32be(height), 8, 2, 0, 0, 0, 0, 0, 0, 0]);
+const jpeg = (width, height) => Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, ...ascii('JFIF'), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xff, 0xdb, 0, 4, 0, 0, 0xff, 0xc2, 0, 17, 8, height >> 8, height & 255, width >> 8, width & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1, 0xff, 0xd9]);
+const gif = (width, height) => Uint8Array.from([...ascii('GIF89a'), ...u16le(width), ...u16le(height), 0, 0, 0, 0x3b]);
+const riff = (chunk, data) => Uint8Array.from([...ascii('RIFF'), ...u32be(0).reverse(), ...ascii('WEBP'), ...ascii(chunk), ...u16le(data.length), 0, 0, ...data]);
+const webpLossy = (width, height) => riff('VP8 ', [0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, ...u16le(width), ...u16le(height), 0, 0]);
+const webpLossless = (width, height) => { const bits = (width - 1 | (height - 1) << 14) >>> 0; return riff('VP8L', [0x2f, bits & 255, bits >>> 8 & 255, bits >>> 16 & 255, bits >>> 24 & 255, 0]); };
+const webpExtended = (width, height) => riff('VP8X', [0x10, 0, 0, 0, ...u24le(width - 1), ...u24le(height - 1)]);
+const pdf = text => new TextEncoder().encode('%PDF-1.7\n' + text + '\n%%EOF');
+{
+  eq(Object.keys(MOLD_DESIGN_EXTENSIONS), ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'dwg', 'dxf', 'step', 'stp', 'igs', 'iges', 'stl', 'sldprt', 'sldasm', 'slddrw', 'nc1', 'dstv', 'ai', 'eps', 'cdr', 'psd', 'svg', 'zip', 'rar', '7z'], 'the contract\'s extensions, in its order');
+  eq([MOLD_DESIGN_EXTENSIONS.pdf, MOLD_DESIGN_EXTENSIONS.jpeg, MOLD_DESIGN_EXTENSIONS.svg, MOLD_DESIGN_EXTENSIONS['7z']], ['pdf', 'image', 'other', 'other'], 'each extension\'s kind: an SVG is a drawing, never an image shown');
+  eq([MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS], [25 * 1024 * 1024, 10, 80_000_000, ['empty', 'not_pdf', 'bad_image', 'too_many_pixels']], 'the limits and the reasons');
+  eq(moldDesignName('رسم القالب 1380.pdf'), {name: 'رسم القالب 1380.pdf', extension: 'pdf', kind: 'pdf'}, 'the contract\'s example name');
+  eq([moldDesignName(' DRAWING.DWG ')?.name, moldDesignName('Part.SLDPRT')?.extension, moldDesignName('a.b.step')?.kind], ['DRAWING.DWG', 'sldprt', 'other'], 'ends trimmed; the extension in any case');
+  eq(moldDesignName('x'.repeat(196) + '.pdf')?.name.length, 200, '200 characters pass');
+  eq(['x'.repeat(197) + '.pdf', 'a/b.pdf', 'a\\b.pdf', 'C:drawing.pdf', 'a<b.pdf', 'a>b.pdf', 'a"b.pdf', 'a|b.pdf', 'a?.pdf', 'a*.pdf', 'a\u0007.pdf', 'a\u0085.pdf', 'a\nb.pdf', 'x\u202Egnp.zip', '.pdf', ' .pdf', 'drawing', 'drawing.', 'setup.exe', 'image.tiff', '', null, 7].map(moldDesignName), Array(23).fill(null), 'refused: too long, a path, a forbidden character, a control or direction mark, no name, no or another extension');
+  eq(moldDesignName('م'.repeat(196) + '.pdf')?.name.length, 200, 'Arabic letters count as characters, not bytes');
+  eq([moldDesignDisplayName(' a/b\\c\u0000\u202E.pdf '), moldDesignDisplayName('x'.repeat(300)).length, moldDesignDisplayName(5)], ['a_b_c.pdf', 200, ''], 'a listed name made safe to show');
+  eq([moldImageSize(png(1380, 795)), moldImageSize(jpeg(4000, 3000)), moldImageSize(gif(640, 480))], [{format: 'png', width: 1380, height: 795}, {format: 'jpeg', width: 4000, height: 3000}, {format: 'gif', width: 640, height: 480}], 'PNG (IHDR), JPEG (the frame header after APP0, DQT and fill bytes), GIF (the logical screen)');
+  eq([moldImageSize(webpLossy(1024, 768)), moldImageSize(webpLossless(16383, 2)), moldImageSize(webpExtended(16777216, 3))], [{format: 'webp', width: 1024, height: 768}, {format: 'webp', width: 16383, height: 2}, {format: 'webp', width: 16777216, height: 3}], 'WEBP: VP8, VP8L and VP8X');
+  eq([moldImageSize(png(1, 1).slice(0, 20)), moldImageSize(Uint8Array.from([0xff, 0xd8, 0xff, 0xda, 0, 2])), moldImageSize(jpeg(10, 10).slice(0, 30)), moldImageSize(new TextEncoder().encode('not an image at all')), moldImageSize(new Uint8Array(0))], [null, null, null, null, null], 'a cut header, a scan before any frame, or no image: no size');
+  eq(moldDesignFileCheck('رسم.pdf', pdf('مخطط')), {ok: true, name: 'رسم.pdf', extension: 'pdf', kind: 'pdf', contentType: 'application/pdf', width: null, height: null}, 'a real PDF');
+  eq(moldDesignFileCheck('photo.png', jpeg(800, 600)), {ok: true, name: 'photo.png', extension: 'png', kind: 'image', contentType: 'image/jpeg', width: 800, height: 600}, 'an image is any of the four, served as what it really is');
+  eq([moldDesignFileCheck('part.dwg', Uint8Array.of(1, 2, 3)).contentType, moldDesignFileCheck('logo.svg', new TextEncoder().encode('<svg onload="x()"/>')).contentType], ['application/octet-stream', 'application/octet-stream'], 'a drawing or an SVG is plain bytes');
+  eq([moldDesignFileCheck('a.exe', pdf('x')), moldDesignFileCheck('a.pdf', new Uint8Array(0)), moldDesignFileCheck('a.dwg', new Uint8Array(0)), moldDesignFileCheck('a.pdf', new TextEncoder().encode('%PDX-1.4')), moldDesignFileCheck('a.png', new TextEncoder().encode('%PDF-1.4')), moldDesignFileCheck('a.png', png(0, 10))],
+    [{ok: false, field: 'name', reason: 'name'}, {ok: false, field: 'file', reason: 'empty'}, {ok: false, field: 'file', reason: 'empty'}, {ok: false, field: 'file', reason: 'not_pdf'}, {ok: false, field: 'file', reason: 'bad_image'}, {ok: false, field: 'file', reason: 'bad_image'}], 'refusals as production gives them: the name, then empty, not_pdf, bad_image');
+  eq([moldDesignFileCheck('a.png', png(10000, 8000)).ok, moldDesignFileCheck('a.png', png(10000, 8001)), moldDesignFileCheck('a.webp', webpExtended(20000, 20000)).reason], [true, {ok: false, field: 'file', reason: 'too_many_pixels'}, 'too_many_pixels'], '80 000 000 pixels pass, one row more does not');
+  const big = new Uint8Array(MOLD_DESIGN_MAX_BYTES + 1); big.set(ascii('%PDF-'));
+  eq([moldDesignFileCheck('a.pdf', big.subarray(0, MOLD_DESIGN_MAX_BYTES)).ok, moldDesignFileCheck('a.pdf', big).reason], [true, 'too_large'], '25 MiB pass, one byte more does not (413 at production)');
+  eq(['application/pdf', 'IMAGE/PNG; q=1', 'image/svg+xml', 'text/html', '', null].map(moldDesignContentType), ['application/pdf', 'image/png', 'application/octet-stream', 'application/octet-stream', 'application/octet-stream', 'application/octet-stream'], 'served types: a PDF, the four images, else plain bytes');
+  const disposition = moldContentDisposition('رسم القالب (1).pdf', true);
+  eq([disposition.startsWith("inline; filename*=UTF-8''"), /[ ()']/.test(disposition.split("''")[1]), moldDispositionName(disposition), moldContentDisposition('a.dwg')], [true, false, 'رسم القالب (1).pdf', "attachment; filename*=UTF-8''a.dwg"], 'the name in UTF-8 (RFC 5987), read back the same');
+  eq([moldDispositionName('attachment; filename="../x/a.pdf"'), moldDispositionName("attachment; filename*=UTF-8''%E0%A4; filename=\"b.pdf\""), moldDispositionName('attachment')], ['.._x_a.pdf', 'b.pdf', ''], 'a plain or broken name falls back, never a path');
+  const body = moldDesignFileBody({crmRequestId: 'rec-9f3a', crmFileId: 'f-71c2', name: 'رسم القالب 1380.pdf'}, pdf('x'));
+  const cut = body.indexOf(10);
+  eq([JSON.parse(new TextDecoder().decode(body.subarray(0, cut))), Buffer.from(body.subarray(cut + 1)).equals(Buffer.from(pdf('x')))], [{crmRequestId: 'rec-9f3a', crmFileId: 'f-71c2', name: 'رسم القالب 1380.pdf'}, true], 'the body: one JSON line, a newline, the bytes as they are');
+  for (const [meta, field] of [[{crmRequestId: 'rec 1', crmFileId: 'f', name: 'a.pdf'}, /crmRequestId/], [{crmRequestId: 'r', crmFileId: 'f/1', name: 'a.pdf'}, /crmFileId/], [{crmRequestId: 'r', crmFileId: 'f', name: ' a.pdf'}, /name/], [{crmRequestId: 'r', crmFileId: 'f', name: 'a.exe'}, /name/]]) { assert.throws(() => moldDesignFileBody(meta, pdf('x')), field); checks++; }
+  // designFiles in the status object and in pending items: the contract's fields, valid entries only
+  const listed = [
+    {fileId: 501, crmFileId: 'mdf-1', name: 'رسم.pdf', kind: 'pdf', size: 1200, source: 'crm', uploadedAt: '2026-11-02T10:00:00+03:00', path: '/var/x'},
+    {fileId: 'p-9', crmFileId: 'stray', name: ' تصميم\u0000 الإنتاج.dwg ', kind: 'cad', size: -1, source: 'production', uploadedAt: 'later'},
+    {fileId: 501, crmFileId: 'mdf-2', name: 'again.pdf', kind: 'pdf', size: 1, source: 'crm'}, {fileId: 0, name: 'a.pdf', kind: 'pdf', source: 'production'}, {fileId: 7, name: 'a.pdf', kind: 'pdf', source: 'erp'},
+    {fileId: 8, crmFileId: null, name: 'a.pdf', kind: 'pdf', source: 'crm'}, {fileId: 9, name: '\u0007', kind: 'pdf', source: 'production'}, {fileId: 'bad id', name: 'a.pdf', source: 'production'}, 'x', null];
+  const raw = {crmRequestId: 'rec-9f3a', orderNo: 92, status: 'received', editable: true, stages: {}, designFiles: listed};
+  eq(moldStatusObject(raw).designFiles, [{fileId: 501, crmFileId: 'mdf-1', name: 'رسم.pdf', kind: 'pdf', size: 1200, source: 'crm', uploadedAt: '2026-11-02T10:00:00+03:00'}, {fileId: 'p-9', crmFileId: null, name: 'تصميم الإنتاج.dwg', kind: 'other', size: null, source: 'production', uploadedAt: null}],
+    'designFiles: the contract fields of the valid entries, each fileId once; production\'s file has no crmFileId; an unknown kind is shown as other');
+  eq([moldStatusObject({...raw, designFiles: undefined}).designFiles, moldStatusObject({...raw, designFiles: []}).designFiles, moldDesignFileEntry({fileId: 3, crmFileId: 'mdf-3', name: 'x.pdf', kind: 'pdf', source: 'crm'}).size], [null, [], null], 'none sent (an older application) is null; an empty list is empty');
+  const pending = {orderNo: 101, crmRequestId: null, source: 'manual', customer: {}, salesman: {}, specs: {}};
+  eq([moldPendingItem(pending).designFiles, moldPendingItem({...pending, designFiles: listed}).designFiles.map(file => file.fileId)], [[], [501, 'p-9']], 'a pending item carries its design files, those registered in production too');
+  eq(readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['file'], details: {reason: 'not_pdf'}}}), {kind: 'rejected', code: 'invalid_payload', fields: ['file'], reason: 'not_pdf'}, 'a refused file names its reason');
+  eq([readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['file'], details: {reason: '<b>'}}}).reason, readMoldAnswer(413, {error: {code: 'payload_too_large'}}).kind, readMoldAnswer(404, {error: {code: 'not_found'}}).kind], [undefined, 'rejected', 'not_found'], 'a reason that is not a word is not read; 413 and 404 are final');
+  eq([moldRouteTimeout('design-files'), moldRouteTimeout('design-file'), moldRouteTimeout('design-file-delete'), moldRouteTimeout('requests')], [120_000, 120_000, 10_000, 10_000], '120 seconds for the two file routes, 10 for the rest');
+}
+
 // ---- every route against the stand-in production API
 function fetchWith(caFile) {
   const authority = readFileSync(caFile);
   return (url, init) => new Promise((resolve, reject) => {
     const req = httpsRequest(url, {method: init.method, headers: init.headers, ca: authority, signal: init.signal}, res => {
-      const parts = []; res.on('data', part => parts.push(part)); res.on('end', () => { const bytes = Buffer.concat(parts); resolve({status: res.statusCode, arrayBuffer: async () => bytes}); });
+      const headers = new Headers(Object.entries(res.headers).flatMap(([key, value]) => Array.isArray(value) ? value.map(item => [key, item]) : [[key, value]]));
+      const parts = []; res.on('data', part => parts.push(part)); res.on('end', () => { const bytes = Buffer.concat(parts); resolve({status: res.statusCode, headers, arrayBuffer: async () => bytes}); });
     });
     req.on('error', error => reject(init.signal?.aborted ? Object.assign(new Error('timeout'), {name: 'TimeoutError'}) : error));
     req.end(init.body);
@@ -239,6 +299,76 @@ try {
   eq((await call('status', {ids: ['mr-1']}, {timeoutMs: 200})).code, 'timeout', 'no answer within the limit: timeout');
   mock.state.delayMs = 0;
   eq((await callProducts({ok: false, reason: 'not_configured'}, 'requests', body, {fetch})).code, 'not_configured', 'no settings: no call at all');
+  // ---- design files against the stand-in: attach (the JSON line and the bytes signed together), repeat, refusals, delete, download
+  const attach = (crmRequestId, crmFileId, name, bytes, extra) => call('design-files', moldDesignFileBody({crmRequestId, crmFileId, name}, bytes), extra);
+  const drawing = pdf('مخطط القالب 1380');
+  answer = await attach('mr-later', 'mdf-early', 'رسم.pdf', drawing);
+  eq([answer.kind, answer.http], ['not_found', 404], 'a file before its request is accepted: 404, final');
+  await call('requests', moldRequestBody({id: 'mr-files', requestedAt: riyadhIso(Date.now()), customer, salesman, specs}));
+  await approve('approve', 'mr-files');
+  eq(mock.row('mr-files').approvals.sales !== null, true, 'the sales manager approved before the file came');
+  answer = await attach('mr-files', 'mdf-a', 'رسم القالب 1380.pdf', drawing);
+  const sent = mock.state.calls.at(-1), fileA = answer.json?.file;
+  eq([answer.kind, answer.http, answer.json.created, fileA.crmFileId, fileA.name, fileA.kind, fileA.size, fileA.source], ['ok', 201, true, 'mdf-a', 'رسم القالب 1380.pdf', 'pdf', drawing.length, 'crm'], '201 created, the file as production lists it');
+  eq([sent.signed, sent.headers['content-type'], JSON.parse(sent.body).crmFileId], [true, 'application/octet-stream', 'mdf-a'], 'sent as application/octet-stream and accepted as signed');
+  const whole = moldDesignFileBody({crmRequestId: 'mr-files', crmFileId: 'mdf-a', name: 'رسم القالب 1380.pdf'}, drawing);
+  eq([sent.bytes, sent.headers['x-yr-signature']], [whole.length, moldSignature(mock.state.secret, sent.headers['x-yr-timestamp'], 'POST', 'design-files', Buffer.from(whole))], 'the signature covers the whole body: the JSON line, the newline and the file');
+  const request = moldStatusObject(answer.json.request);
+  eq([request.waitingStep, request.approvals.sales, request.designFiles.map(file => file.crmFileId)], ['sales', null, ['mdf-a']], 'attaching undoes the approvals given (back to the sales manager) and the file is listed');
+  const revision = request.revision;
+  answer = await attach('mr-files', 'mdf-a', 'رسم القالب 1380.pdf', drawing);
+  eq([answer.kind, answer.http, answer.json.created, answer.json.file.fileId, answer.json.request.revision], ['ok', 200, false, fileA.fileId, revision], 'the same file again: 200 created:false, nothing changes (safe to repeat)');
+  eq((await attach('mr-files', 'mdf-a', 'رسم القالب 1380.pdf', pdf('another drawing'))).fields, ['crmFileId'], 'a crmFileId is never another file');
+  for (const [name, bytes, reason] of [['empty.dwg', new Uint8Array(0), 'empty'], ['fake.pdf', new TextEncoder().encode('<html>'), 'not_pdf'], ['broken.png', new TextEncoder().encode('PNG?'), 'bad_image'], ['huge.png', png(10000, 8001), 'too_many_pixels']]) {
+    answer = await attach('mr-files', 'mdf-' + reason, name, bytes);
+    eq([answer.kind, answer.http, answer.code, answer.fields, answer.reason], ['rejected', 400, 'invalid_payload', ['file'], reason], '400 invalid_payload file with details.reason ' + reason);
+  }
+  eq((await call('design-files', Buffer.from('{"crmRequestId":"mr-files","crmFileId":"mdf-x","name":"a<b>.pdf"}\n%PDF-1.4'))).fields, ['name'], 'a forbidden name: 400 name');
+  eq((await call('design-files', Buffer.from('{"crmRequestId":"mr-files","crmFileId":"bad id","name":"a.pdf"}\n%PDF-1.4'))).fields, ['crmFileId'], 'a malformed crmFileId: 400 crmFileId');
+  const tooBig = Buffer.alloc(MOLD_DESIGN_MAX_BYTES + 1); tooBig.write('%PDF-1.4');
+  answer = await attach('mr-files', 'mdf-big', 'big.pdf', tooBig);
+  eq([answer.kind, answer.http, answer.code], ['rejected', 413, 'payload_too_large'], 'a file over 25 MiB: 413, final');
+  eq((await call('design-files', Buffer.alloc(MOLD_DESIGN_MAX_BYTES + 5000))).http, 0, 'a body beyond 25 MiB and the JSON line is never sent');
+  await assert.rejects(call('design-files', {crmRequestId: 'mr-files'}), /raw body/); checks++;
+  await assert.rejects(call('status', Buffer.from('{}')), /JSON route/); checks++;
+  // production's own file: listed with source production and no crmFileId, in the status and in pending
+  const production = mock.addProductionFile('mr-files', {name: 'تصميم الإنتاج.png', bytes: png(1200, 900)});
+  const listedNow = moldStatusObject((await call('status', {ids: ['mr-files']})).json.requests[0]).designFiles;
+  eq(listedNow.map(file => [file.source, file.crmFileId, file.kind]), [['crm', 'mdf-a', 'pdf'], ['production', null, 'image']], 'status: the CRM\'s file and production\'s');
+  const manualFiles = mock.registerManual({customerNo: 27});
+  mock.addProductionFile(manualFiles.orderNo, {name: 'مخطط يدوي.dxf', bytes: Buffer.from('0\nSECTION')});
+  const waitingNow = (await call('pending', {})).json.requests.map(item => moldPendingItem(item));
+  eq([waitingNow.find(item => item.crmRequestId === 'mr-files').designFiles.length, waitingNow.find(item => item.orderNo === manualFiles.orderNo).designFiles.map(file => [file.name, file.source, file.kind])], [2, [['مخطط يدوي.dxf', 'production', 'other']]], 'pending: each waiting request with its design files, one registered in production too');
+  // the download: the bytes, their type and the name in UTF-8
+  answer = await call('design-file', {fileId: fileA.fileId});
+  eq([answer.kind, answer.http, Buffer.compare(answer.file.bytes, Buffer.from(drawing)), answer.file.contentType, answer.file.name], ['ok', 200, 0, 'application/pdf', 'رسم القالب 1380.pdf'], 'design-file: the PDF as sent, its type, its Arabic name');
+  answer = await call('design-file', {fileId: production.fileId});
+  eq([answer.file.contentType, answer.file.name, answer.file.bytes.length], ['image/png', 'تصميم الإنتاج.png', png(1200, 900).length], 'production\'s image');
+  answer = await call('design-file', {fileId: 99999});
+  eq([answer.kind, answer.http, answer.code], ['not_found', 404, 'not_found'], 'an unknown file: 404 in the usual JSON');
+  const fake = (status, headers, bytes) => async () => ({status, headers: new Headers(headers), arrayBuffer: async () => bytes, body: {cancel: async () => {}}});
+  eq((await callProducts(config, 'design-file', {fileId: 1}, {fetch: fake(200, {'content-type': 'application/json'}, Buffer.from('{"request":{}}'))})).code, 'bad_response', 'JSON in place of a file: not a file');
+  eq((await callProducts(config, 'design-file', {fileId: 1}, {fetch: fake(200, {'content-length': String(MOLD_DESIGN_MAX_BYTES + 1)}, Buffer.alloc(0))})).code, 'bad_response', 'a declared size over 25 MiB is not read');
+  answer = await callProducts(config, 'design-file', {fileId: 1}, {fetch: fake(200, {'content-type': 'image/svg+xml', 'content-disposition': 'attachment; filename="../../etc/x.svg"'}, Buffer.from('<svg/>'))});
+  eq([answer.file.contentType, answer.file.name], ['application/octet-stream', '.._.._etc_x.svg'], 'an SVG is served as plain bytes; a path in the name is flattened');
+  // the 10-file limit counts production's files too
+  for (let n = 0; n < 8; n++) eq((await attach('mr-files', 'mdf-n' + n, 'drawing ' + n + '.dwg', Uint8Array.of(n + 1))).http, 201, 'file ' + (n + 3) + ' of 10');
+  answer = await attach('mr-files', 'mdf-eleventh', 'one more.dwg', Uint8Array.of(9));
+  eq([answer.kind, answer.http, answer.fields], ['rejected', 400, ['file']], 'the eleventh file is refused (the stand-in says too_many_files; the contract names no reason)');
+  // delete: the CRM's own file, the approvals undone again; then 404 once gone
+  await approve('approve', 'mr-files');
+  answer = await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'mdf-a'});
+  eq([answer.kind, answer.http, moldStatusObject(answer.json.request).designFiles.some(file => file.crmFileId === 'mdf-a'), answer.json.request.waitingStep, answer.json.request.approvals.sales], ['ok', 200, false, 'sales', null], 'design-file-delete: gone, and the approvals undone like an attach');
+  eq((await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'mdf-a'})).kind, 'not_found', 'deleting again: 404 (already gone)');
+  eq((await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'bad id'})).fields, ['crmFileId'], 'a malformed crmFileId: 400');
+  eq((await call('design-file-delete', {crmRequestId: 'mr-nowhere', crmFileId: 'mdf-a'})).kind, 'not_found', 'an unknown request: 404');
+  // the approvals complete: the request is not editable, attach and delete answer 409 request_locked with the status
+  await approve('approve', 'mr-files'); mock.approve('mr-files', 'production'); mock.approve('mr-files', 'admin');
+  answer = await attach('mr-files', 'mdf-late', 'late.pdf', drawing);
+  eq([answer.kind, answer.http, answer.code, answer.request.status, answer.request.editable, answer.request.designFiles.length], ['locked', 409, 'request_locked', 'confirmed', false, 9], 'attach after the approvals: 409 with the status object (nine files left)');
+  answer = await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'mdf-n0'});
+  eq([answer.kind, answer.request.status, mock.row('mr-files').designFiles.some(file => file.crmFileId === 'mdf-n0')], ['locked', 'confirmed', true], 'delete after the approvals: 409, the file stays');
+  eq((await attach('mr-files', 'mdf-n1', 'drawing 1.dwg', Uint8Array.of(2))).json?.created, false, 'a repeat of a file production already holds is still answered 200, locked or not');
   ok(mock.state.calls.every(c => !JSON.stringify(c.headers).includes(mock.state.secret)), 'the secret never travels');
 } finally { await mock.stop(); }
 
