@@ -1,5 +1,5 @@
 // The CRM's customers for the products application (the contract's `customers` route): requests registered there choose the customer
-// from this list only, and its Yourrest code, address and city fill in from it. The whole list goes as `full` (production deactivates
+// from this list only, and its Yourrest code, address and city fill in from it (since 2026-11-02 each carries its ERP code too). The whole list goes as `full` (production deactivates
 // whoever is missing; it deletes nobody): the first time, whenever it changed (a customer added, edited or deleted, by any path: the
 // list's fingerprint is compared), and at least once a day. A list over production's limits goes as `upsert` batches, without a final
 // `full` (it would be refused), so nobody is deactivated that time. Each send is recorded in crm_audit (counts and fingerprint only,
@@ -26,7 +26,7 @@ export const MOLD_CUSTOMERS_SETTLE_MS=5_000,MOLD_CUSTOMERS_CHECK_MS=10*60_000,MO
 export async function moldCustomerList(db:D1Database){
  const rows=(await db.prepare("SELECT n.number,r.data FROM crm_records r JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.kind='customer' ORDER BY n.number").all<{number:number;data:string}>()).results;
  const customers:Entry[]=[];
- for(const row of rows){let data:Record<string,unknown>={};try{data=JSON.parse(row.data);}catch{/* a broken record is left out */}const entry=moldCustomerEntry({crmNumber:row.number,name:data.name,address:data.address,city:data.city});if(entry)customers.push(entry);}
+ for(const row of rows){let data:Record<string,unknown>={};try{data=JSON.parse(row.data);}catch{/* a broken record is left out */}const entry=moldCustomerEntry({crmNumber:row.number,name:data.name,address:data.address,city:data.city,erpCode:data.code});if(entry)customers.push(entry);}
  return customers;
 }
 const fingerprint=(customers:Entry[])=>createHash('sha256').update(JSON.stringify(customers)).digest('hex');

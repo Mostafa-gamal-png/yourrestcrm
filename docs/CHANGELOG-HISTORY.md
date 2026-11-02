@@ -4,6 +4,16 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The ERP code goes with the customer list sent to the products application (2026-11-02, third package of the day, no migration)
+
+- **Asked.** The owner, after «استيراد من ERP»: in the products application the customer cannot be found by its ERP code (146), only by its Yourrest number; «ابعت كود ERP للإنتاج».
+- **List.** `moldCustomerEntry` (`portable/mold-rules.mjs`) adds `erpCode`, the customer's `data.code` trimmed, always present ('' when none or over 50 characters, never cut) so production clears a removed code; `lib/mold-customers-server.ts` passes it. The list's fingerprint changes once, so the whole list goes again after the update.
+- **After an import.** `app/api/erp-customers/route.ts` nudges the list after an apply (`nudgeMoldCustomers({soon:true})`), as a customer edit already did.
+- **Contract copy.** `docs/MOLD-REQUESTS-CONTRACT-AR.md`: `erpCode` in the `customers` route; production ignores it until it supports it (its validator reads only the fields it knows).
+- **Stand-in production.** `scripts/lib/products-mock.mjs` validates and stores `erpCode` (optional, up to 50).
+- **Tests.** `tests/mold-requests.mjs` (the field, trimming, '' when empty or too long, the order of the fields), `tests/mold-customers-http.mjs` (the code in the first list, kept on an edit, sent shortly after «استيراد من ERP», cleared as '').
+- **Operations.** `docs/UPDATE-2026-11-02-ERP-CODE-AR.txt`.
+
 ## «استيراد من ERP» replaces «ربط عملاء ERP»; the products side's notes on mold requests (2026-11-02, second package of the day, no migration)
 
 - **Asked.** The owner: remove «ربط عملاء ERP» and put «استيراد من ERP» in its place, which updates the customers from the ERP customer export; only the ERP customer number is updated, matched by mobile or name, a doubtful match chosen by hand, a customer the CRM does not have left alone, ERP the source when the codes differ; the system administrator and the sales manager use it. The products application's review of the integration: «أُلغي في تطبيق الإنتاج» on a request cancelled there, the 409 reasons of the approval route as the contract lists them, a deleted customer sent as active:false when it is deleted, the 60-second limit of the customers route and production's corrections only after the approvals (both already true in the CRM; the contract copy updated).

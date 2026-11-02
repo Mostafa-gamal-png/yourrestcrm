@@ -125,8 +125,13 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(['الدمام', ' جدة ', 'Riyadh', 'الخبر', ' حي  بعيد ', '', null, undefined].map(moldRequestCity), ['Damam - الدمام', 'Jeddah - جده', 'Riyadh - الرياض', 'الخبر', ' حي  بعيد ', '', '', ''], 'a request\'s city as the sheet writes it when it is one of the sheet\'s');
   eq(moldRequestCity('x'.repeat(120)).length, 120, 'a long other city is not cut here');
   eq(moldRequestBody({id: 'r', requestedAt: 'x', customer: {...customer, city: moldRequestCity('الدمام')}, salesman, specs}).customer.city, 'Damam - الدمام', 'and the body carries it');
-  eq(moldCustomerEntry({crmNumber: 27, name: ' مصنع  زايد ', address: 'حي الصناعية', city: 'الدمام'}), {crmNumber: 27, name: 'مصنع زايد', address: 'حي الصناعية', city: 'Damam - الدمام', active: true}, 'a customer of the list');
-  eq(moldCustomerEntry({crmNumber: 28, name: 'مصنع', address: '', city: ''}), {crmNumber: 28, name: 'مصنع', active: true}, 'empty address and city left out');
+  eq(moldCustomerEntry({crmNumber: 27, name: ' مصنع  زايد ', address: 'حي الصناعية', city: 'الدمام'}), {crmNumber: 27, name: 'مصنع زايد', address: 'حي الصناعية', city: 'Damam - الدمام', erpCode: '', active: true}, 'a customer of the list');
+  eq(moldCustomerEntry({crmNumber: 28, name: 'مصنع', address: '', city: ''}), {crmNumber: 28, name: 'مصنع', erpCode: '', active: true}, 'empty address and city left out');
+  // Since 2026-11-02 each customer carries its ERP code: always present ('' when none, so production clears a removed one), trimmed,
+  // never cut: a value over 50 characters is no ERP code and goes as ''.
+  eq([' 146 ', '٣٨٨٣', 7, '', null, undefined, 'C'.repeat(50), 'C'.repeat(51)].map(erpCode => moldCustomerEntry({crmNumber: 9, name: 'مصنع', erpCode}).erpCode), ['146', '٣٨٨٣', '7', '', '', '', 'C'.repeat(50), ''], 'the ERP code as the CRM holds it, trimmed; empty or too long goes as \'\'');
+  eq(Object.keys(moldCustomerEntry({crmNumber: 9, name: 'مصنع', address: 'ع', city: 'الدمام', erpCode: '1'})), ['crmNumber', 'name', 'address', 'city', 'erpCode', 'active'], 'the contract fields in order');
+  eq(MOLD_LIMITS.erpCode, 50, 'the ERP code limit');
   eq([moldCustomerEntry({crmNumber: 0, name: 'x'}), moldCustomerEntry({crmNumber: 5, name: '  '}), moldCustomerEntry({crmNumber: '5', name: 'x'})], [null, null, null], 'no number or no name: not sent');
   const many = Array.from({length: 20001}, (_, i) => ({crmNumber: i + 1, name: 'مصنع ' + i, active: true}));
   const calls = moldCustomerCalls(many);
