@@ -172,10 +172,11 @@ export function moldDesignName(value) {
   return {name, extension, kind: MOLD_DESIGN_EXTENSIONS[extension]};
 }
 /** A name production listed, or a download carried, made safe to show and to put in a header: no control characters, direction marks
- *  or path separators, single spaces, up to 200 characters. '' when nothing is left. */
+ *  or path separators, no half of a UTF-16 pair left alone (JSON may carry "\ud800", which no header or encodeURIComponent takes),
+ *  single spaces, up to 200 characters. '' when nothing is left. */
 export function moldDesignDisplayName(value) {
   if (typeof value !== 'string') return '';
-  return [...value.replace(/[\u0000-\u001F\u007F-\u009F‪-‮⁦-⁩]/g, '').replace(/[\\/]/g, '_').replace(/\s+/g, ' ').trim()].slice(0, MOLD_DESIGN_NAME_MAX).join('');
+  return [...value.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '').replace(/[\u0000-\u001F\u007F-\u009F‪-‮⁦-⁩]/g, '').replace(/[\\/]/g, '_').replace(/\s+/g, ' ').trim()].slice(0, MOLD_DESIGN_NAME_MAX).join('');
 }
 
 const IMAGE_TYPES = {png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp'};

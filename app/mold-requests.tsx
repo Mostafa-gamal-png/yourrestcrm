@@ -9,7 +9,7 @@ import type {Member,Row} from '@/lib/crm';
 import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,moldApprovalNames,moldErrorText,moldFieldNames,moldHasApprovals,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_DESIGN_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
-import {DesignUploadQueue,MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,designUsed,designWarningText,type DesignChoice,type DesignUpload} from './mold-design-files';
+import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import './mold-requests.css';
 
 type Say=(ar:string,en:string)=>string;
@@ -86,7 +86,7 @@ function SendingState({view,linkReady,say}:{view:MoldRequestView;linkReady:boole
  </div>;
 }
 
-function MoldCard({view,linkReady,onOpen,say}:{view:MoldRequestView;linkReady:boolean;onOpen:()=>void;say:Say}){
+function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkReady:boolean;unsent:number;onOpen:()=>void;say:Say}){
  const remote=view.remote;
  return <button type="button" className="mold-card" data-status={view.cancelled?'cancelled':remote?.status||'local'} data-sending={view.sending.state} onClick={onOpen}>
   <header><strong>{view.customerName}</strong><span className="mold-chip" data-status={view.cancelled?'cancelled':remote?.status||'local'} data-step={view.cancelled?undefined:remote?.waitingStep||undefined} data-mine={view.can.approve||undefined}>{statusText(view,say)}</span></header>
@@ -100,6 +100,7 @@ function MoldCard({view,linkReady,onOpen,say}:{view:MoldRequestView;linkReady:bo
    {!!view.designFiles.length&&<span className="mold-card-files"><Paperclip size={13} aria-hidden="true"/>{say('ملفات التصميم','Design files')}: <b>{view.designFiles.length}</b></span>}
   </div>
   {view.sending.state!=='sent'&&<small className="mold-card-sending" data-state={view.sending.state}>{say(...moldSendingNames[linkReady?view.sending.state:'off'])}</small>}
+  {!!unsent&&<small className="mold-card-sending" data-state="rejected">{say('ملفات تصميم لم تُرفع: ','Design files not uploaded: ')+unsent+' · '+say('افتح الطلب للتفاصيل','open the request for details')}</small>}
  </button>;
 }
 
@@ -112,8 +113,9 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  const list=useMemo(()=>{const needle=query.trim().toLowerCase();return (data?.requests||[]).filter(view=>!needle||[view.customerName,view.specs.description,view.specs.moldNo,String(view.remote?.orderNo||''),view.memberName].some(text=>String(text||'').toLowerCase().includes(needle)));},[data,query]);
  const open=data?.requests.find(view=>view.id===openId)||null;
  const changed=useCallback(()=>{void refresh();},[refresh]);
- // Design files upload one at a time for as long as the page is open (a request's sheet may close meanwhile); each answer refreshes the list.
- const [uploads]=useState(()=>new DesignUploadQueue()),uploading=useSyncExternalStore(uploads.subscribe,uploads.snapshot,uploads.snapshot);
+ // Design files upload one at a time for as long as the app is open (a request's sheet may close, the member may visit another page and
+ // come back to the same uploads); each answer refreshes the list.
+ const [uploads]=useState(()=>designUploadQueue(me.id)),uploading=useSyncExternalStore(uploads.subscribe,uploads.snapshot,uploads.snapshot);
  useEffect(()=>uploads.listen('',()=>{void refresh();}),[uploads,refresh]);
  // The sales manager's waiting list comes with the page and is asked for again every few minutes while the page is open.
  const approver=data?.pending!==null&&data?.pending!==undefined,[tab,setTab]=useState<'pending'|'all'>('pending');
@@ -135,7 +137,7 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
   {!!data?.requests.length&&<label className="mold-search"><Search size={16} aria-hidden="true"/><input type="search" value={query} onChange={event=>setQuery(event.target.value)} placeholder={say('ابحث بالعميل أو الوصف أو رقم أمر الإنتاج','Search by customer, description or order')}/></label>}
   {data&&!list.length&&<p className="empty mold-empty">{data.requests.length?say('لا نتائج','No results'):say('لا توجد طلبات تصنيع قوالب بعد.','No mold requests yet.')}</p>}
   {!data&&!error&&<p className="empty"><Loader2 className="spin" size={16}/> {say('جارٍ التحميل…','Loading…')}</p>}
-  <div className="mold-list">{list.map(view=><MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
+  <div className="mold-list">{list.map(view=><MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} unsent={uploading.filter(upload=>upload.moldId===view.id&&upload.phase==='failed').length} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
   </>}
   {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} linkReady={!!data?.linkReady} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>setOpenId(null)} onChanged={changed}/>}
   {creating&&<MoldRequestDialog customers={customers} uploads={uploads} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
@@ -320,7 +322,7 @@ function MoldRequestDialog({customers,editing,uploads,used=0,onClose,onSaved}:{c
     {text('designUrl',say('رابط التصميم (اختياري، يبدأ بـ https://)','Design link (optional, https://)'),MOLD_LIMITS.designUrl,'url')}
     <VoiceField label={say('ملاحظات (اختياري)','Notes (optional)')} value={form.notes} onChange={value=>set('notes',value)} multiline full className="mold-notes" inputProps={{maxLength:MOLD_LIMITS.notes}}/>
     <MoldDesignPicker choices={files} onChange={next=>{setFiles(next);setAsking(false);}} room={MOLD_DESIGN_MAX_FILES-used} disabled={action.busy} say={say}/>
-    {asking&&!!ready.length&&<div className="mold-design-confirm" role="group" aria-label={say('تأكيد إرفاق الملفات','Confirm attaching the files')}><p><TriangleAlert size={16} aria-hidden="true"/>{designWarningText(say)}</p></div>}
+    {asking&&!!ready.length&&<div className="mold-design-confirm" role="group" ref={revealCentered} aria-label={say('تأكيد إرفاق الملفات','Confirm attaching the files')}><p><TriangleAlert size={16} aria-hidden="true"/>{designWarningText(say)}</p></div>}
     {action.error&&<p className="form-error" role="alert">{action.error}</p>}
     <div className="mold-actions"><button type="submit" className="btn primary" disabled={action.busy}>{action.busy?<Loader2 className="spin" size={16}/>:asking?<Paperclip size={16}/>:<Send size={16}/>}{asking?say('تأكيد: حفظ وإرفاق الملفات','Confirm: save and attach the files'):editing?say('حفظ وإرسال التعديل','Save and send the change'):say('حفظ وإرسال للإنتاج','Save and send to production')}</button>{asking&&<button type="button" className="btn subtle" onClick={()=>setAsking(false)} disabled={action.busy}>{say('رجوع','Back')}</button>}<button type="button" className="btn subtle" onClick={onClose} disabled={action.busy}>{say('إلغاء','Cancel')}</button></div>
    </form>

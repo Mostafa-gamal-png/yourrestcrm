@@ -3,8 +3,10 @@
 // attaches a file to a request production holds (sent at once, the approvals undone, the request back with the sales manager); a file
 // attached before production holds the request waits and goes after it is accepted; the same tap twice stores and sends once, and a send
 // whose answer was lost is answered 200 created:false; the CRM's own refusals (each reason, the name, 413) store and send nothing;
-// production's refusals (400 with each reason, 413, 404 before the request exists there, 409 request_locked) are shown with their reason
-// and never retried; deletion (a file production never held, in the CRM alone; one it holds, through design-file-delete); production's
+// production's refusals (400 with each reason, 413, 409 request_locked) are shown with their reason and never retried; a 404 (production
+// does not hold the request) is not retried by itself but the requester's resend tries again; deletion (a file production never held,
+// in the CRM alone; one it holds, through design-file-delete; its 409 keeps the file with the reason and the status, its 404 completes
+// it); production's
 // own files in the request and in the sales manager's pending list; downloads through the CRM with the permission check (the requester,
 // the supervisor, not another representative or customer service, the sales manager by order number only for their pending items, the
 // other region's manager not, anonymous 401); the 10 files a request with production's; uploads beyond two at once answered 429.
@@ -159,12 +161,18 @@ try {
   check(calls('design-files'), refusedSends, 'and never sent again by itself');
   check(approvalAfter.designFiles.filter(file => file.state === 'rejected').length, 5, 'each one listed with its refusal');
 
-  // ---- 404: the request is not at production (yet); 409 request_locked: production's approvals were complete first
+  // ---- 404: production does not hold the request: not tried again by itself, the reason shown, the resend tries again
+  // 409 request_locked: production's approvals were complete first
   const fourth = await create('rep', 'east1', 'fourth mold');
   mock.forget(fourth.id);
   res = await upload('rep', fourth.id, 'قبل الطلب.pdf', pdf('before the request'));
   body = await res.json();
-  check([res.status, body.send.kind, body.file.state, body.file.error.code, body.file.error.final], [200, 'not_found', 'rejected', 'not_found', true], '404 from production: refused for good, the reason shown');
+  check([res.status, body.send.kind, body.file.state, body.file.stopped, body.file.error.code, body.file.error.http, body.file.error.final, (await fileRow(body.file.crmFileId)).next_attempt_at],
+    [200, 'not_found', 'waiting', true, 'not_found', 404, undefined, null], '404 from production: not tried again by itself, the reason shown');
+  const notFoundSends = calls('design-files');
+  check([body.request.can.resend, (await post('rep', {action: 'resend', id: fourth.id})).status], [true, 200], 'the requester may resend it');
+  await until(async () => calls('design-files') > notFoundSends && (await fileRow(body.file.crmFileId)).next_attempt_at === null, 'the resend tried again');
+  check([calls('design-files') - notFoundSends, (await viewOf('rep', fourth.id)).designFiles[0].stopped], [1, true], 'tried once more; production still lacks the request, so it stops again');
   const fifth = await create('rep', 'east1', 'fifth mold');
   for (const step of ['sales', 'production', 'admin']) mock.approve(fifth.id, step);
   const lockedSends = calls('design-files');
@@ -231,10 +239,36 @@ try {
   check([res.status, res.headers['content-type'], res.headers['content-disposition'].split(';')[0]], [200, 'image/png', 'inline'], 'the sales manager opens a pending request\'s image by its order number');
   check((await download('sm', 'order=' + first.remote.orderNo + '&file=' + production.fileId)).status, 200, 'and the CRM request\'s file the pending item lists');
   check((await download('sm', 'order=' + manual.orderNo + '&file=' + production.fileId)).status, 404, 'a file of another order: 404');
-  check((await download('sm', 'order=' + fifth.remote.orderNo + '&file=' + production.fileId)).status, 404, 'an order no longer waiting for them: 404');
+  // An order no longer waiting for them (its approvals complete), asked for by a file it does list: refused for the order, not the file.
+  const fifthFile = mock.addProductionFile(fifth.id, {name: 'رسم أمر مكتمل.pdf', bytes: pdf('confirmed order drawing')});
+  await age(fifth.id); await list('owner');
+  check([mock.row(fifth.id).designFiles.some(file => file.fileId === fifthFile.fileId), (await download('owner', 'id=' + fifth.id + '&file=' + fifthFile.fileId)).status], [true, 200], 'the file is the order\'s (the administrator downloads it by the request)');
+  res = await download('sm', 'order=' + fifth.remote.orderNo + '&file=' + fifthFile.fileId);
+  check([res.status, /لم يعد بانتظار اعتمادك/.test(res.text)], [404, true], 'an order no longer waiting for them: 404, even for a file it lists');
   check((await download('smw', 'order=' + manual.orderNo + '&file=' + manualFile.fileId)).status, 404, 'the other region\'s sales manager: 404');
   for (const who of ['rep', 'sup', 'owner', 'cs']) check((await download(who, 'order=' + manual.orderNo + '&file=' + manualFile.fileId)).status, 403, who + ': by order number is the sales manager\'s only');
   check((await download(null, 'order=' + manual.orderNo + '&file=' + manualFile.fileId)).status, 401, 'anonymous by order: 401');
+
+  // ---- the delete route against production's answers: 409 request_locked keeps the file with its reason and production's status;
+  // 404 (production no longer holds it) completes the deletion
+  const seventh = await create('rep', 'east2', 'locked delete mold');
+  const lockedDrawing = (await (await upload('rep', seventh.id, 'رسم بعد القفل.pdf', pdf('locked delete'))).json()).file;
+  for (const step of ['sales', 'production', 'admin']) mock.approve(seventh.id, step);
+  const deletesBeforeLock = calls('design-file-delete');
+  res = await remove('rep', seventh.id, lockedDrawing.crmFileId);
+  body = await res.json();
+  const keptFile = body.request.designFiles.find(file => file.crmFileId === lockedDrawing.crmFileId);
+  check([res.status, body.ok, body.send.kind, keptFile.state, keptFile.error.code, keptFile.canDelete, body.request.remote.status, body.request.editable, calls('design-file-delete') - deletesBeforeLock],
+    [409, false, 'locked', 'sent', 'request_locked', false, 'confirmed', false, 1], '409 from production: the file stays as delivered, with the reason and production\'s status');
+  ok(/اكتملت الاعتمادات/.test(body.error), 'said in words');
+  const lockedRow = await fileRow(lockedDrawing.crmFileId);
+  check([lockedRow.deleted_at, lockedRow.outbox, !!lockedRow.object_key, mock.row(seventh.id).designFiles.length, (await download('rep', 'id=' + seventh.id + '&file=' + lockedDrawing.crmFileId)).status], [null, null, true, 1, 200], 'kept here and there, still downloadable');
+  const eighth = await create('rep', 'east2', 'gone at production mold');
+  const goneDrawing = (await (await upload('rep', eighth.id, 'رسم أزاله الإنتاج.pdf', pdf('removed at production'))).json()).file;
+  mock.row(eighth.id).designFiles = [];
+  res = await remove('rep', eighth.id, goneDrawing.crmFileId);
+  body = await res.json();
+  check([res.status, body.send.kind, body.request.designFiles, (await fileRow(goneDrawing.crmFileId)).deleted_at !== null, (await fileRow(goneDrawing.crmFileId)).object_key, (await fileRow(goneDrawing.crmFileId)).outbox], [200, 'ok', [], true, null, null], '404 from production: already gone there, the deletion completes');
 
   // ---- 10 files a request, production's included
   const sixth = await create('rep', 'east2', 'ten files mold');
@@ -260,8 +294,9 @@ try {
     return req;
   };
   const held = [slow(), slow()];
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  res = await upload('rep', sixth.id, 'مشغول.pdf', pdf('busy'));
+  // Asked until both slow uploads have been admitted (no fixed wait): the probe names a file the CRM refuses, so a probe admitted before
+  // they are stores nothing (400) and is simply asked again.
+  for (let n = 0; n < 100; n++) { res = await upload('rep', third2.id, 'مشغول.exe', pdf('busy')); if (res.status === 429) break; await new Promise(resolve => setTimeout(resolve, 100)); }
   body = await res.json();
   check([res.status, res.headers['retry-after'], typeof body.error], [429, '5', 'string'], 'a third upload while two are being read: 429, try again in 5 seconds');
   for (const req of held) req.destroy();

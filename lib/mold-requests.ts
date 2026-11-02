@@ -37,10 +37,13 @@ export type MoldError={code:string;fields?:string[];http?:number;at:string;
 export type MoldDesignFileRow={id:string;requestId:string;memberId:string;name:string;kind:MoldDesignKind;contentType:string;size:number;sha256:string;objectKey:string|null;createdAt:string;deletedAt:string|null;outbox:'send'|'delete'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remoteFileId:string|number|null;sentAt:string|null;version:number};
 /** Where a design file stands for the reader: sent (production holds it), waiting (to be sent, on the timetable), held (until production
  *  holds the request itself), rejected (production refused it; the reason is shown), locked (the approvals were complete first; not sent),
- *  deleting (its deletion waits to reach production), off (the production link is off), production (attached in production). */
-export type MoldDesignState='sent'|'waiting'|'held'|'rejected'|'locked'|'deleting'|'off'|'production';
-/** A design file as a reader receives it: href downloads it through the CRM (viewable: a PDF or an image, which may open inline with &inline=1). */
-export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;state:MoldDesignState;error:MoldError|null;canDelete:boolean;href:string;viewable:boolean};
+ *  cancelled (the request was cancelled in the CRM: not sent unless production refuses the cancellation), deleting (its deletion waits to
+ *  reach production), off (the production link is off), production (attached in production). */
+export type MoldDesignState='sent'|'waiting'|'held'|'rejected'|'locked'|'cancelled'|'deleting'|'off'|'production';
+/** A design file as a reader receives it: href downloads it through the CRM (viewable: a PDF or an image, which may open inline with &inline=1);
+ *  stopped: its sending or its deletion is no longer tried by itself (24 hours of failures, or production did not find the request), and
+ *  waits for the requester's resend. error: the last failure, or why production refused the file or (state sent) its deletion. */
+export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;state:MoldDesignState;error:MoldError|null;stopped:boolean;canDelete:boolean;href:string;viewable:boolean};
 /** A design file of a request waiting for the sales manager, with its download through the CRM. */
 export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean};
 export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOrderNo:number|null;data:MoldRequestData;accepted:MoldRequestData|null;cancelledAt:string|null;cancelReason:string;outbox:'send'|'cancel'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remote:MoldRemote|null;remoteAt:string|null;createdBy:string;createdAt:string;updatedAt:string;version:number};
@@ -112,20 +115,21 @@ export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFil
 }
 const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
 /** The files a request shows: the CRM's own (with where each stands) and those production lists that the CRM does not hold (production's
- *  own, or a CRM file production kept); a file the CRM deleted is hidden even while an older status still lists it. Oldest first. */
+ *  own, or a CRM file production kept); a file the CRM deleted is hidden even while an older status still lists it. Oldest first. A file
+ *  production refused is shown as refused whatever the link's state (it takes none of the 10 places either way, as moldDesignCount says). */
 export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'cancelledAt'|'remote'|'accepted'>,files:MoldDesignFileRow[],me:Pick<Member,'id'>,linkReady:boolean):MoldDesignFileView[]{
  const own=row.memberId===me.id,open=moldEditable(row),listed=row.remote?.designFiles||[],known=new Set(files.map(file=>file.id)),out:MoldDesignFileView[]=[];
  const link=(key:string)=>designHref('id='+encodeURIComponent(row.id)+'&file='+encodeURIComponent(key));
  for(const file of files){
   if(file.deletedAt&&!file.outbox)continue;
   const remote=listed.find(entry=>entry.crmFileId===file.id),fileId=remote?remote.fileId:file.remoteFileId;
-  const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':!linkReady?'off':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):!row.accepted||row.cancelledAt?'held':'waiting';
-  out.push({key:file.id,fileId:fileId===null||fileId===undefined?null:String(fileId),crmFileId:file.id,name:file.name,kind:file.kind,size:file.size,source:'crm',uploadedAt:file.createdAt,state,error:file.lastError,
+  const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):row.cancelledAt?'cancelled':!linkReady?'off':!row.accepted?'held':'waiting';
+  out.push({key:file.id,fileId:fileId===null||fileId===undefined?null:String(fileId),crmFileId:file.id,name:file.name,kind:file.kind,size:file.size,source:'crm',uploadedAt:file.createdAt,state,error:file.lastError,stopped:state!=='cancelled'&&moldDesignStopped(file),
    canDelete:own&&state!=='deleting'&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other'});
  }
  for(const entry of listed){
   if(entry.crmFileId&&known.has(entry.crmFileId))continue;
-  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other'});
+  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,stopped:false,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other'});
  }
  // By the instant each was attached: the CRM writes UTC, production Riyadh time with its offset.
  const at=(file:MoldDesignFileView)=>Date.parse(file.uploadedAt||'')||0;
@@ -161,10 +165,11 @@ export const moldApprovalNames:Record<'sales'|'production'|'admin',[string,strin
 /** Any approval given yet: an edit from the CRM undoes them (the contract), so the form says so first. */
 export const moldHasApprovals=(remote:MoldRemote|null)=>!!remote?.approvals&&remote.approvals.required&&!!(remote.approvals.sales||remote.approvals.production||remote.approvals.admin);
 
-/** Why a call did not go through, in the representative's words; the code alone is stored. */
-export function moldErrorText(code:string,say:(ar:string,en:string)=>string){
+/** Why a call did not go through, in the representative's words; the code alone is stored. file: a design file's call (design-files,
+ *  design-file), whose limit is 120 seconds, not 10. */
+export function moldErrorText(code:string,say:(ar:string,en:string)=>string,{file=false}:{file?:boolean}={}){
  const table:Record<string,[string,string]>={
-  network:['تعذّر الوصول إلى تطبيق الإنتاج','Production could not be reached'],timeout:['لم يرد تطبيق الإنتاج خلال 10 ثوانٍ','Production did not answer within 10 seconds'],
+  network:['تعذّر الوصول إلى تطبيق الإنتاج','Production could not be reached'],timeout:file?['لم يرد تطبيق الإنتاج خلال دقيقتين','Production did not answer within 2 minutes']:['لم يرد تطبيق الإنتاج خلال 10 ثوانٍ','Production did not answer within 10 seconds'],
   not_configured:['الربط مع الإنتاج غير مفعَّل','The production link is off'],invalid_url:['إعداد عنوان الربط في الـCRM غير صحيح','The link address in the CRM settings is invalid'],short_secret:['مفتاح الربط في إعدادات الـCRM غير صحيح','The link key in the CRM settings is invalid'],
   invalid_signature:['مفتاح الربط غير مطابق بين البرنامجين','The link key differs between the two applications'],stale_timestamp:['ساعة الخادم غير مضبوطة','The server clock is off'],
   invalid_payload:['رفض الإنتاج بعض البيانات','Production refused some data'],payload_too_large:['الطلب أكبر من المسموح','The request is too large'],request_locked:['بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا','Production has started; no more changes'],
@@ -174,7 +179,7 @@ export function moldErrorText(code:string,say:(ar:string,en:string)=>string){
  return found?say(...found):say('تعذّر الاتصال بتطبيق الإنتاج','Production could not be reached');
 }
 export const moldDesignStateNames:Record<MoldDesignState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],held:['يُرسل بعد وصول الطلب للإنتاج','Sent once production has the request'],
- rejected:['رفض الإنتاج الملف','Production refused the file'],locked:['اكتملت الاعتمادات قبل وصوله؛ لم يُرسل','The approvals were complete first; not sent'],deleting:['جارٍ حذفه من الإنتاج','Being deleted at production'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],production:['من تطبيق الإنتاج','From production']};
+ rejected:['رفض الإنتاج الملف','Production refused the file'],locked:['اكتملت الاعتمادات قبل وصوله؛ لم يُرسل','The approvals were complete first; not sent'],cancelled:['لن يُرسل: الطلب ملغى','Not sent: the request is cancelled'],deleting:['جارٍ حذفه من الإنتاج','Being deleted at production'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],production:['من تطبيق الإنتاج','From production']};
 /** Why a design file was refused (the CRM's own check, or production's answer), in the representative's words. */
 export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>string){
  const table:Record<string,[string,string]>={
