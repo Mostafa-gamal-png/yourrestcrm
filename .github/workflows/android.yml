@@ -117,7 +117,12 @@ jobs:
           git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add deploy/android
           git commit -q -m "android: the signed APK $version built on GitHub (signer $signer)"
-          git push origin "HEAD:$GITHUB_REF_NAME"
+          # Another push may land on the branch while the APK builds: take it (only deploy/android/ is added here) and push again.
+          for attempt in 1 2 3; do
+            git push origin "HEAD:$GITHUB_REF_NAME" && break
+            [ "$attempt" = 3 ] && { echo "::error title=android build::the APK commit could not be pushed after 3 attempts"; exit 1; }
+            sleep $((attempt * 5)); git pull -q --rebase origin "$GITHUB_REF_NAME"
+          done
           echo "::notice title=android build::APK $version BUILT, SIGNED WITH THE INSTALLED APP'S KEY AND COMMITTED TO deploy/android/"
       - name: Remove the key from the runner
         if: always()
