@@ -2,8 +2,10 @@
 // `pnpm build` first), sending to the stand-in production API (scripts/lib/products-mock.mjs, HTTPS with a throwaway CA): a representative
 // attaches a file to a request production holds (sent at once, the approvals undone, the request back with the sales manager); a file
 // attached before production holds the request waits and goes after it is accepted; the same tap twice stores and sends once, and a send
-// whose answer was lost is answered 200 created:false; the CRM's own refusals (each reason, the name, 413) store and send nothing;
-// production's refusals (400 with each reason, 413, 409 request_locked) are shown with their reason and never retried; a 404 (production
+// whose answer was lost is answered 200 created:false; the CRM's own refusals (each reason, the name, 413) store and send nothing; what
+// production's PR #27 accepts (a PDF header after other bytes, CON.pdf, a PNG named .jpg) goes through and is served as what it is;
+// production's refusals (400 with each reason, the place refusals of PR #27 naming crmFileId, 413, 409 request_locked) are shown with
+// their reason and never retried; a 404 (production
 // does not hold the request) is not retried by itself but the requester's resend tries again; deletion (a file production never held,
 // in the CRM alone; one it holds, through design-file-delete; its 409 keeps the file with the reason and the status, its 404 completes
 // it); production's
@@ -122,6 +124,27 @@ try {
   }
   check([calls('design-files') - before, await rowsOf(first.id)], [0, 1], 'nothing stored, nothing sent');
 
+  // ---- PR #27: what production accepts now, the CRM accepts too: a PDF whose %PDF-1.x follows other bytes within its first 1024, a
+  //  Windows reserved name, an image whose extension names another of the four (sent, kept and served as what it is); never a bare %PDF-
+  const pr27 = await create('rep', 'east2', 'pr27 mold');
+  const leading = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.alloc(600, 0x0a), pdf('after leading bytes')]), photo = png(640, 480);
+  for (const [name, bytes, kind] of [['CON.pdf', leading, 'pdf'], ['COM1.jpg', photo, 'image'], ['aux.dwg', Buffer.from('AC1027 aux'), 'other']]) {
+    res = await upload('rep', pr27.id, name, bytes);
+    body = await res.json();
+    check([res.status, body.file?.name, body.file?.kind, body.file?.state], [200, name, kind, 'sent'], name + ': accepted by the CRM and by production');
+  }
+  check(mock.row(pr27.id).designFiles.map(file => [file.name, file.type]), [['CON.pdf', 'application/pdf'], ['COM1.jpg', 'image/png'], ['aux.dwg', 'application/octet-stream']], 'production keeps each as what it is');
+  const mismatched = (await viewOf('rep', pr27.id)).designFiles.find(file => file.name === 'COM1.jpg');
+  res = await download('rep', 'id=' + pr27.id + '&file=' + mismatched.crmFileId + '&inline=1');
+  check([res.status, res.headers['content-type'], res.headers['content-disposition'].split(';')[0], Buffer.compare(res.bytes, photo)], [200, 'image/png', 'inline', 0], 'the PNG named .jpg is served by the CRM as the PNG it is');
+  const pr27Sends = calls('design-files');
+  for (const [name, bytes] of [['bare.pdf', Buffer.from('%PDF-\n%%EOF\n')], ['late.pdf', Buffer.concat([Buffer.alloc(1024, 0x20), pdf('too late')])]]) {
+    res = await upload('rep', pr27.id, name, bytes);
+    body = await res.json();
+    check([res.status, body.reason], [400, 'not_pdf'], name + ': not a PDF (no version, or beyond the first 1024 bytes), refused by the CRM itself');
+  }
+  check([calls('design-files') - pr27Sends, await rowsOf(pr27.id)], [0, 3], 'those were neither stored nor sent');
+
   // ---- attached before production holds the request: kept, sent once the request is accepted
   mock.state.down = true;
   const second = await create('rep', 'east2', 'second mold');
@@ -143,6 +166,9 @@ try {
     [400, {code: 'invalid_payload', message: 'The file was refused.', fields: ['file'], details: {reason: 'not_pdf'}}, 'not_pdf'],
     [400, {code: 'invalid_payload', message: 'The file was refused.', fields: ['file'], details: {reason: 'bad_image'}}, 'bad_image'],
     [400, {code: 'invalid_payload', message: 'The file was refused.', fields: ['file'], details: {reason: 'too_many_pixels'}}, 'too_many_pixels'],
+    // PR #27: the refusals for a file's place name crmFileId, not file
+    [400, {code: 'invalid_payload', message: 'A request holds at most 10 files.', fields: ['crmFileId'], details: {reason: 'too_many_files'}}, 'too_many_files'],
+    [400, {code: 'invalid_payload', message: 'This crmFileId belonged to a file deleted since.', fields: ['crmFileId'], details: {reason: 'crm_file_id_used'}}, 'crm_file_id_used'],
     [413, {code: 'payload_too_large', message: 'The file is larger than 25 MB.'}, undefined]];
   const refusedIds = [];
   for (const [http, error, reason] of productionRefusals) {
@@ -159,7 +185,9 @@ try {
   check([approvalAfter.can.resend, (await post('rep', {action: 'resend', id: third.id})).status], [false, 409], 'not resent by the resend button either');
   await list('owner');
   check(calls('design-files'), refusedSends, 'and never sent again by itself');
-  check(approvalAfter.designFiles.filter(file => file.state === 'rejected').length, 5, 'each one listed with its refusal');
+  check(approvalAfter.designFiles.filter(file => file.state === 'rejected').length, 7, 'each one listed with its refusal');
+  check(approvalAfter.designFiles.filter(file => file.error?.reason === 'too_many_files' || file.error?.reason === 'crm_file_id_used').map(file => [file.error.reason, file.error.fields, file.error.http, file.error.final]),
+    [['too_many_files', ['crmFileId'], 400, true], ['crm_file_id_used', ['crmFileId'], 400, true]], 'the place refusals keep their field and reason, final');
 
   // ---- 404: production does not hold the request: not tried again by itself, the reason shown, the resend tries again
   // 409 request_locked: production's approvals were complete first

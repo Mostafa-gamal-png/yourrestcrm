@@ -3,7 +3,8 @@
 // API. A deletion that stopped after 24 hours is restarted by resend; a deletion production refuses keeps the file with its reason; a
 // refusal without the contract's code (a web server's 400/413) is final and takes none of the 10 places; an older status never replaces
 // a newer one (a pull, a request's send, an approval); a download keeps its place until its body is read or abandoned, the CRM's own
-// copies too. Synthetic data only; the shared secret is never printed.
+// copies too; production's refusals for a file's place (too_many_files, crm_file_id_used, PR #27) are final and shown with their reason.
+// Synthetic data only; the shared secret is never printed.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -365,6 +366,40 @@ try{
   const stopped=(await viewOf(id)).designFiles[0];
   check([stopped.state,stopped.stopped,stopped.error.code,(await viewOf(id)).can.resend],['waiting',true,'network',true],'stopped after 24 hours: marked stopped, the resend is the way on');
   sql.prepare('UPDATE crm_mold_design_files SET outbox=NULL,next_attempt_at=NULL WHERE id=?').run(fileId);
+ }
+
+ // ---- 13. Production's refusals for a file's place (PR #27: 400 invalid_payload, fields crmFileId, details.reason) from the stand-in:
+ //  stored with the reason, shown in words, final (not tried again by itself nor by resend), taking none of the 10 places
+ {
+  const sends=()=>mock.state.calls.filter(call=>call.route==='design-files').length;
+  // too_many_files: production attached 10 files of its own since the CRM last read the request, so the CRM's count let the file in.
+  let id=await newRequest();
+  for(let n=1;n<=10;n++)mock.addProductionFile(id,{name:'تصميم الإنتاج '+n+'.pdf'});
+  let answer=await attach(id,'رسم زائد.pdf',pdf('eleventh'));
+  let fileId=answer.body.file.crmFileId;
+  check([answer.status,answer.body.send,answer.body.file.state,errorOf(fileId),fileRow(fileId).next_attempt_at,atProduction(id,fileId)],
+   [200,{kind:'rejected',code:'invalid_payload',reason:'too_many_files'},'rejected',{code:'invalid_payload',reason:'too_many_files',fields:['crmFileId'],http:400,at:errorOf(fileId).at,final:true},null,false],'too_many_files: refused for good with its reason and field');
+  check(lib.moldDesignRefusalText(answer.body.file.error.reason,ar=>ar),'الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)','shown in words');
+  let before=sends();
+  check([(await server.sendDueMoldDesignFiles(DB,{link,limit:5})),(await resend(id)).status,sends(),lib.moldDesignCount(await server.loadMoldRequest(DB,id),await filesOf(id)).crm,(await viewOf(id)).can.resend],[0,409,before,0,false],'not tried again (by the timetable or by resend), and it takes no place');
+  // crm_file_id_used: the send arrived but its answer was lost; production then deleted the file, so the retry of the same crmFileId is refused.
+  id=await newRequest();
+  answering=(url,init)=>new URL(url).searchParams.get('route')==='design-files'?viaMock(url,init).then(()=>{throw new TypeError('connection reset');}):viaMock(url,init);
+  fileId=(await attach(id,'وصل ثم حُذف.pdf',pdf('arrived, then deleted there'))).body.file.crmFileId;
+  answering=null;
+  check([fileRow(fileId).outbox,fileRow(fileId).sent_at,atProduction(id,fileId),errorOf(fileId).code],['send',null,true,'network'],'production holds it; the CRM did not hear so and waits to try again');
+  mock.removeFile(fileId);
+  sql.prepare('UPDATE crm_mold_design_files SET next_attempt_at=? WHERE id=?').run(new Date(Date.now()-1000).toISOString(),fileId);
+  const outcome=await server.sendMoldDesignFile(DB,fileId,{link});
+  check([outcome,errorOf(fileId),fileRow(fileId).next_attempt_at,fileRow(fileId).outbox],[{kind:'rejected',code:'invalid_payload',fields:['crmFileId'],reason:'crm_file_id_used'},{code:'invalid_payload',reason:'crm_file_id_used',fields:['crmFileId'],http:400,at:errorOf(fileId).at,final:true},null,'send'],'crm_file_id_used: refused for good with its reason and field');
+  const shown=(await viewOf(id)).designFiles.find(file=>file.crmFileId===fileId);
+  check([shown.state,shown.canDelete,lib.moldDesignRefusalText(shown.error.reason,ar=>ar)],['rejected',true,'الإنتاج رفض الملف: رقمه مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وارفعه من جديد'],'shown in words; the requester may delete it and attach it again');
+  before=sends();
+  check([(await server.sendDueMoldDesignFiles(DB,{link,limit:5})),(await resend(id)).status,sends()],[0,409,before],'not tried again by itself nor by resend');
+  const deletes=mock.state.calls.filter(call=>call.route==='design-file-delete').length;
+  check([(await remove(id,fileId)).status,!!fileRow(fileId).deleted_at,mock.state.calls.filter(call=>call.route==='design-file-delete').length],[200,true,deletes],'deleted in the CRM alone (production holds nothing of it)');
+  answer=await attach(id,'وصل ثم حُذف.pdf',pdf('arrived, then deleted there'));
+  check([answer.body.file.state,answer.body.file.crmFileId===fileId,atProduction(id,answer.body.file.crmFileId)],['sent',false,true],'attached again: a new crmFileId, and production takes it');
  }
 
  check(mock.state.calls.every(call=>!JSON.stringify(call.headers).includes(mock.state.secret)),true,'the secret never travels');

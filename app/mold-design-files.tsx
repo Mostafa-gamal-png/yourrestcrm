@@ -19,7 +19,8 @@ const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message
 export const MOLD_DESIGN_ACCEPT=Object.keys(MOLD_DESIGN_EXTENSIONS).map(extension=>'.'+extension).join(',');
 /** An upload of up to 25 MiB from a phone may take minutes: the server reads the body for up to 300 seconds, then sends for up to 15. */
 const UPLOAD_TIMEOUT_MS=330_000;
-/** The first bytes are enough for a PDF and nearly every image header; an image whose header lies further is read whole. */
+/** The first bytes are enough for a PDF (its %PDF-1.x within the first 1024 bytes) and nearly every image header; an image whose header
+ *  lies further is read whole. */
 const HEAD_BYTES=1024*1024;
 const crmFileIdOf=(key:string)=>'mdf-'+key;
 
@@ -332,18 +333,26 @@ export function MoldDesignFiles({view,uploads,queue,onView,say}:{view:MoldReques
  </section>;
 }
 
-/** A pending request's files in the sales manager's list, each opened or downloaded through the CRM by its order number. */
-export function MoldPendingDesignFiles({files,say}:{files:MoldPendingDesignFile[];say:Say}){
+/** Why a request the sales manager has just approved lists its files without links: those links serve a request only while it waits for
+ *  them (app/api/mold-requests/design-file/route.ts by order), so right after the approval they would answer 404. A request of the CRM
+ *  shows its files on its own sheet. */
+export const pendingFilesApprovedNote=(inCrm:boolean,say:Say)=>inCrm
+ ?say('بعد اعتمادك لا تُفتح الملفات من هنا؛ افتح الطلب لعرضها.','Once you approve, the files no longer open from here; open the request to see them.')
+ :say('بعد اعتمادك لا تُفتح الملفات من هنا.','Once you approve, the files no longer open from here.');
+/** A pending request's files in the sales manager's list, each opened or downloaded through the CRM by its order number. note: the
+ *  files are listed by name only, with this said once (a request just approved, pendingFilesApprovedNote). */
+export function MoldPendingDesignFiles({files,say,note=''}:{files:MoldPendingDesignFile[];say:Say;note?:string}){
  const [errors,setErrors]=useState<Record<string,string>>({});
  if(!files.length)return null;
- return <div className="mold-design mold-design-compact" aria-label={say('ملفات التصميم','Design files')}>
+ return <div className="mold-design mold-design-compact" aria-label={say('ملفات التصميم','Design files')} data-links={note?'off':undefined}>
   <strong className="mold-design-title">{say('ملفات التصميم','Design files')} <span className="mold-design-count" dir="ltr">({files.length})</span></strong>
+  {note&&<small className="mold-design-hint mold-design-links-off">{note}</small>}
   <ul className="mold-design-list">{files.map(file=><li key={String(file.fileId)} className="mold-design-file" data-source={file.source}>
    <span className="mold-design-icon"><KindIcon kind={file.kind}/></span>
    <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
     <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span>{say('من المندوب','From the representative')}</span>}</span>
     {errors[String(file.fileId)]&&<small className="mold-design-reason" role="alert">{errors[String(file.fileId)]}</small>}</div>
-   <div className="mold-design-actions"><FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say} onFailure={message=>setErrors(previous=>({...previous,[String(file.fileId)]:message}))}/></div>
+   {!note&&<div className="mold-design-actions"><FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say} onFailure={message=>setErrors(previous=>({...previous,[String(file.fileId)]:message}))}/></div>}
   </li>)}</ul>
  </div>;
 }

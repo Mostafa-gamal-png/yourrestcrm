@@ -27,7 +27,8 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;status:MoldStatu
 /** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. */
 export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs};
 export type MoldError={code:string;fields?:string[];http?:number;at:string;
- /** Why production refused a design file's bytes (details.reason: empty, not_pdf, bad_image, too_many_pixels). */
+ /** Why production refused a design file (details.reason): its bytes (empty, not_pdf, bad_image, too_many_pixels, with fields ['file'])
+  *  or its place (too_many_files, crm_file_id_used, with fields ['crmFileId']). */
  reason?:string;
  /** A design file's refusal for good, whatever its code (any 400, 404 or 413, a 409 for a send, or the CRM's own refusal): not sent
   *  again by itself, and the resend button does not start it. */
@@ -186,7 +187,8 @@ export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>s
   name:['اسم الملف غير مقبول: حتى 200 حرف، بلا \\ / < > : " | ? * ، وبصيغة من الصيغ المسموحة','The file name is not accepted: up to 200 characters, none of \\ / < > : " | ? *, and an allowed extension'],
   empty:['الملف فارغ','The file is empty'],not_pdf:['الملف ليس PDF فعلًا','The file is not really a PDF'],bad_image:['الصورة تالفة أو بصيغة غير مدعومة','The image is damaged or of an unsupported type'],
   too_many_pixels:['الصورة أكبر من 80 مليون نقطة','The image is larger than 80 million pixels'],too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],payload_too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],
-  too_many_files:['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)','At most 10 files a request (yours and production\'s)'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
+  too_many_files:['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)','At most 10 files a request (yours and production\'s)'],
+  crm_file_id_used:['الإنتاج رفض الملف: رقمه مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وارفعه من جديد','Production refused the file: its number was already used for another file or a deleted one; delete it and upload it again'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
   request_locked:['اكتملت الاعتمادات؛ لم يعد تغيير ملفات الطلب ممكنًا','The approvals are complete; the files can no longer change'],file_missing:['نسخة الملف في الـCRM مفقودة؛ احذفه وأرفقه من جديد','The CRM copy of the file is missing; delete it and attach it again'],
  };
  const found=table[reason];

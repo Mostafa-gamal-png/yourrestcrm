@@ -7,8 +7,9 @@
 // warning; an upload outlives the page (the representative moves to another page while it is on its way, comes back to it still uploading,
 // and later to its failure with the reason and Retry, also said on the request's card); the request on a phone keeps every button within
 // the screen, each at least 44 px (the refused files' dismiss button too); the sales manager sees each pending request's files (one
-// registered in production too), is told why a download or an opened file failed while production is unreachable, and downloads one
-// through the CRM. Screenshots for the report. Synthetic fixtures only: temporary SQLite, no production data, no real production app.
+// registered in production too), is told why a download or an opened file failed while production is unreachable, downloads one
+// through the CRM, and, having approved a request, sees its card under «اعتمدتها الآن» with the files named but no links. Screenshots
+// for the report. Synthetic fixtures only: temporary SQLite, no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -265,6 +266,16 @@ try {
   const saved = fs.readFileSync(await download.path());
   check([download.suggestedFilename(), Buffer.compare(saved, drawingDwg), fetched.status(), new URL(fetched.url()).searchParams.has('order')], ['مسقط.dwg', 0, 200, true], 'downloaded through the CRM by order number, with its name');
   await downloadFailure.waitFor({state: 'detached'});
+  // Approved just now: the card stays below with Withdraw, its files named without links (they open from the list only while the
+  // request waits for the sales manager, so a link there would answer 404 «الطلب لم يعد بانتظار اعتمادك»).
+  check(await manualCard.locator('.mold-design-actions a').count(), 2, 'waiting: Open and Download for its PDF');
+  await manualCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  const approvedCard = sm.locator('.mold-pending[data-done]', {hasText: 'مصنع مسجّل في الإنتاج'});
+  await approvedCard.waitFor();
+  check([await approvedCard.locator('.mold-design-name').allInnerTexts(), await approvedCard.locator('a[href*="/api/mold-requests/design-file"]').count(), await approvedCard.locator('.mold-design-actions').count(), await approvedCard.locator('.mold-design-links-off').innerText()],
+    [['تصميم من الإنتاج.pdf'], 0, 0, 'بعد اعتمادك لا تُفتح الملفات من هنا.'], 'just approved: the file named, no view or download link, and why');
+  ok(await sm.locator('h3.mold-subtitle', {hasText: 'اعتمدتها الآن'}).count() === 1 && await approvedCard.getByRole('button', {name: 'سحب الاعتماد'}).count() === 1, 'under «اعتمدتها الآن», with Withdraw approval');
+  await shot(sm, 'mold-design-pending-approved');
   await sm.context().close();
 
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
