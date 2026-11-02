@@ -144,12 +144,12 @@ try {
   check([await sm.locator('.mold-tabs [aria-selected="true"]').innerText(), await sm.locator('.mold-pending').count()], ['طلبات بانتظار اعتمادي 2', 2], 'the sales manager opens on the requests waiting for them, both kinds');
   ok((await pendingCard.innerText()).includes('مسجّل في تطبيق الإنتاج') && (await pendingCard.innerText()).includes('prod@yourrest.org'), 'registered in production, and by whom');
   await shot(sm, 'mold-pending-manager');
+  // Registered in production meanwhile: the approval's answer reads the list again (the server keeps it a minute otherwise).
+  const gone = mock.registerManual({customerName: 'مصنع اتمسح من الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'gone mold'});
   await pendingCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
   await sm.locator('.mold-pending[data-done]', {hasText: 'مصنع مسجّل في الإنتاج'}).waitFor();
-  check([mock.state.byOrder.get(manual.orderNo).approvals.sales?.via, await sm.locator('.mold-pending:not([data-done])').count()], ['crm', 1], 'approved at production by its order number; one left waiting');
+  check([mock.state.byOrder.get(manual.orderNo).approvals.sales?.via, await sm.locator('.mold-pending:not([data-done])', {hasNotText: 'مصنع اتمسح من الإنتاج'}).count()], ['crm', 1], 'approved at production by its order number; one left waiting');
   // A request production deletes while it waits on the list: the refusal stays readable after the request leaves the list.
-  const gone = mock.registerManual({customerName: 'مصنع اتمسح من الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'gone mold'});
-  await sm.locator('.mold-heading-tools button').first().click();
   const goneCard = sm.locator('.mold-pending', {hasText: 'مصنع اتمسح من الإنتاج'});
   await goneCard.waitFor();
   mock.removeOrder(gone.orderNo);
