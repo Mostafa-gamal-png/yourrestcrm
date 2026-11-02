@@ -174,10 +174,10 @@ export async function sendDueMoldDesignFiles(db:D1Database,{limit=2,now=()=>new 
 }
 
 /**
- * While the server runs, requests waiting to be sent are tried on the §6 timetable: a check every minute, and one right away when the
- * timer starts, so a request that waited through a restart goes as soon as the server is used again. Started by the first page any
- * member loads (lib/mold-customers-hook.ts) and by the mold requests page; never twice in one process. The claim in sendMoldRequest
- * keeps two checks from sending the same request.
+ * While the server runs, requests (and their design files) waiting to be sent are tried on the §6 timetable: a check every minute, and
+ * one right away when the timer starts, so a request that waited through a restart goes as soon as the server is used again. Started by
+ * the first page any member loads (lib/mold-customers-hook.ts) and by the mold requests page; never twice in one process. The claims in
+ * sendMoldRequest and sendMoldDesignFile keep two checks from sending the same request or file.
  */
 export function keepMoldRetrying(){
  const holder=globalThis as typeof globalThis&{__yourrestMoldRetry?:ReturnType<typeof setInterval>};
@@ -217,9 +217,10 @@ export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link
 
 /** The requests waiting for the sales manager (production's pending route, every request, the CRM's and those registered in
  * production), kept a minute so a busy page or several managers do not ask production for each one; a failed call waits half that
- * long before the next. A change of approval empties it. */
+ * long before the next. A change of approval (an approval, or a design file attached or deleted) empties it, and since production has
+ * just answered, forgets a failure too. */
 let pendingCache:{at:string;items:MoldPendingItem[]}|null=null,pendingFailure:MoldError|null=null;
-export function forgetPendingApprovals(){pendingCache=null;}
+export function forgetPendingApprovals(){pendingCache=null;pendingFailure=null;}
 type PendingReader={me:Member;db:D1Database;regionCustomerIds:Set<string>};
 /** The sales manager's «طلبات بانتظار اعتمادي»: every request production holds at the sales step (the CRM's and those registered in
  * production), within the manager's regions when they do not cover all (by the customer's Yourrest number), each with its design files

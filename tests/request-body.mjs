@@ -9,7 +9,7 @@ const work=fs.mkdtempSync(path.join(os.tmpdir(),'yourrest-body-'));let checks=0;
 const eq=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;};
 try{
  const file=path.join(work,'body.mjs');fs.writeFileSync(file,ts.transpileModule(fs.readFileSync('lib/request-body.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
- const {readRequestBytes,readRequestText,readRequestForm,jsonRequestLimit}=await import(pathToFileURL(file));
+ const {readRequestBytes,readRequestText,readRequestForm,jsonRequestLimit,formRequestLimit}=await import(pathToFileURL(file));
  const make=(parts,headers={},url='https://crm.yourrest.org/api/crm')=>{let index=0,cancelled=false;const stream=new ReadableStream({pull(c){if(index<parts.length)c.enqueue(typeof parts[index]==='string'?new TextEncoder().encode(parts[index++]):parts[index++]);else c.close();},cancel(){cancelled=true;}},{highWaterMark:0});return{request:new Request(url,{method:'POST',headers,body:stream,duplex:'half'}),cancelled:()=>cancelled,read:()=>index};};
  const rejects=async(p,status)=>{await assert.rejects(p,error=>error.status===status);checks++;};
  let sample=make(['abc','de']);eq(new TextDecoder().decode(await readRequestBytes(sample.request,5)),'abcde');
@@ -34,6 +34,12 @@ try{
  const raw=new Request('https://crm.yourrest.org/api/visit-files',{method:'POST',body:form}),type=raw.headers.get('content-type'),bytes=new Uint8Array(await raw.arrayBuffer());
  const parsed=await readRequestForm(make([bytes],{'content-type':type}).request,bytes.length);eq(parsed.get('customerId'),'factory');eq(await parsed.get('file').text(),'%PDF-1.4 data');
  sample=make([bytes],{'content-type':type});await rejects(readRequestForm(sample.request,bytes.length-1),413);eq(sample.cancelled(),true);
+ // A mold design file: up to 25 MiB plus its form fields on its own route; every other upload keeps 11 MB.
+ const designs='https://crm.yourrest.org/api/mold-requests/design-files',multipart='multipart/form-data; boundary=x';
+ eq([formRequestLimit(new Request(designs)),formRequestLimit(new Request('https://crm.yourrest.org/api/visit-files')),jsonRequestLimit(new Request(designs+'/delete'))],[25*1024*1024+64*1024,11*1024*1024,2000]);
+ sample=make(['NEVER'],{'content-type':multipart,'content-length':String(25*1024*1024+64*1024+1)},designs);await rejects(readRequestForm(sample.request),413);eq(sample.read(),0);
+ await rejects(readRequestForm(make(['NEVER'],{'content-type':multipart,'content-length':String(12*1024*1024)},'https://crm.yourrest.org/api/visit-files').request),413);
+ await rejects(readRequestForm(make(['x'],{'content-type':multipart,'content-length':String(12*1024*1024)},designs).request),400);
  await rejects(readRequestForm(make(['bad'],{'content-type':'application/json'}).request),415);
  await rejects(readRequestForm(make(['bad'],{'content-type':'multipart/form-data; boundary=none'}).request),400);
  console.log(JSON.stringify({ok:true,checks,coverage:'bounded chunked/declared/dishonest/multibyte/fragmented/timeout/broken streams and multipart parsing',productionDataUsed:false}));

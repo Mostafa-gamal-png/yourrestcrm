@@ -73,8 +73,8 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
   const again=result instanceof Response?result:await replay();
   await env.FILES.delete(objectKey).catch(()=>{});objectKey='';
   if(again)return again;
-  const fresh=await loadMoldRequest(c.db,row.id),now2=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]));
-  throw new CRMError(now2&&now2.crm+now2.production>=MOLD_DESIGN_MAX_FILES?full:'تغيّرت حالة الطلب أو صلاحياتك أثناء الحفظ. حدّث الصفحة.',409);
+  const fresh=await loadMoldRequest(c.db,row.id),places=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]));
+  throw new CRMError(places&&places.crm+places.production>=MOLD_DESIGN_MAX_FILES?full:'تغيّرت حالة الطلب أو صلاحياتك أثناء الحفظ. حدّث الصفحة.',409);
  }
  objectKey='';
  // Saved. When production holds the request the file goes now; the answer waits a little for it.
