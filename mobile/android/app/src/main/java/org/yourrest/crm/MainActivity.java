@@ -47,16 +47,21 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
         ForegroundGeolocation(String origin,GeolocationPermissions.Callback callback){this.origin=origin;this.callback=callback;}
     }
     private static final int PERMISSIONS=110,FILE_PICKER=111,BACKGROUND_LOCATION=112,GEOLOCATION=113,DESIGN_SAVE=114;
-    /** The one design file being fetched, opened or saved (null when none), its progress dialog, the copy waiting for the save picker,
-     *  and a finished fetch held until the app is in front again. */
+    /** The one design file being fetched, opened or saved (null when none), its progress dialog, the question asked before opening one
+     *  without a tap, the copy waiting for the save picker (kept across a recreated activity), and a finished fetch held until the app is
+     *  in front again with the copy it holds. */
     private DesignFiles.Task designTask;
-    private AlertDialog designProgress;
-    private DesignFiles.Fetched designSave;
+    private AlertDialog designProgress,designConfirm;
+    private DesignFiles.Fetched designSave,designHeld;
     private Runnable designDelivery;
+    private static final String SAVE_FOLDER="designSaveFolder",SAVE_NAME="designSaveName",SAVE_TYPE="designSaveType";
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);
         updater=NativeAppUpdater.get(this);updater.attach(this);
         DesignFiles.cleanup(getApplicationContext());
+        // A save picker that was open when Android recreated the activity (dark mode, language, split screen, or the process ended) finds
+        // its copy again; its answer arrives after this.
+        if(saved!=null)designSave=DesignFiles.restore(getApplicationContext(),saved.getString(SAVE_FOLDER),saved.getString(SAVE_NAME),saved.getString(SAVE_TYPE));
         speech=new NativeSpeech(this,new NativeSpeech.Host(){public String nonce(){return web!=null&&RouteRules.trusted(web.getUrl())?pageNonce:"";}public boolean foreground(){return resumed;}});
         FrameLayout container=new FrameLayout(this);web=new WebView(this);container.addView(web);setContentView(container);
         // Consume system insets outside the WebView so page controls do not sit behind Android system bars.
@@ -73,7 +78,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
                 String url=request.getUrl().toString();
                 // «عرض» of a design file: fetched natively with the session; the page stays where it is.
-                if(request.isForMainFrame()&&DesignFileRules.fetchUrl(url)!=null&&RouteRules.trusted(view.getUrl())){openDesignFile(url,true);return true;}
+                if(request.isForMainFrame()&&DesignFileRules.fetchUrl(url)!=null&&RouteRules.trusted(view.getUrl())){openDesignFile(url,true,request.hasGesture());return true;}
                 if(RouteRules.trusted(url))return false;
                 if(MapsLauncher.canHandoff(view.getUrl(),request.isForMainFrame(),request.hasGesture(),resumed,pageNonce,url)){launchMaps(url);return true;}
                 if(request.isForMainFrame()&&request.hasGesture())external(request.getUrl());
@@ -111,7 +116,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
         });
         web.setDownloadListener((url,userAgent,contentDisposition,mimeType,length)->{
             // «تنزيل» of a design file is fetched natively with the session and saved where the person picks.
-            if(DesignFileRules.fetchUrl(url)!=null&&web!=null&&RouteRules.trusted(web.getUrl())){openDesignFile(url,false);return;}
+            if(DesignFileRules.fetchUrl(url)!=null&&web!=null&&RouteRules.trusted(web.getUrl())){openDesignFile(url,false,false);return;}
             // Export links never forward the session cookie to another application.
             if(url.startsWith("https://"))new AlertDialog.Builder(this).setMessage("فتح رابط التنزيل في المتصفح؟ قد يطلب تسجيل الدخول.").setPositiveButton("فتح",(dialog,which)->external(Uri.parse(url))).setNegativeButton("إلغاء",null).show();
             else new AlertDialog.Builder(this).setMessage("لتنزيل الملف استخدم صفحة CRM في المتصفح.").setPositiveButton("حسنًا",null).show();
@@ -154,11 +159,24 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
     }
     /** A design-file link: fetched from the CRM with the WebView session (never handed to the browser or the DownloadManager), then
      *  opened in another app («عرض») or saved through the system picker («تنزيل»). One at a time. */
-    private void openDesignFile(String url,boolean navigation){
+    private void openDesignFile(String url,boolean navigation,boolean gesture){
         String target=DesignFileRules.fetchUrl(url);
         if(target==null||web==null)return;
         if(designTask!=null){Toast.makeText(this,"يجري تنزيل ملف آخر؛ انتظر حتى يكتمل",Toast.LENGTH_SHORT).show();return;}
-        final DesignFiles.Task task=new DesignFiles.Task(target,DesignFileRules.view(navigation,target));
+        boolean view=DesignFileRules.view(navigation,target);
+        // Another app receives a file only after a tap: «عرض» reached without one (a script or a redirect) asks first, one question at a time.
+        if(DesignFileRules.confirmView(view,gesture)){
+            if(designConfirm!=null&&designConfirm.isShowing())return;
+            designConfirm=new AlertDialog.Builder(this).setTitle("فتح ملف التصميم").setMessage("فتح الملف في تطبيق آخر على الجهاز؟")
+                    .setPositiveButton("فتح",(dialog,which)->{designConfirm=null;if(web!=null&&RouteRules.trusted(web.getUrl()))startDesignFile(target,true);})
+                    .setNegativeButton("إلغاء",(dialog,which)->designConfirm=null).show();
+            return;
+        }
+        startDesignFile(target,view);
+    }
+    private void startDesignFile(String target,boolean view){
+        if(designTask!=null){Toast.makeText(this,"يجري تنزيل ملف آخر؛ انتظر حتى يكتمل",Toast.LENGTH_SHORT).show();return;}
+        final DesignFiles.Task task=new DesignFiles.Task(target,view);
         designTask=task;
         designProgress=new AlertDialog.Builder(this).setMessage("جارٍ تنزيل الملف…").setCancelable(false)
                 .setNegativeButton("إلغاء",(dialog,which)->{task.cancel();designFinished(task);}).show();
@@ -168,7 +186,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
         if(task!=designTask||web==null){DesignFiles.discard(fetched);return;}
         if(designProgress!=null){designProgress.dismiss();designProgress=null;}
         // Another app is opened only while Yourrest is in front; a file that arrives meanwhile waits for the person to return.
-        if(!MainActivity.resumed){designDelivery=()->designFetched(task,fetched,error);return;}
+        if(!MainActivity.resumed){designHeld=fetched;designDelivery=()->designFetched(task,fetched,error);return;}
         if(fetched==null){designFinished(task);designAlert("تعذّر تنزيل الملف",error==null?DesignFileRules.FAILED:error);return;}
         if(!task.view){saveDesignFile(task,fetched);return;}
         Intent open=new Intent(Intent.ACTION_VIEW).setDataAndType(DesignFiles.uri(fetched),fetched.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -191,10 +209,11 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
     private void designSaved(int result,Intent data){
         DesignFiles.Fetched fetched=designSave;designSave=null;
         final DesignFiles.Task task=designTask;
-        if(fetched==null){designFinished(task);return;}
         Uri target=result==RESULT_OK&&data!=null?data.getData():null;
         // Cancelling the picker saves nothing.
         if(target==null||!"content".equals(target.getScheme())){DesignFiles.discard(fetched);designFinished(task);return;}
+        // The copy was lost while the picker was open: the empty document it created goes, and the person is told.
+        if(fetched==null){designFinished(task);DesignFiles.abandon(getApplicationContext(),target,()->runOnUiThread(()->designAlert("تعذّر حفظ الملف",DesignFiles.SAVE_LOST)));return;}
         DesignFiles.save(getApplicationContext(),fetched,target,error->runOnUiThread(()->{
             designFinished(task);
             if(web==null)return;
@@ -203,8 +222,10 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
         }));
     }
     private void designFinished(DesignFiles.Task task){
-        if(task!=null&&task!=designTask)return;
+        if(task!=designTask)return;
         designTask=null;designDelivery=null;
+        // A fetched file still waiting for the person to come back is not opened any more: its copy goes now, not a day later.
+        DesignFiles.discard(designHeld);designHeld=null;
         if(designProgress!=null){designProgress.dismiss();designProgress=null;}
     }
     private void designAlert(String title,String message){if(web!=null&&!isFinishing())new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("حسنًا",null).show();}
@@ -214,6 +235,12 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
         String script="(()=>{if(window!==window.top||location.origin!=="+JSONObject.quote(RouteRules.ORIGIN)+")return;const nonce="+nonce+";let seq=0;const pending=new Map();"
                 +"window.__yourrestNativeComplete=(n,id,result,error)=>{if(n!==nonce)return;const entry=pending.get(id);if(!entry)return;pending.delete(id);clearTimeout(entry.timer);error?entry.reject(new Error(error)):entry.resolve(result);};"
                 +"window.__yourrestNative={updateProtocol:1,installedVersionCode:"+installed.optLong("installedVersionCode",0)+",installedVersionName:"+JSONObject.quote(installed.optString("installedVersionName","unknown"))+",speechProtocol:1,speechSupported:"+speech.supported()+",request(method,payload={}){return new Promise((resolve,reject)=>{const id=String(++seq);const timer=setTimeout(()=>{pending.delete(id);reject(new Error('انتهت مهلة الإجراء؛ حاول مرة أخرى'));},90000);pending.set(id,{resolve,reject,timer});YourrestNativeChannel.request(nonce,id,String(method),JSON.stringify(payload));});}};"
+                // A design file's «تنزيل» link (<a download>) is handed to the app on the tap itself, once per document.
+                +"if(!window.__yourrestDesignFiles){window.__yourrestDesignFiles=true;document.addEventListener('click',event=>{"
+                +"if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||!(event.target instanceof Element))return;"
+                +"const link=event.target.closest('a[download][href]');if(!link)return;let url;try{url=new URL(link.href);}catch(_){return;}"
+                +"if(url.origin!=="+JSONObject.quote(RouteRules.ORIGIN)+"||url.pathname!=="+JSONObject.quote(DesignFileRules.PATH)+"||url.search.length<2||url.href.length>3000||!window.__yourrestNative)return;"
+                +"event.preventDefault();window.__yourrestNative.request('designFile',{href:url.href}).catch(()=>{});},true);}"
                 +"window.dispatchEvent(new CustomEvent('yourrest:native-ready'));})();";
         web.evaluateJavascript(script,null);changed(RouteTracker.get(this).state());updater.resume();
     }
@@ -239,6 +266,11 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
                         if(!"start".equals(method)||claimedHandoff==null){reply.complete(tracker.state(),"افتح التطبيق لمتابعة الإجراء ثم حاول مجددًا");return;}
                     }
                     switch(method){
+                        case "designFile":
+                            // «تنزيل» tapped in the page: fetched natively at once (progress, the CRM's error words, one request), instead of the
+                            // WebView's own download, which drops a failed answer without a word.
+                            if(DesignFileRules.fetchUrl(input.optString("href"))==null){reply.complete(tracker.state(),"رابط الملف غير صالح");break;}
+                            openDesignFile(input.optString("href"),false,false);reply.complete(tracker.state(),null);break;
                         case "updateStatus":reply.complete(updater.state(),null);break;
                         case "checkAppUpdate":updater.check();reply.complete(updater.state(),null);break;
                         case "downloadAppUpdate":updater.download();reply.complete(updater.state(),null);break;
@@ -351,8 +383,14 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
     @Override public void installPermission(){startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())));}
     @Override public void confirmInstall(Intent intent){startActivity(intent);}
     @Override protected void onResume(){super.onResume();resumed=true;ServiceAlerts.poll(this,true);if(updater!=null){updater.attach(this);updater.resume();}ContinuousRouteTracker.get(this).resumeFromActivity();RouteTracker.get(this).addListener(this);RouteTracker.get(this).flush(null);if(awaitingBackgroundSettings){awaitingBackgroundSettings=false;prepared(ContinuousRouteTracker.backgroundGranted(this)&&RouteTracker.get(this).permission()?null:"لم يتم منح الموقع الدقيق طوال الوقت؛ فعّله من إعدادات التطبيق");}
-        if(designDelivery!=null){Runnable delivery=designDelivery;designDelivery=null;delivery.run();}}
+        if(designDelivery!=null){Runnable delivery=designDelivery;designDelivery=null;designHeld=null;delivery.run();}}
+    @Override protected void onSaveInstanceState(Bundle out){
+        super.onSaveInstanceState(out);
+        if(designSave!=null){out.putString(SAVE_FOLDER,designSave.file.getParentFile().getName());out.putString(SAVE_NAME,designSave.file.getName());out.putString(SAVE_TYPE,designSave.mime);}
+    }
     @Override protected void onPause(){resumed=false;RouteTracker.get(this).removeListener(this);CookieManager.getInstance().flush();super.onPause();}
     @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
-    @Override protected void onDestroy(){if(updater!=null)updater.detach(this);if(speech!=null)speech.invalidate();RouteTracker.get(this).removeListener(this);completeForegroundGeolocation(false);prepared("تم إغلاق نافذة التطبيق؛ افتحه ثم حاول مجددًا");if(files!=null)files.onReceiveValue(null);if(designTask!=null){designTask.cancel();designFinished(designTask);}DesignFiles.discard(designSave);designSave=null;if(web!=null){pageNonce="";mapsHandoff=null;web.removeJavascriptInterface("YourrestNativeChannel");web.destroy();web=null;}super.onDestroy();}
+    /** The save picker's copy is dropped only when the app is really closing; when Android recreates the activity the next one takes it
+     *  back (onSaveInstanceState), and otherwise the day-old cleanup removes it. */
+    @Override protected void onDestroy(){if(updater!=null)updater.detach(this);if(speech!=null)speech.invalidate();RouteTracker.get(this).removeListener(this);completeForegroundGeolocation(false);prepared("تم إغلاق نافذة التطبيق؛ افتحه ثم حاول مجددًا");if(files!=null)files.onReceiveValue(null);if(designTask!=null){designTask.cancel();designFinished(designTask);}if(designConfirm!=null){designConfirm.dismiss();designConfirm=null;}if(isFinishing())DesignFiles.discard(designSave);designSave=null;if(web!=null){pageNonce="";mapsHandoff=null;web.removeJavascriptInterface("YourrestNativeChannel");web.destroy();web=null;}super.onDestroy();}
 }

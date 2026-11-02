@@ -13,6 +13,8 @@ import java.nio.charset.Charset;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -38,7 +40,11 @@ final class DesignFileRules {
     static final String TIMEOUT="انتهت مهلة تنزيل الملف؛ حاول مرة أخرى";
     static final String STORAGE="تعذّر حفظ الملف على الجهاز؛ تحقق من المساحة المتاحة";
     private static final Pattern FOLDER=Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-    private static final Pattern TYPE=Pattern.compile("[a-z0-9][a-z0-9!#$&^_.+-]{0,126}/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}");
+    /** The only types the CRM serves a design file as (portable/mold-rules.mjs moldDesignContentType); anything else is plain bytes. */
+    static final List<String> SERVED_TYPES=Collections.unmodifiableList(Arrays.asList("application/pdf","image/png","image/jpeg","image/gif","image/webp"));
+    /** "wt" first: from Android 10 "w" does not truncate, so overwriting a longer file would keep its tail. "w" only for a provider that
+     *  refuses "wt" (a cloud provider that takes the whole stream). */
+    static final List<String> SAVE_MODES=Collections.unmodifiableList(Arrays.asList("wt","w"));
 
     /** A failure the person is told about in words; a cancelled transfer has no words. */
     static final class Failure extends Exception {
@@ -76,6 +82,12 @@ final class DesignFileRules {
     }
     /** «عرض» (inline=1, or a main-frame navigation to the link) opens the file in another app; «تنزيل» saves it where the person picks. */
     static boolean view(boolean navigation,String url){return navigation||inline(url);}
+    /** Another app receives a file only after a tap: «عرض» without one (a script or redirect navigation, a download that asks to open)
+     *  asks first. «تنزيل» needs no question: the system save picker is the person's own choice. */
+    static boolean confirmView(boolean view,boolean gesture){return view&&!gesture;}
+    /** After a failed write, the document is removed only when this save created it (empty when the picker returned it, as a new document
+     *  is); a file the person chose to overwrite, or one whose size is unknown, is never deleted. */
+    static boolean createdBySave(Long sizeBefore){return sizeBefore!=null&&sizeBefore==0L;}
 
     /** A Content-Length the cap allows (-1 when the server did not say). */
     static boolean lengthAllowed(long declared){return declared<=MAX_BYTES;}
@@ -189,12 +201,13 @@ final class DesignFileRules {
             ||cp>=Character.MIN_SURROGATE&&cp<=Character.MAX_SURROGATE||cp==0xFEFF;
     }
 
-    /** The MIME type of the answer (parameters dropped), or application/octet-stream when missing or malformed. */
+    /** The answer's MIME type (parameters dropped) when it is one the CRM serves, else application/octet-stream: what reaches another app
+     *  («عرض») or the save picker is never the answer's own choice (an APK, HTML or script type). */
     static String mimeType(String contentType){
         if(contentType==null)return "application/octet-stream";
         int semicolon=contentType.indexOf(';');
         String type=(semicolon<0?contentType:contentType.substring(0,semicolon)).trim().toLowerCase(Locale.ROOT);
-        return TYPE.matcher(type).matches()?type:"application/octet-stream";
+        return SERVED_TYPES.contains(type)?type:"application/octet-stream";
     }
     /** The type a cached file is reported as to another app: the few the CRM shows inline, else plain bytes. */
     static String typeForName(String name){
