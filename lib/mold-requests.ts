@@ -3,10 +3,12 @@
 // Every member asks for a mold for a customer they can see (the owner, 2026-11-01); the sales manager approves it here first, then
 // production and the system administrator approve it in yourrest-products, which owns the status. The representative attaches design
 // files to the request (2026-11-02): kept in the CRM, sent to production, and shown with production's own files to everyone who reads it.
+// Once a request is sent its data is edited by the production manager in the products application only (yourrest-products, 2026-11-02):
+// the CRM changes it only while it has certainly never reached production (moldNeverSent); cancelling and design files are unchanged.
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS,MOLD_DESIGN_MAX_FILES} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS,MOLD_DESIGN_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS};
 export type MoldStage=typeof MOLD_STAGES[number];
@@ -27,9 +29,13 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;status:MoldStatu
 /** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. */
 export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs};
 export type MoldError={code:string;fields?:string[];http?:number;at:string;
- /** Why production refused a design file (details.reason): its bytes (empty, not_pdf, bad_image, too_many_pixels, with fields ['file'])
-  *  or its place (too_many_files, crm_file_id_used, with fields ['crmFileId']). */
+ /** Why production refused (details.reason): a design file's bytes (empty, not_pdf, bad_image, too_many_pixels, with fields ['file'])
+  *  or its place (too_many_files, crm_file_id_used, with fields ['crmFileId']); a request's send, production_only (409 request_locked:
+  *  production holds the request with other data; its data is edited by the production manager only). */
  reason?:string;
+ /** A request's send: this attempt and every one before it were refused before production stored the request (moldAnswerNotStored),
+  *  so it has certainly never reached production and may still be edited (moldNeverSent). */
+ notStored?:boolean;
  /** A design file's refusal for good, whatever its code (any 400, 404 or 413, a 409 for a send, or the CRM's own refusal): not sent
   *  again by itself, and the resend button does not start it. */
  final?:boolean};
@@ -65,8 +71,8 @@ export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem
 /** How often the sales manager's open page asks for the waiting list again. */
 export const MOLD_PENDING_REFRESH_MS=3*60_000;
 /** Whether a request the sales manager approved from their list waits for them again: production lists it at the sales step since a
- *  later time than the copy they approved (attaching or deleting a design file, or an edit, undoes the approvals). The same wait listed
- *  again (a list kept a minute, here or in another server process) is not. */
+ *  later time than the copy they approved (attaching or deleting a design file undoes the approvals, as may a change made in
+ *  production). The same wait listed again (a list kept a minute, here or in another server process) is not. */
 export function moldPendingAgain(copy:Pick<MoldPendingItem,'orderNo'|'waitingSince'>,items:Pick<MoldPendingItem,'orderNo'|'waitingSince'>[]){
  const since=Date.parse(copy.waitingSince||'')||0;
  return items.some(item=>item.orderNo===copy.orderNo&&(Date.parse(item.waitingSince||'')||0)>since);
@@ -95,7 +101,8 @@ export function canReadMoldRequest(row:Pick<MoldRequestRow,'memberId'|'customerI
 /** An answer older than the status stored (a lower revision; one without a revision is never older): answers can cross, and an older
  *  one must not bring back approvals production has since undone. The SQL twin is newerRemote in lib/mold-requests-server.ts. */
 export const moldRemoteOlder=(stored:Pick<MoldRemote,'revision'>|null,incoming:Pick<MoldRemote,'revision'>)=>stored?.revision!=null&&incoming.revision!=null&&stored.revision>incoming.revision;
-/** Production accepts a change only while the request is `received`; before production first saw it the CRM alone decides. */
+/** Production accepts a cancellation, or a design file attached or deleted, only while the request is `received`; before production
+ *  first saw it the CRM alone decides. The request's own data is another matter: moldNeverSent. */
 export const moldEditable=(row:Pick<MoldRequestRow,'cancelledAt'|'remote'>)=>!row.cancelledAt&&(row.remote?row.remote.editable:true);
 /** Waiting for the sales manager: production has it as received, at the sales step, with nothing changed in the CRM still to send. */
 export function moldAwaitsSalesApproval(row:Pick<MoldRequestRow,'cancelledAt'|'remote'|'outbox'|'accepted'>){
@@ -117,9 +124,14 @@ export const moldDesignRefused=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemp
 /** Whether production may hold the file: sent, or a send was tried without a final refusal (a timeout may have arrived). Such a file is
  *  deleted through design-file-delete; any other is removed in the CRM alone. */
 export const moldDesignMayBeRemote=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'sentAt'|'lastAttemptAt'>)=>!!file.sentAt||!!file.lastAttemptAt&&!moldDesignRefused(file);
+/** The request has certainly never reached production (portable/mold-rules.mjs): only then may the CRM change its data. Sent (accepted,
+ *  production's status, or an attempt that may have arrived) it is edited by the production manager in the products application only. */
+export const moldNeverSent=(row:Pick<MoldRequestRow,'accepted'|'remote'|'lastAttemptAt'|'lastError'>)=>neverSent(row);
+/** What the reader may do. edit: the requester, while the request has certainly never reached production (the server's update follows
+ *  the same rule, in SQL too); cancel, attach and deleteFile: the requester while production still accepts changes (moldEditable). */
 export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[]){
  const own=row.memberId===me.id,open=moldEditable(row),approver=canApproveMoldRequests(me),settled=!files.some(moldDesignInFlight);
- return {edit:own&&open,cancel:own&&open,resend:own&&(!!row.outbox||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
+ return {edit:own&&open&&moldNeverSent(row),cancel:own&&open,resend:own&&(!!row.outbox||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
 }
 const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
 /** The files a request shows: the CRM's own (with where each stands) and those production lists that the CRM does not hold (production's
@@ -170,20 +182,22 @@ export const moldSendingNames:Record<MoldSendingState,[string,string]>={sent:['�
 /** Where the request waits now, in the requester's words (the contract's waitingStep). */
 export const moldWaitingNames:Record<MoldWaitingStep,[string,string]>={sales:['بانتظار اعتماد مدير المبيعات','Waiting for the sales manager\'s approval'],production:['بانتظار اعتماد الإنتاج','Waiting for production\'s approval'],admin:['بانتظار اعتماد مدير النظام','Waiting for the system administrator\'s approval'],manufacturing:['في التصنيع','In manufacturing'],delivery:['بانتظار التسليم','Waiting for delivery'],done:['تم التسليم','Delivered'],cancelled:['ملغى','Cancelled']};
 export const moldApprovalNames:Record<'sales'|'production'|'admin',[string,string]>={sales:['مدير المبيعات','Sales manager'],production:['الإنتاج','Production'],admin:['مدير النظام','System administrator']};
-/** Any approval given yet: an edit from the CRM undoes them (the contract), so the form says so first. */
-export const moldHasApprovals=(remote:MoldRemote|null)=>!!remote?.approvals&&remote.approvals.required&&!!(remote.approvals.sales||remote.approvals.production||remote.approvals.admin);
+/** A sent request's change refused for good by production (409 request_locked, production_only): production holds the request with
+ *  other data, which its production manager alone edits. The change is not tried again; the request says so (moldProductionOnly). */
+export const moldProductionOnly=(error:Pick<MoldError,'code'|'reason'>|null|undefined)=>error?.code==='request_locked'&&error.reason===MOLD_PRODUCTION_ONLY;
 
-/** Why a call did not go through, in the representative's words; the code alone is stored. file: a design file's call (design-files,
- *  design-file), whose limit is 120 seconds, not 10. */
-export function moldErrorText(code:string,say:(ar:string,en:string)=>string,{file=false}:{file?:boolean}={}){
+/** Why a call did not go through, in the representative's words; the code alone is stored (with production's reason, when it gave
+ *  one: production_only). file: a design file's call (design-files, design-file), whose limit is 120 seconds, not 10. */
+export function moldErrorText(code:string,say:(ar:string,en:string)=>string,{file=false,reason=''}:{file?:boolean;reason?:string}={}){
  const table:Record<string,[string,string]>={
   network:['تعذّر الوصول إلى تطبيق الإنتاج','Production could not be reached'],timeout:file?['لم يرد تطبيق الإنتاج خلال دقيقتين','Production did not answer within 2 minutes']:['لم يرد تطبيق الإنتاج خلال 10 ثوانٍ','Production did not answer within 10 seconds'],
   not_configured:['الربط مع الإنتاج غير مفعَّل','The production link is off'],invalid_url:['إعداد عنوان الربط في الـCRM غير صحيح','The link address in the CRM settings is invalid'],short_secret:['مفتاح الربط في إعدادات الـCRM غير صحيح','The link key in the CRM settings is invalid'],
   invalid_signature:['مفتاح الربط غير مطابق بين البرنامجين','The link key differs between the two applications'],stale_timestamp:['ساعة الخادم غير مضبوطة','The server clock is off'],
   invalid_payload:['رفض الإنتاج بعض البيانات','Production refused some data'],payload_too_large:['الطلب أكبر من المسموح','The request is too large'],request_locked:['بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا','Production has started; no more changes'],
   bad_response:['رد غير متوقع من تطبيق الإنتاج','Unexpected answer from production'],server_error:['خطأ في تطبيق الإنتاج','Production application error'],not_found:['الطلب غير موجود لدى الإنتاج','Production does not know this request'],
+  [MOLD_PRODUCTION_ONLY]:MOLD_PRODUCTION_ONLY_TEXT,
  };
- const found=table[code]||(/^http_5/.test(code)?table.server_error:undefined);
+ const found=(reason===MOLD_PRODUCTION_ONLY?table[reason]:undefined)||table[code]||(/^http_5/.test(code)?table.server_error:undefined);
  return found?say(...found):say('تعذّر الاتصال بتطبيق الإنتاج','Production could not be reached');
 }
 export const moldDesignStateNames:Record<MoldDesignState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],held:['يُرسل بعد وصول الطلب للإنتاج','Sent once production has the request'],

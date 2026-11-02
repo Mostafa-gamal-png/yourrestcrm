@@ -407,10 +407,10 @@ export function moldPendingItem(value) {
 }
 
 /**
- * What an answer means for the CRM (§4): ok (the request object came back), locked (409 request_locked: production started, or the
- * approvals are complete), not_found (404), rejected (400/413: the data must change before a retry helps; reason: why production refused
- * a design file's bytes, details.reason) or retry (anything else: network, timeout, 401, 503 not_configured, 5xx, a reply that is not
- * the contract's).
+ * What an answer means for the CRM (§4): ok (the request object came back), locked (409 request_locked: production started, the
+ * approvals are complete, or, for the requests route, the request exists there with other data: reason production_only), not_found
+ * (404), rejected (400/413: the data must change before a retry helps; reason: why production refused a design file's bytes or place,
+ * details.reason) or retry (anything else: network, timeout, 401, 503 not_configured, 5xx, a reply that is not the contract's).
  * @param {number} httpStatus
  * @param {any} json
  * @param {{manual?: boolean}} [options] manual: the call may be about a request registered in production (the approval route)
@@ -421,12 +421,49 @@ export function readMoldAnswer(httpStatus, json, {manual = false} = {}) {
   const code = typeof error?.code === 'string' ? error.code.slice(0, 40) : '';
   const fields = Array.isArray(error?.fields) ? error.fields.filter(field => typeof field === 'string').map(field => field.slice(0, 60)).slice(0, 30) : [];
   if (httpStatus >= 200 && httpStatus < 300 && !error) return {kind: 'ok', code: '', fields};
-  // An approval answer may be about a request registered in production (crmRequestId null): manual reads that one too.
-  if (httpStatus === 409 && code === 'request_locked') return {kind: 'locked', code, fields, request: moldStatusObject(error.details?.request, {manual})};
-  if (httpStatus === 404 && code === 'not_found') return {kind: 'not_found', code, fields};
   const reason = typeof error?.details?.reason === 'string' && /^[a-z_]{1,40}$/.test(error.details.reason) ? error.details.reason : '';
+  // An approval answer may be about a request registered in production (crmRequestId null): manual reads that one too.
+  if (httpStatus === 409 && code === 'request_locked') return {kind: 'locked', code, fields, request: moldStatusObject(error.details?.request, {manual}), ...(reason ? {reason} : {})};
+  if (httpStatus === 404 && code === 'not_found') return {kind: 'not_found', code, fields};
   if (httpStatus === 400 || httpStatus === 413) return {kind: 'rejected', code: code || 'http_' + httpStatus, fields, ...(reason ? {reason} : {})};
   return {kind: 'retry', code: code || 'http_' + httpStatus, fields};
+}
+
+/** The requests route's 409 request_locked for a request production holds with other data (details.reason, yourrest-products
+ *  2026-11-02): once sent, a request's data is edited by the production manager in the products application only. */
+export const MOLD_PRODUCTION_ONLY = 'production_only';
+/** The reason in the representative's words, Arabic and English. @type {[string, string]} */
+export const MOLD_PRODUCTION_ONLY_TEXT = ['بيانات الطلب يعدّلها مدير الإنتاج فقط', 'The request\'s data is edited by the production manager only'];
+
+/**
+ * Whether a send's answer proves that production did not store what was sent: refused at its door before the request was read (any
+ * 4xx but 409: the signature, the clock, the data, the size, the route), production's own 503 not_configured (the secret is checked
+ * first), or the CRM's own refusal before sending (http 0, rejected). Anything else may have reached production: no answer (network,
+ * timeout), a 5xx or another 503, a 2xx or 3xx that is not the contract's, and of course ok or locked.
+ * @param {{kind: string, code: string, http?: number}} answer
+ */
+export function moldAnswerNotStored(answer) {
+  const http = answer.http || 0;
+  if (answer.kind === 'rejected') return true;
+  if (answer.kind === 'ok' || answer.kind === 'locked') return false;
+  return http >= 400 && http < 500 && http !== 409 || http === 503 && answer.code === 'not_configured';
+}
+
+/**
+ * Whether a request has certainly never reached production, so the CRM alone may still change its data (yourrest-products 2026-11-02:
+ * once sent, the production manager alone edits it there). Sent: production accepted it (accepted, or a status from production), or a
+ * send of it may have arrived: an attempt whose answer is unknown (no answer, or one that did not prove a refusal) or lost (an attempt
+ * started after the last answer recorded: in flight, or its answer never stored). Never sent: never attempted, or every attempt refused
+ * before production stored it, which the send records on its error as notStored (moldAnswerNotStored, for that attempt and every one
+ * before it); an error stored before this rule carries no such mark and counts as sent. MOLD_NEVER_SENT_SQL
+ * (lib/mold-requests-server.ts) says the same in SQL.
+ * @param {{accepted?: unknown, remote?: unknown, lastAttemptAt?: string | null, lastError?: {at?: string, notStored?: boolean} | null}} row
+ */
+export function moldNeverSent(row) {
+  if (row.accepted || row.remote) return false;
+  if (!row.lastAttemptAt) return true;
+  const error = row.lastError;
+  return error?.notStored === true && typeof error.at === 'string' && error.at >= row.lastAttemptAt;
 }
 
 /**
