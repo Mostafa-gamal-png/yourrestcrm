@@ -2,10 +2,15 @@
 // self-signed certificate, the same signature check, clock window, routes, field checks, linking, locking and answers as the PHP of
 // contract version 1, its addendum and the approval chain of 2026-11-01 (three approvals in order: the sales manager, in the CRM
 // through the approval route, then production, then the system administrator; any change from the CRM undoes them). Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
-// production step on a request (start / deliver), a request deleted there (read as cancelled) or unknown to it, historical rows to link.
+// production step on a request (start / deliver), a request deleted there (read as cancelled) or unknown to it, historical rows to link,
+// a design file production attaches itself. The design files of 2026-11-02 (design-files, design-file-delete, design-file) follow the
+// owner's text of the addition: the JSON line and the bytes signed together, the name and extension rules, 25 MiB, 10 files a request,
+// a real PDF, an image of at most 80 000 000 pixels (its header read with the CRM's own moldImageSize), 404 before the request exists,
+// 409 once it is not editable, the safe repeat, and any attach or delete undoing the approvals.
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
+import {moldImageSize} from '../../portable/mold-rules.mjs';
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {once} from 'node:events';
@@ -88,7 +93,27 @@ function statusObject(row) {
   const approvals = {required: !a.legacy, ...Object.fromEntries(APPROVAL_STEPS.map(step => [step, a[step] ? {at: a[step].at, ...(a[step].via === 'crm' ? {by: a[step].by} : {})} : null]))};
   return {crmRequestId: row.crmRequestId, orderNo: row.orderNo, status, editable: status === 'received', moldSerial: row.moldSerial, productionDate: row.productionDate, stages: structuredClone(row.stages),
     stagesDone: STAGES.filter(key => row.stages[key].done).length, stagesTotal: STAGES.length, delivered: row.delivered, deliveryDate: row.deliveryDate,
-    waitingStep: row.waitingStep, waitingSince: row.waitingSince, approvals, updatedAt: row.updatedAt, revision: row.revision};
+    waitingStep: row.waitingStep, waitingSince: row.waitingSince, approvals, updatedAt: row.updatedAt, revision: row.revision, designFiles: (row.designFiles || []).map(designEntry)};
+}
+const DESIGN_EXTENSIONS = {pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', gif: 'image', ...Object.fromEntries('dwg dxf step stp igs iges stl sldprt sldasm slddrw nc1 dstv ai eps cdr psd svg zip rar 7z'.split(' ').map(e => [e, 'other']))};
+const DESIGN_MAX = 25 * 1024 * 1024;
+const IMAGE_TYPES = {png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp'};
+/** The design file entry of designFiles. */
+const designEntry = file => ({fileId: file.fileId, crmFileId: file.crmFileId, name: file.name, kind: file.kind, size: file.bytes.length, source: file.source, uploadedAt: file.uploadedAt});
+/** A design file's name and bytes, as production checks them: [field, reason] of the refusal, or the file's kind and type. */
+function checkDesign(name, bytes) {
+  if (typeof name !== 'string' || [...name].length > 200 || /[\\/<>:"|?*\u0000-\u001F\u007F]/.test(name) || !/^[^.].*\.([A-Za-z0-9]+)$/.test(name.trim()) || name !== name.trim()) return {field: 'name'};
+  const kind = DESIGN_EXTENSIONS[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
+  if (!kind) return {field: 'name'};
+  if (!bytes.length) return {field: 'file', reason: 'empty'};
+  if (kind === 'pdf') return bytes.subarray(0, 5).toString('latin1') === '%PDF-' ? {kind, type: 'application/pdf'} : {field: 'file', reason: 'not_pdf'};
+  if (kind === 'image') {
+    const size = moldImageSize(bytes);
+    if (!size || !size.width || !size.height) return {field: 'file', reason: 'bad_image'};
+    if (size.width * size.height > 80_000_000) return {field: 'file', reason: 'too_many_pixels'};
+    return {kind, type: IMAGE_TYPES[size.format]};
+  }
+  return {kind, type: 'application/octet-stream'};
 }
 const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null, b = p[column] ?? null; return (a === null) === (b === null) && (a === null || String(a) === String(b)); });
 
@@ -99,7 +124,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map()};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501};
   const riyadh = () => new Date(now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00';
   /** Every change: a new revision, and the wait restarts only when the step changes (yr_mreq_state_set). */
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
@@ -202,6 +227,57 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     return {status: 200, body: {received: entries.length, inserted, updated, deactivated, activeCustomers: [...state.customers.values()].filter(entry => entry.active).length}};
   }
 
+  /** A change from the CRM during the approvals undoes the ones given (an edit, an attached or a deleted file). */
+  const undoApprovals = row => { if (!row.approvals.legacy && APPROVAL_STEPS.some(step => row.approvals[step])) row.approvals = noApprovals(); };
+  /** design-files: one JSON line, a newline, the file's bytes. Safe to repeat: the same crmFileId with the same bytes answers 200. */
+  function attachDesign(raw) {
+    const cut = raw.indexOf(0x0a);
+    let meta;
+    try { meta = cut > 0 ? JSON.parse(raw.subarray(0, cut).toString('utf8')) : null; } catch { meta = null; }
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) throw new ApiError('invalid_payload', 400, 'The body must start with one JSON line.', ['body']);
+    const bytes = raw.subarray(cut + 1), bad = [];
+    if (typeof meta.crmRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(meta.crmRequestId)) bad.push('crmRequestId');
+    if (typeof meta.crmFileId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(meta.crmFileId)) bad.push('crmFileId');
+    const checked = checkDesign(meta.name, bytes);
+    if (checked.field === 'name') bad.push('name');
+    if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', bad);
+    if (bytes.length > DESIGN_MAX) throw new ApiError('payload_too_large', 413, 'The file is larger than 25 MB.');
+    if (checked.field === 'file') throw new ApiError('invalid_payload', 400, 'The file was refused.', ['file'], {reason: checked.reason});
+    const row = state.rows.get(meta.crmRequestId);
+    if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const known = [...state.byOrder.values()].flatMap(other => (other.designFiles || []).map(file => [other, file])).find(([, file]) => file.crmFileId === meta.crmFileId);
+    if (known) {
+      if (known[0] !== row || known[1].sha256 !== sha256) throw new ApiError('invalid_payload', 400, 'This crmFileId belongs to another file.', ['crmFileId']);
+      return {status: 200, body: {created: false, file: designEntry(known[1]), request: statusObject(row)}};
+    }
+    if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
+    if ((row.designFiles ||= []).length >= 10) throw new ApiError('invalid_payload', 400, 'A request holds at most 10 files.', ['file'], {reason: 'too_many_files'});
+    const file = {fileId: state.nextFile++, crmFileId: meta.crmFileId, name: meta.name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256, source: 'crm', uploadedAt: riyadh()};
+    row.designFiles.push(file); undoApprovals(row); touch(row);
+    return {status: 201, body: {created: true, file: designEntry(file), request: statusObject(row)}};
+  }
+  /** design-file-delete: a file the CRM sent, by its crmFileId; production's own files are not the CRM's to delete. */
+  function deleteDesign(body) {
+    const bad = [];
+    if (typeof body.crmRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.crmRequestId)) bad.push('crmRequestId');
+    if (typeof body.crmFileId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.crmFileId)) bad.push('crmFileId');
+    if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', bad);
+    const row = state.rows.get(body.crmRequestId), index = row?.designFiles?.findIndex(file => file.crmFileId === body.crmFileId) ?? -1;
+    if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
+    if (index < 0) throw new ApiError('not_found', 404, 'No file of this request has this crmFileId.');
+    if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
+    row.designFiles.splice(index, 1); undoApprovals(row); touch(row);
+    return {status: 200, body: {request: statusObject(row)}};
+  }
+  /** design-file: the file itself, its type and its name (filename* in UTF-8). */
+  function downloadDesign(body) {
+    const fileId = body.fileId;
+    if (!(Number.isInteger(fileId) && fileId > 0) && !(typeof fileId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(fileId))) throw new ApiError('invalid_payload', 400, 'fileId is required.', ['fileId']);
+    for (const row of state.byOrder.values()) for (const file of row.designFiles || []) if (file.fileId === fileId) return {status: 200, file};
+    throw new ApiError('not_found', 404, 'No file has this fileId.');
+  }
+
   /** yr_mreq_crm_pending: every request waiting for the sales manager, the longest waiting first (up to 500); no production data. */
   function pending() {
     const rows = [...state.byOrder.values()].filter(row => waitingStep(row) === 'sales').sort((a, b) => String(a.waitingSince).localeCompare(String(b.waitingSince)) || a.orderNo - b.orderNo).slice(0, 500);
@@ -209,7 +285,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       enteredBy: row.source === 'manual' ? row.createdBy : null, customer: {crmNumber: row.customerNo, name: row.customerName, address: row.customerAddress, city: row.customerCity},
       salesman: {crmMemberId: row.salesmanId, name: row.salesmanName},
       specs: {description: row.description, core: row.core, vibrators: row.vibrators, model: row.model, halfBlock: row.halfBlock, moldWidth: row.moldWidth, gelbaSize: row.gelbaSize, moldNo: row.moldNo, quantity: row.quantity, designUrl: row.designUrl, notes: row.notes},
-      revision: row.revision}))}};
+      revision: row.revision, designFiles: (row.designFiles || []).map(designEntry)}))}};
   }
 
   const server = createServer({key: readFileSync(key), cert: readFileSync(cert)}, async (req, res) => {
@@ -218,24 +294,35 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     for await (const part of req) parts.push(part);
     const raw = Buffer.concat(parts), url = new URL(req.url, 'https://localhost'), route = url.searchParams.get('route') || '';
     const reply = (http, body) => { res.writeHead(http, {'Content-Type': 'application/json; charset=utf-8'}); res.end(JSON.stringify(body)); };
-    const call = {route, at: now(), signed: false, body: raw.toString('utf8'), headers: {...req.headers}};
+    const call = {route, at: now(), signed: false, body: route === 'design-files' ? raw.subarray(0, Math.max(raw.indexOf(0x0a), 0)).toString('utf8') : raw.toString('utf8'), bytes: raw.length, headers: {...req.headers}};
     state.calls.push(call);
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
     try {
       if (req.method !== 'POST') throw new ApiError('method_not_allowed', 405, 'Use POST.');
-      if (!['requests', 'status', 'cancel', 'approval', 'pending', 'customers'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
+      if (!['requests', 'status', 'cancel', 'approval', 'pending', 'customers', 'design-files', 'design-file-delete', 'design-file'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
       if (state.notConfigured) throw new ApiError('not_configured', 503, 'The integration secret is not configured.');
       const timestamp = String(req.headers['x-yr-timestamp'] || ''), signature = String(req.headers['x-yr-signature'] || '');
       if (!/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) throw new ApiError('invalid_signature', 401, 'Missing or malformed signature headers.');
-      if (raw.length > (route === 'customers' ? 2 * 1024 * 1024 : 64 * 1024)) throw new ApiError('payload_too_large', 413, route === 'customers' ? 'The body is larger than 2 MB.' : 'The body is larger than 64 KB.');
+      if (raw.length > (route === 'customers' ? 2 * 1024 * 1024 : route === 'design-files' ? DESIGN_MAX + 64 * 1024 : 64 * 1024)) throw new ApiError('payload_too_large', 413, route === 'customers' ? 'The body is larger than 2 MB.' : route === 'design-files' ? 'The file is larger than 25 MB.' : 'The body is larger than 64 KB.');
       if (Math.abs(Math.floor(now() / 1000) - Number(timestamp)) > 300) throw new ApiError('stale_timestamp', 401, 'The timestamp is more than 300 seconds from the server clock.');
       const expected = createHmac('sha256', state.secret).update(timestamp + '\n' + req.method + '\n' + route + '\n' + createHash('sha256').update(raw).digest('hex')).digest('hex');
       if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) { state.badSignatures++; throw new ApiError('invalid_signature', 401, 'The signature does not match.'); }
       call.signed = true;
+      if (route === 'design-files') {
+        if (!/^application\/octet-stream\b/i.test(String(req.headers['content-type'] || ''))) throw new ApiError('invalid_payload', 400, 'design-files takes application/octet-stream.', ['body']);
+        const result = attachDesign(raw);
+        reply(result.status, result.body); return;
+      }
       let body;
       try { body = JSON.parse(raw.toString('utf8')); } catch { throw new ApiError('invalid_payload', 400, 'The body is not valid JSON.', ['body']); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('invalid_payload', 400, 'The body must be a JSON object.', ['body']);
-      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'customers' ? customers(body) : cancel(body);
+      if (route === 'design-file') {
+        const {file} = downloadDesign(body);
+        res.writeHead(200, {'Content-Type': file.type, 'Content-Length': String(file.bytes.length), 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(file.name)});
+        res.end(file.bytes); return;
+      }
+      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'customers' ? customers(body)
+        : route === 'design-file-delete' ? deleteDesign(body) : cancel(body);
       reply(result.status, result.body);
     } catch (error) {
       if (!(error instanceof ApiError)) { reply(500, {error: {code: 'server_error', message: 'Unexpected server error.'}}); return; }
@@ -283,6 +370,16 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     removeOrder(orderNo, reason = 'حذف من تطبيق الإنتاج') {
       const row = state.byOrder.get(orderNo); if (!row) throw new Error('no such order: ' + orderNo);
       row.deleted = true; row.cancelled = true; row.cancelReason ||= reason; touch(row);
+    },
+    /** A design file production attaches itself (source production, no crmFileId), to a request of the CRM (by its crmRequestId) or
+     *  to one registered in production (by its orderNo). It changes nothing in the approvals here (production manages its own files). */
+    addProductionFile(key, {name = 'تصميم الإنتاج.pdf', bytes = Buffer.from('%PDF-1.4 production drawing')} = {}) {
+      const row = typeof key === 'number' ? state.byOrder.get(key) : state.rows.get(key); if (!row) throw new Error('no such request: ' + key);
+      const checked = checkDesign(name, Buffer.from(bytes));
+      if (!checked.kind) throw new Error('production would refuse this file: ' + (checked.reason || checked.field));
+      const file = {fileId: state.nextFile++, crmFileId: null, name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256: createHash('sha256').update(bytes).digest('hex'), source: 'production', uploadedAt: riyadh()};
+      (row.designFiles ||= []).push(file); touch(row);
+      return designEntry(file);
     },
     /** Production no longer knows a request (only to test the 404 answers: the real application keeps every request). */
     forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) state.byOrder.delete(row.orderNo); },
