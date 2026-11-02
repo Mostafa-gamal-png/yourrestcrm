@@ -3,7 +3,9 @@
 // (only `data.code` changes, the old code stays as an alias, an explicit mapping where another customer holds the number, one audit
 // entry per changed customer with no phone number, versions moved once); a repeated tap returns the saved answer and the same request
 // with other choices is 409; a customer edited after the preview gives 409 and writes nothing; two rows on one customer are refused;
-// the sales manager sees and changes only their regions' customers; a representative 403, anonymous 401, a foreign origin 403.
+// the sales manager sees and changes only their regions' customers and never a number a customer outside them holds (by its code or by
+// a stored mapping): the mapping stays as it was; a representative 403, anonymous 401, a foreign origin 403; a customer the import mapped
+// can still be deleted, its mapping going with it.
 // Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
 import assert from 'node:assert/strict';
 import {zipSync, strToU8} from 'fflate';
@@ -38,6 +40,7 @@ try {
   await customer('twinB', {name: 'مصنع التوأم'});
   await customer('badr', {name: 'مصنع البدر', phone: '0561234567', code: '33'});
   await customer('east', {name: 'مصنع الشرق', phone: '0531234567', region: 'الشرقية'});
+  await customer('east2', {name: 'مصنع الشرق الثاني', code: '81', region: 'الشرقية'});
   const record = async id => { const raw = await app.db.prepare('SELECT data,version FROM crm_records WHERE id=?').bind(id).first(); return {data: JSON.parse(raw.data), version: raw.version}; };
   const ids = ['nour', 'fajr', 'holder', 'twinA', 'twinB', 'badr', 'east'], before = Object.fromEntries(await Promise.all(ids.map(async id => [id, await record(id)])));
   const internal = async id => (await app.db.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').bind(id).first()).number;
@@ -86,7 +89,7 @@ try {
   check([body.rows[0].from, body.rows[0].to], ['OLD-1', '12'], 'before → after');
   check(body.rows[0].phones, ['4567'], 'the file\'s phones as their last 4 digits');
   ok(!/551234567|501234567|1000000000|erp@example/.test(response.text), 'no full phone, ID number or email in the preview');
-  check(body.summary, {rows: 7, auto: 3, same: 1, choose: 1, missing: 1, outOfRegion: 0, invalid: 1, conflicts: 0, pending: 1, changes: 3, codeChanges: 3, mappings: 1}, 'the counts');
+  check(body.summary, {rows: 7, auto: 3, same: 1, choose: 1, missing: 1, outOfRegion: 0, heldOutside: 0, invalid: 1, conflicts: 0, pending: 1, changes: 3, codeChanges: 3, mappings: 1}, 'the counts');
   check([await count('SELECT count(*) AS n FROM crm_audit'), await count('SELECT count(*) AS n FROM crm_customer_code_mappings')], [0, 0], 'a preview writes nothing');
   for (const id of ids) check((await record(id)).version, 1, 'a preview changes no customer: ' + id);
 
@@ -112,7 +115,7 @@ try {
   response = await post(owner, apply);
   check([response.status, response.headers['cache-control']], [200, 'no-store'], 'apply: 200, no-store');
   const result = response.json();
-  check([result.ok, result.updated, result.mappings, result.changed, result.unchanged, result.skipped, result.missing, result.outOfRegion, result.invalid], [true, 4, 1, 4, 1, 0, 1, 0, 1], 'the result counts');
+  check([result.ok, result.updated, result.mappings, result.changed, result.unchanged, result.skipped, result.missing, result.outOfRegion, result.heldOutside, result.invalid], [true, 4, 1, 4, 1, 0, 1, 0, 0, 1], 'the result counts');
   check(result.changes, [{row: 3, customerId: 'nour', from: 'OLD-1', to: '12', mapping: true}, {row: 4, customerId: 'fajr', from: '', to: '44', mapping: false}, {row: 5, customerId: 'twinB', from: '', to: '55', mapping: false}, {row: 6, customerId: 'east', from: '', to: '66', mapping: false}], 'before → after per changed customer');
   const after = Object.fromEntries(await Promise.all(ids.map(async id => [id, await record(id)])));
   check(ids.map(id => after[id].data.code), ['12', '44', '12', 'T-1', '55', '33', '66'], 'the ERP codes: changed for the matched customers, untouched for the others');
@@ -156,19 +159,37 @@ try {
   check([response.status, response.json().error], [409, 'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة'], 'a stale preview: 409 with the message');
   check([(await record('fajr')).data.code, (await record('badr')).data.code, await count('SELECT count(*) AS n FROM crm_audit')], ['44', '33', auditsBefore], 'nothing was written');
 
-  // ---- the sales manager: their regions only
-  const regional = xlsx([row('71', 'مصنع الشرق', '0531234567'), row('72', 'مصنع الفجر')]);
+  // ---- the sales manager: their regions only, and never a number a customer outside them holds
+  // 66 is east's code (Eastern region) and the administrator mapped it to east; 81 is east2's code (Eastern), with no mapping.
+  await app.db.prepare("INSERT INTO crm_customer_code_mappings(code_key,customer_id,version,updated_by,updated_at) VALUES('66','east',1,'owner',?)").bind(now).run();
+  const mappings = async () => (await app.db.prepare('SELECT code_key,customer_id,version,updated_by FROM crm_customer_code_mappings ORDER BY code_key').all()).results.map(r => ({...r}));
+  const mappingsBefore = await mappings();
+  const regional = xlsx([row('71', 'مصنع الشرق', '0531234567'), row('72', 'مصنع الفجر'), row('66', 'مصنع النور'), row('81', 'مصنع البدر')]);
   response = await post(sm, {...preview, base64: regional});
   check(response.status, 200, 'the sales manager previews');
   body = response.json();
-  check(body.rows.map(r => [r.status, r.candidates.length, r.customerId]), [['out-of-region', 0, ''], ['auto', 1, 'fajr']], 'a customer outside their regions reads «outside your regions» with no candidate');
-  ok(!response.text.includes('"east"') && !response.text.includes('YR-C-' + String(await internal('east')).padStart(6, '0')), 'no detail of the out-of-region customer');
-  check(body.summary.outOfRegion, 1, 'counted as out of region');
+  check(body.rows.map(r => [r.status, r.candidates.length, r.customerId, r.mapping, r.sharedWith]), [['out-of-region', 0, '', false, 0], ['auto', 1, 'fajr', false, 0], ['held-outside', 0, '', false, 0], ['held-outside', 0, '', false, 0]], 'a customer outside their regions reads «outside your regions» with no candidate; a number held outside them (mapped there, or another customer\'s code) is left for the administrator, with no detail');
+  ok(!response.text.includes('"east"') && !response.text.includes('east2') && !response.text.includes('YR-C-' + String(await internal('east')).padStart(6, '0')) && !response.text.includes('YR-C-' + String(await internal('east2')).padStart(6, '0')), 'no detail of the out-of-region customers');
+  check([body.summary.outOfRegion, body.summary.heldOutside, body.summary.changes, body.summary.mappings], [1, 2, 1, 0], 'counted, and only the in-region change is planned');
   check((await post(sm, {...preview, base64: regional, choices: [{row: 3, customerId: 'east'}]})).status, 400, 'an out-of-region row takes no choice');
+  check((await post(sm, {...preview, base64: regional, choices: [{row: 5, customerId: 'nour'}]})).status, 400, 'a held-outside row takes no choice either');
   response = await post(sm, {action: 'apply', fileName: 'Customer.xlsx', base64: regional, snapshot: body.snapshot, requestId: crypto.randomUUID()});
-  check([response.status, response.json().updated, response.json().outOfRegion], [200, 1, 1], 'the manager applies');
-  check([(await record('east')).data.code, (await record('fajr')).data.code], ['66', '72'], 'only the in-region customer changed');
+  check([response.status, response.json().updated, response.json().mappings, response.json().outOfRegion, response.json().heldOutside], [200, 1, 0, 1, 2], 'the manager applies');
+  check([(await record('east')).data.code, (await record('fajr')).data.code, (await record('nour')).data.code, (await record('badr')).data.code, (await record('east2')).data.code], ['66', '72', '12', '33', '81'], 'only the in-region customer changed; the numbers held outside the regions changed nobody');
+  check(await mappings(), mappingsBefore, 'the stored mappings are as they were (the administrator\'s 66 → east included)');
+  // The same file by the administrator links them: their invoices are the administrator's to move.
+  const ownerView = (await post(owner, {...preview, base64: regional})).json();
+  check(ownerView.rows.slice(2).map(r => [r.status, r.customerId, r.mapping]), [['auto', 'nour', true], ['auto', 'badr', true]], 'the system administrator sees them as ordinary links');
   check((await post(rep, {action: 'apply', fileName: 'Customer.xlsx', base64: regional, snapshot: body.snapshot, requestId: crypto.randomUUID()})).status, 403, 'a representative cannot apply either');
+
+  // ---- a customer the import mapped can still be deleted; its mapping goes with it, in the delete's audit entry
+  const nourNow = await record('nour');
+  response = await owner('/api/crm', {method: 'POST', body: {action: 'delete', kind: 'customer', id: 'nour', version: nourNow.version}});
+  check(response.status, 200, 'the mapped customer is deleted');
+  check([await count("SELECT count(*) AS n FROM crm_records WHERE id='nour'"), (await mappings()).map(m => m.code_key)], [0, ['66']], 'the customer and its mapping are gone; the other mapping stays');
+  const deletion = JSON.parse((await app.db.prepare("SELECT detail FROM crm_audit WHERE record_id='nour' AND action='حذف'").first()).detail);
+  check([deletion.kind, deletion.codeMappings], ['customer', ['12']], 'the removed mapping is in the delete\'s audit entry');
+  check((await post(owner, {...preview, base64: xlsx([row('12', 'مصنع قديم')])})).json().rows.map(r => [r.status, r.customerId]), [['same', 'holder']], 'the number is the remaining holder\'s again');
 } finally { await app.stop(); }
 
 console.log(JSON.stringify({ok: true, checks, builtRelease: true, syntheticWorkbook: true, ownerFileUsed: false}));

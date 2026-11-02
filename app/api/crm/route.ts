@@ -94,7 +94,9 @@ async function savePost(req:Request){try{
  if(old&&body.version!==old.version)throw new CRMError('تغيّر السجل بواسطة مستخدم آخر. حدّث الصفحة ثم أعد التعديل.',409);
  if(body.action==='delete'){
   if(!old)throw new CRMError('حدد سجلًا');if(!canManage&&old.kind==='customer')throw new CRMError('حذف العملاء متاح للإدارة فقط',403);
-  if(old.kind==='customer'&&await c.db.prepare('SELECT code_key FROM crm_customer_code_mappings WHERE customer_id=? LIMIT 1').bind(old.id).first())throw new CRMError('أزل ربط كود ERP قبل حذف هذا العميل.',409);
+  // An ERP code mapping to a deleted customer gives nobody anything; it goes with the customer, in the same transaction and in its audit
+  // entry (the ERP import writes mappings and no screen removes one). The gate below refuses the delete if another appears meanwhile.
+  const codeMappings=old.kind==='customer'?(await c.db.prepare('SELECT code_key FROM crm_customer_code_mappings WHERE customer_id=? ORDER BY code_key').bind(old.id).all<{code_key:string}>()).results.map(row=>row.code_key):[];
   if(old.kind==='customer'&&c.serviceCases.some(s=>s.customerId===old.id))throw new CRMError('لا يمكن حذف عميل له سجل خدمة عملاء');
   if(old.kind==='customer'&&await c.db.prepare('SELECT id FROM crm_sales WHERE customer_id=? LIMIT 1').bind(old.id).first())throw new CRMError('لا يمكن حذف عميل له مبيعات مسجلة');
   if(old.kind==='customer'&&await c.db.prepare('SELECT id FROM crm_journey_stops WHERE customer_id=? LIMIT 1').bind(old.id).first())throw new CRMError('لا يمكن حذف عميل له سجل خط سير محفوظ',409);
@@ -104,10 +106,14 @@ async function savePost(req:Request){try{
   // deleting, and block source-followup races instead of leaving orphaned follow-ups.
   const receipt=crypto.randomUUID(),gate="EXISTS (SELECT 1 FROM crm_audit WHERE id=?)";
   const result=await c.db.batch([
-   c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM crm_records WHERE id=? AND version=? AND NOT EXISTS (SELECT 1 FROM crm_records child WHERE child.parent_id=crm_records.id OR json_extract(child.data,'$.requestId')=crm_records.id OR json_extract(child.data,'$.sourceId')=crm_records.id) AND NOT EXISTS (SELECT 1 FROM crm_journey_stops journey WHERE journey.customer_id=crm_records.id) AND NOT EXISTS (SELECT 1 FROM crm_customer_code_mappings identity WHERE identity.customer_id=crm_records.id)) AND ${permission.sql}`).bind(receipt,old.id,c.me.name,'حذف',JSON.stringify({kind,deletedBy:c.me.id,record:old}),now,old.id,old.version,...permission.args),
+   c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM crm_records WHERE id=? AND version=? AND NOT EXISTS (SELECT 1 FROM crm_records child WHERE child.parent_id=crm_records.id OR json_extract(child.data,'$.requestId')=crm_records.id OR json_extract(child.data,'$.sourceId')=crm_records.id) AND NOT EXISTS (SELECT 1 FROM crm_journey_stops journey WHERE journey.customer_id=crm_records.id) AND NOT EXISTS (SELECT 1 FROM crm_customer_code_mappings identity WHERE identity.customer_id=crm_records.id AND identity.code_key NOT IN (SELECT value FROM json_each(?)))) AND ${permission.sql}`).bind(receipt,old.id,c.me.name,'حذف',JSON.stringify({kind,deletedBy:c.me.id,record:old,...(codeMappings.length?{codeMappings}:{})}),now,old.id,old.version,JSON.stringify(codeMappings),...permission.args),
    c.db.prepare(`UPDATE crm_records SET data=json_remove(data,'$._visitPlan'),version=version+1,updated_at=? WHERE json_extract(data,'$._visitPlan.visitId')=? AND ${gate}`).bind(now,old.id,receipt),
    c.db.prepare(`UPDATE crm_records SET data=json_remove(data,'$._stageVisitId'),version=version+1,updated_at=? WHERE json_extract(data,'$._stageVisitId')=? AND ${gate}`).bind(now,old.id,receipt),
    ...(old.data.serviceCaseId?[c.db.prepare(`UPDATE crm_records SET version=version+1,updated_at=? WHERE id=(SELECT customer_id FROM crm_service_cases WHERE id=?) AND ${gate}`).bind(now,old.data.serviceCaseId,receipt)]:[]),
+   ...(codeMappings.length?[c.db.prepare(`DELETE FROM crm_customer_code_mappings WHERE customer_id=? AND ${gate}`).bind(old.id,receipt)]:[]),
+   // The products application's customer list (lib/mold-customers-server.ts, MOLD_CUSTOMERS_REMOVED): the deleted customer's Yourrest
+   // number, name, address and city, read before the delete, so the next send carries it as active:false (the products contract).
+   ...(old.kind==='customer'?[c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,'mold-customers','system','mold-customers:removed',json_object('crmNumber',n.number,'name',json_extract(r.data,'$.name'),'address',json_extract(r.data,'$.address'),'city',json_extract(r.data,'$.city')),? FROM crm_records r JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.id=? AND ${gate}`).bind(crypto.randomUUID(),now,old.id,receipt)]:[]),
    c.db.prepare(`DELETE FROM crm_records WHERE id=? AND version=? AND ${gate}`).bind(old.id,old.version,receipt)
   ]);if(result[0].meta.changes!==1)throw new CRMError('تغيّر السجل أو تمت إضافة سجلات مرتبطة. حدّث البيانات وراجعها قبل الحذف.',409);return Response.json({ok:true});
  }

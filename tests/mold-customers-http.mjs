@@ -4,7 +4,8 @@
 // sent shortly after; a deleted one is deactivated by the next full list; nothing is sent when nothing changed; the send is audited
 // with counts and a fingerprint only; without the link settings nothing is sent and the CRM works. Since 2026-11-02: a changed name,
 // address and city go with the next list; production down does not stop a save and the next send carries what changed meanwhile; the
-// same list goes again after 24 hours and not before, across a restart. Synthetic fixtures only.
+// same list goes again after 24 hours and not before, across a restart; a customer deleted through the CRM goes at once as active:false.
+// Synthetic fixtures only.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {createHash} from 'node:crypto';
@@ -68,6 +69,7 @@ try {
   await until(async () => (await audit()).length === 3, 'the third audit entry');
   check((await audit()).at(-1).deactivated, 1, 'and the audit says so');
 
+
   // ---- a customer's name, address and city changed through the CRM: the next list carries them, production updates it
   const edit = async (id, change) => {
     const row = await app.db.prepare('SELECT version,data FROM crm_records WHERE id=?').bind(id).first();
@@ -91,6 +93,19 @@ try {
   const after = JSON.parse(sends()[4].body).customers;
   check([after.find(item => item.crmNumber === n2).name, after.find(item => item.crmNumber === n1).address], ['مصنع جدة الكبير', 'المنطقة الصناعية الثانية'], 'the change made while it was down goes too');
   await until(async () => (await audit()).length === 5, 'the fifth audit entry');
+
+  // ---- a customer deleted through the CRM: sent at once as active:false (the products contract), with its number and name
+  await customer('c5', {name: 'مصنع هيتمسح', city: 'الرياض', address: 'حي النسيم'});
+  const fifth = await number('c5'), sentBefore = sends().length;
+  await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع إضافي', city: 'جدة', region: 'الشرقية', assignedTo: 'rep', branch: 'الرئيسي'}}});
+  await until(() => sends().length === sentBefore + 1, 'the list with the fifth customer');
+  await until(async () => mock.state.customers.get(fifth)?.active === true, 'the fifth customer held by production');
+  const c5 = await app.db.prepare("SELECT version FROM crm_records WHERE id='c5'").first();
+  check((await owner('/api/crm', {method: 'POST', body: {action: 'delete', kind: 'customer', id: 'c5', version: c5.version}})).status, 200, 'the customer is deleted through the CRM');
+  await until(() => sends().slice(sentBefore + 1).some(call => JSON.parse(call.body).customers.some(item => item.crmNumber === fifth && item.active === false)), 'the deleted customer sent as active:false');
+  const gone5 = JSON.parse(sends().findLast(call => JSON.parse(call.body).customers.some(item => item.crmNumber === fifth)).body).customers.find(item => item.crmNumber === fifth);
+  check(gone5, {crmNumber: fifth, name: 'مصنع هيتمسح', address: 'حي النسيم', city: 'Riyadh - الرياض', active: false}, 'sent with its number, name, address and city, active:false');
+  check(mock.state.customers.get(fifth).active, false, 'production holds it as inactive');
 } finally { await app.stop(); }
 
 // ---- the daily full list: a list unchanged for 24 hours goes again; one sent an hour ago does not (the fingerprint read after a restart)

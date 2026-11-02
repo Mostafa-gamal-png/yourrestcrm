@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Loader2, RefreshCw, Upload, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { definiteSubmitRejection, submitJson, SubmitError } from '@/lib/client-submit';
-import { useLanguage } from '@/lib/i18n';
+import { t, useLanguage } from '@/lib/i18n';
 import { customerCodeKey } from '@/lib/customer-identity';
 import type { ErpCustomerCandidate, ErpCustomerOutcome, ErpCustomersSummary } from '@/lib/erp-customers';
 import UploadStatus, {type UploadState} from './upload-status';
@@ -14,7 +14,7 @@ const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'messag
 
 type Preview = { fileName: string; sheet: string; snapshot: string; summary: ErpCustomersSummary; rows: ErpCustomerOutcome[] };
 type Choice = { row: number; customerId: string };
-type Result = { ok: true; updated: number; mappings: number; changed: number; unchanged: number; skipped: number; missing: number; outOfRegion: number; invalid: number; changes: { row: number; customerId: string; from: string; to: string; mapping: boolean }[]; alreadySaved?: boolean };
+type Result = { ok: true; updated: number; mappings: number; changed: number; unchanged: number; skipped: number; missing: number; outOfRegion: number; heldOutside?: number; invalid: number; changes: { row: number; customerId: string; from: string; to: string; mapping: boolean }[]; alreadySaved?: boolean };
 type SelectedFile = { fileName: string; base64: string; size: number };
 type Filter = 'choose' | 'change' | 'same' | 'missing' | 'other' | 'all';
 type Props = { onClose: () => void; onImported: () => void | Promise<void> };
@@ -30,7 +30,32 @@ const serverEnglish: Record<string, string> = {
   'استيراد عملاء ERP متاح لمدير النظام ومدير المبيعات فقط.': 'ERP customer import is for the system administrator and the sales manager only.',
   'أقصى حجم لملف عملاء ERP 1 ميجابايت': 'The ERP customer file must be 1 MB or smaller.',
   'ملف عملاء ERP لا يحتوي صفوف عملاء بعد العناوين': 'The ERP customer file has no customer rows below the header.',
+  'ده مش ملف عملاء ERP: لازم يكون فيه عمود «رقم العميل» ومعاه عمود الاسم أو الجوال. صدّر ملف العملاء من ERP زي ما هو.': 'This is not an ERP customer file: it needs the «رقم العميل» (customer number) column and a name or phone column. Export the customer file from ERP as it is.',
+  'ترميز ملف العملاء غير صحيح': 'The customer file was not sent correctly. Choose it again.',
+  'تكرار في اختيارات العملاء؛ اعمل معاينة جديدة': 'A row was chosen twice. Run a new preview.',
+  'ملف Excel لا يحتوي أوراقًا صالحة': 'The Excel file has no valid sheets.',
+  'ملف XLSX تالف أو بصيغة غير مدعومة': 'The XLSX file is damaged or in an unsupported format.',
+  'ارفع تقريرًا بصيغة XLSX الصحيحة': 'Upload a valid XLSX file.',
+  'ملف Excel تالف؛ نزّل التقرير من ERP مرة أخرى': 'The Excel file is damaged. Export it from ERP again.',
+  'ارفع ملف XLSX عادي بدون وحدات ماكرو': 'Upload a plain XLSX file without macros.',
+  'ارفع تقرير XLSX بدون وحدات ماكرو أو روابط بيانات خارجية': 'Upload an XLSX file without macros or external data links.',
+  'التقرير يحتوي روابط خارجية أو وحدات ماكرو غير مسموحة': 'The file contains external links or macros, which are not allowed.',
+  'ملف Excel مشفر أو يحتوي ضغطًا غير مدعوم': 'The Excel file is encrypted or uses unsupported compression.',
+  'عدد النصوص أو طولها في Excel يتجاوز الحد المسموح': 'The Excel file has too many or too long texts.',
+  'سطور الملف بتطابق نفس العملاء أكتر من اللازم؛ صدّر ملف العملاء من ERP زي ما هو.': 'Too many rows of the file match the same customers. Export the customer file from ERP as it is.',
 };
+/** Server messages that carry a row, a column or a limit. */
+const serverEnglishPatterns: [RegExp, (match: RegExpMatchArray) => string][] = [
+  [/^عمود مكرر في الملف: (.+)$/, match => `A column is repeated in the file: ${match[1]}`],
+  [/^الحد الأقصى للملف (\d+) (?:عميل|صف)$/, match => `The file can have at most ${match[1]} customers.`],
+  [/^اختيار لسطر غير موجود في الملف \((\d+)\)؛ اعمل معاينة جديدة$/, match => `A choice is for row ${match[1]}, which is not in the file. Run a new preview.`],
+  [/^السطر (\d+) لا يقبل اختيار عميل$/, match => `Row ${match[1]} takes no customer choice. Run a new preview.`],
+  [/^العميل المختار للسطر (\d+) مش من المرشحين؛ اعمل معاينة جديدة$/, match => `The customer chosen for row ${match[1]} is not one of its candidates. Run a new preview.`],
+  [/^الرقم (.+) عند عميل خارج مناطقك؛ ربطه لمدير النظام\.$/, match => `The number ${match[1]} is held by a customer outside your regions; only the system administrator can link it.`],
+  [/^السطر (\d+): التقرير يحتوي معادلات؛ صدّره بالقيم فقط$/, match => `Row ${match[1]}: the file contains formulas. Export it with values only.`],
+  [/^السطر (\d+): .+$/, match => `Row ${match[1]}: a cell cannot be read. Export the file from ERP again.`],
+];
+const englishOf = (value: string) => serverEnglish[value] || serverEnglishPatterns.reduce<string | null>((found, [pattern, english]) => { if (found) return found; const match = value.match(pattern); return match ? english(match) : null; }, null) || t(value);
 /** The rows a filter shows. «Needs a choice» keeps the rows the user already chose, so a row does not vanish under their finger. */
 const inFilter = (row: ErpCustomerOutcome, filter: Filter): boolean => filter === 'all' ? true : filter === 'choose' ? row.status === 'choose'
   : filter === 'change' ? row.change && !row.conflict : filter === 'same' ? !!row.customerId && !row.change && !row.conflict
@@ -61,7 +86,7 @@ function readFile(file: File): Promise<string> {
 export default function ErpCustomersImport({ onClose, onImported }: Props) {
   const { language } = useLanguage();
   const say = (ar: string, en: string) => language === 'en' ? en : ar;
-  const present = (value: string) => language === 'en' ? serverEnglish[value] || value : value;
+  const present = (value: string) => language === 'en' ? englishOf(value) : value;
   const [file, setFile] = useState<SelectedFile | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewChoices, setPreviewChoices] = useState<Choice[]>([]);
@@ -100,10 +125,13 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
   const conflicts = preview?.summary.conflicts || 0, changes = preview?.summary.changes || 0;
   const canApply = !!preview && !locked && !dirty && !refreshing && !stale && !conflicts && changes > 0;
   const matchedText = (by: string) => by === 'both' ? say('بالجوال والاسم', 'by phone and name') : by === 'phone' ? say('بالجوال', 'by phone') : by === 'name' ? say('بالاسم', 'by name') : '';
-  const statusText = (row: ErpCustomerOutcome) => row.status === 'invalid' ? (row.issue === 'no-code' ? say('من غير رقم عميل', 'No customer number') : row.issue === 'long-code' ? say('رقم العميل طويل جدًا', 'Customer number too long') : say('رقم العميل متكرر في الملف', 'Customer number repeated in the file'))
+  const issueText = (issue: ErpCustomerOutcome['issue']) => issue === 'no-code' ? say('من غير رقم عميل', 'No customer number') : issue === 'long-code' ? say('رقم العميل طويل جدًا', 'Customer number too long')
+    : issue === 'too-many-phones' ? say('أرقام جوال كتير في السطر', 'Too many phone numbers in the row') : issue === 'too-many-matches' ? say('بيطابق عملاء كتير', 'Matches too many customers') : say('رقم العميل متكرر في الملف', 'Customer number repeated in the file');
+  const statusText = (row: ErpCustomerOutcome) => row.status === 'invalid' ? issueText(row.issue)
     : row.conflict ? say('نفس العميل في أكتر من سطر', 'Same customer on several rows')
     : row.status === 'choose' ? (row.customerId ? say('اخترت العميل', 'Customer chosen') : row.chosen ? say('متساب', 'Left as is') : say('اختار العميل', 'Choose the customer'))
     : row.status === 'missing' ? say('مش موجود في الـCRM', 'Not in the CRM') : row.status === 'out-of-region' ? say('خارج مناطقك', 'Outside your regions')
+    : row.status === 'held-outside' ? say('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')
     : !row.customerId ? say('متساب', 'Left as is') : !row.change ? say('نفس الكود', 'Same code') : codeChanges(row.from, row.to) ? say('هيتغير', 'Will change') : say('هيتربط الرقم بيه', 'Number will be linked');
   const tone = (row: ErpCustomerOutcome) => row.conflict || unresolved(row) ? 'warn' : row.customerId && row.change ? 'good' : 'muted';
   const filterLabel = (value: Filter) => ({ choose: say('يحتاج اختيار', 'Needs a choice'), change: say('هيتغير', 'Will change'), same: say('من غير تغيير', 'No change'), missing: say('مش في الـCRM', 'Not in the CRM'), other: say('باقي السطور', 'Other rows'), all: say('الكل', 'All') })[value];
@@ -230,7 +258,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
             <div className="erp-import-counts" aria-live="polite">
               {([[say('هيتغير', 'Will change'), changes], [say('يحتاج اختيار', 'Needs a choice'), counts.choose], [say('من غير تغيير', 'No change'), counts.same], [say('مش في الـCRM', 'Not in the CRM'), preview.summary.missing]] as const).map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
             </div>
-            <p className="erp-customers-stats"><span>{say('السطور', 'Rows')}: <bdi>{preview.summary.rows}</bdi></span><span>{say('مطابق تلقائي', 'Matched automatically')}: <bdi>{preview.summary.auto}</bdi></span>{!!preview.summary.outOfRegion && <span>{say('خارج مناطقك', 'Outside your regions')}: <bdi>{preview.summary.outOfRegion}</bdi></span>}{!!preview.summary.invalid && <span>{say('سطور غير صالحة', 'Invalid rows')}: <bdi>{preview.summary.invalid}</bdi></span>}{!!preview.summary.mappings && <span>{say('أرقام عند عميل تاني', 'Numbers held by another customer')}: <bdi>{preview.summary.mappings}</bdi></span>}<span>{say('الورقة', 'Sheet')}: <bdi>{preview.sheet}</bdi></span></p>
+            <p className="erp-customers-stats"><span>{say('السطور', 'Rows')}: <bdi>{preview.summary.rows}</bdi></span><span>{say('مطابق تلقائي', 'Matched automatically')}: <bdi>{preview.summary.auto}</bdi></span>{!!preview.summary.outOfRegion && <span>{say('خارج مناطقك', 'Outside your regions')}: <bdi>{preview.summary.outOfRegion}</bdi></span>}{!!preview.summary.heldOutside && <span>{say('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')}: <bdi>{preview.summary.heldOutside}</bdi></span>}{!!preview.summary.invalid && <span>{say('سطور غير صالحة', 'Invalid rows')}: <bdi>{preview.summary.invalid}</bdi></span>}{!!preview.summary.mappings && <span>{say('أرقام عند عميل تاني', 'Numbers held by another customer')}: <bdi>{preview.summary.mappings}</bdi></span>}<span>{say('الورقة', 'Sheet')}: <bdi>{preview.sheet}</bdi></span></p>
             {refreshing && <p className="erp-import-hint" role="status"><Loader2 size={14} className="spin" aria-hidden="true"/> {say('جارٍ تحديث المعاينة باختياراتك…', 'Updating the preview with your choices…')}</p>}
             {!!conflicts && !dirty && <p className="erp-import-notice" role="status">{say('في عميل متختار لأكتر من سطر، والعميل ليه كود ERP واحد. اختار عميل تاني أو «سيبه» في سطر منهم.', 'A customer is chosen for more than one row, and a customer has one ERP code. Choose another customer or «Leave it» on one of them.')}</p>}
             {!!counts.choose && !conflicts && <p className="erp-import-hint">{say(`${counts.choose} سطر محتاج اختيار؛ اللي مش هتختارله هيتساب من غير تغيير.`, `Rows that need a choice: ${counts.choose}. A row left without one stays unchanged.`)}</p>}
@@ -250,6 +278,10 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
                 {row.customerId && !row.conflict && (codeChanges(row.from, row.to) ? <p className="erp-customers-change">{say('قبل ← بعد', 'Before → after')}: {beforeAfter(row.from, row.to)} · {customerLine(target)}</p> : <p className="erp-customers-same">{say('نفس الكود عند', 'Same code at')} {customerLine(target)}</p>)}
                 {row.customerId && row.sharedWith > 0 && !row.conflict && <p className="erp-customers-shared">{say(`الكود ده كمان عند ${row.sharedWith} عميل تاني؛ الفواتير هتتحسب للعميل ده`, `This code is also held by ${row.sharedWith} other customer(s); its invoices will count for this customer`)}</p>}
                 {row.status === 'out-of-region' && <p className="erp-customers-same">{say('العميل المطابق خارج مناطقك؛ مش هيتغير حاجة.', 'The matching customer is outside your regions; nothing changes.')}</p>}
+                {row.status === 'held-outside' && <p className="erp-customers-same">{say('الرقم ده عند عميل خارج مناطقك؛ ربطه لمدير النظام، ومش هيتغير حاجة.', 'This number is held by a customer outside your regions; only the system administrator can link it. Nothing changes.')}</p>}
+                {row.issue === 'too-many-phones' && <p className="erp-customers-same">{say('السطر فيه أكتر من 5 أرقام جوال؛ صحّحه في ERP. مش هيتغير حاجة.', 'The row lists more than 5 phone numbers; correct it in ERP. Nothing changes.')}</p>}
+                {row.issue === 'too-many-matches' && <p className="erp-customers-same">{say('الجوال أو الاسم ده عند أكتر من 20 عميل؛ مش هيتغير حاجة.', 'More than 20 customers have this phone or name; nothing changes.')}</p>}
+                {!!row.codeRow && !row.conflict && <p className="erp-customers-shared">{say(`كود العميل ده الحالي موجود في سطر ${row.codeRow} من الملف؛ أكّد إنه هو أو سيبه.`, `This customer’s current code is row ${row.codeRow} of the file; confirm it is this customer or leave it.`)}</p>}
                 {row.status === 'missing' && <p className="erp-customers-same">{say('مفيش عميل في الـCRM بنفس الجوال أو الاسم؛ مش هيتعمل عميل جديد.', 'No CRM customer has this phone or name; no customer is created.')}</p>}
                 {!!row.candidates.length && <fieldset className="erp-customers-candidates" disabled={locked || stale}>
                   <legend className="sr-only">{say('العميل لسطر ', 'Customer for row ') + row.row}</legend>
@@ -278,7 +310,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
         {stale && !pending && <p className="erp-import-notice" role="status">{say('اعمل معاينة جديدة؛ اختياراتك هتبدأ من الأول على البيانات الجديدة.', 'Run a new preview; your choices start over on the new data.')}</p>}
         {result && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تحديث الأكواد', 'Codes updated')}</strong>
           <p>{say('اتغير كودها', 'Codes changed')}: {result.updated} · {say('عملاء اتحدثوا', 'Customers updated')}: {result.changed}{!!result.mappings && <> · {say('أرقام اتربطت بعميلها', 'Numbers linked to their customer')}: {result.mappings}</>}</p>
-          <small>{say('من غير تغيير', 'No change')}: {result.unchanged} · {say('متساب', 'Left')}: {result.skipped} · {say('مش في الـCRM', 'Not in the CRM')}: {result.missing}{!!result.outOfRegion && <> · {say('خارج مناطقك', 'Outside your regions')}: {result.outOfRegion}</>}{!!result.invalid && <> · {say('غير صالحة', 'Invalid')}: {result.invalid}</>}</small></div></div>}
+          <small>{say('من غير تغيير', 'No change')}: {result.unchanged} · {say('متساب', 'Left')}: {result.skipped} · {say('مش في الـCRM', 'Not in the CRM')}: {result.missing}{!!result.outOfRegion && <> · {say('خارج مناطقك', 'Outside your regions')}: {result.outOfRegion}</>}{!!result.heldOutside && <> · {say('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')}: {result.heldOutside}</>}{!!result.invalid && <> · {say('غير صالحة', 'Invalid')}: {result.invalid}</>}</small></div></div>}
         <div className="erp-import-actions"><button type="button" className="btn subtle" disabled={!!busy || pending} onClick={close}>{result ? say('تم', 'Done') : say('إغلاق', 'Close')}</button>
           {result ? refreshFailed && <button type="button" className="btn primary" disabled={!!busy} onClick={refreshAfterApply}>{busy === 'refresh' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('تحديث العرض بس', 'Refresh view only')}</button> :
             stale && !pending ? <button type="button" className="btn primary" disabled={!file || !!busy || refreshing} onClick={() => void runPreview(file, true)}>{busy === 'preview' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('معاينة جديدة', 'New preview')}</button> :

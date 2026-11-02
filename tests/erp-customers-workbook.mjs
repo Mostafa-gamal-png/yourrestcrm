@@ -1,4 +1,5 @@
-// The owner's real ERP customer export (gate erp-workbook), read by the same code as the server: the generic sheet reader of
+// The owner's real ERP customer export (gate erp-customers-workbook: `ERP_CUSTOMERS_WORKBOOK=/path/Customer.xlsx npm run check --
+// --gate erp-customers-workbook`), read by the same code as the server: the generic sheet reader of
 // lib/erp-sales.ts and the header and row reading of lib/erp-customers.ts. The file is given by ERP_CUSTOMERS_WORKBOOK and is never
 // copied into the repository. This prints counts and header names only: never a name, phone, email or ID number from the file.
 import assert from 'node:assert/strict';
@@ -45,6 +46,7 @@ eq(parsed.rows.every(row=>row.code&&row.issue!=='no-code'),true,'every row has a
 eq(parsed.rows.every((row,index)=>row.row===index+3),true,'rows are the sheet rows 3 to 183');
 const duplicates=parsed.rows.filter(row=>row.issue==='duplicate-code').length,long=parsed.rows.filter(row=>row.issue==='long-code').length;
 eq(long,0,'no over-long number');
+eq(parsed.rows.filter(row=>row.issue==='too-many-phones').length,0,'no row lists too many phone numbers or an over-long phone cell');
 const counts={
  sheets:sheets.length,rows:parsed.rows.length,duplicateNumberRows:duplicates,
  numbersAllDigits:parsed.rows.filter(row=>/^\d+$/.test(row.code)).length,

@@ -196,30 +196,34 @@ export default function CRM() {
         if(cached){const d=await augmentOfflineSnapshot(cached);if(generation!==snapshotGeneration.current||isOfflineLogoutPending())return null;applySnapshot(d);return d;}
         return null;
     },[applySnapshot,clearSession]);
-    const load = useCallback(async () => {
+    /** True only when this call put the server's answer on screen (not the device copy, not a failure, not a later call's answer). */
+    const loadFromServer = useCallback(async ():Promise<boolean> => {
         const generation=++loadGeneration.current,sessionGeneration=offlineSessionGeneration();setError('');
         try{
-            if(isOfflineLogoutPending()){await finishPendingOfflineLogout().catch(()=>{});clearSession();setError(getLanguage()==='ar'?'سجّل الدخول لفتح بياناتك.':'Sign in to open your data.');return;}
-            if(navigator.onLine===false){const cached=await refreshLocal();if(!cached)throw new Error(getLanguage()==='ar'?'افتح التطبيق وسجّل الدخول مرة بالإنترنت أولًا لتجهيز بياناتك للعمل بدون شبكة.':'Open the app and sign in online once to prepare offline data.');return;}
+            if(isOfflineLogoutPending()){await finishPendingOfflineLogout().catch(()=>{});clearSession();setError(getLanguage()==='ar'?'سجّل الدخول لفتح بياناتك.':'Sign in to open your data.');return false;}
+            if(navigator.onLine===false){const cached=await refreshLocal();if(!cached)throw new Error(getLanguage()==='ar'?'افتح التطبيق وسجّل الدخول مرة بالإنترنت أولًا لتجهيز بياناتك للعمل بدون شبكة.':'Open the app and sign in online once to prepare offline data.');return false;}
             const stale=()=>generation!==loadGeneration.current||sessionGeneration!==offlineSessionGeneration()||isOfflineLogoutPending();
             // Opening the app: this account's copy on the device is on screen at once, and the server's answer replaces it when it comes.
             const first=!snapshotRef.current;
-            if(first){const cached=await refreshLocal().catch(()=>null);if(generation!==loadGeneration.current)return;if(cached){setLoading(false);setRefreshing(true);}}
+            if(first){const cached=await refreshLocal().catch(()=>null);if(generation!==loadGeneration.current)return false;if(cached){setLoading(false);setRefreshing(true);}}
             const d=await request();
-            if(stale())return;
-            const augmented=await augmentOfflineSnapshot(d);if(stale())return;applySnapshot(augmented);setLoading(false);setRefreshing(false);
+            if(stale())return false;
+            const augmented=await augmentOfflineSnapshot(d);if(stale())return false;applySnapshot(augmented);setLoading(false);setRefreshing(false);
             // Saved for working offline after it is on screen, not before.
             try{await saveOfflineSnapshot(d,sessionGeneration);setOfflineStorageError('');}catch{setOfflineStorageError(getLanguage()==='ar'?'تعذر تجهيز الحفظ على الجهاز. تحقق من مساحة التخزين قبل العمل بدون شبكة.':'Device storage is unavailable. Check storage before working offline.');}
             // The first save of a session unlocks the device's queue: what waited in it is sent now, not at the next half-minute.
             if(first&&!stale())void flushOutbox(d.me).catch(()=>{});
+            return true;
         }catch(e){
-            if(generation!==loadGeneration.current)return;
+            if(generation!==loadGeneration.current)return false;
             const failure=crmFailure(e);
-            if(failure.status===401||failure.status===403){await lockOfflineSession();clearSession();setError(failure.message||'');return;}
+            if(failure.status===401||failure.status===403){await lockOfflineSession();clearSession();setError(failure.message||'');return false;}
             const cached=await refreshLocal().catch(()=>null);
             if(!cached){setError(failure.message||'');setAuth(failure.status===401);}
+            return false;
         }finally{if(generation===loadGeneration.current){setLoading(false);setRefreshing(false);}}
     },[applySnapshot,clearSession,refreshLocal]);
+    const load = useCallback(async () => {await loadFromServer();},[loadFromServer]);
     useEffect(()=>subscribeOffline(()=>{const generation=++snapshotGeneration.current;void (async()=>{
         const cached=await loadOfflineSnapshot().catch(()=>null);
         if(generation!==snapshotGeneration.current)return;
@@ -504,7 +508,7 @@ export default function CRM() {
  {view === 'team' && <><div className="info-line"><ShieldCheck size={19}/>{t("المنطقة تحدد نطاق البيانات أولًا، ثم يُطبق الدور والإسناد: المندوب يرى عملاءه داخلها، والمشرف فريقه، والمدير بيانات المنطقة المسموح بها.")}</div><section className="panel"><TeamTrackingData enabled={canSeeTeamTracking(me)}><Table><TableHeader><TableRow>{t(['المستخدم', 'الدور', 'منطقة البيانات المسموح بها', 'الفرع', 'المشرف', 'الحالة'].map((s, i) => <TableHead key={i}>{t(s)}</TableHead>))}{canSeeTeamTracking(me)&&<TableHead>{say('التتبع','Tracking')}</TableHead>}<TableHead/></TableRow></TableHeader><TableBody>{t(members.map(m => <TableRow key={m.id}><TableCell><strong>{m.name}</strong><small dir="ltr">{m.email}</small></TableCell><TableCell>{t(roles[m.role])}<RoleWarning member={m} members={members}/></TableCell><TableCell>{regionLabels(regionScope(m)).map(label=>t(label)).join('، ')}</TableCell><TableCell>{t(m.branch)}</TableCell><TableCell>{t(member(m.supervisorId || ''))}</TableCell><TableCell><span className={'badge ' + (m.active ? 'accepted' : 'lost')}>{m.active ? t('نشط') : t('معطل')}</span></TableCell>{canSeeTeamTracking(me)&&<TableCell><TeamTrackingCell member={m}/></TableCell>}<TableCell>{me?.role === 'admin' && regionScope(me)==='all' && <button className="icon-button" title={t("تعديل المستخدم")} onClick={() => { setFormError(''); setFormDirty(false); setForm({ kind: 'team', data: { ...m, regionScope: regionScope(m), supervisorId: m.supervisorId || 'none' }, parentId: '', memberSnapshot: m.editToken }); }}><Pencil size={16}/></button>}</TableCell></TableRow>))}</TableBody></Table></TeamTrackingData></section></>}
  </>}
  {view!=='map'&&<footer className="page-footer"><span>YOUR REST <b>INDUSTRIES</b></span><span>{t("علاقات أقوى. متابعة أدق.")}</span></footer>}</div></main>{compactNavigation&&me&&<MobileNavigation me={me} view={view} queue={serviceQueue} extra={support.badge+(complaintsPage?0:complaints.badge)} complaints={complaintsPage?complaints.badge:0} onNavigate={go} accountOpen={mobileAccountOpen} onAccountOpenChange={setMobileAccountOpen} blocked={!!(erpCustomersVisible||form||visitEditor||followupEditor||detailId||deleting||printQuote||serviceDetailId)}/>}</SidebarProvider>
- {erpCustomersVisible&&me&&<ErpCustomersImport key={[me.id,me.role,me.regionScope,me.authVersion].join(':')} onClose={()=>setErpCustomersOpen(false)} onImported={load}/>}
+ {erpCustomersVisible&&me&&<ErpCustomersImport key={[me.id,me.role,me.regionScope,me.authVersion].join(':')} onClose={()=>setErpCustomersOpen(false)} onImported={async()=>{if(!await loadFromServer())throw new Error('The customers were not reloaded from the server');}}/>}
  <Dialog open={!!form} onOpenChange={o => { if (!o) closeMasterForm(); }}><DialogContent className="crm-dialog crm-master-dialog" dir={direction()}><DialogTitle>{form?.row || form?.kind==='team'&&form.data.id ? t('تعديل') : t('إضافة')} {t(kindNames[form?.kind || ''])}</DialogTitle><DialogDescription>{form?.kind === 'opportunity' ? t('حدد القالب المطلوب وخطوتك القادمة مع المصنع.') : form?.kind === 'quote' ? t('راجع البنود والضريبة والشروط قبل إرسال العرض.') : t('الحقول المميزة بـ * مطلوبة.')}</DialogDescription>{form && <form onSubmit={save} aria-busy={busy} onInvalidCapture={e=>{let parent=(e.target as HTMLElement).parentElement;while(parent){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}}}><fieldset disabled={busy} className="form-grid" style={{border:0,margin:0,padding:0,minWidth:0}}>
  {form.kind === 'customer' && <>
  {t(field('name', 'اسم المصنع', 'text', true))}
