@@ -33,7 +33,7 @@ try {
   const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
-  const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import'];
+  const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import'];
   for (const url of posts) {
     check((await anonymous(url, {method: 'POST', body: {}})).status, 401, 'anonymous empty POST ' + url);
     check((await anonymous(url, {method: 'POST', body: {createKey: crypto.randomUUID(), requestId: crypto.randomUUID(), action: 'save', kind: 'customer', sourceHash: 'a'.repeat(64), rows: []}})).status, 401, 'anonymous shaped POST ' + url);
@@ -76,6 +76,8 @@ try {
     '/api/device-status': expect(reps, 400, 403),
     '/api/kpi-evidence': expect(['owner', 'mgr', 'mgrw'], 400, 403),
     '/api/customer-identities': expect(['owner'], 400, 403),
+    // «استيراد من ERP»: the administrator and the sales managers (each limited to their regions' customers by the route itself).
+    '/api/erp-customers': expect(['owner', 'mgr', 'mgrw'], 400, 403),
     '/api/sales/import': expect(management, 400, 403)
   };
   for (const [url, byRole] of Object.entries(postMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url, {method: 'POST', body: {}})).status, byRole[id], `POST ${url} as ${id}`);
