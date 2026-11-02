@@ -2,7 +2,8 @@
 // what each file says beside its state: a deletion production refused (the file stays, and why), the last failure of a send (its limit is
 // 2 minutes) and of a deletion (10 seconds), production not finding the request (404: not sent again by itself, use Resend), tries
 // stopped after 24 hours (use Resend), a cancelled request's file (never «sent once production has the request»); a file production
-// refused stays refused and takes no place when the production link is off (the counter and the picker); and the English wording.
+// refused stays refused and takes no place when the production link is off (the counter and the picker); and the English wording; the
+// device's own check on production's PR #27 inputs; when a request approved from the sales manager's list waits for them again.
 // Render contracts only: no browser, no network, no production data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -39,7 +40,7 @@ function load(filename) {
   };
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, filename), 'utf8'), {compilerOptions: compiler, fileName: filename}).outputText,
     // No server here: every request fails as an unreachable network would.
-    {exports, require: resolve, console, Date, Intl, crypto, URL, Promise, setTimeout, clearTimeout, FormData, File, Blob, AbortController, fetch: async () => { throw new TypeError('offline'); }, window: undefined, navigator: undefined}, {filename});
+    {exports, require: resolve, console, Date, Intl, crypto, URL, Promise, setTimeout, clearTimeout, FormData, File, Blob, AbortController, Uint8Array, fetch: async () => { throw new TypeError('offline'); }, window: undefined, navigator: undefined}, {filename});
   return exports;
 }
 const ui = load('app/mold-design-files.tsx'), lib = load('lib/mold-requests.ts');
@@ -162,4 +163,30 @@ function render(row, files, linkReady = true) {
   eq([ui.pendingFilesApprovedNote(true, say), ui.pendingFilesApprovedNote(false, (ar, en) => en)], ['بعد اعتمادك لا تُفتح الملفات من هنا؛ افتح الطلب لعرضها.', 'Once you approve, the files no longer open from here.'], 'the note: where the files are, in both languages');
 }
 
-console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, place refusals, English; the pending files with and without links', productionDataUsed: false}));
+// ---- 8. The device's own check (checkDesignFile, what the picker runs before anything is uploaded) on production's PR #27 inputs: it
+//  reads enough of a PDF for a header after other bytes, takes a reserved name and an image whose extension is not its type
+{
+  // A real 1x1 PNG.
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+  const pdfAfter = (offset, mark = '%PDF-1.7') => Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.alloc(offset - 3, 0x20), Buffer.from(mark + '\n% leading bytes\n%%EOF\n')]);
+  const device = async (name, bytes) => (await ui.checkDesignFile(new File([bytes], name))).refusal;
+  eq(await Promise.all([device('CON.pdf', pdfAfter(600)), device('رسم.pdf', pdfAfter(1016, '%PDF-1.4')), device('COM1.jpg', pixel), device('aux.webp', pixel), device('PRN.dwg', Buffer.from('AC1027'))]), ['', '', '', '', ''],
+    'on the device: a PDF whose %PDF-1.7 starts at byte 600 named CON.pdf, one ending at byte 1024, a PNG named .jpg and .webp, a reserved drawing name: none refused');
+  eq(await Promise.all([device('late.pdf', pdfAfter(1017, '%PDF-1.4')), device('bare.pdf', pdfAfter(10, '%PDF-')), device('x.jpg', Buffer.from('%PDF-1.4'))]), ['not_pdf', 'not_pdf', 'bad_image'],
+    'and refused as production refuses: a marker beyond the first 1024 bytes, %PDF- without its version, a "photo" that is no image');
+  const big = Buffer.alloc(2 * 1024 * 1024, 0x20); pdfAfter(900).copy(big);
+  eq(await device('كبير.pdf', big), '', 'a large PDF (2 MiB) with its header after 900 bytes: read from its first bytes, not refused');
+}
+
+// ---- 9. A request approved from the list that comes back to the sales manager leaves «اعتمدتها الآن» (moldPendingAgain): only when
+//  production lists it waiting since a later time than the copy approved, never for the same wait listed again
+{
+  const copy = {orderNo: 92, waitingSince: '2026-11-02T10:00:00+03:00'};
+  eq([lib.moldPendingAgain(copy, []), lib.moldPendingAgain(copy, [{orderNo: 92, waitingSince: '2026-11-02T10:00:00+03:00'}]), lib.moldPendingAgain(copy, [{orderNo: 92, waitingSince: '2026-11-02T09:59:59+03:00'}])], [false, false, false],
+    'not listed, or listed with the same wait (a list kept a minute) or an older one: still approved here');
+  eq([lib.moldPendingAgain(copy, [{orderNo: 93, waitingSince: '2026-11-02T11:00:00+03:00'}, {orderNo: 92, waitingSince: '2026-11-02T10:00:01+03:00'}]), lib.moldPendingAgain(copy, [{orderNo: 93, waitingSince: '2026-11-02T11:00:00+03:00'}])], [true, false],
+    'waiting again since later: back in the list; another order\'s new wait changes nothing');
+  eq([lib.moldPendingAgain({orderNo: 92, waitingSince: null}, [{orderNo: 92, waitingSince: '2026-11-02T10:00:00+03:00'}]), lib.moldPendingAgain(copy, [{orderNo: 92, waitingSince: null}])], [true, false], 'a copy with no time is behind any wait production dates; a wait without a date is not newer');
+}
+
+console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, place refusals, English; the pending files with and without links; the device check on PR #27 inputs; a request approved from the list waiting again', productionDataUsed: false}));
