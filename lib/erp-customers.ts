@@ -1,0 +1,119 @@
+import type {Member,Row} from './crm';
+import {customerCodeKey,customerCodeCandidates,type CustomerCodeMapping} from './customer-identity';
+import {memberCanAccessRegion} from './regions';
+
+/** The ERP customer export (sheet "Customer": a title row, this header row, then one customer per row). Only the number is written
+ * to the CRM, as the customer's ERP code; the names and phones only find the customer, and nothing else in the CRM changes. */
+export const erpCustomerColumns={code:'رقم العميل',idNumber:'رقم الهوية',name:'الاسم بالعربي',nameEn:'الاسم بالانجليزي',mobile:'رقم الجوال',phone:'رقم الهاتف',email:'البريد الالكتروني',address:'العنوان',date:'التاريخ'} as const;
+export const ERP_CUSTOMERS_MAX_ROWS=20000;
+/** Expected file or choice problem, safe to show as an HTTP 400 message. */
+export class ErpCustomersError extends Error{constructor(message:string){super(message);this.name='ErpCustomersError';}}
+const fail=(message:string):never=>{throw new ErpCustomersError(message);};
+
+const asciiDigits=(value:string)=>value.replace(/[٠-٩۰-۹]/g,digit=>String(digit.charCodeAt(0)-(digit>='۰'?0x6f0:0x660)));
+/** A sheet cell as text: invisible direction marks and repeated spaces never distinguish two values. */
+export const cleanCell=(value:unknown)=>String(value??'').normalize('NFC').replace(/[­​-‏‪-‮⁦-⁩﻿]/g,'').replace(/\s+/g,' ').trim();
+const headerKey=(value:unknown)=>cleanCell(value).normalize('NFKC').replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').toLowerCase();
+/** Saudi national digits of each number in a cell: 5XXXXXXXX (mobile) or 1XXXXXXXX (landline), after Arabic/Persian digits become
+ * plain ones, everything but digits is dropped and a leading 00966 / 966 and then 0 is stripped. Anything else is no number.
+ * Numbers a cell lists with / , ; ، or on separate lines are read one by one; spaces, dashes and brackets inside one number are not separators. */
+export function phoneKeys(value:unknown):string[]{
+ const keys=new Set<string>();
+ for(const part of asciiDigits(String(value??'')).split(/[/,;،؛|\n]+/)){let n=part.replace(/\D/g,'');n=n.startsWith('00966')?n.slice(5):n.startsWith('966')?n.slice(3):n;if(n.startsWith('0'))n=n.slice(1);if(/^[15]\d{8}$/.test(n))keys.add(n);}
+ return [...keys];
+}
+/** A loose Arabic spelling of a full name: harakat and tatweel dropped, أإآٱ→ا ى→ي ة→ه ؤ→و ئ→ي, Latin in lower case, punctuation as
+ * spaces. Two names match only when they are equal after this; no word is dropped and nothing partial or similar counts. */
+export function nameKey(value:unknown):string{
+ return asciiDigits(String(value??'').normalize('NFC')).replace(/\p{Cf}/gu,'').replace(/[ؐ-ًؚ-ٰٟۖ-ۭـ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').replace(/ؤ/g,'و').replace(/ئ/g,'ي').toLowerCase().replace(/[\p{P}\p{S}]/gu,' ').replace(/\s+/g,' ').trim();
+}
+const tail=(key:string)=>key.slice(-4);
+
+export type SheetLike={name:string;rows:{rowNumber:number;cells:string[]}[]};
+export type ErpCustomerRow={row:number;code:string;codeKey:string;name:string;nameEn:string;phones:string[];issue:''|'no-code'|'long-code'|'duplicate-code'};
+type Columns={code:number;name:number;nameEn:number;mobile:number;phone:number};
+function headerColumns(cells:string[]):Columns|null{
+ const keys=cells.map(headerKey),index=(label:string)=>{const key=headerKey(label),at=keys.indexOf(key);if(at>=0&&keys.lastIndexOf(key)!==at)fail(`عمود مكرر في الملف: ${label}`);return at;};
+ const code=index(erpCustomerColumns.code);if(code<0)return null;
+ const columns={code,name:index(erpCustomerColumns.name),nameEn:index(erpCustomerColumns.nameEn),mobile:index(erpCustomerColumns.mobile),phone:index(erpCustomerColumns.phone)};
+ return columns.name<0&&columns.nameEn<0&&columns.mobile<0&&columns.phone<0?null:columns;
+}
+/** The first sheet whose header (within its first 25 rows) has «رقم العميل» and a name or phone column; its rows below the header. */
+export function erpCustomerRows(sheets:SheetLike[]):{sheet:string;rows:ErpCustomerRow[]}{
+ for(const sheet of sheets){
+  const at=sheet.rows.slice(0,25).findIndex(row=>headerColumns(row.cells));if(at<0)continue;
+  const columns=headerColumns(sheet.rows[at].cells)!,codeHeader=headerKey(erpCustomerColumns.code),rows:ErpCustomerRow[]=[];
+  for(const source of sheet.rows.slice(at+1)){
+   const cell=(index:number)=>index<0?'':cleanCell(source.cells[index]);
+   if(source.cells.every(value=>!cleanCell(value))||headerKey(source.cells[columns.code])===codeHeader)continue;
+   const code=cell(columns.code);
+   rows.push({row:source.rowNumber,code,codeKey:customerCodeKey(code),name:cell(columns.name).slice(0,300),nameEn:cell(columns.nameEn).slice(0,300),phones:[...new Set([...phoneKeys(cell(columns.mobile)),...phoneKeys(cell(columns.phone))])],issue:!code?'no-code':code.length>100?'long-code':''});
+   if(rows.length>ERP_CUSTOMERS_MAX_ROWS)fail(`الحد الأقصى للملف ${ERP_CUSTOMERS_MAX_ROWS} عميل`);
+  }
+  const counts=new Map<string,number>();for(const row of rows)if(!row.issue)counts.set(row.codeKey,(counts.get(row.codeKey)||0)+1);
+  for(const row of rows)if(!row.issue&&(counts.get(row.codeKey)||0)>1)row.issue='duplicate-code';
+  if(!rows.length)fail('ملف عملاء ERP لا يحتوي صفوف عملاء بعد العناوين');
+  return {sheet:sheet.name,rows};
+ }
+ return fail(`ده مش ملف عملاء ERP: لازم يكون فيه عمود «${erpCustomerColumns.code}» ومعاه عمود الاسم أو الجوال. صدّر ملف العملاء من ERP زي ما هو.`);
+}
+
+export type MatchedBy='phone'|'name'|'both';
+export type ErpCustomerCandidate={id:string;name:string;internalCode:string;code:string;region:string;phones:string[];matchedBy:MatchedBy};
+export type ErpCustomerStatus='auto'|'same'|'choose'|'missing'|'out-of-region'|'invalid';
+/** One ERP row. `customerId` is the customer it ends on ('' when none); `from` → `to` its ERP code before and after; `sharedWith` how many
+ * other customers hold that number (current code or kept alias), in which case `mapping` says an explicit mapping is written. */
+export type ErpCustomerOutcome={row:number;code:string;name:string;phones:string[];status:ErpCustomerStatus;issue:ErpCustomerRow['issue'];matchedBy:MatchedBy|'';candidates:ErpCustomerCandidate[];customerId:string;chosen:boolean;conflict:boolean;from:string;to:string;change:boolean;mapping:boolean;sharedWith:number};
+export type ErpCustomerPlan={row:number;customerId:string;version:number;codeKey:string;from:string;to:string;codeChange:boolean;mapping:boolean;mappingVersion:number};
+export type ErpCustomersSummary={rows:number;auto:number;same:number;choose:number;missing:number;outOfRegion:number;invalid:number;conflicts:number;pending:number;changes:number;codeChanges:number;mappings:number};
+
+const push=(map:Map<string,Row[]>,key:string,row:Row)=>{const list=map.get(key)||[];if(!list.includes(row))list.push(row);map.set(key,list);};
+/** Matches every ERP row to CRM customers by phone or full name, applies the user's choices (row → customer id, '' to leave the row),
+ * and plans the code changes. Pure: `customers` are the CRM customers (all of them, for holders and hidden candidates), `me` limits
+ * which customers may be shown or changed, `mappings` are the stored explicit code mappings. Candidates outside `me`'s regions are never
+ * returned; a row whose candidates are all outside reads `out-of-region`. Two rows ending on one customer are both `choose` and
+ * `conflict`, and `summary.conflicts` must be 0 before the plan is applied. `involved` (every candidate, visible or not, with its version)
+ * is what the preview's snapshot covers; it is for the server only. */
+export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:{me:Member;mappings?:CustomerCodeMapping[];choices?:Map<number,string>}){
+ const all=customers.filter(row=>row.kind==='customer'),byPhone=new Map<string,Row[]>(),byName=new Map<string,Row[]>(),holders=customerCodeCandidates(all);
+ for(const customer of all){for(const key of new Set([...phoneKeys(customer.data.phone),...phoneKeys(customer.data.phone2)]))push(byPhone,key,customer);const key=nameKey(customer.data.name);if(key)push(byName,key,customer);}
+ const mappings=new Map((options.mappings||[]).map(mapping=>[mapping.codeKey,mapping])),choices=options.choices||new Map<number,string>(),byId=new Map(all.map(row=>[row.id,row]));
+ const inScope=(customer:Row)=>memberCanAccessRegion(options.me,customer.data.region),involved=new Map<string,number>();
+ const view=(customer:Row,matchedBy:MatchedBy):ErpCustomerCandidate=>({id:customer.id,name:String(customer.data.name||''),internalCode:String(customer.data.internalCode||''),code:String(customer.data.code||''),region:String(customer.data.region||''),phones:[...new Set([...phoneKeys(customer.data.phone),...phoneKeys(customer.data.phone2)])].map(tail),matchedBy});
+ const known=new Set(rows.map(row=>row.row));
+ for(const [row] of choices)if(!known.has(row))fail(`اختيار لسطر غير موجود في الملف (${row})؛ اعمل معاينة جديدة`);
+ const outcomes:ErpCustomerOutcome[]=rows.map(row=>{
+  const base:ErpCustomerOutcome={row:row.row,code:row.code,name:row.name||row.nameEn,phones:row.phones.map(tail),status:'invalid',issue:row.issue,matchedBy:'',candidates:[],customerId:'',chosen:false,conflict:false,from:'',to:row.code,change:false,mapping:false,sharedWith:0};
+  if(row.issue){if(choices.has(row.row))fail(`السطر ${row.row} لا يقبل اختيار عميل`);return base;}
+  const byPhoneHits=new Set(row.phones.flatMap(key=>byPhone.get(key)||[])),byNameHits=new Set([...new Set([nameKey(row.name),nameKey(row.nameEn)])].filter(Boolean).flatMap(key=>byName.get(key)||[]));
+  const found=[...new Set([...byPhoneHits,...byNameHits])],visible=found.filter(inScope);
+  for(const customer of found)involved.set(customer.id,customer.version);
+  const matched=(customer:Row):MatchedBy=>byPhoneHits.has(customer)&&byNameHits.has(customer)?'both':byPhoneHits.has(customer)?'phone':'name';
+  base.candidates=visible.map(customer=>view(customer,matched(customer)));
+  if(!found.length)base.status='missing';
+  else if(!visible.length)base.status='out-of-region';
+  else if(found.length===1){base.status=customerCodeKey(found[0].data.code)===row.codeKey?'same':'auto';base.customerId=found[0].id;base.matchedBy=matched(found[0]);}
+  else base.status='choose';
+  if(choices.has(row.row)){
+   if(!visible.length)fail(`السطر ${row.row} لا يقبل اختيار عميل`);
+   const chosen=choices.get(row.row)!;if(chosen&&!visible.some(customer=>customer.id===chosen))fail(`العميل المختار للسطر ${row.row} مش من المرشحين؛ اعمل معاينة جديدة`);
+   base.customerId=chosen;base.chosen=true;base.matchedBy=chosen?matched(byId.get(chosen)!):'';
+  }
+  return base;
+ });
+ // A customer has one code: every row ending on the same customer becomes a choice, and the apply is refused until one remains.
+ const targets=new Map<string,number>();for(const outcome of outcomes)if(outcome.customerId)targets.set(outcome.customerId,(targets.get(outcome.customerId)||0)+1);
+ const plan:ErpCustomerPlan[]=[];
+ outcomes.forEach((outcome,index)=>{
+  if(!outcome.customerId)return;
+  if((targets.get(outcome.customerId)||0)>1){outcome.conflict=true;outcome.status='choose';}
+  const customer=byId.get(outcome.customerId)!,row=rows[index],mapping=mappings.get(row.codeKey);
+  const sharedWith=(holders.get(row.codeKey)||[]).filter(holder=>holder.id!==customer.id).length,codeChange=customerCodeKey(customer.data.code)!==row.codeKey;
+  Object.assign(outcome,{from:String(customer.data.code||''),sharedWith,mapping:sharedWith>0&&mapping?.customerId!==customer.id});
+  outcome.change=codeChange||outcome.mapping;
+  if(outcome.change&&!outcome.conflict)plan.push({row:outcome.row,customerId:customer.id,version:customer.version,codeKey:row.codeKey,from:outcome.from,to:row.code,codeChange,mapping:outcome.mapping,mappingVersion:outcome.mapping?mapping?.version||0:0});
+ });
+ const count=(test:(outcome:ErpCustomerOutcome)=>boolean)=>outcomes.filter(test).length;
+ const summary:ErpCustomersSummary={rows:outcomes.length,auto:count(o=>o.status==='auto'),same:count(o=>o.status==='same'),choose:count(o=>o.status==='choose'),missing:count(o=>o.status==='missing'),outOfRegion:count(o=>o.status==='out-of-region'),invalid:count(o=>o.status==='invalid'),conflicts:count(o=>o.conflict),pending:count(o=>o.status==='choose'&&!o.customerId&&!o.chosen),changes:plan.length,codeChanges:plan.filter(p=>p.codeChange).length,mappings:plan.filter(p=>p.mapping).length};
+ return {rows:outcomes,summary,plan,involved:[...involved].sort(([a],[b])=>a<b?-1:a>b?1:0)};
+}
