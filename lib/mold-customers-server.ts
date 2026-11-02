@@ -14,6 +14,11 @@ import {moldCustomerCalls,moldCustomerEntry,MOLD_SHEET_CITIES} from '@/portable/
 type Config=ReturnType<typeof moldConfig>;
 type Entry=NonNullable<ReturnType<typeof moldCustomerEntry>>;
 export const MOLD_CUSTOMERS_RECORD='mold-customers',MOLD_CUSTOMERS_ACTION='mold-customers:sync';
+/** A customer deleted in the CRM (written with the deletion, app/api/crm/route.ts): its number, name, address and city, so the next send
+ *  carries it as active:false (the contract: a deleted customer is sent upsert with "active": false when it is deleted). */
+export const MOLD_CUSTOMERS_REMOVED='mold-customers:removed';
+/** The removals read again at each send reach back this far before the last send, so one written in the moment of a send is never lost. */
+const REMOVED_OVERLAP_MS=5*60_000,REMOVED_FIRST_MS=30*24*3600_000;
 /** A check runs this long after a change in the CRM, so a burst of edits sends once; a full send at least once a day. */
 export const MOLD_CUSTOMERS_SETTLE_MS=5_000,MOLD_CUSTOMERS_CHECK_MS=10*60_000,MOLD_CUSTOMERS_DAY_MS=24*3600_000;
 
@@ -25,6 +30,13 @@ export async function moldCustomerList(db:D1Database){
  return customers;
 }
 const fingerprint=(customers:Entry[])=>createHash('sha256').update(JSON.stringify(customers)).digest('hex');
+/** The customers deleted since the last send (with an overlap), as entries with active:false; none that is still in the list. */
+async function removedSince(db:D1Database,since:string,listed:Entry[]){
+ const rows=(await db.prepare('SELECT detail FROM crm_audit WHERE record_id=? AND action=? AND created_at>? ORDER BY created_at').bind(MOLD_CUSTOMERS_RECORD,MOLD_CUSTOMERS_REMOVED,since).all<{detail:string}>()).results;
+ const present=new Set(listed.map(entry=>entry.crmNumber)),seen=new Set<number>(),removed:Entry[]=[];
+ for(const row of rows){let data:Record<string,unknown>={};try{data=JSON.parse(row.detail);}catch{/* a broken record is left out */}const entry=moldCustomerEntry({crmNumber:data.crmNumber,name:data.name,address:data.address,city:data.city,active:false});if(entry&&!present.has(entry.crmNumber)&&!seen.has(entry.crmNumber)){seen.add(entry.crmNumber);removed.push(entry);}}
+ return removed;
+}
 
 let last:{hash:string;at:string}|null=null,loaded=false,running:Promise<SyncResult>|null=null;
 export type SyncResult={sent:boolean;reason:string;count?:number;result?:Record<string,number>;error?:string};
@@ -43,16 +55,19 @@ export function syncMoldCustomers(db:D1Database,link:Config,{force=false,now=()=
  if(running)return running;
  running=(async():Promise<SyncResult>=>{
   if(!link.ok)return {sent:false,reason:link.reason};
-  const customers=await moldCustomerList(db),hash=fingerprint(customers),previous=await lastSent(db),at=now();
-  if(!force&&previous&&previous.hash===hash&&Date.parse(at)-Date.parse(previous.at)<MOLD_CUSTOMERS_DAY_MS)return {sent:false,reason:'unchanged',count:customers.length};
-  const totals:Record<string,number>={received:0,inserted:0,updated:0,deactivated:0,activeCustomers:0},calls=moldCustomerCalls(customers);
+  // The time of this send is taken before anything is read: whatever changes after it is read again by the next send.
+  const at=now(),customers=await moldCustomerList(db),hash=fingerprint(customers),previous=await lastSent(db);
+  const removed=await removedSince(db,new Date(previous?Date.parse(previous.at)-REMOVED_OVERLAP_MS:Date.parse(at)-REMOVED_FIRST_MS).toISOString(),customers);
+  if(!force&&previous&&previous.hash===hash&&!removed.length&&Date.parse(at)-Date.parse(previous.at)<MOLD_CUSTOMERS_DAY_MS)return {sent:false,reason:'unchanged',count:customers.length};
+  // A deleted customer goes as active:false with the list (inside the full call, or with the upsert batches of a very large list).
+  const totals:Record<string,number>={received:0,inserted:0,updated:0,deactivated:0,activeCustomers:0},calls=moldCustomerCalls([...customers,...removed]);
   for(const call of calls){
    const answer=await callProducts(link,'customers',call,fetch?{fetch,timeoutMs:60_000}:{timeoutMs:60_000});
    if(answer.kind!=='ok')return {sent:false,reason:'failed',error:answer.code,count:customers.length};
    for(const key of Object.keys(totals))totals[key]=key==='activeCustomers'?Number(answer.json[key]):totals[key]+Number(answer.json[key]);
   }
   const cities=customers.filter(entry=>entry.city&&MOLD_SHEET_CITIES.includes(entry.city)).length;
-  const detail={label:'إرسال قائمة العملاء لتطبيق الإنتاج',mode:calls.length===1?'full':'upsert',calls:calls.length,count:customers.length,sheetCities:cities,hash,...totals};
+  const detail={label:'إرسال قائمة العملاء لتطبيق الإنتاج',mode:calls.length===1?'full':'upsert',calls:calls.length,count:customers.length,removed:removed.length,sheetCities:cities,hash,...totals};
   await db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),MOLD_CUSTOMERS_RECORD,'system',MOLD_CUSTOMERS_ACTION,JSON.stringify(detail),at).run();
   last={hash,at};
   return {sent:true,reason:previous?(previous.hash===hash?'daily':'changed'):'first',count:customers.length,result:totals};
