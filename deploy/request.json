@@ -1,4 +1,4 @@
 {
   "mode": "diagnose",
-  "script": "scripts/diagnose/mold-customers.cjs"
+  "script": "scripts/diagnose/mold-products.cjs"
 }
