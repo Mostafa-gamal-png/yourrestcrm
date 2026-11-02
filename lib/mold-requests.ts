@@ -6,7 +6,7 @@
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS,MOLD_DESIGN_FINAL_CODES,MOLD_DESIGN_MAX_FILES} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS,MOLD_DESIGN_MAX_FILES} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS};
 export type MoldStage=typeof MOLD_STAGES[number];
@@ -28,7 +28,10 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;status:MoldStatu
 export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs};
 export type MoldError={code:string;fields?:string[];http?:number;at:string;
  /** Why production refused a design file's bytes (details.reason: empty, not_pdf, bad_image, too_many_pixels). */
- reason?:string};
+ reason?:string;
+ /** A design file's refusal for good, whatever its code (any 400, 404 or 413, a 409 for a send, or the CRM's own refusal): not sent
+  *  again by itself, and the resend button does not start it. */
+ final?:boolean};
 /** One of the CRM's own design files as stored (crm_mold_design_files): id is its crmFileId; the bytes are in the object store under
  *  objectKey until it is deleted; outbox what waits to reach production (the file, or its deletion). */
 export type MoldDesignFileRow={id:string;requestId:string;memberId:string;name:string;kind:MoldDesignKind;contentType:string;size:number;sha256:string;objectKey:string|null;createdAt:string;deletedAt:string|null;outbox:'send'|'delete'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remoteFileId:string|number|null;sentAt:string|null;version:number};
@@ -78,6 +81,9 @@ export function canReadMoldRequest(row:Pick<MoldRequestRow,'memberId'|'customerI
  if(c.me.role==='customer_service_manager')return inRegion&&c.members.some(member=>member.id===row.memberId&&SERVICE_ROLES.includes(member.role)&&member.supervisorId===c.me.id);
  return false;
 }
+/** An answer older than the status stored (a lower revision; one without a revision is never older): answers can cross, and an older
+ *  one must not bring back approvals production has since undone. The SQL twin is newerRemote in lib/mold-requests-server.ts. */
+export const moldRemoteOlder=(stored:Pick<MoldRemote,'revision'>|null,incoming:Pick<MoldRemote,'revision'>)=>stored?.revision!=null&&incoming.revision!=null&&stored.revision>incoming.revision;
 /** Production accepts a change only while the request is `received`; before production first saw it the CRM alone decides. */
 export const moldEditable=(row:Pick<MoldRequestRow,'cancelledAt'|'remote'>)=>!row.cancelledAt&&(row.remote?row.remote.editable:true);
 /** Waiting for the sales manager: production has it as received, at the sales step, with nothing changed in the CRM still to send. */
@@ -92,10 +98,11 @@ export function moldSalesApprovalWithdrawable(row:Pick<MoldRequestRow,'cancelled
 /** A design file still on its way (its sending or its deletion due on the timetable): the approval waits for it, since its arrival
  *  undoes the approvals anyway. One production refused, or that stopped after 24 hours, holds nothing. */
 export const moldDesignInFlight=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'>)=>!!file.outbox&&file.nextAttemptAt!==null;
-/** Sending stopped after 24 hours of failures (not refused): the requester's resend starts it again. */
-export const moldDesignStopped=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'deletedAt'>)=>file.outbox==='send'&&!file.deletedAt&&file.nextAttemptAt===null&&!MOLD_DESIGN_FINAL_CODES.includes(file.lastError?.code||'');
-/** Refused for good by production (or lost by the CRM): it never reached production and never will by itself. */
-export const moldDesignRefused=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>)=>file.outbox==='send'&&!file.sentAt&&file.nextAttemptAt===null&&MOLD_DESIGN_FINAL_CODES.includes(file.lastError?.code||'');
+/** The file's sending, or its deletion, stopped after 24 hours of failures (not refused): the requester's resend starts it again
+ *  (MOLD_DESIGN_STOPPED_SQL in lib/mold-requests-server.ts says the same in SQL). */
+export const moldDesignStopped=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'deletedAt'>)=>(file.outbox==='delete'||file.outbox==='send'&&!file.deletedAt)&&file.nextAttemptAt===null&&file.lastError?.final!==true;
+/** Refused for good by production (or lost by the CRM): it never reached production and never will by itself (MOLD_DESIGN_REFUSED_SQL). */
+export const moldDesignRefused=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>)=>file.outbox==='send'&&!file.sentAt&&file.nextAttemptAt===null&&file.lastError?.final===true;
 /** Whether production may hold the file: sent, or a send was tried without a final refusal (a timeout may have arrived). Such a file is
  *  deleted through design-file-delete; any other is removed in the CRM alone. */
 export const moldDesignMayBeRemote=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'sentAt'|'lastAttemptAt'>)=>!!file.sentAt||!!file.lastAttemptAt&&!moldDesignRefused(file);

@@ -52,9 +52,6 @@ export const MOLD_DESIGN_TIMEOUT_MS = 120_000;
 export const MOLD_DESIGN_LINE_LIMIT = 4096;
 /** Why production refuses a file's bytes (400 invalid_payload, fields ['file'], details.reason). */
 export const MOLD_DESIGN_REASONS = ['empty', 'not_pdf', 'bad_image', 'too_many_pixels'];
-/** The answers after which a file is not sent again by itself (§5 of the addition): refused data, a request production does not hold,
- *  a file over the limit, a request whose approvals are complete; file_missing: the CRM lost the bytes. */
-export const MOLD_DESIGN_FINAL_CODES = ['invalid_payload', 'payload_too_large', 'not_found', 'request_locked', 'file_missing'];
 
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const length = value => [...value].length;
