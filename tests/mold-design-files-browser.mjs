@@ -8,8 +8,12 @@
 // and later to its failure with the reason and Retry, also said on the request's card); the request on a phone keeps every button within
 // the screen, each at least 44 px (the refused files' dismiss button too); the sales manager sees each pending request's files (one
 // registered in production too), is told why a download or an opened file failed while production is unreachable, downloads one
-// through the CRM, and, having approved a request, sees its card under «اعتمدتها الآن» with the files named but no links. Screenshots
-// for the report. Synthetic fixtures only: temporary SQLite, no production data, no real production app.
+// through the CRM, and, having approved two requests (one registered in production, one of the CRM's), sees their cards under «اعتمدتها
+// الآن» with the files named but no links (the CRM's says to open the request, whose sheet does open them); when the representative then
+// attaches a file, which returns the CRM's request to the sales manager, the next refresh puts it back in the waiting list with its new
+// file, links and Approve. The device's own check takes production's PR #27 inputs (a PDF whose header follows other bytes, named
+// CON.pdf; a PNG named .jpg) and refuses a header beyond the first 1024 bytes. Screenshots for the report. Synthetic fixtures only:
+// temporary SQLite, no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -82,6 +86,16 @@ try {
   await picker.locator('.mold-design-file[data-state="refused"]').waitFor();
   check([await picker.locator('.mold-design-file[data-state="ready"]').count(), await fileRow(picker, 'رسم القالب.pdf').locator('.mold-design-state').innerText()], [1, 'يُرفع بعد حفظ الطلب'], 'the PDF waits for the request to be saved');
   check(await fileRow(picker, 'ليس-pdf.pdf').locator('.mold-design-reason').innerText(), 'الملف ليس PDF فعلًا', 'the device refuses a false PDF and says why, before anything is sent');
+  // Production's PR #27 inputs, checked by the browser itself (its File, the first bytes it reads): a PDF whose %PDF-1.7 starts at byte
+  // 600 named CON.pdf and a PNG named .jpg may go; a header beyond the first 1024 bytes may not. Removed again before saving.
+  const leadingPdf = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.alloc(597, 0x20), Buffer.from('%PDF-1.7\n% header after 600 bytes\n%%EOF\n')]);
+  await picker.locator('input[type=file]').setInputFiles([{name: 'CON.pdf', mimeType: 'application/pdf', buffer: leadingPdf}, {name: 'لقطة.jpg', mimeType: 'image/jpeg', buffer: pixel},
+    {name: 'late.pdf', mimeType: 'application/pdf', buffer: Buffer.concat([Buffer.alloc(1024, 0x20), Buffer.from('%PDF-1.4\n%%EOF\n')])}]);
+  await fileRow(picker, 'late.pdf').waitFor();
+  check(await Promise.all(['CON.pdf', 'لقطة.jpg', 'late.pdf'].map(name => fileRow(picker, name).getAttribute('data-state'))), ['ready', 'ready', 'refused'], 'on the device: CON.pdf with its header after 600 bytes and a PNG named .jpg may go; a header beyond 1024 bytes may not');
+  check(await fileRow(picker, 'late.pdf').locator('.mold-design-reason').innerText(), 'الملف ليس PDF فعلًا', 'and says why');
+  for (const name of ['CON.pdf', 'لقطة.jpg', 'late.pdf']) await picker.getByRole('button', {name: 'إزالة ' + name}).click();
+  check(await picker.locator('.mold-design-name').allInnerTexts(), ['رسم القالب.pdf', 'ليس-pdf.pdf'], 'removed again: the form keeps its two files');
   await picker.scrollIntoViewIfNeeded();
   await shot(rep, 'mold-design-form');
   const sendsBefore = mock.state.calls.filter(call => call.route === 'design-files').length;
@@ -275,7 +289,38 @@ try {
   check([await approvedCard.locator('.mold-design-name').allInnerTexts(), await approvedCard.locator('a[href*="/api/mold-requests/design-file"]').count(), await approvedCard.locator('.mold-design-actions').count(), await approvedCard.locator('.mold-design-links-off').innerText()],
     [['تصميم من الإنتاج.pdf'], 0, 0, 'بعد اعتمادك لا تُفتح الملفات من هنا.'], 'just approved: the file named, no view or download link, and why');
   ok(await sm.locator('h3.mold-subtitle', {hasText: 'اعتمدتها الآن'}).count() === 1 && await approvedCard.getByRole('button', {name: 'سحب الاعتماد'}).count() === 1, 'under «اعتمدتها الآن», with Withdraw approval');
+  // The CRM's request approved from the list too (MoldPendingList's note for a request of the CRM): named without links, and the way to
+  // its files is the request itself, whose sheet opens them by the file's id.
+  check(await crmCard.locator('.mold-design-actions a').count(), 6, 'waiting: Open and Download for each image, Download for each drawing');
+  await crmCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  const approvedCrmCard = sm.locator('.mold-pending[data-done]', {hasText: 'مصنع east1'});
+  await approvedCrmCard.waitFor();
+  check([await approvedCrmCard.locator('.mold-design-name').count(), await approvedCrmCard.locator('a[href*="/api/mold-requests/design-file"]').count(), await approvedCrmCard.locator('.mold-design-actions').count(), await approvedCrmCard.locator('.mold-design-links-off').innerText()],
+    [4, 0, 0, 'بعد اعتمادك لا تُفتح الملفات من هنا؛ افتح الطلب لعرضها.'], 'the CRM\'s request just approved: its four files named, no view or download link, and where they open');
+  check([await sm.locator('.mold-pending[data-done]').count(), await sm.locator('.mold-pending:not([data-done])').count()], [2, 0], 'both under «اعتمدتها الآن», none left waiting');
   await shot(sm, 'mold-design-pending-approved');
+  await approvedCrmCard.getByRole('button', {name: 'فتح الطلب'}).click();
+  await sheet(sm).locator('.mold-design-file').nth(3).waitFor();
+  const sheetLinks = await sheet(sm).locator('.mold-design a').evaluateAll(links => links.map(link => link.getAttribute('href')));
+  ok(sheetLinks.length >= 6 && sheetLinks.every(href => href.startsWith('/api/mold-requests/design-file?id=')), 'the request\'s sheet opens them, by the file\'s id: ' + sheetLinks.join(' '));
+  check(await sm.evaluate(href => fetch(href).then(response => response.status), sheetLinks[0]), 200, 'and the link answers once the request is approved');
+  await sm.keyboard.press('Escape');
+  await sheet(sm).waitFor({state: 'detached'});
+  // The representative attaches another file: production undoes the approvals and the request waits for the sales manager again. The
+  // next refresh takes it out of «اعتمدتها الآن» and back into the list, as production now holds it (the new file, links, Approve).
+  const attachment = new FormData();
+  attachment.set('requestId', crypto.randomUUID()); attachment.set('id', requestId); attachment.set('file', new Blob([pixel]), 'بعد الاعتماد.png');
+  const encoded = new Response(attachment), repUpload = app.as(await app.login('rep'));
+  const attached = await repUpload('/api/mold-requests/design-files', {method: 'POST', body: Buffer.from(await encoded.arrayBuffer()), headers: {'Content-Type': encoded.headers.get('content-type')}});
+  check([attached.status, mock.row(requestId).approvals.sales, mock.row(requestId).waitingStep], [200, null, 'sales'], 'the file reached production, which undid the approval: the request waits for the sales manager again');
+  await sm.locator('.mold-heading-tools button').first().click();
+  const backCard = sm.locator('.mold-pending:not([data-done])', {hasText: 'مصنع east1'});
+  await backCard.waitFor();
+  await backCard.locator('.mold-design-file', {hasText: 'بعد الاعتماد.png'}).waitFor();
+  check([await sm.locator('.mold-pending[data-done]', {hasText: 'مصنع east1'}).count(), await backCard.locator('.mold-design-links-off').count(), await backCard.getByRole('link', {name: 'عرض بعد الاعتماد.png'}).count(), await backCard.getByRole('button', {name: 'اعتماد', exact: true}).count()],
+    [0, 0, 1, 1], 'back in the list: no longer under «اعتمدتها الآن», its new file with its links, and Approve');
+  check(await sm.locator('.mold-pending[data-done]').allInnerTexts().then(texts => texts.map(text => text.includes('مصنع مسجّل في الإنتاج'))), [true], 'the request registered in production stays under «اعتمدتها الآن»');
+  await shot(sm, 'mold-design-pending-back');
   await sm.context().close();
 
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
