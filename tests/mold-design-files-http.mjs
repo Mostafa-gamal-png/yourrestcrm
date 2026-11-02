@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import {request as httpRequest} from 'node:http';
 import {existsSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
@@ -54,7 +55,12 @@ try {
     const encoded = new Response(form);
     return {body: Buffer.from(await encoded.arrayBuffer()), headers: {'Content-Type': encoded.headers.get('content-type')}};
   };
-  const upload = async (who, id, name, bytes, requestId = crypto.randomUUID(), extra = {}) => as(who)('/api/mold-requests/design-files', {method: 'POST', ...await multipart({requestId, id, file: {name, bytes}}), ...extra});
+  const upload = async (who, id, name, bytes, requestId = crypto.randomUUID(), headers = {}) => {
+    const encoded = await multipart({requestId, id, file: {name, bytes}});
+    return as(who)('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: {...encoded.headers, ...headers}});
+  };
+  /** Where the private object store keeps an object (portable/storage.mjs: the SHA-256 of its key). */
+  const objectPath = key => path.join(app.work, 'data/objects', createHash('sha256').update(key).digest('hex'));
   const remove = (who, id, fileId, requestId = crypto.randomUUID()) => as(who)('/api/mold-requests/design-files/delete', {method: 'POST', body: {requestId, id, fileId}});
   const download = (who, query) => as(who)('/api/mold-requests/design-file?' + query);
   const until = async (test, message) => { for (let n = 0; n < 100; n++) { if (await test()) return; await new Promise(resolve => setTimeout(resolve, 100)); } assert.fail(message); };
@@ -66,7 +72,7 @@ try {
   check((await app.request('/api/mold-requests/design-files', {method: 'POST', headers: {Origin: app.origin, ...anonymousUpload.headers}, body: anonymousUpload.body})).status, 401, 'anonymous upload: 401');
   check((await app.request('/api/mold-requests/design-files/delete', {method: 'POST', headers: {Origin: app.origin}, body: {requestId: crypto.randomUUID(), id: first.id, fileId: 'mdf-x'}})).status, 401, 'anonymous delete: 401');
   check((await app.request('/api/mold-requests/design-file?id=' + first.id + '&file=mdf-x')).status, 401, 'anonymous download: 401');
-  check((await upload('rep', first.id, 'x.pdf', pdf('x'), crypto.randomUUID(), {headers: {Origin: 'https://evil.example', ...anonymousUpload.headers}})).status, 403, 'another origin: 403');
+  check((await upload('rep', first.id, 'x.pdf', pdf('x'), crypto.randomUUID(), {Origin: 'https://evil.example'})).status, 403, 'another origin: 403');
   for (const who of ['sup', 'sm', 'owner']) check((await upload(who, first.id, 'x.pdf', pdf('x'))).status, 403, who + ' reads the request but only the requester attaches');
   check((await upload('rep2', first.id, 'x.pdf', pdf('x'))).status, 404, 'another representative: the request is not there for them');
   check(await rowsOf(first.id), 0, 'none of these stored anything');
@@ -174,8 +180,9 @@ try {
 
   // ---- delete: a file production never held, in the CRM alone; one it holds, through design-file-delete (the approvals undone)
   const refusedRow = await fileRow(refusedIds[0]);
+  ok(existsSync(objectPath(refusedRow.object_key)), 'the CRM kept the refused file\'s bytes until it is deleted');
   res = await remove('rep', third.id, refusedIds[0]);
-  check([res.status, calls('design-file-delete'), (await fileRow(refusedIds[0])).object_key, existsSync(path.join(app.work, 'data/objects', refusedRow.object_key))], [200, 0, null, false], 'a refused file: removed in the CRM alone, its bytes gone');
+  check([res.status, calls('design-file-delete'), (await fileRow(refusedIds[0])).object_key, existsSync(objectPath(refusedRow.object_key))], [200, 0, null, false], 'a refused file: removed in the CRM alone, its bytes gone');
   check((await post('sm', {action: 'approve', id: first.id})).status, 200, 'the sales manager approves the first request again');
   check((await remove('sup', first.id, drawingId)).status, 403, 'the supervisor reads it but does not delete');
   check((await remove('rep2', first.id, drawingId)).status, 404, 'another representative: not there for them');
@@ -183,7 +190,7 @@ try {
   res = await remove('rep', first.id, drawingId, deleteKey);
   body = await res.json();
   check([res.status, calls('design-file-delete'), body.request.remote.approvals.sales, body.request.remote.waitingStep, body.request.designFiles], [200, 1, null, 'sales', []], 'deleted at production: the approval undone, back with the sales manager');
-  check([mock.row(first.id).designFiles.length, (await fileRow(drawingId)).object_key, (await fileRow(drawingId)).deleted_at !== null], [0, null, true], 'gone there and its bytes gone here; the row stays as the record');
+  check([mock.row(first.id).designFiles.length, (await fileRow(drawingId)).object_key, (await fileRow(drawingId)).deleted_at !== null, existsSync(objectPath(stored.object_key))], [0, null, true, false], 'gone there and its bytes gone here; the row stays as the record');
   check([(await remove('rep', first.id, drawingId, deleteKey)).status, calls('design-file-delete')], [200, 1], 'the same tap twice: production asked once');
   check((await download('rep', 'id=' + first.id + '&file=' + drawingId)).status, 404, 'a deleted file is never served');
 
