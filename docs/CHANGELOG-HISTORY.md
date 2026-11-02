@@ -4,6 +4,17 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mold request design files (2026-11-02, fourth package of the day, migration 0017)
+
+- **Asked.** The products side's contract addition «ملفات التصميم» (routes design-files, design-file-delete, design-file; designFiles in the status object and pending items) and the owner's list: attach and delete in the form and the sheet with the warning that it sends the request back to the sales manager, store in the CRM and send with retries, show every file (the rep's and production's) with downloads through the CRM after a permission check, the files in the sales manager's pending list, and tests.
+- **Data.** `drizzle/0017_mold_design_files.sql`: one additive table (`crm_mold_design_files`) and two indexes; the bytes in the object store (`mold-design/<request>/<file>/<attempt>`), now also copied by the daily backup (`portable/backup-core.mjs`).
+- **Rules and client.** `portable/mold-rules.mjs` (extensions and kinds, names, 25 MiB, 10 files, PDF and image header checks with production's reasons, designFiles read from status and pending), `portable/mold-client.mjs` (the binary body signed as sent, the binary download, 120 s for the two file routes).
+- **Server and routes.** `lib/mold-requests-server.ts` sends files through the existing retry timer once production holds the request; 400/404/413 and 409 are not retried; deletions go through design-file-delete. `app/api/mold-requests/design-files`, `.../design-files/delete`, `.../design-file` (by request for whoever may read it, by order for the sales manager's pending items only).
+- **Screens.** `app/mold-design-files.tsx` and `app/mold-requests.tsx`: the picker with checks on the device, uploads after the save, the warning before an attach or delete on a request production holds, each file's state, view and download through the CRM, the files in «طلبات بانتظار اعتمادي».
+- **Review.** Two adversarial rounds (stage 1: 5 findings, stage 2: 20); all fixed with tests except the Android app's file chooser and downloads, which need an Android release.
+- **Tests.** `tests/mold-design-files-server.mjs`, `tests/mold-design-files-ui.mjs`, `tests/mold-design-files-http.mjs` (built release), `tests/mold-design-files-browser.mjs` (Chromium), and more checks in `tests/mold-requests.mjs`, `tests/server-authorization.mjs`, `tests/production-backup.mjs`.
+- **Operations.** `docs/UPDATE-2026-11-02-DESIGN-FILES-AR.txt` (rollback in two cases because of the migration).
+
 ## The ERP code goes with the customer list sent to the products application (2026-11-02, third package of the day, no migration)
 
 - **Asked.** The owner, after «استيراد من ERP»: in the products application the customer cannot be found by its ERP code (146), only by its Yourrest number; «ابعت كود ERP للإنتاج».
