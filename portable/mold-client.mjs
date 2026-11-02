@@ -44,6 +44,21 @@ function wellFormed(route, json) {
   return !!moldStatusObject(json.request, {manual: route === 'approval'});
 }
 
+/** A downloaded file's bytes, read as they arrive and given up (the rest never read) once past `limit`: null then. A reply without a
+ *  readable body (a test double) is read whole and checked after. */
+async function readCapped(response, limit) {
+  const reader = response.body?.getReader?.();
+  if (!reader) { const bytes = Buffer.from(await response.arrayBuffer()); return bytes.length > limit ? null : bytes; }
+  const parts = []; let total = 0;
+  for (;;) {
+    const {done, value} = await reader.read();
+    if (done) return Buffer.concat(parts, total);
+    total += value.byteLength;
+    if (total > limit) { void reader.cancel().catch(() => {}); return null; }
+    parts.push(value);
+  }
+}
+
 /**
  * One signed call. Resolves (never throws) with {kind, code, fields, http, request?, json?, file?}: kind as readMoldAnswer says, plus
  * retry/network, retry/timeout and retry/bad_response for calls that did not get a contract answer. design-files takes its raw body
@@ -76,12 +91,13 @@ export async function callProducts(config, route, payload, {fetch: send = global
   }
   const header = name => { try { return response.headers?.get?.(name) ?? null; } catch { return null; } };
   if (route === 'design-file' && response.status === 200) {
-    // The file itself: at most 25 MiB, never a JSON answer in its place.
+    // The file itself: at most 25 MiB (a size declared above it is not read; one undeclared stops being read there), never a JSON
+    // answer in its place.
     const declared = Number(header('content-length') ?? NaN), type = String(header('content-type') || '');
     if (declared > MOLD_DESIGN_MAX_BYTES || /^application\/json/i.test(type)) { try { await response.body?.cancel?.(); } catch { /* nothing left to read */ } return {kind: 'retry', code: 'bad_response', fields: [], http: 200}; }
     let bytes;
-    try { bytes = Buffer.from(await response.arrayBuffer()); } catch (error) { return {kind: 'retry', code: error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'timeout' : 'network', fields: [], http: 200}; }
-    if (bytes.length > MOLD_DESIGN_MAX_BYTES) return {kind: 'retry', code: 'bad_response', fields: [], http: 200};
+    try { bytes = await readCapped(response, MOLD_DESIGN_MAX_BYTES); } catch (error) { return {kind: 'retry', code: error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'timeout' : 'network', fields: [], http: 200}; }
+    if (!bytes) return {kind: 'retry', code: 'bad_response', fields: [], http: 200};
     return {kind: 'ok', code: '', fields: [], http: 200, file: {bytes, contentType: moldDesignContentType(type), name: moldDispositionName(header('content-disposition'))}};
   }
   let json = null;

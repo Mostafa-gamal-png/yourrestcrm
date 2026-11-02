@@ -8,7 +8,7 @@ import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
 import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,riyadhIso,MOLD_STATUS_BATCH} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,moldPendingDesignFiles,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import {canApproveMoldRequests,moldPendingDesignFiles,moldRemoteOlder,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
 type Config=ReturnType<typeof moldConfig>;
@@ -47,20 +47,20 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
  const answer=row.outbox==='cancel'
   ?await callProducts(link,'cancel',{crmRequestId:row.id,reason:row.cancelReason},options)
   :await callProducts(link,'requests',requestBody(row),options);
- const done=now(),remote=answer.kind==='ok'?moldStatusObject(answer.json?.request):answer.kind==='locked'?answer.request:null;
+ const done=now(),remote=answer.kind==='ok'?moldStatusObject(answer.json?.request):answer.kind==='locked'?answer.request:null,[remoteSet,remoteArgs]=newerRemote(remote,done);
  const settle=(sql:string,...args:(string|number|null)[])=>db.prepare(`UPDATE crm_mold_requests SET ${sql},updated_at=? WHERE id=? AND mutation_id=?`).bind(...args,done,id,claim).run();
  const cleared="outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL";
  if(answer.kind==='ok'){
-  if(row.outbox==='send')await settle(`${cleared},last_error=NULL,accepted=?,remote=?,remote_at=?`,JSON.stringify(row.data),JSON.stringify(remote),done);
-  else await settle(`${cleared},last_error=NULL,remote=?,remote_at=?`,JSON.stringify(remote),done);
+  if(row.outbox==='send')await settle(`${cleared},last_error=NULL,accepted=?,${remoteSet}`,JSON.stringify(row.data),...remoteArgs);
+  else await settle(`${cleared},last_error=NULL,${remoteSet}`,...remoteArgs);
  }else if(answer.kind==='not_found'&&row.outbox==='cancel'){
   // Production never had it (a send that did not get through): the cancellation is complete in the CRM.
   await settle(`${cleared},last_error=NULL`);
  }else if(answer.kind==='locked'){
   // Production started first: the change is withdrawn and the request shows what production holds.
   const error=JSON.stringify({code:'request_locked',http:409,at:done});
-  if(row.outbox==='cancel')await settle(`${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,remote=COALESCE(?,remote),remote_at=?,version=version+1`,error,remote?JSON.stringify(remote):null,done);
-  else await settle(`${cleared},data=COALESCE(accepted,data),last_error=?,remote=COALESCE(?,remote),remote_at=?,version=version+1`,error,remote?JSON.stringify(remote):null,done);
+  if(row.outbox==='cancel')await settle(`${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
+  else await settle(`${cleared},data=COALESCE(accepted,data),last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
  }else if(answer.kind==='rejected'){
   // The data must change first; a retry alone cannot help, so the timetable stops until the representative edits or resends.
   await settle('attempts=attempts+1,next_attempt_at=NULL,last_error=?',JSON.stringify({code:answer.code,fields:answer.fields,http:answer.http||0,at:done}));
@@ -81,9 +81,21 @@ export async function sendDueMoldRequests(db:D1Database,{limit=5,now=()=>new Dat
  return sent+await sendDueMoldDesignFiles(db,{now,link,fetch,...(files?{files}:{})});
 }
 
+/**
+ * The SET of an UPDATE that stores production's answer about a request with its time, unless the status stored is newer (a higher
+ * revision; one without a revision is always taken): answers can cross (a pull, an approval and a design file's answer at once), and an
+ * older one must not bring back approvals production has since undone (moldRemoteOlder says the same in TypeScript). Every write of
+ * `remote` goes through it. An answer without a status keeps the stored one, with the time production answered.
+ */
+export function newerRemote(remote:MoldRemote|null,at:string):[string,(string|number)[]]{
+ if(!remote)return ['remote_at=?',[at]];
+ const older="json_extract(remote,'$.revision')>?",revision=remote.revision??Number.MAX_SAFE_INTEGER;
+ return [`remote=CASE WHEN ${older} THEN remote ELSE ? END,remote_at=CASE WHEN ${older} THEN remote_at ELSE ? END`,[revision,JSON.stringify(remote),revision,at]];
+}
 /** Production's answer about a request, stored unless a newer one (a higher revision) is there already. */
 export async function storeMoldRemote(db:D1Database,id:string,remote:MoldRemote,at:string){
- await db.prepare("UPDATE crm_mold_requests SET remote=?,remote_at=? WHERE id=? AND (remote IS NULL OR json_extract(remote,'$.revision') IS NULL OR json_extract(remote,'$.revision')<=?)").bind(JSON.stringify(remote),at,id,remote.revision??Number.MAX_SAFE_INTEGER).run();
+ const [set,args]=newerRemote(remote,at);
+ await db.prepare(`UPDATE crm_mold_requests SET ${set} WHERE id=?`).bind(...args,id).run();
 }
 
 // ---- design files (the contract's addition of 2026-11-02)
@@ -109,13 +121,20 @@ let filesInFlight=0;
 /** A send or a deletion claimed and still within its lease (the claim sets both times from one instant, a lease apart): its answer may
  *  not have come yet. A file merely waiting for its next try is not. */
 export const moldDesignClaimed=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastAttemptAt'>,now:string)=>!!file.outbox&&!!file.nextAttemptAt&&!!file.lastAttemptAt&&file.nextAttemptAt>now&&Date.parse(file.nextAttemptAt)-Date.parse(file.lastAttemptAt)===DESIGN_LEASE_MS;
+/** moldDesignRefused (lib/mold-requests.ts) in SQL, over crm_mold_design_files: refused for good, never reached production. Never NULL
+ *  (IS, not =), so NOT of it holds for a file with nothing waiting. */
+export const MOLD_DESIGN_REFUSED_SQL="(outbox IS 'send' AND sent_at IS NULL AND next_attempt_at IS NULL AND json_extract(last_error,'$.final') IS 1)";
+/** moldDesignStopped in SQL: a sending, or a deletion, that stopped after 24 hours of failures; the requester's resend starts it again. */
+export const MOLD_DESIGN_STOPPED_SQL="((outbox IS 'delete' OR outbox IS 'send' AND deleted_at IS NULL) AND next_attempt_at IS NULL AND json_extract(last_error,'$.final') IS NOT 1)";
 export type DesignOutcome=SendOutcome&{reason?:string};
 /**
  * One send of what a design file has waiting: the file itself (only once production holds its request, never for a cancelled one), or its
  * deletion. Claimed with a lease first, like a request; a deletion asked for meanwhile wins over the answer. Each answer's request (its
- * approvals undone) is stored. Final answers stop the timetable: 400 and 413 (refused, with the reason), 404 (production does not hold
- * the request; for a deletion: already gone, which completes it) and 409 (the approvals were complete first: the file is not sent, or a
- * deleted file stays). Anything else is tried again on the §6 timetable.
+ * approvals undone) is stored. Final answers stop the timetable, marked final whatever their code (a 400 or 413 from a web server in
+ * front of production has no contract code): 400 and 413 (refused, with the reason), 404 (production does not hold the request; for a
+ * deletion: already gone, which completes it) and 409 (the approvals were complete first: the file is not sent). A deletion production
+ * refuses (409, or 400/413) leaves the file as production holds it, with the reason. Anything else is tried again on the §6 timetable;
+ * after 24 hours it stops, and the requester's resend starts it again (a deletion too).
  */
 export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch,files=env.FILES}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;files?:R2Bucket}={}):Promise<DesignOutcome>{
  if(!link.ok)return {kind:'off',code:link.reason};
@@ -130,7 +149,7 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
   const claimed=await db.prepare('UPDATE crm_mold_design_files SET mutation_id=?,last_attempt_at=?,next_attempt_at=? WHERE id=? AND version=? AND outbox=? AND next_attempt_at IS NOT NULL AND next_attempt_at<=?').bind(claim,at,lease,id,file.version,file.outbox,at).run();
   if(claimed.meta.changes!==1)return {kind:'busy',code:''};
   const settle=(sql:string,...args:(string|number|null)[])=>db.prepare(`UPDATE crm_mold_design_files SET ${sql} WHERE id=? AND mutation_id=?`).bind(...args,id,claim).run();
-  const refuse=async(error:MoldError)=>{await settle('attempts=attempts+1,next_attempt_at=NULL,last_error=?',JSON.stringify(error));};
+  const refuse=async(error:Omit<MoldError,'final'>)=>{await settle('attempts=attempts+1,next_attempt_at=NULL,last_error=?',JSON.stringify({...error,final:true}));};
   const options=fetch?{fetch}:{};
   let answer;
   if(file.outbox==='send'){
@@ -150,9 +169,10 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
    if(settled.meta.changes===1&&file.objectKey&&files)await files.delete(file.objectKey).catch(()=>{});
   }else if(answer.kind==='ok'){
    await settle(`${cleared},remote_file_id=?,sent_at=?`,JSON.stringify(answer.json?.file?.fileId??null),done);
-  }else if(answer.kind==='locked'&&file.outbox==='delete'){
-   // The approvals were complete first: the file stays as production holds it, with the reason.
-   await settle("outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL,deleted_at=NULL,version=version+1,last_error=?",JSON.stringify({code:'request_locked',http:409,at:done}));
+  }else if(file.outbox==='delete'&&(answer.kind==='locked'||answer.kind==='rejected')){
+   // The approvals were complete first, or production refused the deletion for good: the file stays as production holds it, with the
+   // reason (and may be deleted again while the request is editable).
+   await settle("outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL,deleted_at=NULL,version=version+1,last_error=?",JSON.stringify({code:answer.kind==='locked'?'request_locked':answer.code,...(answer.reason?{reason:answer.reason}:{}),http:answer.http||0,at:done,final:true}));
   }else if(answer.kind==='locked'||answer.kind==='not_found'||answer.kind==='rejected'){
    await refuse({code:answer.kind==='locked'?'request_locked':answer.code,...(answer.reason?{reason:answer.reason}:{}),...(answer.fields.length?{fields:answer.fields}:{}),http:answer.http||0,at:done});
   }else{
@@ -207,9 +227,10 @@ export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link
   const answer=await callProducts(link,'status',{ids},options);
   if(answer.kind!=='ok'){lastPullFailure={code:answer.code,http:answer.http||0,at};return lastPullFailure;}
   const received=now(),statements=[];
-  for(const item of answer.json!.requests){const status=moldStatusObject(item);if(status&&ids.includes(status.crmRequestId))statements.push(db.prepare('UPDATE crm_mold_requests SET remote=?,remote_at=? WHERE id=?').bind(JSON.stringify(status),received,status.crmRequestId));}
+  for(const item of answer.json!.requests){const status=moldStatusObject(item);if(status&&ids.includes(status.crmRequestId)){const [set,args]=newerRemote(status,received);statements.push(db.prepare(`UPDATE crm_mold_requests SET ${set} WHERE id=?`).bind(...args,status.crmRequestId));}}
   if(statements.length)await db.batch(statements);
-  for(const row of stale.slice(start,start+MOLD_STATUS_BATCH)){const fresh=(answer.json!.requests as unknown[]).map(item=>moldStatusObject(item)).find(item=>item?.crmRequestId===row.id);if(fresh){row.remote=fresh;row.remoteAt=received;}}
+  // The page shows what was stored: an older answer (a file's answer landed meanwhile) leaves the newer status as it was.
+  for(const row of stale.slice(start,start+MOLD_STATUS_BATCH)){const fresh=(answer.json!.requests as unknown[]).map(item=>moldStatusObject(item)).find(item=>item?.crmRequestId===row.id);if(fresh&&!moldRemoteOlder(row.remote,fresh)){row.remote=fresh;row.remoteAt=received;}}
  }
  lastPullFailure=null;
  return null;

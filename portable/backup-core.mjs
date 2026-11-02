@@ -61,12 +61,13 @@ function inspectDatabase(filename,{normalize=false}={}){
   for(const name of ['crm_members','crm_settings','crm_records','crm_visit_files','yr_schema_migrations'])if(!tables.has(name))fail('UNRECOGNIZED_DATABASE');
   if(!db.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n)fail('UNRECOGNIZED_DATABASE');
   // Every stored object a row still references: visit files, and the mold design files the CRM keeps (0017; a deleted one has no key).
-  const designs=tables.has('crm_mold_design_files')?db.prepare('SELECT object_key,size FROM crm_mold_design_files WHERE object_key IS NOT NULL ORDER BY object_key').all():[];
-  const entries=[...db.prepare('SELECT object_key,size FROM crm_visit_files ORDER BY object_key').all(),...designs],unique=new Map();
+  // design: referenced by design files alone, whose bytes the application removes once their row no longer references them.
+  const designs=tables.has('crm_mold_design_files')?db.prepare('SELECT object_key,size,1 AS design FROM crm_mold_design_files WHERE object_key IS NOT NULL ORDER BY object_key').all():[];
+  const entries=[...db.prepare('SELECT object_key,size,0 AS design FROM crm_visit_files ORDER BY object_key').all(),...designs],unique=new Map();
   for(const row of entries){
    if(typeof row.object_key!=='string'||!row.object_key||row.object_key.length>2000||row.object_key.includes('\0')||!Number.isSafeInteger(row.size)||row.size<0)fail('INVALID_OBJECT_REFERENCE');
    if(unique.has(row.object_key)&&unique.get(row.object_key).bytes!==row.size)fail('CONFLICTING_OBJECT_REFERENCE');
-   unique.set(row.object_key,{key:row.object_key,filename:hashKey(row.object_key),bytes:row.size});
+   unique.set(row.object_key,{key:row.object_key,filename:hashKey(row.object_key),bytes:row.size,design:row.design===1&&(unique.get(row.object_key)?.design??true)});
   }
   return [...unique.values()];
  }finally{db.close();}
@@ -104,6 +105,35 @@ export async function verifyBackup({directory,appRoot,expectedRootId}){
  }
  return {manifest,objects:expected.length,bytes:manifest.database.bytes+manifest.objects.reduce((sum,file)=>sum+file.bytes,0)};
 }
+/**
+ * A mold design file's bytes leave the object store after its row stops referencing them (the file was deleted: object_key=NULL first,
+ * then the bytes; lib/mold-requests-server.ts and app/api/mold-requests/design-files/delete). When that happened between the snapshot
+ * and the copy, the live row no longer names the key: the backup takes that row as it now stands (without the bytes) instead of failing.
+ * True when the key is released so; false when a live row still references it (the object is really missing, and the backup fails).
+ */
+function designReleased(liveDatabase,key){
+ const live=new DatabaseSync(liveDatabase,{readOnly:true});
+ try{live.exec('PRAGMA busy_timeout=5000;');return !live.prepare('SELECT 1 FROM crm_mold_design_files WHERE object_key=? UNION ALL SELECT 1 FROM crm_visit_files WHERE object_key=? LIMIT 1').get(key,key);}
+ finally{live.close();}
+}
+/** The snapshot's rows of released design keys, replaced by the live rows as they now stand (their key NULL: the bytes are not in this
+ *  backup), or removed with a live row that is gone (its request deleted). */
+function adoptReleasedDesigns(liveDatabase,stagedDatabase,keys){
+ const live=new DatabaseSync(liveDatabase,{readOnly:true}),staged=new DatabaseSync(stagedDatabase);
+ try{
+  live.exec('PRAGMA busy_timeout=5000;');
+  const columns=staged.prepare('PRAGMA table_info(crm_mold_design_files)').all().map(column=>column.name).filter(name=>name!=='id');
+  const update=staged.prepare(`UPDATE crm_mold_design_files SET ${columns.map(name=>'"'+name+'"=?').join(',')} WHERE id=?`),remove=staged.prepare('DELETE FROM crm_mold_design_files WHERE id=?');
+  staged.exec('BEGIN IMMEDIATE');
+  try{
+   for(const key of keys)for(const {id} of staged.prepare('SELECT id FROM crm_mold_design_files WHERE object_key=?').all(key)){
+    const now=live.prepare('SELECT * FROM crm_mold_design_files WHERE id=?').get(id);
+    if(now)update.run(...columns.map(name=>name==='object_key'?null:now[name]??null),id);else remove.run(id);
+   }
+   staged.exec('COMMIT');
+  }catch(error){staged.exec('ROLLBACK');throw error;}
+ }finally{live.close();staged.close();}
+}
 async function createUnlocked({config,appRoot,destination,rootId=null}){
  const sources=sourcePaths(config,appRoot);destination=destinationPath(destination,appRoot,sources);await absent(destination);
  const stage=path.join(path.dirname(destination),'.yourrest-backup-staging-'+randomUUID());await fs.mkdir(stage,{mode:0o700});
@@ -114,10 +144,17 @@ async function createUnlocked({config,appRoot,destination,rootId=null}){
   const references=inspectDatabase(databasePath,{normalize:true});
   const dbFile=await fs.open(databasePath,'r');try{await dbFile.sync();}finally{await dbFile.close();}
   const objectsPath=path.join(stage,'objects');await fs.mkdir(objectsPath,{mode:0o700});
-  const objects=[];
-  // Application uploads have unique keys and are committed only after durable object writes.
-  // No committed object is replaced/deleted. A missing or changed source fails this backup.
-  for(const reference of references){const result=await digestFile(path.join(sources.objects,reference.filename),appRoot,{destination:path.join(objectsPath,reference.filename),expectedBytes:reference.bytes});objects.push({...reference,sha256:result.sha256});}
+  const objects=[],released=[];
+  // Application uploads have unique keys and are committed only after durable object writes. No committed object is replaced, and only
+  // a deleted mold design file's bytes are removed, after its row stopped referencing them (designReleased). Any other missing or
+  // changed source fails this backup.
+  for(const reference of references){
+   let result;
+   try{result=await digestFile(path.join(sources.objects,reference.filename),appRoot,{destination:path.join(objectsPath,reference.filename),expectedBytes:reference.bytes});}
+   catch(error){if(error.code!=='ENOENT'||!reference.design||!designReleased(sources.database,reference.key))throw error;released.push(reference.key);continue;}
+   objects.push({key:reference.key,filename:reference.filename,bytes:reference.bytes,sha256:result.sha256});
+  }
+  if(released.length){adoptReleasedDesigns(sources.database,databasePath,released);const file=await fs.open(databasePath,'r');try{await file.sync();}finally{await file.close();}}
   await syncDirectory(objectsPath);
   const database=await digestFile(databasePath,appRoot);
   const manifest={format:FORMAT,version:VERSION,backupId:randomUUID(),rootId,createdAt:new Date().toISOString(),database:{filename:'database.sqlite',...database},objects};

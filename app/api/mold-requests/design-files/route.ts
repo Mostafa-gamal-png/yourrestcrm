@@ -7,9 +7,9 @@ import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {readRequestForm} from '@/lib/request-body';
-import {moldDesignFileCheck,MOLD_DESIGN_FINAL_CODES,MOLD_DESIGN_MAX_FILES} from '@/portable/mold-rules.mjs';
+import {moldDesignFileCheck,MOLD_DESIGN_MAX_FILES} from '@/portable/mold-rules.mjs';
 import {canReadMoldRequest,canUseMoldRequests,moldDesignCount,moldDesignRefusalText,moldEditable,moldRequestView} from '@/lib/mold-requests';
-import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
+import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,productsLink,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 // Multipart parsing, hashing and the object write stay bounded together (per Node process, as for visit files).
@@ -20,8 +20,7 @@ const SEND_WAIT_MS=15_000;
 const sha256=async(bytes:Uint8Array<ArrayBuffer>)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(n=>n.toString(16).padStart(2,'0')).join('');
 /** The CRM's live files of a request in SQL, as moldDesignCount counts them: not deleted (or whose deletion has not reached production),
  *  not refused for good. */
-const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND (deleted_at IS NULL OR outbox='delete')
- AND NOT (outbox='send' AND sent_at IS NULL AND next_attempt_at IS NULL AND COALESCE(json_extract(last_error,'$.code'),'') IN (${MOLD_DESIGN_FINAL_CODES.map(()=>'?').join(',')}))`;
+const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND (deleted_at IS NULL OR outbox='delete') AND NOT ${MOLD_DESIGN_REFUSED_SQL}`;
 
 export async function POST(req:Request){let objectKey='',admitted=false;try{
  checkOrigin(req);await requireSession();
@@ -65,7 +64,7 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  const result=await c.db.batch([
   c.db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id)
    SELECT ?,?,?,?,?,?,?,?,?,?,'send',?,1,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND member_id=? AND cancelled_at IS NULL AND (remote IS NULL OR json_extract(remote,'$.editable')=1)) AND (${LIVE_FILES})<?`)
-   .bind(crmFileId,row.id,c.me.id,checked.name,checked.kind,checked.contentType,bytes.length,hash,objectKey,now,now,mutation,...permission.args,row.id,c.me.id,row.id,...MOLD_DESIGN_FINAL_CODES,MOLD_DESIGN_MAX_FILES-count.production),
+   .bind(crmFileId,row.id,c.me.id,checked.name,checked.kind,checked.contentType,bytes.length,hash,objectKey,now,now,mutation,...permission.args,row.id,c.me.id,row.id,MOLD_DESIGN_MAX_FILES-count.production),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,row.id,c.me.name,'mold-design-receipt',canonical,now,crmFileId,mutation),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),row.id,c.me.name,'mold-design:attach',JSON.stringify(detail),now,crmFileId,mutation),
  ]).catch(async error=>{const again=await replay();if(again)return again;throw error;});
