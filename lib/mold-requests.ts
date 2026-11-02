@@ -26,8 +26,10 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;status:MoldStatu
  waitingStep?:MoldWaitingStep|null;waitingSince?:string|null;approvals?:MoldApprovals|null;
  /** The request's design files, the CRM's and production's (absent in a status stored before 2026-11-02; null from an older application). */
  designFiles?:MoldDesignFile[]|null};
-/** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. */
-export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs};
+/** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. unconfirmed
+ *  (accepted only): production holds the request, but these are not its data: the CRM's change production refused for good
+ *  (production_only) after an earlier attempt's answer was lost, so the CRM never learned what production stored (sendMoldRequest). */
+export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs;unconfirmed?:true};
 export type MoldError={code:string;fields?:string[];http?:number;at:string;
  /** Why production refused (details.reason): a design file's bytes (empty, not_pdf, bad_image, too_many_pixels, with fields ['file'])
   *  or its place (too_many_files, crm_file_id_used, with fields ['crmFileId']); a request's send, production_only (409 request_locked:
@@ -37,7 +39,8 @@ export type MoldError={code:string;fields?:string[];http?:number;at:string;
   *  so it has certainly never reached production and may still be edited (moldNeverSent). */
  notStored?:boolean;
  /** A design file's refusal for good, whatever its code (any 400, 404 or 413, a 409 for a send, or the CRM's own refusal): not sent
-  *  again by itself, and the resend button does not start it. */
+  *  again by itself, and the resend button does not start it. A request's change refused for good (409 request_locked, production_only
+  *  among them, or a change to a request production holds refused for its data): dropped, never sent again (moldChangeRefused). */
  final?:boolean};
 /** One of the CRM's own design files as stored (crm_mold_design_files): id is its crmFileId; the bytes are in the object store under
  *  objectKey until it is deleted; outbox what waits to reach production (the file, or its deletion). */
@@ -56,8 +59,9 @@ export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean};
 export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOrderNo:number|null;data:MoldRequestData;accepted:MoldRequestData|null;cancelledAt:string|null;cancelReason:string;outbox:'send'|'cancel'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remote:MoldRemote|null;remoteAt:string|null;createdBy:string;createdAt:string;updatedAt:string;version:number};
 export type MoldSendingState='sent'|'waiting'|'rejected'|'off';
 /** One request as a reader receives it. designFiles: the CRM's and production's; can.attach / can.deleteFile: the requester may attach or
- *  delete design files (each file also says whether it may be deleted). */
-export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;cancelled:boolean;cancelReason:string;
+ *  delete design files (each file also says whether it may be deleted). unconfirmed: the specifications are the CRM's change production
+ *  refused (production_only), not production's data (MoldRequestData). */
+export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null};
  remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean};version:number;
  designFiles:MoldDesignFileView[]};
@@ -167,7 +171,7 @@ export const moldPendingDesignFiles=(item:Pick<MoldPendingItem,'orderNo'|'design
 /** One request as its reader receives it. */
 export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[]):MoldRequestView{
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
-  requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,
+  requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,
   sending:{state:moldSendingState(row,linkReady),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
   remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady)};
 }
@@ -185,6 +189,9 @@ export const moldApprovalNames:Record<'sales'|'production'|'admin',[string,strin
 /** A sent request's change refused for good by production (409 request_locked, production_only): production holds the request with
  *  other data, which its production manager alone edits. The change is not tried again; the request says so (moldProductionOnly). */
 export const moldProductionOnly=(error:Pick<MoldError,'code'|'reason'>|null|undefined)=>error?.code==='request_locked'&&error.reason===MOLD_PRODUCTION_ONLY;
+/** The request's last change was refused for good (final: production_only, another 409, or a change to a request production holds
+ *  refused for its data): dropped, never sent again; the request says so with the reason. */
+export const moldChangeRefused=(error:Pick<MoldError,'code'|'reason'|'final'>|null|undefined)=>!!error&&(error.final===true||moldProductionOnly(error));
 
 /** Why a call did not go through, in the representative's words; the code alone is stored (with production's reason, when it gave
  *  one: production_only). file: a design file's call (design-files, design-file), whose limit is 120 seconds, not 10. */

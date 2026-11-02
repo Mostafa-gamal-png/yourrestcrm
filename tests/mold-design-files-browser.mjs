@@ -4,7 +4,8 @@
 // the request; production attaches its own file, shown in the request as production's and opened through the CRM; a drawing attached
 // from the request's sheet is confirmed first (the warning that it undoes the approvals), the server's «busy» answers with a retry hint
 // and the retry sends it (nothing is uploaded before the confirmation); the representative deletes their PDF after confirming the same
-// warning; an upload outlives the page (the representative moves to another page while it is on its way, comes back to it still uploading,
+// warning; a request production holds offers no edit (its data is the production manager's, 2026-11-02), its files are still attached
+// from the sheet after the same warning; an upload outlives the page (the representative moves to another page while it is on its way, comes back to it still uploading,
 // and later to its failure with the reason and Retry, also said on the request's card); the request on a phone keeps every button within
 // the screen, each at least 44 px (the refused files' dismiss button too); the sales manager sees each pending request's files (one
 // registered in production too), is told why a download or an opened file failed while production is unreachable, downloads one
@@ -12,8 +13,10 @@
 // الآن» with the files named but no links (the CRM's says to open the request, whose sheet does open them); when the representative then
 // attaches a file, which returns the CRM's request to the sales manager, the next refresh puts it back in the waiting list with its new
 // file, links and Approve. The device's own check takes production's PR #27 inputs (a PDF whose header follows other bytes, named
-// CON.pdf; a PNG named .jpg) and refuses a header beyond the first 1024 bytes. Screenshots for the report. Synthetic fixtures only:
-// temporary SQLite, no production data, no real production app.
+// CON.pdf; a PNG named .jpg) and refuses a header beyond the first 1024 bytes. A request production never stored (refused at its door)
+// is still edited, and a file chosen in its edit form follows the edit: no warning (production holds nothing to undo), uploaded once the
+// change is saved, held in the CRM while the request has not reached production, then sent once it has. Screenshots for the report.
+// Synthetic fixtures only: temporary SQLite, no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -174,21 +177,18 @@ try {
   await pdfRow.waitFor({state: 'detached'});
   check([names(mock.row(requestId)), await sheet(rep).locator('.mold-design-file').count()], [['صورة من الإنتاج.png', 'مسقط.dwg'], 2], 'deleted at production too; the sheet shows the two left');
 
-  // ---- 5b. A file chosen while editing the request: the save asks for the same confirmation first, then the file follows the edit
-  await sheet(rep).getByRole('button', {name: 'تعديل الطلب'}).click();
-  const edit = rep.locator('.mold-dialog');
-  await edit.locator('.mold-design-picker input[type=file]').setInputFiles({name: 'مقطع جانبي.png', mimeType: 'image/png', buffer: pixel});
-  await edit.locator('.mold-design-file[data-state="ready"]').waitFor();
-  await edit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
-  const editWarning = edit.locator('.mold-design-confirm');
-  await editWarning.waitFor();
-  ok((await editWarning.innerText()).includes(WARNING), 'the edit form warns before attaching too');
+  // ---- 5b. A request production holds offers no edit (the production manager edits its data in the products application): another
+  //  file is attached from the sheet itself, after the same confirmation, and follows to production
+  check([await sheet(rep).getByRole('button', {name: 'تعديل الطلب'}).count(), await sheet(rep).getByRole('button', {name: 'إلغاء الطلب'}).count()], [0, 1], 'no edit on a request production holds; cancel stays');
+  await sheet(rep).locator('.mold-design-tools input[type=file]').setInputFiles({name: 'مقطع جانبي.png', mimeType: 'image/png', buffer: pixel});
+  const sideWarning = sheet(rep).locator('.mold-design-confirm', {hasText: 'مقطع جانبي.png'});
+  await sideWarning.waitFor();
+  ok((await sideWarning.innerText()).includes(WARNING), 'the sheet warns before attaching it too');
   check(mock.row(requestId).designFiles.length, 2, 'nothing sent before the confirmation');
-  await shot(rep, 'mold-design-edit-warning');
-  await edit.getByRole('button', {name: 'تأكيد: حفظ وإرفاق الملفات'}).click();
-  await edit.waitFor({state: 'detached'});
+  await shot(rep, 'mold-design-sheet-attach-warning');
+  await sideWarning.getByRole('button', {name: 'تأكيد الإرفاق'}).click();
   await fileRow(sheet(rep), 'مقطع جانبي.png').and(rep.locator('[data-state="sent"]')).waitFor();
-  check(names(mock.row(requestId)), ['صورة من الإنتاج.png', 'مسقط.dwg', 'مقطع جانبي.png'], 'the file chosen in the edit form reached production');
+  check(names(mock.row(requestId)), ['صورة من الإنتاج.png', 'مسقط.dwg', 'مقطع جانبي.png'], 'the file attached from the sheet reached production');
 
   // ---- 5c. An upload outlives the page: the representative moves to another page while it is on its way, comes back to it still
   //  uploading, leaves again, it fails meanwhile (busy), and back on the mold page the card and the sheet say so, with Retry
@@ -322,6 +322,45 @@ try {
   check(await sm.locator('.mold-pending[data-done]').allInnerTexts().then(texts => texts.map(text => text.includes('مصنع مسجّل في الإنتاج'))), [true], 'the request registered in production stays under «اعتمدتها الآن»');
   await shot(sm, 'mold-design-pending-back');
   await sm.context().close();
+
+  // ---- 8. A request production never stored (refused at its door, 400) is still edited, and a file chosen in its edit form follows the
+  //  edit: no warning (production holds nothing whose approvals it would undo); uploaded once the change is saved; held in the CRM while
+  //  the request has not reached production (the edit's own send gets no answer); sent as soon as production holds the request.
+  mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
+  const unsent = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}}})).json()).request;
+  check([unsent.sending.state, unsent.can.edit, mock.row(unsent.id)], ['rejected', true, undefined], 'refused before production stored it: still editable');
+  const editor = await open('rep');
+  await goMolds(editor);
+  await editor.locator('.mold-card', {hasText: 'لم يصل للإنتاج بعد'}).click();
+  await sheet(editor).getByRole('button', {name: 'تعديل الطلب'}).click();
+  const edit = editor.locator('.mold-dialog');
+  await edit.waitFor();
+  await edit.locator('.mold-design-picker input[type=file]').setInputFiles({name: 'مقطع علوي.png', mimeType: 'image/png', buffer: pixel});
+  await edit.locator('.mold-design-file[data-state="ready"]').waitFor();
+  await edit.locator('label.mold-field', {hasText: 'الكمية'}).locator('input').fill('3');
+  const filesSent = mock.state.calls.filter(call => call.route === 'design-files').length;
+  mock.state.down = true;
+  await edit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  await edit.waitFor({state: 'detached'});
+  check(await editor.locator('.mold-design-confirm').count(), 0, 'no warning: production holds nothing whose approvals a file would undo');
+  const heldRow = fileRow(sheet(editor), 'مقطع علوي.png').and(editor.locator('[data-state="held"]'));
+  await heldRow.waitFor();
+  check([await heldRow.locator('.mold-design-state').innerText(), mock.row(unsent.id), mock.state.calls.filter(call => call.route === 'design-files').length - filesSent, (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_design_files WHERE request_id=? AND name='مقطع علوي.png'").bind(unsent.id).first()).n],
+    ['يُرسل بعد وصول الطلب للإنتاج', undefined, 0, 1], 'the file followed the edit into the CRM and waits there for the request; nothing reached production');
+  await shot(editor, 'mold-design-edit-held');
+  mock.state.down = false;
+  await sheet(editor).getByRole('button', {name: 'إعادة الإرسال'}).click();
+  await sheet(editor).locator('.mold-sending').waitFor({state: 'detached'});
+  // The resend sends the request, then its files whose turn has come, in the background.
+  for (let n = 0; n < 100 && !mock.row(unsent.id)?.designFiles?.length; n++) await editor.waitForTimeout(100);
+  check([mock.row(unsent.id)?.quantity, names(mock.row(unsent.id))], [3, ['مقطع علوي.png']], 'production holds the edited request, then its file');
+  await editor.keyboard.press('Escape');
+  await sheet(editor).waitFor({state: 'detached'});
+  await editor.locator('.mold-heading-tools button').first().click();
+  await editor.locator('.mold-card', {hasText: 'لم يصل للإنتاج بعد'}).click();
+  await fileRow(sheet(editor), 'مقطع علوي.png').and(editor.locator('[data-state="sent"]')).waitFor();
+  ok(true, 'the request\'s sheet says the file reached production');
+  await editor.context().close();
 
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));

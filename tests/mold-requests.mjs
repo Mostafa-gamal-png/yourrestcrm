@@ -173,6 +173,13 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
     ['بيانات الطلب يعدّلها مدير الإنتاج فقط', 'The request\'s data is edited by the production manager only', 'بيانات الطلب يعدّلها مدير الإنتاج فقط'], 'production_only in Arabic, with its English pair');
   eq([lib.moldErrorText('request_locked', say('ar')), lib.moldErrorText('request_locked', say('ar'), {reason: 'other'})], ['بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا', 'بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا'], 'another 409 keeps its own words');
   eq([lib.moldProductionOnly({code: 'request_locked', reason: 'production_only'}), lib.moldProductionOnly({code: 'request_locked'}), lib.moldProductionOnly(null)], [true, false, false], 'which stored error is production_only');
+  eq([lib.moldChangeRefused({code: 'request_locked', reason: 'production_only', final: true}), lib.moldChangeRefused({code: 'request_locked', reason: 'production_only'}), lib.moldChangeRefused({code: 'invalid_payload', fields: ['specs.notes'], final: true}), lib.moldChangeRefused({code: 'invalid_payload', notStored: true}), lib.moldChangeRefused(null)],
+    [true, true, true, false, false], 'a change refused for good (final, production_only among them) is said so; a refusal the requester may still fix is not');
+  // A change production refused as production_only after an earlier attempt's answer was lost: accepted is the CRM's refused copy, marked
+  // unconfirmed. The view says so, whatever error is stored later; production holds the request (no edit; cancel, files and approval stay).
+  const unconfirmed = {outbox: null, accepted: {...data, unconfirmed: true}, remote: {...status, approvals: {required: true, sales: null, production: null, admin: null}}, lastError: {code: 'request_locked', http: 409, at}};
+  eq([lib.moldRequestView(row(unconfirmed), me, [], true).unconfirmed, lib.moldRequestView(row({outbox: null, accepted: data, remote: status}), me, [], true).unconfirmed], [true, false], 'the view says when the specifications are not production\'s');
+  eq([can(unconfirmed), lib.moldPermissions(row(unconfirmed), {id: 'sm', role: 'manager'}).approve], [[false, true, true, true], true], 'production holds it: no edit; cancelling, files and the sales manager\'s approval as for any request it holds');
 }
 
 // ---- the customers route: the CRM's list, the cities as the production sheet writes them
@@ -326,7 +333,8 @@ try {
   eq((await call('approval', moldApprovalBody({id: 'mr-none', action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'an unknown request: 404');
   // the sales manager approves every request, those registered in production too: the pending route, then the approval by orderNo
   const manual = mock.registerManual({customerNo: 27, customerName: 'مصنع مسجّل', enteredBy: 'x'});
-  await call('requests', moldRequestBody({id: 'mr-wait', requestedAt: riyadhIso(Date.now()), customer, salesman, specs}));
+  const waitBody = moldRequestBody({id: 'mr-wait', requestedAt: riyadhIso(Date.now()), customer, salesman, specs});
+  await call('requests', waitBody);
   answer = await call('pending', {});
   const waiting = answer.json.requests.map(item => moldPendingItem(item));
   eq(waiting.map(item => [item.orderNo, item.source, item.crmRequestId]), [[manual.orderNo, 'manual', null], [mock.row('mr-wait').orderNo, 'crm', 'mr-wait']], 'pending: both, the longest waiting first');
@@ -334,6 +342,18 @@ try {
   answer = await call('approval', moldApprovalBody({orderNo: manual.orderNo, action: 'approve', by: {name: 'مدير المبيعات'}}));
   eq([answer.kind, answer.json.request.crmRequestId, answer.json.request.waitingStep], ['ok', null, 'production'], 'approved by its orderNo: it waits for production');
   eq((await call('pending', {})).json.requests.map(item => item.orderNo), [mock.row('mr-wait').orderNo], 'and leaves the pending list');
+  // 2026-11-02: the production manager edits a CRM request in the products application. pending lists it as it is now; the ORIGINAL data
+  // again is still a safe retry (200 created false, not a change); any other data, the edited data included, is 409 production_only.
+  const edited = mock.edit('mr-wait', {customerName: 'مصنع عدّله الإنتاج', salesmanName: 'مندوب عدّله الإنتاج', quantity: 4, description: 'وصف عدّله الإنتاج'});
+  const editedItem = moldPendingItem((await call('pending', {})).json.requests.find(item => item.crmRequestId === 'mr-wait'));
+  eq([editedItem.customer.name, editedItem.salesman.name, editedItem.specs.quantity, editedItem.specs.description, editedItem.customer.crmNumber], ['مصنع عدّله الإنتاج', 'مندوب عدّله الإنتاج', 4, 'وصف عدّله الإنتاج', 27], 'pending: the CRM\'s request as the production manager edited it');
+  answer = await call('requests', waitBody);
+  eq([answer.kind, answer.http, answer.json.created, answer.json.request.revision, mock.row('mr-wait').quantity, mock.row('mr-wait').customerName], ['ok', 200, false, edited.revision, 4, 'مصنع عدّله الإنتاج'], 'the original again after the edit: 200 created false, nothing changes (a safe retry)');
+  answer = await call('requests', {...waitBody, customer: {...waitBody.customer, name: 'مصنع عدّله الإنتاج'}, salesman: {...waitBody.salesman, name: 'مندوب عدّله الإنتاج'}, specs: {...waitBody.specs, quantity: 4, description: 'وصف عدّله الإنتاج'}});
+  eq([answer.kind, answer.code, answer.reason, answer.request.revision], ['locked', 'request_locked', 'production_only', edited.revision], 'the edited data from the CRM: not the original, so 409 production_only; nothing changes');
+  answer = await call('requests', {...waitBody, specs: {...waitBody.specs, quantity: 9}});
+  eq([answer.kind, answer.reason, mock.row('mr-wait').quantity], ['locked', 'production_only', 4], 'any other data: 409 production_only');
+  eq(await Promise.resolve().then(() => mock.edit('mr-wait', {orderNo: 1})).then(() => '', error => error.message), 'no such column: orderNo', 'the stand-in\'s edit changes the request\'s data only');
   eq((await call('approval', moldApprovalBody({orderNo: 9999, action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'an unknown order: 404');
   // production cancels or deletes it afterwards: the refusal to withdraw carries the request (crmRequestId null) and its reason
   manual.cancelled = true;

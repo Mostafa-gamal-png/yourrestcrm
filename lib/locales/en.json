@@ -1391,5 +1391,11 @@
   "الموديل غير مسجل": "Model not recorded",
   "لا توجد ماكينات لهذا العميل": "This customer has no machines",
   "تُضاف ماكينات العميل من مندوبه المسؤول عنه.": "A customer's machines are added by the representative responsible for them.",
-  "سجّل ماكينات العميل لتظهر هنا وعند طلب القالب.": "Record the customer's machines so they show here and when requesting a mold."
+  "سجّل ماكينات العميل لتظهر هنا وعند طلب القالب.": "Record the customer's machines so they show here and when requesting a mold.",
+  "بيانات الطلب يعدّلها مدير الإنتاج فقط؛ الطلب أُرسل للإنتاج، فتعديله من تطبيق المنتجات.": "The request's data is edited by the production manager only; it was sent to production, so edit it in the products application.",
+  "بيانات الطلب يعدّلها مدير الإنتاج فقط؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله.": "The request's data is edited by the production manager only; the change did not reach production and will not be sent again.",
+  "أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.": "The request was cancelled in the production application; it can no longer be changed.",
+  "اكتملت الاعتمادات أو بدأ الإنتاج قبل وصول الإلغاء؛ لم يعد الإلغاء ممكنًا.": "The approvals were completed or production started before the cancellation arrived; it can no longer be cancelled.",
+  "رفض الإنتاج الإرسال لأن الطلب مقفل لديه؛ لن يُعاد إرساله.": "Production refused it because the request is locked there; it will not be sent again.",
+  "الطلب ملغى": "The request is cancelled"
 }

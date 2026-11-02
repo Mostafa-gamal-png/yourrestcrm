@@ -32,7 +32,8 @@ export async function loadMoldRequest(db:D1Database,id:string){return (await loa
 export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs});
 export const requestedNow=(now:string)=>riyadhIso(now);
 
-export type SendOutcome={kind:'ok'|'locked'|'not_found'|'rejected'|'retry'|'off'|'busy'|'none';code:string;fields?:string[];reason?:string};
+/** What one send gave. sent: what was sent (the request's data, or its cancellation), so a refusal is told in the right words. */
+export type SendOutcome={kind:'ok'|'locked'|'not_found'|'rejected'|'retry'|'off'|'busy'|'none';code:string;fields?:string[];reason?:string;sent?:'send'|'cancel'};
 /** moldNeverSent (portable/mold-rules.mjs) in SQL, over crm_mold_requests: never accepted, no status from production, and either never
  *  attempted or every attempt refused before production stored it (the last error says so, and no attempt started after it). The
  *  update's guard, so a send claimed between the check and the save keeps the request as it is. */
@@ -45,10 +46,16 @@ export const MOLD_NEVER_SENT_SQL="(accepted IS NULL AND remote IS NULL AND (last
  *
  * 409 production_only (production holds the request with other data, which its production manager alone edits; for example a change
  * saved before 2026-11-02 while an earlier attempt had in fact arrived) is final: never tried again, production's status from the
- * answer is stored, the error keeps the reason so the request shows it, and the data goes back to what production last accepted from
- * the CRM when the CRM knows it. When it does not (the earlier attempt's answer was lost), the data stays the CRM's copy and the request
- * says plainly that production's may differ; accepted then only marks that production holds the request (its status is pulled, its
- * design files go), never that the data is production's.
+ * answer is stored when it carries one for this request, the error keeps the reason (final) so the request shows it, and the data goes
+ * back to what production last accepted from the CRM when the CRM knows it. When it does not (the earlier attempt's answer was lost),
+ * the data stays the CRM's refused copy, and accepted becomes that copy marked unconfirmed: it marks that production holds the request
+ * (its status is pulled, its design files go, the sales manager may approve it), never that these are production's data, and the
+ * request says so for as long as it stands, whatever error is stored later. The same answer without a usable status still proves
+ * production holds the request, so it is settled the same way (the status comes with the next pull).
+ *
+ * A change to a request production already holds (queued before 2026-11-02; the CRM no longer saves one) that production refuses for
+ * its data (400 or 413, or the CRM's own refusal) is final too: no edit can fix it any more, so it is dropped, the data goes back to
+ * what production accepted, and the error, marked final, says why.
  */
 export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch}={}):Promise<SendOutcome>{
  if(!link.ok)return {kind:'off',code:link.reason};
@@ -63,7 +70,9 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   :await callProducts(link,'requests',requestBody(row),options);
  // This attempt and every one before it were refused before production stored the request: it may still be edited (moldNeverSent).
  const notStored=moldAnswerNotStored(answer)&&moldNeverSent(row)?{notStored:true}:{};
- const done=now(),remote=answer.kind==='ok'?moldStatusObject(answer.json?.request):answer.kind==='locked'?answer.request:null,[remoteSet,remoteArgs]=newerRemote(remote,done);
+ // A status about another request (a crmRequestId that is not this one's) is not this request's status.
+ const told=answer.kind==='ok'?moldStatusObject(answer.json?.request):answer.kind==='locked'?answer.request:null,remote=told?.crmRequestId===row.id?told:null;
+ const done=now(),[remoteSet,remoteArgs]=newerRemote(remote,done);
  const settle=(sql:string,...args:(string|number|null)[])=>db.prepare(`UPDATE crm_mold_requests SET ${sql},updated_at=? WHERE id=? AND mutation_id=?`).bind(...args,done,id,claim).run();
  const cleared="outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL";
  if(answer.kind==='ok'){
@@ -74,12 +83,19 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   await settle(`${cleared},last_error=NULL`);
  }else if(answer.kind==='locked'){
   // Production refused the change (it started first, or the request is the production manager's to edit now): the change is withdrawn,
-  // never tried again, and the request shows production's status.
-  const error=JSON.stringify({code:'request_locked',...(answer.reason?{reason:answer.reason}:{}),http:409,at:done});
+  // never tried again (final), and the request shows production's status.
+  const productionOnly=row.outbox==='send'&&answer.reason===MOLD_PRODUCTION_ONLY;
+  const error=JSON.stringify({code:'request_locked',...(answer.reason?{reason:answer.reason}:{}),http:409,at:done,...(row.outbox==='send'?{final:true}:{})});
   if(row.outbox==='cancel')await settle(`${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
-  // production_only: the production manager alone edits it now. Final, with the reason; production holds it (accepted), whatever data.
-  else if(answer.reason===MOLD_PRODUCTION_ONLY&&remote)await settle(`${cleared},data=COALESCE(accepted,data),accepted=COALESCE(accepted,data),last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
+  // production_only: production holds the request (with or without a status here), and its production manager alone edits it. When the
+  // CRM never learned what production accepted, its refused copy is kept, marked unconfirmed (SQLite reads the old row on the right).
+  // Without a status, the time of the last pull stays, so the next page pulls it.
+  else if(productionOnly)await settle(`${cleared},data=COALESCE(accepted,data),accepted=COALESCE(accepted,json_set(data,'$.unconfirmed',json('true'))),last_error=?,${remote?remoteSet:'remote_at=remote_at'},version=version+1`,error,...(remote?remoteArgs:[]));
   else await settle(`${cleared},data=COALESCE(accepted,data),last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
+ }else if(answer.kind==='rejected'&&row.outbox==='send'&&row.accepted){
+  // A change (queued before 2026-11-02) to a request production holds, refused for its data: no edit can fix it now, so it is dropped
+  // for good, the data back to what production accepted, with the reason.
+  await settle(`${cleared},data=accepted,last_error=?,version=version+1`,JSON.stringify({code:answer.code,fields:answer.fields,http:answer.http||0,at:done,final:true}));
  }else if(answer.kind==='rejected'){
   // The data must change first; a retry alone cannot help, so the timetable stops until the representative edits (allowed while it
   // has never reached production), resends or cancels.
@@ -88,7 +104,7 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   const failures=row.attempts+1,first=row.firstFailedAt||done;
   await settle('attempts=?,first_failed_at=?,next_attempt_at=?,last_error=?',failures,first,moldNextAttempt(failures,first,done),JSON.stringify({code:answer.code,http:answer.http||0,at:done,...notStored}));
  }
- return {kind:answer.kind==='not_found'&&row.outbox==='cancel'?'ok':answer.kind,code:answer.code,fields:answer.fields,...(answer.reason?{reason:answer.reason}:{})};
+ return {kind:answer.kind==='not_found'&&row.outbox==='cancel'?'ok':answer.kind,code:answer.code,fields:answer.fields,...(answer.reason?{reason:answer.reason}:{}),sent:row.outbox};
 }
 
 /** The requests whose next try has come, oldest first; a few per run so a page or the timer never waits long. Then the design files

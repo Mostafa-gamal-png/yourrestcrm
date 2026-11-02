@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
 import {validateMoldSpecs,moldApprovalBody,moldApprovalRefusal,moldStatusObject,moldRequestCity,MOLD_LIMITS,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldDesignInFlight,moldDesignStopped,moldErrorText,moldPermissions,moldRequestView,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldDesignInFlight,moldDesignStopped,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
 import {forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldDesignFilesByRequest,moldPendingFor as pendingFor,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
@@ -42,9 +42,15 @@ const schema=z.discriminatedUnion('action',[
 ]);
 const labels={create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب','approve-order':'اعتماد مدير المبيعات لطلب تصنيع قالب','withdraw-order':'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
 /** A sent request's data is edited by the production manager in the products application only (yourrest-products, 2026-11-02): the
- *  CRM's update is refused, and a change production still refuses as production_only is final. */
+ *  CRM's update is refused, and a change production still refuses as production_only is final. Each text has its English pair in
+ *  lib/locales/en.json; the request's sheet says which specifications it shows. */
 const PRODUCTION_ONLY=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ الطلب أُرسل للإنتاج، فتعديله من تطبيق المنتجات.';
-const PRODUCTION_ONLY_SENT=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله. المواصفات المعروضة نسخة الـCRM وقد تختلف عما في تطبيق الإنتاج.';
+const PRODUCTION_ONLY_SENT=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله.';
+/** A refusal of production's for what was sent: a cancellation it refused (cancelled there, or the approvals or production came first),
+ *  or the request's data refused as locked for another reason. */
+const CANCELLED_THERE='أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.';
+const CANCEL_LOCKED='اكتملت الاعتمادات أو بدأ الإنتاج قبل وصول الإلغاء؛ لم يعد الإلغاء ممكنًا.';
+const SEND_LOCKED='رفض الإنتاج الإرسال لأن الطلب مقفل لديه؛ لن يُعاد إرساله.';
 function checkedSpecs(input:Record<string,unknown>){
  const {specs,errors}=validateMoldSpecs(input);
  if(Object.keys(errors).length)throw Object.assign(new CRMError(Object.values(errors).join(' • '),400),{fields:errors});
@@ -62,11 +68,13 @@ export async function POST(req:Request){try{
  // The role is checked before the body is read: customer service is refused (403) whatever it sends.
  const c=await reader(),input=schema.parse(await readJsonBody(req)),now=new Date().toISOString(),mutation=crypto.randomUUID(),link=productsLink();keepMoldRetrying();
  const canonical=JSON.stringify(input),receiptId='mold-request-receipt:'+c.me.id+':'+input.requestId;
- const answer=async(rowId:string,outcome:SendOutcome|null,status=200)=>{
+ /** The request as it now stands, with what the send gave; a 409 (the CRM's refusal, given as `refusal`, or production's) carries the
+  * request too, so the screen follows the server's rule at once. */
+ const answer=async(rowId:string,outcome:SendOutcome|null,status=200,refusal='')=>{
   const row=await loadMoldRequest(c.db,rowId);
   if(!row)throw new CRMError('الطلب غير متاح',404);
-  // 409: production refused the change; the request now shows production's status, and the reason is the one production gave.
-  const refused=outcome?.reason===MOLD_PRODUCTION_ONLY?PRODUCTION_ONLY_SENT:row.remote?.status==='cancelled'?'أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.':'بدأ الإنتاج قبل وصول التعديل؛ لم يعد التعديل أو الإلغاء ممكنًا. الطلب كما استلمه الإنتاج.';
+  // 409 from production: the change is withdrawn, the request shows production's status, and the reason is the one production gave.
+  const refused=refusal||(outcome?.reason===MOLD_PRODUCTION_ONLY?PRODUCTION_ONLY_SENT:row.remote?.status==='cancelled'?CANCELLED_THERE:outcome?.sent==='cancel'?CANCEL_LOCKED:SEND_LOCKED);
   return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id])),send:outcome?{kind:outcome.kind,code:outcome.code,fields:outcome.fields||[]}:null,...(status===409?{error:refused}:{})},{status});
  };
  const replay=async()=>{
@@ -144,8 +152,11 @@ export async function POST(req:Request){try{
    return answer(row.id,null);
   }
   // Sent (or perhaps sent): the production manager edits it in the products application; the CRM no longer does, whatever copy the
-  // screen held.
-  if(input.action==='update'&&!allowed.edit)throw new CRMError(row.memberId!==c.me.id?'تعديل الطلب لمن طلبه':row.cancelledAt?'الطلب ملغى':PRODUCTION_ONLY,row.memberId!==c.me.id?403:409);
+  // screen held. The refusal carries the request as it stands, so the screen drops its edit at once.
+  if(input.action==='update'&&!allowed.edit){
+   if(row.memberId!==c.me.id)throw new CRMError('تعديل الطلب لمن طلبه',403);
+   return answer(row.id,null,409,row.cancelledAt?'الطلب ملغى':row.remote?.status==='cancelled'?CANCELLED_THERE:PRODUCTION_ONLY);
+  }
   if(input.action!=='resend'&&input.version!==row.version)throw new CRMError('تغيّر الطلب. حدّث الصفحة.',409);
   const guard=`id=? AND version=? AND member_id=? AND ${permission.sql}`,guardArgs=[row.id,row.version,c.me.id,...permission.args];
   if(input.action==='update'){
@@ -179,7 +190,13 @@ export async function POST(req:Request){try{
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),rowId,c.me.name,'mold-request:'+input.action,JSON.stringify(detail),now,...ga),
  ]).catch(async error=>{const again=await replay();if(again)return again;throw error;});
  if(result instanceof Response)return result;
- if(result[0].meta.changes!==1){const again=await replay();if(again)return again;throw new CRMError('تغيّرت البيانات أو الصلاحيات أثناء الحفظ. حدّث الصفحة.',409);}
+ if(result[0].meta.changes!==1){
+  const again=await replay();if(again)return again;
+  // An update stopped by its guard because a send was claimed since the check (it may arrive): refused as a sent request is.
+  const current=input.action==='update'?await loadMoldRequest(c.db,rowId):null;
+  if(current&&!moldNeverSent(current))return answer(rowId,null,409,PRODUCTION_ONLY);
+  throw new CRMError('تغيّرت البيانات أو الصلاحيات أثناء الحفظ. حدّث الصفحة.',409);
+ }
  // Saved. Now the send (up to 10 seconds); a failure leaves the request waiting on the timetable.
  const outcome=await sendMoldRequest(c.db,rowId,{link});
  // A resend also starts the request's design files whose turn has come again (they go in the background, up to 120 seconds each).
