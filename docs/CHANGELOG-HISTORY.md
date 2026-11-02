@@ -7,11 +7,12 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
 ## The ERP code goes with the customer list sent to the products application (2026-11-02, third package of the day, no migration)
 
 - **Asked.** The owner, after «استيراد من ERP»: in the products application the customer cannot be found by its ERP code (146), only by its Yourrest number; «ابعت كود ERP للإنتاج».
-- **List.** `moldCustomerEntry` (`portable/mold-rules.mjs`) adds `erpCode`, the customer's `data.code` trimmed, always present ('' when none or over 50 characters, never cut) so production clears a removed code; `lib/mold-customers-server.ts` passes it. The list's fingerprint changes once, so the whole list goes again after the update.
+- **List.** `moldCustomerEntry` (`portable/mold-rules.mjs`) adds `erpCode`, the customer's `data.code` trimmed, with Arabic-Indic digits as ASCII digits and control characters dropped (a code that held one must not stop the whole list), '' when none or over 50 characters (never cut) so production clears a removed code; `lib/mold-customers-server.ts` passes it for every listed customer. A deleted customer goes without the field (its deletion record does not keep the code), so production keeps the code it holds. The list's fingerprint changes once, so the whole list goes again after the update.
+- **Review.** An adversarial review of the first version found the control-character throw, the cleared code of deleted customers and the Arabic-Indic digits; all three are fixed and tested.
 - **After an import.** `app/api/erp-customers/route.ts` nudges the list after an apply (`nudgeMoldCustomers({soon:true})`), as a customer edit already did.
 - **Contract copy.** `docs/MOLD-REQUESTS-CONTRACT-AR.md`: `erpCode` in the `customers` route; production ignores it until it supports it (its validator reads only the fields it knows).
 - **Stand-in production.** `scripts/lib/products-mock.mjs` validates and stores `erpCode` (optional, up to 50).
-- **Tests.** `tests/mold-requests.mjs` (the field, trimming, '' when empty or too long, the order of the fields), `tests/mold-customers-http.mjs` (the code in the first list, kept on an edit, sent shortly after «استيراد من ERP», cleared as '').
+- **Tests.** `tests/mold-requests.mjs` (the field, trimming, ASCII digits, control characters, '' when empty or too long, left out without a code given, the order of the fields), `tests/mold-customers-http.mjs` (the code in the first list, kept on an edit, sent shortly after «استيراد من ERP», cleared as '', a deleted customer keeps its code in production).
 - **Operations.** `docs/UPDATE-2026-11-02-ERP-CODE-AR.txt`.
 
 ## «استيراد من ERP» replaces «ربط عملاء ERP»; the products side's notes on mold requests (2026-11-02, second package of the day, no migration)

@@ -6,7 +6,7 @@
 // address and city go with the next list; production down does not stop a save and the next send carries what changed meanwhile; the
 // same list goes again after 24 hours and not before, across a restart; a customer deleted through the CRM goes at once as active:false.
 // Since 2026-11-02 (second part): each customer carries its ERP code (`erpCode`, '' when none); a code changed by «استيراد من ERP» goes
-// shortly after the apply, and a code removed in the CRM goes as ''.
+// shortly after the apply, and a code removed in the CRM goes as ''; a deleted customer goes without it, so production keeps its code.
 // Synthetic fixtures only.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -99,17 +99,18 @@ try {
   await until(async () => (await audit()).length === 5, 'the fifth audit entry');
 
   // ---- a customer deleted through the CRM: sent at once as active:false (the products contract), with its number and name
-  await customer('c5', {name: 'مصنع هيتمسح', city: 'الرياض', address: 'حي النسيم'});
+  await customer('c5', {name: 'مصنع هيتمسح', city: 'الرياض', address: 'حي النسيم', code: '٥٥٥'});
   const fifth = await number('c5'), sentBefore = sends().length;
   await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع إضافي', city: 'جدة', region: 'الشرقية', assignedTo: 'rep', branch: 'الرئيسي'}}});
   await until(() => sends().length === sentBefore + 1, 'the list with the fifth customer');
   await until(async () => mock.state.customers.get(fifth)?.active === true, 'the fifth customer held by production');
+  check(mock.state.customers.get(fifth).erpCode, '555', 'its ERP code in ASCII digits');
   const c5 = await app.db.prepare("SELECT version FROM crm_records WHERE id='c5'").first();
   check((await owner('/api/crm', {method: 'POST', body: {action: 'delete', kind: 'customer', id: 'c5', version: c5.version}})).status, 200, 'the customer is deleted through the CRM');
   await until(() => sends().slice(sentBefore + 1).some(call => JSON.parse(call.body).customers.some(item => item.crmNumber === fifth && item.active === false)), 'the deleted customer sent as active:false');
   const gone5 = JSON.parse(sends().findLast(call => JSON.parse(call.body).customers.some(item => item.crmNumber === fifth)).body).customers.find(item => item.crmNumber === fifth);
-  check(gone5, {crmNumber: fifth, name: 'مصنع هيتمسح', address: 'حي النسيم', city: 'Riyadh - الرياض', erpCode: '', active: false}, 'sent with its number, name, address and city, active:false');
-  check(mock.state.customers.get(fifth).active, false, 'production holds it as inactive');
+  check(gone5, {crmNumber: fifth, name: 'مصنع هيتمسح', address: 'حي النسيم', city: 'Riyadh - الرياض', active: false}, 'sent with its number, name, address and city, active:false, without erpCode');
+  check([mock.state.customers.get(fifth).active, mock.state.customers.get(fifth).erpCode], [false, '555'], 'production holds it as inactive and keeps its ERP code');
 
   // ---- «استيراد من ERP» changes a customer's ERP code: the list goes shortly after the apply, with the new code
   const header = ['رقم العميل', 'رقم الهوية', 'الاسم بالعربي', 'الاسم بالانجليزي', 'رقم الجوال', 'رقم الهاتف', 'البريد الالكتروني', 'العنوان', 'التاريخ'];
@@ -143,7 +144,7 @@ for (const [hours, expected] of [[25, 1], [1, 0]]) {
     const now = new Date().toISOString();
     for (const [id, data] of [['d1', {name: 'مصنع يومي', city: 'الدمام'}], ['d2', {name: 'مصنع آخر', address: 'حي'}]]) await fresh.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(id, JSON.stringify(data), now, now).run();
     const rows = (await fresh.db.prepare("SELECT n.number,r.data FROM crm_records r JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.kind='customer' ORDER BY n.number").all()).results;
-    const list = rows.map(row => { const data = JSON.parse(row.data); return moldCustomerEntry({crmNumber: row.number, name: data.name, address: data.address, city: data.city, erpCode: data.code}); });
+    const list = rows.map(row => { const data = JSON.parse(row.data); return moldCustomerEntry({crmNumber: row.number, name: data.name, address: data.address, city: data.city, erpCode: data.code ?? ''}); });
     const hash = createHash('sha256').update(JSON.stringify(list)).digest('hex'), sentAt = new Date(Date.now() - hours * 3600_000).toISOString();
     await fresh.db.prepare("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,'mold-customers','system','mold-customers:sync',?,?)").bind(crypto.randomUUID(), JSON.stringify({mode: 'full', count: list.length, hash}), sentAt).run();
     const before = listSends().length;
