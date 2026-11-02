@@ -4,9 +4,11 @@
 // with its own requestId, kept for retries of the same file), then sent to production by the server once production holds the request.
 // Everyone who reads the request sees every file (the representative's and production's) and opens or downloads it through the CRM;
 // the requester deletes their own while the request may change. Attaching or deleting undoes the approvals, so it is confirmed first.
+// The uploads outlive the page (a member's queue lasts as long as the app is open), so moving to another page and back loses none.
 import React,{useRef,useState} from 'react';
 import {Download,Eye,FileBox,FileText,ImageIcon,Loader2,Paperclip,RotateCcw,Trash2,TriangleAlert,X} from 'lucide-react';
 import {getLanguage} from '@/lib/i18n';
+import {isNativeTrackingApp} from '@/lib/native-tracking';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import {moldDesignRefusalText,moldDesignStateNames,moldErrorText,type MoldDesignFileView,type MoldDesignKind,type MoldError,type MoldPendingDesignFile,type MoldRequestView} from '@/lib/mold-requests';
 import {MOLD_DESIGN_EXTENSIONS,MOLD_DESIGN_MAX_BYTES,MOLD_DESIGN_MAX_FILES,moldDesignFileCheck,moldDesignName} from '@/portable/mold-rules.mjs';
@@ -31,6 +33,10 @@ export const designSize=(size:number|null)=>size===null?'—':size<1024?size+' B
 const KindIcon=({kind}:{kind:MoldDesignKind|null})=>kind==='pdf'?<FileText size={18} aria-hidden="true"/>:kind==='image'?<ImageIcon size={18} aria-hidden="true"/>:<FileBox size={18} aria-hidden="true"/>;
 /** What attaching or deleting does to a request production holds (the contract: it counts as a change). */
 export const designWarningText=(say:Say)=>say('إرفاق ملف أو حذفه بيتحسب تعديل على الطلب: هيلغي الاعتمادات اللي تمت، ويرجع الطلب لمدير المبيعات من الأول.','Attaching or deleting a file counts as a change to the request: it undoes the approvals given so far and the request goes back to the sales manager.');
+/** A confirmation scrolls itself into view when it appears (a stable callback ref: once per appearance, not on every render), so its
+ *  buttons are on a phone's screen; centered keeps the button that follows a warning in view too. */
+export const reveal=(element:HTMLElement|null)=>{element?.scrollIntoView({block:'nearest'});};
+export const revealCentered=(element:HTMLElement|null)=>{element?.scrollIntoView({block:'center'});};
 /** The warning applies once production holds the request; before that nothing has been approved. */
 export const designNeedsWarning=(view:Pick<MoldRequestView,'remote'>)=>!!view.remote;
 /** Why a file was refused, in the representative's words: production's reason, or the code. */
@@ -70,10 +76,12 @@ export function designUsed(view:Pick<MoldRequestView,'designFiles'>,uploads:Desi
 }
 
 type Listener=(view:MoldRequestView)=>void;
+const sameFile=(a:File,b:File)=>a.name===b.name&&a.size===b.size&&a.lastModified===b.lastModified;
 /**
- * The page's uploads, one at a time (a phone's connection, and the server's two uploads at once). Lives as long as the page: closing the
- * request's sheet does not stop an upload, and its outcome is shown when the sheet opens again. A repeated upload of the same file keeps
- * its requestId, so the server stores it once.
+ * A member's uploads, one at a time (a phone's connection, and the server's two uploads at once). Lives as long as the app is open
+ * (designUploadQueue), not the page: closing the request's sheet or moving to another page does not stop an upload, and its outcome (a
+ * failure with its reason and Retry too) is shown when the sheet opens again. A repeated upload of the same file keeps its requestId, so
+ * the server stores it once: the same file chosen again for the same request is not added twice (one whose upload failed is retried).
  */
 export class DesignUploadQueue{
  private items:DesignUpload[]=[];
@@ -93,7 +101,12 @@ export class DesignUploadQueue{
  mark=()=>this.seq;
  newer=(moldId:string,mark:number)=>{const last=this.latest.get(moldId);return last&&last.seq>mark?last.view:null;};
  add=(moldId:string,choices:DesignChoice[])=>{
-  const fresh=choices.filter(choice=>!choice.refusal&&!this.items.some(item=>item.key===choice.key));
+  const fresh:DesignChoice[]=[];
+  for(const choice of choices){
+   if(choice.refusal||this.items.some(item=>item.key===choice.key))continue;
+   const same=this.items.find(item=>item.moldId===moldId&&sameFile(item.file,choice.file));
+   if(!same)fresh.push(choice);else if(same.phase==='failed'&&!same.final)this.retry(same.key);
+  }
   if(!fresh.length)return;
   this.write([...this.items,...fresh.map(choice=>({key:choice.key,moldId,file:choice.file,name:choice.name,size:choice.size,kind:choice.kind,phase:'queued' as const,percent:null,error:'',busy:false,final:false}))]);
   void this.pump();
@@ -136,15 +149,48 @@ export class DesignUploadQueue{
  }
 }
 
+const queues=new Map<string,DesignUploadQueue>();
+/** The member's upload queue, the same one each time the mold requests page opens while the app is open. */
+export function designUploadQueue(memberId:string){
+ let queue=queues.get(memberId);
+ if(!queue){queue=new DesignUploadQueue();queues.set(memberId,queue);}
+ return queue;
+}
+
 const uploadPhase=(upload:DesignUpload,say:Say)=>upload.phase==='queued'?say('في انتظار الرفع','Waiting to upload')
  :upload.phase==='uploading'?say('جارٍ الرفع','Uploading')+(upload.percent!==null?' '+upload.percent+'%':'')
  :upload.phase==='processing'?say('جارٍ الحفظ والإرسال للإنتاج…','Saving and sending to production…'):say('لم يُرفع','Not uploaded');
 
-/** Open (a PDF or an image, in the browser) and download, both through the CRM. */
-function FileLinks({href,viewable,name,say}:{href:string;viewable:boolean;name:string;say:Say}){
+/** A download through the CRM, fetched by the page so that a failure (production unreachable, the file gone there, the CRM busy) is
+ *  said beside the file rather than lost in the browser's download list. '' once the file is handed to the browser to save. */
+export async function downloadDesignFile(href:string,name:string,say:Say){
+ try{
+  const response=await fetch(href,{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok){
+   let message='';
+   try{message=String(((await response.json()) as {error?:unknown}).error||'');}catch{message='';}
+   return message||(response.status===401?say('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.','Your session has ended. Sign in again.'):say('تعذّر تنزيل الملف. حاول مرة أخرى.','The file could not be downloaded. Try again.'));
+  }
+  const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');
+  link.href=url;link.download=name;link.hidden=true;document.body.appendChild(link);link.click();link.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),60_000);
+  return '';
+ }catch{return say('تعذّر تنزيل الملف؛ تحقق من الاتصال ثم حاول مرة أخرى.','The file could not be downloaded; check the connection and try again.');}
+}
+/** Open (a PDF or an image, in the browser; a failure reads as a page in words there) and download, both through the CRM. In the Android
+ *  app the download stays a plain link: its WebView hands downloads to the system, which the page cannot follow. */
+function FileLinks({href,viewable,name,say,onFailure}:{href:string;viewable:boolean;name:string;say:Say;onFailure:(message:string)=>void}){
+ const [busy,setBusy]=useState(false);
+ const download=(event:React.MouseEvent<HTMLAnchorElement>)=>{
+  if(isNativeTrackingApp()||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+  event.preventDefault();
+  if(busy)return;
+  setBusy(true);onFailure('');
+  void downloadDesignFile(href,name,say).then(onFailure).finally(()=>setBusy(false));
+ };
  return <>
   {viewable&&<a className="btn small subtle" href={href+'&inline=1'} target="_blank" rel="noopener noreferrer" aria-label={say('عرض ','Open ')+name}><Eye size={15} aria-hidden="true"/>{say('عرض','Open')}</a>}
-  <a className="btn small subtle" href={href} download={name} aria-label={say('تنزيل ','Download ')+name}><Download size={15} aria-hidden="true"/>{say('تنزيل','Download')}</a>
+  <a className="btn small subtle" href={href} download={name} aria-label={say('تنزيل ','Download ')+name} aria-busy={busy||undefined} onClick={download}>{busy?<Loader2 className="spin" size={15} aria-hidden="true"/>:<Download size={15} aria-hidden="true"/>}{say('تنزيل','Download')}</a>
  </>;
 }
 
@@ -183,6 +229,24 @@ export function MoldDesignPicker({choices,onChange,room,disabled,say}:{choices:D
  </fieldset>;
 }
 
+/** Why a file stands where it does, beside its state: production's refusal of the file, or of its deletion (the file then stays as
+ *  production holds it); the last failure of a send or a deletion still on its way; and, once the automatic tries have stopped (24 hours
+ *  of failures, or production did not find the request), that the requester's resend is the way on. */
+export function designFileDetail(file:Pick<MoldDesignFileView,'state'|'error'|'stopped'>,say:Say){
+ const error=file.error;
+ if(file.state==='rejected')return designRefusal(error,say);
+ if(file.state==='sent'&&error)return say('لم يُحذف من الإنتاج: ','Not deleted at production: ')+designRefusal(error,say);
+ if(file.state!=='waiting'&&file.state!=='deleting')return '';
+ const parts=[];
+ if(error?.http===404)parts.push(say('لم يجد تطبيق الإنتاج الطلب، أو لا يستقبل ملفات التصميم بعد. لن يُعاد الإرسال تلقائيًا؛ استخدم «إعادة الإرسال».','Production did not find the request, or does not take design files yet. It is not sent again by itself; use Resend.'));
+ else{
+  // A file's own call waits up to 2 minutes; a deletion's, 10 seconds.
+  if(error)parts.push(say('آخر محاولة: ','Last try: ')+moldErrorText(error.code,say,{file:file.state==='waiting'})+'.');
+  if(file.stopped)parts.push(say('توقفت المحاولات التلقائية بعد 24 ساعة؛ استخدم «إعادة الإرسال».','Automatic tries stopped after 24 hours; use Resend.'));
+ }
+ return parts.join(' ');
+}
+
 /** The request's design files in its sheet: every file, the representative's with where it stands and production's marked as such, each
  *  opened or downloaded through the CRM; the requester attaches and deletes while the request may change. */
 export function MoldDesignFiles({view,uploads,queue,onView,say}:{view:MoldRequestView;uploads:DesignUpload[];queue:DesignUploadQueue;onView:(view:MoldRequestView)=>void;say:Say}){
@@ -200,9 +264,10 @@ export function MoldDesignFiles({view,uploads,queue,onView,say}:{view:MoldReques
    if(warn)setAsking(ready);else queue.add(view.id,ready);
   }finally{setChecking(false);}
  };
+ const failed=(key:string)=>(message:string)=>setErrors(previous=>previous[key]===message?previous:{...previous,[key]:message});
  const remove=async(file:MoldDesignFileView)=>{
   if(deleting||!file.crmFileId)return;
-  setDeleting(file.key);setErrors(previous=>({...previous,[file.key]:''}));
+  setDeleting(file.key);failed(file.key)('');
   // A retry after an unclear failure keeps its identifier, so the deletion is asked for once.
   const name='delete:'+file.key;if(!keys.current.has(name))keys.current.set(name,crypto.randomUUID());
   try{
@@ -216,13 +281,12 @@ export function MoldDesignFiles({view,uploads,queue,onView,say}:{view:MoldReques
   }finally{setDeleting(null);}
  };
  const stateText=(file:MoldDesignFileView)=>say(...moldDesignStateNames[file.state]);
- const detail=(file:MoldDesignFileView)=>file.state==='rejected'?designRefusal(file.error,say):file.state==='waiting'&&file.error?say('آخر محاولة: ','Last try: ')+moldErrorText(file.error.code,say):'';
  return <section className="mold-design" aria-label={say('ملفات التصميم','Design files')}>
   <div className="mold-design-head"><h3 className="mold-subtitle">{say('ملفات التصميم','Design files')}</h3><span className="mold-design-count" dir="ltr">{used}/{MOLD_DESIGN_MAX_FILES}</span></div>
   {!view.designFiles.length&&!pending.length&&<p className="mold-design-empty">{say('لا توجد ملفات تصميم.','No design files.')}</p>}
   {(!!view.designFiles.length||!!pending.length)&&<ul className="mold-design-list">
    {view.designFiles.map(file=>{
-    const reason=detail(file),mayReach=warn&&['sent','waiting'].includes(file.state);
+    const reason=designFileDetail(file,say),mayReach=warn&&['sent','waiting'].includes(file.state);
     return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source}>
      <span className="mold-design-icon"><KindIcon kind={file.kind}/></span>
      <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
@@ -230,10 +294,10 @@ export function MoldDesignFiles({view,uploads,queue,onView,say}:{view:MoldReques
       {reason&&<small className="mold-design-reason">{reason}</small>}
       {errors[file.key]&&<small className="mold-design-reason" role="alert">{errors[file.key]}</small>}</div>
      <div className="mold-design-actions">
-      {file.state!=='deleting'&&<FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say}/>}
+      {file.state!=='deleting'&&<FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say} onFailure={failed(file.key)}/>}
       {file.canDelete&&confirming!==file.key&&<button type="button" className="btn small subtle mold-design-delete" disabled={!!deleting} onClick={()=>setConfirming(file.key)} aria-label={say('حذف ','Delete ')+file.name}>{deleting===file.key?<Loader2 className="spin" size={15}/>:<Trash2 size={15} aria-hidden="true"/>}{say('حذف','Delete')}</button>}
      </div>
-     {confirming===file.key&&<div className="mold-design-confirm" role="group" aria-label={say('تأكيد حذف الملف','Confirm deleting the file')}>
+     {confirming===file.key&&<div className="mold-design-confirm" role="group" ref={reveal} aria-label={say('تأكيد حذف الملف','Confirm deleting the file')}>
       <p>{mayReach?<><TriangleAlert size={16} aria-hidden="true"/>{designWarningText(say)}</>:say('حذف الملف من الطلب؟','Delete the file from the request?')}</p>
       <div className="mold-actions"><button type="button" className="btn danger-outline" disabled={!!deleting} onClick={()=>void remove(file)}>{deleting===file.key?<Loader2 className="spin" size={16}/>:<Trash2 size={16} aria-hidden="true"/>}{say('تأكيد الحذف','Confirm delete')}</button>
        <button type="button" className="btn subtle" disabled={!!deleting} onClick={()=>setConfirming(null)}>{say('رجوع','Back')}</button></div>
@@ -255,7 +319,7 @@ export function MoldDesignFiles({view,uploads,queue,onView,say}:{view:MoldReques
    <ul>{refused.map(choice=><li key={choice.key}><bdi>{choice.name}</bdi>: {moldDesignRefusalText(choice.refusal,say)}</li>)}</ul>
    <button type="button" className="btn small subtle" onClick={()=>setRefused([])} aria-label={say('إخفاء','Dismiss')}><X size={15} aria-hidden="true"/></button>
   </div>}
-  {asking&&<div className="mold-design-confirm" role="group" aria-label={say('تأكيد إرفاق الملفات','Confirm attaching the files')}>
+  {asking&&<div className="mold-design-confirm" role="group" ref={reveal} aria-label={say('تأكيد إرفاق الملفات','Confirm attaching the files')}>
    <p><TriangleAlert size={16} aria-hidden="true"/>{designWarningText(say)}</p>
    <ul>{asking.map(choice=><li key={choice.key}><bdi>{choice.name}</bdi> <span dir="ltr">({designSize(choice.size)})</span></li>)}</ul>
    <div className="mold-actions"><button type="button" className="btn primary" onClick={()=>{queue.add(view.id,asking);setAsking(null);}}><Paperclip size={16} aria-hidden="true"/>{say('تأكيد الإرفاق','Confirm attaching')}</button>
@@ -270,14 +334,16 @@ export function MoldDesignFiles({view,uploads,queue,onView,say}:{view:MoldReques
 
 /** A pending request's files in the sales manager's list, each opened or downloaded through the CRM by its order number. */
 export function MoldPendingDesignFiles({files,say}:{files:MoldPendingDesignFile[];say:Say}){
+ const [errors,setErrors]=useState<Record<string,string>>({});
  if(!files.length)return null;
  return <div className="mold-design mold-design-compact" aria-label={say('ملفات التصميم','Design files')}>
   <strong className="mold-design-title">{say('ملفات التصميم','Design files')} <span className="mold-design-count" dir="ltr">({files.length})</span></strong>
   <ul className="mold-design-list">{files.map(file=><li key={String(file.fileId)} className="mold-design-file" data-source={file.source}>
    <span className="mold-design-icon"><KindIcon kind={file.kind}/></span>
    <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
-    <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span>{say('من المندوب','From the representative')}</span>}</span></div>
-   <div className="mold-design-actions"><FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say}/></div>
+    <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span>{say('من المندوب','From the representative')}</span>}</span>
+    {errors[String(file.fileId)]&&<small className="mold-design-reason" role="alert">{errors[String(file.fileId)]}</small>}</div>
+   <div className="mold-design-actions"><FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say} onFailure={message=>setErrors(previous=>({...previous,[String(file.fileId)]:message}))}/></div>
   </li>)}</ul>
  </div>;
 }

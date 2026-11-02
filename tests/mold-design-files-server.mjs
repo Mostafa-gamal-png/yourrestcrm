@@ -14,6 +14,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {request as httpsRequest} from 'node:https';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {privateObjects} from '../portable/storage.mjs';
+import {callProducts} from '../portable/mold-client.mjs';
 
 const root=process.cwd(),runtime=path.join(root,'.sites-runtime');fs.mkdirSync(runtime,{recursive:true});
 const out=fs.mkdtempSync(path.join(runtime,'mold-design-server-')),store=fs.mkdtempSync(path.join(os.tmpdir(),'mold-design-objects-')),seen=new Set();
@@ -210,6 +211,160 @@ try{
   const four=[];for(let n=0;n<4;n++)four.push(await download('id='+id+'&file='+fileId));
   check(four.map(response=>response.status),[200,200,200,200],'every place came back');
   for(const response of four)await response.body.cancel();
+ }
+
+ // ---- 6. A name production lists with half a UTF-16 pair («\ud800» in its JSON): shown without it, and its downloads hold no place
+ {
+  const id=await newRequest();
+  mock.addProductionFile(id,{name:'\ud800رسم الإنتاج.pdf'});
+  const row=await server.loadMoldRequest(DB,id);await server.pullMoldStatuses(DB,[row],{link,force:true});
+  const listed=(await viewOf(id)).designFiles.find(file=>file.source==='production');
+  check([listed.name,listed.name.isWellFormed()],['رسم الإنتاج.pdf',true],'the name as listed, without the lone half');
+  const answers=[];
+  for(let n=0;n<5;n++){const response=await download('id='+id+'&file='+listed.fileId);answers.push([response.status,response.headers.get('content-disposition')]);await response.body?.cancel();}
+  check(answers,Array(5).fill([200,"attachment; filename*=UTF-8''"+encodeURIComponent('رسم الإنتاج.pdf')]),'downloaded each time with a header that can be written (no 500, no place lost)');
+  // A status stored before this rule (the raw name kept in the database) is served all the same.
+  const stored=JSON.parse(sql.prepare('SELECT remote FROM crm_mold_requests WHERE id=?').get(id).remote);
+  stored.designFiles=stored.designFiles.map(file=>({...file,name:'\ud800'+file.name}));
+  sql.prepare('UPDATE crm_mold_requests SET remote=? WHERE id=?').run(JSON.stringify(stored),id);
+  const old=[];for(let n=0;n<5;n++){const response=await download('id='+id+'&file='+listed.fileId);old.push(response.status);await response.body?.cancel();}
+  check(old,[200,200,200,200,200],'a stored name with the lone half: served, every place given back');
+ }
+
+ // ---- 7. The sales manager's download by order number needs the pending list as production answers it now
+ {
+  server.forgetPendingApprovals();
+  const manual=mock.registerManual({customerName:'مصنع مسجّل في الإنتاج'}),file=mock.addProductionFile(manual.orderNo,{name:'تصميم الطلب اليدوي.pdf'});
+  // The list was had two minutes ago, with the order in it; production then moved the order on.
+  const earlier=await server.pullPendingApprovals({link,now:()=>new Date(Date.now()-120_000).toISOString()});
+  check(earlier.items.some(item=>item.orderNo===manual.orderNo),true,'the order was waiting when the list was last had');
+  mock.removeOrder(manual.orderNo);
+  answering=stub('pending',500,{error:{code:'server_error',message:'Unexpected server error.'}});
+  let response=await download('order='+manual.orderNo+'&file='+file.fileId,'manager');
+  answering=null;
+  const failed=await response.json();
+  check([response.status,/تعذّر التأكد/.test(failed.error)],[502,true],'production\'s list could not be had: nothing is served on the list kept from before');
+  server.forgetPendingApprovals();
+  response=await download('order='+manual.orderNo+'&file='+file.fileId,'manager');
+  check(response.status,404,'with the list as production answers it now: the order no longer waits, 404');
+  const waiting=mock.registerManual({customerName:'مصنع آخر'}),its=mock.addProductionFile(waiting.orderNo,{name:'رسم منتظر.pdf'});
+  server.forgetPendingApprovals();
+  response=await download('order='+waiting.orderNo+'&file='+its.fileId,'manager');
+  check(response.status,200,'an order that waits now: served');await response.body.cancel();
+ }
+
+ // ---- 8. A file whose deletion is still on its way to production is not served (the screen offers no link to it)
+ {
+  const id=await newRequest(),bytes=pdf('wrong customer');
+  const fileId=(await attach(id,'رسم عميل آخر.pdf',bytes)).body.file.crmFileId,remoteId=String(JSON.parse(fileRow(fileId).remote_file_id));
+  mock.state.down=true;
+  const answer=await remove(id,fileId);
+  mock.state.down=false;
+  check([answer.status,answer.body.request.designFiles.map(file=>file.state)],[200,['deleting']],'deleted while production is unreachable: being deleted');
+  const statuses=[];
+  for(const member of ['rep','manager'])for(const key of [fileId,remoteId]){const response=await download('id='+id+'&file='+key,member);statuses.push(response.status);await response.body?.cancel();}
+  check(statuses,[404,404,404,404],'neither its CRM copy nor production\'s, for the requester or the sales manager');
+  sql.prepare('UPDATE crm_mold_design_files SET next_attempt_at=? WHERE id=?').run(new Date(Date.now()-1000).toISOString(),fileId);
+  check((await server.sendMoldDesignFile(DB,fileId,{link})).kind,'ok','the deletion reaches production');
+ }
+
+ // ---- 9. A 404 from design-files, whatever its body (an application or web server that does not know the route yet, or the contract's
+ //  not_found): not tried again by itself, the approval not held, the reason shown, and the requester's resend tries again
+ {
+  for(const [label,body,type] of [['unknown_route',{error:{code:'unknown_route',message:'Unknown route.'}},'application/json'],['http_404','<html>404 Not Found</html>','text/html'],['not_found',{error:{code:'not_found',message:'No request has this crmRequestId.'}},'application/json']]){
+   const id=await newRequest();
+   answering=stub('design-files',404,body,type);
+   const answer=await attach(id,'رسم '+label+'.pdf',pdf(label));
+   answering=null;
+   const fileId=answer.body.file.crmFileId,shown=answer.body.file;
+   check([answer.status,answer.body.send.kind,shown.state,shown.stopped,shown.error.code,shown.error.http,shown.error.final,fileRow(fileId).next_attempt_at],[200,'not_found','waiting',true,label,404,undefined,null],label+': stopped, not refused for good, with the reason');
+   const manager=await viewOf(id,{id:'manager',role:'manager'});
+   check([manager.can.approve,(await viewOf(id)).can.resend],[true,true],label+': the sales manager may approve meanwhile; the requester may resend');
+   const resent=await resend(id);
+   check(resent.status,200,label+': the resend is taken');
+   await until(()=>fileRow(fileId).sent_at!==null);
+   check([fileRow(fileId).outbox,atProduction(id,fileId)],[null,true],label+': once production takes it, the file arrives');
+  }
+  // A deletion answered 404 by a web server that does not know the route: production holds nothing there; the deletion is complete.
+  const id=await newRequest(),fileId=(await attach(id,'رسم للحذف.pdf',pdf('to delete'))).body.file.crmFileId;
+  answering=stub('design-file-delete',404,'<html>404 Not Found</html>','text/html');
+  const answer=await remove(id,fileId);
+  answering=null;
+  check([answer.status,answer.body.send.kind,answer.body.request.designFiles,!!fileRow(fileId).deleted_at,fileRow(fileId).outbox,fileRow(fileId).object_key],[200,'ok',[],true,null,null],'a deletion answered 404 (any body) is complete, not retried for 24 hours');
+ }
+
+ // ---- 10. A deletion refused with 409 for a file whose send never got its answer: what production's status lists decides
+ {
+  // Never reached production (the send failed), then the approvals were completed there: production's 409 does not list it, so the
+  // deletion is simply complete (not «delivered» for ever).
+  let id=await newRequest();
+  mock.state.down=true;
+  let fileId=(await attach(id,'لم يصل.pdf',pdf('never arrived'))).body.file.crmFileId;
+  mock.state.down=false;
+  check([fileRow(fileId).outbox,!!fileRow(fileId).last_attempt_at,fileRow(fileId).sent_at],['send',true,null],'the send failed: waiting, tried once');
+  for(const step of ['sales','production','admin'])mock.approve(id,step);
+  // Production answers the deletion with 409 and its status (the stand-in would say 404 first; the contract leaves the order open).
+  const locked=(await callProducts(link,'status',{ids:[id]})).json.requests[0];
+  answering=stub('design-file-delete',409,{error:{code:'request_locked',message:'The request is no longer editable.',details:{request:locked}}});
+  let answer=await remove(id,fileId);
+  answering=null;
+  check([answer.status,answer.body.request.designFiles,answer.body.request.editable,!!fileRow(fileId).deleted_at,fileRow(fileId).object_key,atProduction(id,fileId)],[200,[],false,true,null,false],'production\'s 409 does not list it: deleted, and the request shows production\'s status');
+  // The send did arrive (only its answer was lost): production's 409 lists it, so it stays, shown as delivered, with why it was not deleted.
+  id=await newRequest();
+  answering=(url,init)=>new URL(url).searchParams.get('route')==='design-files'?viaMock(url,init).then(()=>{throw new TypeError('connection reset');}):viaMock(url,init);
+  fileId=(await attach(id,'وصل بلا رد.pdf',pdf('arrived, answer lost'))).body.file.crmFileId;
+  answering=null;
+  check([fileRow(fileId).sent_at,atProduction(id,fileId)],[null,true],'production holds it; the CRM did not hear so');
+  for(const step of ['sales','production','admin'])mock.approve(id,step);
+  answer=await remove(id,fileId);
+  const kept=answer.body.request.designFiles.find(file=>file.crmFileId===fileId);
+  check([answer.status,answer.body.ok,answer.body.send.kind,kept.state,kept.error.code,kept.canDelete,!!fileRow(fileId).sent_at,JSON.parse(fileRow(fileId).remote_file_id)],[409,false,'locked','sent','request_locked',false,true,mock.row(id).designFiles[0].fileId],'production holds it: delivered, with the reason, no longer deletable');
+ }
+
+ // ---- 11. The delete route against production's design-file-delete: 409 request_locked keeps the file with its reason and the status;
+ //  404 (production no longer holds it) completes the deletion
+ {
+  let id=await newRequest();
+  let fileId=(await attach(id,'رسم مقفول.pdf',pdf('locked'))).body.file.crmFileId;
+  for(const step of ['sales','production','admin'])mock.approve(id,step);
+  let answer=await remove(id,fileId);
+  const kept=answer.body.request.designFiles.find(file=>file.crmFileId===fileId);
+  check([answer.status,answer.body.ok,answer.body.send.kind,typeof answer.body.error,kept.state,kept.error.code,fileRow(fileId).deleted_at,fileRow(fileId).outbox,!!fileRow(fileId).object_key,atProduction(id,fileId),answer.body.request.remote.status],
+   [409,false,'locked','string','sent','request_locked',null,null,true,true,'confirmed'],'409: the file stays as production holds it, with the reason; the request shows production\'s status');
+  id=await newRequest();
+  fileId=(await attach(id,'رسم أزاله الإنتاج.pdf',pdf('removed there'))).body.file.crmFileId;
+  mock.row(id).designFiles=[];
+  answer=await remove(id,fileId);
+  check([answer.status,answer.body.request.designFiles,!!fileRow(fileId).deleted_at,fileRow(fileId).object_key],[200,[],true,null],'404: already gone there, the deletion completes');
+ }
+
+ // ---- 12. Where a file stands: refused stays refused when the link is off; a cancelled request's file is not «sent once production has
+ //  the request»; a send stopped after 24 hours says so
+ {
+  let id=await newRequest();
+  answering=stub('design-files',400,{error:{code:'invalid_payload',message:'The file was refused.',fields:['file'],details:{reason:'bad_image'}}});
+  const refused=(await attach(id,'صورة تالفة.png',Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==','base64'))).body.file;
+  answering=null;
+  check(refused.state,'rejected','refused while the link is up');
+  const offline=lib.moldRequestView(await server.loadMoldRequest(DB,id),{id:'rep',role:'rep'},[],false,await filesOf(id));
+  check([offline.designFiles[0].state,offline.designFiles[0].error.reason,lib.moldDesignCount(await server.loadMoldRequest(DB,id),await filesOf(id)).crm],['rejected','bad_image',0],'with the link off: still refused with its reason, and takes no place');
+  id=await newRequest();
+  mock.state.down=true;
+  const waiting=(await attach(id,'قبل الإلغاء.pdf',pdf('before the cancellation'))).body.file;
+  mock.state.down=false;
+  check(waiting.state,'waiting','waiting to be sent');
+  sql.prepare("UPDATE crm_mold_requests SET cancelled_at=?,outbox='cancel',next_attempt_at=NULL WHERE id=?").run(new Date().toISOString(),id);
+  const cancelled=(await viewOf(id)).designFiles[0];
+  check([cancelled.state,cancelled.stopped],['cancelled',false],'the request was cancelled: not sent, and said so');
+  id=await newRequest();
+  mock.state.down=true;
+  const fileId=(await attach(id,'توقف.pdf',pdf('stopped'))).body.file.crmFileId;
+  let clock=Date.now();const at=()=>new Date(clock).toISOString();
+  for(let n=0;n<40&&fileRow(fileId).next_attempt_at;n++){clock=Date.parse(fileRow(fileId).next_attempt_at)+1000;await server.sendMoldDesignFile(DB,fileId,{link,now:at});}
+  mock.state.down=false;
+  const stopped=(await viewOf(id)).designFiles[0];
+  check([stopped.state,stopped.stopped,stopped.error.code,(await viewOf(id)).can.resend],['waiting',true,'network',true],'stopped after 24 hours: marked stopped, the resend is the way on');
+  sql.prepare('UPDATE crm_mold_design_files SET outbox=NULL,next_attempt_at=NULL WHERE id=?').run(fileId);
  }
 
  check(mock.state.calls.every(call=>!JSON.stringify(call.headers).includes(mock.state.secret)),true,'the secret never travels');

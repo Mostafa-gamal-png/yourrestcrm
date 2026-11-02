@@ -8,7 +8,7 @@ import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
 import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,riyadhIso,MOLD_STATUS_BATCH} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,moldPendingDesignFiles,moldRemoteOlder,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import {canApproveMoldRequests,moldPendingDesignFiles,moldRemoteOlder,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
 type Config=ReturnType<typeof moldConfig>;
@@ -131,10 +131,14 @@ export type DesignOutcome=SendOutcome&{reason?:string};
  * One send of what a design file has waiting: the file itself (only once production holds its request, never for a cancelled one), or its
  * deletion. Claimed with a lease first, like a request; a deletion asked for meanwhile wins over the answer. Each answer's request (its
  * approvals undone) is stored. Final answers stop the timetable, marked final whatever their code (a 400 or 413 from a web server in
- * front of production has no contract code): 400 and 413 (refused, with the reason), 404 (production does not hold the request; for a
- * deletion: already gone, which completes it) and 409 (the approvals were complete first: the file is not sent). A deletion production
- * refuses (409, or 400/413) leaves the file as production holds it, with the reason. Anything else is tried again on the §6 timetable;
- * after 24 hours it stops, and the requester's resend starts it again (a deletion too).
+ * front of production has no contract code): 400 and 413 (refused, with the reason) and 409 (the approvals were complete first: the file
+ * is not sent). A 404, whatever its body (the contract's not_found, or the 404 of an application or web server that does not know the
+ * route yet), is production's «not here»: a deletion is then complete; a file is not tried again by itself (the contract), the reason is
+ * shown, and the requester's resend tries it again (production updated meanwhile, say), since nothing in the file has to change.
+ * A deletion production refuses (409, or 400/413) leaves the file as production holds it, with the reason: sent when production lists
+ * it (or it was sent); a file whose send never got its answer and that production's 409 does not list is not there, so the deletion is
+ * complete; one production may or may not hold (no listing) stays not sent. Anything else is tried again on the §6 timetable; after 24
+ * hours it stops, and the requester's resend starts it again (a deletion too).
  */
 export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch,files=env.FILES}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;files?:R2Bucket}={}):Promise<DesignOutcome>{
  if(!link.ok)return {kind:'off',code:link.reason};
@@ -162,7 +166,11 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
   const done=now(),remote=answer.kind==='ok'?moldStatusObject(answer.json?.request):answer.kind==='locked'?answer.request:null;
   if(remote){await storeMoldRemote(db,row.id,remote,done);forgetPendingApprovals();}
   const cleared='outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL,last_error=NULL';
-  const gone=file.outbox==='delete'&&(answer.kind==='ok'||answer.kind==='not_found');
+  const missing=answer.kind==='not_found'||answer.http===404;
+  // Whether production holds the file, from the status a 409 carries: its entry, null when the listing leaves it out, undefined when
+  // there is no listing (an older application).
+  const listed=answer.kind==='locked'&&Array.isArray(remote?.designFiles)?remote.designFiles.find((entry:MoldDesignFile)=>entry.crmFileId===file.id)??null:undefined;
+  const gone=file.outbox==='delete'&&(answer.kind==='ok'||missing||answer.kind==='locked'&&listed===null);
   if(gone){
    // Deleted at production, or never there: the bytes leave the CRM too (the row stays, without them, as the record).
    const settled=await settle(`${cleared},object_key=NULL`);
@@ -171,15 +179,20 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
    await settle(`${cleared},remote_file_id=?,sent_at=?`,JSON.stringify(answer.json?.file?.fileId??null),done);
   }else if(file.outbox==='delete'&&(answer.kind==='locked'||answer.kind==='rejected')){
    // The approvals were complete first, or production refused the deletion for good: the file stays as production holds it, with the
-   // reason (and may be deleted again while the request is editable).
-   await settle("outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL,deleted_at=NULL,version=version+1,last_error=?",JSON.stringify({code:answer.kind==='locked'?'request_locked':answer.code,...(answer.reason?{reason:answer.reason}:{}),http:answer.http||0,at:done,final:true}));
-  }else if(answer.kind==='locked'||answer.kind==='not_found'||answer.kind==='rejected'){
+   // reason (and may be deleted again while the request is editable): sent when production holds it; else not sent, and it never will be.
+   const error=JSON.stringify({code:answer.kind==='locked'?'request_locked':answer.code,...(answer.reason?{reason:answer.reason}:{}),http:answer.http||0,at:done,final:true});
+   if(file.sentAt||listed)await settle("outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL,deleted_at=NULL,version=version+1,sent_at=COALESCE(sent_at,?),remote_file_id=COALESCE(remote_file_id,?),last_error=?",done,listed?JSON.stringify(listed.fileId):null,error);
+   else await settle("outbox='send',attempts=attempts+1,first_failed_at=NULL,next_attempt_at=NULL,deleted_at=NULL,version=version+1,last_error=?",error);
+  }else if(missing){
+   // Production does not hold the request (or does not know the route yet): stopped, with the reason; the requester's resend tries again.
+   await settle('attempts=attempts+1,next_attempt_at=NULL,last_error=?',JSON.stringify({code:answer.code||'not_found',http:404,at:done}));
+  }else if(answer.kind==='locked'||answer.kind==='rejected'){
    await refuse({code:answer.kind==='locked'?'request_locked':answer.code,...(answer.reason?{reason:answer.reason}:{}),...(answer.fields.length?{fields:answer.fields}:{}),http:answer.http||0,at:done});
   }else{
    const failures=file.attempts+1,first=file.firstFailedAt||done;
    await settle('attempts=?,first_failed_at=?,next_attempt_at=?,last_error=?',failures,first,moldNextAttempt(failures,first,done),JSON.stringify({code:answer.code,http:answer.http||0,at:done}));
   }
-  return {kind:gone?'ok':answer.kind,code:answer.code,fields:answer.fields,...(answer.reason?{reason:answer.reason}:{})};
+  return {kind:gone?'ok':missing?'not_found':answer.kind,code:answer.code,fields:answer.fields,...(answer.reason?{reason:answer.reason}:{})};
  }finally{filesInFlight--;}
 }
 /** The design files whose turn has come, oldest first: deletions, and files whose request production holds (not cancelled). A file

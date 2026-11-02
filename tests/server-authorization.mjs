@@ -49,9 +49,9 @@ try {
     '/api/mobile-route': expect([...management, ...reps], 200, 403),
     '/api/mold-requests': expect(everyone, 200, 403),
     // A mold request's design file: every role may read the requests it may see (an unknown request is 404 for all); by order number
-    // only the sales managers (no production link here: nothing is pending, so 404).
+    // only the sales managers (no production link here: their pending list cannot be had, so 503 «the link is off»).
     '/api/mold-requests/design-file?id=x&file=y': expect(everyone, 404, 403),
-    '/api/mold-requests/design-file?order=1&file=y': expect(['mgr', 'mgrw'], 404, 403),
+    '/api/mold-requests/design-file?order=1&file=y': expect(['mgr', 'mgrw'], 503, 403),
     '/api/device-status': expect(management, 200, 403),
     '/api/customer-identities': expect(['owner'], 200, 403),
     '/api/sales/import': expect(management, 200, 403),

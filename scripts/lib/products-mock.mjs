@@ -323,7 +323,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('invalid_payload', 400, 'The body must be a JSON object.', ['body']);
       if (route === 'design-file') {
         const {file} = downloadDesign(body);
-        res.writeHead(200, {'Content-Type': file.type, 'Content-Length': String(file.bytes.length), 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(file.name)});
+        res.writeHead(200, {'Content-Type': file.type, 'Content-Length': String(file.bytes.length), 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(file.name.toWellFormed())});
         res.end(file.bytes); return;
       }
       const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'customers' ? customers(body)

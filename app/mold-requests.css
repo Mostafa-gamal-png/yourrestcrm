@@ -12,7 +12,7 @@
 .mold-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.mold-card header strong{font-size:16px;overflow-wrap:anywhere}
 .mold-card p{margin:0;font-size:14px;overflow-wrap:anywhere}
 .mold-card-facts{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted-foreground)}.mold-card-facts b{color:var(--foreground)}
-.mold-card-sending{font-size:13px;font-weight:600;color:#8a5a00}.mold-card-sending[data-state=off]{color:#34385a}
+.mold-card-sending{font-size:13px;font-weight:600;color:#8a5a00}.mold-card-sending[data-state=off]{color:#34385a}.mold-card-sending[data-state=rejected]{color:#7a2c1f}
 .mold-chip{flex-shrink:0;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#eceefa;color:#333588;white-space:nowrap}
 .mold-chip[data-status=in_production],.mold-chip[data-status=confirmed]{background:#e3f0ff;color:#1d4f91}.mold-chip[data-status=produced]{background:#e5f4ec;color:#1b6a47}
 .mold-chip[data-status=delivered]{background:#1b6a47;color:#fff}.mold-chip[data-status=cancelled]{background:#f3e3e0;color:#7a2c1f}.mold-chip[data-status=local]{background:#f5e9c8;color:#6a4a0e}
@@ -94,6 +94,7 @@
 .mold-design-file{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card);min-width:0}
 .mold-design-file[data-state=rejected],.mold-design-file[data-state=locked],.mold-design-file[data-state=refused],.mold-design-file[data-state=upload-failed]{border-color:#e2b4ab}
 .mold-design-file[data-state=held],.mold-design-file[data-state=waiting],.mold-design-file[data-state=deleting]{border-color:#e6cf8f}
+.mold-design-file[data-state=cancelled] .mold-design-state{color:var(--muted-foreground)}
 .mold-design-icon{flex-shrink:0;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--muted);color:var(--muted-foreground)}
 .mold-design-file[data-source=production] .mold-design-icon{background:#e3f0ff;color:#1d4f91}
 .mold-design-main{flex:1 1 180px;min-width:0;display:grid;gap:2px}
@@ -124,4 +125,5 @@
 @media (max-width:640px){
  .mold-design-actions{width:100%;margin-inline-start:0}.mold-design-actions .btn{flex:1 1 auto;min-height:44px}
  .mold-design-tools,.mold-design-picker{justify-items:stretch}.mold-design-attach{width:100%}
+ .mold-design-refused .btn{min-width:44px;min-height:44px}
 }
