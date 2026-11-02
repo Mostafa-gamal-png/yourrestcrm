@@ -35,6 +35,25 @@ export const MOLD_SHEET_CITIES = ['Damam - الدمام', 'Riyadh - الرياض
 /** §6: after a failed send, the next try waits 1 minute, then 5, then 30, then 2 hours, then every 2 hours until 24 hours have passed. */
 export const MOLD_RETRY_MINUTES = [1, 5, 30, 120];
 export const MOLD_RETRY_WINDOW_MS = 24 * 3600_000;
+/** Design files (the contract's addition «ملفات التصميم», 2026-11-02): the extensions production accepts and the kind each is shown as. */
+export const MOLD_DESIGN_EXTENSIONS = Object.freeze({pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', gif: 'image',
+  ...Object.fromEntries('dwg dxf step stp igs iges stl sldprt sldasm slddrw nc1 dstv ai eps cdr psd svg zip rar 7z'.split(' ').map(extension => [extension, 'other']))});
+export const MOLD_DESIGN_KINDS = ['pdf', 'image', 'other'];
+export const MOLD_DESIGN_SOURCES = ['crm', 'production'];
+/** 25 MiB a file, 10 files a request (the CRM's and production's together), 80 000 000 pixels an image, a name of 200 characters. */
+export const MOLD_DESIGN_MAX_BYTES = 25 * 1024 * 1024;
+export const MOLD_DESIGN_MAX_FILES = 10;
+export const MOLD_DESIGN_MAX_PIXELS = 80_000_000;
+export const MOLD_DESIGN_NAME_MAX = 200;
+/** design-files and design-file wait up to 120 seconds; every other route keeps its own limit. */
+export const MOLD_DESIGN_TIMEOUT_MS = 120_000;
+/** The JSON line before the bytes ({crmRequestId, crmFileId, name} and its newline) stays within this. */
+export const MOLD_DESIGN_LINE_LIMIT = 4096;
+/** Why production refuses a file's bytes (400 invalid_payload, fields ['file'], details.reason). */
+export const MOLD_DESIGN_REASONS = ['empty', 'not_pdf', 'bad_image', 'too_many_pixels'];
+/** The answers after which a file is not sent again by itself (§5 of the addition): refused data, a request production does not hold,
+ *  a file over the limit, a request whose approvals are complete; file_missing: the CRM lost the bytes. */
+export const MOLD_DESIGN_FINAL_CODES = ['invalid_payload', 'payload_too_large', 'not_found', 'request_locked', 'file_missing'];
 
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const length = value => [...value].length;
@@ -135,6 +154,158 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
 
 const dateOrNull = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 40) : null;
 const shortOrNull = (value, max) => typeof value === 'string' ? value.slice(0, max) : null;
+
+// ---- Design files: the name, the bytes, the body of design-files, the entries production lists
+const NAME_FORBIDDEN = /[\\/<>:"|?*\u0000-\u001F\u007F-\u009F‪-‮⁦-⁩]/;
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+/**
+ * A design file's name as the contract accepts it: the original name with its ends trimmed, up to 200 characters, no path and none of
+ * \ / < > : " | ? *, no control characters (nor the direction marks that could disguise an extension), a name before the extension,
+ * and an extension of the list (any letter case). null when production would refuse it.
+ * @param {unknown} value
+ * @returns {{name: string, extension: string, kind: 'pdf'|'image'|'other'} | null}
+ */
+export function moldDesignName(value) {
+  if (typeof value !== 'string') return null;
+  const name = value.trim(), dot = name.lastIndexOf('.');
+  if (!name || length(name) > MOLD_DESIGN_NAME_MAX || NAME_FORBIDDEN.test(name) || dot < 1 || !name.slice(0, dot).trim()) return null;
+  const extension = name.slice(dot + 1).toLowerCase();
+  if (!hasOwn(MOLD_DESIGN_EXTENSIONS, extension)) return null;
+  return {name, extension, kind: MOLD_DESIGN_EXTENSIONS[extension]};
+}
+/** A name production listed, or a download carried, made safe to show and to put in a header: no control characters, direction marks
+ *  or path separators, single spaces, up to 200 characters. '' when nothing is left. */
+export function moldDesignDisplayName(value) {
+  if (typeof value !== 'string') return '';
+  return [...value.replace(/[\u0000-\u001F\u007F-\u009F‪-‮⁦-⁩]/g, '').replace(/[\\/]/g, '_').replace(/\s+/g, ' ').trim()].slice(0, MOLD_DESIGN_NAME_MAX).join('');
+}
+
+const IMAGE_TYPES = {png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp'};
+/**
+ * The width and height an image's header declares, with its format: PNG (IHDR), JPEG (the first SOF frame header), GIF (the logical
+ * screen) or WEBP (VP8, VP8L or VP8X). null when the bytes are none of these or the header is cut short.
+ * @param {Uint8Array} bytes
+ * @returns {{format: 'png'|'jpeg'|'gif'|'webp', width: number, height: number} | null}
+ */
+export function moldImageSize(bytes) {
+  const b = bytes, n = b?.length || 0;
+  const at = (i, text) => n >= i + text.length && [...text].every((char, k) => b[i + k] === char.charCodeAt(0));
+  const be16 = i => b[i] << 8 | b[i + 1], le16 = i => b[i] | b[i + 1] << 8, le24 = i => b[i] | b[i + 1] << 8 | b[i + 2] << 16;
+  if (n >= 24 && [137, 80, 78, 71, 13, 10, 26, 10].every((value, i) => b[i] === value)) {
+    if (!at(12, 'IHDR')) return null;
+    return {format: 'png', width: b[16] * 2 ** 24 + (b[17] << 16 | b[18] << 8 | b[19]), height: b[20] * 2 ** 24 + (b[21] << 16 | b[22] << 8 | b[23])};
+  }
+  if (n >= 10 && (at(0, 'GIF87a') || at(0, 'GIF89a'))) return {format: 'gif', width: le16(6), height: le16(8)};
+  if (at(0, 'RIFF') && at(8, 'WEBP')) {
+    if (at(12, 'VP8 ')) return n >= 30 && b[23] === 0x9d && b[24] === 0x01 && b[25] === 0x2a ? {format: 'webp', width: le16(26) & 0x3fff, height: le16(28) & 0x3fff} : null;
+    if (at(12, 'VP8L')) { if (n < 25 || b[20] !== 0x2f) return null; const bits = (b[21] | b[22] << 8 | b[23] << 16 | b[24] << 24) >>> 0; return {format: 'webp', width: (bits & 0x3fff) + 1, height: (bits >>> 14 & 0x3fff) + 1}; }
+    if (at(12, 'VP8X')) return n >= 30 ? {format: 'webp', width: le24(24) + 1, height: le24(27) + 1} : null;
+    return null;
+  }
+  if (n >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    // The segments after SOI, until the first frame header (SOF0..SOF15 without DHT, JPG and DAC); a scan or the end before it: no size.
+    for (let i = 2; i + 4 <= n;) {
+      if (b[i] !== 0xff) return null;
+      const marker = b[i + 1];
+      if (marker === 0xff) { i++; continue; }
+      if (marker === 0x01 || marker >= 0xd0 && marker <= 0xd8) { i += 2; continue; }
+      if (marker === 0xd9 || marker === 0xda) return null;
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) return i + 9 <= n ? {format: 'jpeg', width: be16(i + 7), height: be16(i + 5)} : null;
+      const size = be16(i + 2);
+      if (size < 2) return null;
+      i += 2 + size;
+    }
+  }
+  return null;
+}
+
+/**
+ * A design file before the CRM keeps it, checked as production checks it: its name (moldDesignName), then its bytes: none is empty or
+ * over 25 MiB, a PDF starts with %PDF-, an image is a PNG, JPEG, GIF or WEBP (whatever its extension says among those) whose header
+ * declares at most 80 000 000 pixels. A refusal names the contract's field and, for the bytes, the reason production gives
+ * (MOLD_DESIGN_REASONS, or too_large, which production answers with 413).
+ * @param {unknown} name
+ * @param {Uint8Array} bytes
+ * @returns {{ok: true, name: string, extension: string, kind: 'pdf'|'image'|'other', contentType: string, width: number|null, height: number|null} | {ok: false, field: 'name'|'file', reason: string}}
+ */
+export function moldDesignFileCheck(name, bytes) {
+  const named = moldDesignName(name);
+  if (!named) return {ok: false, field: 'name', reason: 'name'};
+  if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, field: 'file', reason: 'empty'};
+  if (bytes.length > MOLD_DESIGN_MAX_BYTES) return {ok: false, field: 'file', reason: 'too_large'};
+  if (named.kind === 'pdf') return [37, 80, 68, 70, 45].every((value, i) => bytes[i] === value) ? {ok: true, ...named, contentType: 'application/pdf', width: null, height: null} : {ok: false, field: 'file', reason: 'not_pdf'};
+  if (named.kind === 'image') {
+    const size = moldImageSize(bytes);
+    if (!size || !size.width || !size.height) return {ok: false, field: 'file', reason: 'bad_image'};
+    if (size.width * size.height > MOLD_DESIGN_MAX_PIXELS) return {ok: false, field: 'file', reason: 'too_many_pixels'};
+    return {ok: true, ...named, contentType: IMAGE_TYPES[size.format], width: size.width, height: size.height};
+  }
+  return {ok: true, ...named, contentType: 'application/octet-stream', width: null, height: null};
+}
+
+/** The type a design file is served with: a PDF or one of the four image types as they are, anything else as plain bytes (an SVG or a
+ *  drawing is never rendered by the browser). */
+export function moldDesignContentType(value) {
+  const type = String(value ?? '').split(';')[0].trim().toLowerCase();
+  return ['application/pdf', ...Object.values(IMAGE_TYPES)].includes(type) ? type : 'application/octet-stream';
+}
+/** The file name a Content-Disposition carries: filename* (UTF-8, RFC 5987) first, else filename; made safe to show. '' when none. */
+export function moldDispositionName(header) {
+  const text = String(header ?? ''), extended = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(text), plain = /filename\s*=\s*"([^"]*)"/i.exec(text) || /filename\s*=\s*([^;\s]+)/i.exec(text);
+  if (extended) { try { return moldDesignDisplayName(decodeURIComponent(extended[1].trim())); } catch { /* a broken encoding: the plain name, if any */ } }
+  return plain ? moldDesignDisplayName(plain[1]) : '';
+}
+/** Content-Disposition for a design file: inline (viewed in the browser) or attachment, the name in UTF-8 (filename*, RFC 5987). */
+export function moldContentDisposition(name, inline = false) {
+  const encoded = encodeURIComponent(moldDesignDisplayName(name) || 'design').replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase());
+  return (inline ? 'inline' : 'attachment') + "; filename*=UTF-8''" + encoded;
+}
+
+/**
+ * The body of design-files: one JSON line {crmRequestId, crmFileId, name}, a newline, then the file's bytes as they are. The client signs
+ * exactly these bytes. Throws on a value production would refuse.
+ * @param {{crmRequestId: string, crmFileId: string, name: string}} meta
+ * @param {Uint8Array} bytes
+ * @returns {Uint8Array}
+ */
+export function moldDesignFileBody({crmRequestId, crmFileId, name}, bytes) {
+  if (!MOLD_ID.test(crmRequestId || '')) throw new Error('crmRequestId');
+  if (!MOLD_ID.test(crmFileId || '')) throw new Error('crmFileId');
+  if (moldDesignName(name)?.name !== name) throw new Error('name');
+  if (!(bytes instanceof Uint8Array)) throw new Error('file');
+  const line = new TextEncoder().encode(JSON.stringify({crmRequestId, crmFileId, name}) + '\n');
+  if (line.length > MOLD_DESIGN_LINE_LIMIT) throw new Error('name');
+  const body = new Uint8Array(line.length + bytes.length);
+  body.set(line); body.set(bytes, line.length);
+  return body;
+}
+
+/**
+ * One entry of designFiles (in the status object and in pending items), reduced to the contract's fields; null when it is not one.
+ * fileId is production's (a positive whole number or an id like crmRequestId) and is sent back as it came; crmFileId is the CRM's for a
+ * file the CRM sent (source crm), null for one production attached. A kind the contract does not list is shown as other.
+ * @param {any} value
+ * @returns {{fileId: string|number, crmFileId: string|null, name: string, kind: 'pdf'|'image'|'other', size: number|null, source: 'crm'|'production', uploadedAt: string|null} | null}
+ */
+export function moldDesignFileEntry(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !MOLD_DESIGN_SOURCES.includes(value.source)) return null;
+  const fileId = isWhole(value.fileId) && value.fileId > 0 ? value.fileId : typeof value.fileId === 'string' && MOLD_ID.test(value.fileId) ? value.fileId : null;
+  const crmFileId = value.source === 'crm' && typeof value.crmFileId === 'string' && MOLD_ID.test(value.crmFileId) ? value.crmFileId : null;
+  const name = moldDesignDisplayName(value.name);
+  if (fileId === null || !name || value.source === 'crm' && !crmFileId) return null;
+  return {fileId, crmFileId, name, kind: MOLD_DESIGN_KINDS.includes(value.kind) ? value.kind : 'other', size: isWhole(value.size) && value.size >= 0 ? value.size : null, source: value.source, uploadedAt: dateOrNull(value.uploadedAt)};
+}
+/** designFiles as received: the valid entries, each fileId once, up to 50; null when production sent none (an older application). */
+function designFilesOf(value) {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set(), out = [];
+  for (const item of value) {
+    const entry = moldDesignFileEntry(item);
+    if (!entry || seen.has(String(entry.fileId)) || out.length >= 50) continue;
+    seen.add(String(entry.fileId)); out.push(entry);
+  }
+  return out;
+}
 /** The approvals as the status object carries them: when each was given (null: not yet) and, for the sales manager's approval given
  *  in the CRM only, by whom. required false: a historical request that needs none. null when production sent none (an older app). */
 function approvalsOf(value) {
