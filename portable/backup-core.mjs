@@ -60,7 +60,9 @@ function inspectDatabase(filename,{normalize=false}={}){
   const tables=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name));
   for(const name of ['crm_members','crm_settings','crm_records','crm_visit_files','yr_schema_migrations'])if(!tables.has(name))fail('UNRECOGNIZED_DATABASE');
   if(!db.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n)fail('UNRECOGNIZED_DATABASE');
-  const entries=db.prepare('SELECT object_key,size FROM crm_visit_files ORDER BY object_key').all(),unique=new Map();
+  // Every stored object a row still references: visit files, and the mold design files the CRM keeps (0017; a deleted one has no key).
+  const designs=tables.has('crm_mold_design_files')?db.prepare('SELECT object_key,size FROM crm_mold_design_files WHERE object_key IS NOT NULL ORDER BY object_key').all():[];
+  const entries=[...db.prepare('SELECT object_key,size FROM crm_visit_files ORDER BY object_key').all(),...designs],unique=new Map();
   for(const row of entries){
    if(typeof row.object_key!=='string'||!row.object_key||row.object_key.length>2000||row.object_key.includes('\0')||!Number.isSafeInteger(row.size)||row.size<0)fail('INVALID_OBJECT_REFERENCE');
    if(unique.has(row.object_key)&&unique.get(row.object_key).bytes!==row.size)fail('CONFLICTING_OBJECT_REFERENCE');

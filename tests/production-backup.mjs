@@ -90,6 +90,14 @@ try{
  // Pre-existing unrelated status and stale locks are never silently overwritten/broken.
  const foreignRoot=path.join(work,'foreign-status');await fs.mkdir(foreignRoot,{mode:0o700});await fs.writeFile(path.join(foreignRoot,'status.json'),'{}',{mode:0o600});await rejects(()=>scheduledBackup({config,appRoot,backupRoot:foreignRoot}));check(await fs.readFile(path.join(foreignRoot,'status.json'),'utf8'),'{}');
  await fs.mkdir(path.join(data,'.yourrest-backup.lock'),{mode:0o700});await rejects(()=>createBackup({config,appRoot,destination:path.join(work,'stale-lock')}));check((await fs.stat(path.join(data,'.yourrest-backup.lock'))).isDirectory(),true);await fs.rmdir(path.join(data,'.yourrest-backup.lock'));
+ // Mold design files the CRM keeps (0017) are copied too; a deleted one (no object key) is not.
+ await db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,created_by,created_at,updated_at) VALUES('mr-1','rep','factory','{}','rep','2026-11-02','2026-11-02')").run();
+ const design=(id,key,bytes)=>db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,deleted_at) VALUES(?,'mr-1','rep','رسم.pdf','pdf','application/pdf',?,?,?,'2026-11-02',?)").bind(id,bytes.length,hash(bytes),key,key?null:'2026-11-02').run();
+ await objects.put('mold-design/mr-1/mdf-1/a',Buffer.from('%PDF-design'));await design('mdf-1','mold-design/mr-1/mdf-1/a',Buffer.from('%PDF-design'));await design('mdf-2',null,Buffer.from('%PDF-gone'));
+ const withDesigns=path.join(work,'backup-designs');check((await createBackup({config,appRoot,destination:withDesigns})).objects,3);check((await verifyBackup({directory:withDesigns,appRoot})).objects,3);
+ check((await fs.readdir(path.join(withDesigns,'objects'))).includes(hash('mold-design/mr-1/mdf-1/a')),true);
+ const designsRestored=path.join(work,'designs-restored');await restoreBackup({directory:withDesigns,destination:designsRestored,appRoot});check(await fs.readFile(path.join(designsRestored,'objects',hash('mold-design/mr-1/mdf-1/a')),'utf8'),'%PDF-design');
+ await db.prepare('DELETE FROM crm_mold_requests').run();await objects.delete('mold-design/mr-1/mdf-1/a');check(await db.prepare('SELECT COUNT(*) n FROM crm_mold_design_files').first('n'),0);
  // Execute the exact deployed CLIs from a release/operations layout.
  const operations=path.join(appRoot,'release','operations');await fs.mkdir(operations,{recursive:true,mode:0o700});
  for(const name of ['backup-core.mjs','backup.mjs','backup-scheduled.mjs','backup-cron.mjs','restore.mjs','config.cjs'])await fs.copyFile(path.resolve(import.meta.dirname,'../portable',name),path.join(operations,name));

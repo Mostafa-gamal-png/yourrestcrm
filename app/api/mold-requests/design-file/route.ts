@@ -34,7 +34,7 @@ export async function GET(req:Request){try{
   const own=shown.source==='crm'?files.find(file=>file.id===shown.crmFileId):undefined;
   if(own?.objectKey&&env.FILES){
    const object=await env.FILES.get(own.objectKey);
-   if(object)return served(object.body,own.size,moldDesignContentType(own.contentType),own.name,inline&&own.kind!=='other');
+   if(object)return served(object.body,object.size??own.size,moldDesignContentType(own.contentType),own.name,inline&&own.kind!=='other');
   }
   entry=shown.fileId===null?undefined:(row.remote?.designFiles||[]).find(file=>String(file.fileId)===shown.fileId);
   if(!entry)throw new CRMError(own?'نسخة الملف في الـCRM غير موجودة ولم يصل للإنتاج بعد':'الملف غير متاح',404);

@@ -102,7 +102,7 @@ try {
   await age(first);
   const statusCalls = calls('status');
   const opened = (await list('rep')).requests.find(item => item.id === first);
-  check([calls('status') - statusCalls, opened.remote.status, opened.remote.stagesDone, opened.remote.moldSerial, opened.remote.stages.box, opened.editable, opened.can], [1, 'in_production', 2, '093', {done: true, at: '2026-11-02'}, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false}], 'one status call; stages with dates, the serial; edit and cancel closed');
+  check([calls('status') - statusCalls, opened.remote.status, opened.remote.stagesDone, opened.remote.moldSerial, opened.remote.stages.box, opened.editable, opened.can], [1, 'in_production', 2, '093', {done: true, at: '2026-11-02'}, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false, attach: false, deleteFile: false}], 'one status call; stages with dates, the serial; edit and cancel closed');
   await list('rep');
   check(calls('status') - statusCalls, 1, 'opened again within a minute: the stored status, no new call');
   res = await post('rep', {action: 'update', id: first, version: (await stored(first)).version, specs: {...specs, quantity: 3}});
@@ -128,7 +128,7 @@ try {
   mock.remove(removed.id);
   await age(removed.id);
   const gone = (await list('rep')).requests.find(item => item.id === removed.id);
-  check([gone.remote.status, gone.remote.waitingStep, gone.cancelled, gone.editable, gone.can], ['cancelled', 'cancelled', false, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false}], 'deleted in production: cancelled there; no edit, cancel or approval');
+  check([gone.remote.status, gone.remote.waitingStep, gone.cancelled, gone.editable, gone.can], ['cancelled', 'cancelled', false, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false, attach: false, deleteFile: false}], 'deleted in production: cancelled there; no edit, cancel or approval');
   check((await post('rep', {action: 'update', id: removed.id, version: removed.version, specs: {...specs, quantity: 9}})).status, 409, 'an edit is refused');
   // deleted there while the CRM still showed it received: the edit goes, production refuses, the reason is the real one
   const eighth = (await (await create('rep', 'east1', {description: 'eighth mold'})).json()).request;

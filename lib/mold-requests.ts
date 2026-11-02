@@ -120,7 +120,9 @@ export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'can
   if(entry.crmFileId&&known.has(entry.crmFileId))continue;
   out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other'});
  }
- return out.sort((a,b)=>String(a.uploadedAt||'').localeCompare(String(b.uploadedAt||'')));
+ // By the instant each was attached: the CRM writes UTC, production Riyadh time with its offset.
+ const at=(file:MoldDesignFileView)=>Date.parse(file.uploadedAt||'')||0;
+ return out.sort((a,b)=>at(a)-at(b));
 }
 /** How many of the 10 places a request's files take: the CRM's (not refused, not deleted, or whose deletion has not reached production)
  *  and production's that the CRM does not hold. */
