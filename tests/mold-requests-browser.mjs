@@ -197,7 +197,8 @@ try {
   const reader = await open('rep');
   await goMolds(reader);
   const removedCard = reader.locator('.mold-card', {hasText: 'مصنع east2'});
-  await removedCard.locator('.mold-chip', {hasText: 'ملغى'}).waitFor();
+  // Cancelled there without the CRM asking (deleted or cancelled in production): said so on the card (the products contract).
+  await removedCard.locator('.mold-chip', {hasText: 'أُلغي في تطبيق الإنتاج'}).waitFor();
   await removedCard.click();
   await sheet(reader).locator('.mold-banner[data-kind="cancelled"]').waitFor();
   ok((await sheet(reader).locator('.mold-banner[data-kind="cancelled"]').innerText()).includes('أُلغي الطلب في تطبيق الإنتاج'), 'the sheet says it was cancelled in production');

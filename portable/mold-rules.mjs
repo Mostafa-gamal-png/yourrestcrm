@@ -197,7 +197,9 @@ export function moldApprovalBody({id = null, orderNo = null, action, by}) {
 export function moldApprovalRefusal(status, approving) {
   if (status?.status === 'cancelled') return 'الطلب ملغى في تطبيق الإنتاج.';
   if (status?.approvals?.required === false) return 'طلب قديم من الشيت ومعتمد أصلًا؛ لا يحتاج اعتمادًا.';
-  return approving ? 'الطلب لم يعد بانتظار اعتماد مدير المبيعات.' : 'اعتمد الإنتاج الطلب؛ لم يعد سحب اعتماد مدير المبيعات ممكنًا.';
+  // The contract (approval, 409): production's approval given means the sales manager's can no longer be withdrawn.
+  if (status?.approvals?.production || status?.approvals?.admin) return approving ? 'الطلب لم يعد بانتظار اعتماد مدير المبيعات.' : 'اعتمد الإنتاج الطلب؛ لم يعد سحب اعتماد مدير المبيعات ممكنًا.';
+  return approving ? 'الطلب لم يعد بانتظار اعتماد مدير المبيعات.' : 'تغيّرت حالة الطلب في تطبيق الإنتاج؛ حدّث الصفحة.';
 }
 
 const textOf = (value, max) => typeof value === 'string' ? value.replace(/[ \t ]+/g, ' ').trim().slice(0, max) : '';
