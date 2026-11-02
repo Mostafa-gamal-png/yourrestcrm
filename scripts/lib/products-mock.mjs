@@ -279,6 +279,11 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
       row.deleted = true; row.cancelled = true; row.cancelReason ||= reason; touch(row);
     },
+    /** The same for a request registered in production itself, named by its order number. */
+    removeOrder(orderNo, reason = 'حذف من تطبيق الإنتاج') {
+      const row = state.byOrder.get(orderNo); if (!row) throw new Error('no such order: ' + orderNo);
+      row.deleted = true; row.cancelled = true; row.cancelReason ||= reason; touch(row);
+    },
     /** Production no longer knows a request (only to test the 404 answers: the real application keeps every request). */
     forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) state.byOrder.delete(row.orderNo); },
     row: id => state.rows.get(id),

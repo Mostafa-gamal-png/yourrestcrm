@@ -130,6 +130,12 @@ try {
   const gone = (await list('rep')).requests.find(item => item.id === removed.id);
   check([gone.remote.status, gone.remote.waitingStep, gone.cancelled, gone.editable, gone.can], ['cancelled', 'cancelled', false, false, {edit: false, cancel: false, resend: false, approve: false, withdraw: false}], 'deleted in production: cancelled there; no edit, cancel or approval');
   check((await post('rep', {action: 'update', id: removed.id, version: removed.version, specs: {...specs, quantity: 9}})).status, 409, 'an edit is refused');
+  // deleted there while the CRM still showed it received: the edit goes, production refuses, the reason is the real one
+  const eighth = (await (await create('rep', 'east1', {description: 'eighth mold'})).json()).request;
+  mock.remove(eighth.id);
+  res = await post('rep', {action: 'update', id: eighth.id, version: eighth.version, specs: {...specs, description: 'eighth mold', quantity: 6}});
+  body = await res.json();
+  check([res.status, body.error, body.request.remote.status, body.request.editable, body.request.specs.quantity], [409, 'أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.', 'cancelled', false, 1], 'an edit reaching a request deleted in production: «cancelled in production», not «production started»; the edit withdrawn');
 
   // ---- the sales manager approves; production and the administrator follow in their application
   const fourth = (await (await create('rep', 'east1', {description: 'fourth mold'})).json()).request;
@@ -193,6 +199,16 @@ try {
   check((await post('sm', {action: 'approve-order', orderNo: manual.orderNo})).status, 409, 'no longer waiting: refused');
   body = await (await post('sm', {action: 'withdraw-order', orderNo: manual.orderNo})).json();
   check([body.status.waitingStep, body.pending.items.some(item => item.orderNo === manual.orderNo)], ['sales', true], 'withdrawn: back on the list');
+  // production refuses by order number: the real reason, with the request as production holds it
+  check((await post('sm', {action: 'approve-order', orderNo: manual.orderNo})).status, 200, 'approved again');
+  mock.removeOrder(manual.orderNo);
+  res = await post('sm', {action: 'withdraw-order', orderNo: manual.orderNo});
+  body = await res.json();
+  check([res.status, body.error, body.status?.status, body.status?.crmRequestId], [409, 'الطلب ملغى في تطبيق الإنتاج.', 'cancelled', null], 'deleted in production after the approval: the withdrawal is refused as cancelled, with production\'s status');
+  mock.seedLegacy(1);
+  res = await post('sm', {action: 'withdraw-order', orderNo: 1});
+  body = await res.json();
+  check([res.status, body.error, body.status?.approvals?.required], [409, 'طلب قديم من الشيت ومعتمد أصلًا؛ لا يحتاج اعتمادًا.', false], 'a historical order from the sheet: refused as needing no approval');
   body = await (await post('sm', {action: 'approve-order', orderNo: fifth.remote.orderNo})).json();
   check([JSON.parse(mock.state.calls.findLast(call => call.route === 'approval').body).crmRequestId, body.request.remote.waitingStep, body.request.can.withdraw], [fifth.id, 'production', true], 'the CRM\'s own request goes by its crmRequestId, and the CRM keeps its new status');
 

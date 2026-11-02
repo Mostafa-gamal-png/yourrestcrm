@@ -147,6 +147,17 @@ try {
   await pendingCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
   await sm.locator('.mold-pending[data-done]', {hasText: 'مصنع مسجّل في الإنتاج'}).waitFor();
   check([mock.state.byOrder.get(manual.orderNo).approvals.sales?.via, await sm.locator('.mold-pending:not([data-done])').count()], ['crm', 1], 'approved at production by its order number; one left waiting');
+  // A request production deletes while it waits on the list: the refusal stays readable after the request leaves the list.
+  const gone = mock.registerManual({customerName: 'مصنع اتمسح من الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'gone mold'});
+  await sm.locator('.mold-heading-tools button').first().click();
+  const goneCard = sm.locator('.mold-pending', {hasText: 'مصنع اتمسح من الإنتاج'});
+  await goneCard.waitFor();
+  mock.removeOrder(gone.orderNo);
+  await goneCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await sm.locator('.mold-pending-gone').waitFor();
+  const goneText = await sm.locator('.mold-pending-gone').innerText();
+  ok(goneText.includes(String(gone.orderNo)) && goneText.includes('لم يعد بانتظار اعتمادك'), 'the refusal names the order and stays readable: ' + goneText);
+  check(await goneCard.count(), 0, 'the deleted request left the list');
   await sm.locator('.mold-tabs button', {hasText: 'كل الطلبات'}).click();
   const waitingCard = sm.locator('.mold-card', {hasText: 'مصنع east2'});
   await waitingCard.waitFor();
@@ -195,6 +206,22 @@ try {
   await reader.waitForTimeout(400);
   await shot(reader, 'mold-sheet-cancelled-in-production');
   await reader.context().close();
+
+  // ---- 3e. Cancelled in the CRM while production is unreachable: «ملغى» at once, the cancellation waiting to be sent
+  const api = app.as(await app.login('rep'));
+  const asked = (await (await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}}})).json()).request;
+  mock.state.down = true;
+  check((await api('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: asked.id, version: asked.version, reason: ''}})).status, 200, 'cancelled in the CRM while production is down');
+  const canceller = await open('rep');
+  await goMolds(canceller);
+  const pendingCancel = canceller.locator('.mold-card', {hasText: 'cancel while down'});
+  await pendingCancel.waitFor();
+  check([await pendingCancel.locator('.mold-chip').innerText(), await pendingCancel.locator('.mold-card-since').count(), await pendingCancel.locator('.mold-card-sending').innerText()], ['ملغى', 0, 'بانتظار الإرسال'], 'the card reads cancelled, not production\'s step, with the cancellation waiting to be sent');
+  await pendingCancel.click();
+  await sheet(canceller).locator('.mold-banner[data-kind="cancelled"]').waitFor();
+  check([await sheet(canceller).locator('.mold-waiting').count(), await sheet(canceller).locator('.mold-stages li[aria-current]').count()], [0, 0], 'the sheet shows no waiting step and no current stage');
+  mock.state.down = false;
+  await canceller.context().close();
 
   // ---- 4. The phone keeps the representative's five tabs; the page opens from the account sheet
   const phone = await open('rep', {viewport: PHONE});

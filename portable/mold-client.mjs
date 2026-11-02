@@ -68,7 +68,7 @@ export async function callProducts(config, route, payload, {fetch: send = global
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length <= 4 * 1024 * 1024) json = JSON.parse(bytes.toString('utf8'));
   } catch { json = null; }
-  const answer = readMoldAnswer(response.status, json);
+  const answer = readMoldAnswer(response.status, json, {manual: route === 'approval'});
   if (answer.kind === 'ok' && !wellFormed(route, json)) return {kind: 'retry', code: 'bad_response', fields: [], http: response.status};
   return {...answer, http: response.status, json: answer.kind === 'ok' ? json : undefined};
 }

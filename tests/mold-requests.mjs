@@ -95,6 +95,9 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   // Why production refused (409 request_locked), from the request it returned: cancelled there, historical, or the step moved on.
   eq([moldApprovalRefusal(moldStatusObject({...raw, status: 'cancelled'}), false), moldApprovalRefusal(moldStatusObject({...raw, status: 'cancelled'}), true)], ['الطلب ملغى في تطبيق الإنتاج.', 'الطلب ملغى في تطبيق الإنتاج.'], 'cancelled or deleted in production: said so, approving or withdrawing');
   eq(moldApprovalRefusal(moldStatusObject({...raw, status: 'received', editable: true, approvals: {required: false, sales: null, production: null, admin: null}}), true), 'طلب قديم من الشيت ومعتمد أصلًا؛ لا يحتاج اعتمادًا.', 'a historical request needs no approval');
+  eq(moldApprovalRefusal(moldStatusObject({...raw, status: 'cancelled', approvals: {required: false, sales: null, production: null, admin: null}}), false), 'الطلب ملغى في تطبيق الإنتاج.', 'a historical request deleted in production: cancelled first, as production checks it first');
+  const lockedManual = {error: {code: 'request_locked', details: {request: {...raw, crmRequestId: null, status: 'cancelled'}}}};
+  eq([readMoldAnswer(409, lockedManual).request, readMoldAnswer(409, lockedManual, {manual: true}).request.status], [null, 'cancelled'], 'a refusal about a request registered in production is read when the call may be about one');
   eq([moldApprovalRefusal(moldStatusObject({...raw, status: 'received', editable: true, approvals: {required: true, sales: {at: 'x'}, production: {at: 'y'}, admin: null}}), false), moldApprovalRefusal(null, true)], ['اعتمد الإنتاج الطلب؛ لم يعد سحب اعتماد مدير المبيعات ممكنًا.', 'الطلب لم يعد بانتظار اعتماد مدير المبيعات.'], 'production approved first; or the step moved on');
   eq(moldStatusObject({...raw, crmRequestId: null}), null, 'a status without crmRequestId is not one of the CRM\'s requests');
   eq(moldStatusObject({...raw, crmRequestId: null}, {manual: true}).crmRequestId, null, 'but is read as the answer to an approval by orderNo');
@@ -184,6 +187,10 @@ try {
   eq([answer.kind, answer.json.request.crmRequestId, answer.json.request.waitingStep], ['ok', null, 'production'], 'approved by its orderNo: it waits for production');
   eq((await call('pending', {})).json.requests.map(item => item.orderNo), [mock.row('mr-wait').orderNo], 'and leaves the pending list');
   eq((await call('approval', moldApprovalBody({orderNo: 9999, action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'an unknown order: 404');
+  // production cancels or deletes it afterwards: the refusal to withdraw carries the request (crmRequestId null) and its reason
+  manual.cancelled = true;
+  answer = await call('approval', moldApprovalBody({orderNo: manual.orderNo, action: 'withdraw', by: {name: 'مدير المبيعات'}}));
+  eq([answer.kind, answer.request?.status, answer.request?.crmRequestId, moldApprovalRefusal(answer.request, false)], ['locked', 'cancelled', null, 'الطلب ملغى في تطبيق الإنتاج.'], 'a request registered in production and cancelled there: refused, said so');
   // the customers route: full deactivates whoever is missing (nobody deleted); upsert only adds or changes; 2 MB allowed
   answer = await call('customers', {mode: 'full', customers: [moldCustomerEntry({crmNumber: 1, name: 'أ', city: 'الدمام'}), moldCustomerEntry({crmNumber: 2, name: 'ب'})]});
   eq([answer.kind, answer.json], ['ok', {received: 2, inserted: 2, updated: 0, deactivated: 0, activeCustomers: 2}], 'a full list');
@@ -214,6 +221,8 @@ try {
   eq([answer.http, answer.json.created, answer.json.linked, answer.json.request.orderNo], [200, false, true, 2], 'a historical row is linked, not created');
   eq([answer.json.request.waitingStep, answer.json.request.approvals.required], ['manufacturing', false], 'a historical request needs no approval');
   eq((await call('approval', moldApprovalBody({id: 'mr-legacy-2', action: 'approve', by: {name: 'm'}}))).kind, 'locked', 'and cannot be approved');
+  answer = await call('approval', moldApprovalBody({orderNo: 3, action: 'withdraw', by: {name: 'm'}}));
+  eq([answer.kind, answer.request?.approvals.required, moldApprovalRefusal(answer.request, false)], ['locked', false, 'طلب قديم من الشيت ومعتمد أصلًا؛ لا يحتاج اعتمادًا.'], 'an unlinked historical row by its order number: refused as historical');
   answer = await call('requests', {...legacy, specs: {...legacy.specs, quantity: 9}});
   eq([answer.http, answer.json.linked], [200, false], 'linking again is safe even when the CRM data differ');
   eq((await call('requests', {...legacy, crmRequestId: 'mr-other'})).kind, 'locked', 'a row linked to another CRM id: 409');

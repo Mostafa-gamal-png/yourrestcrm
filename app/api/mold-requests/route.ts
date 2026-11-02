@@ -80,7 +80,9 @@ export async function POST(req:Request){try{
  const answer=async(rowId:string,outcome:SendOutcome|null,status=200)=>{
   const row=await loadMoldRequest(c.db,rowId);
   if(!row)throw new CRMError('الطلب غير متاح',404);
-  return Response.json({ok:status<400,request:view(row,c.me,c.members,link.ok),send:outcome?{kind:outcome.kind,code:outcome.code,fields:outcome.fields||[]}:null,...(status===409?{error:'بدأ الإنتاج قبل وصول التعديل؛ لم يعد التعديل أو الإلغاء ممكنًا. الطلب كما استلمه الإنتاج.'}:{})},{status});
+  // 409: production refused the change; the request now shows what production holds, and the reason is the one production gave.
+  const refused=row.remote?.status==='cancelled'?'أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.':'بدأ الإنتاج قبل وصول التعديل؛ لم يعد التعديل أو الإلغاء ممكنًا. الطلب كما استلمه الإنتاج.';
+  return Response.json({ok:status<400,request:view(row,c.me,c.members,link.ok),send:outcome?{kind:outcome.kind,code:outcome.code,fields:outcome.fields||[]}:null,...(status===409?{error:refused}:{})},{status});
  };
  const replay=async()=>{
   const saved=await c.db.prepare('SELECT record_id,detail FROM crm_audit WHERE id=?').bind(receiptId).first<{record_id:string;detail:string}>();

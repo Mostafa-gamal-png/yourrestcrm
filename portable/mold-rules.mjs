@@ -228,14 +228,16 @@ export function moldPendingItem(value) {
  * 401, 503 not_configured, 5xx, a reply that is not the contract's).
  * @param {number} httpStatus
  * @param {any} json
+ * @param {{manual?: boolean}} [options] manual: the call may be about a request registered in production (the approval route)
  * @returns {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], request?: any}}
  */
-export function readMoldAnswer(httpStatus, json) {
+export function readMoldAnswer(httpStatus, json, {manual = false} = {}) {
   const error = json && typeof json === 'object' && json.error && typeof json.error === 'object' ? json.error : null;
   const code = typeof error?.code === 'string' ? error.code.slice(0, 40) : '';
   const fields = Array.isArray(error?.fields) ? error.fields.filter(field => typeof field === 'string').map(field => field.slice(0, 60)).slice(0, 30) : [];
   if (httpStatus >= 200 && httpStatus < 300 && !error) return {kind: 'ok', code: '', fields};
-  if (httpStatus === 409 && code === 'request_locked') return {kind: 'locked', code, fields, request: moldStatusObject(error.details?.request)};
+  // An approval answer may be about a request registered in production (crmRequestId null): manual reads that one too.
+  if (httpStatus === 409 && code === 'request_locked') return {kind: 'locked', code, fields, request: moldStatusObject(error.details?.request, {manual})};
   if (httpStatus === 404 && code === 'not_found') return {kind: 'not_found', code, fields};
   if (httpStatus === 400 || httpStatus === 413) return {kind: 'rejected', code: code || 'http_' + httpStatus, fields};
   return {kind: 'retry', code: code || 'http_' + httpStatus, fields};
