@@ -64,6 +64,13 @@ export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'>&{inCrm
 export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null};
 /** How often the sales manager's open page asks for the waiting list again. */
 export const MOLD_PENDING_REFRESH_MS=3*60_000;
+/** Whether a request the sales manager approved from their list waits for them again: production lists it at the sales step since a
+ *  later time than the copy they approved (attaching or deleting a design file, or an edit, undoes the approvals). The same wait listed
+ *  again (a list kept a minute, here or in another server process) is not. */
+export function moldPendingAgain(copy:Pick<MoldPendingItem,'orderNo'|'waitingSince'>,items:Pick<MoldPendingItem,'orderNo'|'waitingSince'>[]){
+ const since=Date.parse(copy.waitingSince||'')||0;
+ return items.some(item=>item.orderNo===copy.orderNo&&(Date.parse(item.waitingSince||'')||0)>since);
+}
 
 /** Every role has the page and asks (the owner, 2026-11-01: «الكل بيعمل طلب», customer service too). */
 export const MOLD_ROLES=['rep','supervisor','manager','admin','customer_service','customer_service_manager'];
@@ -188,7 +195,7 @@ export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>s
   empty:['الملف فارغ','The file is empty'],not_pdf:['الملف ليس PDF فعلًا','The file is not really a PDF'],bad_image:['الصورة تالفة أو بصيغة غير مدعومة','The image is damaged or of an unsupported type'],
   too_many_pixels:['الصورة أكبر من 80 مليون نقطة','The image is larger than 80 million pixels'],too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],payload_too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],
   too_many_files:['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)','At most 10 files a request (yours and production\'s)'],
-  crm_file_id_used:['الإنتاج رفض الملف: رقمه مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وارفعه من جديد','Production refused the file: its number was already used for another file or a deleted one; delete it and upload it again'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
+  crm_file_id_used:['رقم الملف مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وأرفقه من جديد','The file\'s number was already used for another file or a deleted one; delete it and attach it again'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
   request_locked:['اكتملت الاعتمادات؛ لم يعد تغيير ملفات الطلب ممكنًا','The approvals are complete; the files can no longer change'],file_missing:['نسخة الملف في الـCRM مفقودة؛ احذفه وأرفقه من جديد','The CRM copy of the file is missing; delete it and attach it again'],
  };
  const found=table[reason];

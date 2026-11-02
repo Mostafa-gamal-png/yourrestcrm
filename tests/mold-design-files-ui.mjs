@@ -142,10 +142,11 @@ function render(row, files, linkReady = true) {
   const full = file('الحادي عشر.pdf', {nextAttemptAt: null, lastError: {code: 'invalid_payload', fields: ['crmFileId'], reason: 'too_many_files', http: 400, at: later, final: true}});
   const {rows, view} = render(request(), [used, full]);
   eq([view.designFiles.map(entry => entry.state), view.designFiles.map(entry => entry.stopped), view.can.resend, lib.moldDesignCount(request(), [used, full]).crm], [['rejected', 'rejected'], [false, false], false, 0], 'refused for good: not stopped, nothing to resend, no place taken');
-  ok(rows[0].includes('رفض الإنتاج الملف') && rows[0].includes('الإنتاج رفض الملف: رقمه مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وارفعه من جديد'), 'crm_file_id_used in words: ' + rows[0]);
+  // The state says production refused it; the reason below says why, without saying it twice, and with the words the other reasons use.
+  ok(rows[0].includes('رفض الإنتاج الملف رقم الملف مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وأرفقه من جديد') && rows[0].split('رفض').length === 2 && !rows[0].includes('ارفعه'), 'crm_file_id_used in words, the refusal said once: ' + rows[0]);
   ok(rows[1].includes('الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)'), 'too_many_files in words: ' + rows[1]);
   eq([ui.designRefusal({code: 'invalid_payload', fields: ['crmFileId'], reason: 'crm_file_id_used'}, (ar, en) => en), ui.designRefusal({code: 'invalid_payload', fields: ['crmFileId']}, say)],
-    ['Production refused the file: its number was already used for another file or a deleted one; delete it and upload it again', 'رفض الإنتاج الملف'], 'in English too; a crmFileId refusal without a reason reads as a plain refusal');
+    ['The file\'s number was already used for another file or a deleted one; delete it and attach it again', 'رفض الإنتاج الملف'], 'in English too; a crmFileId refusal without a reason reads as a plain refusal');
 }
 
 // ---- 7. The sales manager's pending files: links while the request waits; named only, with a note, on a card just approved

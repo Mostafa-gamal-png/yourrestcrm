@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,moldApprovalNames,moldErrorText,moldFieldNames,moldHasApprovals,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,moldApprovalNames,moldErrorText,moldFieldNames,moldHasApprovals,moldPendingAgain,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_DESIGN_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
@@ -147,9 +147,17 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
 /** «طلبات بانتظار اعتمادي»: every request production holds for the sales manager, the CRM's and those registered in production, the
  * longest waiting first, each with what was asked for and an Approve button. Approved here, a request leaves the list; until the page
  * is refreshed it stays below with Withdraw approval, in case it was a mistake, its files named without links (they open from the list
- * only while the request waits for the sales manager). */
+ * only while the request waits for the sales manager). Should it come back to the sales manager meanwhile (production lists it waiting
+ * since after that approval), it leaves «اعتمدتها الآن» for the list above, as production now holds it, files and links included. */
 function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnswer;say:Say;onOpen:(id:string)=>void;onChanged:()=>void}){
  const [busy,setBusy]=useState<number|null>(null),[errors,setErrors]=useState<Record<number,string>>({}),[approved,setApproved]=useState<MoldPendingAnswer['items']>([]);
+ // Read on each new list (state adjusted while rendering, not in an effect): a copy dropped here stays dropped should the request
+ // leave the list again later.
+ const [listed,setListed]=useState(pending);
+ if(listed!==pending){
+  setListed(pending);
+  if(approved.some(copy=>moldPendingAgain(copy,pending.items)))setApproved(previous=>previous.filter(copy=>!moldPendingAgain(copy,pending.items)));
+ }
  const keys=useRef(new Map<string,string>());
  const run=async(item:MoldPendingAnswer['items'][number],action:'approve-order'|'withdraw-order')=>{
   if(busy!==null)return;
