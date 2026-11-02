@@ -1,23 +1,23 @@
 {
   "schemaVersion": 1,
   "packageName": "org.yourrest.crm",
-  "versionName": "1.0.11",
-  "versionCode": 12,
-  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.11-12.apk",
-  "sizeBytes": 242509,
-  "sha256": "246ce41714a8ea78bc86c02dc031cde6ed928c5a391cd2d1e2d4b548a55b7faa",
+  "versionName": "1.0.12",
+  "versionCode": 13,
+  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.12-13.apk",
+  "sizeBytes": 271181,
+  "sha256": "e50e6eb7cf247996fdf8c97a8ad3222010cc2427024ee80e27661e5af0f69802",
   "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
   "releaseNotes": {
     "ar": [
-      "إشعار على الهاتف عند تحويل طلب من خدمة العملاء إليك، حتى والتطبيق مغلق أو الشاشة مقفلة.",
-      "يتحقق التطبيق من الطلبات الجديدة كل عشر دقائق في ساعات العمل (6 صباحًا إلى 6 مساءً عدا الجمعة) وعند فتحه.",
+      "اختيار كل أنواع ملفات التصميم من التطبيق عند إرفاقها بطلب القالب (DWG وDXF وSTEP وSTL وSolidWorks وNC1 وAI وPSD وZIP وغيرها).",
+      "فتح ملفات التصميم وحفظها داخل التطبيق بجلسة دخولك، من غير المتصفح ومن غير تسجيل دخول جديد.",
       "تبقى بياناتك والزيارات المحفوظة على الجهاز كما هي بعد التحديث."
     ],
     "en": [
-      "A phone notification when customer service assigns a request to you, even with the app closed or the screen locked.",
-      "The app checks for new requests every ten minutes in working hours (6 a.m. to 6 p.m. except Friday) and when opened.",
+      "Choose every design file type from the app when attaching it to a mold request (DWG, DXF, STEP, STL, SolidWorks, NC1, AI, PSD, ZIP and more).",
+      "Open and save design files inside the app with your signed-in session, without the browser or signing in again.",
       "Your data and the visits saved on the phone stay as they are after the update."
     ]
   },
-  "publishedAt": "2026-10-31T15:26:06.399Z"
+  "publishedAt": "2026-11-02T15:49:49.703Z"
 }
