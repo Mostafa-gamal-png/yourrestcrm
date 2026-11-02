@@ -84,3 +84,44 @@
 .mold-pending-done{display:inline-flex;align-items:center;gap:6px;color:#1f7a44;font-weight:600}
 .dark .mold-pending .mold-chip[data-source=manual]{background:#33284d;color:#e1d4ff}
 .dark .mold-count{background:#5a4510;color:#f6e3b0}
+/* Design files (2026-11-02): the request's files in its sheet and form, their sending state, and the pending list's files. */
+.mold-card-files{display:inline-flex;align-items:center;gap:4px}
+.mold-design{display:grid;gap:10px;min-width:0}
+.mold-design-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.mold-design-head .mold-subtitle{margin:6px 0 0}
+.mold-design-count{font-size:12px;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.mold-design-empty{margin:0;font-size:14px;color:var(--muted-foreground)}
+.mold-design-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;min-width:0}
+.mold-design-file{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card);min-width:0}
+.mold-design-file[data-state=rejected],.mold-design-file[data-state=locked],.mold-design-file[data-state=refused],.mold-design-file[data-state=upload-failed]{border-color:#e2b4ab}
+.mold-design-file[data-state=held],.mold-design-file[data-state=waiting],.mold-design-file[data-state=deleting]{border-color:#e6cf8f}
+.mold-design-icon{flex-shrink:0;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--muted);color:var(--muted-foreground)}
+.mold-design-file[data-source=production] .mold-design-icon{background:#e3f0ff;color:#1d4f91}
+.mold-design-main{flex:1 1 180px;min-width:0;display:grid;gap:2px}
+.mold-design-name{font-weight:600;font-size:14px;overflow-wrap:anywhere}
+.mold-design-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:var(--muted-foreground)}
+.mold-design-state{font-weight:600;color:#8a5a00}
+.mold-design-file[data-state=sent] .mold-design-state,.mold-design-file[data-state=ready] .mold-design-state{color:#1b6a47}
+.mold-design-file[data-state=rejected] .mold-design-state,.mold-design-file[data-state=locked] .mold-design-state,.mold-design-file[data-state=refused] .mold-design-state,.mold-design-file[data-state=upload-failed] .mold-design-state{color:#7a2c1f}
+.mold-design-file[data-state=off] .mold-design-state{color:#34385a}
+.mold-design-reason{font-size:13px;color:#7a2c1f;line-height:1.6;overflow-wrap:anywhere}
+.mold-design-actions{display:flex;flex-wrap:wrap;gap:6px;margin-inline-start:auto}.mold-design-actions .btn{min-height:40px}
+.mold-chip[data-source=production]{background:#e3f0ff;color:#1d4f91}
+.mold-design-confirm{flex-basis:100%;display:grid;gap:8px;padding:10px 12px;border-radius:12px;background:#f5e9c8;color:#6a4a0e}
+.mold-design-confirm p{display:flex;align-items:flex-start;gap:8px;margin:0;font-size:14px;line-height:1.6}.mold-design-confirm p svg{flex-shrink:0;margin-top:3px}
+.mold-design-confirm ul,.mold-design-refused ul{margin:0;padding-inline-start:20px;font-size:13px;overflow-wrap:anywhere}
+.mold-design-refused{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid #efc7cd;border-radius:12px;background:#fff0f1;color:#a63149}
+.mold-design-tools{display:grid;gap:6px;justify-items:start}
+.mold-design-attach{position:relative;overflow:hidden;cursor:pointer;min-height:44px}.mold-design-attach:focus-within{outline:2px solid var(--primary);outline-offset:2px}
+.mold-design-attach[data-disabled]{opacity:.5;cursor:not-allowed}
+.mold-design-input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:inherit;font-size:0}
+.mold-design-hint{font-size:12px;color:var(--muted-foreground);line-height:1.6}
+.mold-design-picker{border:1px dashed var(--border);border-radius:12px;padding:12px;margin:0;display:grid;gap:8px;min-width:0;justify-items:start}.mold-design-picker legend{font-size:14px;padding:0 4px}.mold-design-picker .mold-design-list{width:100%}
+.mold-design-compact{gap:6px}.mold-design-title{font-size:14px}
+.dark .mold-design-confirm{background:#3a3014;color:#f2dca0}.dark .mold-design-refused{background:#3a1d22;color:#f4c7cf;border-color:#6b2f3a}
+.dark .mold-design-state{color:#f2dca0}.dark .mold-design-file[data-state=sent] .mold-design-state,.dark .mold-design-file[data-state=ready] .mold-design-state{color:#bfe8d2}
+.dark .mold-design-reason,.dark .mold-design-file[data-state=rejected] .mold-design-state,.dark .mold-design-file[data-state=locked] .mold-design-state,.dark .mold-design-file[data-state=refused] .mold-design-state,.dark .mold-design-file[data-state=upload-failed] .mold-design-state{color:#f4c7cf}
+.dark .mold-chip[data-source=production],.dark .mold-design-file[data-source=production] .mold-design-icon{background:#1d3150;color:#cfe2ff}
+@media (max-width:640px){
+ .mold-design-actions{width:100%;margin-inline-start:0}.mold-design-actions .btn{flex:1 1 auto;min-height:44px}
+ .mold-design-tools,.mold-design-picker{justify-items:stretch}.mold-design-attach{width:100%}
+}
