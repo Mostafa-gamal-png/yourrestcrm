@@ -106,6 +106,9 @@ export async function moldDesignFilesByRequest(db:D1Database,ids:string[]){
  * process (each holds up to 25 MiB twice in memory), the others wait for the next check. */
 const DESIGN_LEASE_MS=3*60_000,DESIGN_SENDS=2;
 let filesInFlight=0;
+/** A send or a deletion claimed and still within its lease (the claim sets both times from one instant, a lease apart): its answer may
+ *  not have come yet. A file merely waiting for its next try is not. */
+export const moldDesignClaimed=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastAttemptAt'>,now:string)=>!!file.outbox&&!!file.nextAttemptAt&&!!file.lastAttemptAt&&file.nextAttemptAt>now&&Date.parse(file.nextAttemptAt)-Date.parse(file.lastAttemptAt)===DESIGN_LEASE_MS;
 export type DesignOutcome=SendOutcome&{reason?:string};
 /**
  * One send of what a design file has waiting: the file itself (only once production holds its request, never for a cancelled one), or its
