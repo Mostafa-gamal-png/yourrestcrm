@@ -29,7 +29,10 @@ const salesXmlPaths = new Set([
     'worksheet.sheetData.row.c.is', 'worksheet.sheetData.row.c.is.t',
     'worksheet.sheetData.row.c.is.r', 'worksheet.sheetData.row.c.is.r.t',
 ]);
-function salesXmlParser() {
+// Row and element bounds: the sales report keeps its own; a generic sheet (readWorkbookSheets) states its own.
+type ReadLimits = { rows: number; rowsMessage: string; tags: number };
+const salesLimits: ReadLimits = { rows: MAX_ROWS + 50, rowsMessage: 'الحد الأقصى للتقرير 5000 بند', tags: 750000 };
+function salesXmlParser(limits: ReadLimits = salesLimits) {
     let rows = 0, columns = 0, strings = 0;
     return new XMLParser({
         ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false,
@@ -44,7 +47,7 @@ function salesXmlParser() {
             // Enforce the existing limits before retaining oversized collections.
             if (key === 'worksheet.sheetData.row') {
                 columns = 0;
-                if (++rows > MAX_ROWS + 50) fail('الحد الأقصى للتقرير 5000 بند');
+                if (++rows > limits.rows) fail(limits.rowsMessage);
             }
             if (key === 'worksheet.sheetData.row.c' && ++columns > MAX_COLUMNS) fail('عدد أعمدة التقرير يتجاوز الحد المسموح');
             if (key === 'sst.si' && ++strings > 100000) fail('عدد النصوص أو طولها في Excel يتجاوز الحد المسموح');
@@ -54,7 +57,7 @@ function salesXmlParser() {
 }
 type XmlNodes = XmlNode | XmlNode[];
 interface XmlNode {
-    '#text'?: unknown; '@_r'?: unknown; '@_t'?: unknown; '@_id'?: unknown; '@_Id'?: unknown; '@_Type'?: unknown; '@_Target'?: unknown; '@_ContentType'?: unknown; '@_date1904'?: unknown;
+    '#text'?: unknown; '@_r'?: unknown; '@_t'?: unknown; '@_id'?: unknown; '@_name'?: unknown; '@_Id'?: unknown; '@_Type'?: unknown; '@_Target'?: unknown; '@_ContentType'?: unknown; '@_date1904'?: unknown;
     t?: unknown; f?: unknown; v?: unknown; is?: XmlNode; r?: XmlNodes; c?: XmlNodes; row?: XmlNodes;
     worksheet?: XmlNode; sheetData?: XmlNode; workbook?: XmlNode; workbookPr?: XmlNode; sheets?: XmlNode; sheet?: XmlNodes;
     Types?: XmlNode; Default?: XmlNodes; Override?: XmlNodes; Relationships?: XmlNode; Relationship?: XmlNodes; sst?: XmlNode; si?: XmlNodes;
@@ -169,7 +172,7 @@ function guardRelationshipTag(tag: string) {
 
 // Lexical resource and relationship guards; XMLValidator verifies structure.
 // Skip comments/CDATA before inspecting tags or counting depth.
-function guardXml(text: string) {
+function guardXml(text: string, tagLimit = salesLimits.tags) {
     if (/<!\s*(?:DOCTYPE|ENTITY)/i.test(text) || text.includes('\0')) fail('تعريفات XML الخارجية غير مسموحة');
     let position = 0, depth = 0, tags = 0;
     while ((position = text.indexOf('<', position)) !== -1) {
@@ -188,7 +191,7 @@ function guardXml(text: string) {
         }
         if (end === text.length) fail('XML غير مكتمل في ملف Excel');
         if (text[position + 1] !== '?') {
-            if (++tags > 750000) fail('عدد عناصر Excel يتجاوز الحد المسموح');
+            if (++tags > tagLimit) fail('عدد عناصر Excel يتجاوز الحد المسموح');
             if (text[position + 1] === '/') depth--;
             else {
                 guardRelationshipTag(text.slice(position + 1, end));
@@ -199,10 +202,10 @@ function guardXml(text: string) {
         position = end + 1;
     }
 }
-function validateXml(bytes: Uint8Array, name: string) {
+function validateXml(bytes: Uint8Array, name: string, tagLimit = salesLimits.tags) {
     let text: string;
     try { text = decoder.decode(bytes); } catch { fail(`ترميز XML غير صالح: ${name}`); }
-    guardXml(text);
+    guardXml(text, tagLimit);
     if (XMLValidator.validate(text) !== true) fail(`ملف XML غير صالح: ${name}`);
 }
 
@@ -262,10 +265,10 @@ function headerColumns(row: SheetRow): Record<Field, number> | null {
     }
     return columns;
 }
-function worksheetRows(sheet: XmlNode, strings: string[]): SheetRow[] {
+function worksheetRows(sheet: XmlNode, strings: string[], limits: ReadLimits = salesLimits): SheetRow[] {
     if (!sheet.worksheet?.sheetData) fail('لا توجد بيانات في ورقة التقرير');
     const source = list<XmlNode>(sheet.worksheet.sheetData.row);
-    if (source.length > MAX_ROWS + 50) fail('الحد الأقصى للتقرير 5000 بند');
+    if (source.length > limits.rows) fail(limits.rowsMessage);
     let previousRow = 0;
     return source.map(row => {
         const rowNumber = row['@_r'] === undefined ? previousRow + 1 : Number(row['@_r']);
@@ -299,13 +302,14 @@ function worksheetRows(sheet: XmlNode, strings: string[]): SheetRow[] {
     });
 }
 
-/** Pure parser. Company exclusion, member assignment and product/category mapping
- * intentionally belong to the authenticated preview/commit layer. */
-export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
+type SheetMessages = { missing: string; path: string; file: string };
+/** The validated archive, its content types and workbook. Every XML part is validated; an AST is built only for the parts read,
+ * in the order the caller reads them, so a sales report meets its checks in the same order as before. */
+function openWorkbook(bytes: Uint8Array, limits: ReadLimits) {
     const parts = unzipWorkbook(bytes), documents = new Map<string, XmlNode>(), validated = new Set<string>();
     for (const [name, data] of parts) {
         if (name.endsWith('.xml') || name.endsWith('.rels')) {
-            validateXml(data, name); validated.add(name);
+            validateXml(data, name, limits.tags); validated.add(name);
         }
     }
     // The archive may contain large unused custom XML, metadata or worksheets.
@@ -313,7 +317,7 @@ export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
     const document = (name: string): XmlNode | undefined => {
         if (!validated.has(name)) return undefined;
         if (!documents.has(name)) {
-            try { documents.set(name, salesXmlParser().parse(decoder.decode(parts.get(name)!)) as XmlNode); }
+            try { documents.set(name, salesXmlParser(limits).parse(decoder.decode(parts.get(name)!)) as XmlNode); }
             catch (error) { if (error instanceof ErpWorkbookError) throw error; fail(`تعذر قراءة XML: ${name}`); }
         }
         return documents.get(name);
@@ -321,25 +325,65 @@ export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
     const contentTypes = document('[Content_Types].xml');
     if (!contentTypes?.Types || [...list<XmlNode>(contentTypes.Types.Default), ...list<XmlNode>(contentTypes.Types.Override)].some(t => /(?:macroenabled|vba|activex|oleobject)/i.test(String(t['@_ContentType'] || '')))) fail('ارفع ملف XLSX عادي بدون وحدات ماكرو');
     const workbook = document('xl/workbook.xml')?.workbook;
-    const sheets = list<XmlNode>(workbook?.sheets?.sheet);
+    return {
+        workbook, sheets: list<XmlNode>(workbook?.sheets?.sheet),
+        relationships(): XmlNode[] {
+            const relationships = list<XmlNode>(document('xl/_rels/workbook.xml.rels')?.Relationships?.Relationship);
+            const seenRelationships = new Set<string>();
+            for (const relationship of relationships) {
+                const id = literal(relationship['@_Id']);
+                if (!id || seenRelationships.has(id)) fail('مراجع أوراق Excel مكررة أو غير صالحة');
+                seenRelationships.add(id);
+            }
+            return relationships;
+        },
+        sheetPath(sheet: XmlNode, relationships: XmlNode[], messages: SheetMessages): string {
+            const sheetId = literal(sheet['@_id']);
+            const relationship = relationships.find(r => literal(r['@_Id']) === sheetId && /\/worksheet$/.test(String(r['@_Type'])));
+            if (!relationship) fail(messages.missing);
+            const target = literal(relationship['@_Target']);
+            if (!target || target.includes('\\') || target.split('/').some(s => s === '..' || s === '.') || /[?#:]/.test(target)) fail(messages.path);
+            const sheetPath = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+            if (!sheetPath.startsWith('xl/worksheets/') || !validated.has(sheetPath)) fail(messages.file);
+            return sheetPath;
+        },
+        strings(): string[] {
+            const strings = list<XmlNode>(document('xl/sharedStrings.xml')?.sst?.si).map(richText);
+            if (strings.length > 100000 || strings.some(s => s.length > 5000)) fail('عدد النصوص أو طولها في Excel يتجاوز الحد المسموح');
+            return strings;
+        },
+        rows(sheetPath: string, strings: string[]): SheetRow[] { return worksheetRows(document(sheetPath)!, strings, limits); },
+    };
+}
+
+export type WorkbookSheet = { name: string; rows: { rowNumber: number; cells: string[] }[] };
+/** Every worksheet's name and rows, each cell as trimmed text, read with the same strict, bounded reader as the sales report
+ * (formulas, macros, external links and error cells are refused as there). Rows are counted across all sheets. */
+export function readWorkbookSheets(bytes: Uint8Array, options: { maxRows?: number } = {}): WorkbookSheet[] {
+    const maxRows = options.maxRows ?? 20000;
+    if (!Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > 100000) throw new Error('Invalid workbook row limit');
+    const limits: ReadLimits = { rows: maxRows + 50, rowsMessage: `الحد الأقصى للملف ${maxRows} صف`, tags: 2000000 };
+    const book = openWorkbook(bytes, limits);
+    if (!book.sheets.length || book.sheets.length > 50) fail('ملف Excel لا يحتوي أوراقًا صالحة');
+    const relationships = book.relationships(), strings = book.strings();
+    let total = 0;
+    return book.sheets.map(sheet => {
+        const path = book.sheetPath(sheet, relationships, { missing: 'تعذر العثور على ورقة داخل Excel', path: 'مسار ورقة Excel غير صالح', file: 'ملف ورقة Excel غير موجود' });
+        const rows = book.rows(path, strings).map(row => ({ rowNumber: row.rowNumber, cells: row.cells.map(cell => cell.text.trim()) }));
+        if ((total += rows.length) > limits.rows) fail(limits.rowsMessage);
+        return { name: normalizeErpText(literal(sheet['@_name'])), rows };
+    });
+}
+
+/** Pure parser. Company exclusion, member assignment and product/category mapping
+ * intentionally belong to the authenticated preview/commit layer. */
+export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
+    const book = openWorkbook(bytes, salesLimits), workbook = book.workbook, sheets = book.sheets;
     if (sheets.length !== 1) fail('ارفع تقرير المبيعات في ورقة Excel واحدة');
-    const relationships = list<XmlNode>(document('xl/_rels/workbook.xml.rels')?.Relationships?.Relationship);
-    const seenRelationships = new Set<string>();
-    for (const relationship of relationships) {
-        const id = literal(relationship['@_Id']);
-        if (!id || seenRelationships.has(id)) fail('مراجع أوراق Excel مكررة أو غير صالحة');
-        seenRelationships.add(id);
-    }
-    const sheetId = literal(sheets[0]['@_id']);
-    const relationship = relationships.find(r => literal(r['@_Id']) === sheetId && /\/worksheet$/.test(String(r['@_Type'])));
-    if (!relationship) fail('تعذر العثور على ورقة المبيعات داخل Excel');
-    const target = literal(relationship['@_Target']);
-    if (!target || target.includes('\\') || target.split('/').some(s => s === '..' || s === '.') || /[?#:]/.test(target)) fail('مسار ورقة المبيعات غير صالح');
-    const sheetPath = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
-    if (!sheetPath.startsWith('xl/worksheets/') || !validated.has(sheetPath)) fail('ملف ورقة المبيعات غير موجود');
-    const strings = list<XmlNode>(document('xl/sharedStrings.xml')?.sst?.si).map(richText);
-    if (strings.length > 100000 || strings.some(s => s.length > 5000)) fail('عدد النصوص أو طولها في Excel يتجاوز الحد المسموح');
-    const source = worksheetRows(document(sheetPath)!, strings);
+    const relationships = book.relationships();
+    const sheetPath = book.sheetPath(sheets[0], relationships, { missing: 'تعذر العثور على ورقة المبيعات داخل Excel', path: 'مسار ورقة المبيعات غير صالح', file: 'ملف ورقة المبيعات غير موجود' });
+    const strings = book.strings();
+    const source = book.rows(sheetPath, strings);
     let columns: Record<Field, number> | null = null, headerIndex = -1;
     for (let i = 0; i < Math.min(25, source.length); i++) {
         columns = headerColumns(source[i]);
