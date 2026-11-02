@@ -114,5 +114,6 @@ export async function bootBuiltApp(seed, {tls = false, tlsPort: requestedTlsPort
   /** A request function bound to a session cookie (or anonymous when cookie is falsy). */
   const as = cookie => (url, options = {}) => request(url, {...options, headers: {Origin: origin, ...(cookie ? {Cookie: cookie} : {}), ...options.headers}});
 
-  return {origin, db, request, login, as, work, mailFile: capture, log: () => log, async stop() { child.kill(); proxy?.close(); await rm(work, {recursive: true, force: true}); }};
+  // port: the release's own HTTP port, for a test that needs a raw connection (a body sent slowly).
+  return {origin, port: backendPort, db, request, login, as, work, mailFile: capture, log: () => log, async stop() { child.kill(); proxy?.close(); await rm(work, {recursive: true, force: true}); }};
 }

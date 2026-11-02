@@ -3,7 +3,7 @@
 // contract version 1, its addendum and the approval chain of 2026-11-01 (three approvals in order: the sales manager, in the CRM
 // through the approval route, then production, then the system administrator; any change from the CRM undoes them). Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
 // production step on a request (start / deliver), a request deleted there (read as cancelled) or unknown to it, historical rows to link,
-// a design file production attaches itself. The design files of 2026-11-02 (design-files, design-file-delete, design-file) follow the
+// a design file production attaches itself, a one-shot answer for one route (answerNext). The design files of 2026-11-02 (design-files, design-file-delete, design-file) follow the
 // owner's text of the addition: the JSON line and the bytes signed together, the name and extension rules, 25 MiB, 10 files a request,
 // a real PDF, an image of at most 80 000 000 pixels (its header read with the CRM's own moldImageSize), 404 before the request exists,
 // 409 once it is not editable, the safe repeat, and any attach or delete undoing the approvals.
@@ -124,7 +124,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map()};
   const riyadh = () => new Date(now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00';
   /** Every change: a new revision, and the wait restarts only when the step changes (yr_mreq_state_set). */
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
@@ -310,6 +310,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       const expected = createHmac('sha256', state.secret).update(timestamp + '\n' + req.method + '\n' + route + '\n' + createHash('sha256').update(raw).digest('hex')).digest('hex');
       if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) { state.badSignatures++; throw new ApiError('invalid_signature', 401, 'The signature does not match.'); }
       call.signed = true;
+      // A test's one-shot answer for this route (a refusal the CRM's own checks would never let through), after a valid signature.
+      const forced = state.answers.get(route)?.shift();
+      if (forced) { call.forced = true; reply(forced.http, forced.body); return; }
       if (route === 'design-files') {
         if (!/^application\/octet-stream\b/i.test(String(req.headers['content-type'] || ''))) throw new ApiError('invalid_payload', 400, 'design-files takes application/octet-stream.', ['body']);
         const result = attachDesign(raw);
@@ -383,6 +386,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       (row.designFiles ||= []).push(file); touch(row);
       return designEntry(file);
     },
+    /** The next call of a route (signed as usual) gets this answer instead of the route's own, once: for an answer the stand-in's rules
+     *  never give to what the CRM sends (production refusing a file the CRM's own checks accepted, a 413 from its web server). */
+    answerNext(route, http, body) { const queue = state.answers.get(route) || []; queue.push({http, body}); state.answers.set(route, queue); },
     /** Production no longer knows a request (only to test the 404 answers: the real application keeps every request). */
     forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) state.byOrder.delete(row.orderNo); },
     row: id => state.rows.get(id),
