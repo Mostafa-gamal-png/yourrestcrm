@@ -1,11 +1,12 @@
 // Mold manufacturing requests (طلبات تصنيع القوالب): what the screen and the server share. The contract rules live in
 // portable/mold-rules.mjs; this adds who may see and change a request, the shape the screen receives and the Arabic wording.
 // Every member asks for a mold for a customer they can see (the owner, 2026-11-01); the sales manager approves it here first, then
-// production and the system administrator approve it in yourrest-products, which owns the status.
+// production and the system administrator approve it in yourrest-products, which owns the status. The representative attaches design
+// files to the request (2026-11-02): kept in the CRM, sent to production, and shown with production's own files to everyone who reads it.
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS,MOLD_DESIGN_FINAL_CODES,MOLD_DESIGN_MAX_FILES} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS};
 export type MoldStage=typeof MOLD_STAGES[number];
@@ -14,23 +15,45 @@ export type MoldSpecs={description:string;core:string;vibrators:number|null;mode
 export type MoldWaitingStep=typeof MOLD_WAITING_STEPS[number];
 /** The approvals as production reports them: when each was given (null: not yet); by whom, for the sales manager's given in the CRM. */
 export type MoldApprovals={required:boolean;sales:{at:string|null;by?:string}|null;production:{at:string|null}|null;admin:{at:string|null}|null};
+export type MoldDesignKind='pdf'|'image'|'other';
+/** A design file as production lists it (designFiles of the status object and of a pending item): fileId is production's, sent back as
+ *  it came; crmFileId the CRM's for a file the CRM sent, null for one production attached. */
+export type MoldDesignFile={fileId:string|number;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null};
 export type MoldRemote={crmRequestId:string;orderNo:number|null;status:MoldStatusName;editable:boolean;moldSerial:string|null;productionDate:string|null;stages:Record<string,{done:boolean;at:string|null}>;stagesDone:number;stagesTotal:number;delivered:boolean;deliveryDate:string|null;updatedAt:string|null;revision:number|null;
  /** Where it waits now and since when (absent in a status stored before the approval chain). */
- waitingStep?:MoldWaitingStep|null;waitingSince?:string|null;approvals?:MoldApprovals|null};
+ waitingStep?:MoldWaitingStep|null;waitingSince?:string|null;approvals?:MoldApprovals|null;
+ /** The request's design files, the CRM's and production's (absent in a status stored before 2026-11-02; null from an older application). */
+ designFiles?:MoldDesignFile[]|null};
 /** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. */
 export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs};
-export type MoldError={code:string;fields?:string[];http?:number;at:string};
+export type MoldError={code:string;fields?:string[];http?:number;at:string;
+ /** Why production refused a design file's bytes (details.reason: empty, not_pdf, bad_image, too_many_pixels). */
+ reason?:string};
+/** One of the CRM's own design files as stored (crm_mold_design_files): id is its crmFileId; the bytes are in the object store under
+ *  objectKey until it is deleted; outbox what waits to reach production (the file, or its deletion). */
+export type MoldDesignFileRow={id:string;requestId:string;memberId:string;name:string;kind:MoldDesignKind;contentType:string;size:number;sha256:string;objectKey:string|null;createdAt:string;deletedAt:string|null;outbox:'send'|'delete'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remoteFileId:string|number|null;sentAt:string|null;version:number};
+/** Where a design file stands for the reader: sent (production holds it), waiting (to be sent, on the timetable), held (until production
+ *  holds the request itself), rejected (production refused it; the reason is shown), locked (the approvals were complete first; not sent),
+ *  deleting (its deletion waits to reach production), off (the production link is off), production (attached in production). */
+export type MoldDesignState='sent'|'waiting'|'held'|'rejected'|'locked'|'deleting'|'off'|'production';
+/** A design file as a reader receives it: href downloads it through the CRM (viewable: a PDF or an image, which may open inline with &inline=1). */
+export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;state:MoldDesignState;error:MoldError|null;canDelete:boolean;href:string;viewable:boolean};
+/** A design file of a request waiting for the sales manager, with its download through the CRM. */
+export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean};
 export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOrderNo:number|null;data:MoldRequestData;accepted:MoldRequestData|null;cancelledAt:string|null;cancelReason:string;outbox:'send'|'cancel'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remote:MoldRemote|null;remoteAt:string|null;createdBy:string;createdAt:string;updatedAt:string;version:number};
 export type MoldSendingState='sent'|'waiting'|'rejected'|'off';
-/** One request as a reader receives it. */
+/** One request as a reader receives it. designFiles: the CRM's and production's; can.attach / can.deleteFile: the requester may attach or
+ *  delete design files (each file also says whether it may be deleted). */
 export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;cancelled:boolean;cancelReason:string;
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null};
- remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean};version:number};
+ remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean};version:number;
+ designFiles:MoldDesignFileView[]};
 /** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
 export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm'|'manual';requestedAt:string|null;waitingSince:string|null;enteredBy:string|null;
- customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;revision:number|null};
-/** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it also shows in the list below). */
-export type MoldPendingAnswer={items:(MoldPendingItem&{inCrm:boolean})[];error:MoldError|null;at:string|null};
+ customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;revision:number|null;designFiles:MoldDesignFile[]};
+/** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it also shows in the list below);
+ *  designFiles: its design files (the request's own and production's), each downloaded through the CRM. */
+export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'>&{inCrm:boolean;designFiles:MoldPendingDesignFile[]})[];error:MoldError|null;at:string|null};
 export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null};
 /** How often the sales manager's open page asks for the waiting list again. */
 export const MOLD_PENDING_REFRESH_MS=3*60_000;
@@ -66,9 +89,54 @@ export function moldSalesApprovalWithdrawable(row:Pick<MoldRequestRow,'cancelled
  const approvals=row.remote?.approvals;
  return !row.cancelledAt&&!row.outbox&&row.remote?.status==='received'&&!!approvals?.sales&&!approvals.production&&!approvals.admin;
 }
-export function moldPermissions(row:MoldRequestRow,me:Member){
- const own=row.memberId===me.id,open=moldEditable(row),approver=canApproveMoldRequests(me);
- return {edit:own&&open,cancel:own&&open,resend:own&&!!row.outbox,approve:approver&&moldAwaitsSalesApproval(row),withdraw:approver&&moldSalesApprovalWithdrawable(row)};
+/** A design file still on its way (its sending or its deletion due on the timetable): the approval waits for it, since its arrival
+ *  undoes the approvals anyway. One production refused, or that stopped after 24 hours, holds nothing. */
+export const moldDesignInFlight=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'>)=>!!file.outbox&&file.nextAttemptAt!==null;
+/** Sending stopped after 24 hours of failures (not refused): the requester's resend starts it again. */
+export const moldDesignStopped=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'deletedAt'>)=>file.outbox==='send'&&!file.deletedAt&&file.nextAttemptAt===null&&!MOLD_DESIGN_FINAL_CODES.includes(file.lastError?.code||'');
+/** Refused for good by production (or lost by the CRM): it never reached production and never will by itself. */
+export const moldDesignRefused=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>)=>file.outbox==='send'&&!file.sentAt&&file.nextAttemptAt===null&&MOLD_DESIGN_FINAL_CODES.includes(file.lastError?.code||'');
+/** Whether production may hold the file: sent, or a send was tried without a final refusal (a timeout may have arrived). Such a file is
+ *  deleted through design-file-delete; any other is removed in the CRM alone. */
+export const moldDesignMayBeRemote=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'sentAt'|'lastAttemptAt'>)=>!!file.sentAt||!!file.lastAttemptAt&&!moldDesignRefused(file);
+export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[]){
+ const own=row.memberId===me.id,open=moldEditable(row),approver=canApproveMoldRequests(me),settled=!files.some(moldDesignInFlight);
+ return {edit:own&&open,cancel:own&&open,resend:own&&(!!row.outbox||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
+}
+const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
+/** The files a request shows: the CRM's own (with where each stands) and those production lists that the CRM does not hold (production's
+ *  own, or a CRM file production kept); a file the CRM deleted is hidden even while an older status still lists it. Oldest first. */
+export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'cancelledAt'|'remote'|'accepted'>,files:MoldDesignFileRow[],me:Pick<Member,'id'>,linkReady:boolean):MoldDesignFileView[]{
+ const own=row.memberId===me.id,open=moldEditable(row),listed=row.remote?.designFiles||[],known=new Set(files.map(file=>file.id)),out:MoldDesignFileView[]=[];
+ const link=(key:string)=>designHref('id='+encodeURIComponent(row.id)+'&file='+encodeURIComponent(key));
+ for(const file of files){
+  if(file.deletedAt&&!file.outbox)continue;
+  const remote=listed.find(entry=>entry.crmFileId===file.id),fileId=remote?remote.fileId:file.remoteFileId;
+  const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':!linkReady?'off':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):!row.accepted||row.cancelledAt?'held':'waiting';
+  out.push({key:file.id,fileId:fileId===null||fileId===undefined?null:String(fileId),crmFileId:file.id,name:file.name,kind:file.kind,size:file.size,source:'crm',uploadedAt:file.createdAt,state,error:file.lastError,
+   canDelete:own&&state!=='deleting'&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other'});
+ }
+ for(const entry of listed){
+  if(entry.crmFileId&&known.has(entry.crmFileId))continue;
+  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other'});
+ }
+ return out.sort((a,b)=>String(a.uploadedAt||'').localeCompare(String(b.uploadedAt||'')));
+}
+/** How many of the 10 places a request's files take: the CRM's (not refused, not deleted, or whose deletion has not reached production)
+ *  and production's that the CRM does not hold. */
+export function moldDesignCount(row:Pick<MoldRequestRow,'remote'>,files:MoldDesignFileRow[]){
+ const known=new Set(files.map(file=>file.id));
+ const crm=files.filter(file=>(!file.deletedAt||file.outbox==='delete')&&!moldDesignRefused(file)).length;
+ return {crm,production:(row.remote?.designFiles||[]).filter(entry=>!entry.crmFileId||!known.has(entry.crmFileId)).length,max:MOLD_DESIGN_MAX_FILES};
+}
+/** The pending item's files, each downloaded through the CRM by its order number. */
+export const moldPendingDesignFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'>):MoldPendingDesignFile[]=>item.designFiles.map(file=>({...file,href:designHref('order='+item.orderNo+'&file='+encodeURIComponent(String(file.fileId))),viewable:file.kind!=='other'}));
+/** One request as its reader receives it. */
+export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[]):MoldRequestView{
+ return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
+  requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,
+  sending:{state:moldSendingState(row,linkReady),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady)};
 }
 export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>,linkReady:boolean):MoldSendingState{
  if(!row.outbox)return 'sent';
@@ -95,6 +163,20 @@ export function moldErrorText(code:string,say:(ar:string,en:string)=>string){
  };
  const found=table[code]||(/^http_5/.test(code)?table.server_error:undefined);
  return found?say(...found):say('تعذّر الاتصال بتطبيق الإنتاج','Production could not be reached');
+}
+export const moldDesignStateNames:Record<MoldDesignState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],held:['يُرسل بعد وصول الطلب للإنتاج','Sent once production has the request'],
+ rejected:['رفض الإنتاج الملف','Production refused the file'],locked:['اكتملت الاعتمادات قبل وصوله؛ لم يُرسل','The approvals were complete first; not sent'],deleting:['جارٍ حذفه من الإنتاج','Being deleted at production'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],production:['من تطبيق الإنتاج','From production']};
+/** Why a design file was refused (the CRM's own check, or production's answer), in the representative's words. */
+export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>string){
+ const table:Record<string,[string,string]>={
+  name:['اسم الملف غير مقبول: حتى 200 حرف، بلا \\ / < > : " | ? * ، وبصيغة من الصيغ المسموحة','The file name is not accepted: up to 200 characters, none of \\ / < > : " | ? *, and an allowed extension'],
+  empty:['الملف فارغ','The file is empty'],not_pdf:['الملف ليس PDF فعلًا','The file is not really a PDF'],bad_image:['الصورة تالفة أو بصيغة غير مدعومة','The image is damaged or of an unsupported type'],
+  too_many_pixels:['الصورة أكبر من 80 مليون نقطة','The image is larger than 80 million pixels'],too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],payload_too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],
+  too_many_files:['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)','At most 10 files a request (yours and production\'s)'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
+  request_locked:['اكتملت الاعتمادات؛ لم يعد تغيير ملفات الطلب ممكنًا','The approvals are complete; the files can no longer change'],file_missing:['نسخة الملف في الـCRM مفقودة؛ احذفه وأرفقه من جديد','The CRM copy of the file is missing; delete it and attach it again'],
+ };
+ const found=table[reason];
+ return found?say(...found):say('رفض الإنتاج الملف','Production refused the file');
 }
 /** The contract's field names, for a refusal that names them. */
 export const moldFieldNames:Record<string,[string,string]>={'specs.description':['الوصف','Description'],'specs.core':['العلب','Core'],'specs.vibrators':['الرجاجات','Vibrators'],'specs.model':['الموديل','Model'],'specs.halfBlock':['بلوكة النص','Half block'],'specs.moldWidth':['عرض القالب','Mold width'],'specs.gelbaSize':['مقاس الجلب','Gelba size'],'specs.moldNo':['رقم القالب','Mold no.'],'specs.quantity':['الكمية','Quantity'],'specs.designUrl':['رابط التصميم','Design link'],'specs.notes':['الملاحظات','Notes'],'customer.name':['اسم العميل','Customer name'],'customer.crmNumber':['كود يورست للعميل','Customer Yourrest code'],'customer.address':['عنوان العميل','Customer address'],'customer.city':['مدينة العميل','Customer city'],'salesman.name':['اسم المندوب','Salesman name'],'salesman.email':['بريد المندوب','Salesman email'],requestedAt:['تاريخ الطلب','Request date'],legacyOrderNo:['رقم الطلب في الشيت','Sheet order number'],crmRequestId:['رقم الطلب','Request id']};
