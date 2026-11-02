@@ -63,7 +63,7 @@ export function MoldStages({view,say}:{view:MoldRequestView;say:Say}){
  const stages=view.remote?.stages;
  return <ol className="mold-stages" aria-label={say('مراحل التصنيع','Production stages')}>{MOLD_STAGES.map((key,index)=>{
   const stage=stages?.[key],done=!!stage?.done;
-  return <li key={key} data-done={done} aria-current={!done&&MOLD_STAGES.slice(0,index).every(prior=>stages?.[prior]?.done)&&!!view.remote&&!view.remote.delivered?'step':undefined}>
+  return <li key={key} data-done={done} aria-current={!done&&MOLD_STAGES.slice(0,index).every(prior=>stages?.[prior]?.done)&&!!view.remote&&!view.remote.delivered&&view.remote.status!=='cancelled'&&!view.cancelled?'step':undefined}>
    <span className="mold-stage-dot" aria-hidden="true">{index+1}</span><span className="mold-stage-name" dir="ltr">{MOLD_STAGE_NAMES[key as keyof typeof MOLD_STAGE_NAMES]}</span>
    <small>{done?(stage?.at?day(stage.at):say('منتهية','Done')):say('لم تبدأ','Not yet')}</small>
   </li>;})}</ol>;
@@ -213,6 +213,7 @@ function MoldRequestSheet({view:initial,linkReady,statusAt,customers,onClose,onC
    <SendingState view={view} linkReady={linkReady} say={say}/>
    {pullError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {pullError}</p>}
    {view.cancelled&&<p className="mold-banner" data-kind="cancelled">{say('أُلغي الطلب','The request was cancelled')}{view.cancelReason?': '+view.cancelReason:''}</p>}
+   {!view.cancelled&&remote?.status==='cancelled'&&<p className="mold-banner" data-kind="cancelled">{say('أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.','The request was cancelled in the production application; it can no longer be changed.')}</p>}
    {remote?.waitingStep&&<p className="mold-waiting" data-step={remote.waitingStep}><Hourglass size={15} aria-hidden="true"/><strong>{say(...moldWaitingNames[remote.waitingStep])}</strong>{waitingSince(view,say)&&<span>{waitingSince(view,say)}</span>}</p>}
    <MoldApprovals view={view} say={say}/>
    <MoldStages view={view} say={say}/>
@@ -220,7 +221,7 @@ function MoldRequestSheet({view:initial,linkReady,statusAt,customers,onClose,onC
    <dl className="mold-facts">{facts.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
    <h3 className="mold-subtitle">{say('المواصفات','Specifications')}</h3>
    <dl className="mold-facts">{asked.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
-   {!view.editable&&!view.cancelled&&view.can&&!view.can.edit&&remote&&<p className="mold-locked"><Lock size={14} aria-hidden="true"/>{remote.status==='confirmed'?say('اكتملت الاعتمادات؛ لم يعد التعديل أو الإلغاء ممكنًا.','All approvals are in; the request can no longer be changed or cancelled.'):say('بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.','Production has started; the request can no longer be changed or cancelled.')}</p>}
+   {!view.editable&&!view.cancelled&&view.can&&!view.can.edit&&remote&&remote.status!=='cancelled'&&<p className="mold-locked"><Lock size={14} aria-hidden="true"/>{remote.status==='confirmed'?say('اكتملت الاعتمادات؛ لم يعد التعديل أو الإلغاء ممكنًا.','All approvals are in; the request can no longer be changed or cancelled.'):say('بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.','Production has started; the request can no longer be changed or cancelled.')}</p>}
    {action.error&&<p className="form-error" role="alert">{action.error}</p>}
    <div className="mold-actions">
     {view.can.approve&&<button type="button" className="btn primary" disabled={action.busy} onClick={()=>void action.run({action:'approve',id:view.id})}>{action.busy?<Loader2 className="spin" size={16}/>:<BadgeCheck size={16}/>}{say('اعتماد','Approve')}</button>}

@@ -2,7 +2,8 @@
 // self-signed certificate, the same signature check, clock window, routes, field checks, linking, locking and answers as the PHP of
 // contract version 1, its addendum and the approval chain of 2026-11-01 (three approvals in order: the sales manager, in the CRM
 // through the approval route, then production, then the system administrator; any change from the CRM undoes them). Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
-// production step on a request (start / deliver), historical rows to link. No real account, network or secret is used.
+// production step on a request (start / deliver), a request deleted there (read as cancelled) or unknown to it, historical rows to link.
+// No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
@@ -272,6 +273,14 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       for (const [index, stage] of stages.entries()) row.stages[stage] = {done: true, at: '2026-11-0' + (index + 1)};
       Object.assign(row, {moldSerial, productionDate, delivered, deliveryDate}); touch(row);
     },
+    /** A request deleted in the products application (yr_mreq_admin_mutate delete-request): kept there and cancelled, so the CRM
+     *  reads it as cancelled. */
+    remove(crmRequestId, reason = 'حذف من تطبيق الإنتاج') {
+      const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
+      row.deleted = true; row.cancelled = true; row.cancelReason ||= reason; touch(row);
+    },
+    /** Production no longer knows a request (only to test the 404 answers: the real application keeps every request). */
+    forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) state.byOrder.delete(row.orderNo); },
     row: id => state.rows.get(id),
     async stop() { server.closeAllConnections?.(); server.close(); rmSync(work, {recursive: true, force: true}); },
   };

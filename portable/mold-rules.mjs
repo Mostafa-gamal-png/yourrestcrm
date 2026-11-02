@@ -20,8 +20,9 @@ export const MOLD_APPROVAL_STEPS = ['sales', 'production', 'admin'];
 export const MOLD_APPROVAL_ACTIONS = ['approve', 'withdraw'];
 export const MOLD_RANGES = {moldWidth: [1000, 2000], gelbaSize: [500, 1200], quantity: [1, 100]};
 export const MOLD_USUAL = {moldWidth: [1380, 1375], gelbaSize: [795, 800]};
-/** Text limits in characters: the stricter of the contract (§2, other texts 160) and the addendum (customer name 200, city 100, email 190). */
-export const MOLD_LIMITS = {description: 200, moldNo: 40, designUrl: 1000, notes: 2000, customerName: 160, address: 300, city: 100, salesmanName: 160, email: 160, crmMemberId: 64, cancelReason: 500};
+/** Text limits in characters: the stricter of the contract (§2, other texts 160) and what production accepts (customer name 200, as in
+ *  the customers route, so a customer the list carries can always be asked for; city 100; email 190). */
+export const MOLD_LIMITS = {description: 200, moldNo: 40, designUrl: 1000, notes: 2000, customerName: 200, address: 300, city: 100, salesmanName: 160, email: 160, crmMemberId: 64, cancelReason: 500};
 export const MOLD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 export const MOLD_TIMEOUT_MS = 10_000;
 export const MOLD_STATUS_BATCH = 200;
@@ -186,6 +187,19 @@ export function moldApprovalBody({id = null, orderNo = null, action, by}) {
   return body;
 }
 
+/**
+ * Why production refused the sales manager's approval or its withdrawal (409 request_locked), from the request as production returned
+ * it (error.details.request): cancelled (or deleted) there, a historical request from the sheet that needs no approval, or the step
+ * has moved on (approving: no longer at the sales step; withdrawing: production approved first).
+ * @param {{status?: string, approvals?: {required?: boolean} | null} | null | undefined} status
+ * @param {boolean} approving
+ */
+export function moldApprovalRefusal(status, approving) {
+  if (status?.status === 'cancelled') return 'الطلب ملغى في تطبيق الإنتاج.';
+  if (status?.approvals?.required === false) return 'طلب قديم من الشيت ومعتمد أصلًا؛ لا يحتاج اعتمادًا.';
+  return approving ? 'الطلب لم يعد بانتظار اعتماد مدير المبيعات.' : 'اعتمد الإنتاج الطلب؛ لم يعد سحب اعتماد مدير المبيعات ممكنًا.';
+}
+
 const textOf = (value, max) => typeof value === 'string' ? value.replace(/[ \t ]+/g, ' ').trim().slice(0, max) : '';
 const wholeOrNull = value => isWhole(value) ? value : null;
 /**
@@ -259,6 +273,15 @@ export function sheetCity(city) {
   const loose = looseArabic(text);
   for (const [sheet, names] of Object.entries(CITY_NAMES)) if (loose === looseArabic(sheet) || names.includes(loose)) return sheet;
   return [...text].slice(0, 100).join('');
+}
+/**
+ * The city a new request carries: the sheet's form when the CRM city is one of the sheet's cities (production then fills it in
+ * itself, as for the customers list), else the CRM's text unchanged (moldRequestBody leaves out one production would refuse).
+ * @param {unknown} city
+ */
+export function moldRequestCity(city) {
+  const sheet = sheetCity(city);
+  return MOLD_SHEET_CITIES.includes(sheet) ? sheet : String(city ?? '');
 }
 
 /**

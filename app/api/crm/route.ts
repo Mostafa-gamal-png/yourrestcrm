@@ -13,12 +13,13 @@ import {normalizeMemberEmail,memberEmailError} from '@/lib/member-email';
 import {memberEditToken} from '@/lib/member-edit';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {enforceVisitPlace} from '@/lib/visit-place-server';
-import {nudgeMoldCustomers} from '@/lib/mold-customers-hook';
+import {nudgeMoldCustomers,wakeMoldRetries} from '@/lib/mold-customers-hook';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
- // The products application's customer list follows the CRM's (lib/mold-customers-server.ts): started by the page everyone loads.
- nudgeMoldCustomers();
+ // The products application's customer list follows the CRM's (lib/mold-customers-server.ts), and mold requests waiting to be sent
+ // are retried (lib/mold-requests-server.ts): both started by the page everyone loads.
+ nudgeMoldCustomers();wakeMoldRetries();
  const names=new Set(c.members.filter(m=>scope.has(m.id)&&c.members.every(other=>other.name!==m.name||scope.has(other.id))).map(m=>m.name));
  const masterIds=new Set(c.visible.filter(r=>['customer','factory'].includes(r.kind)).map(r=>r.id)),activityIds=new Set(c.visible.filter(r=>r.kind==='activity').map(r=>r.id));
  const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حفظ متابعة','visit-receipt','service-receipt','support-receipt','complaint-receipt','service-kpi-receipt','crm-create-receipt','mold-request-receipt') AND action NOT LIKE 'mold-request:%' AND action NOT LIKE 'service:%' AND action NOT LIKE 'support:%' AND action NOT LIKE 'complaint:%' AND action NOT LIKE 'service-kpi:%' ORDER BY created_at DESC LIMIT 500").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(c.me.role==='rep'?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor)));
