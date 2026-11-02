@@ -6,9 +6,9 @@ import {spawnSync} from 'node:child_process';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(root);
 const args=process.argv.slice(2);
-if(args.length&&!(args.length===2&&args[0]==='--gate'))throw Error('Usage: npm run check [-- --gate erp-workbook]');
+if(args.length&&!(args.length===2&&args[0]==='--gate'))throw Error('Usage: npm run check [-- --gate erp-workbook|erp-customers-workbook]');
 const gate=args[1]||'default';
-if(!['default','erp-workbook'].includes(gate))throw Error('Browser/build/archive gates require explicit preparation; see tests/CHECKS.md.');
+if(!['default','erp-workbook','erp-customers-workbook'].includes(gate))throw Error('Browser/build/archive gates require explicit preparation; see tests/CHECKS.md.');
 const manifest=JSON.parse(fs.readFileSync('tests/check-manifest.json','utf8'));
 if(manifest.schema!==1||!Array.isArray(manifest.excluded))throw Error('Unsupported check manifest');
 const exclusions=new Map();
@@ -22,6 +22,8 @@ for(const file of files)if(file.endsWith('.py')&&!exclusions.has(file))throw Err
 const selected=files.filter(file=>gate==='default'?!exclusions.has(file):exclusions.get(file)?.gate===gate);
 if(!selected.length)throw Error('The selected gate has no tests');
 if(gate==='erp-workbook'&&(!process.env.ERP_TEST_WORKBOOK||!fs.existsSync(process.env.ERP_TEST_WORKBOOK)))throw Error('Set ERP_TEST_WORKBOOK to the original ERP workbook. No workbook checks have run.');
+// The ERP customer export is another file: its own gate, so the sales gate still runs with ERP_TEST_WORKBOOK alone.
+if(gate==='erp-customers-workbook'&&(!process.env.ERP_CUSTOMERS_WORKBOOK||!fs.existsSync(process.env.ERP_CUSTOMERS_WORKBOOK)))throw Error('Set ERP_CUSTOMERS_WORKBOOK to the ERP customer export. No workbook checks have run.');
 const output=path.join(root,'output','check');fs.mkdirSync(output,{recursive:true});
 const results=[];
 function run(name,commandArgs,heap=512,timeout=120000){

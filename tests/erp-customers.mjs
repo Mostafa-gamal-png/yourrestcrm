@@ -58,6 +58,8 @@ eq(phone('05512345678'),[],'too long');
 eq(phone('+971 50 123 4567'),[],'a foreign number');
 eq([phone(''),phone(null),phone(undefined)],[[],[],[]],'nothing is no number');
 eq(phone(551234567),['551234567'],'a number cell');
+eq(['0500000000','0555555555','0511111111','0111111111','+966 1 0000 0000','0123456789','0512345678','٠٥٠٠٠٠٠٠٠٠'].map(phone),[[],[],[],[],[],[],[],[]],'placeholders typed for an unknown number (eight equal digits after the 5 or 1, 0123456789, 0512345678) are nobody\'s number');
+eq([phone('0551111111'),phone('0500000001')],[['551111111'],['500000001']],'a real number with repeated digits is still a number');
 
 // ---- name keys
 const name=E.nameKey;
@@ -101,6 +103,18 @@ throws(()=>E.erpCustomerRows([sheet([['رقم العميل','البريد الا
 throws(()=>E.erpCustomerRows([sheet([['رقم الفاتورة','التاريخ','رقم العميل','اسم العميل'],['INV-1','2026/01/01','7','مصنع']])]),/مش ملف عملاء ERP/,'the ERP sales report is not a customer file');
 throws(()=>E.erpCustomerRows([sheet([['رقم العميل','الاسم بالعربي','الاسم بالعربي'],['1','أ','ب']])]),/عمود مكرر/,'a duplicated column is refused');
 throws(()=>E.erpCustomerRows([sheet([header])]),/لا يحتوي صفوف/,'a header without rows');
+parsed=E.erpCustomerRows([sheet([header,line('20','أ','','0551234567\n0501234567','0112345678'),line('21','ب','','0551234568\r\n0501234568')])]);
+eq(parsed.rows.map(r=>r.phones),[['551234567','501234567','112345678'],['551234568','501234568']],'numbers on separate lines of one cell are read one by one, as the cell holds them');
+const many=Array.from({length:6},(_,i)=>'05512345'+(10+i)).join(' / ');
+parsed=E.erpCustomerRows([sheet([header,line('22','أ','',many,''),line('23','ب','','0551234567 / 0501234567 / 0561234567','0112345678 / 0112345679'),line('24','ج','','','0'.repeat(201)),line('25','د','','0551234567'+' '.repeat(190),''),line('22','ه','','','')])]);
+eq(parsed.rows.map(r=>[r.code,r.issue,r.phones.length]),[['22','duplicate-code',0],['23','',5],['24','too-many-phones',0],['25','',1],['22','duplicate-code',0]],'more than 5 numbers or a phone cell over 200 characters: not read (and still a number of the file, so its twin is a duplicate); 5 numbers and a cell of exactly 200 are read');
+parsed=E.erpCustomerRows([sheet([header,line('26','أ','',many,'')])]);
+eq([parsed.rows[0].issue,parsed.rows[0].phones],['too-many-phones',[]],'a row with too many numbers keeps none of them');
+const titled=[['تقرير العملاء'],['الشركة'],['من 2026/01/01'],['إلى 2026/11/01'],[''],header,line('31','مصنع','','','')];
+eq(E.erpCustomerRows([sheet(titled)]).rows.map(r=>r.row),[7],'the header is found under several title rows (row 6 here)');
+const deep=[...Array.from({length:24},(_,i)=>['ملاحظة '+(i+1)]),header,line('32','مصنع','','','')];
+eq(E.erpCustomerRows([sheet(deep)]).rows.map(r=>r.row),[26],'a header on row 25 is still found');
+throws(()=>E.erpCustomerRows([sheet([['ملاحظة'],...deep])]),/مش ملف عملاء ERP/,'a header below the first 25 rows is not looked for');
 throws(()=>E.erpCustomerRows([sheet([header,...Array.from({length:20001},(_,i)=>line(String(i+1),'م','','',''))])]),/20000/,'more than 20 000 customers');
 eq(E.erpCustomerRows([sheet([header,...Array.from({length:20000},(_,i)=>line(String(i+1),'م','','',''))])]).rows.length,20000,'20 000 customers are read');
 
@@ -142,8 +156,8 @@ eq(r.status,'missing','a longer name is not a match and a broken phone matches n
 let result=match([erp(3,'12','مصنع النور'),erp(4,'13','',['551234567'])],[nour,fajr]);
 eq(result.rows.map(o=>[o.status,o.conflict,o.customerId]),[['choose',true,'nour'],['choose',true,'nour']],'two rows on one customer: both choose, in conflict');
 eq([result.summary.conflicts,result.plan.length],[2,0],'nothing is planned while they conflict');
-result=match([erp(3,'12','مصنع النور'),erp(4,'C-1','',['551234567'])],[nour,fajr]);
-eq(result.rows.map(o=>[o.status,o.conflict]),[['choose',true],['choose',true]],'a same row and an auto row on one customer conflict too');
+result=match([erp(3,'12','مصنع النور'),erp(4,'C-1','',['551234567'])],[nour,fajr],{choices:new Map([[3,'nour']])});
+eq(result.rows.map(o=>[o.status,o.conflict]),[['choose',true],['choose',true]],'a same row and a row chosen for the same customer conflict too');
 result=match([erp(3,'12','مصنع النور'),erp(4,'13','',['551234567'])],[nour,fajr],{choices:new Map([[4,'']])});
 eq(result.rows.map(o=>[o.status,o.conflict,o.customerId,o.chosen]),[['auto',false,'nour',false],['auto',false,'',true]],'leaving one of them resolves the conflict');
 eq(result.plan.map(p=>[p.row,p.customerId,p.from,p.to,p.codeChange,p.mapping,p.version]),[[3,'nour','C-1','12',true,false,3]],'and the other is planned');
@@ -178,8 +192,8 @@ eq([result.rows[0].sharedWith,result.rows[0].mapping],[0,false],'nobody else hol
 const sameTwin=customer('same-twin',{name:'مصنع آخر',code:'C-1'});
 result=match([erp(3,'C-1','مصنع النور')],[nour,sameTwin]);
 eq([result.rows[0].status,result.rows[0].change,result.plan.map(p=>[p.codeChange,p.mapping])],['same',true,[[false,true]]],'the same code also held by another customer: only the mapping is written');
-result=match([erp(3,'12','مصنع النور'),erp(4,'C-1','مصنع الفجر')],[nour,fajr]);
-eq(result.plan.map(p=>[p.customerId,p.to,p.mapping]),[['nour','12',false],['fajr','C-1',true]],'a number moving from one customer to another in the same file: the new holder gets the mapping');
+result=match([erp(3,'12','مصنع النور'),erp(4,'C-1','مصنع الفجر')],[nour,fajr],{choices:new Map([[3,'nour']])});
+eq(result.plan.map(p=>[p.customerId,p.to,p.mapping]),[['nour','12',false],['fajr','C-1',true]],'a number moving from one customer to another in the same file (confirmed): the new holder gets the mapping');
 
 // the manager's regions
 const east=customer('east',{name:'مصنع الشرق',phone:'0551234567',region:'الشرقية'}),central=customer('central',{name:'مصنع الوسط',phone:'0551234567',region:'الوسطى'});
@@ -197,10 +211,67 @@ result=match([erp(3,'12','',['551234567'])],[east,central],{me:manager});
 eq(result.involved,[['central',3],['east',3]],'the snapshot covers every candidate, hidden ones too (server only)');
 const regional={...admin,regionScope:'eastern'};
 eq(one([erp(3,'12','مصنع الوسط')],[central],{me:regional}).status,'out-of-region','an administrator with regions is limited to them as well');
+// a number a customer outside the manager's regions holds, or that a stored mapping gives to one: left for the system administrator
+const eastHolder=customer('east-holder',{name:'مصنع شرقي',code:'12',region:'الشرقية'}),hidden=customer('hidden',{name:'مصنع مخفي',code:'OLD',_erpCodeAliases:['OLD','12'],region:'الشرقية'});
+for(const [who,held] of [['current code',eastHolder],['kept alias',hidden]]){
+ result=match([erp(3,'12','مصنع الوسط')],[central,held],{me:manager});
+ eq([result.rows[0].status,result.rows[0].candidates,result.rows[0].customerId,result.rows[0].sharedWith,result.plan,result.summary.heldOutside],['held-outside',[],'',0,[],1],'the number is the '+who+' of a customer outside the manager\'s regions: nothing planned, no details');
+ ok(result.involved.some(([id])=>id===held.id),'the outside holder\'s version is part of the preview ('+who+')');
+ eq([one([erp(3,'12','مصنع الوسط')],[central,held]).status,match([erp(3,'12','مصنع الوسط')],[central,held]).plan.map(p=>[p.customerId,p.mapping])],['auto',[['central',true]]],'the system administrator links it ('+who+')');
+}
+throws(()=>match([erp(3,'12','مصنع الوسط')],[central,eastHolder],{me:manager,choices:new Map([[3,'central']])}),/لا يقبل/,'a held-outside row takes no choice');
+const dal=customer('dal',{name:'مصنع دال',code:'OLD-D',_erpCodeAliases:['OLD-D','30']});
+result=match([erp(4,'30','مصنع دال')],[dal,east],{me:manager,mappings:[{codeKey:'30',customerId:'east',version:2}]});
+eq([result.rows[0].status,result.plan],['held-outside',[]],'a stored mapping to a customer outside the regions is never overwritten by the manager');
+eq(match([erp(4,'30','مصنع دال')],[dal,east],{mappings:[{codeKey:'30',customerId:'east',version:2}]}).plan.map(p=>[p.codeChange,p.mapping]),[[true,false]],'the system administrator changes the code (nobody else holds 30, so no mapping is needed)');
+const insideHolder=customer('inside-holder',{name:'مصنع داخلي',code:'12'});
+result=match([erp(3,'12','مصنع الوسط')],[central,insideHolder,eastHolder],{me:manager,mappings:[{codeKey:'12',customerId:'inside-holder',version:5}]});
+eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping,p.mappingVersion])],['auto',[['central',true,true,5]]],'a mapping to a holder inside the regions keeps the outside holder out: the manager may move it to another of their customers');
+result=match([erp(3,'12','مصنع الوسط')],[central,eastHolder],{me:manager,mappings:[{codeKey:'12',customerId:'central',version:1}]});
+eq([result.rows[0].status,result.plan.map(p=>[p.codeChange,p.mapping])],['held-outside',[]],'a mapping to a customer that does not hold the number keeps nothing out: still the administrator\'s');
+const insideTwin=customer('inside-twin',{name:'مصنع آخر',code:'12'});
+result=match([erp(3,'12','مصنع الوسط')],[central,insideTwin],{me:manager});
+eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.mapping])],['auto',[['central',true]]],'a number held only inside the manager\'s regions is linked as for the administrator');
+eq([E.heldOutsideRegions(admin,[eastHolder],{codeKey:'12',customerId:'gone',version:1},new Map()),E.heldOutsideRegions(manager,[eastHolder],undefined,new Map([[eastHolder.id,eastHolder]])),E.heldOutsideRegions(manager,[central],undefined,new Map([[central.id,central]]))],[false,true,false],'heldOutsideRegions: never for all regions; a holder outside; only holders inside');
+
+// too many matches: a phone or name shared by more than 20 customers is not offered
+const crowd=(count,data)=>Array.from({length:count},(_,i)=>customer('crowd-'+i,{name:'مصنع رقم '+i,...data}));
+r=one([erp(3,'12','',['551234599'])],crowd(21,{phone:'0551234599'}));
+eq([r.status,r.issue,r.candidates,r.customerId],['invalid','too-many-matches',[],''],'21 customers with the phone: too many, no candidate list');
+r=one([erp(3,'12','',['551234599'])],crowd(20,{phone:'0551234599'}));
+eq([r.status,r.candidates.length],['choose',20],'20 customers are still offered');
+r=one([erp(3,'12','مصنع مشترك')],crowd(21,{name:'مصنع مشترك'}));
+eq([r.status,r.issue],['invalid','too-many-matches'],'21 customers with the name: too many');
+r=one([erp(3,'12','مصنع مشترك',['551234599'])],[...crowd(12,{phone:'0551234599'}),...crowd(12,{name:'مصنع مشترك'}).map(c=>({...c,id:c.id+'-n'}))]);
+eq([r.status,r.issue],['invalid','too-many-matches'],'12 by phone and 12 by name together: too many');
+throws(()=>match([erp(3,'12','',['551234599'])],crowd(21,{phone:'0551234599'}),{choices:new Map([[3,'crowd-0']])}),/لا يقبل/,'a row with too many matches takes no choice');
+const wideResult=match([erp(3,'12','',['551234599'])],crowd(21,{phone:'0551234599'}));
+eq([wideResult.summary.invalid,wideResult.involved,wideResult.plan],[1,[],[]],'counted as invalid; nothing involved or planned');
+const twenty=crowd(20,{phone:'0551234599'}),rowsOf=count=>Array.from({length:count},(_,i)=>erp(i+3,String(i+1),'',['551234599']));
+eq(match(rowsOf(2000),twenty).rows.reduce((n,o)=>n+o.candidates.length,0),40000,'40 000 candidates in one preview are offered');
+throws(()=>match(rowsOf(2001),twenty),/أكتر من اللازم/,'beyond 40 000 the file is refused, not sent');
+
+// the single candidate's current code is another row of the same file: a choice, not automatic
+const amal=customer('amal',{name:'مصنع الامل',phone:'0112345678',code:'12'});
+result=match([erp(3,'12','مصنع الأمل للبلاستيك',['559999999']),erp(4,'57','شركة اخرى',['112345678'])],[amal]);
+eq(result.rows.map(o=>[o.row,o.status,o.customerId,o.codeRow,o.candidates.map(c=>c.id)]),[[3,'missing','',0,[]],[4,'choose','',3,['amal']]],'a shared landline points to a customer whose code is row 3 of the file: the user confirms, the code is not replaced');
+eq([result.plan,result.summary.pending],[[],1],'nothing planned until then');
+result=match([erp(3,'12','مصنع الأمل للبلاستيك',['559999999']),erp(4,'57','شركة اخرى',['112345678'])],[amal],{choices:new Map([[4,'amal']])});
+eq([result.rows[1].status,result.rows[1].customerId,result.plan.map(p=>[p.customerId,p.from,p.to])],['choose','amal',[['amal','12','57']]],'confirmed: the code changes');
+result=match([erp(3,'12','مصنع الامل'),erp(4,'57','شركة اخرى',['112345678'])],[amal],{choices:new Map([[4,'amal']])});
+eq(result.rows.map(o=>[o.status,o.conflict]),[['choose',true],['choose',true]],'and if the code\'s own row ends on the customer too, the two conflict');
+eq(one([erp(4,'57','شركة اخرى',['112345678']),{...erp(3,'12','x'),issue:'duplicate-code'}],[amal]).status,'auto','a code row the file itself marks as invalid does not count');
+
+// among several candidates, the one already holding exactly this number is preselected as unchanged
+result=match([erp(3,'C-9','مصنع النور')],[nour,twin]);
+eq([result.rows[0].status,result.rows[0].customerId,result.rows[0].change,result.rows[0].candidates.map(c=>c.id),result.summary.pending,result.plan],['same','twin',false,['nour','twin'],0,[]],'the twin already holding C-9: no change, the other candidate still listed');
+result=match([erp(3,'C-9','مصنع النور')],[nour,twin],{choices:new Map([[3,'nour']])});
+eq([result.rows[0].status,result.rows[0].customerId,result.plan.map(p=>[p.customerId,p.to,p.mapping])],['choose','nour',[['nour','C-9',true]]],'the user may still pick the other one');
+eq(one([erp(3,'C-9','مصنع النور')],[nour,twin,{...twin,id:'twin2',data:{...twin.data,internalCode:'YR-C-999999'}}]).status,'choose','two candidates holding the number: still a choice');
 
 // summary
 result=match([erp(3,'12','مصنع النور'),erp(4,'C-9','مصنع النور'),erp(5,'20','مصنع الأمل'),erp(6,'',''),erp(7,'0','مصنع البدر')].map(row=>row.code?row:{...row,issue:'no-code'}),[nour,twin,badr],{me:admin});
-eq(result.summary,{rows:5,auto:1,same:0,choose:2,missing:1,outOfRegion:0,invalid:1,conflicts:0,pending:2,changes:1,codeChanges:1,mappings:0},'the counts');
+eq(result.summary,{rows:5,auto:1,same:1,choose:1,missing:1,outOfRegion:0,heldOutside:0,invalid:1,conflicts:0,pending:1,changes:1,codeChanges:1,mappings:0},'the counts');
 
 // ---- the generic sheet reader on synthetic workbooks
 const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
@@ -223,4 +294,4 @@ assert.throws(()=>S.readWorkbookSheets(strToU8('not a zip file at all, not even 
 assert.throws(()=>S.parseErpWorkbook(bytes),error=>error instanceof S.ErpWorkbookError,'the sales parser still refuses a customer file');checks++;
 eq(S.readWorkbookSheets(book([{name:'Customer',rows:Array.from({length:20050},()=>[number(1),inline('x')])}])).reduce((n,s)=>n+s.rows.length,0),20050,'20 000 rows and a header fit the default limit');
 
-console.log(JSON.stringify({ok:true,checks,scope:'ERP customer import: header detection, phone and name keys, auto/choose/missing/same/out-of-region/invalid, conflicts, choices, mappings, manager regions, plan and summary, generic sheet reader'}));
+console.log(JSON.stringify({ok:true,checks,scope:'ERP customer import: header detection (also under title rows), phone and name keys (placeholders, numbers on separate lines, bounded cells), auto/choose/missing/same/out-of-region/held-outside/invalid, too many matches, a code that is another row, preselected holder, conflicts, choices, mappings, manager regions and numbers held outside them, plan and summary, generic sheet reader'}));

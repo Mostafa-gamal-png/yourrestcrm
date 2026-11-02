@@ -214,7 +214,7 @@ for(const locale of ['ar','en']){
   globals:{navigator:{onLine:true},fetch:async()=>({ok:false,status:401,json:async()=>({error:'Session expired'})})},
  });
  let tree=h.render();button(tree,locale==='ar'?'استيراد من ERP':'Import from ERP').props.onClick();tree=h.render();eq(child(tree,MobileNavigation).props.blocked,true,'Open administrative dialog blocks underlying mobile navigation');
- await child(tree,ErpCustomersImport).props.onImported();eq(h.state.erpCustomersOpen,false,'Session rejection clears administrative dialog state');eq(h.state.me,null,'Session rejection clears the previous administrator');
+ await assert.rejects(child(tree,ErpCustomersImport).props.onImported(),/not reloaded/,'A reload the server rejected is reported to the import dialog, not taken as a fresh list');checks++;eq(h.state.erpCustomersOpen,false,'Session rejection clears administrative dialog state');eq(h.state.me,null,'Session rejection clears the previous administrator');
  h.state.me={...me};h.state.auth=false;h.state.records=records;tree=h.render();eq(child(tree,ErpCustomersImport),undefined,'A later rep session never inherits an administrative dialog');eq(child(tree,MobileNavigation).props.blocked,false,'A later rep session can navigate normally');
  child(tree,MobileNavigation).props.onNavigate('activity');eq(h.state.view,'activity','Rep mobile tabs work after administrative session expiry');
 }

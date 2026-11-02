@@ -3,7 +3,8 @@ import {CRMError,accessGuard,customerDetailMutationGuard,type context} from './c
 import {regionScope} from './regions';
 import type {Member} from './crm';
 import {readWorkbookSheets,ErpWorkbookError} from './erp-sales';
-import {erpCustomerRows,matchErpCustomers,ErpCustomersError,ERP_CUSTOMERS_MAX_ROWS} from './erp-customers';
+import {erpCustomerRows,matchErpCustomers,heldOutsideRegions,ErpCustomersError,ERP_CUSTOMERS_MAX_ROWS} from './erp-customers';
+import {customerCodeCandidates} from './customer-identity';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const maxFileBytes=1024*1024;
@@ -46,10 +47,15 @@ export async function importErpCustomers(c:Context,body:unknown){
  const prepared={...book.match(choiceMap(input)),snapshot:book.snapshot};
  if(prepared.summary.conflicts)throw new CRMError('اخترت نفس العميل لأكثر من سطر؛ العميل له كود ERP واحد. راجع الاختيارات.');
  if(!prepared.plan.length)throw new CRMError('لا توجد أكواد تتغير في هذا الملف.');
- // The same checks as a customer edit, for every customer that changes; their SQL (member and record version) is the gate below.
- const customers=new Map(c.all.map(row=>[row.id,row]));for(const step of prepared.plan){const customer=customers.get(step.customerId)!;customerDetailMutationGuard({me:c.me,members:c.members,all:[customer]},customer);}
+ // The same checks as a customer edit, for every customer that changes; their SQL (member and record version) is the gate below. A member
+ // limited to regions never moves a number's invoices away from a customer outside them (the preview already leaves those rows out).
+ const customers=new Map(c.all.filter(row=>row.kind==='customer').map(row=>[row.id,row])),holders=customerCodeCandidates(c.all),mappings=new Map(c.customerIdentityState.mappings.map(mapping=>[mapping.codeKey,mapping]));
+ for(const step of prepared.plan){
+  const customer=customers.get(step.customerId)!;customerDetailMutationGuard({me:c.me,members:c.members,all:[customer]},customer);
+  if(heldOutsideRegions(c.me,holders.get(step.codeKey)||[],mappings.get(step.codeKey),customers))throw new CRMError(`الرقم ${step.to} عند عميل خارج مناطقك؛ ربطه لمدير النظام.`,403);
+ }
  const now=new Date().toISOString(),attempt='erp-customers-import:'+crypto.randomUUID();
- const result={ok:true,updated:prepared.summary.codeChanges,mappings:prepared.summary.mappings,changed:prepared.plan.length,unchanged:prepared.rows.filter(row=>row.customerId&&!row.change).length,skipped:prepared.rows.filter(row=>!row.customerId&&['auto','same','choose'].includes(row.status)).length,missing:prepared.summary.missing,outOfRegion:prepared.summary.outOfRegion,invalid:prepared.summary.invalid,changes:prepared.plan.map(step=>({row:step.row,customerId:step.customerId,from:step.from,to:step.to,mapping:step.mapping}))};
+ const result={ok:true,updated:prepared.summary.codeChanges,mappings:prepared.summary.mappings,changed:prepared.plan.length,unchanged:prepared.rows.filter(row=>row.customerId&&!row.change).length,skipped:prepared.rows.filter(row=>!row.customerId&&['auto','same','choose'].includes(row.status)).length,missing:prepared.summary.missing,outOfRegion:prepared.summary.outOfRegion,heldOutside:prepared.summary.heldOutside,invalid:prepared.summary.invalid,changes:prepared.plan.map(step=>({row:step.row,customerId:step.customerId,from:step.from,to:step.to,mapping:step.mapping}))};
  // The receipt is the transaction's gate: the member's role and regions, the identity revision (every code and mapping change moves it)
  // and every involved customer's version, in one JSON parameter. Every later write requires this attempt's own receipt.
  const guard=accessGuard(c);
