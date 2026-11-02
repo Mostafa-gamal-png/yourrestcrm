@@ -1,4 +1,7 @@
 {
-  "mode": "diagnose",
-  "script": "scripts/diagnose/mold-customers.cjs"
+  "mode": "deploy",
+  "package": "deploy/packages/Yourrest-CRM-Update-DesignFiles-20261102.zip",
+  "sha256": "5f0d3aaa111ac188f94a915f34d54cb90c828ef6e7eeb078d434b7025ea7fb2e",
+  "stage": "yourrest-crm-update-design-files-20261102",
+  "helper": "yourrest-activate-update-design-files.cjs"
 }
