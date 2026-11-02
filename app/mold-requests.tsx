@@ -17,9 +17,10 @@ const stamp=(iso:string|null|undefined)=>iso?new Date(iso).toLocaleString('en-GB
 const day=(value:string|null|undefined)=>value?value.slice(0,10):'—';
 /** Where the request is: the step it waits at (since the approval chain), else production's status; the sales manager reads «waiting
  * for you» on what they can approve. */
+// Cancelled in the CRM reads «cancelled» at once, even while the cancellation still waits to reach production (its sending state says so).
 const statusText=(view:MoldRequestView,say:Say)=>view.can.approve?say('بانتظار اعتمادك','Waiting for your approval')
- :view.remote?.waitingStep?say(...moldWaitingNames[view.remote.waitingStep]):view.remote?say(...moldStatusNames[view.remote.status]):view.cancelled?say('ملغى','Cancelled'):say('لم يصل للإنتاج بعد','Not in production yet');
-const waitingSince=(view:MoldRequestView,say:Say)=>view.remote?.waitingSince&&!['done','cancelled'].includes(view.remote.waitingStep||'')?say('من ','Since ')+stamp(view.remote.waitingSince):'';
+ :view.cancelled?say('ملغى','Cancelled'):view.remote?.waitingStep?say(...moldWaitingNames[view.remote.waitingStep]):view.remote?say(...moldStatusNames[view.remote.status]):say('لم يصل للإنتاج بعد','Not in production yet');
+const waitingSince=(view:MoldRequestView,say:Say)=>!view.cancelled&&view.remote?.waitingSince&&!['done','cancelled'].includes(view.remote.waitingStep||'')?say('من ','Since ')+stamp(view.remote.waitingSince):'';
 
 /** The mold requests the reader may see, with their status as pulled by the server when the list opens. */
 export function useMoldRequests(me:Member|null){
@@ -86,8 +87,8 @@ function SendingState({view,linkReady,say}:{view:MoldRequestView;linkReady:boole
 
 function MoldCard({view,linkReady,onOpen,say}:{view:MoldRequestView;linkReady:boolean;onOpen:()=>void;say:Say}){
  const remote=view.remote;
- return <button type="button" className="mold-card" data-status={remote?.status||(view.cancelled?'cancelled':'local')} data-sending={view.sending.state} onClick={onOpen}>
-  <header><strong>{view.customerName}</strong><span className="mold-chip" data-status={remote?.status||'local'} data-step={remote?.waitingStep||undefined} data-mine={view.can.approve||undefined}>{statusText(view,say)}</span></header>
+ return <button type="button" className="mold-card" data-status={view.cancelled?'cancelled':remote?.status||'local'} data-sending={view.sending.state} onClick={onOpen}>
+  <header><strong>{view.customerName}</strong><span className="mold-chip" data-status={view.cancelled?'cancelled':remote?.status||'local'} data-step={view.cancelled?undefined:remote?.waitingStep||undefined} data-mine={view.can.approve||undefined}>{statusText(view,say)}</span></header>
   {waitingSince(view,say)&&<small className="mold-card-since"><Hourglass size={13} aria-hidden="true"/>{waitingSince(view,say)}</small>}
   <p dir="auto">{view.specs.description}</p>
   <div className="mold-card-facts">
@@ -156,6 +157,8 @@ function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnsw
   finally{setBusy(null);}
  };
  const waiting=pending.items.filter(item=>!approved.some(other=>other.orderNo===item.orderNo));
+ // A refusal for a request that has since left the list (production moved it on, cancelled or deleted it) stays readable above it.
+ const orphaned=Object.entries(errors).filter(([orderNo,text])=>text&&!pending.items.some(item=>String(item.orderNo)===orderNo)&&!approved.some(item=>String(item.orderNo)===orderNo));
  const card=(item:MoldPendingAnswer['items'][number],done:boolean)=>{
   const specs=item.specs,choice=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
   return <article key={item.orderNo} className="mold-pending" data-source={item.source} data-done={done||undefined}>
@@ -179,6 +182,7 @@ function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnsw
  };
  return <div className="mold-pending-list">
   {pending.error&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث القائمة الآن','The list could not be refreshed now')}: {moldErrorText(pending.error.code,say)}</p>}
+  {orphaned.map(([orderNo,text])=><p key={orderNo} className="form-error mold-pending-gone" role="alert">{say('أمر الإنتاج ','Production order ')+orderNo}: {text}</p>)}
   {!waiting.length&&!pending.error&&<p className="empty mold-empty">{say('لا توجد طلبات بانتظار اعتمادك.','Nothing is waiting for your approval.')}</p>}
   {waiting.map(item=>card(item,false))}
   {!!approved.length&&<h3 className="mold-subtitle">{say('اعتمدتها الآن','Approved just now')}</h3>}
@@ -214,7 +218,7 @@ function MoldRequestSheet({view:initial,linkReady,statusAt,customers,onClose,onC
    {pullError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {pullError}</p>}
    {view.cancelled&&<p className="mold-banner" data-kind="cancelled">{say('أُلغي الطلب','The request was cancelled')}{view.cancelReason?': '+view.cancelReason:''}</p>}
    {!view.cancelled&&remote?.status==='cancelled'&&<p className="mold-banner" data-kind="cancelled">{say('أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.','The request was cancelled in the production application; it can no longer be changed.')}</p>}
-   {remote?.waitingStep&&<p className="mold-waiting" data-step={remote.waitingStep}><Hourglass size={15} aria-hidden="true"/><strong>{say(...moldWaitingNames[remote.waitingStep])}</strong>{waitingSince(view,say)&&<span>{waitingSince(view,say)}</span>}</p>}
+   {remote?.waitingStep&&!view.cancelled&&<p className="mold-waiting" data-step={remote.waitingStep}><Hourglass size={15} aria-hidden="true"/><strong>{say(...moldWaitingNames[remote.waitingStep])}</strong>{waitingSince(view,say)&&<span>{waitingSince(view,say)}</span>}</p>}
    <MoldApprovals view={view} say={say}/>
    <MoldStages view={view} say={say}/>
    <p className="mold-updated">{say('آخر تحديث للحالة','Status last updated')}: {stamp(view.remoteAt||statusAt)}</p>
