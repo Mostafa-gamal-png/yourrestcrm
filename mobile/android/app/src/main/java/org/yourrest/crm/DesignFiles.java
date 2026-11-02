@@ -2,16 +2,20 @@ package org.yourrest.crm;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
 import android.webkit.CookieManager;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -44,6 +48,7 @@ final class DesignFiles {
     interface Fetchedback {void done(Fetched fetched,String error);}
     interface Savedback {void done(String error);}
     static final String SAVE_FAILED="تعذّر حفظ الملف في المكان المختار؛ حاول مرة أخرى";
+    static final String SAVE_LOST="لم يكتمل حفظ الملف لأن التطبيق أُغلق أثناء اختيار المكان؛ اضغط «تنزيل» مرة أخرى";
     private static final ExecutorService worker=Executors.newSingleThreadExecutor();
 
     static File root(Context context){return new File(context.getCacheDir(),"design-files");}
@@ -96,22 +101,53 @@ final class DesignFiles {
             callback.done(fetched,error);
         });
     }
-    /** Writes the fetched copy to the document the person created with the system picker, then drops the cached copy. */
+    /** Writes the fetched copy to the document the person picked with the system picker (truncating it), then drops the cached copy. */
     static void save(Context app,Fetched fetched,Uri target,Savedback callback){
         worker.execute(()->{
             String error=null;
             ContentResolver resolver=app.getContentResolver();
-            try(InputStream input=new FileInputStream(fetched.file);OutputStream output=resolver.openOutputStream(target,"w")){
-                if(output==null)throw new IOException("no output");
+            // Read before writing: only a document this save created is removed after a failure, never a file the person overwrites.
+            boolean created=DesignFileRules.createdBySave(size(resolver,target));
+            try(InputStream input=new FileInputStream(fetched.file);OutputStream output=open(resolver,target)){
                 DesignFileRules.copy(input,output,fetched.file.length(),null,0);
             }catch(Exception failed){
                 error=SAVE_FAILED;
-                // A half-written document is not left behind in the chosen place.
-                try{DocumentsContract.deleteDocument(resolver,target);}catch(Exception ignored){ }
+                // A half-written new document is not left behind in the chosen place.
+                if(created)try{DocumentsContract.deleteDocument(resolver,target);}catch(Exception ignored){ }
             }
             remove(fetched.file.getParentFile());
             callback.done(error);
         });
+    }
+    /** The picker answered after the copy to write was lost (the activity was recreated or closed meanwhile): the empty document it
+     *  created is removed, and the person is told. */
+    static void abandon(Context app,Uri target,Runnable done){
+        worker.execute(()->{
+            ContentResolver resolver=app.getContentResolver();
+            if(DesignFileRules.createdBySave(size(resolver,target)))try{DocumentsContract.deleteDocument(resolver,target);}catch(Exception ignored){ }
+            done.run();
+        });
+    }
+    /** The document's size as its provider reports it, or null when unknown. */
+    private static Long size(ContentResolver resolver,Uri target){
+        try(Cursor cursor=resolver.query(target,new String[]{OpenableColumns.SIZE},null,null,null)){
+            if(cursor==null||!cursor.moveToFirst()||cursor.isNull(0))return null;
+            return cursor.getLong(0);
+        }catch(RuntimeException unknown){return null;}
+    }
+    /** "wt" (truncate), or "w" for a provider that refuses "wt". */
+    private static OutputStream open(ContentResolver resolver,Uri target)throws IOException{
+        IOException refused=new FileNotFoundException("no output");
+        for(String mode:DesignFileRules.SAVE_MODES){
+            try{OutputStream output=resolver.openOutputStream(target,mode);if(output!=null)return output;}
+            catch(FileNotFoundException|IllegalArgumentException|UnsupportedOperationException unsupported){refused=new IOException(unsupported);}
+        }
+        throw refused;
+    }
+    /** The copy a save picker was opened for, found again after Android recreated the activity (only a file of the private cache). */
+    static Fetched restore(Context app,String folder,String name,String mime){
+        File file=DesignFileRules.servable(root(app),Arrays.asList(folder,name));
+        return file==null?null:new Fetched(file,file.getName(),DesignFileRules.mimeType(mime));
     }
     /** The cache file; failing to create it is the phone's storage, not the network. */
     private static OutputStream create(File file)throws DesignFileRules.Failure{

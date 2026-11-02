@@ -84,6 +84,10 @@ public final class DesignFileCheck {
         check(DesignFileRules.view(true,LINK+"?"+query),"A main-frame navigation to the link is «عرض»");
         check(DesignFileRules.view(false,LINK+"?"+query+"&inline=1"),"A download of an inline link is «عرض»");
         check(!DesignFileRules.view(false,LINK+"?"+query),"The download link is «تنزيل»");
+        // Another app receives a file only after a tap; the save picker is itself the person's choice.
+        check(!DesignFileRules.confirmView(true,true),"«عرض» tapped opens without a question");
+        check(DesignFileRules.confirmView(true,false),"«عرض» without a tap (a script, a redirect, a download that asks to open) asks first");
+        check(!DesignFileRules.confirmView(false,false)&&!DesignFileRules.confirmView(false,true),"«تنزيل» needs no question: the save picker is the choice");
 
         // ---- 3. the file's name from Content-Disposition
         String arabic="قالب علبة ٢٥٠ مل.pdf";
@@ -210,6 +214,16 @@ public final class DesignFileCheck {
         // ---- 6. types
         check("application/pdf".equals(DesignFileRules.mimeType("application/pdf"))&&"image/png".equals(DesignFileRules.mimeType("image/png; charset=binary"))&&"image/jpeg".equals(DesignFileRules.mimeType(" IMAGE/JPEG ")),"The answer's type, without parameters");
         for(String odd:new String[]{null,"","text","a/b/c","text/html<script>","*/*","image/*","/png"})check("application/octet-stream".equals(DesignFileRules.mimeType(odd)),"A missing or odd type is plain bytes: "+odd);
+        // Only the types the CRM serves (moldDesignContentType: PDF and its four image types) reach another app or the save picker: a
+        // well-formed APK type would otherwise hand an unpinned package to the system installer under Yourrest's install permission.
+        check("image/gif".equals(DesignFileRules.mimeType("image/gif"))&&"image/webp".equals(DesignFileRules.mimeType("image/webp; q=1")),"The CRM's GIF and WEBP types");
+        for(String dangerous:new String[]{"application/vnd.android.package-archive","APPLICATION/VND.ANDROID.PACKAGE-ARCHIVE; charset=binary","text/html","text/html; charset=utf-8",
+                "application/xhtml+xml","image/svg+xml","text/javascript","application/javascript","application/x-msdownload","application/java-archive","application/zip",
+                "application/x-shockwave-flash","text/plain","text/vcard","application/vnd.ms-excel","image/jpg","image/x-icon","image/heic","application/pdfx","application/pdf+zip","image/pngx"})
+            check("application/octet-stream".equals(DesignFileRules.mimeType(dangerous)),"A type the CRM never serves is plain bytes: "+dangerous);
+        check(new TreeSet<>(DesignFileRules.SERVED_TYPES).equals(new TreeSet<>(Arrays.asList("application/pdf","image/png","image/jpeg","image/gif","image/webp"))),"Exactly PDF and four image types");
+        for(String served:DesignFileRules.SERVED_TYPES)check(served.equals(DesignFileRules.mimeType(served))&&served.equals(DesignFileRules.mimeType(served.toUpperCase()+"; x=1")),"A served type is kept: "+served);
+        check(!DesignFileRules.SERVED_TYPES.contains("application/vnd.android.package-archive"),"Never the package installer's type");
         check("application/pdf".equals(DesignFileRules.typeForName("x.PDF"))&&"image/jpeg".equals(DesignFileRules.typeForName("x.jpeg"))&&"application/octet-stream".equals(DesignFileRules.typeForName("x.dwg"))&&"application/octet-stream".equals(DesignFileRules.typeForName(null)),"The provider's type by name");
 
         // ---- 7. the provider serves root/<random folder>/<safe name> only
@@ -258,6 +272,12 @@ public final class DesignFileCheck {
         }finally{try(java.util.stream.Stream<Path> walk=Files.walk(root)){walk.sorted(Collections.reverseOrder()).forEach(p->p.toFile().delete());}}
         check(DesignFileRules.readOnly("r"),"Reading is offered");
         for(String mode:new String[]{"w","wt","wa","rw","rwt","",null,"R"," r"})check(!DesignFileRules.readOnly(mode),"No writing: "+mode);
+        // The save picker's document: truncated on write ("w" alone keeps an overwritten file's tail from Android 10), removed after a
+        // failure only when this save created it.
+        check(DesignFileRules.SAVE_MODES.equals(Arrays.asList("wt","w")),"\"wt\" first, \"w\" only as the fallback");
+        for(String mode:DesignFileRules.SAVE_MODES)check(!DesignFileRules.readOnly(mode),"A save mode writes: "+mode);
+        check(DesignFileRules.createdBySave(0L),"An empty document (new from the picker) is this save's own");
+        for(Long size:new Long[]{null,1L,5L*1024*1024,-1L})check(!DesignFileRules.createdBySave(size),"Never deleted: a file the person overwrites, or one of unknown size: "+size);
         check(DesignFileRules.folderName("0f8fad5b-d9cb-469f-a165-70867728950e")&&!DesignFileRules.folderName("../x")&&!DesignFileRules.folderName(null),"Folder names are random UUIDs");
         long now=1_800_000_000_000L,day=24*3600_000L;
         check(!DesignFileRules.expired(now-day+1,now)&&DesignFileRules.expired(now-day,now)&&DesignFileRules.expired(now-30*day,now),"Copies older than a day are removed");
@@ -267,22 +287,56 @@ public final class DesignFileCheck {
         Path source=Path.of(args.length>0?args[0]:"mobile/android/app/src/main/java/org/yourrest/crm");
         String activity=Files.readString(source.resolve("MainActivity.java")),files=Files.readString(source.resolve("DesignFiles.java")),provider=Files.readString(source.resolve("DesignFileProvider.java"));
         String navigation=TripStartCheck.block(activity,"public boolean shouldOverrideUrlLoading(");
-        int intercept=navigation.indexOf("if(request.isForMainFrame()&&DesignFileRules.fetchUrl(url)!=null&&RouteRules.trusted(view.getUrl())){openDesignFile(url,true);return true;}"),trusted=navigation.indexOf("if(RouteRules.trusted(url))return false;");
-        check(intercept>=0&&trusted>intercept,"«عرض» is taken before trusted pages load in the WebView, so the page stays");
+        int intercept=navigation.indexOf("if(request.isForMainFrame()&&DesignFileRules.fetchUrl(url)!=null&&RouteRules.trusted(view.getUrl())){openDesignFile(url,true,request.hasGesture());return true;}"),trusted=navigation.indexOf("if(RouteRules.trusted(url))return false;");
+        check(intercept>=0&&trusted>intercept,"«عرض» is taken before trusted pages load in the WebView, so the page stays; WebView's gesture flag goes with it");
         String downloads=TripStartCheck.block(activity,"web.setDownloadListener(");
-        int take=downloads.indexOf("if(DesignFileRules.fetchUrl(url)!=null&&web!=null&&RouteRules.trusted(web.getUrl())){openDesignFile(url,false);return;}"),browser=downloads.indexOf("فتح رابط التنزيل في المتصفح؟");
+        int take=downloads.indexOf("if(DesignFileRules.fetchUrl(url)!=null&&web!=null&&RouteRules.trusted(web.getUrl())){openDesignFile(url,false,false);return;}"),browser=downloads.indexOf("فتح رابط التنزيل في المتصفح؟");
         check(take>=0&&browser>take,"«تنزيل» of a design file is taken before the browser dialog, which stays for every other download");
         check(downloads.contains("لتنزيل الملف استخدم صفحة CRM في المتصفح."),"Other downloads keep today's behaviour");
-        String open=TripStartCheck.block(activity,"private void openDesignFile(");
-        check(open.contains("if(designTask!=null)")&&open.contains("DesignFiles.fetch(getApplicationContext(),task,web.getSettings().getUserAgentString()"),"One at a time, with the app's user agent");
+        String open=TripStartCheck.block(activity,"private void openDesignFile("),start=TripStartCheck.block(activity,"private void startDesignFile(");
+        check(start.contains("if(designTask!=null)")&&start.contains("DesignFiles.fetch(getApplicationContext(),task,web.getSettings().getUserAgentString()"),"One at a time, with the app's user agent");
+        int ask=open.indexOf("if(DesignFileRules.confirmView(view,gesture)){"),direct=open.lastIndexOf("startDesignFile(target,view);");
+        check(open.contains("boolean view=DesignFileRules.view(navigation,target);")&&ask>=0&&direct>ask&&open.indexOf("return;",ask)<direct,"«عرض» without a tap asks before anything is fetched or opened");
+        check(open.contains("\"فتح\",(dialog,which)->{designConfirm=null;if(web!=null&&RouteRules.trusted(web.getUrl()))startDesignFile(target,true);}")&&open.contains("if(designConfirm!=null&&designConfirm.isShowing())return;"),"Only the person's «فتح» starts it; one question at a time");
+        Matcher starts=Pattern.compile("startDesignFile\\(").matcher(activity);int startCalls=0;while(starts.find())startCalls++;
+        check(startCalls==3,"startDesignFile is reached only from openDesignFile (directly or through the question): "+startCalls);
+        Matcher opens=Pattern.compile("(?<!void )openDesignFile\\(([^;]*)\\);").matcher(activity);Set<String> openCalls=new TreeSet<>();while(opens.find())openCalls.add(opens.group(1));
+        check(openCalls.equals(new TreeSet<>(Arrays.asList("url,true,request.hasGesture()","url,false,false","input.optString(\"href\"),false,false"))),"Only a navigation passes a gesture, and only WebView's own flag: "+openCalls);
         String fetched=TripStartCheck.block(activity,"private void designFetched(");
         check(fetched.contains("Intent.ACTION_VIEW")&&fetched.contains("DesignFiles.uri(fetched)")&&fetched.contains("fetched.mime")&&fetched.contains("Intent.FLAG_GRANT_READ_URI_PERMISSION"),"«عرض»: a content URI with the answer's type and a read grant");
         check(fetched.contains("ActivityNotFoundException")&&fetched.contains("\"حفظ\"")&&fetched.contains("saveDesignFile(task,fetched)"),"No app to open it: say so and offer «حفظ»");
-        check(fetched.contains("if(!MainActivity.resumed){designDelivery="),"Another app is opened only while Yourrest is in front");
+        check(fetched.contains("if(!MainActivity.resumed){designHeld=fetched;designDelivery="),"Another app is opened only while Yourrest is in front");
+        String finished=TripStartCheck.block(activity,"private void designFinished(");
+        check(finished.contains("if(task!=designTask)return;")&&finished.contains("DesignFiles.discard(designHeld);designHeld=null;"),"A held file that will not be opened is removed at once; a stale finish never ends a newer transfer");
+        check(TripStartCheck.block(activity,"protected void onResume(").contains("designDelivery=null;designHeld=null;delivery.run();"),"A delivered file is not removed under the viewer");
         String save=TripStartCheck.block(activity,"private void saveDesignFile(");
         check(save.contains("Intent.ACTION_CREATE_DOCUMENT")&&save.contains("Intent.EXTRA_TITLE,fetched.name")&&save.contains("setType(fetched.mime)")&&save.contains("startActivityForResult(create,DESIGN_SAVE)"),"«تنزيل»: the system save picker with the name and type");
         String saved=TripStartCheck.block(activity,"private void designSaved(");
         check(saved.contains("result==RESULT_OK")&&saved.contains("DesignFiles.discard(fetched)")&&saved.contains("\"تم حفظ الملف\""),"Cancelling saves nothing; a saved file is confirmed");
+        int pickerCancelled=saved.indexOf("if(target==null||!\"content\".equals(target.getScheme()))"),lostCopy=saved.indexOf("if(fetched==null){designFinished(task);DesignFiles.abandon(getApplicationContext(),target,");
+        check(pickerCancelled>=0&&lostCopy>pickerCancelled&&saved.contains("DesignFiles.SAVE_LOST"),"A picker answer whose copy was lost removes the empty document and tells the person");
+        // The copy waiting for the picker survives a recreated activity (uiMode, locale, split screen, process death).
+        check(TripStartCheck.block(activity,"protected void onSaveInstanceState(").contains("out.putString(SAVE_FOLDER,designSave.file.getParentFile().getName())"),"The pending save is kept in the saved state");
+        check(TripStartCheck.block(activity,"public void onCreate(").contains("if(saved!=null)designSave=DesignFiles.restore(getApplicationContext(),saved.getString(SAVE_FOLDER),saved.getString(SAVE_NAME),saved.getString(SAVE_TYPE));"),"A recreated activity takes the pending save back");
+        String restore=TripStartCheck.block(files,"static Fetched restore(");
+        check(restore.contains("DesignFileRules.servable(root(app),Arrays.asList(folder,name))")&&restore.contains("DesignFileRules.mimeType(mime)"),"Only a file of the private cache comes back, with a served type");
+        String destroy=TripStartCheck.block(activity,"protected void onDestroy(");
+        check(destroy.contains("if(isFinishing())DesignFiles.discard(designSave);designSave=null;")&&!destroy.replace("if(isFinishing())DesignFiles.discard(designSave);","").contains("DesignFiles.discard(designSave)"),"The pending save's copy is dropped only when the app really closes");
+        String saving=TripStartCheck.block(files,"static void save(");
+        int sized=saving.indexOf("boolean created=DesignFileRules.createdBySave(size(resolver,target));"),opened=saving.indexOf("OutputStream output=open(resolver,target)");
+        check(sized>=0&&opened>sized,"Whether this save created the document is read before writing");
+        check(saving.contains("if(created)try{DocumentsContract.deleteDocument(resolver,target);}")&&!saving.replace("if(created)try{DocumentsContract.deleteDocument","").contains("deleteDocument"),"Only a document this save created is removed after a failure");
+        check(!files.contains("openOutputStream(target,\"w\")")&&TripStartCheck.block(files,"private static OutputStream open(").contains("for(String mode:DesignFileRules.SAVE_MODES)"),"The document is opened \"wt\" (truncating), \"w\" only as the fallback");
+        check(TripStartCheck.block(files,"static void abandon(").contains("if(DesignFileRules.createdBySave(size(resolver,target)))"),"A lost save removes only an empty document");
+        // «تنزيل» tapped in a loaded page reaches the app at once: WebView's own download drops a failed answer without a word.
+        String bridge=TripStartCheck.block(activity,"private void installBridge(");
+        check(bridge.contains("document.addEventListener('click',")&&bridge.contains("closest('a[download][href]')")&&bridge.contains("url.pathname!==\"+JSONObject.quote(DesignFileRules.PATH)+\"")
+            &&bridge.contains("url.origin!==\"+JSONObject.quote(RouteRules.ORIGIN)+\"")&&bridge.contains("event.preventDefault();window.__yourrestNative.request('designFile',{href:url.href})")&&bridge.contains("if(!window.__yourrestDesignFiles){window.__yourrestDesignFiles=true;"),
+            "The injected page script hands a design file's «تنزيل» tap to the app, once per document, and nothing else");
+        check(bridge.indexOf("event.preventDefault()")>bridge.indexOf("||!window.__yourrestNative)return;"),"Without the bridge the link keeps WebView's download (the listener fallback)");
+        String request=TripStartCheck.block(activity,"public void request(String nonce,String id,String method,String raw)");
+        check(request.contains("case \"designFile\":")&&request.contains("if(DesignFileRules.fetchUrl(input.optString(\"href\"))==null)")&&request.indexOf("case \"designFile\":")>request.indexOf("if(pageNonce.isEmpty()||!pageNonce.equals(nonce)||!RouteRules.trusted(web.getUrl()))return;"),
+            "The bridge takes only a design-file link, behind the page nonce and the trusted page");
         check(TripStartCheck.block(activity,"protected void onActivityResult(").contains("if(request==DESIGN_SAVE){designSaved(result,data);return;}"),"The save picker's answer is handled");
         check(TripStartCheck.block(activity,"public void onCreate(").contains("DesignFiles.cleanup(getApplicationContext())"),"Old copies are removed when the app starts");
         check(TripStartCheck.block(activity,"protected void onDestroy(").contains("designTask.cancel()"),"Closing the app stops a transfer");
@@ -324,10 +378,16 @@ public final class DesignFileCheck {
         check(permissions.equals(new TreeSet<>(Arrays.asList("android.permission.INTERNET","android.permission.ACCESS_NETWORK_STATE","android.permission.ACCESS_COARSE_LOCATION","android.permission.ACCESS_FINE_LOCATION",
             "android.permission.ACCESS_BACKGROUND_LOCATION","android.permission.RECEIVE_BOOT_COMPLETED","android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_LOCATION",
             "android.permission.POST_NOTIFICATIONS","android.permission.REQUEST_INSTALL_PACKAGES"))),"No new Android permission (no storage permission at all)");
+        // The release that brought design files (1.0.12, versionCode 13) or a later one: the guard follows the feature, not one release.
         String gradle=Files.readString(source.resolve("../../../../../../build.gradle"));
-        check(gradle.contains("versionCode 13")&&gradle.contains("versionName '1.0.12'")&&gradle.contains("minSdk 26"),"1.0.12 (versionCode 13), minSdk 26");
+        Matcher code=Pattern.compile("versionCode (\\d+)").matcher(gradle),version=Pattern.compile("versionName '1\\.0\\.(\\d+)'").matcher(gradle);
+        check(code.find()&&Integer.parseInt(code.group(1))>=13&&version.find()&&Integer.parseInt(version.group(1))>=12&&gradle.contains("minSdk 26"),"1.0.12 (versionCode 13) or later, minSdk 26");
         String readme=Files.readString(source.resolve("../../../../../../../README.md"));
-        check(readme.startsWith("# Yourrest CRM Android 1.0.12 (versionCode 13)")&&readme.contains("## Design files in 1.0.12"),"README names the release and describes design files");
+        check(readme.startsWith("# Yourrest CRM Android 1.0."+version.group(1)+" (versionCode "+code.group(1)+")\n")&&readme.contains("## Design files in 1.0.12"),"README names the built release and describes design files");
+        // Every type the app passes on is one the CRM itself serves (portable/mold-rules.mjs), when that file is beside the app.
+        Path rules=source.resolve("../../../../../../../../../portable/mold-rules.mjs");
+        if(Files.isRegularFile(rules)){String served=Files.readString(rules);for(String type:DesignFileRules.SERVED_TYPES)check(served.contains("'"+type+"'"),"The CRM serves "+type);}
+        else check(true,"portable/mold-rules.mjs not beside this source (counted, not compared)");
         System.out.println("Native design files: "+checks+" checks passed (actual link, name, size, error and path-guard rules; source and manifest guards; no phone, network, viewer or save picker verification)");
     }
 }
