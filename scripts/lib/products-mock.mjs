@@ -2,9 +2,11 @@
 // self-signed certificate, the same signature check, clock window, routes, field checks, linking, locking and answers as the PHP of
 // contract version 1, its addendum and the approval chain of 2026-11-01 (three approvals in order: the sales manager, in the CRM
 // through the approval route, then production, then the system administrator; a design file attached or deleted from the CRM undoes
-// them). Since 2026-11-02 a sent request's data is edited by the production manager only: the requests route answers the same data
-// again with 200 created:false, and other data for a crmRequestId it holds with 409 request_locked, details.reason production_only and
-// details.request, changing nothing. Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
+// them). Since 2026-11-02 a sent request's data is edited by the production manager only: the requests route remembers the data the
+// CRM first sent for a crmRequestId and answers that ORIGINAL again with 200 created:false (a retry, even after the production manager
+// edited the request there), and any other data with 409 request_locked, details.reason production_only and details.request, changing
+// nothing; pending lists each request's data as it is now (after those edits). Kept in memory. Test controls: down (connections are
+// cut), notConfigured (503), delayMs, the production manager's edit of a request (edit), a
 // production step on a request (start / deliver), a request deleted there (read as cancelled) or unknown to it, historical rows to link,
 // a design file production attaches itself, a one-shot answer for one route (answerNext). The design files of 2026-11-02 (design-files, design-file-delete, design-file) follow the
 // owner's text of the addition and production's PR #27: the JSON line and the bytes signed together, the name and extension rules
@@ -150,12 +152,15 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     } else if (!row) {
       row = {crmRequestId: p.crmRequestId, orderNo: state.nextOrder++, source: 'crm', stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null};
       for (const column of COLUMNS) row[column] = p[column];
+      // What the CRM first sent, kept apart from the columns the production manager may edit: a retry is compared with it.
+      row.original = Object.fromEntries(COLUMNS.map(column => [column, p[column]]));
       touch(row); state.rows.set(row.crmRequestId, row); state.byOrder.set(row.orderNo, row); created = true;
     } else {
       const linkRetry = p.legacyOrderNo !== null && row.orderNo === p.legacyOrderNo;
-      // The same data again is a retry (200, created false). Other data is refused whatever the request's state: once sent, its data is
-      // edited by the production manager in the products application only. Nothing changes.
-      if (!linkRetry && !same(row, p)) throw new ApiError('request_locked', 409, 'The request\'s data is edited by the production manager only.', [], {reason: 'production_only', request: statusObject(row)});
+      // The ORIGINAL data again is a retry (200, created false), even after the production manager edited the request. Any other data
+      // (the edited data included) is refused whatever the request's state: once sent, its data is edited by the production manager in
+      // the products application only. Nothing changes.
+      if (!linkRetry && !same(row.original || row, p)) throw new ApiError('request_locked', 409, 'The request\'s data is edited by the production manager only.', [], {reason: 'production_only', request: statusObject(row)});
     }
     return {status: created ? 201 : 200, body: {request: statusObject(row), created, linked}};
   }
@@ -360,6 +365,15 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
         description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: ''};
       touch(row); state.byOrder.set(row.orderNo, row);
       return row;
+    },
+    /** The production manager edits a request in the products application (by its crmRequestId, or the orderNo of one registered there):
+     *  its columns change (customerName, salesmanName, quantity, description…); the CRM's first data stays the original a retry is
+     *  compared with, and pending lists the edited data. The approvals stay as they are. */
+    edit(key, changes) {
+      const row = typeof key === 'number' ? state.byOrder.get(key) : state.rows.get(key); if (!row) throw new Error('no such request: ' + key);
+      for (const [column, value] of Object.entries(changes)) { if (!COLUMNS.includes(column)) throw new Error('no such column: ' + column); row[column] = value; }
+      touch(row);
+      return statusObject(row);
     },
     /** An approval given in the production app (production, or the system administrator; the sales manager's too, outside the CRM). */
     approve(crmRequestId, step, by = 'staff@yourrest.org') {
