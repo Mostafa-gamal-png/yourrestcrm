@@ -128,9 +128,9 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(moldCustomerEntry({crmNumber: 27, name: ' مصنع  زايد ', address: 'حي الصناعية', city: 'الدمام'}), {crmNumber: 27, name: 'مصنع زايد', address: 'حي الصناعية', city: 'Damam - الدمام', active: true}, 'a customer of the list');
   eq(moldCustomerEntry({crmNumber: 28, name: 'مصنع', address: '', city: '', erpCode: ''}), {crmNumber: 28, name: 'مصنع', erpCode: '', active: true}, 'empty address and city left out');
   // Since 2026-11-02 each listed customer carries its ERP code ('' when none, so production clears a removed one): trimmed, Arabic-Indic
-  // digits as ASCII digits, control characters dropped (never a throw that would stop the whole list), never cut: over 50 characters is
+  // digits as ASCII digits, control characters and invisible marks dropped (never a throw that would stop the whole list), never cut: over 50 characters is
   // no ERP code and goes as ''. A customer given no erpCode (a deleted one) goes without the field, so production keeps what it holds.
-  eq([' 146 ', '٣٨٨٣', '۱۲۳', 7, '', null, '14\u00016', '146\u001F', '\u007F', 'C'.repeat(50), 'C'.repeat(51)].map(erpCode => moldCustomerEntry({crmNumber: 9, name: 'مصنع', erpCode}).erpCode), ['146', '3883', '123', '7', '', '', '146', '146', '', 'C'.repeat(50), ''], 'the ERP code trimmed, in ASCII digits, without control characters; empty or too long goes as \'\'');
+  eq([' 146 ', '٣٨٨٣', '۱۲۳', 7, '', null, '14\u00016', '146\u001F', '\u007F', '\u200F146', '1\u200B4\u200E6\uFEFF', '\u202B١٤٦\u202C', '\u200F', 'C'.repeat(50), 'C'.repeat(51)].map(erpCode => moldCustomerEntry({crmNumber: 9, name: 'مصنع', erpCode}).erpCode), ['146', '3883', '123', '7', '', '', '146', '146', '', '146', '146', '146', '', 'C'.repeat(50), ''], 'the ERP code trimmed, in ASCII digits, without control characters; empty or too long goes as \'\'');
   eq(Object.keys(moldCustomerEntry({crmNumber: 9, name: 'مصنع', address: 'ع', city: 'الدمام', erpCode: '1'})), ['crmNumber', 'name', 'address', 'city', 'erpCode', 'active'], 'the contract fields in order');
   eq(Object.hasOwn(moldCustomerEntry({crmNumber: 9, name: 'مصنع', active: false}), 'erpCode'), false, 'no erpCode given (a deleted customer): the field is left out');
   eq(MOLD_LIMITS.erpCode, 50, 'the ERP code limit');
