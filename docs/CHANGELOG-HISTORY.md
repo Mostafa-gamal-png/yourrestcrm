@@ -4,6 +4,15 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Android 1.0.12 (forced), the products app's PR #27 and the production-only rule (2026-11-02, fifth package of the day, no migration)
+
+- **Asked.** The owner approved a new Android release for design files in the app; the products side then reported PR #27 (PDF marker within 1024 bytes, mismatched image extensions and reserved names accepted, the refusals too_many_files and crm_file_id_used with fields ["crmFileId"]) and that a sent request is edited only by the production manager there (409 request_locked, details.reason production_only; pending returns production's current data).
+- **Android 1.0.12 (13).** `mobile/android`: the file picker follows the page's accept list (all files when an extension has no Android type); «عرض» and «تنزيل» of `/api/mold-requests/design-file` are fetched natively with the session (never handed to another app), opened through the app's own read-only provider or saved with the system's save window. Built and signed on GitHub with the installed app's certificate; `.github/workflows/android.yml` now rebases before pushing the APK. Published with `scripts/publish-android-release.mjs`; the required version becomes 1.0.12.
+- **PR #27.** `portable/mold-rules.mjs` and the stand-in accept a PDF whose `%PDF-n.n` marker is within the first 1024 bytes; the stand-in answers the two refusals like the site; Arabic/English text for crm_file_id_used; file links hidden on the sales manager's «اعتمدتها الآن» cards.
+- **Production-only rule.** No «تعديل» for a sent request (a request that certainly never reached production may still be edited); the server refuses the update with «بيانات الطلب يعدّلها مدير الإنتاج فقط»; production_only is final and never resent; the stand-in remembers the original data (a resend of it answers 200 created:false). The pending list and the request sheet show production's customer, salesman and specs for the sales manager.
+- **Review.** Adversarial reviews: Android 6 findings, PR #27 4, production-only 16; all fixed with tests.
+- **Operations.** `docs/UPDATE-2026-11-02-ANDROID-1012-AR.txt`.
+
 ## Mold request design files (2026-11-02, fourth package of the day, migration 0017)
 
 - **Asked.** The products side's contract addition «ملفات التصميم» (routes design-files, design-file-delete, design-file; designFiles in the status object and pending items) and the owner's list: attach and delete in the form and the sheet with the warning that it sends the request back to the sales manager, store in the CRM and send with retries, show every file (the rep's and production's) with downloads through the CRM after a permission check, the files in the sales manager's pending list, and tests.
