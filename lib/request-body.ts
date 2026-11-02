@@ -7,7 +7,7 @@ export class RequestBodyError extends Error {
 // unit preserves Arabic inputs while placing a real bound on buffered bytes.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
- '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':16_000,'/api/service-kpi':32_000,
+ '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':16_000,'/api/mold-requests/design-files/delete':2_000,'/api/service-kpi':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
  '/api/kpis':60_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
  '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,
@@ -15,6 +15,11 @@ const jsonLimits:Record<string,number>={
 export function jsonRequestLimit(request:Request){
  return jsonLimits[new URL(request.url).pathname.replace(/\/$/,'')]??450_000;
 }
+// File uploads: 11 MB and 120 seconds by default (visit files, 10 MB). A mold design file is up to 25 MiB (MOLD_DESIGN_MAX_BYTES in
+// portable/mold-rules.mjs) plus its form fields, and may take five minutes from a phone on a slow line.
+const formLimits:Record<string,{bytes:number;ms:number}>={'/api/mold-requests/design-files':{bytes:25*1024*1024+64*1024,ms:300_000}};
+const formLimit=(request:Request)=>formLimits[new URL(request.url).pathname.replace(/\/$/,'')]??{bytes:11*1024*1024,ms:120_000};
+export const formRequestLimit=(request:Request)=>formLimit(request).bytes;
 
 export async function readRequestBytes(request:Request,maxBytes:number,timeoutMs=30_000):Promise<Uint8Array<ArrayBuffer>>{
  if(!Number.isSafeInteger(maxBytes)||maxBytes<1)throw new Error('Invalid request byte limit');
@@ -63,10 +68,10 @@ export async function readRequestText(request:Request,maxBytes=jsonRequestLimit(
  catch{throw new RequestBodyError('ترميز البيانات غير صحيح.',400);}
 }
 
-export async function readRequestForm(request:Request,maxBytes=11*1024*1024){
+export async function readRequestForm(request:Request,maxBytes=formRequestLimit(request),timeoutMs=formLimit(request).ms){
  const contentType=request.headers.get('content-type')||'';
  if(!/^multipart\/form-data\s*;/i.test(contentType))throw new RequestBodyError('صيغة رفع الملف غير صحيحة.',415);
- const bytes=await readRequestBytes(request,maxBytes,120_000);
+ const bytes=await readRequestBytes(request,maxBytes,timeoutMs);
  try{return await new Response(bytes,{headers:{'Content-Type':contentType}}).formData();}
  catch{throw new RequestBodyError('تعذر قراءة الملف المرفوع.',400);}
 }
