@@ -9,7 +9,7 @@ import type {Member,Row} from '@/lib/crm';
 import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,moldApprovalNames,moldErrorText,moldFieldNames,moldHasApprovals,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_DESIGN_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
-import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
+import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import './mold-requests.css';
 
 type Say=(ar:string,en:string)=>string;
@@ -146,7 +146,8 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
 
 /** «طلبات بانتظار اعتمادي»: every request production holds for the sales manager, the CRM's and those registered in production, the
  * longest waiting first, each with what was asked for and an Approve button. Approved here, a request leaves the list; until the page
- * is refreshed it stays below with Withdraw approval, in case it was a mistake. */
+ * is refreshed it stays below with Withdraw approval, in case it was a mistake, its files named without links (they open from the list
+ * only while the request waits for the sales manager). */
 function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnswer;say:Say;onOpen:(id:string)=>void;onChanged:()=>void}){
  const [busy,setBusy]=useState<number|null>(null),[errors,setErrors]=useState<Record<number,string>>({}),[approved,setApproved]=useState<MoldPendingAnswer['items']>([]);
  const keys=useRef(new Map<string,string>());
@@ -178,7 +179,8 @@ function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnsw
    </div>
    <p className="mold-pending-specs">{[choice(MOLD_CORES,specs.core),specs.vibrators?say('رجاجات: ','Vibrators: ')+specs.vibrators:'',choice(MOLD_MODELS,specs.model),choice(MOLD_HALF_BLOCKS,specs.halfBlock),specs.moldWidth?say('عرض ','Width ')+specs.moldWidth:'',specs.gelbaSize?say('جلب ','Gelba ')+specs.gelbaSize:'',specs.moldNo?say('قالب ','Mold ')+specs.moldNo:''].filter(Boolean).join(' · ')}</p>
    {specs.notes&&<p className="mold-pending-notes" dir="auto">{specs.notes}</p>}
-   <MoldPendingDesignFiles files={item.designFiles} say={say}/>
+   {/* Approved just now: the request no longer waits for them, so its files are listed without links (the CRM's request shows them). */}
+   <MoldPendingDesignFiles files={item.designFiles} say={say} note={done?pendingFilesApprovedNote(item.inCrm&&!!item.crmRequestId,say):''}/>
    {errors[item.orderNo]&&<p className="form-error" role="alert">{errors[item.orderNo]}</p>}
    <div className="mold-actions">
     {done?<><span className="mold-pending-done"><BadgeCheck size={16} aria-hidden="true"/>{say('اعتمدته الآن','You approved it')}</span><button type="button" className="btn subtle" disabled={busy!==null} onClick={()=>void run(item,'withdraw-order')}>{busy===item.orderNo?<Loader2 className="spin" size={16}/>:<Undo2 size={16}/>}{say('سحب الاعتماد','Withdraw approval')}</button></>

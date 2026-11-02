@@ -4,9 +4,12 @@
 // through the approval route, then production, then the system administrator; any change from the CRM undoes them). Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
 // production step on a request (start / deliver), a request deleted there (read as cancelled) or unknown to it, historical rows to link,
 // a design file production attaches itself, a one-shot answer for one route (answerNext). The design files of 2026-11-02 (design-files, design-file-delete, design-file) follow the
-// owner's text of the addition: the JSON line and the bytes signed together, the name and extension rules, 25 MiB, 10 files a request,
-// a real PDF, an image of at most 80 000 000 pixels (its header read with the CRM's own moldImageSize), 404 before the request exists,
-// 409 once it is not editable, the safe repeat, and any attach or delete undoing the approvals.
+// owner's text of the addition and production's PR #27: the JSON line and the bytes signed together, the name and extension rules
+// (a Windows reserved name such as CON accepted), 25 MiB, 10 files a request (400 fields ['crmFileId'], reason too_many_files), a PDF
+// with %PDF-1.x within its first 1024 bytes, an image of at most 80 000 000 pixels whatever its extension says among the four (its
+// header read with the CRM's own moldImageSize), a crmFileId never taken by another file nor after its file's deletion (400 fields
+// ['crmFileId'], reason crm_file_id_used), 404 before the request exists, 409 once it is not editable, the safe repeat, and any attach
+// or delete undoing the approvals.
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
@@ -100,13 +103,15 @@ const DESIGN_MAX = 25 * 1024 * 1024;
 const IMAGE_TYPES = {png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp'};
 /** The design file entry of designFiles. */
 const designEntry = file => ({fileId: file.fileId, crmFileId: file.crmFileId, name: file.name, kind: file.kind, size: file.bytes.length, source: file.source, uploadedAt: file.uploadedAt});
-/** A design file's name and bytes, as production checks them: [field, reason] of the refusal, or the file's kind and type. */
+/** A design file's name and bytes, as production checks them: [field, reason] of the refusal, or the file's kind and type. A Windows
+ *  reserved name (CON, AUX, COM1…) is accepted; an image is any of the four whatever its extension says among them, kept as what it is. */
 function checkDesign(name, bytes) {
   if (typeof name !== 'string' || [...name].length > 200 || /[\\/<>:"|?*\u0000-\u001F\u007F]/.test(name) || !/^[^.].*\.([A-Za-z0-9]+)$/.test(name.trim()) || name !== name.trim()) return {field: 'name'};
   const kind = DESIGN_EXTENSIONS[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
   if (!kind) return {field: 'name'};
   if (!bytes.length) return {field: 'file', reason: 'empty'};
-  if (kind === 'pdf') return bytes.subarray(0, 5).toString('latin1') === '%PDF-' ? {kind, type: 'application/pdf'} : {field: 'file', reason: 'not_pdf'};
+  // PR #27: %PDF- and its version anywhere within the first 1024 bytes, whatever comes before it there.
+  if (kind === 'pdf') return /%PDF-\d\.\d/.test(bytes.subarray(0, 1024).toString('latin1')) ? {kind, type: 'application/pdf'} : {field: 'file', reason: 'not_pdf'};
   if (kind === 'image') {
     const size = moldImageSize(bytes);
     if (!size || !size.width || !size.height) return {field: 'file', reason: 'bad_image'};
@@ -124,7 +129,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map()};
+  // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set()};
   const riyadh = () => new Date(now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00';
   /** Every change: a new revision, and the wait restarts only when the step changes (yr_mreq_state_set). */
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
@@ -231,7 +237,10 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
 
   /** A change from the CRM during the approvals undoes the ones given (an edit, an attached or a deleted file). */
   const undoApprovals = row => { if (!row.approvals.legacy && APPROVAL_STEPS.some(step => row.approvals[step])) row.approvals = noApprovals(); };
-  /** design-files: one JSON line, a newline, the file's bytes. Safe to repeat: the same crmFileId with the same bytes answers 200. */
+  /** A refusal of the file for its place, not its bytes (PR #27): 400 invalid_payload, fields ['crmFileId'], details.reason. */
+  const placeRefusal = (reason, message) => new ApiError('invalid_payload', 400, message, ['crmFileId'], {reason});
+  /** design-files: one JSON line, a newline, the file's bytes. Safe to repeat: the same crmFileId with the same bytes answers 200. A
+   *  crmFileId used for another file, or for a file deleted since, is refused (crm_file_id_used); so is an eleventh file (too_many_files). */
   function attachDesign(raw) {
     const cut = raw.indexOf(0x0a);
     let meta;
@@ -250,11 +259,12 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const known = [...state.byOrder.values()].flatMap(other => (other.designFiles || []).map(file => [other, file])).find(([, file]) => file.crmFileId === meta.crmFileId);
     if (known) {
-      if (known[0] !== row || known[1].sha256 !== sha256) throw new ApiError('invalid_payload', 400, 'This crmFileId belongs to another file.', ['crmFileId']);
+      if (known[0] !== row || known[1].sha256 !== sha256) throw placeRefusal('crm_file_id_used', 'This crmFileId belongs to another file.');
       return {status: 200, body: {created: false, file: designEntry(known[1]), request: statusObject(row)}};
     }
+    if (state.deletedFileIds.has(meta.crmFileId)) throw placeRefusal('crm_file_id_used', 'This crmFileId belonged to a file deleted since.');
     if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
-    if ((row.designFiles ||= []).length >= 10) throw new ApiError('invalid_payload', 400, 'A request holds at most 10 files.', ['file'], {reason: 'too_many_files'});
+    if ((row.designFiles ||= []).length >= 10) throw placeRefusal('too_many_files', 'A request holds at most 10 files.');
     const file = {fileId: state.nextFile++, crmFileId: meta.crmFileId, name: meta.name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256, source: 'crm', uploadedAt: riyadh()};
     row.designFiles.push(file); undoApprovals(row); touch(row);
     return {status: 201, body: {created: true, file: designEntry(file), request: statusObject(row)}};
@@ -269,7 +279,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
     if (index < 0) throw new ApiError('not_found', 404, 'No file of this request has this crmFileId.');
     if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
-    row.designFiles.splice(index, 1); undoApprovals(row); touch(row);
+    state.deletedFileIds.add(body.crmFileId); row.designFiles.splice(index, 1); undoApprovals(row); touch(row);
     return {status: 200, body: {request: statusObject(row)}};
   }
   /** design-file: the file itself, its type and its name (filename* in UTF-8). */
@@ -385,6 +395,15 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       const file = {fileId: state.nextFile++, crmFileId: null, name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256: createHash('sha256').update(bytes).digest('hex'), source: 'production', uploadedAt: riyadh()};
       (row.designFiles ||= []).push(file); touch(row);
       return designEntry(file);
+    },
+    /** A file of the CRM deleted in the products application itself (by its crmFileId): gone from the request, and its crmFileId is
+     *  never taken again. Changes nothing in the approvals here. */
+    removeFile(crmFileId) {
+      for (const row of state.byOrder.values()) {
+        const index = (row.designFiles || []).findIndex(file => file.crmFileId === crmFileId);
+        if (index >= 0) { row.designFiles.splice(index, 1); state.deletedFileIds.add(crmFileId); touch(row); return true; }
+      }
+      throw new Error('no such file: ' + crmFileId);
     },
     /** The next call of a route (signed as usual) gets this answer instead of the route's own, once: for an answer the stand-in's rules
      *  never give to what the CRM sends (production refusing a file the CRM's own checks accepted, a 413 from its web server). */

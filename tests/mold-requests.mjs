@@ -7,7 +7,7 @@ import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldApprovalRefusal, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText, sheetCity, moldRequestCity, moldCustomerEntry, moldCustomerCalls,
-  MOLD_DESIGN_EXTENSIONS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, moldDesignName, moldDesignDisplayName, moldImageSize, moldDesignFileCheck, moldDesignContentType, moldDispositionName, moldContentDisposition, moldDesignFileBody, moldDesignFileEntry} from '../portable/mold-rules.mjs';
+  MOLD_DESIGN_EXTENSIONS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, MOLD_DESIGN_PLACE_REASONS, moldDesignName, moldDesignDisplayName, moldImageSize, moldDesignFileCheck, moldDesignContentType, moldDispositionName, moldContentDisposition, moldDesignFileBody, moldDesignFileEntry} from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts, moldRouteTimeout} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 
@@ -163,12 +163,13 @@ const pdf = text => new TextEncoder().encode('%PDF-1.7\n' + text + '\n%%EOF');
 {
   eq(Object.keys(MOLD_DESIGN_EXTENSIONS), ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'dwg', 'dxf', 'step', 'stp', 'igs', 'iges', 'stl', 'sldprt', 'sldasm', 'slddrw', 'nc1', 'dstv', 'ai', 'eps', 'cdr', 'psd', 'svg', 'zip', 'rar', '7z'], 'the contract\'s extensions, in its order');
   eq([MOLD_DESIGN_EXTENSIONS.pdf, MOLD_DESIGN_EXTENSIONS.jpeg, MOLD_DESIGN_EXTENSIONS.svg, MOLD_DESIGN_EXTENSIONS['7z']], ['pdf', 'image', 'other', 'other'], 'each extension\'s kind: an SVG is a drawing, never an image shown');
-  eq([MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS], [25 * 1024 * 1024, 10, 80_000_000, ['empty', 'not_pdf', 'bad_image', 'too_many_pixels']], 'the limits and the reasons');
+  eq([MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, MOLD_DESIGN_PLACE_REASONS], [25 * 1024 * 1024, 10, 80_000_000, ['empty', 'not_pdf', 'bad_image', 'too_many_pixels'], ['too_many_files', 'crm_file_id_used']], 'the limits and the reasons (the bytes\', and the place\'s of PR #27)');
   eq(moldDesignName('رسم القالب 1380.pdf'), {name: 'رسم القالب 1380.pdf', extension: 'pdf', kind: 'pdf'}, 'the contract\'s example name');
   eq([moldDesignName(' DRAWING.DWG ')?.name, moldDesignName('Part.SLDPRT')?.extension, moldDesignName('a.b.step')?.kind], ['DRAWING.DWG', 'sldprt', 'other'], 'ends trimmed; the extension in any case');
   eq(moldDesignName('x'.repeat(196) + '.pdf')?.name.length, 200, '200 characters pass');
   eq(['x'.repeat(197) + '.pdf', 'a/b.pdf', 'a\\b.pdf', 'C:drawing.pdf', 'a<b.pdf', 'a>b.pdf', 'a"b.pdf', 'a|b.pdf', 'a?.pdf', 'a*.pdf', 'a\u0007.pdf', 'a\u0085.pdf', 'a\nb.pdf', 'x\u202Egnp.zip', '.pdf', ' .pdf', 'drawing', 'drawing.', 'setup.exe', 'image.tiff', '', null, 7].map(moldDesignName), Array(23).fill(null), 'refused: too long, a path, a forbidden character, a control or direction mark, no name, no or another extension');
   eq(moldDesignName('م'.repeat(196) + '.pdf')?.name.length, 200, 'Arabic letters count as characters, not bytes');
+  eq(['CON.pdf', 'aux.png', 'COM1.dwg', 'LPT9.stl', 'nul.zip', 'PRN.jpg'].map(name => moldDesignName(name)?.name), ['CON.pdf', 'aux.png', 'COM1.dwg', 'LPT9.stl', 'nul.zip', 'PRN.jpg'], 'a Windows reserved name is a name like any other (production accepts it, PR #27)');
   eq([moldDesignDisplayName(' a/b\\c\u0000\u202E.pdf '), moldDesignDisplayName('x'.repeat(300)).length, moldDesignDisplayName(5)], ['a_b_c.pdf', 200, ''], 'a listed name made safe to show');
   // JSON may carry half of a UTF-16 pair ("\ud800"): no header can hold it and encodeURIComponent throws on it, so it is dropped; a whole
   // pair (an emoji) stays.
@@ -183,7 +184,16 @@ const pdf = text => new TextEncoder().encode('%PDF-1.7\n' + text + '\n%%EOF');
   eq([moldDesignFileCheck('a.exe', pdf('x')), moldDesignFileCheck('a.pdf', new Uint8Array(0)), moldDesignFileCheck('a.dwg', new Uint8Array(0)), moldDesignFileCheck('a.pdf', new TextEncoder().encode('%PDX-1.4')), moldDesignFileCheck('a.png', new TextEncoder().encode('%PDF-1.4')), moldDesignFileCheck('a.png', png(0, 10))],
     [{ok: false, field: 'name', reason: 'name'}, {ok: false, field: 'file', reason: 'empty'}, {ok: false, field: 'file', reason: 'empty'}, {ok: false, field: 'file', reason: 'not_pdf'}, {ok: false, field: 'file', reason: 'bad_image'}, {ok: false, field: 'file', reason: 'bad_image'}], 'refusals as production gives them: the name, then empty, not_pdf, bad_image');
   eq([moldDesignFileCheck('a.png', png(10000, 8000)).ok, moldDesignFileCheck('a.png', png(10000, 8001)), moldDesignFileCheck('a.webp', webpExtended(20000, 20000)).reason], [true, {ok: false, field: 'file', reason: 'too_many_pixels'}, 'too_many_pixels'], '80 000 000 pixels pass, one row more does not');
-  const big = new Uint8Array(MOLD_DESIGN_MAX_BYTES + 1); big.set(ascii('%PDF-'));
+  // PR #27: %PDF- and its version anywhere within the first 1024 bytes (a PDF with bytes before its header), never beyond them.
+  const marked = (offset, mark = '%PDF-1.4') => { const bytes = new Uint8Array(offset + mark.length + 40).fill(0x20); bytes.set(Uint8Array.from([0xef, 0xbb, 0xbf, 0x00, 0xff, 0x0a]).subarray(0, Math.min(offset, 6))); bytes.set(ascii(mark), offset); return bytes; };
+  eq([0, 6, 300, 1016].map(offset => moldDesignFileCheck('رسم.pdf', marked(offset)).ok), [true, true, true, true], 'a PDF whose %PDF-1.x starts after other bytes passes, as long as it ends within the first 1024 bytes');
+  eq([1017, 1024, 4096].map(offset => moldDesignFileCheck('رسم.pdf', marked(offset)).reason), ['not_pdf', 'not_pdf', 'not_pdf'], 'a marker cut by the 1024th byte, or wholly beyond it: not a PDF');
+  eq(['%PDF-', '%PDF-x.4', '%PDF-1.', '%PDF-1x4', '%pdf-1.4', '%PDF 1.4'].map(mark => moldDesignFileCheck('a.pdf', marked(10, mark)).reason), Array(6).fill('not_pdf'), '%PDF- without its version (or another spelling) is not a PDF');
+  eq([moldDesignFileCheck('a.pdf', marked(0, '%PDF-2.0')).ok, moldDesignFileCheck('CON.pdf', pdf('reserved')).ok, moldDesignFileCheck('COM1.png', png(10, 10)).ok], [true, true, true], 'PDF 2.0 too; CON.pdf and COM1.png pass the name rule');
+  // An image is any of the four whatever its extension says among them, kept as what it really is (production stores and serves it so).
+  eq([moldDesignFileCheck('scan.jpg', png(30, 20)), moldDesignFileCheck('photo.gif', webpLossy(64, 48)).contentType, moldDesignFileCheck('drawing.webp', gif(8, 8)).contentType, moldDesignFileCheck('a.jpeg', png(1, 1)).contentType],
+    [{ok: true, name: 'scan.jpg', extension: 'jpg', kind: 'image', contentType: 'image/png', width: 30, height: 20}, 'image/webp', 'image/gif', 'image/png'], 'a mismatched image extension is still accepted, served as its real type');
+  const big = new Uint8Array(MOLD_DESIGN_MAX_BYTES + 1); big.set(ascii('%PDF-1.4'));
   eq([moldDesignFileCheck('a.pdf', big.subarray(0, MOLD_DESIGN_MAX_BYTES)).ok, moldDesignFileCheck('a.pdf', big).reason], [true, 'too_large'], '25 MiB pass, one byte more does not (413 at production)');
   eq(['application/pdf', 'IMAGE/PNG; q=1', 'image/svg+xml', 'text/html', '', null].map(moldDesignContentType), ['application/pdf', 'image/png', 'application/octet-stream', 'application/octet-stream', 'application/octet-stream', 'application/octet-stream'], 'served types: a PDF, the four images, else plain bytes');
   const disposition = moldContentDisposition('رسم القالب (1).pdf', true);
@@ -206,6 +216,8 @@ const pdf = text => new TextEncoder().encode('%PDF-1.7\n' + text + '\n%%EOF');
   const pending = {orderNo: 101, crmRequestId: null, source: 'manual', customer: {}, salesman: {}, specs: {}};
   eq([moldPendingItem(pending).designFiles, moldPendingItem({...pending, designFiles: listed}).designFiles.map(file => file.fileId)], [[], [501, 'p-9']], 'a pending item carries its design files, those registered in production too');
   eq(readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['file'], details: {reason: 'not_pdf'}}}), {kind: 'rejected', code: 'invalid_payload', fields: ['file'], reason: 'not_pdf'}, 'a refused file names its reason');
+  eq([readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['crmFileId'], details: {reason: 'too_many_files'}}}), readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['crmFileId'], details: {reason: 'crm_file_id_used'}}})],
+    [{kind: 'rejected', code: 'invalid_payload', fields: ['crmFileId'], reason: 'too_many_files'}, {kind: 'rejected', code: 'invalid_payload', fields: ['crmFileId'], reason: 'crm_file_id_used'}], 'PR #27: a refusal for the file\'s place names crmFileId and its reason, final like the others');
   eq([readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['file'], details: {reason: '<b>'}}}).reason, readMoldAnswer(413, {error: {code: 'payload_too_large'}}).kind, readMoldAnswer(404, {error: {code: 'not_found'}}).kind], [undefined, 'rejected', 'not_found'], 'a reason that is not a word is not read; 413 and 404 are final');
   eq([moldRouteTimeout('design-files'), moldRouteTimeout('design-file'), moldRouteTimeout('design-file-delete'), moldRouteTimeout('requests')], [120_000, 120_000, 10_000, 10_000], '120 seconds for the two file routes, 10 for the rest');
 }
@@ -329,7 +341,8 @@ try {
   const revision = request.revision;
   answer = await attach('mr-files', 'mdf-a', 'رسم القالب 1380.pdf', drawing);
   eq([answer.kind, answer.http, answer.json.created, answer.json.file.fileId, answer.json.request.revision], ['ok', 200, false, fileA.fileId, revision], 'the same file again: 200 created:false, nothing changes (safe to repeat)');
-  eq((await attach('mr-files', 'mdf-a', 'رسم القالب 1380.pdf', pdf('another drawing'))).fields, ['crmFileId'], 'a crmFileId is never another file');
+  answer = await attach('mr-files', 'mdf-a', 'رسم القالب 1380.pdf', pdf('another drawing'));
+  eq([answer.kind, answer.http, answer.code, answer.fields, answer.reason], ['rejected', 400, 'invalid_payload', ['crmFileId'], 'crm_file_id_used'], 'a crmFileId is never another file: 400 crmFileId, reason crm_file_id_used (PR #27)');
   for (const [name, bytes, reason] of [['empty.dwg', new Uint8Array(0), 'empty'], ['fake.pdf', new TextEncoder().encode('<html>'), 'not_pdf'], ['broken.png', new TextEncoder().encode('PNG?'), 'bad_image'], ['huge.png', png(10000, 8001), 'too_many_pixels']]) {
     answer = await attach('mr-files', 'mdf-' + reason, name, bytes);
     eq([answer.kind, answer.http, answer.code, answer.fields, answer.reason], ['rejected', 400, 'invalid_payload', ['file'], reason], '400 invalid_payload file with details.reason ' + reason);
@@ -342,6 +355,19 @@ try {
   eq((await call('design-files', Buffer.alloc(MOLD_DESIGN_MAX_BYTES + 5000))).http, 0, 'a body beyond 25 MiB and the JSON line is never sent');
   await assert.rejects(call('design-files', {crmRequestId: 'mr-files'}), /raw body/); checks++;
   await assert.rejects(call('status', Buffer.from('{}')), /JSON route/); checks++;
+  // PR #27 at the stand-in, on a request of its own (the 10 places of mr-files stay as counted below): a PDF whose header follows other
+  // bytes, a reserved Windows name, an image whose extension names another of the four (kept and served as what it is)
+  await call('requests', moldRequestBody({id: 'mr-pr27', requestedAt: riyadhIso(Date.now()), customer, salesman, specs}));
+  const leading = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.alloc(900, 0x20), Buffer.from('%PDF-1.7\n% leading bytes\n%%EOF\n')]);
+  answer = await attach('mr-pr27', 'mdf-leading', 'CON.pdf', leading);
+  eq([answer.kind, answer.http, answer.json.file.name, answer.json.file.kind], ['ok', 201, 'CON.pdf', 'pdf'], 'a PDF with 903 bytes before %PDF-1.7, named CON.pdf: accepted');
+  answer = await attach('mr-pr27', 'mdf-late-mark', 'late.pdf', Buffer.concat([Buffer.alloc(1024, 0x20), Buffer.from('%PDF-1.4\n')]));
+  eq([answer.kind, answer.http, answer.fields, answer.reason], ['rejected', 400, ['file'], 'not_pdf'], 'its marker beyond the first 1024 bytes: not_pdf');
+  eq((await attach('mr-pr27', 'mdf-no-version', 'bare.pdf', Buffer.from('%PDF-\n%%EOF'))).reason, 'not_pdf', '%PDF- without its version: not_pdf');
+  answer = await attach('mr-pr27', 'mdf-mismatch', 'COM1.jpg', png(40, 30));
+  eq([answer.kind, answer.http, answer.json.file.kind], ['ok', 201, 'image'], 'a PNG named COM1.jpg: accepted');
+  answer = await call('design-file', {fileId: answer.json.file.fileId});
+  eq([answer.file.contentType, answer.file.name], ['image/png', 'COM1.jpg'], 'and served as the PNG it is, under its own name');
   // production's own file: listed with source production and no crmFileId, in the status and in pending
   const production = mock.addProductionFile('mr-files', {name: 'تصميم الإنتاج.png', bytes: png(1200, 900)});
   const listedNow = moldStatusObject((await call('status', {ids: ['mr-files']})).json.requests[0]).designFiles;
@@ -377,12 +403,14 @@ try {
   // the 10-file limit counts production's files too
   for (let n = 0; n < 8; n++) eq((await attach('mr-files', 'mdf-n' + n, 'drawing ' + n + '.dwg', Uint8Array.of(n + 1))).http, 201, 'file ' + (n + 3) + ' of 10');
   answer = await attach('mr-files', 'mdf-eleventh', 'one more.dwg', Uint8Array.of(9));
-  eq([answer.kind, answer.http, answer.fields], ['rejected', 400, ['file']], 'the eleventh file is refused (the stand-in says too_many_files; the contract names no reason)');
+  eq([answer.kind, answer.http, answer.code, answer.fields, answer.reason], ['rejected', 400, 'invalid_payload', ['crmFileId'], 'too_many_files'], 'the eleventh file: 400 crmFileId, reason too_many_files (PR #27)');
   // delete: the CRM's own file, the approvals undone again; then 404 once gone
   await approve('approve', 'mr-files');
   answer = await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'mdf-a'});
   eq([answer.kind, answer.http, moldStatusObject(answer.json.request).designFiles.some(file => file.crmFileId === 'mdf-a'), answer.json.request.waitingStep, answer.json.request.approvals.sales], ['ok', 200, false, 'sales', null], 'design-file-delete: gone, and the approvals undone like an attach');
   eq((await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'mdf-a'})).kind, 'not_found', 'deleting again: 404 (already gone)');
+  answer = await attach('mr-files', 'mdf-a', 'رسم القالب 1380.pdf', drawing);
+  eq([answer.kind, answer.http, answer.fields, answer.reason, mock.row('mr-files').designFiles.length], ['rejected', 400, ['crmFileId'], 'crm_file_id_used', 9], 'the crmFileId of a file deleted since is never taken again, even with the same bytes: crm_file_id_used');
   eq((await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'bad id'})).fields, ['crmFileId'], 'a malformed crmFileId: 400');
   eq((await call('design-file-delete', {crmRequestId: 'mr-nowhere', crmFileId: 'mdf-a'})).kind, 'not_found', 'an unknown request: 404');
   // the approvals complete: the request is not editable, attach and delete answer 409 request_locked with the status

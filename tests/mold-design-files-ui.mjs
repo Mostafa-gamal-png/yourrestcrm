@@ -136,4 +136,29 @@ function render(row, files, linkReady = true) {
   eq(quiet.snapshot().map(item => item.key), ['k1', 'k3', 'k4'], 'the same file for another request is its own upload');
 }
 
-console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, English', productionDataUsed: false}));
+// ---- 6. Production's refusals for a file's place (PR #27: 400, fields crmFileId, details.reason): said in words, final, taking no place
+{
+  const used = file('رسم مكرر.pdf', {nextAttemptAt: null, lastError: {code: 'invalid_payload', fields: ['crmFileId'], reason: 'crm_file_id_used', http: 400, at: later, final: true}});
+  const full = file('الحادي عشر.pdf', {nextAttemptAt: null, lastError: {code: 'invalid_payload', fields: ['crmFileId'], reason: 'too_many_files', http: 400, at: later, final: true}});
+  const {rows, view} = render(request(), [used, full]);
+  eq([view.designFiles.map(entry => entry.state), view.designFiles.map(entry => entry.stopped), view.can.resend, lib.moldDesignCount(request(), [used, full]).crm], [['rejected', 'rejected'], [false, false], false, 0], 'refused for good: not stopped, nothing to resend, no place taken');
+  ok(rows[0].includes('رفض الإنتاج الملف') && rows[0].includes('الإنتاج رفض الملف: رقمه مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وارفعه من جديد'), 'crm_file_id_used in words: ' + rows[0]);
+  ok(rows[1].includes('الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)'), 'too_many_files in words: ' + rows[1]);
+  eq([ui.designRefusal({code: 'invalid_payload', fields: ['crmFileId'], reason: 'crm_file_id_used'}, (ar, en) => en), ui.designRefusal({code: 'invalid_payload', fields: ['crmFileId']}, say)],
+    ['Production refused the file: its number was already used for another file or a deleted one; delete it and upload it again', 'رفض الإنتاج الملف'], 'in English too; a crmFileId refusal without a reason reads as a plain refusal');
+}
+
+// ---- 7. The sales manager's pending files: links while the request waits; named only, with a note, on a card just approved
+{
+  const item = {orderNo: 94, designFiles: [{fileId: 501, crmFileId: 'mdf-1', name: 'رسم.pdf', kind: 'pdf', size: 2048, source: 'crm', uploadedAt: at}, {fileId: 'p-2', crmFileId: null, name: 'مسقط.dwg', kind: 'other', size: 10, source: 'production', uploadedAt: at}]};
+  const files = lib.moldPendingDesignFiles(item), pending = note => renderToStaticMarkup(React.createElement(ui.MoldPendingDesignFiles, {files, say, note}));
+  const waiting = pending(undefined);
+  eq([(waiting.match(/<a /g) || []).length, waiting.includes('/api/mold-requests/design-file?order=94&amp;file=501'), waiting.includes('data-links')], [3, true, false], 'waiting: Open and Download for the PDF, Download for the drawing, by order number');
+  for (const inCrm of [true, false]) {
+    const note = ui.pendingFilesApprovedNote(inCrm, say), done = pending(note), text = done.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    eq([(done.match(/<a /g) || []).length, done.includes('design-file?'), done.includes('data-links="off"'), text.includes('رسم.pdf') && text.includes('مسقط.dwg'), text.includes(note)], [0, false, true, true, true], 'just approved' + (inCrm ? ' (a CRM request)' : ' (registered in production)') + ': no view or download link, the names and the note');
+  }
+  eq([ui.pendingFilesApprovedNote(true, say), ui.pendingFilesApprovedNote(false, (ar, en) => en)], ['بعد اعتمادك لا تُفتح الملفات من هنا؛ افتح الطلب لعرضها.', 'Once you approve, the files no longer open from here.'], 'the note: where the files are, in both languages');
+}
+
+console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, place refusals, English; the pending files with and without links', productionDataUsed: false}));

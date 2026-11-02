@@ -52,6 +52,9 @@ export const MOLD_DESIGN_TIMEOUT_MS = 120_000;
 export const MOLD_DESIGN_LINE_LIMIT = 4096;
 /** Why production refuses a file's bytes (400 invalid_payload, fields ['file'], details.reason). */
 export const MOLD_DESIGN_REASONS = ['empty', 'not_pdf', 'bad_image', 'too_many_pixels'];
+/** Why production refuses a file for its place rather than its bytes (400 invalid_payload, fields ['crmFileId'], details.reason; PR #27):
+ *  the request holds 10 files already, or the crmFileId was used for another file or for a file deleted since. Final like the others. */
+export const MOLD_DESIGN_PLACE_REASONS = ['too_many_files', 'crm_file_id_used'];
 
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 const length = value => [...value].length;
@@ -159,7 +162,8 @@ const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key
 /**
  * A design file's name as the contract accepts it: the original name with its ends trimmed, up to 200 characters, no path and none of
  * \ / < > : " | ? *, no control characters (nor the direction marks that could disguise an extension), a name before the extension,
- * and an extension of the list (any letter case). null when production would refuse it.
+ * and an extension of the list (any letter case). A Windows reserved name (CON, AUX, COM1…) is a name like any other: production accepts
+ * it (PR #27). null when production would refuse it.
  * @param {unknown} value
  * @returns {{name: string, extension: string, kind: 'pdf'|'image'|'other'} | null}
  */
@@ -218,11 +222,16 @@ export function moldImageSize(bytes) {
   return null;
 }
 
+/** A PDF's marker and version (%PDF-1.4), looked for within the file's first 1024 bytes read one byte to a character (latin1). */
+const PDF_MARK = /%PDF-\d\.\d/, PDF_MARK_WITHIN = 1024;
+const latin1 = bytes => String.fromCharCode(...bytes);
 /**
- * A design file before the CRM keeps it, checked as production checks it: its name (moldDesignName), then its bytes: none is empty or
- * over 25 MiB, a PDF starts with %PDF-, an image is a PNG, JPEG, GIF or WEBP (whatever its extension says among those) whose header
- * declares at most 80 000 000 pixels. A refusal names the contract's field and, for the bytes, the reason production gives
- * (MOLD_DESIGN_REASONS, or too_large, which production answers with 413).
+ * A design file before the CRM keeps it, checked as production checks it: its name (moldDesignName; a Windows reserved name such as CON
+ * or COM1 is accepted, as production accepts it), then its bytes: none is empty or over 25 MiB, a PDF carries %PDF- and its version
+ * (%PDF-1.4, /%PDF-\d\.\d/) within its first 1024 bytes, whatever comes before it there (production's PR #27), an image is a PNG, JPEG,
+ * GIF or WEBP (whatever its extension says among those: production stores and serves it as what it really is) whose header declares at
+ * most 80 000 000 pixels. A refusal names the contract's field and, for the bytes, the reason production gives (MOLD_DESIGN_REASONS, or
+ * too_large, which production answers with 413).
  * @param {unknown} name
  * @param {Uint8Array} bytes
  * @returns {{ok: true, name: string, extension: string, kind: 'pdf'|'image'|'other', contentType: string, width: number|null, height: number|null} | {ok: false, field: 'name'|'file', reason: string}}
@@ -232,7 +241,7 @@ export function moldDesignFileCheck(name, bytes) {
   if (!named) return {ok: false, field: 'name', reason: 'name'};
   if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, field: 'file', reason: 'empty'};
   if (bytes.length > MOLD_DESIGN_MAX_BYTES) return {ok: false, field: 'file', reason: 'too_large'};
-  if (named.kind === 'pdf') return [37, 80, 68, 70, 45].every((value, i) => bytes[i] === value) ? {ok: true, ...named, contentType: 'application/pdf', width: null, height: null} : {ok: false, field: 'file', reason: 'not_pdf'};
+  if (named.kind === 'pdf') return PDF_MARK.test(latin1(bytes.subarray(0, PDF_MARK_WITHIN))) ? {ok: true, ...named, contentType: 'application/pdf', width: null, height: null} : {ok: false, field: 'file', reason: 'not_pdf'};
   if (named.kind === 'image') {
     const size = moldImageSize(bytes);
     if (!size || !size.width || !size.height) return {ok: false, field: 'file', reason: 'bad_image'};
