@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-ErpCustomers-20261102.zip",
-  "sha256": "39307feab38c37e45873ea228a459d7fadf39647700e6e95f2971a185256cc7e",
-  "stage": "yourrest-crm-update-erp-customers-20261102",
-  "helper": "yourrest-activate-update-erp-customers.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-ErpCode-20261102.zip",
+  "sha256": "c69ab70f0b5750d62c707bdaa4200dae11ef265648240ecc7ef8be096bc721aa",
+  "stage": "yourrest-crm-update-erp-code-20261102",
+  "helper": "yourrest-activate-update-erp-code.cjs"
 }
