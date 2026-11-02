@@ -1,11 +1,11 @@
 import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {validateMoldSpecs,moldApprovalBody,moldApprovalRefusal,moldStatusObject,moldRequestCity,MOLD_LIMITS} from '@/portable/mold-rules.mjs';
+import {validateMoldSpecs,moldApprovalBody,moldApprovalRefusal,moldStatusObject,moldRequestCity,MOLD_LIMITS,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldDesignInFlight,moldDesignStopped,moldErrorText,moldPermissions,moldRequestView,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
-import {forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldDesignFilesByRequest,moldPendingFor as pendingFor,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_STOPPED_SQL,type SendOutcome} from '@/lib/mold-requests-server';
+import {forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldDesignFilesByRequest,moldPendingFor as pendingFor,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 const reader=async()=>{const c=await context({load:'customers'});if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);return c;};
@@ -41,6 +41,10 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('withdraw-order'),requestId,orderNo:z.number().int().positive()}).strict(),
 ]);
 const labels={create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب','approve-order':'اعتماد مدير المبيعات لطلب تصنيع قالب','withdraw-order':'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
+/** A sent request's data is edited by the production manager in the products application only (yourrest-products, 2026-11-02): the
+ *  CRM's update is refused, and a change production still refuses as production_only is final. */
+const PRODUCTION_ONLY=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ الطلب أُرسل للإنتاج، فتعديله من تطبيق المنتجات.';
+const PRODUCTION_ONLY_SENT=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله. المواصفات المعروضة نسخة الـCRM وقد تختلف عما في تطبيق الإنتاج.';
 function checkedSpecs(input:Record<string,unknown>){
  const {specs,errors}=validateMoldSpecs(input);
  if(Object.keys(errors).length)throw Object.assign(new CRMError(Object.values(errors).join(' • '),400),{fields:errors});
@@ -49,7 +53,8 @@ function checkedSpecs(input:Record<string,unknown>){
 
 /**
  * create, update, cancel, resend. The change is saved in the CRM first (with its audit entry, as a receipt that makes a repeated
- * tap harmless), then sent; the answer carries the request as it now stands and what the send gave.
+ * tap harmless), then sent; the answer carries the request as it now stands and what the send gave. update only while the request has
+ * certainly never reached production (moldNeverSent; MOLD_NEVER_SENT_SQL guards the save): once sent, 409 with production_only's text.
  * approve, withdraw (the sales manager): production's approval route is called first, and only its answer is saved, with the receipt.
  */
 export async function POST(req:Request){try{
@@ -60,8 +65,8 @@ export async function POST(req:Request){try{
  const answer=async(rowId:string,outcome:SendOutcome|null,status=200)=>{
   const row=await loadMoldRequest(c.db,rowId);
   if(!row)throw new CRMError('الطلب غير متاح',404);
-  // 409: production refused the change; the request now shows what production holds, and the reason is the one production gave.
-  const refused=row.remote?.status==='cancelled'?'أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.':'بدأ الإنتاج قبل وصول التعديل؛ لم يعد التعديل أو الإلغاء ممكنًا. الطلب كما استلمه الإنتاج.';
+  // 409: production refused the change; the request now shows production's status, and the reason is the one production gave.
+  const refused=outcome?.reason===MOLD_PRODUCTION_ONLY?PRODUCTION_ONLY_SENT:row.remote?.status==='cancelled'?'أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.':'بدأ الإنتاج قبل وصول التعديل؛ لم يعد التعديل أو الإلغاء ممكنًا. الطلب كما استلمه الإنتاج.';
   return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id])),send:outcome?{kind:outcome.kind,code:outcome.code,fields:outcome.fields||[]}:null,...(status===409?{error:refused}:{})},{status});
  };
  const replay=async()=>{
@@ -138,14 +143,18 @@ export async function POST(req:Request){try{
    ]);
    return answer(row.id,null);
   }
+  // Sent (or perhaps sent): the production manager edits it in the products application; the CRM no longer does, whatever copy the
+  // screen held.
+  if(input.action==='update'&&!allowed.edit)throw new CRMError(row.memberId!==c.me.id?'تعديل الطلب لمن طلبه':row.cancelledAt?'الطلب ملغى':PRODUCTION_ONLY,row.memberId!==c.me.id?403:409);
   if(input.action!=='resend'&&input.version!==row.version)throw new CRMError('تغيّر الطلب. حدّث الصفحة.',409);
   const guard=`id=? AND version=? AND member_id=? AND ${permission.sql}`,guardArgs=[row.id,row.version,c.me.id,...permission.args];
   if(input.action==='update'){
-   if(!allowed.edit)throw new CRMError(row.cancelledAt?'الطلب ملغى':row.memberId!==c.me.id?'تعديل الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد التعديل ممكنًا',row.memberId!==c.me.id?403:409);
    const specs=checkedSpecs(input.specs);
    if(JSON.stringify(specs)===JSON.stringify(row.data.specs))return answer(row.id,null);
    detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity};
-   statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard}`).bind(JSON.stringify({...row.data,specs}),now,now,mutation,...guardArgs);
+   // Production never stored any of it, so the edited request starts as never attempted; the guard holds that in SQL, so a send claimed
+   // since the check (it may arrive) keeps the request as it is.
+   statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_attempt_at=NULL,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND ${MOLD_NEVER_SENT_SQL}`).bind(JSON.stringify({...row.data,specs}),now,now,mutation,...guardArgs);
   }else if(input.action==='cancel'){
    if(!allowed.cancel)throw new CRMError(row.cancelledAt?'الطلب ملغى من قبل':row.memberId!==c.me.id?'إلغاء الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا',row.memberId!==c.me.id?403:409);
    detail={label:labels.cancel,customerName:row.data.customer.name,reason:input.reason};

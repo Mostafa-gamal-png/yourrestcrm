@@ -1,13 +1,20 @@
 // The mold requests contract, version 1 (docs/MOLD-REQUESTS-CONTRACT-AR.md and its addendum), on the CRM side: the signature against
 // the contract's test vector, the settings check, the form checks, the request body, the status object, how answers are read, the
 // §6 retry timetable, the design files of 2026-11-02 (names, bytes, pixels, the body, designFiles), and every route against a stand-in
-// production API that applies the same checks as the PHP. Synthetic files only; no real account.
+// production API that applies the same checks as the PHP. Since 2026-11-02 a sent request's data is edited by the production manager only:
+// the requests route's 409 production_only, its text, which answers prove production never stored a send, and the edit rule (the
+// portable rule and lib/mold-requests.ts's permission, transpiled). Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import ts from 'typescript';
 import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldApprovalRefusal, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText, sheetCity, moldRequestCity, moldCustomerEntry, moldCustomerCalls,
-  MOLD_DESIGN_EXTENSIONS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, MOLD_DESIGN_PLACE_REASONS, moldDesignName, moldDesignDisplayName, moldImageSize, moldDesignFileCheck, moldDesignContentType, moldDispositionName, moldContentDisposition, moldDesignFileBody, moldDesignFileEntry} from '../portable/mold-rules.mjs';
+  MOLD_DESIGN_EXTENSIONS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, MOLD_DESIGN_PLACE_REASONS, moldDesignName, moldDesignDisplayName, moldImageSize, moldDesignFileCheck, moldDesignContentType, moldDispositionName, moldContentDisposition, moldDesignFileBody, moldDesignFileEntry,
+  MOLD_PRODUCTION_ONLY, MOLD_PRODUCTION_ONLY_TEXT, moldAnswerNotStored, moldNeverSent} from '../portable/mold-rules.mjs';
+import * as rules from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts, moldRouteTimeout} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 
@@ -114,6 +121,58 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(readMoldAnswer(404, {error: {code: 'not_found'}}).kind, 'not_found');
   eq(readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['specs.moldWidth']}}), {kind: 'rejected', code: 'invalid_payload', fields: ['specs.moldWidth']}, 'a refusal names its fields');
   eq([readMoldAnswer(503, {error: {code: 'not_configured'}}).kind, readMoldAnswer(401, {error: {code: 'stale_timestamp'}}).kind, readMoldAnswer(500, null).kind, readMoldAnswer(502, null).code], ['retry', 'retry', 'retry', 'http_502'], 'everything else is tried again');
+  // 2026-11-02: the requests route refuses other data for a request production holds, with the reason and the current state
+  const productionOnly = readMoldAnswer(409, {error: {code: 'request_locked', message: 'x', details: {reason: 'production_only', request: raw}}});
+  eq([productionOnly.kind, productionOnly.code, productionOnly.reason, productionOnly.request.orderNo, MOLD_PRODUCTION_ONLY], ['locked', 'request_locked', 'production_only', 92, 'production_only'], '409 production_only: locked, with its reason and production\'s status');
+  eq([readMoldAnswer(409, {error: {code: 'request_locked', details: {request: raw}}}).reason, readMoldAnswer(409, {error: {code: 'request_locked', details: {reason: '<b>', request: raw}}}).reason], [undefined, undefined], 'a 409 without a reason, or with one that is not a word, carries none');
+  eq(MOLD_PRODUCTION_ONLY_TEXT, ['بيانات الطلب يعدّلها مدير الإنتاج فقط', 'The request\'s data is edited by the production manager only'], 'the reason in Arabic and English');
+}
+
+// ---- 2026-11-02: what proves a send never reached production, and when the CRM may still change a request
+{
+  const answer = (kind, http, code = '') => ({kind, http, code});
+  eq([answer('rejected', 400, 'invalid_payload'), answer('rejected', 413, 'payload_too_large'), answer('rejected', 0, 'payload_too_large'), answer('retry', 401, 'invalid_signature'), answer('retry', 401, 'stale_timestamp'), answer('not_found', 404, 'not_found'), answer('retry', 405, 'method_not_allowed'), answer('retry', 503, 'not_configured')].map(moldAnswerNotStored),
+    [true, true, true, true, true, true, true, true], 'refused at production\'s door (any 4xx but 409, its 503 not_configured), or by the CRM before sending: never stored');
+  eq([answer('retry', 0, 'network'), answer('retry', 0, 'timeout'), answer('retry', 500, 'server_error'), answer('retry', 502, 'http_502'), answer('retry', 503, 'http_503'), answer('retry', 200, 'bad_response'), answer('retry', 302, 'http_302'), answer('ok', 201), answer('locked', 409, 'request_locked')].map(moldAnswerNotStored),
+    [false, false, false, false, false, false, false, false, false], 'no answer, a 5xx, a reply that is not the contract\'s, ok or locked: it may have arrived');
+  const at = '2026-11-02T08:00:00.000Z', after = '2026-11-02T08:00:05.000Z', later = '2026-11-02T08:10:00.000Z';
+  const fresh = {accepted: null, remote: null, lastAttemptAt: null, lastError: null};
+  eq(moldNeverSent(fresh), true, 'never attempted: never sent (the link was off, say)');
+  eq(moldNeverSent({...fresh, lastAttemptAt: at, lastError: {code: 'invalid_payload', http: 400, at: after, notStored: true}}), true, 'every attempt refused before production stored it: never sent');
+  eq(moldNeverSent({...fresh, lastAttemptAt: at, lastError: {code: 'network', http: 0, at: after}}), false, 'an attempt without an answer: perhaps sent');
+  eq(moldNeverSent({...fresh, lastAttemptAt: at, lastError: {code: 'invalid_signature', http: 401, at: after}}), false, 'a refusal without the mark (an earlier attempt may have arrived, or stored before the rule): perhaps sent');
+  eq(moldNeverSent({...fresh, lastAttemptAt: later, lastError: {code: 'invalid_payload', http: 400, at: after, notStored: true}}), false, 'an attempt started after the last answer (in flight, or its answer lost): perhaps sent');
+  eq(moldNeverSent({...fresh, lastAttemptAt: null, accepted: {specs: {}}}), false, 'accepted by production: sent');
+  eq(moldNeverSent({...fresh, remote: {status: 'received'}}), false, 'a status from production: sent');
+}
+
+// ---- the edit permission and the reason's text in lib/mold-requests.ts (the source as the build sees it, transpiled)
+{
+  const root = process.cwd(), modules = new Map();
+  const load = filename => {
+    if (modules.has(filename)) return modules.get(filename);
+    const exports = {}; modules.set(filename, exports);
+    const resolve = name => name === '@/portable/mold-rules.mjs' ? rules : name.startsWith('./') ? load(path.join(path.dirname(filename), name) + '.ts') : (() => { throw new Error('not loaded here: ' + name); })();
+    vm.runInNewContext(ts.transpileModule(readFileSync(path.join(root, filename), 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}, fileName: filename}).outputText, {exports, require: resolve, Date, JSON}, {filename});
+    return exports;
+  };
+  const lib = load('lib/mold-requests.ts'), me = {id: 'rep', role: 'rep'}, at = '2026-11-02T08:00:00.000Z', after = '2026-11-02T08:00:05.000Z';
+  const data = {requestedAt: '2026-11-02T11:00:00+03:00', customer: {crmNumber: 27, name: 'مصنع', address: '', city: ''}, salesman: {crmMemberId: 'rep', name: 'مندوب', email: ''}, specs};
+  const status = {crmRequestId: 'mr-1', orderNo: 92, status: 'received', editable: true, stages: {}, stagesDone: 0, stagesTotal: 7, delivered: false, revision: 1, waitingStep: 'sales', approvals: {required: true, sales: {at}, production: null, admin: null}};
+  const row = change => ({id: 'mr-1', memberId: 'rep', customerId: 'c', legacyOrderNo: null, data, accepted: null, cancelledAt: null, cancelReason: '', outbox: 'send', attempts: 0, firstFailedAt: null, nextAttemptAt: at, lastAttemptAt: null, lastError: null, remote: null, remoteAt: null, createdBy: 'rep', createdAt: at, updatedAt: at, version: 1, ...change});
+  const can = (change, who = me) => { const allowed = lib.moldPermissions(row(change), who); return [allowed.edit, allowed.cancel, allowed.attach, allowed.deleteFile]; };
+  eq(can({}), [true, true, true, true], 'never attempted: the requester edits it, cancels it, attaches and deletes files');
+  eq(can({}, {id: 'sm', role: 'manager'}), [false, false, false, false], 'nobody else edits it, the sales manager included');
+  eq(can({attempts: 1, nextAttemptAt: null, lastAttemptAt: at, lastError: {code: 'invalid_payload', fields: ['specs.notes'], http: 400, at: after, notStored: true}}), [true, true, true, true], 'every attempt refused before production stored it: still the requester\'s to edit');
+  eq(can({attempts: 1, lastAttemptAt: at, lastError: {code: 'timeout', http: 0, at: after}}), [false, true, true, true], 'an attempt whose answer was lost: no edit; cancelling and files stay');
+  eq(can({outbox: null, accepted: data, remote: status, remoteAt: at}), [false, true, true, true], 'sent, approvals pending: no edit; cancelling and design files exactly as before');
+  eq(can({outbox: null, accepted: data, remote: {...status, status: 'confirmed', editable: false}}), [false, false, false, false], 'the approvals complete: nothing more from the CRM');
+  eq(lib.moldRequestView(row({outbox: null, accepted: data, remote: status}), me, [], true).can.edit, false, 'the view the screen receives says the same');
+  const say = language => (ar, en) => language === 'en' ? en : ar;
+  eq([lib.moldErrorText('request_locked', say('ar'), {reason: 'production_only'}), lib.moldErrorText('request_locked', say('en'), {reason: 'production_only'}), lib.moldErrorText('production_only', say('ar'))],
+    ['بيانات الطلب يعدّلها مدير الإنتاج فقط', 'The request\'s data is edited by the production manager only', 'بيانات الطلب يعدّلها مدير الإنتاج فقط'], 'production_only in Arabic, with its English pair');
+  eq([lib.moldErrorText('request_locked', say('ar')), lib.moldErrorText('request_locked', say('ar'), {reason: 'other'})], ['بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا', 'بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا'], 'another 409 keeps its own words');
+  eq([lib.moldProductionOnly({code: 'request_locked', reason: 'production_only'}), lib.moldProductionOnly({code: 'request_locked'}), lib.moldProductionOnly(null)], [true, false, false], 'which stored error is production_only');
 }
 
 // ---- the customers route: the CRM's list, the cities as the production sheet writes them
@@ -252,9 +311,14 @@ try {
   eq((await approve('withdraw')).json.request.waitingStep, 'sales', 'withdrawn: back to the sales manager');
   eq((await approve('withdraw')).kind, 'ok', 'withdrawing again is safe');
   await approve('approve');
+  const held = mock.row('mr-1').revision;
+  answer = await call('requests', body);
+  eq([answer.kind, answer.http, answer.json.created, answer.json.request.revision, answer.json.request.approvals.sales !== null], ['ok', 200, false, held, true], 'the same data again (a retry): 200 created false, nothing changes, the approval stays');
   answer = await call('requests', {...body, specs: {...body.specs, quantity: 2}});
-  eq([answer.http, answer.json.request.revision, answer.json.request.waitingStep, answer.json.request.approvals.sales], [200, 5, 'sales', null], 'an edit while received: 200, revision up, the approvals given are undone');
-  await approve('approve'); mock.approve('mr-1', 'production');
+  eq([answer.kind, answer.http, answer.code, answer.reason, answer.request.crmRequestId, answer.request.revision, answer.request.waitingStep, !!answer.request.approvals.sales],
+    ['locked', 409, 'request_locked', 'production_only', 'mr-1', held, 'production', true], 'other data while received: 409 production_only with the status; nothing changes, the approval stays');
+  eq([mock.row('mr-1').quantity, mock.row('mr-1').revision], [1, held], 'production keeps its data');
+  mock.approve('mr-1', 'production');
   answer = await approve('withdraw');
   eq([answer.kind, answer.code, answer.request.waitingStep], ['locked', 'request_locked', 'admin'], 'after production approved: the withdrawal is refused with the current state');
   mock.approve('mr-1', 'admin');
@@ -287,7 +351,7 @@ try {
   eq((await call('customers', {mode: 'full', customers: [{crmNumber: 1, name: ''}]})).kind, 'rejected', 'a customer without a name: refused');
   mock.produce('mr-1', {stages: ['laserCutting', 'box'], moldSerial: '093', productionDate: '2026-11-01'});
   answer = await call('requests', {...body, specs: {...body.specs, quantity: 3}});
-  eq([answer.kind, answer.code, answer.request.status, answer.request.editable, answer.request.stagesDone], ['locked', 'request_locked', 'in_production', false, 2], 'production started: 409 request_locked with the current state');
+  eq([answer.kind, answer.code, answer.reason, answer.request.status, answer.request.editable, answer.request.stagesDone], ['locked', 'request_locked', 'production_only', 'in_production', false, 2], 'production started: 409 request_locked production_only with the current state');
   answer = await call('cancel', {crmRequestId: 'mr-1', reason: ''});
   eq(answer.kind, 'locked', 'and it can no longer be cancelled');
   await call('requests', moldRequestBody({id: 'mr-2', requestedAt: riyadhIso(Date.now()), customer, salesman, specs}));

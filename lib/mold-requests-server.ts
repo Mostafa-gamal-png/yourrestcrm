@@ -73,14 +73,13 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   // Production never had it (a send that did not get through): the cancellation is complete in the CRM.
   await settle(`${cleared},last_error=NULL`);
  }else if(answer.kind==='locked'){
-  // Production started first: the change is withdrawn and the request shows what production holds.
-  const error=JSON.stringify({code:'request_locked',http:409,at:done});
+  // Production refused the change (it started first, or the request is the production manager's to edit now): the change is withdrawn,
+  // never tried again, and the request shows production's status.
+  const error=JSON.stringify({code:'request_locked',...(answer.reason?{reason:answer.reason}:{}),http:409,at:done});
   if(row.outbox==='cancel')await settle(`${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
-  else if(answer.reason===MOLD_PRODUCTION_ONLY&&remote){
-   // The production manager alone edits it now: final, with the reason; production holds it (accepted), whatever data it holds.
-   const refused=JSON.stringify({code:'request_locked',reason:MOLD_PRODUCTION_ONLY,http:409,at:done});
-   await settle(`${cleared},data=COALESCE(accepted,data),accepted=COALESCE(accepted,data),last_error=?,${remoteSet},version=version+1`,refused,...remoteArgs);
-  }else await settle(`${cleared},data=COALESCE(accepted,data),last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
+  // production_only: the production manager alone edits it now. Final, with the reason; production holds it (accepted), whatever data.
+  else if(answer.reason===MOLD_PRODUCTION_ONLY&&remote)await settle(`${cleared},data=COALESCE(accepted,data),accepted=COALESCE(accepted,data),last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
+  else await settle(`${cleared},data=COALESCE(accepted,data),last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
  }else if(answer.kind==='rejected'){
   // The data must change first; a retry alone cannot help, so the timetable stops until the representative edits (allowed while it
   // has never reached production), resends or cancels.

@@ -1,7 +1,10 @@
 // A stand-in for the production application's mold requests API (yourrest-products, crm-api.php) for tests: HTTPS with a throwaway
 // self-signed certificate, the same signature check, clock window, routes, field checks, linking, locking and answers as the PHP of
 // contract version 1, its addendum and the approval chain of 2026-11-01 (three approvals in order: the sales manager, in the CRM
-// through the approval route, then production, then the system administrator; any change from the CRM undoes them). Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
+// through the approval route, then production, then the system administrator; a design file attached or deleted from the CRM undoes
+// them). Since 2026-11-02 a sent request's data is edited by the production manager only: the requests route answers the same data
+// again with 200 created:false, and other data for a crmRequestId it holds with 409 request_locked, details.reason production_only and
+// details.request, changing nothing. Kept in memory. Test controls: down (connections are cut), notConfigured (503), delayMs, a
 // production step on a request (start / deliver), a request deleted there (read as cancelled) or unknown to it, historical rows to link,
 // a design file production attaches itself, a one-shot answer for one route (answerNext). The design files of 2026-11-02 (design-files, design-file-delete, design-file) follow the
 // owner's text of the addition and production's PR #27: the JSON line and the bytes signed together, the name and extension rules
@@ -150,13 +153,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       touch(row); state.rows.set(row.crmRequestId, row); state.byOrder.set(row.orderNo, row); created = true;
     } else {
       const linkRetry = p.legacyOrderNo !== null && row.orderNo === p.legacyOrderNo;
-      if (!linkRetry && !same(row, p)) {
-        if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'Production has started; the request can no longer be changed.', [], {request: statusObject(row)});
-        for (const column of COLUMNS) row[column] = p[column];
-        // A change from the CRM during the approvals undoes the ones given: the request goes back to the sales manager.
-        if (!row.approvals.legacy && APPROVAL_STEPS.some(step => row.approvals[step])) row.approvals = noApprovals();
-        touch(row);
-      }
+      // The same data again is a retry (200, created false). Other data is refused whatever the request's state: once sent, its data is
+      // edited by the production manager in the products application only. Nothing changes.
+      if (!linkRetry && !same(row, p)) throw new ApiError('request_locked', 409, 'The request\'s data is edited by the production manager only.', [], {reason: 'production_only', request: statusObject(row)});
     }
     return {status: created ? 201 : 200, body: {request: statusObject(row), created, linked}};
   }
