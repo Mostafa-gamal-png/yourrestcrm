@@ -20,7 +20,7 @@ const i18n={useLanguage:()=>({language}),getLanguage:()=>language,direction:()=>
 const tr=value=>i18n.t(value);
 function Dialog(){}function AlertDialog(){}function AlertDialogAction(){}function CustomerMachines(){}function MobileNavigation(){}
 function OfflineStatus(){}
-function CustomerIdentities(){}
+function ErpCustomersImport(){}
 function VisitsPage(){}function CustomerVisitDialog(){}function CustomerVisitHistory(){}function CustomerFollowupsPage(){}function CustomerFollowupDialog(){}function CustomerMap(){}function MyTargets(){}
 function load(filename,require,globals={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,filename),'utf8'),{compilerOptions:compiler}).outputText,{exports,Error,TypeError,require:name=>name==='@/lib/client-submit'?load('lib/client-submit.ts',nativeRequire,{AbortController,DOMException,URL,setTimeout,clearTimeout,...globals}):require(name),console,crypto:globalThis.crypto,structuredClone,Intl,setTimeout,clearTimeout,...globals});return exports;}
 function library(filename){if(cache.has(filename))return cache.get(filename);const exports={};cache.set(filename,exports);const require=name=>name.startsWith('.')?library(path.join(path.dirname(filename),name)+'.ts'):nativeRequire(name);vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,filename),'utf8'),{compilerOptions:compiler}).outputText,{exports,require,console,Intl});return exports;}
@@ -29,7 +29,7 @@ function commonRequire(name){
  if(name==='./voice-field')return {__esModule:true,default:VoiceFieldStub};if(name==='@/lib/i18n')return i18n;if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
  if(name==='@/components/ui/dialog')return {...mocks,Dialog,DialogContent:pass,DialogTitle:pass,DialogDescription:pass};
  if(name==='@/components/ui/alert-dialog')return new Proxy({AlertDialog,AlertDialogAction},{get:(target,key)=>target[key]||pass});
- if(name==='./customer-identities')return {__esModule:true,default:CustomerIdentities};
+ if(name==='./erp-customers-import')return {__esModule:true,default:ErpCustomersImport};
  if(name==='./customer-machines')return {__esModule:true,default:CustomerMachines};
  if(name==='./mobile-navigation')return {__esModule:true,default:MobileNavigation};
  if(name==='./customer-visits')return {VisitsPage,CustomerVisitDialog,CustomerVisitHistory};
@@ -189,12 +189,16 @@ for(const locale of ['ar','en'])for(const compactNavigation of [true,false]){
  }
 }
 
-// Internal CRM identity is visible and immutable; reconciliation stays admin/all only.
-for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager','admin'])for(const scope of ['western','all']){
+// Internal CRM identity is visible and immutable; «استيراد من ERP» replaces «ربط عملاء ERP» for the administrator and the sales manager
+// (any regions: the server limits a manager to their regions' customers), on the customers page only.
+for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager','admin','customer_service_manager'])for(const scope of ['western','all']){
  language=locale;const actor={...me,id:role,role,regionScope:scope},customer={...ownCustomer,data:{...ownCustomer.data,internalCode:'YR-C-000123',code:'ERP-456'}};
  const h=harness({me:actor,members:[actor],records:[customer],loading:false,view:'customer',compactNavigation:true});let tree=h.render();
- const link=button(tree,locale==='ar'?'ربط عملاء ERP':'Link ERP customers');eq(!!link,role==='admin'&&scope==='all','Only unrestricted administrator sees ERP reconciliation action');
- if(link){link.props.onClick();tree=h.render();ok(child(tree,CustomerIdentities),'Authorized reconciliation dialog opens');h.state.me={...actor,regionScope:'western'};tree=h.render();eq(child(tree,CustomerIdentities),undefined,'Scope loss unmounts administrative dialog');eq(child(tree,MobileNavigation).props.blocked,false,'Losing admin scope immediately unlocks mobile navigation even before effects run');h.state.me=actor;h.state.customerIdentitiesOpen=false;tree=h.render();}
+ eq(button(tree,locale==='ar'?'ربط عملاء ERP':'Link ERP customers'),undefined,'The old ERP reconciliation action is gone for '+role);
+ const link=button(tree,locale==='ar'?'استيراد من ERP':'Import from ERP');eq(!!link,['admin','manager'].includes(role),'Only the administrator and the sales manager see «Import from ERP» ('+role+', '+scope+')');
+ if(link){link.props.onClick();tree=h.render();ok(child(tree,ErpCustomersImport),'The ERP import dialog opens');eq(child(tree,MobileNavigation).props.blocked,true,'The open import dialog blocks the mobile navigation underneath');
+  h.state.me={...actor,role:'supervisor'};tree=h.render();eq(child(tree,ErpCustomersImport),undefined,'Losing the role unmounts the import dialog');eq(child(tree,MobileNavigation).props.blocked,false,'Losing the role immediately unlocks mobile navigation even before effects run');
+  h.state.me=actor;h.state.erpCustomersOpen=false;h.state.view='activity';tree=h.render();eq(button(tree,locale==='ar'?'استيراد من ERP':'Import from ERP'),undefined,'The import action is on the customers page only');h.state.view='customer';tree=h.render();}
  child(tree,CustomerMachines).props.onEdit(customer);tree=h.render();const internal=nodes(tree,node=>node.type==='input'&&node.props.value==='YR-C-000123')[0];ok(internal,'Customer editor displays permanent Yourrest code');eq(internal.props.readOnly,true,'Permanent code is not editable');eq(internal.props.onChange,undefined,'Permanent code has no mutation callback');
  const erp=nodes(tree,node=>node.type==='input'&&node.props.value==='ERP-456')[0];ok(erp.props.onChange,'External ERP code remains editable');erp.props.onChange({target:{value:'ERP-789'}});eq(h.state.form.data.code,'ERP-789');eq(h.state.form.data.internalCode,'YR-C-000123','ERP edit preserves permanent internal code');
  h.state.form=null;h.state.q='YR-C-000123';tree=h.render();eq(child(tree,CustomerMachines).props.customers.length,1,'Directory search matches permanent code');
@@ -208,9 +212,9 @@ for(const locale of ['ar','en']){
   modules:{'@/lib/offline-store':{offlineSessionGeneration:()=>0,lockOfflineSession:async()=>{}},'@/lib/offline-auth':{isOfflineLogoutPending:()=>false}},
   globals:{navigator:{onLine:true},fetch:async()=>({ok:false,status:401,json:async()=>({error:'Session expired'})})},
  });
- let tree=h.render();button(tree,locale==='ar'?'ربط عملاء ERP':'Link ERP customers').props.onClick();tree=h.render();eq(child(tree,MobileNavigation).props.blocked,true,'Open administrative dialog blocks underlying mobile navigation');
- await child(tree,CustomerIdentities).props.onSaved();eq(h.state.customerIdentitiesOpen,false,'Session rejection clears administrative dialog state');eq(h.state.me,null,'Session rejection clears the previous administrator');
- h.state.me={...me};h.state.auth=false;h.state.records=records;tree=h.render();eq(child(tree,CustomerIdentities),undefined,'A later rep session never inherits an administrative dialog');eq(child(tree,MobileNavigation).props.blocked,false,'A later rep session can navigate normally');
+ let tree=h.render();button(tree,locale==='ar'?'استيراد من ERP':'Import from ERP').props.onClick();tree=h.render();eq(child(tree,MobileNavigation).props.blocked,true,'Open administrative dialog blocks underlying mobile navigation');
+ await child(tree,ErpCustomersImport).props.onImported();eq(h.state.erpCustomersOpen,false,'Session rejection clears administrative dialog state');eq(h.state.me,null,'Session rejection clears the previous administrator');
+ h.state.me={...me};h.state.auth=false;h.state.records=records;tree=h.render();eq(child(tree,ErpCustomersImport),undefined,'A later rep session never inherits an administrative dialog');eq(child(tree,MobileNavigation).props.blocked,false,'A later rep session can navigate normally');
  child(tree,MobileNavigation).props.onNavigate('activity');eq(h.state.view,'activity','Rep mobile tabs work after administrative session expiry');
 }
 
