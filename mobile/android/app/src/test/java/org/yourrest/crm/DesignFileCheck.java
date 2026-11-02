@@ -316,7 +316,7 @@ public final class DesignFileCheck {
         int pickerCancelled=saved.indexOf("if(target==null||!\"content\".equals(target.getScheme()))"),lostCopy=saved.indexOf("if(fetched==null){designFinished(task);DesignFiles.abandon(getApplicationContext(),target,");
         check(pickerCancelled>=0&&lostCopy>pickerCancelled&&saved.contains("DesignFiles.SAVE_LOST"),"A picker answer whose copy was lost removes the empty document and tells the person");
         // The copy waiting for the picker survives a recreated activity (uiMode, locale, split screen, process death).
-        check(TripStartCheck.block(activity,"protected void onSaveInstanceState(").contains("out.putString(SAVE_FOLDER,designSave.file.getParentFile().getName())"),"The pending save is kept in the saved state");
+        check(TripStartCheck.block(activity,"protected void onSaveInstanceState(").contains("if(designSave!=null){out.putString(SAVE_FOLDER,designSave.file.getParentFile().getName());out.putString(SAVE_NAME,designSave.file.getName());out.putString(SAVE_TYPE,designSave.mime);}"),"The pending save is kept in the saved state");
         check(TripStartCheck.block(activity,"public void onCreate(").contains("if(saved!=null)designSave=DesignFiles.restore(getApplicationContext(),saved.getString(SAVE_FOLDER),saved.getString(SAVE_NAME),saved.getString(SAVE_TYPE));"),"A recreated activity takes the pending save back");
         String restore=TripStartCheck.block(files,"static Fetched restore(");
         check(restore.contains("DesignFileRules.servable(root(app),Arrays.asList(folder,name))")&&restore.contains("DesignFileRules.mimeType(mime)"),"Only a file of the private cache comes back, with a served type");
