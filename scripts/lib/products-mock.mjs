@@ -212,7 +212,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       const at = 'customers.' + index + '.', entry = item && typeof item === 'object' ? item : {};
       const crmNumber = int(entry.crmNumber, 1, 2147483647, true, at + 'crmNumber', bad);
       const name = clean(entry.name, 200, true, at + 'name', bad), address = clean(entry.address, 300, false, at + 'address', bad), city = clean(entry.city, 100, false, at + 'city', bad);
-      const erpCode = clean(entry.erpCode, 50, false, at + 'erpCode', bad);
+      // erpCode (2026-11-02): '' clears the stored code; a customer sent without it keeps what production holds.
+      const erpCode = entry.erpCode === undefined ? state.customers.get(crmNumber)?.erpCode ?? '' : clean(entry.erpCode, 50, false, at + 'erpCode', bad);
       if (entry.active !== undefined && typeof entry.active !== 'boolean') bad.push(at + 'active');
       if (crmNumber !== null && seen.has(crmNumber)) bad.push(at + 'crmNumber');
       seen.add(crmNumber); entries.push({crmNumber, name, address, city, erpCode, active: entry.active !== false});

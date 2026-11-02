@@ -26,7 +26,7 @@ export const MOLD_CUSTOMERS_SETTLE_MS=5_000,MOLD_CUSTOMERS_CHECK_MS=10*60_000,MO
 export async function moldCustomerList(db:D1Database){
  const rows=(await db.prepare("SELECT n.number,r.data FROM crm_records r JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.kind='customer' ORDER BY n.number").all<{number:number;data:string}>()).results;
  const customers:Entry[]=[];
- for(const row of rows){let data:Record<string,unknown>={};try{data=JSON.parse(row.data);}catch{/* a broken record is left out */}const entry=moldCustomerEntry({crmNumber:row.number,name:data.name,address:data.address,city:data.city,erpCode:data.code});if(entry)customers.push(entry);}
+ for(const row of rows){let data:Record<string,unknown>={};try{data=JSON.parse(row.data);}catch{/* a broken record is left out */}const entry=moldCustomerEntry({crmNumber:row.number,name:data.name,address:data.address,city:data.city,erpCode:data.code??''});if(entry)customers.push(entry);}
  return customers;
 }
 const fingerprint=(customers:Entry[])=>createHash('sha256').update(JSON.stringify(customers)).digest('hex');
