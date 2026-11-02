@@ -30,10 +30,10 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month];
+  const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
-  const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import'];
+  const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import'];
   for (const url of posts) {
     check((await anonymous(url, {method: 'POST', body: {}})).status, 401, 'anonymous empty POST ' + url);
     check((await anonymous(url, {method: 'POST', body: {createKey: crypto.randomUUID(), requestId: crypto.randomUUID(), action: 'save', kind: 'customer', sourceHash: 'a'.repeat(64), rows: []}})).status, 401, 'anonymous shaped POST ' + url);
@@ -48,6 +48,10 @@ try {
     '/api/journeys': expect([...management, ...reps], 200, 403),
     '/api/mobile-route': expect([...management, ...reps], 200, 403),
     '/api/mold-requests': expect(everyone, 200, 403),
+    // A mold request's design file: every role may read the requests it may see (an unknown request is 404 for all); by order number
+    // only the sales managers (no production link here: nothing is pending, so 404).
+    '/api/mold-requests/design-file?id=x&file=y': expect(everyone, 404, 403),
+    '/api/mold-requests/design-file?order=1&file=y': expect(['mgr', 'mgrw'], 404, 403),
     '/api/device-status': expect(management, 200, 403),
     '/api/customer-identities': expect(['owner'], 200, 403),
     '/api/sales/import': expect(management, 200, 403),
@@ -73,6 +77,9 @@ try {
     '/api/journeys': expect([...management, ...reps], 400, 403),
     '/api/mobile-route': expect([...management, ...reps], 400, 403),
     '/api/mold-requests': expect(everyone, 400, 403),
+    // Design files: the upload takes multipart only (415 once the role has passed); the deletion validates its JSON (400).
+    '/api/mold-requests/design-files': expect(everyone, 415, 403),
+    '/api/mold-requests/design-files/delete': expect(everyone, 400, 403),
     '/api/device-status': expect(reps, 400, 403),
     '/api/kpi-evidence': expect(['owner', 'mgr', 'mgrw'], 400, 403),
     '/api/customer-identities': expect(['owner'], 400, 403),
@@ -81,6 +88,11 @@ try {
     '/api/sales/import': expect(management, 400, 403)
   };
   for (const [url, byRole] of Object.entries(postMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url, {method: 'POST', body: {}})).status, byRole[id], `POST ${url} as ${id}`);
+  // A signed-in member's write from another site is refused before anything is read (the design files' routes, 2026-11-02).
+  for (const url of ['/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete']) for (const origin of ['https://evil.example', null]) {
+    const headers = origin ? {Origin: origin} : {Origin: ''};
+    check((await app.as(sessions.rep1)(url, {method: 'POST', body: {}, headers})).status, 403, `POST ${url} from ${origin || 'no origin'}: 403`);
+  }
 
   // 3. Data scope. Customers are created through the real API; visits are inserted as stored recorder evidence.
   const admin = app.as(sessions.owner), ids = {};
