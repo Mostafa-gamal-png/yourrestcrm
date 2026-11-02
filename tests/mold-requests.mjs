@@ -351,6 +351,18 @@ try {
   eq((await callProducts(config, 'design-file', {fileId: 1}, {fetch: fake(200, {'content-length': String(MOLD_DESIGN_MAX_BYTES + 1)}, Buffer.alloc(0))})).code, 'bad_response', 'a declared size over 25 MiB is not read');
   answer = await callProducts(config, 'design-file', {fileId: 1}, {fetch: fake(200, {'content-type': 'image/svg+xml', 'content-disposition': 'attachment; filename="../../etc/x.svg"'}, Buffer.from('<svg/>'))});
   eq([answer.file.contentType, answer.file.name], ['application/octet-stream', '.._.._etc_x.svg'], 'an SVG is served as plain bytes; a path in the name is flattened');
+  // no declared size: the body is read as it arrives and given up past 25 MiB, never held whole first
+  const streamed = (chunks, size) => {
+    let pulls = 0, cancelled = false;
+    const body = new ReadableStream({pull(controller) { pulls++; if (pulls > chunks) controller.close(); else controller.enqueue(new Uint8Array(size).fill(pulls)); }, cancel() { cancelled = true; }});
+    return {fetch: async () => ({status: 200, headers: new Headers({'content-type': 'application/pdf'}), body, arrayBuffer: async () => { throw new Error('read whole'); }}), seen: () => ({pulls, cancelled})};
+  };
+  const endless = streamed(1000, 1024 * 1024);
+  answer = await callProducts(config, 'design-file', {fileId: 1}, {fetch: endless.fetch});
+  eq([answer.kind, answer.code, endless.seen().cancelled, endless.seen().pulls <= 28], ['retry', 'bad_response', true, true], 'an undeclared size: reading stops once past 25 MiB (about 26 of 1000 MiB read)');
+  const small = streamed(3, 1000);
+  answer = await callProducts(config, 'design-file', {fileId: 1}, {fetch: small.fetch});
+  eq([answer.kind, answer.file.bytes.length, answer.file.bytes[0], answer.file.bytes[2999], small.seen().cancelled], ['ok', 3000, 1, 3, false], 'a streamed file within the limit arrives whole, in order');
   // the 10-file limit counts production's files too
   for (let n = 0; n < 8; n++) eq((await attach('mr-files', 'mdf-n' + n, 'drawing ' + n + '.dwg', Uint8Array.of(n + 1))).http, 201, 'file ' + (n + 3) + ' of 10');
   answer = await attach('mr-files', 'mdf-eleventh', 'one more.dwg', Uint8Array.of(9));
