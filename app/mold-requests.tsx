@@ -154,7 +154,10 @@ function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnsw
  // Read on each new list (state adjusted while rendering, not in an effect): a copy dropped here stays dropped should the request
  // leave the list again later.
  const [listed,setListed]=useState(pending);
- if(listed!==pending){setListed(pending);}
+ if(listed!==pending){
+  setListed(pending);
+  if(approved.some(copy=>moldPendingAgain(copy,pending.items)))setApproved(previous=>previous.filter(copy=>!moldPendingAgain(copy,pending.items)));
+ }
  const keys=useRef(new Map<string,string>());
  const run=async(item:MoldPendingAnswer['items'][number],action:'approve-order'|'withdraw-order')=>{
   if(busy!==null)return;
