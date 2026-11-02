@@ -1,0 +1,46 @@
+تحديث يورست CRM — كود ERP مع قائمة العملاء المرسلة لتطبيق المنتجات (2026-11-02، الحزمة الثالثة لنفس اليوم)
+
+الحزمة تخص crm.yourrest.org فقط. تغيير في الخادم وحده: لا يحتاج تطبيق أندرويد جديدًا. لا تحتوي إعدادات ولا بيانات تشغيل ولا حسابات ولا مفاتيح.
+لا ترحيل جديد: قاعدة البيانات تبقى 17 ترحيلًا. لا يتغير أي جدول.
+لا تشغّل setup.cjs ولا تنسخ الملفات فوق التطبيق الحالي ولا تعدّل settings.cjs أو مجلد البيانات yourrest-crm-data.
+هذه الحزمة تشمل كل ما قبلها («استيراد من ERP» وما قبله). في نفس اليوم يعيد المُفعِّل استعمال نسخة اليوم الاحتياطية ولا يأخذ نسخة جديدة.
+يرفعها Claude من GitHub بموافقة المالك (OPERATIONS-DEVELOPMENT-GUIDE-AR.md، 9-ص). الخطوات اليدوية هنا هي الطريق الاحتياطي.
+
+ما الذي يتغيّر
+1. قائمة العملاء اللي الـCRM بيبعتها لتطبيق المنتجات بقت فيها «كود العميل في ERP» لكل عميل (erpCode)، وفاضي للعميل اللي ملوش كود.
+   - بعد الرفع القائمة كلها بتتبعت مرة واحدة بالكود.
+   - بعد «استيراد من ERP» أو تعديل كود عميل، القائمة بتتبعت بعدها بثواني.
+   - لو كود اتمسح من العميل، بيتبعت فاضي عشان يتمسح في تطبيق المنتجات كمان.
+2. تطبيق المنتجات بيتجاهل الكود لحد ما يتعدّل عندهم عشان يعرضه ويدوّر بيه (العقد: docs/MOLD-REQUESTS-CONTRACT-AR.md، إضافة erpCode). ربط الطلب بالعميل يفضل بكود يورست.
+3. لا يتغير شيء في شاشات الـCRM.
+
+الخطوات
+
+1. نسخة احتياطية لليوم: أُخذت مع حزمة اليوم الأولى؛ المُفعِّل يعيد استعمالها. لا تنفذ شيئًا هنا.
+
+2. والتطبيق يعمل، ارفع الحزمة وافكها داخل:
+/home/youriedx/yourrest-crm-update-erp-code-20261102
+يجب أن يظهر مجلد release والملف yourrest-activate-update-erp-code.cjs مباشرة داخل هذا المسار. (مجلد جديد؛ لا تفكّ فوق أي مجلد قديم.)
+
+3. افحص الحزمة دون إيقاف التطبيق:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-erp-code-20261102/yourrest-activate-update-erp-code.cjs --check
+
+يجب أن يظهر PACKAGE AND CONFIGURATION: READY، ولا يظهر سطر SCHEMA CHANGE لأن لا ترحيل. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله لي.
+
+4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-erp-code-20261102/yourrest-activate-update-erp-code.cjs
+
+5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-erp-code-20261102/yourrest-activate-update-erp-code.cjs --verify
+
+النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 17 و /api/erp-customers: 405.
+
+إذا ظهر STOP أو أي خطأ: احتفظ بالناتج للمراجعة. لا تمسح ملفات الحالة أو القفل ولا تسترجع بيانات قديمة ولا تكرر التبديل قبل مراسلتي.
+
+التراجع (لا تنفذه قبل أن تراسلني)
+هذا التحديث لا يغيّر شكل قاعدة البيانات، فالتراجع هو إعادة مجلد release القديم فقط، في أي وقت:
+1) Stop App.
+2) cd /home/youriedx/yourrest-crm && mv release release-failed-20261102-erp-code && mv /home/youriedx/yourrest-update-erp-code-activation-20261102-XXXXXX/old-release release
+(استبدل XXXXXX بالاسم الفعلي للمجلد الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT.)
+3) Start App.
+التراجع لا يفقد بيانات. الأكواد اللي وصلت لتطبيق المنتجات تفضل عندهم لحد ما تتبعت القائمة تاني.

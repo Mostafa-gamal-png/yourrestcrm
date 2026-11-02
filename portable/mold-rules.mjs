@@ -23,7 +23,7 @@ export const MOLD_RANGES = {moldWidth: [1000, 2000], gelbaSize: [500, 1200], qua
 export const MOLD_USUAL = {moldWidth: [1380, 1375], gelbaSize: [795, 800]};
 /** Text limits in characters: the stricter of the contract (§2, other texts 160) and what production accepts (customer name 200, as in
  *  the customers route, so a customer the list carries can always be asked for; city 100; email 190). */
-export const MOLD_LIMITS = {description: 200, moldNo: 40, designUrl: 1000, notes: 2000, customerName: 200, address: 300, city: 100, salesmanName: 160, email: 160, crmMemberId: 64, cancelReason: 500};
+export const MOLD_LIMITS = {description: 200, moldNo: 40, designUrl: 1000, notes: 2000, customerName: 200, address: 300, city: 100, salesmanName: 160, email: 160, crmMemberId: 64, cancelReason: 500, erpCode: 50};
 export const MOLD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 export const MOLD_TIMEOUT_MS = 10_000;
 export const MOLD_STATUS_BATCH = 200;
@@ -463,20 +463,22 @@ export function moldRequestCity(city) {
 }
 
 /**
- * One customer of the customers route from a CRM customer: its Yourrest number, name (required, 200), address (300) and city (100).
- * null when it cannot be sent (no number or no name).
- * @param {{crmNumber: unknown, name: unknown, address?: unknown, city?: unknown, active?: boolean}} input
+ * One customer of the customers route from a CRM customer: its Yourrest number, name (required, 200), address (300), city (100) and,
+ * since 2026-11-02, its ERP code (`erpCode`, «كود العميل في ERP», up to 50): always sent, '' when the customer has none (or a value
+ * too long to be an ERP code, never cut), so production clears a code removed in the CRM. null when it cannot be sent (no number or no name).
+ * @param {{crmNumber: unknown, name: unknown, address?: unknown, city?: unknown, erpCode?: unknown, active?: boolean}} input
  */
-export function moldCustomerEntry({crmNumber, name, address, city, active = true}) {
+export function moldCustomerEntry({crmNumber, name, address, city, erpCode, active = true}) {
   if (!isWhole(crmNumber) || crmNumber < 1 || crmNumber > 2147483647) return null;
   const clean = (value, max) => { const text = moldText(String(value ?? '')); return text ? [...text].slice(0, max).join('') : ''; };
   const customerName = clean(name, 200);
   if (!customerName) return null;
-  /** @type {{crmNumber: number, name: string, address?: string, city?: string, active: boolean}} */
+  /** @type {{crmNumber: number, name: string, address?: string, city?: string, erpCode: string, active: boolean}} */
   const entry = {crmNumber, name: customerName};
-  const customerAddress = clean(address, 300), customerCity = clean(sheetCity(city), 100);
+  const customerAddress = clean(address, 300), customerCity = clean(sheetCity(city), 100), code = moldText(String(erpCode ?? ''));
   if (customerAddress) entry.address = customerAddress;
   if (customerCity) entry.city = customerCity;
+  entry.erpCode = [...code].length <= MOLD_LIMITS.erpCode ? code : '';
   entry.active = active !== false;
   return entry;
 }
