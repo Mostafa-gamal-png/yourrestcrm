@@ -24,6 +24,7 @@
         </activity>
         <service android:name=".RouteLocationService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="location" />
         <receiver android:name=".AppUpdateInstallReceiver" android:exported="false" />
+        <provider android:name=".DesignFileProvider" android:authorities="org.yourrest.crm.designfiles" android:exported="false" android:grantUriPermissions="true" />
         <receiver android:name=".RouteResumeReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /><action android:name="android.intent.action.TIME_SET" /><action android:name="android.intent.action.TIMEZONE_CHANGED" /></intent-filter>
         </receiver>

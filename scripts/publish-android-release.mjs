@@ -20,12 +20,12 @@ const manifest={schemaVersion:1,packageName:report.package,versionName,versionCo
  apkUrl:`https://crm.yourrest.org/downloads/${name}`,sizeBytes:bytes.length,sha256,
  certificateSha256,
  releaseNotes:{ar:[
-  'إشعار على الهاتف عند تحويل طلب من خدمة العملاء إليك، حتى والتطبيق مغلق أو الشاشة مقفلة.',
-  'يتحقق التطبيق من الطلبات الجديدة كل عشر دقائق في ساعات العمل (6 صباحًا إلى 6 مساءً عدا الجمعة) وعند فتحه.',
+  'اختيار كل أنواع ملفات التصميم من التطبيق عند إرفاقها بطلب القالب (DWG وDXF وSTEP وSTL وSolidWorks وNC1 وAI وPSD وZIP وغيرها).',
+  'فتح ملفات التصميم وحفظها داخل التطبيق بجلسة دخولك، من غير المتصفح ومن غير تسجيل دخول جديد.',
   'تبقى بياناتك والزيارات المحفوظة على الجهاز كما هي بعد التحديث.'
  ],en:[
-  'A phone notification when customer service assigns a request to you, even with the app closed or the screen locked.',
-  'The app checks for new requests every ten minutes in working hours (6 a.m. to 6 p.m. except Friday) and when opened.',
+  'Choose every design file type from the app when attaching it to a mold request (DWG, DXF, STEP, STL, SolidWorks, NC1, AI, PSD, ZIP and more).',
+  'Open and save design files inside the app with your signed-in session, without the browser or signing in again.',
   'Your data and the visits saved on the phone stay as they are after the update.'
  ]},publishedAt:new Date().toISOString()};
 const serialized=JSON.stringify(manifest,null,2)+'\n';
