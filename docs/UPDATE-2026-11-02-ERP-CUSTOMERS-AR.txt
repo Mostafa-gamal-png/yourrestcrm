@@ -43,7 +43,7 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
 5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
 cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-erp-customers-20261102/yourrest-activate-update-erp-customers.cjs --verify
 
-النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 17 و /api/erp-customers: 401.
+النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 17 و /api/erp-customers: 405 (المسار الجديد موجود ويقبل الرفع فقط).
 
 6. بعد النجاح جرّب: «العملاء» ← «استيراد من ERP» ← اختار ملف العملاء ← «قراءة الملف ومعاينته». راجع المعاينة، وبعدين «تحديث الأكواد».
 
