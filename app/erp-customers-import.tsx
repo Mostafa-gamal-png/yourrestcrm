@@ -192,7 +192,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
   }
 
   function close() { if (!lock.current && !pending) onClose(); }
-  const customerLine = (candidate?: ErpCustomerCandidate) => candidate ? <><bdi>{candidate.name}</bdi> · <bdi dir="ltr">{candidate.internalCode || '—'}</bdi></> : null;
+  const customerLine = (candidate?: ErpCustomerCandidate) => candidate ? <><bdi>{candidate.name}</bdi> · <bdi dir="ltr" className="erp-customers-yr">{candidate.internalCode || '—'}</bdi></> : null;
   const beforeAfter = (from: string, to: string) => <span className="erp-customers-codes"><bdi dir="ltr">{from || '—'}</bdi><span aria-hidden="true">{language === 'en' ? ' → ' : ' ← '}</span><span className="sr-only">{say(' إلى ', ' to ')}</span><bdi dir="ltr">{to}</bdi></span>;
 
   return <Dialog open onOpenChange={open => { if (!open) close(); }}>
@@ -233,7 +233,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
             <p className="erp-customers-stats"><span>{say('السطور', 'Rows')}: <bdi>{preview.summary.rows}</bdi></span><span>{say('مطابق تلقائي', 'Matched automatically')}: <bdi>{preview.summary.auto}</bdi></span>{!!preview.summary.outOfRegion && <span>{say('خارج مناطقك', 'Outside your regions')}: <bdi>{preview.summary.outOfRegion}</bdi></span>}{!!preview.summary.invalid && <span>{say('سطور غير صالحة', 'Invalid rows')}: <bdi>{preview.summary.invalid}</bdi></span>}{!!preview.summary.mappings && <span>{say('أرقام عند عميل تاني', 'Numbers held by another customer')}: <bdi>{preview.summary.mappings}</bdi></span>}<span>{say('الورقة', 'Sheet')}: <bdi>{preview.sheet}</bdi></span></p>
             {refreshing && <p className="erp-import-hint" role="status"><Loader2 size={14} className="spin" aria-hidden="true"/> {say('جارٍ تحديث المعاينة باختياراتك…', 'Updating the preview with your choices…')}</p>}
             {!!conflicts && !dirty && <p className="erp-import-notice" role="status">{say('في عميل متختار لأكتر من سطر، والعميل ليه كود ERP واحد. اختار عميل تاني أو «سيبه» في سطر منهم.', 'A customer is chosen for more than one row, and a customer has one ERP code. Choose another customer or «Leave it» on one of them.')}</p>}
-            {!!counts.choose && !conflicts && <p className="erp-import-hint">{say(`${counts.choose} سطر محتاج اختيار؛ اللي مش هتختارله هيتساب من غير تغيير.`, `${counts.choose} rows need a choice; rows without one are left unchanged.`)}</p>}
+            {!!counts.choose && !conflicts && <p className="erp-import-hint">{say(`${counts.choose} سطر محتاج اختيار؛ اللي مش هتختارله هيتساب من غير تغيير.`, `Rows that need a choice: ${counts.choose}. A row left without one stays unchanged.`)}</p>}
           </section>
 
           <section className="erp-import-documents" aria-labelledby="erp-customers-rows-heading">
