@@ -393,7 +393,7 @@ try{
   const outcome=await server.sendMoldDesignFile(DB,fileId,{link});
   check([outcome,errorOf(fileId),fileRow(fileId).next_attempt_at,fileRow(fileId).outbox],[{kind:'rejected',code:'invalid_payload',fields:['crmFileId'],reason:'crm_file_id_used'},{code:'invalid_payload',reason:'crm_file_id_used',fields:['crmFileId'],http:400,at:errorOf(fileId).at,final:true},null,'send'],'crm_file_id_used: refused for good with its reason and field');
   const shown=(await viewOf(id)).designFiles.find(file=>file.crmFileId===fileId);
-  check([shown.state,shown.canDelete,lib.moldDesignRefusalText(shown.error.reason,ar=>ar)],['rejected',true,'الإنتاج رفض الملف: رقمه مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وارفعه من جديد'],'shown in words; the requester may delete it and attach it again');
+  check([shown.state,shown.canDelete,lib.moldDesignRefusalText(shown.error.reason,ar=>ar)],['rejected',true,'رقم الملف مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وأرفقه من جديد'],'shown in words; the requester may delete it and attach it again');
   before=sends();
   check([(await server.sendDueMoldDesignFiles(DB,{link,limit:5})),(await resend(id)).status,sends()],[0,409,before],'not tried again by itself nor by resend');
   const deletes=mock.state.calls.filter(call=>call.route==='design-file-delete').length;
