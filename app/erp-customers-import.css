@@ -1,0 +1,52 @@
+.erp-customers-dialog .erp-import-heading [data-slot=dialog-description]{color:var(--muted-foreground)}
+.erp-customers-stats{display:flex;flex-wrap:wrap;gap:4px 14px;margin:10px 0 0;font-size:12px;line-height:1.8;color:var(--muted-foreground)}
+.erp-customers-stats bdi{color:var(--foreground);font-weight:600;font-variant-numeric:tabular-nums}
+.erp-customers-filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;min-width:0}
+.erp-customers-filters>button{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--background);color:var(--foreground);font-size:13px;line-height:1.5;cursor:pointer}
+.erp-customers-filters>button bdi{font-variant-numeric:tabular-nums;color:var(--muted-foreground);font-weight:600}
+.erp-customers-filters>button[aria-pressed=true]{border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary);color:var(--primary);font-weight:700}
+.erp-customers-filters>button[aria-pressed=true] bdi{color:var(--primary)}
+.erp-customers-filters>button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.erp-customers-list{display:grid;gap:10px;min-width:0}
+.erp-customers-row{border:1px solid var(--border);border-radius:10px;padding:12px 14px;min-width:0;overflow-wrap:anywhere;background:var(--background)}
+.erp-customers-row[data-tone=warn]{border-inline-start:3px solid #c78d22}
+.erp-customers-row[data-tone=good]{border-inline-start:3px solid #087b79}
+.erp-customers-row-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;font-size:14px;line-height:1.7}
+.erp-customers-row-head>strong{min-width:0;font-weight:700}
+.erp-customers-badge{flex-shrink:0;display:inline-block;padding:3px 8px;border-radius:5px;font-size:12px;line-height:1.6;font-weight:600;background:var(--muted);color:var(--muted-foreground)}
+.erp-customers-badge[data-tone=good]{background:#087b7914;color:#087b79}
+.erp-customers-badge[data-tone=warn]{background:#b7701014;color:#965d0c}
+.dark .erp-customers-badge[data-tone=good]{background:#51d4bd20;color:#7de1d2}
+.dark .erp-customers-badge[data-tone=warn]{background:#f6c87118;color:#efc672}
+.erp-customers-name{margin:4px 0 0;font-size:14px;line-height:1.7}
+.erp-customers-meta{display:block;margin-top:2px;font-size:12px;line-height:1.8;color:var(--muted-foreground)}
+.erp-customers-meta bdi+bdi{margin-inline-start:6px}
+.erp-customers-change,.erp-customers-same,.erp-customers-shared{margin:8px 0 0;font-size:13px;line-height:1.8}
+.erp-customers-change{padding:7px 10px;border-radius:7px;background:var(--muted)}
+.erp-customers-same{color:var(--muted-foreground)}
+.erp-customers-shared{color:#965d0c}
+.dark .erp-customers-shared{color:#efc672}
+.erp-customers-codes{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.erp-customers-candidates{display:grid;gap:8px;margin:10px 0 0;padding:0;border:0;min-width:0}
+.erp-customers-candidate{display:flex;align-items:flex-start;gap:10px;min-width:0;min-height:44px;padding:10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--card)}
+.erp-customers-candidate:has(input:checked){border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
+.erp-customers-candidates:disabled .erp-customers-candidate{cursor:default;opacity:.7}
+.erp-customers-candidate>input{width:19px;height:19px;min-width:19px;margin-top:3px;accent-color:var(--primary)}
+.erp-customers-candidate>span{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.erp-customers-candidate strong{font-size:14px;font-weight:600;line-height:1.6}
+.erp-customers-candidate small{font-size:12px;line-height:1.7;color:var(--muted-foreground)}
+.erp-customers-candidate small bdi+bdi{margin-inline-start:6px}
+.erp-customers-candidate.is-leave strong{font-weight:700}
+.erp-customers-result h3{margin-top:18px}
+.erp-customers-changes{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.erp-customers-changes>li{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;line-height:1.7;min-width:0;overflow-wrap:anywhere}
+.erp-customers-changes small{color:var(--muted-foreground);font-size:12px}
+.erp-customers-ready{margin:0 0 10px;font-size:13px;line-height:1.7;color:var(--muted-foreground)}
+.erp-import-hint>.spin{vertical-align:-2px}
+@media(max-width:640px){
+ .erp-customers-filters{gap:6px}
+ .erp-customers-filters>button{min-height:44px;padding:6px 11px;font-size:13px}
+ .erp-customers-row{padding:11px 12px}
+ .erp-customers-candidate{padding:10px 9px}
+ .erp-customers-codes{white-space:normal}
+}
