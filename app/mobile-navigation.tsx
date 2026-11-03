@@ -28,8 +28,8 @@ const pages=[
  {id:'team',ar:'الفريق والصلاحيات',en:'Team & permissions',Icon:ShieldCheck},
  {id:'mold-requests',ar:'طلبات تصنيع القوالب',en:'Mold requests',Icon:Wrench},
 ] as const;
-/** Pages that never take a slot of the bottom bar from the pages it already shows: when every other page fits in the bar,
- * they are reached from the account sheet (a representative keeps the same five tabs). */
+/** Pages that never take a slot of the bottom bar from the pages it already shows: when every other page fits in the bar, they
+ * are reached from «المزيد» beside them (a representative keeps the same five tabs and gets a sixth, «المزيد»; the owner, 2026-11-03). */
 const secondary=new Set<string>(['mold-requests']);
 
 type Props={me:Member;view:string;onNavigate:(view:string)=>void;accountOpen:boolean;onAccountOpenChange:(open:boolean)=>void;blocked?:boolean;queue?:ServiceQueueEntry[];extra?:number;/** What waits for the reader on the complaints page, when they have one. */complaints?:number};
@@ -64,10 +64,9 @@ export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccou
  },[]);
  useEffect(()=>{setMoreOpen(false);onAccountOpenChange(false);},[me.id,me.role]);
  const allowed=pages.filter(page=>canViewPage(me.role,page.id));
- const core=allowed.filter(page=>!secondary.has(page.id)),fits=allowed.length<=5||core.length<=5;
+ const core=allowed.filter(page=>!secondary.has(page.id));
  const primary=allowed.length<=5?allowed:core.length<=5?core:core.slice(0,4);
- const overflow=fits?[]:allowed.filter(page=>!primary.some(item=>item.id===page.id));
- const extras=fits?allowed.filter(page=>!primary.some(item=>item.id===page.id)):[];
+ const overflow=allowed.filter(page=>!primary.some(item=>item.id===page.id));
  const overflowActive=overflow.some(page=>page.id===view);
  const label=(page:typeof pages[number])=>page.id==='targets'&&me.role==='rep'?say('مستهدفي','My targets'):serviceText(me.role,say(page.ar,page.en));
  const navigate=(id:string)=>{if(!canViewPage(me.role,id))return;setMoreOpen(false);onAccountOpenChange(false);onNavigate(id);if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'auto'});};
@@ -82,7 +81,6 @@ export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccou
     <span className="mobile-sheet-handle" aria-hidden="true"/>
     <header className="mobile-sheet-heading"><div><SheetTitle>{accountOpen?say('حسابي','My account'):say('المزيد','More')}</SheetTitle><SheetDescription className="sr-only">{accountOpen?say('بيانات حسابك في يورست للصناعات.','Your Yourrest Industries account.'):say('باقي صفحات التطبيق المتاحة لك.','More pages available to your account.')}</SheetDescription></div><button type="button" className="icon-button" aria-label={say('إغلاق','Close')} onClick={()=>{setMoreOpen(false);onAccountOpenChange(false);}}><X size={19} aria-hidden="true"/></button></header>
     {!accountOpen&&<nav className="mobile-overflow-pages" aria-label={say('المزيد من الصفحات','More pages')}>{overflow.map(page=><button type="button" key={page.id} data-page={page.id} aria-current={view===page.id?'page':undefined} className={view===page.id?'is-active':''} onClick={()=>navigate(page.id)}><page.Icon size={20} aria-hidden="true"/><span>{label(page)}</span><ChevronLeft className="mobile-menu-chevron" size={17} aria-hidden="true"/></button>)}</nav>}
-    {accountOpen&&!!extras.length&&<nav className="mobile-overflow-pages" aria-label={say('صفحات أخرى','Other pages')}>{extras.map(page=><button type="button" key={page.id} data-page={page.id} aria-current={view===page.id?'page':undefined} className={view===page.id?'is-active':''} onClick={()=>navigate(page.id)}><page.Icon size={20} aria-hidden="true"/><span>{label(page)}</span><ChevronLeft className="mobile-menu-chevron" size={17} aria-hidden="true"/></button>)}</nav>}
     <div className="mobile-account-card"><span className="avatar" aria-hidden="true">{me.name?.slice(0,1)||'Y'}</span><div><strong>{me.name}</strong><small>{t(roles[me.role])}</small><span dir="ltr">{me.email}</span></div></div>
     <div className="mobile-account-signout"><span>{say('تسجيل الخروج','Sign out')}</span><EmailLogout/></div>
    </SheetContent>

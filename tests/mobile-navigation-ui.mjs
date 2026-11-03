@@ -48,10 +48,13 @@ const me={id:'rep',role:'rep',name:'مندوب الغربية',email:'rep@yourre
 for(const locale of ['ar','en']){
  language=locale;const navigated=[],accountChanges=[],props={me,view:'activity',onNavigate:value=>navigated.push(value),accountOpen:false,onAccountOpenChange:value=>accountChanges.push(value)};
  const scrolls=[],h=harness('app/mobile-navigation.tsx',props,{}, {window:{scrollTo:options=>scrolls.push(options)}});let tree=h.render();
- eq(pageIds(tree),['customer','map','activity','followup','targets'],'Rep has exactly the five allowed bottom pages');eq(tabs(tree).length,5,'Rep needs no overflow tab');
- eq(nodes(tree,node=>node.type==='button'&&node.props['data-page']==='mold-requests').length,0,'Mold requests take no tab from the representative\'s bar');
- {const sheet=harness('app/mobile-navigation.tsx',{...props,accountOpen:true}).render();const extra=nodes(sheet,node=>node.type==='button'&&node.props['data-page']==='mold-requests');eq(extra.length,1,'The account sheet opens mold requests for a representative');eq(text(extra[0]).includes(locale==='ar'?'طلبات تصنيع القوالب':'Mold requests'),true,'Its label is translated');}
- eq(tabs(tree).map(text),locale==='ar'?['العملاء','الخريطة','الزيارات','المتابعات','مستهدفي']:['Customers','Map','Visits','Follow-ups','My targets'],'Short labels are translated');
+ eq(pageIds(tree),['customer','map','activity','followup','targets'],'Rep keeps the same five bottom pages');eq(tabs(tree).length,6,'Rep gets a sixth tab, «المزيد», for mold requests (the owner, 2026-11-03)');
+ eq(nodes(nav(tree),node=>node.type==='button'&&node.props['data-page']==='mold-requests').length,0,'Mold requests take no tab from the representative\'s bar');
+ {const more=tabs(tree).find(node=>node.props['aria-haspopup']==='dialog');ok(more,'The representative\'s bar has «المزيد»');eq(more.props['aria-label'],locale==='ar'?'المزيد من الصفحات':'More pages','«المزيد» is labelled');
+  more.props.onClick();
+  const opened=h.render(),extra=nodes(opened,node=>node.type==='button'&&node.props['data-page']==='mold-requests'&&!node.props.className?.includes('mobile-tab'));eq(extra.length,1,'«المزيد» opens mold requests for a representative');eq(text(extra[0]).includes(locale==='ar'?'طلبات تصنيع القوالب':'Mold requests'),true,'Its label is translated');
+  const account=harness('app/mobile-navigation.tsx',{...props,accountOpen:true}).render();eq(nodes(account,node=>node.type==='button'&&node.props['data-page']==='mold-requests').length,0,'The account sheet no longer lists pages');}
+ eq(tabs(tree).filter(node=>node.props['data-page']).map(text),locale==='ar'?['العملاء','الخريطة','الزيارات','المتابعات','مستهدفي']:['Customers','Map','Visits','Follow-ups','My targets'],'Short labels are translated');
  eq(nav(tree).props.dir,locale==='ar'?'rtl':'ltr','Language direction honored');
  eq(tabs(tree).filter(node=>node.props['aria-current']==='page').map(node=>node.props['data-page']),['activity'],'Only current page is active');
  for(const id of ['customer','map','activity','followup','targets']){byPage(tree,id).props.onClick();eq(navigated.at(-1),id,'Tap opens '+id);}
