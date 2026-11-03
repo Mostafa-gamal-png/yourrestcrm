@@ -3,13 +3,13 @@ import {useEffect,useState} from 'react';
 import {Download,RefreshCw,Smartphone} from 'lucide-react';
 import {useLanguage} from '@/lib/i18n';
 import {appUpdateController,type AppUpdateState} from '@/lib/app-update';
-import release from '@/lib/app-update-release.json';
 import './app-update.css';
 
-/** The served APK on this site. Some phones (seen on 1.0.11, 2026-11-03) close Android's install confirmation for the in-app session
- * install at once, so the panel returns to «ready»/«cancelled» with nothing installed. The installed app's download handler opens this
- * link in the browser, and Android's ordinary installer updates the app in place (same signature, data kept). */
-const BROWSER_APK_PATH=new URL(release.apkUrl).pathname;
+/** The APK of the announced version on this site, in the only form the app accepts (AppUpdateRules.approvedApkUrl). Some phones (seen on
+ * 1.0.11, 2026-11-03) close Android's install confirmation for the in-app session install at once, so the panel returns to «ready» or
+ * «cancelled» with nothing installed. The installed app's download handler opens this link in the browser, and Android's ordinary
+ * installer updates the app in place (same signature, data kept). */
+const browserApkPath=(name:string,code:number|null)=>/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(name)&&Number.isSafeInteger(code)&&(code as number)>0?`/downloads/yourrest-crm-android-v${name}-${code}.apk`:'';
 
 export default function AppUpdate(){
  const {language}=useLanguage(),en=language==='en',say=(ar:string,english:string)=>en?english:ar;
@@ -21,7 +21,7 @@ export default function AppUpdate(){
  const description=state.offline&&!installable?say('سيُستأنف التحقق عند رجوع الشبكة. يمكنك متابعة شغلك.','Checks resume when you reconnect. You can keep working.'):state.phase==='error'?say('لم يكتمل التحديث. أعد المحاولة؛ بياناتك المحفوظة باقية.','The update did not finish. Retry; saved data is preserved.'):state.phase==='permissionRequired'?say('احفظ أي إدخال مفتوح، ثم اسمح ليورست بالتثبيت وأكمل تأكيد أندرويد.','Save any open entry, then allow Yourrest to install and confirm in Android.'):state.phase==='cancelled'?say('لم يتم التثبيت بعد. احفظ أي إدخال مفتوح قبل إعادة المحاولة.','The update is not installed yet. Save any open entry before retrying.'):state.protocol===0?say('احفظ أي إدخال مفتوح، وأكمل التنزيل في المتصفح ثم وافق على «تحديث». لا تحذف التطبيق.','Save any open entry, finish the download in your browser, then approve Update. Keep the app installed.'):state.phase==='downloading'?say('يمكنك استخدام التطبيق أثناء التنزيل.','You can use the app while it downloads.'):state.phase==='ready'||state.phase==='installing'?say('احفظ أي إدخال مفتوح قبل التثبيت؛ السجلات المحفوظة والمنتظرة للرفع تبقى موجودة.','Save any open entry before installing; saved and queued records stay preserved.'):say('سيطلب أندرويد موافقتك على التثبيت. السجلات المحفوظة تبقى موجودة.','Android will ask you to confirm installation. Saved records stay preserved.');
  const controller=appUpdateController();
  // After a download, an aborted install or an error, the browser path is offered beside the in-app one (it needs the network).
- const browserFallback=state.protocol===1&&!state.offline&&(installable||state.phase==='error');
+ const browserApk=browserApkPath(state.availableVersionName,state.availableVersionCode),browserFallback=state.protocol===1&&!state.offline&&!!browserApk&&(installable||state.phase==='error');
  return <section className="app-update-banner no-print" dir={en?'ltr':'rtl'} aria-label={say('تحديث تطبيق يورست','Yourrest app update')}>
   <Smartphone className="app-update-icon" size={22} aria-hidden="true"/>
   <div className="app-update-copy"><strong>{title} <span className="app-update-version" dir="ltr">{state.availableVersionName}</span></strong><p role="status" aria-live="polite">{description}</p>
@@ -29,7 +29,7 @@ export default function AppUpdate(){
   </div>
   <div className="app-update-actions">
    {state.protocol===0&&state.legacyUrl&&!state.offline?<a className="btn primary" href={state.legacyUrl} download="Yourrest-CRM.apk" onClick={()=>controller.legacyDownloadStarted()}><Download size={17}/>{say('تحديث التطبيق','Update app')}</a>:state.phase==='error'?<button type="button" className="btn primary" disabled={state.offline} onClick={()=>void controller.check(true)}><RefreshCw size={17}/>{say('إعادة المحاولة','Retry')}</button>:<button type="button" className="btn primary" disabled={busy||(state.offline&&!installable)} aria-busy={busy} onClick={()=>void (installable?controller.install():controller.download())}><Download size={17}/>{state.phase==='downloading'?say('جارٍ التنزيل','Downloading'):state.phase==='installing'?say('بانتظار التأكيد','Awaiting confirmation'):installable?say('تثبيت التحديث','Install update'):say('تحديث التطبيق','Update app')}</button>}
-   {browserFallback&&<a className="btn subtle app-update-browser" href={BROWSER_APK_PATH} download="Yourrest-CRM.apk"><Download size={17}/>{say('ثبّت عن طريق المتصفح','Install through the browser')}</a>}
+   {browserFallback&&<a className="btn subtle app-update-browser" href={browserApk} download="Yourrest-CRM.apk"><Download size={17}/>{say('ثبّت عن طريق المتصفح','Install through the browser')}</a>}
   </div>
   {browserFallback&&<p className="app-update-browser-hint">{say('لو «تثبيت التحديث» رجّعك للشاشة دي من غير ما يتحدّث: اضغط «ثبّت عن طريق المتصفح»، ووافق على «فتح»، ولما التنزيل يخلص افتح الملف واضغط «تحديث». متحذفش التطبيق؛ بياناتك باقية.','If «Install update» brings you back here without updating: tap «Install through the browser», choose «Open», and when the download finishes open the file and tap «Update». Do not uninstall the app; your data stays.')}</p>}
  </section>;
