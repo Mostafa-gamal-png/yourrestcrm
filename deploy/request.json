@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-UpdateFallback-20261103.zip",
-  "sha256": "c1a1928cd3cd6832f41ffc9a6e89113ae4744a888d640db066094ecb62826748",
-  "stage": "yourrest-crm-update-fallback-20261103",
-  "helper": "yourrest-activate-update-fallback.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-ErpMold-20261103.zip",
+  "sha256": "3750f019ad7aefe85901c06f8a0497502e9e9ab623e37593e4813d8bf32fe398",
+  "stage": "yourrest-crm-update-erp-mold-20261103",
+  "helper": "yourrest-activate-update-erp-mold.cjs"
 }
