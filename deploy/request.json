@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-ErpMold-20261103.zip",
-  "sha256": "3750f019ad7aefe85901c06f8a0497502e9e9ab623e37593e4813d8bf32fe398",
-  "stage": "yourrest-crm-update-erp-mold-20261103",
-  "helper": "yourrest-activate-update-erp-mold.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldQuotePo-20261103.zip",
+  "sha256": "7981fe58bb121cf2361b63b07d818be22b7c739532f9c5d590d1054b561d7c2e",
+  "stage": "yourrest-crm-update-mold-quote-po-20261103",
+  "helper": "yourrest-activate-update-mold-quote-po.cjs"
 }
