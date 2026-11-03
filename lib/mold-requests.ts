@@ -1,16 +1,21 @@
 // Mold manufacturing requests (طلبات تصنيع القوالب): what the screen and the server share. The contract rules live in
 // portable/mold-rules.mjs; this adds who may see and change a request, the shape the screen receives and the Arabic wording.
 // Every member asks for a mold for a customer they can see (the owner, 2026-11-01); the sales manager approves it here first, then
-// production and the system administrator approve it in yourrest-products, which owns the status. The representative attaches design
+// production and finance («اعتماد المالية», the third approval keyed `admin`, 2026-11-03) approve it in yourrest-products, which owns the
+// status. The representative chooses how the customer pays (cash or deferred, 2026-11-03), sent with the request. The representative attaches design
 // files to the request (2026-11-02): kept in the CRM, sent to production, and shown with production's own files to everyone who reads it.
 // Once a request is sent its data is edited by the production manager in the products application only (yourrest-products, 2026-11-02):
 // the CRM changes it only while it has certainly never reached production (moldNeverSent); cancelling and design files are unchanged.
+// A cancellation is no longer final (2026-11-03): the production manager may restore a cancelled request to where it stood; the CRM keeps
+// pulling its status, shows it active again, and a new cancellation takes a new reason (moldCancelReasonUsed).
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS,MOLD_DESIGN_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_DESIGN_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent} from '@/portable/mold-rules.mjs';
 
-export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_WAITING_STEPS};
+export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS};
+/** How the customer pays (2026-11-03): chosen when asking; a request asked for before has none. */
+export type MoldPayment='cash'|'deferred';
 export type MoldStage=typeof MOLD_STAGES[number];
 export type MoldStatusName='received'|'confirmed'|'in_production'|'produced'|'delivered'|'cancelled';
 export type MoldSpecs={description:string;core:string;vibrators:number|null;model:string;halfBlock:string;moldWidth:number|null;gelbaSize:number|null;moldNo:string;quantity:number|null;designUrl:string;notes:string};
@@ -29,11 +34,16 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;status:MoldStatu
 /** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. unconfirmed
  *  (accepted only): production holds the request, but these are not its data: the CRM's change production refused for good
  *  (production_only) after an earlier attempt's answer was lost, so the CRM never learned what production stored (sendMoldRequest). */
-export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs;unconfirmed?:true};
+export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs;
+ /** How the customer pays (2026-11-03); absent in a request asked for before, which is sent again exactly as first sent (without it). */
+ payment?:MoldPayment;unconfirmed?:true};
 export type MoldError={code:string;fields?:string[];http?:number;at:string;
  /** Why production refused (details.reason): a design file's bytes (empty, not_pdf, bad_image, too_many_pixels, with fields ['file'])
   *  or its place (too_many_files, crm_file_id_used, with fields ['crmFileId']); a request's send, production_only (409 request_locked:
-  *  production holds the request with other data; its data is edited by the production manager only). */
+  *  production holds the request with other data; its data is edited by the production manager only). With code `restored` (not a
+  *  failure, 2026-11-03): why the request is active again after a cancellation: restored (the production manager restored it after the
+  *  cancellation reached production), cancel_dropped (the same, while the cancellation waited for a resend: it is not sent again) or
+  *  same_reason (production answered a cancellation with this reason with the request as it is, not cancelled: it had restored it). */
  reason?:string;
  /** A request's send: this attempt and every one before it were refused before production stored the request (moldAnswerNotStored),
   *  so it has certainly never reached production and may still be edited (moldNeverSent). */
@@ -47,7 +57,8 @@ export type MoldError={code:string;fields?:string[];http?:number;at:string;
 export type MoldDesignFileRow={id:string;requestId:string;memberId:string;name:string;kind:MoldDesignKind;contentType:string;size:number;sha256:string;objectKey:string|null;createdAt:string;deletedAt:string|null;outbox:'send'|'delete'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remoteFileId:string|number|null;sentAt:string|null;version:number};
 /** Where a design file stands for the reader: sent (production holds it), waiting (to be sent, on the timetable), held (until production
  *  holds the request itself), rejected (production refused it; the reason is shown), locked (the approvals were complete first; not sent),
- *  cancelled (the request was cancelled in the CRM: not sent unless production refuses the cancellation), deleting (its deletion waits to
+ *  cancelled (the request was cancelled in the CRM, or in production: held, not sent unless production refuses the cancellation or its
+ *  production manager restores the request, 2026-11-03), deleting (its deletion waits to
  *  reach production), off (the production link is off), production (attached in production). */
 export type MoldDesignState='sent'|'waiting'|'held'|'rejected'|'locked'|'cancelled'|'deleting'|'off'|'production';
 /** A design file as a reader receives it: href downloads it through the CRM (viewable: a PDF or an image, which may open inline with &inline=1);
@@ -60,14 +71,18 @@ export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOr
 export type MoldSendingState='sent'|'waiting'|'rejected'|'off';
 /** One request as a reader receives it. designFiles: the CRM's and production's; can.attach / can.deleteFile: the requester may attach or
  *  delete design files (each file also says whether it may be deleted). unconfirmed: the specifications are the CRM's change production
- *  refused (production_only), not production's data (MoldRequestData). */
-export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
+ *  refused (production_only), not production's data (MoldRequestData). payment: as the CRM stored it (null: asked for before 2026-11-03). */
+export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
+ /** The reasons of the request's earlier cancellations (the production manager restored it since): a new cancellation needs another. */
+ cancelReasons:string[];
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null};
  remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean};version:number;
  designFiles:MoldDesignFileView[]};
 /** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
 export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm'|'manual';requestedAt:string|null;waitingSince:string|null;enteredBy:string|null;
- customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;revision:number|null;designFiles:MoldDesignFile[]};
+ customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;
+ /** How the customer pays, as production holds it now (null: a request asked for before 2026-11-03). */
+ payment:MoldPayment|null;revision:number|null;designFiles:MoldDesignFile[]};
 /** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it also shows in the list below);
  *  designFiles: its design files (the request's own and production's), each downloaded through the CRM. */
 export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'>&{inCrm:boolean;designFiles:MoldPendingDesignFile[]})[];error:MoldError|null;at:string|null};
@@ -147,7 +162,7 @@ export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'can
  for(const file of files){
   if(file.deletedAt&&!file.outbox)continue;
   const remote=listed.find(entry=>entry.crmFileId===file.id),fileId=remote?remote.fileId:file.remoteFileId;
-  const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):row.cancelledAt?'cancelled':!linkReady?'off':!row.accepted?'held':'waiting';
+  const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):row.cancelledAt||row.remote?.status==='cancelled'?'cancelled':!linkReady?'off':!row.accepted?'held':'waiting';
   out.push({key:file.id,fileId:fileId===null||fileId===undefined?null:String(fileId),crmFileId:file.id,name:file.name,kind:file.kind,size:file.size,source:'crm',uploadedAt:file.createdAt,state,error:file.lastError,stopped:state!=='cancelled'&&moldDesignStopped(file),
    canDelete:own&&state!=='deleting'&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other'});
  }
@@ -168,10 +183,11 @@ export function moldDesignCount(row:Pick<MoldRequestRow,'remote'>,files:MoldDesi
 }
 /** The pending item's files, each downloaded through the CRM by its order number. */
 export const moldPendingDesignFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'>):MoldPendingDesignFile[]=>item.designFiles.map(file=>({...file,href:designHref('order='+item.orderNo+'&file='+encodeURIComponent(String(file.fileId))),viewable:file.kind!=='other'}));
-/** One request as its reader receives it. */
-export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[]):MoldRequestView{
+/** One request as its reader receives it. cancelReasons: the reasons of its earlier cancellations (moldCancelReasons in
+ *  lib/mold-requests-server.ts), so the screen asks for another before cancelling again. */
+export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[]):MoldRequestView{
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
-  requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,
+  requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
   remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady)};
 }
@@ -184,8 +200,22 @@ export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>,l
 export const moldStatusNames:Record<MoldStatusName,[string,string]>={received:['استلمه الإنتاج','Received by production'],confirmed:['اكتملت الاعتمادات','Approved'],in_production:['قيد التصنيع','In production'],produced:['تم التصنيع','Produced'],delivered:['تم التسليم للعميل','Delivered'],cancelled:['ملغى','Cancelled']};
 export const moldSendingNames:Record<MoldSendingState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],rejected:['رفض الإنتاج البيانات','Production refused the data'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off']};
 /** Where the request waits now, in the requester's words (the contract's waitingStep). */
-export const moldWaitingNames:Record<MoldWaitingStep,[string,string]>={sales:['بانتظار اعتماد مدير المبيعات','Waiting for the sales manager\'s approval'],production:['بانتظار اعتماد الإنتاج','Waiting for production\'s approval'],admin:['بانتظار اعتماد مدير النظام','Waiting for the system administrator\'s approval'],manufacturing:['في التصنيع','In manufacturing'],delivery:['بانتظار التسليم','Waiting for delivery'],done:['تم التسليم','Delivered'],cancelled:['ملغى','Cancelled']};
-export const moldApprovalNames:Record<'sales'|'production'|'admin',[string,string]>={sales:['مدير المبيعات','Sales manager'],production:['الإنتاج','Production'],admin:['مدير النظام','System administrator']};
+export const moldWaitingNames:Record<MoldWaitingStep,[string,string]>={sales:['بانتظار اعتماد مدير المبيعات','Waiting for the sales manager\'s approval'],production:['بانتظار اعتماد الإنتاج','Waiting for production\'s approval'],admin:['بانتظار اعتماد المالية','Waiting for finance approval'],manufacturing:['في التصنيع','In manufacturing'],delivery:['بانتظار التسليم','Waiting for delivery'],done:['تم التسليم','Delivered'],cancelled:['ملغى','Cancelled']};
+/** Each approval's name, shown after «اعتماد» (Approval:): the third, keyed `admin`, is finance's since yourrest-products 2026-11-03. */
+export const moldApprovalNames:Record<'sales'|'production'|'admin',[string,string]>={sales:['مدير المبيعات','Sales manager'],production:['الإنتاج','Production'],admin:['المالية','Finance']};
+/** How the customer pays, in the representative's words. */
+export const moldPaymentNames:Record<MoldPayment,[string,string]>={cash:[MOLD_PAYMENTS.cash,'Cash'],deferred:[MOLD_PAYMENTS.deferred,'Deferred']};
+/** A cancellation answered with the request not cancelled: production had restored it and this reason was used already (2026-11-03). */
+export const MOLD_SAME_REASON_TEXT:[string,string]=['مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد','The production manager restored the request; to cancel it again, write a new reason'];
+/** Why a request is active again after a cancellation (a stored error with code `restored`), in the representative's words; '' for any
+ *  other error. cancellable: the reader may cancel it now (view.can.cancel); only then is a new reason asked for, never once the
+ *  approvals are complete or production has started, nor for a reader who may not cancel it. */
+export function moldRestoredText(error:Pick<MoldError,'code'|'reason'>|null|undefined,say:(ar:string,en:string)=>string,{cancellable=true}:{cancellable?:boolean}={}){
+ if(error?.code!=='restored')return '';
+ if(error.reason==='same_reason'&&cancellable)return say(...MOLD_SAME_REASON_TEXT)+'.';
+ return (error.reason==='cancel_dropped'?say('رجّعه مدير الإنتاج بعد الإلغاء، فالإلغاء المنتظر لن يُعاد إرساله','The production manager restored it after the cancellation, so the waiting cancellation will not be sent again')
+  :say('رجّعه مدير الإنتاج بعد الإلغاء','The production manager restored it after the cancellation'))+(cancellable?say('؛ عشان تلغيه تاني اكتب سبب جديد.','; to cancel it again, write a new reason.'):'.');
+}
 /** A sent request's change refused for good by production (409 request_locked, production_only): production holds the request with
  *  other data, which its production manager alone edits. The change is not tried again; the request says so (moldProductionOnly). */
 export const moldProductionOnly=(error:Pick<MoldError,'code'|'reason'>|null|undefined)=>error?.code==='request_locked'&&error.reason===MOLD_PRODUCTION_ONLY;
@@ -223,6 +253,6 @@ export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>s
  return found?say(...found):say('رفض الإنتاج الملف','Production refused the file');
 }
 /** The contract's field names, for a refusal that names them. */
-export const moldFieldNames:Record<string,[string,string]>={'specs.description':['الوصف','Description'],'specs.core':['العلب','Core'],'specs.vibrators':['الرجاجات','Vibrators'],'specs.model':['الموديل','Model'],'specs.halfBlock':['بلوكة النص','Half block'],'specs.moldWidth':['عرض القالب','Mold width'],'specs.gelbaSize':['مقاس الجلب','Gelba size'],'specs.moldNo':['رقم القالب','Mold no.'],'specs.quantity':['الكمية','Quantity'],'specs.designUrl':['رابط التصميم','Design link'],'specs.notes':['الملاحظات','Notes'],'customer.name':['اسم العميل','Customer name'],'customer.crmNumber':['كود يورست للعميل','Customer Yourrest code'],'customer.address':['عنوان العميل','Customer address'],'customer.city':['مدينة العميل','Customer city'],'salesman.name':['اسم المندوب','Salesman name'],'salesman.email':['بريد المندوب','Salesman email'],requestedAt:['تاريخ الطلب','Request date'],legacyOrderNo:['رقم الطلب في الشيت','Sheet order number'],crmRequestId:['رقم الطلب','Request id']};
+export const moldFieldNames:Record<string,[string,string]>={'specs.description':['الوصف','Description'],'specs.core':['العلب','Core'],'specs.vibrators':['الرجاجات','Vibrators'],'specs.model':['الموديل','Model'],'specs.halfBlock':['بلوكة النص','Half block'],'specs.moldWidth':['عرض القالب','Mold width'],'specs.gelbaSize':['مقاس الجلب','Gelba size'],'specs.moldNo':['رقم القالب','Mold no.'],'specs.quantity':['الكمية','Quantity'],'specs.designUrl':['رابط التصميم','Design link'],'specs.notes':['الملاحظات','Notes'],'customer.name':['اسم العميل','Customer name'],'customer.crmNumber':['كود يورست للعميل','Customer Yourrest code'],'customer.address':['عنوان العميل','Customer address'],'customer.city':['مدينة العميل','Customer city'],'salesman.name':['اسم المندوب','Salesman name'],'salesman.email':['بريد المندوب','Salesman email'],requestedAt:['تاريخ الطلب','Request date'],payment:['طريقة الدفع غير صحيحة','The payment method is not valid'],legacyOrderNo:['رقم الطلب في الشيت','Sheet order number'],crmRequestId:['رقم الطلب','Request id']};
 /** YR-C-000027 -> 27: the customer's Yourrest code, the number the contract sends as customer.crmNumber. */
 export function yourrestNumber(internalCode:unknown){const match=/^YR-C-(\d{1,10})$/.exec(String(internalCode||''));const value=match?Number(match[1]):NaN;return Number.isInteger(value)&&value>0&&value<=2147483647?value:null;}

@@ -1398,5 +1398,8 @@
   "أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.": "The request was cancelled in the production application; it can no longer be changed.",
   "اكتملت الاعتمادات أو بدأ الإنتاج قبل وصول الإلغاء؛ لم يعد الإلغاء ممكنًا.": "The approvals were completed or production started before the cancellation arrived; it can no longer be cancelled.",
   "رفض الإنتاج الإرسال لأن الطلب مقفل لديه؛ لن يُعاد إرساله.": "Production refused it because the request is locked there; it will not be sent again.",
-  "الطلب ملغى": "The request is cancelled"
+  "الطلب ملغى": "The request is cancelled",
+  "اختار طريقة الدفع: نقدي أو آجل": "Choose how the customer pays: cash or deferred",
+  "مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد": "The production manager restored the request; to cancel it again, write a new reason",
+  "رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.": "The production manager restored it after the cancellation, and the approvals are complete or production has started; it can no longer be cancelled."
 }

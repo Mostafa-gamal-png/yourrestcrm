@@ -3,7 +3,8 @@
 // API. A deletion that stopped after 24 hours is restarted by resend; a deletion production refuses keeps the file with its reason; a
 // refusal without the contract's code (a web server's 400/413) is final and takes none of the 10 places; an older status never replaces
 // a newer one (a pull, a request's send, an approval); a download keeps its place until its body is read or abandoned, the CRM's own
-// copies too; production's refusals for a file's place (too_many_files, crm_file_id_used, PR #27) are final and shown with their reason.
+// copies too; production's refusals for a file's place (too_many_files, crm_file_id_used, PR #27) are final and shown with their reason;
+// a file refused only because its request is cancelled in production is held, and sent once the production manager restores it (2026-11-03).
 // Synthetic data only; the shared secret is never printed.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -400,6 +401,55 @@ try{
   check([(await remove(id,fileId)).status,!!fileRow(fileId).deleted_at,mock.state.calls.filter(call=>call.route==='design-file-delete').length],[200,true,deletes],'deleted in the CRM alone (production holds nothing of it)');
   answer=await attach(id,'وصل ثم حُذف.pdf',pdf('arrived, then deleted there'));
   check([answer.body.file.state,answer.body.file.crmFileId===fileId,atProduction(id,answer.body.file.crmFileId)],['sent',false,true],'attached again: a new crmFileId, and production takes it');
+ }
+
+ // ---- 14. 2026-11-03: a cancellation is no longer final. A file refused only because its request is cancelled in production (by its
+ //  production manager while the file waited, or by the CRM's cancellation arriving first) is not refused for good: it is held while the
+ //  request is cancelled (in the CRM, or in production as last known), and goes once the production manager restores the request
+ {
+  const sends=()=>mock.state.calls.filter(call=>call.route==='design-files').length;
+  const due=fileId=>sql.prepare('UPDATE crm_mold_design_files SET next_attempt_at=? WHERE id=?').run(new Date(Date.now()-1000).toISOString(),fileId);
+  const pull=async id=>server.pullMoldStatuses(DB,[await server.loadMoldRequest(DB,id)],{link,force:true});
+  // (a) production unreachable while the file is attached; meanwhile the production manager cancels the request there
+  let id=await newRequest();
+  mock.state.down=true;
+  let fileId=(await attach(id,'انتظر ثم أُلغي.pdf',pdf('waited, then cancelled there'))).body.file.crmFileId;
+  mock.state.down=false;
+  mock.remove(id);
+  due(fileId);
+  let outcome=await server.sendMoldDesignFile(DB,fileId,{link});
+  let stored=fileRow(fileId);
+  check([outcome,stored.outbox,!!stored.next_attempt_at,errorOf(fileId),JSON.parse(sql.prepare('SELECT remote FROM crm_mold_requests WHERE id=?').get(id).remote).status,atProduction(id,fileId)],
+   [{kind:'none',code:'held'},'send',true,null,'cancelled',false],'409 for a request cancelled in production: not refused for good; it waits, and production\'s status is stored');
+  let shown=(await viewOf(id)).designFiles[0];
+  check([shown.state,shown.stopped],['cancelled',false],'shown as held: the request is cancelled');
+  let before=sends();
+  due(fileId);
+  check([await server.sendDueMoldDesignFiles(DB,{link,limit:5}),await server.sendMoldDesignFile(DB,fileId,{link}),sends()-before],[0,{kind:'none',code:'held'},0],'held while the status stored says cancelled: not sent, by the timetable or directly');
+  mock.restore(id);
+  await pull(id);
+  check((await viewOf(id)).designFiles[0].state,'waiting','restored: it waits to be sent again');
+  check([await server.sendDueMoldDesignFiles(DB,{link,limit:5}),fileRow(fileId).outbox,!!fileRow(fileId).sent_at,atProduction(id,fileId),(await viewOf(id)).designFiles[0].state],[1,null,true,true,'sent'],'and goes on the next check, reaching production');
+  // (b) the file's send is on its way when the representative cancels; the cancellation reaches production first
+  id=await newRequest();
+  mock.state.down=true;
+  fileId=(await attach(id,'سبقه الإلغاء.pdf',pdf('the cancellation came first'))).body.file.crmFileId;
+  mock.state.down=false;
+  due(fileId);
+  const version=sql.prepare('SELECT version FROM crm_mold_requests WHERE id=?').get(id).version;
+  answering=async(url,init)=>{
+   if(new URL(url).searchParams.get('route')==='design-files'){answering=null;as('rep');check((await requests.POST(post('/api/mold-requests',{action:'cancel',requestId:randomUUID(),id,version,reason:'العميل اعتذر'}))).status,200,'the representative cancels while the file travels');}
+   return viaMock(url,init);
+  };
+  outcome=await server.sendMoldDesignFile(DB,fileId,{link});
+  answering=null;
+  stored=fileRow(fileId);
+  check([outcome,stored.outbox,!!stored.next_attempt_at,errorOf(fileId),mock.row(id).cancelled,atProduction(id,fileId),(await viewOf(id)).designFiles[0].state],
+   [{kind:'none',code:'held'},'send',true,null,true,false,'cancelled'],'409 after the cancellation arrived: held, not refused for good');
+  mock.restore(id);
+  await pull(id);
+  const restored=await server.loadMoldRequest(DB,id);
+  check([restored.cancelledAt,restored.lastError?.code,await server.sendDueMoldDesignFiles(DB,{link,limit:5}),atProduction(id,fileId),(await viewOf(id)).designFiles[0].state],[null,'restored',1,true,'sent'],'restored by the production manager: active again, and the file goes');
  }
 
  check(mock.state.calls.every(call=>!JSON.stringify(call.headers).includes(mock.state.secret)),true,'the secret never travels');
