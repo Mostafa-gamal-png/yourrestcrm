@@ -3,13 +3,16 @@
 // pixels, 10 files a request with production's), kept in the CRM's object store with its row and audit entry (a receipt makes a repeated
 // tap harmless; the entry never holds the contents), then sent with design-files as soon as production holds the request. A send that
 // takes long goes on in the background. Attaching undoes the approvals given (the screen warns first).
+// The quotation's and PO's files (yourrest-products, second update of 2026-11-03) come the same way with `category` (quote or po): a PDF or
+// an image only, at most 5 of each kind (production's included), and only once production's update is known to be live; a design file
+// is one without category, as before (10 a request).
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {readRequestForm} from '@/lib/request-body';
-import {moldDesignFileCheck,MOLD_DESIGN_MAX_FILES} from '@/portable/mold-rules.mjs';
-import {canReadMoldRequest,canUseMoldRequests,moldDesignCount,moldDesignRefusalText,moldEditable,moldRequestView} from '@/lib/mold-requests';
-import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldViewReasons,productsLink,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
+import {moldDesignFileCheck,MOLD_CATEGORY_MAX_FILES} from '@/portable/mold-rules.mjs';
+import {canReadMoldRequest,canUseMoldRequests,moldDesignCount,moldDesignRefusalText,moldEditable,moldRequestView,type MoldFileCategory} from '@/lib/mold-requests';
+import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 // Multipart parsing, hashing and the object write stay bounded together (per Node process, as for visit files).
@@ -18,9 +21,15 @@ let activeUploads=0;
 /** How long the answer waits for the send to production before saying «waiting»; the send itself goes on (up to 120 seconds). */
 const SEND_WAIT_MS=15_000;
 const sha256=async(bytes:Uint8Array<ArrayBuffer>)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(n=>n.toString(16).padStart(2,'0')).join('');
-/** The CRM's live files of a request in SQL, as moldDesignCount counts them: not deleted (or whose deletion has not reached production),
- *  not refused for good. */
-const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND (deleted_at IS NULL OR outbox='delete') AND NOT ${MOLD_DESIGN_REFUSED_SQL}`;
+/** The CRM's live files of a request and a category in SQL, as moldDesignCount counts them: not deleted (or whose deletion has not
+ *  reached production), not refused for good. */
+const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND category=? AND (deleted_at IS NULL OR outbox='delete') AND NOT ${MOLD_DESIGN_REFUSED_SQL}`;
+/** A design file (the form sends no category, as before), the quotation's or the PO's. */
+const categoryInput=z.enum(['design','quote','po']);
+/** When a category's places are taken, in the representative's words. */
+const FULL:Record<MoldFileCategory,string>={design:'الحد '+MOLD_CATEGORY_MAX_FILES.design+' ملفات للطلب (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.',quote:'الحد '+MOLD_CATEGORY_MAX_FILES.quote+' ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.',po:'الحد '+MOLD_CATEGORY_MAX_FILES.po+' ملفات للـ PO (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.'};
+/** A quotation's or PO's file attached before production's update is known to be live (no screen offers it then). */
+const QUOTE_PO_NOT_YET='تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.';
 
 export async function POST(req:Request){let objectKey='',admitted=false;try{
  checkOrigin(req);await requireSession();
@@ -31,15 +40,18 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  activeUploads++;admitted=true;
  const form=await readRequestForm(req),file=form.get('file');
  const requestId=z.string().uuid().parse(form.get('requestId')),id=z.string().regex(/^mr-[0-9a-f-]{36}$/).parse(form.get('id'));
+ const category:MoldFileCategory=categoryInput.parse(form.get('category')??'design');
  if(!(file instanceof File))throw new CRMError('اختر ملف التصميم');
- const bytes=new Uint8Array(await file.arrayBuffer()),checked=moldDesignFileCheck(file.name,bytes);
- if(!checked.ok){const message=moldDesignRefusalText(checked.reason,ar=>ar);throw Object.assign(new CRMError(message,checked.reason==='too_large'?413:400),{fields:{[checked.field]:message},reason:checked.reason});}
+ if(category!=='design'&&!await moldQuotePoSupported(c.db))throw new CRMError(QUOTE_PO_NOT_YET,409);
+ const bytes=new Uint8Array(await file.arrayBuffer()),checked=moldDesignFileCheck(file.name,bytes,category);
+ if(!checked.ok){const message=moldDesignRefusalText(checked.reason,ar=>ar,category);throw Object.assign(new CRMError(message,checked.reason==='too_large'?413:400),{fields:{[checked.field]:message},reason:checked.reason});}
  const hash=await sha256(bytes),crmFileId='mdf-'+requestId,link=productsLink();keepMoldRetrying();
- const canonical=JSON.stringify({action:'attach',id,name:checked.name,size:bytes.length,sha256:hash}),receiptId='mold-design-receipt:'+c.me.id+':'+requestId;
+ // A design file's receipt reads as before (an upload started before this release is still recognized); another kind names its own.
+ const canonical=JSON.stringify({action:'attach',id,name:checked.name,size:bytes.length,sha256:hash,...(category!=='design'?{category}:{})}),receiptId='mold-design-receipt:'+c.me.id+':'+requestId;
  const answer=async(status=200,send:DesignOutcome|null=null,error='')=>{
   const row=await loadMoldRequest(c.db,id);
   if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
-  const view=moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id));
+  const view=moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id),await moldQuotePoSupported(c.db));
   return Response.json({ok:status<400,file:view.designFiles.find(entry=>entry.crmFileId===crmFileId)||null,request:view,send:send?{kind:send.kind,code:send.code,...(send.reason?{reason:send.reason}:{})}:null,...(error?{error}:{})},{status,headers:{'Cache-Control':'no-store'}});
  };
  const replay=async()=>{
@@ -53,18 +65,18 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
  if(row.memberId!==c.me.id)throw new CRMError('إرفاق ملفات التصميم لمن طلب القالب',403);
  if(!moldEditable(row))throw new CRMError(row.cancelledAt?'الطلب ملغى':'اكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد تغيير ملفات الطلب ممكنًا',409);
- const count=moldDesignCount(row,await loadMoldDesignFiles(c.db,'request_id=?',[row.id])),full='الحد '+MOLD_DESIGN_MAX_FILES+' ملفات للطلب (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.';
- if(count.crm+count.production>=MOLD_DESIGN_MAX_FILES)throw new CRMError(full,409);
+ const count=moldDesignCount(row,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),category),full=FULL[category];
+ if(count.crm+count.production>=count.max)throw new CRMError(full,409);
  // Every attempt owns a separate object: a losing concurrent retry removes only its own, never the saved file's.
  objectKey='mold-design/'+row.id+'/'+crmFileId+'/'+crypto.randomUUID();
  await env.FILES.put(objectKey,bytes,{httpMetadata:{contentType:checked.contentType}});
  const now=new Date().toISOString(),mutation=crypto.randomUUID(),permission=accessGuard(c),gate='EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND mutation_id=?)';
- const detail={label:'إرفاق ملف تصميم لطلب تصنيع قالب',customerName:row.data.customer.name,name:checked.name,kind:checked.kind,size:bytes.length};
- // Saved only while the request is still the requester's, not cancelled, editable as last known, and within the 10 places.
+ const detail={label:category==='quote'?'إرفاق ملف عرض سعر لطلب تصنيع قالب':category==='po'?'إرفاق ملف PO لطلب تصنيع قالب':'إرفاق ملف تصميم لطلب تصنيع قالب',customerName:row.data.customer.name,name:checked.name,kind:checked.kind,size:bytes.length,...(category!=='design'?{category}:{})};
+ // Saved only while the request is still the requester's, not cancelled, editable as last known, and within its category's places.
  const result=await c.db.batch([
-  c.db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id)
-   SELECT ?,?,?,?,?,?,?,?,?,?,'send',?,1,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND member_id=? AND cancelled_at IS NULL AND (remote IS NULL OR json_extract(remote,'$.editable')=1)) AND (${LIVE_FILES})<?`)
-   .bind(crmFileId,row.id,c.me.id,checked.name,checked.kind,checked.contentType,bytes.length,hash,objectKey,now,now,mutation,...permission.args,row.id,c.me.id,row.id,MOLD_DESIGN_MAX_FILES-count.production),
+  c.db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id,category)
+   SELECT ?,?,?,?,?,?,?,?,?,?,'send',?,1,?,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND member_id=? AND cancelled_at IS NULL AND (remote IS NULL OR json_extract(remote,'$.editable')=1)) AND (${LIVE_FILES})<?`)
+   .bind(crmFileId,row.id,c.me.id,checked.name,checked.kind,checked.contentType,bytes.length,hash,objectKey,now,now,mutation,category,...permission.args,row.id,c.me.id,row.id,category,count.max-count.production),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,row.id,c.me.name,'mold-design-receipt',canonical,now,crmFileId,mutation),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),row.id,c.me.name,'mold-design:attach',JSON.stringify(detail),now,crmFileId,mutation),
  ]).catch(async error=>{const again=await replay();if(again)return again;throw error;});
@@ -72,8 +84,8 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
   const again=result instanceof Response?result:await replay();
   await env.FILES.delete(objectKey).catch(()=>{});objectKey='';
   if(again)return again;
-  const fresh=await loadMoldRequest(c.db,row.id),places=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]));
-  throw new CRMError(places&&places.crm+places.production>=MOLD_DESIGN_MAX_FILES?full:'تغيّرت حالة الطلب أو صلاحياتك أثناء الحفظ. حدّث الصفحة.',409);
+  const fresh=await loadMoldRequest(c.db,row.id),places=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),category);
+  throw new CRMError(places&&places.crm+places.production>=places.max?full:'تغيّرت حالة الطلب أو صلاحياتك أثناء الحفظ. حدّث الصفحة.',409);
  }
  objectKey='';
  // Saved. When production holds the request the file goes now; the answer waits a little for it.

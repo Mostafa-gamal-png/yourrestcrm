@@ -3,7 +3,8 @@
 // 2 minutes) and of a deletion (10 seconds), production not finding the request (404: not sent again by itself, use Resend), tries
 // stopped after 24 hours (use Resend), a cancelled request's file (never «sent once production has the request»); a file production
 // refused stays refused and takes no place when the production link is off (the counter and the picker); and the English wording; the
-// device's own check on production's PR #27 inputs; when a request approved from the sales manager's list waits for them again.
+// device's own check on production's PR #27 inputs; when a request approved from the sales manager's list waits for them again; and
+// (production's second update of 2026-11-03) the files grouped as design, quotation and PO, each with its own places and picker.
 // Render contracts only: no browser, no network, no production data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -189,4 +190,44 @@ function render(row, files, linkReady = true) {
   eq([lib.moldPendingAgain({orderNo: 92, waitingSince: null}, [{orderNo: 92, waitingSince: '2026-11-02T10:00:00+03:00'}]), lib.moldPendingAgain(copy, [{orderNo: 92, waitingSince: null}])], [true, false], 'a copy with no time is behind any wait production dates; a wait without a date is not newer');
 }
 
-console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, place refusals, English; the pending files with and without links; the device check on PR #27 inputs; a request approved from the list waiting again', productionDataUsed: false}));
+// ---- 10. 2026-11-03 (production's second update): the sheet's files grouped as design, quotation and PO, each with its own places and
+//  picker (a PDF or an image only for the quotation and PO); the quotation's and PO's groups appear once the update is live (or when the
+//  request has such files: one kept until then says so, with no picker); production's own quotation and PO files in their group
+{
+  const groups = (row, files, quotePo, uploads = []) => {
+    const view = lib.moldRequestView(row, me, [], true, files, [], quotePo);
+    const html = renderToStaticMarkup(React.createElement(ui.MoldDesignFiles, {view, uploads, queue: new ui.DesignUploadQueue(), onView: () => {}, say, quotePo}));
+    const sections = html.split('<section class="mold-design"').slice(1).map(part => ({category: /data-category="(\w+)"/.exec(part)[1], count: /dir="ltr">(\d+\/\d+)</.exec(part)[1], accept: /accept="([^"]*)"/.exec(part)?.[1] || null, text: part.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')}));
+    return {view, sections};
+  };
+  const design = file('رسم.pdf', {outbox: null, sentAt: at, nextAttemptAt: null}), quote = file('عرض سعر.pdf', {category: 'quote', outbox: null, sentAt: at, nextAttemptAt: null});
+  let shown = groups(request(), [design], false);
+  eq(shown.sections.map(section => [section.category, section.count]), [['design', '1/10']], 'before the update: the design files only, as before');
+  shown = groups(request({remote: {...remote([]), quoteNo: '', poNo: '', quoteOrPoMissing: true, quoteFiles: [], poFiles: [{fileId: 'p-7', crmFileId: null, name: 'PO من الإنتاج.pdf', kind: 'pdf', size: 10, source: 'production', uploadedAt: at, category: 'po'}]}}), [design, quote], true);
+  eq(shown.sections.map(section => [section.category, section.count]), [['design', '1/10'], ['quote', '1/5'], ['po', '1/5']], 'after it: three groups, each with its own places (production\'s PO file counted in its own)');
+  eq([shown.sections[0].text.includes('ملفات التصميم'), shown.sections[1].text.includes('ملفات عرض السعر') && shown.sections[1].text.includes('عرض سعر.pdf'), shown.sections[2].text.includes('ملفات الـ PO') && shown.sections[2].text.includes('PO من الإنتاج.pdf') && shown.sections[2].text.includes('من الإنتاج')], [true, true, true], 'each file in its own group, production\'s marked as such');
+  eq([shown.sections[0].accept.includes('.dwg'), shown.sections[1].accept, shown.sections[2].accept], [true, '.pdf,.png,.jpg,.jpeg,.webp,.gif', '.pdf,.png,.jpg,.jpeg,.webp,.gif'], 'the quotation\'s and PO\'s pickers offer a PDF or an image only');
+  ok(shown.sections[1].text.includes('PDF أو صورة بس') && shown.sections[1].text.includes('5 ملفات'), 'and say so, with their 5 places: ' + shown.sections[1].text);
+  const kept = file('عرض قبل التحديث.pdf', {category: 'quote', attempts: 0, lastAttemptAt: null});
+  shown = groups(request(), [design, kept], false);
+  eq([shown.sections.map(section => section.category), shown.sections[1].accept, shown.sections[1].text.includes('بانتظار تحديث تطبيق المنتجات')], [['design', 'quote'], null, true], 'a quotation file kept until the update: its group shows it (no picker), waiting for the update');
+  language = 'en';
+  shown = groups(request(), [design, quote], true);
+  eq(shown.sections.map(section => /(Design files|Quotation files|PO files)/.exec(section.text)?.[1]), ['Design files', 'Quotation files', 'PO files'], 'the groups in English');
+  language = 'ar';
+  // The device's check for a quotation or PO file, and each picker's own places
+  const device = async (name, bytes, category) => (await ui.checkDesignFile(new File([bytes], name), category)).refusal;
+  eq(await Promise.all([device('رسم.dwg', Buffer.from('AC1027'), 'quote'), device('رسم.dwg', Buffer.from('AC1027'), 'po'), device('رسم.dwg', Buffer.from('AC1027'), 'design'), device('عرض.pdf', Buffer.from('%PDF-1.4 quote'), 'quote')]), ['not_document', 'not_document', '', ''], 'a drawing is refused as a quotation or PO (not_document) but taken as a design file; a PDF is a quotation');
+  const picked = await ui.checkDesignFiles([new File(['%PDF-1.4 a'], 'a.pdf'), new File(['%PDF-1.4 b'], 'b.pdf')], 1, 'po');
+  eq(picked.map(choice => [choice.category, choice.refusal]), [['po', ''], ['po', 'too_many_files']], 'the PO picker\'s places: the file beyond them is refused as too many, each choice says its kind');
+  eq([lib.moldDesignRefusalText('not_document', say), lib.moldDesignRefusalText('too_many_files', say, 'po')], ['ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج)'], 'said in words');
+  const view = lib.moldRequestView(request(), me, [], true, [design, quote], [], true);
+  const uploads = [{key: 'u1', moldId: 'mr-1', category: 'quote', phase: 'queued', final: false}, {key: 'u2', moldId: 'mr-1', category: 'design', phase: 'failed', final: true}];
+  eq([ui.designUsed(view, uploads), ui.designUsed(view, uploads, 'quote'), ui.designUsed(view, uploads, 'po')], [1, 2, 0], 'each kind\'s places counted apart, its uploads on their way included');
+  // The sales manager's list: the quotation's and PO's files under their own title
+  const listed = lib.moldPendingFiles({orderNo: 94, designFiles: [], quoteFiles: [{fileId: 601, crmFileId: 'mdf-q', name: 'عرض.pdf', kind: 'pdf', size: 10, source: 'crm', uploadedAt: at}], poFiles: []});
+  const card = renderToStaticMarkup(React.createElement(ui.MoldPendingDesignFiles, {files: listed.quoteFiles, say, category: 'quote'}));
+  eq([card.includes('ملفات عرض السعر'), card.includes('/api/mold-requests/design-file?order=94&amp;file=601'), renderToStaticMarkup(React.createElement(ui.MoldPendingDesignFiles, {files: listed.poFiles, say, category: 'po'}))], [true, true, ''], 'the quotation files with their links by order number; no PO file, no block');
+}
+
+console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, place refusals, English; the pending files with and without links; the device check on PR #27 inputs; a request approved from the list waiting again; the quotation and PO groups', productionDataUsed: false}));
