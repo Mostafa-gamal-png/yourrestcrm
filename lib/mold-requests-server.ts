@@ -4,7 +4,8 @@
 // request: kept in the object store, sent with design-files, deleted with design-file-delete. Sending is off, never the rest of the CRM,
 // while the settings are missing. Once sent, a request's data is edited by the production manager in the products application only
 // (2026-11-02): the CRM's update is for a request that has certainly never reached production (MOLD_NEVER_SENT_SQL), and a change
-// production still refuses as production_only is final (sendMoldRequest).
+// production still refuses as production_only is final (sendMoldRequest). Since 2026-11-03 the production manager may restore a cancelled
+// request: its status keeps being pulled, and a status that is no longer cancelled makes it active again here (moldRemoteStatements).
 import {env} from 'cloudflare:workers';
 import {database} from './crm-server';
 import {regionScope} from './regions';
@@ -28,12 +29,14 @@ export async function loadMoldRequests(db:D1Database,where='1=1',args:(string|nu
 }
 export async function loadMoldRequest(db:D1Database,id:string){return (await loadMoldRequests(db,'id=?',[id]))[0]||null;}
 
-/** The contract body of a request (§2). */
-export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs});
+/** The contract body of a request (§2), with its payment when it has one: a request stored before 2026-11-03 has none and is sent again
+ *  byte for byte as first sent (production compares a resend with its original; a field added would be other data, 409 production_only). */
+export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs,payment:row.data.payment});
 export const requestedNow=(now:string)=>riyadhIso(now);
 
-/** What one send gave. sent: what was sent (the request's data, or its cancellation), so a refusal is told in the right words. */
-export type SendOutcome={kind:'ok'|'locked'|'not_found'|'rejected'|'retry'|'off'|'busy'|'none';code:string;fields?:string[];reason?:string;sent?:'send'|'cancel'};
+/** What one send gave. sent: what was sent (the request's data, or its cancellation), so a refusal is told in the right words. restored:
+ *  a cancellation production answered with the request as it is, not cancelled (its manager had restored it, and this reason was used). */
+export type SendOutcome={kind:'ok'|'locked'|'not_found'|'rejected'|'retry'|'off'|'busy'|'none'|'restored';code:string;fields?:string[];reason?:string;sent?:'send'|'cancel'};
 /** moldNeverSent (portable/mold-rules.mjs) in SQL, over crm_mold_requests: never accepted, no status from production, and either never
  *  attempted or every attempt refused before production stored it (the last error says so, and no attempt started after it). The
  *  update's guard, so a send claimed between the check and the save keeps the request as it is. */
@@ -56,6 +59,12 @@ export const MOLD_NEVER_SENT_SQL="(accepted IS NULL AND remote IS NULL AND (last
  * A change to a request production already holds (queued before 2026-11-02; the CRM no longer saves one) that production refuses for
  * its data (400 or 413, or the CRM's own refusal) is final too: no edit can fix it any more, so it is dropped, the data goes back to
  * what production accepted, and the error, marked final, says why.
+ *
+ * A cancellation answered 200 with the request NOT cancelled (2026-11-03): its production manager had restored it, and this reason was
+ * used already, so production cancels nothing, whatever the request's state now (approved or in production since). The CRM does not
+ * mark it cancelled either: its cancelled marks are cleared, production's status stored, nothing is tried again, and the error (code
+ * restored, reason same_reason) says why (asking for a new reason only while it may still be cancelled); audited. A cancellation
+ * waiting while the status stored already says cancelled is not sent at all (see below), so this answer only comes for one no pull saw.
  */
 export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch}={}):Promise<SendOutcome>{
  if(!link.ok)return {kind:'off',code:link.reason};
@@ -64,6 +73,14 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
  const at=now(),claim=crypto.randomUUID(),lease=new Date(Date.parse(at)+60_000).toISOString();
  const claimed=await db.prepare('UPDATE crm_mold_requests SET mutation_id=?,last_attempt_at=?,next_attempt_at=? WHERE id=? AND version=? AND outbox=? AND next_attempt_at IS NOT NULL AND next_attempt_at<=?').bind(claim,at,lease,id,row.version,row.outbox,at).run();
  if(claimed.meta.changes!==1)return {kind:'busy',code:''};
+ // A cancellation whose answer was lost while a pull since stored production's status as cancelled (it arrived, or production cancelled
+ // the request itself): complete there, so it is settled as delivered, not sent again. A later restore is then the pull's alone
+ // (moldRemoteStatements: audited «رجّعه مدير الإنتاج بعد الإلغاء», active again), never read from a cancellation's answer. A restore
+ // stored meanwhile (it drops the cancellation and takes the claim) wins.
+ if(row.outbox==='cancel'&&row.remote?.status==='cancelled'){
+  await db.prepare('UPDATE crm_mold_requests SET outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND mutation_id=?').bind(now(),id,claim).run();
+  return {kind:'ok',code:'',sent:'cancel'};
+ }
  const options=fetch?{fetch}:{};
  const answer=row.outbox==='cancel'
   ?await callProducts(link,'cancel',{crmRequestId:row.id,reason:row.cancelReason},options)
@@ -75,9 +92,20 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
  const done=now(),[remoteSet,remoteArgs]=newerRemote(remote,done);
  const settle=(sql:string,...args:(string|number|null)[])=>db.prepare(`UPDATE crm_mold_requests SET ${sql},updated_at=? WHERE id=? AND mutation_id=?`).bind(...args,done,id,claim).run();
  const cleared="outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL";
+ // A cancellation answered with this request's status proves production holds it, with the CRM's data (no edit follows a send that may
+ // have arrived): kept as accepted when the first send's answer was lost, so its status is pulled from now on (a restore included).
+ const [held,heldArgs]:[string,string[]]=remote&&row.outbox==='cancel'?['accepted=COALESCE(accepted,?),',[JSON.stringify(row.data)]]:['',[]];
  if(answer.kind==='ok'){
   if(row.outbox==='send')await settle(`${cleared},last_error=NULL,accepted=?,${remoteSet}`,JSON.stringify(row.data),...remoteArgs);
-  else await settle(`${cleared},last_error=NULL,${remoteSet}`,...remoteArgs);
+  else if(remote&&remote.status!=='cancelled'){
+   const error=JSON.stringify({code:'restored',reason:'same_reason',http:answer.http||200,at:done}),gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=? AND cancelled_at IS NOT NULL)';
+   await db.batch([
+    db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,'mold-request:cancel-restored',?,? WHERE ${gate}`)
+     .bind(crypto.randomUUID(),id,MOLD_PRODUCTION_ACTOR,JSON.stringify({label:'الإلغاء لم يُنفَّذ: مدير الإنتاج رجّع الطلب، والسبب نفسه استُخدم قبل كده',customerName:row.data.customer.name,reason:row.cancelReason,orderNo:remote.orderNo,status:remote.status,waitingStep:remote.waitingStep??null}),done,id,claim),
+    db.prepare(`UPDATE crm_mold_requests SET ${held}${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,${remoteSet},version=version+1,updated_at=? WHERE id=? AND mutation_id=?`).bind(...heldArgs,error,...remoteArgs,done,id,claim),
+   ]);
+   return {kind:'restored',code:'same_reason',fields:[],sent:'cancel'};
+  }else await settle(`${held}${cleared},last_error=NULL,${remoteSet}`,...heldArgs,...remoteArgs);
  }else if(answer.kind==='not_found'&&row.outbox==='cancel'){
   // Production never had it (a send that did not get through): the cancellation is complete in the CRM.
   await settle(`${cleared},last_error=NULL`);
@@ -86,7 +114,7 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   // never tried again (final), and the request shows production's status.
   const productionOnly=row.outbox==='send'&&answer.reason===MOLD_PRODUCTION_ONLY;
   const error=JSON.stringify({code:'request_locked',...(answer.reason?{reason:answer.reason}:{}),http:409,at:done,...(row.outbox==='send'?{final:true}:{})});
-  if(row.outbox==='cancel')await settle(`${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,${remoteSet},version=version+1`,error,...remoteArgs);
+  if(row.outbox==='cancel')await settle(`${held}${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,${remoteSet},version=version+1`,...heldArgs,error,...remoteArgs);
   // production_only: production holds the request (with or without a status here), and its production manager alone edits it. When the
   // CRM never learned what production accepted, its refused copy is kept, marked unconfirmed (SQLite reads the old row on the right).
   // Without a status, the time of the last pull stays, so the next page pulls it.
@@ -128,10 +156,53 @@ export function newerRemote(remote:MoldRemote|null,at:string):[string,(string|nu
  const older="json_extract(remote,'$.revision')>?",revision=remote.revision??Number.MAX_SAFE_INTEGER;
  return [`remote=CASE WHEN ${older} THEN remote ELSE ? END,remote_at=CASE WHEN ${older} THEN remote_at ELSE ? END`,[revision,JSON.stringify(remote),revision,at]];
 }
-/** Production's answer about a request, stored unless a newer one (a higher revision) is there already. */
+/** Who the audit names for what production did (its production manager's restore). */
+export const MOLD_PRODUCTION_ACTOR='تطبيق الإنتاج';
+/** Over crm_mold_requests as it stands before a status is stored: the status stored says cancelled, and the one coming (its revision
+ *  bound, never older: newerRemote's own test) is not cancelled. The production manager restored the request (2026-11-03). */
+const RESTORED_SQL="json_extract(remote,'$.status') IS 'cancelled' AND IFNULL(json_extract(remote,'$.revision')>?,0)=0";
+/**
+ * The statements that store production's answer about a request (newerRemote), run together in this order (one batch). When the answer
+ * says the request is not cancelled while the status stored says it is, the production manager restored it (2026-11-03), and two come
+ * first: an audit entry «رجّعه مدير الإنتاج بعد الإلغاء» (whoever cancelled it), and, for a request the CRM cancelled, its cancelled marks
+ * cleared (cancelled_at, cancel_reason: it is active again, its cancelling and design files back under the usual rules) with why kept
+ * in last_error (code restored). A cancellation still waiting for its resend is dropped then (reason cancel_dropped): production saw the
+ * request cancelled and its manager undid that, so it is never sent again. A cancellation production never showed as cancelled is not
+ * touched by any status: it is sent as before. Any send in flight loses its claim (a change saved meanwhile wins over the answer).
+ */
+export function moldRemoteStatements(db:D1Database,id:string,remote:MoldRemote,at:string):D1PreparedStatement[]{
+ const [set,args]=newerRemote(remote,at),write=db.prepare(`UPDATE crm_mold_requests SET ${set} WHERE id=?`).bind(...args,id);
+ if(remote.status==='cancelled')return [write];
+ const revision=remote.revision??Number.MAX_SAFE_INTEGER,error=(reason:string)=>JSON.stringify({code:'restored',reason,http:0,at});
+ const audit=db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,id,?,'mold-request:restored',json_object('label',?,'customerName',json_extract(data,'$.customer.name'),'cancelledInCrm',json(CASE WHEN cancelled_at IS NULL THEN 'false' ELSE 'true' END),'cancelReason',cancel_reason,'cancelDropped',json(CASE WHEN outbox IS 'cancel' THEN 'true' ELSE 'false' END),'orderNo',?,'status',?,'waitingStep',?),?
+  FROM crm_mold_requests WHERE id=? AND ${RESTORED_SQL}`).bind(crypto.randomUUID(),MOLD_PRODUCTION_ACTOR,'رجّعه مدير الإنتاج بعد الإلغاء',remote.orderNo,remote.status,remote.waitingStep??null,at,id,revision);
+ // accepted: production holds the request with the CRM's data (a cancellation whose first send's answer was lost may lack it).
+ const restore=db.prepare(`UPDATE crm_mold_requests SET cancelled_at=NULL,cancel_reason='',accepted=COALESCE(accepted,data),last_error=CASE WHEN outbox IS 'cancel' THEN ? ELSE ? END,attempts=CASE WHEN outbox IS 'cancel' THEN 0 ELSE attempts END,
+  first_failed_at=CASE WHEN outbox IS 'cancel' THEN NULL ELSE first_failed_at END,next_attempt_at=CASE WHEN outbox IS 'cancel' THEN NULL ELSE next_attempt_at END,outbox=CASE WHEN outbox IS 'cancel' THEN NULL ELSE outbox END,
+  mutation_id=?,updated_at=?,version=version+1 WHERE id=? AND cancelled_at IS NOT NULL AND ${RESTORED_SQL}`).bind(error('cancel_dropped'),error('restored'),crypto.randomUUID(),at,id,revision);
+ return [audit,restore,write];
+}
+/** Production's answer about a request, stored unless a newer one (a higher revision) is there already; a restore it shows is settled
+ *  with it (moldRemoteStatements). */
 export async function storeMoldRemote(db:D1Database,id:string,remote:MoldRemote,at:string){
- const [set,args]=newerRemote(remote,at);
- await db.prepare(`UPDATE crm_mold_requests SET ${set} WHERE id=?`).bind(...args,id).run();
+ await db.batch(moldRemoteStatements(db,id,remote,at));
+}
+/** The reasons of each request's earlier cancellations in the CRM (their audit entries, oldest first), for the requests given: a new
+ *  cancellation of a request the production manager restored needs another (production answers a used one with the request as it is). */
+export async function moldCancelReasons(db:D1Database,ids:string[]){
+ const out=new Map<string,string[]>();
+ for(let start=0;start<ids.length;start+=100){
+  const chunk=ids.slice(start,start+100);
+  const rows=(await db.prepare(`SELECT record_id AS id,json_extract(detail,'$.reason') AS reason FROM crm_audit WHERE record_id IN (${chunk.map(()=>'?').join(',')}) AND action='mold-request:cancel' ORDER BY created_at,id`).bind(...chunk).all<{id:string;reason:unknown}>()).results;
+  for(const row of rows)out.set(row.id,[...(out.get(row.id)||[]),typeof row.reason==='string'?row.reason:'']);
+ }
+ return out;
+}
+/** The earlier reasons a reader's view carries: for the requester of a request active again after a cancellation (code restored), the
+ *  only one who may cancel it; [] otherwise. */
+export async function moldViewReasons(db:D1Database,rows:Pick<MoldRequestRow,'id'|'memberId'|'lastError'>[],me:Pick<Member,'id'>){
+ const wanted=rows.filter(row=>row.memberId===me.id&&row.lastError?.code==='restored').map(row=>row.id);
+ return wanted.length?await moldCancelReasons(db,wanted):new Map<string,string[]>();
 }
 
 // ---- design files (the contract's addition of 2026-11-02)
@@ -164,11 +235,12 @@ export const MOLD_DESIGN_REFUSED_SQL="(outbox IS 'send' AND sent_at IS NULL AND 
 export const MOLD_DESIGN_STOPPED_SQL="((outbox IS 'delete' OR outbox IS 'send' AND deleted_at IS NULL) AND next_attempt_at IS NULL AND json_extract(last_error,'$.final') IS NOT 1)";
 export type DesignOutcome=SendOutcome&{reason?:string};
 /**
- * One send of what a design file has waiting: the file itself (only once production holds its request, never for a cancelled one), or its
- * deletion. Claimed with a lease first, like a request; a deletion asked for meanwhile wins over the answer. Each answer's request (its
- * approvals undone) is stored. Final answers stop the timetable, marked final whatever their code (a 400 or 413 from a web server in
- * front of production has no contract code): 400 and 413 (refused, with the reason) and 409 (the approvals were complete first: the file
- * is not sent). A 404, whatever its body (the contract's not_found, or the 404 of an application or web server that does not know the
+ * One send of what a design file has waiting: the file itself (only once production holds its request, never while it is cancelled, in
+ * the CRM or in production as last known), or its deletion. Claimed with a lease first, like a request; a deletion asked for meanwhile
+ * wins over the answer. Each answer's request (its approvals undone) is stored. Final answers stop the timetable, marked final whatever
+ * their code (a 400 or 413 from a web server in front of production has no contract code): 400 and 413 (refused, with the reason) and
+ * 409 (the approvals were complete first: the file is not sent). A 409 whose request is cancelled there is not final: the production
+ * manager may restore it (2026-11-03), so the file waits, held, and goes once the request is active again. A 404, whatever its body (the contract's not_found, or the 404 of an application or web server that does not know the
  * route yet), is production's «not here»: a deletion is then complete; a file is not tried again by itself (the contract), the reason is
  * shown, and the requester's resend tries it again (production updated meanwhile, say), since nothing in the file has to change.
  * A deletion production refuses (409, or 400/413) leaves the file as production holds it, with the reason: sent when production lists
@@ -181,7 +253,8 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
  const file=(await loadMoldDesignFiles(db,'id=?',[id]))[0];
  if(!file||!file.outbox)return {kind:'none',code:''};
  const row=await loadMoldRequest(db,file.requestId);
- if(!row||file.outbox==='send'&&(!row.accepted||row.cancelledAt))return {kind:'none',code:'held'};
+ // Held while the request is cancelled, in the CRM or in production as last known (its production manager may restore it, 2026-11-03).
+ if(!row||file.outbox==='send'&&(!row.accepted||row.cancelledAt||row.remote?.status==='cancelled'))return {kind:'none',code:'held'};
  if(filesInFlight>=DESIGN_SENDS)return {kind:'busy',code:''};
  filesInFlight++;
  try{
@@ -222,6 +295,12 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
   }else if(missing){
    // Production does not hold the request (or does not know the route yet): stopped, with the reason; the requester's resend tries again.
    await settle('attempts=attempts+1,next_attempt_at=NULL,last_error=?',JSON.stringify({code:answer.code||'not_found',http:404,at:done}));
+  }else if(answer.kind==='locked'&&remote?.status==='cancelled'){
+   // Refused because the request is cancelled there (by its production manager, or by the CRM's cancellation that arrived first): not
+   // final, since the production manager may restore it (2026-11-03). The file waits, held while the status stored says cancelled (or
+   // the CRM's cancellation stands), and goes once the request is active again.
+   await settle('attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL',done);
+   return {kind:'none',code:'held'};
   }else if(answer.kind==='locked'||answer.kind==='rejected'){
    await refuse({code:answer.kind==='locked'?'request_locked':answer.code,...(answer.reason?{reason:answer.reason}:{}),...(answer.fields.length?{fields:answer.fields}:{}),http:answer.http||0,at:done});
   }else{
@@ -231,12 +310,12 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
   return {kind:gone?'ok':missing?'not_found':answer.kind,code:answer.code,fields:answer.fields,...(answer.reason?{reason:answer.reason}:{})};
  }finally{filesInFlight--;}
 }
-/** The design files whose turn has come, oldest first: deletions, and files whose request production holds (not cancelled). A file
- * waiting for its request is left until the request is accepted. */
+/** The design files whose turn has come, oldest first: deletions, and files whose request production holds (not cancelled, in the CRM
+ * nor in production as last known). A file waiting for its request is left until the request is accepted, or restored. */
 export async function sendDueMoldDesignFiles(db:D1Database,{limit=2,now=()=>new Date().toISOString(),link=productsLink(),fetch,files}:{limit?:number;now?:()=>string;link?:Config;fetch?:typeof globalThis.fetch;files?:R2Bucket}={}){
  if(!link.ok||filesInFlight>=DESIGN_SENDS)return 0;
  const due=(await db.prepare(`SELECT f.id FROM crm_mold_design_files f JOIN crm_mold_requests r ON r.id=f.request_id WHERE f.outbox IS NOT NULL AND f.next_attempt_at IS NOT NULL AND f.next_attempt_at<=?
-  AND (f.outbox='delete' OR (r.accepted IS NOT NULL AND r.cancelled_at IS NULL)) ORDER BY f.next_attempt_at,f.id LIMIT ?`).bind(now(),limit).all<{id:string}>()).results;
+  AND (f.outbox='delete' OR (r.accepted IS NOT NULL AND r.cancelled_at IS NULL AND json_extract(r.remote,'$.status') IS NOT 'cancelled')) ORDER BY f.next_attempt_at,f.id LIMIT ?`).bind(now(),limit).all<{id:string}>()).results;
  let sent=0;
  for(const {id} of due){const outcome=await sendMoldDesignFile(db,id,{link,now,fetch,...(files?{files}:{})});if(outcome.kind==='ok')sent++;}
  return sent;
@@ -267,7 +346,8 @@ let lastPullFailure:MoldError|null=null;
  */
 export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link=productsLink(),now=()=>new Date().toISOString(),fetch,force=false}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;force?:boolean}={}):Promise<MoldError|null>{
  if(!link.ok)return null;
- const at=now(),stale=rows.filter(row=>row.accepted&&(force||!row.remoteAt||Date.parse(at)-Date.parse(row.remoteAt)>=MOLD_STATUS_TTL_MS));
+ // Every request production holds (accepted, or a status from it), cancelled ones too: the production manager may restore one (2026-11-03).
+ const at=now(),stale=rows.filter(row=>(row.accepted||row.remote)&&(force||!row.remoteAt||Date.parse(at)-Date.parse(row.remoteAt)>=MOLD_STATUS_TTL_MS));
  if(!stale.length)return null;
  if(!force&&lastPullFailure&&Date.parse(at)-Date.parse(lastPullFailure.at)<MOLD_STATUS_TTL_MS/2)return lastPullFailure;
  const options=fetch?{fetch}:{};
@@ -275,11 +355,13 @@ export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link
   const ids=stale.slice(start,start+MOLD_STATUS_BATCH).map(row=>row.id);
   const answer=await callProducts(link,'status',{ids},options);
   if(answer.kind!=='ok'){lastPullFailure={code:answer.code,http:answer.http||0,at};return lastPullFailure;}
-  const received=now(),statements=[];
-  for(const item of answer.json!.requests){const status=moldStatusObject(item);if(status&&ids.includes(status.crmRequestId)){const [set,args]=newerRemote(status,received);statements.push(db.prepare(`UPDATE crm_mold_requests SET ${set} WHERE id=?`).bind(...args,status.crmRequestId));}}
-  if(statements.length)await db.batch(statements);
-  // The page shows what was stored: an older answer (a file's answer landed meanwhile) leaves the newer status as it was.
+  const received=now(),statements:D1PreparedStatement[]=[],restores:[number,string][]=[];
+  for(const item of answer.json!.requests){const status=moldStatusObject(item);if(status&&ids.includes(status.crmRequestId)){const writes=moldRemoteStatements(db,status.crmRequestId,status,received);if(writes.length>1)restores.push([statements.length+1,status.crmRequestId]);statements.push(...writes);}}
+  const results=statements.length?await db.batch(statements):[];
+  // The page shows what was stored: an older answer (a file's answer landed meanwhile) leaves the newer status as it was; a request
+  // restored now is read again whole (no longer cancelled, its cancellation's sending dropped).
   for(const row of stale.slice(start,start+MOLD_STATUS_BATCH)){const fresh=(answer.json!.requests as unknown[]).map(item=>moldStatusObject(item)).find(item=>item?.crmRequestId===row.id);if(fresh&&!moldRemoteOlder(row.remote,fresh)){row.remote=fresh;row.remoteAt=received;}}
+  for(const [index,id] of restores){if(results[index]?.meta.changes!==1)continue;const fresh=await loadMoldRequest(db,id),row=stale.find(item=>item.id===id);if(fresh&&row)Object.assign(row,fresh);}
  }
  lastPullFailure=null;
  return null;

@@ -1,11 +1,11 @@
 import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {validateMoldSpecs,moldApprovalBody,moldApprovalRefusal,moldStatusObject,moldRequestCity,MOLD_LIMITS,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT} from '@/portable/mold-rules.mjs';
+import {validateMoldSpecs,moldApprovalBody,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldStatusObject,moldRequestCity,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldDesignInFlight,moldDesignStopped,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,yourrestNumber,type MoldRequestData,type MoldRequestRow,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldDesignInFlight,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestRow,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
-import {forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldDesignFilesByRequest,moldPendingFor as pendingFor,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
+import {forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldViewReasons,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 const reader=async()=>{const c=await context({load:'customers'});if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);return c;};
@@ -22,16 +22,17 @@ export async function GET(req:Request){try{
  keepMoldRetrying();void sendDueMoldRequests(c.db,{link}).catch(()=>{});
  const rows=(id?[await loadMoldRequest(c.db,id)].filter((row):row is MoldRequestRow=>!!row):await loadMoldRequests(c.db)).filter(row=>canReadMoldRequest(row,c));
  if(id&&!rows.length)throw new CRMError('الطلب غير متاح',404);
- const statusError=await pullMoldStatuses(c.db,rows,{link}),files=await moldDesignFilesByRequest(c.db,rows.map(row=>row.id));
- const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>moldRequestView(row,c.me,c.members,link.ok,files.get(row.id))),statusError,canCreate:canCreateMoldRequest(c.me),pending:id?null:await pendingFor(c,link)};
+ const statusError=await pullMoldStatuses(c.db,rows,{link}),files=await moldDesignFilesByRequest(c.db,rows.map(row=>row.id)),reasons=await moldViewReasons(c.db,rows,c.me);
+ const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>moldRequestView(row,c.me,c.members,link.ok,files.get(row.id),reasons.get(row.id))),statusError,canCreate:canCreateMoldRequest(c.me),pending:id?null:await pendingFor(c,link)};
  return Response.json(answer,{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 
 const requestId=z.string().uuid(),id=z.string().regex(/^mr-[0-9a-f-]{36}$/),version=z.number().int().positive();
-const specsInput=z.record(z.string(),z.unknown());
+const specsInput=z.record(z.string(),z.unknown()),paymentInput=z.unknown().optional();
 const schema=z.discriminatedUnion('action',[
- z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200),specs:specsInput}).strict(),
- z.object({action:z.literal('update'),requestId,id,version,specs:specsInput}).strict(),
+ // payment (2026-11-03): cash or deferred, required (checkedRequest says so with the field's own message).
+ z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200),specs:specsInput,payment:paymentInput}).strict(),
+ z.object({action:z.literal('update'),requestId,id,version,specs:specsInput,payment:paymentInput}).strict(),
  z.object({action:z.literal('cancel'),requestId,id,version,reason:z.string().trim().max(MOLD_LIMITS.cancelReason,'سبب الإلغاء حتى 500 حرف').default('')}).strict(),
  z.object({action:z.literal('resend'),requestId,id}).strict(),
  z.object({action:z.literal('approve'),requestId,id}).strict(),
@@ -51,10 +52,18 @@ const PRODUCTION_ONLY_SENT=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ التعديل لم 
 const CANCELLED_THERE='أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.';
 const CANCEL_LOCKED='اكتملت الاعتمادات أو بدأ الإنتاج قبل وصول الإلغاء؛ لم يعد الإلغاء ممكنًا.';
 const SEND_LOCKED='رفض الإنتاج الإرسال لأن الطلب مقفل لديه؛ لن يُعاد إرساله.';
-function checkedSpecs(input:Record<string,unknown>){
- const {specs,errors}=validateMoldSpecs(input);
- if(Object.keys(errors).length)throw Object.assign(new CRMError(Object.values(errors).join(' • '),400),{fields:errors});
- return specs as MoldRequestData['specs'];
+/** A cancellation with the reason of an earlier one the production manager undid (2026-11-03): production would answer it with the
+ *  request as it is, so it is refused here before sending. */
+const SAME_REASON=MOLD_SAME_REASON_TEXT[0];
+/** The same, once the request may no longer be cancelled (restored, then the approvals completed or production started): no new reason
+ *  would help, so none is asked for. */
+const RESTORED_LOCKED='رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
+/** The specifications and the payment (cash or deferred, 2026-11-03) of a new request or of an edit before the first send; every wrong
+ *  field named at once. */
+function checkedRequest(input:Record<string,unknown>,paymentValue:unknown){
+ const {specs,errors}=validateMoldSpecs(input),payment=moldPayment(paymentValue) as MoldPayment|null,fields:Record<string,string>={...errors,...(payment?{}:{payment:MOLD_PAYMENT_REQUIRED})};
+ if(Object.keys(fields).length)throw Object.assign(new CRMError(Object.values(fields).join(' • '),400),{fields});
+ return {specs:specs as MoldRequestData['specs'],payment:payment as MoldPayment};
 }
 
 /**
@@ -74,9 +83,13 @@ export async function POST(req:Request){try{
   const row=await loadMoldRequest(c.db,rowId);
   if(!row)throw new CRMError('الطلب غير متاح',404);
   // 409 from production: the change is withdrawn, the request shows production's status, and the reason is the one production gave.
-  const refused=refusal||(outcome?.reason===MOLD_PRODUCTION_ONLY?PRODUCTION_ONLY_SENT:row.remote?.status==='cancelled'?CANCELLED_THERE:outcome?.sent==='cancel'?CANCEL_LOCKED:SEND_LOCKED);
-  return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id])),send:outcome?{kind:outcome.kind,code:outcome.code,fields:outcome.fields||[]}:null,...(status===409?{error:refused}:{})},{status});
+  // A cancellation production answered with the request not cancelled (restored, this reason used): a new reason is needed, while it
+  // may still be cancelled.
+  const refused=refusal||(outcome?.kind==='restored'?(moldEditable(row)?SAME_REASON:RESTORED_LOCKED):outcome?.reason===MOLD_PRODUCTION_ONLY?PRODUCTION_ONLY_SENT:row.remote?.status==='cancelled'?CANCELLED_THERE:outcome?.sent==='cancel'?CANCEL_LOCKED:SEND_LOCKED);
+  return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id)),send:outcome?{kind:outcome.kind,code:outcome.code,fields:outcome.fields||[]}:null,...(status===409?{error:refused}:{})},{status});
  };
+ /** The request as it now stands, as its reader receives it (an approval's answer). */
+ const answerView=async(rowId:string)=>{const row=(await loadMoldRequest(c.db,rowId))!;return moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id));};
  const replay=async()=>{
   const saved=await c.db.prepare('SELECT record_id,detail FROM crm_audit WHERE id=?').bind(receiptId).first<{record_id:string;detail:string}>();
   if(!saved)return null;
@@ -112,7 +125,7 @@ export async function POST(req:Request){try{
    c.db.prepare('INSERT OR IGNORE INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(receiptId,recordId,c.me.name,'mold-request-receipt',canonical,at),
    c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),recordId,c.me.name,'mold-request:'+(approving?'approve':'withdraw'),JSON.stringify(detail),at),
   ]);
-  return Response.json({ok:true,status,request:own?moldRequestView((await loadMoldRequest(c.db,own.id))!,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[own.id])):null,pending:await pendingFor(c,link)});
+  return Response.json({ok:true,status,request:own?await answerView(own.id):null,pending:await pendingFor(c,link)});
  }
  const repeated=await replay();if(repeated)return repeated;
  const permission=accessGuard(c);
@@ -125,8 +138,9 @@ export async function POST(req:Request){try{
   if(!crmNumber)throw new CRMError('كود يورست للعميل غير متاح. حدّث الصفحة.',409);
   const name=String(customer.data.name||'').trim();
   if(!name||[...name].length>MOLD_LIMITS.customerName)throw new CRMError('اسم العميل أطول من '+MOLD_LIMITS.customerName+' حرفًا؛ اختصره من صفحة العميل أولًا',409);
-  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:String(customer.data.address||''),city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:checkedSpecs(input.specs)};
-  rowId='mr-'+input.requestId;detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity};
+  const asked=checkedRequest(input.specs,input.payment);
+  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:String(customer.data.address||''),city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:asked.specs,payment:asked.payment};
+  rowId='mr-'+input.requestId;detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity,payment:data.payment};
   statement=c.db.prepare(`INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,'send',?,?,?,?,1,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)`)
    .bind(rowId,c.me.id,customer.id,JSON.stringify(data),now,c.me.id,now,now,mutation,...permission.args,customer.id,customer.version);
  }else{
@@ -142,7 +156,7 @@ export async function POST(req:Request){try{
    const remote=call.kind==='ok'?moldStatusObject(call.json?.request):call.kind==='locked'?call.request:null,at=new Date().toISOString();
    if(remote)await storeMoldRemote(c.db,row.id,remote,at);
    forgetPendingApprovals();
-   if(call.kind==='locked')return Response.json({ok:false,request:moldRequestView((await loadMoldRequest(c.db,row.id))!,c.me,c.members,link.ok,files),error:moldApprovalRefusal(remote,approving)},{status:409});
+   if(call.kind==='locked')return Response.json({ok:false,request:await answerView(row.id),error:moldApprovalRefusal(remote,approving)},{status:409});
    if(call.kind!=='ok'||!remote)throw new CRMError(call.kind==='not_found'?'الطلب غير موجود لدى الإنتاج':moldErrorText(call.code,ar=>ar)+'. حاول مرة أخرى.',call.kind==='not_found'?409:502);
    const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=?)',detail={label:labels[input.action],customerName:row.data.customer.name,orderNo:remote.orderNo,waitingStep:remote.waitingStep};
    await c.db.batch([
@@ -160,14 +174,16 @@ export async function POST(req:Request){try{
   if(input.action!=='resend'&&input.version!==row.version)throw new CRMError('تغيّر الطلب. حدّث الصفحة.',409);
   const guard=`id=? AND version=? AND member_id=? AND ${permission.sql}`,guardArgs=[row.id,row.version,c.me.id,...permission.args];
   if(input.action==='update'){
-   const specs=checkedSpecs(input.specs);
-   if(JSON.stringify(specs)===JSON.stringify(row.data.specs))return answer(row.id,null);
-   detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity};
+   const {specs,payment}=checkedRequest(input.specs,input.payment);
+   if(JSON.stringify(specs)===JSON.stringify(row.data.specs)&&payment===row.data.payment)return answer(row.id,null);
+   detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity,payment};
    // Production never stored any of it, so the edited request starts as never attempted; the guard holds that in SQL, so a send claimed
    // since the check (it may arrive) keeps the request as it is.
-   statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_attempt_at=NULL,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND ${MOLD_NEVER_SENT_SQL}`).bind(JSON.stringify({...row.data,specs}),now,now,mutation,...guardArgs);
+   statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_attempt_at=NULL,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND ${MOLD_NEVER_SENT_SQL}`).bind(JSON.stringify({...row.data,specs,payment}),now,now,mutation,...guardArgs);
   }else if(input.action==='cancel'){
    if(!allowed.cancel)throw new CRMError(row.cancelledAt?'الطلب ملغى من قبل':row.memberId!==c.me.id?'إلغاء الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا',row.memberId!==c.me.id?403:409);
+   // Cancelled before and restored by the production manager (2026-11-03): a reason used already is refused here, not sent.
+   if(moldCancelReasonUsed(input.reason,(await moldCancelReasons(c.db,[row.id])).get(row.id)))return answer(row.id,null,409,SAME_REASON);
    detail={label:labels.cancel,customerName:row.data.customer.name,reason:input.reason};
    statement=c.db.prepare(`UPDATE crm_mold_requests SET cancelled_at=?,cancel_reason=?,outbox='cancel',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard}`).bind(now,input.reason,now,now,mutation,...guardArgs);
   }else{
@@ -201,7 +217,7 @@ export async function POST(req:Request){try{
  const outcome=await sendMoldRequest(c.db,rowId,{link});
  // A resend also starts the request's design files whose turn has come again (they go in the background, up to 120 seconds each).
  if(input.action==='resend')void sendDueMoldDesignFiles(c.db,{link}).catch(()=>{});
- return answer(rowId,outcome,outcome.kind==='locked'?409:200);
+ return answer(rowId,outcome,outcome.kind==='locked'||outcome.kind==='restored'?409:200);
 }catch(e){
  if(e instanceof z.ZodError)return Response.json({error:e.issues.map(issue=>issue.message).join(' • ')},{status:400});
  if(e instanceof CRMError&&'fields' in e)return Response.json({error:e.message,fields:(e as CRMError&{fields:Record<string,string>}).fields},{status:e.status});
