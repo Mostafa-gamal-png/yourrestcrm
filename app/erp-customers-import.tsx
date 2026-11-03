@@ -30,6 +30,7 @@ const regionEnglish: Record<string, string> = { 'الوسطى': 'Central', 'ال
 const serverEnglish: Record<string, string> = {
   'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة': 'Customer data changed since the preview. Run a new preview.',
   'الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة': 'This screen did not show the new customers that would be added. Reload the page and run a new preview.',
+  'شاشة الاستيراد دي اتفتحت قبل تحديث النظام؛ حدّث الصفحة واعمل معاينة جديدة. ما اتحفظش أي حاجة. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.': 'This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.',
   'اخترت نفس العميل لأكثر من سطر؛ العميل له كود ERP واحد. راجع الاختيارات.': 'The same customer is chosen for more than one row; a customer has one ERP code. Review the choices.',
   'لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.': 'Nothing in this file changes a code or adds a customer.',
   'اعرض الملف أولًا قبل تحديث الأكواد': 'Preview the file before updating the codes.',
