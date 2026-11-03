@@ -230,7 +230,7 @@ try {
 
   // ---- 6. On a phone: the files and their buttons fit the screen, each button big enough to tap
   const phone = await open('rep', {viewport: PHONE});
-  await phone.locator('button.mobile-profile-trigger').click();
+  await phone.locator('.mobile-bottom-navigation button[aria-haspopup="dialog"]').click();
   await phone.locator('.mobile-overflow-pages button[data-page="mold-requests"]').click();
   await phone.locator('.mobile-navigation-sheet').waitFor({state: 'detached'});
   await phone.locator('.mold-card', {hasText: 'مصنع east1'}).click();

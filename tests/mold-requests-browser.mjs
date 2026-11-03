@@ -436,11 +436,13 @@ try {
   check([await managerBanner.innerText(), await sheet(managerSheet).getByRole('button', {name: 'إلغاء الطلب'}).count()], ['رجّعه مدير الإنتاج بعد الإلغاء.', 0], 'the sales manager reads that it was restored, with no instruction to cancel (the requester\'s alone)');
   await managerSheet.context().close();
 
-  // ---- 4. The phone keeps the representative's five tabs; the page opens from the account sheet
+  // ---- 4. The phone keeps the representative's five tabs and adds «المزيد», where the page opens (the owner, 2026-11-03)
   const phone = await open('rep', {viewport: PHONE});
   await phone.locator('.mobile-tab[data-page="targets"]').waitFor();
   check(await phone.locator('.mobile-tab[data-page]').evaluateAll(tabs => tabs.map(tab => tab.getAttribute('data-page'))), ['customer', 'map', 'activity', 'followup', 'targets'], 'the same five tabs');
-  await phone.locator('button.mobile-profile-trigger').click();
+  {const more = phone.locator('.mobile-bottom-navigation button[aria-haspopup="dialog"]'), box = await more.boundingBox(), bar = await phone.locator('.mobile-bottom-navigation').boundingBox()
+   check([await more.getAttribute('aria-label'), box.height >= 44, box.width >= 44, Math.round(bar.x + bar.width) <= PHONE.width], ['المزيد من الصفحات', true, true, true], '«المزيد» sits beside the five tabs, big enough to tap, inside the screen')
+   await noOverflow(phone, 'phone bar with «المزيد»'); await more.click()}
   await phone.locator('.mobile-overflow-pages button[data-page="mold-requests"]').click();
   await phone.locator('.mobile-navigation-sheet').waitFor({state: 'detached'});
   await phone.locator('.mold-page .mold-card').nth(1).waitFor();
