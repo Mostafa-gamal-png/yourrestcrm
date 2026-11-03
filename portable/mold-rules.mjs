@@ -137,13 +137,15 @@ export function moldPayment(value) {
   return value === 'cash' || value === 'deferred' ? value : null;
 }
 
-const ARABIC_DIGITS = /[٠-٩]/g, PERSIAN_DIGITS = /[۰-۹]/g;
+const ARABIC_DIGITS = /[٠-٩]/g, PERSIAN_DIGITS = /[۰-۹]/g, INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
 /** A quotation or PO number as production stores it: Arabic-Indic and Persian digits as ASCII digits, the ends trimmed; '' for none (no
- *  value, or only spaces). undefined for what production would refuse as a text: not a string, or a control character inside. */
+ *  value, or only spaces). Invisible marks a paste may carry (zero-width and direction marks) are dropped first, so a value of only
+ *  those is none rather than a number nobody can see. undefined for what production would refuse as a text: not a string, or a control
+ *  character inside. */
 export function moldQuotePoNumber(value) {
   if (value === null || value === undefined) return '';
   if (typeof value !== 'string') return undefined;
-  const text = value.replace(ARABIC_DIGITS, digit => String(digit.charCodeAt(0) - 0x0660)).replace(PERSIAN_DIGITS, digit => String(digit.charCodeAt(0) - 0x06F0)).trim();
+  const text = value.replace(INVISIBLE, '').replace(ARABIC_DIGITS, digit => String(digit.charCodeAt(0) - 0x0660)).replace(PERSIAN_DIGITS, digit => String(digit.charCodeAt(0) - 0x06F0)).trim();
   return /[\u0000-\u001F\u007F]/.test(text) ? undefined : text;
 }
 /**
@@ -416,7 +418,7 @@ function approvalsOf(value) {
   return out;
 }
 /** A number production listed (quoteNo, poNo): its text as shown, without control characters, up to 60 characters; '' for none. */
-const numberOf = value => typeof value === 'string' ? [...value.replace(/[\u0000-\u001F\u007F-\u009F‪-‮⁦-⁩]/g, '').trim()].slice(0, MOLD_QUOTE_PO_MAX).join('') : '';
+const numberOf = value => typeof value === 'string' ? [...value.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '').trim()].slice(0, MOLD_QUOTE_PO_MAX).join('') : '';
 /** The quotation and PO of a status object or a pending item, from production's updated application only (the key quoteOrPoMissing,
  *  whatever its value): the numbers as production holds them now (the production manager's additions and corrections included), whether
  *  one is still missing, and their files (each with its category). Nothing from an older application.

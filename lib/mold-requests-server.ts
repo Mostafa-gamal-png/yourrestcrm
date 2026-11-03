@@ -414,7 +414,7 @@ export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link
  * just answered, forgets a failure too. */
 let pendingCache:{at:string;items:MoldPendingItem[]}|null=null,pendingFailure:MoldError|null=null;
 export function forgetPendingApprovals(){pendingCache=null;pendingFailure=null;}
-type PendingReader={me:Member;db:D1Database;members:Member[];regionCustomerIds:Set<string>};
+type PendingReader={me:Member;db:D1Database;members:Member[];regionCustomerIds:Set<string>;all?:readonly {id:string;kind:string;data:Record<string,unknown>}[]};
 /** The sales manager's «طلبات بانتظار اعتمادي»: the requests production holds at the sales step (the CRM's and those registered in
  * production) that this manager approves (the owner, 2026-11-03), each with its design files downloaded through the CRM; null for anyone
  * else. One of the CRM's own requests by the CRM's row (moldApprovesRequest: their own, their team's, or one whose requester is in no

@@ -121,6 +121,8 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(validateMoldQuotePo({quoteNo: ' Q-٢٠٢٦ ', poNo: ''}, {required: true}), {quoteNo: 'Q-2026', poNo: '', errors: {}}, 'one number is enough, normalized');
   eq(validateMoldQuotePo({poNo: 'PO-1'}, {required: true}), {quoteNo: '', poNo: 'PO-1', errors: {}}, 'the PO alone too');
   eq(validateMoldQuotePo({quoteNo: '  ', poNo: null}, {required: true}).errors, {quotePo: MOLD_QUOTE_PO_REQUIRED}, 'neither (spaces only count as none): «واحد على الأقل»');
+  eq([moldQuotePoNumber('\u200F'), moldQuotePoNumber('\u200B \uFEFF'), moldQuotePoNumber('\u202BQ-١٢\u202C\u200E')], ['', '', 'Q-12'], 'invisible marks a paste may carry are dropped: a value of only those is none');
+  eq(validateMoldQuotePo({quoteNo: '\u200F', poNo: '\u200B'}, {required: true}).errors, {quotePo: MOLD_QUOTE_PO_REQUIRED}, 'so it does not pass «واحد على الأقل»');
   eq(validateMoldQuotePo({}, {required: false}).errors, {}, 'not required (before production\'s update): none is fine');
   eq([validateMoldQuotePo({quoteNo: 'x'.repeat(60)}).errors, validateMoldQuotePo({quoteNo: '٠'.repeat(60) + '  '}).errors], [{}, {}], '60 characters after normalizing pass');
   eq([validateMoldQuotePo({quoteNo: 'x'.repeat(61)}, {required: true}).errors, validateMoldQuotePo({poNo: 'ط'.repeat(61), quoteNo: 'Q'}).errors], [{quoteNo: 'رقم عرض السعر أطول من 60 حرف'}, {poNo: 'رقم الـ PO أطول من 60 حرف'}], '61 do not, each named in Arabic');
@@ -294,6 +296,7 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same(lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: status}), me, [], true, [], [], true).quotePo, null, 'production holds it and its status carries none (the older application): nothing shown, never the CRM\'s copy');
   same(lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: answered}), me, [], true, [], [], true).quotePo, {quoteNo: 'Q-2', poNo: 'PO-5', missing: false, from: 'production'}, 'production\'s numbers now (its production manager corrected and added them), not the CRM\'s');
   same(lib.moldRequestView(row({outbox: null, accepted: data, remote: {...answered, quoteNo: '', poNo: '', quoteOrPoMissing: true}}), me, [], true).quotePo, {quoteNo: '', poNo: '', missing: true, from: 'production'}, 'production lacks both: the view says so');
+  same([lib.moldRequestView(row({data}), me, [], true, [], [], false).quotePo, lib.moldRequestView(row({data}), me, [], true, [], [], true).quotePo], [null, null], 'a request without numbers that production does not hold yet (before the update, say): no quotation or PO rows at all');
   same([lib.moldRequestView(row({data: numbered}), me, [], true, [], [], false).sending.state, lib.moldRequestView(row({data: numbered}), me, [], true, [], [], true).sending.state, lib.moldRequestView(row({}), me, [], true, [], [], false).sending.state, lib.moldRequestView(row({data: numbered}), me, [], false, [], [], false).sending.state],
     ['held', 'waiting', 'waiting', 'off'], 'a request saved with a number is held while the update is unknown (one without, as before; the link off says so first)');
   same(lib.moldSendingNames.held, ['بانتظار تحديث تطبيق المنتجات', 'Waiting for the products application update'], 'held, in Arabic and English');
@@ -353,6 +356,20 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same(approves('sm', [['sm', 'west'], ['repA', 'west'], ['cs', 'west']]), [false, false, false], 'never beyond his regions, his own included');
   same(approves('smAll', [['cs', 'west'], ['repA', 'west']], []), [true, false], 'a manager of every region: customer service\'s anywhere, never another manager\'s team');
   same(['repA', 'supA', 'owner', 'csm'].map(who => lib.moldApprovesRequest(asked('cs'), reader(who))), [false, false, false, false], 'only a sales manager approves');
+  // Nobody is left to approve a team's request (production cannot give this approval): when the team's manager cannot approve it now
+  // (deactivated, or the customer outside his regions: his regions changed, his team asked elsewhere, his own request elsewhere), every
+  // sales manager of the customer's region does, as for a request in no team. The customers' regions come from the route's records.
+  const customers = [{id: 'east', kind: 'customer', data: {region: 'المنطقة الشرقية'}}, {id: 'west', kind: 'customer', data: {region: 'المنطقة الغربية'}}];
+  const westMember = (id, role, supervisorId = '') => member(id, role, supervisorId, 'western');
+  const moved = [...team.filter(entry => entry.id !== 'sm2'), {...member('sm2', 'manager'), active: 0}, westMember('smWest', 'manager'), westMember('smWest2', 'manager'), member('repToEast', 'rep', 'smWest'), westMember('repAway', 'rep', 'sm')];
+  const withRecords = (who, ids = ['east']) => ({me: moved.find(entry => entry.id === who), members: moved, regionCustomerIds: new Set(ids), all: customers});
+  same(lib.moldApprovingManagerId(asked('repB'), withRecords('sm')), '', 'the team\'s manager deactivated: no single approver');
+  same(['sm', 'smAll'].map(who => lib.moldApprovesRequest(asked('repB'), withRecords(who))), [true, true], 'so the active managers of the region approve his team\'s request');
+  same(['sm', 'smWest'].map(who => lib.moldApprovesRequest(asked('repToEast'), withRecords(who, who === 'sm' ? ['east'] : ['west']))), [true, false], 'a representative under a western manager asks for an eastern customer: the eastern manager approves it, the western one cannot reach it');
+  same(['smWest', 'smWest2'].map(who => lib.moldApprovesRequest(asked('repAway', 'west'), withRecords(who, ['west']))), [true, true], 'the eastern manager\'s representative asks for a western customer: the western managers approve it');
+  same(['sm', 'smWest'].map(who => lib.moldApprovesRequest(asked('sm', 'west'), withRecords(who, who === 'sm' ? ['east'] : ['west']))), [false, true], 'a manager\'s own request for a customer outside his regions: the region\'s managers approve it');
+  same(['sm', 'smAll'].map(who => lib.moldApprovesRequest(asked('repA'), withRecords(who))), [true, false], 'a team whose manager is active and covers the customer stays his alone');
+  same([lib.moldApprovingManagerId(asked('repA', 'unknown'), withRecords('sm')), lib.moldApprovingManagerId(asked('repA'), reader('sm'))], ['sm', 'sm'], 'a customer the records do not hold, or no records loaded: the team\'s manager');
   // The view offers approve/withdraw only to the manager who approves the request (the routes pass moldApprovesRequest).
   const waitingRow = row({outbox: null, accepted: data, remote: {...status, approvals: {required: true, sales: null, production: null, admin: null}}});
   same([lib.moldPermissions(waitingRow, team[0], [], true).approve, lib.moldPermissions(waitingRow, team[0], [], false).approve, lib.moldPermissions(waitingRow, team[0]).approve, lib.moldRequestView(waitingRow, team[0], team, true, [], [], false, false).can.approve],

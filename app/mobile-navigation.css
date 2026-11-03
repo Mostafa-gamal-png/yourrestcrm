@@ -27,7 +27,7 @@
  .mobile-tab-icon{display:flex;align-items:center;justify-content:center;width:48px;max-width:100%;height:29px;border-radius:10px;transition:background .15s,color .15s}
  .mobile-tab.is-active{color:var(--primary);font-weight:700}
  .mobile-tab.is-active .mobile-tab-icon{background:var(--accent)}
- .mobile-tab-label{max-width:100%;white-space:nowrap}
+ .mobile-tab-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .app-shell .menu-trigger{display:none!important}
  .app-shell .breadcrumb{gap:8px;min-width:0}.app-shell .breadcrumb>span{display:none}.app-shell .breadcrumb>svg{display:none}.app-shell .breadcrumb strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .app-shell .topbar{padding-inline:16px;gap:10px}.app-shell .topbar-tools{gap:7px}.app-shell .topbar-tools .today{display:none}
