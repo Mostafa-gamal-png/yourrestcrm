@@ -35,7 +35,7 @@ function newCustomerData(me:Member,add:ErpCustomerAdd,region:string):Record<stri
  const email=z.string().email().safeParse(add.email).success?add.email:'';
  const parsed=schemas.customer.safeParse({name:add.name,code:add.code,phone:add.phone,phone2:add.phone2,email,address:add.address,region,branch:me.branch,assignedTo:me.id});
  if(!parsed.success)throw new CRMError(`السطر ${add.row}: ${parsed.error.issues.map(issue=>issue.message).join(' • ')}`);
- const data:any=parsed.data;
+ const data:typeof parsed.data&Record<string,unknown>={...parsed.data};
  const locationError=prepareCustomerLocation(data);if(locationError)throw new CRMError(locationError);
  for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId'])delete data[key];
  data._createdBy=me.id;
