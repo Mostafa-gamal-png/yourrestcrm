@@ -47,7 +47,8 @@
 .erp-customers-section h3 bdi{font-variant-numeric:tabular-nums;color:var(--muted-foreground)}
 .erp-customers-region{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;max-width:320px}
 .erp-customers-region select,.erp-customers-row-region select{min-height:40px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font-size:14px;max-width:100%}
-.erp-customers-row-region{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);min-width:0;max-width:100%}
+.erp-customers-row-region{display:inline-flex;align-items:center;gap:6px;flex:1 1 180px;font-size:12px;color:var(--muted-foreground);min-width:0;max-width:100%}
+.erp-customers-row-region>span{white-space:nowrap}
 .erp-customers-row-region select{font-size:13px;min-width:0}
 .erp-customers-result h3{margin-top:18px}
 .erp-customers-changes{display:grid;gap:8px;margin:0;padding:0;list-style:none}
