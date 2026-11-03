@@ -14,7 +14,12 @@
 // with %PDF-1.x within its first 1024 bytes, an image of at most 80 000 000 pixels whatever its extension says among the four (its
 // header read with the CRM's own moldImageSize), a crmFileId never taken by another file nor after its file's deletion (400 fields
 // ['crmFileId'], reason crm_file_id_used), 404 before the request exists, 409 once it is not editable, the safe repeat, and any attach
-// or delete undoing the approvals.
+// or delete undoing the approvals. Since 2026-11-03 (the products side's message): the third approval is finance's (still keyed admin);
+// `payment` beside customer, salesman and specs, cash or deferred (absent: stored as null, as for an older client; any other value 400
+// invalid_payload fields ['payment']), part of the original a retry is compared with, and listed by pending (null for an older request);
+// and a cancellation the production manager undoes (restore: the request back where it stood before the cancellation), after which a
+// cancellation with a reason used before answers 200 with the request as it is (not cancelled, whatever its state: approved or in
+// production since, never 409), and only a new reason cancels it again.
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
@@ -26,7 +31,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 const STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
-const COLUMNS = ['requestedAt', 'customerNo', 'customerName', 'customerAddress', 'customerCity', 'salesmanId', 'salesmanName', 'salesmanEmail', 'description', 'core', 'vibrators', 'model', 'halfBlock', 'moldWidth', 'gelbaSize', 'moldNo', 'quantity', 'designUrl', 'notes'];
+const COLUMNS = ['requestedAt', 'customerNo', 'customerName', 'customerAddress', 'customerCity', 'salesmanId', 'salesmanName', 'salesmanEmail', 'description', 'core', 'vibrators', 'model', 'halfBlock', 'moldWidth', 'gelbaSize', 'moldNo', 'quantity', 'designUrl', 'notes', 'payment'];
+const PAYMENTS = ['cash', 'deferred'];
+/** A cancellation's reason as production compares it: white space runs as one space, the ends trimmed. */
+const reasonKey = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 class ApiError extends Error { constructor(code, http, message, fields = [], details = {}) { super(message); Object.assign(this, {code, http, fields, details}); } }
 
 function clean(value, max, required, field, bad) {
@@ -61,6 +69,8 @@ export function validateRequest(body, now = Date.now()) {
   const c = object(body.customer), s = object(body.salesman), p = object(body.specs);
   if (!c) bad.push('customer'); if (!s) bad.push('salesman'); if (!p) bad.push('specs');
   const cc = c || {}, ss = s || {}, pp = p || {};
+  // payment (2026-11-03): cash or deferred; left out (an older client), stored as null; anything else refused.
+  const payment = body.payment === undefined || body.payment === null ? null : PAYMENTS.includes(body.payment) ? body.payment : (bad.push('payment'), null);
   const designUrl = clean(pp.designUrl, 1000, false, 'specs.designUrl', bad);
   if (designUrl !== '' && !/^https:\/\/\S+$/i.test(designUrl)) bad.push('specs.designUrl');
   const email = clean(ss.email, 190, false, 'salesman.email', bad);
@@ -74,7 +84,7 @@ export function validateRequest(body, now = Date.now()) {
     vibrators: int(pp.vibrators, 2, 4, true, 'specs.vibrators', bad), model: choice(pp.model, ['old', 'gelba_new', 'new'], true, 'specs.model', bad),
     halfBlock: choice(pp.halfBlock, ['none', 'one', 'two', 'three'], true, 'specs.halfBlock', bad), moldWidth: int(pp.moldWidth, 1000, 2000, true, 'specs.moldWidth', bad),
     gelbaSize: int(pp.gelbaSize, 500, 1200, true, 'specs.gelbaSize', bad), moldNo: clean(pp.moldNo, 40, false, 'specs.moldNo', bad),
-    quantity: int(pp.quantity, 1, 100, true, 'specs.quantity', bad), designUrl: designUrl === '' ? null : designUrl, notes: clean(pp.notes, 2000, false, 'specs.notes', bad),
+    quantity: int(pp.quantity, 1, 100, true, 'specs.quantity', bad), designUrl: designUrl === '' ? null : designUrl, notes: clean(pp.notes, 2000, false, 'specs.notes', bad), payment,
   };
   if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)]);
   return out;
@@ -135,7 +145,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set()};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map()};
   const riyadh = () => new Date(now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00';
   /** Every change: a new revision, and the wait restarts only when the step changes (yr_mreq_state_set). */
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
@@ -178,8 +188,11 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     const row = state.rows.get(id);
     if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
     if (derive(row) === 'cancelled') return {status: 200, body: {request: statusObject(row)}};
+    // 2026-11-03: the same cancellation (its reason used before) after the production manager restored the request: 200 with the request
+    // as it is, nothing cancelled, whatever its state now (approved since, or in production: no 409). A new reason cancels it again.
+    if ((row.cancelReasons ||= []).includes(reasonKey(reason))) return {status: 200, body: {request: statusObject(row)}};
     if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'Production has started; the request can no longer be cancelled.', [], {request: statusObject(row)});
-    row.cancelled = true; row.cancelReason = reason.trim(); touch(row);
+    row.cancelled = true; row.cancelReason = reason.trim(); row.cancelReasons.push(reasonKey(reason)); touch(row);
     return {status: 200, body: {request: statusObject(row)}};
   }
 
@@ -301,7 +314,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       enteredBy: row.source === 'manual' ? row.createdBy : null, customer: {crmNumber: row.customerNo, name: row.customerName, address: row.customerAddress, city: row.customerCity},
       salesman: {crmMemberId: row.salesmanId, name: row.salesmanName},
       specs: {description: row.description, core: row.core, vibrators: row.vibrators, model: row.model, halfBlock: row.halfBlock, moldWidth: row.moldWidth, gelbaSize: row.gelbaSize, moldNo: row.moldNo, quantity: row.quantity, designUrl: row.designUrl, notes: row.notes},
-      revision: row.revision, designFiles: (row.designFiles || []).map(designEntry)}))}};
+      payment: row.payment ?? null, revision: row.revision, designFiles: (row.designFiles || []).map(designEntry)}))}};
   }
 
   const server = createServer({key: readFileSync(key), cert: readFileSync(cert)}, async (req, res) => {
@@ -309,7 +322,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     const parts = [];
     for await (const part of req) parts.push(part);
     const raw = Buffer.concat(parts), url = new URL(req.url, 'https://localhost'), route = url.searchParams.get('route') || '';
-    const reply = (http, body) => { res.writeHead(http, {'Content-Type': 'application/json; charset=utf-8'}); res.end(JSON.stringify(body)); };
+    // A lost answer (loseNext): production did the work, and the connection is cut before its answer.
+    const reply = (http, body) => { if (call.lost) { req.socket.destroy(); return; } res.writeHead(http, {'Content-Type': 'application/json; charset=utf-8'}); res.end(JSON.stringify(body)); };
     const call = {route, at: now(), signed: false, body: route === 'design-files' ? raw.subarray(0, Math.max(raw.indexOf(0x0a), 0)).toString('utf8') : raw.toString('utf8'), bytes: raw.length, headers: {...req.headers}};
     state.calls.push(call);
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
@@ -324,6 +338,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       const expected = createHmac('sha256', state.secret).update(timestamp + '\n' + req.method + '\n' + route + '\n' + createHash('sha256').update(raw).digest('hex')).digest('hex');
       if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) { state.badSignatures++; throw new ApiError('invalid_signature', 401, 'The signature does not match.'); }
       call.signed = true;
+      if (state.lose.get(route)) { state.lose.set(route, state.lose.get(route) - 1); call.lost = true; }
       // A test's one-shot answer for this route (a refusal the CRM's own checks would never let through), after a valid signature.
       const forced = state.answers.get(route)?.shift();
       if (forced) { call.forced = true; reply(forced.http, forced.body); return; }
@@ -359,10 +374,10 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     /** Historical rows of the sheet, as the production app imports them (orderNo 1..n, source import, not linked). */
     seedLegacy(count) { for (let n = 1; n <= count; n++) state.byOrder.set(n, {crmRequestId: null, orderNo: n, source: 'import', stages: blankStages(), approvals: {...noApprovals(), legacy: true}, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 1, updatedAt: null, waitingStep: 'manufacturing', waitingSince: '2026-04-19T13:45:47+03:00', ...Object.fromEntries(COLUMNS.map(c => [c, null]))}); },
     /** A request registered directly in the products application (source manual, no crmRequestId), waiting for the sales manager. */
-    registerManual({customerNo = null, customerName = 'مصنع مسجّل في الإنتاج', salesmanName = 'مندوب', createdBy = 'staff@yourrest.org', description = 'manual mold', quantity = 1} = {}) {
+    registerManual({customerNo = null, customerName = 'مصنع مسجّل في الإنتاج', salesmanName = 'مندوب', createdBy = 'staff@yourrest.org', description = 'manual mold', quantity = 1, payment = null} = {}) {
       const row = {crmRequestId: null, orderNo: state.nextOrder++, source: 'manual', createdBy, stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null,
         ...Object.fromEntries(COLUMNS.map(c => [c, null])), requestedAt: new Date(now()).toISOString(), customerNo, customerName, customerAddress: '', customerCity: 'الدمام', salesmanId: '', salesmanName, salesmanEmail: '',
-        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: ''};
+        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: '', payment};
       touch(row); state.byOrder.set(row.orderNo, row);
       return row;
     },
@@ -394,6 +409,15 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
       row.deleted = true; row.cancelled = true; row.cancelReason ||= reason; touch(row);
     },
+    /** The production manager restores a cancelled (or deleted) request (2026-11-03), by its crmRequestId or its orderNo: back where it
+     *  stood before the cancellation (its approvals, stages and files are untouched by a cancellation), with a new revision. Its earlier
+     *  cancellations' reasons stay used: the same cancellation again answers 200 with the request as it is. */
+    restore(key) {
+      const row = typeof key === 'number' ? state.byOrder.get(key) : state.rows.get(key); if (!row) throw new Error('no such request: ' + key);
+      if (!row.cancelled) throw new Error('not cancelled: ' + key);
+      row.cancelled = false; row.deleted = false; touch(row);
+      return statusObject(row);
+    },
     /** The same for a request registered in production itself, named by its order number. */
     removeOrder(orderNo, reason = 'حذف من تطبيق الإنتاج') {
       const row = state.byOrder.get(orderNo); if (!row) throw new Error('no such order: ' + orderNo);
@@ -421,6 +445,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     /** The next call of a route (signed as usual) gets this answer instead of the route's own, once: for an answer the stand-in's rules
      *  never give to what the CRM sends (production refusing a file the CRM's own checks accepted, a 413 from its web server). */
     answerNext(route, http, body) { const queue = state.answers.get(route) || []; queue.push({http, body}); state.answers.set(route, queue); },
+    /** The next call of a route is carried out as usual, but its answer is lost (the connection is cut): the CRM never learns of it. */
+    loseNext(route) { state.lose.set(route, (state.lose.get(route) || 0) + 1); },
     /** Production no longer knows a request (only to test the 404 answers: the real application keeps every request). */
     forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) state.byOrder.delete(row.orderNo); },
     row: id => state.rows.get(id),
