@@ -62,6 +62,8 @@
  .erp-customers-pick{min-height:44px}
  .erp-customers-region{max-width:none}
  .erp-customers-region select{width:100%}
+ /* The dialog's phone rule for selects (16px, 46px: no iOS zoom on focus, a full touch target) wins over the sizes above. */
+ .erp-customers-region select,.erp-customers-row-region select{font-size:16px;min-height:46px}
  .erp-customers-filters>button{min-height:44px;padding:6px 11px;font-size:13px}
  .erp-customers-row{padding:11px 12px}
  .erp-customers-candidate{padding:10px 9px}

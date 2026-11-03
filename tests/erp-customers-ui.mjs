@@ -142,6 +142,7 @@ for (const language of ['ar', 'en']) {
   eq(nodes(h.tree(), node => node.type === 'ol').map(list => list.props.children.length), [2, 1], 'what changed and what was added, listed');
   ok(text(h.tree()).includes('YR-C-000001') && text(h.tree()).includes('YR-C-000042') && text(h.tree()).includes(t('الشرقية', 'Eastern')), 'by Yourrest code, the added one with its new number and region');
   ok(text(h.tree()).includes(t('عملاء اتضافوا', 'Customers added') + ': 1') && text(h.tree()).includes(t('متساب', 'Left') + ': 0'), 'the counts: added, left');
+  ok(text(h.tree()).includes(t('مفيش سطور اتسابت.', 'No rows were left.')), 'and nothing left to list');
   if (language === 'en') ok(!arabic.test(chrome(h.tree())), 'English: no Arabic left in the result');
   eq(applyButton(h), undefined, 'nothing more to apply');
   button(h, t('تم', 'Done')).props.onClick(); eq(h.closed(), 1, 'done closes');
@@ -168,6 +169,42 @@ for (const language of ['ar', 'en']) {
   pick(n, 6, '').props.onClick(); n.render();
   await until(() => n.requests.length === 4, 'the preview with the new row back');
   eq(n.requests[3].body.choices, [{row: 8, customerId: ADD}], 'pressing «سيبه» again puts the row back (its default: added)');
+
+  // ---- accessible names: each «ده هو» names its candidate; a new row's «سيبه» is inside a group named by its row
+  const named = await opened(language, first);
+  eq([pick(named, 5, 'twinA').props['aria-label'], pick(named, 5, 'twinB').props['aria-label']], [t('ده هو', 'This one') + ': مصنع التوأم · YR-C-000004', t('ده هو', 'This one') + ': مصنع التوأم · YR-C-000005'], '«ده هو» is named with the candidate\'s name and Yourrest code, so two candidates never read the same');
+  const newGroup = nodes(section(named, 'new'), node => node.props?.role === 'group')[0];
+  eq([newGroup?.props['aria-label'], nodes(newGroup, node => node.type === 'button' && node.props['data-row'] === 6).length], [t('سطر 6 · رقم ERP 77', 'Row 6 · ERP number 77'), 1], 'a new row\'s «سيبه» is in a group named by its row and ERP number');
+  eq(nodes(section(named, 'choose'), node => node.props?.role === 'group').map(group => group.props['aria-label']), [t('العميل لـسطر 5 · رقم ERP 55', 'Customer for Row 5 · ERP number 55')], 'and the candidates\' group by the row and its ERP number');
+
+  // ---- only a similar row, switched to «عميل جديد»: the region select, the note about the uploader, and the region sent with the apply
+  const onlySimilar = {...first, summary: {...summary(0, 0), choose: 0, new: 0, similar: 1, pending: 1}, rows: [similarRow]};
+  const o = await opened(language, onlySimilar);
+  eq([!!section(o, 'new'), !!select(o, node => node.props.id === 'erp-customers-region')], [false, false], 'nothing to add yet: no new-customers part');
+  pick(o, 8, ADD).props.onClick(); await until(() => o.requests.length === 2, 'the preview with «عميل جديد»');
+  o.requests[1].resolve({...onlySimilar, summary: {...onlySimilar.summary, adds: 1, pending: 0}, rows: [{...similarRow, add: true, chosen: true}]}); await until(() => !o.state.refreshing, 'settled'); o.render();
+  ok(!!section(o, 'new') && text(section(o, 'new')).includes(t('هيتضافوا باسمك', 'added under your name')) && text(section(o, 'new')).includes(t('«تعديل»', '“Edit”')), 'a similar row marked «عميل جديد» shows the new-customers part with the note about the uploader');
+  ok(text(section(o, 'new')).includes(t('منهم 1 من «محتاج تختار» اخترت لهم «عميل جديد».', '1 of them are rows in “Needs a choice” you marked “New customer”.')), 'and says where that customer comes from');
+  eq([rowsIn(o, 'new'), rowsIn(o, 'choose')], [[], [8]], 'the row itself stays where it was chosen');
+  select(o, node => node.props.id === 'erp-customers-region').props.onChange({target: {value: 'الشرقية'}}); o.render();
+  eq([text(applyButton(o)).trim(), applyButton(o).props.disabled], [apply(language, 0, 1), false], '«حدّث 0 كود وضيف 1 عميل»');
+  applyButton(o).props.onClick(); await until(() => o.requests.length === 3, 'the apply');
+  eq([o.requests[2].body.choices, o.requests[2].body.region], [[{row: 8, customerId: ADD}], 'الشرقية'], 'the region chosen for it goes with the apply');
+
+  // ---- a row stays in the part where the user acted on it: a conflict resolved there, or a preselected row picked again
+  const cRow = {...base, row: 3, code: '12', name: 'مصنع النور', phones: ['4567'], status: 'choose', conflict: true, matchedBy: 'phone', candidates: [{...candidate('nour', 'مصنع النور', 1, 'OLD'), matchedBy: 'phone'}], customerId: 'nour', from: 'OLD', to: '12', change: false};
+  const sRow = {...similarRow, candidates: [{...candidate('nour', 'مصنع النور', 1, 'OLD'), matchedBy: 'similar'}], customerId: 'nour', chosen: true, conflict: true};
+  const sameRow = {...base, row: 9, code: 'T-1', name: 'مصنع التوأم', status: 'same', matchedBy: 'name', candidates: [candidate('twinA', 'مصنع التوأم', 4, 'T-1'), candidate('twinB', 'مصنع التوأم', 5)], customerId: 'twinA', from: 'T-1', to: 'T-1'};
+  const moving = {...first, summary: {...summary(0, 0), conflicts: 2}, rows: [cRow, sRow, sameRow]};
+  const k = await opened(language, moving);
+  eq([rowsIn(k, 'choose'), rowsIn(k, 'rest')], [[3, 8], [9]], 'the two rows on one customer are in «محتاج تختار»');
+  pick(k, 3, '').props.onClick(); await until(() => k.requests.length === 2, 'the preview with row 3 left');
+  k.requests[1].resolve({...moving, summary: {...moving.summary, conflicts: 0, changes: 1}, rows: [{...cRow, status: 'auto', conflict: false, customerId: '', chosen: true, matchedBy: ''}, {...sRow, conflict: false, change: true}, sameRow]}); await until(() => !k.state.refreshing, 'settled'); k.render();
+  eq([rowsIn(k, 'choose'), pick(k, 3, '').props['aria-pressed']], [[3, 8], true], 'row 3, left there, stays in «محتاج تختار» with «سيبه» pressed (it does not vanish into the other rows)');
+  k.state.filter = 'same'; k.render();
+  pick(k, 9, 'twinA').props.onClick(); await until(() => k.requests.length === 3, 'the preview with row 9 picked again');
+  k.requests[2].resolve({...moving, summary: {...moving.summary, conflicts: 0, changes: 1}, rows: [{...cRow, status: 'auto', conflict: false, customerId: '', chosen: true, matchedBy: ''}, {...sRow, conflict: false, change: true}, {...sameRow, status: 'choose', chosen: true}]}); await until(() => !k.state.refreshing, 'settled'); k.render();
+  eq([rowsIn(k, 'choose'), rowsIn(k, 'rest')], [[3, 8], [9]], 'a preselected row picked again in «باقي سطور الملف» stays there, still shown under its filter');
 
   // ---- a stale preview: 409 → a new preview, which starts the choices over
   const s = await opened(language, first);
@@ -245,6 +282,9 @@ for (const language of ['ar', 'en']) {
   eq([f.requests[1].body.region, f.requests[1].body.regions], ['', []], 'the default region goes with the apply');
   f.requests[1].resolve({ok: true, updated: 1, mappings: 1, changed: 1, added: 1, unchanged: 0, skipped: 1, outOfRegion: 0, heldOutside: 0, invalid: 0, changes: [{row: 3, customerId: 'nour', from: 'OLD', to: '12', mapping: true}], additions: [{row: 6, customerId: 'crm-owner-erp-y-6', code: '77', name: 'مصنع غير موجود', region: '', internalCode: 'YR-C-000043'}]});
   await until(() => f.state.refreshFailed, 'the failed reload'); f.render();
+  const leftList = nodes(f.tree(), node => node.type === 'ol' && /erp-customers-left/.test(node.props.className || ''))[0];
+  eq([leftList?.props.children.length, text(leftList).includes('55') && text(leftList).includes('مصنع التوأم') && text(leftList).includes(t('سطر', 'Row') + ' 5'), text(leftList).includes(t('ما اخترتش العميل', 'No customer chosen'))], [1, true, true], 'what was left is listed too: the row, its ERP number and name, and why (no choice made)');
+  if (language === 'en') ok(!arabic.test(chrome(nodes(f.tree(), node => node.type === 'section' && node.props.className === 'erp-customers-result')[0])), 'English: no Arabic left in the result lists');
   ok(text(f.tree()).includes(t('اتحفظ التحديث، لكن تعذر تحديث قائمة العملاء', 'The update was saved, but the customer list could not refresh')), 'the update is kept and the failed reload is said');
   button(f, t('تحديث العرض بس', 'Refresh view only')).props.onClick();
   await until(() => f.imported() === 2 && !f.state.busy, 'the second reload'); f.render();

@@ -9,7 +9,8 @@
 // transaction (its Yourrest number from the trigger, the uploader responsible, their branch, the chosen region, the file's name, code,
 // phones, email and address only, an «إضافة» history entry); a repeated request adds nobody twice; a region outside the user's scope is
 // refused (400 / 403) and the sales manager adds only in their region; a similar name left alone adds nothing, «ده هو» gives that
-// customer the code, «عميل جديد» adds; a code that became held between the preview and the apply refuses with 409.
+// customer the code, «عميل جديد» adds; a code that became held between the preview and the apply refuses with 409; the same file
+// again after «ده هو» (the old code kept) has no conflict; a similar name only outside the manager's regions is out-of-region, not added.
 // Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
 import assert from 'node:assert/strict';
 import {zipSync, strToU8} from 'fflate';
@@ -207,6 +208,15 @@ try {
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: asNew, snapshot: sim.snapshot, requestId: simId, choices: [{row: 3, customerId: '+new'}], region: 'الغربية'});
   check([response.status, response.json().added, response.json().changed, response.json().additions.map(a => [a.customerId, a.code, a.region])], [200, 1, 0, [['crm-owner-erp-' + simId + '-3', '9004', 'الغربية']]], '«عميل جديد» applied: added');
   check((await record('safa')).data.code, '9003', 'and the similar customer is untouched');
+  // The same kind of file again after «ده هو»: safa's code is 9003 and 345 a kept old code. Row 345 (another customer) finds safa only by
+  // that old code and safa's current code is another row of the file: a choice, not a second row on safa, so nothing conflicts and the
+  // new customer in the file can still be added.
+  const reimport = xlsx([row('345', 'اسم تاني خالص'), row('9003', 'مصنع الصفا للبلوك الحديث'), row('9006', 'مصنع المرجان')]);
+  sim = (await post(owner, {...preview, base64: reimport})).json();
+  check(sim.rows.map(r => [r.row, r.status, r.customerId, r.codeRow, r.conflict]), [[3, 'choose', '', 4, false], [4, 'same', 'safa', 0, false], [5, 'new', '', 0, false]], 're-imported: the old code is a choice pointing at the row with safa\'s current code, which is the same');
+  check([sim.summary.conflicts, sim.summary.adds, sim.summary.changes], [0, 1, 0], 'no conflict, one customer to add');
+  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: reimport, snapshot: sim.snapshot, requestId: crypto.randomUUID()});
+  check([response.status, response.json().added, response.json().changed, (await record('safa')).data.code], [200, 1, 0, '9003'], 'the re-import applies: the new customer is added, safa keeps 9003');
 
   // ---- a code that became held between the preview and the apply: 409, nothing written
   const late = xlsx([row('501', 'مصنع الريحان')]);
@@ -271,6 +281,14 @@ try {
   const smAdded = await app.db.prepare('SELECT assigned_to,branch,data FROM crm_records WHERE id=?').bind('crm-sm-erp-' + mineId + '-3').first();
   check([smAdded.assigned_to, smAdded.branch, JSON.parse(smAdded.data).region, JSON.parse(smAdded.data).assignedTo, (await app.db.prepare("SELECT actor FROM crm_audit WHERE record_id=? AND action='إضافة'").bind('crm-sm-erp-' + mineId + '-3').first()).actor], ['sm', 'الرئيسي', 'الوسطى', 'sm', 'sm'], 'responsible: the manager, in their region, the history entry theirs');
   ok(await internal('crm-sm-erp-' + mineId + '-3') > 0, 'with a Yourrest number');
+  // a similar name only outside the manager's regions: never added by them (the customer may be one they cannot see), no details
+  const eastern = xlsx([row('602', 'مصنع الشرق الحديث', '0597775555')]);
+  response = await post(sm, {...preview, base64: eastern});
+  check([response.json().rows[0].status, response.json().rows[0].matchedBy, response.json().rows[0].candidates, response.json().summary.adds, response.json().summary.outOfRegion], ['out-of-region', 'similar', [], 0, 1], 'the manager: out-of-region, not added');
+  ok(!response.text.includes('"east"') && !response.text.includes('east2') && !response.text.includes('مصنع الشرق الثاني'), 'no detail of the outside customers');
+  check((await post(sm, {...preview, base64: eastern, choices: [{row: 3, customerId: '+new'}]})).status, 400, 'and «عميل جديد» is refused on it');
+  const easternView = (await post(owner, {...preview, base64: eastern})).json();
+  check([easternView.rows[0].status, easternView.rows[0].candidates.map(c => c.id).sort()], ['similar', ['east', 'east2']], 'the administrator sees the similar customers');
 
   // ---- a customer the import mapped can still be deleted; its mapping goes with it, in the delete's audit entry
   const nourNow = await record('nour');
