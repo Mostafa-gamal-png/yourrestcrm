@@ -1,7 +1,4 @@
 {
-  "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-Android1012-20261102.zip",
-  "sha256": "2101c501d5c5cd5bb2e0fa4a09313f3247660f33118c3d2768d7d1a4b8bc363a",
-  "stage": "yourrest-crm-update-android-1012-20261102",
-  "helper": "yourrest-activate-update-android-1012.cjs"
+  "mode": "diagnose",
+  "script": "scripts/diagnose/customer-code-history.cjs"
 }
