@@ -11,7 +11,12 @@
 // meanwhile is refused with the reason (in English too) and the request behind drops its edit at once; the sales manager's
 // «طلبات بانتظار اعتمادي» and the request's sheet they approve from show the request as the production manager edited it in the
 // products application; a change the earlier release queued that production refuses for good (production_only) is said on the request,
-// in Arabic and in English, with which specifications it shows. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
+// in Arabic and in English, with which specifications it shows. Since 2026-11-03: the form's required «طريقة الدفع» (نقدي / آجل, Cash /
+// Deferred), the payment on the request and on the sales manager's list, the third approval as «اعتماد المالية», and a request the
+// production manager restored after its cancellation: active again with why, a reason used before refused on the device, a new one
+// cancelling it; the restore no longer said once the approvals completed or production cancelled it again, and said without the
+// instruction to cancel to the sales manager; the payment the sales manager approves is production's now; the payment choice at phone
+// width. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
 // no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -65,13 +70,14 @@ try {
   const noOverflow = async (page, label) => check(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, label + ': no horizontal overflow');
   const goMolds = async page => { await page.locator('button.nav-item', {hasText: new RegExp(LABEL + '|Mold requests')}).first().click(); await page.locator('.mold-page').waitFor(); };
   const sheet = page => page.locator('.mold-sheet');
-  const fill = async (dialog, customerName) => {
+  const fill = async (dialog, customerName, payment = 'نقدي') => {
     if (customerName) { await dialog.locator('.mold-customer-search input').fill(customerName); await dialog.locator('.mold-customer-matches button', {hasText: customerName}).click(); }
     await dialog.locator('label.mold-field', {hasText: 'وصف القالب'}).locator('input').fill('200*400*27.5TH MM OPEN');
     for (const text of ['مفتوح', 'موديل قديم', 'بدون بلوكة نص']) await dialog.locator('.mold-choice label', {hasText: text}).click();
     await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
     await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
+    await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).locator('label', {hasText: payment}).click();
   };
 
   // ---- 1. The representative asks for a mold: saved, sent, order 92, seven stages not started
@@ -88,6 +94,9 @@ try {
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   ok(await dialog.locator('.field-error', {hasText: 'اختر العميل'}).count() === 1, 'the form asks for the customer');
   ok(await dialog.locator('.field-error').count() >= 5, 'and points at each missing field');
+  // How the customer pays: a required choice of two (2026-11-03).
+  const paymentChoice = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'});
+  check([await paymentChoice.locator('label').allInnerTexts(), await paymentChoice.locator('.field-error').innerText(), await paymentChoice.getAttribute('aria-invalid')], [['نقدي', 'آجل'], 'اختار طريقة الدفع: نقدي أو آجل', 'true'], 'the payment: نقدي or آجل, required');
   check(mock.state.calls.length, before, 'nothing was sent for an incomplete form');
   await fill(dialog, 'مصنع east1');
   check(await dialog.locator('.field-error').count(), 0, 'each message goes once its field is filled');
@@ -105,9 +114,11 @@ try {
   ok(/من \d/.test(await sheet(rep).locator('.mold-waiting').innerText()), 'and since when');
   check([await sheet(rep).locator('.mold-approvals li').count(), await sheet(rep).locator('.mold-approvals li[data-done="true"]').count()], [3, 0], 'three approvals, none given yet');
   check(await sheet(rep).getByRole('button', {name: 'اعتماد', exact: true}).count(), 0, 'a representative does not approve');
+  check(await sheet(rep).locator('.mold-approvals li > span').allInnerTexts(), ['اعتماد مدير المبيعات', 'اعتماد الإنتاج', 'اعتماد المالية'], 'the third approval is finance\'s («اعتماد المالية»)');
+  ok(/الدفع\s*نقدي/.test(await sheet(rep).locator('.mold-facts').nth(1).innerText()), 'the payment chosen is on the request');
   await shot(rep, 'mold-sheet-received');
   const sent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
-  check([sent.customer.name, sent.specs.moldWidth, sent.specs.gelbaSize, sent.specs.vibrators], ['مصنع east1', 1380, 795, 2], 'production received what was chosen');
+  check([sent.customer.name, sent.specs.moldWidth, sent.specs.gelbaSize, sent.specs.vibrators, sent.payment], ['مصنع east1', 1380, 795, 2, 'cash'], 'production received what was chosen, the payment beside the specifications');
   await rep.keyboard.press('Escape');
   await rep.locator('.mold-card').first().waitFor();
   check(await rep.locator('.mold-card').count(), 1, 'the list shows the request');
@@ -130,7 +141,7 @@ try {
   mock.state.down = true;
   await rep.locator('button.mold-new').click();
   await dialog.waitFor();
-  await fill(dialog, 'مصنع east2');
+  await fill(dialog, 'مصنع east2', 'آجل');
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   await sheet(rep).locator('.mold-sending').waitFor();
   ok((await sheet(rep).locator('.mold-sending').innerText()).length > 0, 'the request says it waits to be sent');
@@ -147,7 +158,8 @@ try {
   const second = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).crmRequestId;
   const manual = mock.registerManual({customerName: 'مصنع مسجّل في الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'manual mold'});
   // The production manager edits the CRM's request in the products application (2026-11-02): what the sales manager approves is that.
-  mock.edit(second, {customerName: 'مصنع east2 (عدّله الإنتاج)', salesmanName: 'مندوب عدّله الإنتاج', quantity: 3, description: 'وصف عدّله مدير الإنتاج'});
+  // The payment too: the representative chose آجل (the CRM keeps that); the production manager made it نقدي.
+  mock.edit(second, {customerName: 'مصنع east2 (عدّله الإنتاج)', salesmanName: 'مندوب عدّله الإنتاج', quantity: 3, description: 'وصف عدّله مدير الإنتاج', payment: 'cash'});
   const sm = await open('sm');
   await goMolds(sm);
   // «طلبات بانتظار اعتمادي» first: the CRM's request and the one registered in production
@@ -159,6 +171,7 @@ try {
   const crmPendingText = await sm.locator('.mold-pending', {hasText: 'مصنع east2 (عدّله الإنتاج)'}).innerText();
   ok(crmPendingText.includes('من الـCRM') && crmPendingText.includes('وصف عدّله مدير الإنتاج') && crmPendingText.includes('مندوب عدّله الإنتاج') && /الكمية:\s*3/.test(crmPendingText) && !crmPendingText.includes('200*400*27.5TH MM OPEN'),
     'the CRM\'s request in the list as production holds it now, not the CRM\'s copy: ' + crmPendingText);
+  ok(/الدفع:\s*نقدي/.test(crmPendingText) && !crmPendingText.includes('آجل') && !(await pendingCard.innerText()).includes('الدفع'), 'the payment with each request waiting as production holds it now, not the CRM\'s آجل (none for one registered without it)');
   await shot(sm, 'mold-pending-manager');
   // Registered in production meanwhile: the approval's answer reads the list again (the server keeps it a minute otherwise).
   const gone = mock.registerManual({customerName: 'مصنع اتمسح من الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'gone mold'});
@@ -182,8 +195,8 @@ try {
   // Approved from the request's sheet too, what is shown there is what production lists now, said so.
   await sheet(sm).locator('.mold-specs-note[data-source="production"]').waitFor();
   const askedNow = await sheet(sm).locator('.mold-facts').nth(1).innerText();
-  check([await sheet(sm).locator('[data-slot="sheet-title"]').innerText(), askedNow.includes('وصف عدّله مدير الإنتاج'), /الكمية\s*3/.test(askedNow), (await sheet(sm).locator('.mold-facts').first().innerText()).includes('مندوب عدّله الإنتاج')],
-    ['مصنع east2 (عدّله الإنتاج)', true, true, true], 'the sheet the sales manager approves from shows the request as production holds it now');
+  check([await sheet(sm).locator('[data-slot="sheet-title"]').innerText(), askedNow.includes('وصف عدّله مدير الإنتاج'), /الكمية\s*3/.test(askedNow), (await sheet(sm).locator('.mold-facts').first().innerText()).includes('مندوب عدّله الإنتاج'), /الدفع\s*نقدي/.test(askedNow), askedNow.includes('آجل')],
+    ['مصنع east2 (عدّله الإنتاج)', true, true, true, true, false], 'the sheet the sales manager approves from shows the request as production holds it now, its payment too');
   await sm.waitForTimeout(400);
   await shot(sm, 'mold-sheet-approver-production-data');
   await sheet(sm).getByRole('button', {name: 'اعتماد', exact: true}).click();
@@ -202,7 +215,7 @@ try {
   // ---- 3c. A sent request offers no edit, approved or not: cancelling and its design files only. One production refused before storing
   //  it is still edited, in a dialog over the request (four half-block choices), until its first send reaches production.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
-  const refused = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}}})).json()).request;
+  const refused = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
   check([refused.sending.state, refused.remote, refused.can.edit], ['rejected', null, true], 'production refused it before storing it (400): still the requester\'s to edit');
   const editor = await open('rep');
   await goMolds(editor);
@@ -237,7 +250,7 @@ try {
   //  elsewhere). Saving is refused with the reason in English, the form stays open with it, and the request behind drops its edit at once.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
   const repApi = app.as(await app.login('rep'));
-  const ask = async (description, customerId = 'east1') => (await (await repApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}}})).json()).request;
+  const ask = async (description, customerId = 'east1') => (await (await repApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
   const late = await ask('sent meanwhile');
   check([late.sending.state, late.can.edit], ['rejected', true], 'refused before production stored it: editable');
   const english = await open('rep', {language: 'en'});
@@ -246,6 +259,7 @@ try {
   await sheet(english).getByRole('button', {name: 'Edit request'}).click();
   const lateEdit = english.locator('.mold-dialog');
   await lateEdit.waitFor();
+  check([await lateEdit.locator('.mold-choice', {hasText: 'Payment'}).locator('label').allInnerTexts(), await lateEdit.locator('.mold-choice', {hasText: 'Payment'}).locator('label[data-active="true"]').innerText()], [['Cash', 'Deferred'], 'Cash'], 'in English: Cash or Deferred, the request\'s own chosen');
   check((await repApi('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: late.id}})).status, 200, 'meanwhile its send reaches production');
   await lateEdit.locator('label.mold-field', {hasText: 'Quantity'}).locator('input').fill('4');
   await lateEdit.getByRole('button', {name: 'Save and send the change'}).click();
@@ -331,7 +345,7 @@ try {
 
   // ---- 3e. Cancelled in the CRM while production is unreachable: «ملغى» at once, the cancellation waiting to be sent
   const api = app.as(await app.login('rep'));
-  const asked = (await (await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}}})).json()).request;
+  const asked = (await (await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'deferred'}})).json()).request;
   mock.state.down = true;
   check((await api('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: asked.id, version: asked.version, reason: ''}})).status, 200, 'cancelled in the CRM while production is down');
   const canceller = await open('rep');
@@ -344,6 +358,80 @@ try {
   check([await sheet(canceller).locator('.mold-waiting').count(), await sheet(canceller).locator('.mold-stages li[aria-current]').count()], [0, 0], 'the sheet shows no waiting step and no current stage');
   mock.state.down = false;
   await canceller.context().close();
+
+  // ---- 3g. 2026-11-03: the third approval is finance's; a cancellation the production manager restores
+  const financeStep = await ask('waiting for finance');
+  mock.approve(financeStep.id, 'sales'); mock.approve(financeStep.id, 'production');
+  const SAME_REASON = 'مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد';
+  const undone = await ask('restored after cancelling');
+  check((await repApi('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: undone.id, version: undone.version, reason: 'العميل أجّل'}})).status, 200, 'cancelled by the representative');
+  mock.restore(undone.id);
+  await stale();
+  const restorer = await open('rep');
+  await goMolds(restorer);
+  const financeCard = restorer.locator('.mold-card', {hasText: 'waiting for finance'});
+  check(await financeCard.locator('.mold-chip').innerText(), 'بانتظار اعتماد المالية', 'the card says it waits for finance');
+  await financeCard.click();
+  await sheet(restorer).locator('.mold-waiting', {hasText: 'بانتظار اعتماد المالية'}).waitFor();
+  check([await sheet(restorer).locator('.mold-approvals li[data-done="true"]').count(), (await sheet(restorer).locator('.mold-approvals li').nth(2).innerText()).includes('اعتماد المالية'), (await sheet(restorer).innerText()).includes('مدير النظام')], [2, true, false], 'two approvals given, finance\'s next; the system administrator named nowhere');
+  await restorer.waitForTimeout(300);
+  await shot(restorer, 'mold-sheet-waiting-finance');
+  await restorer.keyboard.press('Escape');
+  await sheet(restorer).waitFor({state: 'detached'});
+  // The production manager restored a cancelled request: the next status pull shows it active again, and says why.
+  const undoneCard = restorer.locator('.mold-card', {hasText: 'restored after cancelling'});
+  check(await undoneCard.locator('.mold-chip').innerText(), 'بانتظار اعتماد مدير المبيعات', 'the card shows where it stands again, not «cancelled»');
+  await undoneCard.click();
+  const restoredBanner = sheet(restorer).locator('.mold-restored');
+  await restoredBanner.waitFor();
+  check([await restoredBanner.innerText(), await sheet(restorer).locator('.mold-banner[data-kind="cancelled"]').count()], ['رجّعه مدير الإنتاج بعد الإلغاء؛ عشان تلغيه تاني اكتب سبب جديد.', 0], 'said on the request; no «cancelled» banner');
+  await sheet(restorer).getByRole('button', {name: 'إلغاء الطلب'}).click();
+  const cancelForm = sheet(restorer).locator('form.mold-cancel');
+  await cancelForm.locator('textarea').fill(' العميل  أجّل ');
+  ok((await cancelForm.innerText()).includes('سبب الإلغاء (سبب جديد)'), 'the form asks for a new reason');
+  const cancelsBefore = mock.state.calls.filter(call => call.route === 'cancel').length;
+  await cancelForm.getByRole('button', {name: 'تأكيد الإلغاء'}).click();
+  check([await cancelForm.locator('.mold-reason-error').innerText(), mock.state.calls.filter(call => call.route === 'cancel').length - cancelsBefore], [SAME_REASON, 0], 'the reason used before is refused on the device, nothing sent');
+  await restorer.waitForTimeout(300);
+  await shot(restorer, 'mold-sheet-restored-same-reason');
+  await cancelForm.locator('textarea').fill('سبب جديد');
+  check(await cancelForm.locator('.mold-reason-error').count(), 0, 'the message goes as the reason changes');
+  await cancelForm.getByRole('button', {name: 'تأكيد الإلغاء'}).click();
+  await sheet(restorer).locator('.mold-banner[data-kind="cancelled"]', {hasText: 'سبب جديد'}).waitFor();
+  check([mock.row(undone.id).cancelled, mock.row(undone.id).cancelReason, await sheet(restorer).locator('.mold-restored').count()], [true, 'سبب جديد', 0], 'a new reason cancels it, in production too');
+  await restorer.context().close();
+  // Restored, then moved on: the approvals completed, or production cancelled it again. The restore is no longer said (no «write a new
+  // reason» where nothing can be cancelled). The sales manager, who may not cancel it, reads only that it was restored.
+  const movedOn = await ask('restored, then approved'), cancelledAgain = await ask('restored, then cancelled there'), managerReads = await ask('restored, read by the manager');
+  for (const request of [movedOn, cancelledAgain, managerReads]) {
+    check((await repApi('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: request.id, version: request.version, reason: 'تأجيل'}})).status, 200, 'cancelled by the representative');
+    mock.restore(request.id);
+  }
+  await stale();
+  const pulled = (await (await repApi('/api/mold-requests')).json()).requests;
+  check([movedOn, cancelledAgain, managerReads].map(request => pulled.find(item => item.id === request.id)?.sending.error?.code), ['restored', 'restored', 'restored'], 'a pull shows each active again, and why is kept');
+  for (const step of ['sales', 'production', 'admin']) mock.approve(movedOn.id, step);
+  mock.remove(cancelledAgain.id);
+  await stale();
+  const movedOnPage = await open('rep');
+  await goMolds(movedOnPage);
+  await movedOnPage.locator('.mold-card', {hasText: 'restored, then approved'}).click();
+  await sheet(movedOnPage).locator('.mold-locked').waitFor();
+  check([await sheet(movedOnPage).locator('.mold-restored').count(), await sheet(movedOnPage).getByRole('button', {name: 'إلغاء الطلب'}).count()], [0, 0], 'restored, then the approvals completed: no restored banner, no cancelling');
+  await movedOnPage.keyboard.press('Escape');
+  await sheet(movedOnPage).waitFor({state: 'detached'});
+  await movedOnPage.locator('.mold-card', {hasText: 'restored, then cancelled there'}).click();
+  await sheet(movedOnPage).locator('.mold-banner[data-kind="cancelled"]').waitFor();
+  check([await sheet(movedOnPage).locator('.mold-restored').count(), (await sheet(movedOnPage).locator('.mold-banner[data-kind="cancelled"]').innerText()).includes('أُلغي الطلب في تطبيق الإنتاج')], [0, true], 'cancelled again in production: said so, with no restored banner');
+  await movedOnPage.context().close();
+  const managerSheet = await open('sm');
+  await goMolds(managerSheet);
+  await managerSheet.locator('.mold-tabs button', {hasText: 'كل الطلبات'}).click();
+  await managerSheet.locator('.mold-card', {hasText: 'restored, read by the manager'}).click();
+  const managerBanner = sheet(managerSheet).locator('.mold-restored');
+  await managerBanner.waitFor();
+  check([await managerBanner.innerText(), await sheet(managerSheet).getByRole('button', {name: 'إلغاء الطلب'}).count()], ['رجّعه مدير الإنتاج بعد الإلغاء.', 0], 'the sales manager reads that it was restored, with no instruction to cancel (the requester\'s alone)');
+  await managerSheet.context().close();
 
   // ---- 4. The phone keeps the representative's five tabs; the page opens from the account sheet
   const phone = await open('rep', {viewport: PHONE});
@@ -359,6 +447,18 @@ try {
   await phone.waitForFunction(() => { const box = document.querySelector('.mold-sheet')?.getBoundingClientRect(); return !!box && box.left >= -1 && box.right <= innerWidth + 1 && box.width >= innerWidth - 2; });
   await sheet(phone).locator('.mold-stages li').first().waitFor();
   await noOverflow(phone, 'phone sheet'); await shot(phone, 'mold-sheet-phone');
+  await phone.keyboard.press('Escape');
+  await sheet(phone).waitFor({state: 'detached'});
+  // The form at phone width: «طريقة الدفع» fits, and either choice can be tapped.
+  await phone.locator('button.mold-new').click();
+  const phonePayment = phone.locator('.mold-dialog .mold-choice', {hasText: 'طريقة الدفع'});
+  await phonePayment.scrollIntoViewIfNeeded();
+  for (const text of ['آجل', 'نقدي']) {
+    await phonePayment.locator('label', {hasText: text}).click();
+    check(await phonePayment.locator('label[data-active="true"]').innerText(), text, 'tapped on the phone: ' + text);
+  }
+  check(await phonePayment.evaluate(element => { const box = element.getBoundingClientRect(); return box.left >= -1 && box.right <= innerWidth + 1; }), true, 'the payment choice fits the phone');
+  await noOverflow(phone, 'phone form'); await shot(phone, 'mold-form-phone-payment');
   await phone.context().close();
 
   // ---- 5. A supervisor follows and asks too; so does customer service

@@ -13,8 +13,14 @@ export const MOLD_CORES = {open: 'مفتوح', closed: 'مغلق'};
 export const MOLD_VIBRATORS = [2, 3, 4];
 export const MOLD_MODELS = {old: 'موديل قديم', gelba_new: 'جلبة موديل جديد', new: 'موديل جديد'};
 export const MOLD_HALF_BLOCKS = {none: 'بدون بلوكة نص', one: 'بلوكة نص واحدة', two: 'بلوكتين نص', three: '3 بلوكات نص'};
-/** Where a request waits now (the contract's waitingStep, 2026-11-01): the three approvals in order (sales manager, production, system
- *  administrator), then manufacturing, delivery, done or cancelled. */
+/** How the customer pays (yourrest-products 2026-11-03): `payment` in the requests body beside customer, salesman and specs, chosen by
+ *  the representative when asking. Production refuses any other value (400 invalid_payload, fields ['payment']); a request sent before
+ *  has none (pending lists it as null). */
+export const MOLD_PAYMENTS = {cash: 'نقدي', deferred: 'آجل'};
+export const MOLD_PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل';
+/** Where a request waits now (the contract's waitingStep, 2026-11-01): the three approvals in order (sales manager, production, finance:
+ *  the third, keyed `admin`, is «اعتماد المالية» since yourrest-products 2026-11-03, formerly the system administrator's), then
+ *  manufacturing, delivery, done or cancelled. */
 export const MOLD_WAITING_STEPS = ['sales', 'production', 'admin', 'manufacturing', 'delivery', 'done', 'cancelled'];
 export const MOLD_APPROVAL_STEPS = ['sales', 'production', 'admin'];
 /** The `approval` route's actions: the sales manager approves a request in the CRM, or withdraws the approval. */
@@ -112,6 +118,20 @@ export function validateMoldSpecs(input) {
   return {specs, errors};
 }
 
+/** The payment a representative chose: 'cash' or 'deferred', null for anything else (a request asked for before 2026-11-03 has none). */
+export function moldPayment(value) {
+  return value === 'cash' || value === 'deferred' ? value : null;
+}
+
+/** A cancellation's reason as it is compared: every run of white space (a new line too) as one space, the ends trimmed; '' for none. */
+export const moldCancelReasonKey = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+/** Whether a reason was used already for this request (its previous cancellations, which the production manager undid): production
+ *  answers such a cancellation with the request as it is, not cancelled (2026-11-03), so cancelling again takes a new reason. */
+export function moldCancelReasonUsed(reason, used) {
+  const key = moldCancelReasonKey(reason);
+  return (used || []).some(previous => moldCancelReasonKey(previous) === key);
+}
+
 /** The CRM's time as the contract writes it: ISO 8601 with Riyadh's offset (+03:00, no daylight saving). */
 export function riyadhIso(value) {
   const at = new Date(value);
@@ -121,10 +141,12 @@ export function riyadhIso(value) {
 
 /**
  * The body of the `requests` route (§2), keys in a fixed order so a retry sends the very same bytes. Optional texts are left out
- * when empty; `customer.crmNumber` is always there (the addendum). Throws when a value would be refused by production.
- * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any}} request
+ * when empty; `customer.crmNumber` is always there (the addendum). `payment` (2026-11-03) follows specs only when the request carries
+ * one: a request asked for before has none and is sent again exactly as it was first sent (production compares a resend with that
+ * original, and a field added to it would be other data: 409 production_only). Throws when a value would be refused by production.
+ * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null}} request
  */
-export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs}) {
+export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment}) {
   if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
   if (!isWhole(customer?.crmNumber) || customer.crmNumber < 1 || customer.crmNumber > 2147483647) throw new Error('customer.crmNumber');
   const checked = validateMoldSpecs(specs);
@@ -150,6 +172,7 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
   body.specs.quantity = s.quantity;
   if (s.designUrl) body.specs.designUrl = s.designUrl;
   if (s.notes) body.specs.notes = s.notes;
+  if (payment !== undefined && payment !== null) { if (!moldPayment(payment)) throw new Error('payment'); body.payment = payment; }
   return body;
 }
 
@@ -387,8 +410,8 @@ const textOf = (value, max) => typeof value === 'string' ? value.replace(/[ \t ]
 const wholeOrNull = value => isWhole(value) ? value : null;
 /**
  * One request waiting for the sales manager, as the `pending` route lists it (from the CRM or registered in the products application),
- * reduced to the fields the contract names, with its design files (none when production sent none); null when it is not one. No
- * production data travels in it.
+ * reduced to the fields the contract names, with its design files (none when production sent none) and how the customer pays (cash,
+ * deferred, or null for a request asked for before 2026-11-03); null when it is not one. No production data travels in it.
  * @param {any} value
  */
 export function moldPendingItem(value) {
@@ -402,7 +425,7 @@ export function moldPendingItem(value) {
     salesman: {crmMemberId: textOf(s.crmMemberId, 64), name: textOf(s.name, 160)},
     specs: {description: textOf(p.description, 200), core: textOf(p.core, 20), vibrators: wholeOrNull(p.vibrators), model: textOf(p.model, 20), halfBlock: textOf(p.halfBlock, 20),
       moldWidth: wholeOrNull(p.moldWidth), gelbaSize: wholeOrNull(p.gelbaSize), moldNo: textOf(p.moldNo, 40), quantity: wholeOrNull(p.quantity), designUrl: /^https:\/\/\S+$/i.test(p.designUrl || '') ? String(p.designUrl).slice(0, 1000) : '', notes: textOf(p.notes, 2000)},
-    revision: wholeOrNull(value.revision), designFiles: designFilesOf(value.designFiles) || [],
+    payment: moldPayment(value.payment), revision: wholeOrNull(value.revision), designFiles: designFilesOf(value.designFiles) || [],
   };
 }
 

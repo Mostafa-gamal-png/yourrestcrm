@@ -46,7 +46,7 @@ try {
     .bind(id, assignedTo, JSON.stringify({name: 'مصنع ' + id, region, city: 'الدمام', address: 'حي الصناعية', code: 'ERP-' + id, branch: 'الرئيسي', assignedTo}), now, now).run();
   await customer('east1', 'rep', 'الشرقية'); await customer('east2', 'rep', 'الشرقية'); await customer('west1', 'rep2', 'الغربية');
   const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
-  const create = async (who, customerId, description) => (await (await post(who, {action: 'create', customerId, specs: {...specs, description}})).json()).request;
+  const create = async (who, customerId, description) => (await (await post(who, {action: 'create', customerId, specs: {...specs, description}, payment: 'cash'})).json()).request;
   const list = async who => (await as(who)('/api/mold-requests')).json();
   const viewOf = async (who, id) => (await list(who)).requests.find(item => item.id === id);
   const age = id => app.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(id).run();

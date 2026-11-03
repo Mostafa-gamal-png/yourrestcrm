@@ -3,7 +3,11 @@
 // §6 retry timetable, the design files of 2026-11-02 (names, bytes, pixels, the body, designFiles), and every route against a stand-in
 // production API that applies the same checks as the PHP. Since 2026-11-02 a sent request's data is edited by the production manager only:
 // the requests route's 409 production_only, its text, which answers prove production never stored a send, and the edit rule (the
-// portable rule and lib/mold-requests.ts's permission, transpiled). Synthetic files only; no real account.
+// portable rule and lib/mold-requests.ts's permission, transpiled). Since 2026-11-03 (yourrest-products): the third approval is shown
+// as «اعتماد المالية» (still keyed admin); `payment` (cash or deferred) beside customer, salesman and specs, required for a new request,
+// sent only when the request has it (an older request is resent exactly as first sent), refused by production otherwise (fields
+// ['payment']) and listed by pending; and a cancellation the production manager restores, after which a reason used before answers 200
+// with the request as it is and only a new reason cancels it. Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
@@ -13,7 +17,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldApprovalRefusal, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText, sheetCity, moldRequestCity, moldCustomerEntry, moldCustomerCalls,
   MOLD_DESIGN_EXTENSIONS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, MOLD_DESIGN_PLACE_REASONS, moldDesignName, moldDesignDisplayName, moldImageSize, moldDesignFileCheck, moldDesignContentType, moldDispositionName, moldContentDisposition, moldDesignFileBody, moldDesignFileEntry,
-  MOLD_PRODUCTION_ONLY, MOLD_PRODUCTION_ONLY_TEXT, moldAnswerNotStored, moldNeverSent} from '../portable/mold-rules.mjs';
+  MOLD_PRODUCTION_ONLY, MOLD_PRODUCTION_ONLY_TEXT, moldAnswerNotStored, moldNeverSent, MOLD_PAYMENTS, MOLD_PAYMENT_REQUIRED, MOLD_WAITING_STEPS, MOLD_APPROVAL_STEPS, moldPayment, moldCancelReasonKey, moldCancelReasonUsed} from '../portable/mold-rules.mjs';
 import * as rules from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts, moldRouteTimeout} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
@@ -81,6 +85,34 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(moldRequestBody({id: 'r', requestedAt: 'x', customer: {crmNumber: 1, name: 'a', city: 'c'.repeat(101)}, salesman: {name: 'b', email: 'not-an-email'}, specs}).customer, {crmNumber: 1, name: 'a'}, 'an over-long optional city and a bad email are left out, never cut');
   eq([Object.keys(body.customer), Object.keys(body.salesman)], [['crmNumber', 'name', 'address', 'city'], ['crmMemberId', 'name', 'email']], 'only the contract fields: no phone, customer email, visit or sales data (§3)');
   eq(riyadhIso('2026-10-29T07:15:00Z'), '2026-10-29T10:15:00+03:00', 'requestedAt in Riyadh time with its offset');
+}
+
+// ---- 2026-11-03: payment (cash or deferred) beside customer, salesman and specs, only when the request has one
+{
+  eq([MOLD_PAYMENTS, MOLD_PAYMENT_REQUIRED], [{cash: 'نقدي', deferred: 'آجل'}, 'اختار طريقة الدفع: نقدي أو آجل'], 'the two choices and the message when none is chosen');
+  eq(['cash', 'deferred', 'Cash', ' cash', 'card', '', null, undefined, 1, {}].map(moldPayment), ['cash', 'deferred', null, null, null, null, null, null, null, null], 'cash or deferred, nothing else (no case or space folding)');
+  const old = moldRequestBody({id: 'rec-9f3a', requestedAt: '2026-10-29T10:15:00+03:00', customer, salesman, specs});
+  for (const payment of [undefined, null]) eq(JSON.stringify(moldRequestBody({id: 'rec-9f3a', requestedAt: '2026-10-29T10:15:00+03:00', customer, salesman, specs, payment})), JSON.stringify(old), 'a request without a payment (asked for before): the very same bytes as before (' + payment + ')');
+  eq(Object.hasOwn(old, 'payment'), false, 'and no payment key at all');
+  for (const payment of ['cash', 'deferred']) {
+    const body = moldRequestBody({id: 'rec-9f3a', requestedAt: '2026-10-29T10:15:00+03:00', customer, salesman, specs, payment});
+    eq([Object.keys(body), body.payment, JSON.stringify({...body, payment: undefined})], [['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment'], payment, JSON.stringify(old)], payment + ': in the body itself after specs, the rest unchanged');
+  }
+  for (const payment of ['card', '', 'CASH', 0]) { assert.throws(() => moldRequestBody({id: 'rec-1', requestedAt: 'x', customer, salesman, specs, payment}), /payment/); checks++; }
+  eq(readMoldAnswer(400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['payment']}}), {kind: 'rejected', code: 'invalid_payload', fields: ['payment']}, 'production refusing the payment names the field (final, the data must change)');
+  const pendingWith = payment => moldPendingItem({orderNo: 7, crmRequestId: 'r', source: 'crm', customer: {name: 'x'}, salesman: {name: 'y'}, specs: {description: 'd'}, ...(payment === 'absent' ? {} : {payment})}).payment;
+  eq(['cash', 'deferred', null, 'absent', 'card', 'Cash'].map(pendingWith), ['cash', 'deferred', null, null, null, null], 'pending: cash, deferred, or null (an older request, or a value the contract does not name)');
+}
+
+// ---- 2026-11-03: a cancellation the production manager restores; a new cancellation takes a new reason
+{
+  eq([moldCancelReasonKey('  العميل   أجّل \n الطلب '), moldCancelReasonKey(''), moldCancelReasonKey(null)], ['العميل أجّل الطلب', '', ''], 'a reason compared with its spaces normalized and its ends trimmed');
+  eq([moldCancelReasonUsed('العميل  أجّل', ['العميل أجّل']), moldCancelReasonUsed(' العميل أجّل ', ['x', 'العميل أجّل']), moldCancelReasonUsed('سبب جديد', ['العميل أجّل']), moldCancelReasonUsed('', ['']), moldCancelReasonUsed('', ['x']), moldCancelReasonUsed('x', []), moldCancelReasonUsed('x', undefined)],
+    [true, true, false, true, false, false, false], 'the same reason (spaces aside) is used; any other, or none before, is new');
+  eq([MOLD_WAITING_STEPS.includes('admin'), MOLD_APPROVAL_STEPS], [true, ['sales', 'production', 'admin']], 'the third approval keeps its key admin in waitingStep and approvals');
+  const restored = moldStatusObject({crmRequestId: 'mr-r', orderNo: 95, status: 'received', editable: true, stages: {}, waitingStep: 'production', waitingSince: '2026-11-03T10:00:00+03:00', revision: 7,
+    approvals: {required: true, sales: {at: '2026-11-03T09:00:00+03:00', by: 'sm'}, production: null, admin: null}});
+  eq([restored.status, restored.editable, restored.waitingStep, !!restored.approvals.sales, restored.revision], ['received', true, 'production', true, 7], 'a restored request\'s status reads as any active one: where it stood before the cancellation');
 }
 
 // ---- the status object (§3) and answers (§4)
@@ -180,6 +212,36 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   const unconfirmed = {outbox: null, accepted: {...data, unconfirmed: true}, remote: {...status, approvals: {required: true, sales: null, production: null, admin: null}}, lastError: {code: 'request_locked', http: 409, at}};
   eq([lib.moldRequestView(row(unconfirmed), me, [], true).unconfirmed, lib.moldRequestView(row({outbox: null, accepted: data, remote: status}), me, [], true).unconfirmed], [true, false], 'the view says when the specifications are not production\'s');
   eq([can(unconfirmed), lib.moldPermissions(row(unconfirmed), {id: 'sm', role: 'manager'}).approve], [[false, true, true, true], true], 'production holds it: no edit; cancelling, files and the sales manager\'s approval as for any request it holds');
+  // Values made in the sandbox (its own Array and Object) are compared as plain data.
+  const same = (actual, expected, message) => eq(JSON.parse(JSON.stringify(actual ?? null)), expected, message);
+  // 2026-11-03: «اعتماد المالية» instead of the system administrator's (the key stays admin), the payment's names and the field's refusal
+  same([lib.moldWaitingNames.admin, lib.moldApprovalNames.admin], [['بانتظار اعتماد المالية', 'Waiting for finance approval'], ['المالية', 'Finance']], 'the third approval\'s names: «بانتظار اعتماد المالية», and «اعتماد المالية» as the sheet composes it');
+  same(JSON.stringify(lib).includes('مدير النظام'), false, 'the system administrator\'s approval is named nowhere any more');
+  same([lib.moldPaymentNames.cash, lib.moldPaymentNames.deferred, lib.moldFieldNames.payment], [['نقدي', 'Cash'], ['آجل', 'Deferred'], ['طريقة الدفع غير صحيحة', 'The payment method is not valid']], 'the payment in Arabic and English, and production\'s refusal of it');
+  const paid = {...data, payment: 'deferred'};
+  same([lib.moldRequestView(row({data: paid}), me, [], true).payment, lib.moldRequestView(row({}), me, [], true).payment, lib.moldRequestView(row({data: {...data, payment: 'card'}}), me, [], true).payment], ['deferred', null, null], 'the view carries the payment the CRM stored; none for a request asked for before');
+  // restored after a cancellation: active again (cancel and files under the usual rules), with why, and the earlier reasons for the screen
+  const active = {outbox: null, accepted: data, remote: status, remoteAt: at, cancelledAt: null, cancelReason: '', lastError: {code: 'restored', reason: 'restored', http: 0, at}};
+  same([can(active), lib.moldRequestView(row(active), me, [], true, [], ['العميل أجّل']).cancelReasons, lib.moldRequestView(row(active), me, [], true).cancelReasons], [[false, true, true, true], ['العميل أجّل'], []], 'restored: cancelling and files back, no edit; the earlier reasons travel with the view');
+  same([lib.moldChangeRefused(active.lastError), lib.moldRequestView(row(active), me, [], true).sending.state], [false, 'sent'], 'a restore is no refused change and nothing waits');
+  // A design file waiting while the request was cancelled: «not sent: the request is cancelled»; restored, it waits to be sent again.
+  const waitingFile = {id: 'mdf-1', requestId: 'mr-1', memberId: 'rep', name: 'رسم.pdf', kind: 'pdf', contentType: 'application/pdf', size: 10, sha256: 'x', objectKey: 'k', createdAt: at, deletedAt: null, outbox: 'send', attempts: 0, firstFailedAt: null, nextAttemptAt: at, lastAttemptAt: null, lastError: null, remoteFileId: null, sentAt: null, version: 1};
+  same([lib.moldDesignFilesView(row({...active, cancelledAt: at, cancelReason: 'x'}), [waitingFile], me, true)[0].state, lib.moldDesignFilesView(row(active), [waitingFile], me, true)[0].state], ['cancelled', 'waiting'], 'a file of a restored request is no longer held as cancelled');
+  // Cancelled in production (not by the CRM): the file is held too, not «waiting» for a send that cannot go until the production manager restores it.
+  const cancelledThere = lib.moldDesignFilesView(row({...active, lastError: null, remote: {...status, status: 'cancelled', editable: false, waitingStep: 'cancelled'}}), [{...waitingFile, lastAttemptAt: at}], me, true)[0];
+  same([cancelledThere.state, cancelledThere.stopped], ['cancelled', false], 'a file of a request cancelled in production is held, said as cancelled');
+  same(['restored', 'cancel_dropped', 'same_reason'].map(reason => lib.moldRestoredText({code: 'restored', reason}, say('ar'))),
+    ['رجّعه مدير الإنتاج بعد الإلغاء؛ عشان تلغيه تاني اكتب سبب جديد.', 'رجّعه مدير الإنتاج بعد الإلغاء، فالإلغاء المنتظر لن يُعاد إرساله؛ عشان تلغيه تاني اكتب سبب جديد.', 'مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد.'], 'why it is active again, in Arabic');
+  same([lib.moldRestoredText({code: 'restored', reason: 'same_reason'}, say('en')), lib.moldRestoredText({code: 'timeout'}, say('ar')), lib.moldRestoredText(null, say('ar'))], ['The production manager restored the request; to cancel it again, write a new reason.', '', ''], 'in English; nothing for any other error');
+  // Once it may no longer be cancelled (approved or in production since), or for a reader who may not cancel it: no new reason asked for.
+  same(['restored', 'cancel_dropped', 'same_reason'].map(reason => lib.moldRestoredText({code: 'restored', reason}, say('ar'), {cancellable: false})),
+    ['رجّعه مدير الإنتاج بعد الإلغاء.', 'رجّعه مدير الإنتاج بعد الإلغاء، فالإلغاء المنتظر لن يُعاد إرساله.', 'رجّعه مدير الإنتاج بعد الإلغاء.'], 'not cancellable: only that it was restored, in Arabic');
+  same(lib.moldRestoredText({code: 'restored', reason: 'same_reason'}, say('en'), {cancellable: false}), 'The production manager restored it after the cancellation.', 'and in English');
+  same(lib.MOLD_SAME_REASON_TEXT, ['مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد', 'The production manager restored the request; to cancel it again, write a new reason'], 'the same-reason refusal, Arabic and English');
+  const dictionary = JSON.parse(readFileSync(path.join(root, 'lib/locales/en.json'), 'utf8'));
+  same([dictionary[lib.MOLD_SAME_REASON_TEXT[0]], dictionary[MOLD_PAYMENT_REQUIRED]], [lib.MOLD_SAME_REASON_TEXT[1], 'Choose how the customer pays: cash or deferred'], 'the server\'s two new refusals have their English pair');
+  const restoredLocked = 'رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
+  same([readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(restoredLocked), dictionary[restoredLocked]], [true, 'The production manager restored it after the cancellation, and the approvals are complete or production has started; it can no longer be cancelled.'], 'the same cancellation once it may no longer be cancelled: its own refusal, with its English pair');
 }
 
 // ---- the customers route: the CRM's list, the cities as the production sheet writes them
@@ -504,6 +566,41 @@ try {
   answer = await call('design-file-delete', {crmRequestId: 'mr-files', crmFileId: 'mdf-n0'});
   eq([answer.kind, answer.request.status, mock.row('mr-files').designFiles.some(file => file.crmFileId === 'mdf-n0')], ['locked', 'confirmed', true], 'delete after the approvals: 409, the file stays');
   eq((await attach('mr-files', 'mdf-n1', 'drawing 1.dwg', Uint8Array.of(2))).json?.created, false, 'a repeat of a file production already holds is still answered 200, locked or not');
+  // ---- 2026-11-03: payment beside customer, salesman and specs; part of the original data; listed by pending
+  answer = await call('requests', {...moldRequestBody({id: 'mr-pay-bad', requestedAt: riyadhIso(Date.now()), customer, salesman, specs}), payment: 'card'});
+  eq([answer.kind, answer.http, answer.code, answer.fields, mock.row('mr-pay-bad')], ['rejected', 400, 'invalid_payload', ['payment'], undefined], 'any payment but cash or deferred: 400 invalid_payload fields [payment], nothing stored');
+  const paidBody = moldRequestBody({id: 'mr-pay', requestedAt: riyadhIso(Date.now()), customer, salesman, specs, payment: 'deferred'});
+  answer = await call('requests', paidBody);
+  eq([answer.kind, answer.http, mock.row('mr-pay').payment], ['ok', 201, 'deferred'], 'a new request with its payment');
+  const olderBody = moldRequestBody({id: 'mr-pay-old', requestedAt: riyadhIso(Date.now()), customer, salesman, specs});
+  answer = await call('requests', olderBody);
+  eq([answer.http, mock.row('mr-pay-old').payment], [201, null], 'an older client\'s request without payment: stored as null');
+  eq([(await call('requests', olderBody)).json?.created, (await call('requests', paidBody)).json?.created], [false, false], 'each resent as first sent: 200 created false');
+  answer = await call('requests', {...olderBody, payment: 'cash'});
+  eq([answer.kind, answer.reason], ['locked', 'production_only'], 'a payment added to a request first sent without one is other data: 409 production_only');
+  eq((await call('requests', {...paidBody, payment: 'cash'})).reason, 'production_only', 'so is another payment');
+  const paidListed = (await call('pending', {})).json.requests.map(item => moldPendingItem(item));
+  eq([paidListed.find(item => item.crmRequestId === 'mr-pay').payment, paidListed.find(item => item.crmRequestId === 'mr-pay-old').payment], ['deferred', null], 'pending: each request\'s payment, null for the older one');
+  mock.edit('mr-pay', {payment: 'cash'});
+  eq(moldPendingItem((await call('pending', {})).json.requests.find(item => item.crmRequestId === 'mr-pay')).payment, 'cash', 'as the production manager may have changed it');
+  // ---- 2026-11-03: the production manager restores a cancelled request; the same cancellation again changes nothing
+  await approve('approve', 'mr-pay');
+  answer = await call('cancel', {crmRequestId: 'mr-pay', reason: 'العميل أجّل'});
+  eq([answer.json.request.status, answer.json.request.waitingStep], ['cancelled', 'cancelled'], 'cancelled');
+  const restoredNow = mock.restore('mr-pay');
+  answer = await call('status', {ids: ['mr-pay']});
+  eq([restoredNow.status, answer.json.requests[0].status, answer.json.requests[0].editable, answer.json.requests[0].waitingStep, !!answer.json.requests[0].approvals.sales, answer.json.requests[0].revision > 0], ['received', 'received', true, 'production', true, true], 'restored: back where it stood (the sales manager\'s approval kept), editable, read from status');
+  const before = mock.row('mr-pay').revision;
+  answer = await call('cancel', {crmRequestId: 'mr-pay', reason: '  العميل   أجّل '});
+  eq([answer.kind, answer.http, answer.json.request.status, answer.json.request.revision], ['ok', 200, 'received', before], 'the same reason (spaces aside) after the restore: 200 with the request as it is, nothing cancelled');
+  answer = await call('cancel', {crmRequestId: 'mr-pay', reason: 'سبب جديد'});
+  eq([answer.json.request.status, mock.row('mr-pay').cancelReason], ['cancelled', 'سبب جديد'], 'a new reason cancels it again');
+  eq((await call('cancel', {crmRequestId: 'mr-pay', reason: 'العميل أجّل'})).json.request.status, 'cancelled', 'a cancellation of a cancelled request: 200 with its state, as before');
+  mock.restore('mr-pay');
+  eq((await call('cancel', {crmRequestId: 'mr-pay', reason: 'سبب جديد'})).json.request.status, 'received', 'restored again: the second reason is used too');
+  eq(await Promise.resolve().then(() => mock.restore('mr-pay')).then(() => '', error => error.message), 'not cancelled: mr-pay', 'only a cancelled request is restored');
+  mock.remove('mr-pay-old');
+  eq([mock.restore('mr-pay-old').status, mock.row('mr-pay-old').deleted], ['received', false], 'a request deleted in production is restored the same way');
   ok(mock.state.calls.every(c => !JSON.stringify(c.headers).includes(mock.state.secret)), 'the secret never travels');
 } finally { await mock.stop(); }
 

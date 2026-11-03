@@ -83,6 +83,7 @@ try {
   await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
   await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
   await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
+  await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).locator('label', {hasText: 'نقدي'}).click();
   const picker = dialog.locator('.mold-design-picker');
   check((await picker.locator('input[type=file]').getAttribute('accept')).split(',').slice(0, 3), ['.pdf', '.png', '.jpg'], 'the picker offers the contract\'s extensions');
   await picker.locator('input[type=file]').setInputFiles([{name: 'رسم القالب.pdf', mimeType: 'application/pdf', buffer: drawingPdf}, {name: 'ليس-pdf.pdf', mimeType: 'application/pdf', buffer: Buffer.from('this is not a pdf')}]);
@@ -327,7 +328,7 @@ try {
   //  edit: no warning (production holds nothing whose approvals it would undo); uploaded once the change is saved; held in the CRM while
   //  the request has not reached production (the edit's own send gets no answer); sent as soon as production holds the request.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
-  const unsent = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}}})).json()).request;
+  const unsent = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
   check([unsent.sending.state, unsent.can.edit, mock.row(unsent.id)], ['rejected', true, undefined], 'refused before production stored it: still editable');
   const editor = await open('rep');
   await goMolds(editor);
