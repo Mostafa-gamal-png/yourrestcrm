@@ -19,7 +19,7 @@
 // 2026-11-03): a new request has none; an older request keeps its own, shown read-only and sent as it was.
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
-import {regionScope} from './regions';
+import {memberCanAccessRegion,regionScope} from './regions';
 import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS};
@@ -142,7 +142,16 @@ export const canCreateMoldRequest=(me:Member)=>canUseMoldRequests(me.role);
 export const canApproveMoldRequests=(me:Pick<Member,'role'>)=>me.role==='manager';
 const SERVICE_ROLES=['customer_service','customer_service_manager'];
 
-type Reader={me:Member;members:Member[];regionCustomerIds:Set<string>};
+/** all: the reader's customer records when the route loaded them (the customers' regions, for moldApprovingManagerId). */
+type Reader={me:Member;members:Member[];regionCustomerIds:Set<string>;all?:readonly {id:string;kind:string;data:Record<string,unknown>}[]};
+const customerRegions=new WeakMap<object,Map<string,unknown>>();
+/** A customer's region from the reader's records: found false when the records were not loaded or do not hold that customer. */
+function customerRegion(c:Reader,customerId:string):{found:boolean;region?:unknown}{
+ if(!c.all)return {found:false};
+ let regions=customerRegions.get(c.all);
+ if(!regions){regions=new Map(c.all.filter(record=>record.kind==='customer').map(record=>[record.id,record.data.region]));customerRegions.set(c.all,regions);}
+ return regions.has(customerId)?{found:true,region:regions.get(customerId)}:{found:false};
+}
 const SALES_TEAM_ROLES=['supervisor','rep'];
 /** The sales manager whose team a member belongs to (the owner, 2026-11-03: «يبان للمندوب طلباته بس ومدير المبيعات طلباته وطلبات
  *  فريقه»): a sales manager is their own; a supervisor or representative belongs to the first sales manager up their «المشرف» chain
@@ -185,8 +194,18 @@ export function canReadMoldRequest(row:Pick<MoldRequestRow,'memberId'|'customerI
 export function moldApprovesRequest(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
  if(!canApproveMoldRequests(c.me))return false;
  if(regionScope(c.me)!=='all'&&!c.regionCustomerIds.has(row.customerId))return false;
- const manager=moldTeamManagerId(row.memberId,c.members);
+ const manager=moldApprovingManagerId(row,c);
  return manager===c.me.id||manager==='';
+}
+/** The one sales manager who approves a request of their team (moldTeamManagerId), or '' when every sales manager of the customer's
+ *  region does: no team, or a team manager who cannot approve it now (deactivated, or the customer is outside their regions, such as
+ *  after their regions changed or for their own request elsewhere), so that no request is left with nobody to approve it (production
+ *  cannot give this approval itself). */
+export function moldApprovingManagerId(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
+ const owner=moldTeamManagerId(row.memberId,c.members),manager=owner?c.members.find(member=>member.id===owner):undefined;
+ if(!manager||!manager.active)return '';
+ const customer=customerRegion(c,row.customerId);
+ return customer.found&&!memberCanAccessRegion(manager,customer.region)?'':owner;
 }
 /** An answer older than the status stored (a lower revision; one without a revision is never older): answers can cross, and an older
  *  one must not bring back approvals production has since undone. The SQL twin is newerRemote in lib/mold-requests-server.ts. */
@@ -275,7 +294,7 @@ export const moldHasQuotePo=(data:Pick<MoldRequestData,'quoteNo'|'poNo'>)=>!!(da
  *  manager's additions and corrections included), else the CRM's own while production does not hold the request yet; none otherwise. */
 export function moldQuotePoView(row:Pick<MoldRequestRow,'data'|'accepted'|'remote'>):MoldQuotePoView|null{
  if(row.remote&&moldQuotePoAnswered(row.remote))return {quoteNo:row.remote.quoteNo||'',poNo:row.remote.poNo||'',missing:row.remote.quoteOrPoMissing===true,from:'production'};
- if(row.remote||row.accepted)return null;
+ if(row.remote||row.accepted||!moldHasQuotePo(row.data))return null;
  return {quoteNo:row.data.quoteNo||'',poNo:row.data.poNo||'',missing:false,from:'crm'};
 }
 /** One request as its reader receives it. cancelReasons: the reasons of its earlier cancellations (moldCancelReasons in

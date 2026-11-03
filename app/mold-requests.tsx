@@ -388,7 +388,11 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onCl
  const action=useMoldAction(onSaved,onRefused);
  // The quotation and PO numbers and their files: asked for once production's update of 2026-11-03 is known to be live (or the server
  // has just said it is, refusing a request without them).
- const asks=quotePo||['quotePo','quoteNo','poNo'].some(key=>!!action.fields[key]);
+ // Once the server has asked for them, they stay asked for (a page loaded before the update): a later attempt that fails without an
+ // answer must resend the same body, numbers included, under the same identifier, so the request is never saved twice.
+ const demanded=['quotePo','quoteNo','poNo'].some(key=>!!action.fields[key]),[wasDemanded,setWasDemanded]=useState(false);
+ if(demanded&&!wasDemanded)setWasDemanded(true);
+ const asks=quotePo||demanded||wasDemanded;
  const [designs,setDesigns]=useState<DesignChoice[]>([]),[quotes,setQuotes]=useState<DesignChoice[]>([]),[pos,setPos]=useState<DesignChoice[]>([]),[asking,setAsking]=useState(false);
  const files=asks?[...designs,...quotes,...pos]:designs,ready=files.filter(choice=>!choice.refusal);
  const chosen=customers.find(row=>row.id===customerId);

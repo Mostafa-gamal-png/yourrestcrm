@@ -833,6 +833,27 @@ try {
     check([(await post('smE2', {action: 'approve-order', orderNo: teamMock.row(rCs.id).orderNo})).status, (await post('smE2', {action: 'approve', id: rE2.id})).status, (await post('smE', {action: 'approve-order', orderNo: teamMock.row(rD.id).orderNo})).status, (await post('smE', {action: 'approve', id: rSm.id})).status],
       [200, 200, 200, 200], 'the other manager of the region approves it by order number; each approves his own team\'s, and his own');
     check([await waiting('smE'), await waiting('smE2')], [sorted(rE.id, rOwner.id, rOrphan.id, 'order:' + manual.orderNo), sorted(rOwner.id, rOrphan.id, 'order:' + manual.orderNo)], 'what is left waiting for each');
+
+    // Nobody may be left to approve a team's request (production cannot give this approval): when the team's manager cannot approve it
+    // now, the region's other managers do, as for a request of no team. Production's waiting list is kept a minute: an approval of an
+    // order number nobody has asks for it again.
+    const refresh = async () => check((await post('smE2', {action: 'approve-order', orderNo: 999999})).status, 409, 'production\'s waiting list asked for again');
+    const rMoved = await ask('repD', 'e3', 'smE\'s team, before his regions changed');
+    await teamApp.db.prepare("UPDATE crm_members SET region_scope='western' WHERE id='smE'").run();
+    check((await as('smE')('/api/mold-requests')).status, 401, 'a change of regions ends his session');
+    sessions.smE = await teamApp.login('smE');
+    await refresh();
+    check([(await waiting('smE2')).includes(rMoved.id), (await waiting('smE')).includes(rMoved.id), (await waiting('smW')).includes(rMoved.id)], [true, false, false], 'smE\'s regions moved to the west: his team\'s eastern request waits for the eastern manager, no longer for him');
+    res = await post('smE2', {action: 'approve', id: rMoved.id}); body = await res.json();
+    check([res.status, body.request.remote.waitingStep, !!teamMock.row(rMoved.id).approvals.sales], [200, 'production', true], 'and smE2 approves it');
+    await teamApp.db.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='smE'").run();
+    sessions.smE = await teamApp.login('smE');
+    const rLeft = await ask('repE2', 'e2', 'smE2\'s team, before he left');
+    await teamApp.db.prepare("UPDATE crm_members SET active=0 WHERE id='smE2'").run();
+    await post('smE', {action: 'approve-order', orderNo: 999999});
+    check([(await waiting('smE')).includes(rLeft.id), (await mine('smE')).includes(rLeft.id)], [true, false], 'smE2 deactivated: his team\'s request waits for smE (not in smE\'s list)');
+    res = await post('smE', {action: 'approve', id: rLeft.id}); body = await res.json();
+    check([res.status, body.request.remote.waitingStep, !!teamMock.row(rLeft.id).approvals.sales], [200, 'production', true], 'and smE approves it');
   } finally { await teamApp.stop(); await teamMock.stop(); }
 }
 
