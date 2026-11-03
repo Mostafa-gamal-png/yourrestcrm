@@ -271,6 +271,21 @@ eq([result.rows[1].status,result.rows[1].customerId,result.plan.map(p=>[p.custom
 result=match([erp(3,'12','مصنع الامل'),erp(4,'57','شركة اخرى',['112345678'])],[amal],{choices:new Map([[4,'amal']])});
 eq(result.rows.map(o=>[o.status,o.conflict]),[['choose',true],['choose',true]],'and if the code\'s own row ends on the customer too, the two conflict');
 eq(one([erp(4,'57','شركة اخرى',['112345678']),{...erp(3,'12','x'),issue:'duplicate-code'}],[amal]).status,'auto','a code row the file itself marks as invalid does not count');
+// The same file again after that apply: amal's code is 57 and 12 a kept old code. Row 3 finds amal only by the old code, and amal's current
+// code is row 4: a choice (not preselected), so the two rows do not conflict and the rest of the file (a new row) can be applied.
+const amalAfter=customer('amal',{name:'مصنع الامل',phone:'0112345678',code:'57',_erpCodeAliases:['12','57']});
+result=match([erp(3,'12','مصنع الأمل للبلاستيك',['559999999']),erp(4,'57','شركة اخرى',['112345678']),erp(5,'9020','مصنع جديد كليا')],[amalAfter]);
+eq(result.rows.map(o=>[o.row,o.status,o.customerId,o.matchedBy,o.codeRow,o.conflict,o.candidates.map(c=>[c.id,c.matchedBy])]),[[3,'choose','','',4,false,[['amal','code']]],[4,'same','amal','phone',0,false,[['amal','phone']]],[5,'new','','',0,false,[]]],'re-imported: the row found only by the old code is a choice pointing at row 4, the row with amal\'s current code is the same');
+eq([result.summary.conflicts,result.summary.pending,result.summary.adds,result.plan],[0,1,1,[]],'no conflict: the new customer can be added');
+result=match([erp(3,'12','مصنع الأمل للبلاستيك',['559999999']),erp(4,'57','شركة اخرى',['112345678'])],[amalAfter],{choices:new Map([[3,'amal']])});
+eq([result.rows.map(o=>[o.status,o.conflict]),result.plan],[[['choose',true],['choose',true]],[]],'picking amal for the old code again: it conflicts with row 4, as any two rows on one customer');
+eq(one([erp(3,'12','مصنع الأمل للبلاستيك')],[amalAfter]).status,'same','the old code alone in the file (amal\'s current code is no row of it): same, nothing to change');
+// The YR-C-000302 flow: 302 holds 345, ERP row 345 is another customer, ERP row 9001 is 302 under a close name.
+const flow=[erp(3,'345','اسم تاني خالص'),erp(4,'9001','مصنع الصفا للبلوك الحديث')],safa302=customer('safa302',{name:'مصنع الصفا للبلوك الاسمنتي',code:'345'});
+result=match(flow,[safa302],{choices:new Map([[3,''],[4,'safa302']])});
+eq([result.summary.conflicts,result.plan.map(p=>[p.customerId,p.from,p.to])],[0,[['safa302','345','9001']]],'302: row 345 left and «ده هو» on 9001 plans 345 → 9001');
+result=match(flow,[{...safa302,data:{...safa302.data,code:'9001',_erpCodeAliases:['345','9001']}}]);
+eq([result.rows.map(o=>[o.status,o.customerId,o.matchedBy,o.codeRow]),result.summary.conflicts,result.plan],[[['choose','','',4],['same','safa302','code',0]],0,[]],'302 re-imported: 9001 is the same, 345 (only an old code now) is a choice pointing at it, no conflict');
 
 // among several candidates, the one already holding exactly this number is preselected as unchanged
 result=match([erp(3,'C-9','مصنع النور')],[nour,twin]);
@@ -327,6 +342,9 @@ eq(sim(['صفا'],['صفا','بلوك','حديث']),0,'two words more on one sid
 eq(sim(['صفا','نور','بدر'],['صفا','فجر','قمر']),0,'two words different: not similar');
 eq(sim(['ab','cd'],['ab','ef']),0,'a single short shared word never makes two names similar');
 eq([sim([],['نور']),sim(['نور'],[])],[0,0],'nothing to compare');
+eq(sim(['محمد','علي','غامدي'],['خالد','فهد','غامدي'],()=>0),0,'on the whole lists: two words different stays not similar, however common those words are');
+eq([sim(['صفا','بلوك'],['صفا','بلوك','حديث'],()=>21),sim(['صفا','بلوك'],['صفا','بلوك','حديث'],()=>20)],[0,2/3],'the shared words are evidence only when at most 20 customers carry all of them');
+eq(sim(['محمد','علي'],['محمد','علي'],()=>500),1,'the same words are similar however many customers carry them (the names differ only in generic words)');
 
 // ---- similar names in the matcher: offered with nothing preselected; the 302-like case
 const c302=customer('c302',{name:'مصنع الصفا للبلوك الاسمنتي',code:'345',phone:'0551110000'});
@@ -350,8 +368,34 @@ r=one([erp(3,'9004','مصنع القمر للبلوك')],blocks(20));
 eq([r.status,r.candidates.length,r.candidates.map(c=>c.id)],['similar',5,['blk-0','blk-1','blk-2','blk-3','blk-4']],'twenty customers share «بلوك» and one other word each: at most 5 suggestions');
 r=one([erp(3,'9004','مصنع القمر للبلوك')],blocks(21));
 eq([r.status,r.candidates],['new',[]],'a word more than 20 customers carry is ignored: «مصنع القمر للبلوك» is new');
+const moons=count=>Array.from({length:count},(_,i)=>customer('moon-'+i,{name:'مصنع القمر نجم'+i+' للبلوك'}));
+eq(one([erp(3,'9004','مصنع القمر للبلوك الحديث')],moons(20)).candidates.length,5,'twenty customers carry «قمر» and «بلوك» together: still evidence');
+eq(one([erp(3,'9004','مصنع القمر للبلوك الحديث')],moons(21)).status,'new','more than twenty carry both together: those shared words are no evidence either');
+// Common words are left out of the evidence only: the one-word rule and the score always see the whole names.
+const commonWords=(word,count)=>Array.from({length:count},(_,i)=>customer(word+'-'+i,{name:'مصنع '+word+' نجم'+i}));
+const crowded=[...commonWords('محمد',25),...commonWords('بلوك',25),...commonWords('علي',25),...commonWords('خالد',25),...commonWords('فهد',25)];
+const block345=customer('block345',{name:'مصنع محمد للبلوك',code:'345'});
+for(const [label,customers] of [['alone',[block345]],['with 25 customers carrying each of its words',[block345,...crowded]]]){
+ result=match([erp(3,'9001','مصنع محمد للبلوك والخرسانة')],customers);
+ eq([result.rows[0].status,result.rows[0].add,result.rows[0].candidates[0]?.id,result.summary.adds],['similar',false,'block345',0],'«مصنع محمد للبلوك» and «مصنع محمد للبلوك والخرسانة» (one word added) are similar, '+label+': never added by default');
+}
+const mohamedAli=customer('mohamed-ali',{name:'محمد علي',code:'346'});
+for(const [label,customers] of [['alone',[mohamedAli]],['with both words common',[mohamedAli,...crowded]]])
+ eq([one([erp(3,'9002','مؤسسة محمد علي')],customers).status,one([erp(3,'9002','مؤسسة محمد علي')],customers).candidates.map(c=>c.id)],['similar',['mohamed-ali']],'«محمد علي» and «مؤسسة محمد علي» (a generic word apart) are similar, '+label);
+const ghamdi=customer('ghamdi',{name:'مؤسسة خالد فهد الغامدي',code:'347'});
+for(const [label,customers] of [['alone',[ghamdi]],['with محمد, علي, خالد and فهد common',[ghamdi,...crowded]]]){
+ r=one([erp(3,'7001','مؤسسة محمد علي الغامدي')],customers);
+ eq([r.status,r.candidates,r.add],['new',[],true],'«مؤسسة محمد علي الغامدي» and «مؤسسة خالد فهد الغامدي» differ in two words: not similar, '+label+' (common words never make names look closer)');
+}
 eq(one([erp(3,'9005','مصنع الصفا للبلوك الحديث')],[{...safa[2],data:{...safa[2].data,region:'الشرقية'}},safa[3]],{me:manager}).candidates.map(c=>c.id),['s4'],'only customers inside the manager\'s regions are offered');
-eq(one([erp(3,'9005','مصنع الصفا للبلوك الحديث')],[{...safa[2],data:{...safa[2].data,region:'الشرقية'}}],{me:manager}).status,'new','a similar customer outside the regions is never shown: the row is new');
+const eastSafa={...safa[2],data:{...safa[2].data,region:'الشرقية'}};
+result=match([erp(3,'9005','مصنع الصفا للبلوك الحديث')],[eastSafa],{me:manager});
+eq([result.rows[0].status,result.rows[0].matchedBy,result.rows[0].candidates,result.rows[0].customerId,result.rows[0].add,result.adds,result.summary.adds,result.summary.outOfRegion],['out-of-region','similar',[],'',false,[],0,1],'a similar customer only outside the regions is never shown, and the row is not added either (out-of-region, like a phone or name match there)');
+ok(result.involved.some(([id])=>id==='s3'),'the outside similar customer is part of the snapshot');
+throws(()=>match([erp(3,'9005','مصنع الصفا للبلوك الحديث')],[eastSafa],{me:manager,choices:new Map([[3,ADD]])}),/لا يقبل/,'and it takes no «عميل جديد» from the manager');
+eq([one([erp(3,'9005','مصنع الصفا للبلوك الحديث')],[eastSafa]).status,one([erp(3,'9005','مصنع الصفا للبلوك الحديث')],[eastSafa]).candidates.map(c=>c.id)],['similar',['s3']],'the system administrator sees it as similar');
+eq(one([erp(3,'9005','مصنع الصفا للبلوك الحديث')],[eastSafa,customer('far',{name:'مصنع بعيد تماما',region:'الشرقية'})],{me:manager}).status,'out-of-region','an unrelated outside customer changes nothing');
+eq(one([erp(3,'9005','مصنع جديد كليا')],[eastSafa],{me:manager}).status,'new','no similar name anywhere: the manager adds it');
 // conflicts with a similar pick
 result=match([erp(3,'12','مصنع النور'),erp(4,'9006','مصنع النور للبلاستيك')],[nour],{choices:new Map([[4,'nour']])});
 eq([result.rows.map(o=>[o.status,o.conflict,o.customerId]),result.summary.conflicts,result.plan],[[['choose',true,'nour'],['similar',true,'nour']],2,[]],'a similar pick on a customer another row ends on: both conflict, the similar row keeps its «عميل جديد»');

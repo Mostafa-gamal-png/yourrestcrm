@@ -3,7 +3,9 @@
 // the «محتاج تختار» and «عملاء جداد هيتضافوا» sections, filters, before → after, the shared-number note); one ambiguous row gets its
 // customer with «ده هو», a similar name gets «عميل جديد» (nothing pressed before), the new customers' region is chosen; «حدّث X كود
 // وضيف Y عميل» applies, the result lists what changed and what was added and the customers reload; the dialog fits a 360 px phone
-// without horizontal scrolling, in Arabic and in English (no Arabic left in the screen's own words). The sales manager has the button;
+// without horizontal scrolling, in Arabic and in English (no Arabic left in the screen's own words); each «ده هو» is named with its
+// candidate; the phone's region selects are 16 px and 46 px tall; a file whose only unmatched row is a similar name marked «عميل جديد» shows
+// the region select and applies the region chosen. The sales manager has the button;
 // a representative has neither. Screenshots for the report. Synthetic fixtures only: temporary SQLite, never the owner's file.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -111,6 +113,7 @@ try {
   check(await fresh.locator('.erp-customers-row').evaluateAll(items => items.map(item => Number(item.dataset.row))), [6], '«عملاء جداد هيتضافوا»: the row the CRM does not have');
   const ambiguous = choose.locator('.erp-customers-row[data-row="5"]'), similar = choose.locator('.erp-customers-row[data-row="8"]');
   check(await ambiguous.locator('button.erp-customers-pick').allInnerTexts(), ['ده هو', 'ده هو', 'سيبه'], 'two candidates with «ده هو», and «سيبه»');
+  check([await ambiguous.getByRole('button', {name: 'ده هو: مصنع التوأم الصناعي · ' + await internal('twinA'), exact: true}).count(), await ambiguous.getByRole('button', {name: 'ده هو: مصنع التوأم الصناعي · ' + await internal('twinB'), exact: true}).count()], [1, 1], 'each «ده هو» is named with its candidate\'s name and Yourrest code (two candidates never read the same)');
   ok((await ambiguous.innerText()).includes(await internal('twinA')) && (await ambiguous.innerText()).includes(await internal('twinB')), 'each candidate with its Yourrest code');
   check(await similar.locator('button.erp-customers-pick').allInnerTexts(), ['ده هو', 'عميل جديد', 'سيبه'], 'a similar name: «ده هو», «عميل جديد», «سيبه»');
   check(await similar.locator('button.erp-customers-pick[aria-pressed=true]').count(), 0, 'nothing pressed on the similar row');
@@ -156,6 +159,7 @@ try {
   await shot(admin, 'erp-customers-choose-phone');
   await fresh.scrollIntoViewIfNeeded();
   await fits(admin, 'phone, new customers');
+  check(await dialog.locator('#erp-customers-region, .erp-customers-row-region select').evaluateAll(items => items.map(item => [getComputedStyle(item).fontSize, item.getBoundingClientRect().height >= 46])), [['16px', true], ['16px', true]], 'phone: the region selects are 16 px and at least 46 px tall, like the dialog\'s other selects (no zoom on focus)');
   await shot(admin, 'erp-customers-new-phone');
   await dialog.locator('.erp-customers-filters button', {hasText: 'الكل'}).click();
   await fits(admin, 'phone, every row');
@@ -170,8 +174,9 @@ try {
   check((await reloaded).status(), 200, 'the customers are reloaded');
   await dialog.locator('.erp-import-success').waitFor();
   ok((await dialog.locator('.erp-import-success').innerText()).includes('تم تحديث الأكواد وإضافة العملاء'), 'the result says so');
-  check(await dialog.locator('.erp-customers-changes:not(.erp-customers-added) > li').count(), 3, 'three changes listed');
-  ok((await dialog.locator('.erp-customers-changes:not(.erp-customers-added)').innerText()).includes(await internal('twinB')), 'by name and Yourrest code');
+  check(await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left) > li').count(), 3, 'three changes listed');
+  ok((await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left)').innerText()).includes(await internal('twinB')), 'by name and Yourrest code');
+  check([await dialog.locator('.erp-customers-left > li').count(), (await dialog.locator('#erp-customers-left-heading').innerText()).trim()], [0, 'اللي اتساب'], 'and what was left: nothing this time');
   const addedIds = (await app.db.prepare("SELECT id FROM crm_records WHERE id LIKE 'crm-owner-erp-%' ORDER BY id").all()).results.map(r => r.id);
   check(addedIds.length, 2, 'two customers added');
   check(await dialog.locator('.erp-customers-added > li').count(), 2, 'and listed as added');
@@ -214,6 +219,31 @@ try {
   await fits(admin, 'phone, English');
   await shot(admin, 'erp-customers-preview-phone-en');
   await dialog.getByRole('button', {name: 'Close', exact: true}).last().click();
+  await dialog.waitFor({state: 'detached'});
+
+  // ---- 6b. A file whose only unmatched row has a similar name: «New customer» brings the region select, and the region chosen is applied
+  await importButton(admin).click();
+  await dialog.waitFor();
+  answer = posted(admin, 'preview');
+  await dialog.locator('#erp-customers-file').setInputFiles({name: 'Customer_similar.xlsx', mimeType: file.mimeType, buffer: workbook([row('9201', 'مصنع الصفا للبلوك المتطور')])});
+  check((await (await answer).json()).rows.map(r => r.status), ['similar'], 'only a similar row');
+  await dialog.locator('[data-section=choose]').waitFor();
+  check([await dialog.locator('[data-section=new]').count(), await dialog.locator('#erp-customers-region').count()], [0, 0], 'nothing to add yet: no region select');
+  answer = posted(admin, 'preview');
+  await dialog.locator('[data-section=choose]').getByRole('button', {name: 'New customer', exact: true}).click();
+  await answer;
+  await dialog.locator('#erp-customers-region').waitFor();
+  ok((await dialog.locator('[data-section=new]').innerText()).includes('under your name') && (await dialog.locator('[data-section=new]').innerText()).includes('“Edit”'), '«New customer» on a similar row: the new-customers part with the note about the uploader');
+  check(await dialog.locator('#erp-customers-region').evaluate(item => [getComputedStyle(item).fontSize, item.getBoundingClientRect().height >= 46]), ['16px', true], 'phone: 16 px, at least 46 px tall');
+  await dialog.locator('#erp-customers-region').selectOption('الشرقية');
+  await fits(admin, 'phone, a similar row added');
+  const similarApplied = posted(admin, 'apply');
+  await dialog.getByRole('button', {name: 'Update 0 code(s) and add 1 customer(s)', exact: true}).click();
+  const similarSent = await similarApplied;
+  check([similarSent.status(), JSON.parse(similarSent.request().postData()).region, JSON.parse(similarSent.request().postData()).choices], [200, 'الشرقية', [{row: 3, customerId: '+new'}]], 'the region chosen goes with the apply');
+  check((await app.db.prepare("SELECT json_extract(data,'$.region') AS region FROM crm_records WHERE json_extract(data,'$.code')='9201'").all()).results.map(r => r.region), ['الشرقية'], 'and the new customer has it');
+  await dialog.locator('.erp-import-success').waitFor();
+  await dialog.getByRole('button', {name: 'Done', exact: true}).click();
   await dialog.waitFor({state: 'detached'});
   await admin.context().close();
 

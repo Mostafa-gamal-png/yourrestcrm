@@ -14,8 +14,9 @@ export const ERP_CUSTOMERS_MAX_ROWS=20000;
 export const ERP_CUSTOMER_MAX_PHONES=5,ERP_CUSTOMER_MAX_PHONE_CELL=200,ERP_CUSTOMER_MAX_CANDIDATES=20;
 /** Candidates offered in one preview, all rows together (two per row of a full file): beyond it the file is refused, never sent. */
 export const ERP_CUSTOMERS_MAX_OFFERED=40000;
-/** Similar names (similarNameTokens, nameSimilarity): at most ERP_SIMILAR_MAX suggestions per row; a word more than ERP_SIMILAR_COMMON CRM
- * customers carry says nothing about which customer it is and is ignored; a name is read as at most ERP_SIMILAR_MAX_WORDS words. */
+/** Similar names (similarNameTokens, nameSimilarity): at most ERP_SIMILAR_MAX suggestions per row; the words two names share are evidence
+ * only when at most ERP_SIMILAR_COMMON CRM customers carry all of them (unless the names have exactly the same words); a name is read as at
+ * most ERP_SIMILAR_MAX_WORDS words. */
 export const ERP_SIMILAR_MAX=5,ERP_SIMILAR_COMMON=20,ERP_SIMILAR_MAX_WORDS=12;
 /** Expected file or choice problem, safe to show as an HTTP 400 message. */
 export class ErpCustomersError extends Error{constructor(message:string){super(message);this.name='ErpCustomersError';}}
@@ -55,14 +56,18 @@ export const ERP_GENERIC_NAME_WORDS=['شركة','مؤسسة','مصنع','مصا�
 const genericWords=new Set(ERP_GENERIC_NAME_WORDS.flatMap(nameWords));
 /** The distinctive words of a name: nameWords without the generic words and without one-letter words, each once, at most ERP_SIMILAR_MAX_WORDS. */
 export function similarNameTokens(value:unknown):string[]{return [...new Set(nameWords(value).filter(word=>word.length>=2&&!genericWords.has(word)))].slice(0,ERP_SIMILAR_MAX_WORDS);}
-/** Whether two names (their distinctive words, common words already left out) are similar, as a score: 0 when not, else the words they
- * share over the words either has (1 = the same words, the names differ only in generic words). Similar means: they share a word of three
- * letters or more, and at most one word differs on each side — one word added, one dropped, or one replaced. A single short word never
- * makes two names similar, and neither does a word very many customers carry (the caller drops those first). */
-export function nameSimilarity(a:string[],b:string[]):number{
+/** Whether two names (their distinctive words, similarNameTokens) are similar, as a score: 0 when not, else the words they share over the
+ * words either has (1 = the same words, the names differ only in generic words). Always on the whole word lists: similar means they share a
+ * word of three letters or more, and at most one word differs on each side — one word added, one dropped, or one replaced. `carriers` (the
+ * matcher's) counts the CRM customers that carry every shared word: unless the two names have exactly the same words, the shared words must
+ * be carried by at most ERP_SIMILAR_COMMON customers, since words that many customers carry (one word, or all the shared words together)
+ * say nothing about which customer it is. So a single short word never makes two names similar, and a common word never makes two names
+ * look closer than their whole lists are. */
+export function nameSimilarity(a:string[],b:string[],carriers?:(shared:string[])=>number):number{
  if(!a.length||!b.length)return 0;
  const other=new Set(b),shared=a.filter(word=>other.has(word));
  if(!shared.some(word=>word.length>=3)||a.length-shared.length>1||b.length-shared.length>1)return 0;
+ if(carriers&&(a.length>shared.length||b.length>shared.length)&&carriers(shared)>ERP_SIMILAR_COMMON)return 0;
  return shared.length/(a.length+b.length-shared.length);
 }
 
@@ -142,10 +147,14 @@ export function heldOutsideRegions(me:Member,holders:Row[],mapping:CustomerCodeM
  *    A row matching more than ERP_CUSTOMER_MAX_CANDIDATES customers is `invalid` (`too-many-matches`). A single candidate whose current
  *    code is another row of the file is a choice; among several candidates, the one that already has exactly this number is preselected as `same`.
  * 2. Else by the row's code, when customers hold it (current code, kept alias, stored mapping): held outside the regions → `held-outside`;
- *    the mapped customer or the only holder → `same`, matched by `code`, nothing changed unless the user picks it; several → `choose`.
- * 3. Else a row with no name is `invalid` (`no-name`). Else the customers inside the regions with a similar name (similarNameTokens,
- *    nameSimilarity, words more than ERP_SIMILAR_COMMON customers carry ignored, the ERP_SIMILAR_MAX best) → `similar`: nothing
- *    preselected; a pick takes the code like a `choose` pick, ERP_ADD_CUSTOMER adds the row, no choice leaves it.
+ *    the mapped customer or the only holder → `same`, matched by `code`, nothing changed unless the user picks it; several → `choose`. As in
+ *    1, a holder whose current code is another row of the file is not preselected: a choice with `codeRow` (else that row and this one
+ *    would both end on it, a conflict on every later import of the same file).
+ * 3. Else a row with no name is `invalid` (`no-name`). Else the customers with a similar name (similarNameTokens, nameSimilarity on the
+ *    whole word lists; shared words more than ERP_SIMILAR_COMMON customers carry together are no evidence), looked for among all
+ *    customers: the ERP_SIMILAR_MAX best inside the regions → `similar`: nothing preselected; a pick takes the code like a `choose` pick,
+ *    ERP_ADD_CUSTOMER adds the row, no choice leaves it. Similar names only outside the regions → `out-of-region` (matched by `similar`, no
+ *    details, never added: the customer may be one the member cannot see).
  * 4. Else `new`: added unless the user leaves it ('').
  * Rows of steps 1 and 2 are never added. Two rows ending on one customer are both a choice and `conflict`, and `summary.conflicts` must be
  * 0 before the plan is applied. `involved` (every candidate and holder, visible or not, with its version) is part of the preview's
@@ -157,25 +166,40 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
  if(byId.has(ERP_ADD_CUSTOMER))fail('سجل عميل بمعرّف محجوز؛ راجع مدير النظام');
  const inScope=(customer:Row)=>memberCanAccessRegion(options.me,customer.data.region),involved=new Map<string,number>(),limited=regionScope(options.me)!=='all';
  const view=(customer:Row,matchedBy:MatchedBy):ErpCustomerCandidate=>({id:customer.id,name:String(customer.data.name||''),internalCode:String(customer.data.internalCode||''),code:String(customer.data.code||''),region:String(customer.data.region||''),phones:[...new Set([...phoneKeys(customer.data.phone),...phoneKeys(customer.data.phone2)])].map(tail),matchedBy});
- // The similar-name index is built once, on first need: every customer's distinctive words counted over all customers, and the
- // customers inside the regions listed under each word few enough customers carry (so a word's list is never longer than ERP_SIMILAR_COMMON).
- let index:{rare:(words:string[])=>string[];wordsOf:Map<Row,string[]>;byWord:Map<string,Row[]>}|null=null;
+ // The similar-name index is built once, on first need, over every customer (every region): each customer's distinctive words, the
+ // customers under each word and under each whole set of words, and (memoized) the customers carrying all of a few words.
+ let index:{wordsOf:Map<Row,string[]>;bySet:Map<string,Row[]>;carrying:(words:string[])=>Row[]|null}|null=null;
+ const setKey=(words:string[])=>[...words].sort().join(' ');
  const similarIndex=()=>{
   if(index)return index;
-  const counts=new Map<string,number>(),wordsOf=new Map<Row,string[]>(),byWord=new Map<string,Row[]>();
-  for(const customer of all){const words=similarNameTokens(customer.data.name);for(const word of words)counts.set(word,(counts.get(word)||0)+1);wordsOf.set(customer,words);}
-  const rare=(words:string[])=>words.filter(word=>(counts.get(word)||0)<=ERP_SIMILAR_COMMON);
-  for(const customer of all){const words=rare(wordsOf.get(customer)!);wordsOf.set(customer,words);if(inScope(customer))for(const word of words)push(byWord,word,customer);}
-  return index={rare,wordsOf,byWord};
+  const wordsOf=new Map<Row,string[]>(),setsOf=new Map<Row,Set<string>>(),byWord=new Map<string,Row[]>(),bySet=new Map<string,Row[]>(),memo=new Map<string,Row[]|null>();
+  const add=(map:Map<string,Row[]>,key:string,customer:Row)=>{const list=map.get(key);if(list)list.push(customer);else map.set(key,[customer]);};
+  for(const customer of all){const words=similarNameTokens(customer.data.name);wordsOf.set(customer,words);setsOf.set(customer,new Set(words));for(const word of words)add(byWord,word,customer);if(words.length)add(bySet,setKey(words),customer);}
+  // The customers carrying every one of `words`, or null when more than ERP_SIMILAR_COMMON do (then the words say nothing about which
+  // customer it is). Walked along the shortest word's list and stopped past the limit, so bounded by that list.
+  const carrying=(words:string[])=>{
+   const key=setKey(words);if(memo.has(key))return memo.get(key)!;
+   const shortest=words.map(word=>byWord.get(word)||[]).sort((x,y)=>x.length-y.length)[0];
+   let found:Row[]|null=[];
+   if(words.length===1)found=shortest.length<=ERP_SIMILAR_COMMON?shortest:null;
+   else for(const customer of shortest)if(words.every(word=>setsOf.get(customer)!.has(word))&&found.push(customer)>ERP_SIMILAR_COMMON){found=null;break;}
+   memo.set(key,found);return found;
+  };
+  return index={wordsOf,bySet,carrying};
  };
  const order=(a:Row,b:Row)=>{const x=String(a.data.internalCode||'')+'\u0000'+a.id,y=String(b.data.internalCode||'')+'\u0000'+b.id;return x<y?-1:x>y?1:0;};
+ /** Every customer similar to the row's Arabic or English name, best first, from every region. A similar customer has the row's words
+  * with at most one missing, so it is among the customers with exactly the row's words or carrying all of the row's words but one (when
+  * few enough do; when more do, those shared words are no evidence anyway). */
  const similarTo=(row:ErpCustomerRow)=>{
-  const {rare,wordsOf,byWord}=similarIndex(),scores=new Map<Row,number>();
-  for(const words of new Set([row.name,row.nameEn].filter(Boolean).map(name=>rare(similarNameTokens(name)).join(' ')))){
-   const own=words?words.split(' '):[];
-   for(const customer of new Set(own.flatMap(word=>byWord.get(word)||[]))){const score=nameSimilarity(own,wordsOf.get(customer)!);if(score>(scores.get(customer)||0))scores.set(customer,score);}
+  const {wordsOf,bySet,carrying}=similarIndex(),scores=new Map<Row,number>(),carriers=(shared:string[])=>carrying(shared)?.length??Infinity;
+  for(const own of new Set([row.name,row.nameEn].filter(Boolean).map(name=>similarNameTokens(name).join(' ')))){
+   if(!own)continue;
+   const words=own.split(' '),found=new Set(bySet.get(setKey(words))||[]);
+   for(const some of words.length>1?[words,...words.map((_,skip)=>words.filter((__,at)=>at!==skip))]:[words])for(const customer of carrying(some)||[])found.add(customer);
+   for(const customer of found){const score=nameSimilarity(words,wordsOf.get(customer)!,carriers);if(score>(scores.get(customer)||0))scores.set(customer,score);}
   }
-  return [...scores].sort(([a,x],[b,y])=>y-x||order(a,b)).slice(0,ERP_SIMILAR_MAX).map(([customer])=>customer);
+  return [...scores].sort(([a,x],[b,y])=>y-x||order(a,b)).map(([customer])=>customer);
  };
  let offered=0;
  const offer=(count:number)=>{if((offered+=count)>ERP_CUSTOMERS_MAX_OFFERED)fail('سطور الملف بتطابق نفس العملاء أكتر من اللازم؛ صدّر ملف العملاء من ERP زي ما هو.');};
@@ -223,16 +247,20 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
    offer(visible.length);
    base.candidates=visible.map(customer=>view(customer,'code'));
    several=visible.length>1;
-   const owner=mapped||(visible.length===1?visible[0]:undefined);
-   if(owner)preselect(owner,'same');else base.status='choose';
+   const owner=mapped||(visible.length===1?visible[0]:undefined),current=owner?customerCodeKey(owner.data.code):'';
+   // The holder's current code is another row of this file (it keeps this number only as an old code or a mapping): the user confirms.
+   const other=owner&&current!==row.codeKey&&fileCodes.get(current)||0;
+   if(owner&&!other)preselect(owner,'same');else{base.status='choose';base.codeRow=other;}
   }else{
    // 3. and 4. Not in the CRM: a similar name to choose from, or a new customer.
    if(!row.name&&!row.nameEn){base.issue='no-name';return refuseChoice();}
-   const similar=similarTo(row);
-   for(const customer of similar)involved.set(customer.id,customer.version);
-   offer(similar.length);
-   base.candidates=similar.map(customer=>view(customer,'similar'));
-   if(similar.length)base.status='similar';else{base.status='new';base.add=true;}
+   const similar=similarTo(row),visible=similar.filter(inScope).slice(0,ERP_SIMILAR_MAX);
+   // Similar names only outside the member's regions: maybe a customer they cannot see, so never added (as a phone or name match there).
+   if(!visible.length&&similar.length){for(const customer of similar.slice(0,ERP_SIMILAR_MAX))involved.set(customer.id,customer.version);base.status='out-of-region';base.matchedBy='similar';return refuseChoice();}
+   for(const customer of visible)involved.set(customer.id,customer.version);
+   offer(visible.length);
+   base.candidates=visible.map(customer=>view(customer,'similar'));
+   if(visible.length)base.status='similar';else{base.status='new';base.add=true;}
   }
   if(choices.has(row.row)){
    const chosen=choices.get(row.row)!;

@@ -3,7 +3,8 @@
 // lib/erp-sales.ts and the header and row reading of lib/erp-customers.ts. The file is given by ERP_CUSTOMERS_WORKBOOK and is never
 // copied into the repository. This prints counts and header names only: never a name, phone, email or ID number from the file. Since
 // 2026-11-03 it also matches the file against an empty CRM (every named row new), against itself (nothing new) and against its own names
-// with one word added (the similar-name rule), in memory only.
+// with words added (the similar-name rule): one word of its own per customer (found, unless the row's words are carried by too many
+// customers together), two words each or the same three words for all (never found), in memory only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -70,15 +71,26 @@ let serial=0;
 const own=parsed.rows.filter(row=>!row.issue).map(row=>({id:'c'+(++serial),kind:'customer',parentId:null,assignedTo:'owner',branch:'b',version:1,createdAt:'',updatedAt:'',data:{name:row.name||row.nameEn,phone:row.contact.mobile,phone2:row.contact.phone,code:row.code,region:'',internalCode:'YR-C-'+String(serial).padStart(6,'0')}}));
 const itself=E.matchErpCustomers(parsed.rows,own,{me});
 eq(itself.summary.new+itself.summary.similar+itself.summary.adds+itself.plan.length,0,'against itself: nothing new, nothing similar, nothing added or changed');
-// The similar-name rule on the real names: every customer renamed with one word added and given another code, no phones. A row whose
-// name has a distinctive word should find its own customer among the similar names (counted, not shown).
-const renamed=own.map(customer=>({...customer,data:{...customer.data,name:customer.data.name+' الحديثه',code:'X-'+customer.data.code,phone:'',phone2:''}}));
-const similar=E.matchErpCustomers(parsed.rows.map(row=>({...row,phones:[]})),renamed,{me});
+// The similar-name rule on the real names: every customer renamed with words added and given another code, no phones (counted, not shown).
+// Each added word is the customer's own (built from its index), so no added word is common and the one-word rule itself is what is tested.
 const ownOf=new Map(parsed.rows.filter(row=>!row.issue).map((row,index)=>[row.row,own[index].id]));
-const distinctive=parsed.rows.filter(row=>!row.issue&&E.similarNameTokens(row.name||row.nameEn).length).length;
-const foundSelf=similar.rows.filter(row=>row.status==='similar'&&row.candidates.some(candidate=>candidate.id===ownOf.get(row.row))).length;
+const extra=(index,letter)=>'zq'+letter+index;
+const renamedWith=words=>own.map((customer,index)=>({...customer,data:{...customer.data,name:customer.data.name+' '+words(index).join(' '),code:'X-'+customer.data.code,phone:'',phone2:''}}));
+const findsOwn=customers=>E.matchErpCustomers(parsed.rows.map(row=>({...row,phones:[]})),customers,{me});
+const foundOwn=result=>result.rows.filter(row=>row.status==='similar'&&row.candidates.some(candidate=>candidate.id===ownOf.get(row.row))).length;
+const renamed=renamedWith(index=>[extra(index,'a')]),similar=findsOwn(renamed);
+// Expected: a row whose name has a distinctive word finds its own customer, unless more than ERP_SIMILAR_COMMON renamed customers carry all
+// of its words (then those words say nothing about which customer it is, by the rule).
+const tokensOf=renamed.map(customer=>new Set(E.similarNameTokens(customer.data.name)));
+const rowsWithWords=parsed.rows.filter(row=>!row.issue&&E.similarNameTokens(row.name||row.nameEn).length);
+const distinctive=rowsWithWords.length,crowded=rowsWithWords.filter(row=>{const words=E.similarNameTokens(row.name||row.nameEn);return tokensOf.filter(tokens=>words.every(word=>tokens.has(word))).length>E.ERP_SIMILAR_COMMON;}).length;
+const foundSelf=foundOwn(similar);
 eq(similar.plan.length,0,'renamed: nothing changes without a choice');
-eq(foundSelf,distinctive,'renamed with one word added: every row with a distinctive word finds its own customer among the similar names');
+eq(foundSelf,distinctive-crowded,'renamed with one word of its own added: every row with a distinctive word finds its own customer among the similar names, except rows whose words more than 20 customers carry together');
 eq(similar.rows.every(row=>row.candidates.length<=E.ERP_SIMILAR_MAX),true,'renamed: at most 5 suggestions per row');
-counts.matching={emptyCrm:{new:empty.summary.new,invalid:empty.summary.invalid,adds:empty.summary.adds},againstItself:{auto:itself.summary.auto,same:itself.summary.same,choose:itself.summary.choose,invalid:itself.summary.invalid},renamedOneWord:{rowsWithDistinctiveWord:distinctive,foundOwnCustomer:foundSelf,similar:similar.summary.similar,new:similar.summary.new,withOtherSuggestions:similar.rows.filter(row=>row.status==='similar'&&row.candidates.length>1).length}};
+const twoWords=foundOwn(findsOwn(renamedWith(index=>[extra(index,'a'),extra(index,'b')])));
+eq(twoWords,0,'renamed with two words of its own added: no row finds its own customer (two words more is not similar)');
+const sameThree=foundOwn(findsOwn(renamedWith(()=>['الحديثه','الجديده','المتطوره'])));
+eq(sameThree,0,'renamed with the same three words added to every name: no row finds its own customer (common words never make names look closer)');
+counts.matching={emptyCrm:{new:empty.summary.new,invalid:empty.summary.invalid,adds:empty.summary.adds},againstItself:{auto:itself.summary.auto,same:itself.summary.same,choose:itself.summary.choose,invalid:itself.summary.invalid},renamedOneWord:{rowsWithDistinctiveWord:distinctive,wordsCarriedByMoreThan20:crowded,foundOwnCustomer:foundSelf,similar:similar.summary.similar,new:similar.summary.new,withOtherSuggestions:similar.rows.filter(row=>row.status==='similar'&&row.candidates.length>1).length},renamedTwoWords:{foundOwnCustomer:twoWords},renamedSameThreeWords:{foundOwnCustomer:sameThree}};
 console.log(JSON.stringify({ok:true,checks,headers,counts,source:'ERP customer export (counts and header names only)'}));
