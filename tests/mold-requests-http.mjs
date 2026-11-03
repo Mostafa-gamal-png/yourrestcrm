@@ -29,7 +29,9 @@
 // alone, the CRM's cancelled marks kept) is settled by this release's next pull, while a cancellation still waiting, or a request
 // production holds cancelled, is never cleared. Since production's second update of 2026-11-03: the quotation and PO numbers and their
 // files (see the last section): nothing asked or sent before the update, the update learned from an answer, a number required after it,
-// an older request resent byte for byte, production's numbers shown, the missing note, the sales manager's list.
+// an older request resent byte for byte, production's numbers shown, the missing note, the sales manager's list. Who sees which request
+// (the owner, 2026-11-03: two managers sharing a region, customer service's request in the waiting list only) and «رابط التصميم» removed
+// (refused when sent, an older request's link kept and resent byte for byte).
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -45,7 +47,9 @@ const members = [
 let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
-const specs = {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, designUrl: 'https://drive.google.com/x', notes: 'أول طلب'};
+// «رابط التصميم» is no longer asked for (2026-11-03): the form sends no design link. An older request's own is kept (see below).
+const specs = {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, notes: 'أول طلب'};
+const DESIGN_URL_GONE = 'رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
 const mock = await startProductsMock();
 const settings = {YR_PRODUCTS_API_URL: mock.url, YR_PRODUCTS_SECRET: mock.state.secret, NODE_EXTRA_CA_CERTS: mock.ca};
 const app = await bootBuiltApp({members}, {env: settings});
@@ -94,7 +98,13 @@ try {
   check((await create('rep', 'west1')).status, 404, 'a customer outside the representative\'s region: 404');
   res = await create('rep', 'east1', {moldWidth: 999, core: 'half', designUrl: 'http://x'});
   body = await res.json();
-  check([res.status, Object.keys(body.fields).sort()], [400, ['core', 'designUrl', 'moldWidth']], 'wrong fields: 400 naming each one');
+  check([res.status, Object.keys(body.fields).sort(), body.fields.designUrl], [400, ['core', 'designUrl', 'moldWidth'], DESIGN_URL_GONE], 'wrong fields: 400 naming each one (a design link, from a page loaded before, says it was removed)');
+  // «رابط التصميم» is no longer asked for (2026-11-03): a valid link from a page loaded before is refused too, nothing saved or sent.
+  const linked = calls('requests');
+  res = await create('rep', 'east1', {description: 'with a link', designUrl: 'https://drive.google.com/new'});
+  body = await res.json();
+  check([res.status, body.fields, body.error, calls('requests') - linked, (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_requests WHERE json_extract(data,'$.specs.description')='with a link'").first()).n], [400, {designUrl: DESIGN_URL_GONE}, DESIGN_URL_GONE, 0, 0], 'a design link on a new request: refused, said so, nothing saved or sent');
+  check([JSON.parse((await stored(first)).data).specs.designUrl, Object.hasOwn(sent.specs, 'designUrl')], ['', false], 'a new request carries no design link and sends none');
   // How the customer pays is required (2026-11-03): none, or anything but cash or deferred, is refused before anything is saved or sent.
   const PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل', unpaid = calls('requests');
   for (const payment of [undefined, 'card', 'CASH', null]) {
@@ -277,16 +287,29 @@ try {
 
   // ---- 2026-11-03: a request asked for before the payment existed is resent exactly as first sent: 200 created:false
   const riyadhNow = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00', older = 'mr-' + crypto.randomUUID(), olderAt = new Date().toISOString();
-  const olderData = {requestedAt: riyadhNow(), customer: {crmNumber: await number('east2'), name: 'مصنع east2', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs: {...specs, description: 'asked before payment'}};
+  const olderData = {requestedAt: riyadhNow(), customer: {crmNumber: await number('east2'), name: 'مصنع east2', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs: {...specs, designUrl: 'https://drive.google.com/x', description: 'asked before payment'}};
   await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east2',?,'send',?,'rep',?,?,1)").bind(older, JSON.stringify(olderData), olderAt, olderAt, olderAt).run();
   body = await (await post('rep', {action: 'resend', id: older})).json();
   const olderFirst = mock.state.calls.findLast(call => call.route === 'requests').body;
   check([body.send.kind, body.request.payment, mock.row(older).payment, Object.hasOwn(JSON.parse(olderFirst), 'payment')], ['ok', null, null, false], 'the earlier release\'s request goes without a payment; production stores none');
+  check([JSON.parse(olderFirst).specs.designUrl, body.request.specs.designUrl], ['https://drive.google.com/x', 'https://drive.google.com/x'], 'and with its own design link, shown on its view (read-only on the screen)');
   await app.db.prepare("UPDATE crm_mold_requests SET outbox='send',next_attempt_at=? WHERE id=?").bind(nextTry(), older).run();
   const olderRevision = mock.row(older).revision;
   res = await post('rep', {action: 'resend', id: older});
   body = await res.json();
-  check([res.status, body.send.kind, body.request.sending.state, body.request.sending.error, mock.state.calls.findLast(call => call.route === 'requests').body, mock.row(older).revision], [200, 'ok', 'sent', null, olderFirst, olderRevision], 'resent byte for byte as first sent (no payment added): 200 created false, nothing changes');
+  check([res.status, body.send.kind, body.request.sending.state, body.request.sending.error, mock.state.calls.findLast(call => call.route === 'requests').body, mock.row(older).revision], [200, 'ok', 'sent', null, olderFirst, olderRevision], 'resent byte for byte as first sent (no payment added, its design link kept): 200 created false, nothing changes');
+  // An older request with a design link that never reached production, edited from today's form (which sends no link): the link stays
+  // as stored and goes with the edit; a page loaded before that changes it is refused, the stored link untouched.
+  const linkedOlder = 'mr-' + crypto.randomUUID();
+  await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east2',?,'send',?,'rep',?,?,1)")
+    .bind(linkedOlder, JSON.stringify({...olderData, specs: {...olderData.specs, description: 'older, never sent, with a link'}, payment: 'cash'}), nextTry(), olderAt, olderAt).run();
+  res = await post('rep', {action: 'update', id: linkedOlder, version: 1, payment: 'cash', specs: {...specs, designUrl: 'https://drive.google.com/changed', description: 'older, never sent, with a link'}});
+  body = await res.json();
+  check([res.status, body.fields, JSON.parse((await stored(linkedOlder)).data).specs.designUrl, (await stored(linkedOlder)).version], [400, {designUrl: DESIGN_URL_GONE}, 'https://drive.google.com/x', 1], 'a page loaded before changing the link: refused, the stored link untouched');
+  body = await (await post('rep', {action: 'update', id: linkedOlder, version: 1, payment: 'cash', specs: {...specs, quantity: 3, description: 'older, never sent, with a link'}})).json();
+  const linkedSent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
+  check([body.send.kind, JSON.parse((await stored(linkedOlder)).data).specs.designUrl, linkedSent.crmRequestId, linkedSent.specs.designUrl, linkedSent.specs.quantity, body.request.specs.designUrl],
+    ['ok', 'https://drive.google.com/x', linkedOlder, 'https://drive.google.com/x', 3, 'https://drive.google.com/x'], 'today\'s form edits it (no link sent): the stored link kept as it is, sent with the edit');
 
   // ---- 2026-11-03: the production manager restores a cancelled request; the next status pull shows it active again
   const SAME_REASON = 'مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد';
@@ -547,7 +570,10 @@ try {
   check((await create('cs', 'other1')).status, 404, 'not for another branch\'s customer');
   check([(await create('sup', 'east1')).status, (await create('owner', 'other1')).status], [200, 200], 'a supervisor and the administrator ask too');
   check([(await ids('csm')).length, (await ids('cs')).length, (await ids('rep2')).length], [1, 1, 0], 'the customer-service manager sees their team\'s, customer service their own, another representative none');
-  ok((await ids('sm')).includes(body.request.id), 'the sales manager sees every request to approve, whoever asked');
+  // Who sees which (the owner, 2026-11-03): the sales manager's list is his own and his team's (the supervisor's request is in it); customer
+  // service's and the administrator's are not (they wait in «طلبات بانتظار اعتمادي»: the last section of this file).
+  const smIds = await ids('sm');
+  check([smIds.includes(body.request.id), (await list('owner')).requests.filter(item => ['sup', 'owner'].includes(item.memberId)).every(item => smIds.includes(item.id) === (item.memberId === 'sup'))], [false, true], 'the sales manager\'s list: his team\'s (the supervisor\'s), not customer service\'s nor the administrator\'s');
   check((await post('cs', {action: 'approve', id: body.request.id})).status, 403, 'customer service does not approve');
 
   // ---- production unreachable: saved, waiting, tried again on the timetable, resent by hand
@@ -729,6 +755,85 @@ try {
     check([res.status, (await res.json()).error], [409, 'بيانات الطلب يعدّلها مدير الإنتاج فقط؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله. كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO.'], 'a production_only refusal (never caused by the CRM, which resends as first sent): says to ask the production manager');
     check([(await list()).quotePo, typeof await learned()], [true, 'string'], 'still known: never unlearned');
   } finally { await quoteApp.stop(); await quoteMock.stop(); }
+}
+
+// ---- who sees which request (the owner, 2026-11-03: «يبان للمندوب طلباته بس ومدير المبيعات طلباته وطلبات فريقه»). Two sales managers
+// share the eastern region, each with a supervisor and a representative under him (smE also has one representative directly); a third
+// manager has the western region. A manager's list is his own and his team's. «طلبات بانتظار اعتمادي» is his own and his team's, every
+// CRM request whose requester is in no sales manager's team (customer service, the administrator, an orphan representative) within his
+// regions, and those registered in production by region; never another manager's team's. The approval (by id and by order number), the
+// approver's sheet (?id=) and the downloads (by order number and by id) follow it exactly.
+{
+  const teamMembers = [
+    {id: 'owner', role: 'admin'}, {id: 'smE', role: 'manager', region: 'eastern'}, {id: 'smE2', role: 'manager', region: 'eastern'}, {id: 'smW', role: 'manager', region: 'western'},
+    {id: 'supE', role: 'supervisor', sup: 'smE', region: 'eastern'}, {id: 'repE', role: 'rep', sup: 'supE', region: 'eastern'}, {id: 'repD', role: 'rep', sup: 'smE', region: 'eastern'},
+    {id: 'supE2', role: 'supervisor', sup: 'smE2', region: 'eastern'}, {id: 'repE2', role: 'rep', sup: 'supE2', region: 'eastern'},
+    {id: 'csm', role: 'customer_service_manager', sup: 'smE', region: 'eastern'}, {id: 'cs', role: 'customer_service', sup: 'csm', region: 'eastern'}, {id: 'orphan', role: 'rep', region: 'eastern'},
+  ];
+  const teamMock = await startProductsMock();
+  const teamApp = await bootBuiltApp({members: teamMembers}, {env: {YR_PRODUCTS_API_URL: teamMock.url, YR_PRODUCTS_SECRET: teamMock.state.secret, NODE_EXTRA_CA_CERTS: teamMock.ca}});
+  try {
+    const sessions = {};
+    for (const member of teamMembers) sessions[member.id] = await teamApp.login(member.id);
+    const as = id => teamApp.as(sessions[id]), now = new Date().toISOString();
+    for (const [id, assignedTo, region] of [['e1', 'repE', 'الشرقية'], ['e2', 'repE2', 'الشرقية'], ['e3', 'repD', 'الشرقية'], ['e4', 'orphan', 'الشرقية'], ['w1', 'owner', 'الغربية']])
+      await teamApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')").bind(id, assignedTo, JSON.stringify({name: 'مصنع ' + id, region, city: 'الدمام'}), now, now).run();
+    const number = async id => (await teamApp.db.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').bind(id).first()).number;
+    const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
+    const ask = async (who, customerId, description) => {
+      const res = await post(who, {action: 'create', customerId, specs: {...specs, description}, payment: 'cash'}), body = await res.json();
+      check([res.status, body.send.kind], [200, 'ok'], description + ': asked and sent');
+      return body.request;
+    };
+    const rE = await ask('repE', 'e1', 'his team, under a supervisor'), rD = await ask('repD', 'e3', 'his team, directly'), rSm = await ask('smE', 'e1', 'the manager\'s own');
+    const rE2 = await ask('repE2', 'e2', 'the other manager\'s team'), rCs = await ask('cs', 'e1', 'customer service'), rOwner = await ask('owner', 'e1', 'the administrator');
+    const rOrphan = await ask('orphan', 'e4', 'a representative under no manager'), rWest = await ask('owner', 'w1', 'the administrator, in the west');
+    const manual = teamMock.registerManual({customerNo: await number('e2'), customerName: 'مصنع مسجّل في الإنتاج (الشرقية)'});
+    const csFile = teamMock.addProductionFile(rCs.id, {name: 'تصميم طلب خدمة العملاء.pdf'}), e2File = teamMock.addProductionFile(rE2.id, {name: 'تصميم الفريق الآخر.pdf'});
+    // Production attached them after its last answer: their requests' status is pulled again when next opened.
+    await teamApp.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z' WHERE id IN (?,?)").bind(rCs.id, rE2.id).run();
+    const list = async who => (await as(who)('/api/mold-requests')).json();
+    const mine = async who => (await list(who)).requests.map(item => item.id).sort();
+    const pendingOf = async who => (await list(who)).pending;
+    const waiting = async who => (await pendingOf(who)).items.map(item => item.crmRequestId || 'order:' + item.orderNo).sort();
+    const sorted = (...ids) => ids.sort();
+
+    check([await mine('smE'), await mine('smE2'), await mine('smW')], [sorted(rE.id, rD.id, rSm.id), [rE2.id], []], 'each manager\'s list: his own and his team\'s (under a supervisor, or directly); never the other manager\'s team in the same region, customer service\'s, the administrator\'s or an orphan\'s');
+    check([await mine('repE'), await mine('supE'), await mine('csm'), (await mine('owner')).length], [[rE.id], [rE.id], [rCs.id], 8], 'a representative his own only; the supervisor, the customer-service manager and the administrator as before');
+    check(await waiting('smE'), sorted(rE.id, rD.id, rSm.id, rCs.id, rOwner.id, rOrphan.id, 'order:' + manual.orderNo), '«طلبات بانتظار اعتمادي» for smE: his own, his team\'s, customer service\'s, the administrator\'s and the orphan\'s in his region, and the one registered in production; not the other team\'s, nor the west\'s');
+    check(await waiting('smE2'), sorted(rE2.id, rCs.id, rOwner.id, rOrphan.id, 'order:' + manual.orderNo), 'for smE2 (the same region): his team\'s and the same requests of no team; not smE\'s team\'s');
+    check(await waiting('smW'), [rWest.id], 'for the western manager: the west\'s request of no team only');
+    const csItem = (await pendingOf('smE')).items.find(item => item.crmRequestId === rCs.id);
+    check([csItem.inCrm, (await list('smE')).requests.some(item => item.id === rCs.id)], [true, false], 'customer service\'s request: the CRM\'s own, in his waiting list but not in his list');
+
+    // The approver's sheet: what his list shows, and a request his waiting list shows him now; nothing else.
+    const sheet = async (who, id) => { const res = await as(who)('/api/mold-requests?id=' + id); return [res.status, res.status === 200 ? res.json().requests[0].can.approve : null]; };
+    check([await sheet('smE', rCs.id), await sheet('smE', rOrphan.id), await sheet('smE2', rCs.id), await sheet('smE', rE.id)], [[200, true], [200, true], [200, true], [200, true]], 'the sheet opens on customer service\'s and the orphan\'s requests from the waiting list (both managers of the region), and on his team\'s');
+    const csSheet = (await as('smE')('/api/mold-requests?id=' + rCs.id)).json().requests[0];
+    check(csSheet.designFiles.map(file => [file.fileId, file.href]), [[String(csFile.fileId), '/api/mold-requests/design-file?id=' + encodeURIComponent(rCs.id) + '&file=' + csFile.fileId]], 'its sheet lists production\'s file, downloaded by id');
+    check([await sheet('smE', rE2.id), await sheet('smW', rCs.id), await sheet('smE2', rE.id)], [[404, null], [404, null], [404, null]], 'never on another manager\'s team\'s, nor on a request of another region');
+
+    // Downloads: by order number for the items his waiting list shows, by id for what his sheet opens.
+    const download = async (who, query) => (await as(who)('/api/mold-requests/design-file?' + query)).status;
+    const csHref = csItem.designFiles.find(file => file.fileId === csFile.fileId).href;
+    const csBytes = await as('smE')(csHref);
+    check([csBytes.status, csBytes.bytes.equals(Buffer.from('%PDF-1.4 production drawing')), (await as('smE2')(csHref)).status, (await as('smW')(csHref)).status], [200, true, 200, 404], 'customer service\'s design file from the waiting list: both managers of the region, not the west\'s');
+    check([await download('smE', 'id=' + rCs.id + '&file=' + csFile.fileId), await download('smE', 'id=' + rE2.id + '&file=' + e2File.fileId), await download('smE', 'order=' + teamMock.row(rE2.id).orderNo + '&file=' + e2File.fileId), await download('smE2', 'order=' + teamMock.row(rE2.id).orderNo + '&file=' + e2File.fileId)],
+      [200, 404, 404, 200], 'by id from the sheet he opens; never the other team\'s file, by id or by order number; its own manager downloads it');
+
+    // Approving: exactly the items shown, by id and by order number.
+    check([(await post('smE', {action: 'approve', id: rE2.id})).status, (await post('smE', {action: 'approve-order', orderNo: teamMock.row(rE2.id).orderNo})).status, (await post('smE2', {action: 'approve-order', orderNo: teamMock.row(rE.id).orderNo})).status, (await post('smW', {action: 'approve', id: rCs.id})).status],
+      [404, 404, 404, 404], 'another manager\'s team\'s request, or one of another region: refused by id and by order number, production not asked');
+    check([teamMock.row(rE2.id).approvals.sales, teamMock.row(rE.id).approvals.sales, teamMock.row(rCs.id).approvals.sales], [null, null, null], 'nothing approved at production');
+    let res = await post('smE', {action: 'approve', id: rCs.id}), body = await res.json();
+    check([res.status, body.request.remote.waitingStep, body.request.can.withdraw, !!teamMock.row(rCs.id).approvals.sales], [200, 'production', true, true], 'smE approves customer service\'s request from its sheet');
+    check([await sheet('smE', rCs.id), await download('smE', 'id=' + rCs.id + '&file=' + csFile.fileId)], [[404, null], 404], 'approved, it is no longer his to open (his list never held it)');
+    res = await post('smE', {action: 'withdraw', id: rCs.id}); body = await res.json();
+    check([res.status, body.request.remote.waitingStep, await sheet('smE', rCs.id)], [200, 'sales', [200, true]], 'his approval withdrawn from the sheet he approved on: waiting for the managers again, open again');
+    check([(await post('smE2', {action: 'approve-order', orderNo: teamMock.row(rCs.id).orderNo})).status, (await post('smE2', {action: 'approve', id: rE2.id})).status, (await post('smE', {action: 'approve-order', orderNo: teamMock.row(rD.id).orderNo})).status, (await post('smE', {action: 'approve', id: rSm.id})).status],
+      [200, 200, 200, 200], 'the other manager of the region approves it by order number; each approves his own team\'s, and his own');
+    check([await waiting('smE'), await waiting('smE2')], [sorted(rE.id, rOwner.id, rOrphan.id, 'order:' + manual.orderNo), sorted(rOwner.id, rOrphan.id, 'order:' + manual.orderNo)], 'what is left waiting for each');
+  } finally { await teamApp.stop(); await teamMock.stop(); }
 }
 
 console.log(JSON.stringify({ok: true, checks, builtRelease: true, realProductionTested: false}));

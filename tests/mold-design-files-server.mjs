@@ -77,7 +77,8 @@ globalThis.__yourrestMoldRetry=1;
 
 try{
  const now=new Date().toISOString();
- for(const [id,role,scope] of [['rep','rep','eastern'],['rep2','rep','eastern'],['manager','manager','all']])sql.prepare("INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,region_scope,active,target,created_at) VALUES(?,?,?,?,?,'الرئيسي','',?,1,0,?)").run(id,'u-'+id,id+'@yourrest.org','عضو '+id,role,scope,now);
+ // The representatives are the sales manager's team (2026-11-03: the sales manager sees his own and his team's requests).
+ for(const [id,role,scope,supervisor] of [['manager','manager','all',''],['rep','rep','eastern','manager'],['rep2','rep','eastern','manager']])sql.prepare("INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,region_scope,active,target,created_at) VALUES(?,?,?,?,?,'الرئيسي',?,?,1,0,?)").run(id,'u-'+id,id+'@yourrest.org','عضو '+id,role,supervisor,scope,now);
  sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('factory','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").run(JSON.stringify({name:'مصنع تجريبي',region:'الشرقية',city:'الدمام'}),now,now);
  const server=await import(path.join(out,'lib/mold-requests-server.mjs')),lib=await import(path.join(out,'lib/mold-requests.mjs'));
  const requests=await import(path.join(out,'app/api/mold-requests/route.mjs')),attacher=await import(path.join(out,'app/api/mold-requests/design-files/route.mjs'));
@@ -91,6 +92,7 @@ try{
  const errorOf=id=>JSON.parse(fileRow(id).last_error||'null');
  const until=async(test,ms=5000)=>{const end=Date.now()+ms;while(!test()){if(Date.now()>end)throw Error('timed out waiting');await new Promise(resolve=>setTimeout(resolve,20));}};
  const filesOf=id=>server.loadMoldDesignFiles(DB,'request_id=?',[id]);
+ const teamMembers=()=>sql.prepare('SELECT id,role,supervisor_id AS supervisorId,region_scope AS regionScope FROM crm_members').all();
  const viewOf=async(id,me={id:'rep',role:'rep'})=>lib.moldRequestView(await server.loadMoldRequest(DB,id),me,[],true,await filesOf(id));
  const atProduction=(id,fileId)=>(mock.row(id).designFiles||[]).some(file=>file.crmFileId===fileId);
  async function newRequest(){
@@ -497,7 +499,7 @@ try{
   check(!!known(),true,'a design file\'s answer teaches it too');
   forget();as('manager');await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:before}));
   check(!!known(),true,'and an approval\'s');
-  forget();await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,regionCustomerIds:new Set()},link,{force:true});
+  forget();await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true});
   check(!!known(),true,'and the sales manager\'s waiting list');
   forget();answer=await create({});
   check([answer.status,!!known(),answer.body.request.quotePo],[200,true,{quoteNo:'',poNo:'',missing:true,from:'production'}],'and a request\'s own send (sent without a number: production marks it missing, and the view says so)');
@@ -546,7 +548,7 @@ try{
   const quoteFileId=mock.row(quoted).designFiles.find(entry=>entry.crmFileId===firstQuote.crmFileId).fileId;
   file=await download('order='+mock.row(quoted).orderNo+'&file='+quoteFileId,'manager');
   check([file.status,Buffer.from(await file.arrayBuffer()).equals(pdf('quotation'))],[200,true],'the sales manager downloads a quotation file from the waiting list by its fileId (quoteFiles)');
-  const pending=await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,regionCustomerIds:new Set()},link,{force:true}),item=pending.items.find(entry=>entry.crmRequestId===quoted);
+  const pending=await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true}),item=pending.items.find(entry=>entry.crmRequestId===quoted);
   check([item.quoteNo,item.poNo,item.quoteOrPoMissing,item.quoteFiles.length,item.poFiles.map(entry=>entry.source).sort(),item.quoteFiles[0].href.startsWith('/api/mold-requests/design-file?order=')],['Q-2026-0153-B','PO-7781',false,5,['crm','crm','production'],true],'the waiting list: the numbers and every list\'s files, each with its link');
   mock.setQuotePo(false);
  }

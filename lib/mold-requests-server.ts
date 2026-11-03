@@ -14,7 +14,7 @@ import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
 import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,moldFileCategory,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
 type Config=ReturnType<typeof moldConfig>;
@@ -414,21 +414,35 @@ export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link
  * just answered, forgets a failure too. */
 let pendingCache:{at:string;items:MoldPendingItem[]}|null=null,pendingFailure:MoldError|null=null;
 export function forgetPendingApprovals(){pendingCache=null;pendingFailure=null;}
-type PendingReader={me:Member;db:D1Database;regionCustomerIds:Set<string>};
-/** The sales manager's «طلبات بانتظار اعتمادي»: every request production holds at the sales step (the CRM's and those registered in
- * production), within the manager's regions when they do not cover all (by the customer's Yourrest number), each with its design files
- * downloaded through the CRM; null for anyone else. */
+type PendingReader={me:Member;db:D1Database;members:Member[];regionCustomerIds:Set<string>};
+/** The sales manager's «طلبات بانتظار اعتمادي»: the requests production holds at the sales step (the CRM's and those registered in
+ * production) that this manager approves (the owner, 2026-11-03), each with its design files downloaded through the CRM; null for anyone
+ * else. One of the CRM's own requests by the CRM's row (moldApprovesRequest: their own, their team's, or one whose requester is in no
+ * sales manager's team, such as customer service's, with its customer in their regions); another manager's team's is that manager's.
+ * One registered in production by its customer's Yourrest number, within the manager's regions when they do not cover all, as before. */
 export async function moldPendingFor(c:PendingReader,link:Config,{force=false}:{force?:boolean}={}):Promise<MoldPendingAnswer|null>{
  if(!canApproveMoldRequests(c.me))return null;
  const pulled=await pullPendingApprovals({link,force});
  await noteMoldQuotePo(c.db,pulled.items);
- const own=new Set((await c.db.prepare('SELECT id FROM crm_mold_requests').all<{id:string}>()).results.map(row=>row.id));
+ // The CRM's own requests, with who asked for each and for which customer.
+ const own=new Map((await c.db.prepare('SELECT id,member_id AS memberId,customer_id AS customerId FROM crm_mold_requests').all<{id:string;memberId:string;customerId:string}>()).results.map(row=>[row.id,row]));
  let inRegion:(number:number|null)=>boolean=()=>true;
  if(regionScope(c.me)!=='all'){
   const byNumber=new Map((await c.db.prepare('SELECT customer_id AS id,number FROM crm_customer_numbers').all<{id:string;number:number}>()).results.map(row=>[row.number,row.id]));
   inRegion=number=>number!==null&&c.regionCustomerIds.has(byNumber.get(number)||'');
  }
- return {items:pulled.items.filter(item=>inRegion(item.customer.crmNumber)).map(item=>({...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item)})),error:pulled.error,at:pulled.at};
+ const shown=(item:MoldPendingItem)=>{const row=item.crmRequestId?own.get(item.crmRequestId):undefined;return row?moldApprovesRequest(row,c):inRegion(item.customer.crmNumber);};
+ return {items:pulled.items.filter(shown).map(item=>({...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item)})),error:pulled.error,at:pulled.at};
+}
+/** Whether a reader may open one request (GET ?id=, its sheet, and its files by id): every request their list shows
+ * (canReadMoldRequest); and for the sales manager one that their list does not show but «طلبات بانتظار اعتمادي» shows them now (customer
+ * service's, say), so they read what they approve, only while it is listed there and production's list could be had (a list kept from
+ * before a failed call may name a request that has moved on). The approval and its withdrawal go by moldApprovesRequest itself. */
+export async function canOpenMoldRequest(row:Pick<MoldRequestRow,'id'|'memberId'|'customerId'>,c:PendingReader,link:Config){
+ if(canReadMoldRequest(row,c))return true;
+ if(!moldApprovesRequest(row,c))return false;
+ const pending=await moldPendingFor(c,link);
+ return !!pending&&!pending.error&&pending.items.some(item=>item.crmRequestId===row.id);
 }
 export async function pullPendingApprovals({link=productsLink(),now=()=>new Date().toISOString(),fetch,force=false}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;force?:boolean}={}):Promise<{items:MoldPendingItem[];error:MoldError|null;at:string|null}>{
  if(!link.ok)return {items:[],error:{code:link.reason,at:now()},at:null};

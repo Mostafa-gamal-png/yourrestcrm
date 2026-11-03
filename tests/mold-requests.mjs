@@ -11,7 +11,8 @@
 // numbers (normalized, up to 60 characters, at least one, sent after payment only when given, an older request byte for byte as before),
 // how the CRM learns that the update is live (quoteOrPoMissing in a status object or a pending item), the files' categories (a PDF or an
 // image only, the body's category for those alone), the view's numbers and limits, and the stand-in as the application before and after
-// its update. Synthetic files only; no real account.
+// its update. Who sees which request (the owner, 2026-11-03): the sales manager's team walked up «المشرف», what each role reads and what
+// each manager approves; «رابط التصميم» no longer asked for. Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
@@ -78,6 +79,9 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(Object.keys(body), ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs'], 'the contract keys, no legacy number for a new request');
   eq(body.specs, {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, designUrl: 'https://drive.google.com/x'}, 'empty notes are left out; numbers are JSON integers');
   eq(JSON.stringify(moldRequestBody({id: 'rec-9f3a', requestedAt: '2026-10-29T10:15:00+03:00', customer, salesman, specs})), JSON.stringify(body), 'the same request gives the same bytes');
+  // «رابط التصميم» is no longer asked for (2026-11-03): a new request stores '' and its body has no designUrl key; an older request's own
+  // link stays in its body exactly where it was (the bytes above).
+  eq([Object.hasOwn(moldRequestBody({id: 'rec-9f3a', requestedAt: '2026-10-29T10:15:00+03:00', customer, salesman, specs: {...specs, designUrl: ''}}).specs, 'designUrl'), Object.keys(body.specs).indexOf('designUrl')], [false, 9], 'no link: none sent; an older link: sent after quantity, as first sent');
   eq(moldRequestBody({id: 'rec-1', legacyOrderNo: 12, requestedAt: '2026-10-29T10:15:00+03:00', customer, salesman, specs}).legacyOrderNo, 12, 'a historical request carries legacyOrderNo');
   assert.throws(() => moldRequestBody({id: 'rec-1', requestedAt: 'x', customer: {...customer, crmNumber: '27'}, salesman, specs}), /customer.crmNumber/); checks++;
   assert.throws(() => moldRequestBody({id: 'rec 1', requestedAt: 'x', customer, salesman, specs}), /crmRequestId/); checks++;
@@ -313,6 +317,46 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same(serverTexts.filter(text => typeof dictionary[text] !== 'string'), [], 'every new refusal of the server has its English pair');
   const sources = ['app/api/mold-requests/route.ts', 'app/api/mold-requests/design-files/route.ts'].map(file => readFileSync(path.join(root, file), 'utf8')).join('\n');
   same(serverTexts.slice(3, 5).filter(text => !sources.includes(text)), [], 'and the server says them (a number, or a quotation\'s or PO\'s file, before the update)');
+  // «رابط التصميم» removed (2026-11-03): the server's refusal of a link from a page loaded before, with its English pair.
+  const designUrlGone = 'رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
+  same([readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(designUrlGone), dictionary[designUrlGone]], [true, 'The design link was removed from the request; refresh the page and attach the design as a file.'], 'the design link\'s refusal, said by the server, with its English pair');
+  // ---- who sees which request (the owner, 2026-11-03: «يبان للمندوب طلباته بس ومدير المبيعات طلباته وطلبات فريقه»)
+  // Two sales managers share the eastern region; each has supervisors and representatives under them (any depth); customer service,
+  // the administrator and representatives whose «المشرف» chain reaches no sales manager (none, a missing one, the administrator, a cycle).
+  const member = (id, role, supervisorId = '', regionScope = 'eastern') => ({id, role, supervisorId, regionScope, name: id, email: id + '@x', branch: 'b', active: 1, target: 0});
+  const team = [member('sm', 'manager'), member('sm2', 'manager'), member('smAll', 'manager', '', 'all'), member('owner', 'admin', '', 'all'),
+    member('supA', 'supervisor', 'sm'), member('repA', 'rep', 'supA'), member('repD', 'rep', 'sm'), member('supDeep', 'supervisor', 'supA'), member('repDeep', 'rep', 'supDeep'),
+    member('supB', 'supervisor', 'sm2'), member('repB', 'rep', 'supB'), member('csm', 'customer_service_manager', 'sm'), member('cs', 'customer_service', 'csm'),
+    member('orphan', 'rep'), member('lost', 'rep', 'gone'), member('underAdmin', 'rep', 'owner'), member('loopA', 'supervisor', 'loopB'), member('loopB', 'supervisor', 'loopA'),
+    member('loopRep', 'rep', 'loopA'), member('self', 'rep', 'self'), member('sm3', 'manager', 'sm'), member('rep3', 'rep', 'sm3'), member('supInactive', 'supervisor', 'sm'), member('repLate', 'rep', 'supInactive')];
+  team.find(entry => entry.id === 'supInactive').active = 0;
+  const managerOf = id => lib.moldTeamManagerId(id, team);
+  same(['sm', 'repA', 'repD', 'supA', 'repDeep', 'repLate', 'repB', 'sm2', 'rep3', 'sm3', 'cs', 'csm', 'owner', 'orphan', 'lost', 'underAdmin', 'loopRep', 'loopA', 'self', 'nobody'].map(managerOf),
+    ['sm', 'sm', 'sm', 'sm', 'sm', 'sm', 'sm2', 'sm2', 'sm3', 'sm3', '', '', '', '', '', '', '', '', '', ''],
+    'the team: a member whose «المشرف» is the manager, a representative under his supervisor at any depth (an inactive supervisor still links); the first manager up the chain; nobody\'s for customer service, the administrator, an orphan, a missing or non-sales link, a cycle');
+  const reader = (id, ids = ['east']) => ({me: team.find(entry => entry.id === id), members: team, regionCustomerIds: new Set(ids)});
+  const asked = (memberId, customerId = 'east') => ({memberId, customerId});
+  const reads = (who, rows, ids) => rows.map(([memberId, customerId]) => lib.canReadMoldRequest(asked(memberId, customerId), reader(who, ids)));
+  const everyone = [['sm'], ['repA'], ['repD'], ['supA'], ['repDeep'], ['repB'], ['sm2'], ['rep3'], ['cs'], ['csm'], ['owner'], ['orphan'], ['loopRep']];
+  same(reads('sm', everyone), [true, true, true, true, true, false, false, false, false, false, false, false, false],
+    'the sales manager\'s list: his own and his team\'s (direct, under a supervisor, deeper); not another manager\'s team in the same region, customer service, the administrator or an orphan');
+  same(reads('sm', [['sm', 'west'], ['repA', 'west']]), [true, false], 'his own always; his team\'s only within his regions');
+  same(reads('sm2', everyone), [false, false, false, false, false, true, true, false, false, false, false, false, false], 'the other manager of the same region: his own team only');
+  same(reads('repA', everyone), [false, true, false, false, false, false, false, false, false, false, false, false, false], 'a representative: his own only');
+  same(reads('supA', everyone), [false, true, false, true, false, false, false, false, false, false, false, false, false], 'a supervisor (unchanged): his own and his representatives\'');
+  same(reads('csm', everyone), [false, false, false, false, false, false, false, false, true, true, false, false, false], 'the customer-service manager (unchanged): his own and his team\'s');
+  same(reads('owner', everyone).every(Boolean), true, 'the administrator (unchanged): all');
+  const approves = (who, rows, ids) => rows.map(([memberId, customerId]) => lib.moldApprovesRequest(asked(memberId, customerId), reader(who, ids)));
+  same(approves('sm', everyone), [true, true, true, true, true, false, false, false, true, true, true, true, true],
+    'what he approves («طلبات بانتظار اعتمادي»): his own and his team\'s, and every request whose requester is in no sales manager\'s team (customer service, the administrator, an orphan, a cycle); not another manager\'s team\'s, nor another manager\'s own');
+  same(approves('sm2', [['cs'], ['owner'], ['repB'], ['repA']]), [true, true, true, false], 'both managers of the region approve customer service\'s and the administrator\'s; each his own team\'s');
+  same(approves('sm', [['sm', 'west'], ['repA', 'west'], ['cs', 'west']]), [false, false, false], 'never beyond his regions, his own included');
+  same(approves('smAll', [['cs', 'west'], ['repA', 'west']], []), [true, false], 'a manager of every region: customer service\'s anywhere, never another manager\'s team');
+  same(['repA', 'supA', 'owner', 'csm'].map(who => lib.moldApprovesRequest(asked('cs'), reader(who))), [false, false, false, false], 'only a sales manager approves');
+  // The view offers approve/withdraw only to the manager who approves the request (the routes pass moldApprovesRequest).
+  const waitingRow = row({outbox: null, accepted: data, remote: {...status, approvals: {required: true, sales: null, production: null, admin: null}}});
+  same([lib.moldPermissions(waitingRow, team[0], [], true).approve, lib.moldPermissions(waitingRow, team[0], [], false).approve, lib.moldPermissions(waitingRow, team[0]).approve, lib.moldRequestView(waitingRow, team[0], team, true, [], [], false, false).can.approve],
+    [true, false, true, false], 'can.approve follows whether this manager approves it');
 }
 
 // ---- the customers route: the CRM's list, the cities as the production sheet writes them

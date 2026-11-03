@@ -127,9 +127,18 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const {data,error,loading,refresh}=useMoldRequests(me);
  const [openId,setOpenId]=useState<string|null>(null),[creating,setCreating]=useState(false),[query,setQuery]=useState('');
+ // A request «طلبات بانتظار اعتمادي» shows the sales manager that their own list does not (customer service's, say: 2026-11-03), read
+ // from the server when opened from there, while it waits for them.
+ const [approverView,setApproverView]=useState<MoldRequestView|null>(null);
  const customers=useMemo(()=>records.filter(row=>row.kind==='customer'),[records]);
  const list=useMemo(()=>{const needle=query.trim().toLowerCase();return (data?.requests||[]).filter(view=>!needle||[view.customerName,view.specs.description,view.specs.moldNo,String(view.remote?.orderNo||''),view.memberName].some(text=>String(text||'').toLowerCase().includes(needle)));},[data,query]);
- const open=data?.requests.find(view=>view.id===openId)||null;
+ const open=data?.requests.find(view=>view.id===openId)||(approverView?.id===openId?approverView:null);
+ const listed=useMemo(()=>new Set((data?.requests||[]).map(view=>view.id)),[data]);
+ const openPending=useCallback(async(id:string)=>{
+  if(listed.has(id)){setOpenId(id);return;}
+  const answer=await submitJson<MoldRequestsAnswer>('/api/mold-requests?id='+encodeURIComponent(id),{cache:'no-store'},{language:getLanguage()});
+  if(answer.requests[0]){setApproverView(answer.requests[0]);setOpenId(id);}
+ },[listed]);
  const changed=useCallback(()=>{void refresh();},[refresh]);
  // Design files upload one at a time for as long as the app is open (a request's sheet may close, the member may visit another page and
  // come back to the same uploads); each answer refreshes the list.
@@ -150,14 +159,14 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
    <button type="button" role="tab" aria-selected={tab==='pending'} className={tab==='pending'?'is-active':''} onClick={()=>setTab('pending')}>{say('طلبات بانتظار اعتمادي','Waiting for my approval')} <span className="mold-count">{data!.pending!.items.length}</span></button>
    <button type="button" role="tab" aria-selected={tab==='all'} className={tab==='all'?'is-active':''} onClick={()=>setTab('all')}>{say('كل الطلبات','All requests')}</button>
   </div>}
-  {showPending&&<MoldPendingList pending={data!.pending!} say={say} onOpen={id=>setOpenId(id)} onChanged={changed}/>}
+  {showPending&&<MoldPendingList pending={data!.pending!} ownList={listed} say={say} onOpen={openPending} onChanged={changed}/>}
   {!showPending&&<>
   {!!data?.requests.length&&<label className="mold-search"><Search size={16} aria-hidden="true"/><input type="search" value={query} onChange={event=>setQuery(event.target.value)} placeholder={say('ابحث بالعميل أو الوصف أو رقم أمر الإنتاج','Search by customer, description or order')}/></label>}
   {data&&!list.length&&<p className="empty mold-empty">{data.requests.length?say('لا نتائج','No results'):say('لا توجد طلبات تصنيع قوالب بعد.','No mold requests yet.')}</p>}
   {!data&&!error&&<p className="empty"><Loader2 className="spin" size={16}/> {say('جارٍ التحميل…','Loading…')}</p>}
   <div className="mold-list">{list.map(view=><MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} unsent={uploading.filter(upload=>upload.moldId===view.id&&upload.phase==='failed').length} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
   </>}
-  {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} current={data?.pending?.items.find(item=>item.inCrm&&item.crmRequestId===open.id)||null} linkReady={!!data?.linkReady} quotePo={!!data?.quotePo} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>setOpenId(null)} onChanged={changed}/>}
+  {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} current={data?.pending?.items.find(item=>item.inCrm&&item.crmRequestId===open.id)||null} linkReady={!!data?.linkReady} quotePo={!!data?.quotePo} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>{setOpenId(null);setApproverView(null);}} onChanged={changed}/>}
   {creating&&<MoldRequestDialog customers={customers} uploads={uploads} quotePo={!!data?.quotePo} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
  </section>;
 }
@@ -166,8 +175,10 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  * longest waiting first, each with what was asked for and an Approve button. Approved here, a request leaves the list; until the page
  * is refreshed it stays below with Withdraw approval, in case it was a mistake, its files named without links (they open from the list
  * only while the request waits for the sales manager). Should it come back to the sales manager meanwhile (production lists it waiting
- * since after that approval), it leaves «اعتمدتها الآن» for the list above, as production now holds it, files and links included. */
-function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnswer;say:Say;onOpen:(id:string)=>void;onChanged:()=>void}){
+ * since after that approval), it leaves «اعتمدتها الآن» for the list above, as production now holds it, files and links included.
+ * ownList: the requests of the manager's own list (theirs and their team's); one it does not hold (customer service's, say) opens from
+ * here only while it waits for them. */
+function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPendingAnswer;ownList:Set<string>;say:Say;onOpen:(id:string)=>Promise<void>;onChanged:()=>void}){
  const [busy,setBusy]=useState<number|null>(null),[errors,setErrors]=useState<Record<number,string>>({}),[approved,setApproved]=useState<MoldPendingAnswer['items']>([]);
  // Read on each new list (state adjusted while rendering, not in an effect): a copy dropped here stays dropped should the request
  // leave the list again later.
@@ -190,11 +201,17 @@ function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnsw
   }catch(failure){if(definiteSubmitRejection(failure))keys.current.delete(name);setErrors(previous=>({...previous,[item.orderNo]:messageOf(failure)}));if(failure instanceof SubmitError&&failure.status===409)onChanged();}
   finally{setBusy(null);}
  };
+ const opening=async(item:MoldPendingAnswer['items'][number])=>{
+  setErrors(previous=>({...previous,[item.orderNo]:''}));
+  try{await onOpen(item.crmRequestId!);}catch(failure){setErrors(previous=>({...previous,[item.orderNo]:messageOf(failure)}));}
+ };
  const waiting=pending.items.filter(item=>!approved.some(other=>other.orderNo===item.orderNo));
  // A refusal for a request that has since left the list (production moved it on, cancelled or deleted it) stays readable above it.
  const orphaned=Object.entries(errors).filter(([orderNo,text])=>text&&!pending.items.some(item=>String(item.orderNo)===orderNo)&&!approved.some(item=>String(item.orderNo)===orderNo));
  const card=(item:MoldPendingAnswer['items'][number],done:boolean)=>{
   const specs=item.specs,choice=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
+  // The CRM's own request in the manager's own list (theirs or their team's) still opens once approved; one only this list shows does not.
+  const inList=item.inCrm&&!!item.crmRequestId&&ownList.has(item.crmRequestId);
   return <article key={item.orderNo} className="mold-pending" data-source={item.source} data-done={done||undefined}>
    <header><strong>{item.customer.name||'—'}</strong><span className="mold-chip" data-source={item.source}>{item.source==='manual'?say('مسجّل في تطبيق الإنتاج','Registered in production'):say('من الـCRM','From the CRM')}</span></header>
    <p dir="auto">{specs.description}</p>
@@ -211,14 +228,15 @@ function MoldPendingList({pending,say,onOpen,onChanged}:{pending:MoldPendingAnsw
    <p className="mold-pending-specs">{[choice(MOLD_CORES,specs.core),specs.vibrators?say('رجاجات: ','Vibrators: ')+specs.vibrators:'',choice(MOLD_MODELS,specs.model),choice(MOLD_HALF_BLOCKS,specs.halfBlock),specs.moldWidth?say('عرض ','Width ')+specs.moldWidth:'',specs.gelbaSize?say('جلب ','Gelba ')+specs.gelbaSize:'',specs.moldNo?say('قالب ','Mold ')+specs.moldNo:''].filter(Boolean).join(' · ')}</p>
    {specs.notes&&<p className="mold-pending-notes" dir="auto">{specs.notes}</p>}
    {/* Approved just now: the request no longer waits for them, so its files are listed without links (the CRM's request shows them). */}
-   <MoldPendingDesignFiles files={item.designFiles} say={say} note={done?pendingFilesApprovedNote(item.inCrm&&!!item.crmRequestId,say):''}/>
+   <MoldPendingDesignFiles files={item.designFiles} say={say} note={done?pendingFilesApprovedNote(inList,say):''}/>
    {/* The quotation's and PO's files, the same way. */}
-   {(['quote','po'] as const).map(category=><MoldPendingDesignFiles key={category} category={category} files={category==='quote'?item.quoteFiles:item.poFiles} say={say} note={done?pendingFilesApprovedNote(item.inCrm&&!!item.crmRequestId,say):''}/>)}
+   {(['quote','po'] as const).map(category=><MoldPendingDesignFiles key={category} category={category} files={category==='quote'?item.quoteFiles:item.poFiles} say={say} note={done?pendingFilesApprovedNote(inList,say):''}/>)}
    {errors[item.orderNo]&&<p className="form-error" role="alert">{errors[item.orderNo]}</p>}
    <div className="mold-actions">
     {done?<><span className="mold-pending-done"><BadgeCheck size={16} aria-hidden="true"/>{say('اعتمدته الآن','You approved it')}</span><button type="button" className="btn subtle" disabled={busy!==null} onClick={()=>void run(item,'withdraw-order')}>{busy===item.orderNo?<Loader2 className="spin" size={16}/>:<Undo2 size={16}/>}{say('سحب الاعتماد','Withdraw approval')}</button></>
      :<button type="button" className="btn primary" disabled={busy!==null} onClick={()=>void run(item,'approve-order')}>{busy===item.orderNo?<Loader2 className="spin" size={16}/>:<BadgeCheck size={16}/>}{say('اعتماد','Approve')}</button>}
-    {item.inCrm&&item.crmRequestId&&<button type="button" className="btn subtle" onClick={()=>onOpen(item.crmRequestId!)}>{say('فتح الطلب','Open request')}</button>}
+    {item.inCrm&&item.crmRequestId&&(!done||inList)&&<button type="button" className="btn subtle" onClick={()=>void opening(item)}>{say('فتح الطلب','Open request')}</button>}
+    {/* An older request's design link, as production holds it (no longer asked for since 2026-11-03): shown read-only. */}
     {specs.designUrl&&<a className="btn subtle" href={specs.designUrl} target="_blank" rel="noopener noreferrer">{say('رابط التصميم','Design link')}</a>}
    </div>
   </article>;
@@ -281,7 +299,9 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,statusAt
   [say('الوصف','Description'),<span dir="auto" key="d">{specs.description}</span>],[say('العلب','Core'),say(MOLD_CORES[specs.core as keyof typeof MOLD_CORES]||specs.core,specs.core)],[say('الرجاجات','Vibrators'),specs.vibrators],
   [say('الموديل','Model'),say(MOLD_MODELS[specs.model as keyof typeof MOLD_MODELS]||specs.model,specs.model)],[say('بلوكة النص','Half block'),say(MOLD_HALF_BLOCKS[specs.halfBlock as keyof typeof MOLD_HALF_BLOCKS]||specs.halfBlock,specs.halfBlock)],
   [say('عرض القالب (مم)','Mold width (mm)'),specs.moldWidth],[say('مقاس الجلب','Gelba size'),specs.gelbaSize],[say('رقم القالب','Mold no.'),specs.moldNo||'—'],[say('الكمية','Quantity'),specs.quantity],
-  [say('رابط التصميم','Design link'),specs.designUrl?<a key="u" href={specs.designUrl} target="_blank" rel="noopener noreferrer" dir="ltr">{say('فتح الرابط','Open link')}</a>:'—'],[say('ملاحظات','Notes'),<span dir="auto" key="n">{specs.notes||'—'}</span>],
+  // «رابط التصميم» is no longer asked for (2026-11-03): an older request's own link is still shown, read-only; nothing for one without.
+  ...(specs.designUrl?[[say('رابط التصميم','Design link'),<a key="u" href={specs.designUrl} target="_blank" rel="noopener noreferrer" dir="ltr">{say('فتح الرابط','Open link')}</a>] as [string,React.ReactNode]]:[]),
+  [say('ملاحظات','Notes'),<span dir="auto" key="n">{specs.notes||'—'}</span>],
   // How the customer pays: the CRM's own (or, approving, production's now); nothing for a request asked for before 2026-11-03.
   ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment])] as [string,React.ReactNode]]:[]),
  ];
@@ -342,7 +362,9 @@ function MoldApprovals({view,say}:{view:MoldRequestView;say:Say}){
  })}</ol>;
 }
 
-const blank:Record<string,string>={description:'',core:'',vibrators:'',model:'',halfBlock:'',moldWidth:'',gelbaSize:'',moldNo:'',quantity:'1',designUrl:'',notes:'',payment:'',quoteNo:'',poNo:''};
+/** The form's fields. «رابط التصميم» is not one of them any more (the owner, 2026-11-03): a new request carries none, and an older
+ *  request's own link is kept by the server as stored, whatever the form sends (shown read-only while editing). */
+const blank:Record<string,string>={description:'',core:'',vibrators:'',model:'',halfBlock:'',moldWidth:'',gelbaSize:'',moldNo:'',quantity:'1',notes:'',payment:'',quoteNo:'',poNo:''};
 /** The form of a request being edited: its specifications, its payment ('' for one asked for before 2026-11-03: to be chosen now) and its
  *  quotation and PO numbers (the CRM's own: an edit is only for a request production does not hold). */
 const asForm=(specs:MoldSpecs,payment:MoldPayment|null,numbers:MoldQuotePoView|null)=>({...Object.fromEntries(Object.entries(blank).map(([key])=>[key,specs[key as keyof MoldSpecs]===null||specs[key as keyof MoldSpecs]===undefined?'':String(specs[key as keyof MoldSpecs])])),payment:payment||'',
@@ -378,6 +400,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onCl
   event.preventDefault();
   // How the customer pays is required (2026-11-03): cash or deferred.
   // At least one of the quotation and PO numbers once production's update is live (2026-11-03), normalized as production stores them.
+  // No design link is sent: the server keeps an older request's own as it is.
   const checked=validateMoldSpecs(form),payment=moldPayment(form.payment),numbers=validateMoldQuotePo(form,{required:asks});
   const errors:Record<string,string>={...checked.errors,...(payment?{}:{payment:say('اختار طريقة الدفع: نقدي أو آجل','Choose how the customer pays: cash or deferred')}),...(asks?quotePoErrors(numbers.errors,say):{})};
   if(!editing&&!customerId){setShown({...errors,customer:say('اختر العميل','Choose the customer')});return;}
@@ -388,12 +411,13 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onCl
   setAsking(false);
   // The files go once the request is saved (each with its own requestId, kept for retries), the request's own change first.
   const typed=asks?{quoteNo:numbers.quoteNo,poNo:numbers.poNo}:{};
-  void action.run(editing?{action:'update',id:editing.id,version:editing.version,specs:checked.specs,payment,...typed}:{action:'create',customerId,specs:checked.specs,payment,...typed}).then(next=>{if(next&&ready.length)uploads.add(next.id,ready);});
+  const specs={...checked.specs};delete specs.designUrl;
+  void action.run(editing?{action:'update',id:editing.id,version:editing.version,specs,payment,...typed}:{action:'create',customerId,specs,payment,...typed}).then(next=>{if(next&&ready.length)uploads.add(next.id,ready);});
  };
  const choice=(key:string,label:string,options:[string,string][])=><fieldset className="mold-choice" aria-invalid={!!errors[key]}><legend>{label}</legend><div>{options.map(([value,text])=><label key={value} data-active={form[key]===value}><input type="radio" name={key} value={value} checked={form[key]===value} onChange={()=>set(key,value)}/>{text}</label>)}</div>{errors[key]&&<small className="field-error">{errors[key]}</small>}</fieldset>;
  const number=(key:string,label:string,usual:number[]=[])=><label className="mold-field" aria-invalid={!!errors[key]}>{label}<input inputMode="numeric" dir="ltr" value={form[key]} onChange={event=>set(key,event.target.value.replace(/[^\d٠-٩]/g,'').replace(/[٠-٩]/g,digit=>String(digit.charCodeAt(0)-0x660)))}/>{!!usual.length&&<span className="mold-usual">{usual.map(value=><button type="button" key={value} className="btn small subtle" onClick={()=>set(key,String(value))}>{value}</button>)}</span>}{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
- // Dimensions, the mold number and the design link are typed (a code, a URL); the notes are free text and take dictation.
- const text=(key:string,label:string,max:number,type:'text'|'url'='text')=><label className="mold-field" aria-invalid={!!errors[key]}>{label}<input type={type} maxLength={max} dir="ltr" value={form[key]} onChange={event=>set(key,event.target.value)}/>{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
+ // Dimensions and the mold number are typed (a code); the notes are free text and take dictation.
+ const text=(key:string,label:string,max:number)=><label className="mold-field" aria-invalid={!!errors[key]}>{label}<input type="text" maxLength={max} dir="ltr" value={form[key]} onChange={event=>set(key,event.target.value)}/>{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
  // Typing one number clears the «one at least» refusal too.
  const numberField=(key:'quoteNo'|'poNo',label:string)=><label className="mold-field" aria-invalid={!!errors[key]||!!errors.quotePo}>{label}<input type="text" name={key} maxLength={MOLD_QUOTE_PO_MAX} dir="ltr" autoComplete="off" value={form[key]} onChange={event=>{set(key,event.target.value);clear('quotePo');}}/>{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
  const picker=(category:MoldFileCategory,choices:DesignChoice[],change:(next:DesignChoice[])=>void)=><MoldDesignPicker key={category} category={category} choices={choices} onChange={next=>{change(next);setAsking(false);}} room={MOLD_CATEGORY_MAX_FILES[category]-(used[category]||0)} disabled={action.busy} say={say}/>;
@@ -418,7 +442,8 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onCl
      {number('quantity',say('الكمية (1–100)','Quantity (1–100)'))}
     </div>
     {choice('payment',say('طريقة الدفع','Payment'),[['cash',say('نقدي','Cash')],['deferred',say('آجل','Deferred')]])}
-    {text('designUrl',say('رابط التصميم (اختياري، يبدأ بـ https://)','Design link (optional, https://)'),MOLD_LIMITS.designUrl,'url')}
+    {/* An older request's own design link (no longer asked for, 2026-11-03): kept as it is, shown read-only. */}
+    {editing?.specs.designUrl&&<p className="mold-specs-note mold-design-link-kept" data-source="crm">{say('رابط التصميم (من الطلب، يبقى كما هو): ','Design link (from the request, kept as it is): ')}<a href={editing.specs.designUrl} target="_blank" rel="noopener noreferrer" dir="ltr">{say('فتح الرابط','Open link')}</a></p>}
     <VoiceField label={say('ملاحظات (اختياري)','Notes (optional)')} value={form.notes} onChange={value=>set('notes',value)} multiline full className="mold-notes" inputProps={{maxLength:MOLD_LIMITS.notes}}/>
     {asks&&<fieldset className="mold-quote-po-fields" aria-invalid={!!errors.quotePo}><legend>{say('عرض السعر والـ PO (واحد على الأقل)','Quotation and PO (at least one)')}</legend>
      <div className="mold-grid">{numberField('quoteNo',say('رقم عرض السعر','Quotation no.'))}{numberField('poNo',say('رقم الـ PO','PO no.'))}</div>

@@ -13,6 +13,10 @@
 // before its first send) needs at least one of the two numbers, kept in the request's data and sent with it; the quotation's and PO's
 // files go with design-files and their category. What a request shows is production's (the status object, the pending item) once
 // production holds it: its production manager adds and corrects them there. Before the update nothing of it is asked, shown or sent.
+// Who sees which request (the owner, 2026-11-03): the representative their own only, the sales manager their own and their team's
+// (canReadMoldRequest, moldTeamManagerId); what the sales manager approves (moldApprovesRequest) also takes customer service's and the
+// administrator's requests in their regions, shown in «طلبات بانتظار اعتمادي» only. «رابط التصميم» is no longer asked for (the owner,
+// 2026-11-03): a new request has none; an older request keeps its own, shown read-only and sent as it was.
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {regionScope} from './regions';
@@ -113,7 +117,8 @@ export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm
  payment:MoldPayment|null;revision:number|null;designFiles:MoldDesignFile[];
  /** From production's update of 2026-11-03 only: the quotation and PO numbers and their files as production holds them now. */
  quoteNo?:string;poNo?:string;quoteOrPoMissing?:boolean;quoteFiles?:MoldDesignFile[];poFiles?:MoldDesignFile[]};
-/** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it also shows in the list below);
+/** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it opens from here: in the list below
+ *  when the manager or their team asked for it, else only from here while it waits for them, as one customer service asked for);
  *  designFiles: its design files (the request's own and production's), each downloaded through the CRM. */
 export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'|'quoteFiles'|'poFiles'>&{inCrm:boolean;designFiles:MoldPendingDesignFile[];quoteFiles:MoldPendingDesignFile[];poFiles:MoldPendingDesignFile[]})[];error:MoldError|null;at:string|null};
 /** quotePo: production's update of 2026-11-03 is known to be live (learned once, kept): the form asks for the quotation and PO numbers
@@ -138,16 +143,50 @@ export const canApproveMoldRequests=(me:Pick<Member,'role'>)=>me.role==='manager
 const SERVICE_ROLES=['customer_service','customer_service_manager'];
 
 type Reader={me:Member;members:Member[];regionCustomerIds:Set<string>};
-/** Everyone their own requests. Beyond that: a supervisor their representatives', the sales manager every request in their regions
- * (they approve them all, whoever asked), a customer-service manager their team's, the administrator all; never beyond the reader's
- * regions. */
+const SALES_TEAM_ROLES=['supervisor','rep'];
+/** The sales manager whose team a member belongs to (the owner, 2026-11-03: «يبان للمندوب طلباته بس ومدير المبيعات طلباته وطلبات
+ *  فريقه»): a sales manager is their own; a supervisor or representative belongs to the first sales manager up their «المشرف» chain
+ *  (supervisorId), at any depth through supervisors and representatives (a representative under a supervisor under the manager). ''
+ *  for anyone else (customer service, the administrator), and for a chain that reaches no sales manager: a missing member, a link to
+ *  another role, or a cycle (each member is passed once). */
+export function moldTeamManagerId(memberId:string,members:Pick<Member,'id'|'role'|'supervisorId'>[]):string{
+ const byId=new Map(members.map(member=>[member.id,member]));
+ let member=byId.get(memberId);
+ if(!member)return '';
+ if(member.role==='manager')return member.id;
+ const seen=new Set<string>();
+ while(member&&SALES_TEAM_ROLES.includes(member.role)&&!seen.has(member.id)){
+  seen.add(member.id);
+  const next:Pick<Member,'id'|'role'|'supervisorId'>|undefined=member.supervisorId?byId.get(member.supervisorId):undefined;
+  if(next?.role==='manager')return next.id;
+  member=next;
+ }
+ return '';
+}
+/** Who sees which request in the list: everyone their own. A representative nothing more. A supervisor their representatives', a
+ *  customer-service manager their team's, within their regions; the administrator all. The sales manager their team's (moldTeamManagerId)
+ *  within their regions (the owner, 2026-11-03): no longer another manager's team's, customer service's or the administrator's, even
+ *  those they approve (moldApprovesRequest: those show in «طلبات بانتظار اعتمادي» only, and open from there: canOpenMoldRequest in
+ *  lib/mold-requests-server.ts). */
 export function canReadMoldRequest(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
  if(c.me.role==='admin'||row.memberId===c.me.id)return true;
  const inRegion=regionScope(c.me)==='all'||c.regionCustomerIds.has(row.customerId);
- if(c.me.role==='manager')return inRegion;
+ if(c.me.role==='manager')return inRegion&&moldTeamManagerId(row.memberId,c.members)===c.me.id;
  if(c.me.role==='supervisor')return inRegion&&salesScopeMemberIds(c.members,c.me).has(row.memberId);
  if(c.me.role==='customer_service_manager')return inRegion&&c.members.some(member=>member.id===row.memberId&&SERVICE_ROLES.includes(member.role)&&member.supervisorId===c.me.id);
  return false;
+}
+/** Which of the CRM's own requests a sales manager approves (the owner, 2026-11-03), decided on the CRM's row (who asked, for which
+ *  customer): its customer is in their regions, and whoever asked is the manager, in their team, or in no sales manager's team at all
+ *  (customer service, the administrator, a supervisor or representative whose chain reaches no sales manager), whom every sales manager
+ *  of the customer's region approves. Another sales manager's own request, or their team's, is theirs. «طلبات بانتظار اعتمادي» lists
+ *  such a request while production holds it at the sales step (moldPendingFor), and the approval, its withdrawal and the approver's
+ *  sheet follow the same rule. */
+export function moldApprovesRequest(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
+ if(!canApproveMoldRequests(c.me))return false;
+ if(regionScope(c.me)!=='all'&&!c.regionCustomerIds.has(row.customerId))return false;
+ const manager=moldTeamManagerId(row.memberId,c.members);
+ return manager===c.me.id||manager==='';
 }
 /** An answer older than the status stored (a lower revision; one without a revision is never older): answers can cross, and an older
  *  one must not bring back approvals production has since undone. The SQL twin is newerRemote in lib/mold-requests-server.ts. */
@@ -179,9 +218,10 @@ export const moldDesignMayBeRemote=(file:Pick<MoldDesignFileRow,'outbox'|'nextAt
  *  production's status, or an attempt that may have arrived) it is edited by the production manager in the products application only. */
 export const moldNeverSent=(row:Pick<MoldRequestRow,'accepted'|'remote'|'lastAttemptAt'|'lastError'>)=>neverSent(row);
 /** What the reader may do. edit: the requester, while the request has certainly never reached production (the server's update follows
- *  the same rule, in SQL too); cancel, attach and deleteFile: the requester while production still accepts changes (moldEditable). */
-export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[]){
- const own=row.memberId===me.id,open=moldEditable(row),approver=canApproveMoldRequests(me),settled=!files.some(moldDesignInFlight);
+ *  the same rule, in SQL too); cancel, attach and deleteFile: the requester while production still accepts changes (moldEditable).
+ *  approver: the reader approves this request (the routes pass moldApprovesRequest; any sales manager when not given). */
+export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[],approver=canApproveMoldRequests(me)){
+ const own=row.memberId===me.id,open=moldEditable(row),settled=!files.some(moldDesignInFlight);
  return {edit:own&&open&&moldNeverSent(row),cancel:own&&open,resend:own&&(!!row.outbox||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
 }
 const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
@@ -240,12 +280,13 @@ export function moldQuotePoView(row:Pick<MoldRequestRow,'data'|'accepted'|'remot
 }
 /** One request as its reader receives it. cancelReasons: the reasons of its earlier cancellations (moldCancelReasons in
  *  lib/mold-requests-server.ts), so the screen asks for another before cancelling again. quotePo: production's update of 2026-11-03 is
- *  known to be live (a request saved with a number, or a quotation's or PO's file, waits for it otherwise). */
-export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[],quotePo=false):MoldRequestView{
+ *  known to be live (a request saved with a number, or a quotation's or PO's file, waits for it otherwise). approver: the reader
+ *  approves this request (moldApprovesRequest), so can.approve and can.withdraw are offered only for a request they may approve. */
+export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[],quotePo=false,approver=canApproveMoldRequests(me)):MoldRequestView{
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
-  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady,quotePo),quotePo:moldQuotePoView(row)};
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady,quotePo),quotePo:moldQuotePoView(row)};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent. */
 export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'>},linkReady:boolean,quotePo=true):MoldSendingState{

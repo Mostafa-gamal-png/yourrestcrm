@@ -6,7 +6,7 @@
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {canReadMoldRequest,canUseMoldRequests,moldDesignMayBeRemote,moldEditable,moldRequestView} from '@/lib/mold-requests';
+import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView} from '@/lib/mold-requests';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
@@ -22,7 +22,7 @@ export async function POST(req:Request){try{
  const answer=async(status=200,send:DesignOutcome|null=null,error='')=>{
   const row=await loadMoldRequest(c.db,input.id);
   if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
-  return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id),await moldQuotePoSupported(c.db)),send:send?{kind:send.kind,code:send.code,...(send.reason?{reason:send.reason}:{})}:null,...(error?{error}:{})},{status,headers:{'Cache-Control':'no-store'}});
+  return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id),await moldQuotePoSupported(c.db),moldApprovesRequest(row,c)),send:send?{kind:send.kind,code:send.code,...(send.reason?{reason:send.reason}:{})}:null,...(error?{error}:{})},{status,headers:{'Cache-Control':'no-store'}});
  };
  const replay=async()=>{
   const saved=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receiptId).first<{detail:string}>();
