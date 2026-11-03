@@ -11,7 +11,7 @@ import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {readRequestForm} from '@/lib/request-body';
 import {moldDesignFileCheck,MOLD_CATEGORY_MAX_FILES} from '@/portable/mold-rules.mjs';
-import {canReadMoldRequest,canUseMoldRequests,moldDesignCount,moldDesignRefusalText,moldEditable,moldRequestView,type MoldFileCategory} from '@/lib/mold-requests';
+import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignRefusalText,moldEditable,moldRequestView,type MoldFileCategory} from '@/lib/mold-requests';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
@@ -51,7 +51,7 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  const answer=async(status=200,send:DesignOutcome|null=null,error='')=>{
   const row=await loadMoldRequest(c.db,id);
   if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
-  const view=moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id),await moldQuotePoSupported(c.db));
+  const view=moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id),await moldQuotePoSupported(c.db),moldApprovesRequest(row,c));
   return Response.json({ok:status<400,file:view.designFiles.find(entry=>entry.crmFileId===crmFileId)||null,request:view,send:send?{kind:send.kind,code:send.code,...(send.reason?{reason:send.reason}:{})}:null,...(error?{error}:{})},{status,headers:{'Cache-Control':'no-store'}});
  };
  const replay=async()=>{

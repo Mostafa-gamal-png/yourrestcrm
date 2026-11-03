@@ -1,11 +1,13 @@
 // Downloading a mold request's design file through the CRM (the contract's addition «ملفات التصميم», 2026-11-02): never a link to
 // production, and only after the reader may see the request.
-// ?id=<request>&file=<crmFileId or production's fileId>: whoever may read the request (canReadMoldRequest), for a file the request shows
+// ?id=<request>&file=<crmFileId or production's fileId>: whoever may open the request (canOpenMoldRequest: what their list shows, and for
+//  the sales manager a request «طلبات بانتظار اعتمادي» shows them now that their list does not, as customer service's), for a file the request shows
 //  (moldDesignFilesView: a file the CRM deleted is never served, even while an older status lists it, nor one whose deletion is still on
 //  its way to production). A CRM file whose bytes the CRM keeps is served from the object store; any other is fetched from production
 //  with design-file.
-// ?order=<orderNo>&file=<fileId>: the sales manager, for a request in their pending list as production answers it now (the same regions
-//  as the list; a list kept from before a failed call is not enough), registered in production or in the CRM, and a file that item lists.
+// ?order=<orderNo>&file=<fileId>: the sales manager, for a request in their pending list as production answers it now (the list's own
+//  rule, moldPendingFor: who asked and the regions; a list kept from before a failed call is not enough), registered in production or in
+//  the CRM, and a file that item lists.
 // A file is any of the request's: a design file, or (since production's update of 2026-11-03) the quotation's or the PO's, named by its
 //  fileId whichever list it is in.
 // &inline=1 opens a PDF or an image in the browser; anything else always downloads, as plain bytes (an SVG or a drawing is never rendered).
@@ -14,8 +16,8 @@ import {env} from 'cloudflare:workers';
 import {context,CRMError,replyError} from '@/lib/crm-server';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {moldContentDisposition,moldDesignContentType} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,canReadMoldRequest,canUseMoldRequests,moldDesignFilesView,moldErrorText,moldListedFiles,type MoldDesignFile,type MoldDesignFileRow} from '@/lib/mold-requests';
-import {loadMoldDesignFiles,loadMoldRequest,moldPendingFor,moldQuotePoSupported,productsLink} from '@/lib/mold-requests-server';
+import {canApproveMoldRequests,canUseMoldRequests,moldDesignFilesView,moldErrorText,moldListedFiles,type MoldDesignFile,type MoldDesignFileRow} from '@/lib/mold-requests';
+import {canOpenMoldRequest,loadMoldDesignFiles,loadMoldRequest,moldPendingFor,moldQuotePoSupported,productsLink} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 // Each file is held whole in memory (up to 25 MiB: production's answer, or the CRM's copy as the object store reads it) until the
@@ -66,7 +68,7 @@ async function answer(req:Request):Promise<Response>{try{
  let entry:MoldDesignFile|undefined,own:MoldDesignFileRow|undefined;
  if(id!==null){
   const row=await loadMoldRequest(c.db,id);
-  if(!row||!canReadMoldRequest(row,c))throw new CRMError('الملف غير متاح',404);
+  if(!row||!await canOpenMoldRequest(row,c,link))throw new CRMError('الملف غير متاح',404);
   const files=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),shown=moldDesignFilesView(row,files,c.me,link.ok,await moldQuotePoSupported(c.db)).find(file=>file.key===key||file.fileId===key);
   // A file its requester deleted is not served while the deletion is still on its way to production (the screen offers no link to it).
   if(!shown||shown.state==='deleting')throw new CRMError('الملف غير متاح',404);

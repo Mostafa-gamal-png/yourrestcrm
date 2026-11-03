@@ -19,7 +19,8 @@
 // width. Since production's second update of 2026-11-03: no number asked before the update is learned; then «رقم عرض السعر» and «رقم الـ
 // PO» (one at least, Arabic digits) with the quotation's and PO's pickers, the request's numbers as production holds them (corrected
 // there), the note when production lacks both, the sales manager's list with the numbers and the quotation's files, in English and at
-// phone width. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
+// phone width. «رابط التصميم» no longer on the form, an older request's link read-only; customer service's request opened from the sales
+// manager's «طلبات بانتظار اعتمادي» and approved there, not in his list (2026-11-03). Screenshots for the report. Synthetic fixtures only: temporary SQLite,
 // no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -92,6 +93,7 @@ try {
   await rep.locator('button.mold-new').click();
   const dialog = rep.locator('.mold-dialog');
   await dialog.waitFor();
+  check([await dialog.getByText('رابط التصميم').count(), await dialog.locator('input[type="url"]').count()], [0, 0], 'no «رابط التصميم» on the form any more (the owner, 2026-11-03)');
   // An incomplete request is refused on the device: no call reaches production.
   const before = mock.state.calls.length;
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
@@ -122,6 +124,7 @@ try {
   await shot(rep, 'mold-sheet-received');
   const sent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
   check([sent.customer.name, sent.specs.moldWidth, sent.specs.gelbaSize, sent.specs.vibrators, sent.payment], ['مصنع east1', 1380, 795, 2, 'cash'], 'production received what was chosen, the payment beside the specifications');
+  check([Object.hasOwn(sent.specs, 'designUrl'), await sheet(rep).locator('.mold-facts dt', {hasText: 'رابط التصميم'}).count()], [false, 0], 'no design link sent, and none shown on the request');
   await rep.keyboard.press('Escape');
   await rep.locator('.mold-card').first().waitFor();
   check(await rep.locator('.mold-card').count(), 1, 'the list shows the request');
@@ -478,6 +481,59 @@ try {
   check(await csm.locator('button.mold-new').count(), 1, 'customer service has the page and asks too');
   await csm.context().close();
 
+  // ---- 5b. «رابط التصميم» is no longer asked for (the owner, 2026-11-03): an older request keeps its own link, shown read-only on its
+  //  sheet and in the edit of a request never sent; the form sends none, so the link stays as stored and goes with the edit.
+  const linkedId = 'mr-' + crypto.randomUUID(), linkedAt = new Date().toISOString(), east1Number = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number;
+  const linkedData = {requestedAt: '2026-11-02T10:00:00+03:00', customer: {crmNumber: east1Number, name: 'مصنع east1', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'},
+    specs: {description: 'older, with a design link', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: 'https://drive.google.com/older-design', notes: ''}, payment: 'cash'};
+  // Saved by the earlier release and never sent yet (its next try far away): still the representative's to edit.
+  await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east1',?,'send','2099-01-01T00:00:00.000Z','rep',?,?,1)").bind(linkedId, JSON.stringify(linkedData), linkedAt, linkedAt).run();
+  const linkedPage = await open('rep');
+  await goMolds(linkedPage);
+  await linkedPage.locator('.mold-card', {hasText: 'older, with a design link'}).click();
+  const linkRow = sheet(linkedPage).locator('.mold-facts > div', {hasText: 'رابط التصميم'});
+  await linkRow.waitFor();
+  check([await linkRow.locator('a').getAttribute('href'), await linkRow.locator('a').innerText()], ['https://drive.google.com/older-design', 'فتح الرابط'], 'the older request\'s design link, shown read-only on its sheet');
+  await sheet(linkedPage).getByRole('button', {name: 'تعديل الطلب'}).click();
+  const linkedEdit = linkedPage.locator('.mold-dialog');
+  await linkedEdit.waitFor();
+  check([await linkedEdit.locator('.mold-design-link-kept a').getAttribute('href'), await linkedEdit.locator('input[type="url"]').count(), await linkedEdit.locator('label.mold-field', {hasText: 'رابط التصميم'}).count()],
+    ['https://drive.google.com/older-design', 0, 0], 'its edit shows the link read-only (kept as it is), with no field to change it');
+  await linkedPage.waitForTimeout(400);
+  await shot(linkedPage, 'mold-edit-older-design-link');
+  await linkedEdit.locator('label.mold-field', {hasText: 'الكمية'}).locator('input').fill('2');
+  await linkedEdit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  await linkedEdit.waitFor({state: 'detached'});
+  const linkedSent = JSON.parse(mock.state.calls.filter(call => call.route === 'requests' && call.body.includes(linkedId)).at(-1).body);
+  check([linkedSent.specs.designUrl, linkedSent.specs.quantity, JSON.parse((await app.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(linkedId).first()).data).specs.designUrl],
+    ['https://drive.google.com/older-design', 2, 'https://drive.google.com/older-design'], 'saved and sent with its link exactly as stored');
+  await linkedPage.context().close();
+
+  // ---- 5c. Who sees which (the owner, 2026-11-03): customer service's request is not in the sales manager's list (his own and his team's);
+  //  it waits for him in «طلبات بانتظار اعتمادي», opens from there («فتح الطلب») and is approved from its sheet.
+  const csmApi = app.as(await app.login('csm'));
+  const fromService = (await (await csmApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب خدمة العملاء', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
+  // An approval by order number reads production's waiting list afresh (the server keeps it a minute otherwise); none has that number.
+  await app.as(await app.login('sm'))('/api/mold-requests', {method: 'POST', body: {action: 'approve-order', requestId: crypto.randomUUID(), orderNo: 999999}});
+  const serviceManager = await open('sm');
+  await goMolds(serviceManager);
+  const serviceCard = serviceManager.locator('.mold-pending', {hasText: 'طلب خدمة العملاء'});
+  await serviceCard.waitFor();
+  await serviceCard.getByRole('button', {name: 'فتح الطلب'}).click();
+  await sheet(serviceManager).locator('.mold-specs-note[data-source="production"]').waitFor();
+  check([await sheet(serviceManager).locator('[data-slot="sheet-title"]').innerText(), (await sheet(serviceManager).locator('.mold-facts').first().innerText()).includes('csm')], ['مصنع east1', true], 'customer service\'s request opens from the waiting list, though his list does not hold it');
+  await serviceManager.waitForTimeout(400);
+  await shot(serviceManager, 'mold-sheet-approver-customer-service');
+  await sheet(serviceManager).getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await sheet(serviceManager).getByRole('button', {name: 'سحب الاعتماد'}).waitFor();
+  check(!!mock.row(fromService.id).approvals.sales, true, 'approved from its sheet, at production too');
+  await serviceManager.keyboard.press('Escape');
+  await sheet(serviceManager).waitFor({state: 'detached'});
+  await serviceManager.locator('.mold-tabs button', {hasText: 'كل الطلبات'}).click();
+  await serviceManager.locator('.mold-card').first().waitFor();
+  check(await serviceManager.locator('.mold-card', {hasText: 'طلب خدمة العملاء'}).count(), 0, 'and it is not in his list (his own and his team\'s)');
+  await serviceManager.context().close();
+
   // ---- 6. 2026-11-03 (production's second update): the quotation and PO numbers. Before the update the form asks nothing new; once the
   // CRM learns it (a pull), «رقم عرض السعر» and «رقم الـ PO» (one at least, Arabic digits accepted) and their files' pickers (a PDF or an
   // image); the request shows production's numbers (its production manager's correction included) and the note when production lacks
@@ -561,7 +617,8 @@ try {
   await quoteManager.context().close();
   // In English, and at phone width
   const englishPhone = await open('rep', {language: 'en', viewport: PHONE});
-  await englishPhone.locator('button.mobile-profile-trigger').click();
+  // «المزيد» (More) beside the five tabs since the merge of the representative's sixth tab; the account sheet lists no pages any more.
+  await englishPhone.locator('.mobile-bottom-navigation button[aria-haspopup="dialog"]').click();
   await englishPhone.locator('.mobile-overflow-pages button[data-page="mold-requests"]').click();
   await englishPhone.locator('.mobile-navigation-sheet').waitFor({state: 'detached'});
   await englishPhone.locator('button.mold-new').click();

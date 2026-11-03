@@ -25,7 +25,7 @@ const STAYS_TYPED = [
   {file: 'app/kpi-evidence-editor.tsx', snippet: 'name="due"', reason: 'an amount in riyals: digits are typed, dictating them makes more errors than it saves'},
   {file: 'app/kpi-evidence-editor.tsx', snippet: 'name="collected"', reason: 'an amount in riyals: digits are typed, dictating them makes more errors than it saves'},
   {file: 'app/sales-workspace.tsx', snippet: "mode==='sales'?'العميل أو مرجع البيع'", reason: 'a search box'},
-  {file: 'app/mold-requests.tsx', snippet: "<input type={type} maxLength={max} dir=\"ltr\"", reason: 'the mold description is dimensions (200*400*27.5TH MM OPEN), the mold number a code and the design link a URL; the notes are dictated'},
+  {file: 'app/mold-requests.tsx', snippet: "<input type=\"text\" maxLength={max} dir=\"ltr\"", reason: 'the mold description is dimensions (200*400*27.5TH MM OPEN) and the mold number a code; the notes are dictated (the design link is no longer asked for, 2026-11-03)'},
   {file: 'app/mold-requests.tsx', snippet: 'inputMode="numeric" dir="ltr"', reason: 'mold width, gelba size and quantity are numbers with ranges, picked from the usual sizes or typed'},
   {file: 'app/mold-requests.tsx', snippet: 'name={key} maxLength={MOLD_QUOTE_PO_MAX}', reason: 'the quotation and PO numbers are codes copied as written on the document (Q-2026-0153, PO-7781); dictation would garble them'},
   {file: 'app/sales-workspace.tsx', snippet: 'maxLength={100} value={data.reference}', reason: 'the sale reference is a code from the invoice'},
