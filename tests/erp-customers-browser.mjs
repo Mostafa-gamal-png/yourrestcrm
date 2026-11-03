@@ -170,7 +170,7 @@ try {
   const applyResponse = await applied;
   check(applyResponse.status(), 200, 'applied');
   const sent = JSON.parse(applyResponse.request().postData());
-  check([sent.snapshot, sent.choices, /^[0-9a-f-]{36}$/.test(sent.requestId), sent.region, sent.regions], [preview.snapshot, [{row: 5, customerId: 'twinB'}, {row: 8, customerId: '+new'}], true, 'الوسطى', []], 'the apply carries the preview\'s snapshot, the choices, the region and a request id');
+  check([sent.snapshot, sent.choices, /^[0-9a-f-]{36}$/.test(sent.requestId), sent.region, sent.regions, sent.adds], [preview.snapshot, [{row: 5, customerId: 'twinB'}, {row: 8, customerId: '+new'}], true, 'الوسطى', [], 2], 'the apply carries the preview\'s snapshot, the choices, the region, the two new customers it showed and a request id');
   check((await reloaded).status(), 200, 'the customers are reloaded');
   await dialog.locator('.erp-import-success').waitFor();
   ok((await dialog.locator('.erp-import-success').innerText()).includes('تم تحديث الأكواد وإضافة العملاء'), 'the result says so');

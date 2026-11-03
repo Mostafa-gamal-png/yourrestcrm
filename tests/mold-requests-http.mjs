@@ -25,11 +25,14 @@
 // waiting for its resend is dropped once the CRM saw the request cancelled and then restored, while one that never reached production
 // is still sent; and production answering a cancellation with the request not cancelled (restored, the reason used) is said, not retried,
 // as no longer cancellable once the request was approved since; a cancellation waiting while a pull already saw it cancelled is settled,
-// not sent again, and the restore is the next pull's (audited).
+// not sent again, and the restore is the next pull's (audited); a restore the release before this one already pulled (it stored the status
+// alone, the CRM's cancelled marks kept) is settled by this release's next pull, while a cancellation still waiting, or a request
+// production holds cancelled, is never cleared.
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
+import {moldStatusObject} from '../portable/mold-rules.mjs';
 
 const members = [
   {id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'},
@@ -390,6 +393,47 @@ try {
   check([seenView.cancelled, seenView.remote.status, seenView.can.cancel, seenView.sending.error.code, seenView.sending.error.reason, seenAudit.length, seenAudit[0]?.label, seenAudit[0]?.cancelReason, seenAudit[0]?.status, (await restoredAudits(seenFirst.id, 'cancel-restored')).length],
     [false, 'confirmed', false, 'restored', 'restored', 1, 'رجّعه مدير الإنتاج بعد الإلغاء', 'تأخر التوريد', 'confirmed', 0], 'the next pull settles the restore: active again, audited «رجّعه مدير الإنتاج بعد الإلغاء»');
   check([calls('cancel') - seenCalls, mock.row(seenFirst.id).cancelled], [0, false], 'production keeps it restored and approved');
+
+  // ---- a restore the release before this one already pulled (it pulled cancelled requests too and stored their status alone, leaving
+  //  the CRM's cancelled marks): the next pull of this release settles it as restored (audited, the reason kept, approval allowed)
+  const pulledEarlier = (await (await create('rep', 'east1', {description: 'restored, pulled by the earlier release'})).json()).request;
+  body = await (await post('rep', {action: 'cancel', id: pulledEarlier.id, version: pulledEarlier.version, reason: 'العميل سافر'})).json();
+  check([body.request.cancelled, body.request.remote.status, mock.row(pulledEarlier.id).cancelled], [true, 'cancelled', true], 'cancelled in the CRM and in production');
+  const restoredStatus = moldStatusObject(mock.restore(pulledEarlier.id));
+  // The earlier release's pull: newerRemote alone (no restore statements), some time after the cancellation; this release's pull comes a minute or more later.
+  const earlierPull = async (id, status) => app.db.prepare("UPDATE crm_mold_requests SET cancelled_at='2026-01-01T00:00:00.000Z',remote=?,remote_at='2026-01-01T00:05:00.000Z' WHERE id=?").bind(JSON.stringify(status), id).run();
+  await earlierPull(pulledEarlier.id, restoredStatus);
+  const oldState = await stored(pulledEarlier.id);
+  check([JSON.parse(oldState.remote).status, oldState.cancelled_at !== null, oldState.cancel_reason, oldState.outbox], ['received', true, 'العميل سافر', null], 'the earlier release\'s state: production\'s status not cancelled, the CRM\'s cancelled marks kept');
+  check((await post('sm', {action: 'approve', id: pulledEarlier.id})).status, 409, 'before this release\'s pull the sales manager is refused (the request reads as cancelled)');
+  const pulledView = (await list('rep')).requests.find(item => item.id === pulledEarlier.id), pulledRow = await stored(pulledEarlier.id), pulledAudit = await restoredAudits(pulledEarlier.id);
+  check([pulledView.cancelled, pulledView.cancelReason, pulledView.remote.status, pulledView.can.cancel, pulledView.can.attach, pulledView.sending.error?.code, pulledView.sending.error?.reason, pulledView.cancelReasons, pulledRow.cancelled_at, pulledRow.cancel_reason, pulledRow.outbox],
+    [false, '', 'received', true, true, 'restored', 'restored', ['العميل سافر'], null, '', null], 'this release\'s pull: active again, cancelling and files back, why kept');
+  check([pulledAudit.length, pulledAudit[0]?.label, pulledAudit[0]?.cancelledInCrm, pulledAudit[0]?.cancelReason, pulledAudit[0]?.cancelDropped, pulledAudit[0]?.status], [1, 'رجّعه مدير الإنتاج بعد الإلغاء', true, 'العميل سافر', false, 'received'], 'audited with the reason it undid');
+  check((await list('sm')).requests.find(item => item.id === pulledEarlier.id).can.approve, true, 'the sales manager may approve it');
+  res = await post('sm', {action: 'approve', id: pulledEarlier.id});
+  check([res.status, !!mock.row(pulledEarlier.id).approvals.sales], [200, true], 'and approves it, in production too');
+  await age(pulledEarlier.id); await list('rep');
+  check((await restoredAudits(pulledEarlier.id)).length, 1, 'a later pull audits nothing more');
+  // never cleared: a cancellation still waiting to be sent (production never saw it), even with a status not cancelled stored after it
+  const waitingCancel = (await (await create('rep', 'east1', {description: 'cancel still waiting'})).json()).request;
+  mock.state.down = true;
+  await post('rep', {action: 'cancel', id: waitingCancel.id, version: waitingCancel.version, reason: 'المصنع مقفول'});
+  mock.state.down = false;
+  await earlierPull(waitingCancel.id, JSON.parse((await stored(waitingCancel.id)).remote));
+  await list('rep');
+  const waitingRow = await stored(waitingCancel.id);
+  check([waitingRow.cancelled_at !== null, waitingRow.cancel_reason, waitingRow.outbox, (await restoredAudits(waitingCancel.id)).length, mock.row(waitingCancel.id).cancelled], [true, 'المصنع مقفول', 'cancel', 0, false], 'a cancellation still waiting: kept');
+  body = await (await post('rep', {action: 'resend', id: waitingCancel.id})).json();
+  check([body.send.kind, body.request.cancelled, body.request.remote.status, body.request.sending.outbox, mock.row(waitingCancel.id).cancelled], ['ok', true, 'cancelled', null, true], 'and still sent: its resend cancels it in production');
+  // never cleared: a request production holds cancelled, whatever status not cancelled was stored after the cancellation
+  const heldCancelled = (await (await create('rep', 'east1', {description: 'production holds it cancelled'})).json()).request;
+  await post('rep', {action: 'cancel', id: heldCancelled.id, version: heldCancelled.version, reason: 'العميل رفض'});
+  const staleStatus = {...JSON.parse((await stored(heldCancelled.id)).remote), status: 'received', waitingStep: 'sales', revision: 0};
+  await earlierPull(heldCancelled.id, staleStatus);
+  await list('rep');
+  const heldRow = await stored(heldCancelled.id), heldView = (await list('rep')).requests.find(item => item.id === heldCancelled.id);
+  check([heldRow.cancelled_at !== null, heldRow.cancel_reason, JSON.parse(heldRow.remote).status, heldView.cancelled, (await restoredAudits(heldCancelled.id)).length, mock.row(heldCancelled.id).cancelled], [true, 'العميل رفض', 'cancelled', true, 0, true], 'production holds it cancelled: still cancelled in the CRM, nothing audited');
 
   // ---- deleted in the products application: read as cancelled there, nothing left to change
   const removed = (await (await create('rep', 'east1', {description: 'removed in production'})).json()).request;

@@ -29,6 +29,7 @@ const sameRegion = '*';
 const regionEnglish: Record<string, string> = { 'الوسطى': 'Central', 'الشرقية': 'Eastern', 'الغربية': 'Western', 'الشمالية': 'Northern', 'الجنوبية': 'Southern' };
 const serverEnglish: Record<string, string> = {
   'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة': 'Customer data changed since the preview. Run a new preview.',
+  'الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة': 'This screen did not show the new customers that would be added. Reload the page and run a new preview.',
   'اخترت نفس العميل لأكثر من سطر؛ العميل له كود ERP واحد. راجع الاختيارات.': 'The same customer is chosen for more than one row; a customer has one ERP code. Review the choices.',
   'لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.': 'Nothing in this file changes a code or adds a customer.',
   'اعرض الملف أولًا قبل تحديث الأكواد': 'Preview the file before updating the codes.',
@@ -251,7 +252,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
     if (!attempt.current) {
       const added = new Set(rows.filter(row => row.add).map(row => row.row));
       const ownRegions = Object.entries(rowRegions).map(([row, value]) => ({ row: Number(row), region: value })).filter(entry => added.has(entry.row)).sort((a, b) => a.row - b.row);
-      attempt.current = JSON.stringify({ action: 'apply', fileName: file.fileName, base64: file.base64, snapshot: preview.snapshot, requestId: crypto.randomUUID(), choices: previewChoices, ...(chosenRegion === null ? {} : { region: chosenRegion }), regions: ownRegions });
+      attempt.current = JSON.stringify({ action: 'apply', fileName: file.fileName, base64: file.base64, snapshot: preview.snapshot, requestId: crypto.randomUUID(), choices: previewChoices, ...(chosenRegion === null ? {} : { region: chosenRegion }), regions: ownRegions, adds });
     }
     let acknowledged = false;
     try {

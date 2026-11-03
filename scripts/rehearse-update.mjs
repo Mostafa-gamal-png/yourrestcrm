@@ -1,6 +1,6 @@
 // Full rehearsal of a hosting update on a throwaway "home" folder, before anything is uploaded.
 //
-//   node scripts/rehearse-update.mjs --old-release <previous dist/standalone> --package <update.zip> [--out report.json] [--keep]
+//   node scripts/rehearse-update.mjs --old-release <previous dist/standalone> --package <update.zip> [--after-package <earlier.zip>] [--out report.json] [--keep]
 //
 // It lays out an installed site exactly like the hosting account (root launcher, private settings.cjs, release/,
 // data folder), runs the PREVIOUS release with synthetic data created through its own API, then follows the
@@ -13,6 +13,12 @@
 // activator leaves the database at the old schema, that --verify refuses before the application has started, that the
 // application's first start applies the migration after a private schema backup, that every pre-existing table is
 // byte-identical afterwards, and that the new feature works for the right roles on the upgraded database.
+//
+// The package deployed before this one (--after-package, by default the one deploy/request.json names) may already have taken
+// today's backup, and this package's activator then has to accept that activation's name (BACKUP_TRANSACTION) or it stops after
+// Stop App with INVALID_DAILY_BACKUP_INDEX. A separate site therefore first runs this package's activator under the earlier
+// package's release name, date and upload folder (so it writes today's daily index exactly as the earlier activator did), and
+// then the real activator, which must reuse that backup.
 //
 // Only temporary folders and loopback sockets are used. No production data, DNS, mailbox or hosting access.
 import assert from 'node:assert/strict';
@@ -44,17 +50,30 @@ const argv = process.argv.slice(2);
 const option = name => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
 const oldRelease = option('--old-release') && path.resolve(option('--old-release'));
 const packageZip = option('--package') && path.resolve(option('--package'));
-if (!oldRelease || !packageZip) { console.error('Usage: node scripts/rehearse-update.mjs --old-release DIR --package ZIP [--out FILE] [--keep]'); process.exit(2); }
+if (!oldRelease || !packageZip) { console.error('Usage: node scripts/rehearse-update.mjs --old-release DIR --package ZIP [--after-package ZIP] [--out FILE] [--keep]'); process.exit(2); }
 for (const required of ['app.cjs', 'server.js', 'operations/config.cjs', 'drizzle']) assert(fs.existsSync(path.join(oldRelease, required)), 'Previous release is incomplete: ' + required);
 
 // The package's own constants, read from its activator before anything is installed: the schema the live database must hold,
 // and the anonymous probes the verification adds for routes this release introduces.
-const listing = execFileSync('python3', ['-c', 'import zipfile,sys;print("\\n".join(i.filename for i in zipfile.ZipFile(sys.argv[1]).infolist() if "/" not in i.filename.rstrip("/")))', packageZip], {encoding: 'utf8'}).split('\n').filter(Boolean);
-const helperName = listing.find(name => name.endsWith('.cjs'));
-assert(helperName, 'the package carries one activator at its top level');
-const helperSource = execFileSync('python3', ['-c', 'import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode())', packageZip, helperName], {encoding: 'utf8'});
-const constant = name => { const found = new RegExp('const ' + name + ' = (.+?);').exec(helperSource); assert(found, 'the activator carries ' + name); return JSON.parse(found[1]); };
+function activatorOf(zip) {
+  const listing = execFileSync('python3', ['-c', 'import zipfile,sys;print("\\n".join(i.filename for i in zipfile.ZipFile(sys.argv[1]).infolist() if "/" not in i.filename.rstrip("/")))', zip], {encoding: 'utf8'}).split('\n').filter(Boolean);
+  const name = listing.find(file => file.endsWith('.cjs'));
+  assert(name, 'the package carries one activator at its top level: ' + path.basename(zip));
+  const source = execFileSync('python3', ['-c', 'import zipfile,sys;sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode())', zip, name], {encoding: 'utf8'});
+  const constant = key => { const found = new RegExp('const ' + key + ' = (.+?);').exec(source); assert(found, 'the activator of ' + path.basename(zip) + ' carries ' + key); return JSON.parse(found[1]); };
+  return {name, source, constant};
+}
+const {name: helperName, source: helperSource, constant} = activatorOf(packageZip);
 const schemaBefore = constant('SCHEMA_BEFORE'), extraRoutes = constant('EXTRA_ROUTES');
+// The package deployed before this one: given, or the one the last deploy request names.
+const afterPackage = (() => {
+  if (option('--after-package')) return path.resolve(option('--after-package'));
+  try {
+    const request = JSON.parse(fs.readFileSync(path.join(root, 'deploy/request.json'), 'utf8'));
+    const named = request.mode === 'deploy' && typeof request.package === 'string' ? path.join(root, request.package) : null;
+    return named && fs.existsSync(named) ? named : null;
+  } catch { return null; }
+})();
 
 const steps = [];
 const note = (name, detail = {}) => { steps.push({step: name, ...detail}); console.error('[ok] ' + name); };
@@ -661,6 +680,43 @@ try {
     note('going back before the first start works: the previous release returns and runs on the untouched database');
     await c.stop();
     c.close();
+  }
+
+  // ── Site D: the second package of the day reuses the backup the earlier package's activator took ───
+  if (!afterPackage) report.sameDayAfter = {skipped: 'no earlier package given and deploy/request.json names none'};
+  else {
+    const earlier = activatorOf(afterPackage), earlierName = earlier.constant('RELEASE_NAME'), earlierDate = earlier.constant('RELEASE_DATE');
+    const activation = 'yourrest-' + earlierName + '-activation-' + earlierDate;
+    if (earlierName === helper.RELEASE_NAME && earlierDate === helper.RELEASE_DATE) report.sameDayAfter = {package: path.basename(afterPackage), activation, skipped: 'same release name and date as this package (always accepted)'};
+    else {
+      const d = await installSite(work, 'home-d', {exactOrigin: true});
+      sites.push(d);
+      // This package's release and pins under the earlier package's identity: the daily index it writes is the one the earlier activator wrote.
+      let earlierStage = earlier.constant('STAGE_DIR');
+      if (earlierStage === stageName) earlierStage += '-earlier';
+      const swap = (source, key, value) => { const pattern = new RegExp('^const ' + key + ' = .+?;', 'm'); assert(pattern.test(source), 'the activator carries ' + key); return source.replace(pattern, 'const ' + key + ' = ' + JSON.stringify(value) + ';'); };
+      const earlierSource = swap(swap(swap(helperSource, 'RELEASE_NAME', earlierName), 'RELEASE_DATE', earlierDate), 'STAGE_DIR', earlierStage);
+      const unpack = folder => { const stage = path.join(d.home, folder); fs.mkdirSync(stage, {mode: 0o700}); execFileSync('python3', ['-c', 'import zipfile,sys;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', packageZip, stage]); return stage; };
+      const stageEarlier = unpack(earlierStage);
+      fs.writeFileSync(path.join(stageEarlier, helperName), earlierSource, {mode: 0o600});
+      const helperEarlier = require(path.join(stageEarlier, helperName)), helperD = require(path.join(unpack(stageName), helperName));
+      assert.equal(helperEarlier.ACTIVATION_FORMAT, activation, 'the earlier activation runs under its own name');
+      await d.start();
+      await d.stop();
+      const morning = await helperEarlier.run(helperEarlier.pathsFor(d.home), 'apply', {log: () => {}});
+      const pathsD = helperD.pathsFor(d.home), dailyFile = path.join(pathsD.dailyRoot, new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date()) + '.json');
+      assert.equal(JSON.parse(fs.readFileSync(dailyFile, 'utf8')).transaction, morning.transaction, "today's daily index names the earlier activation");
+      assert(path.basename(morning.transaction).startsWith(activation + '-'), 'the earlier activation folder carries its name');
+      const dLines = [];
+      let second;
+      try { second = await helperD.run(pathsD, 'apply', {log: line => dLines.push(line)}); }
+      catch (error) { throw Error('this package refuses the backup ' + activation + ' took earlier today (' + (error.code || error.message) + '); add that name to BACKUP_TRANSACTION in portable/activate-ui-refresh-update.cjs and package again'); }
+      assert(dLines.includes('2/4 TODAY\'S VERIFIED FULL BACKUP REUSED. NO NEW FULL COPY.'), 'the second package of the day reuses the earlier backup');
+      assert.deepEqual([second.phase, second.dailyBackup.transaction], ['switched', morning.transaction], 'and switches citing it');
+      report.sameDayAfter = {package: path.basename(afterPackage), activation, reused: true};
+      note('a second package of the same day reuses the backup the earlier package (' + earlierName + ') took', {earlierActivation: path.basename(morning.transaction)});
+      d.close();
+    }
   }
 
   // ── Site B: a damaged package is refused and the live release is untouched ──────────────────
