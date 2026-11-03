@@ -1401,5 +1401,22 @@
   "الطلب ملغى": "The request is cancelled",
   "اختار طريقة الدفع: نقدي أو آجل": "Choose how the customer pays: cash or deferred",
   "مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد": "The production manager restored the request; to cancel it again, write a new reason",
-  "رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.": "The production manager restored it after the cancellation, and the approvals are complete or production has started; it can no longer be cancelled."
+  "رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.": "The production manager restored it after the cancellation, and the approvals are complete or production has started; it can no longer be cancelled.",
+  "اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)": "Type the quotation number or the PO number (at least one)",
+  "رقم عرض السعر أطول من 60 حرف": "The quotation number is longer than 60 characters",
+  "رقم الـ PO أطول من 60 حرف": "The PO number is longer than 60 characters",
+  "رقم عرض السعر فيه رموز غير مسموحة": "The quotation number has characters that are not allowed",
+  "رقم الـ PO فيه رموز غير مسموحة": "The PO number has characters that are not allowed",
+  "تطبيق المنتجات لسه ما اتحدّثش لاستقبال رقم عرض السعر والـ PO؛ حدّث الصفحة وابعت الطلب من غيرهم.": "The products application is not updated yet to take the quotation and PO numbers; refresh the page and send the request without them.",
+  "تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.": "The products application is not updated yet to take quotation and PO files; refresh the page.",
+  "بيانات الطلب يعدّلها مدير الإنتاج فقط؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله. كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO.": "The request's data is edited by the production manager only; the change did not reach production and will not be sent again. Ask the production manager to add the quotation / PO number.",
+  "كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO": "Ask the production manager to add the quotation / PO number",
+  "ناقص عرض السعر / الـ PO، يضيفه مدير الإنتاج": "The quotation / PO is missing; the production manager adds it",
+  "بانتظار تحديث تطبيق المنتجات": "Waiting for the products application update",
+  "الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.": "At most 5 quotation files a request (yours and production's). Delete a file first.",
+  "الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.": "At most 5 PO files a request (yours and production's). Delete a file first.",
+  "الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج)": "At most 5 quotation files a request (yours and production's)",
+  "الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج)": "At most 5 PO files a request (yours and production's)",
+  "ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة": "A quotation or PO file must be a PDF or an image",
+  "نوع الملف غير مقبول": "The kind of file is not accepted"
 }

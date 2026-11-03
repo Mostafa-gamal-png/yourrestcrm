@@ -363,6 +363,50 @@ try {
   ok(true, 'the request\'s sheet says the file reached production');
   await editor.context().close();
 
+  // ---- 2026-11-03 (production's second update): the quotation's and PO's files on the request's sheet, each kind in its own group with
+  // its own picker (a PDF or an image only), attached with the same warning, sent with its category; production's own quotation file in
+  // its group, downloaded through the CRM
+  mock.setQuotePo(true);
+  await stale();
+  const quoteSheet = await open('rep');
+  await goMolds(quoteSheet);
+  const asked = await quoteSheet.evaluate(async body => (await (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json()).request,
+    {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash', quoteNo: 'Q-SHEET'});
+  check([asked.quotePo, JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).quoteNo], [{quoteNo: 'Q-SHEET', poNo: '', missing: false, from: 'production'}, 'Q-SHEET'], 'a pull taught the CRM; a request asked with its quotation number');
+  await quoteSheet.locator('.mold-heading-tools button').first().click();
+  await quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
+  const groupOf = category => sheet(quoteSheet).locator('section.mold-design[data-category="' + category + '"]');
+  await groupOf('po').waitFor();
+  check(await sheet(quoteSheet).locator('section.mold-design h3').allInnerTexts(), ['ملفات التصميم', 'ملفات عرض السعر', 'ملفات الـ PO'], 'three groups on the sheet');
+  check([await groupOf('quote').locator('input[type=file]').getAttribute('accept'), await groupOf('quote').locator('.mold-design-count').innerText()], ['.pdf,.png,.jpg,.jpeg,.webp,.gif', '0/5'], 'the quotation\'s picker: a PDF or an image, 5 places');
+  await groupOf('quote').locator('input[type=file]').setInputFiles({name: 'مسقط.dwg', mimeType: 'application/octet-stream', buffer: drawingDwg});
+  await groupOf('quote').locator('.mold-design-refused').waitFor();
+  check(await groupOf('quote').locator('.mold-design-refused li').innerText(), 'مسقط.dwg: ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'a drawing as the quotation: refused on the device, with why');
+  await groupOf('po').locator('input[type=file]').setInputFiles({name: 'PO-7781.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
+  const poConfirm = groupOf('po').locator('.mold-design-confirm', {hasText: 'PO-7781.pdf'});
+  await poConfirm.waitFor();
+  ok((await poConfirm.innerText()).includes(WARNING), 'the same warning: a file undoes the approvals');
+  await poConfirm.getByRole('button', {name: 'تأكيد الإرفاق'}).click();
+  await fileRow(groupOf('po'), 'PO-7781.pdf').and(quoteSheet.locator('[data-state="sent"]')).waitFor();
+  check([mock.row(asked.id).designFiles.map(file => [file.name, file.category]), JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, await groupOf('po').locator('.mold-design-count').innerText()],
+    [[['PO-7781.pdf', 'po']], 'po', '1/5'], 'the PO file reached production as the PO\'s, in its own group (1 of 5)');
+  await quoteSheet.keyboard.press('Escape');
+  await sheet(quoteSheet).waitFor({state: 'detached'});
+  mock.addProductionFile(asked.id, {name: 'عرض الإنتاج.pdf', bytes: Buffer.from('%PDF-1.4\n% production quotation\n%%EOF\n'), category: 'quote'});
+  await stale();
+  await quoteSheet.locator('.mold-heading-tools button').first().click();
+  await quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
+  const theirs = fileRow(groupOf('quote'), 'عرض الإنتاج.pdf');
+  await theirs.waitFor();
+  check(await theirs.locator('.mold-chip').innerText(), 'من الإنتاج', 'production\'s own quotation file, in the quotation group');
+  const [theirDownload] = await Promise.all([quoteSheet.waitForEvent('download'), theirs.getByRole('link', {name: 'تنزيل عرض الإنتاج.pdf'}).click()]);
+  check([theirDownload.suggestedFilename(), fs.readFileSync(await theirDownload.path()).toString()], ['عرض الإنتاج.pdf', '%PDF-1.4\n% production quotation\n%%EOF\n'], 'downloaded through the CRM by its fileId, with its name');
+  await quoteSheet.waitForFunction(() => { const box = document.querySelector('.mold-sheet')?.getBoundingClientRect(); return !!box && box.left >= -1 && box.right <= innerWidth + 1; });
+  await groupOf('quote').scrollIntoViewIfNeeded();
+  await shot(quoteSheet, 'mold-design-quote-po-groups');
+  await quoteSheet.context().close();
+  mock.setQuotePo(false);
+
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));
   console.log(JSON.stringify({ok: true, checks, screenshots, realChromium: true, productionApplicationReal: false, productionDataUsed: false}));

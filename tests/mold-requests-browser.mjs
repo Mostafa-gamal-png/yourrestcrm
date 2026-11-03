@@ -16,7 +16,10 @@
 // production manager restored after its cancellation: active again with why, a reason used before refused on the device, a new one
 // cancelling it; the restore no longer said once the approvals completed or production cancelled it again, and said without the
 // instruction to cancel to the sales manager; the payment the sales manager approves is production's now; the payment choice at phone
-// width. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
+// width. Since production's second update of 2026-11-03: no number asked before the update is learned; then «رقم عرض السعر» and «رقم الـ
+// PO» (one at least, Arabic digits) with the quotation's and PO's pickers, the request's numbers as production holds them (corrected
+// there), the note when production lacks both, the sales manager's list with the numbers and the quotation's files, in English and at
+// phone width. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
 // no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -472,6 +475,103 @@ try {
   await csm.locator('.mold-page .mold-empty').waitFor();
   check(await csm.locator('button.mold-new').count(), 1, 'customer service has the page and asks too');
   await csm.context().close();
+
+  // ---- 6. 2026-11-03 (production's second update): the quotation and PO numbers. Before the update the form asks nothing new; once the
+  // CRM learns it (a pull), «رقم عرض السعر» and «رقم الـ PO» (one at least, Arabic digits accepted) and their files' pickers (a PDF or an
+  // image); the request shows production's numbers (its production manager's correction included) and the note when production lacks
+  // both; the sales manager's list shows the numbers and the quotation's files; in English; at phone width
+  const quoteRep = await open('rep');
+  await goMolds(quoteRep);
+  await quoteRep.locator('button.mold-new').click();
+  let quoteDialog = quoteRep.locator('.mold-dialog');
+  await quoteDialog.waitFor();
+  check([await quoteDialog.locator('input[name="quoteNo"]').count(), await quoteDialog.locator('.mold-design-picker').count()], [0, 1], 'the older products application: no number field, the design files\' picker only');
+  await quoteRep.keyboard.press('Escape');
+  await quoteDialog.waitFor({state: 'detached'});
+  mock.setQuotePo(true);
+  await stale();
+  await quoteRep.locator('.mold-heading-tools button').first().click();
+  await quoteRep.waitForFunction(() => !document.querySelector('.mold-heading-tools button .spin'));
+  await quoteRep.locator('button.mold-new').click();
+  quoteDialog = quoteRep.locator('.mold-dialog');
+  const numbers = quoteDialog.locator('.mold-quote-po-fields');
+  await numbers.waitFor();
+  check([await numbers.locator('legend').innerText(), await numbers.locator('label.mold-field').allInnerTexts()], ['عرض السعر والـ PO (واحد على الأقل)', ['رقم عرض السعر', 'رقم الـ PO']], 'learned from a pull: the two numbers, one at least');
+  const pickers = await quoteDialog.locator('.mold-design-picker').evaluateAll(list => list.map(picker => [picker.getAttribute('data-category'), picker.querySelector('legend').textContent, picker.querySelector('input[type=file]').getAttribute('accept')]));
+  check([pickers.map(([category, legend]) => [category, legend]), pickers[0][2].includes('.dwg'), pickers[1][2], pickers[2][2]],
+    [[['design', 'ملفات التصميم (اختياري)'], ['quote', 'ملفات عرض السعر (اختياري)'], ['po', 'ملفات الـ PO (اختياري)']], true, '.pdf,.png,.jpg,.jpeg,.webp,.gif', '.pdf,.png,.jpg,.jpeg,.webp,.gif'], 'and the quotation\'s and PO\'s pickers, a PDF or an image only');
+  await fill(quoteDialog, 'مصنع east2');
+  const unsent = mock.state.calls.length;
+  await quoteDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  check([await numbers.locator('.field-error').innerText(), await numbers.getAttribute('aria-invalid'), mock.state.calls.length], ['اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)', 'true', unsent], 'neither: refused on the device, nothing sent');
+  await quoteDialog.locator('input[name="quoteNo"]').fill('Q-٢٠٢٦-٠١٥٣');
+  check(await numbers.locator('.field-error').count(), 0, 'typing one clears it');
+  await quoteDialog.locator('.mold-design-picker[data-category="quote"] input[type=file]').setInputFiles([{name: 'رسم.dwg', mimeType: 'application/octet-stream', buffer: Buffer.from('AC1027')}, {name: 'عرض سعر Q-2026-0153.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic quotation')}]);
+  const quotePicker = quoteDialog.locator('.mold-design-picker[data-category="quote"]');
+  await quotePicker.locator('.mold-design-reason').waitFor();
+  check([await quotePicker.locator('.mold-design-reason').innerText(), await quotePicker.locator('.mold-design-file[data-state="ready"]').count()], ['ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 1], 'a drawing as the quotation: refused on the device; the PDF will go');
+  await shot(quoteRep, 'mold-form-quote-po');
+  await quoteDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  await sheet(quoteRep).waitFor();
+  const quoteSent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests' && call.signed).body), quotedId = quoteSent.crmRequestId;
+  check([quoteSent.quoteNo, Object.hasOwn(quoteSent, 'poNo')], ['Q-2026-0153', false], 'sent with the quotation number in ASCII digits, no PO number');
+  const quoteFacts = sheet(quoteRep).locator('.mold-facts').first();
+  await quoteFacts.locator('dd', {hasText: 'Q-2026-0153'}).waitFor();
+  ok(/رقم الـ PO\s*—/.test(await quoteFacts.innerText()), 'the PO number not given: —');
+  const quoteGroup = sheet(quoteRep).locator('section.mold-design[data-category="quote"]');
+  await quoteGroup.locator('.mold-design-file', {hasText: 'عرض سعر Q-2026-0153.pdf'}).locator('.mold-design-state', {hasText: 'وصل للإنتاج'}).waitFor();
+  check([await sheet(quoteRep).locator('section.mold-design').evaluateAll(sections => sections.map(section => section.getAttribute('data-category'))), await quoteGroup.locator('.mold-design-count').innerText()], [['design', 'quote', 'po'], '1/5'], 'the request\'s files in three groups; the quotation file reached production in its own (1 of 5)');
+  check(mock.row(quotedId).designFiles.map(file => file.category), ['quote'], 'production holds it as the quotation\'s');
+  await quoteRep.waitForFunction(() => { const box = document.querySelector('.mold-sheet')?.getBoundingClientRect(); return !!box && box.left >= -1 && box.right <= innerWidth + 1; });
+  await quoteGroup.scrollIntoViewIfNeeded();
+  await shot(quoteRep, 'mold-sheet-quote-po');
+  await quoteRep.keyboard.press('Escape');
+  await sheet(quoteRep).waitFor({state: 'detached'});
+  // The production manager corrects and adds in the products application: the request shows production's numbers
+  mock.setNumbers(quotedId, {quoteNo: 'Q-2026-0153-B', poNo: 'PO-٧٧٨١'});
+  await stale();
+  await quoteRep.locator('.mold-heading-tools button').first().click();
+  const quoteCard = quoteRep.locator('.mold-card', {hasText: 'Q-2026-0153-B'});
+  await quoteCard.waitFor();
+  check(await quoteCard.locator('.mold-quote-po').allInnerTexts(), ['رقم عرض السعر: Q-2026-0153-B', 'رقم الـ PO: PO-7781'], 'the card shows production\'s numbers now');
+  // Production lacks both (its production manager cleared them): the note, on the card and the request
+  mock.setNumbers(quotedId, {quoteNo: '', poNo: ''});
+  await stale();
+  await quoteRep.locator('.mold-heading-tools button').first().click();
+  const missingCard = quoteRep.locator('.mold-card', {has: quoteRep.locator('.mold-quote-po-missing')});
+  await missingCard.waitFor();
+  check(await missingCard.locator('.mold-quote-po-missing').innerText(), 'ناقص عرض السعر / الـ PO، يضيفه مدير الإنتاج', 'the card says production lacks both');
+  await missingCard.click();
+  await sheet(quoteRep).locator('.mold-quote-po-missing').waitFor();
+  await quoteRep.context().close();
+  mock.setNumbers(quotedId, {quoteNo: 'Q-2026-0153-B'});
+  // The sales manager's list: the numbers as production holds them, and the quotation's files with their links
+  const quoteManager = await open('sm');
+  await goMolds(quoteManager);
+  const quotePending = quoteManager.locator('.mold-pending', {hasText: 'Q-2026-0153-B'});
+  await quotePending.waitFor();
+  check([await quotePending.locator('.mold-quote-po').allInnerTexts(), await quotePending.locator('.mold-quote-po-missing').count()], [['رقم عرض السعر: Q-2026-0153-B'], 0], 'waiting for the sales manager: production\'s number, nothing missing');
+  const quoteFiles = quotePending.locator('.mold-design-compact[data-category="quote"]');
+  check([await quoteFiles.locator('.mold-design-title').innerText(), await quoteFiles.locator('a', {hasText: 'تنزيل'}).count()], ['ملفات عرض السعر (1)', 1], 'the quotation\'s files, each to download');
+  const [download] = await Promise.all([quoteManager.waitForEvent('download'), quoteFiles.locator('a', {hasText: 'تنزيل'}).click()]);
+  check(Buffer.compare(fs.readFileSync(await download.path()), Buffer.from('%PDF-1.7 synthetic quotation')), 0, 'downloaded through the CRM');
+  await shot(quoteManager, 'mold-pending-quote-po');
+  await quoteManager.context().close();
+  // In English, and at phone width
+  const englishPhone = await open('rep', {language: 'en', viewport: PHONE});
+  await englishPhone.locator('button.mobile-profile-trigger').click();
+  await englishPhone.locator('.mobile-overflow-pages button[data-page="mold-requests"]').click();
+  await englishPhone.locator('.mobile-navigation-sheet').waitFor({state: 'detached'});
+  await englishPhone.locator('button.mold-new').click();
+  const englishNumbers = englishPhone.locator('.mold-dialog .mold-quote-po-fields');
+  await englishNumbers.waitFor();
+  await englishPhone.locator('.mold-dialog').getByRole('button', {name: 'Save and send to production'}).click();
+  check([await englishNumbers.locator('legend').innerText(), await englishNumbers.locator('label.mold-field').allInnerTexts(), await englishNumbers.locator('.field-error').first().innerText()],
+    ['Quotation and PO (at least one)', ['Quotation no.', 'PO no.'], 'Type the quotation number or the PO number (at least one)'], 'in English');
+  await englishNumbers.scrollIntoViewIfNeeded();
+  check(await englishNumbers.evaluate(element => { const box = element.getBoundingClientRect(); return box.left >= -1 && box.right <= innerWidth + 1; }), true, 'the numbers fit the phone');
+  await noOverflow(englishPhone, 'phone form with the numbers'); await shot(englishPhone, 'mold-form-quote-po-phone');
+  await englishPhone.context().close();
 
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));

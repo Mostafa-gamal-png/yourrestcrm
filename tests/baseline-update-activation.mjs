@@ -263,6 +263,9 @@ try {
     const devices = named('devices', 'update-devices', '20261101'), tablet = named('tablet', 'update-tablet', '20261101'), molds = named('molds', 'update-molds', '20261101'), approvals = named('approvals', 'update-mold-approvals', '20261101'), moldCustomers = named('moldcustomers', 'update-mold-customers', '20261101');
     const moldFixes = named('moldfixes', 'update-mold-fixes', '20261102'), erpCustomers = named('erpcustomers', 'update-erp-customers', '20261102'), erpCode = named('erpcode', 'update-erp-code', '20261102'), designFiles = named('designfiles', 'update-design-files', '20261102'), android1012 = named('android1012', 'update-android-1012', '20261102');
     const fallback = named('fallback', 'update-fallback', '20261103'), erpMold = named('erpmold', 'update-erp-mold', '20261103');
+    // The third package of 2026-11-03 (the quotation and PO, update-mold-quote-po) comes after the deployed update-erp-mold, whose
+    // activator found the morning's backup and reused it: the day's index still names that transaction, which this one must accept.
+    const quotePo = named('quotepo', 'update-mold-quote-po', '20261103');
     const sameDay = (day, hour) => new Date(day + 'T' + hour + ':00:00Z');
     for (const [label, first, second, day] of [
       ['the devices release', devices, tablet, '2026-11-01'],
@@ -275,7 +278,9 @@ try {
       ['the ERP-code release', erpCode, designFiles, '2026-11-02'],
       ['the design-files release', designFiles, android1012, '2026-11-02'],
       // The live case: the morning's browser-install hotfix took 2026-11-03's backup; the ERP import + mold package comes second.
-      ['the morning\'s update-fallback release', fallback, erpMold, '2026-11-03']
+      ['the morning\'s update-fallback release', fallback, erpMold, '2026-11-03'],
+      // The day's index names update-erp-mold's own transaction when it took the backup itself (no earlier package that day).
+      ['the update-erp-mold release', erpMold, quotePo, '2026-11-03']
     ]) {
       const dir = home('same-day-' + second.helper.RELEASE_NAME + '-after-' + first.helper.RELEASE_NAME + '-' + day, 16, first, second), pe = first.helper.pathsFor(dir), pn = second.helper.pathsFor(dir), logs = [], collect = text => logs.push(text);
       const took = await first.helper.run(pe, 'apply', {log: quiet, stopped: paths => first.helper.ensureStopped(paths, emptyProc), now: () => sameDay(day, '05')});
@@ -287,7 +292,7 @@ try {
       eq([next.phase, next.dailyBackup.transaction], ['switched', took.transaction], 'and switches citing it');
     }
     // The shipped list itself: every activation name delivered on 2026-11-01 to 2026-11-03 is accepted by the next package.
-    const shipped = ['update-devices-activation-20261101', 'update-tablet-activation-20261101', 'update-molds-activation-20261101', 'update-mold-approvals-activation-20261101', 'update-mold-customers-activation-20261101', 'update-mold-fixes-activation-20261102', 'update-erp-customers-activation-20261102', 'update-erp-code-activation-20261102', 'update-design-files-activation-20261102', 'update-android-1012-activation-20261102', 'update-fallback-activation-20261103'];
+    const shipped = ['update-devices-activation-20261101', 'update-tablet-activation-20261101', 'update-molds-activation-20261101', 'update-mold-approvals-activation-20261101', 'update-mold-customers-activation-20261101', 'update-mold-fixes-activation-20261102', 'update-erp-customers-activation-20261102', 'update-erp-code-activation-20261102', 'update-design-files-activation-20261102', 'update-android-1012-activation-20261102', 'update-fallback-activation-20261103', 'update-erp-mold-activation-20261103'];
     const source = read(path.join(root, 'portable/activate-ui-refresh-update.cjs'));
     eq(shipped.filter(name => !source.includes('|' + name + '|')), [], 'the activator lists every activation name delivered from 2026-11-01 to 2026-11-03');
   }

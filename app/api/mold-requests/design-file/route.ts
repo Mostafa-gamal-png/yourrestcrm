@@ -6,14 +6,16 @@
 //  with design-file.
 // ?order=<orderNo>&file=<fileId>: the sales manager, for a request in their pending list as production answers it now (the same regions
 //  as the list; a list kept from before a failed call is not enough), registered in production or in the CRM, and a file that item lists.
+// A file is any of the request's: a design file, or (since production's update of 2026-11-03) the quotation's or the PO's, named by its
+//  fileId whichever list it is in.
 // &inline=1 opens a PDF or an image in the browser; anything else always downloads, as plain bytes (an SVG or a drawing is never rendered).
 //  Opened as a page of its own, a failure is said in words on that page rather than as JSON.
 import {env} from 'cloudflare:workers';
 import {context,CRMError,replyError} from '@/lib/crm-server';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {moldContentDisposition,moldDesignContentType} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,canReadMoldRequest,canUseMoldRequests,moldDesignFilesView,moldErrorText,type MoldDesignFile,type MoldDesignFileRow} from '@/lib/mold-requests';
-import {loadMoldDesignFiles,loadMoldRequest,moldPendingFor,productsLink} from '@/lib/mold-requests-server';
+import {canApproveMoldRequests,canReadMoldRequest,canUseMoldRequests,moldDesignFilesView,moldErrorText,moldListedFiles,type MoldDesignFile,type MoldDesignFileRow} from '@/lib/mold-requests';
+import {loadMoldDesignFiles,loadMoldRequest,moldPendingFor,moldQuotePoSupported,productsLink} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 // Each file is held whole in memory (up to 25 MiB: production's answer, or the CRM's copy as the object store reads it) until the
@@ -65,11 +67,11 @@ async function answer(req:Request):Promise<Response>{try{
  if(id!==null){
   const row=await loadMoldRequest(c.db,id);
   if(!row||!canReadMoldRequest(row,c))throw new CRMError('الملف غير متاح',404);
-  const files=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),shown=moldDesignFilesView(row,files,c.me,link.ok).find(file=>file.key===key||file.fileId===key);
+  const files=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),shown=moldDesignFilesView(row,files,c.me,link.ok,await moldQuotePoSupported(c.db)).find(file=>file.key===key||file.fileId===key);
   // A file its requester deleted is not served while the deletion is still on its way to production (the screen offers no link to it).
   if(!shown||shown.state==='deleting')throw new CRMError('الملف غير متاح',404);
   own=shown.source==='crm'?files.find(file=>file.id===shown.crmFileId):undefined;
-  entry=shown.fileId===null?undefined:(row.remote?.designFiles||[]).find(file=>String(file.fileId)===shown.fileId);
+  entry=shown.fileId===null?undefined:moldListedFiles(row.remote).find(file=>String(file.fileId)===shown.fileId);
   if(!entry&&!(own?.objectKey&&env.FILES))throw new CRMError(own?'نسخة الملف في الـCRM غير موجودة ولم يصل للإنتاج بعد':'الملف غير متاح',404);
  }else{
   if(!canApproveMoldRequests(c.me))throw new CRMError('ملفات الطلبات بانتظار الاعتماد لمدير المبيعات',403);
@@ -82,7 +84,7 @@ async function answer(req:Request):Promise<Response>{try{
   if(pending?.error)throw new CRMError(moldErrorText(pending.error.code,ar=>ar)+'؛ تعذّر التأكد من أن الطلب ما زال بانتظار اعتمادك. حاول مرة أخرى.',502);
   const item=pending?.items.find(waiting=>waiting.orderNo===orderNo);
   if(!item)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',404);
-  entry=item.designFiles.find(file=>String(file.fileId)===key);
+  entry=[...item.designFiles,...item.quoteFiles,...item.poFiles].find(file=>String(file.fileId)===key);
   if(!entry)throw new CRMError('الملف غير متاح',404);
  }
  if(activeDownloads>=maxConcurrentDownloads)return busy();

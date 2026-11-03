@@ -1,5 +1,5 @@
 // Deleting a design file the CRM attached (the contract's addition «ملفات التصميم», 2026-11-02): the requester only, and only the CRM's
-// own files (production manages the ones it attached). A file production never held (never tried, or refused for good) is removed in the
+// own files (production manages the ones it attached). The quotation's and PO's files (2026-11-03) are deleted the same way. A file production never held (never tried, or refused for good) is removed in the
 // CRM alone, at any time. One production may hold goes through design-file-delete while the request is editable, which undoes the
 // approvals given (the screen warns first); a send still in flight is let finish first, so the deletion never overtakes the file.
 // A receipt makes a repeated tap harmless; the audit entry names the file, never its contents.
@@ -7,7 +7,7 @@ import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
 import {canReadMoldRequest,canUseMoldRequests,moldDesignMayBeRemote,moldEditable,moldRequestView} from '@/lib/mold-requests';
-import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,moldViewReasons,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
+import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 const schema=z.object({requestId:z.string().uuid(),id:z.string().regex(/^mr-[0-9a-f-]{36}$/),fileId:z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)}).strict();
@@ -22,7 +22,7 @@ export async function POST(req:Request){try{
  const answer=async(status=200,send:DesignOutcome|null=null,error='')=>{
   const row=await loadMoldRequest(c.db,input.id);
   if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
-  return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id)),send:send?{kind:send.kind,code:send.code,...(send.reason?{reason:send.reason}:{})}:null,...(error?{error}:{})},{status,headers:{'Cache-Control':'no-store'}});
+  return Response.json({ok:status<400,request:moldRequestView(row,c.me,c.members,link.ok,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),(await moldViewReasons(c.db,[row],c.me)).get(row.id),await moldQuotePoSupported(c.db)),send:send?{kind:send.kind,code:send.code,...(send.reason?{reason:send.reason}:{})}:null,...(error?{error}:{})},{status,headers:{'Cache-Control':'no-store'}});
  };
  const replay=async()=>{
   const saved=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receiptId).first<{detail:string}>();

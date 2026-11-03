@@ -2,7 +2,7 @@
 // docs/MOLD-REQUESTS-CONTRACT-ADDENDUM-AR.md, with the design files of 2026-11-02): the values and limits both sides accept, the request
 // body the CRM sends, the design files it attaches, the status object it receives, how an answer is read and when a failed send is
 // tried again. Pure functions, no I/O and no secret: the server, the browser form and the historical import tool (release/operations)
-// share them.
+// share them. Since production's second update of 2026-11-03: the quotation and PO numbers (quoteNo, poNo) and their files (category).
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -18,6 +18,20 @@ export const MOLD_HALF_BLOCKS = {none: 'بدون بلوكة نص', one: 'بلو�
  *  has none (pending lists it as null). */
 export const MOLD_PAYMENTS = {cash: 'نقدي', deferred: 'آجل'};
 export const MOLD_PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل';
+/** The quotation and PO numbers (yourrest-products 2026-11-03, its second update of the day): `quoteNo` and `poNo` in the requests body
+ *  after payment, each a text of up to 60 characters as written on the document (Arabic-Indic digits as ASCII digits, the ends trimmed),
+ *  sent only when given. The CRM asks the representative for at least one of them; production takes a request without either (one sent
+ *  before) and marks it `quoteOrPoMissing` until its production manager adds one. Neither is sent before production's update is live:
+ *  the old application ignores them silently, and a resend cannot add them later (other data: 409 production_only). The update is known
+ *  by the key `quoteOrPoMissing` in a status object (moldQuotePoAnswered). */
+export const MOLD_QUOTE_PO_MAX = 60;
+export const MOLD_QUOTE_PO_FIELDS = ['quoteNo', 'poNo'];
+export const MOLD_QUOTE_PO_LABELS = {quoteNo: 'رقم عرض السعر', poNo: 'رقم الـ PO'};
+export const MOLD_QUOTE_PO_REQUIRED = 'اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)';
+/** What a request's files are (the same design-files route, `category`): design files (the default, sent without category, exactly as
+ *  before), the quotation's and the PO's (a PDF or an image only), each kind within its own limit. */
+export const MOLD_FILE_CATEGORIES = ['design', 'quote', 'po'];
+export const MOLD_CATEGORY_MAX_FILES = Object.freeze({design: 10, quote: 5, po: 5});
 /** Where a request waits now (the contract's waitingStep, 2026-11-01): the three approvals in order (sales manager, production, finance:
  *  the third, keyed `admin`, is «اعتماد المالية» since yourrest-products 2026-11-03, formerly the system administrator's), then
  *  manufacturing, delivery, done or cancelled. */
@@ -123,6 +137,38 @@ export function moldPayment(value) {
   return value === 'cash' || value === 'deferred' ? value : null;
 }
 
+const ARABIC_DIGITS = /[٠-٩]/g, PERSIAN_DIGITS = /[۰-۹]/g;
+/** A quotation or PO number as production stores it: Arabic-Indic and Persian digits as ASCII digits, the ends trimmed; '' for none (no
+ *  value, or only spaces). undefined for what production would refuse as a text: not a string, or a control character inside. */
+export function moldQuotePoNumber(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'string') return undefined;
+  const text = value.replace(ARABIC_DIGITS, digit => String(digit.charCodeAt(0) - 0x0660)).replace(PERSIAN_DIGITS, digit => String(digit.charCodeAt(0) - 0x06F0)).trim();
+  return /[\u0000-\u001F\u007F]/.test(text) ? undefined : text;
+}
+/**
+ * The quotation and PO numbers a representative typed, normalized (moldQuotePoNumber), each up to 60 characters after normalizing.
+ * required: at least one of them (a new request, or an edit before the first send, once production's update is live). Returns
+ * {quoteNo, poNo, errors}: '' for one not given; errors as field -> Arabic message (quotePo when neither was given).
+ * @param {unknown} input
+ * @param {{required?: boolean}} [options]
+ * @returns {{quoteNo: string, poNo: string, errors: Record<string, string>}}
+ */
+export function validateMoldQuotePo(input, {required = false} = {}) {
+  const source = input && typeof input === 'object' ? input : {}, errors = {}, out = {quoteNo: '', poNo: ''};
+  for (const field of MOLD_QUOTE_PO_FIELDS) {
+    const value = moldQuotePoNumber(source[field]), label = MOLD_QUOTE_PO_LABELS[field];
+    if (value === undefined) errors[field] = label + ' فيه رموز غير مسموحة';
+    else if (length(value) > MOLD_QUOTE_PO_MAX) errors[field] = label + ' أطول من ' + MOLD_QUOTE_PO_MAX + ' حرف';
+    else out[field] = value;
+  }
+  if (required && !errors.quoteNo && !errors.poNo && !out.quoteNo && !out.poNo) errors.quotePo = MOLD_QUOTE_PO_REQUIRED;
+  return {...out, errors};
+}
+/** Whether a status object (or a pending item), as moldStatusObject or moldPendingItem read it, comes from production's updated
+ *  application: it carries `quoteOrPoMissing` (whatever its value). The CRM sends no number, category or quotation/PO file before. */
+export const moldQuotePoAnswered = value => !!value && typeof value === 'object' && typeof value.quoteOrPoMissing === 'boolean';
+
 /** A cancellation's reason as it is compared: every run of white space (a new line too) as one space, the ends trimmed; '' for none. */
 export const moldCancelReasonKey = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 /** Whether a reason was used already for this request (its previous cancellations, which the production manager undid): production
@@ -143,10 +189,13 @@ export function riyadhIso(value) {
  * The body of the `requests` route (§2), keys in a fixed order so a retry sends the very same bytes. Optional texts are left out
  * when empty; `customer.crmNumber` is always there (the addendum). `payment` (2026-11-03) follows specs only when the request carries
  * one: a request asked for before has none and is sent again exactly as it was first sent (production compares a resend with that
- * original, and a field added to it would be other data: 409 production_only). Throws when a value would be refused by production.
- * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null}} request
+ * original, and a field added to it would be other data: 409 production_only). The quotation and PO numbers (the second update of
+ * 2026-11-03) follow payment the same way, each only when the request carries it: a request stored without them is sent byte for byte as
+ * before. They come from the request's own data, never from a status production returned. Throws when a value would be refused by
+ * production.
+ * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, quoteNo?: string|null, poNo?: string|null}} request
  */
-export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment}) {
+export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, quoteNo, poNo}) {
   if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
   if (!isWhole(customer?.crmNumber) || customer.crmNumber < 1 || customer.crmNumber > 2147483647) throw new Error('customer.crmNumber');
   const checked = validateMoldSpecs(specs);
@@ -173,6 +222,11 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
   if (s.designUrl) body.specs.designUrl = s.designUrl;
   if (s.notes) body.specs.notes = s.notes;
   if (payment !== undefined && payment !== null) { if (!moldPayment(payment)) throw new Error('payment'); body.payment = payment; }
+  for (const [key, value] of [['quoteNo', quoteNo], ['poNo', poNo]]) {
+    const clean = moldQuotePoNumber(value);
+    if (clean === undefined || length(clean) > MOLD_QUOTE_PO_MAX) throw new Error(key);
+    if (clean) body[key] = clean;
+  }
   return body;
 }
 
@@ -254,14 +308,18 @@ const latin1 = bytes => String.fromCharCode(...bytes);
  * (%PDF-1.4, /%PDF-\d\.\d/) within its first 1024 bytes, whatever comes before it there (production's PR #27), an image is a PNG, JPEG,
  * GIF or WEBP (whatever its extension says among those: production stores and serves it as what it really is) whose header declares at
  * most 80 000 000 pixels. A refusal names the contract's field and, for the bytes, the reason production gives (MOLD_DESIGN_REASONS, or
- * too_large, which production answers with 413).
+ * too_large, which production answers with 413). A quotation's or PO's file (category quote or po, the second update of 2026-11-03) is a
+ * PDF or an image only: any other allowed extension is refused for its name with production's reason not_document.
  * @param {unknown} name
  * @param {Uint8Array} bytes
- * @returns {{ok: true, name: string, extension: string, kind: 'pdf'|'image'|'other', contentType: string, width: number|null, height: number|null} | {ok: false, field: 'name'|'file', reason: string}}
+ * @param {string} [category] design (the default), quote or po
+ * @returns {{ok: true, name: string, extension: string, kind: 'pdf'|'image'|'other', contentType: string, width: number|null, height: number|null} | {ok: false, field: 'name'|'file'|'category', reason: string}}
  */
-export function moldDesignFileCheck(name, bytes) {
+export function moldDesignFileCheck(name, bytes, category = 'design') {
+  if (!MOLD_FILE_CATEGORIES.includes(category)) return {ok: false, field: 'category', reason: 'category'};
   const named = moldDesignName(name);
   if (!named) return {ok: false, field: 'name', reason: 'name'};
+  if (category !== 'design' && named.kind === 'other') return {ok: false, field: 'name', reason: 'not_document'};
   if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, field: 'file', reason: 'empty'};
   if (bytes.length > MOLD_DESIGN_MAX_BYTES) return {ok: false, field: 'file', reason: 'too_large'};
   if (named.kind === 'pdf') return PDF_MARK.test(latin1(bytes.subarray(0, PDF_MARK_WITHIN))) ? {ok: true, ...named, contentType: 'application/pdf', width: null, height: null} : {ok: false, field: 'file', reason: 'not_pdf'};
@@ -294,17 +352,19 @@ export function moldContentDisposition(name, inline = false) {
 
 /**
  * The body of design-files: one JSON line {crmRequestId, crmFileId, name}, a newline, then the file's bytes as they are. The client signs
- * exactly these bytes. Throws on a value production would refuse.
- * @param {{crmRequestId: string, crmFileId: string, name: string}} meta
+ * exactly these bytes. A quotation's or PO's file adds "category" ("quote" or "po") after the name; a design file is sent without it,
+ * exactly as before the second update of 2026-11-03. Throws on a value production would refuse.
+ * @param {{crmRequestId: string, crmFileId: string, name: string, category?: string|null}} meta
  * @param {Uint8Array} bytes
  * @returns {Uint8Array}
  */
-export function moldDesignFileBody({crmRequestId, crmFileId, name}, bytes) {
+export function moldDesignFileBody({crmRequestId, crmFileId, name, category = 'design'}, bytes) {
   if (!MOLD_ID.test(crmRequestId || '')) throw new Error('crmRequestId');
   if (!MOLD_ID.test(crmFileId || '')) throw new Error('crmFileId');
   if (moldDesignName(name)?.name !== name) throw new Error('name');
+  if (!MOLD_FILE_CATEGORIES.includes(category ?? 'design')) throw new Error('category');
   if (!(bytes instanceof Uint8Array)) throw new Error('file');
-  const line = new TextEncoder().encode(JSON.stringify({crmRequestId, crmFileId, name}) + '\n');
+  const line = new TextEncoder().encode(JSON.stringify(category && category !== 'design' ? {crmRequestId, crmFileId, name, category} : {crmRequestId, crmFileId, name}) + '\n');
   if (line.length > MOLD_DESIGN_LINE_LIMIT) throw new Error('name');
   const body = new Uint8Array(line.length + bytes.length);
   body.set(line); body.set(bytes, line.length);
@@ -314,24 +374,28 @@ export function moldDesignFileBody({crmRequestId, crmFileId, name}, bytes) {
 /**
  * One entry of designFiles (in the status object and in pending items), reduced to the contract's fields; null when it is not one.
  * fileId is production's (a positive whole number or an id like crmRequestId) and is sent back as it came; crmFileId is the CRM's for a
- * file the CRM sent (source crm), null for one production attached. A kind the contract does not list is shown as other.
+ * file the CRM sent (source crm), null for one production attached. A kind the contract does not list is shown as other. category: the
+ * list it came in (designFiles, quoteFiles or poFiles: design, quote or po), whatever the entry itself says.
  * @param {any} value
- * @returns {{fileId: string|number, crmFileId: string|null, name: string, kind: 'pdf'|'image'|'other', size: number|null, source: 'crm'|'production', uploadedAt: string|null} | null}
+ * @param {'design'|'quote'|'po'} [category]
+ * @returns {{fileId: string|number, crmFileId: string|null, name: string, kind: 'pdf'|'image'|'other', size: number|null, source: 'crm'|'production', uploadedAt: string|null, category: 'design'|'quote'|'po'} | null}
  */
-export function moldDesignFileEntry(value) {
+export function moldDesignFileEntry(value, category = 'design') {
   if (!value || typeof value !== 'object' || Array.isArray(value) || !MOLD_DESIGN_SOURCES.includes(value.source)) return null;
   const fileId = isWhole(value.fileId) && value.fileId > 0 ? value.fileId : typeof value.fileId === 'string' && MOLD_ID.test(value.fileId) ? value.fileId : null;
   const crmFileId = value.source === 'crm' && typeof value.crmFileId === 'string' && MOLD_ID.test(value.crmFileId) ? value.crmFileId : null;
   const name = moldDesignDisplayName(value.name);
   if (fileId === null || !name || value.source === 'crm' && !crmFileId) return null;
-  return {fileId, crmFileId, name, kind: MOLD_DESIGN_KINDS.includes(value.kind) ? value.kind : 'other', size: isWhole(value.size) && value.size >= 0 ? value.size : null, source: value.source, uploadedAt: dateOrNull(value.uploadedAt)};
+  return {fileId, crmFileId, name, kind: MOLD_DESIGN_KINDS.includes(value.kind) ? value.kind : 'other', size: isWhole(value.size) && value.size >= 0 ? value.size : null, source: value.source, uploadedAt: dateOrNull(value.uploadedAt),
+    category: MOLD_FILE_CATEGORIES.includes(category) ? category : 'design'};
 }
-/** designFiles as received: the valid entries, each fileId once, up to 50; null when production sent none (an older application). */
-function designFilesOf(value) {
+/** designFiles (or quoteFiles, poFiles) as received: the valid entries, each fileId once, up to 50; null when production sent none (an
+ *  older application). */
+function designFilesOf(value, category = 'design') {
   if (!Array.isArray(value)) return null;
   const seen = new Set(), out = [];
   for (const item of value) {
-    const entry = moldDesignFileEntry(item);
+    const entry = moldDesignFileEntry(item, category);
     if (!entry || seen.has(String(entry.fileId)) || out.length >= 50) continue;
     seen.add(String(entry.fileId)); out.push(entry);
   }
@@ -351,9 +415,21 @@ function approvalsOf(value) {
   }
   return out;
 }
+/** A number production listed (quoteNo, poNo): its text as shown, without control characters, up to 60 characters; '' for none. */
+const numberOf = value => typeof value === 'string' ? [...value.replace(/[\u0000-\u001F\u007F-\u009F‪-‮⁦-⁩]/g, '').trim()].slice(0, MOLD_QUOTE_PO_MAX).join('') : '';
+/** The quotation and PO of a status object or a pending item, from production's updated application only (the key quoteOrPoMissing,
+ *  whatever its value): the numbers as production holds them now (the production manager's additions and corrections included), whether
+ *  one is still missing, and their files (each with its category). Nothing from an older application.
+ * @param {any} value
+ * @returns {{quoteNo?: string, poNo?: string, quoteOrPoMissing?: boolean, quoteFiles?: NonNullable<ReturnType<typeof moldDesignFileEntry>>[], poFiles?: NonNullable<ReturnType<typeof moldDesignFileEntry>>[]}} */
+function quotePoOf(value) {
+  if (!hasOwn(value, 'quoteOrPoMissing')) return {};
+  return {quoteNo: numberOf(value.quoteNo), poNo: numberOf(value.poNo), quoteOrPoMissing: value.quoteOrPoMissing === true, quoteFiles: designFilesOf(value.quoteFiles, 'quote') || [], poFiles: designFilesOf(value.poFiles, 'po') || []};
+}
 /** A status object (§3) as received, reduced to the fields the contract names; null when it is not one. manual: a request registered
  * in the products application itself (its approval answer), which has no crmRequestId. designFiles: the request's design files, the
- * CRM's and production's (null from an application older than the addition of 2026-11-02).
+ * CRM's and production's (null from an application older than the addition of 2026-11-02). From production's update of 2026-11-03 (the
+ * key quoteOrPoMissing): quoteNo, poNo, quoteOrPoMissing, quoteFiles and poFiles too (quotePoOf); designFiles then lists design files only.
  * @param {any} value
  * @param {{manual?: boolean}} [options] */
 export function moldStatusObject(value, {manual = false} = {}) {
@@ -369,6 +445,7 @@ export function moldStatusObject(value, {manual = false} = {}) {
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
     waitingStep: MOLD_WAITING_STEPS.includes(value.waitingStep) ? value.waitingStep : null, waitingSince: dateOrNull(value.waitingSince), approvals: approvalsOf(value.approvals),
     designFiles: designFilesOf(value.designFiles),
+    ...quotePoOf(value),
   };
 }
 
@@ -411,7 +488,8 @@ const wholeOrNull = value => isWhole(value) ? value : null;
 /**
  * One request waiting for the sales manager, as the `pending` route lists it (from the CRM or registered in the products application),
  * reduced to the fields the contract names, with its design files (none when production sent none) and how the customer pays (cash,
- * deferred, or null for a request asked for before 2026-11-03); null when it is not one. No production data travels in it.
+ * deferred, or null for a request asked for before 2026-11-03); null when it is not one. No production data travels in it. From
+ * production's update of 2026-11-03 (the key quoteOrPoMissing): its quotation and PO numbers and their files as production holds them now.
  * @param {any} value
  */
 export function moldPendingItem(value) {
@@ -426,6 +504,7 @@ export function moldPendingItem(value) {
     specs: {description: textOf(p.description, 200), core: textOf(p.core, 20), vibrators: wholeOrNull(p.vibrators), model: textOf(p.model, 20), halfBlock: textOf(p.halfBlock, 20),
       moldWidth: wholeOrNull(p.moldWidth), gelbaSize: wholeOrNull(p.gelbaSize), moldNo: textOf(p.moldNo, 40), quantity: wholeOrNull(p.quantity), designUrl: /^https:\/\/\S+$/i.test(p.designUrl || '') ? String(p.designUrl).slice(0, 1000) : '', notes: textOf(p.notes, 2000)},
     payment: moldPayment(value.payment), revision: wholeOrNull(value.revision), designFiles: designFilesOf(value.designFiles) || [],
+    ...quotePoOf(value),
   };
 }
 

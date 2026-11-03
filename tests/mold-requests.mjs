@@ -7,7 +7,11 @@
 // as «اعتماد المالية» (still keyed admin); `payment` (cash or deferred) beside customer, salesman and specs, required for a new request,
 // sent only when the request has it (an older request is resent exactly as first sent), refused by production otherwise (fields
 // ['payment']) and listed by pending; and a cancellation the production manager restores, after which a reason used before answers 200
-// with the request as it is and only a new reason cancels it. Synthetic files only; no real account.
+// with the request as it is and only a new reason cancels it. Since production's second update of 2026-11-03: the quotation and PO
+// numbers (normalized, up to 60 characters, at least one, sent after payment only when given, an older request byte for byte as before),
+// how the CRM learns that the update is live (quoteOrPoMissing in a status object or a pending item), the files' categories (a PDF or an
+// image only, the body's category for those alone), the view's numbers and limits, and the stand-in as the application before and after
+// its update. Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
@@ -17,7 +21,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, validateMoldSpecs, moldRequestBody, moldApprovalBody, moldApprovalRefusal, moldPendingItem, moldStatusObject, readMoldAnswer, moldNextAttempt, riyadhIso, moldText, sheetCity, moldRequestCity, moldCustomerEntry, moldCustomerCalls,
   MOLD_DESIGN_EXTENSIONS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_MAX_FILES, MOLD_DESIGN_MAX_PIXELS, MOLD_DESIGN_REASONS, MOLD_DESIGN_PLACE_REASONS, moldDesignName, moldDesignDisplayName, moldImageSize, moldDesignFileCheck, moldDesignContentType, moldDispositionName, moldContentDisposition, moldDesignFileBody, moldDesignFileEntry,
-  MOLD_PRODUCTION_ONLY, MOLD_PRODUCTION_ONLY_TEXT, moldAnswerNotStored, moldNeverSent, MOLD_PAYMENTS, MOLD_PAYMENT_REQUIRED, MOLD_WAITING_STEPS, MOLD_APPROVAL_STEPS, moldPayment, moldCancelReasonKey, moldCancelReasonUsed} from '../portable/mold-rules.mjs';
+  MOLD_PRODUCTION_ONLY, MOLD_PRODUCTION_ONLY_TEXT, moldAnswerNotStored, moldNeverSent, MOLD_PAYMENTS, MOLD_PAYMENT_REQUIRED, MOLD_WAITING_STEPS, MOLD_APPROVAL_STEPS, moldPayment, moldCancelReasonKey, moldCancelReasonUsed,
+  MOLD_QUOTE_PO_MAX, MOLD_QUOTE_PO_REQUIRED, MOLD_FILE_CATEGORIES, MOLD_CATEGORY_MAX_FILES, moldQuotePoNumber, validateMoldQuotePo, moldQuotePoAnswered} from '../portable/mold-rules.mjs';
 import * as rules from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts, moldRouteTimeout} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
@@ -102,6 +107,43 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   eq(readMoldAnswer(400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['payment']}}), {kind: 'rejected', code: 'invalid_payload', fields: ['payment']}, 'production refusing the payment names the field (final, the data must change)');
   const pendingWith = payment => moldPendingItem({orderNo: 7, crmRequestId: 'r', source: 'crm', customer: {name: 'x'}, salesman: {name: 'y'}, specs: {description: 'd'}, ...(payment === 'absent' ? {} : {payment})}).payment;
   eq(['cash', 'deferred', null, 'absent', 'card', 'Cash'].map(pendingWith), ['cash', 'deferred', null, null, null, null], 'pending: cash, deferred, or null (an older request, or a value the contract does not name)');
+}
+
+// ---- 2026-11-03 (production's second update): the quotation and PO numbers beside the payment, only when the request has them
+{
+  eq([MOLD_QUOTE_PO_MAX, MOLD_QUOTE_PO_REQUIRED], [60, 'اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)'], 'up to 60 characters; one at least, said so in Arabic');
+  eq(['Q-٢٠٢٦-٠١٥٣', '  PO-۷۷۸۱\t', '', null, undefined, '   ', 'Q 12', 'a\u0007b', 5, {}].map(moldQuotePoNumber), ['Q-2026-0153', 'PO-7781', '', '', '', '', 'Q 12', undefined, undefined, undefined],
+    'Arabic-Indic and Persian digits as ASCII, the ends trimmed (spaces inside kept); none is \'\'; a control character or a non-text is refused');
+  eq(validateMoldQuotePo({quoteNo: ' Q-٢٠٢٦ ', poNo: ''}, {required: true}), {quoteNo: 'Q-2026', poNo: '', errors: {}}, 'one number is enough, normalized');
+  eq(validateMoldQuotePo({poNo: 'PO-1'}, {required: true}), {quoteNo: '', poNo: 'PO-1', errors: {}}, 'the PO alone too');
+  eq(validateMoldQuotePo({quoteNo: '  ', poNo: null}, {required: true}).errors, {quotePo: MOLD_QUOTE_PO_REQUIRED}, 'neither (spaces only count as none): «واحد على الأقل»');
+  eq(validateMoldQuotePo({}, {required: false}).errors, {}, 'not required (before production\'s update): none is fine');
+  eq([validateMoldQuotePo({quoteNo: 'x'.repeat(60)}).errors, validateMoldQuotePo({quoteNo: '٠'.repeat(60) + '  '}).errors], [{}, {}], '60 characters after normalizing pass');
+  eq([validateMoldQuotePo({quoteNo: 'x'.repeat(61)}, {required: true}).errors, validateMoldQuotePo({poNo: 'ط'.repeat(61), quoteNo: 'Q'}).errors], [{quoteNo: 'رقم عرض السعر أطول من 60 حرف'}, {poNo: 'رقم الـ PO أطول من 60 حرف'}], '61 do not, each named in Arabic');
+  eq(validateMoldQuotePo({quoteNo: 7, poNo: 'a\u0000'}, {required: true}).errors, {quoteNo: 'رقم عرض السعر فيه رموز غير مسموحة', poNo: 'رقم الـ PO فيه رموز غير مسموحة'}, 'not a text, or a control character: refused');
+  const at = '2026-10-29T10:15:00+03:00', base = {id: 'rec-9f3a', requestedAt: at, customer, salesman, specs, payment: 'cash'}, plain = JSON.stringify(moldRequestBody(base));
+  for (const none of [{}, {quoteNo: '', poNo: ''}, {quoteNo: null, poNo: undefined}, {quoteNo: '   '}]) eq(JSON.stringify(moldRequestBody({...base, ...none})), plain, 'no number: the very same bytes as before (' + JSON.stringify(none) + ')');
+  eq(JSON.stringify(moldRequestBody({id: 'rec-9f3a', requestedAt: at, customer, salesman, specs})), JSON.stringify(moldRequestBody({id: 'rec-9f3a', requestedAt: at, customer, salesman, specs, quoteNo: '', poNo: null})), 'a request asked for before the payment too: unchanged');
+  const both = moldRequestBody({...base, quoteNo: 'Q-2026-0153', poNo: ' PO-٧٧٨١ '});
+  eq([Object.keys(both), both.quoteNo, both.poNo, JSON.stringify({...both, quoteNo: undefined, poNo: undefined})], [['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment', 'quoteNo', 'poNo'], 'Q-2026-0153', 'PO-7781', plain], 'both: after payment, quoteNo then poNo, normalized; the rest unchanged');
+  eq(Object.keys(moldRequestBody({...base, poNo: 'PO-1'})).slice(-2), ['payment', 'poNo'], 'the PO alone: no quoteNo key');
+  for (const [field, value] of [['quoteNo', 'x'.repeat(61)], ['poNo', 12], ['quoteNo', 'a\u0001']]) { assert.throws(() => moldRequestBody({...base, [field]: value}), new RegExp(field)); checks++; }
+  eq(readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['quoteNo']}}), {kind: 'rejected', code: 'invalid_payload', fields: ['quoteNo']}, 'production refusing a number names the field (final: the data must change)');
+  // How the CRM learns production's update: the key quoteOrPoMissing in a status object (or a pending item), whatever its value.
+  const raw = {crmRequestId: 'rec-9f3a', orderNo: 92, status: 'received', editable: true, stages: {}, designFiles: []};
+  eq([moldQuotePoAnswered(moldStatusObject(raw)), Object.hasOwn(moldStatusObject(raw), 'quoteNo'), moldQuotePoAnswered(null)], [false, false, false], 'an older application: nothing learned, nothing read');
+  for (const missing of [true, false, null, 'yes']) eq(moldQuotePoAnswered(moldStatusObject({...raw, quoteOrPoMissing: missing})), true, 'the key, valued ' + JSON.stringify(missing) + ': the update is live');
+  const listed = file => ({fileId: file, crmFileId: null, name: 'عرض ' + file + '.pdf', kind: 'pdf', size: 10, source: 'production', uploadedAt: '2026-11-03T10:00:00+03:00', category: 'design'});
+  const read = moldStatusObject({...raw, quoteNo: ' Q-1\u0000 ', poNo: null, quoteOrPoMissing: false, quoteFiles: [listed(7)], poFiles: [listed(8), 'x'], designFiles: [listed(6)]});
+  eq([read.quoteNo, read.poNo, read.quoteOrPoMissing, read.quoteFiles.map(file => [file.fileId, file.category]), read.poFiles.map(file => [file.fileId, file.category]), read.designFiles.map(file => file.category)],
+    ['Q-1', '', false, [[7, 'quote']], [[8, 'po']], ['design']], 'the numbers as production holds them now, quoteOrPoMissing, and each list\'s files with its category (the list decides)');
+  eq(moldStatusObject({...raw, quoteOrPoMissing: true}).quoteFiles, [], 'no list sent: none');
+  const item = {orderNo: 7, crmRequestId: 'r', source: 'crm', customer: {name: 'x'}, salesman: {name: 'y'}, specs: {description: 'd'}};
+  eq([moldQuotePoAnswered(moldPendingItem(item)), Object.hasOwn(moldPendingItem(item), 'quoteFiles')], [false, false], 'a pending item of the older application: none');
+  const pendingRead = moldPendingItem({...item, quoteNo: 'Q-9', poNo: '', quoteOrPoMissing: false, quoteFiles: [listed(11)], poFiles: []});
+  eq([moldQuotePoAnswered(pendingRead), pendingRead.quoteNo, pendingRead.poNo, pendingRead.quoteFiles[0].category, pendingRead.poFiles], [true, 'Q-9', '', 'quote', []], 'a pending item of the updated one: its numbers and files');
+  // The files' categories (design-files' category): a quotation's or PO's file is a PDF or an image only.
+  eq([MOLD_FILE_CATEGORIES, MOLD_CATEGORY_MAX_FILES], [['design', 'quote', 'po'], {design: 10, quote: 5, po: 5}], 'design, quote and po; 10, 5 and 5 a request');
 }
 
 // ---- 2026-11-03: a cancellation the production manager restores; a new cancellation takes a new reason
@@ -242,6 +284,35 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same([dictionary[lib.MOLD_SAME_REASON_TEXT[0]], dictionary[MOLD_PAYMENT_REQUIRED]], [lib.MOLD_SAME_REASON_TEXT[1], 'Choose how the customer pays: cash or deferred'], 'the server\'s two new refusals have their English pair');
   const restoredLocked = 'رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
   same([readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(restoredLocked), dictionary[restoredLocked]], [true, 'The production manager restored it after the cancellation, and the approvals are complete or production has started; it can no longer be cancelled.'], 'the same cancellation once it may no longer be cancelled: its own refusal, with its English pair');
+  // ---- 2026-11-03 (production's second update): the numbers a reader sees, a request held until the update is known, places by category
+  const numbered = {...data, payment: 'cash', quoteNo: 'Q-1'}, answered = {...status, quoteNo: 'Q-2', poNo: 'PO-5', quoteOrPoMissing: false, quoteFiles: [], poFiles: []};
+  same(lib.moldRequestView(row({data: numbered}), me, [], true, [], [], true).quotePo, {quoteNo: 'Q-1', poNo: '', missing: false, from: 'crm'}, 'before production holds the request: the CRM\'s own numbers');
+  same(lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: status}), me, [], true, [], [], true).quotePo, null, 'production holds it and its status carries none (the older application): nothing shown, never the CRM\'s copy');
+  same(lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: answered}), me, [], true, [], [], true).quotePo, {quoteNo: 'Q-2', poNo: 'PO-5', missing: false, from: 'production'}, 'production\'s numbers now (its production manager corrected and added them), not the CRM\'s');
+  same(lib.moldRequestView(row({outbox: null, accepted: data, remote: {...answered, quoteNo: '', poNo: '', quoteOrPoMissing: true}}), me, [], true).quotePo, {quoteNo: '', poNo: '', missing: true, from: 'production'}, 'production lacks both: the view says so');
+  same([lib.moldRequestView(row({data: numbered}), me, [], true, [], [], false).sending.state, lib.moldRequestView(row({data: numbered}), me, [], true, [], [], true).sending.state, lib.moldRequestView(row({}), me, [], true, [], [], false).sending.state, lib.moldRequestView(row({data: numbered}), me, [], false, [], [], false).sending.state],
+    ['held', 'waiting', 'waiting', 'off'], 'a request saved with a number is held while the update is unknown (one without, as before; the link off says so first)');
+  same(lib.moldSendingNames.held, ['بانتظار تحديث تطبيق المنتجات', 'Waiting for the products application update'], 'held, in Arabic and English');
+  const quoteFile = {...waitingFile, id: 'mdf-q', name: 'عرض سعر.pdf', category: 'quote'}, accepted = {outbox: null, accepted: data, remote: answered};
+  same([lib.moldDesignFilesView(row(accepted), [quoteFile], me, true, false)[0].state, lib.moldDesignFilesView(row(accepted), [quoteFile], me, true, true)[0].state, lib.moldDesignFilesView(row(accepted), [quoteFile], me, true, true)[0].category, lib.moldDesignFilesView(row(accepted), [waitingFile], me, true, false)[0].state],
+    ['update', 'waiting', 'quote', 'waiting'], 'a quotation\'s file waits for the update to be known (a design file as before), and says which kind it is');
+  same(lib.moldDesignStateNames.update, ['بانتظار تحديث تطبيق المنتجات', 'Waiting for the products application update'], 'its state in words');
+  const production = file => ({fileId: file, crmFileId: null, name: 'p' + file + '.pdf', kind: 'pdf', size: 1, source: 'production', uploadedAt: at});
+  const holding = row({outbox: null, accepted: data, remote: {...answered, designFiles: [production(1)], quoteFiles: [production(2), production(3)], poFiles: [production(4)]}});
+  same(lib.moldListedFiles(holding.remote).map(file => [file.fileId, file.category]), [[1, 'design'], [2, 'quote'], [3, 'quote'], [4, 'po']], 'every file production lists, each with the list it came in');
+  same(['design', 'quote', 'po'].map(category => lib.moldDesignCount(holding, [waitingFile, quoteFile], category)), [{crm: 1, production: 1, max: 10}, {crm: 1, production: 2, max: 5}, {crm: 0, production: 1, max: 5}], 'each kind\'s places counted apart: 10 design files, 5 of the quotation, 5 of the PO, production\'s included');
+  same(lib.moldDesignFilesView(holding, [], me, true).map(file => [file.fileId, file.category, file.state]), [['1', 'design', 'production'], ['2', 'quote', 'production'], ['3', 'quote', 'production'], ['4', 'po', 'production']], 'production\'s quotation and PO files on the request, with their kind');
+  same(lib.moldPendingFiles({orderNo: 9, designFiles: [production(1)], quoteFiles: [production(2)], poFiles: undefined}), {designFiles: [{...production(1), category: 'design', href: '/api/mold-requests/design-file?order=9&file=1', viewable: true}], quoteFiles: [{...production(2), category: 'quote', href: '/api/mold-requests/design-file?order=9&file=2', viewable: true}], poFiles: []}, 'a pending item\'s files of every list, each downloaded by its fileId');
+  same([lib.moldDesignRefusalText('too_many_files', say('ar')), lib.moldDesignRefusalText('too_many_files', say('ar'), 'quote'), lib.moldDesignRefusalText('too_many_files', say('en'), 'po'), lib.moldDesignRefusalText('not_document', say('ar'), 'quote'), lib.moldDesignRefusalText('not_document', say('en'), 'po')],
+    ['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)', 'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج)', 'At most 5 PO files a request (yours and production\'s)', 'ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'A quotation or PO file must be a PDF or an image'], 'the new refusals in words, each kind its own limit');
+  same([lib.moldErrorText('request_locked', say('ar'), {reason: 'production_only', quotePo: true}), lib.moldErrorText('request_locked', say('en'), {reason: 'production_only', quotePo: true}), lib.moldErrorText('request_locked', say('ar'), {reason: 'production_only'}), lib.moldErrorText('timeout', say('ar'), {quotePo: true})],
+    ['بيانات الطلب يعدّلها مدير الإنتاج فقط؛ كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO', 'The request\'s data is edited by the production manager only; Ask the production manager to add the quotation / PO number', 'بيانات الطلب يعدّلها مدير الإنتاج فقط', 'لم يرد تطبيق الإنتاج خلال 10 ثوانٍ'], 'production_only once the update is live: who adds a number now');
+  same([lib.MOLD_QUOTE_PO_MISSING_TEXT, lib.moldQuotePoNames.quoteNo, lib.moldQuotePoNames.poNo, lib.moldFieldNames.quoteNo, lib.moldFieldNames.poNo], [['ناقص عرض السعر / الـ PO، يضيفه مدير الإنتاج', 'The quotation / PO is missing; the production manager adds it'], ['رقم عرض السعر', 'Quotation no.'], ['رقم الـ PO', 'PO no.'], ['رقم عرض السعر غير مقبول', 'The quotation number is not accepted'], ['رقم الـ PO غير مقبول', 'The PO number is not accepted']], 'the names and the missing note, Arabic and English');
+  const serverTexts = [MOLD_QUOTE_PO_REQUIRED, 'رقم عرض السعر أطول من 60 حرف', 'رقم الـ PO أطول من 60 حرف', 'تطبيق المنتجات لسه ما اتحدّثش لاستقبال رقم عرض السعر والـ PO؛ حدّث الصفحة وابعت الطلب من غيرهم.', 'تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.',
+    'بيانات الطلب يعدّلها مدير الإنتاج فقط؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله. كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO.', 'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.', 'الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.'];
+  same(serverTexts.filter(text => typeof dictionary[text] !== 'string'), [], 'every new refusal of the server has its English pair');
+  const sources = ['app/api/mold-requests/route.ts', 'app/api/mold-requests/design-files/route.ts'].map(file => readFileSync(path.join(root, file), 'utf8')).join('\n');
+  same(serverTexts.slice(3, 5).filter(text => !sources.includes(text)), [], 'and the server says them (a number, or a quotation\'s or PO\'s file, before the update)');
 }
 
 // ---- the customers route: the CRM's list, the cities as the production sheet writes them
@@ -338,8 +409,8 @@ const pdf = text => new TextEncoder().encode('%PDF-1.7\n' + text + '\n%%EOF');
     {fileId: 501, crmFileId: 'mdf-2', name: 'again.pdf', kind: 'pdf', size: 1, source: 'crm'}, {fileId: 0, name: 'a.pdf', kind: 'pdf', source: 'production'}, {fileId: 7, name: 'a.pdf', kind: 'pdf', source: 'erp'},
     {fileId: 8, crmFileId: null, name: 'a.pdf', kind: 'pdf', source: 'crm'}, {fileId: 9, name: '\u0007', kind: 'pdf', source: 'production'}, {fileId: 'bad id', name: 'a.pdf', source: 'production'}, 'x', null];
   const raw = {crmRequestId: 'rec-9f3a', orderNo: 92, status: 'received', editable: true, stages: {}, designFiles: listed};
-  eq(moldStatusObject(raw).designFiles, [{fileId: 501, crmFileId: 'mdf-1', name: 'رسم.pdf', kind: 'pdf', size: 1200, source: 'crm', uploadedAt: '2026-11-02T10:00:00+03:00'}, {fileId: 'p-9', crmFileId: null, name: 'تصميم الإنتاج.dwg', kind: 'other', size: null, source: 'production', uploadedAt: null}],
-    'designFiles: the contract fields of the valid entries, each fileId once; production\'s file has no crmFileId; an unknown kind is shown as other');
+  eq(moldStatusObject(raw).designFiles, [{fileId: 501, crmFileId: 'mdf-1', name: 'رسم.pdf', kind: 'pdf', size: 1200, source: 'crm', uploadedAt: '2026-11-02T10:00:00+03:00', category: 'design'}, {fileId: 'p-9', crmFileId: null, name: 'تصميم الإنتاج.dwg', kind: 'other', size: null, source: 'production', uploadedAt: null, category: 'design'}],
+    'designFiles: the contract fields of the valid entries, each fileId once; production\'s file has no crmFileId; an unknown kind is shown as other; each a design file (the list it came in)');
   eq([moldStatusObject({...raw, designFiles: undefined}).designFiles, moldStatusObject({...raw, designFiles: []}).designFiles, moldDesignFileEntry({fileId: 3, crmFileId: 'mdf-3', name: 'x.pdf', kind: 'pdf', source: 'crm'}).size], [null, [], null], 'none sent (an older application) is null; an empty list is empty');
   const pending = {orderNo: 101, crmRequestId: null, source: 'manual', customer: {}, salesman: {}, specs: {}};
   eq([moldPendingItem(pending).designFiles, moldPendingItem({...pending, designFiles: listed}).designFiles.map(file => file.fileId)], [[], [501, 'p-9']], 'a pending item carries its design files, those registered in production too');
@@ -348,6 +419,23 @@ const pdf = text => new TextEncoder().encode('%PDF-1.7\n' + text + '\n%%EOF');
     [{kind: 'rejected', code: 'invalid_payload', fields: ['crmFileId'], reason: 'too_many_files'}, {kind: 'rejected', code: 'invalid_payload', fields: ['crmFileId'], reason: 'crm_file_id_used'}], 'PR #27: a refusal for the file\'s place names crmFileId and its reason, final like the others');
   eq([readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['file'], details: {reason: '<b>'}}}).reason, readMoldAnswer(413, {error: {code: 'payload_too_large'}}).kind, readMoldAnswer(404, {error: {code: 'not_found'}}).kind], [undefined, 'rejected', 'not_found'], 'a reason that is not a word is not read; 413 and 404 are final');
   eq([moldRouteTimeout('design-files'), moldRouteTimeout('design-file'), moldRouteTimeout('design-file-delete'), moldRouteTimeout('requests')], [120_000, 120_000, 10_000, 10_000], '120 seconds for the two file routes, 10 for the rest');
+}
+
+// ---- 2026-11-03 (second update): the quotation's and PO's files, a PDF or an image only, sent with their category; a design file as before
+{
+  eq([moldDesignFileCheck('عرض سعر Q-1.pdf', pdf('q'), 'quote').ok, moldDesignFileCheck('PO.png', png(10, 10), 'po').contentType], [true, 'image/png'], 'a PDF or an image is a quotation\'s or PO\'s file');
+  for (const category of ['quote', 'po']) eq(moldDesignFileCheck('رسم.dwg', Uint8Array.from([1]), category), {ok: false, field: 'name', reason: 'not_document'}, 'a drawing is not a ' + category + ' file: refused for its name, not_document');
+  eq([moldDesignFileCheck('رسم.dwg', Uint8Array.from([1]), 'design').ok, moldDesignFileCheck('رسم.dwg', Uint8Array.from([1])).ok], [true, true], 'a drawing is still a design file (the default)');
+  eq(moldDesignFileCheck('a.pdf', pdf('x'), 'invoice'), {ok: false, field: 'category', reason: 'category'}, 'any other category is refused');
+  eq([moldDesignFileCheck('a.pdf', Uint8Array.from([1, 2]), 'quote').reason, moldDesignFileCheck('a.png', Uint8Array.from([1, 2]), 'po').reason], ['not_pdf', 'bad_image'], 'the bytes are checked as a design file\'s');
+  const plain = moldDesignFileBody({crmRequestId: 'r', crmFileId: 'f', name: 'a.pdf'}, pdf('x'));
+  eq([Buffer.from(moldDesignFileBody({crmRequestId: 'r', crmFileId: 'f', name: 'a.pdf', category: 'design'}, pdf('x'))).equals(Buffer.from(plain)), Buffer.from(moldDesignFileBody({crmRequestId: 'r', crmFileId: 'f', name: 'a.pdf', category: null}, pdf('x'))).equals(Buffer.from(plain))], [true, true], 'a design file goes without category: the very same bytes as before');
+  for (const category of ['quote', 'po']) {
+    const body = moldDesignFileBody({crmRequestId: 'r', crmFileId: 'f', name: 'a.pdf', category}, pdf('x')), cut = body.indexOf(10);
+    eq([new TextDecoder().decode(body.subarray(0, cut)), Buffer.from(body.subarray(cut + 1)).equals(Buffer.from(pdf('x')))], ['{"crmRequestId":"r","crmFileId":"f","name":"a.pdf","category":"' + category + '"}', true], category + ': the JSON line carries the category after the name');
+  }
+  assert.throws(() => moldDesignFileBody({crmRequestId: 'r', crmFileId: 'f', name: 'a.pdf', category: 'invoice'}, pdf('x')), /category/); checks++;
+  eq(readMoldAnswer(400, {error: {code: 'invalid_payload', fields: ['name'], details: {reason: 'not_document'}}}), {kind: 'rejected', code: 'invalid_payload', fields: ['name'], reason: 'not_document'}, 'production\'s not_document: final, with its reason');
 }
 
 // ---- every route against the stand-in production API
@@ -601,6 +689,65 @@ try {
   eq(await Promise.resolve().then(() => mock.restore('mr-pay')).then(() => '', error => error.message), 'not cancelled: mr-pay', 'only a cancelled request is restored');
   mock.remove('mr-pay-old');
   eq([mock.restore('mr-pay-old').status, mock.row('mr-pay-old').deleted], ['received', false], 'a request deleted in production is restored the same way');
+  // ---- 2026-11-03 (production's second update): the application before its update ignores the numbers and the categories silently;
+  // after it, it takes them, keeps them in the original a retry is compared with, and answers them in every status object and pending item
+  const quoted = id => moldRequestBody({id, requestedAt: riyadhIso(Date.now()), customer, salesman, specs, payment: 'cash', quoteNo: 'Q-2026-0153'});
+  answer = await call('requests', quoted('mr-qpo-old'));
+  eq([answer.http, Object.hasOwn(answer.json.request, 'quoteOrPoMissing'), mock.row('mr-qpo-old').quoteNo, moldQuotePoAnswered(moldStatusObject(answer.json.request))], [201, false, null, false], 'the older application: the number is dropped without a word, and nothing says it was (nothing learned)');
+  const quoteBytes = pdf('quotation before the update');
+  answer = await attach('mr-qpo-old', 'mdf-qpo-old', 'عرض سعر.pdf', quoteBytes, undefined);
+  ok(answer.kind === 'ok', 'a design file first (no category)');
+  answer = await call('design-files', moldDesignFileBody({crmRequestId: 'mr-qpo-old', crmFileId: 'mdf-qpo-old-q', name: 'عرض سعر 2.pdf', category: 'quote'}, quoteBytes));
+  eq([answer.http, answer.json.file.category, answer.json.request.designFiles.length, Object.hasOwn(answer.json.request, 'quoteFiles')], [201, undefined, 2, false], 'and a category it ignores: kept as a design file (so the CRM never sends one before the update)');
+  mock.setQuotePo(true);
+  answer = await call('status', {ids: ['mr-qpo-old']});
+  const afterUpdate = answer.json.requests[0];
+  eq([afterUpdate.quoteOrPoMissing, afterUpdate.quoteNo, afterUpdate.poNo, afterUpdate.designFiles.length, afterUpdate.quoteFiles, moldQuotePoAnswered(moldStatusObject(afterUpdate))], [false, '', '', 2, [], true], 'after the update: a request taken before is not «missing», has no number, keeps its files as design files; the key says the update is live');
+  eq([(await call('requests', quoted('mr-qpo-old'))).reason, (await call('requests', moldRequestBody({id: 'mr-qpo-old', requestedAt: JSON.parse(mock.state.calls.find(c => c.route === 'requests' && c.body.includes('mr-qpo-old')).body).requestedAt, customer, salesman, specs, payment: 'cash'}))).http],
+    ['production_only', 200], 'and a resend cannot add the number it dropped (409 production_only); the request without it is the original (200)');
+  // New requests: the numbers normalized, refused beyond 60 characters or when not a text, part of the original
+  const fresh = (id, extra) => ({...moldRequestBody({id, requestedAt: riyadhIso(Date.now()), customer, salesman, specs, payment: 'deferred'}), ...extra});
+  answer = await call('requests', fresh('mr-qpo', {quoteNo: '  Q-٢٠٢٦-0153 ', poNo: ''}));
+  eq([answer.http, mock.row('mr-qpo').quoteNo, mock.row('mr-qpo').poNo, answer.json.request.quoteNo, answer.json.request.poNo, answer.json.request.quoteOrPoMissing], [201, 'Q-2026-0153', null, 'Q-2026-0153', '', false], 'a new request with its quotation: stored normalized; "" is none');
+  for (const [extra, field] of [[{quoteNo: 'x'.repeat(61)}, 'quoteNo'], [{poNo: 7781}, 'poNo'], [{quoteNo: 'a\u0001b'}, 'quoteNo']]) {
+    answer = await call('requests', fresh('mr-qpo-bad', extra));
+    eq([answer.kind, answer.http, answer.code, answer.fields, mock.row('mr-qpo-bad')], ['rejected', 400, 'invalid_payload', [field], undefined], JSON.stringify(extra).slice(0, 40) + ': 400 invalid_payload naming ' + field + ', nothing stored');
+  }
+  eq((await call('requests', fresh('mr-qpo-60', {poNo: '٧'.repeat(60) + ' '}))).http, 201, '60 characters after normalizing pass');
+  const original = JSON.parse(mock.state.calls.findLast(c => c.route === 'requests' && c.body.includes('"mr-qpo"') && c.signed).body);
+  eq([(await call('requests', original)).http, (await call('requests', {...original, poNo: 'PO-1'})).reason, (await call('requests', {...original, quoteNo: 'Q-other'})).reason, (await call('requests', {...original, quoteNo: undefined})).reason],
+    [200, 'production_only', 'production_only', 'production_only'], 'the retry with the same data: 200; adding, changing or removing a number: 409 production_only');
+  answer = await call('requests', fresh('mr-qpo-none', {}));
+  eq([answer.json.request.quoteOrPoMissing, answer.json.request.quoteNo, answer.json.request.poNo], [true, '', ''], 'a request taken after the update without either: quoteOrPoMissing');
+  // The production manager adds or corrects a number in the products application: the status shows it, the original stays the CRM's
+  eq([mock.setNumbers('mr-qpo-none', {poNo: ' PO-٧٧٨١ '}).poNo, (await call('status', {ids: ['mr-qpo-none']})).json.requests[0].quoteOrPoMissing], ['PO-7781', false], 'the production manager adds the PO: shown, no longer missing');
+  eq((await call('requests', JSON.parse(mock.state.calls.findLast(c => c.route === 'requests' && c.body.includes('"mr-qpo-none"') && c.signed).body))).http, 200, 'the CRM\'s first data (without the number) is still the original a retry is compared with');
+  mock.setNumbers('mr-qpo', {quoteNo: 'Q-2026-0153-B'});
+  eq([(await call('status', {ids: ['mr-qpo']})).json.requests[0].quoteNo, (await call('requests', original)).http], ['Q-2026-0153-B', 200], 'a correction is production\'s: the status says it, a retry of the original stays 200');
+  let pendingNow = (await call('pending', {})).json.requests;
+  const pendingItem = id => moldPendingItem(pendingNow.find(item => item.crmRequestId === id));
+  eq([pendingItem('mr-qpo').quoteNo, pendingItem('mr-qpo').quoteOrPoMissing, pendingItem('mr-qpo-none').poNo, pendingItem('mr-qpo-60').poNo.length], ['Q-2026-0153-B', false, 'PO-7781', 60], 'pending: each request\'s numbers as production holds them now');
+  eq((await call('cancel', {crmRequestId: 'mr-qpo-60', reason: 'x'})).json.request.quoteOrPoMissing, false, 'a cancelled request is never «missing»');
+  // design-files: the category, a PDF or an image for a quotation or PO, each kind's own limit, the same crmFileId with another category
+  const filed = (crmFileId, name, bytes, category) => call('design-files', moldDesignFileBody({crmRequestId: 'mr-qpo', crmFileId, name, category}, bytes));
+  answer = await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'), 'quote');
+  eq([answer.http, answer.json.file.category, answer.json.request.quoteFiles.map(file => [file.crmFileId, file.category]), answer.json.request.designFiles], [201, 'quote', [['mdf-q1', 'quote']], []], 'a quotation file: in quoteFiles with its category, not in designFiles');
+  eq([(await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'), 'quote')).http, (await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'), 'po')).reason, (await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'))).reason],
+    [200, 'crm_file_id_used', 'crm_file_id_used'], 'the same file with the same category again: 200; the same crmFileId with another category: crm_file_id_used');
+  answer = await filed('mdf-p-dwg', 'رسم.dwg', Uint8Array.from([65, 67]), 'po');
+  eq([answer.http, answer.fields, answer.reason], [400, ['name'], 'not_document'], 'a drawing as the PO: 400 fields [name], reason not_document');
+  eq((await call('design-files', Buffer.from('{"crmRequestId":"mr-qpo","crmFileId":"mdf-c","name":"a.pdf","category":"invoice"}\n%PDF-1.4'))).fields, ['category'], 'another category: 400 fields [category]');
+  for (let n = 2; n <= 5; n++) eq((await filed('mdf-q' + n, 'عرض ' + n + '.png', png(4, 4), 'quote')).http, 201, 'quotation file ' + n);
+  eq([(await filed('mdf-q6', 'عرض 6.pdf', pdf('6'), 'quote')).reason, (await filed('mdf-p1', 'PO.pdf', pdf('po'), 'po')).http, (await filed('mdf-d1', 'رسم.dwg', Uint8Array.from([65]), undefined)).http], ['too_many_files', 201, 201], 'a sixth quotation file: too_many_files; the PO and the design files have their own places');
+  const quoteFileId = mock.row('mr-qpo').designFiles.find(file => file.crmFileId === 'mdf-q1').fileId;
+  answer = await call('design-file', {fileId: quoteFileId});
+  eq([answer.kind, answer.file.contentType, Buffer.from(answer.file.bytes).equals(Buffer.from(pdf('quotation')))], ['ok', 'application/pdf', true], 'design-file downloads a quotation file by its fileId too');
+  const productionPo = mock.addProductionFile('mr-qpo', {name: 'PO الإنتاج.pdf', category: 'po'});
+  pendingNow = (await call('pending', {})).json.requests;
+  eq([pendingItem('mr-qpo').quoteFiles.length, pendingItem('mr-qpo').poFiles.map(file => [file.source, file.category]), pendingItem('mr-qpo').designFiles.map(file => file.crmFileId)], [5, [['crm', 'po'], ['production', 'po']], ['mdf-d1']], 'pending lists the quotation\'s and PO\'s files (production\'s own too), designFiles the design files only');
+  eq((await call('design-file-delete', {crmRequestId: 'mr-qpo', crmFileId: 'mdf-q1'})).json.request.quoteFiles.length, 4, 'a quotation file is deleted as a design file is');
+  eq([productionPo.category, (await call('design-file', {fileId: productionPo.fileId})).kind], ['po', 'ok'], 'production\'s own PO file is downloaded by its fileId');
+  mock.setQuotePo(false);
   ok(mock.state.calls.every(c => !JSON.stringify(c.headers).includes(mock.state.secret)), 'the secret never travels');
 } finally { await mock.stop(); }
 

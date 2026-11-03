@@ -11,7 +11,10 @@
 // it); production's
 // own files in the request and in the sales manager's pending list; downloads through the CRM with the permission check (the requester,
 // the supervisor, not another representative or customer service, the sales manager by order number only for their pending items, the
-// other region's manager not, anonymous 401); the 10 files a request with production's; uploads beyond two at once answered 429.
+// other region's manager not, anonymous 401); the 10 files a request with production's; uploads beyond two at once answered 429; and
+// (production's second update of 2026-11-03) the quotation's and PO's files: none before the update is known, then each with its category,
+// its 5 places, production's refusals (not_document, too_many_files), a retry with the same category, production's own PO file, and a
+// download by fileId from any list.
 // Synthetic isolated fixtures only: temporary SQLite and object store, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {request as httpRequest} from 'node:http';
@@ -331,6 +334,58 @@ try {
   let freed = 0;
   await until(async () => { freed = (await upload('rep', third2.id, 'بعد الانشغال.pdf', pdf('after busy'))).status; return freed !== 429; }, 'the places came back');
   check(freed, 200, 'abandoned uploads give their places back');
+
+  // ---- 2026-11-03 (production's second update): the quotation's and PO's files. Before the CRM knows the update is live none is taken;
+  // after it each goes with its category (a PDF or an image, 5 of each), production's refusals are said with their reason, a retry keeps
+  // the category, production's own PO file shows in its group, and a file of any list downloads by its fileId (the request's sheet and the
+  // sales manager's list)
+  const uploadAs = async (id, name, bytes, category) => { const encoded = await multipart({requestId: crypto.randomUUID(), id, ...(category ? {category} : {}), file: {name, bytes}}); return as('rep')('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: encoded.headers}); };
+  const early = await create('rep', 'east1', 'quotation before the update');
+  res = await uploadAs(early.id, 'عرض سعر.pdf', pdf('quotation before'), 'quote');
+  check([res.status, (await rowsOf(early.id))], [409, 0], 'a quotation file before the update is known: refused, nothing stored');
+  mock.setQuotePo(true);
+  await age(early.id);
+  check((await list('rep')).quotePo, true, 'production updates; the next pull teaches the CRM');
+  const quoted = (await (await post('rep', {action: 'create', customerId: 'east1', specs: {...specs, description: 'with its quotation'}, payment: 'cash', quoteNo: 'Q-2026-0153'})).json()).request;
+  body = await (await uploadAs(quoted.id, 'عرض سعر Q-2026-0153.pdf', pdf('quotation'), 'quote')).json();
+  const quoteFile = body.file;
+  check([quoteFile.state, quoteFile.category, JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, body.request.remote.quoteFiles.map(file => file.crmFileId)], ['sent', 'quote', 'quote', [quoteFile.crmFileId]], 'a quotation PDF: sent with its category, listed by production in quoteFiles');
+  check((await (await uploadAs(quoted.id, 'PO.png', png(8, 8), 'po')).json()).file.category, 'po', 'a PO image');
+  const quoteSends = calls('design-files');
+  res = await uploadAs(quoted.id, 'مسقط.dwg', Buffer.from('AC1027'), 'quote');
+  body = await res.json();
+  check([res.status, body.reason, calls('design-files') - quoteSends], [400, 'not_document', 0], 'a drawing as the quotation: refused by the CRM itself (not_document), nothing sent');
+  mock.answerNext('design-files', 400, {error: {code: 'invalid_payload', message: 'x', fields: ['name'], details: {reason: 'not_document'}}});
+  body = await (await uploadAs(quoted.id, 'عرض 2.pdf', pdf('quotation two'), 'quote')).json();
+  check([body.file.state, body.file.error.reason, body.file.error.final], ['rejected', 'not_document', true], 'production\'s own not_document: final, with its reason');
+  for (let n = 3; n <= 6; n++) check((await uploadAs(quoted.id, 'عرض ' + n + '.pdf', pdf('quotation ' + n), 'quote')).status, 200, 'quotation file ' + n + ' (the refused one takes no place)');
+  res = await uploadAs(quoted.id, 'عرض 7.pdf', pdf('quotation 7'), 'quote');
+  check([res.status, (await res.json()).error], [409, 'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.'], 'a sixth live quotation file: refused here, in its own words');
+  mock.answerNext('design-files', 400, {error: {code: 'invalid_payload', message: 'x', fields: ['crmFileId'], details: {reason: 'too_many_files'}}});
+  body = await (await uploadAs(quoted.id, 'PO 2.pdf', pdf('po two'), 'po')).json();
+  check([body.file.state, body.file.error.reason], ['rejected', 'too_many_files'], 'production\'s too_many_files for a PO file: final, with its reason');
+  // A retry after a lost answer: the same crmFileId, the same category; production answers 200 created:false
+  mock.loseNext('design-files');
+  body = await (await uploadAs(quoted.id, 'PO 3.pdf', pdf('po three'), 'po')).json();
+  const lostPo = body.file.crmFileId;
+  await app.db.prepare('UPDATE crm_mold_design_files SET next_attempt_at=? WHERE id=?').bind(new Date(Date.now() - 1000).toISOString(), lostPo).run();
+  await list('rep');
+  await until(async () => !(await fileRow(lostPo)).outbox, 'the lost PO file was sent again');
+  const lostCalls = mock.state.calls.filter(call => call.route === 'design-files' && call.body.includes(lostPo)).map(call => JSON.parse(call.body));
+  check([lostCalls.length, lostCalls.map(line => line.category), mock.row(quoted.id).designFiles.filter(file => file.crmFileId === lostPo).length], [2, ['po', 'po'], 1], 'sent again with the same category; production holds it once');
+  // Production's own PO file, on the request and in the sales manager's list, downloaded by its fileId
+  const ownPo = mock.addProductionFile(quoted.id, {name: 'PO من الإنتاج.pdf', bytes: pdf('production po'), category: 'po'});
+  await age(quoted.id);
+  const sheet = await viewOf('rep', quoted.id), listedPo = sheet.designFiles.find(file => file.fileId === String(ownPo.fileId));
+  check([listedPo.category, listedPo.source, sheet.designFiles.filter(file => file.category === 'po' && file.state !== 'rejected').length], ['po', 'production', 3], 'production\'s PO file in the PO group, with the CRM\'s');
+  res = await as('rep')(listedPo.href);
+  check([res.status, res.bytes.equals(pdf('production po'))], [200, true], 'downloaded through the CRM by its fileId');
+  const item = (await list('sm')).pending.items.find(entry => entry.crmRequestId === quoted.id), pendingPo = item.poFiles.find(file => file.fileId === ownPo.fileId);
+  res = await as('sm')(pendingPo.href);
+  check([item.quoteNo, item.quoteFiles.length, res.status, res.bytes.equals(pdf('production po'))], ['Q-2026-0153', 5, 200, true], 'the sales manager: the numbers, the quotation files, and production\'s PO file by order number and fileId');
+  res = await remove('rep', quoted.id, quoteFile.crmFileId);
+  check([res.status, (await res.json()).request.remote.quoteFiles.some(file => file.crmFileId === quoteFile.crmFileId)], [200, false], 'a quotation file is deleted as a design file is');
+  mock.setQuotePo(false);
 
   // ---- the secret never leaves the server
   ok(!JSON.stringify(mock.state.calls.map(call => call.body)).includes(mock.state.secret), 'not in any body sent');

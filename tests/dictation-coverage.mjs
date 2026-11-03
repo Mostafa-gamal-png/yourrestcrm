@@ -27,6 +27,7 @@ const STAYS_TYPED = [
   {file: 'app/sales-workspace.tsx', snippet: "mode==='sales'?'العميل أو مرجع البيع'", reason: 'a search box'},
   {file: 'app/mold-requests.tsx', snippet: "<input type={type} maxLength={max} dir=\"ltr\"", reason: 'the mold description is dimensions (200*400*27.5TH MM OPEN), the mold number a code and the design link a URL; the notes are dictated'},
   {file: 'app/mold-requests.tsx', snippet: 'inputMode="numeric" dir="ltr"', reason: 'mold width, gelba size and quantity are numbers with ranges, picked from the usual sizes or typed'},
+  {file: 'app/mold-requests.tsx', snippet: 'name={key} maxLength={MOLD_QUOTE_PO_MAX}', reason: 'the quotation and PO numbers are codes copied as written on the document (Q-2026-0153, PO-7781); dictation would garble them'},
   {file: 'app/sales-workspace.tsx', snippet: 'maxLength={100} value={data.reference}', reason: 'the sale reference is a code from the invoice'},
   {file: 'app/visit-customer-picker.tsx', snippet: 'value={draft.code}', reason: 'the ERP customer code is a code'},
   // The shared helpers hand text and text areas to VoiceField and keep only the other types for themselves; the guard is checked below.
