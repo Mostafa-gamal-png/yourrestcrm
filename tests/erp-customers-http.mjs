@@ -11,9 +11,9 @@
 // refused (400 / 403) and the sales manager adds only in their region; a similar name left alone adds nothing, «ده هو» gives that
 // customer the code, «عميل جديد» adds; a code that became held between the preview and the apply refuses with 409; the same file
 // again after «ده هو» (the old code kept) has no conflict; a similar name only outside the manager's regions is out-of-region, not added.
-// Additions are opt-in: an apply that would add customers without `adds` (the number the preview showed: a screen loaded before the
-// deploy, which said rows without a match are left alone) or with another number is refused with 409 and writes nothing; an apply that
-// adds nobody needs no `adds`.
+// Additions are opt-in: the apply carries `adds` (the number the preview showed). An apply without it (a screen loaded before the deploy,
+// which said rows without a match are left alone and cannot read this release's answer) is refused with 409 and a reload message in
+// Arabic and English, code-only applies too; one with another number is refused with 409; neither writes anything.
 // Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
 import assert from 'node:assert/strict';
 import {zipSync, strToU8} from 'fflate';
@@ -112,20 +112,21 @@ try {
   const twice = xlsx([row('91', 'مصنع الفجر'), row('92', '', '0501234567')]);
   const conflict = (await post(owner, {...preview, base64: twice})).json();
   check(conflict.rows.map(r => [r.status, r.conflict, r.customerId]), [['choose', true, 'fajr'], ['choose', true, 'fajr']], 'two rows on one customer: both choose, conflict');
-  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: twice, snapshot: conflict.snapshot, requestId: crypto.randomUUID()});
+  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: twice, snapshot: conflict.snapshot, requestId: crypto.randomUUID(), adds: 0});
   check(response.status, 400, 'applying with both on one customer is refused');
   ok(/أكثر من سطر/.test(response.json().error), 'and says why');
   const leaveOne = (await post(owner, {...preview, base64: twice, choices: [{row: 4, customerId: ''}]})).json();
   check([leaveOne.summary.conflicts, leaveOne.rows[0].status, leaveOne.rows[1].customerId], [0, 'auto', ''], 'leaving one row resolves it');
 
-  // ---- an apply that would add customers without saying how many the screen showed (a screen loaded before the deploy sends no `adds`):
-  //  409 asking for a reload and a new preview, nothing written
+  // ---- an apply without `adds` (a screen loaded before the deploy) or with another number than the file adds: 409 asking for a reload
+  //  and a new preview, nothing written
   const ADDS_UNCONFIRMED = 'الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة';
+  const SCREEN_OUTDATED = 'شاشة الاستيراد دي اتفتحت قبل تحديث النظام؛ حدّث الصفحة واعمل معاينة جديدة. ما اتحفظش أي حاجة. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.';
   const unconfirmedBefore = [await count("SELECT count(*) AS n FROM crm_records WHERE kind='customer'"), await count('SELECT count(*) AS n FROM crm_audit'), await count('SELECT count(*) AS n FROM crm_customer_code_mappings')];
   const oldScreen = {action: 'apply', fileName: 'Customer.xlsx', base64: file, snapshot: body.snapshot, choices: [{row: 5, customerId: 'twinB'}]};
-  for (const [extra, label] of [[{}, 'no adds (the screen before the deploy)'], [{adds: 0}, 'adds 0'], [{adds: 2}, 'another number']]) {
+  for (const [extra, message, label] of [[{}, SCREEN_OUTDATED, 'no adds (the screen before the deploy)'], [{adds: 0}, ADDS_UNCONFIRMED, 'adds 0'], [{adds: 2}, ADDS_UNCONFIRMED, 'another number']]) {
     response = await post(owner, {...oldScreen, requestId: crypto.randomUUID(), ...extra});
-    check([response.status, response.json().error], [409, ADDS_UNCONFIRMED], label + ' while the file adds a customer: 409 asking for a reload');
+    check([response.status, response.json().error], [409, message], label + ' while the file adds a customer: 409 asking for a reload');
   }
   check([await count("SELECT count(*) AS n FROM crm_records WHERE kind='customer'"), await count('SELECT count(*) AS n FROM crm_audit'), await count('SELECT count(*) AS n FROM crm_customer_code_mappings')], unconfirmedBefore, 'nobody added, no code changed, no receipt');
   for (const id of ids) check((await record(id)).version, 1, 'no customer changed by the refused applies: ' + id);
@@ -191,7 +192,7 @@ try {
   response = await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: 'fajr', version: edited.version, data: {...edited.data, notes: 'edited after the preview'}}});
   check(response.status, 200, 'the customer is edited through the CRM');
   const auditsBefore = await count('SELECT count(*) AS n FROM crm_audit');
-  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: second, snapshot: fresh.snapshot, requestId: crypto.randomUUID()});
+  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: second, snapshot: fresh.snapshot, requestId: crypto.randomUUID(), adds: 0});
   check([response.status, response.json().error], [409, 'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة'], 'a stale preview: 409 with the message');
   check([(await record('fajr')).data.code, (await record('badr')).data.code, await count('SELECT count(*) AS n FROM crm_audit')], ['44', '33', auditsBefore], 'nothing was written');
 
@@ -211,7 +212,7 @@ try {
   check([sim.rows[0].status, sim.rows[0].customerId, sim.rows[0].change, sim.summary.changes, sim.summary.adds], ['similar', 'safa', true, 1, 0], '«ده هو» previewed: that customer takes the code');
   check((await post(owner, {...preview, base64: thisOne, choices: [{row: 3, customerId: 'nour'}]})).status, 400, 'a customer that is not a similar candidate: 400');
   check((await post(owner, {...preview, base64: thisOne, choices: [{row: 3, customerId: 'crm-owner-erp-x'}]})).status, 400, 'nor a made-up id');
-  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: thisOne, snapshot: sim.snapshot, requestId: crypto.randomUUID(), choices: [{row: 3, customerId: 'safa'}]});
+  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: thisOne, snapshot: sim.snapshot, requestId: crypto.randomUUID(), choices: [{row: 3, customerId: 'safa'}], adds: 0});
   check([response.status, response.json().changed, response.json().added, response.json().changes], [200, 1, 0, [{row: 3, customerId: 'safa', from: '345', to: '9003', mapping: false}]], '«ده هو» applied');
   check([(await record('safa')).data.code, (await app.db.prepare("SELECT action FROM crm_audit WHERE record_id='safa'").first()).action], ['9003', 'erp-customer-code'], 'the code changed, with its history entry');
   const asNew = xlsx([row('9004', 'مصنع الصفا للبلوك الجديد', '0598885555')]);
@@ -221,7 +222,7 @@ try {
   check((await post(owner, {...preview, base64: file, choices: [{row: 3, customerId: '+new'}]})).status, 400, '«عميل جديد» on a row the CRM has: 400');
   simId = crypto.randomUUID();
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: asNew, snapshot: sim.snapshot, requestId: crypto.randomUUID(), choices: [{row: 3, customerId: '+new'}], region: 'الغربية'});
-  check([response.status, response.json().error], [409, ADDS_UNCONFIRMED], '«عميل جديد» without adds: 409, nobody added');
+  check([response.status, response.json().error], [409, SCREEN_OUTDATED], '«عميل جديد» without adds: 409, nobody added');
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: asNew, snapshot: sim.snapshot, requestId: simId, choices: [{row: 3, customerId: '+new'}], region: 'الغربية', adds: 1});
   check([response.status, response.json().added, response.json().changed, response.json().additions.map(a => [a.customerId, a.code, a.region])], [200, 1, 0, [['crm-owner-erp-' + simId + '-3', '9004', 'الغربية']]], '«عميل جديد» applied: added');
   check((await record('safa')).data.code, '9003', 'and the similar customer is untouched');
@@ -272,14 +273,20 @@ try {
   check([body.summary.outOfRegion, body.summary.heldOutside, body.summary.changes, body.summary.mappings], [1, 2, 1, 0], 'counted, and only the in-region change is planned');
   check((await post(sm, {...preview, base64: regional, choices: [{row: 3, customerId: 'east'}]})).status, 400, 'an out-of-region row takes no choice');
   check((await post(sm, {...preview, base64: regional, choices: [{row: 5, customerId: 'nour'}]})).status, 400, 'a held-outside row takes no choice either');
+  // A code-only apply from a screen loaded before the deploy (no `adds`) is refused too: that screen cannot read this release's answer
+  // (no `missing`), so a save it made would read as unconfirmed and the dialog could not be closed. Nothing is written.
+  const codeOnlyBefore = [await count('SELECT count(*) AS n FROM crm_audit'), (await record('fajr')).version, (await record('fajr')).data.code];
   response = await post(sm, {action: 'apply', fileName: 'Customer.xlsx', base64: regional, snapshot: body.snapshot, requestId: crypto.randomUUID()});
-  check([response.status, response.json().updated, response.json().mappings, response.json().outOfRegion, response.json().heldOutside], [200, 1, 0, 1, 2], 'the manager applies (no customer to add: no adds needed, as the screen before the deploy sends it)');
+  check([response.status, response.json().error], [409, SCREEN_OUTDATED], 'a code-only apply without adds (the screen before the deploy): 409 asking for a reload');
+  check([await count('SELECT count(*) AS n FROM crm_audit'), (await record('fajr')).version, (await record('fajr')).data.code], codeOnlyBefore, 'nothing written by it');
+  response = await post(sm, {action: 'apply', fileName: 'Customer.xlsx', base64: regional, snapshot: body.snapshot, requestId: crypto.randomUUID(), adds: 0});
+  check([response.status, response.json().updated, response.json().mappings, response.json().outOfRegion, response.json().heldOutside], [200, 1, 0, 1, 2], 'the manager applies (no customer to add: adds 0)');
   check([(await record('east')).data.code, (await record('fajr')).data.code, (await record('nour')).data.code, (await record('badr')).data.code, (await record('east2')).data.code], ['66', '72', '12', '33', '81'], 'only the in-region customer changed; the numbers held outside the regions changed nobody');
   check(await mappings(), mappingsBefore, 'the stored mappings are as they were (the administrator\'s 66 → east included)');
   // The same file by the administrator links them: their invoices are the administrator's to move.
   const ownerView = (await post(owner, {...preview, base64: regional})).json();
   check(ownerView.rows.slice(2).map(r => [r.status, r.customerId, r.mapping]), [['auto', 'nour', true], ['auto', 'badr', true]], 'the system administrator sees them as ordinary links');
-  check((await post(rep, {action: 'apply', fileName: 'Customer.xlsx', base64: regional, snapshot: body.snapshot, requestId: crypto.randomUUID()})).status, 403, 'a representative cannot apply either');
+  check((await post(rep, {action: 'apply', fileName: 'Customer.xlsx', base64: regional, snapshot: body.snapshot, requestId: crypto.randomUUID(), adds: 0})).status, 403, 'a representative cannot apply either');
 
   // ---- the sales manager adds customers in their region only, as the responsible
   const mine = xlsx([row('601', 'مصنع النخيل', '0597776666')]);

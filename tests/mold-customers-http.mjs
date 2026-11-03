@@ -125,7 +125,7 @@ try {
   const preview = await (await owner('/api/erp-customers', {method: 'POST', body: {action: 'preview', fileName: 'Customer.xlsx', base64: file}})).json();
   check([preview.summary?.auto, preview.summary?.changes], [1, 1], 'the import matches the customer by its name and will change its code');
   const beforeImport = sends().length;
-  const applied = await owner('/api/erp-customers', {method: 'POST', body: {action: 'apply', fileName: 'Customer.xlsx', base64: file, snapshot: preview.snapshot, requestId: crypto.randomUUID()}});
+  const applied = await owner('/api/erp-customers', {method: 'POST', body: {action: 'apply', fileName: 'Customer.xlsx', base64: file, snapshot: preview.snapshot, requestId: crypto.randomUUID(), adds: 0}});
   check(applied.status, 200, 'the import is applied');
   await until(() => sends().length > beforeImport && JSON.parse(sends().at(-1).body).customers.some(item => item.crmNumber === n2 && item.erpCode === '777'), 'the list after the import', 15_000);
   check(mock.state.customers.get(n2).erpCode, '777', 'production holds the code the import wrote');

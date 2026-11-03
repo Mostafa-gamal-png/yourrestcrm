@@ -14,8 +14,11 @@ const regionSchema=z.object({row:z.number().int().min(1).max(1048576),region:z.s
 const inputSchema=z.object({action:z.enum(['preview','apply']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),choices:z.array(choiceSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),region:z.string().max(40).optional(),regions:z.array(regionSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),adds:z.number().int().min(0).max(ERP_CUSTOMERS_MAX_ROWS).optional(),snapshot:z.string().regex(/^[a-f0-9]{64}$/).optional(),requestId:z.string().uuid().optional()}).strict();
 type Input=z.infer<typeof inputSchema>;
 const stale='اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة';
-/** An apply that would add customers without saying how many the screen showed: a screen loaded before additions existed (it said rows
- *  without a match are left alone, and never sends `adds`), or one whose count differs. Nobody is added; the page must be reloaded. */
+/** An apply with no `adds`: an import screen loaded before additions existed (it said rows without a match are left alone, never sends
+ *  `adds`, and cannot read this release's answer, which has no `missing`). Every apply from it is refused, code-only ones too, before
+ *  anything is written. That screen cannot translate a new message, so the English sentence travels with it. */
+export const ERP_SCREEN_OUTDATED='شاشة الاستيراد دي اتفتحت قبل تحديث النظام؛ حدّث الصفحة واعمل معاينة جديدة. ما اتحفظش أي حاجة. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.';
+/** An apply whose `adds` differs from the number of new customers the file adds now. Nobody is added; the page must be reloaded. */
 export const ERP_ADDS_UNCONFIRMED='الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة';
 /** The label a customer added by an import carries in its «إضافة» history entry, after its name (the form's entry is the name alone). */
 export const ERP_ADD_AUDIT_LABEL='إضافة عميل من ملف ERP';
@@ -67,9 +70,9 @@ async function withNumbers<T extends {additions?:Addition[]}>(c:Context,result:T
 /** POST /api/erp-customers. `preview` writes nothing; `apply` re-reads the same file with the user's choices and writes, in one
  * transaction, the ERP code of every customer that changes, an explicit code mapping where the number is also held by another customer,
  * one audit entry per changed customer, and every new customer (the importing member responsible, the chosen region, an «إضافة» entry
- * each). Additions are opt-in: the apply carries `adds`, the number of new customers the preview showed, and one that would add customers
- * without it (or with another number) is refused (409 ERP_ADDS_UNCONFIRMED) before anything is written. A repeated `requestId` returns
- * the saved answer and adds nobody twice (the new customers' ids come from it). */
+ * each). Additions are opt-in: the apply carries `adds`, the number of new customers the preview showed. One without it (a screen loaded
+ * before the deploy) is refused (409 ERP_SCREEN_OUTDATED), and one with another number (409 ERP_ADDS_UNCONFIRMED), before anything is
+ * written. A repeated `requestId` returns the saved answer and adds nobody twice (the new customers' ids come from it). */
 export async function importErpCustomers(c:Context,body:unknown){
  requireErpCustomersRole(c.me);
  const {input,bytes}=parseInput(body);
@@ -82,11 +85,12 @@ export async function importErpCustomers(c:Context,body:unknown){
  const fingerprint=await hash(JSON.stringify({file:await hash(bytes),choices:[...choices].sort(([a],[b])=>a-b),region:input.region??null,regions:[...rowRegions].sort(([a],[b])=>a-b)})),receipt='erp-customers:'+c.me.id+':'+input.requestId;
  const replay=async()=>{const row=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receipt).first<{detail:string}>();if(!row)return null;const saved=JSON.parse(row.detail) as {fingerprint:string;result:{additions?:Addition[]}&Record<string,unknown>};if(saved.fingerprint!==fingerprint)throw new CRMError('الطلب محفوظ ببيانات مختلفة. اعمل معاينة جديدة.',409);return {...await withNumbers(c,saved.result),alreadySaved:true};};
  const prior=await replay();if(prior)return prior;
+ if(input.adds===undefined)throw new CRMError(ERP_SCREEN_OUTDATED,409);
  const book=await prepare(c,bytes);
  if(book.snapshot!==input.snapshot)throw new CRMError(stale,409);
  const prepared={...book.match(choices),snapshot:book.snapshot};
  if(prepared.summary.conflicts)throw new CRMError('اخترت نفس العميل لأكثر من سطر؛ العميل له كود ERP واحد. راجع الاختيارات.');
- if((input.adds??0)!==prepared.adds.length)throw new CRMError(ERP_ADDS_UNCONFIRMED,409);
+ if(input.adds!==prepared.adds.length)throw new CRMError(ERP_ADDS_UNCONFIRMED,409);
  if(prepared.adds.length>ERP_CUSTOMERS_MAX_ADDS)throw new CRMError(`أقصى عدد للعملاء الجداد في المرة الواحدة ${ERP_CUSTOMERS_MAX_ADDS}؛ سيب الباقي وضيفهم في مرة تانية.`);
  if(!prepared.plan.length&&!prepared.adds.length)throw new CRMError('لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.');
  // The same checks as a customer edit, for every customer that changes; their SQL (member and record version) is the gate below. A member
