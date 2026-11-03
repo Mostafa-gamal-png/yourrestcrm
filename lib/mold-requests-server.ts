@@ -159,11 +159,16 @@ export function newerRemote(remote:MoldRemote|null,at:string):[string,(string|nu
 /** Who the audit names for what production did (its production manager's restore). */
 export const MOLD_PRODUCTION_ACTOR='تطبيق الإنتاج';
 /** Over crm_mold_requests as it stands before a status is stored: the status stored says cancelled, and the one coming (its revision
- *  bound, never older: newerRemote's own test) is not cancelled. The production manager restored the request (2026-11-03). */
-const RESTORED_SQL="json_extract(remote,'$.status') IS 'cancelled' AND IFNULL(json_extract(remote,'$.revision')>?,0)=0";
+ *  bound, never older: newerRemote's own test) is not cancelled. The production manager restored the request (2026-11-03).
+ *  Or a restore the release before this one already pulled: it pulled cancelled requests too but stored their status alone, so a request
+ *  the CRM cancelled (its cancellation delivered: no outbox) holds a status that is not cancelled, stored after the cancellation, while
+ *  its cancelled marks stay; the status coming says it is still not cancelled. A cancellation still waiting (outbox) is never one, and
+ *  neither is a request production holds cancelled (the status coming says so, and nothing here runs then). */
+const RESTORED_SQL="(json_extract(remote,'$.status') IS 'cancelled' OR (cancelled_at IS NOT NULL AND outbox IS NULL AND remote IS NOT NULL AND json_extract(remote,'$.status') IS NOT 'cancelled' AND remote_at>cancelled_at)) AND IFNULL(json_extract(remote,'$.revision')>?,0)=0";
 /**
  * The statements that store production's answer about a request (newerRemote), run together in this order (one batch). When the answer
- * says the request is not cancelled while the status stored says it is, the production manager restored it (2026-11-03), and two come
+ * says the request is not cancelled while the status stored says it is (or the earlier release already stored that restore without
+ * settling it: RESTORED_SQL), the production manager restored it (2026-11-03), and two come
  * first: an audit entry «رجّعه مدير الإنتاج بعد الإلغاء» (whoever cancelled it), and, for a request the CRM cancelled, its cancelled marks
  * cleared (cancelled_at, cancel_reason: it is active again, its cancelling and design files back under the usual rules) with why kept
  * in last_error (code restored). A cancellation still waiting for its resend is dropped then (reason cancel_dropped): production saw the

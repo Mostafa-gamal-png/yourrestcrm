@@ -127,7 +127,7 @@ for (const language of ['ar', 'en']) {
   applyButton(h).props.onClick();
   await until(() => h.requests.length === 4, 'the apply');
   const sent = h.requests[3];
-  eq([sent.body.action, sent.body.snapshot, sent.body.choices, /^[0-9a-f-]{36}$/.test(sent.body.requestId), sent.body.base64, sent.body.region, sent.body.regions], ['apply', 'a'.repeat(64), [{row: 5, customerId: 'twinB'}], true, h.requests[0].body.base64, 'الوسطى', [{row: 6, region: 'الشرقية'}]], 'the apply carries the same file, the snapshot, the choices, the regions and a request id');
+  eq([sent.body.action, sent.body.snapshot, sent.body.choices, /^[0-9a-f-]{36}$/.test(sent.body.requestId), sent.body.base64, sent.body.region, sent.body.regions, sent.body.adds], ['apply', 'a'.repeat(64), [{row: 5, customerId: 'twinB'}], true, h.requests[0].body.base64, 'الوسطى', [{row: 6, region: 'الشرقية'}], 1], 'the apply carries the same file, the snapshot, the choices, the regions, the number of new customers shown (additions are opt-in on the server) and a request id');
   sent.reject(new submit.SubmitError('Disconnected')); await until(() => h.state.pending, 'the unconfirmed state'); h.render();
   ok(button(h, t('تأكيد الحفظ', 'Confirm save')), 'an unconfirmed apply offers to confirm it');
   eq([pick(h, 5, 'twinA').props.disabled, pick(h, 6, '').props.disabled, select(h, node => node.props.id === 'erp-customers-region').props.disabled], [true, true, true], 'the choices and the regions are locked');
@@ -189,7 +189,7 @@ for (const language of ['ar', 'en']) {
   select(o, node => node.props.id === 'erp-customers-region').props.onChange({target: {value: 'الشرقية'}}); o.render();
   eq([text(applyButton(o)).trim(), applyButton(o).props.disabled], [apply(language, 0, 1), false], '«حدّث 0 كود وضيف 1 عميل»');
   applyButton(o).props.onClick(); await until(() => o.requests.length === 3, 'the apply');
-  eq([o.requests[2].body.choices, o.requests[2].body.region], [[{row: 8, customerId: ADD}], 'الشرقية'], 'the region chosen for it goes with the apply');
+  eq([o.requests[2].body.choices, o.requests[2].body.region, o.requests[2].body.adds], [[{row: 8, customerId: ADD}], 'الشرقية', 1], 'the region chosen for it goes with the apply, and the one customer it adds');
 
   // ---- a row stays in the part where the user acted on it: a conflict resolved there, or a preselected row picked again
   const cRow = {...base, row: 3, code: '12', name: 'مصنع النور', phones: ['4567'], status: 'choose', conflict: true, matchedBy: 'phone', candidates: [{...candidate('nour', 'مصنع النور', 1, 'OLD'), matchedBy: 'phone'}], customerId: 'nour', from: 'OLD', to: '12', change: false};
@@ -268,7 +268,7 @@ for (const language of ['ar', 'en']) {
   m.requests[1].reject(new submit.SubmitError('السطر 14: التقرير يحتوي معادلات؛ صدّره بالقيم فقط', 400));
   await until(() => m.state.error, 'the refusal'); m.render();
   ok(text(m.tree()).includes(t('السطر 14: التقرير يحتوي معادلات؛ صدّره بالقيم فقط', 'Row 14: the file contains formulas')), 'a message with its row');
-  for (const [message, english] of [['السطر 6 مش عميل جديد؛ اعمل معاينة جديدة', 'Row 6 is not a new customer'], ['لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها', 'outside your regions'], ['أقصى عدد للعملاء الجداد في المرة الواحدة 2000؛ سيب الباقي وضيفهم في مرة تانية.', 'At most 2000 new customers'], ['لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.', 'Nothing in this file changes a code or adds a customer']]) {
+  for (const [message, english] of [['السطر 6 مش عميل جديد؛ اعمل معاينة جديدة', 'Row 6 is not a new customer'], ['الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة', 'Reload the page and run a new preview'], ['لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها', 'outside your regions'], ['أقصى عدد للعملاء الجداد في المرة الواحدة 2000؛ سيب الباقي وضيفهم في مرة تانية.', 'At most 2000 new customers'], ['لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.', 'Nothing in this file changes a code or adds a customer']]) {
     const x = await opened(language, first); applyButton(x).props.onClick(); await until(() => x.requests.length === 2, 'the apply');
     x.requests[1].reject(new submit.SubmitError(message, 400, {error: message})); await until(() => x.state.error, 'the refusal'); x.render();
     ok(text(x.tree()).includes(t(message, english)), 'the new refusals in the reader\'s language: ' + english);

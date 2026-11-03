@@ -11,9 +11,12 @@ type Context=Awaited<ReturnType<typeof context>>;
 const maxFileBytes=1024*1024;
 const choiceSchema=z.object({row:z.number().int().min(1).max(1048576),customerId:z.string().max(200)}).strict();
 const regionSchema=z.object({row:z.number().int().min(1).max(1048576),region:z.string().max(40)}).strict();
-const inputSchema=z.object({action:z.enum(['preview','apply']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),choices:z.array(choiceSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),region:z.string().max(40).optional(),regions:z.array(regionSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),snapshot:z.string().regex(/^[a-f0-9]{64}$/).optional(),requestId:z.string().uuid().optional()}).strict();
+const inputSchema=z.object({action:z.enum(['preview','apply']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),choices:z.array(choiceSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),region:z.string().max(40).optional(),regions:z.array(regionSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),adds:z.number().int().min(0).max(ERP_CUSTOMERS_MAX_ROWS).optional(),snapshot:z.string().regex(/^[a-f0-9]{64}$/).optional(),requestId:z.string().uuid().optional()}).strict();
 type Input=z.infer<typeof inputSchema>;
 const stale='اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة';
+/** An apply that would add customers without saying how many the screen showed: a screen loaded before additions existed (it said rows
+ *  without a match are left alone, and never sends `adds`), or one whose count differs. Nobody is added; the page must be reloaded. */
+export const ERP_ADDS_UNCONFIRMED='الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة';
 /** The label a customer added by an import carries in its «إضافة» history entry, after its name (the form's entry is the name alone). */
 export const ERP_ADD_AUDIT_LABEL='إضافة عميل من ملف ERP';
 /** The administrator (every customer in their regions, all of them for a global scope) and the sales manager (their regions' customers). */
@@ -64,7 +67,9 @@ async function withNumbers<T extends {additions?:Addition[]}>(c:Context,result:T
 /** POST /api/erp-customers. `preview` writes nothing; `apply` re-reads the same file with the user's choices and writes, in one
  * transaction, the ERP code of every customer that changes, an explicit code mapping where the number is also held by another customer,
  * one audit entry per changed customer, and every new customer (the importing member responsible, the chosen region, an «إضافة» entry
- * each). A repeated `requestId` returns the saved answer and adds nobody twice (the new customers' ids come from it). */
+ * each). Additions are opt-in: the apply carries `adds`, the number of new customers the preview showed, and one that would add customers
+ * without it (or with another number) is refused (409 ERP_ADDS_UNCONFIRMED) before anything is written. A repeated `requestId` returns
+ * the saved answer and adds nobody twice (the new customers' ids come from it). */
 export async function importErpCustomers(c:Context,body:unknown){
  requireErpCustomersRole(c.me);
  const {input,bytes}=parseInput(body);
@@ -81,6 +86,7 @@ export async function importErpCustomers(c:Context,body:unknown){
  if(book.snapshot!==input.snapshot)throw new CRMError(stale,409);
  const prepared={...book.match(choices),snapshot:book.snapshot};
  if(prepared.summary.conflicts)throw new CRMError('اخترت نفس العميل لأكثر من سطر؛ العميل له كود ERP واحد. راجع الاختيارات.');
+ if((input.adds??0)!==prepared.adds.length)throw new CRMError(ERP_ADDS_UNCONFIRMED,409);
  if(prepared.adds.length>ERP_CUSTOMERS_MAX_ADDS)throw new CRMError(`أقصى عدد للعملاء الجداد في المرة الواحدة ${ERP_CUSTOMERS_MAX_ADDS}؛ سيب الباقي وضيفهم في مرة تانية.`);
  if(!prepared.plan.length&&!prepared.adds.length)throw new CRMError('لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.');
  // The same checks as a customer edit, for every customer that changes; their SQL (member and record version) is the gate below. A member
