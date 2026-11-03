@@ -1,5 +1,5 @@
 {
-  "mode": "deploy",
+  "mode": "verify",
   "package": "deploy/packages/Yourrest-CRM-Update-MoldQuotePo-20261103.zip",
   "sha256": "7981fe58bb121cf2361b63b07d818be22b7c739532f9c5d590d1054b561d7c2e",
   "stage": "yourrest-crm-update-mold-quote-po-20261103",
