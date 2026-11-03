@@ -1,7 +1,9 @@
 // The owner's real ERP customer export (gate erp-customers-workbook: `ERP_CUSTOMERS_WORKBOOK=/path/Customer.xlsx npm run check --
 // --gate erp-customers-workbook`), read by the same code as the server: the generic sheet reader of
 // lib/erp-sales.ts and the header and row reading of lib/erp-customers.ts. The file is given by ERP_CUSTOMERS_WORKBOOK and is never
-// copied into the repository. This prints counts and header names only: never a name, phone, email or ID number from the file.
+// copied into the repository. This prints counts and header names only: never a name, phone, email or ID number from the file. Since
+// 2026-11-03 it also matches the file against an empty CRM (every named row new), against itself (nothing new) and against its own names
+// with one word added (the similar-name rule), in memory only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,8 +57,28 @@ const counts={
  withAnyValidPhone:parsed.rows.filter(row=>row.phones.length).length,withTwoValidPhones:parsed.rows.filter(row=>row.phones.length>1).length,
  withNeitherNameNorPhone:parsed.rows.filter(row=>!row.name&&!row.nameEn&&!row.phones.length).length,
 };
-// Against an empty CRM every valid row is missing and nothing is planned: the matcher runs over the whole file without error.
-const empty=E.matchErpCustomers(parsed.rows,[],{me:{id:'owner',role:'admin',regionScope:'all',name:'',email:'',branch:'',active:1,target:0}});
-eq(empty.summary.missing+empty.summary.invalid,181,'with no CRM customers every row is missing or invalid');
-eq(empty.plan.length,0,'and nothing would change');
+// Against an empty CRM every valid row with a name is new (added) and the rest invalid; no code changes: the matcher runs over the whole file.
+const me={id:'owner',role:'admin',regionScope:'all',name:'',email:'',branch:'',active:1,target:0};
+const empty=E.matchErpCustomers(parsed.rows,[],{me});
+eq(empty.summary.new+empty.summary.invalid,181,'with no CRM customers every row is new or invalid');
+eq(empty.plan.length,0,'and no code would change');
+eq(empty.summary.adds,empty.summary.new,'every new row is added by default');
+eq(empty.summary.adds<=E.ERP_CUSTOMERS_MAX_ADDS,true,'within the limit of one apply');
+eq(empty.adds.every(add=>add.name&&add.name.length<=250&&add.code&&add.phone.length<=250&&add.phone2.length<=250&&add.address.length<=250),true,'every row to add has a name and a code, and its cells fit the customer form');
+// Against a CRM made of the file itself (in memory only): every row finds its own customer, nothing is new, nothing changes.
+let serial=0;
+const own=parsed.rows.filter(row=>!row.issue).map(row=>({id:'c'+(++serial),kind:'customer',parentId:null,assignedTo:'owner',branch:'b',version:1,createdAt:'',updatedAt:'',data:{name:row.name||row.nameEn,phone:row.contact.mobile,phone2:row.contact.phone,code:row.code,region:'',internalCode:'YR-C-'+String(serial).padStart(6,'0')}}));
+const itself=E.matchErpCustomers(parsed.rows,own,{me});
+eq(itself.summary.new+itself.summary.similar+itself.summary.adds+itself.plan.length,0,'against itself: nothing new, nothing similar, nothing added or changed');
+// The similar-name rule on the real names: every customer renamed with one word added and given another code, no phones. A row whose
+// name has a distinctive word should find its own customer among the similar names (counted, not shown).
+const renamed=own.map(customer=>({...customer,data:{...customer.data,name:customer.data.name+' الحديثه',code:'X-'+customer.data.code,phone:'',phone2:''}}));
+const similar=E.matchErpCustomers(parsed.rows.map(row=>({...row,phones:[]})),renamed,{me});
+const ownOf=new Map(parsed.rows.filter(row=>!row.issue).map((row,index)=>[row.row,own[index].id]));
+const distinctive=parsed.rows.filter(row=>!row.issue&&E.similarNameTokens(row.name||row.nameEn).length).length;
+const foundSelf=similar.rows.filter(row=>row.status==='similar'&&row.candidates.some(candidate=>candidate.id===ownOf.get(row.row))).length;
+eq(similar.plan.length,0,'renamed: nothing changes without a choice');
+eq(foundSelf,distinctive,'renamed with one word added: every row with a distinctive word finds its own customer among the similar names');
+eq(similar.rows.every(row=>row.candidates.length<=E.ERP_SIMILAR_MAX),true,'renamed: at most 5 suggestions per row');
+counts.matching={emptyCrm:{new:empty.summary.new,invalid:empty.summary.invalid,adds:empty.summary.adds},againstItself:{auto:itself.summary.auto,same:itself.summary.same,choose:itself.summary.choose,invalid:itself.summary.invalid},renamedOneWord:{rowsWithDistinctiveWord:distinctive,foundOwnCustomer:foundSelf,similar:similar.summary.similar,new:similar.summary.new,withOtherSuggestions:similar.rows.filter(row=>row.status==='similar'&&row.candidates.length>1).length}};
 console.log(JSON.stringify({ok:true,checks,headers,counts,source:'ERP customer export (counts and header names only)'}));

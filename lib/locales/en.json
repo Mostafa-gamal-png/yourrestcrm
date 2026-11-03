@@ -496,6 +496,7 @@
   "إحداثيات الصف {0} غير صالحة": "Invalid coordinates in row {0}",
   "إدارة علاقات العملاء": "Customer Relationship Management",
   "إضافة": "Add",
+  "إضافة عميل من ملف ERP": "Added from the ERP customer file",
   "إضافة عميل": "Add customer",
   "إضافة ماكينة للمصنع": "Add factory machine",
   "إنشاء عرض سعر": "Create quotation",
