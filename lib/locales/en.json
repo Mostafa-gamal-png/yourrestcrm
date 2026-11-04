@@ -1410,6 +1410,7 @@
   "تطبيق المنتجات لسه ما اتحدّثش لاستقبال رقم عرض السعر والـ PO؛ حدّث الصفحة وابعت الطلب من غيرهم.": "The products application is not updated yet to take the quotation and PO numbers; refresh the page and send the request without them.",
   "رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.": "The design link was removed from the request; refresh the page and attach the design as a file.",
   "توقيع العميل مطلوب قبل إرسال الطلب": "The customer's signature is required before the request is sent",
+  "توقيع العميل مطلوب قبل إرسال الطلب؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.": "The customer's signature is required before the request is sent; refresh the page if the signature pad does not show.",
   "اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)": "Type the name of the person signing for the customer (2 to 80 characters)",
   "صورة التوقيع غير صالحة؛ امسح ووقّع من جديد": "The signature image is not valid; clear it and sign again",
   "الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.": "The request holds 10 design files; delete one to make room for the customer's signature.",

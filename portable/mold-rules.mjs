@@ -387,10 +387,29 @@ export function moldSignatureBytes(value) {
     return bytes;
   } catch { return null; }
 }
-const PNG_END = [0, 0, 0, 0, 73, 69, 78, 68, 0xae, 0x42, 0x60, 0x82];
+const CRC_TABLE = Array.from({length: 256}, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (bytes, start, end) => { let c = 0xffffffff; for (let i = start; i < end; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+/** Whether the bytes are a whole PNG, chunk by chunk: the signature, IHDR first, at least one IDAT, IEND last with nothing after it, and
+ *  every chunk's CRC right. A header with junk before an IEND (no image data) is not one. */
+export function moldPngWhole(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.length < 57 || ![137, 80, 78, 71, 13, 10, 26, 10].every((value, i) => bytes[i] === value)) return false;
+  let at = 8, first = true, data = false;
+  while (at + 12 <= bytes.length) {
+    const size = (bytes[at] * 2 ** 24) + (bytes[at + 1] << 16 | bytes[at + 2] << 8 | bytes[at + 3]), end = at + 8 + size;
+    if (end + 4 > bytes.length) return false;
+    const type = String.fromCharCode(bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]);
+    if (!/^[A-Za-z]{4}$/.test(type) || (first && type !== 'IHDR')) return false;
+    const stored = (bytes[end] * 2 ** 24) + (bytes[end + 1] << 16 | bytes[end + 2] << 8 | bytes[end + 3]);
+    if (crc32(bytes, at + 4, end) !== stored) return false;
+    if (type === 'IDAT') data = data || size > 0;
+    if (type === 'IEND') return size === 0 && data && end + 4 === bytes.length;
+    first = false; at = end + 4;
+  }
+  return false;
+}
 /**
- * The customer's signature before the CRM keeps it: who signed (2 to 80 characters, nothing production would refuse) and a real PNG (its
- * header and its closing IEND chunk), at most 256 KiB, at most 1200 pixels a side, its long side at least 64, and one production accepts
+ * The customer's signature before the CRM keeps it: who signed (2 to 80 characters, nothing production would refuse) and a real PNG
+ * (moldPngWhole: IHDR, image data, IEND, every chunk's CRC), at most 256 KiB, at most 1200 pixels a side, its long side at least 64, and one production accepts
  * as a design image (moldDesignFileCheck under its file name). field: signer or signature.
  * @param {unknown} signer
  * @param {Uint8Array|null} bytes
@@ -402,7 +421,7 @@ export function moldSignatureCheck(signer, bytes) {
   if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, field: 'signature', reason: 'missing'};
   if (bytes.length > MOLD_SIGNATURE_MAX_BYTES) return {ok: false, field: 'signature', reason: 'too_large'};
   const size = moldImageSize(bytes);
-  if (!size || size.format !== 'png' || bytes.length < 57 || PNG_END.some((value, i) => bytes[bytes.length - 12 + i] !== value)) return {ok: false, field: 'signature', reason: 'not_png'};
+  if (!size || size.format !== 'png' || !moldPngWhole(bytes)) return {ok: false, field: 'signature', reason: 'not_png'};
   if (size.width > MOLD_SIGNATURE_MAX_SIDE || size.height > MOLD_SIGNATURE_MAX_SIDE || Math.max(size.width, size.height) < MOLD_SIGNATURE_MIN_SIDE || Math.min(size.width, size.height) < 1) return {ok: false, field: 'signature', reason: 'size'};
   const file = moldSignatureName(name), checked = moldDesignFileCheck(file, bytes);
   if (!checked.ok) return {ok: false, field: 'signature', reason: checked.reason};
