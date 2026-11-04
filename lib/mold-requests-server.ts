@@ -14,7 +14,7 @@ import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
 import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
 type Config=ReturnType<typeof moldConfig>;
@@ -34,7 +34,8 @@ export async function loadMoldRequest(db:D1Database,id:string){return (await loa
 
 /** The contract body of a request (§2), with its payment, and its quotation and PO numbers, when it has them: a request stored without
  *  them is sent again byte for byte as first sent (production compares a resend with its original; a field added would be other data,
- *  409 production_only). Always the request's own data, never the numbers a status object carries (production's current values). */
+ *  409 production_only). Always the request's own data, never the numbers a status object carries (production's current values). Built
+ *  from these fields alone: the customer's signature (data.signature, 2026-11-04) goes as a design file, never in this body. */
 export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs,payment:row.data.payment,quoteNo:row.data.quoteNo,poNo:row.data.poNo});
 
 /** Where the CRM keeps that production's update of 2026-11-03 (the quotation and PO) is live: a row of crm_settings, the existing
@@ -419,20 +420,22 @@ type PendingReader={me:Member;db:D1Database;members:Member[];regionCustomerIds:S
  * production) that this manager approves (the owner, 2026-11-03), each with its design files downloaded through the CRM; null for anyone
  * else. One of the CRM's own requests by the CRM's row (moldApprovesRequest: their own, their team's, or one whose requester is in no
  * sales manager's team, such as customer service's, with its customer in their regions); another manager's team's is that manager's.
- * One registered in production by its customer's Yourrest number, within the manager's regions when they do not cover all, as before. */
+ * One registered in production by its customer's Yourrest number, within the manager's regions when they do not cover all, as before.
+ * The CRM's own request carries its customer's signature (2026-11-04), and its signature's file among the design files is labelled so. */
 export async function moldPendingFor(c:PendingReader,link:Config,{force=false}:{force?:boolean}={}):Promise<MoldPendingAnswer|null>{
  if(!canApproveMoldRequests(c.me))return null;
  const pulled=await pullPendingApprovals({link,force});
  await noteMoldQuotePo(c.db,pulled.items);
  // The CRM's own requests, with who asked for each and for which customer.
- const own=new Map((await c.db.prepare('SELECT id,member_id AS memberId,customer_id AS customerId FROM crm_mold_requests').all<{id:string;memberId:string;customerId:string}>()).results.map(row=>[row.id,row]));
+ const own=new Map((await c.db.prepare("SELECT id,member_id AS memberId,customer_id AS customerId,json_extract(data,'$.signature') AS signature FROM crm_mold_requests").all<{id:string;memberId:string;customerId:string;signature:string|null}>()).results.map(row=>[row.id,row]));
+ const signatureOf=(id:string|null)=>{const text=id?own.get(id)?.signature:null;if(!text)return null;try{return moldSignatureOf({signature:JSON.parse(text)});}catch{return null;}};
  let inRegion:(number:number|null)=>boolean=()=>true;
  if(regionScope(c.me)!=='all'){
   const byNumber=new Map((await c.db.prepare('SELECT customer_id AS id,number FROM crm_customer_numbers').all<{id:string;number:number}>()).results.map(row=>[row.number,row.id]));
   inRegion=number=>number!==null&&c.regionCustomerIds.has(byNumber.get(number)||'');
  }
  const shown=(item:MoldPendingItem)=>{const row=item.crmRequestId?own.get(item.crmRequestId):undefined;return row?moldApprovesRequest(row,c):inRegion(item.customer.crmNumber);};
- return {items:pulled.items.filter(shown).map(item=>({...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item)})),error:pulled.error,at:pulled.at};
+ return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature};}),error:pulled.error,at:pulled.at};
 }
 /** Whether a reader may open one request (GET ?id=, its sheet, and its files by id): every request their list shows
  * (canReadMoldRequest); and for the sales manager one that their list does not show but «طلبات بانتظار اعتمادي» shows them now (customer

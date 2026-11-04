@@ -3,6 +3,7 @@
 // body the CRM sends, the design files it attaches, the status object it receives, how an answer is read and when a failed send is
 // tried again. Pure functions, no I/O and no secret: the server, the browser form and the historical import tool (release/operations)
 // share them. Since production's second update of 2026-11-03: the quotation and PO numbers (quoteNo, poNo) and their files (category).
+// Since 2026-11-04: the customer's signature (moldSignatureCheck), a PNG sent as a design image; the requests body is unchanged.
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -332,6 +333,80 @@ export function moldDesignFileCheck(name, bytes, category = 'design') {
     return {ok: true, ...named, contentType: IMAGE_TYPES[size.format], width: size.width, height: size.height};
   }
   return {ok: true, ...named, contentType: 'application/octet-stream', width: null, height: null};
+}
+
+// ---- The customer's signature (the owner, 2026-11-04: «العميل بيوقع على طلب القالب ولازم علشان يعتمد»)
+// The customer signs a new request with a finger or a stylus on the representative's phone or tablet before it is sent. Required for the
+// sales roles only (representative, supervisor, sales manager); customer service and the administrator ask without it. The signature is a
+// PNG kept as one of the request's design files (category design, named «توقيع العميل - <signer>.png»), so it reaches production through
+// design-files exactly like a design image, without category; the request's data names it (signature: {signer, signedAt, fileId}) and the
+// requests body never carries it (moldRequestBody builds from explicit fields).
+/** The roles whose new request (or changing edit before its first send) needs the customer's signature. */
+export const MOLD_SIGNATURE_ROLES = Object.freeze(['rep', 'supervisor', 'manager']);
+/** @param {unknown} role */
+export const moldSignatureRequired = role => typeof role === 'string' && MOLD_SIGNATURE_ROLES.includes(role);
+/** The name of who signed for the customer, in characters (after moldText). */
+export const MOLD_SIGNER_MIN = 2, MOLD_SIGNER_MAX = 80;
+/** The PNG: at most 256 KiB (a canvas export of a signature is typically under 100 KB), 1200 pixels wide and high, its long side at
+ *  least 64 pixels (a dot or a tick trimmed with its margin is smaller). The JSON body carries it as base64 (MOLD_SIGNATURE_BASE64_MAX). */
+export const MOLD_SIGNATURE_MAX_BYTES = 256 * 1024;
+export const MOLD_SIGNATURE_MAX_SIDE = 1200;
+export const MOLD_SIGNATURE_MIN_SIDE = 64;
+export const MOLD_SIGNATURE_BASE64_MAX = Math.ceil(MOLD_SIGNATURE_MAX_BYTES / 3) * 4;
+/** What the pad takes as a signature (in CSS pixels): at least 12 points drawn and a box of at least 40 pixels on its long side, so a tap,
+ *  a dot or a short tick is refused. */
+export const MOLD_SIGNATURE_MIN_POINTS = 12, MOLD_SIGNATURE_MIN_BOX = 40;
+/** The file name's start: «توقيع العميل - <signer>.png». */
+export const MOLD_SIGNATURE_NAME_PREFIX = 'توقيع العميل - ';
+/** The server's refusals (each has its English pair in lib/locales/en.json). */
+export const MOLD_SIGNATURE_REQUIRED = 'توقيع العميل مطلوب قبل إرسال الطلب';
+export const MOLD_SIGNER_REQUIRED = 'اكتب اسم اللي بيوقّع عن العميل (من ' + MOLD_SIGNER_MIN + ' إلى ' + MOLD_SIGNER_MAX + ' حرف)';
+export const MOLD_SIGNATURE_BAD = 'صورة التوقيع غير صالحة؛ امسح ووقّع من جديد';
+/** Who signed, as stored: moldText (single spaces, the ends trimmed) without invisible marks; undefined when production would refuse a
+ *  control character in it, or when it is not a text. Its length is checked by moldSignatureCheck. */
+export function moldSigner(value) {
+  if (typeof value !== 'string') return undefined;
+  return moldText(value.replace(/[​-‏‪-‮⁠-⁩﻿]/g, ''));
+}
+/** The signature file's name for a signer: «توقيع العميل - <signer>.png», the characters a file name may not hold made spaces, within
+ *  200 characters; «توقيع العميل.png» when nothing of the name is left. Always one moldDesignName accepts (an image). */
+export function moldSignatureName(signer) {
+  const clean = [...String(signer ?? '').replace(new RegExp(NAME_FORBIDDEN.source, 'g'), ' ').replace(/\s+/g, ' ').trim()].slice(0, MOLD_SIGNER_MAX).join('').trim();
+  return clean ? MOLD_SIGNATURE_NAME_PREFIX + clean + '.png' : 'توقيع العميل.png';
+}
+/** Whether what was drawn on the pad is a signature: enough points, over a box large enough (CSS pixels). */
+export function moldSignatureDrawn({points, width, height}) {
+  return Number.isFinite(points) && points >= MOLD_SIGNATURE_MIN_POINTS && Math.max(Number(width) || 0, Number(height) || 0) >= MOLD_SIGNATURE_MIN_BOX;
+}
+/** The PNG's bytes from the base64 the form sends (no data: prefix, no spaces); null when it is not base64 or is too long. */
+export function moldSignatureBytes(value) {
+  if (typeof value !== 'string' || !value || value.length > MOLD_SIGNATURE_BASE64_MAX || value.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+  try {
+    const text = atob(value), bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+    return bytes;
+  } catch { return null; }
+}
+const PNG_END = [0, 0, 0, 0, 73, 69, 78, 68, 0xae, 0x42, 0x60, 0x82];
+/**
+ * The customer's signature before the CRM keeps it: who signed (2 to 80 characters, nothing production would refuse) and a real PNG (its
+ * header and its closing IEND chunk), at most 256 KiB, at most 1200 pixels a side, its long side at least 64, and one production accepts
+ * as a design image (moldDesignFileCheck under its file name). field: signer or signature.
+ * @param {unknown} signer
+ * @param {Uint8Array|null} bytes
+ * @returns {{ok: true, signer: string, name: string, width: number, height: number, contentType: string} | {ok: false, field: 'signer'|'signature', reason: string}}
+ */
+export function moldSignatureCheck(signer, bytes) {
+  const name = moldSigner(signer);
+  if (name === undefined || length(name) < MOLD_SIGNER_MIN || length(name) > MOLD_SIGNER_MAX) return {ok: false, field: 'signer', reason: 'signer'};
+  if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, field: 'signature', reason: 'missing'};
+  if (bytes.length > MOLD_SIGNATURE_MAX_BYTES) return {ok: false, field: 'signature', reason: 'too_large'};
+  const size = moldImageSize(bytes);
+  if (!size || size.format !== 'png' || bytes.length < 57 || PNG_END.some((value, i) => bytes[bytes.length - 12 + i] !== value)) return {ok: false, field: 'signature', reason: 'not_png'};
+  if (size.width > MOLD_SIGNATURE_MAX_SIDE || size.height > MOLD_SIGNATURE_MAX_SIDE || Math.max(size.width, size.height) < MOLD_SIGNATURE_MIN_SIDE || Math.min(size.width, size.height) < 1) return {ok: false, field: 'signature', reason: 'size'};
+  const file = moldSignatureName(name), checked = moldDesignFileCheck(file, bytes);
+  if (!checked.ok) return {ok: false, field: 'signature', reason: checked.reason};
+  return {ok: true, signer: name, name: file, width: size.width, height: size.height, contentType: checked.contentType};
 }
 
 /** The type a design file is served with: a PDF or one of the four image types as they are, anything else as plain bytes (an SVG or a

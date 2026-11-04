@@ -3,13 +3,16 @@
 // CRM alone, at any time. One production may hold goes through design-file-delete while the request is editable, which undoes the
 // approvals given (the screen warns first); a send still in flight is let finish first, so the deletion never overtakes the file.
 // A receipt makes a repeated tap harmless; the audit entry names the file, never its contents.
+// The customer's signature (2026-11-04) is not deleted while the request's data names it: an edit that changes what was signed replaces it.
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView} from '@/lib/mold-requests';
+import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView,moldSignatureOf} from '@/lib/mold-requests';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
+/** Its English pair is in lib/locales/en.json. */
+const SIGNATURE_KEPT='توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.';
 const schema=z.object({requestId:z.string().uuid(),id:z.string().regex(/^mr-[0-9a-f-]{36}$/),fileId:z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)}).strict();
 
 export async function POST(req:Request){try{
@@ -37,6 +40,7 @@ export async function POST(req:Request){try{
  const file=(await loadMoldDesignFiles(c.db,'id=? AND request_id=?',[input.fileId,row.id]))[0];
  if(!file)throw new CRMError('الملف غير موجود، أو من ملفات الإنتاج التي يديرها الإنتاج',404);
  if(file.deletedAt)return answer();
+ if(moldSignatureOf(row.data)?.fileId===file.id)throw new CRMError(SIGNATURE_KEPT,409);
  const remote=moldDesignMayBeRemote(file);
  if(remote&&!moldEditable(row))throw new CRMError(row.cancelledAt?'الطلب ملغى؛ ملفاته باقية كما هي':'اكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد حذف الملف ممكنًا',409);
  const now=new Date().toISOString(),mutation=crypto.randomUUID(),permission=accessGuard(c),gate='EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND mutation_id=?)';

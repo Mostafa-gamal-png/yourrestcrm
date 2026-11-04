@@ -128,6 +128,19 @@
 .dark .mold-design-state{color:#f2dca0}.dark .mold-design-file[data-state=sent] .mold-design-state,.dark .mold-design-file[data-state=ready] .mold-design-state{color:#bfe8d2}
 .dark .mold-design-reason,.dark .mold-design-file[data-state=rejected] .mold-design-state,.dark .mold-design-file[data-state=locked] .mold-design-state,.dark .mold-design-file[data-state=refused] .mold-design-state,.dark .mold-design-file[data-state=upload-failed] .mold-design-state{color:#f4c7cf}
 .dark .mold-chip[data-source=production],.dark .mold-design-file[data-source=production] .mold-design-icon{background:#1d3150;color:#cfe2ff}
+/* The customer's signature (2026-11-04): the signing step, the pad (no scroll or zoom while drawing, 2:1 at any width), the sheet's line and image. */
+.mold-form[hidden]{display:none}
+.mold-signing{display:grid;gap:12px;min-width:0}.mold-signing .mold-subtitle{display:flex;align-items:center;gap:6px}
+.mold-signing-lead{margin:0;font-size:14px;color:var(--muted-foreground)}
+.mold-signing-summary{padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--muted)}
+.mold-signature-box{display:grid;gap:6px;min-width:0}
+.mold-signature-pad{display:block;width:100%;max-width:100%;aspect-ratio:2/1;background:#fff;border:2px dashed var(--input);border-radius:12px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;cursor:crosshair;overscroll-behavior:contain}
+.mold-signature-box[aria-invalid=true] .mold-signature-pad{border-color:var(--destructive)}.mold-signature-pad[data-disabled]{opacity:.6;cursor:default}
+.mold-signature-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted-foreground)}.mold-signature-tools .btn{min-height:40px;display:inline-flex;align-items:center;gap:6px}
+.mold-signature-view{display:grid;gap:8px;min-width:0}.mold-signature-view p{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0;font-size:14px}
+.mold-signature-view img{display:block;max-width:min(100%,360px);height:auto;max-height:180px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:4px;object-fit:contain}
+.mold-chip[data-kind=signature]{background:#e8e1f7;color:#432f7a}.dark .mold-chip[data-kind=signature]{background:#2e2547;color:#ddd2fb}
+.mold-signature-room{color:#5a4a8a}.mold-signature-room[data-full]{font-weight:600}.dark .mold-signature-room{color:#cfc3f5}
 @media (max-width:640px){
  .mold-design-actions{width:100%;margin-inline-start:0}.mold-design-actions .btn{flex:1 1 auto;min-height:44px}
  .mold-design-tools,.mold-design-picker{justify-items:stretch}.mold-design-attach{width:100%}

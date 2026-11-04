@@ -1,15 +1,16 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
-import {BadgeCheck,Factory,Hourglass,Loader2,Lock,Paperclip,RefreshCw,Search,Send,TriangleAlert,Undo2,Wrench} from 'lucide-react';
+import {BadgeCheck,Factory,Hourglass,Loader2,Lock,Paperclip,PenLine,RefreshCw,Search,Send,TriangleAlert,Undo2,Wrench} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_QUOTE_PO_REQUIRED_TEXT,MOLD_SAME_REASON_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldPaymentNames,moldPendingAgain,moldQuotePoNames,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldQuotePoView,type MoldRequestView,type MoldRequestsAnswer,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_QUOTE_PO_REQUIRED_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldPaymentNames,moldPendingAgain,moldQuotePoNames,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldQuotePoView,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_QUOTE_PO_MAX,MOLD_USUAL,moldCancelReasonUsed,moldPayment,validateMoldQuotePo,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
+import {MoldSigningStep} from './mold-signature';
 import './mold-requests.css';
 
 type Say=(ar:string,en:string)=>string;
@@ -29,6 +30,13 @@ function QuotePoNumbers({numbers,say}:{numbers:Pick<MoldQuotePoView,'quoteNo'|'p
 }
 /** Production marks the request as lacking both numbers (quoteOrPoMissing): its production manager adds one. */
 const QuotePoMissing=({say}:{say:Say})=><p className="mold-quote-po-missing" role="status"><TriangleAlert size={14} aria-hidden="true"/>{say(...MOLD_QUOTE_PO_MISSING_TEXT)}</p>;
+/** «وقّع العميل: <signer> · <time>» (2026-11-04), with the image through the CRM when it is given (the request's sheet). */
+function SignedBy({signature,href,say}:{signature:MoldSignature;href?:string|null;say:Say}){
+ return <div className="mold-signature-view" data-signed="true">
+  <p><PenLine size={15} aria-hidden="true"/><span>{say(...MOLD_SIGNATURE_TEXT.signed)}: <b><bdi>{signature.signer}</bdi></b> · <bdi dir="ltr">{stamp(signature.signedAt)}</bdi></span></p>
+  {href&&<img src={href+'&inline=1'} alt={say('توقيع العميل: ','Customer signature: ')+signature.signer} loading="lazy" decoding="async"/>}
+ </div>;
+}
 
 /** The mold requests the reader may see, with their status as pulled by the server when the list opens. */
 export function useMoldRequests(me:Member|null){
@@ -49,9 +57,11 @@ export function useMoldRequests(me:Member|null){
  *  request as it now stands goes to onRefused when given (the edit form stays open with the reason), else to onDone. */
 function useMoldAction(onDone:(view:MoldRequestView|null)=>void,onRefused?:(view:MoldRequestView)=>void){
  const lock=useRef(false),attempt=useRef<{body:string;key:string}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[fields,setFields]=useState<Record<string,string>>({});
+ // The fields the last refusal named, for the caller's follow-up once run has answered (the signing step, 2026-11-04).
+ const lastFields=useRef<Record<string,string>>({});
  const run=useCallback(async(body:Record<string,unknown>)=>{
   if(lock.current)return null;
-  lock.current=true;setBusy(true);setError('');setFields({});
+  lock.current=true;setBusy(true);setError('');setFields({});lastFields.current={};
   const text=JSON.stringify(body);if(attempt.current?.body!==text)attempt.current={body:text,key:crypto.randomUUID()};
   try{
    const reply=await submitJson<{request:MoldRequestView}>('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:attempt.current.key})},{language:getLanguage()});
@@ -59,13 +69,13 @@ function useMoldAction(onDone:(view:MoldRequestView|null)=>void,onRefused?:(view
   }catch(failure){
    // 409 from production comes with the request as production holds it: show both the reason and the restored request.
    const reply=failure instanceof SubmitError?failure.body as {request?:MoldRequestView;fields?:Record<string,string>}|undefined:undefined;
-   if(reply?.fields)setFields(reply.fields);
+   if(reply?.fields){setFields(reply.fields);lastFields.current=reply.fields;}
    setError(messageOf(failure));if(definiteSubmitRejection(failure))attempt.current=null;
    if(reply?.request)(onRefused||onDone)(reply.request);
    return null;
   }finally{lock.current=false;setBusy(false);}
  },[onDone,onRefused]);
- return {run,busy,error,fields};
+ return {run,busy,error,fields,lastFields};
 }
 
 /** The seven stages in order, each with the date it was finished when production gave one (§3). */
@@ -166,8 +176,8 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
   {!data&&!error&&<p className="empty"><Loader2 className="spin" size={16}/> {say('جارٍ التحميل…','Loading…')}</p>}
   <div className="mold-list">{list.map(view=><MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} unsent={uploading.filter(upload=>upload.moldId===view.id&&upload.phase==='failed').length} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
   </>}
-  {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} current={data?.pending?.items.find(item=>item.inCrm&&item.crmRequestId===open.id)||null} linkReady={!!data?.linkReady} quotePo={!!data?.quotePo} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>{setOpenId(null);setApproverView(null);}} onChanged={changed}/>}
-  {creating&&<MoldRequestDialog customers={customers} uploads={uploads} quotePo={!!data?.quotePo} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
+  {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} current={data?.pending?.items.find(item=>item.inCrm&&item.crmRequestId===open.id)||null} linkReady={!!data?.linkReady} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>{setOpenId(null);setApproverView(null);}} onChanged={changed}/>}
+  {creating&&<MoldRequestDialog customers={customers} uploads={uploads} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
  </section>;
 }
 
@@ -225,6 +235,8 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
     <QuotePoNumbers numbers={item.quoteOrPoMissing===undefined?null:{quoteNo:item.quoteNo||'',poNo:item.poNo||''}} say={say}/>
    </div>
    {item.quoteOrPoMissing&&<QuotePoMissing say={say}/>}
+   {/* The customer's signature on the CRM's request (2026-11-04); its image is among the design files, labelled so. */}
+   {item.signature&&<SignedBy signature={item.signature} say={say}/>}
    <p className="mold-pending-specs">{[choice(MOLD_CORES,specs.core),specs.vibrators?say('رجاجات: ','Vibrators: ')+specs.vibrators:'',choice(MOLD_MODELS,specs.model),choice(MOLD_HALF_BLOCKS,specs.halfBlock),specs.moldWidth?say('عرض ','Width ')+specs.moldWidth:'',specs.gelbaSize?say('جلب ','Gelba ')+specs.gelbaSize:'',specs.moldNo?say('قالب ','Mold ')+specs.moldNo:''].filter(Boolean).join(' · ')}</p>
    {specs.notes&&<p className="mold-pending-notes" dir="auto">{specs.notes}</p>}
    {/* Approved just now: the request no longer waits for them, so its files are listed without links (the CRM's request shows them). */}
@@ -269,7 +281,7 @@ function changeRefusedNotice(view:Pick<MoldRequestView,'sending'|'unconfirmed'>,
  *  The sales manager approves from here what production lists now (current, from «طلبات بانتظار اعتمادي»: the customer, salesman and
  *  specifications after the production manager's edits), so the approval is for what will be made; without that listing, no approval
  *  here. */
-function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,statusAt,customers,uploads,uploading,onClose,onChanged}:{view:MoldRequestView;current:MoldPendingAnswer['items'][number]|null;linkReady:boolean;quotePo?:boolean;statusAt:string|null;customers:Row[];uploads:DesignUploadQueue;uploading:DesignUpload[];onClose:()=>void;onChanged:()=>void}){
+function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=false,statusAt,customers,uploads,uploading,onClose,onChanged}:{view:MoldRequestView;current:MoldPendingAnswer['items'][number]|null;linkReady:boolean;quotePo?:boolean;signs?:boolean;statusAt:string|null;customers:Row[];uploads:DesignUploadQueue;uploading:DesignUpload[];onClose:()=>void;onChanged:()=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const [view,setView]=useState(initial),[editing,setEditing]=useState(false),[cancelling,setCancelling]=useState(false),[reason,setReason]=useState(''),[reasonError,setReasonError]=useState(''),[pullError,setPullError]=useState<string>('');
  const done=useCallback((next:MoldRequestView|null)=>{if(next)setView(next);onChanged();},[onChanged]);
@@ -329,6 +341,8 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,statusAt
     :view.can.approve?<p className="mold-specs-note" data-source="crm">{say('الاعتماد من «طلبات بانتظار اعتمادي» حيث تظهر بيانات الطلب كما في تطبيق المنتجات الآن؛ حدّث الصفحة.','Approve it from «Waiting for my approval», which shows the request\'s data as it is now in the products application; refresh the page.')}</p>
     :remote&&!view.unconfirmed&&<p className="mold-specs-note" data-source="crm">{say('المواصفات كما أرسلها الـCRM. بعد الإرسال يعدّلها مدير الإنتاج في تطبيق المنتجات فقط، وتعديله لا يظهر هنا.','The specifications as the CRM sent them. Once sent, the production manager alone edits them in the products application, and those edits do not show here.')}</p>}
    <dl className="mold-facts">{asked.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
+   {/* The customer's signature (2026-11-04): who signed and when, and the image through the CRM, for whoever may open the request. */}
+   {view.signature&&<SignedBy signature={view.signature} href={view.signature.href} say={say}/>}
    <MoldDesignFiles view={view} uploads={mine} queue={uploads} onView={done} say={say} quotePo={quotePo}/>
    {!view.editable&&!view.cancelled&&view.can&&!view.can.edit&&remote&&remote.status!=='cancelled'&&<p className="mold-locked"><Lock size={14} aria-hidden="true"/>{remote.status==='confirmed'?say('اكتملت الاعتمادات؛ لم يعد الإلغاء أو تغيير ملفات التصميم ممكنًا.','All approvals are in; the request can no longer be cancelled and its design files can no longer change.'):say('بدأ الإنتاج؛ لم يعد الإلغاء أو تغيير ملفات التصميم ممكنًا.','Production has started; the request can no longer be cancelled and its design files can no longer change.')}</p>}
    {action.error&&<p className="form-error" role="alert">{t(action.error)}</p>}
@@ -346,7 +360,7 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,statusAt
     {reasonError&&<p className="form-error mold-reason-error" role="alert">{reasonError}</p>}
     <div className="mold-actions"><button type="submit" className="btn danger" disabled={action.busy}>{say('تأكيد الإلغاء','Confirm cancellation')}</button><button type="button" className="btn subtle" onClick={()=>setCancelling(false)}>{say('رجوع','Back')}</button></div>
    </form>}
-   {editing&&<MoldRequestDialog customers={customers} editing={view} uploads={uploads} quotePo={quotePo} used={{design:designUsed(view,mine),quote:designUsed(view,mine,'quote'),po:designUsed(view,mine,'po')}} onClose={()=>setEditing(false)} onSaved={next=>{setEditing(false);if(next)setView(next);onChanged();}} onRefused={next=>{setView(next);onChanged();}}/>}
+   {editing&&<MoldRequestDialog customers={customers} editing={view} uploads={uploads} quotePo={quotePo} signs={signs} used={{design:designUsed(view,mine),quote:designUsed(view,mine,'quote'),po:designUsed(view,mine,'po')}} onClose={()=>setEditing(false)} onSaved={next=>{setEditing(false);if(next)setView(next);onChanged();}} onRefused={next=>{setView(next);onChanged();}}/>}
   </SheetContent>
  </Sheet>;
 }
@@ -378,14 +392,28 @@ function quotePoErrors(errors:Record<string,string>,say:Say){
  return out;
 }
 
+/** Whether an edit changes what the customer signed (2026-11-04): the specifications (an older request's own design link stays as it is),
+ *  the payment, or the quotation and PO numbers; the server decides the same way and asks for the signature when it finds a change. */
+function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,payment:string|null,typed:{quoteNo?:string;poNo?:string},asks:boolean){
+ const keys=['description','core','vibrators','model','halfBlock','moldWidth','gelbaSize','moldNo','quantity','notes'] as const;
+ if(keys.some(key=>(specs[key]??'')!==(editing.specs[key]??''))||payment!==editing.payment)return true;
+ const was=editing.quotePo?.from==='crm'?editing.quotePo:{quoteNo:'',poNo:''};
+ return asks&&((typed.quoteNo||'')!==was.quoteNo||(typed.poNo||'')!==was.poNo);
+}
+
 /** Ask for a mold (a customer the member can see, then the specifications), or change one that has certainly never reached production
  *  (once sent, its data is edited by the production manager only); either way with design files, which upload once the request is saved
  *  (`used`: the places the request's files already take). An edit the server refuses (it was sent meanwhile) keeps the form open with
- *  the reason, and onRefused takes the request as it now stands (no more edit). */
-function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
+ *  the reason, and onRefused takes the request as it now stands (no more edit). signs: the reader is a sales role (2026-11-04), so «حفظ
+ *  وإرسال» opens «توقيع العميل» first (a new request, or an edit that changes what was signed), and the signature is sent with it; it
+ *  takes one of the 10 design files' places, so the picker leaves room for it. */
+function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const [customerId,setCustomerId]=useState(editing?.customerId||''),[search,setSearch]=useState(''),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment,editing.quotePo):blank),[shown,setShown]=useState<Record<string,string>>({});
- const action=useMoldAction(onSaved,onRefused);
+ // A refusal that carries the request as it now stands (it was sent meanwhile): counted, so the signing step gives way to the form, which
+ // says why (2026-11-04).
+ const refusals=useRef(0),refused=useCallback((view:MoldRequestView)=>{refusals.current++;onRefused?.(view);},[onRefused]);
+ const action=useMoldAction(onSaved,onRefused?refused:undefined);
  // The quotation and PO numbers and their files: asked for once production's update of 2026-11-03 is known to be live (or the server
  // has just said it is, refusing a request without them).
  // Once the server has asked for them, they stay asked for (a page loaded before the update): a later attempt that fails without an
@@ -394,6 +422,10 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onCl
  if(demanded&&!wasDemanded)setWasDemanded(true);
  const asks=quotePo||demanded||wasDemanded;
  const [designs,setDesigns]=useState<DesignChoice[]>([]),[quotes,setQuotes]=useState<DesignChoice[]>([]),[pos,setPos]=useState<DesignChoice[]>([]),[asking,setAsking]=useState(false);
+ // The signing step (2026-11-04): the request as it will be sent, and what the customer reads before signing it.
+ const [signing,setSigning]=useState<{body:Record<string,unknown>;summary:[string,React.ReactNode][];again:boolean}|null>(null);
+ // A place of the 10 design files is the signature's, unless the request being edited holds one already (the new one replaces it).
+ const signatureRoom=signs&&!editing?.signature?1:0;
  const files=asks?[...designs,...quotes,...pos]:designs,ready=files.filter(choice=>!choice.refusal);
  const chosen=customers.find(row=>row.id===customerId);
  const matches=useMemo(()=>{const needle=search.trim().toLowerCase();return customers.filter(row=>!needle||[row.data.name,row.data.code,row.data.internalCode,row.data.city].some(text=>String(text||'').toLowerCase().includes(needle))).slice(0,30);},[customers,search]);
@@ -414,22 +446,45 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onCl
   if(editing&&ready.length&&designNeedsWarning(editing)&&!asking){setAsking(true);return;}
   setAsking(false);
   // The files go once the request is saved (each with its own requestId, kept for retries), the request's own change first.
-  const typed=asks?{quoteNo:numbers.quoteNo,poNo:numbers.poNo}:{};
+  const typed:{quoteNo?:string;poNo?:string}=asks?{quoteNo:numbers.quoteNo,poNo:numbers.poNo}:{};
   const specs={...checked.specs};delete specs.designUrl;
-  void action.run(editing?{action:'update',id:editing.id,version:editing.version,specs,payment,...typed}:{action:'create',customerId,specs,payment,...typed}).then(next=>{if(next&&ready.length)uploads.add(next.id,ready);});
+  const body=editing?{action:'update',id:editing.id,version:editing.version,specs,payment,...typed}:{action:'create',customerId,specs,payment,...typed};
+  // What the customer reads before signing: the customer, the mold, how they pay, the numbers, and how many files go with it.
+  const choose=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
+  const summary:[string,React.ReactNode][]=[[say('العميل','Customer'),editing?editing.customerName:String(chosen?.data.name||'')],[say('الوصف','Description'),<span dir="auto" key="d">{String(specs.description||'')}</span>],
+   [say('الكمية','Quantity'),String(specs.quantity??'')],[say('العلب','Core'),choose(MOLD_CORES,String(specs.core||''))],[say('الموديل','Model'),choose(MOLD_MODELS,String(specs.model||''))],
+   ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,React.ReactNode]]:[]),
+   ...(['quoteNo','poNo'] as const).filter(key=>typed[key]).map(key=>[say(...moldQuotePoNames[key]),<bdi key={key} dir="ltr">{typed[key]}</bdi>] as [string,React.ReactNode]),
+   [say('الملفات','Files'),String((editing?editing.designFiles.filter(file=>!file.signature).length:0)+ready.length)]];
+  // A sales role's new request, or an edit that changes what was signed, is signed by the customer first (2026-11-04).
+  if(signs&&(!editing||editChanges(editing,specs,payment,typed,asks))){setSigning({body,summary,again:!!editing?.signature});return;}
+  send(body,summary,false);
  };
+ /** The request saved (then its files go); a refusal that asks for the signature opens the signing step, and one of the form's own fields
+  *  goes back to the form, where each is said. */
+ const send=(body:Record<string,unknown>,summary:[string,React.ReactNode][],signed:boolean)=>{const before=refusals.current;void action.run(body).then(next=>{
+  if(next){if(ready.length)uploads.add(next.id,ready);return;}
+  const named=Object.keys(action.lastFields.current);
+  if(!signed&&named.includes('signature'))setSigning({body,summary,again:!!editing?.signature});
+  else if(signed&&(refusals.current!==before||named.some(key=>key!=='signature'&&key!=='signer')))setSigning(null);
+ });};
  const choice=(key:string,label:string,options:[string,string][])=><fieldset className="mold-choice" aria-invalid={!!errors[key]}><legend>{label}</legend><div>{options.map(([value,text])=><label key={value} data-active={form[key]===value}><input type="radio" name={key} value={value} checked={form[key]===value} onChange={()=>set(key,value)}/>{text}</label>)}</div>{errors[key]&&<small className="field-error">{errors[key]}</small>}</fieldset>;
  const number=(key:string,label:string,usual:number[]=[])=><label className="mold-field" aria-invalid={!!errors[key]}>{label}<input inputMode="numeric" dir="ltr" value={form[key]} onChange={event=>set(key,event.target.value.replace(/[^\d٠-٩]/g,'').replace(/[٠-٩]/g,digit=>String(digit.charCodeAt(0)-0x660)))}/>{!!usual.length&&<span className="mold-usual">{usual.map(value=><button type="button" key={value} className="btn small subtle" onClick={()=>set(key,String(value))}>{value}</button>)}</span>}{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
  // Dimensions and the mold number are typed (a code); the notes are free text and take dictation.
  const text=(key:string,label:string,max:number)=><label className="mold-field" aria-invalid={!!errors[key]}>{label}<input type="text" maxLength={max} dir="ltr" value={form[key]} onChange={event=>set(key,event.target.value)}/>{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
  // Typing one number clears the «one at least» refusal too.
  const numberField=(key:'quoteNo'|'poNo',label:string)=><label className="mold-field" aria-invalid={!!errors[key]||!!errors.quotePo}>{label}<input type="text" name={key} maxLength={MOLD_QUOTE_PO_MAX} dir="ltr" autoComplete="off" value={form[key]} onChange={event=>{set(key,event.target.value);clear('quotePo');}}/>{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
- const picker=(category:MoldFileCategory,choices:DesignChoice[],change:(next:DesignChoice[])=>void)=><MoldDesignPicker key={category} category={category} choices={choices} onChange={next=>{change(next);setAsking(false);}} room={MOLD_CATEGORY_MAX_FILES[category]-(used[category]||0)} disabled={action.busy} say={say}/>;
+ const picker=(category:MoldFileCategory,choices:DesignChoice[],change:(next:DesignChoice[])=>void)=>{
+  const reserved=category==='design'?signatureRoom:0;
+  return <MoldDesignPicker key={category} category={category} choices={choices} onChange={next=>{change(next);setAsking(false);}} room={MOLD_CATEGORY_MAX_FILES[category]-(used[category]||0)-reserved} disabled={action.busy} say={say}
+   {...(reserved?{overflow:'signature_room',note:say(...MOLD_SIGNATURE_TEXT.room)}:{})}/>;
+ };
  return <Dialog open onOpenChange={open=>{if(!open&&!action.busy)onClose();}}>
   <DialogContent className="mold-dialog" dir={direction()}>
    <DialogTitle>{editing?say('تعديل طلب تصنيع القالب','Edit mold request'):say('طلب تصنيع قالب','Request a mold')}</DialogTitle>
    <DialogDescription>{editing?say('الطلب لم يصل للإنتاج بعد، فتعديله هنا ممكن. بعد وصوله يعدّل بياناته مدير الإنتاج فقط.','The request has not reached production yet, so it can be changed here. Once it arrives, the production manager alone edits its data.'):say('يُحفظ الطلب في الـCRM ثم يُرسل لتطبيق الإنتاج تلقائيًا.','The request is saved in the CRM, then sent to production automatically.')}</DialogDescription>
-   <form className="mold-form" onSubmit={submit} noValidate>
+   {signing&&<MoldSigningStep summary={signing.summary} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)} onConfirm={signature=>send({...signing.body,signature},signing.summary,true)}/>}
+   <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>
     {editing?<p className="mold-customer-chosen"><Factory size={16} aria-hidden="true"/>{editing.customerName}</p>:chosen?<div className="mold-customer-chosen"><span><Factory size={16} aria-hidden="true"/>{String(chosen.data.name||'')}<small>{String(chosen.data.internalCode||'')}{chosen.data.city?' · '+String(chosen.data.city):''}</small></span><button type="button" className="btn small subtle" onClick={()=>setCustomerId('')}>{say('تغيير','Change')}</button></div>
      :<div className="mold-customer-search" aria-invalid={!!errors.customer}><label>{say('العميل','Customer')}<span className="search"><Search size={16} aria-hidden="true"/><input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder={say('ابحث باسم العميل أو كوده أو مدينته','Search by name, code or city')}/></span></label>
       <div className="mold-customer-matches">{matches.map(row=><button type="button" key={row.id} disabled={!yourrestNumber(row.data.internalCode)} onClick={()=>{setCustomerId(row.id);clear('customer');}}><strong>{String(row.data.name||'')}</strong><small>{String(row.data.internalCode||'')}{row.data.city?' · '+String(row.data.city):''}</small></button>)}{!matches.length&&<p className="empty">{say('لا عملاء مطابقون','No matching customers')}</p>}</div>
@@ -457,7 +512,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,onCl
     {asks&&picker('quote',quotes,setQuotes)}
     {asks&&picker('po',pos,setPos)}
     {asking&&!!ready.length&&<div className="mold-design-confirm" role="group" ref={revealCentered} aria-label={say('تأكيد إرفاق الملفات','Confirm attaching the files')}><p><TriangleAlert size={16} aria-hidden="true"/>{designWarningText(say)}</p></div>}
-    {action.error&&<p className="form-error" role="alert">{t(action.error)}</p>}
+    {action.error&&!signing&&<p className="form-error" role="alert">{t(action.error)}</p>}
     <div className="mold-actions"><button type="submit" className="btn primary" disabled={action.busy}>{action.busy?<Loader2 className="spin" size={16}/>:asking?<Paperclip size={16}/>:<Send size={16}/>}{asking?say('تأكيد: حفظ وإرفاق الملفات','Confirm: save and attach the files'):editing?say('حفظ وإرسال التعديل','Save and send the change'):say('حفظ وإرسال للإنتاج','Save and send to production')}</button>{asking&&<button type="button" className="btn subtle" onClick={()=>setAsking(false)} disabled={action.busy}>{say('رجوع','Back')}</button>}<button type="button" className="btn subtle" onClick={onClose} disabled={action.busy}>{say('إلغاء','Cancel')}</button></div>
    </form>
   </DialogContent>

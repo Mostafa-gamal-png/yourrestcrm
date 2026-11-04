@@ -23,6 +23,7 @@ import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
+import {withSignature} from '../scripts/lib/signature-png.mjs';
 
 const members = [
   {id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'smw', role: 'manager', region: 'western'},
@@ -48,14 +49,17 @@ try {
   const customer = (id, assignedTo, region) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')")
     .bind(id, assignedTo, JSON.stringify({name: 'مصنع ' + id, region, city: 'الدمام', address: 'حي الصناعية', code: 'ERP-' + id, branch: 'الرئيسي', assignedTo}), now, now).run();
   await customer('east1', 'rep', 'الشرقية'); await customer('east2', 'rep', 'الشرقية'); await customer('west1', 'rep2', 'الغربية');
-  const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
+  // A representative's request carries the customer's signature (2026-11-04), one of its design files: each request below starts with it.
+  const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(members.find(member => member.id === who)?.role, {requestId: crypto.randomUUID(), ...body})});
   const create = async (who, customerId, description) => (await (await post(who, {action: 'create', customerId, specs: {...specs, description}, payment: 'cash'})).json()).request;
   const list = async who => (await as(who)('/api/mold-requests')).json();
   const viewOf = async (who, id) => (await list(who)).requests.find(item => item.id === id);
   const age = id => app.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(id).run();
   const calls = route => mock.state.calls.filter(call => call.route === route).length;
   const fileRow = id => app.db.prepare('SELECT * FROM crm_mold_design_files WHERE id=?').bind(id).first();
-  const rowsOf = async requestId => (await app.db.prepare('SELECT id FROM crm_mold_design_files WHERE request_id=?').bind(requestId).all()).results.length;
+  // The files attached here, without the customer's signature each request carries (its crmFileId starts mds-, 2026-11-04).
+  const rowsOf = async requestId => (await app.db.prepare("SELECT id FROM crm_mold_design_files WHERE request_id=? AND id NOT LIKE 'mds-%'").bind(requestId).all()).results.length;
+  const drawn = files => (files || []).filter(file => !file.signature && !String(file.crmFileId || '').startsWith('mds-'));
   const multipart = async fields => {
     const form = new FormData();
     for (const [key, value] of Object.entries(fields)) if (value && typeof value === 'object' && 'bytes' in value) form.set(key, new Blob([value.bytes]), value.name); else form.set(key, value);
@@ -74,7 +78,8 @@ try {
 
   // ---- the routes are closed to strangers
   const first = await create('rep', 'east1', 'first mold');
-  check([first.remote.orderNo, first.remote.status, first.can.attach, first.can.deleteFile, first.designFiles], [92, 'received', true, true, []], 'a request production holds: the requester may attach and delete');
+  check([first.remote.orderNo, first.remote.status, first.can.attach, first.can.deleteFile, drawn(first.designFiles)], [92, 'received', true, true, []], 'a request production holds: the requester may attach and delete');
+  check([first.designFiles.map(file => [file.signature, file.state, file.canDelete, file.kind]), drawn(mock.row(first.id).designFiles).length, mock.row(first.id).designFiles.length], [[[true, 'sent', false, 'image']], 0, 1], 'its only file is the customer\'s signature, sent to production as a design image, not deletable');
   const anonymousUpload = await multipart({requestId: crypto.randomUUID(), id: first.id, file: {name: 'x.pdf', bytes: pdf('x')}});
   check((await app.request('/api/mold-requests/design-files', {method: 'POST', headers: {Origin: app.origin, ...anonymousUpload.headers}, body: anonymousUpload.body})).status, 401, 'anonymous upload: 401');
   check((await app.request('/api/mold-requests/design-files/delete', {method: 'POST', headers: {Origin: app.origin}, body: {requestId: crypto.randomUUID(), id: first.id, fileId: 'mdf-x'}})).status, 401, 'anonymous delete: 401');
@@ -91,14 +96,14 @@ try {
   let res = await upload('rep', first.id, 'رسم القالب 1380.pdf', drawing, drawingKey);
   let body = await res.json();
   check([res.status, body.ok, body.send, body.file.crmFileId, body.file.state, body.file.source, body.file.kind, body.file.size, body.file.viewable], [200, true, {kind: 'ok', code: ''}, drawingId, 'sent', 'crm', 'pdf', drawing.length, true], 'attached and sent at once');
-  check([body.request.remote.approvals.sales, body.request.remote.waitingStep, body.request.remote.designFiles.map(file => file.crmFileId)], [null, 'sales', [drawingId]], 'the answer\'s request: the approval undone, back with the sales manager, the file listed by production');
+  check([body.request.remote.approvals.sales, body.request.remote.waitingStep, drawn(body.request.remote.designFiles).map(file => file.crmFileId)], [null, 'sales', [drawingId]], 'the answer\'s request: the approval undone, back with the sales manager, the file listed by production');
   check(calls('design-files') - sendsBefore, 1, 'one send');
   const sent = mock.state.calls.findLast(call => call.route === 'design-files');
   check([JSON.parse(sent.body), sent.headers['content-type'], sent.signed], [{crmRequestId: first.id, crmFileId: drawingId, name: 'رسم القالب 1380.pdf'}, 'application/octet-stream', true], 'the JSON line, application/octet-stream, signed over the whole body');
-  check(Buffer.compare(mock.row(first.id).designFiles[0].bytes, drawing), 0, 'production holds the same bytes');
+  check(Buffer.compare(drawn(mock.row(first.id).designFiles)[0].bytes, drawing), 0, 'production holds the same bytes');
   const stored = await fileRow(drawingId);
-  ok(stored.sent_at && stored.object_key && stored.outbox === null && JSON.parse(stored.remote_file_id) === mock.row(first.id).designFiles[0].fileId, 'stored as sent, with production\'s fileId and the CRM\'s copy');
-  check([(await viewOf('sm', first.id)).can.approve, (await viewOf('rep', first.id)).designFiles.map(file => [file.name, file.state])], [true, [['رسم القالب 1380.pdf', 'sent']]], 'the sales manager may approve again; the list shows the file sent');
+  ok(stored.sent_at && stored.object_key && stored.outbox === null && JSON.parse(stored.remote_file_id) === drawn(mock.row(first.id).designFiles)[0].fileId, 'stored as sent, with production\'s fileId and the CRM\'s copy');
+  check([(await viewOf('sm', first.id)).can.approve, drawn((await viewOf('rep', first.id)).designFiles).map(file => [file.name, file.state])], [true, [['رسم القالب 1380.pdf', 'sent']]], 'the sales manager may approve again; the list shows the file sent');
   const audit = (await app.db.prepare("SELECT detail FROM crm_audit WHERE record_id=? AND action='mold-design:attach'").bind(first.id).all()).results;
   check([audit.length, JSON.parse(audit[0].detail).name, audit[0].detail.includes('PDF-1.4')], [1, 'رسم القالب 1380.pdf', false], 'audited by name and size, never the contents');
 
@@ -113,7 +118,7 @@ try {
   check((await viewOf('rep', first.id)).can.resend, true, 'a send stopped after its tries: the requester may resend');
   check((await post('rep', {action: 'resend', id: first.id})).status, 200, 'resend');
   await until(async () => (await fileRow(drawingId)).sent_at, 'the file was sent again');
-  check([calls('design-files') - sendsBefore, mock.state.nextFile, mock.row(first.id).designFiles.length, (await fileRow(drawingId)).outbox], [2, filesAtProduction, 1, null], 'sent once more: production answered 200 created:false (no second file there); the CRM marks it sent');
+  check([calls('design-files') - sendsBefore, mock.state.nextFile, drawn(mock.row(first.id).designFiles).length, (await fileRow(drawingId)).outbox], [2, filesAtProduction, 1, null], 'sent once more: production answered 200 created:false (no second file there); the CRM marks it sent');
 
   // ---- the CRM's own checks, as production's: each refusal says why; nothing is stored or sent
   const refusals = [['empty.pdf', Buffer.alloc(0), 400, 'empty', 'file'], ['not-a-pdf.pdf', Buffer.from('hello'), 400, 'not_pdf', 'file'], ['broken.png', Buffer.from('not an image at all'), 400, 'bad_image', 'file'],
@@ -136,7 +141,7 @@ try {
     body = await res.json();
     check([res.status, body.file?.name, body.file?.kind, body.file?.state], [200, name, kind, 'sent'], name + ': accepted by the CRM and by production');
   }
-  check(mock.row(pr27.id).designFiles.map(file => [file.name, file.type]), [['CON.pdf', 'application/pdf'], ['COM1.jpg', 'image/png'], ['aux.dwg', 'application/octet-stream']], 'production keeps each as what it is');
+  check(drawn(mock.row(pr27.id).designFiles).map(file => [file.name, file.type]), [['CON.pdf', 'application/pdf'], ['COM1.jpg', 'image/png'], ['aux.dwg', 'application/octet-stream']], 'production keeps each as what it is');
   const mismatched = (await viewOf('rep', pr27.id)).designFiles.find(file => file.name === 'COM1.jpg');
   res = await download('rep', 'id=' + pr27.id + '&file=' + mismatched.crmFileId + '&inline=1');
   check([res.status, res.headers['content-type'], res.headers['content-disposition'].split(';')[0], Buffer.compare(res.bytes, photo)], [200, 'image/png', 'inline', 0], 'the PNG named .jpg is served by the CRM as the PNG it is');
@@ -160,8 +165,9 @@ try {
   mock.state.down = false;
   const heldSends = calls('design-files');
   check((await post('rep', {action: 'resend', id: second.id})).status, 200, 'the request is resent and accepted');
-  await until(async () => (await fileRow(photoId)).sent_at && (await fileRow(spare.crmFileId)).sent_at, 'both files followed the request');
-  check([calls('design-files') - heldSends, (await viewOf('rep', second.id)).designFiles.map(file => file.state)], [2, ['sent', 'sent']], 'sent after the request was accepted');
+  // Two files a run: the third (the customer's signature, waiting with them) goes on the next check, which any page load makes.
+  await until(async () => { await list('rep'); return (await fileRow(photoId)).sent_at && (await fileRow(spare.crmFileId)).sent_at && (await fileRow('mds-' + second.id.slice(3))).sent_at; }, 'both files and the signature followed the request');
+  check([calls('design-files') - heldSends, (await viewOf('rep', second.id)).designFiles.map(file => [file.signature || false, file.state])], [3, [[true, 'sent'], [false, 'sent'], [false, 'sent']]], 'sent after the request was accepted, the customer\'s signature too');
 
   // ---- production refuses a file the CRM accepted (400 with each reason, 413): shown with the reason, final, never retried
   const third = await create('rep', 'east1', 'third mold');
@@ -203,7 +209,7 @@ try {
   const notFoundSends = calls('design-files');
   check([body.request.can.resend, (await post('rep', {action: 'resend', id: fourth.id})).status], [true, 200], 'the requester may resend it');
   await until(async () => calls('design-files') > notFoundSends && (await fileRow(body.file.crmFileId)).next_attempt_at === null, 'the resend tried again');
-  check([calls('design-files') - notFoundSends, (await viewOf('rep', fourth.id)).designFiles[0].stopped], [1, true], 'tried once more; production still lacks the request, so it stops again');
+  check([calls('design-files') - notFoundSends, drawn((await viewOf('rep', fourth.id)).designFiles)[0].stopped], [1, true], 'tried once more; production still lacks the request, so it stops again');
   const fifth = await create('rep', 'east1', 'fifth mold');
   for (const step of ['sales', 'production', 'admin']) mock.approve(fifth.id, step);
   const lockedSends = calls('design-files');
@@ -211,11 +217,11 @@ try {
   body = await res.json();
   check([res.status, body.ok, body.send, body.file.state, body.file.error.code, body.request.remote.status, body.request.editable, body.request.can.attach], [409, false, {kind: 'locked', code: 'request_locked'}, 'locked', 'request_locked', 'confirmed', false, false], '409 request_locked: the file is kept as not sent, the request shows production\'s status');
   ok(/اكتملت الاعتمادات/.test(body.error), 'with a clear message');
-  check([calls('design-files') - lockedSends, mock.row(fifth.id).designFiles || []], [1, []], 'production holds no file');
+  check([calls('design-files') - lockedSends, drawn(mock.row(fifth.id).designFiles)], [1, []], 'production holds no file (but the signature, sent with the request)');
   check((await upload('rep', fifth.id, 'مرة أخرى.pdf', pdf('again'))).status, 409, 'a request no longer editable takes no more files');
   const lockedFile = body.file;
   res = await remove('rep', fifth.id, lockedFile.crmFileId);
-  check([res.status, (await res.json()).request.designFiles, calls('design-file-delete')], [200, [], 0], 'a file production never held is removed in the CRM alone, even when locked');
+  check([res.status, drawn((await res.json()).request.designFiles), calls('design-file-delete')], [200, [], 0], 'a file production never held is removed in the CRM alone, even when locked');
 
   // ---- delete: a file production never held, in the CRM alone; one it holds, through design-file-delete (the approvals undone)
   const refusedRow = await fileRow(refusedIds[0]);
@@ -228,8 +234,8 @@ try {
   const deleteKey = crypto.randomUUID();
   res = await remove('rep', first.id, drawingId, deleteKey);
   body = await res.json();
-  check([res.status, calls('design-file-delete'), body.request.remote.approvals.sales, body.request.remote.waitingStep, body.request.designFiles], [200, 1, null, 'sales', []], 'deleted at production: the approval undone, back with the sales manager');
-  check([mock.row(first.id).designFiles.length, (await fileRow(drawingId)).object_key, (await fileRow(drawingId)).deleted_at !== null, existsSync(objectPath(stored.object_key))], [0, null, true, false], 'gone there and its bytes gone here; the row stays as the record');
+  check([res.status, calls('design-file-delete'), body.request.remote.approvals.sales, body.request.remote.waitingStep, drawn(body.request.designFiles)], [200, 1, null, 'sales', []], 'deleted at production: the approval undone, back with the sales manager');
+  check([drawn(mock.row(first.id).designFiles).length, (await fileRow(drawingId)).object_key, (await fileRow(drawingId)).deleted_at !== null, existsSync(objectPath(stored.object_key))], [0, null, true, false], 'gone there and its bytes gone here; the row stays as the record');
   check([(await remove('rep', first.id, drawingId, deleteKey)).status, calls('design-file-delete')], [200, 1], 'the same tap twice: production asked once');
   check((await download('rep', 'id=' + first.id + '&file=' + drawingId)).status, 404, 'a deleted file is never served');
 
@@ -237,13 +243,15 @@ try {
   const production = mock.addProductionFile(first.id, {name: 'رسم الإنتاج المعدل.pdf', bytes: pdf('production drawing')});
   await age(first.id);
   const withProduction = await viewOf('rep', first.id);
-  check(withProduction.designFiles.map(file => [file.name, file.source, file.state, file.canDelete, file.fileId]), [['رسم الإنتاج المعدل.pdf', 'production', 'production', false, String(production.fileId)]], 'production\'s file in the request, as production\'s');
+  check(drawn(withProduction.designFiles).map(file => [file.name, file.source, file.state, file.canDelete, file.fileId]), [['رسم الإنتاج المعدل.pdf', 'production', 'production', false, String(production.fileId)]], 'production\'s file in the request, as production\'s');
   check((await remove('rep', first.id, String(production.fileId))).status, 404, 'production\'s file is not the CRM\'s to delete');
   const manual = mock.registerManual({customerNo: (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east2'").first()).number, customerName: 'مصنع مسجّل في الإنتاج', createdBy: 'prod@yourrest.org'});
   const manualFile = mock.addProductionFile(manual.orderNo, {name: 'تصميم الطلب اليدوي.png', bytes: png(640, 480)});
   const pending = (await list('sm')).pending;
   const firstItem = pending.items.find(item => item.orderNo === first.remote.orderNo), manualItem = pending.items.find(item => item.orderNo === manual.orderNo);
-  check(firstItem.designFiles.map(file => [file.name, file.source, file.href, file.viewable]), [['رسم الإنتاج المعدل.pdf', 'production', '/api/mold-requests/design-file?order=' + first.remote.orderNo + '&file=' + production.fileId, true]], 'the pending item lists the file, downloaded through the CRM by order number');
+  // The CRM request's signature (2026-11-04): said on the pending item, its image among the design files, labelled so.
+  check([firstItem.signature.signer, firstItem.designFiles.filter(file => file.signature).map(file => [file.crmFileId, file.kind, file.viewable])], ['م. خالد العتيبي', [['mds-' + first.id.slice(3), 'image', true]]], 'the pending item: signed by the customer, the signature among its files');
+  check(drawn(firstItem.designFiles).map(file => [file.name, file.source, file.href, file.viewable]), [['رسم الإنتاج المعدل.pdf', 'production', '/api/mold-requests/design-file?order=' + first.remote.orderNo + '&file=' + production.fileId, true]], 'the pending item lists the file, downloaded through the CRM by order number');
   check(manualItem.designFiles.map(file => [file.name, file.kind, file.source]), [['تصميم الطلب اليدوي.png', 'image', 'production']], 'a request registered in production shows its design too');
 
   // ---- downloads through the CRM, with the permission check
@@ -293,26 +301,29 @@ try {
     [409, false, 'locked', 'sent', 'request_locked', false, 'confirmed', false, 1], '409 from production: the file stays as delivered, with the reason and production\'s status');
   ok(/اكتملت الاعتمادات/.test(body.error), 'said in words');
   const lockedRow = await fileRow(lockedDrawing.crmFileId);
-  check([lockedRow.deleted_at, lockedRow.outbox, !!lockedRow.object_key, mock.row(seventh.id).designFiles.length, (await download('rep', 'id=' + seventh.id + '&file=' + lockedDrawing.crmFileId)).status], [null, null, true, 1, 200], 'kept here and there, still downloadable');
+  check([lockedRow.deleted_at, lockedRow.outbox, !!lockedRow.object_key, drawn(mock.row(seventh.id).designFiles).length, (await download('rep', 'id=' + seventh.id + '&file=' + lockedDrawing.crmFileId)).status], [null, null, true, 1, 200], 'kept here and there, still downloadable');
   const eighth = await create('rep', 'east2', 'gone at production mold');
   const goneDrawing = (await (await upload('rep', eighth.id, 'رسم أزاله الإنتاج.pdf', pdf('removed at production'))).json()).file;
   mock.row(eighth.id).designFiles = [];
   res = await remove('rep', eighth.id, goneDrawing.crmFileId);
   body = await res.json();
-  check([res.status, body.send.kind, body.request.designFiles, (await fileRow(goneDrawing.crmFileId)).deleted_at !== null, (await fileRow(goneDrawing.crmFileId)).object_key, (await fileRow(goneDrawing.crmFileId)).outbox], [200, 'ok', [], true, null, null], '404 from production: already gone there, the deletion completes');
+  check([res.status, body.send.kind, drawn(body.request.designFiles), (await fileRow(goneDrawing.crmFileId)).deleted_at !== null, (await fileRow(goneDrawing.crmFileId)).object_key, (await fileRow(goneDrawing.crmFileId)).outbox], [200, 'ok', [], true, null, null], '404 from production: already gone there, the deletion completes');
 
-  // ---- 10 files a request, production's included
+  // ---- 10 files a request, production's included, and the customer's signature among them (2026-11-04)
   const sixth = await create('rep', 'east2', 'ten files mold');
   mock.addProductionFile(sixth.id, {name: 'من الإنتاج.pdf'});
   await age(sixth.id);
   await list('rep');
-  for (let n = 1; n <= 9; n++) check((await upload('rep', sixth.id, 'ملف ' + n + '.pdf', pdf('file ' + n))).status, 200, 'file ' + n + ' of the 9 left');
+  for (let n = 1; n <= 8; n++) check((await upload('rep', sixth.id, 'ملف ' + n + '.pdf', pdf('file ' + n))).status, 200, 'file ' + n + ' of the 8 left (the signature takes one)');
   const full = await viewOf('rep', sixth.id);
-  check([full.designFiles.length, full.designFiles.filter(file => file.source === 'production').length, mock.row(sixth.id).designFiles.length], [10, 1, 10], 'ten files: nine of the CRM\'s and production\'s one');
+  check([full.designFiles.length, full.designFiles.filter(file => file.source === 'production').length, full.designFiles.filter(file => file.signature).length, mock.row(sixth.id).designFiles.length], [10, 1, 1, 10], 'ten files: the signature, eight of the CRM\'s and production\'s one');
   res = await upload('rep', sixth.id, 'الحادي عشر.pdf', pdf('eleventh'));
   body = await res.json();
-  check([res.status, /الحد 10 ملفات/.test(body.error), await rowsOf(sixth.id)], [409, true, 9], 'the eleventh is refused by the CRM itself, nothing stored');
-  const one = full.designFiles.find(file => file.source === 'crm');
+  check([res.status, /الحد 10 ملفات/.test(body.error), await rowsOf(sixth.id)], [409, true, 8], 'the eleventh is refused by the CRM itself, nothing stored');
+  const signatureFile = full.designFiles.find(file => file.signature);
+  res = await remove('rep', sixth.id, signatureFile.crmFileId);
+  check([res.status, (await res.json()).error, !!(await fileRow(signatureFile.crmFileId)).deleted_at], [409, 'توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.', false], 'the customer\'s signature cannot be deleted from the request');
+  const one = drawn(full.designFiles).find(file => file.source === 'crm');
   check((await remove('rep', sixth.id, one.crmFileId)).status, 200, 'one deleted');
   check((await upload('rep', sixth.id, 'الحادي عشر.pdf', pdf('eleventh'))).status, 200, 'a place is free again');
 

@@ -30,6 +30,8 @@ import {createRequire} from 'node:module';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
+import {withSignature} from '../scripts/lib/signature-png.mjs';
+import {drawSignature, padInked, signaturePad, signRequest} from '../scripts/lib/signature-pad.mjs';
 
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
 const members = [
@@ -57,8 +59,8 @@ try {
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1']});
   /** A signed-in page; a representative runs in the Android app emulator with tracking set up (the gate lets them in). language: 'en'
    *  opens it in English (the saved choice, as the language switch stores it). */
-  async function open(memberId, {viewport = DESKTOP, language = 'ar'} = {}) {
-    const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block'});
+  async function open(memberId, {viewport = DESKTOP, language = 'ar', touch = false} = {}) {
+    const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', ...(touch ? {hasTouch: true, isMobile: true} : {})});
     if (language === 'en') await context.addInitScript(() => { try { localStorage.setItem('yr-language', 'en'); } catch { /* storage unavailable */ } });
     const cookie = await app.login(memberId), [name, ...value] = cookie.split('=');
     await context.addCookies([{name, value: value.join('='), url: app.origin, httpOnly: true, secure: true, sameSite: 'Lax'}]);
@@ -82,6 +84,17 @@ try {
     await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
     await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).locator('label', {hasText: payment}).click();
+  };
+  // ---- The customer's signature (2026-11-04): drawn on the pad with pointer events, as a mouse, a finger (real touch through the DevTools
+  //  protocol: the Android WebView's and a phone's) or a stylus (pen pointer events, a tablet's) does; 'dot' is a tap, no signature.
+  const pad = signaturePad, drawOn = drawSignature, inked = padInked, sign = signRequest;
+  const SIGNATURE_BLANK = 'التوقيع فاضي أو صغير قوي؛ خلّي العميل يوقّع بصباعه أو بالقلم', SIGNER_REQUIRED = 'اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)';
+  const goMoldsAnywhere = async page => {
+    const more = page.locator('.mobile-bottom-navigation button[aria-haspopup="dialog"]');
+    await page.locator('.mobile-bottom-navigation button[aria-haspopup="dialog"]:visible, button.nav-item:visible').first().waitFor();
+    if (!await more.isVisible()) return goMolds(page);
+    await more.click(); await page.locator('.mobile-overflow-pages button[data-page="mold-requests"]').click();
+    await page.locator('.mobile-navigation-sheet').waitFor({state: 'detached'}); await page.locator('.mold-page').waitFor();
   };
 
   // ---- 1. The representative asks for a mold: saved, sent, order 92, seven stages not started
@@ -107,6 +120,28 @@ try {
   check(await dialog.locator('.field-error').count(), 0, 'each message goes once its field is filled');
   await shot(rep, 'mold-form-desktop');
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  // ---- 1b. The customer signs first (2026-11-04): what they sign, who signs, the pad; nothing drawn, a tap, no name refused; «امسح» clears
+  const step = dialog.locator('.mold-signing');
+  await step.waitFor();
+  check([await dialog.locator('form.mold-form').isVisible(), mock.state.calls.length, await step.locator('h3').innerText()], [false, before, 'توقيع العميل'], 'not sent yet: «حفظ وإرسال» opens «توقيع العميل» first');
+  const summary = await step.locator('.mold-signing-summary').innerText();
+  ok(['مصنع east1', '200*400*27.5TH MM OPEN', 'نقدي', 'مفتوح', 'موديل قديم'].every(text => summary.includes(text)) && /الكمية\s*1/.test(summary) && /الملفات\s*0/.test(summary), 'the summary the customer reads: customer, mold, quantity, payment, files: ' + summary);
+  check(await pad(rep).evaluate(canvas => getComputedStyle(canvas).touchAction), 'none', 'the pad takes the finger: no scroll or zoom while drawing');
+  await step.getByRole('button', {name: 'تأكيد وإرسال'}).click();
+  check(await step.locator('.field-error').allInnerTexts(), [SIGNER_REQUIRED, SIGNATURE_BLANK], 'no name and nothing drawn: both refused on the device');
+  await step.locator('input[name="signer"]').fill('م. خالد العتيبي');
+  await drawOn(rep, {shape: 'dot'});
+  await step.getByRole('button', {name: 'تأكيد وإرسال'}).click();
+  check([await inked(rep), await step.locator('.field-error').allInnerTexts()], [true, [SIGNATURE_BLANK]], 'a tap is no signature');
+  await drawOn(rep);
+  await step.getByRole('button', {name: 'امسح'}).click();
+  check([await inked(rep), await step.getByRole('button', {name: 'امسح'}).isDisabled()], [false, true], '«امسح» clears the pad');
+  await step.getByRole('button', {name: 'تأكيد وإرسال'}).click();
+  check([await step.locator('.field-error').allInnerTexts(), mock.state.calls.length], [[SIGNATURE_BLANK], before], 'cleared: refused again; nothing was sent meanwhile');
+  await drawOn(rep);
+  check(await step.locator('.field-error').count(), 0, 'drawing clears the message');
+  await shot(rep, 'mold-signing-desktop');
+  await step.getByRole('button', {name: 'تأكيد وإرسال'}).click();
   await sheet(rep).waitFor();
   const facts = sheet(rep).locator('.mold-facts').first();
   await facts.locator('dd', {hasText: '92'}).waitFor();
@@ -125,6 +160,19 @@ try {
   const sent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
   check([sent.customer.name, sent.specs.moldWidth, sent.specs.gelbaSize, sent.specs.vibrators, sent.payment], ['مصنع east1', 1380, 795, 2, 'cash'], 'production received what was chosen, the payment beside the specifications');
   check([Object.hasOwn(sent.specs, 'designUrl'), await sheet(rep).locator('.mold-facts dt', {hasText: 'رابط التصميم'}).count()], [false, 0], 'no design link sent, and none shown on the request');
+  // The signature on the request: who and when, its image through the CRM, among the design files labelled and not deletable; at
+  // production as a design image, sent after the request without category; the requests body carries nothing of it.
+  const signedBy = sheet(rep).locator('.mold-signature-view');
+  await signedBy.locator('img').waitFor();
+  ok(/^وقّع العميل: م\. خالد العتيبي · \d/.test(await signedBy.locator('p').innerText()), '«وقّع العميل: <signer> · <time>»: ' + await signedBy.locator('p').innerText());
+  await rep.waitForFunction(() => document.querySelector('.mold-sheet .mold-signature-view img')?.naturalWidth > 0);
+  const signatureRow = sheet(rep).locator('.mold-design-file[data-signature="true"]');
+  check([await signatureRow.locator('.mold-chip').innerText(), await signatureRow.locator('.mold-design-delete').count(), await signatureRow.locator('.mold-design-state').innerText()], ['توقيع العميل', 0, 'وصل للإنتاج'], 'in the files: labelled «توقيع العميل», no delete, delivered to production');
+  const signatureLine = mock.state.calls.find(call => call.route === 'design-files' && call.body.includes(sent.crmRequestId));
+  check([Object.keys(JSON.parse(signatureLine.body)), JSON.parse(signatureLine.body).name, mock.state.calls.indexOf(signatureLine) > mock.state.calls.findIndex(call => call.route === 'requests' && call.body.includes(sent.crmRequestId)), Object.keys(sent).includes('signature')],
+    [['crmRequestId', 'crmFileId', 'name'], 'توقيع العميل - م. خالد العتيبي.png', true, false], 'production got the PNG as a design file without category, after the request; the body has no signature');
+  const atProduction = mock.row(sent.crmRequestId).designFiles[0];
+  check([atProduction.kind, atProduction.type, atProduction.bytes.subarray(1, 4).toString('latin1')], ['image', 'image/png', 'PNG'], 'a real PNG at production');
   await rep.keyboard.press('Escape');
   await rep.locator('.mold-card').first().waitFor();
   check(await rep.locator('.mold-card').count(), 1, 'the list shows the request');
@@ -149,6 +197,7 @@ try {
   await dialog.waitFor();
   await fill(dialog, 'مصنع east2', 'آجل');
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  await sign(rep, {signer: 'أ. منى'});
   await sheet(rep).locator('.mold-sending').waitFor();
   ok((await sheet(rep).locator('.mold-sending').innerText()).length > 0, 'the request says it waits to be sent');
   await shot(rep, 'mold-sheet-waiting');
@@ -178,6 +227,10 @@ try {
   ok(crmPendingText.includes('من الـCRM') && crmPendingText.includes('وصف عدّله مدير الإنتاج') && crmPendingText.includes('مندوب عدّله الإنتاج') && /الكمية:\s*3/.test(crmPendingText) && !crmPendingText.includes('200*400*27.5TH MM OPEN'),
     'the CRM\'s request in the list as production holds it now, not the CRM\'s copy: ' + crmPendingText);
   ok(/الدفع:\s*نقدي/.test(crmPendingText) && !crmPendingText.includes('آجل') && !(await pendingCard.innerText()).includes('الدفع'), 'the payment with each request waiting as production holds it now, not the CRM\'s آجل (none for one registered without it)');
+  // The CRM's request was signed by the customer (2026-11-04): said on its card, its image among the design files labelled so.
+  const signedPending = sm.locator('.mold-pending', {hasText: 'مصنع east2 (عدّله الإنتاج)'});
+  check([(await signedPending.locator('.mold-signature-view p').innerText()).startsWith('وقّع العميل: أ. منى'), await signedPending.locator('.mold-design-file[data-signature="true"] .mold-chip').innerText(), await sm.locator('.mold-pending', {hasText: 'مصنع مسجّل في الإنتاج'}).locator('.mold-signature-view').count()],
+    [true, 'توقيع العميل', 0], '«طلبات بانتظار اعتمادي»: «وقّع العميل» on the CRM\'s signed request, none on one registered in production');
   await shot(sm, 'mold-pending-manager');
   // Registered in production meanwhile: the approval's answer reads the list again (the server keeps it a minute otherwise).
   const gone = mock.registerManual({customerName: 'مصنع اتمسح من الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'gone mold'});
@@ -221,7 +274,7 @@ try {
   // ---- 3c. A sent request offers no edit, approved or not: cancelling and its design files only. One production refused before storing
   //  it is still edited, in a dialog over the request (four half-block choices), until its first send reaches production.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
-  const refused = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
+  const refused = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json()).request;
   check([refused.sending.state, refused.remote, refused.can.edit], ['rejected', null, true], 'production refused it before storing it (400): still the requester\'s to edit');
   const editor = await open('rep');
   await goMolds(editor);
@@ -247,7 +300,14 @@ try {
   await shot(editor, 'mold-edit-unsent');
   await edit.locator('label.mold-field', {hasText: 'الكمية'}).locator('input').fill('2');
   await edit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  // The quantity changed what the customer signed (2026-11-04): signed again, the new signature replacing the old.
+  await edit.locator('.mold-signing-again').waitFor();
+  const firstSigned = JSON.parse((await app.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(refused.id).first()).data).signature.fileId;
+  ok(/الكمية\s*2/.test(await edit.locator('.mold-signing-summary').innerText()), 'the summary shows the change the customer signs');
+  await sign(editor, {signer: 'م. خالد العتيبي'});
   await edit.waitFor({state: 'detached'});
+  const reSigned = JSON.parse((await app.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(refused.id).first()).data).signature.fileId;
+  check([reSigned !== firstSigned, (await app.db.prepare('SELECT deleted_at FROM crm_mold_design_files WHERE id=?').bind(firstSigned).first()).deleted_at !== null], [true, true], 'signed again: a new signature, the old one (never at production) removed');
   await sheet(editor).locator('.mold-specs-note').waitFor();
   check([await sheet(editor).locator('.mold-sending').count(), await sheet(editor).getByRole('button', {name: 'تعديل الطلب'}).count(), mock.row(refused.id)?.quantity], [0, 0, 2], 'the change was sent; production holds it now, so no more edits');
   await editor.context().close();
@@ -256,7 +316,7 @@ try {
   //  elsewhere). Saving is refused with the reason in English, the form stays open with it, and the request behind drops its edit at once.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
   const repApi = app.as(await app.login('rep'));
-  const ask = async (description, customerId = 'east1') => (await (await repApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
+  const ask = async (description, customerId = 'east1') => (await (await repApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json()).request;
   const late = await ask('sent meanwhile');
   check([late.sending.state, late.can.edit], ['rejected', true], 'refused before production stored it: editable');
   const english = await open('rep', {language: 'en'});
@@ -269,6 +329,9 @@ try {
   check((await repApi('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: late.id}})).status, 200, 'meanwhile its send reaches production');
   await lateEdit.locator('label.mold-field', {hasText: 'Quantity'}).locator('input').fill('4');
   await lateEdit.getByRole('button', {name: 'Save and send the change'}).click();
+  // In English: the customer signs the change first («Customer signature»), then the server refuses it; the form comes back with why.
+  check(await lateEdit.locator('.mold-signing h3').innerText(), 'Customer signature', 'the signing step in English');
+  await sign(english, {signer: 'Khalid Al-Otaibi', input: 'pen', confirm: 'Confirm and send'});
   const lateRefusal = lateEdit.locator('.form-error');
   await lateRefusal.waitFor();
   check(await lateRefusal.innerText(), 'The request\'s data is edited by the production manager only; it was sent to production, so edit it in the products application.', 'refused, with the reason in English; the form stays open');
@@ -351,7 +414,7 @@ try {
 
   // ---- 3e. Cancelled in the CRM while production is unreachable: «ملغى» at once, the cancellation waiting to be sent
   const api = app.as(await app.login('rep'));
-  const asked = (await (await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'deferred'}})).json()).request;
+  const asked = (await (await api('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'deferred'})})).json()).request;
   mock.state.down = true;
   check((await api('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: asked.id, version: asked.version, reason: ''}})).status, 200, 'cancelled in the CRM while production is down');
   const canceller = await open('rep');
@@ -503,6 +566,9 @@ try {
   await shot(linkedPage, 'mold-edit-older-design-link');
   await linkedEdit.locator('label.mold-field', {hasText: 'الكمية'}).locator('input').fill('2');
   await linkedEdit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  // An older request (no signature): its changing edit is signed by the customer now (no «sign again» note: there was none before).
+  check(await linkedEdit.locator('.mold-signing-again').count(), 0, 'an older request had no signature: signed now, not «again»');
+  await sign(linkedPage);
   await linkedEdit.waitFor({state: 'detached'});
   const linkedSent = JSON.parse(mock.state.calls.filter(call => call.route === 'requests' && call.body.includes(linkedId)).at(-1).body);
   check([linkedSent.specs.designUrl, linkedSent.specs.quantity, JSON.parse((await app.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(linkedId).first()).data).specs.designUrl],
@@ -570,6 +636,8 @@ try {
   check([await quotePicker.locator('.mold-design-reason').innerText(), await quotePicker.locator('.mold-design-file[data-state="ready"]').count()], ['ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 1], 'a drawing as the quotation: refused on the device; the PDF will go');
   await shot(quoteRep, 'mold-form-quote-po');
   await quoteDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  ok((await quoteDialog.locator('.mold-signing-summary').innerText()).includes('Q-2026-0153'), 'the customer signs with the quotation number in the summary');
+  await sign(quoteRep);
   await sheet(quoteRep).waitFor();
   const quoteSent = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests' && call.signed).body), quotedId = quoteSent.crmRequestId;
   check([quoteSent.quoteNo, Object.hasOwn(quoteSent, 'poNo')], ['Q-2026-0153', false], 'sent with the quotation number in ASCII digits, no PO number');
@@ -579,7 +647,7 @@ try {
   const quoteGroup = sheet(quoteRep).locator('section.mold-design[data-category="quote"]');
   await quoteGroup.locator('.mold-design-file', {hasText: 'عرض سعر Q-2026-0153.pdf'}).locator('.mold-design-state', {hasText: 'وصل للإنتاج'}).waitFor();
   check([await sheet(quoteRep).locator('section.mold-design').evaluateAll(sections => sections.map(section => section.getAttribute('data-category'))), await quoteGroup.locator('.mold-design-count').innerText()], [['design', 'quote', 'po'], '1/5'], 'the request\'s files in three groups; the quotation file reached production in its own (1 of 5)');
-  check(mock.row(quotedId).designFiles.map(file => file.category), ['quote'], 'production holds it as the quotation\'s');
+  check(mock.row(quotedId).designFiles.map(file => [file.category, file.name.startsWith('توقيع العميل')]), [['design', true], ['quote', false]], 'production holds it as the quotation\'s (beside the customer\'s signature, a design file)');
   await quoteRep.waitForFunction(() => { const box = document.querySelector('.mold-sheet')?.getBoundingClientRect(); return !!box && box.left >= -1 && box.right <= innerWidth + 1; });
   await quoteGroup.scrollIntoViewIfNeeded();
   await shot(quoteRep, 'mold-sheet-quote-po');
@@ -631,6 +699,91 @@ try {
   check(await englishNumbers.evaluate(element => { const box = element.getBoundingClientRect(); return box.left >= -1 && box.right <= innerWidth + 1; }), true, 'the numbers fit the phone');
   await noOverflow(englishPhone, 'phone form with the numbers'); await shot(englishPhone, 'mold-form-quote-po-phone');
   await englishPhone.context().close();
+
+  // ---- 6. The customer signs on a phone (360 px, a finger: real touch events, Arabic) and on a tablet (a stylus, English) turned from
+  //  portrait to landscape while signing: the pad fits, the page does not scroll while drawing, the drawing survives the turn.
+  const signPhone = await open('rep', {viewport: PHONE, touch: true});
+  await goMoldsAnywhere(signPhone);
+  await signPhone.locator('button.mold-new').click();
+  const phoneDialog = signPhone.locator('.mold-dialog');
+  await fill(phoneDialog, 'مصنع east1');
+  // production's update of 2026-11-03 is known by now: a number at least
+  await phoneDialog.locator('input[name="poNo"]').fill('PO-٤٤');
+  await phoneDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  await phoneDialog.locator('.mold-signing').waitFor();
+  ok((await phoneDialog.locator('.mold-signing-summary').innerText()).includes('PO-44'), 'the PO number in what the customer signs');
+  await pad(signPhone).scrollIntoViewIfNeeded();
+  const phonePad = await pad(signPhone).boundingBox();
+  check([phonePad.x >= 0, phonePad.x + phonePad.width <= PHONE.width, phonePad.width >= 260, Math.round(phonePad.width / phonePad.height)], [true, true, true, 2], 'the pad fits the phone, 2:1');
+  await noOverflow(signPhone, 'phone signing step');
+  const scrolled = () => signPhone.evaluate(() => [scrollY, document.querySelector('.mold-dialog').scrollTop]);
+  const beforeDrawing = await scrolled();
+  await drawOn(signPhone, {input: 'touch'});
+  check([await inked(signPhone), await scrolled()], [true, beforeDrawing], 'a finger draws, and neither the page nor the dialog scrolls');
+  // Turned to landscape and back: the pad changes width and redraws the same signature each time.
+  for (const viewport of [{width: PHONE.height, height: PHONE.width}, PHONE]) {
+    const width = (await pad(signPhone).boundingBox()).width;
+    await signPhone.setViewportSize(viewport);
+    await signPhone.waitForFunction(old => Math.abs(document.querySelector('.mold-signing .mold-signature-pad').getBoundingClientRect().width - old) > 1, width);
+    await signPhone.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const turned = await pad(signPhone).boundingBox();
+    check([await inked(signPhone), Math.round(turned.width / turned.height), turned.x + turned.width <= viewport.width], [true, 2, true], 'the phone turned to ' + viewport.width + '×' + viewport.height + ': the signature redrawn on the resized pad');
+  }
+  await phoneDialog.locator('input[name="signer"]').fill('م. سالم الدوسري');
+  await shot(signPhone, 'mold-signing-phone');
+  await phoneDialog.getByRole('button', {name: 'تأكيد وإرسال'}).click();
+  await sheet(signPhone).locator('.mold-signature-view img').waitFor();
+  ok((await sheet(signPhone).locator('.mold-signature-view p').innerText()).startsWith('وقّع العميل: م. سالم الدوسري'), 'signed on the phone: the sheet says so');
+  await signPhone.waitForFunction(() => document.querySelector('.mold-sheet .mold-signature-view img')?.naturalWidth > 0);
+  await sheet(signPhone).locator('.mold-signature-view').scrollIntoViewIfNeeded();
+  await noOverflow(signPhone, 'phone sheet with the signature'); await shot(signPhone, 'mold-sheet-signature-phone');
+  await signPhone.context().close();
+  const TABLET = {width: 820, height: 1180};
+  const tablet = await open('rep', {viewport: TABLET, language: 'en', touch: true});
+  await goMoldsAnywhere(tablet);
+  await tablet.locator('button.mold-new').click();
+  const tabletDialog = tablet.locator('.mold-dialog');
+  await tabletDialog.locator('.mold-customer-search input').fill('مصنع east2');
+  await tabletDialog.locator('.mold-customer-matches button', {hasText: 'مصنع east2'}).click();
+  await tabletDialog.locator('label.mold-field', {hasText: 'Mold description'}).locator('input').fill('TABLET MOLD 400');
+  for (const text of ['open', 'old', 'none']) await tabletDialog.locator('.mold-choice label', {hasText: new RegExp('^' + text + '$')}).click();
+  await tabletDialog.locator('.mold-choice', {hasText: 'Vibrators'}).locator('label', {hasText: '3'}).click();
+  await tabletDialog.locator('label.mold-field', {hasText: 'Mold width'}).locator('.mold-usual button', {hasText: '1375'}).click();
+  await tabletDialog.locator('label.mold-field', {hasText: 'Gelba size'}).locator('.mold-usual button', {hasText: '800'}).click();
+  await tabletDialog.locator('.mold-choice', {hasText: 'Payment'}).locator('label', {hasText: 'Deferred'}).click();
+  await tabletDialog.locator('input[name="quoteNo"]').fill('Q-TAB-7');
+  // The customer signature takes the tenth design place: said by the picker before anything is chosen.
+  check(await tabletDialog.locator('.mold-design-picker[data-category="design"] .mold-signature-room').innerText(), 'The customer\'s signature takes one of the 10 places; up to 9 design files', 'the form leaves room for the signature, and says so');
+  await tabletDialog.locator('.mold-design-picker[data-category="design"] input[type=file]').setInputFiles(Array.from({length: 10}, (_, n) => ({name: 'drawing ' + (n + 1) + '.dwg', mimeType: 'application/octet-stream', buffer: Buffer.from('AC1027 ' + n)})));
+  const tenth = tabletDialog.locator('.mold-design-picker[data-category="design"] .mold-design-file[data-state="refused"]');
+  await tenth.waitFor();
+  check([await tenth.count(), await tenth.locator('.mold-design-reason').innerText(), await tabletDialog.locator('.mold-design-picker[data-category="design"] .mold-design-file[data-state="ready"]').count()], [1, 'The tenth place is the customer\'s signature; up to 9 design files', 9], 'ten chosen: nine go, the tenth is refused for the signature\'s place');
+  await tenth.getByRole('button', {name: /Remove/}).click();
+  await tabletDialog.getByRole('button', {name: 'Save and send to production'}).click();
+  const tabletStep = tabletDialog.locator('.mold-signing');
+  await tabletStep.waitFor();
+  const summaryEn = await tabletStep.locator('.mold-signing-summary').innerText();
+  ok(['مصنع east2', 'TABLET MOLD 400', 'Deferred', 'open', 'old', 'Q-TAB-7'].every(text => summaryEn.includes(text)) && /Files\s*9/.test(summaryEn), 'what the customer signs, in English, with the nine files: ' + summaryEn);
+  await tabletStep.getByRole('button', {name: 'Confirm and send'}).click();
+  check(await tabletStep.locator('.field-error').allInnerTexts(), ['Type the name of the person signing for the customer (2 to 80 characters)', 'The signature is empty or too small; have the customer sign with a finger or a stylus'], 'refused in English: the name and the blank pad');
+  const portraitPad = await pad(tablet).boundingBox();
+  await drawOn(tablet, {input: 'pen'});
+  check(await inked(tablet), true, 'a stylus draws (pen pointer events)');
+  await tablet.setViewportSize({width: TABLET.height, height: TABLET.width});
+  await tablet.waitForFunction(() => innerWidth > innerHeight);
+  await tablet.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const landscapePad = await pad(tablet).boundingBox();
+  check([await inked(tablet), Math.round(landscapePad.width / landscapePad.height), landscapePad.x + landscapePad.width <= TABLET.height, Math.abs(landscapePad.width - portraitPad.width) < 2], [true, 2, true, true], 'turned to landscape: the pad keeps its place in the dialog, its shape and the signature');
+  await noOverflow(tablet, 'tablet landscape signing step');
+  await tabletStep.locator('input[name="signer"]').fill('Khalid Al-Otaibi');
+  await shot(tablet, 'mold-signing-tablet-landscape');
+  await tabletStep.getByRole('button', {name: 'Confirm and send'}).click();
+  await sheet(tablet).locator('.mold-signature-view img').waitFor();
+  ok((await sheet(tablet).locator('.mold-signature-view p').innerText()).startsWith('Signed by the customer: Khalid Al-Otaibi'), 'the sheet in English: «Signed by the customer: <signer> · <time>»');
+  const tabletSigned = sheet(tablet).locator('.mold-design-file[data-signature="true"]');
+  await tabletSigned.waitFor();
+  check([await tabletSigned.locator('.mold-chip').innerText(), await tabletSigned.locator('.mold-design-delete').count(), await sheet(tablet).locator('section.mold-design[data-category="design"] .mold-design-count').innerText()], ['Customer signature', 0, '10/10'], 'labelled, not deletable, and the tenth of the ten places once the nine upload');
+  await tablet.context().close();
 
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));

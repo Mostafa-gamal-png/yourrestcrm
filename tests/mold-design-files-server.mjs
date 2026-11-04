@@ -20,6 +20,7 @@ import {request as httpsRequest} from 'node:https';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {privateObjects} from '../portable/storage.mjs';
 import {callProducts} from '../portable/mold-client.mjs';
+import {signatureInput} from '../scripts/lib/signature-png.mjs';
 
 const root=process.cwd(),runtime=path.join(root,'.sites-runtime');fs.mkdirSync(runtime,{recursive:true});
 const out=fs.mkdtempSync(path.join(runtime,'mold-design-server-')),store=fs.mkdtempSync(path.join(os.tmpdir(),'mold-design-objects-')),seen=new Set();
@@ -464,7 +465,8 @@ try{
  {
   const known=()=>sql.prepare("SELECT owner_id AS at FROM crm_settings WHERE id='mold-quote-po'").get()?.at||null,forget=()=>sql.prepare("DELETE FROM crm_settings WHERE id='mold-quote-po'").run();
   const specs={description:'200*400*27.5TH MM OPEN',core:'open',vibrators:2,model:'old',halfBlock:'none',moldWidth:1380,gelbaSize:795,moldNo:'',quantity:1,designUrl:'',notes:''};
-  const create=async extra=>{as('rep');return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',specs,payment:'cash',...extra})));};
+  // A representative's new request carries the customer's signature (2026-11-04).
+  const create=async extra=>{as('rep');return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',specs,payment:'cash',signature:signatureInput(),...extra})));};
   const list=async(member='rep')=>{as(member);return (await requests.GET(new Request('https://test.invalid/api/mold-requests'))).json();};
   const attachAs=async(id,name,bytes,category)=>{const form=new FormData();form.set('requestId',randomUUID());form.set('id',id);if(category)form.set('category',category);form.set('file',new File([bytes],name));as('rep');return json(await attacher.POST(new Request('https://test.invalid/api/mold-requests/design-files',{method:'POST',headers:{origin:'https://test.invalid'},body:form})));};
   const lastBody=route=>mock.state.calls.findLast(call=>call.route===route&&call.signed)?.body||'';
