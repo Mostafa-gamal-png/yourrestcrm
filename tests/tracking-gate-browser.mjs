@@ -29,8 +29,10 @@ try {
   app = await bootBuiltApp({members}, {tls: true});
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1']});
   /** A signed-in page. native: false = plain browser, true/object = the Android app emulator (object = bridge options). */
-  async function open(memberId, {native = false, viewport = PHONE, userAgent} = {}) {
+  async function open(memberId, {native = false, viewport = PHONE, userAgent, clockAt} = {}) {
     const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', ...(userAgent ? {userAgent} : {})});
+    // A page whose clock starts at a given time and then runs (the server keeps the real one).
+    if (clockAt) await context.clock.install({time: clockAt});
     const cookie = await app.login(memberId), [name, ...value] = cookie.split('=');
     await context.addCookies([{name, value: value.join('='), url: app.origin, httpOnly: true, secure: true, sameSite: 'Lax'}]);
     const page = await context.newPage();
@@ -274,26 +276,36 @@ try {
 
   // ---- 9. A tablet beside the work phone: while the phone records today's route, the tablet works without recording;
   // once the phone has been quiet for half an hour, the tablet is gated again and says where the route was recorded.
+  // The companion screen belongs to working hours (06:00-18:00 Riyadh, not Friday), on the device and on the server: this part
+  // runs on its own built app whose clock, like the tablet's, starts at 10:00 of a working day, so it gives the same answer at any hour.
   {
-    const today = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date());
-    const {scope} = await app.db.prepare('SELECT region_scope AS scope FROM crm_members WHERE id=?').bind('rep11').first();
-    const ago = minutes => new Date(Date.now() - minutes * 60_000).toISOString();
-    await app.db.prepare('INSERT INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,ended_at,last_point_at,data,version,mutation_id) VALUES(?,?,?,?,?,?,NULL,?,?,1,?)')
-      .bind('mobile-rep11-phone', 'rep11', crypto.randomUUID(), today, scope, ago(20), ago(1), JSON.stringify({gaps: [], trackingWindow: '06-18'}), 'seed').run();
-    const tablet = await open('rep11', {native: {regionScope: 'western'}, viewport: {width: 800, height: 1280}});
-    await waitWorkspace(tablet);
-    await tablet.locator('[data-tracking="companion"]').first().waitFor();
-    check(await gateOf(tablet).count(), 0, 'a tablet that records nothing is not gated while the phone records');
-    await layoutOk(tablet, 'companion tablet'); await shot(tablet, 'gate-companion-tablet');
-    await pause(2500);
-    check(await reportOf('rep11', 'android-app'), null, 'the tablet does not overwrite the phone status report');
-    await app.db.prepare('UPDATE crm_mobile_route_days SET started_at=?,last_point_at=? WHERE id=?').bind(ago(90), ago(45), 'mobile-rep11-phone').run();
-    await tablet.reload();
-    await waitGate(tablet, 'setup');
-    await tablet.locator('[data-companion="lost"]').waitFor();
-    ok((await texts(tablet)).includes('جهازك الآخر'), 'the setup screen says the route was recorded by the other device');
-    await layoutOk(tablet, 'companion lost'); await shot(tablet, 'gate-companion-lost');
-    await tablet.context().close();
+    const riyadhDay = at => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(at);
+    const isFriday = at => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Riyadh', weekday: 'short'}).format(at) === 'Fri';
+    const workday = isFriday(new Date()) ? new Date(Date.now() - 86_400_000) : new Date();
+    const offset = Date.parse(riyadhDay(workday) + 'T07:00:00.000Z') - Date.now(), shifted = () => new Date(Date.now() + offset);
+    const mainApp = app;
+    app = await bootBuiltApp({members}, {tls: true, env: {NODE_OPTIONS: '--import ' + new URL('../scripts/lib/shifted-clock.mjs', import.meta.url).href, TEST_CLOCK_OFFSET_MS: String(offset)}});
+    try {
+      const today = riyadhDay(shifted());
+      const {scope} = await app.db.prepare('SELECT region_scope AS scope FROM crm_members WHERE id=?').bind('rep11').first();
+      const ago = minutes => new Date(shifted().getTime() - minutes * 60_000).toISOString();
+      await app.db.prepare('INSERT INTO crm_mobile_route_days(id,member_id,device_id,date,region_scope,started_at,ended_at,last_point_at,data,version,mutation_id) VALUES(?,?,?,?,?,?,NULL,?,?,1,?)')
+        .bind('mobile-rep11-phone', 'rep11', crypto.randomUUID(), today, scope, ago(20), ago(1), JSON.stringify({gaps: [], trackingWindow: '06-18'}), 'seed').run();
+      const tablet = await open('rep11', {native: {regionScope: 'western'}, viewport: {width: 800, height: 1280}, clockAt: shifted()});
+      await waitWorkspace(tablet);
+      await tablet.locator('[data-tracking="companion"]').first().waitFor();
+      check(await gateOf(tablet).count(), 0, 'a tablet that records nothing is not gated while the phone records');
+      await layoutOk(tablet, 'companion tablet'); await shot(tablet, 'gate-companion-tablet');
+      await pause(2500);
+      check(await reportOf('rep11', 'android-app'), null, 'the tablet does not overwrite the phone status report');
+      await app.db.prepare('UPDATE crm_mobile_route_days SET started_at=?,last_point_at=? WHERE id=?').bind(ago(90), ago(45), 'mobile-rep11-phone').run();
+      await tablet.reload();
+      await waitGate(tablet, 'setup');
+      await tablet.locator('[data-companion="lost"]').waitFor();
+      ok((await texts(tablet)).includes('جهازك الآخر'), 'the setup screen says the route was recorded by the other device');
+      await layoutOk(tablet, 'companion lost'); await shot(tablet, 'gate-companion-lost');
+      await tablet.context().close();
+    } finally { await app.stop(); app = mainApp; }
   }
 
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));
