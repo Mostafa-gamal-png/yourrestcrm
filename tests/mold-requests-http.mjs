@@ -881,14 +881,14 @@ try {
     const stored = async id => signApp.db.prepare('SELECT * FROM crm_mold_requests WHERE id=?').bind(id).first();
     const fileRow = id => signApp.db.prepare('SELECT * FROM crm_mold_design_files WHERE id=?').bind(id).first();
     const rows = async () => (await signApp.db.prepare('SELECT COUNT(*) AS n FROM crm_mold_requests').first()).n;
-    const REQUIRED = 'توقيع العميل مطلوب قبل إرسال الطلب', SIGNER = 'اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)', BAD = 'صورة التوقيع غير صالحة؛ امسح ووقّع من جديد';
+    const REQUIRED = 'توقيع العميل مطلوب قبل إرسال الطلب', REFRESH = REQUIRED + '؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.', SIGNER = 'اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)', BAD = 'صورة التوقيع غير صالحة؛ امسح ووقّع من جديد';
 
     // (a) who needs it; refused without it, nothing saved or sent
     check([(await (await as('rep')('/api/mold-requests')).json()).signatureRequired, (await (await as('sup')('/api/mold-requests')).json()).signatureRequired, (await (await as('sm')('/api/mold-requests')).json()).signatureRequired, (await (await as('cs')('/api/mold-requests')).json()).signatureRequired, (await (await as('owner')('/api/mold-requests')).json()).signatureRequired],
       [true, true, true, false, false], 'the page tells the sales roles to sign (representative, supervisor, sales manager), not customer service or the administrator');
     const sendsBefore = callsOf('requests').length;
     let res = await ask('rep'), body = await res.json();
-    check([res.status, body.fields, body.error], [400, {signature: REQUIRED}, REQUIRED], 'a representative without the signature: 400 fields.signature');
+    check([res.status, body.fields, body.error], [400, {signature: REFRESH}, REFRESH], 'a representative without the signature: 400 fields.signature (none at all, as a page loaded before sends: refresh the page)');
     res = await ask('rep', {specs: {...specs, moldWidth: 999}}); body = await res.json();
     check(Object.keys(body.fields).sort(), ['moldWidth', 'signature'], 'named with the other wrong fields at once');
     for (const [signature, fields] of [[{signer: 'م', png: signatureInput().png}, {signer: SIGNER}], [{signer: 'م. خالد', png: 'not base64!'}, {signature: BAD}], [{signer: 'م. خالد', png: signaturePng({width: 40, height: 20}).toString('base64')}, {signature: BAD}],
@@ -906,7 +906,7 @@ try {
     const once = {requestId: key, action: 'create', customerId: 's1', specs, payment: 'cash', signature};
     res = await as('rep')('/api/mold-requests', {method: 'POST', body: once}); body = await res.json();
     const signed = body.request, fileId = 'mds-' + key;
-    check([res.status, body.send.kind, signed.signature.signer, signed.signature.fileId, signed.signature.href], [200, 'ok', 'م. خالد العتيبي', fileId, '/api/mold-requests/design-file?id=' + signed.id + '&file=' + fileId], 'saved and sent; the request names its signature');
+    check([res.status, body.send.kind, signed.signature.signer, signed.signature.fileId, signed.signature.href, signed.signature.state], [200, 'ok', 'م. خالد العتيبي', fileId, '/api/mold-requests/design-file?id=' + signed.id + '&file=' + fileId, 'sent'], 'saved and sent; the request names its signature, delivered to production');
     const data = JSON.parse((await stored(signed.id)).data), file = await fileRow(fileId);
     check([data.signature.signer, data.signature.fileId, /^\d{4}-\d{2}-\d{2}T/.test(data.signature.signedAt), file.name, file.kind, file.category, file.content_type, file.size, file.member_id], ['م. خالد العتيبي', fileId, true, 'توقيع العميل - م. خالد العتيبي.png', 'image', 'design', 'image/png', png.length, 'rep'], 'stored: data.signature, and the PNG as one of its design files');
     const sentBody = callsOf('requests').findLast(call => call.body.includes(signed.id)).body;
@@ -933,7 +933,7 @@ try {
     check([res.status, body.error, (await fileRow(fileId)).deleted_at, callsOf('design-file-delete').length], [409, 'توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.', null, 0], 'the delete route refuses it: kept here and at production');
     // the sales manager's waiting list says so, and labels the image among the design files
     const waitingItem = (await (await as('sm')('/api/mold-requests')).json()).pending.items.find(item => item.crmRequestId === signed.id);
-    check([waitingItem.signature.signer, waitingItem.designFiles.map(entry => [entry.crmFileId, entry.signature, entry.kind])], ['م. خالد العتيبي', [[fileId, true, 'image']]], '«طلبات بانتظار اعتمادي»: signed by the customer, the signature labelled');
+    check([waitingItem.signature.signer, waitingItem.signatureDelivered, waitingItem.designFiles.map(entry => [entry.crmFileId, entry.signature, entry.kind])], ['م. خالد العتيبي', true, [[fileId, true, 'image']]], '«طلبات بانتظار اعتمادي»: signed by the customer (production\'s listing holds the image), the signature labelled');
     res = await as('sm')(waitingItem.designFiles[0].href + '&inline=1');
     check([res.status, Buffer.compare(res.bytes, png)], [200, 0], 'the sales manager opens it by order number');
 
@@ -960,20 +960,27 @@ try {
     signMock.state.notConfigured = true;
     res = await ask('rep', {customerId: 's2', specs: {...specs, description: 'edit before sending'}, signature: signatureInput('م. سالم')}); body = await res.json();
     const draft = body.request, firstSignature = draft.signature.fileId;
-    check([body.send.kind, draft.can.edit, draft.designFiles.map(entry => [entry.signature, entry.state])], ['retry', true, [[true, 'held']]], 'not at production yet: editable, its signature held until the request is');
+    check([body.send.kind, draft.can.edit, draft.designFiles.map(entry => [entry.signature, entry.state]), draft.signature.state], ['retry', true, [[true, 'held']], 'waiting'], 'not at production yet: editable, its signature held until the request is (said as not delivered yet)');
     const edit = (change, extra = {}) => raw('rep', {action: 'update', id: draft.id, version: change.version, specs: {...specs, description: 'edit before sending', ...change.specs}, payment: change.payment || 'cash', ...extra});
     let version = (await stored(draft.id)).version;
     res = await edit({version}); body = await res.json();
     check([res.status, body.request.signature.fileId, body.request.version], [200, firstSignature, version], 'an edit that changes nothing: kept as it is, its signature too');
     res = await edit({version, specs: {quantity: 3}}); body = await res.json();
-    check([res.status, body.fields], [400, {signature: REQUIRED}], 'the quantity changed: the customer signs again');
+    check([res.status, body.fields], [400, {signature: REFRESH}], 'the quantity changed: the customer signs again');
     res = await edit({version, payment: 'deferred'}); body = await res.json();
-    check([res.status, body.fields], [400, {signature: REQUIRED}], 'the payment changed: the same');
+    check([res.status, body.fields], [400, {signature: REFRESH}], 'the payment changed: the same');
     res = await edit({version, specs: {quantity: 3}}, {signature: signatureInput('م. سالم', {seed: 3})}); body = await res.json();
     const secondSignature = body.request.signature?.fileId;
     check([res.status, !!secondSignature && secondSignature !== firstSignature, body.request.specs.quantity, body.request.designFiles.map(entry => [entry.crmFileId, entry.signature])], [200, true, 3, [[secondSignature, true]]], 'signed again: the new signature replaces the old');
     const removed = await fileRow(firstSignature);
     check([removed.deleted_at !== null, removed.object_key, removed.outbox, JSON.parse((await stored(draft.id)).data).signature.fileId], [true, null, null, secondSignature], 'the old one (never at production) removed in the CRM, its bytes gone; the data names the new one');
+    // The editor's role changed since (a representative made administrator): a request the customer signed still needs a new signature
+    // for changed data; it is never sent changed and unsigned.
+    await signApp.db.prepare("UPDATE crm_members SET role='admin' WHERE id='rep'").run(); sessions.rep = await signApp.login('rep');
+    version = (await stored(draft.id)).version;
+    res = await edit({version, specs: {quantity: 5}}); body = await res.json();
+    check([res.status, body.fields, JSON.parse((await stored(draft.id)).data).specs.quantity], [400, {signature: REFRESH}, 3], 'another role now: still refused without a new signature, nothing changed');
+    await signApp.db.prepare("UPDATE crm_members SET role='rep' WHERE id='rep'").run(); sessions.rep = await signApp.login('rep');
     // production takes it now: the request, then only the new signature
     signMock.state.notConfigured = false;
     res = await raw('rep', {action: 'resend', id: draft.id}); body = await res.json();
@@ -987,7 +994,29 @@ try {
     for (let n = 1; n <= 10; n++) await signApp.db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,category) VALUES(?,?,'rep',?,'pdf','application/pdf',10,'x',NULL,?,'send',?,1,'design')").bind('mdf-full-' + n, full, 'ملف ' + n + '.pdf', now, now).run();
     res = await raw('rep', {action: 'update', id: full, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', signature: signatureInput('م. سالم')}); body = await res.json();
     check([res.status, body.error, JSON.parse((await stored(full)).data).specs.quantity], [409, 'الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.', 1], 'ten design files already: refused, said why, nothing changed');
+    // An old signature refused for good takes none of the places, so it frees none: 10 live files and such a signature leave no room.
+    const refusedOld = 'mr-' + crypto.randomUUID();
+    await signApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','s1',?,'send',NULL,'rep',?,?,1)").bind(refusedOld, JSON.stringify({...oldData, requestedAt: '2026-11-03T11:00:00+03:00', signature: {signer: 'م. قديم', signedAt: now, fileId: 'mds-refused-old'}}), now, now).run();
+    await signApp.db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,last_attempt_at,last_error,attempts,version,category) VALUES('mds-refused-old',?,'rep','توقيع العميل - م. قديم.png','image','image/png',10,'x',NULL,?,'send',NULL,?,?,1,1,'design')").bind(refusedOld, now, now, JSON.stringify({code: 'invalid_payload', http: 400, at: now, final: true})).run();
+    for (let n = 1; n <= 10; n++) await signApp.db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,category) VALUES(?,?,'rep',?,'pdf','application/pdf',10,'x',NULL,?,'send',?,1,'design')").bind('mdf-ro-' + n, refusedOld, 'ملف ' + n + '.pdf', now, now).run();
+    check((await (await as('rep')('/api/mold-requests?id=' + refusedOld)).json()).requests[0].signature.state, 'refused', 'a signature refused for good: said so on the request');
+    res = await raw('rep', {action: 'update', id: refusedOld, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', signature: signatureInput('م. سالم')}); body = await res.json();
+    check([res.status, body.error], [409, 'الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.'], 'ten live files and a refused old signature: no room (the refused one frees none)');
+    await signApp.db.prepare("UPDATE crm_mold_design_files SET deleted_at=?,outbox=NULL WHERE id='mdf-ro-10'").bind(now).run();
+    res = await raw('rep', {action: 'update', id: refusedOld, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', signature: signatureInput('م. سالم')}); body = await res.json();
+    check([res.status, body.request.designFiles.filter(entry => entry.category === 'design').length, (await fileRow('mds-refused-old')).deleted_at !== null], [200, 10, true], 'nine live files: the new signature takes the tenth place, the refused one removed');
+    // «nothing changed» is decided on the validated specifications with their keys in one order: an older row stored in another order
+    const reordered = 'mr-' + crypto.randomUUID(), looseSpecs = {quantity: 1, notes: 'أول طلب', moldNo: 'YR099-9', designUrl: '', gelbaSize: 795, moldWidth: 1380, halfBlock: 'none', model: 'old', vibrators: 2, core: 'open', description: specs.description};
+    await signApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','s1',?,'send',NULL,'rep',?,?,1)").bind(reordered, JSON.stringify({...oldData, requestedAt: '2026-11-03T12:00:00+03:00', specs: looseSpecs}), now, now).run();
+    res = await raw('rep', {action: 'update', id: reordered, version: 1, specs, payment: 'cash'}); body = await res.json();
+    check([res.status, body.request.version, JSON.parse((await stored(reordered)).data).specs], [200, 1, looseSpecs], 'a no-op edit of an older row stored in another key order: nothing changed, no signature asked');
     signMock.state.notConfigured = false;
+    // Production refuses the signature's image for good: the request says so; the sales manager's list does not call it signed
+    signMock.answerNext('design-files', 400, {error: {code: 'invalid_payload', message: 'x', fields: ['file'], details: {reason: 'bad_image'}}});
+    res = await ask('rep', {customerId: 's2', specs: {...specs, description: 'signature refused there'}, signature: signatureInput('م. مرفوض')}); body = await res.json();
+    check([res.status, body.request.signature.state, body.request.designFiles[0].state], [200, 'refused', 'rejected'], 'the image refused by production: the request says the signature did not arrive');
+    const refusedItem = (await (await as('sm')('/api/mold-requests')).json()).pending.items.find(item => item.crmRequestId === body.request.id);
+    check([refusedItem.signature.signer, refusedItem.signatureDelivered, refusedItem.designFiles.some(entry => entry.signature)], ['م. مرفوض', false, false], '«طلبات بانتظار اعتمادي»: not said signed while production\'s listing lacks the image');
     ok(signMock.state.calls.every(call => !JSON.stringify(call.headers).includes(signMock.state.secret)) && !signApp.log().includes(signMock.state.secret), 'the secret never travels or is logged');
   } finally { await signApp.stop(); await signMock.stop(); }
 }

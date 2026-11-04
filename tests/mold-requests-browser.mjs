@@ -125,7 +125,7 @@ try {
   await step.waitFor();
   check([await dialog.locator('form.mold-form').isVisible(), mock.state.calls.length, await step.locator('h3').innerText()], [false, before, 'توقيع العميل'], 'not sent yet: «حفظ وإرسال» opens «توقيع العميل» first');
   const summary = await step.locator('.mold-signing-summary').innerText();
-  ok(['مصنع east1', '200*400*27.5TH MM OPEN', 'نقدي', 'مفتوح', 'موديل قديم'].every(text => summary.includes(text)) && /الكمية\s*1/.test(summary) && /الملفات\s*0/.test(summary), 'the summary the customer reads: customer, mold, quantity, payment, files: ' + summary);
+  ok(['مصنع east1', '200*400*27.5TH MM OPEN', 'نقدي', 'مفتوح', 'موديل قديم'].every(text => summary.includes(text)) && /الكمية\s*1/.test(summary) && !summary.includes('الملفات'), 'the summary the customer reads: customer, mold, quantity, payment (no files: they may change without a new signature): ' + summary);
   check(await pad(rep).evaluate(canvas => getComputedStyle(canvas).touchAction), 'none', 'the pad takes the finger: no scroll or zoom while drawing');
   await step.getByRole('button', {name: 'تأكيد وإرسال'}).click();
   check(await step.locator('.field-error').allInnerTexts(), [SIGNER_REQUIRED, SIGNATURE_BLANK], 'no name and nothing drawn: both refused on the device');
@@ -199,6 +199,8 @@ try {
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   await sign(rep, {signer: 'أ. منى'});
   await sheet(rep).locator('.mold-sending').waitFor();
+  // Signed, but its image waits with the request: not said as signed yet.
+  check([await sheet(rep).locator('.mold-signature-view').getAttribute('data-state'), (await sheet(rep).locator('.mold-signature-view p').innerText()).startsWith('التوقيع لسه ما وصلش للإنتاج'), await sheet(rep).locator('.mold-signature-view[data-signed]').count()], ['waiting', true, 0], 'the signature not at production yet: «التوقيع لسه ما وصلش للإنتاج»');
   ok((await sheet(rep).locator('.mold-sending').innerText()).length > 0, 'the request says it waits to be sent');
   await shot(rep, 'mold-sheet-waiting');
   mock.state.down = false;
@@ -712,6 +714,7 @@ try {
   await phoneDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   await phoneDialog.locator('.mold-signing').waitFor();
   ok((await phoneDialog.locator('.mold-signing-summary').innerText()).includes('PO-44'), 'the PO number in what the customer signs');
+  check(await signPhone.evaluate(() => { const dialog = document.querySelector('.mold-dialog'), title = dialog.querySelector('.mold-signing h3').getBoundingClientRect(); return [dialog.scrollTop, title.top >= 0 && title.bottom <= innerHeight]; }), [0, true], 'the step opens at its top: the customer reads the summary first');
   await pad(signPhone).scrollIntoViewIfNeeded();
   const phonePad = await pad(signPhone).boundingBox();
   check([phonePad.x >= 0, phonePad.x + phonePad.width <= PHONE.width, phonePad.width >= 260, Math.round(phonePad.width / phonePad.height)], [true, true, true, 2], 'the pad fits the phone, 2:1');
@@ -763,7 +766,7 @@ try {
   const tabletStep = tabletDialog.locator('.mold-signing');
   await tabletStep.waitFor();
   const summaryEn = await tabletStep.locator('.mold-signing-summary').innerText();
-  ok(['مصنع east2', 'TABLET MOLD 400', 'Deferred', 'open', 'old', 'Q-TAB-7'].every(text => summaryEn.includes(text)) && /Files\s*9/.test(summaryEn), 'what the customer signs, in English, with the nine files: ' + summaryEn);
+  ok(['مصنع east2', 'TABLET MOLD 400', 'Deferred', 'open', 'old', 'Q-TAB-7'].every(text => summaryEn.includes(text)) && !summaryEn.includes('Files'), 'what the customer signs, in English (the request\'s data, not its files): ' + summaryEn);
   await tabletStep.getByRole('button', {name: 'Confirm and send'}).click();
   check(await tabletStep.locator('.field-error').allInnerTexts(), ['Type the name of the person signing for the customer (2 to 80 characters)', 'The signature is empty or too small; have the customer sign with a finger or a stylus'], 'refused in English: the name and the blank pad');
   const portraitPad = await pad(tablet).boundingBox();
@@ -784,6 +787,69 @@ try {
   await tabletSigned.waitFor();
   check([await tabletSigned.locator('.mold-chip').innerText(), await tabletSigned.locator('.mold-design-delete').count(), await sheet(tablet).locator('section.mold-design[data-category="design"] .mold-design-count').innerText()], ['Customer signature', 0, '10/10'], 'labelled, not deletable, and the tenth of the ten places once the nine upload');
   await tablet.context().close();
+
+  // ---- 6b. A 320×640 phone (density 2): the answer of «تأكيد وإرسال» is lost (the server saved the request; the connection dropped), the
+  //  representative turns the phone and taps again: the same signature, the same body, the same identifier: one request, not two. A
+  //  server refusal of the name clears as soon as the name is changed.
+  const lost = await open('rep', {viewport: {width: 320, height: 640}, touch: true});
+  await goMoldsAnywhere(lost);
+  await lost.locator('button.mold-new').click();
+  const lostDialog = lost.locator('.mold-dialog');
+  await fill(lostDialog, 'مصنع east1');
+  await lostDialog.locator('label.mold-field', {hasText: 'وصف القالب'}).locator('input').fill('LOST ANSWER MOLD');
+  await lostDialog.locator('input[name="quoteNo"]').fill('Q-LOST-1');
+  await lostDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  const lostStep = lostDialog.locator('.mold-signing');
+  await lostStep.waitFor();
+  check(await lost.evaluate(() => document.querySelector('.mold-dialog').scrollTop), 0, '320 px: the step opens at its top');
+  await noOverflow(lost, '320 px signing step');
+  await lostStep.locator('input[name="signer"]').fill('م. خالد');
+  await drawSignature(lost, {input: 'touch'});
+  const posts = [];
+  let dropAnswer = true;
+  await lost.route('**/api/mold-requests', async route => {
+    const request = route.request();
+    if (request.method() !== 'POST') return route.continue();
+    posts.push(request.postData());
+    if (!dropAnswer) return route.continue();
+    dropAnswer = false;
+    // The server does the work; the answer never reaches the phone.
+    const url = new URL(request.url()), host = url.host; url.hostname = '127.0.0.1';
+    await route.fetch({url: url.toString(), headers: {...request.headers(), host}});
+    return route.abort('connectionreset');
+  });
+  const lostCount = () => app.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_requests WHERE json_extract(data,'$.specs.description')='LOST ANSWER MOLD'").first();
+  await lostStep.getByRole('button', {name: 'تأكيد وإرسال'}).click();
+  await lostStep.locator('.form-error').waitFor();
+  check((await lostCount()).n, 1, 'the first tap was saved by the server, though its answer was lost');
+  await lost.setViewportSize({width: 640, height: 320});
+  await lost.waitForFunction(() => innerWidth > innerHeight);
+  await lostStep.getByRole('button', {name: 'تأكيد وإرسال'}).click();
+  await sheet(lost).locator('.mold-signature-view').waitFor();
+  const [firstPost, secondPost] = posts.map(text => JSON.parse(text));
+  check([posts.length, posts[0] === posts[1], firstPost.requestId === secondPost.requestId, (await lostCount()).n, (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_design_files WHERE name='توقيع العميل - م. خالد.png'").first()).n],
+    [2, true, true, 1, 1], 'turned and tapped again: the very same body under the same identifier, one request and one signature');
+  await lost.unrouteAll();
+  await lost.context().close();
+  // The server's refusal of the name (a page whose own check passed it, here a name of control characters only once normalized) is said
+  // beside the field until the name changes.
+  const nameCheck = await open('rep', {viewport: PHONE, touch: true});
+  await goMoldsAnywhere(nameCheck);
+  await nameCheck.locator('button.mold-new').click();
+  const nameDialog = nameCheck.locator('.mold-dialog');
+  await fill(nameDialog, 'مصنع east2');
+  await nameDialog.locator('input[name="poNo"]').fill('PO-NAME');
+  await nameDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  await nameDialog.locator('.mold-signing').waitFor();
+  await nameCheck.route('**/api/mold-requests', route => route.request().method() === 'POST' ? route.fulfill({status: 400, contentType: 'application/json', body: JSON.stringify({error: SIGNER_REQUIRED, fields: {signer: SIGNER_REQUIRED}})}) : route.continue());
+  await sign(nameCheck, {signer: 'م. سالم'});
+  const signerError = nameDialog.locator('.mold-signer .field-error');
+  await signerError.waitFor();
+  check(await signerError.innerText(), SIGNER_REQUIRED, 'the server\'s refusal of the name, beside it');
+  await nameDialog.locator('input[name="signer"]').fill('م. سالم الدوسري');
+  check(await signerError.count(), 0, 'gone as soon as the name changes');
+  await nameCheck.unrouteAll();
+  await nameCheck.context().close();
 
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));

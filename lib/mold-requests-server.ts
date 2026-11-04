@@ -435,7 +435,8 @@ export async function moldPendingFor(c:PendingReader,link:Config,{force=false}:{
   inRegion=number=>number!==null&&c.regionCustomerIds.has(byNumber.get(number)||'');
  }
  const shown=(item:MoldPendingItem)=>{const row=item.crmRequestId?own.get(item.crmRequestId):undefined;return row?moldApprovesRequest(row,c):inRegion(item.customer.crmNumber);};
- return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature};}),error:pulled.error,at:pulled.at};
+ // Signed only once production's listing holds the signature's image (by its crmFileId); until then the item says it has not arrived.
+ return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature,signatureDelivered:!!signature&&item.designFiles.some(file=>file.crmFileId===signature.fileId)};}),error:pulled.error,at:pulled.at};
 }
 /** Whether a reader may open one request (GET ?id=, its sheet, and its files by id): every request their list shows
  * (canReadMoldRequest); and for the sales manager one that their list does not show but «طلبات بانتظار اعتمادي» shows them now (customer

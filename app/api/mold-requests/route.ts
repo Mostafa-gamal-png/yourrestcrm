@@ -3,7 +3,7 @@ import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
 import {validateMoldSpecs,validateMoldQuotePo,moldApprovalBody,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignInFlight,moldDesignMayBeRemote,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_QUOTE_PO_PRODUCTION_ONLY_TEXT,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignInFlight,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_QUOTE_PO_PRODUCTION_ONLY_TEXT,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
 import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
@@ -113,6 +113,12 @@ async function receiptOf(input:Record<string,unknown>){
  if(!signature||typeof signature!=='object')return JSON.stringify(input);
  return JSON.stringify({...input,signature:{signer:signature.signer,png:typeof signature.png==='string'?await sha256(new TextEncoder().encode(signature.png)):signature.png}});
 }
+/** A sales role's write with no signature at all: most likely a page loaded before the signature (2026-11-04), which shows no pad, so the
+ *  refusal says to refresh. Its English pair is in lib/locales/en.json. */
+const SIGNATURE_REFRESH=MOLD_SIGNATURE_REQUIRED+'؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.';
+/** The specifications as compared for «nothing changed»: validated (normalized as stored) and their keys in one order, so an older row
+ *  stored with its keys in another order (or a field written loosely) is not taken as changed. The request's own design link as stored. */
+const specsKey=(value:Record<string,unknown>,designUrl:string)=>{const {specs}=validateMoldSpecs(value),out:Record<string,unknown>={...specs,designUrl};return JSON.stringify(Object.keys(out).sort().map(key=>[key,out[key]]));};
 /** An edit needing a new signature where the request's 10 design files leave no place for it. Its English pair is in lib/locales/en.json. */
 const SIGNATURE_NO_ROOM='الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.';
 /** How long the answer waits for the signature to reach production once the request has; the send itself goes on (up to 120 seconds). */
@@ -206,7 +212,7 @@ export async function POST(req:Request){let objectKey='';try{
   const name=String(customer.data.name||'').trim();
   if(!name||[...name].length>MOLD_LIMITS.customerName)throw new CRMError('اسم العميل أطول من '+MOLD_LIMITS.customerName+' حرفًا؛ اختصره من صفحة العميل أولًا',409);
   // The sales roles' new request carries the customer's signature (2026-11-04); customer service's and the administrator's may, checked alike.
-  const signed=await readSignature(input.signature),required:Record<string,string>=moldSignatureRequired(c.me.role)&&!signed.signature&&!Object.keys(signed.fields).length?{signature:MOLD_SIGNATURE_REQUIRED}:{};
+  const signed=await readSignature(input.signature),required:Record<string,string>=moldSignatureRequired(c.me.role)&&!signed.signature&&!Object.keys(signed.fields).length?{signature:input.signature===undefined?SIGNATURE_REFRESH:MOLD_SIGNATURE_REQUIRED}:{};
   const asked=checkedRequest(input.specs,input.payment,input,quotePo,'',{...signed.fields,...required});
   rowId='mr-'+input.requestId;
   if(signed.signature)signing={file:signed.signature,id:'mds-'+input.requestId};
@@ -254,14 +260,16 @@ export async function POST(req:Request){let objectKey='';try{
    // Before production's update the request's numbers are left as they are (it has none: none is taken before).
    const edited=quotePo?withNumbers({...row.data,specs,payment},checked):{...row.data,specs,payment};
    // An edit that changes nothing keeps the request as it is, its signature too (a signature sent with it is not taken).
-   if(JSON.stringify(specs)===JSON.stringify(row.data.specs)&&payment===row.data.payment&&(edited.quoteNo||'')===(row.data.quoteNo||'')&&(edited.poNo||'')===(row.data.poNo||''))return answer(row.id,null);
+   if(specsKey(specs,specs.designUrl||'')===specsKey(row.data.specs,row.data.specs.designUrl||'')&&payment===row.data.payment&&(edited.quoteNo||'')===(row.data.quoteNo||'')&&(edited.poNo||'')===(row.data.poNo||''))return answer(row.id,null);
    // What the customer signed changed (2026-11-04): a sales role signs again. The new signature replaces the old in the data; the old file
    // is removed in the CRM alone when production never held it (else it stays as a design file). Without a new one the data names none.
-   if(moldSignatureRequired(c.me.role)&&!signed.signature)throw Object.assign(new CRMError(MOLD_SIGNATURE_REQUIRED,400),{fields:{signature:MOLD_SIGNATURE_REQUIRED}});
+   // A request the customer signed is never sent changed without a new signature, whatever the editor's role is now.
    const old=moldSignatureOf(row.data),oldFile=old?files.find(file=>file.id===old.fileId&&!file.deletedAt):undefined,removable=!!oldFile&&!moldDesignMayBeRemote(oldFile);
+   if((moldSignatureRequired(c.me.role)||old)&&!signed.signature){const text=input.signature===undefined?SIGNATURE_REFRESH:MOLD_SIGNATURE_REQUIRED;throw Object.assign(new CRMError(text,400),{fields:{signature:text}});}
    if(signed.signature){
-    const places=moldDesignCount(row,files,'design');
-    if(places.crm+places.production-(removable?1:0)+1>places.max)throw new CRMError(SIGNATURE_NO_ROOM,409);
+    // The old signature frees its place only when it takes one (a file refused for good takes none: moldDesignCount leaves it out).
+    const places=moldDesignCount(row,files,'design'),freed=removable&&!!oldFile&&!moldDesignRefused(oldFile)?1:0;
+    if(places.crm+places.production-freed+1>places.max)throw new CRMError(SIGNATURE_NO_ROOM,409);
     signing={file:signed.signature,id:'mds-'+input.requestId};
     edited.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
    }else delete edited.signature;

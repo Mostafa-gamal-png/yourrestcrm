@@ -30,10 +30,14 @@ function QuotePoNumbers({numbers,say}:{numbers:Pick<MoldQuotePoView,'quoteNo'|'p
 }
 /** Production marks the request as lacking both numbers (quoteOrPoMissing): its production manager adds one. */
 const QuotePoMissing=({say}:{say:Say})=><p className="mold-quote-po-missing" role="status"><TriangleAlert size={14} aria-hidden="true"/>{say(...MOLD_QUOTE_PO_MISSING_TEXT)}</p>;
-/** «وقّع العميل: <signer> · <time>» (2026-11-04), with the image through the CRM when it is given (the request's sheet). */
-function SignedBy({signature,href,say}:{signature:MoldSignature;href?:string|null;say:Say}){
- return <div className="mold-signature-view" data-signed="true">
-  <p><PenLine size={15} aria-hidden="true"/><span>{say(...MOLD_SIGNATURE_TEXT.signed)}: <b><bdi>{signature.signer}</bdi></b> · <bdi dir="ltr">{stamp(signature.signedAt)}</bdi></span></p>
+/** «وقّع العميل: <signer> · <time>» (2026-11-04), with the image through the CRM when it is given (the request's sheet), once the image
+ *  reached production (state sent). Before that the request says where the signature stands instead: on its way («التوقيع لسه ما وصلش
+ *  للإنتاج»), stopped (the resend starts it again) or refused for good (cancel and ask again with a new signature). */
+function SignedBy({signature,href,state,say}:{signature:MoldSignature;href?:string|null;state:'sent'|'waiting'|'stopped'|'refused'|'missing';say:Say}){
+ const note=state==='waiting'?MOLD_SIGNATURE_TEXT.waiting:state==='stopped'?MOLD_SIGNATURE_TEXT.stopped:state==='refused'?MOLD_SIGNATURE_TEXT.refused:state==='missing'?MOLD_SIGNATURE_TEXT.pendingMissing:null;
+ return <div className="mold-signature-view" data-signed={state==='sent'||undefined} data-state={state}>
+  {state==='sent'?<p><PenLine size={15} aria-hidden="true"/><span>{say(...MOLD_SIGNATURE_TEXT.signed)}: <b><bdi>{signature.signer}</bdi></b> · <bdi dir="ltr">{stamp(signature.signedAt)}</bdi></span></p>
+   :<p className="mold-signature-note" role="status"><TriangleAlert size={15} aria-hidden="true"/><span>{say(...note!)} <small>({say('وقّع: ','Signed by: ')}<bdi>{signature.signer}</bdi> · <bdi dir="ltr">{stamp(signature.signedAt)}</bdi>)</small></span></p>}
   {href&&<img src={href+'&inline=1'} alt={say('توقيع العميل: ','Customer signature: ')+signature.signer} loading="lazy" decoding="async"/>}
  </div>;
 }
@@ -236,7 +240,7 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
    </div>
    {item.quoteOrPoMissing&&<QuotePoMissing say={say}/>}
    {/* The customer's signature on the CRM's request (2026-11-04); its image is among the design files, labelled so. */}
-   {item.signature&&<SignedBy signature={item.signature} say={say}/>}
+   {item.signature&&<SignedBy signature={item.signature} state={item.signatureDelivered?'sent':'missing'} say={say}/>}
    <p className="mold-pending-specs">{[choice(MOLD_CORES,specs.core),specs.vibrators?say('رجاجات: ','Vibrators: ')+specs.vibrators:'',choice(MOLD_MODELS,specs.model),choice(MOLD_HALF_BLOCKS,specs.halfBlock),specs.moldWidth?say('عرض ','Width ')+specs.moldWidth:'',specs.gelbaSize?say('جلب ','Gelba ')+specs.gelbaSize:'',specs.moldNo?say('قالب ','Mold ')+specs.moldNo:''].filter(Boolean).join(' · ')}</p>
    {specs.notes&&<p className="mold-pending-notes" dir="auto">{specs.notes}</p>}
    {/* Approved just now: the request no longer waits for them, so its files are listed without links (the CRM's request shows them). */}
@@ -342,7 +346,7 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
     :remote&&!view.unconfirmed&&<p className="mold-specs-note" data-source="crm">{say('المواصفات كما أرسلها الـCRM. بعد الإرسال يعدّلها مدير الإنتاج في تطبيق المنتجات فقط، وتعديله لا يظهر هنا.','The specifications as the CRM sent them. Once sent, the production manager alone edits them in the products application, and those edits do not show here.')}</p>}
    <dl className="mold-facts">{asked.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
    {/* The customer's signature (2026-11-04): who signed and when, and the image through the CRM, for whoever may open the request. */}
-   {view.signature&&<SignedBy signature={view.signature} href={view.signature.href} say={say}/>}
+   {view.signature&&<SignedBy signature={view.signature} href={view.signature.href} state={view.signature.state} say={say}/>}
    <MoldDesignFiles view={view} uploads={mine} queue={uploads} onView={done} say={say} quotePo={quotePo}/>
    {!view.editable&&!view.cancelled&&view.can&&!view.can.edit&&remote&&remote.status!=='cancelled'&&<p className="mold-locked"><Lock size={14} aria-hidden="true"/>{remote.status==='confirmed'?say('اكتملت الاعتمادات؛ لم يعد الإلغاء أو تغيير ملفات التصميم ممكنًا.','All approvals are in; the request can no longer be cancelled and its design files can no longer change.'):say('بدأ الإنتاج؛ لم يعد الإلغاء أو تغيير ملفات التصميم ممكنًا.','Production has started; the request can no longer be cancelled and its design files can no longer change.')}</p>}
    {action.error&&<p className="form-error" role="alert">{t(action.error)}</p>}
@@ -449,13 +453,13 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   const typed:{quoteNo?:string;poNo?:string}=asks?{quoteNo:numbers.quoteNo,poNo:numbers.poNo}:{};
   const specs={...checked.specs};delete specs.designUrl;
   const body=editing?{action:'update',id:editing.id,version:editing.version,specs,payment,...typed}:{action:'create',customerId,specs,payment,...typed};
-  // What the customer reads before signing: the customer, the mold, how they pay, the numbers, and how many files go with it.
+  // What the customer reads before signing: the customer, the mold, how they pay and the numbers: the request's data the signature covers
+  // (its files may change later without a new signature, so they are not part of it).
   const choose=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
   const summary:[string,React.ReactNode][]=[[say('العميل','Customer'),editing?editing.customerName:String(chosen?.data.name||'')],[say('الوصف','Description'),<span dir="auto" key="d">{String(specs.description||'')}</span>],
    [say('الكمية','Quantity'),String(specs.quantity??'')],[say('العلب','Core'),choose(MOLD_CORES,String(specs.core||''))],[say('الموديل','Model'),choose(MOLD_MODELS,String(specs.model||''))],
    ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,React.ReactNode]]:[]),
-   ...(['quoteNo','poNo'] as const).filter(key=>typed[key]).map(key=>[say(...moldQuotePoNames[key]),<bdi key={key} dir="ltr">{typed[key]}</bdi>] as [string,React.ReactNode]),
-   [say('الملفات','Files'),String((editing?editing.designFiles.filter(file=>!file.signature).length:0)+ready.length)]];
+   ...(['quoteNo','poNo'] as const).filter(key=>typed[key]).map(key=>[say(...moldQuotePoNames[key]),<bdi key={key} dir="ltr">{typed[key]}</bdi>] as [string,React.ReactNode])];
   // A sales role's new request, or an edit that changes what was signed, is signed by the customer first (2026-11-04).
   if(signs&&(!editing||editChanges(editing,specs,payment,typed,asks))){setSigning({body,summary,again:!!editing?.signature});return;}
   send(body,summary,false);

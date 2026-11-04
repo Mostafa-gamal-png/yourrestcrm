@@ -146,3 +146,4 @@
  .mold-design-tools,.mold-design-picker{justify-items:stretch}.mold-design-attach{width:100%}
  .mold-design-refused .btn{min-width:44px;min-height:44px}
 }
+.mold-signature-note{color:#7a4a0e}.mold-signature-view[data-state=refused] .mold-signature-note,.mold-signature-view[data-state=stopped] .mold-signature-note{color:var(--destructive)}.dark .mold-signature-note{color:#f2dca0}

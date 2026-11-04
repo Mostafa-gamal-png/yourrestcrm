@@ -101,7 +101,11 @@ export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|n
 /** A design file of a request waiting for the sales manager, with its download through the CRM; signature: the CRM request's signature. */
 export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean;signature?:true};
 /** The customer's signature as a reader sees it: who signed and when, with the image through the CRM (href, null once its file is gone). */
-export type MoldSignatureView=MoldSignature&{href:string|null};
+/** Where the signature's image stands (2026-11-04): sent (production holds it), waiting (on its way: held until production holds the
+ *  request, or on the timetable), stopped (its tries stopped after 24 hours or production did not find the request: the requester's resend
+ *  starts it again), refused (production refused it, or it is gone: it will not be sent again). */
+export type MoldSignatureState='sent'|'waiting'|'stopped'|'refused';
+export type MoldSignatureView=MoldSignature&{href:string|null;state:MoldSignatureState};
 export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOrderNo:number|null;data:MoldRequestData;accepted:MoldRequestData|null;cancelledAt:string|null;cancelReason:string;outbox:'send'|'cancel'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remote:MoldRemote|null;remoteAt:string|null;createdBy:string;createdAt:string;updatedAt:string;version:number};
 /** held: a request saved with a quotation or PO number while production's update is not known to be live (it cannot happen in normal
  *  use: the form asks for them only after it): kept, never sent to the older application, which would drop them silently. */
@@ -137,7 +141,9 @@ export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm
  *  designFiles: its design files (the request's own and production's), each downloaded through the CRM. */
 export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'|'quoteFiles'|'poFiles'>&{inCrm:boolean;designFiles:MoldPendingDesignFile[];quoteFiles:MoldPendingDesignFile[];poFiles:MoldPendingDesignFile[];
  /** The CRM request's signature (2026-11-04), from the CRM's own row; null for none or a request registered in production. */
- signature:MoldSignature|null})[];error:MoldError|null;at:string|null};
+ signature:MoldSignature|null;
+ /** Production's listing of the pending item holds the signature's image (only then is it said to be signed). */
+ signatureDelivered:boolean})[];error:MoldError|null;at:string|null};
 /** quotePo: production's update of 2026-11-03 is known to be live (learned once, kept): the form asks for the quotation and PO numbers
  *  (one at least) and their files. */
 export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null;quotePo:boolean;
@@ -315,12 +321,14 @@ export function moldSignatureOf(data:{signature?:unknown}|null|undefined):MoldSi
  const value=data?.signature as Partial<MoldSignature>|null|undefined;
  return value&&typeof value==='object'&&typeof value.signer==='string'&&typeof value.signedAt==='string'&&typeof value.fileId==='string'&&value.fileId?{signer:value.signer,signedAt:value.signedAt,fileId:value.fileId}:null;
 }
-/** The signature a reader sees, with its image through the CRM while its file is there (not deleted). */
-export function moldSignatureView(row:Pick<MoldRequestRow,'id'|'data'>,files:Pick<MoldDesignFileRow,'id'|'deletedAt'|'outbox'>[]):MoldSignatureView|null{
+/** The signature a reader sees, with its image through the CRM while its file is there (not deleted), and where that image stands
+ *  (MoldSignatureState) from the request's files as the reader sees them (moldDesignFilesView). */
+export function moldSignatureView(row:Pick<MoldRequestRow,'id'|'data'>,files:Pick<MoldDesignFileView,'crmFileId'|'state'|'stopped'|'href'>[]):MoldSignatureView|null{
  const signature=moldSignatureOf(row.data);
  if(!signature)return null;
- const file=files.find(item=>item.id===signature.fileId),shown=!!file&&!(file.deletedAt);
- return {...signature,href:shown?designHref('id='+encodeURIComponent(row.id)+'&file='+encodeURIComponent(signature.fileId)):null};
+ const file=files.find(item=>item.crmFileId===signature.fileId);
+ const state:MoldSignatureState=!file||file.state==='rejected'||file.state==='locked'||file.state==='deleting'?'refused':file.state==='sent'?'sent':file.stopped?'stopped':'waiting';
+ return {...signature,href:file&&file.state!=='deleting'?file.href:null,state};
 }
 /** Whether a request's data carries a quotation or PO number. */
 export const moldHasQuotePo=(data:Pick<MoldRequestData,'quoteNo'|'poNo'>)=>!!(data.quoteNo||data.poNo);
@@ -336,10 +344,11 @@ export function moldQuotePoView(row:Pick<MoldRequestRow,'data'|'accepted'|'remot
  *  known to be live (a request saved with a number, or a quotation's or PO's file, waits for it otherwise). approver: the reader
  *  approves this request (moldApprovesRequest), so can.approve and can.withdraw are offered only for a request they may approve. */
 export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[],quotePo=false,approver=canApproveMoldRequests(me)):MoldRequestView{
+ const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo);
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
-  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady,quotePo),quotePo:moldQuotePoView(row),signature:moldSignatureView(row,files)};
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles)};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent. */
 export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'>},linkReady:boolean,quotePo=true):MoldSendingState{
@@ -366,7 +375,13 @@ export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer sig
  blank:['التوقيع فاضي أو صغير قوي؛ خلّي العميل يوقّع بصباعه أو بالقلم','The signature is empty or too small; have the customer sign with a finger or a stylus'] as [string,string],
  signerRequired:['اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)','Type the name of the person signing for the customer (2 to 80 characters)'] as [string,string],
  room:['توقيع العميل بيتحسب ملف من الـ 10؛ تقدر ترفع لحد 9 ملفات تصميم','The customer\'s signature takes one of the 10 places; up to 9 design files'] as [string,string],
- again:['اتغيّرت بيانات الطلب؛ لازم العميل يوقّع تاني','The request\'s data changed; the customer signs again'] as [string,string]};
+ again:['اتغيّرت بيانات الطلب؛ لازم العميل يوقّع تاني','The request\'s data changed; the customer signs again'] as [string,string],
+ /** Where the signature's image stands (MoldSignatureState), beside «وقّع العميل». */
+ waiting:['التوقيع لسه ما وصلش للإنتاج','The signature has not reached production yet'] as [string,string],
+ stopped:['التوقيع ما وصلش للإنتاج؛ اضغط «إعادة الإرسال»','The signature did not reach production; tap Resend'] as [string,string],
+ refused:['التوقيع ما وصلش للإنتاج ومش هيتبعت تاني؛ ألغِ الطلب واطلبه من جديد بتوقيع جديد','The signature did not reach production and will not be sent again; cancel the request and ask again with a new signature'] as [string,string],
+ /** «طلبات بانتظار اعتمادي»: the CRM's request names a signature that production's listing does not hold yet. */
+ pendingMissing:['توقيع العميل لسه ما وصلش للإنتاج؛ استنى لما يوصل قبل الاعتماد','The customer\'s signature has not reached production yet; wait for it before approving'] as [string,string]};
 /** Each kind of file, as the request's sheet and the sales manager's list group them. */
 export const moldFileCategoryNames:Record<MoldFileCategory,[string,string]>={design:['ملفات التصميم','Design files'],quote:['ملفات عرض السعر','Quotation files'],po:['ملفات الـ PO','PO files']};
 /** Where the request waits now, in the requester's words (the contract's waitingStep). */

@@ -105,11 +105,22 @@ export function SignaturePad({strokes,onChange,onWidth,disabled,say}:{strokes:Si
 }
 
 /** The step «توقيع العميل»: what the customer signs (summary), who signs for the customer, the pad with «امسح», and «تأكيد وإرسال». The
- *  server's refusals by field (fields.signer, fields.signature) are said beside each; error: any other. */
+ *  server's refusals by field (fields.signer, fields.signature) are said beside each until that field changes; error: any other. The PNG
+ *  is made once per signing, on the first confirm, and sent again as it is by every later confirm (a retry after an answer that never
+ *  came resends the very same body under the same identifier, however the pad was resized since); a new drawing, «امسح» or another
+ *  name starts a new signing. The dialog shows the step from its top, so the customer reads the summary first. */
 export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBack,onConfirm}:{summary:[string,React.ReactNode][];busy:boolean;error:string;fields:Record<string,string>;again?:boolean;say:Say;onBack:()=>void;onConfirm:(signature:{signer:string;png:string})=>void}){
  const [signer,setSigner]=useState(''),[strokes,setStrokes]=useState<SignatureStrokes>([]),[width,setWidth]=useState(0),[shown,setShown]=useState<{signer?:string;pad?:string}>({});
- const signerError=shown.signer||(fields.signer?t(fields.signer):''),padError=shown.pad||(fields.signature?t(fields.signature):'');
+ const [frozen,setFrozen]=useState<{signer:string;png:string}|null>(null),[dismissed,setDismissed]=useState<{signer?:boolean;signature?:boolean}>({}),[answered,setAnswered]=useState(fields);
+ // Each new refusal from the server is shown again (state adjusted while rendering, not in an effect).
+ if(answered!==fields){setAnswered(fields);setDismissed({});}
+ const signerError=shown.signer||(fields.signer&&!dismissed.signer?t(fields.signer):''),padError=shown.pad||(fields.signature&&!dismissed.signature?t(fields.signature):'');
+ const top=useRef<HTMLElement>(null);
+ useEffect(()=>{const dialog=top.current?.closest('.mold-dialog');if(dialog)dialog.scrollTop=0;},[]);
+ const changeSigner=(value:string)=>{setSigner(value);setFrozen(null);setShown(previous=>({...previous,signer:undefined}));setDismissed(previous=>({...previous,signer:true}));};
+ const changeStrokes=(next:SignatureStrokes)=>{setStrokes(next);setFrozen(null);setShown(previous=>({...previous,pad:undefined}));setDismissed(previous=>({...previous,signature:true}));};
  const confirm=()=>{
+  if(frozen){onConfirm(frozen);return;}
   const name=moldSigner(signer),length=name===undefined?0:[...name].length,box=signatureBox(strokes,width);
   const next:{signer?:string;pad?:string}={};
   if(name===undefined||length<MOLD_SIGNER_MIN||length>MOLD_SIGNER_MAX)next.signer=say(...MOLD_SIGNATURE_TEXT.signerRequired);
@@ -117,22 +128,23 @@ export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBac
   if(!png)next.pad=say(...MOLD_SIGNATURE_TEXT.blank);
   setShown(next);
   if(next.signer||next.pad||!png||name===undefined)return;
-  onConfirm({signer:name,png});
+  const signature={signer:name,png};
+  setFrozen(signature);onConfirm(signature);
  };
- return <section className="mold-signing" aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
+ return <section className="mold-signing" ref={top} aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
   <h3 className="mold-subtitle"><PenLine size={16} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.title)}</h3>
   {again&&<p className="mold-specs-note mold-signing-again" role="status">{say(...MOLD_SIGNATURE_TEXT.again)}</p>}
   <p className="mold-signing-lead">{say('العميل بيوقّع على الطلب ده قبل ما يتبعت للإنتاج:','The customer signs this request before it is sent to production:')}</p>
   <dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
   {/* Who signs for the customer: a person's name, typed or dictated. */}
   <div className="mold-field mold-signer" aria-invalid={!!signerError}>
-   <VoiceField label={say(...MOLD_SIGNATURE_TEXT.signer)} value={signer} full disabled={busy} onChange={value=>{setSigner(value);setShown(previous=>({...previous,signer:undefined}));}} inputProps={{name:'signer',dir:'auto',autoComplete:'off',maxLength:MOLD_SIGNER_MAX+20}}/>
+   <VoiceField label={say(...MOLD_SIGNATURE_TEXT.signer)} value={signer} full disabled={busy} onChange={changeSigner} inputProps={{name:'signer',dir:'auto',autoComplete:'off',maxLength:MOLD_SIGNER_MAX+20}}/>
    {signerError&&<small className="field-error">{signerError}</small>}
   </div>
   <div className="mold-signature-box" aria-invalid={!!padError}>
-   <SignaturePad strokes={strokes} onChange={next=>{setStrokes(next);setShown(previous=>({...previous,pad:undefined}));}} onWidth={setWidth} disabled={busy} say={say}/>
+   <SignaturePad strokes={strokes} onChange={changeStrokes} onWidth={setWidth} disabled={busy} say={say}/>
    <div className="mold-signature-tools"><small>{say('وقّع هنا بصباعك أو بالقلم','Sign here with a finger or a stylus')}</small>
-    <button type="button" className="btn small subtle" disabled={busy||!strokes.length} onClick={()=>{setStrokes([]);setShown(previous=>({...previous,pad:undefined}));}}><Eraser size={15} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.clear)}</button></div>
+    <button type="button" className="btn small subtle" disabled={busy||!strokes.length} onClick={()=>changeStrokes([])}><Eraser size={15} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.clear)}</button></div>
    {padError&&<small className="field-error" role="alert">{padError}</small>}
   </div>
   {error&&!fields.signer&&!fields.signature&&<p className="form-error" role="alert">{t(error)}</p>}
