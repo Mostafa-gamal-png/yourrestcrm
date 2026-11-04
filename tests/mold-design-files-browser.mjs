@@ -25,6 +25,8 @@ import {createRequire} from 'node:module';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
+import {withSignature} from '../scripts/lib/signature-png.mjs';
+import {signRequest} from '../scripts/lib/signature-pad.mjs';
 
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
 const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}];
@@ -68,7 +70,9 @@ try {
   const goMolds = async page => { await page.locator('button.nav-item', {hasText: LABEL}).first().click(); await page.locator('.mold-page').waitFor(); };
   const sheet = page => page.locator('.mold-sheet');
   const fileRow = (scopeLocator, name) => scopeLocator.locator('.mold-design-file', {hasText: name});
-  const names = row => (row?.designFiles || []).map(file => file.name).sort();
+  // The files production holds, without the customer's signature each representative's request carries (2026-11-04).
+  const SIGNATURE_NAME = 'توقيع العميل - م. خالد العتيبي.png';
+  const names = row => (row?.designFiles || []).filter(file => !file.name.startsWith('توقيع العميل')).map(file => file.name).sort();
 
   // ---- 1. The new-request form: a PDF that may go and one the device refuses, with the reason
   const rep = await open('rep');
@@ -103,7 +107,11 @@ try {
   await picker.scrollIntoViewIfNeeded();
   await shot(rep, 'mold-design-form');
   const sendsBefore = mock.state.calls.filter(call => call.route === 'design-files').length;
+  // The customer signs first (2026-11-04); the signature takes one of the 10 places, which the picker says beforehand.
+  check(await picker.locator('.mold-signature-room').innerText(), 'توقيع العميل بيتحسب ملف من الـ 10؛ تقدر ترفع لحد 9 ملفات تصميم', 'the picker leaves the signature its place, and says so');
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  check(await picker.isVisible(), false, 'the form gives way to the signing step');
+  await signRequest(rep);
 
   // ---- 2. Saved, then the PDF uploads and goes to production once production holds the request
   await sheet(rep).waitFor();
@@ -111,8 +119,11 @@ try {
   check(await fileRow(sheet(rep), 'رسم القالب.pdf').locator('.mold-design-state').innerText(), 'وصل للإنتاج', 'the sheet says it reached production');
   check(await fileRow(sheet(rep), 'ليس-pdf.pdf').count(), 0, 'the refused file was never uploaded');
   const requestId = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).crmRequestId;
-  check([mock.state.calls.filter(call => call.route === 'design-files').length - sendsBefore, names(mock.row(requestId))], [1, ['رسم القالب.pdf']], 'production received the one file');
-  ok(Buffer.compare(mock.row(requestId).designFiles[0].bytes, drawingPdf) === 0, 'byte for byte');
+  check([mock.state.calls.filter(call => call.route === 'design-files').length - sendsBefore, names(mock.row(requestId)), mock.row(requestId).designFiles[0].name], [2, ['رسم القالب.pdf'], SIGNATURE_NAME], 'production received the one file, after the customer\'s signature');
+  ok(Buffer.compare(mock.row(requestId).designFiles.find(file => file.name === 'رسم القالب.pdf').bytes, drawingPdf) === 0, 'byte for byte');
+  const signedRow = sheet(rep).locator('.mold-design-file[data-signature="true"]');
+  check([await signedRow.locator('.mold-design-name').innerText(), await signedRow.locator('.mold-chip').innerText(), await signedRow.getByRole('button', {name: /حذف/}).count(), await sheet(rep).locator('section.mold-design[data-category="design"] .mold-design-count').innerText()],
+    [SIGNATURE_NAME, 'توقيع العميل', 0, '2/10'], 'the signature among the design files: labelled, no delete, one of the 10 places');
   await shot(rep, 'mold-design-sent');
   await rep.keyboard.press('Escape');
 
@@ -149,7 +160,7 @@ try {
   ok((await confirmAttach.innerText()).includes(WARNING), 'the warning: attaching undoes the approvals and returns the request to the sales manager');
   await confirmAttach.scrollIntoViewIfNeeded();
   await shot(rep, 'mold-design-attach-warning');
-  check([uploadPosts.length, mock.row(requestId).designFiles.length], [0, 2], 'nothing uploaded to the CRM, nor sent to production, before the confirmation');
+  check([uploadPosts.length, names(mock.row(requestId)).length], [0, 2], 'nothing uploaded to the CRM, nor sent to production, before the confirmation');
   let busy = 1;
   await rep.route('**/api/mold-requests/design-files', route => {
     if (route.request().method() === 'POST' && busy-- > 0) return route.fulfill({status: 429, headers: {'Content-Type': 'application/json', 'Retry-After': '5'}, body: JSON.stringify({error: 'رفع الملفات مشغول مؤقتًا. أعد المحاولة بعد لحظات.'})});
@@ -176,7 +187,7 @@ try {
   await shot(rep, 'mold-design-delete-warning');
   await confirmDelete.getByRole('button', {name: 'تأكيد الحذف'}).click();
   await pdfRow.waitFor({state: 'detached'});
-  check([names(mock.row(requestId)), await sheet(rep).locator('.mold-design-file').count()], [['صورة من الإنتاج.png', 'مسقط.dwg'], 2], 'deleted at production too; the sheet shows the two left');
+  check([names(mock.row(requestId)), await sheet(rep).locator('.mold-design-file').count()], [['صورة من الإنتاج.png', 'مسقط.dwg'], 3], 'deleted at production too; the sheet shows the two left and the signature');
 
   // ---- 5b. A request production holds offers no edit (the production manager edits its data in the products application): another
   //  file is attached from the sheet itself, after the same confirmation, and follows to production
@@ -185,7 +196,7 @@ try {
   const sideWarning = sheet(rep).locator('.mold-design-confirm', {hasText: 'مقطع جانبي.png'});
   await sideWarning.waitFor();
   ok((await sideWarning.innerText()).includes(WARNING), 'the sheet warns before attaching it too');
-  check(mock.row(requestId).designFiles.length, 2, 'nothing sent before the confirmation');
+  check(names(mock.row(requestId)).length, 2, 'nothing sent before the confirmation');
   await shot(rep, 'mold-design-sheet-attach-warning');
   await sideWarning.getByRole('button', {name: 'تأكيد الإرفاق'}).click();
   await fileRow(sheet(rep), 'مقطع جانبي.png').and(rep.locator('[data-state="sent"]')).waitFor();
@@ -261,7 +272,8 @@ try {
   await goMolds(sm);
   const crmCard = sm.locator('.mold-pending', {hasText: 'مصنع east1'}), manualCard = sm.locator('.mold-pending', {hasText: 'مصنع مسجّل في الإنتاج'});
   await crmCard.locator('.mold-design-file').nth(1).waitFor();
-  check(await crmCard.locator('.mold-design-name').allInnerTexts(), ['صورة من الإنتاج.png', 'مسقط.dwg', 'مقطع جانبي.png', 'واجهة أمامية.dxf'], 'the CRM request\'s files: production\'s and the representative\'s (the deleted PDF is gone)');
+  check(await crmCard.locator('.mold-design-name').allInnerTexts(), [SIGNATURE_NAME, 'صورة من الإنتاج.png', 'مسقط.dwg', 'مقطع جانبي.png', 'واجهة أمامية.dxf'], 'the CRM request\'s files: the signature, production\'s and the representative\'s (the deleted PDF is gone)');
+  check([await crmCard.locator('.mold-design-file[data-signature="true"] .mold-chip').innerText(), (await crmCard.locator('.mold-signature-view').innerText()).startsWith('وقّع العميل: م. خالد العتيبي')], ['توقيع العميل', true], 'the signature labelled in the list, and «وقّع العميل» on the card');
   check(await manualCard.locator('.mold-design-name').allInnerTexts(), ['تصميم من الإنتاج.pdf'], 'a request registered in production shows its design');
   await shot(sm, 'mold-design-pending');
   // Production unreachable: the download says why beside the file, and an opened file says why on its page (not raw JSON).
@@ -292,12 +304,12 @@ try {
   ok(await sm.locator('h3.mold-subtitle', {hasText: 'اعتمدتها الآن'}).count() === 1 && await approvedCard.getByRole('button', {name: 'سحب الاعتماد'}).count() === 1, 'under «اعتمدتها الآن», with Withdraw approval');
   // The CRM's request approved from the list too (MoldPendingList's note for a request of the CRM): named without links, and the way to
   // its files is the request itself, whose sheet opens them by the file's id.
-  check(await crmCard.locator('.mold-design-actions a').count(), 6, 'waiting: Open and Download for each image, Download for each drawing');
+  check(await crmCard.locator('.mold-design-actions a').count(), 8, 'waiting: Open and Download for each image (the signature too), Download for each drawing');
   await crmCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
   const approvedCrmCard = sm.locator('.mold-pending[data-done]', {hasText: 'مصنع east1'});
   await approvedCrmCard.waitFor();
   check([await approvedCrmCard.locator('.mold-design-name').count(), await approvedCrmCard.locator('a[href*="/api/mold-requests/design-file"]').count(), await approvedCrmCard.locator('.mold-design-actions').count(), await approvedCrmCard.locator('.mold-design-links-off').innerText()],
-    [4, 0, 0, 'بعد اعتمادك لا تُفتح الملفات من هنا؛ افتح الطلب لعرضها.'], 'the CRM\'s request just approved: its four files named, no view or download link, and where they open');
+    [5, 0, 0, 'بعد اعتمادك لا تُفتح الملفات من هنا؛ افتح الطلب لعرضها.'], 'the CRM\'s request just approved: its five files named, no view or download link, and where they open');
   check([await sm.locator('.mold-pending[data-done]').count(), await sm.locator('.mold-pending:not([data-done])').count()], [2, 0], 'both under «اعتمدتها الآن», none left waiting');
   await shot(sm, 'mold-design-pending-approved');
   await approvedCrmCard.getByRole('button', {name: 'فتح الطلب'}).click();
@@ -328,7 +340,7 @@ try {
   //  edit: no warning (production holds nothing whose approvals it would undo); uploaded once the change is saved; held in the CRM while
   //  the request has not reached production (the edit's own send gets no answer); sent as soon as production holds the request.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
-  const unsent = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
+  const unsent = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json()).request;
   check([unsent.sending.state, unsent.can.edit, mock.row(unsent.id)], ['rejected', true, undefined], 'refused before production stored it: still editable');
   const editor = await open('rep');
   await goMolds(editor);
@@ -342,6 +354,8 @@ try {
   const filesSent = mock.state.calls.filter(call => call.route === 'design-files').length;
   mock.state.down = true;
   await edit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  // The quantity changed what the customer signed (2026-11-04): signed again before the change is saved, the file following it.
+  await signRequest(editor);
   await edit.waitFor({state: 'detached'});
   check(await editor.locator('.mold-design-confirm').count(), 0, 'no warning: production holds nothing whose approvals a file would undo');
   const heldRow = fileRow(sheet(editor), 'مقطع علوي.png').and(editor.locator('[data-state="held"]'));
@@ -353,7 +367,7 @@ try {
   await sheet(editor).getByRole('button', {name: 'إعادة الإرسال'}).click();
   await sheet(editor).locator('.mold-sending').waitFor({state: 'detached'});
   // The resend sends the request, then its files whose turn has come, in the background.
-  for (let n = 0; n < 100 && !mock.row(unsent.id)?.designFiles?.length; n++) await editor.waitForTimeout(100);
+  for (let n = 0; n < 100 && !names(mock.row(unsent.id)).length; n++) await editor.waitForTimeout(100);
   check([mock.row(unsent.id)?.quantity, names(mock.row(unsent.id))], [3, ['مقطع علوي.png']], 'production holds the edited request, then its file');
   await editor.keyboard.press('Escape');
   await sheet(editor).waitFor({state: 'detached'});
@@ -371,7 +385,7 @@ try {
   const quoteSheet = await open('rep');
   await goMolds(quoteSheet);
   const asked = await quoteSheet.evaluate(async body => (await (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json()).request,
-    {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash', quoteNo: 'Q-SHEET'});
+    withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash', quoteNo: 'Q-SHEET'}));
   check([asked.quotePo, JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).quoteNo], [{quoteNo: 'Q-SHEET', poNo: '', missing: false, from: 'production'}, 'Q-SHEET'], 'a pull taught the CRM; a request asked with its quotation number');
   await quoteSheet.locator('.mold-heading-tools button').first().click();
   await quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
@@ -389,7 +403,7 @@ try {
   await poConfirm.getByRole('button', {name: 'تأكيد الإرفاق'}).click();
   await fileRow(groupOf('po'), 'PO-7781.pdf').and(quoteSheet.locator('[data-state="sent"]')).waitFor();
   check([mock.row(asked.id).designFiles.map(file => [file.name, file.category]), JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, await groupOf('po').locator('.mold-design-count').innerText()],
-    [[['PO-7781.pdf', 'po']], 'po', '1/5'], 'the PO file reached production as the PO\'s, in its own group (1 of 5)');
+    [[[SIGNATURE_NAME, 'design'], ['PO-7781.pdf', 'po']], 'po', '1/5'], 'the PO file reached production as the PO\'s, in its own group (1 of 5), beside the signature (a design file)');
   await quoteSheet.keyboard.press('Escape');
   await sheet(quoteSheet).waitFor({state: 'detached'});
   mock.addProductionFile(asked.id, {name: 'عرض الإنتاج.pdf', bytes: Buffer.from('%PDF-1.4\n% production quotation\n%%EOF\n'), category: 'quote'});

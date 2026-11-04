@@ -17,12 +17,18 @@
 // (canReadMoldRequest, moldTeamManagerId); what the sales manager approves (moldApprovesRequest) also takes customer service's and the
 // administrator's requests in their regions, shown in «طلبات بانتظار اعتمادي» only. «رابط التصميم» is no longer asked for (the owner,
 // 2026-11-03): a new request has none; an older request keeps its own, shown read-only and sent as it was.
+// The customer signs a new request on the representative's phone or tablet before it is sent (the owner, 2026-11-04), for the sales roles
+// only (moldSignatureRequired): the signature is a PNG kept as one of the request's design files, named by the request's data (signature),
+// shown on its sheet and in «طلبات بانتظار اعتمادي», and not deletable while the request names it.
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired} from '@/portable/mold-rules.mjs';
 
-export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS};
+export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,moldSignatureRequired};
+/** The customer's signature as the request's data names it (2026-11-04): who signed for the customer, when (the CRM's UTC time), and
+ *  the CRM's design file (its crmFileId) that holds the PNG. */
+export type MoldSignature={signer:string;signedAt:string;fileId:string};
 /** How the customer pays (2026-11-03): chosen when asking; a request asked for before has none. */
 export type MoldPayment='cash'|'deferred';
 export type MoldStage=typeof MOLD_STAGES[number];
@@ -55,7 +61,10 @@ export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:
  payment?:MoldPayment;
  /** The quotation and PO numbers as the representative typed them, normalized (the second update of 2026-11-03): each only when given,
   *  so a request without them is sent again exactly as first sent. */
- quoteNo?:string;poNo?:string;unconfirmed?:true};
+ quoteNo?:string;poNo?:string;unconfirmed?:true;
+ /** The customer's signature (2026-11-04): absent for a request asked for before, or by customer service or the administrator. Never part
+  *  of the requests body, so a request is sent with the same bytes with it or without it. */
+ signature?:MoldSignature};
 export type MoldError={code:string;fields?:string[];http?:number;at:string;
  /** Why production refused (details.reason): a design file's bytes (empty, not_pdf, bad_image, too_many_pixels, with fields ['file'])
   *  or its place (too_many_files, crm_file_id_used, with fields ['crmFileId']); a request's send, production_only (409 request_locked:
@@ -86,9 +95,13 @@ export type MoldDesignState='sent'|'waiting'|'held'|'rejected'|'locked'|'cancell
 /** A design file as a reader receives it: href downloads it through the CRM (viewable: a PDF or an image, which may open inline with &inline=1);
  *  stopped: its sending or its deletion is no longer tried by itself (24 hours of failures, or production did not find the request), and
  *  waits for the requester's resend. error: the last failure, or why production refused the file or (state sent) its deletion. */
-export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;state:MoldDesignState;error:MoldError|null;stopped:boolean;canDelete:boolean;href:string;viewable:boolean;category:MoldFileCategory};
-/** A design file of a request waiting for the sales manager, with its download through the CRM. */
-export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean};
+export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;state:MoldDesignState;error:MoldError|null;stopped:boolean;canDelete:boolean;href:string;viewable:boolean;category:MoldFileCategory;
+ /** The customer's signature (the file the request's data names): labelled so, never deletable while the request names it. */
+ signature?:true};
+/** A design file of a request waiting for the sales manager, with its download through the CRM; signature: the CRM request's signature. */
+export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean;signature?:true};
+/** The customer's signature as a reader sees it: who signed and when, with the image through the CRM (href, null once its file is gone). */
+export type MoldSignatureView=MoldSignature&{href:string|null};
 export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOrderNo:number|null;data:MoldRequestData;accepted:MoldRequestData|null;cancelledAt:string|null;cancelReason:string;outbox:'send'|'cancel'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remote:MoldRemote|null;remoteAt:string|null;createdBy:string;createdAt:string;updatedAt:string;version:number};
 /** held: a request saved with a quotation or PO number while production's update is not known to be live (it cannot happen in normal
  *  use: the form asks for them only after it): kept, never sent to the older application, which would drop them silently. */
@@ -109,7 +122,9 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  designFiles:MoldDesignFileView[];
  /** The numbers to show (MoldQuotePoView), null when there is none to show: production holds the request and its status carries none
   *  (production's update not live yet). */
- quotePo:MoldQuotePoView|null};
+ quotePo:MoldQuotePoView|null;
+ /** The customer's signature (2026-11-04); null for a request without one. */
+ signature:MoldSignatureView|null};
 /** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
 export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm'|'manual';requestedAt:string|null;waitingSince:string|null;enteredBy:string|null;
  customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;
@@ -120,10 +135,14 @@ export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm
 /** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it opens from here: in the list below
  *  when the manager or their team asked for it, else only from here while it waits for them, as one customer service asked for);
  *  designFiles: its design files (the request's own and production's), each downloaded through the CRM. */
-export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'|'quoteFiles'|'poFiles'>&{inCrm:boolean;designFiles:MoldPendingDesignFile[];quoteFiles:MoldPendingDesignFile[];poFiles:MoldPendingDesignFile[]})[];error:MoldError|null;at:string|null};
+export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'|'quoteFiles'|'poFiles'>&{inCrm:boolean;designFiles:MoldPendingDesignFile[];quoteFiles:MoldPendingDesignFile[];poFiles:MoldPendingDesignFile[];
+ /** The CRM request's signature (2026-11-04), from the CRM's own row; null for none or a request registered in production. */
+ signature:MoldSignature|null})[];error:MoldError|null;at:string|null};
 /** quotePo: production's update of 2026-11-03 is known to be live (learned once, kept): the form asks for the quotation and PO numbers
  *  (one at least) and their files. */
-export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null;quotePo:boolean};
+export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null;quotePo:boolean;
+ /** The reader's new request, or changing edit, needs the customer's signature (a sales role, 2026-11-04). */
+ signatureRequired:boolean};
 /** How often the sales manager's open page asks for the waiting list again. */
 export const MOLD_PENDING_REFRESH_MS=3*60_000;
 /** Whether a request the sales manager approved from their list waits for them again: production lists it at the sales step since a
@@ -257,19 +276,21 @@ const awaitsUpdate=(file:Pick<MoldDesignFileRow,'category'|'outbox'>,quotePo:boo
  *  production refused is shown as refused whatever the link's state (it takes none of the places either way, as moldDesignCount says).
  *  Design files, the quotation's and the PO's alike, each with its category. quotePo: production's update of 2026-11-03 is known to be
  *  live (a quotation's or PO's file waits for it, state update). */
-export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'cancelledAt'|'remote'|'accepted'>,files:MoldDesignFileRow[],me:Pick<Member,'id'>,linkReady:boolean,quotePo=true):MoldDesignFileView[]{
+export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'cancelledAt'|'remote'|'accepted'>&{data?:Pick<MoldRequestData,'signature'>},files:MoldDesignFileRow[],me:Pick<Member,'id'>,linkReady:boolean,quotePo=true):MoldDesignFileView[]{
  const own=row.memberId===me.id,open=moldEditable(row),listed=moldListedFiles(row.remote),known=new Set(files.map(file=>file.id)),out:MoldDesignFileView[]=[];
+ // The customer's signature (2026-11-04): the file the request's data names, labelled so and never deleted while it names it.
+ const signed=row.data?.signature?.fileId||'';
  const link=(key:string)=>designHref('id='+encodeURIComponent(row.id)+'&file='+encodeURIComponent(key));
  for(const file of files){
   if(file.deletedAt&&!file.outbox)continue;
   const remote=listed.find(entry=>entry.crmFileId===file.id),fileId=remote?remote.fileId:file.remoteFileId;
   const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):row.cancelledAt||row.remote?.status==='cancelled'?'cancelled':!linkReady?'off':!row.accepted?'held':awaitsUpdate(file,quotePo)?'update':'waiting';
   out.push({key:file.id,fileId:fileId===null||fileId===undefined?null:String(fileId),crmFileId:file.id,name:file.name,kind:file.kind,size:file.size,source:'crm',uploadedAt:file.createdAt,state,error:file.lastError,stopped:state!=='cancelled'&&state!=='update'&&moldDesignStopped(file),
-   canDelete:own&&state!=='deleting'&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other',category:moldFileCategory(file)});
+   canDelete:own&&state!=='deleting'&&file.id!==signed&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other',category:moldFileCategory(file),...(signed&&file.id===signed?{signature:true as const}:{})});
  }
  for(const entry of listed){
   if(entry.crmFileId&&known.has(entry.crmFileId))continue;
-  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,stopped:false,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other',category:moldFileCategory(entry)});
+  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,stopped:false,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other',category:moldFileCategory(entry),...(signed&&entry.crmFileId===signed?{signature:true as const}:{})});
  }
  // By the instant each was attached: the CRM writes UTC, production Riyadh time with its offset.
  const at=(file:MoldDesignFileView)=>Date.parse(file.uploadedAt||'')||0;
@@ -284,10 +305,23 @@ export function moldDesignCount(row:Pick<MoldRequestRow,'remote'>,files:MoldDesi
 }
 /** A pending item's files of one list, each downloaded through the CRM by its order number. */
 const pendingLinks=(orderNo:number,files:MoldDesignFile[]|undefined,category:MoldFileCategory):MoldPendingDesignFile[]=>(files||[]).map(file=>({...file,category,href:designHref('order='+orderNo+'&file='+encodeURIComponent(String(file.fileId))),viewable:file.kind!=='other'}));
-/** The pending item's design files, each downloaded through the CRM by its order number. */
-export const moldPendingDesignFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'>):MoldPendingDesignFile[]=>pendingLinks(item.orderNo,item.designFiles,'design');
+/** The pending item's design files, each downloaded through the CRM by its order number; the CRM request's signature (signature: its
+ *  crmFileId, as production lists the file the CRM sent) labelled so. */
+export const moldPendingDesignFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'>,signature?:Pick<MoldSignature,'fileId'>|null):MoldPendingDesignFile[]=>pendingLinks(item.orderNo,item.designFiles,'design').map(file=>signature?.fileId&&file.crmFileId===signature.fileId?{...file,signature:true as const}:file);
 /** The pending item's files of every list (design, quotation, PO), each downloaded through the CRM by its order number. */
-export const moldPendingFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'|'quoteFiles'|'poFiles'>)=>({designFiles:moldPendingDesignFiles(item),quoteFiles:pendingLinks(item.orderNo,item.quoteFiles,'quote'),poFiles:pendingLinks(item.orderNo,item.poFiles,'po')});
+export const moldPendingFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'|'quoteFiles'|'poFiles'>,signature?:Pick<MoldSignature,'fileId'>|null)=>({designFiles:moldPendingDesignFiles(item,signature),quoteFiles:pendingLinks(item.orderNo,item.quoteFiles,'quote'),poFiles:pendingLinks(item.orderNo,item.poFiles,'po')});
+/** A request's signature as the data stores it, or null (none, or not one: each field a text). */
+export function moldSignatureOf(data:{signature?:unknown}|null|undefined):MoldSignature|null{
+ const value=data?.signature as Partial<MoldSignature>|null|undefined;
+ return value&&typeof value==='object'&&typeof value.signer==='string'&&typeof value.signedAt==='string'&&typeof value.fileId==='string'&&value.fileId?{signer:value.signer,signedAt:value.signedAt,fileId:value.fileId}:null;
+}
+/** The signature a reader sees, with its image through the CRM while its file is there (not deleted). */
+export function moldSignatureView(row:Pick<MoldRequestRow,'id'|'data'>,files:Pick<MoldDesignFileRow,'id'|'deletedAt'|'outbox'>[]):MoldSignatureView|null{
+ const signature=moldSignatureOf(row.data);
+ if(!signature)return null;
+ const file=files.find(item=>item.id===signature.fileId),shown=!!file&&!(file.deletedAt);
+ return {...signature,href:shown?designHref('id='+encodeURIComponent(row.id)+'&file='+encodeURIComponent(signature.fileId)):null};
+}
 /** Whether a request's data carries a quotation or PO number. */
 export const moldHasQuotePo=(data:Pick<MoldRequestData,'quoteNo'|'poNo'>)=>!!(data.quoteNo||data.poNo);
 /** The quotation and PO a reader sees (MoldQuotePoView): production's from the status object once it carries them (its production
@@ -305,7 +339,7 @@ export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],li
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
-  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady,quotePo),quotePo:moldQuotePoView(row)};
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles:moldDesignFilesView(row,files,me,linkReady,quotePo),quotePo:moldQuotePoView(row),signature:moldSignatureView(row,files)};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent. */
 export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'>},linkReady:boolean,quotePo=true):MoldSendingState{
@@ -325,6 +359,14 @@ export const MOLD_QUOTE_PO_MISSING_TEXT:[string,string]=['ناقص عرض الس
 export const MOLD_QUOTE_PO_REQUIRED_TEXT:[string,string]=['اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)','Type the quotation number or the PO number (at least one)'];
 /** A sent request's change refused as production_only once numbers are part of the data: only the production manager adds one now. */
 export const MOLD_QUOTE_PO_PRODUCTION_ONLY_TEXT:[string,string]=['كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO','Ask the production manager to add the quotation / PO number'];
+/** The customer's signature in the representative's words (2026-11-04): the step, the pad, its refusals, the sheet's line. */
+export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer signature'] as [string,string],signed:['وقّع العميل','Signed by the customer'] as [string,string],
+ signer:['اسم اللي بيوقّع','Name of the person signing'] as [string,string],clear:['امسح','Clear'] as [string,string],confirm:['تأكيد وإرسال','Confirm and send'] as [string,string],
+ required:['توقيع العميل مطلوب قبل إرسال الطلب','The customer\'s signature is required before the request is sent'] as [string,string],
+ blank:['التوقيع فاضي أو صغير قوي؛ خلّي العميل يوقّع بصباعه أو بالقلم','The signature is empty or too small; have the customer sign with a finger or a stylus'] as [string,string],
+ signerRequired:['اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)','Type the name of the person signing for the customer (2 to 80 characters)'] as [string,string],
+ room:['توقيع العميل بيتحسب ملف من الـ 10؛ تقدر ترفع لحد 9 ملفات تصميم','The customer\'s signature takes one of the 10 places; up to 9 design files'] as [string,string],
+ again:['اتغيّرت بيانات الطلب؛ لازم العميل يوقّع تاني','The request\'s data changed; the customer signs again'] as [string,string]};
 /** Each kind of file, as the request's sheet and the sales manager's list group them. */
 export const moldFileCategoryNames:Record<MoldFileCategory,[string,string]>={design:['ملفات التصميم','Design files'],quote:['ملفات عرض السعر','Quotation files'],po:['ملفات الـ PO','PO files']};
 /** Where the request waits now, in the requester's words (the contract's waitingStep). */
@@ -380,6 +422,7 @@ export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>s
    :category==='po'?['الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج)','At most 5 PO files a request (yours and production\'s)']:['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)','At most 10 files a request (yours and production\'s)'],
   not_document:['ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة','A quotation or PO file must be a PDF or an image'],category:['نوع الملف غير مقبول','The kind of file is not accepted'],
   quote_po_update:['بانتظار تحديث تطبيق المنتجات','Waiting for the products application update'],
+  signature_room:['المكان العاشر لتوقيع العميل؛ تقدر ترفع لحد 9 ملفات تصميم','The tenth place is the customer\'s signature; up to 9 design files'],
   crm_file_id_used:['رقم الملف مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وأرفقه من جديد','The file\'s number was already used for another file or a deleted one; delete it and attach it again'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
   request_locked:['اكتملت الاعتمادات؛ لم يعد تغيير ملفات الطلب ممكنًا','The approvals are complete; the files can no longer change'],file_missing:['نسخة الملف في الـCRM مفقودة؛ احذفه وأرفقه من جديد','The CRM copy of the file is missing; delete it and attach it again'],
  };

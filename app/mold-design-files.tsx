@@ -6,13 +6,14 @@
 // the requester deletes their own while the request may change. Attaching or deleting undoes the approvals, so it is confirmed first.
 // The uploads outlive the page (a member's queue lasts as long as the app is open), so moving to another page and back loses none.
 // The quotation's and PO's files (production's second update of 2026-11-03) go the same way, each in its own group with its own limit (5
-// of each, a PDF or an image only), offered once production's update is known to be live.
+// of each, a PDF or an image only), offered once production's update is known to be live. The customer's signature (2026-11-04) is one of
+// the design files: labelled «توقيع العميل», never deletable while the request names it, and taking one of the 10 places.
 import React,{useRef,useState} from 'react';
-import {Download,Eye,FileBox,FileText,ImageIcon,Loader2,Paperclip,RotateCcw,Trash2,TriangleAlert,X} from 'lucide-react';
+import {Download,Eye,FileBox,FileText,ImageIcon,Loader2,Paperclip,PenLine,RotateCcw,Trash2,TriangleAlert,X} from 'lucide-react';
 import {getLanguage} from '@/lib/i18n';
 import {isNativeTrackingApp} from '@/lib/native-tracking';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
-import {moldDesignRefusalText,moldDesignStateNames,moldErrorText,moldFileCategoryNames,MOLD_FILE_CATEGORY_ORDER,type MoldDesignFileView,type MoldDesignKind,type MoldError,type MoldFileCategory,type MoldPendingDesignFile,type MoldRequestView} from '@/lib/mold-requests';
+import {moldDesignRefusalText,moldDesignStateNames,moldErrorText,moldFileCategoryNames,MOLD_FILE_CATEGORY_ORDER,MOLD_SIGNATURE_TEXT,type MoldDesignFileView,type MoldDesignKind,type MoldError,type MoldFileCategory,type MoldPendingDesignFile,type MoldRequestView} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_DESIGN_EXTENSIONS,MOLD_DESIGN_MAX_BYTES,MOLD_DESIGN_MAX_FILES,moldDesignFileCheck,moldDesignName} from '@/portable/mold-rules.mjs';
 
 type Say=(ar:string,en:string)=>string;
@@ -68,11 +69,12 @@ export async function checkDesignFile(file:File,category:MoldFileCategory='desig
  return {kind:named.kind,refusal:checked.ok?'':checked.reason};
 }
 /** The chosen files, each checked; those beyond the places left are refused as too many (the 10 design files a request, or 5 of the
- *  quotation, 5 of the PO, production's too). */
-export async function checkDesignFiles(files:File[],room:number,category:MoldFileCategory='design'):Promise<DesignChoice[]>{
+ *  quotation, 5 of the PO, production's too). overflow: the reason given to those (signature_room when the customer's signature takes
+ *  the tenth place, 2026-11-04). */
+export async function checkDesignFiles(files:File[],room:number,category:MoldFileCategory='design',overflow='too_many_files'):Promise<DesignChoice[]>{
  const out:DesignChoice[]=[];let left=room;
  for(const file of files){
-  const checked=await checkDesignFile(file,category),refusal=checked.refusal||(left>0?'':'too_many_files');
+  const checked=await checkDesignFile(file,category),refusal=checked.refusal||(left>0?'':overflow);
   if(!refusal)left--;
   out.push({key:crypto.randomUUID(),file,name:file.name,size:file.size,kind:checked.kind,refusal,category});
  }
@@ -221,7 +223,7 @@ const pickerTitle=(say:Say,category:MoldFileCategory)=>category==='quote'?say('�
 
 /** The files chosen in the request form: each checked at once; those that may go upload right after the request is saved. category: the
  *  kind of file this picker takes (design by default; the quotation's or PO's: a PDF or an image only). */
-export function MoldDesignPicker({choices,onChange,room,disabled,say,category='design'}:{choices:DesignChoice[];onChange:(next:DesignChoice[])=>void;room:number;disabled:boolean;say:Say;category?:MoldFileCategory}){
+export function MoldDesignPicker({choices,onChange,room,disabled,say,category='design',overflow='too_many_files',note=''}:{choices:DesignChoice[];onChange:(next:DesignChoice[])=>void;room:number;disabled:boolean;say:Say;category?:MoldFileCategory;overflow?:string;note?:string}){
  const [checking,setChecking]=useState(false);
  const ready=choices.filter(choice=>!choice.refusal).length;
  const pick=async(files:File[])=>{
@@ -229,12 +231,14 @@ export function MoldDesignPicker({choices,onChange,room,disabled,say,category='d
   try{
    // The same file chosen twice goes once.
    const fresh=files.filter(file=>!choices.some(choice=>choice.file.name===file.name&&choice.file.size===file.size&&choice.file.lastModified===file.lastModified));
-   onChange([...choices,...await checkDesignFiles(fresh,room-ready,category)]);
+   onChange([...choices,...await checkDesignFiles(fresh,room-ready,category,overflow)]);
   }finally{setChecking(false);}
  };
  return <fieldset className="mold-design-picker" data-category={category}><legend>{pickerTitle(say,category)}</legend>
   <DesignInput label={say('اختيار ملفات','Choose files')} disabled={disabled||room-ready<=0} busy={checking} onFiles={files=>void pick(files)} say={say} category={category}/>
   <small className="mold-design-hint">{hint(say,category)}</small>
+  {/* The customer's signature takes the tenth place (2026-11-04): said before the representative chooses, and on a tenth file. */}
+  {note&&<small className="mold-design-hint mold-signature-room" data-full={ready>=room||undefined}>{note}</small>}
   {!!choices.length&&<ul className="mold-design-list">{choices.map(choice=><li key={choice.key} className="mold-design-file" data-state={choice.refusal?'refused':'ready'}>
    <span className="mold-design-icon"><KindIcon kind={choice.kind}/></span>
    <div className="mold-design-main"><bdi className="mold-design-name">{choice.name}</bdi>
@@ -311,10 +315,10 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
   {(!!listed.length||!!pending.length)&&<ul className="mold-design-list">
    {listed.map(file=>{
     const reason=designFileDetail(file,say),mayReach=warn&&['sent','waiting'].includes(file.state);
-    return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source}>
-     <span className="mold-design-icon"><KindIcon kind={file.kind}/></span>
+    return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source} data-signature={file.signature||undefined}>
+     <span className="mold-design-icon">{file.signature?<PenLine size={18} aria-hidden="true"/>:<KindIcon kind={file.kind}/>}</span>
      <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
-      <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span className="mold-design-state">{stateText(file)}</span>}</span>
+      <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span className="mold-design-state">{stateText(file)}</span>}</span>
       {reason&&<small className="mold-design-reason">{reason}</small>}
       {errors[file.key]&&<small className="mold-design-reason" role="alert">{errors[file.key]}</small>}</div>
      <div className="mold-design-actions">
@@ -352,6 +356,7 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
   {view.can.attach&&attachable&&<div className="mold-design-tools">
    <DesignInput label={say('إرفاق ملفات','Attach files')} disabled={room<=0||!!asking} busy={checking} onFiles={files=>void pick(files)} say={say} category={category}/>
    <small className="mold-design-hint">{room<=0?moldDesignRefusalText('too_many_files',say,category)+'. '+say('احذف ملفًا أولًا.','Delete a file first.'):hint(say,category)}</small>
+   {category==='design'&&listed.some(file=>file.signature)&&<small className="mold-design-hint mold-signature-room">{say('توقيع العميل من ملفات الطلب الـ 10، ومينفعش يتحذف.','The customer\'s signature is one of the request\'s 10 files and cannot be deleted.')}</small>}
   </div>}
  </section>;
 }
@@ -371,10 +376,10 @@ export function MoldPendingDesignFiles({files,say,note='',category='design'}:{fi
  return <div className="mold-design mold-design-compact" aria-label={say(...moldFileCategoryNames[category])} data-links={note?'off':undefined} data-category={category}>
   <strong className="mold-design-title">{say(...moldFileCategoryNames[category])} <span className="mold-design-count" dir="ltr">({files.length})</span></strong>
   {note&&<small className="mold-design-hint mold-design-links-off">{note}</small>}
-  <ul className="mold-design-list">{files.map(file=><li key={String(file.fileId)} className="mold-design-file" data-source={file.source}>
-   <span className="mold-design-icon"><KindIcon kind={file.kind}/></span>
+  <ul className="mold-design-list">{files.map(file=><li key={String(file.fileId)} className="mold-design-file" data-source={file.source} data-signature={file.signature||undefined}>
+   <span className="mold-design-icon">{file.signature?<PenLine size={18} aria-hidden="true"/>:<KindIcon kind={file.kind}/>}</span>
    <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
-    <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span>{say('من المندوب','From the representative')}</span>}</span>
+    <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span>{say('من المندوب','From the representative')}</span>}</span>
     {errors[String(file.fileId)]&&<small className="mold-design-reason" role="alert">{errors[String(file.fileId)]}</small>}</div>
    {!note&&<div className="mold-design-actions"><FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say} onFailure={message=>setErrors(previous=>({...previous,[String(file.fileId)]:message}))}/></div>}
   </li>)}</ul>

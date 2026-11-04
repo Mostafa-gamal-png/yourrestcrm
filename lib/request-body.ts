@@ -5,9 +5,11 @@ export class RequestBodyError extends Error {
 
 // Existing form limits are in UTF-16 characters. Three UTF-8 bytes per code
 // unit preserves Arabic inputs while placing a real bound on buffered bytes.
+// /api/mold-requests: 16 000 for the request itself, plus the customer's signature (2026-11-04), a PNG of at most 256 KiB carried as
+// base64 (MOLD_SIGNATURE_BASE64_MAX in portable/mold-rules.mjs, 349 528 characters): 380 000.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
- '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':16_000,'/api/mold-requests/design-files/delete':2_000,'/api/service-kpi':32_000,
+ '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':380_000,'/api/mold-requests/design-files/delete':2_000,'/api/service-kpi':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
  '/api/kpis':60_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
  '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,

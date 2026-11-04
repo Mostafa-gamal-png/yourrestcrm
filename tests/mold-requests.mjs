@@ -27,6 +27,7 @@ import {MOLD_STAGES, MOLD_LIMITS, MOLD_HALF_BLOCKS, MOLD_CUSTOMERS_BODY_LIMIT, v
 import * as rules from '../portable/mold-rules.mjs';
 import {moldSignature, moldConfig, callProducts, moldRouteTimeout} from '../portable/mold-client.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
+import {signaturePng} from '../scripts/lib/signature-png.mjs';
 
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
@@ -323,6 +324,41 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   // «رابط التصميم» removed (2026-11-03): the server's refusal of a link from a page loaded before, with its English pair.
   const designUrlGone = 'رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
   same([readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(designUrlGone), dictionary[designUrlGone]], [true, 'The design link was removed from the request; refresh the page and attach the design as a file.'], 'the design link\'s refusal, said by the server, with its English pair');
+  // ---- the customer's signature (the owner, 2026-11-04): who needs it, the checks, the body unchanged, the view, the pending item, the words
+  {
+    same(['rep', 'supervisor', 'manager', 'customer_service', 'customer_service_manager', 'admin', '', undefined].map(rules.moldSignatureRequired), [true, true, true, false, false, false, false, false], 'required of the sales roles only: customer service and the administrator ask without it');
+    same(lib.moldSignatureRequired === rules.moldSignatureRequired, true, 'the screen and the server share one rule');
+    const good = new Uint8Array(signaturePng()), check = rules.moldSignatureCheck;
+    same(check('  م.   خالد ', good), {ok: true, signer: 'م. خالد', name: 'توقيع العميل - م. خالد.png', width: 480, height: 200, contentType: 'image/png'}, 'a real PNG with who signed: kept as «توقيع العميل - <signer>.png», an image');
+    same([check('أ', good).field, check('x'.repeat(81), good).field, check('a\u0007b', good).field, check(12, good).field, check('\u200f\u200f', good).field, check('ab', good).ok, check('x'.repeat(80), good).ok], ['signer', 'signer', 'signer', 'signer', 'signer', true, true], 'who signed: 2 to 80 characters, nothing production refuses, invisible marks dropped');
+    const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0, 200, 1, 224, 3, 1, 34, 0, 2, 17, 1, 3, 17, 1, 0xff, 0xd9]);
+    const reasons = [null, new Uint8Array(0), good.subarray(0, good.length - 12), jpeg, new Uint8Array(signaturePng({width: 1201, height: 100})), new Uint8Array(signaturePng({width: 60, height: 40})), new Uint8Array(rules.MOLD_SIGNATURE_MAX_BYTES + 1)].map(bytes => check('خالد', bytes).reason);
+    same(reasons, ['missing', 'missing', 'not_png', 'not_png', 'size', 'size', 'too_large'], 'the PNG: none, cut short (no IEND), another format, wider than 1200, a dot (long side under 64), over 256 KiB: each refused');
+    same([check('خالد', new Uint8Array(signaturePng({width: 1200, height: 1200}))).ok, check('خالد', new Uint8Array(signaturePng({width: 64, height: 20}))).ok, rules.moldDesignFileCheck(check('خالد', good).name, good).ok], [true, true, true], '1200 a side and a long side of 64 pass; the file is one production takes as a design image');
+    same([rules.moldSignatureName('أحمد: علي/محمد'), rules.moldSignatureName('??**'), rules.moldSignatureName('\u202eabc'), [...rules.moldSignatureName('ط'.repeat(80))].length <= 200], ['توقيع العميل - أحمد علي محمد.png', 'توقيع العميل.png', 'توقيع العميل - abc.png', true], 'the file\'s name: the characters a name may not hold become spaces; none left: «توقيع العميل.png»');
+    for (const signer of ['أحمد: علي/محمد', '??**', 'CON', 'a"b|c']) same(rules.moldDesignName(rules.moldSignatureName(signer))?.kind, 'image', 'always a name production accepts: ' + signer);
+    same([rules.moldSignatureDrawn({points: 1, width: 0, height: 0}), rules.moldSignatureDrawn({points: 40, width: 20, height: 12}), rules.moldSignatureDrawn({points: 8, width: 200, height: 40}), rules.moldSignatureDrawn({points: 12, width: 40, height: 3}), rules.moldSignatureDrawn({points: 0, width: 300, height: 100})], [false, false, false, true, false], 'the pad: a tap or a dot, a short tick, too few points refused; 12 points over 40 pixels taken');
+    same([rules.moldSignatureBytes(Buffer.from(good).toString('base64'))?.length, rules.moldSignatureBytes('data:image/png;base64,AAAA'), rules.moldSignatureBytes('AAA'), rules.moldSignatureBytes('A'.repeat(rules.MOLD_SIGNATURE_BASE64_MAX + 4)), rules.moldSignatureBytes(42), rules.MOLD_SIGNATURE_BASE64_MAX], [good.length, null, null, null, null, 349528], 'base64 only, without a data: prefix, within its cap');
+    // The requests body never carries it: built from explicit fields, the same bytes with data.signature or without it
+    const signed = {...data, payment: 'cash', quoteNo: 'Q-7', signature: {signer: 'م. خالد', signedAt: at, fileId: 'mds-1'}}, plain = {...signed};delete plain.signature;
+    same([JSON.stringify(moldRequestBody({id: 'mr-1', ...signed})), JSON.stringify(moldRequestBody({id: 'mr-1', ...signed})).includes('mds-1')], [JSON.stringify(moldRequestBody({id: 'mr-1', ...plain})), false], 'the body of a request with data.signature is byte for byte the body without it');
+    const serverSource = readFileSync(path.join(root, 'lib/mold-requests-server.ts'), 'utf8'), bodyLine = serverSource.split('\n').find(line => line.startsWith('export const requestBody='));
+    same([/^export const requestBody=\(row:[^)]*\)=>moldRequestBody\(\{id:row\.id,legacyOrderNo:row\.legacyOrderNo,requestedAt:row\.data\.requestedAt,customer:row\.data\.customer,salesman:row\.data\.salesman,specs:row\.data\.specs,payment:row\.data\.payment,quoteNo:row\.data\.quoteNo,poNo:row\.data\.poNo\}\);$/.test(bodyLine), bodyLine.includes('...')], [true, false], 'the server builds the body from those fields alone (no spread of the data)');
+    // The view: the file the data names is the signature, labelled and never deletable; the line on the sheet with its image's link
+    const signatureFile = {...waitingFile, id: 'mds-1', name: 'توقيع العميل - م. خالد.png', kind: 'image', contentType: 'image/png', outbox: null, sentAt: at, remoteFileId: 7};
+    const signedView = lib.moldRequestView(row({data: signed}), me, [], true, [signatureFile, waitingFile]);
+    same([signedView.signature, signedView.designFiles.map(file => [file.crmFileId, file.signature || false, file.canDelete])], [{signer: 'م. خالد', signedAt: at, fileId: 'mds-1', href: '/api/mold-requests/design-file?id=mr-1&file=mds-1'}, [['mds-1', true, false], ['mdf-1', false, true]]], 'the sheet: who signed and when, the image through the CRM; the signature not deletable, another file as before');
+    same([lib.moldRequestView(row({}), me, [], true, [signatureFile]).signature, lib.moldRequestView(row({}), me, [], true, [signatureFile]).designFiles[0].signature, lib.moldRequestView(row({data: signed}), me, [], true, [{...signatureFile, deletedAt: at}]).signature.href], [null, null, null], 'a request whose data names none has none (an older request, or customer service\'s); a file gone: no link');
+    same(lib.moldSignatureOf({signature: {signer: 1}}), null, 'a stored value that is not one is none');
+    const listedSignature = {fileId: 70, crmFileId: 'mds-1', name: 'توقيع العميل - م. خالد.png', kind: 'image', size: 10, source: 'crm', uploadedAt: at};
+    same(lib.moldPendingFiles({orderNo: 9, designFiles: [listedSignature, production(1)]}, {fileId: 'mds-1'}).designFiles.map(file => [file.fileId, file.signature || false]), [[70, true], [1, false]], 'the pending item: production\'s listing of the CRM\'s signature labelled as the signature, by its crmFileId');
+    same(lib.moldPendingFiles({orderNo: 9, designFiles: [listedSignature]}).designFiles[0].signature, null, 'without the CRM\'s signature nothing is labelled');
+    same([lib.MOLD_SIGNATURE_TEXT.required[0], lib.MOLD_SIGNATURE_TEXT.signerRequired[0], lib.MOLD_SIGNATURE_TEXT.signed, lib.MOLD_SIGNATURE_TEXT.title, lib.moldDesignRefusalText('signature_room', say('en'))], [rules.MOLD_SIGNATURE_REQUIRED, rules.MOLD_SIGNER_REQUIRED, ['وقّع العميل', 'Signed by the customer'], ['توقيع العميل', 'Customer signature'], 'The tenth place is the customer\'s signature; up to 9 design files'], 'the words, Arabic and English; the server\'s refusals are the screen\'s');
+    const signatureTexts = [rules.MOLD_SIGNATURE_REQUIRED, rules.MOLD_SIGNER_REQUIRED, rules.MOLD_SIGNATURE_BAD, 'الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.', 'توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.'];
+    same([signatureTexts.filter(text => typeof dictionary[text] !== 'string'), dictionary[rules.MOLD_SIGNATURE_REQUIRED]], [[], lib.MOLD_SIGNATURE_TEXT.required[1]], 'every refusal of the signature has its English pair');
+    const routes = ['app/api/mold-requests/route.ts', 'app/api/mold-requests/design-files/delete/route.ts'].map(file => readFileSync(path.join(root, file), 'utf8')).join('\n');
+    same(signatureTexts.slice(3).filter(text => !routes.includes(text)), [], 'and the server says them');
+  }
   // ---- who sees which request (the owner, 2026-11-03: «يبان للمندوب طلباته بس ومدير المبيعات طلباته وطلبات فريقه»)
   // Two sales managers share the eastern region; each has supervisors and representatives under them (any depth); customer service,
   // the administrator and representatives whose «المشرف» chain reaches no sales manager (none, a missing one, the administrator, a cycle).

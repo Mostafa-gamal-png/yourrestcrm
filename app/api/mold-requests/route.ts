@@ -1,11 +1,12 @@
 import {z} from 'zod';
+import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {validateMoldSpecs,validateMoldQuotePo,moldApprovalBody,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT} from '@/portable/mold-rules.mjs';
+import {validateMoldSpecs,validateMoldQuotePo,moldApprovalBody,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignInFlight,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,yourrestNumber,MOLD_QUOTE_PO_PRODUCTION_ONLY_TEXT,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignInFlight,moldDesignMayBeRemote,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_QUOTE_PO_PRODUCTION_ONLY_TEXT,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
-import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
+import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 const reader=async()=>{const c=await context({load:'customers'});if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);return c;};
@@ -28,17 +29,20 @@ export async function GET(req:Request){try{
  if(id&&!rows.length)throw new CRMError('الطلب غير متاح',404);
  const statusError=await pullMoldStatuses(c.db,rows,{link}),files=await moldDesignFilesByRequest(c.db,rows.map(row=>row.id)),reasons=await moldViewReasons(c.db,rows,c.me);
  const pending=id?null:await pendingFor(c,link),quotePo=await moldQuotePoSupported(c.db);
- const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>moldRequestView(row,c.me,c.members,link.ok,files.get(row.id),reasons.get(row.id),quotePo,moldApprovesRequest(row,c))),statusError,canCreate:canCreateMoldRequest(c.me),pending,quotePo};
+ const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>moldRequestView(row,c.me,c.members,link.ok,files.get(row.id),reasons.get(row.id),quotePo,moldApprovesRequest(row,c))),statusError,canCreate:canCreateMoldRequest(c.me),pending,quotePo,signatureRequired:moldSignatureRequired(c.me.role)};
  return Response.json(answer,{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 
 const requestId=z.string().uuid(),id=z.string().regex(/^mr-[0-9a-f-]{36}$/),version=z.number().int().positive();
 const specsInput=z.record(z.string(),z.unknown()),paymentInput=z.unknown().optional(),numberInput=z.unknown().optional();
+/** The customer's signature (2026-11-04): {signer, png} with the PNG as base64, checked by readSignature (each refusal by its field). */
+const signatureInput=z.unknown().optional();
 const schema=z.discriminatedUnion('action',[
  // payment (2026-11-03): cash or deferred, required (checkedRequest says so with the field's own message). quoteNo and poNo (the second
  // update of 2026-11-03): one at least once production's update is known to be live, none before (checkedRequest).
- z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200),specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput}).strict(),
- z.object({action:z.literal('update'),requestId,id,version,specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput}).strict(),
+ // signature (2026-11-04): the customer's, required of the sales roles for a new request and for an edit that changes what was signed.
+ z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200),specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput}).strict(),
+ z.object({action:z.literal('update'),requestId,id,version,specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput}).strict(),
  z.object({action:z.literal('cancel'),requestId,id,version,reason:z.string().trim().max(MOLD_LIMITS.cancelReason,'سبب الإلغاء حتى 500 حرف').default('')}).strict(),
  z.object({action:z.literal('resend'),requestId,id}).strict(),
  z.object({action:z.literal('approve'),requestId,id}).strict(),
@@ -78,16 +82,41 @@ const DESIGN_URL_GONE='رابط التصميم اتلغى من الطلب؛ حد
  *  so at least one number is required; before it none is taken (no form asks for one), and one given is refused (409). The numbers come
  *  back normalized ('' for none). designUrl: the request's own design link, kept as stored ('' for a new request, so it carries none and
  *  sends none); the form sends none, and a link it sends that is not that one is refused (DESIGN_URL_GONE). */
-function checkedRequest(input:Record<string,unknown>,paymentValue:unknown,numbers:{quoteNo?:unknown;poNo?:unknown},quotePo:boolean,designUrl=''){
+function checkedRequest(input:Record<string,unknown>,paymentValue:unknown,numbers:{quoteNo?:unknown;poNo?:unknown},quotePo:boolean,designUrl='',more:Record<string,string>={}){
  if(!quotePo&&[numbers.quoteNo,numbers.poNo].some(value=>moldQuotePoNumber(value)!==''))throw new CRMError(QUOTE_PO_NOT_YET,409);
  const {specs,errors}=validateMoldSpecs(input),payment=moldPayment(paymentValue) as MoldPayment|null,checked=validateMoldQuotePo(numbers,{required:quotePo});
  const typedUrl=errors.designUrl!==undefined||specs.designUrl!==''&&specs.designUrl!==designUrl;
  delete errors.designUrl;specs.designUrl=designUrl;
- const fields:Record<string,string>={...errors,...(typedUrl?{designUrl:DESIGN_URL_GONE}:{}),...(payment?{}:{payment:MOLD_PAYMENT_REQUIRED}),...(quotePo?checked.errors:{})};
+ const fields:Record<string,string>={...errors,...(typedUrl?{designUrl:DESIGN_URL_GONE}:{}),...(payment?{}:{payment:MOLD_PAYMENT_REQUIRED}),...(quotePo?checked.errors:{}),...more};
  if(Object.keys(fields).length)throw Object.assign(new CRMError(Object.values(fields).join(' • '),400),{fields});
  return {specs:specs as MoldRequestData['specs'],payment:payment as MoldPayment,quoteNo:quotePo?checked.quoteNo:'',poNo:quotePo?checked.poNo:''};
 }
 /** A request's data with its numbers: each kept only when given, so a request without them is stored (and sent) exactly as before. */
+/** The customer's signature as checked (moldSignatureCheck): who signed, the file's name, the PNG and its hash. */
+type SignatureFile={signer:string;name:string;bytes:Uint8Array<ArrayBuffer>;contentType:string;sha256:string};
+const sha256=async(bytes:Uint8Array<ArrayBuffer>)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(n=>n.toString(16).padStart(2,'0')).join('');
+/** The signature a create or an edit carries (2026-11-04): none (absent, or null), or {signer, png} checked as production checks a design
+ *  image (a real PNG of at most 256 KiB and 1200 pixels a side), each refusal by its field: signer (2 to 80 characters), signature. */
+async function readSignature(value:unknown):Promise<{signature:SignatureFile|null;fields:Record<string,string>}>{
+ if(value===undefined||value===null)return {signature:null,fields:{}};
+ const source=typeof value==='object'&&!Array.isArray(value)?value as {signer?:unknown;png?:unknown}:{};
+ const signer=moldSigner(source.signer),named=signer!==undefined&&[...signer].length>=MOLD_SIGNER_MIN&&[...signer].length<=MOLD_SIGNER_MAX;
+ const bytes=moldSignatureBytes(source.png),checked=moldSignatureCheck(named?signer:'--',bytes);
+ const fields:Record<string,string>={...(named?{}:{signer:MOLD_SIGNER_REQUIRED}),...(!checked.ok&&checked.field==='signature'?{signature:checked.reason==='missing'&&!source.png?MOLD_SIGNATURE_REQUIRED:MOLD_SIGNATURE_BAD}:{})};
+ if(Object.keys(fields).length||!checked.ok||!bytes)return {signature:null,fields};
+ const file=new Uint8Array(bytes);
+ return {signature:{signer:checked.signer,name:checked.name,bytes:file,contentType:checked.contentType,sha256:await sha256(file)},fields:{}};
+}
+/** The receipt of a write: the request as sent, with the signature's PNG as its hash (an audit entry never holds a file's contents). */
+async function receiptOf(input:Record<string,unknown>){
+ const signature=input.signature as {signer?:unknown;png?:unknown}|null|undefined;
+ if(!signature||typeof signature!=='object')return JSON.stringify(input);
+ return JSON.stringify({...input,signature:{signer:signature.signer,png:typeof signature.png==='string'?await sha256(new TextEncoder().encode(signature.png)):signature.png}});
+}
+/** An edit needing a new signature where the request's 10 design files leave no place for it. Its English pair is in lib/locales/en.json. */
+const SIGNATURE_NO_ROOM='الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.';
+/** How long the answer waits for the signature to reach production once the request has; the send itself goes on (up to 120 seconds). */
+const SIGNATURE_WAIT_MS=15_000;
 function withNumbers(data:MoldRequestData,{quoteNo,poNo}:{quoteNo:string;poNo:string}):MoldRequestData{
  const next={...data};delete next.quoteNo;delete next.poNo;
  return {...next,...(quoteNo?{quoteNo}:{}),...(poNo?{poNo}:{})};
@@ -99,11 +128,11 @@ function withNumbers(data:MoldRequestData,{quoteNo,poNo}:{quoteNo:string;poNo:st
  * certainly never reached production (moldNeverSent; MOLD_NEVER_SENT_SQL guards the save): once sent, 409 with production_only's text.
  * approve, withdraw (the sales manager): production's approval route is called first, and only its answer is saved, with the receipt.
  */
-export async function POST(req:Request){try{
+export async function POST(req:Request){let objectKey='';try{
  checkOrigin(req);await requireSession();
  // The role is checked before the body is read: customer service is refused (403) whatever it sends.
  const c=await reader(),input=schema.parse(await readJsonBody(req)),now=new Date().toISOString(),mutation=crypto.randomUUID(),link=productsLink();keepMoldRetrying();
- const canonical=JSON.stringify(input),receiptId='mold-request-receipt:'+c.me.id+':'+input.requestId;
+ const canonical=await receiptOf(input),receiptId='mold-request-receipt:'+c.me.id+':'+input.requestId;
  /** The request as it now stands, with what the send gave; a 409 (the CRM's refusal, given as `refusal`, or production's) carries the
   * request too, so the screen follows the server's rule at once. */
  const answer=async(rowId:string,outcome:SendOutcome|null,status=200,refusal='')=>{
@@ -162,6 +191,12 @@ export async function POST(req:Request){try{
  // Production's update of 2026-11-03 known to be live: the quotation and PO numbers are asked for (one at least) and sent.
  const permission=accessGuard(c),quotePo=await moldQuotePoSupported(c.db);
  let rowId:string,statement,restart:D1PreparedStatement|null=null,detail:Record<string,unknown>;
+ // The customer's signature (2026-11-04): its file's row, saved in the same batch as the request (never a request without it), its bytes
+ // put in the object store first; an old signature the edit replaces, removed in the CRM alone when production never held it.
+ let signing:{file:SignatureFile;id:string}|null=null,replaced:{key:string|null;at:number}|null=null;
+ const signatureRows:D1PreparedStatement[]=[];
+ const signatureRow=(file:SignatureFile,fileId:string,requestRow:string)=>c.db.prepare(`INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id,category)
+  SELECT ?,?,?,?,'image',?,?,?,?,?,'send',?,1,?,'design' WHERE EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)`).bind(fileId,requestRow,c.me.id,file.name,file.contentType,file.bytes.length,file.sha256,objectKey,now,now,mutation,requestRow,mutation);
  if(input.action==='create'){
   if(!canCreateMoldRequest(c.me))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
   const customer=askable(c,input.customerId);
@@ -170,9 +205,14 @@ export async function POST(req:Request){try{
   if(!crmNumber)throw new CRMError('كود يورست للعميل غير متاح. حدّث الصفحة.',409);
   const name=String(customer.data.name||'').trim();
   if(!name||[...name].length>MOLD_LIMITS.customerName)throw new CRMError('اسم العميل أطول من '+MOLD_LIMITS.customerName+' حرفًا؛ اختصره من صفحة العميل أولًا',409);
-  const asked=checkedRequest(input.specs,input.payment,input,quotePo);
+  // The sales roles' new request carries the customer's signature (2026-11-04); customer service's and the administrator's may, checked alike.
+  const signed=await readSignature(input.signature),required:Record<string,string>=moldSignatureRequired(c.me.role)&&!signed.signature&&!Object.keys(signed.fields).length?{signature:MOLD_SIGNATURE_REQUIRED}:{};
+  const asked=checkedRequest(input.specs,input.payment,input,quotePo,'',{...signed.fields,...required});
+  rowId='mr-'+input.requestId;
+  if(signed.signature)signing={file:signed.signature,id:'mds-'+input.requestId};
   const data:MoldRequestData=withNumbers({requestedAt:requestedNow(now),customer:{crmNumber,name,address:String(customer.data.address||''),city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:asked.specs,payment:asked.payment},asked);
-  rowId='mr-'+input.requestId;detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.quoteNo?{quoteNo:data.quoteNo}:{}),...(data.poNo?{poNo:data.poNo}:{})};
+  if(signing)data.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
+  detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.quoteNo?{quoteNo:data.quoteNo}:{}),...(data.poNo?{poNo:data.poNo}:{}),...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{})};
   statement=c.db.prepare(`INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,'send',?,?,?,?,1,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)`)
    .bind(rowId,c.me.id,customer.id,JSON.stringify(data),now,c.me.id,now,now,mutation,...permission.args,customer.id,customer.version);
  }else{
@@ -209,14 +249,29 @@ export async function POST(req:Request){try{
   const guard=`id=? AND version=? AND member_id=? AND ${permission.sql}`,guardArgs=[row.id,row.version,c.me.id,...permission.args];
   if(input.action==='update'){
    // The request's own design link (an older request's) stays exactly as stored.
-   const checked=checkedRequest(input.specs,input.payment,input,quotePo,row.data.specs.designUrl||''),{specs,payment}=checked;
+   const signed=await readSignature(input.signature);
+   const checked=checkedRequest(input.specs,input.payment,input,quotePo,row.data.specs.designUrl||'',signed.fields),{specs,payment}=checked;
    // Before production's update the request's numbers are left as they are (it has none: none is taken before).
    const edited=quotePo?withNumbers({...row.data,specs,payment},checked):{...row.data,specs,payment};
+   // An edit that changes nothing keeps the request as it is, its signature too (a signature sent with it is not taken).
    if(JSON.stringify(specs)===JSON.stringify(row.data.specs)&&payment===row.data.payment&&(edited.quoteNo||'')===(row.data.quoteNo||'')&&(edited.poNo||'')===(row.data.poNo||''))return answer(row.id,null);
-   detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity,payment,...(edited.quoteNo?{quoteNo:edited.quoteNo}:{}),...(edited.poNo?{poNo:edited.poNo}:{})};
+   // What the customer signed changed (2026-11-04): a sales role signs again. The new signature replaces the old in the data; the old file
+   // is removed in the CRM alone when production never held it (else it stays as a design file). Without a new one the data names none.
+   if(moldSignatureRequired(c.me.role)&&!signed.signature)throw Object.assign(new CRMError(MOLD_SIGNATURE_REQUIRED,400),{fields:{signature:MOLD_SIGNATURE_REQUIRED}});
+   const old=moldSignatureOf(row.data),oldFile=old?files.find(file=>file.id===old.fileId&&!file.deletedAt):undefined,removable=!!oldFile&&!moldDesignMayBeRemote(oldFile);
+   if(signed.signature){
+    const places=moldDesignCount(row,files,'design');
+    if(places.crm+places.production-(removable?1:0)+1>places.max)throw new CRMError(SIGNATURE_NO_ROOM,409);
+    signing={file:signed.signature,id:'mds-'+input.requestId};
+    edited.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
+   }else delete edited.signature;
+   if(oldFile&&removable)replaced={key:oldFile.objectKey,at:0};
+   detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity,payment,...(edited.quoteNo?{quoteNo:edited.quoteNo}:{}),...(edited.poNo?{poNo:edited.poNo}:{}),...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{}),...(old?{replacedSignature:old.fileId}:{})};
    // Production never stored any of it, so the edited request starts as never attempted; the guard holds that in SQL, so a send claimed
    // since the check (it may arrive) keeps the request as it is.
    statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_attempt_at=NULL,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND ${MOLD_NEVER_SENT_SQL}`).bind(JSON.stringify(edited),now,now,mutation,...guardArgs);
+   // The old signature, never held by production (never tried, or refused for good): removed in the CRM alone, as the delete route does.
+   if(oldFile&&removable)signatureRows.push(c.db.prepare(`UPDATE crm_mold_design_files SET deleted_at=?,outbox=NULL,next_attempt_at=NULL,object_key=NULL,version=version+1 WHERE id=? AND deleted_at IS NULL AND sent_at IS NULL AND (last_attempt_at IS NULL OR ${MOLD_DESIGN_REFUSED_SQL}) AND EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)`).bind(now,oldFile.id,row.id,mutation));
   }else if(input.action==='cancel'){
    if(!allowed.cancel)throw new CRMError(row.cancelledAt?'الطلب ملغى من قبل':row.memberId!==c.me.id?'إلغاء الطلب لمن طلبه':'بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا',row.memberId!==c.me.id?403:409);
    // Cancelled before and restored by the production manager (2026-11-03): a reason used already is refused here, not sent.
@@ -238,24 +293,45 @@ export async function POST(req:Request){try{
   }
  }
  const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)',ga=[rowId,mutation];
- const result=await c.db.batch([statement,...(restart?[restart]:[]),
+ // The signature's bytes first (each attempt its own object, removed should the save not happen), then its row with the request.
+ if(signing){
+  if(!env.FILES)throw new CRMError('رفع الملفات غير متاح مؤقتًا.',503);
+  objectKey='mold-design/'+rowId+'/'+signing.id+'/'+crypto.randomUUID();
+  await env.FILES.put(objectKey,signing.file.bytes,{httpMetadata:{contentType:signing.file.contentType}});
+  signatureRows.unshift(signatureRow(signing.file,signing.id,rowId));
+ }
+ if(replaced)replaced.at=1+(signing?1:0);
+ const drop=async()=>{if(objectKey&&env.FILES)await env.FILES.delete(objectKey).catch(()=>{});objectKey='';};
+ const result=await c.db.batch([statement,...signatureRows,...(restart?[restart]:[]),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,rowId,c.me.name,'mold-request-receipt',canonical,now,...ga),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),rowId,c.me.name,'mold-request:'+input.action,JSON.stringify(detail),now,...ga),
- ]).catch(async error=>{const again=await replay();if(again)return again;throw error;});
- if(result instanceof Response)return result;
+ ]).catch(async error=>{await drop();const again=await replay();if(again)return again;throw error;});
+ if(result instanceof Response){await drop();return result;}
  if(result[0].meta.changes!==1){
+  await drop();
   const again=await replay();if(again)return again;
   // An update stopped by its guard because a send was claimed since the check (it may arrive): refused as a sent request is.
   const current=input.action==='update'?await loadMoldRequest(c.db,rowId):null;
   if(current&&!moldNeverSent(current))return answer(rowId,null,409,PRODUCTION_ONLY);
   throw new CRMError('تغيّرت البيانات أو الصلاحيات أثناء الحفظ. حدّث الصفحة.',409);
  }
+ objectKey='';
+ // The old signature removed with the edit: its bytes leave the CRM now.
+ if(replaced&&result[replaced.at]?.meta.changes===1&&replaced.key&&env.FILES)await env.FILES.delete(replaced.key).catch(()=>{});
  // Saved. Now the send (up to 10 seconds); a failure leaves the request waiting on the timetable.
  const outcome=await sendMoldRequest(c.db,rowId,{link});
+ // Then the customer's signature, as a design file, once production holds the request; the answer waits a little for it, and the
+ // timetable takes it from there.
+ if(signing&&outcome.kind==='ok'&&link.ok){
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  await Promise.race([sendMoldDesignFile(c.db,signing.id,{link}).catch(()=>null),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),SIGNATURE_WAIT_MS);})]);
+  clearTimeout(timer);
+ }
  // A resend also starts the request's design files whose turn has come again (they go in the background, up to 120 seconds each).
  if(input.action==='resend')void sendDueMoldDesignFiles(c.db,{link}).catch(()=>{});
  return answer(rowId,outcome,outcome.kind==='locked'||outcome.kind==='restored'?409:200);
 }catch(e){
+ if(objectKey&&env.FILES)await env.FILES.delete(objectKey).catch(()=>{});
  if(e instanceof z.ZodError)return Response.json({error:e.issues.map(issue=>issue.message).join(' • ')},{status:400});
  if(e instanceof CRMError&&'fields' in e)return Response.json({error:e.message,fields:(e as CRMError&{fields:Record<string,string>}).fields},{status:e.status});
  return replyError(e);

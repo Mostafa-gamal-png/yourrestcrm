@@ -27,6 +27,8 @@ try{
  eq(jsonRequestLimit(new Request('https://crm.yourrest.org/api/mobile-route?x=1')),120000);
  eq(jsonRequestLimit(new Request('https://crm.yourrest.org/api/customers/import')),1200000);
  eq(jsonRequestLimit(new Request('https://crm.yourrest.org/api/unknown')),450000);
+ // A mold request with the customer's signature (2026-11-04): its own 16 000 plus the PNG as base64 (at most 349 528 characters).
+ eq(jsonRequestLimit(new Request('https://crm.yourrest.org/api/mold-requests')),380000);
  let stalledCancelled=false;const stalled=new Request('https://crm.yourrest.org/api/crm',{method:'POST',body:new ReadableStream({cancel(){stalledCancelled=true;}}),duplex:'half'});
  await rejects(readRequestBytes(stalled,10,10),408);eq(stalledCancelled,true);
  await rejects(readRequestBytes(new Request('https://crm.yourrest.org/api/crm',{method:'POST',body:new ReadableStream({start(c){c.error(Error('lost connection'));}}),duplex:'half'}),10),400);
