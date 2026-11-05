@@ -369,12 +369,12 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
 }
 
 /** Why a request the sales manager has just approved lists its files without links: those links serve a request only while it waits for
- *  them (app/api/mold-requests/design-file/route.ts by order), so right after the approval they would answer 404. A request of the CRM
+ *  them (app/api/mold-requests/design-file/route.ts by the item's crmRequestId, requestRef or number), so right after the approval they would answer 404. A request of the CRM
  *  shows its files on its own sheet. */
 export const pendingFilesApprovedNote=(inCrm:boolean,say:Say)=>inCrm
  ?say('بعد اعتمادك لا تُفتح الملفات من هنا؛ افتح الطلب لعرضها.','Once you approve, the files no longer open from here; open the request to see them.')
  :say('بعد اعتمادك لا تُفتح الملفات من هنا.','Once you approve, the files no longer open from here.');
-/** A pending request's files in the sales manager's list, each opened or downloaded through the CRM by its order number. note: the
+/** A pending request's files in the sales manager's list, each opened or downloaded through the CRM by the item's name (moldPendingQuery). note: the
  *  files are listed by name only, with this said once (a request just approved, pendingFilesApprovedNote). category: the kind of these
  *  files (design by default; the quotation's or PO's since production's update of 2026-11-03). */
 export function MoldPendingDesignFiles({files,say,note='',category='design'}:{files:MoldPendingDesignFile[];say:Say;note?:string;category?:MoldFileCategory}){

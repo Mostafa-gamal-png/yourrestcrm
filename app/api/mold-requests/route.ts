@@ -1,12 +1,12 @@
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {validateMoldSpecs,moldApprovalBody,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED} from '@/portable/mold-rules.mjs';
+import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldAwaitsQuoteFile,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldAwaitsQuoteFile,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
-import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
+import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldRequestRefKnown,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 const reader=async()=>{const c=await context({load:'customers'});if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);return c;};
@@ -20,15 +20,17 @@ const askable=(c:Awaited<ReturnType<typeof reader>>,customerId:string)=>isServic
  * with its design files (the CRM's and production's). quotePo: production's update of 2026-11-03 is known to be live (learned from any
  * answer, this page's pulls included), so the form asks for the quotation's or PO's file (one at least, 2026-11-05; no number). The list is the reader's own
  * (canReadMoldRequest: the sales manager's and their team's for a sales manager); ?id= also opens, for the sales manager, a request
- * «طلبات بانتظار اعتمادي» shows them now without their list doing so (canOpenMoldRequest: customer service's, say). */
+ * «طلبات بانتظار اعتمادي» shows them now without their list doing so (canOpenMoldRequest: customer service's, say). refs=1: this
+ * release's page, which names a pending item by its requestRef or crmRequestId; without it (a page loaded before) the waiting list keeps
+ * the items production has numbered only (moldPendingForOldPage). */
 export async function GET(req:Request){try{
- const c=await reader(),link=productsLink(),id=new URL(req.url).searchParams.get('id');
+ const c=await reader(),link=productsLink(),url=new URL(req.url),id=url.searchParams.get('id'),refs=url.searchParams.get('refs')==='1';
  keepMoldRetrying();void sendDueMoldRequests(c.db,{link}).catch(()=>{});
  const one=id?await loadMoldRequest(c.db,id):null;
  const rows=id?(one&&await canOpenMoldRequest(one,c,link)?[one]:[]):(await loadMoldRequests(c.db)).filter(row=>canReadMoldRequest(row,c));
  if(id&&!rows.length)throw new CRMError('الطلب غير متاح',404);
  const statusError=await pullMoldStatuses(c.db,rows,{link}),files=await moldDesignFilesByRequest(c.db,rows.map(row=>row.id)),reasons=await moldViewReasons(c.db,rows,c.me);
- const pending=id?null:await pendingFor(c,link),quotePo=await moldQuotePoSupported(c.db);
+ const listed=id?null:await pendingFor(c,link),pending=refs?listed:moldPendingForOldPage(listed),quotePo=await moldQuotePoSupported(c.db);
  const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>moldRequestView(row,c.me,c.members,link.ok,files.get(row.id),reasons.get(row.id),quotePo,moldApprovesRequest(row,c))),statusError,canCreate:canCreateMoldRequest(c.me),pending,quotePo,signatureRequired:moldSignatureRequired(c.me.role)};
  return Response.json(answer,{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
@@ -37,6 +39,7 @@ const requestId=z.string().uuid(),id=z.string().regex(/^mr-[0-9a-f-]{36}$/),vers
 const specsInput=z.record(z.string(),z.unknown()),paymentInput=z.unknown().optional(),numberInput=z.unknown().optional();
 /** The customer's signature (2026-11-04): {signer, png} with the PNG as base64, checked by readSignature (each refusal by its field). */
 const signatureInput=z.unknown().optional();
+const pendingTarget={requestId,crmRequestId:z.string().regex(MOLD_ID,'حدد الطلب').optional(),requestRef:z.string().regex(MOLD_REQUEST_REF,'مرجع الطلب غير صحيح؛ حدّث الصفحة.').optional(),orderNo:z.number().int().positive().nullable().optional()};
 const schema=z.discriminatedUnion('action',[
  // payment (2026-11-03): cash or deferred, required (checkedRequest says so with the field's own message). quoteNo and poNo (the second
  // update of 2026-11-03) are no longer asked for (2026-11-05): read only to refuse one a page loaded before sends (checkedRequest).
@@ -47,9 +50,12 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('resend'),requestId,id}).strict(),
  z.object({action:z.literal('approve'),requestId,id}).strict(),
  z.object({action:z.literal('withdraw'),requestId,id}).strict(),
- // The sales manager's waiting list names a request by production's order number: the CRM's own, or one registered in production.
- z.object({action:z.literal('approve-order'),requestId,orderNo:z.number().int().positive()}).strict(),
- z.object({action:z.literal('withdraw-order'),requestId,orderNo:z.number().int().positive()}).strict(),
+ // The sales manager's waiting list names a request as moldPendingTarget does (lib/mold-requests.ts): the CRM's own by its crmRequestId,
+ // one registered in production by its requestRef (the products update of 2026-11-05, the second of the day), and only one of the
+ // application before that update (no requestRef) by its order number; one of them only. A page loaded before this release names every
+ // item by its order number, null for an item production has not numbered yet: refused with ORDER_PAGE_OUTDATED.
+ z.object({action:z.literal('approve-order'),...pendingTarget}).strict(),
+ z.object({action:z.literal('withdraw-order'),...pendingTarget}).strict(),
 ]);
 const labels={create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب','approve-order':'اعتماد مدير المبيعات لطلب تصنيع قالب','withdraw-order':'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
 /** A sent request's data is edited by the production manager in the products application only (yourrest-products, 2026-11-02): the
@@ -62,6 +68,12 @@ const PRODUCTION_ONLY_SENT=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ التعديل لم 
  *  nothing typed is dropped silently and no stored request changes; the request's own numbers, sent back unchanged, are kept as stored.
  *  Its English pair is in lib/locales/en.json. */
 const QUOTE_PO_GONE='رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.';
+/** The products update of 2026-11-05 (the second): a request has no order number until production approves it, and the numbers from
+ *  101 up move down by one once, so an order number no longer names a request. A page loaded before this release still does (its item
+ *  without a number sends null): it is asked to reload, never answered on a number. Its English pair is in lib/locales/en.json. */
+const ORDER_PAGE_OUTDATED='الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.';
+/** Production refused how the approval named the request (400: a requestRef or an order number it does not take). */
+const APPROVAL_TARGET_REFUSED='تطبيق الإنتاج لم يقبل تعريف الطلب؛ حدّث الصفحة وحاول مرة أخرى.';
 /** A resend of a request kept for its quotation or PO file (2026-11-05): nothing to resend; attaching the file sends it. */
 const QUOTE_FILE_FIRST='الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.';
 /** A refusal of production's for what was sent: a cancellation it refused (cancelled there, or the approvals or production came first),
@@ -159,37 +171,58 @@ export async function POST(req:Request){let objectKey='';try{
  };
  if(input.action==='approve-order'||input.action==='withdraw-order'){
   if(!canApproveMoldRequests(c.me))throw new CRMError('اعتماد طلبات القوالب لمدير المبيعات',403);
-  const approving=input.action==='approve-order',orderNo=input.orderNo;
+  const approving=input.action==='approve-order',byNumber=input.orderNo!==undefined,orderNo=input.orderNo??null,ref=input.requestRef??null;
+  if([input.crmRequestId,input.requestRef,input.orderNo].filter(value=>value!==undefined).length!==1)throw new CRMError('حدد الطلب',400);
+  // A page loaded before this release (it names items by number) reads the list as it always did (moldPendingForOldPage).
+  const listFor=async()=>{const list=await pendingFor(c,link);return byNumber?moldPendingForOldPage(list):list;};
   const saved=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receiptId).first<{detail:string}>();
-  if(saved){if(saved.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);return Response.json({ok:true,status:null,pending:await pendingFor(c,link)});}
+  if(saved){if(saved.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);return Response.json({ok:true,status:null,pending:await listFor()});}
   if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل',503);
-  // The CRM's own request (it holds that order number) goes by its crmRequestId, with the CRM's own checks: one this manager approves
-  // (moldApprovesRequest, as «طلبات بانتظار اعتمادي» lists it); one registered in production by its orderNo, approved only while
-  // production still lists it as waiting within the manager's regions.
-  const own=(await loadMoldRequests(c.db,"json_extract(remote,'$.orderNo')=?",[orderNo]))[0];
-  let listed=null;
+  // The CRM's own request goes by its crmRequestId, with the CRM's own checks: one this manager approves (moldApprovesRequest, as
+  // «طلبات بانتظار اعتمادي» lists it). One registered in production goes by its requestRef, approved only while production still lists it
+  // as waiting within the manager's regions; a requestRef the CRM's own request holds goes as that request. An order number only while
+  // the products application is the one before its update of 2026-11-05 (learned from production's answers, the list asked for here
+  // included): then it still names one request, the CRM's own that holds it (the stored status, refreshed on each pull) or one registered
+  // in production; once that update is live a number may name another request than the page meant, so nothing is answered on it.
+  let own=null,listed=null;
+  if(byNumber){
+   if(orderNo===null)throw new CRMError(ORDER_PAGE_OUTDATED,409);
+   const waiting=await pendingFor(c,link,{force:true});
+   if(await moldRequestRefKnown(c.db))throw new CRMError(ORDER_PAGE_OUTDATED,409);
+   own=(await loadMoldRequests(c.db,"json_extract(remote,'$.orderNo')=?",[orderNo]))[0];
+   if(!own&&approving){listed=waiting!.items.find(item=>item.orderNo===orderNo&&!item.crmRequestId);if(!listed)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',409);}
+  }else if(input.crmRequestId!==undefined){
+   own=await loadMoldRequest(c.db,input.crmRequestId);
+   if(!own)throw new CRMError('الطلب غير متاح',404);
+  }else{
+   own=(await loadMoldRequests(c.db,"json_extract(remote,'$.requestRef')=?",[ref!]))[0];
+   if(!own&&approving){listed=(await pendingFor(c,link,{force:true}))!.items.find(item=>item.requestRef===ref&&!item.crmRequestId);if(!listed)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',409);}
+  }
   if(own){
    if(!moldApprovesRequest(own,c))throw new CRMError('الطلب غير متاح',404);
    // A design file on its way undoes the approvals when it arrives; a quotation's or PO's no longer does (2026-11-05).
    const filesOnTheWay=(await loadMoldDesignFiles(c.db,'request_id=?',[own.id])).some(moldApprovalWaitsFor);
    if(own.cancelledAt||own.outbox||filesOnTheWay)throw new CRMError(own.cancelledAt?'الطلب ملغى':'في تغيير على الطلب لسه ما وصلش للإنتاج؛ استنى لما يوصل',409);
-  }else if(approving){
-   listed=(await pendingFor(c,link,{force:true}))!.items.find(item=>item.orderNo===orderNo&&!item.crmRequestId);
-   if(!listed)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',409);
-  }else if(regionScope(c.me)!=='all')throw new CRMError('سحب اعتماد طلب مسجّل في الإنتاج لمدير مبيعات كل المناطق',403);
-  const by={name:c.me.name,email:c.me.email},call=await callProducts(link,'approval',moldApprovalBody(own?{id:own.id,action:approving?'approve':'withdraw',by}:{orderNo,action:approving?'approve':'withdraw',by}));
+  }else if(!approving&&regionScope(c.me)!=='all')throw new CRMError('سحب اعتماد طلب مسجّل في الإنتاج لمدير مبيعات كل المناطق',403);
+  const by={name:c.me.name,email:c.me.email},action=approving?'approve':'withdraw';
+  const call=await callProducts(link,'approval',moldApprovalBody(own?{id:own.id,action,by}:ref?{requestRef:ref,action,by}:{orderNo,action,by}));
   const status=call.kind==='ok'?moldStatusObject(call.json?.request,{manual:!own}):call.kind==='locked'?call.request:null,at=new Date().toISOString();
   if(own&&status)await storeMoldRemote(c.db,own.id,status,at);
   else await noteMoldQuotePo(c.db,[status],at);
   forgetPendingApprovals();
-  if(call.kind==='locked')return Response.json({ok:false,status,pending:await pendingFor(c,link),error:moldApprovalRefusal(status,approving)},{status:409});
-  if(call.kind!=='ok'||!status)throw new CRMError(call.kind==='not_found'?'الطلب غير موجود لدى الإنتاج':moldErrorText(call.code,ar=>ar)+'. حاول مرة أخرى.',call.kind==='not_found'?409:502);
-  const recordId=own?.id||'mold-order:'+orderNo,detail={label:labels[input.action],customerName:own?.data.customer.name||listed?.customer.name||'',orderNo,source:own?'crm':'manual',waitingStep:status.waitingStep};
+  if(call.kind==='locked')return Response.json({ok:false,status,pending:await listFor(),error:moldApprovalRefusal(status,approving)},{status:409});
+  // 404: production holds no request by that name; 400: it does not take the name sent (a requestRef or a number). Both say to refresh.
+  if(call.kind==='rejected')throw new CRMError(APPROVAL_TARGET_REFUSED,409);
+  if(call.kind!=='ok'||!status)throw new CRMError(call.kind==='not_found'?'الطلب غير موجود لدى الإنتاج؛ حدّث الصفحة.':moldErrorText(call.code,ar=>ar)+'. حاول مرة أخرى.',call.kind==='not_found'?409:502);
+  // The audit names a request registered in production by its requestRef (mold-ref:), by its number only in the application before
+  // (mold-order:, as older entries do); the number recorded is the one production answered with (none yet, before its approval).
+  const named=ref||status.requestRef||null,recordId=own?.id||(named?'mold-ref:'+named:'mold-order:'+orderNo);
+  const detail={label:labels[input.action],customerName:own?.data.customer.name||listed?.customer.name||'',orderNo:status.orderNo??orderNo,...(named?{requestRef:named}:{}),source:own?'crm':'manual',waitingStep:status.waitingStep};
   await c.db.batch([
    c.db.prepare('INSERT OR IGNORE INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(receiptId,recordId,c.me.name,'mold-request-receipt',canonical,at),
    c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),recordId,c.me.name,'mold-request:'+(approving?'approve':'withdraw'),JSON.stringify(detail),at),
   ]);
-  return Response.json({ok:true,status,request:own?await answerView(own.id):null,pending:await pendingFor(c,link)});
+  return Response.json({ok:true,status,request:own?await answerView(own.id):null,pending:await listFor()});
  }
  const repeated=await replay();if(repeated)return repeated;
  // Production's update of 2026-11-03 known to be live: a new request needs its quotation's or PO's file (2026-11-05) and is kept until

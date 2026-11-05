@@ -294,7 +294,7 @@ try {
   mock.state.down = false;
   const [download, fetched] = await Promise.all([sm.waitForEvent('download'), sm.waitForResponse(response => new URL(response.url()).pathname === '/api/mold-requests/design-file'), crmCard.getByRole('link', {name: 'تنزيل مسقط.dwg'}).click()]);
   const saved = fs.readFileSync(await download.path());
-  check([download.suggestedFilename(), Buffer.compare(saved, drawingDwg), fetched.status(), new URL(fetched.url()).searchParams.has('order')], ['مسقط.dwg', 0, 200, true], 'downloaded through the CRM by order number, with its name');
+  check([download.suggestedFilename(), Buffer.compare(saved, drawingDwg), fetched.status(), new URL(fetched.url()).searchParams.has('crm'), new URL(fetched.url()).searchParams.has('order')], ['مسقط.dwg', 0, 200, true, false], 'downloaded through the CRM by the request\'s crmRequestId (2026-11-05: never by its order number), with its name');
   await downloadFailure.waitFor({state: 'detached'});
   // Approved just now: the card stays below with Withdraw, its files named without links (they open from the list only while the
   // request waits for the sales manager, so a link there would answer 404 «الطلب لم يعد بانتظار اعتمادك»).

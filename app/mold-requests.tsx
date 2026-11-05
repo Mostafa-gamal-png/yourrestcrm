@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_HELD_NAME,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_FILE_WAITING_OTHERS,MOLD_QUOTE_FILE_WAITING_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldPaymentNames,moldPendingAgain,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_HELD_NAME,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_FILE_WAITING_OTHERS,MOLD_QUOTE_FILE_WAITING_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldOrderNoText,moldPaymentNames,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldCancelReasonUsed,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
@@ -50,7 +50,9 @@ export function useMoldRequests(me:Member|null){
  const refresh=useCallback(async()=>{
   if(!identity)return;
   const current=++generation.current;setLoading(true);
-  try{const next=await submitJson<MoldRequestsAnswer>('/api/mold-requests',{cache:'no-store'},{language:getLanguage()});if(current===generation.current){setData(next);setError('');}}
+  // refs=1: this page names the waiting list's items by requestRef or crmRequestId, so it gets every item, numbered by production or not
+  // yet (the products update of 2026-11-05); a page loaded before asks without it and gets only the numbered ones (moldPendingForOldPage).
+  try{const next=await submitJson<MoldRequestsAnswer>('/api/mold-requests?refs=1',{cache:'no-store'},{language:getLanguage()});if(current===generation.current){setData(next);setError('');}}
   catch(failure){if(current===generation.current)setError(messageOf(failure));}
   finally{if(current===generation.current)setLoading(false);}
  },[identity]);
@@ -125,7 +127,8 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
   {waitingSince(view,say)&&<small className="mold-card-since"><Hourglass size={13} aria-hidden="true"/>{waitingSince(view,say)}</small>}
   <p dir="auto">{view.specs.description}</p>
   <div className="mold-card-facts">
-   <span>{say('رقم أمر الإنتاج','Production order')}: <b>{remote?.orderNo??'—'}</b></span>
+   {/* The number from the latest status pulled (production gives it at its approval, 2026-11-05, and renumbered once): never kept elsewhere. */}
+   <span>{say('رقم أمر الإنتاج','Production order')}: <b data-order={remote?.orderNo??undefined}>{moldOrderNoText(remote,say,{cancelled:view.cancelled||remote?.status==='cancelled'})}</b></span>
    <span>{say('الكمية','Quantity')}: <b>{view.specs.quantity}</b></span>
    <span>{say('المراحل','Stages')}: <b>{remote?remote.stagesDone+'/'+remote.stagesTotal:'—'}</b></span>
    <span>{say('مقدّم الطلب','Requested by')}: {view.memberName}</span>
@@ -198,7 +201,10 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  * ownList: the requests of the manager's own list (theirs and their team's); one it does not hold (customer service's, say) opens from
  * here only while it waits for them. */
 function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPendingAnswer;ownList:Set<string>;say:Say;onOpen:(id:string)=>Promise<void>;onChanged:()=>void}){
- const [busy,setBusy]=useState<number|null>(null),[errors,setErrors]=useState<Record<number,string>>({}),[approved,setApproved]=useState<MoldPendingAnswer['items']>([]);
+ // Every item is named by moldPendingKey (the CRM's request by its crmRequestId, one registered in production by its requestRef), never by
+ // its order number: none until production approves it, and renumbered once (the products update of 2026-11-05). errors keeps, with each
+ // refusal, how to name the request should it leave the list.
+ const [busy,setBusy]=useState<string|null>(null),[errors,setErrors]=useState<Record<string,{text:string;label:string}>>({}),[approved,setApproved]=useState<MoldPendingAnswer['items']>([]);
  // Read on each new list (state adjusted while rendering, not in an effect): a copy dropped here stays dropped should the request
  // leave the list again later.
  const [listed,setListed]=useState(pending);
@@ -207,35 +213,40 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
   if(approved.some(copy=>moldPendingAgain(copy,pending.items)))setApproved(previous=>previous.filter(copy=>!moldPendingAgain(copy,pending.items)));
  }
  const keys=useRef(new Map<string,string>());
+ const labelOf=(item:MoldPendingAnswer['items'][number])=>(item.customer.name||'—')+(item.orderNo?' · '+say('أمر الإنتاج ','Production order ')+item.orderNo:'');
+ const failed=(item:MoldPendingAnswer['items'][number],text:string)=>setErrors(previous=>({...previous,[moldPendingKey(item)]:{text,label:labelOf(item)}}));
  const run=async(item:MoldPendingAnswer['items'][number],action:'approve-order'|'withdraw-order')=>{
   if(busy!==null)return;
-  setBusy(item.orderNo);setErrors(previous=>({...previous,[item.orderNo]:''}));
+  const key=moldPendingKey(item),target=moldPendingTarget(item);
+  setBusy(key);failed(item,'');
   // A retry after an unclear failure keeps its identifier, so production is asked once.
-  const name=action+':'+item.orderNo;if(!keys.current.has(name))keys.current.set(name,crypto.randomUUID());
+  const name=action+':'+key;if(!keys.current.has(name))keys.current.set(name,crypto.randomUUID());
   try{
-   await submitJson('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,orderNo:item.orderNo,requestId:keys.current.get(name)})},{language:getLanguage()});
+   if(!target)throw new Error(say('تعذّر تحديد الطلب؛ حدّث الصفحة.','The request could not be named; refresh the page.'));
+   await submitJson('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...target,requestId:keys.current.get(name)})},{language:getLanguage()});
    keys.current.delete(name);
-   setApproved(previous=>action==='approve-order'?[...previous.filter(other=>other.orderNo!==item.orderNo),item]:previous.filter(other=>other.orderNo!==item.orderNo));
+   setApproved(previous=>action==='approve-order'?[...previous.filter(other=>moldPendingKey(other)!==key),item]:previous.filter(other=>moldPendingKey(other)!==key));
    onChanged();
-  }catch(failure){if(definiteSubmitRejection(failure))keys.current.delete(name);setErrors(previous=>({...previous,[item.orderNo]:messageOf(failure)}));if(failure instanceof SubmitError&&failure.status===409)onChanged();}
+  }catch(failure){if(definiteSubmitRejection(failure))keys.current.delete(name);failed(item,messageOf(failure));if(failure instanceof SubmitError&&failure.status===409)onChanged();}
   finally{setBusy(null);}
  };
  const opening=async(item:MoldPendingAnswer['items'][number])=>{
-  setErrors(previous=>({...previous,[item.orderNo]:''}));
-  try{await onOpen(item.crmRequestId!);}catch(failure){setErrors(previous=>({...previous,[item.orderNo]:messageOf(failure)}));}
+  failed(item,'');
+  try{await onOpen(item.crmRequestId!);}catch(failure){failed(item,messageOf(failure));}
  };
- const waiting=pending.items.filter(item=>!approved.some(other=>other.orderNo===item.orderNo));
- // A refusal for a request that has since left the list (production moved it on, cancelled or deleted it) stays readable above it.
- const orphaned=Object.entries(errors).filter(([orderNo,text])=>text&&!pending.items.some(item=>String(item.orderNo)===orderNo)&&!approved.some(item=>String(item.orderNo)===orderNo));
+ const waiting=pending.items.filter(item=>!approved.some(other=>moldPendingKey(other)===moldPendingKey(item)));
+ // A refusal for a request that has since left the list (production moved it on or cancelled it) stays readable above it.
+ const orphaned=Object.entries(errors).filter(([key,error])=>error.text&&!pending.items.some(item=>moldPendingKey(item)===key)&&!approved.some(item=>moldPendingKey(item)===key));
  const card=(item:MoldPendingAnswer['items'][number],done:boolean)=>{
   const specs=item.specs,choice=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
   // The CRM's own request in the manager's own list (theirs or their team's) still opens once approved; one only this list shows does not.
   const inList=item.inCrm&&!!item.crmRequestId&&ownList.has(item.crmRequestId);
-  return <article key={item.orderNo} className="mold-pending" data-source={item.source} data-done={done||undefined}>
+  const key=moldPendingKey(item),error=errors[key]?.text;
+  return <article key={key} className="mold-pending" data-source={item.source} data-done={done||undefined}>
    <header><strong>{item.customer.name||'—'}</strong><span className="mold-chip" data-source={item.source}>{item.source==='manual'?say('مسجّل في تطبيق الإنتاج','Registered in production'):say('من الـCRM','From the CRM')}</span></header>
    <p dir="auto">{specs.description}</p>
    <div className="mold-card-facts">
-    <span>{say('رقم أمر الإنتاج','Production order')}: <b>{item.orderNo}</b></span><span>{say('الكمية','Quantity')}: <b>{specs.quantity??'—'}</b></span>
+    <span>{say('رقم أمر الإنتاج','Production order')}: <b data-order={item.orderNo??undefined}>{moldOrderNoText(item,say)}</b></span><span>{say('الكمية','Quantity')}: <b>{specs.quantity??'—'}</b></span>
     <span>{say('المندوب','Salesman')}: {item.salesman.name||'—'}</span>{item.enteredBy&&<span>{say('سجّله في الإنتاج','Entered in production by')}: <bdi>{item.enteredBy}</bdi></span>}
     <span>{say('تاريخ الطلب','Requested')}: {stamp(item.requestedAt)}</span>{!done&&item.waitingSince&&<span><Hourglass size={13} aria-hidden="true"/> {say('بانتظارك من ','Waiting for you since ')+stamp(item.waitingSince)}</span>}
     {/* How the customer pays, as production holds it now (none for a request asked for before 2026-11-03). */}
@@ -252,10 +263,10 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
    <MoldPendingDesignFiles files={item.designFiles} say={say} note={done?pendingFilesApprovedNote(inList,say):''}/>
    {/* The quotation's and PO's files, the same way. */}
    {(['quote','po'] as const).map(category=><MoldPendingDesignFiles key={category} category={category} files={category==='quote'?item.quoteFiles:item.poFiles} say={say} note={done?pendingFilesApprovedNote(inList,say):''}/>)}
-   {errors[item.orderNo]&&<p className="form-error" role="alert">{errors[item.orderNo]}</p>}
+   {error&&<p className="form-error" role="alert">{error}</p>}
    <div className="mold-actions">
-    {done?<><span className="mold-pending-done"><BadgeCheck size={16} aria-hidden="true"/>{say('اعتمدته الآن','You approved it')}</span><button type="button" className="btn subtle" disabled={busy!==null} onClick={()=>void run(item,'withdraw-order')}>{busy===item.orderNo?<Loader2 className="spin" size={16}/>:<Undo2 size={16}/>}{say('سحب الاعتماد','Withdraw approval')}</button></>
-     :<button type="button" className="btn primary" disabled={busy!==null} onClick={()=>void run(item,'approve-order')}>{busy===item.orderNo?<Loader2 className="spin" size={16}/>:<BadgeCheck size={16}/>}{say('اعتماد','Approve')}</button>}
+    {done?<><span className="mold-pending-done"><BadgeCheck size={16} aria-hidden="true"/>{say('اعتمدته الآن','You approved it')}</span><button type="button" className="btn subtle" disabled={busy!==null} onClick={()=>void run(item,'withdraw-order')}>{busy===key?<Loader2 className="spin" size={16}/>:<Undo2 size={16}/>}{say('سحب الاعتماد','Withdraw approval')}</button></>
+     :<button type="button" className="btn primary" disabled={busy!==null} onClick={()=>void run(item,'approve-order')}>{busy===key?<Loader2 className="spin" size={16}/>:<BadgeCheck size={16}/>}{say('اعتماد','Approve')}</button>}
     {item.inCrm&&item.crmRequestId&&(!done||inList)&&<button type="button" className="btn subtle" onClick={()=>void opening(item)}>{say('فتح الطلب','Open request')}</button>}
     {/* An older request's design link, as production holds it (no longer asked for since 2026-11-03): shown read-only. */}
     {specs.designUrl&&<a className="btn subtle" href={specs.designUrl} target="_blank" rel="noopener noreferrer">{say('رابط التصميم','Design link')}</a>}
@@ -264,7 +275,7 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
  };
  return <div className="mold-pending-list">
   {pending.error&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث القائمة الآن','The list could not be refreshed now')}: {moldErrorText(pending.error.code,say)}</p>}
-  {orphaned.map(([orderNo,text])=><p key={orderNo} className="form-error mold-pending-gone" role="alert">{say('أمر الإنتاج ','Production order ')+orderNo}: {text}</p>)}
+  {orphaned.map(([key,error])=><p key={key} className="form-error mold-pending-gone" role="alert"><bdi>{error.label}</bdi>: {error.text}</p>)}
   {!waiting.length&&!pending.error&&<p className="empty mold-empty">{say('لا توجد طلبات بانتظار اعتمادك.','Nothing is waiting for your approval.')}</p>}
   {waiting.map(item=>card(item,false))}
   {!!approved.length&&<h3 className="mold-subtitle">{say('اعتمدتها الآن','Approved just now')}</h3>}
@@ -309,7 +320,7 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
  // may cancel it.
  const restored=view.editable&&!view.cancelled&&remote?.status!=='cancelled'?moldRestoredText(view.sending.error,say,{cancellable:view.can.cancel}):'';
  const facts:[string,React.ReactNode][]=[
-  [say('رقم أمر الإنتاج','Production order'),remote?.orderNo??'—'],[say('السريال','Serial'),remote?.moldSerial||'—'],[say('تاريخ الإنتاج','Production date'),day(remote?.productionDate)],
+  [say('رقم أمر الإنتاج','Production order'),moldOrderNoText(remote,say,{cancelled:view.cancelled||remote?.status==='cancelled'})],[say('السريال','Serial'),remote?.moldSerial||'—'],[say('تاريخ الإنتاج','Production date'),day(remote?.productionDate)],
   [say('التسليم','Delivery'),remote?.delivered?say('سُلِّم','Delivered')+' · '+day(remote.deliveryDate):say('لم يُسلَّم','Not delivered')],[say('كود يورست','Yourrest code'),'YR-C-'+String(view.crmNumber).padStart(6,'0')],
   [say('تاريخ الطلب','Requested'),stamp(view.requestedAt)],[say('مقدّم الطلب','Requested by'),view.memberName],
   ...(approving?[[say('المندوب','Salesman'),current!.salesman.name||'—'] as [string,React.ReactNode]]:[]),

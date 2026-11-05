@@ -871,6 +871,84 @@ try {
   await nameCheck.unrouteAll();
   await nameCheck.context().close();
 
+  // ---- The products side's second message of 2026-11-05: the order number comes at production's approval, requestRef is the key. The
+  // application switches to the new numbering and renumbers once (here the request after a gap moves down by one): the representative's
+  // card shows the new number after the next pull and «لم يأخذ رقمًا بعد…» for a new request; the sales manager approves a request
+  // registered in production by its requestRef (no orderNo in the body) after downloading its file by it, and the CRM's by its
+  // crmRequestId; production approves and the number appears on the next pull; in English too.
+  {
+    const NO_NUMBER = 'لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)';
+    const sendStored = async (id, description) => {
+      const at = new Date().toISOString(), crmNumber = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number;
+      const data = {requestedAt: '2026-11-05T12:00:00+03:00', customer: {crmNumber, name: 'مصنع east1', address: 'حي الصناعية', city: 'الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'},
+        specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash'};
+      await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east1',?,'send',?,'rep',?,?,1)").bind(id, JSON.stringify(data), at, at, at).run();
+      await repApi('/api/mold-requests');
+      for (let n = 0; n < 100 && !mock.row(id); n++) await new Promise(resolve => setTimeout(resolve, 100));
+      return mock.row(id);
+    };
+    // Today's application: a gap (the deleted test request), then a request numbered after it.
+    mock.state.nextOrder += 1;
+    const gap = mock.state.nextOrder - 1, before = 'mr-' + crypto.randomUUID();
+    check((await sendStored(before, 'NUMBERED BEFORE THE SWITCH')).orderNo, gap + 1, 'today: numbered at creation, after the gap');
+    mock.setRequestRefs(true);
+    mock.renumber(gap + 1);
+    const fresh = 'mr-' + crypto.randomUUID();
+    check((await sendStored(fresh, 'NEW AFTER THE SWITCH')).orderNo, null, 'the new numbering: a new request has no number');
+    await stale();
+    const refRep = await open('rep');
+    await goMolds(refRep);
+    const beforeCard = refRep.locator('.mold-card', {hasText: 'NUMBERED BEFORE THE SWITCH'}), freshCard = refRep.locator('.mold-card', {hasText: 'NEW AFTER THE SWITCH'});
+    await freshCard.waitFor();
+    check([await beforeCard.locator('b[data-order]').innerText(), await freshCard.locator('.mold-card-facts span').first().innerText()], [String(gap), 'رقم أمر الإنتاج: ' + NO_NUMBER], 'the card: the renumbered request\'s new number, and «no number yet» for the new one');
+    await freshCard.click();
+    check(await sheet(refRep).locator('.mold-facts').first().locator('dd').first().innerText(), NO_NUMBER, 'the sheet says so too');
+    await shot(refRep, 'mold-sheet-no-number-yet');
+    await refRep.keyboard.press('Escape');
+    // The sales manager: one registered in production (named by its requestRef) and the CRM's new one, neither numbered.
+    const crmNumber = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number;
+    const registered = mock.registerManual({customerNo: crmNumber, customerName: 'مصنع بمرجع الإنتاج', description: 'REGISTERED WITH A REF'});
+    const itsFile = mock.addProductionFile(registered.requestRef, {name: 'رسم بمرجع.pdf', bytes: Buffer.from('%PDF-1.4 drawing by ref')});
+    mock.registerManual({customerNo: crmNumber, customerName: 'Registered factory', description: 'ENGLISH NO NUMBER'});
+    const refManager = await open('sm');
+    await goMolds(refManager);
+    const registeredCard = refManager.locator('.mold-pending', {hasText: 'REGISTERED WITH A REF'}), freshPending = refManager.locator('.mold-pending', {hasText: 'NEW AFTER THE SWITCH'});
+    await registeredCard.waitFor();
+    check([(await registeredCard.innerText()).includes('رقم أمر الإنتاج: ' + NO_NUMBER), (await freshPending.innerText()).includes('رقم أمر الإنتاج: ' + NO_NUMBER)], [true, true], '«طلبات بانتظار اعتمادي»: «no number yet» on both');
+    const fileLink = registeredCard.locator('.mold-design-compact a', {hasText: 'تنزيل'}).first();
+    check(await fileLink.getAttribute('href'), '/api/mold-requests/design-file?ref=' + registered.requestRef + '&file=' + itsFile.fileId, 'its file linked by its requestRef');
+    const [byRef] = await Promise.all([refManager.waitForEvent('download'), fileLink.click()]);
+    check(fs.readFileSync(await byRef.path()).toString(), '%PDF-1.4 drawing by ref', 'downloaded by its requestRef');
+    await shot(refManager, 'mold-pending-no-number');
+    await registeredCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+    await refManager.locator('.mold-pending[data-done]', {hasText: 'REGISTERED WITH A REF'}).waitFor();
+    const approvedBody = JSON.parse(mock.state.calls.findLast(call => call.route === 'approval' && call.signed).body);
+    check([approvedBody.requestRef, Object.hasOwn(approvedBody, 'orderNo'), Object.hasOwn(approvedBody, 'crmRequestId'), mock.byRef(registered.requestRef).approvals.sales?.via], [registered.requestRef, false, false, 'crm'], 'approved by its requestRef: no orderNo in the body');
+    // The list read again (the approval's answer refreshes it): the approved card once, under «اعتمدتها الآن», by its requestRef.
+    await refManager.locator('.mold-heading-tools button').first().click();
+    await refManager.waitForTimeout(500);
+    check([await refManager.locator('.mold-pending', {hasText: 'REGISTERED WITH A REF'}).count(), await refManager.locator('.mold-pending[data-done]', {hasText: 'REGISTERED WITH A REF'}).count()], [1, 1], 'once, as approved just now');
+    await freshPending.getByRole('button', {name: 'اعتماد', exact: true}).click();
+    await refManager.locator('.mold-pending[data-done]', {hasText: 'NEW AFTER THE SWITCH'}).waitFor();
+    check(JSON.parse(mock.state.calls.findLast(call => call.route === 'approval' && call.signed).body).crmRequestId, fresh, 'the CRM\'s own by its crmRequestId');
+    await refManager.context().close();
+    // Production approves: the last number + 1; the next pull shows it on the card.
+    mock.approve(fresh, 'production');
+    const given = mock.row(fresh).orderNo;
+    await stale();
+    await refRep.locator('.mold-heading-tools button').first().click();
+    await freshCard.locator('b[data-order="' + given + '"]').waitFor();
+    check(await freshCard.locator('b[data-order]').innerText(), String(given), 'production approved it: the number on the next pull');
+    await refRep.context().close();
+    // English (registered with the others: the server keeps production's list a minute).
+    const english = await open('sm', {language: 'en'});
+    await goMolds(english);
+    const englishCard = english.locator('.mold-pending', {hasText: 'ENGLISH NO NUMBER'});
+    await englishCard.waitFor();
+    ok((await englishCard.innerText()).includes('Production order: No number yet (given at production approval)'), 'in English: «No number yet (given at production approval)»');
+    await english.context().close();
+  }
+
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));
   console.log(JSON.stringify({ok: true, checks, screenshots, realChromium: true, productionApplicationReal: false, productionDataUsed: false}));

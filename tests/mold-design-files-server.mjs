@@ -614,7 +614,11 @@ try{
   file=await download('order='+mock.row(kept).orderNo+'&file='+quoteFileId,'manager');
   check([file.status,Buffer.from(await file.arrayBuffer()).equals(pdf('kept quotation'))],[200,true],'the sales manager downloads a quotation file from the waiting list by its fileId (quoteFiles)');
   const pending=await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true}),item=pending.items.find(entry=>entry.crmRequestId===kept);
-  check([item.quoteOrPoMissing,item.quoteFiles.length,item.designFiles.length,item.quoteFiles[0].href.startsWith('/api/mold-requests/design-file?order=')],[false,1,2,true],'the waiting list: the released request with its quotation file (each list with its link), not missing');
+  // The CRM's request is linked by its crmRequestId (2026-11-05, the second update: an order number names nothing); ?order= above, as a
+  // page loaded before links it, still works for a numbered item.
+  check([item.quoteOrPoMissing,item.quoteFiles.length,item.designFiles.length,item.quoteFiles[0].href.startsWith('/api/mold-requests/design-file?crm='+kept+'&file=')],[false,1,2,true],'the waiting list: the released request with its quotation file (each list with its link, by its crmRequestId), not missing');
+  file=await download(item.quoteFiles[0].href.split('?')[1],'manager');
+  check([file.status,Buffer.from(await file.arrayBuffer()).equals(pdf('kept quotation'))],[200,true],'the link as listed (crm=) downloads the same file');
   mock.setQuotePo(false);
  }
 
