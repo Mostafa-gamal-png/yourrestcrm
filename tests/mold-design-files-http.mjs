@@ -349,7 +349,8 @@ try {
   // ---- 2026-11-03 (production's second update): the quotation's and PO's files. Before the CRM knows the update is live none is taken;
   // after it each goes with its category (a PDF or an image, 5 of each), production's refusals are said with their reason, a retry keeps
   // the category, production's own PO file shows in its group, and a file of any list downloads by its fileId (the request's sheet and the
-  // sales manager's list)
+  // sales manager's list). Since 2026-11-05 a new request carries no number and waits in the CRM for its first quotation or PO file,
+  // which releases it.
   const uploadAs = async (id, name, bytes, category) => { const encoded = await multipart({requestId: crypto.randomUUID(), id, ...(category ? {category} : {}), file: {name, bytes}}); return as('rep')('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: encoded.headers}); };
   const early = await create('rep', 'east1', 'quotation before the update');
   res = await uploadAs(early.id, 'عرض سعر.pdf', pdf('quotation before'), 'quote');
@@ -357,10 +358,11 @@ try {
   mock.setQuotePo(true);
   await age(early.id);
   check((await list('rep')).quotePo, true, 'production updates; the next pull teaches the CRM');
-  const quoted = (await (await post('rep', {action: 'create', customerId: 'east1', specs: {...specs, description: 'with its quotation'}, payment: 'cash', quoteNo: 'Q-2026-0153'})).json()).request;
+  const quoted = (await (await post('rep', {action: 'create', customerId: 'east1', specs: {...specs, description: 'with its quotation'}, payment: 'cash'})).json()).request;
+  check([quoted.sending.state, quoted.remote], ['needs_file', null], 'a new request: kept in the CRM until its quotation or PO file');
   body = await (await uploadAs(quoted.id, 'عرض سعر Q-2026-0153.pdf', pdf('quotation'), 'quote')).json();
   const quoteFile = body.file;
-  check([quoteFile.state, quoteFile.category, JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, body.request.remote.quoteFiles.map(file => file.crmFileId)], ['sent', 'quote', 'quote', [quoteFile.crmFileId]], 'a quotation PDF: sent with its category, listed by production in quoteFiles');
+  check([quoteFile.state, quoteFile.category, JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, body.request.remote.quoteFiles.map(file => file.crmFileId), body.request.sending.state], ['sent', 'quote', 'quote', [quoteFile.crmFileId], 'sent'], 'a quotation PDF: releases the request, then goes with its category, listed by production in quoteFiles');
   check((await (await uploadAs(quoted.id, 'PO.png', png(8, 8), 'po')).json()).file.category, 'po', 'a PO image');
   const quoteSends = calls('design-files');
   res = await uploadAs(quoted.id, 'مسقط.dwg', Buffer.from('AC1027'), 'quote');
@@ -393,7 +395,7 @@ try {
   check([res.status, res.bytes.equals(pdf('production po'))], [200, true], 'downloaded through the CRM by its fileId');
   const item = (await list('sm')).pending.items.find(entry => entry.crmRequestId === quoted.id), pendingPo = item.poFiles.find(file => file.fileId === ownPo.fileId);
   res = await as('sm')(pendingPo.href);
-  check([item.quoteNo, item.quoteFiles.length, res.status, res.bytes.equals(pdf('production po'))], ['Q-2026-0153', 5, 200, true], 'the sales manager: the numbers, the quotation files, and production\'s PO file by order number and fileId');
+  check([item.quoteNo, item.quoteOrPoMissing, item.quoteFiles.length, res.status, res.bytes.equals(pdf('production po'))], ['', false, 5, 200, true], 'the sales manager: no number, not missing, the quotation files, and production\'s PO file by order number and fileId');
   res = await remove('rep', quoted.id, quoteFile.crmFileId);
   check([res.status, (await res.json()).request.remote.quoteFiles.some(file => file.crmFileId === quoteFile.crmFileId)], [200, false], 'a quotation file is deleted as a design file is');
   mock.setQuotePo(false);

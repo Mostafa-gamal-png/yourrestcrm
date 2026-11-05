@@ -2,17 +2,19 @@
 // still accepts changes. The file is checked as production checks it (name, extension, 25 MiB, a real PDF, an image of at most 80 000 000
 // pixels, 10 files a request with production's), kept in the CRM's object store with its row and audit entry (a receipt makes a repeated
 // tap harmless; the entry never holds the contents), then sent with design-files as soon as production holds the request. A send that
-// takes long goes on in the background. Attaching undoes the approvals given (the screen warns first).
+// takes long goes on in the background. Attaching a design file undoes the approvals given (the screen warns first).
 // The quotation's and PO's files (yourrest-products, second update of 2026-11-03) come the same way with `category` (quote or po): a PDF or
 // an image only, at most 5 of each kind (production's included), and only once production's update is known to be live; a design file
-// is one without category, as before (10 a request).
+// is one without category, as before (10 a request). Since 2026-11-05 one of them is required of a new request, kept in the CRM until
+// then: the first attached releases it (the request is sent, then its files, releaseMoldRequest). Attaching one no longer undoes the
+// approvals (production's update of 2026-11-05), so no warning is shown for it.
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {readRequestForm} from '@/lib/request-body';
 import {moldDesignFileCheck,MOLD_CATEGORY_MAX_FILES} from '@/portable/mold-rules.mjs';
-import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignRefusalText,moldEditable,moldRequestView,type MoldFileCategory} from '@/lib/mold-requests';
-import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
+import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldAwaitsQuoteFile,moldDesignCount,moldDesignRefusalText,moldEditable,moldRequestView,type MoldFileCategory} from '@/lib/mold-requests';
+import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldQuotePoSupported,moldViewReasons,productsLink,releaseMoldRequest,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 // Multipart parsing, hashing and the object write stay bounded together (per Node process, as for visit files).
@@ -65,7 +67,9 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
  if(row.memberId!==c.me.id)throw new CRMError('إرفاق ملفات التصميم لمن طلب القالب',403);
  if(!moldEditable(row))throw new CRMError(row.cancelledAt?'الطلب ملغى':'اكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد تغيير ملفات الطلب ممكنًا',409);
- const count=moldDesignCount(row,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),category),full=FULL[category];
+ const before=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),count=moldDesignCount(row,before,category),full=FULL[category];
+ // A new request kept for its quotation's or PO's file (2026-11-05): this one, if it is one, releases it once saved.
+ const releases=category!=='design'&&moldAwaitsQuoteFile(row,before);
  if(count.crm+count.production>=count.max)throw new CRMError(full,409);
  // Every attempt owns a separate object: a losing concurrent retry removes only its own, never the saved file's.
  objectKey='mold-design/'+row.id+'/'+crmFileId+'/'+crypto.randomUUID();
@@ -88,11 +92,14 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
   throw new CRMError(places&&places.crm+places.production>=places.max?full:'تغيّرت حالة الطلب أو صلاحياتك أثناء الحفظ. حدّث الصفحة.',409);
  }
  objectKey='';
- // Saved. When production holds the request the file goes now; the answer waits a little for it.
+ // Saved. When production holds the request the file goes now; the answer waits a little for it. The first quotation's or PO's file of
+ // a request kept for it sends the request first, then its files oldest first (this one among them), through the usual sends; the
+ // answer waits as long for that, and the sends go on in the background beyond it.
  let outcome:DesignOutcome|null=null;
- if(row.accepted&&link.ok){
+ if((row.accepted||releases)&&link.ok){
   let timer:ReturnType<typeof setTimeout>|undefined;
-  outcome=await Promise.race([sendMoldDesignFile(c.db,crmFileId,{link}).catch(()=>null),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),SEND_WAIT_MS);})]);
+  const sending=row.accepted?sendMoldDesignFile(c.db,crmFileId,{link}):releaseMoldRequest(c.db,row.id,{link}).then(released=>released.files.get(crmFileId)||null);
+  outcome=await Promise.race([sending.catch(()=>null),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),SEND_WAIT_MS);})]);
   clearTimeout(timer);
  }
  if(outcome?.kind==='locked')return answer(409,outcome,'اكتملت الاعتمادات قبل وصول الملف؛ لم يُرسل. الطلب كما يحمله الإنتاج.');

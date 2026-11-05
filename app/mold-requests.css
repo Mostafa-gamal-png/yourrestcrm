@@ -42,10 +42,10 @@
 .mold-choice label[data-active=true]{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 10%,transparent);font-weight:600}.mold-choice input{accent-color:var(--primary)}
 .mold-choice[aria-invalid=true] label{border-color:var(--destructive)}
 /* The quotation and PO numbers (production's update of 2026-11-03): the two fields, one at least; the numbers on a card; the note when production lacks both. */
-.mold-quote-po-fields{border:0;margin:0;padding:0;min-width:0;display:grid;gap:6px}.mold-quote-po-fields legend{font-size:14px;margin-bottom:6px;padding:0}
-.mold-quote-po-fields[aria-invalid=true]>legend{color:var(--destructive)}
-.mold-quote-po bdi{unicode-bidi:isolate}
+.mold-quote-files{border:0;margin:0;padding:0;min-width:0;display:grid;gap:8px}.mold-quote-files>legend{font-size:14px;font-weight:600;margin-bottom:6px;padding:0}
+.mold-quote-files[aria-invalid=true]>legend{color:var(--destructive)}
 .mold-quote-po-missing{display:flex;align-items:center;gap:6px;margin:0;padding:6px 10px;border-radius:10px;font-size:13px;line-height:1.5;background:#f5e9c8;color:#6a4a0e}
+.mold-quote-po-missing>span{display:grid;gap:2px}.mold-quote-po-missing small{font-size:12px;opacity:.9}
 .dark .mold-quote-po-missing{background:#3a3014;color:#f2dca0}
 .field-error{color:var(--destructive);font-size:13px}
 .mold-customer-search label{display:grid;gap:6px;font-size:14px}.mold-customer-search .search{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:0 10px;background:var(--background);min-height:44px}.mold-customer-search input{flex:1;min-width:0;border:0;background:transparent;font-size:16px;outline:none}

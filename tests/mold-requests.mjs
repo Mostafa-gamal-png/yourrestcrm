@@ -12,7 +12,10 @@
 // how the CRM learns that the update is live (quoteOrPoMissing in a status object or a pending item), the files' categories (a PDF or an
 // image only, the body's category for those alone), the view's numbers and limits, and the stand-in as the application before and after
 // its update. Who sees which request (the owner, 2026-11-03): the sales manager's team walked up «المشرف», what each role reads and what
-// each manager approves; «رابط التصميم» no longer asked for. Synthetic files only; no real account.
+// each manager approves; «رابط التصميم» no longer asked for. Since production's update of 2026-11-05: the view carries production's flag
+// alone (no number), a new request asked for under the rule waits for its quotation or PO file (moldAwaitsQuoteFile, needs_file, no
+// resend), the sales manager's approval waits for design files only, and the stand-in counts files, not numbers, and keeps the approvals
+// for a quotation's or PO's file. Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
@@ -291,13 +294,12 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same([dictionary[lib.MOLD_SAME_REASON_TEXT[0]], dictionary[MOLD_PAYMENT_REQUIRED]], [lib.MOLD_SAME_REASON_TEXT[1], 'Choose how the customer pays: cash or deferred'], 'the server\'s two new refusals have their English pair');
   const restoredLocked = 'رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
   same([readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(restoredLocked), dictionary[restoredLocked]], [true, 'The production manager restored it after the cancellation, and the approvals are complete or production has started; it can no longer be cancelled.'], 'the same cancellation once it may no longer be cancelled: its own refusal, with its English pair');
-  // ---- 2026-11-03 (production's second update): the numbers a reader sees, a request held until the update is known, places by category
+  // ---- 2026-11-03 (production's second update) as it stands since 2026-11-05: production's flag a reader sees (no number any more), a
+  // request held while the update is unknown, places by category
   const numbered = {...data, payment: 'cash', quoteNo: 'Q-1'}, answered = {...status, quoteNo: 'Q-2', poNo: 'PO-5', quoteOrPoMissing: false, quoteFiles: [], poFiles: []};
-  same(lib.moldRequestView(row({data: numbered}), me, [], true, [], [], true).quotePo, {quoteNo: 'Q-1', poNo: '', missing: false, from: 'crm'}, 'before production holds the request: the CRM\'s own numbers');
-  same(lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: status}), me, [], true, [], [], true).quotePo, null, 'production holds it and its status carries none (the older application): nothing shown, never the CRM\'s copy');
-  same(lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: answered}), me, [], true, [], [], true).quotePo, {quoteNo: 'Q-2', poNo: 'PO-5', missing: false, from: 'production'}, 'production\'s numbers now (its production manager corrected and added them), not the CRM\'s');
-  same(lib.moldRequestView(row({outbox: null, accepted: data, remote: {...answered, quoteNo: '', poNo: '', quoteOrPoMissing: true}}), me, [], true).quotePo, {quoteNo: '', poNo: '', missing: true, from: 'production'}, 'production lacks both: the view says so');
-  same([lib.moldRequestView(row({data}), me, [], true, [], [], false).quotePo, lib.moldRequestView(row({data}), me, [], true, [], [], true).quotePo], [null, null], 'a request without numbers that production does not hold yet (before the update, say): no quotation or PO rows at all');
+  same([lib.moldRequestView(row({data: numbered}), me, [], true, [], [], true).quotePo, lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: status}), me, [], true, [], [], true).quotePo], [null, null], 'no number is shown: not the CRM\'s own before production holds the request, nothing from an older status');
+  same(lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: answered}), me, [], true, [], [], true).quotePo, {missing: false}, 'production\'s flag alone, not its numbers (production no longer shows them)');
+  same(lib.moldRequestView(row({outbox: null, accepted: data, remote: {...answered, quoteOrPoMissing: true}}), me, [], true).quotePo, {missing: true}, 'production lacks the file (its number alone is not enough): the view says so');
   same([lib.moldRequestView(row({data: numbered}), me, [], true, [], [], false).sending.state, lib.moldRequestView(row({data: numbered}), me, [], true, [], [], true).sending.state, lib.moldRequestView(row({}), me, [], true, [], [], false).sending.state, lib.moldRequestView(row({data: numbered}), me, [], false, [], [], false).sending.state],
     ['held', 'waiting', 'waiting', 'off'], 'a request saved with a number is held while the update is unknown (one without, as before; the link off says so first)');
   same(lib.moldSendingNames.held, ['بانتظار تحديث تطبيق المنتجات', 'Waiting for the products application update'], 'held, in Arabic and English');
@@ -313,14 +315,31 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same(lib.moldPendingFiles({orderNo: 9, designFiles: [production(1)], quoteFiles: [production(2)], poFiles: undefined}), {designFiles: [{...production(1), category: 'design', href: '/api/mold-requests/design-file?order=9&file=1', viewable: true}], quoteFiles: [{...production(2), category: 'quote', href: '/api/mold-requests/design-file?order=9&file=2', viewable: true}], poFiles: []}, 'a pending item\'s files of every list, each downloaded by its fileId');
   same([lib.moldDesignRefusalText('too_many_files', say('ar')), lib.moldDesignRefusalText('too_many_files', say('ar'), 'quote'), lib.moldDesignRefusalText('too_many_files', say('en'), 'po'), lib.moldDesignRefusalText('not_document', say('ar'), 'quote'), lib.moldDesignRefusalText('not_document', say('en'), 'po')],
     ['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)', 'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج)', 'At most 5 PO files a request (yours and production\'s)', 'ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'A quotation or PO file must be a PDF or an image'], 'the new refusals in words, each kind its own limit');
-  same([lib.moldErrorText('request_locked', say('ar'), {reason: 'production_only', quotePo: true}), lib.moldErrorText('request_locked', say('en'), {reason: 'production_only', quotePo: true}), lib.moldErrorText('request_locked', say('ar'), {reason: 'production_only'}), lib.moldErrorText('timeout', say('ar'), {quotePo: true})],
-    ['بيانات الطلب يعدّلها مدير الإنتاج فقط؛ كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO', 'The request\'s data is edited by the production manager only; Ask the production manager to add the quotation / PO number', 'بيانات الطلب يعدّلها مدير الإنتاج فقط', 'لم يرد تطبيق الإنتاج خلال 10 ثوانٍ'], 'production_only once the update is live: who adds a number now');
-  same([lib.MOLD_QUOTE_PO_MISSING_TEXT, lib.moldQuotePoNames.quoteNo, lib.moldQuotePoNames.poNo, lib.moldFieldNames.quoteNo, lib.moldFieldNames.poNo], [['ناقص عرض السعر / الـ PO، يضيفه مدير الإنتاج', 'The quotation / PO is missing; the production manager adds it'], ['رقم عرض السعر', 'Quotation no.'], ['رقم الـ PO', 'PO no.'], ['رقم عرض السعر غير مقبول', 'The quotation number is not accepted'], ['رقم الـ PO غير مقبول', 'The PO number is not accepted']], 'the names and the missing note, Arabic and English');
-  const serverTexts = [MOLD_QUOTE_PO_REQUIRED, 'رقم عرض السعر أطول من 60 حرف', 'رقم الـ PO أطول من 60 حرف', 'تطبيق المنتجات لسه ما اتحدّثش لاستقبال رقم عرض السعر والـ PO؛ حدّث الصفحة وابعت الطلب من غيرهم.', 'تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.',
-    'بيانات الطلب يعدّلها مدير الإنتاج فقط؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله. كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO.', 'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.', 'الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.'];
-  same(serverTexts.filter(text => typeof dictionary[text] !== 'string'), [], 'every new refusal of the server has its English pair');
+  same([lib.moldErrorText('request_locked', say('ar'), {reason: 'production_only'}), lib.moldErrorText('request_locked', say('en'), {reason: 'production_only'}), lib.moldErrorText('timeout', say('ar'))],
+    ['بيانات الطلب يعدّلها مدير الإنتاج فقط', 'The request\'s data is edited by the production manager only', 'لم يرد تطبيق الإنتاج خلال 10 ثوانٍ'], 'production_only no longer adds who adds a number (2026-11-05: the file is attached from the CRM)');
+  same([lib.MOLD_QUOTE_PO_MISSING_TEXT, lib.MOLD_QUOTE_FILE_REQUIRED_TEXT, lib.moldSendingNames.needs_file, lib.moldFieldNames.quoteNo, lib.moldFieldNames.poNo],
+    [['ناقص ملف عرض السعر / الـ PO', 'The quotation / PO file is missing'], ['أرفق ملف عرض السعر أو الـ PO (واحد على الأقل)', 'Attach the quotation or PO file (at least one)'], ['بانتظار ملف عرض السعر / الـ PO', 'Waiting for the quotation / PO file'], ['رقم عرض السعر غير مقبول', 'The quotation number is not accepted'], ['رقم الـ PO غير مقبول', 'The PO number is not accepted']],
+    'the missing note, the form\'s refusal and the held state (2026-11-05), production\'s refusal of a number (an older request\'s), Arabic and English');
+  same([lib.MOLD_QUOTE_FILE_REQUIRED_TEXT[0], Object.hasOwn(lib, 'moldQuotePoNames'), Object.hasOwn(lib, 'MOLD_QUOTE_PO_REQUIRED_TEXT')], [rules.MOLD_QUOTE_FILE_REQUIRED, false, false], 'the form asks for the file in the rules\' words; no number field\'s names or refusal remain');
+  const quoteGone = 'رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.', quoteFirst = 'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.';
+  const serverTexts = [quoteGone, quoteFirst, 'تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.', 'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.', 'الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.'];
+  same(serverTexts.filter(text => typeof dictionary[text] !== 'string'), [], 'every refusal of the server has its English pair');
   const sources = ['app/api/mold-requests/route.ts', 'app/api/mold-requests/design-files/route.ts'].map(file => readFileSync(path.join(root, file), 'utf8')).join('\n');
-  same(serverTexts.slice(3, 5).filter(text => !sources.includes(text)), [], 'and the server says them (a number, or a quotation\'s or PO\'s file, before the update)');
+  same(serverTexts.slice(0, 3).filter(text => !sources.includes(text)), [], 'and the server says them (a number from a page loaded before, a resend of a request kept for its file, a quotation\'s or PO\'s file before the update)');
+  // ---- 2026-11-05: a new request is kept in the CRM until its first quotation or PO file (moldAwaitsQuoteFile), whatever the link
+  const fileAsked = {...data, payment: 'cash', fileRequired: true}, quoteOf = (category, change = {}) => ({...waitingFile, id: 'mdf-' + category, name: category + '.pdf', category, ...change});
+  const awaits = (change, files) => lib.moldAwaitsQuoteFile(row({data: fileAsked, ...change}), files);
+  same([awaits({}, []), awaits({}, [waitingFile]), awaits({}, [quoteOf('quote')]), awaits({}, [quoteOf('po')]), awaits({}, [quoteOf('quote', {deletedAt: at, outbox: null})]), awaits({}, [quoteOf('po', {nextAttemptAt: null, lastAttemptAt: at, lastError: {code: 'file_missing', http: 0, at, final: true}})])],
+    [true, true, false, false, true, true], 'asked for under the rule: kept while it has no quotation or PO file (a design file is not one; a deleted one, or one refused for good, counts for nothing)');
+  same([lib.moldAwaitsQuoteFile(row({data: {...data, payment: 'cash'}}), []), lib.moldAwaitsQuoteFile(row({data: numbered}), []), awaits({outbox: null, accepted: fileAsked, remote: status}, []), awaits({attempts: 1, lastAttemptAt: at, lastError: {code: 'timeout', http: 0, at: after}}, []), awaits({cancelledAt: at, outbox: 'cancel'}, [])],
+    [false, false, false, false, false], 'never a request asked for before the rule (with a number or none: it goes as it always did), one production holds, one whose send may have arrived, or a cancellation');
+  const heldView = (files, linkReady = true) => lib.moldRequestView(row({data: fileAsked}), me, [], linkReady, files, [], true);
+  same([heldView([]).sending.state, heldView([], false).sending.state, heldView([quoteOf('quote')]).sending.state, heldView([waitingFile]).sending.state, heldView([]).can.resend, heldView([quoteOf('po')]).can.resend, heldView([]).can.attach],
+    ['needs_file', 'needs_file', 'waiting', 'needs_file', false, true, true], 'its state says so, even with the link off; nothing to resend while it waits; the requester attaches the file');
+  // Approvals (2026-11-05): a quotation's or PO's file on its way no longer holds the sales manager's approval; a design file still does.
+  const atSales = {outbox: null, accepted: data, remote: {...status, approvals: {required: true, sales: null, production: null, admin: null}}}, sm = {id: 'sm', role: 'manager'};
+  same([lib.moldPermissions(row(atSales), sm, [quoteOf('quote')]).approve, lib.moldPermissions(row(atSales), sm, [quoteOf('po')]).approve, lib.moldPermissions(row(atSales), sm, [waitingFile]).approve, lib.moldPermissions(row(atSales), sm, []).approve], [true, true, false, true], 'the approval waits for a design file on its way (its arrival undoes it), not for a quotation\'s or PO\'s');
+  same([lib.moldFileResetsApprovals({category: 'design'}), lib.moldFileResetsApprovals({}), lib.moldFileResetsApprovals({category: 'quote'}), lib.moldFileResetsApprovals({category: 'po'})], [true, true, false, false], 'which files undo the approvals: design files (the signature among them) only');
   // «رابط التصميم» removed (2026-11-03): the server's refusal of a link from a page loaded before, with its English pair.
   const designUrlGone = 'رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
   same([readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(designUrlGone), dictionary[designUrlGone]], [true, 'The design link was removed from the request; refresh the page and attach the design as a file.'], 'the design link\'s refusal, said by the server, with its English pair');
@@ -815,13 +834,13 @@ try {
   mock.setQuotePo(true);
   answer = await call('status', {ids: ['mr-qpo-old']});
   const afterUpdate = answer.json.requests[0];
-  eq([afterUpdate.quoteOrPoMissing, afterUpdate.quoteNo, afterUpdate.poNo, afterUpdate.designFiles.length, afterUpdate.quoteFiles, moldQuotePoAnswered(moldStatusObject(afterUpdate))], [false, '', '', 2, [], true], 'after the update: a request taken before is not «missing», has no number, keeps its files as design files; the key says the update is live');
+  eq([afterUpdate.quoteOrPoMissing, afterUpdate.quoteNo, afterUpdate.poNo, afterUpdate.designFiles.length, afterUpdate.quoteFiles, moldQuotePoAnswered(moldStatusObject(afterUpdate))], [true, '', '', 2, [], true], 'after the update (as it stands since 2026-11-05): a request taken before keeps its files as design files, so it has no quotation or PO file and finance has not approved: «missing»; the key says the update is live');
   eq([(await call('requests', quoted('mr-qpo-old'))).reason, (await call('requests', moldRequestBody({id: 'mr-qpo-old', requestedAt: JSON.parse(mock.state.calls.find(c => c.route === 'requests' && c.body.includes('mr-qpo-old')).body).requestedAt, customer, salesman, specs, payment: 'cash'}))).http],
     ['production_only', 200], 'and a resend cannot add the number it dropped (409 production_only); the request without it is the original (200)');
   // New requests: the numbers normalized, refused beyond 60 characters or when not a text, part of the original
   const fresh = (id, extra) => ({...moldRequestBody({id, requestedAt: riyadhIso(Date.now()), customer, salesman, specs, payment: 'deferred'}), ...extra});
   answer = await call('requests', fresh('mr-qpo', {quoteNo: '  Q-٢٠٢٦-0153 ', poNo: ''}));
-  eq([answer.http, mock.row('mr-qpo').quoteNo, mock.row('mr-qpo').poNo, answer.json.request.quoteNo, answer.json.request.poNo, answer.json.request.quoteOrPoMissing], [201, 'Q-2026-0153', null, 'Q-2026-0153', '', false], 'a new request with its quotation: stored normalized; "" is none');
+  eq([answer.http, mock.row('mr-qpo').quoteNo, mock.row('mr-qpo').poNo, answer.json.request.quoteNo, answer.json.request.poNo, answer.json.request.quoteOrPoMissing], [201, 'Q-2026-0153', null, 'Q-2026-0153', '', true], 'a request with its quotation number: still taken and stored normalized ("" is none), but not counted (2026-11-05): missing until a file comes');
   for (const [extra, field] of [[{quoteNo: 'x'.repeat(61)}, 'quoteNo'], [{poNo: 7781}, 'poNo'], [{quoteNo: 'a\u0001b'}, 'quoteNo']]) {
     answer = await call('requests', fresh('mr-qpo-bad', extra));
     eq([answer.kind, answer.http, answer.code, answer.fields, mock.row('mr-qpo-bad')], ['rejected', 400, 'invalid_payload', [field], undefined], JSON.stringify(extra).slice(0, 40) + ': 400 invalid_payload naming ' + field + ', nothing stored');
@@ -833,18 +852,18 @@ try {
   answer = await call('requests', fresh('mr-qpo-none', {}));
   eq([answer.json.request.quoteOrPoMissing, answer.json.request.quoteNo, answer.json.request.poNo], [true, '', ''], 'a request taken after the update without either: quoteOrPoMissing');
   // The production manager adds or corrects a number in the products application: the status shows it, the original stays the CRM's
-  eq([mock.setNumbers('mr-qpo-none', {poNo: ' PO-٧٧٨١ '}).poNo, (await call('status', {ids: ['mr-qpo-none']})).json.requests[0].quoteOrPoMissing], ['PO-7781', false], 'the production manager adds the PO: shown, no longer missing');
+  eq([mock.setNumbers('mr-qpo-none', {poNo: ' PO-٧٧٨١ '}).poNo, (await call('status', {ids: ['mr-qpo-none']})).json.requests[0].quoteOrPoMissing], ['PO-7781', true], 'the production manager adds a PO number: stored, still missing (a number alone is not enough)');
   eq((await call('requests', JSON.parse(mock.state.calls.findLast(c => c.route === 'requests' && c.body.includes('"mr-qpo-none"') && c.signed).body))).http, 200, 'the CRM\'s first data (without the number) is still the original a retry is compared with');
   mock.setNumbers('mr-qpo', {quoteNo: 'Q-2026-0153-B'});
   eq([(await call('status', {ids: ['mr-qpo']})).json.requests[0].quoteNo, (await call('requests', original)).http], ['Q-2026-0153-B', 200], 'a correction is production\'s: the status says it, a retry of the original stays 200');
   let pendingNow = (await call('pending', {})).json.requests;
   const pendingItem = id => moldPendingItem(pendingNow.find(item => item.crmRequestId === id));
-  eq([pendingItem('mr-qpo').quoteNo, pendingItem('mr-qpo').quoteOrPoMissing, pendingItem('mr-qpo-none').poNo, pendingItem('mr-qpo-60').poNo.length], ['Q-2026-0153-B', false, 'PO-7781', 60], 'pending: each request\'s numbers as production holds them now');
+  eq([pendingItem('mr-qpo').quoteNo, pendingItem('mr-qpo').quoteOrPoMissing, pendingItem('mr-qpo-none').poNo, pendingItem('mr-qpo-60').poNo.length], ['Q-2026-0153-B', true, 'PO-7781', 60], 'pending: each request\'s numbers as production holds them now, missing without a file');
   eq((await call('cancel', {crmRequestId: 'mr-qpo-60', reason: 'x'})).json.request.quoteOrPoMissing, false, 'a cancelled request is never «missing»');
   // design-files: the category, a PDF or an image for a quotation or PO, each kind's own limit, the same crmFileId with another category
   const filed = (crmFileId, name, bytes, category) => call('design-files', moldDesignFileBody({crmRequestId: 'mr-qpo', crmFileId, name, category}, bytes));
   answer = await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'), 'quote');
-  eq([answer.http, answer.json.file.category, answer.json.request.quoteFiles.map(file => [file.crmFileId, file.category]), answer.json.request.designFiles], [201, 'quote', [['mdf-q1', 'quote']], []], 'a quotation file: in quoteFiles with its category, not in designFiles');
+  eq([answer.http, answer.json.file.category, answer.json.request.quoteFiles.map(file => [file.crmFileId, file.category]), answer.json.request.designFiles, answer.json.request.quoteOrPoMissing], [201, 'quote', [['mdf-q1', 'quote']], [], false], 'a quotation file: in quoteFiles with its category, not in designFiles; no longer missing');
   eq([(await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'), 'quote')).http, (await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'), 'po')).reason, (await filed('mdf-q1', 'عرض سعر.pdf', pdf('quotation'))).reason],
     [200, 'crm_file_id_used', 'crm_file_id_used'], 'the same file with the same category again: 200; the same crmFileId with another category: crm_file_id_used');
   answer = await filed('mdf-p-dwg', 'رسم.dwg', Uint8Array.from([65, 67]), 'po');
@@ -859,6 +878,30 @@ try {
   pendingNow = (await call('pending', {})).json.requests;
   eq([pendingItem('mr-qpo').quoteFiles.length, pendingItem('mr-qpo').poFiles.map(file => [file.source, file.category]), pendingItem('mr-qpo').designFiles.map(file => file.crmFileId)], [5, [['crm', 'po'], ['production', 'po']], ['mdf-d1']], 'pending lists the quotation\'s and PO\'s files (production\'s own too), designFiles the design files only');
   eq((await call('design-file-delete', {crmRequestId: 'mr-qpo', crmFileId: 'mdf-q1'})).json.request.quoteFiles.length, 4, 'a quotation file is deleted as a design file is');
+  // 2026-11-05: a quotation's or PO's file attached or deleted keeps the approvals; a design file still undoes them. Missing follows the
+  // files (the CRM's and production's own) and finance's approval alone.
+  answer = await call('requests', fresh('mr-qpo-keep', {}));
+  eq([answer.json.request.quoteOrPoMissing, (await approve('approve', 'mr-qpo-keep')).json.request.approvals.sales !== null], [true, true], 'a new request without a file: missing; the sales manager approves it');
+  const keep = (crmFileId, name, bytes, category) => call('design-files', moldDesignFileBody({crmRequestId: 'mr-qpo-keep', crmFileId, name, category}, bytes));
+  answer = await keep('mdf-keep-q', 'عرض سعر.pdf', pdf('kept'), 'quote');
+  eq([answer.http, answer.json.request.approvals.sales !== null, answer.json.request.waitingStep, answer.json.request.quoteOrPoMissing], [201, true, 'production', false], 'its quotation file attached: the approval stays (it waits for production), no longer missing');
+  answer = await keep('mdf-keep-p', 'PO.png', png(4, 4), 'po');
+  eq([answer.json.request.approvals.sales !== null, answer.json.request.poFiles.length], [true, 1], 'a PO file too: the approval stays');
+  answer = await call('design-file-delete', {crmRequestId: 'mr-qpo-keep', crmFileId: 'mdf-keep-q'});
+  eq([answer.json.request.approvals.sales !== null, answer.json.request.quoteOrPoMissing], [true, false], 'the quotation file deleted: the approval stays; the PO file still counts');
+  answer = await call('design-file-delete', {crmRequestId: 'mr-qpo-keep', crmFileId: 'mdf-keep-p'});
+  eq([answer.json.request.approvals.sales !== null, answer.json.request.quoteOrPoMissing], [true, true], 'the last one deleted: the approval stays, missing again');
+  answer = await keep('mdf-keep-d', 'رسم.pdf', pdf('design'), undefined);
+  eq([answer.json.request.approvals.sales, answer.json.request.waitingStep], [null, 'sales'], 'a design file still undoes the approvals: back with the sales manager');
+  await approve('approve', 'mr-qpo-keep');
+  answer = await keep('mdf-keep-q2', 'عرض 2.pdf', pdf('kept 2'), 'quote');
+  answer = await call('design-file-delete', {crmRequestId: 'mr-qpo-keep', crmFileId: 'mdf-keep-d'});
+  eq([answer.json.request.approvals.sales, answer.json.request.quoteOrPoMissing], [null, false], 'and so does deleting one');
+  mock.addProductionFile('mr-qpo-none', {name: 'PO الإنتاج.pdf', category: 'po'});
+  eq((await call('status', {ids: ['mr-qpo-none']})).json.requests[0].quoteOrPoMissing, false, 'production\'s own PO file counts as well (its production manager attached it)');
+  answer = await call('requests', fresh('mr-qpo-fin', {}));
+  mock.approve('mr-qpo-fin', 'sales'); mock.approve('mr-qpo-fin', 'production'); mock.approve('mr-qpo-fin', 'admin');
+  eq((await call('status', {ids: ['mr-qpo-fin']})).json.requests[0].quoteOrPoMissing, false, 'finance approved without a file: no longer missing');
   eq([productionPo.category, (await call('design-file', {fileId: productionPo.fileId})).kind], ['po', 'ok'], 'production\'s own PO file is downloaded by its fileId');
   mock.setQuotePo(false);
   ok(mock.state.calls.every(c => !JSON.stringify(c.headers).includes(mock.state.secret)), 'the secret never travels');

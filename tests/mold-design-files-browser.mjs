@@ -15,7 +15,10 @@
 // file, links and Approve. The device's own check takes production's PR #27 inputs (a PDF whose header follows other bytes, named
 // CON.pdf; a PNG named .jpg) and refuses a header beyond the first 1024 bytes. A request production never stored (refused at its door)
 // is still edited, and a file chosen in its edit form follows the edit: no warning (production holds nothing to undo), uploaded once the
-// change is saved, held in the CRM while the request has not reached production, then sent once it has. Screenshots for the report.
+// change is saved, held in the CRM while the request has not reached production, then sent once it has. Since 2026-11-05 (production's
+// update: the quotation's or PO's file counts, the numbers are gone): a new request kept in the CRM says it waits for that file, and the
+// first one attached from its sheet sends it; attaching or deleting a quotation's or PO's file asks no warning and keeps the approvals,
+// while a design file still warns that they are undone. Screenshots for the report.
 // Synthetic fixtures only: temporary SQLite, no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -37,7 +40,7 @@ const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const PHONE = {width: 360, height: 800}, DESKTOP = {width: 1280, height: 900};
-const LABEL = 'طلبات تصنيع القوالب', WARNING = 'إرفاق ملف أو حذفه بيتحسب تعديل على الطلب';
+const LABEL = 'طلبات تصنيع القوالب', WARNING = 'إرفاق ملف تصميم أو حذفه بيتحسب تعديل على الطلب';
 const drawingPdf = Buffer.from('%PDF-1.4\n% رسم القالب للعميل\n%%EOF\n'), drawingDwg = Buffer.from('AC1027 synthetic drawing for the browser test'), drawingDxf = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n');
 // A real 1x1 PNG, so the browser can show it.
 const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -377,33 +380,62 @@ try {
   ok(true, 'the request\'s sheet says the file reached production');
   await editor.context().close();
 
-  // ---- 2026-11-03 (production's second update): the quotation's and PO's files on the request's sheet, each kind in its own group with
-  // its own picker (a PDF or an image only), attached with the same warning, sent with its category; production's own quotation file in
-  // its group, downloaded through the CRM
+  // ---- 2026-11-03 (production's second update) as it stands since 2026-11-05: the quotation's and PO's files on the request's sheet,
+  // each kind in its own group with its own picker (a PDF or an image only). A new request is kept in the CRM until the first of them,
+  // attached from its sheet without a warning, sends it; later ones keep the approvals (no warning, nor on deleting one), while a design
+  // file still warns. Production's own quotation file in its group, downloaded through the CRM
   mock.setQuotePo(true);
   await stale();
   const quoteSheet = await open('rep');
   await goMolds(quoteSheet);
-  const asked = await quoteSheet.evaluate(async body => (await (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json()).request,
-    withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash', quoteNo: 'Q-SHEET'}));
-  check([asked.quotePo, JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).quoteNo], [{quoteNo: 'Q-SHEET', poNo: '', missing: false, from: 'production'}, 'Q-SHEET'], 'a pull taught the CRM; a request asked with its quotation number');
   await quoteSheet.locator('.mold-heading-tools button').first().click();
-  await quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
+  await quoteSheet.waitForFunction(() => !document.querySelector('.mold-heading-tools button .spin'));
+  const asked = await quoteSheet.evaluate(async body => (await (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json()).request,
+    withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash'}));
+  check([asked.sending.state, asked.remote, mock.row(asked.id) || null], ['needs_file', null, null], 'a pull taught the CRM; a new request without a quotation or PO file is kept in the CRM, not sent');
+  await quoteSheet.locator('.mold-heading-tools button').first().click();
+  const keptCard = quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'});
+  await keptCard.locator('.mold-card-sending[data-state="needs_file"]').waitFor();
+  check(await keptCard.locator('.mold-card-sending').innerText(), 'بانتظار ملف عرض السعر / الـ PO', 'its card says so');
+  await keptCard.click();
   const groupOf = category => sheet(quoteSheet).locator('section.mold-design[data-category="' + category + '"]');
   await groupOf('po').waitFor();
+  check([await sheet(quoteSheet).locator('.mold-sending[data-state="needs_file"] strong').innerText(), (await sheet(quoteSheet).locator('.mold-sending p').innerText()).includes('مش هيتبعت للإنتاج إلا لما ترفق ملف عرض السعر أو الـ PO')], ['بانتظار ملف عرض السعر / الـ PO', true], 'the sheet says what it waits for and what to do');
   check(await sheet(quoteSheet).locator('section.mold-design h3').allInnerTexts(), ['ملفات التصميم', 'ملفات عرض السعر', 'ملفات الـ PO'], 'three groups on the sheet');
   check([await groupOf('quote').locator('input[type=file]').getAttribute('accept'), await groupOf('quote').locator('.mold-design-count').innerText()], ['.pdf,.png,.jpg,.jpeg,.webp,.gif', '0/5'], 'the quotation\'s picker: a PDF or an image, 5 places');
   await groupOf('quote').locator('input[type=file]').setInputFiles({name: 'مسقط.dwg', mimeType: 'application/octet-stream', buffer: drawingDwg});
   await groupOf('quote').locator('.mold-design-refused').waitFor();
   check(await groupOf('quote').locator('.mold-design-refused li').innerText(), 'مسقط.dwg: ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'a drawing as the quotation: refused on the device, with why');
+  await shot(quoteSheet, 'mold-design-kept-for-file');
   await groupOf('po').locator('input[type=file]').setInputFiles({name: 'PO-7781.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
-  const poConfirm = groupOf('po').locator('.mold-design-confirm', {hasText: 'PO-7781.pdf'});
-  await poConfirm.waitFor();
-  ok((await poConfirm.innerText()).includes(WARNING), 'the same warning: a file undoes the approvals');
-  await poConfirm.getByRole('button', {name: 'تأكيد الإرفاق'}).click();
   await fileRow(groupOf('po'), 'PO-7781.pdf').and(quoteSheet.locator('[data-state="sent"]')).waitFor();
-  check([mock.row(asked.id).designFiles.map(file => [file.name, file.category]), JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, await groupOf('po').locator('.mold-design-count').innerText()],
-    [[[SIGNATURE_NAME, 'design'], ['PO-7781.pdf', 'po']], 'po', '1/5'], 'the PO file reached production as the PO\'s, in its own group (1 of 5), beside the signature (a design file)');
+  check([await groupOf('po').locator('.mold-design-confirm').count(), await sheet(quoteSheet).locator('.mold-sending').count(), mock.row(asked.id).designFiles.map(file => [file.name, file.category]), JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, await groupOf('po').locator('.mold-design-count').innerText()],
+    [0, 0, [[SIGNATURE_NAME, 'design'], ['PO-7781.pdf', 'po']], 'po', '1/5'], 'no warning asked; the PO file sent the request, then the signature and itself as the PO\'s, in its own group (1 of 5)');
+  // The sales manager approves; a quotation file attached and deleted since keeps the approval, without a warning; a design file warns.
+  const smApproves = app.as(await app.login('sm'));
+  check((await smApproves('/api/mold-requests', {method: 'POST', body: {action: 'approve', requestId: crypto.randomUUID(), id: asked.id}})).status, 200, 'the sales manager approves it');
+  await quoteSheet.keyboard.press('Escape');
+  await sheet(quoteSheet).waitFor({state: 'detached'});
+  await stale();
+  await quoteSheet.locator('.mold-heading-tools button').first().click();
+  await quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
+  await sheet(quoteSheet).locator('.mold-approvals li[data-done="true"]').waitFor();
+  await groupOf('quote').locator('input[type=file]').setInputFiles({name: 'عرض سعر.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
+  const quoteRow = fileRow(groupOf('quote'), 'عرض سعر.pdf');
+  await quoteRow.and(quoteSheet.locator('[data-state="sent"]')).waitFor();
+  check([await groupOf('quote').locator('.mold-design-confirm').count(), !!mock.row(asked.id).approvals.sales, await sheet(quoteSheet).locator('.mold-approvals li[data-done="true"]').count()], [0, true, 1], 'a quotation file after the approval: no warning, sent, the approval stays (at production and on the sheet)');
+  await quoteRow.getByRole('button', {name: 'حذف عرض سعر.pdf'}).click();
+  const plainDelete = quoteRow.locator('.mold-design-confirm');
+  await plainDelete.waitFor();
+  check([(await plainDelete.innerText()).includes(WARNING), (await plainDelete.innerText()).includes('حذف الملف من الطلب؟')], [false, true], 'deleting it: a plain confirmation, no warning about the approvals');
+  await plainDelete.getByRole('button', {name: 'تأكيد الحذف'}).click();
+  await quoteRow.waitFor({state: 'detached'});
+  check([!!mock.row(asked.id).approvals.sales, await sheet(quoteSheet).locator('.mold-approvals li[data-done="true"]').count()], [true, 1], 'deleted at production: the approval stays');
+  await groupOf('design').locator('input[type=file]').setInputFiles({name: 'مقطع.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
+  const designWarning = groupOf('design').locator('.mold-design-confirm', {hasText: 'مقطع.pdf'});
+  await designWarning.waitFor();
+  ok((await designWarning.innerText()).includes(WARNING), 'a design file still warns that the approvals are undone');
+  await designWarning.getByRole('button', {name: 'إلغاء'}).click();
   await quoteSheet.keyboard.press('Escape');
   await sheet(quoteSheet).waitFor({state: 'detached'});
   mock.addProductionFile(asked.id, {name: 'عرض الإنتاج.pdf', bytes: Buffer.from('%PDF-1.4\n% production quotation\n%%EOF\n'), category: 'quote'});

@@ -230,4 +230,16 @@ function render(row, files, linkReady = true) {
   eq([card.includes('ملفات عرض السعر'), card.includes('/api/mold-requests/design-file?order=94&amp;file=601'), renderToStaticMarkup(React.createElement(ui.MoldPendingDesignFiles, {files: listed.poFiles, say, category: 'po'}))], [true, true, ''], 'the quotation files with their links by order number; no PO file, no block');
 }
 
+// ---- 2026-11-05: the quotation's or PO's file required. Only a design file warns that the approvals are undone; a request kept for its
+//  file offers the quotation's and PO's groups to attach it, even where the page did not know production's update yet.
+{
+  const held = request({data: {...request().data, fileRequired: true}, outbox: 'send', accepted: null, remote: null, remoteAt: null});
+  eq([ui.designNeedsWarning({remote: remote([])}), ui.designNeedsWarning({remote: remote([])}, 'design'), ui.designNeedsWarning({remote: remote([])}, 'quote'), ui.designNeedsWarning({remote: remote([])}, 'po'), ui.designNeedsWarning({remote: null}, 'design')],
+    [true, true, false, false, false], 'the warning is for a design file on a request production holds; never for a quotation\'s or PO\'s file');
+  ok(ui.designWarningText(say).includes('ملف تصميم') && ui.designWarningText(say).includes('هيلغي الاعتمادات'), 'and it names the design file: ' + ui.designWarningText(say));
+  const view = lib.moldRequestView(held, me, [], true, [], [], false);
+  const html = renderToStaticMarkup(React.createElement(ui.MoldDesignFiles, {view, uploads: [], queue: new ui.DesignUploadQueue(), onView: () => {}, say, quotePo: false}));
+  eq([view.sending.state, html.split('<section class="mold-design"').slice(1).map(part => /data-category="(\w+)"/.exec(part)[1]), (html.match(/data-category="quote"[^>]*>[^]*?accept="([^"]*)"/) || [])[1]], ['needs_file', ['design', 'quote', 'po'], '.pdf,.png,.jpg,.jpeg,.webp,.gif'], 'kept for its file: the quotation\'s and PO\'s groups, each with its picker');
+}
+
 console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, place refusals, English; the pending files with and without links; the device check on PR #27 inputs; a request approved from the list waiting again; the quotation and PO groups', productionDataUsed: false}));

@@ -6,8 +6,11 @@
 // copies too; production's refusals for a file's place (too_many_files, crm_file_id_used, PR #27) are final and shown with their reason;
 // a file refused only because its request is cancelled in production is held, and sent once the production manager restores it (2026-11-03).
 // Production's second update of 2026-11-03: the CRM learns it from any answer carrying quoteOrPoMissing (kept in crm_settings), takes no
-// quotation or PO number or file before it (and holds one saved anyway), then requires a number, sends the files with their category
-// (a PDF or an image, 5 of each, the same category on a retry), shows production's numbers and downloads a file of any list by its fileId.
+// quotation or PO number or file before it (and holds one saved anyway), sends the files with their category (a PDF or an image, 5 of
+// each, the same category on a retry) and downloads a file of any list by its fileId. Since 2026-11-05 no number is taken (one a page
+// loaded before sends is refused; a stored one is sent as it is) and a new request, of any role, is kept in the CRM until its first
+// quotation or PO file: no call, resend, timetable or restart sends it, kept requests never crowd out the others, the first file
+// releases it (the request, then its files in order), and deleting the only one before it went keeps it again.
 // Synthetic data only; the shared secret is never printed.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -458,29 +461,32 @@ try{
   check([restored.cancelledAt,restored.lastError?.code,await server.sendDueMoldDesignFiles(DB,{link,limit:5}),atProduction(id,fileId),(await viewOf(id)).designFiles[0].state],[null,'restored',1,true,'sent'],'restored by the production manager: active again, and the file goes');
  }
 
- // ---- 15. 2026-11-03 (production's second update): the quotation and PO. Until the CRM knows the update is live nothing of it is taken or
- //  sent (a request or file that carries it waits); it learns it from the first answer of any route carrying quoteOrPoMissing, kept in
- //  crm_settings; then a request needs a number, the quotation's and PO's files go with their category (a PDF or an image, 5 of each, the
- //  same category on a retry), production's numbers are shown, and a file of any list downloads by its fileId
+ // ---- 15. 2026-11-03 (production's second update) as it stands since 2026-11-05: the quotation and PO. Until the CRM knows the update
+ //  is live nothing of it is taken or sent (a request or file that carries it waits); it learns it from the first answer of any route
+ //  carrying quoteOrPoMissing, kept in crm_settings; then a new request carries no number and waits in the CRM for its quotation's or PO's
+ //  file, the files go with their category (a PDF or an image, 5 of each, the same category on a retry), and a file of any list downloads
+ //  by its fileId
  {
   const known=()=>sql.prepare("SELECT owner_id AS at FROM crm_settings WHERE id='mold-quote-po'").get()?.at||null,forget=()=>sql.prepare("DELETE FROM crm_settings WHERE id='mold-quote-po'").run();
   const specs={description:'200*400*27.5TH MM OPEN',core:'open',vibrators:2,model:'old',halfBlock:'none',moldWidth:1380,gelbaSize:795,moldNo:'',quantity:1,designUrl:'',notes:''};
-  // A representative's new request carries the customer's signature (2026-11-04).
-  const create=async extra=>{as('rep');return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',specs,payment:'cash',signature:signatureInput(),...extra})));};
+  // A representative's new request carries the customer's signature (2026-11-04); customer service's goes without it.
+  const create=async(extra,member='rep')=>{as(member);return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',specs,payment:'cash',...(member==='rep'?{signature:signatureInput()}:{}),...extra})));};
   const list=async(member='rep')=>{as(member);return (await requests.GET(new Request('https://test.invalid/api/mold-requests'))).json();};
-  const attachAs=async(id,name,bytes,category)=>{const form=new FormData();form.set('requestId',randomUUID());form.set('id',id);if(category)form.set('category',category);form.set('file',new File([bytes],name));as('rep');return json(await attacher.POST(new Request('https://test.invalid/api/mold-requests/design-files',{method:'POST',headers:{origin:'https://test.invalid'},body:form})));};
+  const attachAs=async(id,name,bytes,category,member='rep')=>{const form=new FormData();form.set('requestId',randomUUID());form.set('id',id);if(category)form.set('category',category);form.set('file',new File([bytes],name));as(member);return json(await attacher.POST(new Request('https://test.invalid/api/mold-requests/design-files',{method:'POST',headers:{origin:'https://test.invalid'},body:form})));};
   const lastBody=route=>mock.state.calls.findLast(call=>call.route===route&&call.signed)?.body||'';
   const viewQuote=async id=>(await viewOf(id)).designFiles;
+  const dataOf=id=>JSON.parse(sql.prepare('SELECT data FROM crm_mold_requests WHERE id=?').get(id).data);
+  const sentFor=(id,route='requests')=>mock.state.calls.filter(call=>call.route===route&&call.signed&&call.body.includes(id));
   // A tiny PNG header (IHDR with its size): enough for the CRM's and production's checks.
   const png=(width,height)=>{const b=Buffer.alloc(33);Buffer.from([137,80,78,71,13,10,26,10]).copy(b,0);b.writeUInt32BE(13,8);b.write('IHDR',12,'latin1');b.writeUInt32BE(width,16);b.writeUInt32BE(height,20);b[24]=8;b[25]=6;return b;};
   check([known(),await server.moldQuotePoSupported(DB),(await list()).quotePo],[null,false,false],'nothing learned yet (the stand-in is the application before its update): the screen asks for nothing');
   // (a) before: no number and no quotation or PO file is taken; a request without them goes exactly as before
-  const NOT_YET='تطبيق المنتجات لسه ما اتحدّثش لاستقبال رقم عرض السعر والـ PO؛ حدّث الصفحة وابعت الطلب من غيرهم.';
+  const GONE='رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.';
   let answer=await create({quoteNo:'Q-1'});
-  check([answer.status,answer.body.error,sql.prepare("SELECT COUNT(*) n FROM crm_mold_requests WHERE json_extract(data,'$.quoteNo') IS NOT NULL").get().n],[409,NOT_YET,0],'a number before the update: refused, nothing saved');
+  check([answer.status,answer.body.error,answer.body.fields,sql.prepare("SELECT COUNT(*) n FROM crm_mold_requests WHERE json_extract(data,'$.quoteNo') IS NOT NULL").get().n],[400,GONE,{quoteNo:GONE},0],'a number (a page loaded before): refused by its field, nothing saved');
   answer=await create({quoteNo:'',poNo:null});
   const before=answer.body.request.id;
-  check([answer.status,answer.body.send.kind,Object.keys(JSON.parse(lastBody('requests'))).join(','),answer.body.request.quotePo],[200,'ok','crmRequestId,requestedAt,customer,salesman,specs,payment',null],'without them: saved and sent as before (no new key); production holds it, its status carries no number');
+  check([answer.status,answer.body.send.kind,Object.keys(JSON.parse(lastBody('requests'))).join(','),answer.body.request.quotePo,Object.hasOwn(dataOf(before),'fileRequired')],[200,'ok','crmRequestId,requestedAt,customer,salesman,specs,payment',null,false],'without them: saved and sent as before (no new key, no file asked for); production holds it, its status carries nothing of it');
   answer=await attachAs(before,'عرض سعر.pdf',pdf('quote before'),'quote');
   check([answer.status,answer.body.error,sql.prepare("SELECT COUNT(*) n FROM crm_mold_design_files WHERE category<>'design'").get().n],[409,'تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.',0],'a quotation file before the update: refused');
   // Held (cannot happen in normal use): a request saved with a number, a quotation file, while the update is unknown
@@ -504,29 +510,78 @@ try{
   forget();await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true});
   check(!!known(),true,'and the sales manager\'s waiting list');
   forget();answer=await create({});
-  check([answer.status,!!known(),answer.body.request.quotePo],[200,true,{quoteNo:'',poNo:'',missing:true,from:'production'}],'and a request\'s own send (sent without a number: production marks it missing, and the view says so)');
+  check([answer.status,!!known(),answer.body.request.quotePo,Object.hasOwn(dataOf(answer.body.request.id),'fileRequired')],[200,true,{missing:true},false],'and a request\'s own send (asked for before the CRM knew: sent at once, without a file; production marks it missing, and the view says so)');
   check(await server.noteMoldQuotePo(DB,[{quoteOrPoMissing:false}]),true,'learned again: changes nothing (never unlearned by the CRM)');
   // (c) the held request and file go now, with their number and category
   // The page's own check of what is due (any list opened since) or the timetable sends it.
   await server.sendDueMoldRequests(DB,{link,limit:20});await until(()=>!sql.prepare('SELECT outbox FROM crm_mold_requests WHERE id=?').get(heldId).outbox);
   const heldSent=mock.state.calls.filter(call=>call.route==='requests'&&call.signed&&call.body.includes(heldId)).map(call=>JSON.parse(call.body));
-  check([heldSent.length,heldSent[0].quoteNo,(await viewOf(heldId)).sending.state,(await viewOf(heldId)).quotePo],[1,'Q-HELD','sent',{quoteNo:'Q-HELD',poNo:'',missing:false,from:'production'}],'the held request goes once, with its number; production\'s status shows it');
+  check([heldSent.length,heldSent[0].quoteNo,(await viewOf(heldId)).sending.state,(await viewOf(heldId)).quotePo],[1,'Q-HELD','sent',{missing:true}],'the held request (asked for before this rule: no file asked) goes once, byte for byte with its number; production counts no number: missing');
   sql.prepare("UPDATE crm_mold_design_files SET next_attempt_at=? WHERE id='mdf-held-q'").run(new Date(Date.now()-1000).toISOString());
   await server.sendDueMoldDesignFiles(DB,{link,limit:5});await until(()=>!fileRow('mdf-held-q').outbox);
   const heldFile=mock.state.calls.filter(call=>call.route==='design-files'&&call.signed&&call.body.includes('mdf-held-q')).map(call=>JSON.parse(call.body));
   check([heldFile.length,heldFile[0].category,(await viewQuote(before)).find(file=>file.crmFileId==='mdf-held-q').state],[1,'quote','sent'],'the held quotation file goes once, with its category');
-  // (d) a new request needs a number; one is enough; normalized; too long refused
+  // (d) a new request needs a quotation or PO file (2026-11-05): kept in the CRM, sent by nothing, until the first is attached
+  const callsNow=()=>mock.state.calls.filter(call=>['requests','design-files'].includes(call.route)).length;
   answer=await create({});
-  check([answer.status,answer.body.fields,answer.body.error],[400,{quotePo:'اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)'},'اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)'],'none: 400 «واحد على الأقل»');
-  check((await create({poNo:'P'.repeat(61)})).body.fields,{poNo:'رقم الـ PO أطول من 60 حرف'},'61 characters: refused, named');
-  answer=await create({quoteNo:' Q-٢٠٢٦-٠١٥٣ ',poNo:''});
-  const quoted=answer.body.request.id,sentBody=JSON.parse(lastBody('requests'));
-  check([answer.status,JSON.parse(sql.prepare('SELECT data FROM crm_mold_requests WHERE id=?').get(quoted).data).quoteNo,Object.hasOwn(JSON.parse(sql.prepare('SELECT data FROM crm_mold_requests WHERE id=?').get(quoted).data),'poNo'),Object.keys(sentBody).slice(-2),sentBody.quoteNo,answer.body.request.quotePo],
-   [200,'Q-2026-0153',false,['payment','quoteNo'],'Q-2026-0153',{quoteNo:'Q-2026-0153',poNo:'',missing:false,from:'production'}],'one number: stored and sent normalized, after payment; the other left out');
+  const kept=answer.body.request.id,signatureId=dataOf(kept).signature.fileId;
+  check([answer.status,answer.body.send,answer.body.request.sending.state,dataOf(kept).fileRequired,sentFor(kept).length,sentFor(kept,'design-files').length,answer.body.request.can.resend,answer.body.request.can.attach],
+   [200,{kind:'none',code:'quote_file',fields:[]},'needs_file',true,0,0,false,true],'saved (with the customer\'s signature), kept: nothing sent, not even the signature; no resend, the attach action offered');
+  check([(await create({poNo:'PO-1'})).body.fields,(await create({quoteNo:'',poNo:''})).status],[{poNo:GONE},200],'a number is refused (a page loaded before); empty ones are none');
+  sql.prepare("DELETE FROM crm_mold_requests WHERE id<>? AND json_extract(data,'$.fileRequired') IS 1 AND id NOT IN (SELECT request_id FROM crm_mold_design_files WHERE category<>'design')").run(kept);
+  const calls0=callsNow();
+  check([await server.sendMoldRequest(DB,kept,{link}),await server.sendDueMoldRequests(DB,{link,limit:20}),await server.sendDueMoldDesignFiles(DB,{link,limit:20}),callsNow()-calls0],[{kind:'none',code:'quote_file'},0,0,0],'neither a call, the timetable nor its files\' timetable sends it (as after a restart: the hold is in the database)');
+  as('rep');answer=await json(await requests.POST(post('/api/mold-requests',{action:'resend',requestId:randomUUID(),id:kept})));
+  check([answer.status,answer.body.error,callsNow()-calls0],[409,'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.',0],'a resend: refused with what to do; nothing sent');
+  // The kept requests never crowd out the others: five of them due first, and one asked for before the rule still goes.
+  const crowd=[];for(let n=0;n<5;n++)crowd.push((await create({})).body.request.id);
+  sql.prepare("UPDATE crm_mold_requests SET next_attempt_at='2026-01-01T00:00:00.000Z' WHERE json_extract(data,'$.fileRequired') IS 1").run();
+  const plainId='mr-'+randomUUID(),plainAt=new Date().toISOString(),plainData={requestedAt:'2026-11-04T10:00:00+03:00',customer:{crmNumber:27,name:'مصنع تجريبي',address:'الدمام',city:'Damam - الدمام'},salesman:{crmMemberId:'rep',name:'مندوب تجريبي',email:'rep@yourrest.org'},specs,payment:'cash',quoteNo:'Q-OLD'};
+  sql.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','factory',?,'send',?,'rep',?,?,1)").run(plainId,JSON.stringify(plainData),plainAt,plainAt,plainAt);
+  check([await server.sendDueMoldRequests(DB,{link,limit:5}),sentFor(plainId).length,JSON.parse(sentFor(plainId)[0].body).quoteNo,crowd.concat(kept).every(id=>!sentFor(id).length)],[1,1,'Q-OLD',true],'five kept requests due first: still the one asked for before this rule goes (with its number, as stored), and none of the kept');
+  // Customer service asks too (the owner: every role needs the file), without a signature.
+  sql.prepare("INSERT OR IGNORE INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,region_scope,active,target,created_at) VALUES('cs','u-cs','cs@yourrest.org','خدمة العملاء','customer_service','الرئيسي','','eastern',1,0,?)").run(new Date().toISOString());
+  answer=await create({},'cs');
+  check([answer.status,answer.body.request.sending.state,sentFor(answer.body.request.id).length,Object.hasOwn(dataOf(answer.body.request.id),'signature')],[200,'needs_file',0,false],'customer service\'s new request waits for its file the same way');
+  const serviceKept=answer.body.request.id;
+  answer=await attachAs(serviceKept,'PO.pdf',pdf('service po'),'po','cs');
+  check([answer.status,answer.body.file.state,answer.body.request.sending.state,sentFor(serviceKept).length],[200,'sent','sent',1],'its PO file releases it');
+  // A design file does not release it; the first quotation file does: the request first, then its files oldest first.
+  answer=await attachAs(kept,'رسم.pdf',pdf('kept design'));
+  check([answer.body.file.state,answer.body.request.sending.state,sentFor(kept).length],['held','needs_file',0],'a design file: kept with it (held), still waiting for the quotation or PO file');
+  const order0=mock.state.calls.length;
+  answer=await attachAs(kept,'عرض سعر.pdf',pdf('kept quotation'),'quote');
+  const released=mock.state.calls.slice(order0).filter(call=>call.signed&&['requests','design-files'].includes(call.route)).map(call=>call.route==='requests'?'request':/"crmFileId":"([^"]+)"/.exec(call.body)[1]);
+  const keptFiles=await filesOf(kept);
+  check([answer.status,answer.body.file.state,answer.body.request.sending.state,released,keptFiles.map(file=>[file.category,!!file.sentAt])],
+   [200,'sent','sent',['request',signatureId,keptFiles[1].id,keptFiles[2].id],[['design',true],['design',true],['quote',true]]],'the first quotation file releases it: the request, then the signature, the design file and the quotation file, in the order attached');
+  check([Object.keys(JSON.parse(sentFor(kept)[0].body)).join(','),answer.body.request.quotePo,mock.row(kept).quoteFiles?.length??mock.row(kept).designFiles.filter(file=>file.category==='quote').length],['crmRequestId,requestedAt,customer,salesman,specs,payment',{missing:false},1],'sent without a number (the marker never travels); production holds its quotation file: not missing');
+  // Another sender (the timetable, a page's own check) claims the request the moment its first quotation file makes it due: the release
+  // waits for that claim's end and then sends the request and its files itself, so the attach's answer shows them sent.
+  answer=await create({});
+  const raced=answer.body.request.id,racedAt=new Date().toISOString();
+  sql.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,category) VALUES('mdf-raced',?,'rep','عرض.pdf','pdf','application/pdf',?,'x','mold-design/raced',?,'send',?,1,'quote')").run(raced,pdf('raced').length,racedAt,racedAt);
+  await objects.put('mold-design/raced',pdf('raced'));
+  sql.prepare("UPDATE crm_mold_requests SET mutation_id='other',last_attempt_at=?,next_attempt_at=? WHERE id=?").run(racedAt,new Date(Date.now()+60_000).toISOString(),raced);
+  setTimeout(()=>sql.prepare("UPDATE crm_mold_requests SET next_attempt_at=? WHERE id=? AND mutation_id='other'").run(new Date(Date.now()-1000).toISOString(),raced),700);
+  const racedRelease=await server.releaseMoldRequest(DB,raced,{link});
+  check([racedRelease.outcome.kind,racedRelease.files.get('mdf-raced')?.kind,sentFor(raced).length,sentFor(raced,'design-files').length,!!fileRow('mdf-raced').sent_at],['ok','ok',1,2,true],'claimed by another sender at that moment: the release waits for it, then sends the request, its signature and the quotation file');
+  // A never-sent request whose only quotation file is deleted before it went: kept again.
+  answer=await create({});
+  const again=answer.body.request.id;
+  mock.state.notConfigured=true;
+  answer=await attachAs(again,'عرض.pdf',pdf('again'),'quote');
+  check([answer.body.request.sending.state,answer.body.file.state,(await server.loadMoldRequest(DB,again)).lastError.code,(await server.loadMoldRequest(DB,again)).lastError.notStored],['waiting','held','not_configured',true],'released, but production refused before storing it (not configured): it waits on the timetable, the file held');
+  mock.state.notConfigured=false;
+  as('rep');answer=await json(await remover.POST(post('/api/mold-requests/design-files/delete',{requestId:randomUUID(),id:again,fileId:answer.body.file.crmFileId})));
+  sql.prepare("UPDATE crm_mold_requests SET next_attempt_at='2026-01-01T00:00:00.000Z' WHERE id=?").run(again);
+  check([answer.status,answer.body.request.sending.state,await server.sendDueMoldRequests(DB,{link,limit:20}),sentFor(again).length],[200,'needs_file',0,0],'its only quotation file deleted (never sent: removed in the CRM alone): kept again, not sent by the timetable');
   // (e) files: a quotation's PDF or image, not a drawing; 5 of each; the design files apart; a retry with the same category
+  answer=await create({});
+  const quoted=answer.body.request.id;
   answer=await attachAs(quoted,'عرض سعر.pdf',pdf('quotation'),'quote');
   const firstQuote=answer.body.file;
-  check([answer.status,firstQuote.state,firstQuote.category,mock.row(quoted).designFiles.find(file=>file.crmFileId===firstQuote.crmFileId).category],[200,'sent','quote','quote'],'a quotation PDF: sent with its category');
+  check([answer.status,firstQuote.state,firstQuote.category,mock.row(quoted).designFiles.find(file=>file.crmFileId===firstQuote.crmFileId).category,Object.hasOwn(JSON.parse(lastBody('requests')),'quoteNo')],[200,'sent','quote','quote',false],'a quotation PDF: releases its request (no number in it) and goes with its category');
   answer=await attachAs(quoted,'رسم.dwg',Buffer.from('AC1027'),'po');
   check([answer.status,answer.body.reason,answer.body.fields.name],[400,'not_document','ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة'],'a drawing as the PO: refused here first (not_document), nothing stored');
   for(let n=2;n<=5;n++)check((await attachAs(quoted,'عرض '+n+'.pdf',pdf('quotation '+n),'quote')).status,200,'quotation file '+n);
@@ -539,19 +594,27 @@ try{
   sql.prepare('UPDATE crm_mold_design_files SET next_attempt_at=? WHERE id=?').run(new Date(Date.now()-1000).toISOString(),lost);
   const retried=await server.sendMoldDesignFile(DB,lost,{link});
   check([retried.kind,JSON.parse(lastBody('design-files')).category,mock.state.calls.filter(call=>call.route==='design-files'&&call.body.includes(lost)).length,(await viewQuote(quoted)).find(file=>file.crmFileId===lost).state],['ok','po',2,'sent'],'a retry after a lost answer: the same crmFileId with the same category (200, nothing doubled)');
-  // (f) production's numbers and files: the production manager corrects and adds; production attaches its own PO; downloads by fileId
+  // Approvals (2026-11-05): the sales manager approves; a PO file attached since keeps the approval, a design file undoes it.
+  as('manager');answer=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:quoted})));
+  check([answer.status,!!answer.body.request.remote.approvals.sales],[200,true],'the sales manager approves it');
+  answer=await attachAs(quoted,'PO 3.pdf',pdf('po three'),'po');
+  check([answer.body.file.state,!!answer.body.request.remote.approvals.sales,answer.body.request.remote.waitingStep,!!(await server.loadMoldRequest(DB,quoted)).remote.approvals.sales],['sent',true,'production',true],'a PO file attached after it: sent, the approval stays (production\'s answer stored as it is)');
+  as('rep');answer=await json(await remover.POST(post('/api/mold-requests/design-files/delete',{requestId:randomUUID(),id:quoted,fileId:answer.body.file.crmFileId})));
+  check([answer.status,!!answer.body.request.remote.approvals.sales],[200,true],'and deleted again: the approval stays');
+  // (f) production's files: production attaches its own PO; downloads by fileId; the numbers it holds are not shown
   mock.setNumbers(quoted,{poNo:'PO-7781',quoteNo:'Q-2026-0153-B'});
   const ownPo=mock.addProductionFile(quoted,{name:'PO من الإنتاج.pdf',category:'po'});
   await pull(quoted);
   const shown=await viewOf(quoted),theirs=shown.designFiles.find(file=>file.fileId===String(ownPo.fileId));
-  check([shown.quotePo,theirs.category,theirs.source,theirs.state],[{quoteNo:'Q-2026-0153-B',poNo:'PO-7781',missing:false,from:'production'},'po','production','production'],'production\'s numbers now, and its own PO file on the request');
+  check([shown.quotePo,theirs.category,theirs.source,theirs.state],[{missing:false},'po','production','production'],'production\'s own PO file on the request; its flag, not its numbers');
   let file=await download('id='+quoted+'&file='+ownPo.fileId);
   check([file.status,Buffer.from(await file.arrayBuffer()).toString().startsWith('%PDF')],[200,true],'production\'s PO file downloads through the CRM by its fileId');
-  const quoteFileId=mock.row(quoted).designFiles.find(entry=>entry.crmFileId===firstQuote.crmFileId).fileId;
-  file=await download('order='+mock.row(quoted).orderNo+'&file='+quoteFileId,'manager');
-  check([file.status,Buffer.from(await file.arrayBuffer()).equals(pdf('quotation'))],[200,true],'the sales manager downloads a quotation file from the waiting list by its fileId (quoteFiles)');
-  const pending=await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true}),item=pending.items.find(entry=>entry.crmRequestId===quoted);
-  check([item.quoteNo,item.poNo,item.quoteOrPoMissing,item.quoteFiles.length,item.poFiles.map(entry=>entry.source).sort(),item.quoteFiles[0].href.startsWith('/api/mold-requests/design-file?order=')],['Q-2026-0153-B','PO-7781',false,5,['crm','crm','production'],true],'the waiting list: the numbers and every list\'s files, each with its link');
+  // The request released above still waits for the sales manager (the one approved here no longer does).
+  const quoteFileId=mock.row(kept).designFiles.find(entry=>entry.category==='quote').fileId;
+  file=await download('order='+mock.row(kept).orderNo+'&file='+quoteFileId,'manager');
+  check([file.status,Buffer.from(await file.arrayBuffer()).equals(pdf('kept quotation'))],[200,true],'the sales manager downloads a quotation file from the waiting list by its fileId (quoteFiles)');
+  const pending=await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true}),item=pending.items.find(entry=>entry.crmRequestId===kept);
+  check([item.quoteOrPoMissing,item.quoteFiles.length,item.designFiles.length,item.quoteFiles[0].href.startsWith('/api/mold-requests/design-file?order=')],[false,1,2,true],'the waiting list: the released request with its quotation file (each list with its link), not missing');
   mock.setQuotePo(false);
  }
 
