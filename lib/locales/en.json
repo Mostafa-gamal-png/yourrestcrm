@@ -1425,5 +1425,7 @@
   "الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج)": "At most 5 quotation files a request (yours and production's)",
   "الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج)": "At most 5 PO files a request (yours and production's)",
   "ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة": "A quotation or PO file must be a PDF or an image",
+  "رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.": "The quotation and PO numbers were removed from the request; refresh the page and attach the quotation or PO file instead.",
+  "الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.": "The request is waiting for the quotation / PO file; attach the file and the request is sent by itself.",
   "نوع الملف غير مقبول": "The kind of file is not accepted"
 }

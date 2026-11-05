@@ -4,6 +4,8 @@
 // tried again. Pure functions, no I/O and no secret: the server, the browser form and the historical import tool (release/operations)
 // share them. Since production's second update of 2026-11-03: the quotation and PO numbers (quoteNo, poNo) and their files (category).
 // Since 2026-11-04: the customer's signature (moldSignatureCheck), a PNG sent as a design image; the requests body is unchanged.
+// Since production's update of 2026-11-05: the quotation's or PO's FILE is what counts (quoteOrPoMissing: no such file and finance has not
+// approved); the numbers are no longer asked for nor sent with a new request (a request stored with one still sends it, byte for byte).
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -21,14 +23,21 @@ export const MOLD_PAYMENTS = {cash: 'نقدي', deferred: 'آجل'};
 export const MOLD_PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل';
 /** The quotation and PO numbers (yourrest-products 2026-11-03, its second update of the day): `quoteNo` and `poNo` in the requests body
  *  after payment, each a text of up to 60 characters as written on the document (Arabic-Indic digits as ASCII digits, the ends trimmed),
- *  sent only when given. The CRM asks the representative for at least one of them; production takes a request without either (one sent
- *  before) and marks it `quoteOrPoMissing` until its production manager adds one. Neither is sent before production's update is live:
- *  the old application ignores them silently, and a resend cannot add them later (other data: 409 production_only). The update is known
- *  by the key `quoteOrPoMissing` in a status object (moldQuotePoAnswered). */
+ *  sent only when the request carries them. Since production's update of 2026-11-05 the CRM no longer asks for them: a new request
+ *  carries none; one stored with a number (asked for on 2026-11-03/04) keeps it and is sent with it, byte for byte (production still
+ *  accepts and stores them, without showing or counting them). The update of 2026-11-03 is known by the key `quoteOrPoMissing` in a status
+ *  object (moldQuotePoAnswered); since 2026-11-05 that flag means the request has neither a quotation file nor a PO file and finance has
+ *  not approved it yet (a number alone is not enough). */
 export const MOLD_QUOTE_PO_MAX = 60;
 export const MOLD_QUOTE_PO_FIELDS = ['quoteNo', 'poNo'];
 export const MOLD_QUOTE_PO_LABELS = {quoteNo: 'رقم عرض السعر', poNo: 'رقم الـ PO'};
 export const MOLD_QUOTE_PO_REQUIRED = 'اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)';
+/** Since 2026-11-05 (production's message, «المطلوب دلوقتي: ملف عرض سعر أو ملف PO، واحد منهم على الأقل»): a new request, from any role
+ *  (the owner's choice), needs at least one quotation or PO file (a PDF or an image). The form refuses to send without one; the server
+ *  keeps a new request in the CRM, not sent, until the first one is attached (files are uploaded after the request is saved). */
+export const MOLD_QUOTE_FILE_REQUIRED = 'أرفق ملف عرض السعر أو الـ PO (واحد على الأقل)';
+/** The categories whose file production counts as the request's quotation or PO (quoteOrPoMissing). */
+export const MOLD_QUOTE_FILE_CATEGORIES = Object.freeze(['quote', 'po']);
 /** What a request's files are (the same design-files route, `category`): design files (the default, sent without category, exactly as
  *  before), the quotation's and the PO's (a PDF or an image only), each kind within its own limit. */
 export const MOLD_FILE_CATEGORIES = ['design', 'quote', 'po'];

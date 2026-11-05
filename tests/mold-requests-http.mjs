@@ -28,8 +28,11 @@
 // not sent again, and the restore is the next pull's (audited); a restore the release before this one already pulled (it stored the status
 // alone, the CRM's cancelled marks kept) is settled by this release's next pull, while a cancellation still waiting, or a request
 // production holds cancelled, is never cleared. Since production's second update of 2026-11-03: the quotation and PO numbers and their
-// files (see the last section): nothing asked or sent before the update, the update learned from an answer, a number required after it,
-// an older request resent byte for byte, production's numbers shown, the missing note, the sales manager's list. Who sees which request
+// files (see its section): nothing asked or sent before the update, the update learned from an answer, an older request resent byte for
+// byte; since 2026-11-05 no number (one from a page loaded before refused, a stored one kept and sent), a new request of any role kept in
+// the CRM until its first quotation or PO file (no resend, timetable or page sends it), released by that file (the request, then its
+// files), «missing» from production's flag with the file attached afterwards, and a quotation's or PO's file keeping the approvals while a
+// design file undoes them. Who sees which request
 // (the owner, 2026-11-03: two managers sharing a region, customer service's request in the waiting list only) and «رابط التصميم» removed
 // (refused when sent, an older request's link kept and resent byte for byte).
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
@@ -647,115 +650,153 @@ try {
   check([(await as('/api/crm')).status, mock.state.calls.length - calls], [200, 0], 'the rest of the CRM works; nothing was sent');
 } finally { await plain.stop(); await mock.stop(); }
 
-// ---- 2026-11-03 (production's second update): the quotation and PO numbers and their files. While the products application is the
-// older one nothing of it is asked or sent; the CRM learns the update from the first answer carrying quoteOrPoMissing (here a new request's
-// own answer, sent without a number); from then on a new request needs a number, sent normalized; a request first sent before is resent
-// byte for byte; what the request and the sales manager's list show is production's (its production manager's additions included), with
-// the note when production lacks both; the quotation's files go with their category and download by their fileId; and a production_only
-// refusal says who adds a number now.
+// ---- 2026-11-03 (production's second update) as it stands since production's update of 2026-11-05: the quotation's or PO's FILE is
+// required, the numbers are gone. While the products application is the older one nothing of it is asked or sent; the CRM learns the
+// update from the first answer carrying quoteOrPoMissing; from then on a new request, from any role, carries no number (one a page loaded
+// before sends is refused) and is kept in the CRM, not sent, until its first quotation or PO file is attached, which sends the request
+// and then its files; a request first sent before is resent byte for byte; quoteOrPoMissing (no quotation or PO file, finance not
+// approved) is shown as «ناقص» and a file attached to such a request (one sent with a number only) fixes it without undoing the
+// approvals, while a design file still undoes them; a never-sent request stored with a number keeps it through an edit and sends it;
+// production_only no longer says to ask for a number.
 {
   const quoteMock = await startProductsMock();
   const quoteApp = await bootBuiltApp({members}, {env: {YR_PRODUCTS_API_URL: quoteMock.url, YR_PRODUCTS_SECRET: quoteMock.state.secret, NODE_EXTRA_CA_CERTS: quoteMock.ca}});
   try {
-    const sessions = {rep: await quoteApp.login('rep'), sm: await quoteApp.login('sm')}, as = id => quoteApp.as(sessions[id]), now = new Date().toISOString();
+    const sessions = {rep: await quoteApp.login('rep'), sm: await quoteApp.login('sm'), cs: await quoteApp.login('cs')}, as = id => quoteApp.as(sessions[id]), now = new Date().toISOString();
     await quoteApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('q1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع q1', region: 'الشرقية', city: 'الدمام', address: 'حي الصناعية'}), now, now).run();
     const list = async (who = 'rep') => (await as(who)('/api/mold-requests')).json();
     const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(roleOf(who), {requestId: crypto.randomUUID(), ...body})});
-    const create = (extra = {}, specsChange = {}) => post('rep', {action: 'create', customerId: 'q1', specs: {...specs, ...specsChange}, payment: 'cash', ...extra});
+    const create = (extra = {}, specsChange = {}, who = 'rep') => post(who, {action: 'create', customerId: 'q1', specs: {...specs, ...specsChange}, payment: 'cash', ...extra});
     const sentBodies = id => quoteMock.state.calls.filter(call => call.route === 'requests' && call.signed && call.body.includes('"' + id + '"')).map(call => call.body);
+    const fileCalls = id => quoteMock.state.calls.filter(call => call.route === 'design-files' && call.signed && call.body.includes('"' + id + '"'));
     const learned = async () => (await quoteApp.db.prepare("SELECT owner_id AS at FROM crm_settings WHERE id='mold-quote-po'").first())?.at || null;
     const age = id => quoteApp.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(id).run();
-    const viewOf = async id => (await list()).requests.find(item => item.id === id);
-    const REQUIRED = 'اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)';
-
-    // (1) the older products application: the form asks nothing new, a request goes exactly as before, a number is refused unsent
-    let answer = await list();
-    check([answer.quotePo, await learned()], [false, null], 'the older application: the screen asks for no number (quotePo false), nothing learned');
-    let res = await create(), body = await res.json();
-    const before = body.request.id;
-    check([res.status, body.send.kind, Object.keys(JSON.parse(sentBodies(before)[0])), body.request.quotePo, body.quotePo], [200, 'ok', ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment'], null, false], 'a request without a number: saved and sent exactly as before; nothing to show from the older status');
-    res = await create({quoteNo: 'Q-1'});
-    check([res.status, (await res.json()).error, (await quoteApp.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_requests WHERE json_extract(data,'$.quoteNo') IS NOT NULL").first()).n], [409, 'تطبيق المنتجات لسه ما اتحدّثش لاستقبال رقم عرض السعر والـ PO؛ حدّث الصفحة وابعت الطلب من غيرهم.', 0], 'a number sent anyway: refused, nothing saved');
-    // A request whose first send arrived but whose answer was lost: it waits to be sent again, as first sent.
-    quoteMock.loseNext('requests');
-    body = await (await create({}, {description: 'lost answer before the update'})).json();
-    const lost = body.request.id;
-    check([body.request.sending.state, sentBodies(lost).length, !!quoteMock.row(lost)], ['waiting', 1, true], 'its answer lost: production holds it, the CRM waits to send it again');
-    await quoteApp.db.prepare('UPDATE crm_mold_requests SET next_attempt_at=? WHERE id=?').bind(new Date(Date.now() + 3600_000).toISOString(), lost).run();
-
-    // (2) production's update goes live; the CRM learns it from the first answer carrying quoteOrPoMissing: here a new request's own
-    quoteMock.setQuotePo(true);
-    body = await (await create({}, {description: 'after their update, before the CRM knew'})).json();
-    const missing = body.request.id;
-    check([body.send.kind, typeof await learned(), body.quotePo, body.request.quotePo, Object.hasOwn(JSON.parse(sentBodies(missing)[0]), 'quoteNo')], ['ok', 'string', true, {quoteNo: '', poNo: '', missing: true, from: 'production'}, false],
-      'sent without a number (the screen asked none), production marks it missing, and its answer teaches the CRM (kept in crm_settings)');
-    answer = await list();
-    check([answer.quotePo, answer.requests.find(item => item.id === before).quotePo], [true, null], 'the screen now asks for the numbers; the earlier request\'s stored status says nothing yet');
-    await age(before);
-    check((await viewOf(before)).quotePo, {quoteNo: '', poNo: '', missing: false, from: 'production'}, 'pulled again: a request taken before the update has none and is not missing');
-
-    // (3) a new request needs one of the numbers; they are normalized and sent after payment
-    res = await create();
-    body = await res.json();
-    check([res.status, body.fields, body.error], [400, {quotePo: REQUIRED}, REQUIRED], 'none: refused with «واحد على الأقل»');
-    check((await (await create({quoteNo: 'Q'.repeat(61)})).json()).fields, {quoteNo: 'رقم عرض السعر أطول من 60 حرف'}, 'a quotation number of 61 characters: refused, named');
-    body = await (await create({quoteNo: '', poNo: ' PO-٧٧٨١ '})).json();
-    const withPo = body.request.id, poSent = JSON.parse(sentBodies(withPo)[0]);
-    check([body.send.kind, Object.keys(poSent).slice(-2), poSent.poNo, Object.hasOwn(poSent, 'quoteNo'), JSON.parse((await quoteApp.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(withPo).first()).data).poNo, body.request.quotePo],
-      ['ok', ['payment', 'poNo'], 'PO-7781', false, 'PO-7781', {quoteNo: '', poNo: 'PO-7781', missing: false, from: 'production'}], 'the PO alone: normalized, stored and sent after payment; no quoteNo key');
-    body = await (await create({quoteNo: 'Q-2026-0153', poNo: 'PO-1'})).json();
-    const both = body.request.id;
-    check([Object.keys(JSON.parse(sentBodies(both)[0])).slice(-3), body.request.quotePo], [['payment', 'quoteNo', 'poNo'], {quoteNo: 'Q-2026-0153', poNo: 'PO-1', missing: false, from: 'production'}], 'both: quoteNo then poNo');
-
-    // (4) the request first sent before the update is resent byte for byte (no number added): production takes it as the same request
-    res = await post('rep', {action: 'resend', id: lost});
-    body = await res.json();
-    const lostBodies = sentBodies(lost);
-    check([res.status, body.send.kind, lostBodies.length, lostBodies[1] === lostBodies[0], quoteMock.row(lost).quoteNo], [200, 'ok', 2, true, null], 'the resend is the very same bytes as the first send (200 created:false), no number added');
-
-    // (5) the production manager adds and corrects numbers in the products application: the request shows production's
-    quoteMock.setNumbers(missing, {quoteNo: 'Q-ADDED'});
-    quoteMock.setNumbers(both, {poNo: 'PO-1-CORRECTED'});
-    await age(missing); await age(both);
-    check([(await viewOf(missing)).quotePo, (await viewOf(both)).quotePo, JSON.parse((await quoteApp.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(both).first()).data).poNo],
-      [{quoteNo: 'Q-ADDED', poNo: '', missing: false, from: 'production'}, {quoteNo: 'Q-2026-0153', poNo: 'PO-1-CORRECTED', missing: false, from: 'production'}, 'PO-1'], 'production\'s numbers are shown (added, corrected), never the CRM\'s copy, which stays as sent');
-
-    // (6) the sales manager's list: each request's numbers as production holds them, the missing note's flag, and the quotation's files
+    const viewOf = async (id, who = 'rep') => (await list(who)).requests.find(item => item.id === id);
+    const dataOf = async id => JSON.parse((await quoteApp.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(id).first()).data);
     const multipart = async fields => {
       const form = new FormData();
       for (const [key, value] of Object.entries(fields)) if (value && typeof value === 'object' && 'bytes' in value) form.set(key, new Blob([value.bytes]), value.name); else form.set(key, value);
       const encoded = new Response(form);
       return {body: Buffer.from(await encoded.arrayBuffer()), headers: {'Content-Type': encoded.headers.get('content-type')}};
     };
-    const upload = async (id, name, bytes, category) => { const encoded = await multipart({requestId: crypto.randomUUID(), id, ...(category ? {category} : {}), file: {name, bytes}}); return as('rep')('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: encoded.headers}); };
-    const quotation = Buffer.from('%PDF-1.7 synthetic quotation Q-2026-0153');
-    body = await (await upload(both, 'عرض سعر Q-2026-0153.pdf', quotation, 'quote')).json();
-    check([body.file.state, body.file.category, JSON.parse(quoteMock.state.calls.findLast(call => call.route === 'design-files').body).category], ['sent', 'quote', 'quote'], 'a quotation file: sent with its category');
-    res = await upload(both, 'رسم.dwg', Buffer.from('AC1027'), 'po');
-    check([res.status, (await res.json()).reason], [400, 'not_document'], 'a drawing as the PO: refused before anything is saved');
-    const unnumbered = quoteMock.registerManual({customerNo: (await quoteApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='q1'").first()).number, customerName: 'مصنع q1'});
-    const pending = (await list('sm')).pending.items, of = id => pending.find(item => item.crmRequestId === id);
-    check([of(missing).quoteNo, of(missing).quoteOrPoMissing, of(both).poNo, of(both).quoteFiles.map(file => [file.name, file.category]), pending.find(item => item.orderNo === unnumbered.orderNo).quoteOrPoMissing],
-      ['Q-ADDED', false, 'PO-1-CORRECTED', [['عرض سعر Q-2026-0153.pdf', 'quote']], true], 'pending: production\'s numbers, its quotation files, and a request registered there without any marked missing');
-    const fetched = await as('sm')(of(both).quoteFiles[0].href);
-    check([fetched.status, fetched.bytes.equals(quotation)], [200, true], 'the sales manager downloads the quotation file from the list, by its fileId');
+    const upload = async (id, name, bytes, category, who = 'rep') => { const encoded = await multipart({requestId: crypto.randomUUID(), id, ...(category ? {category} : {}), file: {name, bytes}}); return as(who)('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: encoded.headers}); };
+    const remove = (id, fileId, who = 'rep') => as(who)('/api/mold-requests/design-files/delete', {method: 'POST', body: {requestId: crypto.randomUUID(), id, fileId}});
+    const GONE = 'رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.';
+    const pdf = text => Buffer.from('%PDF-1.7 synthetic ' + text);
 
-    // (7) an edit before the first send needs a number too; a production_only refusal says who adds one now
+    // (1) the older products application: the form asks nothing new, a request goes exactly as before, a number is refused unsent
+    let answer = await list();
+    check([answer.quotePo, await learned()], [false, null], 'the older application: the screen asks for nothing new (quotePo false), nothing learned');
+    let res = await create(), body = await res.json();
+    const before = body.request.id;
+    check([res.status, body.send.kind, Object.keys(JSON.parse(sentBodies(before)[0])), body.request.quotePo, body.quotePo, Object.hasOwn(await dataOf(before), 'fileRequired')], [200, 'ok', ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment'], null, false, false], 'a request: saved and sent exactly as before, no file asked for');
+    res = await create({quoteNo: 'Q-1'});
+    check([res.status, (await res.json()).fields, (await quoteApp.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_requests WHERE json_extract(data,'$.quoteNo') IS NOT NULL").first()).n], [400, {quoteNo: GONE}, 0], 'a number sent anyway (a page loaded before): refused by its field, nothing saved');
+    // A request whose first send arrived but whose answer was lost: it waits to be sent again, as first sent.
+    quoteMock.loseNext('requests');
+    body = await (await create({}, {description: 'lost answer before the update'})).json();
+    const lost = body.request.id;
+    check([body.request.sending.state, sentBodies(lost).length, !!quoteMock.row(lost)], ['waiting', 1, true], 'its answer lost: production holds it, the CRM waits to send it again');
+    await quoteApp.db.prepare('UPDATE crm_mold_requests SET next_attempt_at=? WHERE id=?').bind(new Date(Date.now() + 3600_000).toISOString(), lost).run();
+    // Yesterday's request (2026-11-04, the CRM asked for a number then): stored with its quotation number, never sent yet (the link was busy).
+    const yesterday = 'mr-' + crypto.randomUUID(), yesterdayAt = new Date().toISOString();
+    const yesterdayData = {...(await dataOf(before)), requestedAt: '2026-11-04T16:00:00+03:00', quoteNo: 'Q-2026-0153'};
+    delete yesterdayData.signature;
+    await quoteApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','q1',?,'send',?,'rep',?,?,1)").bind(yesterday, JSON.stringify(yesterdayData), new Date(Date.now() + 3600_000).toISOString(), yesterdayAt, yesterdayAt).run();
+
+    // (2) production's update goes live; the CRM learns it from the first answer carrying quoteOrPoMissing: here a status pull
+    quoteMock.setQuotePo(true);
+    await age(before);
+    answer = await list();
+    check([answer.quotePo, typeof await learned(), answer.requests.find(item => item.id === before).quotePo], [true, 'string', {missing: true}], 'a pull teaches the CRM (kept in crm_settings); the request sent before has no quotation or PO file: «missing»');
+
+    // (3) a new request carries no number and is kept until its first quotation or PO file; a number is refused
+    res = await create({quoteNo: 'Q-NEW'});
+    check([res.status, (await res.json()).fields], [400, {quoteNo: GONE}], 'a number from a page loaded before: refused (nothing typed is dropped silently)');
+    res = await create({}, {description: 'kept for its quotation file'});
+    body = await res.json();
+    const kept = body.request.id, keptData = await dataOf(kept);
+    check([res.status, body.send, body.request.sending.state, keptData.fileRequired, Object.hasOwn(keptData, 'quoteNo'), sentBodies(kept).length, fileCalls(kept).length, body.request.can.resend, body.request.can.attach],
+      [200, {kind: 'none', code: 'quote_file', fields: []}, 'needs_file', true, false, 0, 0, false, true], 'saved with the customer\'s signature, kept in the CRM: nothing sent, the signature neither; no resend, the attach action');
+    res = await post('rep', {action: 'resend', id: kept});
+    check([res.status, (await res.json()).error, sentBodies(kept).length], [409, 'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.', 0], 'a resend: refused with what to do');
+    // Due on the timetable (as a request that waited through a restart is: the first page any member loads runs the check, see above):
+    // the check does not send it either.
+    await quoteApp.db.prepare("UPDATE crm_mold_requests SET next_attempt_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(kept).run();
+    check((await as('rep')('/api/crm')).status, 200, 'a page of the CRM loaded');
+    await list();
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    check([sentBodies(kept).length, (await viewOf(kept)).sending.state], [0, 'needs_file'], 'due, and checked by the timetable and by the page: still kept, never sent');
+    // A design file does not release it; the first quotation file does: the request first, then its files in the order attached.
+    body = await (await upload(kept, 'رسم.pdf', pdf('design'))).json();
+    check([body.file.state, body.request.sending.state, sentBodies(kept).length], ['held', 'needs_file', 0], 'a design file: kept with it');
+    const order = quoteMock.state.calls.length;
+    body = await (await upload(kept, 'عرض سعر.pdf', pdf('quotation'), 'quote')).json();
+    const released = quoteMock.state.calls.slice(order).filter(call => call.signed && ['requests', 'design-files'].includes(call.route)).map(call => call.route === 'requests' ? 'request' : JSON.parse(call.body).crmFileId);
+    const keptFiles = (await quoteApp.db.prepare('SELECT id FROM crm_mold_design_files WHERE request_id=? ORDER BY created_at,id').bind(kept).all()).results.map(row => row.id);
+    check([body.file.state, body.request.sending.state, released, quoteMock.row(kept).designFiles.map(file => file.category || 'design'), body.request.quotePo],
+      ['sent', 'sent', ['request', ...keptFiles], ['design', 'design', 'quote'], {missing: false}], 'the quotation file releases it: the request, then the signature, the design file and the quotation file; production holds its quotation file');
+    check([Object.keys(JSON.parse(sentBodies(kept)[0])).join(','), JSON.parse(sentBodies(kept)[0]).crmRequestId], ['crmRequestId,requestedAt,customer,salesman,specs,payment', kept], 'sent without a number; the marker never travels');
+    // The signature is still required of a sales role at create; customer service needs the file too (the owner: every role).
+    res = await post('rep', {action: 'create', customerId: 'q1', specs, payment: 'cash', signature: null});
+    check([res.status, Object.keys((await res.json()).fields)], [400, ['signature']], 'a representative without the customer\'s signature: refused as before');
+    await quoteApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('q2','customer',NULL,'rep2','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع q2', region: 'الشرقية', city: 'الرياض'}), now, now).run();
+    body = await (await post('cs', {action: 'create', customerId: 'q2', specs: {...specs, description: 'customer service, kept'}, payment: 'deferred'})).json();
+    const service = body.request.id;
+    check([body.request.sending.state, sentBodies(service).length], ['needs_file', 0], 'customer service\'s new request is kept for its file too');
+    body = await (await upload(service, 'PO.pdf', pdf('service po'), 'po', 'cs')).json();
+    check([body.file.state, body.request.sending.state, sentBodies(service).length, quoteMock.row(service).designFiles.map(file => file.category)], ['sent', 'sent', 1, ['po']], 'its PO file releases it');
+
+    // (4) the request first sent before the update is resent byte for byte: production takes it as the same request
+    res = await post('rep', {action: 'resend', id: lost});
+    body = await res.json();
+    const lostBodies = sentBodies(lost);
+    check([res.status, body.send.kind, lostBodies.length, lostBodies[1] === lostBodies[0], body.request.sending.state], [200, 'ok', 2, true, 'sent'], 'the resend is the very same bytes as the first send (200 created:false); not kept for a file (asked for before the rule)');
+
+    // (5) yesterday's never-sent request with its number: an edit keeps the number (and sends it), an old page's same number passes, another is refused
+    res = await post('rep', {action: 'update', id: yesterday, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', quoteNo: 'Q-OTHER', poNo: ''});
+    check([res.status, (await res.json()).fields], [400, {quoteNo: GONE}], 'another number from a page loaded before: refused, the stored one kept');
     quoteMock.state.notConfigured = true;
-    body = await (await create({quoteNo: 'Q-EDIT'})).json();
-    const edited = body.request.id;
-    check([body.request.sending.state, body.request.can.edit], ['waiting', true], 'production without its secret: refused before storing, still editable');
-    res = await post('rep', {action: 'update', id: edited, version: body.request.version, specs, payment: 'cash', quoteNo: '', poNo: ''});
-    check([res.status, (await res.json()).fields], [400, {quotePo: REQUIRED}], 'an edit that removes both numbers: refused');
+    body = await (await post('rep', {action: 'update', id: yesterday, version: 1, specs: {...specs, quantity: 2}, payment: 'cash'})).json();
+    check([body.send.kind, (await dataOf(yesterday)).quoteNo, (await dataOf(yesterday)).specs.quantity, body.request.can.edit], ['retry', 'Q-2026-0153', 2, true], 'an edit without numbers (this release\'s form): saved, its number kept as stored; production refused it before storing (still editable)');
+    body = await (await post('rep', {action: 'update', id: yesterday, version: body.request.version, specs: {...specs, quantity: 3}, payment: 'cash', quoteNo: 'Q-2026-0153', poNo: ''})).json();
+    check([body.request.specs.quantity, (await dataOf(yesterday)).quoteNo], [3, 'Q-2026-0153'], 'its own number sent back by an old page: taken (nothing changes in it)');
     quoteMock.state.notConfigured = false;
-    body = await (await post('rep', {action: 'update', id: edited, version: body.request.version, specs, payment: 'cash', quoteNo: 'Q-EDIT', poNo: 'PO-EDIT'})).json();
-    check([body.send.kind, JSON.parse(sentBodies(edited).at(-1)).poNo], ['ok', 'PO-EDIT'], 'an edit with its numbers: saved and sent');
+    res = await post('rep', {action: 'resend', id: yesterday});
+    body = await res.json();
+    const yesterdaySent = JSON.parse(sentBodies(yesterday).at(-1));
+    check([body.send.kind, yesterdaySent.quoteNo, Object.keys(yesterdaySent).slice(-2), body.request.quotePo, Object.hasOwn(await dataOf(yesterday), 'fileRequired')], ['ok', 'Q-2026-0153', ['payment', 'quoteNo'], {missing: true}, false], 'sent with its number, not kept for a file (asked for before this release); production counts no number: «missing»');
+    // Its new signature (the edit changed what was signed) goes after it, in the background: let it arrive before the approval.
+    for (let n = 0; n < 100 && (await quoteApp.db.prepare('SELECT COUNT(*) AS n FROM crm_mold_design_files WHERE request_id=? AND outbox IS NOT NULL').bind(yesterday).first()).n; n++) await new Promise(resolve => setTimeout(resolve, 100));
+    // ... the sales manager approves it; the representative attaches its quotation file: no longer missing, the approval stays
+    answer = await list('sm');
+    const pendingYesterday = answer.pending.items.find(item => item.crmRequestId === yesterday);
+    check([pendingYesterday.quoteOrPoMissing, Object.hasOwn(pendingYesterday, 'quoteNo')], [true, true], 'the sales manager\'s list: «missing» (its number is still in the data production lists, not shown)');
+    res = await post('sm', {action: 'approve', id: yesterday});
+    check([res.status, !!(await res.json()).request.remote.approvals.sales], [200, true], 'the sales manager approves it');
+    body = await (await upload(yesterday, 'عرض سعر Q-2026-0153.pdf', pdf('quotation Q-2026-0153'), 'quote')).json();
+    check([body.file.state, body.request.quotePo, !!body.request.remote.approvals.sales, body.request.remote.waitingStep, JSON.parse(fileCalls(yesterday).at(-1).body).category], ['sent', {missing: false}, true, 'production', 'quote'], 'its quotation file attached: sent with its category, no longer missing, the approval stays');
+    const quoteFile = body.file.crmFileId;
+    body = await (await remove(yesterday, quoteFile)).json();
+    check([body.request.quotePo, !!body.request.remote.approvals.sales], [{missing: true}, true], 'deleted again: missing again, the approval still stays');
+    body = await (await upload(yesterday, 'رسم.pdf', pdf('a design'))).json();
+    check([body.file.state, body.request.remote.approvals.sales, body.request.remote.waitingStep], ['sent', null, 'sales'], 'a design file still undoes the approvals: back with the sales manager');
+    // Production's own PO file counts too (its production manager attached it); a request registered there without any is «missing».
+    quoteMock.addProductionFile(yesterday, {name: 'PO الإنتاج.pdf', category: 'po'});
+    const manual = quoteMock.registerManual({customerNo: (await quoteApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='q1'").first()).number, customerName: 'مصنع q1'});
+    await age(yesterday);
+    answer = await list('sm');
+    check([answer.requests.find(item => item.id === yesterday)?.quotePo ?? (await viewOf(yesterday)).quotePo, answer.pending.items.find(item => item.orderNo === manual.orderNo).quoteOrPoMissing, answer.pending.items.find(item => item.crmRequestId === yesterday).poFiles.map(file => file.source)], [{missing: false}, true, ['production']], 'production\'s own PO file: not missing; one registered there without a file: missing');
+
+    // (6) a production_only refusal (never caused by the CRM, which resends as first sent) no longer says to ask for a number
     quoteMock.state.notConfigured = true;
-    body = await (await create({poNo: 'PO-LOCKED'})).json();
+    body = await (await create({}, {description: 'production only'})).json();
+    const refusedId = body.request.id;
+    body = await (await upload(refusedId, 'عرض.pdf', pdf('production only'), 'quote')).json();
     quoteMock.state.notConfigured = false;
     quoteMock.answerNext('requests', 409, {error: {code: 'request_locked', message: 'x', details: {reason: 'production_only'}}});
-    res = await post('rep', {action: 'resend', id: body.request.id});
-    check([res.status, (await res.json()).error], [409, 'بيانات الطلب يعدّلها مدير الإنتاج فقط؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله. كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO.'], 'a production_only refusal (never caused by the CRM, which resends as first sent): says to ask the production manager');
+    res = await post('rep', {action: 'resend', id: refusedId});
+    check([res.status, (await res.json()).error], [409, 'بيانات الطلب يعدّلها مدير الإنتاج فقط؛ التعديل لم يصل للإنتاج ولن يُعاد إرساله.'], 'production_only: its own words, no number to add');
     check([(await list()).quotePo, typeof await learned()], [true, 'string'], 'still known: never unlearned');
   } finally { await quoteApp.stop(); await quoteMock.stop(); }
 }

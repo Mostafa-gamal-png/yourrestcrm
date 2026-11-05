@@ -10,7 +10,7 @@
 // pulling its status, shows it active again, and a new cancellation takes a new reason (moldCancelReasonUsed).
 // The quotation and PO numbers and their files (yourrest-products, second update of 2026-11-03): once the CRM has learned that production's
 // update is live (a status object carrying quoteOrPoMissing, lib/mold-requests-server.ts moldQuotePoSupported), a new request (or an edit
-// before its first send) needs at least one of the two numbers, kept in the request's data and sent with it; the quotation's and PO's
+// before its first send) needed at least one of the two numbers (until 2026-11-05, below), kept in the request's data and sent with it; the quotation's and PO's
 // files go with design-files and their category. What a request shows is production's (the status object, the pending item) once
 // production holds it: its production manager adds and corrects them there. Before the update nothing of it is asked, shown or sent.
 // Who sees which request (the owner, 2026-11-03): the representative their own only, the sales manager their own and their team's
@@ -20,10 +20,17 @@
 // The customer signs a new request on the representative's phone or tablet before it is sent (the owner, 2026-11-04), for the sales roles
 // only (moldSignatureRequired): the signature is a PNG kept as one of the request's design files, named by the request's data (signature),
 // shown on its sheet and in «طلبات بانتظار اعتمادي», and not deletable while the request names it.
+// The quotation's or PO's FILE is required, the numbers are gone (production's update of 2026-11-05; the owner: every role): once the CRM
+// knows production's update of 2026-11-03 (the same flag), a new request carries no number and needs at least one quotation or PO file.
+// Files are uploaded after the request is saved, so a new request (data.fileRequired) stays in the CRM, not sent, while it has none
+// (moldAwaitsQuoteFile, sending state needs_file «بانتظار ملف عرض السعر / الـ PO»); the first one attached releases it. A request stored
+// with a number keeps it and is sent byte for byte. quoteOrPoMissing now says production has no quotation or PO file and finance has not
+// approved: shown as «ناقص ملف عرض السعر / الـ PO», with the attach action while the request is editable. Attaching or deleting a
+// quotation's or PO's file no longer undoes the approvals; a design file still does (moldFileResetsApprovals).
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,moldSignatureRequired};
 /** The customer's signature as the request's data names it (2026-11-04): who signed for the customer, when (the CRM's UTC time), and
@@ -60,8 +67,12 @@ export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:
  /** How the customer pays (2026-11-03); absent in a request asked for before, which is sent again exactly as first sent (without it). */
  payment?:MoldPayment;
  /** The quotation and PO numbers as the representative typed them, normalized (the second update of 2026-11-03): each only when given,
-  *  so a request without them is sent again exactly as first sent. */
+  *  so a request without them is sent again exactly as first sent. No longer asked for since 2026-11-05: kept as stored, never changed. */
  quoteNo?:string;poNo?:string;unconfirmed?:true;
+ /** Asked for under the rule of 2026-11-05 (production's update of 2026-11-03 known): sent to production only once a quotation or PO file
+  *  is attached in the CRM (moldAwaitsQuoteFile). Absent for a request asked for before, which goes as it always did. Never part of the
+  *  requests body. */
+ fileRequired?:true;
  /** The customer's signature (2026-11-04): absent for a request asked for before, or by customer service or the administrator. Never part
   *  of the requests body, so a request is sent with the same bytes with it or without it. */
  signature?:MoldSignature};
@@ -108,12 +119,13 @@ export type MoldSignatureState='sent'|'waiting'|'stopped'|'refused';
 export type MoldSignatureView=MoldSignature&{href:string|null;state:MoldSignatureState};
 export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOrderNo:number|null;data:MoldRequestData;accepted:MoldRequestData|null;cancelledAt:string|null;cancelReason:string;outbox:'send'|'cancel'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remote:MoldRemote|null;remoteAt:string|null;createdBy:string;createdAt:string;updatedAt:string;version:number};
 /** held: a request saved with a quotation or PO number while production's update is not known to be live (it cannot happen in normal
- *  use: the form asks for them only after it): kept, never sent to the older application, which would drop them silently. */
-export type MoldSendingState='sent'|'waiting'|'rejected'|'off'|'held';
-/** The quotation and PO a reader sees: production's (from the status object, its production manager's additions and corrections
- *  included) once it carries them, else the CRM's own while production does not hold the request yet; missing: production marks the
- *  request as lacking both (its production manager adds one). */
-export type MoldQuotePoView={quoteNo:string;poNo:string;missing:boolean;from:'production'|'crm'};
+ *  use: the form asks for them only after it): kept, never sent to the older application, which would drop them silently.
+ *  needs_file (2026-11-05): a new request without a quotation or PO file yet (moldAwaitsQuoteFile): kept in the CRM, not sent, until the
+ *  first one is attached. */
+export type MoldSendingState='sent'|'waiting'|'rejected'|'off'|'held'|'needs_file';
+/** What a reader sees of the quotation and PO (2026-11-05): missing, production marks the request as having neither a quotation file nor
+ *  a PO file while finance has not approved it (quoteOrPoMissing). The numbers are no longer shown (production no longer shows them). */
+export type MoldQuotePoView={missing:boolean};
 /** One request as a reader receives it. designFiles: the CRM's and production's; can.attach / can.deleteFile: the requester may attach or
  *  delete design files (each file also says whether it may be deleted). unconfirmed: the specifications are the CRM's change production
  *  refused (production_only), not production's data (MoldRequestData). payment: as the CRM stored it (null: asked for before 2026-11-03). */
@@ -124,8 +136,8 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean};version:number;
  /** Every file of the request (design, quotation and PO), each with its category. */
  designFiles:MoldDesignFileView[];
- /** The numbers to show (MoldQuotePoView), null when there is none to show: production holds the request and its status carries none
-  *  (production's update not live yet). */
+ /** Production's quotation and PO flag (MoldQuotePoView), null while production's status carries none (it does not hold the request yet,
+  *  or its application is older than the update of 2026-11-03). */
  quotePo:MoldQuotePoView|null;
  /** The customer's signature (2026-11-04); null for a request without one. */
  signature:MoldSignatureView|null};
@@ -153,7 +165,7 @@ export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem
 export const MOLD_PENDING_REFRESH_MS=3*60_000;
 /** Whether a request the sales manager approved from their list waits for them again: production lists it at the sales step since a
  *  later time than the copy they approved (attaching or deleting a design file undoes the approvals, as may a change made in
- *  production). The same wait listed again (a list kept a minute, here or in another server process) is not. */
+ *  production; a quotation's or PO's file no longer does, 2026-11-05). The same wait listed again (a list kept a minute, here or in another server process) is not. */
 export function moldPendingAgain(copy:Pick<MoldPendingItem,'orderNo'|'waitingSince'>,items:Pick<MoldPendingItem,'orderNo'|'waitingSince'>[]){
  const since=Date.parse(copy.waitingSince||'')||0;
  return items.some(item=>item.orderNo===copy.orderNo&&(Date.parse(item.waitingSince||'')||0)>since);
@@ -250,6 +262,12 @@ export function moldSalesApprovalWithdrawable(row:Pick<MoldRequestRow,'cancelled
 /** A design file still on its way (its sending or its deletion due on the timetable): the approval waits for it, since its arrival
  *  undoes the approvals anyway. One production refused, or that stopped after 24 hours, holds nothing. */
 export const moldDesignInFlight=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'>)=>!!file.outbox&&file.nextAttemptAt!==null;
+/** Whether attaching or deleting the file undoes production's approvals (2026-11-05): a design file (the customer's signature among them)
+ *  does; a quotation's or PO's file no longer does. */
+export const moldFileResetsApprovals=(file:{category?:unknown})=>moldFileCategory(file)==='design';
+/** A file on its way whose arrival undoes the approvals (a design file): the sales manager's approval, or its withdrawal, waits for it. A
+ *  quotation's or PO's file on its way holds nothing (2026-11-05). */
+export const moldApprovalWaitsFor=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'category'>)=>moldFileResetsApprovals(file)&&moldDesignInFlight(file);
 /** The file's sending, or its deletion, stopped after 24 hours of failures (not refused): the requester's resend starts it again
  *  (MOLD_DESIGN_STOPPED_SQL in lib/mold-requests-server.ts says the same in SQL). */
 export const moldDesignStopped=(file:Pick<MoldDesignFileRow,'outbox'|'nextAttemptAt'|'lastError'|'deletedAt'>)=>(file.outbox==='delete'||file.outbox==='send'&&!file.deletedAt)&&file.nextAttemptAt===null&&file.lastError?.final!==true;
@@ -261,12 +279,23 @@ export const moldDesignMayBeRemote=(file:Pick<MoldDesignFileRow,'outbox'|'nextAt
 /** The request has certainly never reached production (portable/mold-rules.mjs): only then may the CRM change its data. Sent (accepted,
  *  production's status, or an attempt that may have arrived) it is edited by the production manager in the products application only. */
 export const moldNeverSent=(row:Pick<MoldRequestRow,'accepted'|'remote'|'lastAttemptAt'|'lastError'>)=>neverSent(row);
+/** A quotation's or PO's file of the CRM that counts for the hold: not deleted, not refused for good. */
+const holdsQuoteFile=(file:Pick<MoldDesignFileRow,'category'|'deletedAt'|'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>)=>MOLD_QUOTE_FILE_CATEGORIES.includes(moldFileCategory(file))&&!file.deletedAt&&!moldDesignRefused(file);
+/** A new request kept in the CRM, not sent, because it has no quotation or PO file yet (2026-11-05): asked for under that rule
+ *  (data.fileRequired), its own data still to send, certainly never reached production (one that may have arrived goes on as it is:
+ *  production's quoteOrPoMissing then says what is missing), and none of its files (the request's own, as loaded) is a quotation's or a
+ *  PO's that counts. MOLD_AWAITS_FILE_SQL (lib/mold-requests-server.ts) says the same in SQL. */
+export function moldAwaitsQuoteFile(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'|'lastAttemptAt'|'lastError'>&{data?:Pick<MoldRequestData,'fileRequired'>|null},files:Pick<MoldDesignFileRow,'category'|'deletedAt'|'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>[]){
+ return row.outbox==='send'&&row.data?.fileRequired===true&&moldNeverSent(row)&&!files.some(holdsQuoteFile);
+}
 /** What the reader may do. edit: the requester, while the request has certainly never reached production (the server's update follows
  *  the same rule, in SQL too); cancel, attach and deleteFile: the requester while production still accepts changes (moldEditable).
+ *  resend: the requester, for the request's own change (not while it waits for its quotation or PO file: attaching one sends it) or a
+ *  file whose tries stopped. approve and withdraw wait for a design file on its way (moldApprovalWaitsFor), not for a quotation's or PO's.
  *  approver: the reader approves this request (the routes pass moldApprovesRequest; any sales manager when not given). */
 export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[],approver=canApproveMoldRequests(me)){
- const own=row.memberId===me.id,open=moldEditable(row),settled=!files.some(moldDesignInFlight);
- return {edit:own&&open&&moldNeverSent(row),cancel:own&&open,resend:own&&(!!row.outbox||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
+ const own=row.memberId===me.id,open=moldEditable(row),settled=!files.some(moldApprovalWaitsFor);
+ return {edit:own&&open&&moldNeverSent(row),cancel:own&&open,resend:own&&(!!row.outbox&&!moldAwaitsQuoteFile(row,files)||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
 }
 const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
 /** A file's category as stored (a status stored before 2026-11-03 carries none: design). */
@@ -332,12 +361,11 @@ export function moldSignatureView(row:Pick<MoldRequestRow,'id'|'data'>,files:Pic
 }
 /** Whether a request's data carries a quotation or PO number. */
 export const moldHasQuotePo=(data:Pick<MoldRequestData,'quoteNo'|'poNo'>)=>!!(data.quoteNo||data.poNo);
-/** The quotation and PO a reader sees (MoldQuotePoView): production's from the status object once it carries them (its production
- *  manager's additions and corrections included), else the CRM's own while production does not hold the request yet; none otherwise. */
-export function moldQuotePoView(row:Pick<MoldRequestRow,'data'|'accepted'|'remote'>):MoldQuotePoView|null{
- if(row.remote&&moldQuotePoAnswered(row.remote))return {quoteNo:row.remote.quoteNo||'',poNo:row.remote.poNo||'',missing:row.remote.quoteOrPoMissing===true,from:'production'};
- if(row.remote||row.accepted||!moldHasQuotePo(row.data))return null;
- return {quoteNo:row.data.quoteNo||'',poNo:row.data.poNo||'',missing:false,from:'crm'};
+/** The quotation and PO a reader sees (MoldQuotePoView): production's flag from the status object once it carries one (2026-11-05:
+ *  missing means production has neither a quotation file nor a PO file and finance has not approved); none otherwise. The numbers, the
+ *  request's own or production's, are not shown: production no longer shows or counts them. */
+export function moldQuotePoView(row:Pick<MoldRequestRow,'remote'>):MoldQuotePoView|null{
+ return row.remote&&moldQuotePoAnswered(row.remote)?{missing:row.remote.quoteOrPoMissing===true}:null;
 }
 /** One request as its reader receives it. cancelReasons: the reasons of its earlier cancellations (moldCancelReasons in
  *  lib/mold-requests-server.ts), so the screen asks for another before cancelling again. quotePo: production's update of 2026-11-03 is
@@ -347,27 +375,34 @@ export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],li
  const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo);
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
-  sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
+  sending:{state:moldSendingState(row,linkReady,quotePo,files),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
   remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles)};
 }
-/** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent. */
-export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'>},linkReady:boolean,quotePo=true):MoldSendingState{
+/** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent.
+ *  files: the request's own files, when given: a new request without a quotation or PO file waits for one (needs_file, 2026-11-05),
+ *  said before the link's state (attaching it is the representative's to do either way). */
+export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&Partial<Pick<MoldRequestRow,'accepted'|'remote'|'lastAttemptAt'>>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'|'fileRequired'>},linkReady:boolean,quotePo=true,files:Parameters<typeof moldAwaitsQuoteFile>[1]|null=null):MoldSendingState{
  if(!row.outbox)return 'sent';
+ if(files&&moldAwaitsQuoteFile({accepted:null,remote:null,lastAttemptAt:null,...row},files))return 'needs_file';
  if(!linkReady)return 'off';
  if(row.outbox==='send'&&!quotePo&&row.data&&moldHasQuotePo(row.data))return 'held';
  return row.lastError&&['invalid_payload','payload_too_large'].includes(row.lastError.code)?'rejected':'waiting';
 }
 
 export const moldStatusNames:Record<MoldStatusName,[string,string]>={received:['استلمه الإنتاج','Received by production'],confirmed:['اكتملت الاعتمادات','Approved'],in_production:['قيد التصنيع','In production'],produced:['تم التصنيع','Produced'],delivered:['تم التسليم للعميل','Delivered'],cancelled:['ملغى','Cancelled']};
-export const moldSendingNames:Record<MoldSendingState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],rejected:['رفض الإنتاج البيانات','Production refused the data'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],held:['بانتظار تحديث تطبيق المنتجات','Waiting for the products application update']};
-/** The quotation and PO numbers, in the representative's words (the second update of 2026-11-03). */
-export const moldQuotePoNames:Record<'quoteNo'|'poNo',[string,string]>={quoteNo:['رقم عرض السعر','Quotation no.'],poNo:['رقم الـ PO','PO no.']};
-/** A request production marks as lacking both numbers (quoteOrPoMissing): its production manager adds one there. */
-export const MOLD_QUOTE_PO_MISSING_TEXT:[string,string]=['ناقص عرض السعر / الـ PO، يضيفه مدير الإنتاج','The quotation / PO is missing; the production manager adds it'];
-/** At least one number, for a new request or an edit before its first send (the form and the server alike). */
-export const MOLD_QUOTE_PO_REQUIRED_TEXT:[string,string]=['اكتب رقم عرض السعر أو رقم الـ PO (واحد على الأقل)','Type the quotation number or the PO number (at least one)'];
-/** A sent request's change refused as production_only once numbers are part of the data: only the production manager adds one now. */
-export const MOLD_QUOTE_PO_PRODUCTION_ONLY_TEXT:[string,string]=['كلّم مدير الإنتاج يضيف رقم عرض السعر / الـ PO','Ask the production manager to add the quotation / PO number'];
+export const moldSendingNames:Record<MoldSendingState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],rejected:['رفض الإنتاج البيانات','Production refused the data'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],held:['بانتظار تحديث تطبيق المنتجات','Waiting for the products application update'],
+ needs_file:['بانتظار ملف عرض السعر / الـ PO','Waiting for the quotation / PO file']};
+/** A request production marks as having neither a quotation file nor a PO file while finance has not approved it (quoteOrPoMissing,
+ *  2026-11-05): the representative attaches one in the CRM while the request is editable, or the production manager in the products
+ *  application. */
+export const MOLD_QUOTE_PO_MISSING_TEXT:[string,string]=['ناقص ملف عرض السعر / الـ PO','The quotation / PO file is missing'];
+/** Beside it, for whoever may attach (the requester, while the request is editable), and for anyone else. */
+export const MOLD_QUOTE_PO_MISSING_ATTACH:[string,string]=['أرفق ملف عرض السعر أو الـ PO من «ملفات عرض السعر» أو «ملفات الـ PO» تحت.','Attach the quotation or PO file under «Quotation files» or «PO files» below.'];
+export const MOLD_QUOTE_PO_MISSING_OTHERS:[string,string]=['المندوب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.','The representative attaches it in the CRM, or the production manager in the products application.'];
+/** A new request needs at least one quotation or PO file (2026-11-05, every role): the form's refusal. */
+export const MOLD_QUOTE_FILE_REQUIRED_TEXT:[string,string]=['أرفق ملف عرض السعر أو الـ PO (واحد على الأقل)','Attach the quotation or PO file (at least one)'];
+/** A request kept in the CRM until its quotation or PO file is attached (sending state needs_file), in the representative's words. */
+export const MOLD_QUOTE_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف عرض السعر أو الـ PO (واحد على الأقل)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach the quotation or PO file (at least one); once you do, the request goes, then its files.'];
 /** The customer's signature in the representative's words (2026-11-04): the step, the pad, its refusals, the sheet's line. */
 export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer signature'] as [string,string],signed:['وقّع العميل','Signed by the customer'] as [string,string],
  signer:['اسم اللي بيوقّع','Name of the person signing'] as [string,string],clear:['امسح','Clear'] as [string,string],confirm:['تأكيد وإرسال','Confirm and send'] as [string,string],
@@ -409,9 +444,8 @@ export const moldProductionOnly=(error:Pick<MoldError,'code'|'reason'>|null|unde
 export const moldChangeRefused=(error:Pick<MoldError,'code'|'reason'|'final'>|null|undefined)=>!!error&&(error.final===true||moldProductionOnly(error));
 
 /** Why a call did not go through, in the representative's words; the code alone is stored (with production's reason, when it gave
- *  one: production_only). file: a design file's call (design-files, design-file), whose limit is 120 seconds, not 10. quotePo: production's
- *  update of 2026-11-03 is live, so a production_only refusal adds who adds a quotation or PO number now. */
-export function moldErrorText(code:string,say:(ar:string,en:string)=>string,{file=false,reason='',quotePo=false}:{file?:boolean;reason?:string;quotePo?:boolean}={}){
+ *  one: production_only). file: a design file's call (design-files, design-file), whose limit is 120 seconds, not 10. */
+export function moldErrorText(code:string,say:(ar:string,en:string)=>string,{file=false,reason=''}:{file?:boolean;reason?:string}={}){
  const table:Record<string,[string,string]>={
   network:['تعذّر الوصول إلى تطبيق الإنتاج','Production could not be reached'],timeout:file?['لم يرد تطبيق الإنتاج خلال دقيقتين','Production did not answer within 2 minutes']:['لم يرد تطبيق الإنتاج خلال 10 ثوانٍ','Production did not answer within 10 seconds'],
   not_configured:['الربط مع الإنتاج غير مفعَّل','The production link is off'],invalid_url:['إعداد عنوان الربط في الـCRM غير صحيح','The link address in the CRM settings is invalid'],short_secret:['مفتاح الربط في إعدادات الـCRM غير صحيح','The link key in the CRM settings is invalid'],
@@ -421,8 +455,7 @@ export function moldErrorText(code:string,say:(ar:string,en:string)=>string,{fil
   [MOLD_PRODUCTION_ONLY]:MOLD_PRODUCTION_ONLY_TEXT,
  };
  const found=(reason===MOLD_PRODUCTION_ONLY?table[reason]:undefined)||table[code]||(/^http_5/.test(code)?table.server_error:undefined);
- const text=found?say(...found):say('تعذّر الاتصال بتطبيق الإنتاج','Production could not be reached');
- return quotePo&&(reason===MOLD_PRODUCTION_ONLY||code===MOLD_PRODUCTION_ONLY)?text+say('؛ ','; ')+say(...MOLD_QUOTE_PO_PRODUCTION_ONLY_TEXT):text;
+ return found?say(...found):say('تعذّر الاتصال بتطبيق الإنتاج','Production could not be reached');
 }
 export const moldDesignStateNames:Record<MoldDesignState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],held:['يُرسل بعد وصول الطلب للإنتاج','Sent once production has the request'],
  rejected:['رفض الإنتاج الملف','Production refused the file'],locked:['اكتملت الاعتمادات قبل وصوله؛ لم يُرسل','The approvals were complete first; not sent'],cancelled:['لن يُرسل: الطلب ملغى','Not sent: the request is cancelled'],deleting:['جارٍ حذفه من الإنتاج','Being deleted at production'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],production:['من تطبيق الإنتاج','From production'],update:['بانتظار تحديث تطبيق المنتجات','Waiting for the products application update']};

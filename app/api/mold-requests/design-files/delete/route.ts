@@ -1,7 +1,9 @@
 // Deleting a design file the CRM attached (the contract's addition «ملفات التصميم», 2026-11-02): the requester only, and only the CRM's
 // own files (production manages the ones it attached). The quotation's and PO's files (2026-11-03) are deleted the same way. A file production never held (never tried, or refused for good) is removed in the
 // CRM alone, at any time. One production may hold goes through design-file-delete while the request is editable, which undoes the
-// approvals given (the screen warns first); a send still in flight is let finish first, so the deletion never overtakes the file.
+// approvals given for a design file (the screen warns first) and no longer for a quotation's or PO's (2026-11-05: no warning); a send
+// still in flight is let finish first, so the deletion never overtakes the file. Deleting the last quotation or PO file of a new request
+// that has not reached production keeps it in the CRM again until another is attached.
 // A receipt makes a repeated tap harmless; the audit entry names the file, never its contents.
 // The customer's signature (2026-11-04) is not deleted while the request's data names it: an edit that changes what was signed replaces it.
 import {z} from 'zod';
@@ -51,7 +53,7 @@ export async function POST(req:Request){try{
  const statement=remote
   ?c.db.prepare(`UPDATE crm_mold_design_files SET deleted_at=?,outbox='delete',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_error=NULL,version=version+1,mutation_id=? WHERE ${unchanged}`).bind(now,after,mutation,...args)
   :c.db.prepare(`UPDATE crm_mold_design_files SET deleted_at=?,outbox=NULL,next_attempt_at=NULL,object_key=NULL,version=version+1,mutation_id=? WHERE ${unchanged}`).bind(now,mutation,...args);
- const detail={label:'حذف ملف تصميم من طلب تصنيع قالب',customerName:row.data.customer.name,name:file.name,atProduction:remote};
+ const detail={label:file.category==='quote'?'حذف ملف عرض سعر من طلب تصنيع قالب':file.category==='po'?'حذف ملف PO من طلب تصنيع قالب':'حذف ملف تصميم من طلب تصنيع قالب',customerName:row.data.customer.name,name:file.name,atProduction:remote,...(file.category!=='design'?{category:file.category}:{})};
  const result=await c.db.batch([statement,
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,row.id,c.me.name,'mold-design-receipt',canonical,now,file.id,mutation),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),row.id,c.me.name,'mold-design:delete',JSON.stringify(detail),now,file.id,mutation),

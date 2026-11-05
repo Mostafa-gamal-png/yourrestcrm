@@ -3,11 +3,13 @@
 // request's sheet, checked on the device as production checks them (portable/mold-rules.mjs), uploaded to the CRM one at a time (each
 // with its own requestId, kept for retries of the same file), then sent to production by the server once production holds the request.
 // Everyone who reads the request sees every file (the representative's and production's) and opens or downloads it through the CRM;
-// the requester deletes their own while the request may change. Attaching or deleting undoes the approvals, so it is confirmed first.
+// the requester deletes their own while the request may change. Attaching or deleting a design file undoes the approvals, so it is
+// confirmed first with that warning; a quotation's or PO's file no longer does (production's update of 2026-11-05): a plain confirmation.
 // The uploads outlive the page (a member's queue lasts as long as the app is open), so moving to another page and back loses none.
 // The quotation's and PO's files (production's second update of 2026-11-03) go the same way, each in its own group with its own limit (5
 // of each, a PDF or an image only), offered once production's update is known to be live. The customer's signature (2026-11-04) is one of
-// the design files: labelled «توقيع العميل», never deletable while the request names it, and taking one of the 10 places.
+// the design files: labelled «توقيع العميل», never deletable while the request names it, and taking one of the 10 places. Since 2026-11-05
+// a new request needs one quotation or PO file (kept in the CRM until then: its groups are offered to attach it from the request's sheet).
 import React,{useRef,useState} from 'react';
 import {Download,Eye,FileBox,FileText,ImageIcon,Loader2,Paperclip,PenLine,RotateCcw,Trash2,TriangleAlert,X} from 'lucide-react';
 import {getLanguage} from '@/lib/i18n';
@@ -39,14 +41,16 @@ export type DesignUpload={key:string;moldId:string;file:File;name:string;size:nu
 
 export const designSize=(size:number|null)=>size===null?'—':size<1024?size+' B':size<1024*1024?Math.max(1,Math.round(size/1024))+' KB':(size/1024/1024).toFixed(1)+' MB';
 const KindIcon=({kind}:{kind:MoldDesignKind|null})=>kind==='pdf'?<FileText size={18} aria-hidden="true"/>:kind==='image'?<ImageIcon size={18} aria-hidden="true"/>:<FileBox size={18} aria-hidden="true"/>;
-/** What attaching or deleting does to a request production holds (the contract: it counts as a change). */
-export const designWarningText=(say:Say)=>say('إرفاق ملف أو حذفه بيتحسب تعديل على الطلب: هيلغي الاعتمادات اللي تمت، ويرجع الطلب لمدير المبيعات من الأول.','Attaching or deleting a file counts as a change to the request: it undoes the approvals given so far and the request goes back to the sales manager.');
+/** What attaching or deleting a design file does to a request production holds (the contract: it counts as a change). Not said for a
+ *  quotation's or PO's file, which no longer undoes the approvals (2026-11-05). */
+export const designWarningText=(say:Say)=>say('إرفاق ملف تصميم أو حذفه بيتحسب تعديل على الطلب: هيلغي الاعتمادات اللي تمت، ويرجع الطلب لمدير المبيعات من الأول.','Attaching or deleting a design file counts as a change to the request: it undoes the approvals given so far and the request goes back to the sales manager.');
 /** A confirmation scrolls itself into view when it appears (a stable callback ref: once per appearance, not on every render), so its
  *  buttons are on a phone's screen; centered keeps the button that follows a warning in view too. */
 export const reveal=(element:HTMLElement|null)=>{element?.scrollIntoView({block:'nearest'});};
 export const revealCentered=(element:HTMLElement|null)=>{element?.scrollIntoView({block:'center'});};
-/** The warning applies once production holds the request; before that nothing has been approved. */
-export const designNeedsWarning=(view:Pick<MoldRequestView,'remote'>)=>!!view.remote;
+/** The warning applies to a design file once production holds the request; before that nothing has been approved. A quotation's or PO's
+ *  file never needs it (2026-11-05: attaching or deleting one keeps the approvals). */
+export const designNeedsWarning=(view:Pick<MoldRequestView,'remote'>,category:MoldFileCategory='design')=>category==='design'&&!!view.remote;
 /** Why a file was refused, in the representative's words: production's reason, or the code. category: the file's kind (its limit). */
 export function designRefusal(error:Pick<MoldError,'code'|'reason'|'fields'>|null,say:Say,category:MoldFileCategory='design'){
  if(!error)return '';
@@ -219,7 +223,8 @@ const hint=(say:Say,category:MoldFileCategory='design')=>category==='design'
  ?say('PDF أو صورة أو ملف رسم (DWG وDXF وSTEP وSTL وZIP…) · حتى 25 ميجابايت للملف · '+MOLD_DESIGN_MAX_FILES+' ملفات للطلب مع ملفات الإنتاج','A PDF, an image or a drawing (DWG, DXF, STEP, STL, ZIP…) · up to 25 MB a file · '+MOLD_DESIGN_MAX_FILES+' files a request with production\'s')
  :say('PDF أو صورة بس · حتى 25 ميجابايت للملف · '+MOLD_CATEGORY_MAX_FILES[category]+' ملفات مع ملفات الإنتاج','A PDF or an image only · up to 25 MB a file · '+MOLD_CATEGORY_MAX_FILES[category]+' files with production\'s');
 /** The picker's title in the form, for each kind of file. */
-const pickerTitle=(say:Say,category:MoldFileCategory)=>category==='quote'?say('ملفات عرض السعر (اختياري)','Quotation files (optional)'):category==='po'?say('ملفات الـ PO (اختياري)','PO files (optional)'):say('ملفات التصميم (اختياري)','Design files (optional)');
+/** The quotation's and PO's pickers sit under «عرض السعر أو الـ PO (ملف واحد على الأقل)» (2026-11-05): no «اختياري» of their own. */
+const pickerTitle=(say:Say,category:MoldFileCategory)=>category==='quote'?say('ملفات عرض السعر','Quotation files'):category==='po'?say('ملفات الـ PO','PO files'):say('ملفات التصميم (اختياري)','Design files (optional)');
 
 /** The files chosen in the request form: each checked at once; those that may go upload right after the request is saved. category: the
  *  kind of file this picker takes (design by default; the quotation's or PO's: a PDF or an image only). */
@@ -268,10 +273,12 @@ export function designFileDetail(file:Pick<MoldDesignFileView,'state'|'error'|'s
 }
 
 /** The request's files in its sheet, one group for each kind: its design files, and (once production's update of 2026-11-03 is live, or
- *  when the request has some) the quotation's and the PO's. quotePo: production's update is known to be live, so those may be attached. */
+ *  when the request has some) the quotation's and the PO's. quotePo: production's update is known to be live, so those may be attached;
+ *  so may they for a request kept for its quotation's or PO's file (needs_file: the server knows the update even if the page did not). */
 export function MoldDesignFiles({view,uploads,queue,onView,say,quotePo=false}:{view:MoldRequestView;uploads:DesignUpload[];queue:DesignUploadQueue;onView:(view:MoldRequestView)=>void;say:Say;quotePo?:boolean}){
- const groups=MOLD_FILE_CATEGORY_ORDER.filter(category=>category==='design'||quotePo||view.designFiles.some(file=>file.category===category)||uploads.some(upload=>upload.category===category));
- return <>{groups.map(category=><MoldFileGroup key={category} category={category} attachable={category==='design'||quotePo} view={view} uploads={uploads} queue={queue} onView={onView} say={say}/>)}</>;
+ const offered=quotePo||view.sending.state==='needs_file';
+ const groups=MOLD_FILE_CATEGORY_ORDER.filter(category=>category==='design'||offered||view.designFiles.some(file=>file.category===category)||uploads.some(upload=>upload.category===category));
+ return <>{groups.map(category=><MoldFileGroup key={category} category={category} attachable={category==='design'||offered} view={view} uploads={uploads} queue={queue} onView={onView} say={say}/>)}</>;
 }
 const emptyText=(say:Say,category:MoldFileCategory)=>category==='quote'?say('لا توجد ملفات عرض سعر.','No quotation files.'):category==='po'?say('لا توجد ملفات PO.','No PO files.'):say('لا توجد ملفات تصميم.','No design files.');
 /** One kind of the request's files: every file of it, the representative's with where it stands and production's marked as such, each
@@ -282,7 +289,7 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
  const keys=useRef(new Map<string,string>());
  const listed=view.designFiles.filter(file=>(file.category||'design')===category);
  const shown=new Set(view.designFiles.map(file=>file.crmFileId)),pending=uploads.filter(upload=>(upload.category||'design')===category&&!shown.has(crmFileIdOf(upload.key)));
- const max=MOLD_CATEGORY_MAX_FILES[category],used=designUsed(view,uploads,category),room=max-used,warn=designNeedsWarning(view);
+ const max=MOLD_CATEGORY_MAX_FILES[category],used=designUsed(view,uploads,category),room=max-used,warn=designNeedsWarning(view,category);
  const pick=async(files:File[])=>{
   setChecking(true);setAsking(null);
   try{

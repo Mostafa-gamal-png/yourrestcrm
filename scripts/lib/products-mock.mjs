@@ -32,6 +32,12 @@
 // another category as crm_file_id_used, and 10 design files, 5 quotation and 5 PO files a request (too_many_files). Test controls: the
 // switch (setQuotePo), the production manager adding or correcting a number (setNumbers), production's own quotation or PO file
 // (addProductionFile with a category).
+// Since the products side's message of 2026-11-05 the updated application (the same switch, quotePo: true) is the one after that
+// message: quoteNo and poNo are still taken, normalized, stored and part of the original a retry is compared with, but not counted;
+// quoteOrPoMissing is true while the request has neither a quotation file nor a PO file (the CRM's or production's own) and finance has
+// not approved it (approvals.admin; a historical request needs none), cancelled and deleted ones excepted; attaching or deleting a
+// quotation's or PO's file keeps the approvals, a design file's still undoes them. Everything else is unchanged. quotePo: false stays the
+// application before 2026-11-03 (no quoteOrPoMissing key at all).
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
@@ -133,12 +139,14 @@ function waitingStep(row) {
   return status === 'produced' ? 'delivery' : 'manufacturing';
 }
 /** The quotation and PO part of a status object or a pending item, from the updated application only: the numbers as it holds them
- *  now ("" for none), quoteOrPoMissing (a request it took after its update, still without either, not cancelled), and the files of each
- *  kind, designFiles then listing design files only. The old application lists every file in designFiles and nothing else. */
+ *  now ("" for none, no longer counted), quoteOrPoMissing (2026-11-05: neither a quotation file nor a PO file, the CRM's or its own, and
+ *  finance has not approved; never for a cancelled or deleted request), and the files of each kind, designFiles then listing design files
+ *  only. The old application lists every file in designFiles and nothing else. */
 function quotePoPart(row, quotePo) {
   const files = category => (row.designFiles || []).filter(file => (file.category || 'design') === category).map(file => designEntryOf(file, true));
   if (!quotePo) return {designFiles: (row.designFiles || []).map(file => designEntryOf(file, false))};
-  return {designFiles: files('design'), quoteNo: row.quoteNo ?? '', poNo: row.poNo ?? '', quoteOrPoMissing: !!row.quotePoEra && !row.cancelled && !row.quoteNo && !row.poNo, quoteFiles: files('quote'), poFiles: files('po')};
+  const quoteFiles = files('quote'), poFiles = files('po');
+  return {designFiles: files('design'), quoteNo: row.quoteNo ?? '', poNo: row.poNo ?? '', quoteOrPoMissing: !row.cancelled && !approved(row) && !quoteFiles.length && !poFiles.length, quoteFiles, poFiles};
 }
 /** yr_mreq_status_object; quotePo: the updated application (2026-11-03) adds the quotation and PO part. */
 function statusObjectOf(row, quotePo) {
@@ -200,8 +208,6 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     } else if (!row) {
       row = {crmRequestId: p.crmRequestId, orderNo: state.nextOrder++, source: 'crm', stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null};
       for (const column of COLUMNS) row[column] = p[column];
-      // A request taken after the update of 2026-11-03: missing its quotation and PO until one is given.
-      row.quotePoEra = state.quotePo;
       // What the CRM first sent, kept apart from the columns the production manager may edit: a retry is compared with it.
       row.original = Object.fromEntries(COLUMNS.map(column => [column, p[column]]));
       touch(row); state.rows.set(row.crmRequestId, row); state.byOrder.set(row.orderNo, row); created = true;
@@ -292,7 +298,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     return {status: 200, body: {received: entries.length, inserted, updated, deactivated, activeCustomers: [...state.customers.values()].filter(entry => entry.active).length}};
   }
 
-  /** A change from the CRM during the approvals undoes the ones given (an edit, an attached or a deleted file). */
+  /** A change from the CRM during the approvals undoes the ones given (an edit, an attached or a deleted design file; since 2026-11-05 not
+   *  a quotation's or PO's file). */
   const undoApprovals = row => { if (!row.approvals.legacy && APPROVAL_STEPS.some(step => row.approvals[step])) row.approvals = noApprovals(); };
   /** A refusal of the file for its place, not its bytes (PR #27): 400 invalid_payload, fields ['crmFileId'], details.reason. */
   const placeRefusal = (reason, message) => new ApiError('invalid_payload', 400, message, ['crmFileId'], {reason});
@@ -328,7 +335,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
     if ((row.designFiles ||= []).filter(file => (file.category || 'design') === category).length >= CATEGORY_LIMITS[category]) throw placeRefusal('too_many_files', 'A request holds at most ' + CATEGORY_LIMITS[category] + ' files of this kind.');
     const file = {fileId: state.nextFile++, crmFileId: meta.crmFileId, name: meta.name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256, source: 'crm', uploadedAt: riyadh(), category};
-    row.designFiles.push(file); undoApprovals(row); touch(row);
+    row.designFiles.push(file); if (category === 'design') undoApprovals(row); touch(row);
     return {status: 201, body: {created: true, file: designEntry(file), request: statusObject(row)}};
   }
   /** design-file-delete: a file the CRM sent, by its crmFileId; production's own files are not the CRM's to delete. */
@@ -341,7 +348,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
     if (index < 0) throw new ApiError('not_found', 404, 'No file of this request has this crmFileId.');
     if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
-    state.deletedFileIds.add(body.crmFileId); row.designFiles.splice(index, 1); undoApprovals(row); touch(row);
+    const [removed] = row.designFiles.splice(index, 1); state.deletedFileIds.add(body.crmFileId);
+    if ((removed.category || 'design') === 'design') undoApprovals(row);
+    touch(row);
     return {status: 200, body: {request: statusObject(row)}};
   }
   /** design-file: the file itself, its type and its name (filename* in UTF-8). */
@@ -422,7 +431,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     registerManual({customerNo = null, customerName = 'مصنع مسجّل في الإنتاج', salesmanName = 'مندوب', createdBy = 'staff@yourrest.org', description = 'manual mold', quantity = 1, payment = null, quoteNo = null, poNo = null} = {}) {
       const row = {crmRequestId: null, orderNo: state.nextOrder++, source: 'manual', createdBy, stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null,
         ...Object.fromEntries(COLUMNS.map(c => [c, null])), requestedAt: new Date(now()).toISOString(), customerNo, customerName, customerAddress: '', customerCity: 'الدمام', salesmanId: '', salesmanName, salesmanEmail: '',
-        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: '', payment, quoteNo, poNo, quotePoEra: state.quotePo};
+        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: '', payment, quoteNo, poNo};
       touch(row); state.byOrder.set(row.orderNo, row);
       return row;
     },
@@ -493,8 +502,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     answerNext(route, http, body) { const queue = state.answers.get(route) || []; queue.push({http, body}); state.answers.set(route, queue); },
     /** The next call of a route is carried out as usual, but its answer is lost (the connection is cut): the CRM never learns of it. */
     loseNext(route) { state.lose.set(route, (state.lose.get(route) || 0) + 1); },
-    /** The application before (false) or after (true) its update of 2026-11-03 (the quotation and PO): what it reads and answers changes
-     *  at once; requests it took before keep quoteOrPoMissing false. */
+    /** The application before (false) or after (true) its update of 2026-11-03 (the quotation and PO), as it stands since the message of
+     *  2026-11-05: what it reads and answers changes at once; quoteOrPoMissing follows the files and finance's approval alone. */
     setQuotePo(on = true) { state.quotePo = !!on; },
     /** The production manager adds or corrects a request's quotation or PO number in the products application (by its crmRequestId, or
      *  the orderNo of one registered there): normalized as the application stores it; the CRM's original data a retry is compared with
