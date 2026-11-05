@@ -425,15 +425,28 @@ const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
  *  a minute ahead; an answer stores its error or clears the outbox). */
 const requestClaimed=(row:MoldRequestRow,at:string)=>!!row.outbox&&!!row.lastAttemptAt&&!!row.nextAttemptAt&&row.nextAttemptAt>at&&!(row.lastError&&row.lastError.at>=row.lastAttemptAt);
 /** The design files whose turn has come, oldest first: deletions, and files whose request production holds (not cancelled, in the CRM
- * nor in production as last known). A file waiting for its request is left until the request is accepted, or restored. */
+ * nor in production as last known). A file waiting for its request is left until the request is accepted, or restored. A request's
+ * files reach production in the order they were attached (the customer's signature first, as releaseMoldRequest sends them): a file
+ * waits while an older one of the same request is due or being sent (its next try within a send's lease), so this check, run beside
+ * another sender (a page's load while an upload releases its request), never sends a newer file past an older one. An older file that
+ * stopped (24 hours of failures) or was refused for good (no next try), or retries later than a lease, holds none. */
 export async function sendDueMoldDesignFiles(db:D1Database,{limit=2,now=()=>new Date().toISOString(),link=productsLink(),fetch,files}:{limit?:number;now?:()=>string;link?:Config;fetch?:typeof globalThis.fetch;files?:R2Bucket}={}){
  if(!link.ok||filesInFlight>=DESIGN_SENDS)return 0;
- // Before production's update is known, a quotation's or PO's file is not due (it would only be held again).
- const update=await moldQuotePoSupported(db)?'':" AND (f.outbox='delete' OR f.category='design')";
- const due=(await db.prepare(`SELECT f.id FROM crm_mold_design_files f JOIN crm_mold_requests r ON r.id=f.request_id WHERE f.outbox IS NOT NULL AND f.next_attempt_at IS NOT NULL AND f.next_attempt_at<=?
-  AND (f.outbox='delete' OR (r.accepted IS NOT NULL AND r.cancelled_at IS NULL AND json_extract(r.remote,'$.status') IS NOT 'cancelled'))${update} ORDER BY f.next_attempt_at,f.id LIMIT ?`).bind(now(),limit).all<{id:string}>()).results;
- let sent=0;
- for(const {id} of due){const outcome=await sendMoldDesignFile(db,id,{link,now,fetch,...(files?{files}:{})});if(outcome.kind==='ok')sent++;}
+ // Before production's update is known, a quotation's or PO's file is not due (it would only be held again), nor does it hold others.
+ const known=await moldQuotePoSupported(db),update=known?'':" AND (f.outbox='delete' OR f.category='design')",olderKind=known?'':" AND o.category='design'";
+ // One file at a time, read again after each send, so an older file sent here lets the newer one go in the same check.
+ const tried:string[]=[];let sent=0;
+ while(tried.length<limit){
+  const at=now(),leaseEnd=new Date(Date.parse(at)+DESIGN_LEASE_MS).toISOString();
+  const next=await db.prepare(`SELECT f.id FROM crm_mold_design_files f JOIN crm_mold_requests r ON r.id=f.request_id WHERE f.outbox IS NOT NULL AND f.next_attempt_at IS NOT NULL AND f.next_attempt_at<=?
+   AND (f.outbox='delete' OR (r.accepted IS NOT NULL AND r.cancelled_at IS NULL AND json_extract(r.remote,'$.status') IS NOT 'cancelled'))${update}
+   AND (f.outbox='delete' OR NOT EXISTS(SELECT 1 FROM crm_mold_design_files o WHERE o.request_id=f.request_id AND o.id<>f.id AND o.outbox='send' AND o.deleted_at IS NULL AND o.sent_at IS NULL
+    AND o.next_attempt_at IS NOT NULL AND o.next_attempt_at<=? AND (o.created_at<f.created_at OR o.created_at=f.created_at AND o.id<f.id)${olderKind}))
+   AND f.id NOT IN (SELECT value FROM json_each(?)) ORDER BY f.next_attempt_at,f.id LIMIT 1`).bind(at,leaseEnd,JSON.stringify(tried)).first<{id:string}>();
+  if(!next)break;
+  tried.push(next.id);
+  const outcome=await sendMoldDesignFile(db,next.id,{link,now,fetch,...(files?{files}:{})});if(outcome.kind==='ok')sent++;
+ }
  return sent;
 }
 
@@ -488,7 +501,7 @@ export async function pullMoldStatuses(db:D1Database,rows:MoldRequestRow[],{link
  * production), kept a minute so a busy page or several managers do not ask production for each one; a failed call waits half that
  * long before the next. An approval, or any file attached or deleted (a design file undoes the approvals; a quotation's or PO's changes
  * what the list shows of the request, 2026-11-05), empties it, and since production has just answered, forgets a failure too. */
-let pendingCache:{at:string;items:MoldPendingItem[]}|null=null,pendingFailure:MoldError|null=null;
+let pendingCache:{at:string;items:MoldPendingItem[];unreadable:number}|null=null,pendingFailure:MoldError|null=null;
 export function forgetPendingApprovals(){pendingCache=null;pendingFailure=null;}
 type PendingReader={me:Member;db:D1Database;members:Member[];regionCustomerIds:Set<string>;all?:readonly {id:string;kind:string;data:Record<string,unknown>}[]};
 /** The sales manager's «طلبات بانتظار اعتمادي»: the requests production holds at the sales step (the CRM's and those registered in
@@ -511,7 +524,7 @@ export async function moldPendingFor(c:PendingReader,link:Config,{force=false}:{
  }
  const shown=(item:MoldPendingItem)=>{const row=item.crmRequestId?own.get(item.crmRequestId):undefined;return row?moldApprovesRequest(row,c):inRegion(item.customer.crmNumber);};
  // Signed only once production's listing holds the signature's image (by its crmFileId); until then the item says it has not arrived.
- return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature,signatureDelivered:!!signature&&item.designFiles.some(file=>file.crmFileId===signature.fileId)};}),error:pulled.error,at:pulled.at};
+ return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature,signatureDelivered:!!signature&&item.designFiles.some(file=>file.crmFileId===signature.fileId)};}),error:pulled.error,at:pulled.at,...(pulled.unreadable?{unreadable:pulled.unreadable}:{})};
 }
 /** Whether a reader may open one request (GET ?id=, its sheet, and its files by id): every request their list shows
  * (canReadMoldRequest); and for the sales manager one that their list does not show but «طلبات بانتظار اعتمادي» shows them now (customer
@@ -523,14 +536,16 @@ export async function canOpenMoldRequest(row:Pick<MoldRequestRow,'id'|'memberId'
  const pending=await moldPendingFor(c,link);
  return !!pending&&!pending.error&&pending.items.some(item=>item.crmRequestId===row.id);
 }
-export async function pullPendingApprovals({link=productsLink(),now=()=>new Date().toISOString(),fetch,force=false}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;force?:boolean}={}):Promise<{items:MoldPendingItem[];error:MoldError|null;at:string|null}>{
- if(!link.ok)return {items:[],error:{code:link.reason,at:now()},at:null};
+/** unreadable: how many of production's items could not be read (moldPendingItem: nothing names one, say a request registered there with
+ *  a malformed requestRef and no number); they cannot be shown or approved, and the list says how many there are. */
+export async function pullPendingApprovals({link=productsLink(),now=()=>new Date().toISOString(),fetch,force=false}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;force?:boolean}={}):Promise<{items:MoldPendingItem[];error:MoldError|null;at:string|null;unreadable:number}>{
+ if(!link.ok)return {items:[],error:{code:link.reason,at:now()},at:null,unreadable:0};
  const at=now();
- if(!force&&pendingCache&&Date.parse(at)-Date.parse(pendingCache.at)<MOLD_STATUS_TTL_MS)return {items:pendingCache.items,error:null,at:pendingCache.at};
- if(!force&&pendingFailure&&Date.parse(at)-Date.parse(pendingFailure.at)<MOLD_STATUS_TTL_MS/2)return {items:pendingCache?.items||[],error:pendingFailure,at:pendingCache?.at||null};
+ if(!force&&pendingCache&&Date.parse(at)-Date.parse(pendingCache.at)<MOLD_STATUS_TTL_MS)return {items:pendingCache.items,error:null,at:pendingCache.at,unreadable:pendingCache.unreadable};
+ if(!force&&pendingFailure&&Date.parse(at)-Date.parse(pendingFailure.at)<MOLD_STATUS_TTL_MS/2)return {items:pendingCache?.items||[],error:pendingFailure,at:pendingCache?.at||null,unreadable:pendingCache?.unreadable||0};
  const answer=await callProducts(link,'pending',{},fetch?{fetch}:{});
- if(answer.kind!=='ok'){pendingFailure={code:answer.code,http:answer.http||0,at};return {items:pendingCache?.items||[],error:pendingFailure,at:pendingCache?.at||null};}
- const items=(answer.json!.requests as unknown[]).map(item=>moldPendingItem(item) as MoldPendingItem|null).filter((item):item is MoldPendingItem=>!!item);
- pendingCache={at,items};pendingFailure=null;
- return {items,error:null,at};
+ if(answer.kind!=='ok'){pendingFailure={code:answer.code,http:answer.http||0,at};return {items:pendingCache?.items||[],error:pendingFailure,at:pendingCache?.at||null,unreadable:pendingCache?.unreadable||0};}
+ const raw=answer.json!.requests as unknown[],items=raw.map(item=>moldPendingItem(item) as MoldPendingItem|null).filter((item):item is MoldPendingItem=>!!item),unreadable=raw.length-items.length;
+ pendingCache={at,items,unreadable};pendingFailure=null;
+ return {items,error:null,at,unreadable};
 }

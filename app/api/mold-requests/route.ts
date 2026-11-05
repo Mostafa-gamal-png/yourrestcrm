@@ -39,7 +39,10 @@ const requestId=z.string().uuid(),id=z.string().regex(/^mr-[0-9a-f-]{36}$/),vers
 const specsInput=z.record(z.string(),z.unknown()),paymentInput=z.unknown().optional(),numberInput=z.unknown().optional();
 /** The customer's signature (2026-11-04): {signer, png} with the PNG as base64, checked by readSignature (each refusal by its field). */
 const signatureInput=z.unknown().optional();
-const pendingTarget={requestId,crmRequestId:z.string().regex(MOLD_ID,'حدد الطلب').optional(),requestRef:z.string().regex(MOLD_REQUEST_REF,'مرجع الطلب غير صحيح؛ حدّث الصفحة.').optional(),orderNo:z.number().int().positive().nullable().optional()};
+const pendingTarget={requestId,crmRequestId:z.string().regex(MOLD_ID,'حدد الطلب').optional(),requestRef:z.string().regex(MOLD_REQUEST_REF,'مرجع الطلب غير صحيح؛ حدّث الصفحة.').optional(),orderNo:z.number().int().positive().nullable().optional(),
+ // This release's page marks its approval (as its GET asks with refs=1): it names an item by number only when production gave it no
+ // requestRef, so its number is checked against production's list as it is now, never refused for being a number.
+ page:z.literal('refs').optional()};
 const schema=z.discriminatedUnion('action',[
  // payment (2026-11-03): cash or deferred, required (checkedRequest says so with the field's own message). quoteNo and poNo (the second
  // update of 2026-11-03) are no longer asked for (2026-11-05): read only to refuse one a page loaded before sends (checkedRequest).
@@ -72,7 +75,10 @@ const QUOTE_PO_GONE='رقم عرض السعر ورقم الـ PO اتشالوا 
  *  101 up move down by one once, so an order number no longer names a request. A page loaded before this release still does (its item
  *  without a number sends null): it is asked to reload, never answered on a number. Its English pair is in lib/locales/en.json. */
 const ORDER_PAGE_OUTDATED='الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.';
-/** Production refused how the approval named the request (400: a requestRef or an order number it does not take). */
+/** A request named by its number while production's list (or the status of the CRM's request holding that number) could not be read
+ *  just now: the number is never resolved against an older copy (it may have moved since). Its English pair is in lib/locales/en.json. */
+const ORDER_UNSURE='تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.';
+/** Production refused how the approval named the request (400 naming requestRef). */
 const APPROVAL_TARGET_REFUSED='تطبيق الإنتاج لم يقبل تعريف الطلب؛ حدّث الصفحة وحاول مرة أخرى.';
 /** A resend of a request kept for its quotation or PO file (2026-11-05): nothing to resend; attaching the file sends it. */
 const QUOTE_FILE_FIRST='الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.';
@@ -180,17 +186,32 @@ export async function POST(req:Request){let objectKey='';try{
   if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل',503);
   // The CRM's own request goes by its crmRequestId, with the CRM's own checks: one this manager approves (moldApprovesRequest, as
   // «طلبات بانتظار اعتمادي» lists it). One registered in production goes by its requestRef, approved only while production still lists it
-  // as waiting within the manager's regions; a requestRef the CRM's own request holds goes as that request. An order number only while
-  // the products application is the one before its update of 2026-11-05 (learned from production's answers, the list asked for here
-  // included): then it still names one request, the CRM's own that holds it (the stored status, refreshed on each pull) or one registered
-  // in production; once that update is live a number may name another request than the page meant, so nothing is answered on it.
+  // as waiting within the manager's regions; a requestRef the CRM's own request holds goes as that request. An order number names a
+  // request only as production answers now (its list and the holder's status pulled here, never an older copy): the CRM's own whose
+  // status still holds it without a requestRef, or one registered in production listed with it and no requestRef. A page loaded before
+  // this release (no page 'refs') is refused once the update of 2026-11-05 is known; this release's page names by number only an item
+  // production gave no requestRef (the application before it, rolled back, or an item answered without one), so it is checked, not refused.
   let own=null,listed=null;
   if(byNumber){
    if(orderNo===null)throw new CRMError(ORDER_PAGE_OUTDATED,409);
-   const waiting=await pendingFor(c,link,{force:true});
-   if(await moldRequestRefKnown(c.db))throw new CRMError(ORDER_PAGE_OUTDATED,409);
-   own=(await loadMoldRequests(c.db,"json_extract(remote,'$.orderNo')=?",[orderNo]))[0];
-   if(!own&&approving){listed=waiting!.items.find(item=>item.orderNo===orderNo&&!item.crmRequestId);if(!listed)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',409);}
+   // The number is read against production as it answers now: its list asked for again (never the copy kept from before a failed
+   // call), and the status of the CRM's request holding that number (or, without one, of the latest the CRM holds) pulled again. Both
+   // also teach the CRM the products update, should it be live since.
+   const fresh=await pendingFor(c,link,{force:true});
+   if(!fresh||fresh.error)throw new CRMError(ORDER_UNSURE,409);
+   const holder=(await loadMoldRequests(c.db,"json_extract(remote,'$.orderNo')=?",[orderNo]))[0],probe=holder||(await loadMoldRequests(c.db,'remote IS NOT NULL'))[0];
+   if(probe&&await pullMoldStatuses(c.db,[probe],{link,force:true}))throw new CRMError(ORDER_UNSURE,409);
+   // A page loaded before this release, once the update is known: refused whatever the number (it may name another request now).
+   if(input.page!=='refs'&&await moldRequestRefKnown(c.db))throw new CRMError(ORDER_PAGE_OUTDATED,409);
+   // The CRM's own request holds that number only if its status pulled just now still says so, without a requestRef.
+   if(holder&&(holder.remote?.orderNo!==orderNo||holder.remote?.requestRef))throw new CRMError(ORDER_PAGE_OUTDATED,409);
+   own=holder||null;
+   if(!own&&approving){
+    listed=fresh.items.find(item=>item.orderNo===orderNo&&!item.crmRequestId);
+    if(!listed)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',409);
+    // Production names it by its requestRef now: the page's number is from an older list.
+    if(listed.requestRef)throw new CRMError(ORDER_PAGE_OUTDATED,409);
+   }else if(!own&&(fresh.items.some(item=>item.requestRef)||probe?.remote?.requestRef))throw new CRMError(ORDER_PAGE_OUTDATED,409);
   }else if(input.crmRequestId!==undefined){
    own=await loadMoldRequest(c.db,input.crmRequestId);
    if(!own)throw new CRMError('الطلب غير متاح',404);
@@ -211,8 +232,9 @@ export async function POST(req:Request){let objectKey='';try{
   else await noteMoldQuotePo(c.db,[status],at);
   forgetPendingApprovals();
   if(call.kind==='locked')return Response.json({ok:false,status,pending:await listFor(),error:moldApprovalRefusal(status,approving)},{status:409});
-  // 404: production holds no request by that name; 400: it does not take the name sent (a requestRef or a number). Both say to refresh.
-  if(call.kind==='rejected')throw new CRMError(APPROVAL_TARGET_REFUSED,409);
+  // 404: production holds no request by that name: said, refresh.
+  // 400 naming requestRef: production does not take that name; any other 400 as before (its data refused).
+  if(call.kind==='rejected'&&call.fields.includes('requestRef'))throw new CRMError(APPROVAL_TARGET_REFUSED,409);
   if(call.kind!=='ok'||!status)throw new CRMError(call.kind==='not_found'?'الطلب غير موجود لدى الإنتاج؛ حدّث الصفحة.':moldErrorText(call.code,ar=>ar)+'. حاول مرة أخرى.',call.kind==='not_found'?409:502);
   // The audit names a request registered in production by its requestRef (mold-ref:), by its number only in the application before
   // (mold-order:, as older entries do); the number recorded is the one production answered with (none yet, before its approval).

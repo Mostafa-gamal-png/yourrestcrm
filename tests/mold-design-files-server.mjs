@@ -622,6 +622,42 @@ try{
   mock.setQuotePo(false);
  }
 
+ // ---- 2026-11-05 (the second update's review): a request's files reach production in the order they were attached, whichever sender
+ // runs (the timetable or a page's check beside an upload's release): a newer file waits while an older one is due or being sent
+ {
+  const id=await newRequest();
+  mock.state.down=true;
+  const older=(await attach(id,'الأقدم.pdf',pdf('older'))).body.file.crmFileId,newer=(await attach(id,'الأحدث.pdf',pdf('newer'))).body.file.crmFileId;
+  mock.state.down=false;
+  const set=(fileId,next,last=null)=>sql.prepare('UPDATE crm_mold_design_files SET next_attempt_at=?,last_attempt_at=? WHERE id=?').run(next,last,fileId);
+  const past=new Date(Date.now()-60_000).toISOString(),soon=new Date(Date.now()+60_000).toISOString(),later=new Date(Date.now()+10*60_000).toISOString();
+  // The older one claimed by another sender (its lease ahead), the newer one due: the newer waits.
+  set(older,soon,new Date().toISOString());set(newer,past);
+  check([await server.sendDueMoldDesignFiles(DB,{link,limit:5}),atProduction(id,newer)],[0,false],'a newer file waits while an older one of the request is being sent');
+  // Both due: oldest first, in one check.
+  set(older,past);
+  check([await server.sendDueMoldDesignFiles(DB,{link,limit:5}),mock.row(id).designFiles.map(file=>file.crmFileId)],[2,[older,newer]],'then both, in the order attached');
+  // An older file that stopped (no next try) or retries later than a lease holds none.
+  mock.state.down=true;
+  const stopped=(await attach(id,'متوقف.pdf',pdf('stopped'))).body.file.crmFileId,afterStopped=(await attach(id,'بعده.pdf',pdf('after stopped'))).body.file.crmFileId;
+  const backoff=(await attach(id,'مؤجل.pdf',pdf('backoff'))).body.file.crmFileId,afterBackoff=(await attach(id,'بعد المؤجل.pdf',pdf('after backoff'))).body.file.crmFileId;
+  mock.state.down=false;
+  set(stopped,null);set(afterStopped,past);set(backoff,later);set(afterBackoff,past);
+  check([await server.sendDueMoldDesignFiles(DB,{link,limit:5}),atProduction(id,afterStopped),atProduction(id,afterBackoff),atProduction(id,stopped),atProduction(id,backoff)],[2,true,true,false,false],'a stopped file, or one retrying after more than a lease, holds no newer file back');
+ }
+
+ // ---- a pending item production sent that cannot be read (a request registered there with a malformed requestRef and no number) is
+ // counted, not dropped silently; a page loaded before gets the list's error for it
+ {
+  const good={orderNo:null,requestRef:'0f8e2c1a-5b7d-4c3e-9a1f-2b3c4d5e6f70',crmRequestId:null,source:'manual',customer:{name:'مقروء'},salesman:{name:'س'},specs:{description:'d'}};
+  answering=stub('pending',200,{requests:[good,{...good,requestRef:'not-a-uuid'}]});
+  const pending=await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true});
+  answering=null;
+  check([pending.items.map(item=>item.customer.name),pending.unreadable,pending.error],[['مقروء'],1,null],'one item read, one counted as unreadable');
+  check(lib.moldPendingForOldPage({...pending,items:[]}).error.code,'bad_response','a page loaded before: the list error');
+  server.forgetPendingApprovals();
+ }
+
  check(mock.state.calls.every(call=>!JSON.stringify(call.headers).includes(mock.state.secret)),true,'the secret never travels');
  console.log(JSON.stringify({ok:true,checks,scope:'mold design files: stopped and refused deletions, final refusals, revisions, download places',productionDataUsed:false}));
 }finally{await mock.stop();sql.close();}

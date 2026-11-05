@@ -167,15 +167,19 @@ export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'|'quoteF
  /** The CRM request's signature (2026-11-04), from the CRM's own row; null for none or a request registered in production. */
  signature:MoldSignature|null;
  /** Production's listing of the pending item holds the signature's image (only then is it said to be signed). */
- signatureDelivered:boolean})[];error:MoldError|null;at:string|null};
+ signatureDelivered:boolean})[];error:MoldError|null;at:string|null;
+ /** How many of production's items could not be read (nothing names one: a request registered there with a malformed requestRef and no
+  *  number, say); absent when none. The list says so, rather than hiding them silently. */
+ unreadable?:number};
 /** The waiting list as a page loaded before this release receives it (its GET carries no `refs=1`): that page keys every item, its errors
  *  and its approval by orderNo, a number it expects on each one (two items without one would share a React key and an error, and its
  *  approval would send orderNo null). So it gets only the items production has numbered (none, once the products update of 2026-11-05 is
  *  live: an item waits for the sales manager before production numbers it), and, when any was left out, the list's error bad_response,
- *  a code that page names («تعذّر تحديث القائمة الآن: رد غير متوقع من تطبيق الإنتاج») instead of «لا توجد طلبات بانتظار اعتمادك»; its
+ *  a code that page names («تعذّر تحديث القائمة الآن: رد غير متوقع من تطبيق الإنتاج») instead of «لا توجد طلبات بانتظار اعتمادك» (the
+ *  same when production sent items that could not be read, which that page cannot name otherwise); its
  *  update notice asks it to reload. This release's page asks with refs=1 and gets every item. */
 export function moldPendingForOldPage(pending:MoldPendingAnswer|null):MoldPendingAnswer|null{
- if(!pending||pending.items.every(item=>item.orderNo!==null))return pending;
+ if(!pending||pending.items.every(item=>item.orderNo!==null)&&!pending.unreadable)return pending;
  return {...pending,items:pending.items.filter(item=>item.orderNo!==null),error:pending.error||{code:'bad_response',at:pending.at||new Date().toISOString()}};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live (learned once, kept): the form asks for the quotation and PO numbers
@@ -208,6 +212,8 @@ export function moldPendingTarget(item:PendingNamed):{crmRequestId:string}|{requ
 /** The production order number in words: the number from the latest status (or pending item), or, while production has given none
  *  (null: given when its production manager approves, 2026-11-05), «لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)»; '—' when there is no
  *  status yet (not sent) or a request cancelled before it had a number (it will never get one). */
+/** The waiting list holds items production sent that could not be read (unreadable), said above the list with how many. */
+export const moldPendingUnreadableText=(count:number,say:(ar:string,en:string)=>string)=>say('فيه '+count+' طلب من تطبيق الإنتاج ما اتقراش (بيانات ناقصة أو غير صحيحة) ومش ظاهر هنا؛ بلّغ مدير الإنتاج.',count+' request(s) from production could not be read (missing or invalid data) and are not shown; tell the production manager.');
 export const MOLD_NO_ORDER_YET:[string,string]=['لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)','No number yet (given at production approval)'];
 export function moldOrderNoText(source:{orderNo:number|null}|null|undefined,say:(ar:string,en:string)=>string,{cancelled=false}:{cancelled?:boolean}={}){
  if(!source)return '—';

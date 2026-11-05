@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_HELD_NAME,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_FILE_WAITING_OTHERS,MOLD_QUOTE_FILE_WAITING_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldOrderNoText,moldPaymentNames,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_HELD_NAME,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_FILE_WAITING_OTHERS,MOLD_QUOTE_FILE_WAITING_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldCancelReasonUsed,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
@@ -223,7 +223,8 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
   const name=action+':'+key;if(!keys.current.has(name))keys.current.set(name,crypto.randomUUID());
   try{
    if(!target)throw new Error(say('تعذّر تحديد الطلب؛ حدّث الصفحة.','The request could not be named; refresh the page.'));
-   await submitJson('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...target,requestId:keys.current.get(name)})},{language:getLanguage()});
+   // page 'refs': this release's page, whose number (an item production gave no requestRef) the server checks against production now.
+   await submitJson('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...target,page:'refs',requestId:keys.current.get(name)})},{language:getLanguage()});
    keys.current.delete(name);
    setApproved(previous=>action==='approve-order'?[...previous.filter(other=>moldPendingKey(other)!==key),item]:previous.filter(other=>moldPendingKey(other)!==key));
    onChanged();
@@ -274,9 +275,10 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
   </article>;
  };
  return <div className="mold-pending-list">
+  {!!pending.unreadable&&<p className="mold-banner mold-pending-unreadable" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{moldPendingUnreadableText(pending.unreadable,say)}</p>}
   {pending.error&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث القائمة الآن','The list could not be refreshed now')}: {moldErrorText(pending.error.code,say)}</p>}
   {orphaned.map(([key,error])=><p key={key} className="form-error mold-pending-gone" role="alert"><bdi>{error.label}</bdi>: {error.text}</p>)}
-  {!waiting.length&&!pending.error&&<p className="empty mold-empty">{say('لا توجد طلبات بانتظار اعتمادك.','Nothing is waiting for your approval.')}</p>}
+  {!waiting.length&&!pending.error&&!pending.unreadable&&<p className="empty mold-empty">{say('لا توجد طلبات بانتظار اعتمادك.','Nothing is waiting for your approval.')}</p>}
   {waiting.map(item=>card(item,false))}
   {!!approved.length&&<h3 className="mold-subtitle">{say('اعتمدتها الآن','Approved just now')}</h3>}
   {approved.map(item=>card(item,true))}
