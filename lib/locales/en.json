@@ -1431,5 +1431,7 @@
   "الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.": "Requests are now named by their reference, not by the order number; refresh the page and approve again.",
   "تطبيق الإنتاج لم يقبل تعريف الطلب؛ حدّث الصفحة وحاول مرة أخرى.": "The production application did not accept how the request was named; refresh the page and try again.",
   "الطلب غير موجود لدى الإنتاج؛ حدّث الصفحة.": "Production does not know this request; refresh the page.",
-  "مرجع الطلب غير صحيح؛ حدّث الصفحة.": "The request's reference is not valid; refresh the page."
+  "مرجع الطلب غير صحيح؛ حدّث الصفحة.": "The request's reference is not valid; refresh the page.",
+  "حدد الطلب": "Choose the request",
+  "تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.": "The request could not be confirmed just now; refresh the page and try again."
 }

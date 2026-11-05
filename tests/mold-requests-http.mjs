@@ -1173,4 +1173,60 @@ try {
   } finally { await refApp.stop(); await refMock.stop(); }
 }
 
+// ---- The review of the requestRef release: a number is never resolved against an older copy of production's list (the forced pull
+// failed after the renumbering: refused, nothing approved); this release's page may still name by number an item production gave no
+// requestRef (the products application rolled back) once the update was learned, checked against the list as it is now, while a page
+// loaded before is refused; production's 400 not about requestRef reads as before; an item production sent that cannot be read is counted.
+{
+  const revMock = await startProductsMock();
+  revMock.state.nextOrder = 101;
+  const revApp = await bootBuiltApp({members}, {env: {YR_PRODUCTS_API_URL: revMock.url, YR_PRODUCTS_SECRET: revMock.state.secret, NODE_EXTRA_CA_CERTS: revMock.ca}});
+  try {
+    const session = await revApp.login('sm'), as = revApp.as(session), now = new Date().toISOString();
+    await revApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('g1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع g1', region: 'الشرقية', city: 'الدمام', address: 'حي الصناعية'}), now, now).run();
+    const crmNumber = (await revApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='g1'").first()).number;
+    const post = body => as('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
+    const list = async (page = 'new') => (await as('/api/mold-requests' + (page === 'new' ? '?refs=1' : ''))).json();
+    const approvals = () => revMock.state.calls.filter(call => call.route === 'approval' && call.signed);
+    const OUTDATED = 'الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.', UNSURE = 'تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.';
+    // (a) A page loaded before lists A as 101 and B as 102; production switches and renumbers (A 100, B 101); its list cannot be read now.
+    const A = revMock.registerManual({customerNo: crmNumber, customerName: 'A'}), B = revMock.registerManual({customerNo: crmNumber, customerName: 'B'});
+    check((await list('old')).pending.items.map(item => [item.orderNo, item.customer.name]), [[101, 'A'], [102, 'B']], 'the old page\'s list before the switch');
+    revMock.setRequestRefs(true); revMock.renumber(101);
+    revMock.answerNext('pending', 503, {error: {code: 'not_configured', message: 'x'}});
+    let calls = approvals().length, res = await post({action: 'approve-order', orderNo: 101});
+    check([res.status, (await res.json()).error, approvals().length - calls, !!revMock.byRef(A.requestRef).approvals.sales, !!revMock.byRef(B.requestRef).approvals.sales], [409, UNSURE, 0, false, false], 'the list could not be read just now: refused, nothing approved (B, now 101, untouched)');
+    res = await post({action: 'approve-order', orderNo: 101});
+    check([res.status, (await res.json()).error, approvals().length - calls], [409, OUTDATED, 0], 'read again: the update learned, the old page asked to reload');
+    // (b) The products application rolls back to the old numbering: this release's page names its item by number (no requestRef).
+    revMock.setRequestRefs(false);
+    const M = revMock.registerManual({customerNo: crmNumber, customerName: 'M'});
+    res = await post({action: 'approve-order', orderNo: M.orderNo, page: 'refs'});
+    check([res.status, JSON.parse(approvals().at(-1).body)], [200, {orderNo: M.orderNo, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}], 'this release\'s page, after a rollback of the products application: by number, checked against the list now');
+    res = await post({action: 'withdraw-order', orderNo: M.orderNo, page: 'refs'});
+    check([res.status, (await res.json()).status.waitingStep], [200, 'sales'], 'and withdrawn by number');
+    calls = approvals().length;
+    res = await post({action: 'approve-order', orderNo: M.orderNo});
+    check([res.status, (await res.json()).error, approvals().length - calls], [409, OUTDATED, 0], 'a page loaded before: still refused once the update was learned');
+    // (c) Mixed: production names the item by its requestRef again; a number for it, even from this release's page, is an older list's.
+    revMock.setRequestRefs(true);
+    res = await post({action: 'approve-order', orderNo: M.orderNo, page: 'refs'});
+    check([res.status, (await res.json()).error, approvals().length - calls], [409, OUTDATED, 0], 'listed with a requestRef now: the number refused');
+    // (d) Production's 400 not about requestRef reads as before (502, its data refused); one naming requestRef says so.
+    revMock.answerNext('approval', 400, {error: {code: 'invalid_payload', message: 'x', fields: ['by.name']}});
+    res = await post({action: 'approve-order', requestRef: M.requestRef});
+    check([res.status, (await res.json()).error], [502, 'رفض الإنتاج بعض البيانات. حاول مرة أخرى.'], 'a 400 for another field: as before');
+    revMock.answerNext('approval', 400, {error: {code: 'invalid_payload', message: 'x', fields: ['requestRef']}});
+    res = await post({action: 'approve-order', requestRef: M.requestRef});
+    check([res.status, (await res.json()).error], [409, 'تطبيق الإنتاج لم يقبل تعريف الطلب؛ حدّث الصفحة وحاول مرة أخرى.'], 'a 400 naming requestRef: said, refresh');
+    // (e) An item production sent that cannot be read (a malformed requestRef and no number): counted and said, not hidden.
+    const raw = {orderNo: null, requestRef: 'not-a-uuid', crmRequestId: null, source: 'manual', customer: {crmNumber, name: 'تالف'}, salesman: {name: 'س'}, specs: {description: 'd'}};
+    revMock.answerNext('pending', 200, {requests: [raw]});
+    res = await post({action: 'approve-order', requestRef: crypto.randomUUID()});
+    const shown = await list(), oldShown = await list('old');
+    check([shown.pending.unreadable, shown.pending.items.some(item => item.customer.name === 'تالف'), oldShown.pending.error?.code], [1, false, 'bad_response'], 'an unreadable item: counted on the list, the old page told the list failed');
+    ok(revMock.state.calls.every(call => !JSON.stringify(call.headers).includes(revMock.state.secret)), 'the secret never travels');
+  } finally { await revApp.stop(); await revMock.stop(); }
+}
+
 console.log(JSON.stringify({ok: true, checks, builtRelease: true, realProductionTested: false}));

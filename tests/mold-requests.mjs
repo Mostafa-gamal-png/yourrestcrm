@@ -979,6 +979,8 @@ try {
   eq([old.items.map(item => item.orderNo), old.error.code, lib.moldPendingForOldPage({...listed, items: [listed.items[0]]}) === undefined], [[95], 'bad_response', false], 'the old page\'s list: numbered items only, and bad_response');
   eq(lib.moldPendingForOldPage({...listed, items: [listed.items[0]]}).error, null, 'all numbered (the application of today): the list as it is');
   eq(lib.moldPendingForOldPage(null), null, 'no list (not a sales manager): none');
+  eq([lib.moldPendingForOldPage({...listed, items: [listed.items[0]], unreadable: 1}).error.code, lib.moldPendingForOldPage({...listed, items: [listed.items[0]], unreadable: 1}).items.length], ['bad_response', 1], 'items production sent that could not be read: the old page told the list failed');
+  eq(lib.moldPendingUnreadableText(2, (ar, en) => en), '2 request(s) from production could not be read (missing or invalid data) and are not shown; tell the production manager.', 'and this release says how many');
   const released = load('lib/released-mold-requests.ts', execFileSync('git', ['show', '1dcd37e:lib/mold-requests.ts'], {cwd: root, encoding: 'utf8'}));
   eq([released.moldErrorText(old.error.code, (ar) => ar), old.items.every(item => Number.isInteger(item.orderNo) && item.orderNo > 0), new Set(old.items.map(item => item.orderNo)).size], ['رد غير متوقع من تطبيق الإنتاج', true, old.items.length], 'the release live today names that error, and every item it gets has its own whole number');
 
