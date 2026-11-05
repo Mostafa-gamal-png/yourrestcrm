@@ -688,6 +688,8 @@ try {
     const earlier = activatorOf(afterPackage), earlierName = earlier.constant('RELEASE_NAME'), earlierDate = earlier.constant('RELEASE_DATE');
     const activation = 'yourrest-' + earlierName + '-activation-' + earlierDate;
     if (earlierName === helper.RELEASE_NAME && earlierDate === helper.RELEASE_DATE) report.sameDayAfter = {package: path.basename(afterPackage), activation, skipped: 'same release name and date as this package (always accepted)'};
+    // An earlier package of another day took that day's backup, not today's: this package takes its own (a step above proves it).
+    else if (earlierDate !== helper.RELEASE_DATE) report.sameDayAfter = {package: path.basename(afterPackage), activation, skipped: 'released on another day (' + earlierDate + '); this package takes today\'s backup itself'};
     else {
       const d = await installSite(work, 'home-d', {exactOrigin: true});
       sites.push(d);
