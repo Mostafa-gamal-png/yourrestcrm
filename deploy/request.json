@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-MoldSignature-20261104.zip",
-  "sha256": "f681596e09a1708bb8f21a7aa5e6dee3f6bf81b7502ee042faf3c9798de8dcc1",
-  "stage": "yourrest-crm-update-mold-signature-20261104",
-  "helper": "yourrest-activate-update-mold-signature.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldQuoteFile-20261105.zip",
+  "sha256": "e3decf8122fab2e060a3a961a29b8840c7a72e061a0a5ed16d36c6f7b28bb0eb",
+  "stage": "yourrest-crm-update-mold-quote-file-20261105",
+  "helper": "yourrest-activate-update-mold-quote-file.cjs"
 }
