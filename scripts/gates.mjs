@@ -3,7 +3,9 @@
 // tests that must run alone, then every failure rerun once alone. Selection (tests/test-areas.json, scripts/lib/test-areas.mjs): the
 // whole default gate always; release-build and browser tests of the areas a change touches, everything when a shared file changed.
 //   node scripts/gates.mjs [--full | --since <git-ref> [--to <git-ref>]] [--plan] [--no-build] [--jobs N] [--browser-jobs N]
-//                          [--browser-executable <path>]
+//                          [--check-jobs N] [--default-gate alongside|first] [--browser-executable <path>]
+// The default gate (scripts/check.mjs, itself parallel with --check-jobs) runs as one slot of the pool beside the other tests, or
+// alone before them with --default-gate first.
 // Nothing is deployed or packaged; no live site is called. Proxy variables are removed for every process (the tests talk to
 // 127.0.0.1); YR_BROWSER_EXECUTABLE (flag or caller's environment) and per-test screenshot folders reach browser tests only.
 import fs from 'node:fs';
@@ -15,8 +17,8 @@ import {loadAreas, selectTests, validateAreas, gatedTests, globToRegExp} from '.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
-const usage = 'Usage: node scripts/gates.mjs [--full | --since <git-ref> [--to <git-ref>]] [--plan] [--no-build] [--jobs N] [--browser-jobs N] [--browser-executable <path>]';
-const options = {full: false, plan: false, build: true, jobs: 6, browserJobs: 5, since: null, to: null, browserExecutable: process.env.YR_BROWSER_EXECUTABLE || ''};
+const usage = 'Usage: node scripts/gates.mjs [--full | --since <git-ref> [--to <git-ref>]] [--plan] [--no-build] [--jobs N] [--browser-jobs N] [--check-jobs N] [--default-gate alongside|first] [--browser-executable <path>]';
+const options = {full: false, plan: false, build: true, jobs: 6, browserJobs: 5, checkJobs: 4, defaultGate: 'alongside', since: null, to: null, browserExecutable: process.env.YR_BROWSER_EXECUTABLE || ''};
 for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i], value = () => { const next = process.argv[++i]; if (!next || next.startsWith('--')) throw Error(arg + ' needs a value. ' + usage); return next; };
   if (arg === '--full') options.full = true;
@@ -26,10 +28,13 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (arg === '--to') options.to = value();
   else if (arg === '--jobs') options.jobs = Number(value());
   else if (arg === '--browser-jobs') options.browserJobs = Number(value());
+  else if (arg === '--check-jobs') options.checkJobs = Number(value());
+  else if (arg === '--default-gate') options.defaultGate = value();
   else if (arg === '--browser-executable') options.browserExecutable = path.resolve(value());
   else throw Error('Unknown option ' + arg + '. ' + usage);
 }
-for (const name of ['jobs', 'browserJobs']) if (!Number.isInteger(options[name]) || options[name] < 1 || options[name] > 16) throw Error('--' + name.replace('J', '-j') + ' must be 1..16');
+if (!['alongside', 'first'].includes(options.defaultGate)) throw Error('--default-gate is alongside or first');
+for (const name of ['jobs', 'browserJobs', 'checkJobs']) if (!Number.isInteger(options[name]) || options[name] < 1 || options[name] > 16) throw Error('--' + name.replace('J', '-j') + ' must be 1..16');
 if (options.full && (options.since || options.to)) throw Error('--full runs everything; leave out --since/--to.');
 if (options.to && !options.since) throw Error('--to needs --since.');
 
@@ -103,7 +108,7 @@ const ownerFiles = {
 };
 const gateOf = new Map(gatedTests(manifest).map(test => [test.file, test.gate]));
 const serial = new Set(Object.keys(map.serial?.tests || {}));
-const jobs = [{name: 'default-gate', gate: 'default', args: ['scripts/check.mjs'], timeout: 3600}];
+const jobs = [{name: 'default-gate', gate: 'default', args: ['scripts/check.mjs', '--jobs', String(options.checkJobs)], timeout: 3600}];
 for (const gate of ['erp-workbook', 'erp-customers-workbook']) jobs.push({name: gate, gate, args: ['scripts/check.mjs', '--gate', gate], timeout: 1800, skip: ownerFiles[gate] && `needs the owner's ERP file (${ownerFiles[gate]})`});
 for (const file of selection.tests) {
   const gate = gateOf.get(file);
@@ -124,7 +129,7 @@ try {
 const estimate = job => typical[job.file || job.name] ?? 60;
 
 if (options.plan) {
-  console.log(JSON.stringify({rule, reasons: selection.reasons, shared: selection.shared, unmatched: selection.unmatched, areas: selection.areas, changedTests: selection.changedTests, generated: selection.generated, defaultGateOnly: selection.defaultGateOnly.length, build: options.build, jobs: options.jobs, browserJobs: options.browserJobs,
+  console.log(JSON.stringify({rule, reasons: selection.reasons, shared: selection.shared, unmatched: selection.unmatched, areas: selection.areas, changedTests: selection.changedTests, generated: selection.generated, defaultGateOnly: selection.defaultGateOnly.length, build: options.build, jobs: options.jobs, browserJobs: options.browserJobs, defaultGate: options.defaultGate, checkJobs: options.checkJobs,
     run: jobs.map(job => ({name: job.name, gate: job.gate, ...(job.serial ? {serial: true} : {}), ...(job.skip ? {skip: job.skip} : {}), estimateSeconds: estimate(job)})),
     counts: {releaseBuild: selection.tests.filter(file => gateOf.get(file) === 'release-build').length, browser: selection.tests.filter(file => gateOf.get(file) === 'browser').length, of: gatedTests(manifest).length}}, null, 2));
   process.exit(0);
@@ -202,6 +207,16 @@ if (options.build) {
 } else if (!fs.existsSync(path.join(root, 'dist/standalone/server.js'))) throw Error('--no-build needs an existing build in dist/standalone.');
 
 const record = (job, row) => { results.set(job.name, {name: job.name, file: job.file, gate: job.gate, ...row}); print(job, row); };
+// A passing default gate whose own pool reran a failure alone (scripts/check.mjs) is flaky, with the entries named.
+function passed(job, row) {
+  if (job.gate === 'default') {
+    try {
+      const report = JSON.parse(fs.readFileSync(path.join(root, 'output/check/default-results.json'), 'utf8'));
+      if (report.flaky?.length) return record(job, {status: 'flaky', reason: 'scripts/check.mjs reran alone and passed: ' + report.flaky.join(', '), flakyEntries: report.flaky, ...row});
+    } catch { /* no report */ }
+  }
+  record(job, {status: 'passed', ...row});
+}
 const queue = [], later = [];
 for (const job of jobs) {
   if (job.skip) record(job, {status: 'skipped', reason: job.skip});
@@ -219,10 +234,16 @@ async function worker() {
     const row = await run(job);
     active.delete(job.name);
     firstTry.set(job.name, row);
-    if (row.passed) record(job, {status: 'passed', ...row}); else console.log(`retry    ${job.name} failed in the pool after ${row.seconds} s; it runs again alone at the end`);
+    if (row.passed) passed(job, row); else console.log(`retry    ${job.name} failed in the pool after ${row.seconds} s; it runs again alone at the end`);
   }
 }
 const active = new Set();
+// --default-gate first: the default gate alone before the pool (its own pool then has the machine); alongside: one slot of the pool.
+if (options.defaultGate === 'first' && queue[0]?.name === 'default-gate') {
+  const [job] = queue.splice(0, 1), row = await run(job);
+  firstTry.set(job.name, row);
+  if (row.passed) passed(job, row); else console.log(`retry    ${job.name} failed after ${row.seconds} s; its failures run again alone at the end`);
+}
 await Promise.all(Array.from({length: options.jobs}, worker));
 const poolSeconds = Math.round((Date.now() - wallStart) / 1000);
 for (const job of later) { const row = await run(job); firstTry.set(job.name, row); if (row.passed) record(job, {status: 'passed', alone: true, ...row}); else console.log(`retry    ${job.name} failed alone; it runs once more`); }
@@ -253,7 +274,7 @@ const statusAfter = git('status', '--porcelain=v1', '--untracked-files=all');
 const wall = Math.round((Date.now() - wallStart) / 1000);
 const rows = jobs.map(job => results.get(job.name));
 const totals = Object.fromEntries(['passed', 'flaky', 'failed', 'skipped', 'not run'].map(status => [status, rows.filter(row => row.status === status).length]));
-const summary = {run: stamp, head: git('rev-parse', '--short', 'HEAD').trim(), rule, reasons: selection.reasons, areas: selection.areas, shared: selection.shared, unmatched: selection.unmatched, changedTests: selection.changedTests,
+const summary = {defaultGate: options.defaultGate, checkJobs: options.checkJobs, run: stamp, head: git('rev-parse', '--short', 'HEAD').trim(), rule, reasons: selection.reasons, areas: selection.areas, shared: selection.shared, unmatched: selection.unmatched, changedTests: selection.changedTests,
   jobs: options.jobs, browserJobs: options.browserJobs, cpus: os.availableParallelism(), browserExecutable: options.browserExecutable || null,
   build: build && {status: build.passed ? 'passed' : 'failed', seconds: build.seconds, log: build.log},
   wallClockSeconds: wall, poolSeconds, totals,
@@ -265,5 +286,5 @@ const width = Math.max(...rows.map(row => row.name.length)), gateWidth = Math.ma
 console.log('\n' + 'test'.padEnd(width) + '  ' + 'gate'.padEnd(gateWidth) + '  status    seconds  checks');
 for (const row of rows) console.log(row.name.padEnd(width) + '  ' + row.gate.padEnd(gateWidth) + '  ' + row.status.padEnd(8) + '  ' + String(row.seconds ?? '').padStart(7) + '  ' + String(row.checks ?? '').padStart(6) + (row.reason ? '  ' + row.reason : ''));
 console.log(`\n${rule.mode} run: ${Object.entries(totals).filter(([, n]) => n).map(([status, n]) => n + ' ' + status).join(', ')}; build ${build ? build.seconds + ' s' : 'skipped'}; wall clock ${Math.floor(wall / 60)} min ${wall % 60} s; docs restored: ${restored.length}; ${rel(path.join(runDir, 'summary.json'))}`);
-if (summary.worktreeChangedByRun.length) console.log('Changed by the run (outside docs/):\n  ' + summary.worktreeChangedByRun.join('\n  '));
+if (summary.worktreeChangedByRun.length) console.log('Changed during the run and not undone (a test outside docsWrittenByTests, or someone\'s edit):\n  ' + summary.worktreeChangedByRun.join('\n  '));
 process.exitCode = totals.failed || totals['not run'] || (build && !build.passed) ? 1 : 0;
