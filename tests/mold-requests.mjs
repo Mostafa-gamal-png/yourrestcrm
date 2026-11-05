@@ -317,7 +317,7 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
     ['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)', 'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج)', 'At most 5 PO files a request (yours and production\'s)', 'ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'A quotation or PO file must be a PDF or an image'], 'the new refusals in words, each kind its own limit');
   same([lib.moldErrorText('request_locked', say('ar'), {reason: 'production_only'}), lib.moldErrorText('request_locked', say('en'), {reason: 'production_only'}), lib.moldErrorText('timeout', say('ar'))],
     ['بيانات الطلب يعدّلها مدير الإنتاج فقط', 'The request\'s data is edited by the production manager only', 'لم يرد تطبيق الإنتاج خلال 10 ثوانٍ'], 'production_only no longer adds who adds a number (2026-11-05: the file is attached from the CRM)');
-  same([lib.MOLD_QUOTE_PO_MISSING_TEXT, lib.MOLD_QUOTE_FILE_REQUIRED_TEXT, lib.moldSendingNames.needs_file, lib.moldFieldNames.quoteNo, lib.moldFieldNames.poNo],
+  same([lib.MOLD_QUOTE_PO_MISSING_TEXT, lib.MOLD_QUOTE_FILE_REQUIRED_TEXT, lib.MOLD_QUOTE_FILE_HELD_NAME, lib.moldFieldNames.quoteNo, lib.moldFieldNames.poNo],
     [['ناقص ملف عرض السعر / الـ PO', 'The quotation / PO file is missing'], ['أرفق ملف عرض السعر أو الـ PO (واحد على الأقل)', 'Attach the quotation or PO file (at least one)'], ['بانتظار ملف عرض السعر / الـ PO', 'Waiting for the quotation / PO file'], ['رقم عرض السعر غير مقبول', 'The quotation number is not accepted'], ['رقم الـ PO غير مقبول', 'The PO number is not accepted']],
     'the missing note, the form\'s refusal and the held state (2026-11-05), production\'s refusal of a number (an older request\'s), Arabic and English');
   same([lib.MOLD_QUOTE_FILE_REQUIRED_TEXT[0], Object.hasOwn(lib, 'moldQuotePoNames'), Object.hasOwn(lib, 'MOLD_QUOTE_PO_REQUIRED_TEXT')], [rules.MOLD_QUOTE_FILE_REQUIRED, false, false], 'the form asks for the file in the rules\' words; no number field\'s names or refusal remain');
@@ -334,8 +334,26 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same([lib.moldAwaitsQuoteFile(row({data: {...data, payment: 'cash'}}), []), lib.moldAwaitsQuoteFile(row({data: numbered}), []), awaits({outbox: null, accepted: fileAsked, remote: status}, []), awaits({attempts: 1, lastAttemptAt: at, lastError: {code: 'timeout', http: 0, at: after}}, []), awaits({cancelledAt: at, outbox: 'cancel'}, [])],
     [false, false, false, false, false], 'never a request asked for before the rule (with a number or none: it goes as it always did), one production holds, one whose send may have arrived, or a cancellation');
   const heldView = (files, linkReady = true) => lib.moldRequestView(row({data: fileAsked}), me, [], linkReady, files, [], true);
-  same([heldView([]).sending.state, heldView([], false).sending.state, heldView([quoteOf('quote')]).sending.state, heldView([waitingFile]).sending.state, heldView([]).can.resend, heldView([quoteOf('po')]).can.resend, heldView([]).can.attach],
-    ['needs_file', 'needs_file', 'waiting', 'needs_file', false, true, true], 'its state says so, even with the link off; nothing to resend while it waits; the requester attaches the file');
+  const heldOf = view => [view.sending.state, view.sending.held ?? null];
+  same([heldOf(heldView([])), heldOf(heldView([], false)), heldOf(heldView([quoteOf('quote')])), heldOf(heldView([waitingFile])), heldView([]).can.resend, heldView([quoteOf('po')]).can.resend, heldView([]).can.attach],
+    [['waiting', 'quote_file'], ['off', 'quote_file'], ['waiting', null], ['waiting', 'quote_file'], false, true, true], 'sending.held says so, even with the link off (its state stays one every page knows); nothing to resend while it waits; the requester attaches the file');
+  same([lib.MOLD_QUOTE_FILE_WAITING_OTHERS, lib.MOLD_QUOTE_PO_MISSING_OTHERS, lib.MOLD_QUOTE_PO_MISSING_PRODUCTION],
+    [['بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO', 'Waiting for whoever asked for it to attach the quotation / PO file'], ['صاحب الطلب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.', 'Whoever asked for it attaches it in the CRM, or the production manager in the products application.'], ['مدير الإنتاج يرفقه من تطبيق المنتجات.', 'The production manager attaches it in the products application.']],
+    'what a reader who cannot attach is told, for a CRM request and for one registered in production, Arabic and English');
+  // A page loaded before this release (the live 2026-11-04 client) indexes its own names by the server's values: every value a view of
+  // this release carries must be one it knows, or its page throws (say(...undefined)). Its maps, as that release has them.
+  const OLD = {sending: ['sent', 'waiting', 'rejected', 'off', 'held'], file: ['sent', 'waiting', 'held', 'rejected', 'locked', 'cancelled', 'deleting', 'off', 'production', 'update'], category: ['design', 'quote', 'po'], signature: ['sent', 'waiting', 'stopped', 'refused'], payment: ['cash', 'deferred']};
+  const views = [heldView([]), heldView([], false), heldView([quoteOf('quote')]), heldView([waitingFile, quoteOf('po', {outbox: null, sentAt: at})]),
+    lib.moldRequestView(row({data: {...fileAsked, signature: {signer: 'خالد', signedAt: at, fileId: 'mdf-1'}}}), me, [], true, [waitingFile], [], true),
+    lib.moldRequestView(row({data: numbered, outbox: null, accepted: numbered, remote: {...answered, quoteOrPoMissing: true}}), me, [], true, [quoteOf('quote', {outbox: null, sentAt: at})], [], true),
+    lib.moldRequestView(row({data: fileAsked, outbox: null, accepted: fileAsked, remote: answered}), me, [], false, [quoteOf('quote', {outbox: 'delete', deletedAt: at})], [], true)];
+  same(views.flatMap(view => [
+    OLD.sending.includes(view.sending.state) ? [] : ['sending ' + view.sending.state],
+    view.designFiles.filter(file => !OLD.file.includes(file.state) || !OLD.category.includes(file.category)).map(file => 'file ' + file.state + '/' + file.category),
+    view.signature && !OLD.signature.includes(view.signature.state) ? ['signature ' + view.signature.state] : [],
+    view.payment !== null && !OLD.payment.includes(view.payment) ? ['payment ' + view.payment] : []].flat()), [], 'every state, category and payment a view carries is one a page of the release before knows');
+  const oldSendingNames = new Function('return ' + /export const moldSendingNames:Record<MoldSendingState,\[string,string\]>=(\{[^\n]*\});/.exec(readFileSync(path.join(root, 'lib/mold-requests.ts'), 'utf8'))[1])();
+  same([Object.keys(oldSendingNames).sort(), views.map(view => typeof oldSendingNames[view.sending.state]?.[0])], [[...OLD.sending].sort(), views.map(() => 'string')], 'the names this release sends with match the old set, so an old page names every state it receives');
   // Approvals (2026-11-05): a quotation's or PO's file on its way no longer holds the sales manager's approval; a design file still does.
   const atSales = {outbox: null, accepted: data, remote: {...status, approvals: {required: true, sales: null, production: null, admin: null}}}, sm = {id: 'sm', role: 'manager'};
   same([lib.moldPermissions(row(atSales), sm, [quoteOf('quote')]).approve, lib.moldPermissions(row(atSales), sm, [quoteOf('po')]).approve, lib.moldPermissions(row(atSales), sm, [waitingFile]).approve, lib.moldPermissions(row(atSales), sm, []).approve], [true, true, false, true], 'the approval waits for a design file on its way (its arrival undoes it), not for a quotation\'s or PO\'s');

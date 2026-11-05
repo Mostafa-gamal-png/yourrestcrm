@@ -525,8 +525,8 @@ try{
   const callsNow=()=>mock.state.calls.filter(call=>['requests','design-files'].includes(call.route)).length;
   answer=await create({});
   const kept=answer.body.request.id,signatureId=dataOf(kept).signature.fileId;
-  check([answer.status,answer.body.send,answer.body.request.sending.state,dataOf(kept).fileRequired,sentFor(kept).length,sentFor(kept,'design-files').length,answer.body.request.can.resend,answer.body.request.can.attach],
-   [200,{kind:'none',code:'quote_file',fields:[]},'needs_file',true,0,0,false,true],'saved (with the customer\'s signature), kept: nothing sent, not even the signature; no resend, the attach action offered');
+  check([answer.status,answer.body.send,[answer.body.request.sending.state,answer.body.request.sending.held],dataOf(kept).fileRequired,sentFor(kept).length,sentFor(kept,'design-files').length,answer.body.request.can.resend,answer.body.request.can.attach],
+   [200,{kind:'none',code:'quote_file',fields:[]},['waiting','quote_file'],true,0,0,false,true],'saved (with the customer\'s signature), kept: nothing sent, not even the signature; no resend, the attach action offered');
   check([(await create({poNo:'PO-1'})).body.fields,(await create({quoteNo:'',poNo:''})).status],[{poNo:GONE},200],'a number is refused (a page loaded before); empty ones are none');
   sql.prepare("DELETE FROM crm_mold_requests WHERE id<>? AND json_extract(data,'$.fileRequired') IS 1 AND id NOT IN (SELECT request_id FROM crm_mold_design_files WHERE category<>'design')").run(kept);
   const calls0=callsNow();
@@ -542,13 +542,13 @@ try{
   // Customer service asks too (the owner: every role needs the file), without a signature.
   sql.prepare("INSERT OR IGNORE INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,region_scope,active,target,created_at) VALUES('cs','u-cs','cs@yourrest.org','خدمة العملاء','customer_service','الرئيسي','','eastern',1,0,?)").run(new Date().toISOString());
   answer=await create({},'cs');
-  check([answer.status,answer.body.request.sending.state,sentFor(answer.body.request.id).length,Object.hasOwn(dataOf(answer.body.request.id),'signature')],[200,'needs_file',0,false],'customer service\'s new request waits for its file the same way');
+  check([answer.status,answer.body.request.sending.held,sentFor(answer.body.request.id).length,Object.hasOwn(dataOf(answer.body.request.id),'signature')],[200,'quote_file',0,false],'customer service\'s new request waits for its file the same way');
   const serviceKept=answer.body.request.id;
   answer=await attachAs(serviceKept,'PO.pdf',pdf('service po'),'po','cs');
   check([answer.status,answer.body.file.state,answer.body.request.sending.state,sentFor(serviceKept).length],[200,'sent','sent',1],'its PO file releases it');
   // A design file does not release it; the first quotation file does: the request first, then its files oldest first.
   answer=await attachAs(kept,'رسم.pdf',pdf('kept design'));
-  check([answer.body.file.state,answer.body.request.sending.state,sentFor(kept).length],['held','needs_file',0],'a design file: kept with it (held), still waiting for the quotation or PO file');
+  check([answer.body.file.state,answer.body.request.sending.held,sentFor(kept).length],['held','quote_file',0],'a design file: kept with it (held), still waiting for the quotation or PO file');
   const order0=mock.state.calls.length;
   answer=await attachAs(kept,'عرض سعر.pdf',pdf('kept quotation'),'quote');
   const released=mock.state.calls.slice(order0).filter(call=>call.signed&&['requests','design-files'].includes(call.route)).map(call=>call.route==='requests'?'request':/"crmFileId":"([^"]+)"/.exec(call.body)[1]);
@@ -575,7 +575,7 @@ try{
   mock.state.notConfigured=false;
   as('rep');answer=await json(await remover.POST(post('/api/mold-requests/design-files/delete',{requestId:randomUUID(),id:again,fileId:answer.body.file.crmFileId})));
   sql.prepare("UPDATE crm_mold_requests SET next_attempt_at='2026-01-01T00:00:00.000Z' WHERE id=?").run(again);
-  check([answer.status,answer.body.request.sending.state,await server.sendDueMoldRequests(DB,{link,limit:20}),sentFor(again).length],[200,'needs_file',0,0],'its only quotation file deleted (never sent: removed in the CRM alone): kept again, not sent by the timetable');
+  check([answer.status,answer.body.request.sending.held,await server.sendDueMoldRequests(DB,{link,limit:20}),sentFor(again).length],[200,'quote_file',0,0],'its only quotation file deleted (never sent: removed in the CRM alone): kept again, not sent by the timetable');
   // (e) files: a quotation's PDF or image, not a drawing; 5 of each; the design files apart; a retry with the same category
   answer=await create({});
   const quoted=answer.body.request.id;

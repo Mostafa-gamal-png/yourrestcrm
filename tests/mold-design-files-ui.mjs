@@ -239,7 +239,7 @@ function render(row, files, linkReady = true) {
   ok(ui.designWarningText(say).includes('ملف تصميم') && ui.designWarningText(say).includes('هيلغي الاعتمادات'), 'and it names the design file: ' + ui.designWarningText(say));
   const view = lib.moldRequestView(held, me, [], true, [], [], false);
   const html = renderToStaticMarkup(React.createElement(ui.MoldDesignFiles, {view, uploads: [], queue: new ui.DesignUploadQueue(), onView: () => {}, say, quotePo: false}));
-  eq([view.sending.state, html.split('<section class="mold-design"').slice(1).map(part => /data-category="(\w+)"/.exec(part)[1]), (html.match(/data-category="quote"[^>]*>[^]*?accept="([^"]*)"/) || [])[1]], ['needs_file', ['design', 'quote', 'po'], '.pdf,.png,.jpg,.jpeg,.webp,.gif'], 'kept for its file: the quotation\'s and PO\'s groups, each with its picker');
+  eq([view.sending.held, html.split('<section class="mold-design"').slice(1).map(part => /data-category="(\w+)"/.exec(part)[1]), (html.match(/data-category="quote"[^>]*>[^]*?accept="([^"]*)"/) || [])[1]], ['quote_file', ['design', 'quote', 'po'], '.pdf,.png,.jpg,.jpeg,.webp,.gif'], 'kept for its file: the quotation\'s and PO\'s groups, each with its picker');
 }
 
 console.log(JSON.stringify({ok: true, checks, scope: 'mold design files on the sheet: state details, stopped, cancelled, refused with the link off, place refusals, English; the pending files with and without links; the device check on PR #27 inputs; a request approved from the list waiting again; the quotation and PO groups', productionDataUsed: false}));

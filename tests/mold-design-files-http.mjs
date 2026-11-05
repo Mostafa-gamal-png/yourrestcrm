@@ -359,7 +359,7 @@ try {
   await age(early.id);
   check((await list('rep')).quotePo, true, 'production updates; the next pull teaches the CRM');
   const quoted = (await (await post('rep', {action: 'create', customerId: 'east1', specs: {...specs, description: 'with its quotation'}, payment: 'cash'})).json()).request;
-  check([quoted.sending.state, quoted.remote], ['needs_file', null], 'a new request: kept in the CRM until its quotation or PO file');
+  check([quoted.sending.state, quoted.sending.held, quoted.remote], ['waiting', 'quote_file', null], 'a new request: kept in the CRM until its quotation or PO file');
   body = await (await uploadAs(quoted.id, 'عرض سعر Q-2026-0153.pdf', pdf('quotation'), 'quote')).json();
   const quoteFile = body.file;
   check([quoteFile.state, quoteFile.category, JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, body.request.remote.quoteFiles.map(file => file.crmFileId), body.request.sending.state], ['sent', 'quote', 'quote', [quoteFile.crmFileId], 'sent'], 'a quotation PDF: releases the request, then goes with its category, listed by production in quoteFiles');

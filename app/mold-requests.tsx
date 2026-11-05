@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_FILE_WAITING_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldPaymentNames,moldPendingAgain,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_HELD_NAME,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_FILE_WAITING_OTHERS,MOLD_QUOTE_FILE_WAITING_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldPaymentNames,moldPendingAgain,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldCancelReasonUsed,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
@@ -26,7 +26,11 @@ const waitingSince=(view:MoldRequestView,say:Say)=>!view.cancelled&&view.remote?
 /** Production marks the request as having neither a quotation file nor a PO file while finance has not approved it (quoteOrPoMissing,
  *  2026-11-05): «ناقص ملف عرض السعر / الـ PO». hint: on the request's sheet, who attaches it (the requester below, while editable; else
  *  the representative or the production manager). The numbers are not shown any more (production no longer shows them). */
-const QuotePoMissing=({say,hint}:{say:Say;hint?:'attach'|'others'})=><p className="mold-quote-po-missing" role="status"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_QUOTE_PO_MISSING_TEXT)}{hint&&<small>{say(...(hint==='attach'?MOLD_QUOTE_PO_MISSING_ATTACH:MOLD_QUOTE_PO_MISSING_OTHERS))}</small>}</span></p>;
+const QuotePoMissing=({say,hint}:{say:Say;hint?:'attach'|'others'|'production'})=><p className="mold-quote-po-missing" role="status"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_QUOTE_PO_MISSING_TEXT)}{hint&&<small>{say(...(hint==='attach'?MOLD_QUOTE_PO_MISSING_ATTACH:hint==='production'?MOLD_QUOTE_PO_MISSING_PRODUCTION:MOLD_QUOTE_PO_MISSING_OTHERS))}</small>}</span></p>;
+/** The state a page of this release shows: a request kept for its quotation's or PO's file (sending.held, 2026-11-05) as such, else the
+ *  state the server gives (one every page knows). */
+const shownState=(sending:MoldRequestView['sending'])=>sending.held==='quote_file'?'needs_file':sending.state;
+const sendingName=(sending:MoldRequestView['sending'],linkReady:boolean):[string,string]=>sending.held==='quote_file'?MOLD_QUOTE_FILE_HELD_NAME:moldSendingNames[linkReady?sending.state:'off'];
 /** «وقّع العميل: <signer> · <time>» (2026-11-04), with the image through the CRM when it is given (the request's sheet), once the image
  *  reached production (state sent). Before that the request says where the signature stands instead: on its way («التوقيع لسه ما وصلش
  *  للإنتاج»), stopped (the resend starts it again) or refused for good (cancel and ask again with a new signature). */
@@ -94,12 +98,14 @@ function SendingState({view,linkReady,say}:{view:MoldRequestView;linkReady:boole
  const sending=view.sending;
  if(sending.state==='sent')return null;
  const what=sending.outbox==='cancel'?say('الإلغاء','The cancellation'):say('الطلب','The request');
- return <div className="mold-sending" data-state={sending.state} role="status">
+ const kept=sending.held==='quote_file';
+ return <div className="mold-sending" data-state={shownState(sending)} role="status">
   <TriangleAlert size={16} aria-hidden="true"/>
-  <div><strong>{say(...moldSendingNames[sending.state])}</strong>
-   <p>{!linkReady&&sending.state!=='needs_file'?say('الطلب محفوظ في الـCRM، وسيُرسل عند تفعيل الربط مع الإنتاج.','The request is saved in the CRM and will be sent once the production link is set up.')
+  <div><strong>{say(...(kept?MOLD_QUOTE_FILE_HELD_NAME:moldSendingNames[sending.state]))}</strong>
+   <p>{!linkReady&&!kept?say('الطلب محفوظ في الـCRM، وسيُرسل عند تفعيل الربط مع الإنتاج.','The request is saved in the CRM and will be sent once the production link is set up.')
     // A new request kept until its quotation's or PO's file is attached (2026-11-05); attaching it sends the request, then its files.
-    :sending.state==='needs_file'?say(...MOLD_QUOTE_FILE_WAITING_TEXT)
+    // Its requester is told what to do; a reader who cannot attach (the sales manager, the administrator) whom it waits for.
+    :kept?say(...(view.can.attach?MOLD_QUOTE_FILE_WAITING_TEXT:MOLD_QUOTE_FILE_WAITING_OTHERS))
     // A request carrying a quotation or PO number is kept until production's update is known to be live (never sent without them).
     :sending.state==='held'?say('الطلب محفوظ في الـCRM ومعه رقم عرض السعر / الـ PO، ويُرسل بعد تحديث تطبيق المنتجات.','The request is saved in the CRM with its quotation / PO number and is sent once the products application is updated.')
     :sending.state==='rejected'?say('رفض الإنتاج: ','Production refused: ')+((sending.error?.fields||[]).map(field=>say(...(moldFieldNames[field]||[field,field]))).join('، ')||moldErrorText(sending.error?.code||'',say))+'. '
@@ -107,7 +113,7 @@ function SendingState({view,linkReady,say}:{view:MoldRequestView;linkReady:boole
      // to cancel it and ask again.
      +(view.can.edit?say('عدّل الطلب أو أعد إرساله.','Edit the request or resend it.'):say('ألغِ الطلب واطلبه من جديد.','Cancel the request and ask again.'))
     :what+' '+say('محفوظ في الـCRM ولم يصل للإنتاج بعد','is saved in the CRM and has not reached production yet')+(sending.error?': '+moldErrorText(sending.error.code,say):'')+'.'}</p>
-   {linkReady&&sending.state==='waiting'&&<small>{sending.nextAttemptAt?say('المحاولة التالية تلقائيًا: ','Next automatic try: ')+stamp(sending.nextAttemptAt):say('توقفت المحاولات التلقائية بعد 24 ساعة؛ استخدم «إعادة الإرسال».','Automatic tries stopped after 24 hours; use Resend.')}{sending.attempts?' · '+say('محاولات: ','Tries: ')+sending.attempts:''}</small>}
+   {linkReady&&!kept&&sending.state==='waiting'&&<small>{sending.nextAttemptAt?say('المحاولة التالية تلقائيًا: ','Next automatic try: ')+stamp(sending.nextAttemptAt):say('توقفت المحاولات التلقائية بعد 24 ساعة؛ استخدم «إعادة الإرسال».','Automatic tries stopped after 24 hours; use Resend.')}{sending.attempts?' · '+say('محاولات: ','Tries: ')+sending.attempts:''}</small>}
   </div>
  </div>;
 }
@@ -130,7 +136,7 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
   </div>
   {view.quotePo?.missing&&<QuotePoMissing say={say}/>}
   {/* Kept for its quotation's or PO's file (2026-11-05): said whatever the link's state, since attaching it is the representative's to do. */}
-  {view.sending.state!=='sent'&&<small className="mold-card-sending" data-state={view.sending.state}>{say(...moldSendingNames[linkReady||view.sending.state==='needs_file'?view.sending.state:'off'])}</small>}
+  {view.sending.state!=='sent'&&<small className="mold-card-sending" data-state={shownState(view.sending)}>{say(...sendingName(view.sending,linkReady))}</small>}
   {!!unsent&&<small className="mold-card-sending" data-state="rejected">{say('ملفات تصميم لم تُرفع: ','Design files not uploaded: ')+unsent+' · '+say('افتح الطلب للتفاصيل','open the request for details')}</small>}
  </button>;
 }
@@ -235,8 +241,9 @@ function MoldPendingList({pending,ownList,say,onOpen,onChanged}:{pending:MoldPen
     {/* How the customer pays, as production holds it now (none for a request asked for before 2026-11-03). */}
     {item.payment&&<span className="mold-payment" data-payment={item.payment}>{say('الدفع','Payment')}: <b>{say(...moldPaymentNames[item.payment])}</b></span>}
    </div>
-   {/* Production has neither a quotation file nor a PO file (2026-11-05): the representative or the production manager attaches one. */}
-   {item.quoteOrPoMissing&&<QuotePoMissing say={say} hint="others"/>}
+   {/* Production has neither a quotation file nor a PO file (2026-11-05): for one of the CRM's requests whoever asked for it (or the
+       production manager) attaches one; for one registered in the products application, its production manager. */}
+   {item.quoteOrPoMissing&&<QuotePoMissing say={say} hint={item.inCrm?'others':'production'}/>}
    {/* The customer's signature on the CRM's request (2026-11-04); its image is among the design files, labelled so. */}
    {item.signature&&<SignedBy signature={item.signature} state={item.signatureDelivered?'sent':'missing'} say={say}/>}
    <p className="mold-pending-specs">{[choice(MOLD_CORES,specs.core),specs.vibrators?say('رجاجات: ','Vibrators: ')+specs.vibrators:'',choice(MOLD_MODELS,specs.model),choice(MOLD_HALF_BLOCKS,specs.halfBlock),specs.moldWidth?say('عرض ','Width ')+specs.moldWidth:'',specs.gelbaSize?say('جلب ','Gelba ')+specs.gelbaSize:'',specs.moldNo?say('قالب ','Mold ')+specs.moldNo:''].filter(Boolean).join(' · ')}</p>
