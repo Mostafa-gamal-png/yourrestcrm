@@ -98,6 +98,9 @@ try {
     await page.goto(app.origin + '/'); await page.locator('.workspace').waitFor();
     await page.getByRole('button', {name: /Switch to English|English/}).first().click();
     await notice(page).waitFor();
+    // The English words load on demand (lib/i18n.ts imports lib/locales/en.json): on a busy machine the notice can show for a moment
+    // in Arabic before they arrive. Wait for them (up to 15 s), then check the text as before.
+    await notice(page).filter({hasText: 'An app update is available'}).waitFor({timeout: 15000}).catch(() => {});
     const text = await notice(page).innerText();
     ok(text.includes('An app update is available') && text.includes('Reload'), 'the English notice: ' + text.replace(/\n/g, ' · '));
     check(/[؀-ۿ]/.test(text), false, 'no Arabic in the English notice');

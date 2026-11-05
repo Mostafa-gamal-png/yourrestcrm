@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint .",
     "check": "node scripts/check.mjs",
-    "check:erp": "node scripts/check.mjs --gate erp-workbook"
+    "check:erp": "node scripts/check.mjs --gate erp-workbook",
+    "gates": "node scripts/gates.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
