@@ -12,7 +12,8 @@ const pending=new Set(),streamCleanup=new Set(),writeCleanup=new Set();let check
 const identity=new AsyncLocalStorage();globalThis.uploadTestIdentity=identity;
 const check=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve};};
-const within=async promise=>{let timer;try{return await Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Fixture phase timed out')),3000))]);}finally{clearTimeout(timer);}};
+// A hang guard, not a speed check: 15 s so a machine running the gates in parallel (scripts/gates.mjs) does not trip it.
+const within=async promise=>{let timer;try{return await Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Fixture phase timed out')),15000))]);}finally{clearTimeout(timer);}};
 fs.writeFileSync(path.join(out,'env.mjs'),'export const env=globalThis.uploadTestEnv;');
 fs.writeFileSync(path.join(out,'auth.mjs'),'export async function getApplicationUser(){return globalThis.uploadTestIdentity.getStore()||null;}');
 function compile(relative){
