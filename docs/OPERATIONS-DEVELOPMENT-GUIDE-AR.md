@@ -510,6 +510,7 @@ node scripts/rehearse-update.mjs --old-release /مسار/dist/standalone-الق�
 - **القراءة:** ناتج الاستضافة كاملًا في سجل الـjob وفي ملخص التشغيل، وأهم أسطره في annotation واحدة (`hosting said`)، والخطوات في annotations (`deploy`).
 - **الحدود:** لا يُحذف شيء ولا يُسترجع: أي `STOP` من المُفعِّل يُنهي التشغيل بمخرجاته. لا يمس السكربت مجلدات حزم سابقة؛ مجلد الحزمة نفسها يُعاد استعماله إن كان بنفس `RELEASE-SHA256SUMS.txt` ويُرفض إن اختلف. يلزم أن يسمح الحساب بـcron (cPanel ← Cron Jobs)؛ إن لم يبدأ السطر خلال 6 دقائق يتوقف الـworkflow ويحذف الطلب والسطر.
 - **الاختبار:** `node tests/deploy-cpanel.mjs` (البوابة الافتراضية) يشغّل السكربتات الحقيقية على cPanel وهمي في مجلد مؤقت بـcron يشغّل bash فعلًا. وباليد: `HOME=<مجلد مؤقت> YR_HOSTING_NODE=$(command -v node) bash scripts/hosting-deploy.sh check <zip> <stage> <helper> <sha256>`.
+- **فتح الموقع لتشغيل الترحيل (2026-11-05):** الاستضافة لا تشغّل التطبيق إلا عند أول زيارة، والترحيل يُطبَّق عند التشغيل. يوم 2026-11-03 لم يزر أحد الموقع خلال دقيقة الفحص فتوقف `--verify` عند `MIGRATION_NOT_APPLIED_START_APP_FIRST`. الآن، كلما قال `--verify` ذلك، يفتح `scripts/hosting-deploy.sh` صفحة الدخول مرة (`OPENED THE SITE TO START THE APP: HTTP …`) ثم يعيد الفحص، حتى ست مرات، في `deploy` وفي `verify`. الفحص الذي ينجح من أول مرة لا يفتح شيئًا. مغطّى في `tests/deploy-cpanel.mjs` (7b).
 
 ## 10. حل المشكلات الشائعة
 
