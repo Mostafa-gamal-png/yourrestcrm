@@ -47,9 +47,26 @@ export const MOLD_QUOTE_PO_SETTING='mold-quote-po';
 export async function moldQuotePoSupported(db:D1Database){
  return !!(await db.prepare('SELECT 1 AS known FROM crm_settings WHERE id=?').bind(MOLD_QUOTE_PO_SETTING).first());
 }
+/** Where the CRM keeps that the products update of 2026-11-05 (the second of the day: requestRef, the order number given at production's
+ *  approval) is live, the same way: a row of crm_settings, written once, never removed. From then on an order number is no identity: a
+ *  page loaded before this release that names a request by it (approve-order, withdraw-order) is asked to reload, never answered on a
+ *  number that may have moved (the renumbering of 101 and up) or that the request does not have yet. */
+export const MOLD_REQUEST_REF_SETTING='mold-request-ref';
+export async function moldRequestRefKnown(db:D1Database){
+ return !!(await db.prepare('SELECT 1 AS known FROM crm_settings WHERE id=?').bind(MOLD_REQUEST_REF_SETTING).first());
+}
+/** Learns that update from any answer read (a status object or a pending item, as moldStatusObject and moldPendingItem read it, so only
+ *  a valid requestRef counts): the first one stores it, any later one changes nothing. Never unlearned. */
+async function noteMoldRequestRef(db:D1Database,values:unknown[],at:string){
+ if(!values.some(value=>!!value&&typeof value==='object'&&typeof (value as {requestRef?:unknown}).requestRef==='string'))return false;
+ if(!await moldRequestRefKnown(db))await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_REQUEST_REF_SETTING,at).run();
+ return true;
+}
 /** Learns production's update from any answer read (a status object or a pending item, as moldStatusObject and moldPendingItem read it)
- *  that carries quoteOrPoMissing, whatever its value: the first one stores it, any later one changes nothing. Never unlearned. */
+ *  that carries quoteOrPoMissing, whatever its value: the first one stores it, any later one changes nothing. Never unlearned. Every
+ *  answer read passes here, so the same answers teach the products update of 2026-11-05 too (noteMoldRequestRef). */
 export async function noteMoldQuotePo(db:D1Database,values:unknown[],at=new Date().toISOString()){
+ await noteMoldRequestRef(db,values,at);
  if(!values.some(moldQuotePoAnswered))return false;
  // Written only while it is not there yet (a page reads the waiting list every few minutes; no write each time).
  if(!await moldQuotePoSupported(db))await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_QUOTE_PO_SETTING,at).run();

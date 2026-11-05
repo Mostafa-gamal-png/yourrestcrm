@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import vm from 'node:vm';
 import ts from 'typescript';
@@ -924,5 +925,99 @@ try {
   mock.setQuotePo(false);
   ok(mock.state.calls.every(c => !JSON.stringify(c.headers).includes(mock.state.secret)), 'the secret never travels');
 } finally { await mock.stop(); }
+
+// ---- the products side's second message of 2026-11-05: the order number comes at production's approval, requestRef is the key
+{
+  const REF = '0f8e2c1a-5b7d-4c3e-9a1f-2b3c4d5e6f70', OTHER = '6d1f0e2a-3b4c-4d5e-8f90-a1b2c3d4e5f6';
+  const base = {crmRequestId: 'mr-ref-1', orderNo: 92, status: 'received', editable: true, stages: {}, delivered: false, revision: 3, waitingStep: 'sales', waitingSince: '2026-11-05T10:00:00+03:00', approvals: {required: true, sales: null, production: null, admin: null}};
+  // The status object: the application of today (no requestRef) reads exactly as before; the new one's orderNo null and its requestRef.
+  const today = moldStatusObject(base);
+  eq([Object.hasOwn(today, 'requestRef'), today.orderNo], [false, 92], 'today\'s status: no requestRef key at all, the number as given');
+  const fresh = moldStatusObject({...base, orderNo: null, requestRef: REF});
+  eq([fresh.orderNo, fresh.requestRef, fresh.status, fresh.revision], [null, REF, 'received', 3], 'the new application: no number yet, its requestRef');
+  eq([moldStatusObject({...base, orderNo: undefined}).orderNo, moldStatusObject({...base, orderNo: 0}).orderNo, moldStatusObject({...base, orderNo: '93'}).orderNo], [null, null, null], 'an absent, zero or text number reads as none');
+  // A malformed requestRef is dropped, never the status that carried it.
+  for (const odd of ['not-a-uuid', 42, '', '0f8e2c1a5b7d4c3e9a1f2b3c4d5e6f70', REF + 'x']) { const read = moldStatusObject({...base, orderNo: null, requestRef: odd}); eq([read?.status, Object.hasOwn(read || {}, 'requestRef')], ['received', false], 'a malformed requestRef (' + JSON.stringify(odd) + '): ignored, the status kept'); }
+  eq(moldStatusObject({...base, crmRequestId: null, orderNo: null, requestRef: REF}, {manual: true}).requestRef, REF, 'a request registered in production (an approval\'s answer): read with its requestRef');
+  eq(rules.moldRequestRef(REF.toUpperCase()), REF.toUpperCase(), 'a UUID in capitals is one, sent back as it came');
+  // A pending item: read with no number, named by crmRequestId, requestRef or number; one named by nothing is left out.
+  const pend = {crmRequestId: null, source: 'manual', customer: {name: 'م'}, salesman: {name: 'س'}, specs: {description: 'd'}};
+  eq([moldPendingItem({...pend, orderNo: null, requestRef: REF}).orderNo, moldPendingItem({...pend, orderNo: null, requestRef: REF}).requestRef], [null, REF], 'an item without a number, named by its requestRef');
+  eq(moldPendingItem({...pend, requestRef: REF}).orderNo, null, 'orderNo absent: none');
+  eq([moldPendingItem({...pend, orderNo: null}), moldPendingItem({...pend, orderNo: null, requestRef: 'bad'})], [null, null], 'nothing names it (no number, no valid requestRef, no crmRequestId): left out');
+  eq([moldPendingItem({...pend, crmRequestId: 'mr-x', source: 'crm', orderNo: null}).crmRequestId, Object.hasOwn(moldPendingItem({...pend, orderNo: 101, requestRef: 'bad'}), 'requestRef'), moldPendingItem({...pend, orderNo: 101, requestRef: 'bad'}).orderNo], ['mr-x', false, 101], 'the CRM\'s item by its crmRequestId; a malformed requestRef beside a number: the number names it');
+  eq(Object.hasOwn(moldPendingItem({...pend, orderNo: 101}), 'requestRef'), false, 'today\'s item: no requestRef key');
+  // The approval body: requestRef for a request registered in production; one name only.
+  eq(moldApprovalBody({requestRef: REF, action: 'approve', by: {name: 'm', email: 'm@yourrest.org'}}), {requestRef: REF, action: 'approve', by: {name: 'm', email: 'm@yourrest.org'}}, 'by requestRef: no orderNo in the body');
+  for (const [input, field] of [[{requestRef: 'nope', action: 'approve', by: {name: 'm'}}, /requestRef/], [{requestRef: REF, orderNo: 3, action: 'approve', by: {name: 'm'}}, /crmRequestId|requestRef|orderNo/], [{id: 'r', requestRef: REF, action: 'approve', by: {name: 'm'}}, /crmRequestId/]]) { assert.throws(() => moldApprovalBody(input), field); checks++; }
+
+  // The page's rules (lib/mold-requests.ts, transpiled): the key, the target, the links, the number in words, the list for an old page.
+  const root = process.cwd(), modules = new Map();
+  const load = (filename, source) => {
+    if (modules.has(filename)) return modules.get(filename);
+    const exports = {}; modules.set(filename, exports);
+    const resolve = name => name === '@/portable/mold-rules.mjs' ? rules : name.startsWith('./') ? load(path.join(path.dirname(filename), name) + '.ts') : (() => { throw new Error('not loaded here: ' + name); })();
+    vm.runInNewContext(ts.transpileModule(source ?? readFileSync(path.join(root, filename), 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}, fileName: filename}).outputText, {exports, require: resolve, Date, JSON}, {filename});
+    return exports;
+  };
+  const lib = load('lib/mold-requests.ts'), same = (a, b, m) => eq(JSON.parse(JSON.stringify(a)), b, m);
+  const crmItem = {orderNo: null, requestRef: OTHER, crmRequestId: 'mr-own'}, manualRef = {orderNo: null, requestRef: REF, crmRequestId: null}, manualOld = {orderNo: 95, crmRequestId: null};
+  eq([lib.moldPendingKey(crmItem), lib.moldPendingKey(manualRef), lib.moldPendingKey(manualOld)], ['crm:mr-own', 'ref:' + REF, 'order:95'], 'the key: crmRequestId, else requestRef, else (an older application) the number');
+  eq(lib.moldPendingKey({...manualRef, orderNo: 100}), lib.moldPendingKey({...manualRef, orderNo: 101}), 'renumbered (or numbered at last): the same key');
+  same([lib.moldPendingTarget(crmItem), lib.moldPendingTarget(manualRef), lib.moldPendingTarget(manualOld), lib.moldPendingTarget({orderNo: null, crmRequestId: null})], [{crmRequestId: 'mr-own'}, {requestRef: REF}, {orderNo: 95}, null], 'what the approval sends: never orderNo beside a requestRef');
+  const file = {fileId: 7, crmFileId: null, name: 'a.pdf', kind: 'pdf', size: 1, source: 'production', uploadedAt: null};
+  eq([lib.moldPendingFiles({...manualRef, designFiles: [file]}).designFiles[0].href, lib.moldPendingFiles({...crmItem, designFiles: [file]}).designFiles[0].href, lib.moldPendingFiles({...manualOld, designFiles: [], poFiles: [file]}).poFiles[0].href],
+    ['/api/mold-requests/design-file?ref=' + REF + '&file=7', '/api/mold-requests/design-file?crm=mr-own&file=7', '/api/mold-requests/design-file?order=95&file=7'], 'each item\'s files linked by its name: ref=, crm=, and order= for an older application\'s only');
+  const say = (ar, en) => ar + '|' + en;
+  eq([lib.moldOrderNoText({orderNo: 100}, say), lib.moldOrderNoText({orderNo: null}, say), lib.moldOrderNoText(null, say), lib.moldOrderNoText({orderNo: null}, say, {cancelled: true})],
+    ['100', 'لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)|No number yet (given at production approval)', '—', '—'], 'the number in words: as given, «no number yet», none before a status, none for one cancelled without a number');
+  eq([lib.moldPendingAgain({...manualRef, waitingSince: '2026-11-05T10:00:00+03:00'}, [{...manualRef, orderNo: null, waitingSince: '2026-11-05T11:00:00+03:00'}]), lib.moldPendingAgain({...manualRef, waitingSince: '2026-11-05T10:00:00+03:00'}, [{...manualOld, waitingSince: '2026-11-05T11:00:00+03:00'}])], [true, false], 'waiting again is told by the key, not by a number');
+  // A page loaded before this release: it keys every item by orderNo (React keys, errors, «approved» memory, the approval's body), so it
+  // gets only numbered items, each with a whole number, and a list error its own wording names.
+  const listed = {items: [{...manualOld, inCrm: false}, {...manualRef, inCrm: false}, {...crmItem, inCrm: true}], error: null, at: '2026-11-05T10:00:00.000Z'};
+  const old = lib.moldPendingForOldPage(listed);
+  eq([old.items.map(item => item.orderNo), old.error.code, lib.moldPendingForOldPage({...listed, items: [listed.items[0]]}) === undefined], [[95], 'bad_response', false], 'the old page\'s list: numbered items only, and bad_response');
+  eq(lib.moldPendingForOldPage({...listed, items: [listed.items[0]]}).error, null, 'all numbered (the application of today): the list as it is');
+  eq(lib.moldPendingForOldPage(null), null, 'no list (not a sales manager): none');
+  const released = load('lib/released-mold-requests.ts', execFileSync('git', ['show', '1dcd37e:lib/mold-requests.ts'], {cwd: root, encoding: 'utf8'}));
+  eq([released.moldErrorText(old.error.code, (ar) => ar), old.items.every(item => Number.isInteger(item.orderNo) && item.orderNo > 0), new Set(old.items.map(item => item.orderNo)).size], ['رد غير متوقع من تطبيق الإنتاج', true, old.items.length], 'the release live today names that error, and every item it gets has its own whole number');
+
+  // The stand-in: the application of today ignores requestRef; the new numbering numbers at production's approval.
+  const refMock = await startProductsMock({requestRefs: true});
+  try {
+    const fetch = fetchWith(refMock.ca), config = moldConfig({YR_PRODUCTS_API_URL: refMock.url, YR_PRODUCTS_SECRET: refMock.state.secret}), call = (route, body) => callProducts(config, route, body, {fetch});
+    refMock.state.nextOrder = 101;
+    const first = moldRequestBody({id: 'mr-ref-a', requestedAt: riyadhIso(Date.now()), customer, salesman, specs});
+    let answer = await call('requests', first);
+    const a = moldStatusObject(answer.json.request);
+    eq([answer.http, a.orderNo, rules.MOLD_REQUEST_REF.test(a.requestRef)], [201, null, true], 'a new request: no number, a requestRef');
+    answer = await call('requests', first);
+    eq([answer.http, moldStatusObject(answer.json.request).requestRef], [200, a.requestRef], 'sent again: 200, the same requestRef');
+    eq((await call('status', {ids: ['mr-ref-a']})).json.requests.map(item => [item.orderNo, item.requestRef]), [[null, a.requestRef]], 'status: the same');
+    const manual = refMock.registerManual({customerName: 'مسجّل'}), other = refMock.registerManual({customerName: 'آخر'});
+    let items = (await call('pending', {})).json.requests.map(item => moldPendingItem(item));
+    eq(items.map(item => [item.orderNo, item.requestRef === manual.requestRef || item.requestRef === other.requestRef || item.requestRef === a.requestRef]), [[null, true], [null, true], [null, true]], 'pending: no numbers, every item with its requestRef');
+    answer = await call('approval', moldApprovalBody({requestRef: manual.requestRef, action: 'approve', by: {name: 'مدير'}}));
+    const approvedManual = moldStatusObject(answer.json.request, {manual: true});
+    eq([answer.kind, approvedManual.waitingStep, approvedManual.orderNo, JSON.parse(refMock.state.calls.at(-1).body).orderNo], ['ok', 'production', null, undefined], 'the sales manager approves by requestRef: still no number, none in the body');
+    eq([(await call('approval', {requestRef: 'nope', action: 'approve', by: {name: 'm'}})).fields, (await call('approval', {requestRef: OTHER, action: 'approve', by: {name: 'm'}})).kind], [['requestRef'], 'not_found'], 'a malformed requestRef: 400 naming it; an unknown one: 404');
+    eq((await call('approval', moldApprovalBody({orderNo: 101, action: 'approve', by: {name: 'm'}}))).kind, 'not_found', 'no request has 101 yet: none is numbered');
+    eq(refMock.approve(manual.requestRef, 'production').orderNo, 101, 'production approves: the last number + 1');
+    refMock.approve('mr-ref-a', 'sales'); refMock.approve('mr-ref-a', 'production');
+    eq(moldStatusObject((await call('status', {ids: ['mr-ref-a']})).json.requests[0]).orderNo, 102, 'the CRM\'s request numbered at production\'s approval: 102');
+    eq((await call('approval', moldApprovalBody({orderNo: 101, action: 'withdraw', by: {name: 'm'}}))).kind, 'locked', 'orderNo still names a numbered request (production approved: no withdrawal)');
+    const revision = refMock.row('mr-ref-a').revision;
+    eq([refMock.renumber(101), refMock.row('mr-ref-a').orderNo, refMock.byRef(manual.requestRef).orderNo, refMock.row('mr-ref-a').revision], [[100, 101], 101, 100, revision], 'renumbered: 101 and up down by one, the same revision');
+    eq(moldStatusObject((await call('status', {ids: ['mr-ref-a']})).json.requests[0]).orderNo, 101, 'the next status says the new number');
+    assert.throws(() => refMock.remove('mr-ref-a'), /no longer deletes/); checks++;
+    assert.throws(() => refMock.removeOrder(101), /no longer deletes/); checks++;
+    eq([refMock.cancelHere('mr-ref-a').status, refMock.row('mr-ref-a').orderNo], ['cancelled', 101], 'production cancels it: it keeps its number');
+    // The application of today: requestRef unknown to it (as any field it does not know); it numbers at creation as before.
+    refMock.setRequestRefs(false);
+    answer = await call('requests', moldRequestBody({id: 'mr-ref-b', requestedAt: riyadhIso(Date.now()), customer, salesman, specs}));
+    eq([Number.isInteger(answer.json.request.orderNo), Object.hasOwn(answer.json.request, 'requestRef')], [true, false], 'today\'s application: numbered at once, no requestRef');
+    eq((await call('approval', {requestRef: other.requestRef, action: 'approve', by: {name: 'm'}})).fields, ['crmRequestId'], 'it ignores requestRef: the body names no request (400)');
+  } finally { await refMock.stop(); }
+}
 
 console.log(JSON.stringify({ok: true, checks, realProductionTested: false}));

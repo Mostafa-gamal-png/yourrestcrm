@@ -292,9 +292,25 @@ try {
       eq([next.phase, next.dailyBackup.transaction], ['switched', took.transaction], 'and switches citing it');
     }
     // The shipped list itself: every activation name delivered on 2026-11-01 to 2026-11-03 is accepted by the next package.
-    const shipped = ['update-devices-activation-20261101', 'update-tablet-activation-20261101', 'update-molds-activation-20261101', 'update-mold-approvals-activation-20261101', 'update-mold-customers-activation-20261101', 'update-mold-fixes-activation-20261102', 'update-erp-customers-activation-20261102', 'update-erp-code-activation-20261102', 'update-design-files-activation-20261102', 'update-android-1012-activation-20261102', 'update-fallback-activation-20261103', 'update-erp-mold-activation-20261103'];
+    const shipped = ['update-devices-activation-20261101', 'update-tablet-activation-20261101', 'update-molds-activation-20261101', 'update-mold-approvals-activation-20261101', 'update-mold-customers-activation-20261101', 'update-mold-fixes-activation-20261102', 'update-erp-customers-activation-20261102', 'update-erp-code-activation-20261102', 'update-design-files-activation-20261102', 'update-android-1012-activation-20261102', 'update-fallback-activation-20261103', 'update-erp-mold-activation-20261103', 'update-mold-quote-file-activation-20261105'];
     const source = read(path.join(root, 'portable/activate-ui-refresh-update.cjs'));
-    eq(shipped.filter(name => !source.includes('|' + name + '|')), [], 'the activator lists every activation name delivered from 2026-11-01 to 2026-11-03');
+    eq(shipped.filter(name => !source.includes('|' + name + '|')), [], 'the activator lists every activation name delivered from 2026-11-01 to 2026-11-05');
+  }
+
+  // ---- 2026-11-05: the second package of the day (update-mold-request-ref) reuses the backup the morning's deployed package
+  // (update-mold-quote-file, the day's first: its activator took the full backup itself) recorded in the day's index
+  {
+    const named = (key, name, date) => packageIt(key, build('build-' + key, key), ['--release-name', name, '--release-date', date, '--stage-name', 'yourrest-crm-' + name + '-' + date, '--schema-baseline', '16']);
+    const quoteFile = named('quotefile', 'update-mold-quote-file', '20261105'), requestRef = named('requestref', 'update-mold-request-ref', '20261105');
+    eq([requestRef.helper.RELEASE_NAME, requestRef.helper.STAGE_DIR], ['update-mold-request-ref', 'yourrest-crm-update-mold-request-ref-20261105'], 'the second package of 2026-11-05 under its own name and stage folder');
+    const day = '2026-11-05', dir = home('same-day-update-mold-request-ref-after-update-mold-quote-file', 16, quoteFile, requestRef), pe = quoteFile.helper.pathsFor(dir), pn = requestRef.helper.pathsFor(dir), logs = [], collect = text => logs.push(text);
+    const took = await quoteFile.helper.run(pe, 'apply', {log: quiet, stopped: paths => quoteFile.helper.ensureStopped(paths, emptyProc), now: () => new Date(day + 'T05:00:00Z')});
+    eq([path.basename(took.transaction).startsWith('yourrest-update-mold-quote-file-activation-20261105-'), JSON.parse(read(path.join(pe.dailyRoot, day + '.json'))).transaction], [true, took.transaction], 'the day\'s index names the morning\'s update-mold-quote-file activation');
+    statuses = {...healthy};
+    await quoteFile.helper.run(pe, 'verify', {log: quiet, stopped: paths => quoteFile.helper.ensureStopped(paths, emptyProc)});
+    const next = await requestRef.helper.run(pn, 'apply', {log: collect, stopped: paths => requestRef.helper.ensureStopped(paths, emptyProc), now: () => new Date(day + 'T12:00:00Z')});
+    eq(logs.includes('2/4 TODAY\'S VERIFIED FULL BACKUP REUSED. NO NEW FULL COPY.'), true, 'update-mold-request-ref reuses the backup update-mold-quote-file took this morning');
+    eq([next.phase, next.dailyBackup.transaction], ['switched', took.transaction], 'and switches citing it');
   }
 
   // ---- a stale or foreign daily backup is still refused

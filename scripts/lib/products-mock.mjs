@@ -38,9 +38,17 @@
 // not approved it (approvals.admin; a historical request needs none), cancelled and deleted ones excepted; attaching or deleting a
 // quotation's or PO's file keeps the approvals, a design file's still undoes them. Everything else is unchanged. quotePo: false stays the
 // application before 2026-11-03 (no quoteOrPoMissing key at all).
+// The new numbering (the products side's second message of 2026-11-05), behind its own switch (requestRefs: false, the default, is the
+// application as it is today: every request numbered when it is created, no requestRef): with it on, a request gets no orderNo when it is
+// created (null in the requests, status and pending answers) and is numbered when production approves it (approvals.production: the last
+// number + 1); every request carries requestRef, a stable UUID, in its status object and its pending item; the approval route takes
+// requestRef for a request registered in the products application (not a UUID: 400 invalid_payload fields ['requestRef']; unknown: 404),
+// crmRequestId for the CRM's as before, and orderNo still for a request that has a number; production no longer deletes a request, it
+// cancels it, and a cancelled request keeps its number. Test controls: the switch (setRequestRefs), renumber (the one-time shift of the
+// numbers from 101 up down by one, without a new revision), cancelHere (production cancelling a request).
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
-import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
+import {createHash, createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
 import {moldImageSize} from '../../portable/mold-rules.mjs';
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
@@ -148,12 +156,13 @@ function quotePoPart(row, quotePo) {
   const quoteFiles = files('quote'), poFiles = files('po');
   return {designFiles: files('design'), quoteNo: row.quoteNo ?? '', poNo: row.poNo ?? '', quoteOrPoMissing: !row.cancelled && !approved(row) && !quoteFiles.length && !poFiles.length, quoteFiles, poFiles};
 }
-/** yr_mreq_status_object; quotePo: the updated application (2026-11-03) adds the quotation and PO part. */
-function statusObjectOf(row, quotePo) {
+/** yr_mreq_status_object; quotePo: the updated application (2026-11-03) adds the quotation and PO part; refs: the application of the new
+ *  numbering (2026-11-05) adds requestRef (orderNo is null until production approves). */
+function statusObjectOf(row, quotePo, refs = false) {
   const status = derive(row), a = row.approvals;
   const approvals = {required: !a.legacy, ...Object.fromEntries(APPROVAL_STEPS.map(step => [step, a[step] ? {at: a[step].at, ...(a[step].via === 'crm' ? {by: a[step].by} : {})} : null]))};
   const {designFiles, ...numbers} = quotePoPart(row, quotePo);
-  return {crmRequestId: row.crmRequestId, orderNo: row.orderNo, status, editable: status === 'received', moldSerial: row.moldSerial, productionDate: row.productionDate, stages: structuredClone(row.stages),
+  return {crmRequestId: row.crmRequestId, orderNo: row.orderNo, ...(refs ? {requestRef: row.requestRef} : {}), status, editable: status === 'received', moldSerial: row.moldSerial, productionDate: row.productionDate, stages: structuredClone(row.stages),
     stagesDone: STAGES.filter(key => row.stages[key].done).length, stagesTotal: STAGES.length, delivered: row.delivered, deliveryDate: row.deliveryDate,
     waitingStep: row.waitingStep, waitingSince: row.waitingSince, approvals, updatedAt: row.updatedAt, revision: row.revision, designFiles, ...numbers};
 }
@@ -182,23 +191,38 @@ function checkDesign(name, bytes) {
 const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null, b = p[column] ?? null; return (a === null) === (b === null) && (a === null || String(a) === String(b)); });
 
 /**
- * @param {{secret?: string, now?: () => number, quotePo?: boolean}} options quotePo: start as the application after its update of 2026-11-03
+ * @param {{secret?: string, now?: () => number, quotePo?: boolean, requestRefs?: boolean}} options quotePo: start as the application after its
+ *  update of 2026-11-03; requestRefs: start as the application of the new numbering (the second message of 2026-11-05)
  */
-export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false} = {}) {
+export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false} = {}) {
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map(), quotePo};
-  // This application's own reading of a request and of a file: before or after its update of 2026-11-03 (state.quotePo).
-  const statusObject = row => statusObjectOf(row, state.quotePo), designEntry = file => designEntryOf(file, state.quotePo);
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map(), quotePo, refs: requestRefs, byRef: new Map()};
+  // This application's own reading of a request and of a file: before or after its update of 2026-11-03 (state.quotePo), and before or
+  // after its new numbering (state.refs).
+  const statusObject = row => statusObjectOf(row, state.quotePo, state.refs), designEntry = file => designEntryOf(file, state.quotePo);
+  /** Every request: by their numbers in the application as it is today (byOrder, which tests edit), by their requestRef with the new
+   *  numbering (a request has no number before production's approval). */
+  const allRows = () => state.refs ? [...state.byRef.values()] : [...state.byOrder.values()];
+  /** A new request's number: as it is created today; none with the new numbering (numbered at production's approval). */
+  const created = row => { row.requestRef = randomUUID(); state.byRef.set(row.requestRef, row); if (row.orderNo !== null) state.byOrder.set(row.orderNo, row); return row; };
+  /** The last number + 1, given when production approves a request it has not numbered (the new numbering). */
+  const numberIt = row => {
+    if (row.orderNo !== null) return;
+    const last = Math.max(state.nextOrder - 1, ...[...state.byRef.values()].map(other => other.orderNo ?? 0));
+    row.orderNo = last + 1; state.nextOrder = row.orderNo + 1; state.byOrder.set(row.orderNo, row);
+  };
+  /** A request by what a test names it with: its number, its requestRef, or its crmRequestId. */
+  const find = key => typeof key === 'number' ? state.byOrder.get(key) : state.byRef.get(key) || state.rows.get(key);
   const riyadh = () => new Date(now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00';
   /** Every change: a new revision, and the wait restarts only when the step changes (yr_mreq_state_set). */
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
 
   function upsert(body) {
     const p = validateRequest(body, now(), {quotePo: state.quotePo});
-    let row = state.rows.get(p.crmRequestId), created = false, linked = false;
+    let row = state.rows.get(p.crmRequestId), isNew = false, linked = false;
     if (!row && p.legacyOrderNo !== null) {
       const legacy = state.byOrder.get(p.legacyOrderNo);
       if (!legacy || legacy.source !== 'import') throw new ApiError('invalid_payload', 400, 'No imported request has this legacyOrderNo.', ['legacyOrderNo']);
@@ -206,11 +230,11 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       legacy.crmRequestId = p.crmRequestId; legacy.salesmanId = p.salesmanId; legacy.salesmanEmail = p.salesmanEmail; touch(legacy);
       state.rows.set(p.crmRequestId, legacy); row = legacy; linked = true;
     } else if (!row) {
-      row = {crmRequestId: p.crmRequestId, orderNo: state.nextOrder++, source: 'crm', stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null};
+      row = {crmRequestId: p.crmRequestId, orderNo: state.refs ? null : state.nextOrder++, source: 'crm', stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null};
       for (const column of COLUMNS) row[column] = p[column];
       // What the CRM first sent, kept apart from the columns the production manager may edit: a retry is compared with it.
       row.original = Object.fromEntries(COLUMNS.map(column => [column, p[column]]));
-      touch(row); state.rows.set(row.crmRequestId, row); state.byOrder.set(row.orderNo, row); created = true;
+      created(row); touch(row); state.rows.set(row.crmRequestId, row); isNew = true;
     } else {
       const linkRetry = p.legacyOrderNo !== null && row.orderNo === p.legacyOrderNo;
       // The ORIGINAL data again is a retry (200, created false), even after the production manager edited the request. Any other data
@@ -218,7 +242,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       // the products application only. Nothing changes.
       if (!linkRetry && !same(row.original || row, p)) throw new ApiError('request_locked', 409, 'The request\'s data is edited by the production manager only.', [], {reason: 'production_only', request: statusObject(row)});
     }
-    return {status: created ? 201 : 200, body: {request: statusObject(row), created, linked}};
+    return {status: isNew ? 201 : 200, body: {request: statusObject(row), created: isNew, linked}};
   }
   function status(body) {
     const ids = body.ids;
@@ -244,19 +268,23 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
 
   /** yr_mreq_crm_approval: the sales manager's approval given in the CRM, or withdrawn; repeating either changes nothing. */
   function approval(body) {
-    const bad = [], id = body.crmRequestId ?? null, orderNo = body.orderNo ?? null;
+    // requestRef is read by the application of the new numbering only (the one of today ignores it, as any field it does not know).
+    const bad = [], id = body.crmRequestId ?? null, orderNo = body.orderNo ?? null, ref = state.refs ? body.requestRef ?? null : null;
     if (id !== null && (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id))) bad.push('crmRequestId');
     if (orderNo !== null && (!Number.isInteger(orderNo) || orderNo < 1)) bad.push('orderNo');
-    // One of them only: the crmRequestId of a request from the CRM, or the orderNo of one registered in the products application.
-    if ((id === null) === (orderNo === null)) bad.push(id === null ? 'crmRequestId' : 'orderNo');
+    if (ref !== null && (typeof ref !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref))) bad.push('requestRef');
+    // One of them only: the crmRequestId of a request from the CRM, or the requestRef (the new numbering) or the orderNo of one
+    // registered in the products application.
+    const named = [id, orderNo, ref].filter(value => value !== null).length;
+    if (named !== 1) bad.push(named === 0 ? 'crmRequestId' : id !== null && orderNo !== null ? 'orderNo' : 'requestRef');
     const action = choice(body.action, ['approve', 'withdraw'], true, 'action', bad);
     const by = body.by && typeof body.by === 'object' && !Array.isArray(body.by) ? body.by : null;
     if (!by) bad.push('by');
     const name = clean(by?.name, 160, true, 'by.name', bad), email = clean(by?.email, 190, false, 'by.email', bad);
     if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad.push('by.email');
     if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)]);
-    const row = id !== null ? state.rows.get(id) : state.byOrder.get(orderNo);
-    if (!row) throw new ApiError('not_found', 404, id !== null ? 'No request has this crmRequestId.' : 'No request has this orderNo.');
+    const row = id !== null ? state.rows.get(id) : ref !== null ? state.byRef.get(ref) : state.byOrder.get(orderNo);
+    if (!row) throw new ApiError('not_found', 404, id !== null ? 'No request has this crmRequestId.' : ref !== null ? 'No request has this requestRef.' : 'No request has this orderNo.');
     const locked = message => new ApiError('request_locked', 409, message, [], {request: statusObject(row)});
     if (row.cancelled) throw locked('The request is cancelled.');
     if (row.approvals.legacy) throw locked('This request predates the approval chain and needs no approval.');
@@ -326,7 +354,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     const row = state.rows.get(meta.crmRequestId);
     if (!row) throw new ApiError('not_found', 404, 'No request has this crmRequestId.');
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const known = [...state.byOrder.values()].flatMap(other => (other.designFiles || []).map(file => [other, file])).find(([, file]) => file.crmFileId === meta.crmFileId);
+    const known = allRows().flatMap(other => (other.designFiles || []).map(file => [other, file])).find(([, file]) => file.crmFileId === meta.crmFileId);
     if (known) {
       if (known[0] !== row || known[1].sha256 !== sha256 || (known[1].category || 'design') !== category) throw placeRefusal('crm_file_id_used', 'This crmFileId belongs to another file.');
       return {status: 200, body: {created: false, file: designEntry(known[1]), request: statusObject(row)}};
@@ -357,14 +385,14 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   function downloadDesign(body) {
     const fileId = body.fileId;
     if (!(Number.isInteger(fileId) && fileId > 0) && !(typeof fileId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(fileId))) throw new ApiError('invalid_payload', 400, 'fileId is required.', ['fileId']);
-    for (const row of state.byOrder.values()) for (const file of row.designFiles || []) if (file.fileId === fileId) return {status: 200, file};
+    for (const row of allRows()) for (const file of row.designFiles || []) if (file.fileId === fileId) return {status: 200, file};
     throw new ApiError('not_found', 404, 'No file has this fileId.');
   }
 
   /** yr_mreq_crm_pending: every request waiting for the sales manager, the longest waiting first (up to 500); no production data. */
   function pending() {
-    const rows = [...state.byOrder.values()].filter(row => waitingStep(row) === 'sales').sort((a, b) => String(a.waitingSince).localeCompare(String(b.waitingSince)) || a.orderNo - b.orderNo).slice(0, 500);
-    return {status: 200, body: {requests: rows.map(row => ({orderNo: row.orderNo, crmRequestId: row.crmRequestId, source: row.source, requestedAt: row.requestedAt, waitingSince: row.waitingSince,
+    const rows = allRows().filter(row => waitingStep(row) === 'sales').sort((a, b) => String(a.waitingSince).localeCompare(String(b.waitingSince)) || (a.orderNo ?? 0) - (b.orderNo ?? 0)).slice(0, 500);
+    return {status: 200, body: {requests: rows.map(row => ({orderNo: row.orderNo, ...(state.refs ? {requestRef: row.requestRef} : {}), crmRequestId: row.crmRequestId, source: row.source, requestedAt: row.requestedAt, waitingSince: row.waitingSince,
       enteredBy: row.source === 'manual' ? row.createdBy : null, customer: {crmNumber: row.customerNo, name: row.customerName, address: row.customerAddress, city: row.customerCity},
       salesman: {crmMemberId: row.salesmanId, name: row.salesmanName},
       specs: {description: row.description, core: row.core, vibrators: row.vibrators, model: row.model, halfBlock: row.halfBlock, moldWidth: row.moldWidth, gelbaSize: row.gelbaSize, moldNo: row.moldNo, quantity: row.quantity, designUrl: row.designUrl, notes: row.notes},
@@ -426,40 +454,44 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   return {
     url: `https://localhost:${port}/products/crm-api.php`, ca: cert, state,
     /** Historical rows of the sheet, as the production app imports them (orderNo 1..n, source import, not linked). */
-    seedLegacy(count) { for (let n = 1; n <= count; n++) state.byOrder.set(n, {crmRequestId: null, orderNo: n, source: 'import', stages: blankStages(), approvals: {...noApprovals(), legacy: true}, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 1, updatedAt: null, waitingStep: 'manufacturing', waitingSince: '2026-04-19T13:45:47+03:00', ...Object.fromEntries(COLUMNS.map(c => [c, null]))}); },
+    seedLegacy(count) { for (let n = 1; n <= count; n++) created({crmRequestId: null, orderNo: n, source: 'import', stages: blankStages(), approvals: {...noApprovals(), legacy: true}, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 1, updatedAt: null, waitingStep: 'manufacturing', waitingSince: '2026-04-19T13:45:47+03:00', ...Object.fromEntries(COLUMNS.map(c => [c, null]))}); },
     /** A request registered directly in the products application (source manual, no crmRequestId), waiting for the sales manager. */
     registerManual({customerNo = null, customerName = 'مصنع مسجّل في الإنتاج', salesmanName = 'مندوب', createdBy = 'staff@yourrest.org', description = 'manual mold', quantity = 1, payment = null, quoteNo = null, poNo = null} = {}) {
-      const row = {crmRequestId: null, orderNo: state.nextOrder++, source: 'manual', createdBy, stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null,
+      const row = {crmRequestId: null, orderNo: state.refs ? null : state.nextOrder++, source: 'manual', createdBy, stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null,
         ...Object.fromEntries(COLUMNS.map(c => [c, null])), requestedAt: new Date(now()).toISOString(), customerNo, customerName, customerAddress: '', customerCity: 'الدمام', salesmanId: '', salesmanName, salesmanEmail: '',
         description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: '', payment, quoteNo, poNo};
-      touch(row); state.byOrder.set(row.orderNo, row);
+      created(row); touch(row);
       return row;
     },
     /** The production manager edits a request in the products application (by its crmRequestId, or the orderNo of one registered there):
      *  its columns change (customerName, salesmanName, quantity, description…); the CRM's first data stays the original a retry is
      *  compared with, and pending lists the edited data. The approvals stay as they are. */
     edit(key, changes) {
-      const row = typeof key === 'number' ? state.byOrder.get(key) : state.rows.get(key); if (!row) throw new Error('no such request: ' + key);
+      const row = find(key); if (!row) throw new Error('no such request: ' + key);
       for (const [column, value] of Object.entries(changes)) { if (!COLUMNS.includes(column)) throw new Error('no such column: ' + column); row[column] = value; }
       touch(row);
       return statusObject(row);
     },
-    /** An approval given in the production app (production, or the system administrator; the sales manager's too, outside the CRM). */
-    approve(crmRequestId, step, by = 'staff@yourrest.org') {
-      const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
-      row.approvals[step] = {by, at: riyadh()}; touch(row);
+    /** An approval given in the production app (production, or the system administrator; the sales manager's too, outside the CRM),
+     *  by the request's crmRequestId, requestRef or number. With the new numbering production's approval numbers the request. */
+    approve(key, step, by = 'staff@yourrest.org') {
+      const row = find(key); if (!row) throw new Error('no such request: ' + key);
+      row.approvals[step] = {by, at: riyadh()}; if (state.refs && step === 'production') numberIt(row); touch(row);
+      return statusObject(row);
     },
     /** Production work on a request: marks stages done (with dates), a serial, a production date, delivery. confirmed: the three
      *  approvals are given first (production may record nothing before them). */
     produce(crmRequestId, {stages = [], moldSerial = null, productionDate = null, delivered = false, deliveryDate = null, confirmed = true} = {}) {
       const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
       if (confirmed) for (const step of APPROVAL_STEPS) row.approvals[step] ||= {by: 'staff@yourrest.org', at: riyadh()};
+      if (state.refs && row.approvals.production) numberIt(row);
       for (const [index, stage] of stages.entries()) row.stages[stage] = {done: true, at: '2026-11-0' + (index + 1)};
       Object.assign(row, {moldSerial, productionDate, delivered, deliveryDate}); touch(row);
     },
     /** A request deleted in the products application (yr_mreq_admin_mutate delete-request): kept there and cancelled, so the CRM
      *  reads it as cancelled. */
     remove(crmRequestId, reason = 'حذف من تطبيق الإنتاج') {
+      if (state.refs) throw new Error('production no longer deletes a mold request (2026-11-05): cancelHere');
       const row = state.rows.get(crmRequestId); if (!row) throw new Error('no such request: ' + crmRequestId);
       row.deleted = true; row.cancelled = true; row.cancelReason ||= reason; touch(row);
     },
@@ -467,20 +499,21 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
      *  stood before the cancellation (its approvals, stages and files are untouched by a cancellation), with a new revision. Its earlier
      *  cancellations' reasons stay used: the same cancellation again answers 200 with the request as it is. */
     restore(key) {
-      const row = typeof key === 'number' ? state.byOrder.get(key) : state.rows.get(key); if (!row) throw new Error('no such request: ' + key);
+      const row = find(key); if (!row) throw new Error('no such request: ' + key);
       if (!row.cancelled) throw new Error('not cancelled: ' + key);
       row.cancelled = false; row.deleted = false; touch(row);
       return statusObject(row);
     },
     /** The same for a request registered in production itself, named by its order number. */
     removeOrder(orderNo, reason = 'حذف من تطبيق الإنتاج') {
+      if (state.refs) throw new Error('production no longer deletes a mold request (2026-11-05): cancelHere');
       const row = state.byOrder.get(orderNo); if (!row) throw new Error('no such order: ' + orderNo);
       row.deleted = true; row.cancelled = true; row.cancelReason ||= reason; touch(row);
     },
     /** A design file production attaches itself (source production, no crmFileId), to a request of the CRM (by its crmRequestId) or
      *  to one registered in production (by its orderNo). It changes nothing in the approvals here (production manages its own files). */
     addProductionFile(key, {name = 'تصميم الإنتاج.pdf', bytes = Buffer.from('%PDF-1.4 production drawing'), category = 'design'} = {}) {
-      const row = typeof key === 'number' ? state.byOrder.get(key) : state.rows.get(key); if (!row) throw new Error('no such request: ' + key);
+      const row = find(key); if (!row) throw new Error('no such request: ' + key);
       const checked = checkDesign(name, Buffer.from(bytes));
       if (!checked.kind) throw new Error('production would refuse this file: ' + (checked.reason || checked.field));
       if (category !== 'design' && (!state.quotePo || checked.kind === 'other')) throw new Error('production would refuse this ' + category + ' file');
@@ -491,7 +524,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     /** A file of the CRM deleted in the products application itself (by its crmFileId): gone from the request, and its crmFileId is
      *  never taken again. Changes nothing in the approvals here. */
     removeFile(crmFileId) {
-      for (const row of state.byOrder.values()) {
+      for (const row of allRows()) {
         const index = (row.designFiles || []).findIndex(file => file.crmFileId === crmFileId);
         if (index >= 0) { row.designFiles.splice(index, 1); state.deletedFileIds.add(crmFileId); touch(row); return true; }
       }
@@ -509,7 +542,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
      *  the orderNo of one registered there): normalized as the application stores it; the CRM's original data a retry is compared with
      *  stays as it was. Answers the status object as it now stands. */
     setNumbers(key, {quoteNo, poNo} = {}) {
-      const row = typeof key === 'number' ? state.byOrder.get(key) : state.rows.get(key); if (!row) throw new Error('no such request: ' + key);
+      const row = find(key); if (!row) throw new Error('no such request: ' + key);
       for (const [column, value] of [['quoteNo', quoteNo], ['poNo', poNo]]) {
         if (value === undefined) continue;
         const clean = quotePoNumber(value);
@@ -520,8 +553,28 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       return statusObject(row);
     },
     /** Production no longer knows a request (only to test the 404 answers: the real application keeps every request). */
-    forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) state.byOrder.delete(row.orderNo); },
+    forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) { state.byOrder.delete(row.orderNo); state.byRef.delete(row.requestRef); } },
+    /** The application of today (false) or of the new numbering (true), at once: what is numbered stays numbered. */
+    setRequestRefs(on = true) { state.refs = !!on; },
+    /** Production cancels a request itself (the new numbering: it no longer deletes one), by its crmRequestId, requestRef or number: it
+     *  keeps its number. */
+    cancelHere(key, reason = 'ألغاه مدير الإنتاج') {
+      const row = find(key); if (!row) throw new Error('no such request: ' + key);
+      row.cancelled = true; row.cancelReason ||= reason; touch(row);
+      return statusObject(row);
+    },
+    /** The one-time renumbering (2026-11-05): the numbers from `from` (101) up move down by one to fill the gap of the deleted test
+     *  request (from - 1, which must be free). Done in production's database, without a new revision or time. */
+    renumber(from = 101) {
+      if (state.byOrder.has(from - 1)) throw new Error('order ' + (from - 1) + ' is not free');
+      const moved = [...state.byOrder.values()].filter(row => row.orderNo >= from).sort((a, b) => a.orderNo - b.orderNo);
+      for (const row of moved) { state.byOrder.delete(row.orderNo); row.orderNo -= 1; state.byOrder.set(row.orderNo, row); }
+      state.nextOrder = Math.max(0, ...state.byOrder.keys()) + 1;
+      return moved.map(row => row.orderNo);
+    },
     row: id => state.rows.get(id),
+    /** A request by its requestRef (every request has one; the application shows it only with the new numbering). */
+    byRef: ref => state.byRef.get(ref),
     async stop() { server.closeAllConnections?.(); server.close(); rmSync(work, {recursive: true, force: true}); },
   };
 }

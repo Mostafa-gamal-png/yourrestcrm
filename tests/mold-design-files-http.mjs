@@ -251,7 +251,7 @@ try {
   const firstItem = pending.items.find(item => item.orderNo === first.remote.orderNo), manualItem = pending.items.find(item => item.orderNo === manual.orderNo);
   // The CRM request's signature (2026-11-04): said on the pending item, its image among the design files, labelled so.
   check([firstItem.signature.signer, firstItem.designFiles.filter(file => file.signature).map(file => [file.crmFileId, file.kind, file.viewable])], ['م. خالد العتيبي', [['mds-' + first.id.slice(3), 'image', true]]], 'the pending item: signed by the customer, the signature among its files');
-  check(drawn(firstItem.designFiles).map(file => [file.name, file.source, file.href, file.viewable]), [['رسم الإنتاج المعدل.pdf', 'production', '/api/mold-requests/design-file?order=' + first.remote.orderNo + '&file=' + production.fileId, true]], 'the pending item lists the file, downloaded through the CRM by order number');
+  check(drawn(firstItem.designFiles).map(file => [file.name, file.source, file.href, file.viewable]), [['رسم الإنتاج المعدل.pdf', 'production', '/api/mold-requests/design-file?crm=' + first.id + '&file=' + production.fileId, true]], 'the pending item lists the file, downloaded through the CRM by the request\'s crmRequestId (2026-11-05: never by its order number)');
   check(manualItem.designFiles.map(file => [file.name, file.kind, file.source]), [['تصميم الطلب اليدوي.png', 'image', 'production']], 'a request registered in production shows its design too');
 
   // ---- downloads through the CRM, with the permission check
@@ -276,7 +276,9 @@ try {
   // by order number: the sales manager, for a request in their pending list, a file that item lists
   res = await download('sm', 'order=' + manual.orderNo + '&file=' + manualFile.fileId + '&inline=1');
   check([res.status, res.headers['content-type'], res.headers['content-disposition'].split(';')[0]], [200, 'image/png', 'inline'], 'the sales manager opens a pending request\'s image by its order number');
-  check((await download('sm', 'order=' + first.remote.orderNo + '&file=' + production.fileId)).status, 200, 'and the CRM request\'s file the pending item lists');
+  check((await download('sm', 'order=' + first.remote.orderNo + '&file=' + production.fileId)).status, 200, 'and the CRM request\'s file the pending item lists (by order number, as a page loaded before links it)');
+  check((await download('sm', firstItem.designFiles.find(file => file.fileId === production.fileId).href.split('?')[1])).status, 200, 'and by the link listed now (crm=)');
+  check([(await download('sm', 'crm=' + first.id + '&file=' + manualFile.fileId)).status, (await download('sm', 'crm=mr-none&file=' + production.fileId)).status, (await download('sm', 'crm=' + first.id + '&order=' + first.remote.orderNo + '&file=' + production.fileId)).status], [404, 404, 400], 'crm=: a file of another request, or a request not waiting: 404; two names: 400');
   check((await download('sm', 'order=' + manual.orderNo + '&file=' + production.fileId)).status, 404, 'a file of another order: 404');
   // An order no longer waiting for them (its approvals complete), asked for by a file it does list: refused for the order, not the file.
   const fifthFile = mock.addProductionFile(fifth.id, {name: 'رسم أمر مكتمل.pdf', bytes: pdf('confirmed order drawing')});

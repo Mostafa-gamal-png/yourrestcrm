@@ -531,6 +531,16 @@ function quotePoOf(value) {
   if (!hasOwn(value, 'quoteOrPoMissing')) return {};
   return {quoteNo: numberOf(value.quoteNo), poNo: numberOf(value.poNo), quoteOrPoMissing: value.quoteOrPoMissing === true, quoteFiles: designFilesOf(value.quoteFiles, 'quote') || [], poFiles: designFilesOf(value.poFiles, 'po') || []};
 }
+/** The products side's message of 2026-11-05 (the second of the day): every request carries requestRef, a stable UUID production gives
+ *  it, in its status object and in its pending item; the order number (orderNo) is given only when the production manager approves it
+ *  (null until then) and may change once (the numbers from 101 up move down by one), so the CRM names a request registered in the products
+ *  application by requestRef and never keys anything by orderNo. The pattern a requestRef must match (any UUID, as production writes it). */
+export const MOLD_REQUEST_REF = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A requestRef as received: the UUID as it came, or null (absent: an older application; or not a UUID). A malformed one is dropped, not
+ *  the answer that carried it: the status or the item stays readable, and the CRM names that request as it would without one. */
+export const moldRequestRef = value => typeof value === 'string' && MOLD_REQUEST_REF.test(value) ? value : null;
+/** An order number as received: a whole number from 1, or null (none yet: production numbers a request when it approves it). */
+const orderNoOf = value => isWhole(value) && value >= 1 ? value : null;
 /** A status object (§3) as received, reduced to the fields the contract names; null when it is not one. manual: a request registered
  * in the products application itself (its approval answer), which has no crmRequestId. designFiles: the request's design files, the
  * CRM's and production's (null from an application older than the addition of 2026-11-02). From production's update of 2026-11-03 (the
@@ -543,8 +553,10 @@ export function moldStatusObject(value, {manual = false} = {}) {
   /** @type {Record<string, {done: boolean, at: string|null}>} */
   const stages = {};
   for (const key of MOLD_STAGES) { const stage = value.stages?.[key]; stages[key] = {done: stage?.done === true, at: dateOrNull(stage?.at)}; }
+  // requestRef (2026-11-05, the second update): only when production sent a valid one, so an older application's status reads as before.
+  const requestRef = moldRequestRef(value.requestRef);
   return {
-    crmRequestId: value.crmRequestId, orderNo: isWhole(value.orderNo) ? value.orderNo : null, status: value.status, editable: value.editable,
+    crmRequestId: value.crmRequestId, orderNo: orderNoOf(value.orderNo), ...(requestRef ? {requestRef} : {}), status: value.status, editable: value.editable,
     moldSerial: shortOrNull(value.moldSerial, 40), productionDate: dateOrNull(value.productionDate), stages,
     stagesDone: MOLD_STAGES.filter(key => stages[key].done).length, stagesTotal: MOLD_STAGES.length,
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
@@ -556,19 +568,22 @@ export function moldStatusObject(value, {manual = false} = {}) {
 
 /**
  * The body of the `approval` route: the sales manager's approval in the CRM, or its withdrawal. The request is named by its
- * crmRequestId when it came from the CRM, or by its orderNo when it was registered in the products application: one of them only.
- * Throws on a value production refuses.
- * @param {{id?: string|null, orderNo?: number|null, action: string, by: {name?: string, email?: string}}} input
+ * crmRequestId when it came from the CRM; one registered in the products application by its requestRef (the products update of
+ * 2026-11-05: it has no number while it waits for the sales manager), or by its orderNo when production sent no requestRef (the
+ * application before that update): one of them only. Throws on a value production refuses.
+ * @param {{id?: string|null, requestRef?: string|null, orderNo?: number|null, action: string, by: {name?: string, email?: string}}} input
  */
-export function moldApprovalBody({id = null, orderNo = null, action, by}) {
-  if ((id === null) === (orderNo === null)) throw new Error(id === null ? 'crmRequestId' : 'orderNo');
+export function moldApprovalBody({id = null, requestRef = null, orderNo = null, action, by}) {
+  const named = [id, requestRef, orderNo].filter(value => value !== null).length;
+  if (named !== 1) throw new Error(id === null ? requestRef === null ? 'crmRequestId' : 'requestRef' : 'crmRequestId');
   if (id !== null && !MOLD_ID.test(id)) throw new Error('crmRequestId');
+  if (requestRef !== null && !moldRequestRef(requestRef)) throw new Error('requestRef');
   if (orderNo !== null && (!isWhole(orderNo) || orderNo < 1)) throw new Error('orderNo');
   if (!MOLD_APPROVAL_ACTIONS.includes(action)) throw new Error('action');
   const name = moldText(by?.name), email = moldText(by?.email);
   if (!name || length(name) > MOLD_LIMITS.salesmanName) throw new Error('by.name');
-  /** @type {{crmRequestId?: string, orderNo?: number, action: string, by: {name: string, email?: string}}} */
-  const body = id !== null ? {crmRequestId: id, action, by: {name}} : {orderNo: /** @type {number} */ (orderNo), action, by: {name}};
+  /** @type {{crmRequestId?: string, requestRef?: string, orderNo?: number, action: string, by: {name: string, email?: string}}} */
+  const body = id !== null ? {crmRequestId: id, action, by: {name}} : requestRef !== null ? {requestRef, action, by: {name}} : {orderNo: /** @type {number} */ (orderNo), action, by: {name}};
   if (email && length(email) <= MOLD_LIMITS.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) body.by.email = email;
   return body;
 }
@@ -598,11 +613,16 @@ const wholeOrNull = value => isWhole(value) ? value : null;
  * @param {any} value
  */
 export function moldPendingItem(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || !isWhole(value.orderNo) || value.orderNo < 1) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   if (!(value.crmRequestId === null || MOLD_ID.test(value.crmRequestId || '')) || !['crm', 'manual'].includes(value.source)) return null;
+  // The products update of 2026-11-05 (the second): orderNo null (or absent) until production approves, requestRef always. An item is
+  // read as long as something names it (its crmRequestId, its requestRef or its number); one named by nothing could be neither
+  // approved nor told apart, and is left out.
+  const orderNo = orderNoOf(value.orderNo), requestRef = moldRequestRef(value.requestRef);
+  if (orderNo === null && requestRef === null && value.crmRequestId === null) return null;
   const c = value.customer && typeof value.customer === 'object' ? value.customer : {}, s = value.salesman && typeof value.salesman === 'object' ? value.salesman : {}, p = value.specs && typeof value.specs === 'object' ? value.specs : {};
   return {
-    orderNo: value.orderNo, crmRequestId: value.crmRequestId, source: value.source, requestedAt: dateOrNull(value.requestedAt), waitingSince: dateOrNull(value.waitingSince),
+    orderNo, ...(requestRef ? {requestRef} : {}), crmRequestId: value.crmRequestId, source: value.source, requestedAt: dateOrNull(value.requestedAt), waitingSince: dateOrNull(value.waitingSince),
     enteredBy: value.source === 'manual' ? textOf(value.enteredBy, 190) || null : null,
     customer: {crmNumber: wholeOrNull(c.crmNumber), name: textOf(c.name, 200), address: textOf(c.address, 300), city: textOf(c.city, 100)},
     salesman: {crmMemberId: textOf(s.crmMemberId, 64), name: textOf(s.name, 160)},

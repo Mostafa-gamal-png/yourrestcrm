@@ -1062,4 +1062,115 @@ try {
   } finally { await signApp.stop(); await signMock.stop(); }
 }
 
+// ---- The products side's second message of 2026-11-05: the order number is given at production's approval, requestRef is the key.
+// The CRM goes live first: (1) against the products application of today (numbered at creation, no requestRef) a page of this release
+// and a page loaded before both work as before (the CRM's request by its crmRequestId, one registered there by its number); (2) then the
+// application switches to the new numbering and renumbers 101 and up once: the stored numbers follow the next pull, a new request has
+// none, the waiting list names items by requestRef (approval and downloads), a page loaded before gets only numbered items and is asked
+// to reload instead of being answered on a number; production's approval numbers the request (the next pull shows it); 400 and 404 in
+// words; the receipt makes a repeated tap harmless; production cancels, never deletes.
+{
+  const refMock = await startProductsMock();
+  refMock.state.nextOrder = 101;
+  const refApp = await bootBuiltApp({members}, {env: {YR_PRODUCTS_API_URL: refMock.url, YR_PRODUCTS_SECRET: refMock.state.secret, NODE_EXTRA_CA_CERTS: refMock.ca}});
+  try {
+    const sessions = {rep: await refApp.login('rep'), sm: await refApp.login('sm')}, as = id => refApp.as(sessions[id]), now = new Date().toISOString();
+    await refApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('f1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع f1', region: 'الشرقية', city: 'الدمام', address: 'حي الصناعية'}), now, now).run();
+    const crmNumber = (await refApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='f1'").first()).number;
+    // This release's page asks with refs=1; a page loaded before without it.
+    const list = async (who = 'sm', page = 'new') => (await as(who)('/api/mold-requests' + (page === 'new' ? '?refs=1' : ''))).json();
+    const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(roleOf(who), {requestId: crypto.randomUUID(), ...body})});
+    const create = description => post('rep', {action: 'create', customerId: 'f1', specs: {...specs, description}, payment: 'cash'});
+    const approvals = () => refMock.state.calls.filter(call => call.route === 'approval' && call.signed);
+    const lastApproval = () => JSON.parse(approvals().at(-1).body);
+    const age = () => refApp.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z'").run();
+    const audit = id => refApp.db.prepare("SELECT record_id AS recordId,action,detail FROM crm_audit WHERE record_id=? AND action LIKE 'mold-request:%' ORDER BY created_at").bind(id).all().then(result => result.results.map(row => [row.action, JSON.parse(row.detail)]));
+    const learned = async () => !!(await refApp.db.prepare("SELECT 1 AS n FROM crm_settings WHERE id='mold-request-ref'").first());
+    const viewOf = async id => (await list('rep')).requests.find(item => item.id === id);
+    const download = query => as('sm')('/api/mold-requests/design-file?' + query);
+    const OUTDATED = 'الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.';
+
+    // (1) the products application of today
+    const a = (await (await create('ref A')).json()).request, b = (await (await create('ref B')).json()).request;
+    const m = refMock.registerManual({customerNo: crmNumber, customerName: 'مصنع مسجّل اليوم'}), mFile = refMock.addProductionFile(m.orderNo, {name: 'رسم اليوم.pdf'});
+    check([a.remote.orderNo, b.remote.orderNo, m.orderNo, Object.hasOwn(a.remote, 'requestRef')], [101, 102, 103, false], 'today: numbered at creation, no requestRef');
+    let waiting = await list(), old = await list('sm', 'old');
+    check([waiting.pending.items.map(item => [item.orderNo, item.crmRequestId, Object.hasOwn(item, 'requestRef')]), old.pending, waiting.pending.error], [[[101, a.id, false], [102, b.id, false], [103, null, false]], waiting.pending, null], 'the waiting list as before, the same for a page loaded before');
+    check(waiting.pending.items[2].designFiles[0].href, '/api/mold-requests/design-file?order=103&file=' + mFile.fileId, 'one registered in production (no requestRef): its files by its number');
+    let res = await post('sm', {action: 'approve-order', crmRequestId: a.id});
+    check([res.status, lastApproval()], [200, {crmRequestId: a.id, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}], 'this release: the CRM\'s own by its crmRequestId');
+    res = await post('sm', {action: 'approve-order', orderNo: 103});
+    check([res.status, lastApproval(), (await audit('mold-order:103')).map(([action, detail]) => [action, detail.orderNo, detail.source])], [200, {orderNo: 103, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}, [['mold-request:approve', 103, 'manual']]], 'one registered in production, by its number (no requestRef), audited under it as before');
+    // A page loaded before names every item by its number, its own too: today that still works, the CRM's own by its crmRequestId.
+    res = await post('sm', {action: 'withdraw-order', orderNo: 101});
+    check([res.status, lastApproval().crmRequestId, (await res.json()).status.waitingStep], [200, a.id, 'sales'], 'a page loaded before withdraws the CRM\'s own by its number: sent by its crmRequestId');
+    check([(await post('sm', {action: 'approve-order', orderNo: 101})).status, lastApproval().crmRequestId], [200, a.id], 'and approves it again');
+    check(await learned(), false, 'nothing learned from the application of today');
+
+    // (2) the products application switches to the new numbering and renumbers 101 and up once (101 -> 100 …)
+    refMock.setRequestRefs(true);
+    refMock.renumber(101);
+    await age();
+    const renumbered = await viewOf(a.id);
+    check([renumbered.remote.orderNo, (await viewOf(b.id)).remote.orderNo, typeof renumbered.remote.requestRef, await learned()], [100, 101, 'string', true], 'the next pull shows the new numbers (the same revision taken), with requestRef; the update learned');
+    const c = (await (await create('ref C')).json()).request;
+    check([c.remote.orderNo, c.remote.requestRef === refMock.row(c.id).requestRef], [null, true], 'a new request: no number yet (shown «لم يأخذ رقمًا بعد»), its requestRef stored');
+    const n = refMock.registerManual({customerNo: crmNumber, customerName: 'مصنع مسجّل بالمرجع'}), nFile = refMock.addProductionFile(n.requestRef, {name: 'رسم المرجع.pdf'});
+    waiting = await list();
+    const items = Object.fromEntries(waiting.pending.items.map(item => [item.crmRequestId || item.requestRef, item]));
+    check([items[b.id].orderNo, items[c.id].orderNo, items[n.requestRef].orderNo, items[n.requestRef].crmRequestId, items[c.id].requestRef === c.remote.requestRef, refMock.byRef(m.requestRef).orderNo], [101, null, null, null, true, 102], 'the waiting list: numbered and not yet numbered items, the new ones named by requestRef');
+    check(items[n.requestRef].designFiles[0].href, '/api/mold-requests/design-file?ref=' + n.requestRef + '&file=' + nFile.fileId, 'a request registered in production: its files by its requestRef');
+    // A page loaded before: only the numbered items, each with its whole number, and the list's error it names.
+    old = await list('sm', 'old');
+    check([old.pending.items.map(item => item.orderNo), old.pending.error.code, old.pending.items.every(item => Number.isInteger(item.orderNo))], [[101], 'bad_response', true], 'a page loaded before: the numbered items only (B), with bad_response');
+    let calls = approvals().length;
+    for (const orderNo of [null, 101, 102]) {
+      res = await post('sm', {action: 'approve-order', orderNo});
+      check([res.status, (await res.json()).error], [409, OUTDATED], 'a page loaded before approves by number ' + orderNo + ': asked to reload');
+    }
+    res = await post('sm', {action: 'withdraw-order', orderNo: 100});
+    check([res.status, (await res.json()).error, approvals().length - calls], [409, OUTDATED, 0], 'or withdraws by a number (that may have moved): refused, production never asked');
+    // The sales manager approves the one registered in production by its requestRef, downloads its file by it, then not once approved.
+    res = await download('ref=' + n.requestRef + '&file=' + nFile.fileId);
+    check([res.status, res.headers['content-type']], [200, 'application/pdf'], 'its file by its requestRef');
+    const byRef = {action: 'approve-order', requestRef: n.requestRef, requestId: crypto.randomUUID()};
+    res = await as('sm')('/api/mold-requests', {method: 'POST', body: byRef});
+    let body = await res.json();
+    check([res.status, lastApproval(), body.status.waitingStep, body.status.orderNo, body.pending.items.some(item => item.requestRef === n.requestRef)], [200, {requestRef: n.requestRef, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}, 'production', null, false], 'approved by requestRef (no orderNo in the body): it waits for production, still no number, and leaves the list');
+    calls = approvals().length;
+    check([(await as('sm')('/api/mold-requests', {method: 'POST', body: byRef})).status, approvals().length - calls], [200, 0], 'the same tap again (its receipt): production not asked again');
+    check((await audit('mold-ref:' + n.requestRef)).map(([action, detail]) => [action, detail.requestRef, detail.orderNo, detail.source]), [['mold-request:approve', n.requestRef, null, 'manual']], 'audited under its requestRef (mold-ref:), the number production answered (none yet)');
+    check((await download('ref=' + n.requestRef + '&file=' + nFile.fileId)).status, 404, 'approved: its file no longer by its requestRef');
+    res = await post('sm', {action: 'withdraw-order', requestRef: n.requestRef});
+    check([res.status, lastApproval().requestRef, (await res.json()).status.waitingStep], [200, n.requestRef, 'sales'], 'withdrawn by requestRef: back with the sales manager');
+    // 400 and 404, in words.
+    res = await post('sm', {action: 'approve-order', requestRef: 'not-a-uuid'});
+    check([res.status, (await res.json()).error], [400, 'مرجع الطلب غير صحيح؛ حدّث الصفحة.'], 'a malformed requestRef: 400 before production is asked');
+    check((await post('sm', {action: 'approve-order', requestRef: n.requestRef, orderNo: 5})).status, 400, 'two names: 400');
+    refMock.answerNext('approval', 400, {error: {code: 'invalid_payload', message: 'x', fields: ['requestRef']}});
+    res = await post('sm', {action: 'approve-order', requestRef: n.requestRef});
+    check([res.status, (await res.json()).error], [409, 'تطبيق الإنتاج لم يقبل تعريف الطلب؛ حدّث الصفحة وحاول مرة أخرى.'], 'production refuses the name (400): said, refresh');
+    res = await post('sm', {action: 'withdraw-order', requestRef: crypto.randomUUID()});
+    check([res.status, (await res.json()).error], [409, 'الطلب غير موجود لدى الإنتاج؛ حدّث الصفحة.'], 'production knows no such requestRef (404): said, refresh');
+    check((await post('sm', {action: 'approve-order', requestRef: crypto.randomUUID()})).status, 409, 'approving one the list does not show: refused here, as before');
+    // The CRM's own: by its crmRequestId; named by its requestRef it still goes as the CRM's own, with the CRM's checks.
+    res = await post('sm', {action: 'approve-order', crmRequestId: c.id});
+    check([res.status, lastApproval()], [200, {crmRequestId: c.id, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}], 'the CRM\'s new request by its crmRequestId');
+    res = await post('sm', {action: 'withdraw-order', requestRef: c.remote.requestRef});
+    check([res.status, lastApproval().crmRequestId, (await res.json()).request.remote.waitingStep], [200, c.id, 'sales'], 'named by its requestRef: sent as the CRM\'s own (crmRequestId)');
+    check((await post('sm', {action: 'approve-order', crmRequestId: 'mr-not-ours'})).status, 404, 'a crmRequestId the CRM does not hold: 404');
+    await post('sm', {action: 'approve-order', crmRequestId: c.id});
+    // Production approves: the number comes (the last + 1) and the next pull shows it; then renumbering is not repeated.
+    refMock.approve(c.id, 'production');
+    await age();
+    check((await viewOf(c.id)).remote.orderNo, 103, 'production\'s approval numbers it: the next pull shows 103');
+    // Production no longer deletes: it cancels, and a cancelled request keeps its number.
+    refMock.cancelHere(c.id);
+    await age();
+    const cancelled = await viewOf(c.id);
+    check([cancelled.remote.status, cancelled.remote.orderNo], ['cancelled', 103], 'cancelled in production: shown cancelled with its number');
+    ok(refMock.state.calls.every(call => !JSON.stringify(call.headers).includes(refMock.state.secret)) && !refApp.log().includes(refMock.state.secret), 'the secret never travels or is logged');
+  } finally { await refApp.stop(); await refMock.stop(); }
+}
+
 console.log(JSON.stringify({ok: true, checks, builtRelease: true, realProductionTested: false}));

@@ -5,9 +5,12 @@
 //  (moldDesignFilesView: a file the CRM deleted is never served, even while an older status lists it, nor one whose deletion is still on
 //  its way to production). A CRM file whose bytes the CRM keeps is served from the object store; any other is fetched from production
 //  with design-file.
-// ?order=<orderNo>&file=<fileId>: the sales manager, for a request in their pending list as production answers it now (the list's own
-//  rule, moldPendingFor: who asked and the regions; a list kept from before a failed call is not enough), registered in production or in
-//  the CRM, and a file that item lists.
+// ?crm=<crmRequestId>&file=<fileId>, ?ref=<requestRef>&file=<fileId>: the sales manager, for a request in their pending list as production
+//  answers it now (the list's own rule, moldPendingFor: who asked and the regions; a list kept from before a failed call is not enough),
+//  the CRM's by its crmRequestId and one registered in production by its requestRef (the products update of 2026-11-05: no number until
+//  production approves), and a file that item lists (moldPendingQuery names the item so). ?order=<orderNo>&file=: the same for an item
+//  production has numbered, as a page loaded before this release links it (and this release for an older application's item without a
+//  requestRef); the number is read against the list as it is now, never kept.
 // A file is any of the request's: a design file, or (since production's update of 2026-11-03) the quotation's or the PO's, named by its
 //  fileId whichever list it is in.
 // &inline=1 opens a PDF or an image in the browser; anything else always downloads, as plain bytes (an SVG or a drawing is never rendered).
@@ -15,7 +18,7 @@
 import {env} from 'cloudflare:workers';
 import {context,CRMError,replyError} from '@/lib/crm-server';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {moldContentDisposition,moldDesignContentType} from '@/portable/mold-rules.mjs';
+import {moldContentDisposition,moldDesignContentType,MOLD_ID,MOLD_REQUEST_REF} from '@/portable/mold-rules.mjs';
 import {canApproveMoldRequests,canUseMoldRequests,moldDesignFilesView,moldErrorText,moldListedFiles,type MoldDesignFile,type MoldDesignFileRow} from '@/lib/mold-requests';
 import {canOpenMoldRequest,loadMoldDesignFiles,loadMoldRequest,moldPendingFor,moldQuotePoSupported,productsLink} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
@@ -62,8 +65,8 @@ export async function GET(req:Request){const reply=await answer(req);return repl
 async function answer(req:Request):Promise<Response>{try{
  const c=await context({load:'customers'});
  if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
- const url=new URL(req.url),id=url.searchParams.get('id'),order=url.searchParams.get('order'),key=url.searchParams.get('file')||'',inline=url.searchParams.get('inline')==='1';
- if(!/^[A-Za-z0-9_-]{1,64}$/.test(key)||(id===null)===(order===null))throw new CRMError('حدد الملف');
+ const url=new URL(req.url),id=url.searchParams.get('id'),order=url.searchParams.get('order'),crm=url.searchParams.get('crm'),ref=url.searchParams.get('ref'),key=url.searchParams.get('file')||'',inline=url.searchParams.get('inline')==='1';
+ if(!/^[A-Za-z0-9_-]{1,64}$/.test(key)||[id,order,crm,ref].filter(value=>value!==null).length!==1)throw new CRMError('حدد الملف');
  const link=productsLink();
  let entry:MoldDesignFile|undefined,own:MoldDesignFileRow|undefined;
  if(id!==null){
@@ -78,13 +81,13 @@ async function answer(req:Request):Promise<Response>{try{
  }else{
   if(!canApproveMoldRequests(c.me))throw new CRMError('ملفات الطلبات بانتظار الاعتماد لمدير المبيعات',403);
   const orderNo=Number(order);
-  if(!/^\d{1,9}$/.test(order||'')||orderNo<1)throw new CRMError('حدد الملف');
+  if(order!==null&&(!/^\d{1,9}$/.test(order)||orderNo<1)||crm!==null&&!MOLD_ID.test(crm)||ref!==null&&!MOLD_REQUEST_REF.test(ref))throw new CRMError('حدد الملف');
   if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل',503);
   // The order must wait for them now: when production's list could not be had, the one kept from before may name an order that has
   // since moved on (approved, cancelled), so nothing is served on it.
   const pending=await moldPendingFor(c,link);
   if(pending?.error)throw new CRMError(moldErrorText(pending.error.code,ar=>ar)+'؛ تعذّر التأكد من أن الطلب ما زال بانتظار اعتمادك. حاول مرة أخرى.',502);
-  const item=pending?.items.find(waiting=>waiting.orderNo===orderNo);
+  const item=pending?.items.find(waiting=>crm!==null?waiting.crmRequestId===crm:ref!==null?waiting.requestRef===ref:waiting.orderNo===orderNo);
   if(!item)throw new CRMError('الطلب لم يعد بانتظار اعتمادك. حدّث الصفحة.',404);
   entry=[...item.designFiles,...item.quoteFiles,...item.poFiles].find(file=>String(file.fileId)===key);
   if(!entry)throw new CRMError('الملف غير متاح',404);

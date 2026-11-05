@@ -53,7 +53,10 @@ export const MOLD_FILE_CATEGORY_ORDER:MoldFileCategory[]=['design','quote','po']
  *  second update of 2026-11-03): fileId is production's, sent back as it came; crmFileId the CRM's for a file the CRM sent, null for one
  *  production attached; category the list it came in (absent in a status stored before: design). */
 export type MoldDesignFile={fileId:string|number;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;category?:MoldFileCategory};
-export type MoldRemote={crmRequestId:string;orderNo:number|null;status:MoldStatusName;editable:boolean;moldSerial:string|null;productionDate:string|null;stages:Record<string,{done:boolean;at:string|null}>;stagesDone:number;stagesTotal:number;delivered:boolean;deliveryDate:string|null;updatedAt:string|null;revision:number|null;
+/** orderNo: production's order number, null until its production manager approves the request (the products update of 2026-11-05, the
+ *  second of the day) and renumbered once (101 and up move down by one): shown from the latest status, never a key. requestRef: the stable
+ *  UUID production gives every request since that update (absent from an older application, or in a status stored before). */
+export type MoldRemote={crmRequestId:string;orderNo:number|null;requestRef?:string;status:MoldStatusName;editable:boolean;moldSerial:string|null;productionDate:string|null;stages:Record<string,{done:boolean;at:string|null}>;stagesDone:number;stagesTotal:number;delivered:boolean;deliveryDate:string|null;updatedAt:string|null;revision:number|null;
  /** Where it waits now and since when (absent in a status stored before the approval chain). */
  waitingStep?:MoldWaitingStep|null;waitingSince?:string|null;approvals?:MoldApprovals|null;
  /** The request's design files, the CRM's and production's (absent in a status stored before 2026-11-02; null from an older application). */
@@ -149,7 +152,9 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  /** The customer's signature (2026-11-04); null for a request without one. */
  signature:MoldSignatureView|null};
 /** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
-export type MoldPendingItem={orderNo:number;crmRequestId:string|null;source:'crm'|'manual';requestedAt:string|null;waitingSince:string|null;enteredBy:string|null;
+/** orderNo: null while production has not numbered it (the products update of 2026-11-05: every item waiting for the sales manager);
+ *  requestRef: production's stable UUID, absent from an older application. A pending item is named by moldPendingKey, never by orderNo. */
+export type MoldPendingItem={orderNo:number|null;requestRef?:string;crmRequestId:string|null;source:'crm'|'manual';requestedAt:string|null;waitingSince:string|null;enteredBy:string|null;
  customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;
  /** How the customer pays, as production holds it now (null: a request asked for before 2026-11-03). */
  payment:MoldPayment|null;revision:number|null;designFiles:MoldDesignFile[];
@@ -163,6 +168,16 @@ export type MoldPendingAnswer={items:(Omit<MoldPendingItem,'designFiles'|'quoteF
  signature:MoldSignature|null;
  /** Production's listing of the pending item holds the signature's image (only then is it said to be signed). */
  signatureDelivered:boolean})[];error:MoldError|null;at:string|null};
+/** The waiting list as a page loaded before this release receives it (its GET carries no `refs=1`): that page keys every item, its errors
+ *  and its approval by orderNo, a number it expects on each one (two items without one would share a React key and an error, and its
+ *  approval would send orderNo null). So it gets only the items production has numbered (none, once the products update of 2026-11-05 is
+ *  live: an item waits for the sales manager before production numbers it), and, when any was left out, the list's error bad_response,
+ *  a code that page names («تعذّر تحديث القائمة الآن: رد غير متوقع من تطبيق الإنتاج») instead of «لا توجد طلبات بانتظار اعتمادك»; its
+ *  update notice asks it to reload. This release's page asks with refs=1 and gets every item. */
+export function moldPendingForOldPage(pending:MoldPendingAnswer|null):MoldPendingAnswer|null{
+ if(!pending||pending.items.every(item=>item.orderNo!==null))return pending;
+ return {...pending,items:pending.items.filter(item=>item.orderNo!==null),error:pending.error||{code:'bad_response',at:pending.at||new Date().toISOString()}};
+}
 /** quotePo: production's update of 2026-11-03 is known to be live (learned once, kept): the form asks for the quotation and PO numbers
  *  (one at least) and their files. */
 export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null;quotePo:boolean;
@@ -173,9 +188,31 @@ export const MOLD_PENDING_REFRESH_MS=3*60_000;
 /** Whether a request the sales manager approved from their list waits for them again: production lists it at the sales step since a
  *  later time than the copy they approved (attaching or deleting a design file undoes the approvals, as may a change made in
  *  production; a quotation's or PO's file no longer does, 2026-11-05). The same wait listed again (a list kept a minute, here or in another server process) is not. */
-export function moldPendingAgain(copy:Pick<MoldPendingItem,'orderNo'|'waitingSince'>,items:Pick<MoldPendingItem,'orderNo'|'waitingSince'>[]){
- const since=Date.parse(copy.waitingSince||'')||0;
- return items.some(item=>item.orderNo===copy.orderNo&&(Date.parse(item.waitingSince||'')||0)>since);
+export function moldPendingAgain(copy:PendingNamed&Pick<MoldPendingItem,'waitingSince'>,items:(PendingNamed&Pick<MoldPendingItem,'waitingSince'>)[]){
+ const since=Date.parse(copy.waitingSince||'')||0,key=moldPendingKey(copy);
+ return items.some(item=>moldPendingKey(item)===key&&(Date.parse(item.waitingSince||'')||0)>since);
+}
+/** What names a pending item. */
+type PendingNamed=Pick<MoldPendingItem,'orderNo'|'requestRef'|'crmRequestId'>;
+/** A pending item's identity on the sales manager's page (its React key, «اعتمدتها الآن», its errors, its approval's retry key), never its
+ *  order number (null until production approves it, and renumbered once: the products update of 2026-11-05): the CRM's request by its
+ *  crmRequestId, one registered in the products application by its requestRef, and only an older application's (no requestRef) by its
+ *  number. */
+export function moldPendingKey(item:PendingNamed){
+ return item.crmRequestId?'crm:'+item.crmRequestId:item.requestRef?'ref:'+item.requestRef:'order:'+String(item.orderNo);
+}
+/** How the sales manager's approval (approve-order, withdraw-order) and the item's file downloads name it, by the same rule. */
+export function moldPendingTarget(item:PendingNamed):{crmRequestId:string}|{requestRef:string}|{orderNo:number}|null{
+ return item.crmRequestId?{crmRequestId:item.crmRequestId}:item.requestRef?{requestRef:item.requestRef}:item.orderNo?{orderNo:item.orderNo}:null;
+}
+/** The production order number in words: the number from the latest status (or pending item), or, while production has given none
+ *  (null: given when its production manager approves, 2026-11-05), «لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)»; '—' when there is no
+ *  status yet (not sent) or a request cancelled before it had a number (it will never get one). */
+export const MOLD_NO_ORDER_YET:[string,string]=['لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)','No number yet (given at production approval)'];
+export function moldOrderNoText(source:{orderNo:number|null}|null|undefined,say:(ar:string,en:string)=>string,{cancelled=false}:{cancelled?:boolean}={}){
+ if(!source)return '—';
+ if(source.orderNo)return String(source.orderNo);
+ return cancelled?'—':say(...MOLD_NO_ORDER_YET);
 }
 
 /** Every role has the page and asks (the owner, 2026-11-01: «الكل بيعمل طلب», customer service too). */
@@ -345,13 +382,20 @@ export function moldDesignCount(row:Pick<MoldRequestRow,'remote'>,files:MoldDesi
  const crm=files.filter(file=>moldFileCategory(file)===category&&(!file.deletedAt||file.outbox==='delete')&&!moldDesignRefused(file)).length;
  return {crm,production:moldListedFiles(row.remote).filter(entry=>entry.category===category&&(!entry.crmFileId||!known.has(entry.crmFileId))).length,max:MOLD_CATEGORY_MAX_FILES[category]};
 }
-/** A pending item's files of one list, each downloaded through the CRM by its order number. */
-const pendingLinks=(orderNo:number,files:MoldDesignFile[]|undefined,category:MoldFileCategory):MoldPendingDesignFile[]=>(files||[]).map(file=>({...file,category,href:designHref('order='+orderNo+'&file='+encodeURIComponent(String(file.fileId))),viewable:file.kind!=='other'}));
-/** The pending item's design files, each downloaded through the CRM by its order number; the CRM request's signature (signature: its
+/** Which pending item a download names (app/api/mold-requests/design-file/route.ts, by moldPendingTarget): crm=<crmRequestId> for the
+ *  CRM's request, ref=<requestRef> for one registered in the products application, order=<orderNo> only for an older application's (no
+ *  requestRef; a link an open page already holds keeps working). */
+export function moldPendingQuery(item:PendingNamed){
+ const target=moldPendingTarget(item);
+ return !target?'':'crmRequestId' in target?'crm='+encodeURIComponent(target.crmRequestId):'requestRef' in target?'ref='+target.requestRef:'order='+target.orderNo;
+}
+/** A pending item's files of one list, each downloaded through the CRM by the item's identity (moldPendingQuery). */
+const pendingLinks=(item:PendingNamed,files:MoldDesignFile[]|undefined,category:MoldFileCategory):MoldPendingDesignFile[]=>(files||[]).map(file=>({...file,category,href:designHref(moldPendingQuery(item)+'&file='+encodeURIComponent(String(file.fileId))),viewable:file.kind!=='other'}));
+/** The pending item's design files, each downloaded through the CRM by the item's identity; the CRM request's signature (signature: its
  *  crmFileId, as production lists the file the CRM sent) labelled so. */
-export const moldPendingDesignFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'>,signature?:Pick<MoldSignature,'fileId'>|null):MoldPendingDesignFile[]=>pendingLinks(item.orderNo,item.designFiles,'design').map(file=>signature?.fileId&&file.crmFileId===signature.fileId?{...file,signature:true as const}:file);
-/** The pending item's files of every list (design, quotation, PO), each downloaded through the CRM by its order number. */
-export const moldPendingFiles=(item:Pick<MoldPendingItem,'orderNo'|'designFiles'|'quoteFiles'|'poFiles'>,signature?:Pick<MoldSignature,'fileId'>|null)=>({designFiles:moldPendingDesignFiles(item,signature),quoteFiles:pendingLinks(item.orderNo,item.quoteFiles,'quote'),poFiles:pendingLinks(item.orderNo,item.poFiles,'po')});
+export const moldPendingDesignFiles=(item:PendingNamed&Pick<MoldPendingItem,'designFiles'>,signature?:Pick<MoldSignature,'fileId'>|null):MoldPendingDesignFile[]=>pendingLinks(item,item.designFiles,'design').map(file=>signature?.fileId&&file.crmFileId===signature.fileId?{...file,signature:true as const}:file);
+/** The pending item's files of every list (design, quotation, PO), each downloaded through the CRM by the item's identity. */
+export const moldPendingFiles=(item:PendingNamed&Pick<MoldPendingItem,'designFiles'|'quoteFiles'|'poFiles'>,signature?:Pick<MoldSignature,'fileId'>|null)=>({designFiles:moldPendingDesignFiles(item,signature),quoteFiles:pendingLinks(item,item.quoteFiles,'quote'),poFiles:pendingLinks(item,item.poFiles,'po')});
 /** A request's signature as the data stores it, or null (none, or not one: each field a text). */
 export function moldSignatureOf(data:{signature?:unknown}|null|undefined):MoldSignature|null{
  const value=data?.signature as Partial<MoldSignature>|null|undefined;
