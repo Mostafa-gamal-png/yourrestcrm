@@ -274,9 +274,9 @@ export function designFileDetail(file:Pick<MoldDesignFileView,'state'|'error'|'s
 
 /** The request's files in its sheet, one group for each kind: its design files, and (once production's update of 2026-11-03 is live, or
  *  when the request has some) the quotation's and the PO's. quotePo: production's update is known to be live, so those may be attached;
- *  so may they for a request kept for its quotation's or PO's file (needs_file: the server knows the update even if the page did not). */
+ *  so may they for a request kept for its quotation's or PO's file (sending.held: the server knows the update even if the page did not). */
 export function MoldDesignFiles({view,uploads,queue,onView,say,quotePo=false}:{view:MoldRequestView;uploads:DesignUpload[];queue:DesignUploadQueue;onView:(view:MoldRequestView)=>void;say:Say;quotePo?:boolean}){
- const offered=quotePo||view.sending.state==='needs_file';
+ const offered=quotePo||view.sending.held==='quote_file';
  const groups=MOLD_FILE_CATEGORY_ORDER.filter(category=>category==='design'||offered||view.designFiles.some(file=>file.category===category)||uploads.some(upload=>upload.category===category));
  return <>{groups.map(category=><MoldFileGroup key={category} category={category} attachable={category==='design'||offered} view={view} uploads={uploads} queue={queue} onView={onView} say={say}/>)}</>;
 }

@@ -716,8 +716,8 @@ try {
     res = await create({}, {description: 'kept for its quotation file'});
     body = await res.json();
     const kept = body.request.id, keptData = await dataOf(kept);
-    check([res.status, body.send, body.request.sending.state, keptData.fileRequired, Object.hasOwn(keptData, 'quoteNo'), sentBodies(kept).length, fileCalls(kept).length, body.request.can.resend, body.request.can.attach],
-      [200, {kind: 'none', code: 'quote_file', fields: []}, 'needs_file', true, false, 0, 0, false, true], 'saved with the customer\'s signature, kept in the CRM: nothing sent, the signature neither; no resend, the attach action');
+    check([res.status, body.send, [body.request.sending.state, body.request.sending.held], keptData.fileRequired, Object.hasOwn(keptData, 'quoteNo'), sentBodies(kept).length, fileCalls(kept).length, body.request.can.resend, body.request.can.attach],
+      [200, {kind: 'none', code: 'quote_file', fields: []}, ['waiting', 'quote_file'], true, false, 0, 0, false, true], 'saved with the customer\'s signature, kept in the CRM: nothing sent, the signature neither; no resend, the attach action');
     res = await post('rep', {action: 'resend', id: kept});
     check([res.status, (await res.json()).error, sentBodies(kept).length], [409, 'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.', 0], 'a resend: refused with what to do');
     // Due on the timetable (as a request that waited through a restart is: the first page any member loads runs the check, see above):
@@ -726,10 +726,10 @@ try {
     check((await as('rep')('/api/crm')).status, 200, 'a page of the CRM loaded');
     await list();
     await new Promise(resolve => setTimeout(resolve, 1500));
-    check([sentBodies(kept).length, (await viewOf(kept)).sending.state], [0, 'needs_file'], 'due, and checked by the timetable and by the page: still kept, never sent');
+    check([sentBodies(kept).length, (await viewOf(kept)).sending.held], [0, 'quote_file'], 'due, and checked by the timetable and by the page: still kept, never sent');
     // A design file does not release it; the first quotation file does: the request first, then its files in the order attached.
     body = await (await upload(kept, 'رسم.pdf', pdf('design'))).json();
-    check([body.file.state, body.request.sending.state, sentBodies(kept).length], ['held', 'needs_file', 0], 'a design file: kept with it');
+    check([body.file.state, body.request.sending.held, sentBodies(kept).length], ['held', 'quote_file', 0], 'a design file: kept with it');
     const order = quoteMock.state.calls.length;
     body = await (await upload(kept, 'عرض سعر.pdf', pdf('quotation'), 'quote')).json();
     const released = quoteMock.state.calls.slice(order).filter(call => call.signed && ['requests', 'design-files'].includes(call.route)).map(call => call.route === 'requests' ? 'request' : JSON.parse(call.body).crmFileId);
@@ -743,7 +743,7 @@ try {
     await quoteApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('q2','customer',NULL,'rep2','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع q2', region: 'الشرقية', city: 'الرياض'}), now, now).run();
     body = await (await post('cs', {action: 'create', customerId: 'q2', specs: {...specs, description: 'customer service, kept'}, payment: 'deferred'})).json();
     const service = body.request.id;
-    check([body.request.sending.state, sentBodies(service).length], ['needs_file', 0], 'customer service\'s new request is kept for its file too');
+    check([body.request.sending.held, sentBodies(service).length], ['quote_file', 0], 'customer service\'s new request is kept for its file too');
     body = await (await upload(service, 'PO.pdf', pdf('service po'), 'po', 'cs')).json();
     check([body.file.state, body.request.sending.state, sentBodies(service).length, quoteMock.row(service).designFiles.map(file => file.category)], ['sent', 'sent', 1, ['po']], 'its PO file releases it');
 

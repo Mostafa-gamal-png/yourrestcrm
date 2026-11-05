@@ -23,7 +23,8 @@
 // The quotation's or PO's FILE is required, the numbers are gone (production's update of 2026-11-05; the owner: every role): once the CRM
 // knows production's update of 2026-11-03 (the same flag), a new request carries no number and needs at least one quotation or PO file.
 // Files are uploaded after the request is saved, so a new request (data.fileRequired) stays in the CRM, not sent, while it has none
-// (moldAwaitsQuoteFile, sending state needs_file «بانتظار ملف عرض السعر / الـ PO»); the first one attached releases it. A request stored
+// (moldAwaitsQuoteFile, sending.held 'quote_file' «بانتظار ملف عرض السعر / الـ PO», its state kept one an older page knows); the first
+// one attached releases it. A request stored
 // with a number keeps it and is sent byte for byte. quoteOrPoMissing now says production has no quotation or PO file and finance has not
 // approved: shown as «ناقص ملف عرض السعر / الـ PO», with the attach action while the request is editable. Attaching or deleting a
 // quotation's or PO's file no longer undoes the approvals; a design file still does (moldFileResetsApprovals).
@@ -119,10 +120,14 @@ export type MoldSignatureState='sent'|'waiting'|'stopped'|'refused';
 export type MoldSignatureView=MoldSignature&{href:string|null;state:MoldSignatureState};
 export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOrderNo:number|null;data:MoldRequestData;accepted:MoldRequestData|null;cancelledAt:string|null;cancelReason:string;outbox:'send'|'cancel'|null;attempts:number;firstFailedAt:string|null;nextAttemptAt:string|null;lastAttemptAt:string|null;lastError:MoldError|null;remote:MoldRemote|null;remoteAt:string|null;createdBy:string;createdAt:string;updatedAt:string;version:number};
 /** held: a request saved with a quotation or PO number while production's update is not known to be live (it cannot happen in normal
- *  use: the form asks for them only after it): kept, never sent to the older application, which would drop them silently.
- *  needs_file (2026-11-05): a new request without a quotation or PO file yet (moldAwaitsQuoteFile): kept in the CRM, not sent, until the
- *  first one is attached. */
-export type MoldSendingState='sent'|'waiting'|'rejected'|'off'|'held'|'needs_file';
+ *  use: the form asks for them only after it): kept, never sent to the older application, which would drop them silently. A page loaded
+ *  before a release indexes its own names by this state, so the server never returns another value (a request kept for its quotation's
+ *  or PO's file says so in sending.held, 2026-11-05). */
+export type MoldSendingState='sent'|'waiting'|'rejected'|'off'|'held';
+/** Why a request's own data waits in the CRM, beyond its state (2026-11-05): quote_file, a new request kept until its first quotation or
+ *  PO file is attached (moldAwaitsQuoteFile). A new field, so a page loaded before this release reads the state it knows («بانتظار
+ *  الإرسال») and nothing it cannot name. */
+export type MoldSendingHeld='quote_file';
 /** What a reader sees of the quotation and PO (2026-11-05): missing, production marks the request as having neither a quotation file nor
  *  a PO file while finance has not approved it (quoteOrPoMissing). The numbers are no longer shown (production no longer shows them). */
 export type MoldQuotePoView={missing:boolean};
@@ -132,7 +137,9 @@ export type MoldQuotePoView={missing:boolean};
 export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
  /** The reasons of the request's earlier cancellations (the production manager restored it since): a new cancellation needs another. */
  cancelReasons:string[];
- sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null};
+ sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null;
+  /** Kept in the CRM for its quotation's or PO's file (2026-11-05); absent otherwise. */
+  held?:MoldSendingHeld};
  remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean};version:number;
  /** Every file of the request (design, quotation and PO), each with its category. */
  designFiles:MoldDesignFileView[];
@@ -375,33 +382,37 @@ export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],li
  const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo);
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
-  sending:{state:moldSendingState(row,linkReady,quotePo,files),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError},
+  sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(moldAwaitsQuoteFile(row,files)?{held:'quote_file' as const}:{})},
   remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles)};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent.
- *  files: the request's own files, when given: a new request without a quotation or PO file waits for one (needs_file, 2026-11-05),
- *  said before the link's state (attaching it is the representative's to do either way). */
-export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&Partial<Pick<MoldRequestRow,'accepted'|'remote'|'lastAttemptAt'>>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'|'fileRequired'>},linkReady:boolean,quotePo=true,files:Parameters<typeof moldAwaitsQuoteFile>[1]|null=null):MoldSendingState{
+ *  Always one of the five states every page knows: a request kept for its quotation's or PO's file reads waiting (or off), and says why
+ *  in sending.held (moldRequestView). */
+export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'>},linkReady:boolean,quotePo=true):MoldSendingState{
  if(!row.outbox)return 'sent';
- if(files&&moldAwaitsQuoteFile({accepted:null,remote:null,lastAttemptAt:null,...row},files))return 'needs_file';
  if(!linkReady)return 'off';
  if(row.outbox==='send'&&!quotePo&&row.data&&moldHasQuotePo(row.data))return 'held';
  return row.lastError&&['invalid_payload','payload_too_large'].includes(row.lastError.code)?'rejected':'waiting';
 }
 
 export const moldStatusNames:Record<MoldStatusName,[string,string]>={received:['استلمه الإنتاج','Received by production'],confirmed:['اكتملت الاعتمادات','Approved'],in_production:['قيد التصنيع','In production'],produced:['تم التصنيع','Produced'],delivered:['تم التسليم للعميل','Delivered'],cancelled:['ملغى','Cancelled']};
-export const moldSendingNames:Record<MoldSendingState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],rejected:['رفض الإنتاج البيانات','Production refused the data'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],held:['بانتظار تحديث تطبيق المنتجات','Waiting for the products application update'],
- needs_file:['بانتظار ملف عرض السعر / الـ PO','Waiting for the quotation / PO file']};
+export const moldSendingNames:Record<MoldSendingState,[string,string]>={sent:['وصل للإنتاج','Delivered to production'],waiting:['بانتظار الإرسال','Waiting to be sent'],rejected:['رفض الإنتاج البيانات','Production refused the data'],off:['الربط مع الإنتاج غير مفعَّل','The production link is off'],held:['بانتظار تحديث تطبيق المنتجات','Waiting for the products application update']};
+/** sending.held quote_file in words (2026-11-05), said instead of the state's name by this release's pages. */
+export const MOLD_QUOTE_FILE_HELD_NAME:[string,string]=['بانتظار ملف عرض السعر / الـ PO','Waiting for the quotation / PO file'];
 /** A request production marks as having neither a quotation file nor a PO file while finance has not approved it (quoteOrPoMissing,
  *  2026-11-05): the representative attaches one in the CRM while the request is editable, or the production manager in the products
  *  application. */
 export const MOLD_QUOTE_PO_MISSING_TEXT:[string,string]=['ناقص ملف عرض السعر / الـ PO','The quotation / PO file is missing'];
-/** Beside it, for whoever may attach (the requester, while the request is editable), and for anyone else. */
+/** Beside it: for whoever may attach (the requester, while the request is editable); for anyone else reading one of the CRM's requests
+ *  (whoever asked for it: a representative, customer service, the administrator); for one registered in the products application. */
 export const MOLD_QUOTE_PO_MISSING_ATTACH:[string,string]=['أرفق ملف عرض السعر أو الـ PO من «ملفات عرض السعر» أو «ملفات الـ PO» تحت.','Attach the quotation or PO file under «Quotation files» or «PO files» below.'];
-export const MOLD_QUOTE_PO_MISSING_OTHERS:[string,string]=['المندوب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.','The representative attaches it in the CRM, or the production manager in the products application.'];
+export const MOLD_QUOTE_PO_MISSING_OTHERS:[string,string]=['صاحب الطلب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.','Whoever asked for it attaches it in the CRM, or the production manager in the products application.'];
+export const MOLD_QUOTE_PO_MISSING_PRODUCTION:[string,string]=['مدير الإنتاج يرفقه من تطبيق المنتجات.','The production manager attaches it in the products application.'];
 /** A new request needs at least one quotation or PO file (2026-11-05, every role): the form's refusal. */
 export const MOLD_QUOTE_FILE_REQUIRED_TEXT:[string,string]=['أرفق ملف عرض السعر أو الـ PO (واحد على الأقل)','Attach the quotation or PO file (at least one)'];
-/** A request kept in the CRM until its quotation or PO file is attached (sending state needs_file), in the representative's words. */
+/** A request kept in the CRM until its quotation or PO file is attached (sending.held quote_file): to its requester, who attaches it, and
+ *  to a reader who cannot (the sales manager, the administrator). */
+export const MOLD_QUOTE_FILE_WAITING_OTHERS:[string,string]=['بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO','Waiting for whoever asked for it to attach the quotation / PO file'];
 export const MOLD_QUOTE_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف عرض السعر أو الـ PO (واحد على الأقل)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach the quotation or PO file (at least one); once you do, the request goes, then its files.'];
 /** The customer's signature in the representative's words (2026-11-04): the step, the pad, its refusals, the sheet's line. */
 export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer signature'] as [string,string],signed:['وقّع العميل','Signed by the customer'] as [string,string],

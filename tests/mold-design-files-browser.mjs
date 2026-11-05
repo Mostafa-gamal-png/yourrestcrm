@@ -392,7 +392,7 @@ try {
   await quoteSheet.waitForFunction(() => !document.querySelector('.mold-heading-tools button .spin'));
   const asked = await quoteSheet.evaluate(async body => (await (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json()).request,
     withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash'}));
-  check([asked.sending.state, asked.remote, mock.row(asked.id) || null], ['needs_file', null, null], 'a pull taught the CRM; a new request without a quotation or PO file is kept in the CRM, not sent');
+  check([asked.sending.state, asked.sending.held, asked.remote, mock.row(asked.id) || null], ['waiting', 'quote_file', null, null], 'a pull taught the CRM; a new request without a quotation or PO file is kept in the CRM, not sent');
   await quoteSheet.locator('.mold-heading-tools button').first().click();
   const keptCard = quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'});
   await keptCard.locator('.mold-card-sending[data-state="needs_file"]').waitFor();
@@ -407,6 +407,15 @@ try {
   await groupOf('quote').locator('.mold-design-refused').waitFor();
   check(await groupOf('quote').locator('.mold-design-refused li').innerText(), 'مسقط.dwg: ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'a drawing as the quotation: refused on the device, with why');
   await shot(quoteSheet, 'mold-design-kept-for-file');
+  // The sales manager reads the same request (his team's): whom it waits for, not what to do; no attach for him.
+  const keptManager = await open('sm');
+  await goMolds(keptManager);
+  await keptManager.locator('.mold-tabs button', {hasText: 'كل الطلبات'}).click();
+  await keptManager.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
+  await sheet(keptManager).locator('.mold-sending').waitFor();
+  check([await sheet(keptManager).locator('.mold-sending strong').innerText(), await sheet(keptManager).locator('.mold-sending p').innerText(), await sheet(keptManager).locator('.mold-design-tools').count()],
+    ['بانتظار ملف عرض السعر / الـ PO', 'بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO', 0], 'the sales manager: whom it waits for, and no attach');
+  await keptManager.context().close();
   await groupOf('po').locator('input[type=file]').setInputFiles({name: 'PO-7781.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
   await fileRow(groupOf('po'), 'PO-7781.pdf').and(quoteSheet.locator('[data-state="sent"]')).waitFor();
   check([await groupOf('po').locator('.mold-design-confirm').count(), await sheet(quoteSheet).locator('.mold-sending').count(), mock.row(asked.id).designFiles.map(file => [file.name, file.category]), JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, await groupOf('po').locator('.mold-design-count').innerText()],

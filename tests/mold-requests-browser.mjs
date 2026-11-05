@@ -665,13 +665,17 @@ try {
   await quoteRep.locator('.mold-heading-tools button').first().click();
   for (let n = 0; n < 100 && !mock.row(yesterday); n++) await new Promise(resolve => setTimeout(resolve, 100));
   check([mock.row(yesterday)?.quoteNo, mock.row(yesterday) && JSON.parse(mock.state.calls.findLast(call => call.route === 'requests' && call.body.includes(yesterday)).body).quoteNo], ['Q-2026-0099', 'Q-2026-0099'], 'sent as stored, with its number (asked for before this release: not kept for a file)');
+  // One registered in the products application without a file: missing too, its production manager attaches it
+  mock.registerManual({customerNo: crmNumber, customerName: 'مصنع مسجّل بدون ملف', description: 'REGISTERED IN PRODUCTION'});
   // The sales manager sees it missing in his list and approves it
   const quoteManager = await open('sm');
   await goMolds(quoteManager);
   const missingPending = quoteManager.locator('.mold-pending', {hasText: 'YESTERDAY WITH A NUMBER'});
   await missingPending.waitFor();
   check([(await missingPending.locator('.mold-quote-po-missing').innerText()).startsWith(MISSING), (await missingPending.locator('.mold-quote-po-missing small').innerText()), await missingPending.locator('.mold-quote-po').count(), (await missingPending.innerText()).includes('Q-2026-0099')],
-    [true, 'المندوب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.', 0, false], 'waiting for the sales manager: «missing», who attaches it; its number not shown');
+    [true, 'صاحب الطلب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.', 0, false], 'waiting for the sales manager: «missing», who attaches it; its number not shown');
+  const manualPending = quoteManager.locator('.mold-pending', {hasText: 'REGISTERED IN PRODUCTION'});
+  check(await manualPending.locator('.mold-quote-po-missing small').innerText(), 'مدير الإنتاج يرفقه من تطبيق المنتجات.', 'one registered in production: its production manager attaches it');
   const quotedPending = quoteManager.locator('.mold-pending', {has: quoteManager.locator('.mold-design-compact[data-category="quote"]')});
   check([await quotedPending.count() >= 1, await quotedPending.first().locator('.mold-quote-po-missing').count()], [true, 0], 'the request with its quotation file: not missing');
   const pendingQuote = quotedPending.first().locator('.mold-design-compact[data-category="quote"]');
