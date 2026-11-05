@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {deploy, DeployError, CRON_COMMAND, SCRIPTS, cleanSetting, cpanelBase, accountHints, dailyBackupTime} from '../scripts/deploy-cpanel.mjs';
@@ -25,10 +25,21 @@ if (mode === '--check') console.log('PACKAGE AND CONFIGURATION: READY. APP MAY R
 else if (mode === '--verify') {
   const verify = process.env.FAKE_VERIFY || 'always';
   if (verify === 'never' || (verify === 'after-start' && !fs.existsSync(path.join(home, 'started')))) { console.log('STOP LOGIN_HTTP_503'); process.exit(1); }
+  // A database step the app applies when it starts: waiting until the site has had a visit (the pretend site leaves 'visited').
+  if (verify === 'after-visit' && !fs.existsSync(path.join(home, 'visited'))) { console.log('STOP: MIGRATION_NOT_APPLIED_START_APP_FIRST'); process.exit(1); }
   console.log('MIGRATIONS: 16'); console.log('DEPLOYMENT VERIFIED');
 } else if (process.env.FAKE_FAIL === 'before-switch') { console.log('1/4 APP STOPPED. VALIDATING CURRENT DATA AND TODAY\\'S BACKUP...'); console.log('STOP APP_OR_DATA_STILL_IN_USE'); process.exit(1); }
 else { console.log('4/4 RELEASE SWITCHED'); console.log('START APP IN CPANEL'); }
 `;
+// The site as the hosting account sees it, in its own process (the cron runs through spawnSync, which blocks this one): every request
+// is logged, and a visit leaves 'visited' in each pretend account home (they all live under the test's temporary folder).
+async function pretendSite() {
+  const log = path.join(fs.mkdtempSync(path.join(temp, 'site-')), 'visits.log');
+  const code = `const http=require('http'),fs=require('fs'),path=require('path');const s=http.createServer((q,r)=>{fs.appendFileSync(${JSON.stringify(log)},q.url+'\\n');for(const d of fs.readdirSync(${JSON.stringify(temp)}))if(d.startsWith('home-'))fs.writeFileSync(path.join(${JSON.stringify(temp)},d,'visited'),'');r.writeHead(200);r.end('ok');});s.listen(0,'127.0.0.1',()=>console.log(s.address().port));`;
+  const child = spawn(process.execPath, ['-e', code], {stdio: ['ignore', 'pipe', 'inherit']});
+  const port = await new Promise((resolve, reject) => { child.stdout.once('data', d => resolve(Number(String(d).trim()))); child.once('exit', reject); });
+  return {origin: 'http://127.0.0.1:' + port, visits: () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : [], stop: () => child.kill()};
+}
 function makePackage(name, sums) {
   const src = fs.mkdtempSync(path.join(temp, 'src-'));
   fs.mkdirSync(path.join(src, 'release'));
@@ -210,6 +221,26 @@ try {
     const s = cpanel(), result = await s.run('deploy');
     check(result.code, 0, 'the host started the app by itself');
     ok(result.output.endsWith('START APP IN CPANEL\nMIGRATIONS: 16\nDEPLOYMENT VERIFIED'), 'verified straight after the switch');
+  }
+  // ---- 7b. a database step waits for the app's start, which the host gives on the first visit (2026-11-03: nobody visited for the
+  // minute --verify waited): the script opens the site's login page itself, then --verify passes; a normal verify opens nothing.
+  {
+    const site = await pretendSite();
+    try {
+      const s = cpanel({env: {FAKE_VERIFY: 'after-visit', YR_SITE_ORIGIN: site.origin}}), result = await s.run('deploy');
+      check(result.code, 0, 'deploy passes once the site was opened');
+      ok(result.output.includes('STOP: MIGRATION_NOT_APPLIED_START_APP_FIRST\nOPENED THE SITE TO START THE APP: HTTP 200\nVERIFY ATTEMPT 1 DID NOT PASS') && result.output.endsWith('MIGRATIONS: 16\nDEPLOYMENT VERIFIED'), 'waiting for the start: the site is opened, then verified');
+      check(site.visits(), ['/login'], 'one visit, to the login page');
+      fs.rmSync(path.join(s.home, 'visited'));
+      const verify = await s.run('verify', {run: '903-1'});
+      check(verify.code, 0, 'verify alone opens the site too when the step waits');
+      ok(verify.output.startsWith('STOP: MIGRATION_NOT_APPLIED_START_APP_FIRST\nOPENED THE SITE TO START THE APP: HTTP 200\nVERIFY ATTEMPT 1 DID NOT PASS') && verify.output.endsWith('DEPLOYMENT VERIFIED'), 'verify: opened, then verified');
+      const normal = cpanel({env: {YR_SITE_ORIGIN: site.origin}}), before = site.visits().length, plain = await normal.run('deploy');
+      check([plain.code, site.visits().length, plain.output.includes('OPENED THE SITE')], [0, before, false], 'a verify that passes opens nothing');
+      const silent = cpanel({env: {FAKE_VERIFY: 'after-visit', YR_SITE_ORIGIN: 'http://127.0.0.1:9'}}), down = await silent.run('deploy', {run: '904-1'});
+      ok(down.code !== 0, 'the site does not answer: the deploy still stops');
+      ok(down.output.includes('OPENED THE SITE TO START THE APP: NO ANSWER') && down.output.includes('VERIFY ATTEMPT 6 DID NOT PASS'), 'six tries, each saying the site did not answer');
+    } finally { site.stop(); }
   }
   // ---- 8. refusals on the hosting account: another checksum, another package in the same folder
   {

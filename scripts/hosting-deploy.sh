@@ -23,6 +23,11 @@ case "$STAGE$HELPER$ZIP" in *..*|*/*) echo "DEPLOY STOP: names must be plain fil
 
 selector() { command -v cloudlinux-selector >/dev/null 2>&1; }
 activator() { "$NODE" "$HOME/$STAGE/$HELPER" "$@"; }
+# The host starts the Node.js app on its first visit, and an update with a database step applies it only when the app starts: when
+# --verify says the step is still waiting (MIGRATION_NOT_APPLIED_START_APP_FIRST), open the site's login page once, as a visitor would.
+SITE="${YR_SITE_ORIGIN:-https://crm.yourrest.org}"
+wake() { "$NODE" -e 'fetch(process.argv[1]+"/login",{redirect:"manual",signal:AbortSignal.timeout(30000),headers:{"Cache-Control":"no-cache"}}).then(r=>console.log("OPENED THE SITE TO START THE APP: HTTP "+r.status),()=>console.log("OPENED THE SITE TO START THE APP: NO ANSWER"))' "$SITE"; }
+waiting_for_start() { grep -q 'MIGRATION_NOT_APPLIED_START_APP_FIRST' "$1"; }
 has_python() { command -v python3 >/dev/null 2>&1; }
 # sel stop|start: what Stop App / Start App do in cPanel's Setup Node.js App, judged by the selector's own answer.
 sel() {
@@ -91,13 +96,22 @@ case "$MODE" in
     # Without the selector the host starts the app on the next request, unless Stop App was pressed in cPanel: --verify makes requests.
     for attempt in 1 2 3 4 5 6; do
       if activator --verify > "$out" 2>&1; then cat "$out"; grep -q '^DEPLOYMENT VERIFIED$' "$out" && exit 0; else cat "$out"; fi
+      waiting_for_start "$out" && wake
       echo "VERIFY ATTEMPT $attempt DID NOT PASS; WAITING FOR THE APP TO START"; sleep "$PAUSE"
     done
     if [ "$stopped" = 0 ]; then echo "START APP IN CPANEL NOW, THEN ASK FOR mode=verify"; exit 4; fi
     echo "DEPLOY STOP: --verify did not pass after the start"; exit 5
     ;;
   verify)
-    activator --verify
+    # Once, as before; only a database step still waiting for the app's start opens the site and tries again (six times at most).
+    out=$(mktemp); trap 'rm -f "$out"' EXIT
+    set +e; activator --verify > "$out" 2>&1; code=$?; set -e; cat "$out"
+    attempt=1
+    while [ "$code" != 0 ] && waiting_for_start "$out" && [ "$attempt" -le 6 ]; do
+      wake; echo "VERIFY ATTEMPT $attempt DID NOT PASS; WAITING FOR THE APP TO START"; sleep "$PAUSE"
+      set +e; activator --verify > "$out" 2>&1; code=$?; set -e; cat "$out"; attempt=$((attempt+1))
+    done
+    exit "$code"
     ;;
   diagnose)
     # A read-only check uploaded beside this script (scripts/diagnose/*.cjs); it prints what it found and changes nothing.
