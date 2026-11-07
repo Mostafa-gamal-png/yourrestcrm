@@ -1,6 +1,6 @@
 'use client';
 import {t,useLanguage,direction} from "@/lib/i18n";
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { History, MapPin, Plus, Loader2, CheckCircle2, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
@@ -9,7 +9,7 @@ import { visitCustomer, visitRequest, customerVisits, strengthLabels, visitProdu
 import { mapsLink } from '@/lib/customer-location';
 import { contactTypes, visitPurposes, visitResult, formatVisitTime} from '@/lib/visits';
 import {isServiceRole,serviceStatusLabels} from '@/lib/customer-service';
-import {filterVisitRows} from '@/lib/visit-list';
+import {filterVisitRows,lostQuoteVisitIds} from '@/lib/visit-list';
 import LanguageSwitch from './language-switch';
 import VisitFields, {FollowupDateField,type VisitLocationState,type VisitData,type VisitValue} from './visit-fields';
 import {submitJson,SubmitError,definiteSubmitRejection} from '@/lib/client-submit';
@@ -99,10 +99,11 @@ export function VisitsPage({ records, members, query, staff, stage, onOpen, onNe
     useLanguage();
     const tw=(text:string)=>t(serviceText(role,text));
     const [page, setPage] = useState(1);
-    const rows = filterVisitRows(records,{query,staff,stage,workflow});
+    const lostQuotes = useMemo(() => stage === 'quoted' ? lostQuoteVisitIds(records) : undefined, [records, stage]);
+    const rows = filterVisitRows(records,{query,staff,stage,workflow,lostQuotes});
     const pages = Math.max(1, Math.ceil(rows.length / 30)), current = Math.min(page, pages);
     return <section className="panel">{records.some(r=>r.data.serviceIntakeId)&&<div className="panel-heading followup-list-heading"><div className="followup-list-filters" role="group" aria-label={t('حالة الاعتماد والتكليف')}>{[['all','كل الزيارات'],['mine','بانتظار إجرائي'],...Object.entries(serviceStatusLabels),['assistance','طلبات المساعدة']].map(([id,label])=><button key={id} className={'followup-list-filter '+(workflow===id?'selected':'')} aria-pressed={workflow===id} onClick={()=>{onWorkflowFilter(id);setPage(1);}}>{tw(label)}</button>)}</div></div>}<div className="panel-heading"><h2>{tw("سجل الزيارات ")}<span className="inline-count">{t(rows.length)}</span></h2><span className="muted">{tw("كل زيارة مرتبطة بالعميل وسجله السابق")}</span></div>{rows.length ? <><VisitsTable onDelete={onDelete} role={role} rows={rows.slice((current - 1) * 30, current * 30)} customerFor={r => visitCustomer(r, records)} onOpen={id => { const r = records.find(r => r.id === id); if (r)
-        onOpen(r); }} onEdit={onOpen} onCustomer={onCustomer} canEdit={canEdit} showPlace={canEdit} expanded members={members} onWorkflow={onWorkflow} support={support}/><div className="table-paging"><button className="btn subtle small" disabled={current === 1} onClick={() => setPage(current - 1)}>{t("السابق")}</button><span>{t(current)} / {t(pages)}</span><button className="btn subtle small" disabled={current === pages} onClick={() => setPage(current + 1)}>{t("التالي")}</button></div></> : <div className="followup-empty"><History size={30}/><h3>{query ? t('لا توجد نتائج مطابقة') : tw('لا توجد زيارات مسجلة')}</h3><button className="btn primary" onClick={onNew}><Plus size={18}/>{tw("زيارة جديدة")}</button></div>}</section>;
+        onOpen(r); }} onEdit={onOpen} onCustomer={onCustomer} canEdit={canEdit} showPlace={canEdit} expanded members={members} onWorkflow={onWorkflow} support={support} lostQuotes={lostQuotes}/><div className="table-paging"><button className="btn subtle small" disabled={current === 1} onClick={() => setPage(current - 1)}>{t("السابق")}</button><span>{t(current)} / {t(pages)}</span><button className="btn subtle small" disabled={current === pages} onClick={() => setPage(current + 1)}>{t("التالي")}</button></div></> : <div className="followup-empty"><History size={30}/><h3>{query ? t('لا توجد نتائج مطابقة') : tw('لا توجد زيارات مسجلة')}</h3><button className="btn primary" onClick={onNew}><Plus size={18}/>{tw("زيارة جديدة")}</button></div>}</section>;
 }
 type Props = {
     initial?: Row;

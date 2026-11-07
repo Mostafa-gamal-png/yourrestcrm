@@ -4,6 +4,14 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The «عرض سعر» visit filter also brings the quotations lost afterwards, marked «مفقودة» (2026-11-07, release `update-quote-lost-filter`, second package of the day, no migration)
+
+- **Asked.** The owner: «فى فلتر مراحل البيع فى الزيارات خلى مرحلة عرض السعر تجيب العروض المفقودة وتكون جمبها كلمة مفقودة», then, asked which rows: «نفس النتائج اللى بتطلع + العروض اللى بعد كده تم فقدها».
+- **Rule** (`lib/visit-list.ts` `lostQuoteVisitIds`, one pass over the reader's records, per customer in `visitOrder`): a visit at `quoted` is lost when the first closing contact after it (a visit or follow-up at `won`/`lost`) is `lost`; a visit at `lost` is a lost quotation when a quotation (a visit or follow-up at `quoted`, a contact of type `quote`, or a quotation record) came after the customer's previous close. `filterVisitRows` with `stage: 'quoted'` keeps every `quoted` visit and adds those lost visits; every other filter is unchanged. Follow-ups stay out of the visit list as before.
+- **Display** (`app/visits-table.tsx`, `lostQuotes` prop from `VisitsPage`): «مفقودة» / «Lost» (`badge lost`) beside the stage on the phone card and beside the visit number on the desktop table; the CSV export (`app/crm-app.tsx`) appends «— مفقودة» to the stage column under that filter. No server value or API changed; pages loaded before the release keep the old filter until reloaded.
+- **Same-day package**: `portable/activate-ui-refresh-update.cjs` lists `update-cs-no-add-customer-activation-20261107` (this morning's activation) so this package reuses the day's full backup (`tests/baseline-update-activation.mjs` shipped list).
+- **Tests.** `tests/crm-regression.mjs`: the lost set (a quote lost in a follow-up, a quote lost in a visit after negotiation, a quote contact of type `quote` in a follow-up, a won quotation, a loss without a quotation since the previous close, another customer), the `quoted` and `lost` filter orders, and the staff filter on the added rows.
+
 ## Customer service no longer adds customers and corrects customer details like a representative (2026-11-07, release `update-cs-no-add-customer`, first package of the day, no migration)
 
 - **Asked.** The owner: «شيل من خدمة العملاء اضافة عملاء بس يقدرو يعدلو بس», then, asked what editing means: «زي المندوب». Customer service (`customer_service` and `customer_service_manager`) picks an existing customer and never adds one, and corrects a customer's details exactly as a representative may; every other role is unchanged (the representative, supervisor, sales manager and administrator add customers as before).

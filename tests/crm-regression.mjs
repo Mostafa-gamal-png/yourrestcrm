@@ -247,7 +247,24 @@ assert.equal(customerHasQuotation('cycle-c',[domainCustomer,oldQuoted,backfilled
 const sameDayClose={...oldClosed,createdAt:'2026-09-03T05:00:00Z',data:{...oldClosed.data,date:'2026-09-03',visitWorkflow:'followup-v1'}},laterContact=contact('later',4);
 assert.equal(customerHasQuotation('cycle-c',[domainCustomer,oldQuoted,sameDayClose,laterContact,oldRequest,afterBackfillQuote]),true);assert.equal(customerHasQuotation('cycle-c',[domainCustomer,oldQuoted,sameDayClose,laterContact,oldRequest,{...afterBackfillQuote,createdAt:'2026-09-03T04:00:00Z'}]),false);checks+=3;
 compile('lib/visit-list.ts');const {filterVisitRows}=await import(path.join(out,'lib/visit-list.mjs'));const searchable=[domainCustomer,contact('one',3,{customerNeeds:'needle needs',performedBy:'rep',salesStage:'specs'}),contact('two',4,{competitorName:'needle competitor',performedBy:'rep',salesStage:'specs'}),contact('three',5,{requestedProducts:['needle product'],performedBy:'other',salesStage:'new'})];
-assert.deepEqual(filterVisitRows(searchable,{query:'needle'}).map(r=>r.id),['three','two','one']);assert.deepEqual(filterVisitRows(searchable,{query:'needle',staff:'rep',stage:'specs'}).map(r=>r.id),['two','one']);checks+=2;
+assert.deepEqual(filterVisitRows(searchable,{query:'needle'}).map(r=>r.id),['three','two','one']);
+// «عرض سعر» also brings the quotations lost afterwards (marked «مفقودة»): a quoted visit whose next closing contact is a
+// loss (a follow-up here), a visit recorded at «تم الفقد» after a quotation; a won quotation, a loss with no quotation since the
+// previous close, follow-ups themselves and other customers stay out.
+{const {lostQuoteVisitIds}=await import(path.join(out,'lib/visit-list.mjs'));const other={...domainCustomer,id:'cycle-d',data:{name:'Other factory'}};const at=(id,n,data,parentId='cycle-c')=>({...contact(id,n,data),parentId});
+const rows=[domainCustomer,other,
+ at('q1',1,{salesStage:'quoted',type:'visit'}),at('f1',2,{salesStage:'lost',visitWorkflow:'followup-v1',invoiceOutcome:'lost'}),
+ at('l0',3,{salesStage:'lost',type:'visit'}),
+ at('q2',4,{salesStage:'quoted',type:'visit'}),at('n2',5,{salesStage:'negotiation'}),at('l2',6,{salesStage:'lost',type:'visit'}),
+ at('q3',7,{salesStage:'quoted',type:'visit'}),at('w3',8,{salesStage:'won',visitWorkflow:'followup-v1'}),
+ at('fq',9,{type:'quote',salesStage:'negotiation',visitWorkflow:'followup-v1'}),at('l4',10,{salesStage:'lost'}),
+ at('q5',11,{salesStage:'quoted'}),
+ at('oq',1,{salesStage:'quoted'},'cycle-d'),at('ow',2,{salesStage:'won'},'cycle-d')];
+assert.deepEqual([...lostQuoteVisitIds(rows)].sort(),['l2','l4','q1','q2']);
+assert.deepEqual(filterVisitRows(rows,{stage:'quoted'}).map(r=>r.id),['q5','l4','q3','l2','q2','q1','oq']);
+assert.deepEqual(filterVisitRows(rows,{stage:'lost'}).map(r=>r.id),['l4','l2','l0']);
+assert.deepEqual(filterVisitRows(rows,{stage:'quoted',staff:'nobody'}).map(r=>r.id),[]);checks+=4;}
+assert.deepEqual(filterVisitRows(searchable,{query:'needle',staff:'rep',stage:'specs'}).map(r=>r.id),['two','one']);checks+=2;
 await post(crm,{action:'member',data:{name:'Outside email',email:'person@example.com',role:'rep',branch:'الرئيسي',active:1,target:0}},400);
 // Malformed input must be a validation error, not an internal crash.
 await post(crm,{action:'member',data:{name:'Invalid email',email:'bad'}},400);
