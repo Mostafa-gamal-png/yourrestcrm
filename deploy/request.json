@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-MoldRequestRef-20261105.zip",
-  "sha256": "78bc2242e0d86078d44351e5452eb0c7793513badd3f7bd9f4a6bf5c57878eed",
-  "stage": "yourrest-crm-update-mold-request-ref-20261105",
-  "helper": "yourrest-activate-update-mold-request-ref.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-CsNoAddCustomer-20261107.zip",
+  "sha256": "6df27ff00026c47cc2c28414ea79f18ab9986dfee78f84c5d6efeb0b8353b392",
+  "stage": "yourrest-crm-update-cs-no-add-customer-20261107",
+  "helper": "yourrest-activate-update-cs-no-add-customer.cjs"
 }
