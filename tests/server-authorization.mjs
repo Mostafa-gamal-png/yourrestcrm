@@ -169,10 +169,21 @@ try {
   const existing = await app.db.prepare('SELECT version FROM crm_records WHERE id=?').bind(ids.e2).first();
   const onExisting = await app.as(sessions.cs)('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: ids.e2, customerVersion: existing.version, data: intake}});
   check(onExisting.status, 200, 'customer service still registers a request on an existing customer: ' + onExisting.text);
+  // Customer service corrects a customer's details like a representative; the responsible member, branch and delete stay out of reach.
   for (const id of ['cs', 'csm']) {
-    const row = await app.db.prepare('SELECT data,version FROM crm_records WHERE id=?').bind(ids.e1).first();
-    const edit = await app.as(sessions[id])('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: ids.e1, version: row.version, data: {...JSON.parse(row.data), phone: '0509999999'}}});
-    check(edit.status, 403, id + ' customer details stay read only, as before');
+    const call = app.as(sessions[id]), current = async () => app.db.prepare('SELECT data,version,assigned_to,branch FROM crm_records WHERE id=?').bind(ids.e1).first();
+    let row = await current();
+    const phone = id === 'cs' ? '0509999999' : '0508888888';
+    const edit = await call('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: ids.e1, version: row.version, data: {...JSON.parse(row.data), phone, contact: 'تواصل ' + id}}});
+    check(edit.status, 200, id + ' edits a customer\'s details: ' + edit.text);
+    const saved = await current();
+    check([JSON.parse(saved.data).phone, JSON.parse(saved.data).contact, saved.assigned_to, saved.branch], [phone, 'تواصل ' + id, row.assigned_to, row.branch], id + ' edit saved, routing kept');
+    row = saved;
+    const reassign = await call('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: ids.e1, version: row.version, data: {...JSON.parse(row.data), assignedTo: 'rep2'}}});
+    check(reassign.status, 403, id + ' cannot reassign');
+    const removed = await call('/api/crm', {method: 'POST', body: {action: 'delete', kind: 'customer', id: ids.e1, version: row.version}});
+    check(removed.status, 403, id + ' cannot delete');
+    check((await current()).version, row.version, id + ' refused writes change nothing');
   }
 
   assert(!/at .*node_modules|stack/i.test(app.log().replace(/ExperimentalWarning[^\n]*/g, '')), 'Server log must not contain stack traces for rejected requests');checks++;

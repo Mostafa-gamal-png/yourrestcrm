@@ -51,7 +51,7 @@ export function salesRecordAccess(members:Member[],me:Member){
    const id=author(row);return !!id&&team.has(id);
   },
   canManageMaster(row:Row){return me.role==='rep'&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo));},
-  canEditCustomerDetails(row:Row){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo));},
+  canEditCustomerDetails(row:Row){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);},
   canEditMachine(row:Row){return row.kind==='factory'&&(me.role==='rep'?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo)));},
  };
 }
@@ -73,4 +73,5 @@ export function canEditMachineRecord(row:Row,members:Member[],me:Member){return 
 export function canManageMasterRecord(row:Row,members:Member[],me:Member){return me.role==='rep'&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||salesScopeMemberIds(members,me).has(row.assignedTo));}
 
 /** The regional address book is shared; correcting it does not grant routing or history rights. */
-export function canEditCustomerDetails(row:Row,members:Member[],me:Member){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&salesScopeMemberIds(members,me).has(row.assignedTo));}
+/** Customer service (since 2026-11-07) corrects the customers of its branch, like a representative; callers apply the region boundary. */
+export function canEditCustomerDetails(row:Row,members:Member[],me:Member){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&salesScopeMemberIds(members,me).has(row.assignedTo)||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);}

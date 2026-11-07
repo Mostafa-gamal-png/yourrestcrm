@@ -32,7 +32,11 @@ export async function GET(){try{
 /** A write that went through may have added, edited or deleted a customer: the products application's list is checked shortly after. */
 export async function POST(req:Request){const response=await savePost(req);if(response.ok)nudgeMoldCustomers({soon:true});return response;}
 async function savePost(req:Request){try{
- checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;if(!serviceCustomerCreate)requireSalesRole(c.me);
+ checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;
+ // Customer service corrects a customer's details like a representative (the owner, 2026-11-07): the customers of their branch in their regions,
+ // never its responsible member or branch, never a delete, a machine or a commercial record.
+ const serviceCustomerEdit=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!!body.id&&!body.parentId;
+ if(!serviceCustomerCreate&&!serviceCustomerEdit)requireSalesRole(c.me);
  // Customer service no longer adds customers (the owner, 2026-11-07). Only the replay of a create committed before that release passes, so a
  // device's outbox retry gets its receipt instead of a refusal; nothing new is written for them.
  if(serviceCustomerCreate&&!(typeof body.createKey==='string'&&z.string().uuid().safeParse(body.createKey).success))throw new CRMError(serviceCustomerAddRefused,403);
@@ -90,7 +94,7 @@ async function savePost(req:Request){try{
  const replayReply=(record:{id:string;version:number;data:Record<string,unknown>},field:string)=>record.data[field]===requestFingerprint?Response.json({ok:true,id:record.id,alreadySaved:true}):Response.json({error:'الزيارة محفوظة بالفعل، لكن توجد تعديلات جديدة لم تُحفظ. راجعها واضغط حفظ مرة أخرى.',existingId:record.id,existingVersion:record.version},{status:409});
  const createKey=kind==='activity'&&!body.id&&body.createKey?z.string().uuid().parse(body.createKey):null;
  if(createKey){const existing=c.all.find(r=>r.id==='visit-'+createKey);if(existing){if(!c.visible.some(r=>r.id===existing.id))throw new CRMError('السجل غير متاح',404);return replayReply(existing,'_creationRequest');}}
- const projectedOld=body.id?c.visible.find(r=>r.id===body.id&&r.kind===kind):undefined;
+ const projectedOld=body.id?(serviceCustomerEdit?c.regionalRecords.find(r=>r.id===body.id&&r.kind==='customer'&&r.branch===c.me.branch):c.visible.find(r=>r.id===body.id&&r.kind===kind)):undefined;
  const old=projectedOld?c.all.find(r=>r.id===projectedOld.id):null;
  if(body.id&&!old)throw new CRMError('السجل غير موجود أو ليس لديك صلاحية',404);
  if(old&&!repCustomerEdit&&!repMachineSave)requireRecordEdit(c.me);
@@ -124,7 +128,7 @@ async function savePost(req:Request){try{
  }
  if(body.action!=='save')throw new CRMError('عملية غير صحيحة');
  if(kind==='activity')requireLegacyVisit(body.data,old||undefined);
- if(repCustomerEdit&&old&&(bodyData?.assignedTo!==undefined&&bodyData.assignedTo!==old.assignedTo||bodyData?.branch!==undefined&&bodyData.branch!==old.branch))throw new CRMError('لا يمكنك تغيير مسؤول العميل أو فرعه',403);
+ if((repCustomerEdit||serviceCustomerEdit)&&old&&(bodyData?.assignedTo!==undefined&&bodyData.assignedTo!==old.assignedTo||bodyData?.branch!==undefined&&bodyData.branch!==old.branch))throw new CRMError('لا يمكنك تغيير مسؤول العميل أو فرعه',403);
  if(repMachineSave){const owner=old?old.assignedTo:c.all.find(r=>r.id===body.parentId&&r.kind==='customer')?.assignedTo;if(owner!==c.me.id)throw new CRMError('ماكينات العميل يسجّلها مسؤوله فقط',403);}
  const input=repCustomerCreate&&bodyData?{...bodyData,assignedTo:c.me.id,branch:c.me.branch}:body.data,inputData=isRecord(input)?input:undefined;
  // Existing routing is canonical on the record, including legacy blank assignees.
@@ -186,7 +190,7 @@ async function savePost(req:Request){try{
   if(parent?.data.technicalStatus!=='approved')throw new CRMError('يجب اعتماد مواصفات القالب فنيًا قبل إنشاء عرض السعر');
   data.number=old?.data.number||`YR-${today().slice(0,4)}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;Object.assign(data,quoteTotals(data.items,data.discount,data.taxRate));
  }
- const permission=kind==='customer'&&old&&!customerRoutingChanged?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
+ const permission=kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
  // ERP source references may belong to several factories. The immutable CRM
  // number is allocated by the database; ambiguous ERP identities require review.
  if(syncFollowup){const parentPermission=accessGuard(c,parent);permission.sql+=' AND '+parentPermission.sql;permission.args.push(...parentPermission.args);}

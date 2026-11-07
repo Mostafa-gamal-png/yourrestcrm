@@ -45,7 +45,7 @@ import {isServiceRole} from '@/lib/customer-service';
 import { schemas, stages, stageLabels, roles, today, money, isOpen, isSalesRequest, followupTitle, quoteTotals, type Row, type Member } from '@/lib/crm';
 import { customerLocationProblem } from '@/lib/customer-fields';
 import { tidyLocationText } from '@/lib/customer-location';
-import {regionScope,regionLabels,regionValue} from '@/lib/regions';
+import {regionScope,regionLabels,regionValue,memberCanAccessRegion} from '@/lib/regions';
 import {MemberRegionField,CustomerRegionField} from './region-picker';
 import CustomerLocationFields,{CustomerClassificationFields} from './customer-entry-fields';
 import LanguageSwitch from './language-switch';
@@ -298,8 +298,11 @@ export default function CRM() {
     const effectiveStaffFilter=me?.role==='rep'?'all':staffFilter;
     const canSearch=me?.role!=='rep'||view==='customer';
     const searchQuery=canSearch?q:'';
-    const canEditRecord=(record:Row)=>!record.data._offlineState&&!record.data._offlineAcknowledged&&!!me&&!record.data._readOnly&&!record.data._masterReadOnly&&(me.role==='rep'?record.kind==='customer'||record.kind==='factory'&&record.assignedTo===me.id:record.kind==='activity'||salesWorkspace);
-    const canManageRecordRouting=(record:Row)=>canEditRecord(record)&&!record.data._masterRoutingReadOnly;
+    // Customer service corrects a customer's details like a representative (the owner, 2026-11-07): the customers of its branch in its regions, as the
+    // server allows (their rows arrive read only for everything else); never routing, delete, machines or commercial records.
+    const serviceDetailsEdit=(record:Row)=>!!me&&isServiceRole(me.role)&&record.kind==='customer'&&record.branch===me.branch&&memberCanAccessRegion(me,record.data.region);
+    const canEditRecord=(record:Row)=>!record.data._offlineState&&!record.data._offlineAcknowledged&&!!me&&(isServiceRole(me.role)?serviceDetailsEdit(record):!record.data._readOnly&&!record.data._masterReadOnly&&(me.role==='rep'?record.kind==='customer'||record.kind==='factory'&&record.assignedTo===me.id:record.kind==='activity'||salesWorkspace));
+    const canManageRecordRouting=(record:Row)=>canEditRecord(record)&&!record.data._masterRoutingReadOnly&&!!me&&!isServiceRole(me.role);
     const canDeleteRecord=(record:Row)=>!record.data._offlineState&&!record.data._offlineAcknowledged&&record.data.visitWorkflow!=='service-intake-v1'&&(me?.role==='admin'||me?.role!=='rep'&&canManageRecordRouting(record));
     const salesRecords=useMemo(()=>records.filter(r=>(!r.data._readOnly||r.data._offlineState||r.data._offlineAcknowledged)&&r.data.visitWorkflow!=='service-intake-v1'),[records]);
     // The list follows the typed text a moment later, so each letter appears at once and the list never holds the keyboard up.
@@ -354,9 +357,9 @@ export default function CRM() {
     } }
     function start(kind: string, r?: Row, parent?: string, specifications = false) {
         setFormDirty(false); setDiscardForm(false); setCustomerLocationPending(false);
-        const repCustomerCreate=me?.role==='rep'&&kind==='customer'&&!parent;
+        const repCustomerCreate=me?.role==='rep'&&kind==='customer'&&!parent,serviceCustomerEdit=!!me&&isServiceRole(me.role)&&kind==='customer'&&!!r&&!parent;
         const repMachine=me?.role==='rep'&&kind==='factory'&&(r?r.assignedTo===me.id:!!parent&&row(parent)?.assignedTo===me.id);
-        if(!me||(r&&!canEditRecord(r))||(kind==='team'&&!canViewPage(me.role,'team'))||(!['activity','followup','opportunity'].includes(kind)&&!salesWorkspace&&!repCustomerCreate&&!repMachine)||(kind==='opportunity'&&specifications&&!salesWorkspace))return;
+        if(!me||(r&&!canEditRecord(r))||(kind==='team'&&!canViewPage(me.role,'team'))||(!['activity','followup','opportunity'].includes(kind)&&!salesWorkspace&&!repCustomerCreate&&!repMachine&&!serviceCustomerEdit)||(kind==='opportunity'&&specifications&&!salesWorkspace))return;
         if(kind==='factory'&&!r&&parent&&row(parent)?.data._masterRoutingReadOnly)return;
         if(kind==='followup'){openFollowup(parent,r);return;}setFollowupEditor(null);
         if (kind === 'opportunity'&&!specifications || kind === 'activity') {
@@ -516,7 +519,7 @@ export default function CRM() {
  {me&&<CustomerRegionField value={form.data.region||''} me={me} disabled={busy||!!form.row?.data._masterRoutingReadOnly} onChange={v=>setField('region',v)}/>}
  <CustomerClassificationFields data={form.data} disabled={busy} onChange={setField}/>
  {t(field('phone', 'الجوال', 'tel'))}{t(field('contact', 'مسؤول التواصل'))}{t(field('city', 'المدينة'))}
- {me?.role!=='rep'&&(customerRoutingLocked?<><label className="field"><span>{t('فرع يورست المسؤول')}</span><input readOnly value={form.data.branch||''}/></label><label className="field"><span>{t('المندوب المسؤول')}</span><input readOnly value={customerAssignees.find(([id])=>id===form.data.assignedTo)?.[1]||say('غير محدد','Not assigned')}/></label></>:<>{t(field('branch', 'فرع يورست المسؤول', 'plain', true))}{t(pickField('assignedTo', 'المندوب المسؤول', customerAssignees, !manage))}</>)}
+ {me?.role!=='rep'&&!isServiceRole(me?.role||'')&&(customerRoutingLocked?<><label className="field"><span>{t('فرع يورست المسؤول')}</span><input readOnly value={form.data.branch||''}/></label><label className="field"><span>{t('المندوب المسؤول')}</span><input readOnly value={customerAssignees.find(([id])=>id===form.data.assignedTo)?.[1]||say('غير محدد','Not assigned')}/></label></>:<>{t(field('branch', 'فرع يورست المسؤول', 'plain', true))}{t(pickField('assignedTo', 'المندوب المسؤول', customerAssignees, !manage))}</>)}
  <CustomerLocationFields key={form.row?.id||form.createKey} data={form.data} editing={!!form.row} disabled={busy}
   onUpdate={update=>{if(masterSaveLock.current)return;setFormDirty(true);const key=form.row?.id||form.createKey;setForm(current=>current?.kind==='customer'&&(current.row?.id||current.createKey)===key?{...current,data:update(current.data)}:current);}}
   onPendingChange={setCustomerLocationPending}/>
