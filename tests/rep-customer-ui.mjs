@@ -189,9 +189,17 @@ eq(phoneCreate.state.draft.name,'','A phone search is not mistaken for a factory
 eq(phoneCreate.state.draft.phone,'٠٥٥ ١٢٣ ٤٥٦٧','Add after a phone search carries the entered number forward');
 const readOnly=harness('app/visit-customer-picker.tsx',{}, {...searchProps,me:{...me,readOnly:true}});
 eq(button(readOnly.render(),'إضافة عميل'),undefined,'Read-only users do not receive a create action');
+// Customer service picks an existing customer only (the owner, 2026-11-07): no create action, and «no match» does not invite adding.
+for(const role of ['customer_service','customer_service_manager']){
+ const service=harness('app/visit-customer-picker.tsx',{}, {...searchProps,value:'',me:{...me,role}}),serviceTree=service.render();
+ eq(button(serviceTree,'إضافة عميل'),undefined,role+' has no create action');eq(nodes(serviceTree,node=>node.props?.className==='visit-new-customer').length,0,role+' has no inline customer form');
+ eq(nodes(serviceTree,node=>node.props?.className==='visit-customer-no-results').map(text),['لا يوجد عميل مطابق. اختار عميل موجود أو اطلب من المبيعات يضيفه.'],role+' no-match text points to an existing customer or sales');
+}
+eq(nodes(harness('app/visit-customer-picker.tsx',{}, {...searchProps,value:''}).render(),node=>node.props?.className==='visit-customer-no-results').map(text),['لا يوجد عميل مطابق.'],'A representative still adds from the button');
 language='en';
 const english=harness('app/visit-customer-picker.tsx',{}, {...searchProps,value:'west'});
 ok(button(english.render(),'Change'),'Compact selected action is translated');
+eq(nodes(harness('app/visit-customer-picker.tsx',{}, {...searchProps,value:'',me:{...me,role:'customer_service'}}).render(),node=>node.props?.className==='visit-customer-no-results').map(text),['No matching customer. Choose an existing customer or ask sales to add them.'],'English no-match text for customer service');
 ok(text(english.render()).includes('Yourrest: YR-C-000123')&&text(english.render()).includes('ERP: W-20'),'Picker clearly labels both permanent and external codes');
 const englishSearch=harness('app/visit-customer-picker.tsx',{}, {...searchProps,value:''});
 ok(nodes(englishSearch.render(),node=>node.props?.placeholder==='Factory name, customer code or phone').length===1,'Mobile search prompt is translated');

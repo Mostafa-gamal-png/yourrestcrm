@@ -1,6 +1,6 @@
 import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {canUseSalesWorkspace,salesScopeMemberIds,recordAuthorId} from '@/lib/access';
-import {activeServiceCase,serviceHistoryLocked,isServiceRole,serviceVisitRecords,canReadService} from '@/lib/customer-service';
+import {activeServiceCase,serviceHistoryLocked,isServiceRole,serviceVisitRecords,canReadService,serviceCustomerAddRefused} from '@/lib/customer-service';
 import {serviceQueue} from '@/lib/service-queue';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
@@ -32,7 +32,11 @@ export async function GET(){try{
 /** A write that went through may have added, edited or deleted a customer: the products application's list is checked shortly after. */
 export async function POST(req:Request){const response=await savePost(req);if(response.ok)nudgeMoldCustomers({soon:true});return response;}
 async function savePost(req:Request){try{
- checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;if(!serviceCustomerCreate)requireSalesRole(c.me);const now=new Date().toISOString();const mutation=crypto.randomUUID();const canManage=['admin','manager'].includes(c.me.role);
+ checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>150000)throw new CRMError('حجم الطلب كبير');const c=await context();const serviceCustomerCreate=isServiceRole(c.me.role)&&body.action==='save'&&body.kind==='customer'&&!body.id&&!body.parentId;if(!serviceCustomerCreate)requireSalesRole(c.me);
+ // Customer service no longer adds customers (the owner, 2026-11-07). Only the replay of a create committed before that release passes, so a
+ // device's outbox retry gets its receipt instead of a refusal; nothing new is written for them.
+ if(serviceCustomerCreate&&!(typeof body.createKey==='string'&&z.string().uuid().safeParse(body.createKey).success))throw new CRMError(serviceCustomerAddRefused,403);
+ const now=new Date().toISOString();const mutation=crypto.randomUUID();const canManage=['admin','manager'].includes(c.me.role);
  const offline=offlineCapture(body,c.me.id,now);if(offline&&(body.action!=='save'||body.kind!=='customer'||body.id||body.parentId||!body.createKey))throw new CRMError('هذا الإجراء يتطلب اتصالًا مباشرًا.');
  const bodyData=isRecord(body.data)?body.data:undefined;
  if(body.action==='member'){
@@ -75,6 +79,7 @@ async function savePost(req:Request){try{
  const genericFingerprint=genericCreateKey?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(body))))).map(n=>n.toString(16).padStart(2,'0')).join(''):'';
  const replayCreate=async()=>{if(!genericCreateKey)return null;const receipt=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=? AND record_id=?').bind(genericReceiptId,genericId).first<{detail:string}>();if(!receipt)return null;const fresh=await context(),record=fresh.all.find(r=>r.id===genericId);if(!record||!fresh.visible.some(r=>r.id===record.id)&&!(isServiceRole(fresh.me.role)&&record.kind==='customer'&&record.data._createdBy===fresh.me.id&&record.branch===fresh.me.branch&&memberCanAccessRegion(fresh.me,record.data.region)))throw new CRMError('السجل غير متاح',404);if(receipt.detail!==genericFingerprint)throw new CRMError('تم حفظ هذه العملية بالفعل. أعد فتح السجل لحفظ تعديلات إضافية.',409);return Response.json({ok:true,id:genericId,alreadySaved:true});};
  const createdReplay=await replayCreate();if(createdReplay)return createdReplay;
+ if(serviceCustomerCreate)throw new CRMError(serviceCustomerAddRefused,403);
  const clockAction=body.clockAction===undefined?undefined:z.enum(['start','finish']).parse(body.clockAction);if(clockAction&&(kind!=='activity'||body.action!=='save'))throw new CRMError('عملية توقيت غير صالحة');
  let requestFingerprint='';
  if(kind==='activity'&&body.action==='save'){

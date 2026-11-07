@@ -3,6 +3,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import {DatabaseSync} from 'node:sqlite';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 // Isolated handler integration checks: real SQL migrations and domain code; mocked identity and R2.
 // No network requests or production writes. Run from the repository root.
 const root=process.cwd(),runtime=path.join(root,'.sites-runtime');
@@ -41,7 +42,9 @@ const intake={source:'website',products:['قوالب البلوك المتحرك
 const create=async(customerId='factory',status=200,extra={})=>post(service,{action:'create',requestId:crypto.randomUUID(),customerId,customerVersion:raw(customerId)?.version,data:intake,...extra},status);
 const act=async(item,action,extra={},status=200)=>post(service,{action,requestId:crypto.randomUUID(),id:item.id,version:item.version,...extra},status);
 user('cs');let projected=(await (await crm.GET()).json()).records;assert.deepEqual(projected.map(r=>r.id),['factory']);assert.equal(projected[0].data._readOnly,true);checks+=2;
-await post(crm,{action:'save',kind:'customer',data:{name:'forged',branch:'الرئيسي',assignedTo:'cs'}},403);
+// Customer service never adds a customer (the owner, 2026-11-07): every create path answers both service roles with this reason.
+const refused='إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.',customerCount=()=>sql.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='customer'").get().n;
+assert.equal((await post(crm,{action:'save',kind:'customer',data:{name:'forged',branch:'الرئيسي',assignedTo:'cs'}},403)).error,refused);checks++;
 assert.equal((await sales.GET(new Request('https://test.invalid/api/sales'))).status,403);checks++;
 await create('west-factory',403);await create('factory',400,{data:{...intake,nextAction:''}});
 const created=await create(),id=created.id;let item=await getCase(id);assert.equal(item.state,'pending_approval');assert.equal(item.assignedTo,null);assert.equal(item.serviceManagerId,'csm');checks+=3;
@@ -68,11 +71,14 @@ user('cs');item=await getCase(id);assert.equal(item.state,'won');assert.equal(it
 // Historic participants keep tracking, but the region remains a ceiling.
 sql.prepare("UPDATE crm_members SET supervisor_id='other-csm' WHERE id='cs'").run();assert.equal((await getCase(id)).state,'won');checks++;sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='cs'").run();assert.equal((await list()).cases.length,0);checks++;sql.prepare("UPDATE crm_members SET region_scope='eastern',supervisor_id='csm' WHERE id='cs'").run();
 const fresh=await create();assert.notEqual(fresh.id,id);checks++;
-// Intake creates a new customer atomically; audit failure rolls both back.
-user('cs');const nc={action:'create',requestId:crypto.randomUUID(),newCustomer:{name:'New factory',phone:'0500000000',region:'الشرقية'},data:{...intake,source:'social'}};auditFailure=true;await post(service,nc,500);auditFailure=false;assert.equal(raw('service-customer-'+nc.requestId),undefined);checks++;
-const ncResult=await post(service,nc);assert.equal((await post(service,nc)).alreadySaved,true);assert.equal(row(ncResult.customerId).data._createdBy,'cs');checks+=2;
+// A new customer with the request is refused for both service roles and writes nothing (the owner, 2026-11-07); they pick an existing one.
+const nc={action:'create',requestId:crypto.randomUUID(),newCustomer:{name:'New factory',phone:'0500000000',region:'الشرقية'},data:{...intake,source:'social'}};
+for(const actor of ['cs','csm']){user(actor);const before=customerCount();assert.equal((await post(service,{...nc,requestId:crypto.randomUUID()},403)).error,refused);assert.equal(customerCount(),before);assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE json_extract(data,'$.name')='New factory'").get().n,0);checks+=3;}
+// The administrator still creates a new customer with the request atomically; audit failure rolls both back.
+user('owner');auditFailure=true;await post(service,nc,500);auditFailure=false;assert.equal(raw('service-customer-'+nc.requestId),undefined);checks++;
+const ncResult=await post(service,nc);assert.equal((await post(service,nc)).alreadySaved,true);assert.equal(row(ncResult.customerId).data._createdBy,'owner');checks+=2;
 // Missing routing is visible to admin alone until it is configured.
-user('unrouted');const ur=await post(service,{...nc,requestId:crypto.randomUUID(),newCustomer:{...nc.newCustomer,name:'Unrouted'}});user('csm');assert.equal((await list()).cases.some(s=>s.id===ur.id),false);checks++;user('owner');assert.equal((await getCase(ur.id)).permissions.approve,true);checks++;
+customer('unrouted-factory');user('unrouted');const ur=await create('unrouted-factory');user('csm');assert.equal((await list()).cases.some(s=>s.id===ur.id),false);checks++;user('owner');assert.equal((await getCase(ur.id)).permissions.approve,true);checks++;
 // Administrators can delete historical contacts, without replacing the newer active case.
 user('owner');await post(crm,{action:'delete',kind:'activity',id:closed.id,version:raw(closed.id).version});assert.equal(raw(closed.id),undefined);assert.equal((await getCase(fresh.id)).state,'pending_approval');checks+=2;
 await post(visits,{id:v.id,version:raw(v.id).version,createKey:crypto.randomUUID(),customerId:'factory'},409);
@@ -117,8 +123,10 @@ const uploadResult=await upload('factory');assert.equal(uploadResult.status,200)
 user('cs2');assert.equal((await files.GET(new Request('https://test.invalid/api/visit-files?id='+uploaded.id))).status,404);checks++;
 // Unified registration: shared fields, repeat contacts, durable numbers, immutable actor/GPS, no sales writes.
 user('cs');
-const inline=await post(crm,{action:'save',kind:'customer',data:{name:'Inline unified',region:'الشرقية',assignedTo:'rep',branch:'forged'}});
-assert.equal(raw(inline.id).assigned_to,'cs');assert.equal(raw(inline.id).branch,'الرئيسي');assert.equal(row(inline.id).data._createdBy,'cs');checks+=3;
+// The inline create of the opportunity form is refused and writes nothing; the registration below goes on a customer sales added.
+for(const actor of ['cs','csm']){user(actor);const before=customerCount();assert.equal((await post(crm,{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Inline unified',region:'الشرقية',assignedTo:'rep',branch:'forged'}},403)).error,refused);assert.equal(customerCount(),before);checks+=2;}
+user('cs');customer('inline-unified');const inline={id:'inline-unified'};
+// Customer details stay as they were for customer service: read only (no edit, delete or machine), as before 2026-11-07.
 await post(crm,{action:'save',kind:'customer',id:inline.id,version:1,data:row(inline.id).data},403);
 await post(crm,{action:'delete',kind:'customer',id:inline.id,version:1},403);
 await post(crm,{action:'save',kind:'factory',parentId:inline.id,data:{}},403);
@@ -184,8 +192,17 @@ await post(crm,{...legacyEdit,id:racingLegacy.id,version:1,data:row(racingLegacy
 }
 // Frozen assignee role and branch prevent a stale assignment committing.
 for(const [column,value] of [['role','customer_service'],['branch','آخر']]){race=()=>sql.prepare('UPDATE crm_members SET '+column+'=? WHERE id=?').run(value,'rep');await post(crm,{...genericBody,createKey:crypto.randomUUID(),data:{...genericBody.data,name:'racing '+column}},409);sql.prepare("UPDATE crm_members SET role='rep',branch='الرئيسي' WHERE id='rep'").run();}
-// The response-loss retry is also safe for inline CSR-created customers.
-user('cs');const csrBody={...genericBody,createKey:crypto.randomUUID(),data:{...genericBody.data,name:'CSR retry'}};const csrCreated=await post(crm,csrBody);assert.equal((await post(crm,csrBody)).id,csrCreated.id);checks++;
+// A customer-service create committed before 2026-11-07 still answers its device's retry with the receipt and writes nothing new;
+// a new one is refused, with a well-formed key or without one.
+user('cs');const csrBody={...genericBody,createKey:crypto.randomUUID(),data:{...genericBody.data,name:'CSR retry'}};
+{const csrId='crm-cs-'+csrBody.createKey;
+sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,'cs','الرئيسي',?,?,?,1,'before-release')").run(csrId,JSON.stringify({...csrBody.data,assignedTo:'cs',branch:'الرئيسي',_createdBy:'cs'}),now,now);
+sql.prepare("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,'cs','crm-create-receipt',?,?)").run('crm-create:cs:'+csrBody.createKey,csrId,createHash('sha256').update(JSON.stringify(csrBody)).digest('hex'),now);
+const before=customerCount(),replayed=await post(crm,csrBody);assert.equal(replayed.id,csrId);assert.equal(replayed.alreadySaved,true);assert.equal(customerCount(),before);checks+=3;
+for(const body of [{...csrBody,createKey:crypto.randomUUID()},{...csrBody,createKey:'not-a-key'},{...csrBody,createKey:undefined}])assert.equal((await post(crm,body,403)).error,refused);
+user('csm');assert.equal((await post(crm,{...csrBody,createKey:crypto.randomUUID()},403)).error,refused);assert.equal(customerCount(),before);checks+=5;}
+// Sales roles and the administrator keep adding customers.
+for(const actor of ['owner','sm','sup','rep']){user(actor);const added=await post(crm,{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Added by '+actor,region:'الشرقية',branch:'الرئيسي',assignedTo:actor==='owner'?'rep':actor,location:'26.437341, 50.034499'}});assert.equal(row(added.id).data._createdBy,actor);checks++;}
 // Authentication and cross-origin checks exercise every current application entry point.
 const endpointNames=['crm','customer-service','visits','customer-followups','followups','sales','targets','kpis'];
 for(const name of endpointNames){globalThis.testUser=null;await post(await api(name),{action:'create',requestId:crypto.randomUUID(),createKey:crypto.randomUUID(),customerId:'factory'},401);}

@@ -147,6 +147,34 @@ try {
   check((await manager('/api/crm', {method: 'POST', body: {action: 'member', data: {name: 'x', email: 'x@yourrest.org', role: 'admin', branch: 'b', active: 1, target: 0}}})).status, 403, 'manager cannot manage members');
   const rows = await app.db.prepare("SELECT COUNT(*) AS n FROM crm_sales WHERE reference='INV-forbidden'").first();
   check(rows.n, 0, 'rejected writes leave no rows');
+  // 5. Adding customers (the owner, 2026-11-07): customer service picks an existing customer and never adds one, by any route;
+  // sales and the administrator keep adding; customer service keeps registering requests on existing customers.
+  const refused = 'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.';
+  const customerTotal = async () => (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='customer'").first()).n;
+  for (const id of everyone) {
+    const before = await customerTotal(), service = id === 'cs' || id === 'csm';
+    const added = await app.as(sessions[id])('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'إضافة ' + id, region: id === 'repw' || id === 'mgrw' ? 'الغربية' : 'الشرقية', branch: 'الرئيسي', assignedTo: ['owner', 'csm', 'cs'].includes(id) ? 'rep1' : id}}});
+    check(added.status, service ? 403 : 200, 'POST /api/crm customer create as ' + id + ': ' + added.text);
+    if (service) check(added.json().error, refused, id + ' is told why');
+    check(await customerTotal(), before + (service ? 0 : 1), id + (service ? ' wrote no customer' : ' added one customer'));
+  }
+  const intake = {source: 'website', products: ['قوالب البلوك المتحركة'], strength: 'strong', needs: 'احتياج', nextAction: 'تحديد المواصفات', nextDate: day};
+  for (const id of ['cs', 'csm', 'owner']) {
+    const before = await customerTotal();
+    const withNew = await app.as(sessions[id])('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), newCustomer: {name: 'طلب بعميل جديد ' + id, phone: '0500000000', region: 'الشرقية'}, data: intake}});
+    check(withNew.status, id === 'owner' ? 200 : 403, 'POST /api/customer-service with a new customer as ' + id + ': ' + withNew.text);
+    if (id !== 'owner') check(withNew.json().error, refused, id + ' is told why (service request)');
+    check(await customerTotal(), before + (id === 'owner' ? 1 : 0), id + ' service request customer count');
+  }
+  const existing = await app.db.prepare('SELECT version FROM crm_records WHERE id=?').bind(ids.e2).first();
+  const onExisting = await app.as(sessions.cs)('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: ids.e2, customerVersion: existing.version, data: intake}});
+  check(onExisting.status, 200, 'customer service still registers a request on an existing customer: ' + onExisting.text);
+  for (const id of ['cs', 'csm']) {
+    const row = await app.db.prepare('SELECT data,version FROM crm_records WHERE id=?').bind(ids.e1).first();
+    const edit = await app.as(sessions[id])('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: ids.e1, version: row.version, data: {...JSON.parse(row.data), phone: '0509999999'}}});
+    check(edit.status, 403, id + ' customer details stay read only, as before');
+  }
+
   assert(!/at .*node_modules|stack/i.test(app.log().replace(/ExperimentalWarning[^\n]*/g, '')), 'Server log must not contain stack traces for rejected requests');checks++;
 
   console.log(JSON.stringify({ok: true, checks, builtRelease: true, syntheticFixtures: true, productionDataUsed: false}));

@@ -20,7 +20,7 @@ const DB={prepare:q=>new Statement(q),batch:async statements=>{if(race){const fn
 globalThis.testEnv={DB,YR_APP_ORIGIN:'https://test.invalid'};
 const now=new Date().toISOString(),day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const member=(id,role,region='eastern',branch='الرئيسي')=>sql.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,?,1,0,?)').run(id,'u-'+id,id+'@yourrest.org',id,role,branch,region,now);
-member('owner','admin','all');member('rep','rep');member('peer','rep');member('west','rep','western');member('all-rep','rep','all');member('unassigned-rep','rep','unassigned');member('cs','customer_service');
+member('owner','admin','all');member('rep','rep');member('peer','rep');member('west','rep','western');member('all-rep','rep','all');member('unassigned-rep','rep','unassigned');member('cs','customer_service');member('csm','customer_service_manager');
 sql.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('company','u-owner')").run();
 const user=id=>{globalThis.testUser=id?{userId:'u-'+id,email:id+'@yourrest.org',fullName:id}:null;};
 const crm=await import(path.join(out,'app/api/crm/route.mjs')),visits=await import(path.join(out,'app/api/visits/route.mjs')),addressApi=await import(path.join(out,'app/api/customer-address/route.mjs')),serviceApi=await import(path.join(out,'app/api/customer-service/route.mjs'));
@@ -81,7 +81,9 @@ const simultaneous=await post(duplicate);check(count(),previous+2);check(!!raw(s
 user('all-rep');const all=await post(create({region:'الغربية'}));check(row(all.id).data.region,'الغربية');check(row(all.id).assigned_to,'all-rep');
 user('unassigned-rep');const unassigned=await post(create({region:''}));check(row(unassigned.id).data.region,'');await post(create({region:'الشرقية'}),403);
 // The existing service intake creation and admin workflows are unaffected.
-user('cs');const service=await post(create({assignedTo:'cs',branch:'الرئيسي'}));check(row(service.id).data._createdBy,'cs');
+// Customer service picks an existing customer and never adds one (the owner, 2026-11-07); nothing is written.
+const serviceRefused='إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.';
+for(const actor of ['cs','csm']){user(actor);const before=count();check((await post(create({assignedTo:actor,branch:'الرئيسي'}),403)).error,serviceRefused,actor+' cannot add a customer');check(count(),before);}
 user('owner');await post({action:'save',kind:'customer',id:saved.id,version:raw(saved.id).version,data:{...row(saved.id).data,name:'تحديث الإدارة'}});check(row(saved.id).data.name,'تحديث الإدارة');
 user('rep');const finalCount=count();await post(create(),403,crm,'https://foreign.invalid');user(null);await post(create(),401);check(count(),finalCount);
 // New customer GPS and short-address fields survive persistence, retries, and old-client admin edits.
@@ -112,8 +114,9 @@ await post({action:'save',kind:'customer',id:gpsSaved.id,version:raw(gpsSaved.id
 await post({action:'save',kind:'customer',id:gpsSaved.id,version:raw(gpsSaved.id).version,data:{...row(gpsSaved.id).data,location:'26.45,50.05',latitude:26.45,longitude:50.05}},400);
 const manual={...row(gpsSaved.id).data,location:'26.45,50.05',latitude:null,longitude:null,locationSource:undefined,locationCapturedAt:'',locationAccuracy:undefined};
 await post({action:'save',kind:'customer',id:gpsSaved.id,version:raw(gpsSaved.id).version,data:manual});check(row(gpsSaved.id).data.locationSource,undefined);check(row(gpsSaved.id).data.locationAccuracy,undefined);check(row(gpsSaved.id).data.latitude,26.45);
-// The strict legacy service-inline schema accepts and retains the same new fields.
-user('cs');sql.prepare("UPDATE crm_members SET supervisor_id='owner' WHERE id='cs'").run();
+// The strict legacy service-inline schema (the administrator's alone since 2026-11-07) accepts and retains the same new fields.
+user('cs');{const before=count();check((await post({action:'create',requestId:crypto.randomUUID(),newCustomer:{name:'Service inline',phone:'0551111112',region:'الشرقية',location:'26.437341, 50.034499'},data:{source:'website',products:['قوالب البلوك المتحركة'],strength:'strong',needs:'احتياج',nextAction:'تحديد المواصفات',nextDate:day}},403,serviceApi)).error,serviceRefused);check(count(),before);}
+user('owner');
 const inlineBody={action:'create',requestId:crypto.randomUUID(),newCustomer:{name:'Inline GPS customer',phone:'0551111111',region:'الشرقية',location:'26.437341, 50.034499',...gps},data:{source:'website',products:['قوالب البلوك المتحركة'],strength:'strong',needs:'احتياج لقوالب جديدة',nextAction:'تحديد المواصفات',nextDate:day}};
 await post(inlineBody,200,serviceApi);check(row('service-customer-'+inlineBody.requestId).data.shortAddress,'ABCD1234');check(row('service-customer-'+inlineBody.requestId).data.locationSource,'device');
 // Address resolution authorizes before provider access and never transmits GPS when unconfigured.

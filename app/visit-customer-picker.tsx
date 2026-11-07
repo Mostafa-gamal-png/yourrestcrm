@@ -45,7 +45,8 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
     const [popupHost, setPopupHost] = useState<HTMLDivElement | null>(null);
     const [draft, setDraft] = useState<CustomerData>({ name: '', code: '', region: regionValue(me), city: '', contact: '', phone: '', location: '', shortAddress: '', address: '', customerType: '', customerStatus: '', category: '' });
     const selected = customers.find(r => r.id === value) || null;
-    const canCreate = !me.readOnly && ['rep', 'supervisor', 'manager', 'admin', 'customer_service', 'customer_service_manager'].includes(me.role);
+    // Customer service picks an existing customer only (the owner, 2026-11-07); the server refuses their creates too.
+    const canCreate = !me.readOnly && ['rep', 'supervisor', 'manager', 'admin'].includes(me.role), service = ['customer_service', 'customer_service_manager'].includes(me.role);
     const searchIndex = useMemo(() => customers.map(customer => ({
         customer,
         text: normalize([customer.data.name, customer.data.internalCode, customer.data.code, customer.data.region, customer.data.city, customer.data.contact, customer.data.phone, customer.data.phone2].filter(Boolean).join(' ')),
@@ -127,7 +128,7 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
                     <ComboboxPrimitive.Positioner sideOffset={6} align="start" className="visit-customer-positioner">
                         <ComboboxPrimitive.Popup className="visit-customer-popup" dir={direction()}>
                             <ComboboxList>{(r: Row) => <ComboboxItem key={r.id} value={r} className="visit-customer-option"><span><strong>{r.data.name}</strong><small>{customerMeta(r) || t('بدون رقم أو منطقة')}{r.data.phone && <><span aria-hidden="true"> · </span><bdi>{r.data.phone}</bdi></>}</small></span></ComboboxItem>}</ComboboxList>
-                            <ComboboxPrimitive.Empty className="visit-customer-no-results">{canCreate?say('لا يوجد عميل مطابق.','No matching customer.'):say('لا يوجد عميل مطابق في منطقتك. اطلب إضافته من المشرف.','No matching customer in your region. Ask your supervisor to add them.')}</ComboboxPrimitive.Empty>
+                            <ComboboxPrimitive.Empty className="visit-customer-no-results">{canCreate?say('لا يوجد عميل مطابق.','No matching customer.'):service?say('لا يوجد عميل مطابق. اختار عميل موجود أو اطلب من المبيعات يضيفه.','No matching customer. Choose an existing customer or ask sales to add them.'):say('لا يوجد عميل مطابق في منطقتك. اطلب إضافته من المشرف.','No matching customer in your region. Ask your supervisor to add them.')}</ComboboxPrimitive.Empty>
                             {matches.length > 40 && <p className="visit-customer-no-results">{say('اكتب المزيد لتقليل النتائج.', 'Type more to narrow the results.')}</p>}
                         </ComboboxPrimitive.Popup>
                     </ComboboxPrimitive.Positioner>

@@ -44,10 +44,12 @@ for(const role of ['rep','supervisor','manager','admin','customer_service','cust
  const html=renderToStaticMarkup(React.createElement(NavMenu,{view:'activity',role,go:noop}));
  for(const [id,label] of pages){const expected=role==='rep'?['customer','map','activity','followup','targets'].includes(id):role.startsWith('customer_service')?id==='activity'||id==='complaints':role==='admin'?id!=='reports':['manager','supervisor'].includes(role)?!['team','reports','complaints'].includes(id):false;check(html.includes('>'+(role==='rep'&&id==='targets'?'مستهدفي':role.startsWith('customer_service')&&id==='activity'?'الفرص':label)+'<'),expected,role+' navigation '+id);}
 }
-for(const role of ['rep','supervisor','manager','admin','customer_service']){
+// Customer service picks an existing customer only (the owner, 2026-11-07): no «إضافة عميل» in the opportunity form's picker.
+for(const role of ['rep','supervisor','manager','admin','customer_service','customer_service_manager']){
  const html=renderToStaticMarkup(React.createElement(Picker,{customers:[],value:'',me:{id:'test',role,branch:'الرئيسي',regionScope:'eastern'},disabled:false,locked:false,onChange:noop,onCreated:noop,onCreating:noop,onSaving:noop}));
- check(html.includes('<button'),true,role+' customer creation button');
- check(html.includes('visit-add-customer')&&html.includes('إضافة عميل'),true,role+' accessible inline customer creation action');
+ const creates=!role.startsWith('customer_service');
+ check(html.includes('<button'),creates,role+' customer creation button');
+ check(html.includes('visit-add-customer')||html.includes('إضافة عميل'),creates,role+' accessible inline customer creation action');
 }
 
 
