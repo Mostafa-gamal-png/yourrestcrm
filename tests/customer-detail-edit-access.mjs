@@ -20,7 +20,7 @@ const DB={prepare:q=>new Statement(q),batch:async statements=>{if(race){const fn
 globalThis.testEnv={DB,YR_APP_ORIGIN:'https://test.invalid'};
 const now=new Date().toISOString(),day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const member=(id,role,region='eastern',branch='الرئيسي')=>sql.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,?,1,0,?)').run(id,'u-'+id,id+'@yourrest.org',id,role,branch,region,now);
-member('owner','admin','all');member('rep','rep');member('peer','rep');member('west','rep','western');member('all-rep','rep','all');member('unassigned-rep','rep','unassigned');member('cs','customer_service');
+member('owner','admin','all');member('rep','rep');member('peer','rep');member('west','rep','western');member('all-rep','rep','all');member('unassigned-rep','rep','unassigned');member('cs','customer_service');member('csm','customer_service_manager');
 sql.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('company','u-owner')").run();
 const user=id=>{globalThis.testUser=id?{userId:'u-'+id,email:id+'@yourrest.org',fullName:id}:null;};
 const crm=await import(path.join(out,'app/api/crm/route.mjs'));
@@ -88,7 +88,9 @@ user('all-manager');await post(edit('admin-owned',{region:'الغربية'}),403
 const newMachine={action:'save',kind:'factory',parentId:'admin-owned',data:{name:'Forbidden machine',machineBrand:'QA',machineModel:'QA',machineType:'mobile'}};
 await post(newMachine,403);
 user('rep');await post(newMachine,403);
-user('cs');await post(edit('admin-owned',{phone:'0502222222'}),403);
+// Customer service: customer details stay read only, exactly as before 2026-11-07 (that release only took away adding customers).
+for(const actor of ['cs','csm']){user(actor);const before=snapshot('admin-owned');check((await post(edit('admin-owned',{phone:'0502222222'}),403)).error,'هذا الإجراء متاح لفريق المبيعات فقط',actor+' edit refused as before');check(snapshot('admin-owned'),before);
+ check((await post(create(),403)).error,'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.',actor+' cannot add a customer');}
 
 // Existing eligible team routing remains usable. New/rerouted customers retain validation.
 user('manager');await post(edit('peer-owned',{assignedTo:'rep'}));check(row('peer-owned').assigned_to,'rep');

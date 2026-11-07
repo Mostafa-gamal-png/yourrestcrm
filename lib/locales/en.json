@@ -1433,5 +1433,6 @@
   "الطلب غير موجود لدى الإنتاج؛ حدّث الصفحة.": "Production does not know this request; refresh the page.",
   "مرجع الطلب غير صحيح؛ حدّث الصفحة.": "The request's reference is not valid; refresh the page.",
   "حدد الطلب": "Choose the request",
-  "تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.": "The request could not be confirmed just now; refresh the page and try again."
+  "تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.": "The request could not be confirmed just now; refresh the page and try again.",
+  "إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.": "Customer service cannot add customers; choose an existing customer or ask sales to add them."
 }
