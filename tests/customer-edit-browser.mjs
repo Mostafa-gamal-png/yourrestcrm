@@ -45,7 +45,8 @@ try{
   {id:'rep1',name:'QA rep one',role:'rep',supervisor:'supervisor',region:'western'},
   {id:'rep2',name:'QA rep two',role:'rep',supervisor:'supervisor',region:'western'},
   {id:'outsider',name:'QA outside team',role:'rep',supervisor:null,region:'western'},
-  {id:'eastrep',name:'QA other region',role:'rep',supervisor:'supervisor',region:'eastern'}
+  {id:'eastrep',name:'QA other region',role:'rep',supervisor:'supervisor',region:'eastern'},
+  {id:'cs1',name:'QA customer service',role:'customer_service',supervisor:null,region:'western'}
  ];
  // A representative uses the system only from the Android app (mandatory route tracking); the app is emulated for their pages.
  const nativeReps=Object.fromEntries(members.filter(member=>member.role==='rep').map(member=>[member.id,member.region||'all']));
@@ -206,8 +207,36 @@ try{
  await managerSheet.getByRole('button',{name:'الخريطة',exact:true}).click();await managerPage.locator('.cm-selected-card').waitFor();
  await managerPage.getByRole('button',{name:'الاتجاهات',exact:true}).click();const managerMaps=managerPage.getByRole('link',{name:'فتح Google Maps',exact:true});await managerMaps.waitFor();
  ok(decodeURIComponent(await managerMaps.getAttribute('href')).includes('24.7134,46.6134'),'Manager map directions use saved coordinates');
- await snapshot(managerPage,'manager-updated-customer-map');eq(errors,[],'No uncaught browser errors');
- const report={ok:true,checks,actualBuiltRelease:true,realSqlite:true,mockedDeviceLocation:true,physicalDeviceTested:false,deployedToNamecheap:false,coverage:['representative edits regional customer assigned to global administrator','sales manager edits same retained customer','phone and location changes persist to SQLite','assignment and branch remain unchanged','manager routing fields are read-only','explicit GPS refresh','manual coordinate save','fresh map coordinates for both roles','delete and add-machine permissions are not expanded','repeated banner removed'],geometry,screenshots:saved};
+ await snapshot(managerPage,'manager-updated-customer-map');
+ // Customer service (the owner, 2026-11-07): no «إضافة عميل» in «فرصة جديدة», but the customer card opens the representative's edit form,
+ // without the responsible member, branch, delete or machines; the edit keeps the routing; outside its region and adding are refused.
+ const serviceCtx=await context(),servicePage=await firstPage(serviceCtx);await signin(servicePage,'cs1');await nav(servicePage,'activity');
+ await servicePage.getByRole('button',{name:'فرصة جديدة',exact:true}).first().click();const serviceVisit=servicePage.locator('.customer-visit-dialog');await serviceVisit.waitFor();
+ eq(await serviceVisit.getByRole('button',{name:'إضافة عميل',exact:true}).count(),0,'Customer service has no add-customer action');
+ await serviceVisit.locator('#visit-customer-search').fill('مصنع غير موجود إطلاقا');
+ await servicePage.locator('.visit-customer-no-results').filter({hasText:'اختار عميل موجود أو اطلب من المبيعات يضيفه'}).waitFor();checks++;
+ await serviceVisit.locator('#visit-customer-search').fill('مصنع الاختبار الثاني');await servicePage.getByRole('option').filter({hasText:'مصنع الاختبار الثاني'}).waitFor();await serviceVisit.locator('#visit-customer-search').press('Enter');
+ await serviceVisit.locator('.visit-context-details>summary').filter({hasText:'بيانات العميل'}).click();await serviceVisit.getByRole('button',{name:'فتح بطاقة العميل',exact:true}).click();
+ const serviceSheet=servicePage.locator('.crm-sheet'),leave=servicePage.getByRole('button',{name:'خروج بدون حفظ',exact:true});
+ await eventually(async()=>await serviceSheet.isVisible()||await leave.isVisible(),'Customer card or leave prompt');if(await leave.isVisible())await leave.click();await serviceSheet.waitFor();
+ eq(await serviceSheet.getByRole('button',{name:'تعديل',exact:true}).count(),1,'Customer service can edit a customer of its branch and region');
+ eq(await serviceSheet.getByRole('button',{name:'حذف السجل',exact:true}).count(),0,'Customer service cannot delete');
+ eq(await serviceSheet.getByRole('button',{name:/^إضافة ماكينة/}).count(),0,'Customer service cannot add a machine');
+ await serviceSheet.getByRole('button',{name:'تعديل',exact:true}).click();
+ const serviceDialog=servicePage.locator('[role=dialog]').filter({has:servicePage.locator('form')});await serviceDialog.waitFor();
+ for(const label of ['فرع يورست المسؤول','المندوب المسؤول']){eq(await serviceDialog.getByRole('textbox',{name:label,exact:true}).count(),0,'Customer service form has no '+label);eq(await serviceDialog.getByRole('combobox',{name:label,exact:true}).count(),0,'Customer service form has no selector for '+label);}
+ eq(await serviceDialog.getByRole('textbox',{name:'الجوال',exact:true}).inputValue(),'0502222222','Customer service sees the saved phone');
+ await serviceDialog.getByRole('textbox',{name:'الجوال',exact:true}).fill('0504444444');await serviceDialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('21.6, 39.3');
+ await snapshot(servicePage,'customer-service-customer-edit');
+ const serviceSave=servicePage.waitForResponse(r=>new URL(r.url()).pathname==='/api/crm'&&r.request().method()==='POST');
+ await serviceDialog.getByRole('button',{name:/^حفظ /}).click();eq((await serviceSave).status(),200,'Customer service actual form save accepted');await serviceDialog.waitFor({state:'detached'});
+ const serviceStored=await db.prepare("SELECT assigned_to,branch,data FROM crm_records WHERE id='west2'").first();
+ eq([JSON.parse(serviceStored.data).phone,JSON.parse(serviceStored.data).latitude,serviceStored.assigned_to,serviceStored.branch],['0504444444',21.6,'owner','Main'],'Customer service edit persisted with routing kept');
+ const eastRow=await db.prepare("SELECT data,version FROM crm_records WHERE id='east'").first();
+ eq((await request(servicePage,'/api/crm',{action:'save',kind:'customer',id:'east',version:eastRow.version,data:{...JSON.parse(eastRow.data),phone:'0505555555'}})).status,404,'Customer service cannot edit outside its region');
+ eq((await request(servicePage,'/api/crm',{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'إضافة خدمة العملاء',region:'الغربية',branch:'Main',assignedTo:'cs1'}})).data.error,'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.','Customer service cannot add a customer');
+ eq(errors,[],'No uncaught browser errors');
+ const report={ok:true,checks,actualBuiltRelease:true,realSqlite:true,mockedDeviceLocation:true,physicalDeviceTested:false,deployedToNamecheap:false,coverage:['representative edits regional customer assigned to global administrator','sales manager edits same retained customer','phone and location changes persist to SQLite','assignment and branch remain unchanged','manager routing fields are read-only','customer service edits a customer of its branch and region like a representative (no routing fields, delete or machines; outside region 404; adding refused)','explicit GPS refresh','manual coordinate save','fresh map coordinates for both roles','delete and add-machine permissions are not expanded','repeated banner removed'],geometry,screenshots:saved};
  await writeFile('docs/CUSTOMER-EDIT-BROWSER-VERIFICATION.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
 }catch(error){console.error('Customer edit browser workflow failed:',error.stack);if(lastPage){try{console.error('UI state:',await lastPage.locator('body').innerText());await lastPage.screenshot({path:path.join(screenshots,'failure.png'),fullPage:false});}catch{}}if(log)console.error('Isolated server diagnostics:',log.replace(/[a-f0-9]{64}/gi,'[redacted]'));process.exitCode=1;}
 finally{await browser?.close();if(proxy){proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));}if(child&&child.exitCode===null){child.kill();await once(child,'exit');}db?.close();await rm(work,{recursive:true,force:true});}

@@ -88,8 +88,12 @@ user('all-manager');await post(edit('admin-owned',{region:'الغربية'}),403
 const newMachine={action:'save',kind:'factory',parentId:'admin-owned',data:{name:'Forbidden machine',machineBrand:'QA',machineModel:'QA',machineType:'mobile'}};
 await post(newMachine,403);
 user('rep');await post(newMachine,403);
-// Customer service: customer details stay read only, exactly as before 2026-11-07 (that release only took away adding customers).
-for(const actor of ['cs','csm']){user(actor);const before=snapshot('admin-owned');check((await post(edit('admin-owned',{phone:'0502222222'}),403)).error,'هذا الإجراء متاح لفريق المبيعات فقط',actor+' edit refused as before');check(snapshot('admin-owned'),before);
+// Customer service (2026-11-07): corrects details like a representative within its branch and regions, routing retained; never adds a customer.
+for(const actor of ['cs','csm']){user(actor);const phone=actor==='cs'?'0502222222':'0503333333';
+ for(const id of ['admin-owned','manager-owned','unassigned-owned','legacy-fields']){const before=routing(id);await post(edit(id,{phone,location:'26.45, 50.05'},id==='legacy-fields'));check(routing(id),before,actor+' keeps routing of '+id);check(row(id).data.phone,phone);check(row(id).data.latitude,26.45);}
+ for(const id of ['western-customer','foreign-branch']){const before=snapshot(id);await post(edit(id,{phone}),404);check(snapshot(id),before,actor+' cannot reach '+id);}
+ for(const extra of [{assignedTo:'rep'},{branch:'فرع آخر'}]){const before=snapshot('admin-owned');check((await post(edit('admin-owned',extra),403)).error,'لا يمكنك تغيير مسؤول العميل أو فرعه');check(snapshot('admin-owned'),before);}
+ {const before=snapshot('admin-owned');await post({action:'delete',kind:'customer',id:'admin-owned',version:raw('admin-owned').version},403);check(snapshot('admin-owned'),before,actor+' cannot delete');}
  check((await post(create(),403)).error,'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.',actor+' cannot add a customer');}
 
 // Existing eligible team routing remains usable. New/rerouted customers retain validation.

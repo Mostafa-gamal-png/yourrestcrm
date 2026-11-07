@@ -51,7 +51,8 @@ export function masterMutationGuard(c:GuardContext,record:Row){
 /** Unchanged customer routing can be retained even when its old assignee is no longer eligible. */
 export function customerDetailMutationGuard(c:GuardContext,record:Row){
  if(!canEditCustomerDetails(record,c.members,c.me))throw new CRMError('تعديل بيانات العميل متاح للمسؤول وفريقه فقط',403);
- return c.me.role==='manager'?accessGuard(c,record):masterMutationGuard(c,record);
+ // Customer service corrects details within the customers it can see (its branch in its regions, checked again in accessGuard), as a representative does.
+ return c.me.role==='manager'||isServiceRole(c.me.role)?accessGuard(c,record):masterMutationGuard(c,record);
 }
 /** Recheck identity, region-bearing root, and source-author reporting line at commit. */
 export function accessGuard(c:GuardContext,record?:Row|null){

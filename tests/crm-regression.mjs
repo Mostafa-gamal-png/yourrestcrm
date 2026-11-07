@@ -126,10 +126,28 @@ user('cs');
 // The inline create of the opportunity form is refused and writes nothing; the registration below goes on a customer sales added.
 for(const actor of ['cs','csm']){user(actor);const before=customerCount();assert.equal((await post(crm,{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Inline unified',region:'الشرقية',assignedTo:'rep',branch:'forged'}},403)).error,refused);assert.equal(customerCount(),before);checks+=2;}
 user('cs');customer('inline-unified');const inline={id:'inline-unified'};
-// Customer details stay as they were for customer service: read only (no edit, delete or machine), as before 2026-11-07.
-await post(crm,{action:'save',kind:'customer',id:inline.id,version:1,data:row(inline.id).data},403);
-await post(crm,{action:'delete',kind:'customer',id:inline.id,version:1},403);
-await post(crm,{action:'save',kind:'factory',parentId:inline.id,data:{}},403);
+// Customer service corrects a customer's details like a representative (the owner, 2026-11-07): the customers of its branch in its regions,
+// keeping the responsible member and branch; no delete, no machine, no commercial record; the edit is audited.
+const detailEdit=(id,extra={})=>({action:'save',kind:'customer',id,version:raw(id).version,data:{...row(id).data,...extra}});
+for(const actor of ['cs','csm']){user(actor);const phone=actor==='cs'?'0551234567':'0557654321';
+ await post(crm,detailEdit(inline.id,{phone,contact:'تواصل '+actor,address:'عنوان '+actor,city:'الخبر',location:'26.3, 50.2'}));
+ assert.equal(row(inline.id).data.phone,phone);assert.equal(row(inline.id).data.contact,'تواصل '+actor);assert.equal(row(inline.id).data.latitude,26.3);assert.equal(raw(inline.id).assigned_to,'outside');assert.equal(raw(inline.id).branch,'الرئيسي');checks+=5;
+ assert.ok(sql.prepare("SELECT 1 FROM crm_audit WHERE record_id=? AND actor=? AND action='تعديل'").get(inline.id,actor));checks++;
+ const before=raw(inline.id);
+ assert.equal((await post(crm,detailEdit(inline.id,{assignedTo:'rep'}),403)).error,'لا يمكنك تغيير مسؤول العميل أو فرعه');assert.equal((await post(crm,detailEdit(inline.id,{branch:'آخر'}),403)).error,'لا يمكنك تغيير مسؤول العميل أو فرعه');
+ await post(crm,{action:'delete',kind:'customer',id:inline.id,version:raw(inline.id).version},403);
+ await post(crm,{action:'save',kind:'factory',parentId:inline.id,data:{}},403);
+ await post(crm,{action:'save',kind:'customer',id:inline.id,version:raw(inline.id).version,parentId:'factory',data:row(inline.id).data},403);
+ await post(crm,detailEdit('west-factory',{phone:'0500000001'}),404);
+ await post(crm,{...detailEdit(inline.id,{phone:'0500000002'}),version:raw(inline.id).version-1},409);
+ assert.deepEqual(raw(inline.id),before);checks++;
+}
+sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('other-branch','customer',NULL,'outside','آخر',?,?,?,1,'fixture')").run(JSON.stringify({name:'other-branch',region:'الشرقية',branch:'آخر',assignedTo:'outside'}),now,now);
+user('cs');await post(crm,detailEdit('other-branch',{phone:'0500000003'}),404);assert.equal(row('other-branch').data.phone,undefined);checks++;
+// A demotion between read and commit leaves the record as it was.
+race=()=>sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='cs'").run();await post(crm,detailEdit(inline.id,{phone:'0500000004'}),409);sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='cs'").run();assert.notEqual(row(inline.id).data.phone,'0500000004');checks++;
+// Commercial and visit records stay out of reach, as before.
+for(const body of [{action:'save',kind:'opportunity',parentId:inline.id,data:{}},{action:'save',kind:'quote',data:{}},{action:'save',kind:'activity',parentId:inline.id,data:{}},{action:'member',data:{}}])assert.equal((await post(crm,body,403)).error,'هذا الإجراء متاح لفريق المبيعات فقط');checks++;
 await post(crm,{action:'save',kind:'customer',data:{name:'West forbidden',region:'الغربية',assignedTo:'cs',branch:'الرئيسي'}},403);
 const registration={type:'call',summary:'تعريف بمنتجات الشركة',result:'متابعة العميل',salesStage:'won',strength:'strong',requestedProducts:['قوالب البلوك المتحركة','خدمات صيانة'],nextAction:'متابعة الاحتياج',nextDate:day,location:'26.437341, 50.034499',locationSource:'device',locationCapturedAt:new Date().toISOString(),locationAccuracy:12,performedBy:'rep',responsibleId:'rep',recordedByEmail:'rep@yourrest.org',customerNeeds:'طلب صيانة وقالب',hasCompetitor:true,competitorName:'Competitor',competitorNotes:'Quote pending'};
 const registerBody=(customerId,extra={})=>({action:'create',requestId:crypto.randomUUID(),customerId,customerVersion:raw(customerId).version,registration:{...registration},elapsedMilliseconds:2200,...extra});
