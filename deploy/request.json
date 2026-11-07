@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-CsNoAddCustomer-20261107.zip",
-  "sha256": "6df27ff00026c47cc2c28414ea79f18ab9986dfee78f84c5d6efeb0b8353b392",
-  "stage": "yourrest-crm-update-cs-no-add-customer-20261107",
-  "helper": "yourrest-activate-update-cs-no-add-customer.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-QuoteLostFilter-20261107.zip",
+  "sha256": "4cabcdd02c038cb5990319579fcc0fcf27133d0bf87ad24c5b13968b5ced916a",
+  "stage": "yourrest-crm-update-quote-lost-filter-20261107",
+  "helper": "yourrest-activate-update-quote-lost-filter.cjs"
 }
