@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-QuoteLostFilter-20261107.zip",
-  "sha256": "4cabcdd02c038cb5990319579fcc0fcf27133d0bf87ad24c5b13968b5ced916a",
-  "stage": "yourrest-crm-update-quote-lost-filter-20261107",
-  "helper": "yourrest-activate-update-quote-lost-filter.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldDesignRequired-20261108.zip",
+  "sha256": "f55b9fcfa2b90d5cb4f63dc5e434330086fb6c40fa4c10738f99094d03213ec8",
+  "stage": "yourrest-crm-update-mold-design-required-20261108",
+  "helper": "yourrest-activate-update-mold-design-required.cjs"
 }
