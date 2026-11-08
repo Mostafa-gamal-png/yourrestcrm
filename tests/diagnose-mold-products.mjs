@@ -86,7 +86,7 @@ writeSettings(small, {...base, YR_DATABASE_PATH: smallDatabase, YR_OBJECTS_PATH:
 
 // ---- production: CRM requests at every step, ids, order and Yourrest numbers that cannot appear by chance in a report
 const ID = {own: 'mrq7own-waiting-k2v', approved: 'mrq7own-approved-p4n', cancelled: 'mrq7own-cancelled-c8d', making: 'mrq7own-making-m3t', historical: 'mrq7own-history-h5w',
-  unknown: 'mrq7own-unknown-u6z', unsent: 'mrq7own-unsent-o9y', elsewhere: 'mrq7other-crm-x1q', smallUnsent: 'mrq7small-unsent-s1j', smallBad: 'mrq7small.bad-id', held: 'mrq7own-held-f4q'};
+  unknown: 'mrq7own-unknown-u6z', unsent: 'mrq7own-unsent-o9y', elsewhere: 'mrq7other-crm-x1q', smallUnsent: 'mrq7small-unsent-s1j', smallBad: 'mrq7small.bad-id', held: 'mrq7own-held-f4q', designHeld: 'mrq7own-design-d2r'};
 const FILLERS = Array.from({length: 200}, (_, n) => 'mrq7fill-' + String(n).padStart(3, '0') + '-f');
 mock.state.nextOrder = 873101;
 mock.seedLegacy(1);
@@ -150,6 +150,10 @@ row(ID.unsent, {accepted: false, outbox: 'send', remote: null});
 // A new request kept for its quotation's or PO's file (2026-11-05): counted apart, never among the sends that wait to go.
 crmData.set(ID.held, {...(crmData.get(ID.unsent) ?? {customer: {name: 'عميل سري'}}), fileRequired: true});
 row(ID.held, {accepted: false, outbox: 'send', remote: null});
+// One kept for its design file (2026-11-08): its quotation's file is there, and the customer's signature is no design file of its own.
+crmData.set(ID.designHeld, {...(crmData.get(ID.unsent) ?? {customer: {name: 'عميل سري'}}), fileRequired: true, designRequired: true, signature: {signer: 'عميل سري', signedAt: '2026-11-08T08:00:00.000Z', fileId: 'mds-secret-1'}});
+row(ID.designHeld, {accepted: false, outbox: 'send', remote: null});
+for (const [fileId, category] of [['mds-secret-1', 'design'], ['mdf-secret-quote', 'quote']]) db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,category) VALUES(?,?,'rep-secret-member-1','f.pdf','pdf','application/pdf',1,'x',NULL,'2026-11-08T08:00:00.000Z','send','2026-11-08T08:00:00.000Z',1,?)").run(fileId, ID.designHeld, category);
 for (const id of FILLERS) row(id, {remote: latest.get(id)});
 closeAsTheApp(db, database);
 const smallDb = migrated(smallDatabase);
@@ -200,7 +204,7 @@ try {
   eq(result.status, 0, 'both kinds answered: exit 0. ' + result.stdout + result.stderr);
   const report = result.report;
   eq([report.readOnly, report.link, report.ok], [true, 'configured', true], 'read only, configured, answered');
-  eq(report.crm, {requests: 208, accepted: 206, cancelled: 1, waitingToSend: 1, toSend: 1, toCancel: 0, heldForQuoteFile: 1, acceptedWithoutStatus: 1, newestStatusPullAt: newestPull, acceptedWithInvalidId: 0}, 'the CRM\'s counts, and its newest status pull by time');
+  eq(report.crm, {requests: 209, accepted: 206, cancelled: 1, waitingToSend: 1, toSend: 1, toCancel: 0, heldForQuoteFile: 1, heldForDesignFile: 1, acceptedWithoutStatus: 1, newestStatusPullAt: newestPull, acceptedWithInvalidId: 0}, 'the CRM\'s counts (the requests kept for a file, by the file: 2026-11-08), and its newest status pull by time');
   eq(report.calls.map(call => [call.route, call.ok, call.http, call.code, call.ids ?? null]), [['pending', true, 200, null, null], ['status', true, 200, null, 200], ['status', true, 200, null, 6]], 'one pending call, status in batches of 200');
   ok(report.calls.every(call => Number.isInteger(call.ms) && call.ms >= 0 && call.ms < 10_000), 'each call timed');
   const waiting = [ID.own, ID.unsent, ID.elsewhere].map(id => mock.row(id).waitingSince), manual = [...mock.state.byOrder.values()].find(item => item.source === 'manual');

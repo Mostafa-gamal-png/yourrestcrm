@@ -23,11 +23,15 @@
 // The quotation's or PO's FILE is required, the numbers are gone (production's update of 2026-11-05; the owner: every role): once the CRM
 // knows production's update of 2026-11-03 (the same flag), a new request carries no number and needs at least one quotation or PO file.
 // Files are uploaded after the request is saved, so a new request (data.fileRequired) stays in the CRM, not sent, while it has none
-// (moldAwaitsQuoteFile, sending.held 'quote_file' «بانتظار ملف عرض السعر / الـ PO», its state kept one an older page knows); the first
+// (moldHeldFor, sending.held 'quote_file' «بانتظار ملف عرض السعر / الـ PO», its state kept one an older page knows); the first
 // one attached releases it. A request stored
 // with a number keeps it and is sent byte for byte. quoteOrPoMissing now says production has no quotation or PO file and finance has not
 // approved: shown as «ناقص ملف عرض السعر / الـ PO», with the attach action while the request is editable. Attaching or deleting a
 // quotation's or PO's file no longer undoes the approvals; a design file still does (moldFileResetsApprovals).
+// A design file is required too (the owner, 2026-11-08: «إجباري على الكل», every role): every new request is saved with
+// data.designRequired, whatever the CRM knows of production, and kept in the CRM the same way while it has no design file of its own (the
+// customer's signature does not count): sending.held 'design_file' «بانتظار ملف التصميم». moldHeldFor says why a request is kept (the
+// quotation's or PO's file first); the first file of the missing kind releases it when nothing else is missing.
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope} from './regions';
@@ -74,9 +78,13 @@ export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:
   *  so a request without them is sent again exactly as first sent. No longer asked for since 2026-11-05: kept as stored, never changed. */
  quoteNo?:string;poNo?:string;unconfirmed?:true;
  /** Asked for under the rule of 2026-11-05 (production's update of 2026-11-03 known): sent to production only once a quotation or PO file
-  *  is attached in the CRM (moldAwaitsQuoteFile). Absent for a request asked for before, which goes as it always did. Never part of the
+  *  is attached in the CRM (moldHeldFor 'quote_file'). Absent for a request asked for before, which goes as it always did. Never part of the
   *  requests body. */
  fileRequired?:true;
+ /** Asked for under the rule of 2026-11-08 (every new request, any role): sent to production only once a design file of its own (not the
+  *  customer's signature) is attached in the CRM (moldHeldFor 'design_file'). Absent for a request asked for before, which goes as it
+  *  always did. Never part of the requests body. */
+ designRequired?:true;
  /** The customer's signature (2026-11-04): absent for a request asked for before, or by customer service or the administrator. Never part
   *  of the requests body, so a request is sent with the same bytes with it or without it. */
  signature?:MoldSignature};
@@ -128,9 +136,10 @@ export type MoldRequestRow={id:string;memberId:string;customerId:string;legacyOr
  *  or PO's file says so in sending.held, 2026-11-05). */
 export type MoldSendingState='sent'|'waiting'|'rejected'|'off'|'held';
 /** Why a request's own data waits in the CRM, beyond its state (2026-11-05): quote_file, a new request kept until its first quotation or
- *  PO file is attached (moldAwaitsQuoteFile). A new field, so a page loaded before this release reads the state it knows («بانتظار
- *  الإرسال») and nothing it cannot name. */
-export type MoldSendingHeld='quote_file';
+ *  PO file is attached; design_file (2026-11-08), one kept until its first design file (the customer's signature does not count) is
+ *  attached (moldHeldFor). A new field, so a page loaded before 2026-11-05 reads the state it knows («بانتظار الإرسال») and nothing it
+ *  cannot name; a page of 2026-11-05..07 knows quote_file alone and reads the state for design_file. */
+export type MoldSendingHeld='quote_file'|'design_file';
 /** What a reader sees of the quotation and PO (2026-11-05): missing, production marks the request as having neither a quotation file nor
  *  a PO file while finance has not approved it (quoteOrPoMissing). The numbers are no longer shown (production no longer shows them). */
 export type MoldQuotePoView={missing:boolean};
@@ -141,7 +150,7 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  /** The reasons of the request's earlier cancellations (the production manager restored it since): a new cancellation needs another. */
  cancelReasons:string[];
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null;
-  /** Kept in the CRM for its quotation's or PO's file (2026-11-05); absent otherwise. */
+  /** Kept in the CRM for its quotation's or PO's file (2026-11-05), or for its design file (2026-11-08); absent otherwise. */
   held?:MoldSendingHeld};
  remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean};version:number;
  /** Every file of the request (design, quotation and PO), each with its category. */
@@ -150,7 +159,10 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
   *  or its application is older than the update of 2026-11-03). */
  quotePo:MoldQuotePoView|null;
  /** The customer's signature (2026-11-04); null for a request without one. */
- signature:MoldSignatureView|null};
+ signature:MoldSignatureView|null;
+ /** Asked for under the rule of 2026-11-08 (data.designRequired): its edit before the first send asks for a design file too, unless it
+  *  has one that counts. A new field: a page loaded before reads nothing of it. */
+ designRequired:boolean};
 /** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
 /** orderNo: null while production has not numbered it (the products update of 2026-11-05: every item waiting for the sales manager);
  *  requestRef: production's stable UUID, absent from an older application. A pending item is named by moldPendingKey, never by orderNo. */
@@ -329,23 +341,35 @@ export const moldDesignMayBeRemote=(file:Pick<MoldDesignFileRow,'outbox'|'nextAt
 /** The request has certainly never reached production (portable/mold-rules.mjs): only then may the CRM change its data. Sent (accepted,
  *  production's status, or an attempt that may have arrived) it is edited by the production manager in the products application only. */
 export const moldNeverSent=(row:Pick<MoldRequestRow,'accepted'|'remote'|'lastAttemptAt'|'lastError'>)=>neverSent(row);
-/** A quotation's or PO's file of the CRM that counts for the hold: not deleted, not refused for good. */
-const holdsQuoteFile=(file:Pick<MoldDesignFileRow,'category'|'deletedAt'|'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>)=>MOLD_QUOTE_FILE_CATEGORIES.includes(moldFileCategory(file))&&!file.deletedAt&&!moldDesignRefused(file);
-/** A new request kept in the CRM, not sent, because it has no quotation or PO file yet (2026-11-05): asked for under that rule
- *  (data.fileRequired), its own data still to send, certainly never reached production (one that may have arrived goes on as it is:
- *  production's quoteOrPoMissing then says what is missing), and none of its files (the request's own, as loaded) is a quotation's or a
- *  PO's that counts. MOLD_AWAITS_FILE_SQL (lib/mold-requests-server.ts) says the same in SQL. */
-export function moldAwaitsQuoteFile(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'|'lastAttemptAt'|'lastError'>&{data?:Pick<MoldRequestData,'fileRequired'>|null},files:Pick<MoldDesignFileRow,'category'|'deletedAt'|'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>[]){
- return row.outbox==='send'&&row.data?.fileRequired===true&&moldNeverSent(row)&&!files.some(holdsQuoteFile);
+type HoldFile=Pick<MoldDesignFileRow,'id'|'category'|'deletedAt'|'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>;
+/** A file of the CRM that counts for the hold: not deleted, not refused for good. */
+const liveFile=(file:HoldFile)=>!file.deletedAt&&!moldDesignRefused(file);
+/** A quotation's or PO's file of the CRM that counts for the hold (2026-11-05). */
+const holdsQuoteFile=(file:HoldFile)=>MOLD_QUOTE_FILE_CATEGORIES.includes(moldFileCategory(file))&&liveFile(file);
+/** A design file of the CRM that counts for the hold (2026-11-08): not the customer's signature (the file the request's data names). */
+const holdsDesignFile=(file:HoldFile,signatureId:unknown)=>moldFileCategory(file)==='design'&&liveFile(file)&&file.id!==signatureId;
+/** Why a new request is kept in the CRM, not sent (null: it is not): its own data still to send, certainly never reached production (one
+ *  that may have arrived goes on as it is: production's quoteOrPoMissing then says what is missing), and, of its files (the request's
+ *  own, as loaded), quote_file: asked for under the rule of 2026-11-05 (data.fileRequired) and none is a quotation's or a PO's that
+ *  counts; else design_file: asked for under the rule of 2026-11-08 (data.designRequired) and none is a design file that counts (the
+ *  customer's signature, data.signature.fileId, does not). The quotation's file is said first when both are missing. MOLD_AWAITS_FILE_SQL
+ *  (lib/mold-requests-server.ts) says the same in SQL (whether it is kept), and MOLD_HELD_FOR_SQL why. */
+export function moldHeldFor(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'|'lastAttemptAt'|'lastError'>&{data?:Pick<MoldRequestData,'fileRequired'|'designRequired'|'signature'>|null},files:HoldFile[]):MoldSendingHeld|null{
+ if(row.outbox!=='send'||!moldNeverSent(row))return null;
+ if(row.data?.fileRequired===true&&!files.some(holdsQuoteFile))return 'quote_file';
+ const signatureId=(row.data?.signature as {fileId?:unknown}|undefined)?.fileId;
+ if(row.data?.designRequired===true&&!files.some(file=>holdsDesignFile(file,signatureId)))return 'design_file';
+ return null;
 }
 /** What the reader may do. edit: the requester, while the request has certainly never reached production (the server's update follows
  *  the same rule, in SQL too); cancel, attach and deleteFile: the requester while production still accepts changes (moldEditable).
- *  resend: the requester, for the request's own change (not while it waits for its quotation or PO file: attaching one sends it) or a
+ *  resend: the requester, for the request's own change (not while it waits for its quotation's, PO's or design file, moldHeldFor:
+ *  attaching it sends it) or a
  *  file whose tries stopped. approve and withdraw wait for a design file on its way (moldApprovalWaitsFor), not for a quotation's or PO's.
  *  approver: the reader approves this request (the routes pass moldApprovesRequest; any sales manager when not given). */
 export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[],approver=canApproveMoldRequests(me)){
  const own=row.memberId===me.id,open=moldEditable(row),settled=!files.some(moldApprovalWaitsFor);
- return {edit:own&&open&&moldNeverSent(row),cancel:own&&open,resend:own&&(!!row.outbox&&!moldAwaitsQuoteFile(row,files)||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
+ return {edit:own&&open&&moldNeverSent(row),cancel:own&&open,resend:own&&(!!row.outbox&&!moldHeldFor(row,files)||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
 }
 const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
 /** A file's category as stored (a status stored before 2026-11-03 carries none: design). */
@@ -429,15 +453,15 @@ export function moldQuotePoView(row:Pick<MoldRequestRow,'remote'>):MoldQuotePoVi
  *  known to be live (a request saved with a number, or a quotation's or PO's file, waits for it otherwise). approver: the reader
  *  approves this request (moldApprovesRequest), so can.approve and can.withdraw are offered only for a request they may approve. */
 export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[],quotePo=false,approver=canApproveMoldRequests(me)):MoldRequestView{
- const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo);
+ const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo),held=moldHeldFor(row,files);
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
-  sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(moldAwaitsQuoteFile(row,files)?{held:'quote_file' as const}:{})},
-  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles)};
+  sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(held?{held}:{})},
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent.
- *  Always one of the five states every page knows: a request kept for its quotation's or PO's file reads waiting (or off), and says why
- *  in sending.held (moldRequestView). */
+ *  Always one of the five states every page knows: a request kept for its quotation's, PO's or design file reads waiting (or off), and
+ *  says why in sending.held (moldRequestView). */
 export function moldSendingState(row:Pick<MoldRequestRow,'outbox'|'lastError'>&{data?:Pick<MoldRequestData,'quoteNo'|'poNo'>},linkReady:boolean,quotePo=true):MoldSendingState{
  if(!row.outbox)return 'sent';
  if(!linkReady)return 'off';
@@ -464,6 +488,17 @@ export const MOLD_QUOTE_FILE_REQUIRED_TEXT:[string,string]=['أرفق ملف ع�
  *  to a reader who cannot (the sales manager, the administrator). */
 export const MOLD_QUOTE_FILE_WAITING_OTHERS:[string,string]=['بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO','Waiting for whoever asked for it to attach the quotation / PO file'];
 export const MOLD_QUOTE_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف عرض السعر أو الـ PO (واحد على الأقل)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach the quotation or PO file (at least one); once you do, the request goes, then its files.'];
+/** A new request needs at least one design file (2026-11-08, every role; the customer's signature does not count): the form's picker
+ *  title and its refusal, sending.held design_file in words, and its explanation to the requester and to a reader who cannot attach. */
+export const MOLD_DESIGN_FILE_PICKER_TITLE:[string,string]=['ملفات التصميم (ملف واحد على الأقل)','Design files (at least one)'];
+export const MOLD_DESIGN_FILE_REQUIRED_TEXT:[string,string]=['أرفق ملف تصميم واحد على الأقل','Attach at least one design file'];
+export const MOLD_DESIGN_FILE_HELD_NAME:[string,string]=['بانتظار ملف التصميم','Waiting for the design file'];
+export const MOLD_DESIGN_FILE_WAITING_OTHERS:[string,string]=['بانتظار ما صاحب الطلب يرفق ملف التصميم','Waiting for whoever asked for it to attach the design file'];
+export const MOLD_DESIGN_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach at least one design file (the customer\'s signature does not count); once you do, the request goes, then its files.'];
+/** sending.held in words, its explanation to the requester (who attaches) and to a reader who cannot. */
+export const moldHeldTexts:Record<MoldSendingHeld,{name:[string,string];waiting:[string,string];others:[string,string]}>={
+ quote_file:{name:MOLD_QUOTE_FILE_HELD_NAME,waiting:MOLD_QUOTE_FILE_WAITING_TEXT,others:MOLD_QUOTE_FILE_WAITING_OTHERS},
+ design_file:{name:MOLD_DESIGN_FILE_HELD_NAME,waiting:MOLD_DESIGN_FILE_WAITING_TEXT,others:MOLD_DESIGN_FILE_WAITING_OTHERS}};
 /** The customer's signature in the representative's words (2026-11-04): the step, the pad, its refusals, the sheet's line. */
 export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer signature'] as [string,string],signed:['وقّع العميل','Signed by the customer'] as [string,string],
  signer:['اسم اللي بيوقّع','Name of the person signing'] as [string,string],clear:['امسح','Clear'] as [string,string],confirm:['تأكيد وإرسال','Confirm and send'] as [string,string],

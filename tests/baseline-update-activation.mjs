@@ -292,7 +292,7 @@ try {
       eq([next.phase, next.dailyBackup.transaction], ['switched', took.transaction], 'and switches citing it');
     }
     // The shipped list itself: every activation name delivered on 2026-11-01 to 2026-11-03 is accepted by the next package.
-    const shipped = ['update-devices-activation-20261101', 'update-tablet-activation-20261101', 'update-molds-activation-20261101', 'update-mold-approvals-activation-20261101', 'update-mold-customers-activation-20261101', 'update-mold-fixes-activation-20261102', 'update-erp-customers-activation-20261102', 'update-erp-code-activation-20261102', 'update-design-files-activation-20261102', 'update-android-1012-activation-20261102', 'update-fallback-activation-20261103', 'update-erp-mold-activation-20261103', 'update-mold-quote-file-activation-20261105', 'update-cs-no-add-customer-activation-20261107'];
+    const shipped = ['update-devices-activation-20261101', 'update-tablet-activation-20261101', 'update-molds-activation-20261101', 'update-mold-approvals-activation-20261101', 'update-mold-customers-activation-20261101', 'update-mold-fixes-activation-20261102', 'update-erp-customers-activation-20261102', 'update-erp-code-activation-20261102', 'update-design-files-activation-20261102', 'update-android-1012-activation-20261102', 'update-fallback-activation-20261103', 'update-erp-mold-activation-20261103', 'update-mold-quote-file-activation-20261105', 'update-cs-no-add-customer-activation-20261107', 'update-quote-lost-filter-activation-20261107'];
     const source = read(path.join(root, 'portable/activate-ui-refresh-update.cjs'));
     eq(shipped.filter(name => !source.includes('|' + name + '|')), [], 'the activator lists every activation name delivered from 2026-11-01 to 2026-11-07');
   }

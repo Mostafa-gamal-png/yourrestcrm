@@ -10,13 +10,15 @@
 // object carries quoteOrPoMissing, kept in crm_settings (moldQuotePoSupported); until then no number, category or quotation/PO file is
 // sent, and a request or file that carries one waits for it. Since production's update of 2026-11-05, a new request asked for once that is
 // known (data.fileRequired) is not sent while it has no quotation or PO file in the CRM (MOLD_AWAITS_FILE_SQL: nothing sends it, neither
-// the timetable, a resend nor a restart); the first one attached releases it (releaseMoldRequest): the request, then its files.
+// the timetable, a resend nor a restart); the first one attached releases it (releaseMoldRequest): the request, then its files. Since
+// 2026-11-08 every new request (data.designRequired) is kept the same way while it has no design file of its own (the customer's
+// signature does not count): MOLD_AWAITS_FILE_SQL holds either reason, and the first file of the missing kind releases it the same way.
 import {env} from 'cloudflare:workers';
 import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
 import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldAwaitsQuoteFile,moldFileCategory,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldHeldFor,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
 type Config=ReturnType<typeof moldConfig>;
@@ -74,14 +76,22 @@ export async function noteMoldQuotePo(db:D1Database,values:unknown[],at=new Date
 }
 /** Over crm_mold_requests: a request whose own change carries a quotation or PO number (held until production's update is known). */
 const QUOTE_PO_SEND_SQL="(outbox IS 'send' AND (IFNULL(json_extract(data,'$.quoteNo'),'')<>'' OR IFNULL(json_extract(data,'$.poNo'),'')<>''))";
-/** moldAwaitsQuoteFile (lib/mold-requests.ts) in SQL, over crm_mold_requests (2026-11-05): a request asked for under the rule of the
- *  quotation's or PO's file, its own data still to send, certainly never reached production (MOLD_NEVER_SENT_SQL, below), and none of
- *  its files a quotation's or PO's that is not deleted nor refused for good (MOLD_DESIGN_REFUSED_SQL, over the file). Never NULL. */
-export const MOLD_AWAITS_FILE_SQL=()=>`(outbox IS 'send' AND json_extract(data,'$.fileRequired') IS 1 AND ${MOLD_NEVER_SENT_SQL} AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files q WHERE q.request_id=crm_mold_requests.id AND q.category IN ('quote','po') AND q.deleted_at IS NULL
- AND NOT (q.outbox IS 'send' AND q.sent_at IS NULL AND q.next_attempt_at IS NULL AND json_extract(q.last_error,'$.final') IS 1)))`;
+/** moldHeldFor (lib/mold-requests.ts) in SQL, over crm_mold_requests: why a request is kept, or NULL. Its own data still to send and
+ *  certainly never reached production (MOLD_NEVER_SENT_SQL, below), then 'quote_file': asked for under the rule of the quotation's or
+ *  PO's file (2026-11-05) and none of its files a quotation's or PO's that is not deleted nor refused for good (MOLD_DESIGN_REFUSED_SQL,
+ *  over the file); else 'design_file': asked for under the rule of the design file (2026-11-08) and none of its files a design file that
+ *  is not deleted, not refused for good, and not the customer's signature (the file data.signature.fileId names). */
+export const MOLD_HELD_FOR_SQL=()=>`(CASE WHEN outbox IS 'send' AND ${MOLD_NEVER_SENT_SQL} THEN CASE
+ WHEN json_extract(data,'$.fileRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files q WHERE q.request_id=crm_mold_requests.id AND q.category IN ('quote','po') AND q.deleted_at IS NULL
+  AND NOT (q.outbox IS 'send' AND q.sent_at IS NULL AND q.next_attempt_at IS NULL AND json_extract(q.last_error,'$.final') IS 1)) THEN 'quote_file'
+ WHEN json_extract(data,'$.designRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files d WHERE d.request_id=crm_mold_requests.id AND d.category NOT IN ('quote','po') AND d.deleted_at IS NULL
+  AND d.id IS NOT json_extract(crm_mold_requests.data,'$.signature.fileId') AND NOT (d.outbox IS 'send' AND d.sent_at IS NULL AND d.next_attempt_at IS NULL AND json_extract(d.last_error,'$.final') IS 1)) THEN 'design_file'
+ END END)`;
+/** Whether a request is kept in the CRM for a file (moldHeldFor in TypeScript, either reason). Never NULL. */
+export const MOLD_AWAITS_FILE_SQL=()=>`(${MOLD_HELD_FOR_SQL()} IS NOT NULL)`;
 export const requestedNow=(now:string)=>riyadhIso(now);
 
-/** What one send gave. sent: what was sent (the request's data, or its cancellation), so a refusal is told in the right words. restored:
+/** What one send gave (code quote_file or design_file with kind none: the request is kept for that file, moldHeldFor). sent: what was sent (the request's data, or its cancellation), so a refusal is told in the right words. restored:
  *  a cancellation production answered with the request as it is, not cancelled (its manager had restored it, and this reason was used). */
 export type SendOutcome={kind:'ok'|'locked'|'not_found'|'rejected'|'retry'|'off'|'busy'|'none'|'restored';code:string;fields?:string[];reason?:string;sent?:'send'|'cancel'};
 /** moldNeverSent (portable/mold-rules.mjs) in SQL, over crm_mold_requests: never accepted, no status from production, and either never
@@ -120,12 +130,13 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
  // A request saved with a quotation or PO number goes only once production's update is known to be live: the older application would
  // store it without them, silently, and no resend could add them later. Kept as it is meanwhile (it cannot happen in normal use).
  if(row.outbox==='send'&&moldHasQuotePo(row.data)&&!await moldQuotePoSupported(db))return {kind:'none',code:'quote_po_update'};
- // A new request without its quotation or PO file (2026-11-05) stays in the CRM until one is attached: never sent, by anything. The claim
- // says the same in SQL, so a file deleted between this check and the claim keeps it too.
- if(row.outbox==='send'&&moldAwaitsQuoteFile(row,await loadMoldDesignFiles(db,'request_id=?',[id])))return {kind:'none',code:'quote_file'};
+ // A new request without its quotation or PO file (2026-11-05), or without its design file (2026-11-08), stays in the CRM until one is
+ // attached: never sent, by anything. The claim says the same in SQL, so a file deleted between this check and the claim keeps it too.
+ const kept=row.outbox==='send'?moldHeldFor(row,await loadMoldDesignFiles(db,'request_id=?',[id])):null;
+ if(kept)return {kind:'none',code:kept};
  const at=now(),claim=crypto.randomUUID(),lease=new Date(Date.parse(at)+60_000).toISOString();
  const claimed=await db.prepare(`UPDATE crm_mold_requests SET mutation_id=?,last_attempt_at=?,next_attempt_at=? WHERE id=? AND version=? AND outbox=? AND next_attempt_at IS NOT NULL AND next_attempt_at<=? AND NOT ${MOLD_AWAITS_FILE_SQL()}`).bind(claim,at,lease,id,row.version,row.outbox,at).run();
- if(claimed.meta.changes!==1)return row.outbox==='send'&&moldAwaitsQuoteFile(row,await loadMoldDesignFiles(db,'request_id=?',[id]))?{kind:'none',code:'quote_file'}:{kind:'busy',code:''};
+ if(claimed.meta.changes!==1){const still=row.outbox==='send'?moldHeldFor(row,await loadMoldDesignFiles(db,'request_id=?',[id])):null;return still?{kind:'none',code:still}:{kind:'busy',code:''};}
  // A cancellation whose answer was lost while a pull since stored production's status as cancelled (it arrived, or production cancelled
  // the request itself): complete there, so it is settled as delivered, not sent again. A later restore is then the pull's alone
  // (moldRemoteStatements: audited «رجّعه مدير الإنتاج بعد الإلغاء», active again), never read from a cancellation's answer. A restore
@@ -194,8 +205,8 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
 export async function sendDueMoldRequests(db:D1Database,{limit=5,now=()=>new Date().toISOString(),link=productsLink(),fetch,files}:{limit?:number;now?:()=>string;link?:Config;fetch?:typeof globalThis.fetch;files?:R2Bucket}={}){
  if(!link.ok)return 0;
  // Before production's update is known, a request carrying a quotation or PO number is not due: it would only be held again. A new
- // request waiting for its quotation or PO file (2026-11-05) is never due: it would only be kept again, and would take the place of
- // requests that may go.
+ // request waiting for its quotation's, PO's (2026-11-05) or design file (2026-11-08) is never due: it would only be kept again, and
+ // would take the place of requests that may go.
  const held=(await moldQuotePoSupported(db)?'':` AND NOT ${QUOTE_PO_SEND_SQL}`)+` AND NOT ${MOLD_AWAITS_FILE_SQL()}`;
  const due=(await db.prepare(`SELECT id FROM crm_mold_requests WHERE outbox IS NOT NULL AND next_attempt_at IS NOT NULL AND next_attempt_at<=?${held} ORDER BY next_attempt_at,id LIMIT ?`).bind(now(),limit).all<{id:string}>()).results;
  let sent=0;
@@ -382,7 +393,8 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
  }finally{filesInFlight--;}
 }
 /**
- * A request kept for its quotation or PO file (2026-11-05), released by the first one attached: the request is sent now, through the
+ * A request kept for its quotation's, PO's (2026-11-05) or design file (2026-11-08), released by the first file of the missing kind
+ * attached once nothing else is missing (the design-files route decides, moldHeldFor): the request is sent now, through the
  * same send as ever (its claim, retries and idempotency unchanged), and once production holds it, its files whose turn has come go one
  * after the other, oldest first (the customer's signature, the design files and the quotation's or PO's, as they were attached). A file
  * that cannot go now (the request not accepted yet, another two in flight) waits for the timetable as usual. Answers the request's

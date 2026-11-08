@@ -77,19 +77,24 @@ function openDatabase(file) {
   return new DatabaseSync(quiet ? new URL(pathToFileURL(file).href + '?mode=ro&immutable=1') : file, {readOnly: true});
 }
 
-/** A new request kept in the CRM for its quotation's or PO's file (2026-11-05; lib/mold-requests-server.ts MOLD_AWAITS_FILE_SQL): never
- *  sent until its requester attaches one, so it is counted apart from the sends that wait to go (waitingToSend, toSend). */
-const AWAITS_FILE = `(outbox IS 'send' AND json_extract(data,'$.fileRequired') IS 1 AND accepted IS NULL AND remote IS NULL
-  AND (last_attempt_at IS NULL OR json_extract(last_error,'$.notStored') IS 1 AND json_extract(last_error,'$.at')>=last_attempt_at)
-  AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files q WHERE q.request_id=crm_mold_requests.id AND q.category IN ('quote','po') AND q.deleted_at IS NULL
-    AND NOT (q.outbox IS 'send' AND q.sent_at IS NULL AND q.next_attempt_at IS NULL AND json_extract(q.last_error,'$.final') IS 1)))`;
+/** Why a new request is kept in the CRM (lib/mold-requests-server.ts MOLD_HELD_FOR_SQL): for its quotation's or PO's file (2026-11-05,
+ *  'quote_file'), else for its design file (2026-11-08, 'design_file': the customer's signature does not count); NULL when it is not.
+ *  Never sent until its requester attaches one, so it is counted apart from the sends that wait to go (waitingToSend, toSend). */
+const HELD_FOR = `(CASE WHEN outbox IS 'send' AND accepted IS NULL AND remote IS NULL
+  AND (last_attempt_at IS NULL OR json_extract(last_error,'$.notStored') IS 1 AND json_extract(last_error,'$.at')>=last_attempt_at) THEN CASE
+  WHEN json_extract(data,'$.fileRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files q WHERE q.request_id=crm_mold_requests.id AND q.category IN ('quote','po') AND q.deleted_at IS NULL
+    AND NOT (q.outbox IS 'send' AND q.sent_at IS NULL AND q.next_attempt_at IS NULL AND json_extract(q.last_error,'$.final') IS 1)) THEN 'quote_file'
+  WHEN json_extract(data,'$.designRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files d WHERE d.request_id=crm_mold_requests.id AND d.category NOT IN ('quote','po') AND d.deleted_at IS NULL
+    AND d.id IS NOT json_extract(crm_mold_requests.data,'$.signature.fileId') AND NOT (d.outbox IS 'send' AND d.sent_at IS NULL AND d.next_attempt_at IS NULL AND json_extract(d.last_error,'$.final') IS 1)) THEN 'design_file'
+  END END)`;
+const AWAITS_FILE = `(${HELD_FOR} IS NOT NULL)`;
 /** What the CRM holds, read-only: counts, plus the ids and the status last stored (kept in memory only, never printed). */
 function readCrm(file, rules) {
   const db = openDatabase(file);
   try {
     const counts = db.prepare(`SELECT COUNT(*) AS requests, COALESCE(SUM(accepted IS NOT NULL), 0) AS accepted, COALESCE(SUM(cancelled_at IS NOT NULL), 0) AS cancelled,
       COALESCE(SUM(outbox IS NOT NULL AND NOT ${AWAITS_FILE}), 0) AS waitingToSend, COALESCE(SUM(outbox = 'send' AND NOT ${AWAITS_FILE}), 0) AS toSend, COALESCE(SUM(outbox = 'cancel'), 0) AS toCancel,
-      COALESCE(SUM(${AWAITS_FILE}), 0) AS heldForQuoteFile,
+      COALESCE(SUM(${HELD_FOR} IS 'quote_file'), 0) AS heldForQuoteFile, COALESCE(SUM(${HELD_FOR} IS 'design_file'), 0) AS heldForDesignFile,
       COALESCE(SUM(accepted IS NOT NULL AND remote IS NULL), 0) AS acceptedWithoutStatus, MAX(remote_at) AS newestStatusPullAt FROM crm_mold_requests`).get();
     const rows = db.prepare('SELECT id, accepted IS NOT NULL AS accepted, remote FROM crm_mold_requests ORDER BY created_at, id').all();
     const all = new Set(), asked = [], stored = new Map();

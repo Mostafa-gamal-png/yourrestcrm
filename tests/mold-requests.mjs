@@ -13,9 +13,11 @@
 // image only, the body's category for those alone), the view's numbers and limits, and the stand-in as the application before and after
 // its update. Who sees which request (the owner, 2026-11-03): the sales manager's team walked up «المشرف», what each role reads and what
 // each manager approves; «رابط التصميم» no longer asked for. Since production's update of 2026-11-05: the view carries production's flag
-// alone (no number), a new request asked for under the rule waits for its quotation or PO file (moldAwaitsQuoteFile, needs_file, no
+// alone (no number), a new request asked for under the rule waits for its quotation or PO file (moldHeldFor quote_file, needs_file, no
 // resend), the sales manager's approval waits for design files only, and the stand-in counts files, not numbers, and keeps the approvals
-// for a quotation's or PO's file. Synthetic files only; no real account.
+// for a quotation's or PO's file. Since 2026-11-08 every new request (data.designRequired) waits for its design file too (moldHeldFor
+// design_file: the customer's signature, a deleted or refused file count for nothing; the quotation's first), its texts, the requests
+// body unchanged by the marker. Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
@@ -327,12 +329,13 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same(serverTexts.filter(text => typeof dictionary[text] !== 'string'), [], 'every refusal of the server has its English pair');
   const sources = ['app/api/mold-requests/route.ts', 'app/api/mold-requests/design-files/route.ts'].map(file => readFileSync(path.join(root, file), 'utf8')).join('\n');
   same(serverTexts.slice(0, 3).filter(text => !sources.includes(text)), [], 'and the server says them (a number from a page loaded before, a resend of a request kept for its file, a quotation\'s or PO\'s file before the update)');
-  // ---- 2026-11-05: a new request is kept in the CRM until its first quotation or PO file (moldAwaitsQuoteFile), whatever the link
+  // ---- 2026-11-05: a new request is kept in the CRM until its first quotation or PO file (moldHeldFor quote_file), whatever the link
   const fileAsked = {...data, payment: 'cash', fileRequired: true}, quoteOf = (category, change = {}) => ({...waitingFile, id: 'mdf-' + category, name: category + '.pdf', category, ...change});
-  const awaits = (change, files) => lib.moldAwaitsQuoteFile(row({data: fileAsked, ...change}), files);
+  const awaitsQuote = (target, files) => lib.moldHeldFor(target, files) === 'quote_file';
+  const awaits = (change, files) => awaitsQuote(row({data: fileAsked, ...change}), files);
   same([awaits({}, []), awaits({}, [waitingFile]), awaits({}, [quoteOf('quote')]), awaits({}, [quoteOf('po')]), awaits({}, [quoteOf('quote', {deletedAt: at, outbox: null})]), awaits({}, [quoteOf('po', {nextAttemptAt: null, lastAttemptAt: at, lastError: {code: 'file_missing', http: 0, at, final: true}})])],
     [true, true, false, false, true, true], 'asked for under the rule: kept while it has no quotation or PO file (a design file is not one; a deleted one, or one refused for good, counts for nothing)');
-  same([lib.moldAwaitsQuoteFile(row({data: {...data, payment: 'cash'}}), []), lib.moldAwaitsQuoteFile(row({data: numbered}), []), awaits({outbox: null, accepted: fileAsked, remote: status}, []), awaits({attempts: 1, lastAttemptAt: at, lastError: {code: 'timeout', http: 0, at: after}}, []), awaits({cancelledAt: at, outbox: 'cancel'}, [])],
+  same([awaitsQuote(row({data: {...data, payment: 'cash'}}), []), awaitsQuote(row({data: numbered}), []), awaits({outbox: null, accepted: fileAsked, remote: status}, []), awaits({attempts: 1, lastAttemptAt: at, lastError: {code: 'timeout', http: 0, at: after}}, []), awaits({cancelledAt: at, outbox: 'cancel'}, [])],
     [false, false, false, false, false], 'never a request asked for before the rule (with a number or none: it goes as it always did), one production holds, one whose send may have arrived, or a cancellation');
   const heldView = (files, linkReady = true) => lib.moldRequestView(row({data: fileAsked}), me, [], linkReady, files, [], true);
   const heldOf = view => [view.sending.state, view.sending.held ?? null];
@@ -341,6 +344,35 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   same([lib.MOLD_QUOTE_FILE_WAITING_OTHERS, lib.MOLD_QUOTE_PO_MISSING_OTHERS, lib.MOLD_QUOTE_PO_MISSING_PRODUCTION],
     [['بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO', 'Waiting for whoever asked for it to attach the quotation / PO file'], ['صاحب الطلب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.', 'Whoever asked for it attaches it in the CRM, or the production manager in the products application.'], ['مدير الإنتاج يرفقه من تطبيق المنتجات.', 'The production manager attaches it in the products application.']],
     'what a reader who cannot attach is told, for a CRM request and for one registered in production, Arabic and English');
+  // ---- 2026-11-08: every new request (data.designRequired, any role) is kept until its first design file of its own; the customer's
+  // signature, a deleted file and one refused for good count for nothing; the quotation's or PO's file is said first when both are missing
+  const designAsked = {...data, payment: 'cash', designRequired: true}, bothAsked = {...fileAsked, designRequired: true};
+  const signedAsked = {...designAsked, signature: {signer: 'خالد', signedAt: at, fileId: 'mds-1'}}, signatureOf = {...waitingFile, id: 'mds-1', name: 'توقيع العميل - خالد.png', kind: 'image'};
+  const heldFor = (asked, files, change = {}) => lib.moldHeldFor(row({data: asked, ...change}), files) ?? null;
+  same([heldFor(designAsked, []), heldFor(designAsked, [waitingFile]), heldFor(designAsked, [quoteOf('quote')]), heldFor(signedAsked, [signatureOf]), heldFor(signedAsked, [signatureOf, waitingFile]),
+    heldFor(designAsked, [{...waitingFile, deletedAt: at, outbox: null}]), heldFor(designAsked, [{...waitingFile, nextAttemptAt: null, lastAttemptAt: at, lastError: {code: 'invalid_payload', http: 400, at, final: true}}]), heldFor(designAsked, [{...waitingFile, outbox: 'delete', deletedAt: at}])],
+    ['design_file', null, 'design_file', 'design_file', null, 'design_file', 'design_file', 'design_file'], 'kept while it has no design file of its own: a quotation\'s file is not one, the customer\'s signature is not one, a deleted one (or one being deleted) or one refused for good counts for nothing');
+  same([heldFor(designAsked, [{...waitingFile, outbox: null, sentAt: at}]), heldFor(designAsked, [{...waitingFile, nextAttemptAt: null, lastAttemptAt: at, lastError: {code: 'network', http: 0, at}}]), heldFor(designAsked, [{...waitingFile, category: undefined}])],
+    [null, null, null], 'a design file sent, or stopped after 24 hours (not refused), counts; one stored without a category is a design file');
+  same([heldFor(bothAsked, []), heldFor(bothAsked, [waitingFile]), heldFor(bothAsked, [quoteOf('po')]), heldFor(bothAsked, [quoteOf('po'), waitingFile]), heldFor({...bothAsked, signature: signedAsked.signature}, [signatureOf, quoteOf('quote')])],
+    ['quote_file', 'quote_file', 'design_file', null, 'design_file'], 'both asked for: the quotation\'s or PO\'s file is said first; once it is there, the design file; both there: sent');
+  same([heldFor(designAsked, [], {outbox: null, accepted: designAsked, remote: status}), heldFor(designAsked, [], {attempts: 1, lastAttemptAt: at, lastError: {code: 'timeout', http: 0, at: after}}), heldFor(designAsked, [], {cancelledAt: at, outbox: 'cancel'}),
+    heldFor(designAsked, [], {attempts: 1, lastAttemptAt: at, lastError: {code: 'invalid_payload', http: 400, at: after, notStored: true}}), heldFor({...data, payment: 'cash'}, []), heldFor(numbered, []), heldFor({...data, payment: 'cash', signature: signedAsked.signature}, [signatureOf])],
+    [null, null, null, 'design_file', null, null, null], 'never one production holds, one whose send may have arrived, or a cancellation (a send refused before production stored it still waits); never a request asked for before (no marker, signed or not): it goes as it always did');
+  const designView = (files, linkReady = true, asked = designAsked, who = me) => lib.moldRequestView(row({data: asked}), who, [], linkReady, files, [], true);
+  same([heldOf(designView([])), heldOf(designView([], false)), heldOf(designView([waitingFile])), heldOf(designView([quoteOf('quote')], true, bothAsked)), designView([]).can.resend, designView([waitingFile]).can.resend, designView([]).can.attach, designView([], true, designAsked, {id: 'sm', role: 'manager'}).can.attach],
+    [['waiting', 'design_file'], ['off', 'design_file'], ['waiting', null], ['waiting', 'design_file'], false, true, true, false], 'sending.held design_file, its state one every page knows (waiting, or off); no resend while it waits; the requester attaches it (nobody else)');
+  same([designView([]).designRequired, lib.moldRequestView(row({}), me, [], true).designRequired, lib.moldRequestView(row({data: fileAsked}), me, [], true).designRequired], [true, false, false], 'the view says which requests were asked for under the rule (their edit asks for a design file too)');
+  same([lib.MOLD_DESIGN_FILE_HELD_NAME, lib.MOLD_DESIGN_FILE_PICKER_TITLE, lib.MOLD_DESIGN_FILE_REQUIRED_TEXT, lib.MOLD_DESIGN_FILE_WAITING_OTHERS],
+    [['بانتظار ملف التصميم', 'Waiting for the design file'], ['ملفات التصميم (ملف واحد على الأقل)', 'Design files (at least one)'], ['أرفق ملف تصميم واحد على الأقل', 'Attach at least one design file'], ['بانتظار ما صاحب الطلب يرفق ملف التصميم', 'Waiting for whoever asked for it to attach the design file']],
+    'the held state, the picker\'s title, the form\'s refusal and what a reader who cannot attach is told (2026-11-08), Arabic and English');
+  same([lib.MOLD_DESIGN_FILE_WAITING_TEXT[0].startsWith('الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)؛'), lib.MOLD_DESIGN_FILE_WAITING_TEXT[1].includes('the customer\'s signature does not count'),
+    Object.keys(lib.moldHeldTexts).sort(), lib.moldHeldTexts.quote_file.name, lib.moldHeldTexts.design_file.waiting === lib.MOLD_DESIGN_FILE_WAITING_TEXT], [true, true, ['design_file', 'quote_file'], [...lib.MOLD_QUOTE_FILE_HELD_NAME], true], 'the requester\'s explanation, and each held value with its words');
+  const designFirst = 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.';
+  same([dictionary[designFirst], readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(designFirst)], ['The request is waiting for the design file; attach a design file and the request is sent by itself.', true], 'a resend of a request kept for its design file: refused by the server, with its English pair');
+  // The marker never travels: the body of a request with designRequired (and fileRequired) is byte for byte the body without them.
+  const marked = {...bothAsked, signature: signedAsked.signature}, unmarked = {...marked};delete unmarked.designRequired;delete unmarked.fileRequired;delete unmarked.signature;
+  same([JSON.stringify(moldRequestBody({id: 'mr-1', ...marked})), JSON.stringify(moldRequestBody({id: 'mr-1', ...marked})).includes('Required')], [JSON.stringify(moldRequestBody({id: 'mr-1', ...unmarked})), false], 'the requests body with data.designRequired is the body without it');
   // A page loaded before this release (the live 2026-11-04 client) indexes its own names by the server's values: every value a view of
   // this release carries must be one it knows, or its page throws (say(...undefined)). Its maps, as that release has them.
   const OLD = {sending: ['sent', 'waiting', 'rejected', 'off', 'held'], file: ['sent', 'waiting', 'held', 'rejected', 'locked', 'cancelled', 'deleting', 'off', 'production', 'update'], category: ['design', 'quote', 'po'], signature: ['sent', 'waiting', 'stopped', 'refused'], payment: ['cash', 'deferred']};

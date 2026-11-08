@@ -222,13 +222,15 @@ function DesignInput({label,disabled,busy,onFiles,say,category='design'}:{label:
 const hint=(say:Say,category:MoldFileCategory='design')=>category==='design'
  ?say('PDF أو صورة أو ملف رسم (DWG وDXF وSTEP وSTL وZIP…) · حتى 25 ميجابايت للملف · '+MOLD_DESIGN_MAX_FILES+' ملفات للطلب مع ملفات الإنتاج','A PDF, an image or a drawing (DWG, DXF, STEP, STL, ZIP…) · up to 25 MB a file · '+MOLD_DESIGN_MAX_FILES+' files a request with production\'s')
  :say('PDF أو صورة بس · حتى 25 ميجابايت للملف · '+MOLD_CATEGORY_MAX_FILES[category]+' ملفات مع ملفات الإنتاج','A PDF or an image only · up to 25 MB a file · '+MOLD_CATEGORY_MAX_FILES[category]+' files with production\'s');
-/** The picker's title in the form, for each kind of file. */
-/** The quotation's and PO's pickers sit under «عرض السعر أو الـ PO (ملف واحد على الأقل)» (2026-11-05): no «اختياري» of their own. */
+/** The picker's title in the form, for each kind of file. The quotation's and PO's pickers sit under «عرض السعر أو الـ PO (ملف واحد على
+ *  الأقل)» (2026-11-05): no «اختياري» of their own. The design files' is «(اختياري)» unless the form gives its own title (a new request,
+ *  2026-11-08: «ملفات التصميم (ملف واحد على الأقل)»). */
 const pickerTitle=(say:Say,category:MoldFileCategory)=>category==='quote'?say('ملفات عرض السعر','Quotation files'):category==='po'?say('ملفات الـ PO','PO files'):say('ملفات التصميم (اختياري)','Design files (optional)');
 
 /** The files chosen in the request form: each checked at once; those that may go upload right after the request is saved. category: the
- *  kind of file this picker takes (design by default; the quotation's or PO's: a PDF or an image only). */
-export function MoldDesignPicker({choices,onChange,room,disabled,say,category='design',overflow='too_many_files',note=''}:{choices:DesignChoice[];onChange:(next:DesignChoice[])=>void;room:number;disabled:boolean;say:Say;category?:MoldFileCategory;overflow?:string;note?:string}){
+ *  kind of file this picker takes (design by default; the quotation's or PO's: a PDF or an image only). title: the form's own (a required
+ *  kind, 2026-11-08), with its refusal (error) said under it. */
+export function MoldDesignPicker({choices,onChange,room,disabled,say,category='design',overflow='too_many_files',note='',title='',error=''}:{choices:DesignChoice[];onChange:(next:DesignChoice[])=>void;room:number;disabled:boolean;say:Say;category?:MoldFileCategory;overflow?:string;note?:string;title?:string;error?:string}){
  const [checking,setChecking]=useState(false);
  const ready=choices.filter(choice=>!choice.refusal).length;
  const pick=async(files:File[])=>{
@@ -239,7 +241,7 @@ export function MoldDesignPicker({choices,onChange,room,disabled,say,category='d
    onChange([...choices,...await checkDesignFiles(fresh,room-ready,category,overflow)]);
   }finally{setChecking(false);}
  };
- return <fieldset className="mold-design-picker" data-category={category}><legend>{pickerTitle(say,category)}</legend>
+ return <fieldset className="mold-design-picker" data-category={category} data-required={title?true:undefined} aria-invalid={!!error||undefined}><legend>{title||pickerTitle(say,category)}</legend>
   <DesignInput label={say('اختيار ملفات','Choose files')} disabled={disabled||room-ready<=0} busy={checking} onFiles={files=>void pick(files)} say={say} category={category}/>
   <small className="mold-design-hint">{hint(say,category)}</small>
   {/* The customer's signature takes the tenth place (2026-11-04): said before the representative chooses, and on a tenth file. */}
@@ -251,6 +253,7 @@ export function MoldDesignPicker({choices,onChange,room,disabled,say,category='d
     {choice.refusal&&<small className="mold-design-reason" role="alert">{moldDesignRefusalText(choice.refusal,say,category)}</small>}</div>
    <div className="mold-design-actions"><button type="button" className="btn small subtle" disabled={disabled} onClick={()=>onChange(choices.filter(other=>other.key!==choice.key))} aria-label={say('إزالة ','Remove ')+choice.name}><X size={15} aria-hidden="true"/>{say('إزالة','Remove')}</button></div>
   </li>)}</ul>}
+  {error&&<small className="field-error" role="alert">{error}</small>}
  </fieldset>;
 }
 
@@ -274,7 +277,9 @@ export function designFileDetail(file:Pick<MoldDesignFileView,'state'|'error'|'s
 
 /** The request's files in its sheet, one group for each kind: its design files, and (once production's update of 2026-11-03 is live, or
  *  when the request has some) the quotation's and the PO's. quotePo: production's update is known to be live, so those may be attached;
- *  so may they for a request kept for its quotation's or PO's file (sending.held: the server knows the update even if the page did not). */
+ *  so may they for a request kept for its quotation's or PO's file (sending.held: the server knows the update even if the page did not).
+ *  The design files' group is always attachable by the requester (view.can.attach), a request kept for its design file (2026-11-08)
+ *  among them. */
 export function MoldDesignFiles({view,uploads,queue,onView,say,quotePo=false}:{view:MoldRequestView;uploads:DesignUpload[];queue:DesignUploadQueue;onView:(view:MoldRequestView)=>void;say:Say;quotePo?:boolean}){
  const offered=quotePo||view.sending.held==='quote_file';
  const groups=MOLD_FILE_CATEGORY_ORDER.filter(category=>category==='design'||offered||view.designFiles.some(file=>file.category===category)||uploads.some(upload=>upload.category===category));

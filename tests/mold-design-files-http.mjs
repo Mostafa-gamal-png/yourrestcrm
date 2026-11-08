@@ -14,7 +14,9 @@
 // other region's manager not, anonymous 401); the 10 files a request with production's; uploads beyond two at once answered 429; and
 // (production's second update of 2026-11-03) the quotation's and PO's files: none before the update is known, then each with its category,
 // its 5 places, production's refusals (not_document, too_many_files), a retry with the same category, production's own PO file, and a
-// download by fileId from any list.
+// download by fileId from any list. Since 2026-11-08 a new request is kept until its first design file of its own: the sections here
+// about a file's way and places use requests as the release before saved them (scripts/lib/mold-before.mjs), and the quotation's
+// section attaches a design file before the quotation's file that releases its request.
 // Synthetic isolated fixtures only: temporary SQLite and object store, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {request as httpRequest} from 'node:http';
@@ -24,6 +26,7 @@ import path from 'node:path';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {withSignature} from '../scripts/lib/signature-png.mjs';
+import {asBefore} from '../scripts/lib/mold-before.mjs';
 
 const members = [
   {id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'smw', role: 'manager', region: 'western'},
@@ -51,7 +54,11 @@ try {
   await customer('east1', 'rep', 'الشرقية'); await customer('east2', 'rep', 'الشرقية'); await customer('west1', 'rep2', 'الغربية');
   // A representative's request carries the customer's signature (2026-11-04), one of its design files: each request below starts with it.
   const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(members.find(member => member.id === who)?.role, {requestId: crypto.randomUUID(), ...body})});
-  const create = async (who, customerId, description) => (await (await post(who, {action: 'create', customerId, specs: {...specs, description}, payment: 'cash'})).json()).request;
+  // Asked for as the release before saved it (asBefore), and read as it then stands (its signature arrived).
+  const create = async (who, customerId, description) => {
+    const request = (await (await asBefore(app.db, body => post(who, body), await post(who, {action: 'create', customerId, specs: {...specs, description}, payment: 'cash'}))).json()).request;
+    return request.remote ? (await (await as(who)('/api/mold-requests?id=' + request.id)).json()).requests[0] : request;
+  };
   const list = async who => (await as(who)('/api/mold-requests')).json();
   const viewOf = async (who, id) => (await list(who)).requests.find(item => item.id === id);
   const age = id => app.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(id).run();
@@ -362,6 +369,8 @@ try {
   check((await list('rep')).quotePo, true, 'production updates; the next pull teaches the CRM');
   const quoted = (await (await post('rep', {action: 'create', customerId: 'east1', specs: {...specs, description: 'with its quotation'}, payment: 'cash'})).json()).request;
   check([quoted.sending.state, quoted.sending.held, quoted.remote], ['waiting', 'quote_file', null], 'a new request: kept in the CRM until its quotation or PO file');
+  body = await (await uploadAs(quoted.id, 'رسم.pdf', pdf('quoted design'))).json();
+  check([body.file.state, body.request.sending.held], ['held', 'quote_file'], 'its design file (2026-11-08): kept with it, still waiting for the quotation or PO file');
   body = await (await uploadAs(quoted.id, 'عرض سعر Q-2026-0153.pdf', pdf('quotation'), 'quote')).json();
   const quoteFile = body.file;
   check([quoteFile.state, quoteFile.category, JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, body.request.remote.quoteFiles.map(file => file.crmFileId), body.request.sending.state], ['sent', 'quote', 'quote', [quoteFile.crmFileId], 'sent'], 'a quotation PDF: releases the request, then goes with its category, listed by production in quoteFiles');
