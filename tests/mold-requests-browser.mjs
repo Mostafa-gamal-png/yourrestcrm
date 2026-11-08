@@ -21,7 +21,10 @@
 // to send without one, the request sent with its files once saved (the quotation's first), «ناقص ملف عرض السعر / الـ PO» from
 // production's flag on the card, the sheet and the sales manager's list, a file attached from the sheet without a warning and the
 // approval kept (a request sent with a number only, from before), in English and at phone width. «رابط التصميم» no longer on the form, an older request's link read-only; customer service's request opened from the sales
-// manager's «طلبات بانتظار اعتمادي» and approved there, not in his list (2026-11-03). Screenshots for the report. Synthetic fixtures only: temporary SQLite,
+// manager's «طلبات بانتظار اعتمادي» and approved there, not in his list (2026-11-03). Since 2026-11-08 (the owner: «إجباري على الكل»)
+// a design file is required of every new request: the picker reads «ملفات التصميم (ملف واحد على الأقل)», «حفظ وإرسال» without one is
+// refused on the device («أرفق ملف تصميم واحد على الأقل», before the signing step), with one it goes on; the request waits for its
+// design file to upload, then goes; on a phone of 360 px, in Arabic and in English. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
 // no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -33,6 +36,7 @@ import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
 import {signaturePng, withSignature} from '../scripts/lib/signature-png.mjs';
 import {drawSignature, padInked, signaturePad, signRequest} from '../scripts/lib/signature-pad.mjs';
+import {asBefore} from '../scripts/lib/mold-before.mjs';
 
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
 const members = [
@@ -57,6 +61,9 @@ try {
   await customer('east1', 'rep', 'الشرقية'); await customer('east2', 'rep', 'الشرقية');
   const {scope} = await app.db.prepare('SELECT region_scope AS scope FROM crm_members WHERE id=?').bind('rep').first();
   const stale = () => app.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z'").run();
+  /** A request saved through the API (api: a signed-in session's fetch) as the release before saved it (asBefore: no design file
+   *  required), for the sections about a request's own flow; sent by its requester's resend. */
+  const askBefore = async (api, body) => asBefore(app.db, change => api('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await api('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), ...body})}));
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1']});
   /** A signed-in page; a representative runs in the Android app emulator with tracking set up (the gate lets them in). language: 'en'
    *  opens it in English (the saved choice, as the language switch stores it). */
@@ -77,7 +84,15 @@ try {
   const noOverflow = async (page, label) => check(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, label + ': no horizontal overflow');
   const goMolds = async page => { await page.locator('button.nav-item', {hasText: new RegExp(LABEL + '|Mold requests')}).first().click(); await page.locator('.mold-page').waitFor(); };
   const sheet = page => page.locator('.mold-sheet');
-  const fill = async (dialog, customerName, payment = 'نقدي') => {
+  /** A design file of the request's own, chosen in the form's design picker (required since 2026-11-08). */
+  const drawing = (name = 'رسم القالب.pdf') => ({name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic drawing ' + name)});
+  const attachDesign = async (dialog, file = drawing()) => {
+    const picker = dialog.locator('.mold-design-picker[data-category="design"]'), ready = await picker.locator('.mold-design-file[data-state="ready"]').count();
+    await picker.locator('input[type=file]').setInputFiles(file);
+    await picker.locator('.mold-design-file[data-state="ready"]').nth(ready).waitFor();
+  };
+  const DESIGN_TITLE = 'ملفات التصميم (ملف واحد على الأقل)', DESIGN_REQUIRED = 'أرفق ملف تصميم واحد على الأقل';
+  const fill = async (dialog, customerName, payment = 'نقدي', {design = true} = {}) => {
     if (customerName) { await dialog.locator('.mold-customer-search input').fill(customerName); await dialog.locator('.mold-customer-matches button', {hasText: customerName}).click(); }
     await dialog.locator('label.mold-field', {hasText: 'وصف القالب'}).locator('input').fill('200*400*27.5TH MM OPEN');
     for (const text of ['مفتوح', 'موديل قديم', 'بدون بلوكة نص']) await dialog.locator('.mold-choice label', {hasText: text}).click();
@@ -85,6 +100,7 @@ try {
     await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
     await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).locator('label', {hasText: payment}).click();
+    if (design) await attachDesign(dialog);
   };
   // ---- The customer's signature (2026-11-04): drawn on the pad with pointer events, as a mouse, a finger (real touch through the DevTools
   //  protocol: the Android WebView's and a phone's) or a stylus (pen pointer events, a tablet's) does; 'dot' is a tap, no signature.
@@ -116,6 +132,9 @@ try {
   // How the customer pays: a required choice of two (2026-11-03).
   const paymentChoice = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'});
   check([await paymentChoice.locator('label').allInnerTexts(), await paymentChoice.locator('.field-error').innerText(), await paymentChoice.getAttribute('aria-invalid')], [['نقدي', 'آجل'], 'اختار طريقة الدفع: نقدي أو آجل', 'true'], 'the payment: نقدي or آجل, required');
+  // A design file of its own (2026-11-08): required of every new request, said in the picker's title and refused beside it.
+  const designPicker = dialog.locator('.mold-design-picker[data-category="design"]');
+  check([await designPicker.locator('legend').innerText(), await designPicker.locator(':scope > .field-error').innerText(), await designPicker.getAttribute('aria-invalid'), await designPicker.getAttribute('data-required')], [DESIGN_TITLE, DESIGN_REQUIRED, 'true', 'true'], 'the design files: one at least, said in the title and refused beside the picker');
   check(mock.state.calls.length, before, 'nothing was sent for an incomplete form');
   await fill(dialog, 'مصنع east1');
   check(await dialog.locator('.field-error').count(), 0, 'each message goes once its field is filled');
@@ -277,7 +296,7 @@ try {
   // ---- 3c. A sent request offers no edit, approved or not: cancelling and its design files only. One production refused before storing
   //  it is still edited, in a dialog over the request (four half-block choices), until its first send reaches production.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
-  const refused = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json()).request;
+  const refused = (await (await askBefore(app.as(await app.login('rep')), {customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})).json()).request;
   check([refused.sending.state, refused.remote, refused.can.edit], ['rejected', null, true], 'production refused it before storing it (400): still the requester\'s to edit');
   const editor = await open('rep');
   await goMolds(editor);
@@ -296,6 +315,7 @@ try {
   await edit.waitFor();
   ok((await edit.innerText()).includes('الطلب لم يصل للإنتاج بعد'), 'the dialog says why it may still change');
   check(await edit.locator('.mold-banner').count(), 0, 'no warning about approvals: there are none to undo');
+  check(await edit.locator('.mold-design-picker[data-category="design"] legend').innerText(), 'ملفات التصميم (اختياري)', 'a request asked for before 2026-11-08: its edit keeps the design files optional');
   check(await edit.locator('.mold-choice', {hasText: 'بلوكة النص'}).locator('label').allInnerTexts(), ['بدون بلوكة نص', 'بلوكة نص واحدة', 'بلوكتين نص', '3 بلوكات نص'], 'none to three half blocks');
   // The dialog opened from the request is above the request, everywhere they overlap.
   check(await editor.evaluate(() => { const box = document.querySelector('.mold-dialog').getBoundingClientRect(), sheetBox = document.querySelector('.mold-sheet').getBoundingClientRect(); const x = Math.max(box.left, sheetBox.left) + 20, y = box.top + box.height / 2; return !!document.elementFromPoint(x, y)?.closest('.mold-dialog'); }), true, 'the edit dialog is on top of the request it was opened from');
@@ -319,7 +339,7 @@ try {
   //  elsewhere). Saving is refused with the reason in English, the form stays open with it, and the request behind drops its edit at once.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
   const repApi = app.as(await app.login('rep'));
-  const ask = async (description, customerId = 'east1') => (await (await repApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json()).request;
+  const ask = async (description, customerId = 'east1') => (await (await askBefore(repApi, {customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})).json()).request;
   const late = await ask('sent meanwhile');
   check([late.sending.state, late.can.edit], ['rejected', true], 'refused before production stored it: editable');
   const english = await open('rep', {language: 'en'});
@@ -398,6 +418,43 @@ try {
   ok((await sheet(englishRep).locator('.mold-production-only').innerText()).includes('The specifications shown are the change production refused'), 'opened again: still said');
   await englishRep.context().close();
 
+  // ---- 3g. 2026-11-08: a request kept for its design file (its upload never came: the page was closed, say): «بانتظار ملف التصميم» on
+  //  the card and the sheet, with what to do and no resend; its edit asks for a design file before the signing step; the file chosen in
+  //  the edit uploads once the change is saved and sends the request, then its signature, then the file.
+  const keptApi = app.as(await app.login('rep'));
+  const keptBody = (await keptApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'kept for its design file', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json();
+  const keptId = keptBody.request.id;
+  check([keptBody.send.code, keptBody.request.sending.held, mock.row(keptId) || null], ['design_file', 'design_file', null], 'saved, kept for its design file: production has nothing');
+  const keeper = await open('rep');
+  await goMolds(keeper);
+  const keptCard = keeper.locator('.mold-card', {hasText: 'kept for its design file'});
+  await keptCard.waitFor();
+  check([await keptCard.locator('.mold-card-sending').innerText(), await keptCard.locator('.mold-card-sending').getAttribute('data-held')], ['بانتظار ملف التصميم', 'design_file'], 'its card says what it waits for');
+  await keptCard.click();
+  const keptSending = sheet(keeper).locator('.mold-sending[data-state="needs_file"]');
+  await keptSending.waitFor();
+  check([await keptSending.locator('strong').innerText(), (await keptSending.locator('p').innerText()).startsWith('الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)'), await sheet(keeper).getByRole('button', {name: 'إعادة الإرسال'}).count(), await sheet(keeper).locator('section.mold-design[data-category="design"] .mold-design-tools').count()],
+    ['بانتظار ملف التصميم', true, 0, 1], 'the sheet: what it waits for and what to do; no resend; the design files\' attach action');
+  await keeper.waitForTimeout(300);
+  await shot(keeper, 'mold-sheet-design-file-held');
+  await sheet(keeper).getByRole('button', {name: 'تعديل الطلب'}).click();
+  const keptEdit = keeper.locator('.mold-dialog');
+  await keptEdit.waitFor();
+  const keptPicker = keptEdit.locator('.mold-design-picker[data-category="design"]');
+  check(await keptPicker.locator('legend').innerText(), DESIGN_TITLE, 'its edit: a design file at least (asked for under the rule, none of its own yet)');
+  await keptEdit.locator('label.mold-field', {hasText: 'الكمية'}).locator('input').fill('2');
+  await keptEdit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  await keptPicker.locator(':scope > .field-error').waitFor();
+  check([await keptPicker.locator(':scope > .field-error').innerText(), await keptEdit.locator('.mold-signing').count(), mock.row(keptId) || null], [DESIGN_REQUIRED, 0, null], 'refused without one, before the signing step');
+  await attachDesign(keptEdit);
+  await keptEdit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  await keptEdit.locator('.mold-signing').waitFor();
+  await sign(keeper, {signer: 'م. خالد العتيبي'});
+  await keptEdit.waitFor({state: 'detached'});
+  for (let n = 0; n < 100 && !(mock.row(keptId)?.designFiles?.length >= 2); n++) await new Promise(resolve => setTimeout(resolve, 100));
+  check([mock.row(keptId)?.quantity, mock.row(keptId)?.designFiles.map(file => file.name.startsWith('توقيع العميل'))], [2, [true, false]], 'the change saved, its design file uploaded: the request went as changed, then its new signature, then the design file');
+  await keeper.context().close();
+
   // ---- 3d. Deleted in the products application: the representative reads it cancelled there, not «production has started»
   mock.remove(second);
   await stale();
@@ -417,7 +474,7 @@ try {
 
   // ---- 3e. Cancelled in the CRM while production is unreachable: «ملغى» at once, the cancellation waiting to be sent
   const api = app.as(await app.login('rep'));
-  const asked = (await (await api('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'deferred'})})).json()).request;
+  const asked = (await (await askBefore(api, {customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'deferred'})).json()).request;
   mock.state.down = true;
   check((await api('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: asked.id, version: asked.version, reason: ''}})).status, 200, 'cancelled in the CRM while production is down');
   const canceller = await open('rep');
@@ -581,7 +638,7 @@ try {
   // ---- 5c. Who sees which (the owner, 2026-11-03): customer service's request is not in the sales manager's list (his own and his team's);
   //  it waits for him in «طلبات بانتظار اعتمادي», opens from there («فتح الطلب») and is approved from its sheet.
   const csmApi = app.as(await app.login('csm'));
-  const fromService = (await (await csmApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب خدمة العملاء', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}})).json()).request;
+  const fromService = (await (await asBefore(app.db, change => csmApi('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await csmApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب خدمة العملاء', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}}))).json()).request;
   // An approval by order number reads production's waiting list afresh (the server keeps it a minute otherwise); none has that number.
   await app.as(await app.login('sm'))('/api/mold-requests', {method: 'POST', body: {action: 'approve-order', requestId: crypto.randomUUID(), orderNo: 999999}});
   const serviceManager = await open('sm');
@@ -629,7 +686,7 @@ try {
   await quoteFiles.waitFor();
   const pickers = await quoteDialog.locator('.mold-design-picker').evaluateAll(list => list.map(picker => [picker.getAttribute('data-category'), picker.querySelector('legend').textContent, picker.querySelector('input[type=file]').getAttribute('accept')]));
   check([await quoteFiles.locator(':scope > legend').innerText(), await quoteDialog.locator('input[name="quoteNo"], input[name="poNo"]').count(), pickers.map(([category, legend]) => [category, legend]), pickers[0][2], pickers[1][2], pickers[2][2].includes('.dwg')],
-    ['عرض السعر أو الـ PO (ملف واحد على الأقل)', 0, [['quote', 'ملفات عرض السعر'], ['po', 'ملفات الـ PO'], ['design', 'ملفات التصميم (اختياري)']], '.pdf,.png,.jpg,.jpeg,.webp,.gif', '.pdf,.png,.jpg,.jpeg,.webp,.gif', true], 'learned from a pull: no number field; the quotation\'s and PO\'s pickers (a PDF or an image), one file at least');
+    ['عرض السعر أو الـ PO (ملف واحد على الأقل)', 0, [['quote', 'ملفات عرض السعر'], ['po', 'ملفات الـ PO'], ['design', DESIGN_TITLE]], '.pdf,.png,.jpg,.jpeg,.webp,.gif', '.pdf,.png,.jpg,.jpeg,.webp,.gif', true], 'learned from a pull: no number field; the quotation\'s and PO\'s pickers (a PDF or an image), one file at least; a design file at least too (2026-11-08)');
   await fill(quoteDialog, 'مصنع east2');
   const unsent = mock.state.calls.length;
   await quoteDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
@@ -651,7 +708,7 @@ try {
   check([Object.hasOwn(quoteSent, 'quoteNo'), Object.hasOwn(quoteSent, 'poNo'), await sheet(quoteRep).locator('.mold-facts dt', {hasText: /رقم عرض السعر|رقم الـ PO/}).count()], [false, false, 0], 'sent without a number; the sheet shows none');
   check([await sheet(quoteRep).locator('section.mold-design').evaluateAll(sections => sections.map(section => section.getAttribute('data-category'))), await quoteGroup.locator('.mold-design-count').innerText(), await sheet(quoteRep).locator('.mold-quote-po-missing').count()], [['design', 'quote', 'po'], '1/5', 0], 'the request\'s files in three groups; the quotation file reached production in its own (1 of 5); nothing missing');
   await sheet(quoteRep).locator('.mold-signature-view[data-state="sent"]').waitFor();
-  check(mock.row(quotedId).designFiles.map(file => [file.category, file.name.startsWith('توقيع العميل')]), [['design', true], ['quote', false]], 'production holds it as the quotation\'s, beside the customer\'s signature (a design file)');
+  check(mock.row(quotedId).designFiles.map(file => [file.category, file.name.startsWith('توقيع العميل')]), [['design', true], ['quote', false], ['design', false]], 'production holds it as the quotation\'s, beside the customer\'s signature and the design file (in the order attached: the quotation\'s uploads first)');
   await quoteRep.waitForFunction(() => { const box = document.querySelector('.mold-sheet')?.getBoundingClientRect(); return !!box && box.left >= -1 && box.right <= innerWidth + 1; });
   await quoteGroup.scrollIntoViewIfNeeded();
   await shot(quoteRep, 'mold-sheet-quote-file');
@@ -715,6 +772,8 @@ try {
   await englishFiles.locator(':scope > .field-error').waitFor();
   check([await englishFiles.locator(':scope > legend').innerText(), await englishFiles.locator('.mold-design-picker legend').allInnerTexts(), await englishFiles.locator(':scope > .field-error').innerText()],
     ['Quotation or PO (at least one file)', ['Quotation files', 'PO files'], 'Attach the quotation or PO file (at least one)'], 'in English');
+  const englishDesign = englishPhone.locator('.mold-dialog .mold-design-picker[data-category="design"]');
+  check([await englishDesign.locator('legend').innerText(), await englishDesign.locator(':scope > .field-error').innerText()], ['Design files (at least one)', 'Attach at least one design file'], 'the design file\'s title and refusal in English (2026-11-08)');
   await englishFiles.scrollIntoViewIfNeeded();
   check(await englishFiles.evaluate(element => { const box = element.getBoundingClientRect(); return box.left >= -1 && box.right <= innerWidth + 1; }), true, 'the quotation and PO pickers fit the phone');
   await noOverflow(englishPhone, 'phone form with the quotation and PO files'); await shot(englishPhone, 'mold-form-quote-file-phone');
@@ -726,10 +785,19 @@ try {
   await goMoldsAnywhere(signPhone);
   await signPhone.locator('button.mold-new').click();
   const phoneDialog = signPhone.locator('.mold-dialog');
-  await fill(phoneDialog, 'مصنع east1');
+  await fill(phoneDialog, 'مصنع east1', 'نقدي', {design: false});
   // production's update of 2026-11-03 is known by now: a quotation or PO file at least (2026-11-05)
   await phoneDialog.locator('.mold-design-picker[data-category="po"] input[type=file]').setInputFiles({name: 'PO-44.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic PO 44')});
   await phoneDialog.locator('.mold-design-picker[data-category="po"] .mold-design-file[data-state="ready"]').waitFor();
+  // No design file (2026-11-08): refused on the phone with the message, before the signing step; nothing sent.
+  const phoneSends = mock.state.calls.length, phoneDesign = phoneDialog.locator('.mold-design-picker[data-category="design"]');
+  await phoneDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+  await phoneDesign.locator(':scope > .field-error').waitFor();
+  check([await phoneDesign.locator('legend').innerText(), await phoneDesign.locator(':scope > .field-error').innerText(), await phoneDialog.locator('.mold-signing').count(), await phoneDialog.locator('.field-error').count(), mock.state.calls.length], [DESIGN_TITLE, DESIGN_REQUIRED, 0, 1, phoneSends], '360 px: no design file of its own: refused beside its picker, no signing, nothing sent');
+  await phoneDesign.scrollIntoViewIfNeeded();
+  await noOverflow(signPhone, 'phone form refusing without a design file'); await shot(signPhone, 'mold-form-design-required-phone');
+  await attachDesign(phoneDialog, drawing('مسقط القالب.pdf'));
+  check(await phoneDesign.locator(':scope > .field-error').count(), 0, 'a design file chosen: the refusal goes');
   await phoneDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   await phoneDialog.locator('.mold-signing').waitFor();
   ok(!(await phoneDialog.locator('.mold-signing-summary').innerText()).includes('PO'), 'what the customer signs carries no number');

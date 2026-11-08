@@ -44,6 +44,7 @@
 /* The quotation and PO numbers (production's update of 2026-11-03): the two fields, one at least; the numbers on a card; the note when production lacks both. */
 .mold-quote-files{border:0;margin:0;padding:0;min-width:0;display:grid;gap:8px}.mold-quote-files>legend{font-size:14px;font-weight:600;margin-bottom:6px;padding:0}
 .mold-quote-files[aria-invalid=true]>legend{color:var(--destructive)}
+.mold-design-picker[aria-invalid=true]>legend{color:var(--destructive)}
 .mold-quote-po-missing{display:flex;align-items:center;gap:6px;margin:0;padding:6px 10px;border-radius:10px;font-size:13px;line-height:1.5;background:#f5e9c8;color:#6a4a0e}
 .mold-quote-po-missing>span{display:grid;gap:2px}.mold-quote-po-missing small{font-size:12px;opacity:.9}
 .dark .mold-quote-po-missing{background:#3a3014;color:#f2dca0}

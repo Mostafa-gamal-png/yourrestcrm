@@ -34,13 +34,17 @@
 // files), «missing» from production's flag with the file attached afterwards, and a quotation's or PO's file keeping the approvals while a
 // design file undoes them. Who sees which request
 // (the owner, 2026-11-03: two managers sharing a region, customer service's request in the waiting list only) and «رابط التصميم» removed
-// (refused when sent, an older request's link kept and resent byte for byte).
+// (refused when sent, an older request's link kept and resent byte for byte). Since 2026-11-08 (the owner: «إجباري على الكل») every new
+// request, of any role, is kept in the CRM until its first design file of its own (the customer's signature does not count): the first
+// request below goes that way (saved, kept, released by its design file); the sections about a request's own flow use requests as the
+// release before saved them (`create`: no data.designRequired), and the design file's hold has its own checks with the quotation's.
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {moldStatusObject} from '../portable/mold-rules.mjs';
 import {signatureInput, signaturePng, withSignature} from '../scripts/lib/signature-png.mjs';
+import {asBefore} from '../scripts/lib/mold-before.mjs';
 
 const members = [
   {id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'},
@@ -52,6 +56,16 @@ const roleOf = (who, roster = members) => roster.find(member => member.id === wh
 let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
+/** A multipart body as the page's upload sends it (a design file, or the quotation's or PO's with its category). */
+const multipart = async fields => {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) if (value && typeof value === 'object' && 'bytes' in value) form.set(key, new Blob([value.bytes]), value.name); else form.set(key, value);
+  const encoded = new Response(form);
+  return {body: Buffer.from(await encoded.arrayBuffer()), headers: {'Content-Type': encoded.headers.get('content-type')}};
+};
+const pdf = text => Buffer.from('%PDF-1.7 synthetic ' + text);
+/** The design-files upload of a request, as the page sends it, through the given session. */
+const uploader = as => async (id, name, bytes, category, who = 'rep') => { const encoded = await multipart({requestId: crypto.randomUUID(), id, ...(category ? {category} : {}), file: {name, bytes}}); return as(who)('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: encoded.headers}); };
 // «رابط التصميم» is no longer asked for (2026-11-03): the form sends no design link. An older request's own is kept (see below).
 const specs = {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, notes: 'أول طلب'};
 const DESIGN_URL_GONE = 'رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
@@ -71,8 +85,11 @@ try {
   const list = async who => (await get(who)).json();
   // A sales role's create, or edit, carries the customer's signature as the form sends it (2026-11-04: see its own section below).
   const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(roleOf(who), {requestId: crypto.randomUUID(), ...body})});
-  // How the customer pays is chosen with every request (2026-11-03).
-  const create = (who, customerId, extra = {}, ...payment) => post(who, {action: 'create', customerId, specs: {...specs, ...extra}, payment: payment.length ? payment[0] : 'cash'});
+  // How the customer pays is chosen with every request (2026-11-03). save: the save alone (kept for its design file since 2026-11-08);
+  // create: a request as the release before saved it, sent (asBefore).
+  const save = (who, customerId, extra = {}, ...payment) => post(who, {action: 'create', customerId, specs: {...specs, ...extra}, payment: payment.length ? payment[0] : 'cash'});
+  const create = async (who, ...rest) => asBefore(app.db, body => post(who, body), await save(who, ...rest));
+  const upload = uploader(as);
   const stored = async id => app.db.prepare('SELECT * FROM crm_mold_requests WHERE id=?').bind(id).first();
   const age = id => app.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(id).run();
   const calls = route => mock.state.calls.filter(call => call.route === route).length;
@@ -85,10 +102,14 @@ try {
   check([empty.requests, empty.linkReady, empty.canCreate, empty.statusError], [[], true, true, null], 'a representative: an empty list, the link ready, may ask');
   check([(await list('sup')).canCreate, (await list('cs')).canCreate, (await list('owner')).canCreate], [true, true, true], 'everyone asks');
 
-  // ---- a request: saved, then signed and sent
-  let res = await create('rep', 'east1');
+  // ---- a request: saved (signed), kept until its design file (2026-11-08), then sent
+  let res = await save('rep', 'east1');
   let body = await res.json();
-  check([res.status, body.send.kind, body.request.sending.state, body.request.remote.orderNo, body.request.remote.status, body.request.editable], [200, 'ok', 'sent', 92, 'received', true], 'saved and delivered: order 92, received, still editable');
+  check([res.status, body.send, body.request.sending.state, body.request.sending.held, body.request.remote, calls('requests'), calls('design-files'), body.request.can.resend, body.request.can.attach], [200, {kind: 'none', code: 'design_file', fields: []}, 'waiting', 'design_file', null, 0, 0, false, true], 'saved with the customer\'s signature and kept for its design file: nothing sent, not even the signature; the attach action, no resend');
+  res = await upload(body.request.id, 'رسم القالب.pdf', pdf('first design'));
+  body = await res.json();
+  check([res.status, body.file.state, body.request.sending.state, body.request.sending.held, body.request.remote.orderNo, body.request.remote.status, body.request.editable], [200, 'sent', 'sent', undefined, 92, 'received', true], 'its design file sends it: delivered, order 92, received, still editable; the file follows');
+  check(mock.state.calls.filter(call => ['requests', 'design-files'].includes(call.route)).map(call => call.route === 'requests' ? 'request' : JSON.parse(call.body).name), ['request', 'توقيع العميل - م. خالد العتيبي.png', 'رسم القالب.pdf'], 'the request first, then the customer\'s signature, then the design file');
   check([body.request.remote.waitingStep, body.request.remote.approvals], ['sales', {required: true, sales: null, production: null, admin: null}], 'it waits for the sales manager\'s approval');
   const first = body.request.id;
   ok(/^mr-[0-9a-f-]{36}$/.test(first), 'the CRM request id is the contract crmRequestId');
@@ -127,7 +148,7 @@ try {
   const before = calls('requests');
   const firstTap = await (await as('rep')('/api/mold-requests', {method: 'POST', body: once})).json();
   const secondTap = await (await as('rep')('/api/mold-requests', {method: 'POST', body: once})).json();
-  check([secondTap.request.id, calls('requests') - before], [firstTap.request.id, 1], 'the same tap twice: one request, sent once');
+  check([secondTap.request.id, secondTap.request.sending.held, calls('requests') - before, (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_requests WHERE customer_id='east2'").first()).n], [firstTap.request.id, 'design_file', 0, 1], 'the same tap twice: one request (kept for its design file, nothing sent)');
   check((await as('rep')('/api/mold-requests', {method: 'POST', body: {...once, specs: {...specs, quantity: 4}}})).status, 409, 'the same receipt with other data: 409');
 
   // ---- who sees it
@@ -645,8 +666,11 @@ try {
   const listed = (await as('/api/mold-requests')).json();
   check([listed.linkReady, listed.linkProblem], [false, 'not_configured'], 'the screen says the link is off');
   const created = await (await as('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'e1', specs, payment: 'deferred'})})).json();
-  check([created.request.sending.state, created.send.kind, created.request.can.edit], ['off', 'off', true], 'a request is still saved, waiting while the link is off (never attempted: still editable)');
-  check((await as('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: created.request.id}})).status, 503, 'resend says the link is off');
+  check([created.request.sending.state, created.send.kind, created.request.can.edit, created.request.sending.held], ['off', 'off', true, 'design_file'], 'a request is still saved, waiting while the link is off (never attempted: still editable), kept for its design file');
+  const keptOff = await as('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: created.request.id}});
+  check([keptOff.status, keptOff.json().error], [409, 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.'], 'its resend says to attach the design file first');
+  await plain.db.prepare("UPDATE crm_mold_requests SET data=json_remove(data,'$.designRequired') WHERE id=?").bind(created.request.id).run();
+  check((await as('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: created.request.id}})).status, 503, 'one asked for before: resend says the link is off');
   check([(await as('/api/crm')).status, mock.state.calls.length - calls], [200, 0], 'the rest of the CRM works; nothing was sent');
 } finally { await plain.stop(); await mock.stop(); }
 
@@ -657,12 +681,15 @@ try {
 // and then its files; a request first sent before is resent byte for byte; quoteOrPoMissing (no quotation or PO file, finance not
 // approved) is shown as «ناقص» and a file attached to such a request (one sent with a number only) fixes it without undoing the
 // approvals, while a design file still undoes them; a never-sent request stored with a number keeps it through an edit and sends it;
-// production_only no longer says to ask for a number.
+// production_only no longer says to ask for a number. Since 2026-11-08 the design file is required the same way, of every role: a new
+// request with its quotation's file but no design file of its own stays kept (sending.held design_file), nothing sends it, and its first
+// design file releases it (the request, then its files in order, the customer's signature first); a request asked for before goes as
+// it always did.
 {
   const quoteMock = await startProductsMock();
   const quoteApp = await bootBuiltApp({members}, {env: {YR_PRODUCTS_API_URL: quoteMock.url, YR_PRODUCTS_SECRET: quoteMock.state.secret, NODE_EXTRA_CA_CERTS: quoteMock.ca}});
   try {
-    const sessions = {rep: await quoteApp.login('rep'), sm: await quoteApp.login('sm'), cs: await quoteApp.login('cs')}, as = id => quoteApp.as(sessions[id]), now = new Date().toISOString();
+    const sessions = {rep: await quoteApp.login('rep'), sm: await quoteApp.login('sm'), cs: await quoteApp.login('cs'), owner: await quoteApp.login('owner')}, as = id => quoteApp.as(sessions[id]), now = new Date().toISOString();
     await quoteApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('q1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع q1', region: 'الشرقية', city: 'الدمام', address: 'حي الصناعية'}), now, now).run();
     const list = async (who = 'rep') => (await as(who)('/api/mold-requests')).json();
     const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(roleOf(who), {requestId: crypto.randomUUID(), ...body})});
@@ -689,19 +716,22 @@ try {
     check([answer.quotePo, await learned()], [false, null], 'the older application: the screen asks for nothing new (quotePo false), nothing learned');
     let res = await create(), body = await res.json();
     const before = body.request.id;
-    check([res.status, body.send.kind, Object.keys(JSON.parse(sentBodies(before)[0])), body.request.quotePo, body.quotePo, Object.hasOwn(await dataOf(before), 'fileRequired')], [200, 'ok', ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment'], null, false, false], 'a request: saved and sent exactly as before, no file asked for');
+    check([res.status, body.send, body.request.sending.held, body.quotePo, Object.hasOwn(await dataOf(before), 'fileRequired'), (await dataOf(before)).designRequired], [200, {kind: 'none', code: 'design_file', fields: []}, 'design_file', false, false, true], 'a request: saved, no quotation\'s file asked for; kept for its design file (2026-11-08, whatever is known of production)');
+    body = await (await upload(before, 'رسم.pdf', pdf('before the update'))).json();
+    check([body.request.sending.state, Object.keys(JSON.parse(sentBodies(before)[0])), body.request.quotePo], ['sent', ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment'], null], 'its design file sends it exactly as before (the marker never travels)');
     res = await create({quoteNo: 'Q-1'});
     check([res.status, (await res.json()).fields, (await quoteApp.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_requests WHERE json_extract(data,'$.quoteNo') IS NOT NULL").first()).n], [400, {quoteNo: GONE}, 0], 'a number sent anyway (a page loaded before): refused by its field, nothing saved');
     // A request whose first send arrived but whose answer was lost: it waits to be sent again, as first sent.
-    quoteMock.loseNext('requests');
     body = await (await create({}, {description: 'lost answer before the update'})).json();
     const lost = body.request.id;
+    quoteMock.loseNext('requests');
+    body = await (await upload(lost, 'رسم.pdf', pdf('lost answer'))).json();
     check([body.request.sending.state, sentBodies(lost).length, !!quoteMock.row(lost)], ['waiting', 1, true], 'its answer lost: production holds it, the CRM waits to send it again');
     await quoteApp.db.prepare('UPDATE crm_mold_requests SET next_attempt_at=? WHERE id=?').bind(new Date(Date.now() + 3600_000).toISOString(), lost).run();
     // Yesterday's request (2026-11-04, the CRM asked for a number then): stored with its quotation number, never sent yet (the link was busy).
     const yesterday = 'mr-' + crypto.randomUUID(), yesterdayAt = new Date().toISOString();
     const yesterdayData = {...(await dataOf(before)), requestedAt: '2026-11-04T16:00:00+03:00', quoteNo: 'Q-2026-0153'};
-    delete yesterdayData.signature;
+    delete yesterdayData.signature;delete yesterdayData.designRequired;
     await quoteApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','q1',?,'send',?,'rep',?,?,1)").bind(yesterday, JSON.stringify(yesterdayData), new Date(Date.now() + 3600_000).toISOString(), yesterdayAt, yesterdayAt).run();
 
     // (2) production's update goes live; the CRM learns it from the first answer carrying quoteOrPoMissing: here a status pull
@@ -745,13 +775,43 @@ try {
     const service = body.request.id;
     check([body.request.sending.held, sentBodies(service).length], ['quote_file', 0], 'customer service\'s new request is kept for its file too');
     body = await (await upload(service, 'PO.pdf', pdf('service po'), 'po', 'cs')).json();
-    check([body.file.state, body.request.sending.state, sentBodies(service).length, quoteMock.row(service).designFiles.map(file => file.category)], ['sent', 'sent', 1, ['po']], 'its PO file releases it');
+    check([body.file.state, body.request.sending.held, sentBodies(service).length], ['held', 'design_file', 0], 'its PO file: kept still, now for its design file (2026-11-08)');
+    body = await (await upload(service, 'رسم.pdf', pdf('service design'), undefined, 'cs')).json();
+    check([body.file.state, body.request.sending.state, sentBodies(service).length, quoteMock.row(service).designFiles.map(file => file.category || 'design')], ['sent', 'sent', 1, ['po', 'design']], 'its design file releases it: the request, then the PO file and the design file');
+    // (3b) 2026-11-08: the quotation's file first, no design file: kept for it, sent by nothing; the first design file of its own (the
+    // customer's signature is none) releases it; the administrator alike.
+    const DESIGN_FIRST = 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.';
+    body = await (await create({}, {description: 'kept for its design file'})).json();
+    const designKept = body.request.id;
+    check([body.request.sending.held, (await dataOf(designKept)).designRequired, !!(await dataOf(designKept)).signature], ['quote_file', true, true], 'both missing: the quotation\'s file is said first');
+    body = await (await upload(designKept, 'عرض سعر.pdf', pdf('design kept quotation'), 'quote')).json();
+    check([body.file.state, body.request.sending.state, body.request.sending.held, sentBodies(designKept).length, fileCalls(designKept).length, body.request.can.resend, body.request.can.attach],
+      ['held', 'waiting', 'design_file', 0, 0, false, true], 'its quotation file: kept still, for its design file (the customer\'s signature does not count); nothing sent; no resend, the attach action');
+    res = await post('rep', {action: 'resend', id: designKept});
+    check([res.status, (await res.json()).error, sentBodies(designKept).length], [409, DESIGN_FIRST, 0], 'a resend: refused with what to do');
+    await quoteApp.db.prepare("UPDATE crm_mold_requests SET next_attempt_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(designKept).run();
+    await list();
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    check([sentBodies(designKept).length, fileCalls(designKept).length, (await viewOf(designKept)).sending.held, (await viewOf(designKept, 'sm')).sending.held, (await viewOf(designKept, 'sm')).can.attach], [0, 0, 'design_file', 'design_file', false], 'due, and checked by the timetable and by the page: still kept, never sent; the sales manager reads why, and does not attach');
+    const designOrder = quoteMock.state.calls.length;
+    body = await (await upload(designKept, 'رسم القالب.dwg', Buffer.from('AC1027 design kept'))).json();
+    const designReleased = quoteMock.state.calls.slice(designOrder).filter(call => call.signed && ['requests', 'design-files'].includes(call.route)).map(call => call.route === 'requests' ? 'request' : JSON.parse(call.body).crmFileId);
+    const designKeptFiles = (await quoteApp.db.prepare('SELECT id,category FROM crm_mold_design_files WHERE request_id=? ORDER BY created_at,id').bind(designKept).all()).results;
+    check([body.file.state, body.request.sending.state, designReleased, designKeptFiles.map(row => row.category), designKeptFiles[0].id === (await dataOf(designKept)).signature.fileId, Object.keys(JSON.parse(sentBodies(designKept)[0])).join(',')],
+      ['sent', 'sent', ['request', ...designKeptFiles.map(row => row.id)], ['design', 'quote', 'design'], true, 'crmRequestId,requestedAt,customer,salesman,specs,payment'], 'its design file releases it: the request (no marker in it), then the signature, the quotation file and the design file, in the order attached');
+    body = await (await post('owner', {action: 'create', customerId: 'q2', specs: {...specs, description: 'the administrator, kept'}, payment: 'cash'})).json();
+    const adminKept = body.request.id;
+    body = await (await upload(adminKept, 'PO.pdf', pdf('admin po'), 'po', 'owner')).json();
+    check([body.request.sending.held, sentBodies(adminKept).length, Object.hasOwn(await dataOf(adminKept), 'signature')], ['design_file', 0, false], 'the administrator\'s request (no signature): its PO file alone keeps it for its design file');
+    check([(await post('owner', {action: 'resend', id: adminKept})).status, sentBodies(adminKept).length], [409, 0], 'its resend is refused too');
+    body = await (await upload(adminKept, 'رسم.png', Buffer.from(signaturePng()), undefined, 'owner')).json();
+    check([body.file.state, body.request.sending.state, sentBodies(adminKept).length, quoteMock.row(adminKept).designFiles.map(file => file.category || 'design')], ['sent', 'sent', 1, ['po', 'design']], 'its design file releases it');
 
     // (4) the request first sent before the update is resent byte for byte: production takes it as the same request
     res = await post('rep', {action: 'resend', id: lost});
     body = await res.json();
     const lostBodies = sentBodies(lost);
-    check([res.status, body.send.kind, lostBodies.length, lostBodies[1] === lostBodies[0], body.request.sending.state], [200, 'ok', 2, true, 'sent'], 'the resend is the very same bytes as the first send (200 created:false); not kept for a file (asked for before the rule)');
+    check([res.status, body.send.kind, lostBodies.length, lostBodies[1] === lostBodies[0], body.request.sending.state], [200, 'ok', 2, true, 'sent'], 'the resend is the very same bytes as the first send (200 created:false); not kept for a quotation\'s file (asked for before that rule; its design file is there)');
 
     // (5) yesterday's never-sent request with its number: an edit keeps the number (and sends it), an old page's same number passes, another is refused
     res = await post('rep', {action: 'update', id: yesterday, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', quoteNo: 'Q-OTHER', poNo: ''});
@@ -792,6 +852,7 @@ try {
     quoteMock.state.notConfigured = true;
     body = await (await create({}, {description: 'production only'})).json();
     const refusedId = body.request.id;
+    await upload(refusedId, 'رسم.pdf', pdf('production only design'));
     body = await (await upload(refusedId, 'عرض.pdf', pdf('production only'), 'quote')).json();
     quoteMock.state.notConfigured = false;
     quoteMock.answerNext('requests', 409, {error: {code: 'request_locked', message: 'x', details: {reason: 'production_only'}}});
@@ -824,8 +885,9 @@ try {
       await teamApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')").bind(id, assignedTo, JSON.stringify({name: 'مصنع ' + id, region, city: 'الدمام'}), now, now).run();
     const number = async id => (await teamApp.db.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').bind(id).first()).number;
     const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(teamMembers.find(member => member.id === who)?.role, {requestId: crypto.randomUUID(), ...body})});
+    // Who sees and approves which request does not depend on its files: each is asked for as the release before saved it (asBefore).
     const ask = async (who, customerId, description) => {
-      const res = await post(who, {action: 'create', customerId, specs: {...specs, description}, payment: 'cash'}), body = await res.json();
+      const res = await asBefore(teamApp.db, body => post(who, body), await post(who, {action: 'create', customerId, specs: {...specs, description}, payment: 'cash'})), body = await res.json();
       check([res.status, body.send.kind], [200, 'ok'], description + ': asked and sent');
       return body.request;
     };
@@ -907,7 +969,8 @@ try {
 // labelled, downloadable, not deletable; customer service asks without it; an older request is resent byte for byte, with no signature
 // asked on resend or cancel; an edit before the first send that changes what was signed needs a new signature (the old one, never at
 // production, removed), one that changes nothing keeps it; the signature takes one of the 10 design files' places; the receipt holds its
-// hash, never its bytes.
+// hash, never its bytes. Since 2026-11-08 the signature is no design file of the request's own: a signed new request is kept until one
+// (sending.held design_file), and its first design file sends the request, then the signature, then the design file.
 {
   const signMock = await startProductsMock();
   const signApp = await bootBuiltApp({members}, {env: {YR_PRODUCTS_API_URL: signMock.url, YR_PRODUCTS_SECRET: signMock.state.secret, NODE_EXTRA_CA_CERTS: signMock.ca}});
@@ -918,6 +981,7 @@ try {
     for (const id of ['s1', 's2']) await signApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(id, JSON.stringify({name: 'مصنع ' + id, region: 'الشرقية', city: 'الدمام'}), now, now).run();
     const raw = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
     const ask = (who, extra = {}) => raw(who, {action: 'create', customerId: 's1', specs, payment: 'cash', ...extra});
+    const upload = uploader(as);
     const callsOf = route => signMock.state.calls.filter(call => call.route === route && call.signed);
     const stored = async id => signApp.db.prepare('SELECT * FROM crm_mold_requests WHERE id=?').bind(id).first();
     const fileRow = id => signApp.db.prepare('SELECT * FROM crm_mold_design_files WHERE id=?').bind(id).first();
@@ -942,20 +1006,25 @@ try {
     // the JSON route takes a signature within its cap, not a body over it
     check((await ask('rep', {signature: {signer: 'م. خالد', png: 'A'.repeat(380_000)}})).status, 413, 'a body over the route\'s 380 000 bytes: 413');
 
-    // (b) with it: one save (request and file), the request sent, then the PNG as a design file without category
+    // (b) with it: one save (request and file), kept until its design file (2026-11-08), then the request sent, then the PNG as a design
+    // file without category, then the design file
     const key = crypto.randomUUID(), signature = signatureInput('م. خالد العتيبي'), png = Buffer.from(signature.png, 'base64');
     const once = {requestId: key, action: 'create', customerId: 's1', specs, payment: 'cash', signature};
     res = await as('rep')('/api/mold-requests', {method: 'POST', body: once}); body = await res.json();
-    const signed = body.request, fileId = 'mds-' + key;
-    check([res.status, body.send.kind, signed.signature.signer, signed.signature.fileId, signed.signature.href, signed.signature.state], [200, 'ok', 'م. خالد العتيبي', fileId, '/api/mold-requests/design-file?id=' + signed.id + '&file=' + fileId, 'sent'], 'saved and sent; the request names its signature, delivered to production');
+    const fileId = 'mds-' + key, keptSigned = body.request;
+    check([res.status, body.send, keptSigned.sending.held, keptSigned.signature.fileId, keptSigned.signature.state, callsOf('requests').filter(call => call.body.includes(keptSigned.id)).length, callsOf('design-files').filter(call => call.body.includes(keptSigned.id)).length],
+      [200, {kind: 'none', code: 'design_file', fields: []}, 'design_file', fileId, 'waiting', 0, 0], 'saved with its signature, and kept: the signature is no design file of its own (2026-11-08); nothing sent');
+    body = await (await upload(keptSigned.id, 'رسم القالب.pdf', pdf('signed request design'))).json();
+    const signed = body.request, designFileId = body.file.crmFileId;
+    check([body.file.state, signed.sending.state, signed.signature.signer, signed.signature.fileId, signed.signature.href, signed.signature.state], ['sent', 'sent', 'م. خالد العتيبي', fileId, '/api/mold-requests/design-file?id=' + signed.id + '&file=' + fileId, 'sent'], 'its design file sends it; the request names its signature, delivered to production');
     const data = JSON.parse((await stored(signed.id)).data), file = await fileRow(fileId);
     check([data.signature.signer, data.signature.fileId, /^\d{4}-\d{2}-\d{2}T/.test(data.signature.signedAt), file.name, file.kind, file.category, file.content_type, file.size, file.member_id], ['م. خالد العتيبي', fileId, true, 'توقيع العميل - م. خالد العتيبي.png', 'image', 'design', 'image/png', png.length, 'rep'], 'stored: data.signature, and the PNG as one of its design files');
     const sentBody = callsOf('requests').findLast(call => call.body.includes(signed.id)).body;
     check([Object.keys(JSON.parse(sentBody)), sentBody.includes('mds-') || sentBody.includes('signature') || sentBody.includes('توقيع')], [['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment'], false], 'the requests body carries nothing of it');
     const lines = callsOf('design-files').filter(call => call.body.includes(signed.id));
-    check([lines.length, JSON.parse(lines[0].body), signMock.state.calls.findIndex(call => call.route === 'requests' && call.body.includes(signed.id)) < signMock.state.calls.indexOf(lines[0])], [1, {crmRequestId: signed.id, crmFileId: fileId, name: 'توقيع العميل - م. خالد العتيبي.png'}, true], 'then the signature, with design-files, without category, after the request');
+    check([lines.length, JSON.parse(lines[0].body), signMock.state.calls.findIndex(call => call.route === 'requests' && call.body.includes(signed.id)) < signMock.state.calls.indexOf(lines[0]), JSON.parse(lines[1].body).crmFileId], [2, {crmRequestId: signed.id, crmFileId: fileId, name: 'توقيع العميل - م. خالد العتيبي.png'}, true, designFileId], 'then the signature, with design-files, without category, after the request; then the design file');
     const atProduction = signMock.row(signed.id).designFiles;
-    check([atProduction.length, atProduction[0].kind, atProduction[0].category || 'design', Buffer.compare(atProduction[0].bytes, png), file.sent_at !== null || !!(await fileRow(fileId)).sent_at], [1, 'image', 'design', 0, true], 'production holds it as a design image, the same bytes');
+    check([atProduction.length - 1, atProduction[0].kind, atProduction[0].category || 'design', Buffer.compare(atProduction[0].bytes, png), file.sent_at !== null || !!(await fileRow(fileId)).sent_at], [1, 'image', 'design', 0, true], 'production holds it as a design image, the same bytes');
     // the same tap again: the saved answer, one request, one file; the receipt holds the PNG's hash, never its bytes
     const filesBefore = callsOf('design-files').length;
     body = await (await as('rep')('/api/mold-requests', {method: 'POST', body: once})).json();
@@ -966,7 +1035,7 @@ try {
 
     // (c) the sheet: the signature listed and labelled, downloadable, not deletable
     const sheet = (await (await as('rep')('/api/mold-requests?id=' + signed.id)).json()).requests[0];
-    check([sheet.signature.signer, sheet.designFiles.map(entry => [entry.crmFileId, entry.signature, entry.canDelete, entry.state, entry.kind])], ['م. خالد العتيبي', [[fileId, true, false, 'sent', 'image']]], 'the sheet: signed by, and the file labelled as the signature, not deletable');
+    check([sheet.signature.signer, sheet.designFiles.map(entry => [entry.crmFileId, entry.signature, entry.canDelete, entry.state, entry.kind])], ['م. خالد العتيبي', [[fileId, true, false, 'sent', 'image'], [designFileId, undefined, true, 'sent', 'pdf']]], 'the sheet: signed by, and the file labelled as the signature, not deletable (the design file is)');
     res = await as('rep')(sheet.signature.href + '&inline=1');
     check([res.status, res.headers['content-type'], res.headers['content-disposition'].split(';')[0], Buffer.compare(res.bytes, png)], [200, 'image/png', 'inline', 0], 'its image through the CRM\'s download route');
     for (const who of ['sup', 'sm', 'owner']) check((await as(who)(sheet.signature.href + '&inline=1')).status, 200, who + ' reads the request, so the signature');
@@ -974,13 +1043,13 @@ try {
     check([res.status, body.error, (await fileRow(fileId)).deleted_at, callsOf('design-file-delete').length], [409, 'توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.', null, 0], 'the delete route refuses it: kept here and at production');
     // the sales manager's waiting list says so, and labels the image among the design files
     const waitingItem = (await (await as('sm')('/api/mold-requests')).json()).pending.items.find(item => item.crmRequestId === signed.id);
-    check([waitingItem.signature.signer, waitingItem.signatureDelivered, waitingItem.designFiles.map(entry => [entry.crmFileId, entry.signature, entry.kind])], ['م. خالد العتيبي', true, [[fileId, true, 'image']]], '«طلبات بانتظار اعتمادي»: signed by the customer (production\'s listing holds the image), the signature labelled');
+    check([waitingItem.signature.signer, waitingItem.signatureDelivered, waitingItem.designFiles.map(entry => [entry.crmFileId, entry.signature, entry.kind])], ['م. خالد العتيبي', true, [[fileId, true, 'image'], [designFileId, undefined, 'pdf']]], '«طلبات بانتظار اعتمادي»: signed by the customer (production\'s listing holds the image), the signature labelled');
     res = await as('sm')(waitingItem.designFiles[0].href + '&inline=1');
     check([res.status, Buffer.compare(res.bytes, png)], [200, 0], 'the sales manager opens it by order number');
 
     // (d) customer service and the administrator ask without it (one they send is taken the same way)
     res = await raw('cs', {action: 'create', customerId: 's1', specs: {...specs, description: 'customer service'}, payment: 'cash'}); body = await res.json();
-    check([res.status, body.send.kind, body.request.signature, body.request.designFiles, Object.hasOwn(JSON.parse((await stored(body.request.id)).data), 'signature')], [200, 'ok', null, [], false], 'customer service: no signature asked, none stored');
+    check([res.status, body.send.kind, body.request.sending.held, body.request.signature, body.request.designFiles, Object.hasOwn(JSON.parse((await stored(body.request.id)).data), 'signature')], [200, 'none', 'design_file', null, [], false], 'customer service: no signature asked, none stored (kept for its design file, as every new request)');
     res = await raw('owner', {action: 'create', customerId: 's2', specs: {...specs, description: 'the administrator, signed'}, payment: 'cash', signature: signatureInput('عميل الإدارة')}); body = await res.json();
     check([res.status, body.request.signature.signer, body.request.designFiles.length], [200, 'عميل الإدارة', 1], 'the administrator may send one: taken the same way');
 
@@ -999,7 +1068,8 @@ try {
     // (f) an edit before the first send: what was signed changed -> sign again (the old signature, never at production, removed); nothing
     // changed -> kept. Production refuses at its door (503 not_configured), so the request has certainly never reached it.
     signMock.state.notConfigured = true;
-    res = await ask('rep', {customerId: 's2', specs: {...specs, description: 'edit before sending'}, signature: signatureInput('م. سالم')}); body = await res.json();
+    // Asked for as the release before saved it (no design file required: asBefore), so the edit's own rule is what is checked here.
+    res = await asBefore(signApp.db, body => raw('rep', body), await ask('rep', {customerId: 's2', specs: {...specs, description: 'edit before sending'}, signature: signatureInput('م. سالم')})); body = await res.json();
     const draft = body.request, firstSignature = draft.signature.fileId;
     check([body.send.kind, draft.can.edit, draft.designFiles.map(entry => [entry.signature, entry.state]), draft.signature.state], ['retry', true, [[true, 'held']], 'waiting'], 'not at production yet: editable, its signature held until the request is (said as not delivered yet)');
     const edit = (change, extra = {}) => raw('rep', {action: 'update', id: draft.id, version: change.version, specs: {...specs, description: 'edit before sending', ...change.specs}, payment: change.payment || 'cash', ...extra});
@@ -1053,9 +1123,10 @@ try {
     check([res.status, body.request.version, JSON.parse((await stored(reordered)).data).specs], [200, 1, looseSpecs], 'a no-op edit of an older row stored in another key order: nothing changed, no signature asked');
     signMock.state.notConfigured = false;
     // Production refuses the signature's image for good: the request says so; the sales manager's list does not call it signed
+    body = await (await ask('rep', {customerId: 's2', specs: {...specs, description: 'signature refused there'}, signature: signatureInput('م. مرفوض')})).json();
     signMock.answerNext('design-files', 400, {error: {code: 'invalid_payload', message: 'x', fields: ['file'], details: {reason: 'bad_image'}}});
-    res = await ask('rep', {customerId: 's2', specs: {...specs, description: 'signature refused there'}, signature: signatureInput('م. مرفوض')}); body = await res.json();
-    check([res.status, body.request.signature.state, body.request.designFiles[0].state], [200, 'refused', 'rejected'], 'the image refused by production: the request says the signature did not arrive');
+    res = await upload(body.request.id, 'رسم.pdf', pdf('signature refused there')); body = await res.json();
+    check([res.status, body.request.signature.state, body.request.designFiles[0].state, body.file.state], [200, 'refused', 'rejected', 'sent'], 'the image refused by production (its design file released the request; the signature went first): the request says the signature did not arrive');
     const refusedItem = (await (await as('sm')('/api/mold-requests')).json()).pending.items.find(item => item.crmRequestId === body.request.id);
     check([refusedItem.signature.signer, refusedItem.signatureDelivered, refusedItem.designFiles.some(entry => entry.signature)], ['م. مرفوض', false, false], '«طلبات بانتظار اعتمادي»: not said signed while production\'s listing lacks the image');
     ok(signMock.state.calls.every(call => !JSON.stringify(call.headers).includes(signMock.state.secret)) && !signApp.log().includes(signMock.state.secret), 'the secret never travels or is logged');
@@ -1080,7 +1151,8 @@ try {
     // This release's page asks with refs=1; a page loaded before without it.
     const list = async (who = 'sm', page = 'new') => (await as(who)('/api/mold-requests' + (page === 'new' ? '?refs=1' : ''))).json();
     const post = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(roleOf(who), {requestId: crypto.randomUUID(), ...body})});
-    const create = description => post('rep', {action: 'create', customerId: 'f1', specs: {...specs, description}, payment: 'cash'});
+    // How production names a request does not depend on its files: each asked for as the release before saved it (asBefore).
+    const create = async description => asBefore(refApp.db, body => post('rep', body), await post('rep', {action: 'create', customerId: 'f1', specs: {...specs, description}, payment: 'cash'}));
     const approvals = () => refMock.state.calls.filter(call => call.route === 'approval' && call.signed);
     const lastApproval = () => JSON.parse(approvals().at(-1).body);
     const age = () => refApp.db.prepare("UPDATE crm_mold_requests SET remote_at='2026-01-01T00:00:00.000Z'").run();

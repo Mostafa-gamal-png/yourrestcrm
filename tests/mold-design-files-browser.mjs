@@ -18,7 +18,9 @@
 // change is saved, held in the CRM while the request has not reached production, then sent once it has. Since 2026-11-05 (production's
 // update: the quotation's or PO's file counts, the numbers are gone): a new request kept in the CRM says it waits for that file, and the
 // first one attached from its sheet sends it; attaching or deleting a quotation's or PO's file asks no warning and keeps the approvals,
-// while a design file still warns that they are undone. Screenshots for the report.
+// while a design file still warns that they are undone. Since 2026-11-08 a new request needs a design file of its own too: with its PO
+// file and no design file it says it waits for the design file (the requester and the sales manager each in their words), and the design
+// file attached from its sheet sends it, then its files in order. Screenshots for the report.
 // Synthetic fixtures only: temporary SQLite, no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -28,6 +30,7 @@ import {createRequire} from 'node:module';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
+import {asBefore} from '../scripts/lib/mold-before.mjs';
 import {withSignature} from '../scripts/lib/signature-png.mjs';
 import {signRequest} from '../scripts/lib/signature-pad.mjs';
 
@@ -343,7 +346,9 @@ try {
   //  edit: no warning (production holds nothing whose approvals it would undo); uploaded once the change is saved; held in the CRM while
   //  the request has not reached production (the edit's own send gets no answer); sent as soon as production holds the request.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
-  const unsent = (await (await app.as(await app.login('rep'))('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json()).request;
+  // Asked for as the release before saved it (scripts/lib/mold-before.mjs: no design file required), so its first send meets the refusal.
+  const unsentApi = app.as(await app.login('rep'));
+  const unsent = (await (await asBefore(app.db, change => unsentApi('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await unsentApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})}))).json()).request;
   check([unsent.sending.state, unsent.can.edit, mock.row(unsent.id)], ['rejected', true, undefined], 'refused before production stored it: still editable');
   const editor = await open('rep');
   await goMolds(editor);
@@ -417,9 +422,27 @@ try {
     ['بانتظار ملف عرض السعر / الـ PO', 'بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO', 0], 'the sales manager: whom it waits for, and no attach');
   await keptManager.context().close();
   await groupOf('po').locator('input[type=file]').setInputFiles({name: 'PO-7781.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
+  await fileRow(groupOf('po'), 'PO-7781.pdf').and(quoteSheet.locator('[data-state="held"]')).waitFor();
+  // 2026-11-08: its PO file is there, but no design file of its own (the customer's signature is none): kept, now for its design file.
+  const forDesign = sheet(quoteSheet).locator('.mold-sending[data-held="design_file"]');
+  await forDesign.waitFor();
+  check([await groupOf('po').locator('.mold-design-confirm').count(), await forDesign.locator('strong').innerText(), (await forDesign.locator('p').innerText()).includes('ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)'), mock.row(asked.id) || null],
+    [0, 'بانتظار ملف التصميم', true, null], 'no warning asked; the PO file alone does not send it: it waits for its design file now, and says so');
+  const designManager = await open('sm');
+  await goMolds(designManager);
+  await designManager.locator('.mold-tabs button', {hasText: 'كل الطلبات'}).click();
+  await designManager.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
+  await sheet(designManager).locator('.mold-sending').waitFor();
+  check([await sheet(designManager).locator('.mold-sending strong').innerText(), await sheet(designManager).locator('.mold-sending p').innerText(), await sheet(designManager).locator('.mold-design-tools').count()],
+    ['بانتظار ملف التصميم', 'بانتظار ما صاحب الطلب يرفق ملف التصميم', 0], 'the sales manager: whom it waits for, and no attach');
+  await designManager.context().close();
+  await shot(quoteSheet, 'mold-design-kept-for-design-file');
+  await groupOf('design').locator('input[type=file]').setInputFiles({name: 'رسم القالب.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
+  await fileRow(groupOf('design'), 'رسم القالب.pdf').and(quoteSheet.locator('[data-state="sent"]')).waitFor();
   await fileRow(groupOf('po'), 'PO-7781.pdf').and(quoteSheet.locator('[data-state="sent"]')).waitFor();
-  check([await groupOf('po').locator('.mold-design-confirm').count(), await sheet(quoteSheet).locator('.mold-sending').count(), mock.row(asked.id).designFiles.map(file => [file.name, file.category]), JSON.parse(mock.state.calls.findLast(call => call.route === 'design-files').body).category, await groupOf('po').locator('.mold-design-count').innerText()],
-    [0, 0, [[SIGNATURE_NAME, 'design'], ['PO-7781.pdf', 'po']], 'po', '1/5'], 'no warning asked; the PO file sent the request, then the signature and itself as the PO\'s, in its own group (1 of 5)');
+  const poCall = mock.state.calls.find(call => call.route === 'design-files' && call.body.includes('PO-7781.pdf'));
+  check([await groupOf('design').locator('.mold-design-confirm').count(), await sheet(quoteSheet).locator('.mold-sending').count(), mock.row(asked.id).designFiles.map(file => [file.name, file.category]), JSON.parse(poCall.body).category, await groupOf('po').locator('.mold-design-count').innerText()],
+    [0, 0, [[SIGNATURE_NAME, 'design'], ['PO-7781.pdf', 'po'], ['رسم القالب.pdf', 'design']], 'po', '1/5'], 'no warning asked (production held nothing); the design file sent the request, then the signature, the PO\'s file (in its own group, 1 of 5) and itself');
   // The sales manager approves; a quotation file attached and deleted since keeps the approval, without a warning; a design file warns.
   const smApproves = app.as(await app.login('sm'));
   check((await smApproves('/api/mold-requests', {method: 'POST', body: {action: 'approve', requestId: crypto.randomUUID(), id: asked.id}})).status, 200, 'the sales manager approves it');

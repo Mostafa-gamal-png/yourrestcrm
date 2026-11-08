@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_HELD_NAME,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_FILE_WAITING_OTHERS,MOLD_QUOTE_FILE_WAITING_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldCancelReasonUsed,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
@@ -27,10 +27,13 @@ const waitingSince=(view:MoldRequestView,say:Say)=>!view.cancelled&&view.remote?
  *  2026-11-05): «ناقص ملف عرض السعر / الـ PO». hint: on the request's sheet, who attaches it (the requester below, while editable; else
  *  the representative or the production manager). The numbers are not shown any more (production no longer shows them). */
 const QuotePoMissing=({say,hint}:{say:Say;hint?:'attach'|'others'|'production'})=><p className="mold-quote-po-missing" role="status"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_QUOTE_PO_MISSING_TEXT)}{hint&&<small>{say(...(hint==='attach'?MOLD_QUOTE_PO_MISSING_ATTACH:hint==='production'?MOLD_QUOTE_PO_MISSING_PRODUCTION:MOLD_QUOTE_PO_MISSING_OTHERS))}</small>}</span></p>;
-/** The state a page of this release shows: a request kept for its quotation's or PO's file (sending.held, 2026-11-05) as such, else the
- *  state the server gives (one every page knows). */
-const shownState=(sending:MoldRequestView['sending'])=>sending.held==='quote_file'?'needs_file':sending.state;
-const sendingName=(sending:MoldRequestView['sending'],linkReady:boolean):[string,string]=>sending.held==='quote_file'?MOLD_QUOTE_FILE_HELD_NAME:moldSendingNames[linkReady?sending.state:'off'];
+/** Why a request is kept in the CRM (sending.held): its quotation's or PO's file (2026-11-05) or its design file (2026-11-08), with its
+ *  words; null otherwise (or for a reason this page cannot name, which reads as the state). */
+const heldTexts=(sending:MoldRequestView['sending'])=>sending.held?moldHeldTexts[sending.held]||null:null;
+/** The state a page of this release shows: a request kept for a file (sending.held) as such, else the state the server gives (one every
+ *  page knows). */
+const shownState=(sending:MoldRequestView['sending'])=>heldTexts(sending)?'needs_file':sending.state;
+const sendingName=(sending:MoldRequestView['sending'],linkReady:boolean):[string,string]=>heldTexts(sending)?.name||moldSendingNames[linkReady?sending.state:'off'];
 /** «وقّع العميل: <signer> · <time>» (2026-11-04), with the image through the CRM when it is given (the request's sheet), once the image
  *  reached production (state sent). Before that the request says where the signature stands instead: on its way («التوقيع لسه ما وصلش
  *  للإنتاج»), stopped (the resend starts it again) or refused for good (cancel and ask again with a new signature). */
@@ -100,14 +103,15 @@ function SendingState({view,linkReady,say}:{view:MoldRequestView;linkReady:boole
  const sending=view.sending;
  if(sending.state==='sent')return null;
  const what=sending.outbox==='cancel'?say('الإلغاء','The cancellation'):say('الطلب','The request');
- const kept=sending.held==='quote_file';
- return <div className="mold-sending" data-state={shownState(sending)} role="status">
+ const kept=heldTexts(sending);
+ return <div className="mold-sending" data-state={shownState(sending)} data-held={kept?sending.held:undefined} role="status">
   <TriangleAlert size={16} aria-hidden="true"/>
-  <div><strong>{say(...(kept?MOLD_QUOTE_FILE_HELD_NAME:moldSendingNames[sending.state]))}</strong>
+  <div><strong>{say(...(kept?kept.name:moldSendingNames[sending.state]))}</strong>
    <p>{!linkReady&&!kept?say('الطلب محفوظ في الـCRM، وسيُرسل عند تفعيل الربط مع الإنتاج.','The request is saved in the CRM and will be sent once the production link is set up.')
-    // A new request kept until its quotation's or PO's file is attached (2026-11-05); attaching it sends the request, then its files.
-    // Its requester is told what to do; a reader who cannot attach (the sales manager, the administrator) whom it waits for.
-    :kept?say(...(view.can.attach?MOLD_QUOTE_FILE_WAITING_TEXT:MOLD_QUOTE_FILE_WAITING_OTHERS))
+    // A new request kept until its quotation's or PO's file (2026-11-05), or its design file (2026-11-08), is attached; attaching it
+    // sends the request, then its files. Its requester is told what to do; a reader who cannot attach (the sales manager, the
+    // administrator) whom it waits for.
+    :kept?say(...(view.can.attach?kept.waiting:kept.others))
     // A request carrying a quotation or PO number is kept until production's update is known to be live (never sent without them).
     :sending.state==='held'?say('الطلب محفوظ في الـCRM ومعه رقم عرض السعر / الـ PO، ويُرسل بعد تحديث تطبيق المنتجات.','The request is saved in the CRM with its quotation / PO number and is sent once the products application is updated.')
     :sending.state==='rejected'?say('رفض الإنتاج: ','Production refused: ')+((sending.error?.fields||[]).map(field=>say(...(moldFieldNames[field]||[field,field]))).join('، ')||moldErrorText(sending.error?.code||'',say))+'. '
@@ -139,7 +143,7 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
   </div>
   {view.quotePo?.missing&&<QuotePoMissing say={say}/>}
   {/* Kept for its quotation's or PO's file (2026-11-05): said whatever the link's state, since attaching it is the representative's to do. */}
-  {view.sending.state!=='sent'&&<small className="mold-card-sending" data-state={shownState(view.sending)}>{say(...sendingName(view.sending,linkReady))}</small>}
+  {view.sending.state!=='sent'&&<small className="mold-card-sending" data-state={shownState(view.sending)} data-held={heldTexts(view.sending)?view.sending.held:undefined}>{say(...sendingName(view.sending,linkReady))}</small>}
   {!!unsent&&<small className="mold-card-sending" data-state="rejected">{say('ملفات تصميم لم تُرفع: ','Design files not uploaded: ')+unsent+' · '+say('افتح الطلب للتفاصيل','open the request for details')}</small>}
  </button>;
 }
@@ -417,7 +421,9 @@ function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,paymen
  *  وإرسال» opens «توقيع العميل» first (a new request, or an edit that changes what was signed), and the signature is sent with it; it
  *  takes one of the 10 design files' places, so the picker leaves room for it. quotePo: production's update of 2026-11-03 is known, so a
  *  new request needs at least one quotation or PO file (2026-11-05, every role; no number any more): refused on the device without one,
- *  and uploaded first once the request is saved (the server keeps the request until one arrives, then sends it and its files). */
+ *  and uploaded first once the request is saved (the server keeps the request until one arrives, then sends it and its files). Every new
+ *  request needs at least one design file too (2026-11-08, every role; the customer's signature does not count), and so does the edit of
+ *  a request asked for under that rule (designRequired) that has none yet: refused the same way, before the signing step. */
 function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const [customerId,setCustomerId]=useState(editing?.customerId||''),[search,setSearch]=useState(''),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment):blank),[shown,setShown]=useState<Record<string,string>>({});
@@ -427,6 +433,9 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  const action=useMoldAction(onSaved,onRefused?refused:undefined);
  // The quotation's and PO's files: offered once production's update of 2026-11-03 is known to be live; one at least for a new request.
  const asks=quotePo,needsFile=asks&&!editing;
+ // A design file (2026-11-08): one at least for a new request, or for the edit of one asked for under that rule while none of its own
+ // counts (deleted, refused, or the customer's signature do not); an older request keeps «(اختياري)».
+ const designRequired=!editing||editing.designRequired,hasDesign=!!editing?.designFiles.some(file=>file.category==='design'&&file.source==='crm'&&!file.signature&&!['rejected','locked','deleting'].includes(file.state));
  const [designs,setDesigns]=useState<DesignChoice[]>([]),[quotes,setQuotes]=useState<DesignChoice[]>([]),[pos,setPos]=useState<DesignChoice[]>([]),[asking,setAsking]=useState(false);
  // The signing step (2026-11-04): the request as it will be sent, and what the customer reads before signing it.
  const [signing,setSigning]=useState<{body:Record<string,unknown>;summary:[string,React.ReactNode][];again:boolean}|null>(null);
@@ -447,7 +456,8 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   // No design link is sent: the server keeps an older request's own as it is; no number either (an edited request keeps its own).
   const checked=validateMoldSpecs(form),payment=moldPayment(form.payment);
   const errors:Record<string,string>={...checked.errors,...(payment?{}:{payment:say('اختار طريقة الدفع: نقدي أو آجل','Choose how the customer pays: cash or deferred')}),
-   ...(needsFile&&![...quotes,...pos].some(choice=>!choice.refusal)?{quoteFile:say(...MOLD_QUOTE_FILE_REQUIRED_TEXT)}:{})};
+   ...(needsFile&&![...quotes,...pos].some(choice=>!choice.refusal)?{quoteFile:say(...MOLD_QUOTE_FILE_REQUIRED_TEXT)}:{}),
+   ...(designRequired&&!hasDesign&&!designs.some(choice=>!choice.refusal)?{designFile:say(...MOLD_DESIGN_FILE_REQUIRED_TEXT)}:{})};
   if(!editing&&!customerId){setShown({...errors,customer:say('اختر العميل','Choose the customer')});return;}
   if(Object.keys(errors).length){setShown(errors);return;}
   setShown({});
@@ -482,9 +492,10 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  const text=(key:string,label:string,max:number)=><label className="mold-field" aria-invalid={!!errors[key]}>{label}<input type="text" maxLength={max} dir="ltr" value={form[key]} onChange={event=>set(key,event.target.value)}/>{errors[key]&&<small className="field-error">{errors[key]}</small>}</label>;
  const picker=(category:MoldFileCategory,choices:DesignChoice[],change:(next:DesignChoice[])=>void)=>{
   const reserved=category==='design'?signatureRoom:0;
-  // Choosing a quotation or PO file clears the «one at least» refusal.
-  return <MoldDesignPicker key={category} category={category} choices={choices} onChange={next=>{change(next);setAsking(false);if(category!=='design')clear('quoteFile');}} room={MOLD_CATEGORY_MAX_FILES[category]-(used[category]||0)-reserved} disabled={action.busy} say={say}
-   {...(reserved?{overflow:'signature_room',note:say(...MOLD_SIGNATURE_TEXT.room)}:{})}/>;
+  // Choosing a file of a required kind clears its «one at least» refusal.
+  const required=category==='design'&&designRequired;
+  return <MoldDesignPicker key={category} category={category} choices={choices} onChange={next=>{change(next);setAsking(false);clear(category==='design'?'designFile':'quoteFile');}} room={MOLD_CATEGORY_MAX_FILES[category]-(used[category]||0)-reserved} disabled={action.busy} say={say}
+   {...(reserved?{overflow:'signature_room',note:say(...MOLD_SIGNATURE_TEXT.room)}:{})}{...(required?{title:say(...MOLD_DESIGN_FILE_PICKER_TITLE),error:errors.designFile||''}:{})}/>;
  };
  return <Dialog open onOpenChange={open=>{if(!open&&!action.busy)onClose();}}>
   <DialogContent className="mold-dialog" dir={direction()}>

@@ -3,7 +3,7 @@ import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
 import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldAwaitsQuoteFile,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldHeldFor,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {isServiceRole} from '@/lib/customer-service';
 import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldRequestRefKnown,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
@@ -82,6 +82,8 @@ const ORDER_UNSURE='تعذّر التأكد من الطلب الآن؛ حدّث 
 const APPROVAL_TARGET_REFUSED='تطبيق الإنتاج لم يقبل تعريف الطلب؛ حدّث الصفحة وحاول مرة أخرى.';
 /** A resend of a request kept for its quotation or PO file (2026-11-05): nothing to resend; attaching the file sends it. */
 const QUOTE_FILE_FIRST='الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.';
+/** The same for a request kept for its design file (2026-11-08). Its English pair is in lib/locales/en.json. */
+const DESIGN_FILE_FIRST='الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.';
 /** A refusal of production's for what was sent: a cancellation it refused (cancelled there, or the approvals or production came first),
  *  or the request's data refused as locked for another reason. */
 const CANCELLED_THERE='أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.';
@@ -248,7 +250,8 @@ export async function POST(req:Request){let objectKey='';try{
  }
  const repeated=await replay();if(repeated)return repeated;
  // Production's update of 2026-11-03 known to be live: a new request needs its quotation's or PO's file (2026-11-05) and is kept until
- // one is attached (data.fileRequired); before it, a request goes as it always did.
+ // one is attached (data.fileRequired); before it, a request goes as it always did. Every new request needs a design file too
+ // (2026-11-08, data.designRequired, whatever is known of production: design files go to it since 2026-11-02).
  const permission=accessGuard(c),quotePo=await moldQuotePoSupported(c.db);
  let rowId:string,statement,restart:D1PreparedStatement|null=null,detail:Record<string,unknown>;
  // The customer's signature (2026-11-04): its file's row, saved in the same batch as the request (never a request without it), its bytes
@@ -271,10 +274,11 @@ export async function POST(req:Request){let objectKey='';try{
   rowId='mr-'+input.requestId;
   if(signed.signature)signing={file:signed.signature,id:'mds-'+input.requestId};
   // No number (2026-11-05). Once production's update is known, the request waits in the CRM for its quotation's or PO's file, whoever
-  // asked (the owner: every role); the marker is the request's data, never part of the requests body.
-  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:String(customer.data.address||''),city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:asked.specs,payment:asked.payment,...(quotePo?{fileRequired:true as const}:{})};
+  // asked (the owner: every role); and always for its design file (2026-11-08, every role: «إجباري على الكل»). The markers are the
+  // request's data, never part of the requests body.
+  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:String(customer.data.address||''),city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:asked.specs,payment:asked.payment,...(quotePo?{fileRequired:true as const}:{}),designRequired:true};
   if(signing)data.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
-  detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.fileRequired?{fileRequired:true}:{}),...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{})};
+  detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.fileRequired?{fileRequired:true}:{}),designRequired:true,...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{})};
   statement=c.db.prepare(`INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,'send',?,?,?,?,1,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)`)
    .bind(rowId,c.me.id,customer.id,JSON.stringify(data),now,c.me.id,now,now,mutation,...permission.args,customer.id,customer.version);
  }else{
@@ -313,7 +317,7 @@ export async function POST(req:Request){let objectKey='';try{
    // The request's own design link (an older request's) stays exactly as stored.
    const signed=await readSignature(input.signature);
    const {specs,payment}=checkedRequest(input.specs,input.payment,input,row.data,row.data.specs.designUrl||'',signed.fields);
-   // The request's numbers (one asked for before 2026-11-05) and whether it waits for its quotation's or PO's file stay as stored.
+   // The request's numbers (one asked for before 2026-11-05) and whether it waits for its quotation's, PO's or design file stay as stored.
    const edited:MoldRequestData={...row.data,specs,payment};
    // An edit that changes nothing keeps the request as it is, its signature too (a signature sent with it is not taken).
    if(specsKey(specs,specs.designUrl||'')===specsKey(row.data.specs,row.data.specs.designUrl||'')&&payment===row.data.payment)return answer(row.id,null);
@@ -345,8 +349,10 @@ export async function POST(req:Request){let objectKey='';try{
   }else{
    // Something the resend would start: the request's own change, or a design file whose sending or deletion stopped (not one refused).
    const waiting=!!row.outbox||files.some(moldDesignStopped);
-   // Kept for its quotation's or PO's file (2026-11-05): nothing to resend until one is attached, which sends it.
-   if(!allowed.resend&&row.memberId===c.me.id&&moldAwaitsQuoteFile(row,files))throw new CRMError(QUOTE_FILE_FIRST,409);
+   // Kept for its quotation's or PO's file (2026-11-05), or its design file (2026-11-08): nothing to resend until one is attached,
+   // which sends it.
+   const held=!allowed.resend&&row.memberId===c.me.id?moldHeldFor(row,files):null;
+   if(held)throw new CRMError(held==='quote_file'?QUOTE_FILE_FIRST:DESIGN_FILE_FIRST,409);
    if(!allowed.resend)throw new CRMError(waiting?'إعادة الإرسال لمن طلبه':'وصل الطلب للإنتاج؛ لا شيء ينتظر الإرسال',waiting?403:409);
    if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل. الطلب محفوظ وينتظر الإرسال.',503);
    detail={label:labels.resend,customerName:row.data.customer.name};
