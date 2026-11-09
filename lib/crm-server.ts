@@ -54,13 +54,19 @@ export function masterMutationGuard(c:GuardContext,record:Row){
 /** «حذف» (lib/permissions.ts, the owner 2026-11-09): the cell decides who deletes (the route's requireCell); this decides WHAT, and is never
  *  wider than editing that record under the member's role (the team as the role defines it; «عرض بيانات الفريق بالكامل» never widens it):
  *  - a customer or a machine: the master write scope (masterMutationGuard): the administrator all; a sales manager or a supervisor the
- *    customers of their team; a representative the customers of their regions (as they correct a customer's details);
+ *    customers of their team; a representative only the customers assigned to them;
  *  - a visit, a follow-up, a quotation or mold specifications: the edit scope (recordEditGuard: the administrator all, a sales manager
  *    their own and their supervisors' and representatives', a supervisor their own and their representatives'); a representative, who
  *    edits no saved record, only a visit or a follow-up they recorded themselves (its author), of a customer in their regions.
  *  Customer service never reaches here (no delete cell: «—»; /api/crm is for the sales team; their service requests are not deleted). The commit re-checks the
  *  member, the permissions' version (a cell switched off meanwhile fails it safe), the record's version and the reporting line. */
 export function recordDeleteGuard(c:GuardContext,record:Row){
+ if(c.me.role==='rep'&&record.kind==='customer'){
+  // The owner, 2026-11-09: a representative granted «حذف» on «العملاء» deletes only the customers assigned to them (never another
+  // representative's customer of the same regions). The commit re-checks the assignment.
+  if(record.assignedTo!==c.me.id)throw new CRMError('يمكنك حذف عملائك أنت فقط',403);
+  const permission=masterMutationGuard(c,record);permission.sql+=' AND EXISTS (SELECT 1 FROM crm_records own WHERE own.id=? AND own.assigned_to=?)';permission.args.push(record.id,c.me.id);return permission;
+ }
  if(['customer','factory'].includes(record.kind))return masterMutationGuard(c,record);
  if(c.me.role==='rep'){
   if(record.kind!=='activity'||recordAuthorId(record,c.members)!==c.me.id)throw new CRMError('يمكنك حذف زياراتك ومتابعاتك أنت فقط',403);

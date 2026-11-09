@@ -334,7 +334,7 @@ ok(sql.prepare("SELECT 1 FROM crm_audit WHERE record_id='dv1' AND action='حذف
 await grant('rep1',{'activity:delete':true,'followup:delete':true,'customer:delete':true});
 await remove('rep1','df1');eq(raw('df1'),undefined,'granted «المتابعات»: their own follow-up');
 await remove('rep1','d2');eq(raw('d2'),undefined,'granted «العملاء»: a customer of their regions with no history');
-await remove('rep1','d3');eq(raw('d3'),undefined,'… another representative\'s customer in their regions too (as editing a customer\'s details)');
+eq((await remove('rep1','d3',403)).error,'يمكنك حذف عملائك أنت فقط','… never another representative\'s customer of the same regions (the owner, 2026-11-09)');ok(raw('d3'),'still there');
 await remove('rep1','dw',404);ok(raw('dw'),'a customer outside their regions: refused (never visible)');
 eq((await remove('rep1','d1',400)).error,'يوجد سجلات مرتبطة. احذفها قبل حذف هذا السجل.','the existing refusals hold: a customer with visits');
 await remove('rep1','dm1',403);ok(raw('dm1'),'never a machine (its cell is «تحرير» on «العملاء»; a representative never deletes one)');
