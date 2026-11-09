@@ -14,6 +14,7 @@ import {memberEditToken} from '@/lib/member-edit';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {enforceVisitPlace} from '@/lib/visit-place-server';
 import {nudgeMoldCustomers,wakeMoldRetries} from '@/lib/mold-customers-hook';
+import {readLastPurchases,withLastPurchase} from '@/lib/customer-last-purchase-server';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
@@ -27,7 +28,9 @@ export async function GET(){try{
  const members=c.regionalMembers.filter(m=>isServiceRole(c.me.role)?m.id===c.me.id||m.supervisorId===c.me.id:scope.has(m.id)).map(projectMember),memberIds=new Set(members.map(m=>m.id));
  const authors=new Set(c.visible.filter(r=>['activity','opportunity','quote'].includes(r.kind)).map(r=>recordAuthorId(r,c.members)));
  for(const member of c.members)if(scope.has(member.id)&&authors.has(member.id)&&!memberIds.has(member.id))members.push({...projectMember(member),userId:undefined,authVersion:undefined,target:undefined,readOnly:true});
- return Response.json({records:serviceVisitRecords(c).map(r=>{const intake=r.kind==='customer'?activeServiceCase(r.id,c):undefined;return intake?.status==='assigned'&&canReadService(intake,c)?{...r,data:{...r.data,_serviceIntake:{id:intake.id,createdAt:intake.createdAt,products:intake.data.products,strength:intake.data.strength,needs:intake.data.needs,nextAction:intake.data.nextAction,nextDate:intake.data.nextDate}}}:r;}),me:projectMember(c.me),members,audits,serviceQueue:serviceQueue(c)},{headers:{'Cache-Control':'no-store'}});
+ // «لم يشترِ منذ 60 يومًا»: each customer row carries its last purchase (lib/customer-last-purchase.ts), read in one grouped statement.
+ const lastPurchases=await readLastPurchases(c.db,c.all);
+ return Response.json({records:withLastPurchase(serviceVisitRecords(c),lastPurchases).map(r=>{const intake=r.kind==='customer'?activeServiceCase(r.id,c):undefined;return intake?.status==='assigned'&&canReadService(intake,c)?{...r,data:{...r.data,_serviceIntake:{id:intake.id,createdAt:intake.createdAt,products:intake.data.products,strength:intake.data.strength,needs:intake.data.needs,nextAction:intake.data.nextAction,nextDate:intake.data.nextDate}}}:r;}),me:projectMember(c.me),members,audits,serviceQueue:serviceQueue(c)},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 /** A write that went through may have added, edited or deleted a customer: the products application's list is checked shortly after. */
 export async function POST(req:Request){const response=await savePost(req);if(response.ok)nudgeMoldCustomers({soon:true});return response;}
