@@ -17,7 +17,9 @@
 // resend), the sales manager's approval waits for design files only, and the stand-in counts files, not numbers, and keeps the approvals
 // for a quotation's or PO's file. Since 2026-11-08 every new request (data.designRequired) waits for its design file too (moldHeldFor
 // design_file: the customer's signature, a deleted or refused file count for nothing; the quotation's first), its texts, the requests
-// body unchanged by the marker. Synthetic files only; no real account.
+// body unchanged by the marker. Since 2026-11-09 each request carries its delivery address (moldAddress: trimmed, required, up to 300
+// characters as production counts them; the view's customerAddress; the body's customer.address from the request's data, an older
+// request's bytes unchanged). Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
@@ -394,6 +396,27 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   // «رابط التصميم» removed (2026-11-03): the server's refusal of a link from a page loaded before, with its English pair.
   const designUrlGone = 'رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
   same([readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(designUrlGone), dictionary[designUrlGone]], [true, 'The design link was removed from the request; refresh the page and attach the design as a file.'], 'the design link\'s refusal, said by the server, with its English pair');
+  // ---- 2026-11-09 (the owner: «عنوان لكل طلب قالب»): the request's delivery address, asked for with the request, filled in from the
+  // customer's registered address and changed for this request only; customer.address in the requests body, production unchanged
+  {
+    const A = rules.moldAddress;
+    same([A('  حي   الصناعية،\n شارع\t5  '), A('مخزن جدة'), A(''), A('  \n\t '), A(null), A(undefined), A(42)],
+      [{address: 'حي الصناعية، شارع 5', error: null}, {address: 'مخزن جدة', error: null}, {address: '', error: 'required'}, {address: '', error: 'required'}, {address: '', error: 'required'}, {address: '', error: 'required'}, {address: '', error: 'required'}],
+      'trimmed, single spaces (a new line from the text area a space), required');
+    same([A('ع'.repeat(300)).error, A('ع'.repeat(301)).error, A('😀'.repeat(300)).error, A('😀'.repeat(301)).error, A(' ' + 'x'.repeat(300) + ' ').error, MOLD_LIMITS.address],
+      [null, 'long', null, 'long', null, 300], 'up to 300 characters, counted as production counts them (code points: 300 emoji are 600 UTF-16 units and pass), after trimming');
+    same([rules.MOLD_ADDRESS_REQUIRED, rules.MOLD_ADDRESS_LONG, lib.MOLD_ADDRESS_TEXT, dictionary[rules.MOLD_ADDRESS_REQUIRED], dictionary[rules.MOLD_ADDRESS_LONG], dictionary['عنوان التسليم'], lib.moldFieldNames['customer.address']],
+      ['اكتب عنوان التسليم', 'العنوان حتى 300 حرف', {required: ['اكتب عنوان التسليم', 'Enter the delivery address'], long: ['العنوان حتى 300 حرف', 'The address is up to 300 characters']}, 'Enter the delivery address', 'The address is up to 300 characters', 'Delivery address', ['عنوان التسليم', 'Delivery address']],
+      'the refusals (the server\'s and the form\'s, Arabic and English) and production\'s field named as the delivery address');
+    const delivered = {...data, customer: {...data.customer, address: 'مخزن جدة، المنطقة الصناعية الثانية'}};
+    same([lib.moldRequestView(row({data: delivered}), me, [], true).customerAddress, lib.moldRequestView(row({}), me, [], true).customerAddress, lib.moldRequestView(row({data: {...data, customer: {crmNumber: 27, name: 'مصنع'}}}), me, [], true).customerAddress],
+      ['مخزن جدة، المنطقة الصناعية الثانية', '', ''], 'the view carries the request\'s own address (\'\' for a request stored without one)');
+    // The requests body takes the request's own address (data.customer.address), never the customer's record; a request stored before
+    // (the registered address in its data) is sent byte for byte as it always was.
+    same(moldRequestBody({id: 'mr-1', ...delivered}).customer, {crmNumber: 27, name: 'مصنع', address: 'مخزن جدة، المنطقة الصناعية الثانية'}, 'the body sends the request\'s delivery address as customer.address');
+    const before = {...data, customer: {crmNumber: 27, name: 'مصنع', address: 'حي الصناعية', city: 'Damam - الدمام'}, payment: 'cash'};
+    same(JSON.stringify(moldRequestBody({id: 'mr-1', ...before})), '{"crmRequestId":"mr-1","requestedAt":"2026-11-02T11:00:00+03:00","customer":{"crmNumber":27,"name":"مصنع","address":"حي الصناعية","city":"Damam - الدمام"},"salesman":{"crmMemberId":"rep","name":"مندوب"},"specs":' + JSON.stringify(moldRequestBody({id: 'mr-1', ...data}).specs) + ',"payment":"cash"}', 'a request stored before this release: the same bytes as ever');
+  }
   // ---- the customer's signature (the owner, 2026-11-04): who needs it, the checks, the body unchanged, the view, the pending item, the words
   {
     same(['rep', 'supervisor', 'manager', 'customer_service', 'customer_service_manager', 'admin', '', undefined].map(rules.moldSignatureRequired), [true, true, true, false, false, false, false, false], 'required of the sales roles only: customer service and the administrator ask without it');

@@ -98,6 +98,24 @@ export function moldText(value) {
 }
 const isWhole = value => typeof value === 'number' && Number.isInteger(value);
 
+/** The request's delivery address (the owner, 2026-11-09: «عنوان لكل طلب قالب»): asked for with every new request (and its edit before
+ *  the first send), filled in from the customer's registered address and changed for this request only (the customer's own address
+ *  never changes). It is the request's `customer.address` in the requests body, the field production always took: production needs no
+ *  change. The server's refusals (each with its English pair in lib/locales/en.json; the form says them from MOLD_ADDRESS_TEXT). */
+export const MOLD_ADDRESS_REQUIRED = 'اكتب عنوان التسليم';
+export const MOLD_ADDRESS_LONG = 'العنوان حتى ' + MOLD_LIMITS.address + ' حرف';
+/**
+ * A delivery address as typed, as it is stored and sent: a control character (a new line from a paste or a text area) becomes a space,
+ * then moldText (single spaces, the ends trimmed). error: 'required' when nothing is left, 'long' over 300 characters, counted as
+ * production counts them (code points, [...s].length); null when it may be sent. Anything but a string is none ('required').
+ * @param {unknown} value
+ * @returns {{address: string, error: 'required'|'long'|null}}
+ */
+export function moldAddress(value) {
+  const address = typeof value === 'string' ? moldText(value.replace(/[\u0000-\u001F\u007F]/g, ' ')) ?? '' : '';
+  return {address, error: !address ? 'required' : length(address) > MOLD_LIMITS.address ? 'long' : null};
+}
+
 /**
  * Checks what a representative typed. Returns {specs, errors}: specs with every field normalized, errors as field -> Arabic message.
  * Numbers arrive as JSON numbers or as digit strings from a form; anything else, or a fraction, is refused (the addendum).

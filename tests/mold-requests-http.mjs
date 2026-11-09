@@ -38,6 +38,7 @@
 // request, of any role, is kept in the CRM until its first design file of its own (the customer's signature does not count): the first
 // request below goes that way (saved, kept, released by its design file); the sections about a request's own flow use requests as the
 // release before saved them (`create`: no data.designRequired), and the design file's hold has its own checks with the quotation's.
+// Since 2026-11-09 (the owner: «عنوان لكل طلب قالب») every request carries its delivery address (its own section, at the end).
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -1299,6 +1300,98 @@ try {
     check([shown.pending.unreadable, shown.pending.items.some(item => item.customer.name === 'تالف'), oldShown.pending.error?.code], [1, false, 'bad_response'], 'an unreadable item: counted on the list, the old page told the list failed');
     ok(revMock.state.calls.every(call => !JSON.stringify(call.headers).includes(revMock.state.secret)), 'the secret never travels');
   } finally { await revApp.stop(); await revMock.stop(); }
+}
+
+// ---- 2026-11-09 (the owner: «عنوان لكل طلب قالب»): every request carries its delivery address, filled in from the customer's registered
+// address and changed for that request only. A typed address is stored as the request's (trimmed, single spaces) and reaches production
+// as customer.address; the customer's record and the customers list sent to production keep the registered one. A page loaded before
+// sends no address: the registered one, as before. None, blank or over 300 characters: 400 naming the field, nothing saved or sent. An
+// edit before the first send that changes only the address is a change of what the customer signed (a sales role signs again; customer
+// service does not sign); one that reads the same, or sends none, keeps the request and its signature exactly as they are.
+{
+  const addrMock = await startProductsMock();
+  const addrApp = await bootBuiltApp({members}, {env: {YR_PRODUCTS_API_URL: addrMock.url, YR_PRODUCTS_SECRET: addrMock.state.secret, NODE_EXTRA_CA_CERTS: addrMock.ca}});
+  try {
+    const sessions = {};
+    for (const id of ['rep', 'cs', 'owner']) sessions[id] = await addrApp.login(id);
+    const as = id => addrApp.as(sessions[id]), now = new Date().toISOString(), REGISTERED = 'حي الصناعية، شارع 12';
+    for (const id of ['d1', 'd2']) await addrApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(id, JSON.stringify({name: 'مصنع ' + id, region: 'الشرقية', city: 'الدمام', address: REGISTERED}), now, now).run();
+    const raw = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(roleOf(who), {requestId: crypto.randomUUID(), ...body})});
+    const ask = (who, extra = {}) => raw(who, {action: 'create', customerId: 'd1', specs, payment: 'cash', ...extra});
+    const edit = (who, id, version, extra = {}) => raw(who, {action: 'update', id, version, specs, payment: 'cash', ...extra});
+    const upload = uploader(as);
+    const callsOf = route => addrMock.state.calls.filter(call => call.route === route && call.signed);
+    const sentOf = id => JSON.parse(callsOf('requests').findLast(call => call.body.includes(id)).body);
+    const stored = async id => addrApp.db.prepare('SELECT data,version FROM crm_mold_requests WHERE id=?').bind(id).first();
+    const customerRow = id => addrApp.db.prepare('SELECT data,version,updated_at FROM crm_records WHERE id=?').bind(id).first();
+    const rows = async () => (await addrApp.db.prepare('SELECT COUNT(*) AS n FROM crm_mold_requests').first()).n;
+    const until = async (condition, what) => { for (let n = 0; n < 120; n++) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 250)); } throw new Error('timed out waiting for ' + what); };
+    const crmNumber = (await addrApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='d1'").first()).number;
+    const registered = await customerRow('d1');
+    const REQUIRED = 'اكتب عنوان التسليم', LONG = 'العنوان حتى 300 حرف', REFRESH = 'توقيع العميل مطلوب قبل إرسال الطلب؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.';
+
+    // (a) a delivery address of its own: stored as typed (normalized), kept for its design file, then sent as customer.address
+    const DELIVERY = 'مخزن جدة، المنطقة الصناعية الثانية بوابة 3';
+    let res = await ask('rep', {address: '  مخزن جدة،   المنطقة الصناعية الثانية \n بوابة 3 '}), body = await res.json();
+    const custom = body.request.id;
+    check([res.status, body.request.sending.held, body.request.customerAddress, JSON.parse((await stored(custom)).data).customer], [200, 'design_file', DELIVERY, {crmNumber, name: 'مصنع d1', address: DELIVERY, city: 'Damam - الدمام'}], 'saved with its own delivery address (trimmed, single spaces), the view says it');
+    res = await upload(custom, 'رسم العنوان.pdf', pdf('address'));
+    body = await res.json();
+    check([res.status, body.request.sending.state, sentOf(custom).customer], [200, 'sent', {crmNumber, name: 'مصنع d1', address: DELIVERY, city: 'Damam - الدمام'}], 'its design file sends it: production receives the request\'s address as customer.address');
+    const untouched = await customerRow('d1');
+    check([JSON.parse(untouched.data).address, untouched.version, untouched.updated_at, untouched.data], [REGISTERED, registered.version, registered.updated_at, registered.data], 'the customer\'s own record is never written: its registered address, version and time as they were');
+    // The customers route (production's list of the CRM's customers) still carries the registered address.
+    await as('owner')('/api/crm');
+    await until(() => callsOf('customers').length > 0, 'the customers list');
+    const listed = JSON.parse(callsOf('customers').at(-1).body).customers.find(entry => entry.crmNumber === crmNumber);
+    check([listed.address, addrMock.state.customers.get(crmNumber).address], [REGISTERED, REGISTERED], 'the customers list sent to production keeps the registered address');
+
+    // (b) a page loaded before this release sends no address: the customer's registered one, stored and sent exactly as before
+    res = await ask('rep', {specs: {...specs, description: 'old page'}}); body = await res.json();
+    const oldPage = body.request.id;
+    check([res.status, body.request.customerAddress, JSON.parse((await stored(oldPage)).data).customer], [200, REGISTERED, {crmNumber, name: 'مصنع d1', address: REGISTERED, city: 'Damam - الدمام'}], 'no address sent (an old page): the registered address, as before');
+    await upload(oldPage, 'رسم قديم.pdf', pdf('old page'));
+    check(sentOf(oldPage).customer, {crmNumber, name: 'مصنع d1', address: REGISTERED, city: 'Damam - الدمام'}, 'and production receives it');
+
+    // (c) none, blank or too long: refused by its field, nothing saved or sent
+    const saved = await rows(), sends = callsOf('requests').length;
+    for (const [address, text] of [['', REQUIRED], ['  \n\t ', REQUIRED], [null, REQUIRED], [42, REQUIRED], ['ع'.repeat(301), LONG], ['😀'.repeat(301), LONG]]) {
+      res = await ask('rep', {address}); body = await res.json();
+      check([res.status, body.fields, body.error], [400, {address: text}, text], 'address ' + JSON.stringify(address).slice(0, 20) + ': 400 with the field\'s message');
+    }
+    res = await ask('cs', {address: '', payment: 'card'}); body = await res.json();
+    check([res.status, Object.keys(body.fields).sort()], [400, ['address', 'payment']], 'each wrong field named at once (customer service too)');
+    check([await rows(), callsOf('requests').length], [saved, sends], 'nothing saved, nothing sent');
+    res = await ask('rep', {address: '😀'.repeat(300), specs: {...specs, description: 'three hundred'}}); body = await res.json();
+    check([res.status, [...body.request.customerAddress].length], [200, 300], '300 characters, counted as production counts them (code points), are taken');
+
+    // (d) an edit before the first send (kept for its design file: never sent)
+    res = await ask('rep', {address: 'مخزن الخبر', specs: {...specs, description: 'edited address'}}); body = await res.json();
+    const draft = body.request.id, firstSignature = body.request.signature.fileId;
+    let {version} = await stored(draft);
+    check([body.request.can.edit, body.request.sending.held], [true, 'design_file'], 'never sent: the requester edits it');
+    for (const extra of [{address: 'مخزن الخبر'}, {address: '  مخزن   الخبر '}, {}]) {
+      res = await edit('rep', draft, version, {specs: {...specs, description: 'edited address'}, signature: undefined, ...extra}); body = await res.json();
+      check([res.status, body.request.version, body.request.signature.fileId, JSON.parse((await stored(draft)).data).customer.address], [200, version, firstSignature, 'مخزن الخبر'], 'an edit whose address reads the same (' + JSON.stringify(extra) + '): kept as it is, its signature too');
+    }
+    res = await edit('rep', draft, version, {specs: {...specs, description: 'edited address'}, address: 'مخزن الدمام، بوابة 2', signature: undefined}); body = await res.json();
+    check([res.status, body.fields, JSON.parse((await stored(draft)).data).customer.address], [400, {signature: REFRESH}, 'مخزن الخبر'], 'the address changed alone: what the customer signed changed, so a representative\'s customer signs again');
+    res = await edit('rep', draft, version, {specs: {...specs, description: 'edited address'}, address: ''}); body = await res.json();
+    check([res.status, body.fields], [400, {address: REQUIRED}], 'emptied on edit: refused by its field');
+    res = await edit('rep', draft, version, {specs: {...specs, description: 'edited address'}, address: 'مخزن الدمام، بوابة 2', signature: signatureInput('م. خالد العتيبي', {seed: 9})}); body = await res.json();
+    const edited = await stored(draft), audit = await addrApp.db.prepare("SELECT detail FROM crm_audit WHERE record_id=? AND action='mold-request:update'").bind(draft).first();
+    check([res.status, body.request.customerAddress, JSON.parse(edited.data).customer.address, edited.version, body.request.signature.fileId !== firstSignature, JSON.parse(audit.detail).address], [200, 'مخزن الدمام، بوابة 2', 'مخزن الدمام، بوابة 2', version + 1, true, 'مخزن الدمام، بوابة 2'], 'signed again: the request\'s address changed (audited), the new signature in place of the old');
+    check([JSON.parse((await customerRow('d1')).data).address, (await customerRow('d1')).version], [REGISTERED, registered.version], 'the customer\'s registered address still unchanged');
+    await upload(draft, 'رسم معدل.pdf', pdf('edited'));
+    check(sentOf(draft).customer.address, 'مخزن الدمام، بوابة 2', 'production receives the edited address');
+    // customer service signs nothing: its address-only edit goes as it is
+    res = await ask('cs', {address: 'مستودع الشركة', specs: {...specs, description: 'service address'}}); body = await res.json();
+    const service = body.request.id;
+    ({version} = await stored(service));
+    res = await edit('cs', service, version, {specs: {...specs, description: 'service address'}, address: 'مستودع الشركة الجديد'}); body = await res.json();
+    check([res.status, body.request.customerAddress, (await stored(service)).version, body.request.signature], [200, 'مستودع الشركة الجديد', version + 1, null], 'customer service: an address-only edit saved, no signature asked');
+    ok(addrMock.state.calls.every(call => !JSON.stringify(call.headers).includes(addrMock.state.secret)), 'the secret never travels');
+  } finally { await addrApp.stop(); await addrMock.stop(); }
 }
 
 console.log(JSON.stringify({ok: true, checks, builtRelease: true, realProductionTested: false}));
