@@ -6,8 +6,8 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
-import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldCancelReasonUsed,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldAddress,moldCancelReasonUsed,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import {MoldSigningStep} from './mold-signature';
@@ -321,6 +321,7 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
  // Production lacks the quotation's and PO's file (2026-11-05): from the pending item when approving from it, else the status object;
  // nothing from an application older than production's update of 2026-11-03. The numbers are not shown.
  const missing=approving&&current!.quoteOrPoMissing!==undefined?current!.quoteOrPoMissing:!!view.quotePo?.missing;
+ const deliveryAddress=approving?current!.customer.address:view.customerAddress||'';
  // Active again after a cancellation (the production manager restored it, 2026-11-03): said while it may still change (not once the
  // approvals are complete, production started, or production cancelled it again), with what a new cancellation needs for the one who
  // may cancel it.
@@ -328,6 +329,9 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
  const facts:[string,React.ReactNode][]=[
   [say('رقم أمر الإنتاج','Production order'),moldOrderNoText(remote,say,{cancelled:view.cancelled||remote?.status==='cancelled'})],[say('السريال','Serial'),remote?.moldSerial||'—'],[say('تاريخ الإنتاج','Production date'),day(remote?.productionDate)],
   [say('التسليم','Delivery'),remote?.delivered?say('سُلِّم','Delivered')+' · '+day(remote.deliveryDate):say('لم يُسلَّم','Not delivered')],[say('كود يورست','Yourrest code'),'YR-C-'+String(view.crmNumber).padStart(6,'0')],
+  // Where the mold is delivered (2026-11-09): the request's own address, which may differ from the customer's registered one (as
+  // production lists it now when approving from «طلبات بانتظار اعتمادي»); nothing for a request stored without one.
+  ...(deliveryAddress?[[say('عنوان التسليم','Delivery address'),<span dir="auto" key="a">{deliveryAddress}</span>] as [string,React.ReactNode]]:[]),
   [say('تاريخ الطلب','Requested'),stamp(view.requestedAt)],[say('مقدّم الطلب','Requested by'),view.memberName],
   ...(approving?[[say('المندوب','Salesman'),current!.salesman.name||'—'] as [string,React.ReactNode]]:[]),
  ];
@@ -407,11 +411,12 @@ const blank:Record<string,string>={description:'',core:'',vibrators:'',model:'',
  *  quotation and PO numbers are not on the form any more (2026-11-05): a request that has some keeps them as stored. */
 const asForm=(specs:MoldSpecs,payment:MoldPayment|null)=>({...Object.fromEntries(Object.entries(blank).map(([key])=>[key,specs[key as keyof MoldSpecs]===null||specs[key as keyof MoldSpecs]===undefined?'':String(specs[key as keyof MoldSpecs])])),payment:payment||''});
 
-/** Whether an edit changes what the customer signed (2026-11-04): the specifications (an older request's own design link stays as it is)
- *  or the payment; the server decides the same way and asks for the signature when it finds a change. */
-function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,payment:string|null){
+/** Whether an edit changes what the customer signed (2026-11-04): the specifications (an older request's own design link stays as it is),
+ *  the payment, or the delivery address (2026-11-09, compared as stored: moldAddress); the server decides the same way and asks for the
+ *  signature when it finds a change. */
+function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,payment:string|null,address:string){
  const keys=['description','core','vibrators','model','halfBlock','moldWidth','gelbaSize','moldNo','quantity','notes'] as const;
- return keys.some(key=>(specs[key]??'')!==(editing.specs[key]??''))||payment!==editing.payment;
+ return keys.some(key=>(specs[key]??'')!==(editing.specs[key]??''))||payment!==editing.payment||address!==moldAddress(editing.customerAddress||'').address;
 }
 
 /** Ask for a mold (a customer the member can see, then the specifications), or change one that has certainly never reached production
@@ -423,10 +428,13 @@ function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,paymen
  *  new request needs at least one quotation or PO file (2026-11-05, every role; no number any more): refused on the device without one,
  *  and uploaded first once the request is saved (the server keeps the request until one arrives, then sends it and its files). Every new
  *  request needs at least one design file too (2026-11-08, every role; the customer's signature does not count), and so does the edit of
- *  a request asked for under that rule (designRequired) that has none yet: refused the same way, before the signing step. */
+ *  a request asked for under that rule (designRequired) that has none yet: refused the same way, before the signing step. The delivery
+ *  address (2026-11-09) sits under the customer: filled in from the customer's registered address when one is chosen (again when another
+ *  is), from the request's own when editing; changed for this request only, required, up to 300 characters, and read by the customer
+ *  before signing. */
 function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
- const [customerId,setCustomerId]=useState(editing?.customerId||''),[search,setSearch]=useState(''),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment):blank),[shown,setShown]=useState<Record<string,string>>({});
+ const [customerId,setCustomerId]=useState(editing?.customerId||''),[address,setAddress]=useState(editing?.customerAddress||''),[search,setSearch]=useState(''),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment):blank),[shown,setShown]=useState<Record<string,string>>({});
  // A refusal that carries the request as it now stands (it was sent meanwhile): counted, so the signing step gives way to the form, which
  // says why (2026-11-04).
  const refusals=useRef(0),refused=useCallback((view:MoldRequestView)=>{refusals.current++;onRefused?.(view);},[onRefused]);
@@ -454,10 +462,12 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   // How the customer pays is required (2026-11-03): cash or deferred.
   // A new request needs a quotation or PO file once production's update is live (2026-11-05): one chosen that will upload.
   // No design link is sent: the server keeps an older request's own as it is; no number either (an edited request keeps its own).
-  const checked=validateMoldSpecs(form),payment=moldPayment(form.payment);
+  const checked=validateMoldSpecs(form),payment=moldPayment(form.payment),place=moldAddress(address);
   const errors:Record<string,string>={...checked.errors,...(payment?{}:{payment:say('اختار طريقة الدفع: نقدي أو آجل','Choose how the customer pays: cash or deferred')}),
    ...(needsFile&&![...quotes,...pos].some(choice=>!choice.refusal)?{quoteFile:say(...MOLD_QUOTE_FILE_REQUIRED_TEXT)}:{}),
-   ...(designRequired&&!hasDesign&&!designs.some(choice=>!choice.refusal)?{designFile:say(...MOLD_DESIGN_FILE_REQUIRED_TEXT)}:{})};
+   ...(designRequired&&!hasDesign&&!designs.some(choice=>!choice.refusal)?{designFile:say(...MOLD_DESIGN_FILE_REQUIRED_TEXT)}:{}),
+   // The delivery address (2026-11-09), once there is a customer to deliver to: required, up to 300 characters as the server counts.
+   ...((editing||customerId)&&place.error?{address:say(...MOLD_ADDRESS_TEXT[place.error])}:{})};
   if(!editing&&!customerId){setShown({...errors,customer:say('اختر العميل','Choose the customer')});return;}
   if(Object.keys(errors).length){setShown(errors);return;}
   setShown({});
@@ -467,15 +477,15 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   setAsking(false);
   // The files go once the request is saved (each with its own requestId, kept for retries), the request's own change first.
   const specs={...checked.specs};delete specs.designUrl;
-  const body=editing?{action:'update',id:editing.id,version:editing.version,specs,payment}:{action:'create',customerId,specs,payment};
+  const body=editing?{action:'update',id:editing.id,version:editing.version,specs,payment,address:place.address}:{action:'create',customerId,specs,payment,address:place.address};
   // What the customer reads before signing: the customer, the mold and how they pay: the request's data the signature covers (its files
   // may change later without a new signature, so they are not part of it; no number since 2026-11-05).
   const choose=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
-  const summary:[string,React.ReactNode][]=[[say('العميل','Customer'),editing?editing.customerName:String(chosen?.data.name||'')],[say('الوصف','Description'),<span dir="auto" key="d">{String(specs.description||'')}</span>],
+  const summary:[string,React.ReactNode][]=[[say('العميل','Customer'),editing?editing.customerName:String(chosen?.data.name||'')],[say('العنوان','Address'),<span dir="auto" key="a">{place.address}</span>],[say('الوصف','Description'),<span dir="auto" key="d">{String(specs.description||'')}</span>],
    [say('الكمية','Quantity'),String(specs.quantity??'')],[say('العلب','Core'),choose(MOLD_CORES,String(specs.core||''))],[say('الموديل','Model'),choose(MOLD_MODELS,String(specs.model||''))],
    ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,React.ReactNode]]:[])];
   // A sales role's new request, or an edit that changes what was signed, is signed by the customer first (2026-11-04).
-  if(signs&&(!editing||editChanges(editing,specs,payment))){setSigning({body,summary,again:!!editing?.signature});return;}
+  if(signs&&(!editing||editChanges(editing,specs,payment,place.address))){setSigning({body,summary,again:!!editing?.signature});return;}
   send(body,summary,false);
  };
  /** The request saved (then its files go); a refusal that asks for the signature opens the signing step, and one of the form's own fields
@@ -505,8 +515,11 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>
     {editing?<p className="mold-customer-chosen"><Factory size={16} aria-hidden="true"/>{editing.customerName}</p>:chosen?<div className="mold-customer-chosen"><span><Factory size={16} aria-hidden="true"/>{String(chosen.data.name||'')}<small>{String(chosen.data.internalCode||'')}{chosen.data.city?' · '+String(chosen.data.city):''}</small></span><button type="button" className="btn small subtle" onClick={()=>setCustomerId('')}>{say('تغيير','Change')}</button></div>
      :<div className="mold-customer-search" aria-invalid={!!errors.customer}><label>{say('العميل','Customer')}<span className="search"><Search size={16} aria-hidden="true"/><input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder={say('ابحث باسم العميل أو كوده أو مدينته','Search by name, code or city')}/></span></label>
-      <div className="mold-customer-matches">{matches.map(row=><button type="button" key={row.id} disabled={!yourrestNumber(row.data.internalCode)} onClick={()=>{setCustomerId(row.id);clear('customer');}}><strong>{String(row.data.name||'')}</strong><small>{String(row.data.internalCode||'')}{row.data.city?' · '+String(row.data.city):''}</small></button>)}{!matches.length&&<p className="empty">{say('لا عملاء مطابقون','No matching customers')}</p>}</div>
+      <div className="mold-customer-matches">{matches.map(row=><button type="button" key={row.id} disabled={!yourrestNumber(row.data.internalCode)} onClick={()=>{setCustomerId(row.id);setAddress(String(row.data.address||''));clear('customer');clear('address');}}><strong>{String(row.data.name||'')}</strong><small>{String(row.data.internalCode||'')}{row.data.city?' · '+String(row.data.city):''}</small></button>)}{!matches.length&&<p className="empty">{say('لا عملاء مطابقون','No matching customers')}</p>}</div>
       {errors.customer&&<small className="field-error">{errors.customer}</small>}</div>}
+    {(editing||chosen)&&<div className="mold-address" aria-invalid={!!errors.address}>
+     <VoiceField label={say('العنوان','Address')} value={address} onChange={value=>{setAddress(value);clear('address');}} multiline rows={2} contextKey={'mold-address:'+(editing?.id||customerId)} inputProps={{dir:'auto',autoComplete:'street-address','aria-invalid':!!errors.address||undefined}}/>
+     {errors.address&&<small className="field-error">{t(errors.address)}</small>}</div>}
     {text('description',say('وصف القالب','Mold description'),MOLD_LIMITS.description)}
     <div className="mold-grid">
      {choice('core',say('العلب','Core'),Object.entries(MOLD_CORES).map(([value,ar])=>[value,say(ar,value)]))}

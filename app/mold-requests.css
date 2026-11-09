@@ -54,6 +54,9 @@
 .mold-customer-matches>button:disabled{opacity:.5;cursor:not-allowed}.mold-customer-matches small{color:var(--muted-foreground);font-size:12px}
 .mold-customer-chosen{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:10px 12px;border:1px solid var(--primary);border-radius:12px;background:color-mix(in srgb,var(--primary) 6%,transparent)}
 .mold-customer-chosen span{display:grid;gap:2px}.mold-customer-chosen small{font-size:12px;color:var(--muted-foreground)}
+/* The request's delivery address (2026-11-09), under the customer: a two-line text area with dictation, its refusal under it. */
+.mold-address{display:grid;gap:4px;min-width:0}.mold-address .voice-field{min-width:0;width:100%}.mold-address textarea{width:100%;min-width:0;min-height:64px;font-size:16px;line-height:1.5;resize:vertical}
+.mold-address[aria-invalid=true] textarea{border-color:var(--destructive)}
 .dark .mold-banner[data-kind=off],.dark .mold-sending[data-state=off]{background:#252b42;color:#d2d4ff}.dark .mold-banner[data-kind=restored]{background:#173a28;color:#bfe8cf}.dark .mold-banner[data-kind=stale],.dark .mold-sending{background:#3a3014;color:#f2dca0}
 .dark .mold-stages li[data-done=true]{background:#183a2b}.dark .mold-chip{background:#303652;color:#e4e6ff}.dark .mold-chip[data-status=produced]{background:#183a2b;color:#bfe8d2}
 @media (max-width:640px){
