@@ -1,0 +1,27 @@
+/* «المحذوفات» (app/trash-page.tsx): a toolbar, then one card per deletion; one column on a phone. */
+.trash-page{display:flex;flex-direction:column;gap:18px;min-width:0}
+.trash-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.trash-intro{display:flex;align-items:flex-start;gap:9px;font-size:14px;line-height:1.8;color:var(--muted-foreground);max-width:620px;min-width:0}
+.trash-intro svg{flex-shrink:0;margin-top:4px;color:var(--primary)}
+.trash-filter{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500;min-width:200px}
+.trash-loading{display:flex;align-items:center;gap:9px;color:var(--muted-foreground);font-size:14px;padding:24px 0}
+.trash-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.trash-card{display:flex;flex-direction:column;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;min-width:0}
+.trash-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.trash-type{background:var(--accent);color:var(--accent-foreground)}
+.trash-number{font-family:Arial;font-size:13px;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.trash-card h3{font-size:16px;font-weight:600;line-height:1.7;overflow-wrap:anywhere}
+.trash-customer,.trash-meta{font-size:13px;color:var(--muted-foreground);line-height:1.7;overflow-wrap:anywhere}
+.trash-note,.trash-blocked{display:flex;align-items:flex-start;gap:7px;font-size:13px;line-height:1.7;padding:8px 10px;border-radius:8px}
+.trash-note{background:var(--accent);color:var(--accent-foreground)}
+.trash-blocked{background:#fff4e5;color:#8a5a12}
+.dark .trash-blocked{background:#3a2a12;color:#f3c886}
+.trash-note svg,.trash-blocked svg{flex-shrink:0;margin-top:4px}
+.trash-restore{align-self:flex-start;margin-top:4px;min-height:44px}
+.trash-more{align-self:center;min-height:44px}
+@media(max-width:767px){
+ .trash-toolbar{flex-direction:column;align-items:stretch}
+ .trash-filter{min-width:0}
+ .trash-list{grid-template-columns:minmax(0,1fr)}
+ .trash-restore{align-self:stretch}
+}

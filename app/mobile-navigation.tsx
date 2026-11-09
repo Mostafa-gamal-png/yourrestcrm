@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,FileText,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,X} from 'lucide-react';
+import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,FileText,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {canViewPage} from '@/lib/access';
 import {roles,type Member} from '@/lib/crm';
@@ -27,10 +27,12 @@ const pages=[
  {id:'competitors',ar:'المنافسين',en:'Competitors',Icon:Users},
  {id:'team',ar:'الفريق والصلاحيات',en:'Team & permissions',Icon:ShieldCheck},
  {id:'mold-requests',ar:'طلبات تصنيع القوالب',en:'Mold requests',Icon:Wrench},
+ {id:'trash',ar:'المحذوفات',en:'Deleted records',Icon:ArchiveRestore},
 ] as const;
 /** Pages that never take a slot of the bottom bar from the pages it already shows: when every other page fits in the bar, they
  * are reached from «المزيد» beside them (a representative keeps the same five tabs and gets a sixth, «المزيد»; the owner, 2026-11-03). */
-const secondary=new Set<string>(['mold-requests']);
+// «المحذوفات» (2026-11-09) is reached from «المزيد» too.
+const secondary=new Set<string>(['mold-requests','trash']);
 
 type Props={me:Member;view:string;onNavigate:(view:string)=>void;accountOpen:boolean;onAccountOpenChange:(open:boolean)=>void;blocked?:boolean;queue?:ServiceQueueEntry[];extra?:number;/** What waits for the reader on the complaints page, when they have one. */complaints?:number};
 
