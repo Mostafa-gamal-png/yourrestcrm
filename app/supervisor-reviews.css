@@ -1,0 +1,45 @@
+/* The supervisor's notes (app/supervisor-reviews.tsx): on «تقرير يوم المندوب» and the card at the top of every page. Logical properties
+   only, so Arabic and English mirror; every button at least 44 px high on a phone. */
+.review-entries{display:grid;gap:8px;margin-top:10px}
+.review-entry{border:1px dashed var(--border);border-radius:10px;padding:10px 12px;background:var(--muted);min-width:0;margin-top:10px}
+.review-entries>.review-entry{margin-top:0}
+.review-entry.saved{border-style:solid;border-color:color-mix(in srgb,var(--primary) 35%,var(--border));background:var(--card)}
+.review-entry>header,.review-day>header{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;color:var(--primary)}
+.review-entry>header b{font-size:13px;font-weight:600}
+.review-entry>.review-add{width:auto}
+.review-day{border:1px solid var(--primary);border-radius:12px;background:var(--card);padding:14px 16px;margin-bottom:16px;min-width:0}
+.review-day>header h2{font-size:16px;font-weight:600;margin:0;color:var(--foreground);overflow-wrap:anywhere}
+.review-day-state{font-size:12px;color:var(--muted-foreground);margin-inline-start:auto}
+.review-day>.review-add,.review-day>.review-saved,.review-day>.review-form{margin-top:10px}
+.review-saved{display:grid;gap:6px;margin-top:6px;min-width:0}
+.review-saved dl,.review-inbox dl{display:grid;gap:6px;margin:0}
+.review-saved dt,.review-inbox dt{font-size:12px;font-weight:600;color:var(--muted-foreground)}
+.review-saved dd,.review-inbox dd{margin:0;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.review-by{font-size:12px;color:var(--muted-foreground);margin:0}
+.review-saved-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.review-read-status{display:inline-flex;align-items:center;gap:5px;font-size:12px;margin:0;color:var(--muted-foreground)}
+.review-read-status.read{color:var(--primary);font-weight:600}
+.review-form{display:grid;gap:10px;margin-top:8px;min-width:0}
+.review-form .field{margin:0}
+.review-actions{display:flex;gap:8px;flex-wrap:wrap}
+.review-error,.review-load-error{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--destructive);margin:0;overflow-wrap:anywhere}
+.review-load-error{margin-bottom:12px;flex-wrap:wrap}
+.review-inbox{border:1px solid var(--primary);border-radius:12px;background:var(--card);padding:12px 14px;margin-bottom:12px;color:var(--foreground);min-width:0;max-width:100%}
+.review-inbox>header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.review-inbox h2{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600;margin:0;min-width:0;overflow-wrap:anywhere}
+.review-inbox h2 svg{flex-shrink:0;color:var(--primary)}
+.review-count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:999px;background:var(--primary);color:var(--primary-foreground);font-size:12px;font-weight:700}
+.review-inbox ol{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:10px}
+.review-inbox li{border-top:1px solid var(--border);padding-top:10px;display:grid;gap:6px;min-width:0}
+.review-about{margin:0;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.review-about span{color:var(--muted-foreground)}
+.review-inbox-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.review-inbox .btn,.review-entry .btn,.review-day .btn{gap:6px}
+.map-page .review-inbox{margin-bottom:0;flex-shrink:0}
+@media(max-width:600px){
+ .review-inbox,.review-day{padding:10px 12px}
+ .review-inbox .btn,.review-entry .btn,.review-day .btn{min-height:44px}
+ .review-form .voice-button{width:44px;min-width:44px;min-height:44px}
+ .review-inbox-foot>.btn{width:100%;justify-content:center}
+ .review-actions>.btn{flex:1;justify-content:center}
+}
