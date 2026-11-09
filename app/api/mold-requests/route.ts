@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED} from '@/portable/mold-rules.mjs';
+import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,moldAddress,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldHeldFor,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
@@ -39,6 +39,8 @@ const requestId=z.string().uuid(),id=z.string().regex(/^mr-[0-9a-f-]{36}$/),vers
 const specsInput=z.record(z.string(),z.unknown()),paymentInput=z.unknown().optional(),numberInput=z.unknown().optional();
 /** The customer's signature (2026-11-04): {signer, png} with the PNG as base64, checked by readSignature (each refusal by its field). */
 const signatureInput=z.unknown().optional();
+/** The request's delivery address (2026-11-09), checked by askedAddress (its refusal by its field); a page loaded before sends none. */
+const addressInput=z.unknown().optional();
 const pendingTarget={requestId,crmRequestId:z.string().regex(MOLD_ID,'حدد الطلب').optional(),requestRef:z.string().regex(MOLD_REQUEST_REF,'مرجع الطلب غير صحيح؛ حدّث الصفحة.').optional(),orderNo:z.number().int().positive().nullable().optional(),
  // This release's page marks its approval (as its GET asks with refs=1): it names an item by number only when production gave it no
  // requestRef, so its number is checked against production's list as it is now, never refused for being a number.
@@ -47,8 +49,9 @@ const schema=z.discriminatedUnion('action',[
  // payment (2026-11-03): cash or deferred, required (checkedRequest says so with the field's own message). quoteNo and poNo (the second
  // update of 2026-11-03) are no longer asked for (2026-11-05): read only to refuse one a page loaded before sends (checkedRequest).
  // signature (2026-11-04): the customer's, required of the sales roles for a new request and for an edit that changes what was signed.
- z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200),specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput}).strict(),
- z.object({action:z.literal('update'),requestId,id,version,specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput}).strict(),
+ // address (2026-11-09): the request's delivery address, the customer's registered one when a page loaded before sends none.
+ z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200),specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput,address:addressInput}).strict(),
+ z.object({action:z.literal('update'),requestId,id,version,specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput,address:addressInput}).strict(),
  z.object({action:z.literal('cancel'),requestId,id,version,reason:z.string().trim().max(MOLD_LIMITS.cancelReason,'سبب الإلغاء حتى 500 حرف').default('')}).strict(),
  z.object({action:z.literal('resend'),requestId,id}).strict(),
  z.object({action:z.literal('approve'),requestId,id}).strict(),
@@ -112,6 +115,16 @@ function checkedRequest(input:Record<string,unknown>,paymentValue:unknown,number
  const fields:Record<string,string>={...errors,...(typedUrl?{designUrl:DESIGN_URL_GONE}:{}),...(payment?{}:{payment:MOLD_PAYMENT_REQUIRED}),...typedNumbers,...more};
  if(Object.keys(fields).length)throw Object.assign(new CRMError([...new Set(Object.values(fields))].join(' • '),400),{fields});
  return {specs:specs as MoldRequestData['specs'],payment:payment as MoldPayment};
+}
+/** The request's delivery address (the owner, 2026-11-09): what the form sent, checked as stored and sent (moldAddress: required, up to
+ *  300 characters), its refusal by its field (address). Absent (a page loaded before this release sends none): `kept`, the customer's
+ *  registered address for a new request (as before), the stored one for an edit. An edit whose address reads the same as the stored one
+ *  once normalized keeps the stored text exactly, so the request is resent byte for byte and nothing counts as changed. */
+function askedAddress(value:unknown,kept:string):{address:string;fields:Record<string,string>}{
+ if(value===undefined)return {address:kept,fields:{}};
+ const {address,error}=moldAddress(value);
+ if(error)return {address,fields:{address:error==='required'?MOLD_ADDRESS_REQUIRED:MOLD_ADDRESS_LONG}};
+ return {address:address===moldAddress(kept).address?kept:address,fields:{}};
 }
 /** The customer's signature as checked (moldSignatureCheck): who signed, the file's name, the PNG and its hash. */
 type SignatureFile={signer:string;name:string;bytes:Uint8Array<ArrayBuffer>;contentType:string;sha256:string};
@@ -270,13 +283,16 @@ export async function POST(req:Request){let objectKey='';try{
   if(!name||[...name].length>MOLD_LIMITS.customerName)throw new CRMError('اسم العميل أطول من '+MOLD_LIMITS.customerName+' حرفًا؛ اختصره من صفحة العميل أولًا',409);
   // The sales roles' new request carries the customer's signature (2026-11-04); customer service's and the administrator's may, checked alike.
   const signed=await readSignature(input.signature),required:Record<string,string>=moldSignatureRequired(c.me.role)&&!signed.signature&&!Object.keys(signed.fields).length?{signature:input.signature===undefined?SIGNATURE_REFRESH:MOLD_SIGNATURE_REQUIRED}:{};
-  const asked=checkedRequest(input.specs,input.payment,input,{},'',{...signed.fields,...required});
+  // The delivery address (2026-11-09): the request's own, the customer's record never written (none from a page loaded before: the
+  // customer's registered address, as before).
+  const place=askedAddress(input.address,String(customer.data.address||''));
+  const asked=checkedRequest(input.specs,input.payment,input,{},'',{...place.fields,...signed.fields,...required});
   rowId='mr-'+input.requestId;
   if(signed.signature)signing={file:signed.signature,id:'mds-'+input.requestId};
   // No number (2026-11-05). Once production's update is known, the request waits in the CRM for its quotation's or PO's file, whoever
   // asked (the owner: every role); and always for its design file (2026-11-08, every role: «إجباري على الكل»). The markers are the
   // request's data, never part of the requests body.
-  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:String(customer.data.address||''),city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:asked.specs,payment:asked.payment,...(quotePo?{fileRequired:true as const}:{}),designRequired:true};
+  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:place.address,city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:asked.specs,payment:asked.payment,...(quotePo?{fileRequired:true as const}:{}),designRequired:true};
   if(signing)data.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
   detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.fileRequired?{fileRequired:true}:{}),designRequired:true,...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{})};
   statement=c.db.prepare(`INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,'send',?,?,?,?,1,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)`)
@@ -316,11 +332,15 @@ export async function POST(req:Request){let objectKey='';try{
   if(input.action==='update'){
    // The request's own design link (an older request's) stays exactly as stored.
    const signed=await readSignature(input.signature);
-   const {specs,payment}=checkedRequest(input.specs,input.payment,input,row.data,row.data.specs.designUrl||'',signed.fields);
+   // The delivery address (2026-11-09): the request's own, changed for it alone; none sent (a page loaded before) keeps the stored one.
+   const place=askedAddress(input.address,row.data.customer.address||'');
+   const {specs,payment}=checkedRequest(input.specs,input.payment,input,row.data,row.data.specs.designUrl||'',{...place.fields,...signed.fields});
+   const address=place.address,moved=address!==(row.data.customer.address||'');
    // The request's numbers (one asked for before 2026-11-05) and whether it waits for its quotation's, PO's or design file stay as stored.
-   const edited:MoldRequestData={...row.data,specs,payment};
-   // An edit that changes nothing keeps the request as it is, its signature too (a signature sent with it is not taken).
-   if(specsKey(specs,specs.designUrl||'')===specsKey(row.data.specs,row.data.specs.designUrl||'')&&payment===row.data.payment)return answer(row.id,null);
+   const edited:MoldRequestData={...row.data,customer:moved?{...row.data.customer,address}:row.data.customer,specs,payment};
+   // An edit that changes nothing keeps the request as it is, its signature too (a signature sent with it is not taken). The address is
+   // part of what the customer signed (2026-11-09): a changed one is a change like the specifications'.
+   if(specsKey(specs,specs.designUrl||'')===specsKey(row.data.specs,row.data.specs.designUrl||'')&&payment===row.data.payment&&!moved)return answer(row.id,null);
    // What the customer signed changed (2026-11-04): a sales role signs again. The new signature replaces the old in the data; the old file
    // is removed in the CRM alone when production never held it (else it stays as a design file). Without a new one the data names none.
    // A request the customer signed is never sent changed without a new signature, whatever the editor's role is now.
@@ -334,7 +354,7 @@ export async function POST(req:Request){let objectKey='';try{
     edited.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
    }else delete edited.signature;
    if(oldFile&&removable)replaced={key:oldFile.objectKey,at:0};
-   detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity,payment,...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{}),...(old?{replacedSignature:old.fileId}:{})};
+   detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity,payment,...(moved?{address}:{}),...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{}),...(old?{replacedSignature:old.fileId}:{})};
    // Production never stored any of it, so the edited request starts as never attempted; the guard holds that in SQL, so a send claimed
    // since the check (it may arrive) keeps the request as it is.
    statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_attempt_at=NULL,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND ${MOLD_NEVER_SENT_SQL}`).bind(JSON.stringify(edited),now,now,mutation,...guardArgs);

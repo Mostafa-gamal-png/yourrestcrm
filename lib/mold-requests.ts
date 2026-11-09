@@ -35,7 +35,7 @@
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES} from '@/portable/mold-rules.mjs';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,moldSignatureRequired};
 /** The customer's signature as the request's data names it (2026-11-04): who signed for the customer, when (the CRM's UTC time), and
@@ -146,7 +146,10 @@ export type MoldQuotePoView={missing:boolean};
 /** One request as a reader receives it. designFiles: the CRM's and production's; can.attach / can.deleteFile: the requester may attach or
  *  delete design files (each file also says whether it may be deleted). unconfirmed: the specifications are the CRM's change production
  *  refused (production_only), not production's data (MoldRequestData). payment: as the CRM stored it (null: asked for before 2026-11-03). */
-export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
+export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;
+ /** The request's delivery address (data.customer.address, 2026-11-09): the customer's registered address when it was asked for, or the
+  *  one typed for this request; '' for a request stored without one. A new field: a page loaded before reads nothing of it. */
+ customerAddress:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
  /** The reasons of the request's earlier cancellations (the production manager restored it since): a new cancellation needs another. */
  cancelReasons:string[];
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null;
@@ -454,7 +457,7 @@ export function moldQuotePoView(row:Pick<MoldRequestRow,'remote'>):MoldQuotePoVi
  *  approves this request (moldApprovesRequest), so can.approve and can.withdraw are offered only for a request they may approve. */
 export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[],quotePo=false,approver=canApproveMoldRequests(me)):MoldRequestView{
  const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo),held=moldHeldFor(row,files);
- return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,crmNumber:row.data.customer.crmNumber,
+ return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,customerAddress:typeof row.data.customer.address==='string'?row.data.customer.address:'',crmNumber:row.data.customer.crmNumber,
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(held?{held}:{})},
   remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true};
@@ -495,6 +498,8 @@ export const MOLD_DESIGN_FILE_REQUIRED_TEXT:[string,string]=['أرفق ملف ت
 export const MOLD_DESIGN_FILE_HELD_NAME:[string,string]=['بانتظار ملف التصميم','Waiting for the design file'];
 export const MOLD_DESIGN_FILE_WAITING_OTHERS:[string,string]=['بانتظار ما صاحب الطلب يرفق ملف التصميم','Waiting for whoever asked for it to attach the design file'];
 export const MOLD_DESIGN_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach at least one design file (the customer\'s signature does not count); once you do, the request goes, then its files.'];
+/** The request's delivery address (2026-11-09): the form's refusals, the same as the server's (MOLD_ADDRESS_REQUIRED, MOLD_ADDRESS_LONG). */
+export const MOLD_ADDRESS_TEXT:{required:[string,string];long:[string,string]}={required:[MOLD_ADDRESS_REQUIRED,'Enter the delivery address'],long:[MOLD_ADDRESS_LONG,'The address is up to 300 characters']};
 /** sending.held in words, its explanation to the requester (who attaches) and to a reader who cannot. */
 export const moldHeldTexts:Record<MoldSendingHeld,{name:[string,string];waiting:[string,string];others:[string,string]}>={
  quote_file:{name:MOLD_QUOTE_FILE_HELD_NAME,waiting:MOLD_QUOTE_FILE_WAITING_TEXT,others:MOLD_QUOTE_FILE_WAITING_OTHERS},
@@ -574,6 +579,6 @@ export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>s
  return found?say(...found):say('رفض الإنتاج الملف','Production refused the file');
 }
 /** The contract's field names, for a refusal that names them. */
-export const moldFieldNames:Record<string,[string,string]>={'specs.description':['الوصف','Description'],'specs.core':['العلب','Core'],'specs.vibrators':['الرجاجات','Vibrators'],'specs.model':['الموديل','Model'],'specs.halfBlock':['بلوكة النص','Half block'],'specs.moldWidth':['عرض القالب','Mold width'],'specs.gelbaSize':['مقاس الجلب','Gelba size'],'specs.moldNo':['رقم القالب','Mold no.'],'specs.quantity':['الكمية','Quantity'],'specs.designUrl':['رابط التصميم','Design link'],'specs.notes':['الملاحظات','Notes'],'customer.name':['اسم العميل','Customer name'],'customer.crmNumber':['كود يورست للعميل','Customer Yourrest code'],'customer.address':['عنوان العميل','Customer address'],'customer.city':['مدينة العميل','Customer city'],'salesman.name':['اسم المندوب','Salesman name'],'salesman.email':['بريد المندوب','Salesman email'],requestedAt:['تاريخ الطلب','Request date'],payment:['طريقة الدفع غير صحيحة','The payment method is not valid'],quoteNo:['رقم عرض السعر غير مقبول','The quotation number is not accepted'],poNo:['رقم الـ PO غير مقبول','The PO number is not accepted'],legacyOrderNo:['رقم الطلب في الشيت','Sheet order number'],crmRequestId:['رقم الطلب','Request id']};
+export const moldFieldNames:Record<string,[string,string]>={'specs.description':['الوصف','Description'],'specs.core':['العلب','Core'],'specs.vibrators':['الرجاجات','Vibrators'],'specs.model':['الموديل','Model'],'specs.halfBlock':['بلوكة النص','Half block'],'specs.moldWidth':['عرض القالب','Mold width'],'specs.gelbaSize':['مقاس الجلب','Gelba size'],'specs.moldNo':['رقم القالب','Mold no.'],'specs.quantity':['الكمية','Quantity'],'specs.designUrl':['رابط التصميم','Design link'],'specs.notes':['الملاحظات','Notes'],'customer.name':['اسم العميل','Customer name'],'customer.crmNumber':['كود يورست للعميل','Customer Yourrest code'],'customer.address':['عنوان التسليم','Delivery address'],'customer.city':['مدينة العميل','Customer city'],'salesman.name':['اسم المندوب','Salesman name'],'salesman.email':['بريد المندوب','Salesman email'],requestedAt:['تاريخ الطلب','Request date'],payment:['طريقة الدفع غير صحيحة','The payment method is not valid'],quoteNo:['رقم عرض السعر غير مقبول','The quotation number is not accepted'],poNo:['رقم الـ PO غير مقبول','The PO number is not accepted'],legacyOrderNo:['رقم الطلب في الشيت','Sheet order number'],crmRequestId:['رقم الطلب','Request id']};
 /** YR-C-000027 -> 27: the customer's Yourrest code, the number the contract sends as customer.crmNumber. */
 export function yourrestNumber(internalCode:unknown){const match=/^YR-C-(\d{1,10})$/.exec(String(internalCode||''));const value=match?Number(match[1]):NaN;return Number.isInteger(value)&&value>0&&value<=2147483647?value:null;}

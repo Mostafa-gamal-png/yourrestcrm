@@ -24,7 +24,9 @@
 // manager's «طلبات بانتظار اعتمادي» and approved there, not in his list (2026-11-03). Since 2026-11-08 (the owner: «إجباري على الكل»)
 // a design file is required of every new request: the picker reads «ملفات التصميم (ملف واحد على الأقل)», «حفظ وإرسال» without one is
 // refused on the device («أرفق ملف تصميم واحد على الأقل», before the signing step), with one it goes on; the request waits for its
-// design file to upload, then goes; on a phone of 360 px, in Arabic and in English. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
+// design file to upload, then goes; on a phone of 360 px, in Arabic and in English. Since 2026-11-09 (the owner: «عنوان لكل طلب قالب»)
+// «العنوان» under the chosen customer, filled in from the customer's registered address, edited, required and up to 300 characters, in
+// the signing summary under the customer and on the sheet as «عنوان التسليم», at 360 px in Arabic and English. Screenshots for the report. Synthetic fixtures only: temporary SQLite,
 // no production data, no real production app.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -1015,6 +1017,117 @@ try {
     await englishCard.waitFor();
     ok((await englishCard.innerText()).includes('Production order: No number yet (given at production approval)'), 'in English: «No number yet (given at production approval)»');
     await english.context().close();
+  }
+
+  // ---- 7. 2026-11-09 (the owner: «عنوان لكل طلب قالب»): «العنوان» right under the chosen customer, filled in from the customer's registered
+  //  address (again when another customer is chosen, the edit for the previous one replaced), changed for this request only; required and
+  //  up to 300 characters, refused on the device; read by the customer in «توقيع العميل» right under «العميل»; the request's sheet shows
+  //  «عنوان التسليم»; production receives it; the customer's own address unchanged. On a phone of 360 px, in Arabic and in English.
+  {
+    const LONG_ADDRESS = 'شارع '.repeat(61).trim(); // 304 characters: a registered address the request cannot carry as it is
+    await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('east3','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')")
+      .bind(JSON.stringify({name: 'مصنع east3', region: 'الشرقية', city: 'الدمام', address: LONG_ADDRESS, phone: '0551234567', code: 'ERP-east3', branch: 'الرئيسي', assignedTo: 'rep'}), now, now).run();
+    const registeredBefore = (await app.db.prepare("SELECT data,version FROM crm_records WHERE id='east1'").first());
+    const choose = async (dialog, name) => { await dialog.locator('.mold-customer-search input').fill(name); await dialog.locator('.mold-customer-matches button', {hasText: name}).click(); };
+    const addressPhone = await open('rep', {viewport: PHONE, touch: true});
+    await goMoldsAnywhere(addressPhone);
+    await addressPhone.locator('button.mold-new').click();
+    const form = addressPhone.locator('.mold-dialog'), address = form.locator('.mold-address'), area = address.locator('textarea');
+    await form.waitFor();
+    check(await address.count(), 0, 'no address before a customer is chosen');
+    await choose(form, 'مصنع east2');
+    check([await address.locator('.voice-field > span').innerText(), await area.inputValue(), await address.locator('.voice-button').count()], ['العنوان', 'حي الصناعية', 1], '«العنوان» filled in from the customer\'s registered address, with dictation like the other text fields');
+    check(await addressPhone.evaluate(() => document.querySelector('.mold-dialog .mold-customer-chosen')?.nextElementSibling?.classList.contains('mold-address')), true, 'right under the customer card');
+    await area.fill('مخزن تجريبي');
+    await form.getByRole('button', {name: 'تغيير'}).click();
+    check(await address.count(), 0, 'the customer changed: the field waits for the next one');
+    await choose(form, 'مصنع east1');
+    check(await area.inputValue(), 'حي الصناعية', 'another customer: filled in again from that customer, the edit for the previous one replaced');
+    // Required: emptied, refused beside the field, before anything else happens.
+    await fill(form, null, 'نقدي');
+    await form.locator('.mold-design-picker[data-category="po"] input[type=file]').setInputFiles({name: 'PO-ADDR.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic PO address')});
+    await form.locator('.mold-design-picker[data-category="po"] .mold-design-file[data-state="ready"]').waitFor();
+    await area.fill('   ');
+    const sendsBefore = mock.state.calls.length;
+    await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+    await address.locator('.field-error').waitFor();
+    check([await address.locator('.field-error').innerText(), await address.getAttribute('aria-invalid'), await area.getAttribute('aria-invalid'), await form.locator('.mold-signing').count(), await form.locator('.field-error').count(), mock.state.calls.length], ['اكتب عنوان التسليم', 'true', 'true', 0, 1, sendsBefore], 'emptied: «اكتب عنوان التسليم» beside it, no signing step, nothing sent');
+    await address.scrollIntoViewIfNeeded();
+    await noOverflow(addressPhone, 'phone form refusing an empty address'); await shot(addressPhone, 'mold-form-address-required-phone');
+    await area.fill('مخزن');
+    check(await address.locator('.field-error').count(), 0, 'typing clears the message');
+    // Over 300 characters: a registered address that long fills in as it is and is refused until shortened.
+    await form.getByRole('button', {name: 'تغيير'}).click();
+    await choose(form, 'مصنع east3');
+    check([await area.inputValue(), [...await area.inputValue()].length], [LONG_ADDRESS, 304], 'a registered address of 304 characters fills in whole');
+    await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+    await address.locator('.field-error').waitFor();
+    check([await address.locator('.field-error').innerText(), await form.locator('.mold-signing').count(), mock.state.calls.length], ['العنوان حتى 300 حرف', 0, sendsBefore], 'over 300 characters: «العنوان حتى 300 حرف», nothing sent');
+    await noOverflow(addressPhone, 'phone form refusing a long address');
+    // Edited for this request: the customer reads it right under «العميل» before signing.
+    const DELIVERY = 'مخزن الدمام الجديد، المنطقة الصناعية الثانية، بوابة 4';
+    await area.fill(DELIVERY);
+    await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
+    const signing = form.locator('.mold-signing');
+    await signing.waitFor();
+    check((await signing.locator('.mold-signing-summary dt').allInnerTexts()).slice(0, 2), ['العميل', 'العنوان'], 'the signing summary: «العنوان» right under «العميل»');
+    check(await signing.locator('.mold-signing-summary div').nth(1).locator('dd').innerText(), DELIVERY, 'the address the customer signs is the one typed for the request');
+    await signing.locator('.mold-signing-summary').scrollIntoViewIfNeeded();
+    await noOverflow(addressPhone, 'phone signing step with the address'); await shot(addressPhone, 'mold-signing-address-phone');
+    await pad(addressPhone).scrollIntoViewIfNeeded();
+    await drawOn(addressPhone, {input: 'touch'});
+    await signing.locator('input[name="signer"]').fill('م. ماجد القحطاني');
+    await signing.getByRole('button', {name: 'تأكيد وإرسال'}).click();
+    await sheet(addressPhone).locator('.mold-signature-view[data-state="sent"] img').waitFor();
+    const deliveryFact = sheet(addressPhone).locator('.mold-facts').first().locator('div', {has: addressPhone.locator('dt', {hasText: 'عنوان التسليم'})});
+    check([await deliveryFact.count(), await deliveryFact.locator('dd').innerText()], [1, DELIVERY], 'the request\'s sheet: «عنوان التسليم», once');
+    const sentAddress = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests' && call.body.includes('مصنع east3')).body);
+    check([sentAddress.customer.name, sentAddress.customer.address], ['مصنع east3', DELIVERY], 'production received the request\'s address as customer.address');
+    const east3 = await app.db.prepare("SELECT data,version FROM crm_records WHERE id='east3'").first(), east1 = await app.db.prepare("SELECT data,version FROM crm_records WHERE id='east1'").first();
+    check([JSON.parse(east3.data).address, east3.version, east1.data, east1.version], [LONG_ADDRESS, 1, registeredBefore.data, registeredBefore.version], 'the customers\' own addresses unchanged');
+    await deliveryFact.scrollIntoViewIfNeeded();
+    await noOverflow(addressPhone, 'phone sheet with the delivery address'); await shot(addressPhone, 'mold-sheet-address-phone');
+    await addressPhone.context().close();
+
+    // In English, at phone width: the label, both refusals, the signing summary's row and the sheet's.
+    const englishAddress = await open('rep', {viewport: PHONE, language: 'en', touch: true});
+    await goMoldsAnywhere(englishAddress);
+    await englishAddress.locator('.mold-card', {hasText: 'مصنع east3'}).first().click();
+    const englishFact = sheet(englishAddress).locator('.mold-facts').first().locator('div', {has: englishAddress.locator('dt', {hasText: 'Delivery address'})});
+    check(await englishFact.locator('dd').innerText(), DELIVERY, 'the sheet in English: «Delivery address»');
+    await englishAddress.keyboard.press('Escape');
+    await englishAddress.locator('button.mold-new').click();
+    const englishForm = englishAddress.locator('.mold-dialog'), englishField = englishForm.locator('.mold-address'), englishArea = englishField.locator('textarea');
+    await choose(englishForm, 'مصنع east1');
+    check([await englishField.locator('.voice-field > span').innerText(), await englishArea.inputValue()], ['Address', 'حي الصناعية'], 'in English: «Address», filled in');
+    await englishForm.locator('label.mold-field', {hasText: 'Mold description'}).locator('input').fill('ENGLISH ADDRESS 400');
+    for (const text of ['open', 'old', 'none']) await englishForm.locator('.mold-choice label', {hasText: new RegExp('^' + text + '$')}).click();
+    await englishForm.locator('.mold-choice', {hasText: 'Vibrators'}).locator('label', {hasText: '2'}).click();
+    await englishForm.locator('label.mold-field', {hasText: 'Mold width'}).locator('.mold-usual button', {hasText: '1380'}).click();
+    await englishForm.locator('label.mold-field', {hasText: 'Gelba size'}).locator('.mold-usual button', {hasText: '795'}).click();
+    await englishForm.locator('.mold-choice', {hasText: 'Payment'}).locator('label', {hasText: 'Cash'}).click();
+    await attachQuote(englishForm, quotation('Q-ADDR-EN.pdf'));
+    await englishForm.locator('.mold-design-picker[data-category="quote"] .mold-design-file[data-state="ready"]').waitFor();
+    await attachDesign(englishForm, drawing('address drawing.pdf'));
+    await englishArea.fill('');
+    await englishForm.getByRole('button', {name: 'Save and send to production'}).click();
+    await englishField.locator('.field-error').waitFor();
+    check([await englishField.locator('.field-error').innerText(), await englishForm.locator('.field-error').count()], ['Enter the delivery address', 1], 'in English: «Enter the delivery address»');
+    await englishArea.fill('x'.repeat(301));
+    await englishForm.getByRole('button', {name: 'Save and send to production'}).click();
+    await englishField.locator('.field-error').waitFor();
+    check(await englishField.locator('.field-error').innerText(), 'The address is up to 300 characters', 'in English: «The address is up to 300 characters»');
+    await englishField.scrollIntoViewIfNeeded();
+    await noOverflow(englishAddress, 'English phone form refusing a long address'); await shot(englishAddress, 'mold-form-address-long-phone-en');
+    await englishArea.fill('Warehouse 7, Second Industrial City, Dammam');
+    await englishForm.getByRole('button', {name: 'Save and send to production'}).click();
+    const englishSigning = englishForm.locator('.mold-signing');
+    await englishSigning.waitFor();
+    check([(await englishSigning.locator('.mold-signing-summary dt').allInnerTexts()).slice(0, 2), await englishSigning.locator('.mold-signing-summary div').nth(1).locator('dd').innerText()], [['Customer', 'Address'], 'Warehouse 7, Second Industrial City, Dammam'], 'the signing summary in English: «Address» under «Customer»');
+    await noOverflow(englishAddress, 'English phone signing step with the address'); await shot(englishAddress, 'mold-signing-address-phone-en');
+    await englishSigning.getByRole('button', {name: 'Back to the request'}).click();
+    check(await englishArea.inputValue(), 'Warehouse 7, Second Industrial City, Dammam', 'back to the form: the address kept as typed');
+    await englishAddress.context().close();
   }
 
   check(JSON.stringify(mock.state.calls).includes(mock.state.secret), false, 'the secret never travelled in a body');
