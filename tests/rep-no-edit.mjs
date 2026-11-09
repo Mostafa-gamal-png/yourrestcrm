@@ -100,6 +100,8 @@ for(const role of ['manager','supervisor']){
  await post({...edit,version:raw(visit.id).version,createKey:crypto.randomUUID(),data:{...row(visit.id).data,result:'forbidden race'}},409,visits);
  check(capture(),state);sql.prepare('UPDATE crm_members SET role=? WHERE id=?').run(role,role);
 }
+// «حذف» is off by default for everyone but the administrator (the owner, 2026-11-09); the administrator grants it to this manager.
+sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('manager','{\"activity:delete\":true}','[]',1,'owner',?)").run(now);
 user('manager');const beforeDelete=capture();race=()=>sql.prepare("UPDATE crm_members SET role='rep' WHERE id='manager'").run();
 await post({action:'delete',kind:'activity',id:linked.id,version:raw(linked.id).version},409);check(capture(),beforeDelete);sql.prepare("UPDATE crm_members SET role='manager' WHERE id='manager'").run();
 user('rep');const beforeAppend=capture();race=()=>sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='rep'").run();await post(visitBody(),409,visits);check(capture(),beforeAppend);sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='rep'").run();
