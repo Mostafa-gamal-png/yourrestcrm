@@ -7,7 +7,7 @@
 //   2. «حذف» (the owner, 2026-11-09: «امكانية اعطاء الصلاحية دى تمام اقدر اديها لاى مستخدم بس العادى ان محدش يقدر يحذف حاجة»): the
 //      GRANTABLE delete cells (customer, visit, follow-up, quotation, void sale) are OFF by default for every role but the administrator
 //      (on by default, and the administrator may switch it off for another administrator's account) and can be granted to ANY member whose
-//      role has the screen. Granting never widens the record scope: a member deletes only a record they may write under their role's own
+//      role has the screen, except customer service on «الزيارات» («—»: their service requests are never deleted, so the cell would do nothing). Granting never widens the record scope: a member deletes only a record they may write under their role's own
 //      write scope (lib/crm-server.ts recordDeleteGuard, app/api/sales/route.ts), never through «عرض بيانات الفريق بالكامل». «إلغاء طلب» on
 //      mold requests is not one of them: a workflow step of one's own request, on by default and restrict-only as before.
 // - A member without a saved row (crm_member_permissions, migration 0020) has today's behaviour; a cell never saved is on, except a
@@ -31,8 +31,9 @@ export type PermissionScreen='dashboard'|'customer'|'map'|'activity'|'complaints
 type Text={ar:string;en:string};
 /** One action of one screen: what it gates (shown on the cell), the roles that can do it today (its ceiling), and a note. A grantable cell
  *  (grantable:true, the «حذف» cells) exists for every role that has the screen; its roles are those it is ON for by default (the
- *  administrator), and roleNote says, for a role, what granting it does for that role. */
-export type MatrixCell=Text&{roles:readonly string[];grantable?:true;note?:Text;roleNote?:Partial<Record<string,Text>>};
+ *  administrator), without the roles that have the screen but nothing it could delete (customer service on «الزيارات»: their service requests are
+ *  never deleted, so no cell that does nothing), and roleNote says, for a role, what granting it does for that role. */
+export type MatrixCell=Text&{roles:readonly string[];grantable?:true;without?:readonly string[];note?:Text;roleNote?:Partial<Record<string,Text>>};
 export type MatrixRow=Text&{screen:PermissionScreen;cells:Partial<Record<PermissionAction,MatrixCell>>};
 const ALL=['admin','manager','supervisor','rep','customer_service','customer_service_manager'] as const;
 const SALES=['admin','manager','supervisor','rep'] as const,MANAGEMENT=['admin','manager','supervisor'] as const,SERVICE=['admin','customer_service','customer_service_manager'] as const;
@@ -40,7 +41,6 @@ const SALES=['admin','manager','supervisor','rep'] as const,MANAGEMENT=['admin',
 const DEFAULT_ON=['admin'] as const;
 const deleteScope:Text={ar:'مقفولة في الأول لكل الأدوار ما عدا مدير النظام، وتقدر تفتحها لأي مستخدم. بيحذف السجلات اللي يقدر يعدّلها بس (فريقه ومناطقه)، وعرض بيانات الفريق بالكامل مبيوسّعش الحذف.',en:'Off by default for every role but the administrator; it can be granted to any member. They delete only the records they may edit (their team and regions); «View the whole team\'s data» never widens deleting.'};
 const repOwnContacts:Text={ar:'للمندوب: زياراته ومتابعاته هو بس (اللي سجّلها)، لعملاء مناطقه.',en:'For a representative: only their own visits and follow-ups (recorded by them), of customers in their regions.'};
-const serviceNoDelete:Text={ar:'لخدمة العملاء: طلبات خدمة العملاء مبتتحذفش (مفيش حذف لطلب خدمة عملاء لأي حد، ولا مدير النظام)، فالخانة دي ملهاش أثر لحساب خدمة العملاء دلوقتي.',en:'For customer service: service requests are never deleted (nobody, not even the administrator, deletes one), so this switch has no effect for a customer-service account for now.'};
 
 /** The rows: Yourrest's screens in the order of the navigation (app/crm-app.tsx nav), each action mapped to the capability it gates. */
 export const PERMISSION_MATRIX:readonly MatrixRow[]=[
@@ -56,7 +56,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'activity',ar:'الزيارات',en:'Visits',cells:{
   add:{ar:'تسجيل زيارة جديدة (ولخدمة العملاء: تسجيل طلب/فرصة جديدة)',en:'Record a new visit (customer service: register a new request)',roles:ALL},
   edit:{ar:'تعديل زيارة محفوظة (ولخدمة العملاء: تعديل الطلب قبل اعتماده)',en:'Edit a saved visit (customer service: edit a request before approval)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
-  delete:{ar:'حذف زيارة',en:'Delete a visit',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts,customer_service:serviceNoDelete,customer_service_manager:serviceNoDelete}},
+  delete:{ar:'حذف زيارة',en:'Delete a visit',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts},without:['customer_service','customer_service_manager']},
   export:{ar:'تصدير الزيارات (CSV)',en:'Export visits (CSV)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
  }},
  {screen:'complaints',ar:'الشكاوى',en:'Complaints',cells:{
@@ -139,7 +139,7 @@ export const pageCeiling=(role:string,screen:PermissionScreen)=>canViewPage(role
 export const cellGrantable=(screen:PermissionScreen,action:PermissionAction)=>!!permissionRow(screen)?.cells[action]?.grantable;
 export const GRANTABLE_CELLS:readonly string[]=PERMISSION_CELLS.filter(key=>{const [screen,action]=key.split(':') as [PermissionScreen,PermissionAction];return cellGrantable(screen,action);});
 /** What the role can do today, or for a grantable cell may be granted: the ceiling of a cell (the switch exists only within it). */
-export function cellCeiling(role:string,screen:PermissionScreen,action:PermissionAction){const cell=permissionRow(screen)?.cells[action];return !!cell&&(cell.grantable?pageCeiling(role,screen):cell.roles.includes(role));}
+export function cellCeiling(role:string,screen:PermissionScreen,action:PermissionAction){const cell=permissionRow(screen)?.cells[action];return !!cell&&(cell.grantable?pageCeiling(role,screen)&&!cell.without?.includes(role):cell.roles.includes(role));}
 /** The value of a cell never saved (within the ceiling): on, except a grantable cell for a role it is not on for by default. */
 export function cellDefault(role:string,screen:PermissionScreen,action:PermissionAction){const cell=permissionRow(screen)?.cells[action];return !cell?.grantable||cell.roles.includes(role);}
 /** The administrator manages accounts whatever is saved: these cells are always on for an administrator. */
