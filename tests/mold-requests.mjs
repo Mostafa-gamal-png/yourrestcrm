@@ -19,7 +19,9 @@
 // design_file: the customer's signature, a deleted or refused file count for nothing; the quotation's first), its texts, the requests
 // body unchanged by the marker. Since 2026-11-09 each request carries its delivery address (moldAddress: trimmed, required, up to 300
 // characters as production counts them; the view's customerAddress; the body's customer.address from the request's data, an older
-// request's bytes unchanged). Synthetic files only; no real account.
+// request's bytes unchanged). Since the same day a customer not in the CRM (crmNumber null and its ERP code: the name and ERP code rules,
+// the body, the wait for production's update and its view, the visibility by the requester's regions, the stand-in in both modes).
+// Synthetic files only; no real account.
 import assert from 'node:assert/strict';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
@@ -369,7 +371,7 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
     [['بانتظار ملف التصميم', 'Waiting for the design file'], ['ملفات التصميم (ملف واحد على الأقل)', 'Design files (at least one)'], ['أرفق ملف تصميم واحد على الأقل', 'Attach at least one design file'], ['بانتظار ما صاحب الطلب يرفق ملف التصميم', 'Waiting for whoever asked for it to attach the design file']],
     'the held state, the picker\'s title, the form\'s refusal and what a reader who cannot attach is told (2026-11-08), Arabic and English');
   same([lib.MOLD_DESIGN_FILE_WAITING_TEXT[0].startsWith('الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)؛'), lib.MOLD_DESIGN_FILE_WAITING_TEXT[1].includes('the customer\'s signature does not count'),
-    Object.keys(lib.moldHeldTexts).sort(), lib.moldHeldTexts.quote_file.name, lib.moldHeldTexts.design_file.waiting === lib.MOLD_DESIGN_FILE_WAITING_TEXT], [true, true, ['design_file', 'quote_file'], [...lib.MOLD_QUOTE_FILE_HELD_NAME], true], 'the requester\'s explanation, and each held value with its words');
+    Object.keys(lib.moldHeldTexts).sort(), lib.moldHeldTexts.quote_file.name, lib.moldHeldTexts.design_file.waiting === lib.MOLD_DESIGN_FILE_WAITING_TEXT], [true, true, ['design_file', 'free_customer', 'quote_file'], [...lib.MOLD_QUOTE_FILE_HELD_NAME], true], 'the requester\'s explanation, and each held value with its words');
   const designFirst = 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.';
   same([dictionary[designFirst], readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(designFirst)], ['The request is waiting for the design file; attach a design file and the request is sent by itself.', true], 'a resend of a request kept for its design file: refused by the server, with its English pair');
   // The marker never travels: the body of a request with designRequired (and fileRequired) is byte for byte the body without them.
@@ -416,6 +418,45 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
     same(moldRequestBody({id: 'mr-1', ...delivered}).customer, {crmNumber: 27, name: 'مصنع', address: 'مخزن جدة، المنطقة الصناعية الثانية'}, 'the body sends the request\'s delivery address as customer.address');
     const before = {...data, customer: {crmNumber: 27, name: 'مصنع', address: 'حي الصناعية', city: 'Damam - الدمام'}, payment: 'cash'};
     same(JSON.stringify(moldRequestBody({id: 'mr-1', ...before})), '{"crmRequestId":"mr-1","requestedAt":"2026-11-02T11:00:00+03:00","customer":{"crmNumber":27,"name":"مصنع","address":"حي الصناعية","city":"Damam - الدمام"},"salesman":{"crmMemberId":"rep","name":"مندوب"},"specs":' + JSON.stringify(moldRequestBody({id: 'mr-1', ...data}).specs) + ',"payment":"cash"}', 'a request stored before this release: the same bytes as ever');
+  }
+  // ---- a customer not in the CRM (the owner, 2026-11-09: «يتبعت بكود ERP بس»): the typed name and ERP code, the body, the hold, the view
+  {
+    const N = rules.moldCustomerName, E = rules.moldErpCode;
+    same([N('  مصنع   الأمل \n للطوب ').name, N('').error, N('  ').error, N(null).error, N(42).error, N('ع'.repeat(200)).error, N('ع'.repeat(201)).error, N('😀'.repeat(200)).error],
+      ['مصنع الأمل للطوب', 'required', 'required', 'required', 'required', null, 'long', null], 'the name: trimmed, single spaces, required, up to 200 characters as production counts them');
+    same([E(' ١٤٦ ').erpCode, E('۷۸۹').erpCode, E('C-١٠٢').erpCode, E('\u200f146\u200e').erpCode, E('AB\tC').erpCode, E('').error, E('   ').error, E(146).error, E(null).error, E('x'.repeat(50)).error, E('x'.repeat(51)).error],
+      ['146', '789', 'C-102', '146', 'AB C', 'required', 'required', 'required', 'required', null, 'long'], 'the ERP code: Arabic-Indic and Persian digits as English, invisible marks dropped, trimmed, required, up to 50');
+    for (const code of [' ١٤٦ ', 'C-١٠٢', '\u200f146', 'ab  c', 'x'.repeat(51), 146, ''])
+      same(moldCustomerEntry({crmNumber: 1, name: 'a', erpCode: code}).erpCode, rules.moldErpCodeText(code).length <= 50 ? rules.moldErpCodeText(code) : '', 'the customers route (unchanged) and a request normalise ' + JSON.stringify(code).slice(0, 14) + ' alike');
+    // The body: a CRM customer exactly as before (an ERP code in its data never sent); one not in the CRM: crmNumber null and its ERP code.
+    const linked = {...data, customer: {crmNumber: 27, name: 'مصنع', address: 'حي الصناعية', city: 'Damam - الدمام'}, payment: 'cash'};
+    same(JSON.stringify(moldRequestBody({id: 'mr-1', ...linked, customer: {...linked.customer, erpCode: '146'}})), JSON.stringify(moldRequestBody({id: 'mr-1', ...linked})), 'a CRM customer\'s ERP code in the request\'s data is never sent: its body is byte for byte as before');
+    const free = {...data, customer: {crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', city: '', erpCode: '146'}, payment: 'cash'};
+    const freeBody = moldRequestBody({id: 'mr-2', ...free});
+    same([freeBody.customer, Object.keys(freeBody.customer), Object.keys(freeBody)], [{crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', erpCode: '146'}, ['crmNumber', 'name', 'address', 'erpCode'], ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment']],
+      'a customer not in the CRM: crmNumber null, its name, address and ERP code (after address and city); nothing else changes');
+    same(JSON.stringify(moldRequestBody({id: 'mr-2', ...free})), JSON.stringify(freeBody), 'the same bytes each time');
+    same(moldRequestBody({id: 'mr-2', ...free, customer: {...free.customer, city: 'جدة', erpCode: ' ١٤٦ '}}).customer, {crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', city: 'جدة', erpCode: '146'}, 'a city when it has one; the ERP code as production stores it');
+    for (const erpCode of [undefined, '', '  ', 'x'.repeat(51)]) { assert.throws(() => moldRequestBody({id: 'mr-2', ...free, customer: {...free.customer, erpCode}}), /customer\.erpCode/); checks++; }
+    for (const crmNumber of [undefined, 0, '27']) { assert.throws(() => moldRequestBody({id: 'mr-2', ...free, customer: {...free.customer, crmNumber}}), /customer\.crmNumber/); checks++; }
+    // The view, and the hold for production's update: never rejected, resent and edited by its requester, tried again by itself.
+    const freeRow = change => row({customerId: '', data: free, ...change});
+    const plain = lib.moldRequestView(freeRow({}), me, [], true);
+    same([plain.crmNumber, plain.customerErpCode, plain.customerId, plain.sending.held, plain.sending.state, lib.moldFreeCustomer(free), lib.moldFreeCustomer(linked)], [null, '146', '', null, 'waiting', true, false], 'the view: no Yourrest number, the ERP code; nothing held before its first try');
+    same([lib.moldRequestView(row({data: {...linked, customer: {...linked.customer, erpCode: 'ERP-1'}}}), me, [], true).customerErpCode, lib.moldRequestView(row({data: linked}), me, [], true).customerErpCode, lib.moldRequestView(row({data: linked}), me, [], true).crmNumber], ['ERP-1', '', 27], 'a CRM customer\'s request: its Yourrest number, the ERP code when it has one');
+    for (const [change, what] of [[{lastError: {code: 'free_customer', http: 0, at: after, notStored: true}, nextAttemptAt: '2026-11-02T14:00:00.000Z'}, 'production\'s update not known yet'],
+      [{attempts: 1, lastAttemptAt: at, lastError: {code: 'free_customer', fields: ['customer.crmNumber'], http: 400, at: after, notStored: true}, nextAttemptAt: '2026-11-02T14:00:05.000Z'}, 'refused by production for its missing Yourrest number']]) {
+      const view = lib.moldRequestView(freeRow(change), me, [], true);
+      same([view.sending.held, view.sending.state, view.can.resend, view.can.edit, lib.moldFreeCustomerHeld(freeRow(change))], ['free_customer', 'waiting', true, true, true], what + ': held free_customer, still waiting (never rejected), resent and edited by its requester');
+    }
+    same([lib.moldFreeCustomerHeld(freeRow({outbox: null, accepted: free, lastError: {code: 'free_customer', at: after}})), lib.moldFreeCustomerHeld(row({data: linked, lastError: {code: 'free_customer', at: after}})), lib.moldFreeCustomerHeld(freeRow({lastError: {code: 'timeout', at: after}}))], [false, false, false], 'held only while its data waits, for a customer not in the CRM, for that reason');
+    same(lib.moldRequestView(freeRow({data: {...free, designRequired: true}, lastError: {code: 'free_customer', at: after, notStored: true}}), me, [], true).sending.held, 'design_file', 'a request without its design file says so first (attaching it is the requester\'s to do)');
+    const say = language => (ar, en) => language === 'en' ? en : ar;
+    same([lib.moldHeldTexts.free_customer.name, lib.moldErrorText('free_customer', say('en')), lib.moldFieldNames['customer.erpCode'], lib.MOLD_CUSTOMER_TEXT.notInCrm, lib.MOLD_CUSTOMER_TEXT.free[0]],
+      [['بانتظار تحديث تطبيق الإنتاج (عميل من غير كود يورست)', 'Waiting for the production application update (a customer without a Yourrest code)'], 'Waiting for the production application update (a customer without a Yourrest code)', ['كود ERP للعميل', 'Customer ERP code'], ['غير مسجل في الـCRM', 'Not in the CRM'], 'عميل مش موجود في الـCRM: الطلب هيتبعت للإنتاج بالاسم وكود ERP'], 'the words: the hold, production\'s field, the sheet\'s and the form\'s');
+    const texts = [rules.MOLD_CUSTOMER_NAME_REQUIRED, rules.MOLD_CUSTOMER_NAME_LONG, rules.MOLD_ERP_CODE_REQUIRED, rules.MOLD_ERP_CODE_LONG, 'اكتب اسم العميل وكود ERP، أو اختاره من الترشيحات'];
+    same([texts.filter(text => typeof dictionary[text] !== 'string'), [lib.MOLD_CUSTOMER_TEXT.nameRequired, lib.MOLD_CUSTOMER_TEXT.nameLong, lib.MOLD_CUSTOMER_TEXT.erpRequired, lib.MOLD_CUSTOMER_TEXT.erpLong].map(([ar, en]) => dictionary[ar] === en)], [[], [true, true, true, true]], 'every refusal has its English pair, the form\'s the same as the server\'s');
+    same(texts.filter(text => !readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(text) && !Object.values(rules).includes(text)), [], 'and the server says them');
   }
   // ---- the customer's signature (the owner, 2026-11-04): who needs it, the checks, the body unchanged, the view, the pending item, the words
   {
@@ -519,6 +560,17 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   const waitingRow = row({outbox: null, accepted: data, remote: {...status, approvals: {required: true, sales: null, production: null, admin: null}}});
   same([lib.moldPermissions(waitingRow, team[0], [], true).approve, lib.moldPermissions(waitingRow, team[0], [], false).approve, lib.moldPermissions(waitingRow, team[0]).approve, lib.moldRequestView(waitingRow, team[0], team, true, [], [], false, false).can.approve],
     [true, false, true, false], 'can.approve follows whether this manager approves it');
+  // A request for a customer not in the CRM (customerId '', 2026-11-09) has no region: its requester's regions stand for it, in the same
+  // one place (moldRequestInRegion) for the list, the approval and the single approver.
+  const unlinked = memberId => [memberId, ''];
+  same(reads('sm', [unlinked('repA'), unlinked('repB'), unlinked('sm'), unlinked('cs')], []), [true, false, true, false], 'the sales manager\'s list: his team\'s unlinked requests (his region through the requester\'s), not another team\'s or customer service\'s');
+  same(approves('sm', [unlinked('repA'), unlinked('cs'), unlinked('owner'), unlinked('repB'), unlinked('ghost')], []), [true, true, true, false, false], 'what he approves: his team\'s, and customer service\'s and the administrator\'s (all regions) whose regions share his; never a requester no longer listed');
+  same(['sm2', 'smAll'].map(who => lib.moldApprovesRequest(asked('cs', ''), reader(who, []))), [true, true], 'the other manager of the region, and a manager of every region, approve customer service\'s too');
+  same(['smWest', 'smWest2', 'sm'].map(who => lib.moldApprovesRequest(asked('repAway', ''), withRecords(who, []))), [true, true, false], 'a western representative of the eastern manager\'s team: his request goes to the western managers (his manager does not share his region)');
+  same([lib.moldApprovingManagerId(asked('repAway', ''), withRecords('sm')), lib.moldApprovingManagerId(asked('repA', ''), withRecords('sm'))], ['', 'sm'], 'the single approver: the team\'s manager while he shares the requester\'s region');
+  same(['smWest', 'smAll'].map(who => lib.moldApprovesRequest(asked('cs', ''), withRecords(who, []))), [false, true], 'a western manager does not reach an eastern customer service\'s request');
+  same([reads('supA', [unlinked('repA')], []), reads('csm', [unlinked('cs')], []), reads('repA', [unlinked('repA')], []), reads('owner', [unlinked('repB')], [])], [[true], [true], [true], [true]], 'the supervisor, the customer-service manager, the requester and the administrator: as before');
+  same(lib.moldRequestInRegion({memberId: 'repA', customerId: ''}, {...member('x', 'manager', '', 'western,eastern')}, reader('sm')), true, 'several regions: one shared is enough');
 }
 
 // ---- the customers route: the CRM's list, the cities as the production sheet writes them
@@ -1075,6 +1127,33 @@ try {
     eq([Number.isInteger(answer.json.request.orderNo), Object.hasOwn(answer.json.request, 'requestRef')], [true, false], 'today\'s application: numbered at once, no requestRef');
     eq((await call('approval', {requestRef: other.requestRef, action: 'approve', by: {name: 'm'}})).fields, ['crmRequestId'], 'it ignores requestRef: the body names no request (400)');
   } finally { await refMock.stop(); }
+}
+
+// ---- 2026-11-09: the stand-in, as the application of today and as the one that takes a customer not in the CRM
+{
+  const freeMock = await startProductsMock();
+  try {
+    const fetch = fetchWith(freeMock.ca), config = moldConfig({YR_PRODUCTS_API_URL: freeMock.url, YR_PRODUCTS_SECRET: freeMock.state.secret}), call = (route, body) => callProducts(config, route, body, {fetch});
+    const notInCrm = {crmNumber: null, name: 'مصنع الأمل', address: 'جدة', erpCode: '146'}, at = riyadhIso(Date.now());
+    let answer = await call('requests', moldRequestBody({id: 'mr-free-a', requestedAt: at, customer: notInCrm, salesman, specs}));
+    eq([answer.http, freeMock.row('mr-free-a').customerNo, freeMock.row('mr-free-a').customerName, freeMock.row('mr-free-a').customerErpCode, Object.hasOwn(answer.json.request, 'customer'), rules.moldFreeCustomersAnswered(moldStatusObject(answer.json.request))],
+      [201, null, 'مصنع الأمل', null, false, false], 'today\'s application: crmNumber is optional (the addendum), so it stores such a request by its name alone and drops the ERP code silently; its status carries no customer (why the CRM waits for the update)');
+    freeMock.setFreeCustomers(true);
+    answer = await call('requests', moldRequestBody({id: 'mr-free-b', requestedAt: at, customer, salesman, specs}));
+    const status = moldStatusObject(answer.json.request);
+    eq([answer.http, status.customer, rules.moldFreeCustomersAnswered(status), freeMock.row('mr-free-b').customerErpCode], [201, {crmNumber: 27, name: 'مصنع زايد للطابوق', erpCode: ''}, true, null], 'the updated application: a CRM customer as before, its status echoing the customer (erpCode "" for none), from which the CRM learns the update');
+    const second = moldRequestBody({id: 'mr-free-c', requestedAt: at, customer: notInCrm, salesman, specs});
+    answer = await call('requests', second);
+    eq([answer.http, moldStatusObject(answer.json.request).customer, freeMock.row('mr-free-c').customerErpCode], [201, {crmNumber: null, name: 'مصنع الأمل', erpCode: '146'}, '146'], 'a customer not in the CRM: stored with its ERP code, echoed with crmNumber null');
+    eq([(await call('requests', second)).http, (await call('requests', {...second, customer: {...second.customer, erpCode: '147'}})).reason], [200, 'production_only'], 'sent again: the original (200); another ERP code is other data (409 production_only)');
+    for (const part of [{crmNumber: null, name: 'x'}, {name: 'x', erpCode: ''}, {crmNumber: null, name: 'x', erpCode: 'x'.repeat(51)}, {crmNumber: null, name: 'x', erpCode: 5}])
+      eq((await call('requests', {...second, crmRequestId: 'mr-free-x', customer: part})).fields, ['customer.erpCode'], 'refused by its field: ' + JSON.stringify(part).slice(0, 40));
+    const listed = (await call('pending', {})).json.requests.map(item => moldPendingItem(item)).find(item => item.crmRequestId === 'mr-free-c');
+    eq([listed.customer, rules.moldFreeCustomersAnswered(listed)], [{crmNumber: null, name: 'مصنع الأمل', address: 'جدة', city: '', erpCode: '146'}, true], 'pending: the customer with its ERP code');
+    freeMock.setFreeCustomers(false);
+    eq([Object.hasOwn((await call('status', {ids: ['mr-free-c']})).json.requests[0], 'customer'), Object.hasOwn((await call('pending', {})).json.requests[0].customer, 'erpCode'), moldStatusObject((await call('status', {ids: ['mr-free-c']})).json.requests[0]).customer],
+      [false, false, undefined], 'today\'s application again: nothing of it in its answers or as the CRM reads them');
+  } finally { await freeMock.stop(); }
 }
 
 console.log(JSON.stringify({ok: true, checks, realProductionTested: false}));

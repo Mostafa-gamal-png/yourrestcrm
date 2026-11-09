@@ -32,10 +32,16 @@
 // data.designRequired, whatever the CRM knows of production, and kept in the CRM the same way while it has no design file of its own (the
 // customer's signature does not count): sending.held 'design_file' «بانتظار ملف التصميم». moldHeldFor says why a request is kept (the
 // quotation's or PO's file first); the first file of the missing kind releases it when nothing else is missing.
+// A customer not in the CRM (the owner, 2026-11-09: «لو فيه عميل مش موجود فى النظام طلب القالب ميقفش»، «المندوب يكتب الكود والكود المطلوب
+// كود erp»، «يتبعت بكود ERP بس»): the form takes the customer's name and ERP code as typed, with the CRM's customers as suggestions. A
+// request for one of the CRM's customers (chosen, or found by its ERP code alone) is linked as before (customerId, its Yourrest number);
+// any other is stored unlinked (customerId '', data.customer.crmNumber null, data.customer.erpCode) and goes to production with the name
+// and ERP code only, once production's application takes such a customer (moldFreeCustomerHeld, sending.held 'free_customer'). Who sees
+// an unlinked request, and which sales manager approves it, goes by its requester's regions (moldRequestInRegion).
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
-import {memberCanAccessRegion,regionScope} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG} from '@/portable/mold-rules.mjs';
+import {memberCanAccessRegion,regionScope,regionScopesOverlap} from './regions';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,moldSignatureRequired};
 /** The customer's signature as the request's data names it (2026-11-04): who signed for the customer, when (the CRM's UTC time), and
@@ -67,11 +73,15 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;requestRef?:stri
  designFiles?:MoldDesignFile[]|null;
  /** From production's update of 2026-11-03 only (absent before): the quotation and PO numbers as production holds them now ('' for none),
   *  whether one is still missing, and their files. */
- quoteNo?:string;poNo?:string;quoteOrPoMissing?:boolean;quoteFiles?:MoldDesignFile[];poFiles?:MoldDesignFile[]};
+ quoteNo?:string;poNo?:string;quoteOrPoMissing?:boolean;quoteFiles?:MoldDesignFile[];poFiles?:MoldDesignFile[];
+ /** From production's application that takes a customer not in the CRM (2026-11-09) only: the customer it holds. */
+ customer?:{crmNumber:number|null;name:string;erpCode:string}};
 /** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. unconfirmed
  *  (accepted only): production holds the request, but these are not its data: the CRM's change production refused for good
  *  (production_only) after an earlier attempt's answer was lost, so the CRM never learned what production stored (sendMoldRequest). */
-export type MoldRequestData={requestedAt:string;customer:{crmNumber:number;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs;
+/** customer: crmNumber null and erpCode for a customer not in the CRM (2026-11-09); a CRM customer's request may carry its ERP code too
+ *  (erpCode, shown only: never sent, so its body is as before). */
+export type MoldRequestData={requestedAt:string;customer:{crmNumber:number|null;name:string;address:string;city:string;erpCode?:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs;
  /** How the customer pays (2026-11-03); absent in a request asked for before, which is sent again exactly as first sent (without it). */
  payment?:MoldPayment;
  /** The quotation and PO numbers as the representative typed them, normalized (the second update of 2026-11-03): each only when given,
@@ -139,7 +149,7 @@ export type MoldSendingState='sent'|'waiting'|'rejected'|'off'|'held';
  *  PO file is attached; design_file (2026-11-08), one kept until its first design file (the customer's signature does not count) is
  *  attached (moldHeldFor). A new field, so a page loaded before 2026-11-05 reads the state it knows («بانتظار الإرسال») and nothing it
  *  cannot name; a page of 2026-11-05..07 knows quote_file alone and reads the state for design_file. */
-export type MoldSendingHeld='quote_file'|'design_file';
+export type MoldSendingHeld='quote_file'|'design_file'|'free_customer';
 /** What a reader sees of the quotation and PO (2026-11-05): missing, production marks the request as having neither a quotation file nor
  *  a PO file while finance has not approved it (quoteOrPoMissing). The numbers are no longer shown (production no longer shows them). */
 export type MoldQuotePoView={missing:boolean};
@@ -149,7 +159,11 @@ export type MoldQuotePoView={missing:boolean};
 export type MoldRequestView={id:string;memberId:string;memberName:string;customerId:string;customerName:string;
  /** The request's delivery address (data.customer.address, 2026-11-09): the customer's registered address when it was asked for, or the
   *  one typed for this request; '' for a request stored without one. A new field: a page loaded before reads nothing of it. */
- customerAddress:string;crmNumber:number;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
+ customerAddress:string;
+ /** The customer's Yourrest number; null for a customer not in the CRM (2026-11-09, customerId ''). */
+ crmNumber:number|null;
+ /** The customer's ERP code as the request holds it ('' for none): typed for a customer not in the CRM, shown for one of the CRM's. */
+ customerErpCode:string;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
  /** The reasons of the request's earlier cancellations (the production manager restored it since): a new cancellation needs another. */
  cancelReasons:string[];
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null;
@@ -170,7 +184,7 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
 /** orderNo: null while production has not numbered it (the products update of 2026-11-05: every item waiting for the sales manager);
  *  requestRef: production's stable UUID, absent from an older application. A pending item is named by moldPendingKey, never by orderNo. */
 export type MoldPendingItem={orderNo:number|null;requestRef?:string;crmRequestId:string|null;source:'crm'|'manual';requestedAt:string|null;waitingSince:string|null;enteredBy:string|null;
- customer:{crmNumber:number|null;name:string;address:string;city:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;
+ customer:{crmNumber:number|null;name:string;address:string;city:string;erpCode?:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;
  /** How the customer pays, as production holds it now (null: a request asked for before 2026-11-03). */
  payment:MoldPayment|null;revision:number|null;designFiles:MoldDesignFile[];
  /** From production's update of 2026-11-03 only: the quotation and PO numbers and their files as production holds them now. */
@@ -274,6 +288,18 @@ export function moldTeamManagerId(memberId:string,members:Pick<Member,'id'|'role
  }
  return '';
 }
+/** Whether a request is within a member's regions: a member of every region, always; a request for one of the CRM's customers by its
+ *  customer's region (for the reader, `reader`: their own customers, c.regionCustomerIds; for another member, by the route's records, a
+ *  customer they do not hold counting as within); one for a customer not in the CRM (customerId '', 2026-11-09), which has no region of
+ *  its own, by its requester's regions instead: within when they share one (a requester of every region shares them all), never for a
+ *  requester no longer listed. The one place this is decided: canReadMoldRequest, moldApprovesRequest and moldApprovingManagerId ask it. */
+export function moldRequestInRegion(row:Pick<MoldRequestRow,'memberId'|'customerId'>,member:Member,c:Reader,{reader=false}:{reader?:boolean}={}){
+ if(regionScope(member)==='all')return true;
+ if(!row.customerId){const requester=c.members.find(other=>other.id===row.memberId);return !!requester&&regionScopesOverlap(regionScope(member),regionScope(requester));}
+ if(reader)return c.regionCustomerIds.has(row.customerId);
+ const customer=customerRegion(c,row.customerId);
+ return !customer.found||memberCanAccessRegion(member,customer.region);
+}
 /** Who sees which request in the list: everyone their own. A representative nothing more. A supervisor their representatives', a
  *  customer-service manager their team's, within their regions; the administrator all. The sales manager their team's (moldTeamManagerId)
  *  within their regions (the owner, 2026-11-03): no longer another manager's team's, customer service's or the administrator's, even
@@ -281,7 +307,7 @@ export function moldTeamManagerId(memberId:string,members:Pick<Member,'id'|'role
  *  lib/mold-requests-server.ts). */
 export function canReadMoldRequest(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
  if(c.me.role==='admin'||row.memberId===c.me.id)return true;
- const inRegion=regionScope(c.me)==='all'||c.regionCustomerIds.has(row.customerId);
+ const inRegion=moldRequestInRegion(row,c.me,c,{reader:true});
  if(c.me.role==='manager')return inRegion&&moldTeamManagerId(row.memberId,c.members)===c.me.id;
  if(c.me.role==='supervisor')return inRegion&&salesScopeMemberIds(c.members,c.me).has(row.memberId);
  if(c.me.role==='customer_service_manager')return inRegion&&c.members.some(member=>member.id===row.memberId&&SERVICE_ROLES.includes(member.role)&&member.supervisorId===c.me.id);
@@ -295,7 +321,7 @@ export function canReadMoldRequest(row:Pick<MoldRequestRow,'memberId'|'customerI
  *  sheet follow the same rule. */
 export function moldApprovesRequest(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
  if(!canApproveMoldRequests(c.me))return false;
- if(regionScope(c.me)!=='all'&&!c.regionCustomerIds.has(row.customerId))return false;
+ if(!moldRequestInRegion(row,c.me,c,{reader:true}))return false;
  const manager=moldApprovingManagerId(row,c);
  return manager===c.me.id||manager==='';
 }
@@ -306,8 +332,7 @@ export function moldApprovesRequest(row:Pick<MoldRequestRow,'memberId'|'customer
 export function moldApprovingManagerId(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
  const owner=moldTeamManagerId(row.memberId,c.members),manager=owner?c.members.find(member=>member.id===owner):undefined;
  if(!manager||!manager.active)return '';
- const customer=customerRegion(c,row.customerId);
- return customer.found&&!memberCanAccessRegion(manager,customer.region)?'':owner;
+ return moldRequestInRegion(row,manager,c)?owner:'';
 }
 /** An answer older than the status stored (a lower revision; one without a revision is never older): answers can cross, and an older
  *  one must not bring back approvals production has since undone. The SQL twin is newerRemote in lib/mold-requests-server.ts. */
@@ -363,6 +388,17 @@ export function moldHeldFor(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'
  const signatureId=(row.data?.signature as {fileId?:unknown}|undefined)?.fileId;
  if(row.data?.designRequired===true&&!files.some(file=>holdsDesignFile(file,signatureId)))return 'design_file';
  return null;
+}
+/** A request for a customer not in the CRM (2026-11-09): its data carries no Yourrest number. */
+export const moldFreeCustomer=(data:{customer?:{crmNumber?:unknown}}|null|undefined)=>!!data?.customer&&data.customer.crmNumber===null;
+/** The error code a request for a customer not in the CRM keeps while production's application does not take one yet (lib/mold-requests-
+ *  server.ts sendMoldRequest): not a failure, nothing refused for good. */
+export const MOLD_FREE_CUSTOMER='free_customer';
+/** Whether such a request waits in the CRM for production's update (sending.held 'free_customer'): its own data still to send, certainly
+ *  never reached production, and its last try kept it for that (production's update not known yet, or production refused the request for
+ *  its missing Yourrest number). Tried again every 6 hours, on its requester's resend, and as soon as the CRM learns the update. */
+export function moldFreeCustomerHeld(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'|'lastAttemptAt'|'lastError'|'data'>){
+ return row.outbox==='send'&&moldFreeCustomer(row.data)&&row.lastError?.code===MOLD_FREE_CUSTOMER&&moldNeverSent(row);
 }
 /** What the reader may do. edit: the requester, while the request has certainly never reached production (the server's update follows
  *  the same rule, in SQL too); cancel, attach and deleteFile: the requester while production still accepts changes (moldEditable).
@@ -456,8 +492,8 @@ export function moldQuotePoView(row:Pick<MoldRequestRow,'remote'>):MoldQuotePoVi
  *  known to be live (a request saved with a number, or a quotation's or PO's file, waits for it otherwise). approver: the reader
  *  approves this request (moldApprovesRequest), so can.approve and can.withdraw are offered only for a request they may approve. */
 export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[],quotePo=false,approver=canApproveMoldRequests(me)):MoldRequestView{
- const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo),held=moldHeldFor(row,files);
- return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,customerAddress:typeof row.data.customer.address==='string'?row.data.customer.address:'',crmNumber:row.data.customer.crmNumber,
+ const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo),held=moldHeldFor(row,files)||(moldFreeCustomerHeld(row)?MOLD_FREE_CUSTOMER:null);
+ return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,customerAddress:typeof row.data.customer.address==='string'?row.data.customer.address:'',crmNumber:row.data.customer.crmNumber??null,customerErpCode:typeof row.data.customer.erpCode==='string'?row.data.customer.erpCode:'',
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(held?{held}:{})},
   remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true};
@@ -500,10 +536,25 @@ export const MOLD_DESIGN_FILE_WAITING_OTHERS:[string,string]=['بانتظار م
 export const MOLD_DESIGN_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach at least one design file (the customer\'s signature does not count); once you do, the request goes, then its files.'];
 /** The request's delivery address (2026-11-09): the form's refusals, the same as the server's (MOLD_ADDRESS_REQUIRED, MOLD_ADDRESS_LONG). */
 export const MOLD_ADDRESS_TEXT:{required:[string,string];long:[string,string]}={required:[MOLD_ADDRESS_REQUIRED,'Enter the delivery address'],long:[MOLD_ADDRESS_LONG,'The address is up to 300 characters']};
+/** A request for a customer not in the CRM waiting for production's update (sending.held free_customer, 2026-11-09): its name, and what
+ *  it means to its requester and to anyone else reading it. */
+export const MOLD_FREE_CUSTOMER_HELD_NAME:[string,string]=['بانتظار تحديث تطبيق الإنتاج (عميل من غير كود يورست)','Waiting for the production application update (a customer without a Yourrest code)'];
+export const MOLD_FREE_CUSTOMER_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM وهيتبعت للإنتاج بالاسم وكود ERP أول ما تطبيق الإنتاج يقبل عميل مش موجود في الـCRM؛ الـCRM بيحاول تاني لوحده كل 6 ساعات، و«إعادة الإرسال» بتحاول دلوقتي.','The request is saved in the CRM and goes to production with the name and ERP code as soon as the production application takes a customer who is not in the CRM; the CRM tries again by itself every 6 hours, and Resend tries now.'];
+export const MOLD_FREE_CUSTOMER_WAITING_OTHERS:[string,string]=['الطلب لعميل مش موجود في الـCRM، وهيتبعت للإنتاج أول ما تطبيق الإنتاج يتحدّث ويقبله.','The request is for a customer not in the CRM; it goes to production once the production application is updated to take it.'];
 /** sending.held in words, its explanation to the requester (who attaches) and to a reader who cannot. */
 export const moldHeldTexts:Record<MoldSendingHeld,{name:[string,string];waiting:[string,string];others:[string,string]}>={
  quote_file:{name:MOLD_QUOTE_FILE_HELD_NAME,waiting:MOLD_QUOTE_FILE_WAITING_TEXT,others:MOLD_QUOTE_FILE_WAITING_OTHERS},
- design_file:{name:MOLD_DESIGN_FILE_HELD_NAME,waiting:MOLD_DESIGN_FILE_WAITING_TEXT,others:MOLD_DESIGN_FILE_WAITING_OTHERS}};
+ design_file:{name:MOLD_DESIGN_FILE_HELD_NAME,waiting:MOLD_DESIGN_FILE_WAITING_TEXT,others:MOLD_DESIGN_FILE_WAITING_OTHERS},
+ free_customer:{name:MOLD_FREE_CUSTOMER_HELD_NAME,waiting:MOLD_FREE_CUSTOMER_WAITING_TEXT,others:MOLD_FREE_CUSTOMER_WAITING_OTHERS}};
+/** The customer as typed (2026-11-09): the form's refusals, the same as the server's; the note under the fields for a customer not in the
+ *  CRM, the ERP code field's hint, the line of a linked customer, and how the sheet and the card say such a request. */
+export const MOLD_CUSTOMER_TEXT={
+ nameRequired:[MOLD_CUSTOMER_NAME_REQUIRED,'Enter the customer name'] as [string,string],nameLong:[MOLD_CUSTOMER_NAME_LONG,'The customer name is up to 200 characters'] as [string,string],
+ erpRequired:[MOLD_ERP_CODE_REQUIRED,'Enter the customer\'s ERP code'] as [string,string],erpLong:[MOLD_ERP_CODE_LONG,'The ERP code is up to 50 characters'] as [string,string],
+ free:['عميل مش موجود في الـCRM: الطلب هيتبعت للإنتاج بالاسم وكود ERP','A customer not in the CRM: the request goes to production with the name and ERP code'] as [string,string],
+ erpHint:['مطلوب لعميل مش موجود في الـCRM؛ اختياري للعميل المرتبط','Required for a customer not in the CRM; optional for a linked customer'] as [string,string],
+ linked:['مرتبط بالعميل','Linked to the customer'] as [string,string],
+ notInCrm:['غير مسجل في الـCRM','Not in the CRM'] as [string,string]};
 /** The customer's signature in the representative's words (2026-11-04): the step, the pad, its refusals, the sheet's line. */
 export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer signature'] as [string,string],signed:['وقّع العميل','Signed by the customer'] as [string,string],
  signer:['اسم اللي بيوقّع','Name of the person signing'] as [string,string],clear:['امسح','Clear'] as [string,string],confirm:['تأكيد وإرسال','Confirm and send'] as [string,string],
@@ -554,6 +605,7 @@ export function moldErrorText(code:string,say:(ar:string,en:string)=>string,{fil
   invalid_payload:['رفض الإنتاج بعض البيانات','Production refused some data'],payload_too_large:['الطلب أكبر من المسموح','The request is too large'],request_locked:['بدأ الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا','Production has started; no more changes'],
   bad_response:['رد غير متوقع من تطبيق الإنتاج','Unexpected answer from production'],server_error:['خطأ في تطبيق الإنتاج','Production application error'],not_found:['الطلب غير موجود لدى الإنتاج','Production does not know this request'],
   [MOLD_PRODUCTION_ONLY]:MOLD_PRODUCTION_ONLY_TEXT,
+  [MOLD_FREE_CUSTOMER]:MOLD_FREE_CUSTOMER_HELD_NAME,
  };
  const found=(reason===MOLD_PRODUCTION_ONLY?table[reason]:undefined)||table[code]||(/^http_5/.test(code)?table.server_error:undefined);
  return found?say(...found):say('تعذّر الاتصال بتطبيق الإنتاج','Production could not be reached');
@@ -579,6 +631,6 @@ export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>s
  return found?say(...found):say('رفض الإنتاج الملف','Production refused the file');
 }
 /** The contract's field names, for a refusal that names them. */
-export const moldFieldNames:Record<string,[string,string]>={'specs.description':['الوصف','Description'],'specs.core':['العلب','Core'],'specs.vibrators':['الرجاجات','Vibrators'],'specs.model':['الموديل','Model'],'specs.halfBlock':['بلوكة النص','Half block'],'specs.moldWidth':['عرض القالب','Mold width'],'specs.gelbaSize':['مقاس الجلب','Gelba size'],'specs.moldNo':['رقم القالب','Mold no.'],'specs.quantity':['الكمية','Quantity'],'specs.designUrl':['رابط التصميم','Design link'],'specs.notes':['الملاحظات','Notes'],'customer.name':['اسم العميل','Customer name'],'customer.crmNumber':['كود يورست للعميل','Customer Yourrest code'],'customer.address':['عنوان التسليم','Delivery address'],'customer.city':['مدينة العميل','Customer city'],'salesman.name':['اسم المندوب','Salesman name'],'salesman.email':['بريد المندوب','Salesman email'],requestedAt:['تاريخ الطلب','Request date'],payment:['طريقة الدفع غير صحيحة','The payment method is not valid'],quoteNo:['رقم عرض السعر غير مقبول','The quotation number is not accepted'],poNo:['رقم الـ PO غير مقبول','The PO number is not accepted'],legacyOrderNo:['رقم الطلب في الشيت','Sheet order number'],crmRequestId:['رقم الطلب','Request id']};
+export const moldFieldNames:Record<string,[string,string]>={'specs.description':['الوصف','Description'],'specs.core':['العلب','Core'],'specs.vibrators':['الرجاجات','Vibrators'],'specs.model':['الموديل','Model'],'specs.halfBlock':['بلوكة النص','Half block'],'specs.moldWidth':['عرض القالب','Mold width'],'specs.gelbaSize':['مقاس الجلب','Gelba size'],'specs.moldNo':['رقم القالب','Mold no.'],'specs.quantity':['الكمية','Quantity'],'specs.designUrl':['رابط التصميم','Design link'],'specs.notes':['الملاحظات','Notes'],'customer.name':['اسم العميل','Customer name'],'customer.crmNumber':['كود يورست للعميل','Customer Yourrest code'],'customer.erpCode':['كود ERP للعميل','Customer ERP code'],'customer.address':['عنوان التسليم','Delivery address'],'customer.city':['مدينة العميل','Customer city'],'salesman.name':['اسم المندوب','Salesman name'],'salesman.email':['بريد المندوب','Salesman email'],requestedAt:['تاريخ الطلب','Request date'],payment:['طريقة الدفع غير صحيحة','The payment method is not valid'],quoteNo:['رقم عرض السعر غير مقبول','The quotation number is not accepted'],poNo:['رقم الـ PO غير مقبول','The PO number is not accepted'],legacyOrderNo:['رقم الطلب في الشيت','Sheet order number'],crmRequestId:['رقم الطلب','Request id']};
 /** YR-C-000027 -> 27: the customer's Yourrest code, the number the contract sends as customer.crmNumber. */
 export function yourrestNumber(internalCode:unknown){const match=/^YR-C-(\d{1,10})$/.exec(String(internalCode||''));const value=match?Number(match[1]):NaN;return Number.isInteger(value)&&value>0&&value<=2147483647?value:null;}

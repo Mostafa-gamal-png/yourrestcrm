@@ -6,6 +6,8 @@
 // Since 2026-11-04: the customer's signature (moldSignatureCheck), a PNG sent as a design image; the requests body is unchanged.
 // Since production's update of 2026-11-05: the quotation's or PO's FILE is what counts (quoteOrPoMissing: no such file and finance has not
 // approved); the numbers are no longer asked for nor sent with a new request (a request stored with one still sends it, byte for byte).
+// Since 2026-11-09: a customer not in the CRM (customer.crmNumber null with customer.erpCode, moldRequestBody; moldCustomerName,
+// moldErpCode), and how the CRM learns that production takes one (moldFreeCustomersAnswered: customer.erpCode in a status or pending item).
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -117,6 +119,47 @@ export function moldAddress(value) {
 }
 
 /**
+ * A customer's ERP code (`erpCode`, «كود العميل في ERP») as the customers route sends it (2026-11-02) and a request for a customer not in
+ * the CRM carries it (2026-11-09): control characters and invisible marks (direction marks, zero-width characters, as a paste from an
+ * RTL sheet brings) dropped, Arabic-Indic and Persian digits as ASCII digits (146, never ١٤٦), then moldText (single spaces, the ends
+ * trimmed). '' for none. Never cut: the caller decides on its length.
+ * @param {unknown} value
+ */
+export function moldErpCodeText(value) {
+  if (value === null || value === undefined) return '';
+  return moldText(String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, '')
+    .replace(/[\u0660-\u0669]/g, digit => String(digit.charCodeAt(0) - 0x0660)).replace(/[\u06F0-\u06F9]/g, digit => String(digit.charCodeAt(0) - 0x06F0))) ?? '';
+}
+/** A mold request for a customer not in the CRM (the owner, 2026-11-09: «لو فيه عميل مش موجود فى النظام طلب القالب ميقفش»، «يتبعت بكود
+ *  ERP بس»): the representative types the customer's name and ERP code; the request goes to production with both and no Yourrest number
+ *  (customer.crmNumber null). The server's refusals, each with its English pair in lib/locales/en.json (the form says them from
+ *  MOLD_CUSTOMER_TEXT in lib/mold-requests.ts). */
+export const MOLD_CUSTOMER_NAME_REQUIRED = 'اكتب اسم العميل';
+export const MOLD_CUSTOMER_NAME_LONG = 'اسم العميل حتى ' + MOLD_LIMITS.customerName + ' حرف';
+export const MOLD_ERP_CODE_REQUIRED = 'اكتب كود ERP للعميل';
+export const MOLD_ERP_CODE_LONG = 'كود ERP حتى ' + MOLD_LIMITS.erpCode + ' حرف';
+/**
+ * The customer's name of such a request as typed, as it is stored and sent (moldText; a control character such as a new line becomes a
+ * space): error 'required' when nothing is left, 'long' over 200 characters (counted as production counts them).
+ * @param {unknown} value
+ * @returns {{name: string, error: 'required'|'long'|null}}
+ */
+export function moldCustomerName(value) {
+  const name = typeof value === 'string' ? moldText(value.replace(/[\u0000-\u001F\u007F]/g, ' ')) ?? '' : '';
+  return {name, error: !name ? 'required' : length(name) > MOLD_LIMITS.customerName ? 'long' : null};
+}
+/**
+ * The ERP code of a request as typed (moldErpCodeText, a tab or new line as a space first): error 'required' when nothing is left (or
+ * it is not text), 'long' over 50 characters.
+ * @param {unknown} value
+ * @returns {{erpCode: string, error: 'required'|'long'|null}}
+ */
+export function moldErpCode(value) {
+  const erpCode = typeof value === 'string' ? moldErpCodeText(value.replace(/[\t\n\r]/g, ' ')) : '';
+  return {erpCode, error: !erpCode ? 'required' : length(erpCode) > MOLD_LIMITS.erpCode ? 'long' : null};
+}
+
+/**
  * Checks what a representative typed. Returns {specs, errors}: specs with every field normalized, errors as field -> Arabic message.
  * Numbers arrive as JSON numbers or as digit strings from a form; anything else, or a fraction, is refused (the addendum).
  * @param {unknown} input
@@ -222,12 +265,17 @@ export function riyadhIso(value) {
  * original, and a field added to it would be other data: 409 production_only). The quotation and PO numbers (the second update of
  * 2026-11-03) follow payment the same way, each only when the request carries it: a request stored without them is sent byte for byte as
  * before. They come from the request's own data, never from a status production returned. Throws when a value would be refused by
- * production.
+ * production. A customer not in the CRM (2026-11-09): customer.crmNumber null, then customer.erpCode (1 to 50 characters after
+ * moldErpCodeText) is required and follows address and city; a customer of the CRM (crmNumber a number) never sends erpCode, whatever
+ * the request's data holds, so its body is byte for byte as before.
  * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, quoteNo?: string|null, poNo?: string|null}} request
  */
 export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, quoteNo, poNo}) {
   if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
-  if (!isWhole(customer?.crmNumber) || customer.crmNumber < 1 || customer.crmNumber > 2147483647) throw new Error('customer.crmNumber');
+  const free = !!customer && customer.crmNumber === null;
+  if (!free && (!isWhole(customer?.crmNumber) || customer.crmNumber < 1 || customer.crmNumber > 2147483647)) throw new Error('customer.crmNumber');
+  const erpCode = free ? moldErpCodeText(customer.erpCode) : '';
+  if (free && (!erpCode || length(erpCode) > MOLD_LIMITS.erpCode)) throw new Error('customer.erpCode');
   const checked = validateMoldSpecs(specs);
   if (Object.keys(checked.errors).length) throw new Error('specs.' + Object.keys(checked.errors)[0]);
   const optional = (target, key, value, max) => { const clean = moldText(value); if (clean && length(clean) <= max) target[key] = clean; };
@@ -240,6 +288,7 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
   body.customer = {crmNumber: customer.crmNumber, name};
   optional(body.customer, 'address', customer.address, MOLD_LIMITS.address);
   optional(body.customer, 'city', customer.city, MOLD_LIMITS.city);
+  if (free) body.customer.erpCode = erpCode;
   body.salesman = {};
   optional(body.salesman, 'crmMemberId', salesman.crmMemberId, MOLD_LIMITS.crmMemberId);
   body.salesman.name = salesmanName;
@@ -549,6 +598,18 @@ function quotePoOf(value) {
   if (!hasOwn(value, 'quoteOrPoMissing')) return {};
   return {quoteNo: numberOf(value.quoteNo), poNo: numberOf(value.poNo), quoteOrPoMissing: value.quoteOrPoMissing === true, quoteFiles: designFilesOf(value.quoteFiles, 'quote') || [], poFiles: designFilesOf(value.poFiles, 'po') || []};
 }
+/** The customer production holds for a request, from an application that takes a customer not in the CRM (2026-11-09: the key
+ *  customer.erpCode in a status object, whatever its value; "" for none): its Yourrest number (null for a customer not in the CRM), name
+ *  and ERP code. Nothing from an older application, whose status object carries no customer.
+ * @param {any} value */
+function freeCustomerOf(value) {
+  const c = value.customer && typeof value.customer === 'object' && !Array.isArray(value.customer) ? value.customer : null;
+  if (!c || typeof c.erpCode !== 'string') return {};
+  return {customer: {crmNumber: wholeOrNull(c.crmNumber), name: textOf(c.name, 200), erpCode: textOf(c.erpCode, MOLD_LIMITS.erpCode)}};
+}
+/** Whether an answer read (a status object or a pending item, as moldStatusObject and moldPendingItem read it) comes from production's
+ *  application that takes a customer not in the CRM (2026-11-09): its customer carries erpCode (a string, "" included). */
+export const moldFreeCustomersAnswered = value => !!value && typeof value === 'object' && !!value.customer && typeof value.customer === 'object' && typeof value.customer.erpCode === 'string';
 /** The products side's message of 2026-11-05 (the second of the day): every request carries requestRef, a stable UUID production gives
  *  it, in its status object and in its pending item; the order number (orderNo) is given only when the production manager approves it
  *  (null until then) and may change once (the numbers from 101 up move down by one), so the CRM names a request registered in the products
@@ -563,6 +624,7 @@ const orderNoOf = value => isWhole(value) && value >= 1 ? value : null;
  * in the products application itself (its approval answer), which has no crmRequestId. designFiles: the request's design files, the
  * CRM's and production's (null from an application older than the addition of 2026-11-02). From production's update of 2026-11-03 (the
  * key quoteOrPoMissing): quoteNo, poNo, quoteOrPoMissing, quoteFiles and poFiles too (quotePoOf); designFiles then lists design files only.
+ * From production's application that takes a customer not in the CRM (2026-11-09, the key customer.erpCode): customer (freeCustomerOf).
  * @param {any} value
  * @param {{manual?: boolean}} [options] */
 export function moldStatusObject(value, {manual = false} = {}) {
@@ -580,7 +642,7 @@ export function moldStatusObject(value, {manual = false} = {}) {
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
     waitingStep: MOLD_WAITING_STEPS.includes(value.waitingStep) ? value.waitingStep : null, waitingSince: dateOrNull(value.waitingSince), approvals: approvalsOf(value.approvals),
     designFiles: designFilesOf(value.designFiles),
-    ...quotePoOf(value),
+    ...quotePoOf(value), ...freeCustomerOf(value),
   };
 }
 
@@ -642,7 +704,7 @@ export function moldPendingItem(value) {
   return {
     orderNo, ...(requestRef ? {requestRef} : {}), crmRequestId: value.crmRequestId, source: value.source, requestedAt: dateOrNull(value.requestedAt), waitingSince: dateOrNull(value.waitingSince),
     enteredBy: value.source === 'manual' ? textOf(value.enteredBy, 190) || null : null,
-    customer: {crmNumber: wholeOrNull(c.crmNumber), name: textOf(c.name, 200), address: textOf(c.address, 300), city: textOf(c.city, 100)},
+    customer: {crmNumber: wholeOrNull(c.crmNumber), name: textOf(c.name, 200), address: textOf(c.address, 300), city: textOf(c.city, 100), ...(typeof c.erpCode === 'string' ? {erpCode: textOf(c.erpCode, MOLD_LIMITS.erpCode)} : {})},
     salesman: {crmMemberId: textOf(s.crmMemberId, 64), name: textOf(s.name, 160)},
     specs: {description: textOf(p.description, 200), core: textOf(p.core, 20), vibrators: wholeOrNull(p.vibrators), model: textOf(p.model, 20), halfBlock: textOf(p.halfBlock, 20),
       moldWidth: wholeOrNull(p.moldWidth), gelbaSize: wholeOrNull(p.gelbaSize), moldNo: textOf(p.moldNo, 40), quantity: wholeOrNull(p.quantity), designUrl: /^https:\/\/\S+$/i.test(p.designUrl || '') ? String(p.designUrl).slice(0, 1000) : '', notes: textOf(p.notes, 2000)},
@@ -775,8 +837,7 @@ export function moldCustomerEntry({crmNumber, name, address, city, erpCode, acti
   if (customerAddress) entry.address = customerAddress;
   if (customerCity) entry.city = customerCity;
   if (erpCode !== undefined) {
-    const code = moldText(String(erpCode ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, '')
-      .replace(/[\u0660-\u0669]/g, digit => String(digit.charCodeAt(0) - 0x0660)).replace(/[\u06F0-\u06F9]/g, digit => String(digit.charCodeAt(0) - 0x06F0))) ?? '';
+    const code = moldErpCodeText(erpCode);
     entry.erpCode = length(code) <= MOLD_LIMITS.erpCode ? code : '';
   }
   entry.active = active !== false;
