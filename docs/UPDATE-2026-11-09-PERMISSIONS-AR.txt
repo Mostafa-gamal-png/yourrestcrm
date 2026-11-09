@@ -1,4 +1,4 @@
-تحديث يورست CRM — «الصلاحيات» لكل مستخدم بشكل ERP: جدول شاشة × إجراء، «انسخ الصلاحيات من»، إخفاء أي شاشة عن أي حساب، و«عرض بيانات الفريق بالكامل» (2026-11-10، اسم الحزمة مؤقت: update-permissions)
+تحديث يورست CRM — «الصلاحيات» لكل مستخدم بشكل ERP: جدول شاشة × إجراء، «انسخ الصلاحيات من»، إخفاء أي شاشة عن أي حساب، و«عرض بيانات الفريق بالكامل» (2026-11-09، اسم الحزمة مؤقت: update-permissions)
 
 الحزمة تخص crm.yourrest.org فقط. تغيير في الموقع والخادم وحدهما: لا يحتاج تطبيق أندرويد جديدًا (يفضل 1.0.12). لا تحتوي إعدادات ولا بيانات تشغيل ولا حسابات ولا مفاتيح.
 ترحيل جديد واحد: 0020_member_permissions، يضيف جدولًا جديدًا فاضيًا: crm_member_permissions (صف لكل مستخدم مدير النظام حفظ صلاحياته: الخانات، الشاشات المخفية، رقم النسخة، مين حفظ وإمتى). لا يغيّر أي جدول موجود. القاعدة تصبح 21 ترحيلًا (لو حزمة ملاحظات المشرف 0019 لسه ما اترفعتش، الحزمة دي بتشملها وبتطبق الترحيلين 0019 و0020 بالترتيب، والقاعدة برضه تبقى 21).
@@ -75,21 +75,21 @@
 1. نسخة احتياطية لليوم: لو دي أول حزمة لليوم، المُفعِّل بياخدها بنفسه في الخطوة 4 (نسخة كاملة من التطبيق والبيانات، لذلك ممكن تاخد وقت أطول شوية). لا تنفذ شيئًا هنا.
 
 2. والتطبيق يعمل، ارفع الحزمة وافكها داخل:
-/home/youriedx/yourrest-crm-update-permissions-20261110
+/home/youriedx/yourrest-crm-update-permissions-20261109
 يجب أن يظهر مجلد release والملف yourrest-activate-update-permissions.cjs مباشرة داخل هذا المسار. (مجلد جديد؛ لا تفكّ فوق أي مجلد قديم.)
 
 3. افحص الحزمة دون إيقاف التطبيق:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-permissions-20261110/yourrest-activate-update-permissions.cjs --check
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-permissions-20261109/yourrest-activate-update-permissions.cjs --check
 
 يجب أن يظهر PACKAGE AND CONFIGURATION: READY، وسطر SCHEMA CHANGE: 0020_member_permissions.sql WILL BE APPLIED... (أو 0019_supervisor_reviews.sql, 0020_member_permissions.sql لو 0019 لسه ما اترفعتش). إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله لي.
 
 4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-permissions-20261110/yourrest-activate-update-permissions.cjs
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-permissions-20261109/yourrest-activate-update-permissions.cjs
 
 لو دي أول حزمة لليوم هيظهر 2/4 NO VERIFIED BACKUP TODAY. COPYING APPLICATION AND DATA... (نسخة اليوم الأولى)، وبعدها يكمل لوحده.
 
 5. عند ظهور START APP IN CPANEL اضغط Start App (أول تشغيل يطبّق الترحيل بعد نسخة القاعدة الخاصة، فقد يأخذ ثواني أكثر)، ثم:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-permissions-20261110/yourrest-activate-update-permissions.cjs --verify
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-permissions-20261109/yourrest-activate-update-permissions.cjs --verify
 
 النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 21 و MIGRATION APPLIED: 0020_member_permissions.sql.
 لو ظهر MIGRATION_NOT_APPLIED_START_APP_FIRST فاضغط Start App أولًا ثم أعد --verify.
@@ -101,7 +101,7 @@ cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/your
 التراجع (لا تنفذه قبل أن تراسلني)
 هذا التحديث يضيف ترحيلًا: الإصدار القديم يرفض قاعدة فيها ترحيل أحدث. لذلك للتراجع حالتان:
 - أ) التطبيق لم يعمل بعد Start App والقاعدة ما زالت على عدد ترحيلاتها القديم: أوقف التطبيق، ثم أعد المجلد القديم الذي حفظه المُفعِّل:
-  cd /home/youriedx/yourrest-crm && mv release release-failed-20261110-permissions && mv /home/youriedx/yourrest-update-permissions-activation-20261110-XXXXXX/old-release release
+  cd /home/youriedx/yourrest-crm && mv release release-failed-20261109-permissions && mv /home/youriedx/yourrest-update-permissions-activation-20261109-XXXXXX/old-release release
   (استبدل XXXXXX بالاسم الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT) ثم Start App. البيانات لم تتغير.
 - ب) الترحيل تم وتريد العودة: الإصدار القديم + نسخة القاعدة اللي اتاخدت قبل الترحيل. كل اللي اتعمل في الـCRM بعد التحديث بيضيع (الصلاحيات المحفوظة، وكمان أي زيارة أو عميل أو طلب أو تعديل تاني اتعمل بعد التحديث)، فتواصل معي قبل التنفيذ:
   1) Stop App ثم أعد المجلد القديم كما في (أ).
