@@ -80,6 +80,8 @@ const note = (name, detail = {}) => { steps.push({step: name, ...detail}); conso
 const sha = value => createHash('sha256').update(value).digest('hex');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const freePort = async () => { const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve)); const {port} = probe.address(); await new Promise(resolve => probe.close(resolve)); return port; };
+/** Computed fields a newer release may add to its answers (see the comparison after the update). */
+const NEW_COMPUTED = ['_lastPurchase'];
 const stable = value => JSON.stringify(value, (key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
 /** One installed site, laid out like the hosting account. */
@@ -336,7 +338,11 @@ try {
 
   const after = await views();
   const differences = [];
-  for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) for (const part of Object.keys(before[who])) if (stable(before[who][part]) !== stable(after[who][part])) differences.push(who + '.' + part);
+  // Computed values a newer release adds to what it answers, never stored (2026-11-09: each customer's last purchase date,
+  // data._lastPurchase): the comparison leaves them out of the new release's answer when the old one had none.
+  const added = (old, now) => Array.isArray(now) ? now.map((item, i) => added(old?.[i], item)) : now && typeof now === 'object'
+    ? Object.fromEntries(Object.entries(now).filter(([key]) => !(NEW_COMPUTED.includes(key) && !(old && typeof old === 'object' && key in old))).map(([key, value]) => [key, added(old?.[key], value)])) : now;
+  for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) for (const part of Object.keys(before[who])) if (stable(before[who][part]) !== stable(added(before[who][part], after[who][part]))) differences.push(who + '.' + part);
   if (stable(before.file) !== stable(after.file)) differences.push('file');
   assert.deepEqual(differences, [], 'API results are identical for every role before and after the update');
   note('every role sees identical records, sales, performance and attachment after the update', {roles: 5});
