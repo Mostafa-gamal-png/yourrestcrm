@@ -38,7 +38,8 @@
 // request, of any role, is kept in the CRM until its first design file of its own (the customer's signature does not count): the first
 // request below goes that way (saved, kept, released by its design file); the sections about a request's own flow use requests as the
 // release before saved them (`create`: no data.designRequired), and the design file's hold has its own checks with the quotation's.
-// Since 2026-11-09 (the owner: «عنوان لكل طلب قالب») every request carries its delivery address (its own section, at the end).
+// Since 2026-11-09 (the owner: «عنوان لكل طلب قالب») every request carries its delivery address (its own section), and a customer not
+// in the CRM never blocks a request (its own section, at the end).
 // Synthetic isolated fixtures only: temporary SQLite, mocked sendmail, no production data, no real production application.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -1392,6 +1393,174 @@ try {
     check([res.status, body.request.customerAddress, (await stored(service)).version, body.request.signature], [200, 'مستودع الشركة الجديد', version + 1, null], 'customer service: an address-only edit saved, no signature asked');
     ok(addrMock.state.calls.every(call => !JSON.stringify(call.headers).includes(addrMock.state.secret)), 'the secret never travels');
   } finally { await addrApp.stop(); await addrMock.stop(); }
+}
+
+// ---- 2026-11-09 (the owner: «لو فيه عميل مش موجود فى النظام طلب القالب ميقفش»، «المندوب يكتب الكود والكود المطلوب كود erp»، «يتبعت بكود
+// ERP بس»): the customer is typed, name and ERP code. One of the CRM's customers, chosen (customerId) or named by an ERP code exactly one
+// of the reader's customers has (its former codes too), is linked as before, its body byte for byte the same (the ERP code kept in the
+// data only). Any other is a customer not in the CRM: stored unlinked (customer_id '', crmNumber null), its name, ERP code and address
+// required, each refused by its field; sent with crmNumber null and the ERP code only once production's application is known to take it
+// (learned from any answer whose customer carries erpCode): today's application would drop the ERP code silently. Until then it waits,
+// said so, tried again every 6 hours and on resend (the resend asks production what it runs first); production's refusal for its missing
+// Yourrest number is a wait too, never final. Who sees and approves it goes by the requester's regions. An edit before the first send may
+// change the customer (a change of what was signed). The customers list sent to production is unchanged.
+{
+  const roster = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager', region: 'eastern'}, {id: 'smW', role: 'manager', region: 'western'},
+    {id: 'sup', role: 'supervisor', sup: 'sm', region: 'eastern'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}, {id: 'repW', role: 'rep', sup: 'smW', region: 'western'},
+    {id: 'csm', role: 'customer_service_manager', sup: 'sm', region: 'eastern'}, {id: 'cs', role: 'customer_service', sup: 'csm', region: 'eastern'}];
+  const freeMock = await startProductsMock({requestRefs: true});
+  const freeApp = await bootBuiltApp({members: roster}, {env: {YR_PRODUCTS_API_URL: freeMock.url, YR_PRODUCTS_SECRET: freeMock.state.secret, NODE_EXTRA_CA_CERTS: freeMock.ca}});
+  try {
+    const sessions = {};
+    for (const member of roster) sessions[member.id] = await freeApp.login(member.id);
+    const as = id => freeApp.as(sessions[id]), now = new Date().toISOString();
+    const fixture = (id, assignedTo, region, extra = {}) => freeApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')")
+      .bind(id, assignedTo, JSON.stringify({name: 'مصنع ' + id, region, city: region === 'الغربية' ? 'جدة' : 'الدمام', address: 'عنوان ' + id, ...extra}), now, now).run();
+    await fixture('f1', 'rep', 'الشرقية', {code: 'ERP-146'}); await fixture('f2', 'rep', 'الشرقية', {code: 'DUP-1'}); await fixture('f3', 'rep', 'الشرقية', {code: 'DUP-1'});
+    await fixture('f4', 'rep', 'الشرقية', {code: 'NEW-4'}); await fixture('w1', 'repW', 'الغربية', {code: 'ERP-W1'});
+    await freeApp.db.prepare("INSERT INTO crm_customer_code_aliases(customer_id,source_code) VALUES('f4','OLD-9')").run();
+    const number = async id => (await freeApp.db.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').bind(id).first()).number;
+    const raw = (who, body) => as(who)('/api/mold-requests', {method: 'POST', body: withSignature(roleOf(who, roster), {requestId: crypto.randomUUID(), ...body})});
+    const ask = (who, extra = {}) => raw(who, {action: 'create', specs, payment: 'cash', address: 'مخزن جدة', ...extra});
+    const upload = uploader(as);
+    const stored = async id => freeApp.db.prepare('SELECT * FROM crm_mold_requests WHERE id=?').bind(id).first();
+    const dataOf = async id => JSON.parse((await stored(id)).data);
+    const callsOf = route => freeMock.state.calls.filter(call => call.route === route && call.signed);
+    const sentOf = id => callsOf('requests').filter(call => call.body.includes(id)).map(call => JSON.parse(call.body));
+    const listOf = async who => (await (await as(who)('/api/mold-requests?refs=1')).json());
+    const until = async (condition, what) => { for (let n = 0; n < 120; n++) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 250)); } throw new Error('timed out waiting for ' + what); };
+    const known = async () => !!(await freeApp.db.prepare("SELECT 1 AS k FROM crm_settings WHERE id='mold-free-customers'").first());
+    const f1 = await number('f1'), f4 = await number('f4');
+
+    // (a) linked by choice: as before (a page loaded before sends customerId alone), the ERP code kept in the data, never sent
+    let res = await ask('rep', {customerId: 'f1', customer: {name: 'أي اسم', erpCode: ''}}), body = await res.json();
+    const chosen = body.request.id;
+    check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName, body.request.customerErpCode, await dataOf(chosen).then(data => data.customer)],
+      [200, 'f1', f1, 'مصنع f1', 'ERP-146', {crmNumber: f1, name: 'مصنع f1', address: 'مخزن جدة', city: 'Damam - الدمام', erpCode: 'ERP-146'}], 'chosen: linked, its registered name, its own ERP code kept in the request\'s data');
+    res = await upload(chosen, 'رسم.pdf', pdf('chosen'));
+    check([(await res.json()).request.sending.state, sentOf(chosen).at(-1).customer], ['sent', {crmNumber: f1, name: 'مصنع f1', address: 'مخزن جدة', city: 'Damam - الدمام'}], 'its body exactly as before: no ERP code');
+    res = await raw('rep', {action: 'create', customerId: 'f1', specs, payment: 'cash'}); body = await res.json();
+    check([res.status, body.request.customerId, body.request.customerAddress], [200, 'f1', 'عنوان f1'], 'a page loaded before (customerId alone, no address): as before');
+    check((await ask('rep', {customerId: 'w1'})).status, 404, 'a customer the reader may not ask for: 404 as before');
+
+    // (b) linked by its ERP code alone (Arabic-Indic digits, any case, a former code), the server deciding
+    for (const [erpCode, id, crmNumber, kept] of [[' erp-١٤٦ ', 'f1', f1, 'erp-146'], ['OLD-9', 'f4', f4, 'OLD-9']]) {
+      res = await ask('rep', {customer: {name: 'اسم مكتوب', erpCode}}); body = await res.json();
+      check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName, (await dataOf(body.request.id)).customer.erpCode, (await stored(body.request.id)).customer_id], [200, id, crmNumber, 'مصنع ' + id, kept, id], 'ERP code ' + erpCode.trim() + ': linked to the one customer that has it, by the server');
+    }
+    for (const [erpCode, why] of [['DUP-1', 'two customers share it'], ['ERP-W1', 'its customer is outside the reader\'s customers']]) {
+      res = await ask('rep', {customer: {name: 'اسم مكتوب', erpCode}}); body = await res.json();
+      check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName], [200, '', null, 'اسم مكتوب'], erpCode + ': not linked (' + why + ')');
+    }
+
+    // (c) a customer not in the CRM: what is required, refused by its field, nothing saved
+    const NAME = 'اكتب اسم العميل', ERP = 'اكتب كود ERP للعميل', ADDRESS = 'اكتب عنوان التسليم';
+    const before = (await freeApp.db.prepare('SELECT COUNT(*) AS n FROM crm_mold_requests').first()).n;
+    for (const [extra, fields] of [[{customer: {name: '', erpCode: '771'}}, {'customer.name': NAME}], [{customer: {name: 'مصنع الأمل'}}, {'customer.erpCode': ERP}], [{customer: {name: 'مصنع الأمل', erpCode: '   '}}, {'customer.erpCode': ERP}],
+      [{customer: {name: 'م'.repeat(201), erpCode: 'x'.repeat(51)}}, {'customer.name': 'اسم العميل حتى 200 حرف', 'customer.erpCode': 'كود ERP حتى 50 حرف'}], [{customer: {name: 'مصنع الأمل', erpCode: '771'}, address: undefined}, {address: ADDRESS}],
+      [{customer: 'مصنع'}, {customer: 'اكتب اسم العميل وكود ERP، أو اختاره من الترشيحات'}], [{}, {customer: 'اكتب اسم العميل وكود ERP، أو اختاره من الترشيحات'}]]) {
+      const request = {...extra}; if (Object.hasOwn(extra, 'address') && extra.address === undefined) delete request.address;
+      res = await (Object.hasOwn(extra, 'address') ? raw('rep', {action: 'create', specs, payment: 'cash', ...request}) : ask('rep', request)); body = await res.json();
+      check([res.status, body.fields], [400, fields], 'refused by its field: ' + Object.keys(fields).join(', '));
+    }
+    check((await freeApp.db.prepare('SELECT COUNT(*) AS n FROM crm_mold_requests').first()).n, before, 'nothing saved');
+
+    // (d) saved unlinked; while production's update is not known it is never sent: production is asked what it runs (a status, its
+    // waiting list), and the request waits, said so, for 6 hours
+    res = await ask('rep', {customer: {name: '  مصنع   الأمل ', erpCode: '٧٧١'}, address: ' جدة، الصناعية '}); body = await res.json();
+    const free = body.request.id;
+    check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerErpCode, (await stored(free)).customer_id, await dataOf(free).then(data => data.customer)],
+      [200, '', null, '771', '', {crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', city: '', erpCode: '771'}], 'stored unlinked: customer_id \'\', crmNumber null, the name, ERP code and address as typed (normalized)');
+    const statusCalls = callsOf('status').length;
+    res = await upload(free, 'رسم الأمل.pdf', pdf('free')); body = await res.json();
+    const next = Date.parse(body.request.sending.nextAttemptAt) - Date.now();
+    check([body.request.sending.state, body.request.sending.held, body.request.sending.error.code, sentOf(free).length, callsOf('status').length > statusCalls, next > 5.9 * 3600_000 && next <= 6 * 3600_000, body.request.can.resend, body.request.can.edit, await known()],
+      ['waiting', 'free_customer', 'free_customer', 0, true, true, true, true, false], 'its design file releases it, but production\'s update is not known: never sent, production asked once, it waits 6 hours (resend and edit still its requester\'s)');
+    check(body.request.designFiles.map(file => file.state), ['held', 'held'], 'its files (the customer\'s signature, its design file) wait for it');
+    res = await raw('rep', {action: 'resend', id: free}); body = await res.json();
+    check([res.status, body.send, body.request.sending.held, sentOf(free).length], [200, {kind: 'none', code: 'free_customer', fields: []}, 'free_customer', 0], 'a resend asks again: still today\'s application, still waiting');
+    // A second one waits the same way; both go once the update is learned.
+    res = await ask('cs', {customer: {name: 'مصنع الخدمة', erpCode: 'CS-1'}, address: 'الخبر'}); body = await res.json();
+    const service = body.request.id;
+    await upload(service, 'رسم الخدمة.pdf', pdf('service'), undefined, 'cs');
+    check([(await listOf('cs')).requests.find(view => view.id === service).sending.held, sentOf(service).length], ['free_customer', 0], 'customer service\'s too');
+
+    // (e) visibility and approval by the requester's regions
+    const sees = async who => (await listOf(who)).requests.some(view => view.id === free);
+    check(await Promise.all(['rep', 'sup', 'sm', 'owner', 'smW', 'repW', 'cs'].map(sees)), [true, true, true, true, false, false, false], 'the requester, his supervisor, his eastern manager and the administrator see it; the western manager and others do not');
+    check([(await as('smW')('/api/mold-requests?id=' + free)).status, (await as('sm')('/api/mold-requests?id=' + free)).status], [404, 200], 'opened by id the same way');
+
+    // (f) production updated: the resend learns it (production's answer echoes the customer) and sends it, crmNumber null and the
+    // ERP code; the other waiting request goes at once without its 6 hours
+    freeMock.setFreeCustomers(true);
+    res = await raw('rep', {action: 'resend', id: free}); body = await res.json();
+    check([res.status, body.send.kind, body.request.sending.state, body.request.sending.held, await known(), sentOf(free).at(-1).customer, freeMock.row(free).customerErpCode, freeMock.row(free).customerNo],
+      [200, 'ok', 'sent', undefined, true, {crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', erpCode: '771'}, '771', null], 'the update learned: sent with crmNumber null and the ERP code, stored by production');
+    await until(async () => freeMock.row(free).designFiles?.length === 2, 'its signature and design file');
+    await as('cs')('/api/mold-requests');
+    await until(async () => !!freeMock.row(service), 'the other waiting request');
+    check([sentOf(service).at(-1).customer.erpCode, freeMock.row(service).designFiles?.length ?? 0], ['CS-1', 0], 'the other one goes as soon as the CRM learned it (its design file after it)');
+    await until(async () => freeMock.row(service).designFiles?.length === 1, 'its design file');
+    // Once known, a new request for a customer not in the CRM goes as any other.
+    res = await ask('rep', {customer: {name: 'مصنع جديد', erpCode: 'N-1'}}); body = await res.json();
+    res = await upload(body.request.id, 'رسم جديد.pdf', pdf('new')); const fresh = (await res.json()).request;
+    check([fresh.sending.state, sentOf(fresh.id).at(-1).customer], ['sent', {crmNumber: null, name: 'مصنع جديد', address: 'مخزن جدة', erpCode: 'N-1'}], 'a new one: sent at once');
+
+    // (g) «طلبات بانتظار اعتمادي», the approvals by crmRequestId and by requestRef, the design file, status and resend: by the request
+    const pendingOf = async who => (await listOf(who)).pending.items;
+    const item = (await pendingOf('sm')).find(entry => entry.crmRequestId === free);
+    check([item.customer, item.inCrm, (await pendingOf('smW')).some(entry => entry.crmRequestId === free), (await pendingOf('smW')).some(entry => entry.crmRequestId === service)],
+      [{crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', city: '', erpCode: '771'}, true, false, false], 'the eastern manager lists it (production\'s copy, crmNumber null); the western one does not');
+    check((await as('sm')(item.designFiles[0].href)).status, 200, 'its design file downloads through the CRM for the approver');
+    res = await raw('sm', {action: 'approve-order', requestRef: item.requestRef, page: 'refs'}); body = await res.json();
+    check([res.status, body.status.approvals.sales !== null, body.request.id, (await pendingOf('sm')).some(entry => entry.crmRequestId === free)], [200, true, free, false], 'approved by its requestRef: the CRM\'s own request, no customer looked up');
+    res = await raw('sm', {action: 'withdraw', id: free}); body = await res.json();
+    check([res.status, body.request.remote.approvals.sales], [200, null], 'withdrawn by its id');
+    res = await raw('sm', {action: 'approve-order', crmRequestId: service}); body = await res.json();
+    check([res.status, body.status.approvals.sales !== null], [200, true], 'customer service\'s, by its crmRequestId');
+    check((await raw('smW', {action: 'approve-order', crmRequestId: free})).status, 404, 'the western manager cannot approve it');
+    const audit = await freeApp.db.prepare("SELECT detail FROM crm_audit WHERE record_id=? AND action='mold-request:create'").bind(free).first();
+    check([JSON.parse(audit.detail).customerName, JSON.parse(audit.detail).erpCode, JSON.parse(audit.detail).notInCrm], ['مصنع الأمل', '771', true], 'audited with its name and ERP code');
+
+    // (h) production refuses it for its missing Yourrest number (its application back as before, say): a wait, never final
+    freeMock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['customer.crmNumber']}});
+    res = await ask('rep', {customer: {name: 'مصنع مرفوض', erpCode: 'R-1'}}); body = await res.json();
+    const refused = body.request.id;
+    res = await upload(refused, 'رسم مرفوض.pdf', pdf('refused')); body = await res.json();
+    const wait = Date.parse(body.request.sending.nextAttemptAt) - Date.now();
+    check([body.request.sending.state, body.request.sending.held, body.request.sending.error.code, body.request.sending.error.fields, wait > 5.9 * 3600_000, body.request.can.edit, body.request.can.resend],
+      ['waiting', 'free_customer', 'free_customer', ['customer.crmNumber'], true, true, true], 'refused for customer.crmNumber: waiting for production\'s update (6 hours), never rejected; still editable and resent');
+    res = await raw('rep', {action: 'resend', id: refused}); body = await res.json();
+    check([body.send.kind, body.request.sending.state, freeMock.row(refused).customerErpCode], ['ok', 'sent', 'R-1'], 'a resend once production takes it: sent');
+
+    // (i) the edit of one never sent changes its customer: a change of what was signed; to one of the CRM's, it is linked
+    freeMock.setFreeCustomers(false);
+    await freeApp.db.prepare("DELETE FROM crm_settings WHERE id='mold-free-customers'").run();
+    res = await ask('rep', {customer: {name: 'مصنع للتعديل', erpCode: 'E-1'}}); body = await res.json();
+    const draft = body.request.id;
+    await upload(draft, 'رسم تعديل.pdf', pdf('draft'));
+    let {version} = await stored(draft);
+    const edit = extra => raw('rep', {action: 'update', id: draft, version, specs, payment: 'cash', address: 'مخزن جدة', ...extra});
+    res = await edit({customer: {name: 'مصنع للتعديل', erpCode: ' E-1 '}, signature: undefined}); body = await res.json();
+    check([res.status, (await stored(draft)).version], [200, version], 'the same name and code: nothing changed, no signature asked');
+    res = await edit({customer: {name: 'مصنع معدّل', erpCode: 'E-1'}, signature: undefined}); body = await res.json();
+    check([res.status, Object.keys(body.fields)], [400, ['signature']], 'another name: a change of what the customer signed');
+    res = await edit({customer: {name: 'مصنع معدّل', erpCode: 'E-2'}}); body = await res.json();
+    ({version} = await stored(draft));
+    check([res.status, body.request.customerName, body.request.customerErpCode, body.request.customerId, (await dataOf(draft)).customer], [200, 'مصنع معدّل', 'E-2', '', {crmNumber: null, name: 'مصنع معدّل', address: 'مخزن جدة', city: '', erpCode: 'E-2'}], 'signed again: saved with the new name and code');
+    check([body.request.sending.held, sentOf(draft).length], ['free_customer', 0], 'still waiting for production\'s update');
+    res = await edit({customer: {name: 'مصنع معدّل', erpCode: 'ERP-146'}}); body = await res.json();
+    check([res.status, body.request.customerId, body.request.crmNumber, (await stored(draft)).customer_id, (await dataOf(draft)).customer.name, (await dataOf(draft)).customer.erpCode], [200, 'f1', f1, 'f1', 'مصنع f1', 'ERP-146'], 'an ERP code of one of the CRM\'s customers: linked now');
+    check([body.request.sending.state, sentOf(draft).at(-1).customer], ['sent', {crmNumber: f1, name: 'مصنع f1', address: 'مخزن جدة', city: 'Damam - الدمام'}], 'linked: sent at once as any linked request, whatever production runs');
+
+    // (j) the customers list sent to production is unchanged: the CRM's customers only, as before
+    await as('owner')('/api/crm');
+    await until(() => callsOf('customers').length > 0, 'the customers list');
+    const listedNames = JSON.parse(callsOf('customers').at(-1).body).customers.map(entry => entry.name).sort();
+    check(listedNames, ['مصنع f1', 'مصنع f2', 'مصنع f3', 'مصنع f4', 'مصنع w1'], 'the customers list: the CRM\'s customers only, as before (no customer typed for a request)');
+    check(sentOf(chosen).every(call => !Object.hasOwn(call.customer, 'erpCode')), true, 'no linked request ever sent an ERP code');
+    ok(freeMock.state.calls.every(call => !JSON.stringify(call.headers).includes(freeMock.state.secret)), 'the secret never travels');
+  } finally { await freeApp.stop(); await freeMock.stop(); }
 }
 
 console.log(JSON.stringify({ok: true, checks, builtRelease: true, realProductionTested: false}));

@@ -13,12 +13,17 @@
 // the timetable, a resend nor a restart); the first one attached releases it (releaseMoldRequest): the request, then its files. Since
 // 2026-11-08 every new request (data.designRequired) is kept the same way while it has no design file of its own (the customer's
 // signature does not count): MOLD_AWAITS_FILE_SQL holds either reason, and the first file of the missing kind releases it the same way.
+// A request for a customer not in the CRM (2026-11-09: customer.crmNumber null with its ERP code) is sent only once the CRM has learned
+// that production's application takes one (moldFreeCustomersSupported, from any answer whose customer carries erpCode): today's
+// application reads crmNumber as optional and would store the request without its ERP code, silently. Until then, and should production
+// still refuse it for its missing Yourrest number, it waits in the CRM (error free_customer, never final), tried again every 6 hours, on
+// its requester's resend, and at once when the update is learned.
 import {env} from 'cloudflare:workers';
 import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
-import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldHeldFor,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,moldFreeCustomersAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
+import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldFreeCustomer,moldHeldFor,MOLD_FREE_CUSTOMER,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
 type Config=ReturnType<typeof moldConfig>;
@@ -64,11 +69,31 @@ async function noteMoldRequestRef(db:D1Database,values:unknown[],at:string){
  if(!await moldRequestRefKnown(db))await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_REQUEST_REF_SETTING,at).run();
  return true;
 }
+/** Where the CRM keeps that production's application takes a request for a customer not in the CRM (2026-11-09: customer.crmNumber null
+ *  with customer.erpCode), the same way: a row of crm_settings, written once, never removed. */
+export const MOLD_FREE_CUSTOMERS_SETTING='mold-free-customers';
+export async function moldFreeCustomersSupported(db:D1Database){
+ return !!(await db.prepare('SELECT 1 AS known FROM crm_settings WHERE id=?').bind(MOLD_FREE_CUSTOMERS_SETTING).first());
+}
+/** How long a request for a customer not in the CRM waits before its next try while production does not take it yet. */
+export const MOLD_FREE_CUSTOMER_RETRY_MS=6*3600_000;
+/** Learns that update from any answer read whose customer carries erpCode (moldFreeCustomersAnswered: a status object, or a pending
+ *  item, as moldStatusObject and moldPendingItem read them). The first one stores it and makes every request waiting for it due now. */
+async function noteMoldFreeCustomers(db:D1Database,values:unknown[],at:string){
+ if(!values.some(moldFreeCustomersAnswered)||await moldFreeCustomersSupported(db))return false;
+ await db.batch([
+  db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_FREE_CUSTOMERS_SETTING,at),
+  db.prepare(`UPDATE crm_mold_requests SET next_attempt_at=? WHERE outbox IS 'send' AND json_extract(last_error,'$.code')=? AND json_type(data,'$.customer.crmNumber')='null'`).bind(at,MOLD_FREE_CUSTOMER),
+ ]);
+ return true;
+}
 /** Learns production's update from any answer read (a status object or a pending item, as moldStatusObject and moldPendingItem read it)
  *  that carries quoteOrPoMissing, whatever its value: the first one stores it, any later one changes nothing. Never unlearned. Every
- *  answer read passes here, so the same answers teach the products update of 2026-11-05 too (noteMoldRequestRef). */
+ *  answer read passes here, so the same answers teach the products update of 2026-11-05 too (noteMoldRequestRef), and the update that
+ *  takes a customer not in the CRM (noteMoldFreeCustomers, 2026-11-09). */
 export async function noteMoldQuotePo(db:D1Database,values:unknown[],at=new Date().toISOString()){
  await noteMoldRequestRef(db,values,at);
+ await noteMoldFreeCustomers(db,values,at);
  if(!values.some(moldQuotePoAnswered))return false;
  // Written only while it is not there yet (a page reads the waiting list every few minutes; no write each time).
  if(!await moldQuotePoSupported(db))await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_QUOTE_PO_SETTING,at).run();
@@ -134,6 +159,13 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
  // attached: never sent, by anything. The claim says the same in SQL, so a file deleted between this check and the claim keeps it too.
  const kept=row.outbox==='send'?moldHeldFor(row,await loadMoldDesignFiles(db,'request_id=?',[id])):null;
  if(kept)return {kind:'none',code:kept};
+ // A customer not in the CRM (2026-11-09) goes only once production's update is known; until then it waits (6 hours, or a resend), after
+ // the CRM has asked production once more for what it now runs (moldFreeCustomersProbe).
+ if(row.outbox==='send'&&moldFreeCustomer(row.data)&&moldNeverSent(row)&&!await moldFreeCustomersSupported(db)&&!await moldFreeCustomersProbe(db,{link,now,fetch})){
+  const at=now(),error=JSON.stringify({code:MOLD_FREE_CUSTOMER,http:0,at,notStored:true});
+  await db.prepare('UPDATE crm_mold_requests SET next_attempt_at=?,last_error=?,updated_at=? WHERE id=? AND version=? AND outbox IS \'send\' AND next_attempt_at IS NOT NULL AND next_attempt_at<=?').bind(new Date(Date.parse(at)+MOLD_FREE_CUSTOMER_RETRY_MS).toISOString(),error,at,id,row.version,at).run();
+  return {kind:'none',code:MOLD_FREE_CUSTOMER};
+ }
  const at=now(),claim=crypto.randomUUID(),lease=new Date(Date.parse(at)+60_000).toISOString();
  const claimed=await db.prepare(`UPDATE crm_mold_requests SET mutation_id=?,last_attempt_at=?,next_attempt_at=? WHERE id=? AND version=? AND outbox=? AND next_attempt_at IS NOT NULL AND next_attempt_at<=? AND NOT ${MOLD_AWAITS_FILE_SQL()}`).bind(claim,at,lease,id,row.version,row.outbox,at).run();
  if(claimed.meta.changes!==1){const still=row.outbox==='send'?moldHeldFor(row,await loadMoldDesignFiles(db,'request_id=?',[id])):null;return still?{kind:'none',code:still}:{kind:'busy',code:''};}
@@ -189,6 +221,11 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   // A change (queued before 2026-11-02) to a request production holds, refused for its data: no edit can fix it now, so it is dropped
   // for good, the data back to what production accepted, with the reason.
   await settle(`${cleared},data=accepted,last_error=?,version=version+1`,JSON.stringify({code:answer.code,fields:answer.fields,http:answer.http||0,at:done,final:true}));
+ }else if(answer.kind==='rejected'&&row.outbox==='send'&&moldFreeCustomer(row.data)&&answer.fields.includes('customer.crmNumber')){
+  // A customer not in the CRM refused for its missing Yourrest number (production's application without the update of 2026-11-09, or
+  // back to it): not final; it waits for the update and is tried again every 6 hours (and on a resend), never stopped.
+  await settle('attempts=attempts+1,next_attempt_at=?,last_error=?',new Date(Date.parse(done)+MOLD_FREE_CUSTOMER_RETRY_MS).toISOString(),JSON.stringify({code:MOLD_FREE_CUSTOMER,fields:answer.fields,http:answer.http||400,at:done,...notStored}));
+  return {kind:'none',code:MOLD_FREE_CUSTOMER,fields:answer.fields,sent:'send'};
  }else if(answer.kind==='rejected'){
   // The data must change first; a retry alone cannot help, so the timetable stops until the representative edits (allowed while it
   // has never reached production), resends or cancels.
@@ -198,6 +235,20 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   await settle('attempts=?,first_failed_at=?,next_attempt_at=?,last_error=?',failures,first,moldNextAttempt(failures,first,done),JSON.stringify({code:answer.code,http:answer.http||0,at:done,...notStored}));
  }
  return {kind:answer.kind==='not_found'&&row.outbox==='cancel'?'ok':answer.kind,code:answer.code,fields:answer.fields,...(answer.reason?{reason:answer.reason}:{}),sent:row.outbox};
+}
+
+/** Asks production what it runs now, for a request for a customer not in the CRM waiting for its update: the status of the request it
+ *  answered last (any one it holds), else its waiting list; either answer teaches the CRM the update (noteMoldQuotePo). Whether it is
+ *  known now. Nothing is asked while the link is off. */
+async function moldFreeCustomersProbe(db:D1Database,{link,now,fetch}:{link:Config;now:()=>string;fetch?:typeof globalThis.fetch}){
+ if(!link.ok)return false;
+ const latest=await db.prepare('SELECT id FROM crm_mold_requests WHERE remote IS NOT NULL ORDER BY remote_at DESC,id LIMIT 1').first<{id:string}>();
+ const row=latest?await loadMoldRequest(db,latest.id):null;
+ if(row)await pullMoldStatuses(db,[row],{link,now,force:true,...(fetch?{fetch}:{})});
+ if(await moldFreeCustomersSupported(db))return true;
+ const pending=await pullPendingApprovals({link,now,...(fetch?{fetch}:{})});
+ await noteMoldQuotePo(db,pending.items);
+ return moldFreeCustomersSupported(db);
 }
 
 /** The requests whose next try has come, oldest first; a few per run so a page or the timer never waits long. Then the design files

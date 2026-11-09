@@ -46,6 +46,14 @@
 // crmRequestId for the CRM's as before, and orderNo still for a request that has a number; production no longer deletes a request, it
 // cancels it, and a cancelled request keeps its number. Test controls: the switch (setRequestRefs), renumber (the one-time shift of the
 // numbers from 101 up down by one, without a new revision), cancelHere (production cancelling a request).
+// A customer not in the CRM (the owner, 2026-11-09; the CRM's message to the products side of that day), behind its own switch
+// (freeCustomers: false, the default, is the application as it is today): today's application reads customer.crmNumber as optional (the
+// addendum), so a request without one (null or absent) is stored by the customer's name alone and customer.erpCode is ignored silently,
+// as any key it does not know; its status objects carry no customer. The updated one (freeCustomers: true) takes customer.erpCode (a
+// string of up to 50 characters after its normalizing, the ends trimmed; anything else 400 fields ['customer.erpCode']), requires it
+// when customer.crmNumber is null or absent (400 fields ['customer.erpCode']), keeps it in the original a retry is compared with, and
+// echoes the customer in every status object (customer: {crmNumber, name, erpCode}, crmNumber null for such a customer, erpCode "" for
+// none) and the ERP code in every pending item's customer. Test control: the switch (setFreeCustomers).
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
@@ -57,7 +65,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
-const COLUMNS = ['requestedAt', 'customerNo', 'customerName', 'customerAddress', 'customerCity', 'salesmanId', 'salesmanName', 'salesmanEmail', 'description', 'core', 'vibrators', 'model', 'halfBlock', 'moldWidth', 'gelbaSize', 'moldNo', 'quantity', 'designUrl', 'notes', 'payment', 'quoteNo', 'poNo'];
+const COLUMNS = ['requestedAt', 'customerNo', 'customerName', 'customerAddress', 'customerCity', 'salesmanId', 'salesmanName', 'salesmanEmail', 'description', 'core', 'vibrators', 'model', 'halfBlock', 'moldWidth', 'gelbaSize', 'moldNo', 'quantity', 'designUrl', 'notes', 'payment', 'quoteNo', 'poNo', 'customerErpCode'];
 const PAYMENTS = ['cash', 'deferred'];
 /** The file categories of the updated application and how many of each a request holds. */
 const CATEGORY_LIMITS = {design: 10, quote: 5, po: 5};
@@ -93,7 +101,7 @@ function choice(value, allowed, required, field, bad) {
 }
 /** yr_mreq_validate_request, field for field. quotePo: the application after its update of 2026-11-03 (quoteNo and poNo read); before
  *  it they are ignored, whatever they hold. */
-export function validateRequest(body, now = Date.now(), {quotePo = false} = {}) {
+export function validateRequest(body, now = Date.now(), {quotePo = false, freeCustomers = false} = {}) {
   const bad = [];
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('invalid_payload', 400, 'The body must be a JSON object.', ['body']);
   let id = body.crmRequestId;
@@ -126,6 +134,13 @@ export function validateRequest(body, now = Date.now(), {quotePo = false} = {}) 
     gelbaSize: int(pp.gelbaSize, 500, 1200, true, 'specs.gelbaSize', bad), moldNo: clean(pp.moldNo, 40, false, 'specs.moldNo', bad),
     quantity: int(pp.quantity, 1, 100, true, 'specs.quantity', bad), designUrl: designUrl === '' ? null : designUrl, notes: clean(pp.notes, 2000, false, 'specs.notes', bad), payment, quoteNo, poNo,
   };
+  // A customer not in the CRM (the updated application of 2026-11-09): its ERP code, required without a Yourrest number. Today's
+  // application ignores the key.
+  if (freeCustomers) {
+    const code = clean(cc.erpCode, 50, false, 'customer.erpCode', bad);
+    if (out.customerNo === null && code === '' && !bad.includes('customer.crmNumber')) bad.push('customer.erpCode');
+    out.customerErpCode = code === '' ? null : code;
+  } else out.customerErpCode = null;
   if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)]);
   return out;
 }
@@ -158,13 +173,14 @@ function quotePoPart(row, quotePo) {
 }
 /** yr_mreq_status_object; quotePo: the updated application (2026-11-03) adds the quotation and PO part; refs: the application of the new
  *  numbering (2026-11-05) adds requestRef (orderNo is null until production approves). */
-function statusObjectOf(row, quotePo, refs = false) {
+function statusObjectOf(row, quotePo, refs = false, freeCustomers = false) {
   const status = derive(row), a = row.approvals;
   const approvals = {required: !a.legacy, ...Object.fromEntries(APPROVAL_STEPS.map(step => [step, a[step] ? {at: a[step].at, ...(a[step].via === 'crm' ? {by: a[step].by} : {})} : null]))};
   const {designFiles, ...numbers} = quotePoPart(row, quotePo);
   return {crmRequestId: row.crmRequestId, orderNo: row.orderNo, ...(refs ? {requestRef: row.requestRef} : {}), status, editable: status === 'received', moldSerial: row.moldSerial, productionDate: row.productionDate, stages: structuredClone(row.stages),
     stagesDone: STAGES.filter(key => row.stages[key].done).length, stagesTotal: STAGES.length, delivered: row.delivered, deliveryDate: row.deliveryDate,
-    waitingStep: row.waitingStep, waitingSince: row.waitingSince, approvals, updatedAt: row.updatedAt, revision: row.revision, designFiles, ...numbers};
+    waitingStep: row.waitingStep, waitingSince: row.waitingSince, approvals, updatedAt: row.updatedAt, revision: row.revision, designFiles, ...numbers,
+    ...(freeCustomers ? {customer: {crmNumber: row.customerNo ?? null, name: row.customerName ?? '', erpCode: row.customerErpCode ?? ''}} : {})};
 }
 const DESIGN_EXTENSIONS = {pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', gif: 'image', ...Object.fromEntries('dwg dxf step stp igs iges stl sldprt sldasm slddrw nc1 dstv ai eps cdr psd svg zip rar 7z'.split(' ').map(e => [e, 'other']))};
 const DESIGN_MAX = 25 * 1024 * 1024;
@@ -194,15 +210,15 @@ const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null
  * @param {{secret?: string, now?: () => number, quotePo?: boolean, requestRefs?: boolean}} options quotePo: start as the application after its
  *  update of 2026-11-03; requestRefs: start as the application of the new numbering (the second message of 2026-11-05)
  */
-export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false} = {}) {
+export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false} = {}) {
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map(), quotePo, refs: requestRefs, byRef: new Map()};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers};
   // This application's own reading of a request and of a file: before or after its update of 2026-11-03 (state.quotePo), and before or
   // after its new numbering (state.refs).
-  const statusObject = row => statusObjectOf(row, state.quotePo, state.refs), designEntry = file => designEntryOf(file, state.quotePo);
+  const statusObject = row => statusObjectOf(row, state.quotePo, state.refs, state.freeCustomers), designEntry = file => designEntryOf(file, state.quotePo);
   /** Every request: by their numbers in the application as it is today (byOrder, which tests edit), by their requestRef with the new
    *  numbering (a request has no number before production's approval). */
   const allRows = () => state.refs ? [...state.byRef.values()] : [...state.byOrder.values()];
@@ -221,7 +237,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
 
   function upsert(body) {
-    const p = validateRequest(body, now(), {quotePo: state.quotePo});
+    const p = validateRequest(body, now(), {quotePo: state.quotePo, freeCustomers: state.freeCustomers});
     let row = state.rows.get(p.crmRequestId), isNew = false, linked = false;
     if (!row && p.legacyOrderNo !== null) {
       const legacy = state.byOrder.get(p.legacyOrderNo);
@@ -393,7 +409,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   function pending() {
     const rows = allRows().filter(row => waitingStep(row) === 'sales').sort((a, b) => String(a.waitingSince).localeCompare(String(b.waitingSince)) || (a.orderNo ?? 0) - (b.orderNo ?? 0)).slice(0, 500);
     return {status: 200, body: {requests: rows.map(row => ({orderNo: row.orderNo, ...(state.refs ? {requestRef: row.requestRef} : {}), crmRequestId: row.crmRequestId, source: row.source, requestedAt: row.requestedAt, waitingSince: row.waitingSince,
-      enteredBy: row.source === 'manual' ? row.createdBy : null, customer: {crmNumber: row.customerNo, name: row.customerName, address: row.customerAddress, city: row.customerCity},
+      enteredBy: row.source === 'manual' ? row.createdBy : null, customer: {crmNumber: row.customerNo, name: row.customerName, address: row.customerAddress, city: row.customerCity, ...(state.freeCustomers ? {erpCode: row.customerErpCode ?? ''} : {})},
       salesman: {crmMemberId: row.salesmanId, name: row.salesmanName},
       specs: {description: row.description, core: row.core, vibrators: row.vibrators, model: row.model, halfBlock: row.halfBlock, moldWidth: row.moldWidth, gelbaSize: row.gelbaSize, moldNo: row.moldNo, quantity: row.quantity, designUrl: row.designUrl, notes: row.notes},
       payment: row.payment ?? null, revision: row.revision, ...quotePoPart(row, state.quotePo)}))}};
@@ -556,6 +572,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     forget(crmRequestId) { const row = state.rows.get(crmRequestId); state.rows.delete(crmRequestId); if (row) { state.byOrder.delete(row.orderNo); state.byRef.delete(row.requestRef); } },
     /** The application of today (false) or of the new numbering (true), at once: what is numbered stays numbered. */
     setRequestRefs(on = true) { state.refs = !!on; },
+    /** The application of today (false) or after its update for a customer not in the CRM (true, 2026-11-09), at once. */
+    setFreeCustomers(on = true) { state.freeCustomers = !!on; },
     /** Production cancels a request itself (the new numbering: it no longer deletes one), by its crmRequestId, requestRef or number: it
      *  keeps its number. */
     cancelHere(key, reason = 'ألغاه مدير الإنتاج') {

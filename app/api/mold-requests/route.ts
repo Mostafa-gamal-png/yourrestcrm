@@ -1,10 +1,12 @@
 import {z} from 'zod';
+import type {Row} from '@/lib/crm';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
-import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,moldAddress,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG} from '@/portable/mold-rules.mjs';
+import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,moldAddress,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,moldCustomerName,moldErpCode,moldErpCodeText,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldHeldFor,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldRequestData,type MoldRequestsAnswer} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
+import {customerCodeKey,uniqueCustomerCodes} from '@/lib/customer-identity';
 import {isServiceRole} from '@/lib/customer-service';
 import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldRequestRefKnown,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
@@ -15,6 +17,45 @@ const reader=async()=>{const c=await context({load:'customers'});if(!canUseMoldR
 const askable=(c:Awaited<ReturnType<typeof reader>>,customerId:string)=>isServiceRole(c.me.role)
  ?c.regionalRecords.find(row=>row.id===customerId&&row.kind==='customer'&&row.branch===c.me.branch)
  :c.visible.find(row=>row.id===customerId&&row.kind==='customer');
+
+/** The customer a create or an edit names (the owner, 2026-11-09: the customer typed, name and ERP code, with the CRM's customers as
+ *  suggestions): customerId, one of the CRM's customers the reader may ask for (askable), as before, with the ERP code typed (customer.
+ *  erpCode, up to 50 characters) or else the customer's own; or customer {name, erpCode}, a customer typed. A typed ERP code that names
+ *  exactly one customer of the CRM (uniqueCustomerCodes over every customer, its former codes and the CRM's code mappings, as the CRM
+ *  matches ERP codes) that the reader may ask for and that has a Yourrest number links the request to it, the server deciding whatever
+ *  the page thought; any other is a customer not in the CRM (crmNumber null), its name (1..200) and ERP code (1..50, moldErpCode)
+ *  required, each refused by its field (customer.name, customer.erpCode). keep: the edit's own customer, kept even when the reader may no
+ *  longer ask for it. Answers the customer row (null when not in the CRM) and the request's customer data without its address. */
+type AskedCustomer={row:Row|null;customer:{crmNumber:number|null;name:string;city:string;erpCode?:string};address:string;fields:Record<string,string>};
+const NO_CUSTOMER='اكتب اسم العميل وكود ERP، أو اختاره من الترشيحات';
+function askedCustomer(c:Awaited<ReturnType<typeof reader>>,input:{customerId?:string;customer?:unknown},keep?:{customerId:string}):AskedCustomer{
+ const typed=input.customer&&typeof input.customer==='object'&&!Array.isArray(input.customer)?input.customer as {name?:unknown;erpCode?:unknown}:null;
+ const code=typed&&typed.erpCode!==undefined&&typed.erpCode!==null&&typed.erpCode!==''?moldErpCode(typed.erpCode):null;
+ const linkedTo=(row:Row,erpCode:string,fields:Record<string,string>={}):AskedCustomer=>{
+  const crmNumber=yourrestNumber(row.data.internalCode);
+  if(!crmNumber)throw new CRMError('كود يورست للعميل غير متاح. حدّث الصفحة.',409);
+  const name=String(row.data.name||'').trim();
+  if(!name||[...name].length>MOLD_LIMITS.customerName)throw new CRMError('اسم العميل أطول من '+MOLD_LIMITS.customerName+' حرفًا؛ اختصره من صفحة العميل أولًا',409);
+  // The ERP code a linked request shows (never sent): the one typed, else the customer's own when it fits.
+  const own=moldErpCodeText(row.data.code),shown=erpCode||([...own].length<=MOLD_LIMITS.erpCode?own:'');
+  return {row,customer:{crmNumber,name,city:moldRequestCity(row.data.city),...(shown?{erpCode:shown}:{})},address:String(row.data.address||''),fields};
+ };
+ if(input.customerId!==undefined){
+  const row=askable(c,input.customerId)||(keep&&keep.customerId===input.customerId?c.all.find(record=>record.id===input.customerId&&record.kind==='customer'):undefined);
+  if(!row)throw new CRMError('اختر عميلًا من العملاء المتاحين لك',404);
+  return linkedTo(row,code&&!code.error?code.erpCode:'',code?.error==='long'?{'customer.erpCode':MOLD_ERP_CODE_LONG}:{});
+ }
+ if(!typed)throw Object.assign(new CRMError(NO_CUSTOMER,400),{fields:{customer:NO_CUSTOMER}});
+ const name=moldCustomerName(typed.name),erp=code||moldErpCode('');
+ const fields:Record<string,string>={...(name.error?{'customer.name':name.error==='required'?MOLD_CUSTOMER_NAME_REQUIRED:MOLD_CUSTOMER_NAME_LONG}:{}),...(erp.error?{'customer.erpCode':erp.error==='required'?MOLD_ERP_CODE_REQUIRED:MOLD_ERP_CODE_LONG}:{})};
+ // The ERP code names one customer of the CRM the reader may ask for: linked to it (its registered name, its Yourrest number).
+ if(!erp.error){
+  const found=uniqueCustomerCodes(c.all,c.customerIdentityState.mappings).get(customerCodeKey(erp.erpCode))||[];
+  const row=found.length===1?askable(c,found[0].id):undefined;
+  if(row&&yourrestNumber(row.data.internalCode))return linkedTo(row,erp.erpCode);
+ }
+ return {row:null,customer:{crmNumber:null,name:name.name,city:'',erpCode:erp.erpCode},address:'',fields};
+}
 
 /** The requests the reader may see, with their status pulled once (one call for all of them, or for the one asked for by ?id=), each
  * with its design files (the CRM's and production's). quotePo: production's update of 2026-11-03 is known to be live (learned from any
@@ -41,6 +82,8 @@ const specsInput=z.record(z.string(),z.unknown()),paymentInput=z.unknown().optio
 const signatureInput=z.unknown().optional();
 /** The request's delivery address (2026-11-09), checked by askedAddress (its refusal by its field); a page loaded before sends none. */
 const addressInput=z.unknown().optional();
+/** The customer as typed (2026-11-09): {name, erpCode}, checked by askedCustomer (each refusal by its field). */
+const customerInput=z.unknown().optional();
 const pendingTarget={requestId,crmRequestId:z.string().regex(MOLD_ID,'حدد الطلب').optional(),requestRef:z.string().regex(MOLD_REQUEST_REF,'مرجع الطلب غير صحيح؛ حدّث الصفحة.').optional(),orderNo:z.number().int().positive().nullable().optional(),
  // This release's page marks its approval (as its GET asks with refs=1): it names an item by number only when production gave it no
  // requestRef, so its number is checked against production's list as it is now, never refused for being a number.
@@ -50,8 +93,10 @@ const schema=z.discriminatedUnion('action',[
  // update of 2026-11-03) are no longer asked for (2026-11-05): read only to refuse one a page loaded before sends (checkedRequest).
  // signature (2026-11-04): the customer's, required of the sales roles for a new request and for an edit that changes what was signed.
  // address (2026-11-09): the request's delivery address, the customer's registered one when a page loaded before sends none.
- z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200),specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput,address:addressInput}).strict(),
- z.object({action:z.literal('update'),requestId,id,version,specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput,address:addressInput}).strict(),
+ // customerId or customer (2026-11-09): one of the CRM's customers by its id (a page loaded before sends only this), or the customer as
+ // typed {name, erpCode} (askedCustomer); an update without either keeps the request's customer.
+ z.object({action:z.literal('create'),requestId,customerId:z.string().min(1).max(200).optional(),customer:customerInput,specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput,address:addressInput}).strict(),
+ z.object({action:z.literal('update'),requestId,id,version,customerId:z.string().min(1).max(200).optional(),customer:customerInput,specs:specsInput,payment:paymentInput,quoteNo:numberInput,poNo:numberInput,signature:signatureInput,address:addressInput}).strict(),
  z.object({action:z.literal('cancel'),requestId,id,version,reason:z.string().trim().max(MOLD_LIMITS.cancelReason,'سبب الإلغاء حتى 500 حرف').default('')}).strict(),
  z.object({action:z.literal('resend'),requestId,id}).strict(),
  z.object({action:z.literal('approve'),requestId,id}).strict(),
@@ -275,28 +320,29 @@ export async function POST(req:Request){let objectKey='';try{
   SELECT ?,?,?,?,'image',?,?,?,?,?,'send',?,1,?,'design' WHERE EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)`).bind(fileId,requestRow,c.me.id,file.name,file.contentType,file.bytes.length,file.sha256,objectKey,now,now,mutation,requestRow,mutation);
  if(input.action==='create'){
   if(!canCreateMoldRequest(c.me))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
-  const customer=askable(c,input.customerId);
-  if(!customer)throw new CRMError('اختر عميلًا من العملاء المتاحين لك',404);
-  const crmNumber=yourrestNumber(customer.data.internalCode);
-  if(!crmNumber)throw new CRMError('كود يورست للعميل غير متاح. حدّث الصفحة.',409);
-  const name=String(customer.data.name||'').trim();
-  if(!name||[...name].length>MOLD_LIMITS.customerName)throw new CRMError('اسم العميل أطول من '+MOLD_LIMITS.customerName+' حرفًا؛ اختصره من صفحة العميل أولًا',409);
+  // The customer (2026-11-09): one of the CRM's (chosen, or named by its ERP code alone), or one not in the CRM (its name and ERP code).
+  const asked=askedCustomer(c,input),customer=asked.row,name=asked.customer.name;
   // The sales roles' new request carries the customer's signature (2026-11-04); customer service's and the administrator's may, checked alike.
   const signed=await readSignature(input.signature),required:Record<string,string>=moldSignatureRequired(c.me.role)&&!signed.signature&&!Object.keys(signed.fields).length?{signature:input.signature===undefined?SIGNATURE_REFRESH:MOLD_SIGNATURE_REQUIRED}:{};
   // The delivery address (2026-11-09): the request's own, the customer's record never written (none from a page loaded before: the
   // customer's registered address, as before).
-  const place=askedAddress(input.address,String(customer.data.address||''));
-  const asked=checkedRequest(input.specs,input.payment,input,{},'',{...place.fields,...signed.fields,...required});
+  // A customer not in the CRM has no registered address: one is typed (none from a page: required).
+  const place=customer?askedAddress(input.address,asked.address):askedAddress(input.address===undefined?'':input.address,'');
+  const checked=checkedRequest(input.specs,input.payment,input,{},'',{...asked.fields,...place.fields,...signed.fields,...required});
   rowId='mr-'+input.requestId;
   if(signed.signature)signing={file:signed.signature,id:'mds-'+input.requestId};
   // No number (2026-11-05). Once production's update is known, the request waits in the CRM for its quotation's or PO's file, whoever
   // asked (the owner: every role); and always for its design file (2026-11-08, every role: «إجباري على الكل»). The markers are the
   // request's data, never part of the requests body.
-  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:place.address,city:moldRequestCity(customer.data.city)},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:asked.specs,payment:asked.payment,...(quotePo?{fileRequired:true as const}:{}),designRequired:true};
+  // The customer's keys in the order a request always stored them (crmNumber, name, address, city), its ERP code after.
+  const {crmNumber,city,erpCode}=asked.customer;
+  const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:place.address,city,...(erpCode?{erpCode}:{})},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:checked.specs,payment:checked.payment,...(quotePo?{fileRequired:true as const}:{}),designRequired:true};
   if(signing)data.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
-  detail={label:labels.create,customerName:name,description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.fileRequired?{fileRequired:true}:{}),designRequired:true,...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{})};
-  statement=c.db.prepare(`INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,'send',?,?,?,?,1,? WHERE ${permission.sql} AND EXISTS(SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)`)
-   .bind(rowId,c.me.id,customer.id,JSON.stringify(data),now,c.me.id,now,now,mutation,...permission.args,customer.id,customer.version);
+  detail={label:labels.create,customerName:name,...(erpCode?{erpCode}:{}),...(customer?{}:{notInCrm:true}),description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.fileRequired?{fileRequired:true}:{}),designRequired:true,...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{})};
+  // A customer not in the CRM: customer_id '' (the column is never NULL), no customer record to hold.
+  const held=customer?{sql:` AND EXISTS(SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)`,args:[customer.id,customer.version]}:{sql:'',args:[]};
+  statement=c.db.prepare(`INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,'send',?,?,?,?,1,? WHERE ${permission.sql}${held.sql}`)
+   .bind(rowId,c.me.id,customer?.id||'',JSON.stringify(data),now,c.me.id,now,now,mutation,...permission.args,...held.args);
  }else{
   const row=await loadMoldRequest(c.db,input.id),approval=input.action==='approve'||input.action==='withdraw';
   // A sales manager approves, or withdraws, exactly the requests «طلبات بانتظار اعتمادي» lists for them (moldApprovesRequest: customer
@@ -332,15 +378,26 @@ export async function POST(req:Request){let objectKey='';try{
   if(input.action==='update'){
    // The request's own design link (an older request's) stays exactly as stored.
    const signed=await readSignature(input.signature);
+   // The customer (2026-11-09): none sent (a page loaded before) keeps the request's; else as a create names it, the request's own
+   // customer kept even when the editor may no longer ask for it. Another customer of the CRM, a link made or undone, or (not in the CRM)
+   // another name or ERP code is a change of what the customer signed; a linked customer's ERP code alone is shown only, never a change.
+   const asked=input.customerId===undefined&&input.customer===undefined?null:askedCustomer(c,input,{customerId:row.customerId});
+   const before=row.data.customer,customerId=asked?asked.row?.id||'':row.customerId;
+   const swapped=!!asked&&(customerId!==row.customerId||!asked.row&&(asked.customer.name!==before.name||(asked.customer.erpCode||'')!==(before.erpCode||'')));
    // The delivery address (2026-11-09): the request's own, changed for it alone; none sent (a page loaded before) keeps the stored one.
-   const place=askedAddress(input.address,row.data.customer.address||'');
-   const {specs,payment}=checkedRequest(input.specs,input.payment,input,row.data,row.data.specs.designUrl||'',{...place.fields,...signed.fields});
-   const address=place.address,moved=address!==(row.data.customer.address||'');
+   const place=askedAddress(input.address===undefined&&swapped&&!asked!.row?'':input.address,before.address||'');
+   const {specs,payment}=checkedRequest(input.specs,input.payment,input,row.data,row.data.specs.designUrl||'',{...asked?.fields,...place.fields,...signed.fields});
+   const address=place.address,moved=address!==(before.address||'');
+   // The customer as stored: unchanged, its keys in their order (a linked customer's ERP code as typed, when one is); or the new one.
+   const shownCode=asked&&!swapped&&asked.row?asked.customer.erpCode:undefined;
+   const customer=swapped?{crmNumber:asked!.customer.crmNumber,name:asked!.customer.name,address,city:asked!.customer.city,...(asked!.customer.erpCode?{erpCode:asked!.customer.erpCode}:{})}
+    :{...before,...(moved?{address}:{}),...(shownCode!==undefined&&shownCode!==(before.erpCode||'')?shownCode?{erpCode:shownCode}:{}:{})};
    // The request's numbers (one asked for before 2026-11-05) and whether it waits for its quotation's, PO's or design file stay as stored.
-   const edited:MoldRequestData={...row.data,customer:moved?{...row.data.customer,address}:row.data.customer,specs,payment};
+   const edited:MoldRequestData={...row.data,customer,specs,payment};
    // An edit that changes nothing keeps the request as it is, its signature too (a signature sent with it is not taken). The address is
-   // part of what the customer signed (2026-11-09): a changed one is a change like the specifications'.
-   if(specsKey(specs,specs.designUrl||'')===specsKey(row.data.specs,row.data.specs.designUrl||'')&&payment===row.data.payment&&!moved)return answer(row.id,null);
+   // part of what the customer signed (2026-11-09): a changed one is a change like the specifications', and so is the customer.
+   // A linked customer's ERP code typed anew alone is not a change (shown only, never sent): kept with the next change, if any.
+   if(specsKey(specs,specs.designUrl||'')===specsKey(row.data.specs,row.data.specs.designUrl||'')&&payment===row.data.payment&&!moved&&!swapped)return answer(row.id,null);
    // What the customer signed changed (2026-11-04): a sales role signs again. The new signature replaces the old in the data; the old file
    // is removed in the CRM alone when production never held it (else it stays as a design file). Without a new one the data names none.
    // A request the customer signed is never sent changed without a new signature, whatever the editor's role is now.
@@ -354,10 +411,10 @@ export async function POST(req:Request){let objectKey='';try{
     edited.signature={signer:signing.file.signer,signedAt:now,fileId:signing.id};
    }else delete edited.signature;
    if(oldFile&&removable)replaced={key:oldFile.objectKey,at:0};
-   detail={label:labels.update,customerName:row.data.customer.name,description:specs.description,quantity:specs.quantity,payment,...(moved?{address}:{}),...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{}),...(old?{replacedSignature:old.fileId}:{})};
+   detail={label:labels.update,customerName:customer.name,...(swapped?{customer:{name:customer.name,...(customer.erpCode?{erpCode:customer.erpCode}:{}),...(customerId?{}:{notInCrm:true})},previousCustomer:before.name}:{}),description:specs.description,quantity:specs.quantity,payment,...(moved?{address}:{}),...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length}}:{}),...(old?{replacedSignature:old.fileId}:{})};
    // Production never stored any of it, so the edited request starts as never attempted; the guard holds that in SQL, so a send claimed
    // since the check (it may arrive) keeps the request as it is.
-   statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_attempt_at=NULL,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND ${MOLD_NEVER_SENT_SQL}`).bind(JSON.stringify(edited),now,now,mutation,...guardArgs);
+   statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,customer_id=?,outbox='send',attempts=0,first_failed_at=NULL,next_attempt_at=?,last_attempt_at=NULL,last_error=NULL,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND ${MOLD_NEVER_SENT_SQL}`).bind(JSON.stringify(edited),customerId,now,now,mutation,...guardArgs);
    // The old signature, never held by production (never tried, or refused for good): removed in the CRM alone, as the delete route does.
    if(oldFile&&removable)signatureRows.push(c.db.prepare(`UPDATE crm_mold_design_files SET deleted_at=?,outbox=NULL,next_attempt_at=NULL,object_key=NULL,version=version+1 WHERE id=? AND deleted_at IS NULL AND sent_at IS NULL AND (last_attempt_at IS NULL OR ${MOLD_DESIGN_REFUSED_SQL}) AND EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)`).bind(now,oldFile.id,row.id,mutation));
   }else if(input.action==='cancel'){
