@@ -1,14 +1,15 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
-import {BadgeCheck,Factory,Hourglass,Loader2,Lock,Paperclip,PenLine,RefreshCw,Search,Send,TriangleAlert,Undo2,Wrench} from 'lucide-react';
+import {BadgeCheck,Hourglass,Loader2,Lock,Paperclip,PenLine,RefreshCw,Search,Send,TriangleAlert,Undo2,Wrench} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,yourrestNumber,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldAddress,moldCancelReasonUsed,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
+import MoldCustomerFields,{type MoldCustomerText} from './mold-customer-fields';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import {MoldSigningStep} from './mold-signature';
 import './mold-requests.css';
@@ -434,7 +435,7 @@ function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,paymen
  *  before signing. */
 function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
- const [customerId,setCustomerId]=useState(editing?.customerId||''),[address,setAddress]=useState(editing?.customerAddress||''),[search,setSearch]=useState(''),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment):blank),[shown,setShown]=useState<Record<string,string>>({});
+ const [customerId,setCustomerId]=useState(editing?.customerId||''),[address,setAddress]=useState(editing?.customerAddress||''),[customerText,setCustomerText]=useState<MoldCustomerText>({name:'',code:''}),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment):blank),[shown,setShown]=useState<Record<string,string>>({});
  // A refusal that carries the request as it now stands (it was sent meanwhile): counted, so the signing step gives way to the form, which
  // says why (2026-11-04).
  const refusals=useRef(0),refused=useCallback((view:MoldRequestView)=>{refusals.current++;onRefused?.(view);},[onRefused]);
@@ -453,7 +454,8 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  // without waiting for the design files.
  const files=asks?[...quotes,...pos,...designs]:designs,ready=files.filter(choice=>!choice.refusal);
  const chosen=customers.find(row=>row.id===customerId);
- const matches=useMemo(()=>{const needle=search.trim().toLowerCase();return customers.filter(row=>!needle||[row.data.name,row.data.code,row.data.internalCode,row.data.city].some(text=>String(text||'').toLowerCase().includes(needle))).slice(0,30);},[customers,search]);
+ // The customer's suggestions are showing (2026-11-09): Esc closes them, not the dialog.
+ const suggesting=useRef(false),onSuggesting=useCallback((open:boolean)=>{suggesting.current=open;},[]);
  const clear=(key:string)=>setShown(previous=>{if(!(key in previous))return previous;const next={...previous};delete next[key];return next;});
  const set=(key:string,value:string)=>{setForm(previous=>({...previous,[key]:value}));clear(key);};
  const errors={...shown,...action.fields};
@@ -468,7 +470,8 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    ...(designRequired&&!hasDesign&&!designs.some(choice=>!choice.refusal)?{designFile:say(...MOLD_DESIGN_FILE_REQUIRED_TEXT)}:{}),
    // The delivery address (2026-11-09), once there is a customer to deliver to: required, up to 300 characters as the server counts.
    ...((editing||customerId)&&place.error?{address:say(...MOLD_ADDRESS_TEXT[place.error])}:{})};
-  if(!editing&&!customerId){setShown({...errors,customer:say('اختر العميل','Choose the customer')});return;}
+  // A customer is chosen from the suggestions (2026-11-09): text typed without choosing one is said so.
+  if(!editing&&!customerId){setShown({...errors,customer:customerText.name.trim()||customerText.code.trim()?say('اختار العميل من الترشيحات','Choose the customer from the suggestions'):say('اختر العميل','Choose the customer')});return;}
   if(Object.keys(errors).length){setShown(errors);return;}
   setShown({});
   // On a request production holds, attaching a design file undoes the approvals: said first, then confirmed with the same button (not
@@ -508,15 +511,15 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    {...(reserved?{overflow:'signature_room',note:say(...MOLD_SIGNATURE_TEXT.room)}:{})}{...(required?{title:say(...MOLD_DESIGN_FILE_PICKER_TITLE),error:errors.designFile||''}:{})}/>;
  };
  return <Dialog open onOpenChange={open=>{if(!open&&!action.busy)onClose();}}>
-  <DialogContent className="mold-dialog" dir={direction()}>
+  <DialogContent className="mold-dialog" dir={direction()} onEscapeKeyDown={event=>{if(suggesting.current)event.preventDefault();}}>
    <DialogTitle>{editing?say('تعديل طلب تصنيع القالب','Edit mold request'):say('طلب تصنيع قالب','Request a mold')}</DialogTitle>
    <DialogDescription>{editing?say('الطلب لم يصل للإنتاج بعد، فتعديله هنا ممكن. بعد وصوله يعدّل بياناته مدير الإنتاج فقط.','The request has not reached production yet, so it can be changed here. Once it arrives, the production manager alone edits its data.'):say('يُحفظ الطلب في الـCRM ثم يُرسل لتطبيق الإنتاج تلقائيًا.','The request is saved in the CRM, then sent to production automatically.')}</DialogDescription>
    {signing&&<MoldSigningStep summary={signing.summary} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)} onConfirm={signature=>send({...signing.body,signature},signing.summary,true)}/>}
    <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>
-    {editing?<p className="mold-customer-chosen"><Factory size={16} aria-hidden="true"/>{editing.customerName}</p>:chosen?<div className="mold-customer-chosen"><span><Factory size={16} aria-hidden="true"/>{String(chosen.data.name||'')}<small>{String(chosen.data.internalCode||'')}{chosen.data.city?' · '+String(chosen.data.city):''}</small></span><button type="button" className="btn small subtle" onClick={()=>setCustomerId('')}>{say('تغيير','Change')}</button></div>
-     :<div className="mold-customer-search" aria-invalid={!!errors.customer}><label>{say('العميل','Customer')}<span className="search"><Search size={16} aria-hidden="true"/><input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder={say('ابحث باسم العميل أو كوده أو مدينته','Search by name, code or city')}/></span></label>
-      <div className="mold-customer-matches">{matches.map(row=><button type="button" key={row.id} disabled={!yourrestNumber(row.data.internalCode)} onClick={()=>{setCustomerId(row.id);setAddress(String(row.data.address||''));clear('customer');clear('address');}}><strong>{String(row.data.name||'')}</strong><small>{String(row.data.internalCode||'')}{row.data.city?' · '+String(row.data.city):''}</small></button>)}{!matches.length&&<p className="empty">{say('لا عملاء مطابقون','No matching customers')}</p>}</div>
-      {errors.customer&&<small className="field-error">{errors.customer}</small>}</div>}
+    {/* The customer as two typed fields with suggestions (the owner, 2026-11-09: «خانتين بترشيحات»); fixed on an edit, as before. */}
+    <MoldCustomerFields customers={customers} customerId={customerId} text={customerText} onText={setCustomerText} onOpenChange={onSuggesting} error={errors.customer} say={say}
+     fixed={editing?{name:editing.customerName,code:'YR-C-'+String(editing.crmNumber).padStart(6,'0')}:undefined}
+     onChoose={row=>{if(!row){setCustomerId('');return;}setCustomerId(row.id);setAddress(String(row.data.address||''));clear('customer');clear('address');}}/>
     {(editing||chosen)&&<div className="mold-address" aria-invalid={!!errors.address}>
      <VoiceField label={say('العنوان','Address')} value={address} onChange={value=>{setAddress(value);clear('address');}} multiline rows={2} contextKey={'mold-address:'+(editing?.id||customerId)} inputProps={{dir:'auto',autoComplete:'street-address','aria-invalid':!!errors.address||undefined}}/>
      {errors.address&&<small className="field-error">{t(errors.address)}</small>}</div>}

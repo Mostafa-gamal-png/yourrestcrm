@@ -42,7 +42,7 @@
   "areas": {
     "mold-requests": {
       "about": "«طلبات تصنيع القوالب»: the page, the signature, the route and the link to the products application (stand-in: scripts/lib/products-mock.mjs). The design-file tests send requests through the same rules; pwa-browser opens the page standalone.",
-      "sources": ["app/mold-requests.tsx", "app/mold-requests.css", "app/mold-signature.tsx", "app/api/mold-requests/route.ts", "lib/mold-requests.ts", "lib/mold-requests-server.ts", "portable/mold-rules.mjs", "portable/mold-client.mjs", "scripts/lib/products-mock.mjs", "scripts/lib/signature-pad.mjs", "scripts/lib/signature-png.mjs", "scripts/lib/mold-before.mjs", "docs/MOLD-REQUESTS-*", "tests/mold-requests*.mjs"],
+      "sources": ["app/mold-requests.tsx", "app/mold-requests.css", "app/mold-customer-fields.tsx", "app/mold-signature.tsx", "app/api/mold-requests/route.ts", "lib/mold-requests.ts", "lib/mold-requests-server.ts", "portable/mold-rules.mjs", "portable/mold-client.mjs", "scripts/lib/products-mock.mjs", "scripts/lib/signature-pad.mjs", "scripts/lib/signature-png.mjs", "scripts/lib/mold-before.mjs", "docs/MOLD-REQUESTS-*", "tests/mold-requests*.mjs"],
       "tests": ["tests/mold-requests-http.mjs", "tests/mold-requests-browser.mjs", "tests/mold-design-files-http.mjs", "tests/mold-design-files-browser.mjs", "tests/mold-customers-http.mjs", "tests/server-authorization.mjs", "tests/pwa-browser.mjs"]
     },
     "design-files": {
