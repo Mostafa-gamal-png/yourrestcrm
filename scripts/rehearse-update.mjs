@@ -316,7 +316,7 @@ try {
   note('new release started; --verify prints DEPLOYMENT VERIFIED', {verifyOutput: lines.slice()});
   if (helper.NEW_MIGRATIONS.length) {
     const first = helper.NEW_MIGRATIONS[0];
-    assert(lines.includes('MIGRATION APPLIED: ' + first), '--verify names the applied migration');
+    for (const name of helper.NEW_MIGRATIONS) assert(lines.includes('MIGRATION APPLIED: ' + name), '--verify names every applied migration');
     for (const [route, expected] of helper.EXTRA_ROUTES) assert(lines.some(line => line.includes(route + ': ' + expected)), '--verify probed ' + route);
     const afterStart = tables(a), unchanged = Object.keys(dataBeforeSwitch).filter(name => name !== 'yr_schema_migrations');
     assert.deepEqual(Object.fromEntries(unchanged.map(name => [name, afterStart[name]])), Object.fromEntries(unchanged.map(name => [name, dataBeforeSwitch[name]])), 'every pre-existing table is byte-identical after the first start');
@@ -326,7 +326,7 @@ try {
       const ledger = db.prepare('SELECT name FROM yr_schema_migrations ORDER BY name').all().map(row => row.name);
       ledgerCount = ledger.length;
       assert.equal(ledger.length, helper.SCHEMA_AFTER, 'the ledger holds every migration');
-      assert.equal(ledger.at(-1), first, 'the new migration is the last one');
+      assert.deepEqual(ledger.slice(-helper.NEW_MIGRATIONS.length), [...helper.NEW_MIGRATIONS].sort(), 'the new migrations are the last ones');
       assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0, 'foreign keys are intact');
     } finally { db.close(); }
     const backups = fs.readdirSync(path.join(a.data, 'schema-backups')).filter(name => name.startsWith('before-' + first.replace(/\.sql$/, '') + '-'));
