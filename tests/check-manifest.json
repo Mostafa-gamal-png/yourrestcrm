@@ -122,6 +122,11 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/erp-customers-clear-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/erp-customers-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"

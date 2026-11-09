@@ -450,4 +450,38 @@ assert.throws(()=>S.readWorkbookSheets(strToU8('not a zip file at all, not even 
 assert.throws(()=>S.parseErpWorkbook(bytes),error=>error instanceof S.ErpWorkbookError,'the sales parser still refuses a customer file');checks++;
 eq(S.readWorkbookSheets(book([{name:'Customer',rows:Array.from({length:20050},()=>[number(1),inline('x')])}])).reduce((n,s)=>n+s.rows.length,0),20050,'20 000 rows and a header fit the default limit');
 
-console.log(JSON.stringify({ok:true,checks,scope:'ERP customer import: header detection (also under title rows), phone and name keys (placeholders, numbers on separate lines, bounded cells), auto/choose/same/out-of-region/held-outside/invalid, by code, similar names (rule, common words, max 5, regions, 302-like), new rows, the add choice, no-name rows, new-customer regions, too many matches, a code that is another row, preselected holder, conflicts, choices, mappings, manager regions and numbers held outside them, plan and summary, generic sheet reader'}));
+
+// ---- 2026-11-09: the customers the file does not name (`clears`, «امسح كود ERP للعملاء اللي مش في الشيت»)
+{
+ const cl=(id,data)=>customer('clear-'+id,data);
+ const byPhone=cl('phone',{name:'مصنع الهاتف',phone:'0551110001',code:'P-OLD'});             // named by phone → gets the sheet's code, not cleared
+ const byName=cl('name',{name:'مصنع الاسم',code:'71'});                                          // named by name, same code
+ const absent=cl('absent',{name:'مصنع مش في الشيت',code:'K-1'});                                 // nobody names it → cleared
+ const empty=cl('empty',{name:'مصنع من غير كود'});                                               // no code → never listed
+ const blank=cl('blank',{name:'مصنع كود فاضي',code:'   '});                                     // a blank code reads as none
+ const alias=cl('alias',{name:'مصنع قديم جدا',code:'F-1',_erpCodeAliases:['F-1','72']});         // holds row 72's number as a kept old code
+ const current=cl('current',{name:'مصنع كوده في الملف',code:'73'});                              // its code is a row the file gives to another customer
+ const mapped=cl('mapped',{name:'مصنع مربوط',code:'H-1'});                                       // the stored mapping of row 74's number
+ const similar=cl('similar',{name:'مصنع الياسمين',code:'S-1'});                                  // only a similar name of row 75
+ const east=cl('east',{name:'مصنع شرقي بعيد',code:'J-1',region:'الشرقية'});                      // nobody names it; outside the manager's regions
+ const dup=cl('dup',{name:'مصنع مكرر الرقم',phone:'0551110002',code:'D-1'});                     // the phone of a row the file itself marks invalid
+ const crowd=Array.from({length:21},(_,i)=>cl('crowd-'+i,{name:'مصنع زحمة',code:'Z-'+i}));       // the name of a row too wide to offer
+ const other=cl('other',{name:'مصنع تاني',phone:'0551110003'});
+ const all=[byPhone,byName,absent,empty,blank,alias,current,mapped,similar,east,dup,...crowd,other];
+ const rows=[erp(3,'70','مصنع الهاتف الجديد',['551110001']),erp(4,'71','مصنع الاسم'),erp(5,'72','صف برقم قديم'),erp(6,'73','مصنع تاني',['551110003']),erp(7,'74','سطر ربط بالرقم'),
+  erp(8,'75','مصنع الياسمين للبلوك'),{...erp(9,'76','',['551110002']),issue:'duplicate-code'},{...erp(10,'76',''),issue:'duplicate-code'},erp(11,'77','مصنع زحمة')];
+ const mappings=[{codeKey:'74',customerId:'clear-mapped',version:1}];
+ let found=match(rows,all,{mappings});
+ eq(found.clears,[{customerId:'clear-absent',version:3,name:'مصنع مش في الشيت',internalCode:absent.data.internalCode,code:'K-1',region:'الوسطى'},{customerId:'clear-east',version:3,name:'مصنع شرقي بعيد',internalCode:east.data.internalCode,code:'J-1',region:'الشرقية'}],
+  'only the customers no row names in any way and that have a code: not by phone, name, number, kept code, mapping, similar name, an invalid row\'s phone or a too-wide row\'s name');
+ eq(found.rows.find(row=>row.row===3).customerId,'clear-phone','a customer named by phone takes the sheet\'s code as before');
+ eq(found.plan.map(step=>step.customerId).includes('clear-absent'),false,'a cleared customer is not part of the plan');
+ eq(match(rows,all,{mappings,choices:new Map([[6,''],[8,E.ERP_ADD_CUSTOMER]])}).clears.map(c=>c.customerId),['clear-absent','clear-east'],'the choices never change the list (a row left, a similar name added as new)');
+ eq(match(rows,all,{mappings,choices:new Map([[8,'clear-similar']])}).clears.map(c=>c.customerId),['clear-absent','clear-east'],'nor a similar name picked');
+ eq(match(rows,all,{me:manager,mappings}).clears.map(c=>c.customerId),['clear-absent'],'a sales manager: only the customers of their regions');
+ eq(match(rows,all).clears.map(c=>c.customerId),['clear-absent','clear-mapped','clear-east'],'without the stored mapping (sorted by Yourrest code), the mapped customer is named by nothing');
+ eq(match([erp(3,'K-1','اسم تاني')],[absent]).clears,[],'a customer whose current code is a row of the file (found by its code) is not cleared');
+ eq(match([erp(3,'99','اسم تاني')],[empty,blank]).clears,[],'customers with no code are never listed');
+}
+
+console.log(JSON.stringify({ok:true,checks,scope:'ERP customer import: the customers the file does not name (clears), header detection (also under title rows), phone and name keys (placeholders, numbers on separate lines, bounded cells), auto/choose/same/out-of-region/held-outside/invalid, by code, similar names (rule, common words, max 5, regions, 302-like), new rows, the add choice, no-name rows, new-customer regions, too many matches, a code that is another row, preselected holder, conflicts, choices, mappings, manager regions and numbers held outside them, plan and summary, generic sheet reader'}));

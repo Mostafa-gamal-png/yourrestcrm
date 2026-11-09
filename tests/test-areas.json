@@ -58,7 +58,7 @@
     "erp": {
       "about": "«استيراد من ERP» of customers and the ERP sales workbook import (POST /api/erp-customers, /api/sales/import).",
       "sources": ["app/erp-customers-import.tsx", "app/erp-customers-import.css", "app/erp-sales-import.tsx", "app/erp-sales-import.css", "app/api/erp-customers/**", "app/api/sales/import/**", "lib/erp-customers.ts", "lib/erp-customers-shared.ts", "lib/erp-customers-server.ts", "lib/erp-sales.ts", "lib/erp-sales-server.ts", "lib/invoice-reference.ts", "docs/ERP-*", "tests/erp-*.mjs"],
-      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs"]
+      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-clear-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs"]
     },
     "customer-service": {
       "about": "Customer service: requests reaching sales (service queue), assistance (support), complaints, the tracking board, the monthly reports and the evaluation. The panels import one another (service-tracking, service-queue, support-panel, complaints-panel), so the domain runs together.",

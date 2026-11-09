@@ -291,4 +291,50 @@ for (const language of ['ar', 'en']) {
   eq([f.requests.length, f.state.refreshFailed, !!button(f, t('تحديث العرض بس', 'Refresh view only'))], [2, false, false], 'it reloads without sending the update again, and the button goes once the list is fresh');
 }
 
-console.log(JSON.stringify({ok: true, checks, coverage: 'ERP customer import dialog: file checks, immediate preview, summary line and counts, the needs-choice / new-customers / rest sections, «ده هو» / «عميل جديد» / «سيبه» (nothing pressed on a similar row), a new row left and put back, the region select and a row\'s own region, serialized re-preview with the latest choices, the live apply label, apply payload with regions, unconfirmed apply locked and retried byte for byte, stale 409 and a fresh preview, conflicts (button and handler), nothing to apply, the 2000 limit, held-outside / too many matches / too many phones / code in another row / no name / by code, server messages in English, what changed and what was added, a failed reload after the apply; Arabic/English with no Arabic left in English', realBrowser: false}));
+
+// ---- 2026-11-09: the customers the file does not name (`clears`): «عملاء مش موجودين في الشيت: هيتمسح كود ERP بتاعهم (N)» with
+//  «امسح كود ERP للعملاء اللي مش في الشيت» checked by default; the apply carries clearCodes and the preview's clearSnapshot only while it
+//  is checked; the result says how many codes were cleared; unchecked = the apply of before (and nothing to apply when only codes would clear)
+for (const language of ['ar', 'en']) {
+  const t = (ar, en) => say(language, ar, en);
+  const gone = {customerId: 'gone', name: 'مصنع قديم', internalCode: 'YR-C-000009', code: 'K-1', region: 'الوسطى'};
+  const withClears = {...first, clears: [gone], clearSnapshot: 'c'.repeat(64)};
+  const toggle = h => nodes(section(h, 'clear'), node => node.type === 'input' && node.props.type === 'checkbox')[0];
+  let h = await opened(language, withClears);
+  ok(section(h, 'clear'), 'the section of the customers not in the sheet');
+  ok(text(section(h, 'clear')).includes(t('عملاء مش موجودين في الشيت: هيتمسح كود ERP بتاعهم (1)', 'Customers not in the sheet: their ERP code will be cleared (1)')), 'its heading with the count');
+  ok(['مصنع قديم', 'YR-C-000009', 'K-1'].every(value => text(section(h, 'clear')).includes(value)), 'each customer: name, Yourrest code, current ERP code');
+  eq([toggle(h).props.checked, text(nodes(section(h, 'clear'), node => node.type === 'label')[0])], [true, t('امسح كود ERP للعملاء اللي مش في الشيت', 'Clear the ERP code of the customers not in the sheet')], 'the box, checked by default');
+  ok(text(h.tree()).includes(t('1 كود هيتغير، 1 عميل محتاج تختار، 1 عميل جديد هيتضاف، 1 كود ERP هيتمسح.', '1 code(s) will change, 1 customer(s) need a choice, 1 new customer(s) will be added, 1 ERP code(s) will be cleared.')), 'the summary line counts the codes cleared');
+  eq(text(applyButton(h)).trim(), t('حدّث 1 كود وضيف 1 عميل وامسح 1 كود', 'Update 1 code(s), add 1 customer(s) and clear 1 code(s)'), 'the button says it clears');
+  if (language === 'en') ok(!arabic.test(chrome(h.tree())), 'English: no Arabic left in the screen\'s own words (clears): ' + chrome(h.tree()).match(/[^ ]*[؀-ۿ][^ ]*/g)?.slice(0, 5).join(' | '));
+  applyButton(h).props.onClick();
+  await until(() => h.requests.length === 2, 'the apply');
+  eq([h.requests[1].body.clearCodes, h.requests[1].body.clearSnapshot, h.requests[1].body.snapshot], [true, 'c'.repeat(64), 'a'.repeat(64)], 'the apply carries clearCodes and the preview\'s clearSnapshot');
+  h.requests[1].resolve({ok: true, updated: 1, mappings: 1, changed: 1, added: 1, unchanged: 0, skipped: 1, outOfRegion: 0, heldOutside: 0, invalid: 0, cleared: 1, changes: [{row: 3, customerId: 'nour', from: 'OLD', to: '12', mapping: true}], additions: []});
+  await until(() => h.state.result && !h.state.busy, 'the result'); h.render();
+  ok(text(h.tree()).includes(t('اتمسح كود ERP لـ 1 عميل مش في الشيت', 'ERP code cleared for 1 customer(s) not in the sheet')), 'the result message says how many codes were cleared');
+  ok(text(nodes(h.tree(), node => node.type === 'section' && /erp-customers-result/.test(node.props.className || ''))[0]).includes(t('اللي اتمسح كوده', 'Codes cleared') + ''), 'and lists them');
+  if (language === 'en') ok(!arabic.test(chrome(h.tree())), 'English: no Arabic left in the screen\'s own words (result): ' + chrome(h.tree()).match(/[^ ]*[؀-ۿ][^ ]*/g)?.slice(0, 5).join(' | '));
+
+  // unchecked: the apply of before
+  h = await opened(language, withClears);
+  toggle(h).props.onChange({target: {checked: false}}); h.render();
+  eq([toggle(h).props.checked, text(applyButton(h)).trim()], [false, apply(language, 1, 1)], 'unchecked: the button of before');
+  ok(text(section(h, 'clear')).includes(t('مش هيتغير كود ERP بتاعهم.', 'Their ERP codes will not change.')), 'and the section says their codes stay');
+  applyButton(h).props.onClick();
+  await until(() => h.requests.length === 2, 'the apply');
+  eq(['clearCodes' in h.requests[1].body, 'clearSnapshot' in h.requests[1].body], [false, false], 'unchecked: no clearCodes, no clearSnapshot');
+
+  // only codes to clear: the box decides whether there is anything to apply
+  const onlyClears = {...withClears, summary: summary(0, 0), rows: [{...first.rows[0], change: false, from: '12', mapping: false, sharedWith: 0, status: 'same'}]};
+  h = await opened(language, onlyClears);
+  eq([applyButton(h).props.disabled, text(applyButton(h)).trim()], [false, t('حدّث 0 كود وضيف 0 عميل وامسح 1 كود', 'Update 0 code(s), add 0 customer(s) and clear 1 code(s)')], 'only codes to clear: can be applied');
+  toggle(h).props.onChange({target: {checked: false}}); h.render();
+  eq(applyButton(h).props.disabled, true, 'unchecked: nothing to apply');
+  // a preview without the list (a server before this release) shows no section and sends nothing new
+  h = await opened(language, first);
+  eq(section(h, 'clear'), undefined, 'no section without clears');
+}
+
+console.log(JSON.stringify({ok: true, checks, coverage: 'ERP customer import dialog: the customers not in the sheet (clears: section, box, payload, result), file checks, immediate preview, summary line and counts, the needs-choice / new-customers / rest sections, «ده هو» / «عميل جديد» / «سيبه» (nothing pressed on a similar row), a new row left and put back, the region select and a row\'s own region, serialized re-preview with the latest choices, the live apply label, apply payload with regions, unconfirmed apply locked and retried byte for byte, stale 409 and a fresh preview, conflicts (button and handler), nothing to apply, the 2000 limit, held-outside / too many matches / too many phones / code in another row / no name / by code, server messages in English, what changed and what was added, a failed reload after the apply; Arabic/English with no Arabic left in English', realBrowser: false}));

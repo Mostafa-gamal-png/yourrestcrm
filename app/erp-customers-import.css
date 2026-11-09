@@ -56,6 +56,11 @@
 .erp-customers-changes small{color:var(--muted-foreground);font-size:12px}
 .erp-customers-ready{margin:0 0 10px;font-size:13px;line-height:1.7;color:var(--muted-foreground)}
 .erp-import-hint>.spin{vertical-align:-2px}
+/* «امسح كود ERP للعملاء اللي مش في الشيت» (2026-11-09): a checkbox with its label as one 44 px target. */
+.erp-customers-clear-toggle{display:flex;align-items:center;gap:10px;min-height:44px;margin:0 0 6px;font-size:14px;font-weight:600;cursor:pointer}
+.erp-customers-clear-toggle input{width:20px;height:20px;flex:none;margin:0;accent-color:var(--primary)}
+.erp-customers-clear-toggle input:disabled+span{opacity:.6}
+.erp-customers-clears{margin-bottom:8px}
 @media(max-width:640px){
  .erp-customers-filters{gap:6px}
  .erp-customers-candidate{flex-wrap:wrap}
