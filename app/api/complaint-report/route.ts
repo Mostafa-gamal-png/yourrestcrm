@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {context,CRMError,replyError} from '@/lib/crm-server';
+import {context,CRMError,replyError,requirePages} from '@/lib/crm-server';
 import {riyadhDate} from '@/lib/visits';
 import {REPORT_MONTH} from '@/lib/report-timing';
 import {complaintReport,complaintReportAllowed} from '@/lib/complaint-report';
@@ -10,6 +10,8 @@ const monthSchema=z.string().regex(REPORT_MONTH,'اختر شهرًا صحيحً�
 export async function GET(req:Request){try{
  const probe=await context({load:'identity'});
  if(!complaintReportAllowed(probe.me.role))throw new CRMError('تقرير الشكاوى متاح لمدير النظام ومدير المبيعات ومدير خدمة العملاء فقط',403);
+ // «الصلاحيات»: the report is part of «الشكاوى» (for whom the page is theirs).
+ requirePages(probe.me,'complaints');
  // Customer service reads its branch's customers from the full context, as the complaints route does; a sales manager needs the directory only.
  const c=probe.me.role==='manager'?await context({load:'directory'}):await context();
  const now=new Date().toISOString(),month=monthSchema.parse(new URL(req.url).searchParams.get('month')||riyadhDate(now).slice(0,7));

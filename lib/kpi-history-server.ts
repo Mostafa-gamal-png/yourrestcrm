@@ -11,7 +11,7 @@ import {customerCodeKey,uniqueCustomerCodes} from './customer-identity';
 export type PurchaseFact={repId:string;customerKey:string;date:string;netCents:number;hasSale:boolean};
 /** Compact monthly facts, never the full historical invoice/item payload. */
 export async function readKpiPurchaseHistory(c:Context,month:string){
- const allowed=[...salesReadMemberIds(c.members,c.me)],period=kpiPeriod(month);
+ const allowed=[...salesReadMemberIds(c.members,c.me,true)],period=kpiPeriod(month);
  if(!allowed.length)return{facts:[] as PurchaseFact[],unresolved:new Set<string>()};
  const placeholders=allowed.map(()=>'?').join(','),codes=uniqueCustomerCodes(c.all,c.customerIdentityState?.mappings);
  const erpScope=regionScopeSql('region_scope',c.me);

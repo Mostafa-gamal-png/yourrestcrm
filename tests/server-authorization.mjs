@@ -194,6 +194,27 @@ try {
     check((await current()).version, row.version, id + ' refused writes change nothing');
   }
 
+  // «الصلاحيات» (2026-11-09, migration 0020): only the administrator saves a member's permissions; a hidden screen's own requests answer
+  // 404 (never 401/403, which lock the offline session) for that member only; a switched-off action is 403 with its message.
+  const permissions = (as, memberId, version, input = {}) => app.as(sessions[as])('/api/crm', {method: 'POST', body: {action: 'permissions', memberId, version, cells: {}, hidden: [], viewAll: false, ...input}});
+  for (const id of everyone.filter(id => id !== 'owner')) check((await permissions(id, 'rep1', 0, {hidden: ['mold-requests']})).status, 403, 'POST /api/crm permissions as ' + id);
+  check(await app.db.prepare('SELECT COUNT(*) AS n FROM crm_member_permissions').first().then(row => row.n), 0, 'nothing saved by them');
+  const savedRep = await permissions('owner', 'rep1', 0, {hidden: ['mold-requests'], cells: {'customer:add': false}});
+  check(savedRep.status, 200, 'the administrator saves rep1\'s permissions: ' + savedRep.text);
+  check((await permissions('owner', 'rep1', 0, {})).status, 409, 'a stale version: 409');
+  const hiddenMold = await app.as(sessions.rep1)('/api/mold-requests');
+  check([hiddenMold.status, hiddenMold.json().error], [404, 'هذا الجزء غير متاح لحسابك. راجع مدير النظام.'], 'rep1: «طلبات تصنيع القوالب» hidden: 404 with its message');
+  check((await app.as(sessions.rep2)('/api/mold-requests')).status, 200, 'rep2 is unaffected');
+  const addRefused = await app.as(sessions.rep1)('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل ممنوع', region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03', phone: '0500000001'}}});
+  check([addRefused.status, addRefused.json().error], [403, 'مش مسموح لك بالإضافة في العملاء. راجع مدير النظام.'], 'rep1: adding a customer switched off: 403 with its message');
+  check((await permissions('owner', 'sup', 0, {hidden: ['journeys']})).status, 200, 'the administrator hides «تقرير يوم المندوب» from the supervisor');
+  for (const url of ['/api/journeys?date=' + day, '/api/reviews?date=' + day, '/api/device-status']) {
+    check((await app.as(sessions.sup)(url)).status, 404, 'sup GET ' + url + ' hidden: 404');
+    check((await app.as(sessions.mgr)(url)).status, 200, 'mgr GET ' + url + ' unaffected');
+  }
+  check((await app.as(sessions.sup)('/api/crm')).status, 200, 'GET /api/crm stays open whatever is hidden (every screen reads it)');
+  check((await app.as(sessions.sup)('/api/crm')).json().me.access.hidden, ['journeys'], 'and carries the member\'s hidden screens');
+
   assert(!/at .*node_modules|stack/i.test(app.log().replace(/ExperimentalWarning[^\n]*/g, '')), 'Server log must not contain stack traces for rejected requests');checks++;
 
   console.log(JSON.stringify({ok: true, checks, builtRelease: true, syntheticFixtures: true, productionDataUsed: false}));

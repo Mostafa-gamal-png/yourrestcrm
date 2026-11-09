@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
+import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requirePages,requireCell} from '@/lib/crm-server';
 import type {Member} from '@/lib/crm';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {AUDIT_CRITERIA,AUDIT_DELETE_DAYS,AUDIT_NOTE_MAX,KPI_MONTH,MANAGER_METRICS,REP_METRICS,SERVICE_AUDIT_KIND,SERVICE_KPI_MONTH_KIND,SERVICE_KPI_SETTINGS_ID,SERVICE_KPI_SETTINGS_KIND,auditResult,auditTotal,closedMonthFor,kpiActions,kpiManagerOf,kpiMonthOf,monthCertificate,monthCloseProblem,monthRowId,normalizeSettings,serviceKpiAllowed,serviceKpiMonth,serviceKpiView,settingsProblem,type ServiceAuditData,type ServiceKpiMonthData} from '@/lib/service-kpi';
@@ -19,6 +19,8 @@ const monthSchema=z.string().regex(KPI_MONTH,'اختر شهرًا صحيحًا')
 export async function GET(req:Request){try{
  const probe=await context({load:'identity'});
  if(!serviceKpiAllowed(probe.me.role))throw new CRMError('تقييم خدمة العملاء لمدير النظام ومدير خدمة العملاء وممثليها فقط',403);
+ // «الصلاحيات»: the evaluation is read on its page and, for customer service, on «الشكاوى»: closed when both are hidden.
+ requirePages(probe.me,'service-kpi','complaints');
  const c=await context({load:'customers'});
  const now=new Date().toISOString(),current=kpiMonthOf(now),url=new URL(req.url);
  const month=monthSchema.parse(url.searchParams.get('month')||current);
@@ -85,6 +87,8 @@ export async function POST(req:Request){try{
   return Response.json({ok:true,id:saved.record_id,alreadySaved:true});
  };
  const repeated=await replay();if(repeated)return repeated;
+ // «الصلاحيات»: a review or the settings is «تحرير» on «تقييم خدمة العملاء» (after a replay has answered).
+ requirePages(me,'service-kpi');requireCell(me,'service-kpi','edit');
  const permission=accessGuard(c),guards=[permission.sql],args:(string|number)[]=[...permission.args];
  const requireMember=(member:Member)=>{const gate=memberGate(member);guards.push(gate.sql);args.push(...gate.args);};
  const requireOpenMonth=(repId:string,managerId:string,month:string)=>{guards.push(openMonthGuard);args.push(month,managerId,repId);};

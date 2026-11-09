@@ -1,4 +1,5 @@
 'use client';
+import {can} from '@/lib/permissions';
 import {offlineSubmit} from '@/lib/offline-submit';
 import {getLanguage} from '@/lib/i18n';
 import { t, useLanguage, direction } from '@/lib/i18n';
@@ -46,7 +47,8 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
     const [draft, setDraft] = useState<CustomerData>({ name: '', code: '', region: regionValue(me), city: '', contact: '', phone: '', location: '', shortAddress: '', address: '', customerType: '', customerStatus: '', category: '' });
     const selected = customers.find(r => r.id === value) || null;
     // Customer service picks an existing customer only (the owner, 2026-11-07); the server refuses their creates too.
-    const canCreate = !me.readOnly && ['rep', 'supervisor', 'manager', 'admin'].includes(me.role), service = ['customer_service', 'customer_service_manager'].includes(me.role);
+    // «الصلاحيات» (lib/permissions.ts): «إضافة» on «العملاء» switched off: pick an existing customer only.
+    const canCreate = !me.readOnly && ['rep', 'supervisor', 'manager', 'admin'].includes(me.role) && can(me, 'customer', 'add'), service = ['customer_service', 'customer_service_manager'].includes(me.role);
     const searchIndex = useMemo(() => customers.map(customer => ({
         customer,
         text: normalize([customer.data.name, customer.data.internalCode, customer.data.code, customer.data.region, customer.data.city, customer.data.contact, customer.data.phone, customer.data.phone2].filter(Boolean).join(' ')),

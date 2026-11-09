@@ -1,4 +1,5 @@
 import type {Member,Row} from './crm';
+import {cellRefused} from './permissions';
 import {memberCanAccessRegion} from './regions';
 import {salesScopeMemberIds} from './access';
 import {serviceSources} from './customer-service';
@@ -173,7 +174,8 @@ export function complaintPermissions(row:ComplaintRow,customer:Row,reader:Compla
  const closer=admin||registrar&&reader.service||reviews(data,reader,members);
  const pending=status==='submitted'||status==='returned';
  return {
-  edit:pending&&(admin||registrar&&(reader.service||reader.lead)),
+  // «الصلاحيات» (lib/permissions.ts): the registrar's edit switched off by the administrator.
+  edit:pending&&(admin||registrar&&(reader.service||reader.lead))&&!cellRefused(reader.me,'complaints','edit'),
   forward:status==='submitted'&&reviewer,
   return:status==='submitted'&&reviewer,
   assign:status==='pending_assignment'&&(admin||reader.manager&&data.salesManagerId===me),

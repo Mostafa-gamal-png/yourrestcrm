@@ -7,7 +7,8 @@ import {z} from 'zod';
 import {canonicalRegionScope,regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {validateFollowup,prepareContactEvidence,requireLegacyVisit,preserveRequestResponsible} from '@/lib/followups-server';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
-import {context,CRMError,replyError,checkOrigin,accessGuard,masterMutationGuard,customerDetailMutationGuard,recordEditGuard,requireRecordEdit} from '@/lib/crm-server';
+import {context,CRMError,replyError,checkOrigin,accessGuard,masterMutationGuard,customerDetailMutationGuard,recordEditGuard,requireRecordEdit,requireCell} from '@/lib/crm-server';
+import {crmCell,readMemberPermissions,savePermissions,PERMISSIONS_AUDIT_ACTION} from '@/lib/permissions-server';
 import {schemas,quoteTotals,isOpen,today,type AuditEntry,type Kind} from '@/lib/crm';
 import {normalizeMemberEmail,memberEmailError} from '@/lib/member-email';
 import {memberEditToken} from '@/lib/member-edit';
@@ -22,13 +23,17 @@ export async function GET(){try{
  // The products application's customer list follows the CRM's (lib/mold-customers-server.ts), and mold requests waiting to be sent
  // are retried (lib/mold-requests-server.ts): both started by the page everyone loads.
  nudgeMoldCustomers();wakeMoldRetries();
- const names=new Set(c.members.filter(m=>scope.has(m.id)&&c.members.every(other=>other.name!==m.name||scope.has(other.id))).map(m=>m.name));
+ // «عرض بيانات الفريق بالكامل» (lib/permissions.ts) widens what is read: the recent changes' authors and the names of the records' authors.
+ const readScope=salesScopeMemberIds(c.members,c.me,{read:true});
+ const names=new Set(c.members.filter(m=>readScope.has(m.id)&&c.members.every(other=>other.name!==m.name||readScope.has(other.id))).map(m=>m.name));
  const masterIds=new Set(c.visible.filter(r=>['customer','factory'].includes(r.kind)).map(r=>r.id)),activityIds=new Set(c.visible.filter(r=>r.kind==='activity').map(r=>r.id));
- const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حذف','استرجاع سجل','مراجعة المشرف لزيارة أو متابعة','مراجعة المشرف لتقرير اليوم','قراءة مراجعة المشرف','حفظ متابعة','visit-receipt','service-receipt','support-receipt','complaint-receipt','service-kpi-receipt','crm-create-receipt','mold-request-receipt') AND action NOT LIKE 'mold-request:%' AND action NOT LIKE 'service:%' AND action NOT LIKE 'support:%' AND action NOT LIKE 'complaint:%' AND action NOT LIKE 'service-kpi:%' ORDER BY created_at DESC LIMIT 500").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(c.me.role==='rep'?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor)));
- const projectMember=(member:typeof c.me)=>({...member,userId:undefined,target:canUseSalesWorkspace(c.me.role)?member.target:undefined,...(c.me.role==='admin'&&regionScope(c.me)==='all'?{editToken:memberEditToken(member)}:{})});
+ const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حذف','استرجاع سجل','"+PERMISSIONS_AUDIT_ACTION+"','مراجعة المشرف لزيارة أو متابعة','مراجعة المشرف لتقرير اليوم','قراءة مراجعة المشرف','حفظ متابعة','visit-receipt','service-receipt','support-receipt','complaint-receipt','service-kpi-receipt','crm-create-receipt','mold-request-receipt') AND action NOT LIKE 'mold-request:%' AND action NOT LIKE 'service:%' AND action NOT LIKE 'support:%' AND action NOT LIKE 'complaint:%' AND action NOT LIKE 'service-kpi:%' ORDER BY created_at DESC LIMIT 500").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(c.me.role==='rep'?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor)));
+ // The administrator's team page edits each member's permissions and copies them («انسخ الصلاحيات من»): what is saved for every member.
+ const saved=c.me.role==='admin'&&regionScope(c.me)==='all'?await readMemberPermissions(c.db,c.members):null;
+ const projectMember=(member:typeof c.me)=>({...member,userId:undefined,target:canUseSalesWorkspace(c.me.role)?member.target:undefined,...(c.me.role==='admin'&&regionScope(c.me)==='all'?{editToken:memberEditToken(member),permissions:saved?.get(member.id)}:{})});
  const members=c.regionalMembers.filter(m=>isServiceRole(c.me.role)?m.id===c.me.id||m.supervisorId===c.me.id:scope.has(m.id)).map(projectMember),memberIds=new Set(members.map(m=>m.id));
  const authors=new Set(c.visible.filter(r=>['activity','opportunity','quote'].includes(r.kind)).map(r=>recordAuthorId(r,c.members)));
- for(const member of c.members)if(scope.has(member.id)&&authors.has(member.id)&&!memberIds.has(member.id))members.push({...projectMember(member),userId:undefined,authVersion:undefined,target:undefined,readOnly:true});
+ for(const member of c.members)if(readScope.has(member.id)&&authors.has(member.id)&&!memberIds.has(member.id))members.push({...projectMember(member),userId:undefined,authVersion:undefined,target:undefined,readOnly:true});
  // «لم يشترِ منذ 60 يومًا»: each customer row carries its last purchase (lib/customer-last-purchase.ts), read in one grouped statement.
  const lastPurchases=await readLastPurchases(c.db,c.all);
  return Response.json({records:withLastPurchase(serviceVisitRecords(c),lastPurchases).map(r=>{const intake=r.kind==='customer'?activeServiceCase(r.id,c):undefined;return intake?.status==='assigned'&&canReadService(intake,c)?{...r,data:{...r.data,_serviceIntake:{id:intake.id,createdAt:intake.createdAt,products:intake.data.products,strength:intake.data.strength,needs:intake.data.needs,nextAction:intake.data.nextAction,nextDate:intake.data.nextDate}}}:r;}),me:projectMember(c.me),members,audits,serviceQueue:serviceQueue(c)},{headers:{'Cache-Control':'no-store'}});
@@ -47,8 +52,10 @@ async function savePost(req:Request){try{
  const now=new Date().toISOString();const mutation=crypto.randomUUID();const canManage=['admin','manager'].includes(c.me.role);
  const offline=offlineCapture(body,c.me.id,now);if(offline&&(body.action!=='save'||body.kind!=='customer'||body.id||body.parentId||!body.createKey))throw new CRMError('هذا الإجراء يتطلب اتصالًا مباشرًا.');
  const bodyData=isRecord(body.data)?body.data:undefined;
+ if(body.action==='permissions')return await savePermissions(c,body,now);
  if(body.action==='member'){
   if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('إدارة المستخدمين متاحة لمدير النظام فقط',403);
+  requireCell(c.me,'team',isRecord(body.data)&&body.data.id?'edit':'add');
   const m=z.object({id:z.string().optional(),name:z.string().trim().min(1).max(100),email:z.string({required_error:memberEmailError,invalid_type_error:memberEmailError}).transform(normalizeMemberEmail).pipe(z.string().email(memberEmailError).max(200,memberEmailError)),role:z.enum(['admin','manager','supervisor','rep','customer_service_manager','customer_service']),branch:z.string().trim().min(1).max(100),supervisorId:z.string().default(''),regionScope:z.union([z.string(),z.array(z.string().max(40)).max(10)]).default('all').transform(canonicalRegionScope).refine(v=>v.length>0,'اختر منطقة البيانات المسموح بها'),active:z.coerce.number().int().min(0).max(1),target:z.coerce.number().finite().min(0).max(1000000000)}).parse(body.data);
   if(!m.email.endsWith('@yourrest.org'))throw new CRMError('استخدم بريد الشركة @yourrest.org');
   if(m.id==='owner'&&(m.role!=='admin'||!m.active||m.regionScope!=='all'))throw new CRMError('لا يمكن تعطيل مدير النظام الأساسي أو تغيير دوره');
@@ -105,6 +112,9 @@ async function savePost(req:Request){try{
  if(old&&clockAction&&((clockAction==='start'&&old.data.startedAt)||(clockAction==='finish'&&old.data.endedAt)))return replayReply(old,clockAction==='start'?'_startRequest':'_finishRequest');
  if(old&&serviceHistoryLocked(old,c)&&!(c.me.role==='admin'&&body.action==='delete'))throw new CRMError('سجل هذا الطلب محفوظ بعد فتح طلب أحدث للعميل. سجّل المتابعة في الطلب الحالي.',409);
  if(old&&body.version!==old.version)throw new CRMError('تغيّر السجل بواسطة مستخدم آخر. حدّث الصفحة ثم أعد التعديل.',409);
+ // «الصلاحيات» (lib/permissions.ts): the cell of this save or delete, after a replay has answered (a retry of what was saved before the
+ // switch went off gets its receipt) and after the role's own checks above.
+ const cell=crmCell(kind,body.action==='delete'?'delete':old?'edit':'add',old||{kind,data:bodyData});if(cell)requireCell(c.me,cell[0],cell[1]);
  if(body.action==='delete'){
   if(!old)throw new CRMError('حدد سجلًا');if(!canManage&&old.kind==='customer')throw new CRMError('حذف العملاء متاح للإدارة فقط',403);
   // An ERP code mapping to a deleted customer gives nobody anything; it goes with the customer, in the same transaction and in its audit

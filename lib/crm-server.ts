@@ -8,6 +8,7 @@ import {regionRecords,regionMembers,regionScope,memberCanAccessRegion} from './r
 import {canReadSalesRecord,canUseSalesWorkspace,recordAuthorId,canManageMasterRecord,canEditCustomerDetails,canEditMachineRecord} from './access';
 import { scopeRecords, type Row, type Member } from './crm';
 import {loadContextRecords,type ContextLoad} from './crm-context-records';
+import {memberAccess,cellRefused,cellRefusalText,pagesBlocked,PAGE_HIDDEN_TEXT,type PermissionAction,type PermissionScreen} from './permissions';
 export class CRMError extends Error { constructor(message:string,public status=400){super(message);} }
 export function database(){if(!env.DB)throw new CRMError('تعذر الاتصال بقاعدة البيانات. أعد المحاولة.',503);return env.DB;}
 export async function context(options:ContextLoad={}){
@@ -16,6 +17,8 @@ export async function context(options:ContextLoad={}){
  const members=(await db.prepare('SELECT id,user_id AS userId,email,name,role,branch,supervisor_id AS supervisorId,region_scope AS regionScope,auth_version AS authVersion,active,target FROM crm_members').all<Member>()).results;
  const me=members.find(m=>m.id===user.memberId);
  if(!me||!me.active||me.authVersion!==user.memberVersion)throw new CRMError('حسابك غير مضاف إلى فريق يورست. تواصل مع مدير النظام.',403);
+ // The member's permissions (lib/permissions.ts, migration 0020): one read per request, never cached; no row is the role's behaviour.
+ me.access=memberAccess(me.role,await db.prepare('SELECT permissions,hidden,version FROM crm_member_permissions WHERE member_id=?').bind(me.id).first<{permissions:string;hidden:string;version:number}>());
  let customerIdentityState:CustomerIdentityState={revision:0,mappings:[]};
  if(!['identity','mobile','customer-graph','directory'].includes(options.load||'')){const state=await readCustomerIdentityState(db);if(!state)throw new CRMError('تحديث أكواد العملاء غير مكتمل.',503);customerIdentityState=state;}
  const {all,serviceCases}=await loadContextRecords(db,me,options,members),regionalRecords=regionRecords(all,me),regionalMembers=regionMembers(members,me),regionCustomerIds=new Set(regionalRecords.filter(r=>r.kind==='customer').map(r=>r.id));return{db,user,me,members,all,serviceCases,customerIdentityState,regionalRecords,regionalMembers,regionCustomerIds,visible:scopeRecords(regionalRecords,members,me)};
@@ -56,8 +59,9 @@ export function customerDetailMutationGuard(c:GuardContext,record:Row){
 }
 /** Recheck identity, region-bearing root, and source-author reporting line at commit. */
 export function accessGuard(c:GuardContext,record?:Row|null){
- let sql="EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=? AND auth_version=?)";
- const args:(string|number)[]=[c.me.id,c.me.role,c.me.branch,c.me.supervisorId||'',regionScope(c.me),c.me.authVersion||0];
+ // The permissions the request was decided with are still the member's at commit (a save by the administrator meanwhile fails it safe).
+ let sql="EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=? AND auth_version=?) AND COALESCE((SELECT version FROM crm_member_permissions WHERE member_id=?),0)=?";
+ const args:(string|number)[]=[c.me.id,c.me.role,c.me.branch,c.me.supervisorId||'',regionScope(c.me),c.me.authVersion||0,c.me.id,c.me.access?.version||0];
  if(record){
   assertRecordMutation(c,record);const root=recordCustomer(c,record)!;
   sql+=" AND EXISTS (SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)";args.push(root.id,root.version);
@@ -72,6 +76,11 @@ export function accessGuard(c:GuardContext,record?:Row|null){
  }
  return{sql,args};
 }
+/** A request of these screens, when the administrator hid them from the member (lib/permissions.ts pagesBlocked): 404, never 401/403,
+ *  which would lock the page's offline session. */
+export function requirePages(me:Member,...screens:PermissionScreen[]){if(pagesBlocked(me,screens))throw new CRMError(PAGE_HIDDEN_TEXT,404);}
+/** An action the administrator switched off for the member (within what the role can do; other roles meet the routes' own checks): 403. */
+export function requireCell(me:Member,screen:PermissionScreen,action:PermissionAction){if(cellRefused(me,screen,action))throw new CRMError(cellRefusalText(screen,action),403);}
 export function requireSalesWorkspace(me:Member){if(!canUseSalesWorkspace(me.role))throw new CRMError('هذه الصفحة متاحة للمشرف ومدير المبيعات فقط',403);}
 
 export function requireSalesRole(me:Member){if(isServiceRole(me.role))throw new CRMError('هذا الإجراء متاح لفريق المبيعات فقط',403);}

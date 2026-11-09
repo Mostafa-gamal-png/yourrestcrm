@@ -24,8 +24,9 @@ const ok=(value,message)=>{assert.ok(value,message);checks++;};
 
 // ---- 1. Migration 0019: twenty migrations, a fresh database and the upgrade of a 19-migration one (portable/initialize.mjs, upgrade.mjs).
 const NEW='0019_supervisor_reviews.sql';
-const all=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort(),before=all.filter(name=>name<NEW);
-eq([all.length,all.at(-1),before.length],[20,NEW,19],'twenty migrations, the newest the supervisor reviews');
+// Later migrations (0020 member permissions) are left out of this check: it is 0019's own, on the schema it was made for.
+const all=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort(),upto=all.filter(name=>name<=NEW),before=all.filter(name=>name<NEW);
+eq([upto.length,upto.at(-1),before.length],[20,NEW,19],'twenty migrations up to the supervisor reviews');
 const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 {
  const schema=new DatabaseSync(':memory:');for(const name of before)schema.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));
@@ -45,14 +46,14 @@ const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('he
  };
  const read=(filename,fn)=>{const db=new DatabaseSync(filename,{readOnly:true});try{return fn(db);}finally{db.close();}};
  const reviewTables=db=>db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('crm_daily_entry_reviews','crm_daily_report_reviews') ORDER BY name").all().map(row=>row.name);
- const fresh=fixture('fresh',all);
+ const fresh=fixture('fresh',upto);
  eq(initializeDatabase(fresh).migrations,20,'a new database takes the twenty migrations');
  eq(read(fresh.filename,reviewTables),['crm_daily_entry_reviews','crm_daily_report_reviews'],'with both review tables');
  const old=fixture('upgrade',before);
  eq(initializeDatabase(old).migrations,19,'the live schema: 19 migrations');
  const live=new DatabaseSync(old.filename);live.exec("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES('kept','synthetic-customer','Synthetic owner','تعديل','{}','2026-11-02T00:00:00Z')");live.close();
  fs.copyFileSync(path.join(root,'drizzle',NEW),path.join(old.migrations,NEW));
- fs.writeFileSync(path.join(old.migrations,'manifest.json'),JSON.stringify({format:'yourrest-migrations-v1',files:all.map(file=>({name:file,sha256:digest(path.join(old.migrations,file))}))}));
+ fs.writeFileSync(path.join(old.migrations,'manifest.json'),JSON.stringify({format:'yourrest-migrations-v1',files:upto.map(file=>({name:file,sha256:digest(path.join(old.migrations,file))}))}));
  eq(inspectInitializedDatabase(old),{pending:[NEW],migrations:20},'0019 is the one pending migration');
  const upgraded=await upgradeExistingDatabase(old);
  eq([upgraded.upgraded,upgraded.migrations,path.basename(upgraded.backup).startsWith('before-0019_supervisor_reviews-')],[true,20,true],'the upgrade applies it after a private schema backup');

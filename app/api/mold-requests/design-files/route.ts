@@ -11,7 +11,7 @@
 // customer's signature) is required of every new request too, kept the same way: the file that leaves nothing missing releases it.
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
-import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
+import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError,requirePages} from '@/lib/crm-server';
 import {readRequestForm} from '@/lib/request-body';
 import {moldDesignFileCheck,MOLD_CATEGORY_MAX_FILES} from '@/portable/mold-rules.mjs';
 import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignRefusalText,moldEditable,moldHeldFor,moldRequestView,type MoldFileCategory} from '@/lib/mold-requests';
@@ -38,6 +38,8 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  checkOrigin(req);await requireSession();
  const c=await context({load:'customers'});
  if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
+ // «الصلاحيات»: part of «طلبات تصنيع القوالب» (closed when hidden).
+ requirePages(c.me,'mold-requests');
  if(!env.FILES)throw new CRMError('رفع الملفات غير متاح مؤقتًا.',503);
  if(activeUploads>=maxConcurrentUploads){void req.body?.cancel().catch(()=>{});return Response.json({error:'رفع الملفات مشغول مؤقتًا. أعد المحاولة بعد لحظات.'},{status:429,headers:{'Retry-After':'5','Cache-Control':'private, no-store'}});}
  activeUploads++;admitted=true;

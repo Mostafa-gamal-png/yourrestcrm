@@ -5,7 +5,7 @@ import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {riyadhDate} from '@/lib/visits';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
 import {z} from 'zod';
-import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
+import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError,requireCell} from '@/lib/crm-server';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {schemas,type AuditEntry,type Member,type Row} from '@/lib/crm';
 import {caseProgress} from '@/lib/service-queue';
@@ -53,6 +53,8 @@ export async function POST(req:Request){try{
   // A new customer with the request is the administrator's only: customer service picks an existing one (the owner, 2026-11-07). A request
   // committed before that release still replays above with its receipt.
   if(body.newCustomer&&isServiceRole(c.me.role))throw new CRMError(serviceCustomerAddRefused,403);
+  // «الصلاحيات»: registering a request is «إضافة» on «الزيارات» (customer service's «الفرص»); its new customer, «إضافة» on «العملاء».
+  requireCell(c.me,'activity','add');if(body.newCustomer)requireCell(c.me,'customer','add');
   data=body.registration?{}:serviceIntakeSchema.parse(body.data);id='service-'+requestId;
   if(body.newCustomer){const fields=serviceCustomerSchema.parse(body.newCustomer);if(!memberCanAccessRegion(c.me,fields.region))throw new CRMError('العميل خارج منطقتك المسموح بها',403);const locationError=prepareCustomerLocation(fields);if(locationError)throw new CRMError(locationError);customer={id:'service-customer-'+requestId,kind:'customer',parentId:null,assignedTo:c.me.id,branch:c.me.branch,data:{...fields,branch:c.me.branch,assignedTo:c.me.id,_createdBy:c.me.id},createdAt:now,updatedAt:now,version:1};newCustomer=true;}
   else{const found=customerChoices(c).find(r=>r.id===body.customerId);if(!found)throw new CRMError('العميل خارج نطاق صلاحيتك',403);customer=found;if(!offline&&customer.version!==body.customerVersion)throw new CRMError('تغيّرت بيانات العميل. حدّث القائمة.',409);const active=activeServiceCase(customer.id,c);if(active){if(!body.registration)throw new CRMError('يوجد طلب خدمة عملاء مفتوح لهذا العميل بالفعل',409);if(!canReadService(active,c))throw new CRMError('يوجد طلب خدمة عملاء مفتوح لهذا العميل بالفعل',409);const openedAt=active.data.registration?.offlineRecordedAt||active.createdAt;if(offline&&occurredAt<openedAt)throw new CRMError('تم فتح طلب أحدث بعد تسجيل هذه الزيارة. راجع الإدخال المحفوظ قبل ربطه بالطلب الحالي.',409);action='contact';}}
@@ -67,6 +69,7 @@ export async function POST(req:Request){try{
   if(c.me.role==='customer_service_manager'){const creator=c.members.find(m=>m.id===item.creatorId);if(creator)requireMember(creator);}
   if(body.version!==item.version)throw new CRMError('تغيّر الطلب. حدّث البيانات قبل إعادة المحاولة.',409);
   data={...item.data};status=item.status;const allowed=servicePermissions(item,c);
+  if(action==='edit')requireCell(c.me,'activity','edit');
   if(action==='edit'){if(item.data.registration&&!body.registration)throw new CRMError('استخدم قسم الزيارات لحفظ بيانات الزيارة والعميل.');if(!allowed.edit)throw new CRMError('لا يمكن تعديل الطلب بعد اعتماده',403);data={...data,...(body.registration?{}:serviceIntakeSchema.parse(body.data))};if(item.status==='returned')data.resubmittedAt=now;status='pending_approval';}
   if(action==='approve'||action==='return'){
    if(!allowed.approve)throw new CRMError('الاعتماد متاح لمدير خدمة العملاء المسؤول فقط',403);

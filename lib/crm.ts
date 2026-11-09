@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {lineCents,moneyCents,percentCents} from './decimal-money';
 import {regionRecords} from './regions';
 import {salesRecordAccess} from './access';
+import type {MemberAccess} from './permissions';
 import {customerAddressFields} from './customer-fields';
 export const stages = ['new','specs','technical','quoted','negotiation','won','lost'] as const;
 export const stageLabels:Record<string,string> = {new:'تحديد الاحتياج',specs:'جمع المواصفات',technical:'مراجعة فنية',quoted:'عرض سعر',negotiation:'تفاوض',won:'تم الفوز',lost:'تم الفقد'};
@@ -9,7 +10,9 @@ export const roles:Record<string,string> = {admin:'مدير النظام',manage
 export type Kind = 'customer'|'factory'|'opportunity'|'activity'|'quote';
 export type Row = {id:string;kind:Kind;parentId:string|null;assignedTo:string;branch:string;data:any;createdAt:string;updatedAt:string;version:number};
 export type AuditEntry = {id:string;recordId:string;actor:string;action:string;detail:string;createdAt:string};
-export type Member = {authVersion?:number;editToken?:string;id:string;userId?:string;email:string;name:string;role:string;branch:string;supervisorId?:string;regionScope?:string;readOnly?:boolean;active:number;target:number};
+/** access: the member's permissions (lib/permissions.ts), set by the server on the signed-in member only. */
+/** permissions: what is saved for this member (the administrator's team page only, GET /api/crm). */
+export type Member = {permissions?:{version:number;cells:Record<string,boolean>;hidden:string[];viewAll:boolean};access?:MemberAccess;authVersion?:number;editToken?:string;id:string;userId?:string;email:string;name:string;role:string;branch:string;supervisorId?:string;regionScope?:string;readOnly?:boolean;active:number;target:number};
 // One formatter each, made once: today() and money() run for every row of every list, and making a formatter costs far more than using one.
 const riyadhDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}),moneyFormat=new Intl.NumberFormat('en-US',{maximumFractionDigits:2,minimumFractionDigits:0});
 export const today=()=>riyadhDay.format(new Date());
@@ -57,6 +60,8 @@ export function scopeRecords(all:Row[],members:Member[],me:Member){
    if(!access.canManageMaster(row))data._masterRoutingReadOnly=true;
   }
   if(row.kind==='factory'&&!access.canEditMachine(row))data._masterReadOnly=true;
+  // Read through «عرض بيانات الفريق بالكامل» only: shown, never edited or deleted from the page (the routes refuse it too).
+  if(access.readOnly(row))data._teamReadOnly=true;
   if(['activity','quote'].includes(row.kind)&&parentId&&!ids.has(parentId))parentId=rootCustomer(row)?.id||parentId;
   if(data.requestSnapshot&&(!data.requestId||!ids.has(data.requestId)))delete data.requestSnapshot;
   if(data.requestId&&!ids.has(data.requestId))delete data.requestId;

@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,FileText,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
-import {canViewPage} from '@/lib/access';
+import {pageAllowed} from '@/lib/permissions';
 import {roles,type Member} from '@/lib/crm';
 import {t,useLanguage} from '@/lib/i18n';
 import {serviceText} from '@/lib/service-wording';
@@ -65,13 +65,14 @@ export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccou
   };
  },[]);
  useEffect(()=>{setMoreOpen(false);onAccountOpenChange(false);},[me.id,me.role]);
- const allowed=pages.filter(page=>canViewPage(me.role,page.id));
+ // A screen the administrator hid from this member («الصلاحيات», lib/permissions.ts) is neither a tab nor in «المزيد».
+ const allowed=pages.filter(page=>pageAllowed(me,page.id));
  const core=allowed.filter(page=>!secondary.has(page.id));
  const primary=allowed.length<=5?allowed:core.length<=5?core:core.slice(0,4);
  const overflow=allowed.filter(page=>!primary.some(item=>item.id===page.id));
  const overflowActive=overflow.some(page=>page.id===view);
  const label=(page:typeof pages[number])=>page.id==='targets'&&me.role==='rep'?say('مستهدفي','My targets'):serviceText(me.role,say(page.ar,page.en));
- const navigate=(id:string)=>{if(!canViewPage(me.role,id))return;setMoreOpen(false);onAccountOpenChange(false);onNavigate(id);if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'auto'});};
+ const navigate=(id:string)=>{if(!pageAllowed(me,id))return;setMoreOpen(false);onAccountOpenChange(false);onNavigate(id);if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'auto'});};
  if(!allowed.length)return null;
  return <>
   <nav className="mobile-bottom-navigation no-print" aria-label={say('صفحات التطبيق','App pages')} dir={language==='ar'?'rtl':'ltr'} hidden={blocked||editing} style={{gridTemplateColumns:`repeat(${primary.length+(overflow.length?1:0)},minmax(0,1fr))`}}>

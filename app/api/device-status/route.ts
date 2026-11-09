@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {context,checkOrigin,replyError,readJsonBody,requireSession,CRMError} from '@/lib/crm-server';
+import {context,checkOrigin,replyError,readJsonBody,requireSession,CRMError,requirePages} from '@/lib/crm-server';
 import {journeyDate} from '@/lib/journeys';
 import {requireJourneyReport} from '@/lib/journeys-server';
 import {deviceReportSchema} from '@/lib/device-status';
@@ -20,6 +20,8 @@ export async function POST(req:Request){try{
 /** Supervisors, managers and admins read the tracking state of the representatives they already see in the daily report. */
 export async function GET(req:Request){try{
  const c=await context({load:'identity'});requireJourneyReport(c);
+ // «الصلاحيات»: read by «تقرير يوم المندوب» and «الفريق والصلاحيات»: closed when both are hidden.
+ requirePages(c.me,'journeys','team');
  const requested=new URL(req.url).searchParams.get('date'),date=requested===null?journeyDate():dateSchema.parse(requested);
  return Response.json({date,serverTime:new Date().toISOString(),members:await trackingOverview(c,date)},{headers:{'Cache-Control':'no-store'}});
 }catch(error){if(error instanceof z.ZodError)return Response.json({error:'تاريخ غير صحيح'},{status:400});return replyError(error);}}

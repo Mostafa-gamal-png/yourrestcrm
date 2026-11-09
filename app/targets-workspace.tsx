@@ -1,4 +1,5 @@
 'use client';
+import {can} from '@/lib/permissions';
 import {submitJson} from '@/lib/client-submit';
 import {getLanguage} from '@/lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
@@ -12,7 +13,8 @@ import {money,type Member} from '@/lib/crm';
 import {targetProducts,quantityNumber,activityFields,defaultActivityTargets,effectiveSet,targetSaveBase,type TargetState,type TargetKind,type QuantityTargets,type ProductWeights,type ActivityTargets} from '@/lib/targets';
 import {toast} from 'sonner';
 export default function TargetsWorkspace({state,members,me,staff,query,onSaved,branch:controlledBranch,onBranchChange}:{state:TargetState;members:Member[];me:Member;staff:string;query:string;onSaved:()=>void;branch?:string;onBranchChange?:(branch:string)=>void}){
- const {language}=useLanguage(),say=(ar:string,en:string)=>language==='en'?en:ar;const manage=['admin','manager'].includes(me.role),globalManage=manage&&regionScope(me)==='all',[localBranch,setLocalBranch]=useState(state.branches.includes(me.branch)?me.branch:state.branches[0]||''),[editing,setEditing]=useState<{kind:TargetKind;scopeId:string;name:string}|null>(null);
+ const {language}=useLanguage(),say=(ar:string,en:string)=>language==='en'?en:ar;// «الصلاحيات» (lib/permissions.ts): «تحرير» on «المستهدفات وتقييم الأداء» switched off leaves the targets read only.
+ const manage=['admin','manager'].includes(me.role)&&can(me,'targets','edit'),globalManage=manage&&regionScope(me)==='all',[localBranch,setLocalBranch]=useState(state.branches.includes(me.branch)?me.branch:state.branches[0]||''),[editing,setEditing]=useState<{kind:TargetKind;scopeId:string;name:string}|null>(null);
  const controlled=controlledBranch!==undefined,branch=controlledBranch??localBranch,setBranch=onBranchChange||setLocalBranch,allBranches=controlled&&branch==='__all__',showBranchTotals=globalManage&&!allBranches&&state.branches.includes(branch);
  useEffect(()=>{if(!controlled&&!state.branches.includes(branch)){const next=state.branches.includes(me.branch)?me.branch:state.branches[0]||'';if(next!==branch)setBranch(next);}},[state.branches,branch,me.branch,setBranch,controlled]);
  const people=members.filter(m=>!m.readOnly&&(allBranches||m.branch===branch)&&(m.active||state.sets.some(s=>s.scopeId===m.id))&&(staff==='all'||staff===m.id)&&(!query||[m.name,m.branch].join(' ').toLowerCase().includes(query.toLowerCase())));

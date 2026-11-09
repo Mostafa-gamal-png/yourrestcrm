@@ -4,7 +4,7 @@ import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {activeServiceCase,serviceHistoryLocked} from '@/lib/customer-service';
 import {requireSalesRole} from '@/lib/crm-server';
 import {z} from 'zod';
-import {accessGuard,recordEditGuard,requireRecordEdit,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
+import {accessGuard,recordEditGuard,requireRecordEdit,requireCell,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {schemas,today,isSalesRequest,type Row} from '@/lib/crm';
 import {visitCustomer,visitRequest,customerVisits,visitOrder,visitProducts} from '@/lib/customer-visits';
 import {riyadhDate} from '@/lib/visits';
@@ -25,6 +25,8 @@ export async function POST(req:Request){try{
  if(receipt){if(receipt.detail===fingerprint)return Response.json({ok:true,id,alreadySaved:true});throw new CRMError('تم حفظ هذه العملية بالفعل. أعد فتح الزيارة لحفظ تعديلات إضافية.',409);}
  const old=body.id&&c.visible.some(r=>r.id===id)?c.all.find(r=>r.id===id&&r.kind==='activity'):undefined;if(body.id&&!old||typeof id!=='string')throw new CRMError('الزيارة غير متاحة',404);
  if(old)requireRecordEdit(c.me);
+ // «الصلاحيات»: recording a visit, editing a saved one (after a replay has answered above).
+ requireCell(c.me,'activity',old?'edit':'add');
  if(old?.data.visitWorkflow==='followup-v1')throw new CRMError('افتح المتابعة من صفحة المتابعات.');
  if(old&&serviceHistoryLocked(old,c))throw new CRMError('سجل هذا الطلب محفوظ بعد فتح طلب أحدث للعميل. سجّل المتابعة في الطلب الحالي.',409);
  if(old&&body.version!==old.version)throw new CRMError('تغيّرت الزيارة. حدّث البيانات ثم أعد فتحها.',409);

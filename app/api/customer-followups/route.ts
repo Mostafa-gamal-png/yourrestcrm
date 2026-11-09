@@ -1,7 +1,7 @@
 import {loadAuthorizedVisitAttachment,visitAttachmentWriteGuard} from '@/lib/visit-file-access';
 import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {activeServiceCase} from '@/lib/customer-service';
-import {requireSalesRole} from '@/lib/crm-server';
+import {requireSalesRole,requireCell} from '@/lib/crm-server';
 import {z} from 'zod';
 import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
 import {type Row} from '@/lib/crm';
@@ -23,6 +23,8 @@ export async function POST(req:Request){try{
  const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(body))))).map(n=>n.toString(16).padStart(2,'0')).join('');
  const receipt=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=? AND record_id=?').bind('customer-followup-save-'+c.me.id+':'+key,id).first<{detail:string}>();
  if(receipt){if(receipt.detail===fingerprint)return Response.json({ok:true,id,alreadySaved:true});throw new CRMError('تم حفظ هذه المتابعة بالفعل. افتح تسجيل متابعة جديدة.',409);}
+ // «الصلاحيات»: recording a follow-up (after a replay has answered above).
+ requireCell(c.me,'followup','add');
  if(body.customerVersion!==customer.version)throw new CRMError('تغيّرت بيانات العميل أو متابعته الأخيرة. حدّث البيانات ثم أعد المحاولة.',409);
  const service=activeServiceCase(customer.id,c),previousSource=latestCustomerContact(customer.id,c.visible),currentSource=service?.status==='assigned'&&previousSource&&previousSource.createdAt<service.createdAt?undefined:previousSource;
  const projectedSource=body.sourceId?c.visible.find(r=>r.id===body.sourceId&&['activity','opportunity'].includes(r.kind)):currentSource;const source=projectedSource?c.all.find(r=>r.id===projectedSource.id):undefined;

@@ -6,7 +6,7 @@ import {type TargetKind,type TargetSet,type TargetState,targetSaveSchema,quantit
 import {readErpSales} from './erp-sales-server';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function targetState(c:Context,month:string,sales:Sale[]=[]):Promise<TargetState>{
- const roleAllowed=salesReadMemberIds(c.members,c.me),allowed=new Set(c.regionalMembers.filter(m=>roleAllowed.has(m.id)).map(m=>m.id)),global=regionScope(c.me)==='all',manage=['admin','manager'].includes(c.me.role);
+ const roleAllowed=salesReadMemberIds(c.members,c.me,true),allowed=new Set(c.regionalMembers.filter(m=>roleAllowed.has(m.id)).map(m=>m.id)),global=regionScope(c.me)==='all',manage=['admin','manager'].includes(c.me.role);
  const raw=(await c.db.prepare('SELECT * FROM crm_target_sets WHERE month<=? ORDER BY month DESC').bind(month).all<{kind:TargetKind;scope_id:string;month:string;data:string;version:number;updated_at:string}>()).results;
  const branches=Array.from(new Set([...c.regionalMembers.map(m=>m.branch),...c.visible.filter(r=>r.kind==='customer').map(r=>r.branch)])).filter(Boolean).filter(b=>manage||b===c.me.branch).sort();
  const seen=new Set<string>();const sets:TargetSet[]=[];

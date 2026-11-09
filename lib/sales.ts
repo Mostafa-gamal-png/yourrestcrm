@@ -27,9 +27,10 @@ export type Sale = z.infer<typeof saleSchema> & { id: string; customerName: stri
 export function salesMemberIds(members: Member[], me: Member) {
     return salesScopeMemberIds(members.filter(m=>['admin','manager','supervisor','rep'].includes(m.role)),me,{activeOnly:true});
 }
-/** Historical entries remain in the current reporting scope after account deactivation. */
-export function salesReadMemberIds(members:Member[],me:Member){
-    return salesScopeMemberIds(members.filter(m=>['admin','manager','supervisor','rep'].includes(m.role)),me);
+/** Historical entries remain in the current reporting scope after account deactivation. read: a report only reads (wider with «عرض
+ *  بيانات الفريق بالكامل», lib/permissions.ts); a save checks its target against the team (read omitted). */
+export function salesReadMemberIds(members:Member[],me:Member,read=false){
+    return salesScopeMemberIds(members.filter(m=>['admin','manager','supervisor','rep'].includes(m.role)),me,{read});
 }
 /** Resolve imported email-only recorders with the same identity rule used by visibility. */
 export function salesReportingRecords(records:Row[],members:Member[]){return records.map(row=>row.kind==='activity'?{...row,data:{...row.data,performedBy:recordAuthorId(row,members)||'',responsibleId:recordAuthorId(row,members)||''}}:row);}

@@ -5,7 +5,7 @@ import {buildTrackingCoverage} from '@/lib/tracking-coverage';
 import {dailyPendingFollowups} from '@/lib/daily-followups';
 import type {JourneyReportData} from '@/lib/journeys';
 import {z} from 'zod';
-import {context,checkOrigin,replyError,readJsonBody,CRMError,accessGuard,requireSalesRole} from '@/lib/crm-server';
+import {context,checkOrigin,replyError,readJsonBody,CRMError,accessGuard,requireSalesRole,requirePages} from '@/lib/crm-server';
 import {customerCoordinates} from '@/lib/customer-location';
 import {customerRegionScope} from '@/lib/regions';
 import {visitCustomer} from '@/lib/customer-visits';
@@ -23,7 +23,8 @@ export async function GET(req:Request){try{
  const c=await context(),now=new Date().toISOString(),url=new URL(req.url);requireSalesRole(c.me);
  if(url.searchParams.has('stopId')){if(url.searchParams.has('date'))throw new CRMError('اختر رقم المحطة أو تاريخ التقرير');return response(await ownJourney(c,identifier.parse(url.searchParams.get('stopId'))),now);}
  if(!url.searchParams.has('date'))return response(await activeJourney(c,now),now);
- requireJourneyReport(c);const date=dateSchema.parse(url.searchParams.get('date')),scope=salesScopeMemberIds(c.members,c.me),memberId=url.searchParams.get('memberId')||c.me.id;
+ // «الصلاحيات»: the report is «تقرير يوم المندوب» (closed when hidden); «عرض بيانات الفريق بالكامل» widens whom it reads.
+ requireJourneyReport(c);requirePages(c.me,'journeys');const date=dateSchema.parse(url.searchParams.get('date')),scope=salesScopeMemberIds(c.members,c.me,{read:true}),memberId=url.searchParams.get('memberId')||c.me.id;
  if(memberId!=='all'&&!scope.has(memberId))throw new CRMError('الموظف خارج نطاق فريقك',403);
  const raw=(await c.db.prepare('SELECT '+journeyColumns+' FROM crm_journey_stops WHERE date=? ORDER BY selected_at,id').bind(date).all<JourneyRow>()).results;
  const availableStops=raw.map(decodeJourney).filter(stop=>canReadJourney(stop,c)),stops=availableStops.filter(stop=>memberId==='all'||stop.memberId===memberId);
