@@ -22,8 +22,8 @@ declare global {
 declare namespace VinextRouteTypes {
   type PageRoute = "/" | "/login";
   type LayoutRoute = "/";
-  type RouteHandlerRoute = "/api/app-update" | "/api/auth/[action]" | "/api/complaint-report" | "/api/complaints" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/device-status" | "/api/erp-customers" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/mold-requests" | "/api/mold-requests/design-file" | "/api/mold-requests/design-files" | "/api/mold-requests/design-files/delete" | "/api/sales" | "/api/sales/import" | "/api/service-kpi" | "/api/service-queue/alerts" | "/api/service-report" | "/api/support" | "/api/targets" | "/api/trash" | "/api/visit-files" | "/api/visits";
-  type AppRoute = "/" | "/api/app-update" | "/api/auth/[action]" | "/api/complaint-report" | "/api/complaints" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/device-status" | "/api/erp-customers" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/mold-requests" | "/api/mold-requests/design-file" | "/api/mold-requests/design-files" | "/api/mold-requests/design-files/delete" | "/api/sales" | "/api/sales/import" | "/api/service-kpi" | "/api/service-queue/alerts" | "/api/service-report" | "/api/support" | "/api/targets" | "/api/trash" | "/api/visit-files" | "/api/visits" | "/login";
+  type RouteHandlerRoute = "/api/app-update" | "/api/auth/[action]" | "/api/complaint-report" | "/api/complaints" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/device-status" | "/api/erp-customers" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/mold-requests" | "/api/mold-requests/design-file" | "/api/mold-requests/design-files" | "/api/mold-requests/design-files/delete" | "/api/review-inbox" | "/api/reviews" | "/api/sales" | "/api/sales/import" | "/api/service-kpi" | "/api/service-queue/alerts" | "/api/service-report" | "/api/support" | "/api/targets" | "/api/visit-files" | "/api/visits";
+  type AppRoute = "/" | "/api/app-update" | "/api/auth/[action]" | "/api/complaint-report" | "/api/complaints" | "/api/crm" | "/api/customer-address" | "/api/customer-followups" | "/api/customer-identities" | "/api/customer-service" | "/api/customers/import" | "/api/device-status" | "/api/erp-customers" | "/api/followups" | "/api/journeys" | "/api/kpi-evidence" | "/api/kpis" | "/api/machines/import" | "/api/mobile-route" | "/api/mold-requests" | "/api/mold-requests/design-file" | "/api/mold-requests/design-files" | "/api/mold-requests/design-files/delete" | "/api/review-inbox" | "/api/reviews" | "/api/sales" | "/api/sales/import" | "/api/service-kpi" | "/api/service-queue/alerts" | "/api/service-report" | "/api/support" | "/api/targets" | "/api/visit-files" | "/api/visits" | "/login";
 
   interface ParamMap {
     "/": {};
@@ -49,6 +49,8 @@ declare namespace VinextRouteTypes {
     "/api/mold-requests/design-file": {};
     "/api/mold-requests/design-files": {};
     "/api/mold-requests/design-files/delete": {};
+    "/api/review-inbox": {};
+    "/api/reviews": {};
     "/api/sales": {};
     "/api/sales/import": {};
     "/api/service-kpi": {};
@@ -56,7 +58,6 @@ declare namespace VinextRouteTypes {
     "/api/service-report": {};
     "/api/support": {};
     "/api/targets": {};
-    "/api/trash": {};
     "/api/visit-files": {};
     "/api/visits": {};
     "/login": {};

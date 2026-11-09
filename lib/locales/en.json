@@ -1468,5 +1468,16 @@
   "لم يُسترجع كود ERP «{0}»: أصبح للعميل «{1}».": "ERP code «{0}» was not restored: it now belongs to the customer «{1}».",
   "استُرجع العميل برقم يورست جديد {0} (حُذف قبل ترقيم العملاء).": "The customer was restored with a new Yourrest number {0} (it was deleted before customers were numbered).",
   "حُذف قبل ترقيم العملاء: يُسترجع برقم يورست جديد.": "Deleted before customers were numbered: it is restored with a new Yourrest number.",
-  "يمكن استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.": "It can be restored later from «Deleted records». Records with linked records cannot be deleted."
+  "يمكن استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.": "It can be restored later from «Deleted records». Records with linked records cannot be deleted.",
+  "اكتب النتيجة والإجراء المطلوب؛ الخانتان إلزاميتان (حرفان على الأقل).": "Write the result and the required action; both fields are required (two characters at least).",
+  "النتيجة والإجراء المطلوب حتى 2000 حرف لكل منهما.": "The result and the required action take up to 2000 characters each.",
+  "بيانات المراجعة غير صحيحة.": "The note’s data is not valid.",
+  "كتابة النتيجة والإجراء المطلوب متاحة لمدير النظام ومدير المبيعات والمشرف فقط.": "Only administrators, sales managers and supervisors write the result and the required action.",
+  "الزيارة أو التواصل غير موجود في تقرير اليوم.": "This visit or contact is not in the daily report.",
+  "النتيجة والإجراء المطلوب تُكتب على شغل فريقك، لا على شغلك.": "The result and the required action are written on your team’s work, not on your own.",
+  "الموظف خارج نطاق فريقك.": "This member is outside your team.",
+  "لا يمكن مراجعة يوم لم يأتِ بعد.": "A day that has not come yet cannot be reviewed.",
+  "تغيّرت مراجعة هذه الزيارة. حدّث التقرير قبل الحفظ.": "The note on this visit has changed. Refresh the report before saving.",
+  "تغيّرت مراجعة هذا اليوم. حدّث التقرير قبل الحفظ.": "The note on this day has changed. Refresh the report before saving.",
+  "طلب القراءة غير صحيح.": "The read request is not valid."
 }

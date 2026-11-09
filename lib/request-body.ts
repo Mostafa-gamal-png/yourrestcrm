@@ -8,11 +8,13 @@ export class RequestBodyError extends Error {
 // /api/mold-requests: 16 000 for the request itself, plus the customer's signature (2026-11-04), a PNG of at most 256 KiB carried as
 // base64 (MOLD_SIGNATURE_BASE64_MAX in portable/mold-rules.mjs, 349 528 characters): 380 000.
 // /api/trash (a restoration, 2026-11-09): an entry's id and a request id, under 300 bytes: 2 000.
+// /api/reviews: the supervisor's «النتيجة» and «الإجراء المطلوب», 2 000 characters each (lib/supervisor-reviews.ts), 3 bytes a character
+// plus the keys: 14 000. /api/review-inbox: «قرأت الكل» on at most 50 notes of kind, id (200) and version: 16 000.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
  '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':380_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/service-kpi':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
- '/api/kpis':60_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
+ '/api/kpis':60_000,'/api/reviews':14_000,'/api/review-inbox':16_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
  '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,
 };
 export function jsonRequestLimit(request:Request){
