@@ -48,7 +48,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'customer',ar:'العملاء',en:'Customers',cells:{
   add:{ar:'إضافة عميل جديد (من صفحة العملاء والخريطة ونموذج الزيارة)',en:'Add a new customer (customers page, map, visit form)',roles:SALES},
   edit:{ar:'تعديل بيانات العميل، وإضافة وتعديل وحذف ماكيناته',en:'Edit a customer\'s details, and add, edit or delete its machines',roles:ALL},
-  delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاء مناطقه (زي تعديل بيانات العميل)، ومفيش حذف لعميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: customers of their regions (as editing a customer\'s details), never one with visits, machines, sales or a route.'}}},
+  delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاؤه هو بس (المسؤول عنهم)، ومفيش حذف لعميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: only the customers assigned to them, never one with visits, machines, sales or a route.'}}},
   export:{ar:'تصدير العملاء (CSV) من صفحة العملاء والخريطة',en:'Export customers (CSV) from the customers page and the map',roles:MANAGEMENT},
   import:{ar:'«استيراد من ERP» واستيراد العملاء والماكينات',en:'«Import from ERP» and the customers and machines imports',roles:['admin','manager']},
  }},

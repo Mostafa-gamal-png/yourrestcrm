@@ -315,7 +315,7 @@ export default function CRM() {
     // «حذف» (lib/permissions.ts): whoever has the cell on, for a record they may delete; the same scope as the server's recordDeleteGuard,
     // best effort (the server decides): the administrator any; a sales manager or supervisor what they may edit and route (their team); a
     // representative a customer of their regions, or a visit or follow-up they recorded; customer service none (service requests stay).
-    const deleteScope=(record:Row)=>!!me&&(me.role==='admin'||(me.role==='rep'?!record.data._readOnly&&(record.kind==='customer'?!record.data._masterReadOnly:record.kind==='activity'&&recordAuthorId(record,members)===me.id):!isServiceRole(me.role)&&canManageRecordRouting(record)));
+    const deleteScope=(record:Row)=>!!me&&(me.role==='admin'||(me.role==='rep'?!record.data._readOnly&&(record.kind==='customer'?!record.data._masterReadOnly&&record.assignedTo===me.id:record.kind==='activity'&&recordAuthorId(record,members)===me.id):!isServiceRole(me.role)&&canManageRecordRouting(record)));
     const canDeleteRecord=(record:Row)=>!record.data._offlineState&&!record.data._offlineAcknowledged&&!record.data._teamReadOnly&&allowedCell(record,'delete')&&record.data.visitWorkflow!=='service-intake-v1'&&deleteScope(record);
     const salesRecords=useMemo(()=>records.filter(r=>(!r.data._readOnly||r.data._offlineState||r.data._offlineAcknowledged)&&r.data.visitWorkflow!=='service-intake-v1'),[records]);
     // The list follows the typed text a moment later, so each letter appears at once and the list never holds the keyboard up.
