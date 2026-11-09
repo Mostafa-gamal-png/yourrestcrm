@@ -58,7 +58,7 @@ export function masterMutationGuard(c:GuardContext,record:Row){
  *  - a visit, a follow-up, a quotation or mold specifications: the edit scope (recordEditGuard: the administrator all, a sales manager
  *    their own and their supervisors' and representatives', a supervisor their own and their representatives'); a representative, who
  *    edits no saved record, only a visit or a follow-up they recorded themselves (its author), of a customer in their regions.
- *  Customer service never reaches here (/api/crm is for the sales team; their service requests are not deleted). The commit re-checks the
+ *  Customer service never reaches here (no delete cell: «—»; /api/crm is for the sales team; their service requests are not deleted). The commit re-checks the
  *  member, the permissions' version (a cell switched off meanwhile fails it safe), the record's version and the reporting line. */
 export function recordDeleteGuard(c:GuardContext,record:Row){
  if(['customer','factory'].includes(record.kind))return masterMutationGuard(c,record);

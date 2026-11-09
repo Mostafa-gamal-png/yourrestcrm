@@ -87,7 +87,7 @@ const ROLES=['admin','manager','supervisor','rep','customer_service','customer_s
 // «حذف» (the owner, 2026-11-09): the grantable cells; mold «إلغاء طلب» is not one of them.
 const DELETES=['customer:delete','activity:delete','followup:delete','quote:delete','sales:delete'];
 eq(P.GRANTABLE_CELLS,DELETES,'the grantable cells: deleting a customer, a visit, a follow-up, a quotation, voiding a sale');
-const roleDeletes=role=>DELETES.filter(key=>A.canViewPage(role,key.split(':')[0]));
+const roleDeletes=role=>['customer_service','customer_service_manager'].includes(role)?[]:DELETES.filter(key=>A.canViewPage(role,key.split(':')[0]));
 // Defaults: today's behaviour, except «حذف»: every screen shows exactly as lib/access.ts canViewPage says, every cell of the role's ceiling
 // is on but the grantable delete cells, which are off for every role but the administrator.
 for(const role of ROLES){
@@ -109,9 +109,9 @@ eq(ceiling('admin'),P.PERMISSION_CELLS,'the administrator has every cell');
 eq(ceiling('manager'),['customer:add','customer:edit','customer:delete','customer:export','customer:import','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:edit','targets:export','trash:edit'],'the sales manager');
 eq(ceiling('supervisor'),['customer:add','customer:edit','customer:delete','customer:export','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:export'],'the supervisor (customer:delete now grantable: the screen is theirs)');
 eq(ceiling('rep'),['customer:add','customer:edit','customer:delete','activity:add','activity:delete','followup:add','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the representative: the delete cells of their screens are grantable (no quotation or sales screen)');
-eq(ceiling('customer_service'),['customer:edit','activity:add','activity:edit','activity:delete','activity:export','complaints:add','complaints:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'customer service: «حذف» on the visits screen they have (no customers screen: customer:edit is their detail correction, not a screen)');
-eq(ceiling('customer_service_manager'),['customer:edit','activity:add','activity:edit','activity:delete','activity:export','complaints:add','complaints:edit','service-kpi:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the customer-service manager');
-for(const role of ROLES)eq(DELETES.filter(key=>{const [screen,action]=key.split(':');return P.cellCeiling(role,screen,action);}),roleDeletes(role),role+': a delete cell for every screen the role has, and only those');
+eq(ceiling('customer_service'),['customer:edit','activity:add','activity:edit','activity:export','complaints:add','complaints:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'customer service: no «حذف» at all («—»: their service requests are never deleted; no customers screen)');
+eq(ceiling('customer_service_manager'),['customer:edit','activity:add','activity:edit','activity:export','complaints:add','complaints:edit','service-kpi:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the customer-service manager');
+for(const role of ROLES)eq(DELETES.filter(key=>{const [screen,action]=key.split(':');return P.cellCeiling(role,screen,action);}),roleDeletes(role),role+': a delete cell for every screen the role has (never customer service), and only those');
 eq(PERMISSION_ROWS_WITH_CELLS(),['customer','activity','complaints','service-kpi','followup','mold-requests','journeys','quote','sales','targets','team','trash'],'the screens with actions; dashboard, map and competitors have «استعراض» only');
 function PERMISSION_ROWS_WITH_CELLS(){return P.PERMISSION_MATRIX.filter(row=>Object.keys(row.cells).length).map(row=>row.screen);}
 
@@ -141,7 +141,7 @@ eq([P.can(adminMe,'team','edit'),P.pageAllowed(adminMe,'team'),P.can(adminMe,'cu
 const forged={role:'rep',access:{version:1,off:['sales:import'],hidden:['trash'],viewAll:true}};
 eq([P.cellRefused(forged,'sales','import'),P.can(forged,'sales','import'),P.pageHidden(forged,'trash'),A.viewsWholeTeam(forged)],[false,false,true,false],'beyond the role: not "refused by a switch", still not allowed; viewAll never applies to a representative');
 // A grantable cell is the decision itself: refused unless on, including for a role without the screen (a forged access cannot grant it).
-eq([P.cellRefused(forged,'customer','delete'),P.can(forged,'customer','delete'),P.cellRefused(forged,'quote','delete'),P.can(forged,'quote','delete'),P.cellRefused({role:'customer_service',access:{version:1,off:[],hidden:[],viewAll:false}},'customer','delete')],[false,true,true,false,true],'rep: customer:delete not in off = granted; quote:delete (not their screen) refused even with nothing off; customer service has no customers screen');
+eq([P.cellRefused(forged,'customer','delete'),P.can(forged,'customer','delete'),P.cellRefused(forged,'quote','delete'),P.can(forged,'quote','delete'),P.cellRefused({role:'customer_service',access:{version:1,off:[],hidden:[],viewAll:false}},'customer','delete'),P.cellRefused({role:'customer_service_manager',access:{version:1,off:[],hidden:[],viewAll:false}},'activity','delete')],[false,true,true,false,true,true],'rep: customer:delete not in off = granted; quote:delete (not their screen) refused even with nothing off; customer service refused both (no cell)');
 eq([P.cellRefused({role:'admin',access:{version:1,off:['activity:delete'],hidden:[],viewAll:false}},'activity','delete'),P.cellRefused({role:'admin'},'activity','delete')],[true,false],'the administrator: off when switched off, on by default');
 // Saved row → what applies.
 const access=P.memberAccess('manager',{permissions:JSON.stringify({'customer:delete':false,'trash:edit':false,'viewAll':true,'junk':false}),hidden:JSON.stringify(['sales','team']),version:4});
@@ -160,7 +160,7 @@ const granter=P.normalizePermissions('manager',{cells:{'customer:delete':true,'a
 copied=P.copyPermissions({role:'manager',stored:granter},'rep');
 eq([copied.stored.cells['customer:delete'],copied.stored.cells['activity:delete'],copied.stored.cells['followup:delete'],copied.skipped.filter(key=>key.endsWith(':delete'))],[true,true,false,['quote:delete','sales:delete']],'manager → rep: customer and visit deletes copied, the follow-up one (off) copied off, quotation and sale skipped');
 copied=P.copyPermissions({role:'manager',stored:granter},'customer_service');
-eq([copied.stored.cells['activity:delete'],'customer:delete' in copied.stored.cells,copied.skipped.includes('customer:delete')],[true,false,true],'manager → customer service: the visits delete copied, the customers one skipped (no screen)');
+eq(['activity:delete' in copied.stored.cells,'customer:delete' in copied.stored.cells,copied.skipped.filter(key=>key.endsWith(':delete'))],[false,false,['customer:delete','activity:delete','quote:delete','sales:delete']],'manager → customer service: no delete cell copied, the granted ones listed as skipped');
 copied=P.copyPermissions({role:'rep',stored:P.normalizePermissions('rep',{cells:{'activity:delete':true}})},'supervisor');
 eq([copied.stored.cells['activity:delete'],copied.stored.cells['customer:delete'],copied.stored.cells['sales:delete']],[true,false,false],'rep → supervisor: a granted visit delete is copied; the rest off');
 copied=P.copyPermissions({role:'supervisor',stored:P.normalizePermissions('supervisor',{hidden:['sales'],viewAll:true})},'admin');
@@ -338,8 +338,8 @@ await remove('rep1','d3');eq(raw('d3'),undefined,'… another representative\'s 
 await remove('rep1','dw',404);ok(raw('dw'),'a customer outside their regions: refused (never visible)');
 eq((await remove('rep1','d1',400)).error,'يوجد سجلات مرتبطة. احذفها قبل حذف هذا السجل.','the existing refusals hold: a customer with visits');
 await remove('rep1','dm1',403);ok(raw('dm1'),'never a machine (its cell is «تحرير» on «العملاء»; a representative never deletes one)');
-// Customer service granted «حذف» on visits: their service requests are not deleted, and /api/crm is the sales team's.
-eq((await grant('cs',{'activity:delete':true})).permissions.cells['activity:delete'],true,'customer service: the cell is grantable');
+// Customer service: no «حذف» cell (their service requests are not deleted, and /api/crm is the sales team's).
+eq('activity:delete' in (await grant('cs',{'activity:delete':true})).permissions.cells,false,'customer service: not grantable, a sent value is not stored');
 eq((await remove('cs','dv3',403)).error,'هذا الإجراء متاح لفريق المبيعات فقط','… and deletes nothing through /api/crm');
 // A supervisor granted «حذف»: their own and their representatives' records only; «عرض بيانات الفريق بالكامل» never widens it.
 await grant('sup',{'activity:delete':true,'customer:delete':true},{viewAll:true});

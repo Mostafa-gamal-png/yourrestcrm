@@ -7,7 +7,7 @@
 // /api/service-kpi, /api/mold-requests, /api/reviews, /api/journeys, /api/device-status, /api/sales, /api/sales/import,
 // /api/erp-customers, /api/targets, /api/kpis, /api/kpi-evidence, /api/trash. «حذف» (2026-11-09): off on release day for every role but the
 // administrator, granted per member within the role's write scope (a representative's own visit, never another's; a supervisor's team only,
-// «عرض بيانات الفريق بالكامل» never widening it; customer service deleting nothing; voiding a sale within the team). Synthetic fixtures only:
+// «عرض بيانات الفريق بالكامل» never widening it; customer service without a delete cell; voiding a sale within the team). Synthetic fixtures only:
 // temporary SQLite, mocked mail.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -75,7 +75,7 @@ try {
 
   // 1. Release day: no saved row; every mapped action answers as before (allowed or refused by the role's own rule, never by a switch).
   eq(Number((await app.db.prepare('SELECT COUNT(*) n FROM crm_member_permissions').first()).n), 0, 'nobody has saved permissions');
-  const DELETES = {admin: [], manager: ['customer:delete', 'activity:delete', 'followup:delete', 'quote:delete', 'sales:delete'], supervisor: ['customer:delete', 'activity:delete', 'followup:delete', 'quote:delete', 'sales:delete'], rep: ['customer:delete', 'activity:delete', 'followup:delete'], customer_service: ['activity:delete'], customer_service_manager: ['activity:delete']};
+  const DELETES = {admin: [], manager: ['customer:delete', 'activity:delete', 'followup:delete', 'quote:delete', 'sales:delete'], supervisor: ['customer:delete', 'activity:delete', 'followup:delete', 'quote:delete', 'sales:delete'], rep: ['customer:delete', 'activity:delete', 'followup:delete'], customer_service: [], customer_service_manager: []};
   for (const {id, role} of members) eq((await session[id]('/api/crm')).json().me.access, {version: 0, off: DELETES[role], hidden: [], viewAll: false}, id + ': the role\'s behaviour, «حذف» off but for the administrator');
   eq((await customerAdd('rep1')).status, 200, 'rep1 adds a customer');
   eq((await customerEdit('rep1', 'c1')).status, 200, 'rep1 edits a customer');
@@ -182,8 +182,8 @@ try {
   eq((await remove('rep1', 'customer', 'cw')).status, 404, 'rep1: a customer outside their regions');
   eq([(await remove('rep1', 'customer', 'c1')).status, await exists('c1')], [400, true], 'rep1: the existing refusals hold (a customer with visits)');
   eq((await remove('rep1', 'customer', 'c5')).status, 200, 'rep1: a customer of their regions with no history');
-  await save('cs2', {cells: {'activity:delete': true}});
-  eq([(await remove('cs2', 'activity', 'v7')).status, await exists('v7')], [403, true], 'customer service granted «حذف»: nothing deleted through /api/crm');
+  eq('activity:delete' in (await save('cs2', {cells: {'activity:delete': true}})).json().permissions.cells, false, 'customer service: «حذف» is not grantable (not stored)');
+  eq([(await remove('cs2', 'activity', 'v7')).status, await exists('v7')], [403, true], 'customer service: nothing deleted through /api/crm');
   await save('sup2', {cells: {'activity:delete': true}, viewAll: true});
   ok((await session.sup2('/api/crm')).json().records.some(r => r.id === 'v7' && r.data._teamReadOnly), 'sup2 reads rep1\'s visit through «عرض بيانات الفريق بالكامل»');
   eq([(await remove('sup2', 'activity', 'v7')).status, await exists('v7')], [403, true], '… and may not delete it: viewAll never widens deleting');

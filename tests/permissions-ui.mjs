@@ -2,7 +2,8 @@
 // (or acts on), «الكل» per row, «—» where the action is not on the screen or not the role's, the administrator's team cells always on and
 // nothing to hide from an administrator, «عرض بيانات الفريق بالكامل» for a supervisor and a sales manager only, «انسخ الصلاحيات من» listing
 // the other members, and a copied draft (lib/permissions.ts copyPermissions) shown with what was skipped. «حذف» (2026-11-09): a cell for every
-// role that has the screen, unticked by default for everyone but the administrator, with its scope note. No browser or network.
+// role that has the screen (not customer service: «—»), unticked by default for everyone but the administrator, with its scope note. No
+// browser or network.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,8 +74,8 @@ ok(!html.includes('data-permission="viewAll"')&&html.includes('مفيش صلاح
 html=render(person('cs','customer_service',saved('customer_service',{},0)));
 eq(rows(html),['customer','activity','complaints','mold-requests'],'customer service: «العملاء» for its edit (not a screen of its own: «استعراض» «—»)');
 eq([isNone(html,'browse:customer'),isBox(html,'customer:edit'),isBox(html,'browse:complaints')],[true,true,true],'customer service: the customer row is only its edit');
-eq([isNone(html,'customer:delete'),isBox(html,'activity:delete'),isChecked(html,'activity:delete')],[true,true,false],'customer service: no customer delete (no screen); visits delete shown, unticked');
-ok(cell(html,'activity:delete').includes('لخدمة العملاء: طلبات خدمة العملاء مبتتحذفش'),'and told it deletes no service request');
+eq([isNone(html,'customer:delete'),isNone(html,'activity:delete')],[true,true],'customer service: «—» for deleting (no customers screen; their service requests are never deleted)');
+eq(isNone(render(person('csm','customer_service_manager',saved('customer_service_manager',{cells:{'activity:delete':true}},1))),'activity:delete'),true,'the customer-service manager too, whatever was sent');
 // «انسخ الصلاحيات من»: the other members (not the edited one), each with their role.
 const mgr=person('mgr','manager',saved('manager',{cells:{'quote:delete':false,'activity:delete':true},hidden:['trash','competitors'],viewAll:true}));
 html=render(sup,[sup,mgr,owner,{...person('old','rep',undefined),readOnly:true}]);

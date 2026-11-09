@@ -3,7 +3,7 @@
 // «انسخ الصلاحيات من» of components/crm/forms.tsx): one row per screen, one column per action (استعراض/إضافة/تحرير/حذف/تصدير/استيراد) and
 // «الكل» per row; «—» where the action is not on the screen or not the role's. Restrict-only (lib/permissions.ts): a switch takes away what
 // the role does today, never more, except «حذف» (customer, visit, follow-up, quotation, void sale): unticked by default for everyone but the
-// administrator, and grantable to any member whose role has the screen (within what they may edit). Under the table «صلاحيات عامة»: «عرض بيانات الفريق بالكامل». The administrator only; saved on its own
+// administrator, and grantable to any member whose role has the screen (within what they may edit; customer service: «—»). Under the table «صلاحيات عامة»: «عرض بيانات الفريق بالكامل». The administrator only; saved on its own
 // («حفظ الصلاحيات», POST /api/crm {action:'permissions'}) with its version, so the member form's own save is unchanged.
 import {useMemo,useRef,useState} from 'react';
 import {Loader2,ShieldCheck,Copy,RefreshCw} from 'lucide-react';
