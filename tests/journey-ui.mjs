@@ -119,7 +119,8 @@ const formKey=crypto.randomUUID(),keySelection=trackerHarness();keySelection.flu
 const visits=load('lib/visits.ts',()=>({}));
 let reportLanguage='ar';const journeyEngine=load('lib/journeys.ts',()=>({}));
 const coverageWindow=load('lib/tracking-window.ts',()=>({})),coverageEngine=load('lib/tracking-coverage.ts',name=>name==='./tracking-window'?coverageWindow:{}),coverageText=load('lib/tracking-coverage-text.ts',name=>name==='./tracking-coverage'?coverageEngine:{});
-const reportModule=load('app/journey-report.tsx',name=>name==='react'?React:name==='react/jsx-runtime'?jsx:name==='lucide-react'?icons:name==='@/lib/i18n'?{useLanguage:()=>({language:reportLanguage})}:name==='@/lib/journeys'?journeyEngine:name==='@/lib/visits'?visits:name==='@/lib/tracking-coverage'?coverageEngine:name==='@/lib/tracking-coverage-text'?coverageText:{});
+// The supervisor's notes (app/supervisor-reviews.tsx) show only inside their provider, which the page adds around the report: none here.
+const reportModule=load('app/journey-report.tsx',name=>name==='./supervisor-reviews'?{EntryReview:()=>null,EntryReviews:()=>null,DayReviewPanel:()=>null,ReportReviewsProvider:({children})=>children}:name==='react'?React:name==='react/jsx-runtime'?jsx:name==='lucide-react'?icons:name==='@/lib/i18n'?{useLanguage:()=>({language:reportLanguage})}:name==='@/lib/journeys'?journeyEngine:name==='@/lib/visits'?visits:name==='@/lib/tracking-coverage'?coverageEngine:name==='@/lib/tracking-coverage-text'?coverageText:{});
 const reportBase={date:'2026-09-30',memberId:'rep',members:[{id:'rep',name:'Representative',role:'rep',active:1}],stops:[],communications:[],serverTime:new Date(base).toISOString()};
 const renderReport=report=>renderToStaticMarkup(React.createElement(reportModule.JourneyDayReport,{report}));
 let html=renderReport(reportBase);ok(html.includes('لا يوجد نشاط مسجل لهذا اليوم'));ok(!html.includes('journey-map-canvas'));

@@ -1436,5 +1436,16 @@
   "مرجع الطلب غير صحيح؛ حدّث الصفحة.": "The request's reference is not valid; refresh the page.",
   "حدد الطلب": "Choose the request",
   "تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.": "The request could not be confirmed just now; refresh the page and try again.",
-  "إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.": "Customer service cannot add customers; choose an existing customer or ask sales to add them."
+  "إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.": "Customer service cannot add customers; choose an existing customer or ask sales to add them.",
+  "اكتب النتيجة والإجراء المطلوب؛ الخانتان إلزاميتان (حرفان على الأقل).": "Write the result and the required action; both fields are required (two characters at least).",
+  "النتيجة والإجراء المطلوب حتى 2000 حرف لكل منهما.": "The result and the required action take up to 2000 characters each.",
+  "بيانات المراجعة غير صحيحة.": "The note’s data is not valid.",
+  "كتابة النتيجة والإجراء المطلوب متاحة لمدير النظام ومدير المبيعات والمشرف فقط.": "Only administrators, sales managers and supervisors write the result and the required action.",
+  "الزيارة أو التواصل غير موجود في تقرير اليوم.": "This visit or contact is not in the daily report.",
+  "النتيجة والإجراء المطلوب تُكتب على شغل فريقك، لا على شغلك.": "The result and the required action are written on your team’s work, not on your own.",
+  "الموظف خارج نطاق فريقك.": "This member is outside your team.",
+  "لا يمكن مراجعة يوم لم يأتِ بعد.": "A day that has not come yet cannot be reviewed.",
+  "تغيّرت مراجعة هذه الزيارة. حدّث التقرير قبل الحفظ.": "The note on this visit has changed. Refresh the report before saving.",
+  "تغيّرت مراجعة هذا اليوم. حدّث التقرير قبل الحفظ.": "The note on this day has changed. Refresh the report before saving.",
+  "طلب القراءة غير صحيح.": "The read request is not valid."
 }
