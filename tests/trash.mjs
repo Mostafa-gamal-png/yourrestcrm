@@ -187,7 +187,8 @@ check((await restore(deletion('quote-1').id,409)).error,'استرجع السجل
 await restore(deletion('opp-1').id);await restore(deletion('quote-1').id);await restore(deletion('machine-1').id);
 check(['machine-1','opp-1','quote-1'].map(id=>[raw(id).parent_id,raw(id).version]),[[home,2],[home,2],['opp-1',2]],'all three back under their parents');
 
-// ---- a sales manager: their own deletions only
+// ---- a sales manager: their own deletions only («حذف» is off by default since 2026-11-09: the administrator granted it)
+sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('mgr','{\"customer:delete\":true}','[]',1,'owner',?)").run(now);
 login('mgr');
 const managed=(await post({action:'save',kind:'customer',data:{name:'مصنع المدير',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;
 await remove(managed);

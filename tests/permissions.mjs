@@ -4,7 +4,11 @@
 // requests); and the routes on an isolated in-memory SQLite (the route modules compiled as the build does, the session faked): the
 // administrator's save (version, 409, audit before/after kept out of the recent changes, retry), a switched-off action refused with its
 // message while other members are unaffected, a hidden screen answering 404, the commit re-checking the permissions' version, and
-// «عرض بيانات الفريق بالكامل» widening what a supervisor reads, never what they write. Synthetic people only; no build, no network.
+// «عرض بيانات الفريق بالكامل» widening what a supervisor reads, never what they write. «حذف» (2026-11-09): off by default for every role but the
+// administrator, grantable to any role that has the screen (copy, old rows, mold cancel unchanged), and on the routes: who (the cell) and
+// what (the role's write scope: a representative's own visits and follow-ups and the customers of their regions, a supervisor's team,
+// viewAll never widening it, customer service nothing, voiding a sale within the team, the commit race, the existing refusals).
+// Synthetic people only; no build, no network.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -80,29 +84,49 @@ for(const name of ['crm','visits','trash','sales','targets','reviews','journeys'
 const P=await import(pathToFileURL(path.join(out,'lib/permissions.mjs'))),A=await import(pathToFileURL(path.join(out,'lib/access.mjs')));
 const ROLES=['admin','manager','supervisor','rep','customer_service','customer_service_manager'];
 
-// Defaults: today's behaviour. Every screen shows exactly as lib/access.ts canViewPage says, every cell of the role's ceiling is on.
+// «حذف» (the owner, 2026-11-09): the grantable cells; mold «إلغاء طلب» is not one of them.
+const DELETES=['customer:delete','activity:delete','followup:delete','quote:delete','sales:delete'];
+eq(P.GRANTABLE_CELLS,DELETES,'the grantable cells: deleting a customer, a visit, a follow-up, a quotation, voiding a sale');
+const roleDeletes=role=>DELETES.filter(key=>A.canViewPage(role,key.split(':')[0]));
+// Defaults: today's behaviour, except «حذف»: every screen shows exactly as lib/access.ts canViewPage says, every cell of the role's ceiling
+// is on but the grantable delete cells, which are off for every role but the administrator.
 for(const role of ROLES){
  const me={role,access:P.memberAccess(role,null)};
- eq(me.access,{version:0,off:[],hidden:[],viewAll:false},role+': no saved row, nothing switched off');
+ eq(me.access,{version:0,off:role==='admin'?[]:roleDeletes(role),hidden:[],viewAll:false},role+': no saved row, only «حذف» off'+(role==='admin'?' (none for the administrator)':''));
  for(const screen of P.PERMISSION_SCREENS){
   eq(P.pageAllowed(me,screen),A.canViewPage(role,screen),role+' sees '+screen+' as before');
-  for(const action of P.PERMISSION_ACTIONS)eq(P.can(me,screen,action),P.cellCeiling(role,screen,action),role+' '+screen+':'+action+' as the role');
+  for(const action of P.PERMISSION_ACTIONS)eq(P.can(me,screen,action),P.cellCeiling(role,screen,action)&&(role==='admin'||!DELETES.includes(screen+':'+action)),role+' '+screen+':'+action+' as the role, «حذف» off unless administrator');
  }
+ // The same without any access read (an old offline snapshot): the defaults, never more.
+ for(const key of DELETES){const [screen,action]=key.split(':');eq(P.can({role},screen,action),role==='admin',role+' without access: '+key+' as the default');}
+ eq(P.can({role},'mold-requests','delete'),true,role+': «إلغاء طلب» on mold requests stays on by default');
+ eq(P.storedFromAccess(role,P.memberAccess(role,null)),P.normalizePermissions(role,null),role+': the matrix of a member never saved shows the defaults');
+ eq(P.storedFromAccess(role,undefined),P.normalizePermissions(role,null),role+': and without access');
 }
 // The ceilings, pinned: what each role does today on each screen (the table of the guide).
 const ceiling=role=>P.PERMISSION_CELLS.filter(key=>{const [screen,action]=key.split(':');return P.cellCeiling(role,screen,action);});
 eq(ceiling('admin'),P.PERMISSION_CELLS,'the administrator has every cell');
 eq(ceiling('manager'),['customer:add','customer:edit','customer:delete','customer:export','customer:import','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:edit','targets:export','trash:edit'],'the sales manager');
-eq(ceiling('supervisor'),['customer:add','customer:edit','customer:export','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:export'],'the supervisor');
-eq(ceiling('rep'),['customer:add','customer:edit','activity:add','followup:add','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the representative');
-eq(ceiling('customer_service'),['customer:edit','activity:add','activity:edit','activity:export','complaints:add','complaints:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'customer service');
-eq(ceiling('customer_service_manager'),['customer:edit','activity:add','activity:edit','activity:export','complaints:add','complaints:edit','service-kpi:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the customer-service manager');
+eq(ceiling('supervisor'),['customer:add','customer:edit','customer:delete','customer:export','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:export'],'the supervisor (customer:delete now grantable: the screen is theirs)');
+eq(ceiling('rep'),['customer:add','customer:edit','customer:delete','activity:add','activity:delete','followup:add','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the representative: the delete cells of their screens are grantable (no quotation or sales screen)');
+eq(ceiling('customer_service'),['customer:edit','activity:add','activity:edit','activity:delete','activity:export','complaints:add','complaints:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'customer service: «حذف» on the visits screen they have (no customers screen: customer:edit is their detail correction, not a screen)');
+eq(ceiling('customer_service_manager'),['customer:edit','activity:add','activity:edit','activity:delete','activity:export','complaints:add','complaints:edit','service-kpi:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the customer-service manager');
+for(const role of ROLES)eq(DELETES.filter(key=>{const [screen,action]=key.split(':');return P.cellCeiling(role,screen,action);}),roleDeletes(role),role+': a delete cell for every screen the role has, and only those');
 eq(PERMISSION_ROWS_WITH_CELLS(),['customer','activity','complaints','service-kpi','followup','mold-requests','journeys','quote','sales','targets','team','trash'],'the screens with actions; dashboard, map and competitors have «استعراض» only');
 function PERMISSION_ROWS_WITH_CELLS(){return P.PERMISSION_MATRIX.filter(row=>Object.keys(row.cells).length).map(row=>row.screen);}
 
 // Normalising: within the role only, a cell never saved is on, junk is dropped.
 let n=P.normalizePermissions('supervisor',{cells:{'customer:delete':false,'customer:edit':false,'quote:add':'no','sales:import':false,'bogus':false},hidden:['sales','team','trash','sales',7,'nowhere'],viewAll:true});
-eq([n.cells['customer:edit'],n.cells['quote:add'],n.cells['sales:import'],'customer:delete' in n.cells,'bogus' in n.cells],[false,true,false,false,false],'cells beyond the role and unknown keys are dropped; a non-false value is on');
+eq([n.cells['customer:edit'],n.cells['quote:add'],n.cells['sales:import'],n.cells['customer:delete'],'bogus' in n.cells,'team:add' in n.cells],[false,true,false,false,false,false],'cells beyond the role and unknown keys are dropped; a non-false value is on; customer:delete is now the supervisor\'s (off)');
+// «حذف»: a delete cell is on only when saved true (a non-admin's default is off, junk stays off); the administrator's is on unless saved false.
+const g=P.normalizePermissions('rep',{cells:{'activity:delete':true,'followup:delete':'yes','customer:delete':1,'mold-requests:delete':false,'quote:delete':true}});
+eq([g.cells['activity:delete'],g.cells['followup:delete'],g.cells['customer:delete'],g.cells['mold-requests:delete'],'quote:delete' in g.cells,'sales:delete' in g.cells],[true,false,false,false,false,false],'rep: granted visits only; junk is not a grant; the mold cancel can still be switched off; no quotation or sales screen, no cell');
+eq(P.normalizePermissions('admin',{cells:{'customer:delete':'no'}}).cells['customer:delete'],true,'the administrator: on unless saved false');
+eq(P.normalizePermissions('admin',null).cells,Object.fromEntries(P.PERMISSION_CELLS.map(key=>[key,true])),'the administrator never saved: every cell on, «حذف» included');
+// An old saved row (saved before this change) with a manager's delete cells never written: they are off now (release day: managers and
+// supervisors lose deleting until the administrator ticks it); written true they stay granted.
+eq(P.memberAccess('supervisor',{permissions:JSON.stringify({'activity:edit':false}),hidden:'[]',version:3}).off,['customer:delete','activity:edit','activity:delete','followup:delete','quote:delete','sales:delete'],'an old row: the delete cells off');
+eq(P.memberAccess('supervisor',{permissions:JSON.stringify({'activity:delete':true,'sales:delete':true}),hidden:'[]',version:3}).off,['customer:delete','followup:delete','quote:delete'],'granted cells on');
 eq(n.hidden,['sales'],'only screens the role has can be hidden, once each');
 eq(n.viewAll,true,'«عرض بيانات الفريق بالكامل» exists for the supervisor');
 eq(P.normalizePermissions('rep',{viewAll:true}).viewAll,false,'not for a representative (reads stay as the role: decided, writes on own data only)');
@@ -114,12 +138,15 @@ eq([n.cells['team:add'],n.cells['team:edit'],n.cells['customer:delete'],n.hidden
 const adminMe={role:'admin',access:{version:3,off:['team:edit','customer:delete'],hidden:['team'],viewAll:false}};
 eq([P.can(adminMe,'team','edit'),P.pageAllowed(adminMe,'team'),P.can(adminMe,'customer','delete')],[true,true,false],'even a forged access object cannot lock the administrator out of the team page');
 // The ceiling: a switch never refuses what the role cannot do anyway (the routes' own checks answer, with their own words).
-const forged={role:'rep',access:{version:1,off:['customer:delete','sales:import'],hidden:['trash'],viewAll:true}};
-eq([P.cellRefused(forged,'customer','delete'),P.can(forged,'customer','delete'),P.pageHidden(forged,'trash'),A.viewsWholeTeam(forged)],[false,false,true,false],'beyond the role: not "refused by a switch", still not allowed; viewAll never applies to a representative');
+const forged={role:'rep',access:{version:1,off:['sales:import'],hidden:['trash'],viewAll:true}};
+eq([P.cellRefused(forged,'sales','import'),P.can(forged,'sales','import'),P.pageHidden(forged,'trash'),A.viewsWholeTeam(forged)],[false,false,true,false],'beyond the role: not "refused by a switch", still not allowed; viewAll never applies to a representative');
+// A grantable cell is the decision itself: refused unless on, including for a role without the screen (a forged access cannot grant it).
+eq([P.cellRefused(forged,'customer','delete'),P.can(forged,'customer','delete'),P.cellRefused(forged,'quote','delete'),P.can(forged,'quote','delete'),P.cellRefused({role:'customer_service',access:{version:1,off:[],hidden:[],viewAll:false}},'customer','delete')],[false,true,true,false,true],'rep: customer:delete not in off = granted; quote:delete (not their screen) refused even with nothing off; customer service has no customers screen');
+eq([P.cellRefused({role:'admin',access:{version:1,off:['activity:delete'],hidden:[],viewAll:false}},'activity','delete'),P.cellRefused({role:'admin'},'activity','delete')],[true,false],'the administrator: off when switched off, on by default');
 // Saved row → what applies.
 const access=P.memberAccess('manager',{permissions:JSON.stringify({'customer:delete':false,'trash:edit':false,'viewAll':true,'junk':false}),hidden:JSON.stringify(['sales','team']),version:4});
-eq(access,{version:4,off:['customer:delete','trash:edit'],hidden:['sales'],viewAll:true},'a saved row: switched-off cells, hidden screens of the role, viewAll');
-eq(P.memberAccess('manager',{permissions:'not json',hidden:'{',version:2}),{version:2,off:[],hidden:[],viewAll:false},'an unreadable row is the role\'s behaviour (never more)');
+eq(access,{version:4,off:['customer:delete','activity:delete','followup:delete','quote:delete','sales:delete','trash:edit'],hidden:['sales'],viewAll:true},'a saved row: switched-off cells (the delete cells never granted), hidden screens of the role, viewAll');
+eq(P.memberAccess('manager',{permissions:'not json',hidden:'{',version:2}),{version:2,off:DELETES,hidden:[],viewAll:false},'an unreadable row is the role\'s behaviour (never more: no delete)');
 // Copying: every cell of the target's ceiling takes the source's value; what the target's role cannot hold is skipped and listed.
 const managerSaved=P.normalizePermissions('manager',{cells:{'customer:delete':false,'quote:delete':false},hidden:['trash','competitors'],viewAll:true});
 let copied=P.copyPermissions({role:'manager',stored:managerSaved},'supervisor');
@@ -128,8 +155,16 @@ eq(copied.skipped,['customer:import','targets:edit','trash:edit','browse:trash']
 eq(copied.skipped.map(key=>P.permissionKeyText(key)),['العملاء · استيراد','المستهدفات وتقييم الأداء · تحرير','المحذوفات · تحرير','المحذوفات · استعراض'],'and named in Arabic');
 copied=P.copyPermissions({role:'rep',stored:P.normalizePermissions('rep',{cells:{'customer:add':false}})},'supervisor');
 eq([copied.stored.cells['customer:add'],copied.stored.cells['activity:edit'],copied.stored.cells['sales:add']],[false,false,false],'rep → supervisor: the supervisor\'s cells a representative does not have come over off (GSCO copies the value)');
+// «حذف» copies to whoever's role has the screen; the source's grant of a screen the target lacks is skipped and listed.
+const granter=P.normalizePermissions('manager',{cells:{'customer:delete':true,'activity:delete':true,'quote:delete':true,'sales:delete':true}});
+copied=P.copyPermissions({role:'manager',stored:granter},'rep');
+eq([copied.stored.cells['customer:delete'],copied.stored.cells['activity:delete'],copied.stored.cells['followup:delete'],copied.skipped.filter(key=>key.endsWith(':delete'))],[true,true,false,['quote:delete','sales:delete']],'manager → rep: customer and visit deletes copied, the follow-up one (off) copied off, quotation and sale skipped');
+copied=P.copyPermissions({role:'manager',stored:granter},'customer_service');
+eq([copied.stored.cells['activity:delete'],'customer:delete' in copied.stored.cells,copied.skipped.includes('customer:delete')],[true,false,true],'manager → customer service: the visits delete copied, the customers one skipped (no screen)');
+copied=P.copyPermissions({role:'rep',stored:P.normalizePermissions('rep',{cells:{'activity:delete':true}})},'supervisor');
+eq([copied.stored.cells['activity:delete'],copied.stored.cells['customer:delete'],copied.stored.cells['sales:delete']],[true,false,false],'rep → supervisor: a granted visit delete is copied; the rest off');
 copied=P.copyPermissions({role:'supervisor',stored:P.normalizePermissions('supervisor',{hidden:['sales'],viewAll:true})},'admin');
-eq([copied.stored.hidden,copied.stored.cells['team:edit'],copied.skipped],[[],true,['browse:sales','viewAll']],'→ administrator: nothing hidden, team kept, the rest listed');
+eq([copied.stored.hidden,copied.stored.cells['team:edit'],copied.stored.cells['customer:delete'],copied.skipped],[[],true,false,['browse:sales','viewAll']],'→ administrator: nothing hidden, team kept, the source\'s values (its deletes off), the rest listed');
 // A hidden screen's requests: closed only when every screen sharing them is hidden or not the role's.
 const sup={role:'supervisor',access:{version:1,off:[],hidden:['sales'],viewAll:false}};
 eq([P.pagesBlocked(sup,['sales']),P.pagesBlocked(sup,['sales','targets']),P.pagesBlocked({...sup,access:{...sup.access,hidden:['sales','targets']}},['sales','targets'])],[true,false,true],'/api/sales: open while «المستهدفات» uses it');
@@ -181,34 +216,37 @@ const editCustomer=(as,id,status)=>{const row=raw(id);return call(crm.POST,{as,u
 
 // Release day: nobody has a saved row; GET /api/crm sends the member's own access (role defaults) and, to the administrator, everyone's.
 let mine=await state('mgr');
-eq(mine.me.access,{version:0,off:[],hidden:[],viewAll:false},'the manager: role defaults');
+eq(mine.me.access,{version:0,off:DELETES,hidden:[],viewAll:false},'the manager: role defaults, «حذف» off');
 ok(mine.members.every(m=>m.permissions===undefined),'nobody but the administrator receives saved permissions');
 let admin=await state('owner');
 eq(admin.members.find(m=>m.id==='mgr').permissions.version,0,'the administrator sees each member, never saved: version 0');
-eq(admin.members.find(m=>m.id==='mgr').permissions.cells['customer:delete'],true,'with every cell of the role on');
+eq(Object.entries(admin.members.find(m=>m.id==='mgr').permissions.cells).filter(([,on])=>!on).map(([key])=>key),DELETES,'with every cell of the role on but «حذف»');
+eq(admin.me.access.off,[],'the administrator: «حذف» on by default');
+// Release day: the manager no longer deletes until the administrator ticks «حذف».
+eq((await remove('mgr','c3',403)).error,'مش مسموح لك بالحذف في العملاء. راجع مدير النظام.','the manager may not delete a customer by default');
 // Who saves: the administrator only.
 for(const as of ['mgr','sup','rep1','cs'])await savePerms(as,'rep1',0,{},403);
 await savePerms('owner','ghost',0,{},404);
 await savePerms('owner','mgr',0,{cells:{'customer:delete':'off'}},400);
 await savePerms('owner','mgr',0,{surprise:true},400);
-// The administrator removes «حذف» on customers from the manager.
+// The administrator grants «حذف» on customers to the manager.
 const requestId=crypto.randomUUID();
-let saved=await savePerms('owner','mgr',0,{cells:{'customer:delete':false,'bogus:add':false,'team:edit':false},hidden:['sales','team'],viewAll:false},200,requestId);
-eq([saved.permissions.version,saved.permissions.cells['customer:delete'],'team:edit' in saved.permissions.cells,saved.permissions.hidden],[1,false,false,['sales']],'saved within the manager\'s role: version 1');
-eq((await savePerms('owner','mgr',0,{cells:{'customer:delete':false,'bogus:add':false,'team:edit':false},hidden:['sales','team']},200,requestId)).alreadySaved,true,'a retry of the same save answers as it did');
-eq((await savePerms('owner','mgr',0,{cells:{'customer:delete':true}},409)).code,'PERMISSIONS_CONFLICT','a stale version is refused (409)');
+let saved=await savePerms('owner','mgr',0,{cells:{'customer:delete':true,'bogus:add':false,'team:edit':false},hidden:['sales','team'],viewAll:false},200,requestId);
+eq([saved.permissions.version,saved.permissions.cells['customer:delete'],'team:edit' in saved.permissions.cells,saved.permissions.hidden],[1,true,false,['sales']],'saved within the manager\'s role: version 1');
+eq((await savePerms('owner','mgr',0,{cells:{'customer:delete':true,'bogus:add':false,'team:edit':false},hidden:['sales','team']},200,requestId)).alreadySaved,true,'a retry of the same save answers as it did');
+eq((await savePerms('owner','mgr',0,{cells:{'customer:delete':false}},409)).code,'PERMISSIONS_CONFLICT','a stale version is refused (409)');
 const audit=sql.prepare("SELECT record_id,actor,action,detail FROM crm_audit WHERE action='صلاحيات'").all();
 eq(audit.length,1,'one «صلاحيات» history entry');
 const detail=JSON.parse(audit[0].detail);
-eq([audit[0].record_id,audit[0].actor,detail.memberId,detail.before.version,detail.before.cells['customer:delete'],detail.after.version,detail.after.cells['customer:delete'],detail.after.hidden],['mgr','اسم owner','mgr',0,true,1,false,['sales']],'with before and after');
+eq([audit[0].record_id,audit[0].actor,detail.memberId,detail.before.version,detail.before.cells['customer:delete'],detail.after.version,detail.after.cells['customer:delete'],detail.after.hidden],['mgr','اسم owner','mgr',0,false,1,true,['sales']],'with before and after');
 for(const as of ['owner','mgr'])ok(!(await state(as)).audits.some(a=>a.action==='صلاحيات'),'kept out of the recent changes of GET /api/crm ('+as+')');
 // The manager's page picks it up on the next load; the server refuses it.
 mine=await state('mgr');
-eq(mine.me.access,{version:1,off:['customer:delete'],hidden:['sales'],viewAll:false},'the manager\'s next load carries the switches');
-eq((await remove('mgr','c3',403)).error,'مش مسموح لك بالحذف في العملاء. راجع مدير النظام.','the manager may no longer delete a customer');
-ok(raw('c3'),'the customer is still there');
+eq(mine.me.access,{version:1,off:DELETES.filter(key=>key!=='customer:delete'),hidden:['sales'],viewAll:false},'the manager\'s next load carries the switches');
 await editCustomer('mgr','c3');
-await remove('mgr2','c3');eq(raw('c3'),undefined,'another manager is unaffected: deleted');
+eq((await remove('mgr2','c3',403)).error,'مش مسموح لك بالحذف في العملاء. راجع مدير النظام.','another manager is unaffected: still not granted');
+ok(raw('c3'),'the customer is still there');
+await remove('mgr','c3');eq(raw('c3'),undefined,'the granted manager deletes it');
 // A hidden screen's requests answer 404 (never 401/403, which lock the offline session).
 const salesGet=as=>call(sales.GET,{as,url:'https://test.invalid/api/sales?month='+day.slice(0,7)},200);
 await salesGet('mgr');
@@ -264,4 +302,69 @@ await savePerms('owner','sup',4,{hidden:['journeys']});
 await call(reviews.GET,{as:'sup',url:'https://test.invalid/api/reviews?date='+day+'&memberId=rep1'},404);
 // A body over /api/crm's limit is still refused before it is read; a save from another site is refused.
 await call(crm.POST,{as:'owner',url:'https://test.invalid/api/crm',body:{action:'permissions',memberId:'mgr',version:5,cells:{},hidden:[]},origin:'https://evil.example'},403);
+
+// ---- 4. «حذف» off by default, grantable to any member (the owner, 2026-11-09): the cell decides who, the role's write scope decides what.
+const version=id=>Number(sql.prepare('SELECT version FROM crm_member_permissions WHERE member_id=?').get(id)?.version||0);
+const grant=(id,cells,extra={})=>savePerms('owner',id,version(id),{cells,...extra});
+const regionCustomer=(id,assigned,region)=>record(id,'customer',null,assigned,{name:'مصنع '+id,region,city:'',location:'',code:'',customerType:'',customerStatus:'',category:'',shortAddress:'',address:'',contact:'',phone:'',email:''});
+for(const [id,assigned] of [['d1','rep1'],['d2','rep1'],['d3','rep2'],['d4','rep1'],['d5','rep2'],['d6','rep1'],['d7','rep2'],['d8','rep2']])customer(id,assigned);
+regionCustomer('dw','rep1','الغربية');
+visit('dv1','rep1','d1');visit('dv2','rep2','d8');visit('dv3','rep1','d1');visit('dv4','sup','d1');visit('dv5','rep1','d1');visit('dvA','owner','d1');visit('dv6','rep1','d1');
+record('df1','activity','d1','rep1',{type:'call',date:day,summary:'متابعة',result:'تمت',outcome:'pending',notes:'',performedBy:'rep1',responsibleId:'rep1',recordedByEmail:'rep1@yourrest.org',visitWorkflow:'followup-v1'});
+record('dm1','factory','d6','rep1',{name:'ماكينة',machineType:'',brand:'',model:'',notes:''});
+const NOT=screen=>`مش مسموح لك بالحذف في ${screen}. راجع مدير النظام.`;
+// Default: nobody but the administrator deletes; the same 403 an old page meets.
+eq((await remove('sup','dv1',403)).error,NOT('الزيارات'),'supervisor: no visit delete by default');
+eq((await remove('rep1','dv1',403)).error,NOT('الزيارات'),'representative: no visit delete by default');
+eq((await remove('rep1','df1',403)).error,NOT('المتابعات'),'representative: no follow-up delete by default');
+eq((await remove('rep1','d2',403)).error,NOT('العملاء'),'representative: no customer delete by default');
+eq((await remove('mgr2','dv1',403)).error,NOT('الزيارات'),'a sales manager never saved: no delete');
+await remove('cs','dv1',403);
+await remove('owner','dvA');eq(raw('dvA'),undefined,'the administrator deletes by default');
+ok(raw('dv1')&&raw('df1')&&raw('d2'),'nothing else deleted');
+// A representative granted «حذف» on visits: their own visits of customers in their regions; never another's, never a follow-up (its own cell).
+await grant('rep1',{'activity:delete':true});
+eq((await state('rep1')).me.access.off.includes('activity:delete'),false,'the grant reaches the representative\'s next load');
+await remove('rep1','dv1');eq(raw('dv1'),undefined,'the representative deletes their own visit');
+await remove('rep1','dv2',404);ok(raw('dv2'),'another representative\'s visit: not theirs (404, never shown to them)');
+await remove('rep1','dv4',404);ok(raw('dv4'),'their supervisor\'s visit on their customer: not theirs');
+eq((await remove('rep1','df1',403)).error,NOT('المتابعات'),'a follow-up needs «حذف» on «المتابعات»');
+eq((await remove('rep1','d2',403)).error,NOT('العملاء'),'a customer needs «حذف» on «العملاء»');
+ok(sql.prepare("SELECT 1 FROM crm_audit WHERE record_id='dv1' AND action='حذف'").get(),'the deletion has its «حذف» entry (the administrator restores it from «المحذوفات»)');
+await grant('rep1',{'activity:delete':true,'followup:delete':true,'customer:delete':true});
+await remove('rep1','df1');eq(raw('df1'),undefined,'granted «المتابعات»: their own follow-up');
+await remove('rep1','d2');eq(raw('d2'),undefined,'granted «العملاء»: a customer of their regions with no history');
+await remove('rep1','d3');eq(raw('d3'),undefined,'… another representative\'s customer in their regions too (as editing a customer\'s details)');
+await remove('rep1','dw',404);ok(raw('dw'),'a customer outside their regions: refused (never visible)');
+eq((await remove('rep1','d1',400)).error,'يوجد سجلات مرتبطة. احذفها قبل حذف هذا السجل.','the existing refusals hold: a customer with visits');
+await remove('rep1','dm1',403);ok(raw('dm1'),'never a machine (its cell is «تحرير» on «العملاء»; a representative never deletes one)');
+// Customer service granted «حذف» on visits: their service requests are not deleted, and /api/crm is the sales team's.
+eq((await grant('cs',{'activity:delete':true})).permissions.cells['activity:delete'],true,'customer service: the cell is grantable');
+eq((await remove('cs','dv3',403)).error,'هذا الإجراء متاح لفريق المبيعات فقط','… and deletes nothing through /api/crm');
+// A supervisor granted «حذف»: their own and their representatives' records only; «عرض بيانات الفريق بالكامل» never widens it.
+await grant('sup',{'activity:delete':true,'customer:delete':true},{viewAll:true});
+await remove('sup','dv3');eq(raw('dv3'),undefined,'their representative\'s visit');
+await remove('sup','dv4');eq(raw('dv4'),undefined,'their own visit');
+ok((await state('sup')).records.some(r=>r.id==='dv2'&&r.data._teamReadOnly),'another team\'s visit is shown, read only (viewAll)');
+eq((await remove('sup','dv2',403)).error,'السجل خارج نطاق صلاحيتك','… and not deleted: viewAll never widens deleting');ok(raw('dv2'),'still there');
+await remove('sup','d4');eq(raw('d4'),undefined,'a customer of their team');
+eq((await remove('sup','d5',403)).error,'تعديل بيانات العميل متاح للمسؤول وفريقه فقط','not a customer of another team');ok(raw('d5'),'still there');
+// The commit re-checks the permissions: a switch turned off between the decision and the write fails it safe.
+race=()=>{sql.prepare("UPDATE crm_member_permissions SET permissions=json_set(permissions,'$.\"activity:delete\"',json('false')),version=version+1 WHERE member_id='sup'").run();};
+await remove('sup','dv5',409);ok(raw('dv5'),'the visit stays');
+eq((await remove('sup','dv5',403)).error,NOT('الزيارات'),'and the next attempt meets the switch');
+// The administrator can switch it off for another administrator (and for themselves); the team cells stay fixed.
+member('owner2','admin');
+eq((await grant('owner2',{'activity:delete':false})).permissions.cells['activity:delete'],false,'another administrator\'s «حذف» switched off');
+eq((await remove('owner2','dv5',403)).error,NOT('الزيارات'),'and refused');
+// Void a sale: «حذف» on «المبيعات», within the team the role writes for.
+const sale=(id,rep,customerId)=>sql.prepare("INSERT INTO crm_sales(id,customer_id,rep_id,branch,date,reference,reference_key,data,total_cents,status,void_reason,version,mutation_id,create_fingerprint,created_by,created_at,updated_at) VALUES(?,?,?,'الرئيسي',?,?,?,'{}',1000,'confirmed','',1,'m','f','owner',?,?)").run(id,customerId,rep,day,'INV-'+id,'inv-'+id,now,now);
+sale('s1','rep1','d6');sale('s2','rep2','d7');sale('s3','rep1','d6');
+const voidSale=(as,id,status)=>call(sales.POST,{as,url:'https://test.invalid/api/sales',body:{action:'void',id,version:1,reason:'خطأ في الإدخال'}},status);
+const saleStatus=id=>sql.prepare('SELECT status FROM crm_sales WHERE id=?').get(id).status;
+eq((await voidSale('mgr2','s1',403)).error,NOT('المبيعات'),'a sales manager never saved: no void');
+await grant('sup',{'sales:delete':true});
+await voidSale('sup','s1');eq(saleStatus('s1'),'void','a granted supervisor voids their representative\'s sale');
+await voidSale('sup','s2',404);eq(saleStatus('s2'),'confirmed','not another team\'s');
+await voidSale('owner','s3');eq(saleStatus('s3'),'void','the administrator voids by default');
 console.log(JSON.stringify({ok:true,checks}));

@@ -2,9 +2,16 @@
 // تحرير/حذف/تصدير/استيراد، وعمود «الكل». «انسخ الصلاحيات من» مستخدم آخر، وإخفاء أي شاشة عن أي حساب … مع مفتاح «عرض بيانات الفريق بالكامل».»).
 // Copied from GSCO 2.13.61 (lib/crm/permission-matrix.ts, components/crm/permission-matrix.tsx, section-access.ts), adapted to Yourrest:
 // - RESTRICT-ONLY: a cell exists for a role only when the role can do that action today (its «سقف»); a switch can only take it away.
-//   GSCO lets the owner grant anything; Yourrest's first version cannot grant beyond the role (scope and safety logic stay intact), with
-//   one exception, «عرض بيانات الفريق بالكامل», which widens what a supervisor or a sales manager READS (never what they write).
-// - A member without a saved row (crm_member_permissions, migration 0020) has exactly today's behaviour; a cell never saved is on.
+//   GSCO lets the owner grant anything; Yourrest cannot grant beyond the role (scope and safety logic stay intact), with two exceptions:
+//   1. «عرض بيانات الفريق بالكامل», which widens what a supervisor or a sales manager READS (never what they write);
+//   2. «حذف» (the owner, 2026-11-09: «امكانية اعطاء الصلاحية دى تمام اقدر اديها لاى مستخدم بس العادى ان محدش يقدر يحذف حاجة»): the
+//      GRANTABLE delete cells (customer, visit, follow-up, quotation, void sale) are OFF by default for every role but the administrator
+//      (on by default, and the administrator may switch it off for another administrator's account) and can be granted to ANY member whose
+//      role has the screen. Granting never widens the record scope: a member deletes only a record they may write under their role's own
+//      write scope (lib/crm-server.ts recordDeleteGuard, app/api/sales/route.ts), never through «عرض بيانات الفريق بالكامل». «إلغاء طلب» on
+//      mold requests is not one of them: a workflow step of one's own request, on by default and restrict-only as before.
+// - A member without a saved row (crm_member_permissions, migration 0020) has today's behaviour; a cell never saved is on, except a
+//   grantable «حذف» cell, which is off for every role but the administrator.
 // - «استعراض» shows or hides the screen (hidden: its own requests answer 404, never 401/403, which lock the offline session).
 // - The administrator is never locked out: nothing is hidden from an administrator and their «الفريق والصلاحيات» cells are always on.
 // Shared by the server (lib/crm-server.ts context(), the routes) and the page (nav, buttons, the matrix in the member form).
@@ -22,13 +29,18 @@ const actionNouns:Record<PermissionAction,readonly [string,string]>={add:['ال�
 
 export type PermissionScreen='dashboard'|'customer'|'map'|'activity'|'complaints'|'service-kpi'|'followup'|'mold-requests'|'journeys'|'quote'|'sales'|'competitors'|'targets'|'team'|'trash';
 type Text={ar:string;en:string};
-/** One action of one screen: what it gates (shown on the cell), the roles that can do it today (its ceiling), and a note when the screen
- *  has no button for some of those roles (the switch still closes the server's door, for an old page or a direct request). */
-export type MatrixCell=Text&{roles:readonly string[];note?:Text};
+/** One action of one screen: what it gates (shown on the cell), the roles that can do it today (its ceiling), and a note. A grantable cell
+ *  (grantable:true, the «حذف» cells) exists for every role that has the screen; its roles are those it is ON for by default (the
+ *  administrator), and roleNote says, for a role, what granting it does for that role. */
+export type MatrixCell=Text&{roles:readonly string[];grantable?:true;note?:Text;roleNote?:Partial<Record<string,Text>>};
 export type MatrixRow=Text&{screen:PermissionScreen;cells:Partial<Record<PermissionAction,MatrixCell>>};
 const ALL=['admin','manager','supervisor','rep','customer_service','customer_service_manager'] as const;
 const SALES=['admin','manager','supervisor','rep'] as const,MANAGEMENT=['admin','manager','supervisor'] as const,SERVICE=['admin','customer_service','customer_service_manager'] as const;
-const adminOnlyButton:Text={ar:'زرار الحذف في الصفحة لمدير النظام بس؛ الخانة بتقفل الحذف من أي صفحة قديمة أو طلب مباشر كمان.',en:'Only the administrator has the delete button on the page; the switch also closes deleting from an old page or a direct request.'};
+/** «حذف»: off by default except for the administrator; whoever it is granted to deletes only what they may edit (their own scope). */
+const DEFAULT_ON=['admin'] as const;
+const deleteScope:Text={ar:'مقفولة في الأول لكل الأدوار ما عدا مدير النظام، وتقدر تفتحها لأي مستخدم. بيحذف السجلات اللي يقدر يعدّلها بس (فريقه ومناطقه)، وعرض بيانات الفريق بالكامل مبيوسّعش الحذف.',en:'Off by default for every role but the administrator; it can be granted to any member. They delete only the records they may edit (their team and regions); «View the whole team\'s data» never widens deleting.'};
+const repOwnContacts:Text={ar:'للمندوب: زياراته ومتابعاته هو بس (اللي سجّلها)، لعملاء مناطقه.',en:'For a representative: only their own visits and follow-ups (recorded by them), of customers in their regions.'};
+const serviceNoDelete:Text={ar:'لخدمة العملاء: طلبات خدمة العملاء مبتتحذفش (مفيش حذف لطلب خدمة عملاء لأي حد، ولا مدير النظام)، فالخانة دي ملهاش أثر لحساب خدمة العملاء دلوقتي.',en:'For customer service: service requests are never deleted (nobody, not even the administrator, deletes one), so this switch has no effect for a customer-service account for now.'};
 
 /** The rows: Yourrest's screens in the order of the navigation (app/crm-app.tsx nav), each action mapped to the capability it gates. */
 export const PERMISSION_MATRIX:readonly MatrixRow[]=[
@@ -36,7 +48,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'customer',ar:'العملاء',en:'Customers',cells:{
   add:{ar:'إضافة عميل جديد (من صفحة العملاء والخريطة ونموذج الزيارة)',en:'Add a new customer (customers page, map, visit form)',roles:SALES},
   edit:{ar:'تعديل بيانات العميل، وإضافة وتعديل وحذف ماكيناته',en:'Edit a customer\'s details, and add, edit or delete its machines',roles:ALL},
-  delete:{ar:'حذف عميل',en:'Delete a customer',roles:['admin','manager']},
+  delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاء مناطقه (زي تعديل بيانات العميل)، ومفيش حذف لعميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: customers of their regions (as editing a customer\'s details), never one with visits, machines, sales or a route.'}}},
   export:{ar:'تصدير العملاء (CSV) من صفحة العملاء والخريطة',en:'Export customers (CSV) from the customers page and the map',roles:MANAGEMENT},
   import:{ar:'«استيراد من ERP» واستيراد العملاء والماكينات',en:'«Import from ERP» and the customers and machines imports',roles:['admin','manager']},
  }},
@@ -44,7 +56,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'activity',ar:'الزيارات',en:'Visits',cells:{
   add:{ar:'تسجيل زيارة جديدة (ولخدمة العملاء: تسجيل طلب/فرصة جديدة)',en:'Record a new visit (customer service: register a new request)',roles:ALL},
   edit:{ar:'تعديل زيارة محفوظة (ولخدمة العملاء: تعديل الطلب قبل اعتماده)',en:'Edit a saved visit (customer service: edit a request before approval)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
-  delete:{ar:'حذف زيارة',en:'Delete a visit',roles:MANAGEMENT,note:adminOnlyButton},
+  delete:{ar:'حذف زيارة',en:'Delete a visit',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts,customer_service:serviceNoDelete,customer_service_manager:serviceNoDelete}},
   export:{ar:'تصدير الزيارات (CSV)',en:'Export visits (CSV)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
  }},
  {screen:'complaints',ar:'الشكاوى',en:'Complaints',cells:{
@@ -57,7 +69,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'followup',ar:'المتابعات',en:'Follow-ups',cells:{
   add:{ar:'تسجيل متابعة',en:'Record a follow-up',roles:SALES},
   edit:{ar:'تعديل متابعة محفوظة',en:'Edit a saved follow-up',roles:MANAGEMENT},
-  delete:{ar:'حذف متابعة',en:'Delete a follow-up',roles:MANAGEMENT,note:adminOnlyButton},
+  delete:{ar:'حذف متابعة',en:'Delete a follow-up',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts}},
  }},
  {screen:'mold-requests',ar:'طلبات تصنيع القوالب',en:'Mold requests',cells:{
   add:{ar:'طلب تصنيع قالب جديد',en:'Request a new mold',roles:ALL},
@@ -70,13 +82,13 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'quote',ar:'عروض الأسعار',en:'Quotations',cells:{
   add:{ar:'إضافة عرض سعر ومواصفات قالب',en:'Add a quotation and mold specifications',roles:MANAGEMENT},
   edit:{ar:'تعديل عرض سعر ومواصفات قالب',en:'Edit a quotation and mold specifications',roles:MANAGEMENT},
-  delete:{ar:'حذف عرض سعر ومواصفات قالب',en:'Delete a quotation and mold specifications',roles:MANAGEMENT,note:adminOnlyButton},
+  delete:{ar:'حذف عرض سعر ومواصفات قالب',en:'Delete a quotation and mold specifications',roles:DEFAULT_ON,grantable:true,note:deleteScope},
   export:{ar:'تصدير عروض الأسعار (CSV)',en:'Export quotations (CSV)',roles:MANAGEMENT},
  }},
  {screen:'sales',ar:'المبيعات',en:'Sales',cells:{
   add:{ar:'تسجيل بيع',en:'Record a sale',roles:MANAGEMENT},
   edit:{ar:'تعديل بيع مسجل',en:'Edit a recorded sale',roles:MANAGEMENT},
-  delete:{ar:'إلغاء بيع',en:'Void a sale',roles:MANAGEMENT},
+  delete:{ar:'إلغاء بيع',en:'Void a sale',roles:DEFAULT_ON,grantable:true,note:deleteScope},
   export:{ar:'تصدير المبيعات (CSV)',en:'Export sales (CSV)',roles:MANAGEMENT},
   import:{ar:'استيراد مبيعات ERP',en:'Import ERP sales',roles:MANAGEMENT},
  }},
@@ -120,23 +132,30 @@ export const GENERAL_PERMISSIONS={viewAll:{ar:'عرض بيانات الفريق 
   en:'For a supervisor or a sales manager: reads the visits, follow-ups, quotations, day reports, sales and targets of the whole sales team (administrator, sales managers, supervisors, representatives), read only; editing and deleting stay limited to their own team. Off by default.'}}} as const;
 export const viewAllAvailable=(role:string)=>role==='supervisor'||role==='manager';
 
-/** What the role can do today: the ceiling of a cell (the switch exists only within it). */
-export function cellCeiling(role:string,screen:PermissionScreen,action:PermissionAction){return !!permissionRow(screen)?.cells[action]?.roles.includes(role);}
 /** Whether the role has the screen at all (lib/access.ts canViewPage); «استعراض» exists only then. */
 export const pageCeiling=(role:string,screen:PermissionScreen)=>canViewPage(role,screen);
+/** A grantable cell («حذف»: customer, visit, follow-up, quotation, void sale): grantable to any role that has the screen, off by default
+ *  except for the administrator. */
+export const cellGrantable=(screen:PermissionScreen,action:PermissionAction)=>!!permissionRow(screen)?.cells[action]?.grantable;
+export const GRANTABLE_CELLS:readonly string[]=PERMISSION_CELLS.filter(key=>{const [screen,action]=key.split(':') as [PermissionScreen,PermissionAction];return cellGrantable(screen,action);});
+/** What the role can do today, or for a grantable cell may be granted: the ceiling of a cell (the switch exists only within it). */
+export function cellCeiling(role:string,screen:PermissionScreen,action:PermissionAction){const cell=permissionRow(screen)?.cells[action];return !!cell&&(cell.grantable?pageCeiling(role,screen):cell.roles.includes(role));}
+/** The value of a cell never saved (within the ceiling): on, except a grantable cell for a role it is not on for by default. */
+export function cellDefault(role:string,screen:PermissionScreen,action:PermissionAction){const cell=permissionRow(screen)?.cells[action];return !cell?.grantable||cell.roles.includes(role);}
 /** The administrator manages accounts whatever is saved: these cells are always on for an administrator. */
 const ADMIN_FIXED=new Set(['team:add','team:edit']);
 export const cellFixed=(role:string,key:string)=>role==='admin'&&ADMIN_FIXED.has(key);
 
-/** What is saved for a member, normalised to the member's role: every cell of the role's ceiling with its value (a cell never saved is
- *  on), the screens hidden among those the role has (none for an administrator) and «عرض بيانات الفريق بالكامل» where it exists. */
+/** What is saved for a member, normalised to the member's role: every cell of the role's ceiling with its value (a cell never saved takes
+ *  cellDefault; a grantable cell off by default is on only when saved true, any other cell is on unless saved false), the screens hidden
+ *  among those the role has (none for an administrator) and «عرض بيانات الفريق بالكامل» where it exists. */
 export type StoredPermissions={cells:Record<string,boolean>;hidden:PermissionScreen[];viewAll:boolean};
 export function normalizePermissions(role:string,input:{cells?:unknown;hidden?:unknown;viewAll?:unknown}|null|undefined):StoredPermissions{
  const raw=input&&typeof input.cells==='object'&&input.cells!==null&&!Array.isArray(input.cells)?input.cells as Record<string,unknown>:{};
  const cells:Record<string,boolean>={};
  for(const row of PERMISSION_MATRIX)for(const action of PERMISSION_ACTIONS){
   if(!cellCeiling(role,row.screen,action))continue;
-  const key=cellKey(row.screen,action);cells[key]=cellFixed(role,key)||raw[key]!==false;
+  const key=cellKey(row.screen,action);cells[key]=cellFixed(role,key)||(cellDefault(role,row.screen,action)?raw[key]!==false:raw[key]===true);
  }
  const wanted=new Set(Array.isArray(input?.hidden)?input.hidden.filter((value):value is string=>typeof value==='string'):[]);
  const hidden=role==='admin'?[]:PERMISSION_SCREENS.filter(screen=>wanted.has(screen)&&pageCeiling(role,screen));
@@ -151,24 +170,31 @@ export function decodePermissions(row:{permissions?:string|null;hidden?:string|n
 }
 
 /** What applies to a member, sent with the member to the page (me.access) and held by the server for the request (c.me.access):
- *  version (0 without a saved row), the cells switched off (within the ceiling), the hidden screens, and viewAll. */
+ *  version (0 without a saved row), the cells switched off (within the ceiling; without a saved row the grantable cells off by default),
+ *  the hidden screens, and viewAll. */
 export type MemberAccess={version:number;off:string[];hidden:PermissionScreen[];viewAll:boolean};
-export const ROLE_DEFAULT_ACCESS:MemberAccess={version:0,off:[],hidden:[],viewAll:false};
 export function memberAccess(role:string,row:{permissions?:string|null;hidden?:string|null;version?:number|null}|null|undefined):MemberAccess{
- if(!row)return{...ROLE_DEFAULT_ACCESS,off:[],hidden:[]};
- const stored=normalizePermissions(role,decodePermissions(row));
- return{version:Number(row.version)||0,off:Object.entries(stored.cells).filter(([,on])=>!on).map(([key])=>key),hidden:stored.hidden,viewAll:stored.viewAll};
+ const stored=normalizePermissions(role,row?decodePermissions(row):null);
+ return{version:row?Number(row.version)||0:0,off:Object.entries(stored.cells).filter(([,on])=>!on).map(([key])=>key),hidden:stored.hidden,viewAll:stored.viewAll};
 }
-/** The stored values of a member from what applies (for the matrix of a member never saved: every cell of the ceiling on). */
+/** The stored values of a member from what applies (no access: the role's defaults). */
 export function storedFromAccess(role:string,access:MemberAccess|undefined):StoredPermissions{
- const off=new Set(access?.off||[]);
- return normalizePermissions(role,{cells:Object.fromEntries([...off].map(key=>[key,false])),hidden:access?.hidden||[],viewAll:access?.viewAll});
+ if(!access)return normalizePermissions(role,null);
+ const off=new Set(access.off),cells:Record<string,boolean>={};
+ for(const row of PERMISSION_MATRIX)for(const action of PERMISSION_ACTIONS)if(cellCeiling(role,row.screen,action)){const key=cellKey(row.screen,action);cells[key]=!off.has(key);}
+ return normalizePermissions(role,{cells,hidden:access.hidden,viewAll:access.viewAll});
 }
 
 type Who={role:string;access?:MemberAccess|null};
 /** Whether the member was refused this action by a switch: the role can do it today and the administrator switched it off. Roles without
- *  the ceiling are refused by the routes' own role checks, with their own words, as before. */
-export function cellRefused(me:Who,screen:PermissionScreen,action:PermissionAction){const key=cellKey(screen,action);return cellCeiling(me.role,screen,action)&&!cellFixed(me.role,key)&&!!me.access?.off.includes(key);}
+ *  the ceiling are refused by the routes' own role checks, with their own words, as before. A grantable cell is the decision itself: refused
+ *  unless it is on for the member (switched on, or on by default for the role when no access was read), whatever the role. */
+export function cellRefused(me:Who,screen:PermissionScreen,action:PermissionAction){
+ const key=cellKey(screen,action);
+ if(cellFixed(me.role,key))return false;
+ if(cellGrantable(screen,action))return !cellCeiling(me.role,screen,action)||(me.access?me.access.off.includes(key):!cellDefault(me.role,screen,action));
+ return cellCeiling(me.role,screen,action)&&!!me.access?.off.includes(key);
+}
 /** Whether the member may do this action now: within the role's ceiling and not switched off. */
 export const can=(me:Who|null|undefined,screen:PermissionScreen,action:PermissionAction)=>!!me&&cellCeiling(me.role,screen,action)&&!cellRefused(me,screen,action);
 /** Whether the administrator hid this screen from the member (never from an administrator). */
@@ -186,7 +212,8 @@ export function cellRefusalText(screen:PermissionScreen,action:PermissionAction,
 }
 
 /** «انسخ الصلاحيات من»: the target takes the source's value of every cell of the target's ceiling (off where the source's role does not
- *  have it), the source's hidden screens the target's role has, and viewAll where the target's role has it. What the source has that the
+ *  have it; a «حذف» cell is copied whenever the target's role has the screen), the source's hidden screens the target's role has, and viewAll
+ *  where the target's role has it. What the source has that the
  *  target's role cannot hold is skipped and listed (cell keys, 'browse:<screen>' for a hidden screen, 'viewAll'). */
 export function copyPermissions(source:{role:string;stored:StoredPermissions},targetRole:string):{stored:StoredPermissions;skipped:string[]}{
  const cells:Record<string,boolean>={},skipped:string[]=[];

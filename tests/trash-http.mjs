@@ -61,7 +61,9 @@ try {
   const visit = (await owner('/api/crm')).json().records.find(r => r.id === 'visit-h');
   check([visit.data.visitNumber, visit.version], [number, 2], 'the visit with its number, at the next version');
 
-  // ---- a sales manager: their own deletions
+  // ---- a sales manager: their own deletions («حذف» is off by default since 2026-11-09: the administrator grants it)
+  const grant = async (memberId, cells) => check((await owner('/api/crm', {method: 'POST', body: {action: 'permissions', memberId, version: 0, cells, hidden: [], viewAll: false}})).status, 200, 'grant ' + memberId);
+  await grant('sm', {'customer:delete': true});
   response = await sm('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'مصنع مدير المبيعات', region: 'الوسطى', city: 'الرياض', branch: 'الرئيسي', assignedTo: 'rep', phone: '0501234568', contact: 'م'}}});
   const managed = response.json().id;
   await remove(sm, managed);
@@ -73,7 +75,8 @@ try {
   check([response.status, response.json().error], [403, 'استرجاع ما حذفه غيرك متاح لمدير النظام فقط.'], 'not the administrator\'s');
   check((await restore(sm, (await deletion(managed)).id)).status, 200, 'their own: restored');
 
-  // ---- nobody else; another site; a body over the limit
+  // ---- nobody else (granted «حذف» or not: the administrator restores what they delete); another site; a body over the limit
+  await grant('sup', {'activity:delete': true, 'customer:delete': true});await grant('rep', {'activity:delete': true});await grant('cs', {'activity:delete': true});
   for (const id of ['sup', 'rep', 'cs']) {
     const as = app.as(await app.login(id));
     check([(await as('/api/trash')).status, (await restore(as, 'x')).status], [403, 403], id + ': no page, no restoration');

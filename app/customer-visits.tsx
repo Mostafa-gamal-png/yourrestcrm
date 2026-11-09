@@ -38,7 +38,7 @@ function Pick({ value, onChange, options, label, disabled = false }: {
     label: string;
     disabled?: boolean;
 }) { useLanguage(); return <Select dir={direction()} value={value || undefined} onValueChange={onChange} disabled={disabled}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{t(options.map(([id, text]) => <SelectItem key={id} value={id}>{t(text)}</SelectItem>))}</SelectContent></Select>; }
-export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuote, canEdit = true, onDelete, support, role }: {
+export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuote, canEdit = true, onDelete, canDelete, support, role }: {
     customer: Row;
     support?: SupportBinding;
     records: Row[];
@@ -47,6 +47,8 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
     onQuote?: (id: string) => void;
     canEdit?: boolean;
     onDelete?: (row:Row)=>void;
+    /** «حذف» per record (app/crm-app.tsx canDeleteRecord): the delete button shows only for a record the reader may delete. */
+    canDelete?: (row:Row)=>boolean;
     role?: string;
 }) {
     useLanguage();
@@ -74,11 +76,11 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
                 {v.data.requestSnapshot?.lossReason && <p>{t('سبب فقد الطلب')}: {v.data.requestSnapshot.lossReason}</p>}
                 {v.data.recordedByEmail && <small className="visit-history-recorder"><bdi>{v.data.recordedByEmail}</bdi></small>}
                 <button type="button" className="text-button" onClick={() => onVisit(v)}>{tw(!canEdit||v.data._readOnly?'عرض التفاصيل':v.data.visitWorkflow==='followup-v1'?'تفاصيل المتابعة':'عرض / تعديل الزيارة')}</button>
-                {onDelete&&v.data.visitWorkflow!=='service-intake-v1'&&!v.data._offlineState&&!v.data._offlineAcknowledged&&<button type="button" className="btn subtle small danger" onClick={()=>onDelete(v)}>{t("حذف السجل")}</button>}
+                {onDelete&&(!canDelete||canDelete(v))&&v.data.visitWorkflow!=='service-intake-v1'&&!v.data._offlineState&&!v.data._offlineAcknowledged&&<button type="button" className="btn subtle small danger" onClick={()=>onDelete(v)}>{t("حذف السجل")}</button>}
             </article></li>;
         })}</ol>{requests.length > 0 && <details className="previous-requests"><summary>{t("طلبات القوالب وعروض الأسعار (")}{t(requests.length)})</summary>{t(requests.map(r => { const linked = visits.filter(v => visitRequest(v, records)?.id === r.id), quotes = records.filter(q => q.kind === 'quote' && q.parentId === r.id); return <article key={r.id}><strong>{r.data.moldType} · {t(stageLabels[r.data.stage])} · {r.data.value == null ? t('غير مسعّر') : t(money(r.data.value)) + t(' ر.س')}</strong><small>{linked.length ? t(`${linked.length} زيارة مرتبطة`) : tw('طلب قالب سابق — لا توجد زيارة مسجلة')}{r.data.lossReason ? t(' · ') + r.data.lossReason : t('')}</small>{onNew && <button type="button" className="text-button" onClick={() => onNew(r)}>{tw("تسجيل زيارة لهذا الطلب")}</button>}{t(quotes.map(q => <button type="button" className="text-button" key={q.id} onClick={() => onQuote?.(q.id)}>{q.data.number} · {t(money(q.data.total))}{t(" ر.س")}</button>))}</article>; }))}</details>}</section>;
 }
-export function VisitsPage({ records, members, query, staff, stage, onOpen, onNew, onCustomer, onWorkflow, workflow, onWorkflowFilter, canEdit = true, onDelete, support, role }: {
+export function VisitsPage({ records, members, query, staff, stage, onOpen, onNew, onCustomer, onWorkflow, workflow, onWorkflowFilter, canEdit = true, onDelete, canDelete, support, role }: {
     support?: SupportBinding;
     /** The reader's role: customer service reads the list as its opportunities. */
     role?: string;
@@ -95,6 +97,8 @@ export function VisitsPage({ records, members, query, staff, stage, onOpen, onNe
     onCustomer: (id: string) => void;
     canEdit?: boolean;
     onDelete?: (row:Row)=>void;
+    /** «حذف» per record (app/crm-app.tsx canDeleteRecord): the delete button shows only for a record the reader may delete. */
+    canDelete?: (row:Row)=>boolean;
 }) {
     useLanguage();
     const tw=(text:string)=>t(serviceText(role,text));
@@ -102,7 +106,7 @@ export function VisitsPage({ records, members, query, staff, stage, onOpen, onNe
     const lostQuotes = useMemo(() => stage === 'quoted' ? lostQuoteVisitIds(records) : undefined, [records, stage]);
     const rows = filterVisitRows(records,{query,staff,stage,workflow,lostQuotes});
     const pages = Math.max(1, Math.ceil(rows.length / 30)), current = Math.min(page, pages);
-    return <section className="panel">{records.some(r=>r.data.serviceIntakeId)&&<div className="panel-heading followup-list-heading"><div className="followup-list-filters" role="group" aria-label={t('حالة الاعتماد والتكليف')}>{[['all','كل الزيارات'],['mine','بانتظار إجرائي'],...Object.entries(serviceStatusLabels),['assistance','طلبات المساعدة']].map(([id,label])=><button key={id} className={'followup-list-filter '+(workflow===id?'selected':'')} aria-pressed={workflow===id} onClick={()=>{onWorkflowFilter(id);setPage(1);}}>{tw(label)}</button>)}</div></div>}<div className="panel-heading"><h2>{tw("سجل الزيارات ")}<span className="inline-count">{t(rows.length)}</span></h2><span className="muted">{tw("كل زيارة مرتبطة بالعميل وسجله السابق")}</span></div>{rows.length ? <><VisitsTable onDelete={onDelete} role={role} rows={rows.slice((current - 1) * 30, current * 30)} customerFor={r => visitCustomer(r, records)} onOpen={id => { const r = records.find(r => r.id === id); if (r)
+    return <section className="panel">{records.some(r=>r.data.serviceIntakeId)&&<div className="panel-heading followup-list-heading"><div className="followup-list-filters" role="group" aria-label={t('حالة الاعتماد والتكليف')}>{[['all','كل الزيارات'],['mine','بانتظار إجرائي'],...Object.entries(serviceStatusLabels),['assistance','طلبات المساعدة']].map(([id,label])=><button key={id} className={'followup-list-filter '+(workflow===id?'selected':'')} aria-pressed={workflow===id} onClick={()=>{onWorkflowFilter(id);setPage(1);}}>{tw(label)}</button>)}</div></div>}<div className="panel-heading"><h2>{tw("سجل الزيارات ")}<span className="inline-count">{t(rows.length)}</span></h2><span className="muted">{tw("كل زيارة مرتبطة بالعميل وسجله السابق")}</span></div>{rows.length ? <><VisitsTable onDelete={onDelete} canDelete={canDelete} role={role} rows={rows.slice((current - 1) * 30, current * 30)} customerFor={r => visitCustomer(r, records)} onOpen={id => { const r = records.find(r => r.id === id); if (r)
         onOpen(r); }} onEdit={onOpen} onCustomer={onCustomer} canEdit={canEdit} showPlace={canEdit} expanded members={members} onWorkflow={onWorkflow} support={support} lostQuotes={lostQuotes}/><div className="table-paging"><button className="btn subtle small" disabled={current === 1} onClick={() => setPage(current - 1)}>{t("السابق")}</button><span>{t(current)} / {t(pages)}</span><button className="btn subtle small" disabled={current === pages} onClick={() => setPage(current + 1)}>{t("التالي")}</button></div></> : <div className="followup-empty"><History size={30}/><h3>{query ? t('لا توجد نتائج مطابقة') : tw('لا توجد زيارات مسجلة')}</h3><button className="btn primary" onClick={onNew}><Plus size={18}/>{tw("زيارة جديدة")}</button></div>}</section>;
 }
 type Props = {
@@ -122,9 +126,11 @@ type Props = {
     onOpenCustomer: (id: string) => void;
     onOpenQuote: (id: string) => void;
     onDelete: (r: Row) => void;
+    /** «حذف»: whether the reader may delete this saved visit (app/crm-app.tsx canDeleteRecord); without it, whoever may edit it. */
+    canDelete?: boolean;
     onWorkflow: (id:string) => void;
 };
-export function CustomerVisitDialog({ initial, competitorName: seedCompetitorName = '', showCompetitor = false, customerId: seedCustomerId, requestId: seedRequestId, records, members, me, onClose, onSaved, onCustomerCreated, onOpenVisit, onNewVisit, onOpenCustomer, onOpenQuote, onDelete, onWorkflow }: Props) {
+export function CustomerVisitDialog({ initial, competitorName: seedCompetitorName = '', showCompetitor = false, customerId: seedCustomerId, requestId: seedRequestId, records, members, me, onClose, onSaved, onCustomerCreated, onOpenVisit, onNewVisit, onOpenCustomer, onOpenQuote, onDelete, canDelete, onWorkflow }: Props) {
     const {language}=useLanguage(),say=(ar:string,en:string)=>serviceText(me.role,language==='ar'?ar:en);
     const tw=(text:string)=>t(serviceText(me.role,text));
     const initialCustomer = initial ? visitCustomer(initial, records) : records.find(r => r.id === seedCustomerId), originalRequest = initial ? visitRequest(initial, records) : records.find(r => r.id === seedRequestId);
@@ -262,7 +268,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
               {!initial&&!readOnly&&(locationState.status==='locating'||!data.locationCapturedAt)&&<p className="visit-save-hint" role={locationState.status==='error'?'alert':'status'}>{locationState.error?t(locationState.error):locationState.status==='locating'?say('جارٍ تحديد موقع الجهاز… وافق على إذن الموقع أثناء الاستخدام.','Getting the device location… allow location while using the app.'):say('السماح بالموقع مطلوب لحفظ الزيارة. اضغط إعادة المحاولة في قسم الموقع.','Location access is required. Tap Retry in the location section.')}</p>}
               {!initial&&!readOnly&&place.blocked&&<p className="visit-save-hint" role="alert">{place.message}</p>}
               {creatingCustomer&&<p className="visit-save-hint">{say('احفظ العميل أو ألغِ إضافته للمتابعة.','Save the customer or cancel adding to continue.')}</p>}
-              <div className="form-footer">{initial&&!readOnly&&!service&&!savedReceipt.current&&!retryPending&&<button type="button" className="icon-button danger" onClick={()=>requestLeave(()=>onDelete(initial))} aria-label={tw('حذف الزيارة')} disabled={busy||uploading||savingCustomer}><Trash2 size={17}/></button>}<button type="button" className="btn subtle" onClick={()=>requestLeave()} disabled={busy||uploading||savingCustomer}>{t(readOnly||savedReceipt.current?'إغلاق':'إلغاء')}</button>{!readOnly&&<button type="submit" className="btn primary" aria-busy={busy} disabled={busy||uploading||savingCustomer||creatingCustomer||(!retryPending&&!savedReceipt.current&&(!customerId||!initial&&(locationState.status==='locating'||!data.locationCapturedAt||place.blocked)))}>{busy?<Loader2 size={18} className="spin"/>:<CheckCircle2 size={18}/>} {savedReceipt.current?say('تحديث السجل','Refresh history'):retryPending?say('تأكيد الحفظ','Confirm save'):initial?t('حفظ التعديلات'):tw('حفظ الزيارة')}</button>}</div>
+              <div className="form-footer">{initial&&(canDelete??!readOnly)&&!service&&!savedReceipt.current&&!retryPending&&<button type="button" className="icon-button danger" onClick={()=>requestLeave(()=>onDelete(initial))} aria-label={tw('حذف الزيارة')} disabled={busy||uploading||savingCustomer}><Trash2 size={17}/></button>}<button type="button" className="btn subtle" onClick={()=>requestLeave()} disabled={busy||uploading||savingCustomer}>{t(readOnly||savedReceipt.current?'إغلاق':'إلغاء')}</button>{!readOnly&&<button type="submit" className="btn primary" aria-busy={busy} disabled={busy||uploading||savingCustomer||creatingCustomer||(!retryPending&&!savedReceipt.current&&(!customerId||!initial&&(locationState.status==='locating'||!data.locationCapturedAt||place.blocked)))}>{busy?<Loader2 size={18} className="spin"/>:<CheckCircle2 size={18}/>} {savedReceipt.current?say('تحديث السجل','Refresh history'):retryPending?say('تأكيد الحفظ','Confirm save'):initial?t('حفظ التعديلات'):tw('حفظ الزيارة')}</button>}</div>
             </>}
           </footer>
         </form>
