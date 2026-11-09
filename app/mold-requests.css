@@ -49,11 +49,28 @@
 .mold-quote-po-missing>span{display:grid;gap:2px}.mold-quote-po-missing small{font-size:12px;opacity:.9}
 .dark .mold-quote-po-missing{background:#3a3014;color:#f2dca0}
 .field-error{color:var(--destructive);font-size:13px}
-.mold-customer-search label{display:grid;gap:6px;font-size:14px}.mold-customer-search .search{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:0 10px;background:var(--background);min-height:44px}.mold-customer-search input{flex:1;min-width:0;border:0;background:transparent;font-size:16px;outline:none}
-.mold-customer-matches{display:grid;gap:6px;max-height:240px;overflow:auto;margin-top:8px}.mold-customer-matches>button{display:grid;gap:2px;text-align:start;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:inherit;font:inherit;cursor:pointer;min-height:44px}
-.mold-customer-matches>button:disabled{opacity:.5;cursor:not-allowed}.mold-customer-matches small{color:var(--muted-foreground);font-size:12px}
-.mold-customer-chosen{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:10px 12px;border:1px solid var(--primary);border-radius:12px;background:color-mix(in srgb,var(--primary) 6%,transparent)}
-.mold-customer-chosen span{display:grid;gap:2px}.mold-customer-chosen small{font-size:12px;color:var(--muted-foreground)}
+/* The customer as two typed fields with suggestions (2026-11-09): «اسم العميل» (with dictation) and «الكود» side by side, stacked under
+   400 px; the suggestions in the page's flow under the field typed in (nothing clipped by the dialog's scroll), each at least 44 px high;
+   one without a Yourrest code dimmed; the compact «تم اختيار العميل» line under both. */
+.mold-customer-fields{display:grid;gap:8px;min-width:0}
+.mold-customer-inputs{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:10px;align-items:start;min-width:0}
+.mold-customer-field{display:grid;gap:6px;min-width:0}.mold-customer-fields .field{min-width:0;width:100%;display:grid;gap:6px}
+.mold-customer-fields .field input{width:100%;min-width:0;min-height:44px;font-size:16px}.mold-customer-code input::placeholder{font-size:14px}
+.mold-customer-fields[data-fixed=true] input{background:var(--muted);color:inherit;cursor:default}
+.mold-customer-fields[aria-invalid=true] .mold-customer-field input{border-color:var(--destructive)}
+.mold-customer-suggestions{border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--card-foreground,inherit);box-shadow:0 6px 18px #183b2f14;overflow:hidden}
+.mold-customer-suggestions ul{list-style:none;margin:0;padding:4px;max-height:min(52vh,420px);overflow:auto;overscroll-behavior:contain}
+.mold-customer-suggestions li{display:grid;gap:2px;padding:8px 12px;min-height:48px;border-radius:8px;cursor:pointer;touch-action:manipulation;text-align:start}
+.mold-customer-suggestions li[aria-selected=true]{background:color-mix(in srgb,var(--primary) 12%,transparent)}
+.mold-customer-suggestions li[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.mold-customer-suggestions strong{font-weight:600;overflow-wrap:anywhere}.mold-customer-suggestions small{color:var(--muted-foreground);font-size:12px;overflow-wrap:anywhere}
+.mold-customer-suggestions p{margin:0;padding:10px 12px;font-size:13px;color:var(--muted-foreground)}
+@media (max-width:400px){.mold-customer-inputs{grid-template-columns:minmax(0,1fr)}}
+.mold-customer-chosen{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:8px 12px;border:1px solid var(--primary);border-radius:12px;background:color-mix(in srgb,var(--primary) 6%,transparent);font-size:14px}
+.mold-customer-chosen>span{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}.mold-customer-chosen svg{color:var(--primary);flex-shrink:0}.mold-customer-chosen small{font-size:12px;color:var(--muted-foreground)}
+/* The request's delivery address (2026-11-09), under the customer: a two-line text area with dictation, its refusal under it. */
+.mold-address{display:grid;gap:4px;min-width:0}.mold-address .voice-field{min-width:0;width:100%}.mold-address textarea{width:100%;min-width:0;min-height:64px;font-size:16px;line-height:1.5;resize:vertical}
+.mold-address[aria-invalid=true] textarea{border-color:var(--destructive)}
 .dark .mold-banner[data-kind=off],.dark .mold-sending[data-state=off]{background:#252b42;color:#d2d4ff}.dark .mold-banner[data-kind=restored]{background:#173a28;color:#bfe8cf}.dark .mold-banner[data-kind=stale],.dark .mold-sending{background:#3a3014;color:#f2dca0}
 .dark .mold-stages li[data-done=true]{background:#183a2b}.dark .mold-chip{background:#303652;color:#e4e6ff}.dark .mold-chip[data-status=produced]{background:#183a2b;color:#bfe8d2}
 @media (max-width:640px){
