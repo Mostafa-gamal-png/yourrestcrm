@@ -7,7 +7,7 @@ import {z} from 'zod';
 import {canonicalRegionScope,regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {validateFollowup,prepareContactEvidence,requireLegacyVisit,preserveRequestResponsible} from '@/lib/followups-server';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
-import {context,CRMError,replyError,checkOrigin,accessGuard,masterMutationGuard,customerDetailMutationGuard,recordEditGuard,requireRecordEdit,requireCell} from '@/lib/crm-server';
+import {context,CRMError,replyError,checkOrigin,accessGuard,masterMutationGuard,customerDetailMutationGuard,recordEditGuard,recordDeleteGuard,requireRecordEdit,requireCell} from '@/lib/crm-server';
 import {crmCell,readMemberPermissions,savePermissions,PERMISSIONS_AUDIT_ACTION} from '@/lib/permissions-server';
 import {schemas,quoteTotals,isOpen,today,type AuditEntry,type Kind} from '@/lib/crm';
 import {normalizeMemberEmail,memberEmailError} from '@/lib/member-email';
@@ -81,12 +81,15 @@ async function savePost(req:Request){try{
   return Response.json({ok:true});
  }
  const kind=body.kind as Kind;if(!schemas[kind])throw new CRMError('نوع سجل غير صحيح');
- // Customer detail edits are regional; reps cannot delete, reassign, or edit commercial records.
+ // Customer detail edits are regional; reps cannot reassign or edit commercial records. Deleting is «حذف» (lib/permissions.ts): off by
+ // default for everyone but the administrator and grantable to any member; a representative it was granted to deletes a customer of their
+ // regions, or a visit or follow-up they recorded (recordDeleteGuard), never a machine, a quotation or an old follow-up thread.
+ const repCustomerDelete=c.me.role==='rep'&&kind==='customer'&&body.action==='delete'&&!!body.id;
  const repCustomerCreate=c.me.role==='rep'&&kind==='customer'&&body.action==='save'&&!body.id&&!body.parentId;
  const repCustomerEdit=c.me.role==='rep'&&kind==='customer'&&body.action==='save'&&!!body.id&&!body.parentId;
  // A representative also adds and corrects the machines of their own customers (never deletes them); the ownership is checked below and again at commit.
  const repMachineSave=c.me.role==='rep'&&kind==='factory'&&body.action==='save';
- if(c.me.role==='rep'&&['customer','factory','opportunity','quote'].includes(kind)&&!repCustomerCreate&&!repCustomerEdit&&!repMachineSave)throw new CRMError('يمكنك إضافة عميل جديد وتسجيل الزيارات والمتابعات؛ تعديل بيانات العملاء متاح للإدارة فقط',403);
+ if(c.me.role==='rep'&&['customer','factory','opportunity','quote'].includes(kind)&&!repCustomerCreate&&!repCustomerEdit&&!repMachineSave&&!repCustomerDelete)throw new CRMError('يمكنك إضافة عميل جديد وتسجيل الزيارات والمتابعات؛ تعديل بيانات العملاء متاح للإدارة فقط',403);
  if(repCustomerCreate&&!body.createKey)throw new CRMError('تعذر تحديد عملية إضافة العميل. أعد فتح النموذج ثم حاول مرة أخرى.');
  const genericCreateKey=kind!=='activity'&&body.action==='save'&&!body.id&&body.createKey?z.string().uuid().parse(body.createKey):null;
  const genericId=genericCreateKey?'crm-'+c.me.id+'-'+genericCreateKey:'';
@@ -108,7 +111,8 @@ async function savePost(req:Request){try{
  const projectedOld=body.id?(serviceCustomerEdit?c.regionalRecords.find(r=>r.id===body.id&&r.kind==='customer'&&r.branch===c.me.branch):c.visible.find(r=>r.id===body.id&&r.kind===kind)):undefined;
  const old=projectedOld?c.all.find(r=>r.id===projectedOld.id):null;
  if(body.id&&!old)throw new CRMError('السجل غير موجود أو ليس لديك صلاحية',404);
- if(old&&!repCustomerEdit&&!repMachineSave)requireRecordEdit(c.me);
+ // A delete is decided by its «حذف» cell below and its scope by recordDeleteGuard (never wider than editing the record).
+ if(old&&!repCustomerEdit&&!repMachineSave&&body.action!=='delete')requireRecordEdit(c.me);
  if(old&&clockAction&&((clockAction==='start'&&old.data.startedAt)||(clockAction==='finish'&&old.data.endedAt)))return replayReply(old,clockAction==='start'?'_startRequest':'_finishRequest');
  if(old&&serviceHistoryLocked(old,c)&&!(c.me.role==='admin'&&body.action==='delete'))throw new CRMError('سجل هذا الطلب محفوظ بعد فتح طلب أحدث للعميل. سجّل المتابعة في الطلب الحالي.',409);
  if(old&&body.version!==old.version)throw new CRMError('تغيّر السجل بواسطة مستخدم آخر. حدّث الصفحة ثم أعد التعديل.',409);
@@ -116,7 +120,7 @@ async function savePost(req:Request){try{
  // switch went off gets its receipt) and after the role's own checks above.
  const cell=crmCell(kind,body.action==='delete'?'delete':old?'edit':'add',old||{kind,data:bodyData});if(cell)requireCell(c.me,cell[0],cell[1]);
  if(body.action==='delete'){
-  if(!old)throw new CRMError('حدد سجلًا');if(!canManage&&old.kind==='customer')throw new CRMError('حذف العملاء متاح للإدارة فقط',403);
+  if(!old)throw new CRMError('حدد سجلًا');
   // An ERP code mapping to a deleted customer gives nobody anything; it goes with the customer, in the same transaction and in its audit
   // entry (the ERP import writes mappings and no screen removes one). The gate below refuses the delete if another appears meanwhile.
   const codeMappings=old.kind==='customer'?(await c.db.prepare('SELECT code_key FROM crm_customer_code_mappings WHERE customer_id=? ORDER BY code_key').bind(old.id).all<{code_key:string}>()).results.map(row=>row.code_key):[];
@@ -124,7 +128,7 @@ async function savePost(req:Request){try{
   if(old.kind==='customer'&&await c.db.prepare('SELECT id FROM crm_sales WHERE customer_id=? LIMIT 1').bind(old.id).first())throw new CRMError('لا يمكن حذف عميل له مبيعات مسجلة');
   if(old.kind==='customer'&&await c.db.prepare('SELECT id FROM crm_journey_stops WHERE customer_id=? LIMIT 1').bind(old.id).first())throw new CRMError('لا يمكن حذف عميل له سجل خط سير محفوظ',409);
   if(c.all.some(r=>r.parentId===old.id||r.data.requestId===old.id||r.data.sourceId===old.id))throw new CRMError('يوجد سجلات مرتبطة. احذفها قبل حذف هذا السجل.');
-  const permission=['customer','factory'].includes(old.kind)?masterMutationGuard(c,old):recordEditGuard(c,old);
+  const permission=recordDeleteGuard(c,old);
   // The receipt gates every statement in the same transaction. Capture evidence before
   // deleting, and block source-followup races instead of leaving orphaned follow-ups.
   const receipt=crypto.randomUUID(),gate="EXISTS (SELECT 1 FROM crm_audit WHERE id=?)";

@@ -16,9 +16,10 @@ export function canViewPage(role:string,view:string){
  return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets','mold-requests'].includes(view);
 }
 
-/** «المحذوفات» (2026-11-09): the administrator sees and restores every deletion, the sales manager only those they made themselves (the
- *  roles that delete customers; only the administrator deletes visits and follow-ups); nobody else has the page. One place, so the
- *  permissions matrix can make it a switch later. */
+/** «المحذوفات» (2026-11-09): the administrator sees and restores every deletion, the sales manager only those they made themselves; nobody
+ *  else has the page. «حذف» can be granted to any member (lib/permissions.ts): a supervisor, representative or customer-service member it
+ *  was granted to does not get this page; the administrator sees and restores what they deleted. One place, so the permissions matrix can
+ *  make it a switch later. */
 export function trashScope(role:string):'all'|'own'|null{return role==='admin'?'all':role==='manager'?'own':null;}
 
 /** Preserve old bookmarks without granting access to a management workspace. A screen the administrator hid from the member (hidden,

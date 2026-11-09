@@ -2,7 +2,8 @@
 // «الصلاحيات» in the member form of «الفريق والصلاحيات» (the owner, 2026-11-09, after GSCO 2.13.61 components/crm/permission-matrix.tsx and
 // «انسخ الصلاحيات من» of components/crm/forms.tsx): one row per screen, one column per action (استعراض/إضافة/تحرير/حذف/تصدير/استيراد) and
 // «الكل» per row; «—» where the action is not on the screen or not the role's. Restrict-only (lib/permissions.ts): a switch takes away what
-// the role does today, never more. Under the table «صلاحيات عامة»: «عرض بيانات الفريق بالكامل». The administrator only; saved on its own
+// the role does today, never more, except «حذف» (customer, visit, follow-up, quotation, void sale): unticked by default for everyone but the
+// administrator, and grantable to any member whose role has the screen (within what they may edit). Under the table «صلاحيات عامة»: «عرض بيانات الفريق بالكامل». The administrator only; saved on its own
 // («حفظ الصلاحيات», POST /api/crm {action:'permissions'}) with its version, so the member form's own save is unchanged.
 import {useMemo,useRef,useState} from 'react';
 import {Loader2,ShieldCheck,Copy,RefreshCw} from 'lucide-react';
@@ -81,12 +82,13 @@ export function MemberPermissionsEditor({member,members,roleChanged,onSaved}:{me
       if(column.key==='browse')return <td key="browse" data-cell={'browse:'+row.screen}>{browsable(row)?box(shown(row),roleChanged,column[lang]+' · '+row[lang],on=>setShown(row,on)):none(admin?say('مدير النظام بيشوف كل الشاشات','An administrator sees every screen'):say('الشاشة مش من شغل الدور','Not this role\'s screen'))}</td>;
       const cell=row.cells[column.key],key=cellKey(row.screen,column.key);
       if(!cell||!cellCeiling(role,row.screen,column.key))return <td key={column.key} data-cell={key}>{none(cell?say('مش من شغل الدور','Not this role\'s'):say('الإجراء ده مش موجود في الشاشة','No such action on this screen'))}</td>;
-      return <td key={column.key} data-cell={key} title={cell[lang]+(cell.note?' — '+cell.note[lang]:'')}>{box(!!draft.cells[key],cellFixed(role,key)||roleChanged,column[lang]+' · '+row[lang],on=>setCell(key,on))}{cell.note&&<span className="permission-star" aria-hidden="true">*</span>}</td>;
+      const note=[cell.note,cell.roleNote?.[role]].filter((text):text is {ar:string;en:string}=>!!text).map(text=>text[lang]).join(' ');
+      return <td key={column.key} data-cell={key} title={cell[lang]+(note?' — '+note:'')}>{box(!!draft.cells[key],cellFixed(role,key)||roleChanged,column[lang]+' · '+row[lang],on=>setCell(key,on))}{note&&<span className="permission-star" aria-hidden="true">*</span>}</td>;
      })}
     </tr>;})}</tbody>
    </table>
   </div>
-  <p className="member-permissions-foot">{say('«—» يعني الإجراء مش موجود في الشاشة أو مش من شغل الدور. الصلاحيات بتقفل حاجة الدور بيعملها النهارده بس، ومبتزوّدش عليه. «*» فيه ملاحظة: وقّف الماوس على الخانة. التصدير بيتقفل من زرار الصفحة (الملف بيتعمل على الجهاز).','«—» means the action is not on the screen or not the role\'s. Permissions only take away what the role does today; they never add to it. «*» has a note: hover the cell. Export is closed by hiding the page\'s button (the file is made on the device).')}</p>
+  <p className="member-permissions-foot">{say('«—» يعني الإجراء مش موجود في الشاشة أو مش من شغل الدور. الصلاحيات بتقفل حاجة الدور بيعملها النهارده بس، ومبتزوّدش عليه، ما عدا «حذف»: مقفول في الأول لكل الأدوار ما عدا مدير النظام، وتقدر تفتحه لأي مستخدم (بيحذف اللي يقدر يعدّله بس). «*» فيه ملاحظة: وقّف الماوس على الخانة. التصدير بيتقفل من زرار الصفحة (الملف بيتعمل على الجهاز).','«—» means the action is not on the screen or not the role\'s. Permissions only take away what the role does today; they never add to it, except «Delete»: off by default for every role but the administrator, and it can be granted to any member (they delete only what they may edit). «*» has a note: hover the cell. Export is closed by hiding the page\'s button (the file is made on the device).')}</p>
   <h4 className="member-permissions-general">{say('صلاحيات عامة','General permissions')}</h4>
   {viewAllAvailable(role)?<label className="member-permissions-switch" data-permission="viewAll"><input type="checkbox" checked={draft.viewAll} disabled={busy||roleChanged} onChange={event=>setDraft(current=>({...current,viewAll:event.target.checked}))}/><span><strong>{GENERAL_PERMISSIONS.viewAll[lang]}</strong><small>{GENERAL_PERMISSIONS.viewAll.note[lang]}</small></span></label>
    :<p className="member-permissions-note">{say('مفيش صلاحيات عامة لدور ','No general permissions for the role ')}{say(roles[role]||role,role)}{say(' (عرض بيانات الفريق بالكامل للمشرف ومدير المبيعات).',' («View the whole team\'s data» is for a supervisor or a sales manager).')}</p>}

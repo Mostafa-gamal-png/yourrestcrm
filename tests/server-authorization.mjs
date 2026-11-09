@@ -215,6 +215,30 @@ try {
   check((await app.as(sessions.sup)('/api/crm')).status, 200, 'GET /api/crm stays open whatever is hidden (every screen reads it)');
   check((await app.as(sessions.sup)('/api/crm')).json().me.access.hidden, ['journeys'], 'and carries the member\'s hidden screens');
 
+  // «حذف» (the owner, 2026-11-09): off by default for every role but the administrator; the 403 names the screen. Customer service meets
+  // /api/crm's own refusal. Granted, a representative deletes their own visit and nothing of another's.
+  const visitVersion = async id => (await app.db.prepare('SELECT version FROM crm_records WHERE id=?').bind(id).first())?.version;
+  const removeAs = async (id, record, kind = 'activity') => app.as(sessions[id])('/api/crm', {method: 'POST', body: {action: 'delete', kind, id: record, version: await visitVersion(record)}});
+  for (const id of ['mgr', 'sup', 'rep1']) {
+    const refused = await removeAs(id, 'v-rep1');
+    check([refused.status, refused.json().error], [403, 'مش مسموح لك بالحذف في الزيارات. راجع مدير النظام.'], id + ': deleting a visit is off by default');
+  }
+  for (const id of ['cs', 'csm']) check((await removeAs(id, 'v-rep1')).status, 403, id + ': no delete through /api/crm');
+  const sale1 = await app.db.prepare("SELECT id,version FROM crm_sales WHERE reference='INV-e1'").first();
+  for (const id of ['mgr', 'sup']) {
+    const voided = await app.as(sessions[id])('/api/sales', {method: 'POST', body: {action: 'void', id: sale1.id, version: sale1.version, reason: 'تجربة'}});
+    check([voided.status, voided.json().error], [403, 'مش مسموح لك بالحذف في المبيعات. راجع مدير النظام.'], id + ': voiding a sale is off by default');
+  }
+  check(await visitVersion('v-rep1'), 1, 'nothing deleted');
+  const repVersion = (await app.db.prepare("SELECT version FROM crm_member_permissions WHERE member_id='rep1'").first()).version;
+  check((await permissions('owner', 'rep1', repVersion, {hidden: ['mold-requests'], cells: {'customer:add': false, 'activity:delete': true}})).status, 200, 'the administrator grants rep1 «حذف» on visits');
+  check((await removeAs('rep1', 'v-rep2-on-e1')).status, 404, 'rep1: another representative\'s visit on their customer is not theirs');
+  check((await removeAs('rep1', 'v-rep1')).status, 200, 'rep1: their own visit is deleted');
+  check(await visitVersion('v-rep1'), undefined, 'gone');
+  check((await removeAs('rep2', 'v-rep2')).status, 403, 'rep2 is unaffected');
+  const extra = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'للحذف', region: 'الشرقية', city: 'x', code: 'del-1', branch: 'الرئيسي', assignedTo: 'rep2', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
+  check((await removeAs('owner', extra.json().id, 'customer')).status, 200, 'the administrator deletes by default');
+
   assert(!/at .*node_modules|stack/i.test(app.log().replace(/ExperimentalWarning[^\n]*/g, '')), 'Server log must not contain stack traces for rejected requests');checks++;
 
   console.log(JSON.stringify({ok: true, checks, builtRelease: true, syntheticFixtures: true, productionDataUsed: false}));

@@ -5,7 +5,10 @@
 // and requests another screen shares stay open; a stale save is 409; every save leaves a «صلاحيات» history entry with before and after,
 // kept out of the recent changes. Routes covered: /api/crm, /api/visits, /api/customer-followups, /api/customer-service, /api/complaints,
 // /api/service-kpi, /api/mold-requests, /api/reviews, /api/journeys, /api/device-status, /api/sales, /api/sales/import,
-// /api/erp-customers, /api/targets, /api/kpis, /api/kpi-evidence, /api/trash. Synthetic fixtures only: temporary SQLite, mocked mail.
+// /api/erp-customers, /api/targets, /api/kpis, /api/kpi-evidence, /api/trash. «حذف» (2026-11-09): off on release day for every role but the
+// administrator, granted per member within the role's write scope (a representative's own visit, never another's; a supervisor's team only,
+// «عرض بيانات الفريق بالكامل» never widening it; customer service deleting nothing; voiding a sale within the team). Synthetic fixtures only:
+// temporary SQLite, mocked mail.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 
@@ -31,7 +34,8 @@ try {
   const insert = (id, kind, parent, assigned, data) => app.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id, kind, parent, assigned, 'الرئيسي', JSON.stringify(data), now, now).run();
   const customer = id => insert(id, 'customer', null, 'rep1', {name: 'مصنع ' + id, region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03', phone: '0500000000', contact: 'المسؤول'});
   for (const id of ['c1', 'c2', 'c3', 'c4', 'c5']) await customer(id);
-  for (const [id, by] of [['v1', 'rep1'], ['v2', 'rep1'], ['v3', 'rep1'], ['v4', 'rep2']])
+  await insert('cw', 'customer', null, 'rep1', {name: 'مصنع الغربية', region: 'الغربية', city: 'جدة', location: '21.5, 39.2', phone: '0500000000', contact: 'المسؤول'});
+  for (const [id, by] of [['v1', 'rep1'], ['v2', 'rep1'], ['v3', 'rep1'], ['v4', 'rep2'], ['v5', 'rep1'], ['v6', 'rep2'], ['v7', 'rep1'], ['v8', 'rep1']])
     await insert(id, 'activity', 'c1', by, {type: 'visit', date: day, summary: 'تعريف', result: 'تمت', outcome: 'pending', notes: '', performedBy: by, responsibleId: by, recordedByEmail: by + '@yourrest.org'});
   const session = {};
   for (const member of members) session[member.id] = app.as(await app.login(member.id));
@@ -71,11 +75,16 @@ try {
 
   // 1. Release day: no saved row; every mapped action answers as before (allowed or refused by the role's own rule, never by a switch).
   eq(Number((await app.db.prepare('SELECT COUNT(*) n FROM crm_member_permissions').first()).n), 0, 'nobody has saved permissions');
-  for (const id of members.map(m => m.id)) eq((await session[id]('/api/crm')).json().me.access, {version: 0, off: [], hidden: [], viewAll: false}, id + ': the role\'s behaviour');
+  const DELETES = {admin: [], manager: ['customer:delete', 'activity:delete', 'followup:delete', 'quote:delete', 'sales:delete'], supervisor: ['customer:delete', 'activity:delete', 'followup:delete', 'quote:delete', 'sales:delete'], rep: ['customer:delete', 'activity:delete', 'followup:delete'], customer_service: ['activity:delete'], customer_service_manager: ['activity:delete']};
+  for (const {id, role} of members) eq((await session[id]('/api/crm')).json().me.access, {version: 0, off: DELETES[role], hidden: [], viewAll: false}, id + ': the role\'s behaviour, «حذف» off but for the administrator');
   eq((await customerAdd('rep1')).status, 200, 'rep1 adds a customer');
   eq((await customerEdit('rep1', 'c1')).status, 200, 'rep1 edits a customer');
-  eq((await remove('mgr', 'customer', 'c4')).status, 200, 'mgr deletes a customer');
-  eq((await remove('mgr', 'activity', 'v2')).status, 200, 'mgr deletes a visit');
+  refused(await remove('mgr', 'customer', 'c4'), 'العملاء', 'الحذف', 'release day: mgr no longer deletes a customer');
+  refused(await remove('mgr', 'activity', 'v2'), 'الزيارات', 'الحذف', 'release day: mgr no longer deletes a visit');
+  refused(await remove('sup', 'activity', 'v2'), 'الزيارات', 'الحذف', 'release day: sup no longer deletes a visit');
+  ok(await exists('c4') && await exists('v2'), 'nothing deleted');
+  eq((await remove('owner', 'customer', 'c4')).status, 200, 'the administrator deletes a customer by default');
+  eq((await remove('owner', 'activity', 'v2')).status, 200, 'and a visit');
   for (const [label, response] of [['rep1 visit', await visitAdd('rep1')], ['sup visit edit', await visitEdit('sup', 'v1')], ['rep1 follow-up', await followupAdd('rep1')], ['csm settings', await kpiSettings('csm')], ['rep1 mold', await moldCreate('rep1')], ['sup sale', await saleAdd('sup')], ['mgr targets', await targetsSave('mgr')], ['mgr kpis', await kpiSave('mgr')], ['mgr erp customers', await erpCustomers('mgr')], ['mgr restore', await restore('mgr')]]) open(response, label);
   eq((await serviceCreate('cs')).status, 200, 'cs registers a request');
   eq((await complaintAdd('cs')).status, 200, 'cs registers a complaint');
@@ -89,7 +98,8 @@ try {
   eq((await session.owner('/api/crm', {method: 'POST', body: {action: 'permissions', memberId: 'mgr', version: 0, cells: {}, hidden: []}})).status, 409, 'a stale version is refused');
   const entry = await app.db.prepare("SELECT record_id,detail FROM crm_audit WHERE action='صلاحيات'").first();
   const detail = JSON.parse(entry.detail);
-  eq([entry.record_id, detail.before.version, detail.before.cells['customer:delete'], detail.after.version, detail.after.cells['customer:delete'], detail.after.cells['trash:edit']], ['mgr', 0, true, 1, false, false], 'the «صلاحيات» entry: before and after');
+  eq([entry.record_id, detail.before.version, detail.before.cells['customer:delete'], detail.before.cells['trash:edit'], detail.after.version, detail.after.cells['customer:delete'], detail.after.cells['trash:edit']], ['mgr', 0, false, true, 1, false, false], 'the «صلاحيات» entry: before and after');
+  await save('mgr2', {cells: {'customer:delete': true, 'activity:delete': true}});
   ok(!(await session.owner('/api/crm')).json().audits.some(a => a.action === 'صلاحيات'), 'kept out of the recent changes');
   await save('rep1', {cells: {'customer:add': false, 'customer:edit': false, 'activity:add': false, 'followup:add': false, 'mold-requests:add': false}});
   await save('sup', {cells: {'activity:edit': false, 'journeys:add': false, 'sales:add': false, 'sales:import': false}});
@@ -103,7 +113,7 @@ try {
   refused(await remove('mgr', 'customer', 'c5'), 'العملاء', 'الحذف', 'mgr deletes a customer');
   ok(await exists('c5'), 'the customer is kept');
   refused(await remove('mgr', 'activity', 'v3'), 'الزيارات', 'الحذف', 'mgr deletes a visit');
-  eq((await remove('mgr2', 'activity', 'v3')).status, 200, 'mgr2 still deletes it');
+  eq((await remove('mgr2', 'activity', 'v3')).status, 200, 'mgr2, granted «حذف», deletes it');
   refused(await visitAdd('rep1'), 'الزيارات', 'الإضافة', 'rep1 records a visit');
   refused(await visitEdit('sup', 'v1'), 'الزيارات', 'التعديل', 'sup edits a visit');
   refused(await followupAdd('rep1'), 'المتابعات', 'الإضافة', 'rep1 records a follow-up');
@@ -152,15 +162,47 @@ try {
   eq((await session.csm('/api/service-kpi?month=' + month)).status, 200, 'csm still reads it');
   const state = (await session.sup('/api/crm')).json();
   // A save replaces the whole row: the last one for sup carried hidden screens and no switched-off cell.
-  eq([state.me.access.hidden, state.me.access.off], [['journeys', 'sales', 'targets'], []], 'GET /api/crm carries what applies to the member (the whole row as last saved)');
+  eq([state.me.access.hidden, state.me.access.off], [['journeys', 'sales', 'targets'], DELETES.supervisor], 'GET /api/crm carries what applies to the member (the whole row as last saved; «حذف» never granted: off)');
   // Nothing is hidden from an administrator, whose team page always stays open.
   const own = await save('owner', {hidden: ['team', 'trash'], cells: {'team:edit': false, 'team:add': false}});
   eq([own.json().permissions.hidden, own.json().permissions.cells['team:edit']], [[], true], 'the administrator cannot be locked out');
   eq((await session.owner('/api/trash?type=all')).status, 200, 'the administrator still opens «المحذوفات»');
   await save('rep2', {cells: {'customer:edit': false}});
   eq((await session.owner('/api/crm')).json().members.find(m => m.id === 'rep2').permissions.cells['customer:edit'], false, 'the administrator saved again: the team page shows the saved cells');
+  // 5. «حذف» granted: the cell decides who, the role's write scope decides what.
+  await save('rep1', {cells: {'activity:delete': true}});
+  eq((await session.rep1('/api/crm')).json().me.access.off, ['customer:delete', 'followup:delete'], 'rep1\'s next load: visits delete granted');
+  eq((await remove('rep1', 'activity', 'v5')).status, 200, 'rep1 deletes their own visit');
+  ok(!await exists('v5'), 'gone');
+  eq((await remove('rep1', 'activity', 'v6')).status, 404, 'rep1: another representative\'s visit (on rep1\'s customer) is not theirs');
+  ok(await exists('v6'), 'kept');
+  refused(await remove('rep2', 'activity', 'v6'), 'الزيارات', 'الحذف', 'rep2 is not granted');
+  refused(await remove('rep1', 'customer', 'c5'), 'العملاء', 'الحذف', 'rep1: a customer needs its own cell');
+  await save('rep1', {cells: {'activity:delete': true, 'customer:delete': true}});
+  eq((await remove('rep1', 'customer', 'cw')).status, 404, 'rep1: a customer outside their regions');
+  eq([(await remove('rep1', 'customer', 'c1')).status, await exists('c1')], [400, true], 'rep1: the existing refusals hold (a customer with visits)');
+  eq((await remove('rep1', 'customer', 'c5')).status, 200, 'rep1: a customer of their regions with no history');
+  await save('cs2', {cells: {'activity:delete': true}});
+  eq([(await remove('cs2', 'activity', 'v7')).status, await exists('v7')], [403, true], 'customer service granted «حذف»: nothing deleted through /api/crm');
+  await save('sup2', {cells: {'activity:delete': true}, viewAll: true});
+  ok((await session.sup2('/api/crm')).json().records.some(r => r.id === 'v7' && r.data._teamReadOnly), 'sup2 reads rep1\'s visit through «عرض بيانات الفريق بالكامل»');
+  eq([(await remove('sup2', 'activity', 'v7')).status, await exists('v7')], [403, true], '… and may not delete it: viewAll never widens deleting');
+  eq((await remove('sup2', 'activity', 'v6')).status, 200, 'sup2 deletes their representative\'s visit');
+  // Voiding a sale: «حذف» on «المبيعات», within the team.
+  const sale = async repId => (await post('owner', '/api/sales', {action: 'save', createKey: crypto.randomUUID(), version: 0, data: {customerId: 'c1', repId, date: day, reference: 'INV-' + crypto.randomUUID().slice(0, 8), items: [{product: 'قوالب البلوك المتحركة', description: '', quantity: 1, unitPrice: 100}], discount: 0, notes: ''}})).json().id;
+  const voidSale = async (who, id) => post(who, '/api/sales', {action: 'void', id, version: 1, reason: 'خطأ في الإدخال'});
+  const status = async id => (await app.db.prepare('SELECT status FROM crm_sales WHERE id=?').bind(id).first()).status;
+  const s1 = await sale('rep2'), s2 = await sale('rep1'), s3 = await sale('rep1');
+  refused(await voidSale('sup2', s1), 'المبيعات', 'الحذف', 'sup2 voids a sale by default');
+  await save('sup2', {cells: {'activity:delete': true, 'sales:delete': true}});
+  eq([(await voidSale('sup2', s1)).status, await status(s1)], [200, 'void'], 'granted: sup2 voids their representative\'s sale');
+  eq([(await voidSale('sup2', s2)).status, await status(s2)], [404, 'confirmed'], 'never another team\'s');
+  eq([(await voidSale('owner', s3)).status, await status(s3)], [200, 'void'], 'the administrator voids by default');
+  // An old page: the button may still show; the server answers with the switch.
+  await save('rep1', {cells: {'customer:delete': true}});
+  refused(await remove('rep1', 'activity', 'v8'), 'الزيارات', 'الحذف', 'rep1\'s grant taken back: refused');
   // A permissions save never signs the member out.
-  eq((await session.rep1('/api/crm')).status, 200, 'rep1 is still signed in after five saves');
+  eq((await session.rep1('/api/crm')).status, 200, 'rep1 is still signed in after eight saves');
   ok(!/at .*node_modules|stack/i.test(app.log().replace(/ExperimentalWarning[^\n]*/g, '')), 'no stack traces for refused requests');
   console.log(JSON.stringify({ok: true, checks, builtRelease: true, syntheticFixtures: true}));
 } finally { await app.stop(); }
