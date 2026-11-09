@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
+import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requireCell} from '@/lib/crm-server';
 import {today,type Member} from '@/lib/crm';
 import {regionScope} from '@/lib/regions';
 import {COMPLAINT_DEMAND_MAX,COMPLAINT_LIST_LIMIT,COMPLAINT_SHORT_MAX,COMPLAINT_TEXT_MAX,canReadComplaint,canRegisterComplaint,closureOutcomes,complaintActions,complaintBadge,complaintCandidates,complaintCategories,complaintChannels,complaintPermissions,complaintQueue,complaintReader,isOpenComplaint,registrarManager,resolutionOutcomes,type ComplaintData} from '@/lib/complaints';
@@ -67,6 +67,8 @@ export async function POST(req:Request){try{
   return Response.json({ok:true,id:saved.record_id,alreadySaved:true,...await numbered(saved.record_id)});
  };
  const repeated=await replay();if(repeated)return repeated;
+ // «الصلاحيات»: registering a complaint, and its registrar's edit (after a replay has answered).
+ if(input.action==='register'||input.action==='edit')requireCell(c.me,'complaints',input.action==='register'?'add':'edit');
  const permission=accessGuard(c),guards=[permission.sql],args:(string|number)[]=[...permission.args];
  const requireMember=(member:Member)=>{const gate=memberGate(member);guards.push(gate.sql);args.push(...gate.args);};
  const rootGuard="EXISTS(SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND version=?)";

@@ -16,7 +16,7 @@
 // &inline=1 opens a PDF or an image in the browser; anything else always downloads, as plain bytes (an SVG or a drawing is never rendered).
 //  Opened as a page of its own, a failure is said in words on that page rather than as JSON.
 import {env} from 'cloudflare:workers';
-import {context,CRMError,replyError} from '@/lib/crm-server';
+import {context,CRMError,replyError,requirePages} from '@/lib/crm-server';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {moldContentDisposition,moldDesignContentType,MOLD_ID,MOLD_REQUEST_REF} from '@/portable/mold-rules.mjs';
 import {canApproveMoldRequests,canUseMoldRequests,moldDesignFilesView,moldErrorText,moldListedFiles,type MoldDesignFile,type MoldDesignFileRow} from '@/lib/mold-requests';
@@ -65,6 +65,8 @@ export async function GET(req:Request){const reply=await answer(req);return repl
 async function answer(req:Request):Promise<Response>{try{
  const c=await context({load:'customers'});
  if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
+ // «الصلاحيات»: part of «طلبات تصنيع القوالب» (closed when hidden).
+ requirePages(c.me,'mold-requests');
  const url=new URL(req.url),id=url.searchParams.get('id'),order=url.searchParams.get('order'),crm=url.searchParams.get('crm'),ref=url.searchParams.get('ref'),key=url.searchParams.get('file')||'',inline=url.searchParams.get('inline')==='1';
  if(!/^[A-Za-z0-9_-]{1,64}$/.test(key)||[id,order,crm,ref].filter(value=>value!==null).length!==1)throw new CRMError('حدد الملف');
  const link=productsLink();

@@ -1,4 +1,5 @@
 import type {Member} from './crm';
+import {cellRefused} from './permissions';
 import type {ServiceCase} from './customer-service';
 import {COMPLAINT_REOPEN_DAYS,type ComplaintRow} from './complaints';
 import type {SupportRow} from './support';
@@ -468,15 +469,16 @@ const median=(values:number[])=>{if(!values.length)return null;const sorted=[...
  * the audits of the cards they see, the suggested sample for those a manager can still audit, and what they may do. */
 export function serviceKpiView(input:KpiInput,month:string,now:string,me:Member,options:{customerName:(id:string)=>string;detail?:string;settingsVersion:number}):ServiceKpiResponse{
  const all=serviceKpiMonth(input,month,now),visible=visibleKpi(all,me),names=new Map(input.members.map(member=>[member.id,member.name]));
- const admin=me.role==='admin',lead=me.role==='customer_service_manager',name=(id:string)=>names.get(id)||'';
+ // «الصلاحيات» (lib/permissions.ts): «تحرير» switched off leaves the page read only (no audit, settings, close or delete; the route refuses them too).
+ const editing=!cellRefused(me,'service-kpi','edit'),admin=me.role==='admin',lead=me.role==='customer_service_manager',name=(id:string)=>names.get(id)||'';
  const cardOut=(card:Scorecard):KpiCardOut=>{
   const open=me.role==='customer_service'||card.memberId===options.detail;
   return {...card,name:name(card.memberId),metrics:card.metrics.map(one=>({...one,itemCount:one.items.length,items:open?one.items.slice(0,KPI_ITEM_LIMIT).map(item=>({...item,customerName:item.customerId?options.customerName(item.customerId):''})):[]}))};
  };
  const groups=visible.groups.map(group=>{
   const {closedBy,manager,reps,...rest}=group;
-  const mayClose=admin||lead&&group.managerId===me.id,problem=mayClose&&!group.closed?monthCloseProblem(month,now,group.settings):'';
-  return {...rest,closedByName:name(closedBy),canClose:mayClose&&!group.closed&&problem==='',closeProblem:problem,canReopen:admin&&group.closed,manager:manager?cardOut(manager):null,reps:reps.map(cardOut)};
+  const mayClose=editing&&(admin||lead&&group.managerId===me.id),problem=mayClose&&!group.closed?monthCloseProblem(month,now,group.settings):'';
+  return {...rest,closedByName:name(closedBy),canClose:mayClose&&!group.closed&&problem==='',closeProblem:problem,canReopen:editing&&admin&&group.closed,manager:manager?cardOut(manager):null,reps:reps.map(cardOut)};
  });
  const groupOf=new Map<string,KpiGroup>();
  for(const group of all.groups)for(const card of group.reps)groupOf.set(card.memberId,group);
@@ -488,10 +490,10 @@ export function serviceKpiView(input:KpiInput,month:string,now:string,me:Member,
  const audits=input.audits.filter(row=>!row.data.deleted&&row.data.month===month&&seen.has(row.data.repId)).sort((a,b)=>b.data.at.localeCompare(a.data.at)||b.id.localeCompare(a.id)).map(row=>{
   const data=row.data,reference=data.reference&&data.reference.id?data.reference:{type:'' as const,id:''};
   return {id:row.id,repId:data.repId,repName:name(data.repId),month:data.month,date:data.date||'',reference:{type:reference.type,id:reference.id,customerName:reference.id?options.customerName(customerOf.get(reference.id)||''):''},scores:data.scores,total:data.total,result:data.result,verification:data.verification,note:data.note,auditorId:data.auditorId,auditorName:name(data.auditorId),at:data.at,
-   canDelete:!groupOf.get(data.repId)?.closed&&(admin||data.auditorId===me.id&&Date.parse(now)-Date.parse(data.at)<=AUDIT_DELETE_DAYS*DAY)};
+   canDelete:editing&&!groupOf.get(data.repId)?.closed&&(admin||data.auditorId===me.id&&Date.parse(now)-Date.parse(data.at)<=AUDIT_DELETE_DAYS*DAY)};
  });
  const sample:Record<string,KpiSampleOut[]>={};
- if(admin||lead)for(const group of visible.groups)if(!group.closed)for(const card of group.reps)sample[card.memberId]=auditSample(input,month,card.memberId,now).map(item=>({ref:item.ref,type:item.type,customerName:options.customerName(item.customerId),at:item.at,tag:item.tag}));
+ if(editing&&(admin||lead))for(const group of visible.groups)if(!group.closed)for(const card of group.reps)sample[card.memberId]=auditSample(input,month,card.memberId,now).map(item=>({ref:item.ref,type:item.type,customerName:options.customerName(item.customerId),at:item.at,tag:item.tag}));
  // One month alone is noisy for a small team, so each card shows its last three months; a finished month answers the same however late it is asked.
  const months=trailingMonths(month,3),computed=months.map(one=>one===month?all:serviceKpiMonth(input,one,now));
  const scoreIn=(result:KpiMonth,id:string)=>{for(const group of result.groups){const found=group.reps.find(card=>card.memberId===id)||(group.manager&&group.manager.memberId===id?group.manager:undefined);if(found)return found.score;}return null;};
@@ -500,5 +502,5 @@ export function serviceKpiView(input:KpiInput,month:string,now:string,me:Member,
   for(const card of [...group.reps,...(group.manager?[group.manager]:[])])scores[card.memberId]=computed.map(result=>scoreIn(result,card.memberId));
   if(admin||lead)medians[group.managerId||'none']=computed.map(result=>median((result.groups.find(other=>other.managerId===group.managerId)?.reps||[]).map(card=>card.score).filter((value):value is number=>value!==null)));
  }
- return {month,months:kpiMonths(input,now),generatedAt:now,settings:normalizeSettings(input.settings),settingsVersion:options.settingsVersion,me:{id:me.id,role:me.role,canAudit:admin||lead,canSettings:admin},groups,audits,sample,trend:{months,scores,medians}};
+ return {month,months:kpiMonths(input,now),generatedAt:now,settings:normalizeSettings(input.settings),settingsVersion:options.settingsVersion,me:{id:me.id,role:me.role,canAudit:editing&&(admin||lead),canSettings:editing&&admin},groups,audits,sample,trend:{months,scores,medians}};
 }

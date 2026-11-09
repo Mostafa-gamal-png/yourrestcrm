@@ -1,6 +1,6 @@
 import {recordAuthorId} from '@/lib/access';
 import {readJsonBody,isRecord} from '@/lib/crm-server';
-import {requireSalesRole} from '@/lib/crm-server';
+import {requireSalesRole,requireCell} from '@/lib/crm-server';
 import {z} from 'zod';
 import {accessGuard,recordEditGuard,requireRecordEdit,context,CRMError,checkOrigin,requireSession,replyError} from '@/lib/crm-server';
 import {schemas,type Row} from '@/lib/crm';
@@ -22,6 +22,8 @@ export async function POST(req:Request){try{
  const old=body.id&&c.visible.some(r=>r.id===body.id)?c.all.find(r=>r.id===body.id&&r.kind==='opportunity'):undefined;
  if(body.id&&!old)throw new CRMError('السجل غير متاح',404);
  if(old)requireRecordEdit(c.me);
+ // «الصلاحيات»: starting a follow-up, editing one or taking an older request into it (after a replay has answered above).
+ requireCell(c.me,'followup',old||body.adoptId?'edit':'add');
  if(old&&body.version!==old.version)throw new CRMError('تغيّرت المتابعة. حدّث البيانات ثم راجع التعديلات.',409);
  const parent=c.visible.find(r=>r.id===body.parentId&&['customer','factory'].includes(r.kind));if(!parent)throw new CRMError('حدد المصنع والماكينة التابعة له');
  const customerId=(r:Row)=>r.kind==='customer'?r.id:r.kind==='factory'?r.parentId:c.visible.find(p=>p.id===r.parentId)?.kind==='customer'?r.parentId:c.visible.find(p=>p.id===r.parentId)?.parentId;

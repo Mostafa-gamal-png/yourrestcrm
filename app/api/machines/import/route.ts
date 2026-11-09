@@ -3,7 +3,7 @@ import {parseJsonBody} from '@/lib/crm-server';
 import {regionScope} from '@/lib/regions';
 import {env} from 'cloudflare:workers';
 import {z} from 'zod';
-import {database,context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
+import {database,context,accessGuard,checkOrigin,requireSession,CRMError,replyError,requireCell} from '@/lib/crm-server';
 import {schemas,type Row} from '@/lib/crm';
 import {machineSourceData,hasMachineSource} from '@/lib/machines';
 export const dynamic='force-dynamic';
@@ -14,7 +14,7 @@ async function access(req:Request,sourceHash:string){
   let mismatch=0;for(let i=0;i<token.length;i++)mismatch|=token.charCodeAt(i)^expected.charCodeAt(i);
   if(!mismatch){const db=database();const owner=await db.prepare("SELECT id,name FROM crm_members WHERE id='owner' AND role='admin' AND active=1 AND region_scope='all'").first<{id:string;name:string}>();if(!owner)throw new CRMError('مدير النظام غير مهيأ',409);return{db,actor:owner.name,permission:{sql:"EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role='admin' AND region_scope='all')",args:[owner.id]}};}
  }
- const c=await context({load:'identity'});if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('الاستيراد متاح لمدير النظام فقط',403);return{db:c.db,actor:c.me.name,permission:accessGuard(c)};
+ const c=await context({load:'identity'});if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('الاستيراد متاح لمدير النظام فقط',403);requireCell(c.me,'customer','import');return{db:c.db,actor:c.me.name,permission:accessGuard(c)};
 }
 export async function POST(req:Request){try{
  checkOrigin(req);if(!req.headers.get('x-machine-import-token'))await requireSession();const text=await readRequestText(req,3000);if(text.length>1000)throw new CRMError('الطلب كبير');

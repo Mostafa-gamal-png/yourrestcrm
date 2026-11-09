@@ -38,6 +38,7 @@
 // any other is stored unlinked (customerId '', data.customer.crmNumber null, data.customer.erpCode) and goes to production with the name
 // and ERP code only, once production's application takes such a customer (moldFreeCustomerHeld, sending.held 'free_customer'). Who sees
 // an unlinked request, and which sales manager approves it, goes by its requester's regions (moldRequestInRegion).
+import {cellRefused} from './permissions';
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope,regionScopesOverlap} from './regions';
@@ -254,6 +255,8 @@ export function moldOrderNoText(source:{orderNo:number|null}|null|undefined,say:
 export const MOLD_ROLES=['rep','supervisor','manager','admin','customer_service','customer_service_manager'];
 export const canUseMoldRequests=(role:string)=>MOLD_ROLES.includes(role);
 export const canCreateMoldRequest=(me:Member)=>canUseMoldRequests(me.role);
+/** «الصلاحيات» (lib/permissions.ts): the page offers no edit or cancellation the administrator switched off (the route refuses them too). */
+const switchedOff=<T extends {edit:boolean;cancel:boolean}>(can:T,me:Member):T=>({...can,edit:can.edit&&!cellRefused(me,'mold-requests','edit'),cancel:can.cancel&&!cellRefused(me,'mold-requests','delete')});
 /** Only the sales manager approves in the CRM (the products contract leaves the choice to the CRM; the owner chose the sales manager). */
 export const canApproveMoldRequests=(me:Pick<Member,'role'>)=>me.role==='manager';
 const SERVICE_ROLES=['customer_service','customer_service_manager'];
@@ -496,7 +499,7 @@ export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],li
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,customerAddress:typeof row.data.customer.address==='string'?row.data.customer.address:'',crmNumber:row.data.customer.crmNumber??null,customerErpCode:typeof row.data.customer.erpCode==='string'?row.data.customer.erpCode:'',
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(held?{held}:{})},
-  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:moldPermissions(row,me,files,approver),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true};
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:switchedOff(moldPermissions(row,me,files,approver),me),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent.
  *  Always one of the five states every page knows: a request kept for its quotation's, PO's or design file reads waiting (or off), and

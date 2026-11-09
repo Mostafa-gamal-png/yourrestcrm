@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {cellRefused} from './permissions';
 import {CRMError,accessGuard} from './crm-server';
 import {salesScopeMemberIds,recordAuthorId} from './access';
 import {memberCanAccessRegion} from './regions';
@@ -80,7 +81,8 @@ export async function dayReview(db:D1Database,memberId:string,date:string):Promi
 
 /** GET /api/reviews?date=&memberId=: the notes on the report the reader opened, with the read time, and what they may write on it. */
 export async function reportReviews(c:JourneyContext,date:string,memberId:string):Promise<ReportReviews>{
- const activities=reportActivities(c,date,memberId),writer=canWriteReviews(c.me);
+ // «الصلاحيات» (lib/permissions.ts): «إضافة» on «تقرير يوم المندوب» switched off: the notes are shown, none may be written.
+ const activities=reportActivities(c,date,memberId),writer=canWriteReviews(c.me)&&!cellRefused(c.me,'journeys','add');
  const entries=await entryReviews(c.db,activities.map(a=>a.row.id));
  const day=memberId==='all'?null:await dayReview(c.db,memberId,date);
  return{ok:true,date,memberId,entries,reviewable:writer?activities.filter(a=>a.author!==c.me.id).map(a=>a.row.id):[],day,dayReviewable:writer&&memberId!=='all'&&date<=today()&&dayReviewableMember(c,memberId,date)};

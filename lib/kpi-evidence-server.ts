@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {cellRefused} from './permissions';
 import {context,CRMError,accessGuard,requireSalesWorkspace} from './crm-server';
 import {type Member,type Row,today} from './crm';
 import {recordAuthorId} from './access';
@@ -29,7 +30,7 @@ export async function readSalesRevision(c:Context){
 }
 async function readEvidenceRevision(c:Context){const row=await c.db.prepare("SELECT revision FROM crm_kpi_evidence_state WHERE id='company'").first<{revision:number}>();if(!row)throw new CRMError('تحديث قاعدة بيانات المؤشرات غير مكتمل.',503);return row.revision;}
 export async function readKpiEvidenceRows(c:Context,month:string):Promise<KpiEvidence[]>{
- requireSalesWorkspace(c.me);const selected=monthSchema.parse(month),allowed=salesReadMemberIds(c.members,c.me),regional=new Set(c.regionalMembers.filter(m=>m.role==='rep').map(m=>m.id));
+ requireSalesWorkspace(c.me);const selected=monthSchema.parse(month),allowed=salesReadMemberIds(c.members,c.me,true),regional=new Set(c.regionalMembers.filter(m=>m.role==='rep').map(m=>m.id));
  const rows=(await c.db.prepare('SELECT e.*,m.name AS author FROM crm_kpi_evidence e LEFT JOIN crm_members m ON m.id=e.updated_by WHERE e.month=?').bind(selected).all<EvidenceRow>()).results;
  return rows.filter(row=>allowed.has(row.member_id)&&regional.has(row.member_id)).map(decode);
 }
@@ -83,7 +84,7 @@ export async function getKpiEvidenceOptions(c:Context,memberId:string,month:stri
  const guard=accessGuard(c),fresh=await c.db.prepare("SELECT EXISTS(SELECT 1 FROM crm_customer_identity_state WHERE id='company' AND revision=?) AS identityCurrent WHERE "+guard.sql+' AND '+memberSnapshotsGate).bind(c.customerIdentityState.revision,...guard.args,JSON.stringify([memberSnapshot(member)])).first<{identityCurrent:number}>();
  if(!fresh)throw new CRMError('تغيّرت الصلاحيات. حدّث الصفحة.',403);
  if(!fresh.identityCurrent)throw new CRMError('تغيّر ربط أكواد العملاء. حدّث الصفحة وأعد المراجعة.',409);
- return{memberId:member.id,month:selected,evidence,salesRevision,evidenceRevision,scopeKey:evidenceScopeKey(member),period,computed,sourceMemberIds,canEdit:!computed&&['admin','manager'].includes(c.me.role)&&selected<=today().slice(0,7),quotes:quotations.map(row=>quoteOption(row,c)),invoices:invoices.filter(row=>quoteCustomers.has(row.customerId)).map(invoiceOption)};
+ return{memberId:member.id,month:selected,evidence,salesRevision,evidenceRevision,scopeKey:evidenceScopeKey(member),period,computed,sourceMemberIds,canEdit:!computed&&['admin','manager'].includes(c.me.role)&&!cellRefused(c.me,'targets','edit')&&selected<=today().slice(0,7),quotes:quotations.map(row=>quoteOption(row,c)),invoices:invoices.filter(row=>quoteCustomers.has(row.customerId)).map(invoiceOption)};
 }
 
 const saveSchema=z.object({memberId:z.string().min(1).max(200),month:monthSchema,version:z.number().int().min(0),requestId:z.string().uuid(),salesRevision:z.number().int().nonnegative(),evidenceRevision:z.number().int().nonnegative(),input:kpiEvidenceInputSchema}).strict();

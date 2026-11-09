@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {cellRefused} from './permissions';
 import {regionScope} from './regions';
 import {context,CRMError,accessGuard} from './crm-server';
 import {today} from './crm';
@@ -11,7 +12,7 @@ import {readKpiPurchaseHistory,isKpiIssuedQuote,isValidKpiConversion} from './kp
 import {effectiveSet,defaultActivityTargets,type ActivityTargets,type TargetState} from './targets';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function kpiData(c:Context,month:string,performance:KpiPerformance[],targets?:TargetState):Promise<KpiData>{
- const period=kpiPeriod(month),allowed=salesReadMemberIds(c.members,c.me);
+ const period=kpiPeriod(month),allowed=salesReadMemberIds(c.members,c.me,true);
  const salesRevision=await readSalesRevision(c);
  const evidenceRevision=(await c.db.prepare("SELECT revision FROM crm_kpi_evidence_state WHERE id='company'").first<{revision:number}>())?.revision||0;
  const [assessmentRows,saleRows,currentErp,previousErp,evidenceRows]=await Promise.all([
@@ -55,7 +56,7 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
  if(!access)throw new CRMError('تغيّرت صلاحيات حسابك. أعد تسجيل الدخول.',403);
  if(!access.identityCurrent)throw new CRMError('تغيّر ربط أكواد العملاء. حدّث الصفحة وأعد المراجعة.',409);
  if(currentSales!==salesRevision||(currentEvidence?.revision||0)!==evidenceRevision)throw new CRMError('تغيّرت بيانات التقييم أثناء التحميل. حدّث الصفحة.',409);
- return{month,period,people,canManage:['admin','manager'].includes(c.me.role)};
+ return{month,period,people,canManage:['admin','manager'].includes(c.me.role)&&!cellRefused(c.me,'targets','edit')};
 }
 const saveSchema=z.object({memberId:z.string().min(1).max(200),month:monthSchema,version:z.number().int().min(0),requestId:z.string().uuid(),input:kpiInputSchema}).strict();
 export async function saveKpi(c:Context,body:unknown){

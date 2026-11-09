@@ -17,7 +17,7 @@
       "app/mobile-navigation.tsx", "app/mobile-navigation.css", "app/offline-entry.tsx", "app/offline-status.tsx", "app/offline-status.css",
       "app/email-login.tsx", "app/email-session.tsx", "app/login/**", "app/application-auth.ts", "app/chatgpt-auth.ts", "app/api/auth/**", "app/api/crm/**",
       "app/language-switch.tsx", "app/voice-field.tsx", "app/upload-status.tsx", "app/upload-status.css",
-      "lib/crm.ts", "lib/crm-server.ts", "lib/crm-context-records.ts", "lib/access.ts", "lib/regions.ts", "lib/request-body.ts", "lib/auth-environment.ts", "lib/email-auth.ts",
+      "lib/crm.ts", "lib/crm-server.ts", "lib/crm-context-records.ts", "lib/permissions.ts", "lib/permissions-server.ts", "lib/access.ts", "lib/regions.ts", "lib/request-body.ts", "lib/auth-environment.ts", "lib/email-auth.ts",
       "lib/member-email.ts", "lib/customer-fields.ts", "lib/customer-location.ts", "lib/kingdom.ts", "lib/kingdom-border.ts", "lib/decimal-money.ts",
       "lib/customer-identity.ts", "lib/customer-identity-store.ts", "lib/customer-service.ts", "lib/customer-visits.ts", "lib/visits.ts", "lib/working-hours.ts", "lib/omit.ts",
       "lib/native-tracking.ts", "lib/i18n.ts", "lib/client-submit.ts", "lib/utils.ts", "lib/native-speech.ts",
@@ -115,6 +115,11 @@
       "sources": ["app/region-picker.tsx", "lib/member-edit.ts", "tests/member*.mjs", "tests/region*.mjs"],
       "tests": ["tests/member-regions-browser.mjs", "tests/customer-edit-browser.mjs", "tests/app-browser-workflows.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs"]
     },
+    "permissions": {
+      "about": "«الصلاحيات» per member (migration 0020): the matrix, «انسخ الصلاحيات من» and «عرض بيانات الفريق بالكامل» in the team form. The rules and the server checks are lib/permissions*.ts (shared: every route reads them). Hidden screens answer 404, switched-off actions 403.",
+      "sources": ["app/member-permissions.tsx", "app/member-permissions.css", "tests/permissions*.mjs"],
+      "tests": ["tests/permissions-http.mjs", "tests/permissions-browser.mjs", "tests/member-regions-browser.mjs", "tests/server-authorization.mjs"]
+    },
     "app-update-android": {
       "about": "The Android app version and its update (app/app-update.tsx, /api/app-update, the published APKs); the tracking gate asks for the update.",
       "sources": ["app/app-update.tsx", "app/app-update.css", "app/api/app-update/**", "lib/app-update.ts", "lib/app-update-release.json", "public/app-update.json", "public/downloads/**", "tests/app-update*.mjs"],
@@ -164,7 +169,7 @@
     "tests/targets-attainment-http.mjs": 35, "tests/competitors-browser.mjs": 33, "tests/competitor-intelligence-browser.mjs": 30, "tests/visit-place-http.mjs": 30,
     "tests/machines-browser.mjs": 28, "tests/tracking-gate-browser.mjs": 141, "tests/pwa-browser.mjs": 24, "tests/erp-customers-browser.mjs": 23, "tests/kpi-evidence-browser.mjs": 22,
     "tests/namecheap-http.mjs": 22, "tests/customer-edit-browser.mjs": 21, "tests/erp-customers-http.mjs": 21, "tests/open-cached-browser.mjs": 20,
-    "tests/member-regions-browser.mjs": 19, "tests/supervisor-reviews-http.mjs": 31, "tests/supervisor-reviews-browser.mjs": 40, "tests/admin-delete-browser.mjs": 17, "tests/daily-report-browser.mjs": 11, "tests/sales-date-boundaries.mjs": 6,
+    "tests/member-regions-browser.mjs": 19, "tests/permissions-http.mjs": 25, "tests/permissions-browser.mjs": 45, "tests/supervisor-reviews-http.mjs": 31, "tests/supervisor-reviews-browser.mjs": 40, "tests/admin-delete-browser.mjs": 17, "tests/daily-report-browser.mjs": 11, "tests/sales-date-boundaries.mjs": 6,
     "tests/app-update-browser.mjs": 3, "tests/offline-outbox-browser.mjs": 3, "tests/app-update-release.mjs": 1, "tests/erp-sales-browser.mjs": 30,
     "default-gate": 300
   }

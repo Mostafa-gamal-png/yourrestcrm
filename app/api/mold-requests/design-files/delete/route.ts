@@ -8,7 +8,7 @@
 // The customer's signature (2026-11-04) is not deleted while the request's data names it: an edit that changes what was signed replaces it.
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
-import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError} from '@/lib/crm-server';
+import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requirePages} from '@/lib/crm-server';
 import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView,moldSignatureOf} from '@/lib/mold-requests';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
@@ -22,6 +22,8 @@ export async function POST(req:Request){try{
  // The role is checked before the body is read.
  const c=await context({load:'customers'});
  if(!canUseMoldRequests(c.me.role))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
+ // «الصلاحيات»: part of «طلبات تصنيع القوالب» (closed when hidden).
+ requirePages(c.me,'mold-requests');
  const input=schema.parse(await readJsonBody(req)),link=productsLink();keepMoldRetrying();
  const canonical=JSON.stringify({action:'delete',...input}),receiptId='mold-design-receipt:'+c.me.id+':'+input.requestId;
  const answer=async(status=200,send:DesignOutcome|null=null,error='')=>{

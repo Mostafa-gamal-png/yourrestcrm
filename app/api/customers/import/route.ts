@@ -3,7 +3,7 @@ import {parseJsonBody} from '@/lib/crm-server';
 import {regionScope} from '@/lib/regions';
 import {env} from 'cloudflare:workers';
 import {z} from 'zod';
-import {database,context,accessGuard,checkOrigin,requireSession,CRMError,replyError} from '@/lib/crm-server';
+import {database,context,accessGuard,checkOrigin,requireSession,CRMError,replyError,requireCell} from '@/lib/crm-server';
 import {schemas} from '@/lib/crm';
 import {coordinatesFromText} from '@/lib/customer-location';
 export const dynamic='force-dynamic';
@@ -17,7 +17,7 @@ async function importAccess(req:Request,sourceHash:string){
   let mismatch=0;for(let i=0;i<expected.length;i++)mismatch|=expected.charCodeAt(i)^submitted.charCodeAt(i);
   if(mismatch===0){const db=database();const owner=await db.prepare("SELECT id,name,branch FROM crm_members WHERE id='owner' AND active=1 AND role='admin' AND region_scope='all'").first<{id:string;name:string;branch:string}>();if(!owner)throw new CRMError('يلزم تهيئة مدير النظام قبل الاستيراد',409);return{db,owner,permission:{sql:"EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role='admin' AND region_scope='all')",args:[owner.id]}};}
  }
- const c=await context({load:'identity'});if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('استيراد العملاء متاح لمدير النظام فقط',403);return{db:c.db,owner:c.me,permission:accessGuard(c)};
+ const c=await context({load:'identity'});if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('استيراد العملاء متاح لمدير النظام فقط',403);requireCell(c.me,'customer','import');return{db:c.db,owner:c.me,permission:accessGuard(c)};
 }
 const batchSchema=z.object({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),sourceFile:z.string().max(250),rows:z.array(z.object({id:z.string().regex(/^yr-import-[a-f0-9]{32}$/),data:z.record(z.unknown())})).min(1).max(50)});
 export async function POST(req:Request){try{

@@ -1,4 +1,6 @@
 import type {Member,Row} from './crm';
+/** «عرض بيانات الفريق بالكامل» (lib/permissions.ts): a supervisor or a sales manager the administrator switched it on for. */
+export const viewsWholeTeam=(me:Member)=>(me.role==='supervisor'||me.role==='manager')&&me.access?.viewAll===true;
 
 /** Commercial reporting and pricing are management workspaces. */
 export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'].includes(role);
@@ -19,15 +21,21 @@ export function canViewPage(role:string,view:string){
  *  permissions matrix can make it a switch later. */
 export function trashScope(role:string):'all'|'own'|null{return role==='admin'?'all':role==='manager'?'own':null;}
 
-/** Preserve old bookmarks without granting access to a management workspace. */
-export function resolveCRMPage(role:string,view:string){
+/** Preserve old bookmarks without granting access to a management workspace. A screen the administrator hid from the member (hidden,
+ *  lib/permissions.ts) is not opened either: the first screen the member has, «الزيارات» when it is not hidden. */
+export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=[]){
  const page=view==='factory'?'customer':['opportunity','service'].includes(view)?'activity':view==='reports'&&canUseSalesWorkspace(role)?'targets':view;
- return canViewPage(role,page)?page:'activity';
+ const shown=(screen:string)=>canViewPage(role,screen)&&(role==='admin'||!hidden.includes(screen));
+ if(shown(page))return page;
+ return ['activity','dashboard','customer','map','followup','mold-requests','complaints','targets','journeys','quote','sales','competitors','service-kpi','trash','team'].find(shown)||'activity';
 }
 
-/** Reporting history includes inactive members; assignment selectors can request activeOnly. */
-export function salesScopeMemberIds(members:Member[],me:Member,options:{activeOnly?:boolean}={}){
- const scoped=members.filter(member=>member.id===me.id||me.role==='admin'||me.role==='manager'&&['supervisor','rep'].includes(member.role)||me.role==='supervisor'&&member.role==='rep'&&member.supervisorId===me.id);
+/** Reporting history includes inactive members; assignment selectors can request activeOnly. read: a place that only READS may widen to
+ *  every sales member when the administrator switched «عرض بيانات الفريق بالكامل» on for this supervisor or sales manager (me.access.viewAll,
+ *  lib/permissions.ts); every write, assignment and commit check keeps the team as the role defines it (read omitted). */
+export function salesScopeMemberIds(members:Member[],me:Member,options:{activeOnly?:boolean;read?:boolean}={}){
+ const wide=!!options.read&&viewsWholeTeam(me);
+ const scoped=members.filter(member=>member.id===me.id||me.role==='admin'||wide&&['admin','manager','supervisor','rep'].includes(member.role)||me.role==='manager'&&['supervisor','rep'].includes(member.role)||me.role==='supervisor'&&member.role==='rep'&&member.supervisorId===me.id);
  return new Set(scoped.filter(member=>!options.activeOnly||!!member.active).map(member=>member.id));
 }
 
@@ -45,8 +53,10 @@ function resolveRecordAuthor(row:Row,resolveEmail:(email:string)=>string|undefin
 }
 
 /** One synchronous projection gets one fresh index; never reuse across requests. */
+/** canRead follows the reader's scope (wider with «عرض بيانات الفريق بالكامل»); readOnly(row) says a row is read only through that widening
+ *  (the page shows it without edit or delete; the routes refuse writes on it by the team's own scope). The edit checks keep the team. */
 export function salesRecordAccess(members:Member[],me:Member){
- const team=salesScopeMemberIds(members,me),emails=new Map<string,string>();
+ const team=salesScopeMemberIds(members,me),readable=viewsWholeTeam(me)?salesScopeMemberIds(members,me,{read:true}):team,emails=new Map<string,string>();
  for(const member of members){const email=member.email.toLowerCase();if(!emails.has(email))emails.set(email,member.id);}
  const author=(row:Row)=>resolveRecordAuthor(row,email=>emails.get(email));
  return{
@@ -54,8 +64,9 @@ export function salesRecordAccess(members:Member[],me:Member){
    if(row.kind==='customer'||row.kind==='factory')return !['customer_service','customer_service_manager'].includes(me.role);
    if(me.role==='admin')return true;
    if(row.kind==='quote'&&!canUseSalesWorkspace(me.role)||!['manager','supervisor','rep'].includes(me.role))return false;
-   const id=author(row);return !!id&&team.has(id);
+   const id=author(row);return !!id&&readable.has(id);
   },
+  readOnly(row:Row){if(readable===team||['customer','factory'].includes(row.kind))return false;const id=author(row);return !!id&&!team.has(id);},
   canManageMaster(row:Row){return me.role==='rep'&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo));},
   canEditCustomerDetails(row:Row){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);},
   canEditMachine(row:Row){return row.kind==='factory'&&(me.role==='rep'?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo)));},
@@ -63,13 +74,13 @@ export function salesRecordAccess(members:Member[],me:Member){
 }
 
 /** Source-author check only; callers apply the customer's region boundary separately. */
-export function canReadSalesRecord(row:Row,members:Member[],me:Member){
+export function canReadSalesRecord(row:Row,members:Member[],me:Member,options:{read?:boolean}={}){
  if(['customer','factory'].includes(row.kind))return !['customer_service','customer_service_manager'].includes(me.role);
  if(me.role==='admin')return true;
  if(row.kind==='quote'&&!canUseSalesWorkspace(me.role))return false;
  if(!['manager','supervisor','rep'].includes(me.role))return false;
  const author=recordAuthorId(row,members);
- return !!author&&salesScopeMemberIds(members,me).has(author);
+ return !!author&&salesScopeMemberIds(members,me,options).has(author);
 }
 
 /** A machine belongs to its customer's responsible member: a representative adds and corrects the machines of their own customers (never deletes them), the sales roles those of their team. */

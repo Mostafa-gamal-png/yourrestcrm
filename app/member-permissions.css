@@ -1,0 +1,29 @@
+/* «الصلاحيات» in the member form (app/member-permissions.tsx): the matrix scrolls inside its own box on a phone, never the page. */
+.member-permissions{display:flex;flex-direction:column;gap:12px;margin-top:6px;padding-top:14px;border-top:1px solid var(--border);min-width:0}
+.member-permissions-head{display:flex;align-items:flex-start;gap:9px}
+.member-permissions-head svg{flex-shrink:0;margin-top:4px;color:var(--primary)}
+.member-permissions-head h3{font-size:16px;font-weight:700;line-height:1.6}
+.member-permissions-head p{font-size:13px;color:var(--muted-foreground);line-height:1.6}
+.member-permissions-note{font-size:13px;line-height:1.7;color:var(--muted-foreground);background:var(--accent);border-radius:8px;padding:8px 10px;overflow-wrap:anywhere}
+.member-permissions-note.warn{background:#fff4e5;color:#8a5a12}
+.dark .member-permissions-note.warn{background:#3a2a12;color:#f3c886}
+.member-permissions-copy{display:flex;flex-direction:column;gap:8px;max-width:420px}
+.member-permissions-copy select{min-height:44px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);padding:0 10px;font:inherit;max-width:100%}
+.member-permissions-scroll{overflow-x:auto;max-width:100%;border:1px solid var(--border);border-radius:10px;-webkit-overflow-scrolling:touch}
+.permission-matrix{width:100%;min-width:560px;border-collapse:collapse;font-size:13px}
+.permission-matrix th,.permission-matrix td{padding:6px 6px;text-align:center;border-top:1px solid var(--border);white-space:nowrap}
+.permission-matrix thead th{border-top:0;background:var(--muted);font-weight:600}
+.permission-matrix tbody th{text-align:start;font-weight:500;white-space:normal;min-width:120px}
+.permission-box{width:22px;height:22px;accent-color:var(--primary);cursor:pointer;vertical-align:middle}
+.permission-box:disabled{cursor:not-allowed;opacity:.55}
+.permission-none{color:var(--muted-foreground);display:inline-block;min-width:22px}
+.permission-star{color:var(--muted-foreground);margin-inline-start:2px}
+.member-permissions-foot{font-size:12px;line-height:1.8;color:var(--muted-foreground)}
+.member-permissions-general{font-size:14px;font-weight:700}
+.member-permissions-switch{display:flex;align-items:flex-start;gap:10px;cursor:pointer;min-height:44px}
+.member-permissions-switch input{width:22px;height:22px;flex-shrink:0;margin-top:3px;accent-color:var(--primary)}
+.member-permissions-switch span{display:flex;flex-direction:column;gap:3px;line-height:1.6}
+.member-permissions-switch small{font-size:12px;color:var(--muted-foreground)}
+.member-permissions-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.member-permissions-actions .btn{min-height:44px}
+@media(max-width:767px){.member-permissions-actions{flex-direction:column;align-items:stretch}}

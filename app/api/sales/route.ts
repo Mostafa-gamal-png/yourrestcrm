@@ -1,7 +1,7 @@
 import {readJsonBody} from '@/lib/crm-server';
 import {canonicalInvoiceReference} from '@/lib/invoice-reference';
 import {erpInvoiceKey,readErpSales} from '@/lib/erp-sales-server';
-import {requireSalesWorkspace} from '@/lib/crm-server';
+import {requireSalesWorkspace,requirePages,requireCell} from '@/lib/crm-server';
 import {regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {kpiData} from '@/lib/kpis-server';
 import {targetState} from '@/lib/targets-server';
@@ -16,7 +16,9 @@ function saleRow(r: SaleRow & { customer_data: string }): Sale { return { ...JSO
 function errorResponse(e: unknown) { if(e instanceof z.ZodError) return Response.json({error:e.issues.map(i=>i.message).join(' • ')},{status:400}); if(String(e).includes('crm_sales.customer_id, crm_sales.reference_key')) return Response.json({error:'مرجع البيع مسجل بالفعل لهذا العميل'},{status:409}); return replyError(e); }
 export async function GET(req:Request){try{
  const c=await context(), month=monthSchema.parse(new URL(req.url).searchParams.get('month') || today().slice(0,7));
- requireSalesWorkspace(c.me);const allowed=salesReadMemberIds(c.members,c.me);
+ requireSalesWorkspace(c.me);
+ // «الصلاحيات»: read by «المبيعات» and «المستهدفات وتقييم الأداء»: closed when both are hidden. «عرض بيانات الفريق بالكامل» widens it.
+ requirePages(c.me,'sales','targets');const allowed=salesReadMemberIds(c.members,c.me,true);
  const raw=(await c.db.prepare(selectSales+' WHERE s.date>=? AND s.date<=? ORDER BY s.date DESC,s.created_at DESC,s.id').bind(month+'-01',month+'-31').all<SaleRow & { customer_data: string }>()).results;
  const salesForPerformance=[...raw.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(saleRow),...await readErpSales(c,month)].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));
  const sales=salesForPerformance;
@@ -32,7 +34,7 @@ export async function GET(req:Request){try{
 export async function POST(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>100000)throw new CRMError('حجم الطلب كبير');
  const c=await context(), now=new Date().toISOString(), mutation=crypto.randomUUID(), allowed=salesMemberIds(c.members,c.me), manage=['admin','manager'].includes(c.me.role);
- requireSalesWorkspace(c.me);const version=z.number().int().min(0).parse(body.version ?? 0);
+ requireSalesWorkspace(c.me);requirePages(c.me,'sales');const version=z.number().int().min(0).parse(body.version ?? 0);
  if(!(['save','void'] as unknown[]).includes(body.action))throw new CRMError('عملية غير صحيحة');
  const raw=body.id?await c.db.prepare(selectSales+' WHERE s.id=?').bind(String(body.id)).first<SaleRow & { customer_data: string }>():null;
  const old=raw?saleRow(raw):undefined;
@@ -41,6 +43,7 @@ export async function POST(req:Request){try{
   if(!old)throw new CRMError('حدد سجل المبيعات');
   const reason=z.string().trim().min(1,'اكتب سبب الإلغاء').max(500).parse(body.reason);
   if(old.status==='void'&&old.voidReason===reason)return Response.json({ok:true});
+  requireCell(c.me,'sales','delete');
   if(old.status==='void')throw new CRMError('هذا البيع ملغى بالفعل');
   const owner=c.members.find(m=>m.id===old.repId)!,permission=accessGuard(c,c.all.find(r=>r.id===old.customerId));
   const result=await c.db.batch([c.db.prepare("UPDATE crm_sales SET status='void',void_reason=?,version=version+1,updated_at=?,mutation_id=? WHERE id=? AND version=? AND status='confirmed' AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND branch=? AND active=? AND COALESCE(supervisor_id,'')=?) AND "+permission.sql).bind(reason,now,mutation,old.id,version,owner.id,owner.role,owner.branch,owner.active,owner.supervisorId||'',...permission.args),c.db.prepare("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM crm_sales WHERE id=? AND mutation_id=?)").bind(crypto.randomUUID(),old.customerId,c.me.name,'إلغاء بيع',old.reference+' · '+reason,now,old.id,mutation)]);
@@ -61,6 +64,8 @@ export async function POST(req:Request){try{
  const fingerprint=JSON.stringify(data), id=old?.id||'sale-'+z.string().uuid().parse(body.createKey), refKey=canonicalInvoiceReference(data.reference);
  if(!refKey)throw new CRMError('أدخل رقم الفاتورة أو مرجع البيع');
  if(!old){const replay=await c.db.prepare('SELECT id,create_fingerprint,created_by FROM crm_sales WHERE id=?').bind(id).first<{id:string;create_fingerprint:string;created_by:string}>();if(replay){if(replay.created_by!==c.me.id)throw new CRMError('سجل المبيعات غير متاح',404);if(replay.create_fingerprint!==fingerprint)throw new CRMError('البيع محفوظ بالفعل ببيانات مختلفة. حدّث الصفحة.',409);return Response.json({ok:true,id,alreadySaved:true});}}
+ // «الصلاحيات»: recording a sale, editing one (after a replay has answered above).
+ requireCell(c.me,'sales',old?'edit':'add');
  // Old rows may predate reference normalization. Check their display references
  // without rewriting/deleting history, and bind this read to the atomic write.
  const revision=await c.db.prepare("SELECT revision FROM crm_erp_import_state WHERE id='yourrest-industries'").first<{revision:number}>();

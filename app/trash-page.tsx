@@ -3,6 +3,7 @@
 // restore (/api/trash, lib/trash-server.ts), newest first, 40 at a time with «تحميل المزيد», filtered by «نوع السجل»; each with «استرجاع»
 // behind a confirmation. No permanent deletion here: the CRM's deletion already removes the record. The administrator and the sales manager
 // (their own deletions) only (lib/access.ts trashScope).
+import {can} from '@/lib/permissions';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ArchiveRestore,Loader2,RefreshCw,RotateCcw,TriangleAlert,Info} from 'lucide-react';
 import {toast} from 'sonner';
@@ -75,7 +76,7 @@ export default function TrashPage({me,onRestored}:{me:Member;onRestored?:()=>unk
      <p className="trash-meta">{say('حذفه: ','Deleted by: ')}<bdi>{item.deletedBy||'—'}</bdi> · <bdi dir="ltr">{stamp(item.deletedAt)}</bdi></p>
      {item.note&&<p className="trash-note"><Info size={15} aria-hidden="true"/><span>{t(item.note)}</span></p>}
      {item.blocked&&<p className="trash-blocked" role="note"><TriangleAlert size={15} aria-hidden="true"/><span>{t(item.blocked)}</span></p>}
-     <button type="button" className="btn subtle trash-restore" disabled={!!item.blocked||restoring} aria-label={say('استرجاع ','Restore ')+heading(item)} onClick={()=>setConfirm(item)}><RotateCcw size={16} aria-hidden="true"/>{say('استرجاع','Restore')}</button>
+     {can(me,'trash','edit')&&<button type="button" className="btn subtle trash-restore" disabled={!!item.blocked||restoring} aria-label={say('استرجاع ','Restore ')+heading(item)} onClick={()=>setConfirm(item)}><RotateCcw size={16} aria-hidden="true"/>{say('استرجاع','Restore')}</button>}
     </li>)}</ul>}
   {!!items?.length&&answer?.next&&<button type="button" className="btn subtle trash-more" disabled={loadingMore} onClick={()=>{setLoadingMore(true);void load(answer.next!);}}>{loadingMore&&<Loader2 className="spin" size={16} aria-hidden="true"/>}{say('تحميل المزيد','Load more')}</button>}
   <AlertDialog open={!!confirm} onOpenChange={open=>{if(!open&&!restoring)setConfirm(null);}}>
