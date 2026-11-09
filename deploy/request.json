@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-MoldDesignRequired-20261108.zip",
-  "sha256": "f55b9fcfa2b90d5cb4f63dc5e434330086fb6c40fa4c10738f99094d03213ec8",
-  "stage": "yourrest-crm-update-mold-design-required-20261108",
-  "helper": "yourrest-activate-update-mold-design-required.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldAddress-20261109.zip",
+  "sha256": "6d2613f9d0251c6086652cfec76cc0cfcad2190d0426d6a4956d3b26c4515ddf",
+  "stage": "yourrest-crm-update-mold-address-20261109",
+  "helper": "yourrest-activate-update-mold-address.cjs"
 }
