@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-MoldAddress-20261109.zip",
-  "sha256": "6d2613f9d0251c6086652cfec76cc0cfcad2190d0426d6a4956d3b26c4515ddf",
-  "stage": "yourrest-crm-update-mold-address-20261109",
-  "helper": "yourrest-activate-update-mold-address.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-ErpClearCodes-20261109.zip",
+  "sha256": "a98c8be0df158860823dc48ae2a7bbef9952404395f4affed88379ce43d4c227",
+  "stage": "yourrest-crm-update-erp-clear-codes-20261109",
+  "helper": "yourrest-activate-update-erp-clear-codes.cjs"
 }
