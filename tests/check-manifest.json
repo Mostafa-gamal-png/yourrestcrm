@@ -92,6 +92,16 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/customer-last-purchase-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/customer-last-purchase-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/daily-report-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
