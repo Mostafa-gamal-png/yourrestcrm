@@ -7,6 +7,7 @@
 // same list goes again after 24 hours and not before, across a restart; a customer deleted through the CRM goes at once as active:false.
 // Since 2026-11-02 (second part): each customer carries its ERP code (`erpCode`, '' when none); a code changed by «استيراد من ERP» goes
 // shortly after the apply, and a code removed in the CRM goes as ''; a deleted customer goes without it, so production keeps its code.
+// Since 2026-11-09: a code «استيراد من ERP» clears (a customer the ERP file does not name, the box checked) goes as '' too, never left out.
 // Synthetic fixtures only.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -134,6 +135,21 @@ try {
   check((await edit('c1', {code: ''})).status, 200, 'the code is removed');
   await until(() => mock.state.customers.get(n1)?.erpCode === '', 'the list after the code was removed');
   check(JSON.parse(sends().at(-1).body).customers.find(item => item.crmNumber === n1).erpCode, '', 'sent as an empty ERP code');
+
+  // ---- 2026-11-09: «امسح كود ERP للعملاء اللي مش في الشيت» clears the code of a customer the ERP file does not name; the list goes
+  //  shortly after the apply with erpCode '' (never left out: production would keep the old code), so production clears it too
+  const typed = await (await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع مش في ERP', city: 'الرياض', region: 'الشرقية', assignedTo: 'rep', branch: 'الرئيسي', code: '333'}}})).json();
+  ok(typed.id, 'a customer saved with a code the ERP does not have');
+  const n3 = await number(typed.id);
+  await until(() => mock.state.customers.get(n3)?.erpCode === '333', 'the list with the typed code');
+  const clearPreview = await (await owner('/api/erp-customers', {method: 'POST', body: {action: 'preview', fileName: 'Customer.xlsx', base64: file}})).json();
+  check(clearPreview.clears?.map(clear => [clear.customerId, clear.code]), [[typed.id, '333']], 'the preview lists the customer the file does not name, with its code');
+  const beforeClear = sends().length;
+  const cleared = await owner('/api/erp-customers', {method: 'POST', body: {action: 'apply', fileName: 'Customer.xlsx', base64: file, snapshot: clearPreview.snapshot, clearCodes: true, clearSnapshot: clearPreview.clearSnapshot, requestId: crypto.randomUUID(), adds: 0}});
+  check([cleared.status, cleared.json().cleared], [200, 1], 'the apply clears it');
+  await until(() => sends().length > beforeClear && mock.state.customers.get(n3)?.erpCode === '', 'the list after the code was cleared', 15_000);
+  const clearedEntry = JSON.parse(sends().at(-1).body).customers.find(item => item.crmNumber === n3);
+  check([Object.hasOwn(clearedEntry, 'erpCode'), clearedEntry.erpCode, mock.state.customers.get(n2).erpCode], [true, '', '777'], 'sent with erpCode \'\' (production clears it); the customer in the file keeps its code');
 } finally { await app.stop(); }
 
 // ---- the daily full list: a list unchanged for 24 hours goes again; one sent an hour ago does not (the fingerprint read after a restart)

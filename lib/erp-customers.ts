@@ -120,6 +120,10 @@ export type ErpCustomerOutcome={row:number;code:string;name:string;phones:string
 export type ErpCustomerPlan={row:number;customerId:string;version:number;codeKey:string;from:string;to:string;codeChange:boolean;mapping:boolean;mappingVersion:number};
 /** A row to add: its code and name (Arabic, else English, cut to the form's 250 characters) and the row's contact cells. Server only. */
 export type ErpCustomerAdd={row:number;code:string;codeKey:string;name:string;phone:string;phone2:string;email:string;address:string};
+/** A CRM customer the file does not name (ErpCustomersMatch.clears): `code` is its current ERP code, cleared by an apply with `clearCodes`.
+ * `version` is for the server only (the preview sends ErpCustomerClearView). */
+export type ErpCustomerClear={customerId:string;version:number;name:string;internalCode:string;code:string;region:string};
+export type ErpCustomerClearView=Omit<ErpCustomerClear,'version'>;
 export type ErpCustomersSummary={rows:number;auto:number;same:number;choose:number;similar:number;new:number;outOfRegion:number;heldOutside:number;invalid:number;conflicts:number;pending:number;changes:number;codeChanges:number;mappings:number;adds:number};
 
 /** The values a new customer's region may take (the customer form's): '' («المنطقة غير محددة») and the five regions by their names. */
@@ -158,7 +162,12 @@ export function heldOutsideRegions(me:Member,holders:Row[],mapping:CustomerCodeM
  * 4. Else `new`: added unless the user leaves it ('').
  * Rows of steps 1 and 2 are never added. Two rows ending on one customer are both a choice and `conflict`, and `summary.conflicts` must be
  * 0 before the plan is applied. `involved` (every candidate and holder, visible or not, with its version) is part of the preview's
- * snapshot; it and `adds` are for the server only. */
+ * snapshot; it and `adds` are for the server only.
+ * `clears` (the owner, 2026-11-09: «عايزه العملاء اللى مش موجودين فى الشييت يبقى كود erp فاضى»): the customers inside `me`'s regions with
+ * a non-empty current ERP code that no row of the file names, by any evidence the matcher reads: a phone or the exact loose name of any
+ * row (rows too wide to offer and rows with an issue included), the row's number held as a current code, a kept old code or a stored
+ * mapping, a candidate offered for a row (similar names included) or the customer a row ends on. They do not depend on the choices (a
+ * choice only picks among candidates), so the preview's list is the apply's. Sorted like the candidates (Yourrest code, then id). */
 export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:{me:Member;mappings?:CustomerCodeMapping[];choices?:Map<number,string>}){
  const all=customers.filter(row=>row.kind==='customer'),byPhone=new Map<string,Row[]>(),byName=new Map<string,Row[]>(),holders=customerCodeCandidates(all);
  for(const customer of all){for(const key of new Set([...phoneKeys(customer.data.phone),...phoneKeys(customer.data.phone2)]))push(byPhone,key,customer);const key=nameKey(customer.data.name);if(key)push(byName,key,customer);}
@@ -291,7 +300,17 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
   outcome.change=codeChange||outcome.mapping;
   if(outcome.change&&!outcome.conflict)plan.push({row:outcome.row,customerId:customer.id,version:customer.version,codeKey:row.codeKey,from:outcome.from,to:row.code,codeChange,mapping:outcome.mapping,mappingVersion:outcome.mapping?mapping?.version||0:0});
  });
+ // Every customer the file names in any way; the rest of `me`'s customers that still carry an ERP code are the ones the ERP does not have.
+ const named=new Set<string>(),mark=(list?:Row[])=>{for(const customer of list||[])named.add(customer.id);};
+ for(const row of rows){
+  for(const key of row.phones)mark(byPhone.get(key));
+  for(const key of [nameKey(row.name),nameKey(row.nameEn)])if(key)mark(byName.get(key));
+  if(row.codeKey){mark(holders.get(row.codeKey));const mapping=mappings.get(row.codeKey);if(mapping)named.add(mapping.customerId);}
+ }
+ for(const outcome of outcomes){for(const candidate of outcome.candidates)named.add(candidate.id);if(outcome.customerId)named.add(outcome.customerId);}
+ const clears:ErpCustomerClear[]=all.filter(customer=>!named.has(customer.id)&&inScope(customer)&&customerCodeKey(customer.data.code)).sort(order)
+  .map(customer=>({customerId:customer.id,version:customer.version,name:String(customer.data.name||''),internalCode:String(customer.data.internalCode||''),code:String(customer.data.code),region:String(customer.data.region||'')}));
  const count=(test:(outcome:ErpCustomerOutcome)=>boolean)=>outcomes.filter(test).length;
  const summary:ErpCustomersSummary={rows:outcomes.length,auto:count(o=>o.status==='auto'),same:count(o=>o.status==='same'),choose:count(o=>o.status==='choose'),similar:count(o=>o.status==='similar'),new:count(o=>o.status==='new'),outOfRegion:count(o=>o.status==='out-of-region'),heldOutside:count(o=>o.status==='held-outside'),invalid:count(o=>o.status==='invalid'),conflicts:count(o=>o.conflict),pending:count(o=>(o.status==='choose'||o.status==='similar')&&!o.customerId&&!o.chosen),changes:plan.length,codeChanges:plan.filter(p=>p.codeChange).length,mappings:plan.filter(p=>p.mapping).length,adds:adds.length};
- return {rows:outcomes,summary,plan,adds,involved:[...involved].sort(([a],[b])=>a<b?-1:a>b?1:0)};
+ return {rows:outcomes,summary,plan,adds,clears,involved:[...involved].sort(([a],[b])=>a<b?-1:a>b?1:0)};
 }
