@@ -81,7 +81,8 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const freePort = async () => { const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve)); const {port} = probe.address(); await new Promise(resolve => probe.close(resolve)); return port; };
 /** Computed fields a newer release may add to its answers (see the comparison after the update). */
-const NEW_COMPUTED = ['_lastPurchase'];
+// Fields a release adds to what an API returns (absent before it): _lastPurchase (60-day filter), access and permissions («الصلاحيات»: me.access, and what is saved for each member on the administrator's team page).
+const NEW_COMPUTED = ['_lastPurchase', 'access', 'permissions'];
 const stable = value => JSON.stringify(value, (key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
 /** One installed site, laid out like the hosting account. */
@@ -342,7 +343,9 @@ try {
   // data._lastPurchase): the comparison leaves them out of the new release's answer when the old one had none.
   const added = (old, now) => Array.isArray(now) ? now.map((item, i) => added(old?.[i], item)) : now && typeof now === 'object'
     ? Object.fromEntries(Object.entries(now).filter(([key]) => !(NEW_COMPUTED.includes(key) && !(old && typeof old === 'object' && key in old))).map(([key, value]) => [key, added(old?.[key], value)])) : now;
-  for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) for (const part of Object.keys(before[who])) if (stable(before[who][part]) !== stable(added(before[who][part], after[who][part]))) differences.push(who + '.' + part);
+  // The first path that differs, so a failure names what changed (synthetic fixtures only).
+  const firstDiff = (a, b, at) => { if (stable(a) === stable(b)) return null; if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return at; for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) { const found = firstDiff(a[key], b[key], at + '.' + key); if (found) return found; } return at; };
+  for (const who of ['owner', 'mgr', 'sup', 'rep1', 'repw']) for (const part of Object.keys(before[who])) { const where = firstDiff(before[who][part], added(before[who][part], after[who][part]), who + '.' + part); if (where) differences.push(where); }
   if (stable(before.file) !== stable(after.file)) differences.push('file');
   assert.deepEqual(differences, [], 'API results are identical for every role before and after the update');
   note('every role sees identical records, sales, performance and attachment after the update', {roles: 5});
