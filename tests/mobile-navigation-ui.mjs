@@ -68,7 +68,8 @@ for(const locale of ['ar','en']){
  props.blocked=true;tree=h.render();eq(nav(tree).props.hidden,true,'Editing dialog hides navigation');eq(nodes(tree,node=>node.type===Sheet)[0].props.open,false,'An open form blocks navigation sheets');
 }
 language='ar';
-const allowed={admin:['customer','map','activity','followup','targets','complaints','service-kpi','dashboard','journeys','quote','sales','competitors','team','mold-requests'],manager:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests'],supervisor:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests'],customer_service:['activity','complaints','mold-requests'],customer_service_manager:['activity','complaints','service-kpi','mold-requests'],unknown:[]};
+// «المحذوفات» (2026-11-09): the administrator and the sales manager, from «المزيد».
+const allowed={admin:['customer','map','activity','followup','targets','complaints','service-kpi','dashboard','journeys','quote','sales','competitors','team','mold-requests','trash'],manager:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests','trash'],supervisor:['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests'],customer_service:['activity','complaints','mold-requests'],customer_service_manager:['activity','complaints','service-kpi','mold-requests'],unknown:[]};
 for(const role of Object.keys(allowed)){
  const navigated=[],props={me:{...me,role},view:'targets',onNavigate:value=>navigated.push(value),accountOpen:false,onAccountOpenChange:noop};const h=harness('app/mobile-navigation.tsx',props);let tree=h.render();
  if(role==='unknown'){eq(tree,null,'Unknown role has no navigation');continue;}

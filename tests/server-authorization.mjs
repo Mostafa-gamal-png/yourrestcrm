@@ -30,10 +30,10 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month];
+  const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
-  const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import'];
+  const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import', '/api/trash'];
   for (const url of posts) {
     check((await anonymous(url, {method: 'POST', body: {}})).status, 401, 'anonymous empty POST ' + url);
     check((await anonymous(url, {method: 'POST', body: {createKey: crypto.randomUUID(), requestId: crypto.randomUUID(), action: 'save', kind: 'customer', sourceHash: 'a'.repeat(64), rows: []}})).status, 401, 'anonymous shaped POST ' + url);
@@ -60,7 +60,9 @@ try {
     '/api/support': expect(everyone, 200, 0),
     '/api/complaints': expect(everyone, 200, 0),
     '/api/complaint-report': expect(['owner', 'mgr', 'mgrw', 'csm'], 200, 403),
-    ['/api/service-kpi?month=' + month]: expect(['owner', 'csm', 'cs'], 200, 403)
+    ['/api/service-kpi?month=' + month]: expect(['owner', 'csm', 'cs'], 200, 403),
+    // «المحذوفات» (2026-11-09): the administrator (all deletions) and the sales managers (their own).
+    '/api/trash': expect(['owner', 'mgr', 'mgrw'], 200, 403)
   };
   for (const [url, byRole] of Object.entries(getMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url)).status, byRole[id], `GET ${url} as ${id}`);
   // KPI evidence is read per member; ask each management role about a member inside its own scope.
@@ -85,11 +87,12 @@ try {
     '/api/customer-identities': expect(['owner'], 400, 403),
     // «استيراد من ERP»: the administrator and the sales managers (each limited to their regions' customers by the route itself).
     '/api/erp-customers': expect(['owner', 'mgr', 'mgrw'], 400, 403),
-    '/api/sales/import': expect(management, 400, 403)
+    '/api/sales/import': expect(management, 400, 403),
+    '/api/trash': expect(['owner', 'mgr', 'mgrw'], 400, 403)
   };
   for (const [url, byRole] of Object.entries(postMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url, {method: 'POST', body: {}})).status, byRole[id], `POST ${url} as ${id}`);
   // A signed-in member's write from another site is refused before anything is read (the design files' routes, 2026-11-02).
-  for (const url of ['/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete']) for (const origin of ['https://evil.example', null]) {
+  for (const url of ['/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/trash']) for (const origin of ['https://evil.example', null]) {
     const headers = origin ? {Origin: origin} : {Origin: ''};
     check((await app.as(sessions.rep1)(url, {method: 'POST', body: {}, headers})).status, 403, `POST ${url} from ${origin || 'no origin'}: 403`);
   }

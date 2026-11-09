@@ -9,9 +9,15 @@ export function canViewPage(role:string,view:string){
  // Mold requests are for every role (the owner, 2026-11-01), customer service included.
  if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints'||view==='mold-requests'||view==='service-kpi'&&role==='customer_service_manager';
  if(!canUseSalesWorkspace(role))return false;
+ if(view==='trash')return trashScope(role)!==null;
  if(view==='team'||view==='complaints'||view==='service-kpi')return role==='admin';
  return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets','mold-requests'].includes(view);
 }
+
+/** «المحذوفات» (2026-11-09): the administrator sees and restores every deletion, the sales manager only those they made themselves (the
+ *  roles that delete customers; only the administrator deletes visits and follow-ups); nobody else has the page. One place, so the
+ *  permissions matrix can make it a switch later. */
+export function trashScope(role:string):'all'|'own'|null{return role==='admin'?'all':role==='manager'?'own':null;}
 
 /** Preserve old bookmarks without granting access to a management workspace. */
 export function resolveCRMPage(role:string,view:string){
