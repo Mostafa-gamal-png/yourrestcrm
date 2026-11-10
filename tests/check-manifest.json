@@ -232,6 +232,16 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/mold-nov10-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/mold-nov10-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/mold-requests-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

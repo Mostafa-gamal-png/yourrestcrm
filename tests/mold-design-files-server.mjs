@@ -192,7 +192,7 @@ try{
   check((await server.sendMoldRequest(DB,id,{link,fetch:stub('requests',200,{request:older,created:false})})).kind,'ok','a change accepted, answered with an older status');
   check([stored().revision,stored().approvals.sales,sql.prepare('SELECT outbox FROM crm_mold_requests WHERE id=?').get(id).outbox],[newer.revision,null,null],'its status does not replace the newer one');
   answering=stub('approval',200,{request:older});
-  as('manager');const approved=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id})));
+  as('manager');const approved=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id,termsAccepted:true})));
   answering=null;
   check([approved.status,stored().revision,stored().approvals.sales,approved.body.request.remote.revision],[200,newer.revision,null,newer.revision],'an approval answered with an older status: the newer one stays');
   const fresh={...newer,revision:newer.revision+1,approvals:sales};
@@ -510,7 +510,7 @@ try{
   check([typeof known(),await server.moldQuotePoSupported(DB),(await list()).quotePo],['string',true,true],'a status pull taught it (crm_settings, with when): the screen asks for the numbers now');
   forget();await attachAs(before,'رسم.pdf',pdf('a design file teaches it too'));
   check(!!known(),true,'a design file\'s answer teaches it too');
-  forget();as('manager');await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:before}));
+  forget();as('manager');await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:before,termsAccepted:true}));
   check(!!known(),true,'and an approval\'s');
   forget();await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true});
   check(!!known(),true,'and the sales manager\'s waiting list');
@@ -608,7 +608,7 @@ try{
   const retried=await server.sendMoldDesignFile(DB,lost,{link});
   check([retried.kind,JSON.parse(lastBody('design-files')).category,mock.state.calls.filter(call=>call.route==='design-files'&&call.body.includes(lost)).length,(await viewQuote(quoted)).find(file=>file.crmFileId===lost).state],['ok','po',2,'sent'],'a retry after a lost answer: the same crmFileId with the same category (200, nothing doubled)');
   // Approvals (2026-11-05): the sales manager approves; a PO file attached since keeps the approval, a design file undoes it.
-  as('manager');answer=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:quoted})));
+  as('manager');answer=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:quoted,termsAccepted:true})));
   check([answer.status,!!answer.body.request.remote.approvals.sales],[200,true],'the sales manager approves it');
   answer=await attachAs(quoted,'PO 3.pdf',pdf('po three'),'po');
   check([answer.body.file.state,!!answer.body.request.remote.approvals.sales,answer.body.request.remote.waitingStep,!!(await server.loadMoldRequest(DB,quoted)).remote.approvals.sales],['sent',true,'production',true],'a PO file attached after it: sent, the approval stays (production\'s answer stored as it is)');

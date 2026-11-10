@@ -49,7 +49,7 @@ import {cellRefused} from './permissions';
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope,regionScopesOverlap} from './regions';
-import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG} from '@/portable/mold-rules.mjs';
+import {MOLD_PAYMENT_TERMS,MOLD_TERMS_ACCEPT,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,moldSignatureRequired};
 /** The customer's signature as the request's data names it (2026-11-04): who signed for the customer, when (the CRM's UTC time), and
@@ -66,12 +66,17 @@ export type MoldSignatureData=MoldSignature&{block?:{key:string;sha256:string;wi
 export type MoldSignLink={hash:string;sentAt:string;expiresAt:string;by:string};
 /** How the customer pays (2026-11-03): chosen when asking; a request asked for before has none. */
 export type MoldPayment='cash'|'deferred';
+/** How a deferred payment is paid (2026-11-10): one of three, with "deferred" only. */
+export type MoldPaymentTerms=keyof typeof MOLD_PAYMENT_TERMS;
+/** Finance sent the request back to the sales manager (the products update of 2026-11-10): why, when, and when the CRM's correction
+ *  reached production (null until then). Cleared by production at the sales manager's next approval. */
+export type MoldReturned={by:'finance';name?:string;reason:string;at:string|null;correctedAt:string|null};
 export type MoldStage=typeof MOLD_STAGES[number];
 export type MoldStatusName='received'|'confirmed'|'in_production'|'produced'|'delivered'|'cancelled';
 export type MoldSpecs={description:string;core:string;vibrators:number|null;model:string;halfBlock:string;moldWidth:number|null;gelbaSize:number|null;moldNo:string;quantity:number|null;designUrl:string;notes:string};
 export type MoldWaitingStep=typeof MOLD_WAITING_STEPS[number];
 /** The approvals as production reports them: when each was given (null: not yet); by whom, for the sales manager's given in the CRM. */
-export type MoldApprovals={required:boolean;sales:{at:string|null;by?:string}|null;production:{at:string|null}|null;admin:{at:string|null}|null};
+export type MoldApprovals={required:boolean;sales:{at:string|null;by?:string;termsAccepted?:true}|null;production:{at:string|null}|null;admin:{at:string|null}|null};
 export type MoldDesignKind='pdf'|'image'|'other';
 /** What a file of a request is: a design file, the quotation's or the PO's (the second update of 2026-11-03). */
 export type MoldFileCategory='design'|'quote'|'po';
@@ -92,7 +97,9 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;requestRef?:stri
   *  whether one is still missing, and their files. */
  quoteNo?:string;poNo?:string;quoteOrPoMissing?:boolean;quoteFiles?:MoldDesignFile[];poFiles?:MoldDesignFile[];
  /** From production's application that takes a customer not in the CRM (2026-11-09) only: the customer it holds. */
- customer?:{crmNumber:number|null;name:string;erpCode:string}};
+ customer?:{crmNumber:number|null;name:string;erpCode:string};
+ /** From the products update of 2026-11-10 only (absent before): the payment's terms as production holds them now, and finance's return. */
+ paymentTerms?:MoldPaymentTerms|null;returned?:MoldReturned|null};
 /** The request as the CRM owns it: the customer and salesman as they were when it was asked for, and the specifications. unconfirmed
  *  (accepted only): production holds the request, but these are not its data: the CRM's change production refused for good
  *  (production_only) after an earlier attempt's answer was lost, so the CRM never learned what production stored (sendMoldRequest). */
@@ -101,6 +108,9 @@ export type MoldRemote={crmRequestId:string;orderNo:number|null;requestRef?:stri
 export type MoldRequestData={requestedAt:string;customer:{crmNumber:number|null;name:string;address:string;city:string;erpCode?:string};salesman:{crmMemberId:string;name:string;email:string};specs:MoldSpecs;
  /** How the customer pays (2026-11-03); absent in a request asked for before, which is sent again exactly as first sent (without it). */
  payment?:MoldPayment;
+ /** How a deferred payment is paid (2026-11-10): with "deferred" only; absent in a request asked for before (sent byte for byte as before).
+  *  termsSent: whether this request's sends carry it (decided at its first send, lib/mold-requests-server.ts requestBody). */
+ paymentTerms?:MoldPaymentTerms;termsSent?:boolean;
  /** The quotation and PO numbers as the representative typed them, normalized (the second update of 2026-11-03): each only when given,
   *  so a request without them is sent again exactly as first sent. No longer asked for since 2026-11-05: kept as stored, never changed. */
  quoteNo?:string;poNo?:string;unconfirmed?:true;
@@ -187,7 +197,9 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  /** The customer's Yourrest number; null for a customer not in the CRM (2026-11-09, customerId ''). */
  crmNumber:number|null;
  /** The customer's ERP code as the request holds it ('' for none): typed for a customer not in the CRM, shown for one of the CRM's. */
- customerErpCode:string;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
+ customerErpCode:string;requestedAt:string;legacyOrderNo:number|null;specs:MoldSpecs;payment:MoldPayment|null;
+ /** How a deferred payment is paid (2026-11-10), as the CRM stored it; null for none. A new field. */
+ paymentTerms:MoldPaymentTerms|null;unconfirmed:boolean;cancelled:boolean;cancelReason:string;
  /** The reasons of the request's earlier cancellations (the production manager restored it since): a new cancellation needs another. */
  cancelReasons:string[];
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null;
@@ -196,7 +208,9 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean;
   /** Make a new signing link, cancel it, or have the customer sign on the device now (2026-11-10): whoever may edit it, while it awaits
    *  the customer's signature. A new field: a page loaded before reads nothing of it. */
-  link?:boolean};version:number;
+  link?:boolean;
+  /** «تعديل وإعادة الإرسال» of a request finance sent back (2026-11-10): its requester; present only then. */
+  correct?:boolean};version:number;
  /** Every file of the request (design, quotation and PO), each with its category. */
  designFiles:MoldDesignFileView[];
  /** Production's quotation and PO flag (MoldQuotePoView), null while production's status carries none (it does not hold the request yet,
@@ -208,7 +222,9 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
   *  has one that counts. A new field: a page loaded before reads nothing of it. */
  designRequired:boolean;
  /** The customer's signature inside the PDFs and the signing link (2026-11-10, moldSigningView). A new field. */
- signing:MoldSigningView};
+ signing:MoldSigningView;
+ /** Finance sent it back (the products update of 2026-11-10): why, by whom, when, and when the correction reached production; null otherwise. */
+ returned:MoldReturned|null};
 /** How far the customer's signing is (2026-11-10). awaits: kept until the customer signs (the requester chose the link); link: the active
  *  link's times (expired: it no longer opens: a new one is needed); via: how the signature was given; stamped: the signature carries its
  *  block, so PDFs get signed copies; copies: how many signed copies it names; skipped: the PDFs that got none, with why (protected or
@@ -221,6 +237,8 @@ export type MoldPendingItem={orderNo:number|null;requestRef?:string;crmRequestId
  customer:{crmNumber:number|null;name:string;address:string;city:string;erpCode?:string};salesman:{crmMemberId:string;name:string};specs:MoldSpecs;
  /** How the customer pays, as production holds it now (null: a request asked for before 2026-11-03). */
  payment:MoldPayment|null;revision:number|null;designFiles:MoldDesignFile[];
+ /** From the products update of 2026-11-10: the payment's terms as production holds them, and finance's return. */
+ paymentTerms?:MoldPaymentTerms|null;returned?:MoldReturned|null;
  /** From production's update of 2026-11-03 only: the quotation and PO numbers and their files as production holds them now. */
  quoteNo?:string;poNo?:string;quoteOrPoMissing?:boolean;quoteFiles?:MoldDesignFile[];poFiles?:MoldDesignFile[]};
 /** The sales manager's list «طلبات بانتظار اعتمادي»; inCrm: the request is one of the CRM's own (it opens from here: in the list below
@@ -289,7 +307,7 @@ export const MOLD_ROLES=['rep','supervisor','manager','admin','customer_service'
 export const canUseMoldRequests=(role:string)=>MOLD_ROLES.includes(role);
 export const canCreateMoldRequest=(me:Member)=>canUseMoldRequests(me.role);
 /** «الصلاحيات» (lib/permissions.ts): the page offers no edit or cancellation the administrator switched off (the route refuses them too). */
-const switchedOff=<T extends {edit:boolean;cancel:boolean;link?:boolean}>(can:T,me:Member):T=>({...can,edit:can.edit&&!cellRefused(me,'mold-requests','edit'),cancel:can.cancel&&!cellRefused(me,'mold-requests','delete'),...(can.link!==undefined?{link:can.link&&!cellRefused(me,'mold-requests','edit')}:{})});
+const switchedOff=<T extends {edit:boolean;cancel:boolean;link?:boolean;correct?:boolean}>(can:T,me:Member):T=>({...can,edit:can.edit&&!cellRefused(me,'mold-requests','edit'),cancel:can.cancel&&!cellRefused(me,'mold-requests','delete'),...(can.link!==undefined?{link:can.link&&!cellRefused(me,'mold-requests','edit')}:{}),...(can.correct!==undefined?{correct:can.correct&&!cellRefused(me,'mold-requests','edit')}:{})});
 /** Only the sales manager approves in the CRM (the products contract leaves the choice to the CRM; the owner chose the sales manager). */
 export const canApproveMoldRequests=(me:Pick<Member,'role'>)=>me.role==='manager';
 const SERVICE_ROLES=['customer_service','customer_service_manager'];
@@ -421,14 +439,22 @@ const holdsDesignFile=(file:HoldFile,signatureId:unknown)=>moldFileCategory(file
 /** Since 2026-11-10, last: customer_signature, the requester chose to send the customer a link to sign from (data.awaitsSignature) and
  *  the customer has not signed yet. The files come first: the customer should see them when signing, and attaching them is the
  *  requester's to do (the link page shows the files there are when it is opened). */
+/** The customer's signature holds a correction too (finance sent the request back, 2026-11-10: production holds the request, and the
+ *  corrected request waits in the CRM for the customer's new signature from the link): it is the one reason not bound to «never sent». */
 export function moldHeldFor(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'|'lastAttemptAt'|'lastError'>&{data?:Pick<MoldRequestData,'fileRequired'|'designRequired'|'signature'|'awaitsSignature'>|null},files:HoldFile[]):MoldSendingHeld|null{
- if(row.outbox!=='send'||!moldNeverSent(row))return null;
- if(row.data?.fileRequired===true&&!files.some(holdsQuoteFile))return 'quote_file';
- const signatureId=(row.data?.signature as {fileId?:unknown}|undefined)?.fileId;
- if(row.data?.designRequired===true&&!files.some(file=>holdsDesignFile(file,signatureId)))return 'design_file';
+ if(row.outbox!=='send')return null;
+ if(moldNeverSent(row)){
+  if(row.data?.fileRequired===true&&!files.some(holdsQuoteFile))return 'quote_file';
+  const signatureId=(row.data?.signature as {fileId?:unknown}|undefined)?.fileId;
+  if(row.data?.designRequired===true&&!files.some(file=>holdsDesignFile(file,signatureId)))return 'design_file';
+ }
  if(row.data?.awaitsSignature===true)return 'customer_signature';
  return null;
 }
+/** Finance sent the request back to the sales manager (the products update of 2026-11-10): production's status carries returned, and the
+ *  request is not cancelled. Its requester corrects it from the CRM (the same requests route, as a correction) until the sales manager
+ *  approves it again (production then clears returned). */
+export const moldReturnedNow=(row:Pick<MoldRequestRow,'cancelledAt'|'remote'>)=>!row.cancelledAt&&!!row.remote?.returned&&row.remote.status!=='cancelled';
 /** A request for a customer not in the CRM (2026-11-09): its data carries no Yourrest number. */
 export const moldFreeCustomer=(data:{customer?:{crmNumber?:unknown}}|null|undefined)=>!!data?.customer&&data.customer.crmNumber===null;
 /** The error code a request for a customer not in the CRM keeps while production's application does not take one yet (lib/mold-requests-
@@ -450,7 +476,9 @@ export function moldFreeCustomerHeld(row:Pick<MoldRequestRow,'outbox'|'accepted'
  *  same as edit (present only on a request that awaits it, so every other request's permissions read exactly as before). */
 export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[],approver=canApproveMoldRequests(me)){
  const own=row.memberId===me.id,open=moldEditable(row),settled=!files.some(moldApprovalWaitsFor),edit=own&&open&&moldNeverSent(row);
- return {edit,cancel:own&&open,resend:own&&(!!row.outbox&&!moldHeldFor(row,files)||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open,...(row.outbox==='send'&&row.data?.awaitsSignature===true?{link:edit}:{})};
+ return {edit,cancel:own&&open,resend:own&&(!!row.outbox&&!moldHeldFor(row,files)||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open,...(row.outbox==='send'&&row.data?.awaitsSignature===true?{link:edit||own&&moldReturnedNow(row)}:{}),
+  // correct (2026-11-10): «تعديل وإعادة الإرسال» of a request finance sent back; present only then.
+  ...(moldReturnedNow(row)?{correct:own}:{})};
 }
 const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
 /** A file's category as stored (a status stored before 2026-11-03 carries none: design). */
@@ -489,11 +517,16 @@ export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'can
 }
 /** How many of a category's places a request's files take (10 design files, 5 of the quotation, 5 of the PO): the CRM's (not refused,
  *  not deleted, or whose deletion has not reached production) and production's that the CRM does not hold. */
-export function moldDesignCount(row:Pick<MoldRequestRow,'remote'>,files:MoldDesignFileRow[],category:MoldFileCategory='design'){
- const known=new Set(files.map(file=>file.id));
- const crm=files.filter(file=>moldFileCategory(file)===category&&(!file.deletedAt||file.outbox==='delete')&&!moldDesignRefused(file)).length;
- return {crm,production:moldListedFiles(row.remote).filter(entry=>entry.category===category&&(!entry.crmFileId||!known.has(entry.crmFileId))).length,max:MOLD_CATEGORY_MAX_FILES[category]};
+/** Since 2026-11-10 the originals' places leave the signed copies out (originals: true; production counts both, and its limits are 20, 10
+ *  and 10 since its update of that day, which the copies' own count follows: moldSignedCopyMax). */
+export function moldDesignCount(row:Pick<MoldRequestRow,'remote'>,files:MoldDesignFileRow[],category:MoldFileCategory='design',{originals=false}:{originals?:boolean}={}){
+ const known=new Set(files.map(file=>file.id)),counted=(id:string|null)=>!originals||!id?.startsWith('mdc-');
+ const crm=files.filter(file=>moldFileCategory(file)===category&&(!file.deletedAt||file.outbox==='delete')&&!moldDesignRefused(file)&&counted(file.id)).length;
+ return {crm,production:moldListedFiles(row.remote).filter(entry=>entry.category===category&&(!entry.crmFileId||!known.has(entry.crmFileId))&&counted(entry.crmFileId)).length,max:MOLD_CATEGORY_MAX_FILES[category]};
 }
+/** How many files of a category a request may hold with its signed copies (2026-11-10): production's limits of its update of that day
+ *  (20 design, 10 quotation, 10 PO) once the CRM knows it is live (moldNov10Known), else the limits before (10, 5, 5). */
+export const moldSignedCopyMax=(category:MoldFileCategory,nov10:boolean)=>nov10?{design:20,quote:10,po:10}[category]:MOLD_CATEGORY_MAX_FILES[category];
 /** Which pending item a download names (app/api/mold-requests/design-file/route.ts, by moldPendingTarget): crm=<crmRequestId> for the
  *  CRM's request, ref=<requestRef> for one registered in the products application, order=<orderNo> only for an older application's (no
  *  requestRef; a link an open page already holds keeps working). */
@@ -566,9 +599,10 @@ export function moldQuotePoView(row:Pick<MoldRequestRow,'remote'>):MoldQuotePoVi
 export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],linkReady:boolean,files:MoldDesignFileRow[]=[],cancelReasons:string[]=[],quotePo=false,approver=canApproveMoldRequests(me)):MoldRequestView{
  const designFiles=moldDesignFilesView(row,files,me,linkReady,quotePo),held=moldHeldFor(row,files)||(moldFreeCustomerHeld(row)?MOLD_FREE_CUSTOMER:null);
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,customerAddress:typeof row.data.customer.address==='string'?row.data.customer.address:'',crmNumber:row.data.customer.crmNumber??null,customerErpCode:typeof row.data.customer.erpCode==='string'?row.data.customer.erpCode:'',
-  requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
+  requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,
+  paymentTerms:row.data.payment==='deferred'&&row.data.paymentTerms&&Object.hasOwn(MOLD_PAYMENT_TERMS,row.data.paymentTerms)?row.data.paymentTerms:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(held?{held}:{})},
-  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:switchedOff(moldPermissions(row,me,files,approver),me),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true,signing:moldSigningView(row,files)};
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:switchedOff(moldPermissions(row,me,files,approver),me),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true,signing:moldSigningView(row,files),returned:moldReturnedNow(row)?row.remote!.returned!:null};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent.
  *  Always one of the five states every page knows: a request kept for its quotation's, PO's or design file reads waiting (or off), and
@@ -637,9 +671,21 @@ export const MOLD_SIGN_LINK_TEXT={
  none:['مفيش لينك شغال؛ ابعت لينك جديد أو خلّي العميل يوقّع على الجهاز.','No active link; send a new link or have the customer sign on the device.'] as [string,string],
  hidden:['اللينك بيتعرض مرة واحدة بعد عمله؛ لو محتاجه تاني ابعت لينك جديد (القديم بيبطل).','The link is shown once, when it is made; to have it again, send a new link (the old one stops working).'] as [string,string],
  copyMark:['نسخة موقّعة','Signed copy'] as [string,string],
+ /** A signed copy production refused for its count (its limits before its update of 2026-11-10): the request goes on without it. */
+ copyRefused:['ما اتبعتتش: الإنتاج رفض عدد الملفات','Not sent: production refused the number of files'] as [string,string],
  copies:['نسخ موقّعة من ملفات الـPDF','Signed copies of the PDF files'] as [string,string],
  after:['اتضاف بعد توقيع العميل، فمالوش نسخة موقّعة (العميل ما شافهوش):','Attached after the customer signed, so no signed copy (the customer did not see it):'] as [string,string],
  viaLink:['وقّع من اللينك','Signed from the link'] as [string,string]};
+/** Finance sent the request back (2026-11-10), in the representative's and the sales manager's words. */
+export const MOLD_RETURNED_TEXT={badge:['رجّعتها المالية','Returned by finance'] as [string,string],title:['رجّعته المالية','Finance returned it'] as [string,string],
+ correct:['تعديل وإعادة الإرسال','Edit and resend'] as [string,string],corrected:['اتبعت التعديل للإنتاج','The correction reached production'] as [string,string],
+ waiting:['عدّل الطلب وابعته تاني؛ بيرجع لمدير المبيعات يعتمده من جديد.','Correct the request and send it again; it goes back to the sales manager for a new approval.'] as [string,string],
+ others:['بانتظار تعديل صاحب الطلب ثم اعتماد مدير المبيعات من جديد.','Waiting for the requester\'s correction, then the sales manager\'s approval again.'] as [string,string],
+ manager:['المالية رجّعته؛ راجع السبب قبل ما تعتمده من جديد.','Finance returned it; read the reason before approving it again.'] as [string,string],
+ filter:['رجّعتها المالية','Returned by finance'] as [string,string],save:['حفظ وإعادة الإرسال للإنتاج','Save and resend to production'] as [string,string],
+ dialog:['المالية رجّعت الطلب. عدّله وابعته تاني؛ أي تغيير في اللي العميل وقّع عليه محتاج توقيع جديد.','Finance returned the request. Correct it and send it again; any change to what the customer signed needs a new signature.'] as [string,string]};
+/** «رجّعته المالية (<name>): <reason> · <time>»: the name only when it says more than «finance» (an e-mail, a person). */
+export const moldReturnedName=(returned:Pick<MoldReturned,'name'>)=>{const name=(returned.name||'').trim();return name&&!/^(finance|المالية)$/i.test(name)?name:'';};
 /** Why a PDF got no signed copy, in the representative's words: «ما اتحطش التوقيع جوه <file>: …». */
 export function moldNotSignedText(name:string,reason:string,say:(ar:string,en:string)=>string){
  const why=reason==='protected'||reason==='damaged'?say('الملف محمي أو تالف','the file is protected or damaged')
@@ -678,6 +724,14 @@ export const moldWaitingNames:Record<MoldWaitingStep,[string,string]>={sales:['�
 export const moldApprovalNames:Record<'sales'|'production'|'admin',[string,string]>={sales:['مدير المبيعات','Sales manager'],production:['الإنتاج','Production'],admin:['المالية','Finance']};
 /** How the customer pays, in the representative's words. */
 export const moldPaymentNames:Record<MoldPayment,[string,string]>={cash:[MOLD_PAYMENTS.cash,'Cash'],deferred:[MOLD_PAYMENTS.deferred,'Deferred']};
+/** A deferred payment's terms, in the representative's words (2026-11-10), the field's title and its refusal; and the sales manager's
+ *  acknowledgement that goes with every approval. */
+export const moldPaymentTermsNames:Record<MoldPaymentTerms,[string,string]>={advance_before_shipping:[MOLD_PAYMENT_TERMS.advance_before_shipping,'An advance payment, the rest before shipping'],
+ advance_after_shipping:[MOLD_PAYMENT_TERMS.advance_after_shipping,'An advance payment, the rest after shipping'],advance_credit_limit:[MOLD_PAYMENT_TERMS.advance_credit_limit,'An advance payment, the rest on a credit limit']};
+export const MOLD_PAYMENT_TERMS_TITLE:[string,string]=['طريقة الدفع المتفق عليها','Agreed payment terms'];
+export const MOLD_PAYMENT_TERMS_REQUIRED_TEXT:[string,string]=['اختار طريقة الدفع المتفق عليها','Choose the agreed payment terms'];
+export const MOLD_TERMS_ACCEPT_TEXT:[string,string]=[MOLD_TERMS_ACCEPT,'Manufacturing is approved on the payment terms stated at receipt'];
+export const MOLD_TERMS_ACCEPTED_TEXT:[string,string]=['وافق على شروط الدفع','Accepted the payment terms'];
 /** A cancellation answered with the request not cancelled: production had restored it and this reason was used already (2026-11-03). */
 export const MOLD_SAME_REASON_TEXT:[string,string]=['مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد','The production manager restored the request; to cancel it again, write a new reason'];
 /** Why a request is active again after a cancellation (a stored error with code `restored`), in the representative's words; '' for any

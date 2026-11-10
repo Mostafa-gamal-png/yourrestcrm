@@ -12,8 +12,8 @@
 import {env} from 'cloudflare:workers';
 import {stampSignaturePdf} from './mold-signed-pdf';
 import {MOLD_SIGN_LINK_DAYS,MOLD_SIGN_TOKEN,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,moldDesignFileCheck,moldSignatureBlockAt,moldSignatureBlockBytes,moldSignatureBlockCheck,moldSignatureBytes,moldSignatureCheck,moldSignedCopyName,moldSigner} from '@/portable/mold-rules.mjs';
-import {moldDesignCount,moldFileCategory,moldNeverSent,moldSignableFile,moldSignatureOf,moldSignedCopyId,moldSignedCopyOf,MOLD_NOT_SIGNED,type MoldDesignFileRow,type MoldRequestRow,type MoldSignLink} from './mold-requests';
-import {loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,MOLD_DESIGN_REFUSED_SQL,MOLD_NEVER_SENT_SQL} from './mold-requests-server';
+import {moldDesignCount,moldFileCategory,moldNeverSent,moldReturnedNow,moldSignableFile,moldSignatureOf,moldSignedCopyId,moldSignedCopyMax,moldSignedCopyOf,MOLD_NOT_SIGNED,type MoldDesignFileRow,type MoldPaymentTerms,type MoldRequestRow,type MoldSignLink} from './mold-requests';
+import {loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldNov10Known,MOLD_DESIGN_REFUSED_SQL,MOLD_NEVER_SENT_SQL} from './mold-requests-server';
 
 export const MOLD_SIGN_LINK_MS=MOLD_SIGN_LINK_DAYS*86400_000;
 /** How long after signing the customer may still download the signed copies through the link that signed (its thank-you page). */
@@ -43,7 +43,7 @@ export const signLinkUrl=(token:string)=>(env.YR_APP_ORIGIN||'')+'/sign/m/'+toke
  *  certainly never reached production with its data still to send, and the link has not expired. */
 export function signLinkOpen(row:MoldRequestRow,now=Date.now()){
  const link=row.data.signatureLink;
- return !!link&&row.data.awaitsSignature===true&&!moldSignatureOf(row.data)&&!row.cancelledAt&&row.outbox==='send'&&moldNeverSent(row)&&Date.parse(link.expiresAt)>now;
+ return !!link&&row.data.awaitsSignature===true&&!moldSignatureOf(row.data)&&!row.cancelledAt&&row.outbox==='send'&&(moldNeverSent(row)||moldReturnedNow(row))&&Date.parse(link.expiresAt)>now;
 }
 /** The request a token names: 'open' while its link opens (signLinkOpen), 'signed' for the link the customer signed from, within a day of
  *  signing (its signed copies only); null for anything else, a token not of the shape included (looked up by its hash, never by itself). */
@@ -116,16 +116,17 @@ export async function makeSignedCopies(db:D1Database,{requestId,signatureFileId,
   if(!stamped.ok){await skip(stamped.reason);continue;}
   const copy=new Uint8Array(stamped.bytes),checked=moldDesignFileCheck(name,copy,category);
   if(!checked.ok){await skip(checked.reason==='too_large'?'too_large':'damaged');continue;}
-  // A place of the category, counted as an upload counts it (the CRM's live files and production's that the CRM does not hold).
-  const places=moldDesignCount(row,await loadMoldDesignFiles(db,'request_id=?',[requestId]),category);
-  if(places.crm+places.production>=places.max){await skip('too_many_files');continue;}
+  // A place of the category, every file counted (the CRM's live files and production's that the CRM does not hold), within production's
+  // limits: 20, 10 and 10 once its update of 2026-11-10 is known, else 10, 5 and 5 (moldSignedCopyMax).
+  const places=moldDesignCount(row,await loadMoldDesignFiles(db,'request_id=?',[requestId]),category),max=moldSignedCopyMax(category,await moldNov10Known(db));
+  if(places.crm+places.production>=max){await skip('too_many_files');continue;}
   const objectKey='mold-design/'+requestId+'/'+id+'/'+crypto.randomUUID(),at=now(),mutation=crypto.randomUUID();
   await store.put(objectKey,copy,{httpMetadata:{contentType:'application/pdf'}});
   const hash=await sha256Hex(copy);
   const result=await db.batch([
    db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id,category)
     SELECT ?,?,?,?,'pdf','application/pdf',?,?,?,?,'send',?,1,?,? WHERE EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND cancelled_at IS NULL AND json_extract(data,'$.signature.fileId')=?) AND (${LIVE_FILES})<?`)
-    .bind(id,requestId,row.memberId,name,copy.length,hash,objectKey,at,at,mutation,category,requestId,signatureFileId,requestId,category,places.max-places.production),
+    .bind(id,requestId,row.memberId,name,copy.length,hash,objectKey,at,at,mutation,category,requestId,signatureFileId,requestId,category,max-places.production),
    db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND mutation_id=?)`)
     .bind(crypto.randomUUID(),requestId,actor,'mold-design:signed-copy',JSON.stringify({label:'نسخة موقّعة من ملف لطلب تصنيع قالب',customerName:row.data.customer.name,name,of:original.name,size:copy.length,...(category!=='design'?{category}:{})}),at,id,mutation),
   ]);
@@ -149,7 +150,7 @@ export function dropOldCopies(db:D1Database,files:MoldDesignFileRow[],oldSignatu
 /** What the public page shows of a request (the fields the device's signing summary shows: nothing internal, no CRM number, no
  *  representative, no production state) and its files, each through the token. */
 export type SignLinkPage={key:string;expiresAt:string;now:string;
- summary:{customerName:string;erpCode:string;address:string;description:string;core:string;vibrators:number|null;model:string;halfBlock:string;moldWidth:number|null;gelbaSize:number|null;quantity:number|null;payment:'cash'|'deferred'|null;quoteNo:string;poNo:string};
+ summary:{customerName:string;erpCode:string;address:string;description:string;core:string;vibrators:number|null;model:string;halfBlock:string;moldWidth:number|null;gelbaSize:number|null;quantity:number|null;payment:'cash'|'deferred'|null;paymentTerms:MoldPaymentTerms|null;quoteNo:string;poNo:string};
  files:{id:string;name:string;kind:'pdf'|'image'|'other';category:'design'|'quote'|'po';size:number;href:string}[]};
 export const signFileHref=(token:string,fileId:string)=>'/sign/m/'+token+'/file/'+encodeURIComponent(fileId);
 /** The page of an open link (null: refused, the same for every reason: over the address's count, a token of another shape, unknown,
@@ -161,7 +162,7 @@ export async function loadSignLinkPage(db:D1Database,token:string,headers:Header
  const {row}=found,files=await loadMoldDesignFiles(db,'request_id=?',[row.id]),data=row.data,specs=data.specs;
  return {key:await moldSignKey(row,files),expiresAt:data.signatureLink!.expiresAt,now:new Date(now).toISOString(),
   summary:{customerName:data.customer.name,erpCode:typeof data.customer.erpCode==='string'?data.customer.erpCode:'',address:typeof data.customer.address==='string'?data.customer.address:'',description:specs.description,core:specs.core,vibrators:specs.vibrators,model:specs.model,halfBlock:specs.halfBlock,
-   moldWidth:specs.moldWidth,gelbaSize:specs.gelbaSize,quantity:specs.quantity,payment:data.payment==='cash'||data.payment==='deferred'?data.payment:null,quoteNo:data.quoteNo||'',poNo:data.poNo||''},
+   moldWidth:specs.moldWidth,gelbaSize:specs.gelbaSize,quantity:specs.quantity,payment:data.payment==='cash'||data.payment==='deferred'?data.payment:null,paymentTerms:data.payment==='deferred'&&data.paymentTerms?data.paymentTerms:null,quoteNo:data.quoteNo||'',poNo:data.poNo||''},
   files:signLinkFiles(row,files,'open').map(file=>({id:file.id,name:file.name,kind:file.kind,category:moldFileCategory(file),size:file.size,href:signFileHref(token,file.id)}))};
 }
 
@@ -205,7 +206,7 @@ export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILE
   ...(!block?.ok?{signature:MOLD_SIGNATURE_BAD}:!blockAt?{signature:'وقت التوقيع مش مظبوط؛ افتح اللينك تاني ووقّع.'}:{})};
  if(Object.keys(fields).length||!checked.ok||!png||!blockBytes||!block?.ok||!blockAt)throw new SignLinkRefusal([...new Set(Object.values(fields))].join(' • ')||MOLD_SIGNATURE_BAD,400,fields);
  // The signature's image takes one of the 10 design places, as on the device (moldDesignCount).
- const places=moldDesignCount(row,files,'design');
+ const places=moldDesignCount(row,files,'design',{originals:true});
  if(places.crm+places.production+1>places.max)throw new SignLinkRefusal('الطلب مش جاهز للتوقيع دلوقتي؛ كلّم المندوب.',409);
  if(!store)throw new SignLinkRefusal('التوقيع مش متاح دلوقتي؛ حاول بعد شوية.',503);
  const fileId='mds-'+crypto.randomUUID(),mutation=crypto.randomUUID(),pngBytes=new Uint8Array(png),blockCopy=new Uint8Array(blockBytes);
@@ -216,7 +217,7 @@ export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILE
  await store.put(blockKey,blockCopy,{httpMetadata:{contentType:'image/png'}});
  const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)',actor=checked.signer+' (العميل، من اللينك)';
  const result=await db.batch([
-  db.prepare(`UPDATE crm_mold_requests SET data=?,next_attempt_at=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND cancelled_at IS NULL AND outbox IS 'send' AND json_extract(data,'$.awaitsSignature') IS 1 AND json_extract(data,'$.signatureLink.hash')=? AND json_extract(data,'$.signatureLink.expiresAt')>? AND ${MOLD_NEVER_SENT_SQL}`)
+  db.prepare(`UPDATE crm_mold_requests SET data=?,next_attempt_at=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND cancelled_at IS NULL AND outbox IS 'send' AND json_extract(data,'$.awaitsSignature') IS 1 AND json_extract(data,'$.signatureLink.hash')=? AND json_extract(data,'$.signatureLink.expiresAt')>? AND (${MOLD_NEVER_SENT_SQL} OR json_type(remote,'$.returned')='object')`)
    .bind(JSON.stringify(data),at,at,mutation,row.id,row.version,found.hash,at),
   db.prepare(`INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id,category) SELECT ?,?,?,?,'image',?,?,?,?,?,'send',?,1,?,'design' WHERE ${gate}`)
    .bind(fileId,row.id,row.memberId,checked.name,checked.contentType,pngBytes.length,await sha256Hex(pngBytes),objectKey,at,at,mutation,row.id,mutation),

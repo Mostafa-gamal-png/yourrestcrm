@@ -1488,5 +1488,10 @@
   "النسخة الموقّعة ما بتتحذفش من الطلب طول ما التوقيع اللي عليها هو توقيع الطلب.": "A signed copy is not deleted from the request while its signature is the request's signature.",
   "اللينك ده مش شغال. اطلب من المندوب لينك جديد.": "This link is not working. Ask the representative for a new link.",
   "الطلب اتعدّل، افتح اللينك تاني.": "The request has changed; open the link again.",
-  "محاولات كتير؛ استنى دقيقة وحاول تاني.": "Too many attempts; wait a minute and try again."
+  "محاولات كتير؛ استنى دقيقة وحاول تاني.": "Too many attempts; wait a minute and try again.",
+  "حدّث الصفحة: اعتماد طلب القالب بقى محتاج تأكيد الموافقة على شروط الدفع.": "Refresh the page: approving a mold request now needs the acknowledgement of the payment terms.",
+  "علّم «تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام» قبل الاعتماد.": "Tick «Manufacturing is approved on the payment terms stated at receipt» before approving.",
+  "اختار طريقة الدفع المتفق عليها": "Choose the agreed payment terms",
+  "حدّث الصفحة واختار طريقة الدفع المتفق عليها": "Refresh the page and choose the agreed payment terms",
+  "طريقة الدفع المتفق عليها للدفع الآجل بس": "Agreed payment terms are for a deferred payment only"
 }

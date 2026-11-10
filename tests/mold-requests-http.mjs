@@ -510,7 +510,7 @@ try {
   const can = async (who, id) => (await list(who)).requests.find(item => item.id === id)?.can;
   check([(await can('sm', fourth.id)).approve, (await can('rep', fourth.id)).approve, (await can('owner', fourth.id)).approve, (await can('sup', fourth.id)).approve], [true, false, false, false], 'only the sales manager approves');
   for (const who of ['rep', 'sup', 'owner']) check((await post(who, {action: 'approve', id: fourth.id})).status, 403, who + ' cannot approve');
-  const approvals = calls('approval'), approveOnce = {action: 'approve', id: fourth.id, requestId: crypto.randomUUID()};
+  const approvals = calls('approval'), approveOnce = {action: 'approve', id: fourth.id, termsAccepted: true, requestId: crypto.randomUUID()};
   res = await as('sm')('/api/mold-requests', {method: 'POST', body: approveOnce});
   body = await res.json();
   check([res.status, body.request.remote.waitingStep, body.request.remote.status, body.request.remote.approvals.sales.by, body.request.can.approve, body.request.can.withdraw], [200, 'production', 'received', 'sm@yourrest.org (sm)', false, true], 'approved: it waits for production, still received; withdrawable');
@@ -566,7 +566,7 @@ try {
   check([waitingList.items.find(item => item.orderNo === manual.orderNo).enteredBy, waitingList.error], ['prod@yourrest.org', null], 'who entered it in production');
   check([(await list('rep')).pending, (await list('owner')).pending, (await list('sup')).pending], [null, null, null], 'nobody else gets the list');
   check((await post('rep', {action: 'approve-order', orderNo: manual.orderNo})).status, 403, 'a representative cannot approve by order number');
-  const byOrder = {action: 'approve-order', orderNo: manual.orderNo, requestId: crypto.randomUUID()}, approvalCalls = calls('approval');
+  const byOrder = {action: 'approve-order', orderNo: manual.orderNo, termsAccepted: true, requestId: crypto.randomUUID()}, approvalCalls = calls('approval');
   res = await as('sm')('/api/mold-requests', {method: 'POST', body: byOrder});
   body = await res.json();
   check([res.status, body.status.waitingStep, body.status.crmRequestId, body.pending.items.some(item => item.orderNo === manual.orderNo)], [200, 'production', null, false], 'approved by its order number: it waits for production and leaves the list');
@@ -1080,8 +1080,8 @@ try {
     check([res.status, body.request.signature.fileId, body.request.version], [200, firstSignature, version], 'an edit that changes nothing: kept as it is, its signature too');
     res = await edit({version, specs: {quantity: 3}}); body = await res.json();
     check([res.status, body.fields], [400, {signature: REFRESH}], 'the quantity changed: the customer signs again');
-    res = await edit({version, payment: 'deferred'}); body = await res.json();
-    check([res.status, body.fields], [400, {signature: REFRESH}], 'the payment changed: the same');
+    res = await edit({version, payment: 'deferred'}, {paymentTerms: 'advance_after_shipping'}); body = await res.json();
+    check([res.status, body.fields], [400, {signature: REFRESH}], 'the payment changed (with its terms, 2026-11-10): the same');
     res = await edit({version, specs: {quantity: 3}}, {signature: signatureInput('م. سالم', {seed: 3})}); body = await res.json();
     const secondSignature = body.request.signature?.fileId;
     check([res.status, !!secondSignature && secondSignature !== firstSignature, body.request.specs.quantity, body.request.designFiles.map(entry => [entry.crmFileId, entry.signature])], [200, true, 3, [[secondSignature, true]]], 'signed again: the new signature replaces the old');
@@ -1207,7 +1207,7 @@ try {
     // The sales manager approves the one registered in production by its requestRef, downloads its file by it, then not once approved.
     res = await download('ref=' + n.requestRef + '&file=' + nFile.fileId);
     check([res.status, res.headers['content-type']], [200, 'application/pdf'], 'its file by its requestRef');
-    const byRef = {action: 'approve-order', requestRef: n.requestRef, requestId: crypto.randomUUID()};
+    const byRef = {action: 'approve-order', requestRef: n.requestRef, termsAccepted: true, requestId: crypto.randomUUID()};
     res = await as('sm')('/api/mold-requests', {method: 'POST', body: byRef});
     let body = await res.json();
     check([res.status, lastApproval(), body.status.waitingStep, body.status.orderNo, body.pending.items.some(item => item.requestRef === n.requestRef)], [200, {requestRef: n.requestRef, action: 'approve', by: {name: 'sm', email: 'sm@yourrest.org'}}, 'production', null, false], 'approved by requestRef (no orderNo in the body): it waits for production, still no number, and leaves the list');
@@ -1259,7 +1259,7 @@ try {
     const session = await revApp.login('sm'), as = revApp.as(session), now = new Date().toISOString();
     await revApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('g1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع g1', region: 'الشرقية', city: 'الدمام', address: 'حي الصناعية'}), now, now).run();
     const crmNumber = (await revApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='g1'").first()).number;
-    const post = body => as('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}});
+    const post = body => as('/api/mold-requests', {method: 'POST', body: withSignature(null, {requestId: crypto.randomUUID(), ...body})});
     const list = async (page = 'new') => (await as('/api/mold-requests' + (page === 'new' ? '?refs=1' : ''))).json();
     const approvals = () => revMock.state.calls.filter(call => call.route === 'approval' && call.signed);
     const OUTDATED = 'الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.', UNSURE = 'تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.';

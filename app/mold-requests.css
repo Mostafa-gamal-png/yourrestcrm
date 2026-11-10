@@ -179,3 +179,16 @@
 .mold-signing-skipped,.mold-signing-after{color:#7a2c1f}.mold-signing-link-note{display:flex;align-items:flex-start;gap:6px;font-size:13px}
 .mold-chip[data-kind=signed-copy]{background:#e5f4ec;color:#1b6a47}
 .dark .mold-sign-link{background:#3a3014;color:#f2dca0}
+/* A deferred payment's agreed terms (2026-11-10): long choices, one under the other, wrapping on a phone; the sales manager's
+   acknowledgement before «اعتماد». */
+.mold-payment-terms-choice .mold-choice>div{display:grid;gap:6px}.mold-payment-terms-choice .mold-choice label{white-space:normal;line-height:1.5}
+.mold-terms-accept{display:flex;align-items:flex-start;gap:8px;flex-basis:100%;min-height:44px;font-size:14px;line-height:1.6;cursor:pointer}
+.mold-terms-accept input{width:20px;height:20px;margin-top:2px;flex-shrink:0;accent-color:var(--primary)}
+/* Finance's return (2026-11-10): the note on the sheet, the dialog and the manager's list; the card's line; the list's filter. */
+.mold-returned{display:flex;align-items:flex-start;gap:8px;margin:0;padding:10px 12px;border:1px solid #d98a6a;border-radius:12px;background:#fbeee6;color:#7a2c1f;min-width:0}
+.mold-returned>svg{flex-shrink:0;margin-top:3px}.mold-returned>div{display:grid;gap:2px;min-width:0}.mold-returned p{margin:0;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.mold-returned small{font-size:12px;opacity:.9}.mold-returned small[data-corrected]{color:#1b6a47;opacity:1}
+.mold-returned-badge{display:flex;align-items:flex-start;gap:6px;margin:0;padding:4px 8px;border-radius:8px;font-size:13px;line-height:1.5;background:#fbeee6;color:#7a2c1f;overflow-wrap:anywhere}
+.mold-returned-badge>svg{flex-shrink:0;margin-top:3px}.mold-card[data-returned]{border-color:#d98a6a}
+.mold-returned-filter{justify-self:start;min-height:44px}.mold-returned-filter[data-active]{border-color:#d98a6a;background:#fbeee6;color:#7a2c1f}
+.dark .mold-returned,.dark .mold-returned-badge,.dark .mold-returned-filter[data-active]{background:#3a2016;color:#f6c9b5}.dark .mold-returned small[data-corrected]{color:#9be0bd}

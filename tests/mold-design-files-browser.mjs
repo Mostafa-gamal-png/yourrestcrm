@@ -42,6 +42,8 @@ let checks = 0, browser;
 const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
+/** «اعتماد» once the sales manager's acknowledgement of the payment terms is ticked (2026-11-10): the button waits for it. */
+const approveIn = async scope => { await scope.locator('.mold-terms-accept input').first().check(); await scope.getByRole('button', {name: 'اعتماد', exact: true}).click(); };
 const PHONE = {width: 360, height: 800}, DESKTOP = {width: 1280, height: 900};
 const LABEL = 'طلبات تصنيع القوالب', WARNING = 'إرفاق ملف تصميم أو حذفه بيتحسب تعديل على الطلب';
 const drawingPdf = Buffer.from('%PDF-1.4\n% رسم القالب للعميل\n%%EOF\n'), drawingDwg = Buffer.from('AC1027 synthetic drawing for the browser test'), drawingDxf = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n');
@@ -94,7 +96,7 @@ try {
   await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
   await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
   await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
-  await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).locator('label', {hasText: 'نقدي'}).click();
+  await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: 'نقدي'}).click();
   const picker = dialog.locator('.mold-design-picker');
   check((await picker.locator('input[type=file]').getAttribute('accept')).split(',').slice(0, 3), ['.pdf', '.png', '.jpg'], 'the picker offers the contract\'s extensions');
   await picker.locator('input[type=file]').setInputFiles([{name: 'رسم القالب.pdf', mimeType: 'application/pdf', buffer: drawingPdf}, {name: 'ليس-pdf.pdf', mimeType: 'application/pdf', buffer: Buffer.from('this is not a pdf')}]);
@@ -152,7 +154,7 @@ try {
 
   // ---- 4. A drawing attached from the sheet: the warning first; the server busy (429) says to retry; the retry sends it
   const approve = app.as(await app.login('sm'));
-  check((await approve('/api/mold-requests', {method: 'POST', body: {action: 'approve', requestId: crypto.randomUUID(), id: requestId}})).status, 200, 'the sales manager approves meanwhile');
+  check((await approve('/api/mold-requests', {method: 'POST', body: {action: 'approve', requestId: crypto.randomUUID(), id: requestId, termsAccepted: true}})).status, 200, 'the sales manager approves meanwhile');
   await rep.keyboard.press('Escape');
   await stale();
   await rep.locator('.mold-heading-tools button').first().click();
@@ -303,7 +305,7 @@ try {
   // Approved just now: the card stays below with Withdraw, its files named without links (they open from the list only while the
   // request waits for the sales manager, so a link there would answer 404 «الطلب لم يعد بانتظار اعتمادك»).
   check(await manualCard.locator('.mold-design-actions a').count(), 2, 'waiting: Open and Download for its PDF');
-  await manualCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await approveIn(manualCard);
   const approvedCard = sm.locator('.mold-pending[data-done]', {hasText: 'مصنع مسجّل في الإنتاج'});
   await approvedCard.waitFor();
   check([await approvedCard.locator('.mold-design-name').allInnerTexts(), await approvedCard.locator('a[href*="/api/mold-requests/design-file"]').count(), await approvedCard.locator('.mold-design-actions').count(), await approvedCard.locator('.mold-design-links-off').innerText()],
@@ -312,7 +314,7 @@ try {
   // The CRM's request approved from the list too (MoldPendingList's note for a request of the CRM): named without links, and the way to
   // its files is the request itself, whose sheet opens them by the file's id.
   check(await crmCard.locator('.mold-design-actions a').count(), 8, 'waiting: Open and Download for each image (the signature too), Download for each drawing');
-  await crmCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await approveIn(crmCard);
   const approvedCrmCard = sm.locator('.mold-pending[data-done]', {hasText: 'مصنع east1'});
   await approvedCrmCard.waitFor();
   check([await approvedCrmCard.locator('.mold-design-name').count(), await approvedCrmCard.locator('a[href*="/api/mold-requests/design-file"]').count(), await approvedCrmCard.locator('.mold-design-actions').count(), await approvedCrmCard.locator('.mold-design-links-off').innerText()],
@@ -446,7 +448,7 @@ try {
     [0, 0, [[SIGNATURE_NAME, 'design'], ['PO-7781.pdf', 'po'], ['رسم القالب.pdf', 'design']], 'po', '1/5'], 'no warning asked (production held nothing); the design file sent the request, then the signature, the PO\'s file (in its own group, 1 of 5) and itself');
   // The sales manager approves; a quotation file attached and deleted since keeps the approval, without a warning; a design file warns.
   const smApproves = app.as(await app.login('sm'));
-  check((await smApproves('/api/mold-requests', {method: 'POST', body: {action: 'approve', requestId: crypto.randomUUID(), id: asked.id}})).status, 200, 'the sales manager approves it');
+  check((await smApproves('/api/mold-requests', {method: 'POST', body: {action: 'approve', requestId: crypto.randomUUID(), id: asked.id, termsAccepted: true}})).status, 200, 'the sales manager approves it');
   await quoteSheet.keyboard.press('Escape');
   await sheet(quoteSheet).waitFor({state: 'detached'});
   await stale();

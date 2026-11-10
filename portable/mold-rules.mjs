@@ -25,6 +25,20 @@ export const MOLD_HALF_BLOCKS = {none: 'بدون بلوكة نص', one: 'بلو�
  *  has none (pending lists it as null). */
 export const MOLD_PAYMENTS = {cash: 'نقدي', deferred: 'آجل'};
 export const MOLD_PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل';
+/** How a deferred payment is to be paid (the owner, 2026-11-10: «فى حال طلب الدفع اجل يجب على المندوب يختار طريقة الدفع المتفق عليها»): one of
+ *  three, required with "deferred" and never with "cash"; sent as `paymentTerms` beside `payment` only by a request that carries it (the
+ *  products update of 2026-11-10 reads it; the application before ignores it, as any key it does not know). */
+export const MOLD_PAYMENT_TERMS = Object.freeze({advance_before_shipping: 'دفعة مقدمة واستكمال باقي المبلغ قبل الترحيل', advance_after_shipping: 'دفعة مقدمة واستكمال باقي المبلغ بعد الترحيل', advance_credit_limit: 'دفعة مقدمة واستكمال باقي المبلغ حد ائتماني'});
+export const MOLD_PAYMENT_TERMS_REQUIRED = 'اختار طريقة الدفع المتفق عليها';
+/** A page loaded before 2026-11-10 asks for a deferred request without the terms (it shows no such field). */
+export const MOLD_PAYMENT_TERMS_REFRESH = 'حدّث الصفحة واختار طريقة الدفع المتفق عليها';
+export const MOLD_PAYMENT_TERMS_CASH = 'طريقة الدفع المتفق عليها للدفع الآجل بس';
+/** The code of a payment's terms, or null when it is not one of the three.
+ * @param {unknown} value
+ * @returns {'advance_before_shipping'|'advance_after_shipping'|'advance_credit_limit'|null} */
+export const moldPaymentTerms = value => typeof value === 'string' && Object.prototype.hasOwnProperty.call(MOLD_PAYMENT_TERMS, value) ? /** @type {'advance_before_shipping'|'advance_after_shipping'|'advance_credit_limit'} */ (value) : null;
+/** The sales manager's acknowledgement that goes with every approval (2026-11-10), sent as termsAccepted: true. */
+export const MOLD_TERMS_ACCEPT = 'تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام';
 /** The quotation and PO numbers (yourrest-products 2026-11-03, its second update of the day): `quoteNo` and `poNo` in the requests body
  *  after payment, each a text of up to 60 characters as written on the document (Arabic-Indic digits as ASCII digits, the ends trimmed),
  *  sent only when the request carries them. Since production's update of 2026-11-05 the CRM no longer asks for them: a new request
@@ -270,9 +284,9 @@ export function riyadhIso(value) {
  * production. A customer not in the CRM (2026-11-09): customer.crmNumber null, then customer.erpCode (1 to 50 characters after
  * moldErpCodeText) is required and follows address and city; a customer of the CRM (crmNumber a number) never sends erpCode, whatever
  * the request's data holds, so its body is byte for byte as before.
- * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, quoteNo?: string|null, poNo?: string|null}} request
+ * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, paymentTerms?: string|null, quoteNo?: string|null, poNo?: string|null}} request
  */
-export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, quoteNo, poNo}) {
+export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, paymentTerms, quoteNo, poNo}) {
   if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
   const free = !!customer && customer.crmNumber === null;
   if (!free && (!isWhole(customer?.crmNumber) || customer.crmNumber < 1 || customer.crmNumber > 2147483647)) throw new Error('customer.crmNumber');
@@ -303,6 +317,8 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
   if (s.designUrl) body.specs.designUrl = s.designUrl;
   if (s.notes) body.specs.notes = s.notes;
   if (payment !== undefined && payment !== null) { if (!moldPayment(payment)) throw new Error('payment'); body.payment = payment; }
+  // 2026-11-10: the terms of a deferred payment, right after it, only when the request carries them (an older request byte for byte).
+  if (paymentTerms !== undefined && paymentTerms !== null) { if (!moldPaymentTerms(paymentTerms) || payment !== 'deferred') throw new Error('paymentTerms'); body.paymentTerms = paymentTerms; }
   for (const [key, value] of [['quoteNo', quoteNo], ['poNo', poNo]]) {
     const clean = moldQuotePoNumber(value);
     if (clean === undefined || length(clean) > MOLD_QUOTE_PO_MAX) throw new Error(key);
@@ -651,6 +667,8 @@ function approvalsOf(value) {
     if (!given || typeof given !== 'object') continue;
     out[step] = {at: dateOrNull(given.at)};
     if (step === 'sales' && typeof given.by === 'string' && given.by.trim()) out.sales = {at: out.sales.at, by: given.by.trim().slice(0, 200)};
+    // 2026-11-10: the sales manager acknowledged the payment terms (approvals.sales.termsAccepted of the updated application).
+    if (step === 'sales' && given.termsAccepted === true) out.sales = {...out.sales, termsAccepted: true};
   }
   return out;
 }
@@ -709,8 +727,22 @@ export function moldStatusObject(value, {manual = false} = {}) {
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
     waitingStep: MOLD_WAITING_STEPS.includes(value.waitingStep) ? value.waitingStep : null, waitingSince: dateOrNull(value.waitingSince), approvals: approvalsOf(value.approvals),
     designFiles: designFilesOf(value.designFiles),
-    ...quotePoOf(value), ...freeCustomerOf(value),
+    ...quotePoOf(value), ...freeCustomerOf(value), ...nov10Of(value),
   };
+}
+/** The products update of 2026-11-10, in a status object or a pending item, only when the answer carries its keys (an older application's
+ *  reads exactly as before): paymentTerms (a code, or null), and returned: finance sent the request back to the sales manager
+ *  ({by: 'finance', reason, at, correctedAt}, or null). */
+function nov10Of(value) {
+  return {...(Object.prototype.hasOwnProperty.call(value, 'paymentTerms') ? {paymentTerms: moldPaymentTerms(value.paymentTerms)} : {}),
+    ...(Object.prototype.hasOwnProperty.call(value, 'returned') ? {returned: moldReturned(value.returned)} : {})};
+}
+/** Finance's return of a request (2026-11-10): its reason (3 to 500 characters as production checks it), when, and when the CRM's
+ *  correction reached production (null until then); null for anything else. */
+export function moldReturned(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.reason !== 'string' || !value.reason.trim()) return null;
+  const name = typeof value.name === 'string' ? [...value.name.trim()].slice(0, 190).join('') : '';
+  return {by: /** @type {'finance'} */ ('finance'), ...(name ? {name} : {}), reason: [...value.reason.trim()].slice(0, 500).join(''), at: dateOrNull(value.at), correctedAt: dateOrNull(value.correctedAt)};
 }
 
 /**
@@ -718,9 +750,9 @@ export function moldStatusObject(value, {manual = false} = {}) {
  * crmRequestId when it came from the CRM; one registered in the products application by its requestRef (the products update of
  * 2026-11-05: it has no number while it waits for the sales manager), or by its orderNo when production sent no requestRef (the
  * application before that update): one of them only. Throws on a value production refuses.
- * @param {{id?: string|null, requestRef?: string|null, orderNo?: number|null, action: string, by: {name?: string, email?: string}}} input
+ * @param {{id?: string|null, requestRef?: string|null, orderNo?: number|null, action: string, by: {name?: string, email?: string}, termsAccepted?: boolean}} input
  */
-export function moldApprovalBody({id = null, requestRef = null, orderNo = null, action, by}) {
+export function moldApprovalBody({id = null, requestRef = null, orderNo = null, action, by, termsAccepted = false}) {
   const named = [id, requestRef, orderNo].filter(value => value !== null).length;
   if (named !== 1) throw new Error(id === null ? requestRef === null ? 'crmRequestId' : 'requestRef' : 'crmRequestId');
   if (id !== null && !MOLD_ID.test(id)) throw new Error('crmRequestId');
@@ -732,6 +764,8 @@ export function moldApprovalBody({id = null, requestRef = null, orderNo = null, 
   /** @type {{crmRequestId?: string, requestRef?: string, orderNo?: number, action: string, by: {name: string, email?: string}}} */
   const body = id !== null ? {crmRequestId: id, action, by: {name}} : requestRef !== null ? {requestRef, action, by: {name}} : {orderNo: /** @type {number} */ (orderNo), action, by: {name}};
   if (email && length(email) <= MOLD_LIMITS.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) body.by.email = email;
+  // 2026-11-10: an approval carries the sales manager's acknowledgement of the payment terms (ignored by the application before).
+  if (action === 'approve' && termsAccepted === true) body.termsAccepted = true;
   return body;
 }
 
@@ -776,7 +810,7 @@ export function moldPendingItem(value) {
     specs: {description: textOf(p.description, 200), core: textOf(p.core, 20), vibrators: wholeOrNull(p.vibrators), model: textOf(p.model, 20), halfBlock: textOf(p.halfBlock, 20),
       moldWidth: wholeOrNull(p.moldWidth), gelbaSize: wholeOrNull(p.gelbaSize), moldNo: textOf(p.moldNo, 40), quantity: wholeOrNull(p.quantity), designUrl: /^https:\/\/\S+$/i.test(p.designUrl || '') ? String(p.designUrl).slice(0, 1000) : '', notes: textOf(p.notes, 2000)},
     payment: moldPayment(value.payment), revision: wholeOrNull(value.revision), designFiles: designFilesOf(value.designFiles) || [],
-    ...quotePoOf(value),
+    ...quotePoOf(value), ...nov10Of(value),
   };
 }
 
