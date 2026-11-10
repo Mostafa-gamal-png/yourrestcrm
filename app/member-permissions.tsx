@@ -3,7 +3,8 @@
 // «انسخ الصلاحيات من» of components/crm/forms.tsx): one row per screen, one column per action (استعراض/إضافة/تحرير/حذف/تصدير/استيراد) and
 // «الكل» per row; «—» where the action is not on the screen or not the role's. Restrict-only (lib/permissions.ts): a switch takes away what
 // the role does today, never more, except «حذف» (customer, visit, follow-up, quotation, void sale): unticked by default for everyone but the
-// administrator, and grantable to any member whose role has the screen (within what they may edit; customer service: «—»). Under the table «صلاحيات عامة»: «عرض بيانات الفريق بالكامل». The administrator only; saved on its own
+// administrator, and grantable to any member whose role has the screen (within what they may edit; customer service: «—»); «المحذوفات» shows
+// for a supervisor or a representative with its note (2026-11-10: it comes with «حذف», their own deletions only). Under the table «صلاحيات عامة»: «عرض بيانات الفريق بالكامل». The administrator only; saved on its own
 // («حفظ الصلاحيات», POST /api/crm {action:'permissions'}) with its version, so the member form's own save is unchanged.
 import {useMemo,useRef,useState} from 'react';
 import {Loader2,ShieldCheck,Copy,RefreshCw} from 'lucide-react';
@@ -76,7 +77,7 @@ export function MemberPermissionsEditor({member,members,roleChanged,onSaved}:{me
    <table className="permission-matrix" data-permission-matrix>
     <thead><tr><th scope="col">{say('الشاشة','Screen')}</th><th scope="col">{say('الكل','All')}</th>{MATRIX_COLUMNS.map(column=><th scope="col" key={column.key}>{column[lang]}</th>)}</tr></thead>
     <tbody>{rows.map(row=>{const free=changeable(row).length>0||browsable(row);return <tr key={row.screen} data-matrix-row={row.screen}>
-     <th scope="row">{row[lang]}</th>
+     <th scope="row">{row[lang]}{row.roleNote?.[role]&&<small className="permission-row-note" data-row-note>{row.roleNote[role]![lang]}</small>}</th>
      <td>{free?box(allOn(row),roleChanged,say('الكل · ','All · ')+row[lang],on=>setRow(row,on)):none(say('مفيش حاجة تتغير هنا','Nothing to change here'))}</td>
      {MATRIX_COLUMNS.map(column=>{
       if(column.key==='browse')return <td key="browse" data-cell={'browse:'+row.screen}>{browsable(row)?box(shown(row),roleChanged,column[lang]+' · '+row[lang],on=>setShown(row,on)):none(admin?say('مدير النظام بيشوف كل الشاشات','An administrator sees every screen'):say('الشاشة مش من شغل الدور','Not this role\'s screen'))}</td>;

@@ -61,8 +61,9 @@ try {
     '/api/complaints': expect(everyone, 200, 0),
     '/api/complaint-report': expect(['owner', 'mgr', 'mgrw', 'csm'], 200, 403),
     ['/api/service-kpi?month=' + month]: expect(['owner', 'csm', 'cs'], 200, 403),
-    // «المحذوفات» (2026-11-09): the administrator (all deletions) and the sales managers (their own).
-    '/api/trash': expect(['owner', 'mgr', 'mgrw'], 200, 403),
+    // «المحذوفات» (2026-11-09): the administrator (all deletions) and the sales managers (their own); since 2026-11-10 also whoever has a
+    // «حذف» cell on (none here yet: off by default), and anyone else gets 404 as for a hidden screen (never 403, which locks the offline session).
+    '/api/trash': expect(['owner', 'mgr', 'mgrw'], 200, 404),
     // The supervisor's notes (2026-11-09): those of a day report for the roles that open it; everyone reads their own unread notes.
     ['/api/reviews?date=' + day]: expect(management, 200, 403),
     '/api/review-inbox': expect(everyone, 200, 0)
@@ -91,7 +92,7 @@ try {
     // «استيراد من ERP»: the administrator and the sales managers (each limited to their regions' customers by the route itself).
     '/api/erp-customers': expect(['owner', 'mgr', 'mgrw'], 400, 403),
     '/api/sales/import': expect(management, 400, 403),
-    '/api/trash': expect(['owner', 'mgr', 'mgrw'], 400, 403),
+    '/api/trash': expect(['owner', 'mgr', 'mgrw'], 400, 404),
     '/api/reviews': expect(management, 400, 403),
     '/api/review-inbox': expect(everyone, 400, 0)
   };
@@ -236,6 +237,17 @@ try {
   check((await removeAs('rep1', 'v-rep1')).status, 200, 'rep1: their own visit is deleted');
   check(await visitVersion('v-rep1'), undefined, 'gone');
   check((await removeAs('rep2', 'v-rep2')).status, 403, 'rep2 is unaffected');
+  // «المحذوفات» with «حذف» (the owner, 2026-11-10): rep1 now sees their own deletion and restores it; rep2 (no «حذف») still 404.
+  const repTrash = await app.as(sessions.rep1)('/api/trash');
+  check([repTrash.status, repTrash.json().scope, repTrash.json().items.map(item => [item.recordId, item.blocked])], [200, 'own', [['v-rep1', null]]], 'rep1 granted «حذف»: «المحذوفات» with their own deletion');
+  for (const id of ['rep2', 'sup', 'cs']) check([(await app.as(sessions[id])('/api/trash')).status, (await app.as(sessions[id])('/api/trash', {method: 'POST', body: {}})).status], [404, 404], id + ' without «حذف»: still 404');
+  const deletedRep1 = await app.db.prepare("SELECT id FROM crm_audit WHERE record_id='v-rep1' AND action='حذف'").first();
+  check((await app.as(sessions.rep2)('/api/trash', {method: 'POST', body: {auditId: deletedRep1.id, requestId: crypto.randomUUID()}})).status, 404, 'rep2 cannot restore it');
+  const repRestored = await app.as(sessions.rep1)('/api/trash', {method: 'POST', body: {auditId: deletedRep1.id, requestId: crypto.randomUUID()}});
+  check([repRestored.status, repRestored.json().type, await visitVersion('v-rep1')], [200, 'visit', 2], 'rep1 restores their own visit');
+  const repVersion2 = (await app.db.prepare("SELECT version FROM crm_member_permissions WHERE member_id='rep1'").first()).version;
+  check((await permissions('owner', 'rep1', repVersion2, {hidden: ['mold-requests'], cells: {'customer:add': false}})).status, 200, 'the administrator takes «حذف» back');
+  check((await app.as(sessions.rep1)('/api/trash')).status, 404, 'rep1 without «حذف» again: 404');
   const extra = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'للحذف', region: 'الشرقية', city: 'x', code: 'del-1', branch: 'الرئيسي', assignedTo: 'rep2', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
   check((await removeAs('owner', extra.json().id, 'customer')).status, 200, 'the administrator deletes by default');
 

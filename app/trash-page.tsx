@@ -1,8 +1,9 @@
 'use client';
 // «المحذوفات» / «Deleted records» (2026-11-09, after GSCO's Trash() in components/crm/record-actions.tsx): the deletions the reader may
 // restore (/api/trash, lib/trash-server.ts), newest first, 40 at a time with «تحميل المزيد», filtered by «نوع السجل»; each with «استرجاع»
-// behind a confirmation. No permanent deletion here: the CRM's deletion already removes the record. The administrator and the sales manager
-// (their own deletions) only (lib/access.ts trashScope).
+// behind a confirmation. No permanent deletion here: the CRM's deletion already removes the record. The administrator, the sales manager
+// (their own deletions) and, since 2026-11-10, whoever has a «حذف» cell on (their own deletions, each restorable while the record's own
+// «حذف» is on and within what they may delete; otherwise its card says why: lib/permissions.ts trashScopeOf, lib/trash-server.ts).
 import {can} from '@/lib/permissions';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ArchiveRestore,Loader2,RefreshCw,RotateCcw,TriangleAlert,Info} from 'lucide-react';
@@ -58,7 +59,7 @@ export default function TrashPage({me,onRestored}:{me:Member;onRestored?:()=>unk
  const items=answer?.items;
  return <section className="trash-page" dir={direction()}>
   <div className="trash-toolbar">
-   <p className="trash-intro"><ArchiveRestore size={18} aria-hidden="true"/><span>{answer?.scope==='own'||me.role!=='admin'?say('السجلات اللي انت حذفتها. «استرجاع» يرجّع السجل بتاريخه وزياراته وملفاته.','Records you deleted. «Restore» brings a record back with its history, visits and files.'):say('كل السجلات المحذوفة. «استرجاع» يرجّع السجل بتاريخه وزياراته وملفاته.','All deleted records. «Restore» brings a record back with its history, visits and files.')}</span></p>
+   <p className="trash-intro"><ArchiveRestore size={18} aria-hidden="true"/><span>{answer?.scope==='own'||me.role!=='admin'?say('السجلات اللي انت حذفتها. «استرجاع» يرجّع السجل بتاريخه وزياراته وملفاته.','Records you deleted. «Restore» brings a record back with its history, visits and files.'):say('كل السجلات المحذوفة. «استرجاع» يرجّع السجل بتاريخه وزياراته وملفاته.','All deleted records. «Restore» brings a record back with its history, visits and files.')}{!['admin','manager'].includes(me.role)&&say(' «استرجاع» متاح طول ما «حذف» شاشة السجل مفتوح لك.',' «Restore» works while «Delete» of the record\'s screen is on for you.')}</span></p>
    <label className="trash-filter"><span>{say('نوع السجل','Record type')}</span>
     <Select dir={direction()} value={type} onValueChange={value=>{setAnswer(null);setType(value as 'all'|TrashType);}}>
      <SelectTrigger className="pick" aria-label={say('نوع السجل','Record type')}><SelectValue/></SelectTrigger>

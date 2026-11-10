@@ -6,7 +6,10 @@
 // customer) at the next version, once (restore:<id>, a replay answers alreadySaved), and refuses: the parent first, a record with the same
 // id, a number taken, another member's deletion for a manager, other roles. Deletions recorded before this release (no capture) restore
 // from what they hold; a customer deleted before customers were numbered gets a new number. GET /api/crm never lists either entry.
-// Synthetic data only.
+// Since 2026-11-10 (the owner: whoever was granted «حذف» sees and restores their own deletions): who has the page by role and cells (404
+// without it, as a hidden screen); a representative's and a supervisor's own list; a restoration refused when the record's cell is off (also
+// after deleting, and at commit), for another member's deletion, out of their scope now; the receipt answering a retry after the cell went
+// off; a child waiting for its customer; the manager and the administrator as before. Synthetic data only.
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
@@ -47,14 +50,16 @@ class Statement{
  async all(){return{results:sql.prepare(this.query).all(...this.args)};}
  async first(){return sql.prepare(this.query).get(...this.args)||null;}
 }
-const DB={prepare:query=>new Statement(query),batch:async statements=>{sql.exec('BEGIN');try{const results=[];for(const statement of statements)results.push(await statement.run());sql.exec('COMMIT');return results;}catch(error){sql.exec('ROLLBACK');throw error;}}};
+// beforeBatch: a write by someone else between a request's reads and its commit (the commit race).
+const DB={prepare:query=>new Statement(query),batch:async statements=>{const race=globalThis.beforeBatch;globalThis.beforeBatch=null;race?.();sql.exec('BEGIN');try{const results=[];for(const statement of statements)results.push(await statement.run());sql.exec('COMMIT');return results;}catch(error){sql.exec('ROLLBACK');throw error;}}};
 globalThis.testEnv={DB,YR_APP_ORIGIN:'https://test.invalid'};
 const now=new Date().toISOString();
 const member=(id,name,role,region='all',supervisor=null)=>sql.prepare('INSERT INTO crm_members(id,email,name,role,branch,supervisor_id,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,?,1,0,?)').run(id,id+'@yourrest.org',name,role,'HQ',supervisor,region,now);
-member('owner','مدير النظام','admin');member('mgr','مدير المبيعات','manager');member('mgr2','مدير مبيعات الغربية','manager','western');member('sup','المشرف','supervisor','all','mgr');member('rep','المندوب','rep','eastern','sup');member('adminw','مدير نظام الغربية','admin','western');member('repw','مندوب الغربية','rep','western','sup');
+member('owner','مدير النظام','admin');member('mgr','مدير المبيعات','manager');member('mgr2','مدير مبيعات الغربية','manager','western');member('sup','المشرف','supervisor','all','mgr');member('sup2','المشرف التاني','supervisor','all','mgr');member('rep','المندوب','rep','eastern','sup');member('adminw','مدير نظام الغربية','admin','western');member('repw','مندوب الغربية','rep','western','sup');
 const login=id=>{const m=sql.prepare('SELECT * FROM crm_members WHERE id=?').get(id);globalThis.testUser={provider:'email-otp',memberId:id,memberVersion:m.auth_version,userId:'test-'+id,email:m.email,fullName:m.name};};
 const crm=await import(path.join(out,'app/api/crm/route.mjs')),trash=await import(path.join(out,'app/api/trash/route.mjs'));
-const {canViewPage,trashScope}=await import(path.join(out,'lib/access.mjs'));
+const {canViewPage,trashScope,resolveCRMPage}=await import(path.join(out,'lib/access.mjs'));
+const {trashScopeOf,pageAllowed,memberAccess,trashRestoreCellOff,TRASH_DELETE_CELLS}=await import(path.join(out,'lib/permissions.mjs'));
 let checks=0;
 const check=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
 const raw=id=>sql.prepare('SELECT * FROM crm_records WHERE id=?').get(id);
@@ -70,9 +75,18 @@ const aliasesOf=id=>sql.prepare('SELECT source_code FROM crm_customer_code_alias
 const insert=(id,kind,parent,assignedTo,payload,version=1)=>sql.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,?)').run(id,kind,parent,assignedTo,'HQ',JSON.stringify(payload),'2026-01-0'+(1+(checks%8))+'T08:00:00.000Z',now,version);
 const crmAudits=async()=>{const response=await crm.GET();return (await response.json()).audits.map(a=>a.action);};
 
-// ---- who has the page (one function: lib/access.ts trashScope)
-check(['admin','manager','supervisor','rep','customer_service_manager','customer_service'].map(role=>[trashScope(role),canViewPage(role,'trash')]),[['all',true],['own',true],[null,false],[null,false],[null,false],[null,false]],'the administrator all, the sales manager their own, nobody else');
-for(const id of ['sup','rep']){login(id);await list('',403);await restore('x',403);}
+// ---- who has the page (one function for a member: lib/permissions.ts trashScopeOf; lib/access.ts canViewPage is the role's ceiling)
+const ROLES=['admin','manager','supervisor','rep','customer_service_manager','customer_service'];
+check(ROLES.map(role=>[trashScope(role),canViewPage(role,'trash')]),[['all',true],['own',true],[null,true],[null,true],[null,false],[null,false]],'by role: the administrator all, the sales manager their own; a supervisor or a representative can have it (the ceiling), customer service never');
+const who=(role,cells={},hidden=[])=>({role,access:memberAccess(role,{permissions:JSON.stringify(cells),hidden:JSON.stringify(hidden),version:1})});
+check(ROLES.map(role=>[trashScopeOf(who(role)),pageAllowed(who(role),'trash')]),[['all',true],['own',true],[null,false],[null,false],[null,false],[null,false]],'without a «حذف» cell (the default): the administrator and the sales manager only');
+check(TRASH_DELETE_CELLS,['customer:delete','activity:delete','followup:delete','quote:delete'],'the «حذف» cells that bring the page (not «إلغاء بيع»: a voided sale never reaches the trash)');
+check([who('supervisor',{'quote:delete':true}),who('supervisor',{'customer:delete':true}),who('rep',{'activity:delete':true}),who('rep',{'followup:delete':true}),who('rep',{'customer:delete':true})].map(trashScopeOf),['own','own','own','own','own'],'any one of them on: their own deletions');
+check([who('supervisor',{'sales:delete':true}),who('rep',{'quote:delete':true,'sales:delete':true}),who('customer_service',{'activity:delete':true,'customer:delete':true}),{role:'customer_service',access:{version:1,off:[],hidden:[],viewAll:false}},{role:'rep'},{role:'supervisor'}].map(trashScopeOf),[null,null,null,null,null,null],'not «إلغاء بيع», not a cell beyond the role, never customer service (a forged access included), nothing without an access read');
+check([pageAllowed(who('rep',{'activity:delete':true}),'trash'),pageAllowed(who('rep',{'activity:delete':true},['trash']),'trash'),pageAllowed(who('admin',{'customer:delete':false,'activity:delete':false,'followup:delete':false,'quote:delete':false,'sales:delete':false},['trash']),'trash'),pageAllowed(who('manager',{},['trash']),'trash'),pageAllowed({role:'manager'},'trash')],[true,false,true,false,true],'«استعراض» still hides it; never from the administrator, whose cells are all off here');
+check([resolveCRMPage('rep','trash'),resolveCRMPage('rep','trash',[],true),resolveCRMPage('supervisor','trash',[],false),resolveCRMPage('supervisor','trash',['trash'],true),resolveCRMPage('manager','trash'),resolveCRMPage('admin','trash')],['activity','trash','activity','activity','trash','trash'],'a bookmark of «المحذوفات» opens only for whom it is open');
+check([trashRestoreCellOff(who('rep',{'activity:delete':true}),{kind:'activity',data:{}}),trashRestoreCellOff(who('rep',{'activity:delete':true}),{kind:'activity',data:{visitWorkflow:'followup-v1'}}),trashRestoreCellOff(who('supervisor',{'quote:delete':true}),{kind:'opportunity',data:{hasRequest:false}}),trashRestoreCellOff(who('supervisor',{'quote:delete':true}),{kind:'factory',data:{}}),trashRestoreCellOff(who('supervisor',{'quote:delete':true,'customer:edit':false}),{kind:'factory',data:{}}),trashRestoreCellOff(who('manager'),{kind:'activity',data:{}}),trashRestoreCellOff(who('admin',{'activity:delete':false}),{kind:'activity',data:{}})],[null,['followup','delete'],['followup','delete'],null,['customer','edit'],null,null],'the record\'s own cell (its deletion\'s): a visit, a follow-up, an old thread, a machine; never asked of the manager or the administrator');
+for(const id of ['sup','rep']){login(id);check((await list('',404)).error,'هذا الجزء غير متاح لحسابك. راجع مدير النظام.',id+': no «حذف», no page: 404 as a hidden screen');await restore('x',404);}
 
 // ---- a customer with its Yourrest number, two ERP aliases and an explicit mapping
 login('owner');
@@ -247,12 +261,97 @@ insert('visit-3','activity','opp-2','rep',{type:'call',date:'2026-11-09',summary
 check((await remove('opp-2',400)).error,'يوجد سجلات مرتبطة. احذفها قبل حذف هذا السجل.','a record with children is not deleted');
 check(sql.prepare('PRAGMA foreign_key_check').all(),[]);check(sql.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 
+// ---- «حذف» brings «المحذوفات» (the owner, 2026-11-10): their own deletions, restored while the record's own cell is on and within their scope
+login('owner');
+const grant=(id,cells,hidden=[])=>{if(sql.prepare('SELECT 1 FROM crm_member_permissions WHERE member_id=?').get(id))sql.prepare('UPDATE crm_member_permissions SET permissions=?,hidden=?,version=version+1 WHERE member_id=?').run(JSON.stringify(cells),JSON.stringify(hidden),id);else sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES(?,?,?,1,'owner',?)").run(id,JSON.stringify(cells),JSON.stringify(hidden),now);};
+const own=(id,summary,extra={})=>insert(id,'activity',home,'rep',{type:'call',date:'2026-11-10',summary,result:'اتصال',performedBy:'rep',...extra});
+own('rv-1','زيارة المندوب الأولى');own('rv-2','زيارة المندوب التانية');own('rv-3','زيارة المندوب التالتة');own('rf-1','متابعة المندوب',{visitWorkflow:'followup-v1'});
+login('rep');
+check((await remove('rv-1',403)).error,'مش مسموح لك بالحذف في الزيارات. راجع مدير النظام.','no «حذف»: the representative deletes nothing (unchanged)');
+grant('rep',{'activity:delete':true});
+await remove('rv-1');
+page=await list();
+check([page.scope,page.items.map(item=>[item.recordId,item.type,item.customerName,item.deletedBy,item.blocked])],['own',[['rv-1','visit','مصنع الزيارات','المندوب',null]]],'granted «حذف» on visits: the page, with their own deletion only (none of the administrator\'s or the manager\'s)');
+let receiptOf=crypto.randomUUID();
+check((await restore(deletion('rv-1').id,200,receiptOf)).type,'visit','restored by the representative');
+check([raw('rv-1').parent_id,raw('rv-1').assigned_to,data('rv-1').summary],[home,'rep','زيارة المندوب الأولى'],'the visit is back');
+check(sql.prepare("SELECT actor FROM crm_audit WHERE id=?").get('restore:'+deletion('rv-1').id).actor,'المندوب','the receipt names them');
+// the cell switched off after the restoration: a retry of the same request still answers as it did (the receipt first)
+grant('rep',{'followup:delete':true});
+check((await restore(deletion('rv-1').id,200,receiptOf)).alreadySaved,true,'a lost answer\'s retry after the cell went off: alreadySaved');
+// deleted with the cell on, the cell switched off afterwards: listed with why, refused with it
+grant('rep',{'activity:delete':true,'followup:delete':true});
+await remove('rv-2');await remove('rf-1');
+grant('rep',{'followup:delete':true});
+const cellOff='استرجاع السجل ده محتاج صلاحية «حذف» في الزيارات، وهي مش مفتوحة لك دلوقتي. راجع مدير النظام.';
+check((await list()).items.map(item=>[item.recordId,item.blocked]),[['rf-1',null],['rv-2',cellOff]],'«حذف» of visits off now: the visit says why; the follow-up (its cell on) can be restored');
+check((await restore(deletion('rv-2').id,403)).error,cellOff,'refused: 403 with the reason');
+check(raw('rv-2'),undefined,'nothing written');
+await restore(deletion('rf-1').id);
+check(data('rf-1').visitWorkflow,'followup-v1','the follow-up is back');
+// every «حذف» cell off again: no page (404); their deletion stays for the administrator
+grant('rep',{});
+await list('',404);await restore(deletion('rv-2').id,404);
+login('owner');
+check((await list('?type=visit')).items.filter(item=>item.recordId==='rv-2').map(item=>[item.deletedBy,item.blocked]),[['المندوب',null]],'the administrator sees it, with who deleted it, and may restore it');
+// «استعراض» hides it; «تحرير» (restoring) can be switched off on its own
+grant('rep',{'activity:delete':true},['trash']);login('rep');
+await list('',404);await restore(deletion('rv-2').id,404);
+grant('rep',{'activity:delete':true,'trash:edit':false});
+check((await list()).items.map(item=>item.recordId),['rv-2'],'«استرجاع» off: the list stays');
+check((await restore(deletion('rv-2').id,403)).error,'مش مسموح لك بالتعديل في المحذوفات. راجع مدير النظام.','restoring refused with the switch\'s message');
+grant('rep',{'activity:delete':true});
+// another member's deletion: not listed, not restored
+login('owner');await remove('rv-3');login('rep');
+check((await list()).items.map(item=>item.recordId),['rv-2'],'the administrator\'s deletion of their visit is not theirs');
+check((await restore(deletion('rv-3').id,403)).error,'استرجاع ما حذفه غيرك متاح لمدير النظام فقط.','nor restored by them');
+// the cell switched off between the request's reads and its commit: nothing is written
+globalThis.beforeBatch=()=>grant('rep',{'followup:delete':true});
+check((await restore(deletion('rv-2').id,409)).error,'تغيّرت البيانات أثناء الاسترجاع. حدّث القائمة وأعد المحاولة.','the commit re-checks the permissions\' version');
+check(raw('rv-2'),undefined,'not restored');
+grant('rep',{'activity:delete':true});
+await restore(deletion('rv-2').id);
+check(raw('rv-2').version,2,'restored once the cell is on again');
+// a customer assigned to them; a child waits for its customer
+grant('rep',{'activity:delete':true,'customer:delete':true});
+insert('rc-1','customer',null,'rep',{name:'عميل المندوب للحذف',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'});
+const rcNumber=numberOf('rc-1');
+insert('rc-visit','activity','rc-1','rep',{type:'call',date:'2026-11-10',summary:'زيارة عميل المندوب',performedBy:'rep'});
+await remove('rc-visit');await remove('rc-1');
+page=await list();
+check(page.items.slice(0,2).map(item=>[item.recordId,item.blocked]),[['rc-1',null],['rc-visit','استرجع السجل الأصلي أولًا: العميل «عميل المندوب للحذف».']],'their customer, and its visit waiting for it');
+check((await restore(deletion('rc-visit').id,409)).error,'استرجع السجل الأصلي أولًا: العميل «عميل المندوب للحذف».','the parent first');
+await restore(deletion('rc-1').id);await restore(deletion('rc-visit').id);
+check([raw('rc-1').assigned_to,numberOf('rc-1'),raw('rc-visit').parent_id],['rep',rcNumber,'rc-1'],'the customer with its number, then its visit');
+// moved out of the customer's regions: not listed, and refused
+await remove('rv-1');
+sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='rep'").run();login('rep');
+check((await list()).items.map(item=>item.recordId),[],'a representative of another region now: their eastern deletion is not listed');
+check((await restore(deletion('rv-1').id,403)).error,'السجل خارج نطاق صلاحيتك','and not restored');
+sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='rep'").run();login('rep');
+await restore(deletion('rv-1').id);
+// a supervisor: their team's visit; refused once that representative is in another supervisor's team
+grant('sup',{'activity:delete':true});login('sup');
+own('sv-1','زيارة لفريق المشرف');
+await remove('sv-1');
+check((await list()).items.map(item=>[item.recordId,item.deletedBy,item.blocked]),[['sv-1','المشرف',null]],'the supervisor: their own deletion');
+sql.prepare("UPDATE crm_members SET supervisor_id='sup2' WHERE id='rep'").run();login('sup');
+check((await list()).items.map(item=>[item.recordId,item.blocked]),[['sv-1','السجل خارج نطاق صلاحيتك']],'its author is in another supervisor\'s team now: listed with why');
+check((await restore(deletion('sv-1').id,403)).error,'السجل خارج نطاق صلاحيتك','and refused (out of what they may delete now)');
+sql.prepare("UPDATE crm_members SET supervisor_id='sup' WHERE id='rep'").run();login('sup');
+await restore(deletion('sv-1').id);
+check(raw('sv-1').version,2,'their team again: restored');
+// the sales manager and the administrator as before
+grant('mgr',{});login('mgr');
+check((await list()).scope,'own','the sales manager keeps the page without a «حذف» cell');
+login('owner');check((await list()).scope,'all','the administrator all');
+
 // ---- every message the routes answer with has its English (lib/locales/en.json, patterns for the named ones)
 compile('lib/i18n.ts');compile('lib/trash.ts');
 const i18n=await import(path.join(out,'lib/i18n.mjs')),words=await import(path.join(out,'lib/trash.mjs'));
 i18n.installEnglish(JSON.parse(fs.readFileSync('lib/locales/en.json','utf8')));
 const english=value=>i18n.translateText(value,'en');
-const messages=[...Object.entries(words.TRASH_TEXT).filter(([key])=>key!=='linked').map(([,value])=>value),words.TRASH_NEW_NUMBER_NOTE,words.trashNumberTaken('YR-C-000777'),words.trashCodeSkipped('ERP-B','مصنع الكود الجديد'),words.trashNewNumber('YR-C-000012'),
+const messages=[...Object.entries(words.TRASH_TEXT).filter(([key])=>key!=='linked').map(([,value])=>value),words.TRASH_NEW_NUMBER_NOTE,...[['customer','delete'],['activity','delete'],['followup','delete'],['quote','delete'],['customer','edit']].map(([screen,action])=>words.trashCellOff(screen,action)),'مدير النظام يقدر يسترجعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.',words.trashNumberTaken('YR-C-000777'),words.trashCodeSkipped('ERP-B','مصنع الكود الجديد'),words.trashNewNumber('YR-C-000012'),
  ...['العميل «مصنع»','الماكينة «ماكينة»','الفرصة «قالب بلوك»','عرض السعر «YR-1»','الزيارة رقم 12','الزيارة «زيارة»','المتابعة «متابعة»','السجل المرتبط'].map(words.trashParentFirst),'المحذوفات','يمكن استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.'];
 check(messages.filter(message=>english(message)===message),[],'every message is translated');
 check([english(words.trashParentFirst('الفرصة «قالب بلوك»')),english(words.trashCodeSkipped('ERP-B','مصنع الكود الجديد')),english(words.trashNumberTaken('YR-C-000777'))],['Restore the original record first: the opportunity «قالب بلوك».','ERP code «ERP-B» was not restored: it now belongs to the customer «مصنع الكود الجديد».','Yourrest number YR-C-000777 now belongs to another customer; the customer cannot be restored with the same number.'],'with the names in place');

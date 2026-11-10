@@ -2,8 +2,10 @@
 // customer with POST /api/crm, finds it in GET /api/trash with its Yourrest code, restores it with POST /api/trash and it is back in
 // GET /api/crm with the same YR-C code, nothing of the deletion or the restoration in the history GET /api/crm sends; a second
 // restoration is 409, a lost answer's retry (same request id) is alreadySaved; a visit comes back with its number; the quotation waits for
-// its opportunity; a sales manager lists and restores only their own deletions; a supervisor, a representative and customer service get
-// 403; another site's request 403; an oversized body 413. Synthetic fixtures only: temporary SQLite, mocked sendmail.
+// its opportunity; a sales manager lists and restores only their own deletions; since 2026-11-10 a representative or a supervisor granted
+// «حذف» lists and restores their own deletions (a visit deleted with «حذف» on visits, refused with its reason once that cell is off, another
+// member's deletion refused, back with nothing of the page once every «حذف» cell is off: 404), while customer service (no «حذف» cell) and
+// a member without one get 404; another site's request 403; an oversized body 413. Synthetic fixtures only: temporary SQLite, mocked sendmail.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 
@@ -75,12 +77,40 @@ try {
   check([response.status, response.json().error], [403, 'استرجاع ما حذفه غيرك متاح لمدير النظام فقط.'], 'not the administrator\'s');
   check((await restore(sm, (await deletion(managed)).id)).status, 200, 'their own: restored');
 
-  // ---- nobody else (granted «حذف» or not: the administrator restores what they delete); another site; a body over the limit
-  await grant('sup', {'activity:delete': true, 'customer:delete': true});await grant('rep', {'activity:delete': true});await grant('cs', {'activity:delete': true});
-  for (const id of ['sup', 'rep', 'cs']) {
-    const as = app.as(await app.login(id));
-    check([(await as('/api/trash')).status, (await restore(as, 'x')).status], [403, 403], id + ': no page, no restoration');
+  // ---- «حذف» brings «المحذوفات» (the owner, 2026-11-10): the representative's own visit, deleted and restored by them
+  const rep = app.as(await app.login('rep')), sup = app.as(await app.login('sup')), cs = app.as(await app.login('cs'));
+  for (const [id, as] of [['sup', sup], ['rep', rep], ['cs', cs]]) {
+    const list = await as('/api/trash');
+    check([list.status, list.json().error, (await restore(as, 'x')).status], [404, 'هذا الجزء غير متاح لحسابك. راجع مدير النظام.', 404], id + ' without «حذف»: no page (404, as a hidden screen), no restoration');
   }
+  await insert('visit-r', 'activity', customer, {type: 'call', date: now.slice(0, 10), summary: 'زيارة المندوب', performedBy: 'rep'});
+  await insert('visit-r2', 'activity', customer, {type: 'call', date: now.slice(0, 10), summary: 'زيارة المندوب التانية', performedBy: 'rep'});
+  await insert('visit-s', 'activity', customer, {type: 'call', date: now.slice(0, 10), summary: 'زيارة للمشرف', performedBy: 'rep'});
+  await grant('rep', {'activity:delete': true});
+  await remove(rep, 'visit-r'); await remove(rep, 'visit-r2'); await remove(owner, 'visit-s');
+  page = await listed(rep);
+  check([page.scope, page.items.map(item => [item.recordId, item.deletedBy, item.blocked]).sort()], ['own', [['visit-r', 'مندوب الوسطى', null], ['visit-r2', 'مندوب الوسطى', null]]], 'the representative: their own deletions only (not the administrator\'s of their visit)');
+  response = await restore(rep, (await deletion('visit-s')).id);
+  check([response.status, response.json().error], [403, 'استرجاع ما حذفه غيرك متاح لمدير النظام فقط.'], 'another member\'s deletion: 403');
+  response = await restore(rep, (await deletion('visit-r')).id);
+  check([response.status, response.json().type], [200, 'visit'], 'their own: restored');
+  check((await rep('/api/crm')).json().records.some(r => r.id === 'visit-r'), true, 'the visit is back in their records');
+  // the cell switched off after deleting: listed with why, refused with it; «حذف» elsewhere keeps the page
+  const repVersion = (await app.db.prepare("SELECT version FROM crm_member_permissions WHERE member_id='rep'").first()).version;
+  check((await owner('/api/crm', {method: 'POST', body: {action: 'permissions', memberId: 'rep', version: repVersion, cells: {'followup:delete': true}, hidden: [], viewAll: false}})).status, 200, 'the administrator switches «حذف» of visits off');
+  const reason = 'استرجاع السجل ده محتاج صلاحية «حذف» في الزيارات، وهي مش مفتوحة لك دلوقتي. راجع مدير النظام.';
+  check((await listed(rep)).items.map(item => [item.recordId, item.blocked]), [['visit-r2', reason]], 'listed with why');
+  response = await restore(rep, (await deletion('visit-r2')).id);
+  check([response.status, response.json().error], [403, reason], 'refused: 403 with the reason');
+  check((await owner('/api/crm', {method: 'POST', body: {action: 'permissions', memberId: 'rep', version: repVersion + 1, cells: {}, hidden: [], viewAll: false}})).status, 200, 'every «حذف» off');
+  check([(await rep('/api/trash')).status, (await restore(rep, (await deletion('visit-r2')).id)).status], [404, 404], 'no «حذف» left: no page');
+  check((await listed(owner)).items.some(item => item.recordId === 'visit-r2' && item.deletedBy === 'مندوب الوسطى' && !item.blocked), true, 'the administrator has it, and may restore it');
+  // a supervisor granted «حذف» on visits: their own; customer service holds no «حذف» cell whatever is sent
+  await grant('sup', {'activity:delete': true}); await grant('cs', {'activity:delete': true, 'customer:delete': true});
+  check((await listed(sup)).scope, 'own', 'the supervisor with «حذف»: their own');
+  check([(await cs('/api/trash')).status, (await restore(cs, 'x')).status], [404, 404], 'customer service: never');
+
+  // ---- another site; a body over the limit
   check((await owner('/api/trash', {method: 'POST', body: {auditId: 'x', requestId: crypto.randomUUID()}, headers: {Origin: 'https://evil.example'}})).status, 403, 'another site: 403');
   check((await owner('/api/trash', {method: 'POST', body: {auditId: 'x'.repeat(3000), requestId: crypto.randomUUID()}})).status, 413, 'over 2 000 bytes: 413');
   check((await owner('/api/trash', {method: 'POST', body: {auditId: 'nothing', requestId: crypto.randomUUID()}})).status, 404, 'an unknown entry: 404');
