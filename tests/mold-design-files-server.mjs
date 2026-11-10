@@ -192,7 +192,7 @@ try{
   check((await server.sendMoldRequest(DB,id,{link,fetch:stub('requests',200,{request:older,created:false})})).kind,'ok','a change accepted, answered with an older status');
   check([stored().revision,stored().approvals.sales,sql.prepare('SELECT outbox FROM crm_mold_requests WHERE id=?').get(id).outbox],[newer.revision,null,null],'its status does not replace the newer one');
   answering=stub('approval',200,{request:older});
-  as('manager');const approved=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id})));
+  as('manager');const approved=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id,termsAccepted:true})));
   answering=null;
   check([approved.status,stored().revision,stored().approvals.sales,approved.body.request.remote.revision],[200,newer.revision,null,newer.revision],'an approval answered with an older status: the newer one stays');
   const fresh={...newer,revision:newer.revision+1,approvals:sales};
@@ -510,7 +510,7 @@ try{
   check([typeof known(),await server.moldQuotePoSupported(DB),(await list()).quotePo],['string',true,true],'a status pull taught it (crm_settings, with when): the screen asks for the numbers now');
   forget();await attachAs(before,'رسم.pdf',pdf('a design file teaches it too'));
   check(!!known(),true,'a design file\'s answer teaches it too');
-  forget();as('manager');await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:before}));
+  forget();as('manager');await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:before,termsAccepted:true}));
   check(!!known(),true,'and an approval\'s');
   forget();await server.moldPendingFor({me:{id:'manager',role:'manager',regionScope:'all'},db:DB,members:teamMembers(),regionCustomerIds:new Set()},link,{force:true});
   check(!!known(),true,'and the sales manager\'s waiting list');
@@ -608,7 +608,7 @@ try{
   const retried=await server.sendMoldDesignFile(DB,lost,{link});
   check([retried.kind,JSON.parse(lastBody('design-files')).category,mock.state.calls.filter(call=>call.route==='design-files'&&call.body.includes(lost)).length,(await viewQuote(quoted)).find(file=>file.crmFileId===lost).state],['ok','po',2,'sent'],'a retry after a lost answer: the same crmFileId with the same category (200, nothing doubled)');
   // Approvals (2026-11-05): the sales manager approves; a PO file attached since keeps the approval, a design file undoes it.
-  as('manager');answer=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:quoted})));
+  as('manager');answer=await json(await requests.POST(post('/api/mold-requests',{action:'approve',requestId:randomUUID(),id:quoted,termsAccepted:true})));
   check([answer.status,!!answer.body.request.remote.approvals.sales],[200,true],'the sales manager approves it');
   answer=await attachAs(quoted,'PO 3.pdf',pdf('po three'),'po');
   check([answer.body.file.state,!!answer.body.request.remote.approvals.sales,answer.body.request.remote.waitingStep,!!(await server.loadMoldRequest(DB,quoted)).remote.approvals.sales],['sent',true,'production',true],'a PO file attached after it: sent, the approval stays (production\'s answer stored as it is)');
@@ -680,14 +680,15 @@ try{
    designStopped:{category:'design',next_attempt_at:null,last_attempt_at:t0,last_error:{code:'network',http:0,at:t1}},designSent:{category:'design',outbox:null,sent_at:t1},quote:{category:'quote'},poRefused:{category:'po',next_attempt_at:null,last_attempt_at:t0,last_error:{code:'x',http:400,at:t1,final:true}},quoteDeleted:{category:'quote',deleted_at:t0,outbox:null}};
   let seed=20261108;const random=()=>(seed=(seed*1103515245+12345)%2147483648)/2147483648;
   const cases=[],tally={};
-  for(let n=0;n<400;n++){
-   const marks={fileRequired:random()<0.5,designRequired:random()<0.7,signed:random()<0.5},state=Object.keys(states)[Math.floor(random()*Object.keys(states).length)];
+  for(let n=0;n<500;n++){
+   // 2026-11-10: a request waiting for the customer's signature from a link (customer_signature, after the files' reasons).
+   const marks={fileRequired:random()<0.5,designRequired:random()<0.7,signed:random()<0.5,awaits:random()<0.5},state=Object.keys(states)[Math.floor(random()*Object.keys(states).length)];
    const files=Object.keys(kinds).filter(()=>random()<0.25);
    cases.push({marks,state,files});
   }
   for(const [n,{marks,state,files}] of cases.entries()){
    const id='mr-'+randomUUID(),change=states[state],signature=marks.signed?{signer:'خالد',signedAt:t0,fileId:'mds-gen-'+n}:null;
-   const data={...base,...(marks.fileRequired?{fileRequired:true}:{}),...(marks.designRequired?{designRequired:true}:{}),...(signature?{signature}:{})};
+   const data={...base,...(marks.fileRequired?{fileRequired:true}:{}),...(marks.designRequired?{designRequired:true}:{}),...(signature?{signature}:{}),...(marks.awaits?{awaitsSignature:true}:{})};
    sql.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,accepted,outbox,next_attempt_at,last_attempt_at,last_error,remote,created_by,created_at,updated_at,version) VALUES(?,'rep','factory',?,?,?,?,?,?,?,'rep',?,?,1)")
     .run(id,JSON.stringify(data),change.accepted?JSON.stringify(data):null,'outbox' in change?change.outbox:'send',t0,change.last_attempt_at||null,change.last_error?JSON.stringify(change.last_error):null,change.remote?JSON.stringify(change.remote):null,t0,t0);
    for(const kind of files){
@@ -701,7 +702,7 @@ try{
    tally[String(fromTs)]=(tally[String(fromTs)]||0)+1;
    sql.prepare('DELETE FROM crm_mold_requests WHERE id=?').run(id);
   }
-  check([Object.keys(tally).sort(),Object.values(tally).every(count=>count>=20)],[['design_file','null','quote_file'],true],'the SQL and the TypeScript rule agree on '+cases.length+' generated cases, each reason well represented');
+  check([Object.keys(tally).sort(),Object.values(tally).every(count=>count>=20)],[['customer_signature','design_file','null','quote_file'],true],'the SQL and the TypeScript rule agree on '+cases.length+' generated cases, each reason well represented');
  }
 
  // ---- 2026-11-05 (the second update's review): a request's files reach production in the order they were attached, whichever sender

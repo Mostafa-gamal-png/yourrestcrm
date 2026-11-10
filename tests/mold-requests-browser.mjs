@@ -55,6 +55,8 @@ let checks = 0, browser;
 const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
+/** «اعتماد» once the sales manager's acknowledgement of the payment terms is ticked (2026-11-10): the button waits for it. */
+const approveIn = async scope => { await scope.locator('.mold-terms-accept input').first().check(); await scope.getByRole('button', {name: 'اعتماد', exact: true}).click(); };
 const PHONE = {width: 360, height: 800}, DESKTOP = {width: 1280, height: 900};
 const LABEL = 'طلبات تصنيع القوالب';
 
@@ -114,7 +116,9 @@ try {
     await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
     await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
-    await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).locator('label', {hasText: payment}).click();
+    await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: payment}).click();
+    // Deferred asks for its agreed terms (2026-11-10): tests/mold-nov10-browser.mjs tries the choice itself.
+    if (payment === 'آجل') await dialog.locator('.mold-payment-terms-choice label', {hasText: 'قبل الترحيل'}).click();
     if (design) await attachDesign(dialog);
   };
   // ---- The customer's signature (2026-11-04): drawn on the pad with pointer events, as a mouse, a finger (real touch through the DevTools
@@ -145,7 +149,7 @@ try {
   check([await dialog.locator('.mold-customer-field[data-field="name"] .field-error').innerText(), await dialog.locator('.mold-customer-field[data-field="code"] .field-error').innerText()], ['اكتب اسم العميل', 'اكتب كود ERP للعميل'], 'the form asks for the customer: its name and ERP code (2026-11-09)');
   ok(await dialog.locator('.field-error').count() >= 5, 'and points at each missing field');
   // How the customer pays: a required choice of two (2026-11-03).
-  const paymentChoice = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'});
+  const paymentChoice = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first();
   check([await paymentChoice.locator('label').allInnerTexts(), await paymentChoice.locator('.field-error').innerText(), await paymentChoice.getAttribute('aria-invalid')], [['نقدي', 'آجل'], 'اختار طريقة الدفع: نقدي أو آجل', 'true'], 'the payment: نقدي or آجل, required');
   // A design file of its own (2026-11-08): required of every new request, said in the picker's title and refused beside it.
   const designPicker = dialog.locator('.mold-design-picker[data-category="design"]');
@@ -265,7 +269,7 @@ try {
   const crmPendingText = await sm.locator('.mold-pending', {hasText: 'مصنع east2 (عدّله الإنتاج)'}).innerText();
   ok(crmPendingText.includes('من الـCRM') && crmPendingText.includes('وصف عدّله مدير الإنتاج') && crmPendingText.includes('مندوب عدّله الإنتاج') && /الكمية:\s*3/.test(crmPendingText) && !crmPendingText.includes('200*400*27.5TH MM OPEN'),
     'the CRM\'s request in the list as production holds it now, not the CRM\'s copy: ' + crmPendingText);
-  ok(/الدفع:\s*نقدي/.test(crmPendingText) && !crmPendingText.includes('آجل') && !(await pendingCard.innerText()).includes('الدفع'), 'the payment with each request waiting as production holds it now, not the CRM\'s آجل (none for one registered without it)');
+  ok(/الدفع:\s*نقدي/.test(crmPendingText) && !crmPendingText.includes('آجل') && !(await pendingCard.locator('.mold-card-facts').innerText()).includes('الدفع'), 'the payment with each request waiting as production holds it now, not the CRM\'s آجل (none for one registered without it)');
   // The CRM's request was signed by the customer (2026-11-04): said on its card, its image among the design files labelled so.
   const signedPending = sm.locator('.mold-pending', {hasText: 'مصنع east2 (عدّله الإنتاج)'});
   check([(await signedPending.locator('.mold-signature-view p').innerText()).startsWith('وقّع العميل: أ. منى'), await signedPending.locator('.mold-design-file[data-signature="true"] .mold-chip').innerText(), await sm.locator('.mold-pending', {hasText: 'مصنع مسجّل في الإنتاج'}).locator('.mold-signature-view').count()],
@@ -273,14 +277,14 @@ try {
   await shot(sm, 'mold-pending-manager');
   // Registered in production meanwhile: the approval's answer reads the list again (the server keeps it a minute otherwise).
   const gone = mock.registerManual({customerName: 'مصنع اتمسح من الإنتاج', salesmanName: 'مندوب الإنتاج', createdBy: 'prod@yourrest.org', description: 'gone mold'});
-  await pendingCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await approveIn(pendingCard);
   await sm.locator('.mold-pending[data-done]', {hasText: 'مصنع مسجّل في الإنتاج'}).waitFor();
   check([mock.state.byOrder.get(manual.orderNo).approvals.sales?.via, await sm.locator('.mold-pending:not([data-done])', {hasNotText: 'مصنع اتمسح من الإنتاج'}).count()], ['crm', 1], 'approved at production by its order number; one left waiting');
   // A request production deletes while it waits on the list: the refusal stays readable after the request leaves the list.
   const goneCard = sm.locator('.mold-pending', {hasText: 'مصنع اتمسح من الإنتاج'});
   await goneCard.waitFor();
   mock.removeOrder(gone.orderNo);
-  await goneCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await approveIn(goneCard);
   await sm.locator('.mold-pending-gone').waitFor();
   const goneText = await sm.locator('.mold-pending-gone').innerText();
   ok(goneText.includes(String(gone.orderNo)) && goneText.includes('لم يعد بانتظار اعتمادك'), 'the refusal names the order and stays readable: ' + goneText);
@@ -297,7 +301,7 @@ try {
     ['مصنع east2 (عدّله الإنتاج)', true, true, true, true, false], 'the sheet the sales manager approves from shows the request as production holds it now, its payment too');
   await sm.waitForTimeout(400);
   await shot(sm, 'mold-sheet-approver-production-data');
-  await sheet(sm).getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await approveIn(sheet(sm));
   await sheet(sm).locator('.mold-waiting', {hasText: 'بانتظار اعتماد الإنتاج'}).waitFor();
   check(await sheet(sm).locator('.mold-approvals li[data-done="true"]').count(), 1, 'the sales manager\'s approval is shown as given');
   ok((await sheet(sm).locator('.mold-approvals li').first().innerText()).includes('sm@yourrest.org'), 'with who gave it');
@@ -306,7 +310,7 @@ try {
   await sheet(sm).getByRole('button', {name: 'سحب الاعتماد'}).click();
   await sheet(sm).getByRole('button', {name: 'اعتماد', exact: true}).waitFor();
   check(mock.row(second).approvals.sales, null, 'withdrawn at production too');
-  await sheet(sm).getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await approveIn(sheet(sm));
   await sheet(sm).getByRole('button', {name: 'سحب الاعتماد'}).waitFor();
   await sm.context().close();
 
@@ -367,7 +371,7 @@ try {
   await sheet(english).getByRole('button', {name: 'Edit request'}).click();
   const lateEdit = english.locator('.mold-dialog');
   await lateEdit.waitFor();
-  check([await lateEdit.locator('.mold-choice', {hasText: 'Payment'}).locator('label').allInnerTexts(), await lateEdit.locator('.mold-choice', {hasText: 'Payment'}).locator('label[data-active="true"]').innerText()], [['Cash', 'Deferred'], 'Cash'], 'in English: Cash or Deferred, the request\'s own chosen');
+  check([await lateEdit.locator('.mold-choice', {hasText: 'Payment'}).first().locator('label').allInnerTexts(), await lateEdit.locator('.mold-choice', {hasText: 'Payment'}).first().locator('label[data-active="true"]').innerText()], [['Cash', 'Deferred'], 'Cash'], 'in English: Cash or Deferred, the request\'s own chosen');
   check((await repApi('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: late.id}})).status, 200, 'meanwhile its send reaches production');
   await lateEdit.locator('label.mold-field', {hasText: 'Quantity'}).locator('input').fill('4');
   await lateEdit.getByRole('button', {name: 'Save and send the change'}).click();
@@ -601,7 +605,7 @@ try {
   await sheet(phone).waitFor({state: 'detached'});
   // The form at phone width: «طريقة الدفع» fits, and either choice can be tapped.
   await phone.locator('button.mold-new').click();
-  const phonePayment = phone.locator('.mold-dialog .mold-choice', {hasText: 'طريقة الدفع'});
+  const phonePayment = phone.locator('.mold-dialog .mold-choice', {hasText: 'طريقة الدفع'}).first();
   await phonePayment.scrollIntoViewIfNeeded();
   for (const text of ['آجل', 'نقدي']) {
     await phonePayment.locator('label', {hasText: text}).click();
@@ -659,7 +663,7 @@ try {
   const csmApi = app.as(await app.login('csm'));
   const fromService = (await (await asBefore(app.db, change => csmApi('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await csmApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب خدمة العملاء', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}}))).json()).request;
   // An approval by order number reads production's waiting list afresh (the server keeps it a minute otherwise); none has that number.
-  await app.as(await app.login('sm'))('/api/mold-requests', {method: 'POST', body: {action: 'approve-order', requestId: crypto.randomUUID(), orderNo: 999999}});
+  await app.as(await app.login('sm'))('/api/mold-requests', {method: 'POST', body: {action: 'approve-order', requestId: crypto.randomUUID(), orderNo: 999999, termsAccepted: true}});
   const serviceManager = await open('sm');
   await goMolds(serviceManager);
   const serviceCard = serviceManager.locator('.mold-pending', {hasText: 'طلب خدمة العملاء'});
@@ -669,7 +673,7 @@ try {
   check([await sheet(serviceManager).locator('[data-slot="sheet-title"]').innerText(), (await sheet(serviceManager).locator('.mold-facts').first().innerText()).includes('csm')], ['مصنع east1', true], 'customer service\'s request opens from the waiting list, though his list does not hold it');
   await serviceManager.waitForTimeout(400);
   await shot(serviceManager, 'mold-sheet-approver-customer-service');
-  await sheet(serviceManager).getByRole('button', {name: 'اعتماد', exact: true}).click();
+  await approveIn(sheet(serviceManager));
   await sheet(serviceManager).getByRole('button', {name: 'سحب الاعتماد'}).waitFor();
   check(!!mock.row(fromService.id).approvals.sales, true, 'approved from its sheet, at production too');
   await serviceManager.keyboard.press('Escape');
@@ -758,7 +762,7 @@ try {
   const [download] = await Promise.all([quoteManager.waitForEvent('download'), pendingQuote.locator('a', {hasText: 'تنزيل'}).first().click()]);
   check(fs.readFileSync(await download.path()).toString().startsWith('%PDF-1.7 synthetic quotation'), true, 'its quotation file downloaded through the CRM');
   await shot(quoteManager, 'mold-pending-quote-missing');
-  await missingPending.getByRole('button', {name: 'اعتماد'}).click();
+  await approveIn(missingPending);
   await quoteManager.locator('.mold-pending[data-done="true"]', {hasText: 'YESTERDAY WITH A NUMBER'}).waitFor();
   await quoteManager.context().close();
   // The representative: «missing» on the card and the sheet, attaches the quotation from the sheet: no warning, the approval stays
@@ -859,7 +863,8 @@ try {
   await tabletDialog.locator('.mold-choice', {hasText: 'Vibrators'}).locator('label', {hasText: '3'}).click();
   await tabletDialog.locator('label.mold-field', {hasText: 'Mold width'}).locator('.mold-usual button', {hasText: '1375'}).click();
   await tabletDialog.locator('label.mold-field', {hasText: 'Gelba size'}).locator('.mold-usual button', {hasText: '800'}).click();
-  await tabletDialog.locator('.mold-choice', {hasText: 'Payment'}).locator('label', {hasText: 'Deferred'}).click();
+  await tabletDialog.locator('.mold-choice', {hasText: 'Payment'}).first().locator('label', {hasText: 'Deferred'}).click();
+  await tabletDialog.locator('.mold-payment-terms-choice label', {hasText: 'after shipping'}).click();
   await attachQuote(tabletDialog, quotation('Q-TAB-7.pdf'));
   // The customer signature takes the tenth design place: said by the picker before anything is chosen.
   check(await tabletDialog.locator('.mold-design-picker[data-category="design"] .mold-signature-room').innerText(), 'The customer\'s signature takes one of the 10 places; up to 9 design files', 'the form leaves room for the signature, and says so');
@@ -1006,7 +1011,7 @@ try {
     const [byRef] = await Promise.all([refManager.waitForEvent('download'), fileLink.click()]);
     check(fs.readFileSync(await byRef.path()).toString(), '%PDF-1.4 drawing by ref', 'downloaded by its requestRef');
     await shot(refManager, 'mold-pending-no-number');
-    await registeredCard.getByRole('button', {name: 'اعتماد', exact: true}).click();
+    await approveIn(registeredCard);
     await refManager.locator('.mold-pending[data-done]', {hasText: 'REGISTERED WITH A REF'}).waitFor();
     const approvedBody = JSON.parse(mock.state.calls.findLast(call => call.route === 'approval' && call.signed).body);
     check([approvedBody.requestRef, Object.hasOwn(approvedBody, 'orderNo'), Object.hasOwn(approvedBody, 'crmRequestId'), mock.byRef(registered.requestRef).approvals.sales?.via], [registered.requestRef, false, false, 'crm'], 'approved by its requestRef: no orderNo in the body');
@@ -1014,7 +1019,7 @@ try {
     await refManager.locator('.mold-heading-tools button').first().click();
     await refManager.waitForTimeout(500);
     check([await refManager.locator('.mold-pending', {hasText: 'REGISTERED WITH A REF'}).count(), await refManager.locator('.mold-pending[data-done]', {hasText: 'REGISTERED WITH A REF'}).count()], [1, 1], 'once, as approved just now');
-    await freshPending.getByRole('button', {name: 'اعتماد', exact: true}).click();
+    await approveIn(freshPending);
     await refManager.locator('.mold-pending[data-done]', {hasText: 'NEW AFTER THE SWITCH'}).waitFor();
     check(JSON.parse(mock.state.calls.findLast(call => call.route === 'approval' && call.signed).body).crmRequestId, fresh, 'the CRM\'s own by its crmRequestId');
     await refManager.context().close();
@@ -1118,7 +1123,7 @@ try {
     await englishForm.locator('.mold-choice', {hasText: 'Vibrators'}).locator('label', {hasText: '2'}).click();
     await englishForm.locator('label.mold-field', {hasText: 'Mold width'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await englishForm.locator('label.mold-field', {hasText: 'Gelba size'}).locator('.mold-usual button', {hasText: '795'}).click();
-    await englishForm.locator('.mold-choice', {hasText: 'Payment'}).locator('label', {hasText: 'Cash'}).click();
+    await englishForm.locator('.mold-choice', {hasText: 'Payment'}).first().locator('label', {hasText: 'Cash'}).click();
     await attachQuote(englishForm, quotation('Q-ADDR-EN.pdf'));
     await englishForm.locator('.mold-design-picker[data-category="quote"] .mold-design-file[data-state="ready"]').waitFor();
     await attachDesign(englishForm, drawing('address drawing.pdf'));

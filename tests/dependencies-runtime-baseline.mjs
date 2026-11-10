@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 
 const root=process.env.DEPENDENCY_TEST_ROOT||fileURLToPath(new URL('..',import.meta.url));
 const require=createRequire(resolve(root,'package.json'));
@@ -36,4 +36,15 @@ assert.equal(request.nextUrl.searchParams.get('value'),'ordinary');checks++;
 const response=NextResponse.json({ok:true});
 assert.deepEqual(await response.json(),{ok:true});checks++;
 assert.equal(response.status,200);checks++;
-console.log(JSON.stringify({ok:true,checks,next,eslintNext,exploitReproduction:false}));
+// pdf-lib (2026-11-10: the customer's signature stamped inside a mold request's PDFs, lib/mold-signed-pdf.ts): the exact version, its
+// licence (MIT, pure JavaScript, no native code or install script), bundled into the server's build, and an ordinary round trip.
+const pdfLibPackage=JSON.parse(readFileSync(require.resolve('pdf-lib/package.json'),'utf8'));
+assert.equal(pdfLibPackage.version,'1.17.1','pdf-lib stays on the reviewed version');checks++;
+assert.equal(pdfLibPackage.license,'MIT','pdf-lib is MIT');checks++;
+assert.equal(pdfLibPackage.scripts?.install??pdfLibPackage.scripts?.postinstall??null,null,'pdf-lib runs nothing at install');checks++;
+const {PDFDocument}=await import(pathToFileURL(require.resolve('pdf-lib')).href);
+const made=await PDFDocument.create();made.addPage([200,100]);
+const read=await PDFDocument.load(await made.save());
+assert.equal(read.getPageCount(),1);checks++;
+assert.equal(Math.round(read.getPage(0).getWidth()),200);checks++;
+console.log(JSON.stringify({ok:true,checks,next,eslintNext,pdfLib:pdfLibPackage.version,exploitReproduction:false}));

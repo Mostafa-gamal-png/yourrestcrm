@@ -10,12 +10,13 @@
 // of each, a PDF or an image only), offered once production's update is known to be live. The customer's signature (2026-11-04) is one of
 // the design files: labelled «توقيع العميل», never deletable while the request names it, and taking one of the 10 places. Since 2026-11-05
 // a new request needs one quotation or PO file (kept in the CRM until then: its groups are offered to attach it from the request's sheet).
+// Since 2026-11-10 a signed copy of a PDF (the customer's signature stamped on its last page) is labelled «نسخة موقّعة», not deletable.
 import React,{useRef,useState} from 'react';
 import {Download,Eye,FileBox,FileText,ImageIcon,Loader2,Paperclip,PenLine,RotateCcw,Trash2,TriangleAlert,X} from 'lucide-react';
 import {getLanguage} from '@/lib/i18n';
 import {isNativeTrackingApp} from '@/lib/native-tracking';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
-import {moldDesignRefusalText,moldDesignStateNames,moldErrorText,moldFileCategoryNames,MOLD_FILE_CATEGORY_ORDER,MOLD_SIGNATURE_TEXT,type MoldDesignFileView,type MoldDesignKind,type MoldError,type MoldFileCategory,type MoldPendingDesignFile,type MoldRequestView} from '@/lib/mold-requests';
+import {moldDesignRefusalText,moldDesignStateNames,moldErrorText,moldFileCategoryNames,MOLD_FILE_CATEGORY_ORDER,MOLD_SIGNATURE_TEXT,MOLD_SIGN_LINK_TEXT,type MoldDesignFileView,type MoldDesignKind,type MoldError,type MoldFileCategory,type MoldPendingDesignFile,type MoldRequestView} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_DESIGN_EXTENSIONS,MOLD_DESIGN_MAX_BYTES,MOLD_DESIGN_MAX_FILES,moldDesignFileCheck,moldDesignName} from '@/portable/mold-rules.mjs';
 
 type Say=(ar:string,en:string)=>string;
@@ -87,8 +88,9 @@ export async function checkDesignFiles(files:File[],room:number,category:MoldFil
 /** How many of a category's places a request's files take, as the server counts them (moldDesignCount): every file of it shown except
  *  those refused for good, and its uploads still on their way or retryable. */
 export function designUsed(view:Pick<MoldRequestView,'designFiles'>,uploads:DesignUpload[],category:MoldFileCategory='design'){
+ // The signed copies (2026-11-10) take none of the originals' places.
  const shown=new Set(view.designFiles.map(file=>file.crmFileId)),of=(item:{category?:MoldFileCategory})=>(item.category||'design')===category;
- return view.designFiles.filter(file=>of(file)&&file.state!=='rejected'&&file.state!=='locked').length+uploads.filter(upload=>of(upload)&&!shown.has(crmFileIdOf(upload.key))&&!(upload.phase==='failed'&&upload.final)).length;
+ return view.designFiles.filter(file=>of(file)&&!file.signedCopy&&!String(file.crmFileId||'').startsWith('mdc-')&&file.state!=='rejected'&&file.state!=='locked').length+uploads.filter(upload=>of(upload)&&!shown.has(crmFileIdOf(upload.key))&&!(upload.phase==='failed'&&upload.final)).length;
 }
 
 type Listener=(view:MoldRequestView)=>void;
@@ -326,11 +328,12 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
   {!listed.length&&!pending.length&&<p className="mold-design-empty">{emptyText(say,category)}</p>}
   {(!!listed.length||!!pending.length)&&<ul className="mold-design-list">
    {listed.map(file=>{
-    const reason=designFileDetail(file,say),mayReach=warn&&['sent','waiting'].includes(file.state);
-    return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source} data-signature={file.signature||undefined}>
-     <span className="mold-design-icon">{file.signature?<PenLine size={18} aria-hidden="true"/>:<KindIcon kind={file.kind}/>}</span>
+    // A signed copy production refused for its count (2026-11-10): said plainly; the request went on without it.
+    const reason=file.signedCopy&&file.state==='rejected'&&file.error?.reason==='too_many_files'?say(...MOLD_SIGN_LINK_TEXT.copyRefused):designFileDetail(file,say),mayReach=warn&&['sent','waiting'].includes(file.state);
+    return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source} data-signature={file.signature||undefined} data-signed-copy={file.signedCopy||undefined}>
+     <span className="mold-design-icon">{file.signature||file.signedCopy?<PenLine size={18} aria-hidden="true"/>:<KindIcon kind={file.kind}/>}</span>
      <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
-      <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span className="mold-design-state">{stateText(file)}</span>}</span>
+      <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.signedCopy&&<span className="mold-chip" data-kind="signed-copy">{say(...MOLD_SIGN_LINK_TEXT.copyMark)}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span className="mold-design-state">{stateText(file)}</span>}</span>
       {reason&&<small className="mold-design-reason">{reason}</small>}
       {errors[file.key]&&<small className="mold-design-reason" role="alert">{errors[file.key]}</small>}</div>
      <div className="mold-design-actions">
