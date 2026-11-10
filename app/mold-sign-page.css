@@ -17,3 +17,7 @@
 .sign-gone{justify-items:center;text-align:center;font-size:16px;line-height:1.8;color:#7a2c1f}.sign-gone p{margin:0}
 .sign-done{justify-items:start}.sign-done svg:first-child{color:#1b6a47}
 .dark .sign-changed{background:#3a3014;color:#f2dca0}
+/* The documents on the page (2026-11-10): as wide as the cards, the signature box after them. */
+.sign-documents{width:min(100%,640px);min-width:0}
+.sign-card.mold-sign-box{border:2px solid var(--foreground,#1d2a22);border-radius:6px}
+.sign-box h2.mold-sign-box-title{margin:0;font-size:17px}

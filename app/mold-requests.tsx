@@ -12,6 +12,7 @@ import VoiceField from './voice-field';
 import MoldCustomerFields,{moldCustomerByErpCode,type MoldCustomerText} from './mold-customer-fields';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import {MoldSigningStep,noteServerTime} from './mold-signature';
+import {viewerFilesFromRequest,type MoldViewerFile} from '@/lib/mold-document-view';
 import {MoldSignLinkPanel,MoldSigningNotes,SignLinkLine,rememberSignLink} from './mold-sign-link';
 import './mold-requests.css';
 
@@ -532,12 +533,15 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  const designRequired=!editing||editing.designRequired,hasDesign=!!editing?.designFiles.some(file=>file.category==='design'&&file.source==='crm'&&!file.signature&&!['rejected','locked','deleting'].includes(file.state));
  const [designs,setDesigns]=useState<DesignChoice[]>([]),[quotes,setQuotes]=useState<DesignChoice[]>([]),[pos,setPos]=useState<DesignChoice[]>([]),[asking,setAsking]=useState(false);
  // The signing step (2026-11-04): the request as it will be sent, and what the customer reads before signing it.
- const [signing,setSigning]=useState<{body:Record<string,unknown>;summary:[string,React.ReactNode][];again:boolean}|null>(null);
+ const [signing,setSigning]=useState<{body:Record<string,unknown>;summary:[string,React.ReactNode][];again:boolean;documents:MoldViewerFile[]}|null>(null);
  // A place of the 10 design files is the signature's, unless the request being edited holds one already (the new one replaces it).
  const signatureRoom=signs&&!editing?.signature?1:0;
  // The quotation's and PO's files upload first: the first one releases the request kept for it (2026-11-05), so it reaches production
  // without waiting for the design files.
  const files=asks?[...quotes,...pos,...designs]:designs,ready=files.filter(choice=>!choice.refusal);
+ // What the customer reads at the signing step (2026-11-10, «يوقع داخل pdf»): the request's files already uploaded (an edit) and those
+ // chosen in the form, still on the device, the quotation's and PO's first, then the design's (MoldDocumentViewer orders them).
+ const signingDocuments=():MoldViewerFile[]=>[...(editing?viewerFilesFromRequest(editing.designFiles):[]),...ready.map(choice=>({key:'local:'+choice.key,name:choice.name,category:choice.category,kind:choice.kind||'other',file:choice.file}))];
  // The customer the request is linked to: the one chosen (or, editing, the request's own, which the page may not list), else the one the
  // ERP code names alone; none: a customer not in the CRM.
  const kept=useMemo<Row|null>(()=>editing?.customerId&&editing.crmNumber!==null?{id:editing.customerId,kind:'customer',parentId:null,assignedTo:'',branch:'',data:{name:editing.customerName,internalCode:'YR-C-'+String(editing.crmNumber).padStart(6,'0'),code:editing.customerErpCode},createdAt:'',updatedAt:'',version:0} as unknown as Row:null,[editing]);
@@ -592,7 +596,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,React.ReactNode]]:[]),
    ...(terms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(terms,say)] as [string,React.ReactNode]]:[])];
   // A sales role's new request, or an edit that changes what was signed, is signed by the customer first (2026-11-04).
-  if(signs&&(!editing||editChanges(editing,specs,payment,place.address,customerChanges(editing,linkedId,customerText.name,customerText.code),terms))){setSigning({body,summary,again:!!editing?.signature});return;}
+  if(signs&&(!editing||editChanges(editing,specs,payment,place.address,customerChanges(editing,linkedId,customerText.name,customerText.code),terms))){setSigning({body,summary,again:!!editing?.signature,documents:signingDocuments()});return;}
   send(body,summary,false);
  };
  /** The request saved (then its files go); a refusal that asks for the signature opens the signing step, and one of the form's own fields
@@ -600,7 +604,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  const send=(body:Record<string,unknown>,summary:[string,React.ReactNode][],signed:boolean)=>{const before=refusals.current;void action.run(body).then(next=>{
   if(next){if(ready.length)uploads.add(next.id,ready);return;}
   const named=Object.keys(action.lastFields.current);
-  if(!signed&&named.includes('signature'))setSigning({body,summary,again:!!editing?.signature});
+  if(!signed&&named.includes('signature'))setSigning({body,summary,again:!!editing?.signature,documents:signingDocuments()});
   else if(signed&&(refusals.current!==before||named.some(key=>key!=='signature'&&key!=='signer')))setSigning(null);
  });};
  const choice=(key:string,label:string,options:[string,string][])=><fieldset className="mold-choice" aria-invalid={!!errors[key]}><legend>{label}</legend><div>{options.map(([value,text])=><label key={value} data-active={form[key]===value}><input type="radio" name={key} value={value} checked={form[key]===value} onChange={()=>set(key,value)}/>{text}</label>)}</div>{errors[key]&&<small className="field-error">{errors[key]}</small>}</fieldset>;
@@ -620,7 +624,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    <DialogDescription>{correcting?say(...MOLD_RETURNED_TEXT.dialog):editing?say('الطلب لم يصل للإنتاج بعد، فتعديله هنا ممكن. بعد وصوله يعدّل بياناته مدير الإنتاج فقط.','The request has not reached production yet, so it can be changed here. Once it arrives, the production manager alone edits its data.'):say('يُحفظ الطلب في الـCRM ثم يُرسل لتطبيق الإنتاج تلقائيًا.','The request is saved in the CRM, then sent to production automatically.')}</DialogDescription>
    {/* The customer signs now (with the PDFs chosen, by their SHA-256: each gets its signed copy as it is uploaded), or (2026-11-10) the
        request is saved with a link for the customer to sign from. */}
-   {signing&&<MoldSigningStep summary={signing.summary} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)}
+   {signing&&<MoldSigningStep summary={signing.summary} documents={signing.documents} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)}
     onConfirm={signature=>void seenPdfs(ready).then(seen=>send({...signing.body,signature:{...signature,...(seen.length?{seen}:{})}},signing.summary,true))}
     onLink={()=>send({...signing.body,signatureLink:true},signing.summary,true)}/>}
    <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>

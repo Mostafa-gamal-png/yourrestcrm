@@ -8,11 +8,15 @@
 // Since 2026-11-10 the signing also composes the block stamped at the bottom of the last page of every PDF of the request (signatureBlockPng:
 // the drawing, «توقيع العميل: <name>» and the moment in Riyadh, the canvas shaping the Arabic), the moment taken from the server's clock
 // (noteServerTime, serverNow); and a sales role may choose «ابعت للعميل لينك يوقّع منه» instead of the pad.
+// Since the owner's «يوقع داخل pdf» (2026-11-10, second release of the day) the customer reads the request's PDFs and pictures themselves
+// on the screen (app/mold-document-viewer.tsx) and signs in the box after their last page.
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {Eraser,Link2,Loader2,PenLine,Send,Undo2} from 'lucide-react';
 import {t} from '@/lib/i18n';
 import {MOLD_SIGNATURE_TEXT,MOLD_SIGN_LINK_TEXT} from '@/lib/mold-requests';
 import {MOLD_SIGNATURE_MAX_BYTES,MOLD_SIGNATURE_MAX_SIDE,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
+import {MOLD_VIEWER_TEXT,type MoldViewerFile} from '@/lib/mold-document-view';
+import MoldDocumentViewer from './mold-document-viewer';
 import VoiceField from './voice-field';
 
 type Say=(ar:string,en:string)=>string;
@@ -150,8 +154,11 @@ export function SignaturePad({strokes,onChange,onWidth,disabled,say}:{strokes:Si
 /** The signature as the step gives it (2026-11-10: with the block and its moment, both made once per signing like the drawing's PNG). */
 export type SigningResult={signer:string;png:string;block:string;blockAt:string};
 /** onLink (2026-11-10): offered (a sales role's new request, or an edit that changes what was signed), the step starts with a choice: the
- *  customer signs now (the pad), or a link is sent for the customer to sign from (the request is saved and kept until then). */
-export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBack,onConfirm,onLink}:{summary:[string,React.ReactNode][];busy:boolean;error:string;fields:Record<string,string>;again?:boolean;say:Say;onBack:()=>void;onConfirm:(signature:SigningResult)=>void;onLink?:()=>void}){
+ *  customer signs now (the pad), or a link is sent for the customer to sign from (the request is saved and kept until then).
+ *  documents (the owner, 2026-11-10: «يوقع داخل pdf»): signing now, the customer reads the request's files themselves first (the
+ *  quotation's and PO's, then the design's: MoldDocumentViewer), and signs in the box after their last page, «توقيع العميل», which holds
+ *  what is signed for (the summary), the name, the pad, «امسح» and the confirmation. Choosing the link shows no document. */
+export function MoldSigningStep({summary,documents,busy,error,fields,again=false,say,onBack,onConfirm,onLink}:{summary:[string,React.ReactNode][];documents?:MoldViewerFile[];busy:boolean;error:string;fields:Record<string,string>;again?:boolean;say:Say;onBack:()=>void;onConfirm:(signature:SigningResult)=>void;onLink?:()=>void}){
  const [signer,setSigner]=useState(''),[strokes,setStrokes]=useState<SignatureStrokes>([]),[width,setWidth]=useState(0),[shown,setShown]=useState<{signer?:string;pad?:string}>({});
  const [frozen,setFrozen]=useState<SigningResult|null>(null),[dismissed,setDismissed]=useState<{signer?:boolean;signature?:boolean}>({}),[answered,setAnswered]=useState(fields);
  const [mode,setMode]=useState<'now'|'link'>('now');
@@ -174,16 +181,17 @@ export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBac
   const signature={signer:name,png,block,blockAt:at.toISOString()};
   setFrozen(signature);onConfirm(signature);
  };
+ const summaryList=<dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>;
+ const lead=<p className="mold-signing-lead">{say('العميل بيوقّع على الطلب ده قبل ما يتبعت للإنتاج:','The customer signs this request before it is sent to production:')}</p>;
  return <section className="mold-signing" ref={top} aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
   <h3 className="mold-subtitle"><PenLine size={16} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.title)}</h3>
   {again&&<p className="mold-specs-note mold-signing-again" role="status">{say(...MOLD_SIGNATURE_TEXT.again)}</p>}
-  <p className="mold-signing-lead">{say('العميل بيوقّع على الطلب ده قبل ما يتبعت للإنتاج:','The customer signs this request before it is sent to production:')}</p>
-  <dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
-  {/* The pad or the link (2026-11-10): offered to the sales roles. */}
+  {/* The pad or the link (2026-11-10): offered to the sales roles; the choice comes before the documents. */}
   {onLink&&<fieldset className="mold-choice mold-signing-mode"><legend>{say('إزاي العميل هيوقّع؟','How does the customer sign?')}</legend><div>
    {(['now','link'] as const).map(value=><label key={value} data-active={mode===value}><input type="radio" name="signing-mode" value={value} checked={mode===value} disabled={busy} onChange={()=>setMode(value)}/>{say(...(value==='now'?MOLD_SIGN_LINK_TEXT.now:MOLD_SIGN_LINK_TEXT.link))}</label>)}
   </div></fieldset>}
   {onLink&&mode==='link'?<>
+   {lead}{summaryList}
    <p className="mold-specs-note mold-signing-link-note" role="note"><Link2 size={15} aria-hidden="true"/> {say(...MOLD_SIGN_LINK_TEXT.linkNote)}</p>
    {error&&<p className="form-error" role="alert">{t(error)}</p>}
    <div className="mold-actions">
@@ -191,6 +199,11 @@ export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBac
     <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
    </div>
   </>:<>
+  {/* The request's files themselves, page after page (2026-11-10), then the box the customer signs in. */}
+  {documents&&<><p className="mold-doc-lead">{say(...MOLD_VIEWER_TEXT.lead)}</p><MoldDocumentViewer files={documents} say={say}/></>}
+  <div className="mold-sign-box" role="group" aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
+  <p className="mold-sign-box-title"><PenLine size={17} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.title)}</p>
+  {lead}{summaryList}
   {/* Who signs for the customer: a person's name, typed or dictated. */}
   <div className="mold-field mold-signer" aria-invalid={!!signerError}>
    <VoiceField label={say(...MOLD_SIGNATURE_TEXT.signer)} value={signer} full disabled={busy} onChange={changeSigner} inputProps={{name:'signer',dir:'auto',autoComplete:'off',maxLength:MOLD_SIGNER_MAX+20}}/>
@@ -206,6 +219,7 @@ export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBac
   <div className="mold-actions">
    <button type="button" className="btn primary" disabled={busy} onClick={confirm}>{busy?<Loader2 className="spin" size={16}/>:<Send size={16}/>}{say(...MOLD_SIGNATURE_TEXT.confirm)}</button>
    <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
+  </div>
   </div>
   </>}
  </section>;

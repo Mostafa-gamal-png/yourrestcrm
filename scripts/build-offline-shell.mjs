@@ -14,7 +14,9 @@ const publicDir=path.join(root,'public'),output=path.join(publicDir,'offline-app
 await rm(output,{recursive:true,force:true});
 const result=await build({
  configFile:false,root,base:'/offline-app/',publicDir:false,
- resolve:{alias:{'@':root}},
+ // The signing screens' pdf.js (lib/pdf-viewer-loader.ts) is not part of the shell: signing needs the internet, and the shell's cache
+ // stays as it was (its stand-in says a document cannot be drawn there).
+ resolve:{alias:[{find:/^@\/lib\/pdf-viewer-loader$/,replacement:path.join(root,'lib/pdf-viewer-loader.offline.ts')},{find:'@',replacement:root}]},
  esbuild:{jsx:'automatic'},
  build:{outDir:output,emptyOutDir:true,target:'es2020',cssCodeSplit:false,sourcemap:false,
   rollupOptions:{input:path.join(root,'app/offline-entry.tsx'),output:{entryFileNames:'assets/app-[hash].js',chunkFileNames:'assets/chunk-[hash].js',assetFileNames:'assets/[name]-[hash][extname]'}}},
