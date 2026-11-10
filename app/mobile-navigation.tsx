@@ -8,6 +8,7 @@ import {t,useLanguage} from '@/lib/i18n';
 import {serviceText} from '@/lib/service-wording';
 import {EmailLogout} from './email-login';
 import {QueueBadge} from './service-queue';
+import {InactiveCustomersBadge} from './inactive-customers';
 import type {ServiceQueueEntry} from '@/lib/service-queue';
 import './mobile-navigation.css';
 
@@ -34,9 +35,9 @@ const pages=[
 // «المحذوفات» (2026-11-09) is reached from «المزيد» too.
 const secondary=new Set<string>(['mold-requests','trash']);
 
-type Props={me:Member;view:string;onNavigate:(view:string)=>void;accountOpen:boolean;onAccountOpenChange:(open:boolean)=>void;blocked?:boolean;queue?:ServiceQueueEntry[];extra?:number;/** What waits for the reader on the complaints page, when they have one. */complaints?:number};
+type Props={me:Member;view:string;onNavigate:(view:string)=>void;accountOpen:boolean;onAccountOpenChange:(open:boolean)=>void;blocked?:boolean;queue?:ServiceQueueEntry[];extra?:number;/** What waits for the reader on the complaints page, when they have one. */complaints?:number;/** «عملاء واقفين»: a representative's own (app/inactive-customers.tsx). */customers?:number};
 
-export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccountOpenChange,blocked=false,queue,extra=0,complaints=0}:Props){
+export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccountOpenChange,blocked=false,queue,extra=0,complaints=0,customers=0}:Props){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
  const [moreOpen,setMoreOpen]=useState(false),[editing,setEditing]=useState(false);
  const opener=useRef<HTMLElement|null>(null);
@@ -76,7 +77,7 @@ export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccou
  if(!allowed.length)return null;
  return <>
   <nav className="mobile-bottom-navigation no-print" aria-label={say('صفحات التطبيق','App pages')} dir={language==='ar'?'rtl':'ltr'} hidden={blocked||editing} style={{gridTemplateColumns:`repeat(${primary.length+(overflow.length?1:0)},minmax(0,1fr))`}}>
-   {primary.map(page=><button type="button" key={page.id} className={'mobile-tab'+(view===page.id?' is-active':'')} aria-current={view===page.id?'page':undefined} data-page={page.id} onClick={()=>navigate(page.id)}><span className="mobile-tab-icon"><page.Icon size={21} strokeWidth={view===page.id?2.2:1.8} aria-hidden="true"/>{page.id==='activity'&&(queue||extra>0)&&<QueueBadge entries={queue||[]} extra={extra}/>}{page.id==='complaints'&&complaints>0&&<QueueBadge entries={[]} extra={complaints}/>}</span><span className="mobile-tab-label">{label(page)}</span></button>)}
+   {primary.map(page=><button type="button" key={page.id} className={'mobile-tab'+(view===page.id?' is-active':'')} aria-current={view===page.id?'page':undefined} data-page={page.id} onClick={()=>navigate(page.id)}><span className="mobile-tab-icon"><page.Icon size={21} strokeWidth={view===page.id?2.2:1.8} aria-hidden="true"/>{page.id==='activity'&&(queue||extra>0)&&<QueueBadge entries={queue||[]} extra={extra}/>}{page.id==='complaints'&&complaints>0&&<QueueBadge entries={[]} extra={complaints}/>}{page.id==='customer'&&<InactiveCustomersBadge count={customers}/>}</span><span className="mobile-tab-label">{label(page)}</span></button>)}
    {!!overflow.length&&<button type="button" className={'mobile-tab'+(overflowActive?' is-active':'')} aria-label={say('المزيد من الصفحات','More pages')} aria-haspopup="dialog" aria-expanded={moreOpen} onClick={()=>{onAccountOpenChange(false);setMoreOpen(true);}}><span className="mobile-tab-icon"><Ellipsis size={23} aria-hidden="true"/></span><span className="mobile-tab-label">{say('المزيد','More')}</span></button>}
   </nav>
   <Sheet open={!blocked&&(moreOpen||accountOpen)} onOpenChange={open=>{if(!open){setMoreOpen(false);onAccountOpenChange(false);}}}>

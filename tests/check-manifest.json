@@ -367,6 +367,16 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/team-home-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/team-today-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/tracking-gate-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
