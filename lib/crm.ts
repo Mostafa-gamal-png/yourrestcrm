@@ -4,6 +4,7 @@ import {regionRecords} from './regions';
 import {salesRecordAccess} from './access';
 import type {MemberAccess} from './permissions';
 import {customerAddressFields} from './customer-fields';
+import {isCustomerKind} from './customer-options';
 export const stages = ['new','specs','technical','quoted','negotiation','won','lost'] as const;
 export const stageLabels:Record<string,string> = {new:'تحديد الاحتياج',specs:'جمع المواصفات',technical:'مراجعة فنية',quoted:'عرض سعر',negotiation:'تفاوض',won:'تم الفوز',lost:'تم الفقد'};
 export const roles:Record<string,string> = {admin:'مدير النظام',manager:'مدير المبيعات',supervisor:'مشرف المبيعات',rep:'مندوب المبيعات',customer_service_manager:'مدير خدمة العملاء',customer_service:'ممثل خدمة العملاء'};
@@ -28,8 +29,13 @@ const optionalDate=z.union([date,z.literal('')]).default('');
 const timestamp=z.union([z.string().datetime({offset:true}),z.literal('')]).default('');
 const positive=z.coerce.number().finite().positive().max(1000000);
 const amount=z.coerce.number().finite().min(0).max(1000000000);
+/** «نوع العميل» (data.customerKind): one of lib/customer-options.ts customerKinds or empty. Optional: a save that leaves it out (a page
+ *  opened before the field existed) keeps the stored value (app/api/crm/route.ts). «تصنيف العميل» (customerType) stays free text, as it
+ *  always was, so a stored classification no longer offered («خدمات») is never refused on an unrelated edit. */
+const customerKindRefused='اختار نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري';
+export const customerKindField=z.string({invalid_type_error:customerKindRefused}).trim().refine(isCustomerKind,customerKindRefused);
 export const schemas={
- customer:z.object({name:required,code:short,city:short,region:short,address:short,...customerAddressFields,contact:short,phone:short,email:z.union([z.string().email(),z.literal('')]).default(''),contact2:short,phone2:short,email2:z.union([z.string().email(),z.literal('')]).default(''),customerType:short,customerStatus:short,machineCount:z.coerce.number().int().min(0).max(100000).nullable().optional(),machineTypes:short,supplier:short,category:short,sourceFile:short,sourceRow:z.number().int().positive().optional(),sourceKey:short,sourceHash:short,notes,branch:required,assignedTo:required}),
+ customer:z.object({name:required,code:short,city:short,region:short,address:short,...customerAddressFields,contact:short,phone:short,email:z.union([z.string().email(),z.literal('')]).default(''),contact2:short,phone2:short,email2:z.union([z.string().email(),z.literal('')]).default(''),customerType:short,customerKind:customerKindField.optional(),customerStatus:short,machineCount:z.coerce.number().int().min(0).max(100000).nullable().optional(),machineTypes:short,supplier:short,category:short,sourceFile:short,sourceRow:z.number().int().positive().optional(),sourceKey:short,sourceHash:short,notes,branch:required,assignedTo:required}),
  factory:z.object({name:required,recordType:z.enum(['machine','group']).default('machine'),quantity:z.coerce.number().int().min(0).max(100000).nullable().default(1),machineBrand:short,machineModel:short,machineType:z.enum(['stationary','mobile','unknown']).default('unknown'),modelCondition:z.enum(['','new','old']).default(''),bushingCondition:z.enum(['','new','old']).default(''),boardDimensions:short,notes,sourceMachineTypes:short,sourceMachineCount:z.number().int().min(0).nullable().optional(),sourceFile:short,sourceRow:z.number().int().positive().optional(),sourceKey:short,sourceHash:short}).superRefine((v,c)=>{if(v.recordType==='machine'&&(!v.machineBrand||!(v.machineModel||v.modelCondition)))c.addIssue({code:'custom',message:'أدخل الشركة المصنعة واختر الموديل جديد أم قديم'});}),
  opportunity:z.object({responsibleId:short,hasRequest:z.boolean().default(true),followupTitle:short,followupStatus:z.enum(['open','closed']).default('open'),moldType:short,product:short,dimensions:short,cavities:z.coerce.number().int().min(0).max(10000).default(0),quantity:positive.int(),requiredAt:optionalDate,value:amount.nullable().default(null),stage:z.enum(stages),nextAction:short,nextDate:optionalDate,technicalStatus:z.enum(['pending','approved']).default('pending'),technicalNotes:notes,technicalBy:short,technicalAt:short,lossReason:short,orderRef:short,closedAt:optionalDate,notes}).superRefine((v,c)=>{
  if(v.hasRequest&&(!v.moldType||!v.product||!v.dimensions))c.addIssue({code:'custom',message:'أدخل نوع القالب والمنتج والأبعاد المطلوبة'});

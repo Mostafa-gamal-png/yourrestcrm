@@ -5,22 +5,24 @@ import {t, useLanguage} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
 import {captureVisitLocation} from '@/lib/visit-location';
 import {coordinatesFromText, tidyLocationText} from '@/lib/customer-location';
-import {customerTypes, customerStatuses, factoryCategories} from '@/lib/customer-options';
+import {customerTypes, customerKinds, customerStatuses, factoryCategories, choicesWithCurrent} from '@/lib/customer-options';
 import LocationPicker from './location-picker';
 import './customer-entry-fields.css';
 
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
-export type CustomerData = { [field: string]: unknown; name?: string; code?: string; region?: string; city?: string; contact?: string; phone?: string; address?: string; location?: string; shortAddress?: string; customerType?: string; customerStatus?: string; category?: string };
+export type CustomerData = { [field: string]: unknown; name?: string; code?: string; region?: string; city?: string; contact?: string; phone?: string; address?: string; location?: string; shortAddress?: string; customerType?: string; customerKind?: string; customerStatus?: string; category?: string };
 export type CustomerDataUpdate = (current:CustomerData) => CustomerData;
 type AddressResult = {status:'found'|'not_configured'|'not_found'|'unavailable'|'ambiguous';shortAddress?:string;address?:string;city?:string;message?:string};
 export function CustomerClassificationFields({data,onChange,disabled=false}:{data:CustomerData;onChange:(key:string,value:string)=>void;disabled?:boolean}){
  useLanguage();
  return <>{([
-  ['customerType','نوع العميل',customerTypes],
+  ['customerType','تصنيف العميل',customerTypes],
+  ['customerKind','نوع العميل',customerKinds],
   ['customerStatus','حالة العميل',customerStatuses],
   ['category','فئة المصنع',factoryCategories],
  ] as const).map(([key,label,choices])=>{
-  const values=[...choices,...(data[key]&&!choices.some(value=>value===data[key])?[data[key]]:[])];
+  // A value no longer offered (the retired «خدمات», an imported text) stays shown and chosen for this customer only.
+  const values=choicesWithCurrent(choices,data[key]);
   return <fieldset className="customer-choice-field full" key={key} disabled={disabled}><legend>{t(label)}</legend><div className="customer-choice-grid">{values.map(value=><label className="customer-choice" key={value}><input type="radio" name={'customer-choice-'+key} value={value} checked={data[key]===value} onChange={event=>{if(event.target.checked)onChange(key,value);}}/><span>{t(value)}</span></label>)}</div></fieldset>;
  })}</>;
 }

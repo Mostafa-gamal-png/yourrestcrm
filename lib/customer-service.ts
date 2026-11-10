@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {type Member,type Row,today} from './crm';
+import {type Member,type Row,today,customerKindField} from './crm';
 import {memberCanAccessRegion} from './regions';
 import {salesScopeMemberIds,canReadSalesRecord} from './access';
 import {riyadhDate} from './visits';
@@ -22,7 +22,7 @@ const required=z.string().trim().min(1,'هذا الحقل مطلوب').max(250);
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'اختر موعد المتابعة').refine(v=>Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'التاريخ غير صالح');
 export function serviceIntakeSchemaForDay(recordedDay?:string){return z.object({source:z.enum(['visit','call','email','whatsapp','website','social']),products:z.array(z.string().refine(p=>[...visitProducts,'خدمات صيانة'].includes(p),'اختر الصنف من القائمة')).min(1,'اختر صنفًا واحدًا على الأقل').max(8),strength:z.enum(['weak','medium','strong']),needs:z.string().trim().min(3,'اكتب احتياج العميل').max(4000),nextAction:required,nextDate:date.refine(v=>v>=(recordedDay||today()),'موعد المتابعة يجب أن يكون يوم التسجيل أو لاحقًا')}).strict();}
 export const serviceIntakeSchema=serviceIntakeSchemaForDay();
-export const serviceCustomerSchema=z.object({name:required,contact:z.string().trim().max(250).default(''),phone:z.string().trim().min(1,'أدخل رقم التواصل').max(100),city:z.string().trim().max(250).default(''),region:z.string().trim().max(250).default(''),address:z.string().trim().max(250).default(''),customerType:z.string().trim().max(250).default(''),customerStatus:z.string().trim().max(250).default(''),category:z.string().trim().max(250).default(''),...customerAddressFields}).strict();
+export const serviceCustomerSchema=z.object({name:required,contact:z.string().trim().max(250).default(''),phone:z.string().trim().min(1,'أدخل رقم التواصل').max(100),city:z.string().trim().max(250).default(''),region:z.string().trim().max(250).default(''),address:z.string().trim().max(250).default(''),customerType:z.string().trim().max(250).default(''),customerKind:customerKindField.default(''),customerStatus:z.string().trim().max(250).default(''),category:z.string().trim().max(250).default(''),...customerAddressFields}).strict();
 const contactIndexes=new WeakMap<Row[],Map<string,Row[]>>();
 export function serviceContacts(item:ServiceCase,all:Row[]){let index=contactIndexes.get(all);if(!index){index=new Map();for(const r of all){if(r.kind!=='activity'||!r.data.serviceCaseId)continue;const contacts=index.get(r.data.serviceCaseId)||[];contacts.push(r);index.set(r.data.serviceCaseId,contacts);}for(const contacts of index.values())contacts.sort((a,b)=>visitOrder(b).localeCompare(visitOrder(a)));contactIndexes.set(all,index);}return index.get(item.id)||[];}
 export function serviceState(item:ServiceCase,all:Row[],members:Member[]){const contact=serviceContacts(item,all)[0],stage=contact?.data.salesStage||'new';return ['won','lost'].includes(stage)?stage:item.status==='assigned'&&members.find(m=>m.id===item.assignedTo)?.role==='supervisor'?'with_supervisor':item.status;}
