@@ -1,0 +1,61 @@
+/* The top of the member's first screen (app/team-home.tsx): «عملاء واقفين» and «فريقي النهارده». Logical properties only, so Arabic and
+   English mirror; on a phone every row becomes a card and every button is at least 44 px high. */
+.team-home{display:grid;gap:12px;margin-bottom:16px;min-width:0}
+.team-alert{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid color-mix(in srgb,#b45309 45%,var(--border));border-inline-start-width:4px;border-radius:12px;padding:12px 14px;min-width:0;color:var(--foreground)}
+.team-alert-head{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 260px}
+.team-alert-icon{display:grid;place-items:center;flex-shrink:0;width:38px;height:38px;border-radius:10px;background:color-mix(in srgb,#b45309 14%,transparent);color:#b45309}
+:root.dark .team-alert-icon{color:#f6b26b}
+.team-alert-text{flex:1 1 220px;min-width:0}
+.team-alert-text h2{margin:0;font-size:15px;font-weight:600;line-height:1.6;overflow-wrap:anywhere}
+.team-alert-text h2 b{font-size:17px;color:#b45309}
+:root.dark .team-alert-text h2 b{color:#f6b26b}
+.team-alert-text p{margin:2px 0 0;font-size:13px;color:var(--muted-foreground);line-height:1.6}
+.team-alert>.btn{flex-shrink:0;gap:6px;margin:0}
+/* The team card stacks its heading, the names and «عرض الكل» (a grid: each takes only its own height). */
+.inactive-team{display:grid;gap:10px;align-items:start}
+.inactive-team-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;min-width:0}
+.inactive-team-list button{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--muted);color:var(--foreground);font-size:14px;text-align:start;cursor:pointer}
+.inactive-team-list button:hover,.inactive-team-list button:focus-visible{border-color:var(--primary)}
+.inactive-team-name{flex:1;min-width:0;overflow-wrap:anywhere}
+.inactive-team-name small{display:block;font-size:11px;color:var(--muted-foreground)}
+.inactive-team-list b{min-width:28px;padding:0 8px;border-radius:999px;background:#b45309;color:#fff;font-size:13px;line-height:24px;text-align:center}
+.inactive-team-more{justify-self:start;min-height:44px}
+.inactive-customers-badge{background:#b45309}
+
+.team-today{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;min-width:0;color:var(--foreground)}
+.team-today-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.team-today-head h2{display:flex;align-items:center;gap:8px;margin:0;font-size:16px;font-weight:600;min-width:0}
+.team-today-head h2 svg{color:var(--primary);flex-shrink:0}
+.team-today-head h2 small{font-size:12px;font-weight:400;color:var(--muted-foreground)}
+.team-today-head .btn{gap:6px;margin:0}
+.team-today-totals{margin:8px 0 0;font-size:14px;font-weight:600;color:var(--primary);overflow-wrap:anywhere}
+.team-today-note,.team-today-error{display:flex;align-items:center;gap:6px;margin:8px 0 0;font-size:13px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.team-today-error{color:var(--destructive)}
+.team-today-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
+.team-today-table th,.team-today-table td{padding:8px 10px;border-top:1px solid var(--border);text-align:start;vertical-align:middle}
+.team-today-table thead th{border-top:0;font-size:12px;font-weight:600;color:var(--muted-foreground);white-space:nowrap}
+/* The global table head colours (globals.css, with !important) are for column heads, not for the name that heads a row. */
+.team-today-table tbody th.team-today-name{background:transparent;color:var(--foreground)!important;font-size:14px;font-weight:600!important;white-space:normal;padding:8px 10px!important;overflow-wrap:anywhere}
+.team-today-name small{display:block;font-size:11px;font-weight:400;color:var(--muted-foreground)}
+.team-today-not-started{display:inline-block;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--destructive) 13%,transparent);color:var(--destructive);font-size:13px;font-weight:600}
+.team-today-started{font-size:13px}
+.team-today-unread{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:999px;background:var(--primary);color:var(--primary-foreground);font-size:12px;font-weight:700}
+.team-today-action{text-align:end}
+.team-today-action .btn{gap:5px;margin:0}
+.team-today-foot{display:block;margin-top:8px;font-size:12px;color:var(--muted-foreground)}
+.team-today-link{margin:0 0 10px}
+.team-today-link .text-button{min-height:44px}
+@media(max-width:640px){
+ .team-alert,.team-today{padding:10px 12px}
+ .team-alert>.btn{width:100%;min-height:44px}
+ .inactive-team-list{grid-template-columns:1fr}
+ .team-today-head .btn,.team-today-action .btn{min-height:44px}
+ .team-today-table thead{display:none}
+ .team-today-table,.team-today-table tbody{display:block}
+ .team-today-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;padding:10px 0;border-top:1px solid var(--border)}
+ .team-today-table th,.team-today-table td,.team-today-table tbody th.team-today-name{padding:0!important;border:0}
+ .team-today-table .team-today-name{grid-column:1/-1;font-size:15px}
+ .team-today-table td[data-label]::before{content:attr(data-label);display:block;font-size:11px;font-weight:600;color:var(--muted-foreground)}
+ .team-today-action{grid-column:1/-1;text-align:start}
+ .team-today-action .btn{width:100%}
+}
