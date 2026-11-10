@@ -30,7 +30,7 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/crm', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox'];
+  const protectedGets = ['/api/crm', '/api/team-today', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import', '/api/trash', '/api/reviews', '/api/review-inbox'];
@@ -66,7 +66,9 @@ try {
     '/api/trash': expect(['owner', 'mgr', 'mgrw'], 200, 404),
     // The supervisor's notes (2026-11-09): those of a day report for the roles that open it; everyone reads their own unread notes.
     ['/api/reviews?date=' + day]: expect(management, 200, 403),
-    '/api/review-inbox': expect(everyone, 200, 0)
+    '/api/review-inbox': expect(everyone, 200, 0),
+    // «فريقي النهارده» (2026-11-10): the roles that open «تقرير يوم المندوب»; a representative and customer service are refused.
+    '/api/team-today': expect(management, 200, 403)
   };
   for (const [url, byRole] of Object.entries(getMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url)).status, byRole[id], `GET ${url} as ${id}`);
   // KPI evidence is read per member; ask each management role about a member inside its own scope.
@@ -209,7 +211,7 @@ try {
   const addRefused = await app.as(sessions.rep1)('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل ممنوع', region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03', phone: '0500000001'}}});
   check([addRefused.status, addRefused.json().error], [403, 'مش مسموح لك بالإضافة في العملاء. راجع مدير النظام.'], 'rep1: adding a customer switched off: 403 with its message');
   check((await permissions('owner', 'sup', 0, {hidden: ['journeys']})).status, 200, 'the administrator hides «تقرير يوم المندوب» from the supervisor');
-  for (const url of ['/api/journeys?date=' + day, '/api/reviews?date=' + day, '/api/device-status']) {
+  for (const url of ['/api/journeys?date=' + day, '/api/reviews?date=' + day, '/api/device-status', '/api/team-today']) {
     check((await app.as(sessions.sup)(url)).status, 404, 'sup GET ' + url + ' hidden: 404');
     check((await app.as(sessions.mgr)(url)).status, 200, 'mgr GET ' + url + ' unaffected');
   }
