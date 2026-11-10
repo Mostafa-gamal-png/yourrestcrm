@@ -1,0 +1,29 @@
+/* The request's documents on the signing screens (2026-11-10): the pages one under the other, the width of the screen, a thin line between
+   them, each file under its own heading; the signature box follows them as the document's last block (.mold-sign-box). */
+.mold-doc-viewer{display:grid;gap:14px;min-width:0;width:100%}
+.mold-doc-lead{margin:0;font-size:14px;line-height:1.7;color:var(--muted-foreground,#5d6b62)}
+.mold-doc-none{margin:0;font-size:14px;color:var(--muted-foreground,#5d6b62)}
+.mold-doc-file{display:grid;gap:6px;min-width:0}
+.mold-doc-head,.mold-doc-other{display:flex;align-items:center;gap:8px;min-width:0;margin:0;padding:8px 10px;border-radius:10px;background:var(--muted,#f1f4f2);font-size:14px;line-height:1.5}
+.mold-doc-head svg,.mold-doc-other svg{flex-shrink:0;color:var(--muted-foreground,#5d6b62)}
+.mold-doc-title,.mold-doc-other>span{min-width:0;overflow-wrap:anywhere}.mold-doc-title small{font-size:12px;color:var(--muted-foreground,#5d6b62);font-weight:400}
+.mold-doc-head .btn,.mold-doc-other .btn,.mold-doc-error .btn{display:inline-flex;align-items:center;gap:5px;min-height:40px;flex-shrink:0;margin-inline-start:auto}
+.mold-doc-other{border:1px dashed var(--border,#dce4e0);background:transparent}
+.mold-doc-loading{display:flex;align-items:center;gap:8px;margin:0;padding:14px 10px;font-size:14px;color:var(--muted-foreground,#5d6b62)}
+.mold-doc-error{display:flex;align-items:flex-start;gap:8px;margin:0;padding:10px 12px;border-radius:10px;background:#fbeaea;color:#7a2c1f;font-size:14px;line-height:1.6}
+.mold-doc-error>span{display:grid;gap:2px;min-width:0}.mold-doc-error small{font-size:12px;color:inherit;opacity:.85}
+.dark .mold-doc-error{background:#3a1d1a;color:#f3c4bb}
+.mold-doc-pages{display:grid;gap:0;min-width:0}
+.mold-doc-page{margin:0;display:grid;gap:4px;min-width:0;padding:8px 0;border-top:1px solid var(--border,#dce4e0)}
+.mold-doc-page:first-child{border-top:0;padding-top:0}
+.mold-doc-page-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted-foreground,#5d6b62)}
+.mold-doc-page-bar .btn{display:inline-flex;align-items:center;gap:5px;min-height:36px}
+.mold-doc-frame{position:relative;width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;background:#fff;box-shadow:0 0 0 1px var(--border,#dce4e0);-webkit-overflow-scrolling:touch}
+.mold-doc-frame canvas{display:block;max-width:none;background:#fff}
+.mold-doc-page:not([data-zoom]) .mold-doc-frame{overflow-x:hidden}.mold-doc-page:not([data-zoom]) .mold-doc-frame canvas{max-width:100%}
+.mold-doc-page-wait{position:absolute;inset-inline:0;top:24px;display:flex;justify-content:center;align-items:center;gap:6px;font-size:13px;color:#5d6b62}
+.mold-doc-page-wait[data-error]{color:#7a2c1f}
+.mold-doc-image{display:block;max-width:100%;height:auto;margin-inline:auto;background:#fff;border:1px solid var(--border,#dce4e0);border-radius:4px}
+/* The signature box: the document's last block, as if printed under its last page. */
+.mold-sign-box{display:grid;gap:12px;min-width:0;padding:14px 12px;border:2px solid var(--foreground,#1d2a22);border-radius:6px;background:var(--card,#fff)}
+.mold-sign-box-title{display:flex;align-items:center;gap:6px;margin:0;font-size:17px;font-weight:700;padding-bottom:8px;border-bottom:1px solid var(--border,#dce4e0)}

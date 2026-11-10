@@ -6,7 +6,7 @@
 // gone, and «إرسال لينك جديد» makes another (the old one stops working). While the request is still unsent the requester may also stop the
 // link or have the customer sign on the device now. The card says the request waits for the customer's signature, when the link was made
 // and until when it opens, or that it expired.
-import React,{useCallback,useState,useSyncExternalStore} from 'react';
+import React,{useCallback,useMemo,useState,useSyncExternalStore} from 'react';
 import {Copy,Link2,Loader2,MessageCircle,PenLine,TriangleAlert,X} from 'lucide-react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {direction,getLanguage,t} from '@/lib/i18n';
@@ -15,6 +15,7 @@ import {whatsappUrl,COMPANY_NAME,COMPANY_NAME_EN} from '@/lib/whatsapp';
 import type {Row} from '@/lib/crm';
 import {MOLD_SIGN_LINK_TEXT,moldNotSignedText,type MoldRequestView} from '@/lib/mold-requests';
 import {MoldSigningStep,type SigningResult} from './mold-signature';
+import {viewerFilesFromRequest} from '@/lib/mold-document-view';
 
 type Say=(ar:string,en:string)=>string;
 export type SignLinkMade={url:string;expiresAt:string};
@@ -100,6 +101,8 @@ function useLinkAction(onView:(view:MoldRequestView)=>void){
 export function MoldSignLinkPanel({view,customers,summary,onView,say}:{view:MoldRequestView;customers:Row[];summary:[string,React.ReactNode][];onView:(view:MoldRequestView)=>void;say:Say}){
  const signing=view.signing,fresh=useSignLink(view.id),action=useLinkAction(onView),[copied,setCopied]=useState(false),[signingNow,setSigningNow]=useState(false);
  const sign=useLinkAction(next=>{onView(next);if(!next.signing?.awaits)setSigningNow(false);});
+ // What the customer reads before signing on the device (2026-11-10): the request's own uploaded files, page after page.
+ const documents=useMemo(()=>viewerFilesFromRequest(view.designFiles),[view.designFiles]);
  if(!signing?.awaits)return null;
  const link=signing.link,active=!!link&&!link.expired,shown=active&&fresh&&fresh.expiresAt===link.expiresAt?fresh:null;
  const phone=customers.find(row=>row.id===view.customerId)?.data.phone;
@@ -134,7 +137,7 @@ export function MoldSignLinkPanel({view,customers,summary,onView,say}:{view:Mold
    <DialogContent className="mold-dialog" dir={direction()}>
     <DialogTitle>{say(...MOLD_SIGN_LINK_TEXT.device)}</DialogTitle>
     <DialogDescription>{say('العميل بيوقّع دلوقتي على الجهاز بدل اللينك؛ اللينك بيبطل والطلب بيتبعت للإنتاج.','The customer signs now on the device instead of the link; the link stops working and the request goes to production.')}</DialogDescription>
-    <MoldSigningStep summary={summary} busy={sign.busy} error={sign.error} fields={sign.fields} say={say} onBack={()=>setSigningNow(false)}
+    <MoldSigningStep summary={summary} documents={documents} busy={sign.busy} error={sign.error} fields={sign.fields} say={say} onBack={()=>setSigningNow(false)}
      onConfirm={(signature:SigningResult)=>void sign.run({action:'sign',id:view.id,version:view.version,signature})}/>
    </DialogContent>
   </Dialog>}

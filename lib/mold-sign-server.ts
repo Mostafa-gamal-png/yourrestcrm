@@ -63,6 +63,12 @@ export function signLinkFiles(row:MoldRequestRow,files:MoldDesignFileRow[],state
  if(state==='signed')return signature?files.filter(file=>!file.deletedAt&&!!file.objectKey&&!!moldSignedCopyOf(file.id,signature.fileId)):[];
  return files.filter(file=>(file.kind==='pdf'||file.kind==='image')&&!file.deletedAt&&!!file.objectKey&&file.id.startsWith('mdf-')&&!(file.outbox==='send'&&!file.sentAt&&file.nextAttemptAt===null&&file.lastError?.final===true));
 }
+/** The request's other files the link names but never serves (2026-11-10, the documents on the page): a drawing, a model, an archive of
+ *  its design, quotation or PO files that goes to production as it is, by name and category only. Not part of the page's key (moldSignKey):
+ *  the customer signs what the page shows. Oldest first. */
+export function signLinkOtherFiles(files:MoldDesignFileRow[]){
+ return files.filter(file=>file.kind==='other'&&!file.deletedAt&&!!file.objectKey&&file.id.startsWith('mdf-')&&!(file.outbox==='send'&&!file.sentAt&&file.nextAttemptAt===null&&file.lastError?.final===true));
+}
 /** What the page was opened on (its form carries it back): the request's version and its files as listed, so a change of either since is
  *  told apart (SIGN_LINK_CHANGED). */
 export async function moldSignKey(row:MoldRequestRow,files:MoldDesignFileRow[]){
@@ -151,7 +157,9 @@ export function dropOldCopies(db:D1Database,files:MoldDesignFileRow[],oldSignatu
  *  representative, no production state) and its files, each through the token. */
 export type SignLinkPage={key:string;expiresAt:string;now:string;
  summary:{customerName:string;erpCode:string;address:string;description:string;core:string;vibrators:number|null;model:string;halfBlock:string;moldWidth:number|null;gelbaSize:number|null;quantity:number|null;payment:'cash'|'deferred'|null;paymentTerms:MoldPaymentTerms|null;quoteNo:string;poNo:string};
- files:{id:string;name:string;kind:'pdf'|'image'|'other';category:'design'|'quote'|'po';size:number;href:string}[]};
+ files:{id:string;name:string;kind:'pdf'|'image'|'other';category:'design'|'quote'|'po';size:number;href:string}[];
+ /** The other files (named only, never served through the link: signLinkOtherFiles). */
+ others:{name:string;category:'design'|'quote'|'po'}[]};
 export const signFileHref=(token:string,fileId:string)=>'/sign/m/'+token+'/file/'+encodeURIComponent(fileId);
 /** The page of an open link (null: refused, the same for every reason: over the address's count, a token of another shape, unknown,
  *  expired, signed, cancelled, sent). */
@@ -163,7 +171,8 @@ export async function loadSignLinkPage(db:D1Database,token:string,headers:Header
  return {key:await moldSignKey(row,files),expiresAt:data.signatureLink!.expiresAt,now:new Date(now).toISOString(),
   summary:{customerName:data.customer.name,erpCode:typeof data.customer.erpCode==='string'?data.customer.erpCode:'',address:typeof data.customer.address==='string'?data.customer.address:'',description:specs.description,core:specs.core,vibrators:specs.vibrators,model:specs.model,halfBlock:specs.halfBlock,
    moldWidth:specs.moldWidth,gelbaSize:specs.gelbaSize,quantity:specs.quantity,payment:data.payment==='cash'||data.payment==='deferred'?data.payment:null,paymentTerms:data.payment==='deferred'&&data.paymentTerms?data.paymentTerms:null,quoteNo:data.quoteNo||'',poNo:data.poNo||''},
-  files:signLinkFiles(row,files,'open').map(file=>({id:file.id,name:file.name,kind:file.kind,category:moldFileCategory(file),size:file.size,href:signFileHref(token,file.id)}))};
+  files:signLinkFiles(row,files,'open').map(file=>({id:file.id,name:file.name,kind:file.kind,category:moldFileCategory(file),size:file.size,href:signFileHref(token,file.id)})),
+  others:signLinkOtherFiles(files).map(file=>({name:file.name,category:moldFileCategory(file)}))};
 }
 
 /** What the customer's signing answers (and its repeat answers again within the day): who signed and when, the signed copies to download

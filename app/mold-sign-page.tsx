@@ -2,13 +2,17 @@
 // What the customer sees from the representative's link (the owner, 2026-11-10: «امكانية ارسال لينك بالpdf طلب القالب للتوقيع عليه»):
 // the company's name and logo, «طلب تصنيع قالب» with what the customer signs for (the same fields as the signing summary on the
 // representative's device: nothing internal), the request's PDFs and images to open (through the link only), then the signer's name, the
-// pad (the app's own), the consent «قرأت الطلب والملفات وموافق عليها» and «توقيع». The block stamped in the PDFs is composed here, its
+// pad (the app's own), the consent «قرأت الطلب والملفات وموافق عليها» and «توقيع». Since the owner's «يوقع داخل pdf» (2026-11-10, second
+// release of the day) the files are the page itself: the quotation's and PO's, then the design's, page after page (MoldDocumentViewer),
+// and the signature is a box after their last page holding what is signed for, the name, the pad, the consent and «توقيع». The block stamped in the PDFs is composed here, its
 // moment the server's clock (the page's own now). Once signed: «تم التوقيع، شكرًا» and the signed copies to download. A link that does
 // not work is one neutral sentence. Arabic first, with English through the app's own language switch (phone first, 360 px).
-import React,{useEffect,useRef,useState} from 'react';
-import {CheckCircle2,Download,Eraser,Eye,FileText,ImageIcon,Loader2,PenLine,RotateCcw,TriangleAlert} from 'lucide-react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
+import {CheckCircle2,Download,Eraser,FileText,Loader2,PenLine,RotateCcw,TriangleAlert} from 'lucide-react';
 import {useLanguage} from '@/lib/i18n';
-import {MOLD_CORES,MOLD_HALF_BLOCKS,MOLD_MODELS,MOLD_PAYMENT_TERMS_TITLE,moldFileCategoryNames,moldNotSignedText,moldPaymentNames,moldPaymentTermsNames} from '@/lib/mold-requests';
+import {MOLD_CORES,MOLD_HALF_BLOCKS,MOLD_MODELS,MOLD_PAYMENT_TERMS_TITLE,moldNotSignedText,moldPaymentNames,moldPaymentTermsNames} from '@/lib/mold-requests';
+import type {MoldViewerFile} from '@/lib/mold-document-view';
+import MoldDocumentViewer from './mold-document-viewer';
 import {MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
 import type {SignLinkDone,SignLinkPage} from '@/lib/mold-sign-server';
 import {SignaturePad,noteServerTime,serverNow,signatureBlockPng,signatureBox,signaturePng,type SignatureStrokes} from './mold-signature';
@@ -16,7 +20,6 @@ import './mold-requests.css';
 import './mold-sign-page.css';
 
 type Say=(ar:string,en:string)=>string;
-const size=(bytes:number)=>bytes<1024*1024?Math.max(1,Math.round(bytes/1024))+' KB':(bytes/1024/1024).toFixed(1)+' MB';
 const stamp=(iso:string)=>new Date(iso).toLocaleString('en-GB',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'});
 /** The server's words, in English when the page is (the few the link can answer with). */
 const english:Record<string,string>={
@@ -42,6 +45,9 @@ export default function MoldSignPage({token,page}:{token:string;page:SignLinkPag
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[fields,setFields]=useState<Record<string,string>>({}),[state,setState]=useState<'open'|'changed'|'gone'>('open'),[done,setDone]=useState<SignLinkDone|null>(null);
  // One identifier per signing (a retry after an answer that never came resends the very same body under it).
  const attempt=useRef<{body:string;id:string}|null>(null);
+ // The request's files as the page shows them (2026-11-10): the PDFs and pictures through the link, the others by name.
+ const documents=useMemo<MoldViewerFile[]>(()=>page?[...page.files.map(file=>({key:file.id,name:file.name,category:file.category,kind:file.kind,href:file.href,link:file.href})),
+  ...(page.others||[]).map((file,index)=>({key:'other:'+index,name:file.name,category:file.category,kind:'other' as const}))]:[],[page]);
  useEffect(()=>{if(page)noteServerTime(page.now);},[page]);
  useEffect(()=>{document.title=en?'Sign the mold request | Yourrest Industries':'توقيع طلب تصنيع قالب | يورست للصناعات';},[en]);
  const head=<header className="sign-head">
@@ -92,15 +98,16 @@ export default function MoldSignPage({token,page}:{token:string;page:SignLinkPag
    {done.skipped.map((item,index)=><p key={index} className="sign-note"><TriangleAlert size={14} aria-hidden="true"/>{moldNotSignedText(item.name,item.reason,say)}</p>)}
   </section></main>;
  return <main className="sign-page" dir={en?'ltr':'rtl'}>{head}
-  <section className="sign-card">
+  <section className="sign-card sign-intro">
    <h1>{say('طلب تصنيع قالب','Mold manufacturing request')}</h1>
-   <p className="sign-lead">{say('راجع الطلب والملفات، وبعدين اكتب اسمك ووقّع.','Review the request and its files, then type your name and sign.')}</p>
+   <p className="sign-lead">{say('راجع عرض السعر والـ PO والتصميم تحت، وبعدين اكتب اسمك ووقّع في الخانة اللي في آخرهم.','Review the quotation, the PO and the design below, then type your name and sign in the box at their end.')}</p>
    {state==='changed'&&<div className="sign-changed" role="alert"><TriangleAlert size={16} aria-hidden="true"/><span>{tr(error||'الطلب اتعدّل، افتح اللينك تاني.')}</span><button type="button" className="btn small subtle" onClick={()=>window.location.reload()}><RotateCcw size={15} aria-hidden="true"/>{say('افتح اللينك تاني','Open the link again')}</button></div>}
+  </section>
+  {/* The documents themselves (2026-11-10), then the box the customer signs in, as their last block. */}
+  <div className="sign-documents"><MoldDocumentViewer files={documents} say={say} credentials="omit"/></div>
+  <section className="sign-card mold-sign-box sign-box" aria-label={say('توقيع العميل','Customer signature')}>
+   <h2 className="mold-sign-box-title"><PenLine size={17} aria-hidden="true"/>{say('توقيع العميل','Customer signature')}</h2>
    <dl className="mold-facts sign-facts">{facts.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
-   <h2>{say('الملفات','Files')}</h2>
-   {!page.files.length?<p className="sign-note">{say('مفيش ملفات في الطلب.','The request has no files.')}</p>
-    :<ul className="sign-files">{page.files.map(file=><li key={file.id}>{file.kind==='image'?<ImageIcon size={18} aria-hidden="true"/>:<FileText size={18} aria-hidden="true"/>}<span className="sign-file-name"><bdi>{file.name}</bdi><small>{say(...moldFileCategoryNames[file.category])} · <span dir="ltr">{size(file.size)}</span></small></span>
-     <a className="btn small subtle" href={file.href} target="_blank" rel="noopener noreferrer"><Eye size={15} aria-hidden="true"/>{say('فتح','Open')}</a></li>)}</ul>}
    <p className="sign-note">{say('اللينك صالح لحد ','The link is valid until ')}<bdi dir="ltr">{stamp(page.expiresAt)}</bdi></p>
    {state==='open'&&<form className="sign-form" onSubmit={event=>void submit(event)} noValidate>
     <label className="mold-field" aria-invalid={!!fields.signer}>{say('اسم اللي بيوقّع عن العميل','Name of the person signing for the customer')}
