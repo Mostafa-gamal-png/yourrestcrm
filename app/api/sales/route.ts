@@ -5,7 +5,7 @@ import {requireSalesWorkspace,requirePages,requireCell} from '@/lib/crm-server';
 import {regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {kpiData} from '@/lib/kpis-server';
 import {targetState} from '@/lib/targets-server';
-import {effectiveSet,quantityAttainment,defaultActivityTargets,type ActivityTargets} from '@/lib/targets';
+import {effectiveSet,quantityAttainment,defaultActivityTargets,hiddenAdminIds,type ActivityTargets} from '@/lib/targets';
 import { z } from 'zod';
 import { context, CRMError, replyError, checkOrigin, accessGuard } from '@/lib/crm-server';
 import { today } from '@/lib/crm';
@@ -26,10 +26,13 @@ export async function GET(req:Request){try{
  const regionalIds=new Set(c.regionalMembers.map(m=>m.id)),factIds=new Set([...salesForPerformance.map(s=>s.repId),...reportRecords.filter(r=>r.kind==='activity').map(r=>r.data.performedBy||r.data.responsibleId),...targets.sets.flatMap(s=>s.teamMemberIds||[])]);
  const members=c.members.filter(m=>allowed.has(m.id)&&(regionalIds.has(m.id)||factIds.has(m.id))).map(m=>regionalIds.has(m.id)?({...m,userId:undefined}):({...m,email:'',branch:'',supervisorId:undefined,target:0,userId:undefined,readOnly:true}));
  // Aggregate by the authenticated recorder, independently of subsequent customer reassignment.
+ // The administrator does not sell: out of the targets tables, cards, KPIs and exports of a month with no target or sale of theirs
+ // in it (lib/targets.ts). Never in a team roll-up either way, so no total moves.
+ const hiddenFromTargets=hiddenAdminIds(targets,members,salesForPerformance),hidden=new Set(hiddenFromTargets);
  const individualPerformance=members.map(m=>repPerformance(m,month,reportRecords,salesForPerformance));
- const performance=members.map(m=>{const activity=effectiveSet<ActivityTargets>(targets,'activity',m.id),quantity=effectiveSet(targets,'sales',m.id),sourceMemberIds=activity?.computed?activity.teamMemberIds||[]:[m.id],salesSourceMemberIds=quantity?.computed?quantity.teamMemberIds||[]:[m.id];return {...repPerformance(m,month,reportRecords,salesForPerformance,sourceMemberIds,salesSourceMemberIds),sourceMemberIds,salesSourceMemberIds,teamRollup:!!quantity?.computed,activityTeamRollup:!!activity?.computed,activityTargetsKnown:!m.readOnly&&!activity?.incomplete,activityTargets:activity?.data||defaultActivityTargets,activitySource:activity?.computed?null:activity?.month||null,attainment:quantityAttainment(m.id,targets,salesForPerformance)};}).filter(p=>['rep','manager','supervisor'].includes(p.member.role)||p.contacts||p.invoices||targets.sets.some(s=>s.scopeId===p.member.id));
+ const performance=members.map(m=>{const activity=effectiveSet<ActivityTargets>(targets,'activity',m.id),quantity=effectiveSet(targets,'sales',m.id),sourceMemberIds=activity?.computed?activity.teamMemberIds||[]:[m.id],salesSourceMemberIds=quantity?.computed?quantity.teamMemberIds||[]:[m.id];return {...repPerformance(m,month,reportRecords,salesForPerformance,sourceMemberIds,salesSourceMemberIds),sourceMemberIds,salesSourceMemberIds,teamRollup:!!quantity?.computed,activityTeamRollup:!!activity?.computed,activityTargetsKnown:!m.readOnly&&!activity?.incomplete,activityTargets:activity?.data||defaultActivityTargets,activitySource:activity?.computed?null:activity?.month||null,attainment:quantityAttainment(m.id,targets,salesForPerformance)};}).filter(p=>!hidden.has(p.member.id)&&(['rep','manager','supervisor'].includes(p.member.role)||p.contacts||p.invoices||targets.sets.some(s=>s.scopeId===p.member.id)));
  const kpis=new URL(req.url).searchParams.get('kpis')==='1'?await kpiData(c,month,performance,targets):null;
- return Response.json({sales,targets,performance,individualPerformance,members,kpis},{headers:{'Cache-Control':'no-store'}});
+ return Response.json({sales,targets,performance,individualPerformance,members,kpis,hiddenFromTargets},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return errorResponse(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>100000)throw new CRMError('حجم الطلب كبير');

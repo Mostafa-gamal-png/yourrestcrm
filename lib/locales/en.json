@@ -1503,5 +1503,10 @@
   "علّم «تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام» قبل الاعتماد.": "Tick «Manufacturing is approved on the payment terms stated at receipt» before approving.",
   "اختار طريقة الدفع المتفق عليها": "Choose the agreed payment terms",
   "حدّث الصفحة واختار طريقة الدفع المتفق عليها": "Refresh the page and choose the agreed payment terms",
-  "طريقة الدفع المتفق عليها للدفع الآجل بس": "Agreed payment terms are for a deferred payment only"
+  "طريقة الدفع المتفق عليها للدفع الآجل بس": "Agreed payment terms are for a deferred payment only",
+  "المحقق": "Achieved",
+  "مستهدف الفرع": "Branch target",
+  "الشهر ده خلص؛ تعديل مستهدفاته لمدير النظام بس": "This month has ended; only the system administrator can change its targets",
+  "سجل التعديلات غير متاح": "The change history is not available",
+  "حدد المستهدف فقط.": "Specify the target only."
 }

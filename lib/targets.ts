@@ -21,6 +21,19 @@ export type TargetState={month:string;sets:TargetSet[];branches:string[]};
 export const targetSaveSchema=z.object({kind:z.enum(['sales','activity','weights']),scopeId:z.string().min(1).max(300),month:monthSchema,version:z.number().int().min(0),inheritedFrom:z.object({month:monthSchema,version:z.number().int().positive()}).nullable(),requestId:z.string().uuid(),data:z.unknown()}).superRefine((d,c)=>{if(d.inheritedFrom&&(d.version!==0||d.inheritedFrom.month>=d.month))c.addIssue({code:'custom',message:'مصدر المستهدف غير صحيح'});});
 export function effectiveSet<T=any>(state:TargetState,kind:TargetKind,scopeId:string):TargetSet<T>|undefined{return state.sets.filter(s=>s.kind===kind&&s.scopeId===scopeId&&s.month<=state.month).sort((a,b)=>b.month.localeCompare(a.month))[0];}
 export function targetSaveBase(state:TargetState,kind:TargetKind,scopeId:string){const source=effectiveSet(state,kind,scopeId);return{kind,scopeId,month:state.month,version:source?.month===state.month?source.version:0,inheritedFrom:source&&source.month<state.month?{month:source.month,version:source.version}:null};}
+/** «Finished months» (the owner, 2026-11-10): a month before the current month in Riyadh keeps its targets as they were; only the
+ *  administrator changes them (and the audit records it). KPI evidence and the evaluation entry are not locked. */
+const riyadhMonthFormat=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'});
+export const riyadhMonth=(now:Date=new Date())=>riyadhMonthFormat.format(now).slice(0,7);
+export const CLOSED_MONTH_MESSAGE='الشهر ده خلص؛ تعديل مستهدفاته لمدير النظام بس';
+export const targetMonthClosed=(month:string,now:Date=new Date())=>month<riyadhMonth(now);
+export const canEditTargetMonth=(role:string,month:string,now:Date=new Date())=>role==='admin'||!targetMonthClosed(month,now);
+/** The administrator does not sell: left out of the targets tables, cards, distribution and exports of a month unless they have a
+ *  target of their own effective that month (products or customers and visits) or a confirmed sale (CRM or ERP) in it, so nothing
+ *  that counts disappears. Never part of a team roll-up (managerTeam follows managers, supervisors and representatives only). */
+export function hiddenAdminIds(state:TargetState,members:Pick<Member,'id'|'role'>[],sales:Pick<Sale,'repId'|'status'|'date'>[]):string[]{
+ return members.filter(m=>m.role==='admin'&&!state.sets.some(s=>s.scopeId===m.id&&s.kind!=='weights'&&!s.computed&&s.month<=state.month)&&!sales.some(s=>s.repId===m.id&&s.status==='confirmed'&&String(s.date).startsWith(state.month))).map(m=>m.id);
+}
 /** Follow explicit reporting links; a manager's visibility does not define their team. */
 export function managerTeam(manager:Member,members:Member[],includeInactive:Set<string>=new Set()){
  if(!['manager','supervisor'].includes(manager.role))return[];

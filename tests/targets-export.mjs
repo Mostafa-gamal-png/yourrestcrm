@@ -66,6 +66,10 @@ for (const name of ['مدير النظام', 'المشرف', 'مندوب معط�
 eq(of('مدير النظام', 'مستهدفات الأصناف').map(row => [row[4], row[5]]), targetProducts.map(() => ['', 'غير محدد']), 'no product target: every product «غير محدد», never a zero');
 eq(of('المشرف', 'مستهدفات الأصناف').every(row => row[5] === 'محسوب من الفريق'), true, 'the supervisor\'s products stay computed (no «غير محدد» rows beside them)');
 eq(rows.some(row => row[1] === 'زميل سابق'), false, 'a colleague read only for history is not listed');
+// 2026-11-10 decision 4: an administrator the page leaves out (no target or sale of theirs this month) is left out of the file too.
+const withoutAdmin = targetsCsvRows(state, members, '2026-11', ar, ['owner']);
+eq(withoutAdmin.some(row => row[1] === 'مدير النظام'), false, 'a hidden administrator has no row in the file');
+eq(withoutAdmin.length, rows.length - targetProducts.length - 3, 'only the administrator\'s default rows go (8 products «غير محدد» and 3 activity defaults)');
 const english = targetsCsvRows(state, members, '2026-11', en);
 eq(english.find(row => row[1] === 'مدير النظام' && row[5] === 'Default targets')?.[2], 'Customer and visit targets', 'English labels');
 eq(english.find(row => row[1] === 'All sales reps')?.[2], 'Performance weights', 'English weights');
@@ -95,5 +99,5 @@ for (const [value, expected] of [[30 / 55 * 100, 54.55], [20 / 30 * 100, 66.67],
 const card = fs.readFileSync('app/targets-performance-summary.tsx', 'utf8');
 eq(card.includes('<TargetGauge value={shownAchievement(row?.achievement)}'), true, 'the summary card passes the two-decimal figure to its product gauge');
 const workspace = fs.readFileSync('app/sales-workspace.tsx', 'utf8');
-eq([workspace.includes('targetsCsvRows(payload.targets,members,month,t)'), workspace.includes('performanceCsvRows(filteredKpiPeople,month,t)')], [true, true], 'the page exports through these functions');
+eq([workspace.includes('targetsCsvRows(payload.targets,members,month,t,hiddenFromTargets)'), workspace.includes('performanceCsvRows(filteredKpiPeople,month,t)')], [true, true], 'the page exports through these functions (the targets file leaves out the administrators the page leaves out)');
 console.log(JSON.stringify({ok: true, checks, syntheticFixtures: true, productionDataUsed: false}));

@@ -407,6 +407,16 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/targets-decisions-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/targets-decisions-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/team-home-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

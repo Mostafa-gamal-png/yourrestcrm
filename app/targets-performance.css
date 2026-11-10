@@ -23,3 +23,46 @@
 .kpi-overview-with-gauge{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:1000px){.kpi-overview-with-gauge{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi-overview-with-gauge>.panel:first-child{grid-column:auto}}
 @media(max-width:420px){.kpi-overview-with-gauge{grid-template-columns:1fr}.kpi-overview-with-gauge>.panel{min-width:0}}
+/* «سجل التعديلات», the finished-month note and the phone cards of «توزيع المستهدفات» (2026-11-10). */
+.target-history-button{display:inline-flex;align-items:center;gap:5px;margin-top:6px;font-size:13px;font-weight:600;color:var(--primary)}
+.target-weights-source{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}
+.target-weights-source .target-history-button{margin-top:0}
+.target-closed-note{margin:0 20px 12px;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--muted);color:var(--foreground)}
+.target-closed-note.is-admin{background:transparent;color:var(--muted-foreground)}
+.target-cards{display:none}
+.target-card{padding:14px;display:grid;gap:12px;min-width:0}
+.target-card-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.target-card-heading h3{font-size:16px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}
+.target-card-heading p{font-size:13px;margin:2px 0 0}
+.target-card-heading .target-team-label{margin-top:2px;text-align:end;flex-shrink:0;max-width:45%}
+.target-card-products{display:grid;gap:8px;margin:0}
+.target-card-product{display:grid;gap:4px;padding:8px 0;border-top:1px solid var(--border)}
+.target-card-product dt{font-weight:600;font-size:14px;overflow-wrap:anywhere}
+.target-card-product dt small{font-weight:400;color:var(--muted-foreground)}
+.target-card-product dd{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0}
+.target-card-product dd>span{display:grid;gap:2px;min-width:0}
+.target-card-product dd small{font-size:12px;color:var(--muted-foreground)}
+.target-card-product dd b{font-size:15px;font-weight:700;overflow-wrap:anywhere}
+.target-card-activity h4{font-size:14px;font-weight:700;margin-bottom:6px}
+.target-card-activity h4 small{font-weight:400;display:block}
+.target-card-activity dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0}
+.target-card-activity dt{font-size:12px;color:var(--muted-foreground)}
+.target-card-activity dd{margin:0;font-weight:700}
+.target-card-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.target-card-actions .target-history-button{margin-top:0}
+.target-history-dialog{max-height:min(86vh,760px);overflow-y:auto}
+.target-history-list{display:grid;gap:12px;margin:12px 0;padding:0;list-style:none}
+.target-history-entry{border:1px solid var(--border);border-radius:8px;padding:12px;display:grid;gap:8px;min-width:0}
+.target-history-entry header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px}
+.target-history-entry time{font-size:13px;color:var(--muted-foreground)}
+.target-history-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0;font-size:13px}
+.target-history-closed{background:var(--muted)}
+.target-history-changes{display:grid;gap:4px;margin:0;padding:0;list-style:none;font-size:14px}
+.target-history-changes li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 12px}
+.target-history-diff{font-weight:600}
+.target-history-unavailable{margin:0;font-size:13px}
+@media (max-width:480px){
+ .targets-workspace [data-slot=table-container]:has(>.quantity-targets-table),.targets-workspace .target-activity-panel{display:none}
+ .target-cards{display:grid;gap:12px;padding:0 12px 12px}
+}
+.target-card bdi,.target-history-entry bdi{white-space:nowrap}

@@ -2,7 +2,8 @@ import {regionScope} from './regions';
 import {kpiPeriod} from './kpis';
 import {context,CRMError,accessGuard} from './crm-server';
 import {salesReadMemberIds,salesReportingRecords,type Sale} from './sales';
-import {type TargetKind,type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets} from './targets';
+import {type TargetKind,type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets,targetMonthClosed,CLOSED_MONTH_MESSAGE} from './targets';
+import {TARGET_HISTORY_PAGE,TARGET_HISTORY_MAX_OFFSET,targetHistoryEntry,type TargetHistory} from './targets-history';
 import {readErpSales} from './erp-sales-server';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function targetState(c:Context,month:string,sales:Sale[]=[]):Promise<TargetState>{
@@ -30,9 +31,12 @@ export async function saveTargetSet(c:Context,body:unknown){
   else if(c.members.some(m=>m.id===p.scopeId&&(m.role==='manager'||p.kind==='sales'&&m.role==='supervisor')))throw new CRMError('مستهدف المبيعات للمدير والمشرف يُحسب تلقائيًا من إجمالي مستهدفات الفريق.');
  }
  const canonical=JSON.stringify({...p,data,requestId:undefined}),mutation='target-set:'+c.me.id+':'+p.requestId;
- const replay=async()=>{const row=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(mutation).first<{detail:string}>();if(!row)return false;if(row.detail!==canonical)throw new CRMError('طلب المستهدف محفوظ ببيانات مختلفة. حدّث الصفحة.',409);return true;};
+ // The audit row also keeps what the save replaced («before») and whether the month had ended; a replay compares the request alone.
+ const replay=async()=>{const row=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(mutation).first<{detail:string}>();if(!row)return false;let saved='';try{const {before:_before,closedMonth:_closed,...request}=JSON.parse(row.detail) as Record<string,unknown>;void _before;void _closed;saved=JSON.stringify(request);}catch{saved=row.detail;}if(saved!==canonical)throw new CRMError('طلب المستهدف محفوظ ببيانات مختلفة. حدّث الصفحة.',409);return true;};
  if(await replay())return{ok:true};
- const old=await c.db.prepare('SELECT version FROM crm_target_sets WHERE kind=? AND scope_id=? AND month=?').bind(p.kind,p.scopeId,p.month).first<{version:number}>();
+ // A finished month (before this month in Riyadh) keeps its targets; only the administrator changes them, and the audit says so.
+ const closed=targetMonthClosed(p.month);if(closed&&c.me.role!=='admin')throw new CRMError(CLOSED_MONTH_MESSAGE,403);
+ const old=await c.db.prepare('SELECT version,data FROM crm_target_sets WHERE kind=? AND scope_id=? AND month=?').bind(p.kind,p.scopeId,p.month).first<{version:number;data:string}>();
  const conflict=()=>new CRMError('تغيّرت المستهدفات أو مصدرها. حدّث الصفحة وأعد المحاولة.',409);
  if((old?.version||0)!==p.version){if(await replay())return{ok:true};throw conflict();}
  const inherited=p.inheritedFrom,sourceGuard=inherited?'EXISTS(SELECT 1 FROM crm_target_sets WHERE kind=? AND scope_id=? AND month=? AND version=?) AND NOT EXISTS(SELECT 1 FROM crm_target_sets WHERE kind=? AND scope_id=? AND month>? AND month<?)':'NOT EXISTS(SELECT 1 FROM crm_target_sets WHERE kind=? AND scope_id=? AND month<?)';
@@ -42,9 +46,26 @@ export async function saveTargetSet(c:Context,body:unknown){
  const scopeGate=memberScope?(p.kind==='sales'?" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role IN ('admin','rep') AND region_scope=? AND role=? AND COALESCE(supervisor_id,'')=?)":" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role IN ('admin','supervisor','rep') AND region_scope=? AND role=? AND COALESCE(supervisor_id,'')=?)"):'';
  const member=c.members.find(m=>m.id===p.scopeId);const gateArgs=memberScope?[...permission.args,p.scopeId,regionScope(member!),member!.role,member!.supervisorId||'']:permission.args;
  const now=new Date().toISOString(),json=JSON.stringify(data);
+ // What this save replaces: this month's set (read at the version the write is gated on), the set carried from an earlier month
+ // (the version the insert is gated on), or nothing. A write that loses either gate writes no audit row.
+ const carried=!old&&inherited?await c.db.prepare('SELECT data FROM crm_target_sets WHERE kind=? AND scope_id=? AND month=? AND version=?').bind(p.kind,p.scopeId,inherited.month,inherited.version).first<{data:string}>():null;
+ const before=old?{month:p.month,data:JSON.parse(old.data)}:carried&&inherited?{month:inherited.month,data:JSON.parse(carried.data)}:{month:null,data:null};
+ const detail=JSON.stringify({...JSON.parse(canonical),before,...(closed?{closedMonth:true}:{})});
  const write=old?c.db.prepare('UPDATE crm_target_sets SET data=?,version=version+1,mutation_id=?,updated_by=?,updated_at=? WHERE kind=? AND scope_id=? AND month=? AND version=? AND '+actorGate+scopeGate).bind(json,mutation,c.me.id,now,p.kind,p.scopeId,p.month,p.version,...gateArgs):c.db.prepare('INSERT INTO crm_target_sets(kind,scope_id,month,data,version,mutation_id,updated_by,updated_at) SELECT ?,?,?,?,1,?,?,? WHERE '+sourceGuard+' AND '+actorGate+scopeGate+' ON CONFLICT(kind,scope_id,month) DO NOTHING').bind(p.kind,p.scopeId,p.month,json,mutation,c.me.id,now,...sourceArgs,...gateArgs);
- const audit=c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE changes()=1').bind(mutation,'target-'+p.scopeId,c.me.name,p.kind==='weights'?'تعديل أوزان الأصناف':p.kind==='activity'?'تعديل مستهدفات العملاء والزيارات':'تعديل مستهدفات الأصناف',canonical,now);
+ const audit=c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE changes()=1').bind(mutation,'target-'+p.scopeId,c.me.name,p.kind==='weights'?'تعديل أوزان الأصناف':p.kind==='activity'?'تعديل مستهدفات العملاء والزيارات':'تعديل مستهدفات الأصناف',detail,now);
  let result;try{result=await c.db.batch([write,audit]);}catch(e){if(await replay())return{ok:true};throw e;}
  if(result[0].meta.changes!==1){if(await replay())return{ok:true};throw conflict();}
  return{ok:true};
+}
+
+/** «سجل التعديلات» of one scope (a person, «branch:<name>» or the company weights), newest first, a page at a time. The same read
+ *  scope as the targets themselves (targetState): a person this account reads the targets of, a branch for a manager over every
+ *  region, the weights for anyone on the page. Anything else is «not available» (404), never an empty list that reveals nothing. */
+export async function targetHistory(c:Context,scopeId:string,offset:number):Promise<TargetHistory>{
+ const roleAllowed=salesReadMemberIds(c.members,c.me,true),global=regionScope(c.me)==='all',manage=['admin','manager'].includes(c.me.role);
+ const visible=scopeId==='company'||(scopeId.startsWith('branch:')?manage&&global&&scopeId.length>7:c.regionalMembers.some(m=>m.id===scopeId&&roleAllowed.has(m.id)));
+ if(!visible)throw new CRMError('سجل التعديلات غير متاح',404);
+ const start=Math.max(0,Math.min(TARGET_HISTORY_MAX_OFFSET,Math.trunc(offset)||0));
+ const rows=(await c.db.prepare("SELECT id,actor,detail,created_at FROM crm_audit WHERE record_id=? AND id LIKE 'target-set:%' ORDER BY created_at DESC,rowid DESC LIMIT ? OFFSET ?").bind('target-'+scopeId,TARGET_HISTORY_PAGE+1,start).all<{id:string;actor:string;detail:string;created_at:string}>()).results;
+ return{scopeId,offset:start,more:rows.length>TARGET_HISTORY_PAGE,entries:rows.slice(0,TARGET_HISTORY_PAGE).map(targetHistoryEntry).filter(entry=>entry!==null)};
 }
