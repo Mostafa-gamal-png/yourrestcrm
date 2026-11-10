@@ -76,7 +76,7 @@ try {
     await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
     await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
-    await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).locator('label', {hasText: 'نقدي'}).click();
+    await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: 'نقدي'}).click();
     const picker = dialog.locator('.mold-design-picker[data-category="design"]');
     await picker.locator('input[type=file]').setInputFiles(file);
     await picker.locator('.mold-design-file[data-state="ready"]').first().waitFor();

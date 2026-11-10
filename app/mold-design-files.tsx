@@ -88,8 +88,9 @@ export async function checkDesignFiles(files:File[],room:number,category:MoldFil
 /** How many of a category's places a request's files take, as the server counts them (moldDesignCount): every file of it shown except
  *  those refused for good, and its uploads still on their way or retryable. */
 export function designUsed(view:Pick<MoldRequestView,'designFiles'>,uploads:DesignUpload[],category:MoldFileCategory='design'){
+ // The signed copies (2026-11-10) take none of the originals' places.
  const shown=new Set(view.designFiles.map(file=>file.crmFileId)),of=(item:{category?:MoldFileCategory})=>(item.category||'design')===category;
- return view.designFiles.filter(file=>of(file)&&file.state!=='rejected'&&file.state!=='locked').length+uploads.filter(upload=>of(upload)&&!shown.has(crmFileIdOf(upload.key))&&!(upload.phase==='failed'&&upload.final)).length;
+ return view.designFiles.filter(file=>of(file)&&!file.signedCopy&&!String(file.crmFileId||'').startsWith('mdc-')&&file.state!=='rejected'&&file.state!=='locked').length+uploads.filter(upload=>of(upload)&&!shown.has(crmFileIdOf(upload.key))&&!(upload.phase==='failed'&&upload.final)).length;
 }
 
 type Listener=(view:MoldRequestView)=>void;
@@ -327,7 +328,8 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
   {!listed.length&&!pending.length&&<p className="mold-design-empty">{emptyText(say,category)}</p>}
   {(!!listed.length||!!pending.length)&&<ul className="mold-design-list">
    {listed.map(file=>{
-    const reason=designFileDetail(file,say),mayReach=warn&&['sent','waiting'].includes(file.state);
+    // A signed copy production refused for its count (2026-11-10): said plainly; the request went on without it.
+    const reason=file.signedCopy&&file.state==='rejected'&&file.error?.reason==='too_many_files'?say(...MOLD_SIGN_LINK_TEXT.copyRefused):designFileDetail(file,say),mayReach=warn&&['sent','waiting'].includes(file.state);
     return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source} data-signature={file.signature||undefined} data-signed-copy={file.signedCopy||undefined}>
      <span className="mold-design-icon">{file.signature||file.signedCopy?<PenLine size={18} aria-hidden="true"/>:<KindIcon kind={file.kind}/>}</span>
      <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>

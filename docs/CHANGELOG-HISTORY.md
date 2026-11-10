@@ -4,6 +4,24 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mold requests: finance returns a request to sales, and the CRM corrects it (2026-11-10, no migration)
+
+- **Asked.** The products application's update of 2026-11-10 (schema 17; the message `docs/MOLD-PRODUCTS-MESSAGE-2026-11-10-AR.md`, their reply in the contract's section «رد فريق المنتجات»): finance sends a request waiting for it back to the sales manager with a reason; the CRM corrects it through the same `requests` route.
+- **Read** (`portable/mold-rules.mjs` `moldReturned`, in the status object and the pending item only when the answer carries the key): `returned` `{by: 'finance', name, reason, at, correctedAt}` or null; a request is returned while production says so and nobody cancelled it (`moldReturnedNow`). Audited «رجّعته المالية» (`mold-request:returned`) once for each return, when first seen.
+- **Shown**: the card «رجّعتها المالية: <السبب>», the list's filter «رجّعتها المالية» with its count, the sheet and «طلبات بانتظار اعتمادي» «رجّعته المالية (<name>): <reason> · <time>» with what comes next for the reader, and «اتبعت التعديل للإنتاج» once corrected.
+- **Corrected** by its requester only (`can.correct`, «تعديل وإعادة الإرسال»): the same form and checks; a change of what the customer signed needs a new signature, on the device or from the customer's link (the correction is held until the customer signs; `customer_signature` no longer needs a never-sent request, in TS and SQL); new signed copies; sent with the original `requestedAt` and the terms; saved only while the stored status still says returned and not cancelled; audited «تعديل طلب القالب بعد إرجاع المالية وإعادة إرساله». Production answers `corrected: true`, the same body again `corrected: false`; a request not returned, or returned and cancelled, is refused as before (409).
+- **Stand-in** (`scripts/lib/products-mock.mjs`): `nov10` / `setNov10` (the application of today, or after its update exactly as the reply says), `financeReturn`, and each call's answer kept (`call.answer`).
+- **Tests.** `tests/mold-nov10.mjs`, `tests/mold-nov10-http.mjs`, `tests/mold-nov10-browser.mjs`.
+
+## Mold requests: a deferred payment's agreed terms, and the sales manager's acknowledgement (2026-11-10, no migration)
+
+- **Asked.** The owner: a deferred request names the agreed terms (three: an advance, the rest before shipping / after shipping / on a credit limit), and the sales manager's approval comes with «تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام».
+- **Terms**: `paymentTerms` in the create and update bodies, required with deferred (none at all: a page loaded before, «حدّث الصفحة واختار طريقة الدفع المتفق عليها»), refused with cash, stored in `data.paymentTerms`; part of what the customer signs (the signing summary, the link's page); on the card, the sheet and the waiting list.
+- **Sent** right after `payment` only once the CRM has seen `paymentTerms` and `returned` in a status object or a pending item (`crm_settings` `mold-nov10`, learned once); before that, kept in the CRM and the audit. Whether a request's sends carry them is decided at the first send that may reach production and kept (`data.termsSent`), so every resend is the same bytes; a request refused at production's door before takes them on its next send.
+- **Acknowledgement**: a box before «اعتماد» on the sheet and the list (the button waits for it); the server requires `termsAccepted: true` (none: 409, refresh; false: 400 by its field); audited with its words; sent to production with the approval once the update is known; `approvals.sales.termsAccepted` read back («وافق على شروط الدفع»).
+- **Files**: production's limits are 20/10/10 now; the CRM keeps 10/5/5 for the originals, and a signed copy fits within production's limits (20/10/10 once known); a copy production refuses for its count stops nothing («ما اتبعتتش: الإنتاج رفض عدد الملفات»).
+- **Tests.** `tests/mold-nov10.mjs`, `tests/mold-nov10-http.mjs`, `tests/mold-nov10-browser.mjs`; the existing mold tests send the acknowledgement and the terms as this release's pages do (`withSignature`, the browser tests tick the box).
+
 ## Mold requests: the customer's signature inside the PDFs, and a link the customer signs from (2026-11-10, no migration)
 
 - **Asked.** The owner: «عايز توقيع العميل فى طلبات القوالب داخل pdf التصميم او عرض السعر او po» and «امكانية ارسال لينك بالpdf طلب القالب للتوقيع عليه»; chose every PDF (design, quotation, PO), the last page at the bottom with the signer's name and the date, a signed copy NEXT TO the original, and a request sent by link waiting in the CRM «بانتظار توقيع العميل» until the customer signs, then sent by itself.

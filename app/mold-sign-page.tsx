@@ -8,7 +8,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {CheckCircle2,Download,Eraser,Eye,FileText,ImageIcon,Loader2,PenLine,RotateCcw,TriangleAlert} from 'lucide-react';
 import {useLanguage} from '@/lib/i18n';
-import {MOLD_CORES,MOLD_HALF_BLOCKS,MOLD_MODELS,moldFileCategoryNames,moldNotSignedText,moldPaymentNames} from '@/lib/mold-requests';
+import {MOLD_CORES,MOLD_HALF_BLOCKS,MOLD_MODELS,MOLD_PAYMENT_TERMS_TITLE,moldFileCategoryNames,moldNotSignedText,moldPaymentNames,moldPaymentTermsNames} from '@/lib/mold-requests';
 import {MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
 import type {SignLinkDone,SignLinkPage} from '@/lib/mold-sign-server';
 import {SignaturePad,noteServerTime,serverNow,signatureBlockPng,signatureBox,signaturePng,type SignatureStrokes} from './mold-signature';
@@ -54,6 +54,8 @@ export default function MoldSignPage({token,page}:{token:string;page:SignLinkPag
   [say('العلب','Core'),choose(MOLD_CORES,s.core)],[say('الرجاجات','Vibrators'),String(s.vibrators??'—')],[say('الموديل','Model'),choose(MOLD_MODELS,s.model)],[say('بلوكة النص','Half block'),choose(MOLD_HALF_BLOCKS,s.halfBlock)],
   [say('عرض القالب (مم)','Mold width (mm)'),String(s.moldWidth??'—')],[say('مقاس الجلب','Gelba size'),String(s.gelbaSize??'—')],
   ...(s.payment?[[say('الدفع','Payment'),say(...moldPaymentNames[s.payment])] as [string,React.ReactNode]]:[]),
+  // How a deferred payment is paid (2026-11-10): the customer signs the terms too.
+  ...(s.paymentTerms?[[say(...MOLD_PAYMENT_TERMS_TITLE),say(...moldPaymentTermsNames[s.paymentTerms])] as [string,React.ReactNode]]:[]),
   ...(s.quoteNo?[[say('رقم عرض السعر','Quotation no.'),<bdi dir="ltr" key="q">{s.quoteNo}</bdi>] as [string,React.ReactNode]]:[]),...(s.poNo?[[say('رقم الـ PO','PO no.'),<bdi dir="ltr" key="p">{s.poNo}</bdi>] as [string,React.ReactNode]]:[])];
  const submit=async(event:React.FormEvent)=>{
   event.preventDefault();

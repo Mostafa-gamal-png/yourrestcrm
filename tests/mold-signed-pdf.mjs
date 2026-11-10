@@ -147,8 +147,10 @@ function ok(value, message) { assert.ok(value, message); checks++; }
   const file = (fileId, change = {}) => ({id: fileId, requestId: 'mr-1', memberId: 'rep', name: fileId + '.pdf', kind: 'pdf', contentType: 'application/pdf', size: 10, sha256: 'x', objectKey: 'k', createdAt: at, deletedAt: null, outbox: 'send', attempts: 0, firstFailedAt: null, nextAttemptAt: at, lastAttemptAt: null, lastError: null, remoteFileId: null, sentAt: null, version: 1, category: 'design', ...change});
   const design = file(original);
   check([lib.moldHeldFor(row({data: {...data, awaitsSignature: true}}), []), lib.moldHeldFor(row({data: {...data, awaitsSignature: true}}), [design]), lib.moldHeldFor(row({data: {...data, awaitsSignature: true, fileRequired: true}}), [design]),
-    lib.moldHeldFor(row({data: {...data, awaitsSignature: true}, accepted: data}), [design]), lib.moldHeldFor(row({data}), [design])],
-    ['design_file', 'customer_signature', 'quote_file', null, null], 'customer_signature after the files\' reasons; nothing for a request production may hold, or one that does not wait');
+    lib.moldHeldFor(row({data: {...data, awaitsSignature: true}, accepted: data}), [design]), lib.moldHeldFor(row({data: {...data, awaitsSignature: true, fileRequired: true}, accepted: data}), []),
+    lib.moldHeldFor(row({data}), [design]), lib.moldHeldFor(row({data: {...data, awaitsSignature: true}, outbox: null}), [design])],
+    ['design_file', 'customer_signature', 'quote_file', 'customer_signature', 'customer_signature', null, null],
+    'customer_signature after the files\' reasons; since finance\'s return (2026-11-10) a correction production holds waits for it too (the files\' reasons are a new request\'s only); nothing for one that does not wait or is not to be sent');
   const signed = {...data, signature: {signer: 'خالد', signedAt: at, fileId: signatureId, via: 'link', block: {key: 'k', sha256: 's', width: 960, height: 300, at}}};
   const made = file(id, {name: 'x - موقّع.pdf'}), skippedId = lib.moldSignedCopyId(signatureId, 'mdf-cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee');
   const skipped = file(skippedId, {name: 'y - موقّع.pdf', size: 0, objectKey: null, deletedAt: at, outbox: null, nextAttemptAt: null, lastError: {code: 'not_signed', reason: 'protected', http: 0, at}});

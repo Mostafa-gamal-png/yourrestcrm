@@ -29,7 +29,7 @@ const SEND_WAIT_MS=15_000;
 const sha256=async(bytes:Uint8Array<ArrayBuffer>)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(n=>n.toString(16).padStart(2,'0')).join('');
 /** The CRM's live files of a request and a category in SQL, as moldDesignCount counts them: not deleted (or whose deletion has not
  *  reached production), not refused for good. */
-const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND category=? AND (deleted_at IS NULL OR outbox='delete') AND NOT ${MOLD_DESIGN_REFUSED_SQL}`;
+const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND category=? AND (deleted_at IS NULL OR outbox='delete') AND NOT ${MOLD_DESIGN_REFUSED_SQL} AND id NOT LIKE 'mdc-%'`;
 /** A design file (the form sends no category, as before), the quotation's or the PO's. */
 const categoryInput=z.enum(['design','quote','po']);
 /** When a category's places are taken, in the representative's words. */
@@ -73,7 +73,8 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
  if(row.memberId!==c.me.id)throw new CRMError('إرفاق ملفات التصميم لمن طلب القالب',403);
  if(!moldEditable(row))throw new CRMError(row.cancelledAt?'الطلب ملغى':'اكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد تغيير ملفات الطلب ممكنًا',409);
- const before=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),count=moldDesignCount(row,before,category),full=FULL[category];
+ // The originals' places (2026-11-10: the signed copies leave them free; production's own limits are larger since its update).
+ const before=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),count=moldDesignCount(row,before,category,{originals:true}),full=FULL[category];
  // A new request kept for its quotation's or PO's file (2026-11-05) or its design file (2026-11-08): this one releases it once saved
  // when, with it, nothing is missing any more (a quotation's file of a request with no design file keeps it, for its design file). The
  // page uploads one file at a time; two kinds saved at once elsewhere leave the request due, and the next timetable check sends it.
@@ -97,7 +98,7 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
   const again=result instanceof Response?result:await replay();
   await env.FILES.delete(objectKey).catch(()=>{});objectKey='';
   if(again)return again;
-  const fresh=await loadMoldRequest(c.db,row.id),places=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),category);
+  const fresh=await loadMoldRequest(c.db,row.id),places=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),category,{originals:true});
   throw new CRMError(places&&places.crm+places.production>=places.max?full:'تغيّرت حالة الطلب أو صلاحياتك أثناء الحفظ. حدّث الصفحة.',409);
  }
  objectKey='';
