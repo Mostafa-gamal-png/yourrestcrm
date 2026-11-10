@@ -204,7 +204,7 @@ try {
   eq(result.status, 0, 'both kinds answered: exit 0. ' + result.stdout + result.stderr);
   const report = result.report;
   eq([report.readOnly, report.link, report.ok], [true, 'configured', true], 'read only, configured, answered');
-  eq(report.crm, {requests: 209, accepted: 206, cancelled: 1, waitingToSend: 1, toSend: 1, toCancel: 0, heldForQuoteFile: 1, heldForDesignFile: 1, acceptedWithoutStatus: 1, newestStatusPullAt: newestPull, acceptedWithInvalidId: 0}, 'the CRM\'s counts (the requests kept for a file, by the file: 2026-11-08), and its newest status pull by time');
+  eq(report.crm, {requests: 209, accepted: 206, cancelled: 1, waitingToSend: 1, toSend: 1, toCancel: 0, heldForQuoteFile: 1, heldForDesignFile: 1, heldForSignature: 0, acceptedWithoutStatus: 1, newestStatusPullAt: newestPull, acceptedWithInvalidId: 0}, 'the CRM\'s counts (the requests kept for a file, by the file: 2026-11-08), and its newest status pull by time');
   eq(report.calls.map(call => [call.route, call.ok, call.http, call.code, call.ids ?? null]), [['pending', true, 200, null, null], ['status', true, 200, null, 200], ['status', true, 200, null, 6]], 'one pending call, status in batches of 200');
   ok(report.calls.every(call => Number.isInteger(call.ms) && call.ms >= 0 && call.ms < 10_000), 'each call timed');
   const waiting = [ID.own, ID.unsent, ID.elsewhere].map(id => mock.row(id).waitingSince), manual = [...mock.state.byOrder.values()].find(item => item.source === 'manual');

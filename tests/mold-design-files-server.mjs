@@ -680,14 +680,15 @@ try{
    designStopped:{category:'design',next_attempt_at:null,last_attempt_at:t0,last_error:{code:'network',http:0,at:t1}},designSent:{category:'design',outbox:null,sent_at:t1},quote:{category:'quote'},poRefused:{category:'po',next_attempt_at:null,last_attempt_at:t0,last_error:{code:'x',http:400,at:t1,final:true}},quoteDeleted:{category:'quote',deleted_at:t0,outbox:null}};
   let seed=20261108;const random=()=>(seed=(seed*1103515245+12345)%2147483648)/2147483648;
   const cases=[],tally={};
-  for(let n=0;n<400;n++){
-   const marks={fileRequired:random()<0.5,designRequired:random()<0.7,signed:random()<0.5},state=Object.keys(states)[Math.floor(random()*Object.keys(states).length)];
+  for(let n=0;n<500;n++){
+   // 2026-11-10: a request waiting for the customer's signature from a link (customer_signature, after the files' reasons).
+   const marks={fileRequired:random()<0.5,designRequired:random()<0.7,signed:random()<0.5,awaits:random()<0.5},state=Object.keys(states)[Math.floor(random()*Object.keys(states).length)];
    const files=Object.keys(kinds).filter(()=>random()<0.25);
    cases.push({marks,state,files});
   }
   for(const [n,{marks,state,files}] of cases.entries()){
    const id='mr-'+randomUUID(),change=states[state],signature=marks.signed?{signer:'خالد',signedAt:t0,fileId:'mds-gen-'+n}:null;
-   const data={...base,...(marks.fileRequired?{fileRequired:true}:{}),...(marks.designRequired?{designRequired:true}:{}),...(signature?{signature}:{})};
+   const data={...base,...(marks.fileRequired?{fileRequired:true}:{}),...(marks.designRequired?{designRequired:true}:{}),...(signature?{signature}:{}),...(marks.awaits?{awaitsSignature:true}:{})};
    sql.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,accepted,outbox,next_attempt_at,last_attempt_at,last_error,remote,created_by,created_at,updated_at,version) VALUES(?,'rep','factory',?,?,?,?,?,?,?,'rep',?,?,1)")
     .run(id,JSON.stringify(data),change.accepted?JSON.stringify(data):null,'outbox' in change?change.outbox:'send',t0,change.last_attempt_at||null,change.last_error?JSON.stringify(change.last_error):null,change.remote?JSON.stringify(change.remote):null,t0,t0);
    for(const kind of files){
@@ -701,7 +702,7 @@ try{
    tally[String(fromTs)]=(tally[String(fromTs)]||0)+1;
    sql.prepare('DELETE FROM crm_mold_requests WHERE id=?').run(id);
   }
-  check([Object.keys(tally).sort(),Object.values(tally).every(count=>count>=20)],[['design_file','null','quote_file'],true],'the SQL and the TypeScript rule agree on '+cases.length+' generated cases, each reason well represented');
+  check([Object.keys(tally).sort(),Object.values(tally).every(count=>count>=20)],[['customer_signature','design_file','null','quote_file'],true],'the SQL and the TypeScript rule agree on '+cases.length+' generated cases, each reason well represented');
  }
 
  // ---- 2026-11-05 (the second update's review): a request's files reach production in the order they were attached, whichever sender

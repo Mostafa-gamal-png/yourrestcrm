@@ -18,6 +18,9 @@
 // application reads crmNumber as optional and would store the request without its ERP code, silently. Until then, and should production
 // still refuse it for its missing Yourrest number, it waits in the CRM (error free_customer, never final), tried again every 6 hours, on
 // its requester's resend, and at once when the update is learned.
+// A request whose requester chose to send the customer a link to sign from (2026-11-10: data.awaitsSignature) is kept the same way as one
+// waiting for a file, until the customer signs (MOLD_HELD_FOR_SQL 'customer_signature', after the files' reasons); the signing (from the
+// link, or on the device from the request's sheet) sends it at once (lib/mold-sign-server.ts).
 import {env} from 'cloudflare:workers';
 import {database} from './crm-server';
 import {regionScope} from './regions';
@@ -105,14 +108,17 @@ const QUOTE_PO_SEND_SQL="(outbox IS 'send' AND (IFNULL(json_extract(data,'$.quot
  *  certainly never reached production (MOLD_NEVER_SENT_SQL, below), then 'quote_file': asked for under the rule of the quotation's or
  *  PO's file (2026-11-05) and none of its files a quotation's or PO's that is not deleted nor refused for good (MOLD_DESIGN_REFUSED_SQL,
  *  over the file); else 'design_file': asked for under the rule of the design file (2026-11-08) and none of its files a design file that
- *  is not deleted, not refused for good, and not the customer's signature (the file data.signature.fileId names). */
+ *  is not deleted, not refused for good, and not the customer's signature (the file data.signature.fileId names); else (2026-11-10)
+ *  'customer_signature': the requester chose the signing link and the customer has not signed yet (data.awaitsSignature). The same order
+ *  as moldHeldFor: the quotation's file, the design file, then the customer's signature. */
 export const MOLD_HELD_FOR_SQL=()=>`(CASE WHEN outbox IS 'send' AND ${MOLD_NEVER_SENT_SQL} THEN CASE
  WHEN json_extract(data,'$.fileRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files q WHERE q.request_id=crm_mold_requests.id AND q.category IN ('quote','po') AND q.deleted_at IS NULL
   AND NOT (q.outbox IS 'send' AND q.sent_at IS NULL AND q.next_attempt_at IS NULL AND json_extract(q.last_error,'$.final') IS 1)) THEN 'quote_file'
  WHEN json_extract(data,'$.designRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files d WHERE d.request_id=crm_mold_requests.id AND d.category NOT IN ('quote','po') AND d.deleted_at IS NULL
   AND d.id IS NOT json_extract(crm_mold_requests.data,'$.signature.fileId') AND NOT (d.outbox IS 'send' AND d.sent_at IS NULL AND d.next_attempt_at IS NULL AND json_extract(d.last_error,'$.final') IS 1)) THEN 'design_file'
+ WHEN json_extract(data,'$.awaitsSignature') IS 1 THEN 'customer_signature'
  END END)`;
-/** Whether a request is kept in the CRM for a file (moldHeldFor in TypeScript, either reason). Never NULL. */
+/** Whether a request is kept in the CRM for a file, or for the customer's signature (moldHeldFor in TypeScript, any reason). Never NULL. */
 export const MOLD_AWAITS_FILE_SQL=()=>`(${MOLD_HELD_FOR_SQL()} IS NOT NULL)`;
 export const requestedNow=(now:string)=>riyadhIso(now);
 
@@ -451,7 +457,9 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
  * that cannot go now (the request not accepted yet, another two in flight) waits for the timetable as usual. Answers the request's
  * outcome and each file's sent here.
  */
-export async function releaseMoldRequest(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch,files,waitMs=12_000}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;files?:R2Bucket;waitMs?:number}={}){
+/** onRequest (2026-11-10): told the request's own outcome as soon as it is known, before its files go (a caller that answers while the files
+ *  are still on their way). */
+export async function releaseMoldRequest(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch,files,waitMs=12_000,onRequest}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;files?:R2Bucket;waitMs?:number;onRequest?:(outcome:SendOutcome)=>void}={}){
  const extra={...(fetch?{fetch}:{})},until=Date.now()+waitMs,sent=new Map<string,DesignOutcome>();
  let outcome=await sendMoldRequest(db,id,{link,now,...extra});
  // The file saved just now makes the request due for any sender: the timetable or a page's own check may have claimed it first. Its
@@ -466,6 +474,7 @@ export async function releaseMoldRequest(db:D1Database,id:string,{link=productsL
   outcome=await sendMoldRequest(db,id,{link,now,...extra});
   if(outcome.kind==='busy')break;
  }
+ onRequest?.(outcome);
  if(outcome.kind!=='ok')return {outcome,files:sent};
  const due=(await db.prepare("SELECT id FROM crm_mold_design_files WHERE request_id=? AND outbox='send' AND deleted_at IS NULL AND next_attempt_at IS NOT NULL AND next_attempt_at<=? ORDER BY created_at,id").bind(id,now()).all<{id:string}>()).results;
  for(const file of due){

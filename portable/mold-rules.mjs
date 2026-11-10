@@ -8,6 +8,8 @@
 // approved); the numbers are no longer asked for nor sent with a new request (a request stored with one still sends it, byte for byte).
 // Since 2026-11-09: a customer not in the CRM (customer.crmNumber null with customer.erpCode, moldRequestBody; moldCustomerName,
 // moldErpCode), and how the CRM learns that production takes one (moldFreeCustomersAnswered: customer.erpCode in a status or pending item).
+// Since 2026-11-10: the customer's signature inside the request's PDFs (moldSignatureBlockCheck, moldSignedCopyName: a signed copy is one
+// more file of its original's category, production unchanged) and the link the customer signs from (MOLD_SIGN_TOKEN, MOLD_SIGN_LINK_DAYS).
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -502,6 +504,71 @@ export function moldSignatureCheck(signer, bytes) {
   const file = moldSignatureName(name), checked = moldDesignFileCheck(file, bytes);
   if (!checked.ok) return {ok: false, field: 'signature', reason: checked.reason};
   return {ok: true, signer: name, name: file, width: size.width, height: size.height, contentType: checked.contentType};
+}
+
+// ---- The customer's signature inside the request's PDFs, and the link the customer signs from (the owner, 2026-11-10)
+// Production's side does not change: a signed copy is one more file of the original's category, sent with design-files like any other.
+/** The block stamped at the bottom of the last page of each signed PDF: a PNG the signing browser composes (the drawing, «توقيع العميل:
+ *  <name>» and the moment in Riyadh; the canvas shapes the Arabic), at most 384 KiB, 600 to 1600 pixels wide, 150 to 800 high, at least
+ *  1.5 times as wide as high. The JSON body carries it as base64 (MOLD_SIGNATURE_BLOCK_BASE64_MAX). */
+export const MOLD_SIGNATURE_BLOCK_MAX_BYTES = 384 * 1024;
+export const MOLD_SIGNATURE_BLOCK_BASE64_MAX = Math.ceil(MOLD_SIGNATURE_BLOCK_MAX_BYTES / 3) * 4;
+export const MOLD_SIGNATURE_BLOCK_WIDTH = Object.freeze([600, 1600]), MOLD_SIGNATURE_BLOCK_HEIGHT = Object.freeze([150, 800]);
+/** How far the moment printed in the block (blockAt) may be from the server's clock: the page sets its clock by the server's. */
+export const MOLD_SIGNATURE_BLOCK_SKEW_MS = 10 * 60_000;
+/** At most this many PDFs' SHA-256 the customer saw on the device before they were uploaded (seen): 10 design, 5 quotation, 5 PO. */
+export const MOLD_SIGNATURE_SEEN_MAX = 20;
+/** A signed copy's name: «<the original's name without .pdf> - موقّع.pdf». */
+export const MOLD_SIGNED_SUFFIX = ' - موقّع';
+/** A signing link stays valid this long (one active link a request). */
+export const MOLD_SIGN_LINK_DAYS = 14;
+/** The link's token: 32 random bytes in base64url (43 characters, 256 bits). */
+export const MOLD_SIGN_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+/** Bytes from base64 without the data: prefix (no spaces), up to maxLength characters; null otherwise. */
+function base64Bytes(value, maxLength) {
+  if (typeof value !== 'string' || !value || value.length > maxLength || value.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+  try {
+    const text = atob(value), bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+    return bytes;
+  } catch { return null; }
+}
+/** The block's bytes from the base64 the form sends; null when it is not base64 or is too long. */
+export const moldSignatureBlockBytes = value => base64Bytes(value, MOLD_SIGNATURE_BLOCK_BASE64_MAX);
+/**
+ * The block before the CRM keeps it: a whole PNG (moldPngWhole) within its limits.
+ * @param {Uint8Array|null} bytes
+ * @returns {{ok: true, width: number, height: number} | {ok: false, reason: 'missing'|'too_large'|'not_png'|'size'}}
+ */
+export function moldSignatureBlockCheck(bytes) {
+  if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, reason: 'missing'};
+  if (bytes.length > MOLD_SIGNATURE_BLOCK_MAX_BYTES) return {ok: false, reason: 'too_large'};
+  const size = moldImageSize(bytes);
+  if (!size || size.format !== 'png' || !moldPngWhole(bytes)) return {ok: false, reason: 'not_png'};
+  const [minW, maxW] = MOLD_SIGNATURE_BLOCK_WIDTH, [minH, maxH] = MOLD_SIGNATURE_BLOCK_HEIGHT;
+  if (size.width < minW || size.width > maxW || size.height < minH || size.height > maxH || size.width < 1.5 * size.height) return {ok: false, reason: 'size'};
+  return {ok: true, width: size.width, height: size.height};
+}
+/** Whether the moment printed in the block is the server's now, within MOLD_SIGNATURE_BLOCK_SKEW_MS. */
+export function moldSignatureBlockAt(value, now = Date.now()) {
+  if (typeof value !== 'string' || value.length > 40 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(value)) return null;
+  const at = Date.parse(value);
+  return Number.isFinite(at) && Math.abs(at - now) <= MOLD_SIGNATURE_BLOCK_SKEW_MS ? new Date(at).toISOString() : null;
+}
+/** The SHA-256 (hex) of the PDFs the customer saw on the device, kept once each, at most MOLD_SIGNATURE_SEEN_MAX; [] for none; null
+ *  when it is not such a list. */
+export function moldSignatureSeen(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MOLD_SIGNATURE_SEEN_MAX || !value.every(item => typeof item === 'string' && /^[0-9a-f]{64}$/i.test(item))) return null;
+  return [...new Set(value.map(item => item.toLowerCase()))];
+}
+/** A signed copy's name: «<name without .pdf> - موقّع.pdf», the original's name shortened (never below one character) to stay within 200
+ *  characters. Always one moldDesignName accepts as a PDF when the original's name is. */
+export function moldSignedCopyName(name) {
+  const text = String(name ?? ''), dot = text.toLowerCase().endsWith('.pdf') ? text.length - 4 : text.length;
+  const tail = MOLD_SIGNED_SUFFIX + '.pdf', room = Math.max(1, MOLD_DESIGN_NAME_MAX - length(tail));
+  const base = [...text.slice(0, dot)].slice(0, room).join('').trim() || 'ملف';
+  return base + tail;
 }
 
 /** The type a design file is served with: a PDF or one of the four image types as they are, anything else as plain bytes (an SVG or a

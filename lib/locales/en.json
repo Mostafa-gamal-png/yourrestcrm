@@ -1479,5 +1479,14 @@
   "لا يمكن مراجعة يوم لم يأتِ بعد.": "A day that has not come yet cannot be reviewed.",
   "تغيّرت مراجعة هذه الزيارة. حدّث التقرير قبل الحفظ.": "The note on this visit has changed. Refresh the report before saving.",
   "تغيّرت مراجعة هذا اليوم. حدّث التقرير قبل الحفظ.": "The note on this day has changed. Refresh the report before saving.",
-  "طلب القراءة غير صحيح.": "The read request is not valid."
+  "طلب القراءة غير صحيح.": "The read request is not valid.",
+  "الطلب بانتظار توقيع العميل؛ أول ما العميل يوقّع من اللينك يتبعت الطلب لوحده.": "The request is waiting for the customer's signature; once the customer signs from the link, it is sent by itself.",
+  "اختار: العميل يوقّع دلوقتي أو لينك يوقّع منه، مش الاتنين.": "Choose one: the customer signs now, or a link to sign from, not both.",
+  "الطلب مش بانتظار توقيع العميل من لينك؛ حدّث الصفحة.": "The request is not waiting for the customer's signature from a link; refresh the page.",
+  "وقت التوقيع مش مظبوط؛ حدّث الصفحة ووقّع تاني.": "The signing time is off; refresh the page and sign again.",
+  "توقيع العميل ولينك التوقيع لمن طلب القالب": "The customer's signature and the signing link are for whoever asked for the mold",
+  "النسخة الموقّعة ما بتتحذفش من الطلب طول ما التوقيع اللي عليها هو توقيع الطلب.": "A signed copy is not deleted from the request while its signature is the request's signature.",
+  "اللينك ده مش شغال. اطلب من المندوب لينك جديد.": "This link is not working. Ask the representative for a new link.",
+  "الطلب اتعدّل، افتح اللينك تاني.": "The request has changed; open the link again.",
+  "محاولات كتير؛ استنى دقيقة وحاول تاني.": "Too many attempts; wait a minute and try again."
 }

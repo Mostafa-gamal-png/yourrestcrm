@@ -5,10 +5,13 @@
 // either orientation draw alike; the page does not scroll while drawing). A blank pad, a tap or a short tick is refused
 // (moldSignatureDrawn). The drawing is sent as a PNG (white background, trimmed to what was drawn, at most 1200 pixels a side and 256 KiB),
 // kept by the CRM as one of the request's design files and sent to production with them.
+// Since 2026-11-10 the signing also composes the block stamped at the bottom of the last page of every PDF of the request (signatureBlockPng:
+// the drawing, «توقيع العميل: <name>» and the moment in Riyadh, the canvas shaping the Arabic), the moment taken from the server's clock
+// (noteServerTime, serverNow); and a sales role may choose «ابعت للعميل لينك يوقّع منه» instead of the pad.
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {Eraser,Loader2,PenLine,Send,Undo2} from 'lucide-react';
+import {Eraser,Link2,Loader2,PenLine,Send,Undo2} from 'lucide-react';
 import {t} from '@/lib/i18n';
-import {MOLD_SIGNATURE_TEXT} from '@/lib/mold-requests';
+import {MOLD_SIGNATURE_TEXT,MOLD_SIGN_LINK_TEXT} from '@/lib/mold-requests';
 import {MOLD_SIGNATURE_MAX_BYTES,MOLD_SIGNATURE_MAX_SIDE,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 
@@ -53,6 +56,41 @@ export function signaturePng(strokes:SignatureStrokes,width:number):string|null{
   if(data&&Math.floor(data.length/4)*3<=MOLD_SIGNATURE_MAX_BYTES)return data;
  }
  return null;
+}
+
+/** The server's clock as the page last heard it (a list's generatedAt, the link page's now): the block's moment is the server's, whatever
+ *  the device's own clock says (the server refuses a moment far from its own). */
+let serverOffset=0;
+export function noteServerTime(iso:string|null|undefined){const at=Date.parse(iso||'');if(Number.isFinite(at))serverOffset=at-Date.now();}
+export const serverNow=()=>new Date(Date.now()+serverOffset);
+/** The moment as the block prints it: day/month/year and the hour in Riyadh. */
+export const blockMoment=(at:Date)=>new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(at).replace(',',' -');
+/** The block's size in pixels (moldSignatureBlockCheck takes 600..1600 by 150..800). */
+export const BLOCK_WIDTH=960,BLOCK_HEIGHT=300;
+/** The block stamped in the request's PDFs as a PNG in base64 (no data: prefix): a white card with a thin frame, «توقيع العميل: <signer>»
+ *  at the top (right to left, shaped by the canvas, smaller when long), the drawing scaled into the middle, and «التاريخ: <day> - <hour>
+ *  (توقيت الرياض)» at the bottom. null when nothing was drawn or it cannot be made. */
+export function signatureBlockPng(strokes:SignatureStrokes,width:number,signer:string,at:Date):string|null{
+ const box=signatureBox(strokes,width);
+ if(!box.points||typeof document==='undefined')return null;
+ const canvas=document.createElement('canvas');canvas.width=BLOCK_WIDTH;canvas.height=BLOCK_HEIGHT;
+ const g=canvas.getContext('2d');
+ if(!g)return null;
+ const W=BLOCK_WIDTH,H=BLOCK_HEIGHT,pad=26,family='"Segoe UI",Tahoma,"Noto Naskh Arabic","Noto Sans Arabic","DejaVu Sans",Arial,sans-serif';
+ g.fillStyle='#fff';g.fillRect(0,0,W,H);
+ g.strokeStyle='#5b6b62';g.lineWidth=2;g.strokeRect(5,5,W-10,H-10);
+ g.direction='rtl';g.textAlign='right';g.textBaseline='alphabetic';g.fillStyle='#111';
+ const fit=(text:string,weight:string,size:number,min:number)=>{let next=size;for(;next>min;next-=1){g.font=weight+' '+next+'px '+family;if(g.measureText(text).width<=W-2*pad)break;}g.font=weight+' '+next+'px '+family;};
+ const title='توقيع العميل: '+signer;
+ fit(title,'bold',32,14);g.fillText(title,W-pad,50);
+ // The moment, its digits kept in their order (an isolate inside the right-to-left line).
+ const when='التاريخ: \u2066'+blockMoment(at)+'\u2069 (توقيت الرياض)';
+ fit(when,'normal',22,12);g.fillStyle='#333';g.fillText(when,W-pad,H-22);
+ // The drawing, scaled into the space between the two lines and centred.
+ const top=66,bottom=H-50,room={width:W-2*pad,height:bottom-top},scale=Math.min(room.width/Math.max(box.width,1),room.height/Math.max(box.height,1),3);
+ g.save();g.translate(pad+(room.width-box.width*scale)/2,top+(room.height-box.height*scale)/2);g.scale(scale,scale);g.translate(-box.minX,-box.minY);
+ drawStrokes(g,strokes,width);g.restore();
+ return canvas.toDataURL('image/png').split(',')[1]||null;
 }
 
 /** The pad: a canvas that keeps its 2:1 shape at any width, drawn on with pointer events (touch-action none: no scroll, no zoom while
@@ -109,9 +147,14 @@ export function SignaturePad({strokes,onChange,onWidth,disabled,say}:{strokes:Si
  *  is made once per signing, on the first confirm, and sent again as it is by every later confirm (a retry after an answer that never
  *  came resends the very same body under the same identifier, however the pad was resized since); a new drawing, «امسح» or another
  *  name starts a new signing. The dialog shows the step from its top, so the customer reads the summary first. */
-export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBack,onConfirm}:{summary:[string,React.ReactNode][];busy:boolean;error:string;fields:Record<string,string>;again?:boolean;say:Say;onBack:()=>void;onConfirm:(signature:{signer:string;png:string})=>void}){
+/** The signature as the step gives it (2026-11-10: with the block and its moment, both made once per signing like the drawing's PNG). */
+export type SigningResult={signer:string;png:string;block:string;blockAt:string};
+/** onLink (2026-11-10): offered (a sales role's new request, or an edit that changes what was signed), the step starts with a choice: the
+ *  customer signs now (the pad), or a link is sent for the customer to sign from (the request is saved and kept until then). */
+export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBack,onConfirm,onLink}:{summary:[string,React.ReactNode][];busy:boolean;error:string;fields:Record<string,string>;again?:boolean;say:Say;onBack:()=>void;onConfirm:(signature:SigningResult)=>void;onLink?:()=>void}){
  const [signer,setSigner]=useState(''),[strokes,setStrokes]=useState<SignatureStrokes>([]),[width,setWidth]=useState(0),[shown,setShown]=useState<{signer?:string;pad?:string}>({});
- const [frozen,setFrozen]=useState<{signer:string;png:string}|null>(null),[dismissed,setDismissed]=useState<{signer?:boolean;signature?:boolean}>({}),[answered,setAnswered]=useState(fields);
+ const [frozen,setFrozen]=useState<SigningResult|null>(null),[dismissed,setDismissed]=useState<{signer?:boolean;signature?:boolean}>({}),[answered,setAnswered]=useState(fields);
+ const [mode,setMode]=useState<'now'|'link'>('now');
  // Each new refusal from the server is shown again (state adjusted while rendering, not in an effect).
  if(answered!==fields){setAnswered(fields);setDismissed({});}
  const signerError=shown.signer||(fields.signer&&!dismissed.signer?t(fields.signer):''),padError=shown.pad||(fields.signature&&!dismissed.signature?t(fields.signature):'');
@@ -124,11 +167,11 @@ export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBac
   const name=moldSigner(signer),length=name===undefined?0:[...name].length,box=signatureBox(strokes,width);
   const next:{signer?:string;pad?:string}={};
   if(name===undefined||length<MOLD_SIGNER_MIN||length>MOLD_SIGNER_MAX)next.signer=say(...MOLD_SIGNATURE_TEXT.signerRequired);
-  const png=moldSignatureDrawn(box)?signaturePng(strokes,width):null;
-  if(!png)next.pad=say(...MOLD_SIGNATURE_TEXT.blank);
+  const png=moldSignatureDrawn(box)?signaturePng(strokes,width):null,at=serverNow(),block=png&&name!==undefined?signatureBlockPng(strokes,width,name,at):null;
+  if(!png||!block)next.pad=say(...MOLD_SIGNATURE_TEXT.blank);
   setShown(next);
-  if(next.signer||next.pad||!png||name===undefined)return;
-  const signature={signer:name,png};
+  if(next.signer||next.pad||!png||!block||name===undefined)return;
+  const signature={signer:name,png,block,blockAt:at.toISOString()};
   setFrozen(signature);onConfirm(signature);
  };
  return <section className="mold-signing" ref={top} aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
@@ -136,6 +179,18 @@ export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBac
   {again&&<p className="mold-specs-note mold-signing-again" role="status">{say(...MOLD_SIGNATURE_TEXT.again)}</p>}
   <p className="mold-signing-lead">{say('العميل بيوقّع على الطلب ده قبل ما يتبعت للإنتاج:','The customer signs this request before it is sent to production:')}</p>
   <dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
+  {/* The pad or the link (2026-11-10): offered to the sales roles. */}
+  {onLink&&<fieldset className="mold-choice mold-signing-mode"><legend>{say('إزاي العميل هيوقّع؟','How does the customer sign?')}</legend><div>
+   {(['now','link'] as const).map(value=><label key={value} data-active={mode===value}><input type="radio" name="signing-mode" value={value} checked={mode===value} disabled={busy} onChange={()=>setMode(value)}/>{say(...(value==='now'?MOLD_SIGN_LINK_TEXT.now:MOLD_SIGN_LINK_TEXT.link))}</label>)}
+  </div></fieldset>}
+  {onLink&&mode==='link'?<>
+   <p className="mold-specs-note mold-signing-link-note" role="note"><Link2 size={15} aria-hidden="true"/> {say(...MOLD_SIGN_LINK_TEXT.linkNote)}</p>
+   {error&&<p className="form-error" role="alert">{t(error)}</p>}
+   <div className="mold-actions">
+    <button type="button" className="btn primary" disabled={busy} onClick={onLink}>{busy?<Loader2 className="spin" size={16}/>:<Link2 size={16}/>}{say(...MOLD_SIGN_LINK_TEXT.make)}</button>
+    <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
+   </div>
+  </>:<>
   {/* Who signs for the customer: a person's name, typed or dictated. */}
   <div className="mold-field mold-signer" aria-invalid={!!signerError}>
    <VoiceField label={say(...MOLD_SIGNATURE_TEXT.signer)} value={signer} full disabled={busy} onChange={changeSigner} inputProps={{name:'signer',dir:'auto',autoComplete:'off',maxLength:MOLD_SIGNER_MAX+20}}/>
@@ -152,5 +207,6 @@ export function MoldSigningStep({summary,busy,error,fields,again=false,say,onBac
    <button type="button" className="btn primary" disabled={busy} onClick={confirm}>{busy?<Loader2 className="spin" size={16}/>:<Send size={16}/>}{say(...MOLD_SIGNATURE_TEXT.confirm)}</button>
    <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
   </div>
+  </>}
  </section>;
 }

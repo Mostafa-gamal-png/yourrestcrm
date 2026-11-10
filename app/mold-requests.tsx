@@ -11,7 +11,8 @@ import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldAddress,moldCancelRea
 import VoiceField from './voice-field';
 import MoldCustomerFields,{moldCustomerByErpCode,type MoldCustomerText} from './mold-customer-fields';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
-import {MoldSigningStep} from './mold-signature';
+import {MoldSigningStep,noteServerTime} from './mold-signature';
+import {MoldSignLinkPanel,MoldSigningNotes,SignLinkLine,rememberSignLink} from './mold-sign-link';
 import './mold-requests.css';
 
 type Say=(ar:string,en:string)=>string;
@@ -34,7 +35,7 @@ const QuotePoMissing=({say,hint}:{say:Say;hint?:'attach'|'others'|'production'})
 const heldTexts=(sending:MoldRequestView['sending'])=>sending.held?moldHeldTexts[sending.held]||null:null;
 /** The state a page of this release shows: a request kept for a file (sending.held) as such, else the state the server gives (one every
  *  page knows). */
-const shownState=(sending:MoldRequestView['sending'])=>heldTexts(sending)?sending.held==='free_customer'?'needs_update':'needs_file':sending.state;
+const shownState=(sending:MoldRequestView['sending'])=>heldTexts(sending)?sending.held==='free_customer'?'needs_update':sending.held==='customer_signature'?'needs_signature':'needs_file':sending.state;
 const sendingName=(sending:MoldRequestView['sending'],linkReady:boolean):[string,string]=>heldTexts(sending)?.name||moldSendingNames[linkReady?sending.state:'off'];
 /** «وقّع العميل: <signer> · <time>» (2026-11-04), with the image through the CRM when it is given (the request's sheet), once the image
  *  reached production (state sent). Before that the request says where the signature stands instead: on its way («التوقيع لسه ما وصلش
@@ -57,7 +58,8 @@ export function useMoldRequests(me:Member|null){
   const current=++generation.current;setLoading(true);
   // refs=1: this page names the waiting list's items by requestRef or crmRequestId, so it gets every item, numbered by production or not
   // yet (the products update of 2026-11-05); a page loaded before asks without it and gets only the numbered ones (moldPendingForOldPage).
-  try{const next=await submitJson<MoldRequestsAnswer>('/api/mold-requests?refs=1',{cache:'no-store'},{language:getLanguage()});if(current===generation.current){setData(next);setError('');}}
+  // The server's clock with each list (2026-11-10): the moment a signature's block prints is the server's.
+  try{const next=await submitJson<MoldRequestsAnswer>('/api/mold-requests?refs=1',{cache:'no-store'},{language:getLanguage()});noteServerTime(next.generatedAt);if(current===generation.current){setData(next);setError('');}}
   catch(failure){if(current===generation.current)setError(messageOf(failure));}
   finally{if(current===generation.current)setLoading(false);}
  },[identity]);
@@ -76,7 +78,9 @@ function useMoldAction(onDone:(view:MoldRequestView|null)=>void,onRefused?:(view
   lock.current=true;setBusy(true);setError('');setFields({});lastFields.current={};
   const text=JSON.stringify(body);if(attempt.current?.body!==text)attempt.current={body:text,key:crypto.randomUUID()};
   try{
-   const reply=await submitJson<{request:MoldRequestView}>('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:attempt.current.key})},{language:getLanguage()});
+   const reply=await submitJson<{request:MoldRequestView;link?:unknown}>('/api/mold-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:attempt.current.key})},{language:getLanguage()});
+   // A signing link made by this write (2026-11-10): its address comes once, kept for the request's sheet.
+   if(reply.link)rememberSignLink(reply.request.id,reply.link);
    attempt.current=null;onDone(reply.request);return reply.request;
   }catch(failure){
    // 409 from production comes with the request as production holds it: show both the reason and the restored request.
@@ -148,6 +152,8 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
   {view.quotePo?.missing&&<QuotePoMissing say={say}/>}
   {/* Kept for its quotation's or PO's file (2026-11-05): said whatever the link's state, since attaching it is the representative's to do. */}
   {view.sending.state!=='sent'&&<small className="mold-card-sending" data-state={shownState(view.sending)} data-held={heldTexts(view.sending)?view.sending.held:undefined}>{say(...sendingName(view.sending,linkReady))}</small>}
+  {/* Waiting for the customer's signature from a link (2026-11-10): when it was made and until when it opens, or that it expired. */}
+  <SignLinkLine view={view} say={say}/>
   {!!unsent&&<small className="mold-card-sending" data-state="rejected">{say('ملفات تصميم لم تُرفع: ','Design files not uploaded: ')+unsent+' · '+say('افتح الطلب للتفاصيل','open the request for details')}</small>}
  </button>;
 }
@@ -352,11 +358,19 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
   // How the customer pays: the CRM's own (or, approving, production's now); nothing for a request asked for before 2026-11-03.
   ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment])] as [string,React.ReactNode]]:[]),
  ];
+ // What the customer reads before signing on the device from the sheet (2026-11-10): the same as the form's signing summary.
+ const signingSummary:[string,React.ReactNode][]=[[say('العميل','Customer'),<span dir="auto" key="c">{view.customerName}</span>],
+  ...(view.customerErpCode?[[say('كود ERP','ERP code'),<bdi dir="ltr" key="e">{view.customerErpCode}</bdi>] as [string,React.ReactNode]]:[]),
+  [say('العنوان','Address'),<span dir="auto" key="a">{view.customerAddress}</span>],[say('الوصف','Description'),<span dir="auto" key="d">{view.specs.description}</span>],
+  [say('الكمية','Quantity'),String(view.specs.quantity??'')],[say('العلب','Core'),say(MOLD_CORES[view.specs.core as keyof typeof MOLD_CORES]||view.specs.core,view.specs.core)],[say('الموديل','Model'),say(MOLD_MODELS[view.specs.model as keyof typeof MOLD_MODELS]||view.specs.model,view.specs.model)],
+  ...(view.payment?[[say('الدفع','Payment'),say(...moldPaymentNames[view.payment])] as [string,React.ReactNode]]:[])];
  return <Sheet open onOpenChange={open=>{if(!open)onClose();}}>
   <SheetContent side={direction()==='rtl'?'left':'right'} className="mold-sheet" dir={direction()}>
    <SheetTitle>{approving&&current!.customer.name||view.customerName}</SheetTitle>
    <SheetDescription>{statusText(view,say)}{remote?' · '+say('مراحل منتهية','stages done')+' '+remote.stagesDone+'/'+remote.stagesTotal:''}</SheetDescription>
    <SendingState view={view} linkReady={linkReady} say={say}/>
+   {/* The link the customer signs from (2026-11-10): its state, its address once made here, a new one, or signing on the device now. */}
+   <MoldSignLinkPanel view={view} customers={customers} summary={signingSummary} onView={done} say={say}/>
    {restored&&<p className="mold-banner mold-restored" data-kind="restored" role="status"><Undo2 size={16} aria-hidden="true"/>{restored}</p>}
    {pullError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {pullError}</p>}
    {view.cancelled&&<p className="mold-banner" data-kind="cancelled">{say('أُلغي الطلب','The request was cancelled')}{view.cancelReason?': '+view.cancelReason:''}</p>}
@@ -378,6 +392,8 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
    <dl className="mold-facts">{asked.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
    {/* The customer's signature (2026-11-04): who signed and when, and the image through the CRM, for whoever may open the request. */}
    {view.signature&&<SignedBy signature={view.signature} href={view.signature.href} state={view.signature.state} say={say}/>}
+   {/* The signed copies of its PDFs (2026-11-10), and the PDFs that got none, with why. */}
+   <MoldSigningNotes view={view} say={say}/>
    <MoldDesignFiles view={view} uploads={mine} queue={uploads} onView={done} say={say} quotePo={quotePo}/>
    {!view.editable&&!view.cancelled&&view.can&&!view.can.edit&&remote&&remote.status!=='cancelled'&&<p className="mold-locked"><Lock size={14} aria-hidden="true"/>{remote.status==='confirmed'?say('اكتملت الاعتمادات؛ لم يعد الإلغاء أو تغيير ملفات التصميم ممكنًا.','All approvals are in; the request can no longer be cancelled and its design files can no longer change.'):say('بدأ الإنتاج؛ لم يعد الإلغاء أو تغيير ملفات التصميم ممكنًا.','Production has started; the request can no longer be cancelled and its design files can no longer change.')}</p>}
    {action.error&&<p className="form-error" role="alert">{t(action.error)}</p>}
@@ -433,6 +449,15 @@ function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,paymen
  return keys.some(key=>(specs[key]??'')!==(editing.specs[key]??''))||payment!==editing.payment||address!==moldAddress(editing.customerAddress||'').address||customerChanged;
 }
 
+/** The SHA-256 of the PDFs chosen in the form, which the customer sees when signing on the device (2026-11-10): each gets its signed copy
+ *  when it is uploaded. A file that cannot be read is left out (it gets none). */
+async function seenPdfs(choices:DesignChoice[]){
+ const out:string[]=[];
+ for(const choice of choices)if(choice.kind==='pdf'&&!choice.refusal){
+  try{out.push(Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await choice.file.arrayBuffer())),byte=>byte.toString(16).padStart(2,'0')).join(''));}catch{/* not read: no signed copy */}
+ }
+ return [...new Set(out)].slice(0,20);
+}
 /** Ask for a mold (a customer the member can see, then the specifications), or change one that has certainly never reached production
  *  (once sent, its data is edited by the production manager only); either way with design files, which upload once the request is saved
  *  (`used`: the places the request's files already take). An edit the server refuses (it was sent meanwhile) keeps the form open with
@@ -545,7 +570,11 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   <DialogContent className="mold-dialog" dir={direction()} onEscapeKeyDown={event=>{if(suggesting.current)event.preventDefault();}}>
    <DialogTitle>{editing?say('تعديل طلب تصنيع القالب','Edit mold request'):say('طلب تصنيع قالب','Request a mold')}</DialogTitle>
    <DialogDescription>{editing?say('الطلب لم يصل للإنتاج بعد، فتعديله هنا ممكن. بعد وصوله يعدّل بياناته مدير الإنتاج فقط.','The request has not reached production yet, so it can be changed here. Once it arrives, the production manager alone edits its data.'):say('يُحفظ الطلب في الـCRM ثم يُرسل لتطبيق الإنتاج تلقائيًا.','The request is saved in the CRM, then sent to production automatically.')}</DialogDescription>
-   {signing&&<MoldSigningStep summary={signing.summary} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)} onConfirm={signature=>send({...signing.body,signature},signing.summary,true)}/>}
+   {/* The customer signs now (with the PDFs chosen, by their SHA-256: each gets its signed copy as it is uploaded), or (2026-11-10) the
+       request is saved with a link for the customer to sign from. */}
+   {signing&&<MoldSigningStep summary={signing.summary} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)}
+    onConfirm={signature=>void seenPdfs(ready).then(seen=>send({...signing.body,signature:{...signature,...(seen.length?{seen}:{})}},signing.summary,true))}
+    onLink={()=>send({...signing.body,signatureLink:true},signing.summary,true)}/>}
    <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>
     {/* The customer as typed, name and ERP code, with the CRM's customers as suggestions (the owner, 2026-11-09: «اسم العميل بيتكتب نص
         وبيجى ترشيحات من النظام»); a customer not in the CRM never blocks the request. Editable on the edit of a request never sent too. */}
