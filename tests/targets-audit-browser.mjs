@@ -8,6 +8,8 @@
 // (two decimals), the branch distribution, editing a target in a future month (carried from this month, this month unchanged), the weights
 // dialog (99% cannot be saved), the KPI detail, both CSV exports against the screen, the supervisor read only, the representative's
 // «مستهدفي» from the Android app, customer service with no page; no sideways scrolling; no page error. Screenshots for the report.
+// 2026-11-10 decisions: last month's targets are set by the administrator (the sales manager is refused), and the administrator with no
+// target or sale is in no card, column or row; their own checks are tests/targets-decisions-http.mjs and targets-decisions-browser.mjs.
 // Synthetic fixtures only: temporary SQLite, mocked sendmail, no production data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -59,8 +61,10 @@ try {
   await customer('n-before', 'عميل قبل منتصف الليل', 'الرئيسي', 'rep1', '', {sourceFile: undefined, _createdBy: 'rep1'}, new Date(firstUtc - 3.5 * 3600000).toISOString());
   await customer('n-after', 'عميل بعد منتصف الليل', 'الرئيسي', 'rep1', '', {sourceFile: undefined, _createdBy: 'rep1'}, new Date(firstUtc - 2.5 * 3600000).toISOString());
 
-  check((await save('sm', 'weights', 'company', weightRows([40, 20, 10, 10, 10, 5, 5, 0]), prev)).status, 200, 'weights saved last month');
-  check((await save('sm', 'sales', 'rep1', quantities([10, 4]), prev)).status, 200, 'rep1 last month');
+  // Last month has ended: only the administrator sets its targets (decision 1 of 2026-11-10; tests/targets-decisions-http.mjs).
+  check((await save('sm', 'weights', 'company', weightRows([40, 20, 10, 10, 10, 5, 5, 0]), prev)).status, 403, 'the sales manager cannot set last month\'s weights');
+  check((await save('owner', 'weights', 'company', weightRows([40, 20, 10, 10, 10, 5, 5, 0]), prev)).status, 200, 'weights saved last month by the administrator');
+  check((await save('owner', 'sales', 'rep1', quantities([10, 4]), prev)).status, 200, 'rep1 last month');
   check((await save('sm', 'sales', 'rep1', quantities([20, 8]), month, 0, {month: prev, version: 1})).status, 200, 'rep1 this month, replacing what was carried');
   check((await save('sm', 'sales', 'rep2', quantities([10, 4]))).status, 200);
   check((await save('sm', 'sales', 'rep3', quantities([20, 0]))).status, 200);
@@ -206,7 +210,7 @@ try {
   // A future month: editing rep1 carries this month's values, and this month keeps them.
   await sm.locator('.sales-toolbar input[type=month]').fill(next);
   await sm.locator('.targets-summary-future').first().waitFor();
-  await sm.locator('.quantity-targets-table thead th').filter({hasText: 'مندوب أول'}).getByRole('button', {name: 'تعديل'}).click();
+  await sm.locator('.quantity-targets-table thead th').filter({hasText: 'مندوب أول'}).getByRole('button', {name: 'تعديل', exact: true}).click();
   const dialog = sm.getByRole('dialog');
   check(await dialog.locator('input').first().inputValue(), '20', 'the editor opens with the values carried from this month');
   ok((await dialog.innerText()).includes('القيم الحالية سارية من شهر: ' + month), 'and says where they come from');
@@ -230,11 +234,14 @@ try {
     const page = await open(who, {viewport});
     await ready(page);
     await noSideways(page, who + ' ' + label);
-    const edits = await page.locator('.targets-workspace').getByRole('button', {name: 'تعديل'}).count();
+    // The edit buttons (the table's «تعديل», the phone cards' «تعديل الأصناف» …), not «سجل التعديلات».
+    const edits = await page.locator('.targets-workspace').getByRole('button', {name: /^تعديل/}).count();
     if (who === 'sup') {
       check([edits, await page.getByRole('button', {name: 'أوزان التقييم'}).count(), await page.getByRole('button', {name: 'تصدير كل المستهدفات'}).count()], [0, 0, 1], 'the supervisor reads and exports, and edits nothing');
       check((await page.locator('.targets-summary-card h3').allInnerTexts()).sort(), ['المشرف أحمد', 'مندوب أول', 'مندوب ثاني'].sort(), 'the supervisor sees their own team only');
     } else ok(edits > 0, who + ' edits targets');
+    // The administrator has no target and no sale this month: no card, no column, no row of theirs (decision 4 of 2026-11-10).
+    check(await page.locator('.targets-summary-card h3', {hasText: /^مدير النظام$/}).count(), 0, who + ' ' + label + ': the administrator who does not sell is not listed');
     await shot(page, 'targets-' + who + '-' + label + '-ar');
     await page.close();
   }

@@ -12,6 +12,15 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
 - **Tests.** `tests/customer-kind.mjs` (options, the retired value kept, validation in both schemas, labels, export, English, the products contract), `tests/customer-kind-http.mjs` (built release: with and without the field, 400 and nothing written, an old page keeps the stored type, «خدمات» unchanged on an unrelated edit, customer service), `tests/customer-kind-browser.mjs` (Chromium, phone 360, Arabic and English: the two groups, the legacy value on its own customer only, saving), `tests/customer-entry-fields-ui.mjs` (15 choices).
 - **Rollback.** Code only. The previous release labels the field «نوع العميل» again, offers «خدمات» again, shows no type and drops `customerKind` from a customer it edits (its schema does not know it).
 
+## Targets: the four decisions of the audit (2026-11-10, no migration)
+
+- **Asked.** The owner, on the audit's «محتاج قرار منك» list: «نفذ 1 و2 و3 و4».
+- **1. Finished months.** A month before the current one (Riyadh) keeps its targets: products, customers and visits, weights and the branch target are refused to everyone but the administrator (403, «الشهر ده خلص؛ تعديل مستهدفاته لمدير النظام بس», nothing written; a save already recorded is still answered); the page shows it read only with that note. The administrator still edits it and the audit marks the change `closedMonth`. KPI evidence and the evaluation entry are not locked (`lib/targets.ts` `targetMonthClosed`, `canEditTargetMonth`; `lib/targets-server.ts` `saveTargetSet`).
+- **2. «سجل التعديلات».** A button under each person, the branch target and the weights opens who / when / month / before → after, newest first, twenty a page (`GET /api/targets/history`, `targetHistory`, `lib/targets-history.ts`), with the same read scope as the targets. No new table: the rows crm_audit already holds; a save now also keeps what it replaced (`before`); older rows show the saved values with «تفاصيل غير متاحة».
+- **3. Phone.** At 480 px and under, «توزيع المستهدفات» and the customer and visit table become one card per person (target / achieved / % per product, activity targets, edit buttons where allowed, history); tablet and desktop keep the table.
+- **4. The administrator.** Left out of the targets tables, cards, KPIs, exports and picker of a month with no target effective and no confirmed sale of theirs (`hiddenAdminIds`, `hiddenFromTargets` in `/api/sales`). Totals unchanged: team roll-ups never included the administrator and the distribution counts targets only.
+- **Tests.** `tests/targets-decisions.mjs` (default gate), `tests/targets-decisions-http.mjs` (built release), `tests/targets-decisions-browser.mjs` (Chromium); `tests/targets-audit-browser.mjs` and `tests/targets-export.mjs` updated. Guide: `docs/UPDATE-2026-11-11-CUSTOMERS-TARGETS-AR.txt`.
+
 ## «المستهدفات وتقييم الأداء» audited whole: what did not work is mended (2026-11-11, no migration)
 
 - **Asked.** The owner (2026-11-10): «كمل المستهدفات صلح اللى مش شغال فيها», then «افحص الصفحة كلها».
