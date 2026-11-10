@@ -19,7 +19,8 @@ import TargetsPerformanceSummary from './targets-performance-summary';
 import {targetProducts,quantityNumber,type TargetState,type ActivityTargets,type quantityAttainment} from '@/lib/targets';
 import VisitCustomerPicker from './visit-customer-picker';
 import KpiPerformanceView from './kpi-performance';
-import {operationalIndicators,type KpiData} from '@/lib/kpis';
+import {type KpiData} from '@/lib/kpis';
+import {targetsCsvHeaders,targetsCsvRows,performanceCsvHeaders,performanceCsvRows} from '@/lib/targets-export';
 import { toast } from 'sonner';
 import './targets-performance.css';
 import ErpSalesImport from './erp-sales-import';
@@ -29,7 +30,6 @@ type Payload = { kpis:KpiData|null; sales: Sale[]; targets: TargetState; perform
 type Props = { mode: 'sales' | 'targets-performance'; month:string; onMonthChange:(month:string)=>void; records: Row[]; me: Member; onRefresh: () => Promise<void>; onCustomer: (id: string) => void; onCustomerCreated: (id: string) => Promise<Row> };
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
 type SaleDraft = { customerId:string; repId:string; date:string; reference:string; items:SaleItem[]; discount:number; notes:string };
-type ProductTarget = { product:string; quantity?:number|null; weight?:number };
 async function api<T=Record<string,unknown>>(body?:Record<string,unknown>,month?:string,signal?:AbortSignal,includeKpis=false){return submitJson<T>('/api/sales'+(month?'?month='+encodeURIComponent(month)+(includeKpis?'&kpis=1':''):''),body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store',signal},{language:getLanguage()});}
 function Choice({ value, onChange, options, label, disabled=false }: { value:string; onChange:(value:string)=>void; options:[string,string][]; label:string; disabled?:boolean }) { return <Select dir={direction()} value={value} onValueChange={onChange} disabled={disabled}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{options.map(([id,label])=><SelectItem key={id} value={id}>{t(label)}</SelectItem>)}</SelectContent></Select>; }
 function csv(name:string,headers:string[],rows:unknown[][]){const esc=(value:unknown)=>{let text=String(value??'');if(/^[=+\-@\t\r]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';};const url=URL.createObjectURL(new Blob(['\ufeff'+[headers.map(t),...rows].map(row=>row.map(esc).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8;'}));const link=document.createElement('a');link.href=url;link.download=name;link.click();URL.revokeObjectURL(url);}
@@ -62,8 +62,8 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
  const filteredFuturePeople=(payload?.performance||[]).filter(person=>(branch==='__all__'||person.member.branch===branch)&&(selectedStaff==='all'||person.member.id===selectedStaff)&&(!query||[person.member.name,person.member.branch].join(' ').toLowerCase().includes(query.toLowerCase())));
  const pages=Math.max(1,Math.ceil(sales.length/25)),currentPage=Math.min(page,pages);
  const exportSales=()=>csv('Yourrest-sales-'+month+'.csv',['تاريخ البيع','مرجع البيع','العميل','المندوب','الفرع','صافي المبيعات قبل الضريبة','الحالة','سبب الإلغاء'],sales.map(s=>[s.date,s.reference,s.customerName,members.find(m=>m.id===s.repId)?.name||'',s.branch,s.totalCents/100,t(s.status==='confirmed'?'مسجل':'ملغى'),s.voidReason]));
- const exportTargets=()=>{if(!payload)return;csv('Yourrest-targets-'+month+'.csv',['الشهر','المندوب / الفرع','نوع المستهدف','الصنف / المؤشر','الكمية / الوزن','ساري من'],payload.targets.sets.flatMap(s=>s.kind==='activity'?Object.entries(s.data).map(([k,v])=>[month,members.find(m=>m.id===s.scopeId)?.name||s.scopeId,t('مستهدفات العملاء والزيارات'),t(({newCustomers:'العملاء الجدد',recoveredCustomers:'العملاء المستردون',visits:'الزيارات الفعلية'} as Record<string,string>)[k]),s.incomplete?'':v,s.computed?t('محسوب من الفريق'):s.month]):s.data.products.map((p:ProductTarget)=>[month,members.find(m=>m.id===s.scopeId)?.name||s.scopeId,t(s.kind==='weights'?'أوزان التقييم':'مستهدفات الأصناف'),t(p.product),p.quantity??p.weight??'',s.computed?t('محسوب من الفريق'):s.month])));};
- const exportPerformance=()=>{if(futureMonth||!branchKpis)return;csv('Yourrest-kpis-'+month+'.csv',['الشهر','المندوب','المؤشر','الوزن %','الدرجة من 100','النقاط المحتسبة','البيانات المطلوبة / طريقة الحساب'],filteredKpiPeople.flatMap(person=>person.metrics.map(metric=>[month,person.member.name,t(operationalIndicators.find(indicator=>indicator.id===metric.id)!.name),operationalIndicators.find(indicator=>indicator.id===metric.id)!.weight,metric.score??'',metric.points??'',t(metric.reason)])));};
+ const exportTargets=()=>{if(!payload)return;csv('Yourrest-targets-'+month+'.csv',targetsCsvHeaders,targetsCsvRows(payload.targets,members,month,t));};
+ const exportPerformance=()=>{if(futureMonth||!branchKpis)return;csv('Yourrest-kpis-'+month+'.csv',performanceCsvHeaders,performanceCsvRows(filteredKpiPeople,month,t));};
  const scrollTo=(section:React.RefObject<HTMLElement|null>)=>section.current?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
  const summaryDetails=(id:string)=>{selectStaff(id);window.requestAnimationFrame(()=>scrollTo(futureMonth?targetsSection:performanceSection));};
  async function cancelSale(){if(!voiding||busy)return;setBusy(true);setVoidError('');try{await api({action:'void',id:voiding.id,version:voiding.version,reason});setVoiding(null);toast.success(t('تم إلغاء البيع'));refresh();}catch(e){setVoidError(messageOf(e));}finally{setBusy(false);}}
