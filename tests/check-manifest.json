@@ -392,6 +392,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/targets-audit-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
       "file": "tests/team-home-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
