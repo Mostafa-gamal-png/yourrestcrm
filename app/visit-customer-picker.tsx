@@ -44,7 +44,7 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
     const nameInput = useRef<HTMLInputElement>(null);
     const [locationPending,setLocationPending]=useState(false);
     const [popupHost, setPopupHost] = useState<HTMLDivElement | null>(null);
-    const [draft, setDraft] = useState<CustomerData>({ name: '', code: '', region: regionValue(me), city: '', contact: '', phone: '', location: '', shortAddress: '', address: '', customerType: '', customerStatus: '', category: '' });
+    const [draft, setDraft] = useState<CustomerData>({ name: '', code: '', region: regionValue(me), city: '', contact: '', phone: '', location: '', shortAddress: '', address: '', customerType: '', customerKind: '', customerStatus: '', category: '' });
     const selected = customers.find(r => r.id === value) || null;
     // Customer service picks an existing customer only (the owner, 2026-11-07); the server refuses their creates too.
     // «الصلاحيات» (lib/permissions.ts): «إضافة» on «العملاء» switched off: pick an existing customer only.
@@ -66,7 +66,7 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
         createKey.current = crypto.randomUUID();
         setAdding(true); setLocationPending(false); setError(''); setSavedId(''); setExtraOpen(false); setInvalidField('');
         const initialQuery = selected ? '' : query.trim(), phoneQuery = /^[+\d\s()\-]+$/.test(normalize(initialQuery));
-        setDraft({ name: phoneQuery ? '' : initialQuery, code: '', region: regionValue(me), city: '', contact: '', phone: phoneQuery ? initialQuery : '', location: '', shortAddress: '', address: '', customerType: '', customerStatus: '', category: '' });
+        setDraft({ name: phoneQuery ? '' : initialQuery, code: '', region: regionValue(me), city: '', contact: '', phone: phoneQuery ? initialQuery : '', location: '', shortAddress: '', address: '', customerType: '', customerKind: '', customerStatus: '', category: '' });
         onCreating(true);
     }
     function cancel() {

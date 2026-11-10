@@ -88,7 +88,7 @@
     "customers": {
       "about": "Customers: the customer form and its location picker, address lookup, identities, imports, «لم يشترِ منذ 60 يومًا» (the last purchase GET /api/crm attaches), opening on the device's copy and the slow-phone budget of the customer list and sheet.",
       "sources": ["app/customer-entry-fields.tsx", "app/customer-entry-fields.css", "app/location-picker.tsx", "app/location-picker.css", "app/customer-picker-mobile.css", "app/customer-directory-mobile.css", "app/api/customer-address/**", "app/api/customer-identities/**", "app/api/customers/**", "lib/customer-options.ts", "lib/customer-last-purchase.ts", "lib/customer-last-purchase-server.ts", "lib/customer-address-server.ts", "lib/customer-identity-server.ts", "tests/customer-*.mjs", "tests/location-*.mjs", "tests/open-cached*.mjs", "tests/perf-budget*.mjs"],
-      "tests": ["tests/customer-edit-browser.mjs", "tests/customer-last-purchase-http.mjs", "tests/customer-last-purchase-browser.mjs", "tests/location-picker-browser.mjs", "tests/open-cached-browser.mjs", "tests/perf-budget-browser.mjs", "tests/machines-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/team-home-browser.mjs"]
+      "tests": ["tests/customer-edit-browser.mjs", "tests/customer-kind-http.mjs", "tests/customer-kind-browser.mjs", "tests/customer-last-purchase-http.mjs", "tests/customer-last-purchase-browser.mjs", "tests/location-picker-browser.mjs", "tests/open-cached-browser.mjs", "tests/perf-budget-browser.mjs", "tests/machines-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/team-home-browser.mjs"]
     },
     "team-home": {
       "about": "«عملاء واقفين» and «فريقي النهارده» (2026-11-10): the cards at the top of the first screen (app/team-home.tsx), the badge on «العملاء», GET /api/team-today and their rules (lib/inactive-customers.ts, lib/team-today*.ts). The route reads the day report's own modules, so the tracking area runs these tests too; the stalled rule is the customers area's.",
@@ -173,7 +173,7 @@
     "tests/perf-budget-browser.mjs": 44, "tests/location-picker-browser.mjs": 42, "tests/visit-files-http.mjs": 37, "tests/build-notice-browser.mjs": 35,
     "tests/targets-attainment-http.mjs": 35, "tests/competitors-browser.mjs": 33, "tests/competitor-intelligence-browser.mjs": 30, "tests/visit-place-http.mjs": 30,
     "tests/machines-browser.mjs": 28, "tests/tracking-gate-browser.mjs": 141, "tests/pwa-browser.mjs": 24, "tests/erp-customers-browser.mjs": 23, "tests/kpi-evidence-browser.mjs": 22,
-    "tests/namecheap-http.mjs": 22, "tests/customer-edit-browser.mjs": 21, "tests/erp-customers-http.mjs": 21, "tests/open-cached-browser.mjs": 20,
+    "tests/namecheap-http.mjs": 22, "tests/customer-edit-browser.mjs": 21, "tests/customer-kind-http.mjs": 21, "tests/customer-kind-browser.mjs": 22, "tests/erp-customers-http.mjs": 21, "tests/open-cached-browser.mjs": 20,
     "tests/member-regions-browser.mjs": 19, "tests/permissions-http.mjs": 25, "tests/permissions-browser.mjs": 45, "tests/supervisor-reviews-http.mjs": 31, "tests/supervisor-reviews-browser.mjs": 40, "tests/admin-delete-browser.mjs": 17, "tests/daily-report-browser.mjs": 11, "tests/sales-date-boundaries.mjs": 6,
     "tests/app-update-browser.mjs": 3, "tests/offline-outbox-browser.mjs": 3, "tests/app-update-release.mjs": 1, "tests/erp-sales-browser.mjs": 30,
     "default-gate": 300

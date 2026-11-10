@@ -174,6 +174,8 @@ async function savePost(req:Request){try{
   if(!memberCanAccessRegion(c.me,data.region))throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
   const locationError=prepareCustomerLocation(data,old?.data);if(locationError)throw new CRMError(locationError);
   if(old&&bodyData?.shortAddress===undefined)data.shortAddress=old.data.shortAddress||'';
+  // «نوع العميل» (2026-11-11): a page opened before the field existed sends no customerKind; the stored one stays as it was.
+  if(old&&inputData?.customerKind===undefined){if(typeof old.data.customerKind==='string')data.customerKind=old.data.customerKind;else delete data.customerKind;}
   if(old){for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId','_createdBy','_locationFromVisit'])data[key]=old.data[key];}
   else {for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId'])delete data[key];data._createdBy=c.me.id;}
   // The note that the place came from a visit belongs to that point: a point someone else sets drops it.
