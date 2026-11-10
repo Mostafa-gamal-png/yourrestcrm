@@ -47,4 +47,20 @@ const made=await PDFDocument.create();made.addPage([200,100]);
 const read=await PDFDocument.load(await made.save());
 assert.equal(read.getPageCount(),1);checks++;
 assert.equal(Math.round(read.getPage(0).getWidth()),200);checks++;
-console.log(JSON.stringify({ok:true,checks,next,eslintNext,pdfLib:pdfLibPackage.version,exploitReproduction:false}));
+// pdfjs-dist (2026-11-10, second release of the day: the customer reads the request's PDFs on the signing screens, app/mold-document-viewer.tsx):
+// the exact version, its licence (Apache-2.0), nothing run at install, its one native package (@napi-rs/canvas, for Node only) optional
+// and never what the browser build loads, and an ordinary read of a PDF's pages with the legacy build the screens load.
+const pdfjsPackage=JSON.parse(readFileSync(require.resolve('pdfjs-dist/package.json'),'utf8'));
+assert.equal(pdfjsPackage.version,'4.10.38','pdfjs-dist stays on the reviewed version');checks++;
+assert.equal(pdfjsPackage.license,'Apache-2.0','pdfjs-dist is Apache-2.0');checks++;
+assert.deepEqual(pdfjsPackage.scripts||{},{},'pdfjs-dist runs nothing at install');checks++;
+assert.deepEqual([Object.keys(pdfjsPackage.dependencies||{}),Object.keys(pdfjsPackage.optionalDependencies||{})],[[],['@napi-rs/canvas']],'its only native package is optional');checks++;
+const browserBuild=readFileSync(resolve(require.resolve('pdfjs-dist/package.json'),'..','legacy/build/pdf.min.mjs'),'utf8');
+assert.ok(!/^\s*import\s/m.test(browserBuild)&&!/from\s*["']@napi-rs\/canvas["']/.test(browserBuild),'the browser build imports nothing (the native canvas only through Node\'s own require, never in a browser)');checks++;
+const pdfjs=await import(pathToFileURL(resolve(require.resolve('pdfjs-dist/package.json'),'..','legacy/build/pdf.mjs')).href);
+const three=await PDFDocument.create();for(let n=0;n<3;n++)three.addPage([300,400]);
+const opened=await pdfjs.getDocument({data:new Uint8Array(await three.save()),isEvalSupported:false,useSystemFonts:false,verbosity:0}).promise;
+const firstPage=await opened.getPage(1);
+assert.deepEqual([opened.numPages,firstPage.getViewport({scale:1}).width],[3,300],'pdf.js reads the pages and their size');checks++;
+await opened.destroy();
+console.log(JSON.stringify({ok:true,checks,next,eslintNext,pdfLib:pdfLibPackage.version,pdfjs:pdfjsPackage.version,exploitReproduction:false}));

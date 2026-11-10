@@ -5,8 +5,13 @@
 /** The pad of the signing step on the page. */
 export const signaturePad = page => page.locator('.mold-signing .mold-signature-pad');
 
+/** The request's documents above the pad (2026-11-10) opened or refused, so the pad no longer moves while it is drawn on (a PDF that opens
+ *  makes room for its pages above it). */
+export const documentsSettled = page => page.waitForFunction(() => !document.querySelector('.mold-doc-file[data-state="loading"]'), null, {timeout: 60000});
+
 /** Draws on the pad: a wave across it, or 'dot' (a tap, which is no signature). input: mouse, touch or pen. */
 export async function drawSignature(page, {input = 'mouse', shape = 'wave'} = {}) {
+  await documentsSettled(page);
   const canvas = signaturePad(page);
   await canvas.scrollIntoViewIfNeeded();
   const box = await canvas.boundingBox(), path = shape === 'dot' ? [[0.5, 0.5], [0.502, 0.5]] : Array.from({length: 32}, (_, i) => [0.12 + i * 0.024, 0.5 + Math.sin(i / 3) * 0.28]);

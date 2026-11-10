@@ -177,6 +177,12 @@ function ok(value, message) { assert.ok(value, message); checks++; }
   const request = {id: 'mr-1', version: 3, data: {}}, files = [{id: 'mdf-1', kind: 'pdf', sha256: 'a', deletedAt: null, objectKey: 'k', outbox: null, sentAt: 'x', nextAttemptAt: null, lastError: null}];
   const key = await server.moldSignKey(request, files);
   check([key.length, key === await server.moldSignKey({...request, version: 4}, files), key === await server.moldSignKey(request, [...files, {...files[0], id: 'mdf-2'}]), key === await server.moldSignKey(request, files)], [32, false, false, true], 'the page\'s key changes with the request\'s version and its files');
+  // The documents on the page (2026-11-10): the PDFs and pictures served through the link, the other files named only (never served,
+  // not part of the key), neither the signature nor a signed copy nor a file deleted or refused for good.
+  const row = (id, kind, extra = {}) => ({id, kind, sha256: id, deletedAt: null, objectKey: 'k-' + id, outbox: null, sentAt: 'x', nextAttemptAt: null, lastError: null, ...extra});
+  const mixed = [row('mdf-q', 'pdf'), row('mdf-d', 'other'), row('mdf-i', 'image'), row('mds-1', 'image'), row('mdc-x', 'pdf'), row('mdf-gone', 'other', {deletedAt: 'x'}), row('mdf-refused', 'other', {outbox: 'send', sentAt: null, lastError: {final: true}}), row('mdf-z', 'other')];
+  check([server.signLinkFiles({data: {}}, mixed, 'open').map(file => file.id), server.signLinkOtherFiles(mixed).map(file => file.id)], [['mdf-q', 'mdf-i'], ['mdf-d', 'mdf-z']], 'the link serves the PDFs and pictures, and names the other files');
+  check(await server.moldSignKey(request, mixed) === await server.moldSignKey(request, mixed.filter(file => file.kind !== 'other')), true, 'the other files are not part of the page\'s key');
   const open = {id: 'mr-1', cancelledAt: null, outbox: 'send', accepted: null, remote: null, lastAttemptAt: null, lastError: null, data: {awaitsSignature: true, signatureLink: {hash: 'h', sentAt: '', expiresAt: '2999-01-01T00:00:00.000Z', by: 'rep'}}};
   check([server.signLinkOpen(open), server.signLinkOpen({...open, cancelledAt: 'x'}), server.signLinkOpen({...open, data: {...open.data, signatureLink: {...open.data.signatureLink, expiresAt: '2020-01-01T00:00:00.000Z'}}}),
     server.signLinkOpen({...open, accepted: {}}), server.signLinkOpen({...open, data: {...open.data, signature: {signer: 'x', signedAt: 'y', fileId: 'mds-1'}}}), server.signLinkOpen({...open, data: {signatureLink: open.data.signatureLink}})],

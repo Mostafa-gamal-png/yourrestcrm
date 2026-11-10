@@ -41,7 +41,7 @@ import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
 import {signaturePng, withSignature} from '../scripts/lib/signature-png.mjs';
-import {drawSignature, padInked, signaturePad, signRequest} from '../scripts/lib/signature-pad.mjs';
+import {documentsSettled, drawSignature, padInked, signaturePad, signRequest} from '../scripts/lib/signature-pad.mjs';
 import {asBefore} from '../scripts/lib/mold-before.mjs';
 
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
@@ -825,6 +825,8 @@ try {
   await phoneDialog.locator('.mold-signing').waitFor();
   ok(!(await phoneDialog.locator('.mold-signing-summary').innerText()).includes('PO'), 'what the customer signs carries no number');
   check(await signPhone.evaluate(() => { const dialog = document.querySelector('.mold-dialog'), title = dialog.querySelector('.mold-signing h3').getBoundingClientRect(); return [dialog.scrollTop, title.top >= 0 && title.bottom <= innerHeight]; }), [0, true], 'the step opens at its top: the customer reads the summary first');
+  // The request's files shown above the pad (2026-11-10) opened (or refused) first: the pad no longer moves when measured.
+  await documentsSettled(signPhone);
   await pad(signPhone).scrollIntoViewIfNeeded();
   const phonePad = await pad(signPhone).boundingBox();
   check([phonePad.x >= 0, phonePad.x + phonePad.width <= PHONE.width, phonePad.width >= 260, Math.round(phonePad.width / phonePad.height)], [true, true, true, 2], 'the pad fits the phone, 2:1');
@@ -880,6 +882,7 @@ try {
   ok(['مصنع east2', 'TABLET MOLD 400', 'Deferred', 'open', 'old'].every(text => summaryEn.includes(text)) && !summaryEn.includes('Files') && !summaryEn.includes('Q-TAB-7'), 'what the customer signs, in English (the request\'s data, not its files): ' + summaryEn);
   await tabletStep.getByRole('button', {name: 'Confirm and send'}).click();
   check(await tabletStep.locator('.field-error').allInnerTexts(), ['Type the name of the person signing for the customer (2 to 80 characters)', 'The signature is empty or too small; have the customer sign with a finger or a stylus'], 'refused in English: the name and the blank pad');
+  await documentsSettled(tablet);
   const portraitPad = await pad(tablet).boundingBox();
   await drawOn(tablet, {input: 'pen'});
   check(await inked(tablet), true, 'a stylus draws (pen pointer events)');

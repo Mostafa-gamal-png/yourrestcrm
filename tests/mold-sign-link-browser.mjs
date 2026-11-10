@@ -2,8 +2,9 @@
 // against the BUILT release (run `pnpm build` first), sending to the stand-in production API: on a phone of 360 px in Arabic, the
 // representative fills a request with a real PDF, chooses «ابعت للعميل لينك يوقّع منه» at the signing step, gets the link on the
 // request's sheet, copies it (the clipboard holds it) and has WhatsApp ready on the customer's mobile; the card says «بانتظار توقيع
-// العميل». The customer opens the link in a fresh browser (no session) on a phone: the request, its files (a PDF opened through the
-// link), English and back, then the name, the pad (a finger), the consent and «توقيع»: «تم التوقيع، شكرًا» with the signed copy; the
+// العميل». The customer opens the link in a fresh browser (no session) on a phone: the request, its files shown on the page (the PDF drawn
+// page after page, since the owner's «يوقع داخل pdf» of 2026-11-10, and opened through the link), English and back, then, in the box after
+// the last page, the name, the pad (a finger), the consent and «توقيع»: «تم التوقيع، شكرًا» with the signed copy; the
 // request reaches production. The signed copy's last page is rendered (poppler's pdftoppm, when on the machine) as a screenshot showing
 // the block with the Arabic shaped by the browser. On a computer in English the sheet's link panel makes a new link; in Arabic the
 // representative's device signing makes the signed copy, marked «نسخة موقّعة» on the sheet. Screenshots for the report. Synthetic
@@ -131,7 +132,12 @@ try {
   check(await customer.evaluate(() => document.querySelector('meta[name="robots"]')?.content || ''), 'noindex, nofollow, nocache', 'not indexed');
   await noOverflow(customer, 'the customer\'s page at 360 px');
   await shot(customer, '04-customer-page-360-ar');
-  const fileLink = customer.locator('.sign-files a', {hasText: 'فتح'}).first();
+  // The PDF is on the page itself, its two pages drawn, and the signature box comes after it (2026-11-10).
+  const shownFile = customer.locator('.sign-documents .mold-doc-file').first();
+  await shownFile.locator('.mold-doc-page[data-page="2"]').waitFor();
+  check([await shownFile.locator('.mold-doc-title').innerText(), await shownFile.locator('.mold-doc-page').count()], ['التصميم: رسم القالب.pdf · صفحتين', 2], 'the design\'s PDF shown on the page, both pages');
+  ok(await customer.evaluate(() => !!(document.querySelector('.sign-documents').compareDocumentPosition(document.querySelector('.sign-box')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'the signature box after the documents');
+  const fileLink = shownFile.locator('a.mold-doc-open');
   const href = await fileLink.getAttribute('href');
   // Fetched by the page itself (the browser maps the CRM's name to the test server; a request from Node would not).
   const fetched = target => customer.evaluate(async address => { const reply = await fetch(address, {cache: 'no-store'}), bytes = new Uint8Array(await reply.arrayBuffer()); let text = ''; for (const byte of bytes) text += String.fromCharCode(byte); return {status: reply.status, type: reply.headers.get('content-type'), base64: btoa(text)}; }, target);
