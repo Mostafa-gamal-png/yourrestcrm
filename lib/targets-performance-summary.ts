@@ -8,6 +8,10 @@ export function remainingTarget(target:number|null|undefined,actual:number|null|
  // Returns can make net actuals negative and increase the remaining quantity.
  return Math.round((Math.max(target-actual,0)+Number.EPSILON)*1_000_000)/1_000_000;
 }
+/** A product's achievement as the card writes it beside the gauge: two decimals (54.55, not 54.545455), unknown stays unknown. */
+export function shownAchievement(value:number|null|undefined):number|null{
+ return typeof value==='number'&&Number.isFinite(value)?Math.round((value+Number.EPSILON)*100)/100:null;
+}
 export function missingIndicators(metrics:KpiMetric[]=[]){
  return operationalIndicators.filter(indicator=>{const metric=metrics.find(value=>value.id===indicator.id);return metric?.status!=='not_applicable'&&(typeof metric?.score!=='number'||!Number.isFinite(metric.score));});
 }
