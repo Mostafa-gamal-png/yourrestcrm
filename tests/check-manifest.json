@@ -387,6 +387,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/trash-own-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
       "file": "tests/trip-start-update-package.py",
       "gate": "release-artifact",
       "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."

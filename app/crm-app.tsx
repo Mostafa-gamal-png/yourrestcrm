@@ -180,7 +180,9 @@ export default function CRM() {
         machineId?: string;
         editorKey: string;
     } | null>(null);
-    const go = useCallback((v: string) => { v=resolveCRMPage(me?.role||'',v,me?.access?.hidden);setView(v); setFiltersOpen(false); setServiceFilter('all'); setQ(''); setStageFilter('all'); setRegionFilter('all'); setInactiveOnly(false); setPageIndex(1); window.history.replaceState(null, '', '#' + v); }, [me?.role,me?.access?.hidden]);
+    // «المحذوفات» follows the member's «حذف» cells (lib/permissions.ts trashScopeOf), not the role alone.
+    const trashOpen=!!me&&pageAllowed(me,'trash');
+    const go = useCallback((v: string) => { v=resolveCRMPage(me?.role||'',v,me?.access?.hidden,trashOpen);setView(v); setFiltersOpen(false); setServiceFilter('all'); setQ(''); setStageFilter('all'); setRegionFilter('all'); setInactiveOnly(false); setPageIndex(1); window.history.replaceState(null, '', '#' + v); }, [me?.role,me?.access?.hidden,trashOpen]);
     const applySnapshot=useCallback((d:OfflineSnapshot)=>{
         if(isOfflineLogoutPending())return;
         const previous=snapshotRef.current?.me;
@@ -190,7 +192,7 @@ export default function CRM() {
         // The same data again (the server confirming the device's copy, or that copy announced once more after saving) leaves the screen as it is.
         if(!snapshotRef.current||!sameSnapshot(snapshotRef.current,d)){snapshotRef.current=d;setRecords(d.records);setMembers(d.members);setMe(d.me);setAudits(d.audits);setServiceQueue(Array.isArray(d.serviceQueue)?d.serviceQueue as ServiceQueueEntry[]:[]);}
         if(pendingServiceCase.current){const id=pendingServiceCase.current;pendingServiceCase.current='';const entry=(d.serviceQueue as ServiceQueueEntry[]|undefined)?.find(item=>item.id===id);if(entry)void recordSeen(entry).catch(()=>{});setVisitEditor(null);setServiceDetailId(id);}
-        setView(current=>resolveCRMPage(d.me.role,current,d.me.access?.hidden));setAuth(false);setError('');
+        setView(current=>resolveCRMPage(d.me.role,current,d.me.access?.hidden,pageAllowed(d.me,'trash')));setAuth(false);setError('');
     },[]);
     const clearSession=useCallback(()=>{
         ++snapshotGeneration.current;
@@ -288,7 +290,7 @@ export default function CRM() {
         }
         catch { }
     } return () => lifecycle.abort(); }, [go,me?.role]);
-    useEffect(()=>{if(!me)return;const next=resolveCRMPage(me.role,view,me.access?.hidden);if(next!==view)go(view);else if(window.location.hash==='#reports')window.history.replaceState(null,'','#'+next);},[me,view,go]);
+    useEffect(()=>{if(!me)return;const next=resolveCRMPage(me.role,view,me.access?.hidden,pageAllowed(me,'trash'));if(next!==view)go(view);else if(window.location.hash==='#reports')window.history.replaceState(null,'','#'+next);},[me,view,go]);
     // Lookups over the snapshot, built once per snapshot: a row, a list or a search no longer scans every record for each row it draws.
     const index = useMemo(() => recordIndex(records), [records]);
     const all = (kind: string) => index.ofKind(kind);
@@ -442,7 +444,7 @@ export default function CRM() {
         if(busy||form?.kind!=='team'||!form.data.id)return;
         const opened=form;setBusy(true);
         try{
-            const fresh=await request();setRecords(fresh.records);setMembers(fresh.members);setMe(fresh.me);setAudits(fresh.audits);setView(current=>resolveCRMPage(fresh.me.role,current,fresh.me.access?.hidden));
+            const fresh=await request();setRecords(fresh.records);setMembers(fresh.members);setMe(fresh.me);setAudits(fresh.audits);setView(current=>resolveCRMPage(fresh.me.role,current,fresh.me.access?.hidden,pageAllowed(fresh.me,'trash')));
             const member=fresh.members.find((value:Member)=>value.id===opened.data.id);
             if(fresh.me.role!=='admin'||regionScope(fresh.me)!=='all'||!member?.editToken){setForm(null);toast.error(say('لم يعد تعديل هذا المستخدم متاحًا لحسابك.','You can no longer edit this member.'));return;}
             setForm(current=>current===opened?{kind:'team',data:{...member,regionScope:regionScope(member),supervisorId:member.supervisorId||'none'},parentId:'',memberSnapshot:member.editToken}:current);
@@ -562,7 +564,7 @@ export default function CRM() {
  {followupEditor&&me&&<CustomerFollowupDialog key={followupEditor.key} initial={followupEditor.initial} customerId={followupEditor.customerId} records={followupEditor.initial?records:salesRecords} me={me} onClose={()=>setFollowupEditor(null)} onSaved={async queued=>{if(queued)await refreshLocal();else await load();toast.success(queued?say('محفوظ على الجهاز — بانتظار المزامنة','Saved on this device — waiting to sync'):t('تم حفظ المتابعة'));}}/>}
  {visitEditor && me && <CustomerVisitDialog key={visitEditor.editorKey} {...visitEditor} canDelete={!!visitEditor.initial&&canDeleteRecord(visitEditor.initial)} records={records} members={members} me={me} onClose={() => setVisitEditor(null)} onSaved={async queued => { if(queued)await refreshLocal();else await load(); toast.success(queued?say('محفوظ على الجهاز — بانتظار المزامنة','Saved on this device — waiting to sync'):t(serviceText(me?.role, "تم حفظ الزيارة"))); }} onCustomerCreated={createdCustomer} onOpenVisit={r => openVisit(r)} onNewVisit={(customerId, request) => openVisit(undefined, customerId, request?.id)} onOpenCustomer={setDetailId} onOpenQuote={salesWorkspace?setDetailId:()=>{}} onWorkflow={id=>{setVisitEditor(null);setServiceDetailId(id);}} onDelete={r => { setVisitEditor(null); setDeleting(r); }}/>}
  <AlertDialog open={!!deleting} onOpenChange={o => { if (!o && !busy)
-        setDeleting(null); }}><AlertDialogContent dir={direction()}><AlertDialogTitle>{t("حذف ")}{deleting ? t(title(deleting)) : t('السجل')}{t("؟")}</AlertDialogTitle><AlertDialogDescription>{t("يمكن استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.")}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel disabled={busy}>{t("إلغاء")}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={e => { e.preventDefault(); remove(); }}>{t("حذف السجل")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+        setDeleting(null); }}><AlertDialogContent dir={direction()}><AlertDialogTitle>{t("حذف ")}{deleting ? t(title(deleting)) : t('السجل')}{t("؟")}</AlertDialogTitle><AlertDialogDescription>{t(trashOpen?"يمكن استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.":"مدير النظام يقدر يسترجعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.")}</AlertDialogDescription><AlertDialogFooter><AlertDialogCancel disabled={busy}>{t("إلغاء")}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={e => { e.preventDefault(); remove(); }}>{t("حذف السجل")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
  {printQuote && <article className="print-document" dir={direction()}><div className="print-head"><img src="/yourrest-logo.png" alt={t("يورست للصناعات")}/><div><h1>{t("عرض سعر")}</h1><p dir="ltr">{printQuote.data.number}</p><p>{t(quoteStatus[printQuote.data.status])}</p></div></div><div className="print-meta"><div><b>{t("السادة / ")}{customerFor(printQuote)?.data.name}</b><p>{customerFor(printQuote)?.data.contact}</p><p>{t("الماكينة / خط الإنتاج: ")}{machineFor(printQuote)?.data.name}</p></div><div><p>{t("التاريخ: ")}{t(printQuote.data.date)}</p><p>{t("صالح حتى: ")}{t(printQuote.data.validUntil)}</p><p>{t("المسؤول: ")}{t(member(printQuote.assignedTo))}</p></div></div><table><thead><tr>{t(['#', 'البيان', 'الكمية', 'سعر الوحدة', 'الإجمالي'].map(h => <th key={h}>{t(h)}</th>))}</tr></thead><tbody>{t(printQuote.data.items.map((it: QuoteLine, i: number) => <tr key={i}><td>{t(i) + 1}</td><td>{it.description}</td><td>{t(it.quantity)}</td><td>{t(money(it.price))}</td><td>{t(money(lineCents(it.quantity,it.price)/100))}</td></tr>))}</tbody></table><div className="print-totals"><p><span>{t("الإجمالي قبل الخصم")}</span><b>{t(money(printQuote.data.subtotal))}</b></p><p><span>{t("الخصم")}</span><b>{t(money(printQuote.data.discount))}</b></p><p><span>{t("الضريبة (")}{t(printQuote.data.taxRate)}%)</span><b>{t(money(printQuote.data.tax))}</b></p><p className="grand"><span>{t("الإجمالي · ر.س")}</span><b>{t(money(printQuote.data.total))}</b></p></div>{printQuote.data.terms && <section><h3>{t("شروط الدفع والتوريد")}</h3><p className="print-terms">{printQuote.data.terms}</p></section>}<footer>{t("يورست للصناعات · YOUR REST INDUSTRIES")}<br />{t("عرض سعر — لا يُعد فاتورة ضريبية")}</footer></article>}
  </TrackingGate></JourneyTrackerProvider>;
 }

@@ -2,8 +2,9 @@
 // (or acts on), «الكل» per row, «—» where the action is not on the screen or not the role's, the administrator's team cells always on and
 // nothing to hide from an administrator, «عرض بيانات الفريق بالكامل» for a supervisor and a sales manager only, «انسخ الصلاحيات من» listing
 // the other members, and a copied draft (lib/permissions.ts copyPermissions) shown with what was skipped. «حذف» (2026-11-09): a cell for every
-// role that has the screen (not customer service: «—»), unticked by default for everyone but the administrator, with its scope note. No
-// browser or network.
+// role that has the screen (not customer service: «—»), unticked by default for everyone but the administrator, with its scope note.
+// «المحذوفات» (2026-11-10): a row for the supervisor and the representative too («استعراض» and «تحرير», restrict-only) with the note «لمن
+// عنده «حذف»: اللي حذفه هو بس». No browser or network.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,7 +33,11 @@ const isBox=(html,key)=>/type="checkbox"/.test(cell(html,key)),isNone=(html,key)
 
 // A supervisor never saved: every cell of the role on but «حذف»; the rows are the screens the role has or acts on, in the navigation's order.
 let sup=person('sup','supervisor',saved('supervisor',{},0)),html=render(sup);
-eq(rows(html),['dashboard','customer','map','activity','followup','mold-requests','journeys','quote','sales','competitors','targets'],'the supervisor\'s screens');
+eq(rows(html),['dashboard','customer','map','activity','followup','mold-requests','journeys','quote','sales','competitors','targets','trash'],'the supervisor\'s screens («المحذوفات» since 2026-11-10: it comes with «حذف»)');
+const rowNote=(html,screen)=>{const start=html.indexOf('data-matrix-row="'+screen+'"'),row=html.slice(start,html.indexOf('</tr>',start));return (/data-row-note="true">([^<]*)</.exec(row)||[])[1]||'';};
+eq([isBox(html,'browse:trash'),isChecked(html,'browse:trash'),isBox(html,'trash:edit'),isChecked(html,'trash:edit'),rowNote(html,'trash')],[true,true,true,true,'لمن عنده «حذف»: اللي حذفه هو بس'],'«المحذوفات» for a supervisor: «استعراض» and «تحرير» on (restrict-only), and the note');
+ok(cell(html,'trash:edit').includes('وطول ما «حذف» شاشة السجل مفتوح له'),'«تحرير» says restoring needs the record\'s «حذف»');
+eq(rowNote(html,'sales'),'','no note on other rows');
 for(const head of ['الشاشة','الكل','استعراض','إضافة','تحرير','حذف','تصدير','استيراد'])ok(html.includes('>'+head+'</th>'),'column «'+head+'»');
 eq([isBox(html,'browse:sales'),isChecked(html,'browse:sales'),isBox(html,'sales:import'),isChecked(html,'sales:import')],[true,true,true,true],'«المبيعات»: shown, import on');
 eq([isNone(html,'customer:import'),isNone(html,'dashboard:add'),isNone(html,'targets:edit')],[true,true,true],'«—» where the supervisor\'s role has no such action (or the screen none)');
@@ -66,7 +71,8 @@ ok(html.includes('مدير النظام بيشوف كل الشاشات دايم�
 ok(!html.includes('data-permission="viewAll"'),'no viewAll switch for an administrator (they see everything)');
 // A representative and customer service: only their screens; no general switch.
 html=render(person('rep1','rep',saved('rep',{},0)));
-eq(rows(html),['customer','map','activity','followup','mold-requests','targets'],'the representative\'s screens');
+eq(rows(html),['customer','map','activity','followup','mold-requests','targets','trash'],'the representative\'s screens («المحذوفات» with «حذف»)');
+eq([isBox(html,'browse:trash'),isBox(html,'trash:edit'),rowNote(html,'trash')],[true,true,'لمن عنده «حذف»: اللي حذفه هو بس'],'the representative: «المحذوفات» switches and the note');
 eq([isBox(html,'customer:add'),isNone(html,'customer:export'),isNone(html,'activity:edit'),isNone(html,'targets:edit')],[true,true,true,true],'a representative adds customers, never exports them nor edits a saved visit');
 eq(['customer:delete','activity:delete','followup:delete'].map(key=>[isBox(html,key),isChecked(html,key)]),[[true,false],[true,false],[true,false]],'a representative: «حذف» grantable on customers, visits and follow-ups, unticked');
 ok(cell(html,'activity:delete').includes('للمندوب: زياراته ومتابعاته هو بس'),'with the representative\'s scope');
@@ -85,7 +91,8 @@ ok(html.includes('اسم mgr · مدير المبيعات'),'named with their ro
 const copied=P.copyPermissions({role:'manager',stored:P.normalizePermissions('manager',mgr.permissions)},'supervisor');
 html=render({...sup,permissions:{version:sup.permissions.version,...copied.stored}},[sup,mgr]);
 eq([isChecked(html,'quote:delete'),isChecked(html,'activity:delete'),isChecked(html,'browse:competitors'),isChecked(html,'sales:import')],[false,true,false,true],'the copy: quote delete off, the granted visit delete copied, competitors hidden, the rest as the manager');
-eq([...copied.skipped],['customer:import','targets:edit','trash:edit','browse:trash'],'skipped: what the supervisor cannot hold (a delete cell is copied: the supervisor has the screen)');
+eq([...copied.skipped],['customer:import','targets:edit'],'skipped: what the supervisor cannot hold (a delete cell is copied: the supervisor has the screen; «المحذوفات» too since 2026-11-10)');
+eq(isChecked(html,'browse:trash'),false,'the manager\'s hidden «المحذوفات» copied');
 // A role changed in the form and not yet saved: every switch waits.
 html=render(sup,[sup],true);
 ok(html.includes('احفظ المستخدم الأول')&&isDisabled(html,'sales:add'),'a changed role: save the member first');

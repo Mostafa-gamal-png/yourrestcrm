@@ -82,6 +82,15 @@ for(const role of Object.keys(allowed)){
  for(const id of allowed[role].slice(4)){h.state.moreOpen=true;tree=h.render();byPage(tree,id).props.onClick();eq(navigated.at(-1),id,'Overflow action opens '+id);eq(h.state.moreOpen,false,'Selecting a page closes More');}
  if(role!=='admin')eq(byPage(tree,'team'),undefined,role+' cannot reach permission management');
 }
+// «المحذوفات» with «حذف» (the owner, 2026-11-10): a representative or a supervisor granted a «حذف» cell has it in «المزيد»; without one, or
+// with it hidden, not; the bottom bar stays the same.
+{const P=library('lib/permissions.ts'),grantedMe=(role,cells,hidden=[])=>({...me,role,access:P.memberAccess(role,{permissions:JSON.stringify(cells),hidden:JSON.stringify(hidden),version:1})});
+ for(const [label,member,expected] of [['rep, «حذف» on visits',grantedMe('rep',{'activity:delete':true}),['customer','map','activity','followup','targets','mold-requests','trash']],['rep, no «حذف»',grantedMe('rep',{}),['customer','map','activity','followup','targets','mold-requests']],['rep, «حذف» on but «المحذوفات» hidden',grantedMe('rep',{'activity:delete':true},['trash']),['customer','map','activity','followup','targets','mold-requests']],['supervisor, «حذف» on quotations',grantedMe('supervisor',{'quote:delete':true}),['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests','trash']],['supervisor, only «إلغاء بيع»',grantedMe('supervisor',{'sales:delete':true}),['customer','map','activity','followup','targets','dashboard','journeys','quote','sales','competitors','mold-requests']]]){
+  const h=harness('app/mobile-navigation.tsx',{me:member,view:'activity',onNavigate:noop,accountOpen:false,onAccountOpenChange:noop});let tree=h.render();
+  eq(nodes(tree,node=>node.type==='button'&&!!node.props['data-page']).map(node=>node.props['data-page']),expected,label+': its pages');
+  eq(pageIds(tree),['customer','map','activity','followup',...(member.role==='rep'?['targets']:[])],label+': the bottom bar unchanged');
+  if(expected.includes('trash')){tabs(tree).find(node=>!node.props['data-page']).props.onClick();tree=h.render();eq(nodes(tree,node=>node.type==='button'&&node.props['data-page']==='trash'&&!node.props.className?.includes('mobile-tab')).length,1,label+': «المحذوفات» in «المزيد»');}
+ }}
 // Exercise real focus listeners: bar hides for editable fields even without visualViewport.
 class FakeElement{constructor(editing=false){this.editing=editing;this.isContentEditable=false;this.isConnected=true;this.focused=0;}matches(){return this.editing;}focus(){this.focused++;}}
 const events=new Map(),document={activeElement:new FakeElement(),addEventListener:(name,callback)=>events.set(name,callback),removeEventListener:name=>events.delete(name)};

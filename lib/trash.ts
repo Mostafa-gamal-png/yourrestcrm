@@ -1,6 +1,8 @@
 // «المحذوفات» (the owner, 2026-11-09, «نفذ الاربعة», GSCO's «المحذوفات مع استرجاع»): the records deleted from the CRM, read from the
 // «حذف» history entries a deletion already writes (app/api/crm/route.ts; no table of its own, no migration), and restored from them by
-// /api/trash (lib/trash-server.ts). Shared by the page and the server: the record types, their names and the messages.
+// /api/trash (lib/trash-server.ts). Shared by the page and the server: the record types, their names and the messages. Who has the page:
+// lib/permissions.ts trashScopeOf (the administrator all; the sales manager, and since 2026-11-10 whoever has a «حذف» cell on, their own).
+import {MATRIX_COLUMNS,permissionRow,type PermissionAction,type PermissionScreen} from './permissions';
 export type TrashType='customer'|'visit'|'followup'|'opportunity'|'quote'|'machine';
 export const TRASH_TYPES:readonly TrashType[]=['customer','visit','followup','opportunity','quote','machine'];
 /** The app's names of the kinds of records (a follow-up is a contact of the «متابعات» page, a visit any other contact). */
@@ -29,7 +31,6 @@ export type TrashAnswer={items:TrashItem[];next:string|null;scope:'all'|'own'};
 export type TrashRestoreAnswer={ok:true;id:string;type:TrashType;notes:string[];alreadySaved?:boolean};
 
 export const TRASH_TEXT={
- forbidden:'المحذوفات متاحة لمدير النظام ومدير المبيعات فقط.',
  notYours:'استرجاع ما حذفه غيرك متاح لمدير النظام فقط.',
  notFound:'السجل غير موجود في المحذوفات.',
  already:'السجل اتسترجع قبل كده.',
@@ -45,4 +46,7 @@ export const trashNumberTaken=(code:string)=>'رقم يورست '+code+' أصب�
 export const trashCodeSkipped=(code:string,holder:string)=>'لم يُسترجع كود ERP «'+code+'»: أصبح للعميل «'+holder+'».';
 export const trashNewNumber=(code:string)=>'استُرجع العميل برقم يورست جديد '+code+' (حُذف قبل ترقيم العملاء).';
 export const TRASH_NEW_NUMBER_NOTE='حُذف قبل ترقيم العملاء: يُسترجع برقم يورست جديد.';
+/** A supervisor's or a representative's restoration refused because the record's own cell (lib/permissions.ts trashRestoreCellOff) is not on
+ *  for them now: «استرجاع السجل ده محتاج صلاحية «حذف» في الزيارات، …». */
+export const trashCellOff=(screen:PermissionScreen,action:PermissionAction)=>'استرجاع السجل ده محتاج صلاحية «'+(MATRIX_COLUMNS.find(column=>column.key===action)?.ar||action)+'» في '+(permissionRow(screen)?.ar||screen)+'، وهي مش مفتوحة لك دلوقتي. راجع مدير النظام.';
 export const yourrestCode=(number:number)=>'YR-C-'+String(number).padStart(6,'0');

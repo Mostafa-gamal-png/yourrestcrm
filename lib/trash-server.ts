@@ -2,17 +2,20 @@
 // - deleteCapture: what a deletion adds to its «حذف» history entry so the record can be put back as it was (app/api/crm/route.ts): the
 //   journey stops its contact was linked to, the records whose visit-plan pointers it removed (with the pointer), and a customer's Yourrest
 //   number and ERP code aliases (cascaded away with the row). Read inside the deletion's own statement, so nothing changes in between.
-// - listTrash: the deletions not restored yet, newest first, 40 at a time; the administrator sees all of them, the sales manager those
-//   they deleted themselves (lib/access.ts trashScope), each reader within their regions.
+// - listTrash: the deletions not restored yet, newest first, 40 at a time; the administrator sees all of them, the sales manager and (since
+//   2026-11-10) a supervisor or a representative with a «حذف» cell on those they deleted themselves (lib/permissions.ts trashScopeOf), each
+//   reader within their regions.
 // - restoreFromTrash: puts one back with its id, kind, parent, assignee, branch, data and creation time at the next version, and what its
-//   deletion took with it, in one gated batch with the receipt restore:<deletion id> (a deletion is restored once).
+//   deletion took with it, in one gated batch with the receipt restore:<deletion id> (a deletion is restored once). A supervisor or a
+//   representative (restoreRights) restores only while the record's own «حذف» cell is on for them and within what they may delete now.
 import {z} from 'zod';
-import {accessGuard,CRMError,type context} from './crm-server';
-import {followupTitle,type Kind,type Row} from './crm';
+import {accessGuard,CRMError,recordDeleteGuard,type context} from './crm-server';
+import {followupTitle,type Kind,type Member,type Row} from './crm';
 import {trashScope} from './access';
+import {PAGE_HIDDEN_TEXT,trashRestoreCellOff,trashScopeOf} from './permissions';
 import {memberCanAccessRegion,regionScope} from './regions';
 import {customerCodeKey,customerErpCodes} from './customer-identity';
-import {TRASH_DELETE_ACTION,TRASH_NEW_NUMBER_NOTE,TRASH_PAGE_SIZE,TRASH_RESTORE_ACTION,TRASH_TEXT,TRASH_TYPES,trashCodeSkipped,trashNewNumber,trashNumberTaken,trashParentFirst,trashRestoreId,trashType,yourrestCode,type TrashAnswer,type TrashItem,type TrashRestoreAnswer,type TrashType} from './trash';
+import {TRASH_DELETE_ACTION,TRASH_NEW_NUMBER_NOTE,TRASH_PAGE_SIZE,TRASH_RESTORE_ACTION,TRASH_TEXT,TRASH_TYPES,trashCellOff,trashCodeSkipped,trashNewNumber,trashNumberTaken,trashParentFirst,trashRestoreId,trashType,yourrestCode,type TrashAnswer,type TrashItem,type TrashRestoreAnswer,type TrashType} from './trash';
 
 type Context=Awaited<ReturnType<typeof context>>;
 type Pointer={id:string;field:'_visitPlan'|'_stageVisitId';value:unknown};
@@ -118,9 +121,22 @@ async function lineage(db:D1Database,ids:string[]){
  return{live,gone,node,customerOf};
 }
 
-/** The deletions this reader may see, newest first; a page of 40 and the cursor of the next. */
+/** Whose «المحذوفات» comes from «حذف» (a supervisor or a representative: lib/permissions.ts trashScopeOf), so each restoration of theirs is
+ *  asked rule 2 of the owner's 2026-11-10 request; the administrator and the sales manager restore as before. */
+const restoreRights=(me:Member)=>!trashScope(me.role);
+/** Rule 2, its first part: the record's own «حذف» cell (the one its deletion needed) still on for the member; the refusal's words, or null. */
+function cellRefusal(me:Member,record:Row){const off=trashRestoreCellOff(me,record);return off?trashCellOff(off[0],off[1]):null;}
+/** Rule 2, its second part: the record within what the member may delete now, the deletion's own scope (lib/crm-server.ts recordDeleteGuard,
+ *  for a record not there yet): a representative their own visit or follow-up of a customer in their regions, or a customer assigned to
+ *  them; a supervisor their team's. The commit's conditions, or a 403 in the words of a restoration out of scope. */
+function restoreScope(c:{me:Member;members:Member[];all:Row[]},record:Row){
+ try{return recordDeleteGuard(c,record,{restoring:true});}
+ catch(error){if(error instanceof CRMError&&error.status===403)throw new CRMError(TRASH_TEXT.outOfScope,403);throw error;}
+}
+
+/** The deletions this reader may see, newest first; a page of 40 and the cursor of the next. A member without the page: 404, as a hidden screen. */
 export async function listTrash(c:Context,url:URL):Promise<TrashAnswer>{
- const scope=trashScope(c.me.role);if(!scope)throw new CRMError(TRASH_TEXT.forbidden,403);
+ const scope=trashScopeOf(c.me);if(!scope)throw new CRMError(PAGE_HIDDEN_TEXT,404);
  const type=url.searchParams.get('type')||'all';if(type!=='all'&&!TRASH_TYPES.includes(type as TrashType))throw new CRMError('نوع السجل غير صحيح');
  const cursor=url.searchParams.get('before')||'',split=cursor.indexOf('|'),before=split>0?{at:cursor.slice(0,split),id:cursor.slice(split+1)}:null;
  if(cursor&&(!before||cursor.length>400))throw new CRMError('طلب غير صحيح');
@@ -145,12 +161,18 @@ export async function listTrash(c:Context,url:URL):Promise<TrashAnswer>{
  }
  const shown=picked.slice(0,TRASH_PAGE_SIZE),more=picked.length>TRASH_PAGE_SIZE;
  const graph=await lineage(c.db,shown.flatMap(({snap})=>snap?[snap.record.id,...references(snap.record)]:[]));
+ // For a supervisor or a representative, each entry also says when rule 2 refuses it, in the restoration's words: the scope is decided over
+ // the live lineage as the list read it (ids, kinds, parents and a customer's region: what recordDeleteGuard reads of the ancestors).
+ const rights=restoreRights(c.me),ancestors=rights?[...graph.live.values()].map(row=>({...row,assignedTo:'',branch:'',createdAt:'',updatedAt:'',version:0}) as unknown as Row):[];
+ const outOfScope=(record:Row)=>{try{restoreScope({me:c.me,members:c.members,all:ancestors},record);return null;}catch(error){if(error instanceof CRMError)return error.message;throw error;}};
  const items:TrashItem[]=shown.map(({audit,snap})=>{
   if(!snap)return{id:audit.id,recordId:audit.recordId,type:'customer',title:audit.recordId,number:'',customerName:'',deletedBy:audit.actor,deletedAt:audit.createdAt,blocked:TRASH_TEXT.broken,note:null};
   const record=snap.record,type=trashType(record)!,customer=record.kind==='customer'?undefined:graph.customerOf(record.parentId);
   const number=record.kind==='customer'?(snapshotNumber(snap)?yourrestCode(snapshotNumber(snap)!):''):record.kind==='activity'?text(record.data.visitNumber):'';
   const missing=references(record).find(id=>!graph.live.has(id));
-  const blocked=graph.live.has(record.id)?TRASH_TEXT.exists:missing?trashParentFirst(graph.gone.has(missing)?trashLabel(graph.gone.get(missing)!.record):TRASH_TEXT.linked):null;
+  const structural=graph.live.has(record.id)?TRASH_TEXT.exists:missing?trashParentFirst(graph.gone.has(missing)?trashLabel(graph.gone.get(missing)!.record):TRASH_TEXT.linked):null;
+  // The same order as restoreFromTrash: the cell, the record already there, the parent first, the scope.
+  const blocked=rights?cellRefusal(c.me,record)??structural??outOfScope(record):structural;
   return{id:audit.id,recordId:record.id,type,title:trashTitle(record),number,customerName:text(customer?.data.name)||snap.customer?.name||'',deletedBy:audit.actor,deletedAt:audit.createdAt,blocked,note:record.kind==='customer'&&!snapshotNumber(snap)?TRASH_NEW_NUMBER_NOTE:null};
  });
  return{items,next:more?shown[shown.length-1].audit.createdAt+'|'+shown[shown.length-1].audit.id:null,scope};
@@ -159,17 +181,22 @@ export async function listTrash(c:Context,url:URL):Promise<TrashAnswer>{
 const restoreInput=z.object({auditId:z.string().min(1).max(200),requestId:z.string().uuid()}).strict();
 
 export async function restoreFromTrash(c:Context,body:unknown):Promise<TrashRestoreAnswer>{
- const scope=trashScope(c.me.role);if(!scope)throw new CRMError(TRASH_TEXT.forbidden,403);
+ const scope=trashScopeOf(c.me);if(!scope)throw new CRMError(PAGE_HIDDEN_TEXT,404);
  const input=restoreInput.parse(body);
  const audit=await c.db.prepare('SELECT id,record_id AS recordId,detail FROM crm_audit WHERE id=? AND action=?').bind(input.auditId,TRASH_DELETE_ACTION).first<{id:string;recordId:string;detail:string}>();
  if(!audit)throw new CRMError(TRASH_TEXT.notFound,404);
  const snap=parseSnapshot(audit.detail,audit.recordId);
- // A sales manager restores what they deleted themselves (GSCO: without the whole-company view, only one's own deletions).
+ // A sales manager, a supervisor or a representative restores what they deleted themselves (GSCO: without the whole-company view, only
+ // one's own deletions).
  if(scope==='own'&&snap?.deletedBy!==c.me.id)throw new CRMError(TRASH_TEXT.notYours,403);
  const receiptId=trashRestoreId(audit.id);
  const replay=async()=>{const row=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receiptId).first<{detail:string}>();if(!row)return null;let detail:Record<string,unknown>={};try{detail=JSON.parse(row.detail);}catch{/* an unreadable receipt is still a restoration */}if(detail.requestId===input.requestId&&detail.restoredBy===c.me.id)return{ok:true as const,id:audit.recordId,type:(detail.type as TrashType)||'customer',notes:strings(detail.notes),alreadySaved:true};throw new CRMError(TRASH_TEXT.already,409);};
  const replayed=await replay();if(replayed)return replayed;
  if(!snap)throw new CRMError(TRASH_TEXT.broken,409);
+ // Rule 2 (the owner, 2026-11-10), after a replay has answered (a retry of what was restored before the cell went off gets its receipt):
+ // a supervisor or a representative restores only while the record's own «حذف» cell is on for them.
+ const rights=restoreRights(c.me),cellOff=rights?cellRefusal(c.me,snap.record):null;
+ if(cellOff)throw new CRMError(cellOff,403);
  const record=snap.record,type=trashType(record)!,refs=references(record);
  const pointerTargets=snap.pointers.map(p=>p.id),planTargets=record.kind==='customer'?[text((record.data._visitPlan as Record<string,unknown>|undefined)?.visitId),text(record.data._stageVisitId)].filter(Boolean):[];
  const graph=await lineage(c.db,[record.id,...refs,...pointerTargets,...planTargets]);
@@ -180,6 +207,9 @@ export async function restoreFromTrash(c:Context,body:unknown):Promise<TrashRest
  let permission:{sql:string;args:(string|number)[]};
  if(record.kind==='customer'){if(!memberCanAccessRegion(c.me,record.data.region))throw new CRMError(TRASH_TEXT.outOfScope,403);permission=accessGuard(c);}
  else{const parent=c.all.find(row=>row.id===record.parentId);if(!parent)throw new CRMError(TRASH_TEXT.outOfScope,403);permission=accessGuard(c,parent);}
+ // And within what they may delete now (the deletion's scope); the commit re-checks it with the member, the permissions' version (a cell
+ // switched off meanwhile fails it safe) and the reporting line.
+ if(rights){const scoped=restoreScope(c,record);permission={sql:permission.sql+' AND '+scoped.sql,args:[...permission.args,...scoped.args]};}
  const data:Record<string,unknown>={...record.data};for(const key of COMPUTED_FIELDS)delete data[key];
  if(record.kind==='customer'){
   // A visit-plan pointer to a contact that is gone points nowhere; scopeRecords drops it for readers, it is not stored back.

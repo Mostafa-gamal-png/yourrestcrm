@@ -81,9 +81,9 @@
       "tests": ["tests/visit-place-http.mjs", "tests/offline-outbox-browser.mjs", "tests/app-browser-workflows.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs"]
     },
     "trash": {
-      "about": "«المحذوفات» (2026-11-09): the deleted records page, GET/POST /api/trash (the list and the restoration, from the «حذف» history entries) and lib/trash*.ts; what a deletion records for it lives in app/api/crm (shared).",
+      "about": "«المحذوفات» (2026-11-09; since 2026-11-10 also for whoever has a «حذف» cell on: their own deletions, lib/permissions.ts trashScopeOf): the deleted records page, GET/POST /api/trash (the list and the restoration, from the «حذف» history entries) and lib/trash*.ts; what a deletion records for it lives in app/api/crm (shared).",
       "sources": ["app/trash-page.tsx", "app/trash-page.css", "app/api/trash/**", "lib/trash.ts", "lib/trash-server.ts", "tests/trash*.mjs"],
-      "tests": ["tests/trash-http.mjs", "tests/trash-browser.mjs", "tests/admin-delete-browser.mjs", "tests/server-authorization.mjs"]
+      "tests": ["tests/trash-http.mjs", "tests/trash-browser.mjs", "tests/trash-own-browser.mjs", "tests/admin-delete-browser.mjs", "tests/server-authorization.mjs"]
     },
     "customers": {
       "about": "Customers: the customer form and its location picker, address lookup, identities, imports, «لم يشترِ منذ 60 يومًا» (the last purchase GET /api/crm attaches), opening on the device's copy and the slow-phone budget of the customer list and sheet.",

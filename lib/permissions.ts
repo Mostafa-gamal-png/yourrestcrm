@@ -14,8 +14,11 @@
 //   grantable «حذف» cell, which is off for every role but the administrator.
 // - «استعراض» shows or hides the screen (hidden: its own requests answer 404, never 401/403, which lock the offline session).
 // - The administrator is never locked out: nothing is hidden from an administrator and their «الفريق والصلاحيات» cells are always on.
+// - «المحذوفات» (the owner, 2026-11-10): besides the administrator (all) and the sales manager (their own), whoever has a «حذف» cell on
+//   (TRASH_DELETE_CELLS) sees their own deletions there and restores one while the record's own cell is still on (trashScopeOf,
+//   trashRestoreCellOff; the scope is the deletion's: lib/trash-server.ts). Nothing new is granted: the page follows the «حذف» grant.
 // Shared by the server (lib/crm-server.ts context(), the routes) and the page (nav, buttons, the matrix in the member form).
-import {canViewPage} from './access';
+import {canViewPage,trashScope} from './access';
 
 export const PERMISSION_ACTIONS=['add','edit','delete','export','import'] as const;
 export type PermissionAction=typeof PERMISSION_ACTIONS[number];
@@ -34,13 +37,16 @@ type Text={ar:string;en:string};
  *  administrator), without the roles that have the screen but nothing it could delete (customer service on «الزيارات»: their service requests are
  *  never deleted, so no cell that does nothing), and roleNote says, for a role, what granting it does for that role. */
 export type MatrixCell=Text&{roles:readonly string[];grantable?:true;without?:readonly string[];note?:Text;roleNote?:Partial<Record<string,Text>>};
-export type MatrixRow=Text&{screen:PermissionScreen;cells:Partial<Record<PermissionAction,MatrixCell>>};
+export type MatrixRow=Text&{screen:PermissionScreen;cells:Partial<Record<PermissionAction,MatrixCell>>;roleNote?:Partial<Record<string,Text>>};
 const ALL=['admin','manager','supervisor','rep','customer_service','customer_service_manager'] as const;
 const SALES=['admin','manager','supervisor','rep'] as const,MANAGEMENT=['admin','manager','supervisor'] as const,SERVICE=['admin','customer_service','customer_service_manager'] as const;
 /** «حذف»: off by default except for the administrator; whoever it is granted to deletes only what they may edit (their own scope). */
 const DEFAULT_ON=['admin'] as const;
 const deleteScope:Text={ar:'مقفولة في الأول لكل الأدوار ما عدا مدير النظام، وتقدر تفتحها لأي مستخدم. بيحذف السجلات اللي يقدر يعدّلها بس (فريقه ومناطقه)، وعرض بيانات الفريق بالكامل مبيوسّعش الحذف.',en:'Off by default for every role but the administrator; it can be granted to any member. They delete only the records they may edit (their team and regions); «View the whole team\'s data» never widens deleting.'};
 const repOwnContacts:Text={ar:'للمندوب: زياراته ومتابعاته هو بس (اللي سجّلها)، لعملاء مناطقه.',en:'For a representative: only their own visits and follow-ups (recorded by them), of customers in their regions.'};
+/** «المحذوفات» of a supervisor or a representative: it comes with «حذف» (trashScopeOf). */
+const trashOwn:Text={ar:'لمن عنده «حذف»: اللي حذفه هو بس',en:'For whoever has «Delete»: only what they deleted themselves'};
+const trashOwnRestore:Text={ar:'لمن عنده «حذف»: اللي حذفه هو بس، وطول ما «حذف» شاشة السجل مفتوح له، وفي حدود اللي يقدر يحذفه.',en:'For whoever has «Delete»: only what they deleted themselves, while «Delete» of the record\'s screen is on for them, and within what they may delete.'};
 
 /** The rows: Yourrest's screens in the order of the navigation (app/crm-app.tsx nav), each action mapped to the capability it gates. */
 export const PERMISSION_MATRIX:readonly MatrixRow[]=[
@@ -101,8 +107,8 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   add:{ar:'إضافة مستخدم',en:'Add a member',roles:['admin']},
   edit:{ar:'تعديل مستخدم وصلاحياته',en:'Edit a member and their permissions',roles:['admin']},
  }},
- {screen:'trash',ar:'المحذوفات',en:'Deleted records',cells:{
-  edit:{ar:'استرجاع سجل محذوف',en:'Restore a deleted record',roles:['admin','manager']},
+ {screen:'trash',ar:'المحذوفات',en:'Deleted records',roleNote:{supervisor:trashOwn,rep:trashOwn},cells:{
+  edit:{ar:'استرجاع سجل محذوف',en:'Restore a deleted record',roles:['admin','manager','supervisor','rep'],roleNote:{manager:{ar:'لمدير المبيعات: اللي حذفه هو بس.',en:'For a sales manager: only what they deleted themselves.'},supervisor:trashOwnRestore,rep:trashOwnRestore}},
  }},
 ];
 export const PERMISSION_SCREENS:readonly PermissionScreen[]=PERMISSION_MATRIX.map(row=>row.screen);
@@ -199,8 +205,31 @@ export function cellRefused(me:Who,screen:PermissionScreen,action:PermissionActi
 export const can=(me:Who|null|undefined,screen:PermissionScreen,action:PermissionAction)=>!!me&&cellCeiling(me.role,screen,action)&&!cellRefused(me,screen,action);
 /** Whether the administrator hid this screen from the member (never from an administrator). */
 export const pageHidden=(me:Who|null|undefined,screen:string)=>!!me&&me.role!=='admin'&&!!me.access?.hidden.includes(screen as PermissionScreen);
-/** Whether the screen shows for the member: the role has it and it is not hidden. */
-export const pageAllowed=(me:Who|null|undefined,screen:string)=>!!me&&canViewPage(me.role,screen)&&!pageHidden(me,screen);
+/** Whether the screen shows for the member: the role has it, it is not hidden, and «المحذوفات» only for whom trashScopeOf gives it. */
+export const pageAllowed=(me:Who|null|undefined,screen:string)=>!!me&&canViewPage(me.role,screen)&&!pageHidden(me,screen)&&(screen!=='trash'||trashScopeOf(me)!==null);
+
+/** «المحذوفات» (the owner, 2026-11-10): the «حذف» cells whose deletions reach it (a deletion of /api/crm writes the «حذف» entry the page reads,
+ *  lib/trash.ts). «إلغاء بيع» is not one: a voided sale stays in «المبيعات» with its reason (app/api/sales: status void, an «إلغاء بيع» entry). */
+export const TRASH_DELETE_CELLS:readonly string[]=GRANTABLE_CELLS.filter(key=>key!=='sales:delete');
+/** Who has «المحذوفات» and what it lists: the administrator every deletion and the sales manager their own, whatever their cells (lib/access.ts
+ *  trashScope); a supervisor or a representative their own while at least one of TRASH_DELETE_CELLS is on for them; nobody else (customer
+ *  service holds no «حذف» cell). A member whose cells are all off again has no page; their deletions stay for the administrator. «استعراض»
+ *  can still hide it (pageAllowed, the routes' 404), never from an administrator. */
+export function trashScopeOf(me:Who|null|undefined):'all'|'own'|null{
+ if(!me||!canViewPage(me.role,'trash'))return null;
+ const byRole=trashScope(me.role);if(byRole)return byRole;
+ return TRASH_DELETE_CELLS.some(key=>{const [screen,action]=key.split(':') as [PermissionScreen,PermissionAction];return can(me,screen,action);})?'own':null;
+}
+/** A restoration by a member whose «المحذوفات» comes from «حذف» (a supervisor or a representative): the record's own cell, the one its
+ *  deletion needed (recordCell: a customer «العملاء · حذف», a visit «الزيارات · حذف», a follow-up «المتابعات · حذف», a quotation or mold
+ *  specifications «عروض الأسعار · حذف», an old follow-up thread «المتابعات · حذف», a machine «العملاء · تحرير»), must still be on: the cell
+ *  when it is not, else null. The administrator and the sales manager restore as before (never refused here). */
+export function trashRestoreCellOff(me:Who,record:{kind?:string;data?:Record<string,unknown>|null}):[PermissionScreen,PermissionAction]|null{
+ if(trashScope(me.role))return null;
+ // recordCell names a cell for every kind a deletion records (lib/trash-server.ts parseSnapshot); anything else is refused as a customer's.
+ const cell=recordCell(String(record.kind||''),'delete',record)||['customer','delete'] as [PermissionScreen,PermissionAction];
+ return can(me,cell[0],cell[1])?null:cell;
+}
 /** A request that belongs to these screens is closed only when one of them was hidden and every one of them is hidden or not the role's,
  *  so hiding one screen never breaks another that shares the request (GSCO sectionBlocksRequest). */
 export function pagesBlocked(me:Who,screens:readonly PermissionScreen[]){return screens.some(screen=>pageHidden(me,screen))&&screens.every(screen=>pageHidden(me,screen)||!canViewPage(me.role,screen));}

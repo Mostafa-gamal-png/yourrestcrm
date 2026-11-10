@@ -94,7 +94,8 @@ for(const role of ROLES){
  const me={role,access:P.memberAccess(role,null)};
  eq(me.access,{version:0,off:role==='admin'?[]:roleDeletes(role),hidden:[],viewAll:false},role+': no saved row, only «حذف» off'+(role==='admin'?' (none for the administrator)':''));
  for(const screen of P.PERMISSION_SCREENS){
-  eq(P.pageAllowed(me,screen),A.canViewPage(role,screen),role+' sees '+screen+' as before');
+  // «المحذوفات» (2026-11-10): the role's ceiling includes the supervisor and the representative, who have it only with a «حذف» cell on.
+  eq(P.pageAllowed(me,screen),A.canViewPage(role,screen)&&(screen!=='trash'||A.trashScope(role)!==null),role+' sees '+screen+' as before');
   for(const action of P.PERMISSION_ACTIONS)eq(P.can(me,screen,action),P.cellCeiling(role,screen,action)&&(role==='admin'||!DELETES.includes(screen+':'+action)),role+' '+screen+':'+action+' as the role, «حذف» off unless administrator');
  }
  // The same without any access read (an old offline snapshot): the defaults, never more.
@@ -107,8 +108,8 @@ for(const role of ROLES){
 const ceiling=role=>P.PERMISSION_CELLS.filter(key=>{const [screen,action]=key.split(':');return P.cellCeiling(role,screen,action);});
 eq(ceiling('admin'),P.PERMISSION_CELLS,'the administrator has every cell');
 eq(ceiling('manager'),['customer:add','customer:edit','customer:delete','customer:export','customer:import','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:edit','targets:export','trash:edit'],'the sales manager');
-eq(ceiling('supervisor'),['customer:add','customer:edit','customer:delete','customer:export','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:export'],'the supervisor (customer:delete now grantable: the screen is theirs)');
-eq(ceiling('rep'),['customer:add','customer:edit','customer:delete','activity:add','activity:delete','followup:add','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the representative: the delete cells of their screens are grantable (no quotation or sales screen)');
+eq(ceiling('supervisor'),['customer:add','customer:edit','customer:delete','customer:export','activity:add','activity:edit','activity:delete','activity:export','followup:add','followup:edit','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','journeys:add','quote:add','quote:edit','quote:delete','quote:export','sales:add','sales:edit','sales:delete','sales:export','sales:import','targets:export','trash:edit'],'the supervisor (customer:delete now grantable: the screen is theirs; «المحذوفات» restore since 2026-11-10, with «حذف»)');
+eq(ceiling('rep'),['customer:add','customer:edit','customer:delete','activity:add','activity:delete','followup:add','followup:delete','mold-requests:add','mold-requests:edit','mold-requests:delete','trash:edit'],'the representative: the delete cells of their screens are grantable (no quotation or sales screen); «المحذوفات» restore with «حذف»');
 eq(ceiling('customer_service'),['customer:edit','activity:add','activity:edit','activity:export','complaints:add','complaints:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'customer service: no «حذف» at all («—»: their service requests are never deleted; no customers screen)');
 eq(ceiling('customer_service_manager'),['customer:edit','activity:add','activity:edit','activity:export','complaints:add','complaints:edit','service-kpi:edit','mold-requests:add','mold-requests:edit','mold-requests:delete'],'the customer-service manager');
 for(const role of ROLES)eq(DELETES.filter(key=>{const [screen,action]=key.split(':');return P.cellCeiling(role,screen,action);}),roleDeletes(role),role+': a delete cell for every screen the role has (never customer service), and only those');
@@ -127,7 +128,7 @@ eq(P.normalizePermissions('admin',null).cells,Object.fromEntries(P.PERMISSION_CE
 // supervisors lose deleting until the administrator ticks it); written true they stay granted.
 eq(P.memberAccess('supervisor',{permissions:JSON.stringify({'activity:edit':false}),hidden:'[]',version:3}).off,['customer:delete','activity:edit','activity:delete','followup:delete','quote:delete','sales:delete'],'an old row: the delete cells off');
 eq(P.memberAccess('supervisor',{permissions:JSON.stringify({'activity:delete':true,'sales:delete':true}),hidden:'[]',version:3}).off,['customer:delete','followup:delete','quote:delete'],'granted cells on');
-eq(n.hidden,['sales'],'only screens the role has can be hidden, once each');
+eq(n.hidden,['sales','trash'],'only screens the role has can be hidden, once each («المحذوفات» is the supervisor\'s with «حذف», so it can be hidden)');
 eq(n.viewAll,true,'«عرض بيانات الفريق بالكامل» exists for the supervisor');
 eq(P.normalizePermissions('rep',{viewAll:true}).viewAll,false,'not for a representative (reads stay as the role: decided, writes on own data only)');
 eq(P.normalizePermissions('customer_service',{viewAll:true}).viewAll,false,'nor for customer service');
@@ -150,9 +151,10 @@ eq(P.memberAccess('manager',{permissions:'not json',hidden:'{',version:2}),{vers
 // Copying: every cell of the target's ceiling takes the source's value; what the target's role cannot hold is skipped and listed.
 const managerSaved=P.normalizePermissions('manager',{cells:{'customer:delete':false,'quote:delete':false},hidden:['trash','competitors'],viewAll:true});
 let copied=P.copyPermissions({role:'manager',stored:managerSaved},'supervisor');
-eq([copied.stored.cells['quote:delete'],copied.stored.cells['customer:edit'],copied.stored.hidden,copied.stored.viewAll],[false,true,['competitors'],true],'manager → supervisor: values copied within the supervisor\'s role');
-eq(copied.skipped,['customer:import','targets:edit','trash:edit','browse:trash'],'skipped: what the supervisor\'s role cannot hold (customer:delete was off, so nothing to skip there)');
-eq(copied.skipped.map(key=>P.permissionKeyText(key)),['العملاء · استيراد','المستهدفات وتقييم الأداء · تحرير','المحذوفات · تحرير','المحذوفات · استعراض'],'and named in Arabic');
+eq([copied.stored.cells['quote:delete'],copied.stored.cells['customer:edit'],copied.stored.hidden,copied.stored.viewAll,copied.stored.cells['trash:edit']],[false,true,['competitors','trash'],true,true],'manager → supervisor: values copied within the supervisor\'s role («المحذوفات» hidden and restoring included since 2026-11-10)');
+eq(copied.skipped,['customer:import','targets:edit'],'skipped: what the supervisor\'s role cannot hold (customer:delete was off, so nothing to skip there)');
+eq(copied.skipped.map(key=>P.permissionKeyText(key)),['العملاء · استيراد','المستهدفات وتقييم الأداء · تحرير'],'and named in Arabic');
+eq(P.permissionKeyText('browse:trash'),'المحذوفات · استعراض','a hidden «المحذوفات» named in Arabic');
 copied=P.copyPermissions({role:'rep',stored:P.normalizePermissions('rep',{cells:{'customer:add':false}})},'supervisor');
 eq([copied.stored.cells['customer:add'],copied.stored.cells['activity:edit'],copied.stored.cells['sales:add']],[false,false,false],'rep → supervisor: the supervisor\'s cells a representative does not have come over off (GSCO copies the value)');
 // «حذف» copies to whoever's role has the screen; the source's grant of a screen the target lacks is skipped and listed.

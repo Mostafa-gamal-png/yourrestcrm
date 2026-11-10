@@ -5,28 +5,31 @@ export const viewsWholeTeam=(me:Member)=>(me.role==='supervisor'||me.role==='man
 /** Commercial reporting and pricing are management workspaces. */
 export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'].includes(role);
 export function canViewPage(role:string,view:string){
- if(role==='rep')return ['customer','map','activity','followup','targets','mold-requests'].includes(view);
+ // «المحذوفات» here is the role's ceiling (the matrix offers its «استعراض» and «تحرير»); who has it now is lib/permissions.ts trashScopeOf.
+ if(role==='rep')return ['customer','map','activity','followup','targets','mold-requests','trash'].includes(view);
  // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
  // The customer-service evaluation has one for the manager and the administrator; a representative meets theirs on the Complaints page.
  // Mold requests are for every role (the owner, 2026-11-01), customer service included.
  if(['customer_service','customer_service_manager'].includes(role))return view==='activity'||view==='complaints'||view==='mold-requests'||view==='service-kpi'&&role==='customer_service_manager';
  if(!canUseSalesWorkspace(role))return false;
- if(view==='trash')return trashScope(role)!==null;
+ if(view==='trash')return true;
  if(view==='team'||view==='complaints'||view==='service-kpi')return role==='admin';
  return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets','mold-requests'].includes(view);
 }
 
-/** «المحذوفات» (2026-11-09): the administrator sees and restores every deletion, the sales manager only those they made themselves; nobody
- *  else has the page. «حذف» can be granted to any member (lib/permissions.ts): a supervisor, representative or customer-service member it
- *  was granted to does not get this page; the administrator sees and restores what they deleted. One place, so the permissions matrix can
- *  make it a switch later. */
+/** «المحذوفات» (2026-11-09, widened 2026-11-10): by role, the administrator sees and restores every deletion and the sales manager those they
+ *  made themselves, whatever their cells. A supervisor or a representative has the page only while one of their «حذف» cells is on (the
+ *  owner, 2026-11-10: «اللي اديته صلاحية الحذف … يشوف في المحذوفات اللي هو حذفه ويقدر يرجّعه بنفسه»), for their own deletions: that part
+ *  needs the member's cells and is lib/permissions.ts trashScopeOf, the one function that decides it for a member. Customer service never has
+ *  it (no «حذف» cell). */
 export function trashScope(role:string):'all'|'own'|null{return role==='admin'?'all':role==='manager'?'own':null;}
 
 /** Preserve old bookmarks without granting access to a management workspace. A screen the administrator hid from the member (hidden,
- *  lib/permissions.ts) is not opened either: the first screen the member has, «الزيارات» when it is not hidden. */
-export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=[]){
+ *  lib/permissions.ts) is not opened either: the first screen the member has, «الزيارات» when it is not hidden. trashOpen: whether the
+ *  member has «المحذوفات» now (lib/permissions.ts pageAllowed(me,'trash')); without it, the role's own (the administrator, the sales manager). */
+export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=[],trashOpen=trashScope(role)!==null){
  const page=view==='factory'?'customer':['opportunity','service'].includes(view)?'activity':view==='reports'&&canUseSalesWorkspace(role)?'targets':view;
- const shown=(screen:string)=>canViewPage(role,screen)&&(role==='admin'||!hidden.includes(screen));
+ const shown=(screen:string)=>canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen));
  if(shown(page))return page;
  return ['activity','dashboard','customer','map','followup','mold-requests','complaints','targets','journeys','quote','sales','competitors','service-kpi','trash','team'].find(shown)||'activity';
 }
