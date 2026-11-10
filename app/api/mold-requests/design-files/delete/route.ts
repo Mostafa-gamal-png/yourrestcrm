@@ -6,15 +6,18 @@
 // that has not reached production keeps it in the CRM again until another is attached.
 // A receipt makes a repeated tap harmless; the audit entry names the file, never its contents.
 // The customer's signature (2026-11-04) is not deleted while the request's data names it: an edit that changes what was signed replaces it.
+// Nor is a signed copy the signature names (2026-11-10).
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requirePages} from '@/lib/crm-server';
-import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView,moldSignatureOf} from '@/lib/mold-requests';
+import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView,moldSignatureOf,moldSignedCopyOf} from '@/lib/mold-requests';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 /** Its English pair is in lib/locales/en.json. */
 const SIGNATURE_KEPT='توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.';
+/** A signed copy the signature names (2026-11-10) stays with it, the same way. Its English pair is in lib/locales/en.json. */
+const COPY_KEPT='النسخة الموقّعة ما بتتحذفش من الطلب طول ما التوقيع اللي عليها هو توقيع الطلب.';
 const schema=z.object({requestId:z.string().uuid(),id:z.string().regex(/^mr-[0-9a-f-]{36}$/),fileId:z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)}).strict();
 
 export async function POST(req:Request){try{
@@ -44,7 +47,9 @@ export async function POST(req:Request){try{
  const file=(await loadMoldDesignFiles(c.db,'id=? AND request_id=?',[input.fileId,row.id]))[0];
  if(!file)throw new CRMError('الملف غير موجود، أو من ملفات الإنتاج التي يديرها الإنتاج',404);
  if(file.deletedAt)return answer();
- if(moldSignatureOf(row.data)?.fileId===file.id)throw new CRMError(SIGNATURE_KEPT,409);
+ const signature=moldSignatureOf(row.data);
+ if(signature?.fileId===file.id)throw new CRMError(SIGNATURE_KEPT,409);
+ if(signature&&moldSignedCopyOf(file.id,signature.fileId))throw new CRMError(COPY_KEPT,409);
  const remote=moldDesignMayBeRemote(file);
  if(remote&&!moldEditable(row))throw new CRMError(row.cancelledAt?'الطلب ملغى؛ ملفاته باقية كما هي':'اكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد حذف الملف ممكنًا',409);
  const now=new Date().toISOString(),mutation=crypto.randomUUID(),permission=accessGuard(c),gate='EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND mutation_id=?)';

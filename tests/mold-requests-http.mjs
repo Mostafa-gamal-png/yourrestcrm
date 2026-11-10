@@ -1006,7 +1006,7 @@ try {
     check((await as('sup')('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'create', customerId: 's1', specs, payment: 'cash'}})).status, 400, 'the supervisor too');
     check([await rows(), callsOf('requests').length - sendsBefore], [0, 0], 'nothing saved, nothing sent');
     // the JSON route takes a signature within its cap, not a body over it
-    check((await ask('rep', {signature: {signer: 'م. خالد', png: 'A'.repeat(380_000)}})).status, 413, 'a body over the route\'s 380 000 bytes: 413');
+    check((await ask('rep', {signature: {signer: 'م. خالد', png: 'A'.repeat(910_000)}})).status, 413, 'a body over the route\'s 910 000 bytes (2026-11-10: the block too): 413');
 
     // (b) with it: one save (request and file), kept until its design file (2026-11-08), then the request sent, then the PNG as a design
     // file without category, then the design file
@@ -1499,8 +1499,11 @@ try {
     await until(async () => freeMock.row(free).designFiles?.length === 2, 'its signature and design file');
     await as('cs')('/api/mold-requests');
     await until(async () => !!freeMock.row(service), 'the other waiting request');
-    check([sentOf(service).at(-1).customer.erpCode, freeMock.row(service).designFiles?.length ?? 0], ['CS-1', 0], 'the other one goes as soon as the CRM learned it (its design file after it)');
     await until(async () => freeMock.row(service).designFiles?.length === 1, 'its design file');
+    // Its design file after it, by the order production received them (not by catching none at one instant: on a fast machine the file
+    // arrives within the same check, 2026-11-10).
+    const serviceCalls = freeMock.state.calls.filter(call => call.signed && (call.route === 'requests' || call.route === 'design-files') && call.body.includes(service)).map(call => call.route);
+    check([sentOf(service).at(-1).customer.erpCode, serviceCalls.indexOf('requests') >= 0 && serviceCalls.indexOf('requests') < serviceCalls.indexOf('design-files')], ['CS-1', true], 'the other one goes as soon as the CRM learned it (its design file after it)');
     // Once known, a new request for a customer not in the CRM goes as any other.
     res = await ask('rep', {customer: {name: 'مصنع جديد', erpCode: 'N-1'}}); body = await res.json();
     res = await upload(body.request.id, 'رسم جديد.pdf', pdf('new')); const fresh = (await res.json()).request;

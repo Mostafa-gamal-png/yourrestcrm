@@ -38,6 +38,13 @@
 // any other is stored unlinked (customerId '', data.customer.crmNumber null, data.customer.erpCode) and goes to production with the name
 // and ERP code only, once production's application takes such a customer (moldFreeCustomerHeld, sending.held 'free_customer'). Who sees
 // an unlinked request, and which sales manager approves it, goes by its requester's regions (moldRequestInRegion).
+// The customer's signature inside the request's PDFs, and a link the customer signs from (the owner, 2026-11-10: «عايز توقيع العميل فى
+// طلبات القوالب داخل pdf التصميم او عرض السعر او po»، «امكانية ارسال لينك بالpdf طلب القالب للتوقيع عليه»): when the customer signs (on
+// the device as before, or from the link), every PDF of the request's design, quotation and PO files the customer saw gets a signed copy
+// next to it («… - موقّع.pdf», the same category; the original untouched), named by the signature (moldSignedCopyId) and not deletable
+// while it names it. A request whose requester chose the link instead of the pad (data.awaitsSignature) is kept in the CRM, not sent,
+// until the customer signs (moldHeldFor 'customer_signature' «بانتظار توقيع العميل»), then sent by itself. moldSigningView says how far
+// the signing is (the link sent and its expiry, the copies made, the files that got none and why).
 import {cellRefused} from './permissions';
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
@@ -47,7 +54,16 @@ import {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOL
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,moldSignatureRequired};
 /** The customer's signature as the request's data names it (2026-11-04): who signed for the customer, when (the CRM's UTC time), and
  *  the CRM's design file (its crmFileId) that holds the PNG. */
-export type MoldSignature={signer:string;signedAt:string;fileId:string};
+export type MoldSignature={signer:string;signedAt:string;fileId:string;
+ /** How the customer signed (2026-11-10): on the representative's device, or from the link; absent for a signature stored before. */
+ via?:'device'|'link'};
+/** The signature as the request's data stores it: besides who and when, since 2026-11-10 the block stamped in its PDFs (the PNG in the
+ *  object store under key, never shown), the SHA-256 of the PDFs the customer saw on the device before they were uploaded (seen: each
+ *  gets its signed copy as it arrives), and the link it was given through (its token's hash, for the customer's downloads that day). */
+export type MoldSignatureData=MoldSignature&{block?:{key:string;sha256:string;width:number;height:number;at:string};seen?:string[];link?:{hash:string;at:string}};
+/** The link the customer signs from (2026-11-10): its token's SHA-256 only (the token is shown once, to whoever made it), when it was made,
+ *  until when it opens (14 days), and by whom. One a request: a new one replaces it; signing or cancelling the request ends it. */
+export type MoldSignLink={hash:string;sentAt:string;expiresAt:string;by:string};
 /** How the customer pays (2026-11-03): chosen when asking; a request asked for before has none. */
 export type MoldPayment='cash'|'deferred';
 export type MoldStage=typeof MOLD_STAGES[number];
@@ -98,7 +114,12 @@ export type MoldRequestData={requestedAt:string;customer:{crmNumber:number|null;
  designRequired?:true;
  /** The customer's signature (2026-11-04): absent for a request asked for before, or by customer service or the administrator. Never part
   *  of the requests body, so a request is sent with the same bytes with it or without it. */
- signature?:MoldSignature};
+ signature?:MoldSignatureData;
+ /** The requester chose to send the customer a link to sign from (2026-11-10): kept in the CRM (moldHeldFor 'customer_signature') until
+  *  the customer signs, from the link or on the device; removed when signed. Never part of the requests body. */
+ awaitsSignature?:true;
+ /** The link the customer signs from, while one is active (absent once signed, or never made). */
+ signatureLink?:MoldSignLink};
 export type MoldError={code:string;fields?:string[];http?:number;at:string;
  /** Why production refused (details.reason): a design file's bytes (empty, not_pdf, bad_image, too_many_pixels, with fields ['file'])
   *  or its place (too_many_files, crm_file_id_used, with fields ['crmFileId']); a request's send, production_only (409 request_locked:
@@ -131,7 +152,9 @@ export type MoldDesignState='sent'|'waiting'|'held'|'rejected'|'locked'|'cancell
  *  waits for the requester's resend. error: the last failure, or why production refused the file or (state sent) its deletion. */
 export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;state:MoldDesignState;error:MoldError|null;stopped:boolean;canDelete:boolean;href:string;viewable:boolean;category:MoldFileCategory;
  /** The customer's signature (the file the request's data names): labelled so, never deletable while the request names it. */
- signature?:true};
+ signature?:true;
+ /** A signed copy the request's signature names (2026-11-10): labelled «نسخة موقّعة», never deletable while the signature names it. */
+ signedCopy?:true};
 /** A design file of a request waiting for the sales manager, with its download through the CRM; signature: the CRM request's signature. */
 export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean;signature?:true};
 /** The customer's signature as a reader sees it: who signed and when, with the image through the CRM (href, null once its file is gone). */
@@ -150,7 +173,7 @@ export type MoldSendingState='sent'|'waiting'|'rejected'|'off'|'held';
  *  PO file is attached; design_file (2026-11-08), one kept until its first design file (the customer's signature does not count) is
  *  attached (moldHeldFor). A new field, so a page loaded before 2026-11-05 reads the state it knows («بانتظار الإرسال») and nothing it
  *  cannot name; a page of 2026-11-05..07 knows quote_file alone and reads the state for design_file. */
-export type MoldSendingHeld='quote_file'|'design_file'|'free_customer';
+export type MoldSendingHeld='quote_file'|'design_file'|'free_customer'|'customer_signature';
 /** What a reader sees of the quotation and PO (2026-11-05): missing, production marks the request as having neither a quotation file nor
  *  a PO file while finance has not approved it (quoteOrPoMissing). The numbers are no longer shown (production no longer shows them). */
 export type MoldQuotePoView={missing:boolean};
@@ -170,7 +193,10 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  sending:{state:MoldSendingState;outbox:'send'|'cancel'|null;attempts:number;nextAttemptAt:string|null;lastAttemptAt:string|null;error:MoldError|null;
   /** Kept in the CRM for its quotation's or PO's file (2026-11-05), or for its design file (2026-11-08); absent otherwise. */
   held?:MoldSendingHeld};
- remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean};version:number;
+ remote:MoldRemote|null;remoteAt:string|null;editable:boolean;can:{edit:boolean;cancel:boolean;resend:boolean;approve:boolean;withdraw:boolean;attach:boolean;deleteFile:boolean;
+  /** Make a new signing link, cancel it, or have the customer sign on the device now (2026-11-10): whoever may edit it, while it awaits
+   *  the customer's signature. A new field: a page loaded before reads nothing of it. */
+  link?:boolean};version:number;
  /** Every file of the request (design, quotation and PO), each with its category. */
  designFiles:MoldDesignFileView[];
  /** Production's quotation and PO flag (MoldQuotePoView), null while production's status carries none (it does not hold the request yet,
@@ -180,7 +206,14 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  signature:MoldSignatureView|null;
  /** Asked for under the rule of 2026-11-08 (data.designRequired): its edit before the first send asks for a design file too, unless it
   *  has one that counts. A new field: a page loaded before reads nothing of it. */
- designRequired:boolean};
+ designRequired:boolean;
+ /** The customer's signature inside the PDFs and the signing link (2026-11-10, moldSigningView). A new field. */
+ signing:MoldSigningView};
+/** How far the customer's signing is (2026-11-10). awaits: kept until the customer signs (the requester chose the link); link: the active
+ *  link's times (expired: it no longer opens: a new one is needed); via: how the signature was given; stamped: the signature carries its
+ *  block, so PDFs get signed copies; copies: how many signed copies it names; skipped: the PDFs that got none, with why (protected or
+ *  damaged, too_many_files, too_large); after: the PDFs attached after the customer signed (the customer did not see them: no copy). */
+export type MoldSigningView={awaits:boolean;link:{sentAt:string;expiresAt:string;expired:boolean}|null;via:'device'|'link'|null;stamped:boolean;copies:number;skipped:{name:string;reason:string}[];after:string[]};
 /** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
 /** orderNo: null while production has not numbered it (the products update of 2026-11-05: every item waiting for the sales manager);
  *  requestRef: production's stable UUID, absent from an older application. A pending item is named by moldPendingKey, never by orderNo. */
@@ -256,7 +289,7 @@ export const MOLD_ROLES=['rep','supervisor','manager','admin','customer_service'
 export const canUseMoldRequests=(role:string)=>MOLD_ROLES.includes(role);
 export const canCreateMoldRequest=(me:Member)=>canUseMoldRequests(me.role);
 /** «الصلاحيات» (lib/permissions.ts): the page offers no edit or cancellation the administrator switched off (the route refuses them too). */
-const switchedOff=<T extends {edit:boolean;cancel:boolean}>(can:T,me:Member):T=>({...can,edit:can.edit&&!cellRefused(me,'mold-requests','edit'),cancel:can.cancel&&!cellRefused(me,'mold-requests','delete')});
+const switchedOff=<T extends {edit:boolean;cancel:boolean;link?:boolean}>(can:T,me:Member):T=>({...can,edit:can.edit&&!cellRefused(me,'mold-requests','edit'),cancel:can.cancel&&!cellRefused(me,'mold-requests','delete'),...(can.link!==undefined?{link:can.link&&!cellRefused(me,'mold-requests','edit')}:{})});
 /** Only the sales manager approves in the CRM (the products contract leaves the choice to the CRM; the owner chose the sales manager). */
 export const canApproveMoldRequests=(me:Pick<Member,'role'>)=>me.role==='manager';
 const SERVICE_ROLES=['customer_service','customer_service_manager'];
@@ -385,11 +418,15 @@ const holdsDesignFile=(file:HoldFile,signatureId:unknown)=>moldFileCategory(file
  *  counts; else design_file: asked for under the rule of 2026-11-08 (data.designRequired) and none is a design file that counts (the
  *  customer's signature, data.signature.fileId, does not). The quotation's file is said first when both are missing. MOLD_AWAITS_FILE_SQL
  *  (lib/mold-requests-server.ts) says the same in SQL (whether it is kept), and MOLD_HELD_FOR_SQL why. */
-export function moldHeldFor(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'|'lastAttemptAt'|'lastError'>&{data?:Pick<MoldRequestData,'fileRequired'|'designRequired'|'signature'>|null},files:HoldFile[]):MoldSendingHeld|null{
+/** Since 2026-11-10, last: customer_signature, the requester chose to send the customer a link to sign from (data.awaitsSignature) and
+ *  the customer has not signed yet. The files come first: the customer should see them when signing, and attaching them is the
+ *  requester's to do (the link page shows the files there are when it is opened). */
+export function moldHeldFor(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'|'lastAttemptAt'|'lastError'>&{data?:Pick<MoldRequestData,'fileRequired'|'designRequired'|'signature'|'awaitsSignature'>|null},files:HoldFile[]):MoldSendingHeld|null{
  if(row.outbox!=='send'||!moldNeverSent(row))return null;
  if(row.data?.fileRequired===true&&!files.some(holdsQuoteFile))return 'quote_file';
  const signatureId=(row.data?.signature as {fileId?:unknown}|undefined)?.fileId;
  if(row.data?.designRequired===true&&!files.some(file=>holdsDesignFile(file,signatureId)))return 'design_file';
+ if(row.data?.awaitsSignature===true)return 'customer_signature';
  return null;
 }
 /** A request for a customer not in the CRM (2026-11-09): its data carries no Yourrest number. */
@@ -409,9 +446,11 @@ export function moldFreeCustomerHeld(row:Pick<MoldRequestRow,'outbox'|'accepted'
  *  attaching it sends it) or a
  *  file whose tries stopped. approve and withdraw wait for a design file on its way (moldApprovalWaitsFor), not for a quotation's or PO's.
  *  approver: the reader approves this request (the routes pass moldApprovesRequest; any sales manager when not given). */
+/** link (2026-11-10): a new signing link, its cancellation or the customer's signature on the device, while the request awaits it: the
+ *  same as edit (present only on a request that awaits it, so every other request's permissions read exactly as before). */
 export function moldPermissions(row:MoldRequestRow,me:Member,files:MoldDesignFileRow[]=[],approver=canApproveMoldRequests(me)){
- const own=row.memberId===me.id,open=moldEditable(row),settled=!files.some(moldApprovalWaitsFor);
- return {edit:own&&open&&moldNeverSent(row),cancel:own&&open,resend:own&&(!!row.outbox&&!moldHeldFor(row,files)||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open};
+ const own=row.memberId===me.id,open=moldEditable(row),settled=!files.some(moldApprovalWaitsFor),edit=own&&open&&moldNeverSent(row);
+ return {edit,cancel:own&&open,resend:own&&(!!row.outbox&&!moldHeldFor(row,files)||files.some(moldDesignStopped)),approve:approver&&settled&&moldAwaitsSalesApproval(row),withdraw:approver&&settled&&moldSalesApprovalWithdrawable(row),attach:own&&open,deleteFile:own&&open,...(row.outbox==='send'&&row.data?.awaitsSignature===true?{link:edit}:{})};
 }
 const designHref=(query:string)=>'/api/mold-requests/design-file?'+query;
 /** A file's category as stored (a status stored before 2026-11-03 carries none: design). */
@@ -429,19 +468,20 @@ const awaitsUpdate=(file:Pick<MoldDesignFileRow,'category'|'outbox'>,quotePo:boo
  *  live (a quotation's or PO's file waits for it, state update). */
 export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'cancelledAt'|'remote'|'accepted'>&{data?:Pick<MoldRequestData,'signature'>},files:MoldDesignFileRow[],me:Pick<Member,'id'>,linkReady:boolean,quotePo=true):MoldDesignFileView[]{
  const own=row.memberId===me.id,open=moldEditable(row),listed=moldListedFiles(row.remote),known=new Set(files.map(file=>file.id)),out:MoldDesignFileView[]=[];
- // The customer's signature (2026-11-04): the file the request's data names, labelled so and never deleted while it names it.
- const signed=row.data?.signature?.fileId||'';
+ // The customer's signature (2026-11-04): the file the request's data names, labelled so and never deleted while it names it; and the
+ // signed copies it names (2026-11-10), the same.
+ const signed=row.data?.signature?.fileId||'',copyOf=(id:string|null)=>!!signed&&!!id&&!!moldSignedCopyOf(id,signed);
  const link=(key:string)=>designHref('id='+encodeURIComponent(row.id)+'&file='+encodeURIComponent(key));
  for(const file of files){
   if(file.deletedAt&&!file.outbox)continue;
   const remote=listed.find(entry=>entry.crmFileId===file.id),fileId=remote?remote.fileId:file.remoteFileId;
   const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):row.cancelledAt||row.remote?.status==='cancelled'?'cancelled':!linkReady?'off':!row.accepted?'held':awaitsUpdate(file,quotePo)?'update':'waiting';
   out.push({key:file.id,fileId:fileId===null||fileId===undefined?null:String(fileId),crmFileId:file.id,name:file.name,kind:file.kind,size:file.size,source:'crm',uploadedAt:file.createdAt,state,error:file.lastError,stopped:state!=='cancelled'&&state!=='update'&&moldDesignStopped(file),
-   canDelete:own&&state!=='deleting'&&file.id!==signed&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other',category:moldFileCategory(file),...(signed&&file.id===signed?{signature:true as const}:{})});
+   canDelete:own&&state!=='deleting'&&file.id!==signed&&!copyOf(file.id)&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other',category:moldFileCategory(file),...(signed&&file.id===signed?{signature:true as const}:{}),...(copyOf(file.id)?{signedCopy:true as const}:{})});
  }
  for(const entry of listed){
   if(entry.crmFileId&&known.has(entry.crmFileId))continue;
-  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,stopped:false,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other',category:moldFileCategory(entry),...(signed&&entry.crmFileId===signed?{signature:true as const}:{})});
+  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,stopped:false,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other',category:moldFileCategory(entry),...(signed&&entry.crmFileId===signed?{signature:true as const}:{}),...(copyOf(entry.crmFileId)?{signedCopy:true as const}:{})});
  }
  // By the instant each was attached: the CRM writes UTC, production Riyadh time with its offset.
  const at=(file:MoldDesignFileView)=>Date.parse(file.uploadedAt||'')||0;
@@ -471,7 +511,36 @@ export const moldPendingFiles=(item:PendingNamed&Pick<MoldPendingItem,'designFil
 /** A request's signature as the data stores it, or null (none, or not one: each field a text). */
 export function moldSignatureOf(data:{signature?:unknown}|null|undefined):MoldSignature|null{
  const value=data?.signature as Partial<MoldSignature>|null|undefined;
- return value&&typeof value==='object'&&typeof value.signer==='string'&&typeof value.signedAt==='string'&&typeof value.fileId==='string'&&value.fileId?{signer:value.signer,signedAt:value.signedAt,fileId:value.fileId}:null;
+ return value&&typeof value==='object'&&typeof value.signer==='string'&&typeof value.signedAt==='string'&&typeof value.fileId==='string'&&value.fileId?{signer:value.signer,signedAt:value.signedAt,fileId:value.fileId,...(value.via==='device'||value.via==='link'?{via:value.via}:{})}:null;
+}
+/** A signed copy's crmFileId (2026-11-10): 'mdc-', the original's UUID, then 23 hex digits of the signature's own id: fixed for a signature
+ *  and an original (a second try makes the same row, which is kept once), another for each new signature, and never another file's (64
+ *  characters at most, as the contract's crmFileId). */
+export function moldSignedCopyId(signatureFileId:string,originalId:string){
+ return 'mdc-'+originalId.replace(/^md[a-z]-/,'').slice(0,36)+'-'+signatureFileId.replace(/^md[a-z]-/,'').replace(/-/g,'').slice(0,23);
+}
+/** The original's crmFileId when fileId is a signed copy the signature names; null otherwise. */
+export function moldSignedCopyOf(fileId:string,signatureFileId:string){
+ if(!fileId.startsWith('mdc-')||fileId.length<42)return null;
+ const original='mdf-'+fileId.slice(4,40);
+ return moldSignedCopyId(signatureFileId,original)===fileId?original:null;
+}
+/** Why a PDF got no signed copy (a row of the copy that was not made, kept for that: deleted, never sent, its last error not_signed). */
+export const MOLD_NOT_SIGNED='not_signed';
+/** A request's PDFs that a signed copy is made of: the CRM's own design, quotation and PO files (not deleted, not refused for good), PDFs,
+ *  not the signature, not a signed copy. */
+export const moldSignableFile=(file:Pick<MoldDesignFileRow,'id'|'kind'|'deletedAt'|'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>)=>file.kind==='pdf'&&!file.deletedAt&&!moldDesignRefused(file)&&file.id.startsWith('mdf-');
+/** How far the customer's signing is (MoldSigningView), from the request's data and its files as stored (the rows of copies not made
+ *  included). now: the moment the link's expiry is read at. */
+export function moldSigningView(row:Pick<MoldRequestRow,'data'>,files:MoldDesignFileRow[],now=Date.now()):MoldSigningView{
+ const data=row.data,link=data.signatureLink,signature=moldSignatureOf(data),stamped=!!signature&&!!data.signature?.block;
+ const named=signature?files.map(file=>({file,of:moldSignedCopyOf(file.id,signature.fileId)})).filter(entry=>entry.of):[];
+ const made=named.filter(entry=>!entry.file.deletedAt||entry.file.outbox==='delete'),skipped=named.filter(entry=>entry.file.deletedAt&&!entry.file.outbox&&entry.file.lastError?.code===MOLD_NOT_SIGNED);
+ const covered=new Set(named.map(entry=>entry.of));
+ // Attached after the customer signed: the customer did not see them (the device's own files that were seen get theirs as they arrive).
+ const after=stamped?files.filter(file=>moldSignableFile(file)&&!covered.has(file.id)&&Date.parse(file.createdAt)>Date.parse(signature!.signedAt)).map(file=>file.name):[];
+ return {awaits:data.awaitsSignature===true,link:data.awaitsSignature===true&&link&&typeof link.expiresAt==='string'?{sentAt:link.sentAt,expiresAt:link.expiresAt,expired:Date.parse(link.expiresAt)<=now}:null,
+  via:signature?.via||(signature?'device':null),stamped,copies:made.length,skipped:skipped.map(entry=>({name:files.find(file=>file.id===entry.of)?.name||entry.file.name,reason:entry.file.lastError?.reason||'damaged'})),after};
 }
 /** The signature a reader sees, with its image through the CRM while its file is there (not deleted), and where that image stands
  *  (MoldSignatureState) from the request's files as the reader sees them (moldDesignFilesView). */
@@ -499,7 +568,7 @@ export function moldRequestView(row:MoldRequestRow,me:Member,members:Member[],li
  return {id:row.id,memberId:row.memberId,memberName:members.find(m=>m.id===row.memberId)?.name||row.data.salesman.name,customerId:row.customerId,customerName:row.data.customer.name,customerAddress:typeof row.data.customer.address==='string'?row.data.customer.address:'',crmNumber:row.data.customer.crmNumber??null,customerErpCode:typeof row.data.customer.erpCode==='string'?row.data.customer.erpCode:'',
   requestedAt:row.data.requestedAt,legacyOrderNo:row.legacyOrderNo,specs:row.data.specs,payment:row.data.payment==='cash'||row.data.payment==='deferred'?row.data.payment:null,unconfirmed:row.accepted?.unconfirmed===true,cancelled:!!row.cancelledAt,cancelReason:row.cancelReason,cancelReasons,
   sending:{state:moldSendingState(row,linkReady,quotePo),outbox:row.outbox,attempts:row.attempts,nextAttemptAt:row.nextAttemptAt,lastAttemptAt:row.lastAttemptAt,error:row.lastError,...(held?{held}:{})},
-  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:switchedOff(moldPermissions(row,me,files,approver),me),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true};
+  remote:row.remote,remoteAt:row.remoteAt,editable:moldEditable(row),can:switchedOff(moldPermissions(row,me,files,approver),me),version:row.version,designFiles,quotePo:moldQuotePoView(row),signature:moldSignatureView(row,designFiles),designRequired:row.data.designRequired===true,signing:moldSigningView(row,files)};
 }
 /** quotePo: production's update of 2026-11-03 is known to be live; without it a request whose data carries a number is held, not sent.
  *  Always one of the five states every page knows: a request kept for its quotation's, PO's or design file reads waiting (or off), and
@@ -545,10 +614,39 @@ export const MOLD_FREE_CUSTOMER_HELD_NAME:[string,string]=['بانتظار تح�
 export const MOLD_FREE_CUSTOMER_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM وهيتبعت للإنتاج بالاسم وكود ERP أول ما تطبيق الإنتاج يقبل عميل مش موجود في الـCRM؛ الـCRM بيحاول تاني لوحده كل 6 ساعات، و«إعادة الإرسال» بتحاول دلوقتي.','The request is saved in the CRM and goes to production with the name and ERP code as soon as the production application takes a customer who is not in the CRM; the CRM tries again by itself every 6 hours, and Resend tries now.'];
 export const MOLD_FREE_CUSTOMER_WAITING_OTHERS:[string,string]=['الطلب لعميل مش موجود في الـCRM، وهيتبعت للإنتاج أول ما تطبيق الإنتاج يتحدّث ويقبله.','The request is for a customer not in the CRM; it goes to production once the production application is updated to take it.'];
 /** sending.held in words, its explanation to the requester (who attaches) and to a reader who cannot. */
+/** A request kept until the customer signs from the link (sending.held customer_signature, 2026-11-10). */
+export const MOLD_SIGNATURE_HELD_NAME:[string,string]=['بانتظار توقيع العميل','Waiting for the customer\'s signature'];
+export const MOLD_SIGNATURE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما العميل يوقّع من اللينك (أو يوقّع دلوقتي على الجهاز)؛ أول ما يوقّع يتبعت الطلب لوحده.','The request is saved in the CRM and is not sent to production until the customer signs from the link (or signs now on the device); once signed, it goes by itself.'];
+export const MOLD_SIGNATURE_WAITING_OTHERS:[string,string]=['بانتظار توقيع العميل من اللينك اللي بعته صاحب الطلب','Waiting for the customer to sign from the link the requester sent'];
 export const moldHeldTexts:Record<MoldSendingHeld,{name:[string,string];waiting:[string,string];others:[string,string]}>={
  quote_file:{name:MOLD_QUOTE_FILE_HELD_NAME,waiting:MOLD_QUOTE_FILE_WAITING_TEXT,others:MOLD_QUOTE_FILE_WAITING_OTHERS},
  design_file:{name:MOLD_DESIGN_FILE_HELD_NAME,waiting:MOLD_DESIGN_FILE_WAITING_TEXT,others:MOLD_DESIGN_FILE_WAITING_OTHERS},
- free_customer:{name:MOLD_FREE_CUSTOMER_HELD_NAME,waiting:MOLD_FREE_CUSTOMER_WAITING_TEXT,others:MOLD_FREE_CUSTOMER_WAITING_OTHERS}};
+ free_customer:{name:MOLD_FREE_CUSTOMER_HELD_NAME,waiting:MOLD_FREE_CUSTOMER_WAITING_TEXT,others:MOLD_FREE_CUSTOMER_WAITING_OTHERS},
+ customer_signature:{name:MOLD_SIGNATURE_HELD_NAME,waiting:MOLD_SIGNATURE_WAITING_TEXT,others:MOLD_SIGNATURE_WAITING_OTHERS}};
+/** The signed copies and the signing link in the representative's words (2026-11-10). */
+export const MOLD_SIGN_LINK_TEXT={
+ now:['العميل يوقّع دلوقتي','The customer signs now'] as [string,string],
+ link:['ابعت للعميل لينك يوقّع منه','Send the customer a link to sign from'] as [string,string],
+ linkNote:['الطلب هيتحفظ ومش هيتبعت للإنتاج إلا لما العميل يوقّع من اللينك؛ أول ما يوقّع يتبعت لوحده. اللينك صالح 14 يوم.','The request is saved and is not sent to production until the customer signs from the link; once signed, it goes by itself. The link is valid for 14 days.'] as [string,string],
+ make:['حفظ وعمل اللينك','Save and make the link'] as [string,string],
+ copy:['نسخ اللينك','Copy the link'] as [string,string],copied:['اتنسخ اللينك','Link copied'] as [string,string],
+ whatsapp:['إرسال واتساب','Send on WhatsApp'] as [string,string],renew:['إرسال لينك جديد','Send a new link'] as [string,string],
+ cancel:['إيقاف اللينك','Stop the link'] as [string,string],device:['العميل يوقّع دلوقتي على الجهاز','The customer signs now on the device'] as [string,string],
+ title:['لينك توقيع العميل','Customer signing link'] as [string,string],
+ sent:['اتعمل اللينك','Link made'] as [string,string],expires:['ينتهي','Expires'] as [string,string],expired:['اللينك انتهى','The link has expired'] as [string,string],
+ none:['مفيش لينك شغال؛ ابعت لينك جديد أو خلّي العميل يوقّع على الجهاز.','No active link; send a new link or have the customer sign on the device.'] as [string,string],
+ hidden:['اللينك بيتعرض مرة واحدة بعد عمله؛ لو محتاجه تاني ابعت لينك جديد (القديم بيبطل).','The link is shown once, when it is made; to have it again, send a new link (the old one stops working).'] as [string,string],
+ copyMark:['نسخة موقّعة','Signed copy'] as [string,string],
+ copies:['نسخ موقّعة من ملفات الـPDF','Signed copies of the PDF files'] as [string,string],
+ after:['اتضاف بعد توقيع العميل، فمالوش نسخة موقّعة (العميل ما شافهوش):','Attached after the customer signed, so no signed copy (the customer did not see it):'] as [string,string],
+ viaLink:['وقّع من اللينك','Signed from the link'] as [string,string]};
+/** Why a PDF got no signed copy, in the representative's words: «ما اتحطش التوقيع جوه <file>: …». */
+export function moldNotSignedText(name:string,reason:string,say:(ar:string,en:string)=>string){
+ const why=reason==='protected'||reason==='damaged'?say('الملف محمي أو تالف','the file is protected or damaged')
+  :reason==='too_many_files'?say('مفيش مكان لنسخة موقّعة (حد ملفات النوع ده اكتمل)','no room for a signed copy (this kind\'s file limit is reached)')
+  :reason==='too_large'?say('النسخة الموقّعة أكبر من 25 ميجابايت','the signed copy is larger than 25 MB'):say('ما اتعملتش نسخة موقّعة','no signed copy was made');
+ return say('ما اتحطش التوقيع جوه ','The signature was not put inside ')+name+': '+why;
+}
 /** The customer as typed (2026-11-09): the form's refusals, the same as the server's; the note under the fields for a customer not in the
  *  CRM, the ERP code field's hint, the line of a linked customer, and how the sheet and the card say such a request. */
 export const MOLD_CUSTOMER_TEXT={

@@ -1,0 +1,19 @@
+/* The customer's signing page from the representative's link (2026-11-10): one column, phone first (360 px), the app's colours. */
+.sign-page{min-height:100dvh;display:grid;align-content:start;justify-items:center;gap:14px;padding:16px 12px 32px;background:var(--background,#f5f7f6)}
+.sign-head{width:min(100%,640px);display:flex;align-items:center;justify-content:space-between;gap:12px}.sign-head img{width:140px;height:54px;object-fit:contain}
+.sign-card{width:min(100%,640px);display:grid;gap:12px;min-width:0;padding:18px 14px;border:1px solid var(--border,#dce4e0);border-radius:18px;background:var(--card,#fff)}
+.sign-card h1{margin:0;font-size:21px}.sign-card h2{margin:6px 0 0;font-size:16px}.sign-lead,.sign-note{margin:0;font-size:14px;line-height:1.7;color:var(--muted-foreground,#5d6b62)}
+.sign-note{display:flex;gap:6px;align-items:flex-start;font-size:13px}
+.sign-facts{padding:10px 12px;border:1px solid var(--border,#dce4e0);border-radius:12px;background:var(--muted,#f1f4f2)}
+.sign-files{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.sign-files li{display:flex;align-items:center;gap:10px;min-width:0;padding:8px 10px;border:1px solid var(--border,#dce4e0);border-radius:12px}
+.sign-files li .btn{display:inline-flex;align-items:center;gap:6px;min-height:44px;flex-shrink:0;margin-inline-start:auto}
+.sign-file-name{display:grid;gap:2px;min-width:0}.sign-file-name bdi{overflow-wrap:anywhere;font-weight:600;font-size:14px}.sign-file-name small{font-size:12px;color:var(--muted-foreground,#5d6b62)}
+.sign-form{display:grid;gap:12px;min-width:0;margin-top:4px}
+.sign-consent{display:flex;align-items:flex-start;gap:10px;font-size:15px;line-height:1.6;min-height:44px;cursor:pointer}.sign-consent input{width:22px;height:22px;margin-top:2px;accent-color:var(--primary,#23683c);flex-shrink:0}
+.sign-consent[aria-invalid=true]{color:var(--destructive,#a52828)}
+.sign-submit{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;font-size:16px;font-weight:700}
+.sign-changed{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:#f5e9c8;color:#6a4a0e;font-size:14px}
+.sign-gone{justify-items:center;text-align:center;font-size:16px;line-height:1.8;color:#7a2c1f}.sign-gone p{margin:0}
+.sign-done{justify-items:start}.sign-done svg:first-child{color:#1b6a47}
+.dark .sign-changed{background:#3a3014;color:#f2dca0}
