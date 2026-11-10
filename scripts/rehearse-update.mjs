@@ -81,8 +81,8 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const freePort = async () => { const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve)); const {port} = probe.address(); await new Promise(resolve => probe.close(resolve)); return port; };
 /** Computed fields a newer release may add to its answers (see the comparison after the update). */
-// Fields a release adds to what an API returns (absent before it): _lastPurchase (60-day filter), access and permissions («الصلاحيات»: me.access, and what is saved for each member on the administrator's team page).
-const NEW_COMPUTED = ['_lastPurchase', 'access', 'permissions'];
+// Fields a release adds to what an API returns (absent before it): _lastPurchase (60-day filter), access and permissions («الصلاحيات»: me.access, and what is saved for each member on the administrator's team page), trash:edit (2026-11-10: «المحذوفات» joined the supervisor's and the representative's permission cells).
+const NEW_COMPUTED = ['_lastPurchase', 'access', 'permissions', 'trash:edit'];
 const stable = value => JSON.stringify(value, (key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
 /** One installed site, laid out like the hosting account. */
