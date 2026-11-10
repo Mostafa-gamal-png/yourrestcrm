@@ -54,6 +54,18 @@
 // when customer.crmNumber is null or absent (400 fields ['customer.erpCode']), keeps it in the original a retry is compared with, and
 // echoes the customer in every status object (customer: {crmNumber, name, erpCode}, crmNumber null for such a customer, erpCode "" for
 // none) and the ERP code in every pending item's customer. Test control: the switch (setFreeCustomers).
+// The products update of 2026-11-10 (docs/MOLD-PRODUCTS-MESSAGE-2026-11-10-AR.md), behind its own switch (nov10: false, the default, is the
+// application as it is today: it ignores paymentTerms and termsAccepted as any key it does not know, never says `returned`, and answers a
+// changed body with 409 production_only). The updated one (nov10: true): `paymentTerms` beside `payment` (advance_before_shipping,
+// advance_after_shipping or advance_credit_limit, with "deferred" only; anything else 400 ['paymentTerms']; absent: null), kept in the
+// original a retry is compared with, echoed in every status object and pending item; the approval's `termsAccepted` (not a boolean: 400
+// ['termsAccepted']) kept as approvals.sales.termsAccepted; finance sending a request back (financeReturn: every approval cleared, back
+// to the sales manager, `returned: {by: 'finance', reason, at, correctedAt}`, null otherwise, cleared by the next sales approval); while
+// returned (and not cancelled), a changed body for the same crmRequestId is a correction (every column but requestedAt, a new revision,
+// returned.correctedAt, the approvals still cleared, 200 {created: false, linked: false, corrected: true}, the corrected data the one
+// a retry is compared with: the same correction again 200 corrected false, nothing changed); `corrected` in every answer of requests;
+// times as ISO with +03:00; returned.name (finance's account); and the files' limits of 20 design, 10 quotation and 10 PO files (the
+// products team's reply of 2026-11-10, schema 17). Test controls: setNov10, financeReturn.
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
@@ -65,10 +77,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 const STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
-const COLUMNS = ['requestedAt', 'customerNo', 'customerName', 'customerAddress', 'customerCity', 'salesmanId', 'salesmanName', 'salesmanEmail', 'description', 'core', 'vibrators', 'model', 'halfBlock', 'moldWidth', 'gelbaSize', 'moldNo', 'quantity', 'designUrl', 'notes', 'payment', 'quoteNo', 'poNo', 'customerErpCode'];
+const COLUMNS = ['requestedAt', 'customerNo', 'customerName', 'customerAddress', 'customerCity', 'salesmanId', 'salesmanName', 'salesmanEmail', 'description', 'core', 'vibrators', 'model', 'halfBlock', 'moldWidth', 'gelbaSize', 'moldNo', 'quantity', 'designUrl', 'notes', 'payment', 'quoteNo', 'poNo', 'customerErpCode', 'paymentTerms'];
+/** The terms of a deferred payment (the update of 2026-11-10). */
+const PAYMENT_TERMS = ['advance_before_shipping', 'advance_after_shipping', 'advance_credit_limit'];
 const PAYMENTS = ['cash', 'deferred'];
 /** The file categories of the updated application and how many of each a request holds. */
-const CATEGORY_LIMITS = {design: 10, quote: 5, po: 5};
+const CATEGORY_LIMITS = {design: 10, quote: 5, po: 5}, NOV10_LIMITS = {design: 20, quote: 10, po: 10};
 /** A quotation or PO number as the updated application stores it: Arabic-Indic and Persian digits as ASCII, the ends trimmed; null for
  *  none (absent, null or ""); undefined for a refusal (not a string, a control character, more than 60 characters). */
 function quotePoNumber(value) {
@@ -101,7 +115,7 @@ function choice(value, allowed, required, field, bad) {
 }
 /** yr_mreq_validate_request, field for field. quotePo: the application after its update of 2026-11-03 (quoteNo and poNo read); before
  *  it they are ignored, whatever they hold. */
-export function validateRequest(body, now = Date.now(), {quotePo = false, freeCustomers = false} = {}) {
+export function validateRequest(body, now = Date.now(), {quotePo = false, freeCustomers = false, nov10 = false} = {}) {
   const bad = [];
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError('invalid_payload', 400, 'The body must be a JSON object.', ['body']);
   let id = body.crmRequestId;
@@ -141,6 +155,9 @@ export function validateRequest(body, now = Date.now(), {quotePo = false, freeCu
     if (out.customerNo === null && code === '' && !bad.includes('customer.crmNumber')) bad.push('customer.erpCode');
     out.customerErpCode = code === '' ? null : code;
   } else out.customerErpCode = null;
+  // The terms of a deferred payment (the update of 2026-11-10): with "deferred" only; the application of today ignores the key.
+  if (nov10 && body.paymentTerms !== undefined && body.paymentTerms !== null) out.paymentTerms = PAYMENT_TERMS.includes(body.paymentTerms) && payment === 'deferred' ? body.paymentTerms : (bad.push('paymentTerms'), null);
+  else out.paymentTerms = null;
   if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)]);
   return out;
 }
@@ -173,15 +190,17 @@ function quotePoPart(row, quotePo) {
 }
 /** yr_mreq_status_object; quotePo: the updated application (2026-11-03) adds the quotation and PO part; refs: the application of the new
  *  numbering (2026-11-05) adds requestRef (orderNo is null until production approves). */
-function statusObjectOf(row, quotePo, refs = false, freeCustomers = false) {
+function statusObjectOf(row, quotePo, refs = false, freeCustomers = false, nov10 = false) {
   const status = derive(row), a = row.approvals;
-  const approvals = {required: !a.legacy, ...Object.fromEntries(APPROVAL_STEPS.map(step => [step, a[step] ? {at: a[step].at, ...(a[step].via === 'crm' ? {by: a[step].by} : {})} : null]))};
+  const approvals = {required: !a.legacy, ...Object.fromEntries(APPROVAL_STEPS.map(step => [step, a[step] ? {at: a[step].at, ...(a[step].via === 'crm' ? {by: a[step].by} : {}), ...(nov10 && step === 'sales' ? {termsAccepted: a[step].termsAccepted ?? null} : {})} : null]))};
   const {designFiles, ...numbers} = quotePoPart(row, quotePo);
   return {crmRequestId: row.crmRequestId, orderNo: row.orderNo, ...(refs ? {requestRef: row.requestRef} : {}), status, editable: status === 'received', moldSerial: row.moldSerial, productionDate: row.productionDate, stages: structuredClone(row.stages),
     stagesDone: STAGES.filter(key => row.stages[key].done).length, stagesTotal: STAGES.length, delivered: row.delivered, deliveryDate: row.deliveryDate,
     waitingStep: row.waitingStep, waitingSince: row.waitingSince, approvals, updatedAt: row.updatedAt, revision: row.revision, designFiles, ...numbers,
-    ...(freeCustomers ? {customer: {crmNumber: row.customerNo ?? null, name: row.customerName ?? '', erpCode: row.customerErpCode ?? ''}} : {})};
+    ...(freeCustomers ? {customer: {crmNumber: row.customerNo ?? null, name: row.customerName ?? '', erpCode: row.customerErpCode ?? ''}} : {}), ...nov10Part(row, nov10)};
 }
+/** The update of 2026-11-10's part of a status object or a pending item: the payment's terms and finance's return. */
+const nov10Part = (row, nov10) => nov10 ? {paymentTerms: row.paymentTerms ?? null, returned: row.returned ? {by: 'finance', name: row.returned.name, reason: row.returned.reason, at: row.returned.at, correctedAt: row.returned.correctedAt} : null} : {};
 const DESIGN_EXTENSIONS = {pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', gif: 'image', ...Object.fromEntries('dwg dxf step stp igs iges stl sldprt sldasm slddrw nc1 dstv ai eps cdr psd svg zip rar 7z'.split(' ').map(e => [e, 'other']))};
 const DESIGN_MAX = 25 * 1024 * 1024;
 const IMAGE_TYPES = {png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp'};
@@ -210,15 +229,15 @@ const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null
  * @param {{secret?: string, now?: () => number, quotePo?: boolean, requestRefs?: boolean}} options quotePo: start as the application after its
  *  update of 2026-11-03; requestRefs: start as the application of the new numbering (the second message of 2026-11-05)
  */
-export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false} = {}) {
+export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false, nov10 = false} = {}) {
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers, nov10};
   // This application's own reading of a request and of a file: before or after its update of 2026-11-03 (state.quotePo), and before or
   // after its new numbering (state.refs).
-  const statusObject = row => statusObjectOf(row, state.quotePo, state.refs, state.freeCustomers), designEntry = file => designEntryOf(file, state.quotePo);
+  const statusObject = row => statusObjectOf(row, state.quotePo, state.refs, state.freeCustomers, state.nov10), designEntry = file => designEntryOf(file, state.quotePo);
   /** Every request: by their numbers in the application as it is today (byOrder, which tests edit), by their requestRef with the new
    *  numbering (a request has no number before production's approval). */
   const allRows = () => state.refs ? [...state.byRef.values()] : [...state.byOrder.values()];
@@ -237,7 +256,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
   const touch = row => { row.revision++; row.updatedAt = riyadh(); const step = waitingStep(row); if (step !== row.waitingStep) { row.waitingStep = step; row.waitingSince = riyadh(); } };
 
   function upsert(body) {
-    const p = validateRequest(body, now(), {quotePo: state.quotePo, freeCustomers: state.freeCustomers});
+    const p = validateRequest(body, now(), {quotePo: state.quotePo, freeCustomers: state.freeCustomers, nov10: state.nov10});
     let row = state.rows.get(p.crmRequestId), isNew = false, linked = false;
     if (!row && p.legacyOrderNo !== null) {
       const legacy = state.byOrder.get(p.legacyOrderNo);
@@ -256,9 +275,22 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       // The ORIGINAL data again is a retry (200, created false), even after the production manager edited the request. Any other data
       // (the edited data included) is refused whatever the request's state: once sent, its data is edited by the production manager in
       // the products application only. Nothing changes.
-      if (!linkRetry && !same(row.original || row, p)) throw new ApiError('request_locked', 409, 'The request\'s data is edited by the production manager only.', [], {reason: 'production_only', request: statusObject(row)});
+      if (!linkRetry && !same(row.original || row, p)) {
+        // The update of 2026-11-10: a request finance sent back takes the CRM's correction (every column but requestedAt), and the
+        // corrected data becomes the one a retry is compared with: the same correction again is a retry (200, corrected false, nothing
+        // changed, answered below).
+        if (state.nov10 && row.returned && !row.cancelled) {
+          for (const column of COLUMNS) if (column !== 'requestedAt') row[column] = p[column];
+          // (The body as it came is what the next send is compared with; the request's own requestedAt stays.)
+          row.original = Object.fromEntries(COLUMNS.map(column => [column, p[column]]));
+          row.returned.correctedAt = riyadh(); touch(row);
+          return {status: 200, body: {request: statusObject(row), created: false, linked: false, corrected: true}};
+        }
+        throw new ApiError('request_locked', 409, 'The request\'s data is edited by the production manager only.', [], {reason: 'production_only', request: statusObject(row)});
+      }
     }
-    return {status: isNew ? 201 : 200, body: {request: statusObject(row), created: isNew, linked}};
+    // The updated application (2026-11-10) says `corrected` in every answer of requests (false but for a correction).
+    return {status: isNew ? 201 : 200, body: {request: statusObject(row), created: isNew, linked, ...(state.nov10 ? {corrected: false} : {})}};
   }
   function status(body) {
     const ids = body.ids;
@@ -298,6 +330,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (!by) bad.push('by');
     const name = clean(by?.name, 160, true, 'by.name', bad), email = clean(by?.email, 190, false, 'by.email', bad);
     if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad.push('by.email');
+    // termsAccepted (the update of 2026-11-10): a boolean when given; the application of today ignores it.
+    if (state.nov10 && body.termsAccepted !== undefined && typeof body.termsAccepted !== 'boolean') bad.push('termsAccepted');
     if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)]);
     const row = id !== null ? state.rows.get(id) : ref !== null ? state.byRef.get(ref) : state.byOrder.get(orderNo);
     if (!row) throw new ApiError('not_found', 404, id !== null ? 'No request has this crmRequestId.' : ref !== null ? 'No request has this requestRef.' : 'No request has this orderNo.');
@@ -306,7 +340,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (row.approvals.legacy) throw locked('This request predates the approval chain and needs no approval.');
     if (action === 'approve') {
       if (row.approvals.sales) return {status: 200, body: {request: statusObject(row)}};
-      row.approvals.sales = {by: email !== '' ? email + ' (' + name + ')' : name, at: riyadh(), via: 'crm'};
+      row.approvals.sales = {by: email !== '' ? email + ' (' + name + ')' : name, at: riyadh(), via: 'crm', ...(state.nov10 && body.termsAccepted === true ? {termsAccepted: true} : {})};
+      // The next sales approval clears finance's return (kept in the history only).
+      if (state.nov10 && row.returned) { (row.returnHistory ||= []).push(row.returned); row.returned = null; }
     } else {
       if (!row.approvals.sales) return {status: 200, body: {request: statusObject(row)}};
       if (row.approvals.production || row.approvals.admin) throw locked('Production has already approved; the sales approval can no longer be withdrawn.');
@@ -359,7 +395,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (typeof meta.crmFileId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(meta.crmFileId)) bad.push('crmFileId');
     // The updated application (2026-11-03) reads category (design when absent); the old one ignores it: every file is a design file.
     const category = !state.quotePo || meta.category === undefined || meta.category === null ? 'design' : meta.category;
-    if (!Object.hasOwn(CATEGORY_LIMITS, category)) bad.push('category');
+    const limits = state.nov10 ? NOV10_LIMITS : CATEGORY_LIMITS;
+    if (!Object.hasOwn(limits, category)) bad.push('category');
     const checked = checkDesign(meta.name, bytes);
     if (checked.field === 'name') bad.push('name');
     if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', bad);
@@ -377,7 +414,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     }
     if (state.deletedFileIds.has(meta.crmFileId)) throw placeRefusal('crm_file_id_used', 'This crmFileId belonged to a file deleted since.');
     if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
-    if ((row.designFiles ||= []).filter(file => (file.category || 'design') === category).length >= CATEGORY_LIMITS[category]) throw placeRefusal('too_many_files', 'A request holds at most ' + CATEGORY_LIMITS[category] + ' files of this kind.');
+    if ((row.designFiles ||= []).filter(file => (file.category || 'design') === category).length >= limits[category]) throw placeRefusal('too_many_files', 'A request holds at most ' + limits[category] + ' files of this kind.');
     const file = {fileId: state.nextFile++, crmFileId: meta.crmFileId, name: meta.name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256, source: 'crm', uploadedAt: riyadh(), category};
     row.designFiles.push(file); if (category === 'design') undoApprovals(row); touch(row);
     return {status: 201, body: {created: true, file: designEntry(file), request: statusObject(row)}};
@@ -412,7 +449,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       enteredBy: row.source === 'manual' ? row.createdBy : null, customer: {crmNumber: row.customerNo, name: row.customerName, address: row.customerAddress, city: row.customerCity, ...(state.freeCustomers ? {erpCode: row.customerErpCode ?? ''} : {})},
       salesman: {crmMemberId: row.salesmanId, name: row.salesmanName},
       specs: {description: row.description, core: row.core, vibrators: row.vibrators, model: row.model, halfBlock: row.halfBlock, moldWidth: row.moldWidth, gelbaSize: row.gelbaSize, moldNo: row.moldNo, quantity: row.quantity, designUrl: row.designUrl, notes: row.notes},
-      payment: row.payment ?? null, revision: row.revision, ...quotePoPart(row, state.quotePo)}))}};
+      payment: row.payment ?? null, revision: row.revision, ...quotePoPart(row, state.quotePo), ...nov10Part(row, state.nov10)}))}};
   }
 
   const server = createServer({key: readFileSync(key), cert: readFileSync(cert)}, async (req, res) => {
@@ -421,7 +458,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     for await (const part of req) parts.push(part);
     const raw = Buffer.concat(parts), url = new URL(req.url, 'https://localhost'), route = url.searchParams.get('route') || '';
     // A lost answer (loseNext): production did the work, and the connection is cut before its answer.
-    const reply = (http, body) => { if (call.lost) { req.socket.destroy(); return; } res.writeHead(http, {'Content-Type': 'application/json; charset=utf-8'}); res.end(JSON.stringify(body)); };
+    // Each call keeps the answer production gave (call.answer, a lost one too), for the tests that read it.
+    const reply = (http, body) => { call.answer = {http, body}; if (call.lost) { req.socket.destroy(); return; } res.writeHead(http, {'Content-Type': 'application/json; charset=utf-8'}); res.end(JSON.stringify(body)); };
     const call = {route, at: now(), signed: false, body: route === 'design-files' ? raw.subarray(0, Math.max(raw.indexOf(0x0a), 0)).toString('utf8') : raw.toString('utf8'), bytes: raw.length, headers: {...req.headers}};
     state.calls.push(call);
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
@@ -574,6 +612,17 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     setRequestRefs(on = true) { state.refs = !!on; },
     /** The application of today (false) or after its update for a customer not in the CRM (true, 2026-11-09), at once. */
     setFreeCustomers(on = true) { state.freeCustomers = !!on; },
+    /** The application of today (false) or after its update of 2026-11-10 (true), at once. */
+    setNov10(on = true) { state.nov10 = !!on; },
+    /** Finance sends a request back to the sales manager (the update of 2026-11-10, only while it waits for finance): every approval
+     *  cleared, `returned` with the reason; the request waits for the sales manager again. */
+    financeReturn(key, reason = 'ناقص ملف عرض السعر الموقّع') {
+      const row = find(key); if (!row) throw new Error('no such request: ' + key);
+      if (!state.nov10) throw new Error('finance returns a request only in the updated application');
+      if (row.cancelled || row.approvals.legacy || waitingStep(row) !== 'admin') throw new Error('not waiting for finance: ' + waitingStep(row));
+      row.approvals = noApprovals(); row.returned = {by: 'finance', name: 'finance@yourrest.org', reason, at: riyadh(), correctedAt: null}; touch(row);
+      return statusObject(row);
+    },
     /** Production cancels a request itself (the new numbering: it no longer deletes one), by its crmRequestId, requestRef or number: it
      *  keeps its number. */
     cancelHere(key, reason = 'ألغاه مدير الإنتاج') {

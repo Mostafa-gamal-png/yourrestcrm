@@ -33,6 +33,15 @@ try {
   const protectedGets = ['/api/crm', '/api/team-today', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
+  // The customer's signing link (2026-11-10) is public by design, but opens only with a valid token: without one, one neutral page or
+  // answer, never anything of a request, and no session is asked for (not 401, no redirect to the sign-in).
+  const forged = 'A'.repeat(43), gone = 'اللينك ده مش شغال. اطلب من المندوب لينك جديد.';
+  for (const url of ['/sign/m/' + forged, '/sign/m/short', '/sign/m/' + forged + '/file/mdf-x']) {
+    const reply = await anonymous(url);
+    check([reply.status === 200 || reply.status === 404, reply.text.includes(gone), /\/login/.test(reply.headers.location || '')], [true, true, false], 'anonymous ' + url + ': the neutral page');
+  }
+  check((await anonymous('/api/mold-sign', {method: 'POST', body: {requestId: crypto.randomUUID(), token: forged, key: '0'.repeat(32), signer: 'عميل', png: 'AAAA', block: 'AAAA', blockAt: new Date().toISOString(), consent: true}})).json(), {error: gone, gone: true}, 'anonymous signing with a forged token: the neutral answer');
+  check((await anonymous('/api/mold-sign', {method: 'POST', headers: {Origin: 'https://evil.example'}, body: {}})).status, 403, 'signing from another origin: refused');
   const posts = ['/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import', '/api/trash', '/api/reviews', '/api/review-inbox'];
   for (const url of posts) {
     check((await anonymous(url, {method: 'POST', body: {}})).status, 401, 'anonymous empty POST ' + url);

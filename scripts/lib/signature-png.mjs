@@ -24,9 +24,18 @@ export function signaturePng({width = 480, height = 200, seed = 1, blank = false
 }
 /** The signature as the form sends it: {signer, png} with the PNG in base64. */
 export const signatureInput = (signer = 'م. خالد العتيبي', options = {}) => ({signer, png: signaturePng(options).toString('base64')});
-/** A create or an update by a sales role (representative, supervisor, sales manager) as the form sends it: with the customer's signature,
- *  unless the body says `signature` itself (undefined: sent without one). Any other body, or role, as it is. */
+/** The terms of a deferred payment the tests' pages choose (2026-11-10), unless a body says its own. */
+export const TEST_PAYMENT_TERMS = 'advance_before_shipping';
+/** A body as a page of this release sends it. Since 2026-11-10 (tests/mold-nov10-http.mjs tries the bodies without them): an approval
+ *  ('approve', 'approve-order') with the sales manager's acknowledgement (termsAccepted: true), and a create or an update with
+ *  "deferred" with its terms (TEST_PAYMENT_TERMS), unless the body says either itself (undefined: sent without it, a page loaded before).
+ *  A create or an update by a sales role (representative, supervisor, sales manager) with the customer's signature too, unless the body
+ *  says `signature` itself (undefined: sent without one). Any other body, or role, as it is. */
 export function withSignature(role, body) {
-  if (!['rep', 'supervisor', 'manager'].includes(role) || !['create', 'update'].includes(body?.action) || Object.hasOwn(body, 'signature')) return body;
-  return {...body, signature: signatureInput()};
+  if (!body || typeof body !== 'object') return body;
+  let out = body;
+  if (['approve', 'approve-order'].includes(out.action) && !Object.hasOwn(out, 'termsAccepted')) out = {...out, termsAccepted: true};
+  if (['create', 'update'].includes(out.action) && out.payment === 'deferred' && !Object.hasOwn(out, 'paymentTerms')) out = {...out, paymentTerms: TEST_PAYMENT_TERMS};
+  if (!['rep', 'supervisor', 'manager'].includes(role) || !['create', 'update'].includes(out.action) || Object.hasOwn(out, 'signature')) return out;
+  return {...out, signature: signatureInput()};
 }

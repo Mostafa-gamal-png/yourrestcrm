@@ -8,6 +8,8 @@
 // approved); the numbers are no longer asked for nor sent with a new request (a request stored with one still sends it, byte for byte).
 // Since 2026-11-09: a customer not in the CRM (customer.crmNumber null with customer.erpCode, moldRequestBody; moldCustomerName,
 // moldErpCode), and how the CRM learns that production takes one (moldFreeCustomersAnswered: customer.erpCode in a status or pending item).
+// Since 2026-11-10: the customer's signature inside the request's PDFs (moldSignatureBlockCheck, moldSignedCopyName: a signed copy is one
+// more file of its original's category, production unchanged) and the link the customer signs from (MOLD_SIGN_TOKEN, MOLD_SIGN_LINK_DAYS).
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -23,6 +25,20 @@ export const MOLD_HALF_BLOCKS = {none: 'بدون بلوكة نص', one: 'بلو�
  *  has none (pending lists it as null). */
 export const MOLD_PAYMENTS = {cash: 'نقدي', deferred: 'آجل'};
 export const MOLD_PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل';
+/** How a deferred payment is to be paid (the owner, 2026-11-10: «فى حال طلب الدفع اجل يجب على المندوب يختار طريقة الدفع المتفق عليها»): one of
+ *  three, required with "deferred" and never with "cash"; sent as `paymentTerms` beside `payment` only by a request that carries it (the
+ *  products update of 2026-11-10 reads it; the application before ignores it, as any key it does not know). */
+export const MOLD_PAYMENT_TERMS = Object.freeze({advance_before_shipping: 'دفعة مقدمة واستكمال باقي المبلغ قبل الترحيل', advance_after_shipping: 'دفعة مقدمة واستكمال باقي المبلغ بعد الترحيل', advance_credit_limit: 'دفعة مقدمة واستكمال باقي المبلغ حد ائتماني'});
+export const MOLD_PAYMENT_TERMS_REQUIRED = 'اختار طريقة الدفع المتفق عليها';
+/** A page loaded before 2026-11-10 asks for a deferred request without the terms (it shows no such field). */
+export const MOLD_PAYMENT_TERMS_REFRESH = 'حدّث الصفحة واختار طريقة الدفع المتفق عليها';
+export const MOLD_PAYMENT_TERMS_CASH = 'طريقة الدفع المتفق عليها للدفع الآجل بس';
+/** The code of a payment's terms, or null when it is not one of the three.
+ * @param {unknown} value
+ * @returns {'advance_before_shipping'|'advance_after_shipping'|'advance_credit_limit'|null} */
+export const moldPaymentTerms = value => typeof value === 'string' && Object.prototype.hasOwnProperty.call(MOLD_PAYMENT_TERMS, value) ? /** @type {'advance_before_shipping'|'advance_after_shipping'|'advance_credit_limit'} */ (value) : null;
+/** The sales manager's acknowledgement that goes with every approval (2026-11-10), sent as termsAccepted: true. */
+export const MOLD_TERMS_ACCEPT = 'تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام';
 /** The quotation and PO numbers (yourrest-products 2026-11-03, its second update of the day): `quoteNo` and `poNo` in the requests body
  *  after payment, each a text of up to 60 characters as written on the document (Arabic-Indic digits as ASCII digits, the ends trimmed),
  *  sent only when the request carries them. Since production's update of 2026-11-05 the CRM no longer asks for them: a new request
@@ -268,9 +284,9 @@ export function riyadhIso(value) {
  * production. A customer not in the CRM (2026-11-09): customer.crmNumber null, then customer.erpCode (1 to 50 characters after
  * moldErpCodeText) is required and follows address and city; a customer of the CRM (crmNumber a number) never sends erpCode, whatever
  * the request's data holds, so its body is byte for byte as before.
- * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, quoteNo?: string|null, poNo?: string|null}} request
+ * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, paymentTerms?: string|null, quoteNo?: string|null, poNo?: string|null}} request
  */
-export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, quoteNo, poNo}) {
+export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, paymentTerms, quoteNo, poNo}) {
   if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
   const free = !!customer && customer.crmNumber === null;
   if (!free && (!isWhole(customer?.crmNumber) || customer.crmNumber < 1 || customer.crmNumber > 2147483647)) throw new Error('customer.crmNumber');
@@ -301,6 +317,8 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
   if (s.designUrl) body.specs.designUrl = s.designUrl;
   if (s.notes) body.specs.notes = s.notes;
   if (payment !== undefined && payment !== null) { if (!moldPayment(payment)) throw new Error('payment'); body.payment = payment; }
+  // 2026-11-10: the terms of a deferred payment, right after it, only when the request carries them (an older request byte for byte).
+  if (paymentTerms !== undefined && paymentTerms !== null) { if (!moldPaymentTerms(paymentTerms) || payment !== 'deferred') throw new Error('paymentTerms'); body.paymentTerms = paymentTerms; }
   for (const [key, value] of [['quoteNo', quoteNo], ['poNo', poNo]]) {
     const clean = moldQuotePoNumber(value);
     if (clean === undefined || length(clean) > MOLD_QUOTE_PO_MAX) throw new Error(key);
@@ -504,6 +522,71 @@ export function moldSignatureCheck(signer, bytes) {
   return {ok: true, signer: name, name: file, width: size.width, height: size.height, contentType: checked.contentType};
 }
 
+// ---- The customer's signature inside the request's PDFs, and the link the customer signs from (the owner, 2026-11-10)
+// Production's side does not change: a signed copy is one more file of the original's category, sent with design-files like any other.
+/** The block stamped at the bottom of the last page of each signed PDF: a PNG the signing browser composes (the drawing, «توقيع العميل:
+ *  <name>» and the moment in Riyadh; the canvas shapes the Arabic), at most 384 KiB, 600 to 1600 pixels wide, 150 to 800 high, at least
+ *  1.5 times as wide as high. The JSON body carries it as base64 (MOLD_SIGNATURE_BLOCK_BASE64_MAX). */
+export const MOLD_SIGNATURE_BLOCK_MAX_BYTES = 384 * 1024;
+export const MOLD_SIGNATURE_BLOCK_BASE64_MAX = Math.ceil(MOLD_SIGNATURE_BLOCK_MAX_BYTES / 3) * 4;
+export const MOLD_SIGNATURE_BLOCK_WIDTH = Object.freeze([600, 1600]), MOLD_SIGNATURE_BLOCK_HEIGHT = Object.freeze([150, 800]);
+/** How far the moment printed in the block (blockAt) may be from the server's clock: the page sets its clock by the server's. */
+export const MOLD_SIGNATURE_BLOCK_SKEW_MS = 10 * 60_000;
+/** At most this many PDFs' SHA-256 the customer saw on the device before they were uploaded (seen): 10 design, 5 quotation, 5 PO. */
+export const MOLD_SIGNATURE_SEEN_MAX = 20;
+/** A signed copy's name: «<the original's name without .pdf> - موقّع.pdf». */
+export const MOLD_SIGNED_SUFFIX = ' - موقّع';
+/** A signing link stays valid this long (one active link a request). */
+export const MOLD_SIGN_LINK_DAYS = 14;
+/** The link's token: 32 random bytes in base64url (43 characters, 256 bits). */
+export const MOLD_SIGN_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+/** Bytes from base64 without the data: prefix (no spaces), up to maxLength characters; null otherwise. */
+function base64Bytes(value, maxLength) {
+  if (typeof value !== 'string' || !value || value.length > maxLength || value.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+  try {
+    const text = atob(value), bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+    return bytes;
+  } catch { return null; }
+}
+/** The block's bytes from the base64 the form sends; null when it is not base64 or is too long. */
+export const moldSignatureBlockBytes = value => base64Bytes(value, MOLD_SIGNATURE_BLOCK_BASE64_MAX);
+/**
+ * The block before the CRM keeps it: a whole PNG (moldPngWhole) within its limits.
+ * @param {Uint8Array|null} bytes
+ * @returns {{ok: true, width: number, height: number} | {ok: false, reason: 'missing'|'too_large'|'not_png'|'size'}}
+ */
+export function moldSignatureBlockCheck(bytes) {
+  if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, reason: 'missing'};
+  if (bytes.length > MOLD_SIGNATURE_BLOCK_MAX_BYTES) return {ok: false, reason: 'too_large'};
+  const size = moldImageSize(bytes);
+  if (!size || size.format !== 'png' || !moldPngWhole(bytes)) return {ok: false, reason: 'not_png'};
+  const [minW, maxW] = MOLD_SIGNATURE_BLOCK_WIDTH, [minH, maxH] = MOLD_SIGNATURE_BLOCK_HEIGHT;
+  if (size.width < minW || size.width > maxW || size.height < minH || size.height > maxH || size.width < 1.5 * size.height) return {ok: false, reason: 'size'};
+  return {ok: true, width: size.width, height: size.height};
+}
+/** Whether the moment printed in the block is the server's now, within MOLD_SIGNATURE_BLOCK_SKEW_MS. */
+export function moldSignatureBlockAt(value, now = Date.now()) {
+  if (typeof value !== 'string' || value.length > 40 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(value)) return null;
+  const at = Date.parse(value);
+  return Number.isFinite(at) && Math.abs(at - now) <= MOLD_SIGNATURE_BLOCK_SKEW_MS ? new Date(at).toISOString() : null;
+}
+/** The SHA-256 (hex) of the PDFs the customer saw on the device, kept once each, at most MOLD_SIGNATURE_SEEN_MAX; [] for none; null
+ *  when it is not such a list. */
+export function moldSignatureSeen(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MOLD_SIGNATURE_SEEN_MAX || !value.every(item => typeof item === 'string' && /^[0-9a-f]{64}$/i.test(item))) return null;
+  return [...new Set(value.map(item => item.toLowerCase()))];
+}
+/** A signed copy's name: «<name without .pdf> - موقّع.pdf», the original's name shortened (never below one character) to stay within 200
+ *  characters. Always one moldDesignName accepts as a PDF when the original's name is. */
+export function moldSignedCopyName(name) {
+  const text = String(name ?? ''), dot = text.toLowerCase().endsWith('.pdf') ? text.length - 4 : text.length;
+  const tail = MOLD_SIGNED_SUFFIX + '.pdf', room = Math.max(1, MOLD_DESIGN_NAME_MAX - length(tail));
+  const base = [...text.slice(0, dot)].slice(0, room).join('').trim() || 'ملف';
+  return base + tail;
+}
+
 /** The type a design file is served with: a PDF or one of the four image types as they are, anything else as plain bytes (an SVG or a
  *  drawing is never rendered by the browser). */
 export function moldDesignContentType(value) {
@@ -584,6 +667,8 @@ function approvalsOf(value) {
     if (!given || typeof given !== 'object') continue;
     out[step] = {at: dateOrNull(given.at)};
     if (step === 'sales' && typeof given.by === 'string' && given.by.trim()) out.sales = {at: out.sales.at, by: given.by.trim().slice(0, 200)};
+    // 2026-11-10: the sales manager acknowledged the payment terms (approvals.sales.termsAccepted of the updated application).
+    if (step === 'sales' && given.termsAccepted === true) out.sales = {...out.sales, termsAccepted: true};
   }
   return out;
 }
@@ -642,8 +727,22 @@ export function moldStatusObject(value, {manual = false} = {}) {
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
     waitingStep: MOLD_WAITING_STEPS.includes(value.waitingStep) ? value.waitingStep : null, waitingSince: dateOrNull(value.waitingSince), approvals: approvalsOf(value.approvals),
     designFiles: designFilesOf(value.designFiles),
-    ...quotePoOf(value), ...freeCustomerOf(value),
+    ...quotePoOf(value), ...freeCustomerOf(value), ...nov10Of(value),
   };
+}
+/** The products update of 2026-11-10, in a status object or a pending item, only when the answer carries its keys (an older application's
+ *  reads exactly as before): paymentTerms (a code, or null), and returned: finance sent the request back to the sales manager
+ *  ({by: 'finance', reason, at, correctedAt}, or null). */
+function nov10Of(value) {
+  return {...(Object.prototype.hasOwnProperty.call(value, 'paymentTerms') ? {paymentTerms: moldPaymentTerms(value.paymentTerms)} : {}),
+    ...(Object.prototype.hasOwnProperty.call(value, 'returned') ? {returned: moldReturned(value.returned)} : {})};
+}
+/** Finance's return of a request (2026-11-10): its reason (3 to 500 characters as production checks it), when, and when the CRM's
+ *  correction reached production (null until then); null for anything else. */
+export function moldReturned(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.reason !== 'string' || !value.reason.trim()) return null;
+  const name = typeof value.name === 'string' ? [...value.name.trim()].slice(0, 190).join('') : '';
+  return {by: /** @type {'finance'} */ ('finance'), ...(name ? {name} : {}), reason: [...value.reason.trim()].slice(0, 500).join(''), at: dateOrNull(value.at), correctedAt: dateOrNull(value.correctedAt)};
 }
 
 /**
@@ -651,9 +750,9 @@ export function moldStatusObject(value, {manual = false} = {}) {
  * crmRequestId when it came from the CRM; one registered in the products application by its requestRef (the products update of
  * 2026-11-05: it has no number while it waits for the sales manager), or by its orderNo when production sent no requestRef (the
  * application before that update): one of them only. Throws on a value production refuses.
- * @param {{id?: string|null, requestRef?: string|null, orderNo?: number|null, action: string, by: {name?: string, email?: string}}} input
+ * @param {{id?: string|null, requestRef?: string|null, orderNo?: number|null, action: string, by: {name?: string, email?: string}, termsAccepted?: boolean}} input
  */
-export function moldApprovalBody({id = null, requestRef = null, orderNo = null, action, by}) {
+export function moldApprovalBody({id = null, requestRef = null, orderNo = null, action, by, termsAccepted = false}) {
   const named = [id, requestRef, orderNo].filter(value => value !== null).length;
   if (named !== 1) throw new Error(id === null ? requestRef === null ? 'crmRequestId' : 'requestRef' : 'crmRequestId');
   if (id !== null && !MOLD_ID.test(id)) throw new Error('crmRequestId');
@@ -665,6 +764,8 @@ export function moldApprovalBody({id = null, requestRef = null, orderNo = null, 
   /** @type {{crmRequestId?: string, requestRef?: string, orderNo?: number, action: string, by: {name: string, email?: string}}} */
   const body = id !== null ? {crmRequestId: id, action, by: {name}} : requestRef !== null ? {requestRef, action, by: {name}} : {orderNo: /** @type {number} */ (orderNo), action, by: {name}};
   if (email && length(email) <= MOLD_LIMITS.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) body.by.email = email;
+  // 2026-11-10: an approval carries the sales manager's acknowledgement of the payment terms (ignored by the application before).
+  if (action === 'approve' && termsAccepted === true) body.termsAccepted = true;
   return body;
 }
 
@@ -709,7 +810,7 @@ export function moldPendingItem(value) {
     specs: {description: textOf(p.description, 200), core: textOf(p.core, 20), vibrators: wholeOrNull(p.vibrators), model: textOf(p.model, 20), halfBlock: textOf(p.halfBlock, 20),
       moldWidth: wholeOrNull(p.moldWidth), gelbaSize: wholeOrNull(p.gelbaSize), moldNo: textOf(p.moldNo, 40), quantity: wholeOrNull(p.quantity), designUrl: /^https:\/\/\S+$/i.test(p.designUrl || '') ? String(p.designUrl).slice(0, 1000) : '', notes: textOf(p.notes, 2000)},
     payment: moldPayment(value.payment), revision: wholeOrNull(value.revision), designFiles: designFilesOf(value.designFiles) || [],
-    ...quotePoOf(value),
+    ...quotePoOf(value), ...nov10Of(value),
   };
 }
 

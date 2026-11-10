@@ -18,11 +18,14 @@
 // application reads crmNumber as optional and would store the request without its ERP code, silently. Until then, and should production
 // still refuse it for its missing Yourrest number, it waits in the CRM (error free_customer, never final), tried again every 6 hours, on
 // its requester's resend, and at once when the update is learned.
+// A request whose requester chose to send the customer a link to sign from (2026-11-10: data.awaitsSignature) is kept the same way as one
+// waiting for a file, until the customer signs (MOLD_HELD_FOR_SQL 'customer_signature', after the files' reasons); the signing (from the
+// link, or on the device from the request's sheet) sends it at once (lib/mold-sign-server.ts).
 import {env} from 'cloudflare:workers';
 import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
-import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,moldFreeCustomersAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
+import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPaymentTerms,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,moldFreeCustomersAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
 import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldFreeCustomer,moldHeldFor,MOLD_FREE_CUSTOMER,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
@@ -45,7 +48,10 @@ export async function loadMoldRequest(db:D1Database,id:string){return (await loa
  *  them is sent again byte for byte as first sent (production compares a resend with its original; a field added would be other data,
  *  409 production_only). Always the request's own data, never the numbers a status object carries (production's current values). Built
  *  from these fields alone: the customer's signature (data.signature, 2026-11-04) goes as a design file, never in this body. */
-export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs,payment:row.data.payment,quoteNo:row.data.quoteNo,poNo:row.data.poNo});
+/** Since 2026-11-10 a deferred request's terms (paymentTerms) go right after its payment, only when this request's sends carry them
+ *  (data.termsSent, decided at its first send once the products update of 2026-11-10 is known: moldNov10Known): a request first sent
+ *  without them is sent again without them, byte for byte (production compares a resend with its original). */
+export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>,withTerms=row.data.termsSent===true)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs,payment:row.data.payment,paymentTerms:withTerms&&row.data.payment==='deferred'?row.data.paymentTerms:undefined,quoteNo:row.data.quoteNo,poNo:row.data.poNo});
 
 /** Where the CRM keeps that production's update of 2026-11-03 (the quotation and PO) is live: a row of crm_settings, the existing
  *  key-value table (its owner_id holds when it was learned). Written once, never removed by the CRM, so a restart keeps it. */
@@ -87,6 +93,21 @@ async function noteMoldFreeCustomers(db:D1Database,values:unknown[],at:string){
  ]);
  return true;
 }
+/** Where the CRM keeps that the products update of 2026-11-10 is live (a deferred payment's terms, the sales manager's acknowledgement,
+ *  finance's return, 20/10/10 files): a row of crm_settings, written once, never removed. Learned from any status object or pending item
+ *  that carries both keys paymentTerms and returned (null included), as production's reply of 2026-11-10 says. Until then the CRM keeps
+ *  the terms and the acknowledgement for itself and sends neither (the updated application refuses paymentTerms without "deferred", the
+ *  application before ignores both). */
+export const MOLD_NOV10_SETTING='mold-nov10';
+export async function moldNov10Known(db:D1Database){
+ return !!(await db.prepare('SELECT 1 AS known FROM crm_settings WHERE id=?').bind(MOLD_NOV10_SETTING).first());
+}
+export const moldNov10Answered=(value:unknown)=>!!value&&typeof value==='object'&&Object.hasOwn(value,'paymentTerms')&&Object.hasOwn(value,'returned');
+async function noteMoldNov10(db:D1Database,values:unknown[],at:string){
+ if(!values.some(moldNov10Answered)||await moldNov10Known(db))return false;
+ await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_NOV10_SETTING,at).run();
+ return true;
+}
 /** Learns production's update from any answer read (a status object or a pending item, as moldStatusObject and moldPendingItem read it)
  *  that carries quoteOrPoMissing, whatever its value: the first one stores it, any later one changes nothing. Never unlearned. Every
  *  answer read passes here, so the same answers teach the products update of 2026-11-05 too (noteMoldRequestRef), and the update that
@@ -94,6 +115,7 @@ async function noteMoldFreeCustomers(db:D1Database,values:unknown[],at:string){
 export async function noteMoldQuotePo(db:D1Database,values:unknown[],at=new Date().toISOString()){
  await noteMoldRequestRef(db,values,at);
  await noteMoldFreeCustomers(db,values,at);
+ await noteMoldNov10(db,values,at);
  if(!values.some(moldQuotePoAnswered))return false;
  // Written only while it is not there yet (a page reads the waiting list every few minutes; no write each time).
  if(!await moldQuotePoSupported(db))await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_QUOTE_PO_SETTING,at).run();
@@ -105,14 +127,18 @@ const QUOTE_PO_SEND_SQL="(outbox IS 'send' AND (IFNULL(json_extract(data,'$.quot
  *  certainly never reached production (MOLD_NEVER_SENT_SQL, below), then 'quote_file': asked for under the rule of the quotation's or
  *  PO's file (2026-11-05) and none of its files a quotation's or PO's that is not deleted nor refused for good (MOLD_DESIGN_REFUSED_SQL,
  *  over the file); else 'design_file': asked for under the rule of the design file (2026-11-08) and none of its files a design file that
- *  is not deleted, not refused for good, and not the customer's signature (the file data.signature.fileId names). */
-export const MOLD_HELD_FOR_SQL=()=>`(CASE WHEN outbox IS 'send' AND ${MOLD_NEVER_SENT_SQL} THEN CASE
- WHEN json_extract(data,'$.fileRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files q WHERE q.request_id=crm_mold_requests.id AND q.category IN ('quote','po') AND q.deleted_at IS NULL
+ *  is not deleted, not refused for good, and not the customer's signature (the file data.signature.fileId names); else (2026-11-10)
+ *  'customer_signature': the requester chose the signing link and the customer has not signed yet (data.awaitsSignature), whether or not
+ *  production holds the request (a correction of one finance sent back waits for it too). The same order as moldHeldFor: the
+ *  quotation's file, the design file (both for a request never sent), then the customer's signature. */
+export const MOLD_HELD_FOR_SQL=()=>`(CASE WHEN outbox IS NOT 'send' THEN NULL
+ WHEN ${MOLD_NEVER_SENT_SQL} AND json_extract(data,'$.fileRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files q WHERE q.request_id=crm_mold_requests.id AND q.category IN ('quote','po') AND q.deleted_at IS NULL
   AND NOT (q.outbox IS 'send' AND q.sent_at IS NULL AND q.next_attempt_at IS NULL AND json_extract(q.last_error,'$.final') IS 1)) THEN 'quote_file'
- WHEN json_extract(data,'$.designRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files d WHERE d.request_id=crm_mold_requests.id AND d.category NOT IN ('quote','po') AND d.deleted_at IS NULL
+ WHEN ${MOLD_NEVER_SENT_SQL} AND json_extract(data,'$.designRequired') IS 1 AND NOT EXISTS(SELECT 1 FROM crm_mold_design_files d WHERE d.request_id=crm_mold_requests.id AND d.category NOT IN ('quote','po') AND d.deleted_at IS NULL
   AND d.id IS NOT json_extract(crm_mold_requests.data,'$.signature.fileId') AND NOT (d.outbox IS 'send' AND d.sent_at IS NULL AND d.next_attempt_at IS NULL AND json_extract(d.last_error,'$.final') IS 1)) THEN 'design_file'
- END END)`;
-/** Whether a request is kept in the CRM for a file (moldHeldFor in TypeScript, either reason). Never NULL. */
+ WHEN json_extract(data,'$.awaitsSignature') IS 1 THEN 'customer_signature'
+ END)`;
+/** Whether a request is kept in the CRM for a file, or for the customer's signature (moldHeldFor in TypeScript, any reason). Never NULL. */
 export const MOLD_AWAITS_FILE_SQL=()=>`(${MOLD_HELD_FOR_SQL()} IS NOT NULL)`;
 export const requestedNow=(now:string)=>riyadhIso(now);
 
@@ -166,8 +192,14 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
   await db.prepare('UPDATE crm_mold_requests SET next_attempt_at=?,last_error=?,updated_at=? WHERE id=? AND version=? AND outbox IS \'send\' AND next_attempt_at IS NOT NULL AND next_attempt_at<=?').bind(new Date(Date.parse(at)+MOLD_FREE_CUSTOMER_RETRY_MS).toISOString(),error,at,id,row.version,at).run();
   return {kind:'none',code:MOLD_FREE_CUSTOMER};
  }
- const at=now(),claim=crypto.randomUUID(),lease=new Date(Date.parse(at)+60_000).toISOString();
- const claimed=await db.prepare(`UPDATE crm_mold_requests SET mutation_id=?,last_attempt_at=?,next_attempt_at=? WHERE id=? AND version=? AND outbox=? AND next_attempt_at IS NOT NULL AND next_attempt_at<=? AND NOT ${MOLD_AWAITS_FILE_SQL()}`).bind(claim,at,lease,id,row.version,row.outbox,at).run();
+ // Whether this request's sends carry the payment's terms (2026-11-10), kept with the claim (data.termsSent) so every later send is the
+ // same bytes (production compares a resend with its original). While every attempt so far was refused before production stored the
+ // request (never sent), it is decided again at each send: with them once the update is known. Once a send may have reached production,
+ // what was decided stays (a correction of a request finance sent back says true itself).
+ const fresh=moldNeverSent(row)&&!row.accepted,decided=typeof row.data.termsSent==='boolean'&&!fresh;
+ const withTerms=decided?row.data.termsSent===true:!!row.data.paymentTerms&&row.data.payment==='deferred'&&(row.data.termsSent===true||fresh&&await moldNov10Known(db));
+ const at=now(),claim=crypto.randomUUID(),lease=new Date(Date.parse(at)+60_000).toISOString(),keepTerms=row.outbox==='send'&&!!row.data.paymentTerms&&row.data.termsSent!==withTerms;
+ const claimed=await db.prepare(`UPDATE crm_mold_requests SET mutation_id=?,last_attempt_at=?,next_attempt_at=?,data=CASE WHEN ? THEN json_set(data,'$.termsSent',json(?)) ELSE data END WHERE id=? AND version=? AND outbox=? AND next_attempt_at IS NOT NULL AND next_attempt_at<=? AND NOT ${MOLD_AWAITS_FILE_SQL()}`).bind(claim,at,lease,keepTerms?1:0,withTerms?'true':'false',id,row.version,row.outbox,at).run();
  if(claimed.meta.changes!==1){const still=row.outbox==='send'?moldHeldFor(row,await loadMoldDesignFiles(db,'request_id=?',[id])):null;return still?{kind:'none',code:still}:{kind:'busy',code:''};}
  // A cancellation whose answer was lost while a pull since stored production's status as cancelled (it arrived, or production cancelled
  // the request itself): complete there, so it is settled as delivered, not sent again. A later restore is then the pull's alone
@@ -180,7 +212,7 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
  const options=fetch?{fetch}:{};
  const answer=row.outbox==='cancel'
   ?await callProducts(link,'cancel',{crmRequestId:row.id,reason:row.cancelReason},options)
-  :await callProducts(link,'requests',requestBody(row),options);
+  :await callProducts(link,'requests',requestBody(row,withTerms),options);
  // This attempt and every one before it were refused before production stored the request: it may still be edited (moldNeverSent).
  const notStored=moldAnswerNotStored(answer)&&moldNeverSent(row)?{notStored:true}:{};
  // A status about another request (a crmRequestId that is not this one's) is not this request's status.
@@ -297,7 +329,11 @@ const RESTORED_SQL="(json_extract(remote,'$.status') IS 'cancelled' OR (cancelle
  */
 export function moldRemoteStatements(db:D1Database,id:string,remote:MoldRemote,at:string):D1PreparedStatement[]{
  const [set,args]=newerRemote(remote,at),write=db.prepare(`UPDATE crm_mold_requests SET ${set} WHERE id=?`).bind(...args,id);
- if(remote.status==='cancelled')return [write];
+ // Finance sent it back (2026-11-10): «رجّعته المالية» in the audit, once for each return (named by its moment), when first seen.
+ const returned=remote.returned?[db.prepare(`INSERT OR IGNORE INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,id,?,'mold-request:returned',json_object('label',?,'customerName',json_extract(data,'$.customer.name'),'reason',?,'by',?,'at',?),? FROM crm_mold_requests WHERE id=?`)
+  .bind('mold-returned:'+id+':'+(remote.returned.at||''),MOLD_PRODUCTION_ACTOR,'رجّعته المالية',remote.returned.reason,remote.returned.name||'finance',remote.returned.at,at,id)]:[];
+ // (Last, after the write and a restore's statements: the callers count the restore by its place.)
+ if(remote.status==='cancelled')return [write,...returned];
  const revision=remote.revision??Number.MAX_SAFE_INTEGER,error=(reason:string)=>JSON.stringify({code:'restored',reason,http:0,at});
  const audit=db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,id,?,'mold-request:restored',json_object('label',?,'customerName',json_extract(data,'$.customer.name'),'cancelledInCrm',json(CASE WHEN cancelled_at IS NULL THEN 'false' ELSE 'true' END),'cancelReason',cancel_reason,'cancelDropped',json(CASE WHEN outbox IS 'cancel' THEN 'true' ELSE 'false' END),'orderNo',?,'status',?,'waitingStep',?),?
   FROM crm_mold_requests WHERE id=? AND ${RESTORED_SQL}`).bind(crypto.randomUUID(),MOLD_PRODUCTION_ACTOR,'رجّعه مدير الإنتاج بعد الإلغاء',remote.orderNo,remote.status,remote.waitingStep??null,at,id,revision);
@@ -305,7 +341,7 @@ export function moldRemoteStatements(db:D1Database,id:string,remote:MoldRemote,a
  const restore=db.prepare(`UPDATE crm_mold_requests SET cancelled_at=NULL,cancel_reason='',accepted=COALESCE(accepted,data),last_error=CASE WHEN outbox IS 'cancel' THEN ? ELSE ? END,attempts=CASE WHEN outbox IS 'cancel' THEN 0 ELSE attempts END,
   first_failed_at=CASE WHEN outbox IS 'cancel' THEN NULL ELSE first_failed_at END,next_attempt_at=CASE WHEN outbox IS 'cancel' THEN NULL ELSE next_attempt_at END,outbox=CASE WHEN outbox IS 'cancel' THEN NULL ELSE outbox END,
   mutation_id=?,updated_at=?,version=version+1 WHERE id=? AND cancelled_at IS NOT NULL AND ${RESTORED_SQL}`).bind(error('cancel_dropped'),error('restored'),crypto.randomUUID(),at,id,revision);
- return [audit,restore,write];
+ return [audit,restore,write,...returned];
 }
 /** Production's answer about a request, stored unless a newer one (a higher revision) is there already; a restore it shows is settled
  *  with it (moldRemoteStatements). An answer of production's updated application teaches the CRM so (noteMoldQuotePo). */
@@ -451,7 +487,9 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
  * that cannot go now (the request not accepted yet, another two in flight) waits for the timetable as usual. Answers the request's
  * outcome and each file's sent here.
  */
-export async function releaseMoldRequest(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch,files,waitMs=12_000}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;files?:R2Bucket;waitMs?:number}={}){
+/** onRequest (2026-11-10): told the request's own outcome as soon as it is known, before its files go (a caller that answers while the files
+ *  are still on their way). */
+export async function releaseMoldRequest(db:D1Database,id:string,{link=productsLink(),now=()=>new Date().toISOString(),fetch,files,waitMs=12_000,onRequest}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;files?:R2Bucket;waitMs?:number;onRequest?:(outcome:SendOutcome)=>void}={}){
  const extra={...(fetch?{fetch}:{})},until=Date.now()+waitMs,sent=new Map<string,DesignOutcome>();
  let outcome=await sendMoldRequest(db,id,{link,now,...extra});
  // The file saved just now makes the request due for any sender: the timetable or a page's own check may have claimed it first. Its
@@ -466,6 +504,7 @@ export async function releaseMoldRequest(db:D1Database,id:string,{link=productsL
   outcome=await sendMoldRequest(db,id,{link,now,...extra});
   if(outcome.kind==='busy')break;
  }
+ onRequest?.(outcome);
  if(outcome.kind!=='ok')return {outcome,files:sent};
  const due=(await db.prepare("SELECT id FROM crm_mold_design_files WHERE request_id=? AND outbox='send' AND deleted_at IS NULL AND next_attempt_at IS NOT NULL AND next_attempt_at<=? ORDER BY created_at,id").bind(id,now()).all<{id:string}>()).results;
  for(const file of due){
@@ -578,7 +617,7 @@ export async function moldPendingFor(c:PendingReader,link:Config,{force=false}:{
  const pulled=await pullPendingApprovals({link,force});
  await noteMoldQuotePo(c.db,pulled.items);
  // The CRM's own requests, with who asked for each and for which customer.
- const own=new Map((await c.db.prepare("SELECT id,member_id AS memberId,customer_id AS customerId,json_extract(data,'$.signature') AS signature FROM crm_mold_requests").all<{id:string;memberId:string;customerId:string;signature:string|null}>()).results.map(row=>[row.id,row]));
+ const own=new Map((await c.db.prepare("SELECT id,member_id AS memberId,customer_id AS customerId,json_extract(data,'$.signature') AS signature,json_extract(data,'$.paymentTerms') AS paymentTerms FROM crm_mold_requests").all<{id:string;memberId:string;customerId:string;signature:string|null;paymentTerms:string|null}>()).results.map(row=>[row.id,row]));
  const signatureOf=(id:string|null)=>{const text=id?own.get(id)?.signature:null;if(!text)return null;try{return moldSignatureOf({signature:JSON.parse(text)});}catch{return null;}};
  let inRegion:(number:number|null)=>boolean=()=>true;
  if(regionScope(c.me)!=='all'){
@@ -587,7 +626,10 @@ export async function moldPendingFor(c:PendingReader,link:Config,{force=false}:{
  }
  const shown=(item:MoldPendingItem)=>{const row=item.crmRequestId?own.get(item.crmRequestId):undefined;return row?moldApprovesRequest(row,c):inRegion(item.customer.crmNumber);};
  // Signed only once production's listing holds the signature's image (by its crmFileId); until then the item says it has not arrived.
- return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature,signatureDelivered:!!signature&&item.designFiles.some(file=>file.crmFileId===signature.fileId)};}),error:pulled.error,at:pulled.at,...(pulled.unreadable?{unreadable:pulled.unreadable}:{})};
+ // The payment's terms (2026-11-10): production's when it lists some (its update), else the CRM's own request's (kept in the CRM alone
+ // while the update was not known, or sent before it); none beside a payment production holds as anything but "deferred".
+ const termsOf=(item:MoldPendingItem)=>item.payment!=='deferred'?null:item.paymentTerms||moldPaymentTerms(item.crmRequestId?own.get(item.crmRequestId)?.paymentTerms:null);
+ return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,paymentTerms:termsOf(item),inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature,signatureDelivered:!!signature&&item.designFiles.some(file=>file.crmFileId===signature.fileId)};}),error:pulled.error,at:pulled.at,...(pulled.unreadable?{unreadable:pulled.unreadable}:{})};
 }
 /** Whether a reader may open one request (GET ?id=, its sheet, and its files by id): every request their list shows
  * (canReadMoldRequest); and for the sales manager one that their list does not show but «طلبات بانتظار اعتمادي» shows them now (customer

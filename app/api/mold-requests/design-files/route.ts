@@ -9,12 +9,15 @@
 // then: the first attached releases it (the request is sent, then its files, releaseMoldRequest). Attaching one no longer undoes the
 // approvals (production's update of 2026-11-05), so no warning is shown for it. Since 2026-11-08 a design file of its own (not the
 // customer's signature) is required of every new request too, kept the same way: the file that leaves nothing missing releases it.
+// Since 2026-11-10 a PDF the customer saw on the device when signing (its SHA-256 among the signature's seen) gets its signed copy as it
+// arrives (lib/mold-sign-server.ts makeSignedCopies), saved right after it and sent after it; one attached after the signature gets none.
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError,requirePages} from '@/lib/crm-server';
 import {readRequestForm} from '@/lib/request-body';
 import {moldDesignFileCheck,MOLD_CATEGORY_MAX_FILES} from '@/portable/mold-rules.mjs';
-import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignRefusalText,moldEditable,moldHeldFor,moldRequestView,type MoldFileCategory} from '@/lib/mold-requests';
+import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignRefusalText,moldEditable,moldHeldFor,moldRequestView,moldSignatureOf,type MoldFileCategory} from '@/lib/mold-requests';
+import {makeSignedCopies} from '@/lib/mold-sign-server';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldQuotePoSupported,moldViewReasons,productsLink,releaseMoldRequest,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
@@ -26,7 +29,7 @@ const SEND_WAIT_MS=15_000;
 const sha256=async(bytes:Uint8Array<ArrayBuffer>)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(n=>n.toString(16).padStart(2,'0')).join('');
 /** The CRM's live files of a request and a category in SQL, as moldDesignCount counts them: not deleted (or whose deletion has not
  *  reached production), not refused for good. */
-const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND category=? AND (deleted_at IS NULL OR outbox='delete') AND NOT ${MOLD_DESIGN_REFUSED_SQL}`;
+const LIVE_FILES=`SELECT COUNT(*) FROM crm_mold_design_files WHERE request_id=? AND category=? AND (deleted_at IS NULL OR outbox='delete') AND NOT ${MOLD_DESIGN_REFUSED_SQL} AND id NOT LIKE 'mdc-%'`;
 /** A design file (the form sends no category, as before), the quotation's or the PO's. */
 const categoryInput=z.enum(['design','quote','po']);
 /** When a category's places are taken, in the representative's words. */
@@ -70,7 +73,8 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  if(!row||!canReadMoldRequest(row,c))throw new CRMError('الطلب غير متاح',404);
  if(row.memberId!==c.me.id)throw new CRMError('إرفاق ملفات التصميم لمن طلب القالب',403);
  if(!moldEditable(row))throw new CRMError(row.cancelledAt?'الطلب ملغى':'اكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد تغيير ملفات الطلب ممكنًا',409);
- const before=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),count=moldDesignCount(row,before,category),full=FULL[category];
+ // The originals' places (2026-11-10: the signed copies leave them free; production's own limits are larger since its update).
+ const before=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),count=moldDesignCount(row,before,category,{originals:true}),full=FULL[category];
  // A new request kept for its quotation's or PO's file (2026-11-05) or its design file (2026-11-08): this one releases it once saved
  // when, with it, nothing is missing any more (a quotation's file of a request with no design file keeps it, for its design file). The
  // page uploads one file at a time; two kinds saved at once elsewhere leave the request due, and the next timetable check sends it.
@@ -94,17 +98,24 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
   const again=result instanceof Response?result:await replay();
   await env.FILES.delete(objectKey).catch(()=>{});objectKey='';
   if(again)return again;
-  const fresh=await loadMoldRequest(c.db,row.id),places=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),category);
+  const fresh=await loadMoldRequest(c.db,row.id),places=fresh&&moldDesignCount(fresh,await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),category,{originals:true});
   throw new CRMError(places&&places.crm+places.production>=places.max?full:'تغيّرت حالة الطلب أو صلاحياتك أثناء الحفظ. حدّث الصفحة.',409);
  }
  objectKey='';
+ // A PDF the customer saw on the device when signing (2026-11-10): its signed copy, saved now, so it follows the original to production.
+ const signature=moldSignatureOf(row.data),stamp=row.data.signature;
+ let copies:string[]=[];
+ if(signature&&stamp?.block?.key&&checked.kind==='pdf'&&(stamp.seen||[]).includes(hash)){
+  const original=(await loadMoldDesignFiles(c.db,'id=?',[crmFileId]))[0];
+  if(original)copies=(await makeSignedCopies(c.db,{requestId:row.id,signatureFileId:signature.fileId,blockKey:stamp.block.key,originals:[original],actor:c.me.name}).catch(()=>({made:[]}))).made.map(copy=>copy.id);
+ }
  // Saved. When production holds the request the file goes now; the answer waits a little for it. The file that releases a request
  // kept for its files sends the request first, then its files oldest first (this one among them), through the usual sends; the
- // answer waits as long for that, and the sends go on in the background beyond it.
+ // answer waits as long for that, and the sends go on in the background beyond it. A signed copy goes right after its original.
  let outcome:DesignOutcome|null=null;
  if((row.accepted||releases)&&link.ok){
   let timer:ReturnType<typeof setTimeout>|undefined;
-  const sending=row.accepted?sendMoldDesignFile(c.db,crmFileId,{link}):releaseMoldRequest(c.db,row.id,{link}).then(released=>released.files.get(crmFileId)||null);
+  const sending=row.accepted?sendMoldDesignFile(c.db,crmFileId,{link}).then(async sent=>{for(const copy of copies)void sendMoldDesignFile(c.db,copy,{link}).catch(()=>null);return sent;}):releaseMoldRequest(c.db,row.id,{link}).then(released=>released.files.get(crmFileId)||null);
   outcome=await Promise.race([sending.catch(()=>null),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),SEND_WAIT_MS);})]);
   clearTimeout(timer);
  }
