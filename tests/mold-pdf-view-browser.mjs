@@ -215,7 +215,7 @@ try {
   await deskViewer.locator('.mold-doc-file').nth(0).locator('.mold-doc-page[data-page="1"][data-state="drawn"]').waitFor();
   ok(await boxIsLast(desk, boxAfter('.mold-dialog .mold-doc-viewer', '.mold-dialog .mold-sign-box')), 'the box after the last document');
   await noOverflow(desk, 'the sheet\'s device step on a computer');
-  await shot(desk, '06-device-sheet-step-desktop-en');
+  await shot(desk, '03b-device-sheet-step-desktop-en');
   await signRequest(desk, {signer: 'Khalid Al-Otaibi', confirm: 'Confirm and send'});
   await until(async () => (await sheet(desk).locator('.mold-design-file[data-signed-copy]').count()) === 1, 'the quotation\'s signed copy', 60000);
   await until(async () => (await sheet(desk).locator('.mold-signing-skipped').count()) === 1, 'the damaged PDF got none, said why', 60000);
