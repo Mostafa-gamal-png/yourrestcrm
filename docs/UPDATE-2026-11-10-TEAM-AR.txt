@@ -115,3 +115,34 @@
    - تقدر تضيف أو تمسح ملفات الطلب عادي وهو راجع.
 4) بعد ما التعديل يوصل للإنتاج هيظهر «اتبعت التعديل للإنتاج»، والطلب بيرجع لمدير المبيعات يعتمده من جديد.
 5) مدير المبيعات بيشوف السبب في «طلبات بانتظار اعتمادي». أول ما يعتمد تاني، علامة «رجّعتها المالية» بتختفي.
+
+خطوات الرفع (الحزمة update-team-20261110)
+----------------------------------------
+لا ترحيل في هذه الحزمة: القاعدة تفضل على 21 ترحيلًا. لا تطبيق أندرويد جديد.
+
+1. نسخة احتياطية لليوم: لو دي أول حزمة لليوم، المُفعِّل بياخدها بنفسه في الخطوة 4. لا تنفذ شيئًا هنا.
+
+2. والتطبيق يعمل، ارفع الحزمة وافكها داخل:
+/home/youriedx/yourrest-crm-update-team-20261110
+يجب أن يظهر مجلد release والملف yourrest-activate-update-team.cjs مباشرة داخل هذا المسار. (مجلد جديد؛ لا تفكّ فوق أي مجلد قديم.)
+
+3. افحص الحزمة دون إيقاف التطبيق:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-team-20261110/yourrest-activate-update-team.cjs --check
+يجب أن يظهر PACKAGE AND CONFIGURATION: READY. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله لي.
+
+4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-team-20261110/yourrest-activate-update-team.cjs
+
+5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-team-20261110/yourrest-activate-update-team.cjs --verify
+النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 21.
+
+6. بعد النجاح: بلّغ الكل يحدّثوا أي صفحة CRM مفتوحة، ويضغطوا في تطبيق أندرويد «أعد التحميل» لما تظهر رسالة «يوجد تحديث للتطبيق».
+
+إذا ظهر STOP أو أي خطأ: احتفظ بالناتج للمراجعة. لا تمسح ملفات الحالة أو القفل ولا تكرر التبديل قبل مراسلتي.
+
+التراجع (لا تنفذه قبل أن تراسلني)
+لا ترحيل، فالتراجع بإعادة المجلد القديم فقط والبيانات كما هي: Stop App ثم
+  cd /home/youriedx/yourrest-crm && mv release release-failed-20261110-team && mv /home/youriedx/yourrest-update-team-activation-20261110-XXXXXX/old-release release
+  (استبدل XXXXXX بالاسم الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT) ثم Start App.
+بعد التراجع: طلبات القوالب اللي اتسجّلت بطريقة دفع أو توقيع من لينك بتفضل محفوظة في بياناتها، والإصدار القديم بيتجاهل الحقول الجديدة؛ الطلب اللي كان «بانتظار توقيع العميل» بيتعامل معاه الإصدار القديم كطلب من غير توقيع (لو مندوب مبيعات عدّله هيطلب توقيع على الجهاز). لينكات التوقيع اللي اتبعتت بتبطل تفتح.
