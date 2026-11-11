@@ -65,7 +65,8 @@ if (fs.existsSync(fixture) && path.basename(fixture).endsWith(ORIGINAL) === fals
 } else throw new Error('Set ERP_TEST_WORKBOOK to the actual uploaded ERP fixture');
 
 let result = parseErpWorkbook(pack(workbook()));
-equal(result.rows[0], { rowNumber: 2, reference: 'INV-1', date: '2026-10-03', documentType: 'sale', itemCode: '00123', itemName: 'قالب', category: 'قوالب', quantity: 2, unit: 'حبة', unitPrice: 1234.56, discountCents: 1000, totalCents: 245912, vatCents: 36887, customerCode: '0007', customerName: 'مصنع', employeeId: '07018', employeeName: 'مندوب' });
+equal(result.rows[0], { rowNumber: 2, reference: 'INV-1', date: '2026-10-03', documentType: 'sale', itemCode: '00123', itemName: 'قالب', category: 'قوالب', quantity: 2, unit: 'حبة', unitPrice: 1234.56, discountCents: 1000, totalCents: 245912, vatCents: 36887, customerCode: '0007', customerName: 'مصنع', employeeId: '07018', employeeName: 'مندوب', description: '' });
+equal(result.hasDescription, false); // a report without «الوصف» (tests/quote-conversion.mjs reads one with it)
 equal(result.categories, ['قوالب']); equal(result.employees, [{ employeeId: '07018', employeeName: 'مندوب' }]);
 equal(normalizeErpText(' ﻣﺒﻴﻌﺎت\u00a0\u200f مكتب '), 'مبيعات مكتب');
 ok(isOfficeEmployee('مبيعات المكتب')); ok(isOfficeEmployee('مبيعات\nمكتب'));

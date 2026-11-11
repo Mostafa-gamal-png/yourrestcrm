@@ -101,14 +101,17 @@ const metric=(data,id,memberId='rep')=>person(data,memberId).metrics.find(row=>r
 const input=(rep='rep',complete=true)=>({collection:{dueCents:rep==='rep'?20000:10000,collectedCents:10000,reference:'Synthetic approved collection ledger'},history:{complete,reference:complete?'Reconciled complete ERP and manual history':''},quotationsComplete:complete,quotations:rep==='rep'?[{quoteId:'quote-erp',saleId:'keep-current'},{quoteId:'quote-not-converted',saleId:null}]:[{quoteId:'quote-manual',saleId:'rep2-recovered-current'}]});
 
 let data=await read();
-for(const id of ['collection','recovered','retention','orders'])eq(metric(data,id).status,'missing','Unconfirmed '+id+' cannot produce an invented score');
+for(const id of ['collection','recovered','retention'])eq(metric(data,id).status,'missing','Unconfirmed '+id+' cannot produce an invented score');
+// The quote-to-sales rate counts the month's quotations by itself (2026-11-11): two issued quotations, none named by an invoice yet.
+eq([metric(data,'orders').numerator,metric(data,'orders').denominator,metric(data,'orders').score,metric(data,'orders').status],[0,2,0,'scored'],'Quotations are counted automatically, before any evidence');
+eq([metric(data,'orders','rep2').numerator,metric(data,'orders','rep2').denominator],[0,1]);
 eq(person(data).attainment.rows[1].actual,null,'An absent product remains unknown before completeness confirmation');
 eq(person(data).summary.complete,false);eq(person(data).summary.total,null);
 globalThis.testIdentity='admin';
 // Partial history is saved, but does not turn customer cohorts or absent sales
 // products into known quantities. Collection is independently available.
 await saveEvidence('rep',input('rep',false));data=await read();
-eq(metric(data,'collection').score,50);eq(metric(data,'retention').status,'missing');eq(metric(data,'recovered').status,'missing');eq(metric(data,'orders').status,'missing');
+eq(metric(data,'collection').score,50);eq(metric(data,'retention').status,'missing');eq(metric(data,'recovered').status,'missing');eq(metric(data,'orders').score,50,'A manual link adds its conversion without a completeness confirmation');
 eq(person(data).attainment.rows[1].actual,null);
 globalThis.testIdentity='admin';const first=await saveEvidence('rep',input());
 const saved=await evidence();eq(saved.evidence.input,input(),'Save/reload preserves the approved input');
@@ -145,7 +148,8 @@ await read('rep',403);await read(null,401);
 // still known because collection is a separate reviewed ledger input.
 sql.prepare("UPDATE crm_erp_import_state SET revision=revision+1 WHERE id='yourrest-industries'").run();
 data=await read();eq(metric(data,'collection').score,50);
-for(const id of ['recovered','retention','orders'])eq(metric(data,id).status,'missing','Changed sales snapshot invalidates '+id);
+for(const id of ['recovered','retention'])eq(metric(data,id).status,'missing','Changed sales snapshot invalidates '+id);
+eq(metric(data,'orders').score,50,'Conversions are read from the documents themselves, not from a confirmation an import makes stale');
 eq(person(data).attainment.rows[1].actual,null);eq(person(data).summary.complete,false);
 globalThis.testIdentity='admin';await saveEvidence('rep',input());await saveEvidence('rep2',input('rep2'));
 eq(person(await read()).summary.complete,true,'Re-review after the import restores the complete assessment');
@@ -153,15 +157,15 @@ eq(person(await read()).summary.complete,true,'Re-review after the import restor
 // Existing links are revalidated from current documents; an issued quote that
 // becomes a draft no longer establishes a completed conversion cohort.
 sql.prepare("UPDATE crm_records SET data=json_set(data,'$.status','draft'),version=version+1 WHERE id='quote-erp'").run();
-data=await read();eq(metric(data,'orders').status,'missing','A changed quote cannot preserve an old conversion score');eq(metric(data,'retention').status,'missing','A changed quote revision conservatively requires completeness review');eq(metric(data,'collection').score,50,'Independent collection remains available after quote changes');
+data=await read();eq([metric(data,'orders').numerator,metric(data,'orders').denominator],[0,1],'A quote back to draft is no longer an issued quotation, and its old link no longer converts');eq(metric(data,'retention').status,'missing','A changed quote revision conservatively requires completeness review');eq(metric(data,'collection').score,50,'Independent collection remains available after quote changes');
 sql.prepare("UPDATE crm_records SET data=json_set(data,'$.status','sent'),version=version+1 WHERE id='quote-erp'").run();
-eq(metric(await read(),'orders').status,'missing','Restoring the quote still requires confirming the latest snapshot');
+eq(metric(await read(),'orders').score,50,'Restoring the quote counts its link again');
 globalThis.testIdentity='admin';await saveEvidence('rep',input());await saveEvidence('rep2',input('rep2'));
 eq(metric(await read(),'orders').score,50,'Reconfirmed restored quote counts again');
 // Use the real sales API to void the linked manual invoice. The database trigger
 // must invalidate the history snapshot and the removed sale must stop counting.
 globalThis.testIdentity='admin';await responseJson(await salesApi.POST(jsonRequest('/api/sales',{action:'void',id:'rep2-recovered-current',version:1,reason:'Synthetic reversal check'})),200);
-data=await read();eq(metric(data,'orders','rep2').status,'missing');eq(metric(data,'collection','rep2').score,100);
+data=await read();eq([metric(data,'orders','rep2').numerator,metric(data,'orders','rep2').denominator],[0,1],'A voided sale no longer converts its quotation');eq(metric(data,'collection','rep2').score,100);
 globalThis.testIdentity='admin';const afterVoid=input('rep2');afterVoid.quotations=[{quoteId:'quote-manual',saleId:null}];
 await saveEvidence('rep',input());await saveEvidence('rep2',afterVoid);
 data=await read();eq(metric(data,'orders','rep2').score,0,'Explicitly unconverted quote is a real zero');eq(metric(data,'recovered','rep2').numerator,0,'Voided sale cannot recover a former customer');

@@ -3,7 +3,8 @@ import {type Member,type Row,today} from './crm';
 import {type Sale} from './sales';
 import {type ActivityTargets,type quantityAttainment} from './targets';
 import {customerVisits,customerPlanSource,visitOrder} from './customer-visits';
-import {type KpiEvidenceContext} from './kpi-evidence';
+import {type KpiEvidenceContext,type KpiQuotationDetail} from './kpi-evidence';
+import {quotationRefKey} from './quotation-refs';
 export const operationalIndicators=[
  {id:'attainment',name:'تحقيق المستهدف البيعي',weight:25,axis:'sales'},
  {id:'collection',name:'التحصيل',weight:20,axis:'collection'},
@@ -41,7 +42,30 @@ export function kpiPeriod(month:string){const first=month+'-01',now=today(),end=
 export type KpiAssessment={memberId:string;month:string;input:KpiInput;version:number;updatedAt:string;updatedBy:string};
 export type KpiPerformance={member:Member;sourceMemberIds:string[];salesSourceMemberIds:string[];teamRollup:boolean;activityTeamRollup:boolean;activityTargetsKnown?:boolean;activityTargets:ActivityTargets;attainment:ReturnType<typeof quantityAttainment>};
 export type GrowthRow={product:string;actual:number|null;previous:number|null;weight:number|null;growth:number|null;contribution:number|null};
-export type KpiPerson=KpiPerformance&{metrics:KpiMetric[];summary:ReturnType<typeof kpiSummary>;assessment:KpiAssessment|null;growthRows:GrowthRow[]};
+/** quotations: the month's quotations of «معدل تحويل عرض السعر إلى مبيعات», each once, converted or not (empty when unknown). */
+export type KpiPerson=KpiPerformance&{metrics:KpiMetric[];summary:ReturnType<typeof kpiSummary>;assessment:KpiAssessment|null;growthRows:GrowthRow[];quotations:KpiQuotation[]};
+export type KpiQuotation={quoteId:string;converted:boolean}&KpiQuotationDetail;
+/** A quotation of the month, attributed to one representative (the author of the quote record, or whom «بيانات المؤشرات» assigned it to),
+ *  with the invoices a manager linked to it by hand (already checked: a confirmed sale of that representative, of its customer, on or after
+ *  it, within the evaluation period). */
+export type KpiQuoteCandidate={quoteId:string;number:string;date:string;repId:string;customerName:string;manualInvoices:string[]};
+/** A confirmed ERP sales invoice (not a return, a positive total) whose «الوصف» names quotations. */
+export type KpiQuoteInvoice={id:string;reference:string;repId:string;date:string;quotationRefs:string[]};
+/** «معدل تحويل عرض السعر إلى مبيعات», automatically: a quotation converted when an ERP sales invoice of the same representative, dated on
+ *  or after it, names its number in «الوصف» (any later day: a quotation of a finished month still converts when it is invoiced after
+ *  the month), or when a manager linked it to a sale. A manual link adds a conversion and never removes one; a quotation without a
+ *  link stays unconverted. Pure: lib/kpis-server.ts gives it the quotations and the invoices the reader's scope holds. */
+export function quoteConversions(quotes:KpiQuoteCandidate[],invoices:KpiQuoteInvoice[]):KpiQuotation[]{
+ const byRef=new Map<string,KpiQuoteInvoice[]>();
+ for(const invoice of invoices)for(const ref of new Set(invoice.quotationRefs)){const list=byRef.get(ref)||[];list.push(invoice);byRef.set(ref,list);}
+ return quotes.map(q=>{
+  const key=quotationRefKey(q.number);
+  const matched=key?(byRef.get(key)||[]).filter(invoice=>invoice.repId===q.repId&&invoice.date>=q.date):[];
+  const references=[...new Set([...matched.map(invoice=>invoice.reference),...q.manualInvoices])].sort((a,b)=>a.localeCompare(b,'en'));
+  const via:KpiQuotation['via']=[...(matched.length?['description' as const]:[]),...(q.manualInvoices.length?['manual' as const]:[])];
+  return {quoteId:q.quoteId,number:q.number,date:q.date,repId:q.repId,customerName:q.customerName,converted:references.length>0,invoices:references,via};
+ });
+}
 export type KpiData={month:string;period:ReturnType<typeof kpiPeriod>;people:KpiPerson[];canManage:boolean};
 export function prepareKpiRecords(records:Row[],month:string){
  const indexed=new Map(records.map(r=>[r.id,r])),customers=records.filter(r=>r.kind==='customer'),buckets=new Map<string,Row[]>(),customerIds=new Map<string,string>();
@@ -53,7 +77,7 @@ export function prepareKpiRecords(records:Row[],month:string){
 }
 export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:Sale[],assessment:KpiAssessment|null,prepared=prepareKpiRecords(records,month),evidence?:KpiEvidenceContext){
  const period=kpiPeriod(month),ids=new Set(p.sourceMemberIds),saleIds=new Set(p.salesSourceMemberIds),input=assessment?.input||emptyKpiInput(),ratio=(a:number,b:number)=>b>0?a/b*100:null;
- if(evidence&&saleIds.size===0)evidence={...evidence,historyComplete:false,collection:null,quotationsComplete:false,recoveryTarget:null,invalidHistoryReason:'لا يوجد فريق مبيعات مؤهل لحساب المؤشرات.'};
+ if(evidence&&saleIds.size===0)evidence={...evidence,historyComplete:false,collection:null,quotationsKnown:false,quotations:[],recoveryTarget:null,invalidHistoryReason:'لا يوجد فريق مبيعات مؤهل لحساب المؤشرات.'};
  const invoices=sales.filter(s=>saleIds.has(s.repId)&&s.status==='confirmed'&&s.date>=period.first&&s.date<=period.cutoff),previous=sales.filter(s=>saleIds.has(s.repId)&&s.status==='confirmed'&&s.date>=period.previousFirst&&s.date<=period.previousEnd);
  // A verified complete sales period establishes a real zero for absent products.
  // Unconfirmed or incomplete imports must continue to display an unknown value.
@@ -72,7 +96,10 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
  const historyFrom=new Date(period.first+'T12:00:00Z');historyFrom.setUTCMonth(historyFrom.getUTCMonth()-3);const priorThreeFirst=historyFrom.toISOString().slice(0,10),buyers=new Set<string>(),priorBuyers=new Set<string>(),olderBuyers=new Set<string>();
  for(const purchase of purchaseMonths.values()){if(!purchase.hasSale||purchase.netCents<=0)continue;if(purchase.date>=period.first)buyers.add(purchase.customerKey);else if(purchase.date>=priorThreeFirst)priorBuyers.add(purchase.customerKey);else olderBuyers.add(purchase.customerKey);}
  const recovered=[...buyers].filter(id=>!priorBuyers.has(id)&&olderBuyers.has(id)).length,retained=[...priorBuyers].filter(id=>buyers.has(id)).length;
- const quotationMap=new Map<string,boolean>();for(const quote of evidence?.quotations||[])quotationMap.set(quote.quoteId,!!quotationMap.get(quote.quoteId)||quote.converted);const converted=[...quotationMap.values()].filter(Boolean).length;
+ // Each quotation once; converted when any of its entries converted.
+ const quotationMap=new Map<string,KpiQuotation>();
+ for(const quote of evidence?.quotationsKnown?evidence.quotations:[]){const prior=quotationMap.get(quote.quoteId),invoices=[...new Set([...(prior?.invoices||[]),...(quote.invoices||[])])],via=[...new Set([...(prior?.via||[]),...(quote.via||[])])];quotationMap.set(quote.quoteId,{number:'',date:'',repId:'',customerName:'',...prior,...quote,converted:!!prior?.converted||quote.converted,invoices,via});}
+ const converted=[...quotationMap.values()].filter(q=>q.converted).length;
  const collection=evidence?.collection,validCollection=!!collection&&Number.isFinite(collection.dueCents)&&Number.isFinite(collection.collectedCents)&&collection.dueCents>=0&&collection.collectedCents>=0&&(collection.dueCents>0||collection.collectedCents===0);
  const visits=records.filter(r=>r.kind==='activity'&&ids.has(r.data.performedBy||r.data.responsibleId)&&r.data.type==='visit'&&r.data.date>=period.first&&r.data.date<=period.cutoff);
  const stage=(r:Row|undefined)=>r?.data.salesStage||r?.data.stage||'new';
@@ -100,9 +127,9 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
   countMetric('visits',p.activityTargetsKnown===false?null:visits.length,p.activityTargetsKnown===false?null:p.activityTargets.visits,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':'الزيارات المسجلة والمتابعات من نوع زيارة فقط ÷ مستهدف الزيارات.'),
   countMetric('positive',positive,visits.length,'زيارات الشهر المرتبطة بعملاء في مرحلة بيع مفتوحة حاليًا ÷ جميع زيارات الشهر، وفق تعريف gscoinvest.'),
   countMetric('quotes',quoted,qualified,'العملاء الذين بدأ تواصلهم في الشهر، وما زالوا في مرحلة مفتوحة، وتأهلوا بجمع المواصفات أو المراجعة الفنية: مَن سُجّل لهم عرض بعد التأهيل ÷ جميع المؤهلين.'),
-  countMetric('orders',evidence?.quotationsComplete?converted:null,evidence?.quotationsComplete?quotationMap.size:null,evidence?.quotationsComplete?'عروض الشهر المرتبطة بفواتير بيع مؤكدة ÷ عروض الشهر المسندة للمندوب بعد تأكيد اكتمالها.':'حدد عروض الشهر واربط المحوّل منها بفواتير البيع، ثم أكد اكتمال القائمة.',evidence?.quotationsComplete?'automatic':'required'),
+  countMetric('orders',evidence?.quotationsKnown?converted:null,evidence?.quotationsKnown?quotationMap.size:null,evidence?.quotationsKnown?'عروض الأسعار الصادرة في الشهر والمسندة للمندوب (المرسلة والمقبولة والمرفوضة، ومنها المستوردة من ERP): المحوَّل منها ÷ جميعها. يُعدّ العرض محوَّلًا إذا ذكر عمود «الوصف» رقمه في فاتورة بيع مؤكدة من ERP للمندوب نفسه بتاريخ العرض أو بعده، أو إذا ربطته الإدارة بفاتورة بيع في «بيانات المؤشرات». لا تُحتسب المرتجعات.':'لا يوجد فريق مبيعات مؤهل لحساب المؤشر.',evidence?.quotationsKnown?'automatic':'required'),
   countMetric('quality',input.correct,input.reviewed,'السجلات الصحيحة والمكتملة ÷ السجلات التي راجعتها الإدارة.','management'),
   countMetric('documentation',documented,lost,'العملاء الذين بدأ تواصلهم في الشهر ووصلوا للفقد مع سبب موثق ÷ جميع حالات الفقد لنفس المجموعة.'),
   ...conductKeys.map(id=>metric(id,input.conduct[id].score,'درجة الإدارة من صفر إلى 100 مع ملاحظة اختيارية.','management'))
- ];return{...p,metrics,summary:kpiSummary(metrics),assessment,growthRows};
+ ];return{...p,metrics,summary:kpiSummary(metrics),assessment,growthRows,quotations:[...quotationMap.values()]};
 }

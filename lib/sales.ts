@@ -23,7 +23,9 @@ export const saleSchema = z.object({
     const { totalCents } = salesTotals(data.items, data.discount);
     if (totalCents <= 0 || totalCents > 100000000000) ctx.addIssue({ code: 'custom', message: 'راجع الأسعار والخصم؛ صافي المبيعات يجب أن يكون أكبر من صفر' });
 });
-export type Sale = z.infer<typeof saleSchema> & { id: string; customerName: string; branch: string; totalCents: number; status: 'confirmed' | 'void'; voidReason: string; version: number; createdBy: string; createdAt: string; updatedAt: string; source?: 'erp'; documentType?: 'sale' | 'return'; readOnly?: boolean };
+export type Sale = z.infer<typeof saleSchema> & { id: string; customerName: string; branch: string; totalCents: number; status: 'confirmed' | 'void'; voidReason: string; version: number; createdBy: string; createdAt: string; updatedAt: string; source?: 'erp'; documentType?: 'sale' | 'return'; readOnly?: boolean;
+    /** An ERP invoice: the quotations its «الوصف» names («Qut-349»), when the import read a description column (lib/quotation-refs.ts). */
+    quotationRefs?: string[] };
 export function salesMemberIds(members: Member[], me: Member) {
     return salesScopeMemberIds(members.filter(m=>['admin','manager','supervisor','rep'].includes(m.role)),me,{activeOnly:true});
 }

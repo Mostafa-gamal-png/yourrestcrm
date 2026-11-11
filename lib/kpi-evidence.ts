@@ -28,4 +28,10 @@ export type KpiInvoiceOption=InvoiceOption;
 export type KpiEvidenceOptions={memberId:string;month:string;evidence:KpiEvidence|null;salesRevision:number;evidenceRevision:number;scopeKey:string;period:{from:string;through:string};canEdit:boolean;computed:boolean;sourceMemberIds:string[];quotes:QuoteOption[];invoices:InvoiceOption[]};
 /** A reporting-scope change makes old completeness confirmations stale. */
 export function evidenceScopeKey(member:Member){return JSON.stringify([member.id,member.role,member.regionScope||'all',member.branch,member.supervisorId||'',member.authVersion??0,member.active]);}
-export type KpiEvidenceContext={historyComplete:boolean;collection:{dueCents:number;collectedCents:number}|null;purchases:Array<{customerKey:string;date:string;netCents:number;hasSale:boolean}>;quotationsComplete:boolean;quotations:Array<{quoteId:string;converted:boolean}>;recoveryTarget:number|null;invalidHistoryReason?:string};
+/** quotationsKnown: the month's quotations of the scope are known (lib/kpis-server.ts lists them from the CRM's quote records, so this
+ *  holds whenever the scope has a sales team; it no longer waits for a confirmation in «بيانات المؤشرات»). quotations: each once, with
+ *  whether it converted and, from the server, its number and the invoices that converted it (lib/kpis.ts KpiQuotation). */
+export type KpiEvidenceContext={historyComplete:boolean;collection:{dueCents:number;collectedCents:number}|null;purchases:Array<{customerKey:string;date:string;netCents:number;hasSale:boolean}>;quotationsKnown:boolean;quotations:Array<{quoteId:string;converted:boolean}&Partial<KpiQuotationDetail>>;recoveryTarget:number|null;invalidHistoryReason?:string};
+/** What the hub's «عروض الأسعار» shows of a quotation: its number, day, customer and representative, and the invoices that converted it
+ *  (via: «description» an ERP invoice whose «الوصف» names it, «manual» a link in «بيانات المؤشرات»). */
+export type KpiQuotationDetail={number:string;date:string;repId:string;customerName:string;invoices:string[];via:Array<'description'|'manual'>};
