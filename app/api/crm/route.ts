@@ -167,8 +167,11 @@ async function savePost(req:Request){try{
  // Own historical entries retain their original link even when its author's scope has changed.
  const parent=parentId&&(parentVisible||old&&old.parentId===parentId)?c.all.find(r=>r.id===parentId):null;
  const expected={factory:'customer',opportunity:'factory',activity:'opportunity',quote:'opportunity'};
- if(kind!=='customer'&&(!parent||(kind==='activity'?!['customer','opportunity'].includes(parent.kind):kind==='opportunity'?!['customer','factory'].includes(parent.kind):parent.kind!==expected[kind])))throw new CRMError('حدد السجل المرتبط أولًا');
- let assignedTo=parent?.assignedTo||c.me.id,branch=parent?.branch||c.me.branch,customerRoutingChanged=false;
+ // A quotation imported from ERP (lib/erp-quotes-server.ts, data._erp) sits directly under its customer: edited here like any quote,
+ // it keeps its customer, its representative and branch, its ERP marker and number; it is never created here.
+ const erpQuote=kind==='quote'&&!!old?.data?._erp&&parent?.kind==='customer';
+ if(kind!=='customer'&&!erpQuote&&(!parent||(kind==='activity'?!['customer','opportunity'].includes(parent.kind):kind==='opportunity'?!['customer','factory'].includes(parent.kind):parent.kind!==expected[kind])))throw new CRMError('حدد السجل المرتبط أولًا');
+ let assignedTo=erpQuote?old!.assignedTo:parent?.assignedTo||c.me.id,branch=erpQuote?old!.branch:parent?.branch||c.me.branch,customerRoutingChanged=false;
  if(kind==='customer'){
   if(old&&activeServiceCase(old.id,c)&&(data.assignedTo!==old.assignedTo||data.branch!==old.branch||data.region!==(old.data.region||'')))throw new CRMError('تغيير مسؤول العميل يتم من تكليف خدمة العملاء أثناء وجود طلب مفتوح',403);
   if(!memberCanAccessRegion(c.me,data.region))throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
@@ -210,7 +213,8 @@ async function savePost(req:Request){try{
  }
 
  if(kind==='quote'){
-  if(parent?.data.technicalStatus!=='approved')throw new CRMError('يجب اعتماد مواصفات القالب فنيًا قبل إنشاء عرض السعر');
+  if(erpQuote)data._erp=old!.data._erp;
+  else if(parent?.data.technicalStatus!=='approved')throw new CRMError('يجب اعتماد مواصفات القالب فنيًا قبل إنشاء عرض السعر');
   data.number=old?.data.number||`YR-${today().slice(0,4)}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;Object.assign(data,quoteTotals(data.items,data.discount,data.taxRate));
  }
  const permission=kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}

@@ -104,12 +104,13 @@ const workbook = process.env.ERP_TEST_WORKBOOK || path.resolve(root, '../../uplo
 const ownerFiles = {
   'tests/erp-sales-browser.mjs': fs.existsSync(workbook) ? null : 'ERP_TEST_WORKBOOK',
   'erp-workbook': process.env.ERP_TEST_WORKBOOK && fs.existsSync(process.env.ERP_TEST_WORKBOOK) ? null : 'ERP_TEST_WORKBOOK',
-  'erp-customers-workbook': process.env.ERP_CUSTOMERS_WORKBOOK && fs.existsSync(process.env.ERP_CUSTOMERS_WORKBOOK) ? null : 'ERP_CUSTOMERS_WORKBOOK'
+  'erp-customers-workbook': process.env.ERP_CUSTOMERS_WORKBOOK && fs.existsSync(process.env.ERP_CUSTOMERS_WORKBOOK) ? null : 'ERP_CUSTOMERS_WORKBOOK',
+  'erp-quotes-workbook': process.env.ERP_QUOTES_WORKBOOK && fs.existsSync(process.env.ERP_QUOTES_WORKBOOK) ? null : 'ERP_QUOTES_WORKBOOK'
 };
 const gateOf = new Map(gatedTests(manifest).map(test => [test.file, test.gate]));
 const serial = new Set(Object.keys(map.serial?.tests || {}));
 const jobs = [{name: 'default-gate', gate: 'default', args: ['scripts/check.mjs', '--jobs', String(options.checkJobs)], timeout: 3600}];
-for (const gate of ['erp-workbook', 'erp-customers-workbook']) jobs.push({name: gate, gate, args: ['scripts/check.mjs', '--gate', gate], timeout: 1800, skip: ownerFiles[gate] && `needs the owner's ERP file (${ownerFiles[gate]})`});
+for (const gate of ['erp-workbook', 'erp-customers-workbook', 'erp-quotes-workbook']) jobs.push({name: gate, gate, args: ['scripts/check.mjs', '--gate', gate], timeout: 1800, skip: ownerFiles[gate] && `needs the owner's ERP file (${ownerFiles[gate]})`});
 for (const file of selection.tests) {
   const gate = gateOf.get(file);
   jobs.push({name: path.basename(file, '.mjs'), file, gate, args: [file], timeout: gate === 'browser' ? 1200 : 900, serial: serial.has(file), skip: ownerFiles[file] && `needs the owner's ERP file (${ownerFiles[file]})`});
