@@ -15,7 +15,6 @@ import {whatsappUrl,COMPANY_NAME,COMPANY_NAME_EN} from '@/lib/whatsapp';
 import type {Row} from '@/lib/crm';
 import {MOLD_SIGN_LINK_TEXT,moldNotSignedText,type MoldRequestView} from '@/lib/mold-requests';
 import {MoldSigningStep,type SigningResult} from './mold-signature';
-import BidiText from './bidi-text';
 import {viewerFilesFromRequest,viewerPagesText} from '@/lib/mold-document-view';
 
 type Say=(ar:string,en:string)=>string;
@@ -71,11 +70,11 @@ export function MoldSigningNotes({view,say}:{view:MoldRequestView;say:Say}){
   {signing.via==='link'&&<p><Link2 size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.viaLink)}</p>}
   {/* The ONE signed document (2026-11-11): made, waiting for the files the customer saw, or not made (and what was made instead). */}
   {document?.state==='made'&&<p data-document="made"><PenLine size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.documentMade)}{document.pages?<> · <b>{viewerPagesText(document.pages,say)}</b></>:null}</p>}
-  {document?.state==='waiting'&&<p data-document="waiting"><Hourglass size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.documentWaiting)} {(document.missing||[]).map((name,index)=><React.Fragment key={index}>{index?'، ':''}<bdi dir={direction()}><BidiText segments={[{text:name}]} rtl={direction()==='rtl'}/></bdi></React.Fragment>)}</span></p>}
+  {document?.state==='waiting'&&<p data-document="waiting"><Hourglass size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.documentWaiting)} {(document.missing||[]).map((name,index)=><React.Fragment key={index}>{index?'، ':''}<bdi dir="auto">{name}</bdi></React.Fragment>)}</span></p>}
   {document?.state==='fallback'&&<p className="mold-signing-skipped" data-document="fallback" data-reason={document.reason}><TriangleAlert size={14} aria-hidden="true"/><span>{say(...(document.reason==='too_large'?MOLD_SIGN_LINK_TEXT.documentTooLarge:document.reason==='too_many_files'?MOLD_SIGN_LINK_TEXT.documentRefused:MOLD_SIGN_LINK_TEXT.documentMismatch))}</span></p>}
   {!!signing.copies&&<p><PenLine size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.copies)}: <b>{signing.copies}</b></p>}
   {signing.skipped.map((item,index)=><p key={'s'+index} className="mold-signing-skipped"><TriangleAlert size={14} aria-hidden="true"/><span>{moldNotSignedText(item.name,item.reason,say)}</span></p>)}
-  {!!signing.after.length&&<p className="mold-signing-after"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.after)} {signing.after.map((name,index)=><React.Fragment key={index}>{index?'، ':''}<bdi dir={direction()}><BidiText segments={[{text:name}]} rtl={direction()==='rtl'}/></bdi></React.Fragment>)}</span></p>}
+  {!!signing.after.length&&<p className="mold-signing-after"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.after)} {signing.after.map((name,index)=><React.Fragment key={index}>{index?'، ':''}<bdi dir="auto">{name}</bdi></React.Fragment>)}</span></p>}
  </div>;
 }
 
