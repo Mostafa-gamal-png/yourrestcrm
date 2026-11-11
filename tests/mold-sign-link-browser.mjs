@@ -126,34 +126,32 @@ try {
   customer.on('pageerror', error => errors.push('customer: ' + error.message));
   await customer.goto(url);
   await customer.locator('.sign-card h1').waitFor();
-  check(await customer.locator('.sign-card h1').innerText(), 'طلب تصنيع قالب', 'the page: «طلب تصنيع قالب»');
-  ok((await customer.locator('.sign-facts').innerText()).includes('مصنع الشرق'), 'what the customer signs for');
+  check(await customer.locator('.sign-card h1').innerText(), 'طلب تصنيع قالب — مصنع الشرق', 'the page: «طلب تصنيع قالب — <the customer>»');
+  // Since 2026-11-11 what is signed for is on the document's signature page, its last page.
+  await customer.locator('.sign-documents .mold-doc-viewer[data-ready]').waitFor({timeout: 60000});
+  ok((await customer.locator('.mold-doc-sign-sheet .mold-signing-summary').innerText()).includes('مصنع الشرق'), 'what the customer signs for');
   check(await customer.locator('.workspace, nav, .mobile-bottom-navigation').count(), 0, 'no CRM navigation');
   check(await customer.evaluate(() => document.querySelector('meta[name="robots"]')?.content || ''), 'noindex, nofollow, nocache', 'not indexed');
   await noOverflow(customer, 'the customer\'s page at 360 px');
   await shot(customer, '04-customer-page-360-ar');
-  // The PDF is on the page itself, its two pages drawn, and the signature box comes after it (2026-11-10).
-  const shownFile = customer.locator('.sign-documents .mold-doc-file').first();
-  await shownFile.locator('.mold-doc-page[data-page="2"]').waitFor();
-  check([await shownFile.locator('.mold-doc-title').innerText(), await shownFile.locator('.mold-doc-page').count()], ['التصميم: رسم القالب.pdf · صفحتين', 2], 'the design\'s PDF shown on the page, both pages');
-  ok(await customer.evaluate(() => !!(document.querySelector('.sign-documents').compareDocumentPosition(document.querySelector('.sign-box')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'the signature box after the documents');
-  const fileLink = shownFile.locator('a.mold-doc-open');
-  const href = await fileLink.getAttribute('href');
+  // The PDF is the document itself (since 2026-11-11 one document): its two pages, then the signature page, «صفحة n من 3».
+  const sheets = customer.locator('.sign-documents .mold-doc-sheet');
+  check(await sheets.evaluateAll(items => items.map(item => [item.dataset.kind, item.querySelector('.mold-doc-counter').textContent.trim(), (item.querySelector('.mold-doc-caption')?.textContent || '').trim()])),
+    [['pdf', 'صفحة 1 من 3', 'التصميم · رسم القالب.pdf'], ['pdf', 'صفحة 2 من 3', 'التصميم · رسم القالب.pdf'], ['signature', 'صفحة 3 من 3', '']], 'the design\'s PDF, both pages, and the signature page last');
+  const fileId = (await app.db.prepare("SELECT id FROM crm_mold_design_files WHERE request_id=(SELECT id FROM crm_mold_requests ORDER BY created_at DESC LIMIT 1) AND name='رسم القالب.pdf'").first()).id;
+  const href = new URL(url).pathname + '/file/' + fileId;
   // Fetched by the page itself (the browser maps the CRM's name to the test server; a request from Node would not).
   const fetched = target => customer.evaluate(async address => { const reply = await fetch(address, {cache: 'no-store'}), bytes = new Uint8Array(await reply.arrayBuffer()); let text = ''; for (const byte of bytes) text += String.fromCharCode(byte); return {status: reply.status, type: reply.headers.get('content-type'), base64: btoa(text)}; }, target);
   const opened = await fetched(href);
   check([opened.status, opened.type, Buffer.from(opened.base64, 'base64').subarray(0, 5).toString('latin1')], [200, 'application/pdf', '%PDF-'], 'the PDF opens through the link');
-  const [popup] = await Promise.all([customer.waitForEvent('popup'), fileLink.click()]);
-  ok(popup.url().endsWith(href), 'it opens in its own tab');
-  await popup.close();
   await customer.getByRole('button', {name: 'English'}).click();
-  await until(async () => (await customer.locator('.sign-card h1').innerText()) === 'Mold manufacturing request', 'English');
+  await until(async () => (await customer.locator('.sign-card h1').innerText()).startsWith('Mold manufacturing request'), 'English');
   ok((await customer.locator('.sign-consent').innerText()).includes('I have read the request and its files'), 'the consent in English');
   await noOverflow(customer, 'the customer\'s page in English');
   await shot(customer, '05-customer-page-360-en');
   await customer.getByRole('button', {name: 'العربية'}).click();
-  await until(async () => (await customer.locator('.sign-card h1').innerText()) === 'طلب تصنيع قالب', 'back to Arabic');
-  await customer.getByRole('button', {name: 'توقيع'}).click();
+  await until(async () => (await customer.locator('.sign-card h1').innerText()).startsWith('طلب تصنيع قالب'), 'back to Arabic');
+  await customer.locator('.sign-under').getByRole('button', {name: 'توقيع'}).click();
   ok(await customer.locator('.sign-form .field-error').count() >= 2, 'a name, a signature and the consent are required');
   await customer.locator('.sign-form input[name="signer"]').fill('سالم الحربي');
   const pad = customer.locator('.sign-form .mold-signature-pad');
@@ -165,24 +163,25 @@ try {
   await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
   await customer.locator('.sign-consent input').check();
   await shot(customer, '06-customer-signed-pad-360-ar');
-  await customer.getByRole('button', {name: 'توقيع'}).click();
+  await customer.locator('.sign-under').getByRole('button', {name: 'توقيع'}).click();
   await customer.locator('.sign-done').waitFor({timeout: 40000});
   check(await customer.locator('.sign-done h1').innerText(), 'تم التوقيع، شكرًا', '«تم التوقيع، شكرًا»');
   const copyLink = customer.locator('.sign-done .sign-files a').first();
-  check(await customer.locator('.sign-done .sign-files li bdi').allInnerTexts(), ['رسم القالب - موقّع.pdf'], 'the signed copy to download');
+  check(await customer.locator('.sign-done .sign-files li bdi').allInnerTexts(), ['طلب القالب - موقّع.pdf'], 'the ONE signed file to download (2026-11-11)');
   await noOverflow(customer, 'the thank-you page');
   await shot(customer, '07-customer-done-360-ar');
   await until(() => mock.state.calls.some(call => call.route === 'requests' && call.signed && call.body.includes(requestId)), 'the request reaches production');
-  await until(() => (mock.row(requestId)?.designFiles || []).some(file => file.name === 'رسم القالب - موقّع.pdf'), 'its signed copy too');
-  // The signed copy's last page as a picture: the block, the Arabic shaped by the browser's canvas.
+  await until(() => (mock.row(requestId)?.designFiles || []).some(file => file.name === 'طلب القالب - موقّع.pdf'), 'its signed file too');
+  // The signed file's last page as a picture: the signature page, the Arabic shaped by the browser's canvas.
   const copy = await fetched(await copyLink.getAttribute('href'));
   const copyBytes = Buffer.from(copy.base64, 'base64');
   check([copy.status, copyBytes.subarray(0, 5).toString('latin1')], [200, '%PDF-'], 'the signed copy downloads');
   const signedFile = path.join(screenshots, 'signed-copy.pdf');
   fs.writeFileSync(signedFile, copyBytes);
   try {
-    execFileSync('pdftoppm', ['-png', '-r', '110', '-f', '2', '-l', '2', '-singlefile', signedFile, path.join(screenshots, '08-signed-copy-last-page')]);
-    execFileSync('pdftoppm', ['-png', '-r', '300', '-f', '2', '-l', '2', '-singlefile', '-x', '0', '-y', '2900', '-W', '1100', '-H', '608', signedFile, path.join(screenshots, '09-signed-copy-block-zoom')]);
+    check((await PDFDocument.load(copyBytes)).getPageCount(), 3, 'the signed file: the design\'s two pages and the signature page');
+    execFileSync('pdftoppm', ['-png', '-r', '110', '-f', '3', '-l', '3', '-singlefile', signedFile, path.join(screenshots, '08-signed-copy-last-page')]);
+    execFileSync('pdftoppm', ['-png', '-r', '200', '-f', '3', '-l', '3', '-singlefile', '-x', '0', '-y', '1150', '-W', '1654', '-H', '1100', signedFile, path.join(screenshots, '09-signed-copy-block-zoom')]);
     ok(fs.existsSync(path.join(screenshots, '08-signed-copy-last-page.png')), 'the signed copy\'s last page rendered');
   } catch { console.log(JSON.stringify({note: 'pdftoppm not available: the signed copy was checked as a file, not rendered'})); }
 
@@ -209,11 +208,11 @@ try {
   await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   await signRequest(desk, {signer: 'م. خالد العتيبي'});
   await sheet(desk).waitFor();
-  await until(async () => (await sheet(desk).locator('.mold-design-file[data-signed-copy]').count()) === 1, 'the signed copy appears on the sheet');
-  check(await sheet(desk).locator('.mold-design-file[data-signed-copy] .mold-chip').innerText(), 'نسخة موقّعة', 'marked «نسخة موقّعة»');
+  await until(async () => (await sheet(desk).locator('.mold-design-file[data-signed-copy]').count()) === 1, 'the signed file appears on the sheet', 60000);
+  check(await sheet(desk).locator('.mold-design-file[data-signed-copy] .mold-chip').innerText(), 'الملف الموقّع', 'marked «الملف الموقّع» (2026-11-11: one file)');
   check(await sheet(desk).locator('.mold-design-file[data-signed-copy] .mold-design-delete').count(), 0, 'not deletable');
-  await until(async () => (await sheet(desk).locator('.mold-signing-notes b').count()) === 1, 'the sheet counts the copies');
-  check([await sheet(desk).locator('.mold-signing-notes b').innerText(), (await sheet(desk).locator('.mold-signing-notes').innerText()).includes('نسخ موقّعة من ملفات الـPDF')], ['1', true], 'the sheet counts it');
+  await until(async () => (await sheet(desk).locator('.mold-signing-notes [data-document="made"]').count()) === 1, 'the sheet says the signed file was made');
+  ok((await sheet(desk).locator('.mold-signing-notes [data-document="made"]').innerText()).includes('3 صفحات'), 'with its pages (the PDF\'s two pages and the signature page)');
   await sheet(desk).locator('.mold-design-file[data-signed-copy]').scrollIntoViewIfNeeded();
   await shot(desk, '11-rep-sheet-signed-copy-desktop-ar');
 

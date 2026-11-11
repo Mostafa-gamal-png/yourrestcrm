@@ -237,6 +237,11 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/mold-sign-document-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/mold-sign-link-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"

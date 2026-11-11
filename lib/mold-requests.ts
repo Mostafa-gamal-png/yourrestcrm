@@ -46,6 +46,7 @@
 // until the customer signs (moldHeldFor 'customer_signature' «بانتظار توقيع العميل»), then sent by itself. moldSigningView says how far
 // the signing is (the link sent and its expiry, the copies made, the files that got none and why).
 import {cellRefused} from './permissions';
+import type {SignedDocPart} from './mold-signed-document';
 import type {Member} from './crm';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope,regionScopesOverlap} from './regions';
@@ -60,7 +61,14 @@ export type MoldSignature={signer:string;signedAt:string;fileId:string;
 /** The signature as the request's data stores it: besides who and when, since 2026-11-10 the block stamped in its PDFs (the PNG in the
  *  object store under key, never shown), the SHA-256 of the PDFs the customer saw on the device before they were uploaded (seen: each
  *  gets its signed copy as it arrives), and the link it was given through (its token's hash, for the customer's downloads that day). */
-export type MoldSignatureData=MoldSignature&{block?:{key:string;sha256:string;width:number;height:number;at:string};seen?:string[];link?:{hash:string;at:string}};
+export type MoldSignatureData=MoldSignature&{block?:{key:string;sha256:string;width:number;height:number;at:string};seen?:string[];link?:{hash:string;at:string};
+ /** Since 2026-11-11: the ONE signed document (moldSignedDocumentId): the signature page the browser composed (a PNG in the object store
+  *  under key, never shown) and the documents it is made of in their order, each found among the request's files by its SHA-256 and
+  *  category (parts). The block (and seen) stay with it: the per-file signed copies are the fallback when the document cannot be made
+  *  (larger than production's limit for one file, or not what the signing page listed). */
+ document?:{key:string;sha256:string;width:number;height:number;at:string;parts:SignedDocPart[];
+  /** The first document's category among all the page named (its parts and the files named only), when the page said it. */
+  category?:MoldFileCategory}};
 /** The link the customer signs from (2026-11-10): its token's SHA-256 only (the token is shown once, to whoever made it), when it was made,
  *  until when it opens (14 days), and by whom. One a request: a new one replaces it; signing or cancelling the request ends it. */
 export type MoldSignLink={hash:string;sentAt:string;expiresAt:string;by:string};
@@ -84,7 +92,9 @@ export const MOLD_FILE_CATEGORY_ORDER:MoldFileCategory[]=['design','quote','po']
 /** A design file as production lists it (designFiles of the status object and of a pending item, and quoteFiles and poFiles since the
  *  second update of 2026-11-03): fileId is production's, sent back as it came; crmFileId the CRM's for a file the CRM sent, null for one
  *  production attached; category the list it came in (absent in a status stored before: design). */
-export type MoldDesignFile={fileId:string|number;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;category?:MoldFileCategory};
+export type MoldDesignFile={fileId:string|number;crmFileId:string|null;name:string;kind:MoldDesignKind;size:number|null;source:'crm'|'production';uploadedAt:string|null;category?:MoldFileCategory;
+ /** Production's own mark of a signed copy (its schema 19, 2026-11-11), when its answer carries one. */
+ signed?:boolean};
 /** orderNo: production's order number, null until its production manager approves the request (the products update of 2026-11-05, the
  *  second of the day) and renumbered once (101 and up move down by one): shown from the latest status, never a key. requestRef: the stable
  *  UUID production gives every request since that update (absent from an older application, or in a status stored before). */
@@ -164,7 +174,9 @@ export type MoldDesignFileView={key:string;fileId:string|null;crmFileId:string|n
  /** The customer's signature (the file the request's data names): labelled so, never deletable while the request names it. */
  signature?:true;
  /** A signed copy the request's signature names (2026-11-10): labelled «نسخة موقّعة», never deletable while the signature names it. */
- signedCopy?:true};
+ signedCopy?:true;
+ /** The ONE signed document of the request (2026-11-11, moldSignedDocumentId): a signed copy too, labelled «الملف الموقّع». */
+ signedDocument?:true};
 /** A design file of a request waiting for the sales manager, with its download through the CRM; signature: the CRM request's signature. */
 export type MoldPendingDesignFile=MoldDesignFile&{href:string;viewable:boolean;signature?:true};
 /** The customer's signature as a reader sees it: who signed and when, with the image through the CRM (href, null once its file is gone). */
@@ -229,7 +241,12 @@ export type MoldRequestView={id:string;memberId:string;memberName:string;custome
  *  link's times (expired: it no longer opens: a new one is needed); via: how the signature was given; stamped: the signature carries its
  *  block, so PDFs get signed copies; copies: how many signed copies it names; skipped: the PDFs that got none, with why (protected or
  *  damaged, too_many_files, too_large); after: the PDFs attached after the customer signed (the customer did not see them: no copy). */
-export type MoldSigningView={awaits:boolean;link:{sentAt:string;expiresAt:string;expired:boolean}|null;via:'device'|'link'|null;stamped:boolean;copies:number;skipped:{name:string;reason:string}[];after:string[]};
+export type MoldSigningView={awaits:boolean;link:{sentAt:string;expiresAt:string;expired:boolean}|null;via:'device'|'link'|null;stamped:boolean;copies:number;skipped:{name:string;reason:string}[];after:string[];
+ /** The ONE signed document (2026-11-11; absent for a signature given before, or without it): made (its pages, the signature page's
+  *  included); waiting for the documents the customer saw to be uploaded (their names); fallback: not made (too_large: over production's
+  *  limit for one file, by the CRM's count or production's 413; mismatch: not what the signing page listed; too_many_files: no place
+  *  left in its category, here or at production), the per-file signed copies made instead where they have room. A new field. */
+ document?:{state:'made'|'waiting'|'fallback';reason?:string;missing?:string[];pages?:number}};
 /** A request waiting for the sales manager, as production's pending route lists it: from the CRM, or registered in production itself. */
 /** orderNo: null while production has not numbered it (the products update of 2026-11-05: every item waiting for the sales manager);
  *  requestRef: production's stable UUID, absent from an older application. A pending item is named by moldPendingKey, never by orderNo. */
@@ -498,18 +515,18 @@ export function moldDesignFilesView(row:Pick<MoldRequestRow,'id'|'memberId'|'can
  const own=row.memberId===me.id,open=moldEditable(row),listed=moldListedFiles(row.remote),known=new Set(files.map(file=>file.id)),out:MoldDesignFileView[]=[];
  // The customer's signature (2026-11-04): the file the request's data names, labelled so and never deleted while it names it; and the
  // signed copies it names (2026-11-10), the same.
- const signed=row.data?.signature?.fileId||'',copyOf=(id:string|null)=>!!signed&&!!id&&!!moldSignedCopyOf(id,signed);
+ const signed=row.data?.signature?.fileId||'',copyOf=(id:string|null)=>!!signed&&!!id&&!!moldSignedOutputOf(id,signed),documentOf=(id:string|null)=>!!signed&&!!id&&id===moldSignedDocumentId(signed);
  const link=(key:string)=>designHref('id='+encodeURIComponent(row.id)+'&file='+encodeURIComponent(key));
  for(const file of files){
   if(file.deletedAt&&!file.outbox)continue;
   const remote=listed.find(entry=>entry.crmFileId===file.id),fileId=remote?remote.fileId:file.remoteFileId;
   const state:MoldDesignState=file.outbox==='delete'?'deleting':!file.outbox?'sent':moldDesignRefused(file)?(file.lastError?.code==='request_locked'?'locked':'rejected'):row.cancelledAt||row.remote?.status==='cancelled'?'cancelled':!linkReady?'off':!row.accepted?'held':awaitsUpdate(file,quotePo)?'update':'waiting';
   out.push({key:file.id,fileId:fileId===null||fileId===undefined?null:String(fileId),crmFileId:file.id,name:file.name,kind:file.kind,size:file.size,source:'crm',uploadedAt:file.createdAt,state,error:file.lastError,stopped:state!=='cancelled'&&state!=='update'&&moldDesignStopped(file),
-   canDelete:own&&state!=='deleting'&&file.id!==signed&&!copyOf(file.id)&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other',category:moldFileCategory(file),...(signed&&file.id===signed?{signature:true as const}:{}),...(copyOf(file.id)?{signedCopy:true as const}:{})});
+   canDelete:own&&state!=='deleting'&&file.id!==signed&&!copyOf(file.id)&&(!moldDesignMayBeRemote(file)||open),href:link(file.id),viewable:file.kind!=='other',category:moldFileCategory(file),...(signed&&file.id===signed?{signature:true as const}:{}),...(copyOf(file.id)||remote?.signed===true?{signedCopy:true as const}:{}),...(documentOf(file.id)?{signedDocument:true as const}:{})});
  }
  for(const entry of listed){
   if(entry.crmFileId&&known.has(entry.crmFileId))continue;
-  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,stopped:false,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other',category:moldFileCategory(entry),...(signed&&entry.crmFileId===signed?{signature:true as const}:{}),...(copyOf(entry.crmFileId)?{signedCopy:true as const}:{})});
+  out.push({key:String(entry.fileId),fileId:String(entry.fileId),crmFileId:entry.crmFileId,name:entry.name,kind:entry.kind,size:entry.size,source:entry.source,uploadedAt:entry.uploadedAt,state:entry.source==='production'?'production':'sent',error:null,stopped:false,canDelete:false,href:link(String(entry.fileId)),viewable:entry.kind!=='other',category:moldFileCategory(entry),...(signed&&entry.crmFileId===signed?{signature:true as const}:{}),...(copyOf(entry.crmFileId)||entry.signed===true?{signedCopy:true as const}:{}),...(documentOf(entry.crmFileId)?{signedDocument:true as const}:{})});
  }
  // By the instant each was attached: the CRM writes UTC, production Riyadh time with its offset.
  const at=(file:MoldDesignFileView)=>Date.parse(file.uploadedAt||'')||0;
@@ -558,11 +575,31 @@ export function moldSignedCopyOf(fileId:string,signatureFileId:string){
  const original='mdf-'+fileId.slice(4,40);
  return moldSignedCopyId(signatureFileId,original)===fileId?original:null;
 }
+/** The ONE signed document's crmFileId (2026-11-11): 'mdc-' (a signed copy's prefix: it takes none of the originals' places, as the copies
+ *  do), the signature's UUID and '-doc'; fixed for a signature (a second try makes the same row), never a per-file copy's (those end in 23
+ *  hex digits). */
+export const moldSignedDocumentId=(signatureFileId:string)=>'mdc-'+signatureFileId.replace(/^md[a-z]-/,'').slice(0,36)+'-doc';
+/** Whether fileId is something the signature made: a per-file signed copy (its original's crmFileId) or the signed document ('document'). */
+export function moldSignedOutputOf(fileId:string,signatureFileId:string):string|null{
+ return fileId===moldSignedDocumentId(signatureFileId)?'document':moldSignedCopyOf(fileId,signatureFileId);
+}
 /** Why a PDF got no signed copy (a row of the copy that was not made, kept for that: deleted, never sent, its last error not_signed). */
 export const MOLD_NOT_SIGNED='not_signed';
 /** A request's PDFs that a signed copy is made of: the CRM's own design, quotation and PO files (not deleted, not refused for good), PDFs,
  *  not the signature, not a signed copy. */
 export const moldSignableFile=(file:Pick<MoldDesignFileRow,'id'|'kind'|'deletedAt'|'outbox'|'nextAttemptAt'|'lastError'|'sentAt'>)=>file.kind==='pdf'&&!file.deletedAt&&!moldDesignRefused(file)&&file.id.startsWith('mdf-');
+/** The request's files the signed document's parts name, in order (each the CRM's own original: not deleted, not refused for good, its
+ *  bytes held, the same SHA-256 and category; a file found once only, so two parts of the same bytes take two files); missing: the parts
+ *  not found (yet: the device uploads the files the customer saw after the request is saved). */
+export function moldSignedDocumentFiles(parts:readonly SignedDocPart[],files:readonly MoldDesignFileRow[]){
+ const taken=new Set<string>(),found:(MoldDesignFileRow|null)[]=[],missing:SignedDocPart[]=[];
+ for(const part of parts){
+  const file=files.find(item=>!taken.has(item.id)&&item.id.startsWith('mdf-')&&!item.deletedAt&&!!item.objectKey&&!moldDesignRefused(item)&&item.sha256===part.sha256&&moldFileCategory(item)===part.category&&item.kind===part.kind)||null;
+  if(file)taken.add(file.id);else missing.push(part);
+  found.push(file);
+ }
+ return {found,missing,complete:!missing.length};
+}
 /** How far the customer's signing is (MoldSigningView), from the request's data and its files as stored (the rows of copies not made
  *  included). now: the moment the link's expiry is read at. */
 export function moldSigningView(row:Pick<MoldRequestRow,'data'>,files:MoldDesignFileRow[],now=Date.now()):MoldSigningView{
@@ -570,10 +607,20 @@ export function moldSigningView(row:Pick<MoldRequestRow,'data'>,files:MoldDesign
  const named=signature?files.map(file=>({file,of:moldSignedCopyOf(file.id,signature.fileId)})).filter(entry=>entry.of):[];
  const made=named.filter(entry=>!entry.file.deletedAt||entry.file.outbox==='delete'),skipped=named.filter(entry=>entry.file.deletedAt&&!entry.file.outbox&&entry.file.lastError?.code===MOLD_NOT_SIGNED);
  const covered=new Set(named.map(entry=>entry.of));
+ // The ONE signed document (2026-11-11): what its parts cover, whether it was made, not made (and why), or still waits for its parts.
+ const plan=signature?data.signature?.document:undefined,documentFile=signature&&plan?files.find(file=>file.id===moldSignedDocumentId(signature.fileId)):undefined;
+ const parts=plan?moldSignedDocumentFiles(plan.parts,files):null;
+ if(parts)for(const file of parts.found)if(file)covered.add(file.id);
+ // Production refused it once sent (413, or no place there): the per-file copies were made instead (signedDocumentRefused).
+ const refusedThere=!!documentFile&&!documentFile.deletedAt&&moldDesignRefused(documentFile)&&documentFile.lastError?.code!=='request_locked';
+ const document:MoldSigningView['document']=!plan?undefined:refusedThere?{state:'fallback',reason:documentFile!.lastError?.http===413||documentFile!.lastError?.code==='payload_too_large'?'too_large':documentFile!.lastError?.reason==='too_many_files'?'too_many_files':'mismatch'}
+  :documentFile&&(!documentFile.deletedAt||documentFile.outbox==='delete')?{state:'made',pages:plan.parts.reduce((sum,part)=>sum+part.pages,0)+1}
+  :documentFile&&documentFile.lastError?.code===MOLD_NOT_SIGNED?{state:'fallback',reason:documentFile.lastError.reason||'mismatch'}
+  :{state:'waiting',missing:parts!.missing.map(part=>part.name)};
  // Attached after the customer signed: the customer did not see them (the device's own files that were seen get theirs as they arrive).
  const after=stamped?files.filter(file=>moldSignableFile(file)&&!covered.has(file.id)&&Date.parse(file.createdAt)>Date.parse(signature!.signedAt)).map(file=>file.name):[];
  return {awaits:data.awaitsSignature===true,link:data.awaitsSignature===true&&link&&typeof link.expiresAt==='string'?{sentAt:link.sentAt,expiresAt:link.expiresAt,expired:Date.parse(link.expiresAt)<=now}:null,
-  via:signature?.via||(signature?'device':null),stamped,copies:made.length,skipped:skipped.map(entry=>({name:files.find(file=>file.id===entry.of)?.name||entry.file.name,reason:entry.file.lastError?.reason||'damaged'})),after};
+  via:signature?.via||(signature?'device':null),stamped,copies:made.length,skipped:skipped.map(entry=>({name:files.find(file=>file.id===entry.of)?.name||entry.file.name,reason:entry.file.lastError?.reason||'damaged'})),after,...(document?{document}:{})};
 }
 /** The signature a reader sees, with its image through the CRM while its file is there (not deleted), and where that image stands
  *  (MoldSignatureState) from the request's files as the reader sees them (moldDesignFilesView). */
@@ -675,7 +722,14 @@ export const MOLD_SIGN_LINK_TEXT={
  copyRefused:['ما اتبعتتش: الإنتاج رفض عدد الملفات','Not sent: production refused the number of files'] as [string,string],
  copies:['نسخ موقّعة من ملفات الـPDF','Signed copies of the PDF files'] as [string,string],
  after:['اتضاف بعد توقيع العميل، فمالوش نسخة موقّعة (العميل ما شافهوش):','Attached after the customer signed, so no signed copy (the customer did not see it):'] as [string,string],
- viaLink:['وقّع من اللينك','Signed from the link'] as [string,string]};
+ viaLink:['وقّع من اللينك','Signed from the link'] as [string,string],
+ /** The ONE signed document (2026-11-11, MoldSigningView.document). */
+ documentMark:['الملف الموقّع','Signed file'] as [string,string],
+ documentMade:['الملف الموقّع (المستندات وصفحة التوقيع)','The signed file (the documents and the signature page)'] as [string,string],
+ documentWaiting:['الملف الموقّع هيتعمل أول ما تترفع الملفات اللي العميل شافها:','The signed file is made once the files the customer saw are uploaded:'] as [string,string],
+ documentTooLarge:['الملف الموقّع الواحد كان هيبقى أكبر من 25 ميجابايت؛ اتعملت نسخة موقّعة من كل PDF بدله.','The single signed file would have been larger than 25 MB; a signed copy of each PDF was made instead.'] as [string,string],
+ documentMismatch:['ما اتعملش الملف الموقّع الواحد (الملفات مش زي اللي اتعرضت)؛ اتعملت نسخة موقّعة من كل PDF بدله.','The single signed file was not made (the files are not as shown); a signed copy of each PDF was made instead.'] as [string,string],
+ documentRefused:['مفيش مكان للملف الموقّع الواحد في نوعه (حد ملفات النوع ده اكتمل)؛ اتعملت نسخة موقّعة من كل PDF ليها مكان بدله.','No room for the single signed file in its kind (the file limit is reached); a signed copy of each PDF with room was made instead.'] as [string,string]};
 /** Finance sent the request back (2026-11-10), in the representative's and the sales manager's words. */
 export const MOLD_RETURNED_TEXT={badge:['رجّعتها المالية','Returned by finance'] as [string,string],title:['رجّعته المالية','Finance returned it'] as [string,string],
  correct:['تعديل وإعادة الإرسال','Edit and resend'] as [string,string],corrected:['اتبعت التعديل للإنتاج','The correction reached production'] as [string,string],

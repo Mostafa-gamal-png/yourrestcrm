@@ -10,9 +10,10 @@
 //   The public page (app/sign/m/[token]) and its routes find a request by that hash only (findBySignToken); every refusal looks the same.
 //   Each public request is counted by address (the sign-in's limiter, auth_limits) before anything is looked up.
 import {env} from 'cloudflare:workers';
-import {stampSignaturePdf} from './mold-signed-pdf';
-import {MOLD_SIGN_LINK_DAYS,MOLD_SIGN_TOKEN,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,moldDesignFileCheck,moldSignatureBlockAt,moldSignatureBlockBytes,moldSignatureBlockCheck,moldSignatureBytes,moldSignatureCheck,moldSignedCopyName,moldSigner} from '@/portable/mold-rules.mjs';
-import {moldDesignCount,moldFileCategory,moldNeverSent,moldReturnedNow,moldSignableFile,moldSignatureOf,moldSignedCopyId,moldSignedCopyMax,moldSignedCopyOf,MOLD_NOT_SIGNED,type MoldDesignFileRow,type MoldPaymentTerms,type MoldRequestRow,type MoldSignLink} from './mold-requests';
+import {buildSignedDocument,stampSignaturePdf,type SignedDocResult} from './mold-signed-pdf';
+import {MOLD_DESIGN_MAX_BYTES,MOLD_SIGNED_DOCUMENT_NAME,MOLD_SIGN_LINK_DAYS,MOLD_SIGN_TOKEN,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,moldDesignFileCheck,moldSignatureBlockAt,moldSignatureBlockBytes,moldSignatureBlockCheck,moldSignatureBytes,moldSignatureCheck,moldSignaturePageBytes,moldSignaturePageCheck,moldSignedCopyName,moldSignedDocumentCategory,moldSignedDocumentParts,moldSigner} from '@/portable/mold-rules.mjs';
+import {moldDesignCount,moldFileCategory,moldNeverSent,moldReturnedNow,moldSignableFile,moldSignatureOf,moldSignedCopyId,moldSignedCopyMax,moldSignedCopyOf,moldSignedDocumentFiles,moldSignedDocumentId,moldSignedOutputOf,MOLD_NOT_SIGNED,type MoldDesignFileRow,type MoldFileCategory,type MoldPaymentTerms,type MoldRequestRow,type MoldSignatureData,type MoldSignLink} from './mold-requests';
+import {docCategory,type SignedDocPart} from './mold-signed-document';
 import {loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldNov10Known,MOLD_DESIGN_REFUSED_SQL,MOLD_NEVER_SENT_SQL} from './mold-requests-server';
 
 export const MOLD_SIGN_LINK_MS=MOLD_SIGN_LINK_DAYS*86400_000;
@@ -56,11 +57,11 @@ export async function findBySignToken(db:D1Database,token:string,now=Date.now())
  return signed&&!signed.cancelledAt&&Number.isFinite(at)&&now-at<MOLD_SIGNED_DOWNLOAD_MS&&now>=at?{row:signed,state:'signed',hash}:null;
 }
 /** The files a link shows and serves: while it opens, the request's own PDFs and images of the design, quotation and PO files (not the
- *  signature, not a signed copy, not deleted nor refused for good; nothing of production's); once signed, the signed copies its
- *  signature names. Oldest first. */
+ *  signature, not a signed copy, not deleted nor refused for good; nothing of production's); once signed, what its signature made: the
+ *  signed document (2026-11-11), else the signed copies. Oldest first. */
 export function signLinkFiles(row:MoldRequestRow,files:MoldDesignFileRow[],state:'open'|'signed'){
  const signature=moldSignatureOf(row.data);
- if(state==='signed')return signature?files.filter(file=>!file.deletedAt&&!!file.objectKey&&!!moldSignedCopyOf(file.id,signature.fileId)):[];
+ if(state==='signed')return signature?files.filter(file=>!file.deletedAt&&!!file.objectKey&&!!moldSignedOutputOf(file.id,signature.fileId)):[];
  return files.filter(file=>(file.kind==='pdf'||file.kind==='image')&&!file.deletedAt&&!!file.objectKey&&file.id.startsWith('mdf-')&&!(file.outbox==='send'&&!file.sentAt&&file.nextAttemptAt===null&&file.lastError?.final===true));
 }
 /** The request's other files the link names but never serves (2026-11-10, the documents on the page): a drawing, a model, an archive of
@@ -145,11 +146,108 @@ export async function makeSignedCopies(db:D1Database,{requestId,signatureFileId,
  }
  return out;
 }
+/** The sources of a signed document: each part's file as the CRM holds it, read from the object store when building, refused (null) when
+ *  its bytes are not the ones the signing page listed. */
+export function signedDocSources(parts:readonly SignedDocPart[],found:readonly (MoldDesignFileRow|null)[],store:R2Bucket){
+ return parts.map((part,index)=>({part,read:async()=>{
+  const file=found[index],object=file?.objectKey?await store.get(file.objectKey):null;
+  if(!object)return null;
+  const bytes=new Uint8Array(await object.arrayBuffer());
+  return bytes.length===file!.size&&await sha256Hex(bytes)===part.sha256?bytes:null;
+ }}));
+}
+/** The signed document's category: the first document's (quotation, else PO, else design), among its parts, else among the request's
+ *  own files. */
+const documentCategory=(parts:readonly SignedDocPart[],files:readonly MoldDesignFileRow[],seen?:MoldFileCategory)=>docCategory(parts,[...files.filter(file=>file.id.startsWith('mdf-')&&!file.deletedAt).map(file=>({category:moldFileCategory(file)})),...(seen?[{category:seen}]:[])]);
+/**
+ * The ONE signed document of a request (the owner, 2026-11-11: «ملف واحد موقّع»): once every document the signing page listed is among the
+ * request's files (at once from the link or the sheet; on the device as the files the customer saw are uploaded), it is built
+ * (buildSignedDocument: their pages as they are, each picture a page, the signature page last), checked as production checks a PDF, stored
+ * and saved with one audit entry as «طلب القالب - موقّع.pdf», a file of the first document's category that takes none of the originals'
+ * places (a signed copy's 'mdc-' id), sent to production like the others. Not made: a row of reason is kept instead (as for a copy):
+ * too_large (over production's limit for one file) or mismatch (not what the page listed: another count of pages, a PDF that does not
+ * open), and the per-file signed copies of today are made instead from the block (fallback); too_many_files (no place left): nothing.
+ * built: the document already built (the link builds it before saving the signature, to refuse a page that showed something else).
+ * Returns the ids of what it made (the document, or the copies), to send after it.
+ */
+export async function makeSignedDocument(db:D1Database,{requestId,signatureFileId,actor,now=()=>new Date().toISOString(),store=env.FILES,built}:{requestId:string;signatureFileId:string;actor:string;now?:()=>string;store?:R2Bucket;built?:SignedDocResult}):Promise<{made:string[];state:'made'|'waiting'|'fallback'|'none'}>{
+ const row=await loadMoldRequest(db,requestId),data=row?.data.signature as MoldSignatureData|undefined,plan=data?.document;
+ if(!row||!store||!plan||moldSignatureOf(row.data)?.fileId!==signatureFileId)return {made:[],state:'none'};
+ const id=moldSignedDocumentId(signatureFileId),files=await loadMoldDesignFiles(db,'request_id=?',[requestId]);
+ if(files.some(file=>file.id===id))return {made:[],state:'none'};
+ const parts=moldSignedDocumentFiles(plan.parts,files);
+ if(!parts.complete)return {made:[],state:'waiting'};
+ const category=documentCategory(plan.parts,files,plan.category),name=MOLD_SIGNED_DOCUMENT_NAME;
+ let result=built;
+ if(!result){
+  const page=await store.get(plan.key),pageBytes=page?new Uint8Array(await page.arrayBuffer()):null;
+  result=pageBytes?await buildSignedDocument({sources:signedDocSources(plan.parts,parts.found,store),page:pageBytes,at:new Date(plan.at),maxBytes:MOLD_DESIGN_MAX_BYTES}):{ok:false,reason:'damaged'};
+ }
+ if(result.ok&&!moldDesignFileCheck(name,result.bytes,category).ok)result={ok:false,reason:'too_large'};
+ const pages=plan.parts.reduce((sum,part)=>sum+part.pages,0)+1;
+ const skip=async(reason:string)=>{
+  const at=now();
+  const saved=await db.batch([
+   db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,deleted_at,outbox,next_attempt_at,last_error,version,category) SELECT ?,?,?,?,'pdf','application/pdf',0,'',NULL,?,?,NULL,NULL,?,1,? WHERE EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND json_extract(data,'$.signature.fileId')=?)`)
+    .bind(id,requestId,row.memberId,name,at,at,JSON.stringify({code:MOLD_NOT_SIGNED,reason,http:0,at}),category,requestId,signatureFileId),
+   db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND created_at=? AND object_key IS NULL)`)
+    .bind(crypto.randomUUID(),requestId,actor,'mold-design:signed-document-skipped',JSON.stringify({label:'ما اتعملش الملف الموقّع الواحد لطلب تصنيع قالب',customerName:row.data.customer.name,name,reason,pages,...(reason!=='too_many_files'?{fallback:'signed-copies'}:{})}),at,id,at),
+  ]);
+  return saved[0].meta.changes===1;
+ };
+ // Today's per-file signed copies instead (2026-11-10), from the block, of the PDFs the page listed; each takes a place of its own
+ // original's category and is made only where one is left (makeSignedCopies says which got none).
+ const fallback=async(reason:string)=>{
+  if(!await skip(reason))return {made:[] as string[],state:'none' as const};
+  const copies=await signedCopiesInstead(db,{requestId,signatureFileId,data,parts:plan.parts,found:parts.found,actor,now,store});
+  return {made:copies,state:'fallback' as const};
+ };
+ if(!result.ok)return fallback(result.reason==='too_large'?'too_large':'mismatch');
+ // A place of the category, every file counted (the CRM's live files and production's that the CRM does not hold), as for a copy:
+ // production keeps no mark of a signed copy, so the signed file takes one of its category's places there (20 design, 10 quotation,
+ // 10 PO). None left: the per-file copies instead, where their categories have room.
+ const places=moldDesignCount(row,files,category),max=moldSignedCopyMax(category,await moldNov10Known(db));
+ if(places.crm+places.production>=max)return fallback('too_many_files');
+ const bytes=new Uint8Array(result.bytes),objectKey='mold-design/'+requestId+'/'+id+'/'+crypto.randomUUID(),at=now(),mutation=crypto.randomUUID();
+ await store.put(objectKey,bytes,{httpMetadata:{contentType:'application/pdf'}});
+ const saved=await db.batch([
+  db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id,category)
+   SELECT ?,?,?,?,'pdf','application/pdf',?,?,?,?,'send',?,1,?,? WHERE EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND cancelled_at IS NULL AND json_extract(data,'$.signature.fileId')=?) AND (${LIVE_FILES})<?`)
+   .bind(id,requestId,row.memberId,name,bytes.length,await sha256Hex(bytes),objectKey,at,at,mutation,category,requestId,signatureFileId,requestId,category,max-places.production),
+  db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND mutation_id=?)`)
+   .bind(crypto.randomUUID(),requestId,actor,'mold-design:signed-document',JSON.stringify({label:'الملف الموقّع لطلب تصنيع قالب (المستندات وصفحة التوقيع)',customerName:row.data.customer.name,name,pages:result.pages,size:bytes.length,documents:plan.parts.map(part=>part.name),...(category!=='design'?{category}:{})}),at,id,mutation),
+ ]);
+ if(saved[0].meta.changes===1)return {made:[id],state:'made'};
+ await store.delete(objectKey).catch(()=>{});
+ // Taken meanwhile: by the same document (another sender made it first) nothing more; else the category filled up: the copies instead.
+ if(!(await loadMoldDesignFiles(db,'id=?',[id])).length)return fallback('too_many_files');
+ return {made:[],state:'none'};
+}
+/** The per-file signed copies of the PDFs a signed document listed, made instead of it (its block; none without one). */
+async function signedCopiesInstead(db:D1Database,{requestId,signatureFileId,data,parts,found,actor,now,store}:{requestId:string;signatureFileId:string;data:MoldSignatureData|undefined;parts:readonly SignedDocPart[];found:readonly (MoldDesignFileRow|null)[];actor:string;now:()=>string;store:R2Bucket}){
+ const originals=found.filter((file,index):file is MoldDesignFileRow=>!!file&&parts[index]?.kind==='pdf'&&moldSignableFile(file));
+ if(!data?.block?.key||!originals.length)return [] as string[];
+ const copies=await makeSignedCopies(db,{requestId,signatureFileId,blockKey:data.block.key,originals,actor,now,store}).catch(error=>{console.error('Signed copies failed',error instanceof Error?error.name:'error');return {made:[],skipped:[]} as SignedCopies;});
+ return copies.made.map(copy=>copy.id);
+}
+/**
+ * Production refused the signed document after the CRM sent it (413: over its limit for one file; too_many_files: its category full
+ * there): the per-file signed copies are made instead, while the request's signature is still the one that made it, and sent like any
+ * file (the timetable takes them). The refused row stays as the record (said on the sheet: MoldSigningView.document fallback).
+ */
+export async function signedDocumentRefused(db:D1Database,requestId:string,documentId:string,{now=()=>new Date().toISOString(),store=env.FILES}:{now?:()=>string;store?:R2Bucket}={}){
+ const row=await loadMoldRequest(db,requestId),data=row?.data.signature as MoldSignatureData|undefined,signature=row?moldSignatureOf(row.data):null;
+ if(!row||!store||!data?.document||!signature||moldSignedDocumentId(signature.fileId)!==documentId)return [] as string[];
+ const files=await loadMoldDesignFiles(db,'request_id=?',[requestId]),parts=moldSignedDocumentFiles(data.document.parts,files);
+ const made=await signedCopiesInstead(db,{requestId,signatureFileId:signature.fileId,data,parts:data.document.parts,found:parts.found,actor:'النظام (رفض الإنتاج للملف الموقّع)',now,store});
+ if(made.length)await db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),requestId,'النظام','mold-design:signed-document-skipped',JSON.stringify({label:'رفض الإنتاج الملف الموقّع الواحد؛ اتعملت نسخة موقّعة من كل PDF بدله',customerName:row.data.customer.name,name:MOLD_SIGNED_DOCUMENT_NAME,fallback:'signed-copies',copies:made.length}),now()).run();
+ return made;
+}
 /** The signed copies an old signature named that never reached production (removed in the CRM alone, as an old signature's image is when
  *  a new signature replaces it, 2026-11-04); one production may hold stays an ordinary file. The statements to run with the edit (each
  *  gated on the edit's own mutation) and the object keys to remove once it is saved. */
 export function dropOldCopies(db:D1Database,files:MoldDesignFileRow[],oldSignatureId:string,requestId:string,mutation:string,now:string){
- const old=files.filter(file=>!!moldSignedCopyOf(file.id,oldSignatureId)&&!file.deletedAt&&!file.sentAt&&!file.lastAttemptAt);
+ const old=files.filter(file=>!!moldSignedOutputOf(file.id,oldSignatureId)&&!file.deletedAt&&!file.sentAt&&!file.lastAttemptAt);
  return {keys:old.map(file=>file.objectKey).filter((key):key is string=>!!key),statements:old.map(file=>db.prepare(`UPDATE crm_mold_design_files SET deleted_at=?,outbox=NULL,next_attempt_at=NULL,object_key=NULL,version=version+1 WHERE id=? AND deleted_at IS NULL AND sent_at IS NULL AND last_attempt_at IS NULL AND EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)`).bind(now,file.id,requestId,mutation))};
 }
 
@@ -181,12 +279,15 @@ export type SignLinkDone={ok:true;signer:string;signedAt:string;copies:{id:strin
 export class SignLinkRefusal extends Error{constructor(message:string,public status:number,public fields?:Record<string,string>){super(message);}}
 /** The customer's signature from the link, checked as the device's is (moldSignatureCheck for the drawing, moldSignatureBlockCheck for the
  *  block, its moment the server's). */
-export type SignInput={requestId:string;token:string;key:string;signer:unknown;png:unknown;block:unknown;blockAt:unknown;consent:true};
+export type SignInput={requestId:string;token:string;key:string;signer:unknown;png:unknown;block:unknown;blockAt:unknown;consent:true;
+ /** The ONE signed document (2026-11-11): the signature page the page composed (a PNG as base64) and the documents it lists in their
+  *  order (moldSignedDocumentParts); a page of the release before sends none, and its signature makes the per-file copies of before. */
+ document?:{page:unknown;parts:unknown;category?:unknown}};
 async function doneFor(db:D1Database,token:string,row:MoldRequestRow,sent:boolean):Promise<SignLinkDone>{
  const signature=moldSignatureOf(row.data)!,files=await loadMoldDesignFiles(db,'request_id=?',[row.id]);
- const named=files.filter(file=>!!moldSignedCopyOf(file.id,signature.fileId));
+ const named=files.filter(file=>!!moldSignedCopyOf(file.id,signature.fileId)),made=files.filter(file=>!!moldSignedOutputOf(file.id,signature.fileId));
  return {ok:true,signer:signature.signer,signedAt:signature.signedAt,sent,
-  copies:named.filter(file=>!file.deletedAt&&!!file.objectKey).map(file=>({id:file.id,name:file.name,href:signFileHref(token,file.id)})),
+  copies:made.filter(file=>!file.deletedAt&&!!file.objectKey).map(file=>({id:file.id,name:file.name,href:signFileHref(token,file.id)})),
   skipped:named.filter(file=>file.deletedAt&&!file.outbox&&file.lastError?.code===MOLD_NOT_SIGNED).map(file=>({name:files.find(original=>original.id===moldSignedCopyOf(file.id,signature.fileId))?.name||file.name,reason:file.lastError?.reason||'damaged'}))};
 }
 /**
@@ -200,7 +301,8 @@ async function doneFor(db:D1Database,token:string,row:MoldRequestRow,sent:boolea
 export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILES,send,now=()=>new Date().toISOString(),waitMs=15_000}:{store?:R2Bucket;send:(requestId:string,told:(outcome:{kind:string})=>void)=>Promise<unknown>;now?:()=>string;waitMs?:number}):Promise<SignLinkDone>{
  const at=now(),found=await findBySignToken(db,input.token,Date.parse(at));
  if(!found)throw new SignLinkRefusal(SIGN_LINK_GONE,404);
- const body=await sha256Hex(JSON.stringify([input.key,input.signer,input.png,input.block,input.blockAt])),receiptId='mold-sign-receipt:'+found.hash;
+ // The same five fields as before for a body without the document (a page of the release before reads its receipt as it was).
+ const body=await sha256Hex(JSON.stringify(input.document===undefined?[input.key,input.signer,input.png,input.block,input.blockAt]:[input.key,input.signer,input.png,input.block,input.blockAt,input.document])),receiptId='mold-sign-receipt:'+found.hash;
  if(found.state==='signed'){
   const saved=await db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receiptId).first<{detail:string}>();
   if(saved?.detail===body)return doneFor(db,input.token,found.row,!found.row.outbox);
@@ -211,19 +313,37 @@ export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILE
  const signer=moldSigner(input.signer),named=signer!==undefined&&[...signer].length>=MOLD_SIGNER_MIN&&[...signer].length<=MOLD_SIGNER_MAX;
  const png=moldSignatureBytes(input.png),checked=moldSignatureCheck(named?signer:'--',png);
  const blockBytes=moldSignatureBlockBytes(input.block),block=blockBytes?moldSignatureBlockCheck(blockBytes):null,blockAt=moldSignatureBlockAt(input.blockAt,Date.parse(at));
+ // The signature page and the documents it lists (2026-11-11), when the page sent them.
+ const pageBytes=input.document===undefined?null:moldSignaturePageBytes(input.document?.page),pageChecked=pageBytes?moldSignaturePageCheck(pageBytes):null,parts=input.document===undefined?null:moldSignedDocumentParts(input.document?.parts);
+ const documentBad=input.document!==undefined&&(!pageChecked?.ok||!parts);
  const fields:Record<string,string>={...(named?{}:{signer:MOLD_SIGNER_REQUIRED}),...(!checked.ok&&checked.field==='signature'?{signature:checked.reason==='missing'?MOLD_SIGNATURE_REQUIRED:MOLD_SIGNATURE_BAD}:{}),
-  ...(!block?.ok?{signature:MOLD_SIGNATURE_BAD}:!blockAt?{signature:'وقت التوقيع مش مظبوط؛ افتح اللينك تاني ووقّع.'}:{})};
+  ...(!block?.ok||documentBad?{signature:MOLD_SIGNATURE_BAD}:!blockAt?{signature:'وقت التوقيع مش مظبوط؛ افتح اللينك تاني ووقّع.'}:{})};
  if(Object.keys(fields).length||!checked.ok||!png||!blockBytes||!block?.ok||!blockAt)throw new SignLinkRefusal([...new Set(Object.values(fields))].join(' • ')||MOLD_SIGNATURE_BAD,400,fields);
  // The signature's image takes one of the 10 design places, as on the device (moldDesignCount).
  const places=moldDesignCount(row,files,'design',{originals:true});
  if(places.crm+places.production+1>places.max)throw new SignLinkRefusal('الطلب مش جاهز للتوقيع دلوقتي؛ كلّم المندوب.',409);
  if(!store)throw new SignLinkRefusal('التوقيع مش متاح دلوقتي؛ حاول بعد شوية.',503);
+ // The signed document is built from what the page listed BEFORE the signature is saved: a document the page listed that is not among
+ // the link's files as they are now, or whose pages pdf-lib counts otherwise, means the page did not show what the CRM holds: refused as
+ // a change (opened again, the page lists it right). Too large for production, or failing otherwise: signed, with the per-file copies.
+ let built:SignedDocResult|undefined;
+ if(parts&&pageBytes&&pageChecked?.ok){
+  const match=moldSignedDocumentFiles(parts,signLinkFiles(row,files,'open'));
+  if(!match.complete)throw new SignLinkRefusal(SIGN_LINK_CHANGED,409);
+  built=await buildSignedDocument({sources:signedDocSources(parts,match.found,store),page:pageBytes,at:new Date(blockAt),maxBytes:MOLD_DESIGN_MAX_BYTES});
+  if(!built.ok&&built.reason==='mismatch')throw new SignLinkRefusal(SIGN_LINK_CHANGED,409);
+ }
  const fileId='mds-'+crypto.randomUUID(),mutation=crypto.randomUUID(),pngBytes=new Uint8Array(png),blockCopy=new Uint8Array(blockBytes);
  const objectKey='mold-design/'+row.id+'/'+fileId+'/'+crypto.randomUUID(),blockKey='mold-sign-block/'+row.id+'/'+fileId+'/'+crypto.randomUUID();
- const data:MoldRequestRow['data']={...row.data,signature:{signer:checked.signer,signedAt:at,fileId,via:'link',block:{key:blockKey,sha256:await sha256Hex(blockCopy),width:block.width,height:block.height,at:blockAt},link:{hash:found.hash,at}}};
+ const pageKey=parts&&pageBytes&&pageChecked?.ok?'mold-sign-page/'+row.id+'/'+fileId+'/'+crypto.randomUUID():'',pageCopy=pageKey?new Uint8Array(pageBytes!):null;
+ const seenCategory=moldSignedDocumentCategory(input.document?.category);
+ const document=pageKey&&pageCopy&&pageChecked?.ok&&parts?{key:pageKey,sha256:await sha256Hex(pageCopy),width:pageChecked.width,height:pageChecked.height,at:blockAt,parts,...(seenCategory?{category:seenCategory}:{})}:null;
+ const data:MoldRequestRow['data']={...row.data,signature:{signer:checked.signer,signedAt:at,fileId,via:'link',block:{key:blockKey,sha256:await sha256Hex(blockCopy),width:block.width,height:block.height,at:blockAt},link:{hash:found.hash,at},...(document?{document}:{})}};
  delete data.awaitsSignature;delete data.signatureLink;
+ const dropAll=async()=>{for(const key of [objectKey,blockKey,pageKey])if(key)await store.delete(key).catch(()=>{});};
  await store.put(objectKey,pngBytes,{httpMetadata:{contentType:checked.contentType}});
  await store.put(blockKey,blockCopy,{httpMetadata:{contentType:'image/png'}});
+ if(pageKey&&pageCopy)await store.put(pageKey,pageCopy,{httpMetadata:{contentType:'image/png'}});
  const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)',actor=checked.signer+' (العميل، من اللينك)';
  const result=await db.batch([
   db.prepare(`UPDATE crm_mold_requests SET data=?,next_attempt_at=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND cancelled_at IS NULL AND outbox IS 'send' AND json_extract(data,'$.awaitsSignature') IS 1 AND json_extract(data,'$.signatureLink.hash')=? AND json_extract(data,'$.signatureLink.expiresAt')>? AND (${MOLD_NEVER_SENT_SQL} OR json_type(remote,'$.returned')='object')`)
@@ -232,16 +352,18 @@ export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILE
    .bind(fileId,row.id,row.memberId,checked.name,checked.contentType,pngBytes.length,await sha256Hex(pngBytes),objectKey,at,at,mutation,row.id,mutation),
   db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,row.id,actor,'mold-sign-receipt',body,at,row.id,mutation),
   db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`)
-   .bind(crypto.randomUUID(),row.id,actor,'mold-request:sign',JSON.stringify({label:'توقيع العميل على طلب تصنيع قالب من اللينك',customerName:row.data.customer.name,via:'link',signature:{signer:checked.signer,fileId,size:pngBytes.length,stamped:true}}),at,row.id,mutation),
- ]).catch(async error=>{await store.delete(objectKey).catch(()=>{});await store.delete(blockKey).catch(()=>{});throw error;});
+   .bind(crypto.randomUUID(),row.id,actor,'mold-request:sign',JSON.stringify({label:'توقيع العميل على طلب تصنيع قالب من اللينك',customerName:row.data.customer.name,via:'link',signature:{signer:checked.signer,fileId,size:pngBytes.length,stamped:true,...(document?{document:document.parts.length}:{})}}),at,row.id,mutation),
+ ]).catch(async error=>{await dropAll();throw error;});
  if(result[0].meta.changes!==1){
-  await store.delete(objectKey).catch(()=>{});await store.delete(blockKey).catch(()=>{});
+  await dropAll();
   // Changed between the check and the save (an edit, a new link, a cancellation, or the same signature from another tab): said as a change
   // when the link still opens, else as any refusal.
   const again=await findBySignToken(db,input.token,Date.parse(now()));
   throw again?.state==='open'?new SignLinkRefusal(SIGN_LINK_CHANGED,409):new SignLinkRefusal(SIGN_LINK_GONE,404);
  }
- await makeSignedCopies(db,{requestId:row.id,signatureFileId:fileId,blockKey,originals:signLinkFiles(row,files,'open').filter(moldSignableFile),actor,now,store}).catch(error=>{console.error('Signed copies failed',error instanceof Error?error.name:'error');});
+ // The ONE signed document (2026-11-11), else (a page of the release before) the per-file copies of before.
+ if(document)await makeSignedDocument(db,{requestId:row.id,signatureFileId:fileId,actor,now,store,built}).catch(error=>{console.error('Signed document failed',error instanceof Error?error.name:'error');});
+ else await makeSignedCopies(db,{requestId:row.id,signatureFileId:fileId,blockKey,originals:signLinkFiles(row,files,'open').filter(moldSignableFile),actor,now,store}).catch(error=>{console.error('Signed copies failed',error instanceof Error?error.name:'error');});
  let told:{kind:string}|null=null,timer:ReturnType<typeof setTimeout>|undefined;
  await Promise.race([send(row.id,outcome=>{told=outcome;}).catch(()=>null),new Promise(resolve=>{timer=setTimeout(resolve,waitMs);})]);
  clearTimeout(timer);

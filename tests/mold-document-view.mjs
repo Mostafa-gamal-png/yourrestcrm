@@ -76,7 +76,10 @@ const ar = (arabic) => arabic, en = (_arabic, english) => english;
 // ---- pdf.js: loaded by the signing screens only; the legacy build; the offline shell carries none
 {
   const loader = fs.readFileSync(path.join(root, 'lib/pdf-viewer-loader.ts'), 'utf8');
-  check([...loader.matchAll(/import\('([^']+)'\)/g)].map(match => match[1]), ['pdfjs-dist/legacy/build/pdf.min.mjs', 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', './pdf-viewer-fonts'], 'the legacy build, its worker by address and the standard fonts, each a dynamic import');
+  check([...loader.matchAll(/import\('([^']+)'\)/g)].map(match => match[1]), ['pdfjs-dist/legacy/build/pdf.min.mjs', 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', './pdf-viewer-fonts', 'pdf-lib'], 'the legacy build, its worker by address and the standard fonts, each a dynamic import; since 2026-11-11 pdf-lib too (it counts the pages as the server builds them)');
+  // pdf-lib on the client only through the loader (lib/mold-signed-document.ts takes it as an argument: no import of it).
+  const shared = fs.readFileSync(path.join(root, 'lib/mold-signed-document.ts'), 'utf8');
+  ok(!/from ['"]pdf-lib['"]|import\(['"]pdf-lib/.test(shared), 'the shared rules of the signed document import no pdf-lib');
   const fonts = fs.readFileSync(path.join(root, 'lib/pdf-viewer-fonts.ts'), 'utf8'), bundled = fs.readdirSync(path.join(root, 'node_modules/pdfjs-dist/standard_fonts')).filter(name => !name.startsWith('LICENSE')).sort();
   check([...fonts.matchAll(/from 'pdfjs-dist\/standard_fonts\/([^?']+)\?url'/g)].map(match => match[1]).sort(), bundled, 'every standard font of pdf.js, by its address (fetched only when a PDF needs it)');
   ok(!/^import (?!type)/m.test(loader), 'no static import of pdf.js');
@@ -87,6 +90,7 @@ const ar = (arabic) => arabic, en = (_arabic, english) => english;
   const offline = path.join(root, 'public/offline-app/assets');
   const shell = fs.readdirSync(offline).map(name => fs.readFileSync(path.join(offline, name), 'utf8')).join('\n');
   ok(!/GlobalWorkerOptions|pdf\.worker|4\.10\.38|PDFDocumentLoadingTask/.test(shell), 'the offline shell carries no pdf.js');
+  ok(!/EncryptedPDFError|wrapContentStreams/.test(shell), 'nor pdf-lib (2026-11-11)');
   const shellManifest = JSON.parse(fs.readFileSync(path.join(root, 'public/offline-shell-manifest.json'), 'utf8'));
   ok(shellManifest.assets.every(asset => !/pdf/i.test(asset.url)), 'nor does its cache list');
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

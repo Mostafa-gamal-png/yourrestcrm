@@ -9,14 +9,19 @@
 // the drawing, «توقيع العميل: <name>» and the moment in Riyadh, the canvas shaping the Arabic), the moment taken from the server's clock
 // (noteServerTime, serverNow); and a sales role may choose «ابعت للعميل لينك يوقّع منه» instead of the pad.
 // Since the owner's «يوقع داخل pdf» (2026-11-10, second release of the day) the customer reads the request's PDFs and pictures themselves
-// on the screen (app/mold-document-viewer.tsx) and signs in the box after their last page.
+// on the screen (app/mold-document-viewer.tsx) and signs in the box after their last page. Since 2026-11-11 («ملف واحد موقّع») they are ONE
+// document whose last page is the signature page (app/mold-signature-page.tsx); the page is composed as a PNG on signing and the CRM makes
+// one signed PDF of every page.
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {Eraser,Link2,Loader2,PenLine,Send,Undo2} from 'lucide-react';
-import {t} from '@/lib/i18n';
+import {direction,t} from '@/lib/i18n';
 import {MOLD_SIGNATURE_TEXT,MOLD_SIGN_LINK_TEXT} from '@/lib/mold-requests';
 import {MOLD_SIGNATURE_MAX_BYTES,MOLD_SIGNATURE_MAX_SIDE,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
 import {MOLD_VIEWER_TEXT,type MoldViewerFile} from '@/lib/mold-document-view';
-import MoldDocumentViewer from './mold-document-viewer';
+import {MOLD_SIGN_PAGE_TEXT,docCategory,type SignedDocPart} from '@/lib/mold-signed-document';
+import type {MoldFileCategory} from '@/lib/mold-requests';
+import MoldDocumentViewer,{type DocPlan} from './mold-document-viewer';
+import {MoldSignaturePage,signaturePagePng} from './mold-signature-page';
 import VoiceField from './voice-field';
 
 type Say=(ar:string,en:string)=>string;
@@ -146,22 +151,24 @@ export function SignaturePad({strokes,onChange,onWidth,disabled,say}:{strokes:Si
   onPointerUp={finish} onPointerCancel={finish} onLostPointerCapture={finish}/>;
 }
 
-/** The step «توقيع العميل»: what the customer signs (summary), who signs for the customer, the pad with «امسح», and «تأكيد وإرسال». The
- *  server's refusals by field (fields.signer, fields.signature) are said beside each until that field changes; error: any other. The PNG
- *  is made once per signing, on the first confirm, and sent again as it is by every later confirm (a retry after an answer that never
- *  came resends the very same body under the same identifier, however the pad was resized since); a new drawing, «امسح» or another
- *  name starts a new signing. The dialog shows the step from its top, so the customer reads the summary first. */
-/** The signature as the step gives it (2026-11-10: with the block and its moment, both made once per signing like the drawing's PNG). */
-export type SigningResult={signer:string;png:string;block:string;blockAt:string};
+/** The step «توقيع العميل»: the request's documents as ONE document (2026-11-11) whose last page is the signature page (what is signed for,
+ *  the documents and their pages, the consent, the signer's name and the pad inside its box, the moment), then «تأكيد وإرسال» and «رجوع
+ *  للطلب» under it. The server's refusals by field (fields.signer, fields.signature) are said beside each until that field changes; error:
+ *  any other. The signature (the PNG, the block, the signature page and its documents) is made once per signing, on the first confirm, and
+ *  sent again as it is by every later confirm (a retry after an answer that never came resends the very same body under the same
+ *  identifier, however the pad was resized since); a new drawing, «امسح» or another name starts a new signing. The dialog shows the step
+ *  from its top, so the customer reads the document from its first page. */
+/** The signature as the step gives it: the drawing's PNG, the block (2026-11-10: the per-file copies, now the fallback) and its moment, and
+ *  since 2026-11-11 the signature page as a PNG with the documents it lists (document). */
+export type SigningResult={signer:string;png:string;block:string;blockAt:string;document:{page:string;parts:SignedDocPart[];category:MoldFileCategory}};
 /** onLink (2026-11-10): offered (a sales role's new request, or an edit that changes what was signed), the step starts with a choice: the
- *  customer signs now (the pad), or a link is sent for the customer to sign from (the request is saved and kept until then).
- *  documents (the owner, 2026-11-10: «يوقع داخل pdf»): signing now, the customer reads the request's files themselves first (the
- *  quotation's and PO's, then the design's: MoldDocumentViewer), and signs in the box after their last page, «توقيع العميل», which holds
- *  what is signed for (the summary), the name, the pad, «امسح» and the confirmation. Choosing the link shows no document. */
-export function MoldSigningStep({summary,documents,busy,error,fields,again=false,say,onBack,onConfirm,onLink}:{summary:[string,React.ReactNode][];documents?:MoldViewerFile[];busy:boolean;error:string;fields:Record<string,string>;again?:boolean;say:Say;onBack:()=>void;onConfirm:(signature:SigningResult)=>void;onLink?:()=>void}){
+ *  customer signs now (the document and its signature page), or a link is sent for the customer to sign from (the request is saved and
+ *  kept until then; no document is shown). summary: what the request is, as text (the signature page prints it). title: the customer's
+ *  name for the line above the document. */
+export function MoldSigningStep({summary,title,documents=[],busy,error,fields,again=false,say,onBack,onConfirm,onLink}:{summary:[string,string][];title?:string;documents?:MoldViewerFile[];busy:boolean;error:string;fields:Record<string,string>;again?:boolean;say:Say;onBack:()=>void;onConfirm:(signature:SigningResult)=>void;onLink?:()=>void}){
  const [signer,setSigner]=useState(''),[strokes,setStrokes]=useState<SignatureStrokes>([]),[width,setWidth]=useState(0),[shown,setShown]=useState<{signer?:string;pad?:string}>({});
  const [frozen,setFrozen]=useState<SigningResult|null>(null),[dismissed,setDismissed]=useState<{signer?:boolean;signature?:boolean}>({}),[answered,setAnswered]=useState(fields);
- const [mode,setMode]=useState<'now'|'link'>('now');
+ const [mode,setMode]=useState<'now'|'link'>('now'),[plan,setPlan]=useState<DocPlan|null>(null);
  // Each new refusal from the server is shown again (state adjusted while rendering, not in an effect).
  if(answered!==fields){setAnswered(fields);setDismissed({});}
  const signerError=shown.signer||(fields.signer&&!dismissed.signer?t(fields.signer):''),padError=shown.pad||(fields.signature&&!dismissed.signature?t(fields.signature):'');
@@ -169,24 +176,28 @@ export function MoldSigningStep({summary,documents,busy,error,fields,again=false
  useEffect(()=>{const dialog=top.current?.closest('.mold-dialog');if(dialog)dialog.scrollTop=0;},[]);
  const changeSigner=(value:string)=>{setSigner(value);setFrozen(null);setShown(previous=>({...previous,signer:undefined}));setDismissed(previous=>({...previous,signer:true}));};
  const changeStrokes=(next:SignatureStrokes)=>{setStrokes(next);setFrozen(null);setShown(previous=>({...previous,pad:undefined}));setDismissed(previous=>({...previous,signature:true}));};
+ const ready=!!plan?.ready;
  const confirm=()=>{
   if(frozen){onConfirm(frozen);return;}
+  if(!plan?.ready)return;
   const name=moldSigner(signer),length=name===undefined?0:[...name].length,box=signatureBox(strokes,width);
   const next:{signer?:string;pad?:string}={};
   if(name===undefined||length<MOLD_SIGNER_MIN||length>MOLD_SIGNER_MAX)next.signer=say(...MOLD_SIGNATURE_TEXT.signerRequired);
-  const png=moldSignatureDrawn(box)?signaturePng(strokes,width):null,at=serverNow(),block=png&&name!==undefined?signatureBlockPng(strokes,width,name,at):null;
-  if(!png||!block)next.pad=say(...MOLD_SIGNATURE_TEXT.blank);
+  const png=moldSignatureDrawn(box)?signaturePng(strokes,width):null,at=serverNow();
+  const block=png&&name!==undefined?signatureBlockPng(strokes,width,name,at):null;
+  const page=png&&block&&name!==undefined?signaturePagePng({plan,summary,signer:name,strokes,width,at,say,rtl:direction()==='rtl'}):null;
+  if(!png||!block||!page)next.pad=say(...MOLD_SIGNATURE_TEXT.blank);
   setShown(next);
-  if(next.signer||next.pad||!png||!block||name===undefined)return;
-  const signature={signer:name,png,block,blockAt:at.toISOString()};
+  if(next.signer||next.pad||!png||!block||!page||name===undefined)return;
+  const signature:SigningResult={signer:name,png,block,blockAt:at.toISOString(),document:{page,parts:plan.parts,category:docCategory(plan.parts,plan.left)}};
   setFrozen(signature);onConfirm(signature);
  };
- const summaryList=<dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>;
+ const summaryList=<dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd><bdi dir="auto">{value}</bdi></dd></div>)}</dl>;
  const lead=<p className="mold-signing-lead">{say('العميل بيوقّع على الطلب ده قبل ما يتبعت للإنتاج:','The customer signs this request before it is sent to production:')}</p>;
  return <section className="mold-signing" ref={top} aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
   <h3 className="mold-subtitle"><PenLine size={16} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.title)}</h3>
   {again&&<p className="mold-specs-note mold-signing-again" role="status">{say(...MOLD_SIGNATURE_TEXT.again)}</p>}
-  {/* The pad or the link (2026-11-10): offered to the sales roles; the choice comes before the documents. */}
+  {/* The pad or the link (2026-11-10): offered to the sales roles; the choice comes before the document. */}
   {onLink&&<fieldset className="mold-choice mold-signing-mode"><legend>{say('إزاي العميل هيوقّع؟','How does the customer sign?')}</legend><div>
    {(['now','link'] as const).map(value=><label key={value} data-active={mode===value}><input type="radio" name="signing-mode" value={value} checked={mode===value} disabled={busy} onChange={()=>setMode(value)}/>{say(...(value==='now'?MOLD_SIGN_LINK_TEXT.now:MOLD_SIGN_LINK_TEXT.link))}</label>)}
   </div></fieldset>}
@@ -199,27 +210,17 @@ export function MoldSigningStep({summary,documents,busy,error,fields,again=false
     <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
    </div>
   </>:<>
-  {/* The request's files themselves, page after page (2026-11-10), then the box the customer signs in. */}
-  {documents&&<><p className="mold-doc-lead">{say(...MOLD_VIEWER_TEXT.lead)}</p><MoldDocumentViewer files={documents} say={say}/></>}
-  <div className="mold-sign-box" role="group" aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
-  <p className="mold-sign-box-title"><PenLine size={17} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.title)}</p>
-  {lead}{summaryList}
-  {/* Who signs for the customer: a person's name, typed or dictated. */}
-  <div className="mold-field mold-signer" aria-invalid={!!signerError}>
-   <VoiceField label={say(...MOLD_SIGNATURE_TEXT.signer)} value={signer} full disabled={busy} onChange={changeSigner} inputProps={{name:'signer',dir:'auto',autoComplete:'off',maxLength:MOLD_SIGNER_MAX+20}}/>
-   {signerError&&<small className="field-error">{signerError}</small>}
-  </div>
-  <div className="mold-signature-box" aria-invalid={!!padError}>
-   <SignaturePad strokes={strokes} onChange={changeStrokes} onWidth={setWidth} disabled={busy} say={say}/>
-   <div className="mold-signature-tools"><small>{say('وقّع هنا بصباعك أو بالقلم','Sign here with a finger or a stylus')}</small>
-    <button type="button" className="btn small subtle" disabled={busy||!strokes.length} onClick={()=>changeStrokes([])}><Eraser size={15} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.clear)}</button></div>
-   {padError&&<small className="field-error" role="alert">{padError}</small>}
-  </div>
+  {/* The request's documents as one document (2026-11-11), its last page the signature page. */}
+  <p className="mold-doc-title-line"><b>{say(...MOLD_VIEWER_TEXT.title)}</b>{title?<> — <bdi dir="auto">{title}</bdi></>:null}</p>
+  <p className="mold-doc-lead">{say(...MOLD_VIEWER_TEXT.lead)}</p>
+  <MoldDocumentViewer files={documents} say={say} onPlan={setPlan} signaturePage={current=><MoldSignaturePage plan={current} summary={summary} say={say} busy={busy} strokes={strokes} onStrokes={changeStrokes} onWidth={setWidth} signerError={signerError} padError={padError}
+   name={<VoiceField label={say(...MOLD_SIGNATURE_TEXT.signer)} value={signer} full disabled={busy} onChange={changeSigner} inputProps={{name:'signer',dir:'auto',autoComplete:'off',maxLength:MOLD_SIGNER_MAX+20}}/>}
+   clear={<button type="button" className="btn small subtle" disabled={busy||!strokes.length} onClick={()=>changeStrokes([])}><Eraser size={15} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.clear)}</button>}/>}/>
+  {!ready&&<p className="mold-doc-loading" role="status"><Loader2 className="spin" size={16} aria-hidden="true"/>{say(...MOLD_SIGN_PAGE_TEXT.preparing)}</p>}
   {error&&!fields.signer&&!fields.signature&&<p className="form-error" role="alert">{t(error)}</p>}
-  <div className="mold-actions">
-   <button type="button" className="btn primary" disabled={busy} onClick={confirm}>{busy?<Loader2 className="spin" size={16}/>:<Send size={16}/>}{say(...MOLD_SIGNATURE_TEXT.confirm)}</button>
+  <div className="mold-actions mold-sign-actions">
+   <button type="button" className="btn primary" disabled={busy||!ready} onClick={confirm}>{busy?<Loader2 className="spin" size={16}/>:<Send size={16}/>}{say(...MOLD_SIGNATURE_TEXT.confirm)}</button>
    <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
-  </div>
   </div>
   </>}
  </section>;
