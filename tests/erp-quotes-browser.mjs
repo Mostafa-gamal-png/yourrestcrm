@@ -56,6 +56,8 @@ try {
   }
   const shot = async (page, label) => { await page.waitForTimeout(250); await page.screenshot({path: path.join(screenshots, label + '.png')}); };
   const button = (page, english = false) => page.getByRole('button', {name: english ? 'Import quotations from ERP' : 'استيراد عروض الأسعار من ERP', exact: true});
+  // The import sits in the targets hub's «عروض الأسعار» tab (2026-11-11).
+  const toQuotesTab = async (page, english = false) => { await page.getByRole('tab', {name: english ? 'Quotations' : 'عروض الأسعار'}).click(); };
   const dialogOf = page => page.locator('.erp-quotes-import');
   const posted = page => page.waitForResponse(response => response.url().endsWith('/api/erp-quotes') && response.request().method() === 'POST');
   const tiles = dialog => dialog.locator('.erp-quotes-counts>div').evaluateAll(nodes => nodes.map(node => [node.querySelector('span').textContent.trim(), node.querySelector('strong').textContent.trim()]));
@@ -65,6 +67,7 @@ try {
 
   // ---- 1. The administrator on the targets page, Arabic, computer.
   const admin = await open('owner');
+  await toQuotesTab(admin);
   await button(admin).waitFor();
   await shot(admin, '01-targets-page-button-desktop-ar');
   await button(admin).click();
@@ -123,6 +126,7 @@ try {
 
   // ---- 3. The supervisor on a 360 px phone: the same file again, nothing to import, nothing scrolls sideways.
   const phone = await open('sup', {viewport: PHONE});
+  await toQuotesTab(phone);
   await button(phone).waitFor();
   ok(await noSideways(phone), 'the targets page fits a 360 px phone');
   await shot(phone, '08-targets-page-button-phone-ar');
@@ -155,6 +159,7 @@ try {
   // ---- 4. English: computer and phone.
   for (const [viewport, label] of [[DESKTOP, 'desktop'], [PHONE, 'phone']]) {
     const page = await open('owner', {viewport, english: true});
+    await toQuotesTab(page, true);
     await button(page, true).waitFor();
     await button(page, true).click();
     const d = dialogOf(page);
