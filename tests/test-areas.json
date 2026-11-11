@@ -12,32 +12,11 @@
   },
   "shared": {
     "about": "Files most pages or routes import (transitively, through lib/crm-server.ts on the server and app/crm-app.tsx in the page), the boot path of every built-release test, the build, the test harness used by most tests and the dependency set. Any change here runs everything.",
-    "globs": [
-      "app/crm-app.tsx", "app/page.tsx", "app/layout.tsx", "app/globals.css", "app/map-workspace.css", "app/rep-mobile-shell.css", "app/touch-comfort.css",
-      "app/mobile-navigation.tsx", "app/mobile-navigation.css", "app/offline-entry.tsx", "app/offline-status.tsx", "app/offline-status.css",
-      "app/email-login.tsx", "app/email-session.tsx", "app/login/**", "app/application-auth.ts", "app/chatgpt-auth.ts", "app/api/auth/**", "app/api/crm/**",
-      "app/language-switch.tsx", "app/voice-field.tsx", "app/upload-status.tsx", "app/upload-status.css",
-      "lib/crm.ts", "lib/crm-server.ts", "lib/crm-context-records.ts", "lib/permissions.ts", "lib/permissions-server.ts", "lib/access.ts", "lib/regions.ts", "lib/request-body.ts", "lib/auth-environment.ts", "lib/email-auth.ts",
-      "lib/member-email.ts", "lib/customer-fields.ts", "lib/customer-location.ts", "lib/kingdom.ts", "lib/kingdom-border.ts", "lib/decimal-money.ts",
-      "lib/customer-identity.ts", "lib/customer-identity-store.ts", "lib/customer-service.ts", "lib/customer-visits.ts", "lib/visits.ts", "lib/working-hours.ts", "lib/omit.ts",
-      "lib/native-tracking.ts", "lib/i18n.ts", "lib/client-submit.ts", "lib/utils.ts", "lib/native-speech.ts",
-      "lib/offline-store.ts", "lib/offline-submit.ts", "lib/offline-auth.ts", "lib/same-snapshot.ts", "lib/record-index.ts",
-      "components/**", "hooks/**", "db/**", "drizzle/**", "drizzle.config.ts",
-      "portable/app.cjs", "portable/upgrade.mjs", "portable/initialize.mjs", "portable/runtime.mjs", "portable/storage.mjs", "portable/local-mail.mjs", "portable/passenger-client.mjs",
-      "public/offline.html", "public/theme-bootstrap.js",
-      "scripts/build-independent.mjs", "scripts/build-offline-shell.mjs", "scripts/check.mjs", "scripts/gates.mjs", "scripts/lib/built-app.mjs", "scripts/lib/native-bridge.mjs", "scripts/lib/test-areas.mjs",
-      "tests/check-manifest.json", "tests/test-areas.json",
-      "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc", "next.config.ts", "vite.config.ts", "tsconfig.json", "postcss.config.mjs", "vendor/**"
-    ]
+    "globs": ["app/crm-app.tsx", "app/page.tsx", "app/layout.tsx", "app/globals.css", "app/map-workspace.css", "app/rep-mobile-shell.css", "app/touch-comfort.css", "app/mobile-navigation.tsx", "app/mobile-navigation.css", "app/offline-entry.tsx", "app/offline-status.tsx", "app/offline-status.css", "app/email-login.tsx", "app/email-session.tsx", "app/login/**", "app/application-auth.ts", "app/chatgpt-auth.ts", "app/api/auth/**", "app/api/crm/**", "app/language-switch.tsx", "app/voice-field.tsx", "app/upload-status.tsx", "app/upload-status.css", "lib/crm.ts", "lib/crm-server.ts", "lib/crm-context-records.ts", "lib/permissions.ts", "lib/permissions-server.ts", "lib/access.ts", "lib/regions.ts", "lib/request-body.ts", "lib/auth-environment.ts", "lib/email-auth.ts", "lib/member-email.ts", "lib/customer-fields.ts", "lib/customer-location.ts", "lib/kingdom.ts", "lib/kingdom-border.ts", "lib/decimal-money.ts", "lib/customer-identity.ts", "lib/customer-identity-store.ts", "lib/customer-service.ts", "lib/customer-visits.ts", "lib/visits.ts", "lib/working-hours.ts", "lib/omit.ts", "lib/native-tracking.ts", "lib/i18n.ts", "lib/client-submit.ts", "lib/utils.ts", "lib/native-speech.ts", "lib/offline-store.ts", "lib/offline-submit.ts", "lib/offline-auth.ts", "lib/same-snapshot.ts", "lib/record-index.ts", "components/**", "hooks/**", "db/**", "drizzle/**", "drizzle.config.ts", "portable/app.cjs", "portable/upgrade.mjs", "portable/initialize.mjs", "portable/runtime.mjs", "portable/storage.mjs", "portable/local-mail.mjs", "portable/passenger-client.mjs", "public/offline.html", "public/theme-bootstrap.js", "scripts/build-independent.mjs", "scripts/build-offline-shell.mjs", "scripts/check.mjs", "scripts/gates.mjs", "scripts/lib/built-app.mjs", "scripts/lib/native-bridge.mjs", "scripts/lib/test-areas.mjs", "tests/check-manifest.json", "tests/test-areas.json", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc", "next.config.ts", "vite.config.ts", "tsconfig.json", "postcss.config.mjs", "vendor/**"]
   },
   "defaultGateOnly": {
     "about": "Covered by the default gate alone (it always runs): documentation, the Android project (its own gate), release requests, packaging helpers the rehearsal checks, lint configuration, type declarations, modules no page or route imports, and the default gate's own tests (a changed release-build or browser test still runs itself, and one an area names runs that area).",
-    "globs": [
-      "docs/**", "README.md", "tests/CHECKS.md", ".github/**", "mobile/**", "deploy/**", "migration/**", "eslint.config.mjs", ".env.example", ".gitignore", "components.json",
-      "cloudflare-env.d.ts", "next-env.d.ts", ".next/types/**", "settings.example.cjs", "Yourrest-CRM-Revised-Source-20261010.zip",
-      "lib/connector-context.ts", "lib/connector-contract.mts", "lib/connector-errors.mts", "lib/connector-preview.d.ts", "lib/connectors.ts",
-      "scripts/lib/voice-field-stub.mjs", "scripts/demo-local.mjs", "tests/**"
-    ]
+    "globs": ["docs/**", "README.md", "tests/CHECKS.md", ".github/**", "mobile/**", "deploy/**", "migration/**", "eslint.config.mjs", ".env.example", ".gitignore", "components.json", "cloudflare-env.d.ts", "next-env.d.ts", ".next/types/**", "settings.example.cjs", "Yourrest-CRM-Revised-Source-20261010.zip", "lib/connector-context.ts", "lib/connector-contract.mts", "lib/connector-errors.mts", "lib/connector-preview.d.ts", "lib/connectors.ts", "scripts/lib/voice-field-stub.mjs", "scripts/demo-local.mjs", "tests/**"]
   },
   "areas": {
     "mold-requests": {
@@ -58,7 +37,7 @@
     "erp": {
       "about": "«استيراد من ERP» of customers, the ERP sales workbook import and the ERP quotations import (POST /api/erp-customers, /api/sales/import, /api/erp-quotes).",
       "sources": ["app/erp-customers-import.tsx", "app/erp-customers-import.css", "app/erp-sales-import.tsx", "app/erp-sales-import.css", "app/api/erp-customers/**", "app/api/sales/import/**", "lib/erp-customers.ts", "lib/erp-customers-shared.ts", "lib/erp-customers-server.ts", "lib/erp-sales.ts", "lib/erp-sales-server.ts", "lib/erp-quotes.ts", "lib/erp-quotes-server.ts", "app/erp-quotes-import.tsx", "app/erp-quotes-import.css", "app/api/erp-quotes/**", "scripts/lib/erp-quotes-fixture.mjs", "lib/invoice-reference.ts", "docs/ERP-*", "tests/erp-*.mjs"],
-      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-clear-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/erp-quotes-http.mjs", "tests/erp-quotes-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs"]
+      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-clear-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/erp-quotes-http.mjs", "tests/erp-quotes-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs", "tests/erp-collections-http.mjs"]
     },
     "customer-service": {
       "about": "Customer service: requests reaching sales (service queue), assistance (support), complaints, the tracking board, the monthly reports and the evaluation. The panels import one another (service-tracking, service-queue, support-panel, complaints-panel), so the domain runs together.",
@@ -107,8 +86,8 @@
     },
     "targets-sales": {
       "about": "Sales, targets, KPIs and their evidence (the Targets page, «أهدافي», the gauge, /api/sales, /api/targets, /api/kpis, /api/kpi-evidence).",
-      "sources": ["app/sales-workspace.tsx", "app/targets-workspace.tsx", "app/targets-performance-summary.tsx", "app/targets-performance-summary.css", "app/targets-performance.css", "app/my-targets.tsx", "app/my-targets.css", "app/target-gauge.tsx", "app/target-gauge.css", "app/kpi-performance.tsx", "app/kpi-evidence-editor.tsx", "app/kpi-evidence-editor.css", "app/api/sales/route.ts", "app/api/targets/**", "app/api/kpis/**", "app/api/kpi-evidence/**", "lib/sales.ts", "lib/targets.ts", "lib/targets-server.ts", "lib/targets-performance-summary.ts", "lib/targets-export.ts", "lib/targets-history.ts", "lib/own-targets.ts", "lib/own-targets-server.ts", "lib/kpis.ts", "lib/kpis-server.ts", "lib/kpi-evidence.ts", "lib/kpi-evidence-server.ts", "lib/kpi-history-server.ts", "tests/targets-*.mjs", "tests/sales-*.mjs", "tests/kpi-*.mjs", "tests/ui-refresh*.mjs"],
-      "tests": ["tests/targets-attainment-http.mjs", "tests/targets-audit-browser.mjs", "tests/targets-decisions-http.mjs", "tests/targets-decisions-browser.mjs", "tests/sales-date-boundaries.mjs", "tests/kpi-evidence-browser.mjs", "tests/ui-refresh-browser.mjs", "tests/app-browser-workflows.mjs", "tests/erp-sales-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs"]
+      "sources": ["app/sales-workspace.tsx", "app/targets-workspace.tsx", "app/targets-performance-summary.tsx", "app/targets-performance-summary.css", "app/targets-performance.css", "app/my-targets.tsx", "app/my-targets.css", "app/target-gauge.tsx", "app/target-gauge.css", "app/kpi-performance.tsx", "app/kpi-evidence-editor.tsx", "app/kpi-evidence-editor.css", "app/api/sales/route.ts", "app/api/targets/**", "app/api/kpis/**", "app/api/kpi-evidence/**", "lib/sales.ts", "lib/targets.ts", "lib/targets-server.ts", "lib/targets-performance-summary.ts", "lib/targets-export.ts", "lib/targets-history.ts", "lib/own-targets.ts", "lib/own-targets-server.ts", "lib/kpis.ts", "lib/kpis-server.ts", "lib/kpi-evidence.ts", "lib/kpi-evidence-server.ts", "lib/kpi-history-server.ts", "tests/targets-*.mjs", "tests/sales-*.mjs", "tests/kpi-*.mjs", "tests/ui-refresh*.mjs", "app/targets-overview.tsx", "app/targets-hub.css", "app/kpi-evidence-panel.tsx", "app/erp-collections-import.tsx", "app/erp-collections-import.css", "lib/targets-overview.ts", "lib/targets-hub.ts", "lib/erp-collections.ts", "lib/erp-collections-server.ts", "tests/erp-collections*.mjs"],
+      "tests": ["tests/targets-attainment-http.mjs", "tests/targets-audit-browser.mjs", "tests/targets-decisions-http.mjs", "tests/targets-decisions-browser.mjs", "tests/sales-date-boundaries.mjs", "tests/kpi-evidence-browser.mjs", "tests/ui-refresh-browser.mjs", "tests/app-browser-workflows.mjs", "tests/erp-sales-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/targets-hub-browser.mjs", "tests/erp-collections-http.mjs"]
     },
     "competitors": {
       "about": "Competitors: the workspace, the competitor fields of a visit and the attachments (/api/visit-files).",
@@ -164,18 +143,75 @@
   },
   "typicalSeconds": {
     "about": "Serial seconds measured on this 4-CPU machine (2026-11-05); the pool starts the longest first. The latest output/gates/*/summary.json overrides these.",
-    "tests/mold-requests-browser.mjs": 199, "tests/mold-requests-http.mjs": 175, "tests/mold-sign-link-http.mjs": 60, "tests/mold-sign-document-http.mjs": 40, "tests/mold-sign-link-browser.mjs": 70, "tests/mold-nov10-http.mjs": 30, "tests/mold-nov10-browser.mjs": 50, "tests/mold-pdf-view-browser.mjs": 45, "tests/sign-page-bidi-browser.mjs": 5, "tests/mobile-comfort-browser.mjs": 129, "tests/service-queue-browser.mjs": 122,
-    "tests/support-browser.mjs": 116, "tests/mold-customers-http.mjs": 100, "tests/complaints-http.mjs": 87, "tests/complaint-report-http.mjs": 76,
-    "tests/app-browser-workflows.mjs": 73, "tests/service-kpi-browser.mjs": 73, "tests/support-http.mjs": 73, "tests/production-load.mjs": 69,
-    "tests/offline-browser.mjs": 68, "tests/mold-design-files-browser.mjs": 64, "tests/complaints-browser.mjs": 62, "tests/service-kpi-http.mjs": 62,
-    "tests/service-queue-http.mjs": 57, "tests/device-status-http.mjs": 56, "tests/service-report-http.mjs": 51, "tests/dictation-browser.mjs": 50,
-    "tests/visit-place-browser.mjs": 48, "tests/server-authorization.mjs": 47, "tests/ui-refresh-browser.mjs": 47, "tests/mold-design-files-http.mjs": 44,
-    "tests/perf-budget-browser.mjs": 44, "tests/location-picker-browser.mjs": 42, "tests/visit-files-http.mjs": 37, "tests/build-notice-browser.mjs": 35,
-    "tests/targets-attainment-http.mjs": 35, "tests/targets-audit-browser.mjs": 60, "tests/targets-decisions-http.mjs": 25, "tests/targets-decisions-browser.mjs": 50, "tests/competitors-browser.mjs": 33, "tests/competitor-intelligence-browser.mjs": 30, "tests/visit-place-http.mjs": 30,
-    "tests/machines-browser.mjs": 28, "tests/tracking-gate-browser.mjs": 141, "tests/pwa-browser.mjs": 24, "tests/erp-customers-browser.mjs": 23, "tests/kpi-evidence-browser.mjs": 22,
-    "tests/namecheap-http.mjs": 22, "tests/customer-edit-browser.mjs": 21, "tests/customer-kind-http.mjs": 21, "tests/customer-kind-browser.mjs": 22, "tests/erp-customers-http.mjs": 21, "tests/open-cached-browser.mjs": 20,
-    "tests/member-regions-browser.mjs": 19, "tests/permissions-http.mjs": 25, "tests/permissions-browser.mjs": 45, "tests/supervisor-reviews-http.mjs": 31, "tests/supervisor-reviews-browser.mjs": 40, "tests/admin-delete-browser.mjs": 17, "tests/daily-report-browser.mjs": 11, "tests/sales-date-boundaries.mjs": 6,
-    "tests/app-update-browser.mjs": 3, "tests/offline-outbox-browser.mjs": 3, "tests/app-update-release.mjs": 1, "tests/erp-sales-browser.mjs": 30, "tests/erp-quotes-http.mjs": 25, "tests/erp-quotes-browser.mjs": 45,
-    "default-gate": 300
+    "tests/mold-requests-browser.mjs": 199,
+    "tests/mold-requests-http.mjs": 175,
+    "tests/mold-sign-link-http.mjs": 60,
+    "tests/mold-sign-document-http.mjs": 40,
+    "tests/mold-sign-link-browser.mjs": 70,
+    "tests/mold-nov10-http.mjs": 30,
+    "tests/mold-nov10-browser.mjs": 50,
+    "tests/mold-pdf-view-browser.mjs": 45,
+    "tests/sign-page-bidi-browser.mjs": 5,
+    "tests/mobile-comfort-browser.mjs": 129,
+    "tests/service-queue-browser.mjs": 122,
+    "tests/support-browser.mjs": 116,
+    "tests/mold-customers-http.mjs": 100,
+    "tests/complaints-http.mjs": 87,
+    "tests/complaint-report-http.mjs": 76,
+    "tests/app-browser-workflows.mjs": 73,
+    "tests/service-kpi-browser.mjs": 73,
+    "tests/support-http.mjs": 73,
+    "tests/production-load.mjs": 69,
+    "tests/offline-browser.mjs": 68,
+    "tests/mold-design-files-browser.mjs": 64,
+    "tests/complaints-browser.mjs": 62,
+    "tests/service-kpi-http.mjs": 62,
+    "tests/service-queue-http.mjs": 57,
+    "tests/device-status-http.mjs": 56,
+    "tests/service-report-http.mjs": 51,
+    "tests/dictation-browser.mjs": 50,
+    "tests/visit-place-browser.mjs": 48,
+    "tests/server-authorization.mjs": 47,
+    "tests/ui-refresh-browser.mjs": 47,
+    "tests/mold-design-files-http.mjs": 44,
+    "tests/perf-budget-browser.mjs": 44,
+    "tests/location-picker-browser.mjs": 42,
+    "tests/visit-files-http.mjs": 37,
+    "tests/build-notice-browser.mjs": 35,
+    "tests/targets-attainment-http.mjs": 35,
+    "tests/targets-audit-browser.mjs": 60,
+    "tests/targets-decisions-http.mjs": 25,
+    "tests/targets-decisions-browser.mjs": 50,
+    "tests/competitors-browser.mjs": 33,
+    "tests/competitor-intelligence-browser.mjs": 30,
+    "tests/visit-place-http.mjs": 30,
+    "tests/machines-browser.mjs": 28,
+    "tests/tracking-gate-browser.mjs": 141,
+    "tests/pwa-browser.mjs": 24,
+    "tests/erp-customers-browser.mjs": 23,
+    "tests/kpi-evidence-browser.mjs": 22,
+    "tests/namecheap-http.mjs": 22,
+    "tests/customer-edit-browser.mjs": 21,
+    "tests/customer-kind-http.mjs": 21,
+    "tests/customer-kind-browser.mjs": 22,
+    "tests/erp-customers-http.mjs": 21,
+    "tests/open-cached-browser.mjs": 20,
+    "tests/member-regions-browser.mjs": 19,
+    "tests/permissions-http.mjs": 25,
+    "tests/permissions-browser.mjs": 45,
+    "tests/supervisor-reviews-http.mjs": 31,
+    "tests/supervisor-reviews-browser.mjs": 40,
+    "tests/admin-delete-browser.mjs": 17,
+    "tests/daily-report-browser.mjs": 11,
+    "tests/sales-date-boundaries.mjs": 6,
+    "tests/app-update-browser.mjs": 3,
+    "tests/offline-outbox-browser.mjs": 3,
+    "tests/app-update-release.mjs": 1,
+    "tests/erp-sales-browser.mjs": 30,
+    "tests/erp-quotes-http.mjs": 25,
+    "tests/erp-quotes-browser.mjs": 45,
+    "default-gate": 300,
+    "tests/targets-hub-browser.mjs": 120,
+    "tests/erp-collections-http.mjs": 25
   }
 }

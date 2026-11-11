@@ -59,9 +59,9 @@ try {
     const page = await context.newPage();
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => errors.push(who + ': ' + error.message));
-    await page.goto(app.origin + '/#targets');
+    await page.goto(app.origin + '/?tab=targets#targets'); // the hub's «المستهدفات والأوزان» tab (2026-11-11)
     if (english) await page.waitForFunction(() => document.documentElement.lang === 'en');
-    if (monthValue !== month) await page.locator('.sales-toolbar input[type=month]').fill(monthValue);
+    if (monthValue !== month) await page.locator('.targets-hub-month input').fill(monthValue);
     await page.locator('.targets-workspace').waitFor();
     await page.locator('.targets-workspace .panel-heading bdi', {hasText: monthValue}).first().waitFor();
     return page;

@@ -3,16 +3,16 @@
   "default": "All tests/**/*.mjs not explicitly excluded below, plus TypeScript. New .mjs tests are automatically included.",
   "serial": [
     {
+      "file": "tests/portable-local-mail.mjs",
+      "reason": "Checks that a hung mail program is killed by its 4.5 s timeout within 6 s of wall clock: a loaded machine can add the missing second. Runs alone after the parallel pool."
+    },
+    {
       "file": "tests/record-index.mjs",
       "reason": "Asserts time budgets on production-sized data (customerVisitDue under 400 ms, recordIndex under 100 ms): other tests on the same CPUs would fail it for the machine, not the code. Runs alone after the parallel pool."
     },
     {
       "file": "tests/same-snapshot.mjs",
       "reason": "Asserts a time budget (comparing 8,300 records under 400 ms): runs alone after the parallel pool for the same reason."
-    },
-    {
-      "file": "tests/portable-local-mail.mjs",
-      "reason": "Checks that a hung mail program is killed by its 4.5 s timeout within 6 s of wall clock: a loaded machine can add the missing second. Runs alone after the parallel pool."
     }
   ],
   "excluded": [
@@ -125,6 +125,11 @@
       "file": "tests/dictation-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/erp-collections-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
     },
     {
       "file": "tests/erp-customers-browser.mjs",
@@ -247,21 +252,6 @@
       "reason": "requires independent build"
     },
     {
-      "file": "tests/mold-sign-link-browser.mjs",
-      "gate": "browser",
-      "reason": "requires browser; requires independent build"
-    },
-    {
-      "file": "tests/mold-sign-document-http.mjs",
-      "gate": "release-build",
-      "reason": "requires independent build"
-    },
-    {
-      "file": "tests/mold-sign-link-http.mjs",
-      "gate": "release-build",
-      "reason": "requires independent build"
-    },
-    {
       "file": "tests/mold-nov10-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
@@ -283,6 +273,21 @@
     },
     {
       "file": "tests/mold-requests-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/mold-sign-document-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/mold-sign-link-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/mold-sign-link-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
     },
@@ -440,6 +445,11 @@
       "file": "tests/targets-decisions-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
+    },
+    {
+      "file": "tests/targets-hub-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
     },
     {
       "file": "tests/team-home-browser.mjs",

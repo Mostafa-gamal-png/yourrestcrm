@@ -1,0 +1,49 @@
+/* «المستهدفات والنتائج في مكان واحد» (2026-11-11): the hub card, its tabs and month, the company and branches gauges, the evidence tabs. */
+.targets-hub{display:flex;align-items:flex-start;justify-content:space-between;gap:18px 24px;flex-wrap:wrap;padding:20px 22px;margin-bottom:24px;min-width:0}
+.targets-hub-main{display:flex;flex-direction:column;gap:14px;min-width:0;flex:1 1 420px}
+.targets-hub-main h2{font-size:18px;font-weight:700;line-height:1.5}
+.targets-hub-tabs{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.targets-hub-tab{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 16px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--foreground);font-size:14px;font-weight:600;line-height:1.4;cursor:pointer}
+.targets-hub-tab:hover{background:var(--accent)}
+.targets-hub-tab:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.targets-hub-tab.is-active{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground)}
+.targets-hub-tab svg{flex-shrink:0}
+.targets-hub-month{flex:0 0 220px;min-width:0}
+.targets-hub-month input{width:100%;direction:ltr}
+.targets-hub-panel{min-width:0}
+.targets-hub-panel>.targets-performance-section+.targets-performance-section{margin-top:38px}
+.targets-hub-panel-heading{margin-top:4px}
+.targets-hub-panel>.targets-hub-toolbar{margin-top:-4px}
+.targets-overview{margin-bottom:26px;min-width:0;overflow:hidden}
+.targets-overview-heading{padding:16px 20px;border-bottom:1px solid var(--border)}
+.targets-overview-heading h3{font-size:17px;font-weight:700;line-height:1.5}
+.targets-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:20px;padding:22px 20px 8px}
+.targets-overview-scope{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0}
+.targets-overview-scope h4{font-size:16px;font-weight:700;line-height:1.5;text-align:center;overflow-wrap:anywhere}
+.targets-overview-source{font-size:12px;color:var(--muted-foreground);text-align:center}
+.targets-overview-details{align-self:stretch;min-width:0}
+.targets-overview-details summary{display:flex;align-items:center;justify-content:flex-start;gap:6px;min-height:40px;cursor:pointer;font-size:14px;color:var(--foreground);list-style:none}
+.targets-overview-details summary::-webkit-details-marker{display:none}
+.targets-overview-details[open] summary svg{transform:rotate(180deg)}
+.targets-overview-table{width:100%;border-collapse:collapse;font-size:13px}
+.targets-overview-table th,.targets-overview-table td{padding:6px 4px;border-bottom:1px solid var(--border);text-align:start;vertical-align:top;overflow-wrap:anywhere}
+.targets-overview-table th{color:var(--muted-foreground);font-weight:600}
+.targets-overview-table td:not(:first-child),.targets-overview-table th:not(:first-child){white-space:nowrap;width:1%}
+.targets-overview-table td small{color:var(--muted-foreground)}
+.targets-overview-note{margin:0;padding:12px 20px 18px;font-size:13px;line-height:1.9;color:var(--muted-foreground)}
+.kpi-evidence-panel{min-width:0}
+.kpi-evidence-panel-heading h3{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700}
+.kpi-evidence-panel-heading h3 svg{color:var(--primary);flex-shrink:0}
+.kpi-evidence-panel-heading p{margin:4px 0 0;line-height:1.8}
+.kpi-evidence-panel-actions{display:flex;flex-wrap:wrap;gap:8px}
+.kpi-evidence-panel-table td small{display:block;color:var(--muted-foreground)}
+@media(max-width:760px){
+ .targets-hub{padding:16px;gap:14px}
+ .targets-hub-main{flex-basis:100%}
+ .targets-hub-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .targets-hub-tab{justify-content:center;padding:8px 10px;font-size:13px;text-align:center}
+ .targets-hub-month{flex:1 1 100%}
+ .targets-overview-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;padding:16px 12px 4px}
+ .kpi-evidence-panel-actions{width:100%}.kpi-evidence-panel-actions .btn{flex:1;justify-content:center}
+}
+@media print{.targets-hub{display:none}.targets-overview{break-inside:avoid}}

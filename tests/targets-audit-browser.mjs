@@ -167,6 +167,10 @@ try {
     return page;
   }
   const ready = page => page.locator('.targets-summary-card').first().waitFor();
+  // The hub of 2026-11-11: the summary and the evaluation are «نتائج الأداء», the targets table and the weights «المستهدفات والأوزان».
+  const hubTab = async (page, label) => { await page.locator('.targets-hub-tabs [role=tab]', {hasText: label}).click(); await page.waitForFunction(text => document.querySelector('.targets-hub-tabs [aria-selected=true]')?.textContent?.trim() === text, label); };
+  const targetsTab = async page => { await hubTab(page, (await page.evaluate(() => document.documentElement.lang)) === 'en' ? 'Targets & weights' : 'المستهدفات والأوزان'); await page.locator('.targets-workspace').waitFor(); };
+  const resultsTab = async page => { await hubTab(page, (await page.evaluate(() => document.documentElement.lang)) === 'en' ? 'Performance results' : 'نتائج الأداء'); await ready(page); };
   const shot = async (page, label) => { await page.waitForTimeout(250); await page.screenshot({path: path.join(screenshots, label + '.png'), fullPage: true}); };
   const noSideways = async (page, label) => check(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, label + ': no sideways scrolling');
   const card = (page, name) => page.locator('.targets-summary-card').filter({has: page.locator('h3', {hasText: new RegExp('^' + name + '$')})});
@@ -185,6 +189,7 @@ try {
   await noSideways(sm, 'manager desktop');
   await shot(sm, 'targets-sm-desktop-ar');
   // Exports against the screen.
+  await targetsTab(sm);
   const targetsCsv = await download(sm, 'تصدير كل المستهدفات');
   check(targetsCsv[0], ['الشهر', 'المندوب / الفرع', 'نوع المستهدف', 'الصنف / المؤشر', 'الكمية / الوزن', 'ساري من'], 'targets CSV headers');
   check(targetsCsv.some(row => /^(branch:|company$)/.test(row[1] || '')), false, 'the targets CSV names the branch and the company weights, never their ids');
@@ -192,11 +197,13 @@ try {
   check(targetsCsv.filter(row => row[1] === 'كل المناديب').map(row => row[4]), ['40', '20', '10', '10', '10', '5', '5', '0'], 'the weights rows');
   check(targetsCsv.filter(row => row[1] === 'مندوب ثاني' && row[2] === 'مستهدفات العملاء والزيارات').map(row => [row[4], row[5]]), [['10', 'المستهدفات الافتراضية'], ['5', 'المستهدفات الافتراضية'], ['320', 'المستهدفات الافتراضية']], 'the default activity targets the table shows are in the file');
   check(targetsCsv.filter(row => row[1] === 'مدير المبيعات' && row[2] === 'مستهدفات الأصناف').map(row => row[4]).slice(0, 2), ['55', '17'], 'the manager computed from the team');
+  await resultsTab(sm);
   const kpiCsv = await download(sm, 'تصدير التقييم');
   const overall = kpiCsv.find(row => row[1] === 'مندوب أول' && row[2] === 'درجة التقييم الكلية');
   check(overall?.slice(3), ['87', '65.33', '56.83', 'الوزن الذي تم تقييمه: 87 / 87%'], 'the evaluation CSV ends each person with the overall line the page shows');
   check(kpiCsv.find(row => row[1] === 'مندوب أول' && row[2] === 'التحصيل')?.slice(3, 6), ['20', '80', '16'], 'an indicator row');
   // The branch: its target and what is left to distribute (rep1 20 + rep2 10 + rep3 20 = 50 of 60; 8 + 4 + 0 = 12 of 12).
+  await targetsTab(sm);
   await sm.locator('.sales-toolbar').getByRole('combobox', {name: 'الفرع'}).click();
   await sm.getByRole('option', {name: 'الرئيسي', exact: true}).click();
   const difference = sm.locator('.quantity-targets-table tbody tr').locator('td:last-child');
@@ -204,12 +211,14 @@ try {
   check((await difference.allInnerTexts()).slice(0, 3).map(text => text.trim()), ['10 غير موزع', 'موزع بالكامل', 'موزع بالكامل'], 'the branch distribution');
   await shot(sm, 'targets-sm-branch-desktop-ar');
   // The KPI detail of rep1.
+  await resultsTab(sm);
   await card(sm, 'مندوب أول').getByRole('button', {name: 'عرض التفاصيل'}).click();
   await sm.locator('.kpi-person-heading').getByText('مندوب أول').waitFor();
   check((await sm.locator('.kpi-overview .panel strong').allInnerTexts()).map(text => text.trim()), ['65.33 / 100', '56.83', '87 / 87%'], 'the KPI detail: score, points and weight');
   // A future month: editing rep1 carries this month's values, and this month keeps them.
-  await sm.locator('.sales-toolbar input[type=month]').fill(next);
+  await sm.locator('.targets-hub-month input').fill(next);
   await sm.locator('.targets-summary-future').first().waitFor();
+  await targetsTab(sm);
   await sm.locator('.quantity-targets-table thead th').filter({hasText: 'مندوب أول'}).getByRole('button', {name: 'تعديل', exact: true}).click();
   const dialog = sm.getByRole('dialog');
   check(await dialog.locator('input').first().inputValue(), '20', 'the editor opens with the values carried from this month');
@@ -234,15 +243,18 @@ try {
     const page = await open(who, {viewport});
     await ready(page);
     await noSideways(page, who + ' ' + label);
-    // The edit buttons (the table's «تعديل», the phone cards' «تعديل الأصناف» …), not «سجل التعديلات».
-    const edits = await page.locator('.targets-workspace').getByRole('button', {name: /^تعديل/}).count();
-    if (who === 'sup') {
-      check([edits, await page.getByRole('button', {name: 'أوزان التقييم'}).count(), await page.getByRole('button', {name: 'تصدير كل المستهدفات'}).count()], [0, 0, 1], 'the supervisor reads and exports, and edits nothing');
-      check((await page.locator('.targets-summary-card h3').allInnerTexts()).sort(), ['المشرف أحمد', 'مندوب أول', 'مندوب ثاني'].sort(), 'the supervisor sees their own team only');
-    } else ok(edits > 0, who + ' edits targets');
+    if (who === 'sup') check((await page.locator('.targets-summary-card h3').allInnerTexts()).sort(), ['المشرف أحمد', 'مندوب أول', 'مندوب ثاني'].sort(), 'the supervisor sees their own team only');
     // The administrator has no target and no sale this month: no card, no column, no row of theirs (decision 4 of 2026-11-10).
     check(await page.locator('.targets-summary-card h3', {hasText: /^مدير النظام$/}).count(), 0, who + ' ' + label + ': the administrator who does not sell is not listed');
     await shot(page, 'targets-' + who + '-' + label + '-ar');
+    await targetsTab(page);
+    await noSideways(page, who + ' ' + label + ' targets tab');
+    // The edit buttons (the table's «تعديل», the phone cards' «تعديل الأصناف» …), not «سجل التعديلات».
+    const edits = await page.locator('.targets-workspace').getByRole('button', {name: /^تعديل/}).count();
+    if (who === 'sup') check([edits, await page.getByRole('button', {name: 'أوزان التقييم'}).count(), await page.getByRole('button', {name: 'تصدير كل المستهدفات'}).count()], [0, 0, 1], 'the supervisor reads and exports, and edits nothing');
+    else ok(edits > 0, who + ' edits targets');
+    check(await page.locator('.targets-workspace', {hasText: /مدير النظام/}).count(), 0, who + ' ' + label + ': nor in the targets tab');
+    await shot(page, 'targets-' + who + '-' + label + '-targets-ar');
     await page.close();
   }
   // The representative, from the Android app.
@@ -263,6 +275,10 @@ try {
   const leftover = arabicIn(await english.locator('.targets-performance-workspace').innerText()).filter(line => !line.split(/[·،,\t]| - /).map(part => part.trim()).filter(Boolean).every(part => names.has(part) || /^[\x00-\x7F]*$/.test(part) || [...names].some(name => part.endsWith(name) && /^[\x00-\x7F]*$/.test(part.slice(0, -name.length)))));
   check(leftover, [], 'English: no Arabic left but people\'s and branches\' names');
   await shot(english, 'targets-sm-desktop-en');
+  await targetsTab(english);
+  const leftoverTargets = arabicIn(await english.locator('.targets-performance-workspace').innerText()).filter(line => !line.split(/[·،,\t]| - /).map(part => part.trim()).filter(Boolean).every(part => names.has(part) || /^[\x00-\x7F]*$/.test(part) || [...names].some(name => part.endsWith(name) && /^[\x00-\x7F]*$/.test(part.slice(0, -name.length)))));
+  check(leftoverTargets, [], 'English, the targets tab: no Arabic left but people\'s and branches\' names');
+  await shot(english, 'targets-sm-targets-desktop-en');
   await english.close();
   // Customer service has no page: the address opens their home, and the menu has no such item.
   const service = await open('cs');
