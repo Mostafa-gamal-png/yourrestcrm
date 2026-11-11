@@ -7,7 +7,7 @@
 // link or have the customer sign on the device now. The card says the request waits for the customer's signature, when the link was made
 // and until when it opens, or that it expired.
 import React,{useCallback,useMemo,useState,useSyncExternalStore} from 'react';
-import {Copy,Link2,Loader2,MessageCircle,PenLine,TriangleAlert,X} from 'lucide-react';
+import {Copy,Hourglass,Link2,Loader2,MessageCircle,PenLine,TriangleAlert,X} from 'lucide-react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
@@ -15,7 +15,7 @@ import {whatsappUrl,COMPANY_NAME,COMPANY_NAME_EN} from '@/lib/whatsapp';
 import type {Row} from '@/lib/crm';
 import {MOLD_SIGN_LINK_TEXT,moldNotSignedText,type MoldRequestView} from '@/lib/mold-requests';
 import {MoldSigningStep,type SigningResult} from './mold-signature';
-import {viewerFilesFromRequest} from '@/lib/mold-document-view';
+import {viewerFilesFromRequest,viewerPagesText} from '@/lib/mold-document-view';
 
 type Say=(ar:string,en:string)=>string;
 export type SignLinkMade={url:string;expiresAt:string};
@@ -65,8 +65,13 @@ export function SignLinkLine({view,say}:{view:MoldRequestView;say:Say}){
 export function MoldSigningNotes({view,say}:{view:MoldRequestView;say:Say}){
  const signing=view.signing;
  if(!signing?.stamped)return null;
+ const document=signing.document;
  return <div className="mold-signing-notes" role="status">
   {signing.via==='link'&&<p><Link2 size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.viaLink)}</p>}
+  {/* The ONE signed document (2026-11-11): made, waiting for the files the customer saw, or not made (and what was made instead). */}
+  {document?.state==='made'&&<p data-document="made"><PenLine size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.documentMade)}{document.pages?<> · <b>{viewerPagesText(document.pages,say)}</b></>:null}</p>}
+  {document?.state==='waiting'&&<p data-document="waiting"><Hourglass size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.documentWaiting)} {(document.missing||[]).map((name,index)=><bdi key={index}>{index?'، ':''}{name}</bdi>)}</span></p>}
+  {document?.state==='fallback'&&<p className="mold-signing-skipped" data-document="fallback" data-reason={document.reason}><TriangleAlert size={14} aria-hidden="true"/><span>{say(...(document.reason==='too_large'?MOLD_SIGN_LINK_TEXT.documentTooLarge:document.reason==='too_many_files'?MOLD_SIGN_LINK_TEXT.documentRefused:MOLD_SIGN_LINK_TEXT.documentMismatch))}</span></p>}
   {!!signing.copies&&<p><PenLine size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.copies)}: <b>{signing.copies}</b></p>}
   {signing.skipped.map((item,index)=><p key={'s'+index} className="mold-signing-skipped"><TriangleAlert size={14} aria-hidden="true"/><span>{moldNotSignedText(item.name,item.reason,say)}</span></p>)}
   {!!signing.after.length&&<p className="mold-signing-after"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.after)} {signing.after.map((name,index)=><bdi key={index}>{index?'، ':''}{name}</bdi>)}</span></p>}
@@ -98,7 +103,7 @@ function useLinkAction(onView:(view:MoldRequestView)=>void){
 
 /** The sheet's panel while the request waits for the customer's signature: the link's state, its address once made here (copy, WhatsApp),
  *  a new link, stopping it, or the customer's signature on the device now. customers: the CRM's customers the page holds (the mobile). */
-export function MoldSignLinkPanel({view,customers,summary,onView,say}:{view:MoldRequestView;customers:Row[];summary:[string,React.ReactNode][];onView:(view:MoldRequestView)=>void;say:Say}){
+export function MoldSignLinkPanel({view,customers,summary,onView,say}:{view:MoldRequestView;customers:Row[];summary:[string,string][];onView:(view:MoldRequestView)=>void;say:Say}){
  const signing=view.signing,fresh=useSignLink(view.id),action=useLinkAction(onView),[copied,setCopied]=useState(false),[signingNow,setSigningNow]=useState(false);
  const sign=useLinkAction(next=>{onView(next);if(!next.signing?.awaits)setSigningNow(false);});
  // What the customer reads before signing on the device (2026-11-10): the request's own uploaded files, page after page.
@@ -137,7 +142,7 @@ export function MoldSignLinkPanel({view,customers,summary,onView,say}:{view:Mold
    <DialogContent className="mold-dialog" dir={direction()}>
     <DialogTitle>{say(...MOLD_SIGN_LINK_TEXT.device)}</DialogTitle>
     <DialogDescription>{say('العميل بيوقّع دلوقتي على الجهاز بدل اللينك؛ اللينك بيبطل والطلب بيتبعت للإنتاج.','The customer signs now on the device instead of the link; the link stops working and the request goes to production.')}</DialogDescription>
-    <MoldSigningStep summary={summary} documents={documents} busy={sign.busy} error={sign.error} fields={sign.fields} say={say} onBack={()=>setSigningNow(false)}
+    <MoldSigningStep summary={summary} title={view.customerName} documents={documents} busy={sign.busy} error={sign.error} fields={sign.fields} say={say} onBack={()=>setSigningNow(false)}
      onConfirm={(signature:SigningResult)=>void sign.run({action:'sign',id:view.id,version:view.version,signature})}/>
    </DialogContent>
   </Dialog>}

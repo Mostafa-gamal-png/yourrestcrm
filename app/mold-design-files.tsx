@@ -330,10 +330,10 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
    {listed.map(file=>{
     // A signed copy production refused for its count (2026-11-10): said plainly; the request went on without it.
     const reason=file.signedCopy&&file.state==='rejected'&&file.error?.reason==='too_many_files'?say(...MOLD_SIGN_LINK_TEXT.copyRefused):designFileDetail(file,say),mayReach=warn&&['sent','waiting'].includes(file.state);
-    return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source} data-signature={file.signature||undefined} data-signed-copy={file.signedCopy||undefined}>
+    return <li key={file.key} className="mold-design-file" data-state={file.state} data-source={file.source} data-signature={file.signature||undefined} data-signed-copy={file.signedCopy||undefined} data-signed-document={file.signedDocument||undefined}>
      <span className="mold-design-icon">{file.signature||file.signedCopy?<PenLine size={18} aria-hidden="true"/>:<KindIcon kind={file.kind}/>}</span>
      <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
-      <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.signedCopy&&<span className="mold-chip" data-kind="signed-copy">{say(...MOLD_SIGN_LINK_TEXT.copyMark)}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span className="mold-design-state">{stateText(file)}</span>}</span>
+      <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.signedCopy&&<span className="mold-chip" data-kind="signed-copy">{say(...(file.signedDocument?MOLD_SIGN_LINK_TEXT.documentMark:MOLD_SIGN_LINK_TEXT.copyMark))}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span className="mold-design-state">{stateText(file)}</span>}</span>
       {reason&&<small className="mold-design-reason">{reason}</small>}
       {errors[file.key]&&<small className="mold-design-reason" role="alert">{errors[file.key]}</small>}</div>
      <div className="mold-design-actions">
@@ -394,7 +394,7 @@ export function MoldPendingDesignFiles({files,say,note='',category='design'}:{fi
   <ul className="mold-design-list">{files.map(file=><li key={String(file.fileId)} className="mold-design-file" data-source={file.source} data-signature={file.signature||undefined}>
    <span className="mold-design-icon">{file.signature?<PenLine size={18} aria-hidden="true"/>:<KindIcon kind={file.kind}/>}</span>
    <div className="mold-design-main"><bdi className="mold-design-name">{file.name}</bdi>
-    <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span>{say('من المندوب','From the representative')}</span>}</span>
+    <span className="mold-design-meta"><span dir="ltr">{designSize(file.size)}</span>{file.signature&&<span className="mold-chip" data-kind="signature">{say(...MOLD_SIGNATURE_TEXT.title)}</span>}{file.signed===true&&!file.signature&&<span className="mold-chip" data-kind="signed-copy">{say(...MOLD_SIGN_LINK_TEXT.copyMark)}</span>}{file.source==='production'?<span className="mold-chip" data-source="production">{say('من الإنتاج','From production')}</span>:<span>{say('من المندوب','From the representative')}</span>}</span>
     {errors[String(file.fileId)]&&<small className="mold-design-reason" role="alert">{errors[String(file.fileId)]}</small>}</div>
    {!note&&<div className="mold-design-actions"><FileLinks href={file.href} viewable={file.viewable} name={file.name} say={say} onFailure={message=>setErrors(previous=>({...previous,[String(file.fileId)]:message}))}/></div>}
   </li>)}</ul>

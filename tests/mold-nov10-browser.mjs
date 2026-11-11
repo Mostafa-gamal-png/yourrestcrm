@@ -119,7 +119,7 @@ try {
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   const step = dialog.locator('.mold-signing');
   await step.waitFor();
-  const summary = await step.innerText();
+  const summary = await step.locator('.mold-signing-summary').innerText(); // on the document's signature page (2026-11-11)
   ok(summary.includes('آجل') && summary.includes('دفعة مقدمة واستكمال باقي المبلغ بعد الترحيل'), 'the customer signs the terms with the rest');
   await noOverflow(rep, 'the signing step at 360 px');
   await shot(rep, '02-rep-signing-summary-terms-360-ar');
@@ -197,7 +197,7 @@ try {
   await shot(rep, '08b-rep-correction-save-360-ar');
   await save.click();
   await edit.locator('.mold-signing').waitFor();
-  ok((await edit.locator('.mold-signing').innerText()).includes('دفعة مقدمة واستكمال باقي المبلغ بعد الترحيل'), 'a change of what the customer signed: signed again');
+  ok((await edit.locator('.mold-signing .mold-signing-summary').innerText()).includes('دفعة مقدمة واستكمال باقي المبلغ بعد الترحيل'), 'a change of what the customer signed: signed again');
   await signRequest(rep, {signer: 'م. خالد العتيبي', input: 'touch'});
   await edit.waitFor({state: 'detached'});
   await until(() => mock.row(requestId).quantity === 3 && typeof mock.row(requestId).returned?.correctedAt === 'string', 'production takes the correction');

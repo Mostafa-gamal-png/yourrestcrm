@@ -1006,7 +1006,7 @@ try {
     check((await as('sup')('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'create', customerId: 's1', specs, payment: 'cash'}})).status, 400, 'the supervisor too');
     check([await rows(), callsOf('requests').length - sendsBefore], [0, 0], 'nothing saved, nothing sent');
     // the JSON route takes a signature within its cap, not a body over it
-    check((await ask('rep', {signature: {signer: 'م. خالد', png: 'A'.repeat(910_000)}})).status, 413, 'a body over the route\'s 910 000 bytes (2026-11-10: the block too): 413');
+    check((await ask('rep', {signature: {signer: 'م. خالد', png: 'A'.repeat(2_330_000)}})).status, 413, 'a body over the route\'s 2 330 000 bytes (2026-11-11: the signature page too): 413');
 
     // (b) with it: one save (request and file), kept until its design file (2026-11-08), then the request sent, then the PNG as a design
     // file without category, then the design file

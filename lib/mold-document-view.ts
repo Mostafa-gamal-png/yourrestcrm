@@ -2,6 +2,8 @@
 // وخانة فى الاخر العميل بيوقع داخلها»): the rules of the viewer (app/mold-document-viewer.tsx), pure so they are tested without a browser.
 // - Which files: the request's own quotation, PO and design files (not the customer's signature, not a signed copy, not one deleted or
 //   refused for good), the quotation's first, then the PO's, then the design's, each in the order it was attached.
+// - Since 2026-11-11 (one document: lib/mold-signed-document.ts) the files are drawn as one document's pages, one counter for all, a
+//   caption under each page naming its file, and the signature page last.
 // - How large a page is drawn: the viewer's width × the screen's density (at most 2), twice that when «تكبير» is pressed, and never more
 //   than MOLD_VIEWER_MAX_PIXELS pixels nor MOLD_VIEWER_MAX_SIDE a side (a phone's memory: a page is a canvas of width × height × 4 bytes).
 import type {MoldDesignFileView,MoldDesignKind,MoldFileCategory} from './mold-requests';
@@ -30,7 +32,7 @@ export const MOLD_VIEWER_LABELS:Record<MoldFileCategory,[string,string]>={quote:
 export const viewerLabel=(category:MoldFileCategory,say:Say)=>say(...MOLD_VIEWER_LABELS[category]);
 export const viewerPageText=(page:number,pages:number,say:Say)=>say('صفحة '+page+' من '+pages,'Page '+page+' of '+pages);
 export const MOLD_VIEWER_TEXT={
- lead:['راجع عرض السعر والـ PO والتصميم تحت، والتوقيع في آخرهم.','Review the quotation, the PO and the design below; the signature is at their end.'] as [string,string],
+ lead:['راجع المستند صفحة صفحة: عرض السعر أو الـ PO، وبعدين التصميم، والتوقيع في آخر صفحة.','Review the document page by page: the quotation or PO, then the design; the signature is on the last page.'] as [string,string],
  failed:['ما قدرناش نعرض الملف ده','We could not show this file'] as [string,string],
  failedNote:['التوقيع ممكن برضه؛ الملف هيتبعت للإنتاج زي ما هو.','You can still sign; the file goes to production as it is.'] as [string,string],
  pageFailed:['ما قدرناش نعرض الصفحة دي','We could not show this page'] as [string,string],
@@ -39,7 +41,9 @@ export const MOLD_VIEWER_TEXT={
  zoomIn:['تكبير','Zoom in'] as [string,string],zoomOut:['تصغير','Zoom out'] as [string,string],
  open:['فتح','Open'] as [string,string],download:['تنزيل','Download'] as [string,string],
  none:['مفيش ملفات في الطلب.','The request has no files.'] as [string,string],
- documents:['ملفات الطلب','The request\'s files'] as [string,string],
+ documents:['مستند الطلب','The request\'s document'] as [string,string],
+ /** The short title above the document: «طلب تصنيع قالب — <customer>». */
+ title:['طلب تصنيع قالب','Mold manufacturing request'] as [string,string],
 };
 /** A file that is neither a PDF nor a picture (a drawing, a model, an archive): named, never drawn. */
 export const viewerOtherText=(name:string,say:Say)=>say('ملف '+name+' (مش PDF) — هيتبعت للإنتاج زي ما هو','File '+name+' (not a PDF) — it goes to production as it is');

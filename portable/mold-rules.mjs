@@ -587,6 +587,65 @@ export function moldSignedCopyName(name) {
   return base + tail;
 }
 
+// ---- One signed document (the owner, 2026-11-11: «التوقيع يكون داخل pdf ... عرض السعر او po وبعدين التصميم وفى اخره خانة للتوقيع»)
+// The customer reads the request's documents as ONE document (the quotation's pages, the PO's, the design's, each picture a page) whose
+// last page is the signature page («إقرار وتوقيع العميل»); the signing browser composes that page as a PNG (the canvas shapes the Arabic)
+// and the CRM builds one PDF of every page in that order with the signature page at its end, «طلب القالب - موقّع.pdf», one more file of
+// the first document's category for production (production's side does not change: its name rule, a PDF, 25 MiB, one place).
+/** The signed document's name, the same for every request. */
+export const MOLD_SIGNED_DOCUMENT_NAME = 'طلب القالب' + MOLD_SIGNED_SUFFIX + '.pdf';
+/** The signature page as the browser composes it: a whole PNG of an A4 sheet (height / width 297/210, within 1%), 1000 to 1800 pixels
+ *  wide, at most 1 MiB. */
+export const MOLD_SIGNATURE_PAGE_MAX_BYTES = 1024 * 1024;
+export const MOLD_SIGNATURE_PAGE_BASE64_MAX = Math.ceil(MOLD_SIGNATURE_PAGE_MAX_BYTES / 3) * 4;
+export const MOLD_SIGNATURE_PAGE_WIDTH = Object.freeze([1000, 1800]), MOLD_SIGNATURE_PAGE_RATIO = 297 / 210;
+/** The documents a signed document may list (10 design, 5 quotation and 5 PO files: the CRM's own) and its pages, the signature's
+ *  excluded. */
+export const MOLD_SIGNED_DOCUMENT_PARTS_MAX = 20, MOLD_SIGNED_DOCUMENT_PAGES_MAX = 2000;
+/** The signed document's category as the page saw it: the first document's of all it named (in it, or named only: a quotation's PDF that
+ *  does not open still makes it a quotation's file); one of the three, else null (absent: worked out from the parts alone). */
+export const moldSignedDocumentCategory = value => MOLD_FILE_CATEGORIES.includes(value) ? value : null;
+/** The signature page's bytes from the base64 the form sends; null when it is not base64 or is too long. */
+export const moldSignaturePageBytes = value => base64Bytes(value, MOLD_SIGNATURE_PAGE_BASE64_MAX);
+/**
+ * The signature page before the CRM keeps it: a whole PNG (moldPngWhole) within its limits, shaped as an A4 sheet.
+ * @param {Uint8Array|null} bytes
+ * @returns {{ok: true, width: number, height: number} | {ok: false, reason: 'missing'|'too_large'|'not_png'|'size'}}
+ */
+export function moldSignaturePageCheck(bytes) {
+  if (!(bytes instanceof Uint8Array) || !bytes.length) return {ok: false, reason: 'missing'};
+  if (bytes.length > MOLD_SIGNATURE_PAGE_MAX_BYTES) return {ok: false, reason: 'too_large'};
+  const size = moldImageSize(bytes);
+  if (!size || size.format !== 'png' || !moldPngWhole(bytes)) return {ok: false, reason: 'not_png'};
+  const [minW, maxW] = MOLD_SIGNATURE_PAGE_WIDTH;
+  if (size.width < minW || size.width > maxW || Math.abs(size.height / size.width - MOLD_SIGNATURE_PAGE_RATIO) > MOLD_SIGNATURE_PAGE_RATIO * 0.01) return {ok: false, reason: 'size'};
+  return {ok: true, width: size.width, height: size.height};
+}
+/**
+ * The documents the signed document is made of, as the signing page listed them, in their order: each {sha256, category, kind, name,
+ * pages} (a picture is one page; a PDF from 1 page). Every one is one of the request's files the CRM holds, found by its SHA-256 and
+ * category; the server builds from exactly these and refuses a count that is not the file's. [] for none (a request whose files are all
+ * named only); null when it is not such a list.
+ * @param {unknown} value
+ * @returns {{sha256: string, category: 'design'|'quote'|'po', kind: 'pdf'|'image', name: string, pages: number}[] | null}
+ */
+export function moldSignedDocumentParts(value) {
+  if (!Array.isArray(value) || value.length > MOLD_SIGNED_DOCUMENT_PARTS_MAX) return null;
+  const out = [];
+  let pages = 0;
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const {sha256, category, kind, name} = item, count = item.pages;
+    if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(sha256) || !MOLD_FILE_CATEGORIES.includes(category) || (kind !== 'pdf' && kind !== 'image')) return null;
+    if (typeof name !== 'string' || !name.trim() || length(name) > MOLD_DESIGN_NAME_MAX || CONTROL.test(name)) return null;
+    if (!isWhole(count) || count < 1 || (kind === 'image' && count !== 1)) return null;
+    pages += count;
+    if (pages > MOLD_SIGNED_DOCUMENT_PAGES_MAX) return null;
+    out.push({sha256: sha256.toLowerCase(), category, kind, name, pages: count});
+  }
+  return out;
+}
+
 /** The type a design file is served with: a PDF or one of the four image types as they are, anything else as plain bytes (an SVG or a
  *  drawing is never rendered by the browser). */
 export function moldDesignContentType(value) {
@@ -613,13 +672,18 @@ export function moldContentDisposition(name, inline = false) {
  * @param {Uint8Array} bytes
  * @returns {Uint8Array}
  */
-export function moldDesignFileBody({crmRequestId, crmFileId, name, category = 'design'}, bytes) {
+/**
+ * Production's schema 19 (yourrest-products#52): a design file may be marked a signed copy ("signed": true in the body's line; absent is
+ * false; anything but a boolean is refused). The CRM sends it only for a signed copy or the signed document, and only once it has seen
+ * the key on a file object of production's (moldSignedFlagAnswered); without signed the line reads exactly as before.
+ */
+export function moldDesignFileBody({crmRequestId, crmFileId, name, category = 'design', signed = false}, bytes) {
   if (!MOLD_ID.test(crmRequestId || '')) throw new Error('crmRequestId');
   if (!MOLD_ID.test(crmFileId || '')) throw new Error('crmFileId');
   if (moldDesignName(name)?.name !== name) throw new Error('name');
   if (!MOLD_FILE_CATEGORIES.includes(category ?? 'design')) throw new Error('category');
   if (!(bytes instanceof Uint8Array)) throw new Error('file');
-  const line = new TextEncoder().encode(JSON.stringify(category && category !== 'design' ? {crmRequestId, crmFileId, name, category} : {crmRequestId, crmFileId, name}) + '\n');
+  const line = new TextEncoder().encode(JSON.stringify({...(category && category !== 'design' ? {crmRequestId, crmFileId, name, category} : {crmRequestId, crmFileId, name}), ...(signed === true ? {signed: true} : {})}) + '\n');
   if (line.length > MOLD_DESIGN_LINE_LIMIT) throw new Error('name');
   const body = new Uint8Array(line.length + bytes.length);
   body.set(line); body.set(bytes, line.length);
@@ -642,7 +706,16 @@ export function moldDesignFileEntry(value, category = 'design') {
   const name = moldDesignDisplayName(value.name);
   if (fileId === null || !name || value.source === 'crm' && !crmFileId) return null;
   return {fileId, crmFileId, name, kind: MOLD_DESIGN_KINDS.includes(value.kind) ? value.kind : 'other', size: isWhole(value.size) && value.size >= 0 ? value.size : null, source: value.source, uploadedAt: dateOrNull(value.uploadedAt),
-    category: MOLD_FILE_CATEGORIES.includes(category) ? category : 'design'};
+    category: MOLD_FILE_CATEGORIES.includes(category) ? category : 'design',
+    // Production's own mark of a signed copy (schema 19), a boolean only; an older application's file has none.
+    ...(typeof value.signed === 'boolean' ? {signed: value.signed} : {})};
+}
+/** Whether an answer read (a status object, a pending item, or a file object of design-files' answer) shows production's schema 19: a
+ *  file object carrying the boolean "signed". */
+export function moldSignedFlagAnswered(value) {
+  if (!value || typeof value !== 'object') return false;
+  if (typeof value.signed === 'boolean' && (MOLD_DESIGN_SOURCES.includes(value.source) || hasOwn(value, 'fileId'))) return true;
+  return ['designFiles', 'quoteFiles', 'poFiles'].some(key => Array.isArray(value[key]) && value[key].some(file => file && typeof file === 'object' && typeof file.signed === 'boolean'));
 }
 /** designFiles (or quoteFiles, poFiles) as received: the valid entries, each fileId once, up to 50; null when production sent none (an
  *  older application). */

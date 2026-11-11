@@ -10,7 +10,7 @@
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requirePages} from '@/lib/crm-server';
-import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView,moldSignatureOf,moldSignedCopyOf} from '@/lib/mold-requests';
+import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignMayBeRemote,moldEditable,moldRequestView,moldSignatureOf,moldSignedOutputOf} from '@/lib/mold-requests';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,moldQuotePoSupported,moldViewReasons,productsLink,sendMoldDesignFile,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
@@ -49,7 +49,7 @@ export async function POST(req:Request){try{
  if(file.deletedAt)return answer();
  const signature=moldSignatureOf(row.data);
  if(signature?.fileId===file.id)throw new CRMError(SIGNATURE_KEPT,409);
- if(signature&&moldSignedCopyOf(file.id,signature.fileId))throw new CRMError(COPY_KEPT,409);
+ if(signature&&moldSignedOutputOf(file.id,signature.fileId))throw new CRMError(COPY_KEPT,409);
  const remote=moldDesignMayBeRemote(file);
  if(remote&&!moldEditable(row))throw new CRMError(row.cancelledAt?'الطلب ملغى؛ ملفاته باقية كما هي':'اكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد حذف الملف ممكنًا',409);
  const now=new Date().toISOString(),mutation=crypto.randomUUID(),permission=accessGuard(c),gate='EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND mutation_id=?)';
