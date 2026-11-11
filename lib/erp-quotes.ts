@@ -26,7 +26,7 @@
 // discount, so the CRM's own sums (quoteTotals) give the same net; the stored subtotal/tax/total are the ERP's figures (subtotal being the
 // gross before discounts, as the CRM prints it), and when the CRM's computation differs from them by more than a halala the quote is
 // marked (`_erp.totalsDiffer`) and still shows the ERP's figures.
-import {readWorkbookSheets,ErpWorkbookError} from './erp-sales';
+import {readWorkbookSheets,ErpWorkbookError,isOfficeEmployee} from './erp-sales';
 import {schemas,quoteTotals,type Member,type Row} from './crm';
 import {customerCodeKey} from './customer-identity';
 import {lineCents} from './decimal-money';
@@ -287,7 +287,7 @@ export const erpQuoteRecordId=async(key:string)=>'erp-quote-'+(await sha256(ERP_
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The plan
 // ---------------------------------------------------------------------------------------------------------------------------------
-export type ErpQuoteStatus='new'|'update'|'unchanged'|'edited'|'refused';
+export type ErpQuoteStatus='new'|'update'|'unchanged'|'edited'|'refused'|'excluded';
 /** The words of the outcomes the screen and the report share (stored nowhere). */
 export const ERP_QUOTE_REASONS={
  edited:'عُدِّل في الـCRM، تُرك كما هو',
@@ -302,6 +302,8 @@ export const ERP_QUOTE_REASONS={
  numberTaken:'رقم العرض مستخدم لعرض سعر أُنشئ في الـCRM؛ لن يُستبدل',
  recordOutside:'العرض محفوظ لمندوب خارج نطاق فريقك؛ لن يُعدَّل',
  customerChanged:'تغيّر عميل العرض في ERP؛ لن يُنقل العرض المحفوظ إلى عميل آخر تلقائيًا',
+ /** «مبيعات مكتب» (the ERP sales import's words, lib/erp-sales-server.ts): another company's quotations, never written nor mapped. */
+ office:'مبيعات مكتب: عروض شركة أخرى مستبعدة تلقائيًا',
 } as const;
 export type ErpQuoteMarker={source:'erp';key:string;code:string;transactionId:string;no:string;customerCode:string;customerName:string;employeeCode:string;employeeName:string;dueDate:string;lineDiscount:number;documentDiscount:number;net:number;crmTotals:{subtotal:number;tax:number;total:number};totalsDiffer:boolean;validUntilAdjusted:boolean;sourceHash:string;appliedHash:string;importedAt:string;importedBy:string;importedByName:string;updatedAt:string;updatedBy:string;updatedByName:string;importId:string;fileName:string};
 export type ErpQuotePlanEntry={
@@ -319,7 +321,9 @@ export type PlanInput={
 /** The key of an ERP employee code (the ERP sales import's mapping key: spaces and marks removed; Arabic-Indic digits read as digits). */
 export const employeeKey=(value:unknown)=>latinDigits(normalizeErpQuoteText(value));
 const fieldsOf=(data:Record<string,unknown>)=>Object.fromEntries(QUOTE_FIELDS.map(field=>[field,data[field]]));
-/** Each quotation of the file: new, update, unchanged, edited in the CRM (left alone) or refused with its reason; with the record it makes. */
+/** Each quotation of the file: new, update, unchanged, edited in the CRM (left alone), excluded («مبيعات مكتب», as the ERP sales import
+ *  excludes them by the employee's name: before anything else, so it never needs a customer or a mapping) or refused with its reason; with
+ *  the record it makes. */
 export async function planErpQuotes(input:PlanInput):Promise<ErpQuotePlanEntry[]>{
  const byKey=new Map<string,Row>(),byNumber=new Map<string,Row>();
  for(const row of input.records){if(row.kind!=='quote')continue;const marker=row.data?._erp;if(marker&&typeof marker.key==='string')byKey.set(marker.key,row);else if(row.data?.number)byNumber.set(erpQuoteKey(row.data.number),row);}
@@ -329,6 +333,7 @@ export async function planErpQuotes(input:PlanInput):Promise<ErpQuotePlanEntry[]
   const entry:ErpQuotePlanEntry={key:q.key,code:q.code,rows:q.rows,date:q.date,customerCode:q.customerCode,customerName:q.customerName,employeeCode:q.employeeCode,employeeName:q.employeeName,lineCount:q.lines.length||q.rows.length,totalCents:q.totalCents,status:'refused',reason:'',recordId:existing?.id||recordId,version:existing?.version||0,customerId:'',customerLabel:'',repId:'',repName:'',branch:'',totalsDiffer:false};
   out.push(entry);
   const refuse=(reason:string)=>{entry.status='refused';entry.reason=reason;};
+  if(isOfficeEmployee(q.employeeName)){entry.status='excluded';entry.reason=ERP_QUOTE_REASONS.office;continue;}
   if(q.problem){refuse(q.problem);continue;}
   const matches=input.codes.get(customerCodeKey(q.customerCode))||[];
   if(!matches.length){refuse(ERP_QUOTE_REASONS.noCustomer);continue;}

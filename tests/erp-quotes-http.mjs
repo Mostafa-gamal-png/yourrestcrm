@@ -9,7 +9,11 @@
 // changes nothing (versions kept); a quote edited by hand through /api/crm keeps its ERP marker, representative and item codes, and the
 // next import leaves it alone; a newer export updates the same record (version, «تعديل» line, before and after in the import's line); the
 // sales manager's preview refuses a customer outside their regions; the imported quotes are in /api/crm for the sales roles (not for a
-// representative), offered by the KPI evidence for the month, and the import's mapping is the ERP sales import's.
+// representative), offered by the KPI evidence for the month, and the import's mapping is the ERP sales import's. «مبيعات مكتب»
+// quotations are excluded (never written, no mapping), and a customer code two customers carry: listed with exactly its customers to the
+// administrator (only the code to a sales manager), mapped through /api/customer-identities (403 to others, a customer that does not carry
+// it refused, the same request once, an old revision 409, an older preview 409), then imported under the chosen customer, unchanged again,
+// and the mapping changed later without moving the imported quote.
 // Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -85,7 +89,7 @@ try {
   const first = await preview('owner', report());
   eq(first.status, 200, 'preview');
   const p1 = first.json();
-  eq(p1.summary, {quotations: 6, lines: 7, newCount: 3, updateCount: 0, unchangedCount: 0, editedCount: 0, refusedCount: 3, rowProblems: 0, deletedRows: 0, totalsDiffer: 0}, 'the counts');
+  eq(p1.summary, {quotations: 6, lines: 7, newCount: 3, updateCount: 0, unchangedCount: 0, editedCount: 0, excludedCount: 0, refusedCount: 3, rowProblems: 0, deletedRows: 0, totalsDiffer: 0}, 'the counts');
   eq(Object.fromEntries(p1.quotations.map(q => [q.code, [q.status, q.reason]])), {
     'Qut-1001': ['new', 'عرض جديد؛ سيُضاف إلى عروض أسعار العميل'], 'Qut-1002': ['new', 'عرض جديد؛ سيُضاف إلى عروض أسعار العميل'],
     'Qut-1003': ['refused', 'العميل غير موجود في الـCRM بكود ERP هذا؛ أضفه أو حدّث كوده من «استيراد من ERP» في العملاء'],
@@ -173,6 +177,57 @@ try {
   eq(evidence.status, 200, 'the KPI evidence');
   const offered = evidence.json().quotes.map(o => o.reference).sort();
   ok(['Qut-1001', 'Qut-1002', 'Qut-1005'].every(number => offered.includes(number)), 'offers the imported quotes issued that month');
+
+  // 8. «مبيعات مكتب» excluded, and a code two customers carry chosen by the administrator from the import (2026-11-11).
+  const office = quotation({code: 'Qut-1007', customerCode: '999', empCode: '7003', empName: 'مبيعات مكتب', lines: lines.q1});
+  const report8 = [...newer, ...office], name8 = 'Reports_Invoices_office.xls';
+  const preview8 = (who, extra = {}) => preview(who, report8, {...choices, fileName: name8, ...extra});
+  const p8 = (await preview8('owner')).json();
+  eq([p8.summary.newCount, p8.summary.updateCount, p8.summary.unchangedCount, p8.summary.editedCount, p8.summary.excludedCount, p8.summary.refusedCount], [0, 0, 3, 1, 1, 2], 'the counts: one excluded, two refused');
+  const status8 = Object.fromEntries(p8.quotations.map(q => [q.code, [q.status, q.reason]]));
+  eq(status8['Qut-1007'], ['excluded', 'مبيعات مكتب: عروض شركة أخرى مستبعدة تلقائيًا'], '«مبيعات مكتب»: excluded with its reason (no customer, no mapping needed)');
+  ok(!p8.employees.some(e => e.employeeId === '7003'), 'an office employee is never offered for mapping');
+  eq(p8.sharedCodes.canMap, true, 'the administrator may choose the customer of a shared code');
+  eq(p8.sharedCodes.codes.map(c => [c.codeKey, c.customerCode, c.quotations, c.status, c.mappedCustomerId, c.mappingVersion]), [['201', '201', 1, 'ambiguous', '', 0]], 'the shared code, its quotations, not chosen');
+  const candidates = p8.sharedCodes.codes[0].candidates;
+  eq(candidates.map(c => [c.id, c.name, c.region, c.branch, c.version]), [['dupA', 'مصنع مكرر أ', 'الوسطى', 'فرع جدة', 1], ['dupB', 'مصنع مكرر ب', 'الوسطى', 'فرع جدة', 1]], 'exactly the customers that carry it, with region and branch');
+  ok(candidates.every(c => /^YR-C-\d{6}$/.test(c.internalCode)), 'each with its YR-C code');
+  const mgr8 = (await preview8('mgr')).json();
+  eq(mgr8.sharedCodes, {canMap: false, revision: 0, codes: [{codeKey: '201', customerCode: '201', quotations: 1, status: 'ambiguous'}]}, 'the sales manager: the code and its count, never the customers');
+  eq(mgr8.quotations.find(q => q.code === 'Qut-1007').status, 'excluded', 'excluded for the sales manager too');
+  const identity = (who, body) => session[who]('/api/customer-identities', {method: 'POST', body});
+  const mapBody = (customerId, version, extra = {}) => ({codeKey: '201', customerId, version, revision: p8.sharedCodes.revision, customerVersion: 1, requestId: crypto.randomUUID(), ...extra});
+  for (const who of ['mgr', 'sup']) eq((await identity(who, mapBody('dupA', 0))).status, 403, who + ' cannot map a code');
+  const notCandidate = await identity('owner', mapBody('c101', 0));
+  eq([notCandidate.status, notCandidate.json().error], [400, 'اختر مصنعًا مرتبطًا بهذا الكود في المصدر؛ لا يمكن تخمين صاحب الفاتورة.'], 'a customer that does not carry the code is refused');
+  const mappings = () => app.db.prepare('SELECT code_key,customer_id,version FROM crm_customer_code_mappings').all().then(r => r.results.map(m => [m.code_key, m.customer_id, m.version]));
+  eq(await mappings(), [], 'nothing saved');
+  const mapA = mapBody('dupA', 0), savedA = await identity('owner', mapA);
+  eq([savedA.status, savedA.json().ok], [200, true], 'the administrator maps 201 to dupA');
+  eq((await identity('owner', mapA)).json().alreadySaved, true, 'the same request again: saved once');
+  eq(await mappings(), [['201', 'dupA', 1]], 'one mapping');
+  eq(await count("SELECT COUNT(*) n FROM crm_audit WHERE action='ربط كود عميل ERP'"), 1, 'one «ربط كود عميل ERP» audit line');
+  eq((await identity('owner', mapBody('dupB', 0))).status, 409, 'an old revision: refused (409)');
+  const stale8 = await post('owner', {action: 'commit', fileName: name8, base64: base64(report8), ...choices, previewToken: p8.previewToken, requestId: crypto.randomUUID()});
+  eq(stale8.status, 409, 'a preview made before the mapping cannot be committed');
+  const p9 = (await preview8('owner')).json();
+  const q1004 = p9.quotations.find(q => q.code === 'Qut-1004');
+  eq([q1004.status, q1004.customerName], ['new', 'مصنع مكرر أ'], 'the mapped code\'s quotation becomes new, under the chosen customer');
+  eq(p9.sharedCodes.codes.map(c => [c.status, c.mappedCustomerId, c.mappingVersion]), [['mapped', 'dupA', 1]], 'the saved choice is shown, to be changed from the same place');
+  const commit9 = await post('owner', {action: 'commit', fileName: name8, base64: base64(report8), ...choices, previewToken: p9.previewToken, requestId: crypto.randomUUID()});
+  const r9 = commit9.json();
+  eq([commit9.status, r9.addedCount, r9.updatedCount, r9.unchangedCount, r9.editedCount, r9.excludedCount, r9.refusedCount], [200, 1, 0, 3, 1, 1, 1], 'imported: the refused and the excluded quotation do not keep the others');
+  const q1004Record = await record('Qut-1004');
+  eq([q1004Record.parent_id, q1004Record.assigned_to], ['dupA', 'rep'], 'under the chosen customer');
+  ok(!(await record('Qut-1007')), 'the office quotation is never written');
+  const p10 = (await preview8('owner')).json();
+  eq([p10.summary.newCount, p10.summary.unchangedCount, p10.summary.excludedCount, p10.quotations.find(q => q.code === 'Qut-1004').status], [0, 4, 1, 'unchanged'], 'the same file again: unchanged');
+  const mapB = await identity('owner', {...mapBody('dupB', 1), revision: p10.sharedCodes.revision});
+  eq(mapB.status, 200, 'the mapping changed later from the same place');
+  const p11 = (await preview8('owner')).json();
+  eq(p11.quotations.find(q => q.code === 'Qut-1004').reason, 'تغيّر عميل العرض في ERP؛ لن يُنقل العرض المحفوظ إلى عميل آخر تلقائيًا', 'the imported quote is not moved to the other customer');
+  eq(p11.sharedCodes.codes.map(c => [c.mappedCustomerId, c.mappingVersion]), [['dupB', 2]], 'the new choice');
+  eq(await count("SELECT COUNT(*) n FROM crm_audit WHERE action='ربط كود عميل ERP'"), 2, 'each change audited');
   console.log(`erp-quotes-http: ${checks} checks passed`);
 } catch (error) {
   console.error(app.log().slice(-3000));
