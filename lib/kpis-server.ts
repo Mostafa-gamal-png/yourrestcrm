@@ -4,7 +4,12 @@ import {regionScope} from './regions';
 import {context,CRMError,accessGuard} from './crm-server';
 import {today} from './crm';
 import {type Sale,type SaleRow,monthSchema,salesReadMemberIds,salesReportingRecords} from './sales';
-import {calculateKpis,prepareKpiRecords,kpiPeriod,kpiInputSchema,type KpiAssessment,type KpiData,type KpiPerformance} from './kpis';
+import {calculateKpis,prepareKpiRecords,kpiPeriod,kpiInputSchema,quoteConversions,type KpiAssessment,type KpiData,type KpiPerformance,type KpiQuoteCandidate,type KpiQuoteInvoice} from './kpis';
+import {storedQuotationRefs} from './quotation-refs';
+import {recordAuthorId} from './access';
+import {visitCustomer} from './customer-visits';
+import {regionScopeSql} from './regions';
+import type {Row} from './crm';
 import {readErpSales} from './erp-sales-server';
 import {readKpiEvidenceRows,readSalesRevision} from './kpi-evidence-server';
 import {evidenceScopeKey,type KpiEvidenceContext} from './kpi-evidence';
@@ -20,10 +25,22 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
   c.db.prepare("SELECT * FROM crm_sales WHERE date>=? AND date<=? AND status='confirmed'").bind(period.previousFirst,period.cutoff).all<SaleRow>(),
   readErpSales(c,month),readErpSales(c,period.previousFirst.slice(0,7)),readKpiEvidenceRows(c,month)
  ]);
- const sales:Sale[]=[...saleRows.results.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(r=>({...JSON.parse(r.data),id:r.id,repId:r.rep_id,customerId:r.customer_id,totalCents:r.total_cents,status:r.status,date:r.date})),...currentErp,...previousErp].filter(s=>s.date>=period.previousFirst&&s.date<=period.cutoff);
+ // «معدل تحويل عرض السعر إلى مبيعات»: the confirmed ERP sales invoices (not returns, a positive total) whose «الوصف» names quotations,
+ // from the first day of the month on (a quotation of the month is converted by an invoice on or after its own day, in any later month),
+ // within the reader's regions and sales team, as every sale the KPI reads.
+ const erpScope=regionScopeSql('region_scope',c.me);
+ const quoteInvoiceRows=(await c.db.prepare("SELECT id,rep_id,reference,date,json_extract(data,'$.quotationRefs') AS refs FROM crm_erp_sales WHERE document_type='sale' AND total_cents>0 AND date>=? AND json_array_length(data,'$.quotationRefs')>0 AND "+erpScope.sql).bind(period.first,...erpScope.args).all<{id:string;rep_id:string;reference:string;date:string;refs:string}>()).results;
+ const quoteInvoices:KpiQuoteInvoice[]=quoteInvoiceRows.filter(row=>allowed.has(row.rep_id)).map(row=>{let refs:string[]=[];try{refs=storedQuotationRefs(JSON.parse(row.refs));}catch{/* unreadable: none */}return{id:row.id,reference:row.reference,repId:row.rep_id,date:row.date,quotationRefs:refs};});
+ const sales:Sale[]=[...saleRows.results.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(r=>({...JSON.parse(r.data),id:r.id,repId:r.rep_id,customerId:r.customer_id,reference:r.reference,totalCents:r.total_cents,status:r.status,date:r.date})),...currentErp,...previousErp].filter(s=>s.date>=period.previousFirst&&s.date<=period.cutoff);
  const evidenceByMember=new Map(evidenceRows.map(row=>[row.memberId,row]));
  const history=evidenceRows.some(row=>row.input.history.complete)?await readKpiPurchaseHistory(c,month):{facts:[],unresolved:new Set<string>()};
  const records=salesReportingRecords(c.visible,c.members),prepared=prepareKpiRecords(records,month);
+ // The month's quotations: every quote record the reader sees (sent, accepted or rejected: issued; a draft is not), of a customer of the
+ // reader's regions, dated in the month up to its cutoff, attributed to its author (the representative an ERP quotation is mapped to),
+ // unless «بيانات المؤشرات» assigned it to a representative explicitly: then to that one.
+ const assignedTo=new Map<string,string>();for(const row of evidenceRows)for(const link of row.input.quotations)assignedTo.set(link.quoteId,row.memberId);
+ const monthQuotes=records.filter(row=>row.kind==='quote'&&isKpiIssuedQuote(row,month)).flatMap(row=>{const customer=visitCustomer(row,c.all);if(!customer||!c.regionCustomerIds.has(customer.id))return[];const repId=assignedTo.get(row.id)||recordAuthorId(row,c.members)||'';return repId?[{row,repId,customerName:String(customer.data.name||'')}]:[];});
+ const quoteNumber=(row:Row)=>String(row.kind==='quote'?row.data.number||'':row.data.visitNumber||'');
  const people=performance.filter(p=>allowed.has(p.member.id)).map(p=>{
   const r=assessmentRows.results.find(row=>row.member_id===p.member.id&&c.regionalMembers.some(m=>m.id===p.member.id));
   const assessment:KpiAssessment|null=r?{memberId:r.member_id,month:r.month,input:kpiInputSchema.parse(JSON.parse(r.input)),version:r.version,updatedBy:r.author||'',updatedAt:r.updated_at}:null;
@@ -35,16 +52,23 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
   const historyComplete=!!current&&identitiesKnown&&sources.every(source=>source.row!.input.history.complete);
   const collectionsKnown=scoped&&sources.every(source=>source.row!.input.collection.dueCents!==null&&source.row!.input.collection.collectedCents!==null);
   const collection=collectionsKnown?sources.reduce((sum,source)=>({dueCents:sum.dueCents+source.row!.input.collection.dueCents!,collectedCents:sum.collectedCents+source.row!.input.collection.collectedCents!}),{dueCents:0,collectedCents:0}):null;
-  const selectedQuotes=sources.flatMap(source=>(source.row?.input.quotations||[]).map(link=>({...link,repId:source.id})));
-  const quotationsValid=selectedQuotes.every(link=>{
-   const quote=c.regionalRecords.find(row=>row.id===link.quoteId);
-   return !!quote&&isKpiIssuedQuote(quote,month)&&(!link.saleId||isValidKpiConversion(c,link.quoteId,link.saleId,link.repId,month,sales));
-  })&&new Set(selectedQuotes.map(link=>link.quoteId)).size===selectedQuotes.length;
+  // The quotations: those of the team's representatives, and those «بيانات المؤشرات» assigned to them (a quote activity included), each
+  // with the sale a manager linked it to when that link still holds (a confirmed sale of the same representative and customer, on or after
+  // the quote, within the period). The manual list is no longer a confirmation the score waits for: it only adds.
+  const candidates=new Map<string,KpiQuoteCandidate>();
+  for(const quote of monthQuotes)if(idSet.has(quote.repId))candidates.set(quote.row.id,{quoteId:quote.row.id,number:quoteNumber(quote.row),date:String(quote.row.data.date),repId:quote.repId,customerName:quote.customerName,manualInvoices:[]});
+  for(const source of sources)for(const link of source.row?.input.quotations||[]){
+   const quote=c.regionalRecords.find(row=>row.id===link.quoteId),customer=quote&&visitCustomer(quote,c.all);
+   if(!quote||!customer||!isKpiIssuedQuote(quote,month))continue;
+   const candidate=candidates.get(quote.id)||{quoteId:quote.id,number:quoteNumber(quote),date:String(quote.data.date),repId:source.id,customerName:String(customer.data.name||''),manualInvoices:[]};
+   const sale=link.saleId&&isValidKpiConversion(c,quote.id,link.saleId,source.id,month,sales)?sales.find(s=>s.id===link.saleId):undefined;
+   if(sale)candidate.manualInvoices.push(String(sale.reference||sale.id));
+   candidates.set(quote.id,candidate);
+  }
   const recoveryTarget=targets&&ids.length?ids.reduce((sum,id)=>sum+(effectiveSet<ActivityTargets>(targets,'activity',id)?.data||defaultActivityTargets).recoveredCustomers,0):p.activityTargetsKnown===false?null:p.activityTargets.recoveredCustomers;
   const evidence:KpiEvidenceContext={historyComplete,collection:collection&&Number.isSafeInteger(collection.dueCents)&&Number.isSafeInteger(collection.collectedCents)?collection:null,
    purchases:history.facts.filter(fact=>idSet.has(fact.repId)).map(({customerKey,date,netCents,hasSale})=>({customerKey,date,netCents,hasSale})),
-   quotationsComplete:!!current&&quotationsValid&&sources.every(source=>source.row!.input.quotationsComplete),
-   quotations:selectedQuotes.map(link=>({quoteId:link.quoteId,converted:!!link.saleId&&isValidKpiConversion(c,link.quoteId,link.saleId,link.repId,month,sales)})),recoveryTarget,
+   quotationsKnown:ids.length>0,quotations:quoteConversions([...candidates.values()],quoteInvoices),recoveryTarget,
    invalidHistoryReason:!identitiesKnown?'توجد فواتير بدون رقم عميل أو أرقام عملاء مكررة بين مصادر المبيعات؛ راجع هوية العملاء أولًا.':!current?'أكّد اكتمال سجل المبيعات للفترة بعد آخر تحديث للبيانات.':'أكّد اكتمال سجل المبيعات لثلاثة أشهر سابقة وفترة التقييم.'};
   return calculateKpis(p,month,records,sales,assessment,prepared,evidence);
  });

@@ -7,6 +7,7 @@ import {regionScope,regionScopeAdmits,regionScopeSql} from './regions';
 import {today,type Member} from './crm';
 import {parseErpWorkbook,ErpWorkbookError,type ErpRow} from './erp-sales';
 import {omit} from './omit';
+import {quotationRefs,storedQuotationRefs,MAX_QUOTATION_REFS} from './quotation-refs';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const namespace='yourrest-industries';
@@ -21,7 +22,14 @@ const inputSchema=z.object({action:z.enum(['preview','commit']),fileName:z.strin
 type Input=z.infer<typeof inputSchema>;
 export type ErpDocumentPreview={key:string;reference:string;date:string;documentType:'sale'|'return';customerName:string;employeeId:string;employeeName:string;repId:string;repName:string;lineCount:number;totalCents:number;status:'new'|'duplicate'|'conflict'|'excluded'|'unassigned'|'unmapped'|'out_of_scope';reason:string};
 export type ErpSaleRow={id:string;rep_id:string;branch:string;date:string;reference:string;document_type:'sale'|'return';customer_code:string;customer_name:string;data:string;total_cents:number;created_by:string;created_at:string;region_scope:string};
-type PreparedDocument={preview:ErpDocumentPreview;rows:ErpRow[];items:SaleItem[];contentHash:string;mappedHash:string;rep?:Member};
+// quotationRefs: the quotations the document's «الوصف» names (null: the report has no description column, so nothing is read or written
+// about them). backfill: an identical document already saved whose stored references differ: the import writes the file's references
+// into its data (lib/quotation-refs.ts), which is neither a new document nor a change of its content.
+type PreparedDocument={preview:ErpDocumentPreview;rows:ErpRow[];items:SaleItem[];contentHash:string;mappedHash:string;rep?:Member;quotationRefs:string[]|null;backfill?:{prior:string}};
+/** The references saved on a document (none when never read). */
+function savedRefs(text:string){if(!text)return [];try{return storedQuotationRefs(JSON.parse(text));}catch{return [];}}
+/** The references of a document's lines, each once, in line order. */
+function documentQuotationRefs(rows:ErpRow[]){const refs:string[]=[];for(const row of rows)for(const ref of quotationRefs(row.description))if(!refs.includes(ref)&&refs.length<MAX_QUOTATION_REFS)refs.push(ref);return refs;}
 function missingEmployee(row:ErpRow){return !normalize(row.employeeName)||!normalize(row.employeeId);}
 function mixedDocument(rows:ErpRow[]){const first=rows[0];return rows.some(r=>r.date!==first.date||normalize(r.employeeId)!==normalize(first.employeeId)||normalize(r.employeeName)!==normalize(first.employeeName)||normalize(r.customerCode)!==normalize(first.customerCode)||normalize(r.customerName)!==normalize(first.customerName));}
 function sorted<T>(items:T[],key:(item:T)=>string){return [...items].sort((a,b)=>key(a).localeCompare(key(b),'en'));}
@@ -66,13 +74,15 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const nameRosterSnapshot=nameInferenceUsed?sorted(nameRoster,m=>m.id).map(snapshot):null;
  for(const [id,m] of categoryChanges)if(categoryIds.has(id)){if(c.me.role==='supervisor'&&categoryMap.has(id)&&categoryMap.get(id)!==m.product)throw new CRMError('تعديل ربط فئة محفوظة متاح لمدير المبيعات أو مدير النظام فقط',403);categoryMap.set(id,m.product);}
  for(const category of categoryIds)if(!categoryMap.has(category)&&salesProducts.includes(category))categoryMap.set(category,category);
- const existing=(await c.db.prepare('SELECT document_key,content_hash,mapped_hash,rep_id,region_scope FROM crm_erp_sales').all<{document_key:string;content_hash:string;mapped_hash:string;rep_id:string;region_scope:string}>()).results;const stored=new Map(existing.map(r=>[r.document_key,r]));
+ const existing=(await c.db.prepare("SELECT document_key,content_hash,mapped_hash,rep_id,region_scope,COALESCE(json_extract(data,'$.quotationRefs'),'') AS quotation_refs FROM crm_erp_sales").all<{document_key:string;content_hash:string;mapped_hash:string;rep_id:string;region_scope:string;quotation_refs:string}>()).results;const stored=new Map(existing.map(r=>[r.document_key,r]));
  const manual=(await c.db.prepare("SELECT reference,date FROM crm_sales WHERE status='confirmed'").all<{reference:string;date:string}>()).results;
  const manualKeys=new Set(manual.map(r=>JSON.stringify([r.date.slice(0,4),canonicalInvoiceReference(r.reference)])));
- const documents:PreparedDocument[]=[];
+ const documents:PreparedDocument[]=[],hasDescription=parsed.hasDescription===true;
  for(const [identity,rows] of groups){
   const first=rows[0],key=await hash(identity),repId=employeeMap.get(normalize(first.employeeId))||'',rep=allowed.get(repId),p:ErpDocumentPreview={key,reference:first.reference,date:first.date,documentType:first.documentType,customerName:first.customerName,employeeId:first.employeeId,employeeName:first.employeeName,repId,repName:rep?.name||'',lineCount:rows.length,totalCents:0,status:'new',reason:''};
-  const contentHash=await hash(JSON.stringify(rows.map(row=>JSON.stringify(omit(row,'rowNumber'))).sort()));
+  // The description stays out of the content hash: a document saved before it was read (or whose description alone changed) is the same document.
+  const contentHash=await hash(JSON.stringify(rows.map(row=>JSON.stringify(omit(row,'rowNumber','description'))).sort()));
+  const refs=hasDescription?documentQuotationRefs(rows):null;let backfill:PreparedDocument['backfill'];
   const items:SaleItem[]=[];let unmappedCategory=false;
   for(const row of rows){const product=categoryMap.get(normalize(row.category));if(!product){unmappedCategory=true;continue;}if(product==='exclude')continue;const sign=row.documentType==='return'?-1:1,quantity=Math.abs(row.quantity)*sign,totalCents=Math.abs(row.totalCents)*sign;p.totalCents+=totalCents;items.push({product,description:row.itemName,quantity,unitPrice:quantity?Math.abs(totalCents/100/quantity):Math.abs(row.unitPrice)});}
   const mappedHash=await hash(JSON.stringify({repId,items:items.map(i=>JSON.stringify(i)).sort(),totalCents:p.totalCents}));
@@ -87,18 +97,20 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   else if(unmappedCategory){p.status='unmapped';p.reason='حدد صنف المستهدف المقابل لكل فئة في الفاتورة';}
   else if(!items.length){p.status='excluded';p.reason='كل فئات هذا المستند مستبعدة من اختيارك';}
   else if(first.documentType==='sale'&&manualKeys.has(JSON.stringify([first.date.slice(0,4),canonicalInvoiceReference(first.reference)]))){p.status='conflict';p.reason='رقم الفاتورة موجود في المبيعات اليدوية في نفس السنة؛ راجع السجل قبل الاستيراد لمنع التكرار';}
-  else if(old){if(old.rep_id!==repId||!regionScopeAdmits(regionScope(c.me),old.region_scope)){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
-  documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'?undefined:rep});
+  else if(old){if(old.rep_id!==repId||!regionScopeAdmits(regionScope(c.me),old.region_scope)){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';if(refs&&JSON.stringify(savedRefs(old.quotation_refs))!==JSON.stringify(refs))backfill={prior:old.quotation_refs};}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
+  documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'?undefined:rep,quotationRefs:refs,backfill});
  }
  const summary={newCount:0,duplicateCount:0,conflictCount:0,excludedCount:0,unassignedCount:0,unassignedTotalCents:0,unmappedCount:0,outOfScopeCount:0,officeExcludedCount:0,skippedCount:0,autoMatchedCount:[...mappingSources.values()].filter(source=>source==='name').length,totalCents:0,months:[...new Set(documents.filter(d=>d.preview.status==='new'||d.preview.status==='duplicate').map(d=>d.preview.date.slice(0,7)))].sort()};
  for(const {preview:p} of documents){const field={new:'newCount',duplicate:'duplicateCount',conflict:'conflictCount',excluded:'excludedCount',unassigned:'unassignedCount',unmapped:'unmappedCount',out_of_scope:'outOfScopeCount'}[p.status] as 'newCount';summary[field]++;if(p.status==='new')summary.totalCents+=p.totalCents;if(p.status==='unassigned')summary.unassignedTotalCents+=p.totalCents;if(p.status==='excluded'&&office(p.employeeName))summary.officeExcludedCount++;}
  summary.skippedCount=summary.unmappedCount+summary.outOfScopeCount;
+ // Only a report with a description column says anything about quotations: one without it answers exactly as before.
+ const quotationSummary=hasDescription?{quotationLinkedCount:documents.filter(d=>['new','duplicate'].includes(d.preview.status)&&d.preview.documentType==='sale'&&!!d.quotationRefs?.length).length,quotationRefsBackfillCount:documents.filter(d=>d.backfill).length}:null;
  const memberSnapshot=sorted([c.me,...members.filter(m=>m.id!==c.me.id)],m=>m.id).map(snapshot);
  const snapshotHash=await hash(JSON.stringify({revision:saved.revision,members:memberSnapshot,nameRoster:nameRosterSnapshot,employees:saved.employees,categories:saved.categories}));
  const relevantEmployees=new Set(relevantRows.map(r=>JSON.stringify([normalize(r.employeeId),normalize(r.employeeName)])));
  const employees=parsed.employees.filter(e=>relevantEmployees.has(JSON.stringify([normalize(e.employeeId),normalize(e.employeeName)]))).map(employee=>{const id=normalize(employee.employeeId),repId=employeeMap.get(id)||'',visibleRep=allowed.has(repId);return {...employee,repId:visibleRep?repId:'',mappingSource:visibleRep?(mappingSources.get(id)||'unmapped'):'unmapped'};});
  const warnings=parsed.warnings.filter(warning=>warning!=='توجد بنود بدون رقم أو اسم موظف؛ يلزم مراجعة الربط قبل الاعتماد'||documents.some(d=>d.preview.status==='conflict'&&d.rows.some(missingEmployee)));
- return {documents,summary,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,categories:[...categoryIds].sort(),warnings:[...warnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
+ return {documents,summary:{...summary,...quotationSummary},quotationSummary,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,categories:[...categoryIds].sort(),warnings:[...warnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
 }
 
 /** Preview is stateless and authenticated; no uploaded bytes or sales are saved here. */
@@ -122,7 +134,8 @@ export async function importErpSales(c:Context,body:unknown){
  if(prepared.summary.skippedCount&&!input.allowSkipped)throw new CRMError('راجع المستندات غير المربوطة أو خارج الصلاحية ووافق صراحة على تخطيها',409);
  const fresh=prepared.documents.filter(d=>d.preview.status==='new');
  const now=new Date().toISOString(),id='erp-import-'+input.requestId;
- const result={ok:true,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months};
+ const backfills=prepared.documents.filter(d=>d.backfill);
+ const result={ok:true,...prepared.quotationSummary,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months};
  const guard=accessGuard(c),usedReps=new Map<string,Member>();
  const mappingDocuments=prepared.documents.filter(d=>['new','duplicate','excluded'].includes(d.preview.status)&&d.rep&&!office(d.preview.employeeName));
  for(const document of mappingDocuments)if(document.rep)usedReps.set(document.rep.id,document.rep);
@@ -148,7 +161,10 @@ export async function importErpSales(c:Context,body:unknown){
  const claim=c.db.prepare('INSERT INTO crm_erp_imports(id,actor_id,fingerprint,file_name,result,created_at) SELECT ?,?,?,?,?,? WHERE '+gate).bind(id,c.me.id,fingerprint,input.fileName,JSON.stringify(result),now,...args);
  const claimed='EXISTS(SELECT 1 FROM crm_erp_imports WHERE id=? AND actor_id=? AND fingerprint=?)',claimArgs=[id,c.me.id,fingerprint];
  const batch:D1PreparedStatement[]=[claim];
- for(const document of fresh){const p=document.preview,first=document.rows[0],member=document.rep!;const data={items:document.items,discount:0,notes:'',employeeId:first.employeeId,employeeName:first.employeeName,sourceLineCount:document.rows.length};batch.push(c.db.prepare('INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE '+claimed).bind('erp-sale-'+p.key,p.key,document.contentHash,document.mappedHash,p.reference,p.documentType,p.date,first.employeeId,member.id,member.branch,regionScope(member),first.customerCode,first.customerName,JSON.stringify(data),p.totalCents,id,c.me.id,now,...claimArgs));}
+ for(const document of fresh){const p=document.preview,first=document.rows[0],member=document.rep!;const data={items:document.items,discount:0,notes:'',employeeId:first.employeeId,employeeName:first.employeeName,sourceLineCount:document.rows.length,...(document.quotationRefs?{quotationRefs:document.quotationRefs}:{})};batch.push(c.db.prepare('INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE '+claimed).bind('erp-sale-'+p.key,p.key,document.contentHash,document.mappedHash,p.reference,p.documentType,p.date,first.employeeId,member.id,member.branch,regionScope(member),first.customerCode,first.customerName,JSON.stringify(data),p.totalCents,id,c.me.id,now,...claimArgs));}
+ // An identical saved document takes the references its description names now: only data.quotationRefs is written, only while the
+ // document and its stored references are as the preview read them. Counted once in the import's audit line, never a change of its own.
+ for(const document of backfills)batch.push(c.db.prepare("UPDATE crm_erp_sales SET data=json_set(data,'$.quotationRefs',json(?)) WHERE document_key=? AND content_hash=? AND mapped_hash=? AND COALESCE(json_extract(data,'$.quotationRefs'),'')=? AND "+claimed).bind(JSON.stringify(document.quotationRefs),document.preview.key,document.contentHash,document.mappedHash,document.backfill!.prior,...claimArgs));
  const usedEmployees=new Set(mappingDocuments.map(d=>normalize(d.preview.employeeId))),usedCategories=new Set(mappingDocuments.flatMap(d=>d.rows.map(r=>normalize(r.category))));
  for(const employeeId of usedEmployees){const repId=prepared.employeeMap.get(employeeId)!;batch.push(c.db.prepare('INSERT INTO crm_erp_employee_mappings(employee_id,rep_id,updated_by,updated_at) SELECT ?,?,?,? WHERE '+claimed+' ON CONFLICT(employee_id) DO UPDATE SET rep_id=excluded.rep_id,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(employeeId,repId,c.me.id,now,...claimArgs));}
  for(const category of usedCategories){const product=prepared.categoryMap.get(category)!;batch.push(c.db.prepare('INSERT INTO crm_erp_category_mappings(category,product,updated_by,updated_at) SELECT ?,?,?,? WHERE '+claimed+' ON CONFLICT(category) DO UPDATE SET product=excluded.product,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(category,product,c.me.id,now,...claimArgs));}

@@ -7,10 +7,15 @@ export type ErpRow = {
     itemCode: string; itemName: string; category: string; quantity: number; unit: string;
     unitPrice: number; discountCents: number; totalCents: number; vatCents: number;
     customerCode: string; customerName: string; employeeId: string; employeeName: string;
+    /** The line's «الوصف» (or «البيان» / «Description»): '' when the report has no such column or the cell is empty. The ERP writes the
+     *  quotation the invoice came from here («Qut-349»); lib/erp-sales-server.ts reads the references (lib/quotation-refs.ts). */
+    description: string;
 };
 export type ErpWorkbook = {
     rows: ErpRow[]; categories: string[];
     employees: { employeeId: string; employeeName: string }[]; warnings: string[];
+    /** The report has a description column (an older export without one is read exactly as before). */
+    hasDescription: boolean;
 };
 
 const MAX_FILE = 5 * 1024 * 1024, MAX_PART = 10 * 1024 * 1024;
@@ -254,6 +259,8 @@ const fields = {
 } as const;
 type Field = keyof typeof fields;
 const fieldNames = Object.keys(fields) as Field[];
+/** Optional: the line's description, under any of these headers (compared as the required headers are, by headerKey). */
+const descriptionHeaders = ['الوصف', 'البيان', 'Description'];
 function headerColumns(row: SheetRow): Record<Field, number> | null {
     const headers = row.cells.map(c => headerKey(c.text));
     if (!headers.includes(headerKey(fields.reference)) || !headers.includes(headerKey(fields.date))) return null;
@@ -395,6 +402,8 @@ export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
     if (!columns) fail('لم يتم العثور على عناوين تقرير فواتير ERP؛ استخدم التقرير الأصلي');
     const header = source[headerIndex].cells.map(c => headerKey(c.text));
     const currencyColumn = header.indexOf(headerKey('العملة')), exchangeColumn = header.indexOf(headerKey('التعادل'));
+    const descriptionKeys = new Set(descriptionHeaders.map(headerKey));
+    const descriptionColumns = header.flatMap((key, index) => descriptionKeys.has(key) ? [index] : []);
     const date1904 = ['1', 'true'].includes(String(workbook?.workbookPr?.['@_date1904'] || ''));
     const rows: ErpRow[] = [], warnings: string[] = [];
     for (const row of source.slice(headerIndex + 1)) {
@@ -430,6 +439,8 @@ export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
             itemCode: text('itemCode', 100), itemName, category: text('category', 200), quantity: sign * Math.abs(quantity), unit: text('unit', 100),
             unitPrice: Math.abs(unitPrice), discountCents: sign * Math.abs(discountCents), totalCents: sign * Math.abs(totalCents), vatCents: sign * Math.abs(vatCents),
             customerCode: text('customerCode', 100), customerName: text('customerName'), employeeId: text('employeeId', 100), employeeName: text('employeeName', 200),
+            // Several description columns are read together; a long note is kept to its first 2000 characters (only references are used).
+            description: descriptionColumns.map(index => normalizeErpText(row.cells[index]?.text)).filter(Boolean).join(' | ').slice(0, 2000),
         });
         if (rows.length > MAX_ROWS) fail('الحد الأقصى للتقرير 5000 بند');
     }
@@ -438,5 +449,5 @@ export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
     if (rows.some(r => !r.category)) warnings.push('توجد بنود بدون فئة؛ يلزم تحديد تصنيفها في المعاينة');
     const employees = new Map<string, { employeeId: string; employeeName: string }>();
     for (const row of rows) employees.set(JSON.stringify([row.employeeId, row.employeeName]), { employeeId: row.employeeId, employeeName: row.employeeName });
-    return { rows, categories: [...new Set(rows.map(r => r.category))], employees: [...employees.values()], warnings };
+    return { rows, categories: [...new Set(rows.map(r => r.category))], employees: [...employees.values()], warnings, hasDescription: descriptionColumns.length > 0 };
 }
