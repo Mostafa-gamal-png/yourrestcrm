@@ -11,6 +11,16 @@
 // The employee mapping is the ERP sales import's (crm_erp_employee_mappings, by the ERP employee code): a saved mapping is used as it is
 // (changed only from the sales import), an unmapped employee is matched by a unique full name or chosen here, and the choice is saved
 // with the import (the shared revision moves, as the sales import moves it).
+// «مبيعات مكتب» (the employee's name, lib/erp-sales.ts isOfficeEmployee, as the ERP sales import): another company's quotations, excluded
+// before anything else (status 'excluded', counted under «مستبعدة»): never written, never needing a customer or a mapping, never listed
+// among the employees to map. Neither they nor a refused quotation keep the others from being imported.
+// A customer code that two or more CRM customers carry (lib/customer-identity.ts customerCodeCandidates) is refused until a «ربط كود
+// عميل ERP» decides it (crm_customer_code_mappings, the same mapping the KPI invoices and the last purchase read). The preview lists those
+// codes (`sharedCodes`): to the administrator who may map identities (lib/customer-identity-server.ts isIdentityAdmin) with exactly the
+// customers that carry the code and the saved choice, which the dialog saves through POST /api/customer-identities (saveCustomerIdentity:
+// its checks, versions, audit and request id unchanged) and then previews again; to anyone else only the code and its count, never the
+// customers. The mapping is saved on its own, never with the import: it is global, and a saved one moves the import state's revision, so a
+// preview made before it cannot be committed (409).
 // The preview is stateless and signed (15 minutes); the import recomputes it and refuses (409) when anything it showed has changed; a
 // request id makes a retried import return its first answer without writing twice.
 import {env} from 'cloudflare:workers';
@@ -19,7 +29,9 @@ import {context,CRMError,accessGuard,requireSalesWorkspace,requirePages,requireC
 import {salesMemberIds} from './sales';
 import {regionScope,memberCanAccessRegion} from './regions';
 import {type Member} from './crm';
-import {uniqueCustomerCodes} from './customer-identity';
+import {uniqueCustomerCodes,customerCodeCandidates,customerCodeKey} from './customer-identity';
+import {isIdentityAdmin} from './customer-identity-server';
+import {isOfficeEmployee} from './erp-sales';
 import {readErpQuotesTable,parseErpQuotes,planErpQuotes,employeeKey,sha256,ErpQuotesError,ERP_QUOTES_MAX_BYTES,ERP_QUOTE_REASONS,type ErpQuotePlanEntry,type ErpQuotesFile} from './erp-quotes';
 
 type Context=Awaited<ReturnType<typeof context>>;
@@ -71,7 +83,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const employeeReps=new Map<string,string>(),sources=new Map<string,MappingSource>();
  for(const m of saved.employees){employeeReps.set(employeeKey(m.employeeId),m.repId);sources.set(employeeKey(m.employeeId),'saved');}
  const fileEmployees=new Map<string,Set<string>>();
- for(const q of file.quotations){const id=employeeKey(q.employeeCode);if(!id)continue;const names=fileEmployees.get(id)||new Set<string>();names.add(nameKey(q.employeeName));fileEmployees.set(id,names);}
+ for(const q of file.quotations){if(isOfficeEmployee(q.employeeName))continue;const id=employeeKey(q.employeeCode);if(!id)continue;const names=fileEmployees.get(id)||new Set<string>();names.add(nameKey(q.employeeName));fileEmployees.set(id,names);}
  const seen=new Set<string>();
  for(const choice of input.employeeMappings){
   const id=employeeKey(choice.employeeId);
@@ -97,21 +109,43 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const now=new Date().toISOString(),importId='erp-quotes-import-'+(input.requestId||'preview');
  const plan=await planErpQuotes({file,records:c.all,visibleIds:editable,codes:uniqueCustomerCodes(c.all,c.customerIdentityState?.mappings),employeeReps,eligible:allowed,customerInRegion:customer=>memberCanAccessRegion(c.me,customer.data?.region),importer:{id:c.me.id,name:c.me.name},now,importId,fileName:input.fileName});
  // A mapping chosen or matched by name is saved only for an employee whose quotations the import takes (or found already there).
- const used=new Set(plan.filter(p=>p.status!=='refused').map(p=>employeeKey(p.employeeCode)));
+ const used=new Set(plan.filter(p=>!['refused','excluded'].includes(p.status)).map(p=>employeeKey(p.employeeCode)));
  const employees=[...fileEmployees.keys()].sort((a,b)=>a.localeCompare(b,'en')).map(id=>{
-  const repId=employeeReps.get(id)||'',quotations=file.quotations.filter(q=>employeeKey(q.employeeCode)===id);
+  const repId=employeeReps.get(id)||'',quotations=file.quotations.filter(q=>!isOfficeEmployee(q.employeeName)&&employeeKey(q.employeeCode)===id);
   return {employeeId:id,employeeName:quotations[0]?.employeeName||'',quotations:quotations.length,repId:allowed.has(repId)?repId:'',savedOutside:!!repId&&!allowed.has(repId),mappingSource:(allowed.has(repId)?sources.get(id)||'unmapped':'unmapped') as MappingSource};
  });
  const missing=new Map<string,{customerCode:string;customerName:string;quotations:number}>();
  for(const p of plan)if(p.status==='refused'&&p.reason===ERP_QUOTE_REASONS.noCustomer){const k=p.customerCode;const item=missing.get(k)||{customerCode:p.customerCode,customerName:p.customerName,quotations:0};item.quotations++;missing.set(k,item);}
  const count=(status:string)=>plan.filter(p=>p.status===status).length;
- const summary={quotations:plan.length,lines:file.quotations.reduce((s,q)=>s+q.lines.length,0),newCount:count('new'),updateCount:count('update'),unchangedCount:count('unchanged'),editedCount:count('edited'),refusedCount:count('refused')+file.problems.length,rowProblems:file.problems.length,deletedRows:file.deletedRows,totalsDiffer:plan.filter(p=>p.status!=='refused'&&p.totalsDiffer).length};
+ const summary={quotations:plan.length,lines:file.quotations.reduce((s,q)=>s+q.lines.length,0),newCount:count('new'),updateCount:count('update'),unchangedCount:count('unchanged'),editedCount:count('edited'),excludedCount:count('excluded'),refusedCount:count('refused')+file.problems.length,rowProblems:file.problems.length,deletedRows:file.deletedRows,totalsDiffer:plan.filter(p=>p.status!=='refused'&&p.totalsDiffer).length};
  const reps=new Map<string,Member>();for(const p of plan)if(['new','update'].includes(p.status)){const rep=allowed.get(p.repId);if(rep)reps.set(rep.id,rep);}
  const newMappings=[...employeeReps].filter(([id])=>['selected','name'].includes(sources.get(id)||'')&&used.has(id)&&allowed.has(employeeReps.get(id)!)).map(([employeeId,repId])=>({employeeId,repId}));
  const snapshotHash=await sha256(JSON.stringify({me:snapshot(c.me),members:members.map(snapshot).sort(),nameRoster,plan:plan.map(p=>[p.key,p.status,p.recordId,p.version,p.customerId,p.repId,p.branch]),newMappings}));
- return {file,plan,summary,employees,missing:[...missing.values()],snapshotHash,saved,reps,newMappings,nameRoster};
+ return {file,plan,summary,employees,missing:[...missing.values()],sharedCodes:sharedCodes(c,file,plan),snapshotHash,saved,reps,newMappings,nameRoster};
 }
-function previewEntry(p:ErpQuotePlanEntry){return {key:p.key,code:p.code,rows:p.rows,date:p.date,customerCode:p.customerCode,customerName:p.customerLabel||p.customerName,lineCount:p.lineCount,totalCents:p.totalCents,status:p.status,reason:p.reason,employeeCode:p.employeeCode,employeeName:p.employeeName,repName:p.repName,totalsDiffer:p.totalsDiffer,recordId:['new','refused'].includes(p.status)?'':p.recordId};}
+/** The customer codes of the file that two or more CRM customers carry, with how many of its quotations name each (excluded quotations and
+ *  those the reader could not read left out): 'ambiguous' (refused until mapped) or 'mapped' (a saved mapping chose one of them). To the
+ *  administrator who may map identities: every such code, its candidates (exactly the customers that carry it) and the saved choice and
+ *  version; to anyone else only the codes still ambiguous, never a customer. */
+function sharedCodes(c:Context,file:ErpQuotesFile,plan:ErpQuotePlanEntry[]){
+ const candidates=customerCodeCandidates(c.all),admin=isIdentityAdmin(c),state=c.customerIdentityState,mappings=new Map(state.mappings.map(m=>[m.codeKey,m]));
+ const codes=new Map<string,{customerCode:string;quotations:number}>();
+ file.quotations.forEach((q,index)=>{
+  if(plan[index]?.status==='excluded'||q.problem)return;
+  const codeKey=customerCodeKey(q.customerCode);if((candidates.get(codeKey)||[]).length<2)return;
+  const item=codes.get(codeKey)||{customerCode:q.customerCode,quotations:0};item.quotations++;codes.set(codeKey,item);
+ });
+ const out=[...codes].sort(([a],[b])=>a.localeCompare(b,'en')).map(([codeKey,item])=>{
+  const rows=candidates.get(codeKey)!,mapping=mappings.get(codeKey),chosen=mapping&&rows.some(r=>r.id===mapping.customerId)?mapping.customerId:'';
+  const status:'mapped'|'ambiguous'=chosen?'mapped':'ambiguous';
+  if(!admin)return {codeKey,customerCode:item.customerCode,quotations:item.quotations,status};
+  return {codeKey,customerCode:item.customerCode,quotations:item.quotations,status,mappedCustomerId:chosen,mappingVersion:mapping?.version||0,
+   candidates:rows.map(r=>({id:r.id,name:String(r.data?.name||''),internalCode:String(r.data?.internalCode||''),region:String(r.data?.region||''),branch:String(r.branch||''),version:r.version}))
+    .sort((a,b)=>a.name.localeCompare(b.name,'ar')||a.internalCode.localeCompare(b.internalCode,'en')||a.id.localeCompare(b.id,'en'))};
+ });
+ return {canMap:admin,revision:admin?state.revision:0,codes:admin?out:out.filter(code=>code.status==='ambiguous')};
+}
+function previewEntry(p:ErpQuotePlanEntry){return {key:p.key,code:p.code,rows:p.rows,date:p.date,customerCode:p.customerCode,customerCodeKey:customerCodeKey(p.customerCode),customerName:p.customerLabel||p.customerName,lineCount:p.lineCount,totalCents:p.totalCents,status:p.status,reason:p.reason,employeeCode:p.employeeCode,employeeName:p.employeeName,repName:p.repName,totalsDiffer:p.totalsDiffer,recordId:['new','refused','excluded'].includes(p.status)?'':p.recordId};}
 const money=(value:unknown)=>new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(value)||0);
 const changeLine=(p:ErpQuotePlanEntry)=>{const before=p.before||{},after=p.data||{},items=(v:unknown)=>Array.isArray(v)?v.length:0;return `${p.code} • ${UPDATE_LABEL}: الإجمالي ${money(before.total)} ← ${money(after.total)} ر.س، البنود ${items(before.items)} ← ${items(after.items)}`;};
 
@@ -131,7 +165,7 @@ export async function importErpQuotes(c:Context,body:unknown){
  const prepared=await prepare(c,input,bytes);
  if(input.action==='preview'){
   const payload=['1',String(Date.now()+15*60_000),fingerprint,prepared.snapshotHash].join('.');
-  return {previewToken:payload+'.'+await signature(payload),quotations:prepared.plan.map(previewEntry),rowProblems:prepared.file.problems,employees:prepared.employees,missingCustomers:prepared.missing,summary:prepared.summary};
+  return {previewToken:payload+'.'+await signature(payload),quotations:prepared.plan.map(previewEntry),rowProblems:prepared.file.problems,employees:prepared.employees,missingCustomers:prepared.missing,sharedCodes:prepared.sharedCodes,summary:prepared.summary};
  }
  if(!input.requestId||!input.previewToken)throw new CRMError('اعرض الملف أولًا قبل تأكيد الاستيراد');
  const pieces=input.previewToken.split('.');
@@ -140,7 +174,7 @@ export async function importErpQuotes(c:Context,body:unknown){
  if(Number(pieces[1])<Date.now()||Number(pieces[1])>Date.now()+16*60_000||pieces[3]!==prepared.snapshotHash)throw new CRMError('انتهت المعاينة أو تغيّرت البيانات أو الصلاحيات منذ عرضها؛ اعرض الملف مرة أخرى',409);
  const fresh=prepared.plan.filter(p=>p.status==='new'),updates=prepared.plan.filter(p=>p.status==='update');
  const now=new Date().toISOString(),s=prepared.summary;
- const result={ok:true,importId:id,addedCount:fresh.length,updatedCount:updates.length,unchangedCount:s.unchangedCount,editedCount:s.editedCount,refusedCount:s.refusedCount,mappingsSaved:prepared.newMappings.length};
+ const result={ok:true,importId:id,addedCount:fresh.length,updatedCount:updates.length,unchangedCount:s.unchangedCount,editedCount:s.editedCount,excludedCount:s.excludedCount,refusedCount:s.refusedCount,mappingsSaved:prepared.newMappings.length};
  // The claim is the transaction's gate: every later statement requires it. The member and their permissions, the ERP mapping state, the
  // representatives assigned, the quotes updated (their versions) and the ids added (still absent) are as the plan read them.
  const guard=accessGuard(c);
