@@ -60,7 +60,7 @@ let h=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id}),tree=h.r
 eq(byClass(tree,'visit-sales-details')[0].props.open,false,'New visit sales extras start collapsed');
 eq(byClass(tree,'visit-context-details').every(node=>!node.props.open),true,'History and factory details no longer precede input as expanded content');
 eq(byClass(tree,'visit-selected-summary').length,0,'Selected customer is not repeated after the picker');
-const sections=byClass(tree,'visit-form-section');ok(text(sections[0]).includes('التواصل والنتيجة'));ok(text(sections[1]).includes('الخطوة الجاية'));
+const sections=byClass(tree,'visit-form-section');ok(text(sections[0]).includes('التواصل والنتيجة'));ok(text(sections[1]).includes('الخطوة التالية'));
 const footer=byClass(tree,'visit-save-bar')[0],scroll=byClass(tree,'visit-form-scroll')[0];eq(nodes(scroll,node=>node===footer).length,0,'Save is outside the single scrolling area');
 eq(button(tree,'حفظ الزيارة').props.disabled,true,'Automatic location remains required');
 named(tree,'VisitFields')[0].props.onLocationState({status:'error',error:'GPS failed'});tree=h.render();ok(text(byClass(tree,'visit-save-hint')).includes('GPS failed'),'GPS failure is visible beside Save, not hidden above the form');
@@ -124,7 +124,7 @@ for(const [file,name,actor] of [[visitFile,'CustomerVisitDialog',me],[visitFile,
 }
 // Date shortcuts call the same data update as manual input, with local-day-safe date arithmetic.
 const dateModule=load('app/visit-fields.tsx',shared);let chosen='';tree=dateModule.FollowupDateField({value:'',onChange:value=>chosen=value});button(tree,'بكرة').props.onClick();const today=library('lib/crm.ts').today(),tomorrow=new Date(today+'T12:00:00Z');tomorrow.setUTCDate(tomorrow.getUTCDate()+1);eq(chosen,tomorrow.toISOString().slice(0,10));
-language='en';tree=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id}).render();ok(text(tree).includes('Contact & outcome'));ok(text(tree).includes('Next step'));ok(text(tree).includes('Sales & products'));ok(!text(tree).includes('الخطوة الجاية'));tree=dateModule.FollowupDateField({value:'',onChange:noop});ok(button(tree,'Tomorrow'));language='ar';
+language='en';tree=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id}).render();ok(text(tree).includes('Contact & outcome'));ok(text(tree).includes('Next step'));ok(text(tree).includes('Sales & products'));ok(!text(tree).includes('الخطوة التالية'));tree=dateModule.FollowupDateField({value:'',onChange:noop});ok(button(tree,'Tomorrow'));language='ar';
 // Competitors page opens the standard form with explicit, editable prefill only.
 const competitorVisit={...ownVisit,id:'competitor-visit',data:{...ownVisit.data,hasCompetitor:true,competitorName:'شركة المثال'}};
 const seeded=harness(visitFile,'CustomerVisitDialog',{customerId:customer.id,showCompetitor:true,competitorName:'شركة المثال',records:[customer,competitorVisit]});

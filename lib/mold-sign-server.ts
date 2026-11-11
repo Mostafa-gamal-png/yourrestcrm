@@ -21,9 +21,9 @@ export const MOLD_SIGN_LINK_MS=MOLD_SIGN_LINK_DAYS*86400_000;
 export const MOLD_SIGNED_DOWNLOAD_MS=24*3600_000;
 /** The words of every refusal of a link (forged, expired, used, cancelled, changed hands): the same, saying nothing of which. Its English
  *  pair is in lib/locales/en.json. */
-export const SIGN_LINK_GONE='اللينك ده مش شغال. اطلب من المندوب لينك جديد.';
+export const SIGN_LINK_GONE='هذا الرابط لم يعد صالحًا. اطلب من المندوب رابطًا جديدًا.';
 /** The request changed after the page was opened (its data, or its files): signed again from a fresh page. */
-export const SIGN_LINK_CHANGED='الطلب اتعدّل، افتح اللينك تاني.';
+export const SIGN_LINK_CHANGED='عُدِّل الطلب؛ افتح الرابط مرة أخرى.';
 
 const hex=(bytes:ArrayBuffer|Uint8Array)=>Array.from(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes),byte=>byte.toString(16).padStart(2,'0')).join('');
 export async function sha256Hex(value:Uint8Array<ArrayBuffer>|string){return hex(await crypto.subtle.digest('SHA-256',typeof value==='string'?new TextEncoder().encode(value):value));}
@@ -113,7 +113,7 @@ export async function makeSignedCopies(db:D1Database,{requestId,signatureFileId,
     db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,deleted_at,outbox,next_attempt_at,last_error,version,category) SELECT ?,?,?,?,'pdf','application/pdf',0,'',NULL,?,?,NULL,NULL,?,1,? WHERE ${gate}`)
      .bind(id,requestId,row.memberId,name,at,at,JSON.stringify({code:MOLD_NOT_SIGNED,reason,http:0,at}),category,requestId,signatureFileId),
     db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND created_at=? AND object_key IS NULL)`)
-     .bind(crypto.randomUUID(),requestId,actor,'mold-design:signed-copy-skipped',JSON.stringify({label:'ما اتحطش توقيع العميل جوه ملف لطلب تصنيع قالب',customerName:row.data.customer.name,name:original.name,reason,...(category!=='design'?{category}:{})}),at,id,at),
+     .bind(crypto.randomUUID(),requestId,actor,'mold-design:signed-copy-skipped',JSON.stringify({label:'لم يوضع توقيع العميل داخل ملف لطلب تصنيع قالب',customerName:row.data.customer.name,name:original.name,reason,...(category!=='design'?{category}:{})}),at,id,at),
    ]);
    if(result[0].meta.changes===1)out.skipped.push({id,name:original.name,of:original.id,reason});
   };
@@ -191,7 +191,7 @@ export async function makeSignedDocument(db:D1Database,{requestId,signatureFileI
    db.prepare(`INSERT OR IGNORE INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,deleted_at,outbox,next_attempt_at,last_error,version,category) SELECT ?,?,?,?,'pdf','application/pdf',0,'',NULL,?,?,NULL,NULL,?,1,? WHERE EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND json_extract(data,'$.signature.fileId')=?)`)
     .bind(id,requestId,row.memberId,name,at,at,JSON.stringify({code:MOLD_NOT_SIGNED,reason,http:0,at}),category,requestId,signatureFileId),
    db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM crm_mold_design_files WHERE id=? AND created_at=? AND object_key IS NULL)`)
-    .bind(crypto.randomUUID(),requestId,actor,'mold-design:signed-document-skipped',JSON.stringify({label:'ما اتعملش الملف الموقّع الواحد لطلب تصنيع قالب',customerName:row.data.customer.name,name,reason,pages,...(reason!=='too_many_files'?{fallback:'signed-copies'}:{})}),at,id,at),
+    .bind(crypto.randomUUID(),requestId,actor,'mold-design:signed-document-skipped',JSON.stringify({label:'لم يُنشأ الملف الموقّع الموحّد لطلب تصنيع قالب',customerName:row.data.customer.name,name,reason,pages,...(reason!=='too_many_files'?{fallback:'signed-copies'}:{})}),at,id,at),
   ]);
   return saved[0].meta.changes===1;
  };
@@ -240,7 +240,7 @@ export async function signedDocumentRefused(db:D1Database,requestId:string,docum
  if(!row||!store||!data?.document||!signature||moldSignedDocumentId(signature.fileId)!==documentId)return [] as string[];
  const files=await loadMoldDesignFiles(db,'request_id=?',[requestId]),parts=moldSignedDocumentFiles(data.document.parts,files);
  const made=await signedCopiesInstead(db,{requestId,signatureFileId:signature.fileId,data,parts:data.document.parts,found:parts.found,actor:'النظام (رفض الإنتاج للملف الموقّع)',now,store});
- if(made.length)await db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),requestId,'النظام','mold-design:signed-document-skipped',JSON.stringify({label:'رفض الإنتاج الملف الموقّع الواحد؛ اتعملت نسخة موقّعة من كل PDF بدله',customerName:row.data.customer.name,name:MOLD_SIGNED_DOCUMENT_NAME,fallback:'signed-copies',copies:made.length}),now()).run();
+ if(made.length)await db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),requestId,'النظام','mold-design:signed-document-skipped',JSON.stringify({label:'رفض الإنتاج الملف الموقّع الموحّد؛ أُنشئت نسخة موقّعة من كل PDF بدلًا منه',customerName:row.data.customer.name,name:MOLD_SIGNED_DOCUMENT_NAME,fallback:'signed-copies',copies:made.length}),now()).run();
  return made;
 }
 /** The signed copies an old signature named that never reached production (removed in the CRM alone, as an old signature's image is when
@@ -317,12 +317,12 @@ export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILE
  const pageBytes=input.document===undefined?null:moldSignaturePageBytes(input.document?.page),pageChecked=pageBytes?moldSignaturePageCheck(pageBytes):null,parts=input.document===undefined?null:moldSignedDocumentParts(input.document?.parts);
  const documentBad=input.document!==undefined&&(!pageChecked?.ok||!parts);
  const fields:Record<string,string>={...(named?{}:{signer:MOLD_SIGNER_REQUIRED}),...(!checked.ok&&checked.field==='signature'?{signature:checked.reason==='missing'?MOLD_SIGNATURE_REQUIRED:MOLD_SIGNATURE_BAD}:{}),
-  ...(!block?.ok||documentBad?{signature:MOLD_SIGNATURE_BAD}:!blockAt?{signature:'وقت التوقيع مش مظبوط؛ افتح اللينك تاني ووقّع.'}:{})};
+  ...(!block?.ok||documentBad?{signature:MOLD_SIGNATURE_BAD}:!blockAt?{signature:'وقت التوقيع غير صحيح؛ افتح الرابط مرة أخرى ووقّع.'}:{})};
  if(Object.keys(fields).length||!checked.ok||!png||!blockBytes||!block?.ok||!blockAt)throw new SignLinkRefusal([...new Set(Object.values(fields))].join(' • ')||MOLD_SIGNATURE_BAD,400,fields);
  // The signature's image takes one of the 10 design places, as on the device (moldDesignCount).
  const places=moldDesignCount(row,files,'design',{originals:true});
- if(places.crm+places.production+1>places.max)throw new SignLinkRefusal('الطلب مش جاهز للتوقيع دلوقتي؛ كلّم المندوب.',409);
- if(!store)throw new SignLinkRefusal('التوقيع مش متاح دلوقتي؛ حاول بعد شوية.',503);
+ if(places.crm+places.production+1>places.max)throw new SignLinkRefusal('الطلب غير جاهز للتوقيع الآن؛ تواصل مع المندوب.',409);
+ if(!store)throw new SignLinkRefusal('التوقيع غير متاح الآن؛ أعد المحاولة بعد قليل.',503);
  // The signed document is built from what the page listed BEFORE the signature is saved: a document the page listed that is not among
  // the link's files as they are now, or whose pages pdf-lib counts otherwise, means the page did not show what the CRM holds: refused as
  // a change (opened again, the page lists it right). Too large for production, or failing otherwise: signed, with the per-file copies.
@@ -344,7 +344,7 @@ export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILE
  await store.put(objectKey,pngBytes,{httpMetadata:{contentType:checked.contentType}});
  await store.put(blockKey,blockCopy,{httpMetadata:{contentType:'image/png'}});
  if(pageKey&&pageCopy)await store.put(pageKey,pageCopy,{httpMetadata:{contentType:'image/png'}});
- const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)',actor=checked.signer+' (العميل، من اللينك)';
+ const gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)',actor=checked.signer+' (العميل، من الرابط)';
  const result=await db.batch([
   db.prepare(`UPDATE crm_mold_requests SET data=?,next_attempt_at=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND cancelled_at IS NULL AND outbox IS 'send' AND json_extract(data,'$.awaitsSignature') IS 1 AND json_extract(data,'$.signatureLink.hash')=? AND json_extract(data,'$.signatureLink.expiresAt')>? AND (${MOLD_NEVER_SENT_SQL} OR json_type(remote,'$.returned')='object')`)
    .bind(JSON.stringify(data),at,at,mutation,row.id,row.version,found.hash,at),
@@ -352,7 +352,7 @@ export async function signFromLink(db:D1Database,input:SignInput,{store=env.FILE
    .bind(fileId,row.id,row.memberId,checked.name,checked.contentType,pngBytes.length,await sha256Hex(pngBytes),objectKey,at,at,mutation,row.id,mutation),
   db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,row.id,actor,'mold-sign-receipt',body,at,row.id,mutation),
   db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`)
-   .bind(crypto.randomUUID(),row.id,actor,'mold-request:sign',JSON.stringify({label:'توقيع العميل على طلب تصنيع قالب من اللينك',customerName:row.data.customer.name,via:'link',signature:{signer:checked.signer,fileId,size:pngBytes.length,stamped:true,...(document?{document:document.parts.length}:{})}}),at,row.id,mutation),
+   .bind(crypto.randomUUID(),row.id,actor,'mold-request:sign',JSON.stringify({label:'توقيع العميل على طلب تصنيع قالب من الرابط',customerName:row.data.customer.name,via:'link',signature:{signer:checked.signer,fileId,size:pngBytes.length,stamped:true,...(document?{document:document.parts.length}:{})}}),at,row.id,mutation),
  ]).catch(async error=>{await dropAll();throw error;});
  if(result[0].meta.changes!==1){
   await dropAll();

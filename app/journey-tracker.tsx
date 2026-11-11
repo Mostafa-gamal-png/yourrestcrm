@@ -399,7 +399,7 @@ function continuousSetup(state:TrackerContext,language:string){
 export function JourneyFormNotice(){
  const {language}=useLanguage(),state=useJourneyTracker(),{error,active,paused}=state,setup=continuousSetup(state,language);
  if(state.isRep&&['setup','upgrade','loading'].includes(state.continuousStatus))return setup;
- if(!error&&state.outsideTrackingHours)return <>{setup}<div className="journey-form-notice" role="status"><MapPin size={16}/><span>{language==='en'?'Route recording is paused on Fridays and outside 6 AM–6 PM Saudi time. You can still save visits and follow-ups.':'تسجيل خط السير متوقف يوم الجمعة وخارج الفترة من 6 صباحًا إلى 6 مساءً بتوقيت السعودية. تقدر تسجّل الزيارات والمتابعات عادي.'}</span></div></>;
+ if(!error&&state.outsideTrackingHours)return <>{setup}<div className="journey-form-notice" role="status"><MapPin size={16}/><span>{language==='en'?'Route recording is paused on Fridays and outside 6 AM–6 PM Saudi time. You can still save visits and follow-ups.':'تسجيل خط السير متوقف يوم الجمعة وخارج الفترة من 6 صباحًا إلى 6 مساءً بتوقيت السعودية. يمكنك تسجيل الزيارات والمتابعات كالمعتاد.'}</span></div></>;
  if(!error&&!(active&&paused))return setup;
  return <>{setup}<div className="journey-form-notice" role="status"><AlertTriangle size={16}/><span>{language==='en'?'Tracking is interrupted. Check location permission and connectivity.':'التسجيل متوقف أو به انقطاع. راجع إذن الموقع والاتصال.'}{state.errorMessage&&<small>{trackingFailureText(state.errorMessage,language)}</small>}</span></div></>;
 }

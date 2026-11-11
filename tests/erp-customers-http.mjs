@@ -8,9 +8,9 @@
 // can still be deleted, its mapping going with it. New customers (2026-11-03): a row the CRM does not have is added in the same
 // transaction (its Yourrest number from the trigger, the uploader responsible, their branch, the chosen region, the file's name, code,
 // phones, email and address only, an «إضافة» history entry); a repeated request adds nobody twice; a region outside the user's scope is
-// refused (400 / 403) and the sales manager adds only in their region; a similar name left alone adds nothing, «ده هو» gives that
+// refused (400 / 403) and the sales manager adds only in their region; a similar name left alone adds nothing, «هو نفسه» gives that
 // customer the code, «عميل جديد» adds; a code that became held between the preview and the apply refuses with 409; the same file
-// again after «ده هو» (the old code kept) has no conflict; a similar name only outside the manager's regions is out-of-region, not added.
+// again after «هو نفسه» (the old code kept) has no conflict; a similar name only outside the manager's regions is out-of-region, not added.
 // Additions are opt-in: the apply carries `adds` (the number the preview showed). An apply without it (a screen loaded before the deploy,
 // which said rows without a match are left alone and cannot read this release's answer) is refused with 409 and a reload message in
 // Arabic and English, code-only applies too; one with another number is refused with 409; neither writes anything.
@@ -120,8 +120,8 @@ try {
 
   // ---- an apply without `adds` (a screen loaded before the deploy) or with another number than the file adds: 409 asking for a reload
   //  and a new preview, nothing written
-  const ADDS_UNCONFIRMED = 'الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة';
-  const SCREEN_OUTDATED = 'شاشة الاستيراد دي اتفتحت قبل تحديث النظام؛ حدّث الصفحة واعمل معاينة جديدة. ما اتحفظش أي حاجة. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.';
+  const ADDS_UNCONFIRMED = 'لم تعرض هذه الشاشة العملاء الجدد الذين سيُضافون؛ حدّث الصفحة وأجرِ معاينة جديدة';
+  const SCREEN_OUTDATED = 'فُتحت شاشة الاستيراد هذه قبل تحديث النظام؛ حدّث الصفحة وأجرِ معاينة جديدة. لم يُحفظ أي شيء. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.';
   const unconfirmedBefore = [await count("SELECT count(*) AS n FROM crm_records WHERE kind='customer'"), await count('SELECT count(*) AS n FROM crm_audit'), await count('SELECT count(*) AS n FROM crm_customer_code_mappings')];
   const oldScreen = {action: 'apply', fileName: 'Customer.xlsx', base64: file, snapshot: body.snapshot, choices: [{row: 5, customerId: 'twinB'}]};
   for (const [extra, message, label] of [[{}, SCREEN_OUTDATED, 'no adds (the screen before the deploy)'], [{adds: 0}, ADDS_UNCONFIRMED, 'adds 0'], [{adds: 2}, ADDS_UNCONFIRMED, 'another number']]) {
@@ -193,10 +193,10 @@ try {
   check(response.status, 200, 'the customer is edited through the CRM');
   const auditsBefore = await count('SELECT count(*) AS n FROM crm_audit');
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: second, snapshot: fresh.snapshot, requestId: crypto.randomUUID(), adds: 0});
-  check([response.status, response.json().error], [409, 'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة'], 'a stale preview: 409 with the message');
+  check([response.status, response.json().error], [409, 'تغيّرت بيانات العملاء منذ المعاينة؛ أجرِ معاينة جديدة'], 'a stale preview: 409 with the message');
   check([(await record('fajr')).data.code, (await record('badr')).data.code, await count('SELECT count(*) AS n FROM crm_audit')], ['44', '33', auditsBefore], 'nothing was written');
 
-  // ---- similar names: left alone adds nothing; «ده هو» gives that customer the code; «عميل جديد» adds
+  // ---- similar names: left alone adds nothing; «هو نفسه» gives that customer the code; «عميل جديد» adds
   await customer('safa', {name: 'مصنع الصفا للبلوك الاسمنتي', phone: '0551110000', code: '345'});
   const simFile = xlsx([row('9001', 'مصنع الصفا للبلوك الحديث', '0598887777'), row('9002', 'مصنع جديد كليا', '0598886666', '', 'not an email')]);
   let sim = (await post(owner, {...preview, base64: simFile})).json();
@@ -209,11 +209,11 @@ try {
   check(JSON.parse((await app.db.prepare('SELECT data FROM crm_records WHERE id=?').bind('crm-owner-erp-' + simId + '-4').first()).data).region, '', 'with no region chosen: «المنطقة غير محددة»');
   const thisOne = xlsx([row('9003', 'مصنع الصفا للبلوك الحديث')]);
   sim = (await post(owner, {...preview, base64: thisOne, choices: [{row: 3, customerId: 'safa'}]})).json();
-  check([sim.rows[0].status, sim.rows[0].customerId, sim.rows[0].change, sim.summary.changes, sim.summary.adds], ['similar', 'safa', true, 1, 0], '«ده هو» previewed: that customer takes the code');
+  check([sim.rows[0].status, sim.rows[0].customerId, sim.rows[0].change, sim.summary.changes, sim.summary.adds], ['similar', 'safa', true, 1, 0], '«هو نفسه» previewed: that customer takes the code');
   check((await post(owner, {...preview, base64: thisOne, choices: [{row: 3, customerId: 'nour'}]})).status, 400, 'a customer that is not a similar candidate: 400');
   check((await post(owner, {...preview, base64: thisOne, choices: [{row: 3, customerId: 'crm-owner-erp-x'}]})).status, 400, 'nor a made-up id');
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: thisOne, snapshot: sim.snapshot, requestId: crypto.randomUUID(), choices: [{row: 3, customerId: 'safa'}], adds: 0});
-  check([response.status, response.json().changed, response.json().added, response.json().changes], [200, 1, 0, [{row: 3, customerId: 'safa', from: '345', to: '9003', mapping: false}]], '«ده هو» applied');
+  check([response.status, response.json().changed, response.json().added, response.json().changes], [200, 1, 0, [{row: 3, customerId: 'safa', from: '345', to: '9003', mapping: false}]], '«هو نفسه» applied');
   check([(await record('safa')).data.code, (await app.db.prepare("SELECT action FROM crm_audit WHERE record_id='safa'").first()).action], ['9003', 'erp-customer-code'], 'the code changed, with its history entry');
   const asNew = xlsx([row('9004', 'مصنع الصفا للبلوك الجديد', '0598885555')]);
   sim = (await post(owner, {...preview, base64: asNew})).json();
@@ -226,7 +226,7 @@ try {
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: asNew, snapshot: sim.snapshot, requestId: simId, choices: [{row: 3, customerId: '+new'}], region: 'الغربية', adds: 1});
   check([response.status, response.json().added, response.json().changed, response.json().additions.map(a => [a.customerId, a.code, a.region])], [200, 1, 0, [['crm-owner-erp-' + simId + '-3', '9004', 'الغربية']]], '«عميل جديد» applied: added');
   check((await record('safa')).data.code, '9003', 'and the similar customer is untouched');
-  // The same kind of file again after «ده هو»: safa's code is 9003 and 345 a kept old code. Row 345 (another customer) finds safa only by
+  // The same kind of file again after «هو نفسه»: safa's code is 9003 and 345 a kept old code. Row 345 (another customer) finds safa only by
   // that old code and safa's current code is another row of the file: a choice, not a second row on safa, so nothing conflicts and the
   // new customer in the file can still be added.
   const reimport = xlsx([row('345', 'اسم تاني خالص'), row('9003', 'مصنع الصفا للبلوك الحديث'), row('9006', 'مصنع المرجان')]);
@@ -243,7 +243,7 @@ try {
   await customer('late', {name: 'مصنع وصل متأخر', code: '501'});
   const lateBefore = [await count("SELECT count(*) AS n FROM crm_records WHERE kind='customer'"), await count('SELECT count(*) AS n FROM crm_audit')];
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: late, snapshot: latePreview.snapshot, requestId: crypto.randomUUID(), adds: 1});
-  check([response.status, response.json().error], [409, 'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة'], 'someone now holds 501: 409');
+  check([response.status, response.json().error], [409, 'تغيّرت بيانات العملاء منذ المعاينة؛ أجرِ معاينة جديدة'], 'someone now holds 501: 409');
   check([await count("SELECT count(*) AS n FROM crm_records WHERE kind='customer'"), await count('SELECT count(*) AS n FROM crm_audit')], lateBefore, 'nothing written');
   check((await post(owner, {...preview, base64: late})).json().rows.map(r => [r.status, r.customerId, r.matchedBy, r.add]), [['same', 'late', 'code', false]], 'a new preview finds it by its code: never added');
 

@@ -145,7 +145,7 @@ function render(row, files, linkReady = true) {
   const {rows, view} = render(request(), [used, full]);
   eq([view.designFiles.map(entry => entry.state), view.designFiles.map(entry => entry.stopped), view.can.resend, lib.moldDesignCount(request(), [used, full]).crm], [['rejected', 'rejected'], [false, false], false, 0], 'refused for good: not stopped, nothing to resend, no place taken');
   // The state says production refused it; the reason below says why, without saying it twice, and with the words the other reasons use.
-  ok(rows[0].includes('رفض الإنتاج الملف رقم الملف مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وأرفقه من جديد') && rows[0].split('رفض').length === 2 && !rows[0].includes('ارفعه'), 'crm_file_id_used in words, the refusal said once: ' + rows[0]);
+  ok(rows[0].includes('رفض الإنتاج الملف رقم الملف مستخدم من قبل لملف آخر أو لملف محذوف؛ احذفه وأرفقه من جديد') && rows[0].split('رفض').length === 2 && !rows[0].includes('ارفعه'), 'crm_file_id_used in words, the refusal said once: ' + rows[0]);
   ok(rows[1].includes('الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)'), 'too_many_files in words: ' + rows[1]);
   eq([ui.designRefusal({code: 'invalid_payload', fields: ['crmFileId'], reason: 'crm_file_id_used'}, (ar, en) => en), ui.designRefusal({code: 'invalid_payload', fields: ['crmFileId']}, say)],
     ['The file\'s number was already used for another file or a deleted one; delete it and attach it again', 'رفض الإنتاج الملف'], 'in English too; a crmFileId refusal without a reason reads as a plain refusal');
@@ -207,7 +207,7 @@ function render(row, files, linkReady = true) {
   eq(shown.sections.map(section => [section.category, section.count]), [['design', '1/10'], ['quote', '1/5'], ['po', '1/5']], 'after it: three groups, each with its own places (production\'s PO file counted in its own)');
   eq([shown.sections[0].text.includes('ملفات التصميم'), shown.sections[1].text.includes('ملفات عرض السعر') && shown.sections[1].text.includes('عرض سعر.pdf'), shown.sections[2].text.includes('ملفات الـ PO') && shown.sections[2].text.includes('PO من الإنتاج.pdf') && shown.sections[2].text.includes('من الإنتاج')], [true, true, true], 'each file in its own group, production\'s marked as such');
   eq([shown.sections[0].accept.includes('.dwg'), shown.sections[1].accept, shown.sections[2].accept], [true, '.pdf,.png,.jpg,.jpeg,.webp,.gif', '.pdf,.png,.jpg,.jpeg,.webp,.gif'], 'the quotation\'s and PO\'s pickers offer a PDF or an image only');
-  ok(shown.sections[1].text.includes('PDF أو صورة بس') && shown.sections[1].text.includes('5 ملفات'), 'and say so, with their 5 places: ' + shown.sections[1].text);
+  ok(shown.sections[1].text.includes('PDF أو صورة فقط') && shown.sections[1].text.includes('5 ملفات'), 'and say so, with their 5 places: ' + shown.sections[1].text);
   const kept = file('عرض قبل التحديث.pdf', {category: 'quote', attempts: 0, lastAttemptAt: null});
   shown = groups(request(), [design, kept], false);
   eq([shown.sections.map(section => section.category), shown.sections[1].accept, shown.sections[1].text.includes('بانتظار تحديث تطبيق المنتجات')], [['design', 'quote'], null, true], 'a quotation file kept until the update: its group shows it (no picker), waiting for the update');
@@ -220,7 +220,7 @@ function render(row, files, linkReady = true) {
   eq(await Promise.all([device('رسم.dwg', Buffer.from('AC1027'), 'quote'), device('رسم.dwg', Buffer.from('AC1027'), 'po'), device('رسم.dwg', Buffer.from('AC1027'), 'design'), device('عرض.pdf', Buffer.from('%PDF-1.4 quote'), 'quote')]), ['not_document', 'not_document', '', ''], 'a drawing is refused as a quotation or PO (not_document) but taken as a design file; a PDF is a quotation');
   const picked = await ui.checkDesignFiles([new File(['%PDF-1.4 a'], 'a.pdf'), new File(['%PDF-1.4 b'], 'b.pdf')], 1, 'po');
   eq(picked.map(choice => [choice.category, choice.refusal]), [['po', ''], ['po', 'too_many_files']], 'the PO picker\'s places: the file beyond them is refused as too many, each choice says its kind');
-  eq([lib.moldDesignRefusalText('not_document', say), lib.moldDesignRefusalText('too_many_files', say, 'po')], ['ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج)'], 'said in words');
+  eq([lib.moldDesignRefusalText('not_document', say), lib.moldDesignRefusalText('too_many_files', say, 'po')], ['يجب أن يكون ملف عرض السعر أو الـ PO ملف PDF أو صورة', 'الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج)'], 'said in words');
   const view = lib.moldRequestView(request(), me, [], true, [design, quote], [], true);
   const uploads = [{key: 'u1', moldId: 'mr-1', category: 'quote', phase: 'queued', final: false}, {key: 'u2', moldId: 'mr-1', category: 'design', phase: 'failed', final: true}];
   eq([ui.designUsed(view, uploads), ui.designUsed(view, uploads, 'quote'), ui.designUsed(view, uploads, 'po')], [1, 2, 0], 'each kind\'s places counted apart, its uploads on their way included');
@@ -236,7 +236,7 @@ function render(row, files, linkReady = true) {
   const held = request({data: {...request().data, fileRequired: true}, outbox: 'send', accepted: null, remote: null, remoteAt: null});
   eq([ui.designNeedsWarning({remote: remote([])}), ui.designNeedsWarning({remote: remote([])}, 'design'), ui.designNeedsWarning({remote: remote([])}, 'quote'), ui.designNeedsWarning({remote: remote([])}, 'po'), ui.designNeedsWarning({remote: null}, 'design')],
     [true, true, false, false, false], 'the warning is for a design file on a request production holds; never for a quotation\'s or PO\'s file');
-  ok(ui.designWarningText(say).includes('ملف تصميم') && ui.designWarningText(say).includes('هيلغي الاعتمادات'), 'and it names the design file: ' + ui.designWarningText(say));
+  ok(ui.designWarningText(say).includes('ملف تصميم') && ui.designWarningText(say).includes('يُلغي الاعتمادات'), 'and it names the design file: ' + ui.designWarningText(say));
   const view = lib.moldRequestView(held, me, [], true, [], [], false);
   const html = renderToStaticMarkup(React.createElement(ui.MoldDesignFiles, {view, uploads: [], queue: new ui.DesignUploadQueue(), onView: () => {}, say, quotePo: false}));
   eq([view.sending.held, html.split('<section class="mold-design"').slice(1).map(part => /data-category="(\w+)"/.exec(part)[1]), (html.match(/data-category="quote"[^>]*>[^]*?accept="([^"]*)"/) || [])[1]], ['quote_file', ['design', 'quote', 'po'], '.pdf,.png,.jpg,.jpeg,.webp,.gif'], 'kept for its file: the quotation\'s and PO\'s groups, each with its picker');

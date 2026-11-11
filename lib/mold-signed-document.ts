@@ -5,7 +5,7 @@
 //   PNG or JPEG picture (one A4 page each, the picture fitted inside it), in the signing's order (the quotation's, the PO's, the design's,
 //   each in the order attached); then the signature page. A PDF pdf-lib cannot open (protected or damaged), a GIF or WEBP picture (pdf-lib
 //   embeds PNG and JPEG only), a PNG too large to embed, and every other file (a drawing, a model, an archive) is NOT in it: named on the
-//   signature page under «ملفات مرفقة مش معروضة هنا», sent to production as it is.
+//   signature page under «ملفات مرفقة غير معروضة هنا», sent to production as it is.
 // - Why pdf-lib decides on both sides: the page ranges printed on the signature page must be the pages of the file the server builds. The
 //   browser counts each PDF's pages with pdf-lib (the same library and version the server builds with, lazily loaded on the signing
 //   screens only: lib/pdf-viewer-loader.ts loadPdfLib), and draws them with pdf.js; the server counts again while building and refuses a
@@ -89,10 +89,10 @@ export const MOLD_SIGN_PAGE_TEXT={
  title:['إقرار وتوقيع العميل','Customer acknowledgement and signature'] as [string,string],
  heading:['طلب تصنيع قالب','Mold manufacturing request'] as [string,string],
  documents:['المستندات في هذا الملف','The documents in this file'] as [string,string],
- none:['مفيش مستندات معروضة في الملف ده.','No document is shown in this file.'] as [string,string],
- others:['ملفات مرفقة مش معروضة هنا','Attached files not shown here'] as [string,string],
+ none:['لا توجد مستندات معروضة في هذا الملف.','No document is shown in this file.'] as [string,string],
+ others:['ملفات مرفقة غير معروضة هنا','Attached files not shown here'] as [string,string],
  consent:['أقر بأني اطلعت على عرض السعر والتصميم الموضحين في الصفحات السابقة وأوافق عليهم.','I confirm that I have reviewed the quotation and the design shown on the previous pages and that I agree to them.'] as [string,string],
- signer:['اسم اللي بيوقّع عن العميل','Name of the person signing for the customer'] as [string,string],
+ signer:['اسم الموقّع عن العميل','Name of the person signing for the customer'] as [string,string],
  signature:['توقيع العميل','Customer signature'] as [string,string],
  date:['التاريخ','Date'] as [string,string],riyadh:['توقيت الرياض','Riyadh time'] as [string,string],
  picture:['صورة','Picture'] as [string,string],
@@ -108,11 +108,11 @@ export function docPartLines(parts:readonly SignedDocPart[],say:Say){
 }
 /** Why a file is named only, in the customer's words. */
 export function docLeftText(item:SignedDocLeft,say:Say){
- const why=item.reason==='unopened'?say('ما قدرناش نفتحه','could not be opened'):item.reason==='format'?say('صيغة صورة مش بتتحط في الملف','a picture format the file cannot hold')
-  :item.reason==='large'?say('صورة كبيرة قوي على الملف','a picture too large for the file'):item.reason==='unread'?say('ما اتحمّلش','could not be loaded'):'';
- return (why?why+' — ':'')+say('هيتبعت للإنتاج زي ما هو','it goes to production as it is');
+ const why=item.reason==='unopened'?say('تعذّر فتحه','could not be opened'):item.reason==='format'?say('صيغة صورة لا يقبلها الملف','a picture format the file cannot hold')
+  :item.reason==='large'?say('صورة أكبر مما يتسع له الملف','a picture too large for the file'):item.reason==='unread'?say('تعذّر تحميله','could not be loaded'):'';
+ return (why?why+' — ':'')+say('يُرسل إلى الإنتاج كما هو','it goes to production as it is');
 }
-/** Each named-only file's line: «التصميم: رسم.dwg — هيتبعت للإنتاج زي ما هو». */
+/** Each named-only file's line: «التصميم: رسم.dwg — يُرسل إلى الإنتاج كما هو». */
 export const docLeftLines=(left:readonly SignedDocLeft[],say:Say)=>left.map(item=>({label:say(...LABELS[item.category]),name:item.name,note:docLeftText(item,say)}));
 /** The moment as the signature page prints it: day/month/year and the hour in Riyadh. */
 export const signPageMoment=(at:Date)=>new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(at).replace(',',' -');

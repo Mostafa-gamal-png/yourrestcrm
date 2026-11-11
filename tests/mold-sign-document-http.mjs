@@ -201,7 +201,7 @@ try {
   const sign = extra => anonymous('/api/mold-sign', {method: 'POST', body: body(extra)});
   check((await sign({document: {page: signaturePng({width: 1240, height: 1240}).toString('base64'), parts: linkParts}})).status, 400, 'a signature page that is not A4: refused');
   check((await sign({document: {page: signaturePagePng().toString('base64'), parts: 'x'}})).status, 400, 'parts that are not a list: refused');
-  check((await sign({document: {page: signaturePagePng().toString('base64'), parts: [part(Buffer.from('another file'), 'quote', 'pdf', 'Q-77.pdf', 2), ...linkParts.slice(1)]}})).json(), {error: 'الطلب اتعدّل، افتح اللينك تاني.'}, 'a file changed between showing and signing (another SHA-256): refused as a change');
+  check((await sign({document: {page: signaturePagePng().toString('base64'), parts: [part(Buffer.from('another file'), 'quote', 'pdf', 'Q-77.pdf', 2), ...linkParts.slice(1)]}})).json(), {error: 'عُدِّل الطلب؛ افتح الرابط مرة أخرى.'}, 'a file changed between showing and signing (another SHA-256): refused as a change');
   check((await sign({document: {page: signaturePagePng().toString('base64'), parts: [{...linkParts[0], pages: 3}, ...linkParts.slice(1)]}})).status, 409, 'another count of pages than the file has: refused as a change');
   check((await dataOf(linkId)).awaitsSignature, true, 'nothing signed by those');
   const firstBody = body({});

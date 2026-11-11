@@ -7,7 +7,7 @@
 // kept by the CRM as one of the request's design files and sent to production with them.
 // Since 2026-11-10 the signing also composes the block stamped at the bottom of the last page of every PDF of the request (signatureBlockPng:
 // the drawing, «توقيع العميل: <name>» and the moment in Riyadh, the canvas shaping the Arabic), the moment taken from the server's clock
-// (noteServerTime, serverNow); and a sales role may choose «ابعت للعميل لينك يوقّع منه» instead of the pad.
+// (noteServerTime, serverNow); and a sales role may choose «أرسل إلى العميل رابطًا يوقّع منه» instead of the pad.
 // Since the owner's «يوقع داخل pdf» (2026-11-10, second release of the day) the customer reads the request's PDFs and pictures themselves
 // on the screen (app/mold-document-viewer.tsx) and signs in the box after their last page. Since 2026-11-11 («ملف واحد موقّع») they are ONE
 // document whose last page is the signature page (app/mold-signature-page.tsx); the page is composed as a PNG on signing and the CRM makes
@@ -19,6 +19,7 @@ import {MOLD_SIGNATURE_TEXT,MOLD_SIGN_LINK_TEXT} from '@/lib/mold-requests';
 import {MOLD_SIGNATURE_MAX_BYTES,MOLD_SIGNATURE_MAX_SIDE,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
 import {MOLD_VIEWER_TEXT,type MoldViewerFile} from '@/lib/mold-document-view';
 import {MOLD_SIGN_PAGE_TEXT,docCategory,type SignedDocPart} from '@/lib/mold-signed-document';
+import {drawTexts,fitSize,labelValueRow,ltrIsolate} from '@/lib/sign-page-canvas';
 import type {MoldFileCategory} from '@/lib/mold-requests';
 import MoldDocumentViewer,{type DocPlan} from './mold-document-viewer';
 import {MoldSignaturePage,signaturePagePng} from './mold-signature-page';
@@ -88,13 +89,12 @@ export function signatureBlockPng(strokes:SignatureStrokes,width:number,signer:s
  const W=BLOCK_WIDTH,H=BLOCK_HEIGHT,pad=26,family='"Segoe UI",Tahoma,"Noto Naskh Arabic","Noto Sans Arabic","DejaVu Sans",Arial,sans-serif';
  g.fillStyle='#fff';g.fillRect(0,0,W,H);
  g.strokeStyle='#5b6b62';g.lineWidth=2;g.strokeRect(5,5,W-10,H-10);
- g.direction='rtl';g.textAlign='right';g.textBaseline='alphabetic';g.fillStyle='#111';
- const fit=(text:string,weight:string,size:number,min:number)=>{let next=size;for(;next>min;next-=1){g.font=weight+' '+next+'px '+family;if(g.measureText(text).width<=W-2*pad)break;}g.font=weight+' '+next+'px '+family;};
- const title='توقيع العميل: '+signer;
- fit(title,'bold',32,14);g.fillText(title,W-pad,50);
- // The moment, its digits kept in their order (an isolate inside the right-to-left line).
- const when='التاريخ: \u2066'+blockMoment(at)+'\u2069 (توقيت الرياض)';
- fit(when,'normal',22,12);g.fillStyle='#333';g.fillText(when,W-pad,H-22);
+ g.textBaseline='alphabetic';
+ // Two cells on the top line (lib/sign-page-canvas.ts): «توقيع العميل:» alone, the signer's name alone in its own direction; the moment one
+ // line, its digits isolated left to right.
+ drawTexts(g,labelValueRow(g,'توقيع العميل:',signer,{room:W-2*pad,start:W-pad,y:18,rtl:true,family,size:32,min:14,weight:'bold'}).texts);
+ const when='التاريخ: '+ltrIsolate(blockMoment(at))+' (توقيت الرياض)',whenSize=fitSize(g,when,W-2*pad,size=>'normal '+size+'px '+family,22,12);
+ drawTexts(g,[{text:when,x:W-pad,y:H-22,font:'normal '+whenSize+'px '+family,color:'#333',dir:'rtl',align:'right'}]);
  // The drawing, scaled into the space between the two lines and centred.
  const top=66,bottom=H-50,room={width:W-2*pad,height:bottom-top},scale=Math.min(room.width/Math.max(box.width,1),room.height/Math.max(box.height,1),3);
  g.save();g.translate(pad+(room.width-box.width*scale)/2,top+(room.height-box.height*scale)/2);g.scale(scale,scale);g.translate(-box.minX,-box.minY);
@@ -133,7 +133,7 @@ export function SignaturePad({strokes,onChange,onWidth,disabled,say}:{strokes:Si
   drawing.current=null;
   onChange([...strokes,current.stroke]);
  };
- return <canvas ref={canvas} className="mold-signature-pad" data-disabled={disabled||undefined} role="img" aria-label={say('مكان توقيع العميل: يوقّع بصباعه أو بالقلم','Signature pad: the customer signs with a finger or a stylus')}
+ return <canvas ref={canvas} className="mold-signature-pad" data-disabled={disabled||undefined} role="img" aria-label={say('مكان توقيع العميل: يوقّع بإصبعه أو بالقلم','Signature pad: the customer signs with a finger or a stylus')}
   onPointerDown={event=>{
    if(disabled||drawing.current||event.button>0)return;
    event.preventDefault();
@@ -193,12 +193,12 @@ export function MoldSigningStep({summary,title,documents=[],busy,error,fields,ag
   setFrozen(signature);onConfirm(signature);
  };
  const summaryList=<dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd><bdi dir="auto">{value}</bdi></dd></div>)}</dl>;
- const lead=<p className="mold-signing-lead">{say('العميل بيوقّع على الطلب ده قبل ما يتبعت للإنتاج:','The customer signs this request before it is sent to production:')}</p>;
+ const lead=<p className="mold-signing-lead">{say('يوقّع العميل على هذا الطلب قبل إرساله إلى الإنتاج:','The customer signs this request before it is sent to production:')}</p>;
  return <section className="mold-signing" ref={top} aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
   <h3 className="mold-subtitle"><PenLine size={16} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.title)}</h3>
   {again&&<p className="mold-specs-note mold-signing-again" role="status">{say(...MOLD_SIGNATURE_TEXT.again)}</p>}
   {/* The pad or the link (2026-11-10): offered to the sales roles; the choice comes before the document. */}
-  {onLink&&<fieldset className="mold-choice mold-signing-mode"><legend>{say('إزاي العميل هيوقّع؟','How does the customer sign?')}</legend><div>
+  {onLink&&<fieldset className="mold-choice mold-signing-mode"><legend>{say('كيف سيوقّع العميل؟','How does the customer sign?')}</legend><div>
    {(['now','link'] as const).map(value=><label key={value} data-active={mode===value}><input type="radio" name="signing-mode" value={value} checked={mode===value} disabled={busy} onChange={()=>setMode(value)}/>{say(...(value==='now'?MOLD_SIGN_LINK_TEXT.now:MOLD_SIGN_LINK_TEXT.link))}</label>)}
   </div></fieldset>}
   {onLink&&mode==='link'?<>
@@ -207,7 +207,7 @@ export function MoldSigningStep({summary,title,documents=[],busy,error,fields,ag
    {error&&<p className="form-error" role="alert">{t(error)}</p>}
    <div className="mold-actions">
     <button type="button" className="btn primary" disabled={busy} onClick={onLink}>{busy?<Loader2 className="spin" size={16}/>:<Link2 size={16}/>}{say(...MOLD_SIGN_LINK_TEXT.make)}</button>
-    <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
+    <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('العودة إلى الطلب','Back to the request')}</button>
    </div>
   </>:<>
   {/* The request's documents as one document (2026-11-11), its last page the signature page. */}
@@ -220,7 +220,7 @@ export function MoldSigningStep({summary,title,documents=[],busy,error,fields,ag
   {error&&!fields.signer&&!fields.signature&&<p className="form-error" role="alert">{t(error)}</p>}
   <div className="mold-actions mold-sign-actions">
    <button type="button" className="btn primary" disabled={busy||!ready} onClick={confirm}>{busy?<Loader2 className="spin" size={16}/>:<Send size={16}/>}{say(...MOLD_SIGNATURE_TEXT.confirm)}</button>
-   <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('رجوع للطلب','Back to the request')}</button>
+   <button type="button" className="btn subtle" disabled={busy} onClick={onBack}><Undo2 size={16} aria-hidden="true"/>{say('العودة إلى الطلب','Back to the request')}</button>
   </div>
   </>}
  </section>;

@@ -40,7 +40,7 @@ try {
   check([response.status, response.json().id, response.json().type], [200, customer, 'customer'], 'restored');
   check((await restore(owner, audit, requestId)).json().alreadySaved, true, 'the same request again: the first answer');
   response = await restore(owner, audit);
-  check([response.status, response.json().error], [409, 'السجل اتسترجع قبل كده.'], 'a second restoration: 409');
+  check([response.status, response.json().error], [409, 'استُرجع السجل من قبل.'], 'a second restoration: 409');
   const crm = (await owner('/api/crm')).json();
   check(crm.records.find(r => r.id === customer)?.data.internalCode, code, 'back in the customers with the same YR-C code');
   check(crm.audits.filter(a => a.recordId === customer).map(a => a.action), ['إضافة'], 'its history: the addition only (no «حذف», no «استرجاع سجل»)');
@@ -98,7 +98,7 @@ try {
   // the cell switched off after deleting: listed with why, refused with it; «حذف» elsewhere keeps the page
   const repVersion = (await app.db.prepare("SELECT version FROM crm_member_permissions WHERE member_id='rep'").first()).version;
   check((await owner('/api/crm', {method: 'POST', body: {action: 'permissions', memberId: 'rep', version: repVersion, cells: {'followup:delete': true}, hidden: [], viewAll: false}})).status, 200, 'the administrator switches «حذف» of visits off');
-  const reason = 'استرجاع السجل ده محتاج صلاحية «حذف» في الزيارات، وهي مش مفتوحة لك دلوقتي. راجع مدير النظام.';
+  const reason = 'استرجاع هذا السجل يتطلب صلاحية «حذف» في الزيارات، وهي غير مفتوحة لك حاليًا. راجع مدير النظام.';
   check((await listed(rep)).items.map(item => [item.recordId, item.blocked]), [['visit-r2', reason]], 'listed with why');
   response = await restore(rep, (await deletion('visit-r2')).id);
   check([response.status, response.json().error], [403, reason], 'refused: 403 with the reason');

@@ -45,7 +45,7 @@ const ok = (value, message) => { assert.ok(value, message); checks++; };
 /** «اعتماد» once the sales manager's acknowledgement of the payment terms is ticked (2026-11-10): the button waits for it. */
 const approveIn = async scope => { await scope.locator('.mold-terms-accept input').first().check(); await scope.getByRole('button', {name: 'اعتماد', exact: true}).click(); };
 const PHONE = {width: 360, height: 800}, DESKTOP = {width: 1280, height: 900};
-const LABEL = 'طلبات تصنيع القوالب', WARNING = 'إرفاق ملف تصميم أو حذفه بيتحسب تعديل على الطلب';
+const LABEL = 'طلبات تصنيع القوالب', WARNING = 'يُعدّ إرفاق ملف تصميم أو حذفه تعديلًا على الطلب';
 const drawingPdf = Buffer.from('%PDF-1.4\n% رسم القالب للعميل\n%%EOF\n'), drawingDwg = Buffer.from('AC1027 synthetic drawing for the browser test'), drawingDxf = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n');
 // A real 1x1 PNG, so the browser can show it.
 const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -120,7 +120,7 @@ try {
   await shot(rep, 'mold-design-form');
   const sendsBefore = mock.state.calls.filter(call => call.route === 'design-files').length;
   // The customer signs first (2026-11-04); the signature takes one of the 10 places, which the picker says beforehand.
-  check(await picker.locator('.mold-signature-room').innerText(), 'توقيع العميل بيتحسب ملف من الـ 10؛ تقدر ترفع لحد 9 ملفات تصميم', 'the picker leaves the signature its place, and says so');
+  check(await picker.locator('.mold-signature-room').innerText(), 'يُحتسب توقيع العميل ملفًا من الـ 10؛ يمكنك رفع 9 ملفات تصميم كحد أقصى', 'the picker leaves the signature its place, and says so');
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   check(await picker.isVisible(), false, 'the form gives way to the signing step');
   await signRequest(rep);
@@ -413,12 +413,12 @@ try {
   await keptCard.click();
   const groupOf = category => sheet(quoteSheet).locator('section.mold-design[data-category="' + category + '"]');
   await groupOf('po').waitFor();
-  check([await sheet(quoteSheet).locator('.mold-sending[data-state="needs_file"] strong').innerText(), (await sheet(quoteSheet).locator('.mold-sending p').innerText()).includes('مش هيتبعت للإنتاج إلا لما ترفق ملف عرض السعر أو الـ PO')], ['بانتظار ملف عرض السعر / الـ PO', true], 'the sheet says what it waits for and what to do');
+  check([await sheet(quoteSheet).locator('.mold-sending[data-state="needs_file"] strong').innerText(), (await sheet(quoteSheet).locator('.mold-sending p').innerText()).includes('لن يُرسل إلى الإنتاج حتى ترفق ملف عرض السعر أو الـ PO')], ['بانتظار ملف عرض السعر / الـ PO', true], 'the sheet says what it waits for and what to do');
   check(await sheet(quoteSheet).locator('section.mold-design h3').allInnerTexts(), ['ملفات التصميم', 'ملفات عرض السعر', 'ملفات الـ PO'], 'three groups on the sheet');
   check([await groupOf('quote').locator('input[type=file]').getAttribute('accept'), await groupOf('quote').locator('.mold-design-count').innerText()], ['.pdf,.png,.jpg,.jpeg,.webp,.gif', '0/5'], 'the quotation\'s picker: a PDF or an image, 5 places');
   await groupOf('quote').locator('input[type=file]').setInputFiles({name: 'مسقط.dwg', mimeType: 'application/octet-stream', buffer: drawingDwg});
   await groupOf('quote').locator('.mold-design-refused').waitFor();
-  check(await groupOf('quote').locator('.mold-design-refused li').innerText(), 'مسقط.dwg: ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 'a drawing as the quotation: refused on the device, with why');
+  check(await groupOf('quote').locator('.mold-design-refused li').innerText(), 'مسقط.dwg: يجب أن يكون ملف عرض السعر أو الـ PO ملف PDF أو صورة', 'a drawing as the quotation: refused on the device, with why');
   await shot(quoteSheet, 'mold-design-kept-for-file');
   // The sales manager reads the same request (his team's): whom it waits for, not what to do; no attach for him.
   const keptManager = await open('sm');
@@ -427,14 +427,14 @@ try {
   await keptManager.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
   await sheet(keptManager).locator('.mold-sending').waitFor();
   check([await sheet(keptManager).locator('.mold-sending strong').innerText(), await sheet(keptManager).locator('.mold-sending p').innerText(), await sheet(keptManager).locator('.mold-design-tools').count()],
-    ['بانتظار ملف عرض السعر / الـ PO', 'بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO', 0], 'the sales manager: whom it waits for, and no attach');
+    ['بانتظار ملف عرض السعر / الـ PO', 'بانتظار أن يرفق صاحب الطلب ملف عرض السعر / الـ PO', 0], 'the sales manager: whom it waits for, and no attach');
   await keptManager.context().close();
   await groupOf('po').locator('input[type=file]').setInputFiles({name: 'PO-7781.pdf', mimeType: 'application/pdf', buffer: drawingPdf});
   await fileRow(groupOf('po'), 'PO-7781.pdf').and(quoteSheet.locator('[data-state="held"]')).waitFor();
   // 2026-11-08: its PO file is there, but no design file of its own (the customer's signature is none): kept, now for its design file.
   const forDesign = sheet(quoteSheet).locator('.mold-sending[data-held="design_file"]');
   await forDesign.waitFor();
-  check([await groupOf('po').locator('.mold-design-confirm').count(), await forDesign.locator('strong').innerText(), (await forDesign.locator('p').innerText()).includes('ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)'), mock.row(asked.id) || null],
+  check([await groupOf('po').locator('.mold-design-confirm').count(), await forDesign.locator('strong').innerText(), (await forDesign.locator('p').innerText()).includes('ترفق ملف تصميم واحدًا على الأقل (لا يُحتسب توقيع العميل)'), mock.row(asked.id) || null],
     [0, 'بانتظار ملف التصميم', true, null], 'no warning asked; the PO file alone does not send it: it waits for its design file now, and says so');
   const designManager = await open('sm');
   await goMolds(designManager);
@@ -442,7 +442,7 @@ try {
   await designManager.locator('.mold-card', {hasText: 'قالب بعرض سعر'}).click();
   await sheet(designManager).locator('.mold-sending').waitFor();
   check([await sheet(designManager).locator('.mold-sending strong').innerText(), await sheet(designManager).locator('.mold-sending p').innerText(), await sheet(designManager).locator('.mold-design-tools').count()],
-    ['بانتظار ملف التصميم', 'بانتظار ما صاحب الطلب يرفق ملف التصميم', 0], 'the sales manager: whom it waits for, and no attach');
+    ['بانتظار ملف التصميم', 'بانتظار أن يرفق صاحب الطلب ملف التصميم', 0], 'the sales manager: whom it waits for, and no attach');
   await designManager.context().close();
   await shot(quoteSheet, 'mold-design-kept-for-design-file');
   await groupOf('design').locator('input[type=file]').setInputFiles({name: 'رسم القالب.pdf', mimeType: 'application/pdf', buffer: drawingPdf});

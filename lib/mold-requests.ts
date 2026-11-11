@@ -311,7 +311,7 @@ export function moldPendingTarget(item:PendingNamed):{crmRequestId:string}|{requ
  *  (null: given when its production manager approves, 2026-11-05), «لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)»; '—' when there is no
  *  status yet (not sent) or a request cancelled before it had a number (it will never get one). */
 /** The waiting list holds items production sent that could not be read (unreadable), said above the list with how many. */
-export const moldPendingUnreadableText=(count:number,say:(ar:string,en:string)=>string)=>say('فيه '+count+' طلب من تطبيق الإنتاج ما اتقراش (بيانات ناقصة أو غير صحيحة) ومش ظاهر هنا؛ بلّغ مدير الإنتاج.',count+' request(s) from production could not be read (missing or invalid data) and are not shown; tell the production manager.');
+export const moldPendingUnreadableText=(count:number,say:(ar:string,en:string)=>string)=>say('يوجد '+count+' طلب من تطبيق الإنتاج تعذّرت قراءته (بيانات ناقصة أو غير صحيحة) ولا يظهر هنا؛ أبلغ مدير الإنتاج.',count+' request(s) from production could not be read (missing or invalid data) and are not shown; tell the production manager.');
 export const MOLD_NO_ORDER_YET:[string,string]=['لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)','No number yet (given at production approval)'];
 export function moldOrderNoText(source:{orderNo:number|null}|null|undefined,say:(ar:string,en:string)=>string,{cancelled=false}:{cancelled?:boolean}={}){
  if(!source)return '—';
@@ -671,34 +671,34 @@ export const MOLD_QUOTE_FILE_HELD_NAME:[string,string]=['بانتظار ملف �
 export const MOLD_QUOTE_PO_MISSING_TEXT:[string,string]=['ناقص ملف عرض السعر / الـ PO','The quotation / PO file is missing'];
 /** Beside it: for whoever may attach (the requester, while the request is editable); for anyone else reading one of the CRM's requests
  *  (whoever asked for it: a representative, customer service, the administrator); for one registered in the products application. */
-export const MOLD_QUOTE_PO_MISSING_ATTACH:[string,string]=['أرفق ملف عرض السعر أو الـ PO من «ملفات عرض السعر» أو «ملفات الـ PO» تحت.','Attach the quotation or PO file under «Quotation files» or «PO files» below.'];
+export const MOLD_QUOTE_PO_MISSING_ATTACH:[string,string]=['أرفق ملف عرض السعر أو الـ PO من «ملفات عرض السعر» أو «ملفات الـ PO» أدناه.','Attach the quotation or PO file under «Quotation files» or «PO files» below.'];
 export const MOLD_QUOTE_PO_MISSING_OTHERS:[string,string]=['صاحب الطلب يرفقه من الـCRM، أو مدير الإنتاج من تطبيق المنتجات.','Whoever asked for it attaches it in the CRM, or the production manager in the products application.'];
 export const MOLD_QUOTE_PO_MISSING_PRODUCTION:[string,string]=['مدير الإنتاج يرفقه من تطبيق المنتجات.','The production manager attaches it in the products application.'];
 /** A new request needs at least one quotation or PO file (2026-11-05, every role): the form's refusal. */
 export const MOLD_QUOTE_FILE_REQUIRED_TEXT:[string,string]=['أرفق ملف عرض السعر أو الـ PO (واحد على الأقل)','Attach the quotation or PO file (at least one)'];
 /** A request kept in the CRM until its quotation or PO file is attached (sending.held quote_file): to its requester, who attaches it, and
  *  to a reader who cannot (the sales manager, the administrator). */
-export const MOLD_QUOTE_FILE_WAITING_OTHERS:[string,string]=['بانتظار ما صاحب الطلب يرفق ملف عرض السعر / الـ PO','Waiting for whoever asked for it to attach the quotation / PO file'];
-export const MOLD_QUOTE_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف عرض السعر أو الـ PO (واحد على الأقل)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach the quotation or PO file (at least one); once you do, the request goes, then its files.'];
+export const MOLD_QUOTE_FILE_WAITING_OTHERS:[string,string]=['بانتظار أن يرفق صاحب الطلب ملف عرض السعر / الـ PO','Waiting for whoever asked for it to attach the quotation / PO file'];
+export const MOLD_QUOTE_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ولن يُرسل إلى الإنتاج حتى ترفق ملف عرض السعر أو الـ PO (واحدًا على الأقل)؛ وبمجرد إرفاقه يُرسل الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach the quotation or PO file (at least one); once you do, the request goes, then its files.'];
 /** A new request needs at least one design file (2026-11-08, every role; the customer's signature does not count): the form's picker
  *  title and its refusal, sending.held design_file in words, and its explanation to the requester and to a reader who cannot attach. */
 export const MOLD_DESIGN_FILE_PICKER_TITLE:[string,string]=['ملفات التصميم (ملف واحد على الأقل)','Design files (at least one)'];
 export const MOLD_DESIGN_FILE_REQUIRED_TEXT:[string,string]=['أرفق ملف تصميم واحد على الأقل','Attach at least one design file'];
 export const MOLD_DESIGN_FILE_HELD_NAME:[string,string]=['بانتظار ملف التصميم','Waiting for the design file'];
-export const MOLD_DESIGN_FILE_WAITING_OTHERS:[string,string]=['بانتظار ما صاحب الطلب يرفق ملف التصميم','Waiting for whoever asked for it to attach the design file'];
-export const MOLD_DESIGN_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)؛ أول ما ترفقه يتبعت الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach at least one design file (the customer\'s signature does not count); once you do, the request goes, then its files.'];
+export const MOLD_DESIGN_FILE_WAITING_OTHERS:[string,string]=['بانتظار أن يرفق صاحب الطلب ملف التصميم','Waiting for whoever asked for it to attach the design file'];
+export const MOLD_DESIGN_FILE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ولن يُرسل إلى الإنتاج حتى ترفق ملف تصميم واحدًا على الأقل (لا يُحتسب توقيع العميل)؛ وبمجرد إرفاقه يُرسل الطلب ثم ملفاته.','The request is saved in the CRM and is not sent to production until you attach at least one design file (the customer\'s signature does not count); once you do, the request goes, then its files.'];
 /** The request's delivery address (2026-11-09): the form's refusals, the same as the server's (MOLD_ADDRESS_REQUIRED, MOLD_ADDRESS_LONG). */
 export const MOLD_ADDRESS_TEXT:{required:[string,string];long:[string,string]}={required:[MOLD_ADDRESS_REQUIRED,'Enter the delivery address'],long:[MOLD_ADDRESS_LONG,'The address is up to 300 characters']};
 /** A request for a customer not in the CRM waiting for production's update (sending.held free_customer, 2026-11-09): its name, and what
  *  it means to its requester and to anyone else reading it. */
-export const MOLD_FREE_CUSTOMER_HELD_NAME:[string,string]=['بانتظار تحديث تطبيق الإنتاج (عميل من غير كود يورست)','Waiting for the production application update (a customer without a Yourrest code)'];
-export const MOLD_FREE_CUSTOMER_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM وهيتبعت للإنتاج بالاسم وكود ERP أول ما تطبيق الإنتاج يقبل عميل مش موجود في الـCRM؛ الـCRM بيحاول تاني لوحده كل 6 ساعات، و«إعادة الإرسال» بتحاول دلوقتي.','The request is saved in the CRM and goes to production with the name and ERP code as soon as the production application takes a customer who is not in the CRM; the CRM tries again by itself every 6 hours, and Resend tries now.'];
-export const MOLD_FREE_CUSTOMER_WAITING_OTHERS:[string,string]=['الطلب لعميل مش موجود في الـCRM، وهيتبعت للإنتاج أول ما تطبيق الإنتاج يتحدّث ويقبله.','The request is for a customer not in the CRM; it goes to production once the production application is updated to take it.'];
+export const MOLD_FREE_CUSTOMER_HELD_NAME:[string,string]=['بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)','Waiting for the production application update (a customer without a Yourrest code)'];
+export const MOLD_FREE_CUSTOMER_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM وسيُرسل إلى الإنتاج بالاسم وكود ERP بمجرد أن يقبل تطبيق الإنتاج عميلًا غير موجود في الـCRM؛ يعيد الـCRM المحاولة تلقائيًا كل 6 ساعات، و«إعادة الإرسال» تحاول الآن.','The request is saved in the CRM and goes to production with the name and ERP code as soon as the production application takes a customer who is not in the CRM; the CRM tries again by itself every 6 hours, and Resend tries now.'];
+export const MOLD_FREE_CUSTOMER_WAITING_OTHERS:[string,string]=['الطلب لعميل غير موجود في الـCRM، وسيُرسل إلى الإنتاج بمجرد تحديث تطبيق الإنتاج وقبوله.','The request is for a customer not in the CRM; it goes to production once the production application is updated to take it.'];
 /** sending.held in words, its explanation to the requester (who attaches) and to a reader who cannot. */
 /** A request kept until the customer signs from the link (sending.held customer_signature, 2026-11-10). */
 export const MOLD_SIGNATURE_HELD_NAME:[string,string]=['بانتظار توقيع العميل','Waiting for the customer\'s signature'];
-export const MOLD_SIGNATURE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما العميل يوقّع من اللينك (أو يوقّع دلوقتي على الجهاز)؛ أول ما يوقّع يتبعت الطلب لوحده.','The request is saved in the CRM and is not sent to production until the customer signs from the link (or signs now on the device); once signed, it goes by itself.'];
-export const MOLD_SIGNATURE_WAITING_OTHERS:[string,string]=['بانتظار توقيع العميل من اللينك اللي بعته صاحب الطلب','Waiting for the customer to sign from the link the requester sent'];
+export const MOLD_SIGNATURE_WAITING_TEXT:[string,string]=['الطلب محفوظ في الـCRM ولن يُرسل إلى الإنتاج حتى يوقّع العميل من الرابط (أو يوقّع الآن على الجهاز)؛ وبمجرد توقيعه يُرسل الطلب تلقائيًا.','The request is saved in the CRM and is not sent to production until the customer signs from the link (or signs now on the device); once signed, it goes by itself.'];
+export const MOLD_SIGNATURE_WAITING_OTHERS:[string,string]=['بانتظار توقيع العميل من الرابط الذي أرسله صاحب الطلب','Waiting for the customer to sign from the link the requester sent'];
 export const moldHeldTexts:Record<MoldSendingHeld,{name:[string,string];waiting:[string,string];others:[string,string]}>={
  quote_file:{name:MOLD_QUOTE_FILE_HELD_NAME,waiting:MOLD_QUOTE_FILE_WAITING_TEXT,others:MOLD_QUOTE_FILE_WAITING_OTHERS},
  design_file:{name:MOLD_DESIGN_FILE_HELD_NAME,waiting:MOLD_DESIGN_FILE_WAITING_TEXT,others:MOLD_DESIGN_FILE_WAITING_OTHERS},
@@ -706,70 +706,70 @@ export const moldHeldTexts:Record<MoldSendingHeld,{name:[string,string];waiting:
  customer_signature:{name:MOLD_SIGNATURE_HELD_NAME,waiting:MOLD_SIGNATURE_WAITING_TEXT,others:MOLD_SIGNATURE_WAITING_OTHERS}};
 /** The signed copies and the signing link in the representative's words (2026-11-10). */
 export const MOLD_SIGN_LINK_TEXT={
- now:['العميل يوقّع دلوقتي','The customer signs now'] as [string,string],
- link:['ابعت للعميل لينك يوقّع منه','Send the customer a link to sign from'] as [string,string],
- linkNote:['الطلب هيتحفظ ومش هيتبعت للإنتاج إلا لما العميل يوقّع من اللينك؛ أول ما يوقّع يتبعت لوحده. اللينك صالح 14 يوم.','The request is saved and is not sent to production until the customer signs from the link; once signed, it goes by itself. The link is valid for 14 days.'] as [string,string],
- make:['حفظ وعمل اللينك','Save and make the link'] as [string,string],
- copy:['نسخ اللينك','Copy the link'] as [string,string],copied:['اتنسخ اللينك','Link copied'] as [string,string],
- whatsapp:['إرسال واتساب','Send on WhatsApp'] as [string,string],renew:['إرسال لينك جديد','Send a new link'] as [string,string],
- cancel:['إيقاف اللينك','Stop the link'] as [string,string],device:['العميل يوقّع دلوقتي على الجهاز','The customer signs now on the device'] as [string,string],
- title:['لينك توقيع العميل','Customer signing link'] as [string,string],
- sent:['اتعمل اللينك','Link made'] as [string,string],expires:['ينتهي','Expires'] as [string,string],expired:['اللينك انتهى','The link has expired'] as [string,string],
- none:['مفيش لينك شغال؛ ابعت لينك جديد أو خلّي العميل يوقّع على الجهاز.','No active link; send a new link or have the customer sign on the device.'] as [string,string],
- hidden:['اللينك بيتعرض مرة واحدة بعد عمله؛ لو محتاجه تاني ابعت لينك جديد (القديم بيبطل).','The link is shown once, when it is made; to have it again, send a new link (the old one stops working).'] as [string,string],
+ now:['يوقّع العميل الآن','The customer signs now'] as [string,string],
+ link:['أرسل إلى العميل رابطًا يوقّع منه','Send the customer a link to sign from'] as [string,string],
+ linkNote:['سيُحفظ الطلب ولن يُرسل إلى الإنتاج حتى يوقّع العميل من الرابط؛ وبمجرد توقيعه يُرسل تلقائيًا. الرابط صالح 14 يومًا.','The request is saved and is not sent to production until the customer signs from the link; once signed, it goes by itself. The link is valid for 14 days.'] as [string,string],
+ make:['حفظ وإنشاء الرابط','Save and make the link'] as [string,string],
+ copy:['نسخ الرابط','Copy the link'] as [string,string],copied:['نُسخ الرابط','Link copied'] as [string,string],
+ whatsapp:['إرسال واتساب','Send on WhatsApp'] as [string,string],renew:['إرسال رابط جديد','Send a new link'] as [string,string],
+ cancel:['إيقاف الرابط','Stop the link'] as [string,string],device:['يوقّع العميل الآن على الجهاز','The customer signs now on the device'] as [string,string],
+ title:['رابط توقيع العميل','Customer signing link'] as [string,string],
+ sent:['أُنشئ الرابط','Link made'] as [string,string],expires:['ينتهي','Expires'] as [string,string],expired:['انتهت صلاحية الرابط','The link has expired'] as [string,string],
+ none:['لا يوجد رابط صالح؛ أرسل رابطًا جديدًا أو اجعل العميل يوقّع على الجهاز.','No active link; send a new link or have the customer sign on the device.'] as [string,string],
+ hidden:['يُعرض الرابط مرة واحدة بعد إنشائه؛ إن احتجته مرة أخرى فأرسل رابطًا جديدًا (ويتوقف القديم).','The link is shown once, when it is made; to have it again, send a new link (the old one stops working).'] as [string,string],
  copyMark:['نسخة موقّعة','Signed copy'] as [string,string],
  /** A signed copy production refused for its count (its limits before its update of 2026-11-10): the request goes on without it. */
- copyRefused:['ما اتبعتتش: الإنتاج رفض عدد الملفات','Not sent: production refused the number of files'] as [string,string],
+ copyRefused:['لم تُرسل: رفض الإنتاج عدد الملفات','Not sent: production refused the number of files'] as [string,string],
  copies:['نسخ موقّعة من ملفات الـPDF','Signed copies of the PDF files'] as [string,string],
- after:['اتضاف بعد توقيع العميل، فمالوش نسخة موقّعة (العميل ما شافهوش):','Attached after the customer signed, so no signed copy (the customer did not see it):'] as [string,string],
- viaLink:['وقّع من اللينك','Signed from the link'] as [string,string],
+ after:['أُضيف بعد توقيع العميل، فلا نسخة موقّعة له (لم يطّلع عليه العميل):','Attached after the customer signed, so no signed copy (the customer did not see it):'] as [string,string],
+ viaLink:['وقّع من الرابط','Signed from the link'] as [string,string],
  /** The ONE signed document (2026-11-11, MoldSigningView.document). */
  documentMark:['الملف الموقّع','Signed file'] as [string,string],
  documentMade:['الملف الموقّع (المستندات وصفحة التوقيع)','The signed file (the documents and the signature page)'] as [string,string],
- documentWaiting:['الملف الموقّع هيتعمل أول ما تترفع الملفات اللي العميل شافها:','The signed file is made once the files the customer saw are uploaded:'] as [string,string],
- documentTooLarge:['الملف الموقّع الواحد كان هيبقى أكبر من 25 ميجابايت؛ اتعملت نسخة موقّعة من كل PDF بدله.','The single signed file would have been larger than 25 MB; a signed copy of each PDF was made instead.'] as [string,string],
- documentMismatch:['ما اتعملش الملف الموقّع الواحد (الملفات مش زي اللي اتعرضت)؛ اتعملت نسخة موقّعة من كل PDF بدله.','The single signed file was not made (the files are not as shown); a signed copy of each PDF was made instead.'] as [string,string],
- documentRefused:['مفيش مكان للملف الموقّع الواحد في نوعه (حد ملفات النوع ده اكتمل)؛ اتعملت نسخة موقّعة من كل PDF ليها مكان بدله.','No room for the single signed file in its kind (the file limit is reached); a signed copy of each PDF with room was made instead.'] as [string,string]};
+ documentWaiting:['سيُنشأ الملف الموقّع بمجرد رفع الملفات التي اطّلع عليها العميل:','The signed file is made once the files the customer saw are uploaded:'] as [string,string],
+ documentTooLarge:['كان الملف الموقّع الموحّد سيتجاوز 25 ميجابايت؛ فأُنشئت نسخة موقّعة من كل PDF بدلًا منه.','The single signed file would have been larger than 25 MB; a signed copy of each PDF was made instead.'] as [string,string],
+ documentMismatch:['لم يُنشأ الملف الموقّع الموحّد (الملفات تختلف عمّا عُرض)؛ فأُنشئت نسخة موقّعة من كل PDF بدلًا منه.','The single signed file was not made (the files are not as shown); a signed copy of each PDF was made instead.'] as [string,string],
+ documentRefused:['لا مكان للملف الموقّع الموحّد في نوعه (اكتمل حد ملفات هذا النوع)؛ فأُنشئت نسخة موقّعة من كل PDF له مكان بدلًا منه.','No room for the single signed file in its kind (the file limit is reached); a signed copy of each PDF with room was made instead.'] as [string,string]};
 /** Finance sent the request back (2026-11-10), in the representative's and the sales manager's words. */
-export const MOLD_RETURNED_TEXT={badge:['رجّعتها المالية','Returned by finance'] as [string,string],title:['رجّعته المالية','Finance returned it'] as [string,string],
- correct:['تعديل وإعادة الإرسال','Edit and resend'] as [string,string],corrected:['اتبعت التعديل للإنتاج','The correction reached production'] as [string,string],
- waiting:['عدّل الطلب وابعته تاني؛ بيرجع لمدير المبيعات يعتمده من جديد.','Correct the request and send it again; it goes back to the sales manager for a new approval.'] as [string,string],
+export const MOLD_RETURNED_TEXT={badge:['أعادتها المالية','Returned by finance'] as [string,string],title:['أعادته المالية','Finance returned it'] as [string,string],
+ correct:['تعديل وإعادة الإرسال','Edit and resend'] as [string,string],corrected:['أُرسل التعديل إلى الإنتاج','The correction reached production'] as [string,string],
+ waiting:['عدّل الطلب وأعد إرساله؛ يعود إلى مدير المبيعات ليعتمده من جديد.','Correct the request and send it again; it goes back to the sales manager for a new approval.'] as [string,string],
  others:['بانتظار تعديل صاحب الطلب ثم اعتماد مدير المبيعات من جديد.','Waiting for the requester\'s correction, then the sales manager\'s approval again.'] as [string,string],
- manager:['المالية رجّعته؛ راجع السبب قبل ما تعتمده من جديد.','Finance returned it; read the reason before approving it again.'] as [string,string],
- filter:['رجّعتها المالية','Returned by finance'] as [string,string],save:['حفظ وإعادة الإرسال للإنتاج','Save and resend to production'] as [string,string],
- dialog:['المالية رجّعت الطلب. عدّله وابعته تاني؛ أي تغيير في اللي العميل وقّع عليه محتاج توقيع جديد.','Finance returned the request. Correct it and send it again; any change to what the customer signed needs a new signature.'] as [string,string]};
-/** «رجّعته المالية (<name>): <reason> · <time>»: the name only when it says more than «finance» (an e-mail, a person). */
+ manager:['أعادته المالية؛ راجع السبب قبل اعتماده من جديد.','Finance returned it; read the reason before approving it again.'] as [string,string],
+ filter:['أعادتها المالية','Returned by finance'] as [string,string],save:['حفظ وإعادة الإرسال للإنتاج','Save and resend to production'] as [string,string],
+ dialog:['أعادت المالية الطلب. عدّله وأعد إرساله؛ وأي تغيير فيما وقّع عليه العميل يتطلب توقيعًا جديدًا.','Finance returned the request. Correct it and send it again; any change to what the customer signed needs a new signature.'] as [string,string]};
+/** «أعادته المالية (<name>): <reason> · <time>»: the name only when it says more than «finance» (an e-mail, a person). */
 export const moldReturnedName=(returned:Pick<MoldReturned,'name'>)=>{const name=(returned.name||'').trim();return name&&!/^(finance|المالية)$/i.test(name)?name:'';};
-/** Why a PDF got no signed copy, in the representative's words: «ما اتحطش التوقيع جوه <file>: …». */
+/** Why a PDF got no signed copy, in the representative's words: «لم يوضع التوقيع داخل <file>: …». */
 export function moldNotSignedText(name:string,reason:string,say:(ar:string,en:string)=>string){
  const why=reason==='protected'||reason==='damaged'?say('الملف محمي أو تالف','the file is protected or damaged')
-  :reason==='too_many_files'?say('مفيش مكان لنسخة موقّعة (حد ملفات النوع ده اكتمل)','no room for a signed copy (this kind\'s file limit is reached)')
-  :reason==='too_large'?say('النسخة الموقّعة أكبر من 25 ميجابايت','the signed copy is larger than 25 MB'):say('ما اتعملتش نسخة موقّعة','no signed copy was made');
- return say('ما اتحطش التوقيع جوه ','The signature was not put inside ')+name+': '+why;
+  :reason==='too_many_files'?say('لا مكان لنسخة موقّعة (اكتمل حد ملفات هذا النوع)','no room for a signed copy (this kind\'s file limit is reached)')
+  :reason==='too_large'?say('النسخة الموقّعة أكبر من 25 ميجابايت','the signed copy is larger than 25 MB'):say('لم تُنشأ نسخة موقّعة','no signed copy was made');
+ return say('لم يوضع التوقيع داخل ','The signature was not put inside ')+name+': '+why;
 }
 /** The customer as typed (2026-11-09): the form's refusals, the same as the server's; the note under the fields for a customer not in the
  *  CRM, the ERP code field's hint, the line of a linked customer, and how the sheet and the card say such a request. */
 export const MOLD_CUSTOMER_TEXT={
  nameRequired:[MOLD_CUSTOMER_NAME_REQUIRED,'Enter the customer name'] as [string,string],nameLong:[MOLD_CUSTOMER_NAME_LONG,'The customer name is up to 200 characters'] as [string,string],
  erpRequired:[MOLD_ERP_CODE_REQUIRED,'Enter the customer\'s ERP code'] as [string,string],erpLong:[MOLD_ERP_CODE_LONG,'The ERP code is up to 50 characters'] as [string,string],
- free:['عميل مش موجود في الـCRM: الطلب هيتبعت للإنتاج بالاسم وكود ERP','A customer not in the CRM: the request goes to production with the name and ERP code'] as [string,string],
- erpHint:['مطلوب لعميل مش موجود في الـCRM؛ اختياري للعميل المرتبط','Required for a customer not in the CRM; optional for a linked customer'] as [string,string],
+ free:['عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود ERP','A customer not in the CRM: the request goes to production with the name and ERP code'] as [string,string],
+ erpHint:['مطلوب لعميل غير موجود في الـCRM؛ اختياري للعميل المرتبط','Required for a customer not in the CRM; optional for a linked customer'] as [string,string],
  linked:['مرتبط بالعميل','Linked to the customer'] as [string,string],
  notInCrm:['غير مسجل في الـCRM','Not in the CRM'] as [string,string]};
 /** The customer's signature in the representative's words (2026-11-04): the step, the pad, its refusals, the sheet's line. */
 export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer signature'] as [string,string],signed:['وقّع العميل','Signed by the customer'] as [string,string],
- signer:['اسم اللي بيوقّع','Name of the person signing'] as [string,string],clear:['امسح','Clear'] as [string,string],confirm:['تأكيد وإرسال','Confirm and send'] as [string,string],
+ signer:['اسم الموقّع','Name of the person signing'] as [string,string],clear:['مسح','Clear'] as [string,string],confirm:['تأكيد وإرسال','Confirm and send'] as [string,string],
  required:['توقيع العميل مطلوب قبل إرسال الطلب','The customer\'s signature is required before the request is sent'] as [string,string],
- blank:['التوقيع فاضي أو صغير قوي؛ خلّي العميل يوقّع بصباعه أو بالقلم','The signature is empty or too small; have the customer sign with a finger or a stylus'] as [string,string],
- signerRequired:['اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)','Type the name of the person signing for the customer (2 to 80 characters)'] as [string,string],
- room:['توقيع العميل بيتحسب ملف من الـ 10؛ تقدر ترفع لحد 9 ملفات تصميم','The customer\'s signature takes one of the 10 places; up to 9 design files'] as [string,string],
- again:['اتغيّرت بيانات الطلب؛ لازم العميل يوقّع تاني','The request\'s data changed; the customer signs again'] as [string,string],
+ blank:['التوقيع فارغ أو صغير جدًا؛ اطلب من العميل أن يوقّع بإصبعه أو بالقلم','The signature is empty or too small; have the customer sign with a finger or a stylus'] as [string,string],
+ signerRequired:['اكتب اسم الموقّع عن العميل (من 2 إلى 80 حرفًا)','Type the name of the person signing for the customer (2 to 80 characters)'] as [string,string],
+ room:['يُحتسب توقيع العميل ملفًا من الـ 10؛ يمكنك رفع 9 ملفات تصميم كحد أقصى','The customer\'s signature takes one of the 10 places; up to 9 design files'] as [string,string],
+ again:['تغيّرت بيانات الطلب؛ يجب أن يوقّع العميل من جديد','The request\'s data changed; the customer signs again'] as [string,string],
  /** Where the signature's image stands (MoldSignatureState), beside «وقّع العميل». */
- waiting:['التوقيع لسه ما وصلش للإنتاج','The signature has not reached production yet'] as [string,string],
- stopped:['التوقيع ما وصلش للإنتاج؛ اضغط «إعادة الإرسال»','The signature did not reach production; tap Resend'] as [string,string],
- refused:['التوقيع ما وصلش للإنتاج ومش هيتبعت تاني؛ ألغِ الطلب واطلبه من جديد بتوقيع جديد','The signature did not reach production and will not be sent again; cancel the request and ask again with a new signature'] as [string,string],
+ waiting:['لم يصل التوقيع إلى الإنتاج بعد','The signature has not reached production yet'] as [string,string],
+ stopped:['لم يصل التوقيع إلى الإنتاج؛ اضغط «إعادة الإرسال»','The signature did not reach production; tap Resend'] as [string,string],
+ refused:['لم يصل التوقيع إلى الإنتاج ولن يُعاد إرساله؛ ألغِ الطلب واطلبه من جديد بتوقيع جديد','The signature did not reach production and will not be sent again; cancel the request and ask again with a new signature'] as [string,string],
  /** «طلبات بانتظار اعتمادي»: the CRM's request names a signature that production's listing does not hold yet. */
- pendingMissing:['توقيع العميل لسه ما وصلش للإنتاج؛ استنى لما يوصل قبل الاعتماد','The customer\'s signature has not reached production yet; wait for it before approving'] as [string,string]};
+ pendingMissing:['لم يصل توقيع العميل إلى الإنتاج بعد؛ انتظر وصوله قبل الاعتماد','The customer\'s signature has not reached production yet; wait for it before approving'] as [string,string]};
 /** Each kind of file, as the request's sheet and the sales manager's list group them. */
 export const moldFileCategoryNames:Record<MoldFileCategory,[string,string]>={design:['ملفات التصميم','Design files'],quote:['ملفات عرض السعر','Quotation files'],po:['ملفات الـ PO','PO files']};
 /** Where the request waits now, in the requester's words (the contract's waitingStep). */
@@ -783,19 +783,19 @@ export const moldPaymentNames:Record<MoldPayment,[string,string]>={cash:[MOLD_PA
 export const moldPaymentTermsNames:Record<MoldPaymentTerms,[string,string]>={advance_before_shipping:[MOLD_PAYMENT_TERMS.advance_before_shipping,'An advance payment, the rest before shipping'],
  advance_after_shipping:[MOLD_PAYMENT_TERMS.advance_after_shipping,'An advance payment, the rest after shipping'],advance_credit_limit:[MOLD_PAYMENT_TERMS.advance_credit_limit,'An advance payment, the rest on a credit limit']};
 export const MOLD_PAYMENT_TERMS_TITLE:[string,string]=['طريقة الدفع المتفق عليها','Agreed payment terms'];
-export const MOLD_PAYMENT_TERMS_REQUIRED_TEXT:[string,string]=['اختار طريقة الدفع المتفق عليها','Choose the agreed payment terms'];
+export const MOLD_PAYMENT_TERMS_REQUIRED_TEXT:[string,string]=['اختر طريقة الدفع المتفق عليها','Choose the agreed payment terms'];
 export const MOLD_TERMS_ACCEPT_TEXT:[string,string]=[MOLD_TERMS_ACCEPT,'Manufacturing is approved on the payment terms stated at receipt'];
 export const MOLD_TERMS_ACCEPTED_TEXT:[string,string]=['وافق على شروط الدفع','Accepted the payment terms'];
 /** A cancellation answered with the request not cancelled: production had restored it and this reason was used already (2026-11-03). */
-export const MOLD_SAME_REASON_TEXT:[string,string]=['مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد','The production manager restored the request; to cancel it again, write a new reason'];
+export const MOLD_SAME_REASON_TEXT:[string,string]=['أعاد مدير الإنتاج الطلب؛ لإلغائه مرة أخرى اكتب سببًا جديدًا','The production manager restored the request; to cancel it again, write a new reason'];
 /** Why a request is active again after a cancellation (a stored error with code `restored`), in the representative's words; '' for any
  *  other error. cancellable: the reader may cancel it now (view.can.cancel); only then is a new reason asked for, never once the
  *  approvals are complete or production has started, nor for a reader who may not cancel it. */
 export function moldRestoredText(error:Pick<MoldError,'code'|'reason'>|null|undefined,say:(ar:string,en:string)=>string,{cancellable=true}:{cancellable?:boolean}={}){
  if(error?.code!=='restored')return '';
  if(error.reason==='same_reason'&&cancellable)return say(...MOLD_SAME_REASON_TEXT)+'.';
- return (error.reason==='cancel_dropped'?say('رجّعه مدير الإنتاج بعد الإلغاء، فالإلغاء المنتظر لن يُعاد إرساله','The production manager restored it after the cancellation, so the waiting cancellation will not be sent again')
-  :say('رجّعه مدير الإنتاج بعد الإلغاء','The production manager restored it after the cancellation'))+(cancellable?say('؛ عشان تلغيه تاني اكتب سبب جديد.','; to cancel it again, write a new reason.'):'.');
+ return (error.reason==='cancel_dropped'?say('أعاده مدير الإنتاج بعد الإلغاء، فلن يُعاد إرسال الإلغاء المنتظر','The production manager restored it after the cancellation, so the waiting cancellation will not be sent again')
+  :say('أعاده مدير الإنتاج بعد الإلغاء','The production manager restored it after the cancellation'))+(cancellable?say('؛ لإلغائه مرة أخرى اكتب سببًا جديدًا.','; to cancel it again, write a new reason.'):'.');
 }
 /** A sent request's change refused for good by production (409 request_locked, production_only): production holds the request with
  *  other data, which its production manager alone edits. The change is not tried again; the request says so (moldProductionOnly). */
@@ -830,10 +830,10 @@ export function moldDesignRefusalText(reason:string,say:(ar:string,en:string)=>s
   too_many_pixels:['الصورة أكبر من 80 مليون نقطة','The image is larger than 80 million pixels'],too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],payload_too_large:['الملف أكبر من 25 ميجابايت','The file is larger than 25 MB'],
   too_many_files:category==='quote'?['الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج)','At most 5 quotation files a request (yours and production\'s)']
    :category==='po'?['الحد 5 ملفات للـ PO (ملفاتك وملفات الإنتاج)','At most 5 PO files a request (yours and production\'s)']:['الحد 10 ملفات للطلب (ملفاتك وملفات الإنتاج)','At most 10 files a request (yours and production\'s)'],
-  not_document:['ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة','A quotation or PO file must be a PDF or an image'],category:['نوع الملف غير مقبول','The kind of file is not accepted'],
+  not_document:['يجب أن يكون ملف عرض السعر أو الـ PO ملف PDF أو صورة','A quotation or PO file must be a PDF or an image'],category:['نوع الملف غير مقبول','The kind of file is not accepted'],
   quote_po_update:['بانتظار تحديث تطبيق المنتجات','Waiting for the products application update'],
-  signature_room:['المكان العاشر لتوقيع العميل؛ تقدر ترفع لحد 9 ملفات تصميم','The tenth place is the customer\'s signature; up to 9 design files'],
-  crm_file_id_used:['رقم الملف مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وأرفقه من جديد','The file\'s number was already used for another file or a deleted one; delete it and attach it again'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
+  signature_room:['المكان العاشر لتوقيع العميل؛ يمكنك رفع 9 ملفات تصميم كحد أقصى','The tenth place is the customer\'s signature; up to 9 design files'],
+  crm_file_id_used:['رقم الملف مستخدم من قبل لملف آخر أو لملف محذوف؛ احذفه وأرفقه من جديد','The file\'s number was already used for another file or a deleted one; delete it and attach it again'],not_found:['الطلب غير موجود لدى الإنتاج بعد','Production does not hold the request yet'],
   request_locked:['اكتملت الاعتمادات؛ لم يعد تغيير ملفات الطلب ممكنًا','The approvals are complete; the files can no longer change'],file_missing:['نسخة الملف في الـCRM مفقودة؛ احذفه وأرفقه من جديد','The CRM copy of the file is missing; delete it and attach it again'],
  };
  const found=table[reason];

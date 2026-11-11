@@ -43,7 +43,7 @@ try{browser=await chromium.launch({headless:true,executablePath:process.env.YR_B
  // Customer service no longer adds customers (the owner, 2026-11-07). A customer a service member queued on a page loaded before that release,
  // and the opportunity recorded on it, are not lost: the customer stays on the device marked «needs review» with the server's reason, the
  // opportunity waits behind it («upload the linked customer first») and is never sent, and both can be archived for review.
- const csMe={...me,id:'cs-1',email:'cs1@example.test',name:'CS One',role:'customer_service'},refusal='إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.';
+ const csMe={...me,id:'cs-1',email:'cs1@example.test',name:'CS One',role:'customer_service'},refusal='إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.';
  snapshot={me:csMe,records:[],members:[csMe],audits:[]};await page.evaluate(s=>offline.saveOfflineSnapshot(s),snapshot);refuse={url:'/api/crm',status:403,error:refusal};
  await context.setOffline(true);const csCustomerKey=crypto.randomUUID(),csRequestId=crypto.randomUUID();
  const csCustomer=await page.evaluate(async({body,me})=>offline.offlineSubmit('/api/crm',body,{me,label:'CS factory',kind:'customer'}),{body:JSON.stringify({action:'save',kind:'customer',createKey:csCustomerKey,data:{name:'CS factory',assignedTo:csMe.id,branch:csMe.branch,region:'western'}}),me:csMe});ok(csCustomer.queued,'Service customer kept on the device');

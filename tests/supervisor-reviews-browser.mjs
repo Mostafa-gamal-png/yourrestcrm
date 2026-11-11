@@ -1,7 +1,7 @@
 // The supervisor's notes (lib/supervisor-reviews*.ts, app/supervisor-reviews.tsx) in a real Chromium against the BUILT release (run the
 // build first): on «تقرير يوم المندوب» the supervisor adds «النتيجة» and «الإجراء المطلوب» under their representative's visit and on
 // the whole day, on a desktop in Arabic and on a 360 px phone in English («لم تُقرأ بعد» / «Not read yet»); the representative, in the
-// Android app emulator, finds «ملاحظات المشرف على شغلك» at the top of every page with its count, a «قرأت» that fails offline keeps the
+// Android app emulator, finds «ملاحظات المشرف على عملك» at the top of every page with its count, a «قرأت» that fails offline keeps the
 // note and says why, «قرأت» hides one, «قرأت الكل» the rest (in English); the supervisor then sees «تمت القراءة» with the time. No
 // horizontal scroll and 44 px buttons on the phone. Synthetic fixtures only: temporary SQLite, mocked mail, no production data.
 import assert from 'node:assert/strict';
@@ -93,7 +93,7 @@ try {
   await card.waitFor();
   eq(await card.locator('[data-review-count]').innerText(), '3', 'three unread notes');
   const text = await card.innerText();
-  for (const words of ['ملاحظات المشرف على شغلك', 'النتيجة', 'الإجراء المطلوب', 'تقييم اليوم', 'زيارة · مصنع الاختبار', 'جهّز عرض السعر قبل الخميس', 'المشرف سالم', 'قرأت الكل']) ok(text.includes(words), 'the card shows ' + words);
+  for (const words of ['ملاحظات المشرف على عملك', 'النتيجة', 'الإجراء المطلوب', 'تقييم اليوم', 'زيارة · مصنع الاختبار', 'جهّز عرض السعر قبل الخميس', 'المشرف سالم', 'قرأت الكل']) ok(text.includes(words), 'the card shows ' + words);
   eq(await smallButtons(rep, '[data-review-inbox]'), [], 'the card\'s buttons are at least 44 px');
   await noOverflow(rep, 'the card on a 360 px phone');
   await shot(rep, '03-representative-card-ar');

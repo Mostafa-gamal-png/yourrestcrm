@@ -1,4 +1,4 @@
-// «فريقي النهارده» (lib/team-today*.ts, GET /api/team-today; the owner 2026-11-10, item 4): the pure rules (the start of the day, the
+// «فريقي اليوم» (lib/team-today*.ts, GET /api/team-today; the owner 2026-11-10, item 4): the pure rules (the start of the day, the
 // order, the totals, what the page accepts), then the route and the reader on an isolated in-memory SQLite (every drizzle migration; the
 // route compiled as the build does, the session faked): 401 anonymous, 403 a representative and customer service, 404 when «تقرير يوم
 // المندوب» is hidden; each reader's rows are exactly the day report's people (the supervisor's own representatives in their region, the

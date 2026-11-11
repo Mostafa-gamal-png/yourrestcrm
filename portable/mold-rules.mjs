@@ -24,15 +24,15 @@ export const MOLD_HALF_BLOCKS = {none: 'بدون بلوكة نص', one: 'بلو�
  *  the representative when asking. Production refuses any other value (400 invalid_payload, fields ['payment']); a request sent before
  *  has none (pending lists it as null). */
 export const MOLD_PAYMENTS = {cash: 'نقدي', deferred: 'آجل'};
-export const MOLD_PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل';
+export const MOLD_PAYMENT_REQUIRED = 'اختر طريقة الدفع: نقدي أو آجل';
 /** How a deferred payment is to be paid (the owner, 2026-11-10: «فى حال طلب الدفع اجل يجب على المندوب يختار طريقة الدفع المتفق عليها»): one of
  *  three, required with "deferred" and never with "cash"; sent as `paymentTerms` beside `payment` only by a request that carries it (the
  *  products update of 2026-11-10 reads it; the application before ignores it, as any key it does not know). */
 export const MOLD_PAYMENT_TERMS = Object.freeze({advance_before_shipping: 'دفعة مقدمة واستكمال باقي المبلغ قبل الترحيل', advance_after_shipping: 'دفعة مقدمة واستكمال باقي المبلغ بعد الترحيل', advance_credit_limit: 'دفعة مقدمة واستكمال باقي المبلغ حد ائتماني'});
-export const MOLD_PAYMENT_TERMS_REQUIRED = 'اختار طريقة الدفع المتفق عليها';
+export const MOLD_PAYMENT_TERMS_REQUIRED = 'اختر طريقة الدفع المتفق عليها';
 /** A page loaded before 2026-11-10 asks for a deferred request without the terms (it shows no such field). */
-export const MOLD_PAYMENT_TERMS_REFRESH = 'حدّث الصفحة واختار طريقة الدفع المتفق عليها';
-export const MOLD_PAYMENT_TERMS_CASH = 'طريقة الدفع المتفق عليها للدفع الآجل بس';
+export const MOLD_PAYMENT_TERMS_REFRESH = 'حدّث الصفحة واختر طريقة الدفع المتفق عليها';
+export const MOLD_PAYMENT_TERMS_CASH = 'طريقة الدفع المتفق عليها للدفع الآجل فقط';
 /** The code of a payment's terms, or null when it is not one of the three.
  * @param {unknown} value
  * @returns {'advance_before_shipping'|'advance_after_shipping'|'advance_credit_limit'|null} */
@@ -185,7 +185,7 @@ export function validateMoldSpecs(input) {
   const source = input && typeof input === 'object' ? input : {}, errors = {}, specs = {};
   const text = (field, max, required, label) => {
     const value = moldText(source[field]);
-    if (value === undefined) errors[field] = label + ' فيه رموز غير مسموحة';
+    if (value === undefined) errors[field] = label + ' يحتوي على رموز غير مسموحة';
     else if (required && !value) errors[field] = 'اكتب ' + label;
     else if (length(value) > max) errors[field] = label + ' حتى ' + max + ' حرفًا';
     specs[field] = value || '';
@@ -214,7 +214,7 @@ export function validateMoldSpecs(input) {
   text('moldNo', MOLD_LIMITS.moldNo, false, 'رقم القالب');
   whole('quantity', MOLD_RANGES.quantity, 'الكمية');
   text('designUrl', MOLD_LIMITS.designUrl, false, 'رابط التصميم');
-  if (!errors.designUrl && specs.designUrl && !/^https:\/\/\S+$/i.test(specs.designUrl)) errors.designUrl = 'رابط التصميم يبدأ بـ https:// ومن غير مسافات';
+  if (!errors.designUrl && specs.designUrl && !/^https:\/\/\S+$/i.test(specs.designUrl)) errors.designUrl = 'رابط التصميم يبدأ بـ https:// وبلا مسافات';
   text('notes', MOLD_LIMITS.notes, false, 'الملاحظات');
   return {specs, errors};
 }
@@ -247,7 +247,7 @@ export function validateMoldQuotePo(input, {required = false} = {}) {
   const source = input && typeof input === 'object' ? input : {}, errors = {}, out = {quoteNo: '', poNo: ''};
   for (const field of MOLD_QUOTE_PO_FIELDS) {
     const value = moldQuotePoNumber(source[field]), label = MOLD_QUOTE_PO_LABELS[field];
-    if (value === undefined) errors[field] = label + ' فيه رموز غير مسموحة';
+    if (value === undefined) errors[field] = label + ' يحتوي على رموز غير مسموحة';
     else if (length(value) > MOLD_QUOTE_PO_MAX) errors[field] = label + ' أطول من ' + MOLD_QUOTE_PO_MAX + ' حرف';
     else out[field] = value;
   }
@@ -454,8 +454,8 @@ export const MOLD_SIGNATURE_MIN_POINTS = 12, MOLD_SIGNATURE_MIN_BOX = 40;
 export const MOLD_SIGNATURE_NAME_PREFIX = 'توقيع العميل - ';
 /** The server's refusals (each has its English pair in lib/locales/en.json). */
 export const MOLD_SIGNATURE_REQUIRED = 'توقيع العميل مطلوب قبل إرسال الطلب';
-export const MOLD_SIGNER_REQUIRED = 'اكتب اسم اللي بيوقّع عن العميل (من ' + MOLD_SIGNER_MIN + ' إلى ' + MOLD_SIGNER_MAX + ' حرف)';
-export const MOLD_SIGNATURE_BAD = 'صورة التوقيع غير صالحة؛ امسح ووقّع من جديد';
+export const MOLD_SIGNER_REQUIRED = 'اكتب اسم الموقّع عن العميل (من ' + MOLD_SIGNER_MIN + ' إلى ' + MOLD_SIGNER_MAX + ' حرفًا)';
+export const MOLD_SIGNATURE_BAD = 'صورة التوقيع غير صالحة؛ امسح التوقيع ووقّع من جديد';
 /** Who signed, as stored: moldText (single spaces, the ends trimmed) without invisible marks; undefined when production would refuse a
  *  control character in it, or when it is not a text. Its length is checked by moldSignatureCheck. */
 export function moldSigner(value) {

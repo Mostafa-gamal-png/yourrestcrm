@@ -331,7 +331,7 @@ try {
   check([res.status, /الحد 10 ملفات/.test(body.error), await rowsOf(sixth.id)], [409, true, 8], 'the eleventh is refused by the CRM itself, nothing stored');
   const signatureFile = full.designFiles.find(file => file.signature);
   res = await remove('rep', sixth.id, signatureFile.crmFileId);
-  check([res.status, (await res.json()).error, !!(await fileRow(signatureFile.crmFileId)).deleted_at], [409, 'توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.', false], 'the customer\'s signature cannot be deleted from the request');
+  check([res.status, (await res.json()).error, !!(await fileRow(signatureFile.crmFileId)).deleted_at], [409, 'لا يُحذف توقيع العميل من الطلب؛ إذا تغيّرت بيانات الطلب قبل إرساله يوقّع العميل من جديد.', false], 'the customer\'s signature cannot be deleted from the request');
   const one = drawn(full.designFiles).find(file => file.source === 'crm');
   check((await remove('rep', sixth.id, one.crmFileId)).status, 200, 'one deleted');
   check((await upload('rep', sixth.id, 'الحادي عشر.pdf', pdf('eleventh'))).status, 200, 'a place is free again');

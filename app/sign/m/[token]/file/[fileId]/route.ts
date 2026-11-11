@@ -23,12 +23,12 @@ function gone(status=404,message=SIGN_LINK_GONE){
 export async function GET(req:Request,{params}:{params:Promise<{token:string;fileId:string}>}){
  try{
   const {token,fileId}=await params,db=database();
-  if(!await signLinkPermit(db,req.headers))return gone(429,'محاولات كتير؛ استنى دقيقة وحاول تاني.');
+  if(!await signLinkPermit(db,req.headers))return gone(429,'محاولات كثيرة؛ انتظر دقيقة ثم أعد المحاولة.');
   const found=await findBySignToken(db,token);
   if(!found)return gone();
   const file=signLinkFiles(found.row,await loadMoldDesignFiles(db,'request_id=?',[found.row.id]),found.state).find(item=>item.id===fileId);
   if(!file?.objectKey||!env.FILES)return gone();
-  if(active>=maxConcurrent)return gone(429,'التحميل مشغول دلوقتي؛ حاول بعد لحظات.');
+  if(active>=maxConcurrent)return gone(429,'التحميل مشغول الآن؛ أعد المحاولة بعد لحظات.');
   active++;
   try{
    const object=await env.FILES.get(file.objectKey);
@@ -36,5 +36,5 @@ export async function GET(req:Request,{params}:{params:Promise<{token:string;fil
    const bytes=new Uint8Array(await object.arrayBuffer()),download=new URL(req.url).searchParams.get('download')==='1',type=moldDesignContentType(file.contentType);
    return new Response(bytes,{headers:{'Content-Type':type,'Content-Length':String(bytes.length),'Content-Disposition':moldContentDisposition(file.name,!download&&type!=='application/octet-stream'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'}});
   }finally{active--;}
- }catch{return gone(503,'الخدمة مش متاحة دلوقتي؛ حاول بعد شوية.');}
+ }catch{return gone(503,'الخدمة غير متاحة الآن؛ أعد المحاولة بعد قليل.');}
 }

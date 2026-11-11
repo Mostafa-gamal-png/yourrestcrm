@@ -65,7 +65,7 @@ const request = extra => ({id: 'mr-00000000-0000-4000-8000-000000000001', reques
   check(['advance_before_shipping', 'advance_after_shipping', 'advance_credit_limit', 'ADVANCE_BEFORE_SHIPPING', ' advance_credit_limit', '', 'toString', '__proto__', 'hasOwnProperty', 1, null, undefined, {}].map(rules.moldPaymentTerms),
     ['advance_before_shipping', 'advance_after_shipping', 'advance_credit_limit', null, null, null, null, null, null, null, null, null, null], 'a code is one of the three exactly (no case folding, no trimming, nothing inherited)');
   check([rules.MOLD_PAYMENT_TERMS_REQUIRED, rules.MOLD_PAYMENT_TERMS_REFRESH, rules.MOLD_PAYMENT_TERMS_CASH, rules.MOLD_TERMS_ACCEPT],
-    ['اختار طريقة الدفع المتفق عليها', 'حدّث الصفحة واختار طريقة الدفع المتفق عليها', 'طريقة الدفع المتفق عليها للدفع الآجل بس', 'تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام'], 'the words of the refusals and the acknowledgement');
+    ['اختر طريقة الدفع المتفق عليها', 'حدّث الصفحة واختر طريقة الدفع المتفق عليها', 'طريقة الدفع المتفق عليها للدفع الآجل فقط', 'تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام'], 'the words of the refusals and the acknowledgement');
   const cash = rules.moldRequestBody(request({payment: 'cash'})), deferred = rules.moldRequestBody(request({payment: 'deferred'}));
   check([JSON.stringify(rules.moldRequestBody(request({payment: 'cash', paymentTerms: undefined}))), JSON.stringify(rules.moldRequestBody(request({payment: 'deferred', paymentTerms: null})))], [JSON.stringify(cash), JSON.stringify(deferred)],
     'no terms (undefined or null): the body byte for byte as before (an older request, a request kept in the CRM before the update is known)');
@@ -136,7 +136,7 @@ const request = extra => ({id: 'mr-00000000-0000-4000-8000-000000000001', reques
   check(rules.MOLD_CATEGORY_MAX_FILES, {design: 10, quote: 5, po: 5}, 'the originals keep today\'s limits');
   // Words.
   check([lib.moldReturnedName({name: 'finance@yourrest.org'}), lib.moldReturnedName({name: 'finance'}), lib.moldReturnedName({name: 'المالية'}), lib.moldReturnedName({})], ['finance@yourrest.org', '', '', ''], 'the name only when it says more than «finance»');
-  check([lib.MOLD_RETURNED_TEXT.badge[0], lib.MOLD_RETURNED_TEXT.title[0], lib.MOLD_RETURNED_TEXT.correct[0], lib.MOLD_SIGN_LINK_TEXT.copyRefused[0]], ['رجّعتها المالية', 'رجّعته المالية', 'تعديل وإعادة الإرسال', 'ما اتبعتتش: الإنتاج رفض عدد الملفات'], 'the owner\'s words');
+  check([lib.MOLD_RETURNED_TEXT.badge[0], lib.MOLD_RETURNED_TEXT.title[0], lib.MOLD_RETURNED_TEXT.correct[0], lib.MOLD_SIGN_LINK_TEXT.copyRefused[0]], ['أعادتها المالية', 'أعادته المالية', 'تعديل وإعادة الإرسال', 'لم تُرسل: رفض الإنتاج عدد الملفات'], 'the owner\'s words');
   check(Object.entries(lib.moldPaymentTermsNames).map(([code, [ar]]) => [code, ar]), Object.entries(rules.MOLD_PAYMENT_TERMS), 'the page\'s names are the rules\' words');
   check(lib.MOLD_TERMS_ACCEPT_TEXT[0], rules.MOLD_TERMS_ACCEPT, 'the box says the acknowledgement production keeps');
 }

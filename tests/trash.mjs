@@ -116,7 +116,7 @@ check(globalThis.nudges?.at(-1),{soon:true},'and the products application\'s lis
 const receipt=sql.prepare("SELECT * FROM crm_audit WHERE id=?").get('restore:'+customerEntry.id);
 check([receipt.action,receipt.record_id,receipt.actor,JSON.parse(receipt.detail).version],['استرجاع سجل',customer,'مدير النظام',before.row.version+1],'the receipt «استرجاع سجل»');
 check((await list()).items,[],'no longer listed');
-await restore(customerEntry.id,409).then(json=>check(json.error,'السجل اتسترجع قبل كده.'));
+await restore(customerEntry.id,409).then(json=>check(json.error,'استُرجع السجل من قبل.'));
 const actions=await crmAudits();
 check([actions.includes('حذف'),actions.includes('استرجاع سجل'),actions.includes('تعديل')],[false,false,true],'GET /api/crm lists neither the deletion nor the restoration of a record that exists again');
 const {context}=await import(path.join(out,'lib/crm-server.mjs'));
@@ -267,7 +267,7 @@ const grant=(id,cells,hidden=[])=>{if(sql.prepare('SELECT 1 FROM crm_member_perm
 const own=(id,summary,extra={})=>insert(id,'activity',home,'rep',{type:'call',date:'2026-11-10',summary,result:'اتصال',performedBy:'rep',...extra});
 own('rv-1','زيارة المندوب الأولى');own('rv-2','زيارة المندوب التانية');own('rv-3','زيارة المندوب التالتة');own('rf-1','متابعة المندوب',{visitWorkflow:'followup-v1'});
 login('rep');
-check((await remove('rv-1',403)).error,'مش مسموح لك بالحذف في الزيارات. راجع مدير النظام.','no «حذف»: the representative deletes nothing (unchanged)');
+check((await remove('rv-1',403)).error,'غير مسموح لك بالحذف في الزيارات. راجع مدير النظام.','no «حذف»: the representative deletes nothing (unchanged)');
 grant('rep',{'activity:delete':true});
 await remove('rv-1');
 page=await list();
@@ -283,7 +283,7 @@ check((await restore(deletion('rv-1').id,200,receiptOf)).alreadySaved,true,'a lo
 grant('rep',{'activity:delete':true,'followup:delete':true});
 await remove('rv-2');await remove('rf-1');
 grant('rep',{'followup:delete':true});
-const cellOff='استرجاع السجل ده محتاج صلاحية «حذف» في الزيارات، وهي مش مفتوحة لك دلوقتي. راجع مدير النظام.';
+const cellOff='استرجاع هذا السجل يتطلب صلاحية «حذف» في الزيارات، وهي غير مفتوحة لك حاليًا. راجع مدير النظام.';
 check((await list()).items.map(item=>[item.recordId,item.blocked]),[['rf-1',null],['rv-2',cellOff]],'«حذف» of visits off now: the visit says why; the follow-up (its cell on) can be restored');
 check((await restore(deletion('rv-2').id,403)).error,cellOff,'refused: 403 with the reason');
 check(raw('rv-2'),undefined,'nothing written');
@@ -299,7 +299,7 @@ grant('rep',{'activity:delete':true},['trash']);login('rep');
 await list('',404);await restore(deletion('rv-2').id,404);
 grant('rep',{'activity:delete':true,'trash:edit':false});
 check((await list()).items.map(item=>item.recordId),['rv-2'],'«استرجاع» off: the list stays');
-check((await restore(deletion('rv-2').id,403)).error,'مش مسموح لك بالتعديل في المحذوفات. راجع مدير النظام.','restoring refused with the switch\'s message');
+check((await restore(deletion('rv-2').id,403)).error,'غير مسموح لك بالتعديل في المحذوفات. راجع مدير النظام.','restoring refused with the switch\'s message');
 grant('rep',{'activity:delete':true});
 // another member's deletion: not listed, not restored
 login('owner');await remove('rv-3');login('rep');
@@ -351,7 +351,7 @@ compile('lib/i18n.ts');compile('lib/trash.ts');
 const i18n=await import(path.join(out,'lib/i18n.mjs')),words=await import(path.join(out,'lib/trash.mjs'));
 i18n.installEnglish(JSON.parse(fs.readFileSync('lib/locales/en.json','utf8')));
 const english=value=>i18n.translateText(value,'en');
-const messages=[...Object.entries(words.TRASH_TEXT).filter(([key])=>key!=='linked').map(([,value])=>value),words.TRASH_NEW_NUMBER_NOTE,...[['customer','delete'],['activity','delete'],['followup','delete'],['quote','delete'],['customer','edit']].map(([screen,action])=>words.trashCellOff(screen,action)),'مدير النظام يقدر يسترجعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.',words.trashNumberTaken('YR-C-000777'),words.trashCodeSkipped('ERP-B','مصنع الكود الجديد'),words.trashNewNumber('YR-C-000012'),
+const messages=[...Object.entries(words.TRASH_TEXT).filter(([key])=>key!=='linked').map(([,value])=>value),words.TRASH_NEW_NUMBER_NOTE,...[['customer','delete'],['activity','delete'],['followup','delete'],['quote','delete'],['customer','edit']].map(([screen,action])=>words.trashCellOff(screen,action)),'يمكن لمدير النظام استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.',words.trashNumberTaken('YR-C-000777'),words.trashCodeSkipped('ERP-B','مصنع الكود الجديد'),words.trashNewNumber('YR-C-000012'),
  ...['العميل «مصنع»','الماكينة «ماكينة»','الفرصة «قالب بلوك»','عرض السعر «YR-1»','الزيارة رقم 12','الزيارة «زيارة»','المتابعة «متابعة»','السجل المرتبط'].map(words.trashParentFirst),'المحذوفات','يمكن استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.'];
 check(messages.filter(message=>english(message)===message),[],'every message is translated');
 check([english(words.trashParentFirst('الفرصة «قالب بلوك»')),english(words.trashCodeSkipped('ERP-B','مصنع الكود الجديد')),english(words.trashNumberTaken('YR-C-000777'))],['Restore the original record first: the opportunity «قالب بلوك».','ERP code «ERP-B» was not restored: it now belongs to the customer «مصنع الكود الجديد».','Yourrest number YR-C-000777 now belongs to another customer; the customer cannot be restored with the same number.'],'with the names in place');

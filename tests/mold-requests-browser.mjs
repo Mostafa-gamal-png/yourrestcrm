@@ -127,7 +127,7 @@ try {
   // ---- The customer's signature (2026-11-04): drawn on the pad with pointer events, as a mouse, a finger (real touch through the DevTools
   //  protocol: the Android WebView's and a phone's) or a stylus (pen pointer events, a tablet's) does; 'dot' is a tap, no signature.
   const pad = signaturePad, drawOn = drawSignature, inked = padInked, sign = signRequest;
-  const SIGNATURE_BLANK = 'التوقيع فاضي أو صغير قوي؛ خلّي العميل يوقّع بصباعه أو بالقلم', SIGNER_REQUIRED = 'اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)';
+  const SIGNATURE_BLANK = 'التوقيع فارغ أو صغير جدًا؛ اطلب من العميل أن يوقّع بإصبعه أو بالقلم', SIGNER_REQUIRED = 'اكتب اسم الموقّع عن العميل (من 2 إلى 80 حرفًا)';
   const goMoldsAnywhere = async page => {
     const more = page.locator('.mobile-bottom-navigation button[aria-haspopup="dialog"]');
     await page.locator('.mobile-bottom-navigation button[aria-haspopup="dialog"]:visible, button.nav-item:visible').first().waitFor();
@@ -153,7 +153,7 @@ try {
   ok(await dialog.locator('.field-error').count() >= 5, 'and points at each missing field');
   // How the customer pays: a required choice of two (2026-11-03).
   const paymentChoice = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first();
-  check([await paymentChoice.locator('label').allInnerTexts(), await paymentChoice.locator('.field-error').innerText(), await paymentChoice.getAttribute('aria-invalid')], [['نقدي', 'آجل'], 'اختار طريقة الدفع: نقدي أو آجل', 'true'], 'the payment: نقدي or آجل, required');
+  check([await paymentChoice.locator('label').allInnerTexts(), await paymentChoice.locator('.field-error').innerText(), await paymentChoice.getAttribute('aria-invalid')], [['نقدي', 'آجل'], 'اختر طريقة الدفع: نقدي أو آجل', 'true'], 'the payment: نقدي or آجل, required');
   // A design file of its own (2026-11-08): required of every new request, said in the picker's title and refused beside it.
   const designPicker = dialog.locator('.mold-design-picker[data-category="design"]');
   check([await designPicker.locator('legend').innerText(), await designPicker.locator(':scope > .field-error').innerText(), await designPicker.getAttribute('aria-invalid'), await designPicker.getAttribute('data-required')], [DESIGN_TITLE, DESIGN_REQUIRED, 'true', 'true'], 'the design files: one at least, said in the title and refused beside the picker');
@@ -164,7 +164,7 @@ try {
   check(await dialog.locator('.field-error').count(), 0, 'each message goes once its field is filled');
   await shot(rep, 'mold-form-desktop');
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
-  // ---- 1b. The customer signs first (2026-11-04): what they sign, who signs, the pad; nothing drawn, a tap, no name refused; «امسح» clears
+  // ---- 1b. The customer signs first (2026-11-04): what they sign, who signs, the pad; nothing drawn, a tap, no name refused; «مسح» clears
   const step = dialog.locator('.mold-signing');
   await step.waitFor();
   check([await dialog.locator('form.mold-form').isVisible(), mock.state.calls.length, await step.locator('h3').innerText()], [false, before, 'توقيع العميل'], 'not sent yet: «حفظ وإرسال» opens «توقيع العميل» first');
@@ -178,8 +178,8 @@ try {
   await step.getByRole('button', {name: 'تأكيد وإرسال'}).click();
   check([await inked(rep), await step.locator('.field-error').allInnerTexts()], [true, [SIGNATURE_BLANK]], 'a tap is no signature');
   await drawOn(rep);
-  await step.getByRole('button', {name: 'امسح'}).click();
-  check([await inked(rep), await step.getByRole('button', {name: 'امسح'}).isDisabled()], [false, true], '«امسح» clears the pad');
+  await step.getByRole('button', {name: 'مسح'}).click();
+  check([await inked(rep), await step.getByRole('button', {name: 'مسح'}).isDisabled()], [false, true], '«مسح» clears the pad');
   await step.getByRole('button', {name: 'تأكيد وإرسال'}).click();
   check([await step.locator('.field-error').allInnerTexts(), mock.state.calls.length], [[SIGNATURE_BLANK], before], 'cleared: refused again; nothing was sent meanwhile');
   await drawOn(rep);
@@ -244,7 +244,7 @@ try {
   await sign(rep, {signer: 'أ. منى'});
   await sheet(rep).locator('.mold-sending').waitFor();
   // Signed, but its image waits with the request: not said as signed yet.
-  check([await sheet(rep).locator('.mold-signature-view').getAttribute('data-state'), (await sheet(rep).locator('.mold-signature-view p').innerText()).startsWith('التوقيع لسه ما وصلش للإنتاج'), await sheet(rep).locator('.mold-signature-view[data-signed]').count()], ['waiting', true, 0], 'the signature not at production yet: «التوقيع لسه ما وصلش للإنتاج»');
+  check([await sheet(rep).locator('.mold-signature-view').getAttribute('data-state'), (await sheet(rep).locator('.mold-signature-view p').innerText()).startsWith('لم يصل التوقيع إلى الإنتاج بعد'), await sheet(rep).locator('.mold-signature-view[data-signed]').count()], ['waiting', true, 0], 'the signature not at production yet: «لم يصل التوقيع إلى الإنتاج بعد»');
   ok((await sheet(rep).locator('.mold-sending').innerText()).length > 0, 'the request says it waits to be sent');
   await shot(rep, 'mold-sheet-waiting');
   mock.state.down = false;
@@ -459,7 +459,7 @@ try {
   await keptCard.click();
   const keptSending = sheet(keeper).locator('.mold-sending[data-state="needs_file"]');
   await keptSending.waitFor();
-  check([await keptSending.locator('strong').innerText(), (await keptSending.locator('p').innerText()).startsWith('الطلب محفوظ في الـCRM ومش هيتبعت للإنتاج إلا لما ترفق ملف تصميم واحد على الأقل (توقيع العميل مش بيتحسب)'), await sheet(keeper).getByRole('button', {name: 'إعادة الإرسال'}).count(), await sheet(keeper).locator('section.mold-design[data-category="design"] .mold-design-tools').count()],
+  check([await keptSending.locator('strong').innerText(), (await keptSending.locator('p').innerText()).startsWith('الطلب محفوظ في الـCRM ولن يُرسل إلى الإنتاج حتى ترفق ملف تصميم واحدًا على الأقل (لا يُحتسب توقيع العميل)'), await sheet(keeper).getByRole('button', {name: 'إعادة الإرسال'}).count(), await sheet(keeper).locator('section.mold-design[data-category="design"] .mold-design-tools').count()],
     ['بانتظار ملف التصميم', true, 0, 1], 'the sheet: what it waits for and what to do; no resend; the design files\' attach action');
   await keeper.waitForTimeout(300);
   await shot(keeper, 'mold-sheet-design-file-held');
@@ -519,7 +519,7 @@ try {
   // ---- 3g. 2026-11-03: the third approval is finance's; a cancellation the production manager restores
   const financeStep = await ask('waiting for finance');
   mock.approve(financeStep.id, 'sales'); mock.approve(financeStep.id, 'production');
-  const SAME_REASON = 'مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد';
+  const SAME_REASON = 'أعاد مدير الإنتاج الطلب؛ لإلغائه مرة أخرى اكتب سببًا جديدًا';
   const undone = await ask('restored after cancelling');
   check((await repApi('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: undone.id, version: undone.version, reason: 'العميل أجّل'}})).status, 200, 'cancelled by the representative');
   mock.restore(undone.id);
@@ -541,7 +541,7 @@ try {
   await undoneCard.click();
   const restoredBanner = sheet(restorer).locator('.mold-restored');
   await restoredBanner.waitFor();
-  check([await restoredBanner.innerText(), await sheet(restorer).locator('.mold-banner[data-kind="cancelled"]').count()], ['رجّعه مدير الإنتاج بعد الإلغاء؛ عشان تلغيه تاني اكتب سبب جديد.', 0], 'said on the request; no «cancelled» banner');
+  check([await restoredBanner.innerText(), await sheet(restorer).locator('.mold-banner[data-kind="cancelled"]').count()], ['أعاده مدير الإنتاج بعد الإلغاء؛ لإلغائه مرة أخرى اكتب سببًا جديدًا.', 0], 'said on the request; no «cancelled» banner');
   await sheet(restorer).getByRole('button', {name: 'إلغاء الطلب'}).click();
   const cancelForm = sheet(restorer).locator('form.mold-cancel');
   await cancelForm.locator('textarea').fill(' العميل  أجّل ');
@@ -587,7 +587,7 @@ try {
   await managerSheet.locator('.mold-card', {hasText: 'restored, read by the manager'}).click();
   const managerBanner = sheet(managerSheet).locator('.mold-restored');
   await managerBanner.waitFor();
-  check([await managerBanner.innerText(), await sheet(managerSheet).getByRole('button', {name: 'إلغاء الطلب'}).count()], ['رجّعه مدير الإنتاج بعد الإلغاء.', 0], 'the sales manager reads that it was restored, with no instruction to cancel (the requester\'s alone)');
+  check([await managerBanner.innerText(), await sheet(managerSheet).getByRole('button', {name: 'إلغاء الطلب'}).count()], ['أعاده مدير الإنتاج بعد الإلغاء.', 0], 'the sales manager reads that it was restored, with no instruction to cancel (the requester\'s alone)');
   await managerSheet.context().close();
 
   // ---- 4. The phone keeps the representative's five tabs and adds «المزيد», where the page opens (the owner, 2026-11-03)
@@ -723,7 +723,7 @@ try {
   await quoteDialog.locator('.mold-design-picker[data-category="quote"] input[type=file]').setInputFiles([{name: 'رسم.dwg', mimeType: 'application/octet-stream', buffer: Buffer.from('AC1027')}, quotation()]);
   const quotePicker = quoteDialog.locator('.mold-design-picker[data-category="quote"]');
   await quotePicker.locator('.mold-design-reason').waitFor();
-  check([await quotePicker.locator('.mold-design-reason').innerText(), await quotePicker.locator('.mold-design-file[data-state="ready"]').count(), await quoteFiles.locator(':scope > .field-error').count()], ['ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة', 1, 0], 'a drawing as the quotation: refused on the device; the PDF will go, and the refusal is gone');
+  check([await quotePicker.locator('.mold-design-reason').innerText(), await quotePicker.locator('.mold-design-file[data-state="ready"]').count(), await quoteFiles.locator(':scope > .field-error').count()], ['يجب أن يكون ملف عرض السعر أو الـ PO ملف PDF أو صورة', 1, 0], 'a drawing as the quotation: refused on the device; the PDF will go, and the refusal is gone');
   await shot(quoteRep, 'mold-form-quote-file');
   await quoteDialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   await quoteDialog.locator('.mold-signing').waitFor();
@@ -784,7 +784,7 @@ try {
   await missingCard.click();
   const missingNote = sheet(quoteRep).locator('.mold-quote-po-missing');
   await missingNote.waitFor();
-  check([await missingNote.locator('small').innerText(), await sheet(quoteRep).locator('.mold-approvals li[data-done="true"]').count()], ['أرفق ملف عرض السعر أو الـ PO من «ملفات عرض السعر» أو «ملفات الـ PO» تحت.', 1], 'the sheet: missing, with where to attach it; the sales manager\'s approval given');
+  check([await missingNote.locator('small').innerText(), await sheet(quoteRep).locator('.mold-approvals li[data-done="true"]').count()], ['أرفق ملف عرض السعر أو الـ PO من «ملفات عرض السعر» أو «ملفات الـ PO» أدناه.', 1], 'the sheet: missing, with where to attach it; the sales manager\'s approval given');
   await shot(quoteRep, 'mold-sheet-quote-missing');
   await sheet(quoteRep).locator('section.mold-design[data-category="po"] input[type=file]').setInputFiles({name: 'PO-7781.png', mimeType: 'image/png', buffer: signaturePng({seed: 7})});
   await sheet(quoteRep).locator('section.mold-design[data-category="po"] .mold-design-file', {hasText: 'PO-7781.png'}).locator('.mold-design-state', {hasText: 'وصل للإنتاج'}).waitFor();
@@ -1182,7 +1182,7 @@ try {
     for (let n = 1; n <= 9; n++) await insert('many' + n, {name: 'مصنع كثير ' + n, city: 'الجبيل', address: 'الجبيل ' + n, code: 'M-' + n});
     const number = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east9'").first()).number, yr = 'YR-C-' + String(number).padStart(6, '0');
     const indic = value => String(value).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[digit]);
-    const FREE = 'عميل مش موجود في الـCRM: الطلب هيتبعت للإنتاج بالاسم وكود ERP', HINT = 'مطلوب لعميل مش موجود في الـCRM؛ اختياري للعميل المرتبط', NOT_IN_CRM = 'غير مسجل في الـCRM';
+    const FREE = 'عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود ERP', HINT = 'مطلوب لعميل غير موجود في الـCRM؛ اختياري للعميل المرتبط', NOT_IN_CRM = 'غير مسجل في الـCRM';
     const phone = await open('rep', {viewport: PHONE, touch: true});
     await goMoldsAnywhere(phone);
     await phone.locator('button.mold-new').click();
@@ -1235,7 +1235,7 @@ try {
     check([await linkedLine.count(), await freeNote.count()], [1, 0], 'the name edited, its ERP code kept: still linked');
     await area.fill('مخزن مؤقت');
     await code.fill('K-7731-9');
-    check([await linkedLine.count(), await freeNote.innerText(), await area.inputValue(), await name.inputValue()], [0, FREE, 'مخزن مؤقت', 'مؤسسة إبراهيم'], 'the ERP code edited to another: unlinked, «عميل مش موجود في الـCRM…», what was typed kept');
+    check([await linkedLine.count(), await freeNote.innerText(), await area.inputValue(), await name.inputValue()], [0, FREE, 'مخزن مؤقت', 'مؤسسة إبراهيم'], 'the ERP code edited to another: unlinked, «عميل غير موجود في الـCRM…», what was typed kept');
     await code.fill('old-55');
     await linkedLine.waitFor();
     check([(await linkedLine.innerText()).includes('مؤسسة إبراهيم للبلوك'), await area.inputValue()], [true, 'مخزن مؤقت'], 'an ERP code one customer has (the one it had before): linked again, the address typed kept');
@@ -1275,14 +1275,14 @@ try {
     await sheet(phone).evaluate(node => Promise.all(node.getAnimations({subtree: true}).map(animation => animation.finished)));
     const fact = label => sheet(phone).locator('.mold-facts').first().locator('div', {has: phone.locator('dt', {hasText: label})}).locator('dd');
     check([await sheet(phone).locator('h2').first().innerText(), await fact('كود يورست').innerText(), await fact('كود ERP').innerText(), (await sheet(phone).locator('.mold-sending strong').innerText())],
-      ['مصنع النور الجديد', NOT_IN_CRM, '9012', 'بانتظار تحديث تطبيق الإنتاج (عميل من غير كود يورست)'], 'the sheet: «غير مسجل في الـCRM», its ERP code, waiting for production\'s update');
+      ['مصنع النور الجديد', NOT_IN_CRM, '9012', 'بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)'], 'the sheet: «غير مسجل في الـCRM», its ERP code, waiting for production\'s update');
     const saved = await app.db.prepare("SELECT customer_id AS customerId,json_extract(data,'$.customer') AS customer FROM crm_mold_requests WHERE json_extract(data,'$.customer.name')='مصنع النور الجديد'").first();
     check([saved.customerId, JSON.parse(saved.customer), mock.state.calls.filter(call => call.route === 'requests' && call.body.includes('مصنع النور الجديد')).length],
       ['', {crmNumber: null, name: 'مصنع النور الجديد', address: 'جدة، حي الصناعية، بوابة 2', city: '', erpCode: '9012'}, 0], 'saved unlinked; production\'s update not known, so nothing reached it');
     await noOverflow(phone, 'phone sheet of a customer not in the CRM'); await shot(phone, 'mold-sheet-free-customer-phone');
     await phone.keyboard.press('Escape');
     const card = phone.locator('.mold-card', {hasText: 'مصنع النور الجديد'}).first();
-    check([await card.locator('.mold-card-customer > span').allInnerTexts(), await card.locator('.mold-card-sending').innerText()], [['كود ERP: 9012', NOT_IN_CRM], 'بانتظار تحديث تطبيق الإنتاج (عميل من غير كود يورست)'], 'its card: the ERP code and «غير مسجل في الـCRM», waiting for the update');
+    check([await card.locator('.mold-card-customer > span').allInnerTexts(), await card.locator('.mold-card-sending').innerText()], [['كود ERP: 9012', NOT_IN_CRM], 'بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)'], 'its card: the ERP code and «غير مسجل في الـCRM», waiting for the update');
     await card.scrollIntoViewIfNeeded();
     await noOverflow(phone, 'phone list with a customer not in the CRM'); await shot(phone, 'mold-card-free-customer-phone');
     // The keyboard: the first that can be chosen highlighted, ↓ moves, Esc closes the suggestions and not the form, ↓ opens them, Enter chooses.

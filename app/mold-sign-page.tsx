@@ -29,20 +29,20 @@ type Say=(ar:string,en:string)=>string;
 const stamp=(iso:string)=>new Date(iso).toLocaleString('en-GB',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'});
 /** The server's words, in English when the page is (the few the link can answer with). */
 const english:Record<string,string>={
- 'اللينك ده مش شغال. اطلب من المندوب لينك جديد.':'This link is not working. Ask the representative for a new link.',
- 'الطلب اتعدّل، افتح اللينك تاني.':'The request has changed; open the link again.',
- 'محاولات كتير؛ استنى دقيقة وحاول تاني.':'Too many attempts; wait a minute and try again.',
- 'لازم توافق إنك قريت الطلب والملفات قبل التوقيع.':'Please confirm you have read the request and its files before signing.',
- 'بيانات التوقيع غير صحيحة؛ افتح اللينك تاني.':'The signature could not be read; open the link again.',
- 'وقت التوقيع مش مظبوط؛ افتح اللينك تاني ووقّع.':'The signing time is off; open the link again and sign.',
- 'صورة التوقيع غير صالحة؛ امسح ووقّع من جديد':'The signature image is not valid; clear it and sign again',
- 'اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)':'Type the name of the person signing (2 to 80 characters)',
- 'الطلب مش جاهز للتوقيع دلوقتي؛ كلّم المندوب.':'The request is not ready to be signed now; contact the representative.',
- 'التوقيع مش متاح دلوقتي؛ حاول بعد شوية.':'Signing is not available right now; try again shortly.',
+ 'هذا الرابط لم يعد صالحًا. اطلب من المندوب رابطًا جديدًا.':'This link is not working. Ask the representative for a new link.',
+ 'عُدِّل الطلب؛ افتح الرابط مرة أخرى.':'The request has changed; open the link again.',
+ 'محاولات كثيرة؛ انتظر دقيقة ثم أعد المحاولة.':'Too many attempts; wait a minute and try again.',
+ 'يجب أن تقرّ بأنك قرأت الطلب والملفات قبل التوقيع.':'Please confirm you have read the request and its files before signing.',
+ 'بيانات التوقيع غير صحيحة؛ افتح الرابط مرة أخرى.':'The signature could not be read; open the link again.',
+ 'وقت التوقيع غير صحيح؛ افتح الرابط مرة أخرى ووقّع.':'The signing time is off; open the link again and sign.',
+ 'صورة التوقيع غير صالحة؛ امسح التوقيع ووقّع من جديد':'The signature image is not valid; clear it and sign again',
+ 'اكتب اسم الموقّع عن العميل (من 2 إلى 80 حرفًا)':'Type the name of the person signing (2 to 80 characters)',
+ 'الطلب غير جاهز للتوقيع الآن؛ تواصل مع المندوب.':'The request is not ready to be signed now; contact the representative.',
+ 'التوقيع غير متاح الآن؛ أعد المحاولة بعد قليل.':'Signing is not available right now; try again shortly.',
 };
 
 function Gone({say}:{say:Say}){
- return <section className="sign-card sign-gone" role="alert"><TriangleAlert size={22} aria-hidden="true"/><p>{say('اللينك ده مش شغال. اطلب من المندوب لينك جديد.','This link is not working. Ask the representative for a new link.')}</p></section>;
+ return <section className="sign-card sign-gone" role="alert"><TriangleAlert size={22} aria-hidden="true"/><p>{say('هذا الرابط لم يعد صالحًا. اطلب من المندوب رابطًا جديدًا.','This link is not working. Ask the representative for a new link.')}</p></section>;
 }
 
 export default function MoldSignPage({token,page}:{token:string;page:SignLinkPage|null}){
@@ -75,15 +75,15 @@ export default function MoldSignPage({token,page}:{token:string;page:SignLinkPag
   event.preventDefault();
   if(busy)return;
   const name=moldSigner(signer),length=name===undefined?0:[...name].length,next:Record<string,string>={};
-  if(name===undefined||length<MOLD_SIGNER_MIN||length>MOLD_SIGNER_MAX)next.signer=say('اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)','Type the name of the person signing (2 to 80 characters)');
+  if(name===undefined||length<MOLD_SIGNER_MIN||length>MOLD_SIGNER_MAX)next.signer=say('اكتب اسم الموقّع عن العميل (من 2 إلى 80 حرفًا)','Type the name of the person signing (2 to 80 characters)');
   if(!plan?.ready)return;
   const box=signatureBox(strokes,width),drawn=moldSignatureDrawn(box),png=drawn?signaturePng(strokes,width):null;
-  if(!png)next.signature=say('التوقيع فاضي أو صغير قوي؛ وقّع بصباعك أو بالقلم','The signature is empty or too small; sign with a finger or a stylus');
-  if(!consent)next.consent=say('لازم توافق إنك قريت الطلب والملفات قبل التوقيع.','Please confirm you have read the request and its files before signing.');
+  if(!png)next.signature=say('التوقيع فارغ أو صغير جدًا؛ وقّع بإصبعك أو بالقلم','The signature is empty or too small; sign with a finger or a stylus');
+  if(!consent)next.consent=say('يجب أن تقرّ بأنك قرأت الطلب والملفات قبل التوقيع.','Please confirm you have read the request and its files before signing.');
   setFields(next);setError('');
   if(Object.keys(next).length||!png||name===undefined)return;
   const at=serverNow(),block=signatureBlockPng(strokes,width,name,at),pagePng=block?signaturePagePng({plan,summary:facts,signer:name,strokes,width,at,say,rtl:!en}):null;
-  if(!block||!pagePng){setFields({signature:say('تعذّر تجهيز التوقيع؛ امسح ووقّع تاني.','The signature could not be prepared; clear it and sign again.')});return;}
+  if(!block||!pagePng){setFields({signature:say('تعذّر تجهيز التوقيع؛ امسح التوقيع ووقّع من جديد.','The signature could not be prepared; clear it and sign again.')});return;}
   // The signature page and the documents it lists (2026-11-11): the CRM makes one signed file of them.
   const body=JSON.stringify({token,key:page.key,signer:name,png,block,blockAt:at.toISOString(),consent:true,document:{page:pagePng,parts:plan.parts,category:docCategory(plan.parts,plan.left)}});
   if(attempt.current?.body!==body)attempt.current={body,id:crypto.randomUUID()};
@@ -96,36 +96,36 @@ export default function MoldSignPage({token,page}:{token:string;page:SignLinkPag
    if(response.status===409){setState('changed');setError(typeof reply.error==='string'?reply.error:'');attempt.current=null;return;}
    if(response.status===400)attempt.current=null;
    if(reply.fields&&typeof reply.fields==='object')setFields(Object.fromEntries(Object.entries(reply.fields as Record<string,string>).map(([key,value])=>[key,tr(value)])));
-   setError(typeof reply.error==='string'?reply.error:say('تعذّر التوقيع؛ حاول تاني.','The signature could not be saved; try again.'));
-  }catch{setError(say('تعذّر الاتصال؛ تأكد من الإنترنت وحاول تاني.','Could not connect; check the internet and try again.'));}
+   setError(typeof reply.error==='string'?reply.error:say('تعذّر التوقيع؛ أعد المحاولة.','The signature could not be saved; try again.'));
+  }catch{setError(say('تعذّر الاتصال؛ تأكد من الإنترنت وأعد المحاولة.','Could not connect; check the internet and try again.'));}
   finally{setBusy(false);}
  };
  if(done)return <main className="sign-page" dir={en?'ltr':'rtl'}>{head}
   <section className="sign-card sign-done" role="status"><CheckCircle2 size={28} aria-hidden="true"/><h1>{say('تم التوقيع، شكرًا','Signed, thank you')}</h1>
    <p>{say('وقّع: ','Signed by: ')}<b><bdi>{done.signer}</bdi></b> · <bdi dir="ltr">{stamp(done.signedAt)}</bdi></p>
-   {!!done.copies.length&&<><h2>{done.copies.length===1?say('الملف الموقّع','The signed file'):say('النسخ الموقّعة','Signed copies')}</h2><ul className="sign-files">{done.copies.map(file=><li key={file.id}><FileText size={18} aria-hidden="true"/><bdi>{file.name}</bdi>
+   {!!done.copies.length&&<><h2>{done.copies.length===1?say('الملف الموقّع','The signed file'):say('النسخ الموقّعة','Signed copies')}</h2><ul className="sign-files">{done.copies.map(file=><li key={file.id}><FileText size={18} aria-hidden="true"/><bdi dir="auto">{file.name}</bdi>
     <a className="btn small subtle" href={file.href+'?download=1'} download={file.name}><Download size={15} aria-hidden="true"/>{say('تنزيل','Download')}</a></li>)}</ul></>}
    {done.skipped.map((item,index)=><p key={index} className="sign-note"><TriangleAlert size={14} aria-hidden="true"/>{moldNotSignedText(item.name,item.reason,say)}</p>)}
   </section></main>;
  return <main className="sign-page" dir={en?'ltr':'rtl'}>{head}
   <section className="sign-card sign-intro">
    <h1>{say(...MOLD_VIEWER_TEXT.title)} — <bdi dir="auto">{s.customerName}</bdi></h1>
-   <p className="sign-lead">{say('راجع المستند صفحة صفحة: عرض السعر أو الـ PO، وبعدين التصميم. في آخر صفحة اكتب اسمك ووقّع جوه الخانة.','Review the document page by page: the quotation or PO, then the design. On the last page, type your name and sign inside the box.')}</p>
-   {state==='changed'&&<div className="sign-changed" role="alert"><TriangleAlert size={16} aria-hidden="true"/><span>{tr(error||'الطلب اتعدّل، افتح اللينك تاني.')}</span><button type="button" className="btn small subtle" onClick={()=>window.location.reload()}><RotateCcw size={15} aria-hidden="true"/>{say('افتح اللينك تاني','Open the link again')}</button></div>}
+   <p className="sign-lead">{say('راجع المستند صفحة بصفحة: عرض السعر أو الـ PO، ثم التصميم. في الصفحة الأخيرة اكتب اسمك ووقّع داخل الخانة.','Review the document page by page: the quotation or PO, then the design. On the last page, type your name and sign inside the box.')}</p>
+   {state==='changed'&&<div className="sign-changed" role="alert"><TriangleAlert size={16} aria-hidden="true"/><span>{tr(error||'عُدِّل الطلب؛ افتح الرابط مرة أخرى.')}</span><button type="button" className="btn small subtle" onClick={()=>window.location.reload()}><RotateCcw size={15} aria-hidden="true"/>{say('افتح الرابط مرة أخرى','Open the link again')}</button></div>}
   </section>
   {/* The documents as one document (2026-11-11), its last page the signature page; the consent and «توقيع» under it. */}
   <form className="sign-documents sign-form" onSubmit={event=>void submit(event)} noValidate>
    <MoldDocumentViewer files={documents} say={say} credentials="omit" onPlan={setPlan} signaturePage={current=><MoldSignaturePage plan={current} summary={facts} say={say} busy={busy||state!=='open'} strokes={strokes} onWidth={setWidth}
     onStrokes={next=>{setStrokes(next);setFields(previous=>({...previous,signature:''}));}} signerError={fields.signer?tr(fields.signer):''} padError={fields.signature?tr(fields.signature):''}
     name={<label className="mold-field">{say(...MOLD_SIGN_PAGE_TEXT.signer)}<input name="signer" dir="auto" autoComplete="name" maxLength={MOLD_SIGNER_MAX+20} value={signer} disabled={busy||state!=='open'} onChange={event=>{setSigner(event.target.value);setFields(previous=>({...previous,signer:''}));}}/></label>}
-    clear={<button type="button" className="btn small subtle" disabled={busy||!strokes.length} onClick={()=>setStrokes([])}><Eraser size={15} aria-hidden="true"/>{say('امسح','Clear')}</button>}/>}/>
+    clear={<button type="button" className="btn small subtle" disabled={busy||!strokes.length} onClick={()=>setStrokes([])}><Eraser size={15} aria-hidden="true"/>{say('مسح','Clear')}</button>}/>}/>
    {state==='open'&&<div className="sign-card sign-under">
     {!plan?.ready&&<p className="sign-note" role="status"><Loader2 className="spin" size={14} aria-hidden="true"/>{say(...MOLD_SIGN_PAGE_TEXT.preparing)}</p>}
     <label className="sign-consent" aria-invalid={!!fields.consent}><input type="checkbox" checked={consent} disabled={busy} onChange={event=>{setConsent(event.target.checked);setFields(previous=>({...previous,consent:''}));}}/>{say('قرأت الطلب والملفات وموافق عليها','I have read the request and its files and agree to them')}</label>
     {fields.consent&&<small className="field-error">{tr(fields.consent)}</small>}
     {error&&<p className="form-error" role="alert">{tr(error)}</p>}
     <button type="submit" className="btn primary sign-submit" disabled={busy||!plan?.ready}>{busy?<Loader2 className="spin" size={16}/>:<PenLine size={16}/>}{say('توقيع','Sign')}</button>
-    <p className="sign-note">{say('اللينك صالح لحد ','The link is valid until ')}<bdi dir="ltr">{stamp(page.expiresAt)}</bdi></p>
+    <p className="sign-note">{say('الرابط صالح حتى ','The link is valid until ')}<bdi dir="ltr">{stamp(page.expiresAt)}</bdi></p>
    </div>}
   </form>
  </main>;

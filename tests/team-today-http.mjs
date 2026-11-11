@@ -1,4 +1,4 @@
-// «فريقي النهارده» (GET /api/team-today, lib/team-today*.ts) over real HTTP against the BUILT release (run the build first): anonymous
+// «فريقي اليوم» (GET /api/team-today, lib/team-today*.ts) over real HTTP against the BUILT release (run the build first): anonymous
 // 401, a representative 403, customer service 403, a supervisor whose «تقرير يوم المندوب» is hidden 404 (as the report itself), never
 // cached; the supervisor reads their own representatives only (not another team's, not another region's, not an inactive one, not
 // themself), the manager and the administrator wider, «عرض بيانات الفريق بالكامل» widening it; the visits and other contacts are the

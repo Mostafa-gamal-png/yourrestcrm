@@ -133,7 +133,7 @@ try {
   check(await manager.locator('.mobile-overflow-pages button[data-page="trash"]').count(), 1, 'the sales manager: «المحذوفات» in «المزيد»');
   await manager.locator('.mobile-overflow-pages button[data-page="trash"]').click();
   await manager.locator('.trash-empty').waitFor();
-  ok((await manager.locator('.trash-intro').innerText()).includes('السجلات اللي انت حذفتها'), 'their own deletions (none: the administrator\'s are not theirs)');
+  ok((await manager.locator('.trash-intro').innerText()).includes('السجلات التي حذفتها'), 'their own deletions (none: the administrator\'s are not theirs)');
   await shot(manager, 'trash-manager-ar');
   await manager.context().close();
   const supervisor = await open('sup', {hash: 'customer'});

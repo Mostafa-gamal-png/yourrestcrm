@@ -126,7 +126,7 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('approve-order'),...pendingTarget}).strict(),
  z.object({action:z.literal('withdraw-order'),...pendingTarget}).strict(),
 ]);
-const labels={sign:'توقيع العميل على طلب تصنيع قالب على الجهاز','signature-link':'لينك توقيع العميل على طلب تصنيع قالب',create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب','approve-order':'اعتماد مدير المبيعات لطلب تصنيع قالب','withdraw-order':'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
+const labels={sign:'توقيع العميل على طلب تصنيع قالب على الجهاز','signature-link':'رابط توقيع العميل على طلب تصنيع قالب',create:'طلب تصنيع قالب',update:'تعديل طلب تصنيع قالب',cancel:'إلغاء طلب تصنيع قالب',resend:'إعادة إرسال طلب تصنيع قالب',approve:'اعتماد مدير المبيعات لطلب تصنيع قالب',withdraw:'سحب اعتماد مدير المبيعات لطلب تصنيع قالب','approve-order':'اعتماد مدير المبيعات لطلب تصنيع قالب','withdraw-order':'سحب اعتماد مدير المبيعات لطلب تصنيع قالب'};
 /** A sent request's data is edited by the production manager in the products application only (yourrest-products, 2026-11-02): the
  *  CRM's update is refused, and a change production still refuses as production_only is final. Each text has its English pair in
  *  lib/locales/en.json; the request's sheet says which specifications it shows. */
@@ -136,32 +136,32 @@ const PRODUCTION_ONLY_SENT=MOLD_PRODUCTION_ONLY_TEXT[0]+'؛ التعديل لم 
  *  this release still shows the two fields: a number it sends that is not the request's own (any, for a new request) is refused, so
  *  nothing typed is dropped silently and no stored request changes; the request's own numbers, sent back unchanged, are kept as stored.
  *  Its English pair is in lib/locales/en.json. */
-const QUOTE_PO_GONE='رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.';
+const QUOTE_PO_GONE='حُذف رقم عرض السعر ورقم الـ PO من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدلًا منهما.';
 /** The products update of 2026-11-05 (the second): a request has no order number until production approves it, and the numbers from
  *  101 up move down by one once, so an order number no longer names a request. A page loaded before this release still does (its item
  *  without a number sends null): it is asked to reload, never answered on a number. Its English pair is in lib/locales/en.json. */
-const ORDER_PAGE_OUTDATED='الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.';
+const ORDER_PAGE_OUTDATED='أصبحت الطلبات تُعرَّف بمرجعها لا برقم الأمر؛ حدّث الصفحة واعتمد من جديد.';
 /** A request named by its number while production's list (or the status of the CRM's request holding that number) could not be read
  *  just now: the number is never resolved against an older copy (it may have moved since). Its English pair is in lib/locales/en.json. */
 const ORDER_UNSURE='تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.';
 /** The sales manager's acknowledgement of the payment terms (2026-11-10): required to approve; a page loaded before sends none (asked to
  *  reload), a box not ticked is refused by its field. Their English pairs are in lib/locales/en.json. */
-const TERMS_REFRESH='حدّث الصفحة: اعتماد طلب القالب بقى محتاج تأكيد الموافقة على شروط الدفع.';
+const TERMS_REFRESH='حدّث الصفحة: أصبح اعتماد طلب القالب يتطلب تأكيد الموافقة على شروط الدفع.';
 const TERMS_REQUIRED='علّم «'+MOLD_TERMS_ACCEPT+'» قبل الاعتماد.';
 const termsRefusal=(value:boolean|undefined)=>value===true?null:value===undefined?new CRMError(TERMS_REFRESH,409):Object.assign(new CRMError(TERMS_REQUIRED,400),{fields:{termsAccepted:TERMS_REQUIRED}});
 /** Production refused how the approval named the request (400 naming requestRef). */
 const APPROVAL_TARGET_REFUSED='تطبيق الإنتاج لم يقبل تعريف الطلب؛ حدّث الصفحة وحاول مرة أخرى.';
 /** A resend of a request kept for its quotation or PO file (2026-11-05): nothing to resend; attaching the file sends it. */
-const QUOTE_FILE_FIRST='الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.';
+const QUOTE_FILE_FIRST='الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ليُرسل الطلب تلقائيًا.';
 /** The same for a request kept for its design file (2026-11-08). Its English pair is in lib/locales/en.json. */
-const DESIGN_FILE_FIRST='الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.';
+const DESIGN_FILE_FIRST='الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ليُرسل الطلب تلقائيًا.';
 /** The same for a request kept until the customer signs from the link (2026-11-10). Its English pair is in lib/locales/en.json. */
-const SIGNATURE_FIRST='الطلب بانتظار توقيع العميل؛ أول ما العميل يوقّع من اللينك يتبعت الطلب لوحده.';
+const SIGNATURE_FIRST='الطلب بانتظار توقيع العميل؛ يُرسل الطلب تلقائيًا بمجرد أن يوقّع العميل من الرابط.';
 /** The signature and the link sent together, the link of a request that does not wait for one, and the moment printed in the block far
  *  from the server's clock (2026-11-10). Their English pairs are in lib/locales/en.json. */
-const SIGNATURE_OR_LINK='اختار: العميل يوقّع دلوقتي أو لينك يوقّع منه، مش الاتنين.';
-const LINK_NOT_WAITING='الطلب مش بانتظار توقيع العميل من لينك؛ حدّث الصفحة.';
-const SIGNATURE_CLOCK='وقت التوقيع مش مظبوط؛ حدّث الصفحة ووقّع تاني.';
+const SIGNATURE_OR_LINK='اختر أحد الأمرين: أن يوقّع العميل الآن، أو رابطًا يوقّع منه، لا كليهما.';
+const LINK_NOT_WAITING='الطلب ليس بانتظار توقيع العميل من رابط؛ حدّث الصفحة.';
+const SIGNATURE_CLOCK='وقت التوقيع غير صحيح؛ حدّث الصفحة ووقّع من جديد.';
 /** A refusal of production's for what was sent: a cancellation it refused (cancelled there, or the approvals or production came first),
  *  or the request's data refused as locked for another reason. */
 const CANCELLED_THERE='أُلغي الطلب في تطبيق الإنتاج؛ لم يعد التعديل أو الإلغاء ممكنًا.';
@@ -172,11 +172,11 @@ const SEND_LOCKED='رفض الإنتاج الإرسال لأن الطلب مقف
 const SAME_REASON=MOLD_SAME_REASON_TEXT[0];
 /** The same, once the request may no longer be cancelled (restored, then the approvals completed or production started): no new reason
  *  would help, so none is asked for. */
-const RESTORED_LOCKED='رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
+const RESTORED_LOCKED='أعاده مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
 /** «رابط التصميم» is no longer asked for (the owner, 2026-11-03): a link from a page loaded before (which still shows the field), for a
  *  new request or one changed or added by an edit, is refused, so nothing typed is dropped silently. Its English pair is in
  *  lib/locales/en.json. */
-const DESIGN_URL_GONE='رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
+const DESIGN_URL_GONE='أُلغي رابط التصميم من الطلب؛ حدّث الصفحة وأرفق التصميم ملفًا.';
 /** The specifications and the payment (cash or deferred, 2026-11-03) of a new request or of an edit before the first send; every wrong
  *  field named at once. The quotation and PO numbers are no longer taken (2026-11-05): the request keeps its own as stored (none for a
  *  new request), and a number sent that is not that one (a page loaded before this release) is refused by its field (QUOTE_PO_GONE); not
@@ -249,12 +249,12 @@ async function receiptOf(input:Record<string,unknown>){
 }
 /** A sales role's write with no signature at all: most likely a page loaded before the signature (2026-11-04), which shows no pad, so the
  *  refusal says to refresh. Its English pair is in lib/locales/en.json. */
-const SIGNATURE_REFRESH=MOLD_SIGNATURE_REQUIRED+'؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.';
+const SIGNATURE_REFRESH=MOLD_SIGNATURE_REQUIRED+'؛ حدّث الصفحة إن لم يظهر مكان التوقيع.';
 /** The specifications as compared for «nothing changed»: validated (normalized as stored) and their keys in one order, so an older row
  *  stored with its keys in another order (or a field written loosely) is not taken as changed. The request's own design link as stored. */
 const specsKey=(value:Record<string,unknown>,designUrl:string)=>{const {specs}=validateMoldSpecs(value),out:Record<string,unknown>={...specs,designUrl};return JSON.stringify(Object.keys(out).sort().map(key=>[key,out[key]]));};
 /** An edit needing a new signature where the request's 10 design files leave no place for it. Its English pair is in lib/locales/en.json. */
-const SIGNATURE_NO_ROOM='الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.';
+const SIGNATURE_NO_ROOM='في الطلب 10 ملفات تصميم؛ احذف ملفًا ليتسع لتوقيع العميل.';
 /** How long the answer waits for the signature to reach production once the request has; the send itself goes on (up to 120 seconds). */
 const SIGNATURE_WAIT_MS=15_000;
 
@@ -342,7 +342,7 @@ export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';
    if(!moldApprovesRequest(own,c))throw new CRMError('الطلب غير متاح',404);
    // A design file on its way undoes the approvals when it arrives; a quotation's or PO's no longer does (2026-11-05).
    const filesOnTheWay=(await loadMoldDesignFiles(c.db,'request_id=?',[own.id])).some(moldApprovalWaitsFor);
-   if(own.cancelledAt||own.outbox||filesOnTheWay)throw new CRMError(own.cancelledAt?'الطلب ملغى':'في تغيير على الطلب لسه ما وصلش للإنتاج؛ استنى لما يوصل',409);
+   if(own.cancelledAt||own.outbox||filesOnTheWay)throw new CRMError(own.cancelledAt?'الطلب ملغى':'في الطلب تغيير لم يصل إلى الإنتاج بعد؛ انتظر حتى يصل',409);
   }else if(!approving&&regionScope(c.me)!=='all')throw new CRMError('سحب اعتماد طلب مسجّل في الإنتاج لمدير مبيعات كل المناطق',403);
   const by={name:c.me.name,email:c.me.email},action=approving?'approve':'withdraw';
   // The acknowledgement goes to production only once its update of 2026-11-10 is known (the CRM keeps it in the audit either way).
@@ -428,7 +428,7 @@ export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';
    const approving=input.action==='approve';
    if(!canApproveMoldRequests(c.me))throw new CRMError('اعتماد طلبات القوالب لمدير المبيعات',403);
    const refusedTerms=approving&&input.action==='approve'?termsRefusal(input.termsAccepted):null;if(refusedTerms)throw refusedTerms;
-   if(approving?!allowed.approve:!allowed.withdraw)throw new CRMError(row.cancelledAt?'الطلب ملغى':row.outbox||files.some(moldApprovalWaitsFor)?'في تغيير على الطلب لسه ما وصلش للإنتاج؛ استنى لما يوصل':approving?'الطلب مش بانتظار اعتماد مدير المبيعات. حدّث الصفحة.':'لا يوجد اعتماد يمكن سحبه. حدّث الصفحة.',409);
+   if(approving?!allowed.approve:!allowed.withdraw)throw new CRMError(row.cancelledAt?'الطلب ملغى':row.outbox||files.some(moldApprovalWaitsFor)?'في الطلب تغيير لم يصل إلى الإنتاج بعد؛ انتظر حتى يصل':approving?'الطلب ليس بانتظار اعتماد مدير المبيعات. حدّث الصفحة.':'لا يوجد اعتماد يمكن سحبه. حدّث الصفحة.',409);
    if(!link.ok)throw new CRMError('الربط مع الإنتاج غير مفعَّل',503);
    const call=await callProducts(link,'approval',moldApprovalBody({id:row.id,action:input.action,by:{name:c.me.name,email:c.me.email},termsAccepted:approving&&await moldNov10Known(c.db)}));
    const remote=call.kind==='ok'?moldStatusObject(call.json?.request):call.kind==='locked'?call.request:null,at=new Date().toISOString();
@@ -522,7 +522,7 @@ export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';
    // 2026-11-10: the customer signs on the device a request that waits for the link's signature, or the link is renewed or stopped. Only
    // while it may be edited and still waits for the customer's signature; saved only while it has certainly never reached production.
    if(!allowed.link){
-    if(row.memberId!==c.me.id)throw new CRMError('توقيع العميل ولينك التوقيع لمن طلب القالب',403);
+    if(row.memberId!==c.me.id)throw new CRMError('توقيع العميل ورابط التوقيع لمن طلب القالب',403);
     return answer(row.id,null,409,!allowed.edit?(row.cancelledAt?'الطلب ملغى':row.remote?.status==='cancelled'?CANCELLED_THERE:PRODUCTION_ONLY):LINK_NOT_WAITING);
    }
    const edited:MoldRequestData={...row.data};
@@ -538,10 +538,10 @@ export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';
     detail={label:labels.sign,customerName:row.data.customer.name,signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length,...(signing.file.block?{stamped:true}:{})}};
    }else if(input.op==='new'){
     const made=await newSignLink(c.me.id,now);madeToken=made.token;madeExpiry=made.link.expiresAt;edited.signatureLink=made.link;
-    detail={label:'لينك توقيع جديد للعميل على طلب تصنيع قالب',customerName:row.data.customer.name,expiresAt:madeExpiry,replaced:!!row.data.signatureLink};
+    detail={label:'رابط توقيع جديد للعميل على طلب تصنيع قالب',customerName:row.data.customer.name,expiresAt:madeExpiry,replaced:!!row.data.signatureLink};
    }else{
     delete edited.signatureLink;
-    detail={label:'إيقاف لينك توقيع العميل على طلب تصنيع قالب',customerName:row.data.customer.name};
+    detail={label:'إيقاف رابط توقيع العميل على طلب تصنيع قالب',customerName:row.data.customer.name};
    }
    // The signature makes the request due at once (it was kept only for it); a link's change keeps it as it is.
    statement=c.db.prepare(`UPDATE crm_mold_requests SET data=?,next_attempt_at=CASE WHEN ? THEN ? ELSE next_attempt_at END,updated_at=?,version=version+1,mutation_id=? WHERE ${guard} AND outbox IS 'send' AND json_extract(data,'$.awaitsSignature') IS 1 AND (${MOLD_NEVER_SENT_SQL} OR json_type(remote,'$.returned')='object')`)

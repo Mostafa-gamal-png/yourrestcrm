@@ -29,7 +29,7 @@ eq(['2025-12', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01'].map(m => t
 for (const role of ['manager', 'supervisor', 'rep', 'customer_service']) eq(canEditTargetMonth(role, '2026-10', firstSecondOfNovember), false, role + ': a finished month is read only');
 eq(canEditTargetMonth('admin', '2026-10', firstSecondOfNovember), true, 'the administrator keeps editing a finished month');
 eq([canEditTargetMonth('manager', '2026-11', firstSecondOfNovember), canEditTargetMonth('manager', '2026-12', firstSecondOfNovember)], [true, true], 'this month and a future month stay editable');
-eq(CLOSED_MONTH_MESSAGE, 'الشهر ده خلص؛ تعديل مستهدفاته لمدير النظام بس', 'the message the owner chose');
+eq(CLOSED_MONTH_MESSAGE, 'انتهى هذا الشهر؛ تعديل مستهدفاته لمدير النظام فقط', 'the message the owner chose');
 const dictionary = JSON.parse(fs.readFileSync('lib/locales/en.json', 'utf8'));
 eq(typeof dictionary[CLOSED_MONTH_MESSAGE] === 'string' && !/[؀-ۿ]/.test(dictionary[CLOSED_MONTH_MESSAGE]), true, 'and its English');
 const server = fs.readFileSync('lib/targets-server.ts', 'utf8');
