@@ -394,12 +394,13 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
   ...(payment==='deferred'&&(approving?current!.paymentTerms:view.paymentTerms)?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(approving?current!.paymentTerms:view.paymentTerms,say)] as [string,React.ReactNode]]:[]),
  ];
  // What the customer reads before signing on the device from the sheet (2026-11-10): the same as the form's signing summary.
- const signingSummary:[string,React.ReactNode][]=[[say('العميل','Customer'),<span dir="auto" key="c">{view.customerName}</span>],
-  ...(view.customerErpCode?[[say('كود ERP','ERP code'),<bdi dir="ltr" key="e">{view.customerErpCode}</bdi>] as [string,React.ReactNode]]:[]),
-  [say('العنوان','Address'),<span dir="auto" key="a">{view.customerAddress}</span>],[say('الوصف','Description'),<span dir="auto" key="d">{view.specs.description}</span>],
+ // Text (2026-11-11): the signature page prints it as the screen shows it.
+ const signingSummary:[string,string][]=[[say('العميل','Customer'),view.customerName],
+  ...(view.customerErpCode?[[say('كود ERP','ERP code'),view.customerErpCode] as [string,string]]:[]),
+  [say('العنوان','Address'),view.customerAddress],[say('الوصف','Description'),view.specs.description],
   [say('الكمية','Quantity'),String(view.specs.quantity??'')],[say('العلب','Core'),say(MOLD_CORES[view.specs.core as keyof typeof MOLD_CORES]||view.specs.core,view.specs.core)],[say('الموديل','Model'),say(MOLD_MODELS[view.specs.model as keyof typeof MOLD_MODELS]||view.specs.model,view.specs.model)],
-  ...(view.payment?[[say('الدفع','Payment'),say(...moldPaymentNames[view.payment])] as [string,React.ReactNode]]:[]),
-  ...(view.paymentTerms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(view.paymentTerms,say)] as [string,React.ReactNode]]:[])];
+  ...(view.payment?[[say('الدفع','Payment'),say(...moldPaymentNames[view.payment])] as [string,string]]:[]),
+  ...(view.paymentTerms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(view.paymentTerms,say)] as [string,string]]:[])];
  return <Sheet open onOpenChange={open=>{if(!open)onClose();}}>
   <SheetContent side={direction()==='rtl'?'left':'right'} className="mold-sheet" dir={direction()}>
    <SheetTitle>{approving&&current!.customer.name||view.customerName}</SheetTitle>
@@ -533,7 +534,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  const designRequired=!editing||editing.designRequired,hasDesign=!!editing?.designFiles.some(file=>file.category==='design'&&file.source==='crm'&&!file.signature&&!['rejected','locked','deleting'].includes(file.state));
  const [designs,setDesigns]=useState<DesignChoice[]>([]),[quotes,setQuotes]=useState<DesignChoice[]>([]),[pos,setPos]=useState<DesignChoice[]>([]),[asking,setAsking]=useState(false);
  // The signing step (2026-11-04): the request as it will be sent, and what the customer reads before signing it.
- const [signing,setSigning]=useState<{body:Record<string,unknown>;summary:[string,React.ReactNode][];again:boolean;documents:MoldViewerFile[]}|null>(null);
+ const [signing,setSigning]=useState<{body:Record<string,unknown>;summary:[string,string][];title:string;again:boolean;documents:MoldViewerFile[]}|null>(null);
  // A place of the 10 design files is the signature's, unless the request being edited holds one already (the new one replaces it).
  const signatureRoom=signs&&!editing?.signature?1:0;
  // The quotation's and PO's files upload first: the first one releases the request kept for it (2026-11-05), so it reaches production
@@ -588,23 +589,25 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   // may change later without a new signature, so they are not part of it; no number since 2026-11-05).
   const choose=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
   // The customer as it goes (2026-11-09): the linked one's registered name, or the name typed; its ERP code when there is one.
-  const summary:[string,React.ReactNode][]=[[say('العميل','Customer'),<span dir="auto" key="c">{linked?String(linked.data.name||''):typedName.name}</span>],
-   ...(typedCode.erpCode?[[say('كود ERP','ERP code'),<bdi dir="ltr" key="e">{typedCode.erpCode}</bdi>] as [string,React.ReactNode]]:[]),
-   ...(!linked?[[say('كود يورست','Yourrest code'),say(...MOLD_CUSTOMER_TEXT.notInCrm)] as [string,React.ReactNode]]:[]),
-   [say('العنوان','Address'),<span dir="auto" key="a">{place.address}</span>],[say('الوصف','Description'),<span dir="auto" key="d">{String(specs.description||'')}</span>],
+  // As text (2026-11-11): the signature page prints it as the screen shows it.
+  const customerName=linked?String(linked.data.name||''):typedName.name;
+  const summary:[string,string][]=[[say('العميل','Customer'),customerName],
+   ...(typedCode.erpCode?[[say('كود ERP','ERP code'),typedCode.erpCode] as [string,string]]:[]),
+   ...(!linked?[[say('كود يورست','Yourrest code'),say(...MOLD_CUSTOMER_TEXT.notInCrm)] as [string,string]]:[]),
+   [say('العنوان','Address'),place.address],[say('الوصف','Description'),String(specs.description||'')],
    [say('الكمية','Quantity'),String(specs.quantity??'')],[say('العلب','Core'),choose(MOLD_CORES,String(specs.core||''))],[say('الموديل','Model'),choose(MOLD_MODELS,String(specs.model||''))],
-   ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,React.ReactNode]]:[]),
-   ...(terms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(terms,say)] as [string,React.ReactNode]]:[])];
+   ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,string]]:[]),
+   ...(terms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(terms,say)] as [string,string]]:[])];
   // A sales role's new request, or an edit that changes what was signed, is signed by the customer first (2026-11-04).
-  if(signs&&(!editing||editChanges(editing,specs,payment,place.address,customerChanges(editing,linkedId,customerText.name,customerText.code),terms))){setSigning({body,summary,again:!!editing?.signature,documents:signingDocuments()});return;}
+  if(signs&&(!editing||editChanges(editing,specs,payment,place.address,customerChanges(editing,linkedId,customerText.name,customerText.code),terms))){setSigning({body,summary,title:customerName,again:!!editing?.signature,documents:signingDocuments()});return;}
   send(body,summary,false);
  };
  /** The request saved (then its files go); a refusal that asks for the signature opens the signing step, and one of the form's own fields
   *  goes back to the form, where each is said. */
- const send=(body:Record<string,unknown>,summary:[string,React.ReactNode][],signed:boolean)=>{const before=refusals.current;void action.run(body).then(next=>{
+ const send=(body:Record<string,unknown>,summary:[string,string][],signed:boolean)=>{const before=refusals.current;void action.run(body).then(next=>{
   if(next){if(ready.length)uploads.add(next.id,ready);return;}
   const named=Object.keys(action.lastFields.current);
-  if(!signed&&named.includes('signature'))setSigning({body,summary,again:!!editing?.signature,documents:signingDocuments()});
+  if(!signed&&named.includes('signature'))setSigning({body,summary,title:summary[0]?.[1]||'',again:!!editing?.signature,documents:signingDocuments()});
   else if(signed&&(refusals.current!==before||named.some(key=>key!=='signature'&&key!=='signer')))setSigning(null);
  });};
  const choice=(key:string,label:string,options:[string,string][])=><fieldset className="mold-choice" aria-invalid={!!errors[key]}><legend>{label}</legend><div>{options.map(([value,text])=><label key={value} data-active={form[key]===value}><input type="radio" name={key} value={value} checked={form[key]===value} onChange={()=>set(key,value)}/>{text}</label>)}</div>{errors[key]&&<small className="field-error">{errors[key]}</small>}</fieldset>;
@@ -624,7 +627,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    <DialogDescription>{correcting?say(...MOLD_RETURNED_TEXT.dialog):editing?say('الطلب لم يصل للإنتاج بعد، فتعديله هنا ممكن. بعد وصوله يعدّل بياناته مدير الإنتاج فقط.','The request has not reached production yet, so it can be changed here. Once it arrives, the production manager alone edits its data.'):say('يُحفظ الطلب في الـCRM ثم يُرسل لتطبيق الإنتاج تلقائيًا.','The request is saved in the CRM, then sent to production automatically.')}</DialogDescription>
    {/* The customer signs now (with the PDFs chosen, by their SHA-256: each gets its signed copy as it is uploaded), or (2026-11-10) the
        request is saved with a link for the customer to sign from. */}
-   {signing&&<MoldSigningStep summary={signing.summary} documents={signing.documents} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)}
+   {signing&&<MoldSigningStep summary={signing.summary} title={signing.title} documents={signing.documents} busy={action.busy} error={action.error} fields={action.fields} again={signing.again} say={say} onBack={()=>setSigning(null)}
     onConfirm={signature=>void seenPdfs(ready).then(seen=>send({...signing.body,signature:{...signature,...(seen.length?{seen}:{})}},signing.summary,true))}
     onLink={()=>send({...signing.body,signatureLink:true},signing.summary,true)}/>}
    <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>

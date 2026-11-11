@@ -294,7 +294,9 @@ try {
   const resent = await post('rep', {action: 'resend', id: linkedId});
   check([bodies(linkedId).length, resent.status >= 400], [linkSent, true], 'never sent while it waits (a resend refused)');
   const page = await as(null)('/sign/m/' + token);
-  check([page.status, page.text.includes('دفعة مقدمة واستكمال باقي المبلغ بعد الترحيل')], [200, true], 'the customer\'s page opens, with the terms');
+  // Since 2026-11-11 the terms are printed on the document's signature page, drawn by the page once its documents are read (the browser
+  // test reads the words there): the page carries them.
+  check([page.status, page.text.replaceAll('\\"', '"').includes('"paymentTerms":"advance_after_shipping"')], [200, true], 'the customer\'s page opens, with the terms');
   const key = /"key":"([0-9a-f]{32})"/.exec(page.text.replaceAll('\\"', '"'))?.[1];
   res = await as(null)('/api/mold-sign', {method: 'POST', body: {requestId: crypto.randomUUID(), token, key, signer: 'سالم العميل', png: signaturePng({seed: 9}).toString('base64'), block: signaturePng({width: 960, height: 300, seed: 6}).toString('base64'), blockAt: new Date().toISOString(), consent: true}});
   check(res.status, 200, 'the customer signs from the link');

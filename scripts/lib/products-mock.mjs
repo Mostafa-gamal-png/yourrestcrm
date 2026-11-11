@@ -65,7 +65,10 @@
 // returned.correctedAt, the approvals still cleared, 200 {created: false, linked: false, corrected: true}, the corrected data the one
 // a retry is compared with: the same correction again 200 corrected false, nothing changed); `corrected` in every answer of requests;
 // times as ISO with +03:00; returned.name (finance's account); and the files' limits of 20 design, 10 quotation and 10 PO files (the
-// products team's reply of 2026-11-10, schema 17). Test controls: setNov10, financeReturn.
+// products team's reply of 2026-11-10, schema 17). Test controls: setNov10, financeReturn. Schema 19 (yourrest-products#52, the signed flag)
+// behind signedFlag (setSignedFlag): "signed" on every file object and a non-boolean refused (400 fields ['signed']); off, the key is ignored.
+// Also (2026-11-11, toward the real one): a name with a mark of direction is refused, a design-files body is 25 MiB + 8 KiB at most, and
+// answerNextFile answers one call for one crmFileId.
 // No real account, network or secret is used.
 import {createServer} from 'node:https';
 import {createHash, createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
@@ -205,11 +208,14 @@ const DESIGN_EXTENSIONS = {pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image'
 const DESIGN_MAX = 25 * 1024 * 1024;
 const IMAGE_TYPES = {png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp'};
 /** The file entry of designFiles (and of quoteFiles, poFiles: the updated application adds each file's category). */
-const designEntryOf = (file, withCategory) => ({fileId: file.fileId, crmFileId: file.crmFileId, name: file.name, kind: file.kind, size: file.bytes.length, source: file.source, uploadedAt: file.uploadedAt, ...(withCategory ? {category: file.category || 'design'} : {})});
+// Schema 19 (yourrest-products#52, the signed flag): a file of the application that has it carries "signed" (true or false) in every
+// file object; a file of the application before carries none (file.signed is set only while state.signedFlag is on).
+const designEntryOf = (file, withCategory) => ({fileId: file.fileId, crmFileId: file.crmFileId, name: file.name, kind: file.kind, size: file.bytes.length, source: file.source, uploadedAt: file.uploadedAt, ...(withCategory ? {category: file.category || 'design'} : {}), ...(typeof file.signed === 'boolean' ? {signed: file.signed} : {})});
 /** A design file's name and bytes, as production checks them: [field, reason] of the refusal, or the file's kind and type. A Windows
  *  reserved name (CON, AUX, COM1…) is accepted; an image is any of the four whatever its extension says among them, kept as what it is. */
 function checkDesign(name, bytes) {
-  if (typeof name !== 'string' || [...name].length > 200 || /[\\/<>:"|?*\u0000-\u001F\u007F]/.test(name) || !/^[^.].*\.([A-Za-z0-9]+)$/.test(name.trim()) || name !== name.trim()) return {field: 'name'};
+  // The real rule (yr_mreq_file_name) also refuses the marks of direction (U+202A..U+202E, U+2066..U+2069): as it does (2026-11-11).
+  if (typeof name !== 'string' || [...name].length > 200 || /[\\/<>:"|?*\u0000-\u001F\u007F\u202A-\u202E\u2066-\u2069]/.test(name) || !/^[^.].*\.([A-Za-z0-9]+)$/.test(name.trim()) || name !== name.trim()) return {field: 'name'};
   const kind = DESIGN_EXTENSIONS[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
   if (!kind) return {field: 'name'};
   if (!bytes.length) return {field: 'file', reason: 'empty'};
@@ -229,12 +235,12 @@ const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null
  * @param {{secret?: string, now?: () => number, quotePo?: boolean, requestRefs?: boolean}} options quotePo: start as the application after its
  *  update of 2026-11-03; requestRefs: start as the application of the new numbering (the second message of 2026-11-05)
  */
-export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false, nov10 = false} = {}) {
+export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false, nov10 = false, signedFlag = false} = {}) {
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers, nov10};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), fileAnswers: [], signedFlag, lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers, nov10};
   // This application's own reading of a request and of a file: before or after its update of 2026-11-03 (state.quotePo), and before or
   // after its new numbering (state.refs).
   const statusObject = row => statusObjectOf(row, state.quotePo, state.refs, state.freeCustomers, state.nov10), designEntry = file => designEntryOf(file, state.quotePo);
@@ -399,6 +405,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (!Object.hasOwn(limits, category)) bad.push('category');
     const checked = checkDesign(meta.name, bytes);
     if (checked.field === 'name') bad.push('name');
+    // Schema 19: "signed" a boolean when present (absent is false); the application before ignores the key, stores nothing of it.
+    if (state.signedFlag && meta.signed !== undefined && typeof meta.signed !== 'boolean') bad.push('signed');
     if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', bad);
     // A quotation's or PO's file is a PDF or an image only.
     if (category !== 'design' && checked.kind === 'other') throw new ApiError('invalid_payload', 400, 'A quotation or PO file must be a PDF or an image.', ['name'], {reason: 'not_document'});
@@ -415,7 +423,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (state.deletedFileIds.has(meta.crmFileId)) throw placeRefusal('crm_file_id_used', 'This crmFileId belonged to a file deleted since.');
     if (derive(row) !== 'received') throw new ApiError('request_locked', 409, 'The request is no longer editable.', [], {request: statusObject(row)});
     if ((row.designFiles ||= []).filter(file => (file.category || 'design') === category).length >= limits[category]) throw placeRefusal('too_many_files', 'A request holds at most ' + limits[category] + ' files of this kind.');
-    const file = {fileId: state.nextFile++, crmFileId: meta.crmFileId, name: meta.name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256, source: 'crm', uploadedAt: riyadh(), category};
+    const file = {fileId: state.nextFile++, crmFileId: meta.crmFileId, name: meta.name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256, source: 'crm', uploadedAt: riyadh(), category, ...(state.signedFlag ? {signed: meta.signed === true} : {})};
     row.designFiles.push(file); if (category === 'design') undoApprovals(row); touch(row);
     return {status: 201, body: {created: true, file: designEntry(file), request: statusObject(row)}};
   }
@@ -469,14 +477,16 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       if (state.notConfigured) throw new ApiError('not_configured', 503, 'The integration secret is not configured.');
       const timestamp = String(req.headers['x-yr-timestamp'] || ''), signature = String(req.headers['x-yr-signature'] || '');
       if (!/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) throw new ApiError('invalid_signature', 401, 'Missing or malformed signature headers.');
-      if (raw.length > (route === 'customers' ? 2 * 1024 * 1024 : route === 'design-files' ? DESIGN_MAX + 64 * 1024 : 64 * 1024)) throw new ApiError('payload_too_large', 413, route === 'customers' ? 'The body is larger than 2 MB.' : route === 'design-files' ? 'The file is larger than 25 MB.' : 'The body is larger than 64 KB.');
+      if (raw.length > (route === 'customers' ? 2 * 1024 * 1024 : route === 'design-files' ? DESIGN_MAX + 8 * 1024 : 64 * 1024)) throw new ApiError('payload_too_large', 413, route === 'customers' ? 'The body is larger than 2 MB.' : route === 'design-files' ? 'The file is larger than 25 MB.' : 'The body is larger than 64 KB.');
       if (Math.abs(Math.floor(now() / 1000) - Number(timestamp)) > 300) throw new ApiError('stale_timestamp', 401, 'The timestamp is more than 300 seconds from the server clock.');
       const expected = createHmac('sha256', state.secret).update(timestamp + '\n' + req.method + '\n' + route + '\n' + createHash('sha256').update(raw).digest('hex')).digest('hex');
       if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) { state.badSignatures++; throw new ApiError('invalid_signature', 401, 'The signature does not match.'); }
       call.signed = true;
       if (state.lose.get(route)) { state.lose.set(route, state.lose.get(route) - 1); call.lost = true; }
       // A test's one-shot answer for this route (a refusal the CRM's own checks would never let through), after a valid signature.
-      const forced = state.answers.get(route)?.shift();
+      // A one-shot answer for one design file, by its crmFileId (answerNextFile): the file named, not whichever call comes next.
+      const fileAnswer = route === 'design-files' ? (() => { const id = /"crmFileId":"([^"]+)"/.exec(raw.subarray(0, Math.max(raw.indexOf(0x0a), 0)).toString('utf8'))?.[1]; const at = id ? state.fileAnswers.findIndex(entry => entry.test(id)) : -1; return at < 0 ? null : state.fileAnswers.splice(at, 1)[0]; })() : null;
+      const forced = fileAnswer || state.answers.get(route)?.shift();
       if (forced) { call.forced = true; reply(forced.http, forced.body); return; }
       if (route === 'design-files') {
         if (!/^application\/octet-stream\b/i.test(String(req.headers['content-type'] || ''))) throw new ApiError('invalid_payload', 400, 'design-files takes application/octet-stream.', ['body']);
@@ -571,7 +581,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       const checked = checkDesign(name, Buffer.from(bytes));
       if (!checked.kind) throw new Error('production would refuse this file: ' + (checked.reason || checked.field));
       if (category !== 'design' && (!state.quotePo || checked.kind === 'other')) throw new Error('production would refuse this ' + category + ' file');
-      const file = {fileId: state.nextFile++, crmFileId: null, name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256: createHash('sha256').update(bytes).digest('hex'), source: 'production', uploadedAt: riyadh(), category};
+      const file = {fileId: state.nextFile++, crmFileId: null, name, kind: checked.kind, type: checked.type, bytes: Buffer.from(bytes), sha256: createHash('sha256').update(bytes).digest('hex'), source: 'production', uploadedAt: riyadh(), category, ...(state.signedFlag ? {signed: false} : {})};
       (row.designFiles ||= []).push(file); touch(row);
       return designEntry(file);
     },
@@ -587,6 +597,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     /** The next call of a route (signed as usual) gets this answer instead of the route's own, once: for an answer the stand-in's rules
      *  never give to what the CRM sends (production refusing a file the CRM's own checks accepted, a 413 from its web server). */
     answerNext(route, http, body) { const queue = state.answers.get(route) || []; queue.push({http, body}); state.answers.set(route, queue); },
+    /** The next design-files call for a crmFileId that matches (a RegExp) gets this answer instead, once (2026-11-11: production refusing
+     *  the signed file with 413 or too_many_files, while the other files go as usual). */
+    answerNextFile(pattern, http, body) { state.fileAnswers.push({test: id => pattern.test(id), http, body}); },
     /** The next call of a route is carried out as usual, but its answer is lost (the connection is cut): the CRM never learns of it. */
     loseNext(route) { state.lose.set(route, (state.lose.get(route) || 0) + 1); },
     /** The application before (false) or after (true) its update of 2026-11-03 (the quotation and PO), as it stands since the message of
@@ -614,6 +627,9 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     setFreeCustomers(on = true) { state.freeCustomers = !!on; },
     /** The application of today (false) or after its update of 2026-11-10 (true), at once. */
     setNov10(on = true) { state.nov10 = !!on; },
+    /** Schema 19 (the signed flag) on: files from then on carry "signed"; the files held already get false (their own update marks its
+     *  old copies, which the CRM need not do). */
+    setSignedFlag(on = true) { state.signedFlag = !!on; if (on) for (const row of allRows()) for (const file of row.designFiles || []) if (typeof file.signed !== 'boolean') file.signed = false; },
     /** Finance sends a request back to the sales manager (the update of 2026-11-10, only while it waits for finance): every approval
      *  cleared, `returned` with the reason; the request waits for the sales manager again. */
     financeReturn(key, reason = 'ناقص ملف عرض السعر الموقّع') {

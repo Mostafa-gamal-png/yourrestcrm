@@ -25,8 +25,8 @@ import {env} from 'cloudflare:workers';
 import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
-import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPaymentTerms,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,moldFreeCustomersAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldFreeCustomer,moldHeldFor,MOLD_FREE_CUSTOMER,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPaymentTerms,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,moldFreeCustomersAnswered,moldSignedFlagAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
+import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldFreeCustomer,moldHeldFor,MOLD_FREE_CUSTOMER,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,moldSignedOutputOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
 import type {Member} from './crm';
 
 type Config=ReturnType<typeof moldConfig>;
@@ -103,6 +103,18 @@ export async function moldNov10Known(db:D1Database){
  return !!(await db.prepare('SELECT 1 AS known FROM crm_settings WHERE id=?').bind(MOLD_NOV10_SETTING).first());
 }
 export const moldNov10Answered=(value:unknown)=>!!value&&typeof value==='object'&&Object.hasOwn(value,'paymentTerms')&&Object.hasOwn(value,'returned');
+/** Where the CRM keeps that production's schema 19 is live (yourrest-products#52: "signed" on a design file): a row of crm_settings,
+ *  written once, never removed, learned from any answer whose file objects carry the boolean "signed" (moldSignedFlagAnswered). Until
+ *  then a signed copy or the signed document is sent without it (an older application would ignore it; it is not sent at all). */
+export const MOLD_SIGNED_FLAG_SETTING='mold-signed-flag';
+export async function moldSignedFlagKnown(db:D1Database){
+ return !!(await db.prepare('SELECT 1 AS known FROM crm_settings WHERE id=?').bind(MOLD_SIGNED_FLAG_SETTING).first());
+}
+export async function noteMoldSignedFlag(db:D1Database,values:unknown[],at=new Date().toISOString()){
+ if(!values.some(moldSignedFlagAnswered)||await moldSignedFlagKnown(db))return false;
+ await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_SIGNED_FLAG_SETTING,at).run();
+ return true;
+}
 async function noteMoldNov10(db:D1Database,values:unknown[],at:string){
  if(!values.some(moldNov10Answered)||await moldNov10Known(db))return false;
  await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_NOV10_SETTING,at).run();
@@ -116,6 +128,7 @@ export async function noteMoldQuotePo(db:D1Database,values:unknown[],at=new Date
  await noteMoldRequestRef(db,values,at);
  await noteMoldFreeCustomers(db,values,at);
  await noteMoldNov10(db,values,at);
+ await noteMoldSignedFlag(db,values,at);
  if(!values.some(moldQuotePoAnswered))return false;
  // Written only while it is not there yet (a page reads the waiting list every few minutes; no write each time).
  if(!await moldQuotePoSupported(db))await db.prepare('INSERT OR IGNORE INTO crm_settings(id,owner_id) VALUES(?,?)').bind(MOLD_QUOTE_PO_SETTING,at).run();
@@ -435,10 +448,15 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
    if(!bytes||bytes.length!==file.size){await refuse({code:'file_missing',http:0,at:now()});return {kind:'rejected',code:'file_missing'};}
    let body;
    // A design file is sent without category, exactly as before; the quotation's or PO's with its own, the same on every retry.
-   try{body=moldDesignFileBody({crmRequestId:row.id,crmFileId:file.id,name:file.name,category:moldFileCategory(file)},bytes);}catch(error){await refuse({code:'invalid_payload',fields:[String((error as Error).message)],http:0,at:now()});return {kind:'rejected',code:'invalid_payload'};}
+   // A signed copy or the signed document (an 'mdc-' row the request's signature names) carries "signed": true once production's schema
+   // 19 is known (2026-11-11); every other file, and every file before, exactly as before. The same on every retry of the file.
+   const signed=file.id.startsWith('mdc-')&&!!moldSignatureOf(row.data)&&!!moldSignedOutputOf(file.id,moldSignatureOf(row.data)!.fileId)&&await moldSignedFlagKnown(db);
+   try{body=moldDesignFileBody({crmRequestId:row.id,crmFileId:file.id,name:file.name,category:moldFileCategory(file),...(signed?{signed:true}:{})},bytes);}catch(error){await refuse({code:'invalid_payload',fields:[String((error as Error).message)],http:0,at:now()});return {kind:'rejected',code:'invalid_payload'};}
    answer=await callProducts(link,'design-files',body,options);
   }else answer=await callProducts(link,'design-file-delete',{crmRequestId:row.id,crmFileId:file.id},options);
   const done=now(),remote=answer.kind==='ok'?moldStatusObject(answer.json?.request):answer.kind==='locked'?answer.request:null;
+  // The design-files answer's own file object teaches schema 19 too ("signed" on it).
+  if(answer.kind==='ok'&&file.outbox==='send')await noteMoldSignedFlag(db,[answer.json?.file],done);
   // The answer's request is stored as production holds it now: a design file's arrival or deletion undid its approvals there, a
   // quotation's or PO's kept them (2026-11-05); the CRM pretends neither, it stores what production says. The waiting list is read again
   // (the file is listed there, and the approvals may have changed).
@@ -472,6 +490,10 @@ export async function sendMoldDesignFile(db:D1Database,id:string,{link=productsL
    return {kind:'none',code:'held'};
   }else if(answer.kind==='locked'||answer.kind==='rejected'){
    await refuse({code:answer.kind==='locked'?'request_locked':answer.code,...(answer.reason?{reason:answer.reason}:{}),...(answer.fields.length?{fields:answer.fields}:{}),http:answer.http||0,at:done});
+   // The ONE signed document refused by production for its size (413) or its place (too_many_files, 2026-11-11): the per-file signed
+   // copies are made instead, as when the CRM finds it too large or without a place before sending (loaded here: that module reads this).
+   if(file.outbox==='send'&&answer.kind==='rejected'&&/^mdc-.+-doc$/.test(file.id)&&(answer.code==='payload_too_large'||answer.http===413||answer.reason==='too_many_files'))
+    await import('./mold-sign-server').then(module=>module.signedDocumentRefused(db,file.requestId,file.id)).catch(error=>{console.error('Signed copies failed',error instanceof Error?error.name:'error');});
   }else{
    const failures=file.attempts+1,first=file.firstFailedAt||done;
    await settle('attempts=?,first_failed_at=?,next_attempt_at=?,last_error=?',failures,first,moldNextAttempt(failures,first,done),JSON.stringify({code:answer.code,http:answer.http||0,at:done}));

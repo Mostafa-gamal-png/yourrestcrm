@@ -6,6 +6,8 @@
 // on the server. The original is never changed: the copy is a new file. A PDF pdf-lib cannot open (encrypted: protected; anything else,
 // or one without pages: damaged) gets no copy; the caller says so on the request. Server only (pdf-lib, MIT, pure JavaScript).
 import {EncryptedPDFError,PDFContentStream,PDFDocument,degrees,popGraphicsState,pushGraphicsState} from 'pdf-lib';
+import {moldImageSize} from '@/portable/mold-rules.mjs';
+import {A4,imageLeftReason,imagePageLayout,type SignedDocPart} from './mold-signed-document';
 
 /** A page's visible box (its crop box, else its media box) in user space, and how it is turned when displayed (/Rotate, clockwise). */
 export type PageBox={x:number;y:number;width:number;height:number;rotation:number};
@@ -57,5 +59,46 @@ export async function stampSignaturePdf(original:Uint8Array,block:Uint8Array):Pr
   page.node.wrapContentStreams(stream(pushGraphicsState()),stream(popGraphicsState()));
   page.drawImage(image,{x:placement.x,y:placement.y,width:placement.width,height:placement.height,rotate:degrees(placement.rotate)});
   return {ok:true,bytes:await doc.save(),placement,pages:pages.length};
+ }catch{return {ok:false,reason:'damaged'};}
+}
+
+// ---- One signed document (the owner, 2026-11-11: «pdf يتفتح ويكون عبارة عن عرض السعر او po وبعدين التصميم وفى اخره خانة للتوقيع»)
+/** One document to put in the signed document: what the signing page listed (lib/mold-signed-document.ts SignedDocPart) and its bytes as
+ *  the CRM holds them (null: not found). */
+export type SignedDocSource={part:SignedDocPart;read:()=>Promise<Uint8Array|null>};
+export type SignedDocResult={ok:true;bytes:Uint8Array;pages:number}|{ok:false;reason:'mismatch'|'too_large'|'damaged';detail?:string};
+/**
+ * The signed document: every page of each PDF as it is (copied, its /Rotate and boxes kept: nothing stamped on it), each picture as one A4
+ * page (imagePageLayout), in the order given, then the signature page (the PNG the signing browser composed) as the last A4 page.
+ * mismatch: a document is not what the signing page listed (not found, a PDF that does not open, another count of pages, a picture that
+ * cannot be a page): the page ranges printed on the signature page would be wrong, so no document is made. too_large: over maxBytes
+ * (production's limit for one file). damaged: pdf-lib failed otherwise. One source is read at a time; the document's dates are the
+ * signing's moment, so the same signature builds the same file.
+ */
+export async function buildSignedDocument({sources,page,at,maxBytes,title='طلب القالب - موقّع'}:{sources:SignedDocSource[];page:Uint8Array;at:Date;maxBytes:number;title?:string}):Promise<SignedDocResult>{
+ try{
+  const doc=await PDFDocument.create({updateMetadata:false});
+  for(const {part,read} of sources){
+   const bytes=await read();
+   if(!bytes)return {ok:false,reason:'mismatch',detail:'missing'};
+   if(part.kind==='pdf'){
+    // Opened and counted as pdfPageCount does (a PDF it cannot count is one the page named only, never a page).
+    let source:PDFDocument,count=0;
+    try{source=await PDFDocument.load(bytes,{updateMetadata:false});count=source.getPageCount();}catch{return {ok:false,reason:'mismatch',detail:'unopened'};}
+    if(!count)return {ok:false,reason:'mismatch',detail:'unopened'};
+    if(count!==part.pages)return {ok:false,reason:'mismatch',detail:'pages'};
+    for(const copied of await doc.copyPages(source,source.getPageIndices()))doc.addPage(copied);
+   }else{
+    if(imageLeftReason(bytes)!==null||part.pages!==1)return {ok:false,reason:'mismatch',detail:'image'};
+    const size=moldImageSize(bytes)!,image=size.format==='png'?await doc.embedPng(bytes):await doc.embedJpg(bytes),layout=imagePageLayout(image.width,image.height);
+    doc.addPage([layout.pageWidth,layout.pageHeight]).drawImage(image,{x:layout.x,y:layout.y,width:layout.width,height:layout.height});
+   }
+  }
+  const signature=await doc.embedPng(page);
+  doc.addPage([A4.width,A4.height]).drawImage(signature,{x:0,y:0,width:A4.width,height:A4.height});
+  doc.setTitle(title,{showInWindowTitleBar:true});doc.setProducer('Yourrest CRM');doc.setCreator('Yourrest CRM');doc.setCreationDate(at);doc.setModificationDate(at);
+  const bytes=await doc.save();
+  if(bytes.length>maxBytes)return {ok:false,reason:'too_large'};
+  return {ok:true,bytes,pages:doc.getPageCount()};
  }catch{return {ok:false,reason:'damaged'};}
 }
