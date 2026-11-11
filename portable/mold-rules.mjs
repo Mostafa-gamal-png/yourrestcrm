@@ -722,7 +722,8 @@ export function moldStatusObject(value, {manual = false} = {}) {
   const requestRef = moldRequestRef(value.requestRef);
   return {
     crmRequestId: value.crmRequestId, orderNo: orderNoOf(value.orderNo), ...(requestRef ? {requestRef} : {}), status: value.status, editable: value.editable,
-    moldSerial: shortOrNull(value.moldSerial, 40), productionDate: dateOrNull(value.productionDate), stages,
+    // moldSerial (2026-11-11, products schema 18): every mold of the order from production's daily log, " / " between them, up to 255.
+    moldSerial: shortOrNull(value.moldSerial, 255), productionDate: dateOrNull(value.productionDate), stages,
     stagesDone: MOLD_STAGES.filter(key => stages[key].done).length, stagesTotal: MOLD_STAGES.length,
     delivered: value.delivered === true, deliveryDate: dateOrNull(value.deliveryDate), updatedAt: shortOrNull(value.updatedAt, 40), revision: isWhole(value.revision) ? value.revision : null,
     waitingStep: MOLD_WAITING_STEPS.includes(value.waitingStep) ? value.waitingStep : null, waitingSince: dateOrNull(value.waitingSince), approvals: approvalsOf(value.approvals),

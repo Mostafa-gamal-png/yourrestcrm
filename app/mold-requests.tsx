@@ -370,7 +370,10 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
  // may cancel it.
  const restored=view.editable&&!view.cancelled&&remote?.status!=='cancelled'?moldRestoredText(view.sending.error,say,{cancellable:view.can.cancel}):'';
  const facts:[string,React.ReactNode][]=[
-  [say('رقم أمر الإنتاج','Production order'),moldOrderNoText(remote,say,{cancelled:view.cancelled||remote?.status==='cancelled'})],[say('السريال','Serial'),remote?.moldSerial||'—'],[say('تاريخ الإنتاج','Production date'),day(remote?.productionDate)],
+  [say('رقم أمر الإنتاج','Production order'),moldOrderNoText(remote,say,{cancelled:view.cancelled||remote?.status==='cancelled'})],// Production's status beside where the request waits (2026-11-11: a mold may be logged before finance approves, so in_production
+  // with waitingStep admin): both said as they are. The serial lists every mold of the order ("049 / 050 / 051").
+  ...(remote?[[say('حالة الإنتاج','Production status'),say(...moldStatusNames[remote.status])] as [string,React.ReactNode]]:[]),
+  [say('السريال','Serial'),remote?.moldSerial?<bdi dir="ltr" className="mold-serial" key="s">{remote.moldSerial}</bdi>:'—'],[say('تاريخ الإنتاج','Production date'),day(remote?.productionDate)],
   [say('التسليم','Delivery'),remote?.delivered?say('سُلِّم','Delivered')+' · '+day(remote.deliveryDate):say('لم يُسلَّم','Not delivered')],
   // A customer not in the CRM (2026-11-09) has no Yourrest code: said so; the ERP code the request carries (typed, or the customer's).
   [say('كود يورست','Yourrest code'),view.crmNumber===null?<span className="mold-not-in-crm" key="y">{say(...MOLD_CUSTOMER_TEXT.notInCrm)}</span>:'YR-C-'+String(view.crmNumber).padStart(6,'0')],

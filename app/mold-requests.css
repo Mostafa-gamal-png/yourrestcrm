@@ -70,6 +70,7 @@
 .mold-customer-free{display:flex;align-items:flex-start;gap:8px;margin:0;padding:8px 12px;border:1px solid #e6cf8f;border-radius:12px;background:#fbf3dc;color:#6a4a0e;font-size:14px;line-height:1.5}.mold-customer-free svg{flex-shrink:0;margin-top:2px}
 .dark .mold-customer-free{background:#3a3014;border-color:#6a5420;color:#f2dca0}
 .mold-not-in-crm{display:inline-block;padding:1px 8px;border-radius:999px;background:#fbf3dc;color:#6a4a0e;font-size:12px;font-weight:600}.dark .mold-not-in-crm{background:#3a3014;color:#f2dca0}
+.mold-serial{overflow-wrap:anywhere;word-break:break-word}
 .mold-card-customer{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:0;font-size:13px;color:var(--muted-foreground)}
 .mold-customer-chosen>span{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}.mold-customer-chosen svg{color:var(--primary);flex-shrink:0}.mold-customer-chosen small{font-size:12px;color:var(--muted-foreground)}
 /* The request's delivery address (2026-11-09), under the customer: a two-line text area with dictation, its refusal under it. */
