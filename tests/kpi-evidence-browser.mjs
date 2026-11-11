@@ -82,7 +82,7 @@ try{
   await page.getByRole('button',{name:/^(المزيد من الصفحات|More pages)$/}).click();await page.locator('.mobile-overflow-pages [data-page=targets]').click();await selectRep();
  }
  async function selectRep(){
-  await page.locator('.targets-performance-workspace').waitFor();const input=page.locator('.sales-toolbar input[type=month]');
+  await page.locator('.targets-performance-workspace').waitFor();const input=page.locator('.targets-hub-month input');
   if(await input.inputValue()!==month){const pending=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/sales'&&new URL(response.url()).searchParams.get('month')===month);await input.fill(month);eq((await pending).status(),200,'Selected historical month loads');}
   await page.locator('.kpi-workspace').waitFor();await page.locator('.sales-toolbar').getByRole('combobox',{name:/^(المندوب|Sales rep)$/}).click();await page.getByRole('option',{name:'مندوب الاختبار QA',exact:true}).click();await page.locator('.kpi-person-heading').waitFor();
  }

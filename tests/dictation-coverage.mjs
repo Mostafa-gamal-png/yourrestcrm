@@ -25,6 +25,7 @@ const STAYS_TYPED = [
   {file: 'app/kpi-evidence-editor.tsx', snippet: 'name="due"', reason: 'an amount in riyals: digits are typed, dictating them makes more errors than it saves'},
   {file: 'app/kpi-evidence-editor.tsx', snippet: 'name="collected"', reason: 'an amount in riyals: digits are typed, dictating them makes more errors than it saves'},
   {file: 'app/sales-workspace.tsx', snippet: "mode==='sales'?'العميل أو مرجع البيع'", reason: 'a search box'},
+  {file: 'app/sales-workspace.tsx', snippet: "placeholder={t(salesView?'العميل أو مرجع البيع'", reason: 'the search box of the targets hub (2026-11-11)'},
   {file: 'app/mold-sign-page.tsx', snippet: 'name="signer" dir="auto" autoComplete="name"', reason: 'the public signing page opens in the customer\'s own phone browser, outside the CRM app (no dictation bridge); the signer types their name'},
   {file: 'app/mold-requests.tsx', snippet: "<input type=\"text\" maxLength={max} dir=\"ltr\"", reason: 'the mold description is dimensions (200*400*27.5TH MM OPEN) and the mold number a code; the notes are dictated (the design link is no longer asked for, 2026-11-03)'},
   {file: 'app/mold-customer-fields.tsx', snippet: 'maxLength={60} inputMode="text"', reason: 'the mold request\'s «كود ERP» is a code typed as the ERP writes it (Latin letters and English digits); the customer name beside it is dictated (2026-11-09)'},

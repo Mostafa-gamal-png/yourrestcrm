@@ -1,0 +1,11 @@
+/* «استيراد كشف التحصيل من ERP»: the dialog borrows the sales import's layout (erp-sales-import.css); only what differs is here. */
+.collections-import-file{display:grid;grid-template-columns:minmax(0,180px) minmax(0,1fr);gap:12px;align-items:end}
+.collections-import-file>.erp-import-filename,.collections-import-file>.btn{grid-column:1/-1;justify-self:start}
+.collections-import-file input[type=month]{direction:ltr;width:100%}
+.collections-import-month{margin:6px 0 10px;font-size:14px;line-height:1.8;overflow-wrap:anywhere}
+.erp-import-badge.collections-new{background:#087b7914;color:#087b79}
+.erp-import-badge.collections-replace,.erp-import-badge.collections-invalid{background:#b7701014;color:#965d0c}
+.dark .erp-import-badge.collections-new{background:#51d4bd20;color:#7de1d2}
+.dark .erp-import-badge.collections-replace,.dark .erp-import-badge.collections-invalid{background:#f6c87118;color:#efc672}
+@media(max-width:640px){.collections-import-file{grid-template-columns:minmax(0,1fr)}}
+.collections-import-dialog .erp-import-counts{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
