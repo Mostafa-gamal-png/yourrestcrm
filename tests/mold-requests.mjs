@@ -183,6 +183,12 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
   ok(!('productionNotes' in read) && !('workers' in read), 'nothing but the contract fields is kept');
   eq([moldStatusObject({...raw, status: 'lost'}), moldStatusObject({...raw, editable: 'no'}), moldStatusObject(null)], [null, null, null], 'not a status object');
   eq([read.waitingStep, read.waitingSince, read.approvals], [null, null, null], 'an older production app without the approval chain: nothing to show, nothing refused');
+  // Products schema 18 (2026-11-11): the serial is every mold of the order from the daily log, up to 255 characters; a mold may be logged
+  // before finance approves, so in_production while waitingStep is admin: both read as they come.
+  const many = Array.from({length: 40}, (_, i) => String(100 + i)).join(' / ');
+  const logged = moldStatusObject({...raw, moldSerial: many, productionDate: '2026-11-11', waitingStep: 'admin', approvals: {required: true, sales: {at: '2026-11-10T09:00:00+03:00', by: 'sm'}, production: {at: '2026-11-10T10:00:00+03:00', by: 'p'}, admin: null}});
+  eq([many.length > 40, logged.moldSerial, logged.status, logged.waitingStep, logged.productionDate], [true, many.slice(0, 255), 'in_production', 'admin', '2026-11-11'], 'a long serial is kept up to 255; in production while finance has not approved');
+  eq([moldStatusObject({...raw, moldSerial: '049 / 050 / 051'}).moldSerial, moldStatusObject({...raw, moldSerial: null, productionDate: null}).moldSerial, moldStatusObject({...raw, moldSerial: null, productionDate: null}).productionDate], ['049 / 050 / 051', null, null], 'three molds; none logged yet is null');
   const chain = moldStatusObject({...raw, status: 'received', editable: true, waitingStep: 'production', waitingSince: '2026-11-01T15:10:00+03:00',
     approvals: {required: true, sales: {at: '2026-11-01T15:10:00+03:00', by: 'manager@yourrest.org (مدير)', extra: 'x'}, production: null, admin: null}});
   eq([chain.waitingStep, chain.waitingSince, chain.approvals], ['production', '2026-11-01T15:10:00+03:00', {required: true, sales: {at: '2026-11-01T15:10:00+03:00', by: 'manager@yourrest.org (مدير)'}, production: null, admin: null}], 'where it waits, since when, and the approvals given');
