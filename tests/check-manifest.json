@@ -147,6 +147,11 @@
       "reason": "Requires the owner's ERP customer export via ERP_CUSTOMERS_WORKBOOK (never copied into the repository); prints counts and header names only."
     },
     {
+      "file": "tests/erp-collections-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/erp-sales-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
@@ -425,6 +430,11 @@
       "file": "tests/targets-decisions-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
+    },
+    {
+      "file": "tests/targets-hub-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
     },
     {
       "file": "tests/team-home-browser.mjs",
