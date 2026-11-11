@@ -3,10 +3,12 @@ import {cellRefused} from '@/lib/permissions';
 import type {Row} from '@/lib/crm';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requirePages,requireCell} from '@/lib/crm-server';
-import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,moldSignatureBlockAt,moldSignatureBlockBytes,moldSignatureBlockCheck,moldSignatureSeen,moldPaymentTerms,MOLD_PAYMENT_TERMS_REQUIRED,MOLD_PAYMENT_TERMS_REFRESH,MOLD_PAYMENT_TERMS_CASH,MOLD_TERMS_ACCEPT,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,moldAddress,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,moldCustomerName,moldErpCode,moldErpCodeText,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG} from '@/portable/mold-rules.mjs';
+import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,moldSignatureBlockAt,moldSignatureBlockBytes,moldSignatureBlockCheck,moldSignatureSeen,moldSignaturePageBytes,moldSignaturePageCheck,moldSignedDocumentCategory,moldSignedDocumentParts,moldPaymentTerms,MOLD_PAYMENT_TERMS_REQUIRED,MOLD_PAYMENT_TERMS_REFRESH,MOLD_PAYMENT_TERMS_CASH,MOLD_TERMS_ACCEPT,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,moldAddress,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,moldCustomerName,moldErpCode,moldErpCodeText,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldHeldFor,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSignableFile,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldPaymentTerms,type MoldRequestData,type MoldRequestsAnswer,type MoldSignatureData} from '@/lib/mold-requests';
-import {dropOldCopies,makeSignedCopies,newSignLink,signLinkUrl} from '@/lib/mold-sign-server';
+import {dropOldCopies,makeSignedCopies,makeSignedDocument,newSignLink,signLinkUrl} from '@/lib/mold-sign-server';
+import type {SignedDocPart} from '@/lib/mold-signed-document';
+import type {MoldFileCategory} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {customerCodeKey,uniqueCustomerCodes} from '@/lib/customer-identity';
 import {isServiceRole} from '@/lib/customer-service';
@@ -84,7 +86,8 @@ const specsInput=z.record(z.string(),z.unknown()),paymentInput=z.unknown().optio
 /** The customer's signature (2026-11-04): {signer, png} with the PNG as base64, checked by readSignature (each refusal by its field).
  *  Since 2026-11-10 also block (the block stamped in the PDFs, a PNG as base64), blockAt (the moment printed in it) and seen (the SHA-256 of
  *  the PDFs the customer saw on the device before they are uploaded); a page loaded before sends none of them, and its signature makes no
- *  signed copies. */
+ *  signed copies. Since 2026-11-11 also document: {page, parts}, the signature page the device composed (a PNG as base64) and the
+ *  documents it lists, of which ONE signed document is made (makeSignedDocument); a page of the release before sends none (per-file copies). */
 const signatureInput=z.unknown().optional();
 /** The requester chose to send the customer a link to sign from instead of the pad (2026-11-10): the request is saved without a signature
  *  and kept until the customer signs. */
@@ -208,32 +211,41 @@ function askedAddress(value:unknown,kept:string):{address:string;fields:Record<s
 /** The customer's signature as checked (moldSignatureCheck): who signed, the file's name, the PNG and its hash; since 2026-11-10 the block
  *  stamped in the PDFs (checked by moldSignatureBlockCheck, the moment printed in it near the server's clock) and the PDFs seen on the
  *  device, when the page sent them. */
-type SignatureFile={signer:string;name:string;bytes:Uint8Array<ArrayBuffer>;contentType:string;sha256:string;block:{bytes:Uint8Array<ArrayBuffer>;width:number;height:number;at:string;sha256:string}|null;seen:string[]};
+type SignatureFile={signer:string;name:string;bytes:Uint8Array<ArrayBuffer>;contentType:string;sha256:string;block:{bytes:Uint8Array<ArrayBuffer>;width:number;height:number;at:string;sha256:string}|null;seen:string[];
+ /** The signature page and its documents (2026-11-11), with the block only (the copies are its fallback). */
+ document:{bytes:Uint8Array<ArrayBuffer>;width:number;height:number;sha256:string;parts:SignedDocPart[];category:MoldFileCategory|null}|null};
 const sha256=async(bytes:Uint8Array<ArrayBuffer>)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(n=>n.toString(16).padStart(2,'0')).join('');
 /** The signature a create or an edit carries (2026-11-04): none (absent, or null), or {signer, png} checked as production checks a design
  *  image (a real PNG of at most 256 KiB and 1200 pixels a side), each refusal by its field: signer (2 to 80 characters), signature. */
 async function readSignature(value:unknown):Promise<{signature:SignatureFile|null;fields:Record<string,string>}>{
  if(value===undefined||value===null)return {signature:null,fields:{}};
- const source=typeof value==='object'&&!Array.isArray(value)?value as {signer?:unknown;png?:unknown;block?:unknown;blockAt?:unknown;seen?:unknown}:{};
+ const source=typeof value==='object'&&!Array.isArray(value)?value as {signer?:unknown;png?:unknown;block?:unknown;blockAt?:unknown;seen?:unknown;document?:unknown}:{};
  const signer=moldSigner(source.signer),named=signer!==undefined&&[...signer].length>=MOLD_SIGNER_MIN&&[...signer].length<=MOLD_SIGNER_MAX;
  const bytes=moldSignatureBytes(source.png),checked=moldSignatureCheck(named?signer:'--',bytes);
  // The block stamped in the PDFs (2026-11-10): optional (a page loaded before sends none); when sent, a valid PNG, its moment the server's.
  const blockBytes=source.block===undefined?null:moldSignatureBlockBytes(source.block),blockChecked=blockBytes?moldSignatureBlockCheck(blockBytes):null;
  const blockAt=source.block===undefined?null:moldSignatureBlockAt(source.blockAt),seen=moldSignatureSeen(source.seen);
- const blockField=source.block===undefined?{}:!blockChecked?.ok||seen===null?{signature:MOLD_SIGNATURE_BAD}:!blockAt?{signature:SIGNATURE_CLOCK}:{};
+ // The signature page and its documents (2026-11-11): optional (a page of the release before sends none); sent, they need the block.
+ const documentSource=source.document===undefined?null:typeof source.document==='object'&&source.document&&!Array.isArray(source.document)?source.document as {page?:unknown;parts?:unknown;category?:unknown}:{};
+ const pageBytes=documentSource?moldSignaturePageBytes(documentSource.page):null,pageChecked=pageBytes?moldSignaturePageCheck(pageBytes):null,parts=documentSource?moldSignedDocumentParts(documentSource.parts):null;
+ const documentBad=!!documentSource&&(!pageChecked?.ok||!parts||source.block===undefined);
+ const blockField=documentBad?{signature:MOLD_SIGNATURE_BAD}:source.block===undefined?{}:!blockChecked?.ok||seen===null?{signature:MOLD_SIGNATURE_BAD}:!blockAt?{signature:SIGNATURE_CLOCK}:{};
  const fields:Record<string,string>={...(named?{}:{signer:MOLD_SIGNER_REQUIRED}),...blockField,...(!checked.ok&&checked.field==='signature'?{signature:checked.reason==='missing'&&!source.png?MOLD_SIGNATURE_REQUIRED:MOLD_SIGNATURE_BAD}:{})};
  if(Object.keys(fields).length||!checked.ok||!bytes)return {signature:null,fields};
  const file=new Uint8Array(bytes),block=blockBytes&&blockChecked?.ok&&blockAt?new Uint8Array(blockBytes):null;
  return {signature:{signer:checked.signer,name:checked.name,bytes:file,contentType:checked.contentType,sha256:await sha256(file),
-  block:block&&blockChecked?.ok?{bytes:block,width:blockChecked.width,height:blockChecked.height,at:blockAt!,sha256:await sha256(block)}:null,seen:seen||[]},fields:{}};
+  block:block&&blockChecked?.ok?{bytes:block,width:blockChecked.width,height:blockChecked.height,at:blockAt!,sha256:await sha256(block)}:null,seen:seen||[],
+  document:block&&pageBytes&&pageChecked?.ok&&parts?{bytes:new Uint8Array(pageBytes),width:pageChecked.width,height:pageChecked.height,sha256:await sha256(new Uint8Array(pageBytes)),parts,category:moldSignedDocumentCategory(documentSource?.category)}:null},fields:{}};
 }
 /** The receipt of a write: the request as sent, with the signature's PNG as its hash (an audit entry never holds a file's contents). */
 async function receiptOf(input:Record<string,unknown>){
- const signature=input.signature as {signer?:unknown;png?:unknown;block?:unknown;blockAt?:unknown;seen?:unknown}|null|undefined;
+ const signature=input.signature as {signer?:unknown;png?:unknown;block?:unknown;blockAt?:unknown;seen?:unknown;document?:{page?:unknown;parts?:unknown}|null}|null|undefined;
  if(!signature||typeof signature!=='object')return JSON.stringify(input);
  const hashed=async(value:unknown)=>typeof value==='string'?await sha256(new TextEncoder().encode(value)):value;
  // The block (2026-11-10) as its hash too; a signature without one reads exactly as before.
- return JSON.stringify({...input,signature:{signer:signature.signer,png:await hashed(signature.png),...(signature.block!==undefined?{block:await hashed(signature.block),blockAt:signature.blockAt,seen:signature.seen}:{})}});
+ // The signature page (2026-11-11) as its hash too, with the documents it lists; absent, the receipt reads exactly as before.
+ const document=signature.document&&typeof signature.document==='object'?{page:await hashed(signature.document.page),parts:signature.document.parts,category:(signature.document as {category?:unknown}).category}:signature.document;
+ return JSON.stringify({...input,signature:{signer:signature.signer,png:await hashed(signature.png),...(signature.block!==undefined?{block:await hashed(signature.block),blockAt:signature.blockAt,seen:signature.seen}:{}),...(signature.document!==undefined?{document}:{})}});
 }
 /** A sales role's write with no signature at all: most likely a page loaded before the signature (2026-11-04), which shows no pad, so the
  *  refusal says to refresh. Its English pair is in lib/locales/en.json. */
@@ -252,7 +264,7 @@ const SIGNATURE_WAIT_MS=15_000;
  * certainly never reached production (moldNeverSent; MOLD_NEVER_SENT_SQL guards the save): once sent, 409 with production_only's text.
  * approve, withdraw (the sales manager): production's approval route is called first, and only its answer is saved, with the receipt.
  */
-export async function POST(req:Request){let objectKey='',blockKey='';try{
+export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';try{
  checkOrigin(req);await requireSession();
  // The role is checked before the body is read: customer service is refused (403) whatever it sends.
  const c=await reader(),input=schema.parse(await readJsonBody(req)),now=new Date().toISOString(),mutation=crypto.randomUUID(),link=productsLink();keepMoldRetrying();
@@ -372,7 +384,9 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
  const obsolete:string[]=[];let copyNow=false;
  /** The signature as the request's data keeps it: who, when, how, and (when the page composed one) its block's object and the PDFs seen. */
  const signatureData=(file:SignatureFile,id:string):MoldSignatureData=>({signer:file.signer,signedAt:now,fileId:id,via:'device',
-  ...(file.block?{block:{key:blockKey,sha256:file.block.sha256,width:file.block.width,height:file.block.height,at:file.block.at},...(file.seen.length?{seen:file.seen}:{})}:{})});
+  ...(file.block?{block:{key:blockKey,sha256:file.block.sha256,width:file.block.width,height:file.block.height,at:file.block.at},...(file.seen.length?{seen:file.seen}:{})}:{}),
+  // The ONE signed document (2026-11-11): its signature page's object and the documents it lists.
+  ...(file.block&&file.document?{document:{key:pageKey,sha256:file.document.sha256,width:file.document.width,height:file.document.height,at:file.block.at,parts:file.document.parts,...(file.document.category?{category:file.document.category}:{})}}:{})});
  /** A signature and a link sent together: refused by the signature's field. */
  const bothGiven=(value:{signature?:unknown;signatureLink?:unknown}):Record<string,string>=>value.signatureLink===true&&value.signature!==undefined&&value.signature!==null?{signature:SIGNATURE_OR_LINK}:{};
  const signatureRow=(file:SignatureFile,fileId:string,requestRow:string)=>c.db.prepare(`INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,mutation_id,category)
@@ -397,7 +411,7 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
   // The customer's keys in the order a request always stored them (crmNumber, name, address, city), its ERP code after.
   const {crmNumber,city,erpCode}=asked.customer;
   const data:MoldRequestData={requestedAt:requestedNow(now),customer:{crmNumber,name,address:place.address,city,...(erpCode?{erpCode}:{})},salesman:{crmMemberId:c.me.id,name:c.me.name,email:c.me.email},specs:checked.specs,payment:checked.payment,...(checked.paymentTerms?{paymentTerms:checked.paymentTerms}:{}),...(quotePo?{fileRequired:true as const}:{}),designRequired:true};
-  if(signing){if(signing.file.block)blockKey='mold-sign-block/'+rowId+'/'+signing.id+'/'+crypto.randomUUID();data.signature=signatureData(signing.file,signing.id);}
+  if(signing){if(signing.file.block)blockKey='mold-sign-block/'+rowId+'/'+signing.id+'/'+crypto.randomUUID();if(signing.file.block&&signing.file.document)pageKey='mold-sign-page/'+rowId+'/'+signing.id+'/'+crypto.randomUUID();data.signature=signatureData(signing.file,signing.id);}
   if(wantsLink){const made=await newSignLink(c.me.id,now);madeToken=made.token;madeExpiry=made.link.expiresAt;data.awaitsSignature=true;data.signatureLink=made.link;}
   detail={label:labels.create,customerName:name,...(erpCode?{erpCode}:{}),...(customer?{}:{notInCrm:true}),description:data.specs.description,quantity:data.specs.quantity,payment:data.payment,...(data.paymentTerms?{paymentTerms:data.paymentTerms}:{}),...(data.fileRequired?{fileRequired:true}:{}),designRequired:true,...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length,...(signing.file.block?{stamped:true,seen:signing.file.seen.length}:{})}}:{}),...(wantsLink?{signatureLink:{expiresAt:madeExpiry}}:{})};
   // A customer not in the CRM: customer_id '' (the column is never NULL), no customer record to hold.
@@ -481,6 +495,7 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
     if(places.crm+places.production-freed+1>places.max)throw new CRMError(SIGNATURE_NO_ROOM,409);
     signing={file:signed.signature,id:'mds-'+input.requestId};
     if(signing.file.block){blockKey='mold-sign-block/'+row.id+'/'+signing.id+'/'+crypto.randomUUID();copyNow=true;}
+    if(signing.file.block&&signing.file.document)pageKey='mold-sign-page/'+row.id+'/'+signing.id+'/'+crypto.randomUUID();
     edited.signature=signatureData(signing.file,signing.id);
    }else{
     delete edited.signature;
@@ -488,7 +503,7 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
    }
    if(oldFile&&removable)replaced={key:oldFile.objectKey,at:0};
    // The old signature's block and its signed copies that never reached production go with it (2026-11-10).
-   if(old){const dropped=dropOldCopies(c.db,files,old.fileId,row.id,mutation,now);signatureRows.push(...dropped.statements);obsolete.push(...dropped.keys);const key=row.data.signature?.block?.key;if(key)obsolete.push(key);}
+   if(old){const dropped=dropOldCopies(c.db,files,old.fileId,row.id,mutation,now);signatureRows.push(...dropped.statements);obsolete.push(...dropped.keys);for(const key of [row.data.signature?.block?.key,row.data.signature?.document?.key])if(key)obsolete.push(key);}
    detail={label:labels.update,customerName:customer.name,...(swapped?{customer:{name:customer.name,...(customer.erpCode?{erpCode:customer.erpCode}:{}),...(customerId?{}:{notInCrm:true})},previousCustomer:before.name}:{}),description:specs.description,quantity:specs.quantity,payment,...(paymentTerms?{paymentTerms}:{}),...(moved?{address}:{}),...(signing?{signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length,...(signing.file.block?{stamped:true}:{})}}:{}),...(old?{replacedSignature:old.fileId}:{}),...(wantsLink?{signatureLink:{expiresAt:madeExpiry}}:{})};
    // Production never stored any of it, so the edited request starts as never attempted; the guard holds that in SQL, so a send claimed
    // since the check (it may arrive) keeps the request as it is.
@@ -518,6 +533,7 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
     if(places.crm+places.production+1>places.max)throw new CRMError(SIGNATURE_NO_ROOM,409);
     signing={file:signed.signature,id:'mds-'+input.requestId};
     if(signing.file.block){blockKey='mold-sign-block/'+row.id+'/'+signing.id+'/'+crypto.randomUUID();copyNow=true;}
+    if(signing.file.block&&signing.file.document)pageKey='mold-sign-page/'+row.id+'/'+signing.id+'/'+crypto.randomUUID();
     edited.signature=signatureData(signing.file,signing.id);delete edited.awaitsSignature;delete edited.signatureLink;
     detail={label:labels.sign,customerName:row.data.customer.name,signature:{signer:signing.file.signer,fileId:signing.id,size:signing.file.bytes.length,...(signing.file.block?{stamped:true}:{})}};
    }else if(input.op==='new'){
@@ -562,10 +578,12 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
   await env.FILES.put(objectKey,signing.file.bytes,{httpMetadata:{contentType:signing.file.contentType}});
   // The block stamped in the PDFs (2026-11-10): kept in the object store only (never sent), named by the signature's data.
   if(blockKey&&signing.file.block)await env.FILES.put(blockKey,signing.file.block.bytes,{httpMetadata:{contentType:'image/png'}});
+  // The signature page (2026-11-11): kept in the object store only, named by the signature's data; the signed document is made of it.
+  if(pageKey&&signing.file.document)await env.FILES.put(pageKey,signing.file.document.bytes,{httpMetadata:{contentType:'image/png'}});
   signatureRows.unshift(signatureRow(signing.file,signing.id,rowId));
  }
  if(replaced)replaced.at=1+(signing?1:0);
- const drop=async()=>{if(env.FILES)for(const key of [objectKey,blockKey])if(key)await env.FILES.delete(key).catch(()=>{});objectKey='';blockKey='';};
+ const drop=async()=>{if(env.FILES)for(const key of [objectKey,blockKey,pageKey])if(key)await env.FILES.delete(key).catch(()=>{});objectKey='';blockKey='';pageKey='';};
  const result=await c.db.batch([statement,...signatureRows,...(restart?[restart]:[]),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,rowId,c.me.name,'mold-request-receipt',canonical,now,...ga),
   c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),rowId,c.me.name,'mold-request:'+input.action,JSON.stringify(detail),now,...ga),
@@ -579,7 +597,7 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
   if(current&&!moldNeverSent(current))return answer(rowId,null,409,PRODUCTION_ONLY);
   throw new CRMError('تغيّرت البيانات أو الصلاحيات أثناء الحفظ. حدّث الصفحة.',409);
  }
- objectKey='';blockKey='';
+ objectKey='';blockKey='';pageKey='';
  if(madeToken)madeLink={url:signLinkUrl(madeToken),expiresAt:madeExpiry};
  // The old signature removed with the edit: its bytes leave the CRM now; so do its block and signed copies (2026-11-10).
  if(replaced&&result[replaced.at]?.meta.changes===1&&replaced.key&&env.FILES)await env.FILES.delete(replaced.key).catch(()=>{});
@@ -588,8 +606,14 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
  // request goes, so the copies follow their originals; then the request and its files are sent at once (the answer waits a little).
  if(copyNow&&signing){
   const saved=await loadMoldRequest(c.db,rowId),attached=(await loadMoldDesignFiles(c.db,'request_id=?',[rowId])).filter(moldSignableFile);
-  const block=(saved?.data.signature as MoldSignatureData|undefined)?.block?.key;
-  if(saved&&block)await makeSignedCopies(c.db,{requestId:rowId,signatureFileId:signing.id,blockKey:block,originals:attached,actor:c.me.name}).catch(error=>{console.error('Signed copies failed',error instanceof Error?error.name:'error');});
+  const stored=saved?.data.signature as MoldSignatureData|undefined,block=stored?.block?.key;
+  // The ONE signed document (2026-11-11) once every document the customer saw is among the request's files (made now when they are all
+  // attached already; else as the last of them is uploaded); a signature of the release before: the per-file copies of before.
+  if(saved&&stored?.document)await makeSignedDocument(c.db,{requestId:rowId,signatureFileId:signing.id,actor:c.me.name}).catch(error=>{console.error('Signed document failed',error instanceof Error?error.name:'error');});
+  else if(saved&&block)await makeSignedCopies(c.db,{requestId:rowId,signatureFileId:signing.id,blockKey:block,originals:attached,actor:c.me.name}).catch(error=>{console.error('Signed copies failed',error instanceof Error?error.name:'error');});
+ }else if(signing?.file.document&&input.action==='create'){
+  // A new request whose documents are all named only (nothing to upload): its signed document is the signature page alone, made now.
+  await makeSignedDocument(c.db,{requestId:rowId,signatureFileId:signing.id,actor:c.me.name}).catch(error=>{console.error('Signed document failed',error instanceof Error?error.name:'error');});
  }
  if(copyNow||input.action==='sign'){
   let told:SendOutcome|null=null,timer:ReturnType<typeof setTimeout>|undefined;
@@ -611,7 +635,7 @@ export async function POST(req:Request){let objectKey='',blockKey='';try{
  if(input.action==='resend')void sendDueMoldDesignFiles(c.db,{link}).catch(()=>{});
  return answer(rowId,outcome,outcome.kind==='locked'||outcome.kind==='restored'?409:200);
 }catch(e){
- if(env.FILES)for(const key of [objectKey,blockKey])if(key)await env.FILES.delete(key).catch(()=>{});
+ if(env.FILES)for(const key of [objectKey,blockKey,pageKey])if(key)await env.FILES.delete(key).catch(()=>{});
  if(e instanceof z.ZodError)return Response.json({error:e.issues.map(issue=>issue.message).join(' • ')},{status:400});
  if(e instanceof CRMError&&'fields' in e)return Response.json({error:e.message,fields:(e as CRMError&{fields:Record<string,string>}).fields},{status:e.status});
  return replyError(e);

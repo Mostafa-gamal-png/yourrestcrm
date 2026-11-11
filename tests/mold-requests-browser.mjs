@@ -92,6 +92,9 @@ try {
   const noOverflow = async (page, label) => check(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, label + ': no horizontal overflow');
   const goMolds = async page => { await page.locator('button.nav-item', {hasText: new RegExp(LABEL + '|Mold requests')}).first().click(); await page.locator('.mold-page').waitFor(); };
   const sheet = page => page.locator('.mold-sheet');
+  /** The signing summary's rows (on the document's signature page since 2026-11-11, drawn once the documents are read). */
+  const summaryOf = async (scope, part) => { await scope.locator('.mold-signing-summary').waitFor(); return scope.locator('.mold-signing-summary ' + part); };
+  const until = async (test, message, ms = 30000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await test()) return; await new Promise(resolve => setTimeout(resolve, 200)); } assert.fail('timed out: ' + message); };
   /** A design file of the request's own, chosen in the form's design picker (required since 2026-11-08). */
   const drawing = (name = 'رسم القالب.pdf') => ({name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic drawing ' + name)});
   const attachDesign = async (dialog, file = drawing()) => {
@@ -376,7 +379,7 @@ try {
   await lateEdit.locator('label.mold-field', {hasText: 'Quantity'}).locator('input').fill('4');
   await lateEdit.getByRole('button', {name: 'Save and send the change'}).click();
   // In English: the customer signs the change first («Customer signature»), then the server refuses it; the form comes back with why.
-  check(await lateEdit.locator('.mold-signing h3').innerText(), 'Customer signature', 'the signing step in English');
+  check(await lateEdit.locator('.mold-signing > h3').innerText(), 'Customer signature', 'the signing step in English');
   await sign(english, {signer: 'Khalid Al-Otaibi', input: 'pen', confirm: 'Confirm and send'});
   const lateRefusal = lateEdit.locator('.form-error');
   await lateRefusal.waitFor();
@@ -474,8 +477,10 @@ try {
   await keptEdit.locator('.mold-signing').waitFor();
   await sign(keeper, {signer: 'م. خالد العتيبي'});
   await keptEdit.waitFor({state: 'detached'});
-  for (let n = 0; n < 100 && !(mock.row(keptId)?.designFiles?.length >= 2); n++) await new Promise(resolve => setTimeout(resolve, 100));
-  check([mock.row(keptId)?.quantity, mock.row(keptId)?.designFiles.map(file => file.name.startsWith('توقيع العميل'))], [2, [true, false]], 'the change saved, its design file uploaded: the request went as changed, then its new signature, then the design file');
+  // Since 2026-11-11 the signed file («طلب القالب - موقّع.pdf», the design and the signature page) follows the design file.
+  for (let n = 0; n < 200 && !(mock.row(keptId)?.designFiles?.length >= 3); n++) await new Promise(resolve => setTimeout(resolve, 100));
+  const kinds = mock.row(keptId)?.designFiles.map(file => file.name.startsWith('توقيع العميل') ? 'signature' : file.name.endsWith(' - موقّع.pdf') ? 'signed file' : 'design');
+  check([mock.row(keptId)?.quantity, kinds?.[0], kinds?.slice(1).sort()], [2, 'signature', ['design', 'signed file']], 'the change saved, its design file uploaded: the request went as changed, then its new signature, then the design file and the signed file (two sends at once, either first)');
   await keeper.context().close();
 
   // ---- 3d. Deleted in the products application: the representative reads it cancelled there, not «production has started»
@@ -731,7 +736,11 @@ try {
   check([Object.hasOwn(quoteSent, 'quoteNo'), Object.hasOwn(quoteSent, 'poNo'), await sheet(quoteRep).locator('.mold-facts dt', {hasText: /رقم عرض السعر|رقم الـ PO/}).count()], [false, false, 0], 'sent without a number; the sheet shows none');
   check([await sheet(quoteRep).locator('section.mold-design').evaluateAll(sections => sections.map(section => section.getAttribute('data-category'))), await quoteGroup.locator('.mold-design-count').innerText(), await sheet(quoteRep).locator('.mold-quote-po-missing').count()], [['design', 'quote', 'po'], '1/5', 0], 'the request\'s files in three groups; the quotation file reached production in its own (1 of 5); nothing missing');
   await sheet(quoteRep).locator('.mold-signature-view[data-state="sent"]').waitFor();
-  check(mock.row(quotedId).designFiles.map(file => [file.category, file.name.startsWith('توقيع العميل')]), [['design', true], ['quote', false], ['design', false]], 'production holds it as the quotation\'s, beside the customer\'s signature and the design file (in the order attached: the quotation\'s uploads first)');
+  // Since 2026-11-11 the signed file too, «طلب القالب - موقّع.pdf», of the quotation's category (the first document's, even when its PDF
+  // is named only): made at once here (no document the page could open), so it may reach production before the uploads.
+  await until(() => (mock.row(quotedId).designFiles || []).length === 4, 'the four files reach production');
+  check([mock.row(quotedId).designFiles.filter(file => !file.name.endsWith(' - موقّع.pdf')).map(file => [file.category, file.name.startsWith('توقيع العميل')]), mock.row(quotedId).designFiles.filter(file => file.name.endsWith(' - موقّع.pdf')).map(file => [file.category, file.name])],
+    [[['design', true], ['quote', false], ['design', false]], [['quote', 'طلب القالب - موقّع.pdf']]], 'production holds it as the quotation\'s, beside the customer\'s signature and the design file (in the order attached: the quotation\'s uploads first), and the signed file as a quotation\'s file');
   await quoteRep.waitForFunction(() => { const box = document.querySelector('.mold-sheet')?.getBoundingClientRect(); return !!box && box.left >= -1 && box.right <= innerWidth + 1; });
   await quoteGroup.scrollIntoViewIfNeeded();
   await shot(quoteRep, 'mold-sheet-quote-file');
@@ -759,7 +768,8 @@ try {
   const quotedPending = quoteManager.locator('.mold-pending', {has: quoteManager.locator('.mold-design-compact[data-category="quote"]')});
   check([await quotedPending.count() >= 1, await quotedPending.first().locator('.mold-quote-po-missing').count()], [true, 0], 'the request with its quotation file: not missing');
   const pendingQuote = quotedPending.first().locator('.mold-design-compact[data-category="quote"]');
-  const [download] = await Promise.all([quoteManager.waitForEvent('download'), pendingQuote.locator('a', {hasText: 'تنزيل'}).first().click()]);
+  // The quotation's own file (the signed file of 2026-11-11 is a quotation's file too).
+  const [download] = await Promise.all([quoteManager.waitForEvent('download'), pendingQuote.locator('li', {hasText: 'عرض سعر Q-2026-0153.pdf'}).locator('a', {hasText: 'تنزيل'}).first().click()]);
   check(fs.readFileSync(await download.path()).toString().startsWith('%PDF-1.7 synthetic quotation'), true, 'its quotation file downloaded through the CRM');
   await shot(quoteManager, 'mold-pending-quote-missing');
   await approveIn(missingPending);
@@ -1091,7 +1101,7 @@ try {
     await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
     const signing = form.locator('.mold-signing');
     await signing.waitFor();
-    check((await signing.locator('.mold-signing-summary dt').allInnerTexts()).slice(0, 3), ['العميل', 'كود ERP', 'العنوان'], 'the signing summary: «العنوان» under «العميل» and its ERP code (2026-11-09)');
+    check((await (await summaryOf(signing, 'dt')).allInnerTexts()).slice(0, 3), ['العميل', 'كود ERP', 'العنوان'], 'the signing summary: «العنوان» under «العميل» and its ERP code (2026-11-09)');
     check(await signing.locator('.mold-signing-summary div').nth(2).locator('dd').innerText(), DELIVERY, 'the address the customer signs is the one typed for the request');
     await signing.locator('.mold-signing-summary').scrollIntoViewIfNeeded();
     await noOverflow(addressPhone, 'phone signing step with the address'); await shot(addressPhone, 'mold-signing-address-phone');
@@ -1144,7 +1154,7 @@ try {
     await englishForm.getByRole('button', {name: 'Save and send to production'}).click();
     const englishSigning = englishForm.locator('.mold-signing');
     await englishSigning.waitFor();
-    check([(await englishSigning.locator('.mold-signing-summary dt').allInnerTexts()).slice(0, 3), await englishSigning.locator('.mold-signing-summary div').nth(2).locator('dd').innerText()], [['Customer', 'ERP code', 'Address'], 'Warehouse 7, Second Industrial City, Dammam'], 'the signing summary in English: «Address» under «Customer» and «ERP code»');
+    check([(await (await summaryOf(englishSigning, 'dt')).allInnerTexts()).slice(0, 3), await englishSigning.locator('.mold-signing-summary div').nth(2).locator('dd').innerText()], [['Customer', 'ERP code', 'Address'], 'Warehouse 7, Second Industrial City, Dammam'], 'the signing summary in English: «Address» under «Customer» and «ERP code»');
     await noOverflow(englishAddress, 'English phone signing step with the address'); await shot(englishAddress, 'mold-signing-address-phone-en');
     await englishSigning.getByRole('button', {name: 'Back to the request'}).click();
     check(await englishArea.inputValue(), 'Warehouse 7, Second Industrial City, Dammam', 'back to the form: the address kept as typed');
@@ -1254,7 +1264,7 @@ try {
     await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
     const freeSigning = form.locator('.mold-signing');
     await freeSigning.waitFor();
-    const summary = await freeSigning.locator('.mold-signing-summary div').evaluateAll(rows => rows.slice(0, 4).map(row => [row.querySelector('dt').innerText, row.querySelector('dd').innerText]));
+    const summary = await (await summaryOf(freeSigning, 'div')).evaluateAll(rows => rows.slice(0, 4).map(row => [row.querySelector('dt').innerText, row.querySelector('dd').innerText]));
     check(summary, [['العميل', 'مصنع النور الجديد'], ['كود ERP', '9012'], ['كود يورست', NOT_IN_CRM], ['العنوان', 'جدة، حي الصناعية، بوابة 2']], 'the signing summary: the name, the ERP code, «غير مسجل في الـCRM», the address');
     await noOverflow(phone, 'phone signing step of a customer not in the CRM'); await shot(phone, 'mold-signing-free-customer-phone');
     await pad(phone).scrollIntoViewIfNeeded();

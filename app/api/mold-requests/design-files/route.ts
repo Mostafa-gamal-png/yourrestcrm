@@ -11,13 +11,15 @@
 // customer's signature) is required of every new request too, kept the same way: the file that leaves nothing missing releases it.
 // Since 2026-11-10 a PDF the customer saw on the device when signing (its SHA-256 among the signature's seen) gets its signed copy as it
 // arrives (lib/mold-sign-server.ts makeSignedCopies), saved right after it and sent after it; one attached after the signature gets none.
+// Since 2026-11-11 a signature that carries its signature page makes ONE signed document instead (makeSignedDocument): the upload of the
+// last document the customer saw (each found by its SHA-256 and category among the signature's parts) builds it, sent after it.
 import {z} from 'zod';
 import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,CRMError,replyError,requirePages} from '@/lib/crm-server';
 import {readRequestForm} from '@/lib/request-body';
 import {moldDesignFileCheck,MOLD_CATEGORY_MAX_FILES} from '@/portable/mold-rules.mjs';
 import {canReadMoldRequest,canUseMoldRequests,moldApprovesRequest,moldDesignCount,moldDesignRefusalText,moldEditable,moldHeldFor,moldRequestView,moldSignatureOf,type MoldFileCategory} from '@/lib/mold-requests';
-import {makeSignedCopies} from '@/lib/mold-sign-server';
+import {makeSignedCopies,makeSignedDocument} from '@/lib/mold-sign-server';
 import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldQuotePoSupported,moldViewReasons,productsLink,releaseMoldRequest,sendMoldDesignFile,MOLD_DESIGN_REFUSED_SQL,type DesignOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
@@ -105,7 +107,10 @@ export async function POST(req:Request){let objectKey='',admitted=false;try{
  // A PDF the customer saw on the device when signing (2026-11-10): its signed copy, saved now, so it follows the original to production.
  const signature=moldSignatureOf(row.data),stamp=row.data.signature;
  let copies:string[]=[];
- if(signature&&stamp?.block?.key&&checked.kind==='pdf'&&(stamp.seen||[]).includes(hash)){
+ if(signature&&stamp?.document){
+  // The ONE signed document (2026-11-11): built once this file completes the documents the customer saw.
+  if(stamp.document.parts.some(part=>part.sha256===hash&&part.category===category))copies=(await makeSignedDocument(c.db,{requestId:row.id,signatureFileId:signature.fileId,actor:c.me.name}).catch(()=>({made:[] as string[]}))).made;
+ }else if(signature&&stamp?.block?.key&&checked.kind==='pdf'&&(stamp.seen||[]).includes(hash)){
   const original=(await loadMoldDesignFiles(c.db,'id=?',[crmFileId]))[0];
   if(original)copies=(await makeSignedCopies(c.db,{requestId:row.id,signatureFileId:signature.fileId,blockKey:stamp.block.key,originals:[original],actor:c.me.name}).catch(()=>({made:[]}))).made.map(copy=>copy.id);
  }

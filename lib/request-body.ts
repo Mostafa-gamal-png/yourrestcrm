@@ -9,13 +9,15 @@ export class RequestBodyError extends Error {
 // base64 (MOLD_SIGNATURE_BASE64_MAX in portable/mold-rules.mjs, 349 528 characters): 380 000; since 2026-11-10 also the block stamped in the
 // PDFs, a PNG of at most 384 KiB as base64 (MOLD_SIGNATURE_BLOCK_BASE64_MAX, 524 288 characters), and the SHA-256 of at most 20 PDFs seen
 // (1 400): 910 000. /api/mold-sign (the customer signing from the link, 2026-11-10): the same signature and block, the token, the page's
-// key and the name: 880 000.
+// key and the name: 880 000. Since 2026-11-11 both also carry the signature page, a PNG of at most 1 MiB as base64
+// (MOLD_SIGNATURE_PAGE_BASE64_MAX, 1 398 104 characters), and the documents it lists (20 at most, about 600 bytes each): 2 330 000 and
+// 2 300 000.
 // /api/trash (a restoration, 2026-11-09): an entry's id and a request id, under 300 bytes: 2 000.
 // /api/reviews: the supervisor's «النتيجة» and «الإجراء المطلوب», 2 000 characters each (lib/supervisor-reviews.ts), 3 bytes a character
 // plus the keys: 14 000. /api/review-inbox: «قرأت الكل» on at most 50 notes of kind, id (200) and version: 16 000.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
- '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':910_000,'/api/mold-sign':880_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/service-kpi':32_000,
+ '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':2_330_000,'/api/mold-sign':2_300_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/service-kpi':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
  '/api/kpis':60_000,'/api/reviews':14_000,'/api/review-inbox':16_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
  '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,
