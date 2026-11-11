@@ -22,11 +22,13 @@ type Document = {
 type Preview = {
   previewToken: string; documents: Document[];
   employees: { employeeId: string; employeeName: string; repId?: string; mappingSource?: 'saved' | 'selected' | 'name' | 'unmapped' }[]; categories: string[];
-  summary: { newCount: number; duplicateCount: number; conflictCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; unmappedCount: number; outOfScopeCount?: number; officeExcludedCount?: number; totalCents: number; months: string[] };
+  summary: { newCount: number; duplicateCount: number; conflictCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; unmappedCount: number; outOfScopeCount?: number; officeExcludedCount?: number; totalCents: number; months: string[];
+    /** Only when the report has a «الوصف» column: sales invoices naming a quotation, and saved ones that take their references now. */
+    quotationLinkedCount?: number; quotationRefsBackfillCount?: number };
   warnings: string[];
 };
 type ImportBody = { fileName: string; base64: string; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; allowSkipped: boolean };
-type Receipt = { importedCount: number; duplicateCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; skippedCount?: number; months: string[] };
+type Receipt = { importedCount: number; duplicateCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; skippedCount?: number; months: string[]; quotationLinkedCount?: number; quotationRefsBackfillCount?: number };
 type Props = { onClose: () => void; onImported: () => void | Promise<void> };
 const endpoint = '/api/sales/import';
 const maxBytes = 5 * 1024 * 1024;
@@ -249,6 +251,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
               {!!preview.summary.unassignedCount && <div className="erp-import-unassigned" role="note"><strong>{say('مستندات بدون مندوب — لن تُستورد', 'Documents without a rep — not imported')}: {preview.summary.unassignedCount}</strong>
                 <p>{say('صافيها قبل الضريبة', 'Their net value before tax')}: <bdi>{money(preview.summary.unassignedTotalCents || 0)} {say('ر.س', 'SAR')}</bdi></p>
                 <p>{say('اسم الموظف أو رقمه مفقود. تُتجاوز هذه المستندات وتُستبعد قيمتها من إجمالي الاستيراد وأداء المناديب.', 'The employee name or number is missing. These documents are skipped and excluded from import totals and rep performance.')}</p></div>}
+              {preview.summary.quotationLinkedCount !== undefined && <p className="erp-import-hint" role="note">{say('فواتير بيع يذكر عمود «الوصف» فيها رقم عرض سعر', 'Sales invoices whose «Description» names a quotation')}: <strong>{preview.summary.quotationLinkedCount}</strong>{!!preview.summary.quotationRefsBackfillCount && <> · {say('فواتير مسجلة سابقًا تُضاف إليها أرقام العروض دون تغيير محتواها', 'Saved invoices that take their quotation numbers without changing their content')}: <strong>{preview.summary.quotationRefsBackfillCount}</strong></>}</p>}
               <p className="erp-import-hint">{say('تُخصم المردودات في شهرها، وتُتخطى الفواتير المطابقة المسجلة سابقًا.', 'Returns reduce performance in their document month. Identical saved invoices are skipped.')}</p>
               {dirty && <p className="erp-import-notice" role="status">{say('الربط تغير؛ حدّث المعاينة للتأكد من الأرقام قبل الاستيراد.', 'Mappings changed. Refresh the preview to verify totals before importing.')}</p>}
             </section>
@@ -314,7 +317,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
       <footer className="erp-import-footer">
         {!!error && <p className="form-error" role="alert">{present(error)}</p>}
         {pending && <p className="erp-import-notice" role="status">{say('لم يتأكد الحفظ بسبب الاتصال. البيانات مثبتة؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب بدون تكرار.', 'The connection did not confirm the import. Your data is locked; choose “Confirm save” to retry the same request without duplicates.')}</p>}
-        {receipt && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تأكيد الاستيراد', 'Import confirmed')}</strong><p>{say('أُضيفت', 'Imported')}: {receipt.importedCount} · {say('مسجلة سابقًا', 'Duplicates')}: {receipt.duplicateCount} · {say('مستبعدة', 'Excluded')}: {receipt.excludedCount}{!!receipt.skippedCount && <> · {say('متجاوزة للمراجعة', 'Skipped for review')}: {receipt.skippedCount}</>}</p>
+        {receipt && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تأكيد الاستيراد', 'Import confirmed')}</strong><p>{say('أُضيفت', 'Imported')}: {receipt.importedCount} · {say('مسجلة سابقًا', 'Duplicates')}: {receipt.duplicateCount} · {say('مستبعدة', 'Excluded')}: {receipt.excludedCount}{!!receipt.skippedCount && <> · {say('متجاوزة للمراجعة', 'Skipped for review')}: {receipt.skippedCount}</>}{receipt.quotationLinkedCount !== undefined && <> · {say('مرتبطة بعروض أسعار', 'Linked to quotations')}: {receipt.quotationLinkedCount}</>}{!!receipt.quotationRefsBackfillCount && <> · {say('أُضيفت إليها أرقام العروض', 'Quotation numbers added')}: {receipt.quotationRefsBackfillCount}</>}</p>
           {!!receipt.unassignedCount && <p>{say('تُجاوزت بدون مندوب ولم تُستورد', 'Skipped without a rep; not imported')}: {receipt.unassignedCount} · {say('صافيها قبل الضريبة', 'Their net value before tax')}: <bdi>{money(receipt.unassignedTotalCents || 0)} {say('ر.س', 'SAR')}</bdi>. {say('لم تُحتسب لأي مندوب.', 'Not counted for any rep.')}</p>}
           <small>{say('الأشهر', 'Months')}: <bdi>{receipt.months.join(' · ') || '—'}</bdi></small></div></div>}
         <div className="erp-import-actions"><button type="button" className="btn subtle" disabled={!!busy || pending} onClick={close}>{say(receipt ? 'تم' : 'إغلاق', receipt ? 'Done' : 'Close')}</button>

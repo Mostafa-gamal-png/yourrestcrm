@@ -4,6 +4,43 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «معدل تحويل عرض السعر إلى مبيعات» computed automatically (2026-11-11, release update-quote-conversion, no migration)
+
+- **Asked.** The owner: «الفواتير مربوطة بعروض السعر فى عمود الوصف» — in the ERP sales export, the «الوصف» of an invoice line names the
+  quotation it came from (ERP numbers «Qut-349»). Until now the KPI `orders` was «بيانات مطلوبة» until a manager linked quotes to invoices by
+  hand and confirmed the list in «بيانات المؤشرات».
+- **The references** (`lib/quotation-refs.ts`, pure, shared by the import and the KPI): «Qut-349», «Qut 349», «QUT-349», «qut349»,
+  «Qut-٣٤٩», any dash, «_ . / # :», hidden direction marks, several in one cell, each once, at most 50, written «Qut-<n>» (leading zeros
+  dropped); not after a Latin letter or a digit. `quotationRefKey(number)` gives the reference a quote number stands for (null for a number
+  that is not an ERP quotation number).
+- **The import** (`lib/erp-sales.ts`, `lib/erp-sales-server.ts`). An optional description column under «الوصف», «البيان» or «Description»
+  (matched by `headerKey` like the other fields; several are read together) is kept per line (`ErpRow.description`, at most 2000
+  characters; `ErpWorkbook.hasDescription`). The document's references (union of its lines) are stored in `crm_erp_sales.data.quotationRefs`
+  — no migration. The content and mapped hashes are computed exactly as before (the description stays out), so an invoice saved before the
+  column was read stays a duplicate, never a conflict or a change. An identical document whose stored references differ from the file's is
+  backfilled (`UPDATE … SET data=json_set(data,'$.quotationRefs',…)` guarded by the document key, both hashes, the stored references read
+  at the preview and the import's claim), counted as `quotationRefsBackfillCount` in the answer and in the import's single audit line
+  (no audit line of its own). A report without the column answers and stores exactly as before (no new keys) and never erases references.
+  The import screen shows «فواتير بيع يذكر عمود «الوصف» فيها رقم عرض سعر» and the backfill count when the column is there.
+- **The KPI** (`lib/kpis.ts quoteConversions`, `lib/kpis-server.ts`). Quotations = the quote records (kind `quote`) the reader sees, of a
+  customer of the reader's regions, issued (status sent, accepted or rejected — a rejected quotation is an issued one that did not convert;
+  drafts are not issued), dated in the month up to its cutoff, attributed to their author (`recordAuthorId`: the representative an ERP
+  quotation is mapped to) or to whom «بيانات المؤشرات» assigned them explicitly. Converted = named by `quotationRefs` of a confirmed ERP sales
+  invoice (document type sale, positive total) of the same representative, dated on or after the quote, any later day (a finished month's
+  quotation still converts when invoiced in a following month), within the reader's region scope and sales team; or linked by hand to a
+  sale (`isValidKpiConversion`, unchanged). A manual link adds a conversion and never removes one; a manual row without an invoice changes
+  nothing. Score = converted ÷ quotations; 0 quotations: not applicable; no sales team: missing. `quotationsComplete` is no longer needed
+  (kept in the stored evidence; `KpiEvidenceContext.quotationsComplete` became `quotationsKnown`). Team roll-ups add their representatives'
+  quotations. `KpiPerson.quotations` carries each quotation with its number, customer, invoices and `via` (description / manual).
+- **The screens.** The hub's «عروض الأسعار» (`app/kpi-evidence-panel.tsx`): per person the month's quotations, the converted ones, the rate
+  and the points, and under a representative's row each converted quotation with its invoice number(s) («ربط يدوي» for a manual-only link);
+  on a phone (≤ 760 px) each person is a card. «بيانات المؤشرات» (`app/kpi-evidence-editor.tsx`): the quotations section is «روابط إضافية بين
+  العروض والفواتير (اختياري)» with a line on the automatic rule, and the list confirmation is gone. The metric's «طريقة الحساب» is rewritten.
+- **Rights and scope unchanged.** Only the sales workspace reads the KPI (a representative gets 403); the import keeps its roles.
+- **Tests.** `tests/quote-conversion.mjs` (default gate: 122 checks), `tests/quote-conversion-http.mjs` (release-build: 31),
+  `tests/quote-conversion-browser.mjs` (browser: 37); updated `kpi-complete-domain`, `kpi-complete-integration`, `kpi-evidence-ui`,
+  `kpi-evidence-browser` and `erp-sales-parser` (the row now has `description`).
+
 ## «استيراد عروض الأسعار من ERP» (2026-11-11, shipped in release update-targets-hub-20261111, no migration)
 
 - **Asked.** The owner uploaded the ERP's quotations report («Reports_Invoices_10.xls») and asked for it to be imported into «عروض الأسعار»;
