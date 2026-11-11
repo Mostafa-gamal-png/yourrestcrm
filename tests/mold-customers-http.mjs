@@ -136,7 +136,7 @@ try {
   await until(() => mock.state.customers.get(n1)?.erpCode === '', 'the list after the code was removed');
   check(JSON.parse(sends().at(-1).body).customers.find(item => item.crmNumber === n1).erpCode, '', 'sent as an empty ERP code');
 
-  // ---- 2026-11-09: «امسح كود ERP للعملاء اللي مش في الشيت» clears the code of a customer the ERP file does not name; the list goes
+  // ---- 2026-11-09: «امسح كود ERP للعملاء غير الموجودين في الشيت» clears the code of a customer the ERP file does not name; the list goes
   //  shortly after the apply with erpCode '' (never left out: production would keep the old code), so production clears it too
   const typed = await (await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع مش في ERP', city: 'الرياض', region: 'الشرقية', assignedTo: 'rep', branch: 'الرئيسي', code: '333'}}})).json();
   ok(typed.id, 'a customer saved with a code the ERP does not have');

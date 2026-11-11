@@ -95,7 +95,7 @@ const ar = (a) => a, en = (a, b) => b;
   check(doc.docPartLines(parts, ar)[0].range, 'صفحات \u20661–2\u2069', 'the range kept left to right inside the Arabic line');
   check(doc.docPartLines(parts, en).map(line => line.label + ': ' + line.range), ['Quotation: pages 1–2', 'Design: pages 3–5', 'Picture: page 6'], 'and in English');
   check(doc.docLeftLines([{name: 'mold.dwg', category: 'design', kind: 'other', reason: 'other'}, {name: 'محمي.pdf', category: 'quote', kind: 'pdf', reason: 'unopened'}], ar).map(line => line.label + ': ' + line.name + ' — ' + line.note),
-    ['التصميم: mold.dwg — هيتبعت للإنتاج زي ما هو', 'عرض السعر: محمي.pdf — ما قدرناش نفتحه — هيتبعت للإنتاج زي ما هو'], 'the files named only, each with why');
+    ['التصميم: mold.dwg — يُرسل إلى الإنتاج كما هو', 'عرض السعر: محمي.pdf — تعذّر فتحه — يُرسل إلى الإنتاج كما هو'], 'the files named only, each with why');
   check([doc.docPageText(3, 7, ar), doc.docPageText(3, 7, en), doc.docPageText(3, null, ar)], ['صفحة 3 من 7', 'Page 3 of 7', 'صفحة 3'], 'one counter for the whole document');
   check(view.orderViewerFiles([{category: 'design', n: 1}, {category: 'po', n: 2}, {category: 'quote', n: 3}, {category: 'design', n: 4}, {category: 'quote', n: 5}]).map(file => file.n), [3, 5, 2, 1, 4], 'the quotation\'s, the PO\'s, then the design\'s, each in its order');
   check([doc.docCategory(parts), doc.docCategory(parts.slice(1)), doc.docCategory([{category: 'po'}, {category: 'design'}]), doc.docCategory([], [{category: 'po'}]), doc.docCategory([])], ['quote', 'design', 'po', 'po', 'design'], 'the document\'s category: the first document\'s (quotation, else PO, else design)');

@@ -9,7 +9,7 @@
 //    signature page («إقرار وتوقيع العميل», what is signed for, «المستندات في هذا الملف» with each document's pages, the consent, the name and
 //    the pad inside its box, the moment); the customer signs, and ONE signed file «طلب القالب - موقّع.pdf» of 7 pages is made, its last page
 //    the signature page as composed (the name and the drawing in the box: rendered by poppler);
-// 2. the device step from the request's sheet («العميل يوقّع دلوقتي على الجهاز») on a tablet in English: the uploaded files through the CRM,
+// 2. the device step from the request's sheet («يوقّع العميل الآن على الجهاز») on a tablet in English: the uploaded files through the CRM,
 //    a damaged PDF and a drawing named only on the signature page, the counter in English and no Arabic left in the viewer's own words;
 // 3. the customer's link page on a phone in Arabic, then English, then a computer: the same document through the link's file route
 //    (inline, application/pdf), the consent and «توقيع» under the signature page; signing makes the one signed file, downloaded from the
@@ -214,9 +214,9 @@ try {
   const summary = await signPage.locator('.mold-signing-summary').innerText();
   ok(['مصنع الشرق', 'قالب بلوك 20 - مستند واحد', 'نقدي'].every(text => summary.includes(text)) && /الكمية\s*1/.test(summary), 'what is signed for: ' + summary.replace(/\s+/g, ' '));
   check(await signPage.locator('.mold-sign-page-consent').innerText(), 'أقر بأني اطلعت على عرض السعر والتصميم الموضحين في الصفحات السابقة وأوافق عليهم.', 'the consent sentence');
-  check([await signPage.locator('.mold-sign-page-box input[name="signer"]').count(), await signPage.locator('.mold-sign-page-box .mold-signature-pad').count(), await signPage.locator('.mold-sign-page-box').getByRole('button', {name: 'امسح'}).count()], [1, 1, 1], 'the name and the pad inside the page\'s signature box');
+  check([await signPage.locator('.mold-sign-page-box input[name="signer"]').count(), await signPage.locator('.mold-sign-page-box .mold-signature-pad').count(), await signPage.locator('.mold-sign-page-box').getByRole('button', {name: 'مسح'}).count()], [1, 1, 1], 'the name and the pad inside the page\'s signature box');
   ok(/^التاريخ: \d{2}\/\d{2}\/\d{4} - \d{2}:\d{2} \(توقيت الرياض\)$/.test((await signPage.locator('.mold-sign-page-date').innerText()).trim()), 'the moment in Riyadh');
-  check([await step.locator('.mold-sign-actions').getByRole('button', {name: 'تأكيد وإرسال'}).count(), await step.locator('.mold-sign-actions').getByRole('button', {name: 'رجوع للطلب'}).count()], [1, 1], '«تأكيد وإرسال» and «رجوع للطلب» right under the page');
+  check([await step.locator('.mold-sign-actions').getByRole('button', {name: 'تأكيد وإرسال'}).count(), await step.locator('.mold-sign-actions').getByRole('button', {name: 'العودة إلى الطلب'}).count()], [1, 1], '«تأكيد وإرسال» and «العودة إلى الطلب» right under the page');
   await signPage.scrollIntoViewIfNeeded();
   await signPage.evaluate(element => element.scrollIntoView({block: 'start'}));
   await noOverflow(rep, 'the signature page at 360 px');
@@ -288,7 +288,7 @@ try {
   await linkViewer.and(customer.locator('[data-ready]')).waitFor({timeout: 60000});
   check(await customer.locator('.sign-card h1').innerText(), 'طلب تصنيع قالب — مصنع الشرق', 'the page\'s title');
   check((await sheets(linkViewer)).map(([kind, counter]) => kind + ' ' + counter), ['pdf صفحة 1 من 7', 'pdf صفحة 2 من 7', 'pdf صفحة 3 من 7', 'pdf صفحة 4 من 7', 'pdf صفحة 5 من 7', 'image صفحة 6 من 7', 'signature صفحة 7 من 7'], 'the link\'s document: 2-page quotation, 3-page design, the picture, the signature page');
-  check(await listedOn(linkViewer), ['عرض السعر: عرض سعر.pdf — صفحات 1–2', 'التصميم: تصميم.pdf — صفحات 3–5', 'صورة: صورة.png — صفحة 6', 'التصميم: مجسم.step — هيتبعت للإنتاج زي ما هو'], 'its documents and the model named');
+  check(await listedOn(linkViewer), ['عرض السعر: عرض سعر.pdf — صفحات 1–2', 'التصميم: تصميم.pdf — صفحات 3–5', 'صورة: صورة.png — صفحة 6', 'التصميم: مجسم.step — يُرسل إلى الإنتاج كما هو'], 'its documents and the model named');
   await linkViewer.locator('.mold-doc-sheet[data-page="1"][data-state="drawn"]').waitFor();
   const linkWidth = Math.round(await linkViewer.evaluate(element => element.getBoundingClientRect().width));
   check(await linkViewer.locator('.mold-doc-sheet[data-page="1"] canvas').evaluate(canvas => [canvas.width, Math.round(canvas.getBoundingClientRect().width)]), [2 * linkWidth, linkWidth], 'a screen of density 2: drawn at twice its width in pixels');
@@ -320,7 +320,7 @@ try {
   await customer.locator('.sign-under .sign-consent input').check();
   await customer.locator('.sign-under').getByRole('button', {name: 'توقيع'}).click();
   await customer.locator('.sign-done').waitFor({timeout: 60000});
-  check(await customer.locator('.sign-done .sign-files li bdi').allInnerTexts(), ['طلب القالب - موقّع.pdf'], 'signed: ONE signed file, to download');
+  check(await customer.locator('.sign-done .sign-files li > bdi').allInnerTexts(), ['طلب القالب - موقّع.pdf'], 'signed: ONE signed file, to download');
   check(await customer.locator('.sign-done h2').innerText(), 'الملف الموقّع', 'named as one file');
   await shot(customer, '12-link-done-phone-ar');
   const href = await customer.locator('.sign-done .sign-files a').getAttribute('href');
@@ -345,7 +345,7 @@ try {
   const firstDrawnMs = Date.now() - opened;
   await bigViewer.and(tablet.locator('[data-ready]')).waitFor({timeout: 90000});
   check(await bigViewer.getAttribute('data-pages'), '31', 'thirty pages and the signature page');
-  check(await listedOn(bigViewer), ['التصميم: كتالوج القالب.pdf — صفحات 1–30', 'عرض السعر: تالف.pdf — ما قدرناش نفتحه — هيتبعت للإنتاج زي ما هو'], 'the damaged quotation named on the signature page');
+  check(await listedOn(bigViewer), ['التصميم: كتالوج القالب.pdf — صفحات 1–30', 'عرض السعر: تالف.pdf — تعذّر فتحه — يُرسل إلى الإنتاج كما هو'], 'the damaged quotation named on the signature page');
   const drawnNow = () => bigViewer.locator('.mold-doc-sheet[data-kind="pdf"]').evaluateAll(items => items.filter(item => item.dataset.state === 'drawn' && item.querySelector('canvas').width > 0).map(item => Number(item.dataset.page)));
   const atTop = await drawnNow();
   ok(atTop.length >= 1 && atTop.length <= 6, 'at the top only the pages near the screen are drawn: ' + atTop.join(','));
@@ -384,7 +384,7 @@ try {
   await throttle.send('Emulation.setCPUThrottlingRate', {rate: 1});
   await tablet.locator('.sign-under').getByRole('button', {name: 'توقيع'}).click();
   await tablet.locator('.sign-done').waitFor({timeout: 90000});
-  check(await tablet.locator('.sign-done .sign-files li bdi').allInnerTexts(), ['طلب القالب - موقّع.pdf'], 'the 30-page PDF signed into one file');
+  check(await tablet.locator('.sign-done .sign-files li > bdi').allInnerTexts(), ['طلب القالب - موقّع.pdf'], 'the 30-page PDF signed into one file');
   check((await pagesOf((await api('/api/mold-requests/design-file?id=' + bigRequest.id + '&file=' + (await signedFileOf(bigRequest.id)).id)).bytes)).length, 31, 'of 31 pages');
   console.log(JSON.stringify({bigPdfMB: +(big30.length / 1024 / 1024).toFixed(1), firstPageMs: firstDrawnMs, mostDrawnAtOnce: most, cpuThrottle: 4}));
   await tabletContext.close();
@@ -396,7 +396,7 @@ try {
   await lone.goto(app.origin + '/sign/m/' + drawingOnly.token);
   const loneViewer = lone.locator('.mold-doc-viewer');
   await loneViewer.and(lone.locator('[data-ready]')).waitFor();
-  check([(await sheets(loneViewer)).map(([kind, counter]) => kind + ' ' + counter), await listedOn(loneViewer), await loneViewer.locator('.mold-sign-page-none').innerText()], [['signature صفحة 1 من 1'], ['التصميم: قالب.dwg — هيتبعت للإنتاج زي ما هو'], 'مفيش مستندات معروضة في الملف ده.'], 'only a drawing: the signature page alone, the drawing named');
+  check([(await sheets(loneViewer)).map(([kind, counter]) => kind + ' ' + counter), await listedOn(loneViewer), await loneViewer.locator('.mold-sign-page-none').innerText()], [['signature صفحة 1 من 1'], ['التصميم: قالب.dwg — يُرسل إلى الإنتاج كما هو'], 'لا توجد مستندات معروضة في هذا الملف.'], 'only a drawing: the signature page alone, the drawing named');
   await noOverflow(lone, 'only a drawing at 360 px');
   await shot(lone, '16-link-drawing-only-phone-ar');
   await lone.close();

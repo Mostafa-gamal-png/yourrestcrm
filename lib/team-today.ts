@@ -1,13 +1,13 @@
-/** «فريقي النهارده» (the owner, 2026-11-10, item 4: «ملخص يومي للمشرف: شاشة فيها مين من فريقه زار النهارده وكام زيارة، ومين ما بدأش يومه،
+/** «فريقي اليوم» (the owner, 2026-11-10, item 4: «ملخص يومي للمشرف: شاشة فيها مين من فريقه زار النهارده وكام زيارة، ومين ما بدأش يومه،
  * ومين ما قراش ملاحظاته»). One row per member of the reader's «تقرير يوم المندوب» for today (Asia/Riyadh): every active representative
  * the report lists, and another sales member (a supervisor who visits) only when they did something today; never the reader. The words
  * come from the day report itself:
- * - «زيارات النهارده» and «تواصل آخر»: the day report's «زيارات مسجلة» and «تواصل آخر مسجل» (an activity of today, by type: a visit,
+ * - «زيارات اليوم» and «تواصل آخر»: the day report's «زيارات مسجلة» and «تواصل آخر مسجل» (an activity of today, by type: a visit,
  *   or any other contact; follow-ups count by their type like there).
  * - «بدأ يومه»: the earlier of the day report's «أول حركة مرصودة» (lib/daily-report.ts, from the GPS points) and the first visit or
- *   contact recorded today (its recording time, as the day report orders them). Neither: «لسه ما بدأش». The phone's tracking day is
+ *   contact recorded today (its recording time, as the day report orders them). Neither: «لم يبدأ بعد». The phone's tracking day is
  *   not used: the Android app opens it at 6:00 whenever the phone is on, so it does not say the representative started working.
- * - «ملاحظات مش مقروءة»: the supervisors' notes on that member's work not marked «قرأت», over the inbox window (30 days), exactly as
+ * - «ملاحظات غير مقروءة»: the supervisors' notes on that member's work not marked «قرأت», over the inbox window (30 days), exactly as
  *   the member's own card counts them (lib/supervisor-reviews*.ts).
  * Shared by the server (lib/team-today-server.ts) and the page (app/team-today.tsx); names, counts and times only. */
 export type TeamTodayStartSource='movement'|'record';

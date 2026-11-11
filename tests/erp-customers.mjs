@@ -103,7 +103,7 @@ parsed=E.erpCustomerRows([sheet([header,line('','مصنع بلا رقم','','055
 eq(parsed.rows.map(r=>r.issue),['no-code','duplicate-code','duplicate-code','','long-code'],'a row without a number, a number twice in the file (Arabic digits are the same number) and an over-long number are marked');
 throws(()=>E.erpCustomerRows([sheet([['الاسم بالعربي','رقم الجوال'],['مصنع','0551234567']])]),/رقم العميل/,'no number column: refused, naming the column');
 throws(()=>E.erpCustomerRows([sheet([['رقم العميل','البريد الالكتروني'],['1','a@b.c']])]),/الاسم أو الجوال/,'a number without a name or phone column: refused');
-throws(()=>E.erpCustomerRows([sheet([['رقم الفاتورة','التاريخ','رقم العميل','اسم العميل'],['INV-1','2026/01/01','7','مصنع']])]),/مش ملف عملاء ERP/,'the ERP sales report is not a customer file');
+throws(()=>E.erpCustomerRows([sheet([['رقم الفاتورة','التاريخ','رقم العميل','اسم العميل'],['INV-1','2026/01/01','7','مصنع']])]),/ليس ملف عملاء ERP/,'the ERP sales report is not a customer file');
 throws(()=>E.erpCustomerRows([sheet([['رقم العميل','الاسم بالعربي','الاسم بالعربي'],['1','أ','ب']])]),/عمود مكرر/,'a duplicated column is refused');
 throws(()=>E.erpCustomerRows([sheet([header])]),/لا يحتوي صفوف/,'a header without rows');
 parsed=E.erpCustomerRows([sheet([header,line('20','أ','','0551234567\n0501234567','0112345678'),line('21','ب','','0551234568\r\n0501234568')])]);
@@ -121,7 +121,7 @@ const titled=[['تقرير العملاء'],['الشركة'],['من 2026/01/01']
 eq(E.erpCustomerRows([sheet(titled)]).rows.map(r=>r.row),[7],'the header is found under several title rows (row 6 here)');
 const deep=[...Array.from({length:24},(_,i)=>['ملاحظة '+(i+1)]),header,line('32','مصنع','','','')];
 eq(E.erpCustomerRows([sheet(deep)]).rows.map(r=>r.row),[26],'a header on row 25 is still found');
-throws(()=>E.erpCustomerRows([sheet([['ملاحظة'],...deep])]),/مش ملف عملاء ERP/,'a header below the first 25 rows is not looked for');
+throws(()=>E.erpCustomerRows([sheet([['ملاحظة'],...deep])]),/ليس ملف عملاء ERP/,'a header below the first 25 rows is not looked for');
 throws(()=>E.erpCustomerRows([sheet([header,...Array.from({length:20001},(_,i)=>line(String(i+1),'م','','',''))])]),/20000/,'more than 20 000 customers');
 eq(E.erpCustomerRows([sheet([header,...Array.from({length:20000},(_,i)=>line(String(i+1),'م','','',''))])]).rows.length,20000,'20 000 customers are read');
 
@@ -177,7 +177,7 @@ result=match([erp(3,'12','مصنع النور',['501234567'])],[nour,fajr],{choi
 eq([result.summary.pending,result.rows[0].chosen,result.plan.length],[0,true,0],'a choice left as it is');
 result=match([erp(3,'12','مصنع الفجر'),erp(4,'13','مصنع النور',['501234567'])],[nour,fajr],{choices:new Map([[4,'fajr']])});
 eq([result.rows.map(o=>o.conflict),result.summary.conflicts],[[true,true],2],'choosing a customer another row already ends on is a conflict');
-throws(()=>match([erp(3,'12','مصنع النور',['501234567'])],[nour,fajr,badr],{choices:new Map([[3,'badr']])}),/مش من المرشحين/,'a customer that is not a candidate cannot be chosen');
+throws(()=>match([erp(3,'12','مصنع النور',['501234567'])],[nour,fajr,badr],{choices:new Map([[3,'badr']])}),/ليس من المرشحين/,'a customer that is not a candidate cannot be chosen');
 throws(()=>match([erp(3,'12','مصنع الأمل')],[nour],{choices:new Map([[3,'nour']])}),/لا يقبل/,'a row with no candidates takes no choice');
 throws(()=>match([erp(3,'12','مصنع النور')],[nour],{choices:new Map([[9,'nour']])}),/غير موجود/,'a choice for a row not in the file');
 throws(()=>match([{...erp(3,'','مصنع النور'),issue:'no-code'}],[nour],{choices:new Map([[3,'nour']])}),/لا يقبل/,'an invalid row takes no choice');
@@ -209,7 +209,7 @@ r=one([erp(3,'12','',['551234567'])],[east],{me:manager});
 eq([r.status,r.candidates,r.customerId,r.matchedBy],['out-of-region',[],'',''],'only candidates outside the manager\'s regions: out-of-region, no details');
 r=one([erp(3,'12','',['551234567'])],[east,central],{me:manager});
 eq([r.status,r.candidates.map(c=>c.id),r.customerId],['choose',['central'],''],'a hidden candidate is never shown, and it still makes the row a choice (nothing guessed)');
-throws(()=>match([erp(3,'12','',['551234567'])],[east,central],{me:manager,choices:new Map([[3,'east']])}),/مش من المرشحين/,'a hidden customer cannot be chosen');
+throws(()=>match([erp(3,'12','',['551234567'])],[east,central],{me:manager,choices:new Map([[3,'east']])}),/ليس من المرشحين/,'a hidden customer cannot be chosen');
 throws(()=>match([erp(3,'12','',['551234567'])],[east],{me:manager,choices:new Map([[3,'east']])}),/لا يقبل/,'an out-of-region row takes no choice');
 r=one([erp(3,'12','مصنع الوسط')],[east,central],{me:manager});
 eq([r.status,r.customerId],['auto','central'],'a unique match inside the regions is automatic');
@@ -257,7 +257,7 @@ const wideResult=match([erp(3,'12','',['551234599'])],crowd(21,{phone:'055123459
 eq([wideResult.summary.invalid,wideResult.involved,wideResult.plan],[1,[],[]],'counted as invalid; nothing involved or planned');
 const twenty=crowd(20,{phone:'0551234599'}),rowsOf=count=>Array.from({length:count},(_,i)=>erp(i+3,String(i+1),'',['551234599']));
 eq(match(rowsOf(2000),twenty).rows.reduce((n,o)=>n+o.candidates.length,0),40000,'40 000 candidates in one preview are offered');
-throws(()=>match(rowsOf(2001),twenty),/أكتر من اللازم/,'beyond 40 000 the file is refused, not sent');
+throws(()=>match(rowsOf(2001),twenty),/أكثر من اللازم/,'beyond 40 000 the file is refused, not sent');
 
 // the single candidate's current code is another row of the same file: a choice, not automatic
 const amal=customer('amal',{name:'مصنع الامل',phone:'0112345678',code:'12'});
@@ -283,7 +283,7 @@ eq(one([erp(3,'12','مصنع الأمل للبلاستيك')],[amalAfter]).statu
 // The YR-C-000302 flow: 302 holds 345, ERP row 345 is another customer, ERP row 9001 is 302 under a close name.
 const flow=[erp(3,'345','اسم تاني خالص'),erp(4,'9001','مصنع الصفا للبلوك الحديث')],safa302=customer('safa302',{name:'مصنع الصفا للبلوك الاسمنتي',code:'345'});
 result=match(flow,[safa302],{choices:new Map([[3,''],[4,'safa302']])});
-eq([result.summary.conflicts,result.plan.map(p=>[p.customerId,p.from,p.to])],[0,[['safa302','345','9001']]],'302: row 345 left and «ده هو» on 9001 plans 345 → 9001');
+eq([result.summary.conflicts,result.plan.map(p=>[p.customerId,p.from,p.to])],[0,[['safa302','345','9001']]],'302: row 345 left and «هو نفسه» on 9001 plans 345 → 9001');
 result=match(flow,[{...safa302,data:{...safa302.data,code:'9001',_erpCodeAliases:['345','9001']}}]);
 eq([result.rows.map(o=>[o.status,o.customerId,o.matchedBy,o.codeRow]),result.summary.conflicts,result.plan],[[['choose','','',4],['same','safa302','code',0]],0,[]],'302 re-imported: 9001 is the same, 345 (only an old code now) is a choice pointing at it, no conflict');
 
@@ -323,7 +323,7 @@ eq([result.rows[0].status,result.rows[0].candidates,result.rows[0].customerId,re
 ok(result.involved.some(([id])=>id==='east-coded'),'the outside holder is still part of the snapshot');
 throws(()=>match([erp(3,'348','اسم تاني خالص')],[eastCoded],{me:manager,choices:new Map([[3,ADD]])}),/لا يقبل/,'and takes no «عميل جديد»');
 for(const [label,rows,customers] of [['auto',[erp(3,'12','مصنع النور')],[nour,fajr]],['same',[erp(3,'C-1','مصنع النور')],[nour]],['choose',[erp(3,'12','مصنع النور',['501234567'])],[nour,fajr]],['by code',[erp(3,'345','اسم تاني خالص')],[coded]]])
- throws(()=>match(rows,customers,{choices:new Map([[3,ADD]])}),/مش عميل جديد/,'«عميل جديد» is refused on a row the CRM already has: '+label);
+ throws(()=>match(rows,customers,{choices:new Map([[3,ADD]])}),/ليس عميلًا جديدًا/,'«عميل جديد» is refused on a row the CRM already has: '+label);
 
 // ---- similar names: the rule
 const words=E.similarNameTokens;
@@ -352,12 +352,12 @@ result=match([erp(3,'9001','مصنع الصفا للبلوك الحديث',['559
 eq([result.rows[0].status,result.rows[0].customerId,result.rows[0].chosen,result.rows[0].add,result.rows[0].matchedBy,result.rows[0].candidates.map(c=>[c.id,c.matchedBy,c.code]),result.plan,result.adds,result.summary.pending,result.summary.similar],['similar','',false,false,'',[['c302','similar','345']],[],[],1,1],'the 302 case: one word different is similar, not new; nothing preselected, nothing planned or added until the user chooses');
 ok(result.involved.some(([id])=>id==='c302'),'a similar candidate is part of the snapshot');
 result=match([erp(3,'9001','مصنع الصفا للبلوك الحديث')],[c302],{choices:new Map([[3,'c302']])});
-eq([result.rows[0].status,result.rows[0].customerId,result.rows[0].chosen,result.rows[0].matchedBy,result.plan.map(p=>[p.customerId,p.from,p.to,p.codeChange,p.mapping]),result.adds],['similar','c302',true,'similar',[['c302','345','9001',true,false]],[]],'«ده هو»: the customer takes the ERP code, like a choose pick');
+eq([result.rows[0].status,result.rows[0].customerId,result.rows[0].chosen,result.rows[0].matchedBy,result.plan.map(p=>[p.customerId,p.from,p.to,p.codeChange,p.mapping]),result.adds],['similar','c302',true,'similar',[['c302','345','9001',true,false]],[]],'«هو نفسه»: the customer takes the ERP code, like a choose pick');
 result=match([erp(3,'9001','مصنع الصفا للبلوك الحديث',[],'',{mobile:'0559990000',phone:'',email:'safa@example.invalid',address:'حي'})],[c302],{choices:new Map([[3,ADD]])});
 eq([result.rows[0].status,result.rows[0].add,result.rows[0].chosen,result.rows[0].customerId,result.plan,result.adds],['similar',true,true,'',[],[{row:3,code:'9001',codeKey:'9001',name:'مصنع الصفا للبلوك الحديث',phone:'0559990000',phone2:'',email:'safa@example.invalid',address:'حي'}]],'«عميل جديد»: the row is added with its cells');
 result=match([erp(3,'9001','مصنع الصفا للبلوك الحديث')],[c302],{choices:new Map([[3,'']])});
-eq([result.rows[0].chosen,result.rows[0].add,result.plan,result.adds,result.summary.pending],[true,false,[],[],0],'«سيبه»: nothing changes, nothing is added');
-throws(()=>match([erp(3,'9001','مصنع الصفا للبلوك الحديث')],[c302,nour],{choices:new Map([[3,'nour']])}),/مش من المرشحين/,'a customer that is not a similar candidate cannot be picked');
+eq([result.rows[0].chosen,result.rows[0].add,result.plan,result.adds,result.summary.pending],[true,false,[],[],0],'«اتركه»: nothing changes, nothing is added');
+throws(()=>match([erp(3,'9001','مصنع الصفا للبلوك الحديث')],[c302,nour],{choices:new Map([[3,'nour']])}),/ليس من المرشحين/,'a customer that is not a similar candidate cannot be picked');
 eq(one([erp(3,'9002','مصنع النور')],[fajr]).status,'new','«مصنع النور» and «مصنع الفجر» are not similar');
 eq(one([erp(3,'9002','مؤسسة الفجر للتجارة')],[fajr]).candidates.map(c=>c.id),['fajr'],'«مؤسسة الفجر للتجارة» and «مصنع الفجر» differ only in generic words: similar');
 // ranked by score, at most 5, none from outside the regions
@@ -408,7 +408,7 @@ eq([result.rows[0].status,result.rows[0].add,result.rows[0].chosen,result.rows[0
 eq(result.adds,[{row:3,code:'9010',codeKey:'9010',name:'مصنع جديد كليا',phone:'0551112222',phone2:'011 222 3333',email:'new@example.invalid',address:'الرياض'}],'what is added: name, code, phones as text, email and address');
 ok(!JSON.stringify(result.rows).includes('0551112222')&&!JSON.stringify(result.rows).includes('new@example')&&!JSON.stringify(result.rows).includes('الرياض'),'the preview rows carry no phone, email or address of a new customer');
 result=match([erp(3,'9010','مصنع جديد كليا')],[nour],{choices:new Map([[3,'']])});
-eq([result.rows[0].status,result.rows[0].add,result.rows[0].chosen,result.adds,result.summary.adds],['new',false,true,[],0],'«سيبه» on a new row: not added');
+eq([result.rows[0].status,result.rows[0].add,result.rows[0].chosen,result.adds,result.summary.adds],['new',false,true,[],0],'«اتركه» on a new row: not added');
 eq(match([erp(3,'9010','مصنع جديد كليا')],[nour],{choices:new Map([[3,ADD]])}).adds.length,1,'«عميل جديد» on a new row is the default, said again');
 throws(()=>match([erp(3,'9010','مصنع جديد كليا')],[nour],{choices:new Map([[3,'nour']])}),/لا يقبل/,'a new row takes no customer');
 eq(match([erp(3,'9011','','',  'New Plastic Factory')].map(row=>({...row,phones:[]})),[]).adds.map(a=>a.name),['New Plastic Factory'],'no Arabic name: the English one');
@@ -451,7 +451,7 @@ assert.throws(()=>S.parseErpWorkbook(bytes),error=>error instanceof S.ErpWorkboo
 eq(S.readWorkbookSheets(book([{name:'Customer',rows:Array.from({length:20050},()=>[number(1),inline('x')])}])).reduce((n,s)=>n+s.rows.length,0),20050,'20 000 rows and a header fit the default limit');
 
 
-// ---- 2026-11-09: the customers the file does not name (`clears`, «امسح كود ERP للعملاء اللي مش في الشيت»)
+// ---- 2026-11-09: the customers the file does not name (`clears`, «امسح كود ERP للعملاء غير الموجودين في الشيت»)
 {
  const cl=(id,data)=>customer('clear-'+id,data);
  const byPhone=cl('phone',{name:'مصنع الهاتف',phone:'0551110001',code:'P-OLD'});             // named by phone → gets the sheet's code, not cleared

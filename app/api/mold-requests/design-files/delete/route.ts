@@ -15,9 +15,9 @@ import {keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,moldDesignClaimed,m
 export const dynamic='force-dynamic';
 
 /** Its English pair is in lib/locales/en.json. */
-const SIGNATURE_KEPT='توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.';
+const SIGNATURE_KEPT='لا يُحذف توقيع العميل من الطلب؛ إذا تغيّرت بيانات الطلب قبل إرساله يوقّع العميل من جديد.';
 /** A signed copy the signature names (2026-11-10) stays with it, the same way. Its English pair is in lib/locales/en.json. */
-const COPY_KEPT='النسخة الموقّعة ما بتتحذفش من الطلب طول ما التوقيع اللي عليها هو توقيع الطلب.';
+const COPY_KEPT='لا تُحذف النسخة الموقّعة من الطلب ما دام التوقيع الذي عليها هو توقيع الطلب.';
 const schema=z.object({requestId:z.string().uuid(),id:z.string().regex(/^mr-[0-9a-f-]{36}$/),fileId:z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)}).strict();
 
 export async function POST(req:Request){try{

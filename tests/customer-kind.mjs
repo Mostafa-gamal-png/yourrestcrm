@@ -56,8 +56,8 @@ eq('customerKind' in parse({}).data,false,'optional: a save without it carries n
 for(const bad of ['خدمات','Company','محل','x'.repeat(300),5,null]){
  const result=parse({customerKind:bad});eq(result.success,false,'refused: '+JSON.stringify(bad).slice(0,20));
 }
-eq(parse({customerKind:'خدمات'}).error.issues.map(issue=>issue.message),['اختار نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري'],'with the list in the message');
-eq([5,null,'x'.repeat(300)].map(bad=>parse({customerKind:bad}).error.issues.map(issue=>issue.message)),Array(3).fill(['اختار نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري']),'the same message for a number, null or a long text');
+eq(parse({customerKind:'خدمات'}).error.issues.map(issue=>issue.message),['اختر نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري'],'with the list in the message');
+eq([5,null,'x'.repeat(300)].map(bad=>parse({customerKind:bad}).error.issues.map(issue=>issue.message)),Array(3).fill(['اختر نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري']),'the same message for a number, null or a long text');
 // «تصنيف العميل» stays free text as it always was: a stored «خدمات» (or an imported text) is never refused on an unrelated edit
 eq(parse({customerType:'خدمات'}).data?.customerType,'خدمات','a stored «خدمات» saves unchanged');
 eq(parse({customerType:'مصنع'}).data?.customerType,'مصنع','an imported free-text classification saves unchanged');
@@ -81,7 +81,7 @@ eq(picker.split("customerType: '', customerKind: ''").length-1,2,'a new customer
 eq(visits.includes("'تصنيف العميل':customer.data.customerType,'نوع العميل':customer.data.customerKind"),true,'the visit form\'s customer card shows both');
 eq(/'نوع العميل'\s*:\s*(detail|customer)\.data\.customerType/.test(app+visits),false,'«نوع العميل» never labels the classification any more');
 const english=JSON.parse(read('lib/locales/en.json'));
-eq(['تصنيف العميل','نوع العميل','مصنع','مؤسسة','شركة','محل تجاري','خدمات','اختار نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري'].map(key=>english[key]),
+eq(['تصنيف العميل','نوع العميل','مصنع','مؤسسة','شركة','محل تجاري','خدمات','اختر نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري'].map(key=>english[key]),
  ['Customer classification','Customer type','Factory','Establishment','Company','Retail shop','Services','Choose the customer type from the list: Factory, Establishment, Company, Retail shop'],'English for the labels, the choices, the retired value and the refusal');
 // the route keeps a stored customerKind when a save leaves it out
 eq(/if\(old&&inputData\?\.customerKind===undefined\)\{if\(typeof old\.data\.customerKind==='string'\)data\.customerKind=old\.data\.customerKind;else delete data\.customerKind;\}/.test(read('app/api/crm/route.ts')),true,'POST /api/crm keeps the stored type when the save has none');

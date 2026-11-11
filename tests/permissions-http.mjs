@@ -1,6 +1,6 @@
 // «الصلاحيات» per member (lib/permissions*.ts, migration 0020) over real HTTP against the BUILT release (run the build first): on release
 // day nothing changes (every mapped action answers as before for every role); the administrator switches one action off for one member and
-// that member is refused with 403 «مش مسموح لك ب<الإجراء> في <الشاشة>. راجع مدير النظام.» while another member of the same role is not; a
+// that member is refused with 403 «غير مسموح لك ب<الإجراء> في <الشاشة>. راجع مدير النظام.» while another member of the same role is not; a
 // hidden screen's own requests answer 404 «هذا الجزء غير متاح لحسابك. راجع مدير النظام.» (never 401/403, which lock the offline session)
 // and requests another screen shares stay open; a stale save is 409; every save leaves a «صلاحيات» history entry with before and after,
 // kept out of the recent changes. Routes covered: /api/crm, /api/visits, /api/customer-followups, /api/customer-service, /api/complaints,
@@ -48,10 +48,10 @@ try {
     if (response.status === 200) saved[memberId] = response.json().permissions.version;
     return response;
   };
-  const refusal = (screen, verb) => `مش مسموح لك ب${verb} في ${screen}. راجع مدير النظام.`;
+  const refusal = (screen, verb) => `غير مسموح لك ب${verb} في ${screen}. راجع مدير النظام.`;
   const refused = (response, screen, verb, label) => eq([response.status, response.json().error], [403, refusal(screen, verb)], label + ' -> ' + response.text.slice(0, 200));
   const hidden = (response, label) => eq([response.status, response.json().error], [404, HIDDEN], label + ' -> ' + response.text.slice(0, 200));
-  const open = (response, label) => ok(![401, 403, 404].includes(response.status) || response.json().error !== HIDDEN && !/^مش مسموح لك/.test(response.json().error || ''), label + ' is not refused by a permission -> ' + response.status + ' ' + response.text.slice(0, 160));
+  const open = (response, label) => ok(![401, 403, 404].includes(response.status) || response.json().error !== HIDDEN && !/^غير مسموح لك/.test(response.json().error || ''), label + ' is not refused by a permission -> ' + response.status + ' ' + response.text.slice(0, 160));
   const post = (who, url, body, headers) => session[who](url, {method: 'POST', body, ...(headers ? {headers} : {})});
 
   const customerAdd = who => post(who, '/api/crm', {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل جديد ' + crypto.randomUUID().slice(0, 6), region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03', phone: '0500000002'}});

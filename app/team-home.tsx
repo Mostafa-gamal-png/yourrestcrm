@@ -9,7 +9,7 @@ import {TeamTodayCard} from './team-today';
 import './team-home.css';
 
 /** The top of the member's first screen (the dashboard; a representative, who has none, their «الزيارات»): «عملاء واقفين» (lib/
- * inactive-customers.ts) and, for those who read «تقرير يوم المندوب», «فريقي النهارده» (lib/team-today.ts). Nothing for customer service. */
+ * inactive-customers.ts) and, for those who read «تقرير يوم المندوب», «فريقي اليوم» (lib/team-today.ts). Nothing for customer service. */
 export default function TeamHome({me,members,customers,ownInactive,offline,onCustomers,onDayReport}:{me:Member;members:Member[];customers:Row[];ownInactive:number;offline:boolean;onCustomers:(memberId:string)=>void;onDayReport:(memberId:string)=>void}){
  const mode=inactiveAlertMode(me);
  const team=useMemo(()=>mode==='team'?teamInactiveBreakdown(me,members,customers,today()):null,[mode,me,members,customers]);

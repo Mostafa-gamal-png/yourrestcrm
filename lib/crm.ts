@@ -32,7 +32,7 @@ const amount=z.coerce.number().finite().min(0).max(1000000000);
 /** «نوع العميل» (data.customerKind): one of lib/customer-options.ts customerKinds or empty. Optional: a save that leaves it out (a page
  *  opened before the field existed) keeps the stored value (app/api/crm/route.ts). «تصنيف العميل» (customerType) stays free text, as it
  *  always was, so a stored classification no longer offered («خدمات») is never refused on an unrelated edit. */
-const customerKindRefused='اختار نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري';
+const customerKindRefused='اختر نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري';
 export const customerKindField=z.string({invalid_type_error:customerKindRefused}).trim().refine(isCustomerKind,customerKindRefused);
 export const schemas={
  customer:z.object({name:required,code:short,city:short,region:short,address:short,...customerAddressFields,contact:short,phone:short,email:z.union([z.string().email(),z.literal('')]).default(''),contact2:short,phone2:short,email2:z.union([z.string().email(),z.literal('')]).default(''),customerType:short,customerKind:customerKindField.optional(),customerStatus:short,machineCount:z.coerce.number().int().min(0).max(100000).nullable().optional(),machineTypes:short,supplier:short,category:short,sourceFile:short,sourceRow:z.number().int().positive().optional(),sourceKey:short,sourceHash:short,notes,branch:required,assignedTo:required}),

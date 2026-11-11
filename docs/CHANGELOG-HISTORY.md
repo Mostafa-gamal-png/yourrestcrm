@@ -4,6 +4,25 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Word order on the signature page, and Modern Standard Arabic throughout (2026-11-11, same release, no migration)
+
+- **Asked.** The owner: «الكلام فى التطبيق بالفصحى مش مصرى عامى»; and the signature page drawn as a picture showed mixed lines in a confusing
+  order («كود ERP: ERP-east1», «رسم القالب.pdf» with the dot of «.pdf» on the far side, «عرض سعر Q-77.pdf — صفحات 1–2»).
+- **Word order** (`lib/bidi-text.ts`, `app/bidi-text.tsx`): a line is cut into runs; a Latin run inside Arabic (a code, a file name with its
+  extension, a number, a date, a page range, a label ending in Latin with its value) and an Arabic run inside English are laid out whole in
+  their own direction, the runs following the line's direction. The canvas draws each piece by itself (`drawBidiLine`: the signature page
+  `signaturePagePng`, the signature block `signatureBlockPng`), so nothing depends on the canvas guessing a direction and no isolate is cut by
+  a line break; the screen's signature page, the captions under each page and the signed files' names use the same runs (`BidiText`).
+- **Modern Standard Arabic.** Every Arabic text the application shows (screens, buttons, hints, the server's messages, the signing pages and
+  link, the signature page and block, ERP import, permissions, targets, the team's day, trash, install and update notes) was rewritten from
+  Egyptian colloquial («اللينك ده مش شغال», «هيتبعت», «اختار») into MSA («هذا الرابط لم يعد صالحًا», «سيُرسل», «اختر»); `lib/locales/en.json`
+  keys follow (English unchanged). Stored values, enum values, production's file names (« - موقّع.pdf») and the ERP column names are unchanged.
+- **Tests.** `tests/msa-wording.mjs` (default gate: every Arabic string literal and JSX text of `app/`, `lib/`, `portable/`, `components/`,
+  the dictionary's keys and the update notes, against a list of colloquial words and verb forms; a line holding Arabic the scanner did not
+  read fails it), `tests/bidi-text.mjs` (default gate: the runs and the positions), `tests/sign-page-bidi-browser.mjs` (Chromium: a real
+  canvas against the screen's HTML). Every test that asserted the old wording asserts the new one.
+- **Rollback.** Code only (the previous build's wording and drawing come back).
+
 ## The customer signs ONE document, as on paper (2026-11-11, no migration)
 
 - **Asked.** The owner, after seeing the release of 2026-11-10: «لا انا قلتلك التوقيع يكون داخل pdf يعنى pdf يتفتح ويكون عبارة عن عرض السعر او po وبعدين التصميم وفى اخره خانة للتوقيع بحيث الموقع يكون عارف هو بيوقع على ايه كأنه بيوقع على ورق حقيقى»; asked what is kept and sent, he chose ONE signed file «طلب القالب - موقّع.pdf» with every page and the signature page at its end, sent with the originals as they are, and no per-file copies for new signatures.

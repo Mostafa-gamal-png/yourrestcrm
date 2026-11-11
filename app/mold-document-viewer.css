@@ -26,9 +26,9 @@
 .mold-sign-page-heading{margin:0;text-align:center;font-size:14px;color:#444}
 .mold-sign-page h3{margin:6px 0 0;font-size:15px;font-weight:700}
 .mold-sign-page .mold-sign-page-facts{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:#111}
-.mold-sign-page .mold-sign-page-facts>div{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
-.mold-sign-page .mold-sign-page-facts dt{font-size:14px;font-weight:600;color:#333}.mold-sign-page .mold-sign-page-facts dt::after{content:':'}
-.mold-sign-page .mold-sign-page-facts dd{margin:0;min-width:0;font-size:14px;font-weight:400;color:#111;overflow-wrap:anywhere}
+.mold-sign-page .mold-sign-page-facts>div{display:block;min-width:0;overflow-wrap:anywhere}
+.mold-sign-page .mold-sign-page-facts dt{display:inline;font-size:14px;font-weight:600;color:#333}.mold-sign-page .mold-sign-page-facts dt::after{content:':'}
+.mold-sign-page .mold-sign-page-facts dd{display:inline;margin:0;font-size:14px;font-weight:400;color:#111}
 .mold-sign-page-list{margin:0;padding-inline-start:18px;display:grid;gap:2px}.mold-sign-page-list li{overflow-wrap:anywhere}
 .mold-sign-page-list[data-kind=others]{color:#333}
 .mold-sign-page-none{margin:0;color:#555}

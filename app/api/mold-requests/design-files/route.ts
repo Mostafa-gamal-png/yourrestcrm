@@ -37,7 +37,7 @@ const categoryInput=z.enum(['design','quote','po']);
 /** When a category's places are taken, in the representative's words. */
 const FULL:Record<MoldFileCategory,string>={design:'الحد '+MOLD_CATEGORY_MAX_FILES.design+' ملفات للطلب (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.',quote:'الحد '+MOLD_CATEGORY_MAX_FILES.quote+' ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.',po:'الحد '+MOLD_CATEGORY_MAX_FILES.po+' ملفات للـ PO (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.'};
 /** A quotation's or PO's file attached before production's update is known to be live (no screen offers it then). */
-const QUOTE_PO_NOT_YET='تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.';
+const QUOTE_PO_NOT_YET='لم يُحدَّث تطبيق المنتجات بعد لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.';
 
 export async function POST(req:Request){let objectKey='',admitted=false;try{
  checkOrigin(req);await requireSession();

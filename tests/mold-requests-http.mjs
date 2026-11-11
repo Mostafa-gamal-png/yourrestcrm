@@ -70,7 +70,7 @@ const pdf = text => Buffer.from('%PDF-1.7 synthetic ' + text);
 const uploader = as => async (id, name, bytes, category, who = 'rep') => { const encoded = await multipart({requestId: crypto.randomUUID(), id, ...(category ? {category} : {}), file: {name, bytes}}); return as(who)('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: encoded.headers}); };
 // «رابط التصميم» is no longer asked for (2026-11-03): the form sends no design link. An older request's own is kept (see below).
 const specs = {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, notes: 'أول طلب'};
-const DESIGN_URL_GONE = 'رابط التصميم اتلغى من الطلب؛ حدّث الصفحة، وأرفق التصميم كملف.';
+const DESIGN_URL_GONE = 'أُلغي رابط التصميم من الطلب؛ حدّث الصفحة وأرفق التصميم ملفًا.';
 const mock = await startProductsMock();
 const settings = {YR_PRODUCTS_API_URL: mock.url, YR_PRODUCTS_SECRET: mock.state.secret, NODE_EXTRA_CA_CERTS: mock.ca};
 const app = await bootBuiltApp({members}, {env: settings});
@@ -135,7 +135,7 @@ try {
   check([res.status, body.fields, body.error, calls('requests') - linked, (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_mold_requests WHERE json_extract(data,'$.specs.description')='with a link'").first()).n], [400, {designUrl: DESIGN_URL_GONE}, DESIGN_URL_GONE, 0, 0], 'a design link on a new request: refused, said so, nothing saved or sent');
   check([JSON.parse((await stored(first)).data).specs.designUrl, Object.hasOwn(sent.specs, 'designUrl')], ['', false], 'a new request carries no design link and sends none');
   // How the customer pays is required (2026-11-03): none, or anything but cash or deferred, is refused before anything is saved or sent.
-  const PAYMENT_REQUIRED = 'اختار طريقة الدفع: نقدي أو آجل', unpaid = calls('requests');
+  const PAYMENT_REQUIRED = 'اختر طريقة الدفع: نقدي أو آجل', unpaid = calls('requests');
   for (const payment of [undefined, 'card', 'CASH', null]) {
     res = await create('rep', 'east1', {description: 'no payment'}, payment);
     body = await res.json();
@@ -341,7 +341,7 @@ try {
     ['ok', 'https://drive.google.com/x', linkedOlder, 'https://drive.google.com/x', 3, 'https://drive.google.com/x'], 'today\'s form edits it (no link sent): the stored link kept as it is, sent with the edit');
 
   // ---- 2026-11-03: the production manager restores a cancelled request; the next status pull shows it active again
-  const SAME_REASON = 'مدير الإنتاج رجّع الطلب؛ عشان تلغيه تاني اكتب سبب جديد';
+  const SAME_REASON = 'أعاد مدير الإنتاج الطلب؛ لإلغائه مرة أخرى اكتب سببًا جديدًا';
   const restoredAudits = async (id, action = 'restored') => (await app.db.prepare('SELECT detail FROM crm_audit WHERE record_id=? AND action=?').bind(id, 'mold-request:' + action).all()).results.map(row => JSON.parse(row.detail));
   const back = (await (await create('rep', 'east1', {description: 'restored mold'})).json()).request;
   check((await post('sm', {action: 'approve', id: back.id})).status, 200, 'the sales manager approves it');
@@ -356,7 +356,7 @@ try {
     [1, false, '', 'received', 'production', true, true, true, true, false], 'the cancelled request is still read from status: restored, it shows where it stood (the approval kept); cancelling and files back');
   check([active.sending.state, active.sending.error.code, active.sending.error.reason, active.cancelReasons, backRow.cancelled_at, backRow.cancel_reason, backRow.outbox], ['sent', 'restored', 'restored', ['العميل أجّل'], null, '', null], 'its cancelled marks cleared, why kept; the earlier reason travels for the screen');
   const backAudit = await restoredAudits(back.id);
-  check([backAudit.length, backAudit[0]?.label, backAudit[0]?.cancelReason, backAudit[0]?.cancelDropped, backAudit[0]?.status], [1, 'رجّعه مدير الإنتاج بعد الإلغاء', 'العميل أجّل', false, 'received'], 'audited «رجّعه مدير الإنتاج بعد الإلغاء» with the cancellation it undid');
+  check([backAudit.length, backAudit[0]?.label, backAudit[0]?.cancelReason, backAudit[0]?.cancelDropped, backAudit[0]?.status], [1, 'أعاده مدير الإنتاج بعد الإلغاء', 'العميل أجّل', false, 'received'], 'audited «أعاده مدير الإنتاج بعد الإلغاء» with the cancellation it undid');
   await age(back.id); await list('rep');
   check((await restoredAudits(back.id)).length, 1, 'a later pull audits nothing more');
   // the same reason again (spaces aside): refused here, production not asked; a new reason cancels it
@@ -413,7 +413,7 @@ try {
 
   // ---- the same, once the request was approved after the restore (no pull saw either): production still answers 200 with the request as
   //  it is (confirmed, not cancelled), never 409; the CRM says it can no longer be cancelled, not «write a new reason»
-  const RESTORED_LOCKED = 'رجّعه مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
+  const RESTORED_LOCKED = 'أعاده مدير الإنتاج بعد الإلغاء، واكتملت الاعتمادات أو بدأ الإنتاج؛ لم يعد الإلغاء ممكنًا.';
   const approvedSince = (await (await create('rep', 'east1', {description: 'same reason, approved since'})).json()).request;
   mock.loseNext('cancel');
   await post('rep', {action: 'cancel', id: approvedSince.id, version: approvedSince.version, reason: 'العميل اعتذر'});
@@ -445,7 +445,7 @@ try {
   await age(seenFirst.id);
   const seenView = (await list('rep')).requests.find(item => item.id === seenFirst.id), seenAudit = await restoredAudits(seenFirst.id);
   check([seenView.cancelled, seenView.remote.status, seenView.can.cancel, seenView.sending.error.code, seenView.sending.error.reason, seenAudit.length, seenAudit[0]?.label, seenAudit[0]?.cancelReason, seenAudit[0]?.status, (await restoredAudits(seenFirst.id, 'cancel-restored')).length],
-    [false, 'confirmed', false, 'restored', 'restored', 1, 'رجّعه مدير الإنتاج بعد الإلغاء', 'تأخر التوريد', 'confirmed', 0], 'the next pull settles the restore: active again, audited «رجّعه مدير الإنتاج بعد الإلغاء»');
+    [false, 'confirmed', false, 'restored', 'restored', 1, 'أعاده مدير الإنتاج بعد الإلغاء', 'تأخر التوريد', 'confirmed', 0], 'the next pull settles the restore: active again, audited «أعاده مدير الإنتاج بعد الإلغاء»');
   check([calls('cancel') - seenCalls, mock.row(seenFirst.id).cancelled], [0, false], 'production keeps it restored and approved');
 
   // ---- a restore the release before this one already pulled (it pulled cancelled requests too and stored their status alone, leaving
@@ -463,7 +463,7 @@ try {
   const pulledView = (await list('rep')).requests.find(item => item.id === pulledEarlier.id), pulledRow = await stored(pulledEarlier.id), pulledAudit = await restoredAudits(pulledEarlier.id);
   check([pulledView.cancelled, pulledView.cancelReason, pulledView.remote.status, pulledView.can.cancel, pulledView.can.attach, pulledView.sending.error?.code, pulledView.sending.error?.reason, pulledView.cancelReasons, pulledRow.cancelled_at, pulledRow.cancel_reason, pulledRow.outbox],
     [false, '', 'received', true, true, 'restored', 'restored', ['العميل سافر'], null, '', null], 'this release\'s pull: active again, cancelling and files back, why kept');
-  check([pulledAudit.length, pulledAudit[0]?.label, pulledAudit[0]?.cancelledInCrm, pulledAudit[0]?.cancelReason, pulledAudit[0]?.cancelDropped, pulledAudit[0]?.status], [1, 'رجّعه مدير الإنتاج بعد الإلغاء', true, 'العميل سافر', false, 'received'], 'audited with the reason it undid');
+  check([pulledAudit.length, pulledAudit[0]?.label, pulledAudit[0]?.cancelledInCrm, pulledAudit[0]?.cancelReason, pulledAudit[0]?.cancelDropped, pulledAudit[0]?.status], [1, 'أعاده مدير الإنتاج بعد الإلغاء', true, 'العميل سافر', false, 'received'], 'audited with the reason it undid');
   check((await list('sm')).requests.find(item => item.id === pulledEarlier.id).can.approve, true, 'the sales manager may approve it');
   res = await post('sm', {action: 'approve', id: pulledEarlier.id});
   check([res.status, !!mock.row(pulledEarlier.id).approvals.sales], [200, true], 'and approves it, in production too');
@@ -670,7 +670,7 @@ try {
   const created = await (await as('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'e1', specs, payment: 'deferred'})})).json();
   check([created.request.sending.state, created.send.kind, created.request.can.edit, created.request.sending.held], ['off', 'off', true, 'design_file'], 'a request is still saved, waiting while the link is off (never attempted: still editable), kept for its design file');
   const keptOff = await as('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: created.request.id}});
-  check([keptOff.status, keptOff.json().error], [409, 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.'], 'its resend says to attach the design file first');
+  check([keptOff.status, keptOff.json().error], [409, 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ليُرسل الطلب تلقائيًا.'], 'its resend says to attach the design file first');
   await plain.db.prepare("UPDATE crm_mold_requests SET data=json_remove(data,'$.designRequired') WHERE id=?").bind(created.request.id).run();
   check((await as('/api/mold-requests', {method: 'POST', body: {action: 'resend', requestId: crypto.randomUUID(), id: created.request.id}})).status, 503, 'one asked for before: resend says the link is off');
   check([(await as('/api/crm')).status, mock.state.calls.length - calls], [200, 0], 'the rest of the CRM works; nothing was sent');
@@ -710,7 +710,7 @@ try {
     };
     const upload = async (id, name, bytes, category, who = 'rep') => { const encoded = await multipart({requestId: crypto.randomUUID(), id, ...(category ? {category} : {}), file: {name, bytes}}); return as(who)('/api/mold-requests/design-files', {method: 'POST', body: encoded.body, headers: encoded.headers}); };
     const remove = (id, fileId, who = 'rep') => as(who)('/api/mold-requests/design-files/delete', {method: 'POST', body: {requestId: crypto.randomUUID(), id, fileId}});
-    const GONE = 'رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.';
+    const GONE = 'حُذف رقم عرض السعر ورقم الـ PO من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدلًا منهما.';
     const pdf = text => Buffer.from('%PDF-1.7 synthetic ' + text);
 
     // (1) the older products application: the form asks nothing new, a request goes exactly as before, a number is refused unsent
@@ -751,7 +751,7 @@ try {
     check([res.status, body.send, [body.request.sending.state, body.request.sending.held], keptData.fileRequired, Object.hasOwn(keptData, 'quoteNo'), sentBodies(kept).length, fileCalls(kept).length, body.request.can.resend, body.request.can.attach],
       [200, {kind: 'none', code: 'quote_file', fields: []}, ['waiting', 'quote_file'], true, false, 0, 0, false, true], 'saved with the customer\'s signature, kept in the CRM: nothing sent, the signature neither; no resend, the attach action');
     res = await post('rep', {action: 'resend', id: kept});
-    check([res.status, (await res.json()).error, sentBodies(kept).length], [409, 'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.', 0], 'a resend: refused with what to do');
+    check([res.status, (await res.json()).error, sentBodies(kept).length], [409, 'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ليُرسل الطلب تلقائيًا.', 0], 'a resend: refused with what to do');
     // Due on the timetable (as a request that waited through a restart is: the first page any member loads runs the check, see above):
     // the check does not send it either.
     await quoteApp.db.prepare("UPDATE crm_mold_requests SET next_attempt_at='2026-01-01T00:00:00.000Z' WHERE id=?").bind(kept).run();
@@ -782,7 +782,7 @@ try {
     check([body.file.state, body.request.sending.state, sentBodies(service).length, quoteMock.row(service).designFiles.map(file => file.category || 'design')], ['sent', 'sent', 1, ['po', 'design']], 'its design file releases it: the request, then the PO file and the design file');
     // (3b) 2026-11-08: the quotation's file first, no design file: kept for it, sent by nothing; the first design file of its own (the
     // customer's signature is none) releases it; the administrator alike.
-    const DESIGN_FIRST = 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.';
+    const DESIGN_FIRST = 'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ليُرسل الطلب تلقائيًا.';
     body = await (await create({}, {description: 'kept for its design file'})).json();
     const designKept = body.request.id;
     check([body.request.sending.held, (await dataOf(designKept)).designRequired, !!(await dataOf(designKept)).signature], ['quote_file', true, true], 'both missing: the quotation\'s file is said first');
@@ -988,7 +988,7 @@ try {
     const stored = async id => signApp.db.prepare('SELECT * FROM crm_mold_requests WHERE id=?').bind(id).first();
     const fileRow = id => signApp.db.prepare('SELECT * FROM crm_mold_design_files WHERE id=?').bind(id).first();
     const rows = async () => (await signApp.db.prepare('SELECT COUNT(*) AS n FROM crm_mold_requests').first()).n;
-    const REQUIRED = 'توقيع العميل مطلوب قبل إرسال الطلب', REFRESH = REQUIRED + '؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.', SIGNER = 'اكتب اسم اللي بيوقّع عن العميل (من 2 إلى 80 حرف)', BAD = 'صورة التوقيع غير صالحة؛ امسح ووقّع من جديد';
+    const REQUIRED = 'توقيع العميل مطلوب قبل إرسال الطلب', REFRESH = REQUIRED + '؛ حدّث الصفحة إن لم يظهر مكان التوقيع.', SIGNER = 'اكتب اسم الموقّع عن العميل (من 2 إلى 80 حرفًا)', BAD = 'صورة التوقيع غير صالحة؛ امسح التوقيع ووقّع من جديد';
 
     // (a) who needs it; refused without it, nothing saved or sent
     check([(await (await as('rep')('/api/mold-requests')).json()).signatureRequired, (await (await as('sup')('/api/mold-requests')).json()).signatureRequired, (await (await as('sm')('/api/mold-requests')).json()).signatureRequired, (await (await as('cs')('/api/mold-requests')).json()).signatureRequired, (await (await as('owner')('/api/mold-requests')).json()).signatureRequired],
@@ -1042,7 +1042,7 @@ try {
     check([res.status, res.headers['content-type'], res.headers['content-disposition'].split(';')[0], Buffer.compare(res.bytes, png)], [200, 'image/png', 'inline', 0], 'its image through the CRM\'s download route');
     for (const who of ['sup', 'sm', 'owner']) check((await as(who)(sheet.signature.href + '&inline=1')).status, 200, who + ' reads the request, so the signature');
     res = await as('rep')('/api/mold-requests/design-files/delete', {method: 'POST', body: {requestId: crypto.randomUUID(), id: signed.id, fileId}}); body = await res.json();
-    check([res.status, body.error, (await fileRow(fileId)).deleted_at, callsOf('design-file-delete').length], [409, 'توقيع العميل ما بيتحذفش من الطلب؛ لو اتغيّرت بيانات الطلب قبل إرساله بيوقّع العميل من جديد.', null, 0], 'the delete route refuses it: kept here and at production');
+    check([res.status, body.error, (await fileRow(fileId)).deleted_at, callsOf('design-file-delete').length], [409, 'لا يُحذف توقيع العميل من الطلب؛ إذا تغيّرت بيانات الطلب قبل إرساله يوقّع العميل من جديد.', null, 0], 'the delete route refuses it: kept here and at production');
     // the sales manager's waiting list says so, and labels the image among the design files
     const waitingItem = (await (await as('sm')('/api/mold-requests')).json()).pending.items.find(item => item.crmRequestId === signed.id);
     check([waitingItem.signature.signer, waitingItem.signatureDelivered, waitingItem.designFiles.map(entry => [entry.crmFileId, entry.signature, entry.kind])], ['م. خالد العتيبي', true, [[fileId, true, 'image'], [designFileId, undefined, 'pdf']]], '«طلبات بانتظار اعتمادي»: signed by the customer (production\'s listing holds the image), the signature labelled');
@@ -1106,7 +1106,7 @@ try {
     await signApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','s1',?,'send',NULL,'rep',?,?,1)").bind(full, JSON.stringify({...oldData, requestedAt: '2026-11-03T10:00:00+03:00'}), now, now).run();
     for (let n = 1; n <= 10; n++) await signApp.db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,category) VALUES(?,?,'rep',?,'pdf','application/pdf',10,'x',NULL,?,'send',?,1,'design')").bind('mdf-full-' + n, full, 'ملف ' + n + '.pdf', now, now).run();
     res = await raw('rep', {action: 'update', id: full, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', signature: signatureInput('م. سالم')}); body = await res.json();
-    check([res.status, body.error, JSON.parse((await stored(full)).data).specs.quantity], [409, 'الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.', 1], 'ten design files already: refused, said why, nothing changed');
+    check([res.status, body.error, JSON.parse((await stored(full)).data).specs.quantity], [409, 'في الطلب 10 ملفات تصميم؛ احذف ملفًا ليتسع لتوقيع العميل.', 1], 'ten design files already: refused, said why, nothing changed');
     // An old signature refused for good takes none of the places, so it frees none: 10 live files and such a signature leave no room.
     const refusedOld = 'mr-' + crypto.randomUUID();
     await signApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','s1',?,'send',NULL,'rep',?,?,1)").bind(refusedOld, JSON.stringify({...oldData, requestedAt: '2026-11-03T11:00:00+03:00', signature: {signer: 'م. قديم', signedAt: now, fileId: 'mds-refused-old'}}), now, now).run();
@@ -1114,7 +1114,7 @@ try {
     for (let n = 1; n <= 10; n++) await signApp.db.prepare("INSERT INTO crm_mold_design_files(id,request_id,member_id,name,kind,content_type,size,sha256,object_key,created_at,outbox,next_attempt_at,version,category) VALUES(?,?,'rep',?,'pdf','application/pdf',10,'x',NULL,?,'send',?,1,'design')").bind('mdf-ro-' + n, refusedOld, 'ملف ' + n + '.pdf', now, now).run();
     check((await (await as('rep')('/api/mold-requests?id=' + refusedOld)).json()).requests[0].signature.state, 'refused', 'a signature refused for good: said so on the request');
     res = await raw('rep', {action: 'update', id: refusedOld, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', signature: signatureInput('م. سالم')}); body = await res.json();
-    check([res.status, body.error], [409, 'الطلب فيه 10 ملفات تصميم؛ احذف ملف عشان يتسع لتوقيع العميل.'], 'ten live files and a refused old signature: no room (the refused one frees none)');
+    check([res.status, body.error], [409, 'في الطلب 10 ملفات تصميم؛ احذف ملفًا ليتسع لتوقيع العميل.'], 'ten live files and a refused old signature: no room (the refused one frees none)');
     await signApp.db.prepare("UPDATE crm_mold_design_files SET deleted_at=?,outbox=NULL WHERE id='mdf-ro-10'").bind(now).run();
     res = await raw('rep', {action: 'update', id: refusedOld, version: 1, specs: {...specs, quantity: 2}, payment: 'cash', signature: signatureInput('م. سالم')}); body = await res.json();
     check([res.status, body.request.designFiles.filter(entry => entry.category === 'design').length, (await fileRow('mds-refused-old')).deleted_at !== null], [200, 10, true], 'nine live files: the new signature takes the tenth place, the refused one removed');
@@ -1162,7 +1162,7 @@ try {
     const learned = async () => !!(await refApp.db.prepare("SELECT 1 AS n FROM crm_settings WHERE id='mold-request-ref'").first());
     const viewOf = async id => (await list('rep')).requests.find(item => item.id === id);
     const download = query => as('sm')('/api/mold-requests/design-file?' + query);
-    const OUTDATED = 'الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.';
+    const OUTDATED = 'أصبحت الطلبات تُعرَّف بمرجعها لا برقم الأمر؛ حدّث الصفحة واعتمد من جديد.';
 
     // (1) the products application of today
     const a = (await (await create('ref A')).json()).request, b = (await (await create('ref B')).json()).request;
@@ -1262,7 +1262,7 @@ try {
     const post = body => as('/api/mold-requests', {method: 'POST', body: withSignature(null, {requestId: crypto.randomUUID(), ...body})});
     const list = async (page = 'new') => (await as('/api/mold-requests' + (page === 'new' ? '?refs=1' : ''))).json();
     const approvals = () => revMock.state.calls.filter(call => call.route === 'approval' && call.signed);
-    const OUTDATED = 'الطلبات بقت بتتعرّف بمرجعها مش برقم الأمر؛ حدّث الصفحة واعتمد من جديد.', UNSURE = 'تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.';
+    const OUTDATED = 'أصبحت الطلبات تُعرَّف بمرجعها لا برقم الأمر؛ حدّث الصفحة واعتمد من جديد.', UNSURE = 'تعذّر التأكد من الطلب الآن؛ حدّث الصفحة وحاول مرة أخرى.';
     // (a) A page loaded before lists A as 101 and B as 102; production switches and renumbers (A 100, B 101); its list cannot be read now.
     const A = revMock.registerManual({customerNo: crmNumber, customerName: 'A'}), B = revMock.registerManual({customerNo: crmNumber, customerName: 'B'});
     check((await list('old')).pending.items.map(item => [item.orderNo, item.customer.name]), [[101, 'A'], [102, 'B']], 'the old page\'s list before the switch');
@@ -1329,7 +1329,7 @@ try {
     const until = async (condition, what) => { for (let n = 0; n < 120; n++) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 250)); } throw new Error('timed out waiting for ' + what); };
     const crmNumber = (await addrApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='d1'").first()).number;
     const registered = await customerRow('d1');
-    const REQUIRED = 'اكتب عنوان التسليم', LONG = 'العنوان حتى 300 حرف', REFRESH = 'توقيع العميل مطلوب قبل إرسال الطلب؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.';
+    const REQUIRED = 'اكتب عنوان التسليم', LONG = 'العنوان حتى 300 حرف', REFRESH = 'توقيع العميل مطلوب قبل إرسال الطلب؛ حدّث الصفحة إن لم يظهر مكان التوقيع.';
 
     // (a) a delivery address of its own: stored as typed (normalized), kept for its design file, then sent as customer.address
     const DELIVERY = 'مخزن جدة، المنطقة الصناعية الثانية بوابة 3';

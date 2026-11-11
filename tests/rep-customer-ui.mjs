@@ -193,7 +193,7 @@ eq(button(readOnly.render(),'إضافة عميل'),undefined,'Read-only users do
 for(const role of ['customer_service','customer_service_manager']){
  const service=harness('app/visit-customer-picker.tsx',{}, {...searchProps,value:'',me:{...me,role}}),serviceTree=service.render();
  eq(button(serviceTree,'إضافة عميل'),undefined,role+' has no create action');eq(nodes(serviceTree,node=>node.props?.className==='visit-new-customer').length,0,role+' has no inline customer form');
- eq(nodes(serviceTree,node=>node.props?.className==='visit-customer-no-results').map(text),['لا يوجد عميل مطابق. اختار عميل موجود أو اطلب من المبيعات يضيفه.'],role+' no-match text points to an existing customer or sales');
+ eq(nodes(serviceTree,node=>node.props?.className==='visit-customer-no-results').map(text),['لا يوجد عميل مطابق. اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.'],role+' no-match text points to an existing customer or sales');
 }
 eq(nodes(harness('app/visit-customer-picker.tsx',{}, {...searchProps,value:''}).render(),node=>node.props?.className==='visit-customer-no-results').map(text),['لا يوجد عميل مطابق.'],'A representative still adds from the button');
 language='en';

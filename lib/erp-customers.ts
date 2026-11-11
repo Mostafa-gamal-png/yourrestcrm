@@ -104,7 +104,7 @@ export function erpCustomerRows(sheets:SheetLike[]):{sheet:string;rows:ErpCustom
   if(!rows.length)fail('ملف عملاء ERP لا يحتوي صفوف عملاء بعد العناوين');
   return {sheet:sheet.name,rows};
  }
- return fail(`ده مش ملف عملاء ERP: لازم يكون فيه عمود «${erpCustomerColumns.code}» ومعاه عمود الاسم أو الجوال. صدّر ملف العملاء من ERP زي ما هو.`);
+ return fail(`هذا ليس ملف عملاء ERP: يجب أن يحتوي على عمود «${erpCustomerColumns.code}» ومعه عمود الاسم أو الجوال. صدّر ملف العملاء من ERP كما هو.`);
 }
 
 /** Why a customer is offered for a row: its phone, its full name, both, the row's ERP code (its current code, a kept old code or a stored
@@ -211,9 +211,9 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
   return [...scores].sort(([a,x],[b,y])=>y-x||order(a,b)).map(([customer])=>customer);
  };
  let offered=0;
- const offer=(count:number)=>{if((offered+=count)>ERP_CUSTOMERS_MAX_OFFERED)fail('سطور الملف بتطابق نفس العملاء أكتر من اللازم؛ صدّر ملف العملاء من ERP زي ما هو.');};
+ const offer=(count:number)=>{if((offered+=count)>ERP_CUSTOMERS_MAX_OFFERED)fail('سطور الملف تطابق العملاء أنفسهم أكثر من اللازم؛ صدّر ملف العملاء من ERP كما هو.');};
  const known=new Set(rows.map(row=>row.row)),fileCodes=new Map(rows.filter(row=>!row.issue).map(row=>[row.codeKey,row.row]));
- for(const [row] of choices)if(!known.has(row))fail(`اختيار لسطر غير موجود في الملف (${row})؛ اعمل معاينة جديدة`);
+ for(const [row] of choices)if(!known.has(row))fail(`اختيار لسطر غير موجود في الملف (${row})؛ أجرِ معاينة جديدة`);
  const outcomes:ErpCustomerOutcome[]=rows.map(row=>{
   const base:ErpCustomerOutcome={row:row.row,code:row.code,name:row.name||row.nameEn,phones:row.phones.map(tail),status:'invalid',issue:row.issue,matchedBy:'',candidates:[],customerId:'',add:false,chosen:false,conflict:false,codeRow:0,from:'',to:row.code,change:false,mapping:false,sharedWith:0};
   const refuseChoice=()=>{if(choices.has(row.row))fail(`السطر ${row.row} لا يقبل اختيار عميل`);return base;};
@@ -274,10 +274,10 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
   if(choices.has(row.row)){
    const chosen=choices.get(row.row)!;
    if(chosen===ERP_ADD_CUSTOMER){
-    if(base.status!=='new'&&base.status!=='similar')fail(`السطر ${row.row} مش عميل جديد؛ اعمل معاينة جديدة`);
+    if(base.status!=='new'&&base.status!=='similar')fail(`السطر ${row.row} ليس عميلًا جديدًا؛ أجرِ معاينة جديدة`);
     Object.assign(base,{add:true,chosen:true,customerId:'',matchedBy:''});
    }else{
-    if(chosen&&!base.candidates.some(customer=>customer.id===chosen))fail(base.candidates.length?`العميل المختار للسطر ${row.row} مش من المرشحين؛ اعمل معاينة جديدة`:`السطر ${row.row} لا يقبل اختيار عميل`);
+    if(chosen&&!base.candidates.some(customer=>customer.id===chosen))fail(base.candidates.length?`العميل المختار للسطر ${row.row} ليس من المرشحين؛ أجرِ معاينة جديدة`:`السطر ${row.row} لا يقبل اختيار عميل`);
     Object.assign(base,{add:false,chosen:true,customerId:chosen,matchedBy:chosen?base.candidates.find(customer=>customer.id===chosen)!.matchedBy:''});
     if((several||base.codeRow)&&base.status!=='similar')base.status='choose';
    }

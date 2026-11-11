@@ -1,12 +1,12 @@
 // «استيراد من ERP» (app/erp-customers-import.tsx), the real component with controlled React hooks and a stand-in for the server: the
 // file is read and previewed at once; the summary line and counts (codes that change, rows that need a choice, new customers); the
-// «محتاج تختار» section with «ده هو» / «سيبه» and, for a similar name, «عميل جديد» (nothing pressed until the user chooses); the «عملاء
-// جداد هيتضافوا» section with its «سيبه» toggle, the region select and a row's own region; a choice is previewed again (one request at a
-// time, the last choices win) and «حدّث X كود وضيف Y عميل» waits for it; the apply carries the preview's snapshot, choices and regions; an unconfirmed
+// «محتاج تختار» section with «هو نفسه» / «اتركه» and, for a similar name, «عميل جديد» (nothing pressed until the user chooses); the «عملاء
+// جداد هيتضافوا» section with its «اتركه» toggle, the region select and a row's own region; a choice is previewed again (one request at a
+// time, the last choices win) and «حدّث X كود وأضف Y عميل» waits for it; the apply carries the preview's snapshot, choices and regions; an unconfirmed
 // apply locks the dialog and is retried with the very same request; a stale preview (409) asks for a new one, which starts the choices
 // over; two rows on one customer keep the button off even with another change, and its handler sends nothing; a number held outside the
 // manager's regions, too many matches and a code that is another row explain themselves; a server message is shown in English with its
-// row; the result lists what changed and what was added; a reload that fails after the apply offers «تحديث العرض بس»; Arabic and
+// row; the result lists what changed and what was added; a reload that fails after the apply offers «تحديث العرض فقط»; Arabic and
 // English (no Arabic left in the screen's own words in English). No browser, no network, no layout claim.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -64,7 +64,7 @@ const first = {fileName: 'Customer.xlsx', sheet: 'Customer', snapshot: 'a'.repea
   {...base, row: 6, code: '77', name: 'مصنع غير موجود', status: 'new', add: true, to: '77'},
 ]};
 const chosen = id => ({...first, summary: summary(2), rows: first.rows.map(row => row.row === 5 ? {...row, customerId: id, chosen: true, matchedBy: 'name', change: true, from: id === 'twinA' ? 'T-1' : ''} : row)});
-const apply = (language, changes, adds) => say(language, `حدّث ${changes} كود وضيف ${adds} عميل`, `Update ${changes} code(s) and add ${adds} customer(s)`);
+const apply = (language, changes, adds) => say(language, `حدّث ${changes} كود وأضف ${adds} عميل`, `Update ${changes} code(s) and add ${adds} customer(s)`);
 const arabic = /[؀-ۿ]/;
 async function opened(language, answer) {
   const h = harness(language); h.render();
@@ -89,18 +89,18 @@ for (const language of ['ar', 'en']) {
   await until(() => h.requests.length === 1, 'the preview');
   eq([h.requests[0].url, h.requests[0].body.action, h.requests[0].body.fileName, h.requests[0].body.choices], ['/api/erp-customers', 'preview', 'Customer.xlsx', []], 'the file is previewed at once, with no choice');
   h.requests[0].resolve(first); await until(() => h.state.preview, 'the preview shown'); h.render();
-  eq(tiles(h), [t('هيتغير', 'Will change') + '1', t('محتاج تختار', 'Needs a choice') + '1', t('عملاء جداد', 'New customers') + '1', t('من غير تغيير', 'No change') + '0'], 'the counts');
-  ok(text(h.tree()).includes(t('1 كود هيتغير، 1 عميل محتاج تختار، 1 عميل جديد هيتضاف.', '1 code(s) will change, 1 customer(s) need a choice, 1 new customer(s) will be added.')), 'the summary line: codes that change, customers to choose, new customers');
-  eq([rowsIn(h, 'choose'), rowsIn(h, 'new'), rowsIn(h, 'rest')], [[5], [6], [3]], 'the sections: «محتاج تختار», «عملاء جداد هيتضافوا», the rest of the file');
+  eq(tiles(h), [t('سيتغيّر', 'Will change') + '1', t('يحتاج إلى اختيارك', 'Needs a choice') + '1', t('عملاء جدد', 'New customers') + '1', t('بلا تغيير', 'No change') + '0'], 'the counts');
+  ok(text(h.tree()).includes(t('1 كود سيتغيّر، 1 عميل يحتاج إلى اختيارك، 1 عميل جديد سيُضاف.', '1 code(s) will change, 1 customer(s) need a choice, 1 new customer(s) will be added.')), 'the summary line: codes that change, customers to choose, new customers');
+  eq([rowsIn(h, 'choose'), rowsIn(h, 'new'), rowsIn(h, 'rest')], [[5], [6], [3]], 'the sections: «محتاج تختار», «عملاء جدد سيُضافون», the rest of the file');
   eq([pick(h, 5, 'twinA').props['aria-pressed'], pick(h, 5, 'twinB').props['aria-pressed'], pick(h, 5, '').props['aria-pressed'], !!pick(h, 5, ADD)], [false, false, false, false], 'nothing is chosen for an ambiguous row, and a choose row offers no «عميل جديد»');
-  eq([text(pick(h, 5, 'twinA')), text(pick(h, 5, ''))], [t('ده هو', 'This one'), t('سيبه', 'Leave it')], '«ده هو» and «سيبه»');
+  eq([text(pick(h, 5, 'twinA')), text(pick(h, 5, ''))], [t('هو نفسه', 'This one'), t('اتركه', 'Leave it')], '«هو نفسه» and «اتركه»');
   ok(text(h.tree()).includes('YR-C-000004') && text(h.tree()).includes('YR-C-000005'), 'each candidate with its Yourrest code');
   ok(text(section(h, 'choose')).includes(t('السبب', 'Why') + ': ' + t('بالاسم', 'by name')) && text(section(h, 'choose')).includes(t('الوسطى', 'Central')), 'and why it is offered, and its region');
-  ok(text(section(h, 'new')).includes(t('هيتضافوا باسمك', 'added under your name')) && text(section(h, 'new')).includes(t('«تعديل»', '“Edit”')), 'new customers: under the uploader\'s name, movable later from «تعديل»');
-  eq([pick(h, 6, '').props['aria-pressed'], text(pick(h, 6, ''))], [false, t('سيبه', 'Leave it')], 'a new row is added unless «سيبه» is pressed');
+  ok(text(section(h, 'new')).includes(t('سيُضافون باسمك', 'added under your name')) && text(section(h, 'new')).includes(t('«تعديل»', '“Edit”')), 'new customers: under the uploader\'s name, movable later from «تعديل»');
+  eq([pick(h, 6, '').props['aria-pressed'], text(pick(h, 6, ''))], [false, t('اتركه', 'Leave it')], 'a new row is added unless «اتركه» is pressed');
   const regionSelect = select(h, node => node.props.id === 'erp-customers-region');
   eq([regionSelect.props.value, nodes(regionSelect, node => node.type === 'option').map(option => [option.props.value, text(option)])], ['', regions.map(value => [value, value ? t(value, {'الوسطى': 'Central', 'الشرقية': 'Eastern', 'الغربية': 'Western', 'الشمالية': 'Northern', 'الجنوبية': 'Southern'}[value]) : t('المنطقة غير محددة', 'Region not specified')])], 'the region of the new customers: «المنطقة غير محددة» by default, the regions the server allows');
-  eq([text(applyButton(h)).trim(), applyButton(h).props.disabled], [apply(language, 1, 1), false], 'the matched rows can be applied as they are: «حدّث 1 كود وضيف 1 عميل»');
+  eq([text(applyButton(h)).trim(), applyButton(h).props.disabled], [apply(language, 1, 1), false], 'the matched rows can be applied as they are: «حدّث 1 كود وأضف 1 عميل»');
   if (language === 'en') ok(!arabic.test(chrome(h.tree())), 'English: no Arabic left in the screen\'s own words (preview): ' + chrome(h.tree()).match(/[^ ]*[؀-ۿ][^ ]*/g)?.slice(0, 5).join(' | '));
 
   // ---- a choice is previewed again; choices made meanwhile follow in one more request, the last one wins
@@ -115,11 +115,11 @@ for (const language of ['ar', 'en']) {
   eq([h.requests.length, h.requests[2].body.choices], [3, [{row: 5, customerId: 'twinB'}]], 'only the latest choices are sent again');
   h.requests[2].resolve(chosen('twinB')); await until(() => !h.state.refreshing, 'the preview settled'); h.render();
   eq(h.state.preview.rows[1].customerId, 'twinB', 'the last answer is the one shown');
-  eq([text(applyButton(h)).trim(), applyButton(h).props.disabled], [apply(language, 2, 1), false], 'ready to apply, the counts live: «حدّث 2 كود وضيف 1 عميل»');
+  eq([text(applyButton(h)).trim(), applyButton(h).props.disabled], [apply(language, 2, 1), false], 'ready to apply, the counts live: «حدّث 2 كود وأضف 1 عميل»');
   // the region for every new customer, and one row's own
   select(h, node => node.props.id === 'erp-customers-region').props.onChange({target: {value: 'الوسطى'}}); h.render();
   const own = select(h, node => node.props.id !== 'erp-customers-region');
-  eq([own.props.value, text(nodes(own, node => node.type === 'option')[0])], ['*', t('زي المنطقة اللي فوق', 'Same as above')], 'a new row follows the region above unless given its own');
+  eq([own.props.value, text(nodes(own, node => node.type === 'option')[0])], ['*', t('مثل المنطقة أعلاه', 'Same as above')], 'a new row follows the region above unless given its own');
   own.props.onChange({target: {value: 'الشرقية'}}); h.render();
   eq([select(h, node => node.props.id === 'erp-customers-region').props.value, select(h, node => node.props.id !== 'erp-customers-region').props.value, h.requests.length], ['الوسطى', 'الشرقية', 3], 'the regions change without a new preview');
 
@@ -141,20 +141,20 @@ for (const language of ['ar', 'en']) {
   ok(text(h.tree()).includes(t('تم تحديث الأكواد وإضافة العملاء', 'Codes updated and customers added')), 'the result');
   eq(nodes(h.tree(), node => node.type === 'ol').map(list => list.props.children.length), [2, 1], 'what changed and what was added, listed');
   ok(text(h.tree()).includes('YR-C-000001') && text(h.tree()).includes('YR-C-000042') && text(h.tree()).includes(t('الشرقية', 'Eastern')), 'by Yourrest code, the added one with its new number and region');
-  ok(text(h.tree()).includes(t('عملاء اتضافوا', 'Customers added') + ': 1') && text(h.tree()).includes(t('متساب', 'Left') + ': 0'), 'the counts: added, left');
-  ok(text(h.tree()).includes(t('مفيش سطور اتسابت.', 'No rows were left.')), 'and nothing left to list');
+  ok(text(h.tree()).includes(t('عملاء أُضيفوا', 'Customers added') + ': 1') && text(h.tree()).includes(t('متروك', 'Left') + ': 0'), 'the counts: added, left');
+  ok(text(h.tree()).includes(t('لم تُترك أي سطور.', 'No rows were left.')), 'and nothing left to list');
   if (language === 'en') ok(!arabic.test(chrome(h.tree())), 'English: no Arabic left in the result');
   eq(applyButton(h), undefined, 'nothing more to apply');
   button(h, t('تم', 'Done')).props.onClick(); eq(h.closed(), 1, 'done closes');
 
-  // ---- a new row left out («سيبه»), then added again; a similar name: «ده هو», «عميل جديد», «سيبه», nothing pressed at first
+  // ---- a new row left out («اتركه»), then added again; a similar name: «هو نفسه», «عميل جديد», «اتركه», nothing pressed at first
   const similarRow = {...base, row: 8, code: '9001', name: 'مصنع الصفا للبلوك الحديث', status: 'similar', candidates: [{...candidate('c302', 'مصنع الصفا للبلوك الاسمنتي', 302, '345'), matchedBy: 'similar'}], to: '9001'};
   const withSimilar = {...first, summary: {...summary(1), similar: 1, pending: 2}, rows: [...first.rows, similarRow]};
   const n = await opened(language, withSimilar);
   eq([rowsIn(n, 'choose'), pick(n, 8, 'c302').props['aria-pressed'], pick(n, 8, ADD).props['aria-pressed'], pick(n, 8, '').props['aria-pressed']], [[5, 8], false, false, false], 'a similar row is in «محتاج تختار» with nothing pressed');
   eq(text(pick(n, 8, ADD)), t('عميل جديد', 'New customer'), 'with «عميل جديد»');
-  ok(text(section(n, 'choose')).includes(t('اسم قريب', 'similar name')) && text(section(n, 'choose')).includes(t('لو ما اخترتش مش هيتغير حاجة', 'Without a choice nothing changes')), 'why it is offered, and that no choice changes nothing');
-  ok(text(n.tree()).includes(t('2 عميل محتاج تختار', '2 customer(s) need a choice')), 'counted as needing a choice');
+  ok(text(section(n, 'choose')).includes(t('اسم قريب', 'similar name')) && text(section(n, 'choose')).includes(t('إن لم تختر فلن يتغيّر شيء', 'Without a choice nothing changes')), 'why it is offered, and that no choice changes nothing');
+  ok(text(n.tree()).includes(t('2 عميل يحتاج إلى اختيارك', '2 customer(s) need a choice')), 'counted as needing a choice');
   pick(n, 8, ADD).props.onClick(); n.render();
   await until(() => n.requests.length === 2, 'the preview with «عميل جديد»');
   eq(n.requests[1].body.choices, [{row: 8, customerId: ADD}], '«عميل جديد» goes as its own value');
@@ -162,19 +162,19 @@ for (const language of ['ar', 'en']) {
   eq([pick(n, 8, ADD).props['aria-pressed'], text(applyButton(n)).trim()], [true, apply(language, 1, 2)], '«عميل جديد» pressed, and one more customer to add');
   pick(n, 6, '').props.onClick(); n.render();
   await until(() => n.requests.length === 3, 'the preview with a new row left');
-  eq(n.requests[2].body.choices, [{row: 6, customerId: ''}, {row: 8, customerId: ADD}], '«سيبه» on a new row');
+  eq(n.requests[2].body.choices, [{row: 6, customerId: ''}, {row: 8, customerId: ADD}], '«اتركه» on a new row');
   n.requests[2].resolve({...withSimilar, summary: {...withSimilar.summary, adds: 1, pending: 1}, rows: withSimilar.rows.map(row => row.row === 8 ? {...row, add: true, chosen: true} : row.row === 6 ? {...row, add: false, chosen: true} : row)}); await until(() => !n.state.refreshing, 'settled'); n.render();
   eq([pick(n, 6, '').props['aria-pressed'], text(applyButton(n)).trim(), !!select(n, node => node.props.id !== 'erp-customers-region')], [true, apply(language, 1, 1), false], 'the row is left: pressed, not counted, no region of its own');
-  ok(text(section(n, 'new')).includes(t('متساب؛ مش هيتضاف.', 'Left; it will not be added.')), 'and says so');
+  ok(text(section(n, 'new')).includes(t('متروك؛ لن يُضاف.', 'Left; it will not be added.')), 'and says so');
   pick(n, 6, '').props.onClick(); n.render();
   await until(() => n.requests.length === 4, 'the preview with the new row back');
-  eq(n.requests[3].body.choices, [{row: 8, customerId: ADD}], 'pressing «سيبه» again puts the row back (its default: added)');
+  eq(n.requests[3].body.choices, [{row: 8, customerId: ADD}], 'pressing «اتركه» again puts the row back (its default: added)');
 
-  // ---- accessible names: each «ده هو» names its candidate; a new row's «سيبه» is inside a group named by its row
+  // ---- accessible names: each «هو نفسه» names its candidate; a new row's «اتركه» is inside a group named by its row
   const named = await opened(language, first);
-  eq([pick(named, 5, 'twinA').props['aria-label'], pick(named, 5, 'twinB').props['aria-label']], [t('ده هو', 'This one') + ': مصنع التوأم · YR-C-000004', t('ده هو', 'This one') + ': مصنع التوأم · YR-C-000005'], '«ده هو» is named with the candidate\'s name and Yourrest code, so two candidates never read the same');
+  eq([pick(named, 5, 'twinA').props['aria-label'], pick(named, 5, 'twinB').props['aria-label']], [t('هو نفسه', 'This one') + ': مصنع التوأم · YR-C-000004', t('هو نفسه', 'This one') + ': مصنع التوأم · YR-C-000005'], '«هو نفسه» is named with the candidate\'s name and Yourrest code, so two candidates never read the same');
   const newGroup = nodes(section(named, 'new'), node => node.props?.role === 'group')[0];
-  eq([newGroup?.props['aria-label'], nodes(newGroup, node => node.type === 'button' && node.props['data-row'] === 6).length], [t('سطر 6 · رقم ERP 77', 'Row 6 · ERP number 77'), 1], 'a new row\'s «سيبه» is in a group named by its row and ERP number');
+  eq([newGroup?.props['aria-label'], nodes(newGroup, node => node.type === 'button' && node.props['data-row'] === 6).length], [t('سطر 6 · رقم ERP 77', 'Row 6 · ERP number 77'), 1], 'a new row\'s «اتركه» is in a group named by its row and ERP number');
   eq(nodes(section(named, 'choose'), node => node.props?.role === 'group').map(group => group.props['aria-label']), [t('العميل لـسطر 5 · رقم ERP 55', 'Customer for Row 5 · ERP number 55')], 'and the candidates\' group by the row and its ERP number');
 
   // ---- only a similar row, switched to «عميل جديد»: the region select, the note about the uploader, and the region sent with the apply
@@ -183,11 +183,11 @@ for (const language of ['ar', 'en']) {
   eq([!!section(o, 'new'), !!select(o, node => node.props.id === 'erp-customers-region')], [false, false], 'nothing to add yet: no new-customers part');
   pick(o, 8, ADD).props.onClick(); await until(() => o.requests.length === 2, 'the preview with «عميل جديد»');
   o.requests[1].resolve({...onlySimilar, summary: {...onlySimilar.summary, adds: 1, pending: 0}, rows: [{...similarRow, add: true, chosen: true}]}); await until(() => !o.state.refreshing, 'settled'); o.render();
-  ok(!!section(o, 'new') && text(section(o, 'new')).includes(t('هيتضافوا باسمك', 'added under your name')) && text(section(o, 'new')).includes(t('«تعديل»', '“Edit”')), 'a similar row marked «عميل جديد» shows the new-customers part with the note about the uploader');
-  ok(text(section(o, 'new')).includes(t('منهم 1 من «محتاج تختار» اخترت لهم «عميل جديد».', '1 of them are rows in “Needs a choice” you marked “New customer”.')), 'and says where that customer comes from');
+  ok(!!section(o, 'new') && text(section(o, 'new')).includes(t('سيُضافون باسمك', 'added under your name')) && text(section(o, 'new')).includes(t('«تعديل»', '“Edit”')), 'a similar row marked «عميل جديد» shows the new-customers part with the note about the uploader');
+  ok(text(section(o, 'new')).includes(t('منهم 1 من «يحتاج إلى اختيارك» اخترت لهم «عميل جديد».', '1 of them are rows in “Needs a choice” you marked “New customer”.')), 'and says where that customer comes from');
   eq([rowsIn(o, 'new'), rowsIn(o, 'choose')], [[], [8]], 'the row itself stays where it was chosen');
   select(o, node => node.props.id === 'erp-customers-region').props.onChange({target: {value: 'الشرقية'}}); o.render();
-  eq([text(applyButton(o)).trim(), applyButton(o).props.disabled], [apply(language, 0, 1), false], '«حدّث 0 كود وضيف 1 عميل»');
+  eq([text(applyButton(o)).trim(), applyButton(o).props.disabled], [apply(language, 0, 1), false], '«حدّث 0 كود وأضف 1 عميل»');
   applyButton(o).props.onClick(); await until(() => o.requests.length === 3, 'the apply');
   eq([o.requests[2].body.choices, o.requests[2].body.region, o.requests[2].body.adds], [[{row: 8, customerId: ADD}], 'الشرقية', 1], 'the region chosen for it goes with the apply, and the one customer it adds');
 
@@ -200,7 +200,7 @@ for (const language of ['ar', 'en']) {
   eq([rowsIn(k, 'choose'), rowsIn(k, 'rest')], [[3, 8], [9]], 'the two rows on one customer are in «محتاج تختار»');
   pick(k, 3, '').props.onClick(); await until(() => k.requests.length === 2, 'the preview with row 3 left');
   k.requests[1].resolve({...moving, summary: {...moving.summary, conflicts: 0, changes: 1}, rows: [{...cRow, status: 'auto', conflict: false, customerId: '', chosen: true, matchedBy: ''}, {...sRow, conflict: false, change: true}, sameRow]}); await until(() => !k.state.refreshing, 'settled'); k.render();
-  eq([rowsIn(k, 'choose'), pick(k, 3, '').props['aria-pressed']], [[3, 8], true], 'row 3, left there, stays in «محتاج تختار» with «سيبه» pressed (it does not vanish into the other rows)');
+  eq([rowsIn(k, 'choose'), pick(k, 3, '').props['aria-pressed']], [[3, 8], true], 'row 3, left there, stays in «محتاج تختار» with «اتركه» pressed (it does not vanish into the other rows)');
   k.state.filter = 'same'; k.render();
   pick(k, 9, 'twinA').props.onClick(); await until(() => k.requests.length === 3, 'the preview with row 9 picked again');
   k.requests[2].resolve({...moving, summary: {...moving.summary, conflicts: 0, changes: 1}, rows: [{...cRow, status: 'auto', conflict: false, customerId: '', chosen: true, matchedBy: ''}, {...sRow, conflict: false, change: true}, {...sameRow, status: 'choose', chosen: true}]}); await until(() => !k.state.refreshing, 'settled'); k.render();
@@ -210,9 +210,9 @@ for (const language of ['ar', 'en']) {
   const s = await opened(language, first);
   pick(s, 5, 'twinA').props.onClick(); await until(() => s.requests.length === 2, 're-preview'); s.requests[1].resolve(chosen('twinA')); await until(() => !s.state.refreshing, 'settled'); s.render();
   applyButton(s).props.onClick(); await until(() => s.requests.length === 3, 'the apply');
-  s.requests[2].reject(new submit.SubmitError('اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة', 409, {error: 'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة'}));
+  s.requests[2].reject(new submit.SubmitError('تغيّرت بيانات العملاء منذ المعاينة؛ أجرِ معاينة جديدة', 409, {error: 'تغيّرت بيانات العملاء منذ المعاينة؛ أجرِ معاينة جديدة'}));
   await until(() => s.state.stale, 'the stale state'); s.render();
-  ok(text(s.tree()).includes(t('اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة', 'Customer data changed since the preview. Run a new preview.')), 'the stale message, in the reader\'s language');
+  ok(text(s.tree()).includes(t('تغيّرت بيانات العملاء منذ المعاينة؛ أجرِ معاينة جديدة', 'Customer data changed since the preview. Run a new preview.')), 'the stale message, in the reader\'s language');
   eq([s.state.pending, pick(s, 5, 'twinA').props.disabled, !!applyButton(s)], [false, true, false], 'no retry of the stale request; choices locked; no apply');
   nodes(nodes(s.tree(), node => node.type === 'footer')[0], node => node.type === 'button' && text(node).trim() === t('معاينة جديدة', 'New preview'))[0].props.onClick();
   await until(() => s.requests.length === 4, 'a new preview');
@@ -225,14 +225,14 @@ for (const language of ['ar', 'en']) {
   const c = await opened(language, {...first, summary: {...summary(1, 0), conflicts: 2, changes: 1}, rows: [{...first.rows[0], status: 'choose', conflict: true}, {...first.rows[0], row: 4, code: '13', status: 'choose', conflict: true}, {...first.rows[0], row: 7, code: '70', candidates: [candidate('fajr', 'مصنع الفجر', 2)], customerId: 'fajr', from: '', to: '70', mapping: false, sharedWith: 0}]});
   eq(applyButton(c).props.disabled, true, 'two rows on one customer: no apply, although another row would change');
   ok(!!pick(c, 3, '') && !!pick(c, 4, ''), 'each conflicting row can be left');
-  ok(text(c.tree()).includes(t('نفس العميل في أكتر من سطر', 'Same customer on several rows')), 'and says why');
+  ok(text(c.tree()).includes(t('العميل نفسه في أكثر من سطر', 'Same customer on several rows')), 'and says why');
   applyButton(c).props.onClick(); await tick(); await tick();
   eq([c.requests.length, c.state.busy], [1, null], 'the handler itself refuses while the button is off: nothing is sent');
   const z = await opened(language, {...first, summary: {...summary(0, 0), pending: 0}, rows: [{...first.rows[0], customerId: 'nour', change: false, mapping: false, from: '12'}]});
-  eq([text(applyButton(z)).trim(), applyButton(z).props.disabled], [apply(language, 0, 0), true], 'nothing to change or add: «حدّث 0 كود وضيف 0 عميل», off');
+  eq([text(applyButton(z)).trim(), applyButton(z).props.disabled], [apply(language, 0, 0), true], 'nothing to change or add: «حدّث 0 كود وأضف 0 عميل», off');
   const big = await opened(language, {...first, summary: {...summary(1), adds: shared.ERP_CUSTOMERS_MAX_ADDS + 1}});
   eq(applyButton(big).props.disabled, true, 'more new customers than one apply may add: off');
-  ok(text(big.tree()).includes(t(`أقصى عدد للعملاء الجداد في المرة الواحدة ${shared.ERP_CUSTOMERS_MAX_ADDS}`, `At most ${shared.ERP_CUSTOMERS_MAX_ADDS} new customers`)), 'and says how many at most');
+  ok(text(big.tree()).includes(t(`الحد الأقصى للعملاء الجدد في المرة الواحدة ${shared.ERP_CUSTOMERS_MAX_ADDS}`, `At most ${shared.ERP_CUSTOMERS_MAX_ADDS} new customers`)), 'and says how many at most');
 
   // ---- rows that explain themselves: a number held outside the regions, too many matches, a code that is another row, no name, by code
   const e = await opened(language, {...first, summary: {...summary(0, 0), heldOutside: 1, invalid: 3, choose: 1, pending: 1, changes: 0}, rows: [
@@ -246,11 +246,11 @@ for (const language of ['ar', 'en']) {
   e.state.filter = 'all'; e.render();
   const all = text(e.tree());
   ok(all.includes(t('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')) && all.includes(t('ربطه لمدير النظام', 'only the system administrator can link it')), 'a number held outside the regions: why, and who can link it');
-  ok(all.includes(t('بيطابق عملاء كتير', 'Matches too many customers')) && all.includes(t('أكتر من 20 عميل', 'More than 20 customers')), 'too many matches');
-  ok(all.includes(t('أرقام جوال كتير في السطر', 'Too many phone numbers in the row')), 'too many phone numbers');
-  ok(all.includes(t('موجود في سطر 3 من الملف', 'is row 3 of the file')), 'a code that is another row: the user confirms');
-  ok(all.includes(t('من غير اسم', 'No name')) && all.includes(t('مش هيتضاف', 'it is not added')), 'a row without a name is not added');
-  ok(all.includes(t('نفس الكود', 'same code')) && all.includes(t('مش هيتغير حاجة ومش هيتضاف عميل', 'nothing changes and no customer is added')), 'a row found by its code: nothing changes, nothing added');
+  ok(all.includes(t('يطابق عملاء كثيرين', 'Matches too many customers')) && all.includes(t('أكثر من 20 عميلًا', 'More than 20 customers')), 'too many matches');
+  ok(all.includes(t('أرقام جوال كثيرة في السطر', 'Too many phone numbers in the row')), 'too many phone numbers');
+  ok(all.includes(t('موجود في السطر 3 من الملف', 'is row 3 of the file')), 'a code that is another row: the user confirms');
+  ok(all.includes(t('بلا اسم', 'No name')) && all.includes(t('لن يُضاف', 'it is not added')), 'a row without a name is not added');
+  ok(all.includes(t('نفس الكود', 'same code')) && all.includes(t('لن يتغيّر شيء ولن يُضاف عميل', 'nothing changes and no customer is added')), 'a row found by its code: nothing changes, nothing added');
   eq([!!pick(e, 3, ''), !!pick(e, 4, ''), !!pick(e, 6, ''), !!pick(e, 7, ''), !!pick(e, 9, 'coded')], [false, false, true, false, true], 'only the rows with a candidate offer a choice');
   ok(all.includes(t('الرقم عند عميل خارج مناطقك', 'Number held outside your regions') + ': 1'), 'counted in the summary line');
   if (language === 'en') ok(!arabic.test(chrome(e.tree())), 'English: no Arabic left in the explanations');
@@ -259,7 +259,7 @@ for (const language of ['ar', 'en']) {
   const m = harness(language); m.render();
   nodes(m.tree(), node => node.type === 'input' && node.props.id === 'erp-customers-file')[0].props.onChange({target: {files: [{name: 'Sales.xlsx', size: 1200}], value: ''}});
   await until(() => m.requests.length === 1, 'the preview');
-  const wrong = 'ده مش ملف عملاء ERP: لازم يكون فيه عمود «رقم العميل» ومعاه عمود الاسم أو الجوال. صدّر ملف العملاء من ERP زي ما هو.';
+  const wrong = 'هذا ليس ملف عملاء ERP: يجب أن يحتوي على عمود «رقم العميل» ومعه عمود الاسم أو الجوال. صدّر ملف العملاء من ERP كما هو.';
   m.requests[0].reject(new submit.SubmitError(wrong, 400, {error: wrong}));
   await until(() => m.state.error, 'the refusal'); m.render();
   ok(text(m.tree()).includes(t(wrong, 'This is not an ERP customer file')), 'the wrong-file refusal in the reader\'s language');
@@ -268,13 +268,13 @@ for (const language of ['ar', 'en']) {
   m.requests[1].reject(new submit.SubmitError('السطر 14: التقرير يحتوي معادلات؛ صدّره بالقيم فقط', 400));
   await until(() => m.state.error, 'the refusal'); m.render();
   ok(text(m.tree()).includes(t('السطر 14: التقرير يحتوي معادلات؛ صدّره بالقيم فقط', 'Row 14: the file contains formulas')), 'a message with its row');
-  for (const [message, english] of [['السطر 6 مش عميل جديد؛ اعمل معاينة جديدة', 'Row 6 is not a new customer'], ['الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة', 'Reload the page and run a new preview'], ['شاشة الاستيراد دي اتفتحت قبل تحديث النظام؛ حدّث الصفحة واعمل معاينة جديدة. ما اتحفظش أي حاجة. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.', 'This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.'], ['لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها', 'outside your regions'], ['أقصى عدد للعملاء الجداد في المرة الواحدة 2000؛ سيب الباقي وضيفهم في مرة تانية.', 'At most 2000 new customers'], ['لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.', 'Nothing in this file changes a code or adds a customer']]) {
+  for (const [message, english] of [['السطر 6 ليس عميلًا جديدًا؛ أجرِ معاينة جديدة', 'Row 6 is not a new customer'], ['لم تعرض هذه الشاشة العملاء الجدد الذين سيُضافون؛ حدّث الصفحة وأجرِ معاينة جديدة', 'Reload the page and run a new preview'], ['فُتحت شاشة الاستيراد هذه قبل تحديث النظام؛ حدّث الصفحة وأجرِ معاينة جديدة. لم يُحفظ أي شيء. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.', 'This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.'], ['لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها', 'outside your regions'], ['الحد الأقصى للعملاء الجدد في المرة الواحدة 2000؛ اترك الباقي وأضفهم في مرة أخرى.', 'At most 2000 new customers'], ['لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.', 'Nothing in this file changes a code or adds a customer']]) {
     const x = await opened(language, first); applyButton(x).props.onClick(); await until(() => x.requests.length === 2, 'the apply');
     x.requests[1].reject(new submit.SubmitError(message, 400, {error: message})); await until(() => x.state.error, 'the refusal'); x.render();
     ok(text(x.tree()).includes(t(message, english)), 'the new refusals in the reader\'s language: ' + english);
   }
 
-  // ---- saved but the customers did not reload: «تحديث العرض بس» reloads only, it never sends the update again
+  // ---- saved but the customers did not reload: «تحديث العرض فقط» reloads only, it never sends the update again
   const f = harness(language, {failImports: 1}); f.render();
   nodes(f.tree(), node => node.type === 'input' && node.props.id === 'erp-customers-file')[0].props.onChange({target: {files: [{name: 'Customer.xlsx', size: 1200}], value: ''}});
   await until(() => f.requests.length === 1, 'the preview'); f.requests[0].resolve(first); await until(() => f.state.preview, 'shown'); f.render();
@@ -283,17 +283,17 @@ for (const language of ['ar', 'en']) {
   f.requests[1].resolve({ok: true, updated: 1, mappings: 1, changed: 1, added: 1, unchanged: 0, skipped: 1, outOfRegion: 0, heldOutside: 0, invalid: 0, changes: [{row: 3, customerId: 'nour', from: 'OLD', to: '12', mapping: true}], additions: [{row: 6, customerId: 'crm-owner-erp-y-6', code: '77', name: 'مصنع غير موجود', region: '', internalCode: 'YR-C-000043'}]});
   await until(() => f.state.refreshFailed, 'the failed reload'); f.render();
   const leftList = nodes(f.tree(), node => node.type === 'ol' && /erp-customers-left/.test(node.props.className || ''))[0];
-  eq([leftList?.props.children.length, text(leftList).includes('55') && text(leftList).includes('مصنع التوأم') && text(leftList).includes(t('سطر', 'Row') + ' 5'), text(leftList).includes(t('ما اخترتش العميل', 'No customer chosen'))], [1, true, true], 'what was left is listed too: the row, its ERP number and name, and why (no choice made)');
+  eq([leftList?.props.children.length, text(leftList).includes('55') && text(leftList).includes('مصنع التوأم') && text(leftList).includes(t('سطر', 'Row') + ' 5'), text(leftList).includes(t('لم تختر العميل', 'No customer chosen'))], [1, true, true], 'what was left is listed too: the row, its ERP number and name, and why (no choice made)');
   if (language === 'en') ok(!arabic.test(chrome(nodes(f.tree(), node => node.type === 'section' && node.props.className === 'erp-customers-result')[0])), 'English: no Arabic left in the result lists');
-  ok(text(f.tree()).includes(t('اتحفظ التحديث، لكن تعذر تحديث قائمة العملاء', 'The update was saved, but the customer list could not refresh')), 'the update is kept and the failed reload is said');
-  button(f, t('تحديث العرض بس', 'Refresh view only')).props.onClick();
+  ok(text(f.tree()).includes(t('حُفظ التحديث، لكن تعذّر تحديث قائمة العملاء', 'The update was saved, but the customer list could not refresh')), 'the update is kept and the failed reload is said');
+  button(f, t('تحديث العرض فقط', 'Refresh view only')).props.onClick();
   await until(() => f.imported() === 2 && !f.state.busy, 'the second reload'); f.render();
-  eq([f.requests.length, f.state.refreshFailed, !!button(f, t('تحديث العرض بس', 'Refresh view only'))], [2, false, false], 'it reloads without sending the update again, and the button goes once the list is fresh');
+  eq([f.requests.length, f.state.refreshFailed, !!button(f, t('تحديث العرض فقط', 'Refresh view only'))], [2, false, false], 'it reloads without sending the update again, and the button goes once the list is fresh');
 }
 
 
-// ---- 2026-11-09: the customers the file does not name (`clears`): «عملاء مش موجودين في الشيت: هيتمسح كود ERP بتاعهم (N)» with
-//  «امسح كود ERP للعملاء اللي مش في الشيت» checked by default; the apply carries clearCodes and the preview's clearSnapshot only while it
+// ---- 2026-11-09: the customers the file does not name (`clears`): «عملاء غير موجودين في الشيت: سيُمسح كود ERP الخاص بهم (N)» with
+//  «امسح كود ERP للعملاء غير الموجودين في الشيت» checked by default; the apply carries clearCodes and the preview's clearSnapshot only while it
 //  is checked; the result says how many codes were cleared; unchecked = the apply of before (and nothing to apply when only codes would clear)
 for (const language of ['ar', 'en']) {
   const t = (ar, en) => say(language, ar, en);
@@ -302,26 +302,26 @@ for (const language of ['ar', 'en']) {
   const toggle = h => nodes(section(h, 'clear'), node => node.type === 'input' && node.props.type === 'checkbox')[0];
   let h = await opened(language, withClears);
   ok(section(h, 'clear'), 'the section of the customers not in the sheet');
-  ok(text(section(h, 'clear')).includes(t('عملاء مش موجودين في الشيت: هيتمسح كود ERP بتاعهم (1)', 'Customers not in the sheet: their ERP code will be cleared (1)')), 'its heading with the count');
+  ok(text(section(h, 'clear')).includes(t('عملاء غير موجودين في الشيت: سيُمسح كود ERP الخاص بهم (1)', 'Customers not in the sheet: their ERP code will be cleared (1)')), 'its heading with the count');
   ok(['مصنع قديم', 'YR-C-000009', 'K-1'].every(value => text(section(h, 'clear')).includes(value)), 'each customer: name, Yourrest code, current ERP code');
-  eq([toggle(h).props.checked, text(nodes(section(h, 'clear'), node => node.type === 'label')[0])], [true, t('امسح كود ERP للعملاء اللي مش في الشيت', 'Clear the ERP code of the customers not in the sheet')], 'the box, checked by default');
-  ok(text(h.tree()).includes(t('1 كود هيتغير، 1 عميل محتاج تختار، 1 عميل جديد هيتضاف، 1 كود ERP هيتمسح.', '1 code(s) will change, 1 customer(s) need a choice, 1 new customer(s) will be added, 1 ERP code(s) will be cleared.')), 'the summary line counts the codes cleared');
-  eq(text(applyButton(h)).trim(), t('حدّث 1 كود وضيف 1 عميل وامسح 1 كود', 'Update 1 code(s), add 1 customer(s) and clear 1 code(s)'), 'the button says it clears');
+  eq([toggle(h).props.checked, text(nodes(section(h, 'clear'), node => node.type === 'label')[0])], [true, t('امسح كود ERP للعملاء غير الموجودين في الشيت', 'Clear the ERP code of the customers not in the sheet')], 'the box, checked by default');
+  ok(text(h.tree()).includes(t('1 كود سيتغيّر، 1 عميل يحتاج إلى اختيارك، 1 عميل جديد سيُضاف، 1 كود ERP سيُمسح.', '1 code(s) will change, 1 customer(s) need a choice, 1 new customer(s) will be added, 1 ERP code(s) will be cleared.')), 'the summary line counts the codes cleared');
+  eq(text(applyButton(h)).trim(), t('حدّث 1 كود وأضف 1 عميل وامسح 1 كود', 'Update 1 code(s), add 1 customer(s) and clear 1 code(s)'), 'the button says it clears');
   if (language === 'en') ok(!arabic.test(chrome(h.tree())), 'English: no Arabic left in the screen\'s own words (clears): ' + chrome(h.tree()).match(/[^ ]*[؀-ۿ][^ ]*/g)?.slice(0, 5).join(' | '));
   applyButton(h).props.onClick();
   await until(() => h.requests.length === 2, 'the apply');
   eq([h.requests[1].body.clearCodes, h.requests[1].body.clearSnapshot, h.requests[1].body.snapshot], [true, 'c'.repeat(64), 'a'.repeat(64)], 'the apply carries clearCodes and the preview\'s clearSnapshot');
   h.requests[1].resolve({ok: true, updated: 1, mappings: 1, changed: 1, added: 1, unchanged: 0, skipped: 1, outOfRegion: 0, heldOutside: 0, invalid: 0, cleared: 1, changes: [{row: 3, customerId: 'nour', from: 'OLD', to: '12', mapping: true}], additions: []});
   await until(() => h.state.result && !h.state.busy, 'the result'); h.render();
-  ok(text(h.tree()).includes(t('اتمسح كود ERP لـ 1 عميل مش في الشيت', 'ERP code cleared for 1 customer(s) not in the sheet')), 'the result message says how many codes were cleared');
-  ok(text(nodes(h.tree(), node => node.type === 'section' && /erp-customers-result/.test(node.props.className || ''))[0]).includes(t('اللي اتمسح كوده', 'Codes cleared') + ''), 'and lists them');
+  ok(text(h.tree()).includes(t('مُسح كود ERP لـ 1 عميل غير موجود في الشيت', 'ERP code cleared for 1 customer(s) not in the sheet')), 'the result message says how many codes were cleared');
+  ok(text(nodes(h.tree(), node => node.type === 'section' && /erp-customers-result/.test(node.props.className || ''))[0]).includes(t('ما مُسح كوده', 'Codes cleared') + ''), 'and lists them');
   if (language === 'en') ok(!arabic.test(chrome(h.tree())), 'English: no Arabic left in the screen\'s own words (result): ' + chrome(h.tree()).match(/[^ ]*[؀-ۿ][^ ]*/g)?.slice(0, 5).join(' | '));
 
   // unchecked: the apply of before
   h = await opened(language, withClears);
   toggle(h).props.onChange({target: {checked: false}}); h.render();
   eq([toggle(h).props.checked, text(applyButton(h)).trim()], [false, apply(language, 1, 1)], 'unchecked: the button of before');
-  ok(text(section(h, 'clear')).includes(t('مش هيتغير كود ERP بتاعهم.', 'Their ERP codes will not change.')), 'and the section says their codes stay');
+  ok(text(section(h, 'clear')).includes(t('لن يتغيّر كود ERP الخاص بهم.', 'Their ERP codes will not change.')), 'and the section says their codes stay');
   applyButton(h).props.onClick();
   await until(() => h.requests.length === 2, 'the apply');
   eq(['clearCodes' in h.requests[1].body, 'clearSnapshot' in h.requests[1].body], [false, false], 'unchecked: no clearCodes, no clearSnapshot');
@@ -329,7 +329,7 @@ for (const language of ['ar', 'en']) {
   // only codes to clear: the box decides whether there is anything to apply
   const onlyClears = {...withClears, summary: summary(0, 0), rows: [{...first.rows[0], change: false, from: '12', mapping: false, sharedWith: 0, status: 'same'}]};
   h = await opened(language, onlyClears);
-  eq([applyButton(h).props.disabled, text(applyButton(h)).trim()], [false, t('حدّث 0 كود وضيف 0 عميل وامسح 1 كود', 'Update 0 code(s), add 0 customer(s) and clear 1 code(s)')], 'only codes to clear: can be applied');
+  eq([applyButton(h).props.disabled, text(applyButton(h)).trim()], [false, t('حدّث 0 كود وأضف 0 عميل وامسح 1 كود', 'Update 0 code(s), add 0 customer(s) and clear 1 code(s)')], 'only codes to clear: can be applied');
   toggle(h).props.onChange({target: {checked: false}}); h.render();
   eq(applyButton(h).props.disabled, true, 'unchecked: nothing to apply');
   // a preview without the list (a server before this release) shows no section and sends nothing new
@@ -337,4 +337,4 @@ for (const language of ['ar', 'en']) {
   eq(section(h, 'clear'), undefined, 'no section without clears');
 }
 
-console.log(JSON.stringify({ok: true, checks, coverage: 'ERP customer import dialog: the customers not in the sheet (clears: section, box, payload, result), file checks, immediate preview, summary line and counts, the needs-choice / new-customers / rest sections, «ده هو» / «عميل جديد» / «سيبه» (nothing pressed on a similar row), a new row left and put back, the region select and a row\'s own region, serialized re-preview with the latest choices, the live apply label, apply payload with regions, unconfirmed apply locked and retried byte for byte, stale 409 and a fresh preview, conflicts (button and handler), nothing to apply, the 2000 limit, held-outside / too many matches / too many phones / code in another row / no name / by code, server messages in English, what changed and what was added, a failed reload after the apply; Arabic/English with no Arabic left in English', realBrowser: false}));
+console.log(JSON.stringify({ok: true, checks, coverage: 'ERP customer import dialog: the customers not in the sheet (clears: section, box, payload, result), file checks, immediate preview, summary line and counts, the needs-choice / new-customers / rest sections, «هو نفسه» / «عميل جديد» / «اتركه» (nothing pressed on a similar row), a new row left and put back, the region select and a row\'s own region, serialized re-preview with the latest choices, the live apply label, apply payload with regions, unconfirmed apply locked and retried byte for byte, stale 409 and a fresh preview, conflicts (button and handler), nothing to apply, the 2000 limit, held-outside / too many matches / too many phones / code in another row / no name / by code, server messages in English, what changed and what was added, a failed reload after the apply; Arabic/English with no Arabic left in English', realBrowser: false}));

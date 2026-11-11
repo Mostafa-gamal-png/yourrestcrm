@@ -29,7 +29,7 @@ const xlsx = rows => Buffer.from(zipSync({
   'xl/_rels/workbook.xml.rels': strToU8('<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'),
   'xl/worksheets/sheet1.xml': strToU8(`<worksheet><sheetData>${[['Customer'], header, ...rows].map((cells, index) => `<row r="${index + 1}">${cells.map(cell).join('')}</row>`).join('')}</sheetData></worksheet>`),
 })).toString('base64');
-const STALE = 'اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة';
+const STALE = 'تغيّرت بيانات العملاء منذ المعاينة؛ أجرِ معاينة جديدة';
 const day = days => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
 
 const app = await bootBuiltApp({members});
@@ -125,8 +125,8 @@ try {
   ok(await revision() > revisionBefore, 'the identity revision moved');
   const audits = (await app.db.prepare("SELECT record_id,actor,action,detail FROM crm_audit WHERE action='erp-customer-code' AND record_id IN ('gone','mapped') ORDER BY record_id").all()).results;
   check(audits.map(a => [a.record_id, a.actor, JSON.parse(a.detail)]), [
-    ['gone', 'sm', {label: 'مسح كود ERP: العميل مش في ملف ERP', from: '900', to: '', cleared: true}],
-    ['mapped', 'sm', {label: 'مسح كود ERP: العميل مش في ملف ERP', from: '901', to: '', cleared: true}],
+    ['gone', 'sm', {label: 'مسح كود ERP: العميل غير موجود في ملف ERP', from: '900', to: '', cleared: true}],
+    ['mapped', 'sm', {label: 'مسح كود ERP: العميل غير موجود في ملف ERP', from: '901', to: '', cleared: true}],
   ], 'one audit entry per cleared code: from, to \'\'');
   // a repeated tap: the saved answer, nothing written twice
   const auditCount = await count('SELECT count(*) AS n FROM crm_audit');
