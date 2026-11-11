@@ -22,7 +22,6 @@ import {MoldSignaturePage,signaturePagePng} from './mold-signature-page';
 import {MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
 import type {SignLinkDone,SignLinkPage} from '@/lib/mold-sign-server';
 import {noteServerTime,serverNow,signatureBlockPng,signatureBox,signaturePng,type SignatureStrokes} from './mold-signature';
-import BidiText from './bidi-text';
 import './mold-requests.css';
 import './mold-sign-page.css';
 
@@ -104,7 +103,7 @@ export default function MoldSignPage({token,page}:{token:string;page:SignLinkPag
  if(done)return <main className="sign-page" dir={en?'ltr':'rtl'}>{head}
   <section className="sign-card sign-done" role="status"><CheckCircle2 size={28} aria-hidden="true"/><h1>{say('تم التوقيع، شكرًا','Signed, thank you')}</h1>
    <p>{say('وقّع: ','Signed by: ')}<b><bdi>{done.signer}</bdi></b> · <bdi dir="ltr">{stamp(done.signedAt)}</bdi></p>
-   {!!done.copies.length&&<><h2>{done.copies.length===1?say('الملف الموقّع','The signed file'):say('النسخ الموقّعة','Signed copies')}</h2><ul className="sign-files">{done.copies.map(file=><li key={file.id}><FileText size={18} aria-hidden="true"/><bdi dir={en?'ltr':'rtl'}><BidiText segments={[{text:file.name}]} rtl={!en}/></bdi>
+   {!!done.copies.length&&<><h2>{done.copies.length===1?say('الملف الموقّع','The signed file'):say('النسخ الموقّعة','Signed copies')}</h2><ul className="sign-files">{done.copies.map(file=><li key={file.id}><FileText size={18} aria-hidden="true"/><bdi dir="auto">{file.name}</bdi>
     <a className="btn small subtle" href={file.href+'?download=1'} download={file.name}><Download size={15} aria-hidden="true"/>{say('تنزيل','Download')}</a></li>)}</ul></>}
    {done.skipped.map((item,index)=><p key={index} className="sign-note"><TriangleAlert size={14} aria-hidden="true"/>{moldNotSignedText(item.name,item.reason,say)}</p>)}
   </section></main>;

@@ -19,8 +19,7 @@ import {MOLD_SIGNATURE_TEXT,MOLD_SIGN_LINK_TEXT} from '@/lib/mold-requests';
 import {MOLD_SIGNATURE_MAX_BYTES,MOLD_SIGNATURE_MAX_SIDE,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,moldSignatureDrawn,moldSigner} from '@/portable/mold-rules.mjs';
 import {MOLD_VIEWER_TEXT,type MoldViewerFile} from '@/lib/mold-document-view';
 import {MOLD_SIGN_PAGE_TEXT,docCategory,type SignedDocPart} from '@/lib/mold-signed-document';
-import {canvasMeasure,drawBidiLine,layoutBidi,type BidiSegment} from '@/lib/bidi-text';
-import BidiText,{sayIsRtl} from './bidi-text';
+import {drawTexts,fitSize,labelValueRow,ltrIsolate} from '@/lib/sign-page-canvas';
 import type {MoldFileCategory} from '@/lib/mold-requests';
 import MoldDocumentViewer,{type DocPlan} from './mold-document-viewer';
 import {MoldSignaturePage,signaturePagePng} from './mold-signature-page';
@@ -91,15 +90,11 @@ export function signatureBlockPng(strokes:SignatureStrokes,width:number,signer:s
  g.fillStyle='#fff';g.fillRect(0,0,W,H);
  g.strokeStyle='#5b6b62';g.lineWidth=2;g.strokeRect(5,5,W-10,H-10);
  g.textBaseline='alphabetic';
- // Each line laid out run by run (lib/bidi-text.ts): a Latin name or the moment's digits keep their order inside the Arabic line.
- const fit=(segments:BidiSegment[],weight:string,size:number,min:number)=>{
-  for(let next=size;;next-=1){
-   const fonts=segments.map(segment=>(segment.bold?'bold':weight)+' '+next+'px '+family),line=layoutBidi(segments,true,Infinity,canvasMeasure(g,fonts))[0];
-   if(line.width<=W-2*pad||next<=min)return {line,fonts};
-  }
- };
- const title=fit([{text:'توقيع العميل: '+signer}],'bold',32,14);drawBidiLine(g,title.line,{rtl:true,start:W-pad,y:50,fonts:title.fonts,colors:['#111']});
- const when=fit([{text:'التاريخ: '+blockMoment(at)+' (توقيت الرياض)'}],'normal',22,12);drawBidiLine(g,when.line,{rtl:true,start:W-pad,y:H-22,fonts:when.fonts,colors:['#333']});
+ // Two cells on the top line (lib/sign-page-canvas.ts): «توقيع العميل:» alone, the signer's name alone in its own direction; the moment one
+ // line, its digits isolated left to right.
+ drawTexts(g,labelValueRow(g,'توقيع العميل:',signer,{room:W-2*pad,start:W-pad,y:18,rtl:true,family,size:32,min:14,weight:'bold'}).texts);
+ const when='التاريخ: '+ltrIsolate(blockMoment(at))+' (توقيت الرياض)',whenSize=fitSize(g,when,W-2*pad,size=>'normal '+size+'px '+family,22,12);
+ drawTexts(g,[{text:when,x:W-pad,y:H-22,font:'normal '+whenSize+'px '+family,color:'#333',dir:'rtl',align:'right'}]);
  // The drawing, scaled into the space between the two lines and centred.
  const top=66,bottom=H-50,room={width:W-2*pad,height:bottom-top},scale=Math.min(room.width/Math.max(box.width,1),room.height/Math.max(box.height,1),3);
  g.save();g.translate(pad+(room.width-box.width*scale)/2,top+(room.height-box.height*scale)/2);g.scale(scale,scale);g.translate(-box.minX,-box.minY);
@@ -197,7 +192,7 @@ export function MoldSigningStep({summary,title,documents=[],busy,error,fields,ag
   const signature:SigningResult={signer:name,png,block,blockAt:at.toISOString(),document:{page,parts:plan.parts,category:docCategory(plan.parts,plan.left)}};
   setFrozen(signature);onConfirm(signature);
  };
- const summaryList=<dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd><BidiText segments={[{text:value}]} rtl={sayIsRtl(say)}/></dd></div>)}</dl>;
+ const summaryList=<dl className="mold-facts mold-signing-summary">{summary.map(([key,value])=><div key={key}><dt>{key}</dt><dd><bdi dir="auto">{value}</bdi></dd></div>)}</dl>;
  const lead=<p className="mold-signing-lead">{say('يوقّع العميل على هذا الطلب قبل إرساله إلى الإنتاج:','The customer signs this request before it is sent to production:')}</p>;
  return <section className="mold-signing" ref={top} aria-label={say(...MOLD_SIGNATURE_TEXT.title)}>
   <h3 className="mold-subtitle"><PenLine size={16} aria-hidden="true"/>{say(...MOLD_SIGNATURE_TEXT.title)}</h3>
@@ -216,7 +211,7 @@ export function MoldSigningStep({summary,title,documents=[],busy,error,fields,ag
    </div>
   </>:<>
   {/* The request's documents as one document (2026-11-11), its last page the signature page. */}
-  <p className="mold-doc-title-line"><BidiText segments={[{text:say(...MOLD_VIEWER_TEXT.title),bold:true},...(title?[{text:' — '+title}]:[])]} rtl={sayIsRtl(say)}/></p>
+  <p className="mold-doc-title-line"><b>{say(...MOLD_VIEWER_TEXT.title)}</b>{title?<> — <bdi dir="auto">{title}</bdi></>:null}</p>
   <p className="mold-doc-lead">{say(...MOLD_VIEWER_TEXT.lead)}</p>
   <MoldDocumentViewer files={documents} say={say} onPlan={setPlan} signaturePage={current=><MoldSignaturePage plan={current} summary={summary} say={say} busy={busy} strokes={strokes} onStrokes={changeStrokes} onWidth={setWidth} signerError={signerError} padError={padError}
    name={<VoiceField label={say(...MOLD_SIGNATURE_TEXT.signer)} value={signer} full disabled={busy} onChange={changeSigner} inputProps={{name:'signer',dir:'auto',autoComplete:'off',maxLength:MOLD_SIGNER_MAX+20}}/>}
