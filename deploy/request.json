@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-SignDocument-20261111.zip",
-  "sha256": "93667c086d0f15f11f97fc2895bbcdc2a882662441763fd0b0013ee92dc7ee01",
-  "stage": "yourrest-crm-update-sign-document-20261111",
-  "helper": "yourrest-activate-update-sign-document.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-TargetsHub-20261111.zip",
+  "sha256": "7c2f1ccc2fdb4c744885236303f11a9ad8fcd67727a96748237b1b49abb90f8f",
+  "stage": "yourrest-crm-update-targets-hub-20261111",
+  "helper": "yourrest-activate-update-targets-hub.cjs"
 }
