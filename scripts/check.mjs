@@ -4,14 +4,14 @@ import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
 import os from 'node:os';
 
-// npm run check [-- --gate erp-workbook|erp-customers-workbook] [-- --jobs N]
+// npm run check [-- --gate erp-workbook|erp-customers-workbook|erp-quotes-workbook] [-- --jobs N]
 // Each test in its own process (512 MiB JS heap, 120 s; TypeScript 768 MiB/180 s, ESLint 2048 MiB/300 s) through a pool of N workers
 // (default: the CPU count, 4 here; --jobs 1 runs one after another, as before 2026-11-05). The tests the manifest lists under
 // `serial` run alone after the pool. In a parallel run, a failure is run once more alone: passing then is reported as flaky
 // (in the line, the summary and the report), never as a plain pass; failing again fails the gate.
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(root);
-const usage='Usage: npm run check [-- --gate erp-workbook|erp-customers-workbook] [-- --jobs N]';
+const usage='Usage: npm run check [-- --gate erp-workbook|erp-customers-workbook|erp-quotes-workbook] [-- --jobs N]';
 let gate='default',jobs=os.availableParallelism();
 for(let i=2;i<process.argv.length;i++){
  const arg=process.argv[i],value=process.argv[i+1];
@@ -20,7 +20,7 @@ for(let i=2;i<process.argv.length;i++){
  else throw Error(usage);
 }
 if(!Number.isInteger(jobs)||jobs<1||jobs>16)throw Error('--jobs must be 1..16');
-if(!['default','erp-workbook','erp-customers-workbook'].includes(gate))throw Error('Browser/build/archive gates require explicit preparation; see tests/CHECKS.md.');
+if(!['default','erp-workbook','erp-customers-workbook','erp-quotes-workbook'].includes(gate))throw Error('Browser/build/archive gates require explicit preparation; see tests/CHECKS.md.');
 const manifest=JSON.parse(fs.readFileSync('tests/check-manifest.json','utf8'));
 if(manifest.schema!==1||!Array.isArray(manifest.excluded))throw Error('Unsupported check manifest');
 const exclusions=new Map();
@@ -42,6 +42,8 @@ if(!selected.length)throw Error('The selected gate has no tests');
 if(gate==='erp-workbook'&&(!process.env.ERP_TEST_WORKBOOK||!fs.existsSync(process.env.ERP_TEST_WORKBOOK)))throw Error('Set ERP_TEST_WORKBOOK to the original ERP workbook. No workbook checks have run.');
 // The ERP customer export is another file: its own gate, so the sales gate still runs with ERP_TEST_WORKBOOK alone.
 if(gate==='erp-customers-workbook'&&(!process.env.ERP_CUSTOMERS_WORKBOOK||!fs.existsSync(process.env.ERP_CUSTOMERS_WORKBOOK)))throw Error('Set ERP_CUSTOMERS_WORKBOOK to the ERP customer export. No workbook checks have run.');
+// The ERP quotations report (Reports_Invoices_*.xls) is a third file: its own gate.
+if(gate==='erp-quotes-workbook'&&(!process.env.ERP_QUOTES_WORKBOOK||!fs.existsSync(process.env.ERP_QUOTES_WORKBOOK)))throw Error('Set ERP_QUOTES_WORKBOOK to the ERP quotations report. No workbook checks have run.');
 const output=path.join(root,'output','check');fs.mkdirSync(output,{recursive:true});
 
 const entries=[];

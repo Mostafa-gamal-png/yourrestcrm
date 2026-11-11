@@ -4,6 +4,44 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «استيراد عروض الأسعار من ERP» (2026-11-11, release update-erp-quotes-20261111, no migration)
+
+- **Asked.** The owner uploaded the ERP's quotations report («Reports_Invoices_10.xls») and asked for it to be imported into «عروض الأسعار»;
+  then asked for the sales, quotations and collections uploads to sit together on the targets page.
+- **Where and who.** A button «استيراد عروض الأسعار من ERP» on the targets page beside «استيراد مبيعات ERP» (`app/sales-workspace.tsx`,
+  component `ErpQuotesImport` of `app/erp-quotes-import.tsx`, props `{onClose, onImported}` as `ErpSalesImport`); nothing new on
+  «عروض الأسعار». Whoever may import ERP sales AND add a quotation (the sales workspace roles, «المبيعات» and «عروض الأسعار» not hidden,
+  «استيراد» on «المبيعات» and «إضافة» on «عروض الأسعار» on): `GET/POST /api/erp-quotes` (`lib/erp-quotes-server.ts`), 401 / 403 / 404 as
+  the other routes, body bounded like the sales import's (a 5 MB file as base64, 7.5 MB request).
+- **The file** (`lib/erp-quotes.ts`, pure). The ERP's «.xls» is an HTML table in UTF-16LE (closed by a second `<TABLE>`), 197 columns, one
+  row per quotation LINE; read by an allow-list reader (table and layout elements only, attributes ignored, rows/columns/cells/elements
+  bounded; `<script>`, `<img>`, `<a>`… refuse the file); the same columns as .xlsx are read through `readWorkbookSheets` (which gained a
+  `maxColumns` option, 100 by default as before). A row whose `Trans_Type_Code` is not «Qut» refuses the whole file, naming the row. The
+  meanings were checked on the owner's file: `Total` is the line's net (Qty × Price − Discount_Amount), `Subtotal` the document's net
+  (Σ Total − Discount_Amount_M), `VAT_AmountM` its VAT, `NewSubtotal` its total with VAT (`NewTotal` is per line); 38 of 38 add up.
+- **The record.** Each quotation (grouped by `Code`) is ONE `quote` record directly under its customer (by its ERP code,
+  `uniqueCustomerCodes`; no customer is ever created), assigned to the representative its ERP employee (`Emp_Code`) is mapped to (the ERP
+  sales import's mapping table, by a unique full name otherwise, or chosen; a choice is saved with the import, a saved mapping is changed
+  only from the sales import), in the customer's branch, number = `Code`, date = `Date1`, valid until = `Expiration_Date` (the date when
+  missing or earlier), status «مرسل», items with the ERP description, code, category and unit, the line and document discounts as the
+  quote's discount, `taxRate` = `VAT`, terms from payment terms, delivery and note, and the ERP's own subtotal (gross), tax and total; when
+  the CRM's `quoteTotals` differs by more than a halala the ERP's figures stay and `_erp.totalsDiffer` says so (0 of 38 on the owner's
+  file). More than 50 lines, mixed header fields, another currency or figures that do not add up: refused with the reason.
+- **Idempotent.** The record id is derived from the quotation number; the same file again is «بلا تغيير»; a newer export updates the same
+  record (one «تعديل» history line, before and after in the import's audit line); a quote edited by hand since the import (its fields no
+  longer what the import wrote) is «عُدِّل في الـCRM، تُرك كما هو»; nothing is deleted. A signed, 15-minute preview; the import recomputes
+  it, gates every write on one claim (member, permissions, mapping revision, representatives, versions) and a request id makes a retry
+  return its first answer. One audit line per import.
+- **Everywhere quotes are.** `/api/crm` lets an imported quote be edited (it keeps its customer, representative, marker and number;
+  schemas.quote keeps an item's optional code/category/unit); the quote sheet shows its ERP source and item codes; printing adds the code
+  and unit columns (and drops the machine line when there is none); the customer's sheet lists its quotations; CSV export and the KPI
+  evidence see them as any issued quote.
+- **Tests.** `tests/erp-quotes.mjs` (default gate), `tests/erp-quotes-http.mjs` (release build), `tests/erp-quotes-browser.mjs` (Chromium:
+  computer and 360 px phone, Arabic and English), `tests/erp-quotes-workbook.mjs` (gate `erp-quotes-workbook`, the owner's file via
+  `ERP_QUOTES_WORKBOOK`, counts only); `/api/erp-quotes` in `tests/server-authorization.mjs`.
+- **Rollback.** Code only: the imported quotes stay as quote records under their customers (the older release lists and prints them; its
+  edit form asks for an approved mold request and refuses to save them).
+
 ## Word order on the signature page, and Modern Standard Arabic throughout (2026-11-11, same release, no migration)
 
 - **Asked.** The owner: «الكلام فى التطبيق بالفصحى مش مصرى عامى»; and the signature page drawn as a picture showed mixed lines in a confusing

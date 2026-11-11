@@ -56,9 +56,9 @@
       "tests": ["tests/mold-customers-http.mjs", "tests/mold-requests-http.mjs", "tests/erp-customers-http.mjs"]
     },
     "erp": {
-      "about": "«استيراد من ERP» of customers and the ERP sales workbook import (POST /api/erp-customers, /api/sales/import).",
-      "sources": ["app/erp-customers-import.tsx", "app/erp-customers-import.css", "app/erp-sales-import.tsx", "app/erp-sales-import.css", "app/api/erp-customers/**", "app/api/sales/import/**", "lib/erp-customers.ts", "lib/erp-customers-shared.ts", "lib/erp-customers-server.ts", "lib/erp-sales.ts", "lib/erp-sales-server.ts", "lib/invoice-reference.ts", "docs/ERP-*", "tests/erp-*.mjs"],
-      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-clear-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs"]
+      "about": "«استيراد من ERP» of customers, the ERP sales workbook import and the ERP quotations import (POST /api/erp-customers, /api/sales/import, /api/erp-quotes).",
+      "sources": ["app/erp-customers-import.tsx", "app/erp-customers-import.css", "app/erp-sales-import.tsx", "app/erp-sales-import.css", "app/api/erp-customers/**", "app/api/sales/import/**", "lib/erp-customers.ts", "lib/erp-customers-shared.ts", "lib/erp-customers-server.ts", "lib/erp-sales.ts", "lib/erp-sales-server.ts", "lib/erp-quotes.ts", "lib/erp-quotes-server.ts", "app/erp-quotes-import.tsx", "app/erp-quotes-import.css", "app/api/erp-quotes/**", "scripts/lib/erp-quotes-fixture.mjs", "lib/invoice-reference.ts", "docs/ERP-*", "tests/erp-*.mjs"],
+      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-clear-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/erp-quotes-http.mjs", "tests/erp-quotes-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs"]
     },
     "customer-service": {
       "about": "Customer service: requests reaching sales (service queue), assistance (support), complaints, the tracking board, the monthly reports and the evaluation. The panels import one another (service-tracking, service-queue, support-panel, complaints-panel), so the domain runs together.",
@@ -175,7 +175,7 @@
     "tests/machines-browser.mjs": 28, "tests/tracking-gate-browser.mjs": 141, "tests/pwa-browser.mjs": 24, "tests/erp-customers-browser.mjs": 23, "tests/kpi-evidence-browser.mjs": 22,
     "tests/namecheap-http.mjs": 22, "tests/customer-edit-browser.mjs": 21, "tests/customer-kind-http.mjs": 21, "tests/customer-kind-browser.mjs": 22, "tests/erp-customers-http.mjs": 21, "tests/open-cached-browser.mjs": 20,
     "tests/member-regions-browser.mjs": 19, "tests/permissions-http.mjs": 25, "tests/permissions-browser.mjs": 45, "tests/supervisor-reviews-http.mjs": 31, "tests/supervisor-reviews-browser.mjs": 40, "tests/admin-delete-browser.mjs": 17, "tests/daily-report-browser.mjs": 11, "tests/sales-date-boundaries.mjs": 6,
-    "tests/app-update-browser.mjs": 3, "tests/offline-outbox-browser.mjs": 3, "tests/app-update-release.mjs": 1, "tests/erp-sales-browser.mjs": 30,
+    "tests/app-update-browser.mjs": 3, "tests/offline-outbox-browser.mjs": 3, "tests/app-update-release.mjs": 1, "tests/erp-sales-browser.mjs": 30, "tests/erp-quotes-http.mjs": 25, "tests/erp-quotes-browser.mjs": 45,
     "default-gate": 300
   }
 }

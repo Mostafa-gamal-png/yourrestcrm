@@ -20,7 +20,7 @@ const jsonLimits:Record<string,number>={
  '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':2_330_000,'/api/mold-sign':2_300_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/service-kpi':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
  '/api/kpis':60_000,'/api/reviews':14_000,'/api/review-inbox':16_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
- '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,
+ '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,'/api/erp-quotes':7_500_000,
 };
 export function jsonRequestLimit(request:Request){
  return jsonLimits[new URL(request.url).pathname.replace(/\/$/,'')]??450_000;

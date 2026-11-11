@@ -30,7 +30,8 @@ const salesXmlPaths = new Set([
     'worksheet.sheetData.row.c.is.r', 'worksheet.sheetData.row.c.is.r.t',
 ]);
 // Row and element bounds: the sales report keeps its own; a generic sheet (readWorkbookSheets) states its own.
-type ReadLimits = { rows: number; rowsMessage: string; tags: number };
+// columns: the widest row read (the sales report and a generic sheet: 100; the ERP quotations report has 197 columns).
+type ReadLimits = { rows: number; rowsMessage: string; tags: number; columns?: number };
 const salesLimits: ReadLimits = { rows: MAX_ROWS + 50, rowsMessage: 'الحد الأقصى للتقرير 5000 بند', tags: 750000 };
 function salesXmlParser(limits: ReadLimits = salesLimits) {
     let rows = 0, columns = 0, strings = 0;
@@ -49,7 +50,7 @@ function salesXmlParser(limits: ReadLimits = salesLimits) {
                 columns = 0;
                 if (++rows > limits.rows) fail(limits.rowsMessage);
             }
-            if (key === 'worksheet.sheetData.row.c' && ++columns > MAX_COLUMNS) fail('عدد أعمدة التقرير يتجاوز الحد المسموح');
+            if (key === 'worksheet.sheetData.row.c' && ++columns > (limits.columns ?? MAX_COLUMNS)) fail('عدد أعمدة التقرير يتجاوز الحد المسموح');
             if (key === 'sst.si' && ++strings > 100000) fail('عدد النصوص أو طولها في Excel يتجاوز الحد المسموح');
             return name;
         },
@@ -275,7 +276,8 @@ function worksheetRows(sheet: XmlNode, strings: string[], limits: ReadLimits = s
         if (!Number.isSafeInteger(rowNumber) || rowNumber <= previousRow || rowNumber > 1048576) fail('أرقام صفوف Excel مكررة أو غير مرتبة');
         previousRow = rowNumber;
         const cells: Cell[] = [], rawCells = list<XmlNode>(row.c);
-        if (rawCells.length > MAX_COLUMNS) fail('عدد أعمدة التقرير يتجاوز الحد المسموح');
+        const maxColumns = limits.columns ?? MAX_COLUMNS;
+        if (rawCells.length > maxColumns) fail('عدد أعمدة التقرير يتجاوز الحد المسموح');
         let previousColumn = -1;
         for (const cell of rawCells) {
             let column = previousColumn + 1;
@@ -284,7 +286,7 @@ function worksheetRows(sheet: XmlNode, strings: string[], limits: ReadLimits = s
                 if (!address || Number(address[2]) !== rowNumber) fail(`السطر ${rowNumber}: عنوان خلية غير صالح`);
                 column = Array.from(address[1]).reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
             }
-            if (column <= previousColumn || column >= MAX_COLUMNS) fail(`السطر ${rowNumber}: أعمدة مكررة أو تتجاوز الحد المسموح`);
+            if (column <= previousColumn || column >= maxColumns) fail(`السطر ${rowNumber}: أعمدة مكررة أو تتجاوز الحد المسموح`);
             previousColumn = column;
             if (cell.f !== undefined) fail(`السطر ${rowNumber}: التقرير يحتوي معادلات؛ صدّره بالقيم فقط`);
             const type = String(cell['@_t'] || ''), raw = literal(cell.v);
@@ -359,10 +361,11 @@ function openWorkbook(bytes: Uint8Array, limits: ReadLimits) {
 export type WorkbookSheet = { name: string; rows: { rowNumber: number; cells: string[] }[] };
 /** Every worksheet's name and rows, each cell as trimmed text, read with the same strict, bounded reader as the sales report
  * (formulas, macros, external links and error cells are refused as there). Rows are counted across all sheets. */
-export function readWorkbookSheets(bytes: Uint8Array, options: { maxRows?: number } = {}): WorkbookSheet[] {
-    const maxRows = options.maxRows ?? 20000;
+export function readWorkbookSheets(bytes: Uint8Array, options: { maxRows?: number; maxColumns?: number } = {}): WorkbookSheet[] {
+    const maxRows = options.maxRows ?? 20000, maxColumns = options.maxColumns ?? MAX_COLUMNS;
     if (!Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > 100000) throw new Error('Invalid workbook row limit');
-    const limits: ReadLimits = { rows: maxRows + 50, rowsMessage: `الحد الأقصى للملف ${maxRows} صف`, tags: 2000000 };
+    if (!Number.isSafeInteger(maxColumns) || maxColumns < 1 || maxColumns > 400) throw new Error('Invalid workbook column limit');
+    const limits: ReadLimits = { rows: maxRows + 50, rowsMessage: `الحد الأقصى للملف ${maxRows} صف`, tags: 2000000, columns: maxColumns };
     const book = openWorkbook(bytes, limits);
     if (!book.sheets.length || book.sheets.length > 50) fail('ملف Excel لا يحتوي أوراقًا صالحة');
     const relationships = book.relationships(), strings = book.strings();

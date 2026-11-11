@@ -1,0 +1,28 @@
+/* «استيراد عروض الأسعار من ERP» (app/erp-quotes-import.tsx): the ERP sales import's dialog (app/erp-sales-import.css) with five counts,
+   the customers the CRM does not have, and the badges of the five outcomes. */
+.erp-quotes-import .erp-quotes-counts{grid-template-columns:repeat(5,minmax(0,1fr))}
+.erp-quotes-missing{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.erp-quotes-missing>li{padding:10px 14px;min-width:0;overflow-wrap:anywhere}
+.erp-quotes-missing>li+li{border-top:1px solid var(--border)}
+.erp-quotes-missing strong{display:block;font-size:14px;font-weight:600;line-height:1.65}
+.erp-quotes-missing small{display:block;font-size:12px;line-height:1.6;color:var(--muted-foreground)}
+.erp-import-badge.erp-quote-new,.erp-import-badge.erp-quote-update{background:#087b7914;color:#087b79}
+.erp-import-badge.erp-quote-refused{background:#b7701014;color:#965d0c}
+.erp-import-badge.erp-quote-edited{background:#3b5bdb14;color:#3451b2}
+.dark .erp-import-badge.erp-quote-new,.dark .erp-import-badge.erp-quote-update{background:#51d4bd20;color:#7de1d2}
+.dark .erp-import-badge.erp-quote-refused{background:#f6c87118;color:#efc672}
+.dark .erp-import-badge.erp-quote-edited{background:#91a7ff20;color:#b4c3ff}
+@media(max-width:640px){
+ .erp-quotes-import .erp-quotes-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .erp-quotes-import .erp-quotes-counts>div:last-child{grid-column:1/-1}
+ .erp-quotes-missing>li{padding:9px 12px}
+}
+/* The quote form of an imported quotation (its customer in place of the approved-request picker) and the customer's quotations on the
+   customer's sheet (app/crm-app.tsx). */
+.erp-quote-source{display:flex;flex-direction:column;gap:3px;min-width:0;overflow-wrap:anywhere}
+.erp-quote-source>span{font-size:13px;color:var(--muted-foreground)}
+.erp-quote-source>strong{font-size:15px;line-height:1.7}
+.erp-quote-source>small{font-size:12px;line-height:1.7;color:var(--muted-foreground)}
+.related-list.customer-quotes{margin-top:16px}
+.related-list.customer-quotes>h3{font-size:15px;font-weight:700;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.detail-quote-item strong>small{display:block;font-size:12px;font-weight:400;color:var(--muted-foreground);margin-top:2px}
