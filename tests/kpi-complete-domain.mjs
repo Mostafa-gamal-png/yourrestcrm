@@ -20,7 +20,7 @@ const performance=(state=targetState(),items=sales,confirmed=false)=>({member,so
 const input=emptyKpiInput();input.reviewed=10;input.correct=10;for(const grade of Object.values(input.conduct))grade.score=100;
 const assessment={memberId:'rep',month,input,version:1,updatedAt:'2025-10-01',updatedBy:'admin'};
 const purchase=(customerKey,date,netCents=1000,hasSale=true)=>({customerKey,date,netCents,hasSale});
-const evidence={historyComplete:true,collection:{dueCents:10000,collectedCents:7000},recoveryTarget:2,quotationsComplete:true,quotations:[{quoteId:'q1',converted:true},{quoteId:'q1',converted:true},{quoteId:'q2',converted:false}],purchases:[purchase('recovered','2025-05-01'),purchase('recovered','2025-09-01'),purchase('retained','2025-06-01'),purchase('retained','2025-09-01'),purchase('lapsed','2025-08-01'),purchase('new','2025-09-01'),purchase('returned','2025-02-01'),purchase('returned','2025-09-01',1000),purchase('returned','2025-09-01',-1000,false),purchase('return-only','2025-09-01',1000,false)]};
+const evidence={historyComplete:true,collection:{dueCents:10000,collectedCents:7000},recoveryTarget:2,quotationsKnown:true,quotations:[{quoteId:'q1',converted:true},{quoteId:'q1',converted:true},{quoteId:'q2',converted:false}],purchases:[purchase('recovered','2025-05-01'),purchase('recovered','2025-09-01'),purchase('retained','2025-06-01'),purchase('retained','2025-09-01'),purchase('lapsed','2025-08-01'),purchase('new','2025-09-01'),purchase('returned','2025-02-01'),purchase('returned','2025-09-01',1000),purchase('returned','2025-09-01',-1000,false),purchase('return-only','2025-09-01',1000,false)]};
 const calc=(context=evidence,p=performance(),items=sales,management=assessment)=>calculateKpis(p,month,[],items,management,undefined,context),get=(result,id)=>result.metrics.find(m=>m.id===id);
 let result=calc();
 eq(get(result,'collection').score,70,'Collection uses evidence cents');
@@ -32,7 +32,7 @@ eq(get(result,'positive').status,'not_applicable');eq(get(result,'quotes').statu
 const noEvidence=calculateKpis(performance(),month,[],sales,assessment);
 for(const id of ['collection','recovered','retention','orders'])eq(get(noEvidence,id).status,'missing','Old records remain unknown for '+id);
 eq(noEvidence.summary.total,null);
-result=calc({...evidence,historyComplete:false,quotationsComplete:false,invalidHistoryReason:'History changed'});
+result=calc({...evidence,historyComplete:false,quotationsKnown:false,invalidHistoryReason:'History changed'});
 eq(get(result,'recovered').reason,'History changed');eq(get(result,'retention').status,'missing');eq(get(result,'orders').status,'missing');eq(get(result,'collection').score,70,'Collection can remain valid independently of purchase history');
 result=calc({...evidence,collection:{dueCents:100,collectedCents:150}});eq(get(result,'collection').score,100,'Over-collection is capped');
 result=calc({...evidence,collection:{dueCents:0,collectedCents:0}});eq(get(result,'collection').status,'not_applicable');
