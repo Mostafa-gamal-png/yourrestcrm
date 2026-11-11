@@ -9,7 +9,7 @@
 //   «طلبات بانتظار اعتمادي», whose items carry the terms;
 // - the signed copies: once the update is known one fits beside ten originals (production takes 20), the originals keep their 10; a copy
 //   production refuses for its count stops nothing;
-// - finance's return: «رجّعته المالية» read from the status object (with finance's name and the ISO time), audited once, shown to the
+// - finance's return: «أعادته المالية» read from the status object (with finance's name and the ISO time), audited once, shown to the
 //   requester (who may correct it), the supervisor and the sales manager (its pending item too); files go on as before; the correction
 //   needs a new signature (device or link), is sent through the requests route as a correction (corrected true; the same body again is
 //   taken without a change), keeps requestedAt and the cleared approvals, is audited; the sales manager's new approval clears returned
@@ -30,8 +30,8 @@ let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''};
-const TERMS_REFRESH = 'حدّث الصفحة: اعتماد طلب القالب بقى محتاج تأكيد الموافقة على شروط الدفع.', TERMS_REQUIRED = 'علّم «' + rules.MOLD_TERMS_ACCEPT + '» قبل الاعتماد.';
-const PRODUCTION_ONLY = rules.MOLD_PRODUCTION_ONLY_TEXT[0] + '؛ الطلب أُرسل للإنتاج، فتعديله من تطبيق المنتجات.', SIGNATURE_REFRESH = rules.MOLD_SIGNATURE_REQUIRED + '؛ حدّث الصفحة لو مش ظاهر مكان التوقيع.';
+const TERMS_REFRESH = 'حدّث الصفحة: أصبح اعتماد طلب القالب يتطلب تأكيد الموافقة على شروط الدفع.', TERMS_REQUIRED = 'علّم «' + rules.MOLD_TERMS_ACCEPT + '» قبل الاعتماد.';
+const PRODUCTION_ONLY = rules.MOLD_PRODUCTION_ONLY_TEXT[0] + '؛ الطلب أُرسل للإنتاج، فتعديله من تطبيق المنتجات.', SIGNATURE_REFRESH = rules.MOLD_SIGNATURE_REQUIRED + '؛ حدّث الصفحة إن لم يظهر مكان التوقيع.';
 const REASON = 'الحد الائتماني للعميل لا يسمح بالمبلغ';
 const png = (width, height) => { const b = Buffer.alloc(33); Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(b, 0); b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'latin1'); b.writeUInt32BE(width, 16); b.writeUInt32BE(height, 20); b[24] = 8; b[25] = 6; return b; };
 async function makePdf(label) {
@@ -203,7 +203,7 @@ try {
   shown = await view('rep', rolledId);
   const refusedCopy = shown.designFiles.find(file => file.signedCopy);
   check([refusedCopy.state, refusedCopy.error.reason, shown.sending.state, sentFiles(rolledId).length, (await view('sm', rolledId)).can.approve], ['rejected', 'too_many_files', 'sent', 10, true],
-    'refused for its count («ما اتبعتتش: الإنتاج رفض عدد الملفات»): the request and its ten originals went, the sales manager approves');
+    'refused for its count («لم تُرسل: رفض الإنتاج عدد الملفات»): the request and its ten originals went, the sales manager approves');
   mock.setNov10(true);
 
   // ==== Finance's return
@@ -214,10 +214,10 @@ try {
   mock.financeReturn(returnedId, REASON);
   await age(returnedId);
   shown = (await (await as('rep')('/api/mold-requests')).json()).requests.find(entry => entry.id === returnedId);
-  check([shown.returned.by, shown.returned.name, shown.returned.reason, shown.returned.correctedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+03:00$/.test(shown.returned.at)], ['finance', 'finance@yourrest.org', REASON, null, true], '«رجّعته المالية» with finance\'s name, the reason and the time');
+  check([shown.returned.by, shown.returned.name, shown.returned.reason, shown.returned.correctedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+03:00$/.test(shown.returned.at)], ['finance', 'finance@yourrest.org', REASON, null, true], '«أعادته المالية» with finance\'s name, the reason and the time');
   check([shown.remote.status, shown.remote.waitingStep, shown.remote.approvals, shown.remote.orderNo, shown.can.correct, shown.can.edit, shown.can.attach],
     ['received', 'sales', {required: true, sales: null, production: null, admin: null}, orderNo, true, false, true], 'back to the sales manager, every approval cleared, its number kept; its requester corrects it');
-  check((await audits(returnedId, 'mold-request:returned')).map(entry => [entry.label, entry.reason, entry.by]), [['رجّعته المالية', REASON, 'finance@yourrest.org']], 'audited when first seen');
+  check((await audits(returnedId, 'mold-request:returned')).map(entry => [entry.label, entry.reason, entry.by]), [['أعادته المالية', REASON, 'finance@yourrest.org']], 'audited when first seen');
   await age(returnedId); await view('rep', returnedId); await (await as('rep')('/api/mold-requests')).json();
   check((await audits(returnedId, 'mold-request:returned')).length, 1, 'once, however often it is read');
   const bySup = await view('sup', returnedId);

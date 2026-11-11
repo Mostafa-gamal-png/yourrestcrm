@@ -223,7 +223,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
         <header className="visit-dialog-heading">
           <div className="visit-language"><LanguageSwitch/></div>
           <DialogTitle ref={titleRef} tabIndex={-1}>{initial ? tw(readOnly?'تفاصيل الزيارة #':'تعديل الزيارة #') + (t(initial.data.visitNumber) || t('—')) : tw('زيارة جديدة')}</DialogTitle>
-          <DialogDescription className="sr-only">{readOnly?say('بيانات الزيارة ونتيجتها والخطوة القادمة.','Recorded visit, outcome and next step.'):say('اختار العميل، سجّل نتيجة التواصل وحدّد الخطوة الجاية.','Choose a customer, record the outcome, and set the next step.')}</DialogDescription>
+          <DialogDescription className="sr-only">{readOnly?say('بيانات الزيارة ونتيجتها والخطوة القادمة.','Recorded visit, outcome and next step.'):say('اختر العميل، وسجّل نتيجة التواصل، وحدّد الخطوة التالية.','Choose a customer, record the outcome, and set the next step.')}</DialogDescription>
         </header>
         <form onSubmit={save} onInvalidCapture={revealInvalid} className="visit-entry-form">
           <fieldset disabled={savingCustomer||busy||savedReceipt.current||retryPending} className="visit-form-scroll min-w-0">
@@ -245,7 +245,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
                 <VisitFields unified service={service} role={me.role} readOnly={readOnly} data={data} parentId={customerId} records={records} editing={!!initial} busy={busy||uploading||creatingCustomer||savedReceipt.current||retryPending} email={me.email} onChange={change} onParent={()=>{}} onLocationState={setLocationState}/>
                 <VisitPlaceStatus view={place}/>
               </div></section>
-              <section className="visit-form-section"><h3>{say('الخطوة الجاية','Next step')}</h3><div className="form-grid">
+              <section className="visit-form-section"><h3>{say('الخطوة التالية','Next step')}</h3><div className="form-grid">
                 <VoiceField label={t('الإجراء القادم')} value={data.nextAction||''} required onChange={value=>change('nextAction',value)}/><FollowupDateField value={data.nextDate||''} onChange={value=>change('nextDate',value)}/>
               </div></section>
               <details className="visit-sales-details" open={salesOpen} onToggle={event=>setSalesOpen(event.currentTarget.open)}>
@@ -263,7 +263,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
           <footer className="visit-save-bar">
             {error&&<div ref={errorRef} tabIndex={-1} className="form-error" role="alert">{t(error)}</div>}
             {retryPending&&<p className="visit-save-hint" role="status">{say('حالة الحفظ غير مؤكدة. البيانات مقفولة مؤقتًا؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب بدون تسجيل زيارة مكررة.','The save is unconfirmed. Entries are temporarily locked; tap Confirm save to retry the identical request without creating a duplicate visit.')}</p>}
-            {confirmLeave?<div className="visit-discard-prompt" role="alert"><p>{retryPending?say('الحفظ غير مؤكد. لو خرجت راجع سجل العميل قبل تسجيل زيارة أخرى.','The save is unconfirmed. If you leave, check the customer history before recording another visit.'):say('فيه بيانات لسه ما اتحفظتش. تخرج من غير حفظ؟','You have unsaved changes. Leave without saving?')}</p><div><button ref={keepRef} type="button" className="btn primary" onClick={()=>setConfirmLeave(false)}>{say('أكمل التسجيل','Keep editing')}</button><button type="button" className="btn subtle danger" onClick={()=>leaveAction.current()}>{retryPending?say('إغلاق ومراجعة السجل','Close and check history'):say('خروج بدون حفظ','Discard changes')}</button></div></div>:<>
+            {confirmLeave?<div className="visit-discard-prompt" role="alert"><p>{retryPending?say('الحفظ غير مؤكد. إن خرجت فراجع سجل العميل قبل تسجيل زيارة أخرى.','The save is unconfirmed. If you leave, check the customer history before recording another visit.'):say('توجد بيانات لم تُحفظ بعد. هل تخرج دون حفظ؟','You have unsaved changes. Leave without saving?')}</p><div><button ref={keepRef} type="button" className="btn primary" onClick={()=>setConfirmLeave(false)}>{say('أكمل التسجيل','Keep editing')}</button><button type="button" className="btn subtle danger" onClick={()=>leaveAction.current()}>{retryPending?say('إغلاق ومراجعة السجل','Close and check history'):say('خروج بدون حفظ','Discard changes')}</button></div></div>:<>
               {!readOnly&&!customerId&&<p className="visit-save-hint">{say('اختر العميل أولًا.','Choose a customer first.')}</p>}
               {!initial&&!readOnly&&(locationState.status==='locating'||!data.locationCapturedAt)&&<p className="visit-save-hint" role={locationState.status==='error'?'alert':'status'}>{locationState.error?t(locationState.error):locationState.status==='locating'?say('جارٍ تحديد موقع الجهاز… وافق على إذن الموقع أثناء الاستخدام.','Getting the device location… allow location while using the app.'):say('السماح بالموقع مطلوب لحفظ الزيارة. اضغط إعادة المحاولة في قسم الموقع.','Location access is required. Tap Retry in the location section.')}</p>}
               {!initial&&!readOnly&&place.blocked&&<p className="visit-save-hint" role="alert">{place.message}</p>}

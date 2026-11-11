@@ -25,7 +25,7 @@ const riyadh = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh', year: 
 const day = riyadh.format(new Date()), month = day.slice(0, 7);
 const shift = n => { const d = new Date(month + '-15T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 7); };
 const prev = shift(-1), next = shift(1);
-const CLOSED = 'الشهر ده خلص؛ تعديل مستهدفاته لمدير النظام بس';
+const CLOSED = 'انتهى هذا الشهر؛ تعديل مستهدفاته لمدير النظام فقط';
 let checks = 0, app;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };

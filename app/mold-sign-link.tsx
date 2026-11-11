@@ -1,9 +1,9 @@
 'use client';
 // The link the customer signs a mold request from, and the signed copies of its PDFs, on the representative's side (the owner, 2026-11-10:
 // «امكانية ارسال لينك بالpdf طلب القالب للتوقيع عليه»). A link's address is known once, in the answer of whatever made it (only its hash is
-// kept by the server): this page keeps it in memory for the request (rememberSignLink) so the sheet offers «نسخ اللينك» and «إرسال واتساب»
+// kept by the server): this page keeps it in memory for the request (rememberSignLink) so the sheet offers «نسخ الرابط» and «إرسال واتساب»
 // (to the customer's mobile when the request is linked to a CRM customer with one, else WhatsApp without a number); after a reload it is
-// gone, and «إرسال لينك جديد» makes another (the old one stops working). While the request is still unsent the requester may also stop the
+// gone, and «إرسال رابط جديد» makes another (the old one stops working). While the request is still unsent the requester may also stop the
 // link or have the customer sign on the device now. The card says the request waits for the customer's signature, when the link was made
 // and until when it opens, or that it expired.
 import React,{useCallback,useMemo,useState,useSyncExternalStore} from 'react';
@@ -15,6 +15,7 @@ import {whatsappUrl,COMPANY_NAME,COMPANY_NAME_EN} from '@/lib/whatsapp';
 import type {Row} from '@/lib/crm';
 import {MOLD_SIGN_LINK_TEXT,moldNotSignedText,type MoldRequestView} from '@/lib/mold-requests';
 import {MoldSigningStep,type SigningResult} from './mold-signature';
+import BidiText from './bidi-text';
 import {viewerFilesFromRequest,viewerPagesText} from '@/lib/mold-document-view';
 
 type Say=(ar:string,en:string)=>string;
@@ -25,7 +26,7 @@ const messageOf=(error:unknown)=>error instanceof Error?error.message:'';
 // ---- the links made while this page is open (their address is never stored)
 const made=new Map<string,SignLinkMade>(),watchers=new Set<()=>void>();
 let version=0;
-/** Keeps the address of a link an answer carried (a create, an edit or «إرسال لينك جديد»), for its request. */
+/** Keeps the address of a link an answer carried (a create, an edit or «إرسال رابط جديد»), for its request. */
 export function rememberSignLink(requestId:string,link:unknown){
  if(!link||typeof link!=='object')return;
  const {url,expiresAt}=link as {url?:unknown;expiresAt?:unknown};
@@ -42,7 +43,7 @@ export function useSignLink(requestId:string){
 /** What the customer reads in WhatsApp: the Arabic and the same in English, with the link and its last moment. */
 export function signLinkMessage(url:string,expiresAt:string){
  const until=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(expiresAt));
- return `${COMPANY_NAME}: ده لينك طلب تصنيع القالب علشان تراجعه وتراجع ملفاته وتوقّع عليه:\n${url}\nاللينك صالح لحد ${until}.`
+ return `${COMPANY_NAME}: هذا رابط طلب تصنيع القالب لمراجعته ومراجعة ملفاته والتوقيع عليه:\n${url}\nالرابط صالح حتى ${until}.`
   +`\n\n${COMPANY_NAME_EN}: here is the link to review the mold request and its files, and sign it:\n${url}\nThe link is valid until ${until}.`;
 }
 /** WhatsApp with the message: to the customer's mobile when the request is linked to a CRM customer who has one, else without a number. */
@@ -70,11 +71,11 @@ export function MoldSigningNotes({view,say}:{view:MoldRequestView;say:Say}){
   {signing.via==='link'&&<p><Link2 size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.viaLink)}</p>}
   {/* The ONE signed document (2026-11-11): made, waiting for the files the customer saw, or not made (and what was made instead). */}
   {document?.state==='made'&&<p data-document="made"><PenLine size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.documentMade)}{document.pages?<> · <b>{viewerPagesText(document.pages,say)}</b></>:null}</p>}
-  {document?.state==='waiting'&&<p data-document="waiting"><Hourglass size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.documentWaiting)} {(document.missing||[]).map((name,index)=><bdi key={index}>{index?'، ':''}{name}</bdi>)}</span></p>}
+  {document?.state==='waiting'&&<p data-document="waiting"><Hourglass size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.documentWaiting)} {(document.missing||[]).map((name,index)=><React.Fragment key={index}>{index?'، ':''}<bdi dir={direction()}><BidiText segments={[{text:name}]} rtl={direction()==='rtl'}/></bdi></React.Fragment>)}</span></p>}
   {document?.state==='fallback'&&<p className="mold-signing-skipped" data-document="fallback" data-reason={document.reason}><TriangleAlert size={14} aria-hidden="true"/><span>{say(...(document.reason==='too_large'?MOLD_SIGN_LINK_TEXT.documentTooLarge:document.reason==='too_many_files'?MOLD_SIGN_LINK_TEXT.documentRefused:MOLD_SIGN_LINK_TEXT.documentMismatch))}</span></p>}
   {!!signing.copies&&<p><PenLine size={14} aria-hidden="true"/>{say(...MOLD_SIGN_LINK_TEXT.copies)}: <b>{signing.copies}</b></p>}
   {signing.skipped.map((item,index)=><p key={'s'+index} className="mold-signing-skipped"><TriangleAlert size={14} aria-hidden="true"/><span>{moldNotSignedText(item.name,item.reason,say)}</span></p>)}
-  {!!signing.after.length&&<p className="mold-signing-after"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.after)} {signing.after.map((name,index)=><bdi key={index}>{index?'، ':''}{name}</bdi>)}</span></p>}
+  {!!signing.after.length&&<p className="mold-signing-after"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_SIGN_LINK_TEXT.after)} {signing.after.map((name,index)=><React.Fragment key={index}>{index?'، ':''}<bdi dir={direction()}><BidiText segments={[{text:name}]} rtl={direction()==='rtl'}/></bdi></React.Fragment>)}</span></p>}
  </div>;
 }
 
@@ -141,7 +142,7 @@ export function MoldSignLinkPanel({view,customers,summary,onView,say}:{view:Mold
   {signingNow&&<Dialog open onOpenChange={open=>{if(!open&&!sign.busy)setSigningNow(false);}}>
    <DialogContent className="mold-dialog" dir={direction()}>
     <DialogTitle>{say(...MOLD_SIGN_LINK_TEXT.device)}</DialogTitle>
-    <DialogDescription>{say('العميل بيوقّع دلوقتي على الجهاز بدل اللينك؛ اللينك بيبطل والطلب بيتبعت للإنتاج.','The customer signs now on the device instead of the link; the link stops working and the request goes to production.')}</DialogDescription>
+    <DialogDescription>{say('يوقّع العميل الآن على الجهاز بدلًا من الرابط؛ يتوقف الرابط ويُرسل الطلب إلى الإنتاج.','The customer signs now on the device instead of the link; the link stops working and the request goes to production.')}</DialogDescription>
     <MoldSigningStep summary={summary} title={view.customerName} documents={documents} busy={sign.busy} error={sign.error} fields={sign.fields} say={say} onBack={()=>setSigningNow(false)}
      onConfirm={(signature:SigningResult)=>void sign.run({action:'sign',id:view.id,version:view.version,signature})}/>
    </DialogContent>

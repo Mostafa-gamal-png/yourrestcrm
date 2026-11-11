@@ -33,7 +33,7 @@ export type TrashRestoreAnswer={ok:true;id:string;type:TrashType;notes:string[];
 export const TRASH_TEXT={
  notYours:'استرجاع ما حذفه غيرك متاح لمدير النظام فقط.',
  notFound:'السجل غير موجود في المحذوفات.',
- already:'السجل اتسترجع قبل كده.',
+ already:'استُرجع السجل من قبل.',
  exists:'السجل موجود بالفعل.',
  broken:'غير قابل للاسترجاع: بيانات الحذف ناقصة.',
  changed:'تغيّرت البيانات أثناء الاسترجاع. حدّث القائمة وأعد المحاولة.',
@@ -47,6 +47,6 @@ export const trashCodeSkipped=(code:string,holder:string)=>'لم يُسترجع 
 export const trashNewNumber=(code:string)=>'استُرجع العميل برقم يورست جديد '+code+' (حُذف قبل ترقيم العملاء).';
 export const TRASH_NEW_NUMBER_NOTE='حُذف قبل ترقيم العملاء: يُسترجع برقم يورست جديد.';
 /** A supervisor's or a representative's restoration refused because the record's own cell (lib/permissions.ts trashRestoreCellOff) is not on
- *  for them now: «استرجاع السجل ده محتاج صلاحية «حذف» في الزيارات، …». */
-export const trashCellOff=(screen:PermissionScreen,action:PermissionAction)=>'استرجاع السجل ده محتاج صلاحية «'+(MATRIX_COLUMNS.find(column=>column.key===action)?.ar||action)+'» في '+(permissionRow(screen)?.ar||screen)+'، وهي مش مفتوحة لك دلوقتي. راجع مدير النظام.';
+ *  for them now: «استرجاع هذا السجل يتطلب صلاحية «حذف» في الزيارات، …». */
+export const trashCellOff=(screen:PermissionScreen,action:PermissionAction)=>'استرجاع هذا السجل يتطلب صلاحية «'+(MATRIX_COLUMNS.find(column=>column.key===action)?.ar||action)+'» في '+(permissionRow(screen)?.ar||screen)+'، وهي غير مفتوحة لك حاليًا. راجع مدير النظام.';
 export const yourrestCode=(number:number)=>'YR-C-'+String(number).padStart(6,'0');

@@ -9,7 +9,7 @@ import {customerAddressFields} from './customer-fields';
 export const serviceRoles=['customer_service','customer_service_manager'];
 export const isServiceRole=(role:string)=>serviceRoles.includes(role);
 /** Customer service picks existing customers and never adds one (the owner, 2026-11-07): the refusal every create path answers them with. */
-export const serviceCustomerAddRefused='إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.';
+export const serviceCustomerAddRefused='إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.';
 export const serviceSources:Record<string,string>={visit:'زيارة',call:'اتصال',email:'بريد إلكتروني',whatsapp:'واتساب',website:'عن طريق الويبسايت',social:'عن طريق مواقع التواصل الاجتماعي'};
 export const serviceStatusLabels:Record<string,string>={pending_approval:'بانتظار اعتماد خدمة العملاء',returned:'مطلوب تعديل',pending_assignment:'بانتظار تكليف المبيعات',with_supervisor:'لدى مشرف المبيعات',assigned:'قيد متابعة المبيعات',won:'تم الفوز',lost:'تم الفقد'};
 export const serviceActions:Record<string,string>={create:'تسجيل طلب خدمة العملاء',edit:'تعديل وإعادة إرسال',approve:'اعتماد وإحالة للمبيعات',return:'إعادة للتعديل',assign:'تكليف المبيعات',delegate:'تكليف مندوب',reassign:'إعادة تكليف',seen:'فتح الطلب',note:'ملاحظة داخلية',assist:'طلب مساعدة داخلية'};

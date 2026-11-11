@@ -1,13 +1,13 @@
 // The products update of 2026-11-10 in a real Chromium against the BUILT release (run the build first), sending to the stand-in
 // production API as the updated application (schema 17):
 // - on a phone of 360 px in Arabic the representative asks for a mold paid «آجل»: «طريقة الدفع المتفق عليها» appears with its three
-//   choices only then and is required («اختار طريقة الدفع المتفق عليها»); the customer signs the terms with the rest (the signing step
+//   choices only then and is required («اختر طريقة الدفع المتفق عليها»); the customer signs the terms with the rest (the signing step
 //   says them); the card says «الدفع: آجل · <the terms>»; production receives paymentTerms;
 // - the sales manager, on a phone in Arabic: the request in «طلبات بانتظار اعتمادي» with its terms, «اعتماد» waits for the box
 //   «تمت الموافقة على التصنيع بشروط الدفع المذكورة وقت الإستلام», and the approval goes with termsAccepted;
-// - finance sends it back: the representative's card says «رجّعتها المالية: <السبب>», the list offers the filter «رجّعتها المالية»,
-//   the sheet says «رجّعته المالية (<name>): <reason> · <time>» and offers «تعديل وإعادة الإرسال»; the dialog says why, the change is
-//   signed again, saved and sent as a correction; the sheet says «اتبعت التعديل للإنتاج»; the sales manager's list says why too, in
+// - finance sends it back: the representative's card says «أعادتها المالية: <السبب>», the list offers the filter «أعادتها المالية»,
+//   the sheet says «أعادته المالية (<name>): <reason> · <time>» and offers «تعديل وإعادة الإرسال»; the dialog says why, the change is
+//   signed again, saved and sent as a correction; the sheet says «أُرسل التعديل إلى الإنتاج»; the sales manager's list says why too, in
 //   Arabic and in English (a computer), and approving again clears it.
 // No page scrolls sideways at 360 px. Screenshots for the report. Synthetic fixtures only: temporary SQLite, PDFs made here, no
 // production data, no real production app.
@@ -110,7 +110,7 @@ try {
   await picker.locator('input[type=file]').setInputFiles({name: 'رسم القالب.pdf', mimeType: 'application/pdf', buffer: await makePdf('Design')});
   await picker.locator('.mold-design-file[data-state="ready"]').first().waitFor();
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
-  check([await terms.locator('.field-error').innerText(), await terms.locator('.mold-choice').getAttribute('aria-invalid')], ['اختار طريقة الدفع المتفق عليها', 'true'], 'required: said under the choice');
+  check([await terms.locator('.field-error').innerText(), await terms.locator('.mold-choice').getAttribute('aria-invalid')], ['اختر طريقة الدفع المتفق عليها', 'true'], 'required: said under the choice');
   await terms.scrollIntoViewIfNeeded();
   await noOverflow(rep, 'the form with the terms at 360 px');
   await shot(rep, '01-rep-form-terms-required-360-ar');
@@ -162,10 +162,10 @@ try {
   mock.financeReturn(requestId, REASON);
   await age(requestId);
   await refresh(rep);
-  await until(async () => (await card.innerText()).includes('رجّعتها المالية'), 'the card says finance returned it');
-  ok((await card.locator('.mold-returned-badge').innerText()).includes('رجّعتها المالية: ' + REASON), 'the card: «رجّعتها المالية: <السبب>»');
+  await until(async () => (await card.innerText()).includes('أعادتها المالية'), 'the card says finance returned it');
+  ok((await card.locator('.mold-returned-badge').innerText()).includes('أعادتها المالية: ' + REASON), 'the card: «أعادتها المالية: <السبب>»');
   const filter = rep.locator('.mold-returned-filter');
-  check([(await filter.innerText()).replace(/\s+/g, ' '), await filter.getAttribute('aria-pressed')], ['رجّعتها المالية 1', 'false'], 'the filter, with how many');
+  check([(await filter.innerText()).replace(/\s+/g, ' '), await filter.getAttribute('aria-pressed')], ['أعادتها المالية 1', 'false'], 'the filter, with how many');
   await filter.click();
   check([await filter.getAttribute('aria-pressed'), await rep.locator('.mold-card').count()], ['true', 1], 'narrowed to the returned ones');
   await noOverflow(rep, 'the returned card at 360 px');
@@ -174,7 +174,7 @@ try {
   const note = sheet(rep).locator('.mold-returned');
   await note.waitFor();
   const noteText = await note.innerText();
-  ok(noteText.includes('رجّعته المالية (finance@yourrest.org):') && noteText.includes(REASON) && noteText.includes('عدّل الطلب وابعته تاني'), 'the sheet: who, why, when, and what to do');
+  ok(noteText.includes('أعادته المالية (finance@yourrest.org):') && noteText.includes(REASON) && noteText.includes('عدّل الطلب وأعد إرساله'), 'the sheet: who, why, when, and what to do');
   const correct = sheet(rep).getByRole('button', {name: 'تعديل وإعادة الإرسال'});
   check([await correct.isVisible(), await sheet(rep).getByRole('button', {name: 'تعديل الطلب', exact: true}).count()], [true, 0], '«تعديل وإعادة الإرسال» (no ordinary edit: production holds it)');
   await noOverflow(rep, 'the sheet at 360 px');
@@ -186,7 +186,7 @@ try {
   await correct.click();
   const edit = rep.locator('.mold-dialog');
   await edit.locator('.mold-returned').waitFor();
-  ok((await edit.locator('[data-slot="dialog-description"]').innerText()).includes('المالية رجّعت الطلب'), 'the dialog says why it is open');
+  ok((await edit.locator('[data-slot="dialog-description"]').innerText()).includes('أعادت المالية الطلب'), 'the dialog says why it is open');
   await edit.locator('label.mold-field', {hasText: 'الكمية'}).locator('input').fill('3');
   const save = edit.getByRole('button', {name: 'حفظ وإعادة الإرسال للإنتاج'});
   await noOverflow(rep, 'the correction dialog at 360 px');
@@ -202,7 +202,7 @@ try {
   await edit.waitFor({state: 'detached'});
   await until(() => mock.row(requestId).quantity === 3 && typeof mock.row(requestId).returned?.correctedAt === 'string', 'production takes the correction');
   await until(async () => (await sheet(rep).locator('.mold-returned small[data-corrected]').count()) === 1, 'the sheet says the correction arrived');
-  ok((await sheet(rep).locator('.mold-returned small[data-corrected]').innerText()).includes('اتبعت التعديل للإنتاج'), '«اتبعت التعديل للإنتاج»');
+  ok((await sheet(rep).locator('.mold-returned small[data-corrected]').innerText()).includes('أُرسل التعديل إلى الإنتاج'), '«أُرسل التعديل إلى الإنتاج»');
   await still(sheet(rep));
   await sheet(rep).locator('.mold-returned').evaluate(element => element.scrollIntoView({block: 'start'}));
   await shot(rep, '09-rep-sheet-corrected-360-ar');

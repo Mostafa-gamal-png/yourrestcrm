@@ -1,13 +1,13 @@
 // «استيراد من ERP» in a real Chromium against the BUILT release (run `pnpm build` first): the administrator opens Customers, the new
 // button is there and «ربط عملاء ERP» is gone; a synthetic ERP customer export is chosen and previewed (the summary line and counts,
-// the «محتاج تختار» and «عملاء جداد هيتضافوا» sections, filters, before → after, the shared-number note); one ambiguous row gets its
-// customer with «ده هو», a similar name gets «عميل جديد» (nothing pressed before), the new customers' region is chosen; «حدّث X كود
+// the «محتاج تختار» and «عملاء جدد سيُضافون» sections, filters, before → after, the shared-number note); one ambiguous row gets its
+// customer with «هو نفسه», a similar name gets «عميل جديد» (nothing pressed before), the new customers' region is chosen; «حدّث X كود
 // وضيف Y عميل» applies, the result lists what changed and what was added and the customers reload; the dialog fits a 360 px phone
-// without horizontal scrolling, in Arabic and in English (no Arabic left in the screen's own words); each «ده هو» is named with its
+// without horizontal scrolling, in Arabic and in English (no Arabic left in the screen's own words); each «هو نفسه» is named with its
 // candidate; the phone's region selects are 16 px and 46 px tall; a file whose only unmatched row is a similar name marked «عميل جديد» shows
 // the region select and applies the region chosen. The sales manager has the button;
 // a representative has neither. Since 2026-11-09: the same file again after the apply names no longer the customer its similar row
-// pointed to, so «عملاء مش موجودين في الشيت: هيتمسح كود ERP بتاعهم (1)» lists it with the box checked; unchecked there is nothing to apply;
+// pointed to, so «عملاء غير موجودين في الشيت: سيُمسح كود ERP الخاص بهم (1)» lists it with the box checked; unchecked there is nothing to apply;
 // the apply clears its code (kept as an alias) and the result says so; the English section and box; a later apply with the box unchecked
 // clears nothing. Screenshots for the report. Synthetic fixtures only: temporary SQLite, never the owner's file.
 import assert from 'node:assert/strict';
@@ -109,46 +109,46 @@ try {
   check(preview.rows.map(r => r.status), ['auto', 'auto', 'choose', 'new', 'same', 'similar'], 'the server matched every row');
   check((await app.db.prepare("SELECT count(*) AS n FROM crm_audit WHERE action LIKE 'erp-customer%'").first()).n, 0, 'the preview wrote nothing');
   const tiles = async () => dialog.locator('.erp-import-counts > div').evaluateAll(items => items.map(item => [item.querySelector('span').textContent, item.querySelector('strong').textContent]));
-  check(await tiles(), [['هيتغير', '2'], ['محتاج تختار', '2'], ['عملاء جداد', '1'], ['من غير تغيير', '1']], 'the counts');
-  check((await dialog.locator('.erp-customers-summary').innerText()).trim(), '2 كود هيتغير، 2 عميل محتاج تختار، 1 عميل جديد هيتضاف.', 'the summary line');
-  check([preview.clears, await dialog.locator('[data-section=clear]').count()], [[], 0], 'every customer with a code is in the file: no «عملاء مش موجودين في الشيت»');
+  check(await tiles(), [['سيتغيّر', '2'], ['يحتاج إلى اختيارك', '2'], ['عملاء جدد', '1'], ['بلا تغيير', '1']], 'the counts');
+  check((await dialog.locator('.erp-customers-summary').innerText()).trim(), '2 كود سيتغيّر، 2 عميل يحتاج إلى اختيارك، 1 عميل جديد سيُضاف.', 'the summary line');
+  check([preview.clears, await dialog.locator('[data-section=clear]').count()], [[], 0], 'every customer with a code is in the file: no «عملاء غير موجودين في الشيت»');
   const choose = dialog.locator('[data-section=choose]'), fresh = dialog.locator('[data-section=new]');
   check(await choose.locator('.erp-customers-row').evaluateAll(items => items.map(item => Number(item.dataset.row))), [5, 8], '«محتاج تختار»: the ambiguous row and the similar name');
-  check(await fresh.locator('.erp-customers-row').evaluateAll(items => items.map(item => Number(item.dataset.row))), [6], '«عملاء جداد هيتضافوا»: the row the CRM does not have');
+  check(await fresh.locator('.erp-customers-row').evaluateAll(items => items.map(item => Number(item.dataset.row))), [6], '«عملاء جدد سيُضافون»: the row the CRM does not have');
   const ambiguous = choose.locator('.erp-customers-row[data-row="5"]'), similar = choose.locator('.erp-customers-row[data-row="8"]');
-  check(await ambiguous.locator('button.erp-customers-pick').allInnerTexts(), ['ده هو', 'ده هو', 'سيبه'], 'two candidates with «ده هو», and «سيبه»');
-  check([await ambiguous.getByRole('button', {name: 'ده هو: مصنع التوأم الصناعي · ' + await internal('twinA'), exact: true}).count(), await ambiguous.getByRole('button', {name: 'ده هو: مصنع التوأم الصناعي · ' + await internal('twinB'), exact: true}).count()], [1, 1], 'each «ده هو» is named with its candidate\'s name and Yourrest code (two candidates never read the same)');
+  check(await ambiguous.locator('button.erp-customers-pick').allInnerTexts(), ['هو نفسه', 'هو نفسه', 'اتركه'], 'two candidates with «هو نفسه», and «اتركه»');
+  check([await ambiguous.getByRole('button', {name: 'هو نفسه: مصنع التوأم الصناعي · ' + await internal('twinA'), exact: true}).count(), await ambiguous.getByRole('button', {name: 'هو نفسه: مصنع التوأم الصناعي · ' + await internal('twinB'), exact: true}).count()], [1, 1], 'each «هو نفسه» is named with its candidate\'s name and Yourrest code (two candidates never read the same)');
   ok((await ambiguous.innerText()).includes(await internal('twinA')) && (await ambiguous.innerText()).includes(await internal('twinB')), 'each candidate with its Yourrest code');
-  check(await similar.locator('button.erp-customers-pick').allInnerTexts(), ['ده هو', 'عميل جديد', 'سيبه'], 'a similar name: «ده هو», «عميل جديد», «سيبه»');
+  check(await similar.locator('button.erp-customers-pick').allInnerTexts(), ['هو نفسه', 'عميل جديد', 'اتركه'], 'a similar name: «هو نفسه», «عميل جديد», «اتركه»');
   check(await similar.locator('button.erp-customers-pick[aria-pressed=true]').count(), 0, 'nothing pressed on the similar row');
   ok((await similar.innerText()).includes(await internal('safa')) && (await similar.innerText()).includes('اسم قريب') && (await similar.innerText()).includes('345'), 'the similar customer: Yourrest code, current ERP code, why');
-  ok((await fresh.innerText()).includes('هيتضافوا باسمك') && (await fresh.innerText()).includes('«تعديل»'), 'new customers: under the uploader\'s name, movable later from «تعديل»');
+  ok((await fresh.innerText()).includes('سيُضافون باسمك') && (await fresh.innerText()).includes('«تعديل»'), 'new customers: under the uploader\'s name, movable later from «تعديل»');
   check(await dialog.locator('#erp-customers-region').inputValue(), '', 'the region of the new customers: «المنطقة غير محددة» by default');
-  check((await dialog.locator('.erp-customers-apply').innerText()).trim(), 'حدّث 2 كود وضيف 1 عميل', 'the apply button says what it will do');
+  check((await dialog.locator('.erp-customers-apply').innerText()).trim(), 'حدّث 2 كود وأضف 1 عميل', 'the apply button says what it will do');
   await shot(admin, 'erp-customers-preview-desktop');
 
   // ---- 3. One ambiguous row gets its customer: previewed again with the choice
   answer = posted(admin, 'preview');
-  await ambiguous.locator('.erp-customers-candidate', {hasText: await internal('twinB')}).getByRole('button', {name: 'ده هو'}).click();
+  await ambiguous.locator('.erp-customers-candidate', {hasText: await internal('twinB')}).getByRole('button', {name: 'هو نفسه'}).click();
   const rechecked = await answer;
   check(JSON.parse(rechecked.request().postData()).choices, [{row: 5, customerId: 'twinB'}], 'the choice goes with the preview');
   await admin.waitForFunction(() => [...document.querySelectorAll('.erp-import-counts strong')][0]?.textContent === '3');
-  check(await tiles(), [['هيتغير', '3'], ['محتاج تختار', '1'], ['عملاء جداد', '1'], ['من غير تغيير', '1']], 'the counts follow the choice');
+  check(await tiles(), [['سيتغيّر', '3'], ['يحتاج إلى اختيارك', '1'], ['عملاء جدد', '1'], ['بلا تغيير', '1']], 'the counts follow the choice');
   check(await ambiguous.locator('button[data-choice=twinB]').getAttribute('aria-pressed'), 'true', 'the chosen customer stays selected');
   answer = posted(admin, 'preview');
   await similar.getByRole('button', {name: 'عميل جديد'}).click();
   check(JSON.parse((await answer).request().postData()).choices, [{row: 5, customerId: 'twinB'}, {row: 8, customerId: '+new'}], '«عميل جديد» goes with the preview');
   await admin.waitForFunction(() => [...document.querySelectorAll('.erp-import-counts strong')][2]?.textContent === '2');
-  check(await tiles(), [['هيتغير', '3'], ['محتاج تختار', '0'], ['عملاء جداد', '2'], ['من غير تغيير', '1']], 'one more customer to add, nothing left to choose');
-  check([await similar.locator('button[data-choice="+new"]').getAttribute('aria-pressed'), (await dialog.locator('.erp-customers-apply').innerText()).trim()], ['true', 'حدّث 3 كود وضيف 2 عميل'], '«عميل جديد» pressed; the apply button follows');
+  check(await tiles(), [['سيتغيّر', '3'], ['يحتاج إلى اختيارك', '0'], ['عملاء جدد', '2'], ['بلا تغيير', '1']], 'one more customer to add, nothing left to choose');
+  check([await similar.locator('button[data-choice="+new"]').getAttribute('aria-pressed'), (await dialog.locator('.erp-customers-apply').innerText()).trim()], ['true', 'حدّث 3 كود وأضف 2 عميل'], '«عميل جديد» pressed; the apply button follows');
   await dialog.locator('#erp-customers-region').selectOption('الوسطى');
-  await dialog.locator('.erp-customers-filters button', {hasText: 'هيتغير'}).click();
+  await dialog.locator('.erp-customers-filters button', {hasText: 'سيتغيّر'}).click();
   const changes = dialog.locator('[data-section=rest] .erp-customers-row');
   check(await changes.count(), 2, 'the other rows that will change');
   const nour = changes.filter({hasText: 'مصنع النور'});
   ok((await nour.locator('.erp-customers-change').innerText()).includes('OLD-1'), 'before → after: the old code');
   ok((await nour.locator('.erp-customers-change').innerText()).includes(await internal('nour')), 'with the customer\'s Yourrest code');
-  check((await nour.locator('.erp-customers-shared').innerText()).trim(), 'الكود ده كمان عند 1 عميل تاني؛ الفواتير هتتحسب للعميل ده', 'the shared-number note');
+  check((await nour.locator('.erp-customers-shared').innerText()).trim(), 'هذا الكود لدى 1 عميل آخر أيضًا؛ ستُحتسب الفواتير لهذا العميل', 'the shared-number note');
   ok((await changes.filter({hasText: 'شركة الفجر'}).innerText()).includes('بالجوال'), 'matched by phone');
   ok(!(await dialog.innerText()).match(/551234567|501234567/), 'phones are shown as their last 4 digits only');
   await shot(admin, 'erp-customers-will-change-desktop');
@@ -168,9 +168,9 @@ try {
   await dialog.locator('.erp-customers-filters button', {hasText: 'الكل'}).click();
   await fits(admin, 'phone, every row');
 
-  // ---- 5. «حدّث 3 كود وضيف 2 عميل»: applied in one step, the result listed, the customers reloaded
+  // ---- 5. «حدّث 3 كود وأضف 2 عميل»: applied in one step, the result listed, the customers reloaded
   const applied = posted(admin, 'apply'), reloaded = admin.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'GET');
-  await dialog.getByRole('button', {name: 'حدّث 3 كود وضيف 2 عميل', exact: true}).click();
+  await dialog.getByRole('button', {name: 'حدّث 3 كود وأضف 2 عميل', exact: true}).click();
   const applyResponse = await applied;
   check(applyResponse.status(), 200, 'applied');
   const sent = JSON.parse(applyResponse.request().postData());
@@ -180,7 +180,7 @@ try {
   ok((await dialog.locator('.erp-import-success').innerText()).includes('تم تحديث الأكواد وإضافة العملاء'), 'the result says so');
   check(await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left) > li').count(), 3, 'three changes listed');
   ok((await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left)').innerText()).includes(await internal('twinB')), 'by name and Yourrest code');
-  check([await dialog.locator('.erp-customers-left > li').count(), (await dialog.locator('#erp-customers-left-heading').innerText()).trim()], [0, 'اللي اتساب'], 'and what was left: nothing this time');
+  check([await dialog.locator('.erp-customers-left > li').count(), (await dialog.locator('#erp-customers-left-heading').innerText()).trim()], [0, 'ما تُرك'], 'and what was left: nothing this time');
   const addedIds = (await app.db.prepare("SELECT id FROM crm_records WHERE id LIKE 'crm-owner-erp-%' ORDER BY id").all()).results.map(r => r.id);
   check(addedIds.length, 2, 'two customers added');
   check(await dialog.locator('.erp-customers-added > li').count(), 2, 'and listed as added');
@@ -194,7 +194,7 @@ try {
   await dialog.waitFor({state: 'detached'});
 
   // ---- 5b. 2026-11-09: the same file again. Its row 8 is now the added customer, so «مصنع الصفا للبلوك الاسمنتي» (345) is named by no row:
-  //  «عملاء مش موجودين في الشيت: هيتمسح كود ERP بتاعهم (1)», the box checked by default; the apply clears its code and says so
+  //  «عملاء غير موجودين في الشيت: سيُمسح كود ERP الخاص بهم (1)», the box checked by default; the apply clears its code and says so
   await admin.setViewportSize(DESKTOP);
   await importButton(admin).click();
   await dialog.waitFor();
@@ -204,16 +204,16 @@ try {
   const clearSection = dialog.locator('[data-section=clear]');
   await clearSection.waitFor();
   check(preview.clears.map(c => [c.customerId, c.code]), [['safa', '345']], 'the server lists the customer the file no longer names');
-  check((await clearSection.locator('h3').innerText()).trim(), 'عملاء مش موجودين في الشيت: هيتمسح كود ERP بتاعهم (1)', 'the section heading with the count');
-  const clearBox = clearSection.getByRole('checkbox', {name: 'امسح كود ERP للعملاء اللي مش في الشيت'});
+  check((await clearSection.locator('h3').innerText()).trim(), 'عملاء غير موجودين في الشيت: سيُمسح كود ERP الخاص بهم (1)', 'the section heading with the count');
+  const clearBox = clearSection.getByRole('checkbox', {name: 'امسح كود ERP للعملاء غير الموجودين في الشيت'});
   check(await clearBox.isChecked(), true, 'the box, checked by default');
   const clearText = await clearSection.locator('.erp-customers-clears').innerText();
   ok(clearText.includes('مصنع الصفا للبلوك الاسمنتي') && clearText.includes(await internal('safa')) && clearText.includes('345'), 'each customer: name, Yourrest code, current ERP code');
-  check([(await dialog.locator('.erp-customers-summary').innerText()).trim(), (await dialog.locator('.erp-customers-apply').innerText()).trim()], ['0 كود هيتغير، 0 عميل محتاج تختار، 0 عميل جديد هيتضاف، 1 كود ERP هيتمسح.', 'حدّث 0 كود وضيف 0 عميل وامسح 1 كود'], 'the summary line and the button count the code cleared');
+  check([(await dialog.locator('.erp-customers-summary').innerText()).trim(), (await dialog.locator('.erp-customers-apply').innerText()).trim()], ['0 كود سيتغيّر، 0 عميل يحتاج إلى اختيارك، 0 عميل جديد سيُضاف، 1 كود ERP سيُمسح.', 'حدّث 0 كود وأضف 0 عميل وامسح 1 كود'], 'the summary line and the button count the code cleared');
   await clearSection.scrollIntoViewIfNeeded();
   await shot(admin, 'erp-customers-clear-desktop');
   await clearBox.uncheck();
-  check([(await dialog.locator('.erp-customers-apply').innerText()).trim(), await dialog.locator('.erp-customers-apply').isDisabled()], ['حدّث 0 كود وضيف 0 عميل', true], 'unchecked: nothing to apply');
+  check([(await dialog.locator('.erp-customers-apply').innerText()).trim(), await dialog.locator('.erp-customers-apply').isDisabled()], ['حدّث 0 كود وأضف 0 عميل', true], 'unchecked: nothing to apply');
   await clearBox.check();
   await admin.setViewportSize(PHONE);
   await admin.waitForTimeout(300);
@@ -222,11 +222,11 @@ try {
   check(await clearBox.evaluate(item => item.closest('label').getBoundingClientRect().height >= 44), true, 'phone: the box and its label are a 44 px target');
   await shot(admin, 'erp-customers-clear-phone');
   const clearApplied = posted(admin, 'apply');
-  await dialog.getByRole('button', {name: 'حدّث 0 كود وضيف 0 عميل وامسح 1 كود', exact: true}).click();
+  await dialog.getByRole('button', {name: 'حدّث 0 كود وأضف 0 عميل وامسح 1 كود', exact: true}).click();
   const clearResponse = await clearApplied, clearSent = JSON.parse(clearResponse.request().postData());
   check([clearResponse.status(), clearSent.clearCodes, clearSent.clearSnapshot, (await clearResponse.json()).cleared], [200, true, preview.clearSnapshot, 1], 'the apply carries the box and the preview\'s list; one code cleared');
   await dialog.locator('.erp-import-success').waitFor();
-  ok((await dialog.locator('.erp-import-success').innerText()).includes('اتمسح كود ERP لـ 1 عميل مش في الشيت'), 'the result message says how many codes were cleared');
+  ok((await dialog.locator('.erp-import-success').innerText()).includes('مُسح كود ERP لـ 1 عميل غير موجود في الشيت'), 'the result message says how many codes were cleared');
   ok((await dialog.locator('.erp-customers-cleared-list').innerText()).includes('مصنع الصفا للبلوك الاسمنتي'), 'and lists the customer');
   check([await code('safa'), (await app.db.prepare("SELECT source_code FROM crm_customer_code_aliases WHERE customer_id='safa'").all()).results.map(r => r.source_code)], ['', ['345']], 'its ERP code is empty, the old one kept');
   await fits(admin, 'phone, the result with a cleared code');

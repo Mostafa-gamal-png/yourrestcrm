@@ -50,10 +50,10 @@ const ar = (arabic) => arabic, en = (_arabic, english) => english;
   check([view.viewerPageText(2, 3, ar), view.viewerPageText(2, 3, en)], ['صفحة 2 من 3', 'Page 2 of 3'], 'each page numbered');
   check([1, 2, 3, 11, 30].map(pages => view.viewerPagesText(pages, ar)), ['صفحة واحدة', 'صفحتين', '3 صفحات', '11 صفحة', '30 صفحة'], 'the count of pages as Arabic says it');
   check([view.viewerPagesText(1, en), view.viewerPagesText(30, en)], ['1 page', '30 pages'], 'and English');
-  check(view.viewerOtherText('mold.dwg', ar), 'ملف mold.dwg (مش PDF) — هيتبعت للإنتاج زي ما هو', 'another kind, in the owner\'s words');
+  check(view.viewerOtherText('mold.dwg', ar), 'ملف mold.dwg (ليس PDF) — يُرسل إلى الإنتاج كما هو', 'another kind, in the owner\'s words');
   check(view.viewerOtherText('mold.dwg', en), 'File mold.dwg (not a PDF) — it goes to production as it is', 'and English');
   for (const [key, pair] of Object.entries(view.MOLD_VIEWER_TEXT)) ok(Array.isArray(pair) && pair.length === 2 && /[؀-ۿ]/.test(pair[0]) && !/[؀-ۿ]/.test(pair[1]) && pair[1].length > 1, 'the words of ' + key + ': Arabic, and English with no Arabic left');
-  check(view.MOLD_VIEWER_TEXT.failed, ['ما قدرناش نعرض الملف ده', 'We could not show this file'], 'a file that cannot be shown says so');
+  check(view.MOLD_VIEWER_TEXT.failed, ['تعذّر عرض هذا الملف', 'We could not show this file'], 'a file that cannot be shown says so');
 }
 
 // ---- the size a page is drawn at

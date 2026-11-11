@@ -25,7 +25,7 @@ export function targetSaveBase(state:TargetState,kind:TargetKind,scopeId:string)
  *  administrator changes them (and the audit records it). KPI evidence and the evaluation entry are not locked. */
 const riyadhMonthFormat=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'});
 export const riyadhMonth=(now:Date=new Date())=>riyadhMonthFormat.format(now).slice(0,7);
-export const CLOSED_MONTH_MESSAGE='الشهر ده خلص؛ تعديل مستهدفاته لمدير النظام بس';
+export const CLOSED_MONTH_MESSAGE='انتهى هذا الشهر؛ تعديل مستهدفاته لمدير النظام فقط';
 export const targetMonthClosed=(month:string,now:Date=new Date())=>month<riyadhMonth(now);
 export const canEditTargetMonth=(role:string,month:string,now:Date=new Date())=>role==='admin'||!targetMonthClosed(month,now);
 /** The administrator does not sell: left out of the targets tables, cards, distribution and exports of a month unless they have a

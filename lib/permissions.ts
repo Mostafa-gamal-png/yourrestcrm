@@ -27,7 +27,7 @@ export const MATRIX_COLUMNS:readonly {key:MatrixColumn;ar:string;en:string}[]=[
  {key:'browse',ar:'استعراض',en:'View'},{key:'add',ar:'إضافة',en:'Add'},{key:'edit',ar:'تحرير',en:'Edit'},
  {key:'delete',ar:'حذف',en:'Delete'},{key:'export',ar:'تصدير',en:'Export'},{key:'import',ar:'استيراد',en:'Import'},
 ];
-/** The words of a refusal: «مش مسموح لك ب<الإجراء> في <الشاشة>». */
+/** The words of a refusal: «غير مسموح لك ب<الإجراء> في <الشاشة>». */
 const actionNouns:Record<PermissionAction,readonly [string,string]>={add:['الإضافة','add'],edit:['التعديل','edit'],delete:['الحذف','delete'],export:['التصدير','export'],import:['الاستيراد','import']};
 
 export type PermissionScreen='dashboard'|'customer'|'map'|'activity'|'complaints'|'service-kpi'|'followup'|'mold-requests'|'journeys'|'quote'|'sales'|'competitors'|'targets'|'team'|'trash';
@@ -42,11 +42,11 @@ const ALL=['admin','manager','supervisor','rep','customer_service','customer_ser
 const SALES=['admin','manager','supervisor','rep'] as const,MANAGEMENT=['admin','manager','supervisor'] as const,SERVICE=['admin','customer_service','customer_service_manager'] as const;
 /** «حذف»: off by default except for the administrator; whoever it is granted to deletes only what they may edit (their own scope). */
 const DEFAULT_ON=['admin'] as const;
-const deleteScope:Text={ar:'مقفولة في الأول لكل الأدوار ما عدا مدير النظام، وتقدر تفتحها لأي مستخدم. بيحذف السجلات اللي يقدر يعدّلها بس (فريقه ومناطقه)، وعرض بيانات الفريق بالكامل مبيوسّعش الحذف.',en:'Off by default for every role but the administrator; it can be granted to any member. They delete only the records they may edit (their team and regions); «View the whole team\'s data» never widens deleting.'};
-const repOwnContacts:Text={ar:'للمندوب: زياراته ومتابعاته هو بس (اللي سجّلها)، لعملاء مناطقه.',en:'For a representative: only their own visits and follow-ups (recorded by them), of customers in their regions.'};
+const deleteScope:Text={ar:'مغلقة افتراضيًا لكل الأدوار عدا مدير النظام، ويمكنك فتحها لأي مستخدم. يحذف السجلات التي يمكنه تعديلها فقط (فريقه ومناطقه)، ولا يوسّع «عرض بيانات الفريق بالكامل» الحذف.',en:'Off by default for every role but the administrator; it can be granted to any member. They delete only the records they may edit (their team and regions); «View the whole team\'s data» never widens deleting.'};
+const repOwnContacts:Text={ar:'للمندوب: زياراته ومتابعاته هو فقط (التي سجّلها)، لعملاء مناطقه.',en:'For a representative: only their own visits and follow-ups (recorded by them), of customers in their regions.'};
 /** «المحذوفات» of a supervisor or a representative: it comes with «حذف» (trashScopeOf). */
-const trashOwn:Text={ar:'لمن عنده «حذف»: اللي حذفه هو بس',en:'For whoever has «Delete»: only what they deleted themselves'};
-const trashOwnRestore:Text={ar:'لمن عنده «حذف»: اللي حذفه هو بس، وطول ما «حذف» شاشة السجل مفتوح له، وفي حدود اللي يقدر يحذفه.',en:'For whoever has «Delete»: only what they deleted themselves, while «Delete» of the record\'s screen is on for them, and within what they may delete.'};
+const trashOwn:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط',en:'For whoever has «Delete»: only what they deleted themselves'};
+const trashOwnRestore:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط، ما دام «حذف» في شاشة السجل مفتوحًا له، وفي حدود ما يمكنه حذفه.',en:'For whoever has «Delete»: only what they deleted themselves, while «Delete» of the record\'s screen is on for them, and within what they may delete.'};
 
 /** The rows: Yourrest's screens in the order of the navigation (app/crm-app.tsx nav), each action mapped to the capability it gates. */
 export const PERMISSION_MATRIX:readonly MatrixRow[]=[
@@ -54,7 +54,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'customer',ar:'العملاء',en:'Customers',cells:{
   add:{ar:'إضافة عميل جديد (من صفحة العملاء والخريطة ونموذج الزيارة)',en:'Add a new customer (customers page, map, visit form)',roles:SALES},
   edit:{ar:'تعديل بيانات العميل، وإضافة وتعديل وحذف ماكيناته',en:'Edit a customer\'s details, and add, edit or delete its machines',roles:ALL},
-  delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاؤه هو بس (المسؤول عنهم)، ومفيش حذف لعميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: only the customers assigned to them, never one with visits, machines, sales or a route.'}}},
+  delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاؤه هو فقط (المسؤول عنهم)، ولا يُحذف عميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: only the customers assigned to them, never one with visits, machines, sales or a route.'}}},
   export:{ar:'تصدير العملاء (CSV) من صفحة العملاء والخريطة',en:'Export customers (CSV) from the customers page and the map',roles:MANAGEMENT},
   import:{ar:'«استيراد من ERP» واستيراد العملاء والماكينات',en:'«Import from ERP» and the customers and machines imports',roles:['admin','manager']},
  }},
@@ -83,7 +83,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   delete:{ar:'إلغاء طلب',en:'Cancel a request',roles:ALL},
  }},
  {screen:'journeys',ar:'تقرير يوم المندوب',en:'Daily route',cells:{
-  add:{ar:'كتابة «النتيجة» و«الإجراء المطلوب» على شغل الفريق',en:'Write «Result» and «Action required» on the team\'s work',roles:MANAGEMENT},
+  add:{ar:'كتابة «النتيجة» و«الإجراء المطلوب» على عمل الفريق',en:'Write «Result» and «Action required» on the team\'s work',roles:MANAGEMENT},
  }},
  {screen:'quote',ar:'عروض الأسعار',en:'Quotations',cells:{
   add:{ar:'إضافة عرض سعر ومواصفات قالب',en:'Add a quotation and mold specifications',roles:MANAGEMENT},
@@ -108,7 +108,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   edit:{ar:'تعديل مستخدم وصلاحياته',en:'Edit a member and their permissions',roles:['admin']},
  }},
  {screen:'trash',ar:'المحذوفات',en:'Deleted records',roleNote:{supervisor:trashOwn,rep:trashOwn},cells:{
-  edit:{ar:'استرجاع سجل محذوف',en:'Restore a deleted record',roles:['admin','manager','supervisor','rep'],roleNote:{manager:{ar:'لمدير المبيعات: اللي حذفه هو بس.',en:'For a sales manager: only what they deleted themselves.'},supervisor:trashOwnRestore,rep:trashOwnRestore}},
+  edit:{ar:'استرجاع سجل محذوف',en:'Restore a deleted record',roles:['admin','manager','supervisor','rep'],roleNote:{manager:{ar:'لمدير المبيعات: ما حذفه هو فقط.',en:'For a sales manager: only what they deleted themselves.'},supervisor:trashOwnRestore,rep:trashOwnRestore}},
  }},
 ];
 export const PERMISSION_SCREENS:readonly PermissionScreen[]=PERMISSION_MATRIX.map(row=>row.screen);
@@ -134,7 +134,7 @@ export function recordCell(kind:string,action:'add'|'edit'|'delete',record:{kind
 
 /** «صلاحيات عامة» under the table: rights of no single screen. */
 export const GENERAL_PERMISSIONS={viewAll:{ar:'عرض بيانات الفريق بالكامل',en:'View the whole team\'s data',
- note:{ar:'للمشرف ومدير المبيعات: يشوف زيارات ومتابعات وعروض أسعار وتقارير يوم ومبيعات ومستهدفات كل فريق المبيعات (مدير النظام ومديري المبيعات والمشرفين والمناديب) للقراءة بس؛ التعديل والحذف فاضلين على فريقه هو بس. مقفولة في الأول.',
+ note:{ar:'للمشرف ومدير المبيعات: يطّلع على زيارات ومتابعات وعروض أسعار وتقارير يوم ومبيعات ومستهدفات فريق المبيعات كله (مدير النظام ومديري المبيعات والمشرفين والمناديب) للقراءة فقط؛ ويبقى التعديل والحذف على فريقه هو فقط. مغلقة افتراضيًا.',
   en:'For a supervisor or a sales manager: reads the visits, follow-ups, quotations, day reports, sales and targets of the whole sales team (administrator, sales managers, supervisors, representatives), read only; editing and deleting stay limited to their own team. Off by default.'}}} as const;
 export const viewAllAvailable=(role:string)=>role==='supervisor'||role==='manager';
 
@@ -237,7 +237,7 @@ export function pagesBlocked(me:Who,screens:readonly PermissionScreen[]){return 
 export const PAGE_HIDDEN_TEXT='هذا الجزء غير متاح لحسابك. راجع مدير النظام.';
 export function cellRefusalText(screen:PermissionScreen,action:PermissionAction,language:'ar'|'en'='ar'){
  const row=permissionRow(screen)!;
- return language==='en'?`You are not allowed to ${actionNouns[action][1]} in ${row.en}. Ask the administrator.`:`مش مسموح لك ب${actionNouns[action][0]} في ${row.ar}. راجع مدير النظام.`;
+ return language==='en'?`You are not allowed to ${actionNouns[action][1]} in ${row.en}. Ask the administrator.`:`غير مسموح لك ب${actionNouns[action][0]} في ${row.ar}. راجع مدير النظام.`;
 }
 
 /** «انسخ الصلاحيات من»: the target takes the source's value of every cell of the target's ceiling (off where the source's role does not

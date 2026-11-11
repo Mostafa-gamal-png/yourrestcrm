@@ -13,7 +13,7 @@ export const dynamic='force-dynamic';
 
 const headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'};
 /** Its English pairs are in lib/locales/en.json. */
-const TOO_MANY='محاولات كتير؛ استنى دقيقة وحاول تاني.',CONSENT='لازم توافق إنك قريت الطلب والملفات قبل التوقيع.',BAD_BODY='بيانات التوقيع غير صحيحة؛ افتح اللينك تاني.';
+const TOO_MANY='محاولات كثيرة؛ انتظر دقيقة ثم أعد المحاولة.',CONSENT='يجب أن تقرّ بأنك قرأت الطلب والملفات قبل التوقيع.',BAD_BODY='بيانات التوقيع غير صحيحة؛ افتح الرابط مرة أخرى.';
 const schema=z.object({requestId:z.string().uuid(),token:z.string().max(64),key:z.string().max(64),signer:z.string().max(400),png:z.string().max(MOLD_SIGNATURE_BASE64_MAX),
  block:z.string().max(MOLD_SIGNATURE_BLOCK_BASE64_MAX),blockAt:z.string().max(40),consent:z.literal(true),
  // The ONE signed document (2026-11-11): the signature page the page composed and the documents it lists (checked by signFromLink); a page

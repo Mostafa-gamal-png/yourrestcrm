@@ -107,8 +107,8 @@ const nextService={...payload,requestId:crypto.randomUUID(),offline:{memberId:'s
 // at sync with the reason and nothing is written; their queued registration on an existing customer (above) still saves.
 {const before=sql.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='customer'").get().n;
 const queued={action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Offline service factory',phone:'0555000101',region:'الشرقية',branch:'الرئيسي',assignedTo:'service'},offline:{memberId:'service',capturedAt:captured}};
-eq((await post('crm',queued,403)).error,'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.','Queued service customer refused with the reason');
-eq((await post('crm',queued,403)).error,'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.','A retry is refused the same way');
+eq((await post('crm',queued,403)).error,'إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.','Queued service customer refused with the reason');
+eq((await post('crm',queued,403)).error,'إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.','A retry is refused the same way');
 eq(sql.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='customer'").get().n,before,'No customer written');eq(raw('crm-service-'+queued.createKey),undefined);}
 // Attachment uploads retry exact bytes using per-owner stable keys and current authorization.
 user('rep');const pdf='%PDF-1.7\nOffline quotation',files=()=>sql.prepare('SELECT * FROM crm_visit_files').all();

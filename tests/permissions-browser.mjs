@@ -135,7 +135,7 @@ try {
   // The representative: «حذف» of «الزيارات» ticked.
   await editMember('مندوب الوسطى');
   check(await admin.getByRole('checkbox', {name: 'حذف · الزيارات'}).isChecked(), false, 'the representative\'s «حذف» on visits: shown, unticked');
-  ok((await matrix.locator('[data-cell="activity:delete"]').getAttribute('title')).includes('للمندوب: زياراته ومتابعاته هو بس'), 'its note gives the representative\'s scope');
+  ok((await matrix.locator('[data-cell="activity:delete"]').getAttribute('title')).includes('للمندوب: زياراته ومتابعاته هو فقط'), 'its note gives the representative\'s scope');
   await admin.getByRole('checkbox', {name: 'حذف · الزيارات'}).check();
   await admin.locator('[data-save-permissions]').click();
   await admin.getByText('تم حفظ الصلاحيات').first().waitFor();
@@ -174,7 +174,7 @@ try {
   // The supervisor, never granted, is refused by the server with its message (an old page or a direct request).
   const supCheck = await open('sup', {hash: 'customer'});
   const version = (await app.db.prepare("SELECT version FROM crm_records WHERE id='perm-visit-2'").first()).version;
-  check(await fetchStatus(supCheck, '/api/crm', {action: 'delete', kind: 'activity', id: 'perm-visit-2', version}), [403, 'مش مسموح لك بالحذف في الزيارات. راجع مدير النظام.'], 'the supervisor\'s delete is refused with its message');
+  check(await fetchStatus(supCheck, '/api/crm', {action: 'delete', kind: 'activity', id: 'perm-visit-2', version}), [403, 'غير مسموح لك بالحذف في الزيارات. راجع مدير النظام.'], 'the supervisor\'s delete is refused with its message');
   await supCheck.context().close();
 
   // ---- 5. The representative after a refresh (phone, Arabic): «حذف» on their own visits only; deleting one.

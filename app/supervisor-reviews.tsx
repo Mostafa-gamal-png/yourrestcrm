@@ -10,7 +10,7 @@ import './supervisor-reviews.css';
 /** The supervisor's notes on a member's work (lib/supervisor-reviews.ts; GSCO components/crm/daily-entry-review.tsx,
  * daily-report-review.tsx and review-inbox.tsx). On «تقرير يوم المندوب»: «إضافة نتيجة وإجراء» under each visit or contact the reader may
  * note, the saved note with «تعديل» and whether the member read it, and the note on the member's whole day. On every page: the card
- * «ملاحظات المشرف على شغلك» for the member who has notes they have not read. */
+ * «ملاحظات المشرف على عملك» for the member who has notes they have not read. */
 
 const selectText=(language:string,ar:string,en:string)=>language==='en'?en:ar;
 const stampFormats=new Map<string,Intl.DateTimeFormat>();
@@ -153,7 +153,7 @@ function DayReviewBlock({memberId,date,memberName,review,canReview,onSaved}:{mem
  </section>;
 }
 
-/** «ملاحظات المشرف على شغلك»: the signed-in member's notes they have not read, at the top of every page until they press «قرأت». Asked
+/** «ملاحظات المشرف على عملك»: the signed-in member's notes they have not read, at the top of every page until they press «قرأت». Asked
  * for on load, every 5 minutes and when the page comes back to the front (at most once a minute); nothing is asked offline, and a failed
  * check keeps what was shown. Nothing shows when there is nothing new. A failed «قرأت» keeps the note and says why. */
 export function ReviewInboxCard({offline=false}:{offline?:boolean}){
@@ -183,7 +183,7 @@ export function ReviewInboxCard({offline=false}:{offline?:boolean}){
   finally{setBusy('');}
  };
  if(!inbox?.items.length)return null;
- const items=inbox.items,title=say('ملاحظات المشرف على شغلك','Your supervisor’s notes on your work');
+ const items=inbox.items,title=say('ملاحظات المشرف على عملك','Your supervisor’s notes on your work');
  return <section className="review-inbox no-print" aria-label={title} data-review-inbox>
   <header><h2><MessageSquareText size={19} aria-hidden/>{title} <span className="review-count" data-review-count>{items.length}{inbox.more?'+':''}</span></h2>
    {items.length>1&&<button type="button" className="btn subtle small" disabled={!!busy} onClick={()=>{void read(items,'all');}} data-review-read-all>{busy==='all'?<Loader2 size={16} className="spin" aria-hidden/>:<CheckCheck size={16} aria-hidden/>}{say('قرأت الكل','Mark all read')}</button>}</header>

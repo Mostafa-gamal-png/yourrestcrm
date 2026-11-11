@@ -82,7 +82,7 @@ user('all-rep');const all=await post(create({region:'الغربية'}));check(ro
 user('unassigned-rep');const unassigned=await post(create({region:''}));check(row(unassigned.id).data.region,'');await post(create({region:'الشرقية'}),403);
 // The existing service intake creation and admin workflows are unaffected.
 // Customer service picks an existing customer and never adds one (the owner, 2026-11-07); nothing is written.
-const serviceRefused='إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.';
+const serviceRefused='إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.';
 for(const actor of ['cs','csm']){user(actor);const before=count();check((await post(create({assignedTo:actor,branch:'الرئيسي'}),403)).error,serviceRefused,actor+' cannot add a customer');check(count(),before);}
 user('owner');await post({action:'save',kind:'customer',id:saved.id,version:raw(saved.id).version,data:{...row(saved.id).data,name:'تحديث الإدارة'}});check(row(saved.id).data.name,'تحديث الإدارة');
 user('rep');const finalCount=count();await post(create(),403,crm,'https://foreign.invalid');user(null);await post(create(),401);check(count(),finalCount);

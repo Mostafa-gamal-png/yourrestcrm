@@ -43,7 +43,7 @@ const create=async(customerId='factory',status=200,extra={})=>post(service,{acti
 const act=async(item,action,extra={},status=200)=>post(service,{action,requestId:crypto.randomUUID(),id:item.id,version:item.version,...extra},status);
 user('cs');let projected=(await (await crm.GET()).json()).records;assert.deepEqual(projected.map(r=>r.id),['factory']);assert.equal(projected[0].data._readOnly,true);checks+=2;
 // Customer service never adds a customer (the owner, 2026-11-07): every create path answers both service roles with this reason.
-const refused='إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.',customerCount=()=>sql.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='customer'").get().n;
+const refused='إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.',customerCount=()=>sql.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='customer'").get().n;
 assert.equal((await post(crm,{action:'save',kind:'customer',data:{name:'forged',branch:'الرئيسي',assignedTo:'cs'}},403)).error,refused);checks++;
 assert.equal((await sales.GET(new Request('https://test.invalid/api/sales'))).status,403);checks++;
 await create('west-factory',403);await create('factory',400,{data:{...intake,nextAction:''}});

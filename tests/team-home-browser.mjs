@@ -1,8 +1,8 @@
-// «عملاء واقفين» and «فريقي النهارده» in a real Chromium against the BUILT release (run the build first). A representative (the Android
+// «عملاء واقفين» and «فريقي اليوم» in a real Chromium against the BUILT release (run the build first). A representative (the Android
 // app emulated, a 360 px phone, Arabic then English) finds the card on their first screen and the badge on «العملاء»; «اعرضهم» opens
-// the customers page with «لم يشترِ منذ 60 يومًا» and «عملائي بس» on, listing exactly their stalled customers (not another
+// the customers page with «لم يشترِ منذ 60 يومًا» and «عملائي فقط» on, listing exactly their stalled customers (not another
 // representative's in the same region); «مسح الفلاتر» clears both. A supervisor (a computer, Arabic) sees the team card per
-// representative and «فريقي النهارده» with one representative not started and one with a visit and an unread note, no badge on
+// representative and «فريقي اليوم» with one representative not started and one with a visit and an unread note, no badge on
 // «العملاء»; a name opens the customers page filtered to that representative, «تقرير اليوم» opens the day report on that
 // representative; the day report links back. The same on a 360 px phone in English. Nothing scrolls sideways at 360 px; every tap
 // target is at least 44 px high on the phone. Screenshots for the report. Synthetic fixtures only: temporary SQLite, mocked sendmail.
@@ -71,24 +71,24 @@ try {
   const own = rep.locator('[data-inactive-card="own"]');
   await own.waitFor();
   check((await own.locator('[data-inactive-count]').innerText()).trim(), '2', 'the representative\'s card: two of their customers (61 days and never; the recent one and rep2\'s are not theirs or not stalled)');
-  ok((await own.innerText()).includes('عملاؤك اللي ما اشتروش من 60 يوم'), 'in Egyptian Arabic');
+  ok((await own.innerText()).includes('عملاؤك الذين لم يشتروا منذ 60 يوم'), 'in Egyptian Arabic');
   check((await rep.locator('.mobile-bottom-navigation [data-page="customer"] [data-inactive-badge]').innerText()).trim(), '2', 'the badge on «العملاء» in the bottom bar');
-  check(await rep.locator('[data-team-today]').count(), 0, 'no «فريقي النهارده» for a representative');
+  check(await rep.locator('[data-team-today]').count(), 0, 'no «فريقي اليوم» for a representative');
   await tall(own.locator('button'), 'the representative\'s card');
   await noSideways(rep, 'the representative\'s first screen');
   await shot(rep, 'team-home-rep-card-ar-360');
   await own.locator('[data-inactive-open]').click();
   await rep.locator('.customer-mobile-card').first().waitFor();
   check(await names(rep), [OLD, NEVER].sort(), '«اعرضهم»: exactly their two stalled customers');
-  check(await filterBadge(rep), '2', 'two filters counted: «لم يشترِ منذ 60 يومًا» and «عملائي بس»');
+  check(await filterBadge(rep), '2', 'two filters counted: «لم يشترِ منذ 60 يومًا» and «عملائي فقط»');
   if (await rep.locator('#crm-page-filters').isHidden()) await rep.locator('.mobile-filter-toggle').click();
   check(await rep.locator('#crm-page-filters .inactive-customers-filter').getAttribute('aria-pressed'), 'true', 'the stalled filter is on');
-  check(await rep.locator('#crm-page-filters .own-customers-filter').getAttribute('aria-pressed'), 'true', '«عملائي بس» is on');
+  check(await rep.locator('#crm-page-filters .own-customers-filter').getAttribute('aria-pressed'), 'true', '«عملائي فقط» is on');
   await noSideways(rep, 'the filtered customers');
   await shot(rep, 'team-home-rep-customers-ar-360');
   await rep.locator('#crm-page-filters .own-customers-filter').click();
   await rep.waitForFunction(() => document.querySelectorAll('.customer-mobile-card').length === 3);
-  check(await names(rep), [OLD, NEVER, OTHER].sort(), 'without «عملائي بس»: their region\'s stalled customers, as the filter alone shows');
+  check(await names(rep), [OLD, NEVER, OTHER].sort(), 'without «عملائي فقط»: their region\'s stalled customers, as the filter alone shows');
   await rep.locator('#crm-page-filters').getByRole('button', {name: 'مسح الفلاتر', exact: true}).click();
   await rep.waitForFunction(() => document.querySelectorAll('.customer-mobile-card').length === 5);
   check(await filterBadge(rep), null, '«مسح الفلاتر»: none counted');
@@ -122,9 +122,9 @@ try {
   check(await sup.locator('[data-team-today] tbody th').evaluateAll(cells => cells.every(cell => getComputedStyle(cell).fontWeight >= 600)), true, 'each name heads its row in bold, not in the column heads\' grey');
   const summary = sup.locator('[data-team-today]');
   await summary.locator('tr[data-member]').first().waitFor();
-  check(await summary.locator('tr[data-member]').evaluateAll(rows => rows.map(row => [row.dataset.member, row.dataset.started])), [['rep2', 'no'], ['rep', 'yes']], '«فريقي النهارده»: rep2 not started first, then the representative who visited');
-  check((await summary.locator('[data-team-today-totals]').innerText()).trim(), 'بدأوا 1 من 2 · زيارات 1 · ملاحظات مش مقروءة 1', 'the header totals');
-  ok((await summary.locator('tr[data-member="rep2"]').innerText()).includes('لسه ما بدأش'), '«لسه ما بدأش»');
+  check(await summary.locator('tr[data-member]').evaluateAll(rows => rows.map(row => [row.dataset.member, row.dataset.started])), [['rep2', 'no'], ['rep', 'yes']], '«فريقي اليوم»: rep2 not started first, then the representative who visited');
+  check((await summary.locator('[data-team-today-totals]').innerText()).trim(), 'بدأوا 1 من 2 · زيارات 1 · ملاحظات غير مقروءة 1', 'the header totals');
+  ok((await summary.locator('tr[data-member="rep2"]').innerText()).includes('لم يبدأ بعد'), '«لم يبدأ بعد»');
   check(await summary.locator('tr[data-member="rep"] [data-cell="visits"]').innerText(), '1', 'one visit today');
   check((await summary.locator('tr[data-member="rep"] [data-cell="notes"]').innerText()).trim(), '1', 'one unread note');
   ok((await summary.locator('tr[data-member="rep"] [data-cell="started"]').innerText()).includes('أول تسجيل'), 'started by the visit recorded');
@@ -141,7 +141,7 @@ try {
   await sup.waitForFunction(() => document.querySelector('.journey-report select')?.value === 'rep');
   check(await sup.locator('.journey-report select').inputValue(), 'rep', '«تقرير اليوم»: the day report opens on that representative');
   await sup.locator('.journey-overview, .journey-empty h2').first().waitFor();
-  ok(await sup.locator('[data-team-today-link]').isVisible(), 'the day report links back to «فريقي النهارده»');
+  ok(await sup.locator('[data-team-today-link]').isVisible(), 'the day report links back to «فريقي اليوم»');
   await shot(sup, 'team-home-supervisor-day-report-ar-desktop');
   await sup.locator('[data-team-today-link]').click();
   await summary.waitFor();

@@ -44,7 +44,7 @@ export const designSize=(size:number|null)=>size===null?'—':size<1024?size+' B
 const KindIcon=({kind}:{kind:MoldDesignKind|null})=>kind==='pdf'?<FileText size={18} aria-hidden="true"/>:kind==='image'?<ImageIcon size={18} aria-hidden="true"/>:<FileBox size={18} aria-hidden="true"/>;
 /** What attaching or deleting a design file does to a request production holds (the contract: it counts as a change). Not said for a
  *  quotation's or PO's file, which no longer undoes the approvals (2026-11-05). */
-export const designWarningText=(say:Say)=>say('إرفاق ملف تصميم أو حذفه بيتحسب تعديل على الطلب: هيلغي الاعتمادات اللي تمت، ويرجع الطلب لمدير المبيعات من الأول.','Attaching or deleting a design file counts as a change to the request: it undoes the approvals given so far and the request goes back to the sales manager.');
+export const designWarningText=(say:Say)=>say('يُعدّ إرفاق ملف تصميم أو حذفه تعديلًا على الطلب: يُلغي الاعتمادات التي تمت، ويعيد الطلب إلى مدير المبيعات من البداية.','Attaching or deleting a design file counts as a change to the request: it undoes the approvals given so far and the request goes back to the sales manager.');
 /** A confirmation scrolls itself into view when it appears (a stable callback ref: once per appearance, not on every render), so its
  *  buttons are on a phone's screen; centered keeps the button that follows a warning in view too. */
 export const reveal=(element:HTMLElement|null)=>{element?.scrollIntoView({block:'nearest'});};
@@ -223,7 +223,7 @@ function DesignInput({label,disabled,busy,onFiles,say,category='design'}:{label:
 }
 const hint=(say:Say,category:MoldFileCategory='design')=>category==='design'
  ?say('PDF أو صورة أو ملف رسم (DWG وDXF وSTEP وSTL وZIP…) · حتى 25 ميجابايت للملف · '+MOLD_DESIGN_MAX_FILES+' ملفات للطلب مع ملفات الإنتاج','A PDF, an image or a drawing (DWG, DXF, STEP, STL, ZIP…) · up to 25 MB a file · '+MOLD_DESIGN_MAX_FILES+' files a request with production\'s')
- :say('PDF أو صورة بس · حتى 25 ميجابايت للملف · '+MOLD_CATEGORY_MAX_FILES[category]+' ملفات مع ملفات الإنتاج','A PDF or an image only · up to 25 MB a file · '+MOLD_CATEGORY_MAX_FILES[category]+' files with production\'s');
+ :say('PDF أو صورة فقط · حتى 25 ميجابايت للملف · '+MOLD_CATEGORY_MAX_FILES[category]+' ملفات مع ملفات الإنتاج','A PDF or an image only · up to 25 MB a file · '+MOLD_CATEGORY_MAX_FILES[category]+' files with production\'s');
 /** The picker's title in the form, for each kind of file. The quotation's and PO's pickers sit under «عرض السعر أو الـ PO (ملف واحد على
  *  الأقل)» (2026-11-05): no «اختياري» of their own. The design files' is «(اختياري)» unless the form gives its own title (a new request,
  *  2026-11-08: «ملفات التصميم (ملف واحد على الأقل)»). */
@@ -371,7 +371,7 @@ function MoldFileGroup({view,uploads,queue,onView,say,category,attachable}:{view
   {view.can.attach&&attachable&&<div className="mold-design-tools">
    <DesignInput label={say('إرفاق ملفات','Attach files')} disabled={room<=0||!!asking} busy={checking} onFiles={files=>void pick(files)} say={say} category={category}/>
    <small className="mold-design-hint">{room<=0?moldDesignRefusalText('too_many_files',say,category)+'. '+say('احذف ملفًا أولًا.','Delete a file first.'):hint(say,category)}</small>
-   {category==='design'&&listed.some(file=>file.signature)&&<small className="mold-design-hint mold-signature-room">{say('توقيع العميل من ملفات الطلب الـ 10، ومينفعش يتحذف.','The customer\'s signature is one of the request\'s 10 files and cannot be deleted.')}</small>}
+   {category==='design'&&listed.some(file=>file.signature)&&<small className="mold-design-hint mold-signature-room">{say('توقيع العميل أحد ملفات الطلب الـ 10، ولا يمكن حذفه.','The customer\'s signature is one of the request\'s 10 files and cannot be deleted.')}</small>}
   </div>}
  </section>;
 }

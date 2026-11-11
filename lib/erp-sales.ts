@@ -323,7 +323,7 @@ function openWorkbook(bytes: Uint8Array, limits: ReadLimits) {
         return documents.get(name);
     };
     const contentTypes = document('[Content_Types].xml');
-    if (!contentTypes?.Types || [...list<XmlNode>(contentTypes.Types.Default), ...list<XmlNode>(contentTypes.Types.Override)].some(t => /(?:macroenabled|vba|activex|oleobject)/i.test(String(t['@_ContentType'] || '')))) fail('ارفع ملف XLSX عادي بدون وحدات ماكرو');
+    if (!contentTypes?.Types || [...list<XmlNode>(contentTypes.Types.Default), ...list<XmlNode>(contentTypes.Types.Override)].some(t => /(?:macroenabled|vba|activex|oleobject)/i.test(String(t['@_ContentType'] || '')))) fail('ارفع ملف XLSX لا يحتوي على وحدات ماكرو');
     const workbook = document('xl/workbook.xml')?.workbook;
     return {
         workbook, sheets: list<XmlNode>(workbook?.sheets?.sheet),

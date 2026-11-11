@@ -216,7 +216,7 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
  if(claimed.meta.changes!==1){const still=row.outbox==='send'?moldHeldFor(row,await loadMoldDesignFiles(db,'request_id=?',[id])):null;return still?{kind:'none',code:still}:{kind:'busy',code:''};}
  // A cancellation whose answer was lost while a pull since stored production's status as cancelled (it arrived, or production cancelled
  // the request itself): complete there, so it is settled as delivered, not sent again. A later restore is then the pull's alone
- // (moldRemoteStatements: audited «رجّعه مدير الإنتاج بعد الإلغاء», active again), never read from a cancellation's answer. A restore
+ // (moldRemoteStatements: audited «أعاده مدير الإنتاج بعد الإلغاء», active again), never read from a cancellation's answer. A restore
  // stored meanwhile (it drops the cancellation and takes the claim) wins.
  if(row.outbox==='cancel'&&row.remote?.status==='cancelled'){
   await db.prepare('UPDATE crm_mold_requests SET outbox=NULL,attempts=0,first_failed_at=NULL,next_attempt_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND mutation_id=?').bind(now(),id,claim).run();
@@ -243,7 +243,7 @@ export async function sendMoldRequest(db:D1Database,id:string,{link=productsLink
    const error=JSON.stringify({code:'restored',reason:'same_reason',http:answer.http||200,at:done}),gate='EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=? AND cancelled_at IS NOT NULL)';
    await db.batch([
     db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,'mold-request:cancel-restored',?,? WHERE ${gate}`)
-     .bind(crypto.randomUUID(),id,MOLD_PRODUCTION_ACTOR,JSON.stringify({label:'الإلغاء لم يُنفَّذ: مدير الإنتاج رجّع الطلب، والسبب نفسه استُخدم قبل كده',customerName:row.data.customer.name,reason:row.cancelReason,orderNo:remote.orderNo,status:remote.status,waitingStep:remote.waitingStep??null}),done,id,claim),
+     .bind(crypto.randomUUID(),id,MOLD_PRODUCTION_ACTOR,JSON.stringify({label:'الإلغاء لم يُنفَّذ: أعاد مدير الإنتاج الطلب، والسبب نفسه استُخدم من قبل',customerName:row.data.customer.name,reason:row.cancelReason,orderNo:remote.orderNo,status:remote.status,waitingStep:remote.waitingStep??null}),done,id,claim),
     db.prepare(`UPDATE crm_mold_requests SET ${held}${cleared},cancelled_at=NULL,cancel_reason='',last_error=?,${remoteSet},version=version+1,updated_at=? WHERE id=? AND mutation_id=?`).bind(...heldArgs,error,...remoteArgs,done,id,claim),
    ]);
    return {kind:'restored',code:'same_reason',fields:[],sent:'cancel'};
@@ -334,7 +334,7 @@ const RESTORED_SQL="(json_extract(remote,'$.status') IS 'cancelled' OR (cancelle
  * The statements that store production's answer about a request (newerRemote), run together in this order (one batch). When the answer
  * says the request is not cancelled while the status stored says it is (or the earlier release already stored that restore without
  * settling it: RESTORED_SQL), the production manager restored it (2026-11-03), and two come
- * first: an audit entry «رجّعه مدير الإنتاج بعد الإلغاء» (whoever cancelled it), and, for a request the CRM cancelled, its cancelled marks
+ * first: an audit entry «أعاده مدير الإنتاج بعد الإلغاء» (whoever cancelled it), and, for a request the CRM cancelled, its cancelled marks
  * cleared (cancelled_at, cancel_reason: it is active again, its cancelling and design files back under the usual rules) with why kept
  * in last_error (code restored). A cancellation still waiting for its resend is dropped then (reason cancel_dropped): production saw the
  * request cancelled and its manager undid that, so it is never sent again. A cancellation production never showed as cancelled is not
@@ -342,14 +342,14 @@ const RESTORED_SQL="(json_extract(remote,'$.status') IS 'cancelled' OR (cancelle
  */
 export function moldRemoteStatements(db:D1Database,id:string,remote:MoldRemote,at:string):D1PreparedStatement[]{
  const [set,args]=newerRemote(remote,at),write=db.prepare(`UPDATE crm_mold_requests SET ${set} WHERE id=?`).bind(...args,id);
- // Finance sent it back (2026-11-10): «رجّعته المالية» in the audit, once for each return (named by its moment), when first seen.
+ // Finance sent it back (2026-11-10): «أعادته المالية» in the audit, once for each return (named by its moment), when first seen.
  const returned=remote.returned?[db.prepare(`INSERT OR IGNORE INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,id,?,'mold-request:returned',json_object('label',?,'customerName',json_extract(data,'$.customer.name'),'reason',?,'by',?,'at',?),? FROM crm_mold_requests WHERE id=?`)
-  .bind('mold-returned:'+id+':'+(remote.returned.at||''),MOLD_PRODUCTION_ACTOR,'رجّعته المالية',remote.returned.reason,remote.returned.name||'finance',remote.returned.at,at,id)]:[];
+  .bind('mold-returned:'+id+':'+(remote.returned.at||''),MOLD_PRODUCTION_ACTOR,'أعادته المالية',remote.returned.reason,remote.returned.name||'finance',remote.returned.at,at,id)]:[];
  // (Last, after the write and a restore's statements: the callers count the restore by its place.)
  if(remote.status==='cancelled')return [write,...returned];
  const revision=remote.revision??Number.MAX_SAFE_INTEGER,error=(reason:string)=>JSON.stringify({code:'restored',reason,http:0,at});
  const audit=db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,id,?,'mold-request:restored',json_object('label',?,'customerName',json_extract(data,'$.customer.name'),'cancelledInCrm',json(CASE WHEN cancelled_at IS NULL THEN 'false' ELSE 'true' END),'cancelReason',cancel_reason,'cancelDropped',json(CASE WHEN outbox IS 'cancel' THEN 'true' ELSE 'false' END),'orderNo',?,'status',?,'waitingStep',?),?
-  FROM crm_mold_requests WHERE id=? AND ${RESTORED_SQL}`).bind(crypto.randomUUID(),MOLD_PRODUCTION_ACTOR,'رجّعه مدير الإنتاج بعد الإلغاء',remote.orderNo,remote.status,remote.waitingStep??null,at,id,revision);
+  FROM crm_mold_requests WHERE id=? AND ${RESTORED_SQL}`).bind(crypto.randomUUID(),MOLD_PRODUCTION_ACTOR,'أعاده مدير الإنتاج بعد الإلغاء',remote.orderNo,remote.status,remote.waitingStep??null,at,id,revision);
  // accepted: production holds the request with the CRM's data (a cancellation whose first send's answer was lost may lack it).
  const restore=db.prepare(`UPDATE crm_mold_requests SET cancelled_at=NULL,cancel_reason='',accepted=COALESCE(accepted,data),last_error=CASE WHEN outbox IS 'cancel' THEN ? ELSE ? END,attempts=CASE WHEN outbox IS 'cancel' THEN 0 ELSE attempts END,
   first_failed_at=CASE WHEN outbox IS 'cancel' THEN NULL ELSE first_failed_at END,next_attempt_at=CASE WHEN outbox IS 'cancel' THEN NULL ELSE next_attempt_at END,outbox=CASE WHEN outbox IS 'cancel' THEN NULL ELSE outbox END,
