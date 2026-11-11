@@ -10,7 +10,7 @@ import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 const members = [{id: 'owner', role: 'admin'}, {id: 'mgr', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'mgr'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern'}];
 let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
-const REFUSED = 'اختار نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري';
+const REFUSED = 'اختر نوع العميل من القائمة: مصنع، مؤسسة، شركة، محل تجاري';
 const app = await bootBuiltApp({members});
 try {
   const sessions = {};

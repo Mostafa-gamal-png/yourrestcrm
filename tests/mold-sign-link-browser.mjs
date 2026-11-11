@@ -1,6 +1,6 @@
 // The customer's signature inside a mold request's PDFs and the link the customer signs from (the owner, 2026-11-10), in a real Chromium
 // against the BUILT release (run `pnpm build` first), sending to the stand-in production API: on a phone of 360 px in Arabic, the
-// representative fills a request with a real PDF, chooses «ابعت للعميل لينك يوقّع منه» at the signing step, gets the link on the
+// representative fills a request with a real PDF, chooses «أرسل إلى العميل رابطًا يوقّع منه» at the signing step, gets the link on the
 // request's sheet, copies it (the clipboard holds it) and has WhatsApp ready on the customer's mobile; the card says «بانتظار توقيع
 // العميل». The customer opens the link in a fresh browser (no session) on a phone: the request, its files shown on the page (the PDF drawn
 // page after page, since the owner's «يوقع داخل pdf» of 2026-11-10, and opened through the link), English and back, then, in the box after
@@ -92,20 +92,20 @@ try {
   await fill(dialog, {name: 'رسم القالب.pdf', mimeType: 'application/pdf', buffer: await makePdf('Design A')});
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
   await dialog.locator('.mold-signing').waitFor();
-  check(await dialog.locator('.mold-signing-mode label').allInnerTexts(), ['العميل يوقّع دلوقتي', 'ابعت للعميل لينك يوقّع منه'], 'the two choices at the signing step');
-  await dialog.locator('.mold-signing-mode label', {hasText: 'ابعت للعميل لينك يوقّع منه'}).click();
+  check(await dialog.locator('.mold-signing-mode label').allInnerTexts(), ['يوقّع العميل الآن', 'أرسل إلى العميل رابطًا يوقّع منه'], 'the two choices at the signing step');
+  await dialog.locator('.mold-signing-mode label', {hasText: 'أرسل إلى العميل رابطًا يوقّع منه'}).click();
   ok(await dialog.locator('.mold-signing-link-note').isVisible(), 'what the link does is said');
   check(await dialog.locator('.mold-signing .mold-signature-pad').count(), 0, 'no pad for the link');
   await noOverflow(rep, 'the link choice at 360 px');
   await shot(rep, '01-rep-link-choice-360-ar');
-  await dialog.getByRole('button', {name: 'حفظ وعمل اللينك'}).click();
+  await dialog.getByRole('button', {name: 'حفظ وإنشاء الرابط'}).click();
   const panel = sheet(rep).locator('.mold-sign-link');
   await panel.waitFor();
   const url = await panel.locator('.mold-sign-link-url input').inputValue();
   ok(url.startsWith(app.origin + '/sign/m/') && /\/sign\/m\/[A-Za-z0-9_-]{43}$/.test(url), 'the link on the CRM\'s origin, shown on the sheet');
-  await panel.getByRole('button', {name: 'نسخ اللينك'}).click();
-  check(await rep.evaluate(() => navigator.clipboard.readText()), url, '«نسخ اللينك» puts it on the clipboard');
-  ok(await panel.getByRole('button', {name: 'اتنسخ اللينك'}).isVisible(), 'and says so');
+  await panel.getByRole('button', {name: 'نسخ الرابط'}).click();
+  check(await rep.evaluate(() => navigator.clipboard.readText()), url, '«نسخ الرابط» puts it on the clipboard');
+  ok(await panel.getByRole('button', {name: 'نُسخ الرابط'}).isVisible(), 'and says so');
   const whatsapp = await panel.locator('a', {hasText: 'إرسال واتساب'}).getAttribute('href');
   ok(whatsapp.startsWith('https://wa.me/966551234567?text=') && decodeURIComponent(whatsapp).includes(url), 'WhatsApp on the customer\'s mobile with the link');
   await until(async () => (await sheet(rep).locator('.mold-sending').innerText()).includes('بانتظار توقيع العميل'), 'the request waits for the customer\'s signature once its file is up');
@@ -167,7 +167,7 @@ try {
   await customer.locator('.sign-done').waitFor({timeout: 40000});
   check(await customer.locator('.sign-done h1').innerText(), 'تم التوقيع، شكرًا', '«تم التوقيع، شكرًا»');
   const copyLink = customer.locator('.sign-done .sign-files a').first();
-  check(await customer.locator('.sign-done .sign-files li bdi').allInnerTexts(), ['طلب القالب - موقّع.pdf'], 'the ONE signed file to download (2026-11-11)');
+  check(await customer.locator('.sign-done .sign-files li > bdi').allInnerTexts(), ['طلب القالب - موقّع.pdf'], 'the ONE signed file to download (2026-11-11)');
   await noOverflow(customer, 'the thank-you page');
   await shot(customer, '07-customer-done-360-ar');
   await until(() => mock.state.calls.some(call => call.route === 'requests' && call.signed && call.body.includes(requestId)), 'the request reaches production');

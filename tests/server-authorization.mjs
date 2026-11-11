@@ -35,7 +35,7 @@ try {
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   // The customer's signing link (2026-11-10) is public by design, but opens only with a valid token: without one, one neutral page or
   // answer, never anything of a request, and no session is asked for (not 401, no redirect to the sign-in).
-  const forged = 'A'.repeat(43), gone = 'اللينك ده مش شغال. اطلب من المندوب لينك جديد.';
+  const forged = 'A'.repeat(43), gone = 'هذا الرابط لم يعد صالحًا. اطلب من المندوب رابطًا جديدًا.';
   for (const url of ['/sign/m/' + forged, '/sign/m/short', '/sign/m/' + forged + '/file/mdf-x']) {
     const reply = await anonymous(url);
     check([reply.status === 200 || reply.status === 404, reply.text.includes(gone), /\/login/.test(reply.headers.location || '')], [true, true, false], 'anonymous ' + url + ': the neutral page');
@@ -76,7 +76,7 @@ try {
     // The supervisor's notes (2026-11-09): those of a day report for the roles that open it; everyone reads their own unread notes.
     ['/api/reviews?date=' + day]: expect(management, 200, 403),
     '/api/review-inbox': expect(everyone, 200, 0),
-    // «فريقي النهارده» (2026-11-10): the roles that open «تقرير يوم المندوب»; a representative and customer service are refused.
+    // «فريقي اليوم» (2026-11-10): the roles that open «تقرير يوم المندوب»; a representative and customer service are refused.
     '/api/team-today': expect(management, 200, 403)
   };
   for (const [url, byRole] of Object.entries(getMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url)).status, byRole[id], `GET ${url} as ${id}`);
@@ -169,7 +169,7 @@ try {
   check(rows.n, 0, 'rejected writes leave no rows');
   // 5. Adding customers (the owner, 2026-11-07): customer service picks an existing customer and never adds one, by any route;
   // sales and the administrator keep adding; customer service keeps registering requests on existing customers.
-  const refused = 'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.';
+  const refused = 'إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.';
   const customerTotal = async () => (await app.db.prepare("SELECT COUNT(*) AS n FROM crm_records WHERE kind='customer'").first()).n;
   for (const id of everyone) {
     const before = await customerTotal(), service = id === 'cs' || id === 'csm';
@@ -218,7 +218,7 @@ try {
   check([hiddenMold.status, hiddenMold.json().error], [404, 'هذا الجزء غير متاح لحسابك. راجع مدير النظام.'], 'rep1: «طلبات تصنيع القوالب» hidden: 404 with its message');
   check((await app.as(sessions.rep2)('/api/mold-requests')).status, 200, 'rep2 is unaffected');
   const addRefused = await app.as(sessions.rep1)('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل ممنوع', region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03', phone: '0500000001'}}});
-  check([addRefused.status, addRefused.json().error], [403, 'مش مسموح لك بالإضافة في العملاء. راجع مدير النظام.'], 'rep1: adding a customer switched off: 403 with its message');
+  check([addRefused.status, addRefused.json().error], [403, 'غير مسموح لك بالإضافة في العملاء. راجع مدير النظام.'], 'rep1: adding a customer switched off: 403 with its message');
   check((await permissions('owner', 'sup', 0, {hidden: ['journeys']})).status, 200, 'the administrator hides «تقرير يوم المندوب» from the supervisor');
   for (const url of ['/api/journeys?date=' + day, '/api/reviews?date=' + day, '/api/device-status', '/api/team-today']) {
     check((await app.as(sessions.sup)(url)).status, 404, 'sup GET ' + url + ' hidden: 404');
@@ -233,13 +233,13 @@ try {
   const removeAs = async (id, record, kind = 'activity') => app.as(sessions[id])('/api/crm', {method: 'POST', body: {action: 'delete', kind, id: record, version: await visitVersion(record)}});
   for (const id of ['mgr', 'sup', 'rep1']) {
     const refused = await removeAs(id, 'v-rep1');
-    check([refused.status, refused.json().error], [403, 'مش مسموح لك بالحذف في الزيارات. راجع مدير النظام.'], id + ': deleting a visit is off by default');
+    check([refused.status, refused.json().error], [403, 'غير مسموح لك بالحذف في الزيارات. راجع مدير النظام.'], id + ': deleting a visit is off by default');
   }
   for (const id of ['cs', 'csm']) check((await removeAs(id, 'v-rep1')).status, 403, id + ': no delete through /api/crm');
   const sale1 = await app.db.prepare("SELECT id,version FROM crm_sales WHERE reference='INV-e1'").first();
   for (const id of ['mgr', 'sup']) {
     const voided = await app.as(sessions[id])('/api/sales', {method: 'POST', body: {action: 'void', id: sale1.id, version: sale1.version, reason: 'تجربة'}});
-    check([voided.status, voided.json().error], [403, 'مش مسموح لك بالحذف في المبيعات. راجع مدير النظام.'], id + ': voiding a sale is off by default');
+    check([voided.status, voided.json().error], [403, 'غير مسموح لك بالحذف في المبيعات. راجع مدير النظام.'], id + ': voiding a sale is off by default');
   }
   check(await visitVersion('v-rep1'), 1, 'nothing deleted');
   const repVersion = (await app.db.prepare("SELECT version FROM crm_member_permissions WHERE member_id='rep1'").first()).version;

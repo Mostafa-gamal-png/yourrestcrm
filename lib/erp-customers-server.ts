@@ -14,27 +14,27 @@ const regionSchema=z.object({row:z.number().int().min(1).max(1048576),region:z.s
 const inputSchema=z.object({action:z.enum(['preview','apply']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),choices:z.array(choiceSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),region:z.string().max(40).optional(),regions:z.array(regionSchema).max(ERP_CUSTOMERS_MAX_ROWS).default([]),adds:z.number().int().min(0).max(ERP_CUSTOMERS_MAX_ROWS).optional(),snapshot:z.string().regex(/^[a-f0-9]{64}$/).optional(),clearCodes:z.boolean().optional(),clearSnapshot:z.string().regex(/^[a-f0-9]{64}$/).optional(),requestId:z.string().uuid().optional()}).strict();
 type Input=z.infer<typeof inputSchema>;
 /** The audit label of a code an import cleared (the customer is not in the ERP file), as «تحديث كود ERP من ملف ERP» for a code it changed. */
-export const ERP_CLEAR_AUDIT_LABEL='مسح كود ERP: العميل مش في ملف ERP';
-const stale='اتغيرت بيانات العملاء من وقت المعاينة؛ اعمل معاينة جديدة';
+export const ERP_CLEAR_AUDIT_LABEL='مسح كود ERP: العميل غير موجود في ملف ERP';
+const stale='تغيّرت بيانات العملاء منذ المعاينة؛ أجرِ معاينة جديدة';
 /** An apply with no `adds`: an import screen loaded before additions existed (it said rows without a match are left alone, never sends
  *  `adds`, and cannot read this release's answer, which has no `missing`). Every apply from it is refused, code-only ones too, before
  *  anything is written. That screen cannot translate a new message, so the English sentence travels with it. */
-export const ERP_SCREEN_OUTDATED='شاشة الاستيراد دي اتفتحت قبل تحديث النظام؛ حدّث الصفحة واعمل معاينة جديدة. ما اتحفظش أي حاجة. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.';
+export const ERP_SCREEN_OUTDATED='فُتحت شاشة الاستيراد هذه قبل تحديث النظام؛ حدّث الصفحة وأجرِ معاينة جديدة. لم يُحفظ أي شيء. / This import screen was opened before the system update. Reload the page and run a new preview. Nothing was saved.';
 /** An apply whose `adds` differs from the number of new customers the file adds now. Nobody is added; the page must be reloaded. */
-export const ERP_ADDS_UNCONFIRMED='الشاشة دي ما عرضتش العملاء الجداد اللي هيتضافوا؛ حدّث الصفحة واعمل معاينة جديدة';
+export const ERP_ADDS_UNCONFIRMED='لم تعرض هذه الشاشة العملاء الجدد الذين سيُضافون؛ حدّث الصفحة وأجرِ معاينة جديدة';
 /** The label a customer added by an import carries in its «إضافة» history entry, after its name (the form's entry is the name alone). */
 export const ERP_ADD_AUDIT_LABEL='إضافة عميل من ملف ERP';
 /** The administrator (every customer in their regions, all of them for a global scope) and the sales manager (their regions' customers). */
 export function requireErpCustomersRole(me:Member){if(!['admin','manager'].includes(me.role))throw new CRMError('استيراد عملاء ERP متاح لمدير النظام ومدير المبيعات فقط.',403);}
 async function hash(value:string|Uint8Array<ArrayBuffer>){const bytes=await crypto.subtle.digest('SHA-256',typeof value==='string'?new TextEncoder().encode(value):value);return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');}
 function parseInput(body:unknown){const input=inputSchema.parse(body);if(!/^[A-Za-z0-9+/]*={0,2}$/.test(input.base64)||input.base64.length%4!==0)throw new CRMError('ترميز ملف العملاء غير صحيح');const raw=atob(input.base64);if(raw.length>maxFileBytes)throw new CRMError('أقصى حجم لملف عملاء ERP 1 ميجابايت',413);return {input,bytes:Uint8Array.from(raw,c=>c.charCodeAt(0)) as Uint8Array<ArrayBuffer>};}
-function choiceMap(input:Input){const choices=new Map<number,string>();for(const choice of input.choices){if(choices.has(choice.row))throw new CRMError('تكرار في اختيارات العملاء؛ اعمل معاينة جديدة');choices.set(choice.row,choice.customerId);}return choices;}
-function regionMap(input:Input){const regions=new Map<number,string>();for(const entry of input.regions){if(regions.has(entry.row))throw new CRMError('تكرار في مناطق العملاء الجداد؛ اعمل معاينة جديدة');regions.set(entry.row,entry.region);}return regions;}
+function choiceMap(input:Input){const choices=new Map<number,string>();for(const choice of input.choices){if(choices.has(choice.row))throw new CRMError('تكرار في اختيارات العملاء؛ أجرِ معاينة جديدة');choices.set(choice.row,choice.customerId);}return choices;}
+function regionMap(input:Input){const regions=new Map<number,string>();for(const entry of input.regions){if(regions.has(entry.row))throw new CRMError('تكرار في مناطق العملاء الجدد؛ أجرِ معاينة جديدة');regions.set(entry.row,entry.region);}return regions;}
 const expected=<T>(run:()=>T)=>{try{return run();}catch(error){if(error instanceof ErpWorkbookError||error instanceof ErpCustomersError)throw new CRMError(error.message);throw error;}};
 /** The same region rules as a customer created from the form, for a customer the importing member adds and is responsible for: one of the
  * form's values, and a region the member may use (memberCanAccessRegion, which is also the responsible member's region rule here). */
 function checkRegion(me:Member,region:string){
- if(!erpNewCustomerRegionValues.includes(region))throw new CRMError('اختار منطقة صحيحة للعملاء الجداد.');
+ if(!erpNewCustomerRegionValues.includes(region))throw new CRMError('اختر منطقة صحيحة للعملاء الجدد.');
  if(!memberCanAccessRegion(me,region))throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
 }
 /** A new customer's record data, as the customer form builds it (schemas.customer, the location fields, `_createdBy`): the row's name,
@@ -55,7 +55,7 @@ function mayChange(c:Context,customer:Row){try{customerDetailMutationGuard({me:c
 async function prepare(c:Context,bytes:Uint8Array<ArrayBuffer>){
  const parsed=expected(()=>erpCustomerRows(readWorkbookSheets(bytes,{maxRows:ERP_CUSTOMERS_MAX_ROWS}))),options={me:c.me,mappings:c.customerIdentityState.mappings};
  const base=expected(()=>matchErpCustomers(parsed.rows,c.all,options));
- // The customers the file does not name whose code «امسح كود ERP للعملاء اللي مش في الشيت» clears: only those `me` may change, like a
+ // The customers the file does not name whose code «امسح كود ERP للعملاء غير الموجودين في الشيت» clears: only those `me` may change, like a
  // code change. They do not depend on the choices; what the preview listed (each with its version) is `clearSnapshot`, which an apply
  // that clears must send back: a customer edited, moved to another region or matched by the file since then refuses it (409).
  const customers=new Map(c.all.filter(row=>row.kind==='customer').map(row=>[row.id,row]));
@@ -98,7 +98,7 @@ export async function importErpCustomers(c:Context,body:unknown){
  if(!input.requestId||!input.snapshot)throw new CRMError('اعرض الملف أولًا قبل تحديث الأكواد');
  const choices=choiceMap(input),rowRegions=regionMap(input);
  const clearing=input.clearCodes===true,fingerprint=await hash(JSON.stringify({file:await hash(bytes),choices:[...choices].sort(([a],[b])=>a-b),region:input.region??null,regions:[...rowRegions].sort(([a],[b])=>a-b),...(clearing?{clear:true}:{})})),receipt='erp-customers:'+c.me.id+':'+input.requestId;
- const replay=async()=>{const row=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receipt).first<{detail:string}>();if(!row)return null;const saved=JSON.parse(row.detail) as {fingerprint:string;result:{additions?:Addition[]}&Record<string,unknown>};if(saved.fingerprint!==fingerprint)throw new CRMError('الطلب محفوظ ببيانات مختلفة. اعمل معاينة جديدة.',409);return {...await withNumbers(c,saved.result),alreadySaved:true};};
+ const replay=async()=>{const row=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(receipt).first<{detail:string}>();if(!row)return null;const saved=JSON.parse(row.detail) as {fingerprint:string;result:{additions?:Addition[]}&Record<string,unknown>};if(saved.fingerprint!==fingerprint)throw new CRMError('الطلب محفوظ ببيانات مختلفة. أجرِ معاينة جديدة.',409);return {...await withNumbers(c,saved.result),alreadySaved:true};};
  const prior=await replay();if(prior)return prior;
  if(input.adds===undefined)throw new CRMError(ERP_SCREEN_OUTDATED,409);
  const book=await prepare(c,bytes);
@@ -108,7 +108,7 @@ export async function importErpCustomers(c:Context,body:unknown){
  const prepared={...book.match(choices),snapshot:book.snapshot};
  if(prepared.summary.conflicts)throw new CRMError('اخترت نفس العميل لأكثر من سطر؛ العميل له كود ERP واحد. راجع الاختيارات.');
  if(input.adds!==prepared.adds.length)throw new CRMError(ERP_ADDS_UNCONFIRMED,409);
- if(prepared.adds.length>ERP_CUSTOMERS_MAX_ADDS)throw new CRMError(`أقصى عدد للعملاء الجداد في المرة الواحدة ${ERP_CUSTOMERS_MAX_ADDS}؛ سيب الباقي وضيفهم في مرة تانية.`);
+ if(prepared.adds.length>ERP_CUSTOMERS_MAX_ADDS)throw new CRMError(`الحد الأقصى للعملاء الجدد في المرة الواحدة ${ERP_CUSTOMERS_MAX_ADDS}؛ اترك الباقي وأضفهم في مرة أخرى.`);
  if(!prepared.plan.length&&!prepared.adds.length&&!clears.length)throw new CRMError('لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.');
  // The same checks as a customer edit, for every customer that changes; their SQL (member and record version) is the gate below. A member
  // limited to regions never moves a number's invoices away from a customer outside them (the preview already leaves those rows out).
@@ -122,7 +122,7 @@ export async function importErpCustomers(c:Context,body:unknown){
  for(const clear of clears){const customer=customers.get(clear.customerId)!;customerDetailMutationGuard({me:c.me,members:c.members,all:[customer]},customer);}
  // New customers: the region chosen for them (or for one row), checked like the form's; their data as the form builds it.
  const addRows=new Set(prepared.adds.map(add=>add.row)),fallback=erpNewCustomerRegions(c.me).default;
- for(const [row] of rowRegions)if(!addRows.has(row))throw new CRMError(`السطر ${row} مش عميل جديد؛ اعمل معاينة جديدة`);
+ for(const [row] of rowRegions)if(!addRows.has(row))throw new CRMError(`السطر ${row} ليس عميلًا جديدًا؛ أجرِ معاينة جديدة`);
  for(const region of [...(input.region===undefined?[]:[input.region]),...rowRegions.values()])checkRegion(c.me,region);
  const additions=prepared.adds.map(add=>{
   const region=rowRegions.get(add.row)??input.region??fallback;

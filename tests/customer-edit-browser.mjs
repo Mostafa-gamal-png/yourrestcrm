@@ -214,7 +214,7 @@ try{
  await servicePage.getByRole('button',{name:'فرصة جديدة',exact:true}).first().click();const serviceVisit=servicePage.locator('.customer-visit-dialog');await serviceVisit.waitFor();
  eq(await serviceVisit.getByRole('button',{name:'إضافة عميل',exact:true}).count(),0,'Customer service has no add-customer action');
  await serviceVisit.locator('#visit-customer-search').fill('مصنع غير موجود إطلاقا');
- await servicePage.locator('.visit-customer-no-results').filter({hasText:'اختار عميل موجود أو اطلب من المبيعات يضيفه'}).waitFor();checks++;
+ await servicePage.locator('.visit-customer-no-results').filter({hasText:'اختر عميلًا موجودًا أو اطلب من المبيعات إضافته'}).waitFor();checks++;
  await serviceVisit.locator('#visit-customer-search').fill('مصنع الاختبار الثاني');await servicePage.getByRole('option').filter({hasText:'مصنع الاختبار الثاني'}).waitFor();await serviceVisit.locator('#visit-customer-search').press('Enter');
  await serviceVisit.locator('.visit-context-details>summary').filter({hasText:'بيانات العميل'}).click();await serviceVisit.getByRole('button',{name:'فتح بطاقة العميل',exact:true}).click();
  const serviceSheet=servicePage.locator('.crm-sheet'),leave=servicePage.getByRole('button',{name:'خروج بدون حفظ',exact:true});
@@ -234,7 +234,7 @@ try{
  eq([JSON.parse(serviceStored.data).phone,JSON.parse(serviceStored.data).latitude,serviceStored.assigned_to,serviceStored.branch],['0504444444',21.6,'owner','Main'],'Customer service edit persisted with routing kept');
  const eastRow=await db.prepare("SELECT data,version FROM crm_records WHERE id='east'").first();
  eq((await request(servicePage,'/api/crm',{action:'save',kind:'customer',id:'east',version:eastRow.version,data:{...JSON.parse(eastRow.data),phone:'0505555555'}})).status,404,'Customer service cannot edit outside its region');
- eq((await request(servicePage,'/api/crm',{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'إضافة خدمة العملاء',region:'الغربية',branch:'Main',assignedTo:'cs1'}})).data.error,'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.','Customer service cannot add a customer');
+ eq((await request(servicePage,'/api/crm',{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'إضافة خدمة العملاء',region:'الغربية',branch:'Main',assignedTo:'cs1'}})).data.error,'إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.','Customer service cannot add a customer');
  eq(errors,[],'No uncaught browser errors');
  const report={ok:true,checks,actualBuiltRelease:true,realSqlite:true,mockedDeviceLocation:true,physicalDeviceTested:false,deployedToNamecheap:false,coverage:['representative edits regional customer assigned to global administrator','sales manager edits same retained customer','phone and location changes persist to SQLite','assignment and branch remain unchanged','manager routing fields are read-only','customer service edits a customer of its branch and region like a representative (no routing fields, delete or machines; outside region 404; adding refused)','explicit GPS refresh','manual coordinate save','fresh map coordinates for both roles','delete and add-machine permissions are not expanded','repeated banner removed'],geometry,screenshots:saved};
  await writeFile('docs/CUSTOMER-EDIT-BROWSER-VERIFICATION.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));

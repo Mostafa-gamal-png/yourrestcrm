@@ -25,11 +25,17 @@
 .mold-sign-page-title{margin:0;text-align:center;font-size:19px;font-weight:800;padding-bottom:6px;border-bottom:2px solid #5b6b62}
 .mold-sign-page-heading{margin:0;text-align:center;font-size:14px;color:#444}
 .mold-sign-page h3{margin:6px 0 0;font-size:15px;font-weight:700}
-.mold-sign-page .mold-sign-page-facts{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:#111}
-.mold-sign-page .mold-sign-page-facts>div{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+/* Cells, as the PNG draws them (lib/sign-page-canvas.ts): a fact is a label cell and a value cell; a document a row of kind | file name |
+   pages. Each value its own direction (dir set from its first strong character), aligned towards the label; the pages never wrap. */
+.mold-sign-page .mold-sign-page-facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 8px;align-items:start;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:#111}
+.mold-sign-page .mold-sign-page-facts>div{display:contents}
 .mold-sign-page .mold-sign-page-facts dt{font-size:14px;font-weight:600;color:#333}.mold-sign-page .mold-sign-page-facts dt::after{content:':'}
 .mold-sign-page .mold-sign-page-facts dd{margin:0;min-width:0;font-size:14px;font-weight:400;color:#111;overflow-wrap:anywhere}
-.mold-sign-page-list{margin:0;padding-inline-start:18px;display:grid;gap:2px}.mold-sign-page-list li{overflow-wrap:anywhere}
+.mold-sign-page-list{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:2px 8px;align-items:start}
+.mold-sign-page-list li{display:contents}
+.mold-sign-page-kind{font-weight:700}.mold-sign-page-name{display:block;min-width:0;overflow-wrap:anywhere;unicode-bidi:isolate}
+.mold-sign-page-range{white-space:nowrap}
+.mold-sign-page-list[data-kind=others]{grid-template-columns:max-content minmax(0,1fr) minmax(0,40%)}
 .mold-sign-page-list[data-kind=others]{color:#333}
 .mold-sign-page-none{margin:0;color:#555}
 .mold-sign-page-consent{margin:6px 0 0;font-weight:700}
@@ -39,4 +45,3 @@
 .mold-sign-actions{margin-top:4px}
 /* A phone: the paper's and the box's margins shrink, so the pad keeps most of the screen's width. */
 @media (max-width:480px){.mold-doc-sign-paper{padding:14px 8px}.mold-sign-page-box{padding:8px 6px}}
-.mold-sign-page-range{white-space:nowrap}

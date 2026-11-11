@@ -1,6 +1,6 @@
 // «المحذوفات» for whoever was granted «حذف» (the owner, 2026-11-10), in a real Chromium against the BUILT release (run the build first).
 // The administrator, on the desktop in Arabic, opens the representative in «الفريق والصلاحيات»: the matrix has the «المحذوفات» row with its
-// note («لمن عنده «حذف»: اللي حذفه هو بس»); ticks «حذف» of «الزيارات» and saves. The representative, on a 360 px phone in Arabic (the
+// note («لمن لديه «حذف»: ما حذفه هو فقط»); ticks «حذف» of «الزيارات» and saves. The representative, on a 360 px phone in Arabic (the
 // Android app's bridge), deletes their own visit (the confirmation says it can be restored from «المحذوفات»), opens «المزيد» → «المحذوفات»,
 // finds only their own deletion, restores it, and the visit is back in «الزيارات»; on the desktop in English the same from the sidebar
 // («Deleted records»). Another representative, never granted, has no «المحذوفات» in «المزيد» and GET /api/trash answers 404. A sales manager
@@ -76,7 +76,7 @@ try {
   await admin.getByRole('row').filter({has: admin.locator('strong', {hasText: /^مندوب الوسطى$/})}).getByTitle('تعديل المستخدم').click();
   const matrix = admin.locator('[data-permission-matrix]');
   await matrix.waitFor();
-  check((await matrix.locator('[data-matrix-row="trash"] [data-row-note]').innerText()).trim(), 'لمن عنده «حذف»: اللي حذفه هو بس', 'the matrix: «المحذوفات» for a representative, with its note');
+  check((await matrix.locator('[data-matrix-row="trash"] [data-row-note]').innerText()).trim(), 'لمن لديه «حذف»: ما حذفه هو فقط', 'the matrix: «المحذوفات» for a representative, with its note');
   check([await admin.getByRole('checkbox', {name: 'استعراض · المحذوفات'}).isChecked(), await admin.getByRole('checkbox', {name: 'تحرير · المحذوفات'}).isChecked()], [true, true], '«استعراض» and «تحرير» of «المحذوفات» on (restrict-only)');
   check(await admin.getByRole('checkbox', {name: 'حذف · الزيارات'}).isChecked(), false, '«حذف» of visits unticked by default');
   await admin.getByRole('checkbox', {name: 'حذف · الزيارات'}).check();
@@ -106,7 +106,7 @@ try {
   const entry = phone.locator('.trash-card[data-record="own-ar"]');
   const text = await entry.innerText();
   ok(text.includes(ARABIC) && text.includes('زيارة') && text.includes('حذفه: مندوب الوسطى') && text.includes(FACTORY), 'the card: type, the visit, its customer, who deleted it: ' + text);
-  ok((await phone.locator('.trash-intro').innerText()).includes('السجلات اللي انت حذفتها'), 'the intro: the records they deleted');
+  ok((await phone.locator('.trash-intro').innerText()).includes('السجلات التي حذفتها'), 'the intro: the records they deleted');
   const restoreButton = entry.getByRole('button', {name: 'استرجاع ' + ARABIC});
   check([await restoreButton.isDisabled(), await restoreButton.evaluate(button => button.getBoundingClientRect().height >= 44)], [false, true], '«استرجاع» enabled, easy to tap');
   await noSideways(phone, 'phone trash');
@@ -168,7 +168,7 @@ try {
   await manager.locator('.customer-mobile-card').filter({has: manager.locator('h3', {hasText: 'مصنع المدير'})}).locator('.customer-mobile-name').click();
   await manager.locator('.crm-sheet').getByTitle('حذف السجل').click();
   const managerDialog = await manager.getByRole('alertdialog').innerText();
-  ok(managerDialog.includes('مدير النظام يقدر يسترجعه لاحقًا من «المحذوفات».') && !managerDialog.includes('يمكن استرجاعه لاحقًا'), '«المحذوفات» hidden: the administrator can restore it');
+  ok(managerDialog.includes('يمكن لمدير النظام استرجاعه لاحقًا من «المحذوفات».') && !managerDialog.includes('يمكن استرجاعه لاحقًا'), '«المحذوفات» hidden: the administrator can restore it');
   await shot(manager, 'trash-own-manager-hidden-ar');
   await manager.getByRole('alertdialog').getByRole('button', {name: 'إلغاء', exact: true}).click();
   await manager.context().close();

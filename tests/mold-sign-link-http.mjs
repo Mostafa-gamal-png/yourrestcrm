@@ -102,7 +102,7 @@ try {
   check(xobjects(copyDoc), [0, 1], 'one image on the last page only');
   check(sha((await as('rep')(shown.designFiles.find(file => file.name === 'رسم القالب.pdf').href)).bytes), sha(seenPdf), 'the original is served unchanged');
   const deleted = await as('rep')('/api/mold-requests/design-files/delete', {method: 'POST', body: {requestId: crypto.randomUUID(), id: deviceId, fileId: copies[0].crmFileId}});
-  check([deleted.status, deleted.json().error], [409, 'النسخة الموقّعة ما بتتحذفش من الطلب طول ما التوقيع اللي عليها هو توقيع الطلب.'], 'a signed copy the signature names is not deleted');
+  check([deleted.status, deleted.json().error], [409, 'لا تُحذف النسخة الموقّعة من الطلب ما دام التوقيع الذي عليها هو توقيع الطلب.'], 'a signed copy the signature names is not deleted');
   // Audited by the representative.
   const audits = (await app.db.prepare("SELECT action,actor FROM crm_audit WHERE record_id=? AND action LIKE 'mold-design:signed-copy%' ORDER BY created_at").bind(deviceId).all()).results;
   check([audits.filter(row => row.action === 'mold-design:signed-copy').length, audits.filter(row => row.action === 'mold-design:signed-copy-skipped').length, [...new Set(audits.map(row => row.actor))]], [2, 2, ['أحمد عبد العزيز']], 'each copy and each PDF without one is audited');
@@ -139,7 +139,7 @@ try {
   check([shown.sending.held, shown.signing.awaits, shown.signing.link.expired, shown.can.link], ['customer_signature', true, false, true], '«بانتظار توقيع العميل», its link open, the requester may renew it');
   check(requestsSent(linkId), 0, 'never sent while it waits');
   const resend = await post('rep', {action: 'resend', id: linkId});
-  check([resend.status, resend.json().error], [409, 'الطلب بانتظار توقيع العميل؛ أول ما العميل يوقّع من اللينك يتبعت الطلب لوحده.'], 'resend refused with the reason');
+  check([resend.status, resend.json().error], [409, 'الطلب بانتظار توقيع العميل؛ يُرسل الطلب تلقائيًا بمجرد أن يوقّع العميل من الرابط.'], 'resend refused with the reason');
   await app.db.prepare('UPDATE crm_mold_requests SET next_attempt_at=? WHERE id=?').bind('2020-01-01T00:00:00.000Z', linkId).run();
   await as('rep')('/api/mold-requests'); await new Promise(resolve => setTimeout(resolve, 1500));
   check(requestsSent(linkId), 0, 'the timetable does not send it either');
@@ -156,12 +156,12 @@ try {
   check([file.status, file.headers['content-type'], /^inline/.test(file.headers['content-disposition']), sha(file.bytes)], [200, 'application/pdf', true, sha(linkPdf)], 'its PDF opens inline through the token');
   const other = (await fileRows(deviceId)).find(row => row.name === 'رسم القالب.pdf');
   file = await anonymous('/sign/m/' + token + '/file/' + other.id);
-  check([file.status, file.text.includes('اللينك ده مش شغال')], [404, true], 'another request\'s file: the neutral page');
+  check([file.status, file.text.includes('هذا الرابط لم يعد صالحًا')], [404, true], 'another request\'s file: the neutral page');
   const forged = token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A');
-  for (const bad of [forged, 'short', token + 'x']) check((await anonymous('/sign/m/' + encodeURIComponent(bad))).text.includes('اللينك ده مش شغال'), true, 'forged or malformed: the neutral page');
+  for (const bad of [forged, 'short', token + 'x']) check((await anonymous('/sign/m/' + encodeURIComponent(bad))).text.includes('هذا الرابط لم يعد صالحًا'), true, 'forged or malformed: the neutral page');
   // Expired: the same page.
   await app.db.prepare("UPDATE crm_mold_requests SET data=json_set(data,'$.signatureLink.expiresAt','2020-01-01T00:00:00.000Z') WHERE id=?").bind(linkId).run();
-  check([(await anonymous('/sign/m/' + token)).text.includes('اللينك ده مش شغال'), (await view('rep', linkId)).signing.link.expired], [true, true], 'expired: neutral page; the sheet says the link expired');
+  check([(await anonymous('/sign/m/' + token)).text.includes('هذا الرابط لم يعد صالحًا'), (await view('rep', linkId)).signing.link.expired], [true, true], 'expired: neutral page; the sheet says the link expired');
   // A new link (the old stops working) by the requester; another representative or the sales manager may not.
   shown = await view('rep', linkId);
   check((await post('rep2', {action: 'signature-link', op: 'new', id: linkId, version: shown.version})).status, 404, 'another representative does not reach it');
@@ -169,7 +169,7 @@ try {
   answer = await post('rep', {action: 'signature-link', op: 'new', id: linkId, version: shown.version});
   check(answer.status, 200, 'a new link');
   const token2 = answer.json().link.url.split('/').pop();
-  check([token2 !== token, (await anonymous('/sign/m/' + token)).text.includes('اللينك ده مش شغال'), (await anonymous('/sign/m/' + token2)).text.includes('تصميم اللينك.pdf')], [true, true, true], 'the old link stops working, the new one opens');
+  check([token2 !== token, (await anonymous('/sign/m/' + token)).text.includes('هذا الرابط لم يعد صالحًا'), (await anonymous('/sign/m/' + token2)).text.includes('تصميم اللينك.pdf')], [true, true, true], 'the old link stops working, the new one opens');
 
   // Signing from the link: the page's key, the request changed after the page opened, the consent, then the signature.
   page = await anonymous('/sign/m/' + token2);
@@ -177,7 +177,7 @@ try {
   ok(key, 'the page carries its key');
   const sign = (body, cookie = null) => app.as(cookie)('/api/mold-sign', {method: 'POST', body: {requestId: crypto.randomUUID(), token: token2, key, signer: 'سالم العميل', png: signaturePng({seed: 9}).toString('base64'), block: block(), blockAt: new Date().toISOString(), consent: true, ...body}});
   check((await sign({consent: false})).status, 400, 'no consent: refused');
-  check((await sign({key: '0'.repeat(32)})).json(), {error: 'الطلب اتعدّل، افتح اللينك تاني.'}, 'another key (the request changed): refused, open again');
+  check((await sign({key: '0'.repeat(32)})).json(), {error: 'عُدِّل الطلب؛ افتح الرابط مرة أخرى.'}, 'another key (the request changed): refused, open again');
   check((await sign({token: forged})).json().gone, true, 'a forged token: the neutral answer');
   check((await sign({blockAt: '2020-01-01T00:00:00.000Z'})).status, 400, 'a moment far from the server\'s: refused');
   check((await anonymous('/api/mold-sign', {method: 'POST', headers: {Origin: 'https://evil.example'}, body: {}})).status, 403, 'another origin: refused');
@@ -197,9 +197,9 @@ try {
   check(sentFiles(linkId).filter(name => name.endsWith('.pdf')), ['تصميم اللينك.pdf', 'أضيف بعد الفتح.pdf', 'تصميم اللينك - موقّع.pdf', 'أضيف بعد الفتح - موقّع.pdf'], 'the PDFs, then their copies (made after the signature)');
   ok(sentFiles(linkId).some(name => name.startsWith('توقيع العميل - سالم العميل')), 'the signature image goes as today');
   const signAudit = await app.db.prepare("SELECT actor FROM crm_audit WHERE record_id=? AND action='mold-request:sign'").bind(linkId).first();
-  check(signAudit.actor, 'سالم العميل (العميل، من اللينك)', 'audited, the customer by name, from the link');
+  check(signAudit.actor, 'سالم العميل (العميل، من الرابط)', 'audited, the customer by name, from the link');
   check((await anonymous('/api/mold-sign', {method: 'POST', body})).json().signer, 'سالم العميل', 'the same submission again answers the same');
-  check((await anonymous('/sign/m/' + token2)).text.includes('اللينك ده مش شغال'), true, 'the used link\'s page: neutral');
+  check((await anonymous('/sign/m/' + token2)).text.includes('هذا الرابط لم يعد صالحًا'), true, 'the used link\'s page: neutral');
   check((await anonymous(done.copies[0].href + '?download=1')).status, 200, 'its signed copies download through it that day');
   check((await anonymous('/sign/m/' + token2 + '/file/' + listed.id)).status, 404, 'but nothing else');
   shown = await view('rep', linkId);
@@ -211,7 +211,7 @@ try {
   check((await anonymous('/sign/m/' + token3)).status, 200, 'its page opens');
   shown = await view('rep', cancelledId);
   check((await post('rep', {action: 'cancel', id: cancelledId, version: shown.version, reason: ''})).status, 200, 'cancelled');
-  check((await anonymous('/sign/m/' + token3)).text.includes('اللينك ده مش شغال'), true, 'a cancelled request\'s link: neutral');
+  check((await anonymous('/sign/m/' + token3)).text.includes('هذا الرابط لم يعد صالحًا'), true, 'a cancelled request\'s link: neutral');
   check((await app.as(null)('/api/mold-sign', {method: 'POST', body: {...body, requestId: crypto.randomUUID(), token: token3}})).status, 404, 'and its signing refused');
 
   // The representative's own device signing from the sheet: the link stops, the request goes.
@@ -222,7 +222,7 @@ try {
   check((await post('rep', {action: 'sign', id: sheetId, version: shown.version})).status, 400, 'signing on the device needs the signature');
   answer = await post('rep', {action: 'sign', id: sheetId, version: shown.version, signature: signature()});
   check(answer.status, 200, 'the customer signs on the device from the sheet');
-  check([(await anonymous('/sign/m/' + token4)).text.includes('اللينك ده مش شغال'), (await dataOf(sheetId)).signature.via], [true, 'device'], 'the link stopped');
+  check([(await anonymous('/sign/m/' + token4)).text.includes('هذا الرابط لم يعد صالحًا'), (await dataOf(sheetId)).signature.via], [true, 'device'], 'the link stopped');
   await until(async () => sentFiles(sheetId).includes('رسم الجهاز - موقّع.pdf'), 'its copy goes to production');
   check((await post('rep', {action: 'sign', id: sheetId, version: (await view('rep', sheetId)).version, signature: signature()})).status, 409, 'nothing waits any more');
 
@@ -233,9 +233,9 @@ try {
   await upload('rep', stopId, 'رسم.png', png(300, 200));
   shown = await view('rep', stopId);
   check((await post('rep', {action: 'signature-link', op: 'cancel', id: stopId, version: shown.version})).status, 200, 'the link stopped');
-  check([(await anonymous('/sign/m/' + token5)).text.includes('اللينك ده مش شغال'), (await view('rep', stopId)).signing.link, (await view('rep', stopId)).sending.held], [true, null, 'customer_signature'], 'its page neutral; still waiting for the signature');
+  check([(await anonymous('/sign/m/' + token5)).text.includes('هذا الرابط لم يعد صالحًا'), (await view('rep', stopId)).signing.link, (await view('rep', stopId)).sending.held], [true, null, 'customer_signature'], 'its page neutral; still waiting for the signature');
   answer = await create('rep', {signatureLink: true, signature: signature()});
-  check([answer.status, answer.json().fields?.signature], [400, 'اختار: العميل يوقّع دلوقتي أو لينك يوقّع منه، مش الاتنين.'], 'both together refused');
+  check([answer.status, answer.json().fields?.signature], [400, 'اختر أحد الأمرين: أن يوقّع العميل الآن، أو رابطًا يوقّع منه، لا كليهما.'], 'both together refused');
 
   // pdf-lib is part of the release itself: bundled into the server's build (so the update package carries it), nothing to install.
   const serverFiles = (dir => { const out = []; const walk = d => { for (const entry of readdirSync(d, {withFileTypes: true})) entry.isDirectory() ? walk(join(d, entry.name)) : out.push(join(d, entry.name)); }; walk(dir); return out; })(fileURLToPath(new URL('../dist/standalone/dist/server', import.meta.url)));

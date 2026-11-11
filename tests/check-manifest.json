@@ -382,6 +382,11 @@
       "reason": "Verifies an independently exported release archive supplied as a positional argument; not a source-only test."
     },
     {
+      "file": "tests/sign-page-bidi-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser"
+    },
+    {
       "file": "tests/supervisor-reviews-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

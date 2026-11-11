@@ -176,12 +176,14 @@ export default function MoldDocumentViewer({files,say,credentials='same-origin',
 
 function LoadingSheet({name}:{name:string}){
  const {say}=useShared();
- return <figure className="mold-doc-sheet" data-kind="loading"><div className="mold-doc-paper mold-doc-wait-paper"><span className="mold-doc-page-wait" role="status"><Loader2 className="spin" size={18} aria-hidden="true"/><span>{say(...MOLD_VIEWER_TEXT.loading)} <bdi>{name}</bdi></span></span></div></figure>;
+ return <figure className="mold-doc-sheet" data-kind="loading"><div className="mold-doc-paper mold-doc-wait-paper"><span className="mold-doc-page-wait" role="status"><Loader2 className="spin" size={18} aria-hidden="true"/><span>{say(...MOLD_VIEWER_TEXT.loading)} <bdi dir="auto">{name}</bdi></span></span></div></figure>;
 }
+/** «عرض السعر · Q-77.pdf» as two pieces: the kind in the page's direction, the file name in its own (dir=auto). */
+const captionCells=(caption:string)=>{const at=caption.indexOf(' · ');return at<0?<bdi dir="auto">{caption}</bdi>:<><span>{caption.slice(0,at)}</span> · <bdi dir="auto">{caption.slice(at+3)}</bdi></>;};
 /** The bar under a page: the whole document's counter, the page's file (discreet), and «تكبير» where it applies. */
 function SheetBar({number,total,caption,zoom,onZoom}:{number:number;total:number|null;caption:string;zoom?:number;onZoom?:()=>void}){
  const {say}=useShared();
- return <figcaption className="mold-doc-sheet-bar"><small className="mold-doc-counter">{docPageText(number,total,say)}</small><small className="mold-doc-caption"><bdi>{caption}</bdi></small>
+ return <figcaption className="mold-doc-sheet-bar"><small className="mold-doc-counter">{docPageText(number,total,say)}</small><small className="mold-doc-caption">{captionCells(caption)}</small>
   {onZoom&&<button type="button" className="btn small subtle" aria-pressed={(zoom||1)>1} onClick={onZoom}>{(zoom||1)>1?<ZoomOut size={14} aria-hidden="true"/>:<ZoomIn size={14} aria-hidden="true"/>}{say(...((zoom||1)>1?MOLD_VIEWER_TEXT.zoomOut:MOLD_VIEWER_TEXT.zoomIn))}</button>}
  </figcaption>;
 }

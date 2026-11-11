@@ -173,7 +173,7 @@ eq([P.pagesBlocked(sup,['sales']),P.pagesBlocked(sup,['sales','targets']),P.page
 eq(P.pagesBlocked({role:'customer_service',access:{version:1,off:[],hidden:['complaints'],viewAll:false}},['service-kpi','complaints']),true,'customer service: the evaluation is read on «الشكاوى» only');
 eq(P.pagesBlocked({role:'customer_service_manager',access:{version:1,off:[],hidden:['complaints'],viewAll:false}},['service-kpi','complaints']),false,'its manager still has «تقييم خدمة العملاء»');
 eq([A.resolveCRMPage('supervisor','sales',['sales']),A.resolveCRMPage('supervisor','sales',[]),A.resolveCRMPage('rep','activity',['activity']),A.resolveCRMPage('admin','team',['team'])],['activity','sales','customer','team'],'a hidden screen opens the first one the member has');
-eq([P.cellRefusalText('customer','delete'),P.cellRefusalText('sales','import','en'),P.PAGE_HIDDEN_TEXT],['مش مسموح لك بالحذف في العملاء. راجع مدير النظام.','You are not allowed to import in Sales. Ask the administrator.','هذا الجزء غير متاح لحسابك. راجع مدير النظام.'],'the two messages');
+eq([P.cellRefusalText('customer','delete'),P.cellRefusalText('sales','import','en'),P.PAGE_HIDDEN_TEXT],['غير مسموح لك بالحذف في العملاء. راجع مدير النظام.','You are not allowed to import in Sales. Ask the administrator.','هذا الجزء غير متاح لحسابك. راجع مدير النظام.'],'the two messages');
 eq([P.recordCell('customer','delete',{}),P.recordCell('factory','delete',{}),P.recordCell('activity','edit',{data:{visitWorkflow:'followup-v1'}}),P.recordCell('activity','delete',{data:{}}),P.recordCell('opportunity','add',{data:{}}),P.recordCell('opportunity','edit',{data:{hasRequest:false}}),P.recordCell('quote','delete',{})],[['customer','delete'],['customer','edit'],['followup','edit'],['activity','delete'],['quote','add'],['followup','edit'],['quote','delete']],'/api/crm: each kind to its cell');
 // «عرض بيانات الفريق بالكامل»: reads widen (read:true), writes keep the team.
 const people=[{id:'owner',role:'admin'},{id:'mgr',role:'manager'},{id:'mgr2',role:'manager'},{id:'sup',role:'supervisor',supervisorId:'mgr'},{id:'sup2',role:'supervisor',supervisorId:'mgr'},{id:'rep1',role:'rep',supervisorId:'sup'},{id:'rep2',role:'rep',supervisorId:'sup2'},{id:'cs',role:'customer_service'}].map(m=>({...m,email:m.id+'@yourrest.org',name:m.id,branch:'b',active:1,target:0}));
@@ -225,7 +225,7 @@ eq(admin.members.find(m=>m.id==='mgr').permissions.version,0,'the administrator 
 eq(Object.entries(admin.members.find(m=>m.id==='mgr').permissions.cells).filter(([,on])=>!on).map(([key])=>key),DELETES,'with every cell of the role on but «حذف»');
 eq(admin.me.access.off,[],'the administrator: «حذف» on by default');
 // Release day: the manager no longer deletes until the administrator ticks «حذف».
-eq((await remove('mgr','c3',403)).error,'مش مسموح لك بالحذف في العملاء. راجع مدير النظام.','the manager may not delete a customer by default');
+eq((await remove('mgr','c3',403)).error,'غير مسموح لك بالحذف في العملاء. راجع مدير النظام.','the manager may not delete a customer by default');
 // Who saves: the administrator only.
 for(const as of ['mgr','sup','rep1','cs'])await savePerms(as,'rep1',0,{},403);
 await savePerms('owner','ghost',0,{},404);
@@ -246,7 +246,7 @@ for(const as of ['owner','mgr'])ok(!(await state(as)).audits.some(a=>a.action===
 mine=await state('mgr');
 eq(mine.me.access,{version:1,off:DELETES.filter(key=>key!=='customer:delete'),hidden:['sales'],viewAll:false},'the manager\'s next load carries the switches');
 await editCustomer('mgr','c3');
-eq((await remove('mgr2','c3',403)).error,'مش مسموح لك بالحذف في العملاء. راجع مدير النظام.','another manager is unaffected: still not granted');
+eq((await remove('mgr2','c3',403)).error,'غير مسموح لك بالحذف في العملاء. راجع مدير النظام.','another manager is unaffected: still not granted');
 ok(raw('c3'),'the customer is still there');
 await remove('mgr','c3');eq(raw('c3'),undefined,'the granted manager deletes it');
 // A hidden screen's requests answer 404 (never 401/403, which lock the offline session).
@@ -264,14 +264,14 @@ await salesGet('mgr');
 // «تحرير» on «المحذوفات» off: the list stays, restoring is refused.
 await savePerms('owner','mgr',3,{cells:{'trash:edit':false}});
 await call(trash.GET,{as:'mgr',url:'https://test.invalid/api/trash?type=all'});
-eq((await call(trash.POST,{as:'mgr',url:'https://test.invalid/api/trash',body:{auditId:'x',requestId:crypto.randomUUID()}},403)).error,'مش مسموح لك بالتعديل في المحذوفات. راجع مدير النظام.','restoring refused with its message');
+eq((await call(trash.POST,{as:'mgr',url:'https://test.invalid/api/trash',body:{auditId:'x',requestId:crypto.randomUUID()}},403)).error,'غير مسموح لك بالتعديل في المحذوفات. راجع مدير النظام.','restoring refused with its message');
 // Visits: «إضافة» and «تحرير» per member.
 await savePerms('owner','sup',0,{cells:{'activity:edit':false}});
 const visitBody=(id,extra={})=>({createKey:crypto.randomUUID(),customerId:'c1',...extra,data:{type:'visit',purpose:'تعريف',summary:'تعريف',result:'تمت',outcome:'pending',notes:'',nextAction:'',nextDate:'',date:day,...(extra.data||{})}});
 const v1=raw('v1');
-eq((await call(visits.POST,{as:'sup',url:'https://test.invalid/api/visits',body:{...visitBody('v1'),id:'v1',version:v1.version}},403)).error,'مش مسموح لك بالتعديل في الزيارات. راجع مدير النظام.','the supervisor may no longer edit a saved visit');
+eq((await call(visits.POST,{as:'sup',url:'https://test.invalid/api/visits',body:{...visitBody('v1'),id:'v1',version:v1.version}},403)).error,'غير مسموح لك بالتعديل في الزيارات. راجع مدير النظام.','the supervisor may no longer edit a saved visit');
 await savePerms('owner','rep1',0,{cells:{'activity:add':false}});
-eq((await call(visits.POST,{as:'rep1',url:'https://test.invalid/api/visits',body:visitBody()},403)).error,'مش مسموح لك بالإضافة في الزيارات. راجع مدير النظام.','the representative may no longer record a visit');
+eq((await call(visits.POST,{as:'rep1',url:'https://test.invalid/api/visits',body:visitBody()},403)).error,'غير مسموح لك بالإضافة في الزيارات. راجع مدير النظام.','the representative may no longer record a visit');
 // The administrator's own account: nothing hidden, team always open, whatever is sent.
 saved=await savePerms('owner','owner',0,{cells:{'team:add':false,'team:edit':false,'customer:delete':false},hidden:['team','trash']});
 eq([saved.permissions.cells['team:add'],saved.permissions.cells['team:edit'],saved.permissions.hidden],[true,true,[]],'the administrator cannot lock themselves out');
@@ -299,7 +299,7 @@ eq((await state('rep1')).records.some(r=>r.id==='v2'),false,'a representative is
 // Notes on the day report: «إضافة» on «تقرير يوم المندوب».
 await savePerms('owner','sup',3,{viewAll:false,cells:{'journeys:add':false}});
 eq((await call(reviews.GET,{as:'sup',url:'https://test.invalid/api/reviews?date='+day+'&memberId=rep1'})).reviewable,[],'switched off: no note offered');
-eq((await call(reviews.POST,{as:'sup',url:'https://test.invalid/api/reviews',body:{kind:'entry',activityId:'v1',result:'زيارة جيدة',action:'تابع',version:null,requestId:crypto.randomUUID()}},403)).error,'مش مسموح لك بالإضافة في تقرير يوم المندوب. راجع مدير النظام.','and refused');
+eq((await call(reviews.POST,{as:'sup',url:'https://test.invalid/api/reviews',body:{kind:'entry',activityId:'v1',result:'زيارة جيدة',action:'تابع',version:null,requestId:crypto.randomUUID()}},403)).error,'غير مسموح لك بالإضافة في تقرير يوم المندوب. راجع مدير النظام.','and refused');
 await savePerms('owner','sup',4,{hidden:['journeys']});
 await call(reviews.GET,{as:'sup',url:'https://test.invalid/api/reviews?date='+day+'&memberId=rep1'},404);
 // A body over /api/crm's limit is still refused before it is read; a save from another site is refused.
@@ -314,7 +314,7 @@ regionCustomer('dw','rep1','الغربية');
 visit('dv1','rep1','d1');visit('dv2','rep2','d8');visit('dv3','rep1','d1');visit('dv4','sup','d1');visit('dv5','rep1','d1');visit('dvA','owner','d1');visit('dv6','rep1','d1');
 record('df1','activity','d1','rep1',{type:'call',date:day,summary:'متابعة',result:'تمت',outcome:'pending',notes:'',performedBy:'rep1',responsibleId:'rep1',recordedByEmail:'rep1@yourrest.org',visitWorkflow:'followup-v1'});
 record('dm1','factory','d6','rep1',{name:'ماكينة',machineType:'',brand:'',model:'',notes:''});
-const NOT=screen=>`مش مسموح لك بالحذف في ${screen}. راجع مدير النظام.`;
+const NOT=screen=>`غير مسموح لك بالحذف في ${screen}. راجع مدير النظام.`;
 // Default: nobody but the administrator deletes; the same 403 an old page meets.
 eq((await remove('sup','dv1',403)).error,NOT('الزيارات'),'supervisor: no visit delete by default');
 eq((await remove('rep1','dv1',403)).error,NOT('الزيارات'),'representative: no visit delete by default');

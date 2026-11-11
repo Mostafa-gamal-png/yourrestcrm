@@ -32,21 +32,21 @@ export const MOLD_VIEWER_LABELS:Record<MoldFileCategory,[string,string]>={quote:
 export const viewerLabel=(category:MoldFileCategory,say:Say)=>say(...MOLD_VIEWER_LABELS[category]);
 export const viewerPageText=(page:number,pages:number,say:Say)=>say('صفحة '+page+' من '+pages,'Page '+page+' of '+pages);
 export const MOLD_VIEWER_TEXT={
- lead:['راجع المستند صفحة صفحة: عرض السعر أو الـ PO، وبعدين التصميم، والتوقيع في آخر صفحة.','Review the document page by page: the quotation or PO, then the design; the signature is on the last page.'] as [string,string],
- failed:['ما قدرناش نعرض الملف ده','We could not show this file'] as [string,string],
- failedNote:['التوقيع ممكن برضه؛ الملف هيتبعت للإنتاج زي ما هو.','You can still sign; the file goes to production as it is.'] as [string,string],
- pageFailed:['ما قدرناش نعرض الصفحة دي','We could not show this page'] as [string,string],
+ lead:['راجع المستند صفحة بصفحة: عرض السعر أو الـ PO، ثم التصميم، والتوقيع في الصفحة الأخيرة.','Review the document page by page: the quotation or PO, then the design; the signature is on the last page.'] as [string,string],
+ failed:['تعذّر عرض هذا الملف','We could not show this file'] as [string,string],
+ failedNote:['يمكن التوقيع مع ذلك؛ يُرسل الملف إلى الإنتاج كما هو.','You can still sign; the file goes to production as it is.'] as [string,string],
+ pageFailed:['تعذّر عرض هذه الصفحة','We could not show this page'] as [string,string],
  loading:['جاري تحميل الملف…','Loading the file…'] as [string,string],
  pageLoading:['جاري عرض الصفحة…','Drawing the page…'] as [string,string],
  zoomIn:['تكبير','Zoom in'] as [string,string],zoomOut:['تصغير','Zoom out'] as [string,string],
  open:['فتح','Open'] as [string,string],download:['تنزيل','Download'] as [string,string],
- none:['مفيش ملفات في الطلب.','The request has no files.'] as [string,string],
+ none:['لا توجد ملفات في الطلب.','The request has no files.'] as [string,string],
  documents:['مستند الطلب','The request\'s document'] as [string,string],
  /** The short title above the document: «طلب تصنيع قالب — <customer>». */
  title:['طلب تصنيع قالب','Mold manufacturing request'] as [string,string],
 };
 /** A file that is neither a PDF nor a picture (a drawing, a model, an archive): named, never drawn. */
-export const viewerOtherText=(name:string,say:Say)=>say('ملف '+name+' (مش PDF) — هيتبعت للإنتاج زي ما هو','File '+name+' (not a PDF) — it goes to production as it is');
+export const viewerOtherText=(name:string,say:Say)=>say('ملف '+name+' (ليس PDF) — يُرسل إلى الإنتاج كما هو','File '+name+' (not a PDF) — it goes to production as it is');
 export const viewerPagesText=(pages:number,say:Say)=>say(pages===1?'صفحة واحدة':pages===2?'صفحتين':pages+(pages<=10?' صفحات':' صفحة'),pages===1?'1 page':pages+' pages');
 
 /** The most pixels a drawn page holds (24 MB of a phone's memory) and the longest side (beyond it some phones draw nothing). */

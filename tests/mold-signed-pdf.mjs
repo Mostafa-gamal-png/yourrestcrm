@@ -162,7 +162,7 @@ function ok(value, message) { assert.ok(value, message); checks++; }
   check(lib.moldSigningView({data: {...data, signature: {signer: 'خ', signedAt: at, fileId: signatureId}}}, [design, late]).after, [], 'a signature without its block (asked before) says nothing of copies');
   const views = lib.moldDesignFilesView({id: 'mr-1', memberId: 'rep', cancelledAt: null, remote: null, accepted: null, data: signed}, [design, made, skipped], {id: 'rep'}, true);
   check(views.map(entry => [entry.crmFileId, !!entry.signedCopy, entry.canDelete]), [[original, false, true], [id, true, false]], 'the copy marked and not deletable; the row of a copy not made is not listed');
-  check(lib.moldNotSignedText('محمي.pdf', 'protected', ar => ar), 'ما اتحطش التوقيع جوه محمي.pdf: الملف محمي أو تالف', 'the sheet\'s words');
+  check(lib.moldNotSignedText('محمي.pdf', 'protected', ar => ar), 'لم يوضع التوقيع داخل محمي.pdf: الملف محمي أو تالف', 'the sheet\'s words');
 }
 
 // ---- the token and the page's key

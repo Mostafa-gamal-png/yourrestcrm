@@ -57,7 +57,7 @@ function TermsAccept({checked,onChange,disabled,say}:{checked:boolean;onChange:(
 }
 /** A deferred payment's terms in words (2026-11-10), '' for none. */
 const termsText=(terms:MoldPaymentTerms|null|undefined,say:Say)=>terms&&moldPaymentTermsNames[terms]?say(...moldPaymentTermsNames[terms]):'';
-/** «رجّعته المالية: <reason> · <time>» (2026-11-10): finance sent the request back to sales. The name when it says more than «finance»;
+/** «أعادته المالية: <reason> · <time>» (2026-11-10): finance sent the request back to sales. The name when it says more than «finance»;
  *  once corrected, when the correction reached production; else what the reader does next (hint). */
 function ReturnedNote({returned,hint,say}:{returned:MoldReturned;hint?:string;say:Say}){
  const name=moldReturnedName(returned);
@@ -153,7 +153,7 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
  return <button type="button" className="mold-card" data-status={view.cancelled?'cancelled':remote?.status||'local'} data-sending={view.sending.state} data-returned={view.returned?'':undefined} onClick={onOpen}>
   <header><strong>{view.customerName}</strong><span className="mold-chip" data-status={view.cancelled?'cancelled':remote?.status||'local'} data-step={view.cancelled?undefined:remote?.waitingStep||undefined} data-mine={view.can.approve||undefined}>{statusText(view,say)}</span></header>
   {waitingSince(view,say)&&<small className="mold-card-since"><Hourglass size={13} aria-hidden="true"/>{waitingSince(view,say)}</small>}
-  {/* Finance sent it back to sales (2026-11-10): «رجّعتها المالية: <reason>». */}
+  {/* Finance sent it back to sales (2026-11-10): «أعادتها المالية: <reason>». */}
   {view.returned&&<p className="mold-returned-badge"><Undo2 size={13} aria-hidden="true"/><span><b>{say(...MOLD_RETURNED_TEXT.badge)}</b>: <span dir="auto">{view.returned.reason}</span></span></p>}
   {/* The customer's ERP code (2026-11-09), and «غير مسجل في الـCRM» for a customer not in the CRM (no Yourrest number). */}
   {(!!view.customerErpCode||view.crmNumber===null)&&<p className="mold-card-customer">{!!view.customerErpCode&&<span>{say('كود ERP','ERP code')}: <bdi dir="ltr">{view.customerErpCode}</bdi></span>}{view.crmNumber===null&&<span className="mold-not-in-crm">{say(...MOLD_CUSTOMER_TEXT.notInCrm)}</span>}</p>}
@@ -189,7 +189,7 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  // from the server when opened from there, while it waits for them.
  const [approverView,setApproverView]=useState<MoldRequestView|null>(null);
  const customers=useMemo(()=>records.filter(row=>row.kind==='customer'),[records]);
- // «رجّعتها المالية» (2026-11-10): how many finance sent back, and the list narrowed to them (offered while there is one).
+ // «أعادتها المالية» (2026-11-10): how many finance sent back, and the list narrowed to them (offered while there is one).
  const returnedCount=useMemo(()=>(data?.requests||[]).filter(view=>view.returned).length,[data]),returnedOnly=onlyReturned&&returnedCount>0;
  const list=useMemo(()=>{const needle=query.trim().toLowerCase();return (data?.requests||[]).filter(view=>(!returnedOnly||!!view.returned)&&(!needle||[view.customerName,view.specs.description,view.specs.moldNo,String(view.remote?.orderNo||''),view.memberName].some(text=>String(text||'').toLowerCase().includes(needle))));},[data,query,returnedOnly]);
  const open=data?.requests.find(view=>view.id===openId)||(approverView?.id===openId?approverView:null);
@@ -213,7 +213,7 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
    <div className="mold-heading-tools"><button type="button" className="btn subtle" onClick={()=>void refresh()} disabled={loading} aria-label={say('تحديث','Refresh')}>{loading?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>}</button>
     {data?.canCreate&&<button type="button" className="btn primary mold-new" onClick={()=>setCreating(true)}><Wrench size={16} aria-hidden="true"/>{say('طلب تصنيع قالب','Request a mold')}</button>}</div></div>
   {data&&!data.linkReady&&<p className="mold-banner" data-kind="off" role="status"><Lock size={16} aria-hidden="true"/>{say('الربط مع الإنتاج غير مفعَّل. الطلبات تُحفظ هنا وتنتظر الإرسال.','The production link is off. Requests are saved here and wait to be sent.')}</p>}
-  {data?.statusError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {moldErrorText(data.statusError.code,say)}. {say('المعروض آخر حالة معروفة، ويتحدث عند الفتح التالي.','Showing the last known status; it refreshes next time.')}</p>}
+  {data?.statusError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {moldErrorText(data.statusError.code,say)}. {say('المعروض آخر حالة معروفة، ويُحدَّث عند الفتح التالي.','Showing the last known status; it refreshes next time.')}</p>}
   {error&&<p className="form-error" role="alert">{error}</p>}
   {approver&&<div className="mold-tabs" role="tablist">
    <button type="button" role="tab" aria-selected={tab==='pending'} className={tab==='pending'?'is-active':''} onClick={()=>setTab('pending')}>{say('طلبات بانتظار اعتمادي','Waiting for my approval')} <span className="mold-count">{data!.pending!.items.length}</span></button>
@@ -567,7 +567,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   const checked=validateMoldSpecs(form),payment=moldPayment(form.payment),place=moldAddress(address),typedName=moldCustomerName(customerText.name),typedCode=moldErpCode(customerText.code);
   // A deferred payment's agreed terms (2026-11-10): one of three, required.
   const terms=payment==='deferred'&&form.paymentTerms&&moldPaymentTermsNames[form.paymentTerms as MoldPaymentTerms]?form.paymentTerms as MoldPaymentTerms:null;
-  const errors:Record<string,string>={...checked.errors,...(payment?{}:{payment:say('اختار طريقة الدفع: نقدي أو آجل','Choose how the customer pays: cash or deferred')}),
+  const errors:Record<string,string>={...checked.errors,...(payment?{}:{payment:say('اختر طريقة الدفع: نقدي أو آجل','Choose how the customer pays: cash or deferred')}),
    ...(payment==='deferred'&&!terms?{paymentTerms:say(...MOLD_PAYMENT_TERMS_REQUIRED_TEXT)}:{}),
    ...(needsFile&&![...quotes,...pos].some(choice=>!choice.refusal)?{quoteFile:say(...MOLD_QUOTE_FILE_REQUIRED_TEXT)}:{}),
    ...(designRequired&&!hasDesign&&!designs.some(choice=>!choice.refusal)?{designFile:say(...MOLD_DESIGN_FILE_REQUIRED_TEXT)}:{}),

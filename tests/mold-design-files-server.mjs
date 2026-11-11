@@ -406,7 +406,7 @@ try{
   const outcome=await server.sendMoldDesignFile(DB,fileId,{link});
   check([outcome,errorOf(fileId),fileRow(fileId).next_attempt_at,fileRow(fileId).outbox],[{kind:'rejected',code:'invalid_payload',fields:['crmFileId'],reason:'crm_file_id_used'},{code:'invalid_payload',reason:'crm_file_id_used',fields:['crmFileId'],http:400,at:errorOf(fileId).at,final:true},null,'send'],'crm_file_id_used: refused for good with its reason and field');
   const shown=(await viewOf(id)).designFiles.find(file=>file.crmFileId===fileId);
-  check([shown.state,shown.canDelete,lib.moldDesignRefusalText(shown.error.reason,ar=>ar)],['rejected',true,'رقم الملف مستخدم قبل كده لملف تاني أو لملف اتحذف؛ احذفه وأرفقه من جديد'],'shown in words; the requester may delete it and attach it again');
+  check([shown.state,shown.canDelete,lib.moldDesignRefusalText(shown.error.reason,ar=>ar)],['rejected',true,'رقم الملف مستخدم من قبل لملف آخر أو لملف محذوف؛ احذفه وأرفقه من جديد'],'shown in words; the requester may delete it and attach it again');
   before=sends();
   check([(await server.sendDueMoldDesignFiles(DB,{link,limit:5})),(await resend(id)).status,sends()],[0,409,before],'not tried again by itself nor by resend');
   const deletes=mock.state.calls.filter(call=>call.route==='design-file-delete').length;
@@ -484,7 +484,7 @@ try{
   const png=(width,height)=>{const b=Buffer.alloc(33);Buffer.from([137,80,78,71,13,10,26,10]).copy(b,0);b.writeUInt32BE(13,8);b.write('IHDR',12,'latin1');b.writeUInt32BE(width,16);b.writeUInt32BE(height,20);b[24]=8;b[25]=6;return b;};
   check([known(),await server.moldQuotePoSupported(DB),(await list()).quotePo],[null,false,false],'nothing learned yet (the stand-in is the application before its update): the screen asks for nothing');
   // (a) before: no number and no quotation or PO file is taken; a request without them goes exactly as before
-  const GONE='رقم عرض السعر ورقم الـ PO اتشالوا من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدالهم.';
+  const GONE='حُذف رقم عرض السعر ورقم الـ PO من الطلب؛ حدّث الصفحة وأرفق ملف عرض السعر أو الـ PO بدلًا منهما.';
   let answer=await create({quoteNo:'Q-1'});
   check([answer.status,answer.body.error,answer.body.fields,sql.prepare("SELECT COUNT(*) n FROM crm_mold_requests WHERE json_extract(data,'$.quoteNo') IS NOT NULL").get().n],[400,GONE,{quoteNo:GONE},0],'a number (a page loaded before): refused by its field, nothing saved');
   answer=await create({quoteNo:'',poNo:null});
@@ -493,7 +493,7 @@ try{
   answer=await attachAs(before,'رسم أول.pdf',pdf('before design'));
   check([answer.status,answer.body.file.state,answer.body.request.sending.state,Object.keys(JSON.parse(lastBody('requests'))).join(','),answer.body.request.quotePo],[200,'sent','sent','crmRequestId,requestedAt,customer,salesman,specs,payment',null],'its design file releases it: sent as before (no new key: the marker never travels); production holds it, its status carries nothing of it');
   answer=await attachAs(before,'عرض سعر.pdf',pdf('quote before'),'quote');
-  check([answer.status,answer.body.error,sql.prepare("SELECT COUNT(*) n FROM crm_mold_design_files WHERE category<>'design'").get().n],[409,'تطبيق المنتجات لسه ما اتحدّثش لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.',0],'a quotation file before the update: refused');
+  check([answer.status,answer.body.error,sql.prepare("SELECT COUNT(*) n FROM crm_mold_design_files WHERE category<>'design'").get().n],[409,'لم يُحدَّث تطبيق المنتجات بعد لاستقبال ملفات عرض السعر والـ PO؛ حدّث الصفحة.',0],'a quotation file before the update: refused');
   // Held (cannot happen in normal use): a request saved with a number, a quotation file, while the update is unknown
   const heldId='mr-'+randomUUID(),at=new Date().toISOString(),heldData={requestedAt:'2026-11-03T10:00:00+03:00',customer:{crmNumber:27,name:'مصنع تجريبي',address:'الدمام',city:'Damam - الدمام'},salesman:{crmMemberId:'rep',name:'مندوب تجريبي',email:'rep@yourrest.org'},specs,payment:'cash',quoteNo:'Q-HELD'};
   sql.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','factory',?,'send',?,'rep',?,?,1)").run(heldId,JSON.stringify(heldData),at,at,at);
@@ -539,7 +539,7 @@ try{
   const calls0=callsNow();
   check([await server.sendMoldRequest(DB,kept,{link}),await server.sendDueMoldRequests(DB,{link,limit:20}),await server.sendDueMoldDesignFiles(DB,{link,limit:20}),callsNow()-calls0],[{kind:'none',code:'quote_file'},0,0,0],'neither a call, the timetable nor its files\' timetable sends it (as after a restart: the hold is in the database)');
   as('rep');answer=await json(await requests.POST(post('/api/mold-requests',{action:'resend',requestId:randomUUID(),id:kept})));
-  check([answer.status,answer.body.error,callsNow()-calls0],[409,'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ويتبعت الطلب لوحده.',0],'a resend: refused with what to do; nothing sent');
+  check([answer.status,answer.body.error,callsNow()-calls0],[409,'الطلب بانتظار ملف عرض السعر / الـ PO؛ أرفق الملف ليُرسل الطلب تلقائيًا.',0],'a resend: refused with what to do; nothing sent');
   // The kept requests never crowd out the others: five of them due first, and one asked for before the rule still goes.
   const crowd=[];for(let n=0;n<5;n++)crowd.push((await create({})).body.request.id);
   sql.prepare("UPDATE crm_mold_requests SET next_attempt_at='2026-01-01T00:00:00.000Z' WHERE json_extract(data,'$.fileRequired') IS 1").run();
@@ -596,7 +596,7 @@ try{
   const firstQuote=answer.body.file;
   check([answer.status,firstQuote.state,firstQuote.category,mock.row(quoted).designFiles.find(file=>file.crmFileId===firstQuote.crmFileId).category,Object.hasOwn(JSON.parse(lastBody('requests')),'quoteNo')],[200,'sent','quote','quote',false],'a quotation PDF: releases its request (no number in it) and goes with its category');
   answer=await attachAs(quoted,'رسم.dwg',Buffer.from('AC1027'),'po');
-  check([answer.status,answer.body.reason,answer.body.fields.name],[400,'not_document','ملف عرض السعر أو الـ PO لازم يكون PDF أو صورة'],'a drawing as the PO: refused here first (not_document), nothing stored');
+  check([answer.status,answer.body.reason,answer.body.fields.name],[400,'not_document','يجب أن يكون ملف عرض السعر أو الـ PO ملف PDF أو صورة'],'a drawing as the PO: refused here first (not_document), nothing stored');
   for(let n=2;n<=5;n++)check((await attachAs(quoted,'عرض '+n+'.pdf',pdf('quotation '+n),'quote')).status,200,'quotation file '+n);
   answer=await attachAs(quoted,'عرض 6.pdf',pdf('quotation 6'),'quote');
   check([answer.status,answer.body.error],[409,'الحد 5 ملفات لعرض السعر (ملفاتك وملفات الإنتاج). احذف ملفًا أولًا.'],'a sixth quotation file: refused here');
@@ -654,7 +654,7 @@ try{
   const calls0=callsNow();
   check([await server.sendMoldRequest(DB,kept,{link}),await server.sendDueMoldRequests(DB,{link,limit:20}),await server.sendDueMoldDesignFiles(DB,{link,limit:20}),callsNow()-calls0],[{kind:'none',code:'design_file'},0,0,0],'due: neither a call, the timetable nor its files\' timetable sends it (the hold is in the database)');
   as('rep');answer=await json(await requests.POST(post('/api/mold-requests',{action:'resend',requestId:randomUUID(),id:kept})));
-  check([answer.status,answer.body.error,callsNow()-calls0],[409,'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ويتبعت الطلب لوحده.',0],'a resend: refused with what to do; nothing sent');
+  check([answer.status,answer.body.error,callsNow()-calls0],[409,'الطلب بانتظار ملف التصميم؛ أرفق ملف تصميم ليُرسل الطلب تلقائيًا.',0],'a resend: refused with what to do; nothing sent');
   const order0=mock.state.calls.length;
   answer=await attachAs(kept,'رسم القالب.pdf',pdf('kept design 2026-11-08'));
   const released=mock.state.calls.slice(order0).filter(call=>call.signed&&['requests','design-files'].includes(call.route)).map(call=>call.route==='requests'?'request':/"crmFileId":"([^"]+)"/.exec(call.body)[1]);

@@ -94,7 +94,7 @@ for(const actor of ['cs','csm']){user(actor);const phone=actor==='cs'?'050222222
  for(const id of ['western-customer','foreign-branch']){const before=snapshot(id);await post(edit(id,{phone}),404);check(snapshot(id),before,actor+' cannot reach '+id);}
  for(const extra of [{assignedTo:'rep'},{branch:'فرع آخر'}]){const before=snapshot('admin-owned');check((await post(edit('admin-owned',extra),403)).error,'لا يمكنك تغيير مسؤول العميل أو فرعه');check(snapshot('admin-owned'),before);}
  {const before=snapshot('admin-owned');await post({action:'delete',kind:'customer',id:'admin-owned',version:raw('admin-owned').version},403);check(snapshot('admin-owned'),before,actor+' cannot delete');}
- check((await post(create(),403)).error,'إضافة العملاء مش متاحة لخدمة العملاء؛ اختار عميل موجود أو اطلب من المبيعات يضيفه.',actor+' cannot add a customer');}
+ check((await post(create(),403)).error,'إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.',actor+' cannot add a customer');}
 
 // Existing eligible team routing remains usable. New/rerouted customers retain validation.
 user('manager');await post(edit('peer-owned',{assignedTo:'rep'}));check(row('peer-owned').assigned_to,'rep');

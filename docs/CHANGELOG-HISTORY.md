@@ -4,6 +4,28 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Word order on the signature page, and Modern Standard Arabic throughout (2026-11-11, same release, no migration)
+
+- **Asked.** The owner: «الكلام فى التطبيق بالفصحى مش مصرى عامى»; and the signature page drawn as a picture showed mixed lines in a confusing
+  order («كود ERP: ERP-east1», «رسم القالب.pdf» with the dot of «.pdf» on the far side, «عرض سعر Q-77.pdf — صفحات 1–2»).
+- **Word order, as cells** (`lib/sign-page-canvas.ts`): a fact is a label cell at the start side and a value cell with its own direction
+  (its first strong character, as `dir="auto"`); a document is a row of kind | file name (its own direction: an Arabic name in the
+  platform's standard order) | pages («صفحات 1–2», never wrapped, the numbers in LRI…PDI). On the canvas each cell's line is ONE
+  `fillText` with the canvas's direction set to the cell's, a long value wrapping inside its cell only (`drawSignaturePage` for the
+  signature page, `labelValueRow` for the signature block); the screen's signature page is the same grid of cells, and the captions
+  under each page are two pieces («عرض السعر» · the name with `dir="auto"`). A first attempt that cut mixed lines into hand-placed runs was
+  replaced before release (it split «كود» from «ERP» and put a range on a line of its own).
+- **Modern Standard Arabic.** Every Arabic text the application shows (screens, buttons, hints, the server's messages, the signing pages and
+  link, the signature page and block, ERP import, permissions, targets, the team's day, trash, install and update notes) was rewritten from
+  Egyptian colloquial («اللينك ده مش شغال», «هيتبعت», «اختار») into MSA («هذا الرابط لم يعد صالحًا», «سيُرسل», «اختر»); `lib/locales/en.json`
+  keys follow (English unchanged). Stored values, enum values, production's file names (« - موقّع.pdf») and the ERP column names are unchanged.
+- **Tests.** `tests/msa-wording.mjs` (default gate: every Arabic string literal and JSX text of `app/`, `lib/`, `portable/`, `components/`,
+  the dictionary's keys and the update notes, against a list of colloquial words and verb forms; a line holding Arabic the scanner did not
+  read fails it), `tests/sign-page-canvas.mjs` (default gate: the cells on a recording canvas), `tests/sign-page-bidi-browser.mjs` (Chromium: the
+  app's drawing on a real canvas, the cells' places and what the pixels show), and the cell layout of the screen at 360 and 320 px in
+  `tests/mold-pdf-view-browser.mjs`. Every test that asserted the old wording asserts the new one.
+- **Rollback.** Code only (the previous build's wording and drawing come back).
+
 ## The customer signs ONE document, as on paper (2026-11-11, no migration)
 
 - **Asked.** The owner, after seeing the release of 2026-11-10: «لا انا قلتلك التوقيع يكون داخل pdf يعنى pdf يتفتح ويكون عبارة عن عرض السعر او po وبعدين التصميم وفى اخره خانة للتوقيع بحيث الموقع يكون عارف هو بيوقع على ايه كأنه بيوقع على ورق حقيقى»; asked what is kept and sent, he chose ONE signed file «طلب القالب - موقّع.pdf» with every page and the signature page at its end, sent with the originals as they are, and no per-file copies for new signatures.
