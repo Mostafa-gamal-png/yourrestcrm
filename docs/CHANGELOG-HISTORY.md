@@ -4,7 +4,7 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
-## «استيراد عروض الأسعار من ERP» (2026-11-11, release update-erp-quotes-20261111, no migration)
+## «استيراد عروض الأسعار من ERP» (2026-11-11, shipped in release update-targets-hub-20261111, no migration)
 
 - **Asked.** The owner uploaded the ERP's quotations report («Reports_Invoices_10.xls») and asked for it to be imported into «عروض الأسعار»;
   then asked for the sales, quotations and collections uploads to sit together on the targets page.
