@@ -7,7 +7,9 @@
 // between lines, more than 50 lines, the terms; and the plan: a customer not in the CRM, an ambiguous code, a customer outside the region,
 // an unmapped employee, a representative outside the team, new, the same file again unchanged, a newer export updating, a quote edited
 // by hand left alone (status, items, the CRM's edit route keeping the items' extra fields), the customer changed, a CRM quote with the same
-// number, the record id stable. Synthetic data only: no database, no network, never the owner's file.
+// number, the record id stable; a shared code decided by a mapping to one of its customers (and not by one to another customer), the
+// mapping changed later without moving the quote, and «مبيعات مكتب» excluded before anything else. Synthetic data only: no database, no
+// network, never the owner's file.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -163,4 +165,25 @@ eq(Q.canonicalQuoteFields(added.data)===Q.canonicalQuoteFields({...added.data,_e
 const invalid=fileOf(quotation({code:'Qut-30',customerCode:'101',lines:[{name:'قالب',qty:1,price:10}],documentDiscount:20}).map(r=>r.map((v,i)=>({Subtotal:'0.00',VAT_AmountM:'0.00',NewSubtotal:'0.00'})[ERP_QUOTE_COLUMNS[i]]??v)));
 eq((await plan(invalid,records))[0].status,'refused','a quotation whose discount exceeds its lines is refused');
 eq(Q.employeeKey(' ٧٠٠١ '),'7001','an employee code with Arabic digits and spaces');
+// A customer code two CRM customers carry: refused until a «ربط كود عميل ERP» chooses one of them (the mapping KPI invoices and the last
+// purchase read too); a mapping to a customer that does not carry the code decides nothing.
+const sharedFile=fileOf(quotation({code:'Qut-40',customerCode:'201',lines:[{name:'قالب',qty:1,price:1000}]}));
+eq((await plan(sharedFile,records))[0].reason,Q.ERP_QUOTE_REASONS.ambiguousCustomer,'a shared code: refused');
+const mappedPlan=(await plan(sharedFile,records,{codes:I.uniqueCustomerCodes(records,[{codeKey:'201',customerId:'dupB',version:1}])}))[0];
+eq([mappedPlan.status,mappedPlan.customerId,mappedPlan.data?.performedBy],['new','dupB','rep'],'mapped to one of its customers: new, under that customer');
+eq((await plan(sharedFile,records,{codes:I.uniqueCustomerCodes(records,[{codeKey:'201',customerId:'c1',version:1}])}))[0].reason,Q.ERP_QUOTE_REASONS.ambiguousCustomer,'a mapping to a customer that does not carry the code decides nothing');
+eq([...I.customerCodeCandidates(records).get('201')].map(r=>r.id),['dupA','dupB'],'the candidates of the code: exactly the customers that carry it');
+const importedShared={...saved(mappedPlan),version:1};
+eq((await plan(sharedFile,[...records,importedShared],{codes:I.uniqueCustomerCodes(records,[{codeKey:'201',customerId:'dupB',version:1}])}))[0].status,'unchanged','imported, then the same file again: unchanged');
+eq((await plan(sharedFile,[...records,importedShared],{codes:I.uniqueCustomerCodes(records,[{codeKey:'201',customerId:'dupA',version:2}])}))[0].reason,Q.ERP_QUOTE_REASONS.customerChanged,'the mapping changed later: the imported quote is not moved to the other customer');
+// «مبيعات مكتب»: excluded before anything else (no customer, no mapping, a quotation the reader refused: still only excluded).
+const officeFile=fileOf(quotation({code:'Qut-41',customerCode:'999',empCode:'7999',empName:'مبيعات مكتب',lines:[{name:'قالب',qty:1,price:1000}]}),
+ quotation({code:'Qut-42',customerCode:'201',empCode:'7999',empName:' مبيعات  المكتب ',lines:[{name:'قالب',qty:1,price:1000}]}),
+ quotation({code:'Qut-43',customerCode:'101',empCode:'7999',empName:'مبيعات مكتب',lines:[{name:'قالب',qty:0,price:1000}]}),
+ quotation({code:'Qut-44',customerCode:'101',empCode:'7001',empName:'مبيعات مكتب الرياض',lines:[{name:'قالب',qty:1,price:1000}]}));
+const officePlan=await plan(officeFile,records);
+eq(officePlan.map(p=>[p.code,p.status,p.reason,p.data===undefined]),[
+ ['Qut-41','excluded',Q.ERP_QUOTE_REASONS.office,true],['Qut-42','excluded',Q.ERP_QUOTE_REASONS.office,true],['Qut-43','excluded',Q.ERP_QUOTE_REASONS.office,true],
+ ['Qut-44','new',Q.ERP_QUOTE_REASONS.new,false]],'«مبيعات مكتب» (and «مبيعات المكتب»): excluded with its reason, never written; another name that merely contains it is not');
+eq(Q.ERP_QUOTE_REASONS.office,'مبيعات مكتب: عروض شركة أخرى مستبعدة تلقائيًا','the reason, as the ERP sales import words it');
 console.log(`erp-quotes: ${checks} checks passed`);

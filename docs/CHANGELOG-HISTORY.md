@@ -4,6 +4,44 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The ERP quotations import: shared customer codes and «مبيعات مكتب» (2026-11-11, release update-quote-codes-20261111, no migration)
+
+- **Asked.** The owner imported his ERP quotations on the live site and many were refused: «كود العميل مسجل لأكثر من عميل في الـCRM؛
+  اربطه بعميل واحد أولًا» (an ERP code that two or more CRM customers carry, with no screen anywhere to decide it) and «اربط موظف ERP
+  بمندوب» for the «مبيعات مكتب» quotations, which the ERP sales import excludes by the employee's name.
+- **«مبيعات مكتب».** `planErpQuotes` (`lib/erp-quotes.ts`) excludes a quotation whose ERP employee is «مبيعات مكتب» or «مبيعات المكتب»
+  (`isOfficeEmployee` of `lib/erp-sales.ts`) before anything else: status `excluded`, reason «مبيعات مكتب: عروض شركة أخرى مستبعدة
+  تلقائيًا», counted under «مستبعدة» (a sixth count, `summary.excludedCount`, and `excludedCount` in the receipt and the import's audit
+  line); never written, never needing a customer or a mapping, its employee never offered in «ربط موظفي ERP بالمناديب» nor matched by name.
+  A refused or an excluded quotation never keeps the others from being imported (only «new» and «update» are written, as before).
+- **Shared codes.** The preview carries `sharedCodes` (`lib/erp-quotes-server.ts`): every customer code of the file (excluded and unreadable
+  quotations left out) that two or more CRM customers carry (`customerCodeCandidates`: `data.code` plus `_erpCodeAliases`), with its
+  quotations count and whether a «ربط كود عميل ERP» already chose one. To the administrator with every region (`isIdentityAdmin`, the
+  predicate behind `requireIdentityAdmin`): its candidates (exactly the customers that carry it: name, «YR-C-…», region, branch, version),
+  the saved choice and the mapping's version, and the identity revision; to anyone else only the codes still undecided, never a customer.
+  The dialog lists them under «أكواد مشتركة بين أكثر من عميل» (`app/erp-code-choice.tsx`, reusable by the sales import): the administrator
+  chooses «العميل الصحيح لهذا الكود» and presses «حفظ الربط», which posts to the existing `/api/customer-identities` (`saveCustomerIdentity`
+  unchanged: 403 to anyone else, a customer that does not carry the code refused, revision and versions checked, the audit «ربط كود عميل
+  ERP», the request id replayed on a retry), then the file is previewed again and those quotations become «ستُضاف» / «ستُحدَّث». A line
+  under the choice says that the mapping is global (KPI invoice matching and the last purchase follow it). A saved mapping is shown as the
+  current choice and can be changed from the same place; quotations already imported stay under their customer (refused with «تغيّر عميل
+  العرض…», never moved). Each quotation refused for a shared code has «اختيار العميل الصحيح لهذا الكود», which takes the administrator to
+  the code; anyone else reads «يحتاج مدير النظام إلى اختيار العميل الصحيح لهذا الكود.».
+- **Why the mapping is saved on its own and not with the import.** It is global and outlives the file; saved through the one existing path
+  it keeps every check and audit of that path, and a saved mapping moves `crm_erp_import_state.revision` (trigger of migration 0014), so a
+  preview made before it cannot be committed (409) and the screen previews again at once.
+- **Tests.** `tests/erp-quotes.mjs` (73 checks: a shared code refused, mapped to one of its customers → new under it, a mapping to a
+  customer that does not carry it decides nothing, re-import unchanged, the mapping changed later does not move the quote, «مبيعات مكتب»
+  excluded even when its customer is missing or the quotation unreadable); `tests/erp-quotes-http.mjs` (96 checks, on the built release:
+  the shared code with its candidates to the administrator and without them to the sales manager, 403 to the sales manager and the
+  supervisor, a non-candidate refused, the same request once, an old revision 409, the older preview 409, the import under the chosen
+  customer with the refused and excluded ones left, unchanged again, the mapping changed later); `tests/erp-quotes-browser.mjs` (58 checks,
+  Chromium: the jump, exactly the two customers, «حفظ الربط», the preview made again; the supervisor's words; a 360 px phone and English).
+  The default gate (185 of 185), `tests/server-authorization.mjs` (658), `tests/targets-performance-ui.mjs` (187),
+  `tests/targets-hub-browser.mjs` (197) and `tests/kpi-evidence-browser.mjs` (87) pass unchanged.
+- **Activator.** The previous release's activation (`update-targets-hub-activation-20261111`) is accepted as today's backup, in
+  `portable/activate-ui-refresh-update.cjs` and the shipped list of `tests/baseline-update-activation.mjs`.
+
 ## «استيراد عروض الأسعار من ERP» (2026-11-11, shipped in release update-targets-hub-20261111, no migration)
 
 - **Asked.** The owner uploaded the ERP's quotations report («Reports_Invoices_10.xls») and asked for it to be imported into «عروض الأسعار»;
