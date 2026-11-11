@@ -20,7 +20,7 @@ import {targetProducts,quantityNumber,type TargetState,type ActivityTargets,type
 import VisitCustomerPicker from './visit-customer-picker';
 import KpiPerformanceView from './kpi-performance';
 import {regionScope} from '@/lib/regions';
-import {ChartNoAxesCombined,ShoppingCart,Wallet,FileText,Upload} from 'lucide-react';
+import {ChartNoAxesCombined,ShoppingCart,Wallet,Upload} from 'lucide-react';
 import TargetsOverviewCard from './targets-overview';
 import KpiEvidencePanel from './kpi-evidence-panel';
 import ErpCollectionsImport from './erp-collections-import';
