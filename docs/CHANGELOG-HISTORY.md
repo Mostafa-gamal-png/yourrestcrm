@@ -41,7 +41,7 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   `tests/targets-hub-browser.mjs` (197) and `tests/kpi-evidence-browser.mjs` (87) pass unchanged.
 - **Activator.** The previous release's activation (`update-targets-hub-activation-20261111`) is accepted as today's backup, in
   `portable/activate-ui-refresh-update.cjs` and the shipped list of `tests/baseline-update-activation.mjs`.
-## «معدل تحويل عرض السعر إلى مبيعات» computed automatically (2026-11-11, release update-quote-conversion, no migration)
+## «معدل تحويل عرض السعر إلى مبيعات» computed automatically (2026-11-11, shipped in release update-quote-codes-20261111, no migration)
 
 - **Asked.** The owner: «الفواتير مربوطة بعروض السعر فى عمود الوصف» — in the ERP sales export, the «الوصف» of an invoice line names the
   quotation it came from (ERP numbers «Qut-349»). Until now the KPI `orders` was «بيانات مطلوبة» until a manager linked quotes to invoices by
