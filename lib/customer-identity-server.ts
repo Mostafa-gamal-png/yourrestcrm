@@ -4,7 +4,10 @@ import {regionScope} from './regions';
 import {customerCodeKey,customerCodeCandidates,customerErpCodes} from './customer-identity';
 
 type Context=Awaited<ReturnType<typeof context>>;
-export function requireIdentityAdmin(c:Context){if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('ربط أكواد العملاء متاح لمدير النظام فقط.',403);}
+/** Who may map a shared ERP customer code to one customer: the administrator with every region (a mapping is global: it decides the
+ *  ERP quotations import, the KPI invoices and the customer's last purchase). */
+export const isIdentityAdmin=(c:Pick<Context,'me'>)=>c.me.role==='admin'&&regionScope(c.me)==='all';
+export function requireIdentityAdmin(c:Context){if(!isIdentityAdmin(c))throw new CRMError('ربط أكواد العملاء متاح لمدير النظام فقط.',403);}
 export async function customerIdentityOptions(c:Context){
  requireIdentityAdmin(c);
  const state=c.customerIdentityState,candidates=customerCodeCandidates(c.all),raw=new Map<string,Set<string>>();

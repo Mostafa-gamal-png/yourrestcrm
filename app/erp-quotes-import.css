@@ -1,6 +1,10 @@
-/* «استيراد عروض الأسعار من ERP» (app/erp-quotes-import.tsx): the ERP sales import's dialog (app/erp-sales-import.css) with five counts,
-   the customers the CRM does not have, and the badges of the five outcomes. */
-.erp-quotes-import .erp-quotes-counts{grid-template-columns:repeat(5,minmax(0,1fr))}
+/* «استيراد عروض الأسعار من ERP» (app/erp-quotes-import.tsx): the ERP sales import's dialog (app/erp-sales-import.css) with six counts,
+   the customers the CRM does not have, the codes shared by more than one customer (app/erp-code-choice.css), and the badges of the six
+   outcomes. */
+.erp-quotes-import .erp-quotes-counts{grid-template-columns:repeat(6,minmax(0,1fr))}
+.erp-quotes-import .erp-quotes-code-jump{margin-top:6px;min-height:34px;white-space:normal;text-align:start;max-width:100%}
+.erp-quotes-import .erp-quotes-code-wait{color:#965d0c}
+.dark .erp-quotes-import .erp-quotes-code-wait{color:#efc672}
 .erp-quotes-missing{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .erp-quotes-missing>li{padding:10px 14px;min-width:0;overflow-wrap:anywhere}
 .erp-quotes-missing>li+li{border-top:1px solid var(--border)}
@@ -9,12 +13,14 @@
 .erp-import-badge.erp-quote-new,.erp-import-badge.erp-quote-update{background:#087b7914;color:#087b79}
 .erp-import-badge.erp-quote-refused{background:#b7701014;color:#965d0c}
 .erp-import-badge.erp-quote-edited{background:#3b5bdb14;color:#3451b2}
+.erp-import-badge.erp-quote-excluded{background:#6b728014;color:#4b5563}
 .dark .erp-import-badge.erp-quote-new,.dark .erp-import-badge.erp-quote-update{background:#51d4bd20;color:#7de1d2}
 .dark .erp-import-badge.erp-quote-refused{background:#f6c87118;color:#efc672}
 .dark .erp-import-badge.erp-quote-edited{background:#91a7ff20;color:#b4c3ff}
+.dark .erp-import-badge.erp-quote-excluded{background:#9ca3af20;color:#d1d5db}
+@media(max-width:900px){.erp-quotes-import .erp-quotes-counts{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:640px){
  .erp-quotes-import .erp-quotes-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
- .erp-quotes-import .erp-quotes-counts>div:last-child{grid-column:1/-1}
  .erp-quotes-missing>li{padding:9px 12px}
 }
 /* The quote form of an imported quotation (its customer in place of the approved-request picker) and the customer's quotations on the

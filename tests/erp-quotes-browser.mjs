@@ -5,7 +5,11 @@
 // then opens «عروض الأسعار»: the imported quotes are listed, one opens with its ERP source, item codes and units, the customer's sheet lists
 // it, and it prints (code and unit columns, the ERP's totals, no machine line). On a 360 px phone the supervisor previews the same file
 // again (everything unchanged, nothing to import) with no sideways scrolling; in English on a computer and a phone the dialog is left to
-// right with no Arabic left in its own words (the data, in <bdi>, and the select's names aside). Screenshots for the report
+// right with no Arabic left in its own words (the data, in <bdi>, and the select's names aside). «مبيعات مكتب» is excluded («مستبعدة»);
+// two codes are each carried by two customers: the administrator jumps from a refused quotation to its code, sees exactly its two
+// customers, saves «حفظ الربط» (one POST /api/customer-identities) and the preview is made again with that quotation to add; the
+// supervisor reads that the administrator has to choose (no customers offered); the administrator on a 360 px phone and in English sees
+// the saved choice (changeable) and the one still open. Screenshots for the report
 // (YR_ERP_QUOTES_SCREENSHOT_DIR). Synthetic fixtures only: temporary SQLite, never the owner's file.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -29,6 +33,9 @@ const rows = [
   ...quotation({code: 'Qut-2001', customerCode: '101', empCode: '7001', empName: 'أحمد المندوب', lines: [{name: 'قالب بلوك 20 سم', qty: 1, price: 18500, code: '10010001'}]}),
   ...quotation({code: 'Qut-2002', customerCode: '102', empCode: '7002', empName: 'موظف ERP آخر', documentDiscount: 100, note: 'يشمل التركيب', lines: [{name: 'قالب انترلوك', qty: 2, price: 9000, discount: 500, code: '10020001', description: 'مع جلبة'}, {name: 'جلبة إضافية', qty: 4, price: 250.5, code: '10030002-1', unit: 'قطعة / PC'}]}),
   ...quotation({code: 'Qut-2003', customerCode: '999', customerName: 'عميل ليس في النظام', empCode: '7001', empName: 'أحمد المندوب', lines: [{name: 'قالب', qty: 1, price: 1000}]}),
+  ...quotation({code: 'Qut-2004', customerCode: '201', empCode: '7001', empName: 'أحمد المندوب', lines: [{name: 'قالب مشترك', qty: 1, price: 1200}]}),
+  ...quotation({code: 'Qut-2005', customerCode: '101', empCode: '7003', empName: 'مبيعات مكتب', lines: [{name: 'قالب مكتب', qty: 1, price: 700}]}),
+  ...quotation({code: 'Qut-2006', customerCode: '202', empCode: '7001', empName: 'أحمد المندوب', lines: [{name: 'قالب ثان', qty: 1, price: 800}]}),
 ];
 const file = {name: 'Reports_Invoices_synthetic.xls', mimeType: 'application/vnd.ms-excel', buffer: erpQuotesXls(rows)};
 
@@ -39,6 +46,10 @@ try {
     .bind(id, JSON.stringify({branch: 'الرئيسي', assignedTo: 'rep', region: 'الوسطى', city: 'الرياض', address: 'حي الصناعية', contact: 'م. خالد', ...data}), now, now).run();
   await customer('c101', {name: 'مصنع الاختبار الأول', code: '101'});
   await customer('c102', {name: 'مصنع الاختبار الثاني', code: '102'});
+  await customer('dupA', {name: 'مصنع مشترك أ', code: '201'});
+  await customer('dupB', {name: 'مصنع مشترك ب', code: '201', region: 'الغربية'});
+  await customer('dupC', {name: 'مصنع آخر ج', code: '202'});
+  await customer('dupD', {name: 'مصنع آخر د', code: '202'});
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1', '--disable-dev-shm-usage']});
   async function open(who, {viewport = DESKTOP, english = false, hash = 'targets'} = {}) {
     const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block'});
@@ -79,21 +90,51 @@ try {
   await dialog.getByRole('button', {name: 'قراءة الملف ومعاينته', exact: true}).click();
   check((await answer).status(), 200, 'preview');
   await dialog.locator('#erp-quotes-preview-heading').waitFor();
-  check(await tiles(dialog), [['ستُضاف', '1'], ['ستُحدَّث', '0'], ['بلا تغيير', '0'], ['عُدِّلت في الـCRM', '0'], ['مرفوضة', '2']], 'the five counts');
+  check(await tiles(dialog), [['ستُضاف', '1'], ['ستُحدَّث', '0'], ['بلا تغيير', '0'], ['عُدِّلت في الـCRM', '0'], ['مستبعدة', '1'], ['مرفوضة', '4']], 'the six counts');
+  ok((await dialog.locator('.erp-import-table tbody tr', {hasText: 'Qut-2005'}).innerText()).includes('مبيعات مكتب: عروض شركة أخرى مستبعدة تلقائيًا'), '«مبيعات مكتب» excluded with its reason');
+  ok(!(await dialog.locator('.erp-import-map-row').allInnerTexts()).some(text => text.includes('مبيعات مكتب')), 'never offered for mapping');
   ok((await dialog.locator('.erp-quotes-missing').innerText()).includes('عميل ليس في النظام'), 'the customer the CRM does not have');
   ok((await dialog.locator('.erp-import-map-row').first().innerText()).includes('مطابقة تلقائية للاسم'), 'an employee matched by name');
   const refusedRow = dialog.locator('.erp-import-table tbody tr', {hasText: 'Qut-2002'});
   ok((await refusedRow.innerText()).includes('اربط موظف ERP بمندوب'), 'an unmapped employee\'s quotation is refused with its reason');
   await shot(admin, '02-preview-desktop-ar');
+  // The shared codes: from the refused quotation to its code, exactly its customers, «حفظ الربط», the preview made again.
+  const shared = dialog.locator('.erp-code-choice');
+  check(await shared.count(), 2, 'two shared codes listed');
+  check(await dialog.locator('#erp-quotes-shared').innerText(), 'أكواد مشتركة بين أكثر من عميل', 'the list\'s title');
+  const sharedRow = dialog.locator('.erp-import-table tbody tr', {hasText: 'Qut-2004'});
+  ok((await sharedRow.innerText()).includes('كود العميل مسجل لأكثر من عميل'), 'the quotation refused for its shared code');
+  await sharedRow.getByRole('button', {name: 'اختيار العميل الصحيح لهذا الكود', exact: true}).click();
+  const code201 = dialog.locator('.erp-code-choice[data-code="201"]');
+  await admin.waitForFunction(() => document.activeElement?.closest('.erp-code-choice')?.getAttribute('data-code') === '201');
+  ok(true, 'the button takes the administrator to the code\'s choice');
+  check(await code201.locator('.erp-code-choice-option strong').allInnerTexts(), ['مصنع مشترك أ', 'مصنع مشترك ب'], 'exactly the two customers that carry the code');
+  ok(/YR-C-\d{6}/.test(await code201.locator('.erp-code-choice-option').first().innerText()) && (await code201.innerText()).includes('الغربية'), 'each with its YR-C code, region and branch');
+  ok((await code201.innerText()).includes('الربط عام: يُطبَّق أيضًا على مطابقة فواتير مؤشرات الأداء وآخر شراء للعميل.'), 'the mapping is global, said under the choice');
+  ok(await code201.getByRole('button', {name: 'حفظ الربط', exact: true}).isDisabled(), 'nothing chosen yet: nothing to save');
+  await code201.getByRole('radio', {name: /مصنع مشترك أ/}).check();
+  await shot(admin, '02b-shared-code-choice-desktop-ar');
+  const identitySaved = admin.waitForResponse(response => response.url().endsWith('/api/customer-identities') && response.request().method() === 'POST');
+  const refreshed = posted(admin);
+  await code201.getByRole('button', {name: 'حفظ الربط', exact: true}).click();
+  check((await identitySaved).status(), 200, 'the mapping saved');
+  check((await refreshed).status(), 200, 'and the file previewed again');
+  await admin.waitForFunction(() => document.querySelector('.erp-quotes-counts>div:first-child strong')?.textContent.trim() === '2');
+  check((await tiles(dialog)).map(t => t[1]), ['2', '0', '0', '0', '1', '3'], 'the mapped code\'s quotation is to add');
+  ok((await dialog.locator('.erp-import-table tbody tr', {hasText: 'Qut-2004'}).innerText()).includes('مصنع مشترك أ'), 'under the chosen customer');
+  check(await code201.getAttribute('data-status'), 'mapped', 'the code is mapped');
+  ok((await code201.innerText()).includes('الربط المحفوظ حاليًا'), 'the saved choice is shown, to be changed from here');
+  await code201.scrollIntoViewIfNeeded();
+  await shot(admin, '02c-shared-code-saved-desktop-ar');
   await dialog.getByRole('combobox', {name: 'مندوب الموظف موظف ERP آخر'}).selectOption('rep2');
   await dialog.locator('.erp-import-footer').getByRole('button', {name: 'تحديث المعاينة', exact: true}).click();
-  await admin.waitForFunction(() => document.querySelector('.erp-quotes-counts>div:first-child strong')?.textContent.trim() === '2');
-  check((await tiles(dialog)).map(t => t[1]), ['2', '0', '0', '0', '1'], 'with the employee chosen, two to add');
+  await admin.waitForFunction(() => document.querySelector('.erp-quotes-counts>div:first-child strong')?.textContent.trim() === '3');
+  check((await tiles(dialog)).map(t => t[1]), ['3', '0', '0', '0', '1', '2'], 'with the employee chosen, three to add');
   answer = posted(admin);
-  await dialog.getByRole('button', {name: 'تأكيد الاستيراد (2)', exact: true}).click();
+  await dialog.getByRole('button', {name: 'تأكيد الاستيراد (3)', exact: true}).click();
   check((await answer).status(), 200, 'import');
   await dialog.locator('.erp-import-success').waitFor();
-  ok((await dialog.locator('.erp-import-success').innerText()).includes('أُضيفت: 2'), 'the result');
+  ok((await dialog.locator('.erp-import-success').innerText()).includes('أُضيفت: 3') && (await dialog.locator('.erp-import-success').innerText()).includes('مستبعدة: 1'), 'the result (the excluded and the refused did not keep the others)');
   await shot(admin, '03-result-desktop-ar');
   await dialog.getByRole('button', {name: 'تم', exact: true}).click();
   await dialog.waitFor({state: 'detached'});
@@ -138,7 +179,12 @@ try {
   await phoneDialog.getByRole('button', {name: 'قراءة الملف ومعاينته', exact: true}).click();
   await answer;
   await phoneDialog.locator('#erp-quotes-preview-heading').waitFor();
-  check((await tiles(phoneDialog)).map(t => t[1]), ['0', '0', '2', '0', '1'], 'the same file again: everything unchanged');
+  check((await tiles(phoneDialog)).map(t => t[1]), ['0', '0', '3', '0', '1', '2'], 'the same file again: everything unchanged');
+  const supShared = phoneDialog.locator('.erp-code-choice');
+  check([await supShared.count(), await supShared.first().getAttribute('data-code'), await phoneDialog.locator('.erp-code-choice input').count()], [1, '202', 0], 'the supervisor: only the code still open, no customer offered');
+  ok((await supShared.innerText()).includes('يحتاج مدير النظام إلى اختيار العميل الصحيح لهذا الكود.'), 'the supervisor reads that the administrator has to choose');
+  await phoneDialog.locator('#erp-quotes-shared').scrollIntoViewIfNeeded();
+  await shot(phone, '09b-shared-code-supervisor-phone-ar');
   ok(await phoneDialog.getByRole('button', {name: 'تأكيد الاستيراد (0)', exact: true}).isDisabled(), 'nothing to import');
   ok(await phoneDialog.locator('.erp-import-cards').isVisible() && !(await phoneDialog.locator('.erp-import-table-wrap').isVisible()), 'cards in place of the table');
   ok(await noSideways(phone), 'the dialog fits a 360 px phone');
@@ -156,6 +202,30 @@ try {
   await customerQuotes.scrollIntoViewIfNeeded();
   await shot(phone, '07-customer-quotes-phone-ar');
 
+  // ---- 3b. The administrator on a 360 px phone: the saved choice (changeable) and the one still open.
+  {
+    const page = await open('owner', {viewport: PHONE});
+    await toQuotesTab(page);
+    await button(page).click();
+    const d = dialogOf(page);
+    await d.waitFor();
+    await d.locator('#erp-quotes-report').setInputFiles(file);
+    answer = posted(page);
+    await d.getByRole('button', {name: 'قراءة الملف ومعاينته', exact: true}).click();
+    await answer;
+    await d.locator('#erp-quotes-preview-heading').waitFor();
+    check(await d.locator('.erp-code-choice').evaluateAll(nodes => nodes.map(node => [node.getAttribute('data-code'), node.getAttribute('data-status'), node.querySelectorAll('input[type=radio]').length])), [['201', 'mapped', 2], ['202', 'ambiguous', 2]], 'the administrator on a phone: both codes, each with its two customers');
+    await d.locator('.erp-import-document-card', {hasText: 'Qut-2006'}).getByRole('button', {name: 'اختيار العميل الصحيح لهذا الكود', exact: true}).click();
+    await page.waitForFunction(() => document.activeElement?.closest('.erp-code-choice')?.getAttribute('data-code') === '202');
+    ok(true, 'the card\'s button takes the administrator to the code (phone)');
+    ok(await page.evaluate(() => { const box = document.querySelector('.erp-code-choice[data-code="202"]').getBoundingClientRect(), scroll = document.querySelector('.erp-import-scroll').getBoundingClientRect(); return box.top >= scroll.top - 1 && box.top < scroll.bottom; }), 'and scrolls the code into view (phone)');
+    ok(await noSideways(page), 'the shared codes fit a 360 px phone');
+    const box = await d.locator('.erp-code-choice[data-code="202"] .btn').boundingBox();
+    ok(box && box.x >= 0 && box.x + box.width <= PHONE.width && box.height >= 34, '«حفظ الربط» is within the phone\'s width and tappable');
+    await shot(page, '09c-shared-code-choice-phone-ar');
+    await page.context().close();
+  }
+
   // ---- 4. English: computer and phone.
   for (const [viewport, label] of [[DESKTOP, 'desktop'], [PHONE, 'phone']]) {
     const page = await open('owner', {viewport, english: true});
@@ -170,7 +240,11 @@ try {
     await d.getByRole('button', {name: 'Read and preview file', exact: true}).click();
     await answer;
     await d.locator('#erp-quotes-preview-heading').waitFor();
-    check(await tiles(d), [['To add', '0'], ['To update', '0'], ['Unchanged', '2'], ['Edited in the CRM', '0'], ['Refused', '1']], 'English counts (' + label + ')');
+    check(await tiles(d), [['To add', '0'], ['To update', '0'], ['Unchanged', '3'], ['Edited in the CRM', '0'], ['Excluded', '1'], ['Refused', '2']], 'English counts (' + label + ')');
+    check(await d.locator('#erp-quotes-shared').innerText(), 'Codes shared by more than one customer', 'English: the shared codes (' + label + ')');
+    ok((await d.locator('.erp-code-choice[data-code="202"]').innerText()).includes('A mapping applies everywhere'), 'English: the choice and its note (' + label + ')');
+    await d.locator('.erp-code-choice[data-code="202"]').scrollIntoViewIfNeeded();
+    await shot(page, '11b-shared-code-' + label + '-en');
     ok(!/[؀-ۿ]/.test(await ownWords(d)), 'English: no Arabic left in the dialog\'s own words (' + label + ')');
     ok(await noSideways(page), 'English dialog fits (' + label + ')');
     await shot(page, '11-preview-' + label + '-en');

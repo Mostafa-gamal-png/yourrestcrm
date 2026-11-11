@@ -1,0 +1,39 @@
+/* «العميل الصحيح لهذا الكود» (app/erp-code-choice.tsx): one shared ERP customer code, its candidates as a list of choices, «حفظ الربط». */
+.erp-code-choice{padding:12px 14px;min-width:0;display:flex;flex-direction:column;gap:9px;scroll-margin:24px}
+.erp-code-choice+.erp-code-choice{border-top:1px solid var(--border)}
+.erp-code-choice-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0}
+.erp-code-choice-head>span:first-child{min-width:0;overflow-wrap:anywhere}
+.erp-code-choice-head strong{display:block;font-size:14px;font-weight:600;line-height:1.65}
+.erp-code-choice-head small{display:block;font-size:12px;line-height:1.6;color:var(--muted-foreground)}
+.erp-code-choice-badge{flex:none;font-size:12px;line-height:1.5;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.erp-code-choice-badge.erp-code-ambiguous{background:#b7701014;color:#965d0c}
+.erp-code-choice-badge.erp-code-mapped{background:#087b7914;color:#087b79}
+.dark .erp-code-choice-badge.erp-code-ambiguous{background:#f6c87118;color:#efc672}
+.dark .erp-code-choice-badge.erp-code-mapped{background:#51d4bd20;color:#7de1d2}
+.erp-code-choice-options{border:0;margin:0;padding:0;min-width:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.erp-code-choice-options legend{font-size:13px;font-weight:600;margin-bottom:6px;padding:0}
+.erp-code-choice-option{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:var(--background);cursor:pointer;min-width:0}
+.erp-code-choice-option[data-selected]{border-color:#087b79;box-shadow:0 0 0 1px #087b79 inset}
+.erp-code-choice-option input{margin:4px 0 0;flex:none;width:17px;height:17px;accent-color:#087b79}
+.erp-code-choice-option>span{min-width:0;overflow-wrap:anywhere}
+.erp-code-choice-option strong{display:block;font-size:14px;font-weight:600;line-height:1.6}
+.erp-code-choice-option small{display:block;font-size:12px;line-height:1.6;color:var(--muted-foreground)}
+.erp-code-choice-option .erp-code-choice-current{color:#087b79}
+/* The code, the region and the branch and their separators as separate pieces: a flex row follows the dialog's direction, where one
+   sentence would let the bidi algorithm reorder a Latin code against the Arabic names. */
+.erp-code-choice-option .erp-code-choice-meta{display:flex;flex-wrap:wrap;gap:0 6px}
+.erp-code-choice-options:disabled .erp-code-choice-option{cursor:default;opacity:.75}
+.erp-code-choice-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-width:0}
+.erp-code-choice-actions .btn{flex:none}
+.erp-code-choice-note{flex-basis:100%;font-size:12px;line-height:1.6;color:var(--muted-foreground)}
+.erp-code-choice-wait,.erp-code-choice-message,.erp-code-choice-saved{margin:0;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.erp-code-choice-wait,.erp-code-choice-message{color:#965d0c}
+.dark .erp-code-choice-wait,.dark .erp-code-choice-message{color:#efc672}
+.erp-code-choice-saved{display:flex;align-items:center;gap:6px;color:#087b79}
+.erp-code-choice .form-error{margin:0}
+@media(max-width:640px){
+ .erp-code-choice{padding:11px 12px}
+ .erp-code-choice-head{flex-direction:column;gap:6px}
+ .erp-code-choice-options{grid-template-columns:minmax(0,1fr)}
+ .erp-code-choice-actions .btn{width:100%;justify-content:center}
+}
