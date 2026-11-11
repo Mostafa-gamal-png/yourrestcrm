@@ -28,7 +28,7 @@ export async function readSalesRevision(c:Context){
  if(!row)throw new CRMError('تحديث قاعدة بيانات المبيعات غير مكتمل.',503);
  return row.revision;
 }
-async function readEvidenceRevision(c:Context){const row=await c.db.prepare("SELECT revision FROM crm_kpi_evidence_state WHERE id='company'").first<{revision:number}>();if(!row)throw new CRMError('تحديث قاعدة بيانات المؤشرات غير مكتمل.',503);return row.revision;}
+export async function readEvidenceRevision(c:Context){const row=await c.db.prepare("SELECT revision FROM crm_kpi_evidence_state WHERE id='company'").first<{revision:number}>();if(!row)throw new CRMError('تحديث قاعدة بيانات المؤشرات غير مكتمل.',503);return row.revision;}
 export async function readKpiEvidenceRows(c:Context,month:string):Promise<KpiEvidence[]>{
  requireSalesWorkspace(c.me);const selected=monthSchema.parse(month),allowed=salesReadMemberIds(c.members,c.me,true),regional=new Set(c.regionalMembers.filter(m=>m.role==='rep').map(m=>m.id));
  const rows=(await c.db.prepare('SELECT e.*,m.name AS author FROM crm_kpi_evidence e LEFT JOIN crm_members m ON m.id=e.updated_by WHERE e.month=?').bind(selected).all<EvidenceRow>()).results;
@@ -61,8 +61,8 @@ function quotationRecords(c:Context,member:Member,month:string){
 }
 function quoteOption(row:Row,c:Context):QuoteOption{const customer=visitCustomer(row,c.all)!;return{id:row.id,reference:String(row.kind==='quote'?row.data.number||row.id:row.data.visitNumber||row.id),customerId:customer.id,customerName:String(customer.data.name||''),date:String(row.data.date),kind:row.kind as 'quote'|'activity'};}
 function invoiceOption(row:InvoiceRecord):InvoiceOption{const{id,reference,customerId,customerName,date,repId,source}=row;return{id,reference,customerId,customerName,date,repId,source};}
-function memberSnapshot(member:Member){return[member.id,member.role,member.branch,member.supervisorId||'',regionScope(member),member.active,member.authVersion||0];}
-const memberSnapshotsGate=`NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN crm_members actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.role IS NOT json_extract(expected.value,'$[1]') OR actual.branch IS NOT json_extract(expected.value,'$[2]') OR COALESCE(actual.supervisor_id,'') IS NOT json_extract(expected.value,'$[3]') OR actual.region_scope IS NOT json_extract(expected.value,'$[4]') OR actual.active IS NOT json_extract(expected.value,'$[5]') OR actual.auth_version IS NOT json_extract(expected.value,'$[6]'))`;
+export function memberSnapshot(member:Member){return[member.id,member.role,member.branch,member.supervisorId||'',regionScope(member),member.active,member.authVersion||0];}
+export const memberSnapshotsGate=`NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN crm_members actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.role IS NOT json_extract(expected.value,'$[1]') OR actual.branch IS NOT json_extract(expected.value,'$[2]') OR COALESCE(actual.supervisor_id,'') IS NOT json_extract(expected.value,'$[3]') OR actual.region_scope IS NOT json_extract(expected.value,'$[4]') OR actual.active IS NOT json_extract(expected.value,'$[5]') OR actual.auth_version IS NOT json_extract(expected.value,'$[6]'))`;
 const recordSnapshotsGate=`NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN crm_records actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.version IS NOT json_extract(expected.value,'$[1]'))`;
 
 export async function getKpiEvidenceOptions(c:Context,memberId:string,month:string):Promise<KpiEvidenceOptions>{

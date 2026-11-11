@@ -4,6 +4,40 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The targets page as one hub, and the ERP collection statement (2026-11-11, update-targets-hub, no migration)
+
+- **Asked.** The owner, with a picture of the page: «عايز المبيعات وعروض السعر والتحصيل فى صفحة المستهدف زى كده».
+- **One hub** (`app/sales-workspace.tsx`, `lib/targets-hub.ts`, `app/targets-hub.css`): «المستهدفات والنتائج في مكان واحد», five tabs in the
+  owner's order — «نتائج الأداء» (the company and branch gauges, the summary cards and the evaluation), «رفع المبيعات» (the sales list, the
+  sale registration and «استيراد مبيعات ERP», exactly as the sales page), «التحصيل» (each person's collection evidence and the new import),
+  «عروض الأسعار» (each person's quotations evidence; `quotesImportSlot` is where the ERP quotations import mounts after its merge),
+  «المستهدفات والأوزان» (the targets and weights editor) — and one month picker «شهر المستهدفات والأداء» for all of them. A tab is shown only
+  to whoever may use it today («رفع المبيعات» follows the «المبيعات» screen); the address (`?tab=`) and the browser remember the tab, so a
+  reload stays on it. The sales page («المبيعات») is unchanged. Permissions unchanged.
+- **«تحقيق المستهدف — الشركة والفروع»** (`lib/targets-overview.ts`, `app/targets-overview.tsx`): a gauge for the company and each branch with
+  «تفاصيل الفئات» (product by product). A branch's target is the sum of its people's own targets in the month (the people of the
+  distribution table), unless the branch has a saved target of its own; the company's is the sum of the branches; achieved is the same
+  people's confirmed sales (CRM and ERP, returns deducted); the gauge is the weighted achievement (`quantityAttainment`: capped at 100% per
+  product, company weights). For the month only, for the administrator and sales managers over every region (who read branch targets).
+- **«استيراد كشف التحصيل من ERP»** (`lib/erp-collections.ts`, `lib/erp-collections-server.ts`, `app/api/kpi-evidence/import`,
+  `app/erp-collections-import.tsx`): the ERP's «كشف حساب» (UTF-16LE HTML saved as .xls; UTF-8 HTML and .xlsx too) with its ten columns. Per
+  account: collected = «حركة الفترة دائن», due = max(0, «الرصيد السابق مدين» − «الرصيد السابق دائن») + «حركة الفترة مدين»; it belongs to
+  «المندوب», else «المحصل»; «مبيعات مكتب» is left out; a row whose current balance is not previous + period is counted and reported. The file
+  has no dates, so the importer chooses the month (the hub's by default). Names are mapped by the full name, then by the ERP sales already
+  imported under that name, then by an earlier import's choice, or chosen in the preview. «اعتماد» writes each mapped representative's
+  `collection {dueCents, collectedCents, reference «كشف حساب ERP · <file> · <day>»}` of `crm_kpi_evidence` and nothing else, in one
+  transaction gated on the evidence revision; a value already there is marked «سيستبدل القيمة الحالية (… / …)» and replaced only when
+  confirmed; the same file twice writes nothing; a repeat of the same request (`requestId`) is answered from the first. Rights: those of
+  saving the evidence by hand (the page's «تحرير», the administrator or a sales manager, their team and regions); a finished month only by the
+  administrator (recorded). One audit line for the import (counts, each representative's before → after, the name mappings) and one on each
+  representative's evidence record.
+- **Tests.** `tests/erp-collections.mjs` (default gate: parser, formula, office, unmapped, Arabic digits, encodings, refusals, the gauges'
+  arithmetic, the remembered tab), `tests/erp-collections-http.mjs` (release-build), `tests/targets-hub-browser.mjs` (browser),
+  `tests/targets-performance-ui.mjs` rewritten for the tabs; the browser tests that open the targets page click the tab they need
+  (`targets-audit-browser`, `targets-decisions-browser`, `kpi-evidence-browser`, `app-browser-workflows`); `/api/kpi-evidence/import` in
+  `tests/server-authorization.mjs`.
+- **Rollback.** Code only; the collection the import wrote stays as KPI evidence the previous build reads and edits by hand.
+
 ## Word order on the signature page, and Modern Standard Arabic throughout (2026-11-11, same release, no migration)
 
 - **Asked.** The owner: «الكلام فى التطبيق بالفصحى مش مصرى عامى»; and the signature page drawn as a picture showed mixed lines in a confusing
