@@ -79,6 +79,9 @@ export const MOLD_BODY_LIMIT = 64 * 1024;
 /** The customers route takes up to 2 MB and 20000 customers in one call (the contract, «customers»). */
 export const MOLD_CUSTOMERS_BODY_LIMIT = 2 * 1024 * 1024;
 export const MOLD_CUSTOMERS_MAX = 20000;
+/** The salesmen route (2026-11-12, yourrest-products#54; portable/mold-salesmen.mjs): up to 256 KB and 1000 salesmen in one call. */
+export const MOLD_SALESMEN_BODY_LIMIT = 256 * 1024;
+export const MOLD_SALESMEN_MAX = 1000;
 /** The cities as the production sheet writes them; a CRM city that is one of them is sent this way so production fills it in itself. */
 export const MOLD_SHEET_CITIES = ['Damam - الدمام', 'Riyadh - الرياض', 'Qassem - القصيم', 'Madina - المدينة', 'Jeddah - جده', 'MAkkah - مكة', 'Taif - الطائف', 'Khames - خميس مشيط', 'Jizan - جيزان'];
 /** §6: after a failed send, the next try waits 1 minute, then 5, then 30, then 2 hours, then every 2 hours until 24 hours have passed. */
@@ -1039,4 +1042,18 @@ export function moldCustomerCalls(customers) {
   }
   if (batch.length) calls.push({mode: 'upsert', customers: batch});
   return calls;
+}
+
+/**
+ * The salesmen route's 200 answer read (portable/mold-salesmen.mjs, lib/mold-salesmen-server.ts): the five counts (whole numbers, not
+ * negative) and deactivatedIds (ids of the contract's shape only, at most 1000), or null when the answer is not the contract's.
+ * @param {any} json
+ * @returns {{received: number, inserted: number, updated: number, deactivated: number, activeSalesmen: number, deactivatedIds: string[]} | null}
+ */
+export function moldSalesmenAnswer(json) {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  if (!['received', 'inserted', 'updated', 'deactivated', 'activeSalesmen'].every(key => Number.isInteger(json[key]) && json[key] >= 0)) return null;
+  if (!Array.isArray(json.deactivatedIds)) return null;
+  const deactivatedIds = json.deactivatedIds.filter(id => typeof id === 'string' && MOLD_ID.test(id)).slice(0, MOLD_SALESMEN_MAX);
+  return {received: json.received, inserted: json.inserted, updated: json.updated, deactivated: json.deactivated, activeSalesmen: json.activeSalesmen, deactivatedIds};
 }
