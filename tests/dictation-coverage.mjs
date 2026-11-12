@@ -31,7 +31,6 @@ const STAYS_TYPED = [
   {file: 'app/mold-customer-fields.tsx', snippet: 'maxLength={60} inputMode="text"', reason: 'the mold request\'s «كود ERP» is a code typed as the ERP writes it (Latin letters and English digits); the customer name beside it is dictated (2026-11-09)'},
   {file: 'app/mold-requests.tsx', snippet: 'inputMode="numeric" dir="ltr"', reason: 'mold width, gelba size and quantity are numbers with ranges, picked from the usual sizes or typed'},
   {file: 'app/sales-workspace.tsx', snippet: 'maxLength={100} value={data.reference}', reason: 'the sale reference is a code from the invoice'},
-  {file: 'app/visit-customer-picker.tsx', snippet: 'value={draft.code}', reason: 'the ERP customer code is a code'},
   // The shared helpers hand text and text areas to VoiceField and keep only the other types for themselves; the guard is checked below.
   {file: 'app/crm-app.tsx', snippet: "type={type === 'plain' ? 'text' : type}", reason: 'field(): only the types other than text and textarea reach this input; "plain" is an identifier or administrative value', guard: 'field'},
   {file: 'app/followups.tsx', snippet: 'type={type} required={required}', reason: 'field(): only the types other than text and textarea reach this input', guard: 'field'},

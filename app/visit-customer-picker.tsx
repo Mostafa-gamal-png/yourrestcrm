@@ -13,6 +13,7 @@ import CustomerLocationFields,{CustomerClassificationFields,type CustomerData} f
 import { schemas, type Row, type Member } from '@/lib/crm';
 import { customerLocationProblem } from '@/lib/customer-fields';
 import VoiceField from './voice-field';
+import ErpCodeReadOnly from './erp-code-readonly';
 import './customer-picker-mobile.css';
 
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
@@ -155,9 +156,9 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
             </div>
             <CustomerLocationFields key={createKey.current} data={draft} disabled={fieldDisabled} onUpdate={setDraft} onPendingChange={setLocationPending}/>
             <details className="visit-new-customer-extra" open={extraOpen} onToggle={e => setExtraOpen(e.currentTarget.open)}>
-                <summary><span>{say('كود ERP والعنوان (اختياري)', 'ERP code and address (optional)')}</span><ChevronDown size={18}/></summary>
+                <summary><span>{say('العنوان (اختياري) وكود ERP', 'Address (optional) and ERP code')}</span><ChevronDown size={18}/></summary>
                 <div className="form-grid">
-                    <label className="field"><span>{say('كود العميل في ERP','Customer ERP code')}</span><input value={draft.code} maxLength={250} autoComplete="off" disabled={fieldDisabled} onChange={e => updateDraft('code', e.target.value)} onKeyDown={preventFormSubmit}/></label>
+                    <ErpCodeReadOnly code="" say={say}/>
                     <VoiceField label="العنوان" value={draft.address ?? ''} onChange={value => updateDraft('address', value)} disabled={fieldDisabled} contextKey="new-customer" inputProps={{maxLength: 250, autoComplete: 'street-address', onKeyDown: preventFormSubmit}}/>
                 </div>
             </details>

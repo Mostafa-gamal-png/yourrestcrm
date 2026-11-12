@@ -142,6 +142,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/erp-customers-duplicates-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/erp-customers-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"

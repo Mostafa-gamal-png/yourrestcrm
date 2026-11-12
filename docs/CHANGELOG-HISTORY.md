@@ -4,6 +4,50 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The ERP code read-only for everyone; the ERP customers import resolves duplicate holders (2026-11-12, to ship with the next package of the day, no migration)
+
+- **Asked.** The owner, 2026-11-12: «ده اخر تحديث للعملاء ومفيش حد ادى لعميلين نفس الكود والغى امكانية تعديل كود erp لاى حد حتى مدير
+  النظام». The owner's latest ERP customers export (194 rows, read locally for counts only) has every «رقم العميل» once (103 and 104
+  once each), so the «مسجل لأكثر من عميل» of the ERP quotations import came from two CRM customers each carrying one code now (hand edits
+  or old data).
+- **Read-only code.** POST /api/crm (app/api/crm/route.ts) refuses, for every role (the administrator with every region included), a
+  customer save that types, changes or empties `data.code`: 403 `ERP_CODE_LOCKED` (lib/customer-identity.ts; English in
+  lib/locales/en.json). An edit keeps the stored code exactly (a page that sends none keeps it; the same key in another spelling, Arabic
+  digits or spaces, is the same code), and a customer added by hand (form, visit picker, rep, offline queue) has none. An edit racing an
+  import of the same customer fails on the record version. The commit-time duplicate guard (`erpCodeTaken`, `NOT EXISTS`) stays as a
+  write guard. Unchanged on purpose: the trash's restore (puts the code back as history unless another customer carries it now), the
+  one-time legacy import app/api/customers/import (no screen; inserts new customers only), and the mold request's typed ERP code (the
+  request's own data, never written to the customer). Screens: app/erp-code-readonly.tsx («كود ERP: 103» / «لا يوجد كود ERP», «يُحدَّث
+  من ملف عملاء ERP فقط») in the customer form (app/crm-app.tsx) and the visit's new-customer form (app/visit-customer-picker.tsx), which
+  lost its code input.
+- **Duplicate holders.** lib/erp-customers.ts `matchErpCustomers` returns `duplicates`: for each row that ends on a customer (by phone,
+  name, code, a stored mapping or the importer's choice), every OTHER customer carrying the row's number as its current code (a holder
+  another row ends on is left out: its code changes anyway). lib/erp-customers-server.ts clears them in the same transaction whatever
+  `clearCodes` says (`'erp-customer-code'` audit `{label: 'مسح كود ERP: الكود يخص عميلًا آخر في ملف ERP', from, to: '', cleared: true,
+  reason: 'duplicate', row, keptBy}`, versions in the gate), answers `duplicatesCleared`, and writes no code mapping any more (`mapping`
+  is always false; the row's customer is the only holder). A row two holders carry with nothing deciding stays a choice and clears nobody;
+  among several holders matched by name, a stored mapping to one of them is the choice. A stored mapping to a customer that loses the
+  number is left and decides nothing (`effectiveCodeMapping`). `heldOutsideRegions(me, holders)` is now "a holder outside a limited
+  member's regions", so such a row is held outside and only the administrator with every region clears it (the apply re-checks each
+  duplicate: «الرقم X عند عميل خارج مناطقك؛ ربطه لمدير النظام.»). The preview lists them in «عملاء يحملون كودًا يخص عميلًا آخر في ملف
+  ERP — سيُمسح منهم الكود» (app/erp-customers-import.tsx: name, Yourrest code, region, code, the customer keeping it and its row), the
+  summary, the apply button («… وامسح N كود») and the result count them; on a phone the apply button's words wrap.
+- **Effect.** After such an import «أكواد مشتركة» of the ERP quotations import no longer lists the code, and its quotations go to the
+  customer that keeps it (tests/erp-customers-duplicates-http.mjs, from four shared codes to none).
+- **Tests.** Default gate 188/188 (tsc 0 errors; ESLint 0 errors, the 5 earlier warnings). tests/erp-customers.mjs (251),
+  tests/security-customer-code.mjs (80, rewritten: the code read-only for admin, manager and rep), tests/rep-customer-create.mjs (284),
+  tests/customer-identities.mjs (89), tests/trash.mjs (214), tests/rep-mobile-shell.mjs (718), tests/dictation-coverage.mjs (30); built
+  release: tests/erp-customers-duplicates-http.mjs (new, 28), tests/erp-customers-http.mjs (146), tests/erp-customers-clear-http.mjs
+  (53), tests/erp-quotes-http.mjs (108), tests/mold-customers-http.mjs (42), tests/server-authorization.mjs (658),
+  tests/trash-http.mjs (61), tests/visit-files-http.mjs (41), tests/sales-date-boundaries.mjs (36), tests/targets-attainment-http.mjs
+  (26), tests/namecheap-http.mjs (381); Chromium: tests/erp-customers-browser.mjs (115), tests/customer-edit-browser.mjs (73). The full
+  gates run (`node scripts/gates.mjs --full`): every release-build and browser test passes (4 skipped: they need the owner's ERP files);
+  four browser tests that failed once under the parallel load passed alone (complaints, mold-requests, permissions, service-queue).
+  Expectations changed on purpose: a code typed or changed through /api/crm is now 403 (fixtures that gave codes through the form now set
+  them as the import does); a number another customer holds is no longer mapped but cleared from that customer (`mapping` false,
+  `mappings` 0, `duplicates`); a sales manager no longer moves a number past a holder outside their regions even with a mapping to a
+  holder inside, and is no longer stopped by a stale mapping to an outside customer that carries nothing.
+- Arabic guide: docs/UPDATE-2026-11-12-ERP-CODE-LOCKED-AR.txt.
 ## «العملاء الجدد» from the ERP customers file (2026-11-12, not released yet, no migration)
 
 - **Asked.** The owner: «فيه فى داتة العملاء اللى برفعها التاريخ واسم المندوب هاتهم من هنا». Before, «العملاء الجدد» counted only the

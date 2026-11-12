@@ -6,7 +6,7 @@
 // address and city go with the next list; production down does not stop a save and the next send carries what changed meanwhile; the
 // same list goes again after 24 hours and not before, across a restart; a customer deleted through the CRM goes at once as active:false.
 // Since 2026-11-02 (second part): each customer carries its ERP code (`erpCode`, '' when none); a code changed by «استيراد من ERP» goes
-// shortly after the apply, and a code removed in the CRM goes as ''; a deleted customer goes without it, so production keeps its code.
+// shortly after the apply, and the form cannot remove one (2026-11-12, read-only); a deleted customer goes without it, so production keeps its code.
 // Since 2026-11-09: a code «استيراد من ERP» clears (a customer the ERP file does not name, the box checked) goes as '' too, never left out.
 // Synthetic fixtures only.
 import assert from 'node:assert/strict';
@@ -131,23 +131,26 @@ try {
   await until(() => sends().length > beforeImport && JSON.parse(sends().at(-1).body).customers.some(item => item.crmNumber === n2 && item.erpCode === '777'), 'the list after the import', 15_000);
   check(mock.state.customers.get(n2).erpCode, '777', 'production holds the code the import wrote');
 
-  // ---- the ERP code removed in the CRM: sent as '' so production clears it
-  check((await edit('c1', {code: ''})).status, 200, 'the code is removed');
-  await until(() => mock.state.customers.get(n1)?.erpCode === '', 'the list after the code was removed');
-  check(JSON.parse(sends().at(-1).body).customers.find(item => item.crmNumber === n1).erpCode, '', 'sent as an empty ERP code');
+  // ---- the ERP code cannot be removed in the CRM's form (2026-11-12: read-only for everyone; only «استيراد من ERP» changes it)
+  check((await edit('c1', {code: ''})).status, 403, 'the form cannot remove the code');
+  check(mock.state.customers.get(n1).erpCode, '146', 'production keeps it');
 
   // ---- 2026-11-09: «امسح كود ERP للعملاء غير الموجودين في الشيت» clears the code of a customer the ERP file does not name; the list goes
   //  shortly after the apply with erpCode '' (never left out: production would keep the old code), so production clears it too
-  const typed = await (await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع مش في ERP', city: 'الرياض', region: 'الشرقية', assignedTo: 'rep', branch: 'الرئيسي', code: '333'}}})).json();
-  ok(typed.id, 'a customer saved with a code the ERP does not have');
+  const typed = await (await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع مش في ERP', city: 'الرياض', region: 'الشرقية', assignedTo: 'rep', branch: 'الرئيسي'}}})).json();
+  ok(typed.id, 'a customer added by hand (no ERP code)');
   const n3 = await number(typed.id);
+  // an earlier ERP file gave it 333 (the only way a customer gets a code)
+  const earlier = workbook([['777', '1000000000', 'مصنع جدة الكبير', 'مصنع جدة الكبير', '', '', '', '', '2026/11/02'], ['333', '1000000000', 'مصنع مش في ERP', 'مصنع مش في ERP', '', '', '', '', '2026/11/02']]);
+  const earlierPreview = await (await owner('/api/erp-customers', {method: 'POST', body: {action: 'preview', fileName: 'Customer.xlsx', base64: earlier}})).json();
+  check((await owner('/api/erp-customers', {method: 'POST', body: {action: 'apply', fileName: 'Customer.xlsx', base64: earlier, snapshot: earlierPreview.snapshot, requestId: crypto.randomUUID(), adds: 0}})).status, 200, 'the earlier file gives it 333');
   await until(() => mock.state.customers.get(n3)?.erpCode === '333', 'the list with the typed code');
   const clearPreview = await (await owner('/api/erp-customers', {method: 'POST', body: {action: 'preview', fileName: 'Customer.xlsx', base64: file}})).json();
-  check(clearPreview.clears?.map(clear => [clear.customerId, clear.code]), [[typed.id, '333']], 'the preview lists the customer the file does not name, with its code');
+  check(clearPreview.clears?.map(clear => [clear.customerId, clear.code]), [['c1', ' 146 '], [typed.id, '333']], 'the preview lists the customers the file does not name, with their codes');
   const beforeClear = sends().length;
   const cleared = await owner('/api/erp-customers', {method: 'POST', body: {action: 'apply', fileName: 'Customer.xlsx', base64: file, snapshot: clearPreview.snapshot, clearCodes: true, clearSnapshot: clearPreview.clearSnapshot, requestId: crypto.randomUUID(), adds: 0}});
-  check([cleared.status, cleared.json().cleared], [200, 1], 'the apply clears it');
-  await until(() => sends().length > beforeClear && mock.state.customers.get(n3)?.erpCode === '', 'the list after the code was cleared', 15_000);
+  check([cleared.status, cleared.json().cleared], [200, 2], 'the apply clears them');
+  await until(() => sends().length > beforeClear && mock.state.customers.get(n3)?.erpCode === '' && mock.state.customers.get(n1)?.erpCode === '', 'the list after the codes were cleared', 15_000);
   const clearedEntry = JSON.parse(sends().at(-1).body).customers.find(item => item.crmNumber === n3);
   check([Object.hasOwn(clearedEntry, 'erpCode'), clearedEntry.erpCode, mock.state.customers.get(n2).erpCode], [true, '', '777'], 'sent with erpCode \'\' (production clears it); the customer in the file keeps its code');
 } finally { await app.stop(); }

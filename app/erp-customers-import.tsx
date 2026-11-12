@@ -7,7 +7,7 @@ import { definiteSubmitRejection, submitJson, SubmitError } from '@/lib/client-s
 import { t, useLanguage } from '@/lib/i18n';
 import { customerCodeKey } from '@/lib/customer-identity';
 import { ERP_ADD_CUSTOMER, ERP_CUSTOMERS_MAX_ADDS } from '@/lib/erp-customers-shared';
-import type { ErpCustomerCandidate, ErpCustomerClearView, ErpCustomerOutcome, ErpCustomersSummary } from '@/lib/erp-customers';
+import type { ErpCustomerCandidate, ErpCustomerClearView, ErpCustomerDuplicateView, ErpCustomerOutcome, ErpCustomersSummary } from '@/lib/erp-customers';
 import UploadStatus, {type UploadState} from './upload-status';
 import type {ErpDatesView} from '@/lib/erp-customer-extras-server';
 import './erp-sales-import.css';
@@ -15,10 +15,11 @@ import './erp-customers-import.css';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 
 /** `clears` and `clearSnapshot` (2026-11-09): the customers the file does not name whose ERP code «امسح كود ERP للعملاء غير الموجودين في الشيت» clears. */
-type Preview = { fileName: string; sheet: string; snapshot: string; summary: ErpCustomersSummary; rows: ErpCustomerOutcome[]; newRegions?: string[]; newRegion?: string | null; clears?: ErpCustomerClearView[]; clearSnapshot?: string; erpDates?: ErpDatesView };
+/** `duplicates` (2026-11-12): the customers that carry the number of a row ending on another customer; the apply clears their code. */
+type Preview = { fileName: string; sheet: string; snapshot: string; summary: ErpCustomersSummary; rows: ErpCustomerOutcome[]; newRegions?: string[]; newRegion?: string | null; clears?: ErpCustomerClearView[]; clearSnapshot?: string; duplicates?: ErpCustomerDuplicateView[]; erpDates?: ErpDatesView };
 type Choice = { row: number; customerId: string };
 type Addition = { row: number; customerId: string; code: string; name: string; region: string; internalCode?: string };
-type Result = { ok: true; updated: number; mappings: number; changed: number; added: number; unchanged: number; skipped: number; outOfRegion: number; heldOutside?: number; invalid: number; changes: { row: number; customerId: string; from: string; to: string; mapping: boolean }[]; additions?: Addition[]; cleared?: number; erpDatesUpdated?: number; alreadySaved?: boolean };
+type Result = { ok: true; updated: number; mappings: number; changed: number; added: number; unchanged: number; skipped: number; outOfRegion: number; heldOutside?: number; invalid: number; changes: { row: number; customerId: string; from: string; to: string; mapping: boolean }[]; additions?: Addition[]; cleared?: number; duplicatesCleared?: number; erpDatesUpdated?: number; alreadySaved?: boolean };
 type SelectedFile = { fileName: string; base64: string; size: number };
 type Filter = 'change' | 'same' | 'other' | 'all';
 type Section = 'choose' | 'new' | 'rest';
@@ -128,6 +129,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
   const [choosePage, setChoosePage] = useState(1);
   const [newPage, setNewPage] = useState(1);
   const [clearPage, setClearPage] = useState(1);
+  const [duplicatePage, setDuplicatePage] = useState(1);
   /** «امسح كود ERP للعملاء غير الموجودين في الشيت», checked by default; unchecked, the apply clears nobody's code. */
   const [clearCodes, setClearCodes] = useState(true);
   const [placed, setPlaced] = useState<Record<number, Section>>({});
@@ -160,10 +162,11 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
   const customers = useMemo(() => new Map(rows.flatMap(row => row.candidates.map(candidate => [candidate.id, candidate] as const))), [rows]);
   const conflicts = preview?.summary.conflicts || 0, changes = preview?.summary.changes || 0, adds = preview?.summary.adds || 0;
   const clears = useMemo(() => preview?.clears || [], [preview]), clearing = clearCodes && /^[a-f0-9]{64}$/.test(String(preview?.clearSnapshot)) ? clears.length : 0, clearView = paged(clears, clearPage);
+  const duplicates = useMemo(() => preview?.duplicates || [], [preview]), duplicateView = paged(duplicates, duplicatePage);
   const regions = preview?.newRegions || [], chosenRegion = region ?? preview?.newRegion ?? null;
   const tooMany = adds > ERP_CUSTOMERS_MAX_ADDS, noRegion = adds > 0 && chosenRegion === null;
   const similarAdds = rows.filter(row => row.status === 'similar' && row.add).length, leftRows = rows.filter(wasLeft);
-  const canApply = !!preview && !locked && !dirty && !refreshing && !stale && !conflicts && changes + adds + clearing + (preview?.erpDates?.updates || 0) > 0 && !tooMany && !noRegion;
+  const canApply = !!preview && !locked && !dirty && !refreshing && !stale && !conflicts && changes + adds + clearing + duplicates.length + (preview?.erpDates?.updates || 0) > 0 && !tooMany && !noRegion;
   const regionText = (value: string) => value ? say(value, regionEnglish[value] || t(value)) : say('المنطقة غير محددة', 'Region not specified');
   const matchedText = (by: string) => by === 'both' ? say('بالجوال والاسم', 'by phone and name') : by === 'phone' ? say('بالجوال', 'by phone') : by === 'name' ? say('بالاسم', 'by name') : by === 'code' ? say('نفس الكود', 'same code') : by === 'similar' ? say('اسم قريب', 'similar name') : '';
   const issueText = (issue: ErpCustomerOutcome['issue']) => issue === 'no-code' ? say('بلا رقم عميل', 'No customer number') : issue === 'long-code' ? say('رقم العميل طويل جدًا', 'Customer number too long')
@@ -183,7 +186,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
 
   async function selectFile(selected?: File) {
     if (!selected || lock.current || previewing.current || pending || result) return;
-    setError(''); setUploadState(null); setPreview(null); setPreviewChoices([]); setChoices({}); setRegion(null); setRowRegions({}); setPlaced({}); setStale(false); setFile(null); setPage(1); setChoosePage(1); setNewPage(1); setClearPage(1); setClearCodes(true); wanted.current = []; attempt.current = null;
+    setError(''); setUploadState(null); setPreview(null); setPreviewChoices([]); setChoices({}); setRegion(null); setRowRegions({}); setPlaced({}); setStale(false); setFile(null); setPage(1); setChoosePage(1); setNewPage(1); setClearPage(1); setDuplicatePage(1); setClearCodes(true); wanted.current = []; attempt.current = null;
     if (!/\.xlsx$/i.test(selected.name)) { setError(say('اختر ملف العملاء من ERP بصيغة .xlsx.', 'Choose the ERP customer file in .xlsx format.')); return; }
     if (!selected.size || selected.size > maxBytes) { setError(say('يجب ألا يكون الملف فارغًا وألا يزيد حجمه على 1 ميجابايت.', 'The file must not be empty and must be no larger than 1 MB.')); return; }
     lock.current = true; setBusy('read'); setUploadState({phase:'reading'});
@@ -215,7 +218,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
       if (!/^[a-f0-9]{64}$/.test(String(answer.snapshot)) || !Array.isArray(answer.rows) || !answer.summary) throw new SubmitError(say('الخادم لم يؤكد تجهيز المعاينة. أعد المحاولة.', 'The server did not confirm the preview. Retry.'));
       setPreview(answer); setPreviewChoices(sent); setStale(false); setUploadState(null);
       if (fresh) {
-        setFilter(answer.rows.some(row => !needsChoice(row) && !isNew(row) && inFilter(row, 'change')) ? 'change' : 'all'); setPage(1); setChoosePage(1); setNewPage(1); setClearPage(1);
+        setFilter(answer.rows.some(row => !needsChoice(row) && !isNew(row) && inFilter(row, 'change')) ? 'change' : 'all'); setPage(1); setChoosePage(1); setNewPage(1); setClearPage(1); setDuplicatePage(1);
         requestAnimationFrame(() => previewHeading.current?.focus());
       }
     } catch (e) {
@@ -295,7 +298,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
       <small className="erp-customers-meta">{say('سطر', 'Row')} <bdi>{row.row}</bdi>{!!row.phones.length && <> · {say('جوال', 'Phone')} {row.phones.map(phone => <bdi dir="ltr" key={phone}>…{phone}</bdi>)}</>}{row.customerId && row.matchedBy && <> · {say('مطابق', 'Matched')} {matchedText(row.matchedBy)}</>}</small>
       {row.customerId && !row.conflict && (row.change && codeChanges(row.from, row.to) ? <p className="erp-customers-change">{say('قبل ← بعد', 'Before → after')}: {beforeAfter(row.from, row.to)} · {customerLine(target)}</p> : <p className="erp-customers-same">{say('نفس الكود عند', 'Same code at')} {customerLine(target)}</p>)}
       {row.customerId && row.matchedBy === 'code' && !row.change && !row.conflict && <p className="erp-customers-same">{say('هذا الرقم هو كود ERP الحالي لهذا العميل في الـCRM؛ لن يتغيّر شيء ولن يُضاف عميل.', 'This number is already this customer\'s current ERP code in the CRM; nothing changes and no customer is added.')}</p>}
-      {row.customerId && row.sharedWith > 0 && row.change && !row.conflict && <p className="erp-customers-shared">{say(`هذا الكود لدى ${row.sharedWith} عميل آخر أيضًا؛ ستُحتسب الفواتير لهذا العميل`, `This code is also held by ${row.sharedWith} other customer(s); its invoices will count for this customer`)}</p>}
+      {row.customerId && row.sharedWith > 0 && !row.conflict && <p className="erp-customers-shared">{say(`هذا الكود لدى ${row.sharedWith} عميل آخر أيضًا؛ سيُمسح منه ويبقى لهذا العميل وحده (انظر «عملاء يحملون كودًا يخص عميلًا آخر»).`, `This code is also held by ${row.sharedWith} other customer(s); it will be cleared from them and stay with this customer only (see “Customers holding a code that belongs to another customer”).`)}</p>}
       {row.status === 'out-of-region' && <p className="erp-customers-same">{row.matchedBy === 'similar' ? say('يوجد عميل باسم قريب خارج مناطقك؛ لن يُضاف ولن يتغيّر شيء. إن كان عميلًا جديدًا فعلًا، فيمكن لمدير النظام إضافته.', 'A customer with a similar name is outside your regions; nothing is added or changed. If it really is a new customer, the system administrator can add it.') : say('العميل المطابق خارج مناطقك؛ لن يتغيّر شيء.', 'The matching customer is outside your regions; nothing changes.')}</p>}
       {row.status === 'held-outside' && <p className="erp-customers-same">{say('هذا الرقم لدى عميل خارج مناطقك؛ ربطه لمدير النظام، ولن يتغيّر شيء.', 'This number is held by a customer outside your regions; only the system administrator can link it. Nothing changes.')}</p>}
       {row.issue === 'too-many-phones' && <p className="erp-customers-same">{say('في السطر أكثر من 5 أرقام جوال؛ صحّحه في ERP. لن يتغيّر شيء.', 'The row lists more than 5 phone numbers; correct it in ERP. Nothing changes.')}</p>}
@@ -358,6 +361,9 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
           {!result.additions?.length ? <p className="erp-import-hint">{say('لم يُضف عملاء جدد.', 'No new customers were added.')}</p> :
             <ol className="erp-customers-changes erp-customers-added">{result.additions.map(addition => <li key={addition.row}><span><bdi>{addition.name}</bdi> · <bdi dir="ltr" className="erp-customers-yr">{addition.internalCode || '—'}</bdi></span>
               <span>{say('كود ERP', 'ERP code')} <bdi dir="ltr">{addition.code}</bdi> · {regionText(addition.region)}</span></li>)}</ol>}
+          {!!result.duplicatesCleared && <><h3 id="erp-customers-duplicates-cleared-heading">{say('ما مُسح كوده لأنه يخص عميلًا آخر', 'Codes cleared because they belong to another customer')}</h3>
+            <ol className="erp-customers-changes erp-customers-duplicates-cleared">{duplicates.map(duplicate => <li key={duplicate.customerId}><span><bdi>{duplicate.name || '—'}</bdi> · <bdi dir="ltr" className="erp-customers-yr">{duplicate.internalCode || '—'}</bdi></span>
+              <span>{say('قبل ← بعد', 'Before → after')}: {beforeAfter(duplicate.code, '—')}</span></li>)}</ol></>}
           {!!result.cleared && <><h3 id="erp-customers-cleared-heading">{say('ما مُسح كوده', 'Codes cleared')}</h3>
             <ol className="erp-customers-changes erp-customers-cleared-list">{clears.map(clear => <li key={clear.customerId}><span><bdi>{clear.name || '—'}</bdi> · <bdi dir="ltr" className="erp-customers-yr">{clear.internalCode || '—'}</bdi></span>
               <span>{say('قبل ← بعد', 'Before → after')}: {beforeAfter(clear.code, '—')}</span></li>)}</ol></>}
@@ -370,7 +376,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
         {preview && !result && <>
           <section className="erp-import-preview" aria-labelledby="erp-customers-preview-heading">
             <h3 id="erp-customers-preview-heading" ref={previewHeading} tabIndex={-1}>{say('ملخص المعاينة', 'Preview summary')}</h3>
-            <p className="erp-customers-summary" aria-live="polite">{clears.length ? say(`${changes} كود سيتغيّر، ${counts.choose} عميل يحتاج إلى اختيارك، ${adds} عميل جديد سيُضاف، ${clearing} كود ERP سيُمسح.`, `${changes} code(s) will change, ${counts.choose} customer(s) need a choice, ${adds} new customer(s) will be added, ${clearing} ERP code(s) will be cleared.`)
+            <p className="erp-customers-summary" aria-live="polite">{duplicates.length ? say(`${changes} كود سيتغيّر، ${counts.choose} عميل يحتاج إلى اختيارك، ${adds} عميل جديد سيُضاف، ${duplicates.length} عميل يحمل كودًا يخص عميلًا آخر سيُمسح منه${clears.length ? `، ${clearing} كود ERP لعملاء غير موجودين في الشيت سيُمسح` : ''}.`, `${changes} code(s) will change, ${counts.choose} customer(s) need a choice, ${adds} new customer(s) will be added, ${duplicates.length} customer(s) holding another customer's code will have it cleared${clears.length ? `, ${clearing} ERP code(s) of customers not in the sheet will be cleared` : ''}.`) : clears.length ? say(`${changes} كود سيتغيّر، ${counts.choose} عميل يحتاج إلى اختيارك، ${adds} عميل جديد سيُضاف، ${clearing} كود ERP سيُمسح.`, `${changes} code(s) will change, ${counts.choose} customer(s) need a choice, ${adds} new customer(s) will be added, ${clearing} ERP code(s) will be cleared.`)
               : say(`${changes} كود سيتغيّر، ${counts.choose} عميل يحتاج إلى اختيارك، ${adds} عميل جديد سيُضاف.`, `${changes} code(s) will change, ${counts.choose} customer(s) need a choice, ${adds} new customer(s) will be added.`)}</p>
             <div className="erp-import-counts">
               {([[say('سيتغيّر', 'Will change'), changes], [say('يحتاج إلى اختيارك', 'Needs a choice'), counts.choose], [say('عملاء جدد', 'New customers'), adds], [say('بلا تغيير', 'No change'), counts.same]] as const).map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
@@ -407,6 +413,15 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
             {pager(newView, setNewPage, say('صفحات العملاء الجدد', 'Pages of new customers'))}
           </section>}
 
+          {!!duplicates.length && <section className="erp-import-documents erp-customers-section" data-section="duplicates" aria-labelledby="erp-customers-duplicates-heading">
+            <div className="erp-import-section-heading"><h3 id="erp-customers-duplicates-heading">{say('عملاء يحملون كودًا يخص عميلًا آخر في ملف ERP — سيُمسح منهم الكود', 'Customers holding a code that belongs to another customer in the ERP file — the code will be cleared from them')} <bdi>({duplicates.length})</bdi></h3></div>
+            <p className="erp-import-hint">{say('ملف ERP يعطي كل رقم لعميل واحد. هؤلاء العملاء يحملون في الـCRM رقمًا يخص عميلًا آخر في الملف، فسيصبح كود ERP الخاص بهم فارغًا، ويبقى الرقم للعميل المذكور وحده. يحدث هذا دائمًا، سواء اخترت مسح أكواد العملاء غير الموجودين في الشيت أم لا، ويبقى كودهم القديم في سجل التغييرات فقط.', 'The ERP file gives each number to one customer. These customers carry, in the CRM, a number that belongs to another customer of the file, so their ERP code will be emptied and the number stays with that customer only. This always happens, whether or not you clear the codes of the customers not in the sheet; their old code stays in the change history only.')}</p>
+            <ol className="erp-customers-changes erp-customers-duplicates">{duplicateView.items.map(duplicate => <li key={duplicate.customerId} data-customer={duplicate.customerId}><span><bdi>{duplicate.name || '—'}</bdi> · <bdi dir="ltr" className="erp-customers-yr">{duplicate.internalCode || '—'}</bdi> · {regionText(duplicate.region)}</span>
+              <span>{say('كود ERP الحالي', 'Current ERP code')}: <bdi dir="ltr">{duplicate.code}</bdi> · {say('سيُمسح', 'will be cleared')}</span>
+              <small>{say('يبقى الكود لـ', 'The code stays with')} <bdi>{duplicate.ownerName || '—'}</bdi> · <bdi dir="ltr" className="erp-customers-yr">{duplicate.ownerInternalCode || '—'}</bdi> · {say('سطر', 'Row')} <bdi>{duplicate.row}</bdi></small></li>)}</ol>
+            {pager(duplicateView, setDuplicatePage, say('صفحات العملاء الذين يحملون كودًا يخص عميلًا آخر', 'Pages of the customers holding another customer\'s code'))}
+          </section>}
+
           {!!clears.length && <section className="erp-import-documents erp-customers-section" data-section="clear" aria-labelledby="erp-customers-clear-heading">
             <div className="erp-import-section-heading"><h3 id="erp-customers-clear-heading">{say('عملاء غير موجودين في الشيت: سيُمسح كود ERP الخاص بهم', 'Customers not in the sheet: their ERP code will be cleared')} <bdi>({clears.length})</bdi></h3></div>
             <label className="erp-customers-clear-toggle"><input type="checkbox" checked={clearCodes} disabled={locked || stale} onChange={event => setClearCodes(event.target.checked)}/><span>{say('امسح كود ERP للعملاء غير الموجودين في الشيت', 'Clear the ERP code of the customers not in the sheet')}</span></label>
@@ -437,13 +452,13 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
           : say(`سيُحدَّث ${changes} عميل ويُضاف ${adds} عميل جديد في خطوة واحدة.`, `${changes} customer(s) will be updated and ${adds} new customer(s) added in one step.`)}</p>}
         {stale && !pending && <p className="erp-import-notice" role="status">{say('أجرِ معاينة جديدة؛ ستبدأ اختياراتك من جديد على البيانات الجديدة.', 'Run a new preview; your choices start over on the new data.')}</p>}
         {result && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{result.added ? say('تم تحديث الأكواد وإضافة العملاء', 'Codes updated and customers added') : say('تم تحديث الأكواد', 'Codes updated')}</strong>
-          <p>{say('تغيّر كودها', 'Codes changed')}: {result.updated} · {say('عملاء حُدِّثوا', 'Customers updated')}: {result.changed} · {say('عملاء أُضيفوا', 'Customers added')}: {result.added}{!!result.mappings && <> · {say('أرقام رُبطت بعميلها', 'Numbers linked to their customer')}: {result.mappings}</>}{!!result.cleared && <> · <span className="erp-customers-cleared">{say(`مُسح كود ERP لـ ${result.cleared} عميل غير موجود في الشيت`, `ERP code cleared for ${result.cleared} customer(s) not in the sheet`)}</span></>}</p>
+          <p>{say('تغيّر كودها', 'Codes changed')}: {result.updated} · {say('عملاء حُدِّثوا', 'Customers updated')}: {result.changed} · {say('عملاء أُضيفوا', 'Customers added')}: {result.added}{!!result.mappings && <> · {say('أرقام رُبطت بعميلها', 'Numbers linked to their customer')}: {result.mappings}</>}{!!result.cleared && <> · <span className="erp-customers-cleared">{say(`مُسح كود ERP لـ ${result.cleared} عميل غير موجود في الشيت`, `ERP code cleared for ${result.cleared} customer(s) not in the sheet`)}</span></>}{!!result.duplicatesCleared && <> · <span className="erp-customers-duplicates-note">{say(`مُسح كود ERP لـ ${result.duplicatesCleared} عميل يحمل كودًا يخص عميلًا آخر`, `ERP code cleared for ${result.duplicatesCleared} customer(s) holding another customer's code`)}</span></>}</p>
           <small>{!!result.erpDatesUpdated && <>{say('تاريخ الإنشاء أو المندوب في ERP حُدِّث لـ', 'ERP creation date or representative updated for')}: {result.erpDatesUpdated} · </>}{say('بلا تغيير', 'No change')}: {result.unchanged} · {say('متروك', 'Left')}: {result.skipped}{!!result.outOfRegion && <> · {say('خارج مناطقك', 'Outside your regions')}: {result.outOfRegion}</>}{!!result.heldOutside && <> · {say('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')}: {result.heldOutside}</>}{!!result.invalid && <> · {say('غير صالحة', 'Invalid')}: {result.invalid}</>}</small></div></div>}
         <div className="erp-import-actions"><button type="button" className="btn subtle" disabled={!!busy || pending} onClick={close}>{result ? say('تم', 'Done') : say('إغلاق', 'Close')}</button>
           {result ? refreshFailed && <button type="button" className="btn primary" disabled={!!busy} onClick={refreshAfterApply}>{busy === 'refresh' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('تحديث العرض فقط', 'Refresh view only')}</button> :
             stale && !pending ? <button type="button" className="btn primary" disabled={!file || !!busy || refreshing} onClick={() => void runPreview(file, true)}>{busy === 'preview' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('معاينة جديدة', 'New preview')}</button> :
             dirty && !refreshing && !pending ? <button type="button" className="btn primary" disabled={!file || !!busy} onClick={() => void runPreview(file, false)}><RefreshCw size={17}/> {say('تحديث المعاينة', 'Refresh preview')}</button> :
-            <button type="button" className="btn primary erp-customers-apply" disabled={pending ? !!busy : !canApply} onClick={apply}>{busy === 'apply' ? <Loader2 className="spin" size={17}/> : <Upload size={17}/>} {pending ? say('تأكيد الحفظ', 'Confirm save') : clearing ? say(`حدّث ${changes} كود وأضف ${adds} عميل وامسح ${clearing} كود`, `Update ${changes} code(s), add ${adds} customer(s) and clear ${clearing} code(s)`) : say(`حدّث ${changes} كود وأضف ${adds} عميل`, `Update ${changes} code(s) and add ${adds} customer(s)`)}</button>}
+            <button type="button" className="btn primary erp-customers-apply" disabled={pending ? !!busy : !canApply} onClick={apply}>{busy === 'apply' ? <Loader2 className="spin" size={17}/> : <Upload size={17}/>} {pending ? say('تأكيد الحفظ', 'Confirm save') : clearing + duplicates.length ? say(`حدّث ${changes} كود وأضف ${adds} عميل وامسح ${clearing + duplicates.length} كود`, `Update ${changes} code(s), add ${adds} customer(s) and clear ${clearing + duplicates.length} code(s)`) : say(`حدّث ${changes} كود وأضف ${adds} عميل`, `Update ${changes} code(s) and add ${adds} customer(s)`)}</button>}
         </div>
       </footer>
     </DialogContent>

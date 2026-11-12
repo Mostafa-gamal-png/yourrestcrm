@@ -90,8 +90,13 @@ for(const id of ['sup','rep']){login(id);check((await list('',404)).error,'هذ�
 
 // ---- a customer with its Yourrest number, two ERP aliases and an explicit mapping
 login('owner');
-const customer=(await post({action:'save',kind:'customer',data:{name:'مصنع الاسترجاع',code:'ERP-A',region:'الشرقية',city:'الدمام',location:'',assignedTo:'rep',branch:'HQ'}})).id;
-await post({action:'save',kind:'customer',id:customer,version:raw(customer).version,data:{...data(customer),code:'ERP-A2'}});
+/** The ERP code is written by the ERP customers import only (2026-11-12): a customer is added by hand, then the import gives it its code. */
+const setCode=(id,code)=>sql.prepare("UPDATE crm_records SET data=json_set(data,'$.code',?),version=version+1 WHERE id=?").run(code,id);
+const withCode=async(code,fields)=>{const id=(await post({action:'save',kind:'customer',data:fields})).id;setCode(id,code);return id;};
+const customer=await withCode('ERP-A',{name:'مصنع الاسترجاع',region:'الشرقية',city:'الدمام',location:'',assignedTo:'rep',branch:'HQ'});
+setCode(customer,'ERP-A2');
+// A hand edit keeps the code (only the import changes it) and leaves its «تعديل» entry in the history.
+await post({action:'save',kind:'customer',id:customer,version:raw(customer).version,data:{...data(customer),city:'الدمام'}});
 sql.prepare("INSERT INTO crm_customer_code_mappings(code_key,customer_id,version,updated_by,updated_at) VALUES('ERP-A2',?,1,'owner',?)").run(customer,now);
 const before={row:raw(customer),number:numberOf(customer),aliases:aliasesOf(customer)};
 check(before.aliases,['ERP-A','ERP-A2'],'the old code is kept as an alias');
@@ -129,17 +134,17 @@ check((await restore(second.id,200,requestId)).alreadySaved,undefined);
 check((await restore(second.id,200,requestId)).alreadySaved,true,'the same request again: alreadySaved');
 
 // ---- an ERP code that now belongs to another customer stays with it
-const coded=(await post({action:'save',kind:'customer',data:{name:'مصنع الكود القديم',code:'ERP-B',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;
+const coded=await withCode('ERP-B',{name:'مصنع الكود القديم',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'});
 await remove(coded);
-const newcomer=(await post({action:'save',kind:'customer',data:{name:'مصنع الكود الجديد',code:'erp-b',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;
+const newcomer=await withCode('erp-b',{name:'مصنع الكود الجديد',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'});
 const codedBack=await restore(deletion(coded).id);
 check(codedBack.notes,['لم يُسترجع كود ERP «ERP-B»: أصبح للعميل «مصنع الكود الجديد».'],'restored without the code, and says so');
 check([data(coded).code,aliasesOf(coded),aliasesOf(newcomer)],['',[],['erp-b']],'the code stays the other customer\'s only');
 // ---- a code another customer only had before (cleared since) is nobody's (2026-11-12): the restored customer takes it back
-const once=(await post({action:'save',kind:'customer',data:{name:'مصنع الكود المسترجع',code:'ERP-C',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;
+const once=await withCode('ERP-C',{name:'مصنع الكود المسترجع',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'});
 await remove(once);
-const passer=(await post({action:'save',kind:'customer',data:{name:'مصنع حمل الكود ثم مُسح',code:'erp-c',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;
-await post({action:'save',kind:'customer',id:passer,version:raw(passer).version,data:{...data(passer),code:''}});
+const passer=await withCode('erp-c',{name:'مصنع حمل الكود ثم مُسح',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'});
+setCode(passer,'');
 const onceBack=await restore(deletion(once).id);
 check([onceBack.notes,data(once).code,aliasesOf(once),data(passer).code,aliasesOf(passer)],[[],'ERP-C',['ERP-C'],'',['erp-c']],'restored with its code: the other customer only had it before');
 

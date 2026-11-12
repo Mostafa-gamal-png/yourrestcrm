@@ -1,6 +1,7 @@
 // «استيراد من ERP» (POST /api/erp-customers, lib/erp-customers-server.ts) over real HTTP against the BUILT release (run `pnpm build`
 // first): a synthetic ERP customer export built here; the preview's rows and counts and that it writes nothing; the apply in one step
-// (only `data.code` changes, the old code stays as an alias (history only: matching reads current codes), an explicit mapping where another customer holds the number, one audit
+// (only `data.code` changes, the old code stays as an alias (history only: matching reads current codes), every OTHER customer that carries a row's number loses it
+// (2026-11-12: listed in the preview's `duplicates`, cleared whatever the «امسح» box says, audited {cleared, reason: 'duplicate'}; no mapping is written), one audit
 // entry per changed customer with no phone number, versions moved once); a repeated tap returns the saved answer and the same request
 // with other choices is 409; a customer edited after the preview gives 409 and writes nothing; two rows on one customer are refused;
 // the sales manager sees and changes only their regions' customers and never a number a customer outside them holds (by its code or by
@@ -57,7 +58,7 @@ try {
   const post = (as, body, headers) => as('/api/erp-customers', {method: 'POST', body, headers});
 
   const file = xlsx([
-    row('12', 'مصنع النور', '+966551234567'),           // 3: phone and name → nour; 12 is also holder's code → mapping
+    row('12', 'مصنع النور', '+966551234567'),           // 3: phone and name → nour; 12 is also holder's code → holder loses it
     row('44', 'مصنع الفجر', '', '0501234567'),          // 4: phone2 and name → fajr
     row('55', 'مصنع التوأم'),                             // 5: two customers with this name → choose
     row('66', 'مصنع الشرق', '0531234567'),              // 6: → east (another region for the manager)
@@ -84,7 +85,7 @@ try {
   let body = response.json();
   check([body.sheet, /^[a-f0-9]{64}$/.test(body.snapshot)], ['Customer', true], 'the sheet and a snapshot');
   check(body.rows.map(r => [r.row, r.code, r.status, r.customerId, r.matchedBy, r.change, r.mapping, r.sharedWith, r.add]), [
-    [3, '12', 'auto', 'nour', 'both', true, true, 1, false],
+    [3, '12', 'auto', 'nour', 'both', true, false, 1, false],
     [4, '44', 'auto', 'fajr', 'both', true, false, 0, false],
     [5, '55', 'choose', '', '', false, false, 0, false],
     [6, '66', 'auto', 'east', 'both', true, false, 0, false],
@@ -98,7 +99,9 @@ try {
   check([body.rows[0].from, body.rows[0].to], ['OLD-1', '12'], 'before → after');
   check(body.rows[0].phones, ['4567'], 'the file\'s phones as their last 4 digits');
   ok(!/551234567|501234567|1000000000|erp@example/.test(response.text), 'no full phone, ID number or email in the preview');
-  check(body.summary, {rows: 7, auto: 3, same: 1, choose: 1, similar: 0, new: 1, outOfRegion: 0, heldOutside: 0, invalid: 1, conflicts: 0, pending: 1, changes: 3, codeChanges: 3, mappings: 1, adds: 1}, 'the counts');
+  check(body.summary, {rows: 7, auto: 3, same: 1, choose: 1, similar: 0, new: 1, outOfRegion: 0, heldOutside: 0, invalid: 1, conflicts: 0, pending: 1, changes: 3, codeChanges: 3, mappings: 0, adds: 1, duplicates: 1}, 'the counts');
+  check(body.duplicates, [{customerId: 'holder', name: 'مصنع قديم', internalCode: 'YR-C-' + String(await internal('holder')).padStart(6, '0'), code: '12', region: 'الوسطى', row: 3, ownerId: 'nour', ownerName: 'مصنع النور', ownerInternalCode: 'YR-C-' + String(await internal('nour')).padStart(6, '0')}], 'the preview lists the customer that carries row 3\'s number and will lose it (no version sent)');
+  check(body.clears.map(c => c.customerId), ['east2'], 'the customers missing from the file are a list apart (east2), cleared only with the box');
   check([await count('SELECT count(*) AS n FROM crm_audit'), await count('SELECT count(*) AS n FROM crm_customer_code_mappings')], [0, 0], 'a preview writes nothing');
   for (const id of ids) check((await record(id)).version, 1, 'a preview changes no customer: ' + id);
 
@@ -138,7 +141,7 @@ try {
   response = await post(owner, apply);
   check([response.status, response.headers['cache-control']], [200, 'no-store'], 'apply: 200, no-store');
   const result = response.json();
-  check([result.ok, result.updated, result.mappings, result.changed, result.added, result.unchanged, result.skipped, result.outOfRegion, result.heldOutside, result.invalid], [true, 4, 1, 4, 1, 1, 0, 0, 0, 1], 'the result counts');
+  check([result.ok, result.updated, result.mappings, result.changed, result.added, result.unchanged, result.skipped, result.outOfRegion, result.heldOutside, result.invalid, result.duplicatesCleared, result.cleared], [true, 4, 0, 4, 1, 1, 0, 0, 0, 1, 1, 0], 'the result counts: the duplicate holder cleared, though the «امسح» box was not sent');
   // ---- the new customer: one record in the same transaction, as the form makes one
   const addedId = 'crm-owner-erp-' + requestId + '-7';
   check(result.additions, [{row: 7, customerId: addedId, code: '77', name: 'مصنع غير موجود', region: 'الوسطى', internalCode: 'YR-C-' + String(await internal(addedId)).padStart(6, '0')}], 'what was added, with the Yourrest number the trigger gave it');
@@ -150,24 +153,26 @@ try {
   check((await app.db.prepare('SELECT source_code FROM crm_customer_code_aliases WHERE customer_id=?').bind(addedId).all()).results.map(r => r.source_code), ['77'], 'its ERP code is known to the identity tables');
   const addAudit = (await app.db.prepare("SELECT actor,action,detail FROM crm_audit WHERE record_id=?").bind(addedId).all()).results.map(r => ({...r}));
   check(addAudit, [{actor: 'owner', action: 'إضافة', detail: 'مصنع غير موجود • إضافة عميل من ملف ERP'}], 'one «إضافة» history entry: the name, then the import label');
-  check(result.changes, [{row: 3, customerId: 'nour', from: 'OLD-1', to: '12', mapping: true}, {row: 4, customerId: 'fajr', from: '', to: '44', mapping: false}, {row: 5, customerId: 'twinB', from: '', to: '55', mapping: false}, {row: 6, customerId: 'east', from: '', to: '66', mapping: false}], 'before → after per changed customer');
+  check(result.changes, [{row: 3, customerId: 'nour', from: 'OLD-1', to: '12', mapping: false}, {row: 4, customerId: 'fajr', from: '', to: '44', mapping: false}, {row: 5, customerId: 'twinB', from: '', to: '55', mapping: false}, {row: 6, customerId: 'east', from: '', to: '66', mapping: false}], 'before → after per changed customer');
   const after = Object.fromEntries(await Promise.all(ids.map(async id => [id, await record(id)])));
-  check(ids.map(id => after[id].data.code), ['12', '44', '12', 'T-1', '55', '33', '66'], 'the ERP codes: changed for the matched customers, untouched for the others');
+  check(ids.map(id => after[id].data.code), ['12', '44', '', 'T-1', '55', '33', '66'], 'the ERP codes: changed for the matched customers, cleared for the other holder of 12, untouched for the others');
   for (const id of ids) {
     const withoutCode = data => Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'code'));
     check(withoutCode(after[id].data), withoutCode(before[id].data), 'nothing but the code changed in ' + id);
-    check(after[id].version, ['nour', 'fajr', 'twinB', 'east'].includes(id) ? 2 : 1, 'version moved once for a changed customer only: ' + id);
+    check(after[id].version, ['nour', 'fajr', 'twinB', 'east', 'holder'].includes(id) ? 2 : 1, 'version moved once for a changed or cleared customer only: ' + id);
   }
   check((await app.db.prepare("SELECT source_code FROM crm_customer_code_aliases WHERE customer_id='nour' ORDER BY source_code").all()).results.map(r => r.source_code), ['12', 'OLD-1'], 'the old code stays as an alias, as history only (matching reads current codes)');
-  check((await app.db.prepare('SELECT code_key,customer_id,version FROM crm_customer_code_mappings').all()).results.map(r => ({...r})), [{code_key: '12', customer_id: 'nour', version: 1}], 'the shared number is mapped to the matched customer; the other holder keeps its code');
+  check((await app.db.prepare('SELECT code_key,customer_id,version FROM crm_customer_code_mappings').all()).results.map(r => ({...r})), [], 'no mapping is written: nour is the only holder of 12 now');
+  check((await app.db.prepare("SELECT source_code FROM crm_customer_code_aliases WHERE customer_id='holder'").all()).results.map(r => r.source_code), ['12'], 'the cleared holder keeps 12 as history only');
   ok(await revision() > revisionBefore, 'the identity revision moved');
   const audits = (await app.db.prepare("SELECT record_id,action,detail FROM crm_audit WHERE action='erp-customer-code' ORDER BY record_id").all()).results;
   check(audits.map(a => [a.record_id, JSON.parse(a.detail)]), [
     ['east', {label: 'تحديث كود ERP من ملف ERP', from: '', to: '66', row: 6}],
     ['fajr', {label: 'تحديث كود ERP من ملف ERP', from: '', to: '44', row: 4}],
-    ['nour', {label: 'تحديث كود ERP من ملف ERP', from: 'OLD-1', to: '12', row: 3, mapping: true}],
+    ['holder', {label: 'مسح كود ERP: الكود يخص عميلًا آخر في ملف ERP', from: '12', to: '', cleared: true, reason: 'duplicate', row: 3, keptBy: 'nour'}],
+    ['nour', {label: 'تحديث كود ERP من ملف ERP', from: 'OLD-1', to: '12', row: 3}],
     ['twinB', {label: 'تحديث كود ERP من ملف ERP', from: '', to: '55', row: 5}],
-  ], 'one audit entry per changed customer');
+  ], 'one audit entry per changed or cleared customer');
   ok(!(await app.db.prepare('SELECT detail FROM crm_audit').all()).results.some(r => /\d{9}/.test(r.detail.replace(/[a-f0-9]{64}/g, '').replace(/[a-f0-9-]{36}/g, ''))), 'no phone number in any audit detail');
   const crm = await (await owner('/api/crm')).json(), listed = crm.records.filter(r => r.kind === 'customer');
   check(listed.find(r => r.id === 'nour').data.code, '12', 'the customers list shows the new code');
@@ -284,7 +289,7 @@ try {
   check(await mappings(), mappingsBefore, 'the stored mappings are as they were (the administrator\'s 66 → east included)');
   // The same file by the administrator links them: their invoices are the administrator's to move.
   const ownerView = (await post(owner, {...preview, base64: regional})).json();
-  check(ownerView.rows.slice(2).map(r => [r.status, r.customerId, r.mapping]), [['auto', 'nour', true], ['auto', 'badr', true]], 'the system administrator sees them as ordinary links');
+  check([ownerView.rows.slice(2).map(r => [r.status, r.customerId, r.mapping, r.sharedWith]), ownerView.duplicates.map(d => [d.customerId, d.code, d.ownerId])], [[['auto', 'nour', false, 1], ['auto', 'badr', false, 1]], [['east', '66', 'nour'], ['east2', '81', 'badr']]], 'the system administrator may do it: the outside holders would lose the numbers');
   check((await post(rep, {action: 'apply', fileName: 'Customer.xlsx', base64: regional, snapshot: body.snapshot, requestId: crypto.randomUUID(), adds: 0})).status, 403, 'a representative cannot apply either');
 
   // ---- the sales manager adds customers in their region only, as the responsible
@@ -313,14 +318,16 @@ try {
   const easternView = (await post(owner, {...preview, base64: eastern})).json();
   check([easternView.rows[0].status, easternView.rows[0].candidates.map(c => c.id).sort()], ['similar', ['east', 'east2']], 'the administrator sees the similar customers');
 
-  // ---- a customer the import mapped can still be deleted; its mapping goes with it, in the delete's audit entry
+  // ---- a customer with a stored mapping (saved by the administrator's «حفظ الربط») can still be deleted; its mapping goes with it, in the
+  // delete's audit entry
+  await app.db.prepare("INSERT INTO crm_customer_code_mappings(code_key,customer_id,version,updated_by,updated_at) VALUES('12','nour',1,'owner',?)").bind(now).run();
   const nourNow = await record('nour');
   response = await owner('/api/crm', {method: 'POST', body: {action: 'delete', kind: 'customer', id: 'nour', version: nourNow.version}});
   check(response.status, 200, 'the mapped customer is deleted');
   check([await count("SELECT count(*) AS n FROM crm_records WHERE id='nour'"), (await mappings()).map(m => m.code_key)], [0, ['66']], 'the customer and its mapping are gone; the other mapping stays');
   const deletion = JSON.parse((await app.db.prepare("SELECT detail FROM crm_audit WHERE record_id='nour' AND action='حذف'").first()).detail);
   check([deletion.kind, deletion.codeMappings], ['customer', ['12']], 'the removed mapping is in the delete\'s audit entry');
-  check((await post(owner, {...preview, base64: xlsx([row('12', 'مصنع قديم')])})).json().rows.map(r => [r.status, r.customerId]), [['same', 'holder']], 'the number is the remaining holder\'s again');
+  check((await post(owner, {...preview, base64: xlsx([row('12', 'مصنع قديم')])})).json().rows.map(r => [r.status, r.customerId, r.from, r.to]), [['auto', 'holder', '', '12']], 'nobody carries 12 now: the file\'s row gives it to the customer of that name again');
 } finally { await app.stop(); }
 
 console.log(JSON.stringify({ok: true, checks, builtRelease: true, syntheticWorkbook: true, ownerFileUsed: false}));

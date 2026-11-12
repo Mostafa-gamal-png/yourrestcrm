@@ -1,6 +1,6 @@
 // The ERP customer import (lib/erp-customers.ts), as pure functions: finding the header of the ERP customer export by its names, the
 // phone and name keys, every outcome of matching an ERP row to CRM customers (auto by phone, by name or by both, choose when they point
-// to different customers or to several, same, two rows on one customer), the mapping needed when another customer holds the number,
+// to different customers or to several, same, two rows on one customer), the other customers that carry the number and lose it (duplicates, 2026-11-12),
 // the manager's regions, the user's choices, and the plan the apply writes; a row found by its code (same / held-outside / choose,
 // never added), the similar-name rule (generic words, words many customers carry, at most 5, the regions, nothing preselected, the
 // 302-like case), new rows and what they are given, the «عميل جديد» choice and where it is refused, a row without a name, and the
@@ -184,24 +184,44 @@ throws(()=>match([{...erp(3,'','مصنع النور'),issue:'no-code'}],[nour],{
 r=one([{...erp(3,'','مصنع النور'),issue:'no-code'}],[nour]);
 eq([r.status,r.issue,r.candidates,r.customerId],['invalid','no-code',[],''],'an invalid row is not matched');
 
-// mapping when the number is held by another customer
+// duplicate holders (2026-11-12: «مفيش حد ادى لعميلين نفس الكود»): the row's customer keeps the number alone and every other customer that
+// carries it now loses it (`duplicates`); no code mapping is ever planned (mapping stays false)
 const holder=customer('holder',{name:'مصنع قديم',code:'12'});
+const dup=result=>result.duplicates.map(d=>[d.customerId,d.code,d.row,d.ownerId]);
 result=match([erp(3,'12','مصنع النور')],[nour,holder]);
-eq([result.rows[0].sharedWith,result.rows[0].mapping,result.plan[0].mapping,result.plan[0].mappingVersion,result.plan[0].codeKey],[1,true,true,0,'12'],'the number is another customer\'s code: a new mapping to this customer');
+eq([result.rows[0].sharedWith,result.rows[0].mapping,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping]),dup(result),result.summary.duplicates,result.summary.mappings],[1,false,[['nour',true,false]],[['holder','12',3,'nour']],1,0],'the number is another customer\'s code: nour takes it, holder loses it, no mapping');
+eq(result.duplicates[0],{customerId:'holder',version:3,name:'مصنع قديم',internalCode:holder.data.internalCode,code:'12',region:'الوسطى',row:3,ownerId:'nour',ownerName:'مصنع النور',ownerInternalCode:nour.data.internalCode},'a duplicate as the preview lists it: name, Yourrest code, region, its code, the row and the customer that keeps it (version for the server)');
 const aliasHolder=customer('alias',{name:'مصنع سابق',code:'40',_erpCodeAliases:['40','12']});
 result=match([erp(3,'12','مصنع النور')],[nour,aliasHolder]);
-eq([result.rows[0].sharedWith,result.rows[0].mapping,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping])],[0,false,[['nour',true,false]]],'a number another customer only had before is nobody\'s (2026-11-12): no mapping, the code alone');
+eq([result.rows[0].sharedWith,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping]),dup(result)],[0,[['nour',true,false]],[]],'a number another customer only had before is nobody\'s: nobody loses it');
 result=match([erp(3,'12','مصنع النور')],[nour,holder],{mappings:[{codeKey:'12',customerId:'holder',version:4}]});
-eq([result.plan[0].mapping,result.plan[0].mappingVersion],[true,4],'a stored mapping to the other customer is moved (its version checked)');
+eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.mapping,p.mappingVersion]),dup(result)],['auto',[['nour',false,0]],[['holder','12',3,'nour']]],'the row\'s exact name decides over a stored mapping to the other holder: holder loses the number, the mapping row is not written (it decides nothing once holder no longer carries the number)');
 result=match([erp(3,'12','مصنع النور')],[nour,holder],{mappings:[{codeKey:'12',customerId:'nour',version:2}]});
-eq([result.rows[0].sharedWith,result.rows[0].mapping],[1,false],'a mapping already pointing to this customer is kept');
+eq([result.rows[0].sharedWith,result.rows[0].mapping,dup(result)],[1,false,[['holder','12',3,'nour']]],'a mapping to a customer that does not carry the number yet changes nothing: holder still loses it');
 result=match([erp(3,'12','مصنع النور')],[nour,fajr]);
-eq([result.rows[0].sharedWith,result.rows[0].mapping],[0,false],'nobody else holds the number: no mapping');
+eq([result.rows[0].sharedWith,dup(result),result.summary.duplicates],[0,[],0],'nobody else holds the number: nobody loses it');
 const sameTwin=customer('same-twin',{name:'مصنع آخر',code:'C-1'});
 result=match([erp(3,'C-1','مصنع النور')],[nour,sameTwin]);
-eq([result.rows[0].status,result.rows[0].change,result.plan.map(p=>[p.codeChange,p.mapping])],['same',true,[[false,true]]],'the same code also held by another customer: only the mapping is written');
+eq([result.rows[0].status,result.rows[0].change,result.plan,dup(result)],['same',false,[],[['same-twin','C-1',3,'nour']]],'the same code also held by another customer: nour keeps it unchanged, the twin loses it');
+result=match([erp(3,'C-1','مصنع النور')],[nour,sameTwin],{choices:new Map([[3,'']])});
+eq([result.rows[0].customerId,dup(result)],['',[]],'a row left clears nobody');
 result=match([erp(3,'12','مصنع النور'),erp(4,'C-1','مصنع الفجر')],[nour,fajr],{choices:new Map([[3,'nour']])});
-eq(result.plan.map(p=>[p.customerId,p.to,p.mapping]),[['nour','12',false],['fajr','C-1',true]],'a number moving from one customer to another in the same file (confirmed): the new holder gets the mapping');
+eq([result.plan.map(p=>[p.customerId,p.to,p.mapping]),dup(result)],[[['nour','12',false],['fajr','C-1',false]],[]],'a number moving from one customer to another in the same file: the old holder takes its own new number, so it is no duplicate');
+// ambiguous: two holders and nothing in the row decides; the importer chooses, and nothing is cleared until then
+const holderA=customer('holder-a',{name:'مصنع ألف',code:'103'}),holderB=customer('holder-b',{name:'مصنع باء',code:'103'});
+result=match([erp(5,'103','اسم لا يطابق أحدًا')],[holderA,holderB]);
+eq([result.rows[0].status,result.rows[0].customerId,result.rows[0].candidates.map(c=>[c.id,c.matchedBy]),dup(result),result.summary.pending],['choose','',[['holder-a','code'],['holder-b','code']],[],1],'two holders and a name that decides nothing: the importer chooses, nobody is cleared yet');
+result=match([erp(5,'103','اسم لا يطابق أحدًا')],[holderA,holderB],{choices:new Map([[5,'holder-b']])});
+eq([result.rows[0].customerId,result.plan,dup(result)],['holder-b',[],[['holder-a','103',5,'holder-b']]],'the importer\'s choice keeps the number and clears the other holder');
+result=match([erp(5,'103','اسم لا يطابق أحدًا')],[holderA,holderB],{mappings:[{codeKey:'103',customerId:'holder-a',version:7}]});
+eq([result.rows[0].status,result.rows[0].customerId,dup(result)],['same','holder-a',[['holder-b','103',5,'holder-a']]],'a stored mapping to one of the holders is the choice: the other holder loses the number');
+result=match([erp(5,'103','مصنع ألف')],[holderA,holderB]);
+eq([result.rows[0].status,result.rows[0].customerId,dup(result)],['same','holder-a',[['holder-b','103',5,'holder-a']]],'the row\'s name decides between the holders');
+const holderA2=customer('holder-a2',{name:'مصنع ألف',code:'103'});
+result=match([erp(5,'103','مصنع ألف')],[holderA,holderA2,holderB]);
+eq([result.rows[0].status,result.rows[0].customerId,dup(result)],['choose','',[]],'two holders with the row\'s name: a choice, nobody cleared');
+result=match([erp(5,'103','مصنع ألف')],[holderA,holderA2,holderB],{mappings:[{codeKey:'103',customerId:'holder-a2',version:1}]});
+eq([result.rows[0].status,result.rows[0].customerId,dup(result).map(d=>d[0])],['same','holder-a2',['holder-a','holder-b']],'among holders with the row\'s name, the stored mapping picks one: both others lose the number');
 
 // the manager's regions
 const east=customer('east',{name:'مصنع الشرق',phone:'0551234567',region:'الشرقية'}),central=customer('central',{name:'مصنع الوسط',phone:'0551234567',region:'الوسطى'});
@@ -219,37 +239,34 @@ result=match([erp(3,'12','',['551234567'])],[east,central],{me:manager});
 eq(result.involved,[['central',3],['east',3]],'the snapshot covers every candidate, hidden ones too (server only)');
 const regional={...admin,regionScope:'eastern'};
 eq(one([erp(3,'12','مصنع الوسط')],[central],{me:regional}).status,'out-of-region','an administrator with regions is limited to them as well');
-// a number a customer outside the manager's regions holds, or that a stored mapping gives to one: left for the system administrator
+// a number a customer outside the manager's regions carries: left for the system administrator (the import would clear it from that customer)
 const eastHolder=customer('east-holder',{name:'مصنع شرقي',code:'12',region:'الشرقية'}),hidden=customer('hidden',{name:'مصنع مخفي',code:'OLD',_erpCodeAliases:['OLD','12'],region:'الشرقية'});
-for(const [who,held] of [['current code',eastHolder]]){
- result=match([erp(3,'12','مصنع الوسط')],[central,held],{me:manager});
- eq([result.rows[0].status,result.rows[0].candidates,result.rows[0].customerId,result.rows[0].sharedWith,result.plan,result.summary.heldOutside],['held-outside',[],'',0,[],1],'the number is the '+who+' of a customer outside the manager\'s regions: nothing planned, no details');
- ok(result.involved.some(([id])=>id===held.id),'the outside holder\'s version is part of the preview ('+who+')');
- eq([one([erp(3,'12','مصنع الوسط')],[central,held]).status,match([erp(3,'12','مصنع الوسط')],[central,held]).plan.map(p=>[p.customerId,p.mapping])],['auto',[['central',true]]],'the system administrator links it ('+who+')');
-}
+result=match([erp(3,'12','مصنع الوسط')],[central,eastHolder],{me:manager});
+eq([result.rows[0].status,result.rows[0].candidates,result.rows[0].customerId,result.rows[0].sharedWith,result.plan,dup(result),result.summary.heldOutside],['held-outside',[],'',0,[],[],1],'the number is the current code of a customer outside the manager\'s regions: nothing planned or cleared, no details');
+ok(result.involved.some(([id])=>id===eastHolder.id),'the outside holder\'s version is part of the preview');
+result=match([erp(3,'12','مصنع الوسط')],[central,eastHolder]);
+eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.mapping]),dup(result)],['auto',[['central',false]],[['east-holder','12',3,'central']]],'the system administrator does it: central takes the number, the outside holder loses it');
 result=match([erp(3,'12','مصنع الوسط')],[central,hidden],{me:manager});
-eq([result.rows[0].status,result.rows[0].customerId,result.plan.map(p=>[p.customerId,p.mapping]),result.summary.heldOutside],['auto','central',[['central',false]],0],'a number a customer outside the regions only had before (a kept alias) holds nothing: the manager links it, no mapping');
+eq([result.rows[0].status,result.rows[0].customerId,result.plan.map(p=>[p.customerId,p.mapping]),dup(result),result.summary.heldOutside],['auto','central',[['central',false]],[],0],'a number a customer outside the regions only had before (a kept alias) holds nothing: the manager links it');
 throws(()=>match([erp(3,'12','مصنع الوسط')],[central,eastHolder],{me:manager,choices:new Map([[3,'central']])}),/لا يقبل/,'a held-outside row takes no choice');
 const dal=customer('dal',{name:'مصنع دال',code:'OLD-D',_erpCodeAliases:['OLD-D','30']});
 result=match([erp(4,'30','مصنع دال')],[dal,east],{me:manager,mappings:[{codeKey:'30',customerId:'east',version:2}]});
-eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping])],['auto',[['dal',true,false]]],'a stored mapping to a customer outside the regions that does not carry the number decides nothing: the manager gives dal the code, and the mapping is not rewritten');
+eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping]),dup(result)],['auto',[['dal',true,false]],[]],'a stored mapping to a customer outside the regions that does not carry the number decides nothing: the manager gives dal the code');
 const eastThirty=customer('east-30',{name:'مصنع شرقي ثلاثين',code:'30',region:'الشرقية'});
 result=match([erp(4,'30','مصنع دال')],[dal,eastThirty],{me:manager,mappings:[{codeKey:'30',customerId:'east-30',version:2}]});
-eq([result.rows[0].status,result.plan],['held-outside',[]],'a stored mapping to a customer outside the regions that carries the number is never overwritten by the manager');
+eq([result.rows[0].status,result.plan,dup(result)],['held-outside',[],[]],'a customer outside the regions that carries the number (mapped to it) is never cleared by the manager');
 const dalInside=customer('dal-inside',{name:'مصنع داخلي ثلاثين',code:'30'});
 result=match([erp(4,'30','مصنع دال')],[dal,dalInside,east],{me:manager,mappings:[{codeKey:'30',customerId:'east',version:2}]});
-eq([result.rows[0].status,result.plan],['held-outside',[]],'a stale mapping to a customer outside the regions, while someone inside carries the number: giving it to dal would write a mapping over it, so it stays the administrator\'s');
-eq(match([erp(4,'30','مصنع دال')],[dal,dalInside,east],{mappings:[{codeKey:'30',customerId:'east',version:2}]}).plan.map(p=>[p.customerId,p.codeChange,p.mapping,p.mappingVersion]),[['dal',true,true,2]],'the system administrator does it: the stale mapping is rewritten by its version');
-eq(match([erp(4,'30','مصنع دال')],[dal,east],{mappings:[{codeKey:'30',customerId:'east',version:2}]}).plan.map(p=>[p.codeChange,p.mapping]),[[true,false]],'the system administrator changes the code (nobody else holds 30, so no mapping is needed)');
+eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping]),dup(result)],['auto',[['dal',true,false]],[['dal-inside','30',4,'dal']]],'a stale mapping to a customer outside the regions decides nothing and is not rewritten: the manager gives dal the number and clears the holder inside their regions');
 const insideHolder=customer('inside-holder',{name:'مصنع داخلي',code:'12'});
 result=match([erp(3,'12','مصنع الوسط')],[central,insideHolder,eastHolder],{me:manager,mappings:[{codeKey:'12',customerId:'inside-holder',version:5}]});
-eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping,p.mappingVersion])],['auto',[['central',true,true,5]]],'a mapping to a holder inside the regions keeps the outside holder out: the manager may move it to another of their customers');
-result=match([erp(3,'12','مصنع الوسط')],[central,eastHolder],{me:manager,mappings:[{codeKey:'12',customerId:'central',version:1}]});
-eq([result.rows[0].status,result.plan.map(p=>[p.codeChange,p.mapping])],['held-outside',[]],'a mapping to a customer that does not hold the number keeps nothing out: still the administrator\'s');
+eq([result.rows[0].status,result.plan,dup(result)],['held-outside',[],[]],'even with a mapping to a holder inside, a holder outside the regions would lose the number: the administrator\'s');
+result=match([erp(3,'12','مصنع الوسط')],[central,insideHolder,eastHolder],{mappings:[{codeKey:'12',customerId:'inside-holder',version:5}]});
+eq([result.rows[0].customerId,dup(result).map(d=>d[0])],['central',['east-holder','inside-holder']],'the system administrator: both holders lose it');
 const insideTwin=customer('inside-twin',{name:'مصنع آخر',code:'12'});
 result=match([erp(3,'12','مصنع الوسط')],[central,insideTwin],{me:manager});
-eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.mapping])],['auto',[['central',true]]],'a number held only inside the manager\'s regions is linked as for the administrator');
-eq([E.heldOutsideRegions(admin,[eastHolder],{codeKey:'12',customerId:'gone',version:1},new Map()),E.heldOutsideRegions(manager,[eastHolder],undefined,new Map([[eastHolder.id,eastHolder]])),E.heldOutsideRegions(manager,[central],undefined,new Map([[central.id,central]]))],[false,true,false],'heldOutsideRegions: never for all regions; a holder outside; only holders inside');
+eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.mapping]),dup(result)],['auto',[['central',false]],[['inside-twin','12',3,'central']]],'a number held only inside the manager\'s regions: the manager clears it as the administrator would');
+eq([E.heldOutsideRegions(admin,[eastHolder]),E.heldOutsideRegions(manager,[eastHolder]),E.heldOutsideRegions(manager,[central]),E.heldOutsideRegions(manager,[central,eastHolder]),E.heldOutsideRegions(manager,[])],[false,true,false,true,false],'heldOutsideRegions: never for all regions; any holder outside; only holders inside; nobody');
 
 // too many matches: a phone or name shared by more than 20 customers is not offered
 const crowd=(count,data)=>Array.from({length:count},(_,i)=>customer('crowd-'+i,{name:'مصنع رقم '+i,...data}));
@@ -301,12 +318,12 @@ eq([result.rows.map(o=>[o.status,o.customerId,o.matchedBy,o.codeRow]),result.sum
 result=match([erp(3,'C-9','مصنع النور')],[nour,twin]);
 eq([result.rows[0].status,result.rows[0].customerId,result.rows[0].change,result.rows[0].candidates.map(c=>c.id),result.summary.pending,result.plan],['same','twin',false,['nour','twin'],0,[]],'the twin already holding C-9: no change, the other candidate still listed');
 result=match([erp(3,'C-9','مصنع النور')],[nour,twin],{choices:new Map([[3,'nour']])});
-eq([result.rows[0].status,result.rows[0].customerId,result.plan.map(p=>[p.customerId,p.to,p.mapping])],['choose','nour',[['nour','C-9',true]]],'the user may still pick the other one');
+eq([result.rows[0].status,result.rows[0].customerId,result.plan.map(p=>[p.customerId,p.to,p.mapping]),dup(result)],['choose','nour',[['nour','C-9',false]],[['twin','C-9',3,'nour']]],'the user may still pick the other one: it takes the number and the twin loses it');
 eq(one([erp(3,'C-9','مصنع النور')],[nour,twin,{...twin,id:'twin2',data:{...twin.data,internalCode:'YR-C-999999'}}]).status,'choose','two candidates holding the number: still a choice');
 
 // summary
 result=match([erp(3,'12','مصنع النور'),erp(4,'C-9','مصنع النور'),erp(5,'20','مصنع الأمل'),erp(6,'',''),erp(7,'0','مصنع البدر')].map(row=>row.code?row:{...row,issue:'no-code'}),[nour,twin,badr],{me:admin});
-eq(result.summary,{rows:5,auto:1,same:1,choose:1,similar:0,new:1,outOfRegion:0,heldOutside:0,invalid:1,conflicts:0,pending:1,changes:1,codeChanges:1,mappings:0,adds:1},'the counts');
+eq(result.summary,{rows:5,auto:1,same:1,choose:1,similar:0,new:1,outOfRegion:0,heldOutside:0,invalid:1,conflicts:0,pending:1,changes:1,codeChanges:1,mappings:0,adds:1,duplicates:0},'the counts');
 
 // ---- by the code: a row with no phone or name match whose number the CRM already knows is found by it, and never added
 const ADD=E.ERP_ADD_CUSTOMER;
@@ -331,9 +348,9 @@ const twinCodeC=customer('code-c',{name:'مصنع جيم',code:'347'});
 result=match([erp(3,'347','اسم تاني خالص')],[twinCodeA,twinCodeC]);
 eq([result.rows[0].status,result.rows[0].customerId,result.rows[0].candidates.map(c=>[c.id,c.matchedBy]),result.summary.pending,result.plan,result.adds],['choose','',[['code-a','code'],['code-c','code']],1,[],[]],'two current holders of the number: choose among them, never added');
 result=match([erp(3,'347','اسم تاني خالص')],[twinCodeA,twinCodeC],{choices:new Map([[3,'code-c']])});
-eq([result.rows[0].status,result.plan.map(p=>[p.customerId,p.codeChange,p.mapping])],['choose',[['code-c',false,true]]],'a pick among current holders: a mapping (the other holder keeps it)');
+eq([result.rows[0].status,result.plan,dup(result)],['choose',[],[['code-a','347',3,'code-c']]],'a pick among current holders: nothing to change for it, the other holder loses the number (no mapping)');
 result=match([erp(3,'347','اسم تاني خالص')],[twinCodeA,twinCodeC],{mappings:[{codeKey:'347',customerId:'code-c',version:2}]});
-eq([result.rows[0].status,result.rows[0].customerId,result.plan],['same','code-c',[]],'a stored mapping decides between the current holders: same, nothing to change');
+eq([result.rows[0].status,result.rows[0].customerId,result.plan,dup(result)],['same','code-c',[],[['code-a','347',3,'code-c']]],'a stored mapping decides between the current holders: same, and the other holder loses the number');
 const eastCoded=customer('east-coded',{name:'مصنع شرقي بعيد',code:'348',region:'الشرقية'});
 result=match([erp(3,'348','اسم تاني خالص')],[eastCoded,central],{me:manager});
 eq([result.rows[0].status,result.rows[0].candidates,result.rows[0].customerId,result.rows[0].add,result.plan,result.adds],['held-outside',[],'',false,[],[]],'a number held outside the manager\'s regions: held-outside, no details, never added');
@@ -503,4 +520,4 @@ eq(S.readWorkbookSheets(book([{name:'Customer',rows:Array.from({length:20050},()
  eq(match([erp(3,'99','اسم تاني')],[empty,blank]).clears,[],'customers with no code are never listed');
 }
 
-console.log(JSON.stringify({ok:true,checks,scope:'ERP customer import: the customers the file does not name (clears), header detection (also under title rows), phone and name keys (placeholders, numbers on separate lines, bounded cells), auto/choose/same/out-of-region/held-outside/invalid, by code, similar names (rule, common words, max 5, regions, 302-like), new rows, the add choice, no-name rows, new-customer regions, too many matches, a code that is another row, preselected holder, conflicts, choices, mappings, manager regions and numbers held outside them, plan and summary, generic sheet reader'}));
+console.log(JSON.stringify({ok:true,checks,scope:'ERP customer import: the customers the file does not name (clears), header detection (also under title rows), phone and name keys (placeholders, numbers on separate lines, bounded cells), auto/choose/same/out-of-region/held-outside/invalid, by code, similar names (rule, common words, max 5, regions, 302-like), new rows, the add choice, no-name rows, new-customer regions, too many matches, a code that is another row, preselected holder, conflicts, choices, duplicate holders that lose the number (a stored mapping as the choice), manager regions and numbers held outside them, plan and summary, generic sheet reader'}));
