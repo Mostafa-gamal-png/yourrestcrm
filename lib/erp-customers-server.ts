@@ -6,6 +6,8 @@ import {prepareCustomerLocation} from './customer-fields';
 import {readWorkbookSheets,ErpWorkbookError} from './erp-sales';
 import {erpCustomerRows,matchErpCustomers,heldOutsideRegions,erpNewCustomerRegions,erpNewCustomerRegionValues,ErpCustomersError,ERP_CUSTOMERS_MAX_ROWS,ERP_CUSTOMERS_MAX_ADDS,type ErpCustomerAdd,type ErpCustomerClearView} from './erp-customers';
 import {customerCodeCandidates} from './customer-identity';
+import {erpCustomerExtras,erpExtraData,erpExtraUpdates} from './erp-customer-extras';
+import {erpDatesView,erpExtraStatements} from './erp-customer-extras-server';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const maxFileBytes=1024*1024;
@@ -53,7 +55,7 @@ function newCustomerData(me:Member,add:ErpCustomerAdd,region:string):Record<stri
 function mayChange(c:Context,customer:Row){try{customerDetailMutationGuard({me:c.me,members:c.members,all:[customer]},customer);return true;}catch{return false;}}
 /** Read the file and match it against the CRM's customers now. The file is parsed in memory only: never stored, never logged. */
 async function prepare(c:Context,bytes:Uint8Array<ArrayBuffer>){
- const parsed=expected(()=>erpCustomerRows(readWorkbookSheets(bytes,{maxRows:ERP_CUSTOMERS_MAX_ROWS}))),options={me:c.me,mappings:c.customerIdentityState.mappings};
+ const sheets=expected(()=>readWorkbookSheets(bytes,{maxRows:ERP_CUSTOMERS_MAX_ROWS})),parsed=expected(()=>erpCustomerRows(sheets)),options={me:c.me,mappings:c.customerIdentityState.mappings};
  const base=expected(()=>matchErpCustomers(parsed.rows,c.all,options));
  // The customers the file does not name whose code «امسح كود ERP للعملاء غير الموجودين في الشيت» clears: only those `me` may change, like a
  // code change. They do not depend on the choices; what the preview listed (each with its version) is `clearSnapshot`, which an apply
@@ -67,7 +69,9 @@ async function prepare(c:Context,bytes:Uint8Array<ArrayBuffer>){
  const shape=await hash(JSON.stringify(base.rows.map(row=>[row.row,row.status,row.customerId,row.candidates.map(candidate=>candidate.id)])));
  const snapshot=await hash(JSON.stringify({revision:c.customerIdentityState.revision,me:[c.me.id,c.me.role,regionScope(c.me)],file:await hash(bytes),involved:base.involved,shape}));
  const clearSnapshot=await hash(JSON.stringify({snapshot,clears:clears.map(clear=>[clear.customerId,clear.version,clear.code])}));
- return {sheet:parsed.sheet,snapshot,clears,clearSnapshot,match:(choices:Map<number,string>)=>choices.size?expected(()=>matchErpCustomers(parsed.rows,c.all,{...options,choices})):base};
+ // «التاريخ» and the representative (lib/erp-customer-extras.ts): written on the customers the rows end on and on the ones they add.
+ const extras=erpCustomerExtras(sheets,parsed.sheet),extraUpdates=(rows:typeof base.rows)=>erpExtraUpdates(rows,extras,customers,customer=>mayChange(c,customer));
+ return {sheet:parsed.sheet,snapshot,clears,clearSnapshot,extras,extraUpdates,match:(choices:Map<number,string>)=>choices.size?expected(()=>matchErpCustomers(parsed.rows,c.all,{...options,choices})):base};
 }
 type Addition={row:number;customerId:string;code:string;name:string;region:string;internalCode?:string};
 /** The Yourrest numbers the identity trigger gave the added customers, read after the commit (and again for a repeated request). */
@@ -93,8 +97,9 @@ export async function importErpCustomers(c:Context,body:unknown){
  const {input,bytes}=parseInput(body);
  if(input.action==='preview'){
   const prepared=await prepare(c,bytes),matched=prepared.match(choiceMap(input)),regions=erpNewCustomerRegions(c.me);
+  const erpDates=erpDatesView(prepared.extras,prepared.extraUpdates(matched.rows));
   return {fileName:input.fileName,sheet:prepared.sheet,snapshot:prepared.snapshot,summary:matched.summary,rows:matched.rows,newRegions:regions.regions,newRegion:regions.default,
-   clears:prepared.clears.map(({version,...clear}):ErpCustomerClearView=>{void version;return clear;}),clearSnapshot:prepared.clearSnapshot};
+   clears:prepared.clears.map(({version,...clear}):ErpCustomerClearView=>{void version;return clear;}),clearSnapshot:prepared.clearSnapshot,erpDates};
  }
  if(!input.requestId||!input.snapshot)throw new CRMError('اعرض الملف أولًا قبل تحديث الأكواد');
  const choices=choiceMap(input),rowRegions=regionMap(input);
@@ -110,7 +115,8 @@ export async function importErpCustomers(c:Context,body:unknown){
  if(prepared.summary.conflicts)throw new CRMError('اخترت نفس العميل لأكثر من سطر؛ العميل له كود ERP واحد. راجع الاختيارات.');
  if(input.adds!==prepared.adds.length)throw new CRMError(ERP_ADDS_UNCONFIRMED,409);
  if(prepared.adds.length>ERP_CUSTOMERS_MAX_ADDS)throw new CRMError(`الحد الأقصى للعملاء الجدد في المرة الواحدة ${ERP_CUSTOMERS_MAX_ADDS}؛ اترك الباقي وأضفهم في مرة أخرى.`);
- if(!prepared.plan.length&&!prepared.adds.length&&!clears.length)throw new CRMError('لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.');
+ const extraUpdates=book.extraUpdates(prepared.rows);
+ if(!prepared.plan.length&&!prepared.adds.length&&!clears.length&&!extraUpdates.length)throw new CRMError('لا توجد أكواد تتغير ولا عملاء جدد في هذا الملف.');
  // The same checks as a customer edit, for every customer that changes; their SQL (member and record version) is the gate below. A member
  // limited to regions never moves a number's invoices away from a customer outside them (the preview already leaves those rows out).
  const customers=new Map(c.all.filter(row=>row.kind==='customer').map(row=>[row.id,row])),holders=customerCodeCandidates(c.all),mappings=new Map(c.customerIdentityState.mappings.map(mapping=>[mapping.codeKey,mapping]));
@@ -132,10 +138,10 @@ export async function importErpCustomers(c:Context,body:unknown){
   const region=rowRegions.get(add.row)??input.region??fallback;
   if(region===null)throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
   checkRegion(c.me,region);
-  return {add,id:'crm-'+c.me.id+'-erp-'+input.requestId+'-'+add.row,region,data:newCustomerData(c.me,add,region)};
+  return {add,id:'crm-'+c.me.id+'-erp-'+input.requestId+'-'+add.row,region,data:{...newCustomerData(c.me,add,region),...erpExtraData(book.extras.rows.get(add.row))}};
  });
  const now=new Date().toISOString(),attempt='erp-customers-import:'+crypto.randomUUID();
- const result={ok:true,updated:prepared.summary.codeChanges,mappings:prepared.summary.mappings,changed:prepared.plan.length,added:additions.length,unchanged:prepared.rows.filter(row=>row.customerId&&!row.change).length,skipped:prepared.rows.filter(row=>!row.customerId&&!row.add&&['auto','same','choose','similar','new'].includes(row.status)).length,cleared:clears.length,outOfRegion:prepared.summary.outOfRegion,heldOutside:prepared.summary.heldOutside,invalid:prepared.summary.invalid,changes:prepared.plan.map(step=>({row:step.row,customerId:step.customerId,from:step.from,to:step.to,mapping:step.mapping})),additions:additions.map(({add,id,region,data}):Addition=>({row:add.row,customerId:id,code:add.code,name:String(data.name),region}))};
+ const result={ok:true,updated:prepared.summary.codeChanges,mappings:prepared.summary.mappings,changed:prepared.plan.length,added:additions.length,unchanged:prepared.rows.filter(row=>row.customerId&&!row.change).length,skipped:prepared.rows.filter(row=>!row.customerId&&!row.add&&['auto','same','choose','similar','new'].includes(row.status)).length,cleared:clears.length,erpDatesUpdated:extraUpdates.length,outOfRegion:prepared.summary.outOfRegion,heldOutside:prepared.summary.heldOutside,invalid:prepared.summary.invalid,changes:prepared.plan.map(step=>({row:step.row,customerId:step.customerId,from:step.from,to:step.to,mapping:step.mapping})),additions:additions.map(({add,id,region,data}):Addition=>({row:add.row,customerId:id,code:add.code,name:String(data.name),region}))};
  // The receipt is the transaction's gate: the member's role and regions, the identity revision (every code and mapping change moves it,
  // and so does adding or deleting a customer), every involved customer's version, in one JSON parameter; and for the new customers,
  // that no record has their ids and that no customer carries their codes now (a code another customer only had before, or a mapping to a
@@ -159,6 +165,7 @@ export async function importErpCustomers(c:Context,body:unknown){
  for(const {id,data} of additions)batch.push(c.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'customer',NULL,?,?,?,?,?,1,? WHERE "+claimed).bind(id,c.me.id,c.me.branch,JSON.stringify(data),now,now,attempt,...claimArgs));
  for(const step of prepared.plan)batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(crypto.randomUUID(),step.customerId,c.me.name,'erp-customer-code',JSON.stringify({label:'تحديث كود ERP من ملف ERP',from:step.from,to:step.to,row:step.row,...(step.mapping?{mapping:true}:{})}),now,...claimArgs));
  for(const clear of clears)batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(crypto.randomUUID(),clear.customerId,c.me.name,'erp-customer-code',JSON.stringify({label:ERP_CLEAR_AUDIT_LABEL,from:clear.code,to:'',cleared:true}),now,...claimArgs));
+ batch.push(...erpExtraStatements(c.db,extraUpdates,c.me.name,now,attempt,claimed,claimArgs));
  for(const {id,data} of additions)batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(crypto.randomUUID(),id,c.me.name,'إضافة',String(data.name)+' • '+ERP_ADD_AUDIT_LABEL,now,...claimArgs));
  let committed;try{committed=await c.db.batch(batch);}catch(error){const saved=await replay();if(saved)return saved;throw error;}
  if(committed[0].meta.changes!==1){const saved=await replay();if(saved)return saved;throw new CRMError(stale,409);}
