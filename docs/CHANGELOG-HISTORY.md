@@ -47,7 +47,7 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   them as the import does); a number another customer holds is no longer mapped but cleared from that customer (`mapping` false,
   `mappings` 0, `duplicates`); a sales manager no longer moves a number past a holder outside their regions even with a mapping to a
   holder inside, and is no longer stopped by a stale mapping to an outside customer that carries nothing.
-- Arabic guide: docs/UPDATE-2026-11-12-ERP-CODE-LOCKED-AR.txt.
+- Arabic guide: docs/UPDATE-2026-11-12-TARGETS-FIXES-AR.txt.
 ## «العملاء الجدد» from the ERP customers file (2026-11-12, not released yet, no migration)
 
 - **Asked.** The owner: «فيه فى داتة العملاء اللى برفعها التاريخ واسم المندوب هاتهم من هنا». Before, «العملاء الجدد» counted only the
