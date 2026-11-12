@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-OfficeEmployees-20261112.zip",
-  "sha256": "1a9fc6e8fc72bcc8e5a116691633e4352fc9fadd5904313bea3d6e45a416172e",
-  "stage": "yourrest-crm-update-office-employees-20261112",
-  "helper": "yourrest-activate-update-office-employees.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-TargetsFixes-20261112.zip",
+  "sha256": "d865e9f19cbed332f77a1a8a7c40c210dad769e72442338dfd785f67a966b31d",
+  "stage": "yourrest-crm-update-targets-fixes-20261112",
+  "helper": "yourrest-activate-update-targets-fixes.cjs"
 }
