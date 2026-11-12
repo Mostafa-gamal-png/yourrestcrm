@@ -194,8 +194,9 @@ try {
   const owner = await a.login('owner');
   const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date()), month = day.slice(0, 7);
   const customers = {};
+  // No «code»: the ERP code is written only by the ERP customers import since update-targets-fixes-20261112.
   for (const [key, name, region, rep] of [['e1', 'مصنع الشرق', 'الشرقية', 'rep1'], ['w1', 'مصنع الغرب', 'الغربية', 'repw']]) {
-    const created = await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region, city: 'x', code: key, branch: 'الرئيسي', assignedTo: rep, phone: '0500000000', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
+    const created = await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region, city: 'x', branch: 'الرئيسي', assignedTo: rep, phone: '0500000000', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
     assert.equal(created.status, 200, created.text);
     customers[key] = created.json().id;
   }
