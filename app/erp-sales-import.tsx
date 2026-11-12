@@ -7,13 +7,14 @@ import { definiteSubmitRejection, submitJson, SubmitError } from '@/lib/client-s
 import { t, useLanguage } from '@/lib/i18n';
 import UploadStatus, {type UploadState} from './upload-status';
 import { monthLabel, periodMonths } from '@/lib/sales-coverage';
+import { ERP_OFFICE_CHOICE } from '@/lib/erp-office-employees';
 import './erp-sales-import.css';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 
 type Member = { id: string; name: string; branch: string };
 type EmployeeMapping = { employeeId: string; repId: string };
 type CategoryMapping = { category: string; product: string };
-type Options = { members: Member[]; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; products: string[]; canEditCategoryMappings?: boolean };
+type Options = { members: Member[]; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; products: string[]; canEditCategoryMappings?: boolean; canChangeOffice?: boolean };
 type DocumentStatus = 'new' | 'duplicate' | 'conflict' | 'excluded' | 'unassigned' | 'unmapped' | 'out_of_scope';
 type Document = {
   key: string; reference: string; date: string; documentType: 'sale' | 'return';
@@ -22,8 +23,9 @@ type Document = {
 };
 type Preview = {
   previewToken: string; documents: Document[];
-  employees: { employeeId: string; employeeName: string; repId?: string; mappingSource?: 'saved' | 'selected' | 'name' | 'unmapped' }[]; categories: string[];
-  summary: { newCount: number; duplicateCount: number; conflictCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; unmappedCount: number; outOfScopeCount?: number; officeExcludedCount?: number; totalCents: number; months: string[];
+  /** office: marked «مبيعات مكتب (مستبعد)» (repId is ERP_OFFICE_CHOICE); officeLocked: a saved mark this reader may not change. */
+  employees: { employeeId: string; employeeName: string; repId?: string; mappingSource?: 'saved' | 'selected' | 'name' | 'unmapped'; office?: boolean; officeLocked?: boolean }[]; categories: string[];
+  summary: { newCount: number; duplicateCount: number; conflictCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; unmappedCount: number; outOfScopeCount?: number; officeExcludedCount?: number; officeMarkedCount?: number; officeSavedCount?: number; totalCents: number; months: string[];
     /** Only when the report has a «الوصف» column: sales invoices naming a quotation, and saved ones that take their references now. */
     quotationLinkedCount?: number; quotationRefsBackfillCount?: number };
   warnings: string[];
@@ -33,13 +35,18 @@ type Preview = {
 };
 type Coverage = { first: string; last: string; minFrom: string; maxTo: string; months: { full: string[]; partial: string[] }; repCount: number; allReps: boolean; blocker: string };
 type ImportBody = { fileName: string; base64: string; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; allowSkipped: boolean };
-type Receipt = { importedCount: number; duplicateCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; skippedCount?: number; months: string[]; quotationLinkedCount?: number; quotationRefsBackfillCount?: number;
+type Receipt = { importedCount: number; duplicateCount: number; excludedCount: number; officeMarkedCount?: number; officeUnmarkedCount?: number; unassignedCount?: number; unassignedTotalCents?: number; skippedCount?: number; months: string[]; quotationLinkedCount?: number; quotationRefsBackfillCount?: number;
   coverage?: { from: string; to: string; months: string[]; partialMonths: string[]; allReps: boolean; repIds: string[] } };
 type Props = { onClose: () => void; onImported: () => void | Promise<void> };
 const endpoint = '/api/sales/import';
 const maxBytes = 5 * 1024 * 1024;
 const reportEnglish: Record<string, string> = {
   'مبيعات مكتب: مبيعات شركة أخرى مستبعدة تلقائيًا': 'Office sales: another company’s sales, excluded automatically.',
+  'مبيعات مكتب (تحديد الموظف): مستبعدة ولا تُحتسب لأي مندوب': 'Office sales (employee marked): excluded and not counted for any rep.',
+  'مبيعات مكتب (تحديد الموظف): مستبعدة من هذا الاستيراد؛ النسخة المحفوظة سابقًا للمندوب تبقى كما هي': 'Office sales (employee marked): excluded from this import; the copy saved earlier for a rep stays as it is.',
+  'مستندات الموظفين المحددين «مبيعات مكتب (مستبعد)» مستبعدة ولا تُحتسب لأي مندوب.': 'Documents of employees marked “Office sales (excluded)” are excluded and not counted for any rep.',
+  'مستندات حُفظت سابقًا لمندوب ثم حُدد موظفها «مبيعات مكتب»: تبقى محفوظة لمندوبها كما هي، ولا يحذف الاستيراد أي مبيعات محفوظة.': 'Documents saved earlier for a rep whose employee is now marked office sales stay saved for that rep; the import never deletes saved sales.',
+  'تعديل موظف محدد «مبيعات مكتب» متاح لمدير المبيعات أو مدير النظام فقط': 'Only the sales manager or system administrator can change an employee marked as office sales.',
   'نفس رقم المستند يحتوي موظفين أو عملاء أو تواريخ مختلفة؛ راجع التقرير': 'This document number has different employees, customers or dates. Review the report.',
   'رقم الموظف أو اسمه ناقص في تقرير ERP؛ صحح التقرير أولًا': 'The ERP employee number or name is missing. Correct the report first.',
   'بدون بيانات موظف كاملة في ERP؛ تُتجاوز تلقائيًا ولا تُحتسب لأي مندوب': 'ERP employee details are incomplete. Skipped automatically and not counted for any rep.',
@@ -246,7 +253,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
       <div className="erp-import-scroll">
         {optionsLoading ? <div className="erp-import-state" role="status"><Loader2 className="spin" size={22}/>{say('جارٍ تحميل الربط المحفوظ…', 'Loading saved mappings…')}</div> : !options ?
           <div className="erp-import-state"><AlertCircle size={24}/><p>{say('تعذر تحميل المناديب والربط المحفوظ.', 'Could not load reps and saved mappings.')}</p><button type="button" className="btn subtle" onClick={() => setOptionsRevision(value => value + 1)}><RefreshCw size={17}/>{say('إعادة المحاولة', 'Retry')}</button></div> : <>
-          <p className="erp-import-office-note"><AlertCircle size={17} aria-hidden="true"/>{say('تُستبعد «مبيعات مكتب» تلقائيًا لأنها تخص شركات أخرى.', '“مبيعات مكتب” rows belong to other companies and are excluded automatically.')}</p>
+          <p className="erp-import-office-note"><AlertCircle size={17} aria-hidden="true"/>{say('تُستبعد «مبيعات مكتب» تلقائيًا لأنها تخص شركات أخرى. ولاستبعاد موظف يعمل في مبيعات المكتب اختر له «مبيعات مكتب (مستبعد)» في ربط الموظفين.', '“مبيعات مكتب” rows belong to other companies and are excluded automatically. To exclude an employee who works in office sales, choose “Office sales (excluded)” for them under employee mapping.')}</p>
           <section className="erp-import-file" aria-label={say('ملف التقرير', 'Report file')}>
             <label className="field" htmlFor="erp-sales-report"><span>{say('تقرير المبيعات من ERP', 'ERP sales report')} · XLSX · {say('حتى 5 ميجابايت', 'up to 5 MB')}</span>
               <input id="erp-sales-report" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={immutable} onChange={event => { const selected = event.target.files?.[0]; event.target.value = ''; void selectFile(selected); }}/></label>
@@ -286,18 +293,22 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
                 // Server-inferred mappings are display-only until confirmed. Keep the
                 // captured previewBody unchanged so the commit uses the same request.
                 const value = employeeMappings[employee.employeeId] || employee.repId || '';
-                const known = options.members.some(member => member.id === value);
+                const office = value === ERP_OFFICE_CHOICE;
+                const known = office || options.members.some(member => member.id === value);
                 const savedMapping = options.employeeMappings.some(item => item.employeeId === employee.employeeId && item.repId === value)
                   || (employee.mappingSource === 'saved' && employee.repId === value);
                 const autoMatched = employee.mappingSource === 'name' && !!employee.repId && employee.repId === value;
                 const missing = !employee.employeeId || !employee.employeeName;
-                return <label className="erp-import-map-row" key={employee.employeeId + ':' + index}><span><strong>{employee.employeeName || say('اسم الموظف فارغ', 'Employee name is blank')}</strong><small>{say('رقم الموظف', 'Employee number')}: <bdi>{employee.employeeId || '—'}</bdi>{savedMapping && !missing ? ' · ' + say('ربط محفوظ', 'Saved mapping') : ''}</small></span>
-                  <select value={value} disabled={immutable || missing} aria-label={say('مندوب الموظف ', 'Rep for employee ') + (employee.employeeName || employee.employeeId)} onChange={event => mappingChanged('employee', employee.employeeId, event.target.value)}>
+                const officeLocked = !!employee.officeLocked && employee.repId === ERP_OFFICE_CHOICE;
+                return <label className="erp-import-map-row" key={employee.employeeId + ':' + index} data-office={office ? 'true' : undefined}><span><strong>{employee.employeeName || say('اسم الموظف فارغ', 'Employee name is blank')}</strong><small>{say('رقم الموظف', 'Employee number')}: <bdi>{employee.employeeId || '—'}</bdi>{savedMapping && !missing ? ' · ' + say(office ? 'محدد «مبيعات مكتب» سابقًا' : 'ربط محفوظ', office ? 'Saved as office sales' : 'Saved mapping') : ''}</small></span>
+                  <select value={value} disabled={immutable || missing || officeLocked} aria-label={say('مندوب الموظف ', 'Rep for employee ') + (employee.employeeName || employee.employeeId)} onChange={event => mappingChanged('employee', employee.employeeId, event.target.value)}>
                     <option value="" disabled={employee.mappingSource === 'name' && !!employee.repId}>{say('اختر المندوب', 'Choose a rep')}</option>
                     {!!value && !known && <option value={value} disabled>{say('المندوب المحفوظ غير متاح ضمن صلاحيتك', 'Saved rep is outside your access')}</option>}
                     {options.members.map(member => <option key={member.id} value={member.id}>{member.name}{member.branch ? ' · ' + member.branch : ''}</option>)}
+                    <option value={ERP_OFFICE_CHOICE}>{say('مبيعات مكتب (مستبعد)', 'Office sales (excluded)')}</option>
                   </select>
-                  {autoMatched && !missing && <small className="erp-import-map-hint">{say('مطابقة تلقائية للاسم', 'Automatic name match')}</small>}
+                  {autoMatched && !missing && <small className="erp-import-map-hint">{say(office ? 'محدد «مبيعات مكتب» بالاسم من كشف التحصيل' : 'مطابقة تلقائية للاسم', office ? 'Marked office sales by name in the collection statement' : 'Automatic name match')}</small>}
+                  {office && !missing && <small className="erp-import-map-hint">{officeLocked ? say('مستبعد: لا تُحتسب مبيعاته لأي مندوب. تعديله لمدير المبيعات أو مدير النظام.', 'Excluded: their sales count for no rep. The sales manager or system administrator can change it.') : savedMapping ? say('مستبعد: لا تُحتسب مبيعاته لأي مندوب.', 'Excluded: their sales count for no rep.') : say('مستبعد: لا تُحتسب مبيعاته لأي مندوب، ويُحفظ التحديد مع تأكيد الاستيراد.', 'Excluded: their sales count for no rep; the choice is saved when the import is confirmed.')}</small>}
                   {missing && <small className="erp-import-map-warning">{say('أكمل اسم ورقم الموظف في ERP ثم ارفع التقرير من جديد.', 'Complete the employee name and number in ERP, then upload the report again.')}</small>}
                 </label>;
               })}</div>
@@ -360,6 +371,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
         {!!error && <p className="form-error" role="alert">{present(error)}</p>}
         {pending && <p className="erp-import-notice" role="status">{say('لم يتأكد الحفظ بسبب الاتصال. البيانات مثبتة؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب بدون تكرار.', 'The connection did not confirm the import. Your data is locked; choose “Confirm save” to retry the same request without duplicates.')}</p>}
         {receipt && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تأكيد الاستيراد', 'Import confirmed')}</strong><p>{say('أُضيفت', 'Imported')}: {receipt.importedCount} · {say('مسجلة سابقًا', 'Duplicates')}: {receipt.duplicateCount} · {say('مستبعدة', 'Excluded')}: {receipt.excludedCount}{!!receipt.skippedCount && <> · {say('متجاوزة للمراجعة', 'Skipped for review')}: {receipt.skippedCount}</>}{receipt.quotationLinkedCount !== undefined && <> · {say('مرتبطة بعروض أسعار', 'Linked to quotations')}: {receipt.quotationLinkedCount}</>}{!!receipt.quotationRefsBackfillCount && <> · {say('أُضيفت إليها أرقام العروض', 'Quotation numbers added')}: {receipt.quotationRefsBackfillCount}</>}</p>
+          {!!(receipt.officeMarkedCount || receipt.officeUnmarkedCount) && <p>{say('حُفظ تحديد «مبيعات مكتب (مستبعد)»', 'Office sales (excluded) saved')}: {receipt.officeMarkedCount || 0}{!!receipt.officeUnmarkedCount && <> · {say('أُعيد إلى مندوب', 'Returned to a rep')}: {receipt.officeUnmarkedCount}</>}</p>}
           {!!receipt.unassignedCount && <p>{say('تُجاوزت بدون مندوب ولم تُستورد', 'Skipped without a rep; not imported')}: {receipt.unassignedCount} · {say('صافيها قبل الضريبة', 'Their net value before tax')}: <bdi>{money(receipt.unassignedTotalCents || 0)} {say('ر.س', 'SAR')}</bdi>. {say('لم تُحتسب لأي مندوب.', 'Not counted for any rep.')}</p>}
           <small>{say('الأشهر', 'Months')}: <bdi>{receipt.months.join(' · ') || '—'}</bdi></small>
           {receipt.coverage && <p className="erp-import-coverage-receipt">{say('سُجّل اكتمال سجل المبيعات للفترة', 'Sales-history completeness recorded for')} <bdi dir="ltr">{receipt.coverage.from} — {receipt.coverage.to}</bdi>{receipt.coverage.months.length ? <> · {say('الأشهر المكتملة', 'Complete months')}: {monthNames(receipt.coverage.months)}</> : null}</p>}</div></div>}

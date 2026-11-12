@@ -131,20 +131,25 @@ export const rowAddsUp=(row:CollectionRow)=>row.currentDebit-row.currentCredit==
 export const accountDueCents=(row:CollectionRow)=>Math.max(0,row.previousDebit-row.previousCredit)+row.periodDebit;
 export const accountCollectedCents=(row:CollectionRow)=>row.periodCredit;
 export type CollectionGroup={key:string;name:string;accounts:number;dueCents:number;collectedCents:number;mismatches:number;fromCollector:number};
-export type CollectionSummary={groups:CollectionGroup[];rows:number;officeRows:number;officeDueCents:number;officeCollectedCents:number;noRepRows:number;noRepDueCents:number;noRepCollectedCents:number;mismatchRows:number};
-/** The statement grouped by the name each account belongs to. The office and accounts with no name are counted apart, never in a group. */
-export function summarizeCollections(rows:CollectionRow[]):CollectionSummary{
- const groups=new Map<string,CollectionGroup>(),summary:Omit<CollectionSummary,'groups'>={rows:rows.length,officeRows:0,officeDueCents:0,officeCollectedCents:0,noRepRows:0,noRepDueCents:0,noRepCollectedCents:0,mismatchRows:0};
+export type CollectionSummary={groups:CollectionGroup[];
+ /** The names marked «مبيعات مكتب (مستبعد)» (lib/erp-office-employees.ts): counted as the office, and listed so a mark can be seen and changed. */
+ officeGroups:CollectionGroup[];rows:number;officeRows:number;officeDueCents:number;officeCollectedCents:number;noRepRows:number;noRepDueCents:number;noRepCollectedCents:number;mismatchRows:number};
+/** The statement grouped by the name each account belongs to. The office («مبيعات مكتب» by its name, and the names in officeKeys, marked
+ *  «مبيعات مكتب (مستبعد)») and accounts with no name are counted apart, never in a group; a marked name is also listed in officeGroups. */
+export function summarizeCollections(rows:CollectionRow[],officeKeys:ReadonlySet<string>=new Set()):CollectionSummary{
+ const groups=new Map<string,CollectionGroup>(),officeGroups=new Map<string,CollectionGroup>(),summary:Omit<CollectionSummary,'groups'|'officeGroups'>={rows:rows.length,officeRows:0,officeDueCents:0,officeCollectedCents:0,noRepRows:0,noRepDueCents:0,noRepCollectedCents:0,mismatchRows:0};
  for(const row of rows){
   const owner=row.rep||row.collector,due=accountDueCents(row),collected=accountCollectedCents(row),balanced=rowAddsUp(row);
   if(!balanced)summary.mismatchRows++;
   if(!owner){summary.noRepRows++;summary.noRepDueCents+=due;summary.noRepCollectedCents+=collected;continue;}
   if(isOfficeEmployee(owner)){summary.officeRows++;summary.officeDueCents+=due;summary.officeCollectedCents+=collected;continue;}
-  const key=collectionNameKey(owner),group=groups.get(key)||{key,name:normalizeErpText(owner),accounts:0,dueCents:0,collectedCents:0,mismatches:0,fromCollector:0};
+  const key=collectionNameKey(owner),marked=officeKeys.has(key),into=marked?officeGroups:groups,group=into.get(key)||{key,name:normalizeErpText(owner),accounts:0,dueCents:0,collectedCents:0,mismatches:0,fromCollector:0};
   group.accounts++;group.dueCents+=due;group.collectedCents+=collected;if(!balanced)group.mismatches++;if(!row.rep)group.fromCollector++;
-  groups.set(key,group);
+  into.set(key,group);
+  if(marked){summary.officeRows++;summary.officeDueCents+=due;summary.officeCollectedCents+=collected;}
  }
- return {...summary,groups:[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'ar'))};
+ const byName=(map:Map<string,CollectionGroup>)=>[...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+ return {...summary,groups:byName(groups),officeGroups:byName(officeGroups)};
 }
 /** Collected as a share of due, two decimals; none when nothing is due. */
 export const collectionPercent=(dueCents:number,collectedCents:number)=>dueCents>0?Math.round(collectedCents/dueCents*10000)/100:null;

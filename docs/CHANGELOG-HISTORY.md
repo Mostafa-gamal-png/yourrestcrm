@@ -4,6 +4,47 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «مبيعات مكتب (مستبعد)» for an ERP employee (2026-11-12, release update-office-employees-20261112, no migration)
+
+- **Asked.** The owner, of employee «نوفل بكر · رقم الموظف: 6007» in «ربط الموظفين بالمناديب» of an ERP import: «ده مبيعات مكتب مش
+  تبع المبيعات». Office sales were excluded only when the ERP's employee NAME is «مبيعات مكتب» / «مبيعات المكتب» (`isOfficeEmployee`,
+  lib/erp-sales.ts, unchanged); a real person who works in office sales asked to be mapped to a representative.
+- **The list** (lib/erp-office-employees.ts). One `crm_settings` row `erp-office-employees` (the JSON in `owner_id`, like the other
+  import states: no migration; `crm_erp_employee_mappings.rep_id` references a member, so no sentinel there), `{employees:[{employeeId,
+  employeeName, by, at}]}`. A mark from the sales or quotations import is keyed by the ERP employee number (marks of direction and repeated
+  spaces removed, Arabic-Indic digits read as digits, so both imports find it) with the name the file showed; one from the collection
+  statement, which has names only, has `employeeId` ''. The row is its own concurrency token: each import's commit gate requires it to be
+  exactly as read (`officeUnchanged`), and it is written only inside the import's own transaction (`writeOfficeList`).
+- **The choice.** Each employee's select in the ERP sales import and the ERP quotations import, and each name's select of the collection
+  statement, ends with «مبيعات مكتب (مستبعد)» (value `office:excluded`). Chosen, the documents are excluded exactly as «مبيعات مكتب»:
+  status `excluded`, counted in `officeExcludedCount`, for no representative, never blocking, and no category asked for them (sales); a
+  quotation is `excluded` before a customer or a mapping is needed (`ERP_QUOTE_REASONS.officeMarked`); the statement's accounts are counted
+  with the office and the name listed with «مبيعات مكتب — مستبعد». The reasons: «مبيعات مكتب (تحديد الموظف): مستبعدة ولا تُحتسب لأي
+  مندوب». The name rule stays as it was.
+- **Saved** with the import, as the employee mapping is: the sales import (every commit), the quotations import (also when it is the only
+  change, so the commit button is enabled for it), the collection statement (with the evidence, or alone with the import's audit line as
+  its claim). One audit line `تحديد موظفي مبيعات المكتب` (record `erp-office-employees`) for each import that changes the list: source,
+  import id, file, who was marked (with the former representative) and who was lifted (with the new one). Marking in the sales import
+  removes that employee's representative mapping row; a mark is lifted only with the representative mapping that replaces it.
+- **Who.** Marking is a change of the employee's mapping: whoever may import, the former representative within their reach (a supervisor
+  cannot mark an employee mapped to another team's representative, 403). Lifting a saved mark (back to a representative) is for the sales
+  manager and the administrator: a supervisor sees it selected and locked («تعديله لمدير المبيعات أو مدير النظام», 403 from the server).
+  In the quotations import a saved mark is fixed like a saved mapping (changed from the sales import, 409); in the collection statement a
+  number mark is fixed (409) and a name mark may be mapped back to a representative there; marking a name mapped to a representative
+  outside the reader's team or regions is refused (403).
+- **Across the imports.** A number mark applies by number in the sales and quotations imports and by its name in the collection
+  statement; a name mark applies in the statement and, in the two other imports, only suggests itself for an unmapped number of exactly
+  that full name (as they suggest a representative of that name), saved as a number mark with the import. No KPI or target computation
+  filters office sales at read time: office documents are never imported, so the exclusion is complete at the imports.
+- **Documents saved before the mark.** Never deleted or rewritten, as with any changed mapping: an invoice saved for a representative
+  under an earlier mapping is shown `excluded` with «… النسخة المحفوظة سابقًا للمندوب تبقى كما هي», counted (`officeSavedCount`) and said
+  in the report notes; it stays counted for that representative. Lifted back to the same representative, it is a duplicate again. An
+  imported quotation of a marked employee likewise stays («العرض المحفوظ سابقًا يبقى كما هو»).
+- **Tests.** tests/erp-office-employees.mjs (default gate, 76), tests/erp-office-employees-http.mjs (release-build, 54),
+  tests/erp-office-employees-browser.mjs (browser, 80: desktop and phone 360, Arabic and English), and additions to
+  tests/erp-quotes-http.mjs and tests/erp-collections-http.mjs; registered in the manifest, the areas and tests/CHECKS.md. The activator's
+  same-day backups now accept update-salesmen-activation-20261112.
+
 ## ERP customer codes matched by the current code only (2026-11-12, release update-erp-current-code-20261112, no migration)
 
 - **Asked.** The owner's rule, said before and again on 2026-11-12: «لما ارفع بيانات العملاء تاخد كود erp وتحدث بيانات العملاء باللى
