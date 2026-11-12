@@ -31,8 +31,9 @@ export function inactiveCustomer(customer:Pick<Row,'data'>,today:string,days=INA
 /** One grouped row per ERP customer code (source 'erp', key = the code as stored) and per customer of a manual invoice (source 'crm',
  * key = the customer id), each with the latest date: LAST_PURCHASE_SQL's answer. */
 export type LastPurchaseRow={source:'erp'|'crm';key:string;date:string};
-/** Customer id -> last purchase date. An ERP code counts only when it maps to exactly one customer (uniqueCustomerCodes: the code and
- * retained aliases of every customer, explicit mappings deciding a shared code; the same join as the KPI invoices): a code two customers
+/** Customer id -> last purchase date. An ERP code counts only when it maps to exactly one customer (uniqueCustomerCodes: the current code
+ * of every customer, explicit mappings deciding among its current holders; the same join as the KPI invoices; a code a customer only had
+ * before, or one an ERP customers import cleared, counts for nobody but its current holder): a code two customers
  * share counts for neither. `customers` must be every customer, not only the reader's, or a shared code would look unique. */
 export function lastPurchaseDates(customers:Row[],mappings:CustomerCodeMapping[],rows:LastPurchaseRow[]){
  const codes=uniqueCustomerCodes(customers,mappings),ids=new Set(customers.filter(row=>row.kind==='customer').map(row=>row.id)),latest=new Map<string,string>();

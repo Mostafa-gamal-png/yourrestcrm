@@ -5,8 +5,10 @@
 // nobody, and one with only codes to clear and the box unchecked has nothing to apply (400); an apply with `clearCodes` and the
 // preview's clearSnapshot sets data.code to '' for exactly those customers in the same transaction (version, mutation id, updated_at
 // moved; nothing else of the record changes), one 'erp-customer-code' audit entry each {label, from, to: '', cleared: true}, `cleared`
-// in the answer; the matched customer keeps the code the file gives it; the old code stays an alias, a stored mapping of it stays, the
-// last purchase of an invoice under the old code still resolves to the customer;
+// in the answer; the matched customer keeps the code the file gives it; the old code stays in crm_customer_code_aliases as history and a
+// stored mapping of it stays, but a cleared customer is not an ERP customer (2026-11-12): it matches nothing, so an invoice under its old
+// code is no longer its last purchase, the customer form may give the code to another customer, whose last purchase it then is, and the
+// form refuses a code another customer carries now;
 // a customer edited after the preview (or moved to another region), or an apply without/with another clearSnapshot, is 409 and writes
 // nothing; a repeated request returns the saved answer, the same request with the box changed is 409; the sales manager clears only
 // their regions' customers. Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
@@ -120,7 +122,7 @@ try {
     check(withoutCode(now.data), withoutCode(was.data), 'nothing but the code changed in ' + id);
     check([now.version - was.version, now.mutationId !== was.mutationId && /^erp-customers-import:/.test(now.mutationId), now.updatedAt > was.updatedAt], cleared ? [1, true, true] : [0, false, false], (cleared ? 'version, mutation id and updated_at moved once: ' : 'untouched: ') + id);
   }
-  check([await aliases('gone'), await aliases('mapped')], [['900'], ['901']], 'the old code stays as an alias (the identity trigger), so earlier invoices still find the customer');
+  check([await aliases('gone'), await aliases('mapped')], [['900'], ['901']], 'the old code stays as an alias (the identity trigger), as history only');
   check((await app.db.prepare('SELECT code_key,customer_id,version FROM crm_customer_code_mappings').all()).results.map(r => ({...r})), [{code_key: '901', customer_id: 'mapped', version: 1}], 'the stored mapping of the cleared code stays as it was');
   ok(await revision() > revisionBefore, 'the identity revision moved');
   const audits = (await app.db.prepare("SELECT record_id,actor,action,detail FROM crm_audit WHERE action='erp-customer-code' AND record_id IN ('gone','mapped') ORDER BY record_id").all()).results;
@@ -142,7 +144,15 @@ try {
 
   // ---- the customers list and what still resolves through the old code
   const crm = (await owner('/api/crm')).json(), listed = Object.fromEntries(crm.records.filter(r => r.kind === 'customer').map(r => [r.id, r]));
-  check([listed.gone.data.code, listed.gone.data._erpCodeAliases, listed.gone.data._lastPurchase], ['', ['900'], day(12)], 'the customers list: an empty ERP code, the old one kept, and the invoice under it still its last purchase');
+  check([listed.gone.data.code, listed.gone.data._erpCodeAliases, listed.gone.data._lastPurchase], ['', ['900'], undefined], 'the customers list: an empty ERP code, the old one kept as history, and the invoice under it no longer its last purchase (a cleared customer matches nothing)');
+  // ---- the code is free: the form refuses a code another customer carries, and gives a cleared one to another customer
+  const save = data => owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {region: 'الوسطى', location: '', assignedTo: 'rep', branch: 'الرئيسي', ...data}}});
+  response = await save({name: 'مصنع يكرر الرقم', code: ' 12 '});
+  check([response.status, response.json().error], [400, 'كود ERP «12» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.'], 'a code another customer carries now is refused, naming it');
+  response = await save({name: 'مصنع يأخذ 900', code: '900'});
+  check(response.status, 200, 'the code a cleared customer had is free');
+  const taker = response.json().id, relisted = Object.fromEntries((await owner('/api/crm')).json().records.filter(r => r.kind === 'customer').map(r => [r.id, r]));
+  check([relisted[taker].data.code, relisted[taker].data._lastPurchase, relisted.gone.data._lastPurchase], ['900', day(12), undefined], 'the invoice under 900 is now the last purchase of the customer that carries 900, never the cleared one\'s');
   check([listed.nour.data.code, listed.kept.data.code, listed.nocode.data.code, listed.similar.data.code], ['12', 'K-2', '', '903'], 'the others as the file and the CRM leave them');
   ok(Object.values(before).length === ids.length, 'every fixture checked');
 } finally { await app.stop(); }

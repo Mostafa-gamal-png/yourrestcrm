@@ -14,7 +14,8 @@
 // «مبيعات مكتب» (the employee's name, lib/erp-sales.ts isOfficeEmployee, as the ERP sales import): another company's quotations, excluded
 // before anything else (status 'excluded', counted under «مستبعدة»): never written, never needing a customer or a mapping, never listed
 // among the employees to map. Neither they nor a refused quotation keep the others from being imported.
-// A customer code that two or more CRM customers carry (lib/customer-identity.ts customerCodeCandidates) is refused until a «ربط كود
+// A customer code that two or more CRM customers carry as their CURRENT code (lib/customer-identity.ts customerCodeCandidates; a code a
+// customer only had before, or one an ERP customers import cleared, makes no customer a candidate since 2026-11-12) is refused until a «ربط كود
 // عميل ERP» decides it (crm_customer_code_mappings, the same mapping the KPI invoices and the last purchase read). The preview lists those
 // codes (`sharedCodes`): to the administrator who may map identities (lib/customer-identity-server.ts isIdentityAdmin) with exactly the
 // customers that carry the code and the saved choice, which the dialog saves through POST /api/customer-identities (saveCustomerIdentity:

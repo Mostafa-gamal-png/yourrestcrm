@@ -1164,7 +1164,7 @@ try {
   // ---- 8. 2026-11-09 (the owner: «خانتين بترشيحات», then «اسم العميل بيتكتب نص وبيجى ترشيحات من النظام يعنى لو فيه عميل مش موجود فى النظام
   //  طلب القالب ميقفش», «المندوب يكتب الكود والكود المطلوب كود erp», «يتبعت بكود ERP بس»): «اسم العميل» (dictated) and «كود ERP», typed,
   //  each suggesting the customers the representative may ask for under it (up to 8: name · Yourrest code · city · ERP code): by name
-  //  (أ/إ/آ as ا); by ERP code (any case, the one it had before) or, as a help, by Yourrest code or its number, in Arabic-Indic digits too;
+  //  (أ/إ/آ as ا); by ERP code (any case; its current one only: a code it had before names nobody since 2026-11-12) or, as a help, by Yourrest code or its number, in Arabic-Indic digits too;
   //  ↑ ↓ Enter Esc (Esc closes the suggestions, not the form) and touch; one without a Yourrest number shown but not chosen, with why.
   //  Choosing fills the name, its ERP code and the address, and says «مرتبط بالعميل <name> · YR-C-…»; an ERP code that names one customer
   //  links it as well; editing the code to another unlinks it. Anything else is a customer not in the CRM: «عميل مش موجود في الـCRM: الطلب
@@ -1175,7 +1175,7 @@ try {
     const insert = (id, data) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')")
       .bind(id, JSON.stringify({region: 'الشرقية', phone: '0551234567', branch: 'الرئيسي', assignedTo: 'rep', ...data}), now, now).run();
     await insert('east9', {name: 'مؤسسة إبراهيم للبلوك', city: 'الخبر', address: 'الخبر، طريق الظهران، مستودع 9', code: 'K-7731'});
-    // The ERP code it had before (kept by the identity tables), and a customer the server has not numbered yet.
+    // The ERP code it had before (kept by the identity tables, as history: it suggests and links nothing), and a customer the server has not numbered yet.
     await app.db.prepare("INSERT OR IGNORE INTO crm_customer_code_aliases(customer_id,source_code) VALUES('east9','OLD-55')").run();
     await insert('east8', {name: 'مصنع بلا كود', city: 'الدمام', address: 'حي الفيصلية', code: ''});
     await app.db.prepare("DELETE FROM crm_customer_numbers WHERE customer_id='east8'").run();
@@ -1212,8 +1212,11 @@ try {
     await unnumbered.click({force: true});
     check([await linkedLine.count(), await name.inputValue(), await freeNote.innerText()], [0, 'بلا كود', FREE], 'tapping it links nothing: the text typed is a customer not in the CRM, said so');
     await name.fill('');
-    // By code: the ERP code (any case), the one it had before, and as a help the Yourrest code, its number alone, Arabic-Indic digits.
-    for (const [typed, what] of [['k-77', 'the start of the ERP code'], ['OLD-5', 'the ERP code it had before'], [yr, 'the Yourrest code'], [String(number), 'the number alone'], [indic(number), 'Arabic-Indic digits'], ['YR-C-' + indic(number), 'YR-C- and Arabic-Indic digits']]) {
+    // By code: the ERP code (any case), and as a help the Yourrest code, its number alone, Arabic-Indic digits. The code it had before
+    // suggests nothing (2026-11-12: current codes only).
+    await code.fill('OLD-55');
+    check(await options.filter({hasText: 'مؤسسة إبراهيم للبلوك'}).count(), 0, 'the ERP code it had before: not suggested');
+    for (const [typed, what] of [['k-77', 'the start of the ERP code'], [yr, 'the Yourrest code'], [String(number), 'the number alone'], [indic(number), 'Arabic-Indic digits'], ['YR-C-' + indic(number), 'YR-C- and Arabic-Indic digits']]) {
       await code.fill(typed);
       await options.first().waitFor();
       check((await options.first().locator('strong').innerText()), 'مؤسسة إبراهيم للبلوك', 'by ' + what + ' (' + typed + '): first suggested');
@@ -1237,8 +1240,10 @@ try {
     await code.fill('K-7731-9');
     check([await linkedLine.count(), await freeNote.innerText(), await area.inputValue(), await name.inputValue()], [0, FREE, 'مخزن مؤقت', 'مؤسسة إبراهيم'], 'the ERP code edited to another: unlinked, «عميل غير موجود في الـCRM…», what was typed kept');
     await code.fill('old-55');
+    check([await linkedLine.count(), await freeNote.innerText()], [0, FREE], 'the ERP code it had before names nobody: still a customer not in the CRM');
+    await code.fill('k-7731');
     await linkedLine.waitFor();
-    check([(await linkedLine.innerText()).includes('مؤسسة إبراهيم للبلوك'), await area.inputValue()], [true, 'مخزن مؤقت'], 'an ERP code one customer has (the one it had before): linked again, the address typed kept');
+    check([(await linkedLine.innerText()).includes('مؤسسة إبراهيم للبلوك'), await area.inputValue()], [true, 'مخزن مؤقت'], 'its current ERP code (any case): linked again, the address typed kept');
     // A customer not in the CRM: the name and ERP code required, the address too, each said beside its field; nothing sent.
     await name.fill('مصنع النور الجديد'); await code.fill(''); await area.fill('');
     await fill(form, null, 'نقدي');
