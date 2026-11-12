@@ -1397,7 +1397,7 @@ try {
 
 // ---- 2026-11-09 (the owner: «لو فيه عميل مش موجود فى النظام طلب القالب ميقفش»، «المندوب يكتب الكود والكود المطلوب كود erp»، «يتبعت بكود
 // ERP بس»): the customer is typed, name and ERP code. One of the CRM's customers, chosen (customerId) or named by an ERP code exactly one
-// of the reader's customers has (its former codes too), is linked as before, its body byte for byte the same (the ERP code kept in the
+// of the reader's customers has as its current code (a code it only had before names nobody since 2026-11-12), is linked as before, its body byte for byte the same (the ERP code kept in the
 // data only). Any other is a customer not in the CRM: stored unlinked (customer_id '', crmNumber null), its name, ERP code and address
 // required, each refused by its field; sent with crmNumber null and the ERP code only once production's application is known to take it
 // (learned from any answer whose customer carries erpCode): today's application would drop the ERP code silently. Until then it waits,
@@ -1443,12 +1443,12 @@ try {
     check([res.status, body.request.customerId, body.request.customerAddress], [200, 'f1', 'عنوان f1'], 'a page loaded before (customerId alone, no address): as before');
     check((await ask('rep', {customerId: 'w1'})).status, 404, 'a customer the reader may not ask for: 404 as before');
 
-    // (b) linked by its ERP code alone (Arabic-Indic digits, any case, a former code), the server deciding
-    for (const [erpCode, id, crmNumber, kept] of [[' erp-١٤٦ ', 'f1', f1, 'erp-146'], ['OLD-9', 'f4', f4, 'OLD-9']]) {
+    // (b) linked by its ERP code alone (Arabic-Indic digits, any case), the server deciding
+    for (const [erpCode, id, crmNumber, kept] of [[' erp-١٤٦ ', 'f1', f1, 'erp-146'], ['new-4', 'f4', f4, 'new-4']]) {
       res = await ask('rep', {customer: {name: 'اسم مكتوب', erpCode}}); body = await res.json();
       check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName, (await dataOf(body.request.id)).customer.erpCode, (await stored(body.request.id)).customer_id], [200, id, crmNumber, 'مصنع ' + id, kept, id], 'ERP code ' + erpCode.trim() + ': linked to the one customer that has it, by the server');
     }
-    for (const [erpCode, why] of [['DUP-1', 'two customers share it'], ['ERP-W1', 'its customer is outside the reader\'s customers']]) {
+    for (const [erpCode, why] of [['DUP-1', 'two customers share it'], ['ERP-W1', 'its customer is outside the reader\'s customers'], ['OLD-9', 'only a code f4 had before: it names nobody (2026-11-12)']]) {
       res = await ask('rep', {customer: {name: 'اسم مكتوب', erpCode}}); body = await res.json();
       check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName], [200, '', null, 'اسم مكتوب'], erpCode + ': not linked (' + why + ')');
     }

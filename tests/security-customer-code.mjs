@@ -1,4 +1,4 @@
-// ERP source references can be shared; immutable CRM numbers identify factories.
+// An ERP code belongs to one customer (since 2026-11-12, refused again at the commit); immutable CRM numbers identify factories.
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
@@ -61,24 +61,28 @@ const number=id=>sql.prepare('SELECT number FROM crm_customer_numbers WHERE cust
 const first=(await post(create('FIRST'))).id,second=(await post(create('SECOND'))).id;
 const firstNumber=number(first),secondNumber=number(second);
 check(Number.isInteger(firstNumber),true);check(Number.isInteger(secondNumber),true);check(firstNumber!==secondNumber,true);
-// Concurrent source-code edits are permitted. The two factory identities and
-// their immutable CRM numbers stay distinct even when the ERP code is shared.
+// A customer's ERP code is its own (2026-11-12): two concurrent edits giving two customers one code cannot both commit (the commit's
+// re-check refuses the second), and neither can two concurrent creates. The two factory identities and their immutable CRM numbers
+// stay distinct.
 beforeBatch=async()=>{await post(edit(second,{code:'CONCURRENT-ERP'}));};
-await post(edit(first,{code:'CONCURRENT-ERP'}));
+await post(edit(first,{code:'CONCURRENT-ERP'}),409);
 check(number(first),firstNumber);check(number(second),secondNumber);
-check(data(first).code,'CONCURRENT-ERP');check(data(second).code,'CONCURRENT-ERP');
-const pendingCreate=create('ＣＯＮＣＵＲＲＥＮＴ-ＥＲＰ');
-beforeBatch=async()=>{await post(create('concurrent-erp'));};
-const third=(await post(pendingCreate)).id;
-check(new Set(sql.prepare('SELECT number FROM crm_customer_numbers').all().map(row=>row.number)).size,4);
+check(data(first).code,'FIRST');check(data(second).code,'CONCURRENT-ERP');
+check((await post(create('ｃｏｎｃｕｒｒｅｎｔ-erp'),400)).error.includes('ｃｏｎｃｕｒｒｅｎｔ-erp'),true,'a code another customer carries is refused, in any spelling, naming it');
+const pendingCreate=create('RACE-CREATE');
+beforeBatch=async()=>{await post(create('race-create'));};
+await post(pendingCreate,409);
+const third=sql.prepare("SELECT id FROM crm_records WHERE kind='customer' AND json_extract(data,'$.code')='race-create'").get().id;
+check(new Set(sql.prepare('SELECT number FROM crm_customer_numbers').all().map(row=>row.number)).size,3);
 check(number(third)>0,true);
+check(sql.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='customer' AND upper(json_extract(data,'$.code'))='RACE-CREATE'").get().n,1,'one customer carries the code');
 const directory=await crm.GET(),result=await directory.json();check(directory.status,200);
-check(new Set(result.records.filter(row=>row.kind==='customer').map(row=>row.data.internalCode)).size,4,'Every factory has a distinct display code');
+check(new Set(result.records.filter(row=>row.kind==='customer').map(row=>row.data.internalCode)).size,3,'Every factory has a distinct display code');
 const codeBefore=result.records.find(row=>row.id===first).data.internalCode;
 await post(edit(first,{internalCode:'YR-C-999999',_erpCodeAliases:['FORGED'],code:''}));
 check(number(first),firstNumber);check(data(first).internalCode,undefined,'Client cannot persist a forged CRM number');check(data(first)._erpCodeAliases,undefined,'Client cannot forge historic aliases');
 const reloaded=await (await crm.GET()).json();check(reloaded.records.find(row=>row.id===first).data.internalCode,codeBefore);
-check(sql.prepare('SELECT source_code FROM crm_customer_code_aliases WHERE customer_id=? ORDER BY source_code').all(first).map(row=>row.source_code),['CONCURRENT-ERP','FIRST'],'Old ERP references survive edits and clearing');
+check(sql.prepare('SELECT source_code FROM crm_customer_code_aliases WHERE customer_id=? ORDER BY source_code').all(first).map(row=>row.source_code),['FIRST'],'Old ERP references survive edits and clearing (as history)');
 await post(edit(second,{code:''}));check(number(second),secondNumber);
 check(sql.prepare('PRAGMA foreign_key_check').all(),[]);
-console.log(JSON.stringify({customerIdentityConcurrency:'passed',checks,policy:'ERP references may be shared; CRM numbers are immutable and unique'}));
+console.log(JSON.stringify({customerIdentityConcurrency:'passed',checks,policy:'an ERP code belongs to one customer (a concurrent duplicate is refused at the commit); CRM numbers are immutable and unique'}));

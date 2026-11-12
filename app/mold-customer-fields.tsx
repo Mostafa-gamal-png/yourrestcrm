@@ -28,7 +28,7 @@ export const moldCustomerErpCode=(row:Row)=>String(row.data.code??'').trim();
 
 type Entry={row:Row;name:string;yourrest:string;number:string;erp:string[];usable:boolean};
 const entriesOf=(customers:Row[]):Entry[]=>customers.map(row=>{const yourrest=String(row.data.internalCode||''),number=yourrestNumber(yourrest);return {row,name:nameKey(row.data.name),yourrest:codeKey(yourrest),number:number?String(number):'',erp:customerErpCodes(row).map(codeKey),usable:!!number};});
-/** The one customer the typed ERP code names (its own code or one it had before), when exactly one of the reader's customers has it and
+/** The one customer the typed ERP code names (its current code: one it only had before names nobody), when exactly one of the reader's customers has it and
  *  it has a Yourrest number: the request is then linked to it as if it were chosen (the server decides the same way, over every customer
  *  and the CRM's code mappings). null otherwise: a customer not in the CRM. */
 export function moldCustomerByErpCode(customers:Row[],code:string):Row|null{
@@ -37,8 +37,8 @@ export function moldCustomerByErpCode(customers:Row[],code:string):Row|null{
  const found=entriesOf(customers).filter(entry=>entry.erp.includes(key));
  return found.length===1&&found[0].usable?found[0].row:null;
 }
-/** The suggestions for what is typed in one field: by name in «اسم العميل»; by ERP code (the customer's own and those it had before,
- *  when the page has them) or, as a help, by Yourrest code (or its number alone) in «كود ERP». Exact first, then starting with it, then
+/** The suggestions for what is typed in one field: by name in «اسم العميل»; by ERP code (the customer's current one)
+ *  or, as a help, by Yourrest code (or its number alone) in «كود ERP». Exact first, then starting with it, then
  *  containing it; customers without a Yourrest number after the others (shown, but not chosen). */
 function suggest(index:Entry[],field:Field,typed:string){
  const ranked:{entry:Entry;rank:number}[]=[];

@@ -39,7 +39,9 @@ let payload=await read();const projected=payload.records.find(r=>r.id===saved.id
 // An identical transport retry returns the existing record and cannot duplicate the audit or customer.
 const beforeCount=count();check((await post(body)).alreadySaved,true);check(count(),beforeCount);check(sql.prepare("SELECT COUNT(*) n FROM crm_audit WHERE record_id=? AND action='إضافة'").get(saved.id).n,1);
 await post({...body,data:{...body.data,name:'changed retry'}},409);check(row(saved.id).data.name,body.data.name);
-const sharedSource=await post(create({code:'REP-001'}));check(count(),beforeCount+1);check(sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(sharedSource.id).number!==sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(saved.id).number,true,'Shared ERP references keep distinct CRM numbers');
+// A customer's ERP code is its own (2026-11-12): another customer with REP-001 is refused, naming the code; another code is saved.
+check((await post(create({code:' rep-001 '}),400)).error,'كود ERP «rep-001» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.');check(count(),beforeCount);
+const sharedSource=await post(create({code:'REP-002'}));check(count(),beforeCount+1);check(sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(sharedSource.id).number!==sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(saved.id).number,true,'Each customer keeps a distinct CRM number');
 await post(create({}, {createKey:undefined}),400);await post(create({}, {createKey:'invalid'}),400);
 for(const region of ['الغربية','','unknown','المنطقة غير محددة'])await post(create({region}),403);
 await post(create({}, {parentId:saved.id}),403);
@@ -74,9 +76,10 @@ for(const [column,value] of [['region_scope','western'],['active',0],['role','cu
  await post(attempted,409);check(count(),previous);check(raw('crm-rep-'+attempted.createKey),undefined);
  sql.prepare('UPDATE crm_members SET '+column+'=? WHERE id=?').run(snapshot[column],'rep');
 }
-// Another factory may share the ERP reference, but receives a distinct CRM number.
+// A customer's ERP code is its own (2026-11-12): another factory taking the same code between the read and the commit refuses the create
+// (the commit re-checks the code), and nothing is written.
 const duplicate=create({code:'CONCURRENT-CODE'}),previous=count();race=()=>sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('racing-customer','customer',NULL,'peer','الرئيسي',?,?,?,1,'race')").run(JSON.stringify({name:'race winner',code:'CONCURRENT-CODE',region:'الشرقية'}),now,now);
-const simultaneous=await post(duplicate);check(count(),previous+2);check(!!raw(simultaneous.id),true);check(sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(simultaneous.id).number!==sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get('racing-customer').number,true);
+await post(duplicate,409);check(count(),previous+1);check(raw('crm-rep-'+duplicate.createKey),undefined);check(Number.isInteger(sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get('racing-customer').number),true);
 // All-regions and explicitly unassigned reps retain their existing territory definitions.
 user('all-rep');const all=await post(create({region:'الغربية'}));check(row(all.id).data.region,'الغربية');check(row(all.id).assigned_to,'all-rep');
 user('unassigned-rep');const unassigned=await post(create({region:''}));check(row(unassigned.id).data.region,'');await post(create({region:'الشرقية'}),403);
@@ -173,4 +176,4 @@ for(const omitted of [false,true]){
 const chosen={...visit,createKey:crypto.randomUUID(),customerId:noNeedCustomer.id,customerVersion:raw(noNeedCustomer.id).version,data:{...visit.data,salesStage:'qualified',strength:'weak',requestedProducts:['خلاطات البلوك']}};
 chosen.data.salesStage='new';
 const chosenReceipt=await post(chosen,200,visits);check(row(chosenReceipt.id).data.salesStage,'new');check(row(chosenReceipt.id).data.strength,'weak');check(row(chosenReceipt.id).data.requestedProducts,['خلاطات البلوك']);
-console.log(JSON.stringify({repCustomerCreateQA:'passed',checks,features:'scoped customer creation, authenticated ownership, regional customer edits with protected ownership, immediate map and visit use, retry identity, race revocation, immutable CRM numbers with shared ERP source references, CS/admin regression, GPS/address persistence, optional SPL lookup, authorization and provider failures'}));
+console.log(JSON.stringify({repCustomerCreateQA:'passed',checks,features:'scoped customer creation, authenticated ownership, regional customer edits with protected ownership, immediate map and visit use, retry identity, race revocation, immutable CRM numbers, one customer per ERP code (refused again at the commit), CS/admin regression, GPS/address persistence, optional SPL lookup, authorization and provider failures'}));

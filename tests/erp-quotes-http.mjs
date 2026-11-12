@@ -13,7 +13,9 @@
 // quotations are excluded (never written, no mapping), and a customer code two customers carry: listed with exactly its customers to the
 // administrator (only the code to a sales manager), mapped through /api/customer-identities (403 to others, a customer that does not carry
 // it refused, the same request once, an old revision 409, an older preview 409), then imported under the chosen customer, unchanged again,
-// and the mapping changed later without moving the imported quote.
+// and the mapping changed later without moving the imported quote. Matching reads current codes only (2026-11-12): a customer whose code
+// was cleared is no candidate for its old code (no «مسجل لأكثر من عميل», even against a stored mapping to it), its old code's quotations
+// go to the customer that carries it now or to nobody, and the customer form refuses a code another customer carries.
 // Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -228,6 +230,39 @@ try {
   eq(p11.quotations.find(q => q.code === 'Qut-1004').reason, 'تغيّر عميل العرض في ERP؛ لن يُنقل العرض المحفوظ إلى عميل آخر تلقائيًا', 'the imported quote is not moved to the other customer');
   eq(p11.sharedCodes.codes.map(c => [c.mappedCustomerId, c.mappingVersion]), [['dupB', 2]], 'the new choice');
   eq(await count("SELECT COUNT(*) n FROM crm_audit WHERE action='ربط كود عميل ERP'"), 2, 'each change audited');
+
+  // 9. Current codes only (2026-11-12): a customer whose code an ERP customers import cleared keeps it as history only. Before, code 103
+  // was «مسجل لأكثر من عميل» (the real ERP customer's current code and the cleared customer's kept one); now it is the real customer's,
+  // even against a stored mapping to the cleared customer, and it is no longer listed among the shared codes.
+  await customer('real103', {name: 'مصنع العميل الحقيقي', code: '103'});
+  await customer('gone103', {name: 'مصنع ليس في ERP', code: '103'});
+  await app.db.prepare("INSERT INTO crm_customer_code_mappings(code_key,customer_id,version,updated_by,updated_at) VALUES('103','gone103',1,'owner',?)").bind(now).run();
+  const shared103 = (await preview('owner', [...report8, ...quotation({code: 'Qut-1008', customerCode: '103', empCode: '7001', empName: 'أحمد المندوب', lines: lines.q1})], {...choices, fileName: name8})).json();
+  eq(shared103.quotations.find(q => q.code === 'Qut-1008').customerName, 'مصنع ليس في ERP', 'two current holders and a mapping to one of them: the mapping decides');
+  await app.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code',''),version=version+1 WHERE id='gone103'").run();
+  eq((await app.db.prepare("SELECT source_code FROM crm_customer_code_aliases WHERE customer_id='gone103'").all()).results.map(r => r.source_code), ['103'], 'cleared: 103 is kept in its history');
+  const report12 = [...report8, ...quotation({code: 'Qut-1008', customerCode: '103', empCode: '7001', empName: 'أحمد المندوب', lines: lines.q1}), ...quotation({code: 'Qut-1009', customerCode: '104', empCode: '7001', empName: 'أحمد المندوب', lines: lines.q1})];
+  await customer('gone104', {name: 'مصنع آخر ليس في ERP', code: '104'});
+  await app.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code',''),version=version+1 WHERE id='gone104'").run();
+  const p12 = (await preview('owner', report12, {...choices, fileName: name8})).json();
+  const q1008 = p12.quotations.find(q => q.code === 'Qut-1008'), q1009 = p12.quotations.find(q => q.code === 'Qut-1009');
+  eq([q1008.status, q1008.customerName], ['new', 'مصنع العميل الحقيقي'], 'the cleared customer is no candidate: 103 is the current holder\'s, whatever the stale mapping says');
+  eq([q1009.status, q1009.reason], ['refused', 'العميل غير موجود في الـCRM بكود ERP هذا؛ أضفه أو حدّث كوده من «استيراد من ERP» في العملاء'], 'a code only a cleared customer had: nobody\'s');
+  eq(p12.sharedCodes.codes.map(c => c.codeKey), ['201'], '«أكواد مشتركة» lists the real current duplicates only (not 103)');
+  const identities12 = (await session.owner('/api/customer-identities')).json().identities;
+  eq(['103', '104'].map(code => { const row = identities12.find(i => i.codeKey === code); return row && [row.customerIds, row.status, row.mappedCustomerId]; }), [[['real103'], 'unique', 'gone103'], undefined], 'the reconciliation list: 103 has one holder, the stale mapping shown but not deciding; 104 is no customer\'s code');
+  const choose103 = await identity('owner', {codeKey: '103', customerId: 'gone103', version: 1, revision: p12.sharedCodes.revision, customerVersion: 2, requestId: crypto.randomUUID()});
+  eq([choose103.status, choose103.json().error], [400, 'اختر مصنعًا مرتبطًا بهذا الكود في المصدر؛ لا يمكن تخمين صاحب الفاتورة.'], 'the cleared customer cannot be chosen for the code');
+  const commit12 = await post('owner', {action: 'commit', fileName: name8, base64: base64(report12), ...choices, previewToken: p12.previewToken, requestId: crypto.randomUUID()});
+  eq([commit12.status, commit12.json().addedCount], [200, 1], 'imported');
+  eq((await record('Qut-1008')).parent_id, 'real103', 'under the customer that carries 103 now');
+  // The customer form cannot make a new duplicate: a code another customer carries is refused, naming it.
+  const duplicate = await session.owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع مكرر جديد', code: '103', region: 'الوسطى', location: '', assignedTo: 'rep', branch: 'الرئيسي'}}});
+  eq([duplicate.status, duplicate.json().error], [400, 'كود ERP «103» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.'], 'the form refuses a code another customer carries');
+  const reuse = await session.owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع يأخذ 104', code: '104', region: 'الوسطى', location: '', assignedTo: 'rep', branch: 'الرئيسي'}}});
+  eq(reuse.status, 200, 'a code only a cleared customer had is free');
+  const p13 = (await preview('owner', report12, {...choices, fileName: name8})).json();
+  eq([p13.quotations.find(q => q.code === 'Qut-1009').status, p13.quotations.find(q => q.code === 'Qut-1009').customerName], ['new', 'مصنع يأخذ 104'], 'and its quotations are the new holder\'s');
   console.log(`erp-quotes-http: ${checks} checks passed`);
 } catch (error) {
   console.error(app.log().slice(-3000));
