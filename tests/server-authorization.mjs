@@ -123,7 +123,7 @@ try {
   // 3. Data scope. Customers are created through the real API; visits are inserted as stored recorder evidence.
   const admin = app.as(sessions.owner), ids = {};
   for (const [key, name, region, rep] of [['e1', 'شرق-1', 'الشرقية', 'rep1'], ['e2', 'شرق-2', 'الشرقية', 'rep2'], ['w1', 'غرب-1', 'الغربية', 'repw']]) {
-    const created = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region, city: 'x', code: key, branch: 'الرئيسي', assignedTo: rep, phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
+    const created = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region, city: 'x', branch: 'الرئيسي', assignedTo: rep, phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
     check(created.status, 200, created.text);
     ids[key] = created.json().id;
   }
@@ -265,7 +265,7 @@ try {
   const repVersion2 = (await app.db.prepare("SELECT version FROM crm_member_permissions WHERE member_id='rep1'").first()).version;
   check((await permissions('owner', 'rep1', repVersion2, {hidden: ['mold-requests'], cells: {'customer:add': false}})).status, 200, 'the administrator takes «حذف» back');
   check((await app.as(sessions.rep1)('/api/trash')).status, 404, 'rep1 without «حذف» again: 404');
-  const extra = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'للحذف', region: 'الشرقية', city: 'x', code: 'del-1', branch: 'الرئيسي', assignedTo: 'rep2', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
+  const extra = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'للحذف', region: 'الشرقية', city: 'x', branch: 'الرئيسي', assignedTo: 'rep2', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
   check((await removeAs('owner', extra.json().id, 'customer')).status, 200, 'the administrator deletes by default');
 
   assert(!/at .*node_modules|stack/i.test(app.log().replace(/ExperimentalWarning[^\n]*/g, '')), 'Server log must not contain stack traces for rejected requests');checks++;

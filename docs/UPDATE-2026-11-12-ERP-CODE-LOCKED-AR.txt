@@ -65,7 +65,9 @@
   الكود نص للقراءة بالعربية والإنجليزية ولكل دور)، tests/dictation-coverage.mjs (30).
 - بعد البناء: tests/erp-customers-duplicates-http.mjs (جديد، 28: من «أكواد مشتركة» قبل الاستيراد إلى خلوها بعده، والاختيار، والربط
   المحفوظ، ومدير المبيعات والمناطق، ورفض الكتابة بعده)، tests/erp-customers-http.mjs (146)، tests/erp-customers-clear-http.mjs (53)،
-  tests/erp-quotes-http.mjs (108).
+  tests/erp-quotes-http.mjs (108)، tests/mold-customers-http.mjs (42)، tests/server-authorization.mjs (658)، tests/trash-http.mjs (61)،
+  tests/visit-files-http.mjs (41)، tests/sales-date-boundaries.mjs (36)، tests/targets-attainment-http.mjs (26)، tests/namecheap-http.mjs (381).
+- التشغيل الكامل لكل اختبارات البناء والمتصفح (scripts/gates.mjs --full) نجح، عدا 4 تُركت لأنها تحتاج ملفات ERP الخاصة بالمالك.
 - المتصفح (Chromium): tests/erp-customers-browser.mjs (115: القسم الجديد بالعربية والإنجليزية على الحاسوب والجوال 360، والتطبيق
   دون المربع، والكود نصًا في نموذج العميل)، tests/customer-edit-browser.mjs (73).
 - ملف المالك قُرئ محليًا بالمحلل نفسه للأعداد فقط: 194 صفًا، 194 كودًا مختلفًا، لا تكرار، 103 و104 مرة واحدة لكل منهما.
