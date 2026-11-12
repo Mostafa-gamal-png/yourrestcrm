@@ -126,5 +126,11 @@ try{
  const wrong=await post('sm',{...body(),base64:statement([['1','x','y','z']],['رقم الفاتورة','التاريخ','النوع','رقم الصنف'])});check([wrong.status,/ليس كشف حساب ERP المتوقع/.test(wrong.json().error)],[400,true],'a file of other columns is refused with its reason');
  const missing=await post('sm',{...body(),base64:statement([],HEADERS.slice(0,8))});check([missing.status,/ينقصه عمود مطلوب: الرصيد الحالي مدين، الرصيد الحالي دائن/.test(missing.json().error)],[400,true],'missing columns are named');
  check((await post('sm',{...body(),base64:'A'.repeat(3_100_000)})).status,413,'a body over the limit is refused before it is read');
+ // ---- «مبيعات مكتب (مستبعد)» for a name (2026-11-12; tests/erp-office-employees-http.mjs covers the saving): the name chosen earlier for
+ // rep1 marked office: its account is counted with «مبيعات مكتب» and leaves rep1's figures; a preview writes no mark.
+ const officeChoice=(await post('sm',body({mappings:[{name:'موظف مجهول',repId:'office:excluded'}]}))).json();
+ const unknown=officeChoice.names.find(n=>n.name==='موظف مجهول');
+ check([unknown.status,unknown.officeSource,officeChoice.summary.officeRows,officeChoice.summary.officeChanges,officeChoice.reps.find(r=>r.repId==='rep1').dueCents],['office','selected',2,1,180000],'marked office: counted with the office, out of rep1\'s due');
+ check(await app.db.prepare("SELECT owner_id FROM crm_settings WHERE id='erp-office-employees'").first(),null,'a preview saves no mark');
  console.log(JSON.stringify({ok:true,checks,syntheticFixtures:true,productionDataUsed:false}));
 }finally{await app?.stop();}

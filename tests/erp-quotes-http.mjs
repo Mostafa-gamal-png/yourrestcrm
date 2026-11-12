@@ -263,6 +263,15 @@ try {
   eq(reuse.status, 200, 'a code only a cleared customer had is free');
   const p13 = (await preview('owner', report12, {...choices, fileName: name8})).json();
   eq([p13.quotations.find(q => q.code === 'Qut-1009').status, p13.quotations.find(q => q.code === 'Qut-1009').customerName], ['new', 'مصنع يأخذ 104'], 'and its quotations are the new holder\'s');
+  // 10. «مبيعات مكتب (مستبعد)» for a person (2026-11-12; tests/erp-office-employees-http.mjs covers the saving): an unmapped employee asks
+  // for a representative; chosen as office, their quotations are excluded with the reason, before a customer or a mapping is needed.
+  const officeRows = quotation({code: 'Qut-1100', customerCode: '101', empCode: '7100', empName: 'موظف مبيعات المكتب', lines: lines.q1});
+  const unmarked = (await preview('owner', officeRows, {fileName: 'office.xls'})).json();
+  eq([unmarked.quotations[0].status, unmarked.quotations[0].reason], ['refused', 'اربط موظف ERP بمندوب'], 'an unmapped employee: refused until mapped');
+  const officeChoice = await preview('owner', officeRows, {fileName: 'office.xls', employeeMappings: [{employeeId: '7100', repId: 'office:excluded'}]});
+  eq([officeChoice.status, officeChoice.json().quotations[0].status, officeChoice.json().quotations[0].reason, officeChoice.json().summary.officeMarks, officeChoice.json().employees[0].repId],
+    [200, 'excluded', 'مبيعات مكتب (تحديد الموظف): مستبعدة ولا تُحتسب لأي مندوب', 1, 'office:excluded'], '«مبيعات مكتب (مستبعد)» chosen: excluded, the mark to be saved with the import');
+  eq(await app.db.prepare("SELECT owner_id FROM crm_settings WHERE id='erp-office-employees'").first(), null, 'a preview saves no mark');
   console.log(`erp-quotes-http: ${checks} checks passed`);
 } catch (error) {
   console.error(app.log().slice(-3000));
