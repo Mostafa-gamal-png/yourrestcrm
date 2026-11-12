@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { definiteSubmitRejection, submitJson, SubmitError } from '@/lib/client-submit';
 import { t, useLanguage } from '@/lib/i18n';
 import UploadStatus, {type UploadState} from './upload-status';
+import { monthLabel, periodMonths } from '@/lib/sales-coverage';
 import './erp-sales-import.css';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 
@@ -26,9 +27,14 @@ type Preview = {
     /** Only when the report has a «الوصف» column: sales invoices naming a quotation, and saved ones that take their references now. */
     quotationLinkedCount?: number; quotationRefsBackfillCount?: number };
   warnings: string[];
+  /** The days the file speaks for if it is complete (lib/sales-coverage.ts): its first and last invoice, how far they may widen, the
+   *  months it covers whole or in part, how many reps it speaks for, and why it cannot be complete (blocker). */
+  coverage?: Coverage | null;
 };
+type Coverage = { first: string; last: string; minFrom: string; maxTo: string; months: { full: string[]; partial: string[] }; repCount: number; allReps: boolean; blocker: string };
 type ImportBody = { fileName: string; base64: string; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; allowSkipped: boolean };
-type Receipt = { importedCount: number; duplicateCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; skippedCount?: number; months: string[]; quotationLinkedCount?: number; quotationRefsBackfillCount?: number };
+type Receipt = { importedCount: number; duplicateCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; skippedCount?: number; months: string[]; quotationLinkedCount?: number; quotationRefsBackfillCount?: number;
+  coverage?: { from: string; to: string; months: string[]; partialMonths: string[]; allReps: boolean; repIds: string[] } };
 type Props = { onClose: () => void; onImported: () => void | Promise<void> };
 const endpoint = '/api/sales/import';
 const maxBytes = 5 * 1024 * 1024;
@@ -55,6 +61,12 @@ const reportEnglish: Record<string, string> = {
   'راجع المستندات غير المربوطة أو خارج الصلاحية ووافق صراحة على تخطيها': 'Review unmapped documents or documents outside your access, then explicitly agree to skip them.',
   'اعرض الملف أولًا قبل تأكيد الاستيراد': 'Preview the file before confirming the import.',
   'تم حفظ الطلب ببيانات مختلفة؛ ارفع الملف للمعاينة من جديد': 'This request was saved with different data. Upload the file for a new preview.',
+  'لا يمكن تأكيد اكتمال الملف وفيه مستندات تحتاج ربطًا؛ أكمل الربط أولًا.': 'The file cannot be confirmed complete while documents still need mapping. Complete the mappings first.',
+  'لا يوجد مناديب ضمن صلاحيتك يشملهم تأكيد الاكتمال.': 'No reps within your access are covered by the completeness confirmation.',
+  'الملف بلا تواريخ فواتير؛ لا يمكن تأكيد اكتماله.': 'The file has no invoice dates, so it cannot be confirmed complete.',
+  'اكتب تاريخي بداية فترة الاكتمال ونهايتها بصيغة صحيحة.': 'Enter valid start and end dates for the completeness period.',
+  'فترة الاكتمال يجب أن تشمل كل تواريخ فواتير الملف.': 'The completeness period must include every invoice date in the file.',
+  'فترة الاكتمال لا تتجاوز أول يوم في الشهر الأول للملف، ولا آخر يوم في شهره الأخير، ولا تاريخ اليوم.': 'The completeness period cannot start before the first day of the file’s first month or end after the last day of its last month or today.',
 };
 
 function readFile(file: File): Promise<string> {
@@ -82,6 +94,10 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
   const [employeeMappings, setEmployeeMappings] = useState<Record<string, string>>({});
   const [categoryMappings, setCategoryMappings] = useState<Record<string, string>>({});
   const [allowSkipped, setAllowSkipped] = useState(false);
+  // «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» (lib/sales-coverage.ts): unticked by default, sent with the commit only.
+  const [completeSnapshot, setCompleteSnapshot] = useState(false);
+  const [coverageFrom, setCoverageFrom] = useState('');
+  const [coverageTo, setCoverageTo] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewBody, setPreviewBody] = useState<ImportBody | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -119,7 +135,12 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
 
   const immutable = !!busy || pending || !!receipt;
   const skippedCount = preview?.documents.filter(doc => ['unmapped', 'out_of_scope'].includes(doc.status)).length || 0;
-  const hasBlockers = !!preview?.documents.some(doc => doc.status === 'conflict') || (skippedCount > 0 && !previewBody?.allowSkipped);
+  const coverage = preview?.coverage || null;
+  const coverageValid = !completeSnapshot || !!coverage && !coverage.blocker && coverageFrom >= coverage.minFrom && coverageFrom <= coverage.first && coverageTo >= coverage.last && coverageTo <= coverage.maxTo;
+  const coveredMonths = coverage && coverageValid && completeSnapshot ? periodMonths(coverageFrom, coverageTo) : null;
+  const monthNames = (months: string[]) => months.map(month => monthLabel(month, language)).join(' · ');
+  const documentBlockers = !!preview?.documents.some(doc => doc.status === 'conflict') || (skippedCount > 0 && !previewBody?.allowSkipped);
+  const hasBlockers = documentBlockers || !coverageValid;
   const documents = useMemo(() => (preview?.documents || []).filter(doc => filter === 'all' || doc.status === filter), [preview, filter]);
   const pages = Math.max(1, Math.ceil(documents.length / 20)), currentPage = Math.min(page, pages);
   const visibleDocuments = documents.slice((currentPage - 1) * 20, currentPage * 20);
@@ -133,7 +154,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
 
   async function selectFile(selected?: File) {
     if (!selected || lock.current || pending || receipt) return;
-    setError(''); setUploadState(null); setPreview(null); setPreviewBody(null); setDirty(false); setAllowSkipped(false); setFile(null); setPage(1); setFilter('all');
+    setError(''); setUploadState(null); setPreview(null); setPreviewBody(null); setDirty(false); setAllowSkipped(false); setCompleteSnapshot(false); setFile(null); setPage(1); setFilter('all');
     if (!/\.xlsx$/i.test(selected.name)) { setError(say('اختر تقرير Excel بصيغة .xlsx.', 'Choose an Excel report in .xlsx format.')); return; }
     if (!selected.size || selected.size > maxBytes) { setError(say('حجم الملف يجب أن يكون أكبر من صفر ولا يزيد عن 5 ميجابايت.', 'The file must not be empty and must be no larger than 5 MB.')); return; }
     lock.current = true; setBusy('read'); setUploadState({phase:'reading'});
@@ -166,6 +187,9 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
       if(typeof result.previewToken!=='string'||!result.previewToken||!Array.isArray(result.documents)||!result.summary)throw new SubmitError(say('الخادم لم يؤكد تجهيز المعاينة. أعد المحاولة.','The server did not confirm the preview. Retry.'));
       if (!live.current) return;
       setUploadState(null); setPreview(result); setPreviewBody(body); setDirty(false); setFilter('all'); setPage(1);
+      if (!result.coverage || result.coverage.blocker) setCompleteSnapshot(false);
+      setCoverageFrom(value => result.coverage && value >= result.coverage.minFrom && value <= result.coverage.first ? value : result.coverage?.first || '');
+      setCoverageTo(value => result.coverage && value >= result.coverage.last && value <= result.coverage.maxTo ? value : result.coverage?.last || '');
       requestAnimationFrame(() => previewHeading.current?.focus());
     } catch (e) {
       if (live.current) { setUploadState({phase:'error'}); setPreviewBody(null); setDirty(true); setError(messageOf(e)); }
@@ -189,7 +213,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
   async function commit() {
     if (lock.current || saved.current || !preview || !previewBody || dirty || hasBlockers) return;
     lock.current = true; setBusy('commit'); setError(''); setUploadState({phase:'uploading',loaded:0,total:null,percent:null});
-    if (!attempt.current) attempt.current = JSON.stringify({ action: 'commit', ...previewBody, previewToken: preview.previewToken, requestId: crypto.randomUUID() });
+    if (!attempt.current) attempt.current = JSON.stringify({ action: 'commit', ...previewBody, previewToken: preview.previewToken, requestId: crypto.randomUUID(), ...(completeSnapshot ? { completeSnapshot: true, coverageFrom, coverageTo } : {}) });
     let acknowledged = false;
     try {
       const result = await submitJson<Receipt>(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: attempt.current }, { language, onUploadProgress:progress=>{if(live.current)setUploadState(progress);} });
@@ -296,7 +320,25 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
 
             {!!preview.warnings?.length && <div className="erp-import-warnings" role="note"><strong>{say('ملاحظات التقرير', 'Report notes')}</strong><ul>{preview.warnings.map((warning, index) => <li key={index}>{present(warning)}</li>)}</ul></div>}
             {skippedCount > 0 && !receipt && <label className="erp-import-skip"><input type="checkbox" checked={allowSkipped} disabled={immutable} onChange={event => { setAllowSkipped(event.target.checked); setDirty(true); setError(''); }}/><span><strong>{say('استيراد الفواتير الجاهزة فقط', 'Import ready invoices only')}</strong><small>{say(`أوافق على استيراد ${preview.summary.newCount} مستند جديد وتجاوز ${skippedCount} مستندًا غير مربوط أو خارج صلاحيتي. يمكن إعادة رفع المتجاوز لاحقًا بعد استكماله.`, `I agree to import ${preview.summary.newCount} new documents and skip ${skippedCount} unmapped documents or documents outside my access. Skipped documents can be uploaded again after they are resolved.`)}</small></span></label>}
-            {hasBlockers && !receipt && <p className="erp-import-notice" role="status">{say('أكمل الربط وراجع الفواتير المتغيرة أو البيانات خارج صلاحيتك. لن تُستبدل أي فاتورة سابقة تلقائيًا.', 'Complete mappings and review changed invoices or records outside your access. Existing invoices are never overwritten automatically.')}</p>}
+            {coverage && !receipt && <section className="erp-import-complete" aria-labelledby="erp-complete-heading">
+              <h3 id="erp-complete-heading">{say('اكتمال سجل المبيعات', 'Sales-history completeness')}</h3>
+              <label className="erp-import-skip"><input type="checkbox" checked={completeSnapshot} disabled={immutable || !!coverage.blocker} onChange={event => { setCompleteSnapshot(event.target.checked); setError(''); }}/><span><strong>{say('الملف يشمل كل مبيعات المناديب للفترة التي يغطيها', 'The file includes all reps’ sales for the period it covers')}</strong>
+                <small>{say('حدده فقط إذا كان التقرير كاملًا للفترة. عندها تُحسب «نمو مبيعات الأصناف» و«العملاء المستردون» و«الحفاظ على العملاء الحاليين» تلقائيًا للأشهر التي يغطيها الملف كاملة، ويُعدّ المندوب أو الصنف بلا مبيعات فيها صفرًا، ولا يلزم التأكيد اليدوي في «بيانات المؤشرات».', 'Tick only if the report is complete for the period. Product sales growth, recovered customers and customer retention are then calculated automatically for the months the file covers whole, a rep or product with no sales there counts as zero, and no manual confirmation is needed in the KPI evidence.')}</small></span></label>
+              {!!coverage.blocker && <p className="erp-import-notice" role="status">{present(coverage.blocker)}</p>}
+              {completeSnapshot && <div className="erp-import-period">
+                <div className="erp-import-period-fields">
+                  <label className="field"><span>{say('من', 'From')}</span><input type="date" value={coverageFrom} min={coverage.minFrom} max={coverage.first} disabled={immutable} onChange={event => { setCoverageFrom(event.target.value); setError(''); }}/></label>
+                  <label className="field"><span>{say('إلى', 'To')}</span><input type="date" value={coverageTo} min={coverage.last} max={coverage.maxTo} disabled={immutable} onChange={event => { setCoverageTo(event.target.value); setError(''); }}/></label>
+                </div>
+                <p className="erp-import-hint">{say('الفترة تبدأ بأول فاتورة في الملف وتنتهي بآخر فاتورة. وسّعها إلى أول الشهر أو آخره فقط إذا لم تكن في تلك الأيام مبيعات.', 'The period runs from the file’s first invoice to its last. Widen it to the start or end of the month only if there were no sales on those days.')} <bdi dir="ltr">{coverage.first} — {coverage.last}</bdi></p>
+                {coveredMonths ? <>
+                  <p className="erp-import-hint"><strong>{say('الأشهر المكتملة بهذا الملف', 'Months this file completes')}:</strong> {monthNames(coveredMonths.full) || say('لا يوجد شهر كامل', 'No whole month')}</p>
+                  {!!coveredMonths.partial.length && <p className="erp-import-hint">{say('أشهر جزئية لا تكتمل إلا برفع كامل آخر يغطي بقية أيامها (الشهر الجاري يُحسب حتى آخر يوم مرفوع)', 'Partial months, complete only once another complete import covers their other days (the current month counts up to the last uploaded day)')}: {monthNames(coveredMonths.partial)}</p>}
+                  <p className="erp-import-hint">{coverage.allReps ? say('يشمل التأكيد كل المناديب.', 'The confirmation covers every rep.') : say(`يشمل التأكيد ${coverage.repCount} من المناديب ضمن صلاحيتك.`, `The confirmation covers ${coverage.repCount} reps within your access.`)}</p>
+                </> : <p className="erp-import-notice" role="status">{say('اختر فترة تشمل كل تواريخ الملف، لا تبدأ قبل أول يوم في شهره الأول ولا تنتهي بعد آخر يوم في شهره الأخير أو بعد اليوم.', 'Choose a period that includes every date in the file, starting no earlier than the first day of its first month and ending no later than the last day of its last month or today.')}</p>}
+              </div>}
+            </section>}
+            {documentBlockers && !receipt && <p className="erp-import-notice" role="status">{say('أكمل الربط وراجع الفواتير المتغيرة أو البيانات خارج صلاحيتك. لن تُستبدل أي فاتورة سابقة تلقائيًا.', 'Complete mappings and review changed invoices or records outside your access. Existing invoices are never overwritten automatically.')}</p>}
 
             <section className="erp-import-documents" aria-labelledby="erp-documents-heading">
               <div className="erp-import-section-heading"><h3 id="erp-documents-heading">{say('الفواتير والمردودات', 'Invoices and returns')}</h3>
@@ -319,7 +361,8 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
         {pending && <p className="erp-import-notice" role="status">{say('لم يتأكد الحفظ بسبب الاتصال. البيانات مثبتة؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب بدون تكرار.', 'The connection did not confirm the import. Your data is locked; choose “Confirm save” to retry the same request without duplicates.')}</p>}
         {receipt && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تأكيد الاستيراد', 'Import confirmed')}</strong><p>{say('أُضيفت', 'Imported')}: {receipt.importedCount} · {say('مسجلة سابقًا', 'Duplicates')}: {receipt.duplicateCount} · {say('مستبعدة', 'Excluded')}: {receipt.excludedCount}{!!receipt.skippedCount && <> · {say('متجاوزة للمراجعة', 'Skipped for review')}: {receipt.skippedCount}</>}{receipt.quotationLinkedCount !== undefined && <> · {say('مرتبطة بعروض أسعار', 'Linked to quotations')}: {receipt.quotationLinkedCount}</>}{!!receipt.quotationRefsBackfillCount && <> · {say('أُضيفت إليها أرقام العروض', 'Quotation numbers added')}: {receipt.quotationRefsBackfillCount}</>}</p>
           {!!receipt.unassignedCount && <p>{say('تُجاوزت بدون مندوب ولم تُستورد', 'Skipped without a rep; not imported')}: {receipt.unassignedCount} · {say('صافيها قبل الضريبة', 'Their net value before tax')}: <bdi>{money(receipt.unassignedTotalCents || 0)} {say('ر.س', 'SAR')}</bdi>. {say('لم تُحتسب لأي مندوب.', 'Not counted for any rep.')}</p>}
-          <small>{say('الأشهر', 'Months')}: <bdi>{receipt.months.join(' · ') || '—'}</bdi></small></div></div>}
+          <small>{say('الأشهر', 'Months')}: <bdi>{receipt.months.join(' · ') || '—'}</bdi></small>
+          {receipt.coverage && <p className="erp-import-coverage-receipt">{say('سُجّل اكتمال سجل المبيعات للفترة', 'Sales-history completeness recorded for')} <bdi dir="ltr">{receipt.coverage.from} — {receipt.coverage.to}</bdi>{receipt.coverage.months.length ? <> · {say('الأشهر المكتملة', 'Complete months')}: {monthNames(receipt.coverage.months)}</> : null}</p>}</div></div>}
         <div className="erp-import-actions"><button type="button" className="btn subtle" disabled={!!busy || pending} onClick={close}>{say(receipt ? 'تم' : 'إغلاق', receipt ? 'Done' : 'Close')}</button>
           {receipt ? refreshFailed && <button type="button" className="btn primary" disabled={!!busy} onClick={refreshAfterImport}>{busy === 'refresh' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('تحديث العرض فقط', 'Refresh view only')}</button> :
             dirty && !pending ? <button type="button" className="btn primary" disabled={!file || immutable} onClick={buildPreview}>{busy === 'preview' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('تحديث المعاينة', 'Refresh preview')}</button> :

@@ -104,3 +104,16 @@
  .erp-import-actions .btn.primary{flex:1;min-width:0;font-size:14px}
  .erp-import-actions .btn{min-height:46px}
 }
+/* «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» (lib/sales-coverage.ts). */
+.erp-import-complete{margin-top:22px;min-width:0}
+.erp-import-complete>h3{font-size:16px;font-weight:600}
+.erp-import-period{margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:9px;min-width:0}
+.erp-import-period-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.erp-import-period-fields .field{margin:0;min-width:0}
+.erp-import-period .erp-import-hint{overflow-wrap:anywhere}
+.erp-import-period .erp-import-hint strong{color:var(--foreground);font-weight:600}
+.erp-import-coverage-receipt{font-size:12px;line-height:1.8;margin-top:4px;overflow-wrap:anywhere}
+@media(max-width:640px){
+ .erp-import-period-fields{grid-template-columns:minmax(0,1fr)}
+ .erp-import-period-fields input{font-size:16px;min-height:46px}
+}

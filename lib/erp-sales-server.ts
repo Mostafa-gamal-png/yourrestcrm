@@ -8,6 +8,7 @@ import {today,type Member} from './crm';
 import {parseErpWorkbook,ErpWorkbookError,type ErpRow} from './erp-sales';
 import {omit} from './omit';
 import {quotationRefs,storedQuotationRefs,MAX_QUOTATION_REFS} from './quotation-refs';
+import {coveragePeriod,filePeriod,periodMonths,salesCoverageEntrySchema,type SalesCoverageEntry} from './sales-coverage';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const namespace='yourrest-industries';
@@ -18,7 +19,10 @@ const office=(value:string)=>['مبيعات مكتب','مبيعات المكتب
 const maxFileBytes=5*1024*1024;
 const mappingSchema=z.object({employeeId:z.string().trim().min(1).max(100),repId:z.string().trim().min(1).max(200)});
 const categorySchema=z.object({category:z.string().trim().min(1).max(300),product:z.string().refine(s=>s==='exclude'||salesProducts.includes(s),'اختر صنفًا صحيحًا')});
-const inputSchema=z.object({action:z.enum(['preview','commit']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),employeeMappings:z.array(mappingSchema).max(5000).default([]),categoryMappings:z.array(categorySchema).max(500).default([]),allowSkipped:z.boolean().default(false),previewToken:z.string().max(1024).optional(),requestId:z.string().uuid().optional()});
+const inputSchema=z.object({action:z.enum(['preview','commit']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),employeeMappings:z.array(mappingSchema).max(5000).default([]),categoryMappings:z.array(categorySchema).max(500).default([]),allowSkipped:z.boolean().default(false),previewToken:z.string().max(1024).optional(),requestId:z.string().uuid().optional(),
+ // «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» (lib/sales-coverage.ts): ticked at the commit, with the period it speaks for
+ // (by default the file's first and last invoice date). Not part of the preview: ticking it never needs a new preview.
+ completeSnapshot:z.boolean().default(false),coverageFrom:z.string().max(10).optional(),coverageTo:z.string().max(10).optional()});
 type Input=z.infer<typeof inputSchema>;
 export type ErpDocumentPreview={key:string;reference:string;date:string;documentType:'sale'|'return';customerName:string;employeeId:string;employeeName:string;repId:string;repName:string;lineCount:number;totalCents:number;status:'new'|'duplicate'|'conflict'|'excluded'|'unassigned'|'unmapped'|'out_of_scope';reason:string};
 export type ErpSaleRow={id:string;rep_id:string;branch:string;date:string;reference:string;document_type:'sale'|'return';customer_code:string;customer_name:string;data:string;total_cents:number;created_by:string;created_at:string;region_scope:string};
@@ -42,7 +46,9 @@ function snapshot(m:Member){return [m.id,m.role,m.branch,m.supervisorId||'',regi
 async function state(c:Context){const revision=await c.db.prepare('SELECT revision FROM crm_erp_import_state WHERE id=?').bind(namespace).first<{revision:number}>();if(!revision)throw new CRMError('تحديث قاعدة بيانات استيراد المبيعات غير مكتمل.',503);const employees=(await c.db.prepare('SELECT employee_id AS employeeId,rep_id AS repId FROM crm_erp_employee_mappings ORDER BY employee_id').all<{employeeId:string;repId:string}>()).results;const categories=(await c.db.prepare('SELECT category,product FROM crm_erp_category_mappings ORDER BY category').all<{category:string;product:string}>()).results;return {revision:revision.revision,employees,categories};}
 export async function erpSalesConfiguration(c:Context){requireSalesWorkspace(c.me);const members=eligible(c),ids=new Set(members.map(m=>m.id)),saved=await state(c);return {members:members.map(m=>({id:m.id,name:m.name,branch:m.branch})),employeeMappings:saved.employees.filter(m=>ids.has(m.repId)),categoryMappings:saved.categories,products:salesProducts,canEditCategoryMappings:c.me.role!=='supervisor'};}
 function parseInput(body:unknown){const input=inputSchema.parse(body);if(!/^[A-Za-z0-9+/]*={0,2}$/.test(input.base64)||input.base64.length%4!==0)throw new CRMError('ترميز ملف المبيعات غير صحيح');const raw=atob(input.base64);if(raw.length>maxFileBytes)throw new CRMError('أقصى حجم لملف المبيعات 5 ميجابايت',413);const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));return {input,bytes};}
-function canonicalInput(input:Input){return JSON.stringify({fileName:input.fileName,base64:input.base64,allowSkipped:input.allowSkipped,employeeMappings:sorted(input.employeeMappings,m=>m.employeeId),categoryMappings:sorted(input.categoryMappings,m=>m.category)});}
+/** The request a preview is signed for; with coverage, the commit's own (a retry with another completeness choice is another request).
+ *  Without the tick both are exactly what they were before it existed. */
+function canonicalInput(input:Input,coverage=false){return JSON.stringify({fileName:input.fileName,base64:input.base64,allowSkipped:input.allowSkipped,employeeMappings:sorted(input.employeeMappings,m=>m.employeeId),categoryMappings:sorted(input.categoryMappings,m=>m.category),...(coverage&&input.completeSnapshot?{completeSnapshot:true,coverageFrom:input.coverageFrom||'',coverageTo:input.coverageTo||''}:{})});}
 function uniqueMappings<T>(rows:T[],key:(row:T)=>string){const values=new Map<string,T>();for(const row of rows){const id=key(row);if(values.has(id))throw new CRMError('تكرار في اختيارات الربط؛ حدّث المعاينة');values.set(id,row);}return values;}
 async function prepare(c:Context,input:Input,bytes:Uint8Array){
  let parsed:Awaited<ReturnType<typeof parseErpWorkbook>>;try{parsed=await parseErpWorkbook(bytes);}catch(error){if(error instanceof ErpWorkbookError)throw new CRMError(error.message);throw error;}if(!parsed.rows.length||parsed.rows.length>5000)throw new CRMError('ارفع ملفًا يحتوي من 1 إلى 5000 بند');
@@ -110,32 +116,51 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const relevantEmployees=new Set(relevantRows.map(r=>JSON.stringify([normalize(r.employeeId),normalize(r.employeeName)])));
  const employees=parsed.employees.filter(e=>relevantEmployees.has(JSON.stringify([normalize(e.employeeId),normalize(e.employeeName)]))).map(employee=>{const id=normalize(employee.employeeId),repId=employeeMap.get(id)||'',visibleRep=allowed.has(repId);return {...employee,repId:visibleRep?repId:'',mappingSource:visibleRep?(mappingSources.get(id)||'unmapped'):'unmapped'};});
  const warnings=parsed.warnings.filter(warning=>warning!=='توجد بنود بدون رقم أو اسم موظف؛ يلزم مراجعة الربط قبل الاعتماد'||documents.some(d=>d.preview.status==='conflict'&&d.rows.some(missingEmployee)));
- return {documents,summary:{...summary,...quotationSummary},quotationSummary,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,categories:[...categoryIds].sort(),warnings:[...warnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
+ // The period a complete file speaks for, and who: the representatives the uploader may import for, less those of a document skipped as
+ // outside the uploader's access; allReps when that was every active representative and nothing was skipped (lib/sales-coverage.ts).
+ const period=filePeriod(parsed.rows.map(row=>row.date),today());
+ const skippedReps=new Set(documents.filter(d=>d.preview.status==='out_of_scope'&&d.preview.repId).map(d=>d.preview.repId));
+ const coveredReps=members.filter(m=>!skippedReps.has(m.id)).map(m=>m.id).sort();
+ const activeReps=c.members.filter(m=>m.role==='rep'&&m.active).map(m=>m.id);
+ const allReps=summary.outOfScopeCount===0&&activeReps.every(id=>allowed.has(id));
+ const coverage=period?{...period,months:periodMonths(period.first,period.last),repCount:coveredReps.length,allReps,
+  blocker:summary.unmappedCount?'لا يمكن تأكيد اكتمال الملف وفيه مستندات تحتاج ربطًا؛ أكمل الربط أولًا.':!coveredReps.length?'لا يوجد مناديب ضمن صلاحيتك يشملهم تأكيد الاكتمال.':''}:null;
+ return {documents,summary:{...summary,...quotationSummary},quotationSummary,coverage,coveredReps,activeReps,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,categories:[...categoryIds].sort(),warnings:[...warnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
 }
 
 /** Preview is stateless and authenticated; no uploaded bytes or sales are saved here. */
 export async function importErpSales(c:Context,body:unknown){
  requireSalesWorkspace(c.me);
- const {input,bytes}=parseInput(body),fingerprint=await hash(c.me.id+':'+canonicalInput(input));
+ const {input,bytes}=parseInput(body),previewFingerprint=await hash(c.me.id+':'+canonicalInput(input)),fingerprint=input.completeSnapshot?await hash(c.me.id+':'+canonicalInput(input,true)):previewFingerprint;
  const replay=async()=>{if(input.action!=='commit'||!input.requestId)return null;const row=await c.db.prepare('SELECT actor_id,fingerprint,result FROM crm_erp_imports WHERE id=?').bind('erp-import-'+input.requestId).first<{actor_id:string;fingerprint:string;result:string}>();if(!row)return null;if(row.actor_id!==c.me.id)throw new CRMError('طلب الاستيراد غير متاح',404);if(row.fingerprint!==fingerprint)throw new CRMError('تم حفظ الطلب ببيانات مختلفة؛ ارفع الملف للمعاينة من جديد',409);return {...JSON.parse(row.result),alreadySaved:true};};
  const prior=await replay();if(prior)return prior;
  const prepared=await prepare(c,input,bytes);
  if(input.action==='preview'){
-  const payload=['1',String(Date.now()+15*60_000),fingerprint,prepared.snapshotHash].join('.');
-  return {previewToken:payload+'.'+await signature(payload),documents:prepared.documents.map(d=>d.preview),employees:prepared.employees,categories:prepared.categories,summary:prepared.summary,warnings:prepared.warnings};
+  const payload=['1',String(Date.now()+15*60_000),previewFingerprint,prepared.snapshotHash].join('.');
+  return {previewToken:payload+'.'+await signature(payload),documents:prepared.documents.map(d=>d.preview),employees:prepared.employees,categories:prepared.categories,summary:prepared.summary,warnings:prepared.warnings,coverage:prepared.coverage};
  }
  if(!input.requestId||!input.previewToken)throw new CRMError('اعرض الملف أولًا قبل تأكيد الاستيراد');
  const pieces=input.previewToken.split('.');
  if(pieces.length!==5||pieces[0]!=='1'||!/^\d{13}$/.test(pieces[1])||!pieces.slice(2).every(v=>/^[a-f0-9]{64}$/.test(v)))throw new CRMError('معاينة الملف غير صحيحة؛ اعرضه مرة أخرى',409);
  const payload=pieces.slice(0,4).join('.');
- if(!safeEqual(await signature(payload),pieces[4])||pieces[2]!==fingerprint)throw new CRMError('تغير الملف أو اختيارات الربط؛ اعرضه مرة أخرى',409);
+ if(!safeEqual(await signature(payload),pieces[4])||pieces[2]!==previewFingerprint)throw new CRMError('تغير الملف أو اختيارات الربط؛ اعرضه مرة أخرى',409);
  if(Number(pieces[1])<Date.now()||Number(pieces[1])>Date.now()+16*60_000||pieces[3]!==prepared.snapshotHash)throw new CRMError('انتهت المعاينة أو تغيّرت الصلاحيات أو الربط؛ اعرض الملف مرة أخرى',409);
  if(prepared.summary.conflictCount)throw new CRMError('يوجد تعارض في مستندات التقرير؛ صححه قبل الاستيراد',409);
  if(prepared.summary.skippedCount&&!input.allowSkipped)throw new CRMError('راجع المستندات غير المربوطة أو خارج الصلاحية ووافق صراحة على تخطيها',409);
  const fresh=prepared.documents.filter(d=>d.preview.status==='new');
  const now=new Date().toISOString(),id='erp-import-'+input.requestId;
+ // «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها»: one coverage entry in this import's own row, audited with it (lib/sales-coverage.ts).
+ let coverage:SalesCoverageEntry|undefined;
+ if(input.completeSnapshot){
+  if(!prepared.coverage)throw new CRMError('الملف بلا تواريخ فواتير؛ لا يمكن تأكيد اكتماله.');
+  if(prepared.coverage.blocker)throw new CRMError(prepared.coverage.blocker,409);
+  const checked=coveragePeriod(prepared.coverage,input.coverageFrom,input.coverageTo);
+  if('error' in checked)throw new CRMError(checked.error);
+  const months=periodMonths(checked.from,checked.to);
+  coverage={complete:true,from:checked.from,to:checked.to,months:months.full,partialMonths:months.partial,repIds:prepared.coveredReps,allReps:prepared.coverage.allReps,importerId:c.me.id,importer:c.me.name,at:now,importId:id};
+ }
  const backfills=prepared.documents.filter(d=>d.backfill);
- const result={ok:true,...prepared.quotationSummary,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months};
+ const result={ok:true,...prepared.quotationSummary,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months,...(coverage?{coverage}:{})};
  const guard=accessGuard(c),usedReps=new Map<string,Member>();
  const mappingDocuments=prepared.documents.filter(d=>['new','duplicate','excluded'].includes(d.preview.status)&&d.rep&&!office(d.preview.employeeName));
  for(const document of mappingDocuments)if(document.rep)usedReps.set(document.rep.id,document.rep);
@@ -146,6 +171,8 @@ export async function importErpSales(c:Context,body:unknown){
  let gate=guard.sql+' AND EXISTS(SELECT 1 FROM crm_erp_import_state WHERE id=? AND revision=?)';
  const args:(string|number)[]=[...guard.args,namespace,prepared.saved.revision];
  for(const member of usedReps.values()){gate+=" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=? AND active=? AND auth_version=? AND name=?)";args.push(...snapshot(member));}
+ // A coverage that speaks for every representative holds only while the active representatives are those the preview read.
+ if(coverage?.allReps){gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep' AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role='rep' AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))";args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));}
  if(prepared.nameRosterSnapshot){
   // Recheck the complete name-matching roster at the same atomic claim as sales.
   // One JSON parameter avoids SQLite's bind limit; indexed IDs check old rows,
@@ -175,6 +202,12 @@ export async function importErpSales(c:Context,body:unknown){
  return result;
 }
 
+/** The coverage entries of the complete ERP sales imports (lib/sales-coverage.ts), in the order they were saved; a malformed one is left
+ *  out. Only ids of representatives and days: no sale, customer or amount. */
+export async function readSalesCoverage(c:Context):Promise<SalesCoverageEntry[]>{
+ const rows=(await c.db.prepare("SELECT json_extract(result,'$.coverage') AS coverage FROM crm_erp_imports WHERE id LIKE 'erp-import-%' AND json_extract(result,'$.coverage.complete')=1 ORDER BY created_at,id").all<{coverage:string}>()).results;
+ return rows.flatMap(row=>{try{const parsed=salesCoverageEntrySchema.safeParse(JSON.parse(row.coverage));return parsed.success?[parsed.data]:[];}catch{return [];}});
+}
 /** Financial projections always require the same region and author-team boundary as CRM sales. */
 export async function readErpSales(c:Context,month:string):Promise<Sale[]>{
  requireSalesWorkspace(c.me);const allowed=salesReadMemberIds(c.members,c.me,true);

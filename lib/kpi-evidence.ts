@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {type Member} from './crm';
+import {type SalesCoverageStatus} from './sales-coverage';
 
 const cents=z.number().int().min(0).max(1_000_000_000_000).nullable();
 const reference=z.string().trim().max(2000);
@@ -25,13 +26,18 @@ export type QuoteOption={id:string;reference:string;customerId:string;customerNa
 export type InvoiceOption={id:string;reference:string;customerId:string;customerName:string;date:string;repId:string;source:'crm'|'erp'};
 export type KpiQuoteOption=QuoteOption;
 export type KpiInvoiceOption=InvoiceOption;
-export type KpiEvidenceOptions={memberId:string;month:string;evidence:KpiEvidence|null;salesRevision:number;evidenceRevision:number;scopeKey:string;period:{from:string;through:string};canEdit:boolean;computed:boolean;sourceMemberIds:string[];quotes:QuoteOption[];invoices:InvoiceOption[]};
+/** coverage: what the complete ERP sales imports already give this scope this month (lib/sales-coverage.ts), so the editor says when the
+ *  manual confirmation of the sales history is no longer needed. */
+export type KpiEvidenceOptions={memberId:string;month:string;evidence:KpiEvidence|null;salesRevision:number;evidenceRevision:number;scopeKey:string;period:{from:string;through:string};canEdit:boolean;computed:boolean;sourceMemberIds:string[];quotes:QuoteOption[];invoices:InvoiceOption[];coverage?:SalesCoverageStatus};
 /** A reporting-scope change makes old completeness confirmations stale. */
 export function evidenceScopeKey(member:Member){return JSON.stringify([member.id,member.role,member.regionScope||'all',member.branch,member.supervisorId||'',member.authVersion??0,member.active]);}
 /** quotationsKnown: the month's quotations of the scope are known (lib/kpis-server.ts lists them from the CRM's quote records, so this
  *  holds whenever the scope has a sales team; it no longer waits for a confirmation in «بيانات المؤشرات»). quotations: each once, with
  *  whether it converted and, from the server, its number and the invoices that converted it (lib/kpis.ts KpiQuotation). */
-export type KpiEvidenceContext={historyComplete:boolean;collection:{dueCents:number;collectedCents:number}|null;purchases:Array<{customerKey:string;date:string;netCents:number;hasSale:boolean}>;quotationsKnown:boolean;quotations:Array<{quoteId:string;converted:boolean}&Partial<KpiQuotationDetail>>;recoveryTarget:number|null;invalidHistoryReason?:string};
+/** historyComplete: the manual confirmation of «بيانات المؤشرات» (current, of every representative of the scope, their customer codes
+ *  known): it completes growth, retention and recovered at once, as before. coverage: the same from the complete ERP sales imports, KPI by
+ *  KPI (lib/sales-coverage.ts); identitiesKnown=false keeps retention and recovered waiting even then (customer codes missing or shared). */
+export type KpiEvidenceContext={historyComplete:boolean;coverage?:SalesCoverageStatus;identitiesKnown?:boolean;collection:{dueCents:number;collectedCents:number}|null;purchases:Array<{customerKey:string;date:string;netCents:number;hasSale:boolean}>;quotationsKnown:boolean;quotations:Array<{quoteId:string;converted:boolean}&Partial<KpiQuotationDetail>>;recoveryTarget:number|null;invalidHistoryReason?:string};
 /** What the hub's «عروض الأسعار» shows of a quotation: its number, day, customer and representative, and the invoices that converted it
  *  (via: «description» an ERP invoice whose «الوصف» names it, «manual» a link in «بيانات المؤشرات»). */
 export type KpiQuotationDetail={number:string;date:string;repId:string;customerName:string;invoices:string[];via:Array<'description'|'manual'>};
