@@ -14,7 +14,7 @@ import {followupTitle,type Kind,type Member,type Row} from './crm';
 import {trashScope} from './access';
 import {PAGE_HIDDEN_TEXT,trashRestoreCellOff,trashScopeOf} from './permissions';
 import {memberCanAccessRegion,regionScope} from './regions';
-import {customerCodeKey,customerErpCodes} from './customer-identity';
+import {customerCodeKey,customerCodeCandidates,effectiveCodeMapping} from './customer-identity';
 import {TRASH_DELETE_ACTION,TRASH_NEW_NUMBER_NOTE,TRASH_PAGE_SIZE,TRASH_RESTORE_ACTION,TRASH_TEXT,TRASH_TYPES,trashCellOff,trashCodeSkipped,trashNewNumber,trashNumberTaken,trashParentFirst,trashRestoreId,trashType,yourrestCode,type TrashAnswer,type TrashItem,type TrashRestoreAnswer,type TrashType} from './trash';
 
 type Context=Awaited<ReturnType<typeof context>>;
@@ -221,11 +221,13 @@ export async function restoreFromTrash(c:Context,body:unknown):Promise<TrashRest
  if(record.kind==='customer'){
   number=snapshotNumber(snap);
   if(number){const taken=await c.db.prepare('SELECT customer_id FROM crm_customer_numbers WHERE number=?').bind(number).first();if(taken)throw new CRMError(trashNumberTaken(yourrestCode(number)),409);}
-  // An ERP code that now belongs to another customer (in its data, its retained aliases or an explicit mapping) stays with that customer:
-  // the restored one does not get it back, so neither customer's invoices become ambiguous. The result says which.
-  const holders=new Map<string,string>();
-  for(const other of c.all)if(other.kind==='customer'&&other.id!==record.id)for(const code of customerErpCodes(other))if(!holders.has(customerCodeKey(code)))holders.set(customerCodeKey(code),text(other.data.name));
-  for(const mapping of c.customerIdentityState.mappings)if(mapping.customerId!==record.id&&!holders.has(mapping.codeKey))holders.set(mapping.codeKey,text(c.all.find(row=>row.id===mapping.customerId)?.data.name));
+  // An ERP code that now belongs to another customer (its current code, or an explicit mapping to a customer that holds it now) stays
+  // with that customer: the restored one does not get it back, so no code is held by two customers. The result says which. A code another
+  // customer only had before (a kept alias, the code an import cleared) is nobody's: matching reads current codes only (2026-11-12), so
+  // the restored customer takes it back.
+  const holders=new Map<string,string>(),current=customerCodeCandidates(c.all.filter(row=>row.id!==record.id));
+  for(const [key,rows] of current)holders.set(key,text(rows[0].data.name));
+  for(const mapping of c.customerIdentityState.mappings){const mapped=effectiveCodeMapping(mapping,current.get(mapping.codeKey));if(mapped)holders.set(mapping.codeKey,text(c.all.find(row=>row.id===mapped.customerId)?.data.name));}
   const skipped=new Set<string>(),skip=(code:string)=>{const key=customerCodeKey(code);if(!key||!holders.has(key))return false;if(!skipped.has(key)){skipped.add(key);notes.push(trashCodeSkipped(code,holders.get(key)||TRASH_TEXT.linked));}return true;};
   if(text(data.code)&&skip(text(data.code)))data.code='';
   aliases=[...new Set(snapshotAliases(snap))].filter(code=>customerCodeKey(code)&&!skip(code));
@@ -240,7 +242,8 @@ export async function restoreFromTrash(c:Context,body:unknown):Promise<TrashRest
   // The insert trigger (drizzle/0014) gave it the next number; it takes back its own, which production's customer list knows it by.
   if(number)statements.push(c.db.prepare(`UPDATE crm_customer_numbers SET number=? WHERE customer_id=? AND ${gate}`).bind(number,record.id,...ga));
   for(const alias of aliases)statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_customer_code_aliases(customer_id,source_code) SELECT ?,? WHERE ${gate}`).bind(record.id,alias,...ga));
-  // Retained aliases decide which ERP invoices are this customer's, as the deletion of one does (drizzle/0014).
+  // The kept codes come back as history (crm_customer_code_aliases): they decide no ERP document since 2026-11-12. The import state's
+  // revision still moves, as the deletion of one does (drizzle/0014), so a preview made before the restore is made again.
   if(aliases.length)statements.push(c.db.prepare(`UPDATE crm_erp_import_state SET revision=revision+1 WHERE id='yourrest-industries' AND ${gate}`).bind(...ga));
   for(const key of mappings)statements.push(c.db.prepare(`INSERT INTO crm_customer_code_mappings(code_key,customer_id,version,updated_by,updated_at) SELECT ?,?,1,?,? WHERE ${gate} AND NOT EXISTS (SELECT 1 FROM crm_customer_code_mappings WHERE code_key=?)`).bind(key,record.id,c.me.id,now,...ga,key));
  }

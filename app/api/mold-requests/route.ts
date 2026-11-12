@@ -26,8 +26,8 @@ const askable=(c:Awaited<ReturnType<typeof reader>>,customerId:string)=>isServic
 /** The customer a create or an edit names (the owner, 2026-11-09: the customer typed, name and ERP code, with the CRM's customers as
  *  suggestions): customerId, one of the CRM's customers the reader may ask for (askable), as before, with the ERP code typed (customer.
  *  erpCode, up to 50 characters) or else the customer's own; or customer {name, erpCode}, a customer typed. A typed ERP code that names
- *  exactly one customer of the CRM (uniqueCustomerCodes over every customer, its former codes and the CRM's code mappings, as the CRM
- *  matches ERP codes) that the reader may ask for and that has a Yourrest number links the request to it, the server deciding whatever
+ *  exactly one customer of the CRM (uniqueCustomerCodes over every customer's current code and the CRM's code mappings, as the CRM
+ *  matches ERP codes: a code a customer only had before names nobody) that the reader may ask for and that has a Yourrest number links the request to it, the server deciding whatever
  *  the page thought; any other is a customer not in the CRM (crmNumber null), its name (1..200) and ERP code (1..50, moldErpCode)
  *  required, each refused by its field (customer.name, customer.erpCode). keep: the edit's own customer, kept even when the reader may no
  *  longer ask for it. Answers the customer row (null when not in the CRM) and the request's customer data without its address. */
