@@ -22,6 +22,10 @@
 // its checks, versions, audit and request id unchanged) and then previews again; to anyone else only the code and its count, never the
 // customers. The mapping is saved on its own, never with the import: it is global, and a saved one moves the import state's revision, so a
 // preview made before it cannot be committed (409).
+// «مبيعات مكتب (مستبعد)» for a person (lib/erp-office-employees.ts, 2026-11-12): an employee code marked so (from either import) has its
+// quotations excluded the same way (counted under «مستبعدة», never written); the employee is listed with the choice selected and, as a
+// saved representative mapping, changed from the sales import only. An unmapped employee may be marked here (or suggested by a name mark
+// of the collection statement): the mark is saved with the import, under the same claim, its row unchanged since the preview.
 // The preview is stateless and signed (15 minutes); the import recomputes it and refuses (409) when anything it showed has changed; a
 // request id makes a retried import return its first answer without writing twice.
 import {env} from 'cloudflare:workers';
@@ -34,6 +38,7 @@ import {uniqueCustomerCodes,customerCodeCandidates,customerCodeKey} from './cust
 import {isIdentityAdmin} from './customer-identity-server';
 import {isOfficeEmployee} from './erp-sales';
 import {readErpQuotesTable,parseErpQuotes,planErpQuotes,employeeKey,sha256,ErpQuotesError,ERP_QUOTES_MAX_BYTES,ERP_QUOTE_REASONS,type ErpQuotePlanEntry,type ErpQuotesFile} from './erp-quotes';
+import {ERP_OFFICE_CHOICE,ERP_OFFICE_SETTING,ERP_OFFICE_AUDIT_ACTION,officeById,officeNameOnly,applyOfficeChanges,readOfficeRow,officeUnchanged,writeOfficeList} from './erp-office-employees';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const namespace='yourrest-industries';
@@ -55,11 +60,12 @@ async function state(c:Context){
  const revision=await c.db.prepare('SELECT revision FROM crm_erp_import_state WHERE id=?').bind(namespace).first<{revision:number}>();
  if(!revision)throw new CRMError('تحديث قاعدة بيانات استيراد ERP غير مكتمل.',503);
  const employees=(await c.db.prepare('SELECT employee_id AS employeeId,rep_id AS repId FROM crm_erp_employee_mappings ORDER BY employee_id').all<{employeeId:string;repId:string}>()).results;
- return {revision:revision.revision,employees};
+ return {revision:revision.revision,employees,office:await readOfficeRow(c.db)};
 }
 export async function erpQuotesConfiguration(c:Context){
  requireErpQuotesImport(c.me);const members=eligible(c),ids=new Set(members.map(m=>m.id)),saved=await state(c);
- return {members:members.map(m=>({id:m.id,name:m.name,branch:m.branch})),employeeMappings:saved.employees.filter(m=>ids.has(m.repId))};
+ const office=[...officeById(saved.office.list).values()].map(e=>({employeeId:employeeKey(e.employeeId),repId:ERP_OFFICE_CHOICE}));
+ return {members:members.map(m=>({id:m.id,name:m.name,branch:m.branch})),employeeMappings:[...saved.employees.filter(m=>ids.has(m.repId)),...office]};
 }
 async function signature(value:string){
  if(!/^[a-f0-9]{64,}$/i.test(env.YR_AUTH_SECRET||''))throw new CRMError('خدمة الاستيراد غير مهيأة. تواصل مع مدير النظام.',503);
@@ -77,12 +83,16 @@ function parseInput(body:unknown){
 const canonicalInput=(input:Input)=>JSON.stringify({fileName:input.fileName,base64:input.base64,employeeMappings:[...input.employeeMappings].map(m=>[employeeKey(m.employeeId),m.repId]).sort((a,b)=>a[0].localeCompare(b[0],'en'))});
 
 type MappingSource='saved'|'selected'|'name'|'unmapped';
+const SAVED_ELSEWHERE='ربط هذا الموظف محفوظ من استيراد مبيعات ERP؛ يُعدَّل من شاشة استيراد المبيعات';
 async function prepare(c:Context,input:Input,bytes:Uint8Array){
  let file:ErpQuotesFile;
  try{file=parseErpQuotes(readErpQuotesTable(bytes));}catch(error){if(error instanceof ErpQuotesError)throw new CRMError(error.message);throw error;}
  const saved=await state(c),members=eligible(c),allowed=new Map(members.map(m=>[m.id,m]));
  const employeeReps=new Map<string,string>(),sources=new Map<string,MappingSource>();
  for(const m of saved.employees){employeeReps.set(employeeKey(m.employeeId),m.repId);sources.set(employeeKey(m.employeeId),'saved');}
+ // «مبيعات مكتب (مستبعد)»: a saved mark wins over a representative mapping (the sales import removes that mapping when it marks).
+ const savedOffice=officeById(saved.office.list),officeNames=officeNameOnly(saved.office.list),office=new Map<string,MappingSource>();
+ for(const key of savedOffice.keys()){office.set(key,'saved');employeeReps.delete(key);sources.delete(key);}
  const fileEmployees=new Map<string,Set<string>>();
  for(const q of file.quotations){if(isOfficeEmployee(q.employeeName))continue;const id=employeeKey(q.employeeCode);if(!id)continue;const names=fileEmployees.get(id)||new Set<string>();names.add(nameKey(q.employeeName));fileEmployees.set(id,names);}
  const seen=new Set<string>();
@@ -91,7 +101,9 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   if(seen.has(id))throw new CRMError('تكرار في اختيارات الربط؛ حدّث المعاينة');seen.add(id);
   if(!fileEmployees.has(id))continue;
   const prior=employeeReps.get(id);
-  if(prior&&sources.get(id)==='saved'){if(prior!==choice.repId)throw new CRMError('ربط هذا الموظف محفوظ من استيراد مبيعات ERP؛ يُعدَّل من شاشة استيراد المبيعات',409);continue;}
+  if(prior&&sources.get(id)==='saved'){if(prior!==choice.repId)throw new CRMError(SAVED_ELSEWHERE,409);continue;}
+  if(office.get(id)==='saved'){if(choice.repId!==ERP_OFFICE_CHOICE)throw new CRMError(SAVED_ELSEWHERE,409);continue;}
+  if(choice.repId===ERP_OFFICE_CHOICE){office.set(id,'selected');continue;}
   if(!allowed.has(choice.repId))throw new CRMError('ربط الموظف خارج نطاق فريقك أو منطقتك',403);
   employeeReps.set(id,choice.repId);sources.set(id,'selected');
  }
@@ -100,29 +112,34 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  for(const m of roster){const k=nameKey(m.name);if(k)byName.set(k,[...(byName.get(k)||[]),m]);}
  let nameRoster:unknown[]|null=null;
  for(const [id,names] of fileEmployees){
-  if(employeeReps.has(id)||names.size!==1)continue;
+  if(employeeReps.has(id)||office.has(id)||names.size!==1)continue;
   const name=[...names][0];if(!name)continue;
+  if(officeNames.has(name)){office.set(id,'name');continue;}
   nameRoster=roster.map(snapshot).sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'en'));
   const matches=byName.get(name)||[];
   if(matches.length===1&&allowed.has(matches[0].id)){employeeReps.set(id,matches[0].id);sources.set(id,'name');}
  }
  const editable=new Set(c.visible.filter(r=>!r.data?._teamReadOnly).map(r=>r.id));
  const now=new Date().toISOString(),importId='erp-quotes-import-'+(input.requestId||'preview');
- const plan=await planErpQuotes({file,records:c.all,visibleIds:editable,codes:uniqueCustomerCodes(c.all,c.customerIdentityState?.mappings),employeeReps,eligible:allowed,customerInRegion:customer=>memberCanAccessRegion(c.me,customer.data?.region),importer:{id:c.me.id,name:c.me.name},now,importId,fileName:input.fileName});
+ const plan=await planErpQuotes({file,records:c.all,visibleIds:editable,codes:uniqueCustomerCodes(c.all,c.customerIdentityState?.mappings),employeeReps,eligible:allowed,officeEmployees:new Set(office.keys()),customerInRegion:customer=>memberCanAccessRegion(c.me,customer.data?.region),importer:{id:c.me.id,name:c.me.name},now,importId,fileName:input.fileName});
  // A mapping chosen or matched by name is saved only for an employee whose quotations the import takes (or found already there).
  const used=new Set(plan.filter(p=>!['refused','excluded'].includes(p.status)).map(p=>employeeKey(p.employeeCode)));
  const employees=[...fileEmployees.keys()].sort((a,b)=>a.localeCompare(b,'en')).map(id=>{
   const repId=employeeReps.get(id)||'',quotations=file.quotations.filter(q=>!isOfficeEmployee(q.employeeName)&&employeeKey(q.employeeCode)===id);
+  const officeSource=office.get(id);
+  if(officeSource)return {employeeId:id,employeeName:quotations[0]?.employeeName||'',quotations:quotations.length,repId:ERP_OFFICE_CHOICE,savedOutside:false,mappingSource:officeSource,office:true};
   return {employeeId:id,employeeName:quotations[0]?.employeeName||'',quotations:quotations.length,repId:allowed.has(repId)?repId:'',savedOutside:!!repId&&!allowed.has(repId),mappingSource:(allowed.has(repId)?sources.get(id)||'unmapped':'unmapped') as MappingSource};
  });
  const missing=new Map<string,{customerCode:string;customerName:string;quotations:number}>();
  for(const p of plan)if(p.status==='refused'&&p.reason===ERP_QUOTE_REASONS.noCustomer){const k=p.customerCode;const item=missing.get(k)||{customerCode:p.customerCode,customerName:p.customerName,quotations:0};item.quotations++;missing.set(k,item);}
  const count=(status:string)=>plan.filter(p=>p.status===status).length;
- const summary={quotations:plan.length,lines:file.quotations.reduce((s,q)=>s+q.lines.length,0),newCount:count('new'),updateCount:count('update'),unchangedCount:count('unchanged'),editedCount:count('edited'),excludedCount:count('excluded'),refusedCount:count('refused')+file.problems.length,rowProblems:file.problems.length,deletedRows:file.deletedRows,totalsDiffer:plan.filter(p=>p.status!=='refused'&&p.totalsDiffer).length};
+ // The marks this import saves: chosen here or suggested by name, for an employee of the file.
+ const newOffice=[...office].filter(([id,source])=>source!=='saved'&&fileEmployees.has(id)).map(([id])=>({employeeId:id,employeeName:file.quotations.find(q=>employeeKey(q.employeeCode)===id)?.employeeName||''}));
+ const summary={...(newOffice.length?{officeMarks:newOffice.length}:{}),quotations:plan.length,lines:file.quotations.reduce((s,q)=>s+q.lines.length,0),newCount:count('new'),updateCount:count('update'),unchangedCount:count('unchanged'),editedCount:count('edited'),excludedCount:count('excluded'),refusedCount:count('refused')+file.problems.length,rowProblems:file.problems.length,deletedRows:file.deletedRows,totalsDiffer:plan.filter(p=>p.status!=='refused'&&p.totalsDiffer).length};
  const reps=new Map<string,Member>();for(const p of plan)if(['new','update'].includes(p.status)){const rep=allowed.get(p.repId);if(rep)reps.set(rep.id,rep);}
  const newMappings=[...employeeReps].filter(([id])=>['selected','name'].includes(sources.get(id)||'')&&used.has(id)&&allowed.has(employeeReps.get(id)!)).map(([employeeId,repId])=>({employeeId,repId}));
- const snapshotHash=await sha256(JSON.stringify({me:snapshot(c.me),members:members.map(snapshot).sort(),nameRoster,plan:plan.map(p=>[p.key,p.status,p.recordId,p.version,p.customerId,p.repId,p.branch]),newMappings}));
- return {file,plan,summary,employees,missing:[...missing.values()],sharedCodes:sharedCodes(c,file,plan),snapshotHash,saved,reps,newMappings,nameRoster};
+ const snapshotHash=await sha256(JSON.stringify({me:snapshot(c.me),members:members.map(snapshot).sort(),nameRoster,plan:plan.map(p=>[p.key,p.status,p.recordId,p.version,p.customerId,p.repId,p.branch]),newMappings,newOffice,office:saved.office.raw}));
+ return {file,plan,summary,employees,missing:[...missing.values()],sharedCodes:sharedCodes(c,file,plan),snapshotHash,saved,reps,newMappings,newOffice,nameRoster};
 }
 /** The customer codes of the file that two or more CRM customers carry, with how many of its quotations name each (excluded quotations and
  *  those the reader could not read left out): 'ambiguous' (refused until mapped) or 'mapped' (a saved mapping chose one of them). To the
@@ -175,12 +192,13 @@ export async function importErpQuotes(c:Context,body:unknown){
  if(Number(pieces[1])<Date.now()||Number(pieces[1])>Date.now()+16*60_000||pieces[3]!==prepared.snapshotHash)throw new CRMError('انتهت المعاينة أو تغيّرت البيانات أو الصلاحيات منذ عرضها؛ اعرض الملف مرة أخرى',409);
  const fresh=prepared.plan.filter(p=>p.status==='new'),updates=prepared.plan.filter(p=>p.status==='update');
  const now=new Date().toISOString(),s=prepared.summary;
- const result={ok:true,importId:id,addedCount:fresh.length,updatedCount:updates.length,unchangedCount:s.unchangedCount,editedCount:s.editedCount,excludedCount:s.excludedCount,refusedCount:s.refusedCount,mappingsSaved:prepared.newMappings.length};
+ const result={ok:true,importId:id,addedCount:fresh.length,updatedCount:updates.length,unchangedCount:s.unchangedCount,editedCount:s.editedCount,excludedCount:s.excludedCount,refusedCount:s.refusedCount,mappingsSaved:prepared.newMappings.length,...(prepared.newOffice.length?{officeMarked:prepared.newOffice.length}:{})};
  // The claim is the transaction's gate: every later statement requires it. The member and their permissions, the ERP mapping state, the
  // representatives assigned, the quotes updated (their versions) and the ids added (still absent) are as the plan read them.
  const guard=accessGuard(c);
- let gate=guard.sql+' AND EXISTS(SELECT 1 FROM crm_erp_import_state WHERE id=? AND revision=?)';
- const args:(string|number)[]=[...guard.args,namespace,prepared.saved.revision];
+ const officeGate=officeUnchanged(prepared.saved.office.raw);
+ let gate=guard.sql+' AND EXISTS(SELECT 1 FROM crm_erp_import_state WHERE id=? AND revision=?) AND '+officeGate.sql;
+ const args:(string|number|null)[]=[...guard.args,namespace,prepared.saved.revision,...officeGate.args];
  gate+=` AND NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN crm_members actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.role IS NOT json_extract(expected.value,'$[1]') OR actual.branch IS NOT json_extract(expected.value,'$[2]') OR COALESCE(actual.supervisor_id,'') IS NOT json_extract(expected.value,'$[3]') OR actual.region_scope IS NOT json_extract(expected.value,'$[4]') OR actual.active IS NOT json_extract(expected.value,'$[5]') OR actual.auth_version IS NOT json_extract(expected.value,'$[6]'))`;
  args.push(JSON.stringify([...prepared.reps.values()].map(snapshot)));
  if(prepared.nameRoster){gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep')=?";args.push(prepared.nameRoster.length);}
@@ -203,6 +221,10 @@ export async function importErpQuotes(c:Context,body:unknown){
  }
  for(const m of prepared.newMappings)batch.push(c.db.prepare('INSERT INTO crm_erp_employee_mappings(employee_id,rep_id,updated_by,updated_at) SELECT ?,?,?,? WHERE '+claimed+' ON CONFLICT(employee_id) DO NOTHING').bind(m.employeeId,m.repId,c.me.id,now,...claimArgs));
  if(prepared.newMappings.length)batch.push(c.db.prepare('UPDATE crm_erp_import_state SET revision=revision+1 WHERE id=? AND '+claimed).bind(namespace,...claimArgs));
+ if(prepared.newOffice.length){
+  batch.push(writeOfficeList(c.db,applyOfficeChanges(prepared.saved.office.list,{markIds:prepared.newOffice},c.me.id,now),claimed,claimArgs));
+  batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(id+':office',ERP_OFFICE_SETTING,c.me.name,ERP_OFFICE_AUDIT_ACTION,JSON.stringify({source:'erp-quotes-import',importId:id,fileName:input.fileName,marked:prepared.newOffice,unmarked:[]}),now,...claimArgs));
+ }
  batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(id,id,c.me.name,ERP_QUOTES_AUDIT_ACTION,JSON.stringify(detail),now,...claimArgs));
  let committed;
  try{committed=await c.db.batch(batch);}catch(error){const saved=await replay();if(saved)return saved;throw error;}

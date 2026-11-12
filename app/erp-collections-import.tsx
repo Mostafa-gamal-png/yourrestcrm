@@ -9,13 +9,14 @@ import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submi
 import {t,useLanguage} from '@/lib/i18n';
 import type {CollectionNamePreview,CollectionRepPreview} from '@/lib/erp-collections-server';
 import UploadStatus,{type UploadState} from './upload-status';
+import {ERP_OFFICE_CHOICE} from '@/lib/erp-office-employees';
 import './erp-sales-import.css';
 import './erp-collections-import.css';
 
 type Options={members:{id:string;name:string;branch:string;active:boolean}[];currentMonth:string;admin:boolean;meaning:string};
 type Preview={month:string;fileName:string;title:string;closedMonth:boolean;meaning:string;reference:string;planDigest:string;names:CollectionNamePreview[];reps:CollectionRepPreview[];warnings:string[];
- summary:{rows:number;officeRows:number;noRepRows:number;mismatchRows:number;names:number;unmappedNames:number;outOfScopeNames:number;reps:number;newCount:number;replaceCount:number;unchangedCount:number;invalidCount:number;dueCents:number;collectedCents:number}};
-type Receipt={writtenCount:number;newCount:number;replaceCount:number;unchangedCount:number;invalidCount:number;skippedNames:number;month:string;alreadySaved?:boolean};
+ summary:{officeChanges?:number;officeNames?:number;rows:number;officeRows:number;noRepRows:number;mismatchRows:number;names:number;unmappedNames:number;outOfScopeNames:number;reps:number;newCount:number;replaceCount:number;unchangedCount:number;invalidCount:number;dueCents:number;collectedCents:number}};
+type Receipt={officeMarked?:number;officeUnmarked?:number;writtenCount:number;newCount:number;replaceCount:number;unchangedCount:number;invalidCount:number;skippedNames:number;month:string;alreadySaved?:boolean};
 type Body={month:string;fileName:string;base64:string;mappings:{name:string;repId:string}[];replaceConfirmed:boolean};
 const endpoint='/api/kpi-evidence/import',maxBytes=2*1024*1024;
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
@@ -35,12 +36,13 @@ const english:Record<string,string>={
  'هذا الملف ليس كشف حساب ERP: لا يحتوي جدولًا':'This is not an ERP account statement: it holds no table.',
  'ربط المندوب خارج نطاق فريقك أو منطقتك':'The mapped representative is outside your team or region.',
  'بيانات المؤشرات متاحة للتعديل لمدير النظام ومدير المبيعات فقط.':'Only the system administrator and sales managers can edit KPI evidence.',
+ 'هذا الاسم محدد «مبيعات مكتب» برقم موظفه من استيراد مبيعات ERP؛ يُعدَّل من شاشة استيراد المبيعات':'This name is marked office sales by its employee number in the ERP sales import; change it there.',
 };
 function readFile(file:File):Promise<string>{return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reader.onabort=()=>reject(new Error('FILE_READ_FAILED'));reader.onload=()=>{const result=String(reader.result||''),at=result.indexOf(',');if(at<0||!result.slice(at+1))reject(new Error('FILE_READ_FAILED'));else resolve(result.slice(at+1));};reader.readAsDataURL(file);});}
 
 export default function ErpCollectionsImport({month:initialMonth,onClose,onImported}:{month:string;onClose:()=>void;onImported:()=>void|Promise<void>}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='en'?en:ar;
- const counted:Record<string,string>={'حسابات «مبيعات مكتب» المستبعدة':'Office sales accounts excluded','حسابات بلا مندوب ولا محصل لا تُنسب لأحد':'Accounts with no representative or collector, counted for nobody','حسابات لا يساوي رصيدها الحالي الرصيد السابق مع حركة الفترة':'Accounts whose current balance is not the previous balance plus the period\'s movement','أسماء غير مربوطة بمندوب لن تُكتب':'Names not mapped to a representative, not written','أسماء مربوطة بمندوب خارج نطاق فريقك أو منطقتك لن تُكتب':'Names mapped to a representative outside your team or region, not written'};
+ const counted:Record<string,string>={'حسابات «مبيعات مكتب» المستبعدة':'Office sales accounts excluded','أسماء محددة «مبيعات مكتب (مستبعد)»':'Names marked “Office sales (excluded)”','حسابات بلا مندوب ولا محصل لا تُنسب لأحد':'Accounts with no representative or collector, counted for nobody','حسابات لا يساوي رصيدها الحالي الرصيد السابق مع حركة الفترة':'Accounts whose current balance is not the previous balance plus the period\'s movement','أسماء غير مربوطة بمندوب لن تُكتب':'Names not mapped to a representative, not written','أسماء مربوطة بمندوب خارج نطاق فريقك أو منطقتك لن تُكتب':'Names mapped to a representative outside your team or region, not written'};
  const present=(value:string)=>{if(language!=='en')return value;if(english[value])return english[value];const match=/^(.*): (\d+)$/.exec(value);return match&&counted[match[1]]?counted[match[1]]+': '+match[2]:t(value);};
  const [options,setOptions]=useState<Options|null>(null),[optionsError,setOptionsError]=useState(''),[optionsRevision,setOptionsRevision]=useState(0);
  const [month,setMonth]=useState(initialMonth),[file,setFile]=useState<{fileName:string;base64:string;size:number}|null>(null),[mappings,setMappings]=useState<Record<string,string>>({}),[replaceConfirmed,setReplaceConfirmed]=useState(false);
@@ -54,10 +56,12 @@ export default function ErpCollectionsImport({month:initialMonth,onClose,onImpor
  const immutable=!!busy||pending||!!receipt;
  const money=(cents:number)=>new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
  const statusText=(status:CollectionRepPreview['status'])=>({new:say('جديد','New'),replace:say('سيستبدل القيمة الحالية','Replaces the current value'),unchanged:say('دون تغيير','Unchanged'),invalid:say('لن يُكتب','Not written')})[status];
- const nameStatus=(status:CollectionNamePreview['status'])=>({mapped:say('مربوط','Mapped'),unmapped:say('غير مربوط — لن يُكتب','Not mapped — not written'),out_of_scope:say('خارج صلاحيتك — لن يُكتب','Outside your access — not written')})[status];
+ const nameStatus=(status:CollectionNamePreview['status'])=>({mapped:say('مربوط','Mapped'),unmapped:say('غير مربوط — لن يُكتب','Not mapped — not written'),out_of_scope:say('خارج صلاحيتك — لن يُكتب','Outside your access — not written'),office:say('مبيعات مكتب — مستبعد','Office sales — excluded')})[status];
  const sourceText=(source:CollectionNamePreview['mappingSource'])=>({selected:say('اختيارك','Your choice'),name:say('مطابقة الاسم','Name match'),erp:say('من مبيعات ERP','From ERP sales'),previous:say('من استيراد سابق','From an earlier import'),none:''})[source];
  const replacing=preview?.reps.filter(rep=>rep.status==='replace')||[],writes=preview?.reps.filter(rep=>rep.status==='new'||rep.status==='replace').length||0;
- const blocked=!preview||dirty||!writes||(replacing.length>0&&!replaceConfirmed);
+ // A «مبيعات مكتب (مستبعد)» chosen or lifted is saved with the approval, even when no representative's collection changes.
+ const officeChanges=preview?.summary.officeChanges||0;
+ const blocked=!preview||dirty||!(writes||officeChanges)||(replacing.length>0&&!replaceConfirmed);
  function changed(){setDirty(true);setError('');}
  async function selectFile(selected?:File){
   if(!selected||lock.current||pending||receipt)return;
@@ -130,12 +134,14 @@ export default function ErpCollectionsImport({month:initialMonth,onClose,onImpor
       </section>
       {!!preview.warnings.length&&<div className="erp-import-warnings" role="note"><strong>{say('ملاحظات الكشف','Statement notes')}</strong><ul>{preview.warnings.map((w,i)=><li key={i}>{present(w)}</li>)}</ul></div>}
       {!!preview.names.length&&<section className="erp-import-mappings" aria-labelledby="collections-mapping"><h3 id="collections-mapping">{say('ربط الأسماء بالمناديب','Map names to representatives')}</h3><div className="erp-import-map-list">{preview.names.map(name=>{
-       const value=mappings[name.name]??name.repId;
-       return <label className="erp-import-map-row" key={name.key}><span><strong>{name.name}</strong><small>{name.accounts} {say('حساب','accounts')}{name.fromCollector?' · '+say('من المحصل','from the collector')+': '+name.fromCollector:''}{name.mismatches?' · '+say('لا تتطابق أرصدتها','balances do not add up')+': '+name.mismatches:''} · {nameStatus(name.status)}{name.mappingSource!=='none'&&name.status==='mapped'?' · '+sourceText(name.mappingSource):''}</small></span>
-        <select value={value} disabled={immutable} aria-label={say('مندوب الاسم ','Representative for ')+name.name} onChange={event=>{const next=event.target.value;setMappings(current=>{const copy={...current};if(next)copy[name.name]=next;else delete copy[name.name];return copy;});changed();}}>
+       const value=mappings[name.name]??name.repId,office=value===ERP_OFFICE_CHOICE,officeFixed=name.officeSource==='sales';
+       return <label className="erp-import-map-row" key={name.key} data-office={office?'true':undefined}><span><strong>{name.name}</strong><small>{name.accounts} {say('حساب','accounts')}{name.fromCollector?' · '+say('من المحصل','from the collector')+': '+name.fromCollector:''}{name.mismatches?' · '+say('لا تتطابق أرصدتها','balances do not add up')+': '+name.mismatches:''} · {nameStatus(name.status)}{name.mappingSource!=='none'&&name.status==='mapped'?' · '+sourceText(name.mappingSource):''}</small></span>
+        <select value={value} disabled={immutable||officeFixed} aria-label={say('مندوب الاسم ','Representative for ')+name.name} onChange={event=>{const next=event.target.value;setMappings(current=>{const copy={...current};if(next)copy[name.name]=next;else delete copy[name.name];return copy;});changed();}}>
          <option value="">{say('اختر المندوب','Choose a representative')}</option>
          {options.members.filter(m=>m.active||m.id===value).map(m=><option key={m.id} value={m.id}>{m.name}{m.branch?' · '+m.branch:''}{m.active?'':' · '+say('معطل','inactive')}</option>)}
-        </select></label>;})}</div></section>}
+         <option value={ERP_OFFICE_CHOICE}>{say('مبيعات مكتب (مستبعد)','Office sales (excluded)')}</option>
+        </select>
+        {office&&<small className="erp-import-map-hint">{officeFixed?say('حُدد «مبيعات مكتب» برقم الموظف في استيراد مبيعات ERP؛ يُعدَّل من هناك. حساباته مستبعدة.','Marked office sales by employee number in the ERP sales import; change it there. Its accounts are excluded.'):say('مستبعد: حساباته تُعد من «مبيعات مكتب» ولا تُكتب لأي مندوب، ويُحفظ التحديد مع الاعتماد.','Excluded: its accounts count as office sales and are written for no representative; the choice is saved with the approval.')}</small>}</label>;})}</div></section>}
       <section className="erp-import-documents" aria-labelledby="collections-reps-heading"><div className="erp-import-section-heading"><h3 id="collections-reps-heading">{say('التحصيل لكل مندوب','Collection by representative')}</h3></div>
        {!preview.reps.length?<p className="erp-import-hint">{say('لا يوجد مندوب مربوط في هذا الكشف.','No representative is mapped in this statement.')}</p>:<div className="erp-import-table-wrap"><table className="erp-import-table"><thead><tr>{[say('المندوب','Representative'),say('الحسابات','Accounts'),say('المستحق · ر.س','Due · SAR'),say('المحصل · ر.س','Collected · SAR'),say('نسبة التحصيل','Rate'),say('الحالة','Status')].map(label=><th key={label}>{label}</th>)}</tr></thead>
         <tbody>{preview.reps.map(rep=><tr key={rep.repId}><td><strong>{rep.repName}</strong><small>{rep.branch}</small>{rep.names.length>1&&<small>{rep.names.join('، ')}</small>}</td><td dir="ltr">{rep.accounts}</td><td className="erp-import-amount" dir="ltr">{money(rep.dueCents)}</td><td className="erp-import-amount" dir="ltr">{money(rep.collectedCents)}</td><td dir="ltr">{rep.percent===null?'—':rep.percent.toFixed(2)+'%'}</td><td><span className={'erp-import-badge collections-'+rep.status}>{statusText(rep.status)}</span>{rep.status==='replace'&&rep.current&&<small>{say('سيستبدل القيمة الحالية','Replaces the current value')} (<bdi dir="ltr">{money(rep.current.dueCents)} / {money(rep.current.collectedCents)}</bdi>)</small>}{rep.status==='invalid'&&<small>{present(rep.reason)}</small>}{rep.mismatches>0&&<small>{say('حسابات لا تتطابق أرصدتها','Accounts whose balances do not add up')}: {rep.mismatches}</small>}</td></tr>)}</tbody></table></div>}
@@ -148,7 +154,7 @@ export default function ErpCollectionsImport({month:initialMonth,onClose,onImpor
    <footer className="erp-import-footer">
     {!!error&&<p className="form-error" role="alert">{present(error)}</p>}
     {pending&&<p className="erp-import-notice" role="status">{say('لم يتأكد الحفظ بسبب الاتصال. البيانات مثبتة؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب دون تكرار.','The connection did not confirm the save. Your data is locked; choose “Confirm save” to retry the same request without duplicates.')}</p>}
-    {receipt&&<div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم اعتماد التحصيل','Collection saved')}</strong><p>{say('كُتب لـ','Written for')} {receipt.writtenCount} {say('مندوب','representatives')} · {say('جديد','New')}: {receipt.newCount} · {say('استبدال','Replaced')}: {receipt.replaceCount} · {say('دون تغيير','Unchanged')}: {receipt.unchangedCount}{receipt.skippedNames?<> · {say('أسماء لم تُكتب','Names not written')}: {receipt.skippedNames}</>:null}</p><small>{say('الشهر','Month')}: <bdi>{receipt.month}</bdi></small></div></div>}
+    {receipt&&<div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم اعتماد التحصيل','Collection saved')}</strong><p>{say('كُتب لـ','Written for')} {receipt.writtenCount} {say('مندوب','representatives')} · {say('جديد','New')}: {receipt.newCount} · {say('استبدال','Replaced')}: {receipt.replaceCount} · {say('دون تغيير','Unchanged')}: {receipt.unchangedCount}{receipt.skippedNames?<> · {say('أسماء لم تُكتب','Names not written')}: {receipt.skippedNames}</>:null}{receipt.officeMarked||receipt.officeUnmarked?<> · {say('تحديد «مبيعات مكتب (مستبعد)»','Office sales (excluded)')}: {receipt.officeMarked||0}{receipt.officeUnmarked?<> · {say('أُعيد إلى مندوب','Returned to a representative')}: {receipt.officeUnmarked}</>:null}</>:null}</p><small>{say('الشهر','Month')}: <bdi>{receipt.month}</bdi></small></div></div>}
     <div className="erp-import-actions"><button type="button" className="btn subtle" disabled={!!busy||pending} onClick={close}>{say(receipt?'تم':'إغلاق',receipt?'Done':'Close')}</button>
      {receipt?refreshFailed&&<button type="button" className="btn primary" disabled={!!busy} onClick={refreshAfterImport}>{busy==='refresh'?<Loader2 className="spin" size={17}/>:<RefreshCw size={17}/>} {say('تحديث العرض فقط','Refresh view only')}</button>:
       dirty&&!pending?<button type="button" className="btn primary" disabled={!file||immutable} onClick={buildPreview}>{busy==='preview'?<Loader2 className="spin" size={17}/>:<RefreshCw size={17}/>} {say('تحديث المعاينة','Refresh preview')}</button>:

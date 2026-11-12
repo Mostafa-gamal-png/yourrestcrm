@@ -304,6 +304,9 @@ export const ERP_QUOTE_REASONS={
  customerChanged:'تغيّر عميل العرض في ERP؛ لن يُنقل العرض المحفوظ إلى عميل آخر تلقائيًا',
  /** «مبيعات مكتب» (the ERP sales import's words, lib/erp-sales-server.ts): another company's quotations, never written nor mapped. */
  office:'مبيعات مكتب: عروض شركة أخرى مستبعدة تلقائيًا',
+ /** An employee marked «مبيعات مكتب (مستبعد)» (lib/erp-office-employees.ts): excluded the same way; a quotation imported earlier stays. */
+ officeMarked:'مبيعات مكتب (تحديد الموظف): مستبعدة ولا تُحتسب لأي مندوب',
+ officeMarkedSaved:'مبيعات مكتب (تحديد الموظف): مستبعدة؛ العرض المحفوظ سابقًا يبقى كما هو',
 } as const;
 export type ErpQuoteMarker={source:'erp';key:string;code:string;transactionId:string;no:string;customerCode:string;customerName:string;employeeCode:string;employeeName:string;dueDate:string;lineDiscount:number;documentDiscount:number;net:number;crmTotals:{subtotal:number;tax:number;total:number};totalsDiffer:boolean;validUntilAdjusted:boolean;sourceHash:string;appliedHash:string;importedAt:string;importedBy:string;importedByName:string;updatedAt:string;updatedBy:string;updatedByName:string;importId:string;fileName:string};
 export type ErpQuotePlanEntry={
@@ -315,6 +318,8 @@ export type PlanInput={
  file:ErpQuotesFile;records:Row[];visibleIds:Set<string>;codes:Map<string,Row[]>;
  /** The ERP employee code (normalised) to its CRM representative; and the representatives the importer may assign. */
  employeeReps:Map<string,string>;eligible:Map<string,Member>;
+ /** The employee codes (employeeKey) marked «مبيعات مكتب (مستبعد)», saved or chosen in this preview. */
+ officeEmployees?:Set<string>;
  customerInRegion:(customer:Row)=>boolean;
  importer:{id:string;name:string};now:string;importId:string;fileName:string;
 };
@@ -334,6 +339,7 @@ export async function planErpQuotes(input:PlanInput):Promise<ErpQuotePlanEntry[]
   out.push(entry);
   const refuse=(reason:string)=>{entry.status='refused';entry.reason=reason;};
   if(isOfficeEmployee(q.employeeName)){entry.status='excluded';entry.reason=ERP_QUOTE_REASONS.office;continue;}
+  if(input.officeEmployees?.has(employeeKey(q.employeeCode))){entry.status='excluded';entry.reason=existing?ERP_QUOTE_REASONS.officeMarkedSaved:ERP_QUOTE_REASONS.officeMarked;continue;}
   if(q.problem){refuse(q.problem);continue;}
   const matches=input.codes.get(customerCodeKey(q.customerCode))||[];
   if(!matches.length){refuse(ERP_QUOTE_REASONS.noCustomer);continue;}

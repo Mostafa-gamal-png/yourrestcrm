@@ -92,7 +92,8 @@ try {
   await dialog.locator('#erp-quotes-preview-heading').waitFor();
   check(await tiles(dialog), [['ستُضاف', '1'], ['ستُحدَّث', '0'], ['بلا تغيير', '0'], ['عُدِّلت في الـCRM', '0'], ['مستبعدة', '1'], ['مرفوضة', '4']], 'the six counts');
   ok((await dialog.locator('.erp-import-table tbody tr', {hasText: 'Qut-2005'}).innerText()).includes('مبيعات مكتب: عروض شركة أخرى مستبعدة تلقائيًا'), '«مبيعات مكتب» excluded with its reason');
-  ok(!(await dialog.locator('.erp-import-map-row').allInnerTexts()).some(text => text.includes('مبيعات مكتب')), 'never offered for mapping');
+  // The employee's own label (each select now ends with «مبيعات مكتب (مستبعد)», 2026-11-12).
+  ok(!(await dialog.locator('.erp-import-map-row > span').allInnerTexts()).some(text => text.includes('مبيعات مكتب')), 'never offered for mapping');
   ok((await dialog.locator('.erp-quotes-missing').innerText()).includes('عميل ليس في النظام'), 'the customer the CRM does not have');
   ok((await dialog.locator('.erp-import-map-row').first().innerText()).includes('مطابقة تلقائية للاسم'), 'an employee matched by name');
   const refusedRow = dialog.locator('.erp-import-table tbody tr', {hasText: 'Qut-2002'});
