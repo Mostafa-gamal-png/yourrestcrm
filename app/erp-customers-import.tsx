@@ -9,15 +9,16 @@ import { customerCodeKey } from '@/lib/customer-identity';
 import { ERP_ADD_CUSTOMER, ERP_CUSTOMERS_MAX_ADDS } from '@/lib/erp-customers-shared';
 import type { ErpCustomerCandidate, ErpCustomerClearView, ErpCustomerOutcome, ErpCustomersSummary } from '@/lib/erp-customers';
 import UploadStatus, {type UploadState} from './upload-status';
+import type {ErpDatesView} from '@/lib/erp-customer-extras-server';
 import './erp-sales-import.css';
 import './erp-customers-import.css';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 
 /** `clears` and `clearSnapshot` (2026-11-09): the customers the file does not name whose ERP code «امسح كود ERP للعملاء غير الموجودين في الشيت» clears. */
-type Preview = { fileName: string; sheet: string; snapshot: string; summary: ErpCustomersSummary; rows: ErpCustomerOutcome[]; newRegions?: string[]; newRegion?: string | null; clears?: ErpCustomerClearView[]; clearSnapshot?: string };
+type Preview = { fileName: string; sheet: string; snapshot: string; summary: ErpCustomersSummary; rows: ErpCustomerOutcome[]; newRegions?: string[]; newRegion?: string | null; clears?: ErpCustomerClearView[]; clearSnapshot?: string; erpDates?: ErpDatesView };
 type Choice = { row: number; customerId: string };
 type Addition = { row: number; customerId: string; code: string; name: string; region: string; internalCode?: string };
-type Result = { ok: true; updated: number; mappings: number; changed: number; added: number; unchanged: number; skipped: number; outOfRegion: number; heldOutside?: number; invalid: number; changes: { row: number; customerId: string; from: string; to: string; mapping: boolean }[]; additions?: Addition[]; cleared?: number; alreadySaved?: boolean };
+type Result = { ok: true; updated: number; mappings: number; changed: number; added: number; unchanged: number; skipped: number; outOfRegion: number; heldOutside?: number; invalid: number; changes: { row: number; customerId: string; from: string; to: string; mapping: boolean }[]; additions?: Addition[]; cleared?: number; erpDatesUpdated?: number; alreadySaved?: boolean };
 type SelectedFile = { fileName: string; base64: string; size: number };
 type Filter = 'change' | 'same' | 'other' | 'all';
 type Section = 'choose' | 'new' | 'rest';
@@ -162,7 +163,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
   const regions = preview?.newRegions || [], chosenRegion = region ?? preview?.newRegion ?? null;
   const tooMany = adds > ERP_CUSTOMERS_MAX_ADDS, noRegion = adds > 0 && chosenRegion === null;
   const similarAdds = rows.filter(row => row.status === 'similar' && row.add).length, leftRows = rows.filter(wasLeft);
-  const canApply = !!preview && !locked && !dirty && !refreshing && !stale && !conflicts && changes + adds + clearing > 0 && !tooMany && !noRegion;
+  const canApply = !!preview && !locked && !dirty && !refreshing && !stale && !conflicts && changes + adds + clearing + (preview?.erpDates?.updates || 0) > 0 && !tooMany && !noRegion;
   const regionText = (value: string) => value ? say(value, regionEnglish[value] || t(value)) : say('المنطقة غير محددة', 'Region not specified');
   const matchedText = (by: string) => by === 'both' ? say('بالجوال والاسم', 'by phone and name') : by === 'phone' ? say('بالجوال', 'by phone') : by === 'name' ? say('بالاسم', 'by name') : by === 'code' ? say('نفس الكود', 'same code') : by === 'similar' ? say('اسم قريب', 'similar name') : '';
   const issueText = (issue: ErpCustomerOutcome['issue']) => issue === 'no-code' ? say('بلا رقم عميل', 'No customer number') : issue === 'long-code' ? say('رقم العميل طويل جدًا', 'Customer number too long')
@@ -375,6 +376,12 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
               {([[say('سيتغيّر', 'Will change'), changes], [say('يحتاج إلى اختيارك', 'Needs a choice'), counts.choose], [say('عملاء جدد', 'New customers'), adds], [say('بلا تغيير', 'No change'), counts.same]] as const).map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
             </div>
             <p className="erp-customers-stats"><span>{say('السطور', 'Rows')}: <bdi>{preview.summary.rows}</bdi></span><span>{say('مطابق تلقائي', 'Matched automatically')}: <bdi>{preview.summary.auto}</bdi></span>{!!preview.summary.outOfRegion && <span>{say('خارج مناطقك', 'Outside your regions')}: <bdi>{preview.summary.outOfRegion}</bdi></span>}{!!preview.summary.heldOutside && <span>{say('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')}: <bdi>{preview.summary.heldOutside}</bdi></span>}{!!preview.summary.invalid && <span>{say('سطور غير صالحة', 'Invalid rows')}: <bdi>{preview.summary.invalid}</bdi></span>}{!!preview.summary.mappings && <span>{say('أرقام لدى عميل آخر', 'Numbers held by another customer')}: <bdi>{preview.summary.mappings}</bdi></span>}<span>{say('الورقة', 'Sheet')}: <bdi>{preview.sheet}</bdi></span></p>
+            {/* «التاريخ» (the customer's creation day in ERP) and the representative's column: what the import writes (lib/erp-customer-extras.ts). */}
+            {(preview.erpDates?.dateColumn || preview.erpDates?.repColumn) && <p className="erp-customers-stats erp-customers-dates" data-updates={preview.erpDates.updates}>
+              {preview.erpDates.dateColumn && <span>{say('تاريخ الإنشاء في ERP', 'ERP creation date')}: <bdi>{preview.erpDates.dates}</bdi></span>}
+              {!!preview.erpDates.invalidDates && <span>{say('تاريخ غير مقروء (يبقى كما هو)', 'Unreadable date (left as is)')}: <bdi>{preview.erpDates.invalidDates}</bdi></span>}
+              {preview.erpDates.repColumn && <span>{say('المندوب في الملف', 'Representative in the file')}: <bdi>{preview.erpDates.reps}</bdi></span>}
+              <span>{say('عملاء موجودون يُحدَّث تاريخهم أو مندوبهم في ERP', 'Existing customers whose ERP date or representative is updated')}: <bdi>{preview.erpDates.updates}</bdi></span></p>}
             {refreshing && <p className="erp-import-hint" role="status"><Loader2 size={14} className="spin" aria-hidden="true"/> {say('جارٍ تحديث المعاينة باختياراتك…', 'Updating the preview with your choices…')}</p>}
             {!!conflicts && !dirty && <p className="erp-import-notice" role="status">{say('اختير عميل لأكثر من سطر، وللعميل كود ERP واحد. اختر عميلًا آخر أو «اتركه» في أحد السطرين.', 'A customer is chosen for more than one row, and a customer has one ERP code. Choose another customer or “Leave it” on one of them.')}</p>}
             {tooMany && !dirty && <p className="erp-import-notice" role="status">{say(`الحد الأقصى للعملاء الجدد في المرة الواحدة ${ERP_CUSTOMERS_MAX_ADDS}؛ اترك الباقي («اتركه») وأضفهم في مرة أخرى.`, `At most ${ERP_CUSTOMERS_MAX_ADDS} new customers can be added at once; leave the rest and add them another time.`)}</p>}
@@ -431,7 +438,7 @@ export default function ErpCustomersImport({ onClose, onImported }: Props) {
         {stale && !pending && <p className="erp-import-notice" role="status">{say('أجرِ معاينة جديدة؛ ستبدأ اختياراتك من جديد على البيانات الجديدة.', 'Run a new preview; your choices start over on the new data.')}</p>}
         {result && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{result.added ? say('تم تحديث الأكواد وإضافة العملاء', 'Codes updated and customers added') : say('تم تحديث الأكواد', 'Codes updated')}</strong>
           <p>{say('تغيّر كودها', 'Codes changed')}: {result.updated} · {say('عملاء حُدِّثوا', 'Customers updated')}: {result.changed} · {say('عملاء أُضيفوا', 'Customers added')}: {result.added}{!!result.mappings && <> · {say('أرقام رُبطت بعميلها', 'Numbers linked to their customer')}: {result.mappings}</>}{!!result.cleared && <> · <span className="erp-customers-cleared">{say(`مُسح كود ERP لـ ${result.cleared} عميل غير موجود في الشيت`, `ERP code cleared for ${result.cleared} customer(s) not in the sheet`)}</span></>}</p>
-          <small>{say('بلا تغيير', 'No change')}: {result.unchanged} · {say('متروك', 'Left')}: {result.skipped}{!!result.outOfRegion && <> · {say('خارج مناطقك', 'Outside your regions')}: {result.outOfRegion}</>}{!!result.heldOutside && <> · {say('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')}: {result.heldOutside}</>}{!!result.invalid && <> · {say('غير صالحة', 'Invalid')}: {result.invalid}</>}</small></div></div>}
+          <small>{!!result.erpDatesUpdated && <>{say('تاريخ الإنشاء أو المندوب في ERP حُدِّث لـ', 'ERP creation date or representative updated for')}: {result.erpDatesUpdated} · </>}{say('بلا تغيير', 'No change')}: {result.unchanged} · {say('متروك', 'Left')}: {result.skipped}{!!result.outOfRegion && <> · {say('خارج مناطقك', 'Outside your regions')}: {result.outOfRegion}</>}{!!result.heldOutside && <> · {say('الرقم عند عميل خارج مناطقك', 'Number held outside your regions')}: {result.heldOutside}</>}{!!result.invalid && <> · {say('غير صالحة', 'Invalid')}: {result.invalid}</>}</small></div></div>}
         <div className="erp-import-actions"><button type="button" className="btn subtle" disabled={!!busy || pending} onClick={close}>{result ? say('تم', 'Done') : say('إغلاق', 'Close')}</button>
           {result ? refreshFailed && <button type="button" className="btn primary" disabled={!!busy} onClick={refreshAfterApply}>{busy === 'refresh' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('تحديث العرض فقط', 'Refresh view only')}</button> :
             stale && !pending ? <button type="button" className="btn primary" disabled={!file || !!busy || refreshing} onClick={() => void runPreview(file, true)}>{busy === 'preview' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('معاينة جديدة', 'New preview')}</button> :
