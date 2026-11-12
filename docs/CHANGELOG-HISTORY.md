@@ -4,6 +4,44 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Sales-history completeness from the ERP sales import, and the default activity targets (2026-11-12, shipped in release update-quote-codes-20261111, no migration)
+
+- **Asked.** The owner's decision «اعمل الاتنين»: «نمو مبيعات الأصناف», «العملاء المستردون» and «الحفاظ على العملاء الحاليين» waited for a
+  manager to confirm, month by month in «بيانات المؤشرات», that the month's and the three previous months' sales history was complete. Now
+  the history is confirmed once per ERP sales import, as the reference CRM (GSCO) does with its `complete_snapshot`; and the default
+  customers-and-visits targets are visible.
+- **The import.** «استيراد مبيعات ERP» has «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» (unticked by default, sent with the commit
+  only: ticking it needs no new preview; `completeSnapshot`, `coverageFrom`, `coverageTo` of `lib/erp-sales-server.ts`). The period is the
+  file's first to last invoice date; the uploader may widen it to the first day of the file's first month and the last day of its last
+  month, never beyond today (a month whose last days had no sale). Refused with documents needing a mapping (`unmappedCount`). Ticked, the
+  import's own row of `crm_erp_imports` keeps `result.coverage` {from, to, months, partialMonths, repIds, allReps, importer, at, importId},
+  also in its audit line: no migration. repIds are the representatives the uploader may import for, less any of a document skipped as out
+  of scope; allReps when that was every active representative and nothing was skipped (a representative added later is covered too; the
+  commit's gate rechecks the active representatives). Entries are never changed or deleted: coverage only grows. The preview (`coverage`)
+  says what a complete file would cover; the receipt says what was recorded. A retry of the same request with another choice is another
+  request (409); without the tick the fingerprints are exactly those of before.
+- **Coverage** (`lib/sales-coverage.ts`, pure). A day is covered for a representative when an entry for them includes it; a month when
+  every day is (the month in progress: from its first day, the indicators reading what was imported through the last covered day). A month
+  only partly in a file is covered only when another complete import covers the rest: the file says nothing about the days outside it. Per
+  KPI, after GSCO's checks: growth needs the month and the comparison days of the month before; retention the month and the three months
+  before; recovered also one whole complete month before those three. A team needs every representative covered.
+- **The KPIs** (`lib/kpis.ts`, `lib/kpis-server.ts`). The manual confirmation still completes all three, as before (fallback). Otherwise
+  each KPI is automatic when covered; within covered months a product or a representative with no sale is a zero (the growth rescaling of
+  zero baselines is unchanged). Not covered: null, `source: 'required'`, the reason naming the months («يلزم رفع مبيعات ERP كاملة لشهر
+  أغسطس 2026.») and `missing` for the English page and export (`kpiMetricReason`, `coverageReason`). Unknown customer codes keep retention
+  and recovered waiting with the identity reason. «بيانات المؤشرات» (`coverage` of `getKpiEvidenceOptions`) says the manual confirmation is
+  no longer needed, or names the missing months.
+- **Default activity targets.** They already applied (10 new customers, 5 recovered, 320 visits: `defaultActivityTargets`, documented in
+  `lib/targets.ts`, the only place they live); now the targets editor writes «افتراضي» beside a value that comes from them (table, phone
+  cards, the edit dialog's note) and the evaluation beside «مستهدفات النشاط» (`activityTargetsDefault` of `/api/sales`). A saved target
+  of the month, or carried from an earlier one, wins; there is no recovery target in «بيانات المؤشرات» (the recovered target is the
+  activity field). Finished months stay locked to the administrator.
+- **Tests.** `tests/sales-coverage.mjs` (default gate, 67 checks), `tests/sales-coverage-http.mjs` (built release, 68),
+  `tests/sales-coverage-browser.mjs` (Chromium, desktop and phone 360, Arabic and English, 86). `tests/targets-export.mjs` now expects the
+  export to receive the page's language.
+- **Going back.** Code only: the coverage entries stay inside the imports' results and the previous release ignores them, so the three KPIs
+  wait for the manual confirmation again.
+
 ## The ERP quotations import: shared customer codes and «مبيعات مكتب» (2026-11-11, release update-quote-codes-20261111, no migration)
 
 - **Asked.** The owner imported his ERP quotations on the live site and many were refused: «كود العميل مسجل لأكثر من عميل في الـCRM؛

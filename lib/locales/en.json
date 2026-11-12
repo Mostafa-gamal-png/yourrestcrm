@@ -1506,5 +1506,8 @@
   "مستهدف الفرع": "Branch target",
   "انتهى هذا الشهر؛ تعديل مستهدفاته لمدير النظام فقط": "This month has ended; only the system administrator can change its targets",
   "سجل التعديلات غير متاح": "The change history is not available",
-  "حدد المستهدف فقط.": "Specify the target only."
+  "حدد المستهدف فقط.": "Specify the target only.",
+  "افتراضي": "Default",
+  "سجل المبيعات مكتمل تلقائيًا من رفع مبيعات ERP الكاملة.": "The sales history is complete from complete ERP sales imports.",
+  "سجل المبيعات مكتمل تلقائيًا من رفع ERP حتى {0}.": "The sales history is complete from ERP imports through {0}."
 }
