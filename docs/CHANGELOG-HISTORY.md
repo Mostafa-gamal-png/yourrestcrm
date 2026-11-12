@@ -45,6 +45,33 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   code, the last purchase of an alias, a renamed code's earlier invoices), and two customers can no longer be given one code through the
   form (the concurrency tests now expect the second save refused).
 - **Activator.** portable/activate-ui-refresh-update.cjs accepts update-quote-codes-activation-20261111 as a previous backup.
+## The salesmen list for the products application (2026-11-12, release update-salesmen-20261112, no migration)
+
+- **Asked.** The products team's new `salesmen` route (agreed contract; their PR yourrest-products#54, not merged when this was built):
+  a request registered in the products application names its representative from the CRM's members, as it names its customer from the
+  `customers` list.
+- **Who is sent** (`lib/mold-salesmen.ts`, pure). Every active member who may file a new mold request exactly as the create path of
+  `POST /api/mold-requests` decides it: a role of `MOLD_ROLES` (`canCreateMoldRequest`), «طلبات تصنيع القوالب» not hidden from them
+  (`pagesBlocked`) and its «إضافة» cell not switched off (`cellRefused`). «المركز الرئيسي» and «مبيعات مكتب» are not members and never
+  sent. The entry (`portable/mold-salesmen.mjs`): `crmMemberId` (`crm_members.id`, `^[A-Za-z0-9_-]{1,64}$`, else skipped), `name` as the
+  users screen shows it with direction marks and invisible characters removed, runs of spaces as one, at most 160 code points, `email`
+  lower-case and left out when it is not an address or is over 160 characters, `active`.
+- **When** (`lib/mold-salesmen-server.ts`, started by the same nudge as the customers list, `lib/mold-customers-hook.ts`). `full` at the
+  first check after the server starts (the release going live), at least once a day, and when a member sent before was deleted;
+  `upsert` of what changed about 5 seconds after a write through `POST /api/crm` (member added or edited, deactivated, permissions
+  changed): changed entries, and active:false for a member sent before who may no longer ask; a check every 10 minutes. Over 1000
+  salesmen or 256 KB a full is never cut (it would deactivate whoever was cut): upsert batches, nobody deactivated that time, a warning.
+- **Before the products release** the route answers 400 invalid_payload with fields `["route"]`: read as «not available yet», no
+  error recorded, one info line a day at most, asked again an hour later.
+- **Kept and logged.** State in one `crm_settings` row `mold-salesmen` (last full, a short fingerprint per salesman sent, the route's
+  absence, the last error's code and fields): no migration. Each send that went through is one `crm_audit` line `mold-salesmen:sync` with
+  counts and `deactivatedIds` (ids only). Failures are a warning an hour at most, with the code, HTTP status and field names. The secret is
+  never logged.
+- **Client and stand-in.** `portable/mold-client.mjs` knows the route (256 KB limit, the answer's five counts and `deactivatedIds`);
+  `scripts/lib/products-mock.mjs` has it behind `{salesmen: true}` / `setSalesmen(true)`, validating the contract field for field;
+  without the option it answers like production today.
+- **Tests.** `tests/mold-salesmen.mjs` (default gate) and `tests/mold-salesmen-http.mjs` (release-build), registered in the manifest,
+  the areas and `tests/CHECKS.md`.
 
 ## Sales-history completeness from the ERP sales import, and the default activity targets (2026-11-12, shipped in release update-quote-codes-20261111, no migration)
 
