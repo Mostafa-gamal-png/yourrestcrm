@@ -22,7 +22,7 @@
     "mold-requests": {
       "about": "«طلبات تصنيع القوالب»: the page, the signature, the route and the link to the products application (stand-in: scripts/lib/products-mock.mjs). The design-file tests send requests through the same rules; pwa-browser opens the page standalone.",
       "sources": ["app/mold-requests.tsx", "app/mold-requests.css", "app/mold-customer-fields.tsx", "app/mold-signature.tsx", "app/mold-sign-link.tsx", "app/mold-sign-page.tsx", "app/mold-sign-page.css", "app/mold-document-viewer.tsx", "app/mold-document-viewer.css", "lib/mold-document-view.ts", "lib/pdf-viewer-loader.ts", "lib/pdf-viewer-loader.offline.ts", "lib/pdf-viewer-fonts.ts", "lib/pdfjs-modules.d.ts", "app/sign/**", "app/api/mold-sign/**", "lib/mold-signed-pdf.ts", "lib/mold-signed-document.ts", "app/mold-signature-page.tsx", "lib/sign-page-canvas.ts", "scripts/lib/signed-document-fixtures.mjs", "lib/mold-sign-server.ts", "app/api/mold-requests/route.ts", "lib/mold-requests.ts", "lib/mold-requests-server.ts", "portable/mold-rules.mjs", "portable/mold-client.mjs", "scripts/lib/products-mock.mjs", "scripts/lib/signature-pad.mjs", "scripts/lib/signature-png.mjs", "scripts/lib/mold-before.mjs", "docs/MOLD-REQUESTS-*", "docs/MOLD-PRODUCTS-MESSAGE-*", "tests/mold-requests*.mjs", "tests/mold-nov10*.mjs", "tests/mold-pdf-view*.mjs", "tests/mold-document-view.mjs"],
-      "tests": ["tests/mold-requests-http.mjs", "tests/mold-requests-browser.mjs", "tests/mold-design-files-http.mjs", "tests/mold-design-files-browser.mjs", "tests/mold-customers-http.mjs", "tests/mold-sign-link-http.mjs", "tests/mold-sign-document-http.mjs", "tests/mold-sign-link-browser.mjs", "tests/mold-nov10-http.mjs", "tests/mold-nov10-browser.mjs", "tests/mold-pdf-view-browser.mjs", "tests/sign-page-bidi-browser.mjs", "tests/server-authorization.mjs", "tests/pwa-browser.mjs"]
+      "tests": ["tests/mold-requests-http.mjs", "tests/mold-requests-browser.mjs", "tests/mold-design-files-http.mjs", "tests/mold-design-files-browser.mjs", "tests/mold-customers-http.mjs", "tests/mold-salesmen-http.mjs", "tests/mold-sign-link-http.mjs", "tests/mold-sign-document-http.mjs", "tests/mold-sign-link-browser.mjs", "tests/mold-nov10-http.mjs", "tests/mold-nov10-browser.mjs", "tests/mold-pdf-view-browser.mjs", "tests/sign-page-bidi-browser.mjs", "tests/server-authorization.mjs", "tests/pwa-browser.mjs"]
     },
     "design-files": {
       "about": "«ملفات التصميم» of a mold request: the component and the three design-file routes; the request page lists them.",
@@ -30,9 +30,9 @@
       "tests": ["tests/mold-design-files-http.mjs", "tests/mold-design-files-browser.mjs", "tests/mold-requests-browser.mjs", "tests/server-authorization.mjs"]
     },
     "mold-customers": {
-      "about": "The CRM's customer list sent to the products application (lib/mold-customers-server.ts, started from /api/crm and the ERP import) and the hosting tools of the mold link.",
-      "sources": ["lib/mold-customers-hook.ts", "lib/mold-customers-server.ts", "portable/mold-import.mjs", "scripts/mold-link/**", "tests/mold-customers*.mjs", "tests/mold-import.mjs", "tests/mold-link.mjs"],
-      "tests": ["tests/mold-customers-http.mjs", "tests/mold-requests-http.mjs", "tests/erp-customers-http.mjs"]
+      "about": "The CRM's customer list and its salesmen list sent to the products application (lib/mold-customers-server.ts and lib/mold-salesmen-server.ts, started from /api/crm and the ERP import) and the hosting tools of the mold link.",
+      "sources": ["lib/mold-customers-hook.ts", "lib/mold-customers-server.ts", "lib/mold-salesmen.ts", "lib/mold-salesmen-server.ts", "portable/mold-salesmen.mjs", "tests/mold-salesmen*.mjs", "portable/mold-import.mjs", "scripts/mold-link/**", "tests/mold-customers*.mjs", "tests/mold-import.mjs", "tests/mold-link.mjs"],
+      "tests": ["tests/mold-customers-http.mjs", "tests/mold-salesmen-http.mjs", "tests/mold-requests-http.mjs", "tests/erp-customers-http.mjs"]
     },
     "erp": {
       "about": "«استيراد من ERP» of customers, the ERP sales workbook import and the ERP quotations import (POST /api/erp-customers, /api/sales/import, /api/erp-quotes).",
@@ -156,6 +156,7 @@
     "tests/service-queue-browser.mjs": 122,
     "tests/support-browser.mjs": 116,
     "tests/mold-customers-http.mjs": 100,
+    "tests/mold-salesmen-http.mjs": 85,
     "tests/complaints-http.mjs": 87,
     "tests/complaint-report-http.mjs": 76,
     "tests/app-browser-workflows.mjs": 73,
