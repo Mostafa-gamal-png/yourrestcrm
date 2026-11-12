@@ -90,6 +90,8 @@ function readFile(file: File): Promise<string> {
   });
 }
 
+const PROBLEM_STATUSES: DocumentStatus[] = ['conflict', 'unmapped', 'out_of_scope', 'unassigned'];
+
 export default function ErpSalesImport({ onClose, onImported }: Props) {
   const { language } = useLanguage();
   const say = (ar: string, en: string) => language === 'en' ? en : ar;
@@ -148,6 +150,15 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
   const monthNames = (months: string[]) => months.map(month => monthLabel(month, language)).join(' · ');
   const documentBlockers = !!preview?.documents.some(doc => doc.status === 'conflict') || (skippedCount > 0 && !previewBody?.allowSkipped);
   const hasBlockers = documentBlockers || !coverageValid;
+  const categoryChoice = (category: string) => categoryMappings[category] || (options?.products.includes(category) ? category : '');
+  const employeeChoice = (employee: Preview['employees'][number]) => employeeMappings[employee.employeeId] || employee.repId || '';
+  const reviewCount = preview?.documents.filter(doc => ['conflict', 'unmapped', 'out_of_scope'].includes(doc.status)).length || 0;
+  const problems = preview && options ? [
+    [say('فئات بلا صنف مستهدف', 'Categories without a target product'), preview.categories.filter(category => !categoryChoice(category)).length],
+    [say('موظفون بلا مندوب', 'Employees without a rep'), preview.employees.filter(employee => !employee.employeeId || !employee.employeeName || !employeeChoice(employee)).length],
+    [say('مستندات تحتاج مراجعة', 'Documents that need review'), reviewCount],
+    [say('مستندات بدون مندوب لن تُستورد', 'Documents without a rep that will not be imported'), preview.summary.unassignedCount || 0],
+  ].filter(([, count]) => Number(count) > 0) as [string, number][] : [];
   const documents = useMemo(() => (preview?.documents || []).filter(doc => filter === 'all' || doc.status === filter), [preview, filter]);
   const pages = Math.max(1, Math.ceil(documents.length / 20)), currentPage = Math.min(page, pages);
   const visibleDocuments = documents.slice((currentPage - 1) * 20, currentPage * 20);
@@ -269,17 +280,21 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
           {preview && <>
             <section className="erp-import-preview" aria-labelledby="erp-preview-heading">
               <h3 id="erp-preview-heading" ref={previewHeading} tabIndex={-1}>{say('ملخص المعاينة', 'Preview summary')}</h3>
+              {!receipt && (problems.length ? <div className="erp-import-problems" role="alert"><strong><AlertCircle size={17} aria-hidden="true"/>{say('مشاكل يجب حلها قبل الاستيراد (معلَّمة بالأحمر)', 'Problems to resolve before importing (marked in red)')}</strong>
+                <ul>{problems.map(([label, count]) => <li key={label}>{label}: <bdi>{count}</bdi></li>)}</ul>
+                {dirty && <p>{say('بعد تعديل الاختيارات اضغط «تحديث المعاينة».', 'After changing your choices, press “Refresh preview”.')}</p>}</div>
+                : !dirty && <p className="erp-import-ok" role="status"><CheckCircle2 size={17} aria-hidden="true"/>{say('لا توجد مشاكل: كل الموظفين والفئات مربوطة، وكل المستندات جاهزة.', 'No problems: every employee and category is mapped and every document is ready.')}</p>)}
               <div className="erp-import-counts" aria-live="polite">
                 {[
                   [say('جديدة', 'New'), preview.summary.newCount],
                   [say('مسجلة سابقًا', 'Duplicates'), preview.summary.duplicateCount],
                   [say('مستبعدة', 'Excluded'), preview.summary.excludedCount],
-                  [say('تحتاج مراجعة', 'Need review'), preview.documents.filter(doc => ['conflict', 'unmapped', 'out_of_scope'].includes(doc.status)).length],
-                ].map(([label, value]) => <div key={String(label)}><span>{label}</span><strong>{value}</strong></div>)}
+                  [say('تحتاج مراجعة', 'Need review'), reviewCount],
+                ].map(([label, value], index) => <div key={String(label)} data-problem={index === 3 && Number(value) > 0 ? 'true' : undefined}><span>{label}</span><strong>{value}</strong></div>)}
               </div>
               <div className="erp-import-summary"><p>{say('صافي الجديد قبل الضريبة', 'New net sales before tax')}<strong dir="ltr">{money(preview.summary.totalCents)} {say('ر.س', 'SAR')}</strong></p>
                 <p>{say('الأشهر من عمود التاريخ', 'Months from the date column')}<strong><bdi>{preview.summary.months.join(' · ') || '—'}</bdi></strong></p></div>
-              {!!preview.summary.unassignedCount && <div className="erp-import-unassigned" role="note"><strong>{say('مستندات بدون مندوب — لن تُستورد', 'Documents without a rep — not imported')}: {preview.summary.unassignedCount}</strong>
+              {!!preview.summary.unassignedCount && <div className="erp-import-unassigned" data-problem="true" role="note"><strong>{say('مستندات بدون مندوب — لن تُستورد', 'Documents without a rep — not imported')}: {preview.summary.unassignedCount}</strong>
                 <p>{say('صافيها قبل الضريبة', 'Their net value before tax')}: <bdi>{money(preview.summary.unassignedTotalCents || 0)} {say('ر.س', 'SAR')}</bdi></p>
                 <p>{say('اسم الموظف أو رقمه مفقود. تُتجاوز هذه المستندات وتُستبعد قيمتها من إجمالي الاستيراد وأداء المناديب.', 'The employee name or number is missing. These documents are skipped and excluded from import totals and rep performance.')}</p></div>}
               {preview.summary.quotationLinkedCount !== undefined && <p className="erp-import-hint" role="note">{say('فواتير بيع يذكر عمود «الوصف» فيها رقم عرض سعر', 'Sales invoices whose «Description» names a quotation')}: <strong>{preview.summary.quotationLinkedCount}</strong>{!!preview.summary.quotationRefsBackfillCount && <> · {say('فواتير مسجلة سابقًا تُضاف إليها أرقام العروض دون تغيير محتواها', 'Saved invoices that take their quotation numbers without changing their content')}: <strong>{preview.summary.quotationRefsBackfillCount}</strong></>}</p>}
@@ -292,7 +307,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
               <div className="erp-import-map-list">{preview.employees.map((employee, index) => {
                 // Server-inferred mappings are display-only until confirmed. Keep the
                 // captured previewBody unchanged so the commit uses the same request.
-                const value = employeeMappings[employee.employeeId] || employee.repId || '';
+                const value = employeeChoice(employee);
                 const office = value === ERP_OFFICE_CHOICE;
                 const known = office || options.members.some(member => member.id === value);
                 const savedMapping = options.employeeMappings.some(item => item.employeeId === employee.employeeId && item.repId === value)
@@ -300,7 +315,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
                 const autoMatched = employee.mappingSource === 'name' && !!employee.repId && employee.repId === value;
                 const missing = !employee.employeeId || !employee.employeeName;
                 const officeLocked = !!employee.officeLocked && employee.repId === ERP_OFFICE_CHOICE;
-                return <label className="erp-import-map-row" key={employee.employeeId + ':' + index} data-office={office ? 'true' : undefined}><span><strong>{employee.employeeName || say('اسم الموظف فارغ', 'Employee name is blank')}</strong><small>{say('رقم الموظف', 'Employee number')}: <bdi>{employee.employeeId || '—'}</bdi>{savedMapping && !missing ? ' · ' + say(office ? 'محدد «مبيعات مكتب» سابقًا' : 'ربط محفوظ', office ? 'Saved as office sales' : 'Saved mapping') : ''}</small></span>
+                return <label className="erp-import-map-row" key={employee.employeeId + ':' + index} data-office={office ? 'true' : undefined} data-problem={missing || !value ? 'true' : undefined}><span><strong>{employee.employeeName || say('اسم الموظف فارغ', 'Employee name is blank')}</strong><small>{say('رقم الموظف', 'Employee number')}: <bdi>{employee.employeeId || '—'}</bdi>{savedMapping && !missing ? ' · ' + say(office ? 'محدد «مبيعات مكتب» سابقًا' : 'ربط محفوظ', office ? 'Saved as office sales' : 'Saved mapping') : ''}</small></span>
                   <select value={value} disabled={immutable || missing || officeLocked} aria-label={say('مندوب الموظف ', 'Rep for employee ') + (employee.employeeName || employee.employeeId)} onChange={event => mappingChanged('employee', employee.employeeId, event.target.value)}>
                     <option value="" disabled={employee.mappingSource === 'name' && !!employee.repId}>{say('اختر المندوب', 'Choose a rep')}</option>
                     {!!value && !known && <option value={value} disabled>{say('المندوب المحفوظ غير متاح ضمن صلاحيتك', 'Saved rep is outside your access')}</option>}
@@ -317,9 +332,9 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
             {!!preview.categories.length && <section className="erp-import-mappings" aria-labelledby="erp-category-mapping">
               <h3 id="erp-category-mapping">{say('ربط الفئات بأصناف المستهدف', 'Map categories to target products')}</h3>
               <div className="erp-import-map-list">{preview.categories.map(category => {
-                const value = categoryMappings[category] || (options.products.includes(category) ? category : '');
+                const value = categoryChoice(category);
                 const mappingLocked = options.canEditCategoryMappings === false && options.categoryMappings.some(item => item.category === category);
-                return <label className="erp-import-map-row" key={category}><span><strong>{category || say('فئة فارغة', 'Blank category')}</strong>{mappingLocked && <small>{say('ربط محفوظ · تعديله لمدير المبيعات', 'Saved mapping · sales manager can change it')}</small>}</span>
+                return <label className="erp-import-map-row" key={category} data-problem={!value ? 'true' : undefined}><span><strong>{category || say('فئة فارغة', 'Blank category')}</strong>{mappingLocked && <small>{say('ربط محفوظ · تعديله لمدير المبيعات', 'Saved mapping · sales manager can change it')}</small>}</span>
                   <select value={value} disabled={immutable || mappingLocked} aria-label={say('صنف الفئة ', 'Target product for ') + category} onChange={event => mappingChanged('category', category, event.target.value)}>
                     <option value="">{say('اختر صنف المستهدف', 'Choose a target product')}</option>
                     {options.products.map(product => <option key={product} value={product}>{t(product)}</option>)}
@@ -330,12 +345,12 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
             </section>}
 
             {!!preview.warnings?.length && <div className="erp-import-warnings" role="note"><strong>{say('ملاحظات التقرير', 'Report notes')}</strong><ul>{preview.warnings.map((warning, index) => <li key={index}>{present(warning)}</li>)}</ul></div>}
-            {skippedCount > 0 && !receipt && <label className="erp-import-skip"><input type="checkbox" checked={allowSkipped} disabled={immutable} onChange={event => { setAllowSkipped(event.target.checked); setDirty(true); setError(''); }}/><span><strong>{say('استيراد الفواتير الجاهزة فقط', 'Import ready invoices only')}</strong><small>{say(`أوافق على استيراد ${preview.summary.newCount} مستند جديد وتجاوز ${skippedCount} مستندًا غير مربوط أو خارج صلاحيتي. يمكن إعادة رفع المتجاوز لاحقًا بعد استكماله.`, `I agree to import ${preview.summary.newCount} new documents and skip ${skippedCount} unmapped documents or documents outside my access. Skipped documents can be uploaded again after they are resolved.`)}</small></span></label>}
+            {skippedCount > 0 && !receipt && <label className="erp-import-skip" data-problem="true"><input type="checkbox" checked={allowSkipped} disabled={immutable} onChange={event => { setAllowSkipped(event.target.checked); setDirty(true); setError(''); }}/><span><strong>{say('استيراد الفواتير الجاهزة فقط', 'Import ready invoices only')}</strong><small>{say(`أوافق على استيراد ${preview.summary.newCount} مستند جديد وتجاوز ${skippedCount} مستندًا غير مربوط أو خارج صلاحيتي. يمكن إعادة رفع المتجاوز لاحقًا بعد استكماله.`, `I agree to import ${preview.summary.newCount} new documents and skip ${skippedCount} unmapped documents or documents outside my access. Skipped documents can be uploaded again after they are resolved.`)}</small></span></label>}
             {coverage && !receipt && <section className="erp-import-complete" aria-labelledby="erp-complete-heading">
               <h3 id="erp-complete-heading">{say('اكتمال سجل المبيعات', 'Sales-history completeness')}</h3>
               <label className="erp-import-skip"><input type="checkbox" checked={completeSnapshot} disabled={immutable || !!coverage.blocker} onChange={event => { setCompleteSnapshot(event.target.checked); setError(''); }}/><span><strong>{say('الملف يشمل كل مبيعات المناديب للفترة التي يغطيها', 'The file includes all reps’ sales for the period it covers')}</strong>
                 <small>{say('حدده فقط إذا كان التقرير كاملًا للفترة. عندها تُحسب «نمو مبيعات الأصناف» و«العملاء المستردون» و«الحفاظ على العملاء الحاليين» تلقائيًا للأشهر التي يغطيها الملف كاملة، ويُعدّ المندوب أو الصنف بلا مبيعات فيها صفرًا، ولا يلزم التأكيد اليدوي في «بيانات المؤشرات».', 'Tick only if the report is complete for the period. Product sales growth, recovered customers and customer retention are then calculated automatically for the months the file covers whole, a rep or product with no sales there counts as zero, and no manual confirmation is needed in the KPI evidence.')}</small></span></label>
-              {!!coverage.blocker && <p className="erp-import-notice" role="status">{present(coverage.blocker)}</p>}
+              {!!coverage.blocker && <p className="erp-import-notice" data-problem="true" role="status">{present(coverage.blocker)}</p>}
               {completeSnapshot && <div className="erp-import-period">
                 <div className="erp-import-period-fields">
                   <label className="field"><span>{say('من', 'From')}</span><input type="date" value={coverageFrom} min={coverage.minFrom} max={coverage.first} disabled={immutable} onChange={event => { setCoverageFrom(event.target.value); setError(''); }}/></label>
@@ -358,8 +373,8 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
                 </select></label>
               </div>
               <div className="erp-import-table-wrap"><table className="erp-import-table"><thead><tr>{[say('المرجع / التاريخ', 'Reference / date'), say('العميل', 'Customer'), say('الموظف ← المندوب', 'Employee → rep'), say('الصافي · ر.س', 'Net · SAR'), say('الحالة', 'Status')].map(label => <th key={label}>{label}</th>)}</tr></thead>
-                <tbody>{visibleDocuments.map(doc => <tr key={doc.key}><td><strong><bdi>{doc.reference}</bdi></strong><small dir="ltr">{doc.date}</small><small>{doc.documentType === 'return' ? say('مردود مبيعات', 'Sales return') : say('فاتورة مبيعات', 'Sales invoice')}</small></td><td>{doc.customerName}<small>{doc.lineCount} {say('بند', 'lines')}</small></td><td>{doc.employeeName || '—'}<small>{doc.repName || '—'}</small></td><td className="erp-import-amount" dir="ltr">{money(doc.totalCents)}</td><td><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span>{doc.reason && <small>{present(doc.reason)}</small>}</td></tr>)}</tbody></table></div>
-              <div className="erp-import-cards">{visibleDocuments.map(doc => <article className="erp-import-document-card" key={doc.key}><div><strong><bdi>{doc.reference}</bdi></strong><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span></div><p>{doc.customerName}</p><small><bdi>{doc.date}</bdi> · {doc.documentType === 'return' ? say('مردود', 'Return') : say('فاتورة', 'Invoice')} · {doc.lineCount} {say('بند', 'lines')}</small><p>{doc.employeeName || '—'}<span aria-hidden="true"> · </span>{doc.repName || (doc.status === 'unassigned' ? say('بدون مندوب', 'No rep') : say('بدون ربط', 'Unmapped'))}</p><strong className="erp-import-amount" dir="ltr">{money(doc.totalCents)} {say('ر.س', 'SAR')}</strong>{doc.reason && <small>{present(doc.reason)}</small>}</article>)}</div>
+                <tbody>{visibleDocuments.map(doc => <tr key={doc.key} data-problem={PROBLEM_STATUSES.includes(doc.status) ? 'true' : undefined}><td><strong><bdi>{doc.reference}</bdi></strong><small dir="ltr">{doc.date}</small><small>{doc.documentType === 'return' ? say('مردود مبيعات', 'Sales return') : say('فاتورة مبيعات', 'Sales invoice')}</small></td><td>{doc.customerName}<small>{doc.lineCount} {say('بند', 'lines')}</small></td><td>{doc.employeeName || '—'}<small>{doc.repName || '—'}</small></td><td className="erp-import-amount" dir="ltr">{money(doc.totalCents)}</td><td><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span>{doc.reason && <small>{present(doc.reason)}</small>}</td></tr>)}</tbody></table></div>
+              <div className="erp-import-cards">{visibleDocuments.map(doc => <article className="erp-import-document-card" key={doc.key} data-problem={PROBLEM_STATUSES.includes(doc.status) ? 'true' : undefined}><div><strong><bdi>{doc.reference}</bdi></strong><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span></div><p>{doc.customerName}</p><small><bdi>{doc.date}</bdi> · {doc.documentType === 'return' ? say('مردود', 'Return') : say('فاتورة', 'Invoice')} · {doc.lineCount} {say('بند', 'lines')}</small><p>{doc.employeeName || '—'}<span aria-hidden="true"> · </span>{doc.repName || (doc.status === 'unassigned' ? say('بدون مندوب', 'No rep') : say('بدون ربط', 'Unmapped'))}</p><strong className="erp-import-amount" dir="ltr">{money(doc.totalCents)} {say('ر.س', 'SAR')}</strong>{doc.reason && <small>{present(doc.reason)}</small>}</article>)}</div>
               {!documents.length && <p className="erp-import-hint">{say('لا توجد فواتير بهذه الحالة.', 'No invoices match this status.')}</p>}
               {pages > 1 && <nav className="erp-import-pagination" aria-label={say('صفحات المعاينة', 'Preview pages')}><button type="button" className="btn subtle small" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>{say('السابق', 'Previous')}</button><span dir="ltr">{currentPage} / {pages}</span><button type="button" className="btn subtle small" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>{say('التالي', 'Next')}</button></nav>}
             </section>
