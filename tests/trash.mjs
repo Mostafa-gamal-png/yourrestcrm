@@ -135,6 +135,13 @@ const newcomer=(await post({action:'save',kind:'customer',data:{name:'مصنع �
 const codedBack=await restore(deletion(coded).id);
 check(codedBack.notes,['لم يُسترجع كود ERP «ERP-B»: أصبح للعميل «مصنع الكود الجديد».'],'restored without the code, and says so');
 check([data(coded).code,aliasesOf(coded),aliasesOf(newcomer)],['',[],['erp-b']],'the code stays the other customer\'s only');
+// ---- a code another customer only had before (cleared since) is nobody's (2026-11-12): the restored customer takes it back
+const once=(await post({action:'save',kind:'customer',data:{name:'مصنع الكود المسترجع',code:'ERP-C',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;
+await remove(once);
+const passer=(await post({action:'save',kind:'customer',data:{name:'مصنع حمل الكود ثم مُسح',code:'erp-c',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;
+await post({action:'save',kind:'customer',id:passer,version:raw(passer).version,data:{...data(passer),code:''}});
+const onceBack=await restore(deletion(once).id);
+check([onceBack.notes,data(once).code,aliasesOf(once),data(passer).code,aliasesOf(passer)],[[],'ERP-C',['ERP-C'],'',['erp-c']],'restored with its code: the other customer only had it before');
 
 // ---- a number taken meanwhile is refused with its code
 const numbered=(await post({action:'save',kind:'customer',data:{name:'مصنع الرقم',region:'الشرقية',location:'',assignedTo:'rep',branch:'HQ'}})).id;

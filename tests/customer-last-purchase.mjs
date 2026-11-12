@@ -1,7 +1,8 @@
 // «لم يشترِ منذ 60 يومًا» (lib/customer-last-purchase.ts, lib/customer-last-purchase-server.ts): the rule and its one grouped statement over
 // the real schema (every drizzle migration in an in-memory SQLite). Boundaries 59/60/61 days (GSCO's: exactly 60 days is still recent);
 // ERP returns and non-positive documents never count; an ERP code two customers share counts for neither unless an explicit mapping
-// picks one; a retained alias counts; confirmed manual invoices count, void ones do not; a status other than «نشط» is never listed;
+// picks one among the code's current holders; a code a customer only had before (a retained alias, a code an ERP import cleared)
+// counts for nobody but its current holder (2026-11-12); confirmed manual invoices count, void ones do not; a status other than «نشط» is never listed;
 // no sales at all is an empty answer. The rows GET /api/crm sends carry data._lastPurchase only on customers that bought.
 // Synthetic data only.
 import fs from 'node:fs';
@@ -78,7 +79,7 @@ erp('C-2',day(1),'return',-100);erp('C-2',day(2),'return',100);
 erp('SHARED',day(2));
 // MAPPED: shared by two too, but an explicit mapping picks «m1»
 erp('MAPPED',day(4));
-// OLD-7: the alias another customer keeps from its previous code
+// OLD-7: only the previous code of «alias» (now NEW-7): nobody's purchase since 2026-11-12
 erp('OLD-7',day(70));
 // ٧٧: Arabic-Indic digits are the same code as 77
 erp('٧٧',day(61));
@@ -88,14 +89,18 @@ erp('NOBODY',day(1));
 manual('m-manual',day(20));manual('a',day(10));manual('void-only',day(1),'void');
 sql.exec("INSERT INTO crm_customer_code_mappings(code_key,customer_id,version,updated_by,updated_at) VALUES('MAPPED','m1',1,'owner','2026-01-01')");
 const latest=await server.readLastPurchases(DB,all);
-eq(Object.fromEntries([...latest].sort()),{a:day(10),alias:day(70),arabic:day(61),m1:day(4),'m-manual':day(20)},'the latest sale per customer: C-1\'s later manual invoice beats its ERP sale of 59 days, returns and zero totals ignored, a shared code ignored, a mapped one counted, an alias and Arabic digits matched, a void invoice ignored');
+eq(Object.fromEntries([...latest].sort()),{a:day(10),arabic:day(61),m1:day(4),'m-manual':day(20)},'the latest sale per customer: C-1\'s later manual invoice beats its ERP sale of 59 days, returns and zero totals ignored, a shared code ignored, a mapped one counted, an old code (alias) not matched, Arabic digits matched, a void invoice ignored');
+const cleared=customer('cleared',{code:'',_erpCodeAliases:['OLD-7']}),holder7=customer('holder7',{code:'OLD-7'});
+eq(Object.fromEntries(lastPurchaseDates([cleared,holder7],[],[{source:'erp',key:'OLD-7',date:day(70)}])),{holder7:day(70)},'a cleared customer\'s old code: the purchase is the current holder\'s');
+eq(Object.fromEntries(lastPurchaseDates([cleared,holder7],[{codeKey:'OLD-7',customerId:'cleared',version:1}],[{source:'erp',key:'OLD-7',date:day(70)}])),{holder7:day(70)},'and a stored mapping to the cleared customer changes nothing: the current holder wins');
+eq(lastPurchaseDates([cleared],[],[{source:'erp',key:'OLD-7',date:day(70)}]).size,0,'nobody carries the code now: nobody bought');
 eq(lastPurchaseDates(all.filter(row=>row.id!=='s2'),[],[{source:'erp',key:'SHARED',date:day(2)}]).get('s1'),day(2),'the same code held by one customer only counts for it');
 eq(lastPurchaseDates(all,[],[{source:'erp',key:'C-1',date:'garbage'},{source:'crm',key:'a',date:''}]).size,0,'unreadable dates are not purchases');
 eq(lastPurchaseDates(all,[],[{source:'crm',key:'machine',date:day(1)},{source:'crm',key:'ghost',date:day(1)}]).size,0,'a manual invoice counts only for a customer of the directory');
 
 // ---- the rows GET /api/crm sends
 const sent=server.withLastPurchase(all,latest);
-eq(sent.filter(row=>row.data._lastPurchase).map(row=>row.id).sort(),['a','alias','arabic','m-manual','m1'],'only customers that bought carry _lastPurchase');
+eq(sent.filter(row=>row.data._lastPurchase).map(row=>row.id).sort(),['a','arabic','m-manual','m1'],'only customers that bought carry _lastPurchase');
 eq(sent.find(row=>row.id==='machine'),all.find(row=>row.id==='machine'),'other kinds are passed through unchanged');
 eq(sent.find(row=>row.id==='none'),all.find(row=>row.id==='none'),'a customer without a purchase is passed through as it is');
 eq(all.find(row=>row.id==='a').data._lastPurchase,undefined,'the loaded rows are not changed');
