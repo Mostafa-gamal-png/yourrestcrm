@@ -188,7 +188,8 @@ async function savePost(req:Request){try{
   if(old&&bodyData?.shortAddress===undefined)data.shortAddress=old.data.shortAddress||'';
   // «نوع العميل» (2026-11-11): a page opened before the field existed sends no customerKind; the stored one stays as it was.
   if(old&&inputData?.customerKind===undefined){if(typeof old.data.customerKind==='string')data.customerKind=old.data.customerKind;else delete data.customerKind;}
-  if(old){for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId','_createdBy','_locationFromVisit'])data[key]=old.data[key];}
+  // erpCreatedAt and erpRep come from the ERP customers file only (lib/erp-customer-extras.ts): the form keeps them as they are.
+  if(old){for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId','_createdBy','_locationFromVisit','erpCreatedAt','erpRep'])data[key]=old.data[key];}
   else {for(const key of ['sourceFile','sourceRow','sourceKey','sourceHash','_visitPlan','_stageVisitId'])delete data[key];data._createdBy=c.me.id;}
   // The note that the place came from a visit belongs to that point: a point someone else sets drops it.
   if(old?.data._locationFromVisit&&(Math.abs((data.latitude??NaN)-(old.data.latitude??NaN))>0.000001||Math.abs((data.longitude??NaN)-(old.data.longitude??NaN))>0.000001))delete data._locationFromVisit;

@@ -4,6 +4,27 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «العملاء الجدد» from the ERP customers file (2026-11-12, not released yet, no migration)
+
+- **Asked.** The owner: «فيه فى داتة العملاء اللى برفعها التاريخ واسم المندوب هاتهم من هنا». Before, «العملاء الجدد» counted only the
+  customers a representative added by hand in the app during the month (`data._createdBy`), divided by the new-customers target.
+- **The import reads «التاريخ».** lib/erp-customer-extras.ts (pure) reads the ERP customers export's «التاريخ» (2026/11/03, 03/11/2026,
+  an Excel serial day, Arabic digits, with or without a time) into `data.erpCreatedAt` (YYYY-MM-DD) of every customer a row ends on and of
+  every customer the import adds, and, when the file has one («المندوب», «اسم المندوب», «رقم الموظف», «كود المندوب»), the representative
+  into `data.erpRep` {employeeId?, name?}; the customer is never reassigned. An empty or unreadable cell erases nothing (the preview counts
+  the unreadable ones). lib/erp-customers-server.ts writes them in the import's one transaction (the version moves once with a code change),
+  one 'erp-customer-fields' audit entry each with before and after (lib/erp-customer-extras-server.ts); a file whose only change is dates or
+  representatives can be applied; the preview and the result say how many (app/erp-customers-import.tsx). A form edit keeps both fields
+  (app/api/crm/route.ts).
+- **The KPI.** lib/new-customers.ts, used by lib/kpis.ts: each customer is credited once in a month, (a) to whom added it by hand in the
+  app that month, else (b) when its ERP date is in the month, to the file's representative when it maps to a CRM member (the ERP employee
+  mappings `crm_erp_employee_mappings`, else exactly one representative's full name), else to the customer's current responsible
+  (`assignedTo`), since the current file has no representative column. «مبيعات مكتب» never counts. A customer the ERP customers import added
+  (its id) is no longer the importer's hand-made customer. A customer made in the month with neither a maker nor an ERP date still makes the
+  metric unknown; one with an ERP date does not. Region and team scoping are unchanged; finished months are recomputed when read. The KPI
+  reads never load the ERP upload parser (lib/kpis-server.ts builds the mapping).
+- **Tests.** tests/new-customers-erp.mjs (pure, 80 checks), tests/new-customers-erp-http.mjs (built release, 26 checks: the import then
+  the KPI); tests/erp-customers-http.mjs leaves «التاريخ» empty in its fixture (what it writes is the new test's).
 ## «تحقيق المستهدف — الشركة» for a company of one branch (2026-11-12, to ship in release update-office-employees-20261112, no migration)
 
 - **Asked.** The owner's screenshot of the live site (administrator): «الشركة» and «فرع الرئيسي» both «—», «لم يكتمل المستهدف»
