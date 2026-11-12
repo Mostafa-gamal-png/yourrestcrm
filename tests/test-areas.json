@@ -37,7 +37,7 @@
     "erp": {
       "about": "«استيراد من ERP» of customers, the ERP sales workbook import and the ERP quotations import (POST /api/erp-customers, /api/sales/import, /api/erp-quotes).",
       "sources": ["app/erp-customers-import.tsx", "app/erp-customers-import.css", "app/erp-sales-import.tsx", "app/erp-sales-import.css", "app/api/erp-customers/**", "app/api/sales/import/**", "lib/erp-customers.ts", "lib/erp-customers-shared.ts", "lib/erp-customers-server.ts", "lib/erp-sales.ts", "lib/erp-sales-server.ts", "lib/quotation-refs.ts", "tests/quote-conversion*.mjs", "lib/erp-quotes.ts", "lib/erp-quotes-server.ts", "app/erp-quotes-import.tsx", "app/erp-quotes-import.css", "app/api/erp-quotes/**", "scripts/lib/erp-quotes-fixture.mjs", "lib/invoice-reference.ts", "docs/ERP-*", "tests/erp-*.mjs"],
-      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-clear-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/erp-quotes-http.mjs", "tests/erp-quotes-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs", "tests/erp-collections-http.mjs", "tests/quote-conversion-http.mjs", "tests/quote-conversion-browser.mjs", "tests/sales-coverage-http.mjs", "tests/sales-coverage-browser.mjs"]
+      "tests": ["tests/erp-customers-http.mjs", "tests/erp-customers-clear-http.mjs", "tests/erp-customers-duplicates-http.mjs", "tests/erp-customers-browser.mjs", "tests/erp-sales-browser.mjs", "tests/erp-quotes-http.mjs", "tests/erp-quotes-browser.mjs", "tests/mold-customers-http.mjs", "tests/ui-refresh-browser.mjs", "tests/server-authorization.mjs", "tests/erp-collections-http.mjs", "tests/quote-conversion-http.mjs", "tests/quote-conversion-browser.mjs", "tests/sales-coverage-http.mjs", "tests/sales-coverage-browser.mjs"]
     },
     "customer-service": {
       "about": "Customer service: requests reaching sales (service queue), assistance (support), complaints, the tracking board, the monthly reports and the evaluation. The panels import one another (service-tracking, service-queue, support-panel, complaints-panel), so the domain runs together.",
@@ -66,7 +66,7 @@
     },
     "customers": {
       "about": "Customers: the customer form and its location picker, address lookup, identities, imports, «لم يشترِ منذ 60 يومًا» (the last purchase GET /api/crm attaches), opening on the device's copy and the slow-phone budget of the customer list and sheet.",
-      "sources": ["app/customer-entry-fields.tsx", "app/customer-entry-fields.css", "app/location-picker.tsx", "app/location-picker.css", "app/customer-picker-mobile.css", "app/customer-directory-mobile.css", "app/api/customer-address/**", "app/api/customer-identities/**", "app/api/customers/**", "lib/customer-options.ts", "lib/customer-last-purchase.ts", "lib/customer-last-purchase-server.ts", "lib/customer-address-server.ts", "lib/customer-identity-server.ts", "tests/customer-*.mjs", "tests/location-*.mjs", "tests/open-cached*.mjs", "tests/perf-budget*.mjs"],
+      "sources": ["app/customer-entry-fields.tsx", "app/customer-entry-fields.css", "app/erp-code-readonly.tsx", "app/erp-code-readonly.css", "app/location-picker.tsx", "app/location-picker.css", "app/customer-picker-mobile.css", "app/customer-directory-mobile.css", "app/api/customer-address/**", "app/api/customer-identities/**", "app/api/customers/**", "lib/customer-options.ts", "lib/customer-last-purchase.ts", "lib/customer-last-purchase-server.ts", "lib/customer-address-server.ts", "lib/customer-identity-server.ts", "tests/customer-*.mjs", "tests/location-*.mjs", "tests/open-cached*.mjs", "tests/perf-budget*.mjs"],
       "tests": ["tests/customer-edit-browser.mjs", "tests/customer-kind-http.mjs", "tests/customer-kind-browser.mjs", "tests/customer-last-purchase-http.mjs", "tests/customer-last-purchase-browser.mjs", "tests/location-picker-browser.mjs", "tests/open-cached-browser.mjs", "tests/perf-budget-browser.mjs", "tests/machines-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/team-home-browser.mjs"]
     },
     "team-home": {
@@ -196,6 +196,7 @@
     "tests/customer-kind-http.mjs": 21,
     "tests/customer-kind-browser.mjs": 22,
     "tests/erp-customers-http.mjs": 21,
+    "tests/erp-customers-duplicates-http.mjs": 12,
     "tests/open-cached-browser.mjs": 20,
     "tests/member-regions-browser.mjs": 19,
     "tests/permissions-http.mjs": 25,

@@ -17,7 +17,7 @@ import {enforceVisitPlace} from '@/lib/visit-place-server';
 import {nudgeMoldCustomers,wakeMoldRetries} from '@/lib/mold-customers-hook';
 import {readLastPurchases,withLastPurchase} from '@/lib/customer-last-purchase-server';
 import {deleteCapture,rootCustomer} from '@/lib/trash-server';
-import {customerCodeKey,erpCodeTaken} from '@/lib/customer-identity';
+import {customerCodeKey,erpCodeTaken,ERP_CODE_LOCKED} from '@/lib/customer-identity';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
@@ -177,6 +177,13 @@ async function savePost(req:Request){try{
  if(kind==='customer'){
   if(old&&activeServiceCase(old.id,c)&&(data.assignedTo!==old.assignedTo||data.branch!==old.branch||data.region!==(old.data.region||'')))throw new CRMError('تغيير مسؤول العميل يتم من تكليف خدمة العملاء أثناء وجود طلب مفتوح',403);
   if(!memberCanAccessRegion(c.me,data.region))throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
+  // The ERP code is read-only here for everyone, the administrator too (the owner, 2026-11-12: «الغى امكانية تعديل كود erp لاى حد حتى مدير
+  // النظام»): only the ERP customers import (lib/erp-customers-server.ts) writes it. A new customer has none; an edit keeps the stored one
+  // exactly (a code sent in another spelling of the same key, Arabic digits or spaces, is the same code; a page that sends none keeps it);
+  // any other value, an emptied code included, is refused. Trash restores (lib/trash-server.ts) put the code back as history, apart.
+  const sentCode=inputData?.code;
+  if(old){if(sentCode!==undefined&&sentCode!==null&&customerCodeKey(sentCode)!==customerCodeKey(old.data.code))throw new CRMError(ERP_CODE_LOCKED,403);if(old.data.code===undefined)delete data.code;else data.code=old.data.code;}
+  else{if(customerCodeKey(sentCode))throw new CRMError(ERP_CODE_LOCKED,403);data.code='';}
   // A customer's ERP code is its own (the owner, 2026-11-12): a code typed or changed here that another customer carries NOW is refused,
   // naming the code (never the other customer, who may be outside the reader's regions). Every customer counts (c.all holds them all).
   // A code another customer only had before is free: it matches nothing. A save that keeps the code is never refused, so an older

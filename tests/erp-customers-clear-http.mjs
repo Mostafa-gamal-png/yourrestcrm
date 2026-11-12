@@ -7,8 +7,8 @@
 // moved; nothing else of the record changes), one 'erp-customer-code' audit entry each {label, from, to: '', cleared: true}, `cleared`
 // in the answer; the matched customer keeps the code the file gives it; the old code stays in crm_customer_code_aliases as history and a
 // stored mapping of it stays, but a cleared customer is not an ERP customer (2026-11-12): it matches nothing, so an invoice under its old
-// code is no longer its last purchase, the customer form may give the code to another customer, whose last purchase it then is, and the
-// form refuses a code another customer carries now;
+// code is no longer its last purchase, the ERP customers import may give the code to another customer, whose last purchase it then is, and the
+// form writes no ERP code for anyone (2026-11-12);
 // a customer edited after the preview (or moved to another region), or an apply without/with another clearSnapshot, is 409 and writes
 // nothing; a repeated request returns the saved answer, the same request with the box changed is 409; the sales manager clears only
 // their regions' customers. Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
@@ -145,13 +145,20 @@ try {
   // ---- the customers list and what still resolves through the old code
   const crm = (await owner('/api/crm')).json(), listed = Object.fromEntries(crm.records.filter(r => r.kind === 'customer').map(r => [r.id, r]));
   check([listed.gone.data.code, listed.gone.data._erpCodeAliases, listed.gone.data._lastPurchase], ['', ['900'], undefined], 'the customers list: an empty ERP code, the old one kept as history, and the invoice under it no longer its last purchase (a cleared customer matches nothing)');
-  // ---- the code is free: the form refuses a code another customer carries, and gives a cleared one to another customer
+  // ---- the code is free, and only the ERP customers import gives it: the form writes no ERP code for anyone (2026-11-12)
+  const LOCKED = 'كود ERP لا يُكتب ولا يُعدَّل يدويًا لأي مستخدم، ولا لمدير النظام؛ يُحدَّث من ملف عملاء ERP فقط («استيراد من ERP»).';
   const save = data => owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {region: 'الوسطى', location: '', assignedTo: 'rep', branch: 'الرئيسي', ...data}}});
-  response = await save({name: 'مصنع يكرر الرقم', code: ' 12 '});
-  check([response.status, response.json().error], [400, 'كود ERP «12» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.'], 'a code another customer carries now is refused, naming it');
-  response = await save({name: 'مصنع يأخذ 900', code: '900'});
-  check(response.status, 200, 'the code a cleared customer had is free');
-  const taker = response.json().id, relisted = Object.fromEntries((await owner('/api/crm')).json().records.filter(r => r.kind === 'customer').map(r => [r.id, r]));
+  for (const code of [' 12 ', '900']) {
+    response = await save({name: 'مصنع يكتب كودًا', code});
+    check([response.status, response.json().error], [403, LOCKED], 'the form refuses the code «' + code + '», the administrator\'s too');
+  }
+  response = await save({name: 'مصنع يأخذ 900'});
+  check(response.status, 200, 'a customer added by hand, without a code');
+  const taker = response.json().id, takeFile = xlsx([row('900', 'مصنع يأخذ 900')]);
+  body = (await post(owner, {action: 'preview', fileName: 'Customer.xlsx', base64: takeFile})).json();
+  check(body.rows.map(r => [r.status, r.customerId, r.from, r.to]), [['auto', taker, '', '900']], 'the ERP file gives it the code a cleared customer had (free)');
+  check((await post(owner, {...base, base64: takeFile, snapshot: body.snapshot, requestId: crypto.randomUUID()})).status, 200, 'applied');
+  const relisted = Object.fromEntries((await owner('/api/crm')).json().records.filter(r => r.kind === 'customer').map(r => [r.id, r]));
   check([relisted[taker].data.code, relisted[taker].data._lastPurchase, relisted.gone.data._lastPurchase], ['900', day(12), undefined], 'the invoice under 900 is now the last purchase of the customer that carries 900, never the cleared one\'s');
   check([listed.nour.data.code, listed.kept.data.code, listed.nocode.data.code, listed.similar.data.code], ['12', 'K-2', '', '903'], 'the others as the file and the CRM leave them');
   ok(Object.values(before).length === ids.length, 'every fixture checked');

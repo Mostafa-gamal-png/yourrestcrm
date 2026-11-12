@@ -38,6 +38,7 @@ function commonRequire(name){
  if(name==='./offline-status')return {__esModule:true,default:OfflineStatus};
  if(name==='./my-targets')return {__esModule:true,default:MyTargets};
  if(name==='./region-picker')return load('app/region-picker.tsx',commonRequire);
+ if(name==='./erp-code-readonly')return load('app/erp-code-readonly.tsx',commonRequire);
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='./complaints-panel')return new Proxy({useComplaints:()=>({data:null,refresh:async()=>{},forCustomer:()=>[],badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
@@ -86,7 +87,12 @@ for(const locale of ['ar','en']){
  const region=nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerRegionField')[0];eq(insideOptional.has(region),false,'Region stays outside optional details');
  const regionField=region.type(region.props);eq(regionField.props.disabled,true,'Rep cannot change assigned region');const selectedRegion=nodes(regionField,node=>node.type==='input'&&node.props.type==='radio'&&node.props.checked);eq(selectedRegion.map(node=>node.props.value).join(','),'الغربية','Assigned region remains visible');
  const phone=labels.find(node=>text(node)===tr('الجوال'));eq(nodes(phone,node=>node.type==='input')[0].props.type,'tel','Phone uses the dial keyboard hint');eq(insideOptional.has(phone),false,'Phone stays in short customer form');
- const code=labels.find(node=>text(node)===(locale==='ar'?'كود العميل في ERP':'Customer ERP code'));ok(insideOptional.has(code),'Customer code remains accessible inside optional details');
+ // The ERP code is read-only for everyone (2026-11-12): shown as text inside the optional details, never an input; a new customer has none.
+ eq(labels.some(node=>text(node).startsWith(locale==='ar'?'كود العميل في ERP':'Customer ERP code')),false,'No ERP code input in the customer form');
+ const code=nodes(form,node=>typeof node.type==='function'&&node.type.name==='ErpCodeReadOnly')[0];ok(insideOptional.has(code),'The ERP code stays visible inside optional details');
+ const codeShown=code.type(code.props);eq(nodes(codeShown,node=>['input','textarea','select'].includes(node.type)).length,0,'The ERP code cannot be typed');
+ eq(text(nodes(codeShown,node=>node.props?.className==='erp-code-readonly-value')[0]),locale==='ar'?'لا يوجد كود ERP':'No ERP code','A new customer has no ERP code');
+ eq(text(nodes(codeShown,node=>node.props?.className==='erp-code-readonly-note')[0]),locale==='ar'?'يُحدَّث من ملف عملاء ERP فقط':'Updated from the ERP customers file only','The note says where the code comes from');
  eq(labels.some(node=>text(node).includes(tr('المندوب المسؤول'))),false,'Rep form exposes no assignment override');
  nameInput.props.onChange({target:{value:'مصنع جديد'}});eq(h.state.formDirty,true,'Changing input marks unsaved customer draft');tree=h.render();form=nodes(tree,node=>node.type==='form')[0];button(form,tr('إلغاء')).props.onClick();
  eq(h.state.discardForm,true,'Cancel requests explicit discard confirmation');eq(h.state.form.data.name,'مصنع جديد','Cancel retains the entire draft');
@@ -201,7 +207,11 @@ for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager',
   h.state.me=actor;h.state.erpCustomersOpen=false;h.state.view='activity';tree=h.render();eq(button(tree,locale==='ar'?'استيراد من ERP':'Import from ERP'),undefined,'The import action is on the customers page only');h.state.view='customer';tree=h.render();}
  if(role==='customer_service_manager')continue;
  child(tree,CustomerMachines).props.onEdit(customer);tree=h.render();const internal=nodes(tree,node=>node.type==='input'&&node.props.value==='YR-C-000123')[0];ok(internal,'Customer editor displays permanent Yourrest code');eq(internal.props.readOnly,true,'Permanent code is not editable');eq(internal.props.onChange,undefined,'Permanent code has no mutation callback');
- const erp=nodes(tree,node=>node.type==='input'&&node.props.value==='ERP-456')[0];ok(erp.props.onChange,'External ERP code remains editable');erp.props.onChange({target:{value:'ERP-789'}});eq(h.state.form.data.code,'ERP-789');eq(h.state.form.data.internalCode,'YR-C-000123','ERP edit preserves permanent internal code');
+ // The ERP code is read-only for every role, the administrator with every region too (2026-11-12): text, never an input.
+ eq(nodes(tree,node=>['input','textarea'].includes(node.type)&&node.props.value==='ERP-456').length,0,'The ERP code is not an input for '+role);
+ const erpNode=nodes(tree,node=>typeof node.type==='function'&&node.type.name==='ErpCodeReadOnly')[0],erp=erpNode.type(erpNode.props);
+ eq(text(nodes(erp,node=>node.props?.className==='erp-code-readonly-value')[0]),(locale==='ar'?'كود ERP':'ERP code')+': ERP-456','The editor shows the ERP code as text ('+role+')');
+ eq(h.state.form.data.code,'ERP-456','The form keeps the stored ERP code unchanged');eq(h.state.form.data.internalCode,'YR-C-000123','The permanent internal code is kept');
  h.state.form=null;h.state.q='YR-C-000123';tree=h.render();eq(child(tree,CustomerMachines).props.customers.length,1,'Directory search matches permanent code');
 }
 
