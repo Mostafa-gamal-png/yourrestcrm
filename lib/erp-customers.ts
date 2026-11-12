@@ -1,5 +1,5 @@
 import type {Member,Row} from './crm';
-import {customerCodeKey,customerCodeCandidates,type CustomerCodeMapping} from './customer-identity';
+import {customerCodeKey,customerCodeCandidates,effectiveCodeMapping,type CustomerCodeMapping} from './customer-identity';
 import {memberCanAccessRegion,regionOptions,regionScope} from './regions';
 import {ERP_ADD_CUSTOMER,ERP_CUSTOMERS_MAX_ADDS} from './erp-customers-shared';
 export {ERP_ADD_CUSTOMER,ERP_CUSTOMERS_MAX_ADDS};
@@ -107,13 +107,13 @@ export function erpCustomerRows(sheets:SheetLike[]):{sheet:string;rows:ErpCustom
  return fail(`هذا ليس ملف عملاء ERP: يجب أن يحتوي على عمود «${erpCustomerColumns.code}» ومعه عمود الاسم أو الجوال. صدّر ملف العملاء من ERP كما هو.`);
 }
 
-/** Why a customer is offered for a row: its phone, its full name, both, the row's ERP code (its current code, a kept old code or a stored
- * mapping), or a similar name. */
+/** Why a customer is offered for a row: its phone, its full name, both, the row's ERP code (its current code, or a stored mapping to it
+ * among the code's current holders: a code it only had before names nothing since 2026-11-12), or a similar name. */
 export type MatchedBy='phone'|'name'|'both'|'code'|'similar';
 export type ErpCustomerCandidate={id:string;name:string;internalCode:string;code:string;region:string;phones:string[];matchedBy:MatchedBy};
 export type ErpCustomerStatus='auto'|'same'|'choose'|'similar'|'new'|'out-of-region'|'held-outside'|'invalid';
 /** One ERP row. `customerId` is the customer it ends on ('' when none); `add` says the row is added as a new customer; `from` → `to` its ERP
- * code before and after; `sharedWith` how many other customers hold that number (current code or kept alias), in which case `mapping` says
+ * code before and after; `sharedWith` how many other customers hold that number as their current code, in which case `mapping` says
  * an explicit mapping is written. `codeRow` is the other row of the file that carries the single candidate's current code (0 when none):
  * then the row is a choice, not automatic. */
 export type ErpCustomerOutcome={row:number;code:string;name:string;phones:string[];status:ErpCustomerStatus;issue:ErpCustomerRow['issue']|'too-many-matches'|'no-name';matchedBy:MatchedBy|'';candidates:ErpCustomerCandidate[];customerId:string;add:boolean;chosen:boolean;conflict:boolean;codeRow:number;from:string;to:string;change:boolean;mapping:boolean;sharedWith:number};
@@ -134,14 +134,19 @@ export function erpNewCustomerRegions(me:Member){const regions=erpNewCustomerReg
 
 const push=(map:Map<string,Row[]>,key:string,row:Row)=>{const list=map.get(key)||[];if(!list.includes(row))list.push(row);map.set(key,list);};
 /** Whether giving this number to one of `me`'s customers would decide the ERP invoices of a customer outside `me`'s regions: a stored
- * mapping gives the number to such a customer, or, with no mapping to a customer inside, such a customer holds it (current code or kept
- * alias) — the number's invoices are theirs now, or nobody's while it is shared. Only the system administrator (all regions) decides
- * those. A mapping to a holder inside the regions already keeps every outside holder out of the number, so it may move between `me`'s customers. */
+ * mapping gives the number to such a customer among its current holders, or, with no such mapping to a customer inside, such a customer
+ * holds it as its current code — the number's invoices are theirs now, or nobody's while it is shared. Only the system administrator (all
+ * regions) decides those. A mapping to a holder inside the regions already keeps every outside holder out of the number, so it may move
+ * between `me`'s customers. `holders` are the current holders; a mapping to a customer that is not one of them decides nothing and is
+ * ignored (effectiveCodeMapping), as a code a customer only had before is: neither is anyone's invoices. Such a stale mapping to a customer
+ * outside the regions still stays the administrator's to rewrite: while somebody carries the number (giving it to another customer would
+ * write a mapping over it), the number is held outside; while nobody does, nothing is written over it and the code may be given. */
 export function heldOutsideRegions(me:Member,holders:Row[],mapping:CustomerCodeMapping|undefined,customers:Map<string,Row>){
  if(regionScope(me)==='all')return false;
- const inside=(customer?:Row)=>!!customer&&memberCanAccessRegion(me,customer.data.region);
- if(mapping&&!inside(customers.get(mapping.customerId)))return true;
- return !(mapping&&holders.some(holder=>holder.id===mapping.customerId))&&holders.some(holder=>!inside(holder));
+ const inside=(customer?:Row)=>!!customer&&memberCanAccessRegion(me,customer.data.region),effective=effectiveCodeMapping(mapping,holders);
+ if(effective&&!inside(customers.get(effective.customerId)))return true;
+ if(mapping&&!effective&&holders.length&&!inside(customers.get(mapping.customerId)))return true;
+ return !effective&&holders.some(holder=>!inside(holder));
 }
 /** Matches every ERP row to CRM customers, applies the user's choices (row → customer id, '' to leave the row, ERP_ADD_CUSTOMER to add
  * it), and plans the code changes and the new customers. Pure: `customers` are the CRM customers (all of them, for holders and hidden
@@ -150,7 +155,7 @@ export function heldOutsideRegions(me:Member,holders:Row[],mapping:CustomerCodeM
  *    `out-of-region`, and a row whose number a customer outside them holds reads `held-outside` (heldOutsideRegions), both with no details.
  *    A row matching more than ERP_CUSTOMER_MAX_CANDIDATES customers is `invalid` (`too-many-matches`). A single candidate whose current
  *    code is another row of the file is a choice; among several candidates, the one that already has exactly this number is preselected as `same`.
- * 2. Else by the row's code, when customers hold it (current code, kept alias, stored mapping): held outside the regions → `held-outside`;
+ * 2. Else by the row's code, when customers hold it as their current code (a stored mapping picks one of them): held outside the regions → `held-outside`;
  *    the mapped customer or the only holder → `same`, matched by `code`, nothing changed unless the user picks it; several → `choose`. As in
  *    1, a holder whose current code is another row of the file is not preselected: a choice with `codeRow` (else that row and this one
  *    would both end on it, a conflict on every later import of the same file).
@@ -165,9 +170,10 @@ export function heldOutsideRegions(me:Member,holders:Row[],mapping:CustomerCodeM
  * snapshot; it and `adds` are for the server only.
  * `clears` (the owner, 2026-11-09: «عايزه العملاء اللى مش موجودين فى الشييت يبقى كود erp فاضى»): the customers inside `me`'s regions with
  * a non-empty current ERP code that no row of the file names, by any evidence the matcher reads: a phone or the exact loose name of any
- * row (rows too wide to offer and rows with an issue included), the row's number held as a current code, a kept old code or a stored
- * mapping, a candidate offered for a row (similar names included) or the customer a row ends on. They do not depend on the choices (a
- * choice only picks among candidates), so the preview's list is the apply's. Sorted like the candidates (Yourrest code, then id). */
+ * row (rows too wide to offer and rows with an issue included), the row's number held as a current code, a candidate offered for a row
+ * (similar names included) or the customer a row ends on. They do not depend on the choices (a choice only picks among candidates), so
+ * the preview's list is the apply's. Sorted like the candidates (Yourrest code, then id). A cleared customer is not an ERP customer: its
+ * code is '' and it matches nothing (no invoice, quotation, last purchase or mold request), the code it had only stays in its history. */
 export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:{me:Member;mappings?:CustomerCodeMapping[];choices?:Map<number,string>}){
  const all=customers.filter(row=>row.kind==='customer'),byPhone=new Map<string,Row[]>(),byName=new Map<string,Row[]>(),holders=customerCodeCandidates(all);
  for(const customer of all){for(const key of new Set([...phoneKeys(customer.data.phone),...phoneKeys(customer.data.phone2)]))push(byPhone,key,customer);const key=nameKey(customer.data.name);if(key)push(byName,key,customer);}
@@ -225,7 +231,8 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
   const byPhoneHits=new Set(phoneLists.flat()),byNameHits=new Set(nameLists.flat()),found=[...new Set([...byPhoneHits,...byNameHits])];
   if(found.length>ERP_CUSTOMER_MAX_CANDIDATES)return wide();
   for(const customer of found)involved.set(customer.id,customer.version);
-  const held=[...(holders.get(row.codeKey)||[])],mapping=mappings.get(row.codeKey),mapped=mapping&&byId.get(mapping.customerId);
+  // The row's number: its current holders and a stored mapping that picks one of them (a mapping to anyone else is ignored).
+  const stored=mappings.get(row.codeKey),held=[...(holders.get(row.codeKey)||[])],mapping=effectiveCodeMapping(stored,held),mapped=mapping&&byId.get(mapping.customerId);
   const preselect=(customer:Row,status:ErpCustomerStatus)=>{base.status=status;base.customerId=customer.id;base.matchedBy=base.candidates.find(candidate=>candidate.id===customer.id)!.matchedBy;};
   let several=false;
   if(found.length){
@@ -234,7 +241,7 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
    if(!visible.length){base.status='out-of-region';return refuseChoice();}
    // A member limited to regions: the number's holders and its mapping are part of what the preview showed (a region change moves a version).
    if(limited){for(const holder of held)involved.set(holder.id,holder.version);if(mapped)involved.set(mapped.id,mapped.version);}
-   if(heldOutsideRegions(options.me,held,mapping,byId)){base.status='held-outside';return refuseChoice();}
+   if(heldOutsideRegions(options.me,held,stored,byId)){base.status='held-outside';return refuseChoice();}
    const matched=(customer:Row):MatchedBy=>byPhoneHits.has(customer)&&byNameHits.has(customer)?'both':byPhoneHits.has(customer)?'phone':'name';
    offer(visible.length);
    base.candidates=visible.map(customer=>view(customer,matched(customer)));
@@ -248,16 +255,15 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
     if(holding.length===1)preselect(holding[0],'same');else base.status='choose';
    }
   }else if(held.length||mapped){
-   // 2. By the code: the CRM already knows this number. Never added.
-   if(mapped&&!held.includes(mapped))held.push(mapped);
+   // 2. By the code: a customer carries this number now. Never added.
    for(const holder of held)involved.set(holder.id,holder.version);
-   if(heldOutsideRegions(options.me,held,mapping,byId)){base.status='held-outside';return refuseChoice();}
+   if(heldOutsideRegions(options.me,held,stored,byId)){base.status='held-outside';return refuseChoice();}
    const visible=held.filter(inScope);
    offer(visible.length);
    base.candidates=visible.map(customer=>view(customer,'code'));
    several=visible.length>1;
    const owner=mapped||(visible.length===1?visible[0]:undefined),current=owner?customerCodeKey(owner.data.code):'';
-   // The holder's current code is another row of this file (it keeps this number only as an old code or a mapping): the user confirms.
+   // The mapped holder's current code is another row of this file: the user confirms.
    const other=owner&&current!==row.codeKey&&fileCodes.get(current)||0;
    if(owner&&!other)preselect(owner,'same');else{base.status='choose';base.codeRow=other;}
   }else{
@@ -292,20 +298,22 @@ export function matchErpCustomers(rows:ErpCustomerRow[],customers:Row[],options:
   if(outcome.add){adds.push({row:row.row,code:row.code,codeKey:row.codeKey,name:(row.name||row.nameEn).slice(0,250).trim(),phone:row.contact.mobile,phone2:row.contact.phone,email:row.contact.email,address:row.contact.address});return;}
   if(!outcome.customerId)return;
   if((targets.get(outcome.customerId)||0)>1){outcome.conflict=true;if(outcome.status!=='similar')outcome.status='choose';}
-  const customer=byId.get(outcome.customerId)!,mapping=mappings.get(row.codeKey);
+  // `stored` is the code's mapping row (rewritten by its version). One already naming this customer decides once the customer carries the
+  // number (it is then a current holder), so it is kept; one naming anybody else is rewritten when another customer still carries it.
+  const customer=byId.get(outcome.customerId)!,stored=mappings.get(row.codeKey);
   const sharedWith=(holders.get(row.codeKey)||[]).filter(holder=>holder.id!==customer.id).length,codeChange=customerCodeKey(customer.data.code)!==row.codeKey;
-  // Found by its code and not picked: the customer already holds the number (maybe as a kept old code); nothing is written.
+  // Found by its code and not picked: the customer already holds the number; nothing is written.
   if(outcome.matchedBy==='code'&&!outcome.chosen){Object.assign(outcome,{from:String(customer.data.code||''),sharedWith});return;}
-  Object.assign(outcome,{from:String(customer.data.code||''),sharedWith,mapping:sharedWith>0&&mapping?.customerId!==customer.id});
+  Object.assign(outcome,{from:String(customer.data.code||''),sharedWith,mapping:sharedWith>0&&stored?.customerId!==customer.id});
   outcome.change=codeChange||outcome.mapping;
-  if(outcome.change&&!outcome.conflict)plan.push({row:outcome.row,customerId:customer.id,version:customer.version,codeKey:row.codeKey,from:outcome.from,to:row.code,codeChange,mapping:outcome.mapping,mappingVersion:outcome.mapping?mapping?.version||0:0});
+  if(outcome.change&&!outcome.conflict)plan.push({row:outcome.row,customerId:customer.id,version:customer.version,codeKey:row.codeKey,from:outcome.from,to:row.code,codeChange,mapping:outcome.mapping,mappingVersion:outcome.mapping?stored?.version||0:0});
  });
  // Every customer the file names in any way; the rest of `me`'s customers that still carry an ERP code are the ones the ERP does not have.
  const named=new Set<string>(),mark=(list?:Row[])=>{for(const customer of list||[])named.add(customer.id);};
  for(const row of rows){
   for(const key of row.phones)mark(byPhone.get(key));
   for(const key of [nameKey(row.name),nameKey(row.nameEn)])if(key)mark(byName.get(key));
-  if(row.codeKey){mark(holders.get(row.codeKey));const mapping=mappings.get(row.codeKey);if(mapping)named.add(mapping.customerId);}
+  if(row.codeKey)mark(holders.get(row.codeKey));
  }
  for(const outcome of outcomes){for(const candidate of outcome.candidates)named.add(candidate.id);if(outcome.customerId)named.add(outcome.customerId);}
  const clears:ErpCustomerClear[]=all.filter(customer=>!named.has(customer.id)&&inScope(customer)&&customerCodeKey(customer.data.code)).sort(order)

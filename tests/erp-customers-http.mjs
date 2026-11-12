@@ -1,6 +1,6 @@
 // «استيراد من ERP» (POST /api/erp-customers, lib/erp-customers-server.ts) over real HTTP against the BUILT release (run `pnpm build`
 // first): a synthetic ERP customer export built here; the preview's rows and counts and that it writes nothing; the apply in one step
-// (only `data.code` changes, the old code stays as an alias, an explicit mapping where another customer holds the number, one audit
+// (only `data.code` changes, the old code stays as an alias (history only: matching reads current codes), an explicit mapping where another customer holds the number, one audit
 // entry per changed customer with no phone number, versions moved once); a repeated tap returns the saved answer and the same request
 // with other choices is 409; a customer edited after the preview gives 409 and writes nothing; two rows on one customer are refused;
 // the sales manager sees and changes only their regions' customers and never a number a customer outside them holds (by its code or by
@@ -10,7 +10,7 @@
 // phones, email and address only, an «إضافة» history entry); a repeated request adds nobody twice; a region outside the user's scope is
 // refused (400 / 403) and the sales manager adds only in their region; a similar name left alone adds nothing, «هو نفسه» gives that
 // customer the code, «عميل جديد» adds; a code that became held between the preview and the apply refuses with 409; the same file
-// again after «هو نفسه» (the old code kept) has no conflict; a similar name only outside the manager's regions is out-of-region, not added.
+// again after «هو نفسه» has no conflict and its row of safa's old code is a new customer; a similar name only outside the manager's regions is out-of-region, not added.
 // Additions are opt-in: the apply carries `adds` (the number the preview showed). An apply without it (a screen loaded before the deploy,
 // which said rows without a match are left alone and cannot read this release's answer) is refused with 409 and a reload message in
 // Arabic and English, code-only applies too; one with another number is refused with 409; neither writes anything.
@@ -158,7 +158,7 @@ try {
     check(withoutCode(after[id].data), withoutCode(before[id].data), 'nothing but the code changed in ' + id);
     check(after[id].version, ['nour', 'fajr', 'twinB', 'east'].includes(id) ? 2 : 1, 'version moved once for a changed customer only: ' + id);
   }
-  check((await app.db.prepare("SELECT source_code FROM crm_customer_code_aliases WHERE customer_id='nour' ORDER BY source_code").all()).results.map(r => r.source_code), ['12', 'OLD-1'], 'the old code stays as an alias, so old invoices still find the customer');
+  check((await app.db.prepare("SELECT source_code FROM crm_customer_code_aliases WHERE customer_id='nour' ORDER BY source_code").all()).results.map(r => r.source_code), ['12', 'OLD-1'], 'the old code stays as an alias, as history only (matching reads current codes)');
   check((await app.db.prepare('SELECT code_key,customer_id,version FROM crm_customer_code_mappings').all()).results.map(r => ({...r})), [{code_key: '12', customer_id: 'nour', version: 1}], 'the shared number is mapped to the matched customer; the other holder keeps its code');
   ok(await revision() > revisionBefore, 'the identity revision moved');
   const audits = (await app.db.prepare("SELECT record_id,action,detail FROM crm_audit WHERE action='erp-customer-code' ORDER BY record_id").all()).results;
@@ -226,15 +226,14 @@ try {
   response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: asNew, snapshot: sim.snapshot, requestId: simId, choices: [{row: 3, customerId: '+new'}], region: 'الغربية', adds: 1});
   check([response.status, response.json().added, response.json().changed, response.json().additions.map(a => [a.customerId, a.code, a.region])], [200, 1, 0, [['crm-owner-erp-' + simId + '-3', '9004', 'الغربية']]], '«عميل جديد» applied: added');
   check((await record('safa')).data.code, '9003', 'and the similar customer is untouched');
-  // The same kind of file again after «هو نفسه»: safa's code is 9003 and 345 a kept old code. Row 345 (another customer) finds safa only by
-  // that old code and safa's current code is another row of the file: a choice, not a second row on safa, so nothing conflicts and the
-  // new customer in the file can still be added.
+  // The same kind of file again after «هو نفسه»: safa's code is 9003 and 345 only a code it had before, which names nobody since
+  // 2026-11-12. Row 345 (another ERP customer) is a new customer, added with its own number; safa is the row with its current code.
   const reimport = xlsx([row('345', 'اسم تاني خالص'), row('9003', 'مصنع الصفا للبلوك الحديث'), row('9006', 'مصنع المرجان')]);
   sim = (await post(owner, {...preview, base64: reimport})).json();
-  check(sim.rows.map(r => [r.row, r.status, r.customerId, r.codeRow, r.conflict]), [[3, 'choose', '', 4, false], [4, 'same', 'safa', 0, false], [5, 'new', '', 0, false]], 're-imported: the old code is a choice pointing at the row with safa\'s current code, which is the same');
-  check([sim.summary.conflicts, sim.summary.adds, sim.summary.changes], [0, 1, 0], 'no conflict, one customer to add');
-  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: reimport, snapshot: sim.snapshot, requestId: crypto.randomUUID(), adds: 1});
-  check([response.status, response.json().added, response.json().changed, (await record('safa')).data.code], [200, 1, 0, '9003'], 'the re-import applies: the new customer is added, safa keeps 9003');
+  check(sim.rows.map(r => [r.row, r.status, r.customerId, r.codeRow, r.conflict]), [[3, 'new', '', 0, false], [4, 'same', 'safa', 0, false], [5, 'new', '', 0, false]], 're-imported: safa\'s old code finds nobody (a new customer), the row with safa\'s current code is the same');
+  check([sim.summary.conflicts, sim.summary.adds, sim.summary.changes], [0, 2, 0], 'no conflict, two customers to add');
+  response = await post(owner, {action: 'apply', fileName: 'Customer.xlsx', base64: reimport, snapshot: sim.snapshot, requestId: crypto.randomUUID(), adds: 2});
+  check([response.status, response.json().added, response.json().changed, (await record('safa')).data.code, response.json().additions.map(a => a.code)], [200, 2, 0, '9003', ['345', '9006']], 'the re-import applies: 345 is added as its own customer (the code safa only had before is free), safa keeps 9003');
 
   // ---- a code that became held between the preview and the apply: 409, nothing written
   const late = xlsx([row('501', 'مصنع الريحان')]);

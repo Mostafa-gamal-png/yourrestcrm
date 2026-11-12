@@ -1,4 +1,5 @@
-// Real handlers + SQLite: retained ERP aliases and explicit, scoped identity resolution.
+// Real handlers + SQLite: matching by the CURRENT ERP code only (2026-11-12: a code a customer had before is history, never a match),
+// the refusal of a code another customer carries now, and explicit, scoped identity resolution among the current holders.
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
@@ -68,7 +69,10 @@ const {isValidKpiConversion,readKpiPurchaseHistory}=await import(path.join(out,'
 const sale={id:'erp-old',customerId:'erp-customer:ERP-OLD',repId:'rep',source:'erp',date:'2025-01-15',status:'confirmed',totalCents:10000,documentType:'sale'};
 check(isValidKpiConversion(await context(),'quote','erp-old','rep','2025-01',[sale]),true);
 await post(edit(first,{code:'ERP-NEW'}));
-check(isValidKpiConversion(await context(),'quote','erp-old','rep','2025-01',[sale]),true,'A source-code edit must preserve prior ERP invoice/quote identity');
+check(isValidKpiConversion(await context(),'quote','erp-old','rep','2025-01',[sale]),false,'A renamed code moves the matching: an invoice of the code the customer had before is no longer its (2026-11-12)');
+check(sql.prepare('SELECT source_code FROM crm_customer_code_aliases WHERE customer_id=? ORDER BY source_code').all(first).map(row=>row.source_code),['ERP-NEW','ERP-OLD'],'the old code is still kept, as history');
+await post(edit(first,{code:'ERP-OLD'}));
+check(isValidKpiConversion(await context(),'quote','erp-old','rep','2025-01',[sale]),true,'Carrying the code again matches again');
 // A second source reference and manual sales still represent one actual factory.
 const oldErp=sql.prepare('SELECT * FROM crm_erp_sales WHERE id=?').get('erp-old');
 const erpColumns=Object.keys(oldErp),insertErp=sql.prepare('INSERT INTO crm_erp_sales('+erpColumns.join(',')+') VALUES('+erpColumns.map(()=>'?').join(',')+')');
@@ -79,16 +83,33 @@ for(const [id,date] of [['peer-prior','2024-12-15'],['peer-current','2025-01-15'
 sql.exec("UPDATE crm_sales SET data=json_set(data,'$.items',json('[]'));UPDATE crm_erp_sales SET data=json_set(data,'$.items',json('[]'));");
 const beforeMoney=sql.prepare('SELECT SUM(total_cents) n FROM crm_erp_sales').get().n;
 const facts=(await readKpiPurchaseHistory(await context(),'2025-01')).facts;
-check(facts[0].customerKey,'crm:'+first,'Old and new aliases identify the same persisted factory');
-check(new Set(facts.map(row=>row.customerKey)).size,1,'Two ERP aliases and a manual invoice have one customer identity');
+check(facts.filter(row=>row.customerKey==='crm:'+first).length>0,true,'The current code and a manual invoice identify the persisted factory');
+check([...new Set(facts.filter(row=>row.repId==='rep').map(row=>row.customerKey))].sort(),['crm:'+first,'erp:ERP-NEW'],'An invoice of the code it carried before (ERP-NEW) is nobody\'s: an unknown ERP customer, not this one');
 const {calculateKpis}=await import(path.join(out,'lib/kpis.mjs'));
 const performance={member:{id:'rep'},sourceMemberIds:['rep'],salesSourceMemberIds:['rep'],activityTargetsKnown:true,activityTargets:{newCustomers:1,recoveredCustomers:1,visits:1},attainment:{rows:[],score:null}};
 const scored=calculateKpis(performance,'2025-01',[],[],null,undefined,{historyComplete:true,purchases:facts,collection:null,quotationsComplete:false,quotations:[],recoveryTarget:1});
-const retention=scored.metrics.find(row=>row.id==='retention');check([retention.numerator,retention.denominator],[1,1],'Customer retention counts the aliased factory once');
+const retention=scored.metrics.find(row=>row.id==='retention');check([retention.numerator,retention.denominator],[1,1],'Customer retention counts the factory once');
+// A customer's ERP code is its own: the form refuses a code another customer carries now (any spelling of it), never one only had before.
+const refused=await post(create('ｅｒｐ-old'),400);
+check(refused.error,'كود ERP «ｅｒｐ-old» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.','the refusal names the code');
+const reused=(await post(create('ERP-NEW'))).id;
+check(data(reused).code,'ERP-NEW','a code another customer only had before is free');
+const unrelated=(await post(create(''))).id;
+await post(edit(unrelated,{code:'erp-new '}),400);
+check(data(unrelated).code,'','an edit to a code another customer carries is refused too');
+await post(edit(unrelated,{notes:'still no code'}));
+// The commit re-checks it: another customer taking the code between the read and the write refuses the save.
+beforeBatch=()=>sql.prepare("UPDATE crm_records SET data=json_set(data,'$.code','RACE-1'),version=version+1 WHERE id=?").run(reused);
+await post(edit(unrelated,{code:'RACE-1'}),409);
+check(data(unrelated).code,'','a code taken meanwhile is not saved');
 
 
 login('owner');
-const second=(await post({action:'save',kind:'customer',data:{name:'Synthetic western factory',code:'ｅｒｐ-old',region:'الغربية',location:'',assignedTo:'owner',branch:'HQ'}})).id;
+await post({action:'save',kind:'customer',data:{name:'Synthetic western factory',code:'ｅｒｐ-old',region:'الغربية',location:'',assignedTo:'owner',branch:'HQ'}},400);
+// Two customers with one current code: data written before the refusal existed (or by the one-time legacy import below).
+const second='legacy-western';
+sql.prepare("INSERT INTO crm_records(id,kind,assigned_to,branch,data,created_at,updated_at) VALUES(?,'customer','owner','HQ',?,?,?)").run(second,JSON.stringify({name:'Synthetic western factory',code:'ｅｒｐ-old',region:'الغربية',location:'',assignedTo:'owner',branch:'HQ'}),now,now);
+await post({action:'save',kind:'customer',id:second,version:raw(second).version,data:{...data(second),notes:'an older duplicate can still be edited'}});
 const ambiguousHistory=await readKpiPurchaseHistory(await context(),'2025-01');
 check(ambiguousHistory.unresolved.has('peer'),true,'ERP-only shared references also need review before customer KPIs');
 check(ambiguousHistory.facts.some(row=>row.repId==='peer'),false,'Ambiguous factory identity cannot fabricate ERP-only customer cohorts');
@@ -176,4 +197,4 @@ check(legacyCustomer.region,'');
 await call(identities,{codeKey:'LEGACY-UNKNOWN',customerId:legacyCustomer.id,version:0,revision:legacyOptions.revision,customerVersion:legacyCustomer.version,requestId:crypto.randomUUID()});
 check(sql.prepare('SELECT SUM(total_cents) n FROM crm_erp_sales').get().n,beforeMoney,'Resolving identities never changes booked money');
 check(sql.prepare('PRAGMA foreign_key_check').all(),[]);check(sql.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
-console.log(JSON.stringify({customerIdentities:'passed',checks,scope:'Real CRUD/import/mapping routes, old aliases, hidden-region ambiguity, admin authorization, CAS, revocation, audit rollback, source replay and unchanged money'}));
+console.log(JSON.stringify({customerIdentities:'passed',checks,scope:'Real CRUD/import/mapping routes, current codes only (old codes kept as history), duplicate codes refused, hidden-region ambiguity, admin authorization, CAS, revocation, audit rollback, source replay and unchanged money'}));

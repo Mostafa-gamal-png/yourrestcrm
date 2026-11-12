@@ -17,6 +17,7 @@ import {enforceVisitPlace} from '@/lib/visit-place-server';
 import {nudgeMoldCustomers,wakeMoldRetries} from '@/lib/mold-customers-hook';
 import {readLastPurchases,withLastPurchase} from '@/lib/customer-last-purchase-server';
 import {deleteCapture,rootCustomer} from '@/lib/trash-server';
+import {customerCodeKey,erpCodeTaken} from '@/lib/customer-identity';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
@@ -172,9 +173,17 @@ async function savePost(req:Request){try{
  const erpQuote=kind==='quote'&&!!old?.data?._erp&&parent?.kind==='customer';
  if(kind!=='customer'&&!erpQuote&&(!parent||(kind==='activity'?!['customer','opportunity'].includes(parent.kind):kind==='opportunity'?!['customer','factory'].includes(parent.kind):parent.kind!==expected[kind])))throw new CRMError('حدد السجل المرتبط أولًا');
  let assignedTo=erpQuote?old!.assignedTo:parent?.assignedTo||c.me.id,branch=erpQuote?old!.branch:parent?.branch||c.me.branch,customerRoutingChanged=false;
+ let takenCodeKey='';
  if(kind==='customer'){
   if(old&&activeServiceCase(old.id,c)&&(data.assignedTo!==old.assignedTo||data.branch!==old.branch||data.region!==(old.data.region||'')))throw new CRMError('تغيير مسؤول العميل يتم من تكليف خدمة العملاء أثناء وجود طلب مفتوح',403);
   if(!memberCanAccessRegion(c.me,data.region))throw new CRMError('لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها',403);
+  // A customer's ERP code is its own (the owner, 2026-11-12): a code typed or changed here that another customer carries NOW is refused,
+  // naming the code (never the other customer, who may be outside the reader's regions). Every customer counts (c.all holds them all).
+  // A code another customer only had before is free: it matches nothing. A save that keeps the code is never refused, so an older
+  // duplicate can still be edited (the ERP quotations import asks the administrator to choose for it). The commit re-checks it below.
+  takenCodeKey=customerCodeKey(data.code);
+  if(!takenCodeKey||takenCodeKey===customerCodeKey(old?.data.code))takenCodeKey='';
+  else if(c.all.some(row=>row.kind==='customer'&&row.id!==old?.id&&row.id!==genericId&&customerCodeKey(row.data.code)===takenCodeKey))throw new CRMError(erpCodeTaken(String(data.code).trim()));
   const locationError=prepareCustomerLocation(data,old?.data);if(locationError)throw new CRMError(locationError);
   if(old&&bodyData?.shortAddress===undefined)data.shortAddress=old.data.shortAddress||'';
   // «نوع العميل» (2026-11-11): a page opened before the field existed sends no customerKind; the stored one stays as it was.
@@ -218,6 +227,8 @@ async function savePost(req:Request){try{
   data.number=old?.data.number||`YR-${today().slice(0,4)}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;Object.assign(data,quoteTotals(data.items,data.discount,data.taxRate));
  }
  const permission=kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
+ // The ERP code checked above, again at the commit: no other customer took it meanwhile (the plain spelling: upper case, no spaces around).
+ if(takenCodeKey){permission.sql+=" AND NOT EXISTS (SELECT 1 FROM crm_records WHERE kind='customer' AND id<>? AND upper(trim(CAST(json_extract(data,'$.code') AS TEXT)))=?)";permission.args.push(old?.id||genericId,takenCodeKey);}
  // ERP source references may belong to several factories. The immutable CRM
  // number is allocated by the database; ambiguous ERP identities require review.
  if(syncFollowup){const parentPermission=accessGuard(c,parent);permission.sql+=' AND '+parentPermission.sql;permission.args.push(...parentPermission.args);}
