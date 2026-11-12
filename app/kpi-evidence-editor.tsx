@@ -1,10 +1,11 @@
 'use client';
 import React,{useEffect,useRef,useState} from 'react';
-import {AlertCircle,FileCheck2,Loader2,Plus,RefreshCw,Trash2,X} from 'lucide-react';
+import {AlertCircle,CheckCircle2,FileCheck2,Loader2,Plus,RefreshCw,Trash2,X} from 'lucide-react';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/ui/dialog';
 import {definiteSubmitRejection,submitJson} from '@/lib/client-submit';
 import {t,useLanguage} from '@/lib/i18n';
 import {emptyKpiEvidenceInput,kpiEvidenceInputSchema,type KpiEvidenceInput,type KpiEvidenceOptions} from '@/lib/kpi-evidence';
+import {coverageReason,type SalesCoverageStatus} from '@/lib/sales-coverage';
 import './kpi-evidence-editor.css';
 import VoiceField from './voice-field';
 
@@ -91,6 +92,7 @@ export default function KpiEvidenceEditor({memberId,memberName,month,identityKey
       <VoiceField label={say('مرجع بيانات التحصيل','Collection source reference')} multiline full rows={2} value={draft.collectionReference} onChange={value=>update({collectionReference:value})} contextKey="kpi-evidence-collection" inputProps={{name:'collectionReference',maxLength:2000}}/>
      </div><p className="kpi-evidence-hint">{say('الخانة الفارغة تعني بيانات غير مكتملة؛ الصفر مبلغ مؤكد.','Blank means incomplete data; zero is a confirmed amount.')}</p></section>
      <section className="kpi-evidence-section" aria-labelledby="kpi-history-title"><h3 id="kpi-history-title">{say('اكتمال سجل المبيعات','Sales-history coverage')}</h3><p className="kpi-evidence-period"><bdi>{options.period.from}</bdi> — <bdi>{options.period.through}</bdi></p>
+      <CoverageNote coverage={options.coverage} language={language}/>
       <label className="kpi-evidence-check"><input name="historyComplete" type="checkbox" checked={draft.historyComplete} onChange={event=>update({historyComplete:event.target.checked})}/><span>{say('أؤكد اكتمال مبيعات الفترة ومرتجعاتها، وإدراج تاريخ الشراء الأقدم للعملاء لتحديد المستردين.','I confirm this period’s sales and returns are complete, with older customer purchases included to identify recovered customers.')}</span></label>
       <VoiceField label={say('مرجع اكتمال سجل المبيعات','Sales-history source reference')} multiline rows={2} value={draft.historyReference} onChange={value=>update({historyReference:value})} contextKey="kpi-evidence-history" inputProps={{name:'historyReference',maxLength:2000}}/>
      </section>
@@ -123,4 +125,14 @@ export default function KpiEvidenceEditor({memberId,memberName,month,identityKey
    <footer className="kpi-evidence-footer">{error&&<div className="form-error" role="alert">{present(error)}</div>}{pending&&<p className="kpi-evidence-notice" role="status">{say('لم يتأكد الحفظ. البيانات مثبتة؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب.','The save was not confirmed. Entries are locked; choose “Confirm save” to retry the same request.')}</p>}<div><button type="button" className="btn subtle" disabled={busy||pending} onClick={close}>{say('إغلاق','Close')}</button>{editable&&<button type="submit" className="btn primary" disabled={busy}>{busy&&<Loader2 size={17} className="spin"/>}{say(pending?'تأكيد الحفظ':'حفظ بيانات المؤشرات',pending?'Confirm save':'Save KPI evidence')}</button>}</div></footer>
   </form>}
  </DialogContent></Dialog>;
+}
+
+/** What the complete ERP sales imports already give the month (lib/sales-coverage.ts): when they cover growth, retention and recovered,
+ *  the manual confirmation below is no longer needed (it stays as a fallback); otherwise the months still to upload. */
+function CoverageNote({coverage,language}:{coverage?:SalesCoverageStatus;language:'ar'|'en'}){
+ if(!coverage)return null;
+ const say=(ar:string,en:string)=>language==='en'?en:ar;
+ if(coverage.recovered)return <p className="kpi-evidence-coverage is-complete" role="note"><CheckCircle2 size={17} aria-hidden="true"/><span>{say('سجل المبيعات مكتمل تلقائيًا من رفع مبيعات ERP الكاملة','The sales history is complete from complete ERP sales imports')}{coverage.through?<> {say('حتى','through')} <bdi>{coverage.through}</bdi></>:null}{say('؛ لا يلزم التأكيد اليدوي لهذا الشهر، ويبقى بديلًا عند الحاجة.','; the manual confirmation is not needed this month and remains a fallback.')}</span></p>;
+ const parts=(['growth','retention'] as const).filter(kind=>coverage[kind]).map(kind=>kind==='growth'?say('نمو مبيعات الأصناف','product sales growth'):say('الحفاظ على العملاء الحاليين','customer retention'));
+ return <p className="kpi-evidence-coverage" role="note"><AlertCircle size={17} aria-hidden="true"/><span>{parts.length?say('يُحسب تلقائيًا من رفع ERP الكامل: ','Calculated automatically from complete ERP imports: ')+parts.join(say('، ',', '))+'. ':''}{coverageReason(coverage.missing.recovered,language)}</span></p>;
 }

@@ -5,6 +5,7 @@ import {type ActivityTargets,type quantityAttainment} from './targets';
 import {customerVisits,customerPlanSource,visitOrder} from './customer-visits';
 import {type KpiEvidenceContext,type KpiQuotationDetail} from './kpi-evidence';
 import {quotationRefKey} from './quotation-refs';
+import {coverageReason,type CoverageMissing} from './sales-coverage';
 export const operationalIndicators=[
  {id:'attainment',name:'تحقيق المستهدف البيعي',weight:25,axis:'sales'},
  {id:'collection',name:'التحصيل',weight:20,axis:'collection'},
@@ -35,12 +36,18 @@ export type KpiInput=z.infer<typeof kpiInputSchema>;
 export const emptyKpiInput=():KpiInput=>({reviewed:null,correct:null,review_note:'',conduct:{responsibility:{score:null,note:''},teamwork:{score:null,note:''},honesty:{score:null,note:''},professionalism:{score:null,note:''},appearance:{score:null,note:''}}});
 export const roundKpi=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 export const boundedScore=(n:number)=>Math.max(0,Math.min(100,n));
-export type KpiMetric={id:IndicatorId;score:number|null;points:number|null;numerator:number|null;denominator:number|null;reason:string;source:'automatic'|'management'|'required';status?:'scored'|'missing'|'not_applicable'};
+/** missing: present only while a KPI waits for complete ERP sales imports (lib/sales-coverage.ts): the months to upload, so the page
+ *  writes them in the reader's language (kpiMetricReason); reason holds the same in Arabic. */
+export type KpiMetric={id:IndicatorId;score:number|null;points:number|null;numerator:number|null;denominator:number|null;reason:string;source:'automatic'|'management'|'required';status?:'scored'|'missing'|'not_applicable';missing?:CoverageMissing};
+/** The text of a KPI's «طريقة الحساب / البيانات المطلوبة» in the reader's language. */
+export function kpiMetricReason(m:Pick<KpiMetric,'reason'|'missing'>,translate:(value:string)=>string,language:'ar'|'en'='ar'){return m.missing&&language==='en'?coverageReason(m.missing,'en'):translate(m.reason);}
 export function metric(id:IndicatorId,score:number|null,reason:string,source:KpiMetric['source']='automatic',numerator:number|null=null,denominator:number|null=null,status?:KpiMetric['status']):KpiMetric{const value=status==='not_applicable'||score===null||!Number.isFinite(score)?null:roundKpi(boundedScore(score));return{id,score:value,points:value===null?null:roundKpi(value*operationalIndicators.find(i=>i.id===id)!.weight/100),numerator,denominator,reason,source,status:status==='not_applicable'?'not_applicable':value===null?'missing':'scored'};}
 export function kpiSummary(metrics:KpiMetric[]){let covered=0,earned=0,excludedWeight=0;for(const indicator of operationalIndicators){const m=metrics.find(m=>m.id===indicator.id);if(m?.status==='not_applicable'){covered+=indicator.weight;excludedWeight+=indicator.weight;}else if(m&&m.score!==null&&Number.isFinite(m.score)){covered+=indicator.weight;earned+=boundedScore(m.score)*indicator.weight/100;}}const applicableWeight=100-excludedWeight,complete=covered===100;return{covered,earned:roundKpi(earned),total:complete&&applicableWeight>0?roundKpi(earned/applicableWeight*100):null,complete,applicableWeight,excludedWeight};}
 export function kpiPeriod(month:string){const first=month+'-01',now=today(),end=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10),cutoff=end<now?end:now;const previous=new Date(first+'T12:00:00Z');previous.setUTCMonth(previous.getUTCMonth()-1);const prior=previous.toISOString().slice(0,7),days=new Date(Date.UTC(previous.getUTCFullYear(),previous.getUTCMonth()+1,0)).getUTCDate(),last=month===now.slice(0,7)?Math.min(Number(now.slice(8,10)),days):days;return{first,cutoff,previousFirst:prior+'-01',previousEnd:prior+'-'+String(last).padStart(2,'0')};}
 export type KpiAssessment={memberId:string;month:string;input:KpiInput;version:number;updatedAt:string;updatedBy:string};
-export type KpiPerformance={member:Member;sourceMemberIds:string[];salesSourceMemberIds:string[];teamRollup:boolean;activityTeamRollup:boolean;activityTargetsKnown?:boolean;activityTargets:ActivityTargets;attainment:ReturnType<typeof quantityAttainment>};
+/** activityTargetsDefault: no customers-and-visits target saved for the person this month or carried from an earlier one, so the
+ *  defaults of lib/targets.ts apply (the page writes «افتراضي» beside them). */
+export type KpiPerformance={member:Member;sourceMemberIds:string[];salesSourceMemberIds:string[];teamRollup:boolean;activityTeamRollup:boolean;activityTargetsKnown?:boolean;activityTargetsDefault?:boolean;activityTargets:ActivityTargets;attainment:ReturnType<typeof quantityAttainment>};
 export type GrowthRow={product:string;actual:number|null;previous:number|null;weight:number|null;growth:number|null;contribution:number|null};
 /** quotations: the month's quotations of «معدل تحويل عرض السعر إلى مبيعات», each once, converted or not (empty when unknown). */
 export type KpiPerson=KpiPerformance&{metrics:KpiMetric[];summary:ReturnType<typeof kpiSummary>;assessment:KpiAssessment|null;growthRows:GrowthRow[];quotations:KpiQuotation[]};
@@ -77,20 +84,32 @@ export function prepareKpiRecords(records:Row[],month:string){
 }
 export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:Sale[],assessment:KpiAssessment|null,prepared=prepareKpiRecords(records,month),evidence?:KpiEvidenceContext){
  const period=kpiPeriod(month),ids=new Set(p.sourceMemberIds),saleIds=new Set(p.salesSourceMemberIds),input=assessment?.input||emptyKpiInput(),ratio=(a:number,b:number)=>b>0?a/b*100:null;
- if(evidence&&saleIds.size===0)evidence={...evidence,historyComplete:false,collection:null,quotationsKnown:false,quotations:[],recoveryTarget:null,invalidHistoryReason:'لا يوجد فريق مبيعات مؤهل لحساب المؤشرات.'};
+ if(evidence&&saleIds.size===0)evidence={...evidence,historyComplete:false,coverage:undefined,collection:null,quotationsKnown:false,quotations:[],recoveryTarget:null,invalidHistoryReason:'لا يوجد فريق مبيعات مؤهل لحساب المؤشرات.'};
  const invoices=sales.filter(s=>saleIds.has(s.repId)&&s.status==='confirmed'&&s.date>=period.first&&s.date<=period.cutoff),previous=sales.filter(s=>saleIds.has(s.repId)&&s.status==='confirmed'&&s.date>=period.previousFirst&&s.date<=period.previousEnd);
+ // The sales history is complete by the manual confirmation of «بيانات المؤشرات» (all three KPIs at once, as before), or KPI by KPI
+ // by the complete ERP sales imports (lib/sales-coverage.ts): retention and recovered also need the customers' codes to be known.
+ const manualHistory=!!evidence?.historyComplete,coverage=evidence?.coverage,identitiesKnown=evidence?.identitiesKnown!==false;
+ const zeroFill=manualHistory||!!coverage?.current,growthReady=manualHistory||!!coverage?.growth,retentionReady=manualHistory||!!coverage?.retention&&identitiesKnown,recoveredReady=manualHistory||!!coverage?.recovered&&identitiesKnown;
  // A verified complete sales period establishes a real zero for absent products.
  // Unconfirmed or incomplete imports must continue to display an unknown value.
- if(evidence?.historyComplete){
+ if(zeroFill){
   const rows=p.attainment.rows.map(r=>{const actual=r.actual??0;return{...r,actual,achievement:r.target!==null&&r.target>0?actual/r.target*100:null,contribution:r.weight===0||r.target===0?0:r.weight!==null&&r.target!==null&&r.target>0?Math.min(1,Math.max(0,actual/r.target))*r.weight:null};});
   const validWeights=rows.every(r=>r.weight!==null)&&Math.abs(rows.reduce((n,r)=>n+(r.weight||0),0)-100)<.001,applicableWeight=validWeights?rows.reduce((n,r)=>n+(r.target===0?0:r.weight||0),0):null,ready=validWeights&&rows.every(r=>r.contribution!==null);
   p={...p,attainment:{...p.attainment,rows,applicableWeight,score:ready&&applicableWeight!==null&&applicableWeight>0?roundKpi(rows.reduce((n,r)=>n+(r.contribution||0),0)/applicableWeight*100):null,status:!validWeights?'weights_missing':ready&&applicableWeight===0?'not_applicable':ready?'ready':'missing_inputs'}};
  }
- const growthRows:GrowthRow[]=p.attainment.rows.map(r=>{const items=previous.flatMap(s=>s.items.filter(i=>i.product===r.id)),baseline=items.length?items.reduce((n,i)=>n+i.quantity,0):evidence?.historyComplete?0:null,growth=r.actual!==null&&baseline!==null&&baseline>0?(r.actual-baseline)/baseline*100:null;return{product:r.id,actual:r.actual,previous:baseline,weight:r.weight,growth:growth===null?null:roundKpi(growth),contribution:r.weight===0||evidence?.historyComplete&&baseline!==null&&baseline<=0?0:r.weight!==null&&growth!==null?growth*r.weight/100:null};});
- const growthWeightsValid=growthRows.every(r=>r.weight!==null)&&Math.abs(growthRows.reduce((n,r)=>n+(r.weight||0),0)-100)<.001,growthApplicableWeight=evidence?.historyComplete?growthRows.reduce((n,r)=>n+(r.previous!==null&&r.previous>0?r.weight||0:0),0):100;
+ const growthRows:GrowthRow[]=p.attainment.rows.map(r=>{const items=previous.flatMap(s=>s.items.filter(i=>i.product===r.id)),baseline=items.length?items.reduce((n,i)=>n+i.quantity,0):growthReady?0:null,growth=r.actual!==null&&baseline!==null&&baseline>0?(r.actual-baseline)/baseline*100:null;return{product:r.id,actual:r.actual,previous:baseline,weight:r.weight,growth:growth===null?null:roundKpi(growth),contribution:r.weight===0||growthReady&&baseline!==null&&baseline<=0?0:r.weight!==null&&growth!==null?growth*r.weight/100:null};});
+ const growthWeightsValid=growthRows.every(r=>r.weight!==null)&&Math.abs(growthRows.reduce((n,r)=>n+(r.weight||0),0)-100)<.001,growthApplicableWeight=growthReady?growthRows.reduce((n,r)=>n+(r.previous!==null&&r.previous>0?r.weight||0:0),0):100;
  const growth=growthWeightsValid&&growthApplicableWeight>0&&growthRows.every(r=>r.contribution!==null)?growthRows.reduce((n,r)=>n+(r.contribution||0),0)/growthApplicableWeight*100:null;
  const countMetric=(id:IndicatorId,numerator:number|null,denominator:number|null,reason:string,source:KpiMetric['source']='automatic')=>metric(id,numerator!==null&&denominator!==null?ratio(numerator,denominator):null,reason,source,numerator,denominator,numerator!==null&&denominator===0?'not_applicable':undefined);
  const historyReason=evidence?.invalidHistoryReason||'أكد اكتمال سجل مبيعات الشهر والأشهر الثلاثة السابقة لحساب العملاء.';
+ // While the imports leave months uncovered, the KPI names them (and keeps them in `missing` for the English page); covered months whose
+ // customer codes are unknown keep the identity reason. When the imports complete it, the reason says up to which day.
+ const waiting=(kind:'growth'|'retention'|'recovered',ready:boolean,fallback:string):{reason:string;missing?:CoverageMissing}=>{
+  if(ready||manualHistory||!coverage||coverage[kind])return {reason:fallback};
+  return {reason:coverageReason(coverage.missing[kind]),missing:coverage.missing[kind]};
+ };
+ const automaticNote=(kind:'growth'|'retention'|'recovered')=>!manualHistory&&coverage?.[kind]?(coverage.through&&coverage.through<period.cutoff?' • سجل المبيعات مكتمل تلقائيًا من رفع ERP حتى '+coverage.through+'.':' • سجل المبيعات مكتمل تلقائيًا من رفع مبيعات ERP الكاملة.'):'';
+ const withMissing=(m:KpiMetric,state:{missing?:CoverageMissing})=>state.missing?{...m,missing:state.missing}:m;
  const purchaseMonths=new Map<string,{customerKey:string;date:string;netCents:number;hasSale:boolean}>();
  for(const purchase of evidence?.purchases||[]){if(!purchase.customerKey||!Number.isFinite(purchase.netCents)||purchase.date>period.cutoff)continue;const key=JSON.stringify([purchase.customerKey,purchase.date.slice(0,7)]),existing=purchaseMonths.get(key);purchaseMonths.set(key,{...purchase,date:purchase.date.slice(0,7)+'-01',netCents:(existing?.netCents||0)+purchase.netCents,hasSale:!!existing?.hasSale||purchase.hasSale});}
  const historyFrom=new Date(period.first+'T12:00:00Z');historyFrom.setUTCMonth(historyFrom.getUTCMonth()-3);const priorThreeFirst=historyFrom.toISOString().slice(0,10),buyers=new Set<string>(),priorBuyers=new Set<string>(),olderBuyers=new Set<string>();
@@ -119,11 +138,11 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
  const metrics:KpiMetric[]=[
   metric('attainment',p.attainment.score,'تحقيق كميات الأصناف مرجحًا بأوزانها. تستبعد الأصناف ذات المستهدف صفر من الوزن المطبق.','automatic',null,null,p.attainment.status==='not_applicable'?'not_applicable':undefined),
   validCollection?countMetric('collection',collection!.collectedCents,collection!.dueCents,'المحصل ÷ المستحق وفق بيانات التحصيل المعتمدة؛ النتيجة بحد أقصى 100%.','management'):metric('collection',null,'أدخل المستحق والمحصل ومرجع بيانات التحصيل.','required'),
-  metric('growth',growth,'نمو كميات الأصناف مقابل الفترة المناظرة من الشهر السابق؛ تستبعد الأصناف بلا أساس شراء موجب بعد تأكيد اكتمال السجل.','automatic',null,null,evidence?.historyComplete&&growthWeightsValid&&growthApplicableWeight===0?'not_applicable':undefined),
+  (()=>{const state=growth===null&&growthWeightsValid?waiting('growth',growthReady,''):{reason:''};return withMissing(metric('growth',growth,state.missing?state.reason:'نمو كميات الأصناف مقابل الفترة المناظرة من الشهر السابق؛ تستبعد الأصناف بلا أساس شراء موجب بعد تأكيد اكتمال السجل.'+automaticNote('growth'),state.missing?'required':'automatic',null,null,growthReady&&growthWeightsValid&&growthApplicableWeight===0?'not_applicable':undefined),state);})(),
   countMetric('variety',diverse,salesInvoices.length,'فواتير البيع التي تشمل 3 أصناف مختلفة أو أكثر ÷ إجمالي فواتير البيع المسجلة غير الملغاة. تستبعد مستندات المرتجعات.'),
   countMetric('new_customers',unknownRegistrations||p.activityTargetsKnown===false?null:newCustomers,p.activityTargetsKnown===false?null:p.activityTargets.newCustomers,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':unknownRegistrations?'بعض العملاء القدامى لا يحملون هوية منشئهم؛ لا تُنسب إضافتهم للمسؤول الحالي بالتخمين.':'العملاء المضافون يدويًا بواسطة المندوب خلال الشهر ÷ مستهدف العملاء الجدد. يستبعد الاستيراد والتحديث وإعادة الإسناد.'),
-  countMetric('recovered',evidence?.historyComplete?recovered:null,evidence?.recoveryTarget??null,evidence?.historyComplete?'عملاء اشتروا قديمًا، وتوقفوا ثلاثة أشهر كاملة، ثم عادوا للشراء هذا الشهر ÷ مستهدف الاسترداد.':historyReason,evidence?.historyComplete?'automatic':'required'),
-  countMetric('retention',evidence?.historyComplete?retained:null,evidence?.historyComplete?priorBuyers.size:null,evidence?.historyComplete?'المشترون هذا الشهر من عملاء الأشهر الثلاثة السابقة ÷ جميع عملاء تلك الأشهر.':historyReason,evidence?.historyComplete?'automatic':'required'),
+  (()=>{const state=waiting('recovered',recoveredReady,historyReason);return withMissing(countMetric('recovered',recoveredReady?recovered:null,evidence?.recoveryTarget??null,recoveredReady?'عملاء اشتروا قديمًا، وتوقفوا ثلاثة أشهر كاملة، ثم عادوا للشراء هذا الشهر ÷ مستهدف الاسترداد.'+automaticNote('recovered'):state.reason,recoveredReady?'automatic':'required'),state);})(),
+  (()=>{const state=waiting('retention',retentionReady,historyReason);return withMissing(countMetric('retention',retentionReady?retained:null,retentionReady?priorBuyers.size:null,retentionReady?'المشترون هذا الشهر من عملاء الأشهر الثلاثة السابقة ÷ جميع عملاء تلك الأشهر.'+automaticNote('retention'):state.reason,retentionReady?'automatic':'required'),state);})(),
   countMetric('visits',p.activityTargetsKnown===false?null:visits.length,p.activityTargetsKnown===false?null:p.activityTargets.visits,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':'الزيارات المسجلة والمتابعات من نوع زيارة فقط ÷ مستهدف الزيارات.'),
   countMetric('positive',positive,visits.length,'زيارات الشهر المرتبطة بعملاء في مرحلة بيع مفتوحة حاليًا ÷ جميع زيارات الشهر، وفق تعريف gscoinvest.'),
   countMetric('quotes',quoted,qualified,'العملاء الذين بدأ تواصلهم في الشهر، وما زالوا في مرحلة مفتوحة، وتأهلوا بجمع المواصفات أو المراجعة الفنية: مَن سُجّل لهم عرض بعد التأهيل ÷ جميع المؤهلين.'),

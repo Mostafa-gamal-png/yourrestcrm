@@ -6,6 +6,12 @@ const quantityFormat=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
 export const quantityNumber=(v:number)=>quantityFormat.format(v);
 export const activityFields=[['newCustomers','العملاء الجدد'],['recoveredCustomers','العملاء المستردون'],['visits','الزيارات الفعلية']] as const;
 export type ActivityTargets={newCustomers:number;recoveredCustomers:number;visits:number};
+/** The default customers-and-visits targets (the reference CRM's: 10 new customers, 5 recovered, 320 visits), the one place they live.
+ *  A person with no activity target saved for the month, nor carried forward from an earlier month (effectiveSet), is evaluated against
+ *  these: «العملاء الجدد», «العملاء المستردون» and «الزيارات الفعلية» are never left without a target for want of one. A saved target
+ *  (this month's or the latest earlier one) always wins; the page writes «افتراضي» beside a value that comes from here. «بيانات
+ *  المؤشرات» holds no recovery target: the recovered target is this field. Finished months keep their saved targets
+ *  (targetMonthClosed); the defaults are constants, so changing them is a change of the code, recorded in the changelog. */
 export const defaultActivityTargets:ActivityTargets={newCustomers:10,recoveredCustomers:5,visits:320};
 const count=z.number().int().min(1).max(1000000);
 const product=z.string().refine(p=>salesProducts.includes(p),'اختر صنفًا صحيحًا');

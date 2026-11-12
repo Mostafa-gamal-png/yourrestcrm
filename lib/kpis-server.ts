@@ -10,7 +10,8 @@ import {recordAuthorId} from './access';
 import {visitCustomer} from './customer-visits';
 import {regionScopeSql} from './regions';
 import type {Row} from './crm';
-import {readErpSales} from './erp-sales-server';
+import {readErpSales,readSalesCoverage} from './erp-sales-server';
+import {salesCoverageStatus} from './sales-coverage';
 import {readKpiEvidenceRows,readSalesRevision} from './kpi-evidence-server';
 import {evidenceScopeKey,type KpiEvidenceContext} from './kpi-evidence';
 import {readKpiPurchaseHistory,isKpiIssuedQuote,isValidKpiConversion} from './kpi-history-server';
@@ -25,6 +26,8 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
   c.db.prepare("SELECT * FROM crm_sales WHERE date>=? AND date<=? AND status='confirmed'").bind(period.previousFirst,period.cutoff).all<SaleRow>(),
   readErpSales(c,month),readErpSales(c,period.previousFirst.slice(0,7)),readKpiEvidenceRows(c,month)
  ]);
+ // The complete ERP sales imports (lib/sales-coverage.ts): what they cover makes growth, retention and recovered automatic.
+ const coverageEntries=await readSalesCoverage(c);
  // «معدل تحويل عرض السعر إلى مبيعات»: the confirmed ERP sales invoices (not returns, a positive total) whose «الوصف» names quotations,
  // from the first day of the month on (a quotation of the month is converted by an invoice on or after its own day, in any later month),
  // within the reader's regions and sales team, as every sale the KPI reads.
@@ -33,7 +36,7 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
  const quoteInvoices:KpiQuoteInvoice[]=quoteInvoiceRows.filter(row=>allowed.has(row.rep_id)).map(row=>{let refs:string[]=[];try{refs=storedQuotationRefs(JSON.parse(row.refs));}catch{/* unreadable: none */}return{id:row.id,reference:row.reference,repId:row.rep_id,date:row.date,quotationRefs:refs};});
  const sales:Sale[]=[...saleRows.results.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(r=>({...JSON.parse(r.data),id:r.id,repId:r.rep_id,customerId:r.customer_id,reference:r.reference,totalCents:r.total_cents,status:r.status,date:r.date})),...currentErp,...previousErp].filter(s=>s.date>=period.previousFirst&&s.date<=period.cutoff);
  const evidenceByMember=new Map(evidenceRows.map(row=>[row.memberId,row]));
- const history=evidenceRows.some(row=>row.input.history.complete)?await readKpiPurchaseHistory(c,month):{facts:[],unresolved:new Set<string>()};
+ const history=evidenceRows.some(row=>row.input.history.complete)||coverageEntries.length?await readKpiPurchaseHistory(c,month):{facts:[],unresolved:new Set<string>()};
  const records=salesReportingRecords(c.visible,c.members),prepared=prepareKpiRecords(records,month);
  // The month's quotations: every quote record the reader sees (sent, accepted or rejected: issued; a draft is not), of a customer of the
  // reader's regions, dated in the month up to its cutoff, attributed to its author (the representative an ERP quotation is mapped to),
@@ -66,7 +69,7 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
    candidates.set(quote.id,candidate);
   }
   const recoveryTarget=targets&&ids.length?ids.reduce((sum,id)=>sum+(effectiveSet<ActivityTargets>(targets,'activity',id)?.data||defaultActivityTargets).recoveredCustomers,0):p.activityTargetsKnown===false?null:p.activityTargets.recoveredCustomers;
-  const evidence:KpiEvidenceContext={historyComplete,collection:collection&&Number.isSafeInteger(collection.dueCents)&&Number.isSafeInteger(collection.collectedCents)?collection:null,
+  const evidence:KpiEvidenceContext={historyComplete,coverage:ids.length?salesCoverageStatus(coverageEntries,ids,month,period):undefined,identitiesKnown,collection:collection&&Number.isSafeInteger(collection.dueCents)&&Number.isSafeInteger(collection.collectedCents)?collection:null,
    purchases:history.facts.filter(fact=>idSet.has(fact.repId)).map(({customerKey,date,netCents,hasSale})=>({customerKey,date,netCents,hasSale})),
    quotationsKnown:ids.length>0,quotations:quoteConversions([...candidates.values()],quoteInvoices),recoveryTarget,
    invalidHistoryReason:!identitiesKnown?'توجد فواتير بدون رقم عميل أو أرقام عملاء مكررة بين مصادر المبيعات؛ راجع هوية العملاء أولًا.':!current?'أكّد اكتمال سجل المبيعات للفترة بعد آخر تحديث للبيانات.':'أكّد اكتمال سجل المبيعات لثلاثة أشهر سابقة وفترة التقييم.'};
