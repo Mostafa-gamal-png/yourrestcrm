@@ -4,6 +4,47 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## ERP customer codes matched by the current code only (2026-11-12, release update-erp-current-code-20261112, no migration)
+
+- **Asked.** The owner's rule, said before and again on 2026-11-12: «لما ارفع بيانات العملاء تاخد كود erp وتحدث بيانات العملاء باللى
+  موجودين فى erp والباقى متحدثهمش ومتديلهمش كود erp يعنى يبقى فاضى لان العميل ده مش موجود فى erp اصلا». A customer not in the ERP has
+  no ERP code and is never matched to ERP data.
+- **The fault.** The ERP quotations import showed many «كود العميل مسجل لأكثر من عميل في الـCRM». Matching read a customer's current
+  `data.code` together with every code it had carried (`crm_customer_code_aliases`, kept by the trigger `crm_customer_identity_update` of
+  drizzle/0014 whenever a code changes or is cleared, read into `data._erpCodeAliases` by lib/crm-context-records.ts). So «امسح كود ERP
+  للعملاء غير الموجودين في الشيت» left a cleared customer matching its old code: code 103 matched the real ERP customer and an unrelated
+  cleared one.
+- **Current code only.** lib/customer-identity.ts: `customerErpCodes` is the current code alone; `customerCodeCandidates` and
+  `uniqueCustomerCodes` (a stored mapping picks one of the code's current holders; a mapping to a customer that no longer carries the code
+  is ignored, never deleted: `effectiveCodeMapping`) therefore decide, through their callers, the ERP quotations import and its «أكواد
+  مشتركة» (lib/erp-quotes-server.ts), the KPI invoices, purchase history and quote conversions (lib/kpi-evidence-server.ts,
+  lib/kpi-history-server.ts), «آخر شراء» (lib/customer-last-purchase.ts), the mold requests' typed ERP code (app/api/mold-requests,
+  app/mold-customer-fields.tsx) and the reconciliation list (`customerIdentityOptions`: 'mapped' only while the mapping's customer
+  carries the code; a saved mapping of a code nobody carries is listed too, so it can be removed). The ERP customers import (lib/erp-customers.ts) finds a row by code only through a current holder, `heldOutsideRegions`
+  ignores a mapping that decides nothing (except that a sales manager still never rewrites a stale mapping to a customer outside their
+  regions while somebody carries the number), a customer named only by an old code or a stale mapping is now among the customers to clear, a
+  plan step rewrites the stored mapping by its version, and a new customer's gate no longer refuses a code another customer only had
+  before (lib/erp-customers-server.ts). The trash's restore gives a customer its code back unless another customer carries it now (or a
+  mapping that decides gives it to one); kept codes still come back as history. The alias table, its trigger and its data stay, for
+  history, the audit and the trash.
+- **No new duplicates.** POST /api/crm refuses a customer save that sets or changes the ERP code to one another customer carries now:
+  «كود ERP «103» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.»
+  (`erpCodeTaken`; the code only, never the other customer; English in lib/locales/en.json), and the commit re-checks it (`NOT EXISTS`
+  on the plain spelling), so two concurrent saves cannot both take one code. A save that keeps its code is never refused, so an older
+  duplicate can still be edited and resolved by the administrator's mapping. The one-time legacy customers import
+  (app/api/customers/import, source factories that may share an ERP reference) is unchanged.
+- **Effects.** A cleared customer's KPI invoices and «آخر شراء» stop counting its old code's invoices (they belong to the current holder,
+  or to nobody); «أكواد مشتركة» shrinks to real current duplicates; a current holder's targets and KPIs include invoices that were
+  ambiguous before. Quotations already imported under a cleared customer stay there (a re-import reports «تغيّر عميل العرض في ERP…»).
+  The ERP customers import's hint under the clear option says a cleared customer is no ERP customer any more.
+- **Tests.** tests/customer-code-key.mjs (37), tests/erp-customers.mjs (245), tests/customer-identities.mjs (89),
+  tests/customer-last-purchase.mjs (25), tests/security-customer-code.mjs (29), tests/rep-customer-create.mjs (273), tests/trash.mjs (215);
+  built release: tests/erp-quotes-http.mjs (108), tests/erp-customers-clear-http.mjs (50), tests/erp-customers-http.mjs (143),
+  tests/mold-requests-http.mjs (413); Chromium: tests/mold-requests-browser.mjs (270: the old code suggests and links nothing).
+  Expectations changed on purpose: an alias no longer matches (kept-alias holders, the «re-imported» rows that found a customer by its old
+  code, the last purchase of an alias, a renamed code's earlier invoices), and two customers can no longer be given one code through the
+  form (the concurrency tests now expect the second save refused).
+- **Activator.** portable/activate-ui-refresh-update.cjs accepts update-quote-codes-activation-20261111 as a previous backup.
 ## The salesmen list for the products application (2026-11-12, release update-salesmen-20261112, no migration)
 
 - **Asked.** The products team's new `salesmen` route (agreed contract; their PR yourrest-products#54, not merged when this was built):

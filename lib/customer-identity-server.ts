@@ -1,11 +1,12 @@
 import {z} from 'zod';
 import {accessGuard,CRMError,type context} from './crm-server';
 import {regionScope} from './regions';
-import {customerCodeKey,customerCodeCandidates,customerErpCodes} from './customer-identity';
+import {customerCodeKey,customerCodeCandidates,customerErpCodes,effectiveCodeMapping} from './customer-identity';
 
 type Context=Awaited<ReturnType<typeof context>>;
 /** Who may map a shared ERP customer code to one customer: the administrator with every region (a mapping is global: it decides the
- *  ERP quotations import, the KPI invoices and the customer's last purchase). */
+ *  ERP quotations import, the KPI invoices and the customer's last purchase). A mapping chooses among the customers that carry the code
+ *  NOW (lib/customer-identity.ts): a customer whose code was cleared or changed can be neither chosen nor matched. */
 export const isIdentityAdmin=(c:Pick<Context,'me'>)=>c.me.role==='admin'&&regionScope(c.me)==='all';
 export function requireIdentityAdmin(c:Context){if(!isIdentityAdmin(c))throw new CRMError('ربط أكواد العملاء متاح لمدير النظام فقط.',403);}
 export async function customerIdentityOptions(c:Context){
@@ -15,7 +16,11 @@ export async function customerIdentityOptions(c:Context){
  const external=await c.db.prepare('SELECT DISTINCT customer_code FROM crm_erp_sales').all<{customer_code:string}>();
  for(const row of external.results){const key=customerCodeKey(row.customer_code);if(!key)continue;const values=raw.get(key)||new Set<string>();values.add(row.customer_code);raw.set(key,values);}
  const mappings=new Map(state.mappings.map(mapping=>[mapping.codeKey,mapping]));
- const identities=[...raw.keys()].sort().map(codeKey=>{const customerIds=(candidates.get(codeKey)||[]).map(row=>row.id),mapping=mappings.get(codeKey);return{codeKey,sourceCodes:[...raw.get(codeKey)!].sort(),customerIds,mappedCustomerId:mapping?.customerId||'',mappingVersion:mapping?.version||0,status:mapping?'mapped':customerIds.length===1?'unique':customerIds.length?'ambiguous':'unmatched'};});
+ // A saved mapping whose code nobody carries now and no sale names is listed too, so the administrator can see and remove it.
+ for(const mapping of state.mappings)if(!raw.has(mapping.codeKey))raw.set(mapping.codeKey,new Set([mapping.codeKey]));
+ // The candidates of a code are the customers that carry it NOW; a saved mapping is 'mapped' only while its customer is one of them (else
+ // it is ignored, and shown so the administrator may remove it: mappedCustomerId and mappingVersion are what is saved).
+ const identities=[...raw.keys()].sort().map(codeKey=>{const holders=candidates.get(codeKey)||[],customerIds=holders.map(row=>row.id),mapping=mappings.get(codeKey);return{codeKey,sourceCodes:[...raw.get(codeKey)!].sort(),customerIds,mappedCustomerId:mapping?.customerId||'',mappingVersion:mapping?.version||0,status:effectiveCodeMapping(mapping,holders)?'mapped':customerIds.length===1?'unique':customerIds.length?'ambiguous':'unmatched'};});
  const guard=accessGuard(c),fresh=await c.db.prepare("SELECT 1 AS allowed WHERE EXISTS(SELECT 1 FROM crm_customer_identity_state WHERE id='company' AND revision=?) AND "+guard.sql).bind(state.revision,...guard.args).first();
  if(!fresh)throw new CRMError('تغيّرت بيانات الربط أو الصلاحيات. حدّث الصفحة.',409);
  return{revision:state.revision,customers:c.all.filter(row=>row.kind==='customer').map(row=>({id:row.id,name:String(row.data.name||''),internalCode:String(row.data.internalCode||''),erpCode:String(row.data.code||''),region:String(row.data.region||''),version:row.version})),identities};

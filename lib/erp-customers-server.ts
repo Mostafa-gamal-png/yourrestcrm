@@ -86,7 +86,8 @@ async function withNumbers<T extends {additions?:Addition[]}>(c:Context,result:T
  * The preview also lists `clears`, the customers of the importer's regions that the file does not name and that still carry an ERP code;
  * an apply with `clearCodes: true` (and the preview's `clearSnapshot`) sets their code to '' in the same transaction, each with an
  * 'erp-customer-code' audit entry {from, to: '', cleared: true}, and answers `cleared`. Without it (the box unchecked, or a screen loaded
- * before 2026-11-09) nobody's code is cleared. */
+ * before 2026-11-09) nobody's code is cleared. A cleared customer has no ERP code and is matched to no ERP document any more (its old code
+ * is history, never a match: 2026-11-12). */
 export async function importErpCustomers(c:Context,body:unknown){
  requireErpCustomersRole(c.me);
  const {input,bytes}=parseInput(body);
@@ -117,8 +118,11 @@ export async function importErpCustomers(c:Context,body:unknown){
   const customer=customers.get(step.customerId)!;customerDetailMutationGuard({me:c.me,members:c.members,all:[customer]},customer);
   if(heldOutsideRegions(c.me,holders.get(step.codeKey)||[],mappings.get(step.codeKey),customers))throw new CRMError(`الرقم ${step.to} عند عميل خارج مناطقك؛ ربطه لمدير النظام.`,403);
  }
- // A cleared code: the same check as a code change (prepare listed only these). Clearing moves no number's invoices: the old code stays
- // the customer's kept code (the identity trigger), and a stored mapping of it stays as it is.
+ // A cleared code: the same check as a code change (prepare listed only these). A cleared customer is not an ERP customer (the owner,
+ // 2026-11-12: «متديلهمش كود erp يعنى يبقى فاضى لان العميل ده مش موجود فى erp اصلا»): its code is '' and it matches nothing from then on
+ // (lib/customer-identity.ts reads current codes only), so the number's invoices, quotations and last purchase belong to the customer that
+ // carries it now, or to nobody. The identity trigger still keeps the old code in crm_customer_code_aliases, as history only, and a stored
+ // mapping of it stays in its table, ignored while the customer does not carry the code.
  for(const clear of clears){const customer=customers.get(clear.customerId)!;customerDetailMutationGuard({me:c.me,members:c.members,all:[customer]},customer);}
  // New customers: the region chosen for them (or for one row), checked like the form's; their data as the form builds it.
  const addRows=new Set(prepared.adds.map(add=>add.row)),fallback=erpNewCustomerRegions(c.me).default;
@@ -134,22 +138,22 @@ export async function importErpCustomers(c:Context,body:unknown){
  const result={ok:true,updated:prepared.summary.codeChanges,mappings:prepared.summary.mappings,changed:prepared.plan.length,added:additions.length,unchanged:prepared.rows.filter(row=>row.customerId&&!row.change).length,skipped:prepared.rows.filter(row=>!row.customerId&&!row.add&&['auto','same','choose','similar','new'].includes(row.status)).length,cleared:clears.length,outOfRegion:prepared.summary.outOfRegion,heldOutside:prepared.summary.heldOutside,invalid:prepared.summary.invalid,changes:prepared.plan.map(step=>({row:step.row,customerId:step.customerId,from:step.from,to:step.to,mapping:step.mapping})),additions:additions.map(({add,id,region,data}):Addition=>({row:add.row,customerId:id,code:add.code,name:String(data.name),region}))};
  // The receipt is the transaction's gate: the member's role and regions, the identity revision (every code and mapping change moves it,
  // and so does adding or deleting a customer), every involved customer's version, in one JSON parameter; and for the new customers,
- // that no record has their ids and that nobody holds their codes now (current code, kept code, mapping). Every later write requires
- // this attempt's own receipt.
+ // that no record has their ids and that no customer carries their codes now (a code another customer only had before, or a mapping to a
+ // customer that no longer carries it, is nobody's). Every later write requires this attempt's own receipt.
  const guard=accessGuard(c);
  let gate=guard.sql+" AND EXISTS(SELECT 1 FROM crm_customer_identity_state WHERE id='company' AND revision=?) AND NOT EXISTS(SELECT 1 FROM json_each(?) AS expected LEFT JOIN crm_records AS actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.kind IS NOT 'customer' OR actual.version IS NOT json_extract(expected.value,'$[1]'))";
  const gateArgs:(string|number)[]=[...guard.args,c.customerIdentityState.revision,JSON.stringify([...prepared.involved,...clears.map(clear=>[clear.customerId,clear.version])])];
  if(additions.length){
   const ids=JSON.stringify(additions.map(addition=>addition.id)),codes=JSON.stringify(additions.map(addition=>addition.add.codeKey));
-  gate+=" AND NOT EXISTS(SELECT 1 FROM crm_records WHERE id IN (SELECT value FROM json_each(?))) AND NOT EXISTS(SELECT 1 FROM crm_records WHERE kind='customer' AND upper(trim(CAST(json_extract(data,'$.code') AS TEXT))) IN (SELECT value FROM json_each(?))) AND NOT EXISTS(SELECT 1 FROM crm_customer_code_aliases WHERE upper(trim(source_code)) IN (SELECT value FROM json_each(?))) AND NOT EXISTS(SELECT 1 FROM crm_customer_code_mappings WHERE code_key IN (SELECT value FROM json_each(?)))";
-  gateArgs.push(ids,codes,codes,codes);
+  gate+=" AND NOT EXISTS(SELECT 1 FROM crm_records WHERE id IN (SELECT value FROM json_each(?))) AND NOT EXISTS(SELECT 1 FROM crm_records WHERE kind='customer' AND upper(trim(CAST(json_extract(data,'$.code') AS TEXT))) IN (SELECT value FROM json_each(?)))";
+  gateArgs.push(ids,codes);
  }
  const claimed='EXISTS(SELECT 1 FROM crm_audit WHERE id=? AND record_id=?)',claimArgs=[receipt,attempt];
  const batch:D1PreparedStatement[]=[c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+gate).bind(receipt,attempt,c.me.name,'erp-customers-receipt',JSON.stringify({fingerprint,result}),now,...gateArgs)];
- // Only the code changes; the identity trigger keeps the old code as an alias, so earlier invoices still find the customer.
+ // Only the code changes; from now on the customer is matched by its new code only (the identity trigger keeps the old one as history).
  for(const step of prepared.plan)if(step.codeChange)batch.push(c.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code',?),updated_at=?,version=version+1,mutation_id=? WHERE id=? AND kind='customer' AND version=? AND "+claimed).bind(step.to,now,attempt,step.customerId,step.version,...claimArgs));
  for(const step of prepared.plan)if(step.mapping)batch.push(step.mappingVersion?c.db.prepare('UPDATE crm_customer_code_mappings SET customer_id=?,version=version+1,updated_by=?,updated_at=? WHERE code_key=? AND version=? AND '+claimed).bind(step.customerId,c.me.id,now,step.codeKey,step.mappingVersion,...claimArgs):c.db.prepare('INSERT INTO crm_customer_code_mappings(code_key,customer_id,version,updated_by,updated_at) SELECT ?,?,1,?,? WHERE '+claimed).bind(step.codeKey,step.customerId,c.me.id,now,...claimArgs));
- // A cleared code: '' (the customer's code field empty, as the form saves it), its version moved; the trigger keeps the old one as an alias.
+ // A cleared code: '' (the customer's code field empty, as the form saves it), its version moved; it matches nothing any more.
  for(const clear of clears)batch.push(c.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code',''),updated_at=?,version=version+1,mutation_id=? WHERE id=? AND kind='customer' AND version=? AND "+claimed).bind(now,attempt,clear.customerId,clear.version,...claimArgs));
  // A new customer as the form inserts one; the identity trigger gives it its Yourrest number and keeps its code.
  for(const {id,data} of additions)batch.push(c.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'customer',NULL,?,?,?,?,?,1,? WHERE "+claimed).bind(id,c.me.id,c.me.branch,JSON.stringify(data),now,now,attempt,...claimArgs));
