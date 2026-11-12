@@ -4,6 +4,31 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «تحقيق المستهدف — الشركة» for a company of one branch (2026-11-12, to ship in release update-office-employees-20261112, no migration)
+
+- **Asked.** The owner's screenshot of the live site (administrator): «الشركة» and «فرع الرئيسي» both «—», «لم يكتمل المستهدف»
+  («مجموع الفروع», «مستهدف خاص بالفرع»), and «مفيش فروع للشركة»: every member's branch is «الرئيسي».
+- **The cause.** A «الفرع بالكامل» target was saved for «الرئيسي» with products of a non-zero weight left empty. The rule of
+  lib/targets-overview.ts let a saved branch target win over the sum of its people even when incomplete, and the company was the sum of
+  the branches; with one branch the company's target was that incomplete target, so both gauges were blank (`missing_inputs`) whatever
+  the representatives' own targets, and stayed so in the following months (effectiveSet carries a target forward).
+- **One branch** (all the people of the distribution table in one branch; a branch with nobody, only a saved target or customers, does
+  not count): `targetsOverview` returns `single: true` and no branch scope; the card is «تحقيق المستهدف — الشركة» with ONE gauge and the
+  note without the branch sentence. The company's target is the sum of the people's own effective targets (the representative cards'
+  rules); a saved branch target is used only when complete (a number for every product of a non-zero weight; `savedMonth` shown) and
+  otherwise ignored and named (`ignoredSaved`: «لم يُعتمد مستهدف «الفرع بالكامل» لأنه ناقص»). The gauge is blank only for what is really
+  missing, and says it in one line (`missing`, `missingLine`): people who sell (active, or with a confirmed sale this month) without a
+  target («3 مناديب بلا مستهدف لهذا الشهر», MSA agreement by `repsCount`), and weighted products a targeted person left empty
+  («لم يُحدَّد مستهدف لصنف: …»). «تفاصيل الفئات» writes «محدَّد لـ 2 من 3» under a product set for part of the people (`coverage`), and no
+  percentage for it. A target of zero is a target. The percentage is the same weighted formula (quantityAttainment).
+- **Two branches or more:** unchanged numbers and layout; a blank gauge now names the product it lacks instead of «لم يكتمل المستهدف».
+  The overview table's cells take their own padding (the global `table td` padding left product names a letter wide on a phone).
+- **Who sees it:** unchanged (the administrator and a sales manager over every region; not a future month).
+- **Tests:** tests/targets-company-gauge.mjs (new, 45 checks); tests/targets-performance-ui.mjs (+3: a one-branch payload has no branch
+  gauge); tests/targets-hub-browser.mjs (+ a one-branch company in Chromium: the missing representative's line, the ignored branch
+  target, «تفاصيل الفئات», then the filled percentage; desktop and phone 360, Arabic and English). The two-branch expectations of both
+  files are unchanged.
+
 ## ERP customer codes matched by the current code only (2026-11-12, release update-erp-current-code-20261112, no migration)
 
 - **Asked.** The owner's rule, said before and again on 2026-11-12: «لما ارفع بيانات العملاء تاخد كود erp وتحدث بيانات العملاء باللى
