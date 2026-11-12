@@ -70,6 +70,8 @@
 // Also (2026-11-11, toward the real one): a name with a mark of direction is refused, a design-files body is 25 MiB + 8 KiB at most, and
 // answerNextFile answers one call for one crmFileId.
 // No real account, network or secret is used.
+// (2026-11-12: the `salesmen` route of yourrest-products#54 only with the option {salesmen: true} or setSalesmen(true); without it, 400
+// invalid_payload fields ['route'] as the products application before that release answers.)
 import {createServer} from 'node:https';
 import {createHash, createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
 import {moldImageSize} from '../../portable/mold-rules.mjs';
@@ -235,12 +237,12 @@ const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null
  * @param {{secret?: string, now?: () => number, quotePo?: boolean, requestRefs?: boolean}} options quotePo: start as the application after its
  *  update of 2026-11-03; requestRefs: start as the application of the new numbering (the second message of 2026-11-05)
  */
-export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false, nov10 = false, signedFlag = false} = {}) {
+export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false, nov10 = false, signedFlag = false, salesmen = false} = {}) {
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), fileAnswers: [], signedFlag, lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers, nov10};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), fileAnswers: [], signedFlag, lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers, nov10, salesmenRoute: salesmen, salesmen: new Map()};
   // This application's own reading of a request and of a file: before or after its update of 2026-11-03 (state.quotePo), and before or
   // after its new numbering (state.refs).
   const statusObject = row => statusObjectOf(row, state.quotePo, state.refs, state.freeCustomers, state.nov10), designEntry = file => designEntryOf(file, state.quotePo);
@@ -384,6 +386,39 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     return {status: 200, body: {received: entries.length, inserted, updated, deactivated, activeCustomers: [...state.customers.values()].filter(entry => entry.active).length}};
   }
 
+  /** The salesmen route (yourrest-products#54, 2026-11-12; only with the option `salesmen`, as after that release): the CRM's members who
+   *  may file a mold request. upsert writes those sent; full also deactivates (never deletes) every active salesman it does not carry.
+   *  Field for field: mode; salesmen a list of 0..1000; crmMemberId ^[A-Za-z0-9_-]{1,64}$ and once a call; name 1..160 characters (no
+   *  control character, spaces collapsed); email optional, up to 190, lower-case, an address; active a boolean, required. deactivated
+   *  and deactivatedIds count the salesmen a full turned off by leaving them out (an active:false sent counts as updated). */
+  function salesmenRoute(body) {
+    const bad = [], mode = choice(body.mode, ['full', 'upsert'], true, 'mode', bad), list = body.salesmen;
+    if (!Array.isArray(list) || list.length > 1000) bad.push('salesmen');
+    const seen = new Set(), entries = [];
+    for (const [index, item] of (Array.isArray(list) ? list : []).entries()) {
+      const at = 'salesmen.' + index + '.', entry = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
+      const id = entry.crmMemberId;
+      if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || seen.has(id)) bad.push(at + 'crmMemberId');
+      seen.add(id);
+      const name = clean(entry.name, 160, true, at + 'name', bad), email = clean(entry.email, 190, false, at + 'email', bad);
+      if (email !== '' && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email !== email.toLowerCase())) bad.push(at + 'email');
+      if (typeof entry.active !== 'boolean') bad.push(at + 'active');
+      entries.push({crmMemberId: id, name, email, active: entry.active === true});
+    }
+    if (bad.length) throw new ApiError('invalid_payload', 400, 'Some fields are missing or invalid.', [...new Set(bad)].slice(0, 30));
+    let inserted = 0, updated = 0;
+    const deactivatedIds = [];
+    for (const entry of entries) {
+      const before = state.salesmen.get(entry.crmMemberId);
+      // An email left out keeps the one production holds.
+      const next = {...entry, email: entry.email || before?.email || ''};
+      if (!before) inserted++; else if (JSON.stringify(before) !== JSON.stringify(next)) updated++;
+      state.salesmen.set(entry.crmMemberId, next);
+    }
+    if (mode === 'full') for (const [id, entry] of state.salesmen) if (!seen.has(id) && entry.active) { state.salesmen.set(id, {...entry, active: false}); deactivatedIds.push(id); }
+    return {status: 200, body: {received: entries.length, inserted, updated, deactivated: deactivatedIds.length, deactivatedIds, activeSalesmen: [...state.salesmen.values()].filter(entry => entry.active).length}};
+  }
+
   /** A change from the CRM during the approvals undoes the ones given (an edit, an attached or a deleted design file; since 2026-11-05 not
    *  a quotation's or PO's file). */
   const undoApprovals = row => { if (!row.approvals.legacy && APPROVAL_STEPS.some(step => row.approvals[step])) row.approvals = noApprovals(); };
@@ -473,11 +508,12 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
     try {
       if (req.method !== 'POST') throw new ApiError('method_not_allowed', 405, 'Use POST.');
-      if (!['requests', 'status', 'cancel', 'approval', 'pending', 'customers', 'design-files', 'design-file-delete', 'design-file'].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
+      // The salesmen route exists only after its release (option salesmen, setSalesmen): before, it is an unknown route like any other.
+      if (!['requests', 'status', 'cancel', 'approval', 'pending', 'customers', 'design-files', 'design-file-delete', 'design-file', ...(state.salesmenRoute ? ['salesmen'] : [])].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
       if (state.notConfigured) throw new ApiError('not_configured', 503, 'The integration secret is not configured.');
       const timestamp = String(req.headers['x-yr-timestamp'] || ''), signature = String(req.headers['x-yr-signature'] || '');
       if (!/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) throw new ApiError('invalid_signature', 401, 'Missing or malformed signature headers.');
-      if (raw.length > (route === 'customers' ? 2 * 1024 * 1024 : route === 'design-files' ? DESIGN_MAX + 8 * 1024 : 64 * 1024)) throw new ApiError('payload_too_large', 413, route === 'customers' ? 'The body is larger than 2 MB.' : route === 'design-files' ? 'The file is larger than 25 MB.' : 'The body is larger than 64 KB.');
+      if (raw.length > (route === 'customers' ? 2 * 1024 * 1024 : route === 'salesmen' ? 256 * 1024 : route === 'design-files' ? DESIGN_MAX + 8 * 1024 : 64 * 1024)) throw new ApiError('payload_too_large', 413, route === 'customers' ? 'The body is larger than 2 MB.' : route === 'salesmen' ? 'The body is larger than 256 KB.' : route === 'design-files' ? 'The file is larger than 25 MB.' : 'The body is larger than 64 KB.');
       if (Math.abs(Math.floor(now() / 1000) - Number(timestamp)) > 300) throw new ApiError('stale_timestamp', 401, 'The timestamp is more than 300 seconds from the server clock.');
       const expected = createHmac('sha256', state.secret).update(timestamp + '\n' + req.method + '\n' + route + '\n' + createHash('sha256').update(raw).digest('hex')).digest('hex');
       if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) { state.badSignatures++; throw new ApiError('invalid_signature', 401, 'The signature does not match.'); }
@@ -501,7 +537,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
         res.writeHead(200, {'Content-Type': file.type, 'Content-Length': String(file.bytes.length), 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(file.name.toWellFormed())});
         res.end(file.bytes); return;
       }
-      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'customers' ? customers(body)
+      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'customers' ? customers(body) : route === 'salesmen' ? salesmenRoute(body)
         : route === 'design-file-delete' ? deleteDesign(body) : cancel(body);
       reply(result.status, result.body);
     } catch (error) {
@@ -625,6 +661,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     setRequestRefs(on = true) { state.refs = !!on; },
     /** The application of today (false) or after its update for a customer not in the CRM (true, 2026-11-09), at once. */
     setFreeCustomers(on = true) { state.freeCustomers = !!on; },
+    /** The application before (false) or after (true) its release of the salesmen route (yourrest-products#54), at once. */
+    setSalesmen(on = true) { state.salesmenRoute = !!on; },
     /** The application of today (false) or after its update of 2026-11-10 (true), at once. */
     setNov10(on = true) { state.nov10 = !!on; },
     /** Schema 19 (the signed flag) on: files from then on carry "signed"; the files held already get false (their own update marks its
