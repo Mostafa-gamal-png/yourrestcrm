@@ -6,6 +6,7 @@ import {customerVisits,customerPlanSource,visitOrder} from './customer-visits';
 import {type KpiEvidenceContext,type KpiQuotationDetail} from './kpi-evidence';
 import {quotationRefKey} from './quotation-refs';
 import {coverageReason,type CoverageMissing} from './sales-coverage';
+import {newCustomerCredits,newCustomersOf,type ErpRepAttribution} from './new-customers';
 export const operationalIndicators=[
  {id:'attainment',name:'تحقيق المستهدف البيعي',weight:25,axis:'sales'},
  {id:'collection',name:'التحصيل',weight:20,axis:'collection'},
@@ -34,6 +35,8 @@ const count=z.number().int().min(0).max(1000000).nullable();
 export const kpiInputSchema=z.object({reviewed:count,correct:count,review_note:z.string().trim().max(2000),conduct:z.object({responsibility:grade,teamwork:grade,honesty:grade,professionalism:grade,appearance:grade}).strict()}).strict().refine(v=>v.reviewed===null?v.correct===null:v.correct!==null&&v.correct<=v.reviewed,'راجع أعداد السجلات الصحيحة والمراجعة.');
 export type KpiInput=z.infer<typeof kpiInputSchema>;
 export const emptyKpiInput=():KpiInput=>({reviewed:null,correct:null,review_note:'',conduct:{responsibility:{score:null,note:''},teamwork:{score:null,note:''},honesty:{score:null,note:''},professionalism:{score:null,note:''},appearance:{score:null,note:''}}});
+/** «طريقة الحساب» of «العملاء الجدد» (lib/new-customers.ts newCustomerCredits). */
+export const NEW_CUSTOMERS_REASON='العملاء الجدد خلال الشهر ÷ مستهدف العملاء الجدد. يُحتسب العميل مرة واحدة: إذا أضافه المندوب يدويًا في التطبيق خلال الشهر نُسب إليه، وإلا إذا وقع تاريخ إنشائه في ERP (عمود «التاريخ» في ملف عملاء ERP) خلال الشهر نُسب إلى مندوب الملف إن ذكره الملف وأمكن ربطه بمستخدم في النظام، وإلا إلى المسؤول الحالي عن العميل في النظام، لأن ملف العملاء الحالي لا يحتوي عمود المندوب. لا يُحتسب عملاء «مبيعات مكتب»، ولا يُعدّ الاستيراد ولا تحديث البيانات إضافةً يدوية.';
 export const roundKpi=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 export const boundedScore=(n:number)=>Math.max(0,Math.min(100,n));
 /** missing: present only while a KPI waits for complete ERP sales imports (lib/sales-coverage.ts): the months to upload, so the page
@@ -74,13 +77,15 @@ export function quoteConversions(quotes:KpiQuoteCandidate[],invoices:KpiQuoteInv
  });
 }
 export type KpiData={month:string;period:ReturnType<typeof kpiPeriod>;people:KpiPerson[];canManage:boolean};
-export function prepareKpiRecords(records:Row[],month:string){
+/** `attribute` names the CRM member of a customer's ERP representative (lib/new-customers.ts); without it a customer with an ERP date
+ *  is credited to its current responsible. */
+export function prepareKpiRecords(records:Row[],month:string,attribute?:ErpRepAttribution){
  const indexed=new Map(records.map(r=>[r.id,r])),customers=records.filter(r=>r.kind==='customer'),buckets=new Map<string,Row[]>(),customerIds=new Map<string,string>();
  for(const r of records){let root:Row|undefined=r;for(let n=0;root&&root.kind!=='customer'&&n<5;n++)root=root.parentId?indexed.get(root.parentId):undefined;if(root?.kind!=='customer')continue;customerIds.set(r.id,root.id);const bucket=buckets.get(root.id)||[];bucket.push(r);buckets.set(root.id,bucket);}
  const contacts=new Map(customers.map(c=>[c.id,customerVisits(c.id,buckets.get(c.id)||[]).reverse()])),plans=new Map(customers.map(c=>[c.id,customerPlanSource(c.id,buckets.get(c.id)||[])]));
- const period=kpiPeriod(month),formatter=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'});
- const registrations=customers.filter(c=>{if(c.data.sourceFile||!c.createdAt)return false;const date=formatter.format(new Date(c.createdAt));return date>=period.first&&date<=period.cutoff;});
- return{customers,buckets,customerIds,contacts,plans,registrations};
+ // «العملاء الجدد»: added by hand in the month, or created in the ERP in the month (lib/new-customers.ts), each customer once.
+ const newCustomers=newCustomerCredits(customers,kpiPeriod(month),attribute);
+ return{customers,buckets,customerIds,contacts,plans,newCustomers};
 }
 export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:Sale[],assessment:KpiAssessment|null,prepared=prepareKpiRecords(records,month),evidence?:KpiEvidenceContext){
  const period=kpiPeriod(month),ids=new Set(p.sourceMemberIds),saleIds=new Set(p.salesSourceMemberIds),input=assessment?.input||emptyKpiInput(),ratio=(a:number,b:number)=>b>0?a/b*100:null;
@@ -122,7 +127,7 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
  const collection=evidence?.collection,validCollection=!!collection&&Number.isFinite(collection.dueCents)&&Number.isFinite(collection.collectedCents)&&collection.dueCents>=0&&collection.collectedCents>=0&&(collection.dueCents>0||collection.collectedCents===0);
  const visits=records.filter(r=>r.kind==='activity'&&ids.has(r.data.performedBy||r.data.responsibleId)&&r.data.type==='visit'&&r.data.date>=period.first&&r.data.date<=period.cutoff);
  const stage=(r:Row|undefined)=>r?.data.salesStage||r?.data.stage||'new';
- const {customers,plans,registrations}=prepared;
+ const {customers,plans}=prepared;
  const positive=visits.filter(v=>{const id=prepared.customerIds.get(v.id);return id&&!['won','lost'].includes(stage(plans.get(id)));}).length;
  let qualified=0,quoted=0,lost=0,documented=0;
  for(const c of customers){const contacts=prepared.contacts.get(c.id)||[],first=contacts.find(r=>r.data.visitWorkflow!=='followup-v1');if(!first||!ids.has(first.data.performedBy||first.data.responsibleId)||first.data.date<period.first||first.data.date>period.cutoff)continue;const current=plans.get(c.id),currentStage=stage(current);
@@ -131,7 +136,7 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
   const qualification=contacts.find(r=>r.data.date<=period.cutoff&&['specs','technical'].includes(r.data.salesStage));if(!qualification)continue;qualified++;
   if(contacts.some(r=>r.data.date<=period.cutoff&&visitOrder(r)>=visitOrder(qualification)&&(r.data.salesStage==='quoted'||r.data.type==='quote'))||(prepared.buckets.get(c.id)||[]).some(r=>r.kind==='quote'&&r.data.date<=period.cutoff&&r.data.date>=qualification.data.date))quoted++;
  }
- const unknownRegistrations=registrations.some(c=>!c.data._createdBy),newCustomers=registrations.filter(c=>ids.has(c.data._createdBy)).length;
+ const unknownRegistrations=prepared.newCustomers.unknown,newCustomers=newCustomersOf(prepared.newCustomers.credits,ids);
  // Returns reduce quantities and growth, but are not new sales invoices.
  const salesInvoices=invoices.filter(s=>s.documentType!=='return');
  const diverse=salesInvoices.filter(s=>new Set(s.items.map(i=>i.product)).size>=3).length;
@@ -140,7 +145,7 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
   validCollection?countMetric('collection',collection!.collectedCents,collection!.dueCents,'المحصل ÷ المستحق وفق بيانات التحصيل المعتمدة؛ النتيجة بحد أقصى 100%.','management'):metric('collection',null,'أدخل المستحق والمحصل ومرجع بيانات التحصيل.','required'),
   (()=>{const state=growth===null&&growthWeightsValid?waiting('growth',growthReady,''):{reason:''};return withMissing(metric('growth',growth,state.missing?state.reason:'نمو كميات الأصناف مقابل الفترة المناظرة من الشهر السابق؛ تستبعد الأصناف بلا أساس شراء موجب بعد تأكيد اكتمال السجل.'+automaticNote('growth'),state.missing?'required':'automatic',null,null,growthReady&&growthWeightsValid&&growthApplicableWeight===0?'not_applicable':undefined),state);})(),
   countMetric('variety',diverse,salesInvoices.length,'فواتير البيع التي تشمل 3 أصناف مختلفة أو أكثر ÷ إجمالي فواتير البيع المسجلة غير الملغاة. تستبعد مستندات المرتجعات.'),
-  countMetric('new_customers',unknownRegistrations||p.activityTargetsKnown===false?null:newCustomers,p.activityTargetsKnown===false?null:p.activityTargets.newCustomers,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':unknownRegistrations?'بعض العملاء القدامى لا يحملون هوية منشئهم؛ لا تُنسب إضافتهم للمسؤول الحالي بالتخمين.':'العملاء المضافون يدويًا بواسطة المندوب خلال الشهر ÷ مستهدف العملاء الجدد. يستبعد الاستيراد والتحديث وإعادة الإسناد.'),
+  countMetric('new_customers',unknownRegistrations||p.activityTargetsKnown===false?null:newCustomers,p.activityTargetsKnown===false?null:p.activityTargets.newCustomers,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':unknownRegistrations?'بعض العملاء المضافين في الشهر لا يحملون هوية منشئهم ولا تاريخ إنشائهم في ERP؛ لا تُنسب إضافتهم للمسؤول الحالي بالتخمين.':NEW_CUSTOMERS_REASON),
   (()=>{const state=waiting('recovered',recoveredReady,historyReason);return withMissing(countMetric('recovered',recoveredReady?recovered:null,evidence?.recoveryTarget??null,recoveredReady?'عملاء اشتروا قديمًا، وتوقفوا ثلاثة أشهر كاملة، ثم عادوا للشراء هذا الشهر ÷ مستهدف الاسترداد.'+automaticNote('recovered'):state.reason,recoveredReady?'automatic':'required'),state);})(),
   (()=>{const state=waiting('retention',retentionReady,historyReason);return withMissing(countMetric('retention',retentionReady?retained:null,retentionReady?priorBuyers.size:null,retentionReady?'المشترون هذا الشهر من عملاء الأشهر الثلاثة السابقة ÷ جميع عملاء تلك الأشهر.'+automaticNote('retention'):state.reason,retentionReady?'automatic':'required'),state);})(),
   countMetric('visits',p.activityTargetsKnown===false?null:visits.length,p.activityTargetsKnown===false?null:p.activityTargets.visits,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':'الزيارات المسجلة والمتابعات من نوع زيارة فقط ÷ مستهدف الزيارات.'),

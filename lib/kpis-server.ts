@@ -16,15 +16,17 @@ import {readKpiEvidenceRows,readSalesRevision} from './kpi-evidence-server';
 import {evidenceScopeKey,type KpiEvidenceContext} from './kpi-evidence';
 import {readKpiPurchaseHistory,isKpiIssuedQuote,isValidKpiConversion} from './kpi-history-server';
 import {effectiveSet,defaultActivityTargets,type ActivityTargets,type TargetState} from './targets';
+import {erpRepResolver,resolveErpRep} from './new-customers';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function kpiData(c:Context,month:string,performance:KpiPerformance[],targets?:TargetState):Promise<KpiData>{
  const period=kpiPeriod(month),allowed=salesReadMemberIds(c.members,c.me,true);
  const salesRevision=await readSalesRevision(c);
  const evidenceRevision=(await c.db.prepare("SELECT revision FROM crm_kpi_evidence_state WHERE id='company'").first<{revision:number}>())?.revision||0;
- const [assessmentRows,saleRows,currentErp,previousErp,evidenceRows]=await Promise.all([
+ const [assessmentRows,saleRows,currentErp,previousErp,evidenceRows,employeeMappings]=await Promise.all([
   c.db.prepare('SELECT a.*,m.name AS author FROM crm_kpi_assessments a LEFT JOIN crm_members m ON m.id=a.updated_by WHERE a.month=?').bind(month).all<{member_id:string;month:string;input:string;version:number;updated_at:string;author:string|null}>(),
   c.db.prepare("SELECT * FROM crm_sales WHERE date>=? AND date<=? AND status='confirmed'").bind(period.previousFirst,period.cutoff).all<SaleRow>(),
-  readErpSales(c,month),readErpSales(c,period.previousFirst.slice(0,7)),readKpiEvidenceRows(c,month)
+  readErpSales(c,month),readErpSales(c,period.previousFirst.slice(0,7)),readKpiEvidenceRows(c,month),
+  c.db.prepare('SELECT employee_id AS employeeId,rep_id AS repId FROM crm_erp_employee_mappings').all<{employeeId:string;repId:string}>()
  ]);
  // The complete ERP sales imports (lib/sales-coverage.ts): what they cover makes growth, retention and recovered automatic.
  const coverageEntries=await readSalesCoverage(c);
@@ -37,7 +39,10 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
  const sales:Sale[]=[...saleRows.results.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(r=>({...JSON.parse(r.data),id:r.id,repId:r.rep_id,customerId:r.customer_id,reference:r.reference,totalCents:r.total_cents,status:r.status,date:r.date})),...currentErp,...previousErp].filter(s=>s.date>=period.previousFirst&&s.date<=period.cutoff);
  const evidenceByMember=new Map(evidenceRows.map(row=>[row.memberId,row]));
  const history=evidenceRows.some(row=>row.input.history.complete)||coverageEntries.length?await readKpiPurchaseHistory(c,month):{facts:[],unresolved:new Set<string>()};
- const records=salesReportingRecords(c.visible,c.members),prepared=prepareKpiRecords(records,month);
+ // «العملاء الجدد»: the representative an ERP customers file named, as a member (the ERP employee mappings, else an exact full name).
+ const resolver=erpRepResolver(employeeMappings.results,c.members);
+ const attribute=(erpRep:unknown)=>resolveErpRep(erpRep,resolver);
+ const records=salesReportingRecords(c.visible,c.members),prepared=prepareKpiRecords(records,month,attribute);
  // The month's quotations: every quote record the reader sees (sent, accepted or rejected: issued; a draft is not), of a customer of the
  // reader's regions, dated in the month up to its cutoff, attributed to its author (the representative an ERP quotation is mapped to),
  // unless «بيانات المؤشرات» assigned it to a representative explicitly: then to that one.

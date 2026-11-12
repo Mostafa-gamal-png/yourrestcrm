@@ -28,7 +28,7 @@ const ok = (value, message) => { assert.ok(value, message); checks++; };
 const header = ['رقم العميل', 'رقم الهوية', 'الاسم بالعربي', 'الاسم بالانجليزي', 'رقم الجوال', 'رقم الهاتف', 'البريد الالكتروني', 'العنوان', 'التاريخ'];
 const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const cell = value => `<c t="inlineStr"><is><t>${escape(value)}</t></is></c>`;
-const row = (code, name, mobile = '', phone = '', email = 'erp@example.invalid') => [code, '1000000000', name, name, mobile, phone, email, 'A B C D 1 2 3 4', '2026/11/01'];
+const row = (code, name, mobile = '', phone = '', email = 'erp@example.invalid') => [code, '1000000000', name, name, mobile, phone, email, 'A B C D 1 2 3 4', '']; // «التاريخ» empty: what it writes is tests/new-customers-erp-http.mjs
 const xlsx = rows => Buffer.from(zipSync({
   '[Content_Types].xml': strToU8('<?xml version="1.0"?><Types/>'),
   'xl/workbook.xml': strToU8('<workbook xmlns:r="r"><sheets><sheet name="Customer" sheetId="1" r:id="rId1"/></sheets></workbook>'),
