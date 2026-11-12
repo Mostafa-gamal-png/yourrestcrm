@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-QuoteCodes-20261111.zip",
-  "sha256": "dad802646902fb94b97c44ad7aebd8831370f1b37c4b4be0aa967721d6f31049",
-  "stage": "yourrest-crm-update-quote-codes-20261111",
-  "helper": "yourrest-activate-update-quote-codes.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-ErpCurrentCode-20261112.zip",
+  "sha256": "8dc5db6870e6ac433daf0a19c2b2fb62428d72eff89b73102bfb798822e6e9ee",
+  "stage": "yourrest-crm-update-erp-current-code-20261112",
+  "helper": "yourrest-activate-update-erp-current-code.cjs"
 }
