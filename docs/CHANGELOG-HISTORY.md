@@ -38,7 +38,11 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   tests/security-customer-code.mjs (80, rewritten: the code read-only for admin, manager and rep), tests/rep-customer-create.mjs (284),
   tests/customer-identities.mjs (89), tests/trash.mjs (214), tests/rep-mobile-shell.mjs (718), tests/dictation-coverage.mjs (30); built
   release: tests/erp-customers-duplicates-http.mjs (new, 28), tests/erp-customers-http.mjs (146), tests/erp-customers-clear-http.mjs
-  (53), tests/erp-quotes-http.mjs (108); Chromium: tests/erp-customers-browser.mjs (115), tests/customer-edit-browser.mjs (73).
+  (53), tests/erp-quotes-http.mjs (108), tests/mold-customers-http.mjs (42), tests/server-authorization.mjs (658),
+  tests/trash-http.mjs (61), tests/visit-files-http.mjs (41), tests/sales-date-boundaries.mjs (36), tests/targets-attainment-http.mjs
+  (26), tests/namecheap-http.mjs (381); Chromium: tests/erp-customers-browser.mjs (115), tests/customer-edit-browser.mjs (73). The full
+  gates run (`node scripts/gates.mjs --full`): every release-build and browser test passes (4 skipped: they need the owner's ERP files);
+  four browser tests that failed once under the parallel load passed alone (complaints, mold-requests, permissions, service-queue).
   Expectations changed on purpose: a code typed or changed through /api/crm is now 403 (fixtures that gave codes through the form now set
   them as the import does); a number another customer holds is no longer mapped but cleared from that customer (`mapping` false,
   `mappings` 0, `duplicates`); a sales manager no longer moves a number past a holder outside their regions even with a mapping to a

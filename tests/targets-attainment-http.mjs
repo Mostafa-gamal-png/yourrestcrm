@@ -19,7 +19,7 @@ try {
   const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date()), month = day.slice(0, 7);
   const products = ['قوالب البلوك المتحركة', 'قوالب البلوك الثابتة', 'لمامة البلوك', 'ماكينة إنتاج البلوكة المتحركة', 'قطع غيار المكائن المتحركة', 'خلاطات البلوك', 'خلاطات الخرسانة الجاهزة', 'خدمات صيانة'];
   const weights = [40, 20, 10, 10, 10, 5, 5, 0];
-  const customer = (await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'E', region: 'الشرقية', city: 'x', code: 'E', branch: 'الرئيسي', assignedTo: 'rep1', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}})).json().id;
+  const customer = (await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'E', region: 'الشرقية', city: 'x', branch: 'الرئيسي', assignedTo: 'rep1', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}})).json().id;
   const save = (who, kind, scopeId, data) => app.as(sessions[who])('/api/targets', {method: 'POST', body: {kind, scopeId, month, version: 0, inheritedFrom: null, requestId: crypto.randomUUID(), data}});
   const quantities = (first, second) => ({products: products.map((product, index) => ({product, quantity: index === 0 ? first : index === 1 ? second : 0}))});
   const weightRows = values => ({products: products.map((product, index) => ({product, weight: values[index]}))});
