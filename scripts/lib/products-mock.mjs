@@ -410,8 +410,8 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     const deactivatedIds = [];
     for (const entry of entries) {
       const before = state.salesmen.get(entry.crmMemberId);
-      // An email left out keeps the one production holds.
-      const next = {...entry, email: entry.email || before?.email || ''};
+      // An email left out is stored empty, as production does (yourrest-products, 2026-11-12): it clears the one held before.
+      const next = {...entry};
       if (!before) inserted++; else if (JSON.stringify(before) !== JSON.stringify(next)) updated++;
       state.salesmen.set(entry.crmMemberId, next);
     }
