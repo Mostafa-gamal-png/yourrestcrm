@@ -26,7 +26,7 @@ try {
   const listed = async (as, query = '') => { const response = await as('/api/trash' + query); check(response.status, 200, response.text); return response.json(); };
 
   // ---- a customer: delete, find, restore, the same YR-C code
-  let response = await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'مصنع المحذوفات', region: 'الوسطى', city: 'الرياض', code: 'TR-1', branch: 'الرئيسي', assignedTo: 'rep', phone: '0501234567', contact: 'م'}}});
+  let response = await owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'مصنع المحذوفات', region: 'الوسطى', city: 'الرياض', branch: 'الرئيسي', assignedTo: 'rep', phone: '0501234567', contact: 'م'}}});
   check(response.status, 200, response.text);
   const customer = response.json().id;
   const code = (await owner('/api/crm')).json().records.find(r => r.id === customer).data.internalCode;

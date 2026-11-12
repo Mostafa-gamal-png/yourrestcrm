@@ -1,0 +1,4 @@
+.erp-code-readonly{min-width:0}
+.erp-code-readonly-value{min-height:44px;display:flex;align-items:center;padding:10px 12px;border:1px dashed var(--border);border-radius:8px;background:var(--muted);font-size:15px;overflow-wrap:anywhere}
+.erp-code-readonly-note{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground)}
+.erp-code-readonly-note svg{flex:none}

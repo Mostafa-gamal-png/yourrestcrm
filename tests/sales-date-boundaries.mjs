@@ -8,7 +8,7 @@ const check = (actual, expected, message) => { assert.deepEqual(actual, expected
 const app = await bootBuiltApp({members: [{id: 'owner', role: 'admin'}, {id: 'rep1', role: 'rep', region: 'eastern'}]});
 try {
   const admin = app.as(await app.login('owner'));
-  const customer = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل', region: 'الشرقية', city: 'x', code: 'D-1', branch: 'الرئيسي', assignedTo: 'rep1', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
+  const customer = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل', region: 'الشرقية', city: 'x', branch: 'الرئيسي', assignedTo: 'rep1', phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
   check(customer.status, 200, customer.text);
   const sale = (date, reference) => admin('/api/sales', {method: 'POST', body: {action: 'save', createKey: crypto.randomUUID(), data: {customerId: customer.json().id, repId: 'rep1', date, reference, items: [{product: 'قوالب البلوك المتحركة', description: '', quantity: 1, unitPrice: 100}], discount: 0, notes: ''}}});
   const dates = ['2024-02-29', '2024-03-01', '2025-12-31', '2026-01-01', '2026-01-31', '2026-02-28', '2026-03-01', '2026-04-30', '2026-05-01'];

@@ -4,6 +4,11 @@ import type {Row} from './crm';
 export const customerCodeKey=(value:unknown)=>String(value??'').normalize('NFKC').replace(/[٠-٩۰-۹]/g,digit=>String(digit.charCodeAt(0)-(digit>='۰'?0x6f0:0x660))).trim().toUpperCase();
 /** The refusal of a customer save whose ERP code another customer carries now (app/api/crm/route.ts): a CRM customer has its own ERP code. */
 export const erpCodeTaken=(code:string)=>'كود ERP «'+code+'» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.';
+/** The refusal of a customer save (app/api/crm/route.ts) that types, changes or clears the ERP code (the owner, 2026-11-12: «الغى امكانية
+ *  تعديل كود erp لاى حد حتى مدير النظام»): the code comes from the ERP customers import only (lib/erp-customers-server.ts). A save that
+ *  keeps the code, or does not send it, is accepted; a customer added by hand has no ERP code. */
+export const ERP_CODE_LOCKED='كود ERP لا يُكتب ولا يُعدَّل يدويًا لأي مستخدم، ولا لمدير النظام؛ يُحدَّث من ملف عملاء ERP فقط («استيراد من ERP»).';
+export const ERP_CODE_LOCKED_NOTE='يُحدَّث من ملف عملاء ERP فقط';
 export type CustomerCodeMapping={codeKey:string;customerId:string;version:number};
 export type CustomerIdentityState={revision:number;mappings:CustomerCodeMapping[]};
 /** The ERP code a customer carries NOW (data.code), as a list of none or one; the only code an ERP document is matched by (the owner,

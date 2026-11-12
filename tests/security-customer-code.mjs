@@ -1,4 +1,4 @@
-// An ERP code belongs to one customer (since 2026-11-12, refused again at the commit); immutable CRM numbers identify factories.
+// The ERP code is read-only for everyone (since 2026-11-12: only the ERP customers import writes it); immutable CRM numbers identify factories.
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
@@ -43,8 +43,10 @@ const DB={prepare:query=>new Statement(query),batch:async statements=>{
 }};
 globalThis.testEnv={DB,YR_APP_ORIGIN:'https://test.invalid'};
 const now=new Date().toISOString();
-sql.prepare('INSERT INTO crm_members(id,email,name,role,branch,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,1,0,?)').run('rep','rep@yourrest.org','Test rep','rep','HQ','eastern',now);
-globalThis.testUser={provider:'email-otp',memberId:'rep',memberVersion:sql.prepare("SELECT auth_version FROM crm_members WHERE id='rep'").get().auth_version,userId:'test-rep',email:'rep@yourrest.org',fullName:'Test rep'};
+const addMember=(id,role,scope)=>sql.prepare('INSERT INTO crm_members(id,email,name,role,branch,region_scope,active,target,created_at) VALUES(?,?,?,?,?,?,1,0,?)').run(id,id+'@yourrest.org','Test '+role,role,'HQ',scope,now);
+addMember('rep','rep','eastern');addMember('manager','manager','eastern');addMember('admin','admin','all');
+let current='rep';const as=id=>{current=id;globalThis.testUser={provider:'email-otp',memberId:id,memberVersion:sql.prepare('SELECT auth_version FROM crm_members WHERE id=?').get(id).auth_version,userId:'test-'+id,email:id+'@yourrest.org',fullName:'Test '+id};};
+as('rep');
 const crm=await import(path.join(out,'app/api/crm/route.mjs'));
 let checks=0;
 const check=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
@@ -54,35 +56,46 @@ const post=async(body,status=200)=>{
  const response=await crm.POST(new Request('https://test.invalid/api/crm',{method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:JSON.stringify(body)}));
  const payload=await response.json();check(response.status,status,JSON.stringify(payload));return payload;
 };
-const create=code=>({action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Test factory',region:'الشرقية',location:'',code}});
+const LOCKED='كود ERP لا يُكتب ولا يُعدَّل يدويًا لأي مستخدم، ولا لمدير النظام؛ يُحدَّث من ملف عملاء ERP فقط («استيراد من ERP»).';
+const create=code=>({action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Test factory',region:'الشرقية',location:'',assignedTo:current,branch:'HQ',...(code===undefined?{}:{code})}});
 const edit=(id,changes)=>({action:'save',kind:'customer',id,version:raw(id).version,data:{...data(id),...changes}});
 const number=id=>sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(id)?.number;
+const customers=()=>sql.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='customer'").get().n;
+/** What the ERP customers import does (lib/erp-customers-server.ts): the only writer of a customer's ERP code. */
+const erpImport=(id,code)=>sql.prepare("UPDATE crm_records SET data=json_set(data,'$.code',?),version=version+1 WHERE id=?").run(code,id);
 
-const first=(await post(create('FIRST'))).id,second=(await post(create('SECOND'))).id;
+// A customer added by hand has no ERP code: one sent with a code is refused for every role, and nothing is written; an empty or absent code is fine.
+for(const member of ['rep','manager','admin']){as(member);const before=customers();check((await post(create('NEW-'+member),403)).error,LOCKED,'a hand-made customer gets no ERP code ('+member+')');check(customers(),before);}
+as('rep');
+const first=(await post(create(''))).id,second=(await post(create())).id;
+check([data(first).code,data(second).code],['',''],'a new customer has no ERP code');
 const firstNumber=number(first),secondNumber=number(second);
 check(Number.isInteger(firstNumber),true);check(Number.isInteger(secondNumber),true);check(firstNumber!==secondNumber,true);
-// A customer's ERP code is its own (2026-11-12): two concurrent edits giving two customers one code cannot both commit (the commit's
-// re-check refuses the second), and neither can two concurrent creates. The two factory identities and their immutable CRM numbers
-// stay distinct.
-beforeBatch=async()=>{await post(edit(second,{code:'CONCURRENT-ERP'}));};
-await post(edit(first,{code:'CONCURRENT-ERP'}),409);
-check(number(first),firstNumber);check(number(second),secondNumber);
-check(data(first).code,'FIRST');check(data(second).code,'CONCURRENT-ERP');
-check((await post(create('ｃｏｎｃｕｒｒｅｎｔ-erp'),400)).error.includes('ｃｏｎｃｕｒｒｅｎｔ-erp'),true,'a code another customer carries is refused, in any spelling, naming it');
-const pendingCreate=create('RACE-CREATE');
-beforeBatch=async()=>{await post(create('race-create'));};
-await post(pendingCreate,409);
-const third=sql.prepare("SELECT id FROM crm_records WHERE kind='customer' AND json_extract(data,'$.code')='race-create'").get().id;
-check(new Set(sql.prepare('SELECT number FROM crm_customer_numbers').all().map(row=>row.number)).size,3);
-check(number(third)>0,true);
-check(sql.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='customer' AND upper(json_extract(data,'$.code'))='RACE-CREATE'").get().n,1,'one customer carries the code');
+erpImport(first,'FIRST');erpImport(second,'SECOND');
+// Nobody types, changes or clears the ERP code by hand, the administrator with every region included (the owner, 2026-11-12).
+for(const member of ['rep','manager','admin']){
+ as(member);const version=raw(first).version;
+ for(const code of ['OTHER','SECOND','','  ','FIRST-2'])check((await post(edit(first,{code}),403)).error,LOCKED,'the code cannot be changed to «'+code+'» ('+member+')');
+ check([data(first).code,raw(first).version],['FIRST',version],'nothing was written ('+member+')');
+ // A save that keeps the code (in any spelling of the same key) or does not send it is accepted, and keeps the stored code exactly.
+ await post(edit(first,{code:' first ',contact:'by '+member}));check([data(first).code,data(first).contact],['FIRST','by '+member],'the same code in another spelling keeps the stored one ('+member+')');
+ const withoutCode=edit(first,{contact:'no code '+member});delete withoutCode.data.code;await post(withoutCode);check([data(first).code,data(first).contact],['FIRST','no code '+member],'a page that sends no code keeps it ('+member+')');
+}
+erpImport(second,'١٢٣');as('rep');await post(edit(second,{code:'123',contact:'digits'}));check(data(second).code,'١٢٣','Arabic digits of the same code are the same code: the stored spelling stays');
+// An edit that started before the ERP import moved the code fails on the record version, so it never writes the old code back.
+as('admin');const stale=edit(first,{contact:'stale'});erpImport(first,'FIRST-ERP');await post(stale,409);check(data(first).code,'FIRST-ERP','the import\'s code stays');
+// A concurrent ERP import between the read and the commit: the version check refuses the edit, and nothing is written.
+const contactBefore=data(first).contact,racing=edit(first,{contact:'race'});beforeBatch=async()=>{erpImport(first,'RACED');};await post(racing,409);check([data(first).code,data(first).contact],['RACED',contactBefore],'the import won the race; the edit wrote nothing');
 const directory=await crm.GET(),result=await directory.json();check(directory.status,200);
-check(new Set(result.records.filter(row=>row.kind==='customer').map(row=>row.data.internalCode)).size,3,'Every factory has a distinct display code');
+check(new Set(result.records.filter(row=>row.kind==='customer').map(row=>row.data.internalCode)).size,2,'Every factory has a distinct display code');
 const codeBefore=result.records.find(row=>row.id===first).data.internalCode;
-await post(edit(first,{internalCode:'YR-C-999999',_erpCodeAliases:['FORGED'],code:''}));
+await post(edit(first,{internalCode:'YR-C-999999',_erpCodeAliases:['FORGED']}));
 check(number(first),firstNumber);check(data(first).internalCode,undefined,'Client cannot persist a forged CRM number');check(data(first)._erpCodeAliases,undefined,'Client cannot forge historic aliases');
 const reloaded=await (await crm.GET()).json();check(reloaded.records.find(row=>row.id===first).data.internalCode,codeBefore);
-check(sql.prepare('SELECT source_code FROM crm_customer_code_aliases WHERE customer_id=? ORDER BY source_code').all(first).map(row=>row.source_code),['FIRST'],'Old ERP references survive edits and clearing (as history)');
-await post(edit(second,{code:''}));check(number(second),secondNumber);
+erpImport(first,'');
+check(sql.prepare('SELECT source_code FROM crm_customer_code_aliases WHERE customer_id=? ORDER BY source_code').all(first).map(row=>row.source_code),['FIRST','FIRST-ERP','RACED'],'Old ERP references survive the import\'s changes and clearing (as history)');
+// A cleared customer stays without a code: typing one back is refused too.
+check((await post(edit(first,{code:'FIRST'}),403)).error,LOCKED);check(data(first).code,'');
+await post(edit(second,{contact:'kept'}));check([number(second),data(second).code],[secondNumber,'١٢٣']);
 check(sql.prepare('PRAGMA foreign_key_check').all(),[]);
-console.log(JSON.stringify({customerIdentityConcurrency:'passed',checks,policy:'an ERP code belongs to one customer (a concurrent duplicate is refused at the commit); CRM numbers are immutable and unique'}));
+console.log(JSON.stringify({customerCodeLock:'passed',checks,policy:'the ERP code is read-only for every role (only the ERP customers import writes it; an edit racing an import fails on the version); CRM numbers are immutable and unique'}));

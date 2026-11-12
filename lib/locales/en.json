@@ -1469,6 +1469,7 @@
   "رقم يورست {0} أصبح لعميل آخر؛ لا يمكن استرجاع العميل بنفس الرقم.": "Yourrest number {0} now belongs to another customer; the customer cannot be restored with the same number.",
   "لم يُسترجع كود ERP «{0}»: أصبح للعميل «{1}».": "ERP code «{0}» was not restored: it now belongs to the customer «{1}».",
   "كود ERP «{0}» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.": "ERP code «{0}» belongs to another customer in the CRM; each customer has its own ERP code, never shared. Correct the code, or leave it empty if the customer is not in the ERP.",
+  "كود ERP لا يُكتب ولا يُعدَّل يدويًا لأي مستخدم، ولا لمدير النظام؛ يُحدَّث من ملف عملاء ERP فقط («استيراد من ERP»).": "The ERP code cannot be typed or changed by hand by anyone, the system administrator included; it is updated from the ERP customers file only (“Import from ERP”).",
   "استُرجع العميل برقم يورست جديد {0} (حُذف قبل ترقيم العملاء).": "The customer was restored with a new Yourrest number {0} (it was deleted before customers were numbered).",
   "حُذف قبل ترقيم العملاء: يُسترجع برقم يورست جديد.": "Deleted before customers were numbered: it is restored with a new Yourrest number.",
   "يمكن استرجاعه لاحقًا من «المحذوفات». لن يُحذف سجل له سجلات مرتبطة.": "It can be restored later from «Deleted records». Records with linked records cannot be deleted.",

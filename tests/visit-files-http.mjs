@@ -17,7 +17,7 @@ try {
   for (const member of members) sessions[member.id] = await app.login(member.id);
   const admin = app.as(sessions.owner);
   async function customer(name, region, rep) {
-    const created = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region, city: 'x', code: name, branch: 'الرئيسي', assignedTo: rep, phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
+    const created = await admin('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region, city: 'x', branch: 'الرئيسي', assignedTo: rep, phone: '0501234567', contact: 'م', customerType: 'مصنع', customerStatus: 'نشط'}}});
     check(created.status, 200, created.text);
     return created.json().id;
   }

@@ -15,7 +15,7 @@
 // it refused, the same request once, an old revision 409, an older preview 409), then imported under the chosen customer, unchanged again,
 // and the mapping changed later without moving the imported quote. Matching reads current codes only (2026-11-12): a customer whose code
 // was cleared is no candidate for its old code (no «مسجل لأكثر من عميل», even against a stored mapping to it), its old code's quotations
-// go to the customer that carries it now or to nobody, and the customer form refuses a code another customer carries.
+// go to the customer that carries it now or to nobody, and the customer form writes no ERP code (2026-11-12: only the ERP customers import does).
 // Synthetic fixtures only: temporary SQLite, mocked sendmail, never the owner's file.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -256,11 +256,13 @@ try {
   const commit12 = await post('owner', {action: 'commit', fileName: name8, base64: base64(report12), ...choices, previewToken: p12.previewToken, requestId: crypto.randomUUID()});
   eq([commit12.status, commit12.json().addedCount], [200, 1], 'imported');
   eq((await record('Qut-1008')).parent_id, 'real103', 'under the customer that carries 103 now');
-  // The customer form cannot make a new duplicate: a code another customer carries is refused, naming it.
+  // The customer form cannot make a new duplicate: since 2026-11-12 it writes no ERP code at all, for anyone (only the ERP customers import does).
   const duplicate = await session.owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع مكرر جديد', code: '103', region: 'الوسطى', location: '', assignedTo: 'rep', branch: 'الرئيسي'}}});
-  eq([duplicate.status, duplicate.json().error], [400, 'كود ERP «103» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.'], 'the form refuses a code another customer carries');
-  const reuse = await session.owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع يأخذ 104', code: '104', region: 'الوسطى', location: '', assignedTo: 'rep', branch: 'الرئيسي'}}});
-  eq(reuse.status, 200, 'a code only a cleared customer had is free');
+  eq([duplicate.status, duplicate.json().error], [403, 'كود ERP لا يُكتب ولا يُعدَّل يدويًا لأي مستخدم، ولا لمدير النظام؛ يُحدَّث من ملف عملاء ERP فقط («استيراد من ERP»).'], 'the form refuses any ERP code, even for the administrator');
+  const reuse = await session.owner('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', data: {name: 'مصنع يأخذ 104', region: 'الوسطى', location: '', assignedTo: 'rep', branch: 'الرئيسي'}}});
+  eq(reuse.status, 200, 'a customer added by hand, with no ERP code');
+  // The ERP customers import gives it 104 (tests/erp-customers-duplicates-http.mjs runs that import itself): a code only a cleared customer had is free.
+  await app.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code','104'),version=version+1 WHERE id=?").bind(reuse.json().id).run();
   const p13 = (await preview('owner', report12, {...choices, fileName: name8})).json();
   eq([p13.quotations.find(q => q.code === 'Qut-1009').status, p13.quotations.find(q => q.code === 'Qut-1009').customerName], ['new', 'مصنع يأخذ 104'], 'and its quotations are the new holder\'s');
   // 10. «مبيعات مكتب (مستبعد)» for a person (2026-11-12; tests/erp-office-employees-http.mjs covers the saving): an unmapped employee asks

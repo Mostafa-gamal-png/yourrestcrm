@@ -33,15 +33,18 @@ const request=(body,origin='https://test.invalid')=>new Request('https://test.in
 const post=async(body,status=200,route=crm,origin)=>{const res=await route.POST(request(body,origin)),data=await res.json();check(res.status,status,JSON.stringify(data));return data;};
 const read=async()=>{const res=await crm.GET();check(res.status,200);return res.json();};
 const create=(data={},extra={})=>({action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'مصنع اختبار الإضافة',region:'الشرقية',location:'26.437341, 50.034499',...data},...extra});
-user('rep');const body=create({code:'REP-001',assignedTo:'west',branch:'فرع مزور',_createdBy:'owner',sourceFile:'forged-import',sourceKey:'forged-row'}),saved=await post(body),created=row(saved.id);
-check(created.assigned_to,'rep');check(created.branch,'الرئيسي');check(created.parent_id,null);check(created.data.assignedTo,'rep');check(created.data.branch,'الرئيسي');check(created.data._createdBy,'rep');check(created.data.sourceFile,undefined);check(created.data.sourceKey,undefined);check(created.data.latitude,26.437341);check(created.data.longitude,50.034499);
+const LOCKED='كود ERP لا يُكتب ولا يُعدَّل يدويًا لأي مستخدم، ولا لمدير النظام؛ يُحدَّث من ملف عملاء ERP فقط («استيراد من ERP»).';
+// A representative's new customer has no ERP code (2026-11-12: only the ERP customers import writes it): one sent with a code is refused.
+user('rep');check((await post(create({code:'REP-001'}),403)).error,LOCKED);check(count(),0);
+const body=create({assignedTo:'west',branch:'فرع مزور',_createdBy:'owner',sourceFile:'forged-import',sourceKey:'forged-row'}),saved=await post(body),created=row(saved.id);
+check(created.data.code,'','a new customer has no ERP code');check(created.assigned_to,'rep');check(created.branch,'الرئيسي');check(created.parent_id,null);check(created.data.assignedTo,'rep');check(created.data.branch,'الرئيسي');check(created.data._createdBy,'rep');check(created.data.sourceFile,undefined);check(created.data.sourceKey,undefined);check(created.data.latitude,26.437341);check(created.data.longitude,50.034499);
 let payload=await read();const projected=payload.records.find(r=>r.id===saved.id);check(!!projected,true);check(projected.data._masterReadOnly,undefined);check(projected.data._readOnly,undefined);
 // An identical transport retry returns the existing record and cannot duplicate the audit or customer.
 const beforeCount=count();check((await post(body)).alreadySaved,true);check(count(),beforeCount);check(sql.prepare("SELECT COUNT(*) n FROM crm_audit WHERE record_id=? AND action='إضافة'").get(saved.id).n,1);
 await post({...body,data:{...body.data,name:'changed retry'}},409);check(row(saved.id).data.name,body.data.name);
-// A customer's ERP code is its own (2026-11-12): another customer with REP-001 is refused, naming the code; another code is saved.
-check((await post(create({code:' rep-001 '}),400)).error,'كود ERP «rep-001» مسجّل لعميل آخر في الـCRM؛ لكل عميل كود ERP خاص به لا يتكرر. صحّح الكود، أو اتركه فارغًا إذا لم يكن العميل في ERP.');check(count(),beforeCount);
-const sharedSource=await post(create({code:'REP-002'}));check(count(),beforeCount+1);check(sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(sharedSource.id).number!==sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(saved.id).number,true,'Each customer keeps a distinct CRM number');
+// The ERP code is read-only (2026-11-12): a create carrying one is refused whatever its spelling, and nothing is written.
+for(const code of [' rep-001 ','NEW-1','٢٠٢'])check((await post(create({code}),403)).error,LOCKED);check(count(),beforeCount);
+const sharedSource=await post(create({}));check(count(),beforeCount+1);check(sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(sharedSource.id).number!==sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(saved.id).number,true,'Each customer keeps a distinct CRM number');
 await post(create({}, {createKey:undefined}),400);await post(create({}, {createKey:'invalid'}),400);
 for(const region of ['الغربية','','unknown','المنطقة غير محددة'])await post(create({region}),403);
 await post(create({}, {parentId:saved.id}),403);
@@ -71,15 +74,15 @@ const contact=await post(visit,200,visits);check(row(contact.id).data.performedB
 sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='rep'").run();await post(body,404);check((await read()).records.some(r=>r.id===saved.id),false);sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='rep'").run();
 // Account, role, reporting line and territorial changes at commit revoke the insert atomically.
 for(const [column,value] of [['region_scope','western'],['active',0],['role','customer_service'],['auth_version',9],['branch','آخر'],['supervisor_id','owner']]){
- const attempted=create({code:'RACE-'+column}),snapshot=sql.prepare("SELECT * FROM crm_members WHERE id='rep'").get(),previous=count();
+ const attempted=create({name:'سباق '+column}),snapshot=sql.prepare("SELECT * FROM crm_members WHERE id='rep'").get(),previous=count();
  race=()=>sql.prepare('UPDATE crm_members SET '+column+'=? WHERE id=?').run(column==='auth_version'?snapshot.auth_version+1:value,'rep');
  await post(attempted,409);check(count(),previous);check(raw('crm-rep-'+attempted.createKey),undefined);
  sql.prepare('UPDATE crm_members SET '+column+'=? WHERE id=?').run(snapshot[column],'rep');
 }
-// A customer's ERP code is its own (2026-11-12): another factory taking the same code between the read and the commit refuses the create
-// (the commit re-checks the code), and nothing is written.
-const duplicate=create({code:'CONCURRENT-CODE'}),previous=count();race=()=>sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('racing-customer','customer',NULL,'peer','الرئيسي',?,?,?,1,'race')").run(JSON.stringify({name:'race winner',code:'CONCURRENT-CODE',region:'الشرقية'}),now,now);
-await post(duplicate,409);check(count(),previous+1);check(raw('crm-rep-'+duplicate.createKey),undefined);check(Number.isInteger(sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get('racing-customer').number),true);
+// A representative's edit cannot give the customer an ERP code either; keeping the stored one (set by the ERP import) is fine.
+sql.prepare("UPDATE crm_records SET data=json_set(data,'$.code','ERP-77'),version=version+1 WHERE id=?").run(saved.id);
+check((await post(editCustomer(saved.id,{code:'ERP-78'}),403)).error,LOCKED);check((await post(editCustomer(saved.id,{code:''}),403)).error,LOCKED);check(row(saved.id).data.code,'ERP-77');
+await post(editCustomer(saved.id,{code:'erp-77',contact:'code kept'}));check([row(saved.id).data.code,row(saved.id).data.contact],['ERP-77','code kept']);
 // All-regions and explicitly unassigned reps retain their existing territory definitions.
 user('all-rep');const all=await post(create({region:'الغربية'}));check(row(all.id).data.region,'الغربية');check(row(all.id).assigned_to,'all-rep');
 user('unassigned-rep');const unassigned=await post(create({region:''}));check(row(unassigned.id).data.region,'');await post(create({region:'الشرقية'}),403);
@@ -152,7 +155,7 @@ delete globalThis.testEnv.YR_NATIONAL_ADDRESS_API_KEY;globalThis.fetch=originalF
 check(sql.prepare('PRAGMA foreign_key_check').all(),[]);
 // Admin deletion preserves source integrity, removes stale plans and is transactional.
 user('owner');
-const removable=await post(create({code:'DELETE-QA',assignedTo:'rep',branch:'الرئيسي'}));
+const removable=await post(create({name:'حذف للاختبار',assignedTo:'rep',branch:'الرئيسي'}));
 const insertContact=(id,extra={})=>sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,'activity',?,'rep','الرئيسي',?,?,?,1)").run(id,removable.id,JSON.stringify({performedBy:'rep',visitWorkflow:'customer-v1',date:day,...extra}),now,now);
 insertContact('delete-source');insertContact('delete-child',{sourceId:'delete-source',visitWorkflow:'followup-v1'});
 const del=id=>({action:'delete',kind:'activity',id,version:row(id).version});
@@ -166,7 +169,7 @@ const evidence=JSON.parse(sql.prepare("SELECT detail FROM crm_audit WHERE record
 insertContact('delete-race');race=()=>insertContact('delete-race-child',{sourceId:'delete-race',visitWorkflow:'followup-v1'});await post(del('delete-race'),409);check(!!raw('delete-race'),true);check(sql.prepare("SELECT count(*) n FROM crm_audit WHERE record_id='delete-race' AND action='حذف'").get().n,0);
 // A routine contact must persist without inventing a buying need.
 user('rep');
-const noNeedCustomer=await post(create({code:'NO-NEED-REGRESSION'}));
+const noNeedCustomer=await post(create({name:'بلا حاجة للاختبار'}));
 for(const omitted of [false,true]){
  const input={...visit,createKey:crypto.randomUUID(),customerId:noNeedCustomer.id,customerVersion:raw(noNeedCustomer.id).version,data:{...visit.data,salesStage:'',strength:'',requestedProducts:[]}};
  if(omitted){delete input.data.salesStage;delete input.data.strength;delete input.data.requestedProducts;}
@@ -176,4 +179,4 @@ for(const omitted of [false,true]){
 const chosen={...visit,createKey:crypto.randomUUID(),customerId:noNeedCustomer.id,customerVersion:raw(noNeedCustomer.id).version,data:{...visit.data,salesStage:'qualified',strength:'weak',requestedProducts:['خلاطات البلوك']}};
 chosen.data.salesStage='new';
 const chosenReceipt=await post(chosen,200,visits);check(row(chosenReceipt.id).data.salesStage,'new');check(row(chosenReceipt.id).data.strength,'weak');check(row(chosenReceipt.id).data.requestedProducts,['خلاطات البلوك']);
-console.log(JSON.stringify({repCustomerCreateQA:'passed',checks,features:'scoped customer creation, authenticated ownership, regional customer edits with protected ownership, immediate map and visit use, retry identity, race revocation, immutable CRM numbers, one customer per ERP code (refused again at the commit), CS/admin regression, GPS/address persistence, optional SPL lookup, authorization and provider failures'}));
+console.log(JSON.stringify({repCustomerCreateQA:'passed',checks,features:'scoped customer creation, authenticated ownership, regional customer edits with protected ownership, immediate map and visit use, retry identity, race revocation, immutable CRM numbers, the ERP code read-only (no hand-made customer or edit sets it), CS/admin regression, GPS/address persistence, optional SPL lookup, authorization and provider failures'}));
