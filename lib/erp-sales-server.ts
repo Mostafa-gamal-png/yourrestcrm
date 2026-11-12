@@ -9,6 +9,7 @@ import {parseErpWorkbook,ErpWorkbookError,type ErpRow} from './erp-sales';
 import {omit} from './omit';
 import {quotationRefs,storedQuotationRefs,MAX_QUOTATION_REFS} from './quotation-refs';
 import {coveragePeriod,filePeriod,periodMonths,salesCoverageEntrySchema,type SalesCoverageEntry} from './sales-coverage';
+import {ERP_OFFICE_CHOICE,ERP_OFFICE_SETTING,ERP_OFFICE_AUDIT_ACTION,officeById,officeNameOnly,officeIdKey,applyOfficeChanges,readOfficeRow,officeUnchanged,writeOfficeList} from './erp-office-employees';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const namespace='yourrest-industries';
@@ -16,6 +17,10 @@ const normalize=(value:string)=>value.normalize('NFKC').replace(/[\u200b-\u200f\
 // Full names only: do not guess from partial names, spelling similarity or team size.
 const employeeNameKey=(value:string)=>normalize(value).toLowerCase();
 const office=(value:string)=>['مبيعات مكتب','مبيعات المكتب'].includes(normalize(value));
+// «مبيعات مكتب (مستبعد)» chosen for an employee number (lib/erp-office-employees.ts): the same exclusion as the name above.
+export const ERP_OFFICE_REASON='مبيعات مكتب (تحديد الموظف): مستبعدة ولا تُحتسب لأي مندوب';
+export const ERP_OFFICE_SAVED_REASON='مبيعات مكتب (تحديد الموظف): مستبعدة من هذا الاستيراد؛ النسخة المحفوظة سابقًا للمندوب تبقى كما هي';
+export const ERP_OFFICE_LOCKED='تعديل موظف محدد «مبيعات مكتب» متاح لمدير المبيعات أو مدير النظام فقط';
 const maxFileBytes=5*1024*1024;
 const mappingSchema=z.object({employeeId:z.string().trim().min(1).max(100),repId:z.string().trim().min(1).max(200)});
 const categorySchema=z.object({category:z.string().trim().min(1).max(300),product:z.string().refine(s=>s==='exclude'||salesProducts.includes(s),'اختر صنفًا صحيحًا')});
@@ -29,7 +34,9 @@ export type ErpSaleRow={id:string;rep_id:string;branch:string;date:string;refere
 // quotationRefs: the quotations the document's «الوصف» names (null: the report has no description column, so nothing is read or written
 // about them). backfill: an identical document already saved whose stored references differ: the import writes the file's references
 // into its data (lib/quotation-refs.ts), which is neither a new document nor a change of its content.
-type PreparedDocument={preview:ErpDocumentPreview;rows:ErpRow[];items:SaleItem[];contentHash:string;mappedHash:string;rep?:Member;quotationRefs:string[]|null;backfill?:{prior:string}};
+type PreparedDocument={preview:ErpDocumentPreview;rows:ErpRow[];items:SaleItem[];contentHash:string;mappedHash:string;rep?:Member;quotationRefs:string[]|null;backfill?:{prior:string};
+ /** Excluded as office sales: by the employee's name (the ERP's «مبيعات مكتب») or by the employee's «مبيعات مكتب (مستبعد)» mark. */
+ office?:'name'|'mark';officeSaved?:boolean};
 /** The references saved on a document (none when never read). */
 function savedRefs(text:string){if(!text)return [];try{return storedQuotationRefs(JSON.parse(text));}catch{return [];}}
 /** The references of a document's lines, each once, in line order. */
@@ -43,8 +50,11 @@ async function signature(value:string){if(!/^[a-f0-9]{64,}$/i.test(env.YR_AUTH_S
 function safeEqual(a:string,b:string){if(a.length!==b.length)return false;let difference=0;for(let n=0;n<a.length;n++)difference|=a.charCodeAt(n)^b.charCodeAt(n);return difference===0;}
 function eligible(c:Context){const ids=salesMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>m.role==='rep'&&ids.has(m.id));}
 function snapshot(m:Member){return [m.id,m.role,m.branch,m.supervisorId||'',regionScope(m),m.active,m.authVersion||0,m.name];}
-async function state(c:Context){const revision=await c.db.prepare('SELECT revision FROM crm_erp_import_state WHERE id=?').bind(namespace).first<{revision:number}>();if(!revision)throw new CRMError('تحديث قاعدة بيانات استيراد المبيعات غير مكتمل.',503);const employees=(await c.db.prepare('SELECT employee_id AS employeeId,rep_id AS repId FROM crm_erp_employee_mappings ORDER BY employee_id').all<{employeeId:string;repId:string}>()).results;const categories=(await c.db.prepare('SELECT category,product FROM crm_erp_category_mappings ORDER BY category').all<{category:string;product:string}>()).results;return {revision:revision.revision,employees,categories};}
-export async function erpSalesConfiguration(c:Context){requireSalesWorkspace(c.me);const members=eligible(c),ids=new Set(members.map(m=>m.id)),saved=await state(c);return {members:members.map(m=>({id:m.id,name:m.name,branch:m.branch})),employeeMappings:saved.employees.filter(m=>ids.has(m.repId)),categoryMappings:saved.categories,products:salesProducts,canEditCategoryMappings:c.me.role!=='supervisor'};}
+async function state(c:Context){const revision=await c.db.prepare('SELECT revision FROM crm_erp_import_state WHERE id=?').bind(namespace).first<{revision:number}>();if(!revision)throw new CRMError('تحديث قاعدة بيانات استيراد المبيعات غير مكتمل.',503);const employees=(await c.db.prepare('SELECT employee_id AS employeeId,rep_id AS repId FROM crm_erp_employee_mappings ORDER BY employee_id').all<{employeeId:string;repId:string}>()).results;const categories=(await c.db.prepare('SELECT category,product FROM crm_erp_category_mappings ORDER BY category').all<{category:string;product:string}>()).results;const office=await readOfficeRow(c.db);return {revision:revision.revision,employees,categories,office};}
+export async function erpSalesConfiguration(c:Context){requireSalesWorkspace(c.me);const members=eligible(c),ids=new Set(members.map(m=>m.id)),saved=await state(c);// The employees marked «مبيعات مكتب (مستبعد)» come as mappings to ERP_OFFICE_CHOICE, to every importer (an ERP number and the name the
+ // file showed: no representative, sale or customer); a supervisor reads them and cannot change them (canChangeOffice).
+ const office=[...officeById(saved.office.list).values()].map(e=>({employeeId:e.employeeId,repId:ERP_OFFICE_CHOICE}));
+ return {members:members.map(m=>({id:m.id,name:m.name,branch:m.branch})),employeeMappings:[...saved.employees.filter(m=>ids.has(m.repId)&&!officeById(saved.office.list).has(officeIdKey(m.employeeId))),...office],categoryMappings:saved.categories,products:salesProducts,canEditCategoryMappings:c.me.role!=='supervisor',canChangeOffice:c.me.role!=='supervisor'};}
 function parseInput(body:unknown){const input=inputSchema.parse(body);if(!/^[A-Za-z0-9+/]*={0,2}$/.test(input.base64)||input.base64.length%4!==0)throw new CRMError('ترميز ملف المبيعات غير صحيح');const raw=atob(input.base64);if(raw.length>maxFileBytes)throw new CRMError('أقصى حجم لملف المبيعات 5 ميجابايت',413);const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));return {input,bytes};}
 /** The request a preview is signed for; with coverage, the commit's own (a retry with another completeness choice is another request).
  *  Without the tick both are exactly what they were before it existed. */
@@ -60,8 +70,31 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  // Keep mixed invoices in review. Only coherent documents lacking employee
  // identity are omitted automatically, along with their exclusive mapping fields.
  const relevantRows=[...groups.values()].filter(rows=>!office(rows[0].employeeName)&&(mixedDocument(rows)||!missingEmployee(rows[0]))).flat();
- const employeeIds=new Set(relevantRows.map(r=>normalize(r.employeeId))),categoryIds=new Set(relevantRows.map(r=>normalize(r.category)));
- for(const [id,m] of employeeChanges){if(!employeeIds.has(id))continue;const prior=employeeMap.get(id);if(prior&&!allowed.has(prior)||!allowed.has(m.repId))throw new CRMError('ربط الموظف خارج نطاق فريقك أو منطقتك',403);employeeMap.set(id,m.repId);mappingSources.set(id,prior===m.repId?'saved':'selected');}
+ const employeeIds=new Set(relevantRows.map(r=>normalize(r.employeeId)));
+ // «مبيعات مكتب (مستبعد)» by employee number: saved, chosen here, or suggested by a name mark of the collection statement. A saved one
+ // wins over a saved representative mapping (marking deletes that mapping, so both exist only if written around this import).
+ const savedOffice=officeById(saved.office.list),officeNames=officeNameOnly(saved.office.list);
+ const officeSources=new Map<string,'saved'|'selected'|'name'>([...savedOffice.keys()].map(key=>[key,'saved']));
+ const isOffice=(employeeId:string)=>officeSources.has(officeIdKey(employeeId));
+ const officeMarks=new Map<string,{employeeId:string;priorRepId:string}>(),officeUnmarks=new Map<string,{employeeId:string;repId:string}>();
+ for(const [id,m] of employeeChanges){
+  if(!employeeIds.has(id))continue;
+  const key=officeIdKey(id),prior=employeeMap.get(id),wasOffice=savedOffice.has(key);
+  if(m.repId===ERP_OFFICE_CHOICE){
+   if(wasOffice)continue;
+   // Marking is a change of the employee's mapping: the same people may make it (the former representative within the importer's reach).
+   if(prior&&!allowed.has(prior))throw new CRMError('ربط الموظف خارج نطاق فريقك أو منطقتك',403);
+   officeSources.set(key,'selected');officeMarks.set(key,{employeeId:id,priorRepId:prior||''});employeeMap.delete(id);mappingSources.delete(id);continue;
+  }
+  if(wasOffice){
+   // Back to a representative: a saved office mark is company-wide, so a supervisor (whose reach is a team) may not lift it.
+   if(c.me.role==='supervisor')throw new CRMError(ERP_OFFICE_LOCKED,403);
+   if(!allowed.has(m.repId))throw new CRMError('ربط الموظف خارج نطاق فريقك أو منطقتك',403);
+   officeSources.delete(key);officeUnmarks.set(key,{employeeId:id,repId:m.repId});employeeMap.set(id,m.repId);mappingSources.set(id,'selected');continue;
+  }
+  if(prior&&!allowed.has(prior)||!allowed.has(m.repId))throw new CRMError('ربط الموظف خارج نطاق فريقك أو منطقتك',403);employeeMap.set(id,m.repId);mappingSources.set(id,prior===m.repId?'saved':'selected');
+ }
+ for(const key of officeSources.keys())for(const id of [...employeeMap.keys()])if(officeIdKey(id)===key){employeeMap.delete(id);mappingSources.delete(id);}
  // Include every rep when checking uniqueness. A hidden or inactive namesake must
  // not make an ambiguous identity look unique inside the uploader's team.
  const nameRoster=c.members.filter(m=>m.role==='rep'),nameCandidates=new Map<string,Member[]>(),erpNames=new Map<string,Set<string>>();
@@ -71,13 +104,17 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  for(const row of parsed.rows){const id=normalize(row.employeeId),names=erpNames.get(id)||new Set<string>();names.add(employeeNameKey(row.employeeName));erpNames.set(id,names);}
  let nameInferenceUsed=false;
  for(const [id,names] of erpNames){
-  if(!id||employeeMap.has(id)||names.size!==1)continue;
+  if(!id||employeeMap.has(id)||names.size!==1||isOffice(id))continue;
   const name=[...names][0];if(!name||office(name))continue;
+  // A name marked «مبيعات مكتب» in the collection statement: suggested for this number (saved as its mark with the import).
+  if(officeNames.has(name)&&employeeIds.has(id)){officeSources.set(officeIdKey(id),'name');officeMarks.set(officeIdKey(id),{employeeId:id,priorRepId:''});continue;}
   nameInferenceUsed=true;
   const matches=nameCandidates.get(name)||[];
   if(matches.length===1&&allowed.has(matches[0].id)){employeeMap.set(id,matches[0].id);mappingSources.set(id,'name');}
  }
  const nameRosterSnapshot=nameInferenceUsed?sorted(nameRoster,m=>m.id).map(snapshot):null;
+ // The categories to map: those of the documents a representative may receive (an office employee's are excluded whole).
+ const categoryIds=new Set(relevantRows.filter(r=>!isOffice(r.employeeId)).map(r=>normalize(r.category)));
  for(const [id,m] of categoryChanges)if(categoryIds.has(id)){if(c.me.role==='supervisor'&&categoryMap.has(id)&&categoryMap.get(id)!==m.product)throw new CRMError('تعديل ربط فئة محفوظة متاح لمدير المبيعات أو مدير النظام فقط',403);categoryMap.set(id,m.product);}
  for(const category of categoryIds)if(!categoryMap.has(category)&&salesProducts.includes(category))categoryMap.set(category,category);
  const existing=(await c.db.prepare("SELECT document_key,content_hash,mapped_hash,rep_id,region_scope,COALESCE(json_extract(data,'$.quotationRefs'),'') AS quotation_refs FROM crm_erp_sales").all<{document_key:string;content_hash:string;mapped_hash:string;rep_id:string;region_scope:string;quotation_refs:string}>()).results;const stored=new Map(existing.map(r=>[r.document_key,r]));
@@ -97,6 +134,9 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   if(office(first.employeeName)){p.status='excluded';p.reason='مبيعات مكتب: مبيعات شركة أخرى مستبعدة تلقائيًا';p.repId='';p.repName='';p.totalCents=0;}
   else if(mixed){p.status='conflict';p.reason='نفس رقم المستند يحتوي موظفين أو عملاء أو تواريخ مختلفة؛ راجع التقرير';}
   else if(missingEmployee(first)){p.status='unassigned';p.reason='بدون بيانات موظف كاملة في ERP؛ تُتجاوز تلقائيًا ولا تُحتسب لأي مندوب';p.repId='';p.repName='';p.totalCents=rows.reduce((total,row)=>total+row.totalCents,0);}
+  // An employee marked «مبيعات مكتب (مستبعد)»: excluded as the ERP's «مبيعات مكتب». A document already saved for a representative under
+  // an earlier mapping is never deleted nor rewritten (as with any changed mapping): it is excluded from this import and said so.
+  else if(isOffice(first.employeeId)){p.status='excluded';p.reason=old?ERP_OFFICE_SAVED_REASON:ERP_OFFICE_REASON;p.repId='';p.repName='';p.totalCents=0;}
   else if(!repId){p.status='unmapped';p.reason='اربط رقم الموظف بالمندوب لأول مرة';}
   else if(!rep){p.status='out_of_scope';p.reason='المندوب المرتبط خارج نطاق فريقك أو منطقتك';p.repId='';}
   else if(first.date>today()){p.status='conflict';p.reason='تاريخ المستند في المستقبل';}
@@ -104,17 +144,29 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   else if(!items.length){p.status='excluded';p.reason='كل فئات هذا المستند مستبعدة من اختيارك';}
   else if(first.documentType==='sale'&&manualKeys.has(JSON.stringify([first.date.slice(0,4),canonicalInvoiceReference(first.reference)]))){p.status='conflict';p.reason='رقم الفاتورة موجود في المبيعات اليدوية في نفس السنة؛ راجع السجل قبل الاستيراد لمنع التكرار';}
   else if(old){if(old.rep_id!==repId||!regionScopeAdmits(regionScope(c.me),old.region_scope)){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';if(refs&&JSON.stringify(savedRefs(old.quotation_refs))!==JSON.stringify(refs))backfill={prior:old.quotation_refs};}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
-  documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'?undefined:rep,quotationRefs:refs,backfill});
+  const officeDoc=office(first.employeeName)?'name' as const:p.reason===ERP_OFFICE_REASON||p.reason===ERP_OFFICE_SAVED_REASON?'mark' as const:undefined;
+  documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'||officeDoc?undefined:rep,quotationRefs:refs,backfill,office:officeDoc,officeSaved:p.reason===ERP_OFFICE_SAVED_REASON});
  }
  const summary={newCount:0,duplicateCount:0,conflictCount:0,excludedCount:0,unassignedCount:0,unassignedTotalCents:0,unmappedCount:0,outOfScopeCount:0,officeExcludedCount:0,skippedCount:0,autoMatchedCount:[...mappingSources.values()].filter(source=>source==='name').length,totalCents:0,months:[...new Set(documents.filter(d=>d.preview.status==='new'||d.preview.status==='duplicate').map(d=>d.preview.date.slice(0,7)))].sort()};
- for(const {preview:p} of documents){const field={new:'newCount',duplicate:'duplicateCount',conflict:'conflictCount',excluded:'excludedCount',unassigned:'unassignedCount',unmapped:'unmappedCount',out_of_scope:'outOfScopeCount'}[p.status] as 'newCount';summary[field]++;if(p.status==='new')summary.totalCents+=p.totalCents;if(p.status==='unassigned')summary.unassignedTotalCents+=p.totalCents;if(p.status==='excluded'&&office(p.employeeName))summary.officeExcludedCount++;}
+ for(const {preview:p} of documents){const field={new:'newCount',duplicate:'duplicateCount',conflict:'conflictCount',excluded:'excludedCount',unassigned:'unassignedCount',unmapped:'unmappedCount',out_of_scope:'outOfScopeCount'}[p.status] as 'newCount';summary[field]++;if(p.status==='new')summary.totalCents+=p.totalCents;if(p.status==='unassigned')summary.unassignedTotalCents+=p.totalCents;}
+ // The marks' counts are given only when there is one (a file without a marked employee answers exactly as before).
+ const officeCounts:{officeMarkedCount?:number;officeSavedCount?:number}={};
+ for(const d of documents){if(d.office)summary.officeExcludedCount++;if(d.office==='mark')officeCounts.officeMarkedCount=(officeCounts.officeMarkedCount||0)+1;if(d.officeSaved)officeCounts.officeSavedCount=(officeCounts.officeSavedCount||0)+1;}
  summary.skippedCount=summary.unmappedCount+summary.outOfScopeCount;
  // Only a report with a description column says anything about quotations: one without it answers exactly as before.
  const quotationSummary=hasDescription?{quotationLinkedCount:documents.filter(d=>['new','duplicate'].includes(d.preview.status)&&d.preview.documentType==='sale'&&!!d.quotationRefs?.length).length,quotationRefsBackfillCount:documents.filter(d=>d.backfill).length}:null;
  const memberSnapshot=sorted([c.me,...members.filter(m=>m.id!==c.me.id)],m=>m.id).map(snapshot);
- const snapshotHash=await hash(JSON.stringify({revision:saved.revision,members:memberSnapshot,nameRoster:nameRosterSnapshot,employees:saved.employees,categories:saved.categories}));
+ const snapshotHash=await hash(JSON.stringify({revision:saved.revision,members:memberSnapshot,nameRoster:nameRosterSnapshot,employees:saved.employees,categories:saved.categories,office:saved.office.raw}));
  const relevantEmployees=new Set(relevantRows.map(r=>JSON.stringify([normalize(r.employeeId),normalize(r.employeeName)])));
- const employees=parsed.employees.filter(e=>relevantEmployees.has(JSON.stringify([normalize(e.employeeId),normalize(e.employeeName)]))).map(employee=>{const id=normalize(employee.employeeId),repId=employeeMap.get(id)||'',visibleRep=allowed.has(repId);return {...employee,repId:visibleRep?repId:'',mappingSource:visibleRep?(mappingSources.get(id)||'unmapped'):'unmapped'};});
+ const employees=parsed.employees.filter(e=>relevantEmployees.has(JSON.stringify([normalize(e.employeeId),normalize(e.employeeName)]))).map(employee=>{
+  const id=normalize(employee.employeeId),officeSource=officeSources.get(officeIdKey(employee.employeeId));
+  // An office employee: the select shows «مبيعات مكتب (مستبعد)»; a saved mark is locked for a supervisor (ERP_OFFICE_LOCKED).
+  if(officeSource)return {...employee,repId:ERP_OFFICE_CHOICE,mappingSource:officeSource,office:true,officeLocked:officeSource==='saved'&&c.me.role==='supervisor'};
+  const repId=employeeMap.get(id)||'',visibleRep=allowed.has(repId);return {...employee,repId:visibleRep?repId:'',mappingSource:visibleRep?(mappingSources.get(id)||'unmapped'):'unmapped'};});
+ // The marks this import saves (chosen or suggested by name, for an employee of the file) and lifts (back to a representative, saved
+ // with that representative's mapping only).
+ const listed=new Set(employees.map(e=>officeIdKey(e.employeeId)));
+ const officeMarksToSave=[...officeMarks].filter(([key])=>listed.has(key)&&officeSources.has(key)).map(([key,m])=>({key,employeeId:m.employeeId,employeeName:parsed.employees.find(e=>officeIdKey(e.employeeId)===key)?.employeeName||'',priorRepId:m.priorRepId}));
  const warnings=parsed.warnings.filter(warning=>warning!=='توجد بنود بدون رقم أو اسم موظف؛ يلزم مراجعة الربط قبل الاعتماد'||documents.some(d=>d.preview.status==='conflict'&&d.rows.some(missingEmployee)));
  // The period a complete file speaks for, and who: the representatives the uploader may import for, less those of a document skipped as
  // outside the uploader's access; allReps when that was every active representative and nothing was skipped (lib/sales-coverage.ts).
@@ -125,7 +177,8 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const allReps=summary.outOfScopeCount===0&&activeReps.every(id=>allowed.has(id));
  const coverage=period?{...period,months:periodMonths(period.first,period.last),repCount:coveredReps.length,allReps,
   blocker:summary.unmappedCount?'لا يمكن تأكيد اكتمال الملف وفيه مستندات تحتاج ربطًا؛ أكمل الربط أولًا.':!coveredReps.length?'لا يوجد مناديب ضمن صلاحيتك يشملهم تأكيد الاكتمال.':''}:null;
- return {documents,summary:{...summary,...quotationSummary},quotationSummary,coverage,coveredReps,activeReps,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,categories:[...categoryIds].sort(),warnings:[...warnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
+ const officeWarnings=[...officeCounts.officeMarkedCount?['مستندات الموظفين المحددين «مبيعات مكتب (مستبعد)» مستبعدة ولا تُحتسب لأي مندوب.']:[],...officeCounts.officeSavedCount?['مستندات حُفظت سابقًا لمندوب ثم حُدد موظفها «مبيعات مكتب»: تبقى محفوظة لمندوبها كما هي، ولا يحذف الاستيراد أي مبيعات محفوظة.']:[]];
+ return {documents,summary:{...summary,...officeCounts,...quotationSummary},quotationSummary,coverage,coveredReps,activeReps,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,officeMarksToSave,officeUnmarks,categories:[...categoryIds].sort(),warnings:[...warnings,...officeWarnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
 }
 
 /** Preview is stateless and authenticated; no uploaded bytes or sales are saved here. */
@@ -160,16 +213,25 @@ export async function importErpSales(c:Context,body:unknown){
   coverage={complete:true,from:checked.from,to:checked.to,months:months.full,partialMonths:months.partial,repIds:prepared.coveredReps,allReps:prepared.coverage.allReps,importerId:c.me.id,importer:c.me.name,at:now,importId:id};
  }
  const backfills=prepared.documents.filter(d=>d.backfill);
- const result={ok:true,...prepared.quotationSummary,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months,...(coverage?{coverage}:{})};
+ // «مبيعات مكتب (مستبعد)»: the marks chosen (or suggested by name) are saved; a mark is lifted only together with the representative
+ // mapping that replaces it (an employee whose documents are not taken by this import keeps the mark).
+ const savedMappingEmployees=new Set(prepared.documents.filter(d=>['new','duplicate','excluded'].includes(d.preview.status)&&d.rep&&!d.office).map(d=>normalize(d.preview.employeeId)));
+ const officeMarked=prepared.officeMarksToSave,officeUnmarked=[...prepared.officeUnmarks.values()].filter(u=>savedMappingEmployees.has(normalize(u.employeeId)));
+ const result={ok:true,...(officeMarked.length||officeUnmarked.length?{officeMarkedCount:officeMarked.length,officeUnmarkedCount:officeUnmarked.length}:{}),...prepared.quotationSummary,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months,...(coverage?{coverage}:{})};
  const guard=accessGuard(c),usedReps=new Map<string,Member>();
  const mappingDocuments=prepared.documents.filter(d=>['new','duplicate','excluded'].includes(d.preview.status)&&d.rep&&!office(d.preview.employeeName));
  for(const document of mappingDocuments)if(document.rep)usedReps.set(document.rep.id,document.rep);
  const mappingEmployeeIds=new Set(mappingDocuments.map(d=>normalize(d.preview.employeeId)));
  for(const priorMapping of prepared.saved.employees){const employeeId=normalize(priorMapping.employeeId);if(mappingEmployeeIds.has(employeeId)&&prepared.employeeMap.get(employeeId)!==priorMapping.repId){const priorMember=c.members.find(m=>m.id===priorMapping.repId);if(priorMember)usedReps.set(priorMember.id,priorMember);}}
+ // Marking an employee mapped to a representative: that representative is checked at the commit as a remapping checks it.
+ for(const mark of officeMarked){const priorMember=mark.priorRepId?c.members.find(m=>m.id===mark.priorRepId):undefined;if(priorMember)usedReps.set(priorMember.id,priorMember);}
  // The claim is the transaction gate: every subsequent write requires it.
  // A racing role/region/team/mapping change makes the complete batch a no-op.
- let gate=guard.sql+' AND EXISTS(SELECT 1 FROM crm_erp_import_state WHERE id=? AND revision=?)';
- const args:(string|number)[]=[...guard.args,namespace,prepared.saved.revision];
+ // The office marks the preview read (lib/erp-office-employees.ts): their row is its own token (the collection statement changes it without
+ // moving the import state's revision).
+ const officeGate=officeUnchanged(prepared.saved.office.raw);
+ let gate=guard.sql+' AND EXISTS(SELECT 1 FROM crm_erp_import_state WHERE id=? AND revision=?) AND '+officeGate.sql;
+ const args:(string|number|null)[]=[...guard.args,namespace,prepared.saved.revision,...officeGate.args];
  for(const member of usedReps.values()){gate+=" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=? AND active=? AND auth_version=? AND name=?)";args.push(...snapshot(member));}
  // A coverage that speaks for every representative holds only while the active representatives are those the preview read.
  if(coverage?.allReps){gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep' AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role='rep' AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))";args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));}
@@ -194,6 +256,15 @@ export async function importErpSales(c:Context,body:unknown){
  for(const document of backfills)batch.push(c.db.prepare("UPDATE crm_erp_sales SET data=json_set(data,'$.quotationRefs',json(?)) WHERE document_key=? AND content_hash=? AND mapped_hash=? AND COALESCE(json_extract(data,'$.quotationRefs'),'')=? AND "+claimed).bind(JSON.stringify(document.quotationRefs),document.preview.key,document.contentHash,document.mappedHash,document.backfill!.prior,...claimArgs));
  const usedEmployees=new Set(mappingDocuments.map(d=>normalize(d.preview.employeeId))),usedCategories=new Set(mappingDocuments.flatMap(d=>d.rows.map(r=>normalize(r.category))));
  for(const employeeId of usedEmployees){const repId=prepared.employeeMap.get(employeeId)!;batch.push(c.db.prepare('INSERT INTO crm_erp_employee_mappings(employee_id,rep_id,updated_by,updated_at) SELECT ?,?,?,? WHERE '+claimed+' ON CONFLICT(employee_id) DO UPDATE SET rep_id=excluded.rep_id,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(employeeId,repId,c.me.id,now,...claimArgs));}
+ if(officeMarked.length||officeUnmarked.length){
+  // The representative mapping of a marked employee is removed (its number is the office's now); the new list is written whole.
+  const markedKeys=new Set(officeMarked.map(m=>m.key));
+  for(const mapping of prepared.saved.employees)if(markedKeys.has(officeIdKey(mapping.employeeId)))batch.push(c.db.prepare('DELETE FROM crm_erp_employee_mappings WHERE employee_id=? AND '+claimed).bind(mapping.employeeId,...claimArgs));
+  const next=applyOfficeChanges(prepared.saved.office.list,{markIds:officeMarked,unmarkIds:officeUnmarked.map(u=>u.employeeId)},c.me.id,now);
+  batch.push(writeOfficeList(c.db,next,claimed,claimArgs));
+  const nameOf=(employeeId:string)=>prepared.employees.find(e=>normalize(e.employeeId)===normalize(employeeId))?.employeeName||'';
+  batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(id+':office',ERP_OFFICE_SETTING,c.me.name,ERP_OFFICE_AUDIT_ACTION,JSON.stringify({source:'erp-sales-import',importId:id,fileName:input.fileName,marked:officeMarked.map(m=>({employeeId:m.employeeId,employeeName:m.employeeName,priorRepId:m.priorRepId})),unmarked:officeUnmarked.map(u=>({employeeId:u.employeeId,employeeName:nameOf(u.employeeId),repId:u.repId}))}),now,...claimArgs));
+ }
  for(const category of usedCategories){const product=prepared.categoryMap.get(category)!;batch.push(c.db.prepare('INSERT INTO crm_erp_category_mappings(category,product,updated_by,updated_at) SELECT ?,?,?,? WHERE '+claimed+' ON CONFLICT(category) DO UPDATE SET product=excluded.product,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(category,product,c.me.id,now,...claimArgs));}
  batch.push(c.db.prepare('UPDATE crm_erp_import_state SET revision=revision+1 WHERE id=? AND '+claimed).bind(namespace,...claimArgs));
  batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(id,id,c.me.name,'استيراد مبيعات ERP',JSON.stringify({fileName:input.fileName,...result}),now,...claimArgs));

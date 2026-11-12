@@ -16,6 +16,7 @@ import { definiteSubmitRejection, submitJson, SubmitError } from '@/lib/client-s
 import { t, useLanguage } from '@/lib/i18n';
 import UploadStatus, {type UploadState} from './upload-status';
 import ErpCodeChoice, {type ErpSharedCode} from './erp-code-choice';
+import { ERP_OFFICE_CHOICE } from '@/lib/erp-office-employees';
 import './erp-sales-import.css';
 import './erp-quotes-import.css';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
@@ -24,15 +25,15 @@ type Member = { id: string; name: string; branch: string };
 type Options = { members: Member[]; employeeMappings: { employeeId: string; repId: string }[] };
 type Status = 'new' | 'update' | 'unchanged' | 'edited' | 'refused' | 'excluded';
 type Quotation = { key: string; code: string; rows: number[]; date: string; customerCode: string; customerCodeKey: string; customerName: string; lineCount: number; totalCents: number; status: Status; reason: string; employeeCode: string; employeeName: string; repName: string; totalsDiffer: boolean };
-type Employee = { employeeId: string; employeeName: string; quotations: number; repId: string; savedOutside: boolean; mappingSource: 'saved' | 'selected' | 'name' | 'unmapped' };
+type Employee = { employeeId: string; employeeName: string; quotations: number; repId: string; savedOutside: boolean; mappingSource: 'saved' | 'selected' | 'name' | 'unmapped'; office?: boolean };
 type Preview = {
   previewToken: string; quotations: Quotation[]; rowProblems: { row: number; reason: string }[]; employees: Employee[];
   missingCustomers: { customerCode: string; customerName: string; quotations: number }[];
   sharedCodes: { canMap: boolean; revision: number; codes: ErpSharedCode[] };
-  summary: { quotations: number; lines: number; newCount: number; updateCount: number; unchangedCount: number; editedCount: number; excludedCount: number; refusedCount: number; rowProblems: number; deletedRows: number; totalsDiffer: number };
+  summary: { officeMarks?: number; quotations: number; lines: number; newCount: number; updateCount: number; unchangedCount: number; editedCount: number; excludedCount: number; refusedCount: number; rowProblems: number; deletedRows: number; totalsDiffer: number };
 };
 type Body = { fileName: string; base64: string; employeeMappings: { employeeId: string; repId: string }[] };
-type Receipt = { addedCount: number; updatedCount: number; unchangedCount: number; editedCount: number; excludedCount?: number; refusedCount: number; mappingsSaved: number; alreadySaved?: boolean };
+type Receipt = { officeMarked?: number; addedCount: number; updatedCount: number; unchangedCount: number; editedCount: number; excludedCount?: number; refusedCount: number; mappingsSaved: number; alreadySaved?: boolean };
 type Props = { onClose: () => void; onImported: () => void | Promise<void> };
 const endpoint = '/api/erp-quotes';
 const maxBytes = 5 * 1024 * 1024;
@@ -45,6 +46,8 @@ const english: Record<string, string> = {
   'العميل غير موجود في الـCRM بكود ERP هذا؛ أضفه أو حدّث كوده من «استيراد من ERP» في العملاء': 'No CRM customer has this ERP code. Add the customer or update its code with «Import from ERP» on Customers.',
   'كود العميل مسجل لأكثر من عميل في الـCRM؛ اربطه بعميل واحد أولًا': 'This ERP customer code belongs to more than one CRM customer. Map it to one customer first.',
   'مبيعات مكتب: عروض شركة أخرى مستبعدة تلقائيًا': 'Office sales: another company’s quotations, excluded automatically.',
+  'مبيعات مكتب (تحديد الموظف): مستبعدة ولا تُحتسب لأي مندوب': 'Office sales (employee marked): excluded and not counted for any rep.',
+  'مبيعات مكتب (تحديد الموظف): مستبعدة؛ العرض المحفوظ سابقًا يبقى كما هو': 'Office sales (employee marked): excluded; the quotation saved earlier stays as it is.',
   'العميل خارج منطقتك': 'The customer is outside your region.',
   'اربط موظف ERP بمندوب': 'Map the ERP employee to a rep.',
   'المندوب المرتبط خارج نطاق فريقك أو منطقتك': 'The mapped rep is outside your team or region.',
@@ -109,6 +112,8 @@ export default function ErpQuotesImport({ onClose, onImported }: Props) {
 
   const immutable = !!busy || pending || !!receipt;
   const ready = (preview?.summary.newCount || 0) + (preview?.summary.updateCount || 0);
+  // «مبيعات مكتب (مستبعد)» chosen for an employee is saved with the import, even when the file has nothing else to import.
+  const officeMarks = preview?.summary.officeMarks || 0;
   const list = useMemo(() => (preview?.quotations || []).filter(q => filter === 'all' || q.status === filter), [preview, filter]);
   const pages = Math.max(1, Math.ceil(list.length / 20)), currentPage = Math.min(page, pages);
   const visible = list.slice((currentPage - 1) * 20, currentPage * 20);
@@ -176,7 +181,7 @@ export default function ErpQuotesImport({ onClose, onImported }: Props) {
   }
 
   async function commit() {
-    if (lock.current || saved.current || !preview || !previewBody || dirty || !ready) return;
+    if (lock.current || saved.current || !preview || !previewBody || dirty || !(ready || officeMarks)) return;
     lock.current = true; setBusy('commit'); setError(''); setUploadState({ phase: 'uploading', loaded: 0, total: null, percent: null });
     if (!attempt.current) attempt.current = JSON.stringify({ action: 'commit', ...previewBody, previewToken: preview.previewToken, requestId: crypto.randomUUID() });
     let acknowledged = false;
@@ -258,13 +263,16 @@ export default function ErpQuotesImport({ onClose, onImported }: Props) {
               <div className="erp-import-map-list">{preview.employees.map(employee => {
                 const value = choices[employee.employeeId] || employee.repId || '';
                 const fixed = employee.mappingSource === 'saved' || employee.savedOutside;
-                return <label className="erp-import-map-row" key={employee.employeeId}><span><strong>{employee.employeeName ? <bdi>{employee.employeeName}</bdi> : say('اسم الموظف فارغ', 'Employee name is blank')}</strong><small>{say('رقم الموظف', 'Employee number')}: <bdi>{employee.employeeId}</bdi> · {employee.quotations} {say('عرض', 'quotations')}{employee.mappingSource === 'saved' ? ' · ' + say('ربط محفوظ من استيراد المبيعات', 'Saved by the sales import') : ''}</small></span>
+                const office = value === ERP_OFFICE_CHOICE;
+                return <label className="erp-import-map-row" key={employee.employeeId} data-office={office ? 'true' : undefined}><span><strong>{employee.employeeName ? <bdi>{employee.employeeName}</bdi> : say('اسم الموظف فارغ', 'Employee name is blank')}</strong><small>{say('رقم الموظف', 'Employee number')}: <bdi>{employee.employeeId}</bdi> · {employee.quotations} {say('عرض', 'quotations')}{employee.mappingSource === 'saved' ? ' · ' + (office ? say('محدد «مبيعات مكتب» سابقًا', 'Saved as office sales') : say('ربط محفوظ من استيراد المبيعات', 'Saved by the sales import')) : ''}</small></span>
                   <select value={value} disabled={immutable || fixed} aria-label={say('مندوب الموظف ', 'Rep for employee ') + (employee.employeeName || employee.employeeId)} onChange={event => choose(employee.employeeId, event.target.value)}>
                     <option value="">{employee.savedOutside ? say('المندوب المحفوظ خارج نطاقك', 'The saved rep is outside your access') : say('اختر المندوب', 'Choose a rep')}</option>
                     {options.members.map(member => <option key={member.id} value={member.id}>{member.name}{member.branch ? ' · ' + member.branch : ''}</option>)}
+                    <option value={ERP_OFFICE_CHOICE}>{say('مبيعات مكتب (مستبعد)', 'Office sales (excluded)')}</option>
                   </select>
-                  {employee.mappingSource === 'name' && employee.repId === value && <small className="erp-import-map-hint">{say('مطابقة تلقائية للاسم؛ تُحفظ مع الاستيراد', 'Automatic name match; saved with the import')}</small>}
-                  {fixed && <small className="erp-import-map-hint">{say('يُعدَّل هذا الربط من شاشة استيراد مبيعات ERP.', 'This mapping is changed from the ERP sales import.')}</small>}
+                  {employee.mappingSource === 'name' && employee.repId === value && <small className="erp-import-map-hint">{office ? say('محدد «مبيعات مكتب» بالاسم من كشف التحصيل؛ يُحفظ مع الاستيراد', 'Marked office sales by name in the collection statement; saved with the import') : say('مطابقة تلقائية للاسم؛ تُحفظ مع الاستيراد', 'Automatic name match; saved with the import')}</small>}
+                  {office && !fixed && <small className="erp-import-map-hint">{say('مستبعد: عروضه لا تُستورد ولا تُحتسب لأي مندوب، ويُحفظ التحديد مع الاستيراد.', 'Excluded: their quotations are not imported and count for no rep; the choice is saved with the import.')}</small>}
+                  {fixed && <small className="erp-import-map-hint">{office ? say('مستبعد: عروضه لا تُستورد. يُعدَّل هذا التحديد من شاشة استيراد مبيعات ERP.', 'Excluded: their quotations are not imported. This is changed from the ERP sales import.') : say('يُعدَّل هذا الربط من شاشة استيراد مبيعات ERP.', 'This mapping is changed from the ERP sales import.')}</small>}
                 </label>;
               })}</div>
             </section>}
@@ -290,13 +298,14 @@ export default function ErpQuotesImport({ onClose, onImported }: Props) {
       <footer className="erp-import-footer">
         {!!error && <p className="form-error" role="alert">{present(error)}</p>}
         {pending && <p className="erp-import-notice" role="status">{say('لم يتأكد الحفظ بسبب الاتصال. البيانات مثبتة؛ اضغط «تأكيد الحفظ» لإعادة الطلب نفسه بدون تكرار.', 'The connection did not confirm the import. Your data is locked; choose “Confirm save” to retry the same request without duplicates.')}</p>}
-        {preview && !receipt && !ready && !dirty && <p className="erp-import-notice" role="status">{say('لا يوجد في الملف عرض جديد أو متغيّر للاستيراد.', 'The file has no new or changed quotation to import.')}</p>}
+        {preview && !receipt && !ready && !officeMarks && !dirty && <p className="erp-import-notice" role="status">{say('لا يوجد في الملف عرض جديد أو متغيّر للاستيراد.', 'The file has no new or changed quotation to import.')}</p>}
         {receipt && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تأكيد الاستيراد', 'Import confirmed')}</strong><p>{say('أُضيفت', 'Added')}: {receipt.addedCount} · {say('حُدِّثت', 'Updated')}: {receipt.updatedCount} · {say('بلا تغيير', 'Unchanged')}: {receipt.unchangedCount} · {say('عُدِّلت في الـCRM وتُركت', 'Edited in the CRM, left')}: {receipt.editedCount} {receipt.excludedCount ? <> · {say('مستبعدة', 'Excluded')}: {receipt.excludedCount}</> : null} · {say('مرفوضة', 'Refused')}: {receipt.refusedCount}</p>
-          {!!receipt.mappingsSaved && <small>{say('حُفظ ربط الموظفين', 'Employee mappings saved')}: {receipt.mappingsSaved}</small>}</div></div>}
+          {!!receipt.mappingsSaved && <small>{say('حُفظ ربط الموظفين', 'Employee mappings saved')}: {receipt.mappingsSaved}</small>}
+          {!!receipt.officeMarked && <small>{say('حُفظ تحديد «مبيعات مكتب (مستبعد)»', 'Office sales (excluded) saved')}: {receipt.officeMarked}</small>}</div></div>}
         <div className="erp-import-actions"><button type="button" className="btn subtle" disabled={!!busy || pending} onClick={close}>{say(receipt ? 'تم' : 'إغلاق', receipt ? 'Done' : 'Close')}</button>
           {receipt ? refreshFailed && <button type="button" className="btn primary" disabled={!!busy} onClick={refreshAfterImport}>{busy === 'refresh' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('تحديث العرض فقط', 'Refresh view only')}</button> :
             dirty && !pending ? <button type="button" className="btn primary" disabled={!file || immutable} onClick={buildPreview}>{busy === 'preview' ? <Loader2 className="spin" size={17}/> : <RefreshCw size={17}/>} {say('تحديث المعاينة', 'Refresh preview')}</button> :
-            <button type="button" className="btn primary" disabled={!!busy || !previewBody || dirty || !ready} onClick={commit}>{busy === 'commit' ? <Loader2 className="spin" size={17}/> : <Upload size={17}/>} {pending ? say('تأكيد الحفظ', 'Confirm save') : say(`تأكيد الاستيراد (${ready})`, `Confirm import (${ready})`)}</button>}
+            <button type="button" className="btn primary" disabled={!!busy || !previewBody || dirty || !(ready || officeMarks)} onClick={commit}>{busy === 'commit' ? <Loader2 className="spin" size={17}/> : <Upload size={17}/>} {pending ? say('تأكيد الحفظ', 'Confirm save') : say(`تأكيد الاستيراد (${ready})`, `Confirm import (${ready})`)}</button>}
         </div>
       </footer>
     </DialogContent>
