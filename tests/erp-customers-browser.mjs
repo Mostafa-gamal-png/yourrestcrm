@@ -9,7 +9,9 @@
 // a representative has neither. Since 2026-11-09: the same file again after the apply names no longer the customer its similar row
 // pointed to, so «عملاء غير موجودين في الشيت: سيُمسح كود ERP الخاص بهم (1)» lists it with the box checked; unchecked there is nothing to apply;
 // the apply clears its code (kept as an alias) and the result says so; the English section and box; a later apply with the box unchecked
-// clears nothing. Screenshots for the report. Synthetic fixtures only: temporary SQLite, never the owner's file.
+// clears nothing. Since 2026-11-12: «عملاء يحملون كودًا يخص عميلًا آخر في ملف ERP — سيُمسح منهم الكود» lists the other holder of a row's number,
+// in Arabic and English, desktop and phone; the apply clears it with the box unchecked; and the customer form shows the ERP code as
+// read-only text («كود ERP: 12», «لا يوجد كود ERP») for the administrator, a save keeping it. Screenshots for the report. Synthetic fixtures only: temporary SQLite, never the owner's file.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -40,7 +42,7 @@ const workbook = rows => Buffer.from(zipSync({
   'xl/worksheets/sheet1.xml': strToU8(`<worksheet><sheetData>${[['Customer'], header, ...rows].map((cells, index) => `<row r="${index + 1}">${cells.map(cell).join('')}</row>`).join('')}</sheetData></worksheet>`),
 }));
 const file = {name: 'Customer_synthetic.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: workbook([
-  row('12', 'مصنع النور', '+966551234567'),        // 3: auto by phone and name; 12 is also held by «مصنع قديم» → mapping note
+  row('12', 'مصنع النور', '+966551234567'),        // 3: auto by phone and name; 12 is also held by «مصنع قديم» → it loses 12 (duplicates)
   row('44', 'شركة الفجر للبلوك', '', '0501234567'), // 4: auto by phone only
   row('55', 'مصنع التوأم الصناعي'),                  // 5: two customers with this name → choose
   row('77', 'مصنع غير موجود', '0599999999'),        // 6: not in the CRM → new, added
@@ -110,7 +112,13 @@ try {
   check((await app.db.prepare("SELECT count(*) AS n FROM crm_audit WHERE action LIKE 'erp-customer%'").first()).n, 0, 'the preview wrote nothing');
   const tiles = async () => dialog.locator('.erp-import-counts > div').evaluateAll(items => items.map(item => [item.querySelector('span').textContent, item.querySelector('strong').textContent]));
   check(await tiles(), [['سيتغيّر', '2'], ['يحتاج إلى اختيارك', '2'], ['عملاء جدد', '1'], ['بلا تغيير', '1']], 'the counts');
-  check((await dialog.locator('.erp-customers-summary').innerText()).trim(), '2 كود سيتغيّر، 2 عميل يحتاج إلى اختيارك، 1 عميل جديد سيُضاف.', 'the summary line');
+  check((await dialog.locator('.erp-customers-summary').innerText()).trim(), '2 كود سيتغيّر، 2 عميل يحتاج إلى اختيارك، 1 عميل جديد سيُضاف، 1 عميل يحمل كودًا يخص عميلًا آخر سيُمسح منه.', 'the summary line');
+  // 2026-11-12: the customers that carry a row's number while the row ends on another customer lose it, in a section of their own
+  const duplicateSection = dialog.locator('[data-section=duplicates]');
+  check([preview.duplicates.map(d => [d.customerId, d.code, d.ownerId]), (await duplicateSection.locator('h3').innerText()).trim()], [[['holder', '12', 'nour']], 'عملاء يحملون كودًا يخص عميلًا آخر في ملف ERP — سيُمسح منهم الكود (1)'], 'the duplicates section with its count');
+  const duplicateText = await duplicateSection.locator('.erp-customers-duplicates').innerText();
+  ok(duplicateText.includes('مصنع قديم') && duplicateText.includes(await internal('holder')) && duplicateText.includes('الوسطى') && duplicateText.includes('12') && duplicateText.includes('يبقى الكود لـ') && duplicateText.includes('مصنع النور') && duplicateText.includes(await internal('nour')), 'each: name, Yourrest code, region, its code, and the customer that keeps it');
+  ok((await duplicateSection.innerText()).includes('سواء اخترت مسح أكواد العملاء غير الموجودين في الشيت أم لا'), 'it says the box does not decide it');
   check([preview.clears, await dialog.locator('[data-section=clear]').count()], [[], 0], 'every customer with a code is in the file: no «عملاء غير موجودين في الشيت»');
   const choose = dialog.locator('[data-section=choose]'), fresh = dialog.locator('[data-section=new]');
   check(await choose.locator('.erp-customers-row').evaluateAll(items => items.map(item => Number(item.dataset.row))), [5, 8], '«محتاج تختار»: the ambiguous row and the similar name');
@@ -124,8 +132,10 @@ try {
   ok((await similar.innerText()).includes(await internal('safa')) && (await similar.innerText()).includes('اسم قريب') && (await similar.innerText()).includes('345'), 'the similar customer: Yourrest code, current ERP code, why');
   ok((await fresh.innerText()).includes('سيُضافون باسمك') && (await fresh.innerText()).includes('«تعديل»'), 'new customers: under the uploader\'s name, movable later from «تعديل»');
   check(await dialog.locator('#erp-customers-region').inputValue(), '', 'the region of the new customers: «المنطقة غير محددة» by default');
-  check((await dialog.locator('.erp-customers-apply').innerText()).trim(), 'حدّث 2 كود وأضف 1 عميل', 'the apply button says what it will do');
+  check((await dialog.locator('.erp-customers-apply').innerText()).trim(), 'حدّث 2 كود وأضف 1 عميل وامسح 1 كود', 'the apply button says what it will do');
   await shot(admin, 'erp-customers-preview-desktop');
+  await duplicateSection.scrollIntoViewIfNeeded();
+  await shot(admin, 'erp-customers-duplicates-desktop');
 
   // ---- 3. One ambiguous row gets its customer: previewed again with the choice
   answer = posted(admin, 'preview');
@@ -140,7 +150,7 @@ try {
   check(JSON.parse((await answer).request().postData()).choices, [{row: 5, customerId: 'twinB'}, {row: 8, customerId: '+new'}], '«عميل جديد» goes with the preview');
   await admin.waitForFunction(() => [...document.querySelectorAll('.erp-import-counts strong')][2]?.textContent === '2');
   check(await tiles(), [['سيتغيّر', '3'], ['يحتاج إلى اختيارك', '0'], ['عملاء جدد', '2'], ['بلا تغيير', '1']], 'one more customer to add, nothing left to choose');
-  check([await similar.locator('button[data-choice="+new"]').getAttribute('aria-pressed'), (await dialog.locator('.erp-customers-apply').innerText()).trim()], ['true', 'حدّث 3 كود وأضف 2 عميل'], '«عميل جديد» pressed; the apply button follows');
+  check([await similar.locator('button[data-choice="+new"]').getAttribute('aria-pressed'), (await dialog.locator('.erp-customers-apply').innerText()).trim()], ['true', 'حدّث 3 كود وأضف 2 عميل وامسح 1 كود'], '«عميل جديد» pressed; the apply button follows');
   await dialog.locator('#erp-customers-region').selectOption('الوسطى');
   await dialog.locator('.erp-customers-filters button', {hasText: 'سيتغيّر'}).click();
   const changes = dialog.locator('[data-section=rest] .erp-customers-row');
@@ -148,7 +158,7 @@ try {
   const nour = changes.filter({hasText: 'مصنع النور'});
   ok((await nour.locator('.erp-customers-change').innerText()).includes('OLD-1'), 'before → after: the old code');
   ok((await nour.locator('.erp-customers-change').innerText()).includes(await internal('nour')), 'with the customer\'s Yourrest code');
-  check((await nour.locator('.erp-customers-shared').innerText()).trim(), 'هذا الكود لدى 1 عميل آخر أيضًا؛ ستُحتسب الفواتير لهذا العميل', 'the shared-number note');
+  check((await nour.locator('.erp-customers-shared').innerText()).trim(), 'هذا الكود لدى 1 عميل آخر أيضًا؛ سيُمسح منه ويبقى لهذا العميل وحده (انظر «عملاء يحملون كودًا يخص عميلًا آخر»).', 'the shared-number note');
   ok((await changes.filter({hasText: 'شركة الفجر'}).innerText()).includes('بالجوال'), 'matched by phone');
   ok(!(await dialog.innerText()).match(/551234567|501234567/), 'phones are shown as their last 4 digits only');
   await shot(admin, 'erp-customers-will-change-desktop');
@@ -165,12 +175,15 @@ try {
   await fits(admin, 'phone, new customers');
   check(await dialog.locator('#erp-customers-region, .erp-customers-row-region select').evaluateAll(items => items.map(item => [getComputedStyle(item).fontSize, item.getBoundingClientRect().height >= 46])), [['16px', true], ['16px', true]], 'phone: the region selects are 16 px and at least 46 px tall, like the dialog\'s other selects (no zoom on focus)');
   await shot(admin, 'erp-customers-new-phone');
+  await duplicateSection.scrollIntoViewIfNeeded();
+  await fits(admin, 'phone, the duplicates');
+  await shot(admin, 'erp-customers-duplicates-phone');
   await dialog.locator('.erp-customers-filters button', {hasText: 'الكل'}).click();
   await fits(admin, 'phone, every row');
 
   // ---- 5. «حدّث 3 كود وأضف 2 عميل»: applied in one step, the result listed, the customers reloaded
   const applied = posted(admin, 'apply'), reloaded = admin.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'GET');
-  await dialog.getByRole('button', {name: 'حدّث 3 كود وأضف 2 عميل', exact: true}).click();
+  await dialog.getByRole('button', {name: 'حدّث 3 كود وأضف 2 عميل وامسح 1 كود', exact: true}).click();
   const applyResponse = await applied;
   check(applyResponse.status(), 200, 'applied');
   const sent = JSON.parse(applyResponse.request().postData());
@@ -178,16 +191,17 @@ try {
   check((await reloaded).status(), 200, 'the customers are reloaded');
   await dialog.locator('.erp-import-success').waitFor();
   ok((await dialog.locator('.erp-import-success').innerText()).includes('تم تحديث الأكواد وإضافة العملاء'), 'the result says so');
-  check(await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left) > li').count(), 3, 'three changes listed');
-  ok((await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left)').innerText()).includes(await internal('twinB')), 'by name and Yourrest code');
+  check(await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left):not(.erp-customers-duplicates-cleared) > li').count(), 3, 'three changes listed');
+  ok((await dialog.locator('.erp-customers-duplicates-cleared').innerText()).includes('مصنع قديم') && (await dialog.locator('.erp-import-success').innerText()).includes('مُسح كود ERP لـ 1 عميل يحمل كودًا يخص عميلًا آخر'), 'and the customer that lost its code, with the count in the result message');
+  ok((await dialog.locator('.erp-customers-changes:not(.erp-customers-added):not(.erp-customers-left):not(.erp-customers-duplicates-cleared)').innerText()).includes(await internal('twinB')), 'by name and Yourrest code');
   check([await dialog.locator('.erp-customers-left > li').count(), (await dialog.locator('#erp-customers-left-heading').innerText()).trim()], [0, 'ما تُرك'], 'and what was left: nothing this time');
   const addedIds = (await app.db.prepare("SELECT id FROM crm_records WHERE id LIKE 'crm-owner-erp-%' ORDER BY id").all()).results.map(r => r.id);
   check(addedIds.length, 2, 'two customers added');
   check(await dialog.locator('.erp-customers-added > li').count(), 2, 'and listed as added');
   for (const id of addedIds) ok((await dialog.locator('.erp-customers-added').innerText()).includes(await internal(id)), 'with the Yourrest number of ' + id.slice(-1));
   check((await app.db.prepare("SELECT json_extract(data,'$.code') AS code,json_extract(data,'$.region') AS region,assigned_to AS owner FROM crm_records WHERE id LIKE 'crm-owner-erp-%' ORDER BY json_extract(data,'$.code')").all()).results.map(r => ({...r})), [{code: '77', region: 'الوسطى', owner: 'owner'}, {code: '9001', region: 'الوسطى', owner: 'owner'}], 'the new customers: their ERP codes, the chosen region, the uploader responsible');
-  check([await code('nour'), await code('fajr'), await code('twinB'), await code('twinA'), await code('holder'), await code('badr'), await code('safa')], ['12', '44', '55', 'T-1', '12', '33', '345'], 'the ERP codes in the database (the similar customer untouched)');
-  check((await app.db.prepare('SELECT code_key,customer_id FROM crm_customer_code_mappings').all()).results.map(r => ({...r})), [{code_key: '12', customer_id: 'nour'}], 'the shared number is mapped');
+  check([await code('nour'), await code('fajr'), await code('twinB'), await code('twinA'), await code('holder'), await code('badr'), await code('safa')], ['12', '44', '55', 'T-1', '', '33', '345'], 'the ERP codes in the database (the other holder of 12 cleared, the similar customer untouched)');
+  check((await app.db.prepare('SELECT code_key,customer_id FROM crm_customer_code_mappings').all()).results.map(r => ({...r})), [], 'no mapping is written: 12 has one holder');
   await fits(admin, 'phone result');
   await shot(admin, 'erp-customers-result-phone');
   await dialog.getByRole('button', {name: 'تم', exact: true}).click();
@@ -300,6 +314,75 @@ try {
   await dialog.locator('.erp-import-success').waitFor();
   await dialog.getByRole('button', {name: 'Done', exact: true}).click();
   await dialog.waitFor({state: 'detached'});
+  // ---- 6c. English: a customer that carries a number the file gives to another customer loses it, whatever the box says (2026-11-12)
+  await customer('holder2', {name: 'مصنع يحمل الرقم 12 أيضًا', code: '12'});
+  await admin.setViewportSize(DESKTOP);
+  await importButton(admin).click();
+  await dialog.waitFor();
+  answer = posted(admin, 'preview');
+  await dialog.locator('#erp-customers-file').setInputFiles({name: 'Customer_duplicate.xlsx', mimeType: file.mimeType, buffer: workbook([row('12', 'مصنع النور', '+966551234567')])});
+  const duplicatePreview = await (await answer).json();
+  check(duplicatePreview.duplicates.map(d => [d.customerId, d.code, d.ownerId]), [['holder2', '12', 'nour']], 'English: the server lists the other holder of 12');
+  const englishDuplicates = dialog.locator('[data-section=duplicates]');
+  await englishDuplicates.waitFor();
+  check((await englishDuplicates.locator('h3').innerText()).trim(), 'Customers holding a code that belongs to another customer in the ERP file — the code will be cleared from them (1)', 'English: the duplicates heading');
+  ok((await englishDuplicates.innerText()).includes('The code stays with') && (await englishDuplicates.innerText()).includes('whether or not you clear the codes of the customers not in the sheet'), 'English: the owner of the code and the note');
+  await dialog.locator('[data-section=clear]').getByRole('checkbox').uncheck();
+  check(await dialog.locator('.erp-customers-apply').innerText().then(text => text.trim()), 'Update 0 code(s), add 0 customer(s) and clear 1 code(s)', 'English: the box unchecked, the duplicate is still cleared');
+  ok(!/[؀-ۿ]/.test(await ownWords()), 'English: no Arabic left with the duplicates section: ' + ((await ownWords()).match(/\S*[؀-ۿ]\S*/g) || []).slice(0, 5).join(' | '));
+  await englishDuplicates.scrollIntoViewIfNeeded();
+  await shot(admin, 'erp-customers-duplicates-desktop-en');
+  await admin.setViewportSize(PHONE);
+  await admin.waitForTimeout(300);
+  await englishDuplicates.scrollIntoViewIfNeeded();
+  await fits(admin, 'phone, English duplicates');
+  check(await dialog.locator('.erp-customers-apply').evaluate(button => button.scrollWidth <= button.clientWidth + 1), true, 'phone: the long English apply label wraps, never cut');
+  await shot(admin, 'erp-customers-duplicates-phone-en');
+  const duplicateApplied = posted(admin, 'apply');
+  await dialog.getByRole('button', {name: 'Update 0 code(s), add 0 customer(s) and clear 1 code(s)', exact: true}).click();
+  const duplicateResponse = await duplicateApplied;
+  check([duplicateResponse.status(), 'clearCodes' in JSON.parse(duplicateResponse.request().postData()), (await duplicateResponse.json()).duplicatesCleared, (await duplicateResponse.json()).cleared], [200, false, 1, 0], 'applied without the box: the duplicate holder cleared, nobody else');
+  check([await code('holder2'), await code('nour'), await code('fajr')], ['', '12', '44'], 'holder2 lost 12; the customers not in the sheet keep theirs');
+  await dialog.locator('.erp-import-success').waitFor();
+  ok((await dialog.locator('.erp-import-success').innerText()).includes('ERP code cleared for 1 customer(s) holding another customer\'s code'), 'English: the result says so');
+  await shot(admin, 'erp-customers-duplicates-result-phone-en');
+  await dialog.getByRole('button', {name: 'Done', exact: true}).click();
+  await dialog.waitFor({state: 'detached'});
+
+  // ---- 6d. The ERP code in the customer form is read-only text for the administrator too (2026-11-12), in English and Arabic, phone and desktop
+  const editForm = async (page, label) => {
+    // The phone's card names the customer in its button; the computer's table has «بيانات العميل» in the customer's row.
+    const card = page.getByRole('button', {name: /^(بيانات العميل|Customer details): مصنع النور$/});
+    await (await card.count() ? card.first() : page.locator('tr', {has: page.locator('.customer-expand strong', {hasText: /^مصنع النور$/})}).getByRole('button', {name: /^(بيانات العميل|Customer details)$/}).first()).click();
+    const sheet = page.locator('.crm-sheet');
+    await sheet.getByRole('button', {name: /^(تعديل|Edit)$/}).first().click();
+    const form = page.locator('[role=dialog]').filter({has: page.locator('form')});
+    await form.waitFor();
+    const extra = form.locator('.customer-extra-fields');
+    if (!await extra.evaluate(node => node.open)) await extra.locator('summary').click();
+    const field = form.locator('.erp-code-readonly');
+    await field.scrollIntoViewIfNeeded();
+    check(await form.locator('input, textarea').evaluateAll(items => items.filter(item => item.value === '12').length), 0, label + ': the ERP code is no input');
+    await shot(page, 'customer-erp-code-readonly-' + label);
+    return {form, field};
+  };
+  let edit = await editForm(admin, 'phone-en');
+  check([(await edit.field.locator('.erp-code-readonly-value').innerText()).trim(), (await edit.field.locator('.erp-code-readonly-note').innerText()).trim()], ['ERP code: 12', 'Updated from the ERP customers file only'], 'English: «ERP code: 12» and its note');
+  check(await admin.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'phone: the form does not scroll sideways');
+  /** Escape closes the form, then the customer's sheet. */
+  const closeAll = async page => { for (let i = 0; i < 4 && await page.locator('[role=dialog][data-state=open]').count(); i++) { await page.keyboard.press('Escape'); await page.waitForTimeout(300); } check(await page.locator('[role=dialog][data-state=open]').count(), 0, 'every dialog closed'); };
+  await closeAll(admin);
+  await admin.setViewportSize(DESKTOP);
+  await admin.waitForTimeout(300);
+  await admin.locator('.topbar-tools .language-switch').click();
+  await admin.waitForFunction(() => document.documentElement.lang === 'ar');
+  edit = await editForm(admin, 'desktop-ar');
+  check([(await edit.field.locator('.erp-code-readonly-value').innerText()).trim(), (await edit.field.locator('.erp-code-readonly-note').innerText()).trim()], ['كود ERP: 12', 'يُحدَّث من ملف عملاء ERP فقط'], 'Arabic: «كود ERP: 12» and its note');
+  const saved = admin.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'POST');
+  await edit.form.getByRole('button', {name: /^حفظ /}).click();
+  check([(await saved).status(), await code('nour')], [200, '12'], 'the administrator saves the customer: the code stays as it is');
+  await edit.form.waitFor({state: 'detached'});
+  await closeAll(admin);
   await admin.context().close();
 
   // ---- 7. The sales manager has the button; a representative has neither
@@ -312,6 +395,18 @@ try {
   await customers(rep);
   await rep.waitForTimeout(500);
   check([await importButton(rep).count(), await oldButton(rep).count()], [0, 0], 'a representative has no import button and no old one');
+  // A representative's new customer: «لا يوجد كود ERP», never a field to type one (2026-11-12), on a 360 px phone
+  await rep.setViewportSize(PHONE);
+  await rep.waitForTimeout(300);
+  await rep.getByRole('button', {name: 'إضافة عميل', exact: true}).first().click();
+  const repForm = rep.locator('[role=dialog]').filter({has: rep.locator('form')});
+  await repForm.waitFor();
+  const repExtra = repForm.locator('.customer-extra-fields');
+  if (!await repExtra.evaluate(node => node.open)) await repExtra.locator('summary').click();
+  check([(await repForm.locator('.erp-code-readonly-value').innerText()).trim(), (await repForm.locator('.erp-code-readonly-note').innerText()).trim(), await repForm.getByRole('textbox', {name: /كود العميل في ERP/}).count()], ['لا يوجد كود ERP', 'يُحدَّث من ملف عملاء ERP فقط', 0], 'a new customer: «لا يوجد كود ERP» and no ERP code field');
+  await repForm.locator('.erp-code-readonly').scrollIntoViewIfNeeded();
+  check(await rep.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'phone: the new-customer form does not scroll sideways');
+  await shot(rep, 'customer-erp-code-new-phone-ar');
   await rep.context().close();
 
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));

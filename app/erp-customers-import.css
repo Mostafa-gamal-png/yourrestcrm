@@ -73,4 +73,6 @@
  .erp-customers-row{padding:11px 12px}
  .erp-customers-candidate{padding:10px 9px}
  .erp-customers-codes{white-space:normal}
+ /* The apply button says what it does («… and clear N code(s)»): on a phone its words wrap instead of being cut. */
+ .erp-import-actions .erp-customers-apply{white-space:normal;line-height:1.35;text-align:center;padding-block:8px}
 }
