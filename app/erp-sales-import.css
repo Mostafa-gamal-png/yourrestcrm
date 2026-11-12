@@ -61,9 +61,8 @@
 .erp-import-amount{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
 .erp-import-badge{display:inline-block;padding:3px 7px;border-radius:5px;font-size:12px;line-height:1.6;background:var(--muted);color:var(--muted-foreground);font-weight:600}
 .erp-import-badge.new{background:#087b7914;color:#087b79}
-.erp-import-badge.conflict,.erp-import-badge.unmapped,.erp-import-badge.out_of_scope{background:#b7701014;color:#965d0c}
+.erp-import-badge.conflict,.erp-import-badge.unmapped,.erp-import-badge.out_of_scope,.erp-import-badge.unassigned{background:color-mix(in oklab,var(--destructive) 12%,transparent);color:var(--destructive)}
 .dark .erp-import-badge.new{background:#51d4bd20;color:#7de1d2}
-.dark .erp-import-badge.conflict,.dark .erp-import-badge.unmapped,.dark .erp-import-badge.out_of_scope{background:#f6c87118;color:#efc672}
 .erp-import-cards{display:none}
 .erp-import-pagination{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px;font-size:13px}
 .erp-import-footer{flex-shrink:0;padding:14px 24px;border-top:1px solid var(--border);background:var(--card);max-height:44dvh;overflow:auto}
@@ -117,3 +116,19 @@
  .erp-import-period-fields{grid-template-columns:minmax(0,1fr)}
  .erp-import-period-fields input{font-size:16px;min-height:46px}
 }
+/* Problems in the preview are marked in red; a clean preview says so in green. */
+.erp-import-problems{margin:0 0 12px;padding:10px 12px;border:1px solid var(--destructive);border-inline-start-width:4px;border-radius:8px;background:color-mix(in oklab,var(--destructive) 9%,var(--background));color:var(--destructive);font-size:13px;line-height:1.8;overflow-wrap:anywhere}
+.erp-import-problems>strong{display:flex;align-items:center;gap:6px;font-size:14px}
+.erp-import-problems ul{margin:4px 0 0;padding-inline-start:20px}
+.erp-import-problems p{margin:4px 0 0}
+.erp-import-ok{display:flex;align-items:center;gap:6px;margin:0 0 12px;padding:9px 12px;border:1px solid color-mix(in oklab,#1f8a4c 45%,var(--border));border-radius:8px;background:color-mix(in oklab,#1f8a4c 9%,var(--background));color:color-mix(in oklab,#1f8a4c 80%,var(--foreground));font-size:13px;line-height:1.8}
+.erp-import-counts>div[data-problem]{border-color:var(--destructive);background:color-mix(in oklab,var(--destructive) 9%,var(--background))}
+.erp-import-counts>div[data-problem] span,.erp-import-counts>div[data-problem] strong{color:var(--destructive)}
+.erp-import-map-row[data-problem]{background:color-mix(in oklab,var(--destructive) 8%,var(--background));box-shadow:inset 3px 0 0 var(--destructive)}
+[dir=rtl] .erp-import-map-row[data-problem]{box-shadow:inset -3px 0 0 var(--destructive)}
+.erp-import-map-row[data-problem] strong{color:var(--destructive)}
+.erp-import-map-row[data-problem] select{border-color:var(--destructive)}
+.erp-import-unassigned[data-problem],.erp-import-skip[data-problem],.erp-import-notice[data-problem]{border-color:var(--destructive);border-inline-start:3px solid var(--destructive);background:color-mix(in oklab,var(--destructive) 8%,var(--background))}
+.erp-import-unassigned[data-problem] strong,.erp-import-skip[data-problem] strong{color:var(--destructive)}
+.erp-import-table tbody tr[data-problem]>td{background:color-mix(in oklab,var(--destructive) 7%,var(--background))}
+.erp-import-document-card[data-problem]{border-color:var(--destructive);background:color-mix(in oklab,var(--destructive) 7%,var(--background))}

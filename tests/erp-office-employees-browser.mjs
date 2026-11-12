@@ -85,10 +85,16 @@ try{
    check(labels.at(-1),OFFICE_LABEL,tag+': «مبيعات مكتب (مستبعد)» is the last option, after the representatives');
    if(firstRun){
     check(await select.inputValue(),'',tag+': 6007 starts unmapped');
+    check(await row.getAttribute('data-problem'),'true',tag+': the unmapped employee is marked in red');
+    ok((await dialog.locator('.erp-import-problems').innerText()).includes(say('موظفون بلا مندوب','Employees without a rep')),tag+': the red banner names it');
+    check(await dialog.locator('.erp-import-ok').count(),0,tag+': no clean notice while it is unmapped');
+    await dialog.locator('.erp-import-problems').scrollIntoViewIfNeeded();await shot(page,'sales-problems-'+tag);await row.scrollIntoViewIfNeeded();await shot(page,'sales-problem-row-'+tag);
     await select.selectOption({label:OFFICE_LABEL});
     ok((await row.innerText()).includes(say('مستبعد: لا تُحتسب مبيعاته لأي مندوب','Excluded: their sales count for no rep')),tag+': the row says what it does');
     await dialog.locator('.erp-import-footer').getByRole('button',{name:say('تحديث المعاينة','Refresh preview'),exact:true}).click();
     await dialog.locator('.erp-import-notice',{hasText:say('الربط تغير','Mappings changed')}).waitFor({state:'detached'});
+    check(await row.getAttribute('data-problem'),null,tag+': marked as office sales, the row is no longer red');
+    check([await dialog.locator('.erp-import-problems').count(),await dialog.locator('.erp-import-ok').count()],[0,1],tag+': no problem left, and the preview says so');
    }else{
     check(await select.inputValue(),'office:excluded',tag+': saved by the first import: shown selected');
     ok((await row.innerText()).includes(say('محدد «مبيعات مكتب» سابقًا','Saved as office sales')),tag+': and said to be saved');

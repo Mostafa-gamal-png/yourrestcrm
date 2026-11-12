@@ -4,6 +4,19 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Problems of the ERP sales import marked in red (2026-11-12, package update-sales-problems-20261112, no migration)
+
+- **Asked.** The owner, 2026-11-12, with a picture of the preview (one category «خدمات تجارة وتوريد الحديد» left on «اختر صنف
+  المستهدف», one document skipped): «اعرف ازاى ان مفيش مشاكل فى المبيعات», then «علم على المشاكل بالاحمر».
+- **What it does** (`app/erp-sales-import.tsx`, `app/erp-sales-import.css`): above the preview's counts a red box «مشاكل يجب حلها قبل
+  الاستيراد (معلَّمة بالأحمر)» lists what remains (categories without a target product and employees without a rep, from the current
+  choices; documents that need review and documents without a rep, from the preview), and asks for «تحديث المعاينة» once a choice changed;
+  with none and the preview current a green line says «لا توجد مشاكل…». In red: each category or employee row with no choice, the count
+  «تحتاج مراجعة» above zero, the box of documents without a rep, the choice «استيراد الفواتير الجاهزة فقط», the completeness blocker,
+  and each document (row or card) that will not be imported, its badge too. Display only: nothing the server checks changed.
+- **Tested.** `tests/erp-office-employees-browser.mjs` (the unmapped employee marked, the banner naming it, gone after the choice and
+  the refresh, the green line then), against the built release.
+
 ## The ERP code read-only for everyone; the ERP customers import resolves duplicate holders (2026-11-12, to ship with the next package of the day, no migration)
 
 - **Asked.** The owner, 2026-11-12: «ده اخر تحديث للعملاء ومفيش حد ادى لعميلين نفس الكود والغى امكانية تعديل كود erp لاى حد حتى مدير
