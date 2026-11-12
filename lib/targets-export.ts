@@ -1,5 +1,5 @@
 import {activityFields,defaultActivityTargets,effectiveSet,targetProducts,type ActivityTargets,type TargetState} from './targets';
-import {operationalIndicators,type KpiPerson} from './kpis';
+import {kpiMetricReason,operationalIndicators,type KpiPerson} from './kpis';
 import {type Member} from './crm';
 
 type Translate=(value:string)=>string;
@@ -37,9 +37,9 @@ export function targetsCsvRows(state:TargetState,members:Member[],month:string,t
 
 /** Every row of «تصدير التقييم»: each indicator of each person, then the person's overall line as the page shows it
  *  (the score out of 100 or empty while incomplete, the points earned, the evaluated weight over the applicable weight). */
-export function performanceCsvRows(people:KpiPerson[],month:string,t:Translate):Cell[][]{
+export function performanceCsvRows(people:KpiPerson[],month:string,t:Translate,language:'ar'|'en'='ar'):Cell[][]{
  return people.flatMap(person=>{
-  const indicators:Cell[][]=person.metrics.map(metric=>{const indicator=operationalIndicators.find(i=>i.id===metric.id)!;return [month,person.member.name,t(indicator.name),indicator.weight,metric.score??'',metric.points??'',t(metric.reason)];});
+  const indicators:Cell[][]=person.metrics.map(metric=>{const indicator=operationalIndicators.find(i=>i.id===metric.id)!;return [month,person.member.name,t(indicator.name),indicator.weight,metric.score??'',metric.points??'',kpiMetricReason(metric,t,language)];});
   const s=person.summary,assessed=s.covered-s.excludedWeight;
   const state=s.total===null?(s.applicableWeight===0?t('لا ينطبق'):t('غير مكتمل')):'';
   return [...indicators,[month,person.member.name,t('درجة التقييم الكلية'),s.applicableWeight,s.total??'',s.earned,[state,t('الوزن الذي تم تقييمه')+': '+assessed+' / '+s.applicableWeight+'%'].filter(Boolean).join(' · ')]];

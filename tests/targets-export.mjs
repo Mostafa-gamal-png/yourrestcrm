@@ -99,5 +99,5 @@ for (const [value, expected] of [[30 / 55 * 100, 54.55], [20 / 30 * 100, 66.67],
 const card = fs.readFileSync('app/targets-performance-summary.tsx', 'utf8');
 eq(card.includes('<TargetGauge value={shownAchievement(row?.achievement)}'), true, 'the summary card passes the two-decimal figure to its product gauge');
 const workspace = fs.readFileSync('app/sales-workspace.tsx', 'utf8');
-eq([workspace.includes('targetsCsvRows(payload.targets,members,month,t,hiddenFromTargets)'), workspace.includes('performanceCsvRows(filteredKpiPeople,month,t)')], [true, true], 'the page exports through these functions (the targets file leaves out the administrators the page leaves out)');
+eq([workspace.includes('targetsCsvRows(payload.targets,members,month,t,hiddenFromTargets)'), workspace.includes('performanceCsvRows(filteredKpiPeople,month,t,language)')], [true, true], 'the page exports through these functions (the targets file leaves out the administrators the page leaves out)');
 console.log(JSON.stringify({ok: true, checks, syntheticFixtures: true, productionDataUsed: false}));

@@ -8,7 +8,9 @@ import {monthSchema,salesReadMemberIds,type Sale,type SaleRow} from './sales';
 import {visitCustomer} from './customer-visits';
 import {targetState} from './targets-server';
 import {effectiveSet} from './targets';
-import {readErpSales,type ErpSaleRow} from './erp-sales-server';
+import {readErpSales,readSalesCoverage,type ErpSaleRow} from './erp-sales-server';
+import {salesCoverageStatus} from './sales-coverage';
+import {kpiPeriod} from './kpis';
 import {uniqueCustomerCodes,customerCodeKey,isKpiIssuedQuote} from './kpi-history-server';
 import {kpiEvidenceInputSchema,evidenceScopeKey,type KpiEvidence,type KpiEvidenceOptions,type QuoteOption,type InvoiceOption} from './kpi-evidence';
 
@@ -67,7 +69,7 @@ const recordSnapshotsGate=`NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT J
 
 export async function getKpiEvidenceOptions(c:Context,memberId:string,month:string):Promise<KpiEvidenceOptions>{
  const selected=monthSchema.parse(month),member=target(c,memberId),period=periodFor(selected),computed=member.role!=='rep';
- const [salesRevision,evidenceRevision,rows]=await Promise.all([readSalesRevision(c),readEvidenceRevision(c),readKpiEvidenceRows(c,selected)]);
+ const [salesRevision,evidenceRevision,rows,coverageEntries]=await Promise.all([readSalesRevision(c),readEvidenceRevision(c),readKpiEvidenceRows(c,selected),readSalesCoverage(c)]);
  let sourceMemberIds=[member.id];
  if(computed){
   const [manual,erp]=await Promise.all([c.db.prepare("SELECT rep_id,customer_id,date FROM crm_sales WHERE status='confirmed' AND date>=? AND date<=?").bind(selected+'-01',period.through).all<{rep_id:string;customer_id:string;date:string}>(),readErpSales(c,selected)]);
@@ -84,7 +86,7 @@ export async function getKpiEvidenceOptions(c:Context,memberId:string,month:stri
  const guard=accessGuard(c),fresh=await c.db.prepare("SELECT EXISTS(SELECT 1 FROM crm_customer_identity_state WHERE id='company' AND revision=?) AS identityCurrent WHERE "+guard.sql+' AND '+memberSnapshotsGate).bind(c.customerIdentityState.revision,...guard.args,JSON.stringify([memberSnapshot(member)])).first<{identityCurrent:number}>();
  if(!fresh)throw new CRMError('تغيّرت الصلاحيات. حدّث الصفحة.',403);
  if(!fresh.identityCurrent)throw new CRMError('تغيّر ربط أكواد العملاء. حدّث الصفحة وأعد المراجعة.',409);
- return{memberId:member.id,month:selected,evidence,salesRevision,evidenceRevision,scopeKey:evidenceScopeKey(member),period,computed,sourceMemberIds,canEdit:!computed&&['admin','manager'].includes(c.me.role)&&!cellRefused(c.me,'targets','edit')&&selected<=today().slice(0,7),quotes:quotations.map(row=>quoteOption(row,c)),invoices:invoices.filter(row=>quoteCustomers.has(row.customerId)).map(invoiceOption)};
+ return{memberId:member.id,month:selected,evidence,salesRevision,evidenceRevision,scopeKey:evidenceScopeKey(member),period,computed,sourceMemberIds,canEdit:!computed&&['admin','manager'].includes(c.me.role)&&!cellRefused(c.me,'targets','edit')&&selected<=today().slice(0,7),quotes:quotations.map(row=>quoteOption(row,c)),invoices:invoices.filter(row=>quoteCustomers.has(row.customerId)).map(invoiceOption),coverage:sourceMemberIds.length?salesCoverageStatus(coverageEntries,sourceMemberIds,selected,kpiPeriod(selected)):undefined};
 }
 
 const saveSchema=z.object({memberId:z.string().min(1).max(200),month:monthSchema,version:z.number().int().min(0),requestId:z.string().uuid(),salesRevision:z.number().int().nonnegative(),evidenceRevision:z.number().int().nonnegative(),input:kpiEvidenceInputSchema}).strict();

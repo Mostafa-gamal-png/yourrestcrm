@@ -94,7 +94,7 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
  const pages=Math.max(1,Math.ceil(sales.length/25)),currentPage=Math.min(page,pages);
  const exportSales=()=>csv('Yourrest-sales-'+month+'.csv',['تاريخ البيع','مرجع البيع','العميل','المندوب','الفرع','صافي المبيعات قبل الضريبة','الحالة','سبب الإلغاء'],sales.map(s=>[s.date,s.reference,s.customerName,members.find(m=>m.id===s.repId)?.name||'',s.branch,s.totalCents/100,t(s.status==='confirmed'?'مسجل':'ملغى'),s.voidReason]));
  const exportTargets=()=>{if(!payload)return;csv('Yourrest-targets-'+month+'.csv',targetsCsvHeaders,targetsCsvRows(payload.targets,members,month,t,hiddenFromTargets));};
- const exportPerformance=()=>{if(futureMonth||!branchKpis)return;csv('Yourrest-kpis-'+month+'.csv',performanceCsvHeaders,performanceCsvRows(filteredKpiPeople,month,t));};
+ const exportPerformance=()=>{if(futureMonth||!branchKpis)return;csv('Yourrest-kpis-'+month+'.csv',performanceCsvHeaders,performanceCsvRows(filteredKpiPeople,month,t,language));};
  const scrollTo=(section:React.RefObject<HTMLElement|null>)=>section.current?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
  const summaryDetails=(id:string)=>{selectStaff(id);if(futureMonth)chooseTab('targets');window.requestAnimationFrame(()=>scrollTo(futureMonth?targetsSection:performanceSection));};
  async function cancelSale(){if(!voiding||busy)return;setBusy(true);setVoidError('');try{await api({action:'void',id:voiding.id,version:voiding.version,reason});setVoiding(null);toast.success(t('تم إلغاء البيع'));refresh();}catch(e){setVoidError(messageOf(e));}finally{setBusy(false);}}
