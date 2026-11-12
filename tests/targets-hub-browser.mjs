@@ -170,6 +170,50 @@ try{
  page=await open('sup');await ready(page);check((await tabs(page).allInnerTexts()).map(s=>s.trim()),TABS,'the supervisor: the five tabs');await page.locator('.kpi-workspace').waitFor();check(await page.locator('.targets-overview').count(),0,'no company gauge (it reads its team only)');await tab(page,'التحصيل');await page.locator('.kpi-evidence-panel').waitFor();check(await page.getByRole('button',{name:'استيراد كشف التحصيل من ERP'}).count(),0,'no import');ok((await page.locator('.kpi-evidence-panel').innerText()).includes('عرض بيانات المؤشرات'),'reads the evidence only');await tab(page,'المستهدفات والأوزان');await page.locator('.targets-workspace').waitFor();check(await page.getByRole('button',{name:'أوزان التقييم'}).count(),0,'no weights editor');await shot(page,'hub-supervisor-targets-ar');await page.close();
  page=await open('smx');await ready(page);check((await tabs(page).allInnerTexts()).map(s=>s.trim()),TABS.filter(t=>t!=='رفع المبيعات'),'«المبيعات» hidden: no «رفع المبيعات»');await page.close();
  for(const who of ['rj1','cs']){page=await open(who,{hub:false});await page.waitForTimeout(1500);check(await page.locator('.targets-hub').count(),0,who+': no hub');await page.close();}
+ // ---- a company of one branch (the owner, 2026-11-12: «مفيش فروع للشركة»; every member is in «الرئيسي»): ONE gauge, the company's.
+ // An incomplete «الفرع بالكامل» target saved for «الرئيسي» (the cause of the owner's blank gauges) is ignored and named; a representative
+ // without a target this month is said in one line; once the target is set, the gauge is the people's targets against their sales.
+ await app.stop();
+ const MAIN='الرئيسي',one=[{id:'owner',role:'admin',name:'مدير النظام',branch:MAIN},{id:'sm',role:'manager',name:'مدير المبيعات',branch:MAIN},{id:'sup',role:'supervisor',sup:'sm',name:'المشرف أحمد',branch:MAIN},
+  {id:'r1',role:'rep',sup:'sup',name:'المندوب الأول',branch:MAIN},{id:'r2',role:'rep',sup:'sup',name:'المندوب الثاني',branch:MAIN},{id:'r3',role:'rep',sup:'sm',name:'المندوب الثالث',branch:MAIN}];
+ for(const m of one)names.add(m.name);names.add(MAIN);
+ app=await bootBuiltApp({members:one},{tls:true});
+ const owner=app.as(await app.login('owner')),put=(kind,scopeId,data)=>owner('/api/targets',{method:'POST',body:{kind,scopeId,month,version:0,inheritedFrom:null,requestId:crypto.randomUUID(),data}});
+ check((await put('weights','company',{products:P.map((product,i)=>({product,weight:[40,20,10,10,10,5,5,0][i]}))})).status,200,'one branch: the weights');
+ for(const [id,values] of [['r1',[20,10,4,2,6,3,2,0]],['r2',[10,10,2,2,4,2,2,0]]])check((await put('sales',id,quantities(values))).status,200,'one branch: the targets of '+id);
+ check((await put('sales','branch:'+MAIN,{products:P.map((product,i)=>({product,quantity:i<2?[50,30][i]:null}))})).status,200,'an incomplete «الفرع بالكامل» target, as on the live site');
+ const now2=new Date().toISOString();
+ await app.db.prepare("INSERT INTO crm_erp_imports(id,actor_id,fingerprint,file_name,result,created_at) VALUES('imp','owner','f','sales.xlsx','{}',?)").bind(now2).run();
+ n=0;for(const [rep,product,quantity] of [['r1',0,8],['r1',1,5],['r2',0,3],['r3',0,6],['sm',0,40]]){n++;await app.db.prepare("INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) VALUES(?,?,'h','h',?,'sale',?,'e','"+rep+"',?,'all','C-1','عميل',?,100000,'imp','owner',?)").bind('erp-'+n,'doc-'+n,'ERP-'+n,day,MAIN,JSON.stringify({items:[{product:P[product],description:'',quantity,unitPrice:100}],discount:0,notes:''}),now2).run();}
+ const single=async page=>{await page.locator('.targets-overview').waitFor();return {heading:await page.locator('.targets-overview-heading h3').innerText(),scopes:await page.locator('.targets-overview-scope h4').allInnerTexts(),gauge:await page.locator('.targets-overview-scope .target-gauge svg').getAttribute('aria-label')};};
+ page=await open('owner');await ready(page);
+ check(await single(page),{heading:'تحقيق المستهدف — الشركة',scopes:['الشركة'],gauge:'نسبة الإنجاز: مندوب واحد بلا مستهدف لهذا الشهر'},'one branch: one gauge, «الشركة»; the representative without a target named in one line');
+ check(await page.locator('.targets-overview .target-gauge-empty').innerText(),'مندوب واحد بلا مستهدف لهذا الشهر','the line under the gauge');
+ ok((await page.locator('.targets-overview-ignored').innerText()).startsWith('لم يُعتمد مستهدف «الفرع بالكامل» لأنه ناقص'),'the incomplete branch target, named');
+ check(await page.locator('.targets-overview-source').innerText(),'مجموع مستهدفات المناديب','its source');
+ check(await page.locator('.targets-overview-note').innerText(),'مستهدف الشركة هو مجموع مستهدفات المناديب في هذا الشهر. مبيعات المكاتب الإدارية لا تدخل في الحساب. يتغير بالشهر فقط، ولا يتأثر باختيار المندوب.','the note, without the branches');
+ await page.locator('.targets-overview-scope summary').click();
+ check(await page.locator('.targets-overview-table tbody tr').count(),8,'«تفاصيل الفئات»: every product');
+ check((await page.locator('.targets-overview-table tbody tr').first().locator('td').allInnerTexts()).map(cell=>cell.replace(/\s+/g,' ')),[P[0]+' · قالب','30 محدَّد لـ 2 من 3','17','—'],'what is set (for 2 of the 3), what is achieved, no percentage of a part');
+ await noSideways(page,'one branch desktop');await shot(page,'company-gauge-missing-desktop-ar',false);
+ await page.close();
+ for(const english of [false,true]){page=await open('owner',{viewport:VIEWPORTS.phone360,english});await ready(page);await page.locator('.targets-overview').waitFor();await page.locator('.targets-overview-scope summary').click();await noSideways(page,'one branch phone360 '+(english?'en':'ar'));
+  if(english){check((await single(page)).gauge,'Achievement: 1 representative without a target this month','in English');check(arabicLeft(await page.locator('.targets-overview').innerText()),[],'one branch: no Arabic left in English but names');}
+  await page.locator('.targets-overview').screenshot({path:path.join(screenshots,'company-gauge-missing-phone360-'+(english?'en':'ar')+'.png')});checks++;await page.close();}
+ // the third representative's target is set: the gauge is the people's targets against their sales (the manager's own sale is not theirs)
+ check((await put('sales','r3',quantities([30,20,6,2,8,4,2,0]))).status,200,'the missing target, filled in «المستهدفات والأوزان»');
+ // products 1..7 summed: 60,40,12,6,18,9,6; sold 17,5,0,...: 40*17/60 + 20*5/40 + the rest 0
+ const expected=Math.round((40*17/60+20*5/40)*100)/100;
+ for(const [viewport,english] of [[VIEWPORTS.desktop,false],[VIEWPORTS.desktop,true],[VIEWPORTS.phone360,false],[VIEWPORTS.phone360,true]]){
+  page=await open('owner',{viewport,english});await ready(page);const seen=await single(page);
+  check(seen,english?{heading:'Target achievement — company',scopes:['Company'],gauge:'Achievement: '+expected+'%'}:{heading:'تحقيق المستهدف — الشركة',scopes:['الشركة'],gauge:'نسبة الإنجاز: '+expected+'%'},'one branch, filled: the weighted percentage ('+(english?'en':'ar')+' '+viewport.width+')');
+  await page.locator('.targets-overview-scope summary').click();await noSideways(page,'one branch filled '+viewport.width);
+  if(english)check(arabicLeft(await page.locator('.targets-overview').innerText()),[],'no Arabic left in English but names');
+  const label='company-gauge-'+(viewport.width===360?'phone360':'desktop')+'-'+(english?'en':'ar');
+  if(viewport.width===360)await page.locator('.targets-overview').screenshot({path:path.join(screenshots,label+'.png')});else await shot(page,label,false);
+  await page.close();
+ }
+ page=await open('sup');await ready(page);await page.locator('.kpi-workspace').waitFor();check(await page.locator('.targets-overview').count(),0,'one branch: the supervisor still gets no company gauge');await page.close();
  check(errors,[],'no page error');
  console.log(JSON.stringify({ok:true,checks,screenshots,syntheticFixtures:true,productionDataUsed:false}));
 }finally{await browser?.close();await app?.stop();}
