@@ -80,7 +80,7 @@ try {
 
   // ---- 0. An earlier request teaches the CRM that production is updated (its answer carries paymentTerms and returned)
   const api = app.as(await app.login('rep')), DESCRIPTION = '200*400*27.5TH MM OPEN';
-  const earlier = await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب سابق', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash', address: 'حي الصناعية', signature: signatureInput()}});
+  const earlier = await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب سابق', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'M-31', quantity: 1, designUrl: '', notes: ''}, payment: 'cash', address: 'حي الصناعية', signature: signatureInput()}});
   const form = new FormData();
   form.set('requestId', crypto.randomUUID()); form.set('id', earlier.json().request.id); form.set('file', new Blob([await makePdf('Earlier')]), 'سابق.pdf');
   const encoded = new Response(form);
@@ -100,6 +100,7 @@ try {
   await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
   await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
   await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
+  await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city is filled in from the customer's «الدمام»)
   const payment = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first();
   await payment.locator('label', {hasText: 'نقدي'}).click();
   check(await dialog.locator('.mold-payment-terms-choice').count(), 0, 'cash: no terms asked');

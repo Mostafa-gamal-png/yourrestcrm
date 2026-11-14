@@ -4,6 +4,28 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mold requests: the city, the mold number and the customer code required; erpCode sent with a CRM customer (2026-11-14, no migration)
+
+- **Asked.** The owner on 2026-11-14: «خلي المدينة ورقم القالب إجباري والطلب يتبعت بكود erp», then «سميه كود العميل بس». A request
+  had reached production with no Yourrest code (a customer not linked in the CRM), no city and no mold number.
+- **The city** (`app/mold-requests.tsx` MoldRequestDialog): a «المدينة» list under the address, its choices exactly the production
+  sheet's cities (`MOLD_SHEET_CITIES`), shown by their Arabic (or English) part, the sheet's text sent as `customer.city`; filled in from
+  the linked customer's city when it maps to one (`sheetCity`), with the address's rules. Required of a new request and of the edit of one
+  never sent, in the form and on the server (`moldCity`, `askedCity` in `app/api/mold-requests/route.ts`): «اختر المدينة». Shown in the
+  signing summaries (the device and the link's page) and on the request's sheet.
+- **The mold number** (`specs.moldNo`, «رقم القالب») is required the same way (`validateMoldSpecs(input, {moldNoRequired})`):
+  «اكتب رقم القالب».
+- **The customer code** («كود العميل», the ERP code; the label renamed from «كود ERP» on the mold screens) is required of every new
+  request and of the edit of one never sent: «اكتب كود العميل».
+- **erpCode with crmNumber.** The products team confirmed on their live code (schema 20) that `customer.erpCode` beside a numeric
+  `crmNumber` is accepted, and that adding it to a request already sent is refused (409 production_only) except in a correction after
+  finance's return. So the CRM decides it when a request is stored, edited before its first send or corrected (`data.erpWithCrm`,
+  `moldSendsErpWithCrm`, one switch `MOLD_SEND_ERP_WITH_CRM_CUSTOMER`, on); a request stored without the mark is sent byte for byte as
+  before on every retry and resend.
+- **Old requests** are not checked again and keep their bodies; a sent request's sheet shows no city or mold number when it has none; the
+  correction of a returned request does not ask for the new fields.
+- Docs: `docs/MOLD-REQUESTS-CONTRACT-AR.md` «المدينة ورقم القالب وكود العميل إجباري».
+
 ## The evaluation scored like GSCO: the score from the data there is, automatic data quality, inactive representatives out, won visits effective (2026-11-14, no migration)
 
 - **Asked.** The owner approved four changes to «المستهدفات وتقييم الأداء» so that it scores as the company's other CRM (GSCO) does,

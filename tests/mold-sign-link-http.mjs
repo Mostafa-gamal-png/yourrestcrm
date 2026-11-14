@@ -28,7 +28,7 @@ let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''};
+const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'M-20', quantity: 1, designUrl: '', notes: ''};
 /** A real PDF of `pages` pages (pdf-lib), its last page turned by `rotate`. */
 async function makePdf(label, {pages = 2, rotate = 0} = {}) {
   const doc = await PDFDocument.create(), font = await doc.embedFont(StandardFonts.Helvetica);

@@ -436,7 +436,7 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
       same(moldCustomerEntry({crmNumber: 1, name: 'a', erpCode: code}).erpCode, rules.moldErpCodeText(code).length <= 50 ? rules.moldErpCodeText(code) : '', 'the customers route (unchanged) and a request normalise ' + JSON.stringify(code).slice(0, 14) + ' alike');
     // The body: a CRM customer exactly as before (an ERP code in its data never sent); one not in the CRM: crmNumber null and its ERP code.
     const linked = {...data, customer: {crmNumber: 27, name: 'مصنع', address: 'حي الصناعية', city: 'Damam - الدمام'}, payment: 'cash'};
-    same(JSON.stringify(moldRequestBody({id: 'mr-1', ...linked, customer: {...linked.customer, erpCode: '146'}})), JSON.stringify(moldRequestBody({id: 'mr-1', ...linked})), 'a CRM customer\'s ERP code in the request\'s data is never sent: its body is byte for byte as before');
+    same(JSON.stringify(moldRequestBody({id: 'mr-1', ...linked, customer: {...linked.customer, erpCode: '146'}})), JSON.stringify(moldRequestBody({id: 'mr-1', ...linked})), 'a CRM customer\'s ERP code in the data of a request stored without the mark (erpWithCrm) is never sent: its body is byte for byte as before');
     const free = {...data, customer: {crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', city: '', erpCode: '146'}, payment: 'cash'};
     const freeBody = moldRequestBody({id: 'mr-2', ...free});
     same([freeBody.customer, Object.keys(freeBody.customer), Object.keys(freeBody)], [{crmNumber: null, name: 'مصنع الأمل', address: 'جدة، الصناعية', erpCode: '146'}, ['crmNumber', 'name', 'address', 'erpCode'], ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs', 'payment']],
@@ -459,10 +459,43 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
     same(lib.moldRequestView(freeRow({data: {...free, designRequired: true}, lastError: {code: 'free_customer', at: after, notStored: true}}), me, [], true).sending.held, 'design_file', 'a request without its design file says so first (attaching it is the requester\'s to do)');
     const say = language => (ar, en) => language === 'en' ? en : ar;
     same([lib.moldHeldTexts.free_customer.name, lib.moldErrorText('free_customer', say('en')), lib.moldFieldNames['customer.erpCode'], lib.MOLD_CUSTOMER_TEXT.notInCrm, lib.MOLD_CUSTOMER_TEXT.free[0]],
-      [['بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)', 'Waiting for the production application update (a customer without a Yourrest code)'], 'Waiting for the production application update (a customer without a Yourrest code)', ['كود ERP للعميل', 'Customer ERP code'], ['غير مسجل في الـCRM', 'Not in the CRM'], 'عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود ERP'], 'the words: the hold, production\'s field, the sheet\'s and the form\'s');
-    const texts = [rules.MOLD_CUSTOMER_NAME_REQUIRED, rules.MOLD_CUSTOMER_NAME_LONG, rules.MOLD_ERP_CODE_REQUIRED, rules.MOLD_ERP_CODE_LONG, 'اكتب اسم العميل وكود ERP، أو اختاره من الترشيحات'];
+      [['بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)', 'Waiting for the production application update (a customer without a Yourrest code)'], 'Waiting for the production application update (a customer without a Yourrest code)', ['كود العميل', 'Customer code'], ['غير مسجل في الـCRM', 'Not in the CRM'], 'عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود العميل'], 'the words: the hold, production\'s field, the sheet\'s and the form\'s');
+    const texts = [rules.MOLD_CUSTOMER_NAME_REQUIRED, rules.MOLD_CUSTOMER_NAME_LONG, rules.MOLD_ERP_CODE_REQUIRED, rules.MOLD_ERP_CODE_LONG, 'اكتب اسم العميل وكود العميل', rules.MOLD_CITY_REQUIRED, rules.MOLD_MOLD_NO_REQUIRED];
     same([texts.filter(text => typeof dictionary[text] !== 'string'), [lib.MOLD_CUSTOMER_TEXT.nameRequired, lib.MOLD_CUSTOMER_TEXT.nameLong, lib.MOLD_CUSTOMER_TEXT.erpRequired, lib.MOLD_CUSTOMER_TEXT.erpLong].map(([ar, en]) => dictionary[ar] === en)], [[], [true, true, true, true]], 'every refusal has its English pair, the form\'s the same as the server\'s');
     same(texts.filter(text => !readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(text) && !Object.values(rules).includes(text)), [], 'and the server says them');
+  }
+  // ---- 2026-11-14 (the owner: «خلي المدينة ورقم القالب إجباري والطلب يتبعت بكود erp»، «سميه كود العميل بس»): the city, the mold number,
+  // the customer's code with a CRM customer (the products team confirmed erpCode with crmNumber, schema 20), and the label «كود العميل».
+  {
+    const C = rules.moldCity;
+    same(rules.MOLD_SHEET_CITIES.map(city => C(city).city), rules.MOLD_SHEET_CITIES, 'every sheet city is taken as it is');
+    same([C(' Riyadh - الرياض ').city, C('الدمام').city, C('جدة').city, C('').error, C('الخبر').error, C(null).error, C(3).error, C('Riyadh').city],
+      ['Riyadh - الرياض', 'Damam - الدمام', 'Jeddah - جده', 'required', 'required', 'required', 'required', 'Riyadh - الرياض'], 'the city: one of the sheet\'s (a CRM spelling of one maps to it); none, another city or not text is refused');
+    same([rules.MOLD_CITY_REQUIRED, rules.MOLD_MOLD_NO_REQUIRED, rules.MOLD_ERP_CODE_REQUIRED, rules.MOLD_ERP_CODE_LONG], ['اختر المدينة', 'اكتب رقم القالب', 'اكتب كود العميل', 'كود العميل حتى 50 حرف'], 'the refusals in Modern Standard Arabic, «كود العميل»');
+    const base = {description: 'قالب', core: 'open', vibrators: 3, model: 'new', halfBlock: 'none', moldWidth: 1380, gelbaSize: 800, quantity: 1};
+    same([validateMoldSpecs(base).errors.moldNo, validateMoldSpecs(base, {moldNoRequired: true}).errors.moldNo, validateMoldSpecs({...base, moldNo: '   '}, {moldNoRequired: true}).errors.moldNo, validateMoldSpecs({...base, moldNo: 'M-12'}, {moldNoRequired: true}).errors.moldNo, validateMoldSpecs({...base, moldNo: 'x'.repeat(41)}, {moldNoRequired: true}).errors.moldNo],
+      [null, 'اكتب رقم القالب', 'اكتب رقم القالب', null, 'رقم القالب حتى 40 حرفًا'], 'the mold number: required only when asked (a new request, an edit never sent), blank refused, up to 40');
+    const stored = {requestedAt: '2026-11-01T10:00:00+03:00', customer: {crmNumber: 27, name: 'مصنع', address: 'حي', city: 'الخبر', erpCode: '146'}, salesman: {crmMemberId: 'm', name: 'مندوب', email: ''}, specs: base};
+    same(moldRequestBody({id: 'old', ...stored}).specs.moldNo ?? null, null, 'a request stored before (no mold number, an older city) is still built: retries and resends are unchanged');
+    same(moldRequestBody({id: 'old', ...stored}).customer, {crmNumber: 27, name: 'مصنع', address: 'حي', city: 'الخبر'}, 'and its customer is sent as it always was');
+    // The flag: one constant, on since 2026-11-14; decided when a request is stored (data.erpWithCrm), never for a request stored before.
+    same(rules.MOLD_SEND_ERP_WITH_CRM_CUSTOMER, true, 'the flag is on (the products team confirmed erpCode with crmNumber on 2026-11-14)');
+    const S = rules.moldSendsErpWithCrm, linkedCustomer = {crmNumber: 27, erpCode: ' ١٤٦ '};
+    same([S(linkedCustomer), S(linkedCustomer, true), S(linkedCustomer, false), S({crmNumber: 27, erpCode: ''}, true), S({crmNumber: 27}, true), S({crmNumber: 27, erpCode: 'x'.repeat(51)}, true), S({crmNumber: null, erpCode: '146'}, true), S(null, true)],
+      [true, true, false, false, false, false, false, false], 'the mark with the flag on and off: a CRM customer with a code that fits, only while the flag is on (a free customer sends its code anyway)');
+    const on = moldRequestBody({id: 'new', ...stored, erpWithCrm: S(stored.customer, true)}), off = moldRequestBody({id: 'new', ...stored, erpWithCrm: S(stored.customer, false)});
+    same([on.customer, Object.keys(on.customer), off.customer], [{crmNumber: 27, name: 'مصنع', address: 'حي', city: 'الخبر', erpCode: '146'}, ['crmNumber', 'name', 'address', 'city', 'erpCode'], {crmNumber: 27, name: 'مصنع', address: 'حي', city: 'الخبر'}],
+      'flag on: the code follows address and city with the crmNumber; flag off: the body as before');
+    same(JSON.stringify(moldRequestBody({id: 'new', ...stored, erpWithCrm: true})), JSON.stringify(on), 'the same bytes on every retry');
+    assert.throws(() => moldRequestBody({id: 'new', ...stored, customer: {...stored.customer, erpCode: ''}, erpWithCrm: true}), /customer\.erpCode/); checks++;
+    const view = lib.moldRequestView(row({data: {...stored, customer: {...stored.customer, city: 'Damam - الدمام'}}}), me, [], true);
+    const say = language => (ar, en) => language === 'en' ? en : ar;
+    same([view.customerCity, lib.moldCityText(view.customerCity, say('ar')), lib.moldCityText('MAkkah - مكة', say('en')), lib.moldCityText('الخبر', say('en')), lib.moldRequestView(row({data: {...stored, customer: {crmNumber: 27, name: 'م', address: ''}}}), me, [], true).customerCity],
+      ['Damam - الدمام', 'الدمام', 'Makkah', 'الخبر', ''], 'the view carries the city; shown as the sheet\'s Arabic or English part, an older city as it is, none for a request without');
+    same([lib.MOLD_CUSTOMER_TEXT.code, lib.moldFieldNames['customer.erpCode'], lib.MOLD_CITY_TEXT.required, lib.MOLD_MOLD_NO_TEXT, lib.MOLD_CUSTOMER_TEXT.erpHint[0]], [['كود العميل', 'Customer code'], ['كود العميل', 'Customer code'], ['اختر المدينة', 'Choose the city'], ['اكتب رقم القالب', 'Enter the mold number'], 'مطلوب لكل طلب؛ وهو كود العميل في نظام ERP'], 'the words of the form');
+    same([dictionary['اختر المدينة'], dictionary['اكتب رقم القالب'], dictionary['اكتب كود العميل']], ['Choose the city', 'Enter the mold number', 'Enter the customer code'], 'the server\'s refusals have their English pairs');
+    const route = readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8');
+    same([/data\.erpWithCrm|erpWithCrm:true/.test(route), /moldSendsErpWithCrm\(customer\)/.test(route), readFileSync(path.join(root, 'lib/mold-requests-server.ts'), 'utf8').includes("erpWithCrm:row.data.erpWithCrm===true")], [true, true, true], 'the mark is set when a request is stored or edited, and read when it is sent');
   }
   // ---- the customer's signature (the owner, 2026-11-04): who needs it, the checks, the body unchanged, the view, the pending item, the words
   {
@@ -483,7 +516,7 @@ const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', em
     const signed = {...data, payment: 'cash', quoteNo: 'Q-7', signature: {signer: 'م. خالد', signedAt: at, fileId: 'mds-1'}}, plain = {...signed};delete plain.signature;
     same([JSON.stringify(moldRequestBody({id: 'mr-1', ...signed})), JSON.stringify(moldRequestBody({id: 'mr-1', ...signed})).includes('mds-1')], [JSON.stringify(moldRequestBody({id: 'mr-1', ...plain})), false], 'the body of a request with data.signature is byte for byte the body without it');
     const serverSource = readFileSync(path.join(root, 'lib/mold-requests-server.ts'), 'utf8'), bodyLine = serverSource.split('\n').find(line => line.startsWith('export const requestBody='));
-    same([/^export const requestBody=\(row:[^)]*\)=>moldRequestBody\(\{id:row\.id,legacyOrderNo:row\.legacyOrderNo,requestedAt:row\.data\.requestedAt,customer:row\.data\.customer,salesman:row\.data\.salesman,specs:row\.data\.specs,payment:row\.data\.payment,paymentTerms:withTerms&&row\.data\.payment==='deferred'\?row\.data\.paymentTerms:undefined,quoteNo:row\.data\.quoteNo,poNo:row\.data\.poNo\}\);$/.test(bodyLine), bodyLine.includes('...')], [true, false], 'the server builds the body from those fields alone (no spread of the data; the terms of 2026-11-10 only once decided to go: tests/mold-nov10.mjs, tests/mold-nov10-http.mjs)');
+    same([/^export const requestBody=\(row:[^)]*\)=>moldRequestBody\(\{id:row\.id,legacyOrderNo:row\.legacyOrderNo,requestedAt:row\.data\.requestedAt,customer:row\.data\.customer,salesman:row\.data\.salesman,specs:row\.data\.specs,payment:row\.data\.payment,paymentTerms:withTerms&&row\.data\.payment==='deferred'\?row\.data\.paymentTerms:undefined,quoteNo:row\.data\.quoteNo,poNo:row\.data\.poNo,erpWithCrm:row\.data\.erpWithCrm===true\}\);$/.test(bodyLine), bodyLine.includes('...')], [true, false], 'the server builds the body from those fields alone (no spread of the data; the terms of 2026-11-10 only once decided to go: tests/mold-nov10.mjs, tests/mold-nov10-http.mjs)');
     // The view: the file the data names is the signature, labelled and never deletable; the line on the sheet with its image's link
     const signatureFile = {...waitingFile, id: 'mds-1', name: 'توقيع العميل - م. خالد.png', kind: 'image', contentType: 'image/png', outbox: null, sentAt: at, remoteFileId: 7};
     const signedView = lib.moldRequestView(row({data: signed}), me, [], true, [signatureFile, waitingFile]);

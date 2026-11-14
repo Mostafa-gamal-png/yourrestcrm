@@ -6,8 +6,8 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_RETURNED_TEXT,moldReturnedName,type MoldReturned,MOLD_PAYMENT_TERMS_REQUIRED_TEXT,MOLD_PAYMENT_TERMS_TITLE,MOLD_TERMS_ACCEPT_TEXT,MOLD_TERMS_ACCEPTED_TEXT,moldPaymentTermsNames,type MoldPaymentTerms,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,MOLD_CUSTOMER_TEXT,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
-import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_USUAL,moldAddress,moldCancelReasonUsed,moldCustomerName,moldErpCode,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
+import {MOLD_RETURNED_TEXT,moldReturnedName,type MoldReturned,MOLD_PAYMENT_TERMS_REQUIRED_TEXT,MOLD_PAYMENT_TERMS_TITLE,MOLD_TERMS_ACCEPT_TEXT,MOLD_TERMS_ACCEPTED_TEXT,moldPaymentTermsNames,type MoldPaymentTerms,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,MOLD_CUSTOMER_TEXT,MOLD_CITY_TEXT,MOLD_MOLD_NO_TEXT,moldCityText,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_SHEET_CITIES,MOLD_USUAL,moldAddress,moldCancelReasonUsed,moldCity,moldCustomerName,moldErpCode,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import MoldCustomerFields,{moldCustomerByErpCode,type MoldCustomerText} from './mold-customer-fields';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
@@ -155,8 +155,8 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
   {waitingSince(view,say)&&<small className="mold-card-since"><Hourglass size={13} aria-hidden="true"/>{waitingSince(view,say)}</small>}
   {/* Finance sent it back to sales (2026-11-10): «أعادتها المالية: <reason>». */}
   {view.returned&&<p className="mold-returned-badge"><Undo2 size={13} aria-hidden="true"/><span><b>{say(...MOLD_RETURNED_TEXT.badge)}</b>: <span dir="auto">{view.returned.reason}</span></span></p>}
-  {/* The customer's ERP code (2026-11-09), and «غير مسجل في الـCRM» for a customer not in the CRM (no Yourrest number). */}
-  {(!!view.customerErpCode||view.crmNumber===null)&&<p className="mold-card-customer">{!!view.customerErpCode&&<span>{say('كود ERP','ERP code')}: <bdi dir="ltr">{view.customerErpCode}</bdi></span>}{view.crmNumber===null&&<span className="mold-not-in-crm">{say(...MOLD_CUSTOMER_TEXT.notInCrm)}</span>}</p>}
+  {/* The customer's ERP code (2026-11-09; «كود العميل» since 2026-11-14), and «غير مسجل في الـCRM» for a customer not in the CRM (no Yourrest number). */}
+  {(!!view.customerErpCode||view.crmNumber===null)&&<p className="mold-card-customer">{!!view.customerErpCode&&<span>{say(...MOLD_CUSTOMER_TEXT.code)}: <bdi dir="ltr">{view.customerErpCode}</bdi></span>}{view.crmNumber===null&&<span className="mold-not-in-crm">{say(...MOLD_CUSTOMER_TEXT.notInCrm)}</span>}</p>}
   <p dir="auto">{view.specs.description}</p>
   <div className="mold-card-facts">
    {/* The number from the latest status pulled (production gives it at its approval, 2026-11-05, and renumbered once): never kept elsewhere. */}
@@ -364,7 +364,7 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
  const missing=approving&&current!.quoteOrPoMissing!==undefined?current!.quoteOrPoMissing:!!view.quotePo?.missing;
  // Finance's return (2026-11-10): the status object's, else (approving from production's listing) the pending item's.
  const returned=view.returned||(approving?current!.returned||null:null);
- const deliveryAddress=approving?current!.customer.address:view.customerAddress||'';
+ const deliveryAddress=approving?current!.customer.address:view.customerAddress||'',deliveryCity=approving?current!.customer.city||'':view.customerCity||'';
  // Active again after a cancellation (the production manager restored it, 2026-11-03): said while it may still change (not once the
  // approvals are complete, production started, or production cancelled it again), with what a new cancellation needs for the one who
  // may cancel it.
@@ -377,10 +377,12 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
   [say('التسليم','Delivery'),remote?.delivered?say('سُلِّم','Delivered')+' · '+day(remote.deliveryDate):say('لم يُسلَّم','Not delivered')],
   // A customer not in the CRM (2026-11-09) has no Yourrest code: said so; the ERP code the request carries (typed, or the customer's).
   [say('كود يورست','Yourrest code'),view.crmNumber===null?<span className="mold-not-in-crm" key="y">{say(...MOLD_CUSTOMER_TEXT.notInCrm)}</span>:'YR-C-'+String(view.crmNumber).padStart(6,'0')],
-  ...(view.customerErpCode?[[say('كود ERP','ERP code'),<bdi dir="ltr" key="e">{view.customerErpCode}</bdi>] as [string,React.ReactNode]]:[]),
+  ...(view.customerErpCode?[[say(...MOLD_CUSTOMER_TEXT.code),<bdi dir="ltr" key="e">{view.customerErpCode}</bdi>] as [string,React.ReactNode]]:[]),
   // Where the mold is delivered (2026-11-09): the request's own address, which may differ from the customer's registered one (as
   // production lists it now when approving from «طلبات بانتظار اعتمادي»); nothing for a request stored without one.
   ...(deliveryAddress?[[say('عنوان التسليم','Delivery address'),<span dir="auto" key="a">{deliveryAddress}</span>] as [string,React.ReactNode]]:[]),
+  // The request's city (2026-11-14: required): production's now when approving from its listing, else the CRM's; nothing for none.
+  ...(deliveryCity?[[say(...MOLD_CITY_TEXT.label),<span dir="auto" key="c">{moldCityText(deliveryCity,say)}</span>] as [string,React.ReactNode]]:[]),
   [say('تاريخ الطلب','Requested'),stamp(view.requestedAt)],[say('مقدّم الطلب','Requested by'),view.memberName],
   ...(approving?[[say('المندوب','Salesman'),current!.salesman.name||'—'] as [string,React.ReactNode]]:[]),
  ];
@@ -399,8 +401,8 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
  // What the customer reads before signing on the device from the sheet (2026-11-10): the same as the form's signing summary.
  // Text (2026-11-11): the signature page prints it as the screen shows it.
  const signingSummary:[string,string][]=[[say('العميل','Customer'),view.customerName],
-  ...(view.customerErpCode?[[say('كود ERP','ERP code'),view.customerErpCode] as [string,string]]:[]),
-  [say('العنوان','Address'),view.customerAddress],[say('الوصف','Description'),view.specs.description],
+  ...(view.customerErpCode?[[say(...MOLD_CUSTOMER_TEXT.code),view.customerErpCode] as [string,string]]:[]),
+  [say('العنوان','Address'),view.customerAddress],...(view.customerCity?[[say(...MOLD_CITY_TEXT.label),moldCityText(view.customerCity,say)] as [string,string]]:[]),[say('الوصف','Description'),view.specs.description],
   [say('الكمية','Quantity'),String(view.specs.quantity??'')],[say('العلب','Core'),say(MOLD_CORES[view.specs.core as keyof typeof MOLD_CORES]||view.specs.core,view.specs.core)],[say('الموديل','Model'),say(MOLD_MODELS[view.specs.model as keyof typeof MOLD_MODELS]||view.specs.model,view.specs.model)],
   ...(view.payment?[[say('الدفع','Payment'),say(...moldPaymentNames[view.payment])] as [string,string]]:[]),
   ...(view.paymentTerms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(view.paymentTerms,say)] as [string,string]]:[])];
@@ -481,19 +483,22 @@ const blank:Record<string,string>={description:'',core:'',vibrators:'',model:'',
 const asForm=(specs:MoldSpecs,payment:MoldPayment|null,paymentTerms:MoldPaymentTerms|null=null)=>({...Object.fromEntries(Object.entries(blank).map(([key])=>[key,specs[key as keyof MoldSpecs]===null||specs[key as keyof MoldSpecs]===undefined?'':String(specs[key as keyof MoldSpecs])])),payment:payment||'',paymentTerms:payment==='deferred'&&paymentTerms||''});
 
 /** Whether an edit changes the customer (2026-11-09): another of the CRM's customers, or one linked or unlinked; for a customer not in the
- *  CRM, its name or ERP code (compared as stored: moldCustomerName, moldErpCode). A linked customer's ERP code is shown only, never part
- *  of what was signed. */
+ *  CRM, its name or ERP code (compared as stored: moldCustomerName, moldErpCode). A linked customer's code typed anew is a change too
+ *  since 2026-11-14 (it goes to production with the request). */
 function customerChanges(editing:MoldRequestView,linkedId:string,name:string,code:string){
- if(editing.customerId||linkedId)return linkedId!==editing.customerId;
+ // A linked customer's code is sent with it since 2026-11-14 (moldSendsErpWithCrm): a code typed anew is a change too.
+ if(editing.customerId||linkedId){const typed=moldErpCode(code).erpCode;return linkedId!==editing.customerId||!!typed&&typed!==(editing.customerErpCode||'');}
  return moldCustomerName(name).name!==editing.customerName||moldErpCode(code).erpCode!==(editing.customerErpCode||'');
 }
 /** Whether an edit changes what the customer signed (2026-11-04): the specifications (an older request's own design link stays as it is),
  *  the payment, the delivery address (2026-11-09, compared as stored: moldAddress), or the customer (customerChanges, 2026-11-09); the
  *  server decides the same way and asks for the signature when it finds a change. */
-function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,payment:string|null,address:string,customerChanged:boolean,paymentTerms:string|null=null){
+function editChanges(editing:MoldRequestView,specs:Record<string,unknown>,payment:string|null,address:string,customerChanged:boolean,paymentTerms:string|null=null,city:string|null=null){
  const keys=['description','core','vibrators','model','halfBlock','moldWidth','gelbaSize','moldNo','quantity','notes'] as const;
  // The terms of a deferred payment (2026-11-10) are signed like the payment.
- return keys.some(key=>(specs[key]??'')!==(editing.specs[key]??''))||payment!==editing.payment||(paymentTerms||null)!==(editing.paymentTerms||null)||address!==moldAddress(editing.customerAddress||'').address||customerChanged;
+ return keys.some(key=>(specs[key]??'')!==(editing.specs[key]??''))||payment!==editing.payment||(paymentTerms||null)!==(editing.paymentTerms||null)||address!==moldAddress(editing.customerAddress||'').address||customerChanged
+  // The city (2026-11-14): none chosen (a correction may keep the stored one) is no change.
+  ||city!==null&&city!==(editing.customerCity||'');
 }
 
 /** The SHA-256 of the PDFs chosen in the form, which the customer sees when signing on the device (2026-11-10): each gets its signed copy
@@ -523,7 +528,9 @@ async function seenPdfs(choices:DesignChoice[]){
  *  The address is asked for always. The edit of a request never sent changes the customer the same way (a change of what was signed). */
 function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
- const [chosenId,setChosenId]=useState(editing?.customerId||''),[address,setAddress]=useState(editing?.customerAddress||''),[customerText,setCustomerText]=useState<MoldCustomerText>({name:editing?.customerName||'',code:editing?.customerErpCode||''}),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment,editing.paymentTerms):blank),[shown,setShown]=useState<Record<string,string>>({});
+ const [chosenId,setChosenId]=useState(editing?.customerId||''),[address,setAddress]=useState(editing?.customerAddress||''),
+  // The city (2026-11-14): one of the sheet's; an older request's city that is not one of them is chosen again.
+  [city,setCity]=useState(()=>moldCity(editing?.customerCity||'').city),[customerText,setCustomerText]=useState<MoldCustomerText>({name:editing?.customerName||'',code:editing?.customerErpCode||''}),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment,editing.paymentTerms):blank),[shown,setShown]=useState<Record<string,string>>({});
  // A refusal that carries the request as it now stands (it was sent meanwhile): counted, so the signing step gives way to the form, which
  // says why (2026-11-04).
  const refusals=useRef(0),refused=useCallback((view:MoldRequestView)=>{refusals.current++;onRefused?.(view);},[onRefused]);
@@ -554,7 +561,13 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  // Linked by its ERP code (typed, 2026-11-14: no suggestions): its registered address fills the address when none is typed yet, or
  // replaces one filled in the same way for another customer (a code corrected); an address typed for the request is kept.
  const lastLinked=useRef(linkedId),autoFilled=useRef<string|null>(null);
- useEffect(()=>{if(linkedId&&linkedId!==lastLinked.current&&linked&&linked.data.address&&(!address.trim()||address===autoFilled.current)){const next=String(linked.data.address);autoFilled.current=next;setAddress(next);setShown(previous=>{if(!('address' in previous))return previous;const rest={...previous};delete rest.address;return rest;});}lastLinked.current=linkedId;},[linkedId,linked,address]);
+ // The city the same way (2026-11-14): the linked customer's own when it is one of the sheet's (moldCity, as moldRequestCity maps it).
+ const autoCity=useRef<string|null>(null);
+ useEffect(()=>{if(linkedId&&linkedId!==lastLinked.current&&linked){
+  if(linked.data.address&&(!address.trim()||address===autoFilled.current)){const next=String(linked.data.address);autoFilled.current=next;setAddress(next);setShown(previous=>{if(!('address' in previous))return previous;const rest={...previous};delete rest.address;return rest;});}
+  const own=moldCity(String(linked.data.city||'')).city;
+  if(own&&(!city||city===autoCity.current)){autoCity.current=own;setCity(own);setShown(previous=>{if(!('city' in previous))return previous;const rest={...previous};delete rest.city;return rest;});}
+ }lastLinked.current=linkedId;},[linkedId,linked,address,city]);
  const clear=(key:string)=>setShown(previous=>{if(!(key in previous))return previous;const next={...previous};delete next[key];return next;});
  const set=(key:string,value:string)=>{setForm(previous=>({...previous,[key]:value}));clear(key);};
  const errors={...shown,...action.fields};
@@ -563,10 +576,14 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   // How the customer pays is required (2026-11-03): cash or deferred.
   // A new request needs a quotation or PO file once production's update is live (2026-11-05): one chosen that will upload.
   // No design link is sent: the server keeps an older request's own as it is; no number either (an edited request keeps its own).
-  const checked=validateMoldSpecs(form),payment=moldPayment(form.payment),place=moldAddress(address),typedName=moldCustomerName(customerText.name),typedCode=moldErpCode(customerText.code);
+  // 2026-11-14: the mold number, the city and the customer's code are required of a new request and the edit of one never sent (not of
+  // the correction of one finance returned, which keeps its stored city when none is chosen).
+  const strict=!correcting;
+  const checked=validateMoldSpecs(form,{moldNoRequired:strict}),payment=moldPayment(form.payment),place=moldAddress(address),typedName=moldCustomerName(customerText.name),typedCode=moldErpCode(customerText.code),town=moldCity(city);
   // A deferred payment's agreed terms (2026-11-10): one of three, required.
   const terms=payment==='deferred'&&form.paymentTerms&&moldPaymentTermsNames[form.paymentTerms as MoldPaymentTerms]?form.paymentTerms as MoldPaymentTerms:null;
-  const errors:Record<string,string>={...checked.errors,...(payment?{}:{payment:say('اختر طريقة الدفع: نقدي أو آجل','Choose how the customer pays: cash or deferred')}),
+  const errors:Record<string,string>={...checked.errors,...(checked.errors.moldNo&&!form.moldNo.trim()?{moldNo:say(...MOLD_MOLD_NO_TEXT)}:{}),
+   ...(strict&&town.error?{city:say(...MOLD_CITY_TEXT.required)}:{}),...(payment?{}:{payment:say('اختر طريقة الدفع: نقدي أو آجل','Choose how the customer pays: cash or deferred')}),
    ...(payment==='deferred'&&!terms?{paymentTerms:say(...MOLD_PAYMENT_TERMS_REQUIRED_TEXT)}:{}),
    ...(needsFile&&![...quotes,...pos].some(choice=>!choice.refusal)?{quoteFile:say(...MOLD_QUOTE_FILE_REQUIRED_TEXT)}:{}),
    ...(designRequired&&!hasDesign&&!designs.some(choice=>!choice.refusal)?{designFile:say(...MOLD_DESIGN_FILE_REQUIRED_TEXT)}:{}),
@@ -575,7 +592,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    // The customer (2026-11-09): a linked one needs nothing more (its ERP code, if typed, up to 50 characters); one not in the CRM its
    // name and ERP code, as the server counts them.
    ...(!linked&&typedName.error?{'customer.name':say(...MOLD_CUSTOMER_TEXT[typedName.error==='required'?'nameRequired':'nameLong'])}:{}),
-   ...(typedCode.error==='long'||!linked&&typedCode.error?{'customer.erpCode':say(...MOLD_CUSTOMER_TEXT[typedCode.error==='required'?'erpRequired':'erpLong'])}:{})};
+   ...(typedCode.error==='long'||(strict||!linked)&&typedCode.error?{'customer.erpCode':say(...MOLD_CUSTOMER_TEXT[typedCode.error==='required'?'erpRequired':'erpLong'])}:{})};
   if(Object.keys(errors).length){setShown(errors);return;}
   setShown({});
   // On a request production holds, attaching a design file undoes the approvals: said first, then confirmed with the same button (not
@@ -586,7 +603,9 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   const specs={...checked.specs};delete specs.designUrl;
   // The customer: the linked one by its id (with the ERP code typed, if any), or the name and ERP code of one not in the CRM.
   const customer={...(linkedId?{customerId:linkedId}:{}),customer:{name:typedName.name,erpCode:typedCode.erpCode}};
-  const body=editing?{action:'update',id:editing.id,version:editing.version,...customer,specs,payment,...(terms?{paymentTerms:terms}:{}),address:place.address}:{action:'create',...customer,specs,payment,...(terms?{paymentTerms:terms}:{}),address:place.address};
+  // The city as the sheet writes it (2026-11-14); a correction with none chosen sends none and keeps its stored one.
+  const where=town.city?{city:town.city}:{};
+  const body=editing?{action:'update',id:editing.id,version:editing.version,...customer,specs,payment,...(terms?{paymentTerms:terms}:{}),address:place.address,...where}:{action:'create',...customer,specs,payment,...(terms?{paymentTerms:terms}:{}),address:place.address,...where};
   // What the customer reads before signing: the customer, the mold and how they pay: the request's data the signature covers (its files
   // may change later without a new signature, so they are not part of it; no number since 2026-11-05).
   const choose=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
@@ -594,14 +613,14 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   // As text (2026-11-11): the signature page prints it as the screen shows it.
   const customerName=linked?String(linked.data.name||''):typedName.name;
   const summary:[string,string][]=[[say('العميل','Customer'),customerName],
-   ...(typedCode.erpCode?[[say('كود ERP','ERP code'),typedCode.erpCode] as [string,string]]:[]),
+   ...(typedCode.erpCode?[[say(...MOLD_CUSTOMER_TEXT.code),typedCode.erpCode] as [string,string]]:[]),
    ...(!linked?[[say('كود يورست','Yourrest code'),say(...MOLD_CUSTOMER_TEXT.notInCrm)] as [string,string]]:[]),
-   [say('العنوان','Address'),place.address],[say('الوصف','Description'),String(specs.description||'')],
+   [say('العنوان','Address'),place.address],...(town.city?[[say(...MOLD_CITY_TEXT.label),moldCityText(town.city,say)] as [string,string]]:[]),[say('الوصف','Description'),String(specs.description||'')],
    [say('الكمية','Quantity'),String(specs.quantity??'')],[say('العلب','Core'),choose(MOLD_CORES,String(specs.core||''))],[say('الموديل','Model'),choose(MOLD_MODELS,String(specs.model||''))],
    ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,string]]:[]),
    ...(terms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(terms,say)] as [string,string]]:[])];
   // A sales role's new request, or an edit that changes what was signed, is signed by the customer first (2026-11-04).
-  if(signs&&(!editing||editChanges(editing,specs,payment,place.address,customerChanges(editing,linkedId,customerText.name,customerText.code),terms))){setSigning({body,summary,title:customerName,again:!!editing?.signature,documents:signingDocuments()});return;}
+  if(signs&&(!editing||editChanges(editing,specs,payment,place.address,customerChanges(editing,linkedId,customerText.name,customerText.code),terms,town.city||null))){setSigning({body,summary,title:customerName,again:!!editing?.signature,documents:signingDocuments()});return;}
   send(body,summary,false);
  };
  /** The request saved (then its files go); a refusal that asks for the signature opens the signing step, and one of the form's own fields
@@ -644,6 +663,14 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
     <div className="mold-address" aria-invalid={!!errors.address}>
      <VoiceField label={say('العنوان','Address')} value={address} onChange={value=>{setAddress(value);clear('address');}} multiline rows={2} contextKey={'mold-address:'+(editing?.id||'new')} inputProps={{dir:'auto',autoComplete:'street-address','aria-invalid':!!errors.address||undefined}}/>
      {errors.address&&<small className="field-error">{t(errors.address)}</small>}</div>
+    {/* The city (the owner, 2026-11-14: «خلي المدينة … إجباري»): one of the production sheet's, filled in from the linked customer's own
+        when it is one of them; required. */}
+    <label className="mold-field mold-city" aria-invalid={!!errors.city}>{say(...MOLD_CITY_TEXT.label)}
+     <select value={city} onChange={event=>{setCity(event.target.value);clear('city');}} aria-invalid={!!errors.city||undefined} data-field="city">
+      <option value="">{say(...MOLD_CITY_TEXT.choose)}</option>
+      {MOLD_SHEET_CITIES.map(value=><option key={value} value={value}>{moldCityText(value,say)}</option>)}
+     </select>
+     {errors.city&&<small className="field-error">{t(errors.city)}</small>}</label>
     {text('description',say('وصف القالب','Mold description'),MOLD_LIMITS.description)}
     <div className="mold-grid">
      {choice('core',say('العلب','Core'),Object.entries(MOLD_CORES).map(([value,ar])=>[value,say(ar,value)]))}
@@ -652,7 +679,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
      {choice('halfBlock',say('بلوكة النص','Half block'),Object.entries(MOLD_HALF_BLOCKS).map(([value,ar])=>[value,say(ar,value)]))}
      {number('moldWidth',say('عرض القالب (مم، 1000–2000)','Mold width (mm, 1000–2000)'),MOLD_USUAL.moldWidth)}
      {number('gelbaSize',say('مقاس الجلب (500–1200)','Gelba size (500–1200)'),MOLD_USUAL.gelbaSize)}
-     {text('moldNo',say('رقم القالب (اختياري)','Mold no. (optional)'),MOLD_LIMITS.moldNo)}
+     {text('moldNo',correcting?say('رقم القالب (اختياري)','Mold no. (optional)'):say('رقم القالب','Mold no.'),MOLD_LIMITS.moldNo)}
      {number('quantity',say('الكمية (1–100)','Quantity (1–100)'))}
     </div>
     {choice('payment',say('طريقة الدفع','Payment'),[['cash',say('نقدي','Cash')],['deferred',say('آجل','Deferred')]])}
