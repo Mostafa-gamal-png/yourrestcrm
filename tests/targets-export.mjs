@@ -88,7 +88,13 @@ eq(kpiRows.length, 2 * (operationalIndicators.length + 1), 'the indicators and t
 const line = name => kpiRows.find(row => row[1] === name && row[2] === 'درجة التقييم الكلية');
 // 80 on every applicable indicator: 80 x 95 / 100 = 76 points of an applicable 95 → 80 / 100.
 eq(line('مندوب أول').slice(3), [95, 80, 76, 'الوزن الذي تم تقييمه: 95 / 95%'], 'complete: the score, the points and the weight as the page shows them');
-eq(line('المشرف').slice(3), [100, '', 16.67, 'غير مكتمل · الوزن الذي تم تقييمه: 25 / 100%'], 'incomplete: no score, the points so far and «غير مكتمل»');
+// Missing data is not a zero (the owner, 2026-11-14): 16.67 points ÷ the 25% that has data = 66.67, with the share and what is missing.
+const missingNames = operationalIndicators.slice(1).map(i => i.name);
+eq(line('المشرف').slice(3), [100, 66.67, 16.67, 'غير مكتمل · الدرجة محسوبة من البيانات الموجودة فقط: 25% من الوزن · بيانات ناقصة: ' + missingNames.join('، ') + ' · الوزن الذي تم تقييمه: 25 / 100%'], 'incomplete: the score from the data there is, «غير مكتمل», the share of the weight and the missing indicators');
+eq(performanceCsvRows([partial], '2026-11', en, 'en').at(-1)[6].startsWith('Incomplete · The score is calculated from the available data only: 25% of the weight · Missing data: ' + en(operationalIndicators[1].name) + ', '), true, 'the same in English');
+const quiet = {...make('rep1', full), summary: {...kpiSummary(operationalIndicators.map(i => metric(i.id, 80, 'سبب')), true)}};
+eq(performanceCsvRows([quiet], '2026-11', ar).at(-1).slice(3), [100, '', '', 'بلا نشاط في هذا الشهر – خارج التقييم'], 'out of the evaluation: the sentence, no score and no points');
+eq(performanceCsvRows([quiet], '2026-11', en, 'en').at(-1)[6], 'No activity this month – excluded from the evaluation', 'and in English');
 const allNa = make('rep1', Object.fromEntries(operationalIndicators.map(i => [i.id, 'na'])));
 eq(performanceCsvRows([allNa], '2026-11', ar).at(-1).slice(4), ['', 0, 'لا ينطبق · الوزن الذي تم تقييمه: 0 / 0%'], 'nothing applies: «لا ينطبق», never a score');
 eq(performanceCsvRows([partial], '2026-11', en).at(-1)[2], 'Overall score', 'English overall line');

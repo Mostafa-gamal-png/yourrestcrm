@@ -106,7 +106,9 @@ for(const id of ['collection','recovered','retention'])eq(metric(data,id).status
 eq([metric(data,'orders').numerator,metric(data,'orders').denominator,metric(data,'orders').score,metric(data,'orders').status],[0,2,0,'scored'],'Quotations are counted automatically, before any evidence');
 eq([metric(data,'orders','rep2').numerator,metric(data,'orders','rep2').denominator],[0,1]);
 eq(person(data).attainment.rows[1].actual,null,'An absent product remains unknown before completeness confirmation');
-eq(person(data).summary.complete,false);eq(person(data).summary.total,null);
+eq(person(data).summary.complete,false);
+// Missing data is not a zero (the owner, 2026-11-14, «الدرجة من الموجود»): the score stands on the weight that has data, and says so.
+{const s=person(data).summary;ok(Number.isFinite(s.total)&&s.total>=0&&s.total<=100,'An incomplete evaluation still has a score from the data there is');ok(s.covered-s.excludedWeight>0&&Math.abs(s.total-s.earned/(s.covered-s.excludedWeight)*100)<0.05,'Earned points ÷ the weight with data × 100');ok(s.dataShare<100,'The share of the weight with data is below 100%');for(const id of ['collection','recovered','retention'])ok(s.missing.includes(id),id+' is named among the missing data');eq(s.inactive,false,'A representative with sales is evaluated');}
 globalThis.testIdentity='admin';
 // Partial history is saved, but does not turn customer cohorts or absent sales
 // products into known quantities. Collection is independently available.
@@ -130,7 +132,11 @@ eq(person(data).attainment.rows[2].target,0);eq(person(data).attainment.rows[2].
 eq(person(data).attainment.applicableWeight,80,'A zero product target excludes its 20% product weight');
 eq(person(data).attainment.score,62.5,'The remaining positive-target products are normalized to their 80% weight');
 for(const id of ['positive','quotes','documentation'])eq(metric(data,id).status,'not_applicable','No observed cohort is N/A for '+id);
-eq(metric(data,'quality').score,90);eq(metric(data,'responsibility').score,80);
+// «دقة واكتمال البيانات» is automatic now (the owner, 2026-11-14): rep's five customers carry a name and a region of the seven fields each,
+// and the saved assessment's old reviewed/correct numbers (10/9) still parse and no longer count.
+{const q=metric(data,'quality');eq([q.numerator,q.denominator,q.score,q.source,q.status],[10,35,28.57,'automatic','scored'],'Quality: the filled fields of the representative\'s customers ÷ (customers × 7)');}
+{const q=metric(data,'quality','rep2');eq([q.numerator,q.denominator,q.score],[2,7,28.57],'Quality of rep2: their one customer');}
+eq(metric(data,'responsibility').score,80);
 eq(person(data).summary.covered,100,'Every weighted indicator is scored or legitimately N/A');
 eq(person(data).summary.complete,true);ok(Number.isFinite(person(data).summary.total),'Complete KPI returns a usable final score');
 eq(person(data,'rep2').summary.covered,100);eq(person(data,'rep2').summary.complete,true);

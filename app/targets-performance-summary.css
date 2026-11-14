@@ -50,3 +50,20 @@
 .targets-summary-total .targets-summary-coverage{grid-column:1/-1}
 .targets-summary-scores .target-gauge svg{width:136px}
 @media(max-width:640px){.targets-summary-scores{gap:8px}.targets-summary-scores .target-gauge svg{width:112px}.targets-summary-card{padding:14px;gap:12px}.targets-summary-quantities>div{padding:8px 10px}.targets-summary-quantities dd{font-size:18px;margin-top:4px}}
+
+/* The score from the data there is (the owner, 2026-11-14): the small «غير مكتمل» badge beside it, the yellow note, and a person out of
+   the evaluation. */
+.targets-summary-score-line{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.kpi-incomplete-badge{background:#fff3da;color:#8a5d14;font-size:12px;line-height:1.5;padding:2px 8px}
+.kpi-partial-notice{background:#fff8df;border:1px solid #e4d397;color:#765b16;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.8;overflow-wrap:anywhere}
+.kpi-partial-notice p{margin:0}
+.kpi-partial-notice p+p{margin-top:4px}
+.kpi-partial-notice bdi{font-variant-numeric:tabular-nums;font-weight:700}
+.targets-summary-inactive{margin:0;padding:12px 14px;border-radius:8px;background:var(--muted);color:var(--muted-foreground);font-size:14px;font-weight:600;line-height:1.8;text-align:center}
+.targets-summary-card.is-out-of-evaluation{opacity:.92}
+.kpi-inactive-label{color:var(--muted-foreground);font-size:13px;font-weight:600;white-space:normal;line-height:1.7}
+.dark .kpi-partial-notice{background:#3c321d;color:#f1cc86;border-color:#7c6538}
+.dark .kpi-incomplete-badge{background:#3c321d;color:#f1cc86}
+.targets-summary-scores .kpi-incomplete-badge,.kpi-overview .kpi-incomplete-badge{color:#8a5d14;font-size:12px;line-height:1.5}
+.dark .targets-summary-scores .kpi-incomplete-badge,.dark .kpi-overview .kpi-incomplete-badge{color:#f1cc86}
+.kpi-overview strong.kpi-overview-text{font-size:17px;color:var(--muted-foreground)}
