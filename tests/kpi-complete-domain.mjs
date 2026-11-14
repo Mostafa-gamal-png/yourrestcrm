@@ -8,7 +8,8 @@ const root=process.cwd(),runtime=path.join(root,'.sites-runtime');fs.mkdirSync(r
 const out=fs.mkdtempSync(path.join(runtime,'kpi-complete-domain-')),seen=new Set();process.on('exit',()=>fs.rmSync(out,{recursive:true,force:true}));
 function compile(relative){if(seen.has(relative))return;seen.add(relative);const source=path.join(root,relative),dest=path.join(out,relative.replace(/\.tsx?$/,'.mjs'));fs.mkdirSync(path.dirname(dest),{recursive:true});let code=ts.transpileModule(fs.readFileSync(source,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;code=code.replace(/from (['"])([^'"]+)\1/g,(match,quote,imp)=>{if(!imp.startsWith('.')&&!imp.startsWith('@/'))return match;let rel=imp.startsWith('@/')?imp.slice(2):path.relative(root,path.resolve(path.dirname(source),imp));if(!/\.tsx?$/.test(rel))rel+=fs.existsSync(path.join(root,rel+'.ts'))?'.ts':'.tsx';compile(rel);return 'from '+JSON.stringify(path.join(out,rel.replace(/\.tsx?$/,'.mjs')));});fs.writeFileSync(dest,code);}
 for(const file of ['lib/kpis.ts','lib/kpi-evidence.ts','lib/targets.ts'])compile(file);
-const {calculateKpis,emptyKpiInput,kpiSummary,metric,operationalIndicators}=await import(path.join(out,'lib/kpis.mjs'));
+const {calculateKpis,emptyKpiInput,kpiSummary,metric,operationalIndicators,kpiInputSchema,customerFilledFields,INACTIVE_TEXT}=await import(path.join(out,'lib/kpis.mjs'));
+const {today}=await import(path.join(out,'lib/crm.mjs'));
 const {kpiEvidenceInputSchema,emptyKpiEvidenceInput,evidenceScopeKey}=await import(path.join(out,'lib/kpi-evidence.mjs'));
 const {quantityAttainment,targetProducts}=await import(path.join(out,'lib/targets.mjs'));
 let checks=0;const eq=(actual,expected,label)=>{assert.deepEqual(actual,expected,label);checks++;},ok=(value,label)=>{assert.ok(value,label);checks++;};
@@ -31,7 +32,8 @@ eq(get(result,'attainment').score,50);eq(get(result,'growth').score,100);eq(resu
 eq(get(result,'positive').status,'not_applicable');eq(get(result,'quotes').status,'not_applicable');eq(get(result,'documentation').status,'not_applicable');
 const noEvidence=calculateKpis(performance(),month,[],sales,assessment);
 for(const id of ['collection','recovered','retention','orders'])eq(get(noEvidence,id).status,'missing','Old records remain unknown for '+id);
-eq(noEvidence.summary.total,null);
+// Missing data is not a zero (the owner, 2026-11-14): the score stands on the weight that has data, with the indicators without it named.
+eq(noEvidence.summary.complete,false);ok(Number.isFinite(noEvidence.summary.total),'An incomplete evaluation has a score from the data there is');for(const id of ['collection','recovered','retention','orders'])ok(noEvidence.summary.missing.includes(id),id+' is named as missing');ok(noEvidence.summary.dataShare>0&&noEvidence.summary.dataShare<100);
 result=calc({...evidence,historyComplete:false,quotationsKnown:false,invalidHistoryReason:'History changed'});
 eq(get(result,'recovered').reason,'History changed');eq(get(result,'retention').status,'missing');eq(get(result,'orders').status,'missing');eq(get(result,'collection').score,70,'Collection can remain valid independently of purchase history');
 result=calc({...evidence,collection:{dueCents:100,collectedCents:150}});eq(get(result,'collection').score,100,'Over-collection is capped');
@@ -43,7 +45,7 @@ result=calc({...evidence,purchases:[purchase('new','2025-09-01')]});eq(get(resul
 result=calc({...evidence,purchases:[purchase('old','2025-05-01'),purchase('old','2025-08-01'),purchase('old','2025-09-01')]});eq(get(result,'recovered').score,0,'Any purchase in prior three months prevents recovery');
 result=calc({...evidence,purchases:[purchase('old','2025-05-01'),purchase('old','2025-09-01',-1000,false)]});eq(get(result,'recovered').score,0,'Return-only month is never a purchase');
 result=calc({...evidence,purchases:[purchase('old','2025-05-01'),purchase('old','2025-09-01',1000),purchase('old','2025-09-01',1000)]});eq(get(result,'recovered').numerator,1,'Repeated monthly facts across a team count one customer');
-result=calc({...evidence,purchases:[],quotations:[]},performance(targetState(),[]),[]);eq(result.attainment.score,0,'Confirmed empty sales means actual zero');eq(get(result,'growth').status,'not_applicable','No prior baseline is N/A only after completeness confirmation');eq(get(result,'variety').status,'not_applicable');eq(get(result,'orders').status,'not_applicable');eq(result.summary.complete,true);
+result=calc({...evidence,purchases:[],quotations:[]},performance(targetState(),[]),[]);eq(result.attainment.score,0,'Confirmed empty sales means actual zero');eq(get(result,'growth').status,'not_applicable','No prior baseline is N/A only after completeness confirmation');eq(get(result,'variety').status,'not_applicable');eq(get(result,'orders').status,'not_applicable');eq(result.summary.complete,true);eq([result.inactive,result.summary.inactive,result.summary.total],[true,true,null],'No visit, contact or sale in a closed, confirmed month: out of the evaluation');
 eq(quantityAttainment('rep',targetState(),[]).score,null,'Unconfirmed empty sales remains unknown');eq(quantityAttainment('rep',targetState(),[],true).score,0);
 const zeroTargets=targetState(targetProducts.map(()=>0));eq(quantityAttainment('rep',zeroTargets,[],true).status,'not_applicable');result=calc(evidence,performance(zeroTargets,[],true),[]);eq(get(result,'attainment').status,'not_applicable');
 const twoWeights=targetProducts.map((_,i)=>i<2?50:0),mixedTargets=targetProducts.map((_,i)=>i===0?0:10),secondSale=[sale('second','2025-09-05',5,targetProducts[1].id)];
@@ -52,8 +54,45 @@ mixedTargets[1]=null;eq(quantityAttainment('rep',targetState(mixedTargets,twoWei
 result=calc(evidence,{...performance(),salesSourceMemberIds:[]});for(const id of ['collection','recovered','retention','orders'])eq(get(result,id).status,'missing','Empty team has no evidence');
 const all=operationalIndicators.map(i=>metric(i.id,80,'test'));let summary=kpiSummary(all);eq(summary.total,80);eq(summary.applicableWeight,100);
 summary=kpiSummary(all.map(m=>m.id==='collection'?metric(m.id,null,'No dues','management',0,0,'not_applicable'):m));eq([summary.covered,summary.excludedWeight,summary.applicableWeight,summary.total],[100,20,80,80],'N/A normalization is explicit');
-summary=kpiSummary(all.filter(m=>m.id!=='collection'));eq(summary.total,null);summary=kpiSummary([...all.filter(m=>m.id!=='collection'),all[0]]);eq(summary.covered,80,'Duplicate metrics never inflate coverage');
+summary=kpiSummary(all.filter(m=>m.id!=='collection'));eq([summary.total,summary.complete,summary.dataShare,summary.missing,summary.scoredWeight],[80,false,80,['collection'],80],'Partial: 64 points ÷ 80% with data × 100, 80% of the weight, collection named');summary=kpiSummary([...all.filter(m=>m.id!=='collection'),all[0]]);eq(summary.covered,80,'Duplicate metrics never inflate coverage');
 summary=kpiSummary(operationalIndicators.map(i=>metric(i.id,null,'N/A','automatic',0,0,'not_applicable')));eq(summary.total,null,'No applicable weight cannot produce a score');eq(summary.applicableWeight,0);
+// ---- 1. The score from the data there is
+summary=kpiSummary(all.map(m=>m.id==='attainment'?metric(m.id,null,'N/A','automatic',0,0,'not_applicable'):m).filter(m=>m.id!=='collection'));
+eq([summary.applicableWeight,summary.scoredWeight,summary.dataShare,summary.total,summary.missing],[75,55,73.33,80,['collection']],'N/A weight leaves both the score and the share; the share is of the applicable weight');
+summary=kpiSummary(all.map(m=>m.id==='visits'?metric(m.id,0,'zero'):m.id==='growth'?metric(m.id,null,'unknown'):m));
+eq([summary.total,summary.earned,summary.scoredWeight,summary.complete,summary.missing],[78.32,74.4,95,false,['growth']],'A real zero counts as zero; unknown is left out: 74.4 ÷ 95 × 100');
+summary=kpiSummary([]);eq([summary.total,summary.dataShare,summary.missing.length,summary.complete],[null,0,18,false],'No data at all: no score, no division by zero');
+summary=kpiSummary(operationalIndicators.map(i=>metric(i.id,null,'N/A','automatic',0,0,'not_applicable')));eq([summary.total,summary.dataShare,summary.missing],[null,0,[]],'Nothing applicable: no score and a zero share, never NaN');
+summary=kpiSummary(all,true);eq([summary.total,summary.inactive,summary.earned],[null,true,80],'Out of the evaluation: no total');
+// ---- 2. «دقة واكتمال البيانات», automatically from the representative's customers
+const customer=(id,assignedTo,data)=>({id,kind:'customer',parentId:null,assignedTo,branch:'HQ',data:{name:'',...data},createdAt:'2025-01-01T00:00:00Z',updatedAt:'2025-01-01T00:00:00Z',version:1});
+const full={name:'Full',region:'الشرقية',city:'الدمام',phone:'0500000000',contact:'Ahmad',customerKind:'مصنع',location:'26.4,50.1'};
+eq(customerFilledFields(full),7);eq(customerFilledFields({...full,location:'',shortAddress:'ABCD1234'}),7,'The short address is a place');eq(customerFilledFields({...full,location:'',address:'Street 1'}),7,'The address is a place');eq(customerFilledFields({...full,location:'',latitude:26.4,longitude:50.1}),7,'Coordinates are a place');
+eq(customerFilledFields({...full,location:'  ',city:' ',phone:''}),4,'Blank and spaces only are empty');eq(customerFilledFields(null),0);
+let customers=[customer('c-full','rep',full),customer('c-two','rep',{name:'Two',shortAddress:'ABCD1234'}),customer('c-other','other',full)];
+result=calc(evidence,performance(),sales,null);
+eq(get(result,'quality').status,'not_applicable','No customers: «لا ينطبق»');
+result=calculateKpis(performance(),month,customers,sales,assessment,undefined,evidence);
+eq([get(result,'quality').numerator,get(result,'quality').denominator,get(result,'quality').score,get(result,'quality').source],[9,14,64.29,'automatic'],'Filled fields ÷ (own customers × 7); another rep\'s customer is left out');
+const legacy={...emptyKpiInput(),reviewed:10,correct:2};ok(kpiInputSchema.safeParse(legacy).success,'An old saved assessment with reviewed/correct still parses');
+result=calculateKpis(performance(),month,customers,sales,{...assessment,input:legacy},undefined,evidence);eq(get(result,'quality').score,64.29,'The old manual numbers no longer score quality');
+// ---- 4. «نسبة الزيارات الفعالة»: won is effective, only lost is not
+const visit=(id,customerId,salesStage,date='2025-09-10',type='visit')=>({id,kind:'activity',parentId:customerId,assignedTo:'rep',branch:'HQ',data:{type,date,performedBy:'rep',responsibleId:'rep',salesStage,summary:'s'},createdAt:date+'T08:00:00Z',updatedAt:date+'T08:00:00Z',version:1});
+customers=[customer('c-won','rep',full),customer('c-lost','rep',full),customer('c-open','rep',full),visit('v-won','c-won','won'),visit('v-lost','c-lost','lost'),visit('v-open','c-open','specs')];
+result=calculateKpis(performance(),month,customers,sales,assessment,undefined,evidence);
+eq([get(result,'positive').numerator,get(result,'positive').denominator,get(result,'positive').score],[2,3,66.67],'Won and open visits are effective; the lost one is not');
+ok(!get(result,'positive').reason.includes('gscoinvest'),'The reason no longer names gscoinvest');
+// ---- 3. «بلا نشاط في هذا الشهر – خارج التقييم»
+const quiet=(context,{p=performance(targetState(),[]),records=[],items=[],when=month}={})=>calculateKpis(p,when,records,items,assessment,undefined,context);
+const covered={...evidence,historyComplete:false,coverage:{current:true,through:'2025-09-30',growth:true,retention:true,recovered:true,missing:{growth:{months:[],olderThan:null},retention:{months:[],olderThan:null},recovered:{months:[],olderThan:null}}}};
+result=quiet(covered);eq([result.inactive,result.summary.total],[true,null],'Closed month covered by the ERP imports, nothing done: out of the evaluation');eq(INACTIVE_TEXT,'بلا نشاط في هذا الشهر – خارج التقييم');
+result=quiet({...evidence,historyComplete:false});eq(result.inactive,false,'Sales not known complete: never out of the evaluation');
+result=quiet(covered,{records:[customer('c-call','rep',full),visit('call','c-call','specs','2025-09-12','call')]});eq(result.inactive,false,'A contact of the month keeps the representative in');
+result=quiet(covered,{records:[customer('c-later','rep',full),visit('later','c-later','specs','2025-10-02')]});eq(result.inactive,true,'A contact of another month does not');
+result=quiet(covered,{items:[sale('one','2025-09-20',1)]});eq(result.inactive,false,'A confirmed sale keeps the representative in');
+result=quiet(covered,{items:[sale('void-only','2025-09-20',1,undefined,{status:'void'})]});eq(result.inactive,true,'A void sale is not a sale');
+result=quiet(covered,{p:{...performance(targetState(),[]),member:{...member,role:'supervisor'}}});eq(result.inactive,false,'A supervisor is never out of the evaluation');
+const running=today().slice(0,7);result=quiet(covered,{when:running});eq(result.inactive,false,'The month in progress is not closed');
 ok(kpiEvidenceInputSchema.safeParse(emptyKpiEvidenceInput()).success);
 const valid={...emptyKpiEvidenceInput(),collection:{dueCents:10000,collectedCents:12000,reference:'Statement'},history:{complete:true,reference:'ERP report'},quotationsComplete:true,quotations:[{quoteId:'q1',saleId:'s1'}]};ok(kpiEvidenceInputSchema.safeParse(valid).success);
 for(const collection of [{dueCents:1,collectedCents:null,reference:'x'},{dueCents:0,collectedCents:1,reference:'x'},{dueCents:1.5,collectedCents:0,reference:'x'},{dueCents:-1,collectedCents:0,reference:'x'},{dueCents:1e12+1,collectedCents:0,reference:'x'},{dueCents:1,collectedCents:0,reference:''}])eq(kpiEvidenceInputSchema.safeParse({...valid,collection}).success,false);

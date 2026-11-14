@@ -4,6 +4,42 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The evaluation scored like GSCO: the score from the data there is, automatic data quality, inactive representatives out, won visits effective (2026-11-14, no migration)
+
+- **Asked.** The owner approved four changes to «المستهدفات وتقييم الأداء» so that it scores as the company's other CRM (GSCO) does,
+  on 2026-11-14, through the multiple-choice answers: «الدرجة من الموجود»، «دقة البيانات تلقائي»، «مندوب بلا نشاط يطلع برّه»، «البيع
+  يتحسب فعالة».
+- **1. The score from the data there is.** `lib/kpis.ts` `kpiSummary`: missing data is not a zero. The overall score is the points earned ÷
+  the weight that has data (the weight of «لا ينطبق» left out) × 100 whenever that weight is above zero; before, it was empty («غير مكتمل»)
+  until every indicator had data. The summary keeps `complete` and adds `scoredWeight`, `dataShare` (the weight with data as a percent of
+  the applicable weight) and `missing` (the indicators without data); with no weight with data there is still no score (no division by
+  zero). The screens (`app/kpi-performance.tsx`: the comparison table and a person's page; `app/targets-performance-summary.tsx`: the
+  cards) write the score with a small «غير مكتمل» badge and a yellow note «الدرجة محسوبة من البيانات الموجودة فقط: X% من الوزن» and
+  «بيانات ناقصة: » followed by the names of the indicators without data (the note replaces the card's old list of incomplete indicators).
+  «تصدير التقييم» (`lib/targets-export.ts`) writes the same score, the badge's word, the share and the missing names in the overall line.
+  Nothing averages or ranks the scores elsewhere (checked: the rollups of supervisors and managers are computed from their teams' data).
+- **2. «دقة واكتمال البيانات» automatically.** The representative's customers (customer records whose responsible is among the person's
+  `sourceMemberIds`; a deleted customer is in «المحذوفات», not in the records): the filled fields ÷ (customers × 7), counting the name, the
+  region, the city, the phone, the contact person («اسم المسؤول»), the customer type («نوع العميل») and a place (the location, the short
+  address, the address, or device coordinates). No customers: «لا ينطبق». Source «محسوب تلقائيًا». The two numbers of the management
+  assessment («عدد السجلات التي تمت مراجعتها»، «عدد السجلات الصحيحة والمكتملة») and its data-review note are gone from the form; the stored
+  schema is unchanged (`kpiInputSchema` still reads `reviewed`, `correct` and `review_note`), so a saved assessment still parses and is
+  saved back as it was, and those numbers no longer count. The five conduct indicators stay manual.
+- **3. «بلا نشاط في هذا الشهر – خارج التقييم».** A representative (role `rep` only, never a supervisor's or a manager's rollup) with no
+  visit, follow-up or other contact of their own (activity records), and no confirmed sales document, in a closed month (its last day before
+  today) whose sales are known complete (the ERP imports cover the month, `coverage.current` of `lib/sales-coverage.ts`, or «بيانات
+  المؤشرات» confirmed the history) is out of the evaluation: `KpiPerson.inactive` and `summary.inactive`, no total. The screens write the
+  sentence in place of a score, with no points or weight in the comparison, put such people after everyone evaluated, and the export writes
+  the sentence with no score or points.
+- **4. «نسبة الزيارات الفعالة».** A visit is effective unless its customer's current stage is «تم الفقد»: a won customer's visit now counts
+  (before, only open stages did). The reason no longer cites gscoinvest.
+- **Tested.** Unit tests: `tests/kpi-complete-domain.mjs` (99 checks), `tests/kpi-complete-integration.mjs` (114),
+  `tests/kpi-performance-evidence-ui.mjs` (111), `tests/targets-performance-summary-ui.mjs` (106), `tests/targets-export.mjs` (43),
+  `tests/crm-regression.mjs` (368: the customer-service flow now changes only the quality indicator of the representatives whose customers
+  it created); the default gate 191/191. Against the built release, the targets area of `npm run gates`: 21 passed, 4 skipped (the owner's
+  ERP files), among them `tests/targets-audit-browser.mjs` (121, rep1's overall score by hand now 64.26 with quality 15/21) and
+  `tests/app-browser-workflows.mjs` (206, the assessment form without the reviewed/correct counts).
+
 ## The mold request's customer typed, with no suggestions (2026-11-14, package update-mold-customer-typed-20261114, no migration)
 
 - **Asked.** The owner, 2026-11-14: «خلى ادخال اسم ورقم العميل كتابة من غير اقتراحات».
