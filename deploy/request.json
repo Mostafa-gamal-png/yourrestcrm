@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-KpiGsco-20261114.zip",
-  "sha256": "66c054fd45c1c0087cd57c19c25f3886e250ba4fb2b31e6feed32fe43f986240",
-  "stage": "yourrest-crm-update-kpi-gsco-20261114",
-  "helper": "yourrest-activate-update-kpi-gsco.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-MoldRequired-20261114.zip",
+  "sha256": "830403912f201fa2aa59ca9ce858c9b87dad4d3bd482f74c98977c66baf8b811",
+  "stage": "yourrest-crm-update-mold-required-20261114",
+  "helper": "yourrest-activate-update-mold-required.cjs"
 }
