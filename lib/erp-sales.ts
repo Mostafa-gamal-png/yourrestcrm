@@ -37,7 +37,10 @@ const salesXmlPaths = new Set([
 // Row and element bounds: the sales report keeps its own; a generic sheet (readWorkbookSheets) states its own.
 // columns: the widest row read (the sales report and a generic sheet: 100; the ERP quotations report has 197 columns).
 type ReadLimits = { rows: number; rowsMessage: string; tags: number; columns?: number };
-const salesLimits: ReadLimits = { rows: MAX_ROWS + 50, rowsMessage: 'الحد الأقصى للتقرير 5000 بند', tags: 750000 };
+// Too many lines: never split the report by representative (the import takes a file as every representative's sales for its period,
+// lib/erp-sales-server.ts ERP_REPLACE); by months is the safe way.
+const SALES_ROWS_MESSAGE = 'الحد الأقصى للتقرير 5000 بند؛ إذا كان التقرير أكبر فصدّره من ERP على عدة ملفات حسب الأشهر، كل ملف يشمل كل المناديب';
+const salesLimits: ReadLimits = { rows: MAX_ROWS + 50, rowsMessage: SALES_ROWS_MESSAGE, tags: 750000 };
 function salesXmlParser(limits: ReadLimits = salesLimits) {
     let rows = 0, columns = 0, strings = 0;
     return new XMLParser({
@@ -442,7 +445,7 @@ export function parseErpWorkbook(bytes: Uint8Array): ErpWorkbook {
             // Several description columns are read together; a long note is kept to its first 2000 characters (only references are used).
             description: descriptionColumns.map(index => normalizeErpText(row.cells[index]?.text)).filter(Boolean).join(' | ').slice(0, 2000),
         });
-        if (rows.length > MAX_ROWS) fail('الحد الأقصى للتقرير 5000 بند');
+        if (rows.length > MAX_ROWS) fail(SALES_ROWS_MESSAGE);
     }
     if (!rows.length) fail('التقرير لا يحتوي بنود مبيعات قابلة للقراءة');
     if (rows.some(r => !r.employeeId || !r.employeeName)) warnings.push('توجد بنود بدون رقم أو اسم موظف؛ يلزم مراجعة الربط قبل الاعتماد');

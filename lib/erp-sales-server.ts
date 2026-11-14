@@ -21,20 +21,45 @@ const office=(value:string)=>['مبيعات مكتب','مبيعات المكتب
 export const ERP_OFFICE_REASON='مبيعات مكتب (تحديد الموظف): مستبعدة ولا تُحتسب لأي مندوب';
 export const ERP_OFFICE_SAVED_REASON='مبيعات مكتب (تحديد الموظف): مستبعدة من هذا الاستيراد؛ النسخة المحفوظة سابقًا للمندوب تبقى كما هي';
 export const ERP_OFFICE_LOCKED='تعديل موظف محدد «مبيعات مكتب» متاح لمدير المبيعات أو مدير النظام فقط';
+// ERP_REPLACE («دايمًا كامل», wholeCompany above): what a file that replaces the saved sales of its period does to a saved ERP invoice
+// (crm_erp_sales only; manual sales are never touched). The period is the file's first and last invoice date (lib/sales-coverage.ts
+// filePeriod), as GSCO 2.13.74 takes it: the file says nothing about the days before its first invoice or after its last.
+export const ERP_REPLACED_REASON='الفاتورة محفوظة بمحتوى مختلف؛ يحل محتوى الملف محل المحفوظ';
+export const ERP_MOVED_REASON='الفاتورة محفوظة لمندوب آخر؛ تُنقل إلى المندوب المرتبط في الملف بمحتوى الملف';
+export const ERP_REMOVED_REASON='محفوظة سابقًا في فترة الملف وليست فيه (أُلغيت أو صُححت في ERP)؛ تُحذف';
+export const ERP_REMOVED_EXCLUDED_REASON='كل فئات الفاتورة مستبعدة الآن؛ تُحذف نسختها المحفوظة';
+export const ERP_REPLACE_CONFIRM='راجع الفواتير المحفوظة التي ستُستبدل أو تُنقل أو تُحذف، ثم وافق على ذلك صراحةً قبل الاستيراد';
+export const ERP_REPLACE_AUDIT_ACTION='استبدال مبيعات ERP';
+export const ERP_OFFICE_SAVED_WARNING='مستندات حُفظت سابقًا لمندوب ثم حُدد موظفها «مبيعات مكتب»: تبقى محفوظة لمندوبها كما هي، ولا يحذف الاستيراد أي مبيعات محفوظة.';
+export const ERP_OFFICE_SAVED_REPLACE_WARNING='مستندات حُفظت سابقًا لمندوب ثم حُدد موظفها «مبيعات مكتب»: تبقى محفوظة لمندوبها كما هي، ولا يستبدلها الاستيراد ولا يحذفها.';
+export const ERP_UNASSIGNED_SAVED_WARNING='مستندات بلا بيانات موظف في الملف ولها نسخة محفوظة لمندوب: تبقى النسخة المحفوظة كما هي، ولا يستبدلها الاستيراد ولا يحذفها.';
+export const ERP_KEPT_OUTSIDE_WARNING='فواتير محفوظة في فترة الملف لمندوبين غير نشطين أو خارج منطقتك لا يشملها الاستبدال وتبقى كما هي.';
 const maxFileBytes=5*1024*1024;
 const mappingSchema=z.object({employeeId:z.string().trim().min(1).max(100),repId:z.string().trim().min(1).max(200)});
 const categorySchema=z.object({category:z.string().trim().min(1).max(300),product:z.string().refine(s=>s==='exclude'||salesProducts.includes(s),'اختر صنفًا صحيحًا')});
 const inputSchema=z.object({action:z.enum(['preview','commit']),fileName:z.string().trim().min(1).max(255),base64:z.string().min(1).max(Math.ceil(maxFileBytes/3)*4),employeeMappings:z.array(mappingSchema).max(5000).default([]),categoryMappings:z.array(categorySchema).max(500).default([]),allowSkipped:z.boolean().default(false),previewToken:z.string().max(1024).optional(),requestId:z.string().uuid().optional(),
  // «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» (lib/sales-coverage.ts): ticked at the commit, with the period it speaks for
  // (by default the file's first and last invoice date). Not part of the preview: ticking it never needs a new preview.
- completeSnapshot:z.boolean().default(false),coverageFrom:z.string().max(10).optional(),coverageTo:z.string().max(10).optional()});
+ completeSnapshot:z.boolean().default(false),coverageFrom:z.string().max(10).optional(),coverageTo:z.string().max(10).optional(),
+ // «دايمًا كامل» (the owner, 2026-11-14: the ERP invoices file always holds every representative for its period, and a file uploaded again
+ // with corrections must win). The page sends wholeCompany with every preview and commit; it counts only for an importer who reaches every
+ // active representative (not a supervisor): the file then replaces what is saved for its period (ERP_REPLACE below). Without it (another
+ // caller, a page from before) the import is exactly what it was. replaceExisting: the importer's explicit agreement at the commit, needed
+ // when saved invoices are replaced, moved or removed (not part of the preview, like completeSnapshot).
+ wholeCompany:z.boolean().default(false),replaceExisting:z.boolean().default(false)});
 type Input=z.infer<typeof inputSchema>;
-export type ErpDocumentPreview={key:string;reference:string;date:string;documentType:'sale'|'return';customerName:string;employeeId:string;employeeName:string;repId:string;repName:string;lineCount:number;totalCents:number;status:'new'|'duplicate'|'conflict'|'excluded'|'unassigned'|'unmapped'|'out_of_scope';reason:string};
+export type ErpDocumentStatus='new'|'duplicate'|'conflict'|'excluded'|'unassigned'|'unmapped'|'out_of_scope'|'replaced'|'moved'|'removed';
+/** saved: for replaced, moved and removed, the invoice as it is saved before this import (its representative and its net before tax). */
+export type ErpDocumentPreview={key:string;reference:string;date:string;documentType:'sale'|'return';customerName:string;employeeId:string;employeeName:string;repId:string;repName:string;lineCount:number;totalCents:number;status:ErpDocumentStatus;reason:string;saved?:{repId:string;repName:string;totalCents:number}};
 export type ErpSaleRow={id:string;rep_id:string;branch:string;date:string;reference:string;document_type:'sale'|'return';customer_code:string;customer_name:string;data:string;total_cents:number;created_by:string;created_at:string;region_scope:string};
 // quotationRefs: the quotations the document's «الوصف» names (null: the report has no description column, so nothing is read or written
 // about them). backfill: an identical document already saved whose stored references differ: the import writes the file's references
 // into its data (lib/quotation-refs.ts), which is neither a new document nor a change of its content.
-type PreparedDocument={preview:ErpDocumentPreview;rows:ErpRow[];items:SaleItem[];contentHash:string;mappedHash:string;rep?:Member;quotationRefs:string[]|null;backfill?:{prior:string};
+/** A saved ERP invoice as the import reads it (crm_erp_sales). */
+type StoredRow={document_key:string;content_hash:string;mapped_hash:string;rep_id:string;region_scope:string;quotation_refs:string;reference:string;date:string;document_type:'sale'|'return';employee_id:string;employee_name:string;customer_code:string;customer_name:string;total_cents:number;line_count:number;import_id:string};
+// invoiceKey: the key the document has as an invoice (an office one's own key differs), so a saved invoice the file still holds in any
+// state is never taken for one the file left out. saved: the saved invoice this document replaces, moves or removes (ERP_REPLACE).
+type PreparedDocument={preview:ErpDocumentPreview;rows:ErpRow[];items:SaleItem[];contentHash:string;mappedHash:string;rep?:Member;quotationRefs:string[]|null;backfill?:{prior:string};invoiceKey:string;saved?:StoredRow;
  /** Excluded as office sales: by the employee's name (the ERP's «مبيعات مكتب») or by the employee's «مبيعات مكتب (مستبعد)» mark. */
  office?:'name'|'mark';officeSaved?:boolean};
 /** The references saved on a document (none when never read). */
@@ -58,10 +83,12 @@ export async function erpSalesConfiguration(c:Context){requireSalesWorkspace(c.m
 function parseInput(body:unknown){const input=inputSchema.parse(body);if(!/^[A-Za-z0-9+/]*={0,2}$/.test(input.base64)||input.base64.length%4!==0)throw new CRMError('ترميز ملف المبيعات غير صحيح');const raw=atob(input.base64);if(raw.length>maxFileBytes)throw new CRMError('أقصى حجم لملف المبيعات 5 ميجابايت',413);const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));return {input,bytes};}
 /** The request a preview is signed for; with coverage, the commit's own (a retry with another completeness choice is another request).
  *  Without the tick both are exactly what they were before it existed. */
-function canonicalInput(input:Input,coverage=false){return JSON.stringify({fileName:input.fileName,base64:input.base64,allowSkipped:input.allowSkipped,employeeMappings:sorted(input.employeeMappings,m=>m.employeeId),categoryMappings:sorted(input.categoryMappings,m=>m.category),...(coverage&&input.completeSnapshot?{completeSnapshot:true,coverageFrom:input.coverageFrom||'',coverageTo:input.coverageTo||''}:{})});}
+// wholeCompany is part of the request a preview is signed for (a commit must carry the flag its preview had); without it the text is
+// exactly what it was before the flag existed.
+function canonicalInput(input:Input,coverage=false){return JSON.stringify({fileName:input.fileName,base64:input.base64,allowSkipped:input.allowSkipped,employeeMappings:sorted(input.employeeMappings,m=>m.employeeId),categoryMappings:sorted(input.categoryMappings,m=>m.category),...(input.wholeCompany?{wholeCompany:true}:{}),...(coverage&&input.completeSnapshot?{completeSnapshot:true,coverageFrom:input.coverageFrom||'',coverageTo:input.coverageTo||''}:{})});}
 function uniqueMappings<T>(rows:T[],key:(row:T)=>string){const values=new Map<string,T>();for(const row of rows){const id=key(row);if(values.has(id))throw new CRMError('تكرار في اختيارات الربط؛ حدّث المعاينة');values.set(id,row);}return values;}
 async function prepare(c:Context,input:Input,bytes:Uint8Array){
- let parsed:Awaited<ReturnType<typeof parseErpWorkbook>>;try{parsed=await parseErpWorkbook(bytes);}catch(error){if(error instanceof ErpWorkbookError)throw new CRMError(error.message);throw error;}if(!parsed.rows.length||parsed.rows.length>5000)throw new CRMError('ارفع ملفًا يحتوي من 1 إلى 5000 بند');
+ let parsed:Awaited<ReturnType<typeof parseErpWorkbook>>;try{parsed=await parseErpWorkbook(bytes);}catch(error){if(error instanceof ErpWorkbookError)throw new CRMError(error.message);throw error;}if(!parsed.rows.length||parsed.rows.length>5000)throw new CRMError('ارفع ملفًا يحتوي من 1 إلى 5000 بند؛ إذا كان التقرير أكبر فصدّره من ERP على عدة ملفات حسب الأشهر، كل ملف يشمل كل المناديب');
  const saved=await state(c),members=eligible(c),allowed=new Map(members.map(m=>[m.id,m]));
  const employeeChanges=uniqueMappings(input.employeeMappings,m=>normalize(m.employeeId)),categoryChanges=uniqueMappings(input.categoryMappings,m=>normalize(m.category));
  const employeeMap=new Map(saved.employees.map(m=>[normalize(m.employeeId),m.repId])),categoryMap=new Map(saved.categories.map(m=>[normalize(m.category),m.product]));
@@ -117,15 +144,23 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const categoryIds=new Set(relevantRows.filter(r=>!isOffice(r.employeeId)).map(r=>normalize(r.category)));
  for(const [id,m] of categoryChanges)if(categoryIds.has(id)){if(c.me.role==='supervisor'&&categoryMap.has(id)&&categoryMap.get(id)!==m.product)throw new CRMError('تعديل ربط فئة محفوظة متاح لمدير المبيعات أو مدير النظام فقط',403);categoryMap.set(id,m.product);}
  for(const category of categoryIds)if(!categoryMap.has(category)&&salesProducts.includes(category))categoryMap.set(category,category);
- const existing=(await c.db.prepare("SELECT document_key,content_hash,mapped_hash,rep_id,region_scope,COALESCE(json_extract(data,'$.quotationRefs'),'') AS quotation_refs FROM crm_erp_sales").all<{document_key:string;content_hash:string;mapped_hash:string;rep_id:string;region_scope:string;quotation_refs:string}>()).results;const stored=new Map(existing.map(r=>[r.document_key,r]));
+ const existing=(await c.db.prepare("SELECT document_key,content_hash,mapped_hash,rep_id,region_scope,COALESCE(json_extract(data,'$.quotationRefs'),'') AS quotation_refs,reference,date,document_type,employee_id,COALESCE(json_extract(data,'$.employeeName'),'') AS employee_name,customer_code,customer_name,total_cents,COALESCE(json_extract(data,'$.sourceLineCount'),json_array_length(data,'$.items'),0) AS line_count,import_id FROM crm_erp_sales").all<StoredRow>()).results;const stored=new Map(existing.map(r=>[r.document_key,r]));
  const manual=(await c.db.prepare("SELECT reference,date FROM crm_sales WHERE status='confirmed'").all<{reference:string;date:string}>()).results;
  const manualKeys=new Set(manual.map(r=>JSON.stringify([r.date.slice(0,4),canonicalInvoiceReference(r.reference)])));
  const documents:PreparedDocument[]=[],hasDescription=parsed.hasDescription===true;
+ // ERP_REPLACE: the file replaces what is saved for its period only for an importer who reaches every active representative (a sales
+ // manager or the administrator; never a supervisor, whose import stays exactly what it was) and only when the page asked for it. A saved
+ // invoice is touched only when its representative is an active one of the importer's and its region is the importer's.
+ const activeReps=c.members.filter(m=>m.role==='rep'&&m.active).map(m=>m.id);
+ const wholeCompany=input.wholeCompany&&c.me.role!=='supervisor'&&activeReps.every(id=>allowed.has(id));
+ const reachable=(row:StoredRow)=>allowed.has(row.rep_id)&&regionScopeAdmits(regionScope(c.me),row.region_scope);
+ const savedView=(row:StoredRow)=>({repId:row.rep_id,repName:c.members.find(m=>m.id===row.rep_id)?.name||'',totalCents:row.total_cents});
  for(const [identity,rows] of groups){
   const first=rows[0],key=await hash(identity),repId=employeeMap.get(normalize(first.employeeId))||'',rep=allowed.get(repId),p:ErpDocumentPreview={key,reference:first.reference,date:first.date,documentType:first.documentType,customerName:first.customerName,employeeId:first.employeeId,employeeName:first.employeeName,repId,repName:rep?.name||'',lineCount:rows.length,totalCents:0,status:'new',reason:''};
+  const invoiceKey=office(first.employeeName)?await hash(JSON.stringify([namespace,'invoice',first.documentType,first.date.slice(0,4),canonicalInvoiceReference(first.reference)])):key;
   // The description stays out of the content hash: a document saved before it was read (or whose description alone changed) is the same document.
   const contentHash=await hash(JSON.stringify(rows.map(row=>JSON.stringify(omit(row,'rowNumber','description'))).sort()));
-  const refs=hasDescription?documentQuotationRefs(rows):null;let backfill:PreparedDocument['backfill'];
+  const refs=hasDescription?documentQuotationRefs(rows):null;let backfill:PreparedDocument['backfill'],replaces:StoredRow|undefined;
   const items:SaleItem[]=[];let unmappedCategory=false;
   for(const row of rows){const product=categoryMap.get(normalize(row.category));if(!product){unmappedCategory=true;continue;}if(product==='exclude')continue;const sign=row.documentType==='return'?-1:1,quantity=Math.abs(row.quantity)*sign,totalCents=Math.abs(row.totalCents)*sign;p.totalCents+=totalCents;items.push({product,description:row.itemName,quantity,unitPrice:quantity?Math.abs(totalCents/100/quantity):Math.abs(row.unitPrice)});}
   const mappedHash=await hash(JSON.stringify({repId,items:items.map(i=>JSON.stringify(i)).sort(),totalCents:p.totalCents}));
@@ -135,28 +170,69 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   else if(mixed){p.status='conflict';p.reason='نفس رقم المستند يحتوي موظفين أو عملاء أو تواريخ مختلفة؛ راجع التقرير';}
   else if(missingEmployee(first)){p.status='unassigned';p.reason='بدون بيانات موظف كاملة في ERP؛ تُتجاوز تلقائيًا ولا تُحتسب لأي مندوب';p.repId='';p.repName='';p.totalCents=rows.reduce((total,row)=>total+row.totalCents,0);}
   // An employee marked «مبيعات مكتب (مستبعد)»: excluded as the ERP's «مبيعات مكتب». A document already saved for a representative under
-  // an earlier mapping is never deleted nor rewritten (as with any changed mapping): it is excluded from this import and said so.
+  // an earlier mapping is never deleted nor rewritten (as with any changed mapping): it is excluded from this import and said so. The same
+  // under ERP_REPLACE: the file still holds the invoice, so its saved copy is neither replaced nor removed.
   else if(isOffice(first.employeeId)){p.status='excluded';p.reason=old?ERP_OFFICE_SAVED_REASON:ERP_OFFICE_REASON;p.repId='';p.repName='';p.totalCents=0;}
   else if(!repId){p.status='unmapped';p.reason='اربط رقم الموظف بالمندوب لأول مرة';}
   else if(!rep){p.status='out_of_scope';p.reason='المندوب المرتبط خارج نطاق فريقك أو منطقتك';p.repId='';}
   else if(first.date>today()){p.status='conflict';p.reason='تاريخ المستند في المستقبل';}
   else if(unmappedCategory){p.status='unmapped';p.reason='حدد صنف المستهدف المقابل لكل فئة في الفاتورة';}
-  else if(!items.length){p.status='excluded';p.reason='كل فئات هذا المستند مستبعدة من اختيارك';}
+  // ERP_REPLACE: every category of a saved invoice now excluded: the file holds nothing of it for a representative, so its copy goes.
+  else if(!items.length){if(wholeCompany&&old&&reachable(old)){p.status='removed';p.reason=ERP_REMOVED_EXCLUDED_REASON;replaces=old;}else{p.status='excluded';p.reason='كل فئات هذا المستند مستبعدة من اختيارك';}}
   else if(first.documentType==='sale'&&manualKeys.has(JSON.stringify([first.date.slice(0,4),canonicalInvoiceReference(first.reference)]))){p.status='conflict';p.reason='رقم الفاتورة موجود في المبيعات اليدوية في نفس السنة؛ راجع السجل قبل الاستيراد لمنع التكرار';}
-  else if(old){if(old.rep_id!==repId||!regionScopeAdmits(regionScope(c.me),old.region_scope)){p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';if(refs&&JSON.stringify(savedRefs(old.quotation_refs))!==JSON.stringify(refs))backfill={prior:old.quotation_refs};}else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}}
+  else if(old){
+   // ERP_REPLACE: the file wins over a saved invoice that changed (its content, its categories' mapping) or whose representative changed.
+   if(old.rep_id!==repId||!regionScopeAdmits(regionScope(c.me),old.region_scope)){if(wholeCompany&&old.rep_id!==repId&&reachable(old)){p.status='moved';p.reason=ERP_MOVED_REASON;replaces=old;}else{p.status='out_of_scope';p.reason='المستند محفوظ لمندوب أو منطقة أخرى';}}
+   else if(old.content_hash===contentHash&&old.mapped_hash===mappedHash){p.status='duplicate';p.reason='مستند مطابق محفوظ سابقًا؛ لن يُضاف مرة أخرى';if(refs&&JSON.stringify(savedRefs(old.quotation_refs))!==JSON.stringify(refs))backfill={prior:old.quotation_refs};}
+   else if(wholeCompany){p.status='replaced';p.reason=ERP_REPLACED_REASON;replaces=old;}
+   else{p.status='conflict';p.reason='رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله';}
+  }
+  if(replaces)p.saved=savedView(replaces);
   const officeDoc=office(first.employeeName)?'name' as const:p.reason===ERP_OFFICE_REASON||p.reason===ERP_OFFICE_SAVED_REASON?'mark' as const:undefined;
-  documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'||officeDoc?undefined:rep,quotationRefs:refs,backfill,office:officeDoc,officeSaved:p.reason===ERP_OFFICE_SAVED_REASON});
+  documents.push({preview:p,rows,items,contentHash,mappedHash,rep:p.status==='unassigned'||officeDoc?undefined:rep,quotationRefs:refs,backfill,invoiceKey,saved:replaces,office:officeDoc,officeSaved:p.reason===ERP_OFFICE_SAVED_REASON});
  }
- const summary={newCount:0,duplicateCount:0,conflictCount:0,excludedCount:0,unassignedCount:0,unassignedTotalCents:0,unmappedCount:0,outOfScopeCount:0,officeExcludedCount:0,skippedCount:0,autoMatchedCount:[...mappingSources.values()].filter(source=>source==='name').length,totalCents:0,months:[...new Set(documents.filter(d=>d.preview.status==='new'||d.preview.status==='duplicate').map(d=>d.preview.date.slice(0,7)))].sort()};
- for(const {preview:p} of documents){const field={new:'newCount',duplicate:'duplicateCount',conflict:'conflictCount',excluded:'excludedCount',unassigned:'unassignedCount',unmapped:'unmappedCount',out_of_scope:'outOfScopeCount'}[p.status] as 'newCount';summary[field]++;if(p.status==='new')summary.totalCents+=p.totalCents;if(p.status==='unassigned')summary.unassignedTotalCents+=p.totalCents;}
+ // The period a complete file speaks for (lib/sales-coverage.ts), which is also the period ERP_REPLACE replaces.
+ const period=filePeriod(parsed.rows.map(row=>row.date),today());
+ // ERP_REPLACE: the saved invoices of the period that the file does not hold in any state (cancelled or corrected in the ERP) are removed;
+ // those of a representative outside the importer's reach (inactive, another region) stay and are counted.
+ const removals:{preview:ErpDocumentPreview;saved:StoredRow}[]=[];let keptOutsideCount=0;
+ if(wholeCompany&&period){
+  const fileKeys=new Set(documents.map(d=>d.invoiceKey));
+  for(const row of sorted(existing,r=>r.date+'|'+r.reference+'|'+r.document_key))if(row.date>=period.first&&row.date<=period.last&&!fileKeys.has(row.document_key)){
+   if(!reachable(row)){keptOutsideCount++;continue;}
+   const repName=c.members.find(m=>m.id===row.rep_id)?.name||'';
+   removals.push({saved:row,preview:{key:row.document_key,reference:row.reference,date:row.date,documentType:row.document_type,customerName:row.customer_name,employeeId:row.employee_id,employeeName:row.employee_name,repId:row.rep_id,repName,lineCount:Number(row.line_count)||0,totalCents:0,status:'removed',reason:ERP_REMOVED_REASON,saved:savedView(row)}});
+  }
+ }
+ const statuses=[...documents.map(d=>d.preview),...removals.map(r=>r.preview)];
+ const summary={newCount:0,duplicateCount:0,conflictCount:0,excludedCount:0,unassignedCount:0,unassignedTotalCents:0,unmappedCount:0,outOfScopeCount:0,officeExcludedCount:0,skippedCount:0,autoMatchedCount:[...mappingSources.values()].filter(source=>source==='name').length,totalCents:0,months:[...new Set(statuses.filter(p=>['new','duplicate','replaced','moved','removed'].includes(p.status)).map(p=>p.date.slice(0,7)))].sort()};
+ const replaceCounts={replacedCount:0,movedCount:0,removedCount:0};
+ for(const p of statuses){if(p.status==='replaced'||p.status==='moved'||p.status==='removed'){replaceCounts[({replaced:'replacedCount',moved:'movedCount',removed:'removedCount'} as const)[p.status]]++;continue;}const field={new:'newCount',duplicate:'duplicateCount',conflict:'conflictCount',excluded:'excludedCount',unassigned:'unassignedCount',unmapped:'unmappedCount',out_of_scope:'outOfScopeCount'}[p.status] as 'newCount';summary[field]++;if(p.status==='new')summary.totalCents+=p.totalCents;if(p.status==='unassigned')summary.unassignedTotalCents+=p.totalCents;}
  // The marks' counts are given only when there is one (a file without a marked employee answers exactly as before).
  const officeCounts:{officeMarkedCount?:number;officeSavedCount?:number}={};
  for(const d of documents){if(d.office)summary.officeExcludedCount++;if(d.office==='mark')officeCounts.officeMarkedCount=(officeCounts.officeMarkedCount||0)+1;if(d.officeSaved)officeCounts.officeSavedCount=(officeCounts.officeSavedCount||0)+1;}
  summary.skippedCount=summary.unmappedCount+summary.outOfScopeCount;
  // Only a report with a description column says anything about quotations: one without it answers exactly as before.
- const quotationSummary=hasDescription?{quotationLinkedCount:documents.filter(d=>['new','duplicate'].includes(d.preview.status)&&d.preview.documentType==='sale'&&!!d.quotationRefs?.length).length,quotationRefsBackfillCount:documents.filter(d=>d.backfill).length}:null;
+ const quotationSummary=hasDescription?{quotationLinkedCount:documents.filter(d=>['new','duplicate','replaced','moved'].includes(d.preview.status)&&d.preview.documentType==='sale'&&!!d.quotationRefs?.length).length,quotationRefsBackfillCount:documents.filter(d=>d.backfill).length}:null;
+ // ERP_REPLACE, before the commit: the period's saved total in the importer's reach before and after, and every representative who has
+ // saved ERP sales in it and none after (no invoice of theirs in the file): that representative ends the period at zero.
+ let replacement:{from:string;to:string;replacedCount:number;movedCount:number;removedCount:number;keptOutsideCount:number;periodBeforeCents:number;periodAfterCents:number;zeroReps:{repId:string;repName:string;beforeCount:number;beforeCents:number}[]}|null=null;
+ if(wholeCompany&&period){
+  const inPeriod=(date:string)=>date>=period.first&&date<=period.last,before=new Map<string,{count:number;cents:number}>(),after=new Map<string,{count:number;cents:number}>();
+  const add=(map:Map<string,{count:number;cents:number}>,repId:string,cents:number,sign:1|-1)=>{const value=map.get(repId)||{count:0,cents:0};value.count+=sign;value.cents+=sign*cents;map.set(repId,value);};
+  for(const row of existing)if(inPeriod(row.date)&&reachable(row)){add(before,row.rep_id,row.total_cents,1);add(after,row.rep_id,row.total_cents,1);}
+  for(const d of documents){
+   if(d.saved&&inPeriod(d.saved.date))add(after,d.saved.rep_id,d.saved.total_cents,-1);
+   if(['new','replaced','moved'].includes(d.preview.status)&&d.rep)add(after,d.rep.id,d.preview.totalCents,1);
+  }
+  for(const r of removals)add(after,r.saved.rep_id,r.saved.total_cents,-1);
+  const total=(map:Map<string,{count:number;cents:number}>)=>[...map.values()].reduce((sum,value)=>sum+value.cents,0);
+  const zeroReps=[...before].filter(([repId,value])=>value.count>0&&!((after.get(repId)?.count||0)>0)).map(([repId,value])=>({repId,repName:c.members.find(m=>m.id===repId)?.name||'',beforeCount:value.count,beforeCents:value.cents})).sort((a,b)=>a.repName.localeCompare(b.repName,'ar')||a.repId.localeCompare(b.repId));
+  replacement={from:period.first,to:period.last,...replaceCounts,keptOutsideCount,periodBeforeCents:total(before),periodAfterCents:total(after),zeroReps};
+ }
  const memberSnapshot=sorted([c.me,...members.filter(m=>m.id!==c.me.id)],m=>m.id).map(snapshot);
- const snapshotHash=await hash(JSON.stringify({revision:saved.revision,members:memberSnapshot,nameRoster:nameRosterSnapshot,employees:saved.employees,categories:saved.categories,office:saved.office.raw}));
+ // ERP_REPLACE is bound to the active representatives the preview read: one added elsewhere meanwhile is a new preview.
+ const snapshotHash=await hash(JSON.stringify({revision:saved.revision,members:memberSnapshot,nameRoster:nameRosterSnapshot,employees:saved.employees,categories:saved.categories,office:saved.office.raw,...(wholeCompany?{wholeCompany:true,activeReps:[...activeReps].sort()}:{})}));
  const relevantEmployees=new Set(relevantRows.map(r=>JSON.stringify([normalize(r.employeeId),normalize(r.employeeName)])));
  const employees=parsed.employees.filter(e=>relevantEmployees.has(JSON.stringify([normalize(e.employeeId),normalize(e.employeeName)]))).map(employee=>{
   const id=normalize(employee.employeeId),officeSource=officeSources.get(officeIdKey(employee.employeeId));
@@ -168,17 +244,17 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  const listed=new Set(employees.map(e=>officeIdKey(e.employeeId)));
  const officeMarksToSave=[...officeMarks].filter(([key])=>listed.has(key)&&officeSources.has(key)).map(([key,m])=>({key,employeeId:m.employeeId,employeeName:parsed.employees.find(e=>officeIdKey(e.employeeId)===key)?.employeeName||'',priorRepId:m.priorRepId}));
  const warnings=parsed.warnings.filter(warning=>warning!=='توجد بنود بدون رقم أو اسم موظف؛ يلزم مراجعة الربط قبل الاعتماد'||documents.some(d=>d.preview.status==='conflict'&&d.rows.some(missingEmployee)));
- // The period a complete file speaks for, and who: the representatives the uploader may import for, less those of a document skipped as
- // outside the uploader's access; allReps when that was every active representative and nothing was skipped (lib/sales-coverage.ts).
- const period=filePeriod(parsed.rows.map(row=>row.date),today());
+ // Who a complete file speaks for: the representatives the uploader may import for, less those of a document skipped as outside the
+ // uploader's access; allReps when that was every active representative and nothing was skipped (lib/sales-coverage.ts).
  const skippedReps=new Set(documents.filter(d=>d.preview.status==='out_of_scope'&&d.preview.repId).map(d=>d.preview.repId));
  const coveredReps=members.filter(m=>!skippedReps.has(m.id)).map(m=>m.id).sort();
- const activeReps=c.members.filter(m=>m.role==='rep'&&m.active).map(m=>m.id);
  const allReps=summary.outOfScopeCount===0&&activeReps.every(id=>allowed.has(id));
  const coverage=period?{...period,months:periodMonths(period.first,period.last),repCount:coveredReps.length,allReps,
   blocker:summary.unmappedCount?'لا يمكن تأكيد اكتمال الملف وفيه مستندات تحتاج ربطًا؛ أكمل الربط أولًا.':!coveredReps.length?'لا يوجد مناديب ضمن صلاحيتك يشملهم تأكيد الاكتمال.':''}:null;
- const officeWarnings=[...officeCounts.officeMarkedCount?['مستندات الموظفين المحددين «مبيعات مكتب (مستبعد)» مستبعدة ولا تُحتسب لأي مندوب.']:[],...officeCounts.officeSavedCount?['مستندات حُفظت سابقًا لمندوب ثم حُدد موظفها «مبيعات مكتب»: تبقى محفوظة لمندوبها كما هي، ولا يحذف الاستيراد أي مبيعات محفوظة.']:[]];
- return {documents,summary:{...summary,...officeCounts,...quotationSummary},quotationSummary,coverage,coveredReps,activeReps,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,officeMarksToSave,officeUnmarks,categories:[...categoryIds].sort(),warnings:[...warnings,...officeWarnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
+ const officeWarnings=[...officeCounts.officeMarkedCount?['مستندات الموظفين المحددين «مبيعات مكتب (مستبعد)» مستبعدة ولا تُحتسب لأي مندوب.']:[],...officeCounts.officeSavedCount?[wholeCompany?ERP_OFFICE_SAVED_REPLACE_WARNING:ERP_OFFICE_SAVED_WARNING]:[]];
+ // ERP_REPLACE: what the replacement leaves as it is, said once each (never for a supervisor's import).
+ const replaceWarnings=replacement?[...documents.some(d=>d.preview.status==='unassigned'&&stored.has(d.preview.key))?[ERP_UNASSIGNED_SAVED_WARNING]:[],...replacement.keptOutsideCount?[ERP_KEPT_OUTSIDE_WARNING]:[]]:[];
+ return {documents,removals,replacement,summary:{...summary,...(replacement?replaceCounts:{}),...officeCounts,...quotationSummary},quotationSummary,coverage,coveredReps,activeReps,saved,employeeMap,categoryMap,employeeIds,categoryIds,members,snapshotHash,nameRosterSnapshot,employees,officeMarksToSave,officeUnmarks,categories:[...categoryIds].sort(),warnings:[...warnings,...officeWarnings,...replaceWarnings,'مبيعات مكتب مستبعدة تلقائيًا حسب اسم الموظف. المرتجعات تخصم من المبيعات والمستهدف في شهر تاريخها.']};
 }
 
 /** Preview is stateless and authenticated; no uploaded bytes or sales are saved here. */
@@ -190,7 +266,7 @@ export async function importErpSales(c:Context,body:unknown){
  const prepared=await prepare(c,input,bytes);
  if(input.action==='preview'){
   const payload=['1',String(Date.now()+15*60_000),previewFingerprint,prepared.snapshotHash].join('.');
-  return {previewToken:payload+'.'+await signature(payload),documents:prepared.documents.map(d=>d.preview),employees:prepared.employees,categories:prepared.categories,summary:prepared.summary,warnings:prepared.warnings,coverage:prepared.coverage};
+  return {previewToken:payload+'.'+await signature(payload),documents:[...prepared.documents.map(d=>d.preview),...prepared.removals.map(r=>r.preview)],employees:prepared.employees,categories:prepared.categories,summary:prepared.summary,warnings:prepared.warnings,coverage:prepared.coverage,...(prepared.replacement?{replacement:prepared.replacement}:{})};
  }
  if(!input.requestId||!input.previewToken)throw new CRMError('اعرض الملف أولًا قبل تأكيد الاستيراد');
  const pieces=input.previewToken.split('.');
@@ -200,6 +276,9 @@ export async function importErpSales(c:Context,body:unknown){
  if(Number(pieces[1])<Date.now()||Number(pieces[1])>Date.now()+16*60_000||pieces[3]!==prepared.snapshotHash)throw new CRMError('انتهت المعاينة أو تغيّرت الصلاحيات أو الربط؛ اعرض الملف مرة أخرى',409);
  if(prepared.summary.conflictCount)throw new CRMError('يوجد تعارض في مستندات التقرير؛ صححه قبل الاستيراد',409);
  if(prepared.summary.skippedCount&&!input.allowSkipped)throw new CRMError('راجع المستندات غير المربوطة أو خارج الصلاحية ووافق صراحة على تخطيها',409);
+ // ERP_REPLACE: saved invoices replaced, moved or removed only with the importer's explicit agreement to what the preview showed.
+ const replacing=prepared.documents.filter(d=>(d.preview.status==='replaced'||d.preview.status==='moved')&&d.saved),removing=[...prepared.documents.filter(d=>d.preview.status==='removed'&&d.saved).map(d=>({preview:d.preview,saved:d.saved!,why:'categories_excluded' as const})),...prepared.removals.map(r=>({...r,why:'not_in_file' as const}))];
+ if((replacing.length||removing.length)&&!input.replaceExisting)throw new CRMError(ERP_REPLACE_CONFIRM,409);
  const fresh=prepared.documents.filter(d=>d.preview.status==='new');
  const now=new Date().toISOString(),id='erp-import-'+input.requestId;
  // «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها»: one coverage entry in this import's own row, audited with it (lib/sales-coverage.ts).
@@ -215,12 +294,14 @@ export async function importErpSales(c:Context,body:unknown){
  const backfills=prepared.documents.filter(d=>d.backfill);
  // «مبيعات مكتب (مستبعد)»: the marks chosen (or suggested by name) are saved; a mark is lifted only together with the representative
  // mapping that replaces it (an employee whose documents are not taken by this import keeps the mark).
- const savedMappingEmployees=new Set(prepared.documents.filter(d=>['new','duplicate','excluded'].includes(d.preview.status)&&d.rep&&!d.office).map(d=>normalize(d.preview.employeeId)));
+ const savedMappingEmployees=new Set(prepared.documents.filter(d=>['new','duplicate','excluded','replaced','moved','removed'].includes(d.preview.status)&&d.rep&&!d.office).map(d=>normalize(d.preview.employeeId)));
  const officeMarked=prepared.officeMarksToSave,officeUnmarked=[...prepared.officeUnmarks.values()].filter(u=>savedMappingEmployees.has(normalize(u.employeeId)));
- const result={ok:true,...(officeMarked.length||officeUnmarked.length?{officeMarkedCount:officeMarked.length,officeUnmarkedCount:officeUnmarked.length}:{}),...prepared.quotationSummary,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months,...(coverage?{coverage}:{})};
+ const result={ok:true,...(officeMarked.length||officeUnmarked.length?{officeMarkedCount:officeMarked.length,officeUnmarkedCount:officeUnmarked.length}:{}),...prepared.quotationSummary,importedCount:fresh.length,duplicateCount:prepared.summary.duplicateCount,excludedCount:prepared.summary.excludedCount,officeExcludedCount:prepared.summary.officeExcludedCount,unassignedCount:prepared.summary.unassignedCount,unassignedTotalCents:prepared.summary.unassignedTotalCents,skippedCount:prepared.summary.skippedCount,totalCents:prepared.summary.totalCents,months:prepared.summary.months,...(coverage?{coverage}:{}),...(prepared.replacement?{replacement:prepared.replacement}:{})};
  const guard=accessGuard(c),usedReps=new Map<string,Member>();
- const mappingDocuments=prepared.documents.filter(d=>['new','duplicate','excluded'].includes(d.preview.status)&&d.rep&&!office(d.preview.employeeName));
+ const mappingDocuments=prepared.documents.filter(d=>['new','duplicate','excluded','replaced','moved','removed'].includes(d.preview.status)&&d.rep&&!office(d.preview.employeeName));
  for(const document of mappingDocuments)if(document.rep)usedReps.set(document.rep.id,document.rep);
+ // ERP_REPLACE: the representative a saved invoice is taken from is checked at the commit as the one it goes to.
+ for(const {saved} of [...replacing.map(d=>({saved:d.saved!})),...removing]){const member=c.members.find(m=>m.id===saved.rep_id);if(member)usedReps.set(member.id,member);}
  const mappingEmployeeIds=new Set(mappingDocuments.map(d=>normalize(d.preview.employeeId)));
  for(const priorMapping of prepared.saved.employees){const employeeId=normalize(priorMapping.employeeId);if(mappingEmployeeIds.has(employeeId)&&prepared.employeeMap.get(employeeId)!==priorMapping.repId){const priorMember=c.members.find(m=>m.id===priorMapping.repId);if(priorMember)usedReps.set(priorMember.id,priorMember);}}
  // Marking an employee mapped to a representative: that representative is checked at the commit as a remapping checks it.
@@ -235,6 +316,16 @@ export async function importErpSales(c:Context,body:unknown){
  for(const member of usedReps.values()){gate+=" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=? AND active=? AND auth_version=? AND name=?)";args.push(...snapshot(member));}
  // A coverage that speaks for every representative holds only while the active representatives are those the preview read.
  if(coverage?.allReps){gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep' AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role='rep' AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))";args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));}
+ // ERP_REPLACE holds only while every saved invoice it changes is as the preview read it (another import moves the revision anyway; this
+ // also refuses a row changed some other way) and while the active representatives are those the importer was found to reach.
+ const touched=[...replacing.map(d=>d.saved!),...removing.map(r=>r.saved)];
+ if(touched.length){
+  gate+=` AND NOT EXISTS(SELECT 1 FROM json_each(?) AS expected LEFT JOIN crm_erp_sales AS actual ON actual.document_key=json_extract(expected.value,'$[0]')
+   WHERE actual.id IS NULL OR actual.content_hash IS NOT json_extract(expected.value,'$[1]') OR actual.mapped_hash IS NOT json_extract(expected.value,'$[2]')
+    OR actual.rep_id IS NOT json_extract(expected.value,'$[3]') OR actual.region_scope IS NOT json_extract(expected.value,'$[4]'))`;
+  args.push(JSON.stringify(touched.map(row=>[row.document_key,row.content_hash,row.mapped_hash,row.rep_id,row.region_scope])));
+  gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep' AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role='rep' AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))";args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));
+ }
  if(prepared.nameRosterSnapshot){
   // Recheck the complete name-matching roster at the same atomic claim as sales.
   // One JSON parameter avoids SQLite's bind limit; indexed IDs check old rows,
@@ -250,7 +341,12 @@ export async function importErpSales(c:Context,body:unknown){
  const claim=c.db.prepare('INSERT INTO crm_erp_imports(id,actor_id,fingerprint,file_name,result,created_at) SELECT ?,?,?,?,?,? WHERE '+gate).bind(id,c.me.id,fingerprint,input.fileName,JSON.stringify(result),now,...args);
  const claimed='EXISTS(SELECT 1 FROM crm_erp_imports WHERE id=? AND actor_id=? AND fingerprint=?)',claimArgs=[id,c.me.id,fingerprint];
  const batch:D1PreparedStatement[]=[claim];
- for(const document of fresh){const p=document.preview,first=document.rows[0],member=document.rep!;const data={items:document.items,discount:0,notes:'',employeeId:first.employeeId,employeeName:first.employeeName,sourceLineCount:document.rows.length,...(document.quotationRefs?{quotationRefs:document.quotationRefs}:{})};batch.push(c.db.prepare('INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE '+claimed).bind('erp-sale-'+p.key,p.key,document.contentHash,document.mappedHash,p.reference,p.documentType,p.date,first.employeeId,member.id,member.branch,regionScope(member),first.customerCode,first.customerName,JSON.stringify(data),p.totalCents,id,c.me.id,now,...claimArgs));}
+ // A saved invoice that ERP_REPLACE rewrites keeps its id (erp-sale-<key>) and takes the file's content as a new one would, written by this
+ // import. Its quotations are exactly the file's when the report has «الوصف»; a report without the column keeps the saved ones.
+ const saleData=(document:PreparedDocument)=>{const first=document.rows[0],refs=document.quotationRefs??(document.saved?savedRefs(document.saved.quotation_refs):[]),keep=document.quotationRefs!==null||refs.length>0;return {items:document.items,discount:0,notes:'',employeeId:first.employeeId,employeeName:first.employeeName,sourceLineCount:document.rows.length,...(keep?{quotationRefs:refs}:{})};};
+ for(const document of fresh){const p=document.preview,first=document.rows[0],member=document.rep!;batch.push(c.db.prepare('INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE '+claimed).bind('erp-sale-'+p.key,p.key,document.contentHash,document.mappedHash,p.reference,p.documentType,p.date,first.employeeId,member.id,member.branch,regionScope(member),first.customerCode,first.customerName,JSON.stringify(saleData(document)),p.totalCents,id,c.me.id,now,...claimArgs));}
+ for(const document of replacing){const p=document.preview,first=document.rows[0],member=document.rep!,old=document.saved!;batch.push(c.db.prepare('UPDATE crm_erp_sales SET content_hash=?,mapped_hash=?,reference=?,document_type=?,date=?,employee_id=?,rep_id=?,branch=?,region_scope=?,customer_code=?,customer_name=?,data=?,total_cents=?,import_id=?,created_by=?,created_at=? WHERE document_key=? AND content_hash=? AND mapped_hash=? AND rep_id=? AND '+claimed).bind(document.contentHash,document.mappedHash,p.reference,p.documentType,p.date,first.employeeId,member.id,member.branch,regionScope(member),first.customerCode,first.customerName,JSON.stringify(saleData(document)),p.totalCents,id,c.me.id,now,old.document_key,old.content_hash,old.mapped_hash,old.rep_id,...claimArgs));}
+ for(const {saved:old} of removing)batch.push(c.db.prepare('DELETE FROM crm_erp_sales WHERE document_key=? AND content_hash=? AND mapped_hash=? AND rep_id=? AND '+claimed).bind(old.document_key,old.content_hash,old.mapped_hash,old.rep_id,...claimArgs));
  // An identical saved document takes the references its description names now: only data.quotationRefs is written, only while the
  // document and its stored references are as the preview read them. Counted once in the import's audit line, never a change of its own.
  for(const document of backfills)batch.push(c.db.prepare("UPDATE crm_erp_sales SET data=json_set(data,'$.quotationRefs',json(?)) WHERE document_key=? AND content_hash=? AND mapped_hash=? AND COALESCE(json_extract(data,'$.quotationRefs'),'')=? AND "+claimed).bind(JSON.stringify(document.quotationRefs),document.preview.key,document.contentHash,document.mappedHash,document.backfill!.prior,...claimArgs));
@@ -267,7 +363,15 @@ export async function importErpSales(c:Context,body:unknown){
  }
  for(const category of usedCategories){const product=prepared.categoryMap.get(category)!;batch.push(c.db.prepare('INSERT INTO crm_erp_category_mappings(category,product,updated_by,updated_at) SELECT ?,?,?,? WHERE '+claimed+' ON CONFLICT(category) DO UPDATE SET product=excluded.product,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(category,product,c.me.id,now,...claimArgs));}
  batch.push(c.db.prepare('UPDATE crm_erp_import_state SET revision=revision+1 WHERE id=? AND '+claimed).bind(namespace,...claimArgs));
- batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(id,id,c.me.name,'استيراد مبيعات ERP',JSON.stringify({fileName:input.fileName,...result}),now,...claimArgs));
+ // ERP_REPLACE is traced in the import's own audit line (each invoice replaced, moved or removed: from which representative and net to
+ // which) and, beside it, the saved rows as they were before this import (their whole content, enough to put one back by hand).
+ const changes=[...replacing.map(d=>({action:d.preview.status,key:d.preview.key,reference:d.preview.reference,date:d.preview.date,documentType:d.preview.documentType,customerCode:d.rows[0].customerCode,from:{repId:d.saved!.rep_id,totalCents:d.saved!.total_cents,date:d.saved!.date,importId:d.saved!.import_id},to:{repId:d.rep!.id,totalCents:d.preview.totalCents}})),
+  ...removing.map(r=>({action:'removed',why:r.why,key:r.saved.document_key,reference:r.saved.reference,date:r.saved.date,documentType:r.saved.document_type,customerCode:r.saved.customer_code,from:{repId:r.saved.rep_id,totalCents:r.saved.total_cents,date:r.saved.date,importId:r.saved.import_id},to:null}))];
+ batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(id,id,c.me.name,'استيراد مبيعات ERP',JSON.stringify({fileName:input.fileName,...result,...(changes.length?{replacementChanges:changes}:{})}),now,...claimArgs));
+ if(touched.length){
+  const before=(await c.db.prepare('SELECT * FROM crm_erp_sales WHERE document_key IN (SELECT value FROM json_each(?)) ORDER BY date,document_key').bind(JSON.stringify(touched.map(row=>row.document_key))).all<Record<string,unknown>>()).results;
+  batch.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(id+':replaced',id,c.me.name,ERP_REPLACE_AUDIT_ACTION,JSON.stringify({importId:id,fileName:input.fileName,from:prepared.replacement?.from,to:prepared.replacement?.to,before}),now,...claimArgs));
+ }
  let committed;try{committed=await c.db.batch(batch);}catch(error){const saved=await replay();if(saved)return saved;throw error;}
  if(committed[0].meta.changes!==1){const saved=await replay();if(saved)return saved;throw new CRMError('تغيّرت الصلاحيات أو الربط أثناء الحفظ؛ اعرض الملف مرة أخرى',409);}
  return result;
