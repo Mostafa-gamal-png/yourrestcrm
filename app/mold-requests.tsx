@@ -517,8 +517,8 @@ async function seenPdfs(choices:DesignChoice[]){
  *  a request asked for under that rule (designRequired) that has none yet: refused the same way, before the signing step. The delivery
  *  address (2026-11-09) sits under the customer: filled in from the customer's registered address when one is chosen (again when another
  *  is), from the request's own when editing; changed for this request only, required, up to 300 characters, and read by the customer
- *  before signing. The customer is typed (the owner, 2026-11-09): its name and ERP code, with the CRM's customers as suggestions
- *  (MoldCustomerFields). Choosing one, or typing an ERP code exactly one of them has, links the request to it (customerId; its address
+ *  before signing. The customer is typed (the owner, 2026-11-09), its name and ERP code, with no suggestions (2026-11-14;
+ *  MoldCustomerFields). Typing an ERP code exactly one of the CRM's customers has links the request to it (customerId; its address
  *  filled in, when none is typed yet); anything else is a customer not in the CRM, sent with the name and ERP code (both required then).
  *  The address is asked for always. The edit of a request never sent changes the customer the same way (a change of what was signed). */
 function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
@@ -551,11 +551,10 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  const kept=useMemo<Row|null>(()=>editing?.customerId&&editing.crmNumber!==null?{id:editing.customerId,kind:'customer',parentId:null,assignedTo:'',branch:'',data:{name:editing.customerName,internalCode:'YR-C-'+String(editing.crmNumber).padStart(6,'0'),code:editing.customerErpCode},createdAt:'',updatedAt:'',version:0} as unknown as Row:null,[editing]);
  const chosen=chosenId?customers.find(row=>row.id===chosenId)||(kept?.id===chosenId?kept:null):null;
  const linked=chosen||moldCustomerByErpCode(customers,customerText.code),linkedId=linked?.id||'';
- // Linked by its ERP code alone: its registered address fills an address not typed yet.
- const lastLinked=useRef(linkedId);
- useEffect(()=>{if(linkedId&&linkedId!==lastLinked.current&&linked&&!address.trim()&&linked.data.address){setAddress(String(linked.data.address));}lastLinked.current=linkedId;},[linkedId,linked,address]);
- // The customer's suggestions are showing (2026-11-09): Esc closes them, not the dialog.
- const suggesting=useRef(false),onSuggesting=useCallback((open:boolean)=>{suggesting.current=open;},[]);
+ // Linked by its ERP code (typed, 2026-11-14: no suggestions): its registered address fills the address when none is typed yet, or
+ // replaces one filled in the same way for another customer (a code corrected); an address typed for the request is kept.
+ const lastLinked=useRef(linkedId),autoFilled=useRef<string|null>(null);
+ useEffect(()=>{if(linkedId&&linkedId!==lastLinked.current&&linked&&linked.data.address&&(!address.trim()||address===autoFilled.current)){const next=String(linked.data.address);autoFilled.current=next;setAddress(next);setShown(previous=>{if(!('address' in previous))return previous;const rest={...previous};delete rest.address;return rest;});}lastLinked.current=linkedId;},[linkedId,linked,address]);
  const clear=(key:string)=>setShown(previous=>{if(!(key in previous))return previous;const next={...previous};delete next[key];return next;});
  const set=(key:string,value:string)=>{setForm(previous=>({...previous,[key]:value}));clear(key);};
  const errors={...shown,...action.fields};
@@ -625,7 +624,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    {...(reserved?{overflow:'signature_room',note:say(...MOLD_SIGNATURE_TEXT.room)}:{})}{...(required?{title:say(...MOLD_DESIGN_FILE_PICKER_TITLE),error:errors.designFile||''}:{})}/>;
  };
  return <Dialog open onOpenChange={open=>{if(!open&&!action.busy)onClose();}}>
-  <DialogContent className="mold-dialog" dir={direction()} onEscapeKeyDown={event=>{if(suggesting.current)event.preventDefault();}}>
+  <DialogContent className="mold-dialog" dir={direction()}>
    <DialogTitle>{editing?say('تعديل طلب تصنيع القالب','Edit mold request'):say('طلب تصنيع قالب','Request a mold')}</DialogTitle>
    <DialogDescription>{correcting?say(...MOLD_RETURNED_TEXT.dialog):editing?say('الطلب لم يصل للإنتاج بعد، فتعديله هنا ممكن. بعد وصوله يعدّل بياناته مدير الإنتاج فقط.','The request has not reached production yet, so it can be changed here. Once it arrives, the production manager alone edits its data.'):say('يُحفظ الطلب في الـCRM ثم يُرسل لتطبيق الإنتاج تلقائيًا.','The request is saved in the CRM, then sent to production automatically.')}</DialogDescription>
    {/* The customer signs now (with the PDFs chosen, by their SHA-256: each gets its signed copy as it is uploaded), or (2026-11-10) the
@@ -635,9 +634,9 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
     onLink={()=>send({...signing.body,signatureLink:true},signing.summary,true)}/>}
    <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>
     {correcting&&<ReturnedNote returned={editing!.returned!} say={say}/>}
-    {/* The customer as typed, name and ERP code, with the CRM's customers as suggestions (the owner, 2026-11-09: «اسم العميل بيتكتب نص
-        وبيجى ترشيحات من النظام»); a customer not in the CRM never blocks the request. Editable on the edit of a request never sent too. */}
-    <MoldCustomerFields customers={customers} chosenId={chosen?chosenId:''} linked={linked} text={customerText} onOpenChange={onSuggesting} say={say}
+    {/* The customer as typed, name and ERP code, with no suggestions (the owner, 2026-11-14: «خلى ادخال اسم ورقم العميل كتابة من غير
+        اقتراحات»); an ERP code one of the CRM's customers has links the request to it; a customer not in the CRM never blocks the request. */}
+    <MoldCustomerFields chosenId={chosen?chosenId:''} linked={linked} text={customerText} say={say}
      errors={{name:errors['customer.name']&&t(errors['customer.name']),code:errors['customer.erpCode']&&t(errors['customer.erpCode']),customer:errors.customer&&t(errors.customer)}}
      onText={next=>{setCustomerText(next);clear('customer');clear('customer.name');clear('customer.erpCode');}}
      onChoose={row=>{if(!row){setChosenId('');return;}setChosenId(row.id);setAddress(String(row.data.address||''));clear('address');}}/>

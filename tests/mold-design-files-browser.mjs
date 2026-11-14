@@ -91,9 +91,9 @@ try {
   await rep.locator('button.mold-new').click();
   const dialog = rep.locator('.mold-dialog');
   await dialog.waitFor();
-  // The customer: typed in «اسم العميل», chosen from its suggestions (2026-11-09).
+  // The customer: its name and ERP code typed (2026-11-14: no suggestions); the code links it.
   await dialog.locator('.mold-customer-field[data-field="name"] input').fill('مصنع east1');
-  await dialog.locator('.mold-customer-suggestions [role="option"]', {hasText: 'مصنع east1'}).click();
+  await dialog.locator('.mold-customer-field[data-field="code"] input').fill('ERP-east1'); // typed, no suggestions (2026-11-14): the ERP code links the request
   await dialog.locator('label.mold-field', {hasText: 'وصف القالب'}).locator('input').fill('قالب بلوك بتصميم مرفق');
   for (const text of ['مفتوح', 'موديل قديم', 'بدون بلوكة نص']) await dialog.locator('.mold-choice label', {hasText: text}).click();
   await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();

@@ -57,13 +57,6 @@
 .mold-customer-field{display:grid;gap:6px;min-width:0}.mold-customer-fields .field{min-width:0;width:100%;display:grid;gap:6px}
 .mold-customer-fields .field input{width:100%;min-width:0;min-height:44px;font-size:16px}.mold-customer-code input::placeholder{font-size:14px}
 .mold-customer-field[aria-invalid=true] input{border-color:var(--destructive)}
-.mold-customer-suggestions{border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--card-foreground,inherit);box-shadow:0 6px 18px #183b2f14;overflow:hidden}
-.mold-customer-suggestions ul{list-style:none;margin:0;padding:4px;max-height:min(52vh,420px);overflow:auto;overscroll-behavior:contain}
-.mold-customer-suggestions li{display:grid;gap:2px;padding:8px 12px;min-height:48px;border-radius:8px;cursor:pointer;touch-action:manipulation;text-align:start}
-.mold-customer-suggestions li[aria-selected=true]{background:color-mix(in srgb,var(--primary) 12%,transparent)}
-.mold-customer-suggestions li[aria-disabled=true]{opacity:.5;cursor:not-allowed}
-.mold-customer-suggestions strong{font-weight:600;overflow-wrap:anywhere}.mold-customer-suggestions small{color:var(--muted-foreground);font-size:12px;overflow-wrap:anywhere}
-.mold-customer-suggestions p{margin:0;padding:10px 12px;font-size:13px;color:var(--muted-foreground)}
 @media (max-width:400px){.mold-customer-inputs{grid-template-columns:minmax(0,1fr)}}
 .mold-customer-chosen{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:8px 12px;border:1px solid var(--primary);border-radius:12px;background:color-mix(in srgb,var(--primary) 6%,transparent);font-size:14px}
 .mold-customer-hint{font-size:12px;color:var(--muted-foreground);line-height:1.4}
