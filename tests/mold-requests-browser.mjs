@@ -103,13 +103,12 @@ try {
     await picker.locator('.mold-design-file[data-state="ready"]').nth(ready).waitFor();
   };
   const DESIGN_TITLE = 'ملفات التصميم (ملف واحد على الأقل)', DESIGN_REQUIRED = 'أرفق ملف تصميم واحد على الأقل';
-  /** The customer (2026-11-09: «اسم العميل» and «الكود», each with suggestions): typed in a field ('name' or 'code'), then chosen from that
-   *  field's suggestions (by its name). */
+  /** The customer (2026-11-09: «اسم العميل» and «كود ERP»; 2026-11-14: typed, with no suggestions): its name typed, then its ERP code,
+   *  which links the request to it (the fixtures' «مصنع <id>» has «ERP-<id>»). */
   const customerField = (dialog, field = 'name') => dialog.locator(`.mold-customer-field[data-field="${field}"] input`);
-  const suggestions = dialog => dialog.locator('.mold-customer-suggestions [role="option"]');
-  const chooseCustomer = async (dialog, customerName, {field = 'name', typed = customerName} = {}) => {
-    await customerField(dialog, field).fill(typed);
-    await suggestions(dialog).filter({hasText: customerName}).first().click();
+  const chooseCustomer = async (dialog, customerName, {code = 'ERP-' + customerName.replace(/^مصنع /, '')} = {}) => {
+    await customerField(dialog, 'name').fill(customerName);
+    await customerField(dialog, 'code').fill(code);
     await dialog.locator('.mold-customer-chosen').waitFor();
   };
   const fill = async (dialog, customerName, payment = 'نقدي', {design = true} = {}) => {
@@ -1074,7 +1073,13 @@ try {
     check(await addressPhone.evaluate(() => document.querySelector('.mold-dialog .mold-customer-fields')?.nextElementSibling?.classList.contains('mold-address')), true, 'right under the customer');
     await area.fill('مخزن تجريبي');
     await choose(form, 'مصنع east1');
-    check(await area.inputValue(), 'حي الصناعية', 'another customer: filled in again from that customer, the edit for the previous one replaced');
+    check(await area.inputValue(), 'مخزن تجريبي', 'another customer\'s code (2026-11-14): an address typed for the request is kept');
+    await area.fill('');
+    await customerField(form, 'code').fill('ERP-east2');
+    await form.locator('.mold-customer-chosen', {hasText: 'مصنع east2'}).waitFor();
+    await customerField(form, 'code').fill('ERP-east1');
+    await form.locator('.mold-customer-chosen', {hasText: 'مصنع east1'}).waitFor();
+    check(await area.inputValue(), 'حي الصناعية', 'a code corrected: the address filled in for the first customer is replaced by the second\'s');
     // Required: emptied, refused beside the field, before anything else happens.
     await fill(form, null, 'نقدي');
     await form.locator('.mold-design-picker[data-category="po"] input[type=file]').setInputFiles({name: 'PO-ADDR.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic PO address')});
@@ -1088,7 +1093,8 @@ try {
     await noOverflow(addressPhone, 'phone form refusing an empty address'); await shot(addressPhone, 'mold-form-address-required-phone');
     await area.fill('مخزن');
     check(await address.locator('.field-error').count(), 0, 'typing clears the message');
-    // Over 300 characters: a registered address that long fills in as it is and is refused until shortened.
+    // Over 300 characters: a registered address that long fills in as it is (into an empty address) and is refused until shortened.
+    await area.fill('');
     await choose(form, 'مصنع east3');
     check([await area.inputValue(), [...await area.inputValue()].length], [LONG_ADDRESS, 304], 'a registered address of 304 characters fills in whole');
     await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
@@ -1163,11 +1169,9 @@ try {
 
   // ---- 8. 2026-11-09 (the owner: «خانتين بترشيحات», then «اسم العميل بيتكتب نص وبيجى ترشيحات من النظام يعنى لو فيه عميل مش موجود فى النظام
   //  طلب القالب ميقفش», «المندوب يكتب الكود والكود المطلوب كود erp», «يتبعت بكود ERP بس»): «اسم العميل» (dictated) and «كود ERP», typed,
-  //  each suggesting the customers the representative may ask for under it (up to 8: name · Yourrest code · city · ERP code): by name
-  //  (أ/إ/آ as ا); by ERP code (any case; its current one only: a code it had before names nobody since 2026-11-12) or, as a help, by Yourrest code or its number, in Arabic-Indic digits too;
-  //  ↑ ↓ Enter Esc (Esc closes the suggestions, not the form) and touch; one without a Yourrest number shown but not chosen, with why.
-  //  Choosing fills the name, its ERP code and the address, and says «مرتبط بالعميل <name> · YR-C-…»; an ERP code that names one customer
-  //  links it as well; editing the code to another unlinks it. Anything else is a customer not in the CRM: «عميل مش موجود في الـCRM: الطلب
+  //  with no suggestions since 2026-11-14 («خلى ادخال اسم ورقم العميل كتابة من غير اقتراحات»). An ERP code that names one of the
+  //  representative's customers (any case; its current one only: a code it had before names nobody since 2026-11-12) links it: the
+  //  address filled in, «مرتبط بالعميل <name> · YR-C-…»; editing the code to another unlinks it. Anything else is a customer not in the CRM: «عميل مش موجود في الـCRM: الطلب
   //  هيتبعت للإنتاج بالاسم وكود ERP», its name, ERP code and address required (each said beside its field, nothing sent), the signing
   //  summary with the name, the ERP code and «غير مسجل في الـCRM», and the sheet and card saying «غير مسجل في الـCRM» with the request
   //  waiting for production's update. On a phone of 360 px in Arabic and 320 px in English.
@@ -1179,14 +1183,12 @@ try {
     await app.db.prepare("INSERT OR IGNORE INTO crm_customer_code_aliases(customer_id,source_code) VALUES('east9','OLD-55')").run();
     await insert('east8', {name: 'مصنع بلا كود', city: 'الدمام', address: 'حي الفيصلية', code: ''});
     await app.db.prepare("DELETE FROM crm_customer_numbers WHERE customer_id='east8'").run();
-    for (let n = 1; n <= 9; n++) await insert('many' + n, {name: 'مصنع كثير ' + n, city: 'الجبيل', address: 'الجبيل ' + n, code: 'M-' + n});
     const number = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east9'").first()).number, yr = 'YR-C-' + String(number).padStart(6, '0');
-    const indic = value => String(value).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[digit]);
     const FREE = 'عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود ERP', HINT = 'مطلوب لعميل غير موجود في الـCRM؛ اختياري للعميل المرتبط', NOT_IN_CRM = 'غير مسجل في الـCRM';
     const phone = await open('rep', {viewport: PHONE, touch: true});
     await goMoldsAnywhere(phone);
     await phone.locator('button.mold-new').click();
-    const form = phone.locator('.mold-dialog'), name = customerField(form, 'name'), code = customerField(form, 'code'), options = suggestions(form);
+    const form = phone.locator('.mold-dialog'), name = customerField(form, 'name'), code = customerField(form, 'code'), options = form.locator('[role="listbox"], [role="option"]');
     const linkedLine = form.locator('.mold-customer-chosen'), freeNote = form.locator('.mold-customer-free'), area = form.locator('.mold-address textarea');
     await form.waitFor();
     await form.evaluate(node => Promise.all(node.getAnimations().map(animation => animation.finished)));
@@ -1195,46 +1197,27 @@ try {
       [['اسم العميل', 'كود ERP'], 'مثال: 146', HINT, 1, 0], 'two fields: «اسم العميل» with dictation, «كود ERP» typed, its hint: required for a customer not in the CRM only');
     const [nameBox, codeBox] = [await name.boundingBox(), await code.boundingBox()];
     ok(codeBox.y >= nameBox.y + nameBox.height, '360 px: «كود ERP» under «اسم العميل»');
-    check([await options.count(), await form.locator('.mold-address').count(), await freeNote.count(), await linkedLine.count()], [0, 1, 0, 0], 'nothing suggested or said before anything is typed; the address asked for always');
-    // By name, the letter variants as one: «ابراهيم» finds «إبراهيم».
+    check([await options.count(), await form.locator('.mold-address').count(), await freeNote.count(), await linkedLine.count()], [0, 1, 0, 0], 'nothing said before anything is typed; the address asked for always');
+    // Typed, nothing suggested (2026-11-14): a name alone, even one of the CRM's customers, links nothing.
     await name.fill('ابراهيم');
-    await options.first().waitFor();
-    check([await options.count(), await name.getAttribute('aria-expanded'), (await options.first().innerText()).replace(/\s+/g, ' ')], [1, 'true', 'مؤسسة إبراهيم للبلوك ' + [yr, 'الخبر', 'ERP K-7731'].join(' · ')], 'by name: «name · Yourrest code · city · ERP code»');
-    check(await phone.evaluate(() => { const input = document.querySelector('.mold-customer-field[data-field="name"] input').getBoundingClientRect(), list = document.querySelector('.mold-customer-suggestions').getBoundingClientRect(); return list.top >= input.bottom && !!document.querySelector('.mold-customer-field[data-field="name"] .mold-customer-suggestions'); }), true, 'under the field typed in');
-    // Many matches: eight shown, «type more» said; one without a Yourrest number shown dimmed, with why, and not chosen.
-    await name.fill('مصنع');
-    await phone.waitForFunction(() => document.querySelectorAll('.mold-customer-suggestions [role="option"]').length === 8);
-    ok((await form.locator('.mold-customer-suggestions').innerText()).includes('اكتب أكثر لتضييق النتائج'), 'up to 8, and «اكتب أكثر لتضييق النتائج»');
-    await noOverflow(phone, 'phone form with eight suggestions'); await shot(phone, 'mold-customer-suggestions-name-phone');
-    await name.fill('بلا كود');
-    const unnumbered = options.filter({hasText: 'مصنع بلا كود'});
-    check([await options.count(), await unnumbered.getAttribute('aria-disabled'), (await unnumbered.innerText()).includes('لم يأخذ كود يورست بعد')], [1, 'true', true], 'without a Yourrest number: shown, dimmed, «لم يأخذ كود يورست بعد»');
-    await unnumbered.click({force: true});
-    check([await linkedLine.count(), await name.inputValue(), await freeNote.innerText()], [0, 'بلا كود', FREE], 'tapping it links nothing: the text typed is a customer not in the CRM, said so');
+    check([await options.count(), await name.getAttribute('role'), await name.getAttribute('aria-expanded'), await linkedLine.count(), await freeNote.innerText()], [0, null, null, 0, FREE], 'a name typed: no suggestions, no list, a customer not in the CRM');
     await name.fill('');
-    // By code: the ERP code (any case), and as a help the Yourrest code, its number alone, Arabic-Indic digits. The code it had before
-    // suggests nothing (2026-11-12: current codes only).
+    // The ERP code it had before names nobody (2026-11-12: current codes only); its current one, in any case, links it.
     await code.fill('OLD-55');
-    check(await options.filter({hasText: 'مؤسسة إبراهيم للبلوك'}).count(), 0, 'the ERP code it had before: not suggested');
-    for (const [typed, what] of [['k-77', 'the start of the ERP code'], [yr, 'the Yourrest code'], [String(number), 'the number alone'], [indic(number), 'Arabic-Indic digits'], ['YR-C-' + indic(number), 'YR-C- and Arabic-Indic digits']]) {
-      await code.fill(typed);
-      await options.first().waitFor();
-      check((await options.first().locator('strong').innerText()), 'مؤسسة إبراهيم للبلوك', 'by ' + what + ' (' + typed + '): first suggested');
-    }
-    await code.fill(indic(number));
-    await noOverflow(phone, 'phone form with suggestions');
-    await shot(phone, 'mold-customer-suggestions-phone');
-    // Choosing by touch fills the name, its ERP code and the address, says it is linked, and closes the suggestions.
-    await options.filter({hasText: 'مؤسسة إبراهيم للبلوك'}).tap();
+    check([await options.count(), await linkedLine.count(), await freeNote.innerText()], [0, 0, FREE], 'the ERP code it had before: linked to nobody');
+    await code.fill('k-7731');
     await linkedLine.waitFor();
-    check([await name.inputValue(), await code.inputValue(), await area.inputValue(), await options.count(), (await linkedLine.innerText()).replace(/\s+/g, ' ').trim(), await freeNote.count()],
-      ['مؤسسة إبراهيم للبلوك', 'K-7731', 'الخبر، طريق الظهران، مستودع 9', 0, 'مرتبط بالعميل مؤسسة إبراهيم للبلوك ' + yr + ' · الخبر', 0], 'chosen: the name, its ERP code, the address, «مرتبط بالعميل …», suggestions closed');
+    check([await name.inputValue(), await area.inputValue(), await options.count(), (await linkedLine.innerText()).replace(/\s+/g, ' ').trim(), await freeNote.count()],
+      ['', 'الخبر، طريق الظهران، مستودع 9', 0, 'مرتبط بالعميل مؤسسة إبراهيم للبلوك ' + yr + ' · الخبر', 0], 'its ERP code typed: linked, «مرتبط بالعميل …», the address filled in; the name is not typed for the representative');
+    await name.fill('مؤسسة إبراهيم للبلوك');
+    await code.fill('K-7731');
+    await noOverflow(phone, 'phone form with the code typed');
+    await shot(phone, 'mold-customer-typed-phone');
     check(await phone.evaluate(() => document.querySelector('.mold-dialog .mold-customer-fields')?.nextElementSibling?.classList.contains('mold-address')), true, 'the address right under the customer');
     await noOverflow(phone, 'phone form with the linked customer');
     await shot(phone, 'mold-customer-chosen-phone');
     // The name edited, the code still its own: still linked. Another code: a customer not in the CRM, the text and address kept.
     await name.fill('مؤسسة إبراهيم');
-    await name.press('Escape');
     check([await linkedLine.count(), await freeNote.count()], [1, 0], 'the name edited, its ERP code kept: still linked');
     await area.fill('مخزن مؤقت');
     await code.fill('K-7731-9');
@@ -1290,27 +1273,9 @@ try {
     check([await card.locator('.mold-card-customer > span').allInnerTexts(), await card.locator('.mold-card-sending').innerText()], [['كود ERP: 9012', NOT_IN_CRM], 'بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)'], 'its card: the ERP code and «غير مسجل في الـCRM», waiting for the update');
     await card.scrollIntoViewIfNeeded();
     await noOverflow(phone, 'phone list with a customer not in the CRM'); await shot(phone, 'mold-card-free-customer-phone');
-    // The keyboard: the first that can be chosen highlighted, ↓ moves, Esc closes the suggestions and not the form, ↓ opens them, Enter chooses.
-    await phone.locator('button.mold-new').click();
-    await form.waitFor();
-    await name.fill('مصنع east');
-    await options.first().waitFor();
-    check(await options.first().getAttribute('aria-selected'), 'true', 'the first highlighted');
-    await name.press('ArrowDown');
-    const second = await options.nth(1).locator('strong').innerText();
-    check([await options.nth(1).getAttribute('aria-selected'), await options.first().getAttribute('aria-selected'), (await name.getAttribute('aria-activedescendant')) === (await options.nth(1).getAttribute('id'))], ['true', 'false', true], '↓ moves the highlight');
-    await name.press('Escape');
-    check([await options.count(), await form.isVisible(), await name.getAttribute('aria-expanded')], [0, true, 'false'], 'Esc closes the suggestions, the form stays');
-    await name.press('ArrowDown');
-    await options.first().waitFor();
-    await name.press('ArrowDown');
-    await name.press('Enter');
-    await linkedLine.waitFor();
-    const secondAddress = (await app.db.prepare("SELECT json_extract(data,'$.address') AS address FROM crm_records WHERE json_extract(data,'$.name')=?").bind(second).first()).address;
-    check([await name.inputValue(), await form.locator('.mold-signing').count(), await area.inputValue()], [second, 0, secondAddress], 'Enter chooses the highlighted customer (the form not sent), its address filled in');
     await phone.context().close();
 
-    // In English, on a 320 px phone: the labels, the hint, the note, the refusals, the suggestions by number, choosing.
+    // In English, on a 320 px phone: the labels, the hint, the note, the refusals, linking by the ERP code.
     const english = await open('rep', {viewport: {width: 320, height: 640}, language: 'en', touch: true});
     await goMoldsAnywhere(english);
     await english.locator('.mold-card', {hasText: 'مصنع النور الجديد'}).first().click();
@@ -1321,7 +1286,7 @@ try {
     await noOverflow(english, '320 px English sheet of a customer not in the CRM'); await shot(english, 'mold-sheet-free-customer-phone-en');
     await english.keyboard.press('Escape');
     await english.locator('button.mold-new').click();
-    const enForm = english.locator('.mold-dialog'), enName = customerField(enForm, 'name'), enCode = customerField(enForm, 'code'), enOptions = suggestions(enForm);
+    const enForm = english.locator('.mold-dialog'), enName = customerField(enForm, 'name'), enCode = customerField(enForm, 'code');
     await enForm.waitFor();
     check([await enForm.locator('.mold-customer-field > .field > span').allInnerTexts(), await enCode.getAttribute('placeholder'), await enForm.locator('.mold-customer-hint').innerText()],
       [['Customer name', 'ERP code'], 'e.g. 146', 'Required for a customer not in the CRM; optional for a linked customer'], 'in English: «Customer name», «ERP code», the hint');
@@ -1332,15 +1297,10 @@ try {
     check([await enForm.locator('.mold-customer-field[data-field="code"] .field-error').innerText(), await enForm.locator('.mold-address .field-error').innerText()], ['Enter the customer\'s ERP code', 'Enter the delivery address'], 'in English: «Enter the customer\'s ERP code», «Enter the delivery address»');
     await enForm.locator('.mold-customer-fields').scrollIntoViewIfNeeded();
     await noOverflow(english, '320 px English form refusing a customer not in the CRM'); await shot(english, 'mold-customer-free-required-phone-en');
-    await enName.fill('بلا كود');
-    ok((await enOptions.first().innerText()).includes('No Yourrest code yet'), 'in English: «No Yourrest code yet»');
     await enName.fill('');
-    await enCode.fill(String(number));
-    await enOptions.first().waitFor();
-    await noOverflow(english, '320 px English form with suggestions'); await shot(english, 'mold-customer-suggestions-phone-en');
-    await enOptions.filter({hasText: 'مؤسسة إبراهيم للبلوك'}).tap();
+    await enCode.fill('K-7731');
     await enForm.locator('.mold-customer-chosen').waitFor();
-    check([await enName.inputValue(), await enCode.inputValue(), (await enForm.locator('.mold-customer-chosen').innerText()).includes('Linked to the customer')], ['مؤسسة إبراهيم للبلوك', 'K-7731', true], 'in English: chosen, «Linked to the customer»');
+    check([await enCode.inputValue(), (await enForm.locator('.mold-customer-chosen').innerText()).includes('Linked to the customer'), await enForm.locator('[role="option"]').count()], ['K-7731', true, 0], 'in English: its ERP code typed links it, «Linked to the customer», nothing suggested');
     await noOverflow(english, '320 px English form with the linked customer'); await shot(english, 'mold-customer-chosen-phone-en');
     await enCode.fill('K-7731-9');
     check([await enForm.locator('.mold-customer-chosen').count(), await enForm.locator('.mold-customer-free').count()], [0, 1], 'in English: editing the code to another unlinks it');

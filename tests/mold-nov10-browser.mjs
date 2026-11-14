@@ -93,7 +93,7 @@ try {
   await rep.locator('.mold-new').click();
   const dialog = rep.locator('.mold-dialog');
   await dialog.locator('.mold-customer-field[data-field="name"] input').fill('مصنع الشرق');
-  await dialog.locator('.mold-customer-suggestions [role="option"]').filter({hasText: 'مصنع الشرق'}).first().click();
+  await dialog.locator('.mold-customer-field[data-field="code"] input').fill('ERP-east1'); // typed, no suggestions (2026-11-14): the ERP code links the request
   await dialog.locator('.mold-customer-chosen').waitFor();
   await dialog.locator('label.mold-field', {hasText: 'وصف القالب'}).locator('input').fill(DESCRIPTION);
   for (const text of ['مفتوح', 'موديل قديم', 'بدون بلوكة نص']) await dialog.locator('.mold-choice label', {hasText: text}).click();

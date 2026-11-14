@@ -4,6 +4,16 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The mold request's customer typed, with no suggestions (2026-11-14, package update-mold-customer-typed-20261114, no migration)
+
+- **Asked.** The owner, 2026-11-14: «خلى ادخال اسم ورقم العميل كتابة من غير اقتراحات».
+- **What it does.** `app/mold-customer-fields.tsx`: «اسم العميل» and «كود ERP» are plain fields (no list, no combobox role, no keyboard
+  choosing; the suggestions of 2026-11-09 are gone with their styles). The current ERP code of exactly one of the reader's customers still
+  links the request (`moldCustomerByErpCode`, the server deciding the same), shown as «مرتبط بالعميل …». `app/mold-requests.tsx`: the
+  linked customer's registered address fills an empty address, or replaces one filled the same way for another customer (a code
+  corrected); an address typed for the request is kept; the address's message goes when it fills.
+- **Tested.** `tests/mold-requests-browser.mjs` (255 checks), and the other mold browser tests type the ERP code in place of choosing.
+
 ## The «عروض الأسعار» screen retired (2026-11-14, package update-quotes-retired-20261114 with the red marks below, no migration)
 
 - **Asked.** The owner, 2026-11-14: «شاشة عروض السعر ملهاش لازمة الغيها وارفع».
