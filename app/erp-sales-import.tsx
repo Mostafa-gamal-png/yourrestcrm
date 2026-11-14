@@ -15,28 +15,37 @@ type Member = { id: string; name: string; branch: string };
 type EmployeeMapping = { employeeId: string; repId: string };
 type CategoryMapping = { category: string; product: string };
 type Options = { members: Member[]; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; products: string[]; canEditCategoryMappings?: boolean; canChangeOffice?: boolean };
-type DocumentStatus = 'new' | 'duplicate' | 'conflict' | 'excluded' | 'unassigned' | 'unmapped' | 'out_of_scope';
+type DocumentStatus = 'new' | 'duplicate' | 'conflict' | 'excluded' | 'unassigned' | 'unmapped' | 'out_of_scope' | 'replaced' | 'moved' | 'removed';
 type Document = {
   key: string; reference: string; date: string; documentType: 'sale' | 'return';
   customerName: string; employeeId: string; employeeName: string; repId: string;
   repName: string; lineCount: number; totalCents: number; status: DocumentStatus; reason: string;
+  /** replaced, moved, removed: the invoice as it is saved before this import. */
+  saved?: { repId: string; repName: string; totalCents: number };
 };
+/** «دايمًا كامل» (lib/erp-sales-server.ts ERP_REPLACE): what the file replaces of the sales saved for its period; only for an importer who
+ *  reaches every active rep (absent for a supervisor, whose import is unchanged). */
+type Replacement = { from: string; to: string; replacedCount: number; movedCount: number; removedCount: number; keptOutsideCount: number; periodBeforeCents: number; periodAfterCents: number;
+  zeroReps: { repId: string; repName: string; beforeCount: number; beforeCents: number }[] };
 type Preview = {
   previewToken: string; documents: Document[];
   /** office: marked «مبيعات مكتب (مستبعد)» (repId is ERP_OFFICE_CHOICE); officeLocked: a saved mark this reader may not change. */
   employees: { employeeId: string; employeeName: string; repId?: string; mappingSource?: 'saved' | 'selected' | 'name' | 'unmapped'; office?: boolean; officeLocked?: boolean }[]; categories: string[];
   summary: { newCount: number; duplicateCount: number; conflictCount: number; excludedCount: number; unassignedCount?: number; unassignedTotalCents?: number; unmappedCount: number; outOfScopeCount?: number; officeExcludedCount?: number; officeMarkedCount?: number; officeSavedCount?: number; totalCents: number; months: string[];
     /** Only when the report has a «الوصف» column: sales invoices naming a quotation, and saved ones that take their references now. */
-    quotationLinkedCount?: number; quotationRefsBackfillCount?: number };
+    quotationLinkedCount?: number; quotationRefsBackfillCount?: number; replacedCount?: number; movedCount?: number; removedCount?: number };
   warnings: string[];
+  replacement?: Replacement;
   /** The days the file speaks for if it is complete (lib/sales-coverage.ts): its first and last invoice, how far they may widen, the
    *  months it covers whole or in part, how many reps it speaks for, and why it cannot be complete (blocker). */
   coverage?: Coverage | null;
 };
 type Coverage = { first: string; last: string; minFrom: string; maxTo: string; months: { full: string[]; partial: string[] }; repCount: number; allReps: boolean; blocker: string };
-type ImportBody = { fileName: string; base64: string; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; allowSkipped: boolean };
+// wholeCompany: the ERP's invoices file always holds every rep for its period («دايمًا كامل»), so every preview and commit asks the server to
+// let the file replace what is saved for its period; the server applies it only for an importer who reaches every active rep.
+type ImportBody = { fileName: string; base64: string; employeeMappings: EmployeeMapping[]; categoryMappings: CategoryMapping[]; allowSkipped: boolean; wholeCompany: true };
 type Receipt = { importedCount: number; duplicateCount: number; excludedCount: number; officeMarkedCount?: number; officeUnmarkedCount?: number; unassignedCount?: number; unassignedTotalCents?: number; skippedCount?: number; months: string[]; quotationLinkedCount?: number; quotationRefsBackfillCount?: number;
-  coverage?: { from: string; to: string; months: string[]; partialMonths: string[]; allReps: boolean; repIds: string[] } };
+  coverage?: { from: string; to: string; months: string[]; partialMonths: string[]; allReps: boolean; repIds: string[] }; replacement?: Replacement };
 type Props = { onClose: () => void; onImported: () => void | Promise<void> };
 const endpoint = '/api/sales/import';
 const maxBytes = 5 * 1024 * 1024;
@@ -46,6 +55,16 @@ const reportEnglish: Record<string, string> = {
   'مبيعات مكتب (تحديد الموظف): مستبعدة من هذا الاستيراد؛ النسخة المحفوظة سابقًا للمندوب تبقى كما هي': 'Office sales (employee marked): excluded from this import; the copy saved earlier for a rep stays as it is.',
   'مستندات الموظفين المحددين «مبيعات مكتب (مستبعد)» مستبعدة ولا تُحتسب لأي مندوب.': 'Documents of employees marked “Office sales (excluded)” are excluded and not counted for any rep.',
   'مستندات حُفظت سابقًا لمندوب ثم حُدد موظفها «مبيعات مكتب»: تبقى محفوظة لمندوبها كما هي، ولا يحذف الاستيراد أي مبيعات محفوظة.': 'Documents saved earlier for a rep whose employee is now marked office sales stay saved for that rep; the import never deletes saved sales.',
+  'مستندات حُفظت سابقًا لمندوب ثم حُدد موظفها «مبيعات مكتب»: تبقى محفوظة لمندوبها كما هي، ولا يستبدلها الاستيراد ولا يحذفها.': 'Documents saved earlier for a rep whose employee is now marked office sales stay saved for that rep; the import neither replaces nor removes them.',
+  'مستندات بلا بيانات موظف في الملف ولها نسخة محفوظة لمندوب: تبقى النسخة المحفوظة كما هي، ولا يستبدلها الاستيراد ولا يحذفها.': 'Documents without employee details in the file that are saved for a rep keep their saved copy; the import neither replaces nor removes it.',
+  'فواتير محفوظة في فترة الملف لمندوبين غير نشطين أو خارج منطقتك لا يشملها الاستبدال وتبقى كما هي.': 'Saved invoices in the file’s period of inactive reps or reps outside your region are not replaced and stay as they are.',
+  'الفاتورة محفوظة بمحتوى مختلف؛ يحل محتوى الملف محل المحفوظ': 'Saved with different contents; the file’s contents replace the saved invoice.',
+  'الفاتورة محفوظة لمندوب آخر؛ تُنقل إلى المندوب المرتبط في الملف بمحتوى الملف': 'Saved for another rep; it moves to the rep mapped in the file, with the file’s contents.',
+  'محفوظة سابقًا في فترة الملف وليست فيه (أُلغيت أو صُححت في ERP)؛ تُحذف': 'Saved earlier within the file’s period but not in the file (cancelled or corrected in ERP); it is removed.',
+  'كل فئات الفاتورة مستبعدة الآن؛ تُحذف نسختها المحفوظة': 'Every category of this invoice is now excluded; its saved copy is removed.',
+  'راجع الفواتير المحفوظة التي ستُستبدل أو تُنقل أو تُحذف، ثم وافق على ذلك صراحةً قبل الاستيراد': 'Review the saved invoices that will be replaced, moved or removed, then explicitly agree before importing.',
+  'ارفع ملفًا يحتوي من 1 إلى 5000 بند؛ إذا كان التقرير أكبر فصدّره من ERP على عدة ملفات حسب الأشهر، كل ملف يشمل كل المناديب': 'Upload a file with 1 to 5000 lines. If the report is larger, export it from ERP as several files by month, each covering every rep.',
+  'الحد الأقصى للتقرير 5000 بند؛ إذا كان التقرير أكبر فصدّره من ERP على عدة ملفات حسب الأشهر، كل ملف يشمل كل المناديب': 'The report can have at most 5000 lines. If it is larger, export it from ERP as several files by month, each covering every rep.',
   'تعديل موظف محدد «مبيعات مكتب» متاح لمدير المبيعات أو مدير النظام فقط': 'Only the sales manager or system administrator can change an employee marked as office sales.',
   'نفس رقم المستند يحتوي موظفين أو عملاء أو تواريخ مختلفة؛ راجع التقرير': 'This document number has different employees, customers or dates. Review the report.',
   'رقم الموظف أو اسمه ناقص في تقرير ERP؛ صحح التقرير أولًا': 'The ERP employee number or name is missing. Correct the report first.',
@@ -91,6 +110,8 @@ function readFile(file: File): Promise<string> {
 }
 
 const PROBLEM_STATUSES: DocumentStatus[] = ['conflict', 'unmapped', 'out_of_scope', 'unassigned'];
+// A saved invoice the file replaces, moves or removes is not a problem: it has its own notice mark, never the red one.
+const REPLACE_STATUSES: DocumentStatus[] = ['replaced', 'moved', 'removed'];
 
 export default function ErpSalesImport({ onClose, onImported }: Props) {
   const { language } = useLanguage();
@@ -107,6 +128,8 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
   const [completeSnapshot, setCompleteSnapshot] = useState(false);
   const [coverageFrom, setCoverageFrom] = useState('');
   const [coverageTo, setCoverageTo] = useState('');
+  // The explicit agreement to replace, move and remove saved invoices (ERP_REPLACE): sent with the commit only, like the coverage tick.
+  const [replaceConfirmed, setReplaceConfirmed] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewBody, setPreviewBody] = useState<ImportBody | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -149,7 +172,9 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
   const coveredMonths = coverage && coverageValid && completeSnapshot ? periodMonths(coverageFrom, coverageTo) : null;
   const monthNames = (months: string[]) => months.map(month => monthLabel(month, language)).join(' · ');
   const documentBlockers = !!preview?.documents.some(doc => doc.status === 'conflict') || (skippedCount > 0 && !previewBody?.allowSkipped);
-  const hasBlockers = documentBlockers || !coverageValid;
+  const replacement = preview?.replacement || null;
+  const replaceTotal = replacement ? replacement.replacedCount + replacement.movedCount + replacement.removedCount : 0;
+  const hasBlockers = documentBlockers || !coverageValid || (replaceTotal > 0 && !replaceConfirmed);
   const categoryChoice = (category: string) => categoryMappings[category] || (options?.products.includes(category) ? category : '');
   const employeeChoice = (employee: Preview['employees'][number]) => employeeMappings[employee.employeeId] || employee.repId || '';
   const reviewCount = preview?.documents.filter(doc => ['conflict', 'unmapped', 'out_of_scope'].includes(doc.status)).length || 0;
@@ -163,18 +188,23 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
   const pages = Math.max(1, Math.ceil(documents.length / 20)), currentPage = Math.min(page, pages);
   const visibleDocuments = documents.slice((currentPage - 1) * 20, currentPage * 20);
   const money = (cents: number) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(cents / 100);
+  // A change from one value to another, read in the page's direction (Arabic «قبل ← بعد», English «before → after»); amounts stay
+  // left to right inside, names in their own direction.
+  const transition = (from: React.ReactNode, to: React.ReactNode, ltr = false) => <span className="erp-import-transition">{ltr ? <bdi dir="ltr">{from}</bdi> : <bdi>{from}</bdi>} {language === 'en' ? '→' : '←'} {ltr ? <bdi dir="ltr">{to}</bdi> : <bdi>{to}</bdi>}</span>;
   const statusText = (status: DocumentStatus) => ({
     new: say('جاهزة للإضافة', 'Ready to import'), duplicate: say('مسجلة سابقًا', 'Already imported'),
     conflict: say('فاتورة متغيرة', 'Changed invoice'), excluded: say('مستبعدة', 'Excluded'),
+    replaced: say('تُستبدل بمحتوى الملف', 'Replaced by the file'), moved: say('تُنقل لمندوب آخر', 'Moves to another rep'), removed: say('تُحذف', 'Removed'),
     unassigned: say('بدون مندوب — لن تُستورد', 'No rep — not imported'),
     unmapped: say('تحتاج ربط / مراجعة', 'Mapping / review needed'), out_of_scope: say('خارج صلاحيتك', 'Outside your access'),
   })[status];
 
   async function selectFile(selected?: File) {
     if (!selected || lock.current || pending || receipt) return;
-    setError(''); setUploadState(null); setPreview(null); setPreviewBody(null); setDirty(false); setAllowSkipped(false); setCompleteSnapshot(false); setFile(null); setPage(1); setFilter('all');
+    setError(''); setUploadState(null); setPreview(null); setPreviewBody(null); setDirty(false); setAllowSkipped(false); setCompleteSnapshot(false); setReplaceConfirmed(false); setFile(null); setPage(1); setFilter('all');
     if (!/\.xlsx$/i.test(selected.name)) { setError(say('اختر تقرير Excel بصيغة .xlsx.', 'Choose an Excel report in .xlsx format.')); return; }
-    if (!selected.size || selected.size > maxBytes) { setError(say('حجم الملف يجب أن يكون أكبر من صفر ولا يزيد عن 5 ميجابايت.', 'The file must not be empty and must be no larger than 5 MB.')); return; }
+    // A larger report is split by months, never by rep: the import takes each file as every rep's sales for its period.
+    if (!selected.size || selected.size > maxBytes) { setError(say('حجم الملف يجب أن يكون أكبر من صفر ولا يزيد عن 5 ميجابايت. إذا كان التقرير أكبر فصدّره من ERP على عدة ملفات حسب الأشهر، كل ملف يشمل كل المناديب.', 'The file must not be empty and must be no larger than 5 MB. If the report is larger, export it from ERP as several files by month, each covering every rep.')); return; }
     lock.current = true; setBusy('read'); setUploadState({phase:'reading'});
     try {
       const base64 = await readFile(selected);
@@ -196,7 +226,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
     lock.current = true; setBusy('preview'); setError(''); setUploadState({phase:'uploading',loaded:0,total:null,percent:null});
     // Capture the entire request. A commit always refers to precisely this preview.
     const body: ImportBody = {
-      fileName: file.fileName, base64: file.base64, allowSkipped,
+      fileName: file.fileName, base64: file.base64, allowSkipped, wholeCompany: true,
       employeeMappings: Object.entries(employeeMappings).sort(([a], [b]) => a.localeCompare(b)).map(([employeeId, repId]) => ({ employeeId, repId })),
       categoryMappings: Object.entries(categoryMappings).sort(([a], [b]) => a.localeCompare(b)).map(([category, product]) => ({ category, product })),
     };
@@ -204,7 +234,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
       const result = await submitJson<Preview>(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'preview', ...body }) }, { language, onUploadProgress:progress=>{if(live.current)setUploadState(progress);} });
       if(typeof result.previewToken!=='string'||!result.previewToken||!Array.isArray(result.documents)||!result.summary)throw new SubmitError(say('الخادم لم يؤكد تجهيز المعاينة. أعد المحاولة.','The server did not confirm the preview. Retry.'));
       if (!live.current) return;
-      setUploadState(null); setPreview(result); setPreviewBody(body); setDirty(false); setFilter('all'); setPage(1);
+      setUploadState(null); setPreview(result); setPreviewBody(body); setDirty(false); setFilter('all'); setPage(1); setReplaceConfirmed(false);
       if (!result.coverage || result.coverage.blocker) setCompleteSnapshot(false);
       setCoverageFrom(value => result.coverage && value >= result.coverage.minFrom && value <= result.coverage.first ? value : result.coverage?.first || '');
       setCoverageTo(value => result.coverage && value >= result.coverage.last && value <= result.coverage.maxTo ? value : result.coverage?.last || '');
@@ -231,7 +261,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
   async function commit() {
     if (lock.current || saved.current || !preview || !previewBody || dirty || hasBlockers) return;
     lock.current = true; setBusy('commit'); setError(''); setUploadState({phase:'uploading',loaded:0,total:null,percent:null});
-    if (!attempt.current) attempt.current = JSON.stringify({ action: 'commit', ...previewBody, previewToken: preview.previewToken, requestId: crypto.randomUUID(), ...(completeSnapshot ? { completeSnapshot: true, coverageFrom, coverageTo } : {}) });
+    if (!attempt.current) attempt.current = JSON.stringify({ action: 'commit', ...previewBody, previewToken: preview.previewToken, requestId: crypto.randomUUID(), ...(completeSnapshot ? { completeSnapshot: true, coverageFrom, coverageTo } : {}), ...(replaceTotal > 0 && replaceConfirmed ? { replaceExisting: true } : {}) });
     let acknowledged = false;
     try {
       const result = await submitJson<Receipt>(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: attempt.current }, { language, onUploadProgress:progress=>{if(live.current)setUploadState(progress);} });
@@ -287,7 +317,7 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
               <div className="erp-import-counts" aria-live="polite">
                 {[
                   [say('جديدة', 'New'), preview.summary.newCount],
-                  [say('مسجلة سابقًا', 'Duplicates'), preview.summary.duplicateCount],
+                  [replacement ? say('مسجلة سابقًا بلا تغيير', 'Saved, unchanged') : say('مسجلة سابقًا', 'Duplicates'), preview.summary.duplicateCount],
                   [say('مستبعدة', 'Excluded'), preview.summary.excludedCount],
                   [say('تحتاج مراجعة', 'Need review'), reviewCount],
                 ].map(([label, value], index) => <div key={String(label)} data-problem={index === 3 && Number(value) > 0 ? 'true' : undefined}><span>{label}</span><strong>{value}</strong></div>)}
@@ -297,10 +327,29 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
               {!!preview.summary.unassignedCount && <div className="erp-import-unassigned" data-problem="true" role="note"><strong>{say('مستندات بدون مندوب — لن تُستورد', 'Documents without a rep — not imported')}: {preview.summary.unassignedCount}</strong>
                 <p>{say('صافيها قبل الضريبة', 'Their net value before tax')}: <bdi>{money(preview.summary.unassignedTotalCents || 0)} {say('ر.س', 'SAR')}</bdi></p>
                 <p>{say('اسم الموظف أو رقمه مفقود. تُتجاوز هذه المستندات وتُستبعد قيمتها من إجمالي الاستيراد وأداء المناديب.', 'The employee name or number is missing. These documents are skipped and excluded from import totals and rep performance.')}</p></div>}
-              {preview.summary.quotationLinkedCount !== undefined && <p className="erp-import-hint" role="note">{say('فواتير بيع يذكر عمود «الوصف» فيها رقم عرض سعر', 'Sales invoices whose «Description» names a quotation')}: <strong>{preview.summary.quotationLinkedCount}</strong>{!!preview.summary.quotationRefsBackfillCount && <> · {say('فواتير مسجلة سابقًا تُضاف إليها أرقام العروض دون تغيير محتواها', 'Saved invoices that take their quotation numbers without changing their content')}: <strong>{preview.summary.quotationRefsBackfillCount}</strong></>}</p>}
+              {preview.summary.quotationLinkedCount !== undefined && <p className="erp-import-hint" role="note">{say('فواتير بيع يذكر عمود «الوصف» فيها رقم عرض سعر', 'Sales invoices whose «Description» names a quotation')}: <strong>{preview.summary.quotationLinkedCount}</strong>{!!preview.summary.quotationRefsBackfillCount && <> · {say('فواتير مسجلة سابقًا تأخذ أرقام العروض التي يذكرها «الوصف» الآن (يُضاف الجديد ويُحذف ما لم يعد مذكورًا) دون تغيير محتواها', 'Saved invoices that take the quotation numbers «Description» names now (new ones added, ones no longer named dropped) without changing their content')}: <strong>{preview.summary.quotationRefsBackfillCount}</strong></>}</p>}
               <p className="erp-import-hint">{say('تُخصم المردودات في شهرها، وتُتخطى الفواتير المطابقة المسجلة سابقًا.', 'Returns reduce performance in their document month. Identical saved invoices are skipped.')}</p>
               {dirty && <p className="erp-import-notice" role="status">{say('الربط تغير؛ حدّث المعاينة للتأكد من الأرقام قبل الاستيراد.', 'Mappings changed. Refresh the preview to verify totals before importing.')}</p>}
             </section>
+
+            {replacement && <section className="erp-import-replace" aria-labelledby="erp-replace-heading">
+              <h3 id="erp-replace-heading">{say('استبدال المحفوظ لفترة الملف', 'Replacing what is saved for the file’s period')}</h3>
+              <p className="erp-import-hint">{say('يُعامل الملف تقريرًا كاملًا لمبيعات كل المناديب في الفترة', 'The file is treated as the complete report of every rep’s sales for the period')} <bdi dir="ltr" className="erp-import-dates">{replacement.from} — {replacement.to}</bdi>{say(': الفاتورة المحفوظة التي تغيّر محتواها أو مندوبها تأخذ ما في الملف، والفاتورة المحفوظة في هذه الفترة وليست في الملف تُحذف، والمندوب الذي ليست له فواتير في الملف تصبح مبيعاته في الفترة صفرًا. الأيام خارج تواريخ الملف والمبيعات اليدوية لا تتأثر.', ': a saved invoice whose contents or rep changed takes the file’s version, a saved invoice in this period that is not in the file is removed, and a rep with no invoice in the file ends the period at zero. Days outside the file’s dates and manual sales are not affected.')}</p>
+              <div className="erp-import-counts erp-import-replace-counts" aria-live="polite">
+                {[
+                  [say('مستبدلة (تغيّر محتواها)', 'Replaced (contents changed)'), replacement.replacedCount],
+                  [say('منقولة لمندوب آخر', 'Moved to another rep'), replacement.movedCount],
+                  [say('محذوفة (ليست في الملف)', 'Removed (not in the file)'), replacement.removedCount],
+                ].map(([label, value]) => <div key={String(label)} data-replace={Number(value) > 0 ? 'true' : undefined}><span>{label}</span><strong>{value}</strong></div>)}
+              </div>
+              <p className="erp-import-hint">{say('صافي مبيعات ERP المحفوظة في الفترة قبل الضريبة', 'Saved ERP net sales for the period before tax')} ({say('ر.س', 'SAR')}): {transition(money(replacement.periodBeforeCents), money(replacement.periodAfterCents), true)}</p>
+              {!!replacement.zeroReps.length && <div className="erp-import-zero-reps" role="note"><strong>{say('مناديب تصبح مبيعاتهم في الفترة صفرًا (ليست لهم فواتير في الملف)', 'Reps whose sales for the period become zero (no invoices in the file)')}: <bdi>{replacement.zeroReps.length}</bdi></strong>
+                <ul>{replacement.zeroReps.map(rep => <li key={rep.repId}><span className="erp-import-zero-name">{rep.repName || rep.repId}<small>{say('الفواتير المحفوظة', 'Saved invoices')}: <bdi>{rep.beforeCount}</bdi></small></span><span className="erp-import-amount">{transition(money(rep.beforeCents), money(0), true)}</span></li>)}</ul></div>}
+              {!!replacement.keptOutsideCount && <p className="erp-import-hint">{say('فواتير محفوظة في الفترة لمندوبين غير نشطين أو خارج منطقتك تبقى كما هي', 'Saved invoices in the period of inactive reps or reps outside your region stay as they are')}: <bdi>{replacement.keptOutsideCount}</bdi></p>}
+              <p className="erp-import-hint">{say('لا ترفع تقريرًا مصفّى لمندوب واحد أو لبعض المناديب. لتقسيم تقرير كبير صدّره من ERP على عدة ملفات حسب الأشهر، كل ملف يشمل كل المناديب.', 'Do not upload a report filtered to one rep or to some reps. To split a large report, export it from ERP as several files by month, each covering every rep.')}</p>
+              {replaceTotal > 0 && !receipt && <label className="erp-import-skip erp-import-replace-confirm"><input type="checkbox" checked={replaceConfirmed} disabled={immutable || dirty} onChange={event => { setReplaceConfirmed(event.target.checked); setError(''); }}/><span><strong>{say('أوافق على استبدال الفواتير المحفوظة ونقلها وحذفها كما في المعاينة', 'I agree to replace, move and remove saved invoices as shown in the preview')}</strong>
+                <small>{say(`الفواتير المحفوظة: تُستبدل ${replacement.replacedCount}، وتُنقل ${replacement.movedCount}، وتُحذف ${replacement.removedCount}. لا يمس ذلك أي فاتورة خارج الفترة.`, `Saved invoices replaced: ${replacement.replacedCount}, moved: ${replacement.movedCount}, removed: ${replacement.removedCount}. Nothing outside the period is touched.`)}</small></span></label>}
+            </section>}
 
             {!!preview.employees.length && <section className="erp-import-mappings" aria-labelledby="erp-employee-mapping">
               <h3 id="erp-employee-mapping">{say('ربط الموظفين بالمناديب', 'Map employees to reps')}</h3>
@@ -364,17 +413,17 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
                 </> : <p className="erp-import-notice" role="status">{say('اختر فترة تشمل كل تواريخ الملف، لا تبدأ قبل أول يوم في شهره الأول ولا تنتهي بعد آخر يوم في شهره الأخير أو بعد اليوم.', 'Choose a period that includes every date in the file, starting no earlier than the first day of its first month and ending no later than the last day of its last month or today.')}</p>}
               </div>}
             </section>}
-            {documentBlockers && !receipt && <p className="erp-import-notice" role="status">{say('أكمل الربط وراجع الفواتير المتغيرة أو البيانات خارج صلاحيتك. لن تُستبدل أي فاتورة سابقة تلقائيًا.', 'Complete mappings and review changed invoices or records outside your access. Existing invoices are never overwritten automatically.')}</p>}
+            {documentBlockers && !receipt && <p className="erp-import-notice" role="status">{replacement ? say('أكمل الربط وراجع المستندات المعلَّمة بالأحمر قبل الاستيراد.', 'Complete the mappings and review the documents marked in red before importing.') : say('أكمل الربط وراجع الفواتير المتغيرة أو البيانات خارج صلاحيتك. لن تُستبدل أي فاتورة سابقة تلقائيًا.', 'Complete mappings and review changed invoices or records outside your access. Existing invoices are never overwritten automatically.')}</p>}
 
             <section className="erp-import-documents" aria-labelledby="erp-documents-heading">
               <div className="erp-import-section-heading"><h3 id="erp-documents-heading">{say('الفواتير والمردودات', 'Invoices and returns')}</h3>
                 <label className="erp-import-filter"><span>{say('عرض', 'Show')}</span><select value={filter} onChange={event => { setFilter(event.target.value as typeof filter); setPage(1); }}>
-                  <option value="all">{say('الكل', 'All')}</option>{(['new', 'duplicate', 'excluded', 'unassigned', 'unmapped', 'conflict', 'out_of_scope'] as const).map(value => <option key={value} value={value}>{statusText(value)}</option>)}
+                  <option value="all">{say('الكل', 'All')}</option>{([...(['new', 'duplicate'] as const), ...(replacement ? REPLACE_STATUSES : []), ...(['excluded', 'unassigned', 'unmapped', 'conflict', 'out_of_scope'] as const)]).map(value => <option key={value} value={value}>{statusText(value)}</option>)}
                 </select></label>
               </div>
               <div className="erp-import-table-wrap"><table className="erp-import-table"><thead><tr>{[say('المرجع / التاريخ', 'Reference / date'), say('العميل', 'Customer'), say('الموظف ← المندوب', 'Employee → rep'), say('الصافي · ر.س', 'Net · SAR'), say('الحالة', 'Status')].map(label => <th key={label}>{label}</th>)}</tr></thead>
-                <tbody>{visibleDocuments.map(doc => <tr key={doc.key} data-problem={PROBLEM_STATUSES.includes(doc.status) ? 'true' : undefined}><td><strong><bdi>{doc.reference}</bdi></strong><small dir="ltr">{doc.date}</small><small>{doc.documentType === 'return' ? say('مردود مبيعات', 'Sales return') : say('فاتورة مبيعات', 'Sales invoice')}</small></td><td>{doc.customerName}<small>{doc.lineCount} {say('بند', 'lines')}</small></td><td>{doc.employeeName || '—'}<small>{doc.repName || '—'}</small></td><td className="erp-import-amount" dir="ltr">{money(doc.totalCents)}</td><td><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span>{doc.reason && <small>{present(doc.reason)}</small>}</td></tr>)}</tbody></table></div>
-              <div className="erp-import-cards">{visibleDocuments.map(doc => <article className="erp-import-document-card" key={doc.key} data-problem={PROBLEM_STATUSES.includes(doc.status) ? 'true' : undefined}><div><strong><bdi>{doc.reference}</bdi></strong><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span></div><p>{doc.customerName}</p><small><bdi>{doc.date}</bdi> · {doc.documentType === 'return' ? say('مردود', 'Return') : say('فاتورة', 'Invoice')} · {doc.lineCount} {say('بند', 'lines')}</small><p>{doc.employeeName || '—'}<span aria-hidden="true"> · </span>{doc.repName || (doc.status === 'unassigned' ? say('بدون مندوب', 'No rep') : say('بدون ربط', 'Unmapped'))}</p><strong className="erp-import-amount" dir="ltr">{money(doc.totalCents)} {say('ر.س', 'SAR')}</strong>{doc.reason && <small>{present(doc.reason)}</small>}</article>)}</div>
+                <tbody>{visibleDocuments.map(doc => <tr key={doc.key} data-problem={PROBLEM_STATUSES.includes(doc.status) ? 'true' : undefined} data-replace={REPLACE_STATUSES.includes(doc.status) ? 'true' : undefined}><td><strong><bdi>{doc.reference}</bdi></strong><small dir="ltr">{doc.date}</small><small>{doc.documentType === 'return' ? say('مردود مبيعات', 'Sales return') : say('فاتورة مبيعات', 'Sales invoice')}</small></td><td>{doc.customerName}<small>{doc.lineCount} {say('بند', 'lines')}</small></td><td>{doc.employeeName || '—'}<small>{doc.status === 'moved' && doc.saved ? transition(doc.saved.repName || '—', doc.repName || '—') : doc.repName || '—'}</small></td><td className="erp-import-amount" dir="ltr">{money(doc.totalCents)}{doc.saved && <small className="erp-import-saved-amount">{say('المحفوظ', 'Saved')} {money(doc.saved.totalCents)}</small>}</td><td><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span>{doc.reason && <small>{present(doc.reason)}</small>}</td></tr>)}</tbody></table></div>
+              <div className="erp-import-cards">{visibleDocuments.map(doc => <article className="erp-import-document-card" key={doc.key} data-problem={PROBLEM_STATUSES.includes(doc.status) ? 'true' : undefined} data-replace={REPLACE_STATUSES.includes(doc.status) ? 'true' : undefined}><div><strong><bdi>{doc.reference}</bdi></strong><span className={'erp-import-badge ' + doc.status}>{statusText(doc.status)}</span></div><p>{doc.customerName}</p><small><bdi>{doc.date}</bdi> · {doc.documentType === 'return' ? say('مردود', 'Return') : say('فاتورة', 'Invoice')} · {doc.lineCount} {say('بند', 'lines')}</small><p>{doc.employeeName || '—'}<span aria-hidden="true"> · </span>{doc.status === 'moved' && doc.saved ? transition(doc.saved.repName || '—', doc.repName || '—') : doc.repName || (doc.status === 'unassigned' ? say('بدون مندوب', 'No rep') : say('بدون ربط', 'Unmapped'))}</p>{doc.saved ? <strong className="erp-import-amount">{transition(money(doc.saved.totalCents), money(doc.totalCents), true)} {say('ر.س', 'SAR')}</strong> : <strong className="erp-import-amount" dir="ltr">{money(doc.totalCents)} {say('ر.س', 'SAR')}</strong>}{doc.reason && <small>{present(doc.reason)}</small>}</article>)}</div>
               {!documents.length && <p className="erp-import-hint">{say('لا توجد فواتير بهذه الحالة.', 'No invoices match this status.')}</p>}
               {pages > 1 && <nav className="erp-import-pagination" aria-label={say('صفحات المعاينة', 'Preview pages')}><button type="button" className="btn subtle small" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>{say('السابق', 'Previous')}</button><span dir="ltr">{currentPage} / {pages}</span><button type="button" className="btn subtle small" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>{say('التالي', 'Next')}</button></nav>}
             </section>
@@ -384,8 +433,10 @@ export default function ErpSalesImport({ onClose, onImported }: Props) {
 
       <footer className="erp-import-footer">
         {!!error && <p className="form-error" role="alert">{present(error)}</p>}
+        {replaceTotal > 0 && !replaceConfirmed && !receipt && !dirty && !pending && <p className="erp-import-notice erp-import-replace-note" role="status">{say('وافق على الاستبدال في قسم «استبدال المحفوظ لفترة الملف» لتفعيل الاستيراد.', 'Agree to the replacement in “Replacing what is saved for the file’s period” to enable the import.')}</p>}
         {pending && <p className="erp-import-notice" role="status">{say('لم يتأكد الحفظ بسبب الاتصال. البيانات مثبتة؛ اضغط «تأكيد الحفظ» لإعادة نفس الطلب بدون تكرار.', 'The connection did not confirm the import. Your data is locked; choose “Confirm save” to retry the same request without duplicates.')}</p>}
-        {receipt && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تأكيد الاستيراد', 'Import confirmed')}</strong><p>{say('أُضيفت', 'Imported')}: {receipt.importedCount} · {say('مسجلة سابقًا', 'Duplicates')}: {receipt.duplicateCount} · {say('مستبعدة', 'Excluded')}: {receipt.excludedCount}{!!receipt.skippedCount && <> · {say('متجاوزة للمراجعة', 'Skipped for review')}: {receipt.skippedCount}</>}{receipt.quotationLinkedCount !== undefined && <> · {say('مرتبطة بعروض أسعار', 'Linked to quotations')}: {receipt.quotationLinkedCount}</>}{!!receipt.quotationRefsBackfillCount && <> · {say('أُضيفت إليها أرقام العروض', 'Quotation numbers added')}: {receipt.quotationRefsBackfillCount}</>}</p>
+        {receipt && <div className="erp-import-success" role="status"><CheckCircle2 size={21}/><div><strong>{say('تم تأكيد الاستيراد', 'Import confirmed')}</strong><p>{say('أُضيفت', 'Imported')}: {receipt.importedCount} · {say('مسجلة سابقًا', 'Duplicates')}: {receipt.duplicateCount} · {say('مستبعدة', 'Excluded')}: {receipt.excludedCount}{!!receipt.skippedCount && <> · {say('متجاوزة للمراجعة', 'Skipped for review')}: {receipt.skippedCount}</>}{receipt.quotationLinkedCount !== undefined && <> · {say('مرتبطة بعروض أسعار', 'Linked to quotations')}: {receipt.quotationLinkedCount}</>}{!!receipt.quotationRefsBackfillCount && <> · {say('حُدّثت أرقام عروضها', 'Quotation numbers updated')}: {receipt.quotationRefsBackfillCount}</>}</p>
+          {receipt.replacement && <p className="erp-import-replace-receipt">{say('استبدال المحفوظ للفترة', 'Replaced for the period')} <bdi dir="ltr" className="erp-import-dates">{receipt.replacement.from} — {receipt.replacement.to}</bdi>: {say('استُبدلت', 'replaced')} {receipt.replacement.replacedCount} · {say('نُقلت لمندوب آخر', 'moved to another rep')} {receipt.replacement.movedCount} · {say('حُذفت', 'removed')} {receipt.replacement.removedCount}{!!receipt.replacement.zeroReps.length && <> · {say('مناديب أصبحت مبيعاتهم في الفترة صفرًا', 'reps whose sales for the period are now zero')} {receipt.replacement.zeroReps.length}</>}</p>}
           {!!(receipt.officeMarkedCount || receipt.officeUnmarkedCount) && <p>{say('حُفظ تحديد «مبيعات مكتب (مستبعد)»', 'Office sales (excluded) saved')}: {receipt.officeMarkedCount || 0}{!!receipt.officeUnmarkedCount && <> · {say('أُعيد إلى مندوب', 'Returned to a rep')}: {receipt.officeUnmarkedCount}</>}</p>}
           {!!receipt.unassignedCount && <p>{say('تُجاوزت بدون مندوب ولم تُستورد', 'Skipped without a rep; not imported')}: {receipt.unassignedCount} · {say('صافيها قبل الضريبة', 'Their net value before tax')}: <bdi>{money(receipt.unassignedTotalCents || 0)} {say('ر.س', 'SAR')}</bdi>. {say('لم تُحتسب لأي مندوب.', 'Not counted for any rep.')}</p>}
           <small>{say('الأشهر', 'Months')}: <bdi>{receipt.months.join(' · ') || '—'}</bdi></small>

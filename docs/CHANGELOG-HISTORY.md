@@ -4,6 +4,48 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## ERP sales: a corrected report replaces what is saved for its period (2026-11-14, not released yet, no migration)
+
+- **Asked.** The owner, 2026-11-14: a sales report the ERP corrected (an invoice billed wrong, moved to another representative or
+  cancelled) must win when it is uploaded again, instead of being refused as «رقم المستند محفوظ بمحتوى أو ربط مختلف؛ لن يتم استبداله». The
+  rule: the ERP invoices file always holds every representative for its period, «دايمًا كامل». The reference is GSCO CRM 2.13.45 and
+  2.13.74 (its page sends `whole_company:true`; a representative with sales stored in the file's period and no invoice in it gets zero).
+- **Who it applies to** (`lib/erp-sales-server.ts`, `ERP_REPLACE`): the page sends `wholeCompany:true` with every preview and commit
+  (`app/erp-sales-import.tsx`); the server applies it only for an importer who reaches every active representative and is not a supervisor
+  (the sales manager, the administrator). A supervisor, a regional manager short of a representative, and any caller without the flag
+  import exactly as before: a changed invoice is a conflict and nothing is removed. The flag is part of the signed request (a commit must
+  carry its preview's flag); without it the request text is unchanged.
+- **The period** is the file's first and last invoice date (`lib/sales-coverage.ts` `filePeriod`), as GSCO takes it: the file says
+  nothing about the days before its first invoice or after its last.
+- **What happens to a saved ERP invoice** (`crm_erp_sales` only; manual sales are never touched): one whose content or category mapping
+  changed takes the file's content in place (status `replaced`, same id `erp-sale-<key>`, written by this import); one whose
+  representative changed moves to the file's representative with the file's content (`moved`; both representatives within the importer's
+  reach); one dated in the period that the file does not hold in any state (cancelled or corrected in the ERP) is removed (`removed`),
+  and so is a saved one all of whose categories are now excluded. A representative with saved ERP sales in the period and none after ends
+  the period at zero: the preview lists each with the saved net and count (`replacement.zeroReps`), and gives the period's saved net
+  before and after. Quotation links of «الوصف» are exactly the file's for every invoice it holds (a number changed or gone is dropped; a
+  report without the column keeps the saved ones); invoices outside the period are untouched.
+- **Left as they were:** the manual-sales, mixed-document and future-date conflicts still block; a saved invoice whose employee is now
+  marked «مبيعات مكتب (مستبعد)», or named «مبيعات مكتب» by the ERP, or given without employee details, keeps its saved copy for its
+  representative (the file still holds it, so it is neither replaced nor removed) and the notes say so; a saved invoice of an inactive
+  representative or one outside the importer's region is not touched and is counted.
+- **The commit** needs the importer's explicit agreement when anything saved is replaced, moved or removed (`replaceExisting`, «أوافق على
+  استبدال الفواتير المحفوظة ونقلها وحذفها كما في المعاينة», as GSCO's `replace_existing`), stays one atomic batch behind the claim, and is
+  refused, writing nothing, when the preview is stale (another import moved the revision), when a saved row it changes is not as the
+  preview read it, or when the active representatives changed meanwhile. The same request replays its receipt.
+- **Traced:** the import's row (`crm_erp_imports.result.replacement`: the period, the counts, the zero rows) and its audit line («استيراد
+  مبيعات ERP», `replacementChanges`: each invoice, from which representative and net to which), and beside it one audit line «استبدال
+  مبيعات ERP» (`<import id>:replaced`) with the saved rows as they were.
+- **The screen:** a section «استبدال المحفوظ لفترة الملف» with the period, the replaced, moved and removed counts, the saved net before and
+  after, the representatives who end at zero, a warning never to upload a report filtered by representative, and the agreement; the
+  documents carry their own amber mark (never the red problem mark). The size and line-limit messages now say to split a larger report
+  by months, each file covering every representative.
+- **Not automatic:** the coverage entry «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» stays the importer's own tick (GSCO, too,
+  asks the importer to confirm completeness).
+- **Tested.** `tests/erp-sales-replace.mjs` (route on migrated SQLite), `tests/erp-sales-replace-ui.mjs` (the component),
+  `tests/erp-sales-replace-http.mjs` (built release, real XLSX, the KPI and own targets reading the result) and
+  `tests/erp-sales-replace-browser.mjs` (Chromium at 360 px and a computer, Arabic and English).
+
 ## Mold requests: the city, the mold number and the customer code required; erpCode sent with a CRM customer (2026-11-14, no migration)
 
 - **Asked.** The owner on 2026-11-14: «خلي المدينة ورقم القالب إجباري والطلب يتبعت بكود erp», then «سميه كود العميل بس». A request
@@ -140,7 +182,7 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   `mappings` 0, `duplicates`); a sales manager no longer moves a number past a holder outside their regions even with a mapping to a
   holder inside, and is no longer stopped by a stale mapping to an outside customer that carries nothing.
 - Arabic guide: docs/UPDATE-2026-11-12-TARGETS-FIXES-AR.txt.
-## «العملاء الجدد» from the ERP customers file (2026-11-12, not released yet, no migration)
+## «العملاء الجدد» from the ERP customers file (2026-11-12, released in update-targets-fixes-20261112, no migration)
 
 - **Asked.** The owner: «فيه فى داتة العملاء اللى برفعها التاريخ واسم المندوب هاتهم من هنا». Before, «العملاء الجدد» counted only the
   customers a representative added by hand in the app during the month (`data._createdBy`), divided by the new-customers target.
