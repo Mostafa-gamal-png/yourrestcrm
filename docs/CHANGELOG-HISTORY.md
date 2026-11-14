@@ -9,7 +9,8 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
 - **Asked.** The owner, 2026-11-14: «خلى ادخال اسم ورقم العميل كتابة من غير اقتراحات».
 - **What it does.** `app/mold-customer-fields.tsx`: «اسم العميل» and «كود ERP» are plain fields (no list, no combobox role, no keyboard
   choosing; the suggestions of 2026-11-09 are gone with their styles). The current ERP code of exactly one of the reader's customers still
-  links the request (`moldCustomerByErpCode`, the server deciding the same), shown as «مرتبط بالعميل …». `app/mold-requests.tsx`: the
+  links the request (`moldCustomerByErpCode`, the server deciding the same), shown as «مرتبط بالعميل …» with «كود ERP: …» and the city,
+  not the Yourrest code (the owner: «خلي كود ERP يظهر بدل كود يورست»; production still gets the Yourrest number). `app/mold-requests.tsx`: the
   linked customer's registered address fills an empty address, or replaces one filled the same way for another customer (a code
   corrected); an address typed for the request is kept; the address's message goes when it fills.
 - **Tested.** `tests/mold-requests-browser.mjs` (255 checks), and the other mold browser tests type the ERP code in place of choosing.

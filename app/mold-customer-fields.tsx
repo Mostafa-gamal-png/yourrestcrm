@@ -43,6 +43,8 @@ export default function MoldCustomerFields({chosenId,linked,text,onText,onChoose
  const describedBy=(field:Field)=>[errors[field]?id+'-'+field+'-error':'',errors.customer?id+'-error':'',field==='code'?id+'-hint':''].filter(Boolean).join(' ')||undefined;
  const fieldProps=(field:Field)=>({'aria-invalid':!!errors[field]||!!errors.customer||undefined,'aria-describedby':describedBy(field),autoComplete:'off'});
  const typed=!!(text.name.trim()||text.code.trim());
+ // The linked customer's ERP code, not its Yourrest code (the owner, 2026-11-14: «خلي كود ERP يظهر بدل كود يورست»): its own, else the one typed.
+ const linkedErp=linked?moldCustomerErpCode(linked)||englishDigits(text.code.trim()):'';
  return <div className="mold-customer-fields" aria-invalid={!!(errors.name||errors.code||errors.customer)} data-linked={linked?'true':typed?'false':undefined}>
   <div className="mold-customer-inputs">
    <div className="mold-customer-field" data-field="name" aria-invalid={!!(errors.name||errors.customer)||undefined}>
@@ -57,8 +59,9 @@ export default function MoldCustomerFields({chosenId,linked,text,onText,onChoose
     {errors.code&&<small className="field-error" id={id+'-code-error'}>{errors.code}</small>}
    </div>
   </div>
-  {/* Linked to one of the CRM's customers (chosen, or named by its ERP code alone): production identifies it by its Yourrest number. */}
-  {linked&&<p className="mold-customer-chosen" role="status"><span><CheckCircle2 size={16} aria-hidden="true"/>{say(...MOLD_CUSTOMER_TEXT.linked)} <bdi dir="auto">{String(linked.data.name||'')}</bdi><small><bdi dir="ltr">{String(linked.data.internalCode||'')}</bdi>{linked.data.city?<> · <bdi>{String(linked.data.city)}</bdi></>:null}</small></span></p>}
+  {/* Linked to one of the CRM's customers (named by its ERP code): its name, ERP code and city; production still identifies it by its
+      Yourrest number, which the reader does not need to see (2026-11-14). */}
+  {linked&&<p className="mold-customer-chosen" role="status"><span><CheckCircle2 size={16} aria-hidden="true"/>{say(...MOLD_CUSTOMER_TEXT.linked)} <bdi dir="auto">{String(linked.data.name||'')}</bdi><small>{linkedErp?<>{say('كود ERP:','ERP code:')} <bdi dir="ltr">{linkedErp}</bdi></>:null}{linkedErp&&linked.data.city?' · ':null}{linked.data.city?<bdi>{String(linked.data.city)}</bdi>:null}</small></span></p>}
   {/* Anything else typed is a customer not in the CRM: the request goes to production with the name and ERP code (never blocked). */}
   {!linked&&typed&&<p className="mold-customer-free" role="status"><Info size={16} aria-hidden="true"/><span>{say(...MOLD_CUSTOMER_TEXT.free)}</span></p>}
   {errors.customer&&<small className="field-error" id={id+'-error'}>{errors.customer}</small>}
