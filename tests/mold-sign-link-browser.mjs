@@ -77,6 +77,7 @@ try {
     await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
     await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
+    await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city is filled in from the customer's «الدمام»)
     await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: 'نقدي'}).click();
     const picker = dialog.locator('.mold-design-picker[data-category="design"]');
     await picker.locator('input[type=file]').setInputFiles(file);
@@ -186,7 +187,7 @@ try {
   } catch { console.log(JSON.stringify({note: 'pdftoppm not available: the signed copy was checked as a file, not rendered'})); }
 
   // ---- 3. On a computer in English: the sheet's panel makes a new link for a request whose link was made elsewhere
-  const apiCreate = await rep.evaluate(async () => (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId: crypto.randomUUID(), action: 'create', customerId: 'east1', specs: {description: 'قالب بلوك 15', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, notes: ''}, payment: 'cash', address: 'الدمام', signatureLink: true})})).status);
+  const apiCreate = await rep.evaluate(async () => (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId: crypto.randomUUID(), action: 'create', customerId: 'east1', specs: {description: 'قالب بلوك 15', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'M-31', quantity: 1, notes: ''}, payment: 'cash', address: 'الدمام', signatureLink: true})})).status);
   check(apiCreate, 200, 'a second request with a link');
   const english = await open('rep', {language: 'en'});
   await goMolds(english);

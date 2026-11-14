@@ -15,7 +15,7 @@ import {CheckCircle2,Download,Eraser,FileText,Loader2,PenLine,RotateCcw,Triangle
 import {MOLD_SIGN_PAGE_TEXT,docCategory} from '@/lib/mold-signed-document';
 import {MOLD_VIEWER_TEXT} from '@/lib/mold-document-view';
 import {useLanguage} from '@/lib/i18n';
-import {MOLD_CORES,MOLD_HALF_BLOCKS,MOLD_MODELS,MOLD_PAYMENT_TERMS_TITLE,moldNotSignedText,moldPaymentNames,moldPaymentTermsNames} from '@/lib/mold-requests';
+import {MOLD_CORES,MOLD_HALF_BLOCKS,MOLD_MODELS,MOLD_PAYMENT_TERMS_TITLE,MOLD_CITY_TEXT,moldCityText,moldNotSignedText,moldPaymentNames,moldPaymentTermsNames} from '@/lib/mold-requests';
 import type {MoldViewerFile} from '@/lib/mold-document-view';
 import MoldDocumentViewer,{type DocPlan} from './mold-document-viewer';
 import {MoldSignaturePage,signaturePagePng} from './mold-signature-page';
@@ -64,7 +64,7 @@ export default function MoldSignPage({token,page}:{token:string;page:SignLinkPag
  const s=page.summary,choose=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
  // As text (2026-11-11): the signature page prints it as the page shows it.
  const facts:[string,string][]=[[say('العميل','Customer'),s.customerName],...(s.erpCode?[[say('كود العميل','Customer code'),s.erpCode] as [string,string]]:[]),
-  [say('عنوان التسليم','Delivery address'),s.address||'—'],[say('الوصف','Description'),s.description],[say('الكمية','Quantity'),String(s.quantity??'—')],
+  [say('عنوان التسليم','Delivery address'),s.address||'—'],...(s.city?[[say(...MOLD_CITY_TEXT.label),moldCityText(s.city,say)] as [string,string]]:[]),[say('الوصف','Description'),s.description],[say('الكمية','Quantity'),String(s.quantity??'—')],
   [say('العلب','Core'),choose(MOLD_CORES,s.core)],[say('الرجاجات','Vibrators'),String(s.vibrators??'—')],[say('الموديل','Model'),choose(MOLD_MODELS,s.model)],[say('بلوكة النص','Half block'),choose(MOLD_HALF_BLOCKS,s.halfBlock)],
   [say('عرض القالب (مم)','Mold width (mm)'),String(s.moldWidth??'—')],[say('مقاس الجلب','Gelba size'),String(s.gelbaSize??'—')],
   ...(s.payment?[[say('الدفع','Payment'),say(...moldPaymentNames[s.payment])] as [string,string]]:[]),
