@@ -140,15 +140,19 @@ try {
   await dialog.getByRole('button', {name: 'تم', exact: true}).click();
   await dialog.waitFor({state: 'detached'});
 
-  // ---- 2. «عروض الأسعار»: listed, opened, on the customer's sheet, printed; no import button there.
+  // ---- 2. The «عروض الأسعار» screen is retired (the owner, 2026-11-14): an old link opens another screen and no menu offers it; the
+  //      imported quotation opens from its customer's sheet, with its ERP source, and prints.
   await admin.goto(app.origin + '/#quote'); await admin.reload();
   await admin.locator('.workspace').waitFor();
-  const quoteRow = admin.locator('tr', {hasText: 'Qut-2002'});
-  await quoteRow.waitFor();
-  check(await button(admin).count(), 0, 'no import button on «عروض الأسعار»');
-  ok((await quoteRow.innerText()).includes('مصنع الاختبار الثاني'), 'listed with its customer');
-  await shot(admin, '04-quotes-list-desktop-ar');
-  await quoteRow.locator('.name-cell').click();
+  await admin.locator('[data-sidebar=menu-button][data-active=true]').first().waitFor();
+  check(await admin.locator('tr', {hasText: 'Qut-2002'}).count(), 0, 'an old link to the quotations screen lists no quotation: another screen opened');
+  check(await admin.locator('[data-sidebar=menu-button]', {hasText: 'عروض الأسعار'}).count(), 0, 'no menu offers the retired quotations screen');
+  await admin.goto(app.origin + '/#customer'); await admin.reload();
+  await admin.locator('tr', {hasText: 'مصنع الاختبار الثاني'}).first().getByRole('button', {name: 'بيانات العميل', exact: true}).click();
+  const adminQuotes = admin.locator('.crm-sheet .customer-quotes');
+  await adminQuotes.waitFor();
+  await shot(admin, '04-customer-quotes-desktop-ar');
+  await adminQuotes.locator('button', {hasText: 'Qut-2002'}).click();
   const sheet = admin.locator('.crm-sheet');
   await sheet.waitFor();
   const sheetText = await sheet.innerText();
