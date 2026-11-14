@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,FileText,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
+import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {pageAllowed} from '@/lib/permissions';
 import {roles,type Member} from '@/lib/crm';
@@ -23,7 +23,6 @@ const pages=[
  {id:'service-kpi',ar:'تقييم الخدمة',en:'Service evaluation',Icon:Gauge},
  {id:'dashboard',ar:'لوحة المتابعة',en:'Dashboard',Icon:LayoutDashboard},
  {id:'journeys',ar:'تقرير يوم المندوب',en:'Daily route',Icon:MapPinned},
- {id:'quote',ar:'عروض الأسعار',en:'Quotations',Icon:FileText},
  {id:'sales',ar:'المبيعات',en:'Sales',Icon:BriefcaseBusiness},
  {id:'competitors',ar:'المنافسين',en:'Competitors',Icon:Users},
  {id:'team',ar:'الفريق والصلاحيات',en:'Team & permissions',Icon:ShieldCheck},
