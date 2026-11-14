@@ -129,10 +129,12 @@ try {
   data = await sales('sm');
   const full = kpi('rep1');
   // attainment 66.67 × 25% = 16.6675, collection 80% × 20 = 16, growth min(100, (10 − 4) / 4) × 5 = 5, variety 0, new customers 33.33% × 5 = 1.6665,
-  // recovered 0, retention 1/1 × 5 = 5, visits 0, quality 90% × 5 = 4.5, conduct 80% × 10 = 8 → 56.834 of an applicable 87
-  // (effective visits 2, quotes 3, orders 3 and documentation 5 do not apply) → 65.33 / 100.
-  check(Object.fromEntries(full.metrics.map(m => [m.id, m.score])), {attainment: 66.67, collection: 80, growth: 100, variety: 0, new_customers: 33.33, recovered: 0, retention: 100, visits: 0, positive: null, quotes: null, orders: null, quality: 90, documentation: null, responsibility: 80, teamwork: 80, honesty: 80, professionalism: 80, appearance: 80}, 'each indicator of rep1');
-  check([full.summary.earned, full.summary.applicableWeight, full.summary.total, full.summary.complete], [56.83, 87, 65.33, true], 'rep1 overall score by hand');
+  // recovered 0, retention 1/1 × 5 = 5, visits 0, quality 15/21 fields = 71.43% × 5 = 3.5714 (automatic since 2026-11-14: rep1's three customers
+  // carry name, region, city, phone and contact of the seven fields; the saved 10/9 no longer counts), conduct 80% × 10 = 8 → 55.905 of an
+  // applicable 87 (effective visits 2, quotes 3, orders 3 and documentation 5 do not apply) → 64.26 / 100.
+  check(Object.fromEntries(full.metrics.map(m => [m.id, m.score])), {attainment: 66.67, collection: 80, growth: 100, variety: 0, new_customers: 33.33, recovered: 0, retention: 100, visits: 0, positive: null, quotes: null, orders: null, quality: 71.43, documentation: null, responsibility: 80, teamwork: 80, honesty: 80, professionalism: 80, appearance: 80}, 'each indicator of rep1');
+  check([full.summary.earned, full.summary.applicableWeight, full.summary.total, full.summary.complete], [55.91, 87, 64.26, true], 'rep1 overall score by hand');
+  check([full.metrics.find(m => m.id === 'quality').numerator, full.metrics.find(m => m.id === 'quality').denominator, full.metrics.find(m => m.id === 'quality').source], [15, 21, 'automatic'], 'data quality from rep1\'s customer records');
 
   // ---- refusals and save paths
   for (const who of ['sup', 'rep1', 'cs']) check((await save(who, 'sales', 'rep2', quantities([1, 1]))).status, 403, who + ' cannot set a target');
@@ -184,7 +186,7 @@ try {
   check(await gauges(sm, 'مدير المبيعات'), [(Math.round((31 / 55 * 40 + 10 / 17 * 20) / 60 * 10000) / 100) + '%', '56.36%'], 'the manager\'s card: weighted 57.18%, product 31/55 written 56.36% (two decimals, as beside it)');
   check(await gauges(sm, 'المشرف أحمد'), ['66.67%', '66.67%'], 'the supervisor\'s card: 20/30 written 66.67%, not 66.666667%');
   check(await gauges(sm, 'مندوب أول'), ['66.67%', '50%'], 'rep1\'s card');
-  check(await card(sm, 'مندوب أول').locator('.targets-summary-total strong').innerText(), '65.33 / 100', 'rep1\'s overall score on the card');
+  check(await card(sm, 'مندوب أول').locator('.targets-summary-total strong').innerText(), '64.26 / 100', 'rep1\'s overall score on the card');
   check(await gauges(sm, 'مندوب ثاني'), ['—', '100%'], 'rep2: the weighted attainment is unknown, the first product 10/10');
   await noSideways(sm, 'manager desktop');
   await shot(sm, 'targets-sm-desktop-ar');
@@ -200,7 +202,7 @@ try {
   await resultsTab(sm);
   const kpiCsv = await download(sm, 'تصدير التقييم');
   const overall = kpiCsv.find(row => row[1] === 'مندوب أول' && row[2] === 'درجة التقييم الكلية');
-  check(overall?.slice(3), ['87', '65.33', '56.83', 'الوزن الذي تم تقييمه: 87 / 87%'], 'the evaluation CSV ends each person with the overall line the page shows');
+  check(overall?.slice(3), ['87', '64.26', '55.91', 'الوزن الذي تم تقييمه: 87 / 87%'], 'the evaluation CSV ends each person with the overall line the page shows');
   check(kpiCsv.find(row => row[1] === 'مندوب أول' && row[2] === 'التحصيل')?.slice(3, 6), ['20', '80', '16'], 'an indicator row');
   // The branch: its target and what is left to distribute (rep1 20 + rep2 10 + rep3 20 = 50 of 60; 8 + 4 + 0 = 12 of 12).
   await targetsTab(sm);
@@ -214,7 +216,7 @@ try {
   await resultsTab(sm);
   await card(sm, 'مندوب أول').getByRole('button', {name: 'عرض التفاصيل'}).click();
   await sm.locator('.kpi-person-heading').getByText('مندوب أول').waitFor();
-  check((await sm.locator('.kpi-overview .panel strong').allInnerTexts()).map(text => text.trim()), ['65.33 / 100', '56.83', '87 / 87%'], 'the KPI detail: score, points and weight');
+  check((await sm.locator('.kpi-overview .panel strong').allInnerTexts()).map(text => text.trim()), ['64.26 / 100', '55.91', '87 / 87%'], 'the KPI detail: score, points and weight');
   // A future month: editing rep1 carries this month's values, and this month keeps them.
   await sm.locator('.targets-hub-month input').fill(next);
   await sm.locator('.targets-summary-future').first().waitFor();

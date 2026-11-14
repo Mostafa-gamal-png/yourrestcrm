@@ -1511,5 +1511,8 @@
   "حدد المستهدف فقط.": "Specify the target only.",
   "افتراضي": "Default",
   "سجل المبيعات مكتمل تلقائيًا من رفع مبيعات ERP الكاملة.": "The sales history is complete from complete ERP sales imports.",
-  "سجل المبيعات مكتمل تلقائيًا من رفع ERP حتى {0}.": "The sales history is complete from ERP imports through {0}."
+  "سجل المبيعات مكتمل تلقائيًا من رفع ERP حتى {0}.": "The sales history is complete from ERP imports through {0}.",
+  "بلا نشاط في هذا الشهر – خارج التقييم": "No activity this month – excluded from the evaluation",
+  "عملاء المندوب المسندون إليه في النظام: الحقول المكتملة ÷ (عدد العملاء × 7). الحقول السبعة: الاسم، والمنطقة، والمدينة، والهاتف، واسم المسؤول، ونوع العميل، والموقع (اللوكيشن أو العنوان المختصر أو العنوان). يُحسب تلقائيًا من بيانات العملاء الحالية، ولا ينطبق على من ليس له عملاء.": "The representative's customers assigned to them in the system: filled fields ÷ (customers × 7). The seven fields: name, region, city, phone, contact person, customer type and place (the location, the short address or the address). Calculated automatically from the current customer data; it does not apply to someone without customers.",
+  "زيارات الشهر لعملاء مرحلتهم الحالية ليست «تم الفقد» ÷ جميع زيارات الشهر. تُعدّ زيارة العميل الذي تم الفوز به فعالة.": "The month's visits to customers whose current stage is not «Lost» ÷ all visits of the month. A visit to a won customer counts as effective."
 }

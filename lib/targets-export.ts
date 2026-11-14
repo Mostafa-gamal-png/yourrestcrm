@@ -1,5 +1,5 @@
 import {activityFields,defaultActivityTargets,effectiveSet,targetProducts,type ActivityTargets,type TargetState} from './targets';
-import {kpiMetricReason,operationalIndicators,type KpiPerson} from './kpis';
+import {INACTIVE_TEXT,kpiMetricReason,operationalIndicators,type KpiPerson} from './kpis';
 import {type Member} from './crm';
 
 type Translate=(value:string)=>string;
@@ -35,13 +35,19 @@ export function targetsCsvRows(state:TargetState,members:Member[],month:string,t
  return rows;
 }
 
-/** Every row of «تصدير التقييم»: each indicator of each person, then the person's overall line as the page shows it
- *  (the score out of 100 or empty while incomplete, the points earned, the evaluated weight over the applicable weight). */
+/** Every row of «تصدير التقييم»: each indicator of each person, then the person's overall line as the page shows it: the score out of 100
+ *  from the data there is (lib/kpis.ts kpiSummary), with «غير مكتمل», the share of the weight it stands on and the indicators without data
+ *  while some are missing; empty for «لا ينطبق» and for a person out of the evaluation («بلا نشاط في هذا الشهر – خارج التقييم»); the
+ *  points earned; the evaluated weight over the applicable weight. */
 export function performanceCsvRows(people:KpiPerson[],month:string,t:Translate,language:'ar'|'en'='ar'):Cell[][]{
+ const say=(ar:string,en:string)=>language==='en'?en:ar;
  return people.flatMap(person=>{
   const indicators:Cell[][]=person.metrics.map(metric=>{const indicator=operationalIndicators.find(i=>i.id===metric.id)!;return [month,person.member.name,t(indicator.name),indicator.weight,metric.score??'',metric.points??'',kpiMetricReason(metric,t,language)];});
-  const s=person.summary,assessed=s.covered-s.excludedWeight;
-  const state=s.total===null?(s.applicableWeight===0?t('لا ينطبق'):t('غير مكتمل')):'';
-  return [...indicators,[month,person.member.name,t('درجة التقييم الكلية'),s.applicableWeight,s.total??'',s.earned,[state,t('الوزن الذي تم تقييمه')+': '+assessed+' / '+s.applicableWeight+'%'].filter(Boolean).join(' · ')]];
+  const s=person.summary,assessed=s.covered-s.excludedWeight,out=!!s.inactive;
+  const state=out?t(INACTIVE_TEXT):s.total===null?(s.applicableWeight===0?t('لا ينطبق'):t('غير مكتمل')):s.complete?'':t('غير مكتمل');
+  const partial=!out&&!s.complete&&s.total!==null?say('الدرجة محسوبة من البيانات الموجودة فقط: ','The score is calculated from the available data only: ')+s.dataShare+'%'+say(' من الوزن',' of the weight'):'';
+  const names=(s.missing||[]).map(id=>operationalIndicators.find(i=>i.id===id)?.name).filter((name):name is NonNullable<typeof name>=>!!name).map(name=>t(name));
+  const missing=!out&&names.length?say('بيانات ناقصة: ','Missing data: ')+names.join(say('، ',', ')):'';
+  return [...indicators,[month,person.member.name,t('درجة التقييم الكلية'),s.applicableWeight,out?'':s.total??'',out?'':s.earned,[state,partial,missing,out?'':t('الوزن الذي تم تقييمه')+': '+assessed+' / '+s.applicableWeight+'%'].filter(Boolean).join(' · ')]];
  });
 }

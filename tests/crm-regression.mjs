@@ -180,7 +180,12 @@ user('csm');assert.equal((await files.GET(new Request('https://test.invalid/api/
 current=await getCase(unified.id);await act(current,'approve',{targetId:'sm'});assert.equal((await crmPayload()).find(r=>r.id==='intake-'+unified.id).data._readOnly,true);checks++;
 user('cs2');assert.ok((await crmPayload()).some(r=>r.id===inline.id));assert.ok(!(await crmPayload()).some(r=>r.data.serviceIntakeId===unified.id));assert.equal((await files.GET(new Request('https://test.invalid/api/visit-files?id=f-first'))).status,404);checks+=3;
 user('cs');sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='cs'").run();assert.ok(!(await crmPayload()).some(r=>r.id===inline.id||r.data.serviceIntakeId===unified.id));checks++;sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='cs'").run();
-user('owner');const afterReport=await (await sales.GET(new Request('https://test.invalid/api/sales?month='+day.slice(0,7)+'&kpis=1'))).json();assert.deepEqual(afterReport.kpis,report.kpis);checks++;
+// Service registrations add no sales activity to any KPI. «دقة واكتمال البيانات» reads the representatives' customer records themselves
+// (automatic since 2026-11-14), and the customers this flow created belong to a representative, so that one indicator (and the score it
+// feeds) follows them: every other indicator is unchanged, and quality still counts seven fields for each customer.
+user('owner');const afterReport=await (await sales.GET(new Request('https://test.invalid/api/sales?month='+day.slice(0,7)+'&kpis=1'))).json();
+const withoutQuality=kpis=>({...kpis,people:kpis.people.map(person=>({...person,metrics:person.metrics.filter(metric=>metric.id!=='quality'),summary:undefined}))});
+assert.deepEqual(withoutQuality(afterReport.kpis),withoutQuality(report.kpis));assert.ok(afterReport.kpis.people.every(person=>{const quality=person.metrics.find(metric=>metric.id==='quality');return quality.source==='automatic'&&(quality.denominator===null||quality.denominator%7===0);}));checks+=2;
 // Focused regressions from the full-application audit.
 user('owner');
 const genericBody={action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Retry customer',region:'الشرقية',branch:'الرئيسي',assignedTo:'rep'}};
