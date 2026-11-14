@@ -32,7 +32,7 @@ import TrashPage from './trash-page';
 import {MyServiceScore,ServiceKpiPage} from './service-kpi';
 import type {ServiceQueueEntry} from '@/lib/service-queue';
 import {EmailLogout} from './email-login';
-import {canViewPage,canUseSalesWorkspace,resolveCRMPage,recordAuthorId} from '@/lib/access';
+import {canViewPage,canUseSalesWorkspace,resolveCRMPage,recordAuthorId,pageRetired} from '@/lib/access';
 import {can,pageAllowed,recordCell} from '@/lib/permissions';
 import {MemberPermissionsEditor} from './member-permissions';
 import InstallApp from './install-app';
@@ -132,7 +132,7 @@ function NavMenu({ view, go, role, who, queue, extra=0, complaints=0, customers=
     complaints?:number;
     /** «عملاء واقفين»: a representative's own customers with no purchase in 60 days (app/inactive-customers.tsx). */
     customers?:number;
-}) { useLanguage(); const { setOpenMobile } = useSidebar(); return <SidebarMenu>{t(nav.filter(n=>!!role&&(who?pageAllowed(who,n[0]):canViewPage(role,n[0]))).map(([id, label, Icon]) => <SidebarMenuItem key={id}><SidebarMenuButton className="nav-item" isActive={view === id} onClick={() => { go(id); setOpenMobile(false); }}><Icon size={20}/><span>{id==='targets'&&role==='rep'?(getLanguage()==='ar'?'مستهدفي':'My targets'):id==='journeys'&&getLanguage()==='en'?'Daily route':t(serviceText(role,label))}</span>{id==='activity'&&(queue||extra>0)&&<QueueBadge entries={queue||[]} extra={extra}/>}{id==='complaints'&&complaints>0&&<QueueBadge entries={[]} extra={complaints}/>}{id==='customer'&&<InactiveCustomersBadge count={customers}/>}{view === id && <span className="nav-active"/>}</SidebarMenuButton></SidebarMenuItem>))}</SidebarMenu>; }
+}) { useLanguage(); const { setOpenMobile } = useSidebar(); return <SidebarMenu>{t(nav.filter(n=>!!role&&!pageRetired(n[0])&&(who?pageAllowed(who,n[0]):canViewPage(role,n[0]))).map(([id, label, Icon]) => <SidebarMenuItem key={id}><SidebarMenuButton className="nav-item" isActive={view === id} onClick={() => { go(id); setOpenMobile(false); }}><Icon size={20}/><span>{id==='targets'&&role==='rep'?(getLanguage()==='ar'?'مستهدفي':'My targets'):id==='journeys'&&getLanguage()==='en'?'Daily route':t(serviceText(role,label))}</span>{id==='activity'&&(queue||extra>0)&&<QueueBadge entries={queue||[]} extra={extra}/>}{id==='complaints'&&complaints>0&&<QueueBadge entries={[]} extra={complaints}/>}{id==='customer'&&<InactiveCustomersBadge count={customers}/>}{view === id && <span className="nav-active"/>}</SidebarMenuButton></SidebarMenuItem>))}</SidebarMenu>; }
 async function request<T = OfflineSnapshot>(body?: Record<string, unknown>) { try{return await submitJson<T>('/api/crm',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'},{language:getLanguage()});}catch(error){if(error instanceof SubmitError)throw Object.assign(error,error.body||{},{status:error.status});throw error;} }
 function downloadCsv(name: string, headers: string[], rows: unknown[][]) { const esc = (x: unknown) => { let s = String(x ?? ''); if (/^[=+\-@\t\r]/.test(s))
     s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; }; const a = document.createElement('a'); const url = URL.createObjectURL(new Blob(['\ufeff' + [headers.map(t), ...rows].map(r => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' })); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }

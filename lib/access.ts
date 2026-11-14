@@ -24,12 +24,19 @@ export function canViewPage(role:string,view:string){
  *  it (no «حذف» cell). */
 export function trashScope(role:string):'all'|'own'|null{return role==='admin'?'all':role==='manager'?'own':null;}
 
+/** Screens no longer offered to anyone (the owner, 2026-11-14: «شاشة عروض السعر ملهاش لازمة الغيها»): not in the menus, and an old link or
+ *  saved place opens the first screen the member has. Only the screen goes: the quotations stay in the data, the ERP quotations import of
+ *  «المستهدفات وتقييم الأداء» and the conversion indicator keep working, and the «عروض الأسعار» cells of «الفريق والصلاحيات» still decide who
+ *  may import them. */
+export const RETIRED_PAGES:ReadonlySet<string>=new Set(['quote']);
+export const pageRetired=(view:string)=>RETIRED_PAGES.has(view);
+
 /** Preserve old bookmarks without granting access to a management workspace. A screen the administrator hid from the member (hidden,
  *  lib/permissions.ts) is not opened either: the first screen the member has, «الزيارات» when it is not hidden. trashOpen: whether the
  *  member has «المحذوفات» now (lib/permissions.ts pageAllowed(me,'trash')); without it, the role's own (the administrator, the sales manager). */
 export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=[],trashOpen=trashScope(role)!==null){
  const page=view==='factory'?'customer':['opportunity','service'].includes(view)?'activity':view==='reports'&&canUseSalesWorkspace(role)?'targets':view;
- const shown=(screen:string)=>canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen));
+ const shown=(screen:string)=>!pageRetired(screen)&&canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen));
  if(shown(page))return page;
  return ['activity','dashboard','customer','map','followup','mold-requests','complaints','targets','journeys','quote','sales','competitors','service-kpi','trash','team'].find(shown)||'activity';
 }

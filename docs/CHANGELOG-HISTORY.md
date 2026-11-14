@@ -4,6 +4,16 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The «عروض الأسعار» screen retired (2026-11-14, package update-quotes-retired-20261114 with the red marks below, no migration)
+
+- **Asked.** The owner, 2026-11-14: «شاشة عروض السعر ملهاش لازمة الغيها وارفع».
+- **What it does.** `lib/access.ts` `RETIRED_PAGES` (`quote`): the screen is in no menu (`app/crm-app.tsx` nav, `app/mobile-navigation.tsx`),
+  for every role, the administrator included, and `resolveCRMPage` sends an old link or saved place to the first screen the member has. Only
+  the screen goes: the quotations stay in the data, the ERP quotations import of the targets page and the quote-to-sale indicator are
+  unchanged, and the «عروض الأسعار» cells of the permissions matrix still decide who may import them (`can(me,'quote','add')`).
+- **Tested.** `tests/permissions.mjs` (an old link opens the first screen for the administrator, the manager and the supervisor),
+  `tests/mobile-navigation-ui.mjs` (no role's phone menu has it).
+
 ## Problems of the ERP sales import marked in red (2026-11-12, package update-sales-problems-20261112, no migration)
 
 - **Asked.** The owner, 2026-11-12, with a picture of the preview (one category «خدمات تجارة وتوريد الحديد» left on «اختر صنف
