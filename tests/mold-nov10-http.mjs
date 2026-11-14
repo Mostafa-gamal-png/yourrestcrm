@@ -29,7 +29,7 @@ const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id:
 let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''};
+const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'M-20', quantity: 1, designUrl: '', notes: ''};
 const TERMS_REFRESH = 'حدّث الصفحة: أصبح اعتماد طلب القالب يتطلب تأكيد الموافقة على شروط الدفع.', TERMS_REQUIRED = 'علّم «' + rules.MOLD_TERMS_ACCEPT + '» قبل الاعتماد.';
 const PRODUCTION_ONLY = rules.MOLD_PRODUCTION_ONLY_TEXT[0] + '؛ الطلب أُرسل للإنتاج، فتعديله من تطبيق المنتجات.', SIGNATURE_REFRESH = rules.MOLD_SIGNATURE_REQUIRED + '؛ حدّث الصفحة إن لم يظهر مكان التوقيع.';
 const REASON = 'الحد الائتماني للعميل لا يسمح بالمبلغ';

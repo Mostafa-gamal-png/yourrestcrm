@@ -99,6 +99,7 @@ try {
   await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
   await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
   await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
+  await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city is filled in from the customer's «الدمام»)
   await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: 'نقدي'}).click();
   const picker = dialog.locator('.mold-design-picker');
   check((await picker.locator('input[type=file]').getAttribute('accept')).split(',').slice(0, 3), ['.pdf', '.png', '.jpg'], 'the picker offers the contract\'s extensions');
@@ -356,7 +357,7 @@ try {
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
   // Asked for as the release before saved it (scripts/lib/mold-before.mjs: no design file required), so its first send meets the refusal.
   const unsentApi = app.as(await app.login('rep'));
-  const unsent = (await (await asBefore(app.db, change => unsentApi('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await unsentApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})}))).json()).request;
+  const unsent = (await (await asBefore(app.db, change => unsentApi('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await unsentApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'لم يصل للإنتاج بعد', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR-14', quantity: 1}, payment: 'cash'})}))).json()).request;
   check([unsent.sending.state, unsent.can.edit, mock.row(unsent.id)], ['rejected', true, undefined], 'refused before production stored it: still editable');
   const editor = await open('rep');
   await goMolds(editor);
@@ -404,7 +405,7 @@ try {
   await quoteSheet.locator('.mold-heading-tools button').first().click();
   await quoteSheet.waitForFunction(() => !document.querySelector('.mold-heading-tools button .spin'));
   const asked = await quoteSheet.evaluate(async body => (await (await fetch('/api/mold-requests', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json()).request,
-    withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash'}));
+    withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'قالب بعرض سعر', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'M-31', quantity: 1, designUrl: '', notes: ''}, payment: 'cash'}));
   check([asked.sending.state, asked.sending.held, asked.remote, mock.row(asked.id) || null], ['waiting', 'quote_file', null, null], 'a pull taught the CRM; a new request without a quotation or PO file is kept in the CRM, not sent');
   await quoteSheet.locator('.mold-heading-tools button').first().click();
   const keptCard = quoteSheet.locator('.mold-card', {hasText: 'قالب بعرض سعر'});

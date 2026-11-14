@@ -10,6 +10,9 @@
 // moldErpCode), and how the CRM learns that production takes one (moldFreeCustomersAnswered: customer.erpCode in a status or pending item).
 // Since 2026-11-10: the customer's signature inside the request's PDFs (moldSignatureBlockCheck, moldSignedCopyName: a signed copy is one
 // more file of its original's category, production unchanged) and the link the customer signs from (MOLD_SIGN_TOKEN, MOLD_SIGN_LINK_DAYS).
+// Since 2026-11-14 (the owner: «خلي المدينة ورقم القالب إجباري والطلب يتبعت بكود erp»): a new request (and the edit of one never sent)
+// needs its city, one of the sheet's (moldCity), its mold number (validateMoldSpecs moldNoRequired) and the customer's code; the code of a
+// CRM customer goes with its crmNumber for a request stored with data.erpWithCrm (MOLD_SEND_ERP_WITH_CRM_CUSTOMER, moldSendsErpWithCrm).
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -84,6 +87,41 @@ export const MOLD_SALESMEN_BODY_LIMIT = 256 * 1024;
 export const MOLD_SALESMEN_MAX = 1000;
 /** The cities as the production sheet writes them; a CRM city that is one of them is sent this way so production fills it in itself. */
 export const MOLD_SHEET_CITIES = ['Damam - الدمام', 'Riyadh - الرياض', 'Qassem - القصيم', 'Madina - المدينة', 'Jeddah - جده', 'MAkkah - مكة', 'Taif - الطائف', 'Khames - خميس مشيط', 'Jizan - جيزان'];
+/** The city of a mold request (the owner, 2026-11-14: «خلي المدينة … إجباري»): chosen from the sheet's cities, sent as the sheet writes
+ *  it. Its refusal has its English pair in lib/locales/en.json. */
+export const MOLD_CITY_REQUIRED = 'اختر المدينة';
+/**
+ * The city a new request (or the edit of one never sent) carries: exactly one of MOLD_SHEET_CITIES after its ends are trimmed (also a
+ * CRM spelling sheetCity maps to one). error 'required' for anything else (nothing, another city, not a string).
+ * @param {unknown} value
+ * @returns {{city: string, error: 'required'|null}}
+ */
+export function moldCity(value) {
+  const sheet = typeof value === 'string' ? sheetCity(value) : '';
+  return MOLD_SHEET_CITIES.includes(sheet) ? {city: sheet, error: null} : {city: '', error: 'required'};
+}
+/** The mold number is required for a new request (and the edit of one never sent) since 2026-11-14: validateMoldSpecs says it with this
+ *  text (its English pair in lib/locales/en.json). */
+export const MOLD_MOLD_NO_REQUIRED = 'اكتب رقم القالب';
+/**
+ * Whether a request for a CRM customer (a numeric crmNumber) sends the customer's code (customer.erpCode) with it. The products team
+ * confirmed on 2026-11-14 (their schema 20) that erpCode together with crmNumber is accepted and stored, that the same body again is
+ * created:false, and that ADDING erpCode to a request already sent is refused (409 production_only) except in the correction of a request
+ * finance returned. So it is decided once, when a request is stored (or edited while never sent, or corrected), and kept in its data
+ * (data.erpWithCrm): a request stored without the mark is sent byte for byte as before, whatever this says now. One line to switch off.
+ */
+export const MOLD_SEND_ERP_WITH_CRM_CUSTOMER = true;
+/**
+ * Whether a request stored now for this customer carries data.erpWithCrm: a CRM customer (crmNumber a number) with an ERP code that fits,
+ * while the flag is on. A customer not in the CRM always sends its code (not this mark).
+ * @param {{crmNumber?: unknown, erpCode?: unknown}|null|undefined} customer
+ * @param {boolean} [flag]
+ */
+export function moldSendsErpWithCrm(customer, flag = MOLD_SEND_ERP_WITH_CRM_CUSTOMER) {
+  if (!flag || !customer || !isWhole(customer.crmNumber)) return false;
+  const code = moldErpCodeText(customer.erpCode);
+  return !!code && length(code) <= MOLD_LIMITS.erpCode;
+}
 /** §6: after a failed send, the next try waits 1 minute, then 5, then 30, then 2 hours, then every 2 hours until 24 hours have passed. */
 export const MOLD_RETRY_MINUTES = [1, 5, 30, 120];
 export const MOLD_RETRY_WINDOW_MS = 24 * 3600_000;
@@ -155,8 +193,9 @@ export function moldErpCodeText(value) {
  *  MOLD_CUSTOMER_TEXT in lib/mold-requests.ts). */
 export const MOLD_CUSTOMER_NAME_REQUIRED = 'اكتب اسم العميل';
 export const MOLD_CUSTOMER_NAME_LONG = 'اسم العميل حتى ' + MOLD_LIMITS.customerName + ' حرف';
-export const MOLD_ERP_CODE_REQUIRED = 'اكتب كود ERP للعميل';
-export const MOLD_ERP_CODE_LONG = 'كود ERP حتى ' + MOLD_LIMITS.erpCode + ' حرف';
+// «كود العميل» (the owner, 2026-11-14: «سميه كود العميل بس»): the customer's ERP code, so named on the mold request's screens.
+export const MOLD_ERP_CODE_REQUIRED = 'اكتب كود العميل';
+export const MOLD_ERP_CODE_LONG = 'كود العميل حتى ' + MOLD_LIMITS.erpCode + ' حرف';
 /**
  * The customer's name of such a request as typed, as it is stored and sent (moldText; a control character such as a new line becomes a
  * space): error 'required' when nothing is left, 'long' over 200 characters (counted as production counts them).
@@ -179,12 +218,13 @@ export function moldErpCode(value) {
 }
 
 /**
- * Checks what a representative typed. Returns {specs, errors}: specs with every field normalized, errors as field -> Arabic message.
+ * Checks what a representative typed (moldNoRequired: the mold number too, 2026-11-14). Returns {specs, errors}: specs with every field normalized, errors as field -> Arabic message.
  * Numbers arrive as JSON numbers or as digit strings from a form; anything else, or a fraction, is refused (the addendum).
  * @param {unknown} input
+ * @param {{moldNoRequired?: boolean}} [options]
  * @returns {{specs: Record<string, any>, errors: Record<string, string>}}
  */
-export function validateMoldSpecs(input) {
+export function validateMoldSpecs(input, {moldNoRequired = false} = {}) {
   const source = input && typeof input === 'object' ? input : {}, errors = {}, specs = {};
   const text = (field, max, required, label) => {
     const value = moldText(source[field]);
@@ -214,7 +254,8 @@ export function validateMoldSpecs(input) {
   choice('halfBlock', MOLD_HALF_BLOCKS, 'بلوكة النص');
   whole('moldWidth', MOLD_RANGES.moldWidth, 'عرض القالب');
   whole('gelbaSize', MOLD_RANGES.gelbaSize, 'مقاس الجلب');
-  text('moldNo', MOLD_LIMITS.moldNo, false, 'رقم القالب');
+  // Required for a new request and the edit of one never sent (2026-11-14: moldNoRequired); a stored request is built as before.
+  text('moldNo', MOLD_LIMITS.moldNo, moldNoRequired, 'رقم القالب');
   whole('quantity', MOLD_RANGES.quantity, 'الكمية');
   text('designUrl', MOLD_LIMITS.designUrl, false, 'رابط التصميم');
   if (!errors.designUrl && specs.designUrl && !/^https:\/\/\S+$/i.test(specs.designUrl)) errors.designUrl = 'رابط التصميم يبدأ بـ https:// وبلا مسافات';
@@ -286,15 +327,16 @@ export function riyadhIso(value) {
  * before. They come from the request's own data, never from a status production returned. Throws when a value would be refused by
  * production. A customer not in the CRM (2026-11-09): customer.crmNumber null, then customer.erpCode (1 to 50 characters after
  * moldErpCodeText) is required and follows address and city; a customer of the CRM (crmNumber a number) never sends erpCode, whatever
- * the request's data holds, so its body is byte for byte as before.
- * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, paymentTerms?: string|null, quoteNo?: string|null, poNo?: string|null}} request
+ * the request's data holds, so its body is byte for byte as before, unless erpWithCrm (2026-11-14, a request stored with data.erpWithCrm:
+ * moldSendsErpWithCrm): then its erpCode follows address and city as a free customer's does.
+ * @param {{id: string, legacyOrderNo?: number|null, requestedAt: string, customer: any, salesman: any, specs: any, payment?: string|null, paymentTerms?: string|null, quoteNo?: string|null, poNo?: string|null, erpWithCrm?: boolean}} request
  */
-export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, paymentTerms, quoteNo, poNo}) {
+export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer, salesman, specs, payment, paymentTerms, quoteNo, poNo, erpWithCrm = false}) {
   if (!MOLD_ID.test(id || '')) throw new Error('crmRequestId');
   const free = !!customer && customer.crmNumber === null;
   if (!free && (!isWhole(customer?.crmNumber) || customer.crmNumber < 1 || customer.crmNumber > 2147483647)) throw new Error('customer.crmNumber');
-  const erpCode = free ? moldErpCodeText(customer.erpCode) : '';
-  if (free && (!erpCode || length(erpCode) > MOLD_LIMITS.erpCode)) throw new Error('customer.erpCode');
+  const withCode = free || erpWithCrm === true, erpCode = withCode ? moldErpCodeText(customer.erpCode) : '';
+  if (withCode && (!erpCode || length(erpCode) > MOLD_LIMITS.erpCode)) throw new Error('customer.erpCode');
   const checked = validateMoldSpecs(specs);
   if (Object.keys(checked.errors).length) throw new Error('specs.' + Object.keys(checked.errors)[0]);
   const optional = (target, key, value, max) => { const clean = moldText(value); if (clean && length(clean) <= max) target[key] = clean; };
@@ -307,7 +349,7 @@ export function moldRequestBody({id, legacyOrderNo = null, requestedAt, customer
   body.customer = {crmNumber: customer.crmNumber, name};
   optional(body.customer, 'address', customer.address, MOLD_LIMITS.address);
   optional(body.customer, 'city', customer.city, MOLD_LIMITS.city);
-  if (free) body.customer.erpCode = erpCode;
+  if (withCode) body.customer.erpCode = erpCode;
   body.salesman = {};
   optional(body.salesman, 'crmMemberId', salesman.crmMemberId, MOLD_LIMITS.crmMemberId);
   body.salesman.name = salesmanName;
