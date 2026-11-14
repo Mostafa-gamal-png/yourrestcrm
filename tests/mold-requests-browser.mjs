@@ -338,7 +338,7 @@ try {
   await edit.waitFor();
   ok((await edit.innerText()).includes('الطلب لم يصل للإنتاج بعد'), 'the dialog says why it may still change');
   const east1Code = 'YR-C-' + String((await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number).padStart(6, '0');
-  check([await edit.locator('.mold-customer-fields input').evaluateAll(inputs => inputs.map(input => [input.value, input.readOnly])), (await edit.locator('.mold-customer-chosen').innerText()).includes(east1Code), await edit.locator('.mold-customer-fields .voice-button').count()], [[['مصنع east1', false], ['ERP-east1', false]], true, 1], 'the edit of a request never sent (2026-11-09): the customer\'s name and ERP code filled and editable, linked to its customer');
+  check([await edit.locator('.mold-customer-fields input').evaluateAll(inputs => inputs.map(input => [input.value, input.readOnly])), (await edit.locator('.mold-customer-chosen').innerText()).includes('كود ERP: ERP-east1') && !(await edit.locator('.mold-customer-chosen').innerText()).includes(east1Code), await edit.locator('.mold-customer-fields .voice-button').count()], [[['مصنع east1', false], ['ERP-east1', false]], true, 1], 'the edit of a request never sent (2026-11-09): the customer\'s name and ERP code filled and editable, linked to its customer (its ERP code shown, not its Yourrest code: 2026-11-14)');
   check(await edit.locator('.mold-banner').count(), 0, 'no warning about approvals: there are none to undo');
   check(await edit.locator('.mold-design-picker[data-category="design"] legend').innerText(), 'ملفات التصميم (اختياري)', 'a request asked for before 2026-11-08: its edit keeps the design files optional');
   check(await edit.locator('.mold-choice', {hasText: 'بلوكة النص'}).locator('label').allInnerTexts(), ['بدون بلوكة نص', 'بلوكة نص واحدة', 'بلوكتين نص', '3 بلوكات نص'], 'none to three half blocks');
@@ -1208,7 +1208,7 @@ try {
     await code.fill('k-7731');
     await linkedLine.waitFor();
     check([await name.inputValue(), await area.inputValue(), await options.count(), (await linkedLine.innerText()).replace(/\s+/g, ' ').trim(), await freeNote.count()],
-      ['', 'الخبر، طريق الظهران، مستودع 9', 0, 'مرتبط بالعميل مؤسسة إبراهيم للبلوك ' + yr + ' · الخبر', 0], 'its ERP code typed: linked, «مرتبط بالعميل …», the address filled in; the name is not typed for the representative');
+      ['', 'الخبر، طريق الظهران، مستودع 9', 0, 'مرتبط بالعميل مؤسسة إبراهيم للبلوك كود ERP: K-7731 · الخبر', 0], 'its ERP code typed (2026-11-14: its ERP code shown, not its Yourrest code «' + yr + '»): linked, «مرتبط بالعميل …», the address filled in; the name is not typed for the representative');
     await name.fill('مؤسسة إبراهيم للبلوك');
     await code.fill('K-7731');
     await noOverflow(phone, 'phone form with the code typed');
@@ -1300,7 +1300,7 @@ try {
     await enName.fill('');
     await enCode.fill('K-7731');
     await enForm.locator('.mold-customer-chosen').waitFor();
-    check([await enCode.inputValue(), (await enForm.locator('.mold-customer-chosen').innerText()).includes('Linked to the customer'), await enForm.locator('[role="option"]').count()], ['K-7731', true, 0], 'in English: its ERP code typed links it, «Linked to the customer», nothing suggested');
+    check([await enCode.inputValue(), (await enForm.locator('.mold-customer-chosen').innerText()).includes('Linked to the customer') && (await enForm.locator('.mold-customer-chosen').innerText()).includes('ERP code: K-7731'), await enForm.locator('[role="option"]').count()], ['K-7731', true, 0], 'in English: its ERP code typed links it, «Linked to the customer», nothing suggested');
     await noOverflow(english, '320 px English form with the linked customer'); await shot(english, 'mold-customer-chosen-phone-en');
     await enCode.fill('K-7731-9');
     check([await enForm.locator('.mold-customer-chosen').count(), await enForm.locator('.mold-customer-free').count()], [0, 1], 'in English: editing the code to another unlinks it');
