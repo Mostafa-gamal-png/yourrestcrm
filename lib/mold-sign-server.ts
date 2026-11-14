@@ -254,7 +254,7 @@ export function dropOldCopies(db:D1Database,files:MoldDesignFileRow[],oldSignatu
 /** What the public page shows of a request (the fields the device's signing summary shows: nothing internal, no CRM number, no
  *  representative, no production state) and its files, each through the token. */
 export type SignLinkPage={key:string;expiresAt:string;now:string;
- summary:{customerName:string;erpCode:string;address:string;description:string;core:string;vibrators:number|null;model:string;halfBlock:string;moldWidth:number|null;gelbaSize:number|null;quantity:number|null;payment:'cash'|'deferred'|null;paymentTerms:MoldPaymentTerms|null;quoteNo:string;poNo:string};
+ summary:{customerName:string;erpCode:string;address:string;city:string;description:string;core:string;vibrators:number|null;model:string;halfBlock:string;moldWidth:number|null;gelbaSize:number|null;quantity:number|null;payment:'cash'|'deferred'|null;paymentTerms:MoldPaymentTerms|null;quoteNo:string;poNo:string};
  files:{id:string;name:string;kind:'pdf'|'image'|'other';category:'design'|'quote'|'po';size:number;href:string}[];
  /** The other files (named only, never served through the link: signLinkOtherFiles). */
  others:{name:string;category:'design'|'quote'|'po'}[]};
@@ -267,7 +267,7 @@ export async function loadSignLinkPage(db:D1Database,token:string,headers:Header
  if(!found||found.state!=='open')return null;
  const {row}=found,files=await loadMoldDesignFiles(db,'request_id=?',[row.id]),data=row.data,specs=data.specs;
  return {key:await moldSignKey(row,files),expiresAt:data.signatureLink!.expiresAt,now:new Date(now).toISOString(),
-  summary:{customerName:data.customer.name,erpCode:typeof data.customer.erpCode==='string'?data.customer.erpCode:'',address:typeof data.customer.address==='string'?data.customer.address:'',description:specs.description,core:specs.core,vibrators:specs.vibrators,model:specs.model,halfBlock:specs.halfBlock,
+  summary:{customerName:data.customer.name,erpCode:typeof data.customer.erpCode==='string'?data.customer.erpCode:'',address:typeof data.customer.address==='string'?data.customer.address:'',city:typeof data.customer.city==='string'?data.customer.city:'',description:specs.description,core:specs.core,vibrators:specs.vibrators,model:specs.model,halfBlock:specs.halfBlock,
    moldWidth:specs.moldWidth,gelbaSize:specs.gelbaSize,quantity:specs.quantity,payment:data.payment==='cash'||data.payment==='deferred'?data.payment:null,paymentTerms:data.payment==='deferred'&&data.paymentTerms?data.paymentTerms:null,quoteNo:data.quoteNo||'',poNo:data.poNo||''},
   files:signLinkFiles(row,files,'open').map(file=>({id:file.id,name:file.name,kind:file.kind,category:moldFileCategory(file),size:file.size,href:signFileHref(token,file.id)})),
   others:signLinkOtherFiles(files).map(file=>({name:file.name,category:moldFileCategory(file)}))};

@@ -121,6 +121,10 @@ try {
     await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: payment}).click();
     // Deferred asks for its agreed terms (2026-11-10): tests/mold-nov10-browser.mjs tries the choice itself.
     if (payment === 'آجل') await dialog.locator('.mold-payment-terms-choice label', {hasText: 'قبل الترحيل'}).click();
+    // The mold number and the city (required since 2026-11-14): the city filled in from a linked customer's own («الدمام»), else chosen.
+    await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14');
+    const city = dialog.locator('select[data-field="city"]');
+    if (!await city.inputValue()) await city.selectOption('Riyadh - الرياض');
     if (design) await attachDesign(dialog);
   };
   // ---- The customer's signature (2026-11-04): drawn on the pad with pointer events, as a mouse, a finger (real touch through the DevTools
@@ -148,7 +152,7 @@ try {
   // An incomplete request is refused on the device: no call reaches production.
   const before = mock.state.calls.length;
   await dialog.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
-  check([await dialog.locator('.mold-customer-field[data-field="name"] .field-error').innerText(), await dialog.locator('.mold-customer-field[data-field="code"] .field-error').innerText()], ['اكتب اسم العميل', 'اكتب كود ERP للعميل'], 'the form asks for the customer: its name and ERP code (2026-11-09)');
+  check([await dialog.locator('.mold-customer-field[data-field="name"] .field-error').innerText(), await dialog.locator('.mold-customer-field[data-field="code"] .field-error').innerText()], ['اكتب اسم العميل', 'اكتب كود العميل'], 'the form asks for the customer: its name and ERP code (2026-11-09)');
   ok(await dialog.locator('.field-error').count() >= 5, 'and points at each missing field');
   // How the customer pays: a required choice of two (2026-11-03).
   const paymentChoice = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first();
@@ -319,7 +323,7 @@ try {
   // ---- 3c. A sent request offers no edit, approved or not: cancelling and its design files only. One production refused before storing
   //  it is still edited, in a dialog over the request (four half-block choices), until its first send reaches production.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
-  const refused = (await (await askBefore(app.as(await app.login('rep')), {customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})).json()).request;
+  const refused = (await (await askBefore(app.as(await app.login('rep')), {customerId: 'east1', specs: {description: 'refused by production', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR-14', quantity: 1}, payment: 'cash'})).json()).request;
   check([refused.sending.state, refused.remote, refused.can.edit], ['rejected', null, true], 'production refused it before storing it (400): still the requester\'s to edit');
   const editor = await open('rep');
   await goMolds(editor);
@@ -338,7 +342,7 @@ try {
   await edit.waitFor();
   ok((await edit.innerText()).includes('الطلب لم يصل للإنتاج بعد'), 'the dialog says why it may still change');
   const east1Code = 'YR-C-' + String((await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number).padStart(6, '0');
-  check([await edit.locator('.mold-customer-fields input').evaluateAll(inputs => inputs.map(input => [input.value, input.readOnly])), (await edit.locator('.mold-customer-chosen').innerText()).includes('كود ERP: ERP-east1') && !(await edit.locator('.mold-customer-chosen').innerText()).includes(east1Code), await edit.locator('.mold-customer-fields .voice-button').count()], [[['مصنع east1', false], ['ERP-east1', false]], true, 1], 'the edit of a request never sent (2026-11-09): the customer\'s name and ERP code filled and editable, linked to its customer (its ERP code shown, not its Yourrest code: 2026-11-14)');
+  check([await edit.locator('.mold-customer-fields input').evaluateAll(inputs => inputs.map(input => [input.value, input.readOnly])), (await edit.locator('.mold-customer-chosen').innerText()).includes('كود العميل: ERP-east1') && !(await edit.locator('.mold-customer-chosen').innerText()).includes(east1Code), await edit.locator('.mold-customer-fields .voice-button').count()], [[['مصنع east1', false], ['ERP-east1', false]], true, 1], 'the edit of a request never sent (2026-11-09): the customer\'s name and ERP code filled and editable, linked to its customer (its ERP code shown, not its Yourrest code: 2026-11-14)');
   check(await edit.locator('.mold-banner').count(), 0, 'no warning about approvals: there are none to undo');
   check(await edit.locator('.mold-design-picker[data-category="design"] legend').innerText(), 'ملفات التصميم (اختياري)', 'a request asked for before 2026-11-08: its edit keeps the design files optional');
   check(await edit.locator('.mold-choice', {hasText: 'بلوكة النص'}).locator('label').allInnerTexts(), ['بدون بلوكة نص', 'بلوكة نص واحدة', 'بلوكتين نص', '3 بلوكات نص'], 'none to three half blocks');
@@ -364,7 +368,7 @@ try {
   //  elsewhere). Saving is refused with the reason in English, the form stays open with it, and the request behind drops its edit at once.
   mock.answerNext('requests', 400, {error: {code: 'invalid_payload', message: 'Some fields are missing or invalid.', fields: ['specs.notes']}});
   const repApi = app.as(await app.login('rep'));
-  const ask = async (description, customerId = 'east1') => (await (await askBefore(repApi, {customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})).json()).request;
+  const ask = async (description, customerId = 'east1') => (await (await askBefore(repApi, {customerId, specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR-14', quantity: 1}, payment: 'cash'})).json()).request;
   const late = await ask('sent meanwhile');
   check([late.sending.state, late.can.edit], ['rejected', true], 'refused before production stored it: editable');
   const english = await open('rep', {language: 'en'});
@@ -447,7 +451,7 @@ try {
   //  the card and the sheet, with what to do and no resend; its edit asks for a design file before the signing step; the file chosen in
   //  the edit uploads once the change is saved and sends the request, then its signature, then the file.
   const keptApi = app.as(await app.login('rep'));
-  const keptBody = (await keptApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'kept for its design file', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'})})).json();
+  const keptBody = (await keptApi('/api/mold-requests', {method: 'POST', body: withSignature('rep', {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'kept for its design file', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR-14', quantity: 1}, payment: 'cash'})})).json();
   const keptId = keptBody.request.id;
   check([keptBody.send.code, keptBody.request.sending.held, mock.row(keptId) || null], ['design_file', 'design_file', null], 'saved, kept for its design file: production has nothing');
   const keeper = await open('rep');
@@ -501,7 +505,7 @@ try {
 
   // ---- 3e. Cancelled in the CRM while production is unreachable: «ملغى» at once, the cancellation waiting to be sent
   const api = app.as(await app.login('rep'));
-  const asked = (await (await askBefore(api, {customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'deferred'})).json()).request;
+  const asked = (await (await askBefore(api, {customerId: 'east1', specs: {description: 'cancel while down', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR-14', quantity: 1}, payment: 'deferred'})).json()).request;
   mock.state.down = true;
   check((await api('/api/mold-requests', {method: 'POST', body: {action: 'cancel', requestId: crypto.randomUUID(), id: asked.id, version: asked.version, reason: ''}})).status, 200, 'cancelled in the CRM while production is down');
   const canceller = await open('rep');
@@ -652,6 +656,15 @@ try {
   await linkedPage.waitForTimeout(400);
   await shot(linkedPage, 'mold-edit-older-design-link');
   await linkedEdit.locator('label.mold-field', {hasText: 'الكمية'}).locator('input').fill('2');
+  // An older request never sent asks for what is required since 2026-11-14: its mold number and its customer's code (its city, «Damam -
+  // الدمام», is one of the sheet's and is kept); nothing is sent until they are given.
+  const sendsBefore = mock.state.calls.length;
+  await linkedEdit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
+  await linkedEdit.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('.field-error').waitFor();
+  check([await linkedEdit.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('.field-error').innerText(), await linkedEdit.locator('.mold-customer-field[data-field="code"] .field-error').innerText(), await linkedEdit.locator('select[data-field="city"]').inputValue(), await linkedEdit.locator('.mold-signing').count(), mock.state.calls.length],
+    ['اكتب رقم القالب', 'اكتب كود العميل', 'Damam - الدمام', 0, sendsBefore], 'the edit of an older request never sent asks for the mold number and the customer code (its sheet city kept); nothing sent');
+  await linkedEdit.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-OLD-1');
+  await customerField(linkedEdit, 'code').fill('ERP-east1');
   await linkedEdit.getByRole('button', {name: 'حفظ وإرسال التعديل'}).click();
   // An older request (no signature): its changing edit is signed by the customer now (no «sign again» note: there was none before).
   check(await linkedEdit.locator('.mold-signing-again').count(), 0, 'an older request had no signature: signed now, not «again»');
@@ -660,12 +673,13 @@ try {
   const linkedSent = JSON.parse(mock.state.calls.filter(call => call.route === 'requests' && call.body.includes(linkedId)).at(-1).body);
   check([linkedSent.specs.designUrl, linkedSent.specs.quantity, JSON.parse((await app.db.prepare('SELECT data FROM crm_mold_requests WHERE id=?').bind(linkedId).first()).data).specs.designUrl],
     ['https://drive.google.com/older-design', 2, 'https://drive.google.com/older-design'], 'saved and sent with its link exactly as stored');
+  check([linkedSent.specs.moldNo, linkedSent.customer.city, linkedSent.customer.erpCode], ['YR-OLD-1', 'Damam - الدمام', 'ERP-east1'], 'and with the mold number, the city and the customer code (never sent before, so its body may carry them)');
   await linkedPage.context().close();
 
   // ---- 5c. Who sees which (the owner, 2026-11-03): customer service's request is not in the sales manager's list (his own and his team's);
   //  it waits for him in «طلبات بانتظار اعتمادي», opens from there («فتح الطلب») and is approved from its sheet.
   const csmApi = app.as(await app.login('csm'));
-  const fromService = (await (await asBefore(app.db, change => csmApi('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await csmApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب خدمة العملاء', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, quantity: 1}, payment: 'cash'}}))).json()).request;
+  const fromService = (await (await asBefore(app.db, change => csmApi('/api/mold-requests', {method: 'POST', body: {requestId: crypto.randomUUID(), ...change}}), await csmApi('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description: 'طلب خدمة العملاء', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR-14', quantity: 1}, payment: 'cash'}}))).json()).request;
   // An approval by order number reads production's waiting list afresh (the server keeps it a minute otherwise); none has that number.
   await app.as(await app.login('sm'))('/api/mold-requests', {method: 'POST', body: {action: 'approve-order', requestId: crypto.randomUUID(), orderNo: 999999, termsAccepted: true}});
   const serviceManager = await open('sm');
@@ -874,6 +888,9 @@ try {
   await tabletDialog.locator('.mold-choice', {hasText: 'Vibrators'}).locator('label', {hasText: '3'}).click();
   await tabletDialog.locator('label.mold-field', {hasText: 'Mold width'}).locator('.mold-usual button', {hasText: '1375'}).click();
   await tabletDialog.locator('label.mold-field', {hasText: 'Gelba size'}).locator('.mold-usual button', {hasText: '800'}).click();
+  await tabletDialog.locator('label.mold-field', {hasText: 'Mold no.'}).locator('input').fill('YR-TAB-1');
+  // The city in English (2026-11-14): filled in from east2's own («الدمام»), the sheet's English part shown.
+  check([await tabletDialog.locator('select[data-field="city"]').inputValue(), await tabletDialog.locator('select[data-field="city"] option:checked').innerText(), await tabletDialog.locator('label.mold-city').evaluate(label => label.firstChild.textContent.trim())], ['Damam - الدمام', 'Damam', 'City'], 'in English: «City», filled in from the linked customer, shown as the sheet\'s English part');
   await tabletDialog.locator('.mold-choice', {hasText: 'Payment'}).first().locator('label', {hasText: 'Deferred'}).click();
   await tabletDialog.locator('.mold-payment-terms-choice label', {hasText: 'after shipping'}).click();
   await attachQuote(tabletDialog, quotation('Q-TAB-7.pdf'));
@@ -1107,7 +1124,7 @@ try {
     await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
     const signing = form.locator('.mold-signing');
     await signing.waitFor();
-    check((await (await summaryOf(signing, 'dt')).allInnerTexts()).slice(0, 3), ['العميل', 'كود ERP', 'العنوان'], 'the signing summary: «العنوان» under «العميل» and its ERP code (2026-11-09)');
+    check((await (await summaryOf(signing, 'dt')).allInnerTexts()).slice(0, 3), ['العميل', 'كود العميل', 'العنوان'], 'the signing summary: «العنوان» under «العميل» and its ERP code (2026-11-09)');
     check(await signing.locator('.mold-signing-summary div').nth(2).locator('dd').innerText(), DELIVERY, 'the address the customer signs is the one typed for the request');
     await signing.locator('.mold-signing-summary').scrollIntoViewIfNeeded();
     await noOverflow(addressPhone, 'phone signing step with the address'); await shot(addressPhone, 'mold-signing-address-phone');
@@ -1142,6 +1159,7 @@ try {
     await englishForm.locator('.mold-choice', {hasText: 'Vibrators'}).locator('label', {hasText: '2'}).click();
     await englishForm.locator('label.mold-field', {hasText: 'Mold width'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await englishForm.locator('label.mold-field', {hasText: 'Gelba size'}).locator('.mold-usual button', {hasText: '795'}).click();
+    await englishForm.locator('label.mold-field', {hasText: 'Mold no.'}).locator('input').fill('YR-EN-1');
     await englishForm.locator('.mold-choice', {hasText: 'Payment'}).first().locator('label', {hasText: 'Cash'}).click();
     await attachQuote(englishForm, quotation('Q-ADDR-EN.pdf'));
     await englishForm.locator('.mold-design-picker[data-category="quote"] .mold-design-file[data-state="ready"]').waitFor();
@@ -1160,7 +1178,7 @@ try {
     await englishForm.getByRole('button', {name: 'Save and send to production'}).click();
     const englishSigning = englishForm.locator('.mold-signing');
     await englishSigning.waitFor();
-    check([(await (await summaryOf(englishSigning, 'dt')).allInnerTexts()).slice(0, 3), await englishSigning.locator('.mold-signing-summary div').nth(2).locator('dd').innerText()], [['Customer', 'ERP code', 'Address'], 'Warehouse 7, Second Industrial City, Dammam'], 'the signing summary in English: «Address» under «Customer» and «ERP code»');
+    check([(await (await summaryOf(englishSigning, 'dt')).allInnerTexts()).slice(0, 3), await englishSigning.locator('.mold-signing-summary div').nth(2).locator('dd').innerText()], [['Customer', 'Customer code', 'Address'], 'Warehouse 7, Second Industrial City, Dammam'], 'the signing summary in English: «Address» under «Customer» and «ERP code»');
     await noOverflow(englishAddress, 'English phone signing step with the address'); await shot(englishAddress, 'mold-signing-address-phone-en');
     await englishSigning.getByRole('button', {name: 'Back to the request'}).click();
     check(await englishArea.inputValue(), 'Warehouse 7, Second Industrial City, Dammam', 'back to the form: the address kept as typed');
@@ -1184,7 +1202,7 @@ try {
     await insert('east8', {name: 'مصنع بلا كود', city: 'الدمام', address: 'حي الفيصلية', code: ''});
     await app.db.prepare("DELETE FROM crm_customer_numbers WHERE customer_id='east8'").run();
     const number = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east9'").first()).number, yr = 'YR-C-' + String(number).padStart(6, '0');
-    const FREE = 'عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود ERP', HINT = 'مطلوب لعميل غير موجود في الـCRM؛ اختياري للعميل المرتبط', NOT_IN_CRM = 'غير مسجل في الـCRM';
+    const FREE = 'عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود العميل', HINT = 'مطلوب لكل طلب؛ وهو كود العميل في نظام ERP', NOT_IN_CRM = 'غير مسجل في الـCRM';
     const phone = await open('rep', {viewport: PHONE, touch: true});
     await goMoldsAnywhere(phone);
     await phone.locator('button.mold-new').click();
@@ -1194,7 +1212,7 @@ try {
     await form.evaluate(node => Promise.all(node.getAnimations().map(animation => animation.finished)));
     const labels = await form.locator('.mold-customer-field > .field > span').allInnerTexts();
     check([labels, await code.getAttribute('placeholder'), await form.locator('.mold-customer-hint').innerText(), await form.locator('.mold-customer-field[data-field="name"] .voice-button').count(), await form.locator('.mold-customer-field[data-field="code"] .voice-button').count()],
-      [['اسم العميل', 'كود ERP'], 'مثال: 146', HINT, 1, 0], 'two fields: «اسم العميل» with dictation, «كود ERP» typed, its hint: required for a customer not in the CRM only');
+      [['اسم العميل', 'كود العميل'], 'مثال: 146', HINT, 1, 0], 'two fields: «اسم العميل» with dictation, «كود ERP» typed, its hint: required for a customer not in the CRM only');
     const [nameBox, codeBox] = [await name.boundingBox(), await code.boundingBox()];
     ok(codeBox.y >= nameBox.y + nameBox.height, '360 px: «كود ERP» under «اسم العميل»');
     check([await options.count(), await form.locator('.mold-address').count(), await freeNote.count(), await linkedLine.count()], [0, 1, 0, 0], 'nothing said before anything is typed; the address asked for always');
@@ -1208,7 +1226,7 @@ try {
     await code.fill('k-7731');
     await linkedLine.waitFor();
     check([await name.inputValue(), await area.inputValue(), await options.count(), (await linkedLine.innerText()).replace(/\s+/g, ' ').trim(), await freeNote.count()],
-      ['', 'الخبر، طريق الظهران، مستودع 9', 0, 'مرتبط بالعميل مؤسسة إبراهيم للبلوك كود ERP: K-7731 · الخبر', 0], 'its ERP code typed (2026-11-14: its ERP code shown, not its Yourrest code «' + yr + '»): linked, «مرتبط بالعميل …», the address filled in; the name is not typed for the representative');
+      ['', 'الخبر، طريق الظهران، مستودع 9', 0, 'مرتبط بالعميل مؤسسة إبراهيم للبلوك كود العميل: K-7731 · الخبر', 0], 'its ERP code typed (2026-11-14: its ERP code shown, not its Yourrest code «' + yr + '»): linked, «مرتبط بالعميل …», the address filled in; the name is not typed for the representative');
     await name.fill('مؤسسة إبراهيم للبلوك');
     await code.fill('K-7731');
     await noOverflow(phone, 'phone form with the code typed');
@@ -1231,21 +1249,28 @@ try {
     await name.fill('مصنع النور الجديد'); await code.fill(''); await area.fill('');
     await fill(form, null, 'نقدي');
     await attachQuote(form, quotation('Q-FREE-CUSTOMER.pdf'));
+    // The city and the mold number (required since 2026-11-14) left empty too: each refused beside its field.
+    const citySelect = form.locator('select[data-field="city"]'), moldNo = form.locator('label.mold-field', {hasText: 'رقم القالب'});
+    await citySelect.selectOption(''); await moldNo.locator('input').fill('');
     const sends = mock.state.calls.length;
     await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
     await form.locator('.mold-customer-field[data-field="code"] .field-error').waitFor();
-    check([await form.locator('.mold-customer-field[data-field="code"] .field-error').innerText(), await code.getAttribute('aria-invalid'), await form.locator('.mold-address .field-error').innerText(), await form.locator('.mold-signing').count(), mock.state.calls.length],
-      ['اكتب كود ERP للعميل', 'true', 'اكتب عنوان التسليم', 0, sends], 'a customer not in the CRM: «اكتب كود ERP للعميل» and «اكتب عنوان التسليم», no signing step, nothing sent');
+    check([await form.locator('.mold-customer-field[data-field="code"] .field-error').innerText(), await code.getAttribute('aria-invalid'), await form.locator('.mold-address .field-error').innerText(), await form.locator('label.mold-city .field-error').innerText(), await citySelect.getAttribute('aria-invalid'), await moldNo.locator('.field-error').innerText(), await form.locator('.mold-signing').count(), mock.state.calls.length],
+      ['اكتب كود العميل', 'true', 'اكتب عنوان التسليم', 'اختر المدينة', 'true', 'اكتب رقم القالب', 0, sends], 'a customer not in the CRM: «اكتب كود العميل», «اكتب عنوان التسليم», «اختر المدينة» and «اكتب رقم القالب», no signing step, nothing sent');
+    check([await form.locator('label.mold-city').evaluate(label => label.firstChild.textContent.trim()), await citySelect.locator('option').allInnerTexts()], ['المدينة', ['اختر المدينة', 'الدمام', 'الرياض', 'القصيم', 'المدينة', 'جده', 'مكة', 'الطائف', 'خميس مشيط', 'جيزان']], '«المدينة»: the sheet\'s cities, by their Arabic names');
     check(await form.locator('.mold-customer-field[data-field="name"]').getAttribute('aria-invalid'), null, 'the name typed is not marked: only the field missing is');
     await form.locator('.mold-customer-fields').scrollIntoViewIfNeeded();
     await noOverflow(phone, 'phone form refusing a customer not in the CRM'); await shot(phone, 'mold-customer-free-required-phone');
+    // The mold number refused in the grid below (2026-11-14), on the same 360 px phone.
+    await moldNo.scrollIntoViewIfNeeded(); await noOverflow(phone, 'phone form refusing the mold number'); await shot(phone, 'mold-mold-no-required-phone');
     await name.fill(''); await code.fill('٩٠١٢');
     check(await code.inputValue(), '9012', 'Arabic-Indic digits typed in «كود ERP» become English ones, as the ERP writes them');
     await form.getByRole('button', {name: 'حفظ وإرسال للإنتاج'}).click();
     await form.locator('.mold-customer-field[data-field="name"] .field-error').waitFor();
     check([await form.locator('.mold-customer-field[data-field="name"] .field-error').innerText(), mock.state.calls.length], ['اكتب اسم العميل', sends], 'no name: «اكتب اسم العميل»');
     await name.fill('مصنع النور الجديد'); await area.fill('جدة، حي الصناعية، بوابة 2');
-    check([await freeNote.innerText(), await form.locator('.mold-customer-fields .field-error').count(), await form.locator('.mold-address .field-error').count()], [FREE, 0, 0], 'typing clears the messages; the note stays');
+    await citySelect.selectOption('Jeddah - جده'); await moldNo.locator('input').fill('YR-NOOR-1');
+    check([await freeNote.innerText(), await form.locator('.mold-customer-fields .field-error').count(), await form.locator('.mold-address .field-error').count(), await form.locator('label.mold-city .field-error').count(), await moldNo.locator('.field-error').count()], [FREE, 0, 0, 0, 0], 'typing (and choosing) clears the messages; the note stays');
     await form.locator('.mold-customer-fields').scrollIntoViewIfNeeded();
     await noOverflow(phone, 'phone form with a customer not in the CRM'); await shot(phone, 'mold-customer-free-phone');
     // The customer signs the name, the ERP code (English digits), «غير مسجل في الـCRM» and the address.
@@ -1253,7 +1278,8 @@ try {
     const freeSigning = form.locator('.mold-signing');
     await freeSigning.waitFor();
     const summary = await (await summaryOf(freeSigning, 'div')).evaluateAll(rows => rows.slice(0, 4).map(row => [row.querySelector('dt').innerText, row.querySelector('dd').innerText]));
-    check(summary, [['العميل', 'مصنع النور الجديد'], ['كود ERP', '9012'], ['كود يورست', NOT_IN_CRM], ['العنوان', 'جدة، حي الصناعية، بوابة 2']], 'the signing summary: the name, the ERP code, «غير مسجل في الـCRM», the address');
+    check(summary, [['العميل', 'مصنع النور الجديد'], ['كود العميل', '9012'], ['كود يورست', NOT_IN_CRM], ['العنوان', 'جدة، حي الصناعية، بوابة 2']], 'the signing summary: the name, the ERP code, «غير مسجل في الـCRM», the address');
+    check(await (await summaryOf(freeSigning, 'div')).evaluateAll(rows => rows.slice(4, 5).map(row => [row.querySelector('dt').innerText, row.querySelector('dd').innerText])), [['المدينة', 'جده']], 'and the city chosen, under the address (2026-11-14)');
     await noOverflow(phone, 'phone signing step of a customer not in the CRM'); await shot(phone, 'mold-signing-free-customer-phone');
     await pad(phone).scrollIntoViewIfNeeded();
     await drawOn(phone, {input: 'touch'});
@@ -1262,15 +1288,15 @@ try {
     await sheet(phone).locator('.mold-sending[data-held="free_customer"]').waitFor();
     await sheet(phone).evaluate(node => Promise.all(node.getAnimations({subtree: true}).map(animation => animation.finished)));
     const fact = label => sheet(phone).locator('.mold-facts').first().locator('div', {has: phone.locator('dt', {hasText: label})}).locator('dd');
-    check([await sheet(phone).locator('h2').first().innerText(), await fact('كود يورست').innerText(), await fact('كود ERP').innerText(), (await sheet(phone).locator('.mold-sending strong').innerText())],
-      ['مصنع النور الجديد', NOT_IN_CRM, '9012', 'بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)'], 'the sheet: «غير مسجل في الـCRM», its ERP code, waiting for production\'s update');
+    check([await sheet(phone).locator('h2').first().innerText(), await fact('كود يورست').innerText(), await fact('كود العميل').innerText(), await fact('المدينة').innerText(), (await sheet(phone).locator('.mold-sending strong').innerText())],
+      ['مصنع النور الجديد', NOT_IN_CRM, '9012', 'جده', 'بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)'], 'the sheet: «غير مسجل في الـCRM», its customer code, its city, waiting for production\'s update');
     const saved = await app.db.prepare("SELECT customer_id AS customerId,json_extract(data,'$.customer') AS customer FROM crm_mold_requests WHERE json_extract(data,'$.customer.name')='مصنع النور الجديد'").first();
     check([saved.customerId, JSON.parse(saved.customer), mock.state.calls.filter(call => call.route === 'requests' && call.body.includes('مصنع النور الجديد')).length],
-      ['', {crmNumber: null, name: 'مصنع النور الجديد', address: 'جدة، حي الصناعية، بوابة 2', city: '', erpCode: '9012'}, 0], 'saved unlinked; production\'s update not known, so nothing reached it');
+      ['', {crmNumber: null, name: 'مصنع النور الجديد', address: 'جدة، حي الصناعية، بوابة 2', city: 'Jeddah - جده', erpCode: '9012'}, 0], 'saved unlinked (the city as the sheet writes it); production\'s update not known, so nothing reached it');
     await noOverflow(phone, 'phone sheet of a customer not in the CRM'); await shot(phone, 'mold-sheet-free-customer-phone');
     await phone.keyboard.press('Escape');
     const card = phone.locator('.mold-card', {hasText: 'مصنع النور الجديد'}).first();
-    check([await card.locator('.mold-card-customer > span').allInnerTexts(), await card.locator('.mold-card-sending').innerText()], [['كود ERP: 9012', NOT_IN_CRM], 'بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)'], 'its card: the ERP code and «غير مسجل في الـCRM», waiting for the update');
+    check([await card.locator('.mold-card-customer > span').allInnerTexts(), await card.locator('.mold-card-sending').innerText()], [['كود العميل: 9012', NOT_IN_CRM], 'بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)'], 'its card: the ERP code and «غير مسجل في الـCRM», waiting for the update');
     await card.scrollIntoViewIfNeeded();
     await noOverflow(phone, 'phone list with a customer not in the CRM'); await shot(phone, 'mold-card-free-customer-phone');
     await phone.context().close();
@@ -1282,25 +1308,25 @@ try {
     await sheet(english).waitFor();
     await sheet(english).evaluate(node => Promise.all(node.getAnimations({subtree: true}).map(animation => animation.finished)));
     const enFact = label => sheet(english).locator('.mold-facts').first().locator('div', {has: english.locator('dt', {hasText: label})}).locator('dd');
-    check([await enFact('Yourrest code').innerText(), await enFact('ERP code').innerText(), await sheet(english).locator('.mold-sending strong').innerText()], ['Not in the CRM', '9012', 'Waiting for the production application update (a customer without a Yourrest code)'], 'the sheet in English: «Not in the CRM»');
+    check([await enFact('Yourrest code').innerText(), await enFact('Customer code').innerText(), await sheet(english).locator('.mold-sending strong').innerText()], ['Not in the CRM', '9012', 'Waiting for the production application update (a customer without a Yourrest code)'], 'the sheet in English: «Not in the CRM»');
     await noOverflow(english, '320 px English sheet of a customer not in the CRM'); await shot(english, 'mold-sheet-free-customer-phone-en');
     await english.keyboard.press('Escape');
     await english.locator('button.mold-new').click();
     const enForm = english.locator('.mold-dialog'), enName = customerField(enForm, 'name'), enCode = customerField(enForm, 'code');
     await enForm.waitFor();
     check([await enForm.locator('.mold-customer-field > .field > span').allInnerTexts(), await enCode.getAttribute('placeholder'), await enForm.locator('.mold-customer-hint').innerText()],
-      [['Customer name', 'ERP code'], 'e.g. 146', 'Required for a customer not in the CRM; optional for a linked customer'], 'in English: «Customer name», «ERP code», the hint');
+      [['Customer name', 'Customer code'], 'e.g. 146', 'Required for every request: the customer\'s code in the ERP'], 'in English: «Customer name», «ERP code», the hint');
     await enName.fill('New Light Factory');
-    check(await enForm.locator('.mold-customer-free').innerText(), 'A customer not in the CRM: the request goes to production with the name and ERP code', 'in English: the note');
+    check(await enForm.locator('.mold-customer-free').innerText(), 'A customer not in the CRM: the request goes to production with the name and customer code', 'in English: the note');
     await enForm.getByRole('button', {name: 'Save and send to production'}).click();
     await enForm.locator('.mold-customer-field[data-field="code"] .field-error').waitFor();
-    check([await enForm.locator('.mold-customer-field[data-field="code"] .field-error').innerText(), await enForm.locator('.mold-address .field-error').innerText()], ['Enter the customer\'s ERP code', 'Enter the delivery address'], 'in English: «Enter the customer\'s ERP code», «Enter the delivery address»');
+    check([await enForm.locator('.mold-customer-field[data-field="code"] .field-error').innerText(), await enForm.locator('.mold-address .field-error').innerText()], ['Enter the customer code', 'Enter the delivery address'], 'in English: «Enter the customer\'s ERP code», «Enter the delivery address»');
     await enForm.locator('.mold-customer-fields').scrollIntoViewIfNeeded();
     await noOverflow(english, '320 px English form refusing a customer not in the CRM'); await shot(english, 'mold-customer-free-required-phone-en');
     await enName.fill('');
     await enCode.fill('K-7731');
     await enForm.locator('.mold-customer-chosen').waitFor();
-    check([await enCode.inputValue(), (await enForm.locator('.mold-customer-chosen').innerText()).includes('Linked to the customer') && (await enForm.locator('.mold-customer-chosen').innerText()).includes('ERP code: K-7731'), await enForm.locator('[role="option"]').count()], ['K-7731', true, 0], 'in English: its ERP code typed links it, «Linked to the customer», nothing suggested');
+    check([await enCode.inputValue(), (await enForm.locator('.mold-customer-chosen').innerText()).includes('Linked to the customer') && (await enForm.locator('.mold-customer-chosen').innerText()).includes('Customer code: K-7731'), await enForm.locator('[role="option"]').count()], ['K-7731', true, 0], 'in English: its ERP code typed links it, «Linked to the customer», nothing suggested');
     await noOverflow(english, '320 px English form with the linked customer'); await shot(english, 'mold-customer-chosen-phone-en');
     await enCode.fill('K-7731-9');
     check([await enForm.locator('.mold-customer-chosen').count(), await enForm.locator('.mold-customer-free').count()], [0, 1], 'in English: editing the code to another unlinks it');

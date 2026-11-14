@@ -144,7 +144,7 @@ try {
   });
   /** A request made through the API with its files, waiting for the customer's signature from a link; returns its id and token. */
   async function requestWithLink(api, description, files) {
-    const answer = await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 3, notes: ''}, payment: 'deferred', paymentTerms: 'advance_after_shipping', address: 'الدمام - حي الصناعية', signatureLink: true}});
+    const answer = await api('/api/mold-requests', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId: 'east1', specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'M-31', quantity: 3, notes: ''}, payment: 'deferred', paymentTerms: 'advance_after_shipping', address: 'الدمام - حي الصناعية', signatureLink: true}});
     check(answer.status, 200, 'a request with a signing link: ' + description);
     const id = answer.json().request.id, token = answer.json().link.url.split('/').pop();
     for (const [name, bytes, category] of files) {
@@ -186,6 +186,7 @@ try {
   await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
   await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
   await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
+  await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city is filled in from the customer's «الدمام»)
   await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: 'نقدي'}).click();
   const quotePicker = dialog.locator('.mold-design-picker[data-category="quote"]'), designPicker = dialog.locator('.mold-design-picker[data-category="design"]');
   await quotePicker.locator('input[type=file]').setInputFiles({name: 'عرض سعر Q-77.pdf', mimeType: 'application/pdf', buffer: quote2});

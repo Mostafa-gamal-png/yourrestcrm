@@ -471,9 +471,9 @@ try{
  //  by its fileId
  {
   const known=()=>sql.prepare("SELECT owner_id AS at FROM crm_settings WHERE id='mold-quote-po'").get()?.at||null,forget=()=>sql.prepare("DELETE FROM crm_settings WHERE id='mold-quote-po'").run();
-  const specs={description:'200*400*27.5TH MM OPEN',core:'open',vibrators:2,model:'old',halfBlock:'none',moldWidth:1380,gelbaSize:795,moldNo:'',quantity:1,designUrl:'',notes:''};
+  const specs={description:'200*400*27.5TH MM OPEN',core:'open',vibrators:2,model:'old',halfBlock:'none',moldWidth:1380,gelbaSize:795,moldNo:'M-1',quantity:1,designUrl:'',notes:''};
   // A representative's new request carries the customer's signature (2026-11-04); customer service's goes without it.
-  const create=async(extra,member='rep')=>{as(member);return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',specs,payment:'cash',...(member==='rep'?{signature:signatureInput()}:{}),...extra})));};
+  const create=async(extra,member='rep')=>{as(member);return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',customer:{erpCode:'146'},city:'Riyadh - الرياض',specs,payment:'cash',...(member==='rep'?{signature:signatureInput()}:{}),...extra})));};
   const list=async(member='rep')=>{as(member);return (await requests.GET(new Request('https://test.invalid/api/mold-requests'))).json();};
   const attachAs=async(id,name,bytes,category,member='rep')=>{const form=new FormData();form.set('requestId',randomUUID());form.set('id',id);if(category)form.set('category',category);form.set('file',new File([bytes],name));as(member);return json(await attacher.POST(new Request('https://test.invalid/api/mold-requests/design-files',{method:'POST',headers:{origin:'https://test.invalid'},body:form})));};
   const lastBody=route=>mock.state.calls.findLast(call=>call.route===route&&call.signed)?.body||'';
@@ -640,8 +640,8 @@ try{
  // again. Then the hold's SQL against the TypeScript rule on generated cases.
  {
   sql.prepare("DELETE FROM crm_settings WHERE id='mold-quote-po'").run();
-  const specs={description:'200*400*27.5TH MM OPEN',core:'open',vibrators:2,model:'old',halfBlock:'none',moldWidth:1380,gelbaSize:795,moldNo:'',quantity:1,designUrl:'',notes:''};
-  const create=async(member='rep')=>{as(member);return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',specs,payment:'cash',...(member==='rep'?{signature:signatureInput()}:{})})));};
+  const specs={description:'200*400*27.5TH MM OPEN',core:'open',vibrators:2,model:'old',halfBlock:'none',moldWidth:1380,gelbaSize:795,moldNo:'M-1',quantity:1,designUrl:'',notes:''};
+  const create=async(member='rep')=>{as(member);return json(await requests.POST(post('/api/mold-requests',{action:'create',requestId:randomUUID(),customerId:'factory',customer:{erpCode:'146'},city:'Riyadh - الرياض',specs,payment:'cash',...(member==='rep'?{signature:signatureInput()}:{})})));};
   const attachAs=async(id,name,bytes,category,member='rep')=>{const form=new FormData();form.set('requestId',randomUUID());form.set('id',id);if(category)form.set('category',category);form.set('file',new File([bytes],name));as(member);return json(await attacher.POST(new Request('https://test.invalid/api/mold-requests/design-files',{method:'POST',headers:{origin:'https://test.invalid'},body:form})));};
   const dataOf=id=>JSON.parse(sql.prepare('SELECT data FROM crm_mold_requests WHERE id=?').get(id).data);
   const sentFor=(id,route='requests')=>mock.state.calls.filter(call=>call.route===route&&call.signed&&call.body.includes(id));

@@ -30,7 +30,7 @@ let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 3, designUrl: '', notes: ''};
+const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'M-20', quantity: 3, designUrl: '', notes: ''};
 const out = process.env.YR_MOLD_SCREENSHOT_DIR ? path.resolve(process.env.YR_MOLD_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-sign-document-http-'));
 fs.mkdirSync(out, {recursive: true});
 /** A PDF of about `mb` MB that does not compress (pictures of random pixels). */

@@ -50,8 +50,10 @@ export async function loadMoldRequest(db:D1Database,id:string){return (await loa
  *  from these fields alone: the customer's signature (data.signature, 2026-11-04) goes as a design file, never in this body. */
 /** Since 2026-11-10 a deferred request's terms (paymentTerms) go right after its payment, only when this request's sends carry them
  *  (data.termsSent, decided at its first send once the products update of 2026-11-10 is known: moldNov10Known): a request first sent
- *  without them is sent again without them, byte for byte (production compares a resend with its original). */
-export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>,withTerms=row.data.termsSent===true)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs,payment:row.data.payment,paymentTerms:withTerms&&row.data.payment==='deferred'?row.data.paymentTerms:undefined,quoteNo:row.data.quoteNo,poNo:row.data.poNo});
+ *  without them is sent again without them, byte for byte (production compares a resend with its original). Since 2026-11-14 a CRM
+ *  customer's code goes with its crmNumber only for a request stored with the mark (data.erpWithCrm, moldSendsErpWithCrm); one without it
+ *  is sent byte for byte as before (production refuses erpCode added to a request it holds). */
+export const requestBody=(row:Pick<MoldRequestRow,'id'|'legacyOrderNo'|'data'>,withTerms=row.data.termsSent===true)=>moldRequestBody({id:row.id,legacyOrderNo:row.legacyOrderNo,requestedAt:row.data.requestedAt,customer:row.data.customer,salesman:row.data.salesman,specs:row.data.specs,payment:row.data.payment,paymentTerms:withTerms&&row.data.payment==='deferred'?row.data.paymentTerms:undefined,quoteNo:row.data.quoteNo,poNo:row.data.poNo,erpWithCrm:row.data.erpWithCrm===true});
 
 /** Where the CRM keeps that production's update of 2026-11-03 (the quotation and PO) is live: a row of crm_settings, the existing
  *  key-value table (its owner_id holds when it was learned). Written once, never removed by the CRM, so a restart keeps it. */
