@@ -83,6 +83,20 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'yourrest-activate-update') event.waitUntil(self.skipWaiting());
 });
 
+// The device's notification of a new supervisor note (app/supervisor-reviews.tsx deviceNotice, tag "yourrest-review:..."): a tap brings an
+// open page of the CRM to the front, or opens one. Any other notification is left alone, and nothing is read from it but its tag.
+self.addEventListener('notificationclick', (event) => {
+  const tag = event.notification && typeof event.notification.tag === 'string' ? event.notification.tag : '';
+  if (!tag.startsWith('yourrest-review:')) return;
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = windows.find((client) => { try { return new URL(client.url).origin === self.location.origin; } catch { return false; } });
+    if (open) { await open.focus(); return; }
+    await self.clients.openWindow('/');
+  })());
+});
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);

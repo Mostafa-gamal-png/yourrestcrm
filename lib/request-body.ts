@@ -14,7 +14,8 @@ export class RequestBodyError extends Error {
 // 2 300 000.
 // /api/trash (a restoration, 2026-11-09): an entry's id and a request id, under 300 bytes: 2 000.
 // /api/reviews: the supervisor's «النتيجة» and «الإجراء المطلوب», 2 000 characters each (lib/supervisor-reviews.ts), 3 bytes a character
-// plus the keys: 14 000. /api/review-inbox: «قرأت الكل» on at most 50 notes of kind, id (200) and version: 16 000.
+// plus the keys: 14 000. /api/review-inbox: «قرأت» names one note since 2026-11-15, but a page loaded before may still send its former
+// «قرأت الكل» on at most 50 notes of kind, id (200) and version, which is read and refused with its reason: 16 000.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
  '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':2_330_000,'/api/mold-sign':2_300_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/service-kpi':32_000,

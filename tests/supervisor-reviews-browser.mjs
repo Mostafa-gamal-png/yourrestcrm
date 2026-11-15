@@ -2,7 +2,7 @@
 // build first): on «تقرير يوم المندوب» the supervisor adds «النتيجة» and «الإجراء المطلوب» under their representative's visit and on
 // the whole day, on a desktop in Arabic and on a 360 px phone in English («لم تُقرأ بعد» / «Not read yet»); the representative, in the
 // Android app emulator, finds «ملاحظات المشرف على عملك» at the top of every page with its count, a «قرأت» that fails offline keeps the
-// note and says why, «قرأت» hides one, «قرأت الكل» the rest (in English); the supervisor then sees «تمت القراءة» with the time. No
+// note and says why, «قرأت» hides one, then each of the rest on its own (in English; no «قرأت الكل» since 2026-11-15); the supervisor then sees «تمت القراءة» with the time. No
 // horizontal scroll and 44 px buttons on the phone. Synthetic fixtures only: temporary SQLite, mocked mail, no production data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -51,7 +51,9 @@ try {
     await page.locator('.journey-toolbar select').selectOption('rep1');
     await page.locator('.journey-communications').waitFor();
   }
-  async function writeNote(block, result, action, saveLabel) {
+  // A note on a visit or contact carries its evaluation (2026-11-15); a day note has none.
+  async function writeNote(block, result, action, saveLabel, rating = '') {
+    if (rating) await block.getByRole('radio', {name: rating, exact: true}).check();
     await block.locator('textarea').nth(0).fill(result);
     await block.locator('textarea').nth(1).fill(action);
     await block.getByRole('button', {name: saveLabel, exact: true}).click();
@@ -65,8 +67,11 @@ try {
   await visit.locator('[data-review-add="visit-rep1"]').click();
   eq(await visit.locator('.voice-field > span').allInnerTexts().then(texts => texts.map(text => text.replace(/\s*\*$/, '').trim())), ['النتيجة', 'الإجراء المطلوب'], 'the two fields, each a dictation field');
   await visit.getByRole('button', {name: 'حفظ', exact: true}).click();
+  eq(await visit.locator('.review-error').innerText(), 'اختر التقييم: فعالة أو سلبية.', 'the evaluation is required before anything is sent');
+  await visit.getByRole('radio', {name: 'فعالة', exact: true}).check();
+  await visit.getByRole('button', {name: 'حفظ', exact: true}).click();
   eq(await visit.locator('.review-error').innerText(), 'اكتب النتيجة والإجراء المطلوب؛ الخانتان إلزاميتان.', 'both fields are required before anything is sent');
-  await writeNote(visit, 'زيارة جيدة والعميل جاد', 'جهّز عرض السعر قبل الخميس', 'حفظ');
+  await writeNote(visit, 'زيارة جيدة والعميل جاد', 'جهّز عرض السعر قبل الخميس', 'حفظ', 'فعالة');
   ok((await visit.innerText()).includes('لم تُقرأ بعد') && (await visit.innerText()).includes('المشرف سالم'), 'the saved note: who wrote it and «لم تُقرأ بعد»');
   await sup.locator('[data-review-add-day="rep1"]').click();
   await writeNote(sup.locator('[data-day-review="rep1"]'), 'يوم منظم', 'زد الزيارات غدًا', 'حفظ');
@@ -80,7 +85,7 @@ try {
   const call = supPhone.locator('[data-entry-review="call-rep1"]');
   await call.getByRole('button', {name: 'Add result and action'}).click();
   eq(await smallButtons(supPhone, '[data-entry-review="call-rep1"]'), [], 'every button of the form at least 44 px on the phone');
-  await writeNote(call, 'Good follow-up call', 'Send the quotation today', 'Save');
+  await writeNote(call, 'Good follow-up call', 'Send the quotation today', 'Save', 'Negative');
   ok((await call.innerText()).includes('Not read yet'), '«Not read yet» in English');
   ok((await supPhone.locator('[data-entry-review="visit-rep1"]').innerText()).includes('زيارة جيدة والعميل جاد'), 'the visit note written on the desktop shows on the phone');
   await noOverflow(supPhone, 'the report on a 360 px phone');
@@ -93,7 +98,8 @@ try {
   await card.waitFor();
   eq(await card.locator('[data-review-count]').innerText(), '3', 'three unread notes');
   const text = await card.innerText();
-  for (const words of ['ملاحظات المشرف على عملك', 'النتيجة', 'الإجراء المطلوب', 'تقييم اليوم', 'زيارة · مصنع الاختبار', 'جهّز عرض السعر قبل الخميس', 'المشرف سالم', 'قرأت الكل']) ok(text.includes(words), 'the card shows ' + words);
+  for (const words of ['ملاحظات المشرف على عملك', 'النتيجة', 'الإجراء المطلوب', 'تقييم اليوم', 'زيارة · مصنع الاختبار', 'جهّز عرض السعر قبل الخميس', 'المشرف سالم', 'فعالة', 'سلبية']) ok(text.includes(words), 'the card shows ' + words);
+  ok(!text.includes('قرأت الكل'), 'no «قرأت الكل»: each note is read on its own');
   eq(await smallButtons(rep, '[data-review-inbox]'), [], 'the card\'s buttons are at least 44 px');
   await noOverflow(rep, 'the card on a 360 px phone');
   await shot(rep, '03-representative-card-ar');
@@ -114,15 +120,19 @@ try {
   await card.waitFor();
   eq(await card.locator('[data-review-count]').innerText(), '2', 'the card on another page');
 
-  // ---- 4. The representative in English on a desktop: «Mark all read».
+  // ---- 4. The representative in English on a desktop: «Read» on each note, one at a time (no «Mark all read» since 2026-11-15).
   const repEn = await open('rep1', {language: 'en'});
   const cardEn = repEn.locator('[data-review-inbox]');
   await cardEn.waitFor();
   ok((await cardEn.innerText()).includes('Your supervisor’s notes on your work') && (await cardEn.innerText()).includes('Required action'), 'the card in English');
+  eq(await cardEn.locator('[data-review-read-all]').count(), 0, 'no «Mark all read»');
   await shot(repEn, '04-representative-card-en');
-  await cardEn.locator('[data-review-read-all]').click();
+  for (let left = await cardEn.locator('[data-review-item]').count(); left > 0; left--) {
+    await cardEn.locator('[data-review-item]').first().getByRole('button', {name: 'Read', exact: true}).click();
+    if (left > 1) await repEn.waitForFunction(count => document.querySelectorAll('[data-review-inbox] [data-review-item]').length === count, left - 1);
+  }
   await cardEn.waitFor({state: 'detached'});
-  ok(true, '«Mark all read» empties and hides the card');
+  ok(true, '«Read» on each note empties and hides the card');
 
   // ---- 5. The supervisor sees «تمت القراءة» with the time.
   await sup.locator('.journey-toolbar button', {hasText: 'تحديث التقرير'}).click();
@@ -137,7 +147,7 @@ try {
   // An edit makes it unread again.
   const edited = sup.locator('[data-entry-review="visit-rep1"]');
   await edited.locator('[data-review-edit]').click();
-  await writeNote(edited, 'زيارة جيدة جدًا', 'جهّز عرض السعر اليوم', 'حفظ');
+  await writeNote(edited, 'زيارة جيدة جدًا', 'جهّز عرض السعر اليوم', 'حفظ', 'سلبية');
   ok((await edited.innerText()).includes('لم تُقرأ بعد'), 'the edited note is unread again');
   await rep.reload();await rep.locator('[data-review-inbox] [data-review-item="visit-rep1"]').waitFor();
   ok(true, 'and it is back on the representative\'s card');

@@ -101,7 +101,8 @@ const call=async(handler,{as,body,url='https://test.invalid/api/x',origin='https
  const response=await handler(request),data=await response.json();eq(response.status,status,(as||'anonymous')+' '+url+' '+JSON.stringify(body||'').slice(0,120)+' -> '+JSON.stringify(data).slice(0,300));return data;
 };
 const save=(as,body,status)=>call(reviews.POST,{as,body:{requestId:crypto.randomUUID(),version:null,...body}},status);
-const entry=(as,activityId,extra={},status)=>save(as,{kind:'entry',activityId,result:'زيارة جيدة',action:'جهّز عرض السعر',...extra},status);
+// Since 2026-11-15 a note on a visit or contact carries its evaluation («فعالة» here; tests/supervisor-reviews-complete.mjs tries the rest).
+const entry=(as,activityId,extra={},status)=>save(as,{kind:'entry',activityId,result:'زيارة جيدة',action:'جهّز عرض السعر',rating:'effective',...extra},status);
 const dayNote=(as,memberId,extra={},status)=>save(as,{kind:'day',memberId,date:day,result:'يوم منظم',action:'زد الزيارات غدًا',...extra},status);
 const report=(as,memberId,status)=>call(reviews.GET,{as,url:'https://test.invalid/api/reviews?date='+day+(memberId?'&memberId='+memberId:'')},status);
 const unread=as=>call(inbox.GET,{as});
@@ -176,9 +177,13 @@ race=()=>sql.prepare("UPDATE crm_members SET supervisor_id='sup2' WHERE id='rep1
 await entry('sup','v4',{},409);
 eq(sql.prepare("SELECT COUNT(*) n FROM crm_daily_entry_reviews WHERE activity_id='v4'").get().n,0,'nothing written when the team changed meanwhile');
 sql.prepare("UPDATE crm_members SET supervisor_id='sup' WHERE id='rep1'").run();
-// «قرأت الكل».
-const items=(await unread('rep1')).items.map(i=>({kind:i.kind,ref:i.ref,version:i.version}));
-eq((await read('rep1',items)).items,[],'all read');
+// No «قرأت الكل» since 2026-11-15: a read naming two notes is refused and writes nothing; each note is read on its own.
+const items=(await unread('rep1')).items.map(i=>({kind:i.kind,ref:i.ref,version:i.version})),readsBefore=reads();
+eq(items.length,2,'two notes wait');
+eq((await read('rep1',items,400)).error,'اضغط «قرأت» على كل ملاحظة وحدها.','a read of two notes at once is refused');
+eq(reads(),readsBefore,'and writes nothing');
+await read('rep1',[items[0]]);
+eq((await read('rep1',[items[1]])).items,[],'each read on its own: none left');
 // The 30 days count from when the note was written or edited.
 await entry('sup','v4');eq((await unread('rep1')).items.map(i=>i.ref),['v4'],'a new note');
 sql.prepare("UPDATE crm_daily_entry_reviews SET updated_at=? WHERE activity_id='v4'").run(new Date(Date.now()-31*86400000).toISOString());

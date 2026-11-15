@@ -72,14 +72,14 @@ try {
   eq((await today('sup')).rows.length, 2, 'the supervisor is unaffected');
 
   // The notes: written through /api/reviews, read through /api/review-inbox.
-  const note = await json(await session.sup('/api/reviews', {method: 'POST', body: {requestId: crypto.randomUUID(), version: null, kind: 'entry', activityId: 'v1', result: 'زيارة جيدة', action: 'جهّز عرض السعر'}}), 200, 'the supervisor notes rep1\'s visit');
+  const note = await json(await session.sup('/api/reviews', {method: 'POST', body: {requestId: crypto.randomUUID(), version: null, kind: 'entry', activityId: 'v1', rating: 'effective', result: 'زيارة جيدة', action: 'جهّز عرض السعر'}}), 200, 'the supervisor notes rep1\'s visit');
   await json(await session.sup('/api/reviews', {method: 'POST', body: {requestId: crypto.randomUUID(), version: null, kind: 'day', memberId: 'rep2', date: day, result: 'يوم بلا زيارات', action: 'ابدأ بدري'}}), 200, 'and rep2\'s day');
   eq(rows(await today('sup')).map(row => [row[0], row[4]]), [['rep2', 1], ['rep1', 1]], 'one unread note each');
   eq((await today('sup')).totals.unreadNotes, 2, 'in the totals');
   const inbox = await json(await session.rep1('/api/review-inbox'), 200, 'rep1\'s card');
   await json(await session.rep1('/api/review-inbox', {method: 'POST', body: {items: inbox.items.map(item => ({kind: item.kind, ref: item.ref, version: item.version}))}}), 200, 'rep1 presses «قرأت»');
   eq(rows(await today('sup')).map(row => [row[0], row[4]]), [['rep2', 1], ['rep1', 0]], 'read: no longer counted');
-  await json(await session.sup('/api/reviews', {method: 'POST', body: {requestId: crypto.randomUUID(), version: note.review.version, kind: 'entry', activityId: 'v1', result: 'زيارة جيدة جدًا', action: 'جهّز عرض السعر اليوم'}}), 200, 'the supervisor edits the note');
+  await json(await session.sup('/api/reviews', {method: 'POST', body: {requestId: crypto.randomUUID(), version: note.review.version, kind: 'entry', activityId: 'v1', rating: 'effective', result: 'زيارة جيدة جدًا', action: 'جهّز عرض السعر اليوم'}}), 200, 'the supervisor edits the note');
   eq(rows(await today('sup')).map(row => [row[0], row[4]]), [['rep2', 1], ['rep1', 1]], 'an edited note waits again');
   ok(!/at .*node_modules|stack/i.test(app.log().replace(/ExperimentalWarning[^\n]*/g, '')), 'no stack trace in the server log');
 } finally { await app.stop(); }

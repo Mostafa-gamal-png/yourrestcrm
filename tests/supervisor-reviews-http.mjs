@@ -2,7 +2,7 @@
 // a supervisor writes «النتيجة» and «الإجراء المطلوب» on their representative's visit and day (200), not on another team's (403) nor
 // as a representative (403); a retry answers from its receipt, the same key with other words and a stale version are 409; the
 // representative's card lists the notes, «قرأت» hides one (another member's «قرأت» changes nothing), the supervisor sees it read and
-// when, an edit makes it unread again, «قرأت الكل»; anonymous callers get 401; GET /api/crm keeps the notes out of its recent changes;
+// when, an edit makes it unread again, «قرأت» one note at a time (no «قرأت الكل» since 2026-11-15); anonymous callers get 401; GET /api/crm keeps the notes out of its recent changes;
 // the day report (GET /api/journeys) answers as before. Synthetic fixtures only: temporary SQLite, mocked mail, no production data.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
@@ -39,7 +39,7 @@ try {
   for (const url of ['/api/reviews', '/api/review-inbox']) for (const body of [{}, {kind: 'entry', activityId: 'visit-rep1', result: 'نتيجة', action: 'إجراء', version: null, requestId: crypto.randomUUID()}, {items: [{kind: 'entry', ref: 'visit-rep1', version: 1}]}])
     eq((await anonymous(url, {method: 'POST', body})).status, 401, 'anonymous POST ' + url);
   // Who writes, on whom.
-  const note = {kind: 'entry', activityId: 'visit-rep1', result: 'زيارة جيدة', action: 'جهّز عرض السعر'};
+  const note = {kind: 'entry', activityId: 'visit-rep1', result: 'زيارة جيدة', action: 'جهّز عرض السعر', rating: 'effective'};
   await save('rep1', note, 403, 'a representative cannot write a note');
   await save('rep2', {...note, activityId: 'visit-rep2'}, 403, 'nor on their own visit');
   await save('sup', {...note, activityId: 'visit-rep2'}, 403, 'a supervisor cannot note another team\'s representative');
@@ -74,8 +74,12 @@ try {
   await save('sup', {...note, version: 1, result: 'زيارة جيدة جدًا'}, 200, 'the edit');
   eq((await unread('rep1')).items.map(item => [item.kind, item.version, item.result]).sort(), [['day', 1, 'يوم منظم'], ['entry', 2, 'زيارة جيدة جدًا']], 'an edited note is unread again');
   eq((await report('sup', 'rep1')).entries[0].readAt, null, 'and the supervisor sees it unread');
-  // «قرأت الكل».
-  eq((await read('rep1', (await unread('rep1')).items.map(({kind, ref, version}) => ({kind, ref, version})))).items, [], '«قرأت الكل»');
+  // No «قرأت الكل» since 2026-11-15: two notes at once are refused (400, nothing written); each one is read on its own.
+  const waiting = (await unread('rep1')).items.map(({kind, ref, version}) => ({kind, ref, version}));
+  eq((await read('rep1', waiting, 400)).error, 'اضغط «قرأت» على كل ملاحظة وحدها.', 'a read of two notes at once is refused');
+  eq((await unread('rep1')).items.length, 2, 'and nothing is marked read');
+  for (const item of waiting) await read('rep1', [item]);
+  eq((await unread('rep1')).items, [], 'each «قرأت» on its own');
   await read('rep1', [], 400);
   // The recent changes of GET /api/crm list none of it; the day report answers as before (no new key).
   for (const who of ['owner', 'sup', 'rep1']) {
