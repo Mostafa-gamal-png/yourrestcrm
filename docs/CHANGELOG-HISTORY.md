@@ -4,6 +4,54 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The supervisor's red card, and the result required on a new opportunity (2026-11-15, not released yet, no migration)
+
+- **Asked.** Two changes the owner asked for in the GSCO conversation, relayed for Yourrest: «عايز يبان للمشرف كارد لونه احمر بزيارات ومتابعات بلا
+  نتيجة او اجراء فى عدد اللى لسه مخدش اجراء ولما يضغط عليه يروح ليهم», and «هل يمكن تسجيل فرصة بدون نتيجة» then «خليها إجبارية والاجراء القادم».
+- **1. The red card «زيارات ومتابعات بلا نتيجة أو إجراء»** (`app/review-pending.tsx`, `GET /api/reviews/pending`, `lib/supervisor-reviews*.ts`
+  `ReviewPending`, `reviewPending`). At the very top of the first screen (`app/team-home.tsx`, before «عملاء واقفين» and «فريقي اليوم») of a
+  supervisor or a sales manager while «تقرير يوم المندوب» is theirs; never the administrator, a representative or customer service. The title
+  with the total of the last 7 Riyadh days (today and the six before, each day from 00:00), then one line per representative and day (the
+  name, «اليوم», «أمس» or the weekday and date, the count), 8 at most and «وأيام أخرى: N» for the other lines; nothing while nothing waits.
+  A line opens the day report on that representative and that day (a one-shot handoff `{memberId, date}` in `app/crm-app.tsx`, read by
+  `app/journey-report.tsx` as its first day); a press anywhere else on the card opens the newest line. Asked when the screen opens, every 5
+  minutes in front and on coming back (at most once a minute), never offline.
+- **The count is the day report's own.** Yourrest's day report had no «بلا مراجعة» number, so the card counts exactly what the reader's
+  own day report offers «إضافة نتيجة وإجراء» on and has no note: the same activities (`reportActivitiesOn`, one pass over the 7 days, of
+  which `reportActivities` is now one day) and the same rule (`reviewableOf`, now also behind `GET /api/reviews` `reviewable`: a reviewer
+  role with «إضافة» on «تقرير يوم المندوب» not switched off, never the reader's own work, the team as the role defines it, never widened by
+  «عرض بيانات الفريق بالكامل»), restricted to representatives (GSCO counted representatives only; a sales manager's day report also lets
+  them note a supervisor's own visits, which the card leaves out). A note saved by anyone takes its visit off at once; a deleted visit
+  leaves; a representative moved to another supervisor moves with their work.
+- **The route** answers 401 without a session, 403 to customer service, a representative and the administrator («بطاقة الزيارات والمتابعات
+  بلا نتيجة أو إجراء متاحة للمشرف ومدير المبيعات فقط.»), 404 with «تقرير يوم المندوب» hidden; names, days and counts only; no-store.
+- **Colours:** the theme's own `--destructive` (light #b52d44, dark #ffa5b9) mixed with the card, as `.erp-import-problems`; dark text on
+  the pink of the dark theme (`app/review-pending.css`).
+- **2. A new opportunity needs its result and next step** (`lib/opportunity-entry.ts`). In Yourrest an opportunity is registered as a new
+  visit or contact on a customer: the screens' «add opportunity» opens «زيارة جديدة» (`start('opportunity')`, `onAddOpportunity`), saved by
+  `POST /api/visits` (which may write the customer's mold request, kind `opportunity`, beside it), and customer service's «فرصة جديدة» (or a
+  further contact on its open request), `POST /api/customer-service`. Both now need «نتيجة الزيارة» (or «نتيجة التواصل» for a call or another
+  contact, and always for customer service, whose words are the contact's), at least 3 letters once trimmed (a follow-up's own rule), the
+  next action and the follow-up date: «اكتب نتيجة الزيارة قبل حفظ الفرصة (3 أحرف على الأقل).», «اكتب نتيجة التواصل قبل حفظ الفرصة (3 أحرف على
+  الأقل).», «اكتب الإجراء القادم قبل حفظ الفرصة.», «حدد موعد المتابعة قبل حفظ الفرصة.» (English pairs in `lib/locales/en.json`).
+- **In the form** (`app/customer-visits.tsx`, `app/visit-fields.tsx`, `app/voice-field.tsx` `problem`): the words stand under each field in
+  the theme's red, the first is focused, nothing is sent, each leaves as its field is filled. The result list and the two next-step fields
+  of a new visit no longer rely on the browser's own check (a hidden native select showed it nowhere useful). Before, the form already asked
+  for them through that check and `/api/visits` asked for the next step but not the result.
+- **On the server, so the device's queue meets it too:** an entry saved without a network by an earlier page and lacking its result comes
+  back «تحتاج مراجعة» with the message; «حالة الحفظ» (`app/offline-status.tsx` `CompleteOfflineEntry`, `lib/offline-submit.ts`
+  `completeOfflineEntry`) asks only the missing fields with the form's own choices, and the same entry (its key, the moment it was recorded
+  on the device, its place and timing) is sent again and saved once.
+- **Not asked:** editing a saved visit or registration (an ended visit emptied of its result keeps its earlier «سجّل نتيجة الزيارة قبل
+  إنهائها»), executing a follow-up (its own rule), and every import: none of them creates a visit or an opportunity (the ERP and Excel
+  imports write customers, machines, quotations, sales and collections), and a restoration from «المحذوفات» puts back what was deleted. The
+  older generic routes (`/api/crm` visits of the earlier kind, `/api/followups`) are not used by any screen and are unchanged. Unlike GSCO,
+  no imported row needs a fixed note, since nothing imported is an opportunity here.
+- **Tested.** `tests/review-pending.mjs` and `tests/opportunity-entry.mjs` (default gate, in-memory SQLite, the clock fixed),
+  `tests/review-pending-http.mjs` and `tests/opportunity-entry-http.mjs` (built release), `tests/review-pending-browser.mjs` and
+  `tests/opportunity-entry-browser.mjs` (Chromium at 360 px and a computer, Arabic, English, dark, the Android app emulator); updated:
+  `tests/server-authorization.mjs` (the route in the role matrix and with the screen hidden).
+
 ## The supervisor's review completed: the evaluation, the earlier notes, «تقرير مراجعاتي», the notice of a new note, «قرأت» on each note (2026-11-15, not released yet, no migration)
 
 - **Asked.** The owner approved five additions relayed from the GSCO conversation («كمل البند التاني»), as GSCO did them in 2.13.66,

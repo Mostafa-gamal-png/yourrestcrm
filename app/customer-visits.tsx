@@ -26,6 +26,7 @@ import {serviceText} from '@/lib/service-wording';
 import {visitPlaceView} from '@/lib/visit-place';
 import './visit-mobile.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
+import {opportunityProblems,type OpportunityField} from '@/lib/opportunity-entry';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 type VisitForm = VisitData & CompetitorInput & { type: string; requestedProducts: string[]; salesStage: string; strength: string; customerNeeds: string; nextAction: string; nextDate: string; responsibleId: string };
 function Pick({ value, onChange, options, label, disabled = false }: {
@@ -140,6 +141,8 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     const [data, setData] = useState<VisitForm>({ type: 'visit', date: today(), summary: '', result: '', outcome: 'pending', notes: '', location: '', startedAt: '', endedAt: '', nextAction: intake?.nextAction||'', nextDate: intake?.nextDate&&intake.nextDate>=today()?intake.nextDate:today(), salesStage: originalRequest?.data.stage || '', strength: '', requestedProducts: [], hasCompetitor: showCompetitor || !!seedCompetitorName, competitorName: seedCompetitorName, competitorNotes: '', competitorFileId: '', competitorFileName: '', customerNeeds: intake?.needs||'', ...initial?.data, responsibleId: initial ? (initial.data.responsibleId || initial.data.performedBy || '') : me.id });
     const [busy, setBusy] = useState(false), [uploading, setUploading] = useState(false), [error, setError] = useState(''), [key] = useState(() => crypto.randomUUID()), [formOpenedTick] = useState(() => performance.now());
     const [locationState,setLocationState]=useState<VisitLocationState>({status:'idle',error:''});
+    // What a new visit or contact lacks (lib/opportunity-entry.ts): written under each field, cleared as soon as that field changes.
+    const [problems,setProblems]=useState<Partial<Record<OpportunityField,string>>>({});
     const [retryPending,setRetryPending]=useState(false);
     const [uploadState,setUploadState]=useState<UploadState|null>(null);
     const uploadAttempt=useRef<{file:File;context:string;key:string}|null>(null);
@@ -157,7 +160,9 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     // A new visit is recorded where the customer is. Arrival the route tracking has confirmed counts; the server judges with its own copy of the stop.
     const tracked=useJourneyTracker().active,journeyArrived=!!tracked&&tracked.customerId===customerId&&!!tracked.data.arrivalAt&&!tracked.data.departureAt&&!tracked.closedAt;
     const place=!initial&&!service&&!readOnly?visitPlaceView({customer:customer?.data,data,role:me.role,language,journeyArrived}):visitPlaceView({customer:undefined,data,role:me.role,language});
-    const change = (k: string, v: VisitValue | string[]) => {if(readOnly||savedReceipt.current||retryPending||saveLock.current)return;if(!['location','latitude','longitude','locationSource','locationCapturedAt','locationAccuracy'].includes(k))setDirty(true);setData(d => ({ ...d, [k]: v }));};
+    const change = (k: string, v: VisitValue | string[]) => {if(readOnly||savedReceipt.current||retryPending||saveLock.current)return;if(!['location','latitude','longitude','locationSource','locationCapturedAt','locationAccuracy'].includes(k))setDirty(true);if(k==='result'||k==='nextAction'||k==='nextDate'||k==='type')setProblems(current=>{const field=k==='type'?'result':k;if(!current[field])return current;const next={...current};delete next[field];return next;});setData(d => ({ ...d, [k]: v }));};
+    /** The first field the form found missing, focused and brought to the middle of the screen. */
+    const showProblem=(found:Partial<Record<OpportunityField,string>>)=>{const first=(['result','nextAction','nextDate'] as const).find(field=>found[field]);const target=first&&typeof document!=='undefined'&&document.getElementById(first==='result'?'visit-result':first==='nextAction'?'visit-next-action':'visit-next-date');if(target){target.focus();target.scrollIntoView({block:'center',behavior:'smooth'});}};
     function requestLeave(action=onClose){if(busy||uploading||uploadLock.current||savingCustomer)return;if(!savedReceipt.current&&(retryPending||dirty||creatingCustomer)){leaveAction.current=action;setConfirmLeave(true);}else action();}
     function revealInvalid(event:React.FormEvent<HTMLFormElement>){const target=event.target as HTMLElement;for(let element:HTMLElement|null=target;element;element=element.parentElement){if(element instanceof HTMLDetailsElement){element.open=true;if(element.classList.contains('visit-sales-details'))setSalesOpen(true);}}if(invalidFrame.current!==null)return;invalidFrame.current=requestAnimationFrame(()=>{invalidFrame.current=null;target.focus();target.scrollIntoView({block:'center',behavior:'smooth'});});}
     const productOptions = [...visitProducts,'خدمات صيانة'];
@@ -195,7 +200,10 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
         return; if(initial&&navigator.onLine===false){setError(say('تعديل الزيارات القديمة يحتاج اتصالًا بالإنترنت. يمكنك تسجيل زيارة جديدة بدون شبكة.','Editing existing visits needs an internet connection. You can record a new visit offline.'));return;}if(!savedReceipt.current&&!retryPending&&!customer){setError(say('اختر العميل أولًا، ثم سجّل الزيارة.','Choose a customer before recording the visit.'));return;}if (!savedReceipt.current&&!retryPending&&!initial && (locationState.status==='locating'||!data.locationCapturedAt)) {
         setError(locationState.error||say('انتظر تحديد موقع الجهاز أو اضغط إعادة المحاولة في قسم الموقع.','Wait for the device location, or tap Retry in the location section.'));
         return;
-    } if(!savedReceipt.current&&!retryPending&&!initial&&place.blocked){setError(place.message);return;} saveLock.current=true;setBusy(true); setError(''); elapsedAtSave.current ??= Math.max(0,Math.round(performance.now()-formOpenedTick)); try {
+    } if(!savedReceipt.current&&!retryPending&&!initial&&place.blocked){setError(place.message);return;}
+    // A new visit or contact is how an opportunity is registered: its result and next step are asked here, beside their fields (the server asks again).
+    if(!savedReceipt.current&&!retryPending&&!initial){const found=opportunityProblems(data,me.role);setProblems(found);if(Object.keys(found).length){setError('');showProblem(found);return;}}
+    saveLock.current=true;setBusy(true); setError(''); elapsedAtSave.current ??= Math.max(0,Math.round(performance.now()-formOpenedTick)); try {
         if(savedReceipt.current){await onSaved();onClose();return;}
         if(!attempt.current){const stopId=!initial?journeyStopId():undefined;const payload=service?{action:initial?'edit':'create',id:initial?.data.serviceIntakeId,version:initial?.version,customerId,customerVersion:customer?.version,registration:data,elapsedMilliseconds:elapsedAtSave.current,requestId:crypto.randomUUID()}:{createKey:key,id:initial?.id,version:initial?.version,customerId,customerVersion:customer?.version,data:{...data,...(stopId?{journeyStopId:stopId}:{})},requestId,timingMode:'automatic',elapsedMilliseconds:elapsedAtSave.current};attempt.current={body:JSON.stringify(payload),url:service?'/api/customer-service':'/api/visits'};}
         const result=initial
@@ -242,11 +250,11 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
             {workflow&&<div className="service-button-row"><span className="badge pending">{t(serviceStatusLabels[workflow.state])}</span><button type="button" className="btn subtle small" onClick={()=>requestLeave(()=>onWorkflow(workflow.id))}>{t('الاعتماد والتكليف')}</button></div>}
             <fieldset disabled={readOnly} className="visit-form-fields">
               <section className="visit-form-section"><h3>{say('التواصل والنتيجة','Contact & outcome')}</h3><div className="form-grid">
-                <VisitFields unified service={service} role={me.role} readOnly={readOnly} data={data} parentId={customerId} records={records} editing={!!initial} busy={busy||uploading||creatingCustomer||savedReceipt.current||retryPending} email={me.email} onChange={change} onParent={()=>{}} onLocationState={setLocationState}/>
+                <VisitFields unified service={service} role={me.role} readOnly={readOnly} data={data} parentId={customerId} records={records} editing={!!initial} busy={busy||uploading||creatingCustomer||savedReceipt.current||retryPending} email={me.email} onChange={change} onParent={()=>{}} onLocationState={setLocationState} resultProblem={problems.result?tw(problems.result):''}/>
                 <VisitPlaceStatus view={place}/>
               </div></section>
               <section className="visit-form-section"><h3>{say('الخطوة التالية','Next step')}</h3><div className="form-grid">
-                <VoiceField label={t('الإجراء القادم')} value={data.nextAction||''} required onChange={value=>change('nextAction',value)}/><FollowupDateField value={data.nextDate||''} onChange={value=>change('nextDate',value)}/>
+                <VoiceField label={t('الإجراء القادم')} value={data.nextAction||''} required={!!initial} marked onChange={value=>change('nextAction',value)} problem={problems.nextAction?tw(problems.nextAction):''} inputProps={{id:'visit-next-action'}}/><FollowupDateField id="visit-next-date" required={!!initial} problem={problems.nextDate?tw(problems.nextDate):''} value={data.nextDate||''} onChange={value=>change('nextDate',value)}/>
               </div></section>
               <details className="visit-sales-details" open={salesOpen} onToggle={event=>setSalesOpen(event.currentTarget.open)}>
                 <summary><span>{say('تفاصيل البيع والأصناف','Sales & products')}</span><span className="badge">{t(stageLabels[data.salesStage])||say('اختياري','Optional')}</span></summary>

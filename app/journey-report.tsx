@@ -16,6 +16,8 @@ import {DayReviewPanel,EntryReview,EntryReviews,ReportReviewsProvider,ReviewsMad
 import './journey-report.css';
 
 type ReportStop=JourneyReportStop;
+/** The first day of the report: the day handed over when it is a real day not after today (Riyadh), else today. */
+export function reportStartDay(day:string|undefined,today=journeyDate()){const at=typeof day==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(day)?Date.parse(day+'T12:00:00Z'):NaN;return Number.isFinite(at)&&new Date(at).toISOString().slice(0,10)===day&&day!<=today?day!:today;}
 export type DailyJourneyReport=JourneyReportData;
 type MobileDay=NonNullable<DailyJourneyReport['mobileDays']>[number];
 const colors=['#057b9e','#8762b2','#b87827','#228472','#c16b63','#526ab0'];
@@ -150,7 +152,7 @@ export function JourneyDayReport({report}:{report:DailyJourneyReport}){
 /** «تقرير يوم المندوب» with «تقرير مراجعاتي» beside it (2026-11-15: what the reviewer wrote on a day, app/supervisor-reviews.tsx
  * ReviewsMadeReport). Both stay mounted once opened, so going back keeps the day, the member and the reviewer chosen; the reviews report
  * asks nothing until its tab is opened. */
-export default function JourneyReport(props:{me:Member;initialMemberId?:string}){
+export default function JourneyReport(props:{me:Member;initialMemberId?:string;initialDate?:string}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),[tab,setTab]=useState<'day'|'reviews'>('day'),[reviewsOpened,setReviewsOpened]=useState(false);
  const choose=(next:'day'|'reviews')=>{setTab(next);if(next==='reviews')setReviewsOpened(true);};
  return <div className="journey-report-tabs-wrap">
@@ -163,9 +165,11 @@ export default function JourneyReport(props:{me:Member;initialMemberId?:string})
  </div>;
 }
 
-/** initialMemberId: the member «فريقي اليوم» opened the report on (app/team-today.tsx); the server still decides whether they are in scope. */
-function DayJourneyReport({me,initialMemberId=''}:{me:Member;initialMemberId?:string}){
- const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),[date,setDate]=useState(()=>journeyDate()),[memberId,setMemberId]=useState(initialMemberId),[members,setMembers]=useState<DailyJourneyReport['members']>([]),[report,setReport]=useState<DailyJourneyReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[refresh,setRefresh]=useState(0);
+/** initialMemberId: the member «فريقي اليوم» or the red card opened the report on (app/team-today.tsx, app/review-pending.tsx); the server
+ * still decides whether they are in scope. initialDate: the day the red card's line names (a yyyy-mm-dd day up to today; anything else is
+ * today), read once as the report's first day. */
+function DayJourneyReport({me,initialMemberId='',initialDate=''}:{me:Member;initialMemberId?:string;initialDate?:string}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),[date,setDate]=useState(()=>reportStartDay(initialDate)),[memberId,setMemberId]=useState(initialMemberId),[members,setMembers]=useState<DailyJourneyReport['members']>([]),[report,setReport]=useState<DailyJourneyReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[refresh,setRefresh]=useState(0);
  useEffect(()=>{setMemberId(initialMemberId);setMembers([]);},[me.id,me.role,me.regionScope,me.supervisorId,me.authVersion,initialMemberId]);
  useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');setReport(null);const params=new URLSearchParams({date});if(memberId)params.set('memberId',memberId);void submitJson<DailyJourneyReport>(`/api/journeys?${params}`,{cache:'no-store',signal:controller.signal},{language}).then(body=>{if(controller.signal.aborted)return;setMembers(body.members);setReport(body);}).catch(err=>{if(!controller.signal.aborted){if(err?.status===403&&memberId){setMemberId('');setMembers([]);return;}setError(err instanceof Error?err.message:say('تعذر تحميل تقرير اليوم','Could not load the daily report'));setMembers([]);}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[date,memberId,refresh,me.id,me.role,me.regionScope,me.supervisorId,me.authVersion]);
  const selected=memberId||report?.memberId||'';

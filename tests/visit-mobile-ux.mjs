@@ -104,7 +104,7 @@ const missingCustomer=harness(visitFile,'CustomerVisitDialog');ok(text(missingCu
 for(const [file,name] of [[visitFile,'CustomerVisitDialog'],[followupFile,'CustomerFollowupDialog']]){
  let refreshFails=true;const saved=harness(file,name,{customerId:customer.id,records:[customer,{...ownVisit,data:{...ownVisit.data,salesStage:'new'}}],onSaved:async()=>{if(refreshFails)throw Error('Refresh failed');}});
  saved.render();
- if(file===visitFile)Object.assign(saved.state.data,{location:'21.5, 39.2',locationCapturedAt:'2026-10-01T09:00:00Z'});
+ if(file===visitFile)Object.assign(saved.state.data,{location:'21.5, 39.2',locationCapturedAt:'2026-10-01T09:00:00Z',result:'متابعة العميل',nextAction:'اتصال'});
  await saved.submit();eq(saved.calls.length,1,name+' submits once before refresh failure');ok(button(saved.render(),'تحديث السجل'),name+' offers refresh instead of a new save');eq(byClass(saved.render(),'visit-form-scroll')[0].props.disabled,true,name+' locks already saved entries');
  refreshFails=false;await saved.submit();eq(saved.calls.length,1,name+' refresh retry does not write a second visit');eq(saved.closeCount(),1,name+' closes after refresh recovery');
 }
@@ -112,7 +112,7 @@ for(const [file,name] of [[visitFile,'CustomerVisitDialog'],[followupFile,'Custo
 for(const [file,name,actor] of [[visitFile,'CustomerVisitDialog',me],[visitFile,'CustomerVisitDialog',{...me,role:'customer_service'}],[followupFile,'CustomerFollowupDialog',me]]){
  for(const mode of ['lost-after-commit','html','unconfirmed','network']){
   const pending=harness(file,name,{customerId:customer.id,me:actor,records:[customer,{...ownVisit,data:{...ownVisit.data,salesStage:'new'}}]});pending.render();
-  if(file===visitFile)Object.assign(pending.state.data,{location:'21.5, 39.2',locationCapturedAt:'2026-10-01T09:00:00Z'});
+  if(file===visitFile)Object.assign(pending.state.data,{location:'21.5, 39.2',locationCapturedAt:'2026-10-01T09:00:00Z',result:'متابعة العميل',nextAction:'اتصال'});
   pending.journeyStop(undefined);pending.mode(mode);await pending.submit();const original=pending.calls[0].rawBody;
   eq(pending.state.retryPending,true,name+' locks ambiguous '+mode);eq(byClass(pending.render(),'visit-form-scroll')[0].props.disabled,true);ok(button(pending.render(),'تأكيد الحفظ'));
   const before=pending.state.data.result,view=pending.render();const callback=file===visitFile?named(view,'VisitFields')[0].props.onChange:(_key,value)=>named(view,'VoiceField').find(node=>node.props.label==='ما نتيجة المتابعة؟').props.onChange(value);callback('result','Unexpected changed result');eq(pending.state.data.result,before,'Ambiguous entries reject stale editing callbacks');
@@ -120,7 +120,7 @@ for(const [file,name,actor] of [[visitFile,'CustomerVisitDialog',me],[visitFile,
   pending.mode(mode==='lost-after-commit'?'receipt-replay':'normal');await pending.submit();eq(pending.calls[1].rawBody,original,'Retry preserves exact body, key, time, coordinates and absent journey link');eq(pending.closeCount(),1);eq(pending.state.retryPending,false);
   if(mode==='lost-after-commit')eq(pending.commits(),1,'Response loss and retry create exactly one record');
  }
- const rejected=harness(file,name,{customerId:customer.id,me:actor,records:[customer,{...ownVisit,data:{...ownVisit.data,salesStage:'new'}}]});rejected.render();if(file===visitFile)Object.assign(rejected.state.data,{location:'21.5,39.2',locationCapturedAt:'2026-10-01T09:00:00Z'});rejected.status(400);await rejected.submit();eq(rejected.state.retryPending,false,'Canonical validation rejection permits correction');eq(byClass(rejected.render(),'visit-form-scroll')[0].props.disabled,false);rejected.state.data.result='Corrected result';rejected.status(200);await rejected.submit();eq(rejected.calls[1].body.data?.result||rejected.calls[1].body.registration?.result,'Corrected result');
+ const rejected=harness(file,name,{customerId:customer.id,me:actor,records:[customer,{...ownVisit,data:{...ownVisit.data,salesStage:'new'}}]});rejected.render();if(file===visitFile)Object.assign(rejected.state.data,{location:'21.5,39.2',locationCapturedAt:'2026-10-01T09:00:00Z',result:'متابعة العميل',nextAction:'اتصال'});rejected.status(400);await rejected.submit();eq(rejected.state.retryPending,false,'Canonical validation rejection permits correction');eq(byClass(rejected.render(),'visit-form-scroll')[0].props.disabled,false);rejected.state.data.result='Corrected result';rejected.status(200);await rejected.submit();eq(rejected.calls[1].body.data?.result||rejected.calls[1].body.registration?.result,'Corrected result');
 }
 // Date shortcuts call the same data update as manual input, with local-day-safe date arithmetic.
 const dateModule=load('app/visit-fields.tsx',shared);let chosen='';tree=dateModule.FollowupDateField({value:'',onChange:value=>chosen=value});button(tree,'بكرة').props.onClick();const today=library('lib/crm.ts').today(),tomorrow=new Date(today+'T12:00:00Z');tomorrow.setUTCDate(tomorrow.getUTCDate()+1);eq(chosen,tomorrow.toISOString().slice(0,10));

@@ -7,7 +7,7 @@ import {customerVisits,visitCustomer} from './customer-visits';
 import {journeyDate} from './journeys';
 import {today,type Member,type Row} from './crm';
 import type {JourneyContext} from './journeys-server';
-import {CHOSEN_RATINGS,CUSTOMER_NOTES_LIMIT,DAY_REVIEW_ACTION,ENTRY_REVIEW_ACTION,REVIEW_INBOX_DAYS,REVIEW_INBOX_LIMIT,REVIEW_READ_ACTION,REVIEW_TEXT_MAX,canWriteReviews,dayReadId,dayReadIdSql,entryRatingOf,entryReadId,entryReadIdSql,reviewTextProblem,reviewerRoles,reviewsMadeCounts,saleEntry,saleEntrySql,type ChosenRating,type CustomerNote,type CustomerNotes,type DayReview,type EntryRating,type EntryReview,type ReportReviews,type ReviewInbox,type ReviewInboxItem,type ReviewMadeDay,type ReviewMadeEntry,type ReviewsMade} from './supervisor-reviews';
+import {CHOSEN_RATINGS,CUSTOMER_NOTES_LIMIT,DAY_REVIEW_ACTION,ENTRY_REVIEW_ACTION,REVIEW_INBOX_DAYS,REVIEW_INBOX_LIMIT,REVIEW_PENDING_DAYS,REVIEW_READ_ACTION,REVIEW_TEXT_MAX,canWriteReviews,reviewPendingDates,reviewPendingRole,sortReviewPending,type ReviewPending,dayReadId,dayReadIdSql,entryRatingOf,entryReadId,entryReadIdSql,reviewTextProblem,reviewerRoles,reviewsMadeCounts,saleEntry,saleEntrySql,type ChosenRating,type CustomerNote,type CustomerNotes,type DayReview,type EntryRating,type EntryReview,type ReportReviews,type ReviewInbox,type ReviewInboxItem,type ReviewMadeDay,type ReviewMadeEntry,type ReviewsMade} from './supervisor-reviews';
 
 /** Server side of the supervisor's notes (lib/supervisor-reviews.ts). Who writes, and on what, follows «تقرير يوم المندوب» exactly
  * (GET /api/journeys): the administrator, a sales manager or a supervisor (active), on a visit or contact the report lists for them (an
@@ -47,19 +47,32 @@ export const REVIEW_MESSAGES={
  rating:'اختر تقييم الزيارة أو التواصل: فعالة أو سلبية.',
  readOne:'اضغط «قرأت» على كل ملاحظة وحدها.',
  reviewer:'لا يمكنك عرض مراجعات هذا الموظف.',
- customer:'العميل خارج نطاق صلاحيتك'
+ customer:'العميل خارج نطاق صلاحيتك',
+ pendingRole:'بطاقة الزيارات والمتابعات بلا نتيجة أو إجراء متاحة للمشرف ومدير المبيعات فقط.'
 } as const;
 
-/** The activities of one report (date, member or 'all') the reader's report lists, with their recorder. Same filters as GET /api/journeys. */
-export function reportActivities(c:JourneyContext,date:string,memberId:string){
- const scope=salesScopeMemberIds(c.members,c.me),out:{row:Row;author:string}[]=[];
+/** The activities of the reports of these days (member or 'all') the reader's report lists, with their recorder and day. Same filters as
+ *  GET /api/journeys. One pass for several days (the red card's 7, GET /api/reviews/pending); reportActivities is one day of it. */
+export function reportActivitiesOn(c:JourneyContext,dates:ReadonlySet<string>,memberId:string){
+ const scope=salesScopeMemberIds(c.members,c.me),out:{row:Row;author:string;date:string}[]=[];
  for(const row of c.visible){
-  if(row.kind!=='activity'||(row.data.date||journeyDate(row.createdAt))!==date)continue;
+  if(row.kind!=='activity')continue;
+  const date=row.data.date||journeyDate(row.createdAt);
+  if(!dates.has(date))continue;
   const author=recordAuthorId(row,c.members);
   if(!author||!scope.has(author)||memberId!=='all'&&author!==memberId||!visitCustomer(row,c.visible))continue;
-  out.push({row,author});
+  out.push({row,author,date});
  }
  return out;
+}
+export const reportActivities=(c:JourneyContext,date:string,memberId:string)=>reportActivitiesOn(c,new Set([date]),memberId);
+/** Whether the reader writes notes on the day report now: a reviewer role, active, and «إضافة» on «تقرير يوم المندوب» not switched off
+ *  («الصلاحيات», lib/permissions.ts): with it off the notes are shown and none may be written. */
+const writesReviews=(c:Pick<JourneyContext,'me'>)=>canWriteReviews(c.me)&&!cellRefused(c.me,'journeys','add');
+/** Of the listed activities, those the reader may note («إضافة نتيجة وإجراء»): none unless they write notes, never their own work. The one
+ *  rule of GET /api/reviews `reviewable` and of the red card's count (reviewPending), so the two never disagree. */
+export function reviewableOf<T extends {author:string}>(c:Pick<JourneyContext,'me'>,activities:readonly T[]):T[]{
+ return writesReviews(c)?activities.filter(activity=>activity.author!==c.me.id):[];
 }
 /** A member whose day the reader may note: in the reader's report list for that date (lib: GET /api/journeys `eligible`), not the reader. */
 function dayReviewableMember(c:JourneyContext,memberId:string,date:string){
@@ -91,10 +104,30 @@ export async function dayReview(db:D1Database,memberId:string,date:string):Promi
 /** GET /api/reviews?date=&memberId=: the notes on the report the reader opened, with the read time, and what they may write on it. */
 export async function reportReviews(c:JourneyContext,date:string,memberId:string):Promise<ReportReviews>{
  // «الصلاحيات» (lib/permissions.ts): «إضافة» on «تقرير يوم المندوب» switched off: the notes are shown, none may be written.
- const activities=reportActivities(c,date,memberId),writer=canWriteReviews(c.me)&&!cellRefused(c.me,'journeys','add');
+ const activities=reportActivities(c,date,memberId);
  const entries=await entryReviews(c.db,activities.map(a=>a.row.id));
  const day=memberId==='all'?null:await dayReview(c.db,memberId,date);
- return{ok:true,date,memberId,entries,reviewable:writer?activities.filter(a=>a.author!==c.me.id).map(a=>a.row.id):[],day,dayReviewable:writer&&memberId!=='all'&&date<=today()&&dayReviewableMember(c,memberId,date),sales:activities.filter(a=>saleEntry(a.row.data)).map(a=>a.row.id)};
+ return{ok:true,date,memberId,entries,reviewable:reviewableOf(c,activities).map(a=>a.row.id),day,dayReviewable:writesReviews(c)&&memberId!=='all'&&date<=today()&&dayReviewableMember(c,memberId,date),sales:activities.filter(a=>saleEntry(a.row.data)).map(a=>a.row.id)};
+}
+
+/** GET /api/reviews/pending (lib/supervisor-reviews.ts ReviewPending, the red card): for a supervisor or a sales manager, the visits, calls and
+ * follow-ups of the representatives of their team on each of the last 7 Riyadh days that their own day report offers «إضافة نتيجة وإجراء»
+ * on (reportActivitiesOn and reviewableOf, the rules of GET /api/reviews) and that have no note yet (no row in crm_daily_entry_reviews: a
+ * saved note takes its visit off at once). One line per representative and day, with the count; names, days and counts only. The
+ * administrator does not get it (403), nor whoever GET /api/reviews refuses (the route's own checks). */
+export async function reviewPending(c:JourneyContext,now=new Date().toISOString()):Promise<ReviewPending>{
+ if(!reviewPendingRole(c.me.role))throw new CRMError(REVIEW_MESSAGES.pendingRole,403);
+ const representatives=new Set(c.members.filter(member=>member.role==='rep').map(member=>member.id));
+ const waiting=reviewableOf(c,reportActivitiesOn(c,new Set(reviewPendingDates(journeyDate(now))),'all')).filter(activity=>representatives.has(activity.author));
+ const reviewed=new Set(waiting.length?(await c.db.prepare('SELECT activity_id AS activityId FROM crm_daily_entry_reviews WHERE activity_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(waiting.map(activity=>activity.row.id))).all<{activityId:string}>()).results.map(row=>row.activityId):[]);
+ const lines=new Map<string,{memberId:string;date:string;pending:number}>();
+ for(const activity of waiting){
+  if(reviewed.has(activity.row.id))continue;
+  const key=activity.author+'|'+activity.date,line=lines.get(key)||{memberId:activity.author,date:activity.date,pending:0};
+  line.pending++;lines.set(key,line);
+ }
+ const items=sortReviewPending([...lines.values()].map(line=>({...line,name:c.members.find(member=>member.id===line.memberId)?.name||''})));
+ return{ok:true,days:REVIEW_PENDING_DAYS,total:items.reduce((sum,item)=>sum+item.pending,0),items};
 }
 
 function texts(input:{result?:unknown;action?:unknown}){

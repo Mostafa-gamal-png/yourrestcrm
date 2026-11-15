@@ -1,0 +1,33 @@
+/* «زيارات ومتابعات بلا نتيجة أو إجراء» (app/review-pending.tsx): the red card at the very top of the first screen of a supervisor or a sales
+   manager. The colour is the theme's own --destructive (light #b52d44, dark #ffa5b9, globals.css), mixed with the card's surface, as the ERP
+   import's problems (app/erp-sales-import.css .erp-import-problems); logical properties only, so Arabic and English mirror; every button is
+   at least 44 px high and nothing scrolls sideways at 360 px. */
+.review-pending{display:grid;gap:10px;min-width:0;padding:12px 14px;border:1px solid var(--destructive);border-inline-start-width:4px;border-radius:12px;background:color-mix(in oklab,var(--destructive) 9%,var(--card));color:var(--foreground);cursor:pointer}
+.review-pending-head{display:flex;align-items:center;gap:12px;width:100%;min-width:0;min-height:44px;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:start;cursor:pointer}
+.review-pending-head:focus-visible,.review-pending-list button:focus-visible{outline:2px solid var(--destructive);outline-offset:2px;border-radius:8px}
+.review-pending-icon{display:grid;place-items:center;flex-shrink:0;width:38px;height:38px;border-radius:10px;background:var(--destructive);color:#fff}
+.review-pending-text{display:grid;gap:2px;flex:1 1 auto;min-width:0}
+.review-pending-title{font-size:15px;font-weight:700;line-height:1.6;color:var(--destructive);overflow-wrap:anywhere}
+.review-pending-title b{font-size:18px}
+.review-pending-text small{font-size:13px;line-height:1.6;color:var(--muted-foreground);overflow-wrap:anywhere}
+.review-pending-chevron{flex-shrink:0;color:var(--destructive)}
+.review-pending-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;min-width:0}
+.review-pending-list button{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:8px;width:100%;min-height:44px;padding:8px 12px;border:1px solid color-mix(in oklab,var(--destructive) 40%,var(--border));border-radius:10px;background:var(--card);color:var(--foreground);font-size:14px;text-align:start;cursor:pointer}
+.review-pending-list button:hover{border-color:var(--destructive)}
+.review-pending-list button svg{color:var(--destructive)}
+.review-pending-name{min-width:0;font-weight:600;overflow-wrap:anywhere}
+.review-pending-day{font-size:13px;color:var(--muted-foreground);white-space:nowrap}
+.review-pending-count{min-width:28px;padding:0 8px;border-radius:999px;background:var(--destructive);color:#fff;font-size:13px;line-height:24px;text-align:center}
+.review-pending-more{margin:0;font-size:13px;font-weight:600;color:var(--destructive)}
+/* Dark: --destructive is a light pink there, so text on it is dark and the surface keeps its own contrast. */
+:root.dark .review-pending{background:color-mix(in oklab,var(--destructive) 12%,var(--card))}
+:root.dark .review-pending-icon,:root.dark .review-pending-count{color:#3a0b16}
+@media(max-width:640px){
+ .review-pending{padding:10px 12px}
+ .review-pending-list{grid-template-columns:1fr}
+ .review-pending-list button{grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:'name count chevron' 'day count chevron';row-gap:2px}
+ .review-pending-name{grid-area:name}
+ .review-pending-day{grid-area:day;white-space:normal}
+ .review-pending-count{grid-area:count}
+ .review-pending-list button svg{grid-area:chevron}
+}
