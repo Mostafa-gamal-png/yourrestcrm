@@ -12,7 +12,7 @@ import type {MobileRouteObservedStop} from '@/lib/mobile-route-stops';
 import type {AutoStation,DailyFollowup,DailySummary} from '@/lib/daily-report';
 import {coverageProblem,type TrackingCoverage} from '@/lib/tracking-coverage';
 import {coverageLabel,coverageSentence,phoneSentence} from '@/lib/tracking-coverage-text';
-import {DayReviewPanel,EntryReview,EntryReviews,ReportReviewsProvider} from './supervisor-reviews';
+import {DayReviewPanel,EntryReview,EntryReviews,ReportReviewsProvider,ReviewsMadeReport} from './supervisor-reviews';
 import './journey-report.css';
 
 type ReportStop=JourneyReportStop;
@@ -147,8 +147,24 @@ export function JourneyDayReport({report}:{report:DailyJourneyReport}){
  return <div className="journey-day" ref={root}>{coveragePanel}{daily?<DailyOverview summary={daily.summary} pendingCount={daily.pendingFollowups.length}/>:<div className="journey-summary"><span><Flag size={17}/>{stops.length} {say('وجهة عميل','customer destinations')}</span><span><MapPin size={17}/>{automaticCount} {say('توقف مرصود','observed stops')}</span><span><CheckCircle2 size={17}/>{confirmed} {say('زيارة بمدة مؤكدة','visits with confirmed duration')}</span><span className={gaps?'journey-attention':''}><AlertCircle size={17}/>{gaps} {say('انقطاع أثناء الزيارات','visit tracking gaps')}</span><small>{say('كل الأوقات بتوقيت الرياض','All times are in Riyadh time')}</small></div>}{!!mobileDays.length&&<details className="journey-recording-details"><summary>{say('تفاصيل تسجيل الموقع','Location recording details')}</summary><MobileDaySummary days={mobileDays}/></details>} {!!(stops.length||mobileDays.length)&&<JourneyMap stops={stops} mobileDays={mobileDays} automaticStations={daily?.automaticStations} onStation={openStation}/>} {!!timeline.length&&<section className="journey-timeline"><header><h2>{say('سجل اليوم بالترتيب','Day timeline')}</h2></header><ol className="journey-stops">{timeline.map(item=>item.kind==='selected'?<JourneyStopCard key={`selected:${item.stop.id}`} stop={item.stop} index={item.index} active={activeKey===`selected:${item.stop.id}`}/>:<AutomaticStationCard key={`automatic:${item.stop.id}`} stop={item.stop} index={item.index} activeKey={activeKey}/>)}</ol></section>}{!daily&&!!mobileDays.length&&<AutomaticLocationStops days={mobileDays} activeKey={activeKey}/>} {!!communications.length&&<JourneyCommunications communications={communications}/>} {daily&&<PendingFollowups items={daily.pendingFollowups} date={report.date}/>}</div>;
 }
 
+/** «تقرير يوم المندوب» with «تقرير مراجعاتي» beside it (2026-11-15: what the reviewer wrote on a day, app/supervisor-reviews.tsx
+ * ReviewsMadeReport). Both stay mounted once opened, so going back keeps the day, the member and the reviewer chosen; the reviews report
+ * asks nothing until its tab is opened. */
+export default function JourneyReport(props:{me:Member;initialMemberId?:string}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),[tab,setTab]=useState<'day'|'reviews'>('day'),[reviewsOpened,setReviewsOpened]=useState(false);
+ const choose=(next:'day'|'reviews')=>{setTab(next);if(next==='reviews')setReviewsOpened(true);};
+ return <div className="journey-report-tabs-wrap">
+  <div className="journey-report-tabs" role="tablist" aria-label={say('تقارير اليوم','Day reports')}>
+   <button type="button" role="tab" id="journey-tab-day" aria-controls="journey-panel-day" aria-selected={tab==='day'} className={tab==='day'?'active':''} onClick={()=>choose('day')} data-journey-tab="day"><Route size={16} aria-hidden/>{say('تقرير اليوم','Daily report')}</button>
+   <button type="button" role="tab" id="journey-tab-reviews" aria-controls="journey-panel-reviews" aria-selected={tab==='reviews'} className={tab==='reviews'?'active':''} onClick={()=>choose('reviews')} data-journey-tab="reviews"><FileText size={16} aria-hidden/>{say('تقرير مراجعاتي','My reviews report')}</button>
+  </div>
+  <div role="tabpanel" id="journey-panel-day" aria-labelledby="journey-tab-day" hidden={tab!=='day'}><DayJourneyReport {...props}/></div>
+  {reviewsOpened&&<div role="tabpanel" id="journey-panel-reviews" aria-labelledby="journey-tab-reviews" hidden={tab!=='reviews'}><ReviewsMadeReport/></div>}
+ </div>;
+}
+
 /** initialMemberId: the member «فريقي اليوم» opened the report on (app/team-today.tsx); the server still decides whether they are in scope. */
-export default function JourneyReport({me,initialMemberId=''}:{me:Member;initialMemberId?:string}){
+function DayJourneyReport({me,initialMemberId=''}:{me:Member;initialMemberId?:string}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),[date,setDate]=useState(()=>journeyDate()),[memberId,setMemberId]=useState(initialMemberId),[members,setMembers]=useState<DailyJourneyReport['members']>([]),[report,setReport]=useState<DailyJourneyReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[refresh,setRefresh]=useState(0);
  useEffect(()=>{setMemberId(initialMemberId);setMembers([]);},[me.id,me.role,me.regionScope,me.supervisorId,me.authVersion,initialMemberId]);
  useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');setReport(null);const params=new URLSearchParams({date});if(memberId)params.set('memberId',memberId);void submitJson<DailyJourneyReport>(`/api/journeys?${params}`,{cache:'no-store',signal:controller.signal},{language}).then(body=>{if(controller.signal.aborted)return;setMembers(body.members);setReport(body);}).catch(err=>{if(!controller.signal.aborted){if(err?.status===403&&memberId){setMemberId('');setMembers([]);return;}setError(err instanceof Error?err.message:say('تعذر تحميل تقرير اليوم','Could not load the daily report'));setMembers([]);}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[date,memberId,refresh,me.id,me.role,me.regionScope,me.supervisorId,me.authVersion]);

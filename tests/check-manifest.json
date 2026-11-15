@@ -467,6 +467,16 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/supervisor-reviews-complete-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/supervisor-reviews-complete-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/supervisor-reviews-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"

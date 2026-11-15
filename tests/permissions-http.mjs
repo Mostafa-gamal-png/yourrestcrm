@@ -66,7 +66,7 @@ try {
   const kpiSettings = async who => post(who, '/api/service-kpi', {requestId: crypto.randomUUID(), action: 'settings', version: 0, settings: (await session.owner('/api/service-kpi?month=' + month)).json().settings});
   // A schema-valid request (tests/mold-requests-http.mjs), so it reaches the permission check; without the products link it is kept here.
   const moldCreate = who => post(who, '/api/mold-requests', {action: 'create', requestId: crypto.randomUUID(), customerId: 'c1', payment: 'cash', specs: {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, notes: 'طلب'}});
-  const review = who => post(who, '/api/reviews', {kind: 'entry', activityId: 'v1', result: 'زيارة جيدة', action: 'جهّز عرض السعر', version: null, requestId: crypto.randomUUID()});
+  const review = who => post(who, '/api/reviews', {kind: 'entry', activityId: 'v1', result: 'زيارة جيدة', action: 'جهّز عرض السعر', rating: 'effective', version: null, requestId: crypto.randomUUID()});
   const saleAdd = who => post(who, '/api/sales', {action: 'save', createKey: crypto.randomUUID(), version: 0, data: {customerId: 'c1', repId: 'rep1', date: day, reference: 'INV-' + crypto.randomUUID().slice(0, 8), items: [{product: 'قوالب البلوك المتحركة', description: '', quantity: 1, unitPrice: 100}], discount: 0, notes: ''}});
   const targetsSave = who => post(who, '/api/targets', {});
   const kpiSave = who => post(who, '/api/kpis', {});

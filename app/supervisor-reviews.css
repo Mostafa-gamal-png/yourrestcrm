@@ -43,3 +43,63 @@
  .review-inbox-foot>.btn{width:100%;justify-content:center}
  .review-actions>.btn{flex:1;justify-content:center}
 }
+/* The evaluation (2026-11-15): «إيجابية» green (set by the system on a sale), «فعالة» blue, «سلبية» red; the choice is two large buttons. */
+.review-rating{display:inline-flex;align-items:center;font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px;white-space:nowrap;background:var(--muted);color:var(--muted-foreground)}
+.review-rating.positive{background:#e8f5ee;color:#2e7254}.review-rating.effective{background:#e7effa;color:#3c6697}.review-rating.negative{background:#f9ecef;color:#a14f62}
+.dark .review-rating.positive{background:#244936;color:#a0e0be}.dark .review-rating.effective{background:#22344d;color:#a9c8f0}.dark .review-rating.negative{background:#442a35;color:#f4bdcc}
+.review-rating-auto,.review-rating-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;font-size:13px}
+.review-rating-auto>span,.review-rating-line>span:first-child{font-weight:600;color:var(--muted-foreground);font-size:12px}
+.review-rating-auto small{color:var(--muted-foreground);font-size:12px}
+.review-rating-choice{border:0;margin:0;padding:0;min-width:0}
+.review-rating-choice legend{font-size:13px;font-weight:500;margin-bottom:6px;padding:0}
+.review-rating-choice legend b{color:#c26366}
+.review-rating-choice>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.review-rating-option{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);font-size:14px;font-weight:600;cursor:pointer;min-width:0}
+.review-rating-option input{width:18px;height:18px;margin:0;flex-shrink:0;accent-color:var(--primary)}
+.review-rating-option.chosen.effective{border-color:#3c6697;background:#e7effa;color:#2c527f}
+.review-rating-option.chosen.negative{border-color:#a14f62;background:#f9ecef;color:#8a3d50}
+.dark .review-rating-option.chosen.effective{background:#22344d;color:#a9c8f0}.dark .review-rating-option.chosen.negative{background:#442a35;color:#f4bdcc}
+.review-rating-option:focus-within{outline:2px solid var(--primary);outline-offset:2px}
+/* A note the card announced: «جديدة» until it is read. */
+.review-inbox li[data-review-new]{border-inline-start:3px solid var(--primary);padding-inline-start:10px}
+.review-new{display:inline-block;margin-inline-end:6px;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;background:var(--primary);color:var(--primary-foreground);vertical-align:middle}
+/* «ملاحظات المشرف السابقة» on the follow-up screen and the customer's details. */
+.review-history{border:1px solid color-mix(in srgb,var(--primary) 35%,var(--border));border-radius:10px;background:var(--card);padding:10px 12px;margin:10px 0;display:grid;gap:8px;min-width:0}
+.review-history>header{display:flex;align-items:center;gap:6px;min-width:0;color:var(--primary)}
+.review-history>header h3{font-size:14px;font-weight:600;margin:0;color:var(--foreground);overflow-wrap:anywhere}
+.review-history ol{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.review-history li{border-top:1px solid var(--border);padding-top:8px;display:grid;gap:5px;min-width:0}
+.review-history li:first-child{border-top:0;padding-top:0}
+.review-history dl{display:grid;gap:4px;margin:0}
+.review-history dt{font-size:12px;font-weight:600;color:var(--muted-foreground)}
+.review-history dd{margin:0;font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.review-history>.btn{justify-self:start}
+/* «تقرير مراجعاتي». */
+.reviews-made{display:grid;gap:16px;min-width:0}
+.reviews-made-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.reviews-made-head h2{display:flex;align-items:center;gap:7px;font-size:17px;font-weight:600;margin:0;overflow-wrap:anywhere}
+.reviews-made-head p{font-size:13px;color:var(--muted-foreground)}
+.reviews-made-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin:0}
+.reviews-made-counts>div{border:1px solid var(--border);border-radius:10px;background:var(--card);padding:8px 10px;min-width:0}
+.reviews-made-counts dt{font-size:12px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.reviews-made-counts dd{margin:2px 0 0;font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+.reviews-made-counts>.positive dd{color:#2e7254}.reviews-made-counts>.effective dd{color:#3c6697}.reviews-made-counts>.negative dd{color:#a14f62}.reviews-made-counts>.attention dd{color:#ae6b19}
+.reviews-made-empty{padding:14px;border:1px solid var(--border);border-radius:9px;background:var(--card);font-size:13px;color:var(--muted-foreground)}
+.reviews-made-list h3{font-size:15px;font-weight:600;margin:0 0 8px}
+.reviews-made-list ol{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.reviews-made-list li{border:1px solid var(--border);border-radius:10px;background:var(--card);padding:10px 12px;display:grid;gap:6px;min-width:0}
+.reviews-made-list li>header{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;font-size:13px;min-width:0}
+.reviews-made-list li>header strong{font-size:14px;overflow-wrap:anywhere}
+.reviews-made-list li>header span{color:var(--muted-foreground);overflow-wrap:anywhere}
+.reviews-made-list li>header time{font-size:12px;color:var(--muted-foreground)}
+.reviews-made-list dl{display:grid;gap:4px;margin:0}
+.reviews-made-list dt{font-size:12px;font-weight:600;color:var(--muted-foreground)}
+.reviews-made-list dd{margin:0;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:600px){
+ .review-history .btn,.review-inbox>header>.btn{min-height:44px}
+ .review-inbox>header>.btn{width:100%;justify-content:center;white-space:normal}
+ .reviews-made-counts{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .reviews-made-counts>div{padding:6px 8px}
+ .reviews-made-counts dd{font-size:17px}
+ .reviews-made-toolbar>.btn{min-height:44px}
+}

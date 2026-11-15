@@ -3,7 +3,7 @@
 // Only a generated public shell and its exact, integrity-checked assets enter
 // Cache Storage. Private HTML, API responses, attachments and map tiles never do.
 const CACHE_PREFIX = 'yourrest-crm-offline-';
-const BUILD_REVISION = '54812336d0d9f5cad145db6f560a795f376cf5a7f17ee8ffb1979820243dba66';
+const BUILD_REVISION = 'c6372c9bed272ddfba08722e52db15e872ed48b236a7231f976a0834cd0cd36c';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_REVISION}`;
 const MANIFEST_URL = '/offline-shell-manifest.json';
 const SHELL_URL = '/offline-app.html';
@@ -81,6 +81,20 @@ self.addEventListener('message', (event) => {
   // Only the page's own "reload now" asks a newer worker already installed to take over; a worker never activates by itself
   // while a page with unsaved work could still be open.
   if (event.data && event.data.type === 'yourrest-activate-update') event.waitUntil(self.skipWaiting());
+});
+
+// The device's notification of a new supervisor note (app/supervisor-reviews.tsx deviceNotice, tag "yourrest-review:..."): a tap brings an
+// open page of the CRM to the front, or opens one. Any other notification is left alone, and nothing is read from it but its tag.
+self.addEventListener('notificationclick', (event) => {
+  const tag = event.notification && typeof event.notification.tag === 'string' ? event.notification.tag : '';
+  if (!tag.startsWith('yourrest-review:')) return;
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = windows.find((client) => { try { return new URL(client.url).origin === self.location.origin; } catch { return false; } });
+    if (open) { await open.focus(); return; }
+    await self.clients.openWindow('/');
+  })());
 });
 
 self.addEventListener('fetch', (event) => {

@@ -6,6 +6,7 @@ import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/compo
 import {t,useLanguage,direction} from '@/lib/i18n';
 import {type Row,type Member,today,stageLabels} from '@/lib/crm';
 import {visitCustomer} from '@/lib/customer-visits';
+import {CustomerReviewNotes} from './supervisor-reviews';
 import {latestCustomerContact,customerHasQuotation,followupTypes,invoiceOutcomes,followupLossReasons,followupClosed,canExecuteCustomerFollowup} from '@/lib/customer-followups';
 import VoiceField from './voice-field';
 import CompetitorFields,{emptyCompetitorInput,type CompetitorInput} from './competitor-fields';
@@ -94,6 +95,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
     {!customer&&<p className="form-error" role="alert">{say('العميل غير متاح. أغلق النافذة وحدّث قائمة المتابعات.','The customer is unavailable. Close this form and refresh the follow-up list.')}</p>}
     {customer&&!canExecuteCustomerFollowup(source)&&<p className="form-error" role="alert">{say('المتابعة تحتاج زيارة سابقة مفتوحة فيها إجراء قادم وموعد متابعة. ارجع للزيارة السابقة أو سجّل زيارة جديدة.','A follow-up needs an open previous contact with a next action and date. Open that contact or record a new visit.')}</p>}
     {source&&<details className="visit-context-details followup-source-summary"><summary>{say('الزيارة السابقة المرتبطة بالمتابعة','Previous contact linked to this follow-up')} <bdi>{source.data.date}</bdi></summary><div className="visit-context-body"><p>{source.data.result||'—'}</p>{source.data.nextAction&&<p><strong>{t('الإجراء القادم')}: </strong>{source.data.nextAction}</p>}</div></details>}
+    {customer&&<CustomerReviewNotes customerId={customer.id} me={me}/>}
     {!isServiceRole(me.role)&&data.type==='visit'&&data.date===today()&&<JourneyFormNotice/>}
     <section className="visit-form-section"><h3>{say('التواصل والنتيجة','Contact & outcome')}</h3><div className="form-grid">
      <label className="field full"><span>{t('نوع المتابعة')}</span><Pick label="نوع المتابعة" value={data.type} onChange={value=>change('type',value)} options={followupTypes}/></label>

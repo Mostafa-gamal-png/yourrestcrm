@@ -4,6 +4,68 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The supervisor's review completed: the evaluation, the earlier notes, «تقرير مراجعاتي», the notice of a new note, «قرأت» on each note (2026-11-15, not released yet, no migration)
+
+- **Asked.** The owner approved five additions relayed from the GSCO conversation («كمل البند التاني»), as GSCO did them in 2.13.66,
+  2.13.67 and 2.13.71 (`lib/crm/daily-entry-review*.ts`, `review-inbox*.ts`, `opportunity-reviews.ts`, `components/crm/supervisor-notes.tsx`
+  there), adapted to Yourrest's records, scope and audit table.
+- **1. The evaluation** (`lib/supervisor-reviews.ts`: `CHOSEN_RATINGS`, `RATING_TEXT`, `saleEntry`, `saleEntrySql`, `entryRatingOf`). Beside
+  «النتيجة» and «الإجراء المطلوب», every note on a visit or contact carries «فعالة» or «سلبية», required (`POST /api/reviews` `rating`,
+  400 «اختر تقييم الزيارة أو التواصل: فعالة أو سلبية.» without it; «إيجابية» cannot be chosen). The visit or contact that records the sale is
+  «إيجابية» by itself and asks nothing: its stage is «تم الفوز» or the follow-up says «نعم، تحوّل إلى فاتورة», and it is not lost (GSCO's
+  `saleActivitySql`). No new column: the choice is the `after.rating` of the note's own audit row (`crm_daily_entry_reviews.mutation_id` ->
+  `crm_audit.id`), and «إيجابية» is read from the activity as it is now, so a note written before has no evaluation unless its visit is the
+  sale (as in GSCO). A whole-day note has none. `GET /api/reviews` adds `sales` (the report's sale activities) and `rating` on each note; the
+  card's items carry `rating`. The form shows two 44 px choices, or «إيجابية · تلقائي: تم البيع»; the saved note, the card, the earlier
+  notes and the report show a coloured pill (green, blue, red). **KPIs unchanged:** GSCO's evaluation does not feed its KPI (its «نسبة
+  الزيارات الفعالة» counts visits by the opportunity's stage), and `lib/kpis.ts` reads nothing of it (a test guards that).
+- **2. «ملاحظات المشرف السابقة»** (`GET /api/reviews/customer?customerId=`, `customerNotes`; `CustomerReviewNotes`): read-only, newest visit
+  first, 20 at most (`more`), three shown and «عرض كل الملاحظات». On «تنفيذ المتابعة» (`app/customer-followups.tsx`, a new follow-up) and on
+  the customer's details, tab «سجل الزيارات» (`app/crm-app.tsx`). Who sees what: a representative the notes on their own visits and
+  contacts only (another representative of the same region sees none of them); a reviewer also those of their team as the role defines it
+  (never widened by «عرض بيانات الفريق بالكامل», as in the day report), within their regions, and only while «تقرير يوم المندوب» is theirs
+  (the same notes `GET /api/reviews` gives them); customer service, another region and an unknown customer 404. Reading them is not «قرأت». Not offline, nothing shown on a failure.
+- **3. «تقرير مراجعاتي»** (`GET /api/reviews/made?date=&reviewerId=`, `reviewsMade`, `reviewerChoices`; `ReviewsMadeReport` in a second tab
+  of «تقرير يوم المندوب», `app/journey-report.tsx`). What a reviewer wrote on one Riyadh day (today by default, a date picker), read from the
+  audit rows of their saves (found by the primary key's prefix `review-entry:<reviewer>:` / `review-day:<reviewer>:`), the last save of that
+  day for each visit or day, in the order first saved: the member, the customer, the type, what the representative recorded, the
+  evaluation, the result, the required action and whether that version was read; then the whole-day notes. Counts at the top (notes, team
+  members, «إيجابية», «فعالة», «سلبية», without evaluation when any, read, not read, day reviews). Who: a supervisor their own only (even
+  with «عرض بيانات الفريق بالكامل»); a sales manager their own or a supervisor of their scope; the administrator any reviewer; a
+  representative and customer service 403, the screen hidden 404. Every note is limited to what the reader's own day report would show (a visit of
+  their team still there, the team never widened by «عرض بيانات الفريق بالكامل»; a deleted one is left out). Nothing new is opened: the same notes were readable day by day through `GET /api/reviews`.
+- **4. The notice of a new note** (`reviewNoticeStep`, `reviewNoticeText`, `hiddenPageMayAsk`; `ReviewInboxCard`). The installed Android app
+  (1.0.12) has no feed of notes: its background poller (`ServiceAlerts`) reads `/api/service-queue/alerts` only and names every notice from
+  a fixed list of customer-service titles, so it cannot carry a supervisor's note honestly. Without a new APK the page does what a page can:
+  when the card's check (on opening, every 5 minutes, on returning to the page) finds a note this browser has not shown, it shows the
+  message «ملاحظة جديدة من المشرف» (or «ملاحظات جديدة من المشرف (n)») with the writer and what it is on and «عرض», marks the note «جديدة»
+  in the card, and, where the browser allows (never inside the app's web view), shows the device's own notification through the service
+  worker or the page (`public/sw.js` brings the CRM to the front on a tap). Never the note's words in either (a locked screen may show
+  them). What was shown is remembered per member in `localStorage` (200 keys), so a note is announced once across reloads and tabs; a
+  browser that remembers nothing announces nothing on its first check (the card is there). The card offers «تنبيهي بالملاحظات الجديدة على
+  هذا الجهاز» while the browser has not been asked; a page in the background asks only when that notification is allowed, once an interval
+  for all tabs. **What it cannot do:** tell a representative whose app is closed or in the background (Android pauses the web view): that
+  needs a new APK (1.0.13, versionCode 14) with a poller like GSCO's 1.4.7 (`/api/crm/review-alerts` there), built and signed with the
+  company's key and published through `scripts/publish-android-release.mjs` and `lib/app-update-release.json`, which cannot be done here.
+- **5. «قرأت» on each note** (GSCO 2.13.67). «قرأت الكل» is gone; `POST /api/review-inbox` takes one note and answers 400 «اضغط «قرأت» على
+  كل ملاحظة وحدها.» to a request naming more (a page loaded before), writing nothing. Reads already saved keep their rows and their «تمت
+  القراءة».
+- **Also.** The moment of a note shows in the Arabic order (`<time dir="auto">`; a forced left-to-right put the day after the time). The tab
+  row, the choices and the report work at 360 px with no sideways scroll.
+- **Deviations from GSCO.** The evaluation is chosen on Yourrest's visits and contacts (GSCO: opportunities' activities); the earlier notes
+  are per customer (Yourrest has no opportunity screen for a representative) and limited to the reader's own work or team, where GSCO
+  shows all of an opportunity's notes to whoever opens it; the reviews report is a tab of its own with a date and, for the administrator and
+  a sales manager, a reviewer, where GSCO shows the reviewer's notes inside their own day report; no Android feed (above).
+- **Old pages** loaded before the update send no evaluation and are told to choose one; their «قرأت الكل» is refused with its reason;
+  everything else answers as before (the day report's shape is unchanged).
+- **Tested.** `tests/supervisor-reviews-complete.mjs` (173 checks), `tests/supervisor-reviews-complete-http.mjs` (84, built release),
+  `tests/supervisor-reviews-complete-browser.mjs` (76, Chromium at 360 px and a desktop, Arabic and English, the Android app
+  emulator); updated: `tests/supervisor-reviews.mjs`, `-http.mjs`, `-browser.mjs`, `tests/team-today-http.mjs`, `tests/permissions-http.mjs`
+  (notes carry an evaluation) and `tests/server-authorization.mjs` (the two routes in the role matrix and with the screen hidden). The
+  release gates (`node scripts/gates.mjs`, a full selection because shared files changed): 89 passed, 1 flaky (`service-queue-browser`,
+  «the case is delegated to the representative (timed out)», passed alone; flaky in earlier runs too), 4 skipped (the owner's ERP files);
+  the default gate 194/194, ESLint 0 errors and 160 warnings (the touched files keep their earlier counts).
+
 ## ERP sales: a corrected report replaces what is saved for its period (2026-11-14, not released yet, no migration)
 
 - **Asked.** The owner, 2026-11-14: a sales report the ERP corrected (an invoice billed wrong, moved to another representative or
@@ -704,7 +766,7 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
 - **Who writes, on what** (`lib/supervisor-reviews-server.ts`): the roles that open «تقرير يوم المندوب» (admin, manager, supervisor; active), on an activity that report lists for them (`reportActivities`: readable, recorder in `salesScopeMemberIds`, with its customer, on that date) and on the day of a member of the report's list (in scope, and active in a compatible region or with an activity that day), never on their own work (400, as GSCO), never a day to come (400). Another team's member: 403; an unknown activity: 404; a representative or customer service: 403 (checked before the body, unlike GSCO, so the role matrix reads 403). Both fields trimmed, 2..2000 characters, no control characters. Version: `null` creates, the current version edits; anything else 409. At commit: `accessGuard` (the writer's role, region, supervisor, auth version), the member still in the writer's team (supervisor: `role='rep' AND supervisor_id`; manager: supervisor/rep), the activity still there; else 409 and nothing written.
 - **Routes.** `GET /api/reviews?date=&memberId=` (sales roles with the report; memberId as `/api/journeys`): the notes of that report with `readAt`, the activity ids the reader may note, the day note and whether they may write it. `POST /api/reviews` `{kind:'entry',activityId|kind:'day',memberId,date, result, action, version, requestId}`. `GET /api/review-inbox`: the caller's own unread notes of the last 30 days (by `updated_at`), 50 at most (`more`), newest first, an entry with its activity type and customer (named only within the reader's regions). `POST /api/review-inbox` `{items:[{kind,ref,version}]}` (1..50): «قرأت»; answers with what is still unread. All with `checkOrigin`/`requireSession`/`context`, 401 without a session, `Cache-Control: no-store`; body limits 14 000 and 16 000 bytes (`lib/request-body.ts`).
 - **The day report** (`app/journey-report.tsx`, `app/supervisor-reviews.tsx`): `ReportReviewsProvider` loads the notes after the report (a failure says so with Retry and leaves the report); under each route stop's results, each matched observed stop and each communication «إضافة نتيجة وإجراء» → «النتيجة» / «الإجراء المطلوب» (VoiceField dictation, Save / Cancel; a retry reuses its request id), then the note with its writer, time, «لم تُقرأ بعد» / «تمت القراءة <time>» and «تعديل»; «تقييم اليوم · <member>» above the report. The server-rendered report without the provider is unchanged (`tests/journey-ui.mjs`, `tests/mobile-route-stops.mjs`).
-- **The card** (`ReviewInboxCard` in `.workspace-notices`, every page, every role; hidden when empty): count, each note's activity type and customer or «تقييم اليوم <date>», «النتيجة», «الإجراء المطلوب», writer and time, «قرأت», «قرأت الكل» when more than one. Asked on load, every 5 minutes and on focus/visibility at most once a minute (as GSCO), never while offline; a failed «قرأت» shows the reason and keeps the note. No outbox for reads. Phone: 44 px buttons (the dictation buttons of the form too), no horizontal scroll. English pairs in place and in `lib/locales/en.json` (server messages).
+- **The card** (`ReviewInboxCard` in `.workspace-notices`, every page, every role; hidden when empty): count, each note's activity type and customer or «تقييم اليوم <date>», «النتيجة», «الإجراء المطلوب», writer and time, «قرأت», «قرأت الكل» when more than one. (Since 2026-11-15 there is no «قرأت الكل»: see the entry «The supervisor's review completed» above.) Asked on load, every 5 minutes and on focus/visibility at most once a minute (as GSCO), never while offline; a failed «قرأت» shows the reason and keeps the note. No outbox for reads. Phone: 44 px buttons (the dictation buttons of the form too), no horizontal scroll. English pairs in place and in `lib/locales/en.json` (server messages).
 - **Deviations from GSCO.** Roles: Yourrest's admin/manager/supervisor (GSCO: owner/admin/sales manager/manager with `view_reports`); the card for every role (GSCO: admin, sales manager, manager, rep, and not with «تقرير يوم المندوب» hidden — Yourrest has no hidden sections); the role check before validation; no «مطلوبة من المشرف» pending marker and no «مراجعات المشرف لزيارات الفريق» list in the reviewer's own day (not asked); notes read through their own route `/api/reviews` instead of being added to `GET /api/journeys` (the report's answer keeps its shape for pages loaded before); the inbox reads with two plain queries rather than a batch (no write lock).
 - **Old pages** ignore the new routes; the day report answers exactly as before.
 - **Release.** Package with `--schema-baseline 19 --new-migration 0019_supervisor_reviews.sql` and `--verify-route /api/review-inbox=401`; guide `docs/UPDATE-2026-11-09-SUPERVISOR-REVIEWS-AR.txt` (rollback a: old release while the database is still 19; b: old release + `schema-backups/before-0019_supervisor_reviews-*.sqlite`). `BACKUP_TRANSACTION` and the shipped list are left to the release that packages it.
