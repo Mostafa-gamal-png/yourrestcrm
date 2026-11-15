@@ -1,7 +1,1 @@
-{
-  "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-CustomerEdits-20261115.zip",
-  "sha256": "95d95c9d8eeef5e3f067bf67fb2ffb7837b22fcf6c01c4665c0dbad1bf34b8be",
-  "stage": "yourrest-crm-update-customer-edits-20261115",
-  "helper": "yourrest-activate-update-customer-edits.cjs"
-}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-LeaveMonths-20261115.zip","sha256":"55c2fe388927a14c80bf1bad6cfa2876cdde1e865bd2bc0d52d2c23736708f67","stage":"yourrest-crm-update-leave-months-20261115","helper":"yourrest-activate-update-leave-months.cjs"}
