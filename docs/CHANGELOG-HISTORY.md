@@ -4,6 +4,72 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The Android app update is mandatory: the oldest app allowed is always the newest release (2026-11-15, not released yet, no migration)
+
+- **Asked.** The owner, on item 3 of the GSCO comparison list: «كمل البند التالت». The item: «تحديث التطبيق يبقى إجباري (قاعدة المالك في GSCO
+  من 2026-10-31): أقل نسخة مسموحة = النسخة الجديدة دايمًا، ومفيش «يمكنك متابعة عملك».» GSCO's rule (web 2.13.40, 2026-10-31): «مفيش حاجة اسمها
+  تحديث اختياري»: every published Android release is required of every user, whatever the role, with no «لاحقًا».
+- **Before.** Since 2026-10-14 the gate held an app older than the release bundled with the page, but only for the roles whose route tracker
+  reads the phone (representative, supervisor, manager, administrator): customer service and its manager were never held. It held offline
+  too, where nothing can be downloaded. The update panel said «يمكنك متابعة عملك» (offline) and «يمكنك استخدام التطبيق أثناء التنزيل»,
+  `lib/app-update-release.json` named no minimum, and the workspace was unmounted under the screen.
+- **The rule** (`lib/app-update.ts`). The manifest carries `minimumVersionCode`, equal to `versionCode` (13): the publisher writes it so
+  (`scripts/publish-android-release.mjs`), `parseAppRelease` reads it as `versionCode` whatever a manifest says (so no release can lower
+  it), and `tests/app-update-release.mjs` checks the served file. Every check of the update controller, whatever the app's update protocol,
+  now reads the served release (`GET /api/app-update`) and asks for its APK with a `HEAD` (no redirect followed, as the app's downloader);
+  it runs when the app opens, returns to the front, reconnects, when the bridge announces itself, and every 15 minutes (GSCO's interval).
+  `enforcedRequirement` is that release only while the device is online, the release was read and its APK answers (a 405 or 501 to `HEAD`
+  is not taken for a missing file); `appUpdateRequired` holds the app when its exact installed code (the update bridge, apps 1.0.10 and
+  later) or, without one, its version name (the old `status`, or the tracking service's `appVersion`) is older. Unknown or malformed versions
+  are never judged; the same or a newer app is never held.
+- **The screen** (`app/tracking-gate.tsx` `UpdateRequiredScreen`, before any tracking check, every role): «حدّث تطبيق يورست للمتابعة» /
+  "Update the Yourrest app to continue"; «الإصدار المثبت على هاتفك X أقدم من الإصدار المطلوب Y. كل إصدار جديد من التطبيق إلزامي لجميع
+  المستخدمين، ولا يمكن استخدام النظام قبل التحديث. ثبّت التحديث فوق التطبيق الحالي دون حذفه؛ يبقى حسابك والإدخالات المحفوظة على الهاتف.»;
+  the update panel (`app/app-update.tsx`, `inGate`: «تحديث التطبيق», the download progress, «تثبيت التحديث», «إعادة المحاولة», «ثبّت عن
+  طريق المتصفح» with its steps, or the served file for apps without the update protocol); the entries waiting on the phone with «رفع الآن»;
+  «ما الجديد في هذا الإصدار» with the required release's notes; both versions; the account and «تسجيل الخروج». No continue, later, skip or
+  close; Escape does nothing. In the panel, the title is «تحديث التطبيق مطلوب» / "App update required" and no phase says the person may keep
+  working. The panel names the required version (and its browser APK) even when the app's own downloader has not learned the release.
+- **What a representative sees.** Online with an older app: the screen, at once and for every role. The download fails (the network drops
+  mid-file, the phone is full, the file is corrupt): still the screen, with «لم يكتمل التحديث. تأكد من الاتصال بالإنترنت ومن وجود مساحة
+  كافية في الهاتف، ثم أعد المحاولة؛ بياناتك المحفوظة باقية.», «إعادة المحاولة» and «ثبّت عن طريق المتصفح» (as GSCO: retry and the manual
+  file). No network: not held (the update cannot proceed); the workspace with the panel «هذا التحديث إلزامي، ويمكن تنزيله عند عودة الاتصال
+  بالإنترنت. بعد عودة الاتصال لا يمكن استخدام النظام قبل التحديث.»; back online, held again. The APK not answering on the site (404, a
+  server error, a redirect) or the release not readable: not held; «هذا التحديث إلزامي، لكن ملف التحديث غير متاح على الموقع الآن. سيُعاد
+  التحقق تلقائيًا.»; held again once the file answers. On the sign-in page the panel shows the same wording (as GSCO, the hold starts after
+  signing in). An ordinary browser on a computer or a phone, and an app at the published version or newer, see nothing.
+- **Data.** Under the screen the workspace stays mounted and hidden (`display:none`, `aria-hidden`; never remounted, so open forms and their
+  text survive), and the workspace's own sending of the phone's queue (`app/crm-app.tsx`: on loading, every 30 seconds, on reconnecting and
+  on returning to the app) keeps running; the screen counts the waiting entries and those that need review («تبقى محفوظة على الهاتف لتراجعها
+  بعد التحديث»), and «رفع الآن» asks for the sending sooner. The native route queue is the Android service's and is untouched. If a dialog of
+  the workspace is open (a visit, a customer, the save status, the phone's menus) when the requirement is found, the screen waits until it is
+  saved or closed, so no form is taken from under the person and Radix's focus trap never holds the screen's buttons; once the screen holds
+  the app, a dialog opened under it afterwards (a notification's request) does not lift it, and the screen stays tappable over Radix's modal
+  layer (`pointer-events:auto`). A representative whose
+  app cannot track at all (too old for the work-hours schedule) still has no workspace, as before.
+- **Server.** Nothing is enforced on the server: no request from the app carries its version (the user agent's `YourrestCRM-Android/1` is a
+  fixed protocol mark; the route service's requests carry none), and refusing an older app's calls would stop its route points and the
+  queued entries from reaching the server. GSCO enforces nothing on its server either.
+- **Deviations from GSCO.** The minimum is read as the published version whatever the manifest writes (GSCO publishes `--minimum-version-code
+  N` and could publish a lower one); the requirement also needs the APK to answer a `HEAD` on the site (GSCO's server withholds its manifest
+  until the APK is verified; Yourrest serves the manifest unconditionally, so the phone checks the file); the screen waits for an open dialog
+  instead of covering it (GSCO overlays with an interaction shield); an app that reports only a version name is judged by it (GSCO judges
+  only apps that report an exact code); the sign-in page shows the panel and does not hold (as GSCO).
+- **Tests.** `tests/app-update-ui.mjs` (default gate, 233 checks: the minimum, the requirement with older, same, newer, unknown, offline,
+  unread and unreachable cases for both protocols, the 15-minute check, no «keep working» or «later» in any phase in both languages, the
+  panel in the screen), `tests/tracking-gate.mjs` (86) and `tests/tracking-gate-ui.mjs` (106: every role held, the workspace kept hidden,
+  the cases that hold nobody, English); `tests/app-update-release.mjs` (built release, 21: `minimumVersionCode` equals `versionCode`, `HEAD` of
+  the APK 200 and of a missing one 404); `tests/app-update-browser.mjs` (Chromium, 68: the panel's wording, an unreachable APK) and
+  `tests/tracking-gate-browser.mjs` (built release in Chromium with the Android app emulated and its update protocol, 170: the administrator
+  in Arabic and English at 360 px, a failed download and its retry, the install, offline and an unreachable APK holding nobody, an open
+  dialog waited for and a later one not lifting the screen, a queued customer sent while held, customer service and a representative held,
+  the same and a newer version, a computer and a phone browser untouched). The release gates (`node scripts/gates.mjs`, selective:
+  app-update-android, tracking, deploy-packaging): 20 passed, 1 not stable (`tracking-gate-browser` failed once in the pool at the existing
+  check «the app asked the phone for its state» of its part 5, then passed alone, and again in three parallel runs), 3 skipped (the owner's
+  ERP files); the default gate 197/197 (TypeScript and ESLint: 0 errors, the 160 warnings of the baseline; the touched files have none);
+  `tests/msa-wording.mjs` passed.
+- **Release.** No APK change (the installed 1.0.12 web view runs it), no migration (21). `public/app-update.json` mirrors the manifest.
+
 ## «نسبة الزيارات الفعالة» from the supervisor's evaluation (2026-11-15, not released yet, no migration)
 
 - **Asked.** The owner approved it in the GSCO conversation on 2026-11-15: «موافق تمام». The effective-visits indicator is now computed

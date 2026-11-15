@@ -1,25 +1,50 @@
 import {isNativeTrackingApp,waitForNativeBridge} from './native-tracking';
 
 export type UpdatePhase='idle'|'checking'|'available'|'upToDate'|'downloading'|'ready'|'permissionRequired'|'installing'|'cancelled'|'error';
-export type AppRelease={schemaVersion:1;packageName:'org.yourrest.crm';versionName:string;versionCode:number;apkUrl:string;sizeBytes:number;sha256:string;certificateSha256:string;releaseNotes:{ar:string[];en:string[]}};
-export type AppUpdateState={native:boolean;protocol:0|1;phase:UpdatePhase;installedVersionCode:number|null;installedVersionName:string;availableVersionCode:number|null;availableVersionName:string;downloadedBytes:number;totalBytes:number;progress:number;error:string;offline:boolean;legacyUrl:string;legacyStarted:boolean;releaseNotes:{ar:string[];en:string[]}};
+/** `minimumVersionCode` is the oldest installed app allowed to work. The owner's rule (taken from GSCO, 2026-10-31: «مفيش حاجة اسمها تحديث
+ * اختياري») makes it always the newest published version: scripts/publish-android-release.mjs writes it equal to `versionCode`, and
+ * parseAppRelease reads it as `versionCode` whatever a manifest says, so no release can lower it. */
+export type AppRelease={schemaVersion:1;packageName:'org.yourrest.crm';versionName:string;versionCode:number;minimumVersionCode:number;apkUrl:string;sizeBytes:number;sha256:string;certificateSha256:string;releaseNotes:{ar:string[];en:string[]}};
+/** `required*` and `apkReachable` come from the last read of the served release (GET /api/app-update) and of its APK on this site, made on
+ * every check whatever the app's update protocol; a failed read clears them (enforcedRequirement). */
+export type AppUpdateState={native:boolean;protocol:0|1;phase:UpdatePhase;installedVersionCode:number|null;installedVersionName:string;availableVersionCode:number|null;availableVersionName:string;downloadedBytes:number;totalBytes:number;progress:number;error:string;offline:boolean;legacyUrl:string;legacyStarted:boolean;releaseNotes:{ar:string[];en:string[]};requiredVersionCode:number|null;requiredVersionName:string;requiredReleaseNotes:{ar:string[];en:string[]};apkReachable:boolean|null};
 type UpdateBridge={updateProtocol?:number;request:(method:string,payload:Record<string,unknown>)=>Promise<unknown>};
-type UpdateEnvironment={native:()=>boolean;online:()=>boolean;bridge:()=>Promise<UpdateBridge>;fetchRelease:()=>Promise<unknown>;now:()=>number;listen:(event:string,handler:(detail?:unknown)=>void)=>()=>void};
+type UpdateEnvironment={native:()=>boolean;online:()=>boolean;bridge:()=>Promise<UpdateBridge>;fetchRelease:()=>Promise<unknown>;probeApk:(path:string)=>Promise<boolean>;now:()=>number;listen:(event:string,handler:(detail?:unknown)=>void)=>()=>void;every?:(ms:number,handler:()=>void)=>()=>void};
 export type AppUpdateController={snapshot:()=>AppUpdateState;subscribe:(listener:(state:AppUpdateState)=>void)=>()=>void;check:(force?:boolean)=>Promise<void>;download:()=>Promise<void>;install:()=>Promise<void>;legacyDownloadStarted:()=>void};
 const phases:UpdatePhase[]=['idle','checking','available','upToDate','downloading','ready','permissionRequired','installing','cancelled','error'];
-const empty=():AppUpdateState=>({native:false,protocol:0,phase:'idle',installedVersionCode:null,installedVersionName:'',availableVersionCode:null,availableVersionName:'',downloadedBytes:0,totalBytes:0,progress:0,error:'',offline:false,legacyUrl:'',legacyStarted:false,releaseNotes:{ar:[],en:[]}});
+/** How often an open app asks again for the served release (GSCO: every 15 minutes), besides opening, returning to it and reconnecting. */
+export const UPDATE_CHECK_INTERVAL=15*60*1000;
+const noRequirement={requiredVersionCode:null,requiredVersionName:'',requiredReleaseNotes:{ar:[],en:[]},apkReachable:null};
+const empty=():AppUpdateState=>({native:false,protocol:0,phase:'idle',installedVersionCode:null,installedVersionName:'',availableVersionCode:null,availableVersionName:'',downloadedBytes:0,totalBytes:0,progress:0,error:'',offline:false,legacyUrl:'',legacyStarted:false,releaseNotes:{ar:[],en:[]},...noRequirement});
 const integer=(value:unknown)=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0?value:null;
 const notes=(value:unknown)=>{const record=value&&typeof value==='object'?value as Record<string,unknown>:{};const list=(key:string)=>Array.isArray(record[key])?(record[key] as unknown[]).filter((item):item is string=>typeof item==='string').slice(0,5).map(item=>item.slice(0,200)):[];return {ar:list('ar'),en:list('en')};};
 const version=(value:unknown)=>typeof value==='string'&&/^\d+\.\d+\.\d+$/.test(value)?value:'';
 export function compareAppVersions(left:string,right:string):number|null{if(!version(left)||!version(right))return null;const a=left.split('.').map(Number),b=right.split('.').map(Number);for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i]?1:-1;return 0;}
-/** Only the fixed company host and immutable, versioned APK path may reach the legacy downloader. */
+/** The APK of a version on this site, in the only form the app accepts (AppUpdateRules.approvedApkUrl), or '' for a malformed version. */
+export const servedApkPath=(name:string,code:number|null)=>/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(name)&&Number.isSafeInteger(code)&&(code as number)>0?`/downloads/yourrest-crm-android-v${name}-${code}.apk`:'';
+/** The version the site requires now, or null when it cannot be enforced. Fail-open as GSCO (lib/crm/android-update.ts androidBelowMinimum):
+ * outside the Android app, offline, when the served release could not be read, or while its APK does not answer on this site (the update
+ * could not proceed for a reason outside the person's control), nobody is held at the update screen. */
+export function enforcedRequirement(state:AppUpdateState):{code:number;name:string}|null{
+ return state.native&&!state.offline&&state.requiredVersionCode!==null&&!!version(state.requiredVersionName)&&state.apkReachable===true?{code:state.requiredVersionCode,name:state.requiredVersionName}:null;
+}
+/** True when the installed app is older than the enforced requirement: by its exact code where the update bridge reports one
+ * (PackageManager), else by its version name (an older app's `status`, or `reported`, the tracking service's appVersion). An unknown or
+ * malformed version is never judged (GSCO: an unreadable version never locks a representative out); a newer app never is either. */
+export function appUpdateRequired(state:AppUpdateState,reported=''):boolean{
+ const required=enforcedRequirement(state);if(!required)return false;
+ if(state.installedVersionCode!==null)return state.installedVersionCode<required.code;
+ return [state.installedVersionName,reported].some(installed=>compareAppVersions(installed,required.name)===-1);
+}
+/** Only the fixed company host and immutable, versioned APK path may reach the legacy downloader. A `minimumVersionCode` the manifest
+ * carries is never read as anything but `versionCode` (the owner's rule above). */
 export function parseAppRelease(value:unknown):AppRelease{
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('invalid_release');
  const item=value as Record<string,unknown>,code=integer(item.versionCode),size=integer(item.sizeBytes),name=version(item.versionName);
  if(item.schemaVersion!==1||item.packageName!=='org.yourrest.crm'||!code||!size||!name||typeof item.apkUrl!=='string'||typeof item.sha256!=='string'||!/^[a-f0-9]{64}$/i.test(item.sha256)||typeof item.certificateSha256!=='string'||!/^[a-f0-9]{64}$/i.test(item.certificateSha256))throw Error('invalid_release');
  const url=new URL(item.apkUrl);
  if(url.origin!=='https://crm.yourrest.org'||url.username||url.password||url.search||url.hash||url.pathname!==`/downloads/yourrest-crm-android-v${name}-${code}.apk`)throw Error('invalid_release');
- return {schemaVersion:1,packageName:'org.yourrest.crm',versionName:name,versionCode:code,apkUrl:url.href,sizeBytes:size,sha256:item.sha256.toLowerCase(),certificateSha256:item.certificateSha256.toLowerCase(),releaseNotes:notes(item.releaseNotes)};
+ return {schemaVersion:1,packageName:'org.yourrest.crm',versionName:name,versionCode:code,minimumVersionCode:code,apkUrl:url.href,sizeBytes:size,sha256:item.sha256.toLowerCase(),certificateSha256:item.certificateSha256.toLowerCase(),releaseNotes:notes(item.releaseNotes)};
 }
 function parseNativeUpdate(value:unknown):Partial<AppUpdateState>{
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('invalid_native_update');
@@ -38,6 +63,13 @@ export function createAppUpdateController(env:UpdateEnvironment):AppUpdateContro
  const emit=(next:Partial<AppUpdateState>)=>{state={...state,...next};for(const listener of subscribers)listener(state);};
  const applyNative=(value:unknown)=>{const parsed=parseNativeUpdate(value);if(state.installedVersionCode&&parsed.installedVersionCode!<state.installedVersionCode)return;emit({...parsed,offline:!env.online()});};
  const nativeRequest=async(bridge:UpdateBridge,method:string)=>{const before=nativeEvents;const result=await bridge.request(method,{});if(before===nativeEvents)applyNative(result);};
+ /** The served release and whether its APK answers on this site; null when the release cannot be read. Never throws. */
+ async function served():Promise<{release:AppRelease;reachable:boolean}|null>{
+  let release:AppRelease;try{release=parseAppRelease(await env.fetchRelease());}catch{return null;}
+  let reachable=false;try{reachable=await env.probeApk(servedApkPath(release.versionName,release.versionCode));}catch{/* Unreachable: the requirement is not enforced. */}
+  return {release,reachable};
+ }
+ const requirementOf=(read:{release:AppRelease;reachable:boolean}|null):Partial<AppUpdateState>=>read?{requiredVersionCode:read.release.minimumVersionCode,requiredVersionName:read.release.versionName,requiredReleaseNotes:read.release.releaseNotes,apkReachable:read.reachable}:noRequirement;
  async function check(force=false){
   if(!state.native||pending)return pending||Promise.resolve();
   emit({offline:!env.online()});
@@ -47,13 +79,19 @@ export function createAppUpdateController(env:UpdateEnvironment):AppUpdateContro
   const before=nativeEvents;pending=(async()=>{try{
    let bridge:UpdateBridge|undefined;try{bridge=await env.bridge();}catch{/* Legacy pages can still offer the verified download without a working bridge. */}
    if(bridge?.updateProtocol===1){
-    await nativeRequest(bridge,'updateStatus');
-    if(!['downloading','ready','permissionRequired','installing','cancelled'].includes(state.phase))await nativeRequest(bridge,'checkAppUpdate');
+    // The site's own read of its release decides the requirement; the app's downloader keeps its own (AppUpdateRules.MANIFEST_URL).
+    const reading=served();
+    try{
+     await nativeRequest(bridge,'updateStatus');
+     if(!['downloading','ready','permissionRequired','installing','cancelled'].includes(state.phase))await nativeRequest(bridge,'checkAppUpdate');
+    }finally{emit({...requirementOf(await reading),offline:!env.online()});}
    }else{
     // Old APKs supply a version name via status, but not a verified version code.
     let installed='';try{const old=await bridge?.request('status',{});if(old&&typeof old==='object')installed=version((old as Record<string,unknown>).appVersion);}catch{/* Unknown version is never invented. */}
     emit({phase:'checking',installedVersionName:installed,installedVersionCode:null,protocol:0});
-    const release=parseAppRelease(await env.fetchRelease()),comparison=compareAppVersions(installed,release.versionName);
+    const read=await served();emit(requirementOf(read));
+    if(!read)throw Error('update_check_failed');
+    const release=read.release,comparison=compareAppVersions(installed,release.versionName);
     if(before===nativeEvents)emit({phase:comparison!==null&&comparison>=0?'upToDate':'available',availableVersionCode:release.versionCode,availableVersionName:release.versionName,totalBytes:release.sizeBytes,releaseNotes:release.releaseNotes,legacyUrl:release.apkUrl,error:'',offline:false});
    }
   }catch{if(before===nativeEvents)emit({phase:'error',error:'update_check_failed',offline:!env.online()});}finally{pending=null;}})();
@@ -69,6 +107,8 @@ export function createAppUpdateController(env:UpdateEnvironment):AppUpdateContro
  function listen(){
   const refresh=()=>{void check(true);},network=()=>{emit({offline:!env.online()});if(env.online())void check(true);};
   stops=[env.listen('yourrest:app-update',detail=>{try{applyNative(detail);nativeEvents++;}catch{/* Invalid events cannot dismiss an available update. */}}),env.listen('yourrest:native-ready',()=>{void check(true);}),env.listen('visible',refresh),env.listen('online',network),env.listen('offline',network)];
+  // A release published while the app stays open becomes required without reopening it.
+  if(env.every)stops.push(env.every(UPDATE_CHECK_INTERVAL,refresh));
   void check();
  }
  return {snapshot:()=>state,subscribe(listener){subscribers.add(listener);listener(state);if(subscribers.size===1&&state.native)listen();return()=>{subscribers.delete(listener);if(!subscribers.size){for(const stop of stops)stop();stops=[];}};},check,download:()=>action('downloadAppUpdate'),install:()=>action('installAppUpdate'),legacyDownloadStarted:()=>emit({legacyStarted:true})};
@@ -78,6 +118,10 @@ export function appUpdateController():AppUpdateController{
  if(singleton)return singleton;
  singleton=createAppUpdateController({native:isNativeTrackingApp,online:()=>navigator.onLine!==false,bridge:async()=>await waitForNativeBridge() as unknown as UpdateBridge,now:Date.now,
   fetchRelease:async()=>{const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),10000);try{const response=await fetch('/api/app-update',{cache:'no-store',credentials:'same-origin',signal:abort.signal,headers:{Accept:'application/json'}});if(!response.ok)throw Error('update_check_failed');return await response.json();}finally{clearTimeout(timeout);}},
+  // HEAD of the served APK, as the app's downloader asks for it (no redirect followed). A server that does not answer HEAD (405, 501) is
+  // not taken for a missing file; a 404, a 5xx, a redirect or no answer is.
+  probeApk:async path=>{if(!path)return false;const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),10000);try{const response=await fetch(path,{method:'HEAD',cache:'no-store',credentials:'omit',redirect:'manual',signal:abort.signal});return response.ok||response.status===405||response.status===501;}finally{clearTimeout(timeout);}},
+  every:(ms,handler)=>{const timer=window.setInterval(()=>{if(document.visibilityState==='visible')handler();},ms);return()=>window.clearInterval(timer);},
   listen:(event,handler)=>{if(event==='visible'){const onVisible=()=>{if(document.visibilityState==='visible')handler();};document.addEventListener('visibilitychange',onVisible);return()=>document.removeEventListener('visibilitychange',onVisible);}const callback=(value:Event)=>handler((value as CustomEvent).detail);window.addEventListener(event,callback);return()=>window.removeEventListener(event,callback);}
  });return singleton;
 }

@@ -30,7 +30,12 @@ try{
  let response;for(let n=0;n<100;n++){if(child.exitCode!==null)throw Error(log);try{response=await get('/api/app-update');if(response.status===200)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  eq(response?.status,200);assert.match(response.headers['cache-control'],/no-store/);checks++;
  const manifest=JSON.parse(response.bytes),expected=JSON.parse(await readFile(path.join(root,'lib/app-update-release.json'),'utf8'));eq(manifest,expected);eq(manifest.packageName,'org.yourrest.crm');assert.match(manifest.versionName,/^\d+\.\d+\.\d+$/);assert.ok(Number.isInteger(manifest.versionCode)&&manifest.versionCode>=11);eq(new URL(manifest.apkUrl).pathname,`/downloads/yourrest-crm-android-v${manifest.versionName}-${manifest.versionCode}.apk`);checks+=3;
+ // Every published release is mandatory (the owner's rule, taken from GSCO on 2026-10-31): the minimum the manifest names is its own version.
+ eq(manifest.minimumVersionCode,manifest.versionCode);
  for(const url of [new URL(manifest.apkUrl).pathname,'/downloads/yourrest-crm-android.apk']){const apk=await get(url);eq(apk.status,200);eq(apk.bytes.length,manifest.sizeBytes);eq(createHash('sha256').update(apk.bytes).digest('hex'),manifest.sha256);}
+ // The phone holds an older app at the update screen only while the served APK answers this HEAD (lib/app-update.ts probeApk).
+ const head=await get(new URL(manifest.apkUrl).pathname,'HEAD');eq(head.status,200);eq(head.bytes.length,0);eq(Number(head.headers['content-length']),manifest.sizeBytes);
+ const missing=await get(`/downloads/yourrest-crm-android-v${manifest.versionName}-${manifest.versionCode+1}.apk`,'HEAD');eq(missing.status,404);
  eq((await get('/login')).status,200);eq((await get('/api/app-update','POST')).status,405);
  const result={ok:true,checks,actualBuiltHttpServer:true,anonymousUpdateMetadata:true,cacheControl:response.headers['cache-control'],versionCode:manifest.versionCode,versionName:manifest.versionName,apkSha256:manifest.sha256,physicalAndroidTested:false,productionModified:false};
  await writeFile(path.join(root,'docs/APP-UPDATE-HTTP-VERIFICATION.json'),JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));

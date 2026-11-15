@@ -26,9 +26,9 @@ const component = load('app/tracking-gate.tsx', name => {
   if (name === 'lucide-react') return icons;
   if (name === '@/lib/i18n') return {useLanguage: () => ({language})};
   if (name === '@/lib/tracking-gate') return gate;
-  if (name === '@/lib/app-update') return {appUpdateController: () => ({snapshot: () => updateState, subscribe(listener) { listener(updateState); return () => {}; }})};
+  if (name === '@/lib/app-update') return {...update, appUpdateController: () => ({snapshot: () => updateState, subscribe(listener) { listener(updateState); return () => {}; }})};
   if (name === '@/lib/app-update-release.json') return release;
-  if (name === './app-update') return {__esModule: true, default: () => React.createElement('section', {className: 'app-update-banner'}, 'IN-APP-UPDATE')};
+  if (name === './app-update') return {__esModule: true, default: props => React.createElement('section', {className: 'app-update-banner', 'data-in-gate': props?.inGate ? 'yes' : 'no'}, 'IN-APP-UPDATE')};
   if (name === './email-login') return {authRequest: async () => ({ok: true})};
   if (name === './journey-tracker') return {useJourneyTracker: () => tracker, trackingFailureText: message => message};
   if (name === './language-switch') return {__esModule: true, default: () => React.createElement('button', {className: 'language-switch'}, 'lang')};
@@ -79,19 +79,63 @@ for (const [reason, context, title] of reasons) {
 }
 language = 'ar';
 
-// The served version is mandatory: the screen names both versions and offers the file, or the in-app flow where the app has one.
-tracker = trackerWith(gateOf({appVersion: '1.0.7'}), {appVersion: '1.0.7'}); html = render();
-ok(html.includes('data-gate-reason="upgrade"') && html.includes('حدّث تطبيق يورست للمتابعة'), 'An app older than the served version is blocked with the update title');
-ok(html.includes('الإصدار المثبت على هاتفك 1.0.7 أقدم من الإصدار المطلوب ' + release.versionName) && html.includes('المطلوب: ' + release.versionName), 'and the body names the installed and the required versions');
+// The mandatory update (the owner's rule, taken from GSCO on 2026-10-31): an app older than the served release, read live with its APK
+// answering, is held at the update screen whatever the role. The workspace stays mounted under it, hidden; nothing offers to continue.
+const required = (patch = {}) => ({native: true, protocol: 0, phase: 'available', installedVersionCode: null, installedVersionName: '1.0.7', availableVersionCode: release.versionCode, availableVersionName: release.versionName, downloadedBytes: 0, totalBytes: 1, progress: 0, error: '', offline: false, legacyUrl: release.apkUrl, legacyStarted: false, releaseNotes: release.releaseNotes, requiredVersionCode: release.versionCode, requiredVersionName: release.versionName, requiredReleaseNotes: release.releaseNotes, apkReachable: true, ...patch});
+const continueWords = /يمكنك متابعة|متابعة العمل|لاحقًا|تخطي|keep working|continue working|Later|Skip/;
+const heldWorkspace = html => /<div class="gate-workspace" style="display:none" aria-hidden="true"><div id="workspace">WORKSPACE<\/div><\/div>/.test(html);
+tracker = trackerWith(gateOf({appVersion: '1.0.7'}), {appVersion: '1.0.7'}); updateState = required(); html = render();
+ok(html.includes('data-gate="blocked"') && html.includes('data-gate-update="required"') && html.includes('حدّث تطبيق يورست للمتابعة'), 'An app older than the served version is held at the update screen');
+ok(heldWorkspace(html), 'The workspace stays mounted under it, hidden and out of reach (open forms and the queue survive)');
+ok(html.includes('الإصدار المثبت على هاتفك 1.0.7 أقدم من الإصدار المطلوب ' + release.versionName) && html.includes('المطلوب: ') && html.includes('إلزامي لجميع المستخدمين'), 'The body names both versions and says the update is required of everyone');
+ok(release.releaseNotes.ar.every(note => html.includes(note.replace(/"/g, '&quot;'))) && html.includes('ما الجديد في هذا الإصدار'), 'The release notes of the required version are listed');
+ok(html.includes('IN-APP-UPDATE') && html.includes('data-in-gate="yes"'), 'The update panel (download, install, retry, browser path) is inside the screen');
+ok(html.includes('تسجيل الخروج') && html.includes('مندوب تجريبي'), 'The account and its sign-out stay reachable');
+no(continueWords.test(html), 'Nothing offers to continue or postpone');
+no(html.includes('tracking-gate-list'), 'The update comes before any tracking checklist');
+for (const role of ['admin', 'manager', 'supervisor', 'customer_service', 'customer_service_manager']) {
+  tracker = role.startsWith('customer_service') ? trackerWith({native: true, loading: false, failed: false, upgradeRequired: false, device: null}, {appVersion: ''}) : trackerWith(gateOf({appVersion: '1.0.7'}), {appVersion: '1.0.7'});
+  updateState = required(role.startsWith('customer_service') ? {protocol: 1, installedVersionCode: release.versionCode - 1, installedVersionName: '1.0.11', legacyUrl: ''} : {}); html = render({...rep, role});
+  ok(html.includes('data-gate-update="required"') && heldWorkspace(html), role + ' in an outdated app is held too');
+}
+// [label, update state, the version the tracking service reports]
+for (const [label, patch, reported] of [
+  ['the same version', {installedVersionName: release.versionName}, release.versionName],
+  ['a newer version', {installedVersionName: '9.0.0'}, '9.0.0'],
+  ['the same exact code', {protocol: 1, installedVersionCode: release.versionCode}, '1.0.7'],
+  ['a newer exact code', {protocol: 1, installedVersionCode: release.versionCode + 1}, '1.0.7'],
+  ['offline (the update cannot be downloaded)', {offline: true}, '1.0.7'],
+  ['an APK that does not answer on the site', {apkReachable: false}, '1.0.7'],
+  ['a release that could not be read', {requiredVersionCode: null, requiredVersionName: '', apkReachable: null}, '1.0.7'],
+  ['an unknown installed version', {installedVersionName: ''}, '']
+]) {
+  tracker = trackerWith(gateOf({appVersion: reported || release.versionName}), {appVersion: reported});
+  updateState = required(patch); html = render();
+  ok(html.includes('<div id="workspace">WORKSPACE</div>') && !html.includes('data-gate') && html.includes('style="display:contents"'), 'Not held: ' + label);
+}
+tracker = trackerWith(gateOf({appVersion: '1.0.7'}), {appVersion: '1.0.7'}); updateState = required({installedVersionName: ''}); html = render();
+ok(html.includes('data-gate-update="required"') && html.includes('الإصدار المثبت على هاتفك 1.0.7 أقدم'), 'An unreported installed version is still judged, and named, by what the tracking service reports');
+updateState = required({installedVersionName: release.versionName}); html = render();
+ok(html.includes('data-gate-update="required"') && html.includes('الإصدار المثبت على هاتفك 1.0.7 أقدم') && !html.includes('هاتفك ' + release.versionName + ' أقدم'), 'The screen names the older of the two reported versions');
+updateState = required(); html = render({...rep, active: 0});
+ok(html.includes('WORKSPACE') && !html.includes('data-gate'), 'A deactivated account sees the account error, not the update screen');
+html = renderToStaticMarkup(React.createElement(component, {me: null}, app));
+ok(html.includes('WORKSPACE') && !html.includes('data-gate'), 'Nothing is held before the member is known');
+tracker = trackerWith({native: false, loading: false, failed: false, upgradeRequired: false, device: null}); updateState = null;
+for (const role of ['admin', 'customer_service']) { html = render({...rep, role}); ok(html.includes('WORKSPACE') && !html.includes('data-gate'), role + ' in a browser is never held'); }
+tracker = trackerWith(gateOf({appVersion: '1.0.6'}), {appVersion: '1.0.6'}); updateState = required({installedVersionName: '1.0.6'}); language = 'en'; html = render();
+ok(html.includes('Update the Yourrest app to continue') && html.includes('older than the required version ' + release.versionName) && html.includes('required for every user') && html.includes('What is new in this version') && html.includes('dir="ltr"'), 'English wording');
+ok(release.releaseNotes.en.every(note => html.includes(note)), 'English release notes');
+no(continueWords.test(html), 'Nothing offers to continue in English either');
+no(/[\u0600-\u06ff]/.test(html.replace(/<button class="language-switch">[^<]*<\/button>/, '').replace(/مندوب تجريبي/g, '').replace(/<div id="workspace">[^<]*<\/div>/, '')), 'No Arabic left in the English screen but the member\'s own name');
+language = 'ar'; updateState = null;
+tracker = trackerWith(gateOf({appVersion: '1.0.6'}), {appVersion: '1.0.6'}); html = render();
+ok(html.includes('data-gate-reason="upgrade"') && !html.includes('data-gate-update') && html.includes('حدّث تطبيق يورست لتفعيل تتبع خط السير') && !html.includes('WORKSPACE'), 'With no live requirement, an app lacking a tracking capability keeps the capability screen, without the workspace');
 ok(html.includes('href="' + new URL(release.apkUrl).pathname + '"') && html.includes('تحديث تطبيق أندرويد') && !html.includes('IN-APP-UPDATE'), 'an app without the update protocol gets the served file');
-updateState = {native: true, protocol: 1, phase: 'available', installedVersionCode: 8, installedVersionName: '1.0.7', availableVersionCode: 11, availableVersionName: release.versionName, downloadedBytes: 0, totalBytes: 1, progress: 0, error: '', offline: false, legacyUrl: '', legacyStarted: false, releaseNotes: {ar: [], en: []}};
+updateState = {...required(), protocol: 1, installedVersionCode: 8, legacyUrl: '', requiredVersionCode: null, requiredVersionName: '', apkReachable: null};
 html = render();
 ok(html.includes('IN-APP-UPDATE') && !html.includes('href="' + new URL(release.apkUrl).pathname + '"'), 'an app with the update protocol gets the in-app flow instead of the file');
 updateState = null;
-for (const role of ['admin', 'manager', 'supervisor']) { html = render({...rep, role}); ok(!html.includes('WORKSPACE') && html.includes('data-gate-reason="upgrade"'), role + ' in an outdated app is blocked too'); }
-tracker = trackerWith(gateOf({appVersion: '1.0.6'}), {appVersion: '1.0.6'}); language = 'en'; html = render();
-ok(html.includes('Update the Yourrest app to continue') && html.includes('older than the required version ' + release.versionName), 'English wording');
-language = 'ar';
 tracker = trackerWith(gateOf({appVersion: release.versionName, continuousSupported: false}), {appVersion: release.versionName}); html = render();
 ok(html.includes('حدّث تطبيق يورست لتفعيل تتبع خط السير') && !html.includes('أقدم من الإصدار المطلوب'), 'a current app that lacks a capability keeps the capability wording');
 

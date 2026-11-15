@@ -9,12 +9,30 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {SERVED_APP_VERSION, installNativeBridge, nativeControl} from '../scripts/lib/native-bridge.mjs';
+import {build} from 'esbuild';
 
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
 const members = [
   {id: 'owner', role: 'admin', name: 'QA admin'}, {id: 'mgr', role: 'manager', name: 'QA manager'}, {id: 'sup', role: 'supervisor', sup: 'mgr', name: 'QA supervisor', region: 'western'},
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(n => ({id: 'rep' + n, role: 'rep', sup: 'sup', region: 'western', name: 'مندوب ' + n}))
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(n => ({id: 'rep' + n, role: 'rep', sup: 'sup', region: 'western', name: 'مندوب ' + n})),
+  {id: 'rep12', role: 'rep', sup: 'sup', region: 'western', name: 'مندوب 12'}, {id: 'cs', role: 'customer_service', region: 'western', name: 'QA customer service'}
 ];
+const SERVED = JSON.parse(fs.readFileSync(new URL('../lib/app-update-release.json', import.meta.url), 'utf8'));
+/** The app's update protocol (MainActivity's bridge with NativeAppUpdater.state(), protocol 1 since 1.0.10) over the emulator: an older
+ *  installed code, the release read by the app itself, a download that ends ready or, when the test says so, in an error. */
+const updateBridgeSource = ({code, name}) => `(() => {
+  if (window !== window.top || !window.__yourrestNative) return;
+  const base = window.__yourrestNative, state = {updateProtocol: 1, phase: 'idle', installedVersionCode: ${code}, installedVersionName: ${JSON.stringify(name)}, downloadedBytes: 0, totalBytes: 0, progress: 0};
+  const emit = () => window.dispatchEvent(new CustomEvent('yourrest:app-update', {detail: JSON.parse(JSON.stringify(state))}));
+  const mock = window.__updateMock = {state, calls: [], failDownload: false, set(patch) { Object.assign(state, patch); emit(); }};
+  const methods = {
+    async updateStatus() { return {...state}; },
+    async checkAppUpdate() { const release = await (await fetch('/api/app-update', {cache: 'no-store'})).json(); delete state.error; Object.assign(state, {phase: 'available', availableVersionCode: release.versionCode, availableVersionName: release.versionName, totalBytes: release.sizeBytes, releaseNotes: release.releaseNotes}); return {...state}; },
+    async downloadAppUpdate() { Object.assign(state, {phase: 'downloading', progress: 0, downloadedBytes: 0}); emit(); setTimeout(() => { if (mock.failDownload) Object.assign(state, {phase: 'error', error: 'لم يكتمل تنزيل تحديث موثوق'}); else Object.assign(state, {phase: 'ready', progress: 100, downloadedBytes: state.totalBytes}); emit(); }, 400); return {...state}; },
+    async installAppUpdate() { Object.assign(state, {phase: 'installing'}); emit(); return {...state}; }
+  };
+  window.__yourrestNative = {...base, updateProtocol: 1, installedVersionCode: ${code}, installedVersionName: ${JSON.stringify(name)}, async request(method, payload = {}) { mock.calls.push(method); return methods[method] ? methods[method](payload) : base.request(method, payload); }};
+})();`;
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-gate-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
 let checks = 0, browser, app;
@@ -29,7 +47,7 @@ try {
   app = await bootBuiltApp({members}, {tls: true});
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1']});
   /** A signed-in page. native: false = plain browser, true/object = the Android app emulator (object = bridge options). */
-  async function open(memberId, {native = false, viewport = PHONE, userAgent, clockAt} = {}) {
+  async function open(memberId, {native = false, update, viewport = PHONE, userAgent, clockAt} = {}) {
     const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', ...(userAgent ? {userAgent} : {})});
     // A page whose clock starts at a given time and then runs (the server keeps the real one).
     if (clockAt) await context.clock.install({time: clockAt});
@@ -39,6 +57,7 @@ try {
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => errors.push(memberId + ': ' + error.message));
     if (native) await installNativeBridge(page, native === true ? {} : native);
+    if (update) await page.addInitScript({content: updateBridgeSource(update)});
     await page.goto(app.origin + '/');
     return page;
   }
@@ -183,8 +202,18 @@ try {
     await withdraw({notificationPermission: 'denied'}, 'permission', 'الإشعارات', 'notifications withdrawn');
     await withdraw({fineLocationPermission: 'denied'}, 'permission', 'الموقع الدقيق', 'precise location withdrawn');
     await withdraw({locationServicesEnabled: false}, 'location_services', 'الموقع (GPS)', 'phone GPS switched off');
-    await withdraw({appVersion: '1.0.6'}, 'upgrade', 'حدّث تطبيق', 'outdated app version');
-    await withdraw({appVersion: '1.0.7'}, 'upgrade', 'أقدم من الإصدار المطلوب ' + SERVED_APP_VERSION, 'app older than the served version');
+    // An app older than the served release is held at the update screen (lib/app-update.ts appUpdateRequired), whatever else it lacks. The
+    // workspace stays mounted under it, hidden, while the representative's tracking works (1.0.7); an app too old to track (1.0.6, no
+    // work-hours schedule) has no workspace, as before.
+    for (const [appVersion, label, kept] of [['1.0.6', 'outdated app version', 0], ['1.0.7', 'app older than the served version', 1]]) {
+      await phone.set({appVersion});
+      await page.locator('main.tracking-gate[data-gate-update="required"]').waitFor();
+      check([await page.locator('.workspace').count(), await page.locator('.workspace').isVisible()], [kept, false], label + (kept ? ': the workspace is kept but hidden' : ': no workspace for an app that cannot track'));
+      ok((await texts(page)).includes('أقدم من الإصدار المطلوب ' + SERVED_APP_VERSION), label + ': says what is wrong');
+      await shot(page, 'gate-' + label.replace(/\W+/g, '-'));
+      await phone.set({appVersion: SERVED_APP_VERSION});
+      await waitWorkspace(page);
+    }
     await withdraw({enrolled: false, memberId: null}, 'setup', 'تسجيل هذا الهاتف', 'enrolment lost');
     // Trouble during the day is not a block: GPS waits, queued points, no network, a paused collector.
     for (const patch of [{error: 'بانتظار موقع حديث؛ الفترة غير المؤكدة تظهر في التقرير'}, {syncError: 'لا يوجد اتصال بالخادم؛ يجري حفظ الموقع على الجهاز لحين عودة الشبكة', pendingCount: 400, pendingGapCount: 3}, {lastFixAt: '2026-10-12T05:00:00.000Z', accuracy: 900}]) {
@@ -306,6 +335,200 @@ try {
       await layoutOk(tablet, 'companion lost'); await shot(tablet, 'gate-companion-lost');
       await tablet.context().close();
     } finally { await app.stop(); app = mainApp; }
+  }
+
+
+  // ---- 10. Every published release is mandatory (the owner's rule, taken from GSCO on 2026-10-31): an older app is held at the update
+  // screen for every role while the update can proceed. No «continue» or «later»; the workspace stays mounted under the screen, the
+  // device's queue keeps being sent, and offline or with the APK not answering nobody is held (GSCO's fail-open).
+  {
+    const held = page => page.locator('main.tracking-gate[data-gate-update="required"]');
+    const panel = page => held(page).locator('.app-update-banner');
+    const noWayAround = async (page, label) => {
+      const labels = await held(page).locator('button, a').evaluateAll(items => items.map(item => item.innerText.trim()).filter(Boolean));
+      check(labels.filter(text => /متابعة|لاحق|تخطي|إغلاق|continue|later|skip|close|dismiss|not now/i.test(text)), [], label + ': no way around the update: ' + labels.join(' | '));
+      const sizes = await held(page).locator('.app-update-actions .btn:visible, .tracking-gate-saved .btn:visible').evaluateAll(items => items.map(item => Math.round(item.getBoundingClientRect().height)));
+      ok(sizes.length && sizes.every(height => height >= 44), label + ': the update actions are touch targets of 44 px at least: ' + sizes.join(','));
+    };
+    // What the phone shows first, then the whole screen (a 360 px window tall enough for all of it).
+    const shotCard = async (page, label) => { await shot(page, label); const size = page.viewportSize(); await page.setViewportSize({width: size.width, height: 1800}); await pause(150); await shot(page, label + '-full'); await page.setViewportSize(size); };
+    // The workspace's own element, marked before the screen holds the app: still the same node afterwards, so nothing was remounted.
+    const mark = page => page.evaluate(() => { document.querySelector('.workspace').dataset.qaMark = 'kept'; });
+    const marked = page => page.evaluate(() => document.querySelector('.workspace')?.dataset.qaMark === 'kept');
+    /** Ask the app to read the release again until the screen is (or is not) shown: a check already in flight answers the first ask. */
+    const settleHeld = async (page, wanted, label) => { for (let n = 0; n < 60; n++) { await recheck(page); await pause(250); if ((await held(page).count() > 0) === wanted) { checks++; return; } } throw Error(label + ': the update screen did not ' + (wanted ? 'appear' : 'go')); };
+    const workspaceKept = async (page, label) => check([await page.locator('.workspace').count(), await page.locator('.workspace').isVisible(), await page.locator('.gate-workspace').getAttribute('aria-hidden')], [1, false, 'true'], label + ': the workspace is mounted, hidden and out of reach');
+    const recheck = page => page.evaluate(() => window.dispatchEvent(new CustomEvent('yourrest:native-ready')));
+
+    // a. The administrator in an app with the update protocol, one build behind (1.0.11, code 12): held, in Arabic and English.
+    const admin = await open('owner', {native: {appVersion: '1.0.11', versionCode: SERVED.versionCode - 1}, update: {code: SERVED.versionCode - 1, name: '1.0.11'}});
+    await held(admin).waitFor();
+    await workspaceKept(admin, 'administrator');
+    let text = await texts(admin);
+    ok(text.includes('حدّث تطبيق يورست للمتابعة') && text.includes('الإصدار المثبت على هاتفك 1.0.11 أقدم من الإصدار المطلوب ' + SERVED.versionName) && text.includes('إلزامي لجميع المستخدمين'), 'the screen names both versions and says the update is required of everyone: ' + text);
+    ok(SERVED.releaseNotes.ar.every(note => text.includes(note)), 'the release notes of the required version are listed');
+    ok(text.includes('QA admin') && await admin.getByRole('button', {name: 'تسجيل الخروج'}).isVisible(), 'the account and its sign-out stay reachable');
+    await panel(admin).getByRole('button', {name: 'تحديث التطبيق', exact: true}).waitFor();
+    await noWayAround(admin, 'Arabic'); await layoutOk(admin, 'update screen'); await shotCard(admin, 'update-required-app-ar');
+    await admin.keyboard.press('Escape'); await pause(300);
+    check(await held(admin).count(), 1, 'Escape does not leave the screen');
+    await held(admin).locator('.language-switch').click();
+    await held(admin).locator('h1', {hasText: 'Update the Yourrest app to continue'}).waitFor();
+    text = await texts(admin);
+    ok(text.includes('The installed version 1.0.11 is older than the required version ' + SERVED.versionName) && text.includes('required for every user') && SERVED.releaseNotes.en.every(note => text.includes(note)), 'English wording and notes');
+    check(text.replace(/«[^»]*»/g, '').replace('QA admin', '').replace('العربية', '').match(/[\u0600-\u06ff]+/g), null, 'no Arabic left in the English screen but the switch back to Arabic');
+    await noWayAround(admin, 'English'); await layoutOk(admin, 'update screen, English'); await shotCard(admin, 'update-required-app-en');
+    await held(admin).locator('.language-switch').click();
+    await held(admin).locator('h1', {hasText: 'حدّث تطبيق يورست للمتابعة'}).waitFor();
+
+    // The download fails (the network drops mid-file, the phone is full): still held, with a retry and the browser path.
+    await admin.evaluate(() => { window.__updateMock.failDownload = true; });
+    await panel(admin).getByRole('button', {name: 'تحديث التطبيق', exact: true}).click();
+    await held(admin).locator('.app-update-banner[data-update-phase="error"]').waitFor();
+    check(await held(admin).count(), 1, 'a failed download keeps the screen');
+    ok((await panel(admin).innerText()).includes('لم يكتمل التحديث') && await panel(admin).getByRole('button', {name: 'إعادة المحاولة'}).isVisible(), 'the failure is explained, with a retry');
+    check(await panel(admin).getByRole('link', {name: 'ثبّت عن طريق المتصفح'}).getAttribute('href'), new URL(SERVED.apkUrl).pathname, 'and the browser path to the same APK');
+    await noWayAround(admin, 'download failed'); await layoutOk(admin, 'download failed'); await shotCard(admin, 'update-download-failed-ar');
+    await admin.evaluate(() => { window.__updateMock.failDownload = false; });
+    await panel(admin).getByRole('button', {name: 'إعادة المحاولة'}).click();
+    await panel(admin).getByRole('button', {name: 'تحديث التطبيق', exact: true}).click();
+    await panel(admin).getByRole('button', {name: 'تثبيت التحديث'}).waitFor();
+    check((await admin.evaluate(() => window.__updateMock.calls)).filter(method => method === 'downloadAppUpdate').length, 2, 'the retry downloads again');
+    await panel(admin).getByRole('button', {name: 'تثبيت التحديث'}).click();
+    await held(admin).locator('.app-update-banner[data-update-phase="installing"]').waitFor();
+    check(await held(admin).count(), 1, 'the installer opening is not the update: still held');
+    // Android installed it: the app now reports the published code, and the workspace comes back as it was.
+    await admin.evaluate(([code, name]) => window.__updateMock.set({phase: 'upToDate', installedVersionCode: code, installedVersionName: name}), [SERVED.versionCode, SERVED.versionName]);
+    await nativeControl(admin).set({appVersion: SERVED.versionName});
+    await waitWorkspace(admin);
+    check(await admin.locator('.gate-workspace').getAttribute('aria-hidden'), null, 'the same version as the published one is not held');
+    await admin.context().close();
+
+    // b. Offline, or with the APK not answering on the site, the update cannot proceed: nobody is held; the workspace says why the update
+    // waits. Back online with the file answering, the screen returns; what was typed in the workspace is still there.
+    const away = await open('owner', {native: {appVersion: '1.0.11', versionCode: SERVED.versionCode - 1}, update: {code: SERVED.versionCode - 1, name: '1.0.11'}});
+    await held(away).waitFor();
+    await mark(away);
+    await away.context().setOffline(true);
+    await waitWorkspace(away);
+    await away.locator('.workspace-notices .app-update-banner', {hasText: 'هذا التحديث إلزامي، ويمكن تنزيله عند عودة الاتصال بالإنترنت'}).waitFor();
+    check(await marked(away), true, 'offline: the same workspace, never remounted');
+    await layoutOk(away, 'offline'); await shot(away, 'update-offline-not-held-ar');
+    await away.context().setOffline(false);
+    await held(away).waitFor();
+    await workspaceKept(away, 'back online');
+    const apk = '**/downloads/yourrest-crm-android-v*.apk', missingApk = route => route.fulfill({status: 404, body: ''});
+    await away.route(apk, missingApk);
+    await settleHeld(away, false, 'APK not answering');
+    await waitWorkspace(away);
+    check(await marked(away), true, 'the workspace under the screen is the same one, with what it held');
+    await away.locator('.workspace-notices .app-update-banner', {hasText: 'ملف التحديث غير متاح على الموقع الآن'}).waitFor();
+    await shot(away, 'update-apk-unreachable-not-held-ar');
+    await away.unroute(apk, missingApk);
+    const noRelease = route => route.abort();
+    await away.route('**/api/app-update', noRelease);
+    await settleHeld(away, false, 'release not readable');
+    check(await held(away).count(), 0, 'the release that cannot be read holds nobody');
+    await away.unroute('**/api/app-update', noRelease);
+    await settleHeld(away, true, 'release readable again');
+
+    // c. A form open when the requirement is found: the screen waits for it to be saved or closed (here the account sheet of the phone layout).
+    await away.route(apk, missingApk);
+    await settleHeld(away, false, 'before the dialog'); await waitWorkspace(away);
+    await away.locator('.mobile-profile-trigger').click();
+    await away.locator('[role="dialog"][data-state="open"]').waitFor();
+    await away.unroute(apk, missingApk);
+    for (let n = 0; n < 8; n++) { await recheck(away); await pause(250); }
+    check(await away.evaluate(() => window.__updateMock.state.phase), 'available', 'the release was read again meanwhile');
+    check([await held(away).count(), await away.locator('[role="dialog"][data-state="open"]').isVisible()], [0, true], 'an open dialog is never taken from under the person');
+    await away.locator('[role="dialog"][data-state="open"]').getByRole('button', {name: 'إغلاق'}).click();
+    await held(away).waitFor();
+    check(await away.locator('[role="dialog"][data-state="open"]').count(), 0, 'once it is closed, the update screen holds the app');
+    // A dialog opened under the screen afterwards (as a notification's request would) does not lift it, and the screen stays tappable.
+    await away.evaluate(() => document.querySelector('.mobile-profile-trigger').click());
+    await away.locator('[role="dialog"][data-state="open"]').waitFor({state: 'attached'});
+    await pause(500);
+    check(await held(away).count(), 1, 'a dialog opened under the screen does not lift it');
+    await held(away).locator('.language-switch').click();
+    await held(away).locator('h1', {hasText: 'Update the Yourrest app to continue'}).waitFor();
+    await held(away).locator('.language-switch').click();
+    await held(away).locator('h1', {hasText: 'حدّث تطبيق يورست للمتابعة'}).waitFor();
+    checks++;
+    await away.context().close();
+
+    // d. The device's queue: an entry saved offline is still sent while the screen holds the app, and the screen counts it until then.
+    const bundle = (await build({stdin: {contents: "export * from './lib/offline-store';export * from './lib/offline-submit';", resolveDir: new URL('..', import.meta.url).pathname}, bundle: true, format: 'iife', globalName: 'offlineQa', platform: 'browser', write: false})).outputFiles[0].text;
+    const queued = await open('owner', {native: {appVersion: '1.0.11', versionCode: SERVED.versionCode - 1}, update: {code: SERVED.versionCode - 1, name: '1.0.11'}});
+    await held(queued).waitFor();
+    await queued.addScriptTag({content: bundle});
+    await queued.waitForFunction(async () => !!(await window.offlineQa.loadOfflineSnapshot()));
+    const createKey = crypto.randomUUID(), customerName = 'مصنع محفوظ على الهاتف ' + createKey.slice(0, 6);
+    await queued.context().setOffline(true);
+    await waitWorkspace(queued);
+    const saved = await queued.evaluate(async ({createKey, customerName}) => {
+      const me = (await window.offlineQa.loadOfflineSnapshot()).me;
+      return window.offlineQa.offlineSubmit('/api/crm', JSON.stringify({action: 'save', kind: 'customer', createKey, data: {name: customerName, phone: '0555000123', region: 'الغربية', branch: 'الرئيسي', assignedTo: me.id}}), {me, label: customerName});
+    }, {createKey, customerName});
+    check(saved.queued, true, 'the customer is saved on the phone while offline');
+    // The server does not answer at first: the entry waits under the screen, which counts it.
+    const crmRoute = url => url.pathname === '/api/crm', refusePost = (route, request) => request.method() === 'POST' ? route.abort() : route.fallback();
+    await queued.route(crmRoute, refusePost);
+    await queued.context().setOffline(false);
+    await held(queued).waitFor();
+    const waiting = held(queued).locator('.tracking-gate-saved[data-saved-waiting="1"]');
+    await waiting.waitFor();
+    ok((await waiting.innerText()).includes('إدخالات محفوظة على الهاتف بانتظار الرفع: 1'), 'the screen says one entry waits on the phone and is kept');
+    await layoutOk(queued, 'saved entries'); await shotCard(queued, 'update-required-queue-waiting-ar');
+    check(await app.db.prepare('SELECT COUNT(*) n FROM crm_records WHERE id=?').bind('crm-owner-' + createKey).first('n'), 0, 'not on the server yet');
+    await queued.unroute(crmRoute, refusePost);
+    await waiting.getByRole('button', {name: 'رفع الآن'}).click();
+    await held(queued).locator('.tracking-gate-saved').waitFor({state: 'detached'});
+    check(await app.db.prepare('SELECT COUNT(*) n FROM crm_records WHERE id=?').bind('crm-owner-' + createKey).first('n'), 1, 'the entry reached the server while the update screen held the app');
+    check(JSON.parse(await app.db.prepare('SELECT data FROM crm_records WHERE id=?').bind('crm-owner-' + createKey).first('data')).name, customerName, 'with what was saved on the phone');
+    check(await queued.evaluate(async () => (await window.offlineQa.listOutbox((await window.offlineQa.loadOfflineSnapshot()).me)).length), 0, 'the phone\'s queue is empty');
+    check(await held(queued).count(), 1, 'and the screen still holds the app');
+    // A second entry is sent by the workspace's own sending (every 30 s and on reconnecting), with no tap.
+    const secondKey = crypto.randomUUID();
+    await queued.context().setOffline(true); await waitWorkspace(queued);
+    await queued.evaluate(async key => { const me = (await window.offlineQa.loadOfflineSnapshot()).me; return window.offlineQa.offlineSubmit('/api/crm', JSON.stringify({action: 'save', kind: 'customer', createKey: key, data: {name: 'مصنع ثان ' + key.slice(0, 6), phone: '0555000124', region: 'الغربية', branch: 'الرئيسي', assignedTo: me.id}}), {me, label: 'second'}); }, secondKey);
+    await queued.context().setOffline(false);
+    await held(queued).waitFor();
+    for (let n = 0; n < 150 && !await app.db.prepare('SELECT COUNT(*) n FROM crm_records WHERE id=?').bind('crm-owner-' + secondKey).first('n'); n++) await pause(200);
+    check(await app.db.prepare('SELECT COUNT(*) n FROM crm_records WHERE id=?').bind('crm-owner-' + secondKey).first('n'), 1, 'sent by itself while the screen holds the app');
+    await queued.context().close();
+
+    // e. Every role: customer service (no route tracking at all) and a representative (before any tracking check), in an app without the
+    // update protocol that reports only its version name.
+    const service = await open('cs', {native: {appVersion: '1.0.11', versionCode: SERVED.versionCode - 1}});
+    await held(service).waitFor();
+    ok((await texts(service)).includes('QA customer service'), 'customer service in an older app is held as well');
+    check(await panel(service).getByRole('link', {name: 'تحديث التطبيق'}).getAttribute('href'), SERVED.apkUrl, 'an app without the update protocol gets the served APK');
+    await workspaceKept(service, 'customer service'); await noWayAround(service, 'customer service');
+    await service.context().close();
+    const representative = await open('rep12', {native: {memberId: 'rep12', regionScope: 'western', appVersion: '1.0.11', versionCode: SERVED.versionCode - 1}});
+    await held(representative).waitFor();
+    check(await representative.locator('.tracking-gate-list').count(), 0, 'a representative is asked to update before any tracking step');
+    await representative.context().close();
+
+    // f. Unaffected: the same version, a newer one, an ordinary browser on a computer and on a phone.
+    for (const [label, options] of [['the same version', {native: {appVersion: SERVED.versionName}, update: {code: SERVED.versionCode, name: SERVED.versionName}}], ['a newer version', {native: {appVersion: '9.0.0', versionCode: SERVED.versionCode + 1}, update: {code: SERVED.versionCode + 1, name: '9.0.0'}}]]) {
+      const page = await open('owner', options);
+      await waitWorkspace(page);
+      await page.waitForFunction(() => window.__updateMock?.calls.includes('checkAppUpdate'));
+      await pause(800);
+      check([await gateOf(page).count(), await page.locator('.app-update-banner').count()], [0, 0], label + ': not held and no update panel');
+      await page.context().close();
+    }
+    const desktop = await open('owner', {viewport: DESKTOP});
+    await waitWorkspace(desktop); await pause(800);
+    check([await gateOf(desktop).count(), await desktop.locator('.app-update-banner').count()], [0, 0], 'a computer browser is never held');
+    await layoutOk(desktop, 'computer browser'); await shot(desktop, 'update-browser-desktop-unaffected');
+    await desktop.context().close();
+    const phoneBrowser = await open('mgr', {userAgent: ANDROID_CHROME});
+    await waitWorkspace(phoneBrowser); await pause(800);
+    check([await gateOf(phoneBrowser).count(), await phoneBrowser.locator('.app-update-banner').count()], [0, 0], 'a phone browser is never held');
+    await shot(phoneBrowser, 'update-phone-browser-unaffected');
+    await phoneBrowser.context().close();
   }
 
   ok(!errors.length, 'no uncaught page errors: ' + errors.join(' | '));

@@ -19,7 +19,7 @@ const ready = {tracking: true, permission: 'granted', pendingCount: 0, pendingGa
 const device = (patch = {}, memberId = 'rep-1') => gate.gateDeviceFrom(native.normalizeNativeState({...ready, ...patch}), memberId);
 const rep = {role: 'rep', active: 1};
 const source = (patch = {}) => ({native: true, loading: false, failed: false, upgradeRequired: false, device: device(), ...patch});
-const decide = (input = {}) => gate.trackingGateDecision({...rep, ...source(), requiredVersion: '1.0.10', ...input});
+const decide = (input = {}) => gate.trackingGateDecision({...rep, ...source(), ...input});
 const blocked = (reason, missing = []) => ({status: 'blocked', reason, missing});
 
 // Only an active representative is gated; everyone else, and an unknown member, passes through untouched.
@@ -44,28 +44,31 @@ eq(decide({loading: true}), {status: 'allowed'}, 'A known healthy phone is allow
 // Old or incomplete app.
 eq(decide({upgradeRequired: true}), blocked('upgrade'), 'The app asked for an upgrade');
 eq(decide({device: device({appVersion: '1.0.6'})}), blocked('upgrade'), 'Version 1.0.6 has no work-hours schedule');
-eq(decide({device: device({appVersion: '1.0.7'}), requiredVersion: '1.0.7'}), {status: 'allowed'}, 'Version 1.0.7 is the first supported, when it is the served one');
+eq(decide({device: device({appVersion: '1.0.7'})}), {status: 'allowed'}, 'Version 1.0.7 is the first with every tracking capability');
 eq(decide({device: device({continuousSupported: false})}), blocked('upgrade'), 'No continuous support');
 eq(decide({device: device({workHoursSupported: false})}), blocked('upgrade'), 'No work-hours support');
 eq(decide({device: device({fridayExclusionSupported: false})}), blocked('upgrade'), 'No Friday exclusion');
 eq(decide({device: device({pendingGapCount: null})}), blocked('upgrade'), 'Unknown gap queue');
 
-// The served version is mandatory for everyone who opens the app; the comparison never judges an unknown version.
-eq(decide({device: device({appVersion: '1.0.7'})}), blocked('upgrade'), 'An app older than the served version is blocked for a representative');
-eq(decide({device: device({appVersion: '1.0.9'})}), blocked('upgrade'), 'however close to it');
+// The mandatory app version is not this decision's: app/tracking-gate.tsx asks lib/app-update.ts appUpdateRequired first, for every role,
+// from the served release read live (GSCO's rule: the oldest app allowed is the newest published one; unknown or unreachable stays open).
+eq(decide({device: device({appVersion: '1.0.7'})}), {status: 'allowed'}, 'The tracking decision judges capabilities, not the version');
+eq(decide({device: device({appVersion: '1.0.7'}), requiredVersion: '1.0.10'}), {status: 'allowed'}, 'A served version handed to it is ignored');
 for (const role of ['admin', 'manager', 'supervisor']) {
-  eq(decide({role, device: device({appVersion: '1.0.7'})}), blocked('upgrade'), role + ' in an outdated app is blocked as well');
-  eq(decide({role, device: device({appVersion: '1.0.10', continuousConsent: false, enrolled: false})}), {status: 'allowed'}, role + ' in the served version passes whatever the tracking state');
+  eq(decide({role, device: device({appVersion: '1.0.10', continuousConsent: false, enrolled: false})}), {status: 'allowed'}, role + ' passes whatever the tracking state');
   eq(decide({role, native: false, device: null}), {status: 'allowed'}, role + ' in a browser is not gated');
 }
-eq(decide({role: 'manager', active: 0, device: device({appVersion: '1.0.7'})}), {status: 'allowed'}, 'A deactivated account sees the account error, not the update screen');
-eq(decide({device: device({appVersion: '1.0.11'})}), {status: 'allowed'}, 'A newer app than the served one is not asked to downgrade');
 eq(decide({device: device({appVersion: ''})}), blocked('upgrade'), 'An app that reports no version is judged on its capabilities only, and an app that old lacks the work-hours schedule');
 eq(decide({role: 'manager', device: device({appVersion: ''})}), {status: 'allowed'}, 'For another role an unknown version is not judged at all');
-eq(decide({device: device({appVersion: '1.0.7'}), requiredVersion: undefined}), {status: 'allowed'}, 'Without a served version nothing is judged');
-eq(decide({device: device({appVersion: '1.0.7'}), requiredVersion: 'later'}), {status: 'allowed'}, 'A malformed served version judges nothing');
-eq(decide({device: device({appVersion: '1.0.7', backgroundPermission: 'denied'})}), blocked('upgrade'), 'The outdated app is reported before any permission problem');
-eq([gate.appOutdated('1.0.7', '1.0.10'), gate.appOutdated('1.0.10', '1.0.10'), gate.appOutdated('1.0.11', '1.0.10'), gate.appOutdated('', '1.0.10'), gate.appOutdated('1.0.7', undefined)], [true, false, false, false, false], 'appOutdated');
+eq(decide({device: device({appVersion: '1.0.7', backgroundPermission: 'denied'})}), blocked('permission', ['background_location']), 'Under the update screen, the tracking reason is still known');
+// appUpdateRequired, on the update state the controller keeps (the served release read live, its APK answering).
+const updateState = (patch = {}) => ({native: true, protocol: 0, phase: 'available', installedVersionCode: null, installedVersionName: '1.0.7', availableVersionCode: 11, availableVersionName: '1.0.10', downloadedBytes: 0, totalBytes: 0, progress: 0, error: '', offline: false, legacyUrl: '', legacyStarted: false, releaseNotes: {ar: [], en: []}, requiredVersionCode: 11, requiredVersionName: '1.0.10', requiredReleaseNotes: {ar: [], en: []}, apkReachable: true, ...patch});
+const held = (patch, reported) => update.appUpdateRequired(updateState(patch), reported);
+eq([held({}), held({installedVersionName: '1.0.9'}), held({installedVersionName: '1.0.10'}), held({installedVersionName: '1.0.11'}), held({installedVersionName: '2.0.0'})], [true, true, false, false, false], 'Older apps are held, however close; the same or a newer one never');
+eq([held({installedVersionCode: 10, installedVersionName: '1.0.9'}), held({installedVersionCode: 11, installedVersionName: '1.0.10'}), held({installedVersionCode: 12}), held({installedVersionCode: 11}, '1.0.7')], [true, false, false, false], 'An exact installed code decides, over any name');
+eq([held({installedVersionName: ''}), held({installedVersionName: 'unknown'}), held({installedVersionName: ''}, '1.0.7'), held({installedVersionName: ''}, 'x'), held({installedVersionName: '1.0.10'}, '1.0.7')], [false, false, true, false, true], 'An unknown version is never held; the tracking service reporting an older one is');
+eq([held({offline: true}), held({requiredVersionCode: null, requiredVersionName: ''}), held({apkReachable: false}), held({apkReachable: null}), held({native: false}), held({requiredVersionName: 'later'})], [false, false, false, false, false, false], 'Offline, an unread release, an APK that does not answer, a browser or a malformed release hold nobody (GSCO: fail-open)');
+eq([update.enforcedRequirement(updateState()), update.enforcedRequirement(updateState({offline: true}))], [{code: 11, name: '1.0.10'}, null], 'enforcedRequirement');
 
 // First activation: consent not given, nothing enrolled or granted.
 const fresh = {continuousConsent: false, enrolled: false, memberId: null, enrolledRole: null, tracking: false, permission: 'denied', fineLocationPermission: 'denied', notificationPermission: 'denied', backgroundPermission: 'prompt'};
@@ -112,7 +115,7 @@ eq(decide({device: tablet}), blocked('permission', ['background_location', 'enro
 eq(decide({device: tablet, companion: true}), {status: 'allowed'}, 'The same device is allowed while another device records the route');
 eq(decide({device: device({backgroundPermission: 'denied', locationServicesEnabled: false}), companion: true}), {status: 'allowed'}, 'A companion needs none of the tracking permissions');
 eq(decide({device: tablet, companion: false}), blocked('permission', ['background_location', 'enrollment']), 'companion false changes nothing');
-eq(decide({device: device({appVersion: '1.0.9'}), companion: true}), blocked('upgrade'), 'A companion must still run the served app version');
+eq(decide({device: device({appVersion: '1.0.9'}), companion: true}), {status: 'allowed'}, 'A companion passes the tracking decision; its app version is held by the update screen before it, as everyone\'s');
 eq(decide({device: tablet, companion: true, upgradeRequired: true}), blocked('upgrade'), 'A companion on an app without continuous support is still told to update');
 eq(decide({native: false, device: null, companion: true}), blocked('browser'), 'A browser never becomes a companion');
 eq(decide({device: null, companion: true}), {status: 'checking'}, 'Before the app answers, a companion is still being checked');
@@ -122,6 +125,6 @@ for (const role of ['admin', 'manager', 'supervisor']) eq(decide({role, device: 
 eq(decide({device: tablet, companionPending: true}), {status: 'checking'}, 'Not set up, server not answered yet: still checking');
 eq(decide({device: tablet, companionPending: true, companion: true}), {status: 'allowed'}, 'Known companion: allowed');
 eq(decide({device: device(), companionPending: true}), {status: 'allowed'}, 'A phone that is set up never waits for the answer');
-eq(decide({device: device({appVersion: '1.0.9'}), companionPending: true}), blocked('upgrade'), 'An outdated app is told to update at once');
+eq(decide({device: device({appVersion: '1.0.9'}), companionPending: true}), {status: 'allowed'}, 'A set-up phone never waits for the answer, whatever its version (the update screen holds an outdated one first)');
 eq(decide({role: 'supervisor', device: tablet, companionPending: true}), {status: 'allowed'}, 'Other roles never wait');
 console.log(JSON.stringify({ok: true, checks}));
