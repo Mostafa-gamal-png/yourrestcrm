@@ -8,7 +8,7 @@ const root=process.cwd(),runtime=path.join(root,'.sites-runtime');fs.mkdirSync(r
 const out=fs.mkdtempSync(path.join(runtime,'kpi-complete-domain-')),seen=new Set();process.on('exit',()=>fs.rmSync(out,{recursive:true,force:true}));
 function compile(relative){if(seen.has(relative))return;seen.add(relative);const source=path.join(root,relative),dest=path.join(out,relative.replace(/\.tsx?$/,'.mjs'));fs.mkdirSync(path.dirname(dest),{recursive:true});let code=ts.transpileModule(fs.readFileSync(source,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;code=code.replace(/from (['"])([^'"]+)\1/g,(match,quote,imp)=>{if(!imp.startsWith('.')&&!imp.startsWith('@/'))return match;let rel=imp.startsWith('@/')?imp.slice(2):path.relative(root,path.resolve(path.dirname(source),imp));if(!/\.tsx?$/.test(rel))rel+=fs.existsSync(path.join(root,rel+'.ts'))?'.ts':'.tsx';compile(rel);return 'from '+JSON.stringify(path.join(out,rel.replace(/\.tsx?$/,'.mjs')));});fs.writeFileSync(dest,code);}
 for(const file of ['lib/kpis.ts','lib/kpi-evidence.ts','lib/targets.ts'])compile(file);
-const {calculateKpis,emptyKpiInput,kpiSummary,metric,operationalIndicators,kpiInputSchema,customerFilledFields,INACTIVE_TEXT}=await import(path.join(out,'lib/kpis.mjs'));
+const {calculateKpis,prepareKpiRecords,emptyKpiInput,kpiSummary,metric,operationalIndicators,kpiInputSchema,customerFilledFields,INACTIVE_TEXT}=await import(path.join(out,'lib/kpis.mjs'));
 const {today}=await import(path.join(out,'lib/crm.mjs'));
 const {kpiEvidenceInputSchema,emptyKpiEvidenceInput,evidenceScopeKey}=await import(path.join(out,'lib/kpi-evidence.mjs'));
 const {quantityAttainment,targetProducts}=await import(path.join(out,'lib/targets.mjs'));
@@ -76,11 +76,14 @@ result=calculateKpis(performance(),month,customers,sales,assessment,undefined,ev
 eq([get(result,'quality').numerator,get(result,'quality').denominator,get(result,'quality').score,get(result,'quality').source],[9,14,64.29,'automatic'],'Filled fields ÷ (own customers × 7); another rep\'s customer is left out');
 const legacy={...emptyKpiInput(),reviewed:10,correct:2};ok(kpiInputSchema.safeParse(legacy).success,'An old saved assessment with reviewed/correct still parses');
 result=calculateKpis(performance(),month,customers,sales,{...assessment,input:legacy},undefined,evidence);eq(get(result,'quality').score,64.29,'The old manual numbers no longer score quality');
-// ---- 4. «نسبة الزيارات الفعالة»: won is effective, only lost is not
+// ---- 4. «نسبة الزيارات الفعالة» (since 2026-11-15, «موافق تمام»: by the supervisor's evaluation, no longer the customer's stage; the
+// whole rule is tests/kpi-effective-visits.mjs): the sale is «إيجابية» by itself, a note's «فعالة» / «سلبية» counts, no note is waiting.
 const visit=(id,customerId,salesStage,date='2025-09-10',type='visit')=>({id,kind:'activity',parentId:customerId,assignedTo:'rep',branch:'HQ',data:{type,date,performedBy:'rep',responsibleId:'rep',salesStage,summary:'s'},createdAt:date+'T08:00:00Z',updatedAt:date+'T08:00:00Z',version:1});
 customers=[customer('c-won','rep',full),customer('c-lost','rep',full),customer('c-open','rep',full),visit('v-won','c-won','won'),visit('v-lost','c-lost','lost'),visit('v-open','c-open','specs')];
 result=calculateKpis(performance(),month,customers,sales,assessment,undefined,evidence);
-eq([get(result,'positive').numerator,get(result,'positive').denominator,get(result,'positive').score],[2,3,66.67],'Won and open visits are effective; the lost one is not');
+eq([get(result,'positive').numerator,get(result,'positive').denominator,get(result,'positive').score,get(result,'positive').waiting],[1,1,100,2],'No note yet: the won visit is «إيجابية» by itself, the open and the lost ones wait');
+result=calculateKpis(performance(),month,customers,sales,assessment,prepareKpiRecords(customers,month,undefined,new Map([['v-open','negative'],['v-lost','effective']])),evidence);
+eq([get(result,'positive').numerator,get(result,'positive').denominator,get(result,'positive').score,get(result,'positive').waiting],[2,3,66.67,0],'The notes decide, not the customer\'s stage: the open visit «سلبية», the lost customer\'s visit «فعالة»');
 ok(!get(result,'positive').reason.includes('gscoinvest'),'The reason no longer names gscoinvest');
 // ---- 3. «بلا نشاط في هذا الشهر – خارج التقييم»
 const quiet=(context,{p=performance(targetState(),[]),records=[],items=[],when=month}={})=>calculateKpis(p,when,records,items,assessment,undefined,context);

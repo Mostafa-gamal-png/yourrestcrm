@@ -4,7 +4,7 @@ import {regionScope} from './regions';
 import {context,CRMError,accessGuard} from './crm-server';
 import {today} from './crm';
 import {type Sale,type SaleRow,monthSchema,salesReadMemberIds,salesReportingRecords} from './sales';
-import {calculateKpis,prepareKpiRecords,kpiPeriod,kpiInputSchema,quoteConversions,type KpiAssessment,type KpiData,type KpiPerformance,type KpiQuoteCandidate,type KpiQuoteInvoice} from './kpis';
+import {calculateKpis,prepareKpiRecords,kpiPeriod,kpiVisits,kpiInputSchema,quoteConversions,type KpiAssessment,type KpiData,type KpiPerformance,type KpiQuoteCandidate,type KpiQuoteInvoice} from './kpis';
 import {storedQuotationRefs} from './quotation-refs';
 import {recordAuthorId} from './access';
 import {visitCustomer} from './customer-visits';
@@ -17,6 +17,7 @@ import {evidenceScopeKey,type KpiEvidenceContext} from './kpi-evidence';
 import {readKpiPurchaseHistory,isKpiIssuedQuote,isValidKpiConversion} from './kpi-history-server';
 import {effectiveSet,defaultActivityTargets,type ActivityTargets,type TargetState} from './targets';
 import {erpRepResolver,resolveErpRep} from './new-customers';
+import {chosenEntryRatings} from './supervisor-reviews-server';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function kpiData(c:Context,month:string,performance:KpiPerformance[],targets?:TargetState):Promise<KpiData>{
  const period=kpiPeriod(month),allowed=salesReadMemberIds(c.members,c.me,true);
@@ -42,7 +43,9 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
  // «العملاء الجدد»: the representative an ERP customers file named, as a member (the ERP employee mappings, else an exact full name).
  const resolver=erpRepResolver(employeeMappings.results,c.members);
  const attribute=(erpRep:unknown)=>resolveErpRep(erpRep,resolver);
- const records=salesReportingRecords(c.visible,c.members),prepared=prepareKpiRecords(records,month,attribute);
+ // «نسبة الزيارات الفعالة»: the supervisor's evaluation of every visit of the month the reader sees, as the notes read it.
+ const records=salesReportingRecords(c.visible,c.members),ratings=await chosenEntryRatings(c.db,kpiVisits(records,period).map(row=>row.id));
+ const prepared=prepareKpiRecords(records,month,attribute,ratings);
  // The month's quotations: every quote record the reader sees (sent, accepted or rejected: issued; a draft is not), of a customer of the
  // reader's regions, dated in the month up to its cutoff, attributed to its author (the representative an ERP quotation is mapped to),
  // unless «بيانات المؤشرات» assigned it to a representative explicitly: then to that one.

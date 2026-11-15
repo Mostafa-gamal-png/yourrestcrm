@@ -7,6 +7,7 @@ import {type KpiEvidenceContext,type KpiQuotationDetail} from './kpi-evidence';
 import {quotationRefKey} from './quotation-refs';
 import {coverageReason,type CoverageMissing} from './sales-coverage';
 import {newCustomerCredits,newCustomersOf,type ErpRepAttribution} from './new-customers';
+import {entryRatingOf,saleEntry} from './supervisor-reviews';
 export const operationalIndicators=[
  {id:'attainment',name:'تحقيق المستهدف البيعي',weight:25,axis:'sales'},
  {id:'collection',name:'التحصيل',weight:20,axis:'collection'},
@@ -40,8 +41,9 @@ export const NEW_CUSTOMERS_REASON='العملاء الجدد خلال الشهر
 export const roundKpi=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 export const boundedScore=(n:number)=>Math.max(0,Math.min(100,n));
 /** missing: present only while a KPI waits for complete ERP sales imports (lib/sales-coverage.ts): the months to upload, so the page
- *  writes them in the reader's language (kpiMetricReason); reason holds the same in Arabic. */
-export type KpiMetric={id:IndicatorId;score:number|null;points:number|null;numerator:number|null;denominator:number|null;reason:string;source:'automatic'|'management'|'required';status?:'scored'|'missing'|'not_applicable';missing?:CoverageMissing};
+ *  writes them in the reader's language (kpiMetricReason); reason holds the same in Arabic. waiting: «نسبة الزيارات الفعالة» only, the
+ *  visits of the month the supervisor has not evaluated yet (left out of its ratio; the reason names them too). */
+export type KpiMetric={id:IndicatorId;score:number|null;points:number|null;numerator:number|null;denominator:number|null;reason:string;source:'automatic'|'management'|'required';status?:'scored'|'missing'|'not_applicable';missing?:CoverageMissing;waiting?:number};
 /** The text of a KPI's «طريقة الحساب / البيانات المطلوبة» in the reader's language. */
 export function kpiMetricReason(m:Pick<KpiMetric,'reason'|'missing'>,translate:(value:string)=>string,language:'ar'|'en'='ar'){return m.missing&&language==='en'?coverageReason(m.missing,'en'):translate(m.reason);}
 export function metric(id:IndicatorId,score:number|null,reason:string,source:KpiMetric['source']='automatic',numerator:number|null=null,denominator:number|null=null,status?:KpiMetric['status']):KpiMetric{const value=status==='not_applicable'||score===null||!Number.isFinite(score)?null:roundKpi(boundedScore(score));return{id,score:value,points:value===null?null:roundKpi(value*operationalIndicators.find(i=>i.id===id)!.weight/100),numerator,denominator,reason,source,status:status==='not_applicable'?'not_applicable':value===null?'missing':'scored'};}
@@ -58,7 +60,20 @@ export const qualityFields=[['name','الاسم'],['region','المنطقة'],['
 const filled=(value:unknown)=>typeof value==='string'?value.trim()!=='':typeof value==='number'&&Number.isFinite(value);
 export function customerFilledFields(data:Record<string,unknown>|null|undefined){const d=data||{};return qualityFields.filter(([key])=>key==='place'?filled(d.location)||filled(d.shortAddress)||filled(d.address)||(filled(d.latitude)&&filled(d.longitude)):filled(d[key])).length;}
 export const QUALITY_REASON='عملاء المندوب المسندون إليه في النظام: الحقول المكتملة ÷ (عدد العملاء × 7). الحقول السبعة: الاسم، والمنطقة، والمدينة، والهاتف، واسم المسؤول، ونوع العميل، والموقع (اللوكيشن أو العنوان المختصر أو العنوان). يُحسب تلقائيًا من بيانات العملاء الحالية، ولا ينطبق على من ليس له عملاء.';
-export const POSITIVE_REASON='زيارات الشهر لعملاء مرحلتهم الحالية ليست «تم الفقد» ÷ جميع زيارات الشهر. تُعدّ زيارة العميل الذي تم الفوز به فعالة.';
+/** «نسبة الزيارات الفعالة» (the owner, 2026-11-15: «موافق تمام», relayed from the GSCO conversation; it replaces the rule of 2026-11-14,
+ *  which read the customer's stage): each visit of the month counts by the supervisor's evaluation of it, read exactly as the notes read it
+ *  (lib/supervisor-reviews.ts entryRatingOf and saleEntry: the choice kept in the note's audit row, «إيجابية» from the visit itself).
+ *  «فعالة» or «إيجابية» (the visit that records the sale, even with no note) is effective, «سلبية» is not, and a visit not evaluated yet
+ *  is left out of the ratio and counted as waiting. Score = effective ÷ evaluated; with none evaluated the indicator is missing (left out
+ *  of the score from the data there is, kpiSummary), never a zero. ratings: the chosen evaluation of each visit with a note (absent: no
+ *  note; anything else than «فعالة» or «سلبية»: none). */
+export function visitEvaluations(visits:readonly Row[],ratings:ReadonlyMap<string,unknown>){
+ let effective=0,negative=0,waiting=0;
+ for(const visit of visits){const rating=entryRatingOf(saleEntry(visit.data),ratings.get(visit.id));if(rating==='effective'||rating==='positive')effective++;else if(rating==='negative')negative++;else waiting++;}
+ return{effective,negative,rated:effective+negative,waiting};
+}
+export const positiveReason=(waiting:number)=>`الزيارات التي قيّمها المشرف «فعالة» أو «إيجابية» (تم البيع) ÷ الزيارات التي قيّمها. زيارات بانتظار تقييم المشرف: ${waiting}.`;
+export const positiveUnratedReason=(waiting:number)=>`لم يقيّم المشرف زيارات هذا الشهر بعد. زيارات بانتظار تقييم المشرف: ${waiting}.`;
 export const INACTIVE_TEXT='بلا نشاط في هذا الشهر – خارج التقييم';
 export function kpiPeriod(month:string){const first=month+'-01',now=today(),end=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10),cutoff=end<now?end:now;const previous=new Date(first+'T12:00:00Z');previous.setUTCMonth(previous.getUTCMonth()-1);const prior=previous.toISOString().slice(0,7),days=new Date(Date.UTC(previous.getUTCFullYear(),previous.getUTCMonth()+1,0)).getUTCDate(),last=month===now.slice(0,7)?Math.min(Number(now.slice(8,10)),days):days;return{first,cutoff,previousFirst:prior+'-01',previousEnd:prior+'-'+String(last).padStart(2,'0')};}
 export type KpiAssessment={memberId:string;month:string;input:KpiInput;version:number;updatedAt:string;updatedBy:string};
@@ -92,15 +107,21 @@ export function quoteConversions(quotes:KpiQuoteCandidate[],invoices:KpiQuoteInv
  });
 }
 export type KpiData={month:string;period:ReturnType<typeof kpiPeriod>;people:KpiPerson[];canManage:boolean};
+/** The visits «الزيارات الفعلية» and «نسبة الزيارات الفعالة» count: the activities of type «زيارة» (a visit, or a follow-up recorded as a
+ *  visit) dated in the period up to its cutoff, by the people of ids (performed by, else responsible); every person's when ids is omitted. */
+export function kpiVisits(records:readonly Row[],period:{first:string;cutoff:string},ids?:ReadonlySet<string>){
+ return records.filter(r=>r.kind==='activity'&&(!ids||ids.has(r.data.performedBy||r.data.responsibleId))&&r.data.type==='visit'&&r.data.date>=period.first&&r.data.date<=period.cutoff);
+}
 /** `attribute` names the CRM member of a customer's ERP representative (lib/new-customers.ts); without it a customer with an ERP date
- *  is credited to its current responsible. */
-export function prepareKpiRecords(records:Row[],month:string,attribute?:ErpRepAttribution){
+ *  is credited to its current responsible. `ratings`: the supervisor's chosen evaluation of the month's visits (lib/supervisor-reviews-
+ *  server.ts chosenEntryRatings), for «نسبة الزيارات الفعالة»; without it no visit has a note. */
+export function prepareKpiRecords(records:Row[],month:string,attribute?:ErpRepAttribution,ratings:ReadonlyMap<string,unknown>=new Map()){
  const indexed=new Map(records.map(r=>[r.id,r])),customers=records.filter(r=>r.kind==='customer'),buckets=new Map<string,Row[]>(),customerIds=new Map<string,string>();
  for(const r of records){let root:Row|undefined=r;for(let n=0;root&&root.kind!=='customer'&&n<5;n++)root=root.parentId?indexed.get(root.parentId):undefined;if(root?.kind!=='customer')continue;customerIds.set(r.id,root.id);const bucket=buckets.get(root.id)||[];bucket.push(r);buckets.set(root.id,bucket);}
  const contacts=new Map(customers.map(c=>[c.id,customerVisits(c.id,buckets.get(c.id)||[]).reverse()])),plans=new Map(customers.map(c=>[c.id,customerPlanSource(c.id,buckets.get(c.id)||[])]));
  // «العملاء الجدد»: added by hand in the month, or created in the ERP in the month (lib/new-customers.ts), each customer once.
  const newCustomers=newCustomerCredits(customers,kpiPeriod(month),attribute);
- return{customers,buckets,customerIds,contacts,plans,newCustomers};
+ return{customers,buckets,customerIds,contacts,plans,newCustomers,ratings};
 }
 export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:Sale[],assessment:KpiAssessment|null,prepared=prepareKpiRecords(records,month),evidence?:KpiEvidenceContext){
  const period=kpiPeriod(month),ids=new Set(p.sourceMemberIds),saleIds=new Set(p.salesSourceMemberIds),input=assessment?.input||emptyKpiInput(),ratio=(a:number,b:number)=>b>0?a/b*100:null;
@@ -140,11 +161,11 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
  for(const quote of evidence?.quotationsKnown?evidence.quotations:[]){const prior=quotationMap.get(quote.quoteId),invoices=[...new Set([...(prior?.invoices||[]),...(quote.invoices||[])])],via=[...new Set([...(prior?.via||[]),...(quote.via||[])])];quotationMap.set(quote.quoteId,{number:'',date:'',repId:'',customerName:'',...prior,...quote,converted:!!prior?.converted||quote.converted,invoices,via});}
  const converted=[...quotationMap.values()].filter(q=>q.converted).length;
  const collection=evidence?.collection,validCollection=!!collection&&Number.isFinite(collection.dueCents)&&Number.isFinite(collection.collectedCents)&&collection.dueCents>=0&&collection.collectedCents>=0&&(collection.dueCents>0||collection.collectedCents===0);
- const visits=records.filter(r=>r.kind==='activity'&&ids.has(r.data.performedBy||r.data.responsibleId)&&r.data.type==='visit'&&r.data.date>=period.first&&r.data.date<=period.cutoff);
+ const visits=kpiVisits(records,period,ids);
  const stage=(r:Row|undefined)=>r?.data.salesStage||r?.data.stage||'new';
  const {customers,plans}=prepared;
- // «نسبة الزيارات الفعالة» (the owner, 2026-11-14: «البيع يتحسب فعالة»): a visit is effective unless its customer is lost now; won counts.
- const positive=visits.filter(v=>{const id=prepared.customerIds.get(v.id);return id&&stage(plans.get(id))!=='lost';}).length;
+ // «نسبة الزيارات الفعالة» (the owner, 2026-11-15: «موافق تمام»): by the supervisor's evaluation of each visit (visitEvaluations).
+ const evaluated=visitEvaluations(visits,prepared.ratings);
  // «دقة واكتمال البيانات»: the filled fields of the person's customers out of seven each.
  const ownCustomers=customers.filter(c=>ids.has(c.assignedTo)),filledFields=ownCustomers.reduce((n,c)=>n+customerFilledFields(c.data),0);
  let qualified=0,quoted=0,lost=0,documented=0;
@@ -167,7 +188,7 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
   (()=>{const state=waiting('recovered',recoveredReady,historyReason);return withMissing(countMetric('recovered',recoveredReady?recovered:null,evidence?.recoveryTarget??null,recoveredReady?'عملاء اشتروا قديمًا، وتوقفوا ثلاثة أشهر كاملة، ثم عادوا للشراء هذا الشهر ÷ مستهدف الاسترداد.'+automaticNote('recovered'):state.reason,recoveredReady?'automatic':'required'),state);})(),
   (()=>{const state=waiting('retention',retentionReady,historyReason);return withMissing(countMetric('retention',retentionReady?retained:null,retentionReady?priorBuyers.size:null,retentionReady?'المشترون هذا الشهر من عملاء الأشهر الثلاثة السابقة ÷ جميع عملاء تلك الأشهر.'+automaticNote('retention'):state.reason,retentionReady?'automatic':'required'),state);})(),
   countMetric('visits',p.activityTargetsKnown===false?null:visits.length,p.activityTargetsKnown===false?null:p.activityTargets.visits,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':'الزيارات المسجلة والمتابعات من نوع زيارة فقط ÷ مستهدف الزيارات.'),
-  countMetric('positive',positive,visits.length,POSITIVE_REASON),
+  {...(!visits.length?metric('positive',null,positiveReason(0),'automatic',0,0,'not_applicable'):evaluated.rated?metric('positive',ratio(evaluated.effective,evaluated.rated),positiveReason(evaluated.waiting),'automatic',evaluated.effective,evaluated.rated):metric('positive',null,positiveUnratedReason(evaluated.waiting),'required')),waiting:evaluated.waiting},
   countMetric('quotes',quoted,qualified,'العملاء الذين بدأ تواصلهم في الشهر، وما زالوا في مرحلة مفتوحة، وتأهلوا بجمع المواصفات أو المراجعة الفنية: مَن سُجّل لهم عرض بعد التأهيل ÷ جميع المؤهلين.'),
   countMetric('orders',evidence?.quotationsKnown?converted:null,evidence?.quotationsKnown?quotationMap.size:null,evidence?.quotationsKnown?'عروض الأسعار الصادرة في الشهر والمسندة للمندوب (المرسلة والمقبولة والمرفوضة، ومنها المستوردة من ERP): المحوَّل منها ÷ جميعها. يُعدّ العرض محوَّلًا إذا ذكر عمود «الوصف» رقمه في فاتورة بيع مؤكدة من ERP للمندوب نفسه بتاريخ العرض أو بعده، أو إذا ربطته الإدارة بفاتورة بيع في «بيانات المؤشرات». لا تُحتسب المرتجعات.':'لا يوجد فريق مبيعات مؤهل لحساب المؤشر.',evidence?.quotationsKnown?'automatic':'required'),
   countMetric('quality',filledFields,ownCustomers.length*qualityFields.length,QUALITY_REASON),

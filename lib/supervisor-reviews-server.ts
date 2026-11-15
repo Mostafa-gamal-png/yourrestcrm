@@ -83,6 +83,14 @@ export async function entryReviews(db:D1Database,activityIds:readonly string[]):
  if(!activityIds.length)return [];
  return (await db.prepare(`SELECT ${entryColumns} FROM crm_daily_entry_reviews r LEFT JOIN crm_members reviewer ON reviewer.id=r.reviewed_by LEFT JOIN crm_records ea ON ea.id=r.activity_id AND ea.kind='activity' WHERE r.activity_id IN (SELECT value FROM json_each(?)) ORDER BY r.activity_id`).bind(JSON.stringify([...activityIds])).all<EntryReview&{sale:number;chosen:unknown}>()).results.map(({sale,chosen,...row})=>({...numbered(row),rating:entryRatingOf(Number(sale)===1,chosen)}));
 }
+/** The evaluation chosen on the notes of these activities, as the notes read it (chosenRatingSql: the note's last save): activity id ->
+ *  the stored choice (null on a note saved before the evaluation existed); an activity with no note is absent. For «نسبة الزيارات الفعالة»
+ *  (lib/kpis.ts visitEvaluations turns it into the visit's evaluation with entryRatingOf and saleEntry, as entryReviews does). */
+export async function chosenEntryRatings(db:D1Database,activityIds:readonly string[]):Promise<Map<string,unknown>>{
+ if(!activityIds.length)return new Map();
+ const rows=(await db.prepare(`SELECT r.activity_id AS activityId,${chosenRatingSql} AS chosen FROM crm_daily_entry_reviews r WHERE r.activity_id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify([...new Set(activityIds)])).all<{activityId:string;chosen:unknown}>()).results;
+ return new Map(rows.map(row=>[row.activityId,row.chosen]));
+}
 export async function dayReview(db:D1Database,memberId:string,date:string):Promise<DayReview|null>{
  const row=await db.prepare(`SELECT ${dayColumns} FROM crm_daily_report_reviews r LEFT JOIN crm_members reviewer ON reviewer.id=r.reviewed_by WHERE r.member_id=? AND r.date=?`).bind(memberId,date).first<DayReview>();
  return row?numbered(row):null;
