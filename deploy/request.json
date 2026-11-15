@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-ReviewsCompleteRetry-20261115.zip",
-  "sha256": "4086723f77fe778f7e651e5b1ed885922a80fec90957253fb19f75665d982819",
-  "stage": "yourrest-crm-update-reviews-retry-20261115",
-  "helper": "yourrest-activate-update-reviews-complete.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-RedCard-20261115.zip",
+  "sha256": "bc17af7a3a090ff0aa0ddd5715bbcb1e7b945277b16a99948c9d134e7e8ca70e",
+  "stage": "yourrest-crm-update-red-card-20261115",
+  "helper": "yourrest-activate-update-red-card.cjs"
 }
