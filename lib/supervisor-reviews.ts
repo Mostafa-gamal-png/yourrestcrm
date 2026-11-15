@@ -43,8 +43,9 @@ export function reviewTextProblem(value:unknown):'short'|'long'|null{
  * المندوب يختار فعالة - سلبية ده بالاضافة للنتيجة والاجراء ... وايجابية لو تم البيع ودى النظام بيعملها لواحده»): beside the result and the
  * action the reviewer chooses «فعالة» or «سلبية»; the visit or contact that records the sale is «إيجابية» by itself and takes no choice.
  * No new column: the choice is kept in the note's own audit row (crm_daily_entry_reviews.mutation_id -> crm_audit.detail.after.rating),
- * and «إيجابية» is read from the activity as it is now. '' = a note saved before the evaluation existed. A whole-day note has none. It is
- * not part of any KPI (GSCO's «نسبة الزيارات الفعالة» does not read it either; lib/kpis.ts is unchanged). */
+ * and «إيجابية» is read from the activity as it is now. '' = a note saved before the evaluation existed. A whole-day note has none. Since
+ * 2026-11-15 («موافق تمام») it is what «نسبة الزيارات الفعالة» counts (lib/kpis.ts visitEvaluations, through entryRatingOf and saleEntry
+ * below and supervisor-reviews-server.ts chosenEntryRatings): «فعالة» or «إيجابية» effective, «سلبية» not, none yet waiting. */
 export const CHOSEN_RATINGS=['effective','negative'] as const;
 export type ChosenRating=typeof CHOSEN_RATINGS[number];
 export type EntryRating=''|'positive'|ChosenRating;

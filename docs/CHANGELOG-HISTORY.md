@@ -4,6 +4,51 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «نسبة الزيارات الفعالة» from the supervisor's evaluation (2026-11-15, not released yet, no migration)
+
+- **Asked.** The owner approved it in the GSCO conversation on 2026-11-15: «موافق تمام». The effective-visits indicator is now computed
+  from the supervisor's evaluation of each visit, not from the opportunity's state. It replaces the rule shipped on 2026-11-14 («البيع
+  يتحسب فعالة»: a visit was effective unless its customer's current stage was «تم الفقد», a won customer's visit counting as effective).
+- **The rule** (`lib/kpis.ts`: `visitEvaluations`, `positiveReason`, `positiveUnratedReason`, `kpiVisits`). The visits are the same set
+  as before: activities of type «زيارة» (a visit, or a follow-up recorded as one) of the month up to its cutoff, by the person (performed
+  by, else responsible) or by the team of a roll-up; `kpiVisits` now holds that filter for «الزيارات الفعلية» and this indicator alike.
+  Only how each visit counts changed. Each is read exactly as the notes read it, with no second definition: `entryRatingOf(saleEntry(visit),
+  chosen)` of `lib/supervisor-reviews.ts`, where `chosen` is the `after.rating` of the audit row of the note's last save
+  (`chosenEntryRatings` in `lib/supervisor-reviews-server.ts`, the notes' own `chosenRatingSql` through `crm_daily_entry_reviews.mutation_id`).
+  «فعالة» or «إيجابية» is effective. «إيجابية» is derived, never stored: the visit whose own activity records the sale (stage «تم الفوز», or
+  the follow-up says «نعم، تحوّل إلى فاتورة», never a lost one), effective even with no note. «سلبية» is not effective. A visit with no note,
+  or a note saved before the evaluation existed (no `rating` in its audit row), or a stored «إيجابية» on a visit that is no longer a sale,
+  is left out of the ratio and counted as waiting. Score = effective ÷ evaluated, the reason: «الزيارات التي قيّمها المشرف «فعالة» أو
+  «إيجابية» (تم البيع) ÷ الزيارات التي قيّمها. زيارات بانتظار تقييم المشرف: N.» With visits and none evaluated, the indicator is missing
+  (no score and no figures, «بيانات مطلوبة», named under «بيانات ناقصة», its 2% left out of the score from the data there is, as missing
+  data has been since 2026-11-14, never a zero): «لم يقيّم المشرف زيارات هذا الشهر بعد. زيارات بانتظار تقييم المشرف: N.» With no visit
+  at all it stays «لا ينطبق». The metric carries `waiting` (the visits not evaluated yet). An evaluation changed later counts as it is now
+  (the last save). Who wrote the note does not matter (a supervisor, a sales manager or the administrator), and a visit keeps its
+  evaluation when its representative moves to another team; who may write one is unchanged (a supervisor of another team is refused, 403).
+- **Readers checked.** The indicator's card and its «طريقة الحساب» / «البيانات المطلوبة / طريقة الحساب» (`app/kpi-performance.tsx`, no code
+  change: the source, the score, the figures and the reason come from the server), the comparison table, the overview cards, the summary
+  card of the targets hub and the yellow notice (through `kpiSummary`: a missing indicator is named and leaves its weight out), «تصدير
+  التقييم» (`lib/targets-export.ts`, no code change: an empty score and points while missing, the reason line with the waiting count, in
+  English too). English: two patterns in `lib/locales/en.json` («... Visits awaiting the supervisor's rating: {0}.»); the old reason's key
+  is kept, unused, so the dictionary only gains keys. `lib/supervisor-reviews.ts` no longer says the evaluation feeds no KPI, and the guard
+  of `tests/supervisor-reviews-complete.mjs` now checks the KPI reads it through `lib/supervisor-reviews*.ts` only.
+- **Finished months.** Nothing freezes KPI results in Yourrest: only a finished month's targets are locked (`lib/targets.ts`
+  `targetMonthClosed`, administrator only); every month's indicators are recomputed live from the current data on each read
+  (`GET /api/sales?kpis=1`, no stored result). So the new rule applies to earlier months as soon as it is released: their visits carry no
+  evaluation (it exists since this morning's release), so their «نسبة الزيارات الفعالة» shows «بيانات مطلوبة» with all their visits
+  waiting, and their overall score is computed without that 2% («غير مكتمل»), until a reviewer evaluates them (a note on an earlier day's
+  visit counts for that month). Nothing is lost: going back to the previous code brings the old figures back.
+- **Deviations.** None from the four GSCO cases. GSCO 2.13.74 (the copy here) predates the change, so the code follows the owner's text and
+  GSCO's cases, not GSCO's source. Zero visits stays «لا ينطبق» (not missing), as every count indicator does.
+- **Tested.** `tests/kpi-effective-visits.mjs` (new, default gate, 89 checks: GSCO's four cases, an evaluation changed later, an old note
+  without one, a supervisor of another team, a member moved to another team, calls and other months, the export and English, the real
+  routes on a migrated SQLite, a closed month recomputed live, one definition), `tests/kpi-effective-visits-http.mjs` (new, built release,
+  58), `tests/kpi-effective-visits-browser.mjs` (new, Chromium at 360 px Arabic and English and a desktop, 20, screenshots); updated
+  `tests/kpi-complete-domain.mjs` (100: yesterday's rule replaced) and `tests/supervisor-reviews-complete.mjs` (173: the guard). The
+  release gates (`node scripts/gates.mjs`, a full selection because `tests/check-manifest.json` and `tests/test-areas.json` changed): 91
+  passed, 1 flaky (`service-queue-browser`, passed alone; flaky in earlier runs too), 4 skipped (the owner's ERP files); the default gate
+  195/195 (TypeScript and ESLint included: 0 errors, the 160 warnings of the baseline; the touched files have none); `tests/msa-wording.mjs`
+  passed.
 ## The supervisor's red card, and the result required on a new opportunity (2026-11-15, not released yet, no migration)
 
 - **Asked.** Two changes the owner asked for in the GSCO conversation, relayed for Yourrest: «عايز يبان للمشرف كارد لونه احمر بزيارات ومتابعات بلا

@@ -64,8 +64,9 @@ eq([migrations.length,migrations.at(-1)],[21,'0020_member_permissions.sql'],'no 
 const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
 for(const name of migrations)sql.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));
 eq(sql.prepare('PRAGMA table_info(crm_daily_entry_reviews)').all().map(column=>column.name),['activity_id','member_id','date','result','action','reviewed_by','version','mutation_id','created_at','updated_at'],'the review table has no new column');
+// Since 2026-11-15 («موافق تمام») «نسبة الزيارات الفعالة» counts the evaluation (tests/kpi-effective-visits.mjs), through these modules only.
 const kpis=fs.readFileSync(path.join(root,'lib/kpis.ts'),'utf8')+fs.readFileSync(path.join(root,'lib/kpis-server.ts'),'utf8');
-ok(!/crm_daily_entry_reviews|supervisor-reviews|\$\.after\.rating/.test(kpis),'the KPIs read nothing of the evaluation (GSCO\'s «نسبة الزيارات الفعالة» does not either)');
+ok(/from '\.\/supervisor-reviews'/.test(kpis)&&/from '\.\/supervisor-reviews-server'/.test(kpis)&&!/crm_daily_entry_reviews|\$\.after\.rating/.test(kpis),'the KPIs read the evaluation through lib/supervisor-reviews*.ts, never a reading of their own');
 
 // ---- 3. The routes on an isolated database.
 class Statement{constructor(q,a=[]){this.q=q;this.a=a;}bind(...a){return new Statement(this.q,a);}async run(){const r=sql.prepare(this.q).run(...this.a);return{meta:{changes:Number(r.changes)}};}async all(){return{results:sql.prepare(this.q).all(...this.a)};}async first(){return sql.prepare(this.q).get(...this.a)||null;}}

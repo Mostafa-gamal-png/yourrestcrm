@@ -1525,5 +1525,7 @@
   "اكتب نتيجة التواصل قبل حفظ الفرصة (3 أحرف على الأقل).": "Write the contact result before saving the opportunity (at least 3 letters).",
   "اكتب الإجراء القادم قبل حفظ الفرصة.": "Enter the next action before saving the opportunity.",
   "حدد موعد المتابعة قبل حفظ الفرصة.": "Set the follow-up date before saving the opportunity.",
-  "بطاقة الزيارات والمتابعات بلا نتيجة أو إجراء متاحة للمشرف ومدير المبيعات فقط.": "The card of visits and follow-ups with no result or action is for supervisors and sales managers only."
+  "بطاقة الزيارات والمتابعات بلا نتيجة أو إجراء متاحة للمشرف ومدير المبيعات فقط.": "The card of visits and follow-ups with no result or action is for supervisors and sales managers only.",
+  "الزيارات التي قيّمها المشرف «فعالة» أو «إيجابية» (تم البيع) ÷ الزيارات التي قيّمها. زيارات بانتظار تقييم المشرف: {0}.": "Visits the supervisor rated «Effective» or «Positive» (sold) ÷ the visits they rated. Visits awaiting the supervisor's rating: {0}.",
+  "لم يقيّم المشرف زيارات هذا الشهر بعد. زيارات بانتظار تقييم المشرف: {0}.": "The supervisor has not rated any visit this month yet. Visits awaiting the supervisor's rating: {0}."
 }
