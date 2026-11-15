@@ -9,6 +9,9 @@ import {activityFields,quantityNumber,targetProducts} from '@/lib/targets';
 import TargetGauge from './target-gauge';
 import './my-targets.css';
 
+/** lib/kpis.ts INACTIVE_TEXT, written here so this page does not load the evaluation's code (tests/kpi-leave-months.mjs checks they agree). */
+const INACTIVE_TEXT='بلا نشاط في هذا الشهر – خارج التقييم';
+
 type Props={me:Member;month:string;onMonthChange:(month:string)=>void};
 type LoadState={key:string;phase:'loading'|'ready'|'error';data?:OwnTargets;error?:string};
 
@@ -18,7 +21,7 @@ export function MyTargetDetails({data}:{data:OwnTargets}){
  const ongoingSource=(month:string)=>say('ساري من شهر ','Effective from ')+month;
  const activitySource=data.activity.isDefault?say('المستهدفات الافتراضية','Default targets'):data.activity.sourceMonth?ongoingSource(data.activity.sourceMonth):'';
  const labels={target:say('المستهدف المطلوب','Required target'),actual:say('صافي المباع','Net sold'),remaining:say('المتبقي','Remaining'),achievement:say('نسبة التحقيق','Achievement')};
- return <div className="my-targets-details"><section className="panel my-targets-panel" aria-labelledby="my-sales-targets-title"><header><div><h2 id="my-sales-targets-title">{say('مستهدفي وما حققته','My targets and achievement')}</h2></div><span className="my-targets-month" dir="ltr">{data.month}</span></header>
+ return <div className="my-targets-details">{data.inactive&&<p className="my-targets-inactive" role="status" data-kpi-inactive=""><strong>{t(INACTIVE_TEXT)}</strong> <span>{say('لا توجد في هذا الشهر المغلق زيارات ولا متابعات ولا عملاء أضفتهم ولا مبيعات مؤكدة، ومبيعاته مكتملة (إجازة أو انقطاع). لا يُحتسب الشهر عليك في التقييم، ولا يدخل ضمن أشهر المقارنة لمؤشري الحفاظ على العملاء والعملاء المستردين.','No visits, follow-ups, customers added or confirmed sales in this closed month, and its sales are complete (leave or absence). The month does not count against you in the evaluation, and is not one of the months compared for customer retention and reactivated customers.')}</span></p>}<section className="panel my-targets-panel" aria-labelledby="my-sales-targets-title"><header><div><h2 id="my-sales-targets-title">{say('مستهدفي وما حققته','My targets and achievement')}</h2></div><span className="my-targets-month" dir="ltr">{data.month}</span></header>
   {data.sales.sourceMonth&&<p className="my-targets-note my-targets-effective-source">{ongoingSource(data.sales.sourceMonth)}</p>}
   {!hasQuantities&&<p className="my-targets-note">{say('لم يُحدد مستهدف كميات الأصناف الساري في الشهر المعروض بعد.','No product quantity targets are effective for the displayed month yet.')}</p>}
   <p className="my-targets-note" id="my-sales-coverage">{data.sales.actualsAvailable?say('صافي المباع بعد المرتجعات. الصفر يعني عدم وجود مبيعات مسجلة للصنف.','Net sold is after returns. Zero means no recorded sales for this product.'):say('الشهر المحدد لم يبدأ بعد؛ يظهر المستهدف فقط.','The selected month has not started; only targets are shown.')}</p>

@@ -40,6 +40,10 @@ try{
  await db.prepare('INSERT INTO crm_settings(id,owner_id) VALUES(?,?)').bind('company','opaque-owner').run();
  async function record(id,kind,parent,payload){await db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id,kind,parent,'rep','Main',JSON.stringify(payload),created,created).run();}
  await record('customer','customer',null,{name:'مصنع اختبار المؤشرات — بيانات توضيحية',code:'QA-C001',region:'الغربية',city:'جدة',customerType:'مصنع',_createdBy:'rep'});
+ // The representative visits in February and March 2025 (2026-11-15, lib/kpi-baseline.ts): the customer above, added by hand in January 2024,
+ // makes January 2024 a worked month, so a covered month with no work after it is a leave and is skipped from the customers' comparison;
+ // with these visits February to April stay the months the history confirmation covers.
+ for(const day of ['2025-02-10','2025-03-10'])await record('visit-'+day,'activity','customer',{type:'visit',date:day,summary:'زيارة توضيحية',result:'العميل مهتم',performedBy:'rep',responsibleId:'rep',recordedByEmail:'rep@yourrest.org'});
  await record('quote','quote','customer',{number:'QA-Q001',performedBy:'rep',recordedByEmail:'rep@yourrest.org',date:month+'-05',status:'sent',items:[{description:'قالب توضيحي',quantity:1,price:100}],discount:0,taxRate:15,total:115});
  const item={product:products[0],description:'قالب توضيحي',quantity:1,unitPrice:100};
  for(const [id,date] of [['sale-prior','2025-04-10'],['sale-current',month+'-10']])await db.prepare("INSERT INTO crm_sales(id,customer_id,rep_id,branch,date,reference,reference_key,data,total_cents,status,void_reason,version,mutation_id,create_fingerprint,created_by,created_at,updated_at) VALUES(?,'customer','rep','Main',?,?,?,?,10000,'confirmed','',1,'fixture','fixture','owner',?,?)").bind(id,date,id,id,JSON.stringify({items:[item],discount:0,notes:''}),created,created).run();

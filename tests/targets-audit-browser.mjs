@@ -85,6 +85,12 @@ try {
   await sale('rep3', 'c3', 'C-LAST', [[0, 2, 100]], prevLast);
   await sale('repj', 'cj', 'J-1', [[0, 5, 100], [1, 2, 100]]);
   await sale('rep1', 'c1', 'P-1', [[0, 4, 100]], prev + '-05');
+  // rep1 sold four months ago and visited in the two months after it (2026-11-15, lib/kpi-baseline.ts, GSCO 2.13.50 and 2.13.51): a
+  // representative with no work and no sales document before the three compared months is new, and «العملاء المستردون» does not apply to them
+  // yet; a confirmed month without work after their first is a leave and is skipped. With these rep1 is established and the three months
+  // before this one are compared, so the hand count below (recovered 0 of the target, retention 1 of 1) holds.
+  await sale('rep1', 'c1', 'P-OLD', [[0, 1, 100]], shift(-4) + '-05');
+  for (const m of [shift(-3), shift(-2)]) await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'activity','c1','rep1','الرئيسي',?,?,?,1,'fixture')").bind('visit-' + m, JSON.stringify({type: 'visit', date: m + '-10', summary: 'زيارة', result: 'العميل مهتم', performedBy: 'rep1', responsibleId: 'rep1', recordedByEmail: 'rep1@yourrest.org'}), created, created).run();
   const now = new Date().toISOString();
   await app.db.prepare("INSERT INTO crm_erp_imports(id,actor_id,fingerprint,file_name,result,created_at) VALUES('imp','owner','f','sales.xlsx','{}',?)").bind(now).run();
   let n = 0;

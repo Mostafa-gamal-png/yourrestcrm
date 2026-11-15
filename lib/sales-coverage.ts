@@ -23,8 +23,13 @@ export const salesCoverageEntrySchema=z.object({
  repIds:z.array(z.string().min(1).max(200)).max(5000),allReps:z.boolean(),importerId:z.string().max(200),importer:z.string().max(300),at:z.string().max(40),importId:z.string().max(300)
 }).refine(entry=>entry.from<=entry.to);
 export type SalesCoverageEntry=z.infer<typeof salesCoverageEntrySchema>;
-/** The months a KPI still needs, and the month before which one older complete month is needed (recovered customers). */
-export type CoverageMissing={months:string[];olderThan:string|null};
+/** The months a KPI still needs, and the month before which one older complete month is needed (recovered customers). uploadOnly: only an
+ *  ERP upload can give them (the customers' comparison reaches past the three months «بيانات المؤشرات» confirms, lib/kpi-baseline.ts), so
+ *  the sentence does not offer the manual confirmation. */
+export type CoverageMissing={months:string[];olderThan:string|null;uploadOnly?:true};
+/** How far back the customers' comparison looks (lib/kpi-baseline.ts CUSTOMER_LOOKBACK_MONTHS) and the months before it read for an earlier
+ *  worked month (recovered customers): the lookback window of SalesCoverageStatus. */
+export const COVERAGE_LOOKBACK_MONTHS=16;
 export type SalesCoverageStatus={
  /** The evaluation month: whole (a finished month), or from its first day (the month in progress). */
  current:boolean;
@@ -37,6 +42,11 @@ export type SalesCoverageStatus={
  /** «العملاء المستردون»: as retention, and one whole complete month before those three. */
  recovered:boolean;
  missing:{growth:CoverageMissing;retention:CoverageMissing;recovered:CoverageMissing};
+ /** For the customers' comparison over the months worked (lib/kpi-baseline.ts, GSCO 2.13.50): of the COVERAGE_LOOKBACK_MONTHS months before
+  *  the evaluation month, those every representative of the scope has wholly covered (whole) and those each has at least one covered day
+  *  of (touched), oldest first; firstWhole: the month from which every representative has a whole covered month (each one's first whole
+  *  covered month, the latest of them), null when one has none. */
+ lookback:{whole:string[];touched:string[];firstWhole:string|null};
 };
 
 const pad=(n:number)=>String(n).padStart(2,'0');
@@ -79,8 +89,15 @@ const covers=(ranges:{from:string;to:string}[],from:string,to:string)=>ranges.so
 export function salesCoverageStatus(entries:SalesCoverageEntry[],repIds:string[],month:string,period:{first:string;cutoff:string;previousFirst:string;previousEnd:string}):SalesCoverageStatus{
  const end=monthEnd(month),inProgress=period.cutoff<end,windowFirst=addMonths(month,-3),growthMonths=new Set<string>(),retentionMonths=new Set<string>();
  let current=repIds.length>0,growth=current,retention=current,older=current,through:string|null=current?period.cutoff:null,needOlder=false;
+ const lookbackMonths=Array.from({length:COVERAGE_LOOKBACK_MONTHS},(_,n)=>addMonths(month,-(n+1)));
+ let whole=null as Set<string>|null,touched=null as Set<string>|null,firstWhole=null as string|null,someWithout=!repIds.length;
  for(const repId of repIds){
   const ranges=coveredRanges(entries,repId);
+  const repWhole=new Set(lookbackMonths.filter(m=>covers(ranges,m+'-01',monthEnd(m)))),repTouched=new Set(lookbackMonths.filter(m=>ranges.some(range=>range.from<=monthEnd(m)&&range.to>=m+'-01')));
+  const keep=(set:Set<string>|null,rep:Set<string>)=>set?new Set([...set].filter(m=>rep.has(m))):rep;
+  whole=keep(whole,repWhole);touched=keep(touched,repTouched);
+  const repFirst=ranges.map(range=>range.from.endsWith('-01')?range.from.slice(0,7):addMonths(range.from.slice(0,7),1)).filter((startMonth,i)=>monthEnd(startMonth)<=ranges[i].to).sort()[0];
+  if(!repFirst)someWithout=true;else if(!firstWhole||repFirst>firstWhole)firstWhole=repFirst;
   const now=inProgress?ranges.find(range=>range.from<=period.first&&range.to>=period.first):ranges.find(range=>range.from<=period.first&&range.to>=period.cutoff);
   if(!now){current=false;growthMonths.add(month);retentionMonths.add(month);through=null;}
   else if(through!==null){const last=now.to<period.cutoff?now.to:period.cutoff;if(last<through)through=last;}
@@ -93,13 +110,16 @@ export function salesCoverageStatus(entries:SalesCoverageEntry[],repIds:string[]
  growth=growth&&current;retention=retention&&current;
  const sorted=(set:Set<string>)=>[...set].sort();
  return {current,through:current?through:null,growth,retention,recovered:retention&&older,
-  missing:{growth:{months:sorted(growthMonths),olderThan:null},retention:{months:sorted(retentionMonths),olderThan:null},recovered:{months:sorted(retentionMonths),olderThan:needOlder||!repIds.length?windowFirst:null}}};
+  missing:{growth:{months:sorted(growthMonths),olderThan:null},retention:{months:sorted(retentionMonths),olderThan:null},recovered:{months:sorted(retentionMonths),olderThan:needOlder||!repIds.length?windowFirst:null}},
+  lookback:{whole:sorted(whole||new Set()),touched:sorted(touched||new Set()),firstWhole:someWithout?null:firstWhole}};
 }
 
 const arabicMonths=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 const englishMonths=['January','February','March','April','May','June','July','August','September','October','November','December'];
 export function monthLabel(month:string,language:'ar'|'en'='ar'){return (language==='en'?englishMonths:arabicMonths)[Number(month.slice(5,7))-1]+' '+month.slice(0,4);}
 function list(items:string[],language:'ar'|'en'){if(items.length<2)return items.join('');return language==='en'?items.slice(0,-1).join(', ')+' and '+items[items.length-1]:items.slice(0,-1).join('، ')+' و'+items[items.length-1];}
+/** Months named in a sentence of the reader's language: «يونيو 2026، يوليو 2026 وسبتمبر 2026», "June 2026, July 2026 and September 2026". */
+export const monthList=(months:string[],language:'ar'|'en'='ar')=>list(months.map(month=>monthLabel(month,language)),language);
 /** The sentence a KPI shows while the sales history is not covered: the months to upload, named (the owner's example: «يلزم رفع مبيعات
  *  ERP كاملة لشهر أغسطس 2026»), then the two ways to complete it. The English is built here too (the dictionary cannot translate names). */
 export function coverageReason(missing:CoverageMissing,language:'ar'|'en'='ar'){
@@ -107,11 +127,11 @@ export function coverageReason(missing:CoverageMissing,language:'ar'|'en'='ar'){
  if(language==='en'){
   if(months.length)parts.push('Upload complete ERP sales for '+list(months,language)+'.');
   if(missing.olderThan)parts.push('Upload complete ERP sales for at least one month before '+monthLabel(missing.olderThan,language)+' to show earlier purchases.');
-  parts.push('Tick “The file includes all reps’ sales for the period it covers” when importing, or confirm the sales history manually in the KPI evidence.');
+  parts.push(missing.uploadOnly?'Tick “The file includes all reps’ sales for the period it covers” when importing.':'Tick “The file includes all reps’ sales for the period it covers” when importing, or confirm the sales history manually in the KPI evidence.');
  }else{
   if(months.length)parts.push('يلزم رفع مبيعات ERP كاملة '+(months.length===1?'لشهر ':'لأشهر ')+list(months,language)+'.');
   if(missing.olderThan)parts.push('يلزم رفع مبيعات ERP كاملة لشهر واحد على الأقل قبل '+monthLabel(missing.olderThan,language)+' لإثبات الشراء القديم.');
-  parts.push('حدّد «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» عند الرفع، أو أكّد اكتمال السجل يدويًا في «بيانات المؤشرات».');
+  parts.push(missing.uploadOnly?'حدّد «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» عند الرفع.':'حدّد «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها» عند الرفع، أو أكّد اكتمال السجل يدويًا في «بيانات المؤشرات».');
  }
  return parts.join(' ');
 }

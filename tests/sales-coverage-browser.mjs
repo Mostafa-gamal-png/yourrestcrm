@@ -55,6 +55,11 @@ const names=new Set([...members.map(m=>m.name),'جدة']);
 const arabicLeft=text=>text.split('\n').map(line=>line.trim()).filter(line=>/[؀-ۿ]/.test(line)).filter(line=>!line.split(/[·،,()|:←]| - /).map(part=>part.trim()).filter(Boolean).every(part=>names.has(part)||!/[؀-ۿ]/.test(part)));
 try{
  app=await bootBuiltApp({members},{tls:true});
+ // rep1 visits a customer in M-3 (2026-11-15, lib/kpi-baseline.ts): a covered month with neither a contact nor a sales document is a month
+ // without activity (a leave) and is skipped from the customers' comparison; with the visit, M-3..M-1 stay the months compared here.
+ {const earlier=M4+'-01T08:00:00.000Z',record=(id,kind,parent,data)=>app.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id,kind,parent,'rep1','جدة',JSON.stringify(data),earlier,earlier).run();
+  await record('c-visited','customer',null,{name:'مصنع الزيارة',region:'الشرقية',city:'الدمام'});
+  await record('v-m3','activity','c-visited',{type:'visit',date:shift(-4)+'-15',summary:'زيارة',result:'العميل مهتم',performedBy:'rep1',responsibleId:'rep1',recordedByEmail:'rep1@yourrest.org'});}
  const owner=app.as(await app.login('owner')),P=(await owner('/api/sales/import')).json().products;
  check((await owner('/api/targets',{method:'POST',body:{kind:'weights',scopeId:'company',month:M,version:0,inheritedFrom:null,requestId:crypto.randomUUID(),data:{products:P.map((product,i)=>({product,weight:i<2?50:0}))}}})).status,200,'weights of '+M);
  browser=await chromium.launch({headless:true,...(process.env.YR_BROWSER_EXECUTABLE?{executablePath:process.env.YR_BROWSER_EXECUTABLE}:{}),args:['--no-sandbox','--ignore-certificate-errors','--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1','--disable-dev-shm-usage']});

@@ -1,10 +1,17 @@
 import {context,CRMError,accessGuard} from './crm-server';
-import {monthSchema} from './sales';
+import {monthSchema,salesReportingRecords} from './sales';
 import {activityTargetsSchema,defaultActivityTargets,quantityTargetsSchema,targetProducts} from './targets';
 import {type OwnTargets} from './own-targets';
 import {riyadhDate} from './visits';
 import {memberCanAccessRegion} from './regions';
-import {readOwnErpSales} from './erp-sales-server';
+import {readOwnErpSales,readSalesCoverage} from './erp-sales-server';
+import {today,type Row} from './crm';
+import {kpiPeriod} from './kpis';
+import {outOfEvaluation,workMonthsByMember,workedMonths} from './kpi-baseline';
+import {salesCoverageStatus,nextDay} from './sales-coverage';
+import {evidenceScopeKey,kpiEvidenceInputSchema} from './kpi-evidence';
+import {readSalesRevision} from './kpi-evidence-server';
+import {readKpiPurchaseHistory} from './kpi-history-server';
 
 type Context=Awaited<ReturnType<typeof context>>;
 type TargetRow={kind:'sales'|'activity';month:string;data:string};
@@ -24,6 +31,38 @@ async function ownManualQuantities(c:Context,month:string){
  return rows.filter(row=>memberCanAccessRegion(c.me,row.region));
 }
 
+type RecordRow=Omit<Row,'data'>&{data:string};
+const recordColumns='id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version';
+/** «بلا نشاط في هذا الشهر – خارج التقييم» on the representative's own page (GSCO 2.13.50: «المندوب يرى العلامة في صفحة أدائه»), decided
+ *  as the evaluation decides it (lib/kpi-baseline.ts outOfEvaluation, lib/kpis.ts calculateKpis): a closed month (never the month in
+ *  progress), no work of theirs in it (no activity of theirs, no customer they added by hand, no confirmed sales document), and its sales
+ *  known complete for them (a complete ERP import covers the whole month, or «بيانات المؤشرات» confirmed it for the current sales data,
+ *  their customers' codes known). Every read binds the signed-in representative; the cheapest answers come first. */
+async function ownOutOfEvaluation(c:Context,month:string){
+ const period=kpiPeriod(month),now=today();
+ if(!(period.cutoff<now))return false;
+ const me=c.me,from=new Date(period.first+'T00:00:00+03:00').toISOString(),until=new Date(nextDay(period.cutoff)+'T00:00:00+03:00').toISOString();
+ const [activities,customers,manual,erp]=await Promise.all([
+  // Prefiltered on whoever the record may name; the author is then decided exactly as everywhere (salesReportingRecords).
+  c.db.prepare(`SELECT ${recordColumns} FROM crm_records WHERE kind='activity' AND json_extract(data,'$.date')>=? AND json_extract(data,'$.date')<=? AND (trim(json_extract(data,'$.performedBy'))=? OR lower(trim(json_extract(data,'$.recordedByEmail')))=? OR trim(json_extract(data,'$.responsibleId'))=?)`).bind(period.first,period.cutoff,me.id,me.email.toLowerCase(),me.id).all<RecordRow>(),
+  c.db.prepare(`SELECT ${recordColumns} FROM crm_records WHERE kind='customer' AND json_extract(data,'$._createdBy')=? AND created_at>=? AND created_at<?`).bind(me.id,from,until).all<RecordRow>(),
+  c.db.prepare("SELECT date FROM crm_sales WHERE rep_id=? AND status='confirmed' AND date>=? AND date<=? LIMIT 1").bind(me.id,period.first,period.cutoff).all<{date:string}>(),
+  c.db.prepare('SELECT e.date FROM crm_erp_sales e WHERE e.rep_id=? AND e.date>=? AND e.date<=? LIMIT 1').bind(me.id,period.first,period.cutoff).all<{date:string}>()
+ ]);
+ const records=salesReportingRecords([...activities.results,...customers.results].map(row=>({...row,data:JSON.parse(row.data)})),c.members);
+ const worked=workedMonths(workMonthsByMember(records,period.cutoff),[me.id],[...manual.results,...erp.results].map(row=>row.date),period.cutoff);
+ if(worked.has(month))return false;
+ if(salesCoverageStatus(await readSalesCoverage(c),[me.id],month,period).current)return outOfEvaluation(me.role,month,period.cutoff,now,true,worked);
+ // «بيانات المؤشرات»: the confirmation counts as lib/kpis-server.ts counts it (the same scope, the current sales data, the month's cutoff,
+ // the customers' codes known).
+ const row=await c.db.prepare('SELECT input,sales_revision,scope_key,cutoff FROM crm_kpi_evidence WHERE member_id=? AND month=?').bind(me.id,month).first<{input:string;sales_revision:number;scope_key:string;cutoff:string}>();
+ if(!row||row.scope_key!==evidenceScopeKey(me)||row.cutoff!==period.cutoff)return false;
+ const input=kpiEvidenceInputSchema.safeParse(JSON.parse(row.input));
+ if(!input.success||!input.data.history.complete||row.sales_revision!==await readSalesRevision(c))return false;
+ if((await readKpiPurchaseHistory(await context({load:'customers'}),month)).unresolved.has(me.id))return false;
+ return outOfEvaluation(me.role,month,period.cutoff,now,true,worked);
+}
+
 export function ownTargetsMonth(req:Request){
  const params=new URL(req.url).searchParams;
  if(Array.from(params.keys()).some(key=>key!=='month')||params.getAll('month').length>1)throw new CRMError('حدد الشهر فقط لعرض مستهدفك.',400);
@@ -41,8 +80,9 @@ export async function ownTargets(c:Context,month:string):Promise<OwnTargets>{
  const activity=activityRow?activityTargetsSchema.parse(JSON.parse(activityRow.data)):defaultActivityTargets;
  const actualsAvailable=selectedMonth<=riyadhDate(new Date().toISOString()).slice(0,7);
  const quantities=new Map<string,number>();
+ let inactive=false;
  if(actualsAvailable){
-  const [manual,imported]=await Promise.all([ownManualQuantities(c,selectedMonth),readOwnErpSales(c,selectedMonth)]);
+  const [manual,imported,out]=await Promise.all([ownManualQuantities(c,selectedMonth),readOwnErpSales(c,selectedMonth),ownOutOfEvaluation(c,selectedMonth)]);inactive=out;
   for(const row of [...manual,...imported.flatMap(sale=>sale.items)]){
    if(targetProducts.some(product=>product.id===row.product)&&Number.isFinite(row.quantity))quantities.set(row.product,(quantities.get(row.product)||0)+row.quantity);
   }
@@ -53,6 +93,7 @@ export async function ownTargets(c:Context,month:string):Promise<OwnTargets>{
  if(!current)throw new CRMError('تغيّرت صلاحيات حسابك. أعد تسجيل الدخول.',403);
  return{
   month:selectedMonth,
+  inactive,
   member:{id:c.me.id,name:c.me.name},
   sales:{products:targetProducts.map(product=>{
    const quantity=sales?.products.find(row=>row.product===product.id)?.quantity??null;
