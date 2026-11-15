@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-ReviewsComplete-20261115.zip",
-  "sha256": "ea628e9b9a7920f97c64a9e203e67b8e7297d31694449d4c35ad56cd34ede2c3",
-  "stage": "yourrest-crm-update-reviews-complete-20261115",
+  "package": "deploy/packages/Yourrest-CRM-Update-ReviewsCompleteRetry-20261115.zip",
+  "sha256": "4086723f77fe778f7e651e5b1ed885922a80fec90957253fb19f75665d982819",
+  "stage": "yourrest-crm-update-reviews-retry-20261115",
   "helper": "yourrest-activate-update-reviews-complete.cjs"
 }
