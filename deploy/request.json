@@ -1,7 +1,7 @@
 {
   "mode": "deploy",
-  "package": "deploy/packages/Yourrest-CRM-Update-SalesReplace-20261114.zip",
-  "sha256": "b63f5b716961d5e6896591d67d85fd20f4cecb7e13df528c702c10f5a4bfab2d",
-  "stage": "yourrest-crm-update-sales-replace-20261114",
-  "helper": "yourrest-activate-update-sales-replace.cjs"
+  "package": "deploy/packages/Yourrest-CRM-Update-ReviewsComplete-20261115.zip",
+  "sha256": "ea628e9b9a7920f97c64a9e203e67b8e7297d31694449d4c35ad56cd34ede2c3",
+  "stage": "yourrest-crm-update-reviews-complete-20261115",
+  "helper": "yourrest-activate-update-reviews-complete.cjs"
 }
