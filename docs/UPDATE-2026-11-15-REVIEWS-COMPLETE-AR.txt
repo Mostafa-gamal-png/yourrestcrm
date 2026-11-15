@@ -20,6 +20,11 @@
 == الرجوع للنسخة السابقة ==
 دون ترحيل، فالرجوع بالكود فقط. التقييمات المحفوظة تبقى في سجل التدقيق ولا تظهر في النسخة السابقة. لا تُحذف أي بيانات.
 
+== المحاولة الأولى (2026-11-15) ==
+توقفت المحاولة الأولى بأمان قبل التبديل أثناء نسخ النسخة الاحتياطية لليوم (STOP: APP_OR_DATA_STILL_IN_USE)، وعاد التطبيق القديم
+للعمل دون أي تغيير. حالة تلك المحاولة باقية في مجلدها yourrest-crm-update-reviews-complete-20261115 للمراجعة ولا تُحذف،
+لذلك تُفك هذه الحزمة في مجلد جديد باسم مختلف.
+
 خطوات الرفع (الحزمة update-reviews-complete-20261115)
 ------------------------------------------------------
 لا ترحيل في هذه الحزمة: القاعدة تبقى على 21 ترحيلًا. لا تطبيق أندرويد جديد.
@@ -27,18 +32,18 @@
 1. نسخة احتياطية لليوم: هذه أول حزمة اليوم، والمُفعِّل يأخذها بنفسه في الخطوة 4. لا تنفذ شيئًا هنا.
 
 2. والتطبيق يعمل، ارفع الحزمة وفكّها داخل:
-/home/youriedx/yourrest-crm-update-reviews-complete-20261115
+/home/youriedx/yourrest-crm-update-reviews-complete-retry-20261115
 يجب أن يظهر مجلد release والملف yourrest-activate-update-reviews-complete.cjs مباشرة داخل هذا المسار. (مجلد جديد؛ لا تفكّ فوق أي مجلد قديم.)
 
 3. افحص الحزمة دون إيقاف التطبيق:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-reviews-complete-20261115/yourrest-activate-update-reviews-complete.cjs --check
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-reviews-complete-retry-20261115/yourrest-activate-update-reviews-complete.cjs --check
 يجب أن يظهر PACKAGE AND CONFIGURATION: READY. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله.
 
 4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-reviews-complete-20261115/yourrest-activate-update-reviews-complete.cjs
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-reviews-complete-retry-20261115/yourrest-activate-update-reviews-complete.cjs
 
 5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
-cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-reviews-complete-20261115/yourrest-activate-update-reviews-complete.cjs --verify
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-reviews-complete-retry-20261115/yourrest-activate-update-reviews-complete.cjs --verify
 النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 21.
 
 6. بعد النجاح: بلّغ الجميع بتحديث أي صفحة CRM مفتوحة، والضغط في تطبيق أندرويد على «أعد التحميل» عند ظهور رسالة «يوجد تحديث للتطبيق».
