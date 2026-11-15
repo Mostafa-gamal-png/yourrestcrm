@@ -4,6 +4,9 @@
    phone; nothing scrolls sideways at 320 px. */
 .cer-card{border:1px solid var(--primary);border-radius:12px;background:var(--card);padding:12px 14px;color:var(--foreground);min-width:0;max-width:100%;display:grid;gap:8px}
 .cer-card-customer{border-color:var(--border);margin-top:12px}
+/* Alone on the first screen (a member with no other card of app/team-home.tsx): the gap .team-home would give. */
+.cer-card[data-customer-edit-inbox]{margin-bottom:16px}
+.team-home .cer-card[data-customer-edit-inbox]{margin-bottom:0}
 .cer-card>header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-width:0}
 .cer-card h2,.cer-card h3{display:flex;align-items:center;gap:6px;margin:0;font-size:15px;font-weight:600;min-width:0;overflow-wrap:anywhere}
 .cer-card h2 svg,.cer-card h3 svg{flex-shrink:0;color:var(--primary)}

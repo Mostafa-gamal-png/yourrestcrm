@@ -63,6 +63,12 @@ try {
   const loaded = (await rep('/api/crm')).json().records.find(r => r.id === 'recent');
   let response = await rep('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: 'recent', version: (await stored('recent')).version, data: {...loaded.data, notes: 'edited by the representative', _lastPurchase: '1999-01-01'}}});
   check(response.status, 200, 'the representative saves their customer with the loaded row\'s fields');
+  // Since 2026-11-15 the representative's edit waits for their supervisor, then the sales manager (lib/customer-edit-requests.ts).
+  const sent = response.json();
+  check([sent.pendingApproval, sent.approvalStage, (await stored('recent')).version], [true, 'supervisor', 1], 'it waits for approval');
+  const sup = app.as(await app.login('sup'));
+  check((await sup('/api/crm', {method: 'POST', body: {action: 'customer-edit', decision: 'approve', id: sent.requestId}})).status, 200, 'the supervisor approves');
+  check((await sm('/api/crm', {method: 'POST', body: {action: 'customer-edit', decision: 'approve', id: sent.requestId}})).status, 200, 'the sales manager approves');
   let saved = await stored('recent');
   check([saved.data.notes, '_lastPurchase' in saved.data, saved.version], ['edited by the representative', false, 2], 'the record is saved without _lastPurchase');
   const before = await stored('old');
@@ -71,7 +77,7 @@ try {
   saved = await stored('old');
   check([saved.data.city, '_lastPurchase' in saved.data], ['الخرج', false], 'nothing of it is stored there either');
   const history = (await app.db.prepare("SELECT action,detail FROM crm_audit WHERE record_id IN ('recent','old') ORDER BY created_at").all()).results;
-  check(history.map(entry => entry.action), ['تعديل', 'تعديل'], 'one history entry each');
+  check(history.map(entry => entry.action).filter(action => !action.startsWith('customer-edit:')), ['تعديل', 'تعديل'], 'one history entry each (beside the request\'s own steps)');
   ok(history.every(entry => !entry.detail.includes('_lastPurchase') && !entry.detail.includes('1999-01-01')), 'that does not mention it');
   const after = await dates(owner);
   check([after.recent, after.old], [expected.recent, expected.old], 'the next GET shows the computed dates, not the ones sent');

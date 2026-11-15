@@ -258,6 +258,9 @@ try{
  // Customer corrections are allowed; deleting saved customers remains forbidden.
  const priorCustomerVersion=repCustomer.version;
  result=await request('/api/crm',{method:'POST',headers:{Cookie:roleSession,Origin:origin},body:{action:'save',kind:'customer',id:repCustomerId,version:repCustomer.version,data:{...repCustomer.data,name:'Rep-corrected factory'}}});check(result.status,200,result.text);
+ // Since 2026-11-15 a representative's correction waits for approval (lib/customer-edit-requests.ts): no supervisor here, so the administrator approves it.
+ check([result.json().pendingApproval,result.json().approvalStage],[true,'sales_manager'],'The correction waits for the sales manager');
+ result=await request('/api/crm',{method:'POST',headers:{Cookie:owner,Origin:origin},body:{action:'customer-edit',decision:'approve',id:result.json().requestId}});check(result.status,200,result.text);
  result=await request('/api/crm',{headers:{Cookie:roleSession}});check(result.status,200,result.text);repCustomer=result.json().records.find(row=>row.id===repCustomerId);assert(repCustomer);checks++;check(repCustomer.data.name,'Rep-corrected factory');check(repCustomer.version,priorCustomerVersion+1,'Later visits use the fresh customer revision');
  result=await request('/api/crm',{method:'POST',headers:{Cookie:roleSession,Origin:origin},body:{action:'delete',kind:'customer',id:repCustomerId,version:repCustomer.version}});check(result.status,403,'Rep correction rights must not permit deletion');
  result=await request('/api/crm',{method:'POST',headers:{Cookie:disabledSession,Origin:origin},body:{action:'save',kind:'customer',id:repCustomerId,version:repCustomer.version,data:{...repCustomer.data,region:'الشرقية'}}});check(result.status,403,'Customer correction cannot move a record outside the western rep region');

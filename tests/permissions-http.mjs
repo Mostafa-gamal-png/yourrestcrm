@@ -55,7 +55,9 @@ try {
   const post = (who, url, body, headers) => session[who](url, {method: 'POST', body, ...(headers ? {headers} : {})});
 
   const customerAdd = who => post(who, '/api/crm', {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل جديد ' + crypto.randomUUID().slice(0, 6), region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03', phone: '0500000002'}});
-  const customerEdit = async (who, id) => { const row = await app.db.prepare('SELECT data,version FROM crm_records WHERE id=?').bind(id).first(); return post(who, '/api/crm', {action: 'save', kind: 'customer', id, version: row.version, data: {...JSON.parse(row.data), contact: 'تعديل ' + who}}); };
+  // A representative's edit is a request since 2026-11-15 (lib/customer-edit-requests.ts): accepted (200) and withdrawn at once, so the
+  // next member's edit of the same customer is not refused for one waiting.
+  const customerEdit = async (who, id) => { const row = await app.db.prepare('SELECT data,version FROM crm_records WHERE id=?').bind(id).first(); const reply = await post(who, '/api/crm', {action: 'save', kind: 'customer', id, version: row.version, data: {...JSON.parse(row.data), contact: 'تعديل ' + who}}); const answer = reply.status === 200 ? reply.json() : null; if (answer?.pendingApproval) await post(who, '/api/crm', {action: 'customer-edit', decision: 'cancel', id: answer.requestId}); return reply; };
   const remove = async (who, kind, id) => post(who, '/api/crm', {action: 'delete', kind, id, version: await version(id)});
   const visitAdd = who => post(who, '/api/visits', {createKey: crypto.randomUUID(), customerId: 'c1', data: {type: 'visit', purpose: 'تعريف', summary: 'تعريف', result: 'تمت', date: day}});
   const visitEdit = async (who, id) => post(who, '/api/visits', {createKey: crypto.randomUUID(), id, version: await version(id), customerId: 'c1', data: {type: 'visit', purpose: 'تعريف', summary: 'تعديل', result: 'تمت', date: day}});
