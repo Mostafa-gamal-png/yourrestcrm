@@ -163,10 +163,36 @@ try{
  const dialog=page.locator('[role=dialog]').filter({has:page.locator('form')});await dialog.waitFor();
  await dialog.getByRole('textbox',{name:'الجوال',exact:true}).fill('0501111111');
  await dialog.getByRole('button',{name:'تحديث من موقعي الحالي',exact:true}).click();
- await eventually(async()=>!(await dialog.getByRole('button',{name:/^حفظ /}).isDisabled()),'GPS lookup releases save');
+ await eventually(async()=>!(await dialog.locator('button[type=submit]').isDisabled()),'GPS lookup releases save');
  await dialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('24.7123, 46.6123');
+ // Since 2026-11-15 (lib/customer-edit-requests.ts) the representative's correction is sent for approval: their supervisor first, then the
+ // sales manager; the customer is unchanged until then.
+ eq(await dialog.getByRole('button',{name:/^حفظ /}).count(),0,'A representative has no direct save of a customer');
+ ok((await dialog.locator('[data-customer-edit-note]').innerText()).includes('مشرفك'),'The form says the edit waits for approval');
+ const phoneBefore=JSON.parse((await db.prepare("SELECT data FROM crm_records WHERE id='west2'").first()).data).phone;
  const repSave=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/crm'&&r.request().method()==='POST');
- await dialog.getByRole('button',{name:/^حفظ /}).click();eq((await repSave).status(),200,'Rep actual form save accepted');await dialog.waitFor({state:'detached'});
+ await dialog.getByRole('button',{name:'إرسال التعديل للموافقة',exact:true}).click();const repReply=await repSave;eq(repReply.status(),200,'Rep actual form save accepted');
+ eq([(await repReply.json()).pendingApproval,(await repReply.json()).approvalStage],[true,'supervisor'],'The edit waits for the representative\'s supervisor');await dialog.waitFor({state:'detached'});
+ eq(JSON.parse((await db.prepare("SELECT data FROM crm_records WHERE id='west2'").first()).data).phone,phoneBefore,'The customer waits for approval');
+ const repWaiting=sheet.locator('[data-customer-edit-history] [data-customer-edit="pending"]');await repWaiting.waitFor();
+ eq([await repWaiting.getAttribute('data-customer-edit-stage'),await repWaiting.locator('[data-customer-edit-cancel]').count()],['supervisor',1],'The request shows on the customer, with the supervisor, and can be cancelled');
+ await snapshot(page,'rep-customer-edit-request-waiting');
+ // The supervisor approves it on their first screen; it then waits for the sales manager, who approves it on theirs.
+ const supervisorCtx=await context(),supervisorPage=await firstPage(supervisorCtx);await signin(supervisorPage,'supervisor');
+ const supervisorItem=supervisorPage.locator('[data-customer-edit-inbox] [data-customer-edit="pending"]');await supervisorItem.waitFor();
+ eq(await supervisorItem.locator('[data-customer-edit-field]').evaluateAll(items=>items.map(item=>item.dataset.customerEditField)),['phone','location'],'The supervisor sees each changed field');
+ await snapshot(supervisorPage,'supervisor-customer-edit-inbox');
+ const supervisorDecision=supervisorPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/crm'&&r.request().method()==='POST');
+ await supervisorItem.locator('[data-customer-edit-approve]').click();eq((await supervisorDecision).status(),200,'The supervisor approves');
+ await supervisorPage.locator('[data-customer-edit-inbox]').waitFor({state:'detached'});
+ eq(JSON.parse((await db.prepare("SELECT data FROM crm_records WHERE id='west2'").first()).data).phone,phoneBefore,'The customer still waits for the sales manager');
+ const approverCtx=await context(),approverPage=await firstPage(approverCtx);await signin(approverPage,'manager');
+ const approverItem=approverPage.locator('[data-customer-edit-inbox] [data-customer-edit="pending"]');await approverItem.waitFor();
+ ok((await approverItem.innerText()).includes('QA supervisor'),'The sales manager sees who approved it first');
+ const approverDecision=approverPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/crm'&&r.request().method()==='POST');
+ await approverItem.locator('[data-customer-edit-approve]').click();eq((await approverDecision).status(),200,'The sales manager approves');
+ await page.reload();await page.locator('.workspace').waitFor();await nav(page,'customer');await page.getByRole('button',{name:'بيانات العميل: مصنع الاختبار الثاني',exact:true}).click();
+ await sheet.locator('[data-customer-edit-history] [data-customer-edit="approved"]').waitFor();
  const result=await request(page,'/api/crm'),customer=result.data.records.find(r=>r.id==='west2');
  eq(customer.data.phone,'0501111111','Rep phone edit persisted');eq(customer.data.latitude,24.7123,'Saved latitude refreshed');eq(customer.data.longitude,46.6123,'Saved longitude refreshed');eq(customer.assignedTo,'owner','Rep edit preserves global administrator assignment');eq(customer.branch,'Main','Rep edit preserves customer branch');
  await sheet.getByRole('button',{name:'الخريطة',exact:true}).click();await page.locator('.cm-selected-card').waitFor();
@@ -174,7 +200,8 @@ try{
  await page.getByRole('button',{name:'الاتجاهات',exact:true}).click();const maps=page.getByRole('link',{name:'فتح Google Maps',exact:true});await maps.waitFor();const destination=decodeURIComponent(await maps.getAttribute('href'));ok(destination.includes('24.7123,46.6123'),'Map directions use updated coordinates');
  eq(await page.getByRole('button',{name:'حذف السجل',exact:true}).count(),0,'Rep delete remains hidden');
  await snapshot(page,'rep-updated-customer-map');
- const managerCtx=await context(),managerPage=await firstPage(managerCtx);await signin(managerPage,'manager');await nav(managerPage,'customer');
+ // The sales manager who approved goes on to the customer (one sign-in: the code may be asked once a minute per account).
+ const managerPage=approverPage;await nav(managerPage,'customer');
  const managerCard=managerPage.locator('.customer-mobile-card').filter({has:managerPage.getByRole('button',{name:'بيانات العميل: مصنع الاختبار الثاني',exact:true})});
  await managerCard.locator('.customer-mobile-machines>summary').click();
  eq(await managerCard.getByRole('button',{name:/^إضافة ماكينة/}).count(),0,'Manager customer card does not gain machine permission');
@@ -229,7 +256,11 @@ try{
  await serviceDialog.getByRole('textbox',{name:'الجوال',exact:true}).fill('0504444444');await serviceDialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('21.6, 39.3');
  await snapshot(servicePage,'customer-service-customer-edit');
  const serviceSave=servicePage.waitForResponse(r=>new URL(r.url()).pathname==='/api/crm'&&r.request().method()==='POST');
- await serviceDialog.getByRole('button',{name:/^حفظ /}).click();eq((await serviceSave).status(),200,'Customer service actual form save accepted');await serviceDialog.waitFor({state:'detached'});
+ await serviceDialog.getByRole('button',{name:'إرسال التعديل للموافقة',exact:true}).click();const serviceReply=await serviceSave;eq(serviceReply.status(),200,'Customer service actual form save accepted');await serviceDialog.waitFor({state:'detached'});
+ // Customer service's correction goes straight to the sales manager (2026-11-15), who approves it.
+ const serviceAnswer=await serviceReply.json();eq([serviceAnswer.pendingApproval,serviceAnswer.approvalStage],[true,'sales_manager'],'Customer service sends a request to the sales manager');
+ eq(JSON.parse((await db.prepare("SELECT data FROM crm_records WHERE id='west2'").first()).data).phone,'0502222222','The customer waits for approval');
+ eq((await request(managerPage,'/api/crm',{action:'customer-edit',decision:'approve',id:serviceAnswer.requestId})).status,200,'The sales manager approves customer service\'s request');
  const serviceStored=await db.prepare("SELECT assigned_to,branch,data FROM crm_records WHERE id='west2'").first();
  eq([JSON.parse(serviceStored.data).phone,JSON.parse(serviceStored.data).latitude,serviceStored.assigned_to,serviceStored.branch],['0504444444',21.6,'owner','Main'],'Customer service edit persisted with routing kept');
  const eastRow=await db.prepare("SELECT data,version FROM crm_records WHERE id='east'").first();

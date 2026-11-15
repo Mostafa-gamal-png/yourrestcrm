@@ -99,11 +99,14 @@ check(data(reused).code,'ERP-NEW','the import gives a code another customer only
 const unrelated=(await post(create(''))).id;
 check((await post(edit(unrelated,{code:'erp-new '}),403)).error,LOCKED);
 check(data(unrelated).code,'','an edit cannot give it a code');
-await post(edit(unrelated,{notes:'still no code'}));
-// An edit racing an import of the same customer fails on the version: it never writes the code it read back.
+// A representative's correction waits for the sales manager since 2026-11-15 (lib/customer-edit-requests.ts): it is a request, never the code.
+const sent=await post(edit(unrelated,{notes:'still no code'}));
+check([sent.pendingApproval,data(unrelated).notes,data(unrelated).code],[true,'',''],'the correction waits; the code is untouched');
+await post({action:'customer-edit',decision:'cancel',id:sent.requestId});
+// An edit racing an import of the same customer fails on the version: it never writes the code it read back, nor a request on it.
 beforeBatch=()=>setCode(unrelated,'RACE-1');
 await post(edit(unrelated,{notes:'race'}),409);
-check([data(unrelated).code,data(unrelated).notes],['RACE-1','still no code'],'the import\'s code stays');
+check([data(unrelated).code,data(unrelated).notes,sql.prepare("SELECT COUNT(*) n FROM crm_audit WHERE record_id=? AND action='customer-edit:request'").get(unrelated).n],['RACE-1','',1],'the import\'s code stays, and no second request');
 
 login('owner');
 check((await post({action:'save',kind:'customer',data:{name:'Synthetic western factory',code:'ｅｒｐ-old',region:'الغربية',location:'',assignedTo:'owner',branch:'HQ'}},403)).error,LOCKED,'the administrator cannot type a code either');

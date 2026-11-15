@@ -30,7 +30,7 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/crm', '/api/team-today', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import'];
+  const protectedGets = ['/api/crm', '/api/customer-edits', '/api/customer-edits?customerId=x', '/api/team-today', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   // The customer's signing link (2026-11-10) is public by design, but opens only with a valid token: without one, one neutral page or
@@ -88,7 +88,10 @@ try {
     // customer service are refused.
     '/api/reviews/pending': expect(['mgr', 'mgrw', 'sup'], 200, 403),
     // «فريقي اليوم» (2026-11-10): the roles that open «تقرير يوم المندوب»; a representative and customer service are refused.
-    '/api/team-today': expect(management, 200, 403)
+    '/api/team-today': expect(management, 200, 403),
+    // «طلبات تعديل بيانات العميل» (2026-11-15): every member reads the list their role gives them (what they decide, their own requests).
+    '/api/customer-edits': expect(everyone, 200, 0),
+    '/api/customer-edits?customerId=x': expect(everyone, 200, 0)
   };
   for (const [url, byRole] of Object.entries(getMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url)).status, byRole[id], `GET ${url} as ${id}`);
   // KPI evidence is read per member; ask each management role about a member inside its own scope.
@@ -121,6 +124,13 @@ try {
     '/api/review-inbox': expect(everyone, 400, 0)
   };
   for (const [url, byRole] of Object.entries(postMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url, {method: 'POST', body: {}})).status, byRole[id], `POST ${url} as ${id}`);
+  // A decision on a customer edit request (POST /api/crm {action:'customer-edit'}): every signed-in member reaches the request's own checks
+  // (customer service cancels its own requests): a malformed one is 400 and an unknown one 404 for all; anonymous 401.
+  for (const id of everyone) {
+    check((await app.as(sessions[id])('/api/crm', {method: 'POST', body: {action: 'customer-edit', decision: 'approve'}})).status, 400, 'a malformed decision as ' + id);
+    check((await app.as(sessions[id])('/api/crm', {method: 'POST', body: {action: 'customer-edit', decision: 'cancel', id: 'customer-edit:' + id + ':' + crypto.randomUUID()}})).status, 404, 'an unknown request as ' + id);
+  }
+  check((await anonymous('/api/crm', {method: 'POST', body: {action: 'customer-edit', decision: 'cancel', id: 'customer-edit:x:' + crypto.randomUUID()}})).status, 401, 'anonymous decision: 401');
   // A signed-in member's write from another site is refused before anything is read (the design files' routes, 2026-11-02).
   for (const url of ['/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/trash', '/api/reviews', '/api/review-inbox']) for (const origin of ['https://evil.example', null]) {
     const headers = origin ? {Origin: origin} : {Origin: ''};
@@ -209,8 +219,12 @@ try {
     const phone = id === 'cs' ? '0509999999' : '0508888888';
     const edit = await call('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: ids.e1, version: row.version, data: {...JSON.parse(row.data), phone, contact: 'تواصل ' + id}}});
     check(edit.status, 200, id + ' edits a customer\'s details: ' + edit.text);
+    // Since 2026-11-15 the correction waits for the sales manager (lib/customer-edit-requests.ts): nothing changes until approved.
+    check([edit.json().pendingApproval, edit.json().approvalStage, (await current()).version], [true, 'sales_manager', row.version], id + ' sends a request; the customer waits');
+    check((await app.as(sessions.rep1)('/api/crm', {method: 'POST', body: {action: 'customer-edit', decision: 'approve', id: edit.json().requestId}})).status, 403, 'a representative cannot approve it');
+    check((await app.as(sessions.mgr)('/api/crm', {method: 'POST', body: {action: 'customer-edit', decision: 'approve', id: edit.json().requestId}})).status, 200, 'the sales manager approves ' + id + '\'s request');
     const saved = await current();
-    check([JSON.parse(saved.data).phone, JSON.parse(saved.data).contact, saved.assigned_to, saved.branch], [phone, 'تواصل ' + id, row.assigned_to, row.branch], id + ' edit saved, routing kept');
+    check([JSON.parse(saved.data).phone, JSON.parse(saved.data).contact, saved.assigned_to, saved.branch], [phone, 'تواصل ' + id, row.assigned_to, row.branch], id + ' edit saved once approved, routing kept');
     row = saved;
     const reassign = await call('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', id: ids.e1, version: row.version, data: {...JSON.parse(row.data), assignedTo: 'rep2'}}});
     check(reassign.status, 403, id + ' cannot reassign');

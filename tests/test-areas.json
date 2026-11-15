@@ -72,7 +72,12 @@
     "team-home": {
       "about": "«عملاء واقفين» and «فريقي اليوم» (2026-11-10): the cards at the top of the first screen (app/team-home.tsx), the badge on «العملاء», GET /api/team-today and their rules (lib/inactive-customers.ts, lib/team-today*.ts). The route reads the day report's own modules, so the tracking area runs these tests too; the stalled rule is the customers area's.",
       "sources": ["app/team-home.tsx", "app/team-home.css", "app/inactive-customers.tsx", "app/team-today.tsx", "app/api/team-today/**", "lib/inactive-customers.ts", "lib/team-today.ts", "lib/team-today-server.ts", "tests/team-*.mjs", "tests/inactive-customers.mjs", "app/review-pending.tsx", "app/review-pending.css", "tests/review-pending*.mjs"],
-      "tests": ["tests/team-today-http.mjs", "tests/team-home-browser.mjs", "tests/review-pending-http.mjs", "tests/review-pending-browser.mjs", "tests/server-authorization.mjs"]
+      "tests": ["tests/team-today-http.mjs", "tests/team-home-browser.mjs", "tests/review-pending-http.mjs", "tests/review-pending-browser.mjs", "tests/server-authorization.mjs", "tests/customer-edit-requests-browser.mjs"]
+    },
+    "customer-edits": {
+      "about": "«طلبات تعديل بيانات العميل» (2026-11-15, GSCO item 4): a representative's, a supervisor's and customer service's customer edits wait for approval (the representative's supervisor first, then the sales manager). The rules and the store (lib/customer-edit-requests*.ts), GET /api/customer-edits and the card (app/customer-edit-requests.tsx); the proposal and the approval run inside POST /api/crm (shared), the form is in app/crm-app.tsx (shared).",
+      "sources": ["app/customer-edit-requests.tsx", "app/customer-edit-requests.css", "app/api/customer-edits/**", "lib/customer-edit-requests.ts", "lib/customer-edit-requests-server.ts", "tests/customer-edit-requests*.mjs"],
+      "tests": ["tests/customer-edit-requests-http.mjs", "tests/customer-edit-requests-browser.mjs", "tests/customer-edit-browser.mjs", "tests/team-home-browser.mjs", "tests/server-authorization.mjs"]
     },
     "machines": {
       "about": "A customer's machines (app/customer-machines.tsx, lib/machines.ts, /api/machines/import).",
@@ -229,6 +234,8 @@
     "tests/erp-office-employees-http.mjs": 20,
     "tests/erp-office-employees-browser.mjs": 60,
     "tests/new-customers-erp-http.mjs": 15,
-    "tests/erp-customers-duplicates-http.mjs": 12
+    "tests/erp-customers-duplicates-http.mjs": 12,
+    "tests/customer-edit-requests-http.mjs": 20,
+    "tests/customer-edit-requests-browser.mjs": 60
   }
 }

@@ -1,6 +1,8 @@
 /* The top of the member's first screen (app/team-home.tsx): «عملاء واقفين» and «فريقي النهارده». Logical properties only, so Arabic and
    English mirror; on a phone every row becomes a card and every button is at least 44 px high. */
 .team-home{display:grid;gap:12px;margin-bottom:16px;min-width:0}
+/* Nothing to show (no edit request either): no gap. */
+.team-home:empty{display:none}
 .team-alert{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid color-mix(in srgb,#b45309 45%,var(--border));border-inline-start-width:4px;border-radius:12px;padding:12px 14px;min-width:0;color:var(--foreground)}
 .team-alert-head{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 260px}
 .team-alert-icon{display:grid;place-items:center;flex-shrink:0;width:38px;height:38px;border-radius:10px;background:color-mix(in srgb,#b45309 14%,transparent);color:#b45309}

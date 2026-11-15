@@ -60,6 +60,9 @@ const LOCKED='كود ERP لا يُكتب ولا يُعدَّل يدويًا لأ
 const create=code=>({action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'Test factory',region:'الشرقية',location:'',assignedTo:current,branch:'HQ',...(code===undefined?{}:{code})}});
 const edit=(id,changes)=>({action:'save',kind:'customer',id,version:raw(id).version,data:{...data(id),...changes}});
 const number=id=>sql.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(id)?.number;
+/** A representative's correction waits for the sales manager since 2026-11-15 (lib/customer-edit-requests.ts): it is sent, then approved by
+ *  the sales manager, whose approval runs the same save (the ERP code rules included) as the approver. */
+const applied=async body=>{const sent=await post(body);if(sent.pendingApproval){const was=current;check(sent.approvalStage,'sales_manager');as('manager');await post({action:'customer-edit',decision:'approve',id:sent.requestId});as(was);}return sent;};
 const customers=()=>sql.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='customer'").get().n;
 /** What the ERP customers import does (lib/erp-customers-server.ts): the only writer of a customer's ERP code. */
 const erpImport=(id,code)=>sql.prepare("UPDATE crm_records SET data=json_set(data,'$.code',?),version=version+1 WHERE id=?").run(code,id);
@@ -78,10 +81,10 @@ for(const member of ['rep','manager','admin']){
  for(const code of ['OTHER','SECOND','','  ','FIRST-2'])check((await post(edit(first,{code}),403)).error,LOCKED,'the code cannot be changed to «'+code+'» ('+member+')');
  check([data(first).code,raw(first).version],['FIRST',version],'nothing was written ('+member+')');
  // A save that keeps the code (in any spelling of the same key) or does not send it is accepted, and keeps the stored code exactly.
- await post(edit(first,{code:' first ',contact:'by '+member}));check([data(first).code,data(first).contact],['FIRST','by '+member],'the same code in another spelling keeps the stored one ('+member+')');
- const withoutCode=edit(first,{contact:'no code '+member});delete withoutCode.data.code;await post(withoutCode);check([data(first).code,data(first).contact],['FIRST','no code '+member],'a page that sends no code keeps it ('+member+')');
+ await applied(edit(first,{code:' first ',contact:'by '+member}));check([data(first).code,data(first).contact],['FIRST','by '+member],'the same code in another spelling keeps the stored one ('+member+')');
+ const withoutCode=edit(first,{contact:'no code '+member});delete withoutCode.data.code;await applied(withoutCode);check([data(first).code,data(first).contact],['FIRST','no code '+member],'a page that sends no code keeps it ('+member+')');
 }
-erpImport(second,'١٢٣');as('rep');await post(edit(second,{code:'123',contact:'digits'}));check(data(second).code,'١٢٣','Arabic digits of the same code are the same code: the stored spelling stays');
+erpImport(second,'١٢٣');as('rep');await applied(edit(second,{code:'123',contact:'digits'}));check(data(second).code,'١٢٣','Arabic digits of the same code are the same code: the stored spelling stays');
 // An edit that started before the ERP import moved the code fails on the record version, so it never writes the old code back.
 as('admin');const stale=edit(first,{contact:'stale'});erpImport(first,'FIRST-ERP');await post(stale,409);check(data(first).code,'FIRST-ERP','the import\'s code stays');
 // A concurrent ERP import between the read and the commit: the version check refuses the edit, and nothing is written.

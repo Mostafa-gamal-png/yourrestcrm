@@ -50,7 +50,12 @@ for(const region of ['الغربية','','unknown','المنطقة غير محد
 await post(create({}, {parentId:saved.id}),403);
 // Regional representatives may update customer details, but cannot delete or reassign.
 const editCustomer=(id,data={},version=row(id).version)=>({action:'save',kind:'customer',id,version,data:{...row(id).data,...data}});
-await post(editCustomer(saved.id,{location:'24.7, 46.6',latitude:null,longitude:null,phone:'0501234567'}));
+/** A representative's correction is a request (2026-11-15); the administrator approves it, then it applies. */
+const approved=async(who,body)=>{user(who);const sent=await post(body);check(sent.pendingApproval,true,'a representative\'s correction waits');user('owner');await post({action:'customer-edit',decision:'approve',id:sent.requestId});user(who);return sent;};
+// Since 2026-11-15 the correction waits for approval (lib/customer-edit-requests.ts): the administrator approves it here.
+const correction=await post(editCustomer(saved.id,{location:'24.7, 46.6',latitude:null,longitude:null,phone:'0501234567'}));
+check([correction.pendingApproval,correction.approvalStage,row(saved.id).data.latitude],[true,'sales_manager',26.437341],'the correction waits');
+user('owner');await post({action:'customer-edit',decision:'approve',id:correction.requestId});user('rep');
 check(row(saved.id).data.latitude,24.7);check(row(saved.id).data.longitude,46.6);check(row(saved.id).data.phone,'0501234567');
 await post(editCustomer(saved.id,{},1),409);
 await post(editCustomer(saved.id,{assignedTo:'peer'}),403);
@@ -61,7 +66,7 @@ await post({action:'delete',kind:'customer',id:saved.id,version:row(saved.id).ve
 for(const kind of ['opportunity','quote'])await post({...create(),kind,parentId:saved.id},403);
 // A machine of the representative's own customer is theirs to record, so a customer's fields offered as a machine fail on the machine's own rules, not on the role.
 await post({...create(),kind:'factory',parentId:saved.id},400);
-user('peer');await post(editCustomer(saved.id,{contact:'Regional correction'}));check(row(saved.id).assigned_to,'rep');check(row(saved.id).data.contact,'Regional correction');
+await approved('peer',editCustomer(saved.id,{contact:'Regional correction'}));check(row(saved.id).assigned_to,'rep');check(row(saved.id).data.contact,'Regional correction');
 user('west');await post(editCustomer(saved.id,{contact:'Forbidden'}),404);check(row(saved.id).data.contact,'Regional correction');
 user('rep');const beforeRace=row(saved.id).version;race=()=>sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='rep'").run();await post(editCustomer(saved.id,{contact:'Race'}),409);check(row(saved.id).version,beforeRace);sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id='rep'").run();
 check(row(saved.id).data.name,body.data.name);
@@ -82,7 +87,7 @@ for(const [column,value] of [['region_scope','western'],['active',0],['role','cu
 // A representative's edit cannot give the customer an ERP code either; keeping the stored one (set by the ERP import) is fine.
 sql.prepare("UPDATE crm_records SET data=json_set(data,'$.code','ERP-77'),version=version+1 WHERE id=?").run(saved.id);
 check((await post(editCustomer(saved.id,{code:'ERP-78'}),403)).error,LOCKED);check((await post(editCustomer(saved.id,{code:''}),403)).error,LOCKED);check(row(saved.id).data.code,'ERP-77');
-await post(editCustomer(saved.id,{code:'erp-77',contact:'code kept'}));check([row(saved.id).data.code,row(saved.id).data.contact],['ERP-77','code kept']);
+await approved('rep',editCustomer(saved.id,{code:'erp-77',contact:'code kept'}));check([row(saved.id).data.code,row(saved.id).data.contact],['ERP-77','code kept']);
 // All-regions and explicitly unassigned reps retain their existing territory definitions.
 user('all-rep');const all=await post(create({region:'الغربية'}));check(row(all.id).data.region,'الغربية');check(row(all.id).assigned_to,'all-rep');
 user('unassigned-rep');const unassigned=await post(create({region:''}));check(row(unassigned.id).data.region,'');await post(create({region:'الشرقية'}),403);

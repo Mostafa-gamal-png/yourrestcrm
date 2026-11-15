@@ -54,8 +54,13 @@ await post({action:'delete',kind:'activity',id:visit.id,version:raw(visit.id).ve
 
 await post({action:'delete',kind:'customer',id:customer.id,version:raw(customer.id).version},403);
 check(capture(),beforeDenied,'Blocked operations cannot alter stored records');
-// Current policy allows regional customer details to be corrected, while visits remain append-only.
-await post({action:'save',kind:'customer',id:customer.id,version:raw(customer.id).version,data:{...row(customer.id).data,name:'Updated factory',location:'26.44, 50.04'}});
+// Current policy allows regional customer details to be corrected, while visits remain append-only. Since 2026-11-15 the correction waits
+// for the sales manager's approval (lib/customer-edit-requests.ts): a request first, the customer unchanged, then applied once approved.
+const correction=await post({action:'save',kind:'customer',id:customer.id,version:raw(customer.id).version,data:{...row(customer.id).data,name:'Updated factory',location:'26.44, 50.04'}});
+check([correction.pendingApproval,row(customer.id).data.name],[true,'مصنع اختبار الصلاحيات'],'the correction waits');
+check(correction.approvalStage,'supervisor','to the representative\'s supervisor first');
+user('supervisor');check((await post({action:'customer-edit',decision:'approve',id:correction.requestId})).stage,'sales_manager');
+user('manager');await post({action:'customer-edit',decision:'approve',id:correction.requestId});user('rep');
 check(row(customer.id).data.name,'Updated factory');check(row(customer.id).data.location,'26.44, 50.04');
 // Followups append new history while maintaining the automatic current plan.
 const followupBody={createKey:crypto.randomUUID(),customerId:customer.id,customerVersion:raw(customer.id).version,sourceId:visit.id,sourceVersion:raw(visit.id).version,data:{type:'call',date:day,result:'تم التواصل وتحديد المتطلبات',salesStage:'specs',invoiceOutcome:'pending',nextAction:'استكمال المواصفات',nextDate:day}};

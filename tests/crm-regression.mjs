@@ -130,9 +130,13 @@ user('cs');customer('inline-unified');const inline={id:'inline-unified'};
 // keeping the responsible member and branch; no delete, no machine, no commercial record; the edit is audited.
 const detailEdit=(id,extra={})=>({action:'save',kind:'customer',id,version:raw(id).version,data:{...row(id).data,...extra}});
 for(const actor of ['cs','csm']){user(actor);const phone=actor==='cs'?'0551234567':'0557654321';
- await post(crm,detailEdit(inline.id,{phone,contact:'تواصل '+actor,address:'عنوان '+actor,city:'الخبر',location:'26.3, 50.2'}));
+ // Since 2026-11-15 the correction waits for the sales manager (lib/customer-edit-requests.ts), who approves it; then it applies.
+ const waiting=raw(inline.id),sent=await post(crm,detailEdit(inline.id,{phone,contact:'تواصل '+actor,address:'عنوان '+actor,city:'الخبر',location:'26.3, 50.2'}));
+ assert.deepEqual([sent.pendingApproval,sent.approvalStage],[true,'sales_manager']);assert.deepEqual(raw(inline.id),waiting);checks+=2;
+ assert.ok(sql.prepare("SELECT 1 FROM crm_audit WHERE record_id=? AND actor=? AND action='customer-edit:request'").get(inline.id,actor));checks++;
+ user('sm');await post(crm,{action:'customer-edit',decision:'approve',id:sent.requestId});user(actor);
  assert.equal(row(inline.id).data.phone,phone);assert.equal(row(inline.id).data.contact,'تواصل '+actor);assert.equal(row(inline.id).data.latitude,26.3);assert.equal(raw(inline.id).assigned_to,'outside');assert.equal(raw(inline.id).branch,'الرئيسي');checks+=5;
- assert.ok(sql.prepare("SELECT 1 FROM crm_audit WHERE record_id=? AND actor=? AND action='تعديل'").get(inline.id,actor));checks++;
+ assert.ok(sql.prepare("SELECT 1 FROM crm_audit WHERE record_id=? AND actor='sm' AND action='تعديل'").get(inline.id));checks++;
  const before=raw(inline.id);
  assert.equal((await post(crm,detailEdit(inline.id,{assignedTo:'rep'}),403)).error,'لا يمكنك تغيير مسؤول العميل أو فرعه');assert.equal((await post(crm,detailEdit(inline.id,{branch:'آخر'}),403)).error,'لا يمكنك تغيير مسؤول العميل أو فرعه');
  await post(crm,{action:'delete',kind:'customer',id:inline.id,version:raw(inline.id).version},403);
