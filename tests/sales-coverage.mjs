@@ -87,7 +87,10 @@ const performance=(items=sales)=>({member,sourceMemberIds:['rep'],salesSourceMem
 const purchase=(customerKey,date)=>({customerKey,date,netCents:1000,hasSale:true});
 const purchases=[purchase('recovered','2025-04-01'),purchase('recovered','2025-09-01'),purchase('retained','2025-06-01'),purchase('retained','2025-09-01'),purchase('lapsed','2025-08-01')];
 const context=(extra={})=>({historyComplete:false,collection:null,purchases,quotationsKnown:true,quotations:[],recoveryTarget:defaultActivityTargets.recoveredCustomers,invalidHistoryReason:'أكّد اكتمال سجل المبيعات لثلاثة أشهر سابقة وفترة التقييم.',...extra});
-const calc=(extra,p=performance(),items=sales)=>calculateKpis(p,month,[],items,null,undefined,context(extra)),get=(result,id)=>result.metrics.find(m=>m.id===id);
+// A visit of the representative in every month from March to August (since 2026-11-15, lib/kpi-baseline.ts): a covered month with neither a
+// contact nor a sales document is a leave and is skipped from the customers' comparison; with these, June to August stay the compared months.
+const workedRecords=['03','04','05','06','07','08'].map(m=>({id:'work-2025-'+m,kind:'activity',parentId:null,assignedTo:'rep',branch:'HQ',data:{type:'visit',date:'2025-'+m+'-10',performedBy:'rep',responsibleId:'rep',summary:'s'},createdAt:'2025-'+m+'-10T08:00:00Z',updatedAt:'2025-'+m+'-10T08:00:00Z',version:1}));
+const calc=(extra,p=performance(),items=sales)=>calculateKpis(p,month,workedRecords,items,null,undefined,context(extra)),get=(result,id)=>result.metrics.find(m=>m.id===id);
 const statusFor=entries=>cov.salesCoverageStatus(entries,['rep'],month,kpiPeriod(month));
 // Covered: April to September, all three automatic with no manual confirmation.
 let result=calc({coverage:statusFor([whole('2025-04','2025-09')])});

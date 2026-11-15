@@ -4,6 +4,82 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Leave months do not count against a representative: the customers' comparison over the last three worked months (2026-11-15, not released yet, no migration)
+
+- **Asked.** Item 5 of the GSCO comparison list, approved by the owner: «تمام كمل البند الخامس وارفع لما الفحص يخلص». The item: «الإجازات
+  تتحسب في التقييم (GSCO 2.13.50): الأيام اللي المندوب كان فيها في إجازة ما تتحسبش ضده». GSCO 2.13.50 and 2.13.51 (`docs/INACTIVE-MONTHS-AR.md`
+  of GSCO 2.13.74): leave and absence are read from the data, nobody types a leave in; GSCO's owner chose «أ», a short leave inside a month counts
+  normally with no reduction of the target.
+- **What Yourrest already had** (verified in the code before the change): a complete ERP sales file speaks for every representative of its
+  uploader's scope over its days (`lib/sales-coverage.ts`, 2026-11-12), so a representative absent from it sold nothing there; a covered month
+  with visits and no sale is a real zero, not «غير متاح» (`zeroFill` in `lib/kpis.ts`); «بلا نشاط في هذا الشهر – خارج التقييم» (2026-11-14:
+  a representative only, a closed month only, sales known complete, no activity and no confirmed sales document; no score, last in the
+  comparison, no points in the export, never a supervisor's or a sales manager's roll-up, nothing averages scores); no target is ever reduced.
+- **What it lacked, added now** (`lib/kpi-baseline.ts`, new, pure):
+  - **The customers' comparison over the months worked.** «الحفاظ على العملاء الحاليين» and «العملاء المستردون» compared the month with the
+    three CALENDAR months before it, a leave month included. They now compare with the last THREE WORKED months (`customerBaseline`),
+    looking back twelve months at most: a month the complete sales cover in which the person had no work (a leave, an absence) is skipped; a
+    month the complete sales do not cover still stops the comparison (missing data, the month named). 2.13.51: a covered month before the
+    person's first worked month (before they joined) is an ordinary month without purchases, so a new representative is compared from their
+    second month; «العملاء المستردون» needs, before the three months, a whole complete month and a worked month the complete sales touch or a
+    sales document, so for a new representative it starts four months after their first worked month («لا ينطبق» with its reason until then).
+    Fewer than three worked months in the twelve: both «لا ينطبق» («لا توجد ثلاثة أشهر عمل فيها المندوب خلال الأشهر الاثني عشر السابقة…»).
+    A recovered customer is one who bought before the oldest compared month, bought in none of the compared months and bought this month.
+  - **A month worked** (one definition, `workMonthsByMember`, `workedMonths`): an activity of the person (a visit, a call, a follow-up or any
+    other contact; its author as every indicator reads it), a customer they added by hand in the app (its record's Riyadh day; never one a
+    file or the ERP customers import made: `handAddedDay` of `lib/new-customers.ts`, which «العملاء الجدد» now reads too), or a confirmed sales
+    document (a sale or a return, CRM or ERP, from the month's sales and the purchase history). The mark of 2026-11-14 reads the same
+    definition (`outOfEvaluation`), so a customer added by hand (GSCO's «أضاف مشروعًا») and a sales document of the purchase history keep a
+    month in the evaluation too; nothing else of the mark changed. A team's roll-up worked a month when any of its people did, so a supervisor's
+    and a sales manager's comparison skips a month only when the whole team had nothing.
+  - **The coverage it needs** (`lib/sales-coverage.ts` `SalesCoverageStatus.lookback`): the 16 months before the month that every
+    representative of the scope has wholly covered and those each has at least one covered day of, and the month from which each has a whole
+    covered month. The manual confirmation of «بيانات المؤشرات» still covers the month and the three before it; a leave reaching past them
+    needs an upload, and that sentence no longer offers the manual confirmation (`CoverageMissing.uploadOnly`). A coverage of the older shape
+    (no lookback) keeps its three calendar months.
+  - **«أشهر بلا نشاط لم تُحتسب».** When months were skipped, the two indicators carry `baseline: {months, skipped}` and their reason ends with
+    «قورن بآخر ثلاثة أشهر عمل فيها: يوليو 2025، سبتمبر 2025 وأكتوبر 2025. أشهر بلا نشاط لم تُحتسب: أغسطس 2025.» (the English built in
+    `kpiMetricReason`, so «تصدير التقييم» in English names the months too); the person's page writes under «العملاء والسوق» «أشهر المقارنة: …» and
+    «أشهر بلا نشاط لم تُحتسب: …» (`app/kpi-performance.tsx`, `.kpi-baseline-note`).
+  - **The representative sees the mark.** «أهدافي» (`GET /api/targets`) now carries `inactive`, decided as the evaluation decides it
+    (`ownOutOfEvaluation` in `lib/own-targets-server.ts`: a closed month, no work of theirs, their sales known complete by a complete import
+    or by a current «بيانات المؤشرات» confirmation with their customers' codes known); the page writes «بلا نشاط في هذا الشهر – خارج التقييم»
+    and «لا توجد في هذا الشهر المغلق زيارات ولا متابعات ولا عملاء أضفتهم ولا مبيعات مؤكدة، ومبيعاته مكتملة (إجازة أو انقطاع). لا يُحتسب الشهر
+    عليك في التقييم، ولا يدخل ضمن أشهر المقارنة لمؤشري الحفاظ على العملاء والعملاء المستردين.» Only that yes or no leaves the server; the month
+    in progress reads nothing more (it is never marked). The manager's sentence on the person's page and under the comparison now names the
+    customers added by hand and says the month is not compared; its title has a line of its own (a phone of 360 px gave it a column one word
+    wide).
+- **Each indicator and a whole month of leave.** As the evaluated month: out of the evaluation (no score, no points), as since 2026-11-14.
+  Inside the period an indicator looks back over: «الحفاظ على العملاء الحاليين» and «العملاء المستردون» skip it (above); «نمو مبيعات الأصناف»
+  compares with the previous calendar month as GSCO does, and after a leave month no product has a positive baseline, so it is «لا ينطبق» and
+  its 5% leaves the score (unchanged, tested); every other indicator reads the evaluated month only. A leave of part of a month: nothing
+  changes (option «أ»).
+- **Not changed.** The team target: a supervisor's target still adds up the targets of a representative on leave all month (GSCO deferred
+  this to its owner; so does Yourrest). No leave register. No migration (21 tables, `0020_member_permissions.sql` the last).
+- **Differences from GSCO.** Fewer than three worked months within twelve, and a new representative's recovered customers, are «لا ينطبق»
+  with a reason in Yourrest (GSCO: «بيانات مطلوبة»), because no upload can fill them and Yourrest's earlier decision keeps «لا ينطبق» for
+  what has nothing to count; with no work at all yet every month is ordinary (GSCO's code would skip them all; its document says the months
+  before the first worked month are ordinary). The months worked come from Yourrest's records (activities and customers added by hand; GSCO
+  also counts its projects' stages, which Yourrest has not). The roll-ups of supervisors and sales managers compare their team's customers
+  (GSCO compares a supervisor's own), so their months worked are the team's.
+- **Tested.** `tests/kpi-leave-months.mjs` (new, default gate, 123 checks: the pure rule, `calculateKpis` with the real coverage, the real
+  routes on SQLite, one definition), `tests/kpi-leave-months-http.mjs` (new, built release, 48), `tests/kpi-leave-months-browser.mjs` (new,
+  Chromium at 320 and 360 px, a tablet upright and on its side and a desktop, Arabic and English, 98, screenshots); updated, because a
+  covered month with neither a contact nor a sales document is now a leave month: `tests/kpi-complete-domain.mjs` (100: a visit in each
+  fixture month, an older purchase in the «new customers are not recovered» case, no purchases in the «nothing done» fixture),
+  `tests/sales-coverage.mjs` (67: a visit in each fixture month), `tests/kpi-complete-integration.mjs` (114: a visit in February and March);
+  `tests/own-targets.mjs` (142) and `tests/namecheap-http.mjs` (384: the own page's keys include `inactive`), `tests/my-targets-ui.mjs`
+  (73) and `tests/kpi-performance-evidence-ui.mjs` (119: the new lines); and four release tests the first full gate run stopped, each
+  because its fixture had a covered month without any work, which the rule now reads as a leave: `tests/sales-coverage-http.mjs` (68) and
+  `tests/sales-coverage-browser.mjs` (86: rep1 visits in M-3; rep2, whose only work is in M, is a new representative, so its recovered target
+  is read from its activity targets), `tests/targets-audit-browser.mjs` (122: rep1 sold four months ago and visited in the two months after,
+  so the hand count of 64.26 holds), `tests/kpi-evidence-browser.mjs` (87: visits in February and March 2025 after the customer added by
+  hand in January 2024). The release gates (`node scripts/gates.mjs`, a full selection because `tests/check-manifest.json` and
+  `tests/test-areas.json` changed): the first run stopped on those four and `tests/namecheap-http.mjs` (each failed twice, mended as above);
+  the second: 99 passed, 1 not stable (`erp-sales-replace-http`: a 409 on «applied with the agreement» in the pool, passed alone; it passed in
+  the first run and nothing of the ERP import changed), 4 skipped (the owner's ERP files); the default gate 199/199 (TypeScript and ESLint
+  included: 0 errors, the 160 warnings of the baseline); `tests/msa-wording.mjs` passed.
+
 ## Customer detail edits wait for approval: the representative's supervisor, then the sales manager (2026-11-15, not released yet, no migration)
 
 - **Asked.** Item 4 of the GSCO comparison list, approved by the owner: «تمام كمل البند الرابع وارفع لما الفحص يخلص». The item: «تعديل بيانات

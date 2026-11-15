@@ -79,6 +79,10 @@ erp('dropped-prior',{code:'DROPPED',date:'2025-03-15'});
 erp('rep2-keep-prior',{rep:'rep2',date:'2025-04-15'});manual('rep2-keep-current',{rep:'rep2'});
 erp('rep2-recovered-prior',{rep:'rep2',code:'REP2-RECOVER',date:'2025-01-15'});manual('rep2-recovered-current',{rep:'rep2',customer:'rep2-recover'});
 manual('void-current',{status:'void',quantity:999});
+// A visit of rep and rep2 in February and March 2025 (since 2026-11-15, lib/kpi-baseline.ts): a covered month with neither a contact nor a
+// sales document is a month without activity (a leave) and is skipped from the customers' comparison, so these keep February to April
+// the three compared months this test was written for.
+for(const rep of ['rep','rep2'])for(const day of ['2025-02-10','2025-03-10'])record('visit-'+rep+'-'+day,'activity',rep==='rep'?'keep':'rep2-recover',rep,{type:'visit',date:day,summary:'Synthetic visit',performedBy:rep,responsibleId:rep,recordedByEmail:rep+'@yourrest.org'});
 for(const [rep,code,region,customer] of [['other','OTHER','eastern','other-customer'],['west','WEST','western','west-customer']]){
  erp('hidden-prior-'+rep,{rep,code,region,date:'2025-04-15',quantity:9999});manual('hidden-current-'+rep,{rep,customer,quantity:9999});
 }

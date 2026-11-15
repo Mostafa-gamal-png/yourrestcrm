@@ -35,6 +35,14 @@ const ERP_IMPORTED_ID=/-erp-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 export const erpImportedCustomer=(row:Pick<Row,'id'>)=>ERP_IMPORTED_ID.test(row.id);
 const riyadhDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'});
 const isDay=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value);
+/** The Riyadh day a customer was added by hand in the app (its record made by a person, not by a file import nor by the ERP customers
+ *  import), or '' for any other. «العملاء الجدد» credits such a customer to `_createdBy`, and the months worked (lib/kpi-baseline.ts) count
+ *  it as that member's work. */
+export function handAddedDay(customer:Pick<Row,'id'|'kind'|'createdAt'|'data'>){
+ if(customer.kind!=='customer'||!customer.createdAt||customer.data?.sourceFile||erpImportedCustomer(customer))return '';
+ const at=new Date(customer.createdAt);
+ return Number.isNaN(at.getTime())?'':riyadhDay.format(at);
+}
 
 /** «العملاء الجدد» of a month (the owner, 2026-11-12: the ERP customers file has the date and the representative: «هاتهم من هنا»). Each
  * customer is credited to at most one member for the month, so it is never counted twice:
@@ -51,7 +59,7 @@ export function newCustomerCredits(customers:Row[],period:{first:string;cutoff:s
  for(const customer of customers){
   if(customer.kind!=='customer')continue;
   const data=customer.data||{},erpDay=isDay(data.erpCreatedAt)?data.erpCreatedAt:'';
-  const madeHere=!data.sourceFile&&!!customer.createdAt&&!erpImportedCustomer(customer)&&inPeriod(riyadhDay.format(new Date(customer.createdAt)));
+  const added=handAddedDay(customer),madeHere=!!added&&inPeriod(added);
   if(madeHere){
    if(data._createdBy){credits.set(customer.id,String(data._createdBy));continue;}
    if(!erpDay){unknown=true;continue;}

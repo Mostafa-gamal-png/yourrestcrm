@@ -1547,5 +1547,7 @@
   "موافقة المشرف على تعديل بيانات العميل": "Supervisor approved the customer details edit",
   "الموافقة على تعديل بيانات العميل": "Customer details edit approved",
   "رفض طلب تعديل بيانات العميل": "Customer details edit rejected",
-  "إلغاء طلب تعديل بيانات العميل": "Customer details edit request cancelled"
+  "إلغاء طلب تعديل بيانات العميل": "Customer details edit request cancelled",
+  "لا توجد ثلاثة أشهر عمل فيها المندوب خلال الأشهر الاثني عشر السابقة، فلا توجد فترة مقارنة للعملاء. الأشهر التي تغطيها مبيعات ERP الكاملة بلا زيارات ولا متابعات ولا مبيعات (إجازة أو انقطاع) لا تُحتسب.": "There are not three months worked by the representative in the previous twelve months, so there is no period to compare customers with. Months covered by complete ERP sales without visits, follow-ups or sales (leave or absence) are not counted.",
+  "لا يوجد قبل أشهر المقارنة شهر عمل فيه المندوب ولا شراء سابق لعملائه، فلا يمكن إثبات عميل مسترد. يبدأ احتساب المؤشر بعد أربعة أشهر من أول شهر عمل فيه.": "Before the compared months there is no month the representative worked and no earlier purchase of their customers, so no reactivated customer can be established. The indicator starts four months after the first month they worked."
 }

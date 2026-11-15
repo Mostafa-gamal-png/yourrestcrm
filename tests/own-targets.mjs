@@ -95,7 +95,8 @@ async function post(api,body,status){const response=await api.POST(postRequest(b
 
 user('rep');let payload=await get();
 eq(payload.member,{id:'rep',name:'المندوب الحالي'});
-eq(Object.keys(payload).sort(),['activity','member','month','sales']);
+// inactive (2026-11-15, GSCO 2.13.50): the month out of the evaluation, a yes or a no (tests/kpi-leave-months*.mjs test the rule).
+eq(Object.keys(payload).sort(),['activity','inactive','member','month','sales']);eq(payload.inactive,false,'a month with the representative\'s own sales is not out of the evaluation');
 eq(Object.keys(payload.sales).sort(),['actualsAvailable','products','sourceMonth']);
 eq(payload.sales.sourceMonth,'2026-09');eq(payload.sales.products.length,salesProducts.length);
 eq(payload.sales.products.map(p=>p.quantity),products(7).map((p,i)=>i===0?0:i===1?null:i===2?1.125:p.quantity));

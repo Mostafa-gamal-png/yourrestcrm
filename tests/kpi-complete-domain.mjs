@@ -22,7 +22,11 @@ const input=emptyKpiInput();input.reviewed=10;input.correct=10;for(const grade o
 const assessment={memberId:'rep',month,input,version:1,updatedAt:'2025-10-01',updatedBy:'admin'};
 const purchase=(customerKey,date,netCents=1000,hasSale=true)=>({customerKey,date,netCents,hasSale});
 const evidence={historyComplete:true,collection:{dueCents:10000,collectedCents:7000},recoveryTarget:2,quotationsKnown:true,quotations:[{quoteId:'q1',converted:true},{quoteId:'q1',converted:true},{quoteId:'q2',converted:false}],purchases:[purchase('recovered','2025-05-01'),purchase('recovered','2025-09-01'),purchase('retained','2025-06-01'),purchase('retained','2025-09-01'),purchase('lapsed','2025-08-01'),purchase('new','2025-09-01'),purchase('returned','2025-02-01'),purchase('returned','2025-09-01',1000),purchase('returned','2025-09-01',-1000,false),purchase('return-only','2025-09-01',1000,false)]};
-const calc=(context=evidence,p=performance(),items=sales,management=assessment)=>calculateKpis(p,month,[],items,management,undefined,context),get=(result,id)=>result.metrics.find(m=>m.id===id);
+// A visit of the representative in every month from February to August (since 2026-11-15, lib/kpi-baseline.ts): a covered month with
+// neither a contact nor a sales document is a month without activity (a leave) and is skipped from the customers' comparison, so these
+// keep June to August the three compared months these cases were written for (tests/kpi-leave-months.mjs tests the leave itself).
+const workedRecords=['02','03','04','05','06','07','08'].map(m=>({id:'work-2025-'+m,kind:'activity',parentId:null,assignedTo:'rep',branch:'HQ',data:{type:'visit',date:'2025-'+m+'-10',performedBy:'rep',responsibleId:'rep',summary:'s'},createdAt:'2025-'+m+'-10T08:00:00Z',updatedAt:'2025-'+m+'-10T08:00:00Z',version:1}));
+const calc=(context=evidence,p=performance(),items=sales,management=assessment)=>calculateKpis(p,month,workedRecords,items,management,undefined,context),get=(result,id)=>result.metrics.find(m=>m.id===id);
 let result=calc();
 eq(get(result,'collection').score,70,'Collection uses evidence cents');
 eq([get(result,'recovered').numerator,get(result,'recovered').denominator,get(result,'recovered').score],[1,2,50],'Recovery needs an old purchase and three full inactive months');
@@ -41,7 +45,7 @@ result=calc({...evidence,collection:{dueCents:0,collectedCents:0}});eq(get(resul
 result=calc({...evidence,collection:{dueCents:0,collectedCents:100}});eq(get(result,'collection').status,'missing','Impossible denominator never becomes N/A');
 result=calc({...evidence,recoveryTarget:null});eq(get(result,'recovered').score,null,'Unknown recovery target stays unknown');
 result=calc({...evidence,recoveryTarget:0});eq(get(result,'recovered').status,'not_applicable');
-result=calc({...evidence,purchases:[purchase('new','2025-09-01')]});eq(get(result,'retention').status,'not_applicable');eq(get(result,'recovered').score,0,'New customers are not recovered');
+result=calc({...evidence,purchases:[purchase('older','2025-03-01'),purchase('new','2025-09-01')]});eq(get(result,'retention').status,'not_applicable');eq(get(result,'recovered').score,0,'New customers are not recovered');
 result=calc({...evidence,purchases:[purchase('old','2025-05-01'),purchase('old','2025-08-01'),purchase('old','2025-09-01')]});eq(get(result,'recovered').score,0,'Any purchase in prior three months prevents recovery');
 result=calc({...evidence,purchases:[purchase('old','2025-05-01'),purchase('old','2025-09-01',-1000,false)]});eq(get(result,'recovered').score,0,'Return-only month is never a purchase');
 result=calc({...evidence,purchases:[purchase('old','2025-05-01'),purchase('old','2025-09-01',1000),purchase('old','2025-09-01',1000)]});eq(get(result,'recovered').numerator,1,'Repeated monthly facts across a team count one customer');
@@ -87,7 +91,8 @@ eq([get(result,'positive').numerator,get(result,'positive').denominator,get(resu
 ok(!get(result,'positive').reason.includes('gscoinvest'),'The reason no longer names gscoinvest');
 // ---- 3. «بلا نشاط في هذا الشهر – خارج التقييم»
 const quiet=(context,{p=performance(targetState(),[]),records=[],items=[],when=month}={})=>calculateKpis(p,when,records,items,assessment,undefined,context);
-const covered={...evidence,historyComplete:false,coverage:{current:true,through:'2025-09-30',growth:true,retention:true,recovered:true,missing:{growth:{months:[],olderThan:null},retention:{months:[],olderThan:null},recovered:{months:[],olderThan:null}}}};
+// No purchase either: since 2026-11-15 a sales document of the purchase history (evidence.purchases) is work of its month too.
+const covered={...evidence,purchases:[],historyComplete:false,coverage:{current:true,through:'2025-09-30',growth:true,retention:true,recovered:true,missing:{growth:{months:[],olderThan:null},retention:{months:[],olderThan:null},recovered:{months:[],olderThan:null}}}};
 result=quiet(covered);eq([result.inactive,result.summary.total],[true,null],'Closed month covered by the ERP imports, nothing done: out of the evaluation');eq(INACTIVE_TEXT,'بلا نشاط في هذا الشهر – خارج التقييم');
 result=quiet({...evidence,historyComplete:false});eq(result.inactive,false,'Sales not known complete: never out of the evaluation');
 result=quiet(covered,{records:[customer('c-call','rep',full),visit('call','c-call','specs','2025-09-12','call')]});eq(result.inactive,false,'A contact of the month keeps the representative in');

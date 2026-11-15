@@ -49,6 +49,11 @@ let checks=0,app;
 const check=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;},ok=(v,m)=>{assert.ok(v,m);checks++;};
 try{
  app=await bootBuiltApp({members});
+ // rep1 visits a customer in M-3 (2026-11-15, lib/kpi-baseline.ts): a covered month with neither a contact nor a sales document is a month
+ // without activity (a leave) and is skipped from the customers' comparison; with the visit, M-3..M-1 stay the months compared here.
+ const earlier=M4+'-01T08:00:00.000Z',record=(id,kind,parent,data)=>app.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id,kind,parent,'rep1','الرئيسي',JSON.stringify(data),earlier,earlier).run();
+ await record('c-visited','customer',null,{name:'مصنع الزيارة',region:'الشرقية',city:'الدمام'});
+ await record('v-m3','activity','c-visited',{type:'visit',date:M3+'-15',summary:'زيارة',result:'العميل مهتم',performedBy:'rep1',responsibleId:'rep1',recordedByEmail:'rep1@yourrest.org'});
  const sessions={};for(const m of members)sessions[m.id]=await app.login(m.id);
  const as=who=>app.as(who?sessions[who]:'');
  const url='/api/sales/import',mappings=[{employeeId:'E1',repId:'rep1'},{employeeId:'E2',repId:'rep2'}];
@@ -147,7 +152,9 @@ try{
  check((await as('owner')('/api/targets',{method:'POST',body:{kind:'activity',scopeId:'rep1',month:M,version:0,inheritedFrom:null,requestId:crypto.randomUUID(),data:{newCustomers:3,recoveredCustomers:2,visits:40}}})).status,200,'the administrator can');
  payload=await kpi();
  check([metric(payload,'rep1','new_customers').denominator,metric(payload,'rep1','visits').denominator,metric(payload,'rep1','recovered').denominator,metric(payload,'rep1','recovered').score,person(payload,'rep1').activityTargetsDefault],[3,40,2,50,false],'a saved target wins over the defaults');
- check([metric(payload,'rep2','recovered').denominator,person(payload,'rep2').activityTargetsDefault],[5,true],'another rep keeps the defaults');
+ // rep2's only work is in M (2026-11-15, GSCO 2.13.51): a new representative, so «العملاء المستردون» does not apply to them yet and its target
+ // is read from the activity targets, not from the indicator's denominator.
+ check([person(payload,'rep2').activityTargets.recoveredCustomers,metric(payload,'rep2','recovered').status,person(payload,'rep2').activityTargetsDefault],[5,'not_applicable',true],'another rep keeps the defaults');
  payload=await kpi('sm',current);
  check([metric(payload,'rep1','new_customers').denominator,person(payload,'rep1').activityTargetsDefault],[3,false],'carried forward to '+current);
 

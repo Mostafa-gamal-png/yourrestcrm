@@ -5,7 +5,8 @@ import {type ActivityTargets,type quantityAttainment} from './targets';
 import {customerVisits,customerPlanSource,visitOrder} from './customer-visits';
 import {type KpiEvidenceContext,type KpiQuotationDetail} from './kpi-evidence';
 import {quotationRefKey} from './quotation-refs';
-import {coverageReason,type CoverageMissing} from './sales-coverage';
+import {addMonths,coverageReason,type CoverageMissing} from './sales-coverage';
+import {baselineSentence,customerBaseline,outOfEvaluation,workMonthsByMember,workedMonths,NEW_HISTORY_REASON,NO_BASELINE_REASON} from './kpi-baseline';
 import {newCustomerCredits,newCustomersOf,type ErpRepAttribution} from './new-customers';
 import {entryRatingOf,saleEntry} from './supervisor-reviews';
 export const operationalIndicators=[
@@ -42,10 +43,17 @@ export const roundKpi=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 export const boundedScore=(n:number)=>Math.max(0,Math.min(100,n));
 /** missing: present only while a KPI waits for complete ERP sales imports (lib/sales-coverage.ts): the months to upload, so the page
  *  writes them in the reader's language (kpiMetricReason); reason holds the same in Arabic. waiting: «نسبة الزيارات الفعالة» only, the
- *  visits of the month the supervisor has not evaluated yet (left out of its ratio; the reason names them too). */
-export type KpiMetric={id:IndicatorId;score:number|null;points:number|null;numerator:number|null;denominator:number|null;reason:string;source:'automatic'|'management'|'required';status?:'scored'|'missing'|'not_applicable';missing?:CoverageMissing;waiting?:number};
-/** The text of a KPI's «طريقة الحساب / البيانات المطلوبة» in the reader's language. */
-export function kpiMetricReason(m:Pick<KpiMetric,'reason'|'missing'>,translate:(value:string)=>string,language:'ar'|'en'='ar'){return m.missing&&language==='en'?coverageReason(m.missing,'en'):translate(m.reason);}
+ *  visits of the month the supervisor has not evaluated yet (left out of its ratio; the reason names them too). baseline: «الحفاظ على
+ *  العملاء الحاليين» and «العملاء المستردون» only, when months without activity were left out of their comparison (lib/kpi-baseline.ts):
+ *  the compared months and the skipped ones; reason ends with the same in Arabic (baselineSentence). */
+export type KpiMetric={id:IndicatorId;score:number|null;points:number|null;numerator:number|null;denominator:number|null;reason:string;source:'automatic'|'management'|'required';status?:'scored'|'missing'|'not_applicable';missing?:CoverageMissing;waiting?:number;baseline?:{months:string[];skipped:string[]}};
+/** The text of a KPI's «طريقة الحساب / البيانات المطلوبة» in the reader's language: the months to upload and the months compared are written
+ *  here (the dictionary cannot translate month names), the rest through the dictionary. */
+export function kpiMetricReason(m:Pick<KpiMetric,'reason'|'missing'|'baseline'>,translate:(value:string)=>string,language:'ar'|'en'='ar'){
+ if(m.missing&&language==='en')return coverageReason(m.missing,'en');
+ if(m.baseline?.skipped.length&&language==='en'){const arabic=' '+baselineSentence(m.baseline,'ar'),base=m.reason.endsWith(arabic)?m.reason.slice(0,-arabic.length):m.reason;return translate(base)+' '+baselineSentence(m.baseline,'en');}
+ return translate(m.reason);
+}
 export function metric(id:IndicatorId,score:number|null,reason:string,source:KpiMetric['source']='automatic',numerator:number|null=null,denominator:number|null=null,status?:KpiMetric['status']):KpiMetric{const value=status==='not_applicable'||score===null||!Number.isFinite(score)?null:roundKpi(boundedScore(score));return{id,score:value,points:value===null?null:roundKpi(value*operationalIndicators.find(i=>i.id===id)!.weight/100),numerator,denominator,reason,source,status:status==='not_applicable'?'not_applicable':value===null?'missing':'scored'};}
 /** The overall score (the owner, 2026-11-14, as the company's other CRM, GSCO: «الدرجة من الموجود»): missing data is not a zero. total =
  *  the points earned ÷ the weight that has data (the weight of «لا ينطبق» left out) × 100, whenever some weight has data; complete only
@@ -121,7 +129,9 @@ export function prepareKpiRecords(records:Row[],month:string,attribute?:ErpRepAt
  const contacts=new Map(customers.map(c=>[c.id,customerVisits(c.id,buckets.get(c.id)||[]).reverse()])),plans=new Map(customers.map(c=>[c.id,customerPlanSource(c.id,buckets.get(c.id)||[])]));
  // «العملاء الجدد»: added by hand in the month, or created in the ERP in the month (lib/new-customers.ts), each customer once.
  const newCustomers=newCustomerCredits(customers,kpiPeriod(month),attribute);
- return{customers,buckets,customerIds,contacts,plans,newCustomers,ratings};
+ // The months each member worked (lib/kpi-baseline.ts): their activities and the customers they added by hand, up to the cutoff.
+ const workMonths=workMonthsByMember(records,kpiPeriod(month).cutoff);
+ return{customers,buckets,customerIds,contacts,plans,newCustomers,ratings,workMonths};
 }
 export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:Sale[],assessment:KpiAssessment|null,prepared=prepareKpiRecords(records,month),evidence?:KpiEvidenceContext){
  const period=kpiPeriod(month),ids=new Set(p.sourceMemberIds),saleIds=new Set(p.salesSourceMemberIds),input=assessment?.input||emptyKpiInput(),ratio=(a:number,b:number)=>b>0?a/b*100:null;
@@ -130,7 +140,20 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
  // The sales history is complete by the manual confirmation of «بيانات المؤشرات» (all three KPIs at once, as before), or KPI by KPI
  // by the complete ERP sales imports (lib/sales-coverage.ts): retention and recovered also need the customers' codes to be known.
  const manualHistory=!!evidence?.historyComplete,coverage=evidence?.coverage,identitiesKnown=evidence?.identitiesKnown!==false;
- const zeroFill=manualHistory||!!coverage?.current,growthReady=manualHistory||!!coverage?.growth,retentionReady=manualHistory||!!coverage?.retention&&identitiesKnown,recoveredReady=manualHistory||!!coverage?.recovered&&identitiesKnown;
+ const zeroFill=manualHistory||!!coverage?.current,growthReady=manualHistory||!!coverage?.growth;
+ // The months the scope worked (lib/kpi-baseline.ts, GSCO 2.13.50): the activities and the hand-added customers of its people, and the days
+ // of their confirmed sales documents (the month's and the previous month's, and every month of the purchase history).
+ const documentDays=[...sales.filter(s=>saleIds.has(s.repId)&&s.status==='confirmed').map(s=>s.date),...(evidence?.purchases||[]).map(purchase=>purchase.date)];
+ const worked=workedMonths(prepared.workMonths,new Set([...ids,...saleIds]),documentDays,period.cutoff),documents=workedMonths(new Map(),[],documentDays,period.cutoff);
+ // «الحفاظ على العملاء الحاليين» and «العملاء المستردون» compare with the last three WORKED months (customerBaseline: a covered month without
+ // work is skipped, a month before the first worked one is ordinary, twelve months back at most), over the months the complete ERP imports
+ // cover (lookback) or «بيانات المؤشرات» confirmed (the three before the month). A coverage without lookback keeps its three calendar months.
+ const calendar=new Set([1,2,3].map(n=>addMonths(month,-n))),lookback=coverage?.lookback,wholeMonths=new Set(lookback?.whole||[]),touchedMonths=new Set(lookback?.touched||[]);
+ const baseline=customerBaseline({month,worked,documents,
+  covered:candidate=>manualHistory&&calendar.has(candidate)||(lookback?wholeMonths.has(candidate):!!coverage?.retention&&calendar.has(candidate)),
+  olderCovered:earliest=>manualHistory&&earliest===addMonths(month,-3)||(lookback?lookback.firstWhole!==null&&lookback.firstWhole<earliest:!!coverage?.recovered&&earliest===addMonths(month,-3)),
+  touched:candidate=>touchedMonths.has(candidate)});
+ const customersCovered=zeroFill&&(manualHistory||identitiesKnown),retentionReady=customersCovered&&baseline.status==='ready',recoveredReady=retentionReady&&baseline.history==='ready';
  // A verified complete sales period establishes a real zero for absent products.
  // Unconfirmed or incomplete imports must continue to display an unknown value.
  if(zeroFill){
@@ -151,10 +174,25 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
  };
  const automaticNote=(kind:'growth'|'retention'|'recovered')=>!manualHistory&&coverage?.[kind]?(coverage.through&&coverage.through<period.cutoff?' • سجل المبيعات مكتمل تلقائيًا من رفع ERP حتى '+coverage.through+'.':' • سجل المبيعات مكتمل تلقائيًا من رفع مبيعات ERP الكاملة.'):'';
  const withMissing=(m:KpiMetric,state:{missing?:CoverageMissing})=>state.missing?{...m,missing:state.missing}:m;
+ // While the customers' comparison waits, the months it needs: the evaluation month, the uncovered months of the search, and for recovered
+ // customers the month before which an older complete month is needed. Months skipped for a leave reach past what «بيانات المؤشرات»
+ // confirms, so then only an upload completes them.
+ const customerState=(kind:'retention'|'recovered'):{reason:string;missing?:CoverageMissing}=>{
+  if(!coverage&&!manualHistory)return {reason:historyReason};
+  const months=[...new Set([...(zeroFill?[]:[month]),...baseline.missing])].sort();
+  let olderThan:string|null=null;
+  if(kind==='recovered'){if(baseline.status==='ready'){if(baseline.history==='missing')olderThan=baseline.earliest;}else{const oldest=[...baseline.months,...baseline.missing].sort()[0]||addMonths(month,-3);olderThan=lookback?(lookback.firstWhole!==null&&lookback.firstWhole<oldest?null:oldest):coverage?.missing.recovered.olderThan??null;}}
+  if(!months.length&&!olderThan)return {reason:historyReason};
+  const missing:CoverageMissing={months,olderThan,...(baseline.skipped.length?{uploadOnly:true as const}:{})};
+  return {reason:coverageReason(missing),missing};
+ };
+ const skipNote=baseline.skipped.length?' '+baselineSentence(baseline,'ar'):'';
+ const withBaseline=(m:KpiMetric)=>baseline.skipped.length?{...m,baseline:{months:baseline.months,skipped:baseline.skipped}}:m;
  const purchaseMonths=new Map<string,{customerKey:string;date:string;netCents:number;hasSale:boolean}>();
  for(const purchase of evidence?.purchases||[]){if(!purchase.customerKey||!Number.isFinite(purchase.netCents)||purchase.date>period.cutoff)continue;const key=JSON.stringify([purchase.customerKey,purchase.date.slice(0,7)]),existing=purchaseMonths.get(key);purchaseMonths.set(key,{...purchase,date:purchase.date.slice(0,7)+'-01',netCents:(existing?.netCents||0)+purchase.netCents,hasSale:!!existing?.hasSale||purchase.hasSale});}
- const historyFrom=new Date(period.first+'T12:00:00Z');historyFrom.setUTCMonth(historyFrom.getUTCMonth()-3);const priorThreeFirst=historyFrom.toISOString().slice(0,10),buyers=new Set<string>(),priorBuyers=new Set<string>(),olderBuyers=new Set<string>();
- for(const purchase of purchaseMonths.values()){if(!purchase.hasSale||purchase.netCents<=0)continue;if(purchase.date>=period.first)buyers.add(purchase.customerKey);else if(purchase.date>=priorThreeFirst)priorBuyers.add(purchase.customerKey);else olderBuyers.add(purchase.customerKey);}
+ // The compared months (the three calendar months while the comparison is not ready), and the purchases before the oldest of them.
+ const reference=new Set(baseline.status==='ready'?baseline.months:[...calendar]),olderBefore=(baseline.earliest||addMonths(month,-3))+'-01',buyers=new Set<string>(),priorBuyers=new Set<string>(),olderBuyers=new Set<string>();
+ for(const purchase of purchaseMonths.values()){if(!purchase.hasSale||purchase.netCents<=0)continue;if(purchase.date>=period.first)buyers.add(purchase.customerKey);else if(reference.has(purchase.date.slice(0,7)))priorBuyers.add(purchase.customerKey);else if(purchase.date<olderBefore)olderBuyers.add(purchase.customerKey);}
  const recovered=[...buyers].filter(id=>!priorBuyers.has(id)&&olderBuyers.has(id)).length,retained=[...priorBuyers].filter(id=>buyers.has(id)).length;
  // Each quotation once; converted when any of its entries converted.
  const quotationMap=new Map<string,KpiQuotation>();
@@ -185,8 +223,17 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
   (()=>{const state=growth===null&&growthWeightsValid?waiting('growth',growthReady,''):{reason:''};return withMissing(metric('growth',growth,state.missing?state.reason:'نمو كميات الأصناف مقابل الفترة المناظرة من الشهر السابق؛ تستبعد الأصناف بلا أساس شراء موجب بعد تأكيد اكتمال السجل.'+automaticNote('growth'),state.missing?'required':'automatic',null,null,growthReady&&growthWeightsValid&&growthApplicableWeight===0?'not_applicable':undefined),state);})(),
   countMetric('variety',diverse,salesInvoices.length,'فواتير البيع التي تشمل 3 أصناف مختلفة أو أكثر ÷ إجمالي فواتير البيع المسجلة غير الملغاة. تستبعد مستندات المرتجعات.'),
   countMetric('new_customers',unknownRegistrations||p.activityTargetsKnown===false?null:newCustomers,p.activityTargetsKnown===false?null:p.activityTargets.newCustomers,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':unknownRegistrations?'بعض العملاء المضافين في الشهر لا يحملون هوية منشئهم ولا تاريخ إنشائهم في ERP؛ لا تُنسب إضافتهم للمسؤول الحالي بالتخمين.':NEW_CUSTOMERS_REASON),
-  (()=>{const state=waiting('recovered',recoveredReady,historyReason);return withMissing(countMetric('recovered',recoveredReady?recovered:null,evidence?.recoveryTarget??null,recoveredReady?'عملاء اشتروا قديمًا، وتوقفوا ثلاثة أشهر كاملة، ثم عادوا للشراء هذا الشهر ÷ مستهدف الاسترداد.'+automaticNote('recovered'):state.reason,recoveredReady?'automatic':'required'),state);})(),
-  (()=>{const state=waiting('retention',retentionReady,historyReason);return withMissing(countMetric('retention',retentionReady?retained:null,retentionReady?priorBuyers.size:null,retentionReady?'المشترون هذا الشهر من عملاء الأشهر الثلاثة السابقة ÷ جميع عملاء تلك الأشهر.'+automaticNote('retention'):state.reason,retentionReady?'automatic':'required'),state);})(),
+  (()=>{
+   if(customersCovered&&baseline.status==='none')return metric('recovered',null,NO_BASELINE_REASON,'automatic',null,null,'not_applicable');
+   if(retentionReady&&baseline.history==='new')return metric('recovered',null,NEW_HISTORY_REASON,'automatic',null,null,'not_applicable');
+   if(recoveredReady)return withBaseline(countMetric('recovered',recovered,evidence?.recoveryTarget??null,'عملاء اشتروا قديمًا، وتوقفوا ثلاثة أشهر كاملة، ثم عادوا للشراء هذا الشهر ÷ مستهدف الاسترداد.'+automaticNote('recovered')+skipNote,'automatic'));
+   const state=customerState('recovered');return withMissing(countMetric('recovered',null,evidence?.recoveryTarget??null,state.reason,'required'),state);
+  })(),
+  (()=>{
+   if(customersCovered&&baseline.status==='none')return metric('retention',null,NO_BASELINE_REASON,'automatic',null,null,'not_applicable');
+   if(retentionReady)return withBaseline(countMetric('retention',retained,priorBuyers.size,'المشترون هذا الشهر من عملاء الأشهر الثلاثة السابقة ÷ جميع عملاء تلك الأشهر.'+automaticNote('retention')+skipNote,'automatic'));
+   const state=customerState('retention');return withMissing(countMetric('retention',null,null,state.reason,'required'),state);
+  })(),
   countMetric('visits',p.activityTargetsKnown===false?null:visits.length,p.activityTargetsKnown===false?null:p.activityTargets.visits,p.activityTargetsKnown===false?'مستهدفات النشاط غير مكتملة لهذا النطاق.':'الزيارات المسجلة والمتابعات من نوع زيارة فقط ÷ مستهدف الزيارات.'),
   {...(!visits.length?metric('positive',null,positiveReason(0),'automatic',0,0,'not_applicable'):evaluated.rated?metric('positive',ratio(evaluated.effective,evaluated.rated),positiveReason(evaluated.waiting),'automatic',evaluated.effective,evaluated.rated):metric('positive',null,positiveUnratedReason(evaluated.waiting),'required')),waiting:evaluated.waiting},
   countMetric('quotes',quoted,qualified,'العملاء الذين بدأ تواصلهم في الشهر، وما زالوا في مرحلة مفتوحة، وتأهلوا بجمع المواصفات أو المراجعة الفنية: مَن سُجّل لهم عرض بعد التأهيل ÷ جميع المؤهلين.'),
@@ -195,10 +242,10 @@ export function calculateKpis(p:KpiPerformance,month:string,records:Row[],sales:
   countMetric('documentation',documented,lost,'العملاء الذين بدأ تواصلهم في الشهر ووصلوا للفقد مع سبب موثق ÷ جميع حالات الفقد لنفس المجموعة.'),
   ...conductKeys.map(id=>metric(id,input.conduct[id].score,'درجة الإدارة من صفر إلى 100 مع ملاحظة اختيارية.','management'))
  ];
- // «بلا نشاط في هذا الشهر – خارج التقييم» (the owner, 2026-11-14: «مندوب بلا نشاط يطلع برّه»): a representative with no visit, follow-up or
- // other contact of their own and no confirmed sales document in a closed month whose sales are known complete (the ERP imports cover the
- // month, or «بيانات المؤشرات» confirmed the history) is out of the evaluation. Managers' and supervisors' rollups never are.
- const activity=records.some(r=>r.kind==='activity'&&ids.has(r.data.performedBy||r.data.responsibleId)&&r.data.date>=period.first&&r.data.date<=period.cutoff);
- const inactive=p.member.role==='rep'&&period.cutoff<today()&&zeroFill&&!activity&&invoices.length===0;
+ // «بلا نشاط في هذا الشهر – خارج التقييم» (the owner, 2026-11-14: «مندوب بلا نشاط يطلع برّه»): a representative with no work of their own
+ // (no visit, follow-up or other contact, no customer added by hand, no confirmed sales document: lib/kpi-baseline.ts) in a closed month
+ // whose sales are known complete (the ERP imports cover the month, or «بيانات المؤشرات» confirmed the history) is out of the evaluation,
+ // and the same month is skipped from the customers' comparison of the months after it. Managers' and supervisors' rollups never are.
+ const inactive=outOfEvaluation(p.member.role,month,period.cutoff,today(),zeroFill,worked);
  return{...p,metrics,summary:kpiSummary(metrics,inactive),inactive,assessment,growthRows,quotations:[...quotationMap.values()]};
 }
