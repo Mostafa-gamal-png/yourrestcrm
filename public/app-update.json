@@ -3,6 +3,7 @@
   "packageName": "org.yourrest.crm",
   "versionName": "1.0.12",
   "versionCode": 13,
+  "minimumVersionCode": 13,
   "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.12-13.apk",
   "sizeBytes": 271181,
   "sha256": "e50e6eb7cf247996fdf8c97a8ad3222010cc2427024ee80e27661e5af0f69802",

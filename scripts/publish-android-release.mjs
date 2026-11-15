@@ -16,7 +16,9 @@ const bytes=fs.readFileSync(apkPath),sha256=createHash('sha256').update(bytes).d
 if(report.package!=='org.yourrest.crm'||report.versionName!==versionName||report.versionCode!==versionCode
  ||report.apkSha256!==sha256||report.apkBytes!==bytes.length||!/^\d+\.\d+\.\d+$/.test(versionName))throw Error('APK differs from reviewed build report/version');
 const name=`yourrest-crm-android-v${versionName}-${versionCode}.apk`;
-const manifest={schemaVersion:1,packageName:report.package,versionName,versionCode,
+// Every published release is mandatory (the owner's rule, taken from GSCO on 2026-10-31): the oldest app allowed is always this one.
+// lib/app-update.ts reads the minimum as versionCode whatever is written here, and tests/app-update-release.mjs checks the served file.
+const manifest={schemaVersion:1,packageName:report.package,versionName,versionCode,minimumVersionCode:versionCode,
  apkUrl:`https://crm.yourrest.org/downloads/${name}`,sizeBytes:bytes.length,sha256,
  certificateSha256,
  releaseNotes:{ar:[
