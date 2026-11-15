@@ -17,7 +17,9 @@
 .tracking-gate-notes{font-size:13px;line-height:1.8;padding:10px 12px;border-radius:10px;border:1px solid var(--border,#d6e0d9);background:var(--muted,#f4f7f5)}.tracking-gate-notes ul{margin:4px 0 0;padding-inline-start:20px;list-style:disc}.tracking-gate-notes li{overflow-wrap:anywhere}
 .tracking-gate-saved{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 10px;font-size:13px;line-height:1.8;padding:10px 12px;border-radius:10px;border:1px solid #b9dcca;background:#f0faf4;color:#1b6a47}.tracking-gate-saved>svg{flex-shrink:0;margin-top:3px}.tracking-gate-saved>div{flex:1 1 200px;min-width:0}.tracking-gate-saved p{margin:0}.tracking-gate-saved .btn{min-height:44px;gap:6px;flex:1 1 100%;justify-content:center}
 .tracking-gate .app-update-banner{margin-bottom:0}
-.gate-workspace[aria-hidden=true]{display:none!important}
+/* Hidden by its own mark, never by aria-hidden: Radix marks every sibling of an open dialog aria-hidden, which would blank the page behind
+   any dialog of an up-to-date app (found by tests/trash-own-browser.mjs, 2026-11-15). */
+.gate-workspace[data-holding=yes]{display:none!important}
 .dark .tracking-gate-icon{background:#204a38;color:#8bd0ad}.dark .tracking-gate-card{box-shadow:none}
 .dark .tracking-gate-list li[data-needed=yes]{background:#3a1f19;border-color:#7a3a2b;color:#ffb4a1}.dark .tracking-gate-list li[data-needed=no]{background:#142e26;border-color:#2f5542;color:#8bd0ad}
 .dark .tracking-gate-error{background:#3a1f19;color:#ffb4a1}

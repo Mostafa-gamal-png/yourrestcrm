@@ -83,7 +83,7 @@ language = 'ar';
 // answering, is held at the update screen whatever the role. The workspace stays mounted under it, hidden; nothing offers to continue.
 const required = (patch = {}) => ({native: true, protocol: 0, phase: 'available', installedVersionCode: null, installedVersionName: '1.0.7', availableVersionCode: release.versionCode, availableVersionName: release.versionName, downloadedBytes: 0, totalBytes: 1, progress: 0, error: '', offline: false, legacyUrl: release.apkUrl, legacyStarted: false, releaseNotes: release.releaseNotes, requiredVersionCode: release.versionCode, requiredVersionName: release.versionName, requiredReleaseNotes: release.releaseNotes, apkReachable: true, ...patch});
 const continueWords = /يمكنك متابعة|متابعة العمل|لاحقًا|تخطي|keep working|continue working|Later|Skip/;
-const heldWorkspace = html => /<div class="gate-workspace" style="display:none" aria-hidden="true"><div id="workspace">WORKSPACE<\/div><\/div>/.test(html);
+const heldWorkspace = html => /<div class="gate-workspace" style="display:none" aria-hidden="true" data-holding="yes"><div id="workspace">WORKSPACE<\/div><\/div>/.test(html);
 tracker = trackerWith(gateOf({appVersion: '1.0.7'}), {appVersion: '1.0.7'}); updateState = required(); html = render();
 ok(html.includes('data-gate="blocked"') && html.includes('data-gate-update="required"') && html.includes('حدّث تطبيق يورست للمتابعة'), 'An app older than the served version is held at the update screen');
 ok(heldWorkspace(html), 'The workspace stays mounted under it, hidden and out of reach (open forms and the queue survive)');

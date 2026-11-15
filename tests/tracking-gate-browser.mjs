@@ -185,6 +185,13 @@ try {
     const phone = nativeControl(page);
     ok((await phone.calls()).some(call => call.method === 'status'), 'the app asked the phone for its state');
     await layoutOk(page, 'workspace with tracking');
+    // A sheet or dialog of an up-to-date app leaves the page behind it in place: Radix marks every sibling of an open dialog aria-hidden,
+    // and the held workspace is hidden by its own mark only (tests/trash-own-browser.mjs found the page blanked on 2026-11-15).
+    await page.getByRole('button', {name: 'المزيد من الصفحات', exact: true}).click();
+    await page.locator('.mobile-overflow-pages').waitFor();
+    check([await page.locator('.gate-workspace').getAttribute('data-holding'), await page.locator('.topbar').isVisible(), await page.locator('.page-heading').isVisible()], [null, true, true], 'an open sheet leaves the page behind it visible');
+    await page.keyboard.press('Escape');
+    await page.locator('.mobile-overflow-pages').waitFor({state: 'detached'});
     const withdraw = async (patch, reason, text, label) => {
       const before = Object.fromEntries(Object.keys(patch).map(key => [key, null]));
       const original = await phone.state();

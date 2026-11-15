@@ -202,7 +202,7 @@ export default function TrackingGate({me,children}:{me:Member|null;children:Reac
  if(latched!==holding)setLatched(holding);
  const decision=trackingGateDecision({role:me?.role,active:me?.active,...tracker.gate});
  if(holding||decision.status==='allowed')return <>
-  <div className="gate-workspace" style={{display:holding?'none':'contents'}} aria-hidden={holding||undefined}>{decision.status==='allowed'?children:null}</div>
+  <div className="gate-workspace" style={{display:holding?'none':'contents'}} aria-hidden={holding||undefined} data-holding={holding?'yes':undefined}>{decision.status==='allowed'?children:null}</div>
   {holding&&me&&update&&<UpdateRequiredScreen member={me} update={update} reported={tracker.appVersion}/>}
  </>;
  if(decision.status==='checking')return <CheckingScreen member={me}/>;

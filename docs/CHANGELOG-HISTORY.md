@@ -6,6 +6,10 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
 
 ## The Android app update is mandatory: the oldest app allowed is always the newest release (2026-11-15, not released yet, no migration)
 
+- **Found by the full gate run.** `trash-own-browser` failed twice: with the «المزيد» sheet open, the whole page behind it was blank. Radix marks
+  every sibling of an open dialog `aria-hidden="true"`, and the held workspace was hidden by the rule `.gate-workspace[aria-hidden=true]`, so any
+  dialog of an up-to-date app blanked the page. The workspace is now hidden by its own mark (`data-holding="yes"`); `tests/tracking-gate-browser.mjs`
+  checks that an open sheet leaves the page behind it visible, and `tracking-gate-ui` the held workspace's mark.
 - **Asked.** The owner, on item 3 of the GSCO comparison list: «كمل البند التالت». The item: «تحديث التطبيق يبقى إجباري (قاعدة المالك في GSCO
   من 2026-10-31): أقل نسخة مسموحة = النسخة الجديدة دايمًا، ومفيش «يمكنك متابعة عملك».» GSCO's rule (web 2.13.40, 2026-10-31): «مفيش حاجة اسمها
   تحديث اختياري»: every published Android release is required of every user, whatever the role, with no «لاحقًا».
