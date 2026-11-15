@@ -101,6 +101,37 @@ const madeEntry=(value:unknown)=>!!value&&typeof value==='object'&&['activityId'
 const madeDay=(value:unknown)=>!!value&&typeof value==='object'&&['memberId','memberName','date','result','action','createdAt','savedAt'].every(key=>text((value as Record<string,unknown>)[key]))&&positive((value as ReviewMadeDay).version)&&readAt((value as ReviewMadeDay).readAt);
 export const validReviewsMade=(value:unknown):value is ReviewsMade=>!!value&&typeof value==='object'&&(value as ReviewsMade).ok===true&&text((value as ReviewsMade).date)&&text((value as ReviewsMade).reviewerId)&&Array.isArray((value as ReviewsMade).reviewers)&&(value as ReviewsMade).reviewers.every(reviewer=>!!reviewer&&text(reviewer.id)&&text(reviewer.name))&&Array.isArray((value as ReviewsMade).entries)&&(value as ReviewsMade).entries.every(madeEntry)&&Array.isArray((value as ReviewsMade).days)&&(value as ReviewsMade).days.every(madeDay)&&!!(value as ReviewsMade).counts&&typeof (value as ReviewsMade).counts==='object';
 
+/** «زيارات ومتابعات بلا نتيجة أو إجراء» (the owner, 2026-11-15, from GSCO: «عايز يبان للمشرف كارد لونه احمر بزيارات ومتابعات بلا نتيجة او اجراء
+ * فى عدد اللى لسه مخدش اجراء ولما يضغط عليه يروح ليهم»): the red card at the top of the first screen of a supervisor or a sales manager
+ * (never the administrator, a representative or customer service), while «تقرير يوم المندوب» is theirs. GET /api/reviews/pending counts,
+ * for each representative of the reader's team and each of the last 7 Riyadh days (today included), the visits, calls and follow-ups the
+ * reader's own day report offers «إضافة نتيجة وإجراء» on and that have no note yet: the same activities and the same «reviewable» rule as
+ * GET /api/reviews (lib/supervisor-reviews-server.ts reportActivitiesOn and reviewableOf), so a saved note takes its visit off at once.
+ * Each line opens the day report on that representative and day; the card itself opens the newest line. */
+export const REVIEW_PENDING_DAYS=7,REVIEW_PENDING_SHOWN=8;
+export const REVIEW_PENDING_ROLES=['supervisor','manager'] as const;
+/** The card asks when it opens, every 5 minutes while the page is in front, and when the page comes back to the front (at most once a minute). */
+export const REVIEW_PENDING_INTERVAL_MS=5*60_000,REVIEW_PENDING_FOCUS_MS=60_000;
+export type ReviewPendingItem={memberId:string;name:string;date:string;pending:number};
+export type ReviewPending={ok:true;days:number;total:number;items:ReviewPendingItem[]};
+/** The roles that see the card (the screen's own rule, «تقرير يوم المندوب», is checked beside it). */
+export const reviewPendingRole=(role:string)=>(REVIEW_PENDING_ROLES as readonly string[]).includes(role);
+/** The last REVIEW_PENDING_DAYS days ending on today (a yyyy-mm-dd day of Riyadh), newest first. */
+export function reviewPendingDates(today:string,days=REVIEW_PENDING_DAYS):string[]{
+ const noon=Date.parse(today+'T12:00:00Z');if(!Number.isFinite(noon))return [];
+ return Array.from({length:days},(_,index)=>new Date(noon-index*86_400_000).toISOString().slice(0,10));
+}
+/** The newest day first; on one day the most waiting first, then by name. */
+export function sortReviewPending(items:readonly ReviewPendingItem[]):ReviewPendingItem[]{
+ return [...items].sort((a,b)=>b.date.localeCompare(a.date)||b.pending-a.pending||a.name.localeCompare(b.name,'ar')||a.memberId.localeCompare(b.memberId));
+}
+/** What the card shows: the first lines and how many other lines are left out («وأيام أخرى: N»). */
+export function reviewPendingLines(items:readonly ReviewPendingItem[],shown=REVIEW_PENDING_SHOWN){
+ return{lines:items.slice(0,shown),others:Math.max(0,items.length-shown)};
+}
+const pendingItem=(value:unknown):value is ReviewPendingItem=>!!value&&typeof value==='object'&&['memberId','name','date'].every(key=>text((value as Record<string,unknown>)[key]))&&/^\d{4}-\d{2}-\d{2}$/.test((value as ReviewPendingItem).date)&&positive((value as ReviewPendingItem).pending);
+export const validReviewPending=(value:unknown):value is ReviewPending=>!!value&&typeof value==='object'&&(value as ReviewPending).ok===true&&positive((value as ReviewPending).days)&&Number.isInteger((value as ReviewPending).total)&&(value as ReviewPending).total>=0&&Array.isArray((value as ReviewPending).items)&&(value as ReviewPending).items.every(pendingItem)&&(value as ReviewPending).items.reduce((sum,item)=>sum+item.pending,0)===(value as ReviewPending).total;
+
 /** The notice of a new note (the owner approved it on 2026-11-15 from GSCO 2.13.66: a phone notification for the supervisor's notes). The
  * installed Android app (1.0.12) has no feed of notes and cannot be told by the server (lib/app-update-release.json; mobile/android
  * ServiceAlerts reads customer-service requests only), so the page does what a page can: when the card's check finds a note this browser

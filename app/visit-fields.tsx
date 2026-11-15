@@ -8,10 +8,13 @@ import { captureVisitLocation } from '@/lib/visit-location';
 import VoiceField,{DictationButton,appendDictation} from './voice-field';
 import {serviceText} from '@/lib/service-wording';
 import { contactTypes, visitPurposes, visitResults } from '@/lib/visits';
-export function FollowupDateField({value,onChange,min}:{value:string;onChange:(value:string)=>void;min?:string}){
+/** required: the browser's own check of the date (the mark shows either way); a form that checks it itself and writes its own words under
+ *  it passes false with its problem (app/customer-visits.tsx, a new visit). */
+export function FollowupDateField({value,onChange,min,required=true,problem='',id}:{value:string;onChange:(value:string)=>void;min?:string;required?:boolean;problem?:string;id?:string}){
     const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
     const dateAfter=(days:number)=>{const date=new Date(today()+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);};
-    return <div className="field visit-date-field"><label><span>{t('موعد المتابعة القادمة')} <b>*</b></span><input type="date" required value={value} min={min} onChange={event=>onChange(event.target.value)}/></label><div className="visit-date-shortcuts" role="group" aria-label={say('اختيار سريع لموعد المتابعة','Quick follow-up date')}>{[[0,say('اليوم','Today')],[1,say('بكرة','Tomorrow')],[3,say('بعد 3 أيام','In 3 days')]].map(([days,label])=>{const date=dateAfter(Number(days));return <button key={days} type="button" aria-pressed={value===date} disabled={!!min&&date<min} onClick={()=>onChange(date)}>{label}</button>;})}</div></div>;
+    const problemId=problem&&id?id+'-problem':undefined;
+    return <div className={'field visit-date-field'+(problem?' has-problem':'')}><label><span>{t('موعد المتابعة القادمة')} <b>*</b></span><input type="date" id={id} required={required} aria-invalid={problem?true:undefined} aria-describedby={problemId} value={value} min={min} onChange={event=>onChange(event.target.value)}/></label>{problem&&<small className="field-problem" role="alert" id={problemId} data-field-problem>{problem}</small>}<div className="visit-date-shortcuts" role="group" aria-label={say('اختيار سريع لموعد المتابعة','Quick follow-up date')}>{[[0,say('اليوم','Today')],[1,say('بكرة','Tomorrow')],[3,say('بعد 3 أيام','In 3 days')]].map(([days,label])=>{const date=dateAfter(Number(days));return <button key={days} type="button" aria-pressed={value===date} disabled={!!min&&date<min} onClick={()=>onChange(date)}>{label}</button>;})}</div></div>;
 }
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 export type VisitValue = string | number | boolean | null | undefined;
@@ -31,9 +34,12 @@ type Props = {
     onChange: (key: string, value: VisitValue) => void;
     onParent: (id: string) => void;
     onLocationState?: (state:VisitLocationState) => void;
+    /** What the form found missing in the result, already in the reader's words (app/customer-visits.tsx checks a new visit itself: the
+     *  select then has no browser check of its own, which on a hidden native select shows nowhere useful). */
+    resultProblem?: string;
 };
 export type VisitLocationState={status:'idle'|'locating'|'captured'|'error';error:string};
-export default function VisitFields({ unified = false, service = false, role, readOnly = false, data, parentId, records, editing, busy, onChange, onParent,onLocationState }: Props) {
+export default function VisitFields({ unified = false, service = false, role, readOnly = false, data, parentId, records, editing, busy, onChange, onParent,onLocationState,resultProblem='' }: Props) {
     const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
     const w=(text:string)=>serviceText(role,text),tw=(text:string)=>t(w(text));
     const captureRun = useRef(0), changeRef = useRef(onChange),stateRef=useRef(onLocationState),captureAbort=useRef<AbortController|null>(null);
@@ -87,7 +93,7 @@ export default function VisitFields({ unified = false, service = false, role, re
             string
         ]), ['other', 'هدف آخر']], w('اختر الهدف من الزيارة'),false,true))}{customGoal && <div className="dictation-row"><input aria-label={tw("الهدف الآخر من الزيارة")} required value={data.summary || ''} onChange={e => onChange('summary', e.target.value)} placeholder={t("اكتب هدف التواصل")}/><DictationButton label={w('الهدف الآخر من الزيارة')} disabled={busy||readOnly} contextKey={'goal:' + parentId} onText={text => onChange('summary', appendDictation(data.summary || '', text))}/></div>}</label>
   {!unified && t(input('date', w('تاريخ الزيارة'), 'date', true))}
-  <label className="field full"><span>{tw('نتيجة الزيارة')}{!editing && <b> *</b>}</span><Select dir={direction()} value={resultValue || undefined} onValueChange={value => onChange('result', value)} required={!editing} disabled={busy||readOnly}><SelectTrigger className="pick" aria-label={tw('نتيجة الزيارة')}><SelectValue placeholder={tw('اختر نتيجة الزيارة')}/></SelectTrigger><SelectContent>{resultOptions.map(result => <SelectItem key={result} value={result}>{t(result)}</SelectItem>)}</SelectContent></Select></label>
+  <label className={'field full'+(resultProblem?' has-problem':'')}><span>{tw('نتيجة الزيارة')}{!editing && <b> *</b>}</span><Select dir={direction()} value={resultValue || undefined} onValueChange={value => onChange('result', value)} required={!editing&&!unified} disabled={busy||readOnly}><SelectTrigger className="pick" id={unified?'visit-result':undefined} aria-label={tw('نتيجة الزيارة')} aria-invalid={resultProblem?true:undefined} aria-describedby={resultProblem&&unified?'visit-result-problem':undefined}><SelectValue placeholder={tw('اختر نتيجة الزيارة')}/></SelectTrigger><SelectContent>{resultOptions.map(result => <SelectItem key={result} value={result}>{t(result)}</SelectItem>)}</SelectContent></Select>{resultProblem&&<small className="field-problem" role="alert" id={unified?'visit-result-problem':undefined} data-field-problem>{resultProblem}</small>}</label>
   <div className="visit-location full automatic-location visit-compact-location" id="visit-device-location"><div className="location-status" aria-live="polite">{locating ? <span><Loader2 className="spin" size={16}/>{t('جارٍ تحديد الموقع…')}</span> : data.location ? <span><MapPin size={16}/>{say('تم تحديد الموقع تلقائيًا','Location captured automatically')}</span> : editing ? <span>{tw('الموقع غير مسجل في هذه الزيارة القديمة.')}</span> : <span><MapPin size={16}/>{tw('يلزم السماح بالموقع لحفظ الزيارة.')}</span>}</div>{locating&&<small>{say('وافق على إذن الموقع أثناء استخدام التطبيق. تفعيل خط السير المستمر إجراء مستقل.','Allow location while using the app. Continuous route activation is a separate step.')}</small>}{data.location&&<details className="visit-location-details"><summary>{say('تفاصيل الموقع','Location details')}</summary><label className="field"><input aria-label={tw('لوكيشن الزيارة التلقائي')} readOnly dir="ltr" value={data.location}/></label>{data.locationAccuracy!=null&&<small>{t(`دقة الجهاز ±${data.locationAccuracy} متر`)}</small>}</details>}{locationError&&<p role="alert">{t(locationError)}</p>}{!editing&&!readOnly&&!locating&&<button type="button" className="btn subtle small" disabled={busy} onClick={()=>void locate()}>{data.location?t('تحديث موقع الجهاز'):t('إعادة المحاولة')}</button>}</div>
   {!unified && <>{t(input('nextDate', 'موعد المتابعة', 'date'))}
   {t(input('nextAction', 'الإجراء القادم', 'text', false, true))}

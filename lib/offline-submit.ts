@@ -60,4 +60,25 @@ async function runDrain(me?:Member){if(isOfflineLogoutPending())return{synced:0,
 }
 export function flushOutbox(me?:Member){if(!drain)drain=runDrain(me).finally(()=>{drain=null;});return drain;}
 export async function retryOutbox(id:string,me:Member){const owner=await requireOfflineOwner(me),job=await readOfflineStore<OfflineJob|undefined>('outbox',id);if(!job||job.ownerId!==owner.id)throw new Error('السجل غير متاح لهذا الحساب.');await updateOfflineJob({...job,owner,status:'pending',message:'',httpStatus:undefined,archivedAt:undefined});return flushOutbox(me);}
+/** The fields of a queued visit or contact a member may complete on the device (lib/opportunity-entry.ts): its result, the next action and
+ *  the follow-up date. */
+export type OfflineEntryFields={result?:string;nextAction?:string;nextDate?:string};
+/** What the queued body of a visit or a customer-service registration holds (its data or registration), or null for any other entry. */
+export function offlineEntryFields(job:Pick<OfflineJob,'kind'|'body'>):{type?:unknown;result?:unknown;nextAction?:unknown;nextDate?:unknown}|null{
+ if((job.kind!=='visit'&&job.kind!=='service')||!job.body)return null;
+ try{const body=JSON.parse(job.body),fields=job.kind==='service'?body.registration:body.data;return isJsonObject(fields)?fields:null;}catch{return null;}
+}
+/** A queued new visit or contact the server sent back «تحتاج مراجعة» because it lacked its result or next step (a new opportunity's rule,
+ *  lib/opportunity-entry.ts): the member adds what is missing on the device, and the same entry (its key, the moment it was recorded on the
+ *  device, its place and timing) is sent again with it. Only an entry of this member that needs review; nothing else of it changes. */
+export async function completeOfflineEntry(id:string,me:Member,fields:OfflineEntryFields){
+ const owner=await requireOfflineOwner(me),job=await readOfflineStore<OfflineJob|undefined>('outbox',id);
+ if(!job||job.ownerId!==owner.id||job.status!=='blocked'||job.archivedAt||!offlineEntryFields(job))throw new Error('السجل غير متاح لهذا الحساب.');
+ const body=JSON.parse(job.body!),target=job.kind==='service'?'registration':'data',patch:Record<string,string>={};
+ for(const key of ['result','nextAction','nextDate'] as const)if(typeof fields[key]==='string')patch[key]=fields[key]!.trim();
+ body[target]={...body[target],...patch};
+ const {offline:_offline,...input}=body;void _offline;
+ await updateOfflineJob({...job,body:JSON.stringify(body),wireBody:undefined,fingerprint:await digest(job.url+'\n'+JSON.stringify(input))});
+ return retryOutbox(id,me);
+}
 export async function currentOfflineSnapshot(){const snapshot=await loadOfflineSnapshot();return snapshot?augmentOfflineSnapshot(snapshot):null;}

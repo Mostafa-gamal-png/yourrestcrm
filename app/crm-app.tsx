@@ -162,7 +162,8 @@ export default function CRM() {
     const [filtersOpen,setFiltersOpen]=useState(false),[offline,setOffline]=useState(false),[formDirty,setFormDirty]=useState(false),[discardForm,setDiscardForm]=useState(false);
     const [customerLocationPending,setCustomerLocationPending]=useState(false);
     // «فريقي اليوم» opens «تقرير يوم المندوب» on one member; leaving the page forgets it.
-    const [journeyMember,setJourneyMember]=useState('');
+    // The one-shot handoff to «تقرير يوم المندوب»: the member and the day «فريقي اليوم» or the red card opened it on (go() clears both).
+    const [journeyMember,setJourneyMember]=useState(''),[journeyDay,setJourneyDay]=useState('');
     // «عملاؤك اللي ما اشتروش»: a representative's customers page narrowed to the customers assigned to them (never through the staff filter).
     const [ownOnly,setOwnOnly]=useState(false);
     // React state updates are asynchronous: lock before the first await so a
@@ -193,7 +194,7 @@ export default function CRM() {
     } | null>(null);
     // «المحذوفات» follows the member's «حذف» cells (lib/permissions.ts trashScopeOf), not the role alone.
     const trashOpen=!!me&&pageAllowed(me,'trash');
-    const go = useCallback((v: string) => { v=resolveCRMPage(me?.role||'',v,me?.access?.hidden,trashOpen);setView(v); setFiltersOpen(false); setServiceFilter('all'); setQ(''); setStageFilter('all'); setRegionFilter('all'); setInactiveOnly(false); setOwnOnly(false); setJourneyMember(''); setPageIndex(1); window.history.replaceState(null, '', '#' + v); }, [me?.role,me?.access?.hidden,trashOpen]);
+    const go = useCallback((v: string) => { v=resolveCRMPage(me?.role||'',v,me?.access?.hidden,trashOpen);setView(v); setFiltersOpen(false); setServiceFilter('all'); setQ(''); setStageFilter('all'); setRegionFilter('all'); setInactiveOnly(false); setOwnOnly(false); setJourneyMember(''); setJourneyDay(''); setPageIndex(1); window.history.replaceState(null, '', '#' + v); }, [me?.role,me?.access?.hidden,trashOpen]);
     const applySnapshot=useCallback((d:OfflineSnapshot)=>{
         if(isOfflineLogoutPending())return;
         const previous=snapshotRef.current?.me;
@@ -335,7 +336,7 @@ export default function CRM() {
     const ownInactive=useMemo(()=>me&&inactiveAlertMode(me)==='own'?ownInactiveCount(me,salesRecords,today()):0,[me,salesRecords]);
     const homeView=me?resolveCRMPage(me.role,'dashboard',me.access?.hidden):'dashboard';
     const openInactiveCustomers=(memberId:string)=>{go('customer');setInactiveOnly(true);if(me?.role==='rep')setOwnOnly(memberId===me.id);else setStaffFilter(memberId);};
-    const openDayReport=(memberId:string)=>{go('journeys');setJourneyMember(memberId);};
+    const openDayReport=(memberId:string,date='')=>{go('journeys');setJourneyMember(memberId);setJourneyDay(date);};
     // The list follows the typed text a moment later, so each letter appears at once and the list never holds the keyboard up.
     const listQuery=useDeferredValue(searchQuery);
     const customerSearchIds=useMemo(()=>view==='customer'&&normalizeMapSearch(listQuery)
@@ -530,7 +531,7 @@ export default function CRM() {
  {view==='trash'&&me&&pageAllowed(me,'trash')&&<TrashPage key={[me.id,me.role,me.regionScope,me.authVersion].join(':')} me={me} onRestored={load}/>}
  {view==='mold-requests'&&me&&<MoldRequestsPage key={[me.id,me.role,me.regionScope,me.authVersion].join(':')} me={me} records={records}/>}
  {view==='competitors'&&salesWorkspace&&me&&<CompetitorsWorkspace key={[me.id,me.role,me.regionScope,me.supervisorId,me.authVersion].join(':')} records={salesRecords.filter(r=>!r.data._offlineState&&!r.data._offlineAcknowledged)} members={members} onCustomer={setDetailId} onVisit={r=>openVisit(r)} onNew={openCompetitorVisit} onRefresh={load}/>}
- {view==='journeys'&&salesWorkspace&&me&&homeView!=='journeys'&&<TeamTodayLink onOpen={()=>go(homeView)}/>}{view==='journeys'&&salesWorkspace&&me&&<JourneyReport key={[me.id,me.role,me.regionScope,me.supervisorId,me.authVersion,journeyMember].join(':')} me={me} initialMemberId={journeyMember}/>}
+ {view==='journeys'&&salesWorkspace&&me&&homeView!=='journeys'&&<TeamTodayLink onOpen={()=>go(homeView)}/>}{view==='journeys'&&salesWorkspace&&me&&<JourneyReport key={[me.id,me.role,me.regionScope,me.supervisorId,me.authVersion,journeyMember,journeyDay].join(':')} me={me} initialMemberId={journeyMember} initialDate={journeyDay}/>}
  {view === 'map' && me && <CustomerMap key={mapScopeKey} customers={customers} me={me} focusId={mapFocusId} filters={mapFilters} scopeKey={mapScopeKey}/>}
  {view === 'dashboard' && <>
  <div className="metrics"><Metric label={t("طلبات القوالب المفتوحة")} value={String(open.length)} note={`${filtered.filter(r => r.kind === 'customer').length} مصنع مسجل`} Icon={Shapes}/><Metric label={t("قيمة الطلبات المفتوحة")} value={money(open.reduce((s, r) => s + (r.data.value || 0), 0))} unit="ر.س" note={`${open.filter(r => r.data.value === null).length} طلب لم يُسعّر بعد`} Icon={BriefcaseBusiness}/><Metric label={t("متابعات مستحقة")} value={String(due.length)} note={`${due.filter(r => r.data.nextDate && r.data.nextDate < today()).length} متأخرة عن موعدها`} Icon={Clock} accent="amber"/><Metric label={t("قيمة الصفقات الفائزة")} value={money(won.reduce((s, r) => s + r.data.value, 0))} unit="ر.س" note={`${won.length} صفقة فائزة · كل الفترات`} Icon={Target} accent="green"/></div>

@@ -12,6 +12,7 @@ import {prepareNewContact,validateFollowup,type ContactData,type OpportunityData
 import {prepareJourneyVisitLink} from '@/lib/journeys-server';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {enforceVisitPlace,adoptCustomerPlace} from '@/lib/visit-place-server';
+import {opportunityProblem} from '@/lib/opportunity-entry';
 export const dynamic='force-dynamic';
 type VisitData=Omit<z.infer<typeof schemas.activity>,'customerStage'>&{customerStage?:string}&ContactData;
 export async function POST(req:Request){try{
@@ -41,6 +42,9 @@ export async function POST(req:Request){try{
  if(old?.data.customerStage!==undefined)data.customerStage=old.data.customerStage;else delete data.customerStage;
  const allowedProducts=new Set([...visitProducts,'خدمات صيانة',...(old?.data.requestedProducts||[])]);
  if(data.requestedProducts.some((p:string)=>!allowedProducts.has(p)))throw new CRMError('اختر الأصناف من القائمة المتاحة');
+ // A new visit or contact is how an opportunity is registered (lib/opportunity-entry.ts): its result (3 letters at least), the next action
+ // and the follow-up date, as the form asks; an entry queued on the device meets the same rule when it uploads. An edit asks nothing new.
+ if(!old){const problem=opportunityProblem(data,c.me.role);if(problem)throw new CRMError(problem);}
  if(!data.nextAction||!data.nextDate)throw new CRMError('الإجراء القادم وموعد المتابعة مطلوبان');
  if((!old||data.nextDate!==old.data.nextDate)&&data.nextDate<(offline?visitDate:today()))throw new CRMError('موعد المتابعة يجب أن يكون يوم التسجيل أو لاحقًا');
  // A contact does not imply a buying need; sales fields are explicitly optional.

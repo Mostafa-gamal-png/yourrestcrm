@@ -11,6 +11,7 @@ import {schemas,type AuditEntry,type Member,type Row} from '@/lib/crm';
 import {caseProgress} from '@/lib/service-queue';
 import {TRACKING_FINISHED_DAYS} from '@/lib/service-tracking';
 import {activeServiceCase,canReadService,isServiceRole,serviceCustomerAddRefused,serviceCandidates,serviceChainIds,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase,type ServiceCaseData,type ServiceRegistration} from '@/lib/customer-service';
+import {opportunityProblem} from '@/lib/opportunity-entry';
 export const dynamic='force-dynamic';
 type Context=Awaited<ReturnType<typeof context>>;
 type RegistrationData=Omit<z.infer<typeof schemas.activity>,'type'|'visitWorkflow'|'customerStage'>&{type:'visit'|'call'|'email'|'whatsapp'|'website'|'social';visitWorkflow?:string;customerStage?:string};
@@ -113,6 +114,9 @@ export async function POST(req:Request){try{
   const old:Row|undefined=action==='edit'?{id:'intake-'+id,kind:'activity' as const,parentId:customer.id,assignedTo:item.creatorId,branch:customer.branch,data:previous||{location:'',performedBy:item.creatorId,responsibleId:item.creatorId,recordedByEmail:'',date},createdAt:item.createdAt,updatedAt:item.updatedAt,version:item.version}:undefined;
   if(old){registration.startedAt=old.data.startedAt||'';registration.endedAt=old.data.endedAt||'';}
   else{const elapsed=body.elapsedMilliseconds;if(typeof elapsed!=='number'||!Number.isFinite(elapsed)||elapsed<0||elapsed>86400000)throw new CRMError('انتهت صلاحية تسجيل الزيارة. أغلق النموذج وافتح زيارة جديدة.');registration.startedAt=new Date(Date.parse(occurredAt)-elapsed).toISOString();registration.endedAt=occurredAt;}
+  // A new opportunity or a further contact (lib/opportunity-entry.ts): its result (3 letters at least), the next action and the follow-up
+  // date, also when it was queued on the device; editing the registration keeps its earlier rule.
+  if(action!=='edit'){const problem=opportunityProblem(registration,c.me.role);if(problem)throw new CRMError(problem);}
   if(!registration.result)throw new CRMError('سجّل نتيجة الزيارة قبل إنهائها');
   if(registration.hasCompetitor&&!registration.competitorName)throw new CRMError('اكتب اسم المنافس');
   if(!registration.hasCompetitor)Object.assign(registration,{competitorName:'',competitorNotes:'',competitorFileId:'',competitorFileName:''});

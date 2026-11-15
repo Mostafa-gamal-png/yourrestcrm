@@ -47,16 +47,18 @@ export const appendDictation=(value:string,text:string,maxLength?:number)=>{
 type FieldAttributes=Omit<InputHTMLAttributes<HTMLInputElement>,'value'|'onChange'|'required'|'disabled'|'className'|'ref'|'type'|'children'|'size'>;
 
 /** The standard free-text field of the forms: a labelled text input or text area with a dictation button beside it. */
-export default function VoiceField({label,value,onChange,required=false,marked=false,multiline=false,full=false,disabled=false,contextKey='',rows=3,className='',inputRef,inputProps}:{
+export default function VoiceField({label,value,onChange,required=false,marked=false,multiline=false,full=false,disabled=false,contextKey='',rows=3,className='',inputRef,inputProps,problem=''}:{
  label:string;value:string;onChange:(value:string)=>void;required?:boolean;/** Shows the required mark without the browser's own validation. */marked?:boolean;multiline?:boolean;full?:boolean;disabled?:boolean;contextKey?:string;rows?:number;className?:string;inputRef?:Ref<HTMLInputElement|HTMLTextAreaElement>;/** Passed to the input or text area: placeholder, maxLength, autoComplete, id, dir, aria-*, onBlur, onKeyDown, autoFocus and the like. */inputProps?:FieldAttributes;
+ /** What the form found missing in this field, shown under it (already in the reader's language) and named by the field's aria-describedby. */problem?:string;
 }){
  const maxLength=typeof inputProps?.maxLength==='number'?inputProps.maxLength:undefined;
  const dictation=useDictation({disabled,contextKey,onText:text=>onChange(appendDictation(value,text,maxLength))});
- return <label className={['field','voice-field',multiline||full?'full':'',dictation.ready?'has-voice-input':'keyboard-input',className].filter(Boolean).join(' ')}>
+ const problemId=problem&&typeof inputProps?.id==='string'?inputProps.id+'-problem':undefined,flagged=problem?{'aria-invalid':true as const,...(problemId?{'aria-describedby':problemId}:{})}:{};
+ return <label className={['field','voice-field',multiline||full?'full':'',dictation.ready?'has-voice-input':'keyboard-input',problem?'has-problem':'',className].filter(Boolean).join(' ')}>
   <span>{t(label)}{(required||marked)&&<b> *</b>}</span><div>
-   {multiline?<textarea {...(inputProps as unknown as TextareaHTMLAttributes<HTMLTextAreaElement>)} ref={inputRef as Ref<HTMLTextAreaElement>} rows={rows} required={required} disabled={disabled} value={value} onChange={event=>onChange(event.target.value)}/>:<input {...inputProps} ref={inputRef as Ref<HTMLInputElement>} required={required} disabled={disabled} value={value} onChange={event=>onChange(event.target.value)}/>}
+   {multiline?<textarea {...(inputProps as unknown as TextareaHTMLAttributes<HTMLTextAreaElement>)} {...flagged} ref={inputRef as Ref<HTMLTextAreaElement>} rows={rows} required={required} disabled={disabled} value={value} onChange={event=>onChange(event.target.value)}/>:<input {...inputProps} {...flagged} ref={inputRef as Ref<HTMLInputElement>} required={required} disabled={disabled} value={value} onChange={event=>onChange(event.target.value)}/>}
    {micButton(dictation,label,disabled)}
-  </div>{micNotes(dictation)}
+  </div>{micNotes(dictation)}{problem&&<small className="field-problem" role="alert" id={problemId} data-field-problem>{problem}</small>}
  </label>;
 }
 

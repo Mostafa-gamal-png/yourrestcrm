@@ -30,7 +30,7 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/crm', '/api/team-today', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/kpi-evidence/import'];
+  const protectedGets = ['/api/crm', '/api/team-today', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   // The customer's signing link (2026-11-10) is public by design, but opens only with a valid token: without one, one neutral page or
@@ -84,6 +84,9 @@ try {
     // customer nobody has (404 for all, as for one outside the reader's scope).
     ['/api/reviews/made?date=' + day]: expect(management, 200, 403),
     '/api/reviews/customer?customerId=x': expect(everyone, 404, 404),
+    // The red card «زيارات ومتابعات بلا نتيجة أو إجراء» (2026-11-15): a supervisor and a sales manager; the administrator, a representative and
+    // customer service are refused.
+    '/api/reviews/pending': expect(['mgr', 'mgrw', 'sup'], 200, 403),
     // «فريقي اليوم» (2026-11-10): the roles that open «تقرير يوم المندوب»; a representative and customer service are refused.
     '/api/team-today': expect(management, 200, 403)
   };
@@ -230,7 +233,7 @@ try {
   const addRefused = await app.as(sessions.rep1)('/api/crm', {method: 'POST', body: {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل ممنوع', region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03', phone: '0500000001'}}});
   check([addRefused.status, addRefused.json().error], [403, 'غير مسموح لك بالإضافة في العملاء. راجع مدير النظام.'], 'rep1: adding a customer switched off: 403 with its message');
   check((await permissions('owner', 'sup', 0, {hidden: ['journeys']})).status, 200, 'the administrator hides «تقرير يوم المندوب» from the supervisor');
-  for (const url of ['/api/journeys?date=' + day, '/api/reviews?date=' + day, '/api/reviews/made?date=' + day, '/api/device-status', '/api/team-today']) {
+  for (const url of ['/api/journeys?date=' + day, '/api/reviews?date=' + day, '/api/reviews/made?date=' + day, '/api/reviews/pending', '/api/device-status', '/api/team-today']) {
     check((await app.as(sessions.sup)(url)).status, 404, 'sup GET ' + url + ' hidden: 404');
     check((await app.as(sessions.mgr)(url)).status, 200, 'mgr GET ' + url + ' unaffected');
   }
