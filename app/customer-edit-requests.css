@@ -1,0 +1,49 @@
+/* «طلبات تعديل بيانات العميل» (app/customer-edit-requests.tsx): the card on the first screen and the list in the customer's details. The
+   theme's own colours (a light --primary for what waits, a solid --primary for an approval, --destructive for a rejection), logical properties only so
+   Arabic and English mirror, every value wraps (a long address or note never widens the page), and every button is at least 44 px high on a
+   phone; nothing scrolls sideways at 320 px. */
+.cer-card{border:1px solid var(--primary);border-radius:12px;background:var(--card);padding:12px 14px;color:var(--foreground);min-width:0;max-width:100%;display:grid;gap:8px}
+.cer-card-customer{border-color:var(--border);margin-top:12px}
+/* Alone on the first screen (a member with no other card of app/team-home.tsx): the gap .team-home would give. */
+.cer-card[data-customer-edit-inbox]{margin-bottom:16px}
+.team-home .cer-card[data-customer-edit-inbox]{margin-bottom:0}
+.cer-card>header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-width:0}
+.cer-card h2,.cer-card h3{display:flex;align-items:center;gap:6px;margin:0;font-size:15px;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.cer-card h2 svg,.cer-card h3 svg{flex-shrink:0;color:var(--primary)}
+.cer-count{min-width:26px;padding:0 8px;border-radius:999px;background:var(--primary);color:var(--primary-foreground);font-size:13px;line-height:22px;text-align:center}
+.cer-hint{margin:0;font-size:13px;line-height:1.7;color:var(--muted-foreground)}
+.cer-card ol{list-style:none;margin:0;padding:0;display:grid;gap:10px;min-width:0}
+.cer-item{border-top:1px solid var(--border);padding-top:10px;display:grid;gap:6px;min-width:0}
+.cer-card ol>.cer-item:first-child{border-top:0;padding-top:2px}
+.cer-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-width:0}
+.cer-customer{padding:0;border:0;background:transparent;color:var(--primary);font:inherit;font-weight:600;text-align:start;cursor:pointer;min-width:0;overflow-wrap:anywhere;min-height:32px}
+.cer-customer:hover{text-decoration:underline}
+.cer-customer:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
+.cer-customer-name{min-width:0;overflow-wrap:anywhere}
+.cer-status{flex-shrink:0;max-width:100%;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.7;overflow-wrap:anywhere;background:color-mix(in oklab,var(--primary) 14%,var(--card));color:var(--foreground)}
+.cer-status-approved{background:var(--primary);color:var(--primary-foreground)}
+.cer-status-rejected{background:color-mix(in oklab,var(--destructive) 16%,var(--card))}
+.cer-status-cancelled{background:var(--muted);color:var(--muted-foreground)}
+.cer-meta{margin:0;font-size:13px;line-height:1.6;color:var(--muted-foreground);overflow-wrap:anywhere}
+.cer-changes{display:grid;gap:6px;margin:0;min-width:0}
+.cer-changes>div{display:grid;gap:2px;min-width:0;padding:6px 8px;border-radius:8px;background:var(--muted)}
+.cer-changes dt{font-size:12px;font-weight:600;color:var(--muted-foreground)}
+.cer-changes dd{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;font-size:14px;line-height:1.6;min-width:0}
+.cer-before,.cer-after{display:grid;gap:0;min-width:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.cer-before bdi,.cer-before .cer-empty{color:var(--muted-foreground);text-decoration:line-through;text-decoration-thickness:1px}
+.cer-after bdi{font-weight:600}
+.cer-side{font-size:11px;color:var(--muted-foreground)}
+.cer-empty{color:var(--muted-foreground)}
+.cer-alert{display:flex;align-items:flex-start;gap:6px;margin:0;padding:6px 8px;border-radius:8px;font-size:13px;line-height:1.7;background:color-mix(in oklab,var(--destructive) 10%,var(--card));overflow-wrap:anywhere}
+.cer-alert svg{flex-shrink:0;margin-top:3px;color:var(--destructive)}
+.cer-reason{margin:0;font-size:14px;line-height:1.7;overflow-wrap:anywhere;white-space:pre-wrap}
+.cer-actions{display:flex;gap:8px;flex-wrap:wrap}
+.cer-actions .btn{gap:6px}
+.cer-reject{display:grid;gap:8px;min-width:0}
+:root.dark .cer-status-rejected{background:color-mix(in oklab,var(--destructive) 22%,var(--card))}
+@media(max-width:640px){
+ .cer-card{padding:10px 12px}
+ .cer-changes dd{grid-template-columns:minmax(0,1fr)}
+ .cer-actions .btn{min-height:44px;flex:1 1 auto;justify-content:center}
+ .cer-customer{min-height:44px}
+}

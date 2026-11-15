@@ -48,6 +48,17 @@ const edit=(id,extra={},omitRouting=false)=>{
  return {action:'save',kind:'customer',id,version:value.version,data};
 };
 const snapshot=id=>sql.prepare('SELECT * FROM crm_records WHERE id=?').get(id);
+/** Since 2026-11-15 (lib/customer-edit-requests.ts) a representative's, a supervisor's or customer service's correction is a request: the
+ *  customer stays as it was until approved (by the representative's supervisor first when they have an active one, then by the sales
+ *  manager: here the sales manager with every region). saveAs sends it as the actor and has it approved, so what this file checks of the
+ *  saved customer is checked after the approval, which runs the same save as the approver. */
+const saveAs=async(actor,body)=>{user(actor);const before=snapshot(body.id),sent=await post(body);
+ if(['rep','peer','west','all-rep','unassigned-rep','supervisor','cs','csm'].includes(actor)){
+  check([sent.pendingApproval,snapshot(body.id)],[true,before],actor+' sends a request; the customer waits');
+  if(sent.approvalStage==='supervisor'){user('supervisor');await post({action:'customer-edit',decision:'approve',id:sent.requestId});}
+  user('all-manager');await post({action:'customer-edit',decision:'approve',id:sent.requestId});user(actor);
+ }else check(sent.pendingApproval,undefined,actor+' edits directly');
+ return sent;};
 const routing=id=>({assignedTo:row(id).assigned_to,branch:row(id).branch,region:row(id).data.region});
 
 // Imported global administrators are intentionally absent from regional selectors.
@@ -56,7 +67,7 @@ for(const actor of ['rep','manager']){
  user(actor);
  for(const id of ['admin-owned','manager-owned','outside-owned','missing-owned','unassigned-owned','foreign-branch','legacy-fields']){
   const before=routing(id);
-  await post(edit(id,{phone:'0501234567',location:'26.44, 50.04'},id==='legacy-fields'));
+  await saveAs(actor,edit(id,{phone:'0501234567',location:'26.44, 50.04'},id==='legacy-fields'));
   check(routing(id),before,actor+' preserves canonical routing for '+id);
   check(row(id).data.assignedTo,before.assignedTo);check(row(id).data.branch,before.branch);
   check(row(id).data.latitude,26.44);check(row(id).data.longitude,50.04);
@@ -65,11 +76,11 @@ for(const actor of ['rep','manager']){
  }
 }
 sql.prepare("UPDATE crm_members SET active=0 WHERE id='peer'").run();
-for(const actor of ['rep','manager']){user(actor);const before=routing('inactive-owned');await post(edit('inactive-owned',{contact:'تحديث جهة الاتصال'}));check(routing('inactive-owned'),before);}
+for(const actor of ['rep','manager']){user(actor);const before=routing('inactive-owned');await saveAs(actor,edit('inactive-owned',{contact:'تحديث جهة الاتصال '+actor}));check(routing('inactive-owned'),before);}
 sql.prepare("UPDATE crm_members SET active=1 WHERE id='peer'").run();
 
 // Supervisor editing keeps the original direct-team limitation.
-user('supervisor');await post(edit('peer-owned',{phone:'0501111111'}));
+await saveAs('supervisor',edit('peer-owned',{phone:'0501111111'}));check(row('peer-owned').data.phone,'0501111111');user('supervisor');
 for(const id of ['admin-owned','manager-owned','outside-owned','missing-owned','unassigned-owned']){
  const before=snapshot(id);await post(edit(id,{phone:'0509999999'}),403);check(snapshot(id),before);
 }
@@ -90,7 +101,7 @@ await post(newMachine,403);
 user('rep');await post(newMachine,403);
 // Customer service (2026-11-07): corrects details like a representative within its branch and regions, routing retained; never adds a customer.
 for(const actor of ['cs','csm']){user(actor);const phone=actor==='cs'?'0502222222':'0503333333';
- for(const id of ['admin-owned','manager-owned','unassigned-owned','legacy-fields']){const before=routing(id);await post(edit(id,{phone,location:'26.45, 50.05'},id==='legacy-fields'));check(routing(id),before,actor+' keeps routing of '+id);check(row(id).data.phone,phone);check(row(id).data.latitude,26.45);}
+ for(const id of ['admin-owned','manager-owned','unassigned-owned','legacy-fields']){const before=routing(id);await saveAs(actor,edit(id,{phone,location:'26.45, 50.05'},id==='legacy-fields'));check(routing(id),before,actor+' keeps routing of '+id);check(row(id).data.phone,phone);check(row(id).data.latitude,26.45);}
  for(const id of ['western-customer','foreign-branch']){const before=snapshot(id);await post(edit(id,{phone}),404);check(snapshot(id),before,actor+' cannot reach '+id);}
  for(const extra of [{assignedTo:'rep'},{branch:'فرع آخر'}]){const before=snapshot('admin-owned');check((await post(edit('admin-owned',extra),403)).error,'لا يمكنك تغيير مسؤول العميل أو فرعه');check(snapshot('admin-owned'),before);}
  {const before=snapshot('admin-owned');await post({action:'delete',kind:'customer',id:'admin-owned',version:raw('admin-owned').version},403);check(snapshot('admin-owned'),before,actor+' cannot delete');}
@@ -112,7 +123,8 @@ await post(create({assignedTo:'owner',branch:'الرئيسي'}),403);
 for(const actor of ['rep','manager'])for(const [column,value] of [['active',0],['region_scope','western'],['role','customer_service'],['auth_version',9],['branch','آخر'],['supervisor_id','owner']]){
  user(actor);const memberBefore=sql.prepare('SELECT * FROM crm_members WHERE id=?').get(actor),before=snapshot('admin-owned');
  race=()=>sql.prepare('UPDATE crm_members SET '+column+'=? WHERE id=?').run(value,actor);
- await post(edit('admin-owned',{phone:'0503333333'}),409);check(snapshot('admin-owned'),before);
+ // A real change, so that a representative's request reaches its commit (an unchanged save is refused before, as no request).
+ await post(edit('admin-owned',{phone:'0503333339'}),409);check(snapshot('admin-owned'),before);
  sql.prepare('UPDATE crm_members SET '+column+'=? WHERE id=?').run(memberBefore[column],actor);
 }
 user('rep');const beforeVersion=row('admin-owned').version;

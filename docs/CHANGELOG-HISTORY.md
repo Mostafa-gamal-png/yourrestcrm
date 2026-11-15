@@ -4,6 +4,97 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Customer detail edits wait for approval: the representative's supervisor, then the sales manager (2026-11-15, not released yet, no migration)
+
+- **Asked.** Item 4 of the GSCO comparison list, approved by the owner: «تمام كمل البند الرابع وارفع لما الفحص يخلص». The item: «تعديل بيانات
+  العميل يستنى موافقة (GSCO 2.13.55 + 2.13.73، على المشاريع): المندوب يبعت طلب تعديل، يروح لمشرفه الأول (المشرف من جدول الربط وفعّال)، يوافق أو
+  يرفض بسبب، وبعد موافقته يروح لمدير المبيعات. مدير المبيعات ما يبتش والطلب عند المشرف. طلب المشرف وخدمة العملاء والمندوب اللي مالوش مشرف فعّال
+  يروحوا لمدير المبيعات على طول. لو المشرف اتوقف والطلب مستنيه، يعدّي لمدير المبيعات. المندوب يلغي في أي مرحلة. الصور الجديدة بتستنى مع الطلب.
+  عندك دلوقتي canEditCustomerDetails في lib/access.ts بيسمح بالتعديل المباشر. الحقول اللي اتقفلت بقرار المالك زي كود ERP تفضل مقفولة.» GSCO did
+  it on its projects (`lib/crm/project-edit-requests-server.ts`, 2.13.55 and 2.13.73); Yourrest does it on its customers.
+- **Before.** `canEditCustomerDetails` (`lib/access.ts`) let a representative (any customer of their regions), a supervisor (their team's
+  customers), customer service and its manager (their branch's) save a customer's details directly through `POST /api/crm`.
+- **Who edits directly, who sends a request.** The administrator and the sales manager still edit directly (as GSCO's management: its
+  sales manager and the owner with «view_all»), and they are the ones who decide. A representative, a supervisor, customer service and
+  the customer service manager send a request: their save passes every check a direct edit of the same customer passes as that member
+  (the record and its version, the «تعديل» cell of «العملاء», their scope and region, the routing rules, the ERP code, the place inside the
+  Kingdom, the schema), and only the write waits. Who may send is unchanged (`canEditCustomerDetails` is untouched); a supervisor with «عرض
+  بيانات الفريق بالكامل» still sends a request (that switch widens reading only, unlike GSCO's «view_all»).
+- **Routing** (`lib/customer-edit-requests.ts`, read live). A representative whose account names a supervisor (`crm_members.supervisor_id`)
+  who is an active member with the supervisor role → that supervisor, who approves (it moves on) or rejects with a reason (it ends); then the
+  sales manager or the administrator, within their regions and with «تعديل» on «العملاء», approves (it applies) or rejects with a reason.
+  A representative linked to a sales manager, to the administrator, to nobody, or to an inactive supervisor; a supervisor; customer
+  service and its manager → straight to the sales manager. While a request is with the supervisor, the sales manager and the administrator
+  are refused (403 «الطلب عند مشرف المندوب. يصل إلى مدير المبيعات بعد موافقة المشرف.») and do not see it in their list (the customer's details
+  show it to them, waiting for the supervisor). Where it stands is evaluated live, at each read and in each commit's own condition, so no job
+  runs: a supervisor deactivated, unlinked from the representative, or a representative who is no longer a representative while it waits →
+  it is with the sales manager at once (and back with the supervisor if they are reactivated before the sales manager decides); linked to
+  another active supervisor → that supervisor.
+- **What a request holds** (`customerEditProposal`). Only the fields the sender changed, beside what each held then: name, region,
+  classification, type, status, category, mobile, contact, city, location (with its point and how it was captured), short national
+  address, address, the two contacts' names, mobiles and mails, the sheet's machine count and types, supplier, notes. Never the ERP code
+  (owner's rule of 2026-11-12: a different, emptied or typed code is 403 «كود ERP لا يُكتب ولا يُعدَّل يدويًا…» before any request exists),
+  the responsible member or branch (403 «لا يمكنك تغيير مسؤول العميل أو فرعه»), the import markers or any forged field (the server builds
+  the request from its own list; approval applies only that list). Nothing changed → 400 «لم يتغير شيء في بيانات العميل.».
+- **Approve, reject, cancel** (`POST /api/crm {action:'customer-edit', decision, id, note?}`). The final approval runs the ordinary
+  customer save of `/api/crm` as the approver, with the request's fields over the customer as it is now and the routing left as stored, in
+  one transaction with the request's end: every rule of a direct edit applies again, and if either fails neither happens. A rejection
+  needs a reason (2 visible characters at least, invisible direction marks do not count, at most 1000; Arabic digits kept as written) that
+  the sender reads with who rejected. The sender cancels at either step («إلغاء الطلب»); nobody else does. A decided request answers 409
+  «تم البت في هذا الطلب بالفعل.».
+- **Conflicts.** One request waits per customer: another edit of the sender → 409 «لديك طلب تعديل بانتظار الموافقة على هذا العميل. ألغِه من
+  بيانات العميل ثم أرسل التعديل الجديد.», of someone else → 409 «يوجد طلب تعديل آخر على هذا العميل بانتظار الموافقة.» (GSCO's rule: what the
+  sales manager reads is what they approve). A field of the request changed by someone after it was sent marks it stale and its approval is
+  refused at either step (409 «تغيرت البيانات نفسها بعد إرسال الطلب. ارفض الطلب ليعيد صاحبه إرساله على البيانات الحالية.»), never a silent
+  overwrite; another field changed meanwhile (or the customer's version moved by a visit) keeps both changes. The sales manager and the
+  administrator may still edit the customer directly while a request waits.
+- **Repeated sends and offline.** The form makes a key when it opens (`editKey`); the same send again after a lost answer is the same
+  request (`alreadySaved`), and so is the same edit without its key (a page loaded before the release) while it waits. A customer edit was
+  never saved on the device and still is not: `lib/offline-submit.ts` queues only new customers and new visits/contacts, and the server
+  refuses an edit carrying a device capture (400 «هذا الإجراء يتطلب اتصالًا مباشرًا.»), so no edit can arrive later as a direct write.
+- **Photos.** A Yourrest customer has no photos (the form and `crm_records` customer data hold none; the only uploads are a visit's
+  competitor quotations, `crm_visit_files`), so there is nothing to hold with a request.
+- **Where it shows.** On the first screen of every member (`app/team-home.tsx`, right under the red card, or alone), the card «طلبات تعديل بيانات العملاء»
+  (`app/customer-edit-requests.tsx`): what they may decide now (with the count) and their own requests, waiting or answered in the last 14
+  days; in the customer's details («البيانات»), «طلبات تعديل بيانات العميل»: every request of that customer for the sales manager and the
+  administrator, the reader's own and, for a supervisor, their representatives' waiting for them. Each shows the sender and the moment,
+  where it waits («بانتظار موافقة المشرف» / «بانتظار موافقة مدير المبيعات»), who approved it as supervisor, every field «الحالي» → «المطلوب»,
+  the stale notice, the reason of a rejection, «موافقة», «رفض» (with «سبب الرفض», dictation included), «إلغاء الطلب». Asked when shown,
+  every 5 minutes on the first screen, on coming back (at most once a minute) and after a send or a decision; never offline. The form tells
+  a sender «لا يظهر تعديلك على العميل قبل الموافقة عليه…» and its button reads «إرسال التعديل للموافقة»; the toast says where it went
+  («تم إرسال التعديل إلى مشرفك للموافقة» / «…إلى مدير المبيعات للموافقة»). English pairs throughout (new server messages in
+  `lib/locales/en.json`, keys only added).
+- **Storage, no migration (21).** `crm_audit`, append-only, as «المحذوفات» keeps its deletions: the request row (id
+  `customer-edit:<sender>:<key>`, action `customer-edit:request`, record the customer, detail the held fields), the supervisor's approval
+  (`customer-edit-supervisor:<id>`) and the end (`customer-edit-decision:<id>`, one by its primary key: approved, rejected with the reason,
+  cancelled). These rows are the audit log of request, supervisor approval, approval (beside the save's own «تعديل» entry by the approver),
+  rejection and cancellation; «سجل التغييرات» of the customer shows them as words with the customer's name, never the fields or the reason.
+  The list reads only the customers its requests name. Going back to the previous release leaves the rows unread (its history tab would
+  show them raw), and a request waiting then applies nothing.
+- **Not changed.** Creating a customer (a representative's, offline included), the ERP customers import, the automatic place from a first
+  visit (`lib/visit-place-server.ts`, only when the customer has none), the visit plan pointers, customer service's assignment, machines.
+- **Deviations from GSCO.** A supervisor with «عرض بيانات الفريق بالكامل» is not management here (Yourrest's switch widens reading only);
+  a request of a sender who is no longer a representative goes to the sales manager (GSCO checks only the link); a reassignment of the
+  customer does not end a waiting request (GSCO ends it because there the right to edit follows the owner; a Yourrest representative edits
+  any customer of their regions); no photos (none on a Yourrest customer); a request is held in crm_audit, not a table of its own (no
+  migration); the supervisor's step is decided by the supervisor the representative's account names now (GSCO: any supervisor linked to
+  them in its mapping table). As GSCO: the supervisor sees their representative's request whatever the customer's region.
+- **Tests.** `tests/customer-edit-requests.mjs` (new, default gate, 337 checks: every role, both steps, cancel at each step, the sales manager
+  and the administrator refused at the supervisor's step, the reason (empty, spaces, invisible marks, one letter, over 1000, Arabic digits),
+  locked and forged fields, a repeated send, two sends at once, stale and not stale, the approval and its end in one transaction, a
+  concurrent change, regions and the «تعديل» cell, an offline edit, a deleted customer, the history), `tests/customer-edit-requests-http.mjs`
+  (new, built release, 138), `tests/customer-edit-requests-browser.mjs` (new, Chromium: 320 and 360 phones with the Android app emulated, a
+  tablet upright and on its side, a computer, Arabic and English with no Arabic left but the data, 53 checks, screenshots);
+  `tests/server-authorization.mjs` (the new route and the decisions in the role matrix, 737). Updated because a direct edit by these roles is
+  now a request (each now sends, has it approved, then checks the customer as before): `customer-detail-edit-access` (309), `crm-regression`
+  (376), `customer-identities` (91), `rep-customer-create` (290), `rep-no-edit` (76), `role-scope` (179), `security-customer-code` (86),
+  `customer-last-purchase-http` (18), `namecheap-http` (383), `permissions-http` (143), `customer-edit-browser` (91), `ui-refresh-browser`
+  (115). The release gates (`node scripts/gates.mjs`, a full selection: shared files changed): 96 passed, 2 not stable (`customer-edit-browser`
+  failed once in the pool at an unchanged step of customer service opening «فرصة جديدة», then passed alone and in two more runs alone;
+  `service-queue-browser`, not stable in earlier runs too), 4 skipped (the owner's ERP files); the default gate 198/198 (TypeScript and
+  ESLint: 0 errors, the 160 warnings of the baseline); `tests/msa-wording.mjs` passed.
+- **Release.** No migration (21), no APK change. `lib/locales/en.json` only gains keys.
+
 ## The Android app update is mandatory: the oldest app allowed is always the newest release (2026-11-15, not released yet, no migration)
 
 - **Found by the full gate run.** `trash-own-browser` failed twice: with the «المزيد» sheet open, the whole page behind it was blank. Radix marks

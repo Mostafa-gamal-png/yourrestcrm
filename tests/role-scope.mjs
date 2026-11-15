@@ -85,7 +85,11 @@ for(const name of ['sales','targets','kpis'])await post(await api(name),{},403);
 for(const kind of ['customer','factory','opportunity','quote']){
  await post(crm,{action:'save',kind,createKey:crypto.randomUUID(),parentId:kind==='factory'?'factory':kind==='quote'?'foreign-request':'machine',data:{name:'forged'}},403);
 }
-await post(crm,{action:'save',kind:'customer',id:'factory',version:raw('factory').version,data:row('factory').data},200);
+// A representative's correction of a customer waits for approval (the owner, 2026-11-15: lib/customer-edit-requests.ts): it is accepted
+// as a request, the customer unchanged; an unchanged save is no request.
+{const before=raw('factory').data;const sent=await post(crm,{action:'save',kind:'customer',id:'factory',version:raw('factory').version,data:{...row('factory').data,notes:'تصحيح من المندوب'}},200);assert.equal(sent.pendingApproval,true);assert.equal(raw('factory').data,before);checks+=2;
+ await post(crm,{action:'save',kind:'customer',id:'factory',version:raw('factory').version,data:row('factory').data},400);
+ await post(crm,{action:'customer-edit',decision:'cancel',id:sent.requestId},200);}
 await post(crm,{action:'delete',kind:'factory',id:'machine',version:raw('machine').version},403);
 // A representative records the machines of their own customers: model and bushings new or old, no place and no number; never deletes, never touches another's.
 {
