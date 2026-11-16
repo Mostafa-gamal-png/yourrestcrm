@@ -48,3 +48,42 @@ export function xlsxWorkbook(sheet:SheetSpec):Uint8Array<ArrayBuffer>{
   {name:'xl/worksheets/sheet1.xml',data:part(worksheet)},
  ]);
 }
+
+/** One sheet of a workbook with several (the owner, 2026-11-16, GSCO list item 3: «تصدير Excel» of the customer-service reports, three
+ *  sheets). A cell is text (an inline string, never read as a formula), a finite number (a number cell, so a spreadsheet sums it), or
+ *  empty (null, undefined or ''). headerRows are bold, noteRows grey italic; the first header row is frozen. */
+export type BookCell=string|number|null|undefined;
+export type BookSheet={name:string;rows:readonly (readonly BookCell[])[];widths?:readonly number[];rightToLeft?:boolean;headerRows?:readonly number[];noteRows?:readonly number[]};
+/** Excel refuses a sheet name longer than 31 characters, one holding any of : \ / ? * [ ], and two sheets of the same name. */
+export function bookSheetName(name:string,index:number,taken:Set<string>){
+ let clean=name.replace(/[:\\/?*[\]]/g,' ').replace(/\s+/g,' ').trim().slice(0,31)||'Sheet'+(index+1);
+ for(let n=2;taken.has(clean.toLowerCase());n++)clean=clean.slice(0,31-String(n).length-1)+' '+n;
+ taken.add(clean.toLowerCase());return clean;
+}
+const bookStyles='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><i/><sz val="10"/><color rgb="FF6B7280"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="49" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="49" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>';
+function bookCell(value:BookCell,ref:string,header:boolean,note:boolean){
+ if(value===null||value===undefined||value==='')return '';
+ if(typeof value==='number')return Number.isFinite(value)?'<c r="'+ref+'" s="'+(header?4:3)+'"><v>'+value+'</v></c>':'';
+ return '<c r="'+ref+'" t="inlineStr" s="'+(header?1:note?2:0)+'"><is><t xml:space="preserve">'+xmlText(String(value))+'</t></is></c>';
+}
+/** A workbook of one or more sheets, each written as xlsxWorkbook writes its one (stored archive, inline text, right to left for Arabic). */
+export function xlsxBook(sheets:readonly BookSheet[]):Uint8Array<ArrayBuffer>{
+ const list=sheets.length?sheets:[{name:'Sheet1',rows:[]}],taken=new Set<string>(),names=list.map((sheet,index)=>bookSheetName(sheet.name,index,taken));
+ const part=(text:string)=>encoder.encode(text),xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+ const worksheets=list.map(sheet=>{
+  const headers=new Set(sheet.headerRows||[]),notes=new Set(sheet.noteRows||[]);
+  const rows=sheet.rows.map((row,r)=>'<row r="'+(r+1)+'">'+row.map((value,c)=>bookCell(value,columnName(c)+(r+1),headers.has(r),notes.has(r))).join('')+'</row>').join('');
+  const cols=sheet.widths?.length?'<cols>'+sheet.widths.map((width,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+Math.max(6,Math.min(80,width))+'" customWidth="1"/>').join('')+'</cols>':'';
+  const first=sheet.headerRows?.length?Math.min(...sheet.headerRows):undefined;
+  const frozen=first===undefined?'':'<pane ySplit="'+(first+1)+'" topLeftCell="A'+(first+2)+'" activePane="bottomLeft" state="frozen"/>';
+  return xml+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"'+(sheet.rightToLeft?' rightToLeft="1"':'')+'>'+frozen+'</sheetView></sheetViews>'+cols+'<sheetData>'+rows+'</sheetData></worksheet>';
+ });
+ return storedZip([
+  {name:'[Content_Types].xml',data:part(xml+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+list.map((_,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')},
+  {name:'_rels/.rels',data:part(xml+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')},
+  {name:'xl/workbook.xml',data:part(xml+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+names.map((name,i)=>'<sheet name="'+xmlText(name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>')},
+  {name:'xl/_rels/workbook.xml.rels',data:part(xml+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+list.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'<Relationship Id="rId'+(list.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')},
+  {name:'xl/styles.xml',data:part(bookStyles)},
+  ...worksheets.map((text,i)=>({name:'xl/worksheets/sheet'+(i+1)+'.xml',data:part(text)})),
+ ]);
+}

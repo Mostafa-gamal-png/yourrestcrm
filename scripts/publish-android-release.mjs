@@ -22,12 +22,14 @@ const manifest={schemaVersion:1,packageName:report.package,versionName,versionCo
  apkUrl:`https://crm.yourrest.org/downloads/${name}`,sizeBytes:bytes.length,sha256,
  certificateSha256,
  releaseNotes:{ar:[
-  'تنبيه المصانع القريبة: عند اقترابك لمسافة كيلومتر من مصانع مسؤول عنها لم تُسجَّل لها زيارة منذ 60 يومًا أو أكثر، يصلك إشعار واحد يجمعها، الأقرب أولًا، في ساعات تسجيل الموقع.',
-  'لا يتكرر تنبيه المصنع نفسه في اليوم نفسه، والضغط على الإشعار يفتح «خريطة المصانع» على أقرب مصنع.',
+  'شكوى تنتظرك: يصلك إشعار بكل شكوى عميل عليك الدور فيها، للمراجعة أو التعديل أو التكليف أو التفويض أو التواصل والحل أو تأكيد الإغلاق، والشكاوى عالية الأهمية أولًا.',
+  'الضغط على الإشعار يفتح الشكوى نفسها، ويختفي الإشعار بعد فتحها أو حين لا تعود تنتظرك.',
+  'فحص في الخلفية كل 15 دقيقة من 6 صباحًا إلى 6 مساءً بتوقيت السعودية عدا الجمعة، ولو كان تسجيل خط السير متوقفًا، لتنبيهات الشكاوى وطلبات خدمة العملاء.',
   'لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي.'
  ],en:[
-  'Nearby factories: within 1 km of factories you are responsible for that have had no visit for 60 days or more, one notification lists them, nearest first, during location recording hours.',
-  'The same factory is not notified twice in a day; tapping the notification opens the factory map on the nearest one.',
+  'A complaint is waiting for you: a notification for each customer complaint whose step is yours (review, correction, assignment, delegation, contact and resolution, closure), high importance first.',
+  'Tapping it opens that complaint; the notification goes once you open it or it no longer waits for you.',
+  'A background check every 15 minutes, 6 am to 6 pm Saudi time except Friday, even with route tracking off, for complaint and customer-service request alerts.',
   'The update asks for no new permission; your data and the visits saved on the phone stay as they are.'
  ]},publishedAt:new Date().toISOString()};
 // The update screen shows at most 5 notes of at most 200 characters each (lib/app-update.ts notes): a longer note would be cut.

@@ -86,10 +86,10 @@ export function MemberPermissionsEditor({member,members,roleChanged,onSaved}:{me
    <table className="permission-matrix" data-permission-matrix>
     <thead><tr><th scope="col">{say('الشاشة','Screen')}</th><th scope="col">{say('الكل','All')}</th>{MATRIX_COLUMNS.map(column=><th scope="col" key={column.key}>{column[lang]}</th>)}</tr></thead>
     <tbody>{rows.map(row=>{const free=changeable(row).length>0||browsable(row);return <Fragment key={row.screen}><tr data-matrix-row={row.screen}>
-     <th scope="row">{row[lang]}{row.roleNote?.[role]&&<small className="permission-row-note" data-row-note>{row.roleNote[role]![lang]}</small>}</th>
+     <th scope="row">{row[lang]}{row.roleNote?.[role]&&<small className="permission-row-note" data-row-note>{row.roleNote[role]![lang]}</small>}{row.part&&<small className="permission-row-note" data-row-part>{row.part[lang]}</small>}</th>
      <td>{free?box(allOn(row),roleChanged,say('الكل · ','All · ')+row[lang],on=>setRow(row,on)):none(say('لا شيء يتغيّر هنا','Nothing to change here'))}</td>
      {MATRIX_COLUMNS.map(column=>{
-      if(column.key==='browse')return <td key="browse" data-cell={'browse:'+row.screen}>{browsable(row)?box(shown(row),roleChanged,column[lang]+' · '+row[lang],on=>setShown(row.screen,on)):none(admin?say('يرى مدير النظام كل الشاشات','An administrator sees every screen'):say('الشاشة ليست من عمل الدور','Not this role\'s screen'))}</td>;
+      if(column.key==='browse')return <td key="browse" data-cell={'browse:'+row.screen}>{browsable(row)?box(shown(row),roleChanged,column[lang]+' · '+row[lang],on=>setShown(row.screen,on)):none(row.part?row.part[lang]:admin?say('يرى مدير النظام كل الشاشات','An administrator sees every screen'):say('الشاشة ليست من عمل الدور','Not this role\'s screen'))}</td>;
       const cell=row.cells[column.key],key=cellKey(row.screen,column.key);
       if(!cell||!cellCeiling(role,row.screen,column.key))return <td key={column.key} data-cell={key}>{none(cell?say('ليس من عمل الدور','Not this role\'s'):say('هذا الإجراء غير موجود في الشاشة','No such action on this screen'))}</td>;
       const note=[cell.note,cell.roleNote?.[role]].filter((text):text is {ar:string;en:string}=>!!text).map(text=>text[lang]).join(' ');

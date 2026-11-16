@@ -12,6 +12,8 @@ export const isServiceRole=(role:string)=>serviceRoles.includes(role);
 export const serviceCustomerAddRefused='إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.';
 export const serviceSources:Record<string,string>={visit:'زيارة',call:'اتصال',email:'بريد إلكتروني',whatsapp:'واتساب',website:'عن طريق الويبسايت',social:'عن طريق مواقع التواصل الاجتماعي'};
 export const serviceStatusLabels:Record<string,string>={pending_approval:'بانتظار اعتماد خدمة العملاء',returned:'مطلوب تعديل',pending_assignment:'بانتظار تكليف المبيعات',with_supervisor:'لدى مشرف المبيعات',assigned:'قيد متابعة المبيعات',won:'تم الفوز',lost:'تم الفقد'};
+/** English wording of the states, as the page's dictionary has them (lib/locales/en.json), for what the server writes itself (the Excel export). */
+export const serviceStatusLabelsEn:Record<string,string>={pending_approval:'Awaiting customer service approval',returned:'Changes requested',pending_assignment:'Awaiting sales assignment',with_supervisor:'With sales supervisor',assigned:'Sales follow-up in progress',won:'Won',lost:'Lost'};
 export const serviceActions:Record<string,string>={create:'تسجيل طلب خدمة العملاء',edit:'تعديل وإعادة إرسال',approve:'اعتماد وإحالة للمبيعات',return:'إعادة للتعديل',assign:'تكليف المبيعات',delegate:'تكليف مندوب',reassign:'إعادة تكليف',seen:'فتح الطلب',note:'ملاحظة داخلية',assist:'طلب مساعدة داخلية'};
 export type ServiceRegistration={date?:string;type?:string;performedBy?:string;competitorFileId?:string;offlineRecordedAt?:string;[key:string]:unknown};
 export type ServiceRegistrationEntry={id:string;registration:ServiceRegistration;createdAt:string};

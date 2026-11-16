@@ -184,7 +184,7 @@ eq(RoleWarning({member:{id:'rep',role:'rep',supervisorId:'',active:1},members}),
 // ---- the monthly report section and view
 const timing=(n,median,average,target,overTarget)=>({n,median,average,target,overTarget});
 const report={month:'2026-09',months:['2026-09','2026-08'],generatedAt:'2026-10-12T12:00:00.000Z',total:5,open:3,won:1,lost:1,winRate:50,byState:{won:1,lost:1,pending_assignment:1,pending_approval:2},
- bySource:[{source:'call',total:2,won:1,lost:0,open:1,winRate:100},{source:'whatsapp',total:1,won:0,lost:1,open:0,winRate:0},{source:'website',total:1,won:0,lost:0,open:1,winRate:null}],
+ byContactType:[{type:'call',total:2,won:1,lost:0,open:1,winRate:100},{type:'whatsapp',total:1,won:0,lost:1,open:0,winRate:0},{type:'website',total:1,won:0,lost:0,open:1,winRate:null}],
  timing:{approval:timing(3,1,2.67,4,1),assignment:timing(2,1.5,1.5,4,0),firstContact:timing(2,7,7,24,0),totalToFirstContact:timing(2,12,12,null,0)},
  openOverTarget:3,lossReasons:[{reason:'السعر أعلى من المنافس',count:1}],targets:{approval:4,assignment:4,delegation:4,first_contact:24}};
 for(const role of ['rep','supervisor','customer_service','unknown'])eq(ServiceReportSection({me:{role}}),null,role+' gets no report section');
@@ -197,8 +197,8 @@ const viewText=text(view);
 ok(['5','3','1','50%'].every(value=>nodes(view,node=>hasClass(node,'service-report-kpi')&&text(node).startsWith(value)).length>0),'the headline figures');
 ok(viewText.includes('نسبة الفوز')&&viewText.includes('مفتوحة وتجاوزت هدفها'),'their labels');
 const tables=nodes(view,node=>node.type==='table');
-eq(tables.length,2,'a channel table and a timing table');
-eq(nodes(tables[0],node=>node.type==='tr').map(row=>text(row)),['القناةالطلباتفازفُقدمفتوحنسبة الفوز','اتصال2101100%','واتساب10100%','عن طريق الويبسايت1001—'],'channels with their win rates, and a dash where nothing closed');
+eq(tables.length,2,'a contact-type table and a timing table');
+eq(nodes(tables[0],node=>node.type==='tr').map(row=>text(row)),['نوع التواصلالطلباتفازفُقدمفتوحنسبة الفوز','اتصال2101100%','واتساب10100%','عن طريق الويبسايت1001—'],'by «نوع التواصل» (2026-11-16), with their win rates, and a dash where nothing closed');
 eq(nodes(tables[1],node=>node.type==='tr').map(row=>text(row))[1],'الاعتماد31.0 س2.7 س4 س1','approval: three cases, median 1.0 h, average 2.7 h, target 4, one over');
 eq(nodes(tables[1],node=>node.type==='tr').map(row=>text(row))[4],'من التسجيل إلى أول تواصل212.0 س12.0 س——','the whole wait to first contact has no target');
 ok(viewText.includes('السعر أعلى من المنافس')&&viewText.includes('ساعات العمل من السبت إلى الخميس'),'loss reasons and the working-hours note');
@@ -206,7 +206,7 @@ ok(viewText.includes('بانتظار تكليف المبيعات: 1')&&viewText.
 const select=nodes(view,node=>node.type==='select')[0];
 eq(nodes(select,node=>node.type==='option').map(option=>option.props.value),['2026-09','2026-08'],'the months the reader can choose, newest first');
 select.props.onChange({target:{value:'2026-08'}});eq(months,['2026-08'],'choosing a month asks for it');
-eq(text(expand(ServiceReportView({report:{...report,total:0,bySource:[],byState:{},lossReasons:[],timing:{...report.timing}},say:(ar)=>ar}))).includes('لا طلبات في هذا الشهر ضمن نطاقك.'),true,'an empty month says so');
+eq(text(expand(ServiceReportView({report:{...report,total:0,byContactType:[],byState:{},lossReasons:[],timing:{...report.timing}},say:(ar)=>ar}))).includes('لا طلبات في هذا الشهر ضمن نطاقك.'),true,'an empty month says so');
 eq(nodes(expand(ServiceReportView({report:{...report,total:0},say:(ar)=>ar})),node=>node.type==='table').length,0,'and shows no tables');
 ok(!JSON.stringify(report).includes('مصنع'),'the report carries no customer names');
 language='en';eq(arabicLeft(expand(ServiceReportView({report:{...report,lossReasons:[]},say:(ar,en)=>en}))),[],'English report has no untranslated wording');view=expand(ServiceReportView({report,say:(ar,en)=>en}));ok(text(view).includes('Win rate')&&text(view).includes('Time per stage, in working hours')&&text(view).includes('Working hours are Saturday to Thursday'),'English report');language='ar';

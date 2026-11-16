@@ -63,7 +63,7 @@ const run=(id,month='2026-09',now='2026-10-12T12:00:00.000Z')=>report.serviceRep
 let r=run('owner');
 eq([r.total,r.open,r.won,r.lost,r.winRate],[5,3,1,1,50],'September: five cases, three open, one won, one lost, half of the closed ones won');
 eq(r.byState,{won:1,lost:1,pending_assignment:1,pending_approval:2},'by current state');
-eq(r.bySource.map(s=>[s.source,s.total,s.won,s.lost,s.open,s.winRate]),[['call',2,1,0,1,100],['social',1,0,0,1,null],['website',1,0,0,1,null],['whatsapp',1,0,1,0,0]],'by channel, busiest first; the win rate only where a case closed');
+eq(r.byContactType.map(s=>[s.type,s.total,s.won,s.lost,s.open,s.winRate]),[['call',2,1,0,1,100],['social',1,0,0,1,null],['website',1,0,0,1,null],['whatsapp',1,0,1,0,0]],'by contact type, busiest first; the win rate only where a case closed');
 eq(r.timing.approval,{n:3,median:1,average:2.67,target:4,overTarget:1},'approval: 1, 6 and 1 working hours; one over the 4-hour target');
 eq(r.timing.assignment,{n:2,median:1.5,average:1.5,target:4,overTarget:0},'assignment: 2 and 1 hours');
 eq(r.timing.firstContact,{n:2,median:7,average:7,target:24,overTarget:0},'first contact after assignment: 1 hour and 13 working hours (the night and the Tuesday count only inside working hours)');
@@ -73,22 +73,22 @@ eq(r.openOverTarget,3,'open cases already past their stage target: C waiting for
 eq(r.months,['2026-09','2026-08'],'months offered, newest first');
 eq(r.targets,{approval:4,assignment:4,delegation:4,first_contact:24},'targets reported with the numbers');
 eq(JSON.stringify(r).includes('مصنع'),false,'no customer name anywhere');
-eq(Object.keys(r).sort(),['byState','bySource','generatedAt','lossReasons','month','months','open','openOverTarget','lost','targets','timing','total','winRate','won'].sort(),'only aggregate fields');
+eq(Object.keys(r).sort(),['byState','byContactType','generatedAt','lossReasons','month','months','open','openOverTarget','lost','targets','timing','total','winRate','won'].sort(),'only aggregate fields');
 
 // ---- other months and empty months
 eq(run('owner','2026-08').total,1,'August has one case');
-eq(run('owner','2026-08').bySource.map(s=>s.source),['email'],'and its channel');
+eq(run('owner','2026-08').byContactType.map(s=>s.type),['email'],'and its channel');
 r=run('owner','2026-07');
-eq([r.total,r.winRate,r.bySource,r.timing.approval.n,r.timing.approval.median,r.lossReasons],[0,null,[],0,null,[]],'an empty month is all zeros, not an error');
+eq([r.total,r.winRate,r.byContactType,r.timing.approval.n,r.timing.approval.median,r.lossReasons],[0,null,[],0,null,[]],'an empty month is all zeros, not an error');
 
 // ---- each reader sees only what they may already read
 r=run('sm');
 eq([r.total,r.byState],[3,{won:1,lost:1,pending_assignment:1}],'the manager sees the cases routed to him or held by sales, not the ones still waiting for approval');
 r=run('csm');
 eq([r.total,r.byState],[4,{won:1,lost:1,pending_assignment:1,pending_approval:1}],'a customer-service manager sees his own team\'s cases');
-eq(r.bySource.some(s=>s.source==='social'),false,'and not another manager\'s team');
+eq(r.byContactType.some(s=>s.type==='social'),false,'and not another manager\'s team');
 r=run('csm2');
-eq([r.total,r.bySource.map(s=>s.source)],[1,['social']],'the other manager sees only his');
+eq([r.total,r.byContactType.map(s=>s.type)],[1,['social']],'the other manager sees only his');
 
 // ---- the clock is injected
 eq(run('owner','2026-09','2026-09-09T08:00:00.000Z').openOverTarget,1,'on the afternoon of the 9th only C is past target (E was registered that morning)');

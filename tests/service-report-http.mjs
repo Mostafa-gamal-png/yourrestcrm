@@ -65,7 +65,7 @@ try {
   let r = response.json();
   check([r.month, r.total, r.open, r.won, r.lost, r.winRate], ['2026-09', 5, 3, 1, 1, 50], 'September: five cases, three open, one won, one lost');
   check(r.byState, {won: 1, lost: 1, pending_assignment: 1, pending_approval: 2}, 'by current state');
-  check(r.bySource.map(s => [s.source, s.total, s.won, s.lost, s.open, s.winRate]), [['call', 2, 1, 0, 1, 100], ['social', 1, 0, 0, 1, null], ['website', 1, 0, 0, 1, null], ['whatsapp', 1, 0, 1, 0, 0]], 'by channel, busiest first');
+  check(r.byContactType.map(s => [s.type, s.total, s.won, s.lost, s.open, s.winRate]), [['call', 2, 1, 0, 1, 100], ['social', 1, 0, 0, 1, null], ['website', 1, 0, 0, 1, null], ['whatsapp', 1, 0, 1, 0, 0]], 'by channel, busiest first');
   check(r.timing.approval, {n: 3, median: 1, average: 2.67, target: 4, overTarget: 1}, 'approval time in working hours');
   check(r.timing.assignment, {n: 2, median: 1.5, average: 1.5, target: 4, overTarget: 0}, 'assignment time');
   check(r.timing.firstContact, {n: 2, median: 7, average: 7, target: 24, overTarget: 0}, 'first contact after assignment');
@@ -74,7 +74,7 @@ try {
   check(r.openOverTarget, 3, 'three open cases are past their stage target');
   check(r.months, ['2026-09', '2026-08'], 'the months a reader can choose');
   check(r.targets, {approval: 4, assignment: 4, delegation: 4, first_contact: 24}, 'the targets travel with the figures');
-  check(Object.keys(r).sort(), ['bySource', 'byState', 'generatedAt', 'lossReasons', 'lost', 'month', 'months', 'open', 'openOverTarget', 'targets', 'timing', 'total', 'winRate', 'won'], 'aggregate fields only');
+  check(Object.keys(r).sort(), ['byContactType', 'byState', 'generatedAt', 'lossReasons', 'lost', 'month', 'months', 'open', 'openOverTarget', 'targets', 'timing', 'total', 'winRate', 'won'], 'aggregate fields only');
 
   // ---- nothing a customer or a note could leak through
   for (const id of ['owner', 'sm', 'csm']) {
@@ -88,12 +88,12 @@ try {
   r = (await report('sm2', '2026-09')).json();
   check([r.total, r.byState, r.openOverTarget], [2, {won: 1, lost: 1}, 0], 'another manager: the cases sales already hold (a manager\'s scope is all of sales), not the one routed to the first');
   r = (await report('smw', '2026-09')).json();
-  check([r.total, r.months, r.bySource, r.timing.approval.n], [0, [], [], 0], 'a manager of another region sees an empty report');
+  check([r.total, r.months, r.byContactType, r.timing.approval.n], [0, [], [], 0], 'a manager of another region sees an empty report');
   r = (await report('csm', '2026-09')).json();
-  check([r.total, r.byState, r.bySource.some(s => s.source === 'social')], [4, {won: 1, lost: 1, pending_assignment: 1, pending_approval: 1}, false], 'a customer-service manager: his own team\'s cases, not the other manager\'s');
+  check([r.total, r.byState, r.byContactType.some(s => s.type === 'social')], [4, {won: 1, lost: 1, pending_assignment: 1, pending_approval: 1}, false], 'a customer-service manager: his own team\'s cases, not the other manager\'s');
   check([r.lossReasons, r.timing.firstContact.n, r.timing.approval.n], [[{reason: 'السعر أعلى من المنافس', count: 1}], 2, 3], 'including the sales contacts of those cases (their figures and loss reasons)');
   r = (await report('csm2', '2026-09')).json();
-  check([r.total, r.bySource.map(s => s.source), r.lossReasons], [1, ['social'], []], 'the other customer-service manager: only his');
+  check([r.total, r.byContactType.map(s => s.type), r.lossReasons], [1, ['social'], []], 'the other customer-service manager: only his');
 
   // ---- months
   check((await report('owner', '2026-08')).json().total, 1, 'August has one case');

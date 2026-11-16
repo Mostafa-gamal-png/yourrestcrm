@@ -12,6 +12,7 @@ import {caseProgress} from '@/lib/service-queue';
 import {TRACKING_FINISHED_DAYS} from '@/lib/service-tracking';
 import {activeServiceCase,canReadService,isServiceRole,serviceCustomerAddRefused,serviceCandidates,serviceChainIds,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase,type ServiceCaseData,type ServiceRegistration} from '@/lib/customer-service';
 import {opportunityProblem} from '@/lib/opportunity-entry';
+import {SUPPORT_ASSIST_RETIRED_MESSAGE} from '@/lib/support-opportunity';
 export const dynamic='force-dynamic';
 type Context=Awaited<ReturnType<typeof context>>;
 type RegistrationData=Omit<z.infer<typeof schemas.activity>,'type'|'visitWorkflow'|'customerStage'>&{type:'visit'|'call'|'email'|'whatsapp'|'website'|'social';visitWorkflow?:string;customerStage?:string};
@@ -46,6 +47,10 @@ export async function POST(req:Request){try{
  const canonical=JSON.stringify(body),receiptId='service-receipt:'+c.me.id+':'+requestId,mutation=crypto.randomUUID();
  const replay=async()=>{const r=await c.db.prepare('SELECT record_id,detail FROM crm_audit WHERE id=?').bind(receiptId).first<{record_id:string;detail:string}>();if(!r)return null;const fresh=await context(),item=fresh.serviceCases.find(s=>s.id===r.record_id);if(!item||!canReadService(item,fresh))throw new CRMError('الطلب غير متاح',403);if(r.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);return Response.json({ok:true,id:r.record_id,alreadySaved:true});};
  const repeated=await replay();if(repeated)return repeated;
+ // «طلب مساعدة داخلية» takes no new requests (the owner, 2026-11-16, GSCO list item 3: «طلبات المساندة القديمة تفضل مقروءة، والمفتوح منها
+ // يقدر يكمل، بس ما يتعملش منها طلبات جديدة»): a new support request opens from «طلب مساندة» into «التواصل مع العملاء» (POST /api/support
+ // with opportunityId). An open one is still answered with `reply`; a retry of one saved before this release replays above with its receipt.
+ if(action==='assist')throw new CRMError(SUPPORT_ASSIST_RETIRED_MESSAGE,409);
  const permission=accessGuard(c),guards=[permission.sql],args:(string|number)[]=[...permission.args],statements=[];
  const requireMember=(m:Member)=>{const g=memberGate(m);guards.push(g.sql);args.push(...g.args);};
  let item:ServiceCase,customer:Row,newCustomer=false,target:Member|undefined,note='',status='',data:ServiceCaseData,id='';

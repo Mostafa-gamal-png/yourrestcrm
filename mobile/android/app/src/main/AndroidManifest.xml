@@ -23,6 +23,7 @@
             </intent-filter>
         </activity>
         <service android:name=".RouteLocationService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="location" />
+        <service android:name=".AlertCheckJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
         <receiver android:name=".AppUpdateInstallReceiver" android:exported="false" />
         <provider android:name=".DesignFileProvider" android:authorities="org.yourrest.crm.designfiles" android:exported="false" android:grantUriPermissions="true" />
         <receiver android:name=".RouteResumeReceiver" android:exported="false">

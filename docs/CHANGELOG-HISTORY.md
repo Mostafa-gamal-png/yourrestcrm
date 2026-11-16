@@ -4,6 +4,48 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Customer-service reports by contact type and to Excel, «شكوى تنتظرك» on the phone, «طلب مساندة» from an opportunity (2026-11-16, not released yet, no migration, Android 1.0.14 (15))
+
+- **Asked.** Item 3 of the GSCO comparison list, approved by the owner: «تمام موافق ابدأ» (publishing waits for «ارفع»). The item:
+  «أ. تقرير طلبات الخدمة يتوزّع «حسب نوع التواصل» في الفرصة، بدل «حسب مصدر الطلب» اللي كان بيطلع سطر واحد. الطلبات القديمة تتحسب كمان.»
+  «ب. زرار «تصدير Excel» في كل تبويب من «تقارير خدمة العملاء»: الملف فيه 3 أوراق: «الملخص»، و«زمن المراحل»، و«التفاصيل» (سطر لكل طلب أو
+  شكوى). كل مستخدم يصدّر اللي مسموحله يقراه بس. صلاحية جديدة «تصدير تقارير خدمة العملاء»، شغالة تلقائيًا للمالك والإدارة ومدير المبيعات ومدير
+  خدمة العملاء، ويقدر المالك يقفلها لأي حساب.» «ج. تنبيه «شكوى تنتظرك» على الموبايل: بيوصل للي عليه الدور في الشكوى: المراجعة، أو التكليف،
+  أو التفويض، أو التواصل والحل، أو الإغلاق. الشكاوى عالية الأهمية تظهر الأول. فيه فحص في الخلفية كل 15 دقيقة، من 06:00 لـ 18:00 بتوقيت
+  السعودية، ما عدا الجمعة، حتى لو تسجيل خط السير مقفول. الميزة دي محتاجة تحديث أندرويد، والتحديث إجباري: أقل نسخة مسموحة = النسخة الجديدة.»
+  «د. «طلب مساندة» جوه الفرصة يفتح طلب في «التواصل مع العملاء» بمدده وتصعيده: الزرار يظهر للمندوب على كل فرصه المفتوحة. لو العميل مش مربوط
+  بالدليل، تظهر رسالة توضح ده. لو للعميل طلب مفتوح، يظهر زرار «فتح الطلب المفتوح». طلبات المساندة القديمة تفضل مقروءة، والمفتوح منها يقدر
+  يكمل، بس ما يتعملش منها طلبات جديدة.»
+- **أ. By contact type.** `lib/service-report.ts` `serviceContactType`: the opportunity's `data.source`, else `registration.type` (the
+  older cases), else «غير محدد»; the report's `bySource` is now `byContactType` (`{type,total,won,lost,open,winRate}`), headed «بحسب نوع
+  التواصل» on the screen.
+- **ب. Excel.** `GET /api/service-report/export?kind=requests|complaints&month=YYYY-MM&lang=ar|en` (`lib/service-report-export.ts`, the
+  multi-sheet writer `xlsxBook` of `lib/xlsx-write.ts`): «الملخص», «زمن المراحل», «التفاصيل» (one row for each request or complaint the reader
+  may read: `canReadService`, `canReadComplaint`), right to left in Arabic, English sheets in English. Without a session 401, a hidden screen
+  404, a role the report refuses 403 (its own words), the cell closed 403, a bad month 400; `private, no-store`. The new permission row
+  «تقارير خدمة العملاء» › «تصدير» (`service-reports`/`export`) is on for the administrator, the management and the sales manager by their role
+  («admin», «manager») and for the customer-service manager; the owner closes it for any account in «الصلاحيات». The screens' definitions moved
+  to `lib/service-report-view.ts` so the page does not load the writer.
+- **ج. «شكوى تنتظرك».** `GET /api/complaints/alerts` (`lib/complaint-alerts.ts`): the complaints waiting for the reader by the existing queue
+  rules (review, correction, assignment, delegation, contact, resolution, closure), high importance first, at most 20, only the customer's
+  name, the category, the importance, the step, whether opened and since when; 401 without a session, 404 with the screen hidden, `no-store`.
+  The page opens a complaint from `#complaint=<id>` or the app's `yourrest:open-complaint`. Android 1.0.14 (15): `ComplaintAlerts` (channel
+  «شكاوى العملاء», grouped, ordered by importance, the page's language, a tap opens the complaint, a notice leaves once opened or no longer
+  waiting), and `AlertCheckJob` (JobScheduler, every 15 minutes with a network, runs only 06:00–18:00 Riyadh and not on Friday
+  (`ContinuousPolicy.inWindow`), with route tracking off too; also polls the service alerts). No new permission. The minimum version is the
+  release's business (`deploy/android-request.json`), not this commit.
+- **د. «طلب مساندة» from an opportunity.** `lib/support-opportunity.ts`, `GET /api/support/opportunity?caseId=` (a preflight) and
+  `POST /api/support` with `opportunityId`: the administrator and the sales team ask from an open opportunity they may read; customer service
+  403; an opportunity the reader cannot read 404; a customer not in the list, a closed opportunity or a customer with an open request 409 with
+  its reason, and «فتح الطلب المفتوح» when the reader may read it. The request keeps the opportunity (number, products) and shows it in
+  «التواصل مع العملاء». The internal help of the service case (`action:'assist'`) is retired with 409 and a message that names «طلب
+  مساندة»; old ones stay readable and an open one can still be answered (`reply`).
+- **Tests.** New: `service-report-export` (78), `complaint-alerts` (23), `support-opportunity` (25), `complaint-alerts-android` (27, with the
+  Java checks `ComplaintAlertRulesCheck` 63 and `ComplaintAlertsCheck` 56), `service-report-export-http` (51), `complaint-alerts-http` (37),
+  `support-opportunity-http` (35), `customer-service-item3-browser` (243, 46 screenshots at 320, 360, tablet both ways and desktop, Arabic and
+  English). Updated for the change: `service-report`, `service-report-http`, `service-queue-ui`, `permissions`, `permissions-ui`,
+  `crm-regression`, `service-queue-http`, `server-authorization`, `nearby-customers-android`, `ServiceAlertCheck`.
+
 ## No customer data in the repository: the initial data snapshot and the source uploads removed; a first installation is empty with its owner (2026-11-16, not released yet, no migration)
 
 - **Asked.** The repository was public until today and carried real customer data since its first import. The owner approved removing it:

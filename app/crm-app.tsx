@@ -188,6 +188,8 @@ export default function CRM() {
     const pendingServiceCase=useRef('');
     // A customer named by the Android app's «تنبيه المصانع القريبة» notification (lib/nearby-customers.ts), opened once the data is in hand.
     const pendingNearby=useRef('');
+    // «شكوى تنتظرك» (lib/complaint-alerts.ts, Android 1.0.14): a complaint a tapped notification names, held until the page has its data.
+    const pendingComplaint=useRef('');
     const [followupEditor,setFollowupEditor]=useState<{initial?:Row;customerId?:string;key:string}|null>(null);
     const [visitEditor, setVisitEditor] = useState<{
         initial?: Row;
@@ -268,7 +270,7 @@ export default function CRM() {
     },[me?.id,me?.authVersion,me?.role,me?.regionScope,load]);
     // A new customer-service request reaches a signed-in, connected, idle user within ten minutes; any open editor is left alone.
     const editorOpenRef=useRef(false),signedIn=!!me;
-    useEffect(()=>{editorOpenRef.current=!!(form||visitEditor||followupEditor||serviceDetailId||supportDialog||complaintDialog||detailId||deleting||printQuote||erpCustomersOpen);});
+    useEffect(()=>{editorOpenRef.current=!!(form||visitEditor||followupEditor||serviceDetailId||supportDialog||complaintDialog?.kind==='register'||complaintEntry||detailId||deleting||printQuote||erpCustomersOpen);});
     useEffect(()=>{
         if(!signedIn)return;
         const timer=window.setInterval(()=>{if(document.visibilityState==='visible'&&navigator.onLine!==false&&!editorOpenRef.current)void load().catch(()=>{});},600000);
@@ -308,6 +310,26 @@ export default function CRM() {
         return()=>window.removeEventListener('yourrest:open-nearby-customer',open);
     },[openNearby,me]);
     useEffect(()=>{if(!me||!snapshotRef.current||!pendingNearby.current)return;const id=pendingNearby.current;pendingNearby.current='';openNearby(id);},[me,openNearby]);
+    // «شكوى تنتظرك» (the owner, 2026-11-16, GSCO list item 3; Android 1.0.14): a tapped notification opens the complaint where this member
+    // meets complaints («الشكاوى», or «الزيارات» for the sales team). The id is only a hint: the sheet opens only if this member's complaints
+    // hold it (lib/complaints.ts decides), and a screen with unsaved work is never replaced underneath the person.
+    const refreshComplaints=complaints.refresh;
+    const openComplaint=useCallback((id:string)=>{
+        const d=snapshotRef.current;if(!d)return;
+        if(editorOpenRef.current){toast.info(getLanguage()==='ar'?'وصلتك شكوى تنتظر إجراءك. أنهِ ما بين يديك ثم افتحها من الشكاوى.':'A complaint is waiting for you. Finish what you are doing, then open it from Complaints.');return;}
+        go(canViewPage(d.me.role,'complaints')?'complaints':'activity');setVisitEditor(null);setComplaintDialog({kind:'detail',id});void refreshComplaints();
+    },[go,refreshComplaints]);
+    useEffect(()=>{
+        const open=(event:Event)=>{
+            const id=(event as CustomEvent<{id?:unknown}>).detail?.id;
+            if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(id))return;
+            if(!snapshotRef.current||!me){pendingComplaint.current=id;return;}
+            openComplaint(id);
+        };
+        window.addEventListener('yourrest:open-complaint',open);
+        return()=>window.removeEventListener('yourrest:open-complaint',open);
+    },[openComplaint,me]);
+    useEffect(()=>{if(!me||!snapshotRef.current||!pendingComplaint.current)return;const id=pendingComplaint.current;pendingComplaint.current='';openComplaint(id);},[me,openComplaint]);
     const createdCustomer=useCallback(async(id:string)=>{
         let d=await refreshLocal();let customer=d?.records.find(r=>r.id===id&&r.kind==='customer');
         if(!customer){await load();d=snapshotRef.current;customer=d?.records.find(r=>r.id===id&&r.kind==='customer');}
@@ -317,7 +339,7 @@ export default function CRM() {
     useEffect(()=>{const query=window.matchMedia('(max-width: 1023px)');const update=()=>{setCompactNavigation(query.matches);if(!query.matches)setMobileAccountOpen(false);};update();query.addEventListener('change',update);return()=>query.removeEventListener('change',update);},[]);
     useEffect(()=>{const update=()=>setOffline(navigator.onLine===false);update();window.addEventListener('online',update);window.addEventListener('offline',update);return()=>{window.removeEventListener('online',update);window.removeEventListener('offline',update);};},[]);
     useEffect(() => { const after = () => setPrintQuote(null); window.addEventListener('afterprint', after); return () => window.removeEventListener('afterprint', after); }, []);
-    useEffect(() => { load(); const hash = window.location.hash.slice(1), link = /^service-case=([A-Za-z0-9_-]{1,200})$/.exec(hash), nearby = /^nearby=([A-Za-z0-9_-]{1,200})$/.exec(hash); if (link) { pendingServiceCase.current = link[1]; window.history.replaceState(null, '', '#activity'); } if (nearby) { pendingNearby.current = nearby[1]; window.history.replaceState(null, '', '#map'); } const v = link ? 'activity' : nearby ? 'map' : hash === 'factory' ? 'customer' : (hash === 'opportunity'||hash === 'service') ? 'activity' : hash; if (v==='reports'||nav.some(n => n[0] === v))
+    useEffect(() => { load(); const hash = window.location.hash.slice(1), link = /^service-case=([A-Za-z0-9_-]{1,200})$/.exec(hash), nearby = /^nearby=([A-Za-z0-9_-]{1,200})$/.exec(hash), complaint = /^complaint=([A-Za-z0-9_-]{1,200})$/.exec(hash); if (link) { pendingServiceCase.current = link[1]; window.history.replaceState(null, '', '#activity'); } if (nearby) { pendingNearby.current = nearby[1]; window.history.replaceState(null, '', '#map'); } if (complaint) { pendingComplaint.current = complaint[1]; window.history.replaceState(null, '', window.location.pathname + window.location.search); } const v = link ? 'activity' : nearby ? 'map' : complaint ? '' : hash === 'factory' ? 'customer' : (hash === 'opportunity'||hash === 'service') ? 'activity' : hash; if (v==='reports'||nav.some(n => n[0] === v))
         setView(v); }, [load]);
     useEffect(() => { const context = (document as Document & { modelContext?: ModelContext }).modelContext; if (!context?.registerTool)
         return; const lifecycle = new AbortController(); for (const tool of [{ name: 'read_crm_summary', title: 'قراءة ملخص يورست', description: 'Read the currently authorized CRM totals without modifying data.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true }, execute: async (input: Record<string, unknown>) => { if (!input || Object.keys(input).length)
@@ -574,7 +596,7 @@ export default function CRM() {
  {supportEntry&&me&&<SupportSheet key={supportEntry.id} entry={supportEntry} onClose={()=>setSupportDialog(null)} onChanged={support.refresh}/>}
  {complaintDialog?.kind==='register'&&me&&<ComplaintRegisterDialog me={me} records={records} complaints={complaints.data?.complaints||[]} onClose={()=>setComplaintDialog(null)} onNotified={complaints.refresh} onSaved={async()=>{await complaints.refresh();toast.success(say('سُجّلت الشكوى ووصلت إلى مدير خدمة العملاء','The complaint was registered and reached the customer-service manager'));}}/>}
  {complaintEntry&&me&&<ComplaintSheet key={complaintEntry.id+':'+complaintEntry.version} entry={complaintEntry} onClose={()=>setComplaintDialog(null)} onChanged={complaints.refresh}/>}
- {serviceDetailId&&me&&<ServiceWorkflow id={serviceDetailId} me={me} onClose={()=>setServiceDetailId('')} onRefresh={load} onEdit={()=>{const row=records.find(r=>r.id==='intake-'+serviceDetailId);setServiceDetailId('');if(row)openVisit(row);}} onVisit={id=>{setServiceDetailId('');openVisit(undefined,id);}}/>}
+ {serviceDetailId&&me&&<ServiceWorkflow id={serviceDetailId} me={me} onClose={()=>setServiceDetailId('')} onRefresh={load} onEdit={()=>{const row=records.find(r=>r.id==='intake-'+serviceDetailId);setServiceDetailId('');if(row)openVisit(row);}} onVisit={id=>{setServiceDetailId('');openVisit(undefined,id);}} onSupportSent={()=>support.refresh()} onOpenSupport={id=>{void support.refresh().then(()=>{setServiceDetailId('');setSupportDialog({kind:'detail',id});});}}/>}
  {view === 'followup' && <CustomerFollowupsPage support={supportBinding} onDelete={can(me,'followup','delete')?setDeleting:undefined} canDelete={canDeleteRecord} records={salesRecords} members={members} query={listQuery} staff={effectiveStaffFilter} stage={stageFilter} onNew={(id,sourceId)=>openFollowup(id,undefined,sourceId)} onOpen={r=>openFollowup(undefined,r)} onCustomer={setDetailId} onImported={me&&!isServiceRole(me.role)&&can(me,'followup','add')?load:undefined}/>}
  {view==='complaints'&&me&&<MyServiceScore me={me}/>}{view==='complaints'&&me&&<ComplaintReportSection me={me}/>}{view==='complaints'&&me&&<ComplaintsList data={complaints.data} me={me} mode="page" onChanged={complaints.refresh} onOpen={entry=>setComplaintDialog({kind:'detail',id:entry.id})}/>}{view==='service-kpi'&&me&&<ServiceKpiPage me={me}/>}
  {view==='activity'&&me&&isServiceRole(me.role)&&<ServiceTrackingBoard me={me} cases={tracking.cases} complaints={complaints.data?.complaints} support={support.data?.requests} onOpenSupport={id=>setSupportDialog({kind:'detail',id})} onOpenCase={id=>{setVisitEditor(null);setServiceDetailId(id);}} onOpenComplaint={id=>setComplaintDialog({kind:'detail',id})}/>}{view === 'activity' && me && <ServiceReportSection me={me}/>}{view === 'activity' && me && !complaintsPage && <ComplaintReportSection me={me}/>}{view === 'activity' && me && <ServiceQueuePanel entries={serviceQueue} me={me} onOpen={openServiceCase} onVisit={visitFromQueue}/>}{view === 'activity' && me && <SupportPanel data={support.data} me={me} onOpen={entry=>setSupportDialog({kind:'detail',id:entry.id})} onChanged={support.refresh}/>}{view==='activity'&&me&&!complaintsPage&&<ComplaintsList data={complaints.data} me={me} mode="panel" onOpen={entry=>setComplaintDialog({kind:'detail',id:entry.id})}/>}{view === 'activity' && <VisitsPage role={me?.role} support={supportBinding} onDelete={can(me,'activity','delete')?setDeleting:undefined} canDelete={canDeleteRecord} canEdit={me?.role!=='rep'&&can(me,'activity','edit')} workflow={serviceFilter} onWorkflowFilter={setServiceFilter} records={records} members={members} query={listQuery} staff={effectiveStaffFilter} stage={stageFilter} onOpen={r => openVisit(r)} onNew={() => start('activity')} onCustomer={setDetailId} onWorkflow={id=>{setVisitEditor(null);setServiceDetailId(id);}}/>}

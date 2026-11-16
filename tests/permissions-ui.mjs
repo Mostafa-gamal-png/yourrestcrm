@@ -116,7 +116,7 @@ ok(html.includes('اسم mgr · مدير المبيعات'),'named with their ro
 const copied=P.copyPermissions({role:'manager',stored:P.normalizePermissions('manager',mgr.permissions)},'supervisor');
 html=render({...sup,permissions:{version:sup.permissions.version,...copied.stored}},[sup,mgr]);
 eq([isChecked(html,'quote:delete'),isChecked(html,'activity:delete'),isChecked(html,'browse:competitors'),isChecked(html,'sales:import')],[false,true,false,true],'the copy: quote delete off, the granted visit delete copied, competitors hidden, the rest as the manager');
-eq([...copied.skipped],['customer:import','targets:edit'],'skipped: what the supervisor cannot hold (a delete cell is copied: the supervisor has the screen; «المحذوفات» too since 2026-11-10)');
+eq([...copied.skipped],['customer:import','service-reports:export','targets:edit'],'skipped: what the supervisor cannot hold (a delete cell is copied: the supervisor has the screen; «المحذوفات» too since 2026-11-10; the export of the customer-service reports since 2026-11-16)');
 eq(isChecked(html,'browse:trash'),false,'the manager\'s hidden «المحذوفات» copied');
 // A hidden tab copied to a supervisor; to a representative it is skipped and named.
 const tabsSource=person('mgr','manager',saved('manager',{hidden:['targets.quotes']}));

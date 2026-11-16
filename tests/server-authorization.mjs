@@ -30,7 +30,7 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/record-import?kind=targets', '/api/record-import?kind=followups', '/api/crm', '/api/customer-edits', '/api/customer-edits?customerId=x', '/api/team-today', '/api/nearby-customers', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import'];
+  const protectedGets = ['/api/complaints/alerts', '/api/service-report/export?kind=requests', '/api/service-report/export?kind=complaints', '/api/support/opportunity?id=x', '/api/record-import?kind=targets', '/api/record-import?kind=followups', '/api/crm', '/api/customer-edits', '/api/customer-edits?customerId=x', '/api/team-today', '/api/nearby-customers', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   // The customer's signing link (2026-11-10) is public by design, but opens only with a valid token: without one, one neutral page or
@@ -73,6 +73,13 @@ try {
     '/api/support': expect(everyone, 200, 0),
     '/api/complaints': expect(everyone, 200, 0),
     '/api/complaint-report': expect(['owner', 'mgr', 'mgrw', 'csm'], 200, 403),
+    // 2026-11-16 (GSCO list item 3): «تصدير Excel» of the two monthly reports, for the roles the reports open for (their «تصدير» cell on by
+    // default); the complaint alerts the Android app asks, for every member; what «طلب مساندة» inside an opportunity needs first, for the
+    // administrator and the sales team (an unknown opportunity: 404), never customer service (403).
+    ['/api/service-report/export?kind=requests&month=' + month]: expect(['owner', 'mgr', 'mgrw', 'csm'], 200, 403),
+    ['/api/service-report/export?kind=complaints&month=' + month]: expect(['owner', 'mgr', 'mgrw', 'csm'], 200, 403),
+    '/api/complaints/alerts': expect(everyone, 200, 0),
+    '/api/support/opportunity?id=x': expect([...management, ...reps], 404, 403),
     ['/api/service-kpi?month=' + month]: expect(['owner', 'csm', 'cs'], 200, 403),
     // «المحذوفات» (2026-11-09): the administrator (all deletions) and the sales managers (their own); since 2026-11-10 also whoever has a
     // «حذف» cell on (none here yet: off by default), and anyone else gets 404 as for a hidden screen (never 403, which locks the offline session).

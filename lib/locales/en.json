@@ -1569,5 +1569,18 @@
   "هذا الإجراء متاح لفريق المبيعات فقط": "This action is available to the sales team only",
   "أقصى حجم لملف الاستيراد 2 ميجابايت.": "The import file may be 2 MB at most.",
   "تقييم السلوك من الإدارة": "Conduct assessment by management",
-  "مدير المبيعات خارج التقييم، فلا تُحدَّد له مستهدفات العملاء والزيارات.": "The sales manager is outside the evaluation, so no customer and visit targets are set for them."
+  "مدير المبيعات خارج التقييم، فلا تُحدَّد له مستهدفات العملاء والزيارات.": "The sales manager is outside the evaluation, so no customer and visit targets are set for them.",
+  "اختر التقرير المطلوب تصديره.": "Choose the report to export.",
+  "التقرير متاح لمدير النظام ومدير المبيعات ومدير خدمة العملاء فقط": "The report is only for the administrator, the sales manager and the customer-service manager",
+  "تقرير الشكاوى متاح لمدير النظام ومدير المبيعات ومدير خدمة العملاء فقط": "The complaints report is only for the administrator, the sales manager and the customer-service manager",
+  "هذا الجزء غير متاح لحسابك. راجع مدير النظام.": "This part is not available to your account. Ask the administrator.",
+  "غير مسموح لك بالتصدير في تقارير خدمة العملاء. راجع مدير النظام.": "You are not allowed to export in Customer-service reports. Ask the administrator.",
+  "طلب المساندة متاح للمندوب والمشرف ومدير المبيعات ومدير النظام فقط.": "Support can be requested by a representative, a supervisor, a sales manager or the administrator only.",
+  "الفرصة غير متاحة.": "The opportunity is not available.",
+  "تغيّر عميل الفرصة. حدّث الصفحة.": "The opportunity's customer changed. Refresh the page.",
+  "طلب المساندة متاح للفرص المفتوحة فقط.": "Support can be requested for open opportunities only.",
+  "عميل هذه الفرصة غير مربوط بقائمة العملاء، وطلب المساندة يحتاج عميلًا محفوظًا في القائمة. راجع مدير النظام ليربط الفرصة بعميلها، ثم أعد طلب المساندة.": "This opportunity's customer is not linked to the customer list, and a support request needs a customer saved in the list. Ask the administrator to link the opportunity to its customer, then request support again.",
+  "يوجد طلب مساندة مفتوح لهذا العميل تتابعه خدمة العملاء في «التواصل مع العملاء»، ولا يُفتح له طلب ثانٍ حتى ينتهي.": "This customer already has an open support request that customer service follows in «Customer contact»; a second one cannot be opened until it finishes.",
+  "لم يعد «طلب مساعدة داخلية» متاحًا: طلب المساندة الجديد يُفتح من زر «طلب مساندة» في الفرصة، وتتابعه خدمة العملاء في «التواصل مع العملاء». تبقى الطلبات السابقة مقروءة، ويُكمل المفتوح منها بالرد.": "«Request internal assistance» is no longer available: a new support request is opened with «Request support» in the opportunity, and customer service follows it in «Customer contact». Earlier requests stay readable, and an open one is completed by replying to it.",
+  "على هذه الفرصة طلب مساعدة داخلية مفتوح من قبل: يُكمل بالرد عليه. طلبات المساندة الجديدة تُفتح من زر «طلب مساندة» وتتابعها خدمة العملاء في «التواصل مع العملاء».": "This opportunity has an internal assistance request opened earlier: it is completed by replying to it. New support requests are opened with «Request support» and customer service follows them in «Customer contact»."
 }
