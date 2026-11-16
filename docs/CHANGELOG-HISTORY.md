@@ -63,6 +63,38 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   267). Not stable: `erp-sales-replace-http` (a 409 on «applied with the agreement» in the pool, passed when run again alone, as on
   2026-11-15 before this change). The default gate after the mending: 212/212 (TypeScript 0 errors; ESLint 0 errors, 165 warnings: the 160 of
   the baseline and 5 of the new code's kind already in the files, `react-hooks/set-state-in-effect` and refs read in render).
+- **The independent review** (2026-11-16, every defect proved over HTTP on a build of 26d5963 with made-up data; each mending has a check
+  that failed before it: `tests/service-sales-review-http.mjs`, 19 of its 44 checks failed on 26d5963, and 5 new checks of
+  `tests/service-sales.mjs` with its 3 new helpers missing there):
+  1. *A later decision reclassified past sales.* «بالكامل» now needs a quotation dated on or after the day of «تتولاها خدمة العملاء»
+     (`routed_at`, `CaseFact.routedAt`), an invoice dated on or after it, and an invoice the system received after the decision
+     (`created_at` of the ERP row, `InvoiceFact.importedAt`; `keptSale` in `lib/service-sales.ts`). A quotation or invoice from before
+     it is «بالمشاركة» and stays in the achievement; a finished month and the whole `/api/sales` answer are the same across the decision.
+  2. *The return of a full sale was charged to the representative.* An ERP return naming no quotation, of a customer whose code names
+     it, dated on or after one of its full sales, follows them, whole, while they cover it (`fullReturns`); beyond that it stays.
+  3. *Reach.* «أداء خدمة العملاء», its Excel and the role tasks name an opportunity's customer, owner and source words only to a reader
+     who may read the opportunity (`canReadService`: the regions, the branch for all but an administrator, no sales member on a kept
+     one); the figures are the same for every reader (question 3). A role task is listed and recorded only on an opportunity the reader
+     may read, or as the member's own task on a customer of their branch and regions.
+  4. *Matching.* An invoice sells a quotation only when dated on or after it and, when its code names one customer, of that customer
+     (`invoiceOfQuote`, as `quoteConversions`). The exclusion and the dashboard read the same documents (a check compares them).
+  5. *The monthly report lost the loss reason of a kept opportunity:* `serviceLossReason` (`lib/customer-service.ts`) for the report,
+     its Excel and «فرص مفقودة للاسترداد».
+  6. *A dormant customer could never be started again:* blocked only while an opportunity of the customer is open; offered again on
+     «عملاء منقطعون عن الشراء 90 يومًا» once it closed.
+  7. *«فرص مفقودة للاسترداد» named the people on another member's opportunity:* the holder and the registrar only for an opportunity
+     the reader may read (and not searchable otherwise); the customer and the loss reason stay.
+  Suspected and checked: «مستهدفي» counted a full customer-service sale as the representative's work in a closed month (real: mended in
+  `lib/own-targets-server.ts`, checked); a decision changing sales without the sales revision (no longer: after 1 the decision changes
+  no document already held, checked); the cost of the exclusion once one opportunity is kept, with 10 000 made-up customers and 30 000
+  activities (`/api/sales` +141 ms, with «تقييم الأداء» +156 ms, «مستهدفي» 9 to 172 ms before; +70, +72 and 7 to 62 ms after: every
+  customer's code is read as one column, `json_extract`, not every customer record parsed).
+  Run after the mending, against a new build: `service-sales-review-http` 44, `service-sales-http` 113 (its ERP fixture now dates each
+  document's arrival at its insertion, after the decision), and the release-build and browser tests of the customer-service and
+  targets-sales areas one by one (33 files, all passed: among them `service-kpi-http` 115, `support-http` 230, `targets-tabs-http` 134,
+  `erp-sales-replace-http` 31, `service-sales-browser` 267, `customer-service-item3-browser` 243, `service-queue-browser` 162); the
+  default gate 212/212 (`service-sales` 66 checks; TypeScript 0 errors; ESLint 0 errors, 165 warnings as before). No screen changed
+  (`npm run build` regenerated nothing in `public/`).
 
 ## Customer-service reports by contact type and to Excel, «شكوى تنتظرك» on the phone, «طلب مساندة» from an opportunity (2026-11-16, not released yet, no migration, Android 1.0.14 (15))
 
