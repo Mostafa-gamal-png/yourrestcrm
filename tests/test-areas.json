@@ -16,7 +16,7 @@
   },
   "defaultGateOnly": {
     "about": "Covered by the default gate alone (it always runs): documentation, the Android project (its own gate), release requests, packaging helpers the rehearsal checks, lint configuration, type declarations, modules no page or route imports, and the default gate's own tests (a changed release-build or browser test still runs itself, and one an area names runs that area).",
-    "globs": ["docs/**", "README.md", "tests/CHECKS.md", ".github/**", "mobile/**", "deploy/**", "migration/**", "eslint.config.mjs", ".env.example", ".gitignore", "components.json", "cloudflare-env.d.ts", "next-env.d.ts", ".next/types/**", "settings.example.cjs", "Yourrest-CRM-Revised-Source-20261010.zip", "lib/connector-context.ts", "lib/connector-contract.mts", "lib/connector-errors.mts", "lib/connector-preview.d.ts", "lib/connectors.ts", "scripts/lib/voice-field-stub.mjs", "scripts/demo-local.mjs", "tests/**"]
+    "globs": ["docs/**", "README.md", "tests/CHECKS.md", ".github/**", "mobile/**", "deploy/**", "eslint.config.mjs", ".env.example", ".gitignore", "components.json", "cloudflare-env.d.ts", "next-env.d.ts", ".next/types/**", "settings.example.cjs", "lib/connector-context.ts", "lib/connector-contract.mts", "lib/connector-errors.mts", "lib/connector-preview.d.ts", "lib/connectors.ts", "scripts/lib/voice-field-stub.mjs", "scripts/demo-local.mjs", "tests/**"]
   },
   "areas": {
     "mold-requests": {

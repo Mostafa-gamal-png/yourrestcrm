@@ -13,3 +13,19 @@ settings.cjs
 
 # Agent worktrees and local assistant state
 .claude/
+
+# Real customer data never enters the repository (the owner, 2026-11-16). The initial data file of a first installation
+# is placed by hand on the host (migration/initial.json and its checksum); the uploaded source archives held it.
+migration/initial.json
+migration/initial.sha256
+/migration/
+*-Revised-Source-*.zip
+*-Full-Source-*.zip
+Yourrest-CRM-Namecheap.zip
+namecheap-upload/
+# Databases, their journals and backups of a running installation.
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+yourrest-crm-data/

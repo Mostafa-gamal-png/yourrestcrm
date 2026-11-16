@@ -4,6 +4,34 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## No customer data in the repository: the initial data snapshot and the source uploads removed; a first installation is empty with its owner (2026-11-16, not released yet, no migration)
+
+- **Asked.** The repository was public until today and carried real customer data since its first import. The owner approved removing it:
+  «تمام موافق ابدأ».
+- **Removed from the branch** (`git rm`) and kept out by `.gitignore`: `migration/initial.json` (the initial data snapshot of the first
+  installation: customers, factories, members and audit rows of the previous application), `migration/initial.sha256`, and
+  `Yourrest-CRM-Revised-Source-20261010.zip` (the original source upload, which held the same snapshot). `.gitignore` also keeps out
+  `/migration/`, `*-Revised-Source-*.zip`, `*-Full-Source-*.zip` (the earlier upload `Yourrest-CRM-Full-Source-20261008.zip`, deleted from
+  the tree on 2026-10-10, held it too), the Namecheap package and its stage, `*.sqlite` with its journals, and `yourrest-crm-data/`.
+- **A first installation** (`portable/setup.cjs`, `portable/initialize.mjs`). Without initial data the database is created empty with its owner
+  only: `node setup.cjs --owner-email=name@yourrest.org [--owner-name=...]` (member `owner`, admin of every region, the address lower-cased and
+  held to `@yourrest.org` like the protected-owner check; the name defaults to «مدير النظام»; the company row names it). Without an owner and
+  without a file, setup refuses before it writes a settings file, a folder or a database. An initial data file the administrator places by hand
+  in `migration/initial.json` with its SHA-256 in `migration/initial.sha256` still loads as before, its checksum checked first; a missing file
+  or checksum, a mismatch, or a file together with `--owner-email` is refused and nothing is created. On an existing database setup changes
+  nothing and refuses `--owner-email`. The summary says `initialData: "none"` or `"file"` for a new database.
+- **The Namecheap package** (`scripts/package-namecheap.py`) no longer copies `migration/` into the package or its `source/`, and refuses to
+  write a package that holds `initial.json`, `initial.sha256`, a `migration/` folder or a source upload; it takes an optional archive path.
+- **Tests.** `tests/fixtures/made-up-seed.js` builds a MADE-UP seed on the schema of the migrations it is given (fictional people and
+  customers, phones 0500000001.., e-mails at example.com; nothing derived from real data). `tests/startup-upgrade.mjs` seeds from it (it read
+  the real snapshot before); `tests/portable-installer.mjs` adds the empty installation with its owner, the refusals, and a hand-placed
+  made-up seed with its checksum checked; `tests/package-install.mjs` checks that the package holds no initial data, then installs it empty
+  and from a hand-placed made-up seed. `tests/test-areas.json` drops the two removed paths. The update-package Python tests keep their
+  one-line stand-in `migration/initial.json` of an existing installation (no record in it).
+- **Live site.** Unaffected: its data is in `yourrest-crm-data`, and the snapshot is read only by a first installation.
+- **Not done here.** The files are still in the git history of every branch: removing them from history is a separate step (a history
+  rewrite), with the published release archives under `deploy/packages/` left as they are (none holds the snapshot).
+
 ## Today's sales against today's target, a re-contact date for a lost follow-up, and targets and follow-ups imported from Excel templates (2026-11-16, not released yet, no migration)
 
 - **Asked.** Item 8 of the GSCO comparison list, approved by the owner: «تمام كمل كل البنود وارفع لما الفحص يخلص». The item: «صغيرة: مبيعات اليوم قصاد
