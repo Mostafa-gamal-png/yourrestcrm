@@ -15,7 +15,7 @@ function library(filename){if(cache.has(filename))return cache.get(filename);con
 const targets=library('lib/targets.ts'),dictionary=JSON.parse(fs.readFileSync(path.join(root,'lib/locales/en.json'),'utf8'));
 const icons=new Proxy({},{get:()=>()=>null});
 const i18n={t:value=>language==='en'?(dictionary[value]||value):value,useLanguage:()=>({language})};
-function commonRequire(name){if(name==='./target-gauge')return load('app/target-gauge.tsx',commonRequire);if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;if(name==='lucide-react')return icons;if(name==='@/lib/targets')return targets;if(name==='@/lib/i18n')return i18n;if(name.endsWith('.css'))return {};throw Error('Unexpected UI dependency '+name);}
+function commonRequire(name){if(name==='./target-gauge')return load('app/target-gauge.tsx',commonRequire);if(name==='./today-sales')return load('app/today-sales.tsx',commonRequire);if(name==='@/lib/crm')return library('lib/crm.ts');if(name==='@/lib/daily-target')return library('lib/daily-target.ts');if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;if(name==='lucide-react')return icons;if(name==='@/lib/targets')return targets;if(name==='@/lib/i18n')return i18n;if(name.endsWith('.css'))return {};throw Error('Unexpected UI dependency '+name);}
 const {MyTargetDetails}=load('app/my-targets.tsx',commonRequire);
 const data=(id='rep',month='2026-10')=>({month,member:{id,name:id},sales:{sourceMonth:month,actualsAvailable:true,products:targets.targetProducts.map((product,index)=>({product:product.id,quantity:index===0?0:index===1?12.345678:null,actualQuantity:index===1?7:index===2?-2:0,remainingQuantity:index===1?5.345678:index===0?0:null,achievement:index===1?56.7:index===0?null:null}))},activity:{newCustomers:10,recoveredCustomers:5,visits:320,sourceMonth:'2026-09',isDefault:false}});
 let html=renderToStaticMarkup(React.createElement(MyTargetDetails,{data:data()}));
@@ -27,6 +27,12 @@ ok(html.includes('الصفر يعني عدم وجود مبيعات مسجلة ل
 const future=data();future.sales.actualsAvailable=false;future.sales.products.forEach(product=>{product.actualQuantity=null;product.remainingQuantity=null;product.achievement=null;});
 html=renderToStaticMarkup(React.createElement(MyTargetDetails,{data:future}));ok(html.includes('الشهر المحدد لم يبدأ بعد'),'Future month explicitly hides actuals');eq(html.includes('%</span>'),false,'Future percentage never displayed');
 html=renderToStaticMarkup(React.createElement(MyTargetDetails,{data:data()}));ok(html.includes('56.7%'),'Own product achievement shown');ok(html.includes('>7 <small>'),'Net actual quantity shown');ok(html.includes('>-2 <small>'),'Negative net sales remain visible');ok(html.includes('5.345678'),'Remaining quantity retains precision');ok(html.includes('<dt>صافي المباع</dt>'),'Mobile product cards carry visible semantic labels');
+// «مبيعات اليوم قصاد مستهدف اليوم» (2026-11-16, GSCO list item 8): the panel only when the server sent the days (a month that began), on the
+// month's last day for a month that ended; the day's share of the month's target (12.345678 over October 2026's 26 working days) beside the day.
+eq(html.includes('data-day-sales'),false,'No day panel without the days');
+{const days=data();days.sales.soldByDay={'2026-10-31':{[targets.targetProducts[1].id]:3}};const panel=renderToStaticMarkup(React.createElement(MyTargetDetails,{data:days}));
+ ok(panel.includes('data-day-sales="2026-10-31"')&&panel.includes('مبيعات اليوم قصاد مستهدف اليوم'),'The day panel on the last day of October');
+ ok(panel.includes('>3</dd>')&&panel.includes('>0.47</dd>'),'3 sold against the day\'s 0.47 (12.345678 / 26)');}
 // «بلا نشاط في هذا الشهر – خارج التقييم» (2026-11-15, GSCO 2.13.50: the representative sees the mark on their own page), only when the server says so.
 eq(html.includes('my-targets-inactive'),false,'No mark for a month in the evaluation');
 html=renderToStaticMarkup(React.createElement(MyTargetDetails,{data:{...data(),inactive:true}}));ok(html.includes('role="status" data-kpi-inactive=""><strong>بلا نشاط في هذا الشهر – خارج التقييم</strong>'),'The mark, as a status line, in Arabic');ok(html.includes('لا يُحتسب الشهر عليك في التقييم')&&html.includes('إجازة أو انقطاع'),'and why: a leave or an absence does not count against them');

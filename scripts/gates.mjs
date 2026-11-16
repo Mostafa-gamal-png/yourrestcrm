@@ -259,7 +259,7 @@ for (const job of jobs.filter(job => firstTry.has(job.name) && !firstTry.get(job
     // Only this run's report (a gate that was killed leaves the previous one): else the whole gate runs again.
     try { if (fs.statSync(report).mtimeMs >= job.startedAt) failed = JSON.parse(fs.readFileSync(report, 'utf8')).results.filter(row => !row.passed).map(row => row.name); } catch { /* no report */ }
     if (failed.length) {
-      const command = name => name === 'typescript' ? ['--max-old-space-size=768', 'node_modules/typescript/bin/tsc', '--noEmit', '--incremental', 'false'] : name === 'eslint' ? ['--max-old-space-size=2048', 'node_modules/eslint/bin/eslint.js', '.'] : ['--max-old-space-size=512', name];
+      const command = name => name === 'typescript' ? ['--max-old-space-size=1024', 'node_modules/typescript/bin/tsc', '--noEmit', '--incremental', 'false'] : name === 'eslint' ? ['--max-old-space-size=2048', 'node_modules/eslint/bin/eslint.js', '.'] : ['--max-old-space-size=512', name];
       const rows = [];
       for (const name of failed) rows.push({name, ...(await run({...job, args: command(name), timeout: 300}, 'default-gate.rerun.' + path.basename(name), ''))});
       again = {passed: rows.every(row => row.passed), seconds: rows.reduce((sum, row) => sum + row.seconds, 0), checks: null, log: rows.map(row => row.log).join(' '), entries: rows.map(row => ({name: row.name, passed: row.passed}))};

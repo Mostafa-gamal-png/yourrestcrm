@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {type Row,stages,today,isSalesRequest} from './crm';
 import {customerPlanSource,customerPlanSources,visitOrder} from './customer-visits';
+import {planTracked,recontactPlanned} from './followup-recontact';
 
 export const followupTypes:Record<string,string>={visit:'زيارة',call:'اتصال',whatsapp:'واتساب',quote:'عرض سعر',meeting:'اجتماع',followup:'متابعة'};
 export const invoiceOutcomes:Record<string,string>={pending:'لم يتحول بعد — المتابعة مستمرة',invoiced:'نعم، تحوّل إلى فاتورة',lost:'لا، فُقد عرض السعر'};
@@ -27,9 +28,10 @@ export function customerHasQuotation(customerId:string,records:Row[],service?:{i
 
 export const latestCustomerContact=customerPlanSource;
 /** Only an open, scheduled previous contact can be executed as a follow-up. */
-export function canExecuteCustomerFollowup(source:Row|undefined){return !!source&&!source.data._offlineState&&!source.data._offlineAcknowledged&&['activity','opportunity'].includes(source.kind)&&source.data.visitWorkflow!=='service-intake-v1'&&!followupClosed(source.data.salesStage||source.data.stage||'new')&&source.data.followupStatus!=='closed'&&!!source.data.nextAction?.trim()&&!!source.data.nextDate;}
+/** A lost follow-up with a re-contact date (lib/followup-recontact.ts) is executed on its day like any open plan. */
+export function canExecuteCustomerFollowup(source:Row|undefined){return !!source&&!source.data._offlineState&&!source.data._offlineAcknowledged&&['activity','opportunity'].includes(source.kind)&&source.data.visitWorkflow!=='service-intake-v1'&&planTracked(source.data)&&!!source.data.nextAction?.trim()&&!!source.data.nextDate;}
 
-export function customerFollowupPlans(records:Row[],plans:Map<string,Row|undefined>=customerPlanSources(records)){return records.filter(r=>r.kind==='customer').flatMap(customer=>{const source=plans.get(customer.id);if(!source)return[];const stage=source.data.salesStage||source.data.stage||'';return[{customer,source,stage,nextDate:source.data.nextDate||'',nextAction:source.data.nextAction||'',responsibleId:customer.assignedTo,closed:followupClosed(stage)||source.data.followupStatus==='closed'}];}).sort((a,b)=>(a.nextDate||'0000').localeCompare(b.nextDate||'0000')||a.customer.data.name.localeCompare(b.customer.data.name));}
+export function customerFollowupPlans(records:Row[],plans:Map<string,Row|undefined>=customerPlanSources(records)){return records.filter(r=>r.kind==='customer').flatMap(customer=>{const source=plans.get(customer.id);if(!source)return[];const stage=source.data.salesStage||source.data.stage||'';return[{customer,source,stage,nextDate:source.data.nextDate||'',nextAction:source.data.nextAction||'',responsibleId:customer.assignedTo,closed:!planTracked(source.data),recontact:recontactPlanned(source.data)}];}).sort((a,b)=>(a.nextDate||'0000').localeCompare(b.nextDate||'0000')||a.customer.data.name.localeCompare(b.customer.data.name));}
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'أدخل تاريخًا صحيحًا').refine(v=>Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'أدخل تاريخًا صحيحًا');
 const competitorText=z.string().trim().max(250).default('');
 /** An explicit observation belongs only to the contact being saved, never its source. */
@@ -38,7 +40,7 @@ export const followupCompetitorObservationSchema=z.object({hasCompetitor:z.boole
 });
 /** The device's point, carried by a follow-up that is a visit (see lib/visit-place.ts); the route drops it from every other kind. */
 const followupLocation={location:z.string().trim().max(250).default(''),latitude:z.number().finite().min(-90).max(90).nullable().optional(),longitude:z.number().finite().min(-180).max(180).nullable().optional(),locationSource:z.literal('device').optional(),locationCapturedAt:z.union([z.string().datetime({offset:true}),z.literal('')]).optional(),locationAccuracy:z.number().finite().min(0).optional()};
-export const customerFollowupSchema=z.object({type:z.enum(['visit','call','whatsapp','quote','meeting','followup']),date,...followupLocation,result:z.string().trim().min(3,'اكتب نتيجة المتابعة في 3 أحرف على الأقل').max(4000),salesStage:z.union([z.enum(stages),z.literal('')]).default(''),invoiceOutcome:z.enum(['pending','invoiced','lost']).default('pending'),nextAction:z.string().trim().max(1000).default(''),nextDate:z.union([date,z.literal('')]).default(''),lossReason:z.string().trim().max(250).default(''),lossDetails:z.string().trim().max(2000).default(''),competitorObservation:followupCompetitorObservationSchema.nullable().optional()}).superRefine((data,c)=>{
+export const customerFollowupSchema=z.object({type:z.enum(['visit','call','whatsapp','quote','meeting','followup']),date,...followupLocation,result:z.string().trim().min(3,'اكتب نتيجة المتابعة في 3 أحرف على الأقل').max(4000),salesStage:z.union([z.enum(stages),z.literal('')]).default(''),invoiceOutcome:z.enum(['pending','invoiced','lost']).default('pending'),nextAction:z.string().trim().max(1000).default(''),nextDate:z.union([date,z.literal('')]).default(''),lossReason:z.string().trim().max(250).default(''),lossDetails:z.string().trim().max(2000).default(''),recontactDate:z.string().max(40).default(''),recontactAction:z.string().max(1000,'الإجراء عند إعادة التواصل طويل جدًا (1000 حرف على الأكثر).').default(''),competitorObservation:followupCompetitorObservationSchema.nullable().optional()}).superRefine((data,c)=>{
  if(data.date>today())c.addIssue({code:'custom',message:'تاريخ المتابعة المنفذة لا يمكن أن يكون في المستقبل'});
  if(!followupClosed(data.salesStage)&&(!data.nextAction||!data.nextDate))c.addIssue({code:'custom',message:'حدد الإجراء القادم وموعد المتابعة القادمة'});
  if(!followupClosed(data.salesStage)&&data.nextDate<data.date)c.addIssue({code:'custom',message:'موعد المتابعة القادمة لا يسبق تاريخ المتابعة المنفذة'});

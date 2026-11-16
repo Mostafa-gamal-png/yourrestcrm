@@ -13,6 +13,7 @@ import {money,roles,type Member} from '@/lib/crm';
 import {targetProducts,quantityNumber,activityFields,defaultActivityTargets,effectiveSet,targetSaveBase,targetMonthClosed,canEditTargetMonth,riyadhMonth,CLOSED_MONTH_MESSAGE,type TargetState,type TargetKind,type QuantityTargets,type ProductWeights,type ActivityTargets} from '@/lib/targets';
 import {type TargetHistory,type TargetHistoryChange} from '@/lib/targets-history';
 import {toast} from 'sonner';
+import RecordImportButton from './record-import';
 type AttainmentRow={id:string;target:number|null;actual:number|null;achievement:number|null};
 type PersonAttainment={member:{id:string};attainment:{rows:AttainmentRow[]}};
 export default function TargetsWorkspace({state,members,me,staff,query,onSaved,branch:controlledBranch,onBranchChange,hidden=[],performance=[]}:{state:TargetState;members:Member[];me:Member;staff:string;query:string;onSaved:()=>void;branch?:string;onBranchChange?:(branch:string)=>void;
@@ -33,6 +34,7 @@ export default function TargetsWorkspace({state,members,me,staff,query,onSaved,b
  const quantity=(id:string,product:string)=>effectiveSet<QuantityTargets>(state,'sales',id)?.data.products.find(p=>p.product===product)?.quantity??null;
  return <div className="targets-workspace">
   {(!controlled||globalManage)&&<div className="targets-heading">{!controlled&&<label className="field"><span>{t('الفرع')}</span><Select dir={direction()} value={branch} onValueChange={setBranch}><SelectTrigger className="pick" aria-label={t('الفرع')}><SelectValue/></SelectTrigger><SelectContent>{state.branches.map(b=><SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent></Select></label>}{globalManage&&<button className="btn primary" onClick={()=>setEditing({kind:'weights',scopeId:'company',name:t('كل المناديب')})}><Target size={18}/>{t('أوزان التقييم')}</button>}</div>}
+  {editRights&&<div className="targets-import-row no-print"><RecordImportButton kind="targets" month={state.month} onImported={onSaved}/></div>}
   {allBranches&&viewBranches&&<p className="target-note targets-performance-branch-note">{t('اختر فرعًا لعرض مستهدف الفرع وفرق التوزيع.')}</p>}
   <section className="panel"><div className="panel-heading"><div><h2>{t('توزيع المستهدفات')}</h2><p className="muted"><bdi>{state.month}</bdi></p></div><span className="muted target-weights-source">{weights?t('الأوزان سارية من شهر')+' '+weights.month:t('لم تُحدد أوزان الأصناف')}<HistoryButton label={say('سجل الأوزان','Weights history')} onClick={()=>setHistory({scopeId:'company',name:t('أوزان التقييم')})}/></span></div>
    {closed&&<p className={'target-note target-closed-note'+(manage?' is-admin':'')} role="note">{manage?say('انتهى هذا الشهر؛ بصفتك مدير النظام يمكنك التعديل، ويُسجَّل كل تعديل في «سجل التعديلات».','This month has ended. As the system administrator you can still change its targets; every change is kept in the change history.'):t(CLOSED_MONTH_MESSAGE)}</p>}

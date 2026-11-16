@@ -34,6 +34,7 @@ import './targets-performance.css';
 import ErpSalesImport from './erp-sales-import';
 import ErpQuotesImport from './erp-quotes-import';
 import VoiceField from './voice-field';
+import TodaySalesCard from './today-sales';
 type Performance = ReturnType<typeof repPerformance> & {activityTargets:ActivityTargets;activitySource:string|null;teamRollup:boolean;activityTeamRollup:boolean;sourceMemberIds:string[];salesSourceMemberIds:string[];attainment:ReturnType<typeof quantityAttainment>};
 type Payload = { kpis:KpiData|null; sales: Sale[]; targets: TargetState; performance: Performance[]; individualPerformance:ReturnType<typeof repPerformance>[]; members: Member[]; hiddenFromTargets?: string[] };
 type Props = { mode: 'sales' | 'targets-performance'; month:string; onMonthChange:(month:string)=>void; records: Row[]; me: Member; onRefresh: () => Promise<void>; onCustomer: (id: string) => void; onCustomerCreated: (id: string) => Promise<Row> };
@@ -141,6 +142,7 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
    <header className="targets-performance-heading targets-hub-panel-heading"><ChartNoAxesCombined size={21}/><div><h2>{say('نتائج الأداء والتقييم','Performance results and evaluation')}</h2></div></header>
    {overview&&<TargetsOverviewCard company={overview.company} branches={overview.branches}/>}
    {hubToolbar}
+   {!futureMonth&&<TodaySalesCard state={payload.targets} sales={payload.sales} members={members} month={month} staff={selectedStaff} branch={branch} hidden={hiddenFromTargets}/>}
    <section ref={summarySection} className="targets-performance-section" aria-labelledby="targets-summary-heading"><TargetsPerformanceSummary people={futureMonth?filteredFuturePeople:filteredKpiPeople} month={month} future={futureMonth} productId={summaryProduct} onProductChange={setSummaryProduct} onDetails={summaryDetails}/></section>
    <section ref={performanceSection} className="targets-performance-section" aria-labelledby="combined-performance-heading"><header className="targets-performance-heading"><TrendingUp size={21}/><div><h2 id="combined-performance-heading">{t('تقييم الأداء')}</h2></div></header>{futureMonth?<div className="targets-performance-future panel" role="status"><Target size={24}/><p>{t('لم يبدأ الشهر بعد')}</p></div>:branchKpis?<KpiPerformanceView identityKey={identityKey} data={branchKpis} staff={selectedStaff} query={query} members={members} onSelect={selectStaff} onSaved={()=>{toast.success(t('تم حفظ التقييم'));refresh();}}/>:<div className="sales-state">{t('لا توجد بيانات أداء مطابقة في هذا الشهر')}</div>}</section>
   </div>:hubTab==='targets'?<div role="tabpanel" id="targets-hub-panel" aria-labelledby="targets-hub-tab-targets" className="targets-hub-panel">

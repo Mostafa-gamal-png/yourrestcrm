@@ -1,4 +1,5 @@
 import {type Row,type Member,isSalesRequest,scopeRecords} from './crm';
+import {planTracked} from './followup-recontact';
 export const visitProducts=['قوالب البلوك المتحركة','قوالب البلوك الثابتة','لمامة البلوك','ماكينة إنتاج البلوكة المتحركة','قطع غيار المكائن المتحركة','خلاطات البلوك','خلاطات الخرسانة الجاهزة'];
 export const strengthLabels:Record<string,string>={weak:'ضعيفة',medium:'متوسطة',strong:'قوية'};
 // A lookup by id for each records array, kept while the array lives, so the two helpers below cost one lookup per step instead of
@@ -59,4 +60,5 @@ export function customerPlanSources(records:Row[]):Map<string,Row|undefined>{
  }
  return plans;
 }
-export function customerVisitDue(records:Row[],plans:Map<string,Row|undefined>=customerPlanSources(records)){return records.filter(r=>r.kind==='customer').flatMap(c=>{const source=plans.get(c.id);return source&&!['won','lost'].includes(source.data.salesStage||source.data.stage||'new')&&source.data.followupStatus!=='closed'?[source]:[];});}
+/** The plans still followed (lib/followup-recontact.ts planTracked): an open one, or a lost one that keeps a re-contact date. */
+export function customerVisitDue(records:Row[],plans:Map<string,Row|undefined>=customerPlanSources(records)){return records.filter(r=>r.kind==='customer').flatMap(c=>{const source=plans.get(c.id);return source&&planTracked(source.data)?[source]:[];});}

@@ -5,7 +5,7 @@ import {spawn} from 'node:child_process';
 import os from 'node:os';
 
 // npm run check [-- --gate erp-workbook|erp-customers-workbook|erp-quotes-workbook] [-- --jobs N]
-// Each test in its own process (512 MiB JS heap, 120 s; TypeScript 768 MiB/180 s, ESLint 2048 MiB/300 s) through a pool of N workers
+// Each test in its own process (512 MiB JS heap, 120 s; TypeScript 1024 MiB/180 s, ESLint 2048 MiB/300 s) through a pool of N workers
 // (default: the CPU count, 4 here; --jobs 1 runs one after another, as before 2026-11-05). The tests the manifest lists under
 // `serial` run alone after the pool. In a parallel run, a failure is run once more alone: passing then is reported as flaky
 // (in the line, the summary and the report), never as a plain pass; failing again fails the gate.
@@ -47,7 +47,9 @@ if(gate==='erp-quotes-workbook'&&(!process.env.ERP_QUOTES_WORKBOOK||!fs.existsSy
 const output=path.join(root,'output','check');fs.mkdirSync(output,{recursive:true});
 
 const entries=[];
-if(gate==='default')entries.push({name:'typescript',args:['node_modules/typescript/bin/tsc','--noEmit','--incremental','false'],heap:768,timeout:180000});
+// TypeScript's own peak was within a few MiB of 768 (2026-11-16: the release before passes at 768 and fails at 700; with the imports of GSCO
+// item 8 it needs between 768 and 800): 1024 keeps the margin a few more modules need.
+if(gate==='default')entries.push({name:'typescript',args:['node_modules/typescript/bin/tsc','--noEmit','--incremental','false'],heap:1024,timeout:180000});
 // ESLint errors fail the gate (warnings do not); the reviewed exceptions and their reasons are in eslint.config.mjs.
 if(gate==='default')entries.push({name:'eslint',args:['node_modules/eslint/bin/eslint.js','.'],heap:2048,timeout:300000});
 for(const file of selected)entries.push({name:file,args:[file],heap:512,timeout:120000,serial:serial.has(file)});

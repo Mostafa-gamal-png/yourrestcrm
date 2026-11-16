@@ -57,7 +57,7 @@
     "followups": {
       "about": "Follow-ups and customer follow-ups (the «متابعة» page, follow-ups that are visits, /api/customer-followups, /api/followups).",
       "sources": ["app/customer-followups.tsx", "app/customer-followup-list.tsx", "app/followup-place.tsx", "app/followups.tsx", "app/api/customer-followups/**", "app/api/followups/**", "lib/customer-followups.ts", "lib/daily-followups.ts", "lib/followups-server.ts", "tests/*followup*.mjs"],
-      "tests": ["tests/visit-place-http.mjs", "tests/offline-outbox-browser.mjs", "tests/supervisor-reviews-complete-browser.mjs", "tests/app-browser-workflows.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs"]
+      "tests": ["tests/visit-place-http.mjs", "tests/offline-outbox-browser.mjs", "tests/supervisor-reviews-complete-browser.mjs", "tests/app-browser-workflows.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/followup-recontact-http.mjs", "tests/today-sales-recontact-import-browser.mjs"]
     },
     "trash": {
       "about": "«المحذوفات» (2026-11-09; since 2026-11-10 also for whoever has a «حذف» cell on: their own deletions, lib/permissions.ts trashScopeOf): the deleted records page, GET/POST /api/trash (the list and the restoration, from the «حذف» history entries) and lib/trash*.ts; what a deletion records for it lives in app/api/crm (shared).",
@@ -84,6 +84,11 @@
       "sources": ["app/customer-edit-requests.tsx", "app/customer-edit-requests.css", "app/api/customer-edits/**", "lib/customer-edit-requests.ts", "lib/customer-edit-requests-server.ts", "tests/customer-edit-requests*.mjs"],
       "tests": ["tests/customer-edit-requests-http.mjs", "tests/customer-edit-requests-browser.mjs", "tests/customer-edit-browser.mjs", "tests/team-home-browser.mjs", "tests/server-authorization.mjs"]
     },
+    "item8-today-recontact-import": {
+      "about": "GSCO list item 8 (2026-11-16): «مبيعات اليوم قصاد مستهدف اليوم» (lib/daily-target.ts, app/today-sales.tsx in the hub and «أهدافي»), «موعد إعادة التواصل» of a lost follow-up (lib/followup-recontact.ts; the follow-up form and route are the followups area's) and «استيراد المستهدفات والمتابعات من قوالب Excel» (lib/record-import*.ts, lib/xlsx-write.ts, app/record-import.tsx, /api/record-import).",
+      "sources": ["app/today-sales.tsx", "app/today-sales.css", "app/record-import.tsx", "app/record-import.css", "app/followup-recontact.css", "app/api/record-import/**", "lib/daily-target.ts", "lib/followup-recontact.ts", "lib/record-import.ts", "lib/record-import-server.ts", "lib/xlsx-write.ts", "tests/daily-target*.mjs", "tests/record-import*.mjs", "tests/today-sales-recontact-import-browser.mjs"],
+      "tests": ["tests/record-import-http.mjs", "tests/followup-recontact-http.mjs", "tests/today-sales-recontact-import-browser.mjs", "tests/server-authorization.mjs", "tests/targets-hub-browser.mjs"]
+    },
     "machines": {
       "about": "A customer's machines (app/customer-machines.tsx, lib/machines.ts, /api/machines/import).",
       "sources": ["app/customer-machines.tsx", "app/api/machines/**", "lib/machines.ts", "tests/machines*.mjs"],
@@ -97,7 +102,7 @@
     "targets-sales": {
       "about": "Sales, targets, KPIs and their evidence (the Targets page, «أهدافي», the gauge, /api/sales, /api/targets, /api/kpis, /api/kpi-evidence).",
       "sources": ["app/sales-workspace.tsx", "app/targets-workspace.tsx", "app/targets-performance-summary.tsx", "app/targets-performance-summary.css", "app/targets-performance.css", "app/my-targets.tsx", "app/my-targets.css", "app/target-gauge.tsx", "app/target-gauge.css", "app/kpi-performance.tsx", "app/kpi-evidence-editor.tsx", "app/kpi-evidence-editor.css", "app/api/sales/route.ts", "app/api/targets/**", "app/api/kpis/**", "app/api/kpi-evidence/**", "lib/sales.ts", "lib/targets.ts", "lib/targets-server.ts", "lib/targets-performance-summary.ts", "lib/targets-export.ts", "lib/targets-history.ts", "lib/own-targets.ts", "lib/own-targets-server.ts", "lib/kpis.ts", "lib/kpis-server.ts", "lib/quotation-refs.ts", "lib/kpi-evidence.ts", "lib/kpi-evidence-server.ts", "lib/kpi-history-server.ts", "lib/sales-coverage.ts", "lib/kpi-baseline.ts", "tests/targets-*.mjs", "tests/sales-*.mjs", "tests/kpi-*.mjs", "tests/ui-refresh*.mjs", "app/targets-overview.tsx", "app/targets-hub.css", "app/kpi-evidence-panel.tsx", "app/erp-collections-import.tsx", "app/erp-collections-import.css", "lib/targets-overview.ts", "lib/targets-hub.ts", "lib/erp-collections.ts", "lib/erp-collections-server.ts", "lib/erp-office-employees.ts", "tests/erp-collections*.mjs", "lib/new-customers.ts"],
-      "tests": ["tests/targets-attainment-http.mjs", "tests/targets-audit-browser.mjs", "tests/targets-decisions-http.mjs", "tests/targets-decisions-browser.mjs", "tests/sales-date-boundaries.mjs", "tests/kpi-evidence-browser.mjs", "tests/ui-refresh-browser.mjs", "tests/app-browser-workflows.mjs", "tests/erp-sales-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/targets-hub-browser.mjs", "tests/erp-collections-http.mjs", "tests/quote-conversion-http.mjs", "tests/quote-conversion-browser.mjs", "tests/sales-coverage-http.mjs", "tests/sales-coverage-browser.mjs", "tests/erp-office-employees-http.mjs", "tests/erp-office-employees-browser.mjs", "tests/new-customers-erp-http.mjs", "tests/erp-sales-replace-http.mjs", "tests/kpi-effective-visits-http.mjs", "tests/kpi-effective-visits-browser.mjs", "tests/kpi-leave-months-http.mjs", "tests/kpi-leave-months-browser.mjs", "tests/targets-tabs-http.mjs", "tests/targets-tabs-browser.mjs"]
+      "tests": ["tests/targets-attainment-http.mjs", "tests/targets-audit-browser.mjs", "tests/targets-decisions-http.mjs", "tests/targets-decisions-browser.mjs", "tests/sales-date-boundaries.mjs", "tests/kpi-evidence-browser.mjs", "tests/ui-refresh-browser.mjs", "tests/app-browser-workflows.mjs", "tests/erp-sales-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/targets-hub-browser.mjs", "tests/erp-collections-http.mjs", "tests/quote-conversion-http.mjs", "tests/quote-conversion-browser.mjs", "tests/sales-coverage-http.mjs", "tests/sales-coverage-browser.mjs", "tests/erp-office-employees-http.mjs", "tests/erp-office-employees-browser.mjs", "tests/new-customers-erp-http.mjs", "tests/erp-sales-replace-http.mjs", "tests/kpi-effective-visits-http.mjs", "tests/kpi-effective-visits-browser.mjs", "tests/kpi-leave-months-http.mjs", "tests/kpi-leave-months-browser.mjs", "tests/targets-tabs-http.mjs", "tests/targets-tabs-browser.mjs", "tests/followup-recontact-http.mjs", "tests/record-import-http.mjs", "tests/today-sales-recontact-import-browser.mjs"]
     },
     "competitors": {
       "about": "Competitors: the workspace, the competitor fields of a visit and the attachments (/api/visit-files).",
@@ -155,6 +160,9 @@
     "about": "Serial seconds measured on this 4-CPU machine (2026-11-05); the pool starts the longest first. The latest output/gates/*/summary.json overrides these.",
     "tests/mold-requests-browser.mjs": 199,
     "tests/kpi-leave-months-browser.mjs": 135,
+    "tests/today-sales-recontact-import-browser.mjs": 150,
+    "tests/record-import-http.mjs": 25,
+    "tests/followup-recontact-http.mjs": 20,
     "tests/mold-requests-http.mjs": 175,
     "tests/mold-sign-link-http.mjs": 60,
     "tests/mold-sign-document-http.mjs": 40,

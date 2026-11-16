@@ -12,8 +12,10 @@ import {validateVisitLocation,type ContactData} from '@/lib/followups-server';
 import {enforceVisitPlace,adoptCustomerPlace} from '@/lib/visit-place-server';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {riyadhDate} from '@/lib/visits';
+import {today} from '@/lib/crm';
+import {readRecontact} from '@/lib/followup-recontact';
 export const dynamic='force-dynamic';
-type FollowupData=Omit<z.infer<typeof customerFollowupSchema>,'competitorObservation'>&{visitWorkflow:string;summary:string;outcome:string;notes:string;hasQuotation:boolean;sourceId:string;requestId:string;responsibleId:string;performedBy:string;recordedByEmail:string;recordedByName:string;hasCompetitor?:boolean;competitorName?:string;competitorNotes?:string;competitorFileId?:string;competitorFileName?:string;serviceCaseId?:string;placeDistance?:number;placeOutside?:boolean};
+type FollowupData=Omit<z.infer<typeof customerFollowupSchema>,'competitorObservation'|'recontactDate'|'recontactAction'>&{recontact?:boolean;visitWorkflow:string;summary:string;outcome:string;notes:string;hasQuotation:boolean;sourceId:string;requestId:string;responsibleId:string;performedBy:string;recordedByEmail:string;recordedByName:string;hasCompetitor?:boolean;competitorName?:string;competitorNotes?:string;competitorFileId?:string;competitorFileName?:string;serviceCaseId?:string;placeDistance?:number;placeOutside?:boolean};
 export async function POST(req:Request){try{
  checkOrigin(req);await requireSession();const body=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');
  const key=z.string().uuid().parse(body.createKey),id='customer-followup-'+key,c=await context({load:'customer-graph',customerId:body.customerId,recordIds:[id]}),now=new Date().toISOString(),mutation=crypto.randomUUID();
@@ -33,13 +35,17 @@ export async function POST(req:Request){try{
  if(!currentSource||currentSource.id!==source.id)throw new CRMError('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.',409);
  if(source&&body.sourceVersion!==source.version)throw new CRMError('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.',409);
  if(service?.status==='assigned'&&source&&source.createdAt<service.createdAt)throw new CRMError('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.',409);
- const {competitorObservation,...input}=customerFollowupSchema.parse(body.data),hasQuotation=customerHasQuotation(customer.id,c.visible,service?.status==='assigned'?service:undefined)||input.type==='quote'||input.salesStage==='quoted';
+ const {competitorObservation,recontactDate,recontactAction,...input}=customerFollowupSchema.parse(body.data),hasQuotation=customerHasQuotation(customer.id,c.visible,service?.status==='assigned'?service:undefined)||input.type==='quote'||input.salesStage==='quoted';
  if(offline&&input.date>riyadhDate(occurredAt))throw new CRMError('تاريخ المتابعة لا يمكن أن يكون بعد يوم تسجيلها على الجهاز.');
  if(hasQuotation&&input.salesStage==='won'&&input.invoiceOutcome!=='invoiced')throw new CRMError('أكد تحوّل عرض السعر إلى فاتورة عند إغلاق البيع');
  if(hasQuotation&&input.invoiceOutcome==='invoiced'&&input.salesStage!=='won'||hasQuotation&&input.invoiceOutcome==='lost'&&input.salesStage!=='lost'||hasQuotation&&input.salesStage==='lost'&&input.invoiceOutcome!=='lost')throw new CRMError('نتيجة عرض السعر يجب أن تطابق مرحلة البيع');
  if(!hasQuotation&&input.invoiceOutcome!=='pending')throw new CRMError('لا يوجد عرض سعر مسجل لهذا العميل');
  const closed=followupClosed(input.salesStage),request=visitRequest(source,c.visible)||(source?.kind==='opportunity'?source:undefined);
- let data:FollowupData={...input,visitWorkflow:'followup-v1',summary:'متابعة العميل',outcome:'pending',notes:'',nextAction:closed?'':input.nextAction,nextDate:closed?'':input.nextDate,lossReason:input.salesStage==='lost'?input.lossReason:'',lossDetails:input.salesStage==='lost'?input.lossDetails:'',hasQuotation,sourceId:source?.id||'',requestId:request?.id||'',responsibleId:c.me.id,performedBy:c.me.id,recordedByEmail:c.user.email.toLowerCase(),recordedByName:c.me.name};
+ // «موعد إعادة التواصل» (lib/followup-recontact.ts): a lost follow-up may keep a re-contact date and its action; no other stage takes one. The day
+ // it may not precede: today in Riyadh, or the day an entry queued on the device was recorded.
+ const recontact=readRecontact({date:recontactDate,action:recontactAction},input.salesStage,input.date,offline?riyadhDate(occurredAt):today());
+ if(recontact&&'error' in recontact)throw new CRMError(recontact.error);
+ let data:FollowupData={...input,visitWorkflow:'followup-v1',summary:'متابعة العميل',outcome:'pending',notes:'',nextAction:closed?recontact?.action||'':input.nextAction,nextDate:closed?recontact?.date||'':input.nextDate,...(recontact?{recontact:true}:{}),lossReason:input.salesStage==='lost'?input.lossReason:'',lossDetails:input.salesStage==='lost'?input.lossDetails:'',hasQuotation,sourceId:source?.id||'',requestId:request?.id||'',responsibleId:c.me.id,performedBy:c.me.id,recordedByEmail:c.user.email.toLowerCase(),recordedByName:c.me.name};
  Object.assign(data,offlineEvidence(offline));
  // A follow-up that is a visit carries the device's point like any visit; the other kinds have no place and keep none.
  if(data.type==='visit')validateVisitLocation(data as unknown as ContactData);else for(const key of ['location','latitude','longitude','locationSource','locationCapturedAt','locationAccuracy'])delete (data as Record<string,unknown>)[key];

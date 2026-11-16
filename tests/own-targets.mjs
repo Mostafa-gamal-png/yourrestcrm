@@ -97,7 +97,10 @@ user('rep');let payload=await get();
 eq(payload.member,{id:'rep',name:'المندوب الحالي'});
 // inactive (2026-11-15, GSCO 2.13.50): the month out of the evaluation, a yes or a no (tests/kpi-leave-months*.mjs test the rule).
 eq(Object.keys(payload).sort(),['activity','inactive','member','month','sales']);eq(payload.inactive,false,'a month with the representative\'s own sales is not out of the evaluation');
-eq(Object.keys(payload.sales).sort(),['actualsAvailable','products','sourceMonth']);
+// soldByDay (2026-11-16, «مبيعات اليوم قصاد مستهدف اليوم»): the same quantities by the day of their document, numbers only, adding up to the month.
+eq(Object.keys(payload.sales).sort(),['actualsAvailable','products','soldByDay','sourceMonth']);
+ok(Object.keys(payload.sales.soldByDay).every(day=>/^2026-09-\d{2}$/.test(day))&&Object.values(payload.sales.soldByDay).every(day=>Object.values(day).every(value=>typeof value==='number')),'days of the month, quantities only');
+for(const row of payload.sales.products)eq(Math.round(Object.values(payload.sales.soldByDay).reduce((n,day)=>n+(day[row.product]||0),0)*1e6)/1e6,row.actualQuantity,'the days add up to the month: '+row.product);
 eq(payload.sales.sourceMonth,'2026-09');eq(payload.sales.products.length,salesProducts.length);
 eq(payload.sales.products.map(p=>p.quantity),products(7).map((p,i)=>i===0?0:i===1?null:i===2?1.125:p.quantity));
 eq(payload.activity,{newCustomers:6,recoveredCustomers:2,visits:120,sourceMonth:'2026-09',isDefault:false});

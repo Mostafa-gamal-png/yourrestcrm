@@ -15,7 +15,7 @@ import {readKpiPurchaseHistory} from './kpi-history-server';
 
 type Context=Awaited<ReturnType<typeof context>>;
 type TargetRow={kind:'sales'|'activity';month:string;data:string};
-type OwnQuantityRow={product:string;quantity:number;region:unknown};
+type OwnQuantityRow={product:string;quantity:number;region:unknown;date:string};
 const roundQuantity=(value:number)=>Math.round(value*1000000)/1000000;
 
 async function ownManualQuantities(c:Context,month:string){
@@ -24,7 +24,7 @@ async function ownManualQuantities(c:Context,month:string){
  // The identity-only context deliberately has no customer directory. Join just the
  // caller's confirmed monthly rows and select quantities + the territory check.
  const rows=(await c.db.prepare(`SELECT json_extract(i.value,'$.product') AS product,
-  json_extract(i.value,'$.quantity') AS quantity,json_extract(c.data,'$.region') AS region
+  json_extract(i.value,'$.quantity') AS quantity,json_extract(c.data,'$.region') AS region,s.date AS date
   FROM crm_sales s JOIN crm_records c ON c.id=s.customer_id AND c.kind='customer',json_each(s.data,'$.items') i
   WHERE s.rep_id=? AND s.date>=? AND s.date<? AND s.status='confirmed'`)
   .bind(c.me.id,month+'-01',next+'-01').all<OwnQuantityRow>()).results;
@@ -79,12 +79,15 @@ export async function ownTargets(c:Context,month:string):Promise<OwnTargets>{
  const sales=salesRow?quantityTargetsSchema.parse(JSON.parse(salesRow.data)):null;
  const activity=activityRow?activityTargetsSchema.parse(JSON.parse(activityRow.data)):defaultActivityTargets;
  const actualsAvailable=selectedMonth<=riyadhDate(new Date().toISOString()).slice(0,7);
- const quantities=new Map<string,number>();
+ const quantities=new Map<string,number>(),soldByDay:Record<string,Record<string,number>>={};
  let inactive=false;
  if(actualsAvailable){
   const [manual,imported,out]=await Promise.all([ownManualQuantities(c,selectedMonth),readOwnErpSales(c,selectedMonth),ownOutOfEvaluation(c,selectedMonth)]);inactive=out;
-  for(const row of [...manual,...imported.flatMap(sale=>sale.items)]){
-   if(targetProducts.some(product=>product.id===row.product)&&Number.isFinite(row.quantity))quantities.set(row.product,(quantities.get(row.product)||0)+row.quantity);
+  for(const row of [...manual,...imported.flatMap(sale=>sale.items.map(item=>({...item,date:sale.date})))]){
+   if(!targetProducts.some(product=>product.id===row.product)||!Number.isFinite(row.quantity))continue;
+   quantities.set(row.product,(quantities.get(row.product)||0)+row.quantity);
+   // «مبيعات اليوم»: the same quantities, by the day of their document (a day of the month only).
+   if(typeof row.date==='string'&&row.date.startsWith(selectedMonth+'-')){const day=soldByDay[row.date]??={};day[row.product]=roundQuantity((day[row.product]||0)+row.quantity);}
   }
  }
  // Do not deliver a read captured before an account, region or role was revoked.
@@ -101,7 +104,7 @@ export async function ownTargets(c:Context,month:string):Promise<OwnTargets>{
    return{product:product.id,quantity,actualQuantity,
     remainingQuantity:quantity!==null&&actualQuantity!==null?roundQuantity(Math.max(0,quantity-actualQuantity)):null,
     achievement:quantity!==null&&quantity>0&&actualQuantity!==null?Math.round(actualQuantity/quantity*10000)/100:null};
-  }),sourceMonth:salesRow?.month??null,actualsAvailable},
+  }),sourceMonth:salesRow?.month??null,actualsAvailable,...(actualsAvailable?{soldByDay}:{})},
   activity:{newCustomers:activity.newCustomers,recoveredCustomers:activity.recoveredCustomers,visits:activity.visits,sourceMonth:activityRow?.month??null,isDefault:!activityRow},
  };
 }

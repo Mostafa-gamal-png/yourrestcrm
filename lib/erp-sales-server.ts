@@ -390,8 +390,8 @@ export async function readErpSales(c:Context,month:string):Promise<Sale[]>{
  return rows.filter(r=>allowed.has(r.rep_id)).map(r=>({...JSON.parse(r.data),id:r.id,customerId:'erp-customer:'+r.customer_code,customerName:r.customer_name,repId:r.rep_id,branch:r.branch,date:r.date,reference:r.reference,totalCents:r.total_cents,status:'confirmed',voidReason:'',version:1,createdBy:r.created_by,createdAt:r.created_at,updatedAt:r.created_at,source:'erp',documentType:r.document_type}));
 }
 /** Reps receive only their product quantities; no invoice, customer, price or colleague data. */
-export async function readOwnErpSales(c:Context,month:string):Promise<{items:{product:string;quantity:number}[]}[]>{
+export async function readOwnErpSales(c:Context,month:string):Promise<{date:string;items:{product:string;quantity:number}[]}[]>{
  if(c.me.role!=='rep')throw new CRMError('هذا العرض خاص بالمندوب',403);
- const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT data FROM crm_erp_sales WHERE rep_id=? AND date>=? AND date<=? AND '+scope.sql).bind(c.me.id,month+'-01',month+'-31',...scope.args).all<{data:string}>()).results;
- return rows.map(row=>({items:(JSON.parse(row.data).items as SaleItem[]).map(item=>({product:item.product,quantity:item.quantity}))}));
+ const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT data,date FROM crm_erp_sales WHERE rep_id=? AND date>=? AND date<=? AND '+scope.sql).bind(c.me.id,month+'-01',month+'-31',...scope.args).all<{data:string;date:string}>()).results;
+ return rows.map(row=>({date:row.date,items:(JSON.parse(row.data).items as SaleItem[]).map(item=>({product:item.product,quantity:item.quantity}))}));
 }

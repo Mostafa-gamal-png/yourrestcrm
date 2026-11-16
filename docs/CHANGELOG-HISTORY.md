@@ -4,6 +4,81 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Today's sales against today's target, a re-contact date for a lost follow-up, and targets and follow-ups imported from Excel templates (2026-11-16, not released yet, no migration)
+
+- **Asked.** Item 8 of the GSCO comparison list, approved by the owner: «تمام كمل كل البنود وارفع لما الفحص يخلص». The item: «صغيرة: مبيعات اليوم قصاد
+  مستهدف اليوم، وميعاد إعادة تواصل مع الفرصة الخسرانة، واستيراد المستهدفات والمتابعات من قوالب Excel.» GSCO 2.13.74: `lib/crm/shared.ts` reportRows
+  («صافي مبيعات اليوم» beside «مستهدف اليوم»), `docs/LOST-RECONTACT-DATE-AR.md` (2.13.43), `lib/crm/record-import*.ts` (2.13.66).
+- **What Yourrest had before** (read in the code first): none of the three. The targets were monthly quantities by product (`lib/targets.ts`) with the
+  month's achievement only (`app/targets-performance-summary.tsx`, «أهدافي» `app/my-targets.tsx`); a follow-up recorded «تم الفقد» cleared its next
+  step and closed the customer's follow-up line for good (`app/api/customer-followups/route.ts`, `lib/customer-followups.ts`); the only Excel imports
+  were the ERP's (sales, customers, quotations, collection statement), no template and nothing for targets or follow-ups.
+- **1. «مبيعات اليوم قصاد مستهدف اليوم»** (`lib/daily-target.ts`, `app/today-sales.tsx`). As GSCO divides it: the day's target is the month's target
+  over the month's working days; Yourrest's working week is Saturday to Thursday (the Friday day off of `lib/working-hours.ts`), so a Friday's share is
+  zero and the card says it is the weekly day off. The day's sales are the confirmed sales documents of that Riyadh day (CRM and ERP, returns
+  deducted) of the people whose sales the month's achievement counts. Each product: «مبيعات اليوم», «مستهدف اليوم», the percentage of it, and the
+  month's target. A day picker inside the month, never after today (an ended month opens on its last day). Where: «نتائج الأداء» of the targets
+  page, under the filters, for the whole team of the branch chosen or the person picked (the administrator, a sales manager and a supervisor,
+  from the data `GET /api/sales` already gives them: their own scope, regions and rights; a computed supervisor's or manager's target counts their
+  team's sales); and «أهدافي» for a representative, their own only (`GET /api/targets` gains `sales.soldByDay`: their quantities of each day of the
+  month, numbers only; `readOwnErpSales` now returns each document's day).
+- **2. «موعد إعادة التواصل» of a lost follow-up** (`lib/followup-recontact.ts`). In the follow-up form, under «سبب الفقد», «إعادة التواصل
+  (اختياري)»: «الإجراء عند إعادة التواصل» and «موعد إعادة التواصل», both or neither, for «تم الفقد» only (another stage is refused), not before the
+  follow-up's day nor in the past (Riyadh; the device's day for an entry queued offline); Arabic and Persian digits read. The follow-up is saved
+  lost, with `recontact: true` and the date and action as its next step: the customer's line stays open, «قادمة» until the day, then in «اليوم
+  والمتأخرة», the dashboard's «يستحق المتابعة» and the day report's pending follow-ups, with «تم الفقد» and «إعادة تواصل» on it; it is executed on
+  its day like any open follow-up (the next follow-up starts at no stage). Without the fields (and every lost follow-up or visit saved before) it is
+  closed exactly as before. A fault found by the browser test and mended: after a quotation, «هل تحوّل عرض السعر إلى فاتورة؟» → «لا، فُقد عرض السعر»
+  (or «نعم») was undone at once, because Radix's hidden form select reported an empty value for the stage it had not listed yet; the form's selects
+  now ignore an empty value (none of their options is empty).
+- **3. «استيراد المستهدفات من Excel» and «استيراد المتابعات من Excel»** (`lib/record-import.ts`, `lib/record-import-server.ts`, `lib/xlsx-write.ts`,
+  `app/record-import.tsx`, `GET`/`POST /api/record-import`). A template to download (Arabic or English headers, a note row, prefilled with what the
+  reader may import: their team's members with the month's targets in force; their customers whose follow-up is open), the file uploaded, a
+  preview that writes nothing (each row's status, a refused row with its Excel row and the reason), then «استيراد» once: the rows that pass are
+  written in ONE transaction, all or nothing (the import's audit line is written first under every condition the preview read, and every write is
+  gated on it). Headers in either language and in any order; Arabic-Indic and Persian digits; days as 2026-11-16, 2026/11/16 or Excel's day
+  number; months as 2026-11 or 11/2026; at most 1000 rows and 2 MB; formulas, macros and error cells refused by the ERP's own reader.
+  - Targets: the rights of editing them (the administrator or a sales manager, «تحرير» on «المستهدفات وتقييم الأداء», their team and regions; a
+    finished month for the administrator only). A row is a member (by sign-in email) and a month: the product quantities (a blank cell «غير محدد»
+    and 0 a product not assigned, as in the targets form) and/or the three customer and visit targets together. A supervisor's or a manager's
+    computed targets are refused, as on the page. Each set written keeps its line in «سجل التعديلات» (before and after, `source: excel-import`).
+  - Follow-ups: the rights of recording one («إضافة» on «المتابعات», a sales member). A row is a customer (Yourrest code or ERP code) with an open
+    follow-up line, a day not in the future and not before the customer's last contact, a type (a visit is recorded in the app, which needs the
+    device's place), the outcome, the stage and next step, the loss reason, a re-contact; recorded as the representative named (a representative
+    only themselves; a supervisor or manager a member of their team, with `importedBy`), checked by the follow-up's own rule. One row per customer
+    per file.
+  - A second run: every target «بلا تغيير» and every follow-up «سبق استيراده» (its record id is made from what the row says), so nothing is written
+    twice; the same request again returns its first answer.
+- **Rights, no session.** `GET /api/record-import?kind=targets|followups` and `POST /api/record-import`: 401 without a session; 403 from another
+  site, and for a role without the right (targets: anyone but the administrator and the sales managers; follow-ups: customer service); 404 when the
+  page is hidden from the member; 400 for an unknown kind. `GET /api/targets` and `POST /api/customer-followups` keep their answers (401 / 403).
+- **Not changed.** No migration (21 tables, `0020_member_permissions.sql` the last). No new permission cell. A visit's own stage «تم الفقد» stays
+  closed as before (a visit always requires a next step; the re-contact belongs to the follow-up that records the loss). The KPIs count a lost
+  follow-up as lost whether or not it keeps a re-contact.
+- **Differences from GSCO.** The day's target follows Yourrest's Friday day off (zero on Friday); GSCO shows the per-working-day share on every day.
+  The re-contact needs its action with its date (Yourrest's rule of 2026-11-15: a follow-up's step carries both; GSCO lets either be empty). The
+  imports write the rows that pass in one transaction (GSCO saves each row on its own); a blank product cell is «غير محدد» (GSCO: 0 when the person
+  had a target); the targets template has no weights sheet (weights were not asked); one follow-up per customer per file; Yourrest gives the
+  templates to download (GSCO's were the owner's own file).
+- **A gate setting changed.** The default gate's TypeScript check runs with 1024 MiB of heap (768 before): the release before this one already
+  needed between 700 and 768 MiB, and these modules (about 2,800 more types) need between 768 and 800, so tsc was killed out of memory
+  (`scripts/check.mjs`, and the rerun in `scripts/gates.mjs`).
+- **Tested.** New: `tests/daily-target.mjs` (default gate, 52 checks), `tests/followup-recontact.mjs` (default gate, 52),
+  `tests/record-import.mjs` (default gate, 123), `tests/record-import-http.mjs` (built release, 60), `tests/followup-recontact-http.mjs`
+  (built release, 28: the re-contact route and «أهدافي»'s days), `tests/today-sales-recontact-import-browser.mjs` (Chromium at 320 and 360 px,
+  a tablet upright and on its side and a desktop, Arabic and English, 158, screenshots). Updated, because they read what changed:
+  `tests/own-targets.mjs` (151: `sales.soldByDay`, the days add up to the month), `tests/erp-sales-server.mjs` (the day of each own ERP
+  document; its later part needs the owner's ERP file and is skipped by the gates), `tests/my-targets-ui.mjs` (76: the day panel),
+  `tests/circular-target-gauges-ui.mjs` (69), `tests/persistent-targets-ui.mjs` (45) and `tests/targets-performance-ui.mjs` (190: the new
+  components' imports), `tests/opportunity-entry.mjs` (159: the follow-ups import is a writer of follow-ups, by the follow-up's rule, never of a
+  visit), `tests/server-authorization.mjs` (786: the new route in the role matrix). The release gates (`node scripts/gates.mjs --full`, twice):
+  the first run stopped on the default gate (the TypeScript heap above, the two harnesses above, and `tests/followup-recontact.mjs` once in the
+  pool: two follow-ups of one customer at the same fixed instant were ordered by their random ids; mended, then three runs alone and two in
+  parallel passed) with `tests/visit-file-concurrency.mjs` not stable (failed in the pool, passed alone; nothing of it changed); the second: 102
+  passed, 1 not stable (`mold-requests-browser`: a strict-mode locator of three headings 12.8 s in, in the pool; passed alone; nothing of the
+  mold requests changed), 4 skipped (the owner's ERP files); the default gate 202/202 (TypeScript and ESLint: 0 errors; ESLint 160 warnings, the
+  baseline's); `tests/msa-wording.mjs` passed.
+
 ## «تنبيه المصانع القريبة»: one grouped notice on the representative's phone within 1 km of their factories with no visit for 60 days (2026-11-16, not released yet, no migration, Android 1.0.13 (14))
 
 - **Asked.** Item 7 of the GSCO comparison list: «تنبيه بالمصانع القريبة اللي محتاجة زيارة، على طريقة تنبيه المشاريع القريبة المجمّع في GSCO

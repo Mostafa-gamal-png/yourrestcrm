@@ -247,6 +247,21 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/record-import-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/followup-recontact-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/today-sales-recontact-import-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
       "file": "tests/kpi-evidence-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
