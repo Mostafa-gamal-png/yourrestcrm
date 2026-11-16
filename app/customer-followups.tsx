@@ -20,7 +20,10 @@ import {offlineSubmit,uploadOfflineVisitFile} from '@/lib/offline-submit';
 import './visit-mobile.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
 
-function Pick({value,onChange,options,label}:{value:string;onChange:(value:string)=>void;options:Record<string,string>;label:string}){return <Select dir={direction()} value={value||undefined} onValueChange={onChange}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{Object.entries(options).map(([id,text])=><SelectItem key={id} value={id}>{t(text)}</SelectItem>)}</SelectContent></Select>;}
+// No option of these lists is empty: an empty value comes only from Radix's hidden form select, which reports '' when the value it is given is
+// not among its options yet (the stage list gains «تم الفقد» or «تم الفوز» in the same render that sets it, after «هل تحوّل عرض السعر إلى
+// فاتورة؟»), and that '' reset the stage and the outcome to what they were (found 2026-11-16 by tests/today-sales-recontact-import-browser.mjs).
+function Pick({value,onChange,options,label}:{value:string;onChange:(value:string)=>void;options:Record<string,string>;label:string}){return <Select dir={direction()} value={value||undefined} onValueChange={next=>{if(next)onChange(next);}}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{Object.entries(options).map(([id,text])=><SelectItem key={id} value={id}>{t(text)}</SelectItem>)}</SelectContent></Select>;}
 export {CustomerFollowupsPage} from './customer-followup-list';
 type Props={initial?:Row;customerId?:string;records:Row[];me:Member;onClose:()=>void;onSaved:(queued?:boolean)=>Promise<void>};
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
