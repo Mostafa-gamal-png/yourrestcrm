@@ -10,9 +10,13 @@ import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {schemas,type AuditEntry,type Member,type Row} from '@/lib/crm';
 import {caseProgress} from '@/lib/service-queue';
 import {TRACKING_FINISHED_DAYS} from '@/lib/service-tracking';
-import {activeServiceCase,canReadService,isServiceRole,serviceCustomerAddRefused,serviceCandidates,serviceChainIds,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase,type ServiceCaseData,type ServiceRegistration} from '@/lib/customer-service';
+import {activeServiceCase,canReadService,heldStage,isServiceRole,serviceCustomerAddRefused,serviceCandidates,serviceChainIds,serviceContacts,serviceCustomerSchema,serviceIntakeSchema,serviceIntakeSchemaForDay,servicePermissions,serviceState,serviceActions,type ServiceCase,type ServiceCaseData,type ServiceRegistration} from '@/lib/customer-service';
 import {opportunityProblem} from '@/lib/opportunity-entry';
 import {SUPPORT_ASSIST_RETIRED_MESSAGE} from '@/lib/support-opportunity';
+import {intakeLead,routingFactsOf} from '@/lib/service-sales-server';
+import {ROUTING_NOT_ELIGIBLE,SERVICE_OWNED_REFUSED,routingEligible,type Lead} from '@/lib/service-sales';
+import {stages} from '@/lib/crm';
+import {followupLossReasons} from '@/lib/customer-followups';
 export const dynamic='force-dynamic';
 type Context=Awaited<ReturnType<typeof context>>;
 type RegistrationData=Omit<z.infer<typeof schemas.activity>,'type'|'visitWorkflow'|'customerStage'>&{type:'visit'|'call'|'email'|'whatsapp'|'website'|'social';visitWorkflow?:string;customerStage?:string};
@@ -36,13 +40,13 @@ export async function GET(req:Request){try{
   const dispatch=permissions.approve?'approve':permissions.assign?'assign':permissions.reassign?'reassign':permissions.delegate?'delegate':'',candidates=dispatch&&!board?serviceCandidates(s,c,dispatch):[];
   // The customer's current holder is offered first, so the usual assignment is one tap.
   const suggestedId=(dispatch==='assign'||dispatch==='reassign')&&candidates.some(m=>m.id===customer.assignedTo)?customer.assignedTo:'';
-  return[{...s,data:visibleData(s),customer:{id:customer.id,name:customer.data.name,phone:customer.data.phone,contact:customer.data.contact,city:customer.data.city,region:customer.data.region,version:customer.version},state,progress:{...progress,assigneeRole:assignee?.role||'',finishedAt},stage:latest?.data.salesStage||'new',nextAction:latest?.data.nextAction??s.data.nextAction,nextDate:latest?.data.nextDate??s.data.nextDate,creatorName:name(s.creatorId),serviceManagerName:name(s.serviceManagerId),salesManagerName:name(s.salesManagerId),assignedName:name(s.assignedTo),supervisorName:name(s.supervisorId),permissions,candidates:candidates.map(m=>({id:m.id,name:m.name,role:m.role})),suggestedId,history:history.filter(a=>a.recordId===s.id&&historyVisible(a,s)),contacts:contacts.map(r=>({id:r.id,date:r.data.date,type:r.data.type,result:r.data.result,summary:r.data.summary,salesStage:r.data.salesStage,nextAction:r.data.nextAction,nextDate:r.data.nextDate,lossReason:r.data.lossReason,competitorFileId:r.data.competitorFileId,competitorFileName:r.data.competitorFileName,actor:name(recordAuthorId(r,c.members)||''),createdAt:r.createdAt}))}];});
+  return[{...s,data:visibleData(s),customer:{id:customer.id,name:customer.data.name,phone:customer.data.phone,contact:customer.data.contact,city:customer.data.city,region:customer.data.region,version:customer.version},state,progress:{...progress,assigneeRole:assignee?.role||'',finishedAt},stage:s.status==='service'?heldStage(s)?.stage||'new':latest?.data.salesStage||'new',nextAction:latest?.data.nextAction??s.data.nextAction,nextDate:latest?.data.nextDate??s.data.nextDate,creatorName:name(s.creatorId),serviceManagerName:name(s.serviceManagerId),salesManagerName:name(s.salesManagerId),assignedName:name(s.assignedTo),supervisorName:name(s.supervisorId),permissions,candidates:candidates.map(m=>({id:m.id,name:m.name,role:m.role})),suggestedId,history:history.filter(a=>a.recordId===s.id&&historyVisible(a,s)),contacts:contacts.map(r=>({id:r.id,date:r.data.date,type:r.data.type,result:r.data.result,summary:r.data.summary,salesStage:r.data.salesStage,nextAction:r.data.nextAction,nextDate:r.data.nextDate,lossReason:r.data.lossReason,competitorFileId:r.data.competitorFileId,competitorFileName:r.data.competitorFileName,actor:name(recordAuthorId(r,c.members)||''),createdAt:r.createdAt}))}];});
  const canCreate=c.me.role==='admin'||isServiceRole(c.me.role);
  return Response.json({cases,canCreate,customers:canCreate?customerChoices(c).map(r=>({id:r.id,name:r.data.name,code:r.data.code,phone:r.data.phone,region:r.data.region,city:r.data.city,version:r.version})):[]},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);await requireSession();const body=await readJsonBody(req);if(JSON.stringify(body).length>18000)throw new CRMError('حجم البيانات كبير');
- const requestId=z.string().uuid().parse(body.requestId);let action:string=z.enum(['create','edit','approve','return','assign','delegate','reassign','seen','note','assist','reply']).parse(body.action);const c=await context(),now=new Date().toISOString();
+ const requestId=z.string().uuid().parse(body.requestId);let action:string=z.enum(['create','edit','approve','return','assign','delegate','reassign','seen','note','assist','reply','stage']).parse(body.action);const c=await context(),now=new Date().toISOString();
  const offline=offlineCapture(body,c.me.id,now);if(offline&&(action!=='create'||!body.registration))throw new CRMError('هذا الإجراء يتطلب اتصالًا مباشرًا.');const occurredAt=offline?.capturedAt||now;
  const canonical=JSON.stringify(body),receiptId='service-receipt:'+c.me.id+':'+requestId,mutation=crypto.randomUUID();
  const replay=async()=>{const r=await c.db.prepare('SELECT record_id,detail FROM crm_audit WHERE id=?').bind(receiptId).first<{record_id:string;detail:string}>();if(!r)return null;const fresh=await context(),item=fresh.serviceCases.find(s=>s.id===r.record_id);if(!item||!canReadService(item,fresh))throw new CRMError('الطلب غير متاح',403);if(r.detail!==canonical)throw new CRMError('العملية محفوظة ببيانات مختلفة. حدّث الصفحة.',409);return Response.json({ok:true,id:r.record_id,alreadySaved:true});};
@@ -53,7 +57,7 @@ export async function POST(req:Request){try{
  if(action==='assist')throw new CRMError(SUPPORT_ASSIST_RETIRED_MESSAGE,409);
  const permission=accessGuard(c),guards=[permission.sql],args:(string|number)[]=[...permission.args],statements=[];
  const requireMember=(m:Member)=>{const g=memberGate(m);guards.push(g.sql);args.push(...g.args);};
- let item:ServiceCase,customer:Row,newCustomer=false,target:Member|undefined,note='',status='',data:ServiceCaseData,id='';
+ let item:ServiceCase,customer:Row,newCustomer=false,target:Member|undefined,note='',status='',data:ServiceCaseData,id='',lead:Lead|null=null,route:'sales'|'service'|null=null,auditAction='';
  if(action==='create'){
   if(c.me.role!=='admin'&&!isServiceRole(c.me.role))throw new CRMError('تسجيل الطلب متاح لخدمة العملاء ومدير النظام فقط',403);
   // A new customer with the request is the administrator's only: customer service picks an existing one (the owner, 2026-11-07). A request
@@ -67,7 +71,14 @@ export async function POST(req:Request){try{
   const manager=c.me.role==='customer_service_manager'?c.me:c.members.find(m=>m.id===c.me.supervisorId&&m.role==='customer_service_manager'&&m.active&&memberCanAccessRegion(m,customer.data.region)&&m.branch===customer.branch);
   if(manager)requireMember(manager);
   item={id,customerId:customer.id,status:'pending_approval',creatorId:c.me.id,serviceManagerId:manager?.id||null,salesManagerId:null,assignedTo:null,supervisorId:null,data:{...data,participants:[c.me.id,...(manager?[manager.id]:[])]},createdAt:now,updatedAt:now,version:1};status=item.status;data=item.data;
-  if(action==='contact'){item=activeServiceCase(customer.id,c)!;id=item.id;status=item.status;data={...item.data};if(c.me.role==='customer_service_manager'){const creator=c.members.find(m=>m.id===item.creatorId);if(creator)requireMember(creator);}}
+  if(action==='contact'){item=activeServiceCase(customer.id,c)!;id=item.id;status=item.status;data={...item.data};if(c.me.role==='customer_service_manager'){const creator=c.members.find(m=>m.id===item.creatorId);if(creator)requireMember(creator);}
+   // An opportunity customer service keeps (2026-11-16): only its owner (or an administrator) records its contacts.
+   if(item.status==='service'&&!servicePermissions(item,c).work)throw new CRMError(SERVICE_OWNED_REFUSED,403);}
+  // «مصدر الفرصة» (lib/service-sales.ts): the form always sends it with a new opportunity; a further contact on the customer's open one
+  // keeps that one's source, and a record of the system starts a NEW opportunity only (never a contact on an open one).
+  const leadPresent=Object.prototype.hasOwnProperty.call(body,'lead');
+  if(leadPresent&&action==='contact'){if(isRecord(body.lead)&&body.lead.group==='system')throw new CRMError('يوجد طلب خدمة عملاء مفتوح لهذا العميل بالفعل',409);}
+  else lead=await intakeLead(c,body.lead,leadPresent,customer.id);
  }else{
   const found=c.serviceCases.find(s=>s.id===body.id);if(!found||!canReadService(found,c))throw new CRMError('الطلب غير متاح',403);item=found;id=item.id;customer=c.all.find(r=>r.id===item.customerId)!;
   if(['rep','supervisor','manager'].includes(c.me.role)&&item.assignedTo){const assignee=c.members.find(m=>m.id===item.assignedTo);if(assignee)requireMember(assignee);}
@@ -80,7 +91,14 @@ export async function POST(req:Request){try{
   if(action==='approve'||action==='return'){
    if(!allowed.approve)throw new CRMError('الاعتماد متاح لمدير خدمة العملاء المسؤول فقط',403);
    const creator=c.members.find(m=>m.id===item.creatorId);if(creator)requireMember(creator);
-   if(action==='approve'){target=serviceCandidates(item,c,'approve').find(m=>m.id===body.targetId);if(!target)throw new CRMError('حدد مدير المبيعات المرتبط بمدير خدمة العملاء',403);status='pending_assignment';data.approvedBy=c.me.id;data.approvedAt=now;}
+   // «اعتماد وإحالة» (2026-11-16): pass it to the sales manager (as before), or keep it with customer service when the customer has no ERP
+   // code, has not bought for 90 days, or customer service brought the lead in (lib/service-sales.ts routingEligible).
+   if(action==='approve'&&body.route==='service'){
+    if(!routingEligible(await routingFactsOf(c,item)))throw new CRMError(ROUTING_NOT_ELIGIBLE,409);
+    target=serviceCandidates(item,c,'keep').find(m=>m.id===body.ownerId);if(!target)throw new CRMError('اختر ممثل خدمة عملاء مفعّلًا من فريقك.',403);
+    status='service';route='service';auditAction='keep';data.approvedBy=c.me.id;data.approvedAt=now;
+   }
+   else if(action==='approve'){target=serviceCandidates(item,c,'approve').find(m=>m.id===body.targetId);if(!target)throw new CRMError('حدد مدير المبيعات المرتبط بمدير خدمة العملاء',403);status='pending_assignment';route='sales';data.approvedBy=c.me.id;data.approvedAt=now;}
    else{note=z.string().trim().min(3,'اكتب سبب إعادة الطلب').max(2000).parse(body.note);status='returned';}
   }
   if(action==='assign'||action==='delegate'||action==='reassign'){
@@ -99,6 +117,13 @@ export async function POST(req:Request){try{
    // An optional instruction for the new holder; it also goes into the case history.
    note=z.string().trim().max(2000).default('').parse(body.note??'');
    if(note){data.assignmentNote=note;data.assignmentNoteBy=c.me.id;}
+  }
+  if(action==='stage'){
+   if(!allowed.work)throw new CRMError(SERVICE_OWNED_REFUSED,403);
+   requireCell(c.me,'activity','add');
+   const entry=z.object({stage:z.enum(stages,{errorMap:()=>({message:'اختر مرحلة البيع'})}),lossReason:z.string().trim().max(250).default(''),stageNote:z.string().trim().max(1000).default('')}).parse({stage:body.stage,lossReason:body.lossReason??'',stageNote:body.stageNote??''});
+   if(entry.stage==='lost'&&!followupLossReasons.includes(entry.lossReason))throw new CRMError('اختر سبب الفقد',400);
+   data.serviceStages=[...(data.serviceStages||[]),{stage:entry.stage,lossReason:entry.stage==='lost'?entry.lossReason:'',note:entry.stageNote,by:c.me.id,at:now}];note=entry.stageNote;
   }
   if(action==='seen'){
    if(!allowed.seen)throw new CRMError('فتح الطلب متاح للمكلَّف به فقط',403);
@@ -138,8 +163,8 @@ export async function POST(req:Request){try{
  if(!newCustomer){guards.push(rootGuard.sql);args.push(...rootGuard.args);}
  const condition=guards.join(' AND '),gate='EXISTS(SELECT 1 FROM crm_service_cases WHERE id=? AND version=? AND mutation_id=?)',ga=[id,revision,mutation];
  if(newCustomer)statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'customer',NULL,?,?,?,?,?,1,? WHERE ${condition}`).bind(customer.id,c.me.id,customer.branch,JSON.stringify(customer.data),now,now,mutation,...args));
- if(action==='create')statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_service_cases(id,customer_id,status,creator_id,service_manager_id,sales_manager_id,assigned_to,supervisor_id,data,created_at,updated_at,version,mutation_id) SELECT ?,?,?,?,?,NULL,NULL,NULL,?,?,?,1,? WHERE ${newCustomer?'EXISTS(SELECT 1 FROM crm_records WHERE id=? AND mutation_id=?)':condition}`).bind(id,customer.id,status,item.creatorId,item.serviceManagerId,JSON.stringify(data),now,now,mutation,...(newCustomer?[customer.id,mutation]:args)));
- else statements.push(c.db.prepare(`UPDATE crm_service_cases SET status=?,sales_manager_id=?,assigned_to=?,supervisor_id=?,data=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND ${condition}`).bind(status,action==='approve'?target!.id:item.salesManagerId,['assign','delegate','reassign'].includes(action)?target!.id:item.assignedTo,action==='assign'&&target!.role==='supervisor'?target!.id:action==='reassign'?(target!.role==='supervisor'?target!.id:target!.supervisorId||null):item.supervisorId,JSON.stringify(data),now,mutation,id,item.version,...args));
+ if(action==='create')statements.push(c.db.prepare(`INSERT OR IGNORE INTO crm_service_cases(id,customer_id,status,creator_id,service_manager_id,sales_manager_id,assigned_to,supervisor_id,data,created_at,updated_at,version,mutation_id,lead_group,lead_source,lead_ref_kind,lead_ref_id,lead_note) SELECT ?,?,?,?,?,NULL,NULL,NULL,?,?,?,1,?,?,?,?,?,? WHERE ${newCustomer?'EXISTS(SELECT 1 FROM crm_records WHERE id=? AND mutation_id=?)':condition}`).bind(id,customer.id,status,item.creatorId,item.serviceManagerId,JSON.stringify(data),now,now,mutation,lead?.group??null,lead?.source??null,lead?.refKind??null,lead?.refId??null,lead?.note??'',...(newCustomer?[customer.id,mutation]:args)));
+ else statements.push(c.db.prepare(`UPDATE crm_service_cases SET status=?,sales_manager_id=?,assigned_to=?,supervisor_id=?,data=?,updated_at=?,version=version+1,mutation_id=?,route=?,routed_by=?,routed_at=? WHERE id=? AND version=? AND ${condition}`).bind(status,action==='approve'?(route==='service'?null:target!.id):item.salesManagerId,['assign','delegate','reassign'].includes(action)||route==='service'?target!.id:item.assignedTo,action==='assign'&&target!.role==='supervisor'?target!.id:action==='reassign'?(target!.role==='supervisor'?target!.id:target!.supervisorId||null):item.supervisorId,JSON.stringify(data),now,mutation,route??item.route??null,route?c.me.id:item.routedBy??null,route?now:item.routedAt??null,id,item.version,...args));
  if(body.registration&&['create','edit','contact'].includes(action)){
   const visitId=action==='contact'?'service-visit-'+requestId:'intake-'+id, path=action==='contact'?'$.registrations['+(data.registrations!.length-1)+'].registration.visitNumber':'$.registration.visitNumber';
   statements.push(c.db.prepare(`INSERT INTO crm_visit_numbers(record_id) SELECT ? WHERE ${gate} AND NOT EXISTS(SELECT 1 FROM crm_visit_numbers WHERE record_id=?)`).bind(visitId,...ga,visitId));
@@ -151,7 +176,7 @@ export async function POST(req:Request){try{
   statements.push(c.db.prepare(`WITH RECURSIVE descendants(id) AS (SELECT id FROM crm_records WHERE parent_id=? UNION SELECT r.id FROM crm_records r JOIN descendants d ON r.parent_id=d.id) UPDATE crm_records SET assigned_to=?,updated_at=?,version=version+1 WHERE id IN(SELECT id FROM descendants) AND ${gate}`).bind(customer.id,target!.id,now,...ga));
  }
  statements.push(c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(receiptId,id,c.me.name,'service-receipt',canonical,now,...ga));
- statements.push(c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),id,c.me.name,'service:'+action,JSON.stringify({label:serviceActions[action]||(action==='contact'?'تسجيل زيارة':'الرد على طلب المساعدة'),note,targetName:target?.name||'',state:status}),now,...ga));
+ statements.push(c.db.prepare(`INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),id,c.me.name,'service:'+action,JSON.stringify({label:serviceActions[auditAction||action]||(action==='contact'?'تسجيل زيارة':'الرد على طلب المساعدة'),note,targetName:target?.name||'',state:status,...(action==='stage'?{stage:data.serviceStages!.at(-1)!.stage,lossReason:data.serviceStages!.at(-1)!.lossReason}:{}),...(lead?{lead:{group:lead.group,source:lead.source}}:{})}),now,...ga));
  let result;try{result=await c.db.batch(statements);}catch(e){const repeated=await replay();if(repeated)return repeated;throw e;}
  if(result[newCustomer?1:0].meta.changes!==1){const repeated=await replay();if(repeated)return repeated;throw new CRMError('تغيّرت البيانات أو الصلاحيات أثناء الحفظ. حدّث الصفحة.',409);}
  return Response.json({ok:true,id,customerId:customer.id});

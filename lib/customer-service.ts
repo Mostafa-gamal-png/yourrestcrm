@@ -11,14 +11,20 @@ export const isServiceRole=(role:string)=>serviceRoles.includes(role);
 /** Customer service picks existing customers and never adds one (the owner, 2026-11-07): the refusal every create path answers them with. */
 export const serviceCustomerAddRefused='إضافة العملاء غير متاحة لخدمة العملاء؛ اختر عميلًا موجودًا أو اطلب من المبيعات إضافته.';
 export const serviceSources:Record<string,string>={visit:'زيارة',call:'اتصال',email:'بريد إلكتروني',whatsapp:'واتساب',website:'عن طريق الويبسايت',social:'عن طريق مواقع التواصل الاجتماعي'};
-export const serviceStatusLabels:Record<string,string>={pending_approval:'بانتظار اعتماد خدمة العملاء',returned:'مطلوب تعديل',pending_assignment:'بانتظار تكليف المبيعات',with_supervisor:'لدى مشرف المبيعات',assigned:'قيد متابعة المبيعات',won:'تم الفوز',lost:'تم الفقد'};
+export const serviceStatusLabels:Record<string,string>={pending_approval:'بانتظار اعتماد خدمة العملاء',returned:'مطلوب تعديل',pending_assignment:'بانتظار تكليف المبيعات',with_supervisor:'لدى مشرف المبيعات',assigned:'قيد متابعة المبيعات',service:'لدى خدمة العملاء',won:'تم الفوز',lost:'تم الفقد'};
 /** English wording of the states, as the page's dictionary has them (lib/locales/en.json), for what the server writes itself (the Excel export). */
-export const serviceStatusLabelsEn:Record<string,string>={pending_approval:'Awaiting customer service approval',returned:'Changes requested',pending_assignment:'Awaiting sales assignment',with_supervisor:'With sales supervisor',assigned:'Sales follow-up in progress',won:'Won',lost:'Lost'};
-export const serviceActions:Record<string,string>={create:'تسجيل طلب خدمة العملاء',edit:'تعديل وإعادة إرسال',approve:'اعتماد وإحالة للمبيعات',return:'إعادة للتعديل',assign:'تكليف المبيعات',delegate:'تكليف مندوب',reassign:'إعادة تكليف',seen:'فتح الطلب',note:'ملاحظة داخلية',assist:'طلب مساعدة داخلية'};
+export const serviceStatusLabelsEn:Record<string,string>={pending_approval:'Awaiting customer service approval',returned:'Changes requested',pending_assignment:'Awaiting sales assignment',with_supervisor:'With sales supervisor',assigned:'Sales follow-up in progress',service:'With customer service',won:'Won',lost:'Lost'};
+export const serviceActions:Record<string,string>={create:'تسجيل طلب خدمة العملاء',edit:'تعديل وإعادة إرسال',approve:'اعتماد وإحالة للمبيعات',keep:'اعتماد لتتولاها خدمة العملاء',stage:'تحديث مرحلة البيع لدى خدمة العملاء',return:'إعادة للتعديل',assign:'تكليف المبيعات',delegate:'تكليف مندوب',reassign:'إعادة تكليف',seen:'فتح الطلب',note:'ملاحظة داخلية',assist:'طلب مساعدة داخلية'};
 export type ServiceRegistration={date?:string;type?:string;performedBy?:string;competitorFileId?:string;offlineRecordedAt?:string;[key:string]:unknown};
 export type ServiceRegistrationEntry={id:string;registration:ServiceRegistration;createdAt:string};
-export type ServiceCaseData={participants?:string[];registration?:ServiceRegistration;registrations?:ServiceRegistrationEntry[];assistanceOpen?:boolean;source?:string;products?:string[];strength?:string;needs?:string;nextAction?:string;nextDate?:string;approvedBy?:string;approvedAt?:string;assignedAt?:string;assignedBy?:string;delegatedAt?:string;delegatedBy?:string;reassignedAt?:string;reassignedBy?:string;previousAssignees?:string[];resubmittedAt?:string;assignmentNote?:string;assignmentNoteBy?:string;seenAt?:string;seenBy?:string;[key:string]:unknown};
-export type ServiceCase={id:string;customerId:string;status:string;creatorId:string;serviceManagerId:string|null;salesManagerId:string|null;assignedTo:string|null;supervisorId:string|null;data:ServiceCaseData;createdAt:string;updatedAt:string;version:number};
+export type ServiceCaseData={participants?:string[];registration?:ServiceRegistration;registrations?:ServiceRegistrationEntry[];assistanceOpen?:boolean;source?:string;products?:string[];strength?:string;needs?:string;nextAction?:string;nextDate?:string;approvedBy?:string;approvedAt?:string;assignedAt?:string;assignedBy?:string;delegatedAt?:string;delegatedBy?:string;reassignedAt?:string;reassignedBy?:string;previousAssignees?:string[];resubmittedAt?:string;assignmentNote?:string;assignmentNoteBy?:string;seenAt?:string;seenBy?:string;
+ /** Customer service keeps the opportunity (status 'service', 2026-11-16): each stage its owner recorded, the last one current. */
+ serviceStages?:ServiceStageEntry[];[key:string]:unknown};
+export type ServiceStageEntry={stage:string;lossReason:string;note:string;by:string;at:string};
+/** leadGroup..routedAt: migration 0021 (lib/service-sales.ts); null on a case registered before it. A case customer service keeps has status
+ *  'service', route 'service' and its customer-service owner in assignedTo. */
+export type ServiceCase={id:string;customerId:string;status:string;creatorId:string;serviceManagerId:string|null;salesManagerId:string|null;assignedTo:string|null;supervisorId:string|null;data:ServiceCaseData;createdAt:string;updatedAt:string;version:number;
+ leadGroup?:string|null;leadSource?:string|null;leadRefKind?:string|null;leadRefId?:string|null;leadNote?:string;route?:string|null;routedBy?:string|null;routedAt?:string|null};
 export type ServiceContext={me:Member;members:Member[];all:Row[];serviceCases:ServiceCase[]};
 const required=z.string().trim().min(1,'هذا الحقل مطلوب').max(250);
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'اختر موعد المتابعة').refine(v=>Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'التاريخ غير صالح');
@@ -27,7 +33,11 @@ export const serviceIntakeSchema=serviceIntakeSchemaForDay();
 export const serviceCustomerSchema=z.object({name:required,contact:z.string().trim().max(250).default(''),phone:z.string().trim().min(1,'أدخل رقم التواصل').max(100),city:z.string().trim().max(250).default(''),region:z.string().trim().max(250).default(''),address:z.string().trim().max(250).default(''),customerType:z.string().trim().max(250).default(''),customerKind:customerKindField.default(''),customerStatus:z.string().trim().max(250).default(''),category:z.string().trim().max(250).default(''),...customerAddressFields}).strict();
 const contactIndexes=new WeakMap<Row[],Map<string,Row[]>>();
 export function serviceContacts(item:ServiceCase,all:Row[]){let index=contactIndexes.get(all);if(!index){index=new Map();for(const r of all){if(r.kind!=='activity'||!r.data.serviceCaseId)continue;const contacts=index.get(r.data.serviceCaseId)||[];contacts.push(r);index.set(r.data.serviceCaseId,contacts);}for(const contacts of index.values())contacts.sort((a,b)=>visitOrder(b).localeCompare(visitOrder(a)));contactIndexes.set(all,index);}return index.get(item.id)||[];}
-export function serviceState(item:ServiceCase,all:Row[],members:Member[]){const contact=serviceContacts(item,all)[0],stage=contact?.data.salesStage||'new';return ['won','lost'].includes(stage)?stage:item.status==='assigned'&&members.find(m=>m.id===item.assignedTo)?.role==='supervisor'?'with_supervisor':item.status;}
+/** The stage customer service recorded last on an opportunity it keeps ('new' before any). */
+export const heldStage=(item:Pick<ServiceCase,'data'>)=>{const stages=item.data.serviceStages||[];return stages.length?stages[stages.length-1]:undefined;};
+export function serviceState(item:ServiceCase,all:Row[],members:Member[]){if(item.status==='service'){const stage=heldStage(item)?.stage||'new';return ['won','lost'].includes(stage)?stage:'service';}const contact=serviceContacts(item,all)[0],stage=contact?.data.salesStage||'new';return ['won','lost'].includes(stage)?stage:item.status==='assigned'&&members.find(m=>m.id===item.assignedTo)?.role==='supervisor'?'with_supervisor':item.status;}
+/** When the opportunity was won or lost ('' while open): the stage customer service recorded, or the sales contact that closed it. */
+export function serviceClosedAt(item:ServiceCase,all:Row[]){if(item.status==='service'){const last=heldStage(item);return last&&['won','lost'].includes(last.stage)?last.at:'';}const contact=serviceContacts(item,all)[0];return contact&&['won','lost'].includes(contact.data.salesStage)?contact.createdAt:'';}
 const activeIndexes=new WeakMap<ServiceContext,Map<string,ServiceCase>>();
 export function activeServiceCase(customerId:string,c:ServiceContext){let index=activeIndexes.get(c);if(!index){index=new Map();for(const s of c.serviceCases)if(!index.has(s.customerId)&&!['won','lost'].includes(serviceState(s,c.all,c.members)))index.set(s.customerId,s);activeIndexes.set(c,index);}return index.get(customerId);}
 /** Once a later intake exists, its predecessor's contact history cannot be rewritten. */
@@ -45,8 +55,11 @@ export function canReadService(item:ServiceCase,c:ServiceContext){
  return c.me.role==='customer_service_manager'&&c.members.some(m=>m.id===item.creatorId&&m.supervisorId===c.me.id&&m.active);
 }
 export function serviceTeamIds(me:Member,members:Member[]){const ids=salesScopeMemberIds(members,me,{activeOnly:true});ids.delete(me.id);return ids;}
-export function serviceCandidates(item:ServiceCase,c:ServiceContext,action:'approve'|'assign'|'delegate'|'reassign'){
+export function serviceCandidates(item:ServiceCase,c:ServiceContext,action:'approve'|'assign'|'delegate'|'reassign'|'keep'){
  const customer=c.all.find(r=>r.id===item.customerId)!;const team=serviceTeamIds(c.me,c.members);
+ // «تتولاها خدمة العملاء» (2026-11-16): the customer-service members of the customer's branch and region an approver may give it to: an
+ // administrator any of them; a customer-service manager himself and his own team. The member who registered it is offered first.
+ if(action==='keep'){const found=c.members.filter(m=>m.active&&isServiceRole(m.role)&&m.branch===customer.branch&&memberCanAccessRegion(m,customer.data.region)&&(c.me.role==='admin'||m.id===c.me.id||m.role==='customer_service'&&m.supervisorId===c.me.id));return [...found.filter(m=>m.id===item.creatorId),...found.filter(m=>m.id!==item.creatorId)];}
  // Moving a case (re-assignment, or a supervisor delegating again) never offers the member who already holds it.
  return c.members.filter(m=>m.active&&memberCanAccessRegion(m,customer.data.region)&&(action==='approve'?m.role==='manager'&&(c.me.role==='admin'||m.id===c.me.supervisorId):['rep','supervisor'].includes(m.role)&&m.branch===customer.branch&&(c.me.role==='admin'||team.has(m.id))&&(action!=='delegate'||m.role==='rep'&&m.supervisorId===c.me.id)&&(action==='assign'||m.id!==item.assignedTo)));
 }
@@ -54,7 +67,9 @@ export function serviceCandidates(item:ServiceCase,c:ServiceContext,action:'appr
 export function serviceChainIds(item:ServiceCase){return [item.creatorId,item.serviceManagerId,item.salesManagerId,item.supervisorId,item.assignedTo].filter((id):id is string=>!!id);}
 export function servicePermissions(item:ServiceCase,c:ServiceContext){const state=serviceState(item,c.all,c.members),closed=state==='won'||state==='lost',admin=c.me.role==='admin',pending=['pending_approval','returned'].includes(item.status),manager=c.me.role==='customer_service_manager'&&(item.serviceManagerId===c.me.id||c.members.some(m=>m.id===item.creatorId&&m.active&&m.supervisorId===c.me.id)),assignee=c.members.find(m=>m.id===item.assignedTo),held=item.status==='assigned'&&!closed;return{edit:pending&&(admin||item.creatorId===c.me.id&&isServiceRole(c.me.role)),approve:item.status==='pending_approval'&&(admin||manager),assign:item.status==='pending_assignment'&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id),// A supervisor hands a case to one of their representatives, whether it sits with the supervisor or with another of their representatives.
  delegate:held&&c.me.role==='supervisor'&&(item.assignedTo===c.me.id||assignee?.role==='rep'&&assignee.supervisorId===c.me.id),// Only the sales manager the case was routed to, or an administrator, moves a held case to someone else.
- reassign:held&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id),seen:held&&item.assignedTo===c.me.id,followup:['assigned','with_supervisor'].includes(state)&&!isServiceRole(c.me.role)&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id||item.assignedTo===c.me.id),note:canReadService(item,c)};}
+ reassign:held&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id),seen:held&&item.assignedTo===c.me.id,
+ // An opportunity customer service keeps: its owner (or an administrator) records its contacts and stages; nobody of sales writes on it.
+ work:item.status==='service'&&!closed&&(admin||item.assignedTo===c.me.id&&isServiceRole(c.me.role)),followup:['assigned','with_supervisor'].includes(state)&&!isServiceRole(c.me.role)&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id||item.assignedTo===c.me.id),note:canReadService(item,c)};}
 
 /** Read projections never widen the sales write scope in context(). */
 export function serviceVisitRecords(c:ServiceContext & {visible:Row[];regionalRecords:Row[]}){
@@ -79,4 +94,4 @@ export function serviceVisitRecords(c:ServiceContext & {visible:Row[];regionalRe
  return [...records.values()];
 }
 
-export function matchesServiceFilter(row:Row,filter:string){const w=row.data._serviceWorkflow;return filter==='all'||filter==='mine'&&!!(w?.permissions.approve||w?.permissions.assign||w?.permissions.delegate)||filter==='assistance'&&!!w?.assistanceOpen||w?.state===filter;}
+export function matchesServiceFilter(row:Row,filter:string){const w=row.data._serviceWorkflow;return filter==='all'||filter==='mine'&&!!(w?.permissions.approve||w?.permissions.assign||w?.permissions.delegate||w?.permissions.work)||filter==='assistance'&&!!w?.assistanceOpen||w?.state===filter;}

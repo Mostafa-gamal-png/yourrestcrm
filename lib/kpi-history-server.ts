@@ -4,6 +4,7 @@ import {regionScopeSql} from './regions';
 import {salesReadMemberIds,type Sale} from './sales';
 import {visitCustomer} from './customer-visits';
 import {kpiPeriod} from './kpis';
+import {serviceSalesExclusion} from './service-sales-server';
 
 type Context=Awaited<ReturnType<typeof context>>;
 export {customerCodeKey,uniqueCustomerCodes} from './customer-identity';
@@ -15,6 +16,8 @@ export async function readKpiPurchaseHistory(c:Context,month:string){
  if(!allowed.length)return{facts:[] as PurchaseFact[],unresolved:new Set<string>()};
  const placeholders=allowed.map(()=>'?').join(','),codes=uniqueCustomerCodes(c.all,c.customerIdentityState?.mappings);
  const erpScope=regionScopeSql('region_scope',c.me);
+ // The full customer-service sales leave the evaluation's purchase history too (2026-11-16).
+ const serviceFull=await serviceSalesExclusion(c);
  const [manual,erp]=await Promise.all([
   c.db.prepare(`SELECT s.rep_id,s.customer_id,substr(s.date,1,7)||'-01' AS period,
    SUM(s.total_cents) AS net,MAX(CASE WHEN s.total_cents>0 THEN 1 ELSE 0 END) AS purchased
@@ -23,9 +26,9 @@ export async function readKpiPurchaseHistory(c:Context,month:string){
    .bind(period.cutoff,...allowed).all<{rep_id:string;customer_id:string;period:string;net:number;purchased:number}>(),
   c.db.prepare(`SELECT rep_id,customer_code,substr(date,1,7)||'-01' AS period,
    SUM(total_cents) AS net,MAX(CASE WHEN document_type='sale' AND total_cents>0 THEN 1 ELSE 0 END) AS purchased
-   FROM crm_erp_sales WHERE date<=? AND rep_id IN (${placeholders}) AND ${erpScope.sql}
+   FROM crm_erp_sales WHERE date<=? AND rep_id IN (${placeholders}) AND ${erpScope.sql} AND id NOT IN (SELECT value FROM json_each(?))
    GROUP BY rep_id,customer_code,substr(date,1,7)`)
-   .bind(period.cutoff,...allowed,...erpScope.args).all<{rep_id:string;customer_code:string;period:string;net:number;purchased:number}>()
+   .bind(period.cutoff,...allowed,...erpScope.args,JSON.stringify([...serviceFull||[]])).all<{rep_id:string;customer_code:string;period:string;net:number;purchased:number}>()
  ]);
  const facts:PurchaseFact[]=[],unresolved=new Set<string>();
  const erpCodes=new Set(erp.results.map(r=>customerCodeKey(r.customer_code)).filter(Boolean));

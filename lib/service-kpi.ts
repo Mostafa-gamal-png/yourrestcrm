@@ -4,6 +4,7 @@ import type {ServiceCase} from './customer-service';
 import {COMPLAINT_REOPEN_DAYS,type ComplaintRow} from './complaints';
 import type {SupportRow} from './support';
 import {workingHoursBetween} from './working-hours';
+import {SUPPORT_SALES_DAYS} from './service-sales';
 
 /** Monthly evaluation of customer service: a score out of 100 for each representative and for each customer-service manager,
  * computed on read from what the system already records (complaints, assistance requests, service requests) plus the manager's
@@ -26,14 +27,14 @@ export const AUDIT_NOTE_MAX=2000;
 export const KPI_ITEM_LIMIT=200;
 export const KPI_MONTH=/^\d{4}-(0[1-9]|1[0-2])$/;
 
-export const REP_METRICS=['support_response','closure_timing','closures_held','audit_quality','missed_visits','registration_accuracy','clearance','customer_rating'] as const;
+export const REP_METRICS=['support_response','closure_timing','closures_held','audit_quality','missed_visits','registration_accuracy','clearance','customer_rating','conversion'] as const;
 export const MANAGER_METRICS=['team_average','review_timing','life_timing','team_rating','team_support_response','team_quality','backlog','repeat_complaints'] as const;
 export const AUDIT_CRITERIA=['greeting','understanding','accuracy','ownership','communication','resolution','closing'] as const;
 export type RepMetric=typeof REP_METRICS[number];
 export type ManagerMetric=typeof MANAGER_METRICS[number];
 export type AuditCriterion=typeof AUDIT_CRITERIA[number];
-export const repMetricLabels:Record<RepMetric,string>={support_response:'الاستجابة للمساندة',closure_timing:'تأكيد الإغلاق في مهلته',closures_held:'إغلاقات ثبتت',audit_quality:'جودة الأداء',missed_visits:'الزيارات المفقودة في مهلتها',registration_accuracy:'دقة التسجيل',clearance:'نسبة الإنجاز',customer_rating:'تقييم العميل'};
-export const repMetricLabelsEn:Record<RepMetric,string>={support_response:'Support response',closure_timing:'Closure confirmed on time',closures_held:'Closures that held',audit_quality:'Performance quality',missed_visits:'Missed visits on time',registration_accuracy:'Registration accuracy',clearance:'Clearance',customer_rating:'Customer rating'};
+export const repMetricLabels:Record<RepMetric,string>={support_response:'الاستجابة للمساندة',closure_timing:'تأكيد الإغلاق في مهلته',closures_held:'إغلاقات ثبتت',audit_quality:'جودة الأداء',missed_visits:'الزيارات المفقودة في مهلتها',registration_accuracy:'دقة التسجيل',clearance:'نسبة الإنجاز',customer_rating:'تقييم العميل',conversion:'نسبة الفرص المتحولة إلى مبيعات'};
+export const repMetricLabelsEn:Record<RepMetric,string>={support_response:'Support response',closure_timing:'Closure confirmed on time',closures_held:'Closures that held',audit_quality:'Performance quality',missed_visits:'Missed visits on time',registration_accuracy:'Registration accuracy',clearance:'Clearance',customer_rating:'Customer rating',conversion:'Opportunities turned into sales'};
 export const managerMetricLabels:Record<ManagerMetric,string>={team_average:'متوسط الفريق',review_timing:'مهلة المراجعة',life_timing:'مهلة الشكوى كاملة',team_rating:'رضا العميل',team_support_response:'الاستجابة للمساندة',team_quality:'جودة الفريق',backlog:'ضبط المتراكم',repeat_complaints:'الشكاوى المتكررة'};
 export const managerMetricLabelsEn:Record<ManagerMetric,string>={team_average:'Team average',review_timing:'Review on time',life_timing:'Whole-complaint time',team_rating:'Customer satisfaction',team_support_response:'Support response',team_quality:'Team quality',backlog:'Backlog control',repeat_complaints:'Repeat complaints'};
 export const auditCriterionLabels:Record<AuditCriterion,string>={greeting:'الترحيب والتعريف',understanding:'فهم المشكلة',accuracy:'دقة المعلومة والتسجيل',ownership:'تحمّل المسؤولية والمتابعة',communication:'أسلوب التواصل',resolution:'الحل المقدَّم',closing:'الإغلاق والتأكيد'};
@@ -53,22 +54,52 @@ export type ServiceKpiSettings={
  audit:{criteria:Record<AuditCriterion,number>;pass:number;coach:number;sample:number};
  /** A month may be closed once it has been over for this many days. */
  closeGraceDays:number;
+ /** The days after a support contact in which the customer's purchase counts as «مبيعات بالمساندة» (lib/service-sales.ts, 2026-11-16). */
+ supportSalesDays:number;
 };
+/** «نسبة الفرص المتحولة إلى مبيعات»: question 1 of the owner's four is its target, provisionally 50% (GSCO 2.13.78's); set here only. */
+export const CONVERSION_TARGET=50;
+export const CONVERSION_WEIGHT=15;
+export const CONVERSION_MIN_CASES=3;
+/** The representative's weights before «نسبة الفرص المتحولة إلى مبيعات» (the defaults then). */
+export const LEGACY_REP_WEIGHTS:Record<string,number>={support_response:15,closure_timing:15,closures_held:15,audit_quality:15,missed_visits:10,registration_accuracy:10,clearance:10,customer_rating:10};
+/** Whole weights that keep the proportions of `weights` and add up to `total` (largest remainder; ties in the card's order). */
+export function scaledWeights(weights:Record<string,number>,keys:readonly string[],total:number):Record<string,number>{
+ const sum=keys.reduce((n,k)=>n+Number(weights[k]||0),0);
+ if(!sum)return Object.fromEntries(keys.map(k=>[k,0]));
+ const exact=keys.map(k=>({k,v:Number(weights[k]||0)*total/sum})),out:Record<string,number>=Object.fromEntries(exact.map(x=>[x.k,Math.floor(x.v)]));
+ let left=total-exact.reduce((n,x)=>n+Math.floor(x.v),0);
+ for(const x of [...exact].sort((a,b)=>(b.v-Math.floor(b.v))-(a.v-Math.floor(a.v))||keys.indexOf(a.k)-keys.indexOf(b.k))){if(left<=0)break;out[x.k]++;left--;}
+ return out;
+}
 /** The values of the evaluation sheet the owner provided, adapted to what the system records. Weights of each card sum to 100. */
 export const DEFAULT_SERVICE_KPI_SETTINGS:ServiceKpiSettings={
  hours:{support:4,missed:4,closure:24,review:4},
  life:{normal:82,high:48},
- rep:{support_response:{target:90,weight:15,min:5},closure_timing:{target:95,weight:15,min:5},closures_held:{target:90,weight:15,min:5},audit_quality:{target:90,weight:15,min:3},missed_visits:{target:95,weight:10,min:5},registration_accuracy:{target:98,weight:10,min:5},clearance:{target:90,weight:10,min:5},customer_rating:{target:90,weight:10,min:5}},
+ // «نسبة الفرص المتحولة إلى مبيعات» (the owner, 2026-11-16) takes 15 of the 100 and needs 3 cases at least; the other weights give it up in
+ // proportion (15,15,15,15,10,10,10,10 -> 13,13,13,13,9,8,8,8), as in GSCO 2.13.78.
+ rep:{support_response:{target:90,weight:13,min:5},closure_timing:{target:95,weight:13,min:5},closures_held:{target:90,weight:13,min:5},audit_quality:{target:90,weight:13,min:3},missed_visits:{target:95,weight:9,min:5},registration_accuracy:{target:98,weight:8,min:5},clearance:{target:90,weight:8,min:5},customer_rating:{target:90,weight:8,min:5},conversion:{target:CONVERSION_TARGET,weight:CONVERSION_WEIGHT,min:CONVERSION_MIN_CASES}},
  manager:{team_average:{target:85,weight:25,min:1},review_timing:{target:90,weight:15,min:5},life_timing:{target:95,weight:15,min:5},team_rating:{target:90,weight:10,min:5},team_support_response:{target:90,weight:10,min:5},team_quality:{target:90,weight:10,min:3},backlog:{target:95,weight:10,min:0},repeat_complaints:{target:95,weight:5,min:5}},
  audit:{criteria:{greeting:10,understanding:15,accuracy:20,ownership:15,communication:15,resolution:15,closing:10},pass:90,coach:80,sample:3},
- closeGraceDays:5
+ closeGraceDays:5,
+ supportSalesDays:SUPPORT_SALES_DAYS
 };
 
 const isObject=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const num=(value:unknown,fallback:number)=>typeof value==='number'&&Number.isFinite(value)?value:fallback;
 /** Settings as stored or sent, filled in from the defaults wherever a value is missing; it may still be invalid (see `settingsProblem`). */
-export function normalizeSettings(raw:unknown):ServiceKpiSettings{
- const d=DEFAULT_SERVICE_KPI_SETTINGS,source=isObject(raw)?raw:{},pick=(value:unknown):Record<string,unknown>=>isObject(value)?value:{};
+/** Settings saved before «نسبة الفرص المتحولة إلى مبيعات» make room for it (2026-11-16): still the old defaults -> the new defaults; weights the
+ *  administrator changed -> scaled to 85 in whole numbers, the new indicator 15. A closed month's certificate (`certificate`) keeps its card as it
+ *  was: the new indicator joins with weight 0. Settings already holding it are read as they are. */
+export function normalizeSettings(raw:unknown,mode:'live'|'certificate'='live'):ServiceKpiSettings{
+ const d=DEFAULT_SERVICE_KPI_SETTINGS,source:Record<string,unknown>=isObject(raw)?{...raw}:{},pick=(value:unknown):Record<string,unknown>=>isObject(value)?value:{};
+ const savedRep=pick(source.rep),old=REP_METRICS.filter(key=>key!=='conversion');
+ if(isObject(source.rep)&&!isObject(savedRep.conversion)&&old.every(key=>isObject(savedRep[key]))){
+  const weights:Record<string,number>=Object.fromEntries(old.map(key=>[key,num(pick(savedRep[key]).weight,0)]));
+  const legacy=old.every(key=>weights[key]===LEGACY_REP_WEIGHTS[key]);
+  const scaled:Record<string,number>=mode==='certificate'?weights:legacy?Object.fromEntries(old.map(key=>[key,d.rep[key].weight])):scaledWeights(weights,old,100-CONVERSION_WEIGHT);
+  source.rep={...Object.fromEntries(old.map(key=>[key,{...pick(savedRep[key]),weight:scaled[key]}])),conversion:{...d.rep.conversion,weight:mode==='certificate'?0:CONVERSION_WEIGHT}};
+ }
  const metrics=<K extends string>(keys:readonly K[],defaults:Record<K,MetricSetting>,given:unknown)=>{
   const found=pick(given),result={} as Record<K,MetricSetting>;
   for(const key of keys){const one=pick(found[key]);result[key]={target:num(one.target,defaults[key].target),weight:num(one.weight,defaults[key].weight),min:num(one.min,defaults[key].min)};}
@@ -81,7 +112,8 @@ export function normalizeSettings(raw:unknown):ServiceKpiSettings{
   life:{normal:num(life.normal,d.life.normal),high:num(life.high,d.life.high)},
   rep:metrics(REP_METRICS,d.rep,source.rep),manager:metrics(MANAGER_METRICS,d.manager,source.manager),
   audit:{criteria:weights,pass:num(audit.pass,d.audit.pass),coach:num(audit.coach,d.audit.coach),sample:num(audit.sample,d.audit.sample)},
-  closeGraceDays:num(source.closeGraceDays,d.closeGraceDays)
+  closeGraceDays:num(source.closeGraceDays,d.closeGraceDays),
+  supportSalesDays:num(source.supportSalesDays,d.supportSalesDays)
  };
 }
 /** What is wrong with the settings, in words for the person who typed them; empty when they are fine. */
@@ -106,6 +138,7 @@ export function settingsProblem(settings:ServiceKpiSettings):string{
  if(!between(settings.audit.coach,1,99)||!between(settings.audit.pass,2,100)||settings.audit.coach>=settings.audit.pass)return 'حد «ناجح» يجب أن يكون أعلى من حد «يحتاج تدريبًا»';
  if(!whole(settings.audit.sample,0,20))return 'حجم العينة المقترحة بين 0 و20';
  if(!whole(settings.closeGraceDays,0,30))return 'أيام الانتظار قبل الإقفال بين 0 و30';
+ if(!whole(settings.supportSalesDays,1,365))return 'مدة احتساب مبيعات المساندة بالأيام عدد صحيح من 1 إلى 365';
  return '';
 }
 
@@ -148,7 +181,11 @@ export type KpiMetric={
 export type Scorecard={memberId:string;role:'rep'|'manager';score:number|null;measuredWeight:number;metrics:KpiMetric[]};
 export type KpiGroup={managerId:string;managerName:string;closed:boolean;closedAt:string;closedBy:string;/** A closed month whose figures no longer match the certificate. */drift:boolean;settings:ServiceKpiSettings;manager:Scorecard|null;reps:Scorecard[]};
 export type KpiMonth={month:string;generatedAt:string;groups:KpiGroup[]};
-export type KpiInput={members:Member[];complaints:ComplaintRow[];support:SupportRow[];serviceCases:ServiceCase[];audits:ServiceAuditRow[];closed:ServiceKpiMonthRow[];settings:ServiceKpiSettings};
+/** An opportunity customer service registered that was won or lost (lib/service-sales-server.ts): whose it is (the member who keeps it, else
+ *  its registrar), when it closed, and whether it sold (won, or an invoice names one of its quotations). */
+export type ConversionFact={caseId:string;customerId:string;memberId:string;closedAt:string;won:boolean;invoiced:boolean};
+export type KpiInput={members:Member[];complaints:ComplaintRow[];support:SupportRow[];serviceCases:ServiceCase[];audits:ServiceAuditRow[];closed:ServiceKpiMonthRow[];settings:ServiceKpiSettings;
+ /** Absent in an input built without them: then «نسبة الفرص المتحولة إلى مبيعات» has no cases. */conversions?:ConversionFact[]};
 
 // ---- a complaint's history, read from its events
 type Act={at:string;by:string;action:'close'|'reject';/** The resolution this confirms or sends back. */since:string;rating:number|null};
@@ -189,11 +226,11 @@ export function complaintTimeline(row:ComplaintRow):Timeline{
 const openAt=(line:Timeline,at:string)=>{let open=false;for(const step of line.openSteps)if(step.at<=at)open=step.open;return open&&line.submitted<=at;};
 const firstAfter=(times:string[],at:string)=>times.filter(time=>time>at).sort()[0]||'';
 
-type Facts={members:Member[];byId:Map<string,Member>;complaints:Timeline[];support:SupportRow[];cases:ServiceCase[];audits:ServiceAuditRow[];byCustomer:Map<string,Timeline[]>};
+type Facts={members:Member[];byId:Map<string,Member>;complaints:Timeline[];support:SupportRow[];cases:ServiceCase[];audits:ServiceAuditRow[];byCustomer:Map<string,Timeline[]>;conversions:ConversionFact[]};
 function buildFacts(input:KpiInput):Facts{
  const complaints=input.complaints.filter(row=>row&&row.data&&row.data.kind==='complaint').map(complaintTimeline),byCustomer=new Map<string,Timeline[]>();
  for(const line of complaints){const list=byCustomer.get(line.row.data.customerId);if(list)list.push(line);else byCustomer.set(line.row.data.customerId,[line]);}
- return {members:input.members,byId:new Map(input.members.map(member=>[member.id,member])),complaints,support:input.support.filter(row=>row&&row.data&&row.data.kind==='support'),cases:input.serviceCases,audits:input.audits.filter(row=>row&&row.data&&row.data.kind==='service_audit'&&!row.data.deleted),byCustomer};
+ return {members:input.members,byId:new Map(input.members.map(member=>[member.id,member])),complaints,support:input.support.filter(row=>row&&row.data&&row.data.kind==='support'),cases:input.serviceCases,audits:input.audits.filter(row=>row&&row.data&&row.data.kind==='service_audit'&&!row.data.deleted),byCustomer,conversions:input.conversions||[]};
 }
 type Ctx={facts:Facts;settings:ServiceKpiSettings;month:string;from:string;to:string;now:string;/** The end of what has happened in this month: the month's end, or now while it runs. */clip:string};
 const within=(ctx:Ctx,at:string|undefined)=>!!at&&at>=ctx.from&&at<ctx.to&&at<=ctx.now;
@@ -271,6 +308,8 @@ export function repMetrics(ctx:Ctx,rep:Member):KpiMetric[]{
   if(finished){if(work.finish<ctx.from)continue;cleared.push({ref:work.ref,type:work.type,customerId:work.customerId,at:work.finish,value:round2(workingHoursBetween(work.arrival,work.finish)),ok:true,tag:work.tag});}
   else{const waited=workingHoursBetween(work.arrival,ctx.clip);if(waited>work.due)cleared.push({ref:work.ref,type:work.type,customerId:work.customerId,at:work.arrival,value:round2(waited),ok:false,tag:work.tag});}
  }
+ // «نسبة الفرص المتحولة إلى مبيعات»: the representative's opportunities that closed in the month, won or with an invoice of one of their quotations.
+ const conversion:KpiItem[]=facts.conversions.filter(fact=>fact.memberId===rep.id&&within(ctx,fact.closedAt)).map(fact=>({ref:fact.caseId,type:'service',customerId:fact.customerId,at:fact.closedAt,value:null,ok:fact.won||fact.invoiced,tag:fact.won?'won':fact.invoiced?'lost_invoiced':'lost'}));
  const part=(items:KpiItem[])=>share(items);
  return [
   metric('support_response','share',s.support_response,part(supportItems).numerator,supportItems.length,supportItems),
@@ -280,7 +319,8 @@ export function repMetrics(ctx:Ctx,rep:Member):KpiMetric[]{
   metric('missed_visits','share',s.missed_visits,part(missedItems).numerator,missedItems.length,missedItems),
   metric('registration_accuracy','share',s.registration_accuracy,part(accuracy).numerator,accuracy.length,accuracy),
   metric('clearance','share',s.clearance,part(cleared).numerator,cleared.length,cleared),
-  metric('customer_rating','rating',s.customer_rating,ratingSum,ratings.length,ratings)
+  metric('customer_rating','rating',s.customer_rating,ratingSum,ratings.length,ratings),
+  metric('conversion','share',s.conversion,part(conversion).numerator,conversion.length,conversion)
  ];
 }
 
@@ -372,7 +412,7 @@ export function serviceKpiMonth(input:KpiInput,month:string,now:string=new Date(
  const groups:KpiGroup[]=[];
  const ids=new Set(['',...managers.map(manager=>manager.id),...closedBy.keys()]);
  for(const managerId of ids){
-  const certificate=closedBy.get(managerId),settings=certificate?normalizeSettings(certificate.data.settings):live;
+  const certificate=closedBy.get(managerId),settings=certificate?normalizeSettings(certificate.data.settings,'certificate'):live;
   const ctx:Ctx={facts,settings,month,from,to,now,clip};
   const manager=managerId?facts.byId.get(managerId):undefined;
   let team:Member[];

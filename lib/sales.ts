@@ -24,6 +24,8 @@ export const saleSchema = z.object({
     if (totalCents <= 0 || totalCents > 100000000000) ctx.addIssue({ code: 'custom', message: 'راجع الأسعار والخصم؛ صافي المبيعات يجب أن يكون أكبر من صفر' });
 });
 export type Sale = z.infer<typeof saleSchema> & { id: string; customerName: string; branch: string; totalCents: number; status: 'confirmed' | 'void'; voidReason: string; version: number; createdBy: string; createdAt: string; updatedAt: string; source?: 'erp'; documentType?: 'sale' | 'return'; readOnly?: boolean;
+ /** A full customer-service sale (lib/service-sales.ts, 2026-11-16): listed by «رفع المبيعات» only, never in an achievement. */
+ serviceFull?: boolean;
     /** An ERP invoice: the quotations its «الوصف» names («Qut-349»), when the import read a description column (lib/quotation-refs.ts). */
     quotationRefs?: string[] };
 export function salesMemberIds(members: Member[], me: Member) {

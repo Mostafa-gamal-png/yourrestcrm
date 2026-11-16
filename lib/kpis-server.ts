@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {serviceSalesExclusion} from './service-sales-server';
 import {cellRefused} from './permissions';
 import {regionScope} from './regions';
 import {context,CRMError,accessGuard} from './crm-server';
@@ -36,7 +37,9 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
  // within the reader's regions and sales team, as every sale the KPI reads.
  const erpScope=regionScopeSql('region_scope',c.me);
  const quoteInvoiceRows=(await c.db.prepare("SELECT id,rep_id,reference,date,json_extract(data,'$.quotationRefs') AS refs FROM crm_erp_sales WHERE document_type='sale' AND total_cents>0 AND date>=? AND json_array_length(data,'$.quotationRefs')>0 AND "+erpScope.sql).bind(period.first,...erpScope.args).all<{id:string;rep_id:string;reference:string;date:string;refs:string}>()).results;
- const quoteInvoices:KpiQuoteInvoice[]=quoteInvoiceRows.filter(row=>allowed.has(row.rep_id)).map(row=>{let refs:string[]=[];try{refs=storedQuotationRefs(JSON.parse(row.refs));}catch{/* unreadable: none */}return{id:row.id,reference:row.reference,repId:row.rep_id,date:row.date,quotationRefs:refs};});
+ // The full customer-service sales leave the evaluation (2026-11-16): their invoice converts no representative's quotation.
+ const serviceFull=await serviceSalesExclusion(c);
+ const quoteInvoices:KpiQuoteInvoice[]=quoteInvoiceRows.filter(row=>allowed.has(row.rep_id)&&!serviceFull?.has(row.id)).map(row=>{let refs:string[]=[];try{refs=storedQuotationRefs(JSON.parse(row.refs));}catch{/* unreadable: none */}return{id:row.id,reference:row.reference,repId:row.rep_id,date:row.date,quotationRefs:refs};});
  const sales:Sale[]=[...saleRows.results.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(r=>({...JSON.parse(r.data),id:r.id,repId:r.rep_id,customerId:r.customer_id,reference:r.reference,totalCents:r.total_cents,status:r.status,date:r.date})),...currentErp,...previousErp].filter(s=>s.date>=period.previousFirst&&s.date<=period.cutoff);
  const evidenceByMember=new Map(evidenceRows.map(row=>[row.memberId,row]));
  const history=evidenceRows.some(row=>row.input.history.complete)||coverageEntries.length?await readKpiPurchaseHistory(c,month):{facts:[],unresolved:new Set<string>()};

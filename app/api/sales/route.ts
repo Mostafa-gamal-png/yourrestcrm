@@ -1,6 +1,7 @@
 import {readJsonBody} from '@/lib/crm-server';
 import {canonicalInvoiceReference} from '@/lib/invoice-reference';
 import {erpInvoiceKey,readErpSales} from '@/lib/erp-sales-server';
+import {serviceSalesExclusion} from '@/lib/service-sales-server';
 import {requireSalesWorkspace,requirePages,requireCell} from '@/lib/crm-server';
 import {hubTabsBlocked} from '@/lib/permissions';
 import {regionScope,memberCanAccessRegion} from '@/lib/regions';
@@ -21,10 +22,16 @@ export async function GET(req:Request){try{
  // «الصلاحيات»: read by «المبيعات» and «المستهدفات وتقييم الأداء»: closed when both are hidden. «عرض بيانات الفريق بالكامل» widens it.
  requirePages(c.me,'sales','targets');const allowed=salesReadMemberIds(c.members,c.me,true);
  const raw=(await c.db.prepare(selectSales+' WHERE s.date>=? AND s.date<=? ORDER BY s.date DESC,s.created_at DESC,s.id').bind(month+'-01',month+'-31').all<SaleRow & { customer_data: string }>()).results;
- const salesForPerformance=[...raw.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(saleRow),...await readErpSales(c,month)].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));
+ // The full customer-service sales (lib/service-sales.ts, the owner 2026-11-16: «منفصلة تمامًا») leave every achievement, the company counter
+ // and the evaluation: `sales` (what the page's gauges, cards and «مبيعات اليوم» read) and everything worked out here are without them;
+ // `serviceFullSales` carries them for «رفع المبيعات», which keeps the ERP total and names them on the line «منها مبيعات خدمة العملاء بالكامل».
+ const erpSales=await readErpSales(c,month,{serviceFull:'include'}),serviceFull=await serviceSalesExclusion(c);
+ const byDate=(a:Sale,b:Sale)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id);
+ const salesForPerformance=[...raw.filter(r=>allowed.has(r.rep_id)&&c.regionCustomerIds.has(r.customer_id)).map(saleRow),...erpSales.filter(sale=>!serviceFull?.has(sale.id))].sort(byDate);
+ const serviceFullSales=erpSales.filter(sale=>serviceFull?.has(sale.id)).map(sale=>({...sale,serviceFull:true})).sort(byDate);
  const sales=salesForPerformance;
  const targets=await targetState(c,month,salesForPerformance),reportRecords=salesReportingRecords(c.visible,c.members);
- const regionalIds=new Set(c.regionalMembers.map(m=>m.id)),factIds=new Set([...salesForPerformance.map(s=>s.repId),...reportRecords.filter(r=>r.kind==='activity').map(r=>r.data.performedBy||r.data.responsibleId),...targets.sets.flatMap(s=>s.teamMemberIds||[])]);
+ const regionalIds=new Set(c.regionalMembers.map(m=>m.id)),factIds=new Set([...salesForPerformance.map(s=>s.repId),...serviceFullSales.map(s=>s.repId),...reportRecords.filter(r=>r.kind==='activity').map(r=>r.data.performedBy||r.data.responsibleId),...targets.sets.flatMap(s=>s.teamMemberIds||[])]);
  const members=c.members.filter(m=>allowed.has(m.id)&&(regionalIds.has(m.id)||factIds.has(m.id))).map(m=>regionalIds.has(m.id)?({...m,userId:undefined}):({...m,email:'',branch:'',supervisorId:undefined,target:0,userId:undefined,readOnly:true}));
  // Aggregate by the authenticated recorder, independently of subsequent customer reassignment.
  // The administrator does not sell: out of the targets tables, cards, KPIs and exports of a month with no target or sale of theirs
@@ -35,7 +42,7 @@ export async function GET(req:Request){try{
  // The evaluation (kpis=1) feeds «نتائج الأداء»، «التحصيل» and «عروض الأسعار» of the targets page: not computed nor sent when the three are
  // hidden from the member (2026-11-16, lib/permissions.ts hubTabsBlocked; the screen hidden counts), while the rest serves the other tabs.
  const kpis=new URL(req.url).searchParams.get('kpis')==='1'&&!hubTabsBlocked(c.me,['results','collection','quotes'])?await kpiData(c,month,performance,targets):null;
- return Response.json({sales,targets,performance,individualPerformance,members,kpis,hiddenFromTargets},{headers:{'Cache-Control':'no-store'}});
+ return Response.json({sales,serviceFullSales,targets,performance,individualPerformance,members,kpis,hiddenFromTargets},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return errorResponse(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>100000)throw new CRMError('حجم الطلب كبير');
