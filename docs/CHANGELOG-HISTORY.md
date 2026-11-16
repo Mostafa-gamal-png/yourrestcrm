@@ -48,11 +48,21 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   21 -> 22. A code-only rollback after it does not start (the previous release refuses a newer migration history); the way back is the
   previous release with `schema-backups/before-0021_service_sales_process-*.sqlite`. Package with `--schema-baseline 21 --new-migration
   0021_service_sales_process.sql`.
-- **Tests.** New: `service-sales` (57), `service-sales-migration` (32), `service-sales-http` (113), `service-sales-browser` (257, 80
+- **Tests.** New: `service-sales` (57), `service-sales-migration` (32), `service-sales-http` (113), `service-sales-browser` (267, 80
   screenshots at 320, 360, tablet both ways and desktop, Arabic and English). Updated for the change: `service-kpi`, `service-kpi-ui`,
-  `server-authorization`, `context-performance`, `visit-mobile-ux`, `offline-forms-ui`, and the «no new migration» counts of `permissions`,
-  `kpi-effective-visits`, `kpi-leave-months`, `kpi-sales-manager-gaps`, `review-pending`, `supervisor-reviews-complete`, `opportunity-entry`,
-  `followup-recontact`, `record-import`. Guide: section 9-ض.
+  `service-kpi-http` (115) and `service-kpi-browser` (83) (nine figures; the hand-worked scores keep the old weights, saved by the
+  administrator, with the new indicator at weight 0), `server-authorization`, `context-performance`, `visit-mobile-ux`, `offline-forms-ui`,
+  and the «no new migration» counts of `permissions`, `kpi-effective-visits`, `kpi-leave-months`, `kpi-sales-manager-gaps`, `review-pending`,
+  `supervisor-reviews-complete`, `opportunity-entry`, `followup-recontact`, `record-import`. Guide: section 9-ض.
+- **The release gates** (`node scripts/gates.mjs --full`): the first run, 109 passed, 5 failed, 1 not stable, 4 skipped (the owner's ERP
+  files). The five came from this change and were mended: `customer-service-item3-browser` and `service-queue-browser` (the two new panels
+  carried the monthly report's class `service-report`, which those tests select by: they have `service-sales-panel` with the same look now),
+  `opportunity-entry-browser` (the browser's own «required» on «مصدر الفرصة» stopped the form before «نتيجة التواصل» was shown beside its
+  field: the source is now checked by the form after the other fields, its message under it), `service-kpi-http` and `service-kpi-browser`
+  (the nine figures and the new default weights). Each then passed alone against a new build (115, 243, 26, 83, 162 checks; `service-sales-browser`
+  267). Not stable: `erp-sales-replace-http` (a 409 on «applied with the agreement» in the pool, passed when run again alone, as on
+  2026-11-15 before this change). The default gate after the mending: 212/212 (TypeScript 0 errors; ESLint 0 errors, 165 warnings: the 160 of
+  the baseline and 5 of the new code's kind already in the files, `react-hooks/set-state-in-effect` and refs read in render).
 
 ## Customer-service reports by contact type and to Excel, «شكوى تنتظرك» on the phone, «طلب مساندة» from an opportunity (2026-11-16, not released yet, no migration, Android 1.0.14 (15))
 
