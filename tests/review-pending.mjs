@@ -55,7 +55,7 @@ const NativeDate=Date;let clock=NativeDate.parse('2026-11-15T08:00:00.000Z');
 globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
 process.on('exit',()=>{globalThis.Date=NativeDate;});
 const migrations=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort();
-eq([migrations.length,migrations.at(-1)],[21,'0020_member_permissions.sql'],'no new migration');
+eq([migrations.filter(name=>name<='0020_member_permissions.sql').length,migrations.filter(name=>name<='0020_member_permissions.sql').at(-1)],[21,'0020_member_permissions.sql'],'no new migration');
 const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
 for(const name of migrations)sql.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));
 class Statement{constructor(q,a=[]){this.q=q;this.a=a;}bind(...a){return new Statement(this.q,a);}async run(){const r=sql.prepare(this.q).run(...this.a);return{meta:{changes:Number(r.changes)}};}async all(){return{results:sql.prepare(this.q).all(...this.a)};}async first(){return sql.prepare(this.q).get(...this.a)||null;}}

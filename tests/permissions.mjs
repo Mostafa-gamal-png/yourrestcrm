@@ -30,7 +30,8 @@ const ok=(value,message)=>{assert.ok(value,message);checks++;};
 
 // ---- 1. Migration 0020: twenty-one migrations, a fresh database and the upgrade of a 20-migration one with its backup.
 const NEW='0020_member_permissions.sql';
-const all=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort(),before=all.filter(name=>name<NEW);
+// Later migrations (0021 customer service in the sales process) are left out of this check: it is 0020's own, on the schema it was made for.
+const every=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort(),all=every.filter(name=>name<=NEW),before=all.filter(name=>name<NEW);
 eq([all.length,all.at(-1),before.length],[21,NEW,20],'twenty-one migrations, the newest the member permissions');
 const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 {
@@ -190,7 +191,7 @@ eq([supAccess.canRead(visit2),supAccess.readOnly(visit2),A.canReadSalesRecord(vi
 
 // ---- 3. The routes on an isolated database.
 const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
-for(const name of all)sql.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));
+for(const name of every)sql.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));
 let race=null;
 class Statement{constructor(q,a=[]){this.q=q;this.a=a;}bind(...a){return new Statement(this.q,a);}async run(){const r=sql.prepare(this.q).run(...this.a);return{meta:{changes:Number(r.changes)}};}async all(){return{results:sql.prepare(this.q).all(...this.a)};}async first(){return sql.prepare(this.q).get(...this.a)||null;}}
 const DB={prepare:q=>new Statement(q),batch:async statements=>{if(race){const fn=race;race=null;await fn();}sql.exec('BEGIN');try{const results=[];for(const s of statements)results.push(/^\s*(SELECT|WITH)/i.test(s.q)?{...await s.all(),meta:{changes:0}}:await s.run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}};

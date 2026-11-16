@@ -115,7 +115,9 @@ reads=[];const customers=await server.context({load:'customers'});eq(customers.a
 // Route-level proof: frequent mobile refresh and personal targets use narrow
 // contexts; management-only KPI save rejects a rep without loading CRM history.
 reads=[];eq((await mobile.GET()).status,200);eq(reads.filter(r=>r.q.includes('JOIN crm_records')).reduce((n,r)=>n+r.rows,0),1);
-reads=[];eq((await targets.GET(new Request('https://test.invalid/api/targets?month='+date.slice(0,7)))).status,200);eq(reads.some(r=>r.q.includes('FROM crm_records')||r.q.includes('FROM crm_service_cases')),false);
+// The personal targets leave out the full customer-service sales (2026-11-16): one probe of the opportunities customer service keeps (an
+// index, crm_service_cases_held), nothing more while there is none; no other CRM history is read.
+reads=[];eq((await targets.GET(new Request('https://test.invalid/api/targets?month='+date.slice(0,7)))).status,200);eq(reads.some(r=>r.q.includes('FROM crm_records')||r.q.includes('FROM crm_service_cases')&&!/WHERE route='service'$/.test(r.q.trim())),false);eq(reads.filter(r=>r.q.includes('FROM crm_service_cases')).map(r=>r.rows),[0],'one probe of the kept opportunities, none here');
 reads=[];eq((await kpis.POST(new Request('https://test.invalid/api/kpis',{method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:'{}'}))).status,403);eq(reads.some(r=>r.q.includes('FROM crm_records')||r.q.includes('FROM crm_service_cases')),false);
 // Hydration retains an invisible latest service contact: it can close a case
 // without revealing that author's result in the reader's activity projection.

@@ -169,7 +169,7 @@ const T=library('lib/targets.ts'),G=library('lib/kpi-gaps.ts'),K=library('lib/kp
 // ---- 1. The sales manager out of the evaluation, the comparison and the customer and visit targets, also with an ERP code and old rows.
 await counted('the sales manager out',async()=>{
  const migrations=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort();
- eq([migrations.length,migrations.at(-1)],[21,'0020_member_permissions.sql'],'no migration: 21, the last 0020_member_permissions.sql');
+ eq([migrations.filter(name=>name<='0020_member_permissions.sql').length,migrations.filter(name=>name<='0020_member_permissions.sql').at(-1)],[21,'0020_member_permissions.sql'],'no migration: 21, the last 0020_member_permissions.sql');
  eq([T.roleOutOfEvaluation('manager'),T.roleOutOfEvaluation('supervisor'),T.roleOutOfEvaluation('rep'),T.roleOutOfEvaluation('admin'),T.roleOutOfEvaluation(undefined)],[true,false,false,false,false],'only the sales manager\'s role is out');
  const ids=data=>data.kpis.people.map(p=>p.member.id).sort();
  eq(ids(views.owner),['rep1','rep2','rep3','sup'],'the administrator\'s evaluation: everyone but the sales manager');
