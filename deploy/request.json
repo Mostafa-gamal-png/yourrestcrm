@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Nearby-20261116.zip","sha256":"78f0bb1b511e7b7e55fcb7eaecaab1ef3b3849c54b924441c324629abbb4c23d","stage":"yourrest-crm-update-nearby-20261116","helper":"yourrest-activate-update-nearby.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Small-20261116.zip","sha256":"6b3bb1175e1e99bfc604bb0589f80fd39401aacb972616f9e553d7bfe9f25068","stage":"yourrest-crm-update-small-20261116","helper":"yourrest-activate-update-small.cjs"}
