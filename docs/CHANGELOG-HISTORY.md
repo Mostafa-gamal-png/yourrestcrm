@@ -4,6 +4,56 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Customer service in the sales process: the lead source, «اعتماد وإحالة», «تسجيل دور خدمة العملاء», «أداء خدمة العملاء», full customer-service sales out of every achievement (2026-11-16, not released yet, migration 0021, no Android change)
+
+- **Asked.** Item 5 of the GSCO comparison list (GSCO 2.13.78), approved by the owner: «تمام موافق ابدأ» (publishing waits for «ارفع»). The item:
+  «- «مصدر الفرصة»: ممثل خدمة العملاء يختار مصدر الفرصة الجديدة. النظام يملا المصدر لوحده لو الفرصة بدأت من سجل: «بدء فرصة جديدة من هذه
+  الفرصة» (فرصة مفقودة)، أو «فرصة جديدة من هذا الطلب»، أو «فرصة جديدة من هذه الشكوى». شاشة «مصادر الفرص» فيها «فرص مفقودة للاسترداد»
+  و«عملاء منقطعون عن الشراء 90 يومًا».» «- «اعتماد وإحالة»: مدير خدمة العملاء يختار «تمرير لمدير المبيعات» أو «تتولاها خدمة العملاء». ده لما
+  يكون العميل مش مسجل، أو منقطع عن الشراء 90 يوم، أو المصدر من بره النظام. يظهر تنبيه لو للعميل فرصة مفتوحة عند المبيعات. الفرصة اللي خدمة
+  العملاء بتتولاها يشتغل عليها ممثل خدمة العملاء، وأعضاء المبيعات ما يعدّلوهاش.» «- «تسجيل دور خدمة العملاء»: لما الفرصة اللي شاركت فيها خدمة
+  العملاء تتكسب أو تتخسر، ترجع مهمة لممثل خدمة العملاء عشان يكتب دوره.» «- شاشة «أداء خدمة العملاء» فيها «تصدير Excel»، ومن غير مستهدف
+  دلوقتي (قرار المالك). بتعرض: الفرص. المبيعات اللي خدمة العملاء عملتها بالكامل. المبيعات اللي شاركت فيها. المبيعات اللي ساندتها خلال 60 يوم
+  (إعداد يتغيّر من الإدارة). العملاء اللي رجعوا يشتروا.» «- مبيعات خدمة العملاء بالكامل (الفواتير اللي عرض سعرها مربوط بفرصة بتتولاها خدمة
+  العملاء) منفصلة تمامًا: ما تدخلش في تحقيق المستهدف، لا للموظف ولا للفريق ولا للفرع ولا للشركة، ولا في التقييم. تقارير المبيعات تفضل بإجمالي
+  ERP، وتحتها سطر «منها مبيعات خدمة العملاء بالكامل».» «- تقييم خدمة العملاء: مؤشر جديد «نسبة الفرص المتحولة إلى مبيعات» بوزن 15، ومحتاج
+  3 حالات على الأقل.» «- 4 أسئلة لسه مستنية رد المالك في GSCO. خد نفس الرد منه.»
+- **What Yourrest had before.** The opportunity customer service registers is a `crm_service_cases` row (`lib/customer-service.ts`,
+  `app/api/customer-service/route.ts`): registered with a contact type and products, approved by the customer-service manager and passed to the
+  sales manager only (`approve`), assigned, then closed by the sales contacts' stage. No lead source, no keeping it with customer service, no
+  role at closing, no dashboard of customer service's sales; the evaluation had eight representative figures (`lib/service-kpi.ts`); every
+  ERP sale counted in the achievement (`lib/erp-sales-server.ts` `readErpSales`, `/api/sales`, `lib/kpis-server.ts`, `lib/own-targets-server.ts`).
+- **The lead source** (`lib/service-sales.ts`, `lib/service-sales-server.ts` `intakeLead`, `resolveLeadReference`, `leadList`; `GET /api/service-leads`):
+  «من جهد خدمة العملاء» picked from GSCO's list (or «أخرى» with 3 letters), or «من بيانات النظام» filled in and locked from a lost opportunity,
+  a dormant customer, a support request, a missed visit or a complaint. Old cases and old queued saves: «غير محدد».
+- **«اعتماد وإحالة»** (`GET /api/service-routing`; `approve` with `route:'service'` and `ownerId`): allowed for a customer with no ERP code (the
+  Yourrest equivalent of «مش مسجل»: customer service cannot add customers), dormant 90 days or never bought, or customer service's own lead;
+  the warning of an open sales visit or mold request; status `'service'` «لدى خدمة العملاء», worked by its owner only (`action:'stage'`, its
+  contacts); sales never read it nor attach a visit to it.
+- **«تسجيل دور خدمة العملاء»** (`GET/POST /api/service-role-tasks`): one task at each closing after the migration, for the owner, else the
+  registrar, else a support handler; 24 working hours; recorded once (`crm_service_role_tasks`).
+- **Attribution and the exclusion.** Full, shared, support (by the quotation an ERP invoice names, the customer's quotation dated while the
+  opportunity was open; support within `supportSalesDays`, 60 by default). The full customer-service sales leave every achievement and the
+  evaluation (`serviceSalesExclusion`: `readErpSales`, `readOwnErpSales`, the KPI's quotation invoices, «بيانات المؤشرات», the purchase
+  history); `/api/sales` sends them apart as `serviceFullSales`, and «رفع المبيعات» keeps the ERP total with the line «منها مبيعات خدمة
+  العملاء بالكامل».
+- **«أداء خدمة العملاء»** (`GET /api/service-performance`, `/export`): per member and team, no target; Excel «الملخص»، «الفواتير»، «الفرص».
+- **Evaluation:** «نسبة الفرص المتحولة إلى مبيعات», weight 15, 3 cases, target 50; other weights 13,13,13,13,9,8,8,8; saved weights scaled to
+  85, closed months unchanged; the setting «مدة احتساب مبيعات المساندة (أيام)».
+- **Provisional answers (GSCO's):** target 50% (`CONVERSION_TARGET`), 60 days (`SUPPORT_SALES_DAYS` and the setting), the sales manager reads
+  every customer-service team (`SALES_MANAGER_SEES_ALL_SERVICE_TEAMS`), the dormant list leaves out never-bought customers
+  (`DORMANT_LIST_INCLUDES_NEVER_BOUGHT`).
+- **Migration** `drizzle/0021_service_sales_process.sql`: eight nullable columns on `crm_service_cases` (lead_group, lead_source,
+  lead_ref_kind, lead_ref_id, lead_note default '', route, routed_by, routed_at; CHECKs), two indexes, and `crm_service_role_tasks`. Schema
+  21 -> 22. A code-only rollback after it does not start (the previous release refuses a newer migration history); the way back is the
+  previous release with `schema-backups/before-0021_service_sales_process-*.sqlite`. Package with `--schema-baseline 21 --new-migration
+  0021_service_sales_process.sql`.
+- **Tests.** New: `service-sales` (57), `service-sales-migration` (32), `service-sales-http` (113), `service-sales-browser` (257, 80
+  screenshots at 320, 360, tablet both ways and desktop, Arabic and English). Updated for the change: `service-kpi`, `service-kpi-ui`,
+  `server-authorization`, `context-performance`, `visit-mobile-ux`, `offline-forms-ui`, and the «no new migration» counts of `permissions`,
+  `kpi-effective-visits`, `kpi-leave-months`, `kpi-sales-manager-gaps`, `review-pending`, `supervisor-reviews-complete`, `opportunity-entry`,
+  `followup-recontact`, `record-import`. Guide: section 9-ض.
+
 ## Customer-service reports by contact type and to Excel, «شكوى تنتظرك» on the phone, «طلب مساندة» from an opportunity (2026-11-16, not released yet, no migration, Android 1.0.14 (15))
 
 - **Asked.** Item 3 of the GSCO comparison list, approved by the owner: «تمام موافق ابدأ» (publishing waits for «ارفع»). The item:
