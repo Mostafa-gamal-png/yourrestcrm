@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-LeaveMonths-20261115.zip","sha256":"55c2fe388927a14c80bf1bad6cfa2876cdde1e865bd2bc0d52d2c23736708f67","stage":"yourrest-crm-update-leave-months-20261115","helper":"yourrest-activate-update-leave-months.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-TargetTabs-20261116.zip","sha256":"be2468b7026745cfb5cfe88018dd347a79d73ac06a28c6c080d1276cb76db461","stage":"yourrest-crm-update-target-tabs-20261116","helper":"yourrest-activate-update-target-tabs.cjs"}
