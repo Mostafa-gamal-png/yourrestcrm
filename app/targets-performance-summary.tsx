@@ -34,13 +34,14 @@ export function KpiMissingList({metrics}:{metrics:readonly KpiMetric[]}){
  return <small className="kpi-missing-list" data-kpi-missing-list="">{KPI_GAP_WORDS.missing[language==='en'?1:0]}: {missing.map((row,index)=><span key={row.id}>{index?(language==='en'?', ':'، '):''}{t(row.name)} (<bdi dir="ltr">{row.weight}%</bdi>)</span>)}</small>;
 }
 /** «المطلوب لاكتمال التقييم» above the comparison table (2026-11-16, item 2 of the GSCO list): one line per action, with the weight of the
- *  indicators it completes and whom it concerns («كل المناديب (N)» when it is everyone listed). Nothing is drawn when nothing is missing. */
+ *  indicators it completes, and under it whom it concerns («كل المناديب (N)» when it is everyone listed). Nothing is drawn when nothing is
+ *  missing. */
 export function KpiGapsSummary({people}:{people:readonly (GapPerson&{member:{id:string;name:string};summary?:{inactive?:boolean}|null})[]}){
  const {language}=useLanguage(),summary=kpiGapSummary(people),word=(pair:readonly [string,string])=>pair[language==='en'?1:0],separator=language==='en'?', ':'، ';
  if(!summary.lines.length)return null;
  const whom=(list:readonly {name:string}[])=>list.length>1&&list.length===summary.people?word(KPI_GAP_WORDS.everyone)+' ('+list.length+')':list.slice(0,4).map(person=>person.name).join(separator)+(list.length>4?' +'+(list.length-4):'');
  return <section className="panel kpi-gaps-summary" data-kpi-gaps-summary="" aria-labelledby="kpi-gaps-summary-heading"><h3 id="kpi-gaps-summary-heading">{word(KPI_GAP_WORDS.title)}</h3><p className="kpi-gaps-hint">{word(KPI_GAP_WORDS.hint)}</p>
-  <ul className="kpi-gap-list">{summary.lines.map(line=><li key={line.action.key} data-kpi-gap-line=""><span>{gapActionText(line.action,language,t,line.waiting)}</span> — <bdi dir="ltr">{line.weight}%</bdi> — <span className="kpi-gap-people">{whom(line.people)}</span></li>)}</ul></section>;
+  <ul className="kpi-gap-list">{summary.lines.map(line=><li key={line.action.key} data-kpi-gap-line=""><span>{gapActionText(line.action,language,t,line.waiting)}</span> — <bdi dir="ltr">{line.weight}%</bdi><span className="kpi-gap-people">{whom(line.people)}</span></li>)}</ul></section>;
 }
 /** The small «غير مكتمل» badge beside a score that stands on part of the data. */
 export function KpiIncompleteBadge({summary}:{summary:Pick<KpiSummary,'complete'|'inactive'>|undefined}){

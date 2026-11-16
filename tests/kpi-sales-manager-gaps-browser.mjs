@@ -91,7 +91,8 @@ try {
       const boxText = flat(await box.innerText());
       ok(boxText.startsWith(T.title), label + ': its title');
       ok(boxText.includes(T.target) && boxText.includes(T.collection) && boxText.includes(T.everyone), label + ': its actions, with whom they concern: ' + boxText.slice(0, 300));
-      ok(/— 25% —/.test(boxText) && /— 10% —/.test(boxText), label + ': with their weights');
+      const lines = (await box.locator('[data-kpi-gap-line]').allInnerTexts()).map(line => line.split('\n').map(part => part.trim()));
+      ok(lines.some(([action, people]) => /— 25%$/.test(action) && people === 'المندوب خالد') && lines.some(([action, people]) => /— 10%$/.test(action) && people.startsWith(T.everyone)), label + ': each with its weight, and whom it concerns under it: ' + JSON.stringify(lines).slice(0, 300));
       const rows = await page.locator('.kpi-workspace tbody tr').allInnerTexts();
       check(rows.some(row => row.includes('مدير المبيعات')), false, label + ': the sales manager is not in the comparison');
       check(rows.filter(row => /المندوب أحمد|المندوب خالد|المشرف سالم/.test(row)).length, 3, label + ': his team is');

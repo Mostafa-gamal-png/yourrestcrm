@@ -82,7 +82,7 @@
 .kpi-gaps-summary h3{margin:0;font-size:16px;font-weight:700;line-height:1.6;color:#765b16}
 .kpi-gaps-summary .kpi-gaps-hint{margin:0;font-size:12px;line-height:1.7;color:var(--muted-foreground)}
 .kpi-gaps-summary .kpi-gap-list{font-size:13px;color:var(--foreground)}
-.kpi-gap-people{color:var(--muted-foreground)}
+.kpi-gap-people{display:block;color:var(--muted-foreground);font-size:12px}
 .dark .kpi-missing-list{color:#f1cc86}
 .dark .kpi-gaps-summary{background:#2c2618;border-color:#7c6538}
 .dark .kpi-gaps-summary h3{color:#f1cc86}

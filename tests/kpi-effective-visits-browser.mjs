@@ -79,7 +79,8 @@ try {
   ok(seen.flat.includes('— / 2'), 'phone ar: no points of the 2: ' + seen.flat);
   ok(seen.flat.includes('البيانات المطلوبة / طريقة الحساب') && seen.flat.includes(UNRATED(3)), 'phone ar: the reason says nothing is evaluated and 3 wait: ' + seen.flat);
   const notice = flat(await page.locator('.kpi-workspace > .kpi-partial-notice').innerText());
-  ok(notice.includes('بيانات ناقصة') && notice.includes('نسبة الزيارات الفعالة') && notice.includes('الدرجة محسوبة من البيانات الموجودة فقط'), 'phone ar: named among the missing data, the score from the data there is: ' + notice);
+  // Since 2026-11-16 (item 2 of the GSCO list) the person's page lists each missing indicator with its weight and what completes it.
+  ok(notice.includes('المطلوب لاكتمال التقييم') && notice.includes('نسبة الزيارات الفعالة (2%): يقيّم المشرف كل زيارة') && notice.includes('(زيارات بانتظار التقييم: 3)') && notice.includes('الدرجة محسوبة من البيانات الموجودة فقط'), 'phone ar: named among what completes the evaluation, with its weight, the supervisor\'s rating and the 3 visits waiting; the score from the data there is: ' + notice);
   await noSideways(page, 'phone ar unrated');
   await shot(page, seen.box, 'kpi-effective-unrated-phone360-ar');
   await page.context().close();
