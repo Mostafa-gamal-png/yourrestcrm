@@ -27,6 +27,8 @@ import {visitPlaceView} from '@/lib/visit-place';
 import './visit-mobile.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
 import {opportunityProblems,type OpportunityField} from '@/lib/opportunity-entry';
+import {serviceLeadProblem,leadFromStart,type LeadDraft,type LeadStart} from '@/lib/service-sales';
+import {LeadSourceField} from './service-sales';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 type VisitForm = VisitData & CompetitorInput & { type: string; requestedProducts: string[]; salesStage: string; strength: string; customerNeeds: string; nextAction: string; nextDate: string; responsibleId: string };
 function Pick({ value, onChange, options, label, disabled = false }: {
@@ -130,8 +132,10 @@ type Props = {
     /** «حذف»: whether the reader may delete this saved visit (app/crm-app.tsx canDeleteRecord); without it, whoever may edit it. */
     canDelete?: boolean;
     onWorkflow: (id:string) => void;
+    /** «مصدر الفرصة» filled in and locked: a new opportunity started from a record (app/service-sales.tsx StartOpportunityButton). */
+    lead?: LeadStart;
 };
-export function CustomerVisitDialog({ initial, competitorName: seedCompetitorName = '', showCompetitor = false, customerId: seedCustomerId, requestId: seedRequestId, records, members, me, onClose, onSaved, onCustomerCreated, onOpenVisit, onNewVisit, onOpenCustomer, onOpenQuote, onDelete, canDelete, onWorkflow }: Props) {
+export function CustomerVisitDialog({ initial, competitorName: seedCompetitorName = '', showCompetitor = false, customerId: seedCustomerId, requestId: seedRequestId, records, members, me, onClose, onSaved, onCustomerCreated, onOpenVisit, onNewVisit, onOpenCustomer, onOpenQuote, onDelete, canDelete, onWorkflow, lead: leadStart }: Props) {
     const {language}=useLanguage(),say=(ar:string,en:string)=>serviceText(me.role,language==='ar'?ar:en);
     const tw=(text:string)=>t(serviceText(me.role,text));
     const initialCustomer = initial ? visitCustomer(initial, records) : records.find(r => r.id === seedCustomerId), originalRequest = initial ? visitRequest(initial, records) : records.find(r => r.id === seedRequestId);
@@ -144,6 +148,9 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     // What a new visit or contact lacks (lib/opportunity-entry.ts): written under each field, cleared as soon as that field changes.
     const [problems,setProblems]=useState<Partial<Record<OpportunityField,string>>>({});
     const [retryPending,setRetryPending]=useState(false);
+    // «مصدر الفرصة» of a new customer-service opportunity (lib/service-sales.ts): asked with every new one, never with a further contact on
+    // the customer's open opportunity (which keeps its own source).
+    const [lead,setLead]=useState<LeadDraft>(()=>leadFromStart(leadStart)),[leadProblem,setLeadProblem]=useState('');
     const [uploadState,setUploadState]=useState<UploadState|null>(null);
     const uploadAttempt=useRef<{file:File;context:string;key:string}|null>(null);
     const [dirty,setDirty]=useState(false),[confirmLeave,setConfirmLeave]=useState(false),[salesOpen,setSalesOpen]=useState(showCompetitor||!!seedCompetitorName||!!initial||!!intake||!!originalRequest);
@@ -156,6 +163,8 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     const competitorContext=useRef('');competitorContext.current=me.id+'\n'+customerId+'\n'+(data.competitorName||'');
     useEffect(()=>()=>{uploadVersion.current++;},[]);
     const customer = records.find(r => r.id === customerId);
+    const openCase=!!customerId&&records.some(r=>r.parentId===customerId&&r.data.visitWorkflow==='service-intake-v1'&&!!r.data._serviceWorkflow&&!['won','lost'].includes(r.data._serviceWorkflow.state));
+    const asksLead=service&&!initial&&!readOnly&&(!!leadStart||!openCase);
     const journeyStopId=useAutomaticJourney({customerId,type:data.type,enabled:!initial&&!service&&!readOnly});
     // A new visit is recorded where the customer is. Arrival the route tracking has confirmed counts; the server judges with its own copy of the stop.
     const tracked=useJourneyTracker().active,journeyArrived=!!tracked&&tracked.customerId===customerId&&!!tracked.data.arrivalAt&&!tracked.data.departureAt&&!tracked.closedAt;
@@ -203,9 +212,10 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
     } if(!savedReceipt.current&&!retryPending&&!initial&&place.blocked){setError(place.message);return;}
     // A new visit or contact is how an opportunity is registered: its result and next step are asked here, beside their fields (the server asks again).
     if(!savedReceipt.current&&!retryPending&&!initial){const found=opportunityProblems(data,me.role);setProblems(found);if(Object.keys(found).length){setError('');showProblem(found);return;}}
+    if(!savedReceipt.current&&!retryPending&&asksLead){const problem=serviceLeadProblem(lead);setLeadProblem(problem);if(problem){setError(problem);return;}}
     saveLock.current=true;setBusy(true); setError(''); elapsedAtSave.current ??= Math.max(0,Math.round(performance.now()-formOpenedTick)); try {
         if(savedReceipt.current){await onSaved();onClose();return;}
-        if(!attempt.current){const stopId=!initial?journeyStopId():undefined;const payload=service?{action:initial?'edit':'create',id:initial?.data.serviceIntakeId,version:initial?.version,customerId,customerVersion:customer?.version,registration:data,elapsedMilliseconds:elapsedAtSave.current,requestId:crypto.randomUUID()}:{createKey:key,id:initial?.id,version:initial?.version,customerId,customerVersion:customer?.version,data:{...data,...(stopId?{journeyStopId:stopId}:{})},requestId,timingMode:'automatic',elapsedMilliseconds:elapsedAtSave.current};attempt.current={body:JSON.stringify(payload),url:service?'/api/customer-service':'/api/visits'};}
+        if(!attempt.current){const stopId=!initial?journeyStopId():undefined;const payload=service?{action:initial?'edit':'create',id:initial?.data.serviceIntakeId,version:initial?.version,customerId,customerVersion:customer?.version,registration:data,elapsedMilliseconds:elapsedAtSave.current,requestId:crypto.randomUUID(),...(asksLead?{lead}:{})}:{createKey:key,id:initial?.id,version:initial?.version,customerId,customerVersion:customer?.version,data:{...data,...(stopId?{journeyStopId:stopId}:{})},requestId,timingMode:'automatic',elapsedMilliseconds:elapsedAtSave.current};attempt.current={body:JSON.stringify(payload),url:service?'/api/customer-service':'/api/visits'};}
         const result=initial
             ?await submitJson(attempt.current.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: attempt.current.body },{language})
             :await offlineSubmit(attempt.current.url,attempt.current.body,{me,language,label:customer?.data.name||say('زيارة جديدة','New visit'),kind:service?'service':'visit'});
@@ -235,7 +245,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
         </header>
         <form onSubmit={save} onInvalidCapture={revealInvalid} className="visit-entry-form">
           <fieldset disabled={savingCustomer||busy||savedReceipt.current||retryPending} className="visit-form-scroll min-w-0">
-            <VisitCustomerPicker customers={records.filter(r => r.kind === 'customer'&&(r.id===customerId||isServiceRole(me.role)||!r.data._readOnly))} value={customerId} me={me} locked={!!initial||readOnly} disabled={busy || uploading||retryPending} onChange={selectCustomer} onCreated={onCustomerCreated} onCreating={value=>{setCreatingCustomer(value);if(value)setDirty(true);}} onSaving={setSavingCustomer}/>
+            <VisitCustomerPicker customers={records.filter(r => r.kind === 'customer'&&(r.id===customerId||isServiceRole(me.role)||!r.data._readOnly))} value={customerId} me={me} locked={!!initial||readOnly||!!leadStart} disabled={busy || uploading||retryPending} onChange={selectCustomer} onCreated={onCustomerCreated} onCreating={value=>{setCreatingCustomer(value);if(value)setDirty(true);}} onSaving={setSavingCustomer}/>
             {!initial&&!service&&data.type==='visit'&&<JourneyFormNotice/>}
             {customer&&<section className="visit-customer-context">
               <div className="visit-context-disclosures">
@@ -249,6 +259,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
             </section>}
             {workflow&&<div className="service-button-row"><span className="badge pending">{t(serviceStatusLabels[workflow.state])}</span><button type="button" className="btn subtle small" onClick={()=>requestLeave(()=>onWorkflow(workflow.id))}>{t('الاعتماد والتكليف')}</button></div>}
             <fieldset disabled={readOnly} className="visit-form-fields">
+              {asksLead&&<section className="visit-form-section" data-lead-section><h3>{say('مصدر الفرصة','Opportunity source')}</h3><div className="form-grid"><LeadSourceField value={lead} locked={leadStart} problem={leadProblem} disabled={busy||savedReceipt.current||retryPending} onChange={next=>{if(readOnly||savedReceipt.current||retryPending||saveLock.current)return;setDirty(true);setLeadProblem('');setLead(next);}}/></div></section>}
               <section className="visit-form-section"><h3>{say('التواصل والنتيجة','Contact & outcome')}</h3><div className="form-grid">
                 <VisitFields unified service={service} role={me.role} readOnly={readOnly} data={data} parentId={customerId} records={records} editing={!!initial} busy={busy||uploading||creatingCustomer||savedReceipt.current||retryPending} email={me.email} onChange={change} onParent={()=>{}} onLocationState={setLocationState} resultProblem={problems.result?tw(problems.result):''}/>
                 <VisitPlaceStatus view={place}/>

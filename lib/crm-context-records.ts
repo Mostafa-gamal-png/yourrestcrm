@@ -9,7 +9,7 @@ export type ContextLoad = {load?:'full'|'identity'|'customers'|'directory'} | {l
 const recordColumns=`id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version,
  CASE WHEN kind='customer' THEN (SELECT printf('YR-C-%06d',number) FROM crm_customer_numbers WHERE customer_id=crm_records.id) END AS internalCode,
  CASE WHEN kind='customer' THEN (SELECT json_group_array(source_code) FROM crm_customer_code_aliases WHERE customer_id=crm_records.id) END AS erpCodeAliases`;
-const serviceColumns='id,customer_id AS customerId,status,creator_id AS creatorId,service_manager_id AS serviceManagerId,sales_manager_id AS salesManagerId,assigned_to AS assignedTo,supervisor_id AS supervisorId,data,created_at AS createdAt,updated_at AS updatedAt,version';
+const serviceColumns='id,customer_id AS customerId,status,creator_id AS creatorId,service_manager_id AS serviceManagerId,sales_manager_id AS salesManagerId,assigned_to AS assignedTo,supervisor_id AS supervisorId,data,created_at AS createdAt,updated_at AS updatedAt,version,lead_group AS leadGroup,lead_source AS leadSource,lead_ref_kind AS leadRefKind,lead_ref_id AS leadRefId,lead_note AS leadNote,route,routed_by AS routedBy,routed_at AS routedAt';
 type RecordRow=Omit<Row,'data'>&{data:string;internalCode?:string|null;erpCodeAliases?:string|null};
 type ServiceRow=Omit<ServiceCase,'data'>&{data:string};
 const decode=<T extends {data:string;kind?:string;internalCode?:string|null;erpCodeAliases?:string|null}>(rows:T[])=>rows.map(row=>{

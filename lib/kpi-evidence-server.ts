@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {serviceSalesExclusion} from './service-sales-server';
 import {cellRefused} from './permissions';
 import {context,CRMError,accessGuard,requireSalesWorkspace} from './crm-server';
 import {type Member,type Row,today} from './crm';
@@ -47,8 +48,10 @@ async function invoiceRecords(c:Context,memberIds:Set<string>,month:string,throu
   c.db.prepare("SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND document_type='sale' AND total_cents>0 AND "+erpScope.sql).bind(month+'-01',through,...erpScope.args).all<ErpSaleRow>()
  ]);
  const result:InvoiceRecord[]=manual.results.filter(row=>memberIds.has(row.rep_id)&&c.regionCustomerIds.has(row.customer_id)).map(row=>({id:row.id,reference:row.reference,customerId:row.customer_id,customerName:JSON.parse(row.customer_data).name||'',date:row.date,repId:row.rep_id,source:'crm',version:row.version,regionScope:'',customerCode:'',documentType:'sale',status:row.status}));
+ // The full customer-service sales are not a representative's invoices (2026-11-16).
+ const serviceFull=await serviceSalesExclusion(c);
  for(const row of erp.results){
-  if(!memberIds.has(row.rep_id))continue;
+  if(!memberIds.has(row.rep_id)||serviceFull?.has(row.id))continue;
   const code=customerCodeKey(row.customer_code),matches=code?codes.get(code)||[]:[],customer=matches.length===1?matches[0]:null;
   if(!customer||!c.regionCustomerIds.has(customer.id))continue;
   result.push({id:row.id,reference:row.reference,customerId:customer.id,customerName:row.customer_name||customer.data.name||'',date:row.date,repId:row.rep_id,source:'erp',version:1,regionScope:row.region_scope,customerCode:row.customer_code,documentType:row.document_type,status:'confirmed'});

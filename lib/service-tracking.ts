@@ -16,7 +16,7 @@ export type TrackingKind='opportunity'|'complaint'|'support';
 export type TrackingSide='service'|'sales'|'done';
 export type TrackingStepId='registered'|'contact'|'approval'|'review'|'assignment'|'delegation'|'first_contact'|'follow_up'|'resolution'|'closure'|'finished';
 export type TrackingStep={id:TrackingStepId;state:'done'|'current'|'upcoming';/** The current step is waiting for the registrar to correct and resend. */returned:boolean};
-export type TrackingHolderRole='service_manager'|'registrar'|'sales_manager'|'supervisor'|'rep'|'sales'|'admin';
+export type TrackingHolderRole='service_manager'|'registrar'|'sales_manager'|'supervisor'|'rep'|'sales'|'admin'|'service_owner';
 export type TrackingFilter='all'|'late'|'service'|'sales'|'finished';
 export const trackingFilters:TrackingFilter[]=['all','late','service','sales','finished'];
 export const trackingFilterLabels:Record<TrackingFilter,Pair>={all:['الكل','All'],late:['متأخرة','Late'],service:['عند خدمة العملاء','With customer service'],sales:['عند المبيعات','With sales'],finished:['منتهية (30 يومًا)','Finished (30 days)']};
@@ -26,7 +26,9 @@ export const trackingStepLabels:Record<TrackingStepId,Pair>={
 };
 export const trackingHolderLabels:Record<TrackingHolderRole,Pair>={
  service_manager:['مدير خدمة العملاء','customer-service manager'],registrar:['خدمة العملاء','customer service'],sales_manager:['مدير المبيعات','sales manager'],supervisor:['مشرف المبيعات','sales supervisor'],
- rep:['مندوب المبيعات','sales representative'],sales:['مسؤول المبيعات','sales owner'],admin:['مدير النظام','administrator']
+ rep:['مندوب المبيعات','sales representative'],sales:['مسؤول المبيعات','sales owner'],admin:['مدير النظام','administrator'],
+ // An opportunity customer service keeps (2026-11-16): its customer-service owner holds it.
+ service_owner:['المسؤول من خدمة العملاء','customer-service owner']
 };
 /** The words for where an item stands, by stage; the stages of an opportunity and of a complaint share one table. */
 export const trackingStageText:Record<string,Pair>={
@@ -48,7 +50,7 @@ export const trackingOpportunityOutcomes:Record<string,Pair>={won:['تم الف�
 
 /** The part of a case from `GET /api/customer-service` that the board reads. */
 export type TrackedCase={
- id:string;state:string;creatorId:string;creatorName:string;serviceManagerName:string;salesManagerName:string;assignedName:string;createdAt:string;updatedAt:string;
+ id:string;state:string;/** The request's status ('service': customer service keeps it, 2026-11-16); absent on an older payload. */status?:string;creatorId:string;creatorName:string;serviceManagerName:string;salesManagerName:string;assignedName:string;createdAt:string;updatedAt:string;
  data:{products?:string[];needs?:string;delegatedAt?:string};
  customer:{id:string;name:string};
  progress?:{stage:QueueStage;since:string;stageHours:number;targetHours:number|null;late:boolean;assigneeRole?:string;finishedAt?:string};
@@ -119,8 +121,9 @@ export function trackedOpportunity(item:TrackedCase):TrackingItem{
   products:Array.isArray(item.data.products)?item.data.products.map(String):[],needs:String(item.data.needs||''),category:'',complaintNumber:null,severity:'normal',
   registeredAt:item.createdAt,registrarId:item.creatorId,registrarName:item.creatorName,
   stage,stageSince:progress?.since||item.createdAt,stageHours:progress?.stageHours||0,targetHours:progress?.targetHours??null,late:!!progress?.late&&!finished,
-  side:trackingSide(stage),steps:trackingSteps('opportunity',stage,delegated),delegated,
-  holder:holderOf(stage,{serviceManager:item.serviceManagerName,registrar:item.creatorName,salesManager:item.salesManagerName,assignee:item.assignedName},progress?.assigneeRole||''),
+  // An opportunity customer service keeps stays on customer service's side, held by its customer-service owner.
+  side:item.status==='service'&&!finished?'service':trackingSide(stage),steps:trackingSteps('opportunity',stage,delegated),delegated,
+  holder:item.status==='service'&&!finished?{name:item.assignedName,role:'service_owner'}:holderOf(stage,{serviceManager:item.serviceManagerName,registrar:item.creatorName,salesManager:item.salesManagerName,assignee:item.assignedName},progress?.assigneeRole||''),
   finishedAt:finished?(progress?.finishedAt||item.updatedAt):'',outcome,last,origin:'',trail:[]
  };
 }

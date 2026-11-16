@@ -5,6 +5,7 @@ import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {AUDIT_CRITERIA,AUDIT_DELETE_DAYS,AUDIT_NOTE_MAX,KPI_MONTH,MANAGER_METRICS,REP_METRICS,SERVICE_AUDIT_KIND,SERVICE_KPI_MONTH_KIND,SERVICE_KPI_SETTINGS_ID,SERVICE_KPI_SETTINGS_KIND,auditResult,auditTotal,closedMonthFor,kpiActions,kpiManagerOf,kpiMonthOf,monthCertificate,monthCloseProblem,monthRowId,normalizeSettings,serviceKpiAllowed,serviceKpiMonth,serviceKpiView,settingsProblem,type ServiceAuditData,type ServiceKpiMonthData} from '@/lib/service-kpi';
 import {loadAuditRow,loadMonthRows,loadServiceKpiInput,loadSettings} from '@/lib/service-kpi-rows';
 import {loadComplaint} from '@/lib/complaint-rows';
+import {loadConversionFacts} from '@/lib/service-sales-server';
 import {loadSupportRow} from '@/lib/support-rows';
 export const dynamic='force-dynamic';
 
@@ -29,7 +30,7 @@ export async function GET(req:Request){try{
  const customers=new Map(c.all.filter(row=>row.kind==='customer').map(row=>[row.id,row]));
  // A customer's name is shown only to a reader who may see that customer: their region, and their branch unless they are an administrator.
  const customerName=(id:string)=>{const customer=customers.get(id);return customer&&memberCanAccessRegion(c.me,customer.data.region)&&(c.me.role==='admin'||customer.branch===c.me.branch)?String(customer.data.name||''):'';};
- const {input,settingsVersion}=await loadServiceKpiInput(c.db,c.members);
+ const {input,settingsVersion}=await loadServiceKpiInput(c.db,c.members,loadConversionFacts(c.db,c.members));
  return Response.json(serviceKpiView(input,month,now,c.me,{customerName,detail,settingsVersion}),{headers:{'Cache-Control':'no-store'}});
 }catch(e){if(e instanceof z.ZodError)return Response.json({error:e.issues.map(i=>i.message).join(' • ')},{status:400});return replyError(e);}}
 
@@ -43,7 +44,9 @@ const settingsShape=z.object({
  rep:z.object(Object.fromEntries(REP_METRICS.map(key=>[key,metricShape]))).strict(),
  manager:z.object(Object.fromEntries(MANAGER_METRICS.map(key=>[key,metricShape]))).strict(),
  audit:z.object({criteria:z.object(Object.fromEntries(AUDIT_CRITERIA.map(key=>[key,finite]))).strict(),pass:finite,coach:finite,sample:finite}).strict(),
- closeGraceDays:finite
+ closeGraceDays:finite,
+ // 2026-11-16: «مدة احتساب مبيعات المساندة»; a page opened before it sends none and keeps the saved value (or the default).
+ supportSalesDays:finite.optional()
 }).strict();
 const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('audit'),requestId,repId:idText,month:monthSchema,date:z.union([day,z.literal('')]).default(''),refType:z.enum(['complaint','support','service','']).default(''),refId:z.string().max(200).default(''),scores:marks,
@@ -123,7 +126,7 @@ export async function POST(req:Request){try{
   statements.push(c.db.prepare(`UPDATE crm_records SET data=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND kind='${SERVICE_AUDIT_KIND}' AND ${guards.join(' AND ')}`).bind(JSON.stringify(data),now,mutation,id,found.version,...args));
  }else if(input.action==='settings'){
   if(!admin)throw new CRMError('تعديل الإعدادات لمدير النظام فقط',403);
-  const settings=normalizeSettings(input.settings),problem=settingsProblem(settings);
+  const settings=normalizeSettings({...input.settings,supportSalesDays:input.settings.supportSalesDays??(await loadSettings(c.db)).settings.supportSalesDays}),problem=settingsProblem(settings);
   if(problem)throw new CRMError(problem,400);
   id=SERVICE_KPI_SETTINGS_ID;extra.version=input.version+1;
   if(input.version===0){
@@ -135,7 +138,7 @@ export async function POST(req:Request){try{
  }else if(input.action==='close_month'){
   if(input.managerId===''&&!admin)throw new CRMError('إقفال شهر الممثلين الذين بلا مدير لمدير النظام',403);
   if(lead&&input.managerId!==me.id)throw new CRMError('تُقفل أشهر فريقك فقط',403);
-  const {input:kpi,settingsVersion}=await loadServiceKpiInput(c.db,c.members);
+  const {input:kpi,settingsVersion}=await loadServiceKpiInput(c.db,c.members,loadConversionFacts(c.db,c.members));
   const problem=monthCloseProblem(input.month,now,kpi.settings);
   if(problem)throw new CRMError(problem,400);
   const group=serviceKpiMonth(kpi,input.month,now).groups.find(one=>one.managerId===input.managerId);

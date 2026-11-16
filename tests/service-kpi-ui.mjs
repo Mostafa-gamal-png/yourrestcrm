@@ -75,9 +75,9 @@ eq([metricValueText({kind:'share',actual:66.666,empty:false,numerator:2,denomina
 eq([closeNote(5,sayFor('ar')),closeNote(5,sayFor('en')),closeNote(0,sayFor('ar')),closeNote(0,sayFor('en'))],['لا يُقفل الشهر قبل مرور 5 أيام على انتهائه','A month cannot be closed until 5 days after it ends','لا يُقفل الشهر قبل أن ينتهي','A month cannot be closed before it ends'],'why a month cannot be closed yet, in both languages');
 const problems=[];
 const mutate=change=>{const copy=clone(K.DEFAULT_SERVICE_KPI_SETTINGS);change(copy);const problem=K.settingsProblem(copy);if(problem)problems.push(problem);};
-mutate(s=>{s.rep.clearance.weight=9;});mutate(s=>{s.manager.backlog.weight=11;});mutate(s=>{s.rep.clearance.target=0;});mutate(s=>{s.rep.clearance.weight=10.5;s.rep.customer_rating.weight=9.5;});mutate(s=>{s.rep.clearance.min=-1;});
-mutate(s=>{s.audit.criteria.greeting=9;});mutate(s=>{s.audit.criteria.greeting=0;s.audit.criteria.closing=20;});mutate(s=>{s.audit.coach=90;});mutate(s=>{s.hours.support=0;});mutate(s=>{s.life.high=0;});mutate(s=>{s.audit.sample=21;});mutate(s=>{s.closeGraceDays=31;});
-eq(problems.length,12,'twelve different mistakes in the settings, each with a message');
+mutate(s=>{s.rep.clearance.weight=7;});mutate(s=>{s.manager.backlog.weight=11;});mutate(s=>{s.rep.clearance.target=0;});mutate(s=>{s.rep.clearance.weight=8.5;s.rep.customer_rating.weight=7.5;});mutate(s=>{s.rep.clearance.min=-1;});
+mutate(s=>{s.audit.criteria.greeting=9;});mutate(s=>{s.audit.criteria.greeting=0;s.audit.criteria.closing=20;});mutate(s=>{s.audit.coach=90;});mutate(s=>{s.hours.support=0;});mutate(s=>{s.life.high=0;});mutate(s=>{s.audit.sample=21;});mutate(s=>{s.closeGraceDays=31;});mutate(s=>{s.supportSalesDays=0;});
+eq(problems.length,13,'thirteen different mistakes in the settings, each with a message (2026-11-16: the support-sales window)');
 for(const problem of problems){ok(problemText(problem,sayFor('ar'))===problem,'in Arabic the message is the module\'s own: '+problem);ok(arabicLeft(problemText(problem,sayFor('en'))).length===0,'in English it has no Arabic left: '+problem);}
 eq(problemText(problems[0],sayFor('en')),'The weights of the representative figures must add up to 100; they add up to 99','the weights message says which card and the total');
 
@@ -114,7 +114,7 @@ ok(!leadHtml.includes('ممثلون بلا مدير')&&!leadHtml.includes('فر�
 const opened=page(kpi('owner',{},{detail:'cs1'}),'ar',{detail:'cs1'});
 ok(opened.includes('class="service-report-table sk-table"'),'the opened card shows its table');
 for(const label of Object.values(K.repMetricLabels))ok(opened.includes(label),'the table names the figure «'+label+'»');
-ok(opened.includes('90%')&&opened.includes('95%')&&opened.includes('98%')&&opened.includes('>15<')&&opened.includes('>10<'),'with the targets and weights of the sheet');
+ok(opened.includes('90%')&&opened.includes('95%')&&opened.includes('98%')&&opened.includes('50%')&&opened.includes('>13<')&&opened.includes('>15<')&&opened.includes('>8<'),'with the targets and weights of the sheet (2026-11-16: 13, 9 and 8, and the opportunities\' 15 at 50%)');
 const cardHtml=(card,over={})=>{language='ar';return html(React.createElement(CardView,{card,role:'rep',say:sayFor('ar'),open:true,onToggle:noop,nameOf:id=>id,loading:false,...over}));};
 const itemized=cardHtml(kpi('owner',{},{detail:'cs1'}).groups[0].reps.find(c=>c.memberId==='cs1'),{defaultOpen:'closure_timing'});
 eq(count(itemized,'<li data-ok='),3,'a figure opened shows its cases: A\'s closure, B\'s send-back and B\'s closure');
@@ -217,7 +217,7 @@ eq(arabicLeft(dialogEn),[],'the English dialog has no Arabic left');
 const settingsDialog=(lang='ar')=>{language=lang;return page(owner,lang,{initialSettings:true});};
 const settingsHtml=settingsDialog();
 ok(settingsHtml.includes('إعدادات تقييم خدمة العملاء')&&count(settingsHtml,'sk-settings-table')===2,'the settings dialog has both cards\' tables');
-eq(count(settingsHtml,'type="number"'),4+2+16*3+7+4,'every number can be edited: 4 hours, 2 whole-complaint limits, 16 figures with 3 values, 7 criteria, 4 thresholds');
+eq(count(settingsHtml,'type="number"'),4+2+17*3+7+5,'every number can be edited: 4 hours, 2 whole-complaint limits, 17 figures with 3 values, 7 criteria, 5 thresholds (2026-11-16: «نسبة الفرص المتحولة إلى مبيعات» and the support-sales window)');
 eq([count(settingsHtml,'>100 / 100<'),count(settingsHtml,'<b>100</b> / 100')],[2,1],'each of the three totals shows 100 of 100');
 ok(!/class="form-error"/.test(settingsHtml.split('sk-settings')[1]||''),'valid settings show no error');
 ok(!/<button[^>]*disabled=""[^>]*>حفظ الإعدادات<\/button>/.test(settingsHtml)&&settingsHtml.includes('استعادة قيم الملف'),'saving is open, and the sheet\'s values can be restored');

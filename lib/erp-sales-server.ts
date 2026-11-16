@@ -1,4 +1,5 @@
 import {env} from 'cloudflare:workers';
+import {serviceSalesExclusion} from './service-sales-server';
 import {canonicalInvoiceReference} from './invoice-reference';
 import {z} from 'zod';
 import {context,CRMError,requireSalesWorkspace,accessGuard} from './crm-server';
@@ -383,15 +384,20 @@ export async function readSalesCoverage(c:Context):Promise<SalesCoverageEntry[]>
  const rows=(await c.db.prepare("SELECT json_extract(result,'$.coverage') AS coverage FROM crm_erp_imports WHERE id LIKE 'erp-import-%' AND json_extract(result,'$.coverage.complete')=1 ORDER BY created_at,id").all<{coverage:string}>()).results;
  return rows.flatMap(row=>{try{const parsed=salesCoverageEntrySchema.safeParse(JSON.parse(row.coverage));return parsed.success?[parsed.data]:[];}catch{return [];}});
 }
-/** Financial projections always require the same region and author-team boundary as CRM sales. */
-export async function readErpSales(c:Context,month:string):Promise<Sale[]>{
+/** Financial projections always require the same region and author-team boundary as CRM sales. The full customer-service sales
+ *  (lib/service-sales.ts, 2026-11-16) are left out unless `serviceFull` is 'include': every achievement, the company counter and the
+ *  evaluation read this list without them; only the sales report («رفع المبيعات») keeps the ERP total and names them on a line of its own. */
+export async function readErpSales(c:Context,month:string,options:{serviceFull?:'exclude'|'include'}={}):Promise<Sale[]>{
  requireSalesWorkspace(c.me);const allowed=salesReadMemberIds(c.members,c.me,true);
  const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT * FROM crm_erp_sales WHERE date>=? AND date<=? AND '+scope.sql+' ORDER BY date DESC,created_at DESC,id').bind(month+'-01',month+'-31',...scope.args).all<ErpSaleRow>()).results;
- return rows.filter(r=>allowed.has(r.rep_id)).map(r=>({...JSON.parse(r.data),id:r.id,customerId:'erp-customer:'+r.customer_code,customerName:r.customer_name,repId:r.rep_id,branch:r.branch,date:r.date,reference:r.reference,totalCents:r.total_cents,status:'confirmed',voidReason:'',version:1,createdBy:r.created_by,createdAt:r.created_at,updatedAt:r.created_at,source:'erp',documentType:r.document_type}));
+ const excluded=options.serviceFull==='include'?null:await serviceSalesExclusion(c);
+ return rows.filter(r=>allowed.has(r.rep_id)&&!excluded?.has(r.id)).map(r=>({...JSON.parse(r.data),id:r.id,customerId:'erp-customer:'+r.customer_code,customerName:r.customer_name,repId:r.rep_id,branch:r.branch,date:r.date,reference:r.reference,totalCents:r.total_cents,status:'confirmed',voidReason:'',version:1,createdBy:r.created_by,createdAt:r.created_at,updatedAt:r.created_at,source:'erp',documentType:r.document_type}));
 }
 /** Reps receive only their product quantities; no invoice, customer, price or colleague data. */
 export async function readOwnErpSales(c:Context,month:string):Promise<{date:string;items:{product:string;quantity:number}[]}[]>{
  if(c.me.role!=='rep')throw new CRMError('هذا العرض خاص بالمندوب',403);
- const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT data,date FROM crm_erp_sales WHERE rep_id=? AND date>=? AND date<=? AND '+scope.sql).bind(c.me.id,month+'-01',month+'-31',...scope.args).all<{data:string;date:string}>()).results;
- return rows.map(row=>({date:row.date,items:(JSON.parse(row.data).items as SaleItem[]).map(item=>({product:item.product,quantity:item.quantity}))}));
+ const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT id,data,date FROM crm_erp_sales WHERE rep_id=? AND date>=? AND date<=? AND '+scope.sql).bind(c.me.id,month+'-01',month+'-31',...scope.args).all<{id:string;data:string;date:string}>()).results;
+ // The full customer-service sales are not the representative's achievement (2026-11-16).
+ const excluded=await serviceSalesExclusion(c);
+ return rows.filter(row=>!excluded?.has(row.id)).map(row=>({date:row.date,items:(JSON.parse(row.data).items as SaleItem[]).map(item=>({product:item.product,quantity:item.quantity}))}));
 }

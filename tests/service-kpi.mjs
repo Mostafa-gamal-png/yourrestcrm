@@ -35,7 +35,7 @@ const ok=(value,message)=>{assert.ok(value,message);checks++;};
 const r1=value=>value===null?null:Math.round(value*10)/10;
 
 // ---- the tables the page translates from
-eq([K.REP_METRICS.length,K.MANAGER_METRICS.length,K.AUDIT_CRITERIA.length],[8,8,7],'eight figures for a representative, eight for a manager, seven audit criteria');
+eq([K.REP_METRICS.length,K.MANAGER_METRICS.length,K.AUDIT_CRITERIA.length],[9,8,7],'nine figures for a representative (since 2026-11-16 «نسبة الفرص المتحولة إلى مبيعات»), eight for a manager, seven audit criteria');
 for(const [keys,ar,en] of [[K.REP_METRICS,K.repMetricLabels,K.repMetricLabelsEn],[K.MANAGER_METRICS,K.managerMetricLabels,K.managerMetricLabelsEn],[K.AUDIT_CRITERIA,K.auditCriterionLabels,K.auditCriterionLabelsEn]])eq([Object.keys(ar),Object.keys(en)],[[...keys],[...keys]],'every figure and criterion has an Arabic and an English name');
 eq(K.SERVICE_KPI_KINDS,['service_audit','service_kpi_month','service_kpi_settings'],'the three record kinds');
 eq([K.AUDIT_DELETE_DAYS,K.REPEAT_COMPLAINT_DAYS],[7,30],'constants');
@@ -47,14 +47,14 @@ const D=K.DEFAULT_SERVICE_KPI_SETTINGS;
 eq(K.settingsProblem(D),'','the defaults are valid');
 eq([Object.values(D.rep).reduce((s,x)=>s+x.weight,0),Object.values(D.manager).reduce((s,x)=>s+x.weight,0),Object.values(D.audit.criteria).reduce((s,x)=>s+x,0)],[100,100,100],'each card\'s weights and the audit marks add up to 100');
 eq([D.hours,D.life,D.audit.pass,D.audit.coach,D.audit.sample,D.closeGraceDays],[{support:4,missed:4,closure:24,review:4},{normal:82,high:48},90,80,3,5],'hours, whole-complaint targets, audit thresholds, sample and waiting days');
-eq(Object.fromEntries(Object.entries(D.rep).map(([k,v])=>[k,[v.target,v.weight,v.min]])),{support_response:[90,15,5],closure_timing:[95,15,5],closures_held:[90,15,5],audit_quality:[90,15,3],missed_visits:[95,10,5],registration_accuracy:[98,10,5],clearance:[90,10,5],customer_rating:[90,10,5]},'the representative\'s targets, weights and least cases');
+eq(Object.fromEntries(Object.entries(D.rep).map(([k,v])=>[k,[v.target,v.weight,v.min]])),{support_response:[90,13,5],closure_timing:[95,13,5],closures_held:[90,13,5],audit_quality:[90,13,3],missed_visits:[95,9,5],registration_accuracy:[98,8,5],clearance:[90,8,5],customer_rating:[90,8,5],conversion:[50,15,3]},'the representative\'s targets, weights and least cases (2026-11-16: the new figure takes 15, the others give it up in proportion)');
 eq(Object.fromEntries(Object.entries(D.manager).map(([k,v])=>[k,[v.target,v.weight,v.min]])),{team_average:[85,25,1],review_timing:[90,15,5],life_timing:[95,15,5],team_rating:[90,10,5],team_support_response:[90,10,5],team_quality:[90,10,3],backlog:[95,10,0],repeat_complaints:[95,5,5]},'the manager\'s targets, weights and least cases');
 const mutate=change=>{const copy=JSON.parse(JSON.stringify(D));change(copy);return K.settingsProblem(copy);};
-ok(/الممثل.*99/.test(mutate(s=>{s.rep.clearance.weight=9;})),'a representative card that adds up to 99 is refused, saying so');
+ok(/الممثل.*99/.test(mutate(s=>{s.rep.clearance.weight=7;})),'a representative card that adds up to 99 is refused, saying so');
 ok(/المدير.*101/.test(mutate(s=>{s.manager.backlog.weight=11;})),'a manager card that adds up to 101 is refused');
 ok(/بين 1 و100/.test(mutate(s=>{s.rep.clearance.target=0;})),'a target of zero is refused');
 ok(/بين 1 و100/.test(mutate(s=>{s.manager.backlog.target=101;})),'and one above 100');
-ok(/عدد صحيح/.test(mutate(s=>{s.rep.clearance.weight=10.5;s.rep.customer_rating.weight=9.5;})),'a fractional weight is refused');
+ok(/عدد صحيح/.test(mutate(s=>{s.rep.clearance.weight=8.5;s.rep.customer_rating.weight=7.5;})),'a fractional weight is refused');
 ok(/الحد الأدنى/.test(mutate(s=>{s.rep.clearance.min=-1;})),'a negative least number of cases is refused');
 ok(/معايير التدقيق.*99/.test(mutate(s=>{s.audit.criteria.greeting=9;})),'audit marks that add up to 99 are refused');
 ok(/معيار/.test(mutate(s=>{s.audit.criteria.greeting=0;s.audit.criteria.closing=20;})),'an audit criterion worth nothing is refused');
@@ -66,7 +66,7 @@ ok(/العينة/.test(mutate(s=>{s.audit.sample=21;})),'a sample above 20 is re
 ok(/الانتظار/.test(mutate(s=>{s.closeGraceDays=31;})),'more than 30 waiting days is refused');
 eq(K.normalizeSettings(undefined),D,'nothing given is the defaults');
 eq(K.normalizeSettings('garbage'),D,'garbage is the defaults');
-eq(K.normalizeSettings({rep:{support_response:{target:50}},hours:{support:6},closeGraceDays:'x'}).rep.support_response,{target:50,weight:15,min:5},'a partly given metric keeps its other values');
+eq(K.normalizeSettings({rep:{support_response:{target:50}},hours:{support:6},closeGraceDays:'x'}).rep.support_response,{target:50,weight:13,min:5},'a partly given metric keeps its other values');
 eq([K.normalizeSettings({hours:{support:6}}).hours,K.normalizeSettings({closeGraceDays:'x'}).closeGraceDays],[{support:6,missed:4,closure:24,review:4},5],'missing or non-numeric values fall back to the defaults');
 
 // ---- time
@@ -137,7 +137,9 @@ const serviceCases=[
 const audits=[audit('AU1','cs1','2026-09',88),audit('AU2','cs1','2026-09',94),audit('AU3','cs2','2026-09',90),audit('AU4','cs3','2026-09',70),audit('AU5','cs1','2026-08',50)];
 const NOW='2026-10-12T12:00:00.000Z';
 // every figure counts from a single case; the default least-case numbers are tried separately below
-const S1=K.normalizeSettings({});for(const card of [S1.rep,S1.manager])for(const key of Object.keys(card))card[key].min=1;S1.manager.backlog.min=0;
+// The scores below were worked out with the representative's weights before 2026-11-16 (15,15,15,15,10,10,10,10): the fixture keeps them and gives
+// «نسبة الفرص المتحولة إلى مبيعات» (no case here) weight 0, so the formula is proved unchanged; the new weights are tests/service-sales.mjs'.
+const S1=K.normalizeSettings({});for(const [key,weight] of Object.entries(K.LEGACY_REP_WEIGHTS))S1.rep[key].weight=weight;S1.rep.conversion.weight=0;for(const card of [S1.rep,S1.manager])for(const key of Object.keys(card))card[key].min=1;S1.manager.backlog.min=0;
 const input=(over={})=>({members,complaints,support:supports,serviceCases,audits,closed:[],settings:S1,...over});
 const run=(month='2026-09',now=NOW,over={})=>K.serviceKpiMonth(input(over),month,now);
 const group=(month,id)=>month.groups.find(g=>g.managerId===id);
@@ -175,7 +177,7 @@ eq([nd(cs1,'customer_rating'),actual(cs1,'customer_rating')],[[12,3],80],'custom
 eq(cs1.score,73.9,'the score: points 8.33+11.84+8.33+15+5.26+6.80+9.40+8.89 of 100');
 eq(cs1.measuredWeight,100,'every figure was measured');
 eq(r1(cs1.metrics.reduce((s,x)=>s+x.points,0)),73.9,'and the points add up to it');
-ok(cs1.metrics.every(x=>x.measured&&x.enough),'with one case each every figure counts');
+ok(cs1.metrics.filter(x=>x.key!=='conversion').every(x=>x.measured&&x.enough),'with one case each every figure counts (the opportunities, with no case and weight 0 here, apart)');
 const cs2=card(g1,'cs2');
 eq([cs2.score,cs2.measuredWeight,cs2.metrics.filter(x=>x.measured).map(x=>x.key)],[100,15,['audit_quality']],'a representative with one audit and nothing else is measured on it alone, and its weight is the whole');
 const idle=card(g1,'cs_idle');
@@ -201,7 +203,7 @@ eq(csm.metrics.filter(x=>x.measured).length,8,'all eight measured');
 // the other groups and the departed
 const g2=group(sept,'csm2');
 eq(g2.reps.map(c=>[c.memberId,c.score]),[['cs_left',100],['cs3',96.3]],'the other team: the departed representative with September work is there, the departed one without is not');
-eq([card(g2,'cs3').metrics.filter(x=>!x.measured).map(x=>x.key),card(g2,'cs3').measuredWeight],[['missed_visits'],90],'a figure with no case is left out and its weight shared: 86.67 of 90 points is 96.3');
+eq([card(g2,'cs3').metrics.filter(x=>!x.measured).map(x=>x.key),card(g2,'cs3').measuredWeight],[['missed_visits','conversion'],90],'a figure with no case is left out and its weight shared: 86.67 of 90 points is 96.3 (the opportunities have no case here either)');
 eq(r1(actual(g2.manager,'team_average')),98.2,'the other manager\'s team average');
 eq(g2.reps.some(c=>c.memberId==='cs_gone'),false,'a departed representative with nothing in the month is not listed');
 eq(card(g2,'cs3').metrics.find(x=>x.key==='closures_held').items.map(i=>i.tag),['held'],'F held (its two weeks ended on the 23rd)');
@@ -247,8 +249,8 @@ eq(metric(heavy,'customer_rating').actual,80,'a figure with no weight is still s
 // ---- the least number of cases: with the sheet's numbers a figure with too few cases is left out, neither raising nor lowering the score
 const real=run('2026-09',NOW,{settings:D});
 const realCs1=card(group(real,'csm'),'cs1');
-eq([realCs1.metrics.filter(x=>x.measured).map(x=>x.key),realCs1.score,realCs1.measuredWeight],[['registration_accuracy','clearance'],81,20],'only registration (6 cases) and clearance (13) reach five cases: (6.80+9.40) of 20 is 81');
-eq(realCs1.metrics.filter(x=>!x.enough).map(x=>x.key),['support_response','closure_timing','closures_held','audit_quality','missed_visits','customer_rating'],'the others are marked as not enough');
+eq([realCs1.metrics.filter(x=>x.measured).map(x=>x.key),realCs1.score,realCs1.measuredWeight],[['registration_accuracy','clearance'],81,16],'only registration (6 cases) and clearance (13) reach five cases: with the sheet\'s weights since 2026-11-16 (8 each) the same 81, of 16 points');
+eq(realCs1.metrics.filter(x=>!x.enough).map(x=>x.key),['support_response','closure_timing','closures_held','audit_quality','missed_visits','customer_rating','conversion'],'the others are marked as not enough (the opportunities too: none here)');
 eq(metric(realCs1,'support_response').actual,50,'the figure is still shown with its cases');
 eq(group(real,'csm').manager.metrics.filter(x=>x.measured).map(x=>x.key),['team_average','review_timing','team_support_response','team_quality','backlog','repeat_complaints'],'the manager: whole-complaint time (3 cases) and rating (3 cases) are left out, quality needs three and has three');
 
@@ -350,7 +352,7 @@ const view=(id,over={},options={})=>K.serviceKpiView(input(over),'2026-09',NOW,m
 const va=view('owner');
 eq([va.month,va.groups.map(g=>g.managerId),va.settingsVersion,va.me],['2026-09',['csm','csm2','csm3',''],3,{id:'owner',role:'admin',canAudit:true,canSettings:true}],'the administrator\'s view: all four groups, and what they may do');
 eq(va.groups.flatMap(g=>[g.manager,...g.reps]).filter(Boolean).every(c=>c.metrics.every(x=>x.items.length===0)),true,'no card carries its cases until one is opened');
-eq(va.groups[0].reps.find(c=>c.memberId==='cs1').metrics.map(x=>x.itemCount),[4,4,2,2,2,6,13,3],'but each says how many cases it has');
+eq(va.groups[0].reps.find(c=>c.memberId==='cs1').metrics.map(x=>x.itemCount),[4,4,2,2,2,6,13,3,0],'but each says how many cases it has (none for the opportunities here)');
 eq(va.groups[0].reps.find(c=>c.memberId==='cs1').name,'عضو cs1','a card carries the name');
 const opened=view('owner',{},{detail:'cs1'}).groups[0].reps.find(c=>c.memberId==='cs1');
 eq([opened.metrics.find(x=>x.key==='closure_timing').items.length,opened.metrics.find(x=>x.key==='closure_timing').items[0].customerName],[4,'اسم-c1'],'the opened card carries its cases with the customers\' names');

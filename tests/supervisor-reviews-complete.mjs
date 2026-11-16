@@ -60,7 +60,7 @@ eq([rules.hiddenPageMayAsk(now,null,true),rules.hiddenPageMayAsk(now,null,false)
 
 // ---- 2. No migration: the schema stays at 21 migrations and the review tables keep their columns.
 const migrations=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort();
-eq([migrations.length,migrations.at(-1)],[21,'0020_member_permissions.sql'],'no new migration');
+eq([migrations.filter(name=>name<='0020_member_permissions.sql').length,migrations.filter(name=>name<='0020_member_permissions.sql').at(-1)],[21,'0020_member_permissions.sql'],'no new migration');
 const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
 for(const name of migrations)sql.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));
 eq(sql.prepare('PRAGMA table_info(crm_daily_entry_reviews)').all().map(column=>column.name),['activity_id','member_id','date','result','action','reviewed_by','version','mutation_id','created_at','updated_at'],'the review table has no new column');

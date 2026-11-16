@@ -1,0 +1,23 @@
+/* Customer service in the sales process (2026-11-16): «مصدر الفرصة», «مصادر الفرص», «اعتماد وإحالة», «تسجيل دور خدمة العملاء», «أداء خدمة العملاء». */
+.lead-source-field{display:grid;gap:6px;min-width:0}.lead-source-field>span,.lead-source-select>span,.lead-source-note>span{font-weight:600;font-size:14px}
+.lead-source-select,.lead-source-note{display:grid;gap:4px;min-width:0}.lead-source-select select,.lead-source-note input{width:100%;min-height:44px;max-width:100%}
+.lead-source-locked{display:grid;gap:2px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--muted)}.lead-source-locked small{color:var(--muted-foreground);overflow-wrap:anywhere}
+.lead-start{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;max-width:100%}.lead-start .btn{min-height:44px;white-space:normal;text-align:start}.lead-start .form-error{flex:1 1 100%;margin:0}
+/* The two panels of «الفرص» look like the monthly reports (app/service-report.css) without their class, which the reports' own tests select by. */
+.service-sales-panel{margin-bottom:18px;padding:12px 16px}.service-sales-panel>summary{cursor:pointer;font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
+.service-leads-tabs{display:flex;flex-wrap:wrap;gap:6px}.service-leads-search{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}.service-leads-search .field{flex:1 1 200px;min-width:0}.service-leads-search .btn{min-height:44px}
+.service-leads-list,.role-task-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.service-leads-list li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card);min-width:0}
+.service-leads-list li>div{display:grid;gap:2px;min-width:0;flex:1 1 220px}.service-leads-list small,.role-task-list small{color:var(--muted-foreground);overflow-wrap:anywhere}
+.routing-decision{display:grid;gap:10px}.routing-choice{display:grid;gap:6px;border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin:0}.routing-choice label{display:flex;gap:8px;align-items:center;min-height:36px}
+.routing-reasons ul,.routing-warning ul{margin:4px 0 0;padding-inline-start:18px}.routing-warning{display:flex;gap:8px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,#f59e0b 14%,var(--card));border:1px solid color-mix(in srgb,#f59e0b 45%,var(--border))}
+.held-stage{display:grid;gap:8px}
+.role-tasks{margin-bottom:18px}.role-tasks>p,.role-tasks>.form-error{margin:12px 16px 0}.role-tasks>.role-task-list{margin:12px 16px 16px}.role-tasks h2{display:flex;align-items:center;gap:8px}
+.role-task-list li{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card);min-width:0}.role-task-list li[data-done="true"]{opacity:.85}
+.role-task-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.role-task-done{margin:0;overflow-wrap:anywhere}
+.role-task-form fieldset{border:0;padding:0;margin:0;display:grid;gap:8px;min-width:0}.role-task-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:4px 14px}.role-task-options label{display:flex;flex-direction:row;gap:8px;align-items:center;justify-content:flex-start;min-height:40px;text-align:start;margin:0}.role-task-options input{flex:none;width:auto;margin:0}
+.routing-choice label{flex-direction:row;justify-content:flex-start;text-align:start}.routing-choice input{flex:none;width:auto;margin:0}
+.role-task-form textarea{width:100%;max-width:100%}
+.performance-team{display:grid;gap:6px;min-width:0}.performance-team h3{margin:4px 0 0}.performance-table td:first-child{min-width:110px}.performance-table td.numeric{font-variant-numeric:tabular-nums}.performance-table tr.total td{font-weight:700;border-top:2px solid var(--border)}
+.performance-team .table-scroll{overflow-x:auto;max-width:100%}.performance-sources{margin:0;font-size:13px;overflow-wrap:anywhere}
+.sales-service-line{margin:8px 0 0;padding:8px 12px;border-radius:12px;background:var(--muted);font-size:14px;overflow-wrap:anywhere}.sales-service-line small{color:var(--muted-foreground)}

@@ -2,7 +2,7 @@ import type {Member} from './crm';
 import type {ServiceCase} from './customer-service';
 import {decodeComplaints} from './complaint-rows';
 import {loadAllSupport} from './support-rows';
-import {SERVICE_AUDIT_KIND,SERVICE_KPI_MONTH_KIND,SERVICE_KPI_SETTINGS_ID,SERVICE_KPI_SETTINGS_KIND,normalizeSettings,type KpiInput,type ServiceAuditRow,type ServiceKpiMonthRow} from './service-kpi';
+import {SERVICE_AUDIT_KIND,SERVICE_KPI_MONTH_KIND,SERVICE_KPI_SETTINGS_ID,SERVICE_KPI_SETTINGS_KIND,normalizeSettings,type ConversionFact,type KpiInput,type ServiceAuditRow,type ServiceKpiMonthRow} from './service-kpi';
 
 /** Reading what the customer-service evaluation needs out of the database. Complaints and service requests are read through a
  * projection of only the fields the figures use, so no description, note or contact travels into the evaluation. A row whose data
@@ -34,7 +34,8 @@ export async function loadServiceCasesForKpi(db:D1Database){
  return found;
 }
 /** Everything the evaluation of any month is computed from. */
-export async function loadServiceKpiInput(db:D1Database,members:Member[]):Promise<{input:KpiInput;settingsVersion:number}>{
- const [complaints,support,serviceCases,audits,closed,saved]=await Promise.all([loadComplaintsForKpi(db),loadAllSupport(db),loadServiceCasesForKpi(db),loadAuditRows(db),loadMonthRows(db),loadSettings(db)]);
- return {input:{members,complaints,support,serviceCases,audits,closed,settings:saved.settings},settingsVersion:saved.version};
+/** `conversions`: «نسبة الفرص المتحولة إلى مبيعات» (lib/service-sales-server.ts loadConversionFacts), read by the route and handed over. */
+export async function loadServiceKpiInput(db:D1Database,members:Member[],conversions?:Promise<ConversionFact[]>):Promise<{input:KpiInput;settingsVersion:number}>{
+ const [complaints,support,serviceCases,audits,closed,saved,converted]=await Promise.all([loadComplaintsForKpi(db),loadAllSupport(db),loadServiceCasesForKpi(db),loadAuditRows(db),loadMonthRows(db),loadSettings(db),conversions||Promise.resolve([] as ConversionFact[])]);
+ return {input:{members,complaints,support,serviceCases,audits,closed,settings:saved.settings,conversions:converted},settingsVersion:saved.version};
 }

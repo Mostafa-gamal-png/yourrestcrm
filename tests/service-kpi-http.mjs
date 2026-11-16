@@ -101,12 +101,15 @@ try {
 
   // ---- with nothing saved, the sheet's numbers apply: a figure needs five cases
   let a = (await kpi('owner')).json();
-  check([a.settingsVersion, a.settings.rep.support_response, a.settings.closeGraceDays], [0, {target: 90, weight: 15, min: 5}, 5], 'nothing saved: the defaults, version 0');
-  check([card(a, 'csm', 'cs1').score, card(a, 'csm', 'cs1').measuredWeight], [81, 20], 'with the defaults only registration and clearance have five cases, so cs1 scores 81 on 20 points of weight');
+  check([a.settingsVersion, a.settings.rep.support_response, a.settings.closeGraceDays], [0, {target: 90, weight: 13, min: 5}, 5], 'nothing saved: the defaults, version 0 (the weights since 2026-11-16: 13,13,13,13,9,8,8,8 and 15 for «نسبة الفرص المتحولة إلى مبيعات»)');
+  check([card(a, 'csm', 'cs1').score, card(a, 'csm', 'cs1').measuredWeight], [81, 16], 'with the defaults only registration and clearance have five cases, so cs1 scores 81 on 16 points of weight (8 each since 2026-11-16)');
 
   // ---- the administrator saves the settings
   const real = a.settings, tuned = JSON.parse(JSON.stringify(real));
   for (const part of [tuned.rep, tuned.manager]) for (const key of Object.keys(part)) part[key].min = 1;
+  // The scores below were worked out by hand with the representative's weights before 2026-11-16 (tests/service-kpi.mjs): the administrator saves
+  // those, and «نسبة الفرص المتحولة إلى مبيعات» (no case here) weight 0; the new weights and the indicator are tests/service-sales-http.mjs'.
+  Object.entries({support_response: 15, closure_timing: 15, closures_held: 15, audit_quality: 15, missed_visits: 10, registration_accuracy: 10, clearance: 10, customer_rating: 10, conversion: 0}).forEach(([key, weight]) => { tuned.rep[key].weight = weight; });
   tuned.manager.backlog.min = 0; tuned.closeGraceDays = 0;
   check([(await post('csm', {action: 'settings', version: 0, settings: tuned})).status, (await post('cs1', {action: 'settings', version: 0, settings: tuned})).status], [403, 403], 'a manager and a representative cannot save settings');
   const bad = JSON.parse(JSON.stringify(tuned)); bad.rep.clearance.weight = 9;
@@ -125,12 +128,12 @@ try {
   ok(a.months.includes('2026-09') && a.months.includes('2026-08') && a.months[0] >= '2026-10', 'the months to choose from include the fixtures\' and the current one, newest first');
   check(group(a, 'csm').reps.map(c => [c.memberId, c.score]), [['cs2', 100], ['cs1', 73.9], ['cs_idle', null]], 'the first team by score; the idle one has none');
   const cs1 = card(a, 'csm', 'cs1');
-  check(Object.fromEntries(cs1.metrics.map(x => [x.key, [x.numerator, x.denominator, r1(x.actual)]])), {support_response: [2, 4, 50], closure_timing: [3, 4, 75], closures_held: [1, 2, 50], audit_quality: [182, 2, 91], missed_visits: [1, 2, 50], registration_accuracy: [4, 6, 66.7], clearance: [11, 13, 84.6], customer_rating: [12, 3, 80]}, 'cs1\'s eight figures, read from the database');
+  check(Object.fromEntries(cs1.metrics.map(x => [x.key, [x.numerator, x.denominator, r1(x.actual)]])), {support_response: [2, 4, 50], closure_timing: [3, 4, 75], closures_held: [1, 2, 50], audit_quality: [182, 2, 91], missed_visits: [1, 2, 50], registration_accuracy: [4, 6, 66.7], clearance: [11, 13, 84.6], customer_rating: [12, 3, 80], conversion: [0, 0, null]}, 'cs1\'s nine figures, read from the database (no opportunity of hers was won or lost)');
   const csm = group(a, 'csm').manager;
   check([csm.score, Object.fromEntries(csm.metrics.map(x => [x.key, [x.numerator, x.denominator]]))], [82.9, {team_average: [173.9, 2], review_timing: [6, 7], life_timing: [2, 3], team_rating: [12, 3], team_support_response: [3, 6], team_quality: [272, 3], backlog: [2, 5], repeat_complaints: [5, 6]}], 'the manager\'s card');
   check([group(a, 'csm2').reps.map(c => [c.memberId, c.score]), group(a, 'csm3').reps, group(a, 'csm3').manager.score, group(a, '').reps.map(c => [c.memberId, c.score])], [[['cs_left', 100], ['cs3', 96.3]], [], 0, [['cs_free', 89.7]]], 'the other teams, the other branch\'s manager whose one overdue request is his whole backlog, and the representative nobody manages');
   check([a.trend.months, a.trend.scores.cs1, a.trend.scores.csm, a.trend.medians], [['2026-07', '2026-08', '2026-09'], [null, 33.3, 73.9], [null, 34.1, 82.9], {csm: [null, 33.3, 87], csm2: [null, null, 98.2], csm3: [null, null, null], none: [null, null, 89.7]}], 'the last three months beside each card and each team\'s median, worked out by hand in tests/service-kpi.mjs: August is one audit and one request left open at its end, July nothing');
-  check(group(a, 'csm').reps.flatMap(c => c.metrics).every(x => x.items.length === 0) && cs1.metrics.map(x => x.itemCount).join() === '4,4,2,2,2,6,13,3', true, 'cases are not sent until a card is opened, but the counts are');
+  check(group(a, 'csm').reps.flatMap(c => c.metrics).every(x => x.items.length === 0) && cs1.metrics.map(x => x.itemCount).join() === '4,4,2,2,2,6,13,3,0', true, 'cases are not sent until a card is opened, but the counts are');
   const opened = (await kpi('owner', '2026-09', '&member=cs1')).json();
   const items = metric(card(opened, 'csm', 'cs1'), 'closure_timing').items;
   check([items.length, items.map(i => i.customerName).sort(), items.map(i => [i.tag, i.value, i.ok]).sort((x, y) => x[1] - y[1])], [4, ['مصنع c1', 'مصنع c1', 'مصنع c2', 'مصنع c2'], [['close', 2, true], ['close', 8, true], ['reject', 20, true], ['close', 30, false]]], 'an opened card carries its cases with the customers\' names');
