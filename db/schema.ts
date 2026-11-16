@@ -49,8 +49,17 @@ export const serviceCases=sqliteTable('crm_service_cases',{
  status:text('status').notNull(),creatorId:text('creator_id').notNull().references(()=>members.id,{onDelete:'restrict'}),
  serviceManagerId:text('service_manager_id').references(()=>members.id,{onDelete:'restrict'}),salesManagerId:text('sales_manager_id').references(()=>members.id,{onDelete:'restrict'}),
  assignedTo:text('assigned_to').references(()=>members.id,{onDelete:'restrict'}),supervisorId:text('supervisor_id').references(()=>members.id,{onDelete:'restrict'}),
- data:text('data').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),version:integer('version').notNull().default(1),mutationId:text('mutation_id').notNull()
-},t=>[index('crm_service_customer').on(t.customerId),index('crm_service_creator').on(t.creatorId),index('crm_service_status').on(t.status)]);
+ data:text('data').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),version:integer('version').notNull().default(1),mutationId:text('mutation_id').notNull(),
+ // Migration 0021: the lead source and the routing at approval (CHECK constraints in the SQL).
+ leadGroup:text('lead_group'),leadSource:text('lead_source'),leadRefKind:text('lead_ref_kind'),leadRefId:text('lead_ref_id'),leadNote:text('lead_note').notNull().default(''),
+ route:text('route'),routedBy:text('routed_by').references(()=>members.id),routedAt:text('routed_at')
+},t=>[index('crm_service_customer').on(t.customerId),index('crm_service_creator').on(t.creatorId),index('crm_service_status').on(t.status),index('crm_service_cases_lead_ref').on(t.leadRefKind,t.leadRefId)]);
+// Migration 0021: the role customer service recorded at the closing of an opportunity it took part in (one row per case, once recorded).
+export const serviceRoleTasks=sqliteTable('crm_service_role_tasks',{
+ caseId:text('case_id').primaryKey().references(()=>serviceCases.id,{onDelete:'restrict'}),outcome:text('outcome').notNull(),memberId:text('member_id').notNull().references(()=>members.id,{onDelete:'restrict'}),
+ basis:text('basis').notNull(),closedAt:text('closed_at').notNull(),roles:text('roles').notNull(),note:text('note').notNull(),
+ doneBy:text('done_by').notNull().references(()=>members.id,{onDelete:'restrict'}),doneAt:text('done_at').notNull(),mutationId:text('mutation_id').notNull()
+},t=>[index('crm_service_role_tasks_member').on(t.memberId,t.doneAt)]);
 
 // The auth revocation trigger is defined explicitly in append-only migration 0009.
 export const authChallenges=sqliteTable('auth_challenges',{
