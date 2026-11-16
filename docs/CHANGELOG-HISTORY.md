@@ -32,6 +32,87 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
 - **Not done here.** The files are still in the git history of every branch: removing them from history is a separate step (a history
   rewrite), with the published release archives under `deploy/packages/` left as they are (none holds the snapshot).
 
+## The sales manager out of the evaluation, and what completes it (2026-11-16, not released yet, no migration)
+
+- **Asked.** Item 2 of the GSCO comparison list (GSCO 2.13.76, commit d623c9a), approved by the owner: «تمام موافق ابدأ». The item:
+  «مدير المبيعات يخرج من «مقارنة أداء المندوبين» ومن التقييم ومن مستهدفات النشاط، حتى لو له كود موظف أو تقييمات قديمة. التقييمات القديمة
+  تفضل محفوظة.» «جنب «بيانات ناقصة» تظهر أسماء المؤشرات الناقصة وأوزانها.» «فوق الجدول مربع «المطلوب لاكتمال التقييم».» «في صفحة الموظف
+  قايمة بكل مؤشر ناقص، والمطلوب عشان يتحسب.» «طريقة حساب الدرجة ما تتغيرش.»
+- **What Yourrest had before** (read in the code first): the sales manager (role `manager`) was a person of the evaluation like a
+  supervisor: `app/api/sales/route.ts` kept every `manager` among the people (`['rep','manager','supervisor']`), `lib/kpis-server.ts`
+  `kpiData` scored his team roll-up and `saveKpi` accepted his assessment, so he had a row in «مقارنة أداء المناديب»
+  (`app/kpi-performance.tsx`), a card in «ملخص المناديب» (`app/targets-performance-summary.tsx`), lines in «تصدير التقييم»
+  (`lib/targets-export.ts`), a place in the hub's «المندوب» picker (`app/sales-workspace.tsx`) and in «بيانات المؤشرات»
+  (`lib/kpi-evidence-server.ts`), and a customer-and-visit target computed from his team (`lib/targets.ts` `withManagerTargets`) shown in
+  «مستهدفات العملاء والزيارات» and on his card (`app/targets-workspace.tsx`) and exported. Saving one for him was already refused
+  (400, «مستهدف المبيعات للمدير والمشرف يُحسب تلقائيًا…»). «بيانات ناقصة» (2026-11-14) named the missing indicators without their weights,
+  on the cards and the person's page only; the comparison showed a «غير مكتمل» badge; nothing said what would complete an indicator.
+- **1. The sales manager out** (`roleOutOfEvaluation` in `lib/targets.ts`: the role alone decides, whatever ERP employee code is mapped to
+  him, whatever ERP sales or old assessment he has). `GET /api/sales?kpis=1` no longer scores him for any reader (the administrator, the
+  sales manager himself, a supervisor): not in the comparison, the summary cards, «التحصيل», «عروض الأسعار», «تصدير التقييم»; the hub's
+  picker on those three tabs leaves him out and a chosen manager falls back to the team; the cards of a month not begun leave him out too.
+  `POST /api/kpis` for him answers 404 «حدد عضوًا متاحًا ضمن صلاحيتك للتقييم», as for any member out of the evaluation; `GET
+  /api/kpi-evidence` for him 404 «عضو الفريق غير متاح ضمن صلاحيتك.». The customer and visit targets («مستهدفات النشاط»): no row in
+  «مستهدفات العملاء والزيارات», no block on his card (it says «مدير المبيعات خارج التقييم ومستهدفات العملاء والزيارات.»), none in
+  «تصدير كل المستهدفات»; a save for him (the page, `POST /api/targets`, and the Excel import) is refused with «مدير المبيعات خارج التقييم،
+  فلا تُحدَّد له مستهدفات العملاء والزيارات.» (400, as it was refused before with another sentence). His products target, computed from
+  his team, stays on «المستهدفات والأوزان». **His old rows are kept**: nothing is deleted or rewritten (`crm_kpi_assessments` and every other
+  table), they are only not read; the previous release reads them again.
+- **2. What completes the evaluation** (`lib/kpi-gaps.ts`, pure, read from what the server already sends, so the score, the weight with data
+  and the missing set are unchanged). A missing indicator is one `kpiSummary` leaves out of the weight with data; «لا ينطبق» is never
+  listed (since 2026-11-14 its weight leaves the applicable weight in Yourrest). The five conduct indicators are one line, «تقييم السلوك من
+  الإدارة» (10%), when all five are missing.
+  - **Beside «بيانات ناقصة»** the names with their weights: under each incomplete score of the comparison (new), on the summary cards, and in
+    «تصدير التقييم» («بيانات ناقصة: تحقيق المستهدف البيعي (25%)، التحصيل (20%)…», English «Missing data: Sales target achievement (25%), …»).
+  - **«المطلوب لاكتمال التقييم» above the comparison:** one line per action with the weight of the indicators it completes, and under it
+    whom it concerns («كل المناديب (N)» when everyone listed, else four names and «+N»), the most weight first; a person out of the month («بلا نشاط
+    في هذا الشهر») is left out; nothing is drawn when nothing is missing.
+  - **The person's page:** the yellow note's names become a checklist «المؤشر (الوزن): المطلوب» under «المطلوب لاكتمال التقييم:».
+  - **The actions, who and where:** the product weights (the administrator or the sales manager, «أوزان التقييم» on «المستهدفات
+    والأوزان»); a weighted product's target («تعديل الأصناف»; for a supervisor, his representatives' targets); the month's complete ERP sales
+    («استيراد مبيعات ERP» on «رفع المبيعات», ticking «الملف يشمل كل مبيعات المناديب للفترة التي يغطيها») or the confirmation in «بيانات
+    المؤشرات», and for growth, retention and recovered customers the months to upload by name (the coverage's own sentence); the
+    collection statement («استيراد كشف التحصيل من ERP» on «التحصيل», or «بيانات المؤشرات»); the ERP customers file with «التاريخ» for the
+    month's customers without a creator; the supervisor's rating of each visit («فعالة» or «سلبية», «إضافة نتيجة وإجراء» in «تقرير يوم
+    المندوب») with the visits waiting; the conduct scores («تقييم الإدارة وتدقيق البيانات»); linking the team in «الفريق والصلاحيات» for
+    a supervisor without one. A case not listed keeps the indicator's own reason. Every text has its English; Modern Standard Arabic only.
+- **The score did not change.** `kpiSummary` and `calculateKpis` are untouched. `tests/kpi-sales-manager-gaps.mjs` compiles the real routes
+  on SQLite and compares every representative's and supervisor's metrics, summary, attainment, growth rows and quotations, and the rest of
+  the answer of `/api/sales` (sales, targets, performance, members), for the administrator's, the sales manager's and the supervisor's
+  views, with the release before (commit f9fe2bf): identical, compared live with `--baseline f9fe2bf` (which compiles that commit's routes
+  from git) and kept as digests for the gates.
+- **Also mended on the same screens:** two lists of team names were joined with the Arabic comma in English mode (the computed team under
+  «فريق المبيعات المحتسب» on a person's page, and «الفريق المحتسب» on «المستهدفات والأوزان»).
+- **Differences from GSCO, and why.** GSCO's sales manager role is `sales_manager`; Yourrest's is `manager`. GSCO also lists «لا ينطبق
+  هذا الشهر» indicators on a dimmed line, because there they are part of the missing weight; in Yourrest they leave the applicable weight
+  (2026-11-14) and are not missing, so they are not listed. GSCO's actions are written for its sections; Yourrest's name its own tabs,
+  buttons and pages, and for coverage reuse the months the coverage already names. GSCO's representative keeps a short warning on their
+  own screen; Yourrest's representative has no evaluation screen («أهدافي» shows targets only). Yourrest keeps the manager's products
+  target (computed from his team) on «المستهدفات والأوزان»; only the customer and visit targets serve the evaluation. The refusals keep
+  Yourrest's existing statuses (404 for the assessment and the evidence, as GSCO; 400 for the activity target, already refused before).
+- **Not changed.** No migration (21 tables, `0020_member_permissions.sql` the last). No new permission. The administrator's rule
+  (`hiddenAdminIds`) is unchanged. The supervisor's evaluation is unchanged.
+- **Tested.** New: `tests/kpi-sales-manager-gaps.mjs` (default gate, 171 checks; 173 with `--baseline f9fe2bf`, which compiles that commit's
+  routes from git and compares the scores live: the real routes on SQLite, the score unchanged, `lib/kpi-gaps.ts`, the screens with the real
+  components and the two exports in Arabic and English), `tests/kpi-sales-manager-gaps-http.mjs` (built release, 60: the four routes and
+  the Excel import, 401 without a session, 403 for the roles without the right, 404/400 for the sales manager, his old row unchanged),
+  `tests/kpi-sales-manager-gaps-browser.mjs` (Chromium at 320 and 360 px, a tablet upright and on its side and a desktop, Arabic and
+  English, 199, screenshots). Mutations: taking the rule out of `kpiData`, out of `saveKpi`, out of the activity table, or the conduct
+  line out of `kpiMissing`, each fails the new test. Updated, because they read what changed: `tests/kpi-leave-months.mjs` (123),
+  `tests/kpi-leave-months-http.mjs` (48), `tests/kpi-effective-visits.mjs` (89), `tests/kpi-effective-visits-http.mjs` (58),
+  `tests/kpi-complete-integration.mjs` (115), `tests/new-customers-erp-http.mjs` (26) and `tests/targets-audit-browser.mjs` (122) (the
+  sales manager's row, card, roll-up or assessment); `tests/kpi-performance-evidence-ui.mjs` (119), `tests/targets-performance-summary-ui.mjs`
+  (106), `tests/kpi-effective-visits-browser.mjs` (20) and `tests/targets-export.mjs` (44) (the names with their weights, the checklist,
+  no customer and visit targets of his in the export); `tests/record-import.mjs` (123: the new reason). The release gates (`node
+  scripts/gates.mjs --full`): the first run (20261116-104349) stopped on `targets-audit-browser` (its English check allows Arabic only as
+  people's names, and a summary line held the English action and the names; the names now go on a line of their own under each action) and
+  `kpi-effective-visits-browser` (its expected words changed; it was updated during that run, so its rerun passed with the new file: a
+  real change, not an unstable test), with `service-queue-browser` not stable; the final run (20261116-111716): 106 passed, 3 not stable
+  (each failed in the pool and passed alone, none touches the evaluation: `complaints-browser`, «the complaint registered three days ago is
+  listed» 8 s in; `mold-requests-browser`, the strict-mode locator of three headings, as before; `service-queue-browser`, as before), 4
+  skipped (the owner's ERP files), 0 failed; the default gate 206/206 with TypeScript (0 errors) and ESLint (0 errors, the 160 warnings of
+  the baseline); `tests/msa-wording.mjs` passed.
+
 ## Today's sales against today's target, a re-contact date for a lost follow-up, and targets and follow-ups imported from Excel templates (2026-11-16, not released yet, no migration)
 
 - **Asked.** Item 8 of the GSCO comparison list, approved by the owner: «تمام كمل كل البنود وارفع لما الفحص يخلص». The item: «صغيرة: مبيعات اليوم قصاد
