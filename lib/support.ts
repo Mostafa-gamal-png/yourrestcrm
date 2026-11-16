@@ -45,6 +45,9 @@ export type SupportOrigin='rep'|'missed_visit';
 export type SupportState='waiting'|'in_progress'|'submitted'|'returned'|'pending_assignment'|'assigned'|'resolved'|'done'|'cancelled';
 export type SupportStage='take'|'contact'|'review'|'fix'|'assignment'|'delegation'|'first_contact'|'closure'|'closed'|'cancelled';
 export type SupportPlan={visitId:string;visitDate:string;result:string;nextAction:string;nextDate:string};
+/** The opportunity a request was asked from (2026-11-16, GSCO list item 3: «طلب مساندة» inside an opportunity, lib/support-opportunity.ts):
+ *  the customer-service request (case) as it was then, its request number and the products asked for. Older requests have none. */
+export type SupportOpportunity={id:string;number:number|null;products:string[]};
 /** What came of a contact with the customer: customer service's own (`result`, kept under that name from the first release) and the sales member's (`resolution`, with the way they reached the customer). */
 export type SupportResult={outcome:string;note:string;nextDate:string;by:string;at:string;channel?:string};
 /** One step of the request's life, kept on the row so the page can tell its story without the audit table. */
@@ -52,6 +55,7 @@ export type SupportEvent={at:string;by:string;action:string;text?:string;targetI
 export type SupportData={
  kind:'support';customerId:string;origin:SupportOrigin;status:SupportStatus;
  requestedBy:string;requestedAt:string;/** The customer's responsible member when the request was made. */repId:string;note:string;channel:string;plan?:SupportPlan;
+ /** Set when the request was asked from inside an opportunity (2026-11-16). */opportunity?:SupportOpportunity;
  /** Empty while nobody has taken it. */handlerId:string;handlerAt:string;handlerBy:string;
  result?:SupportResult;cancelledBy?:string;cancelledAt?:string;cancelReason?:string;answerSeenAt?:string;answerSeenBy?:string;
  /** The customer-service manager it waits for, the sales manager it was handed to, the supervisor it passed through and the member who holds it now; empty until each is known. */
@@ -69,6 +73,8 @@ export type SupportPerson={id:string;name:string;role:string};
 export type SupportEntry={
  id:string;customerId:string;customerName:string;customerPhone:string;customerCity:string;customerRegion:string;customerVersion:number;
  origin:SupportOrigin;state:SupportState;status:SupportStatus;note:string;channel:string;plan:SupportPlan|null;
+ /** The opportunity it was asked from, if any (2026-11-16). */
+ opportunity:SupportOpportunity|null;
  requestedBy:string;requestedByName:string;repId:string;repName:string;handlerId:string;handlerName:string;
  /** Customer service's contact with the customer, submitted for approval (or, in a request answered before the chain existed, its whole answer). */
  result:{outcome:string;note:string;nextDate:string;by:string;byName:string;at:string}|null;
@@ -292,7 +298,7 @@ export function supportQueue(c:SupportContext,now:string=new Date().toISOString(
   const result=data.result,resolution=data.resolution,closure=data.closure;
   entries.push({
    id:row.id,customerId:customer.id,customerName:String(customer.data.name||''),customerPhone:String(customer.data.phone||''),customerCity:String(customer.data.city||''),customerRegion:String(customer.data.region||''),customerVersion:customer.version,
-   origin:data.origin,state,status:data.status,note:String(data.note||''),channel:String(data.channel||'any'),plan:data.plan||null,
+   origin:data.origin,state,status:data.status,note:String(data.note||''),channel:String(data.channel||'any'),plan:data.plan||null,opportunity:data.opportunity&&typeof data.opportunity.id==='string'?{id:data.opportunity.id,number:typeof data.opportunity.number==='number'?data.opportunity.number:null,products:Array.isArray(data.opportunity.products)?data.opportunity.products.filter(product=>typeof product==='string'):[]}:null,
    requestedBy:data.requestedBy,requestedByName:name(data.requestedBy),repId:data.repId,repName:name(data.repId||customer.assignedTo),handlerId:data.handlerId||'',handlerName:name(data.handlerId),
    result:result?{outcome:result.outcome,note:result.note,nextDate:result.nextDate,by:result.by,byName:name(result.by),at:result.at}:null,
    resolution:resolution?{outcome:resolution.outcome,note:resolution.note,nextDate:resolution.nextDate,by:resolution.by,byName:name(resolution.by),at:resolution.at,channel:String(resolution.channel||'')}:null,

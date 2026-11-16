@@ -118,6 +118,8 @@ const GROUP_TEXT:Record<SupportGroupId,Record<string,[string,string]>>={
 };
 const groupTitle=(id:SupportGroupId,role:string,say:Say)=>{const table=GROUP_TEXT[id],pair=table[role]||table.default;return say(pair[0],pair[1]);};
 const VISIBLE_MISSED=8;
+/** A request asked from inside an opportunity (2026-11-16, GSCO list item 3) names it: its request number, or that it came from one. */
+const opportunityText=(opportunity:NonNullable<SupportEntry['opportunity']>,say:Say)=>opportunity.number!==null?say('من الفرصة رقم '+opportunity.number,'From opportunity no. '+opportunity.number):say('من فرصة','From an opportunity');
 
 function RequestCard({entry,me,say,busy,onOpen,onTake}:{entry:SupportEntry;me:Member;say:Say;busy:boolean;onOpen:(entry:SupportEntry)=>void;onTake:(entry:SupportEntry)=>void}){
  const open=isOpenState(entry.state),missed=entry.origin==='missed_visit',holds=entry.assigneeName||entry.salesManagerName;
@@ -125,6 +127,7 @@ function RequestCard({entry,me,say,busy,onOpen,onTake}:{entry:SupportEntry;me:Me
   <header><div><h4>{entry.customerName}</h4>{(entry.customerPhone||entry.customerCity)&&<span className="support-phone" dir="ltr">{[entry.customerPhone,entry.customerCity].filter(Boolean).join(' · ')}</span>}</div><span className="badge pending">{stateText(entry,say)}</span></header>
   <div className="support-meta">
    <span className="support-chip-static">{missed?say('زيارة مفقودة','Missed visit'):say('طلب مساندة','Support request')}</span>
+   {entry.opportunity&&<span className="support-chip-static" data-kind="opportunity">{opportunityText(entry.opportunity,say)}</span>}
    {open&&entry.stageHours>0&&<span className="support-chip-static"><Clock3 size={12} aria-hidden="true"/> {hoursText(entry.stageHours,say)}</span>}
    {entry.late&&entry.targetHours!==null&&<span className="support-chip-static" data-kind="late">{say('متأخر عن هدف '+entry.targetHours+' ساعات عمل','Late against a '+entry.targetHours+'-working-hour target')}</span>}
    {entry.unrouted&&<span className="support-chip-static" data-kind="escalated">{say('لا أحد يغطي منطقة العميل','Nobody covers this customer\'s region')}</span>}
@@ -241,6 +244,7 @@ export function SupportSheet({entry,onClose,onChanged}:{entry:SupportEntry;onClo
   [say('العميل','Customer'),entry.customerName],
   [say('رقم التواصل','Phone'),<span key="p" dir="ltr">{entry.customerPhone||'—'}{links.tel&&<> <ContactLinks phone={entry.customerPhone} say={say}/></>}</span>],
   [say('المدينة والمنطقة','City and region'),[entry.customerCity,entry.customerRegion].filter(Boolean).join(' · ')||'—'],
+  ...(entry.opportunity?[[say('من الفرصة','From the opportunity'),opportunityText(entry.opportunity,say)+(entry.opportunity.products.length?' · '+entry.opportunity.products.map(product=>t(product)).join(say('، ',', ')):'')] as [string,React.ReactNode]]:[]),
   [entry.origin==='missed_visit'?say('فتحها','Opened by'):say('طلبها','Asked by'),entry.requestedByName||'—'],
   [say('مسؤول العميل في المبيعات','Sales owner'),entry.repName||'—'],
   ...(entry.note?[[say('السبب','Reason'),entry.note] as [string,React.ReactNode]]:[]),

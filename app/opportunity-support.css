@@ -1,0 +1,10 @@
+/* «طلب مساندة» inside an opportunity (2026-11-16, GSCO list item 3): app/opportunity-support.tsx in the sheet «الاعتماد والتكليف». */
+.opportunity-support{display:grid;gap:10px;min-width:0}
+.opportunity-support .service-button-row{display:flex;flex-wrap:wrap;gap:8px}.opportunity-support .btn{min-height:44px;display:inline-flex;align-items:center;gap:6px}
+.opportunity-support-card{display:grid;gap:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card);min-width:0}
+.opportunity-support-card h4{margin:0;font-size:15.5px}.opportunity-support-card .form-note{margin:0;line-height:1.7}
+.opportunity-support-facts{margin:0;font-size:14px;overflow-wrap:anywhere}
+.opportunity-support-problem{display:grid;gap:8px;padding:10px 12px;border-radius:10px;background:#f5e9c8;color:#6a4a0e;font-size:14px;line-height:1.7;overflow-wrap:anywhere}.opportunity-support-problem p{margin:0}
+.opportunity-support-sent{display:grid;gap:8px;padding:10px 12px;border-radius:10px;background:#eaf4ee;color:#25503a;font-size:14px;line-height:1.7;overflow-wrap:anywhere}.opportunity-support-sent .btn{justify-self:start}
+.dark .opportunity-support-problem{background:#4a3d20;color:#f0d9a0}.dark .opportunity-support-sent{background:#1f3329;color:#bfe6cf}
+@media (max-width:640px){.opportunity-support .service-button-row .btn{flex:1 1 auto;justify-content:center}}

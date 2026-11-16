@@ -5,6 +5,7 @@ import {memberCanAccessRegion,regionScope} from '@/lib/regions';
 import {registrarManager} from '@/lib/complaints';
 import {SUPPORT_LIST_LIMIT,SUPPORT_NOTE_MAX,canReadSupport,canRequestSupport,missedVisits,supportActions,supportBadge,supportCandidates,supportEvents,supportOutcomes,supportPermissions,supportQueue,supportReader,supportResolutionChannels,supportState,supportStaff,type SupportData} from '@/lib/support';
 import {loadSupport,loadSupportRow as loadOne} from '@/lib/support-rows';
+import {isOpportunitySupportRefusal,opportunitySupport,opportunitySupportProblem,SUPPORT_UNLINKED_MESSAGE} from '@/lib/support-opportunity';
 export const dynamic='force-dynamic';
 
 /** Re-checks at commit that a member named in the change is still who they were when it was decided. */
@@ -29,7 +30,7 @@ const day=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'اختر موعدًا صحيح
 const outcome=z.enum(Object.keys(supportOutcomes) as [string,...string[]]);
 const handing={requestId,id:idText,version,targetId:idText,note:noteField.default('')};
 const schema=z.discriminatedUnion('action',[
- z.object({action:z.literal('request'),requestId,origin:z.enum(['rep','missed_visit']).default('rep'),customerId:idText,customerVersion:version,note:noteField.default(''),channel:z.enum(['any','call','whatsapp']).default('any'),visitId:idText.optional()}).strict(),
+ z.object({action:z.literal('request'),requestId,origin:z.enum(['rep','missed_visit']).default('rep'),customerId:idText,customerVersion:version,note:noteField.default(''),channel:z.enum(['any','call','whatsapp']).default('any'),visitId:idText.optional(),opportunityId:idText.optional()}).strict(),
  z.object({action:z.literal('take'),requestId,id:idText,version}).strict(),
  z.object({action:z.literal('assign'),requestId,id:idText,version,targetId:idText}).strict(),
  z.object({action:z.literal('submit'),requestId,id:idText,version,outcome,note:said(3,'اكتب نتيجة التواصل في 3 أحرف على الأقل'),nextDate:z.union([day,z.literal('')]).default('')}).strict(),
@@ -71,17 +72,30 @@ export async function POST(req:Request){try{
  const by=c.me.id;
 
  if(input.action==='request'){
+  // «طلب مساندة» inside an opportunity (2026-11-16, GSCO list item 3; lib/support-opportunity.ts): the opportunity the member may read
+  // decides, not the customer scope; it must still be open, its customer in the list, and that customer without an open request.
+  let asked:ReturnType<typeof opportunitySupport>|undefined;
+  if(input.opportunityId&&input.origin==='rep'){
+   asked=opportunitySupport({me:c.me,members:c.members,all:c.all,serviceCases:c.serviceCases,support:await loadSupport(c.db,now)},input.opportunityId);
+   if(isOpportunitySupportRefusal(asked))throw new CRMError(asked.error,asked.status);
+   if(!asked.customer)throw new CRMError(SUPPORT_UNLINKED_MESSAGE,409);
+   if(asked.customer.id!==input.customerId)throw new CRMError('تغيّر عميل الفرصة. حدّث الصفحة.',409);
+   const problem=opportunitySupportProblem(asked);if(problem)throw new CRMError(problem,409);
+  }
   const customer=c.all.find(row=>row.id===input.customerId&&row.kind==='customer');
   if(!customer)throw new CRMError('العميل غير متاح',404);
   if(input.customerVersion!==customer.version)throw new CRMError('تغيّرت بيانات العميل أو زيارته الأخيرة. حدّث الصفحة.',409);
   let data:SupportData;
   if(input.origin==='rep'){
-   if(!canRequestSupport(customer,c))throw new CRMError('طلب المساندة متاح لمن يتابع هذا العميل فقط',403);
+   if(!asked&&!canRequestSupport(customer,c))throw new CRMError('طلب المساندة متاح لمن يتابع هذا العميل فقط',403);
    if(input.note.length<3)throw new CRMError('اكتب سبب طلب المساندة في 3 أحرف على الأقل');
+   // The opportunity is still the one the member read when the commit happens.
+   const opportunity=asked&&!isOpportunitySupportRefusal(asked)?asked.opportunity:undefined;
+   if(opportunity){const kase=c.serviceCases.find(item=>item.id===opportunity.id)!;guards.push('EXISTS(SELECT 1 FROM crm_service_cases WHERE id=? AND customer_id=? AND version=?)');args.push(kase.id,customer.id,kase.version);}
    const routed=supportStaff(customer,c.members).routedTo;
    if(routed)requireMember(routed);
    id='support-'+input.requestId;note=input.note;
-   data={kind:'support',customerId:customer.id,origin:'rep',status:'open',requestedBy:by,requestedAt:now,repId:customer.assignedTo,note:input.note,channel:input.channel,handlerId:routed?.id||'',handlerAt:routed?now:'',handlerBy:routed?'auto':'',
+   data={kind:'support',customerId:customer.id,origin:'rep',status:'open',requestedBy:by,requestedAt:now,repId:customer.assignedTo,note:input.note,channel:input.channel,...opportunity?{opportunity:{id:opportunity.id,number:opportunity.number,products:opportunity.products}}:{},handlerId:routed?.id||'',handlerAt:routed?now:'',handlerBy:routed?'auto':'',
     events:[{at:now,by,action:'request',text:input.note},...(routed?[{at:now,by:'',action:'assign',targetId:routed.id}]:[])]};
   }else{
    if(!reader.service&&!reader.lead&&!reader.admin)throw new CRMError('تولّي الزيارات المفقودة لخدمة العملاء فقط',403);

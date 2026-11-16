@@ -114,7 +114,13 @@ try {
   // ---- internal notes along the chain; a stranger's notes stay private
   check((await act('rep2', id1, {action: 'note', note: 'العميل يطلب موعدًا صباحيًا'})).status, 200, 'the holder writes an internal note');
   check((await act('sup', id1, {action: 'note', note: 'ملاحظة المشرف'})).status, 200, 'the supervisor writes one');
-  check((await act('cs', id1, {action: 'assist', note: 'طلب مساعدة من خدمة العملاء: العميل يسأل عن الموعد'})).status, 200, 'customer service asks for help');
+  // 2026-11-16 (GSCO list item 3): «طلب مساعدة داخلية» takes no new requests (a support request opens from «طلب مساندة» into «التواصل مع
+  // العملاء»); one opened before that release is still read by the holder and answered, which is what the lines below check.
+  const retired = await act('cs', id1, {action: 'assist', note: 'طلب مساعدة من خدمة العملاء: العميل يسأل عن الموعد'});
+  check([retired.status, retired.json().error.startsWith('لم يعد «طلب مساعدة داخلية» متاحًا')], [409, true], 'a new internal help request is refused, saying where to go');
+  const registrar = await app.db.prepare("SELECT name FROM crm_members WHERE id='cs'").first();
+  await app.db.prepare("UPDATE crm_service_cases SET data=json_set(data,'$.assistanceOpen',json('true')) WHERE id=?").bind(id1).run();
+  await app.db.prepare("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,'service:assist',?,?)").bind('assist-before-release', id1, registrar.name, JSON.stringify({label: 'طلب مساعدة داخلية', note: 'طلب مساعدة من خدمة العملاء: العميل يسأل عن الموعد', targetName: '', state: 'assigned'}), new Date().toISOString()).run();
   const afterNotes = await getCase('rep2', id1);
   check(afterNotes.history.some(h => h.detail.note === 'طلب مساعدة من خدمة العملاء: العميل يسأل عن الموعد'), true, 'the holder now reads the assistance request addressed to him');
   check(afterNotes.history.some(h => h.detail.note === 'ملاحظة المشرف'), true, 'and his supervisor\'s note');
