@@ -1,24 +1,24 @@
 {
   "schemaVersion": 1,
   "packageName": "org.yourrest.crm",
-  "versionName": "1.0.12",
-  "versionCode": 13,
-  "minimumVersionCode": 13,
-  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.12-13.apk",
-  "sizeBytes": 271181,
-  "sha256": "e50e6eb7cf247996fdf8c97a8ad3222010cc2427024ee80e27661e5af0f69802",
+  "versionName": "1.0.13",
+  "versionCode": 14,
+  "minimumVersionCode": 14,
+  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.13-14.apk",
+  "sizeBytes": 291661,
+  "sha256": "bed79eb51cca83cc484c9b5c91c7f613bf57d5e5596d3c77b63564ba3b89e7e6",
   "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
   "releaseNotes": {
     "ar": [
-      "اختيار كل أنواع ملفات التصميم من التطبيق عند إرفاقها بطلب القالب (DWG وDXF وSTEP وSTL وSolidWorks وNC1 وAI وPSD وZIP وغيرها).",
-      "فتح ملفات التصميم وحفظها داخل التطبيق بجلسة دخولك، من غير المتصفح ومن غير تسجيل دخول جديد.",
-      "تبقى بياناتك والزيارات المحفوظة على الجهاز كما هي بعد التحديث."
+      "تنبيه المصانع القريبة: عند اقترابك لمسافة كيلومتر من مصانع مسؤول عنها لم تُسجَّل لها زيارة منذ 60 يومًا أو أكثر، يصلك إشعار واحد يجمعها، الأقرب أولًا، في ساعات تسجيل الموقع.",
+      "لا يتكرر تنبيه المصنع نفسه في اليوم نفسه، والضغط على الإشعار يفتح «خريطة المصانع» على أقرب مصنع.",
+      "لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي."
     ],
     "en": [
-      "Choose every design file type from the app when attaching it to a mold request (DWG, DXF, STEP, STL, SolidWorks, NC1, AI, PSD, ZIP and more).",
-      "Open and save design files inside the app with your signed-in session, without the browser or signing in again.",
-      "Your data and the visits saved on the phone stay as they are after the update."
+      "Nearby factories: when you come within 1 km of factories you are responsible for that have had no visit for 60 days or more, one notification lists them, nearest first, during the location recording hours.",
+      "The same factory is not notified twice in a day; tapping the notification opens the factory map on the nearest one.",
+      "The update asks for no new permission; your data and the visits saved on the phone stay as they are."
     ]
   },
-  "publishedAt": "2026-11-02T15:49:49.703Z"
+  "publishedAt": "2026-11-16T07:30:15.883Z"
 }
