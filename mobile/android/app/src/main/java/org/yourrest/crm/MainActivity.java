@@ -86,14 +86,14 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
             }
             @Override public void onPageStarted(WebView view,String url,Bitmap icon){speech.invalidate();pageNonce="";mapsHandoff=null;if(!RouteRules.trusted(url)){view.stopLoading();return;}super.onPageStarted(view,url,icon);}
             @Override public void onPageFinished(WebView view,String url){
-                if(RouteRules.trusted(url)&&RouteRules.trusted(view.getUrl())){pageNonce=UUID.randomUUID().toString();installBridge();CookieManager.getInstance().flush();rememberLanguage();}
+                if(RouteRules.trusted(url)&&RouteRules.trusted(view.getUrl())){pageNonce=UUID.randomUUID().toString();installBridge();CookieManager.getInstance().flush();rememberLanguage();if(AlertCheckJob.signedIn())AlertCheckJob.schedule(MainActivity.this);}
             }
             @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error){handler.cancel();}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();String scheme=uri.getScheme();
                 // Never allow arbitrary local or insecure resources. HTTPS tile/fonts/CDNs remain normal subresources.
                 if("http".equals(scheme)||"file".equals(scheme))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
-                if(RouteRules.trusted(uri.toString())&&"/api/auth/logout".equals(uri.getPath())){runOnUiThread(()->speech.invalidate());RouteTracker.get(MainActivity.this).logout(null);}
+                if(RouteRules.trusted(uri.toString())&&"/api/auth/logout".equals(uri.getPath())){runOnUiThread(()->speech.invalidate());ComplaintAlerts.get(MainActivity.this).logout();AlertCheckJob.cancel(MainActivity.this);RouteTracker.get(MainActivity.this).logout(null);}
                 return super.shouldInterceptRequest(view,request);
             }
         });
@@ -121,9 +121,10 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
             if(url.startsWith("https://"))new AlertDialog.Builder(this).setMessage("فتح رابط التنزيل في المتصفح؟ قد يطلب تسجيل الدخول.").setPositiveButton("فتح",(dialog,which)->external(Uri.parse(url))).setNegativeButton("إلغاء",null).show();
             else new AlertDialog.Builder(this).setMessage("لتنزيل الملف استخدم صفحة CRM في المتصفح.").setPositiveButton("حسنًا",null).show();
         });
-        String requested=requestedCase(getIntent()),nearby=NearbyCustomers.requestedCustomer(getIntent());
-        web.loadUrl(RouteRules.ORIGIN+"/"+(requested!=null?"#service-case="+requested:nearby!=null?NearbyRules.openFragment(nearby):""));
-        getIntent().removeExtra(ServiceAlerts.EXTRA_CASE);getIntent().removeExtra(NearbyCustomers.EXTRA);
+        String requested=requestedCase(getIntent()),nearby=NearbyCustomers.requestedCustomer(getIntent()),complaint=ComplaintAlerts.requestedComplaint(getIntent());
+        // 1.0.14: a tapped «شكوى تنتظرك» opens the page on that complaint («#complaint=<id>»).
+        web.loadUrl(RouteRules.ORIGIN+"/"+(requested!=null?"#service-case="+requested:complaint!=null?ComplaintAlertRules.complaintFragment(complaint):nearby!=null?NearbyRules.openFragment(nearby):""));
+        getIntent().removeExtra(ServiceAlerts.EXTRA_CASE);getIntent().removeExtra(NearbyCustomers.EXTRA);getIntent().removeExtra(ComplaintAlerts.EXTRA);
     }
     /** The language the person chose in the CRM page (its own localStorage «yr-language»), for the notices the app words itself. */
     private void rememberLanguage(){
@@ -143,12 +144,17 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
         super.onNewIntent(intent);setIntent(intent);
         String id=requestedCase(intent);intent.removeExtra(ServiceAlerts.EXTRA_CASE);
         String nearby=NearbyCustomers.requestedCustomer(intent);intent.removeExtra(NearbyCustomers.EXTRA);
+        String complaint=ComplaintAlerts.requestedComplaint(intent);intent.removeExtra(ComplaintAlerts.EXTRA);
         if(web==null)return;
         // A running page is told directly (it never replaces unsaved work); a page that is not ready loads with the request in its address.
         boolean ready=!pageNonce.isEmpty()&&RouteRules.trusted(web.getUrl());
         if(id!=null){
             if(ready)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:open-service-case',{detail:{id:"+JSONObject.quote(id)+"}}))",null);
             else web.loadUrl(RouteRules.ORIGIN+"/?notification="+System.currentTimeMillis()+"#service-case="+id);
+        }else if(complaint!=null){
+            // «شكوى تنتظرك» (1.0.14): the page opens the complaint where the member meets complaints, the same way.
+            if(ready)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:open-complaint',{detail:{id:"+JSONObject.quote(complaint)+"}}))",null);
+            else web.loadUrl(RouteRules.ORIGIN+"/?notification="+System.currentTimeMillis()+ComplaintAlertRules.complaintFragment(complaint));
         }else if(nearby!=null){
             // «تنبيه المصانع القريبة»: the page opens «خريطة المصانع» on the nearest customer it names, the same way.
             if(ready)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:open-nearby-customer',{detail:{id:"+JSONObject.quote(nearby)+"}}))",null);
@@ -299,7 +305,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
                         case "status":reply.complete(tracker.state(),null);break;
                         case "flush":tracker.flush(reply);break;
                         case "stop":tracker.stop(reply);break;
-                        case "logout":tracker.logout(reply);break;
+                        case "logout":ComplaintAlerts.get(MainActivity.this).logout();AlertCheckJob.cancel(MainActivity.this);tracker.logout(reply);break;
                         case "openDirections":
                             if(!(input.opt("latitude") instanceof Number)||!(input.opt("longitude") instanceof Number))throw new IllegalArgumentException("لوكيشن العميل غير صالح");
                             MapsLauncher.Destination destination=MapsLauncher.coordinates(input.getDouble("latitude"),input.getDouble("longitude"));
@@ -398,7 +404,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
     @Override public void updateChanged(JSONObject state){if(web!=null&&!pageNonce.isEmpty()&&RouteRules.trusted(web.getUrl()))web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:app-update',{detail:"+state.toString()+"}))",null);}
     @Override public void installPermission(){startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())));}
     @Override public void confirmInstall(Intent intent){startActivity(intent);}
-    @Override protected void onResume(){super.onResume();resumed=true;ServiceAlerts.poll(this,true);if(updater!=null){updater.attach(this);updater.resume();}ContinuousRouteTracker.get(this).resumeFromActivity();RouteTracker.get(this).addListener(this);RouteTracker.get(this).flush(null);if(awaitingBackgroundSettings){awaitingBackgroundSettings=false;prepared(ContinuousRouteTracker.backgroundGranted(this)&&RouteTracker.get(this).permission()?null:"لم يتم منح الموقع الدقيق طوال الوقت؛ فعّله من إعدادات التطبيق");}
+    @Override protected void onResume(){super.onResume();resumed=true;ServiceAlerts.poll(this,true);ComplaintAlerts.get(this).pollNow();AlertCheckJob.schedule(this);if(updater!=null){updater.attach(this);updater.resume();}ContinuousRouteTracker.get(this).resumeFromActivity();RouteTracker.get(this).addListener(this);RouteTracker.get(this).flush(null);if(awaitingBackgroundSettings){awaitingBackgroundSettings=false;prepared(ContinuousRouteTracker.backgroundGranted(this)&&RouteTracker.get(this).permission()?null:"لم يتم منح الموقع الدقيق طوال الوقت؛ فعّله من إعدادات التطبيق");}
         if(designDelivery!=null){Runnable delivery=designDelivery;designDelivery=null;designHeld=null;delivery.run();}}
     @Override protected void onSaveInstanceState(Bundle out){
         super.onSaveInstanceState(out);

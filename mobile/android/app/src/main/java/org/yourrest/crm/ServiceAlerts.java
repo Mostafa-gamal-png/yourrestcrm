@@ -22,18 +22,22 @@ final class ServiceAlerts {
     private static final ExecutorService worker = Executors.newSingleThreadExecutor(task -> { Thread thread = new Thread(task, "YourrestServiceAlerts"); thread.setDaemon(true); return thread; });
 
     /** Cheap to call often: the policy decides whether a request to the server is due. Never blocks the caller. */
-    static void poll(Context context, boolean opening) {
+    static void poll(Context context, boolean opening) { poll(context, opening, null); }
+    /** 1.0.14: the background alert check (AlertCheckJob) with the background cadence; `done` runs once the request (or nothing) is over. */
+    static void pollInBackground(Context context, Runnable done) { poll(context, false, done); }
+    private static void poll(Context context, boolean opening, Runnable done) {
         Context app = context.getApplicationContext();
         long now = System.currentTimeMillis();
         ServiceAlertStore store = new ServiceAlertStore(app);
-        if (!ServiceAlertPolicy.shouldPoll(now, store.lastPollAt(), ContinuousPolicy.inWindow(now), opening)) return;
-        if (!running.compareAndSet(false, true)) return;
+        if (!ServiceAlertPolicy.shouldPoll(now, store.lastPollAt(), ContinuousPolicy.inWindow(now), opening) || !running.compareAndSet(false, true)) { if (done != null) done.run(); return; }
         store.lastPollAt(now);
-        worker.execute(() -> {
-            try { run(app, store, now); }
-            catch (Exception silent) { /* offline, signed out or not allowed: the next poll tries again */ }
-            finally { running.set(false); }
-        });
+        try {
+            worker.execute(() -> {
+                try { run(app, store, now); }
+                catch (Exception silent) { /* offline, signed out or not allowed: the next poll tries again */ }
+                finally { running.set(false); if (done != null) done.run(); }
+            });
+        } catch (RuntimeException refused) { running.set(false); if (done != null) done.run(); }
     }
 
     private static void run(Context app, ServiceAlertStore store, long now) throws Exception {

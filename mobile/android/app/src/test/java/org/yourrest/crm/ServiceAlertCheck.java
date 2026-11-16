@@ -100,7 +100,7 @@ public final class ServiceAlertCheck {
         check(api.contains("RouteRules.ORIGIN + PATH") && api.contains("PATH = \"/api/service-queue/alerts\"") && api.contains("setInstanceFollowRedirects(false)") && api.contains("setRequestMethod(\"GET\")"), "The request goes to the fixed origin and path, without redirects");
         check(api.indexOf("throw new Failure(401") < api.indexOf("openConnection()") && api.contains("65536"), "Without a session no request is made, and the answer is bounded");
         check(!api.contains("setDoOutput") && !api.contains("evaluateJavascript") && !api.contains("Log."), "The session cookie is only sent, never exposed or logged");
-        String poll = block(alerts, "static void poll(");
+        String poll = block(alerts, "private static void poll(");
         check(poll.contains("worker.execute(") && poll.indexOf("store.lastPollAt(now)") < poll.indexOf("worker.execute(") && poll.contains("running.compareAndSet(false, true)"), "Polling never blocks the caller, is recorded before the network call and never overlaps itself");
         String run = block(alerts, "private static void run(");
         check(run.contains("MainActivity.resumed") && run.contains("areNotificationsEnabled()") && run.indexOf("ServiceAlertPolicy.news(") < run.indexOf("show(app"), "Nothing is announced to someone already looking at the app or without notification permission");
