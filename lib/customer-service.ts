@@ -38,6 +38,9 @@ export const heldStage=(item:Pick<ServiceCase,'data'>)=>{const stages=item.data.
 export function serviceState(item:ServiceCase,all:Row[],members:Member[]){if(item.status==='service'){const stage=heldStage(item)?.stage||'new';return ['won','lost'].includes(stage)?stage:'service';}const contact=serviceContacts(item,all)[0],stage=contact?.data.salesStage||'new';return ['won','lost'].includes(stage)?stage:item.status==='assigned'&&members.find(m=>m.id===item.assignedTo)?.role==='supervisor'?'with_supervisor':item.status;}
 /** When the opportunity was won or lost ('' while open): the stage customer service recorded, or the sales contact that closed it. */
 export function serviceClosedAt(item:ServiceCase,all:Row[]){if(item.status==='service'){const last=heldStage(item);return last&&['won','lost'].includes(last.stage)?last.at:'';}const contact=serviceContacts(item,all)[0];return contact&&['won','lost'].includes(contact.data.salesStage)?contact.createdAt:'';}
+/** The loss reason of a lost opportunity: the stage customer service recorded on one it keeps, else the contact that closed it with sales
+ *  ('' when none was written). The monthly report, its Excel file and «فرص مفقودة للاسترداد» read it here. */
+export function serviceLossReason(item:ServiceCase,all:Row[]){const reason=item.status==='service'?heldStage(item)?.lossReason:serviceContacts(item,all)[0]?.data.lossReason;return String(reason??'').trim();}
 const activeIndexes=new WeakMap<ServiceContext,Map<string,ServiceCase>>();
 export function activeServiceCase(customerId:string,c:ServiceContext){let index=activeIndexes.get(c);if(!index){index=new Map();for(const s of c.serviceCases)if(!index.has(s.customerId)&&!['won','lost'].includes(serviceState(s,c.all,c.members)))index.set(s.customerId,s);activeIndexes.set(c,index);}return index.get(customerId);}
 /** Once a later intake exists, its predecessor's contact history cannot be rewritten. */

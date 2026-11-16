@@ -8,7 +8,7 @@
 // canReadComplaint, the report's own scope). The screen's tiles and stage rows are defined once (lib/service-report-view.ts), so the page and the file cannot
 // drift. Pure: no database, no request; the route (app/api/service-report/export) loads the records and checks who may ask.
 import {xlsxBook,type BookCell,type BookSheet} from './xlsx-write';
-import {canReadService,serviceContacts,serviceState,serviceStatusLabels,serviceStatusLabelsEn,type ServiceContext} from './customer-service';
+import {canReadService,serviceContacts,serviceLossReason,serviceState,serviceStatusLabels,serviceStatusLabelsEn,type ServiceContext} from './customer-service';
 import {caseProgress,SERVICE_TARGET_HOURS} from './service-queue';
 import {serviceContactType,serviceMonthOf,serviceReport,type ServiceReport} from './service-report';
 import {complaintReportFlow,complaintReportStages,complaintReportTiles,contactTypeText,percent,sayIn,serviceReportFileName,serviceReportNote,serviceReportStages,serviceReportTiles,serviceReportTitle,type ExportLanguage,type Say,type ServiceReportKind} from './service-report-view';
@@ -58,7 +58,7 @@ export function serviceRequestDetails(c:ServiceContext,month:string,now:string,s
   // The delegation began when the case reached the supervisor: the last assignment or reassignment before it was delegated.
   const reachedSupervisor=[assignedAt,data.reassignedAt||''].filter(stamp=>!!stamp&&(!delegatedAt||stamp<=delegatedAt)).sort().at(-1)||'';
   const visitNumber=data.registration?.visitNumber,number=typeof visitNumber==='number'?visitNumber:'';
-  const lossReason=state==='lost'?String(contacts[0]?.data.lossReason||'').trim()||say('غير محدد','Unspecified'):'';
+  const lossReason=state==='lost'?serviceLossReason(item,c.all)||say('غير محدد','Unspecified'):'';
   return [number,String(customer?.data.name||''),String(customer?.data.city||'').trim(),english(String(customer?.data.region||'').trim(),say),contactTypeText(serviceContactType(item),say),(data.products||[]).map(product=>english(product,say)).join(say('، ',', ')),name(item.creatorId),name(holder),say(serviceStatusLabels[state]||state,serviceStatusLabelsEn[state]||state),
    riyadhStamp(item.createdAt),
    riyadhStamp(approvedAt),approvedAt?lateMark(item.createdAt,approvedAt,T.approval,now,false,say):stage==='approval'?yesNo(progress.late,say):'',

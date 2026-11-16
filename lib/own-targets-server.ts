@@ -12,6 +12,7 @@ import {salesCoverageStatus,nextDay} from './sales-coverage';
 import {evidenceScopeKey,kpiEvidenceInputSchema} from './kpi-evidence';
 import {readSalesRevision} from './kpi-evidence-server';
 import {readKpiPurchaseHistory} from './kpi-history-server';
+import {serviceSalesExclusion} from './service-sales-server';
 
 type Context=Awaited<ReturnType<typeof context>>;
 type TargetRow={kind:'sales'|'activity';month:string;data:string};
@@ -47,7 +48,8 @@ async function ownOutOfEvaluation(c:Context,month:string){
   c.db.prepare(`SELECT ${recordColumns} FROM crm_records WHERE kind='activity' AND json_extract(data,'$.date')>=? AND json_extract(data,'$.date')<=? AND (trim(json_extract(data,'$.performedBy'))=? OR lower(trim(json_extract(data,'$.recordedByEmail')))=? OR trim(json_extract(data,'$.responsibleId'))=?)`).bind(period.first,period.cutoff,me.id,me.email.toLowerCase(),me.id).all<RecordRow>(),
   c.db.prepare(`SELECT ${recordColumns} FROM crm_records WHERE kind='customer' AND json_extract(data,'$._createdBy')=? AND created_at>=? AND created_at<?`).bind(me.id,from,until).all<RecordRow>(),
   c.db.prepare("SELECT date FROM crm_sales WHERE rep_id=? AND status='confirmed' AND date>=? AND date<=? LIMIT 1").bind(me.id,period.first,period.cutoff).all<{date:string}>(),
-  c.db.prepare('SELECT e.date FROM crm_erp_sales e WHERE e.rep_id=? AND e.date>=? AND e.date<=? LIMIT 1').bind(me.id,period.first,period.cutoff).all<{date:string}>()
+  // A full customer-service sale is not the representative's work, as the evaluation reads it (lib/kpis-server.ts, 2026-11-16).
+  serviceSalesExclusion(c).then(excluded=>c.db.prepare('SELECT e.date FROM crm_erp_sales e WHERE e.rep_id=? AND e.date>=? AND e.date<=? AND e.id NOT IN (SELECT value FROM json_each(?)) LIMIT 1').bind(me.id,period.first,period.cutoff,JSON.stringify([...excluded||[]])).all<{date:string}>())
  ]);
  const records=salesReportingRecords([...activities.results,...customers.results].map(row=>({...row,data:JSON.parse(row.data)})),c.members);
  const worked=workedMonths(workMonthsByMember(records,period.cutoff),[me.id],[...manual.results,...erp.results].map(row=>row.date),period.cutoff);

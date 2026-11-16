@@ -10,9 +10,13 @@ import {quotationRefKey} from './quotation-refs';
  *    who has not bought for 90 days, a support request of «التواصل مع العملاء», a missed visit, a complaint), filled in and locked.
  * B. «اعتماد وإحالة»: the customer-service manager passes the opportunity to the sales manager (as before) or keeps it with customer
  *    service, only for a customer with no ERP code, one who has not bought for 90 days (or never), or a lead customer service brought in.
- * C. Sales attribution, each invoice once, highest first: «مبيعات بالكامل» (the invoice names a quotation of the customer issued while
- *    customer service kept the opportunity), «مبيعات بالمشاركة» (the same while an opportunity customer service registered was with sales),
- *    «مبيعات بالمساندة» (the customer was reached through «التواصل مع العملاء» with interest and bought within the set days).
+ * C. Sales attribution, each invoice once, highest first: «مبيعات بالكامل» (the invoice names a quotation of the customer dated on or after
+ *    the day customer service was given the opportunity, while it keeps it; the invoice is dated on or after that quotation, is of that
+ *    customer when its code names one customer, and reached the system after the decision, so keeping an opportunity never reclassifies a
+ *    document already held, nor any month before it), «مبيعات بالمشاركة» (the quotation of an opportunity customer service registered, at
+ *    any other time it was open), «مبيعات بالمساندة» (the customer was reached through «التواصل مع العملاء» with interest and bought within
+ *    the set days). An ERP return naming no quotation, of a customer with full sales and dated on or after one, follows them, up to what
+ *    they left out of the achievement.
  * D. «تسجيل دور خدمة العملاء» when an opportunity customer service took part in is won or lost.
  * E. «أداء خدمة العملاء», for follow-up only: no target (the owner's decision). */
 
@@ -131,14 +135,16 @@ export const salesCategoryLabels:Record<SalesCategory,string>={full:'مبيعا�
 export const salesCategoryLabelsEn:Record<SalesCategory,string>={full:'Full customer-service sales',shared:'Shared sales',support:'Support-assisted sales'};
 export const FULL_SALES_LINE='منها مبيعات خدمة العملاء بالكامل';
 export const FULL_SALES_NOTE='(ضمن إجمالي ERP أعلاه وخارج تحقيق المستهدفات والتقييم)';
-/** An opportunity customer service registered, as the attribution reads it. `held`: customer service keeps it (route 'service'). */
+/** An opportunity customer service registered, as the attribution reads it. `held`: customer service keeps it (route 'service');
+ *  `routedAt`: the moment of the decision ('' when none was taken). */
 export type CaseFact={id:string;number:number|null;customerId:string;customerName:string;registrarId:string;ownerId:string;held:boolean;route:Route|null;approved:boolean;
- createdAt:string;state:string;closedAt:string;leadGroup:string|null;leadSource:string|null;leadNote:string};
+ createdAt:string;state:string;closedAt:string;leadGroup:string|null;leadSource:string|null;leadNote:string;routedAt:string};
 /** A quotation of a customer (an ERP quotation imported onto it): `ref` «Qut-349», its day and its total. */
 export type QuoteFact={id:string;ref:string;customerId:string;date:string;total:number};
 /** One sales document: an ERP invoice or return (crm_erp_sales), or a confirmed manual invoice (crm_sales, never a quotation link).
- *  `value` before tax, a return negative; `refs` the quotations its «الوصف» names; `customerId` the customer it resolves to ('' when none). */
-export type InvoiceFact={id:string;source:'erp'|'crm';number:string;date:string;type:'sale'|'return';customerId:string;repId:string;value:number;refs:string[]};
+ *  `value` before tax, a return negative; `refs` every quotation its «الوصف» names; `customerId` the customer its code names when it
+ *  names one ('' otherwise); `importedAt` when the system received it. */
+export type InvoiceFact={id:string;source:'erp'|'crm';number:string;date:string;type:'sale'|'return';customerId:string;repId:string;value:number;refs:string[];importedAt:string};
 /** A contact customer service made through «التواصل مع العملاء» that found the customer interested or asking for a visit. */
 export type SupportContactFact={requestId:string;customerId:string;handlerId:string;at:string};
 export const SUPPORT_SALES_OUTCOMES=['reached_interested','wants_visit'] as const;
@@ -158,22 +164,36 @@ export function caseOfQuote(quote:Pick<QuoteFact,'customerId'|'date'>,cases:read
  }
  return found;
 }
-/** Every invoice customer service earns, once, in the highest category it reaches. A quotation an invoice names decides «بالكامل» (its
- * opportunity is kept by customer service) and «بالمشاركة» (it is with sales), whatever the ERP salesperson; a support contact decides
- * «بالمساندة» for a sale of that customer no later than `supportDays` after the contact's day. A return goes to the category of its quotation
- * with a negative value and is not counted as an invoice. */
+/** Whether an invoice may be the one that sold a quotation: dated on or after it, and of its customer when the invoice's code names one
+ *  customer (as «تحويل عروض الأسعار» reads a conversion, lib/kpis.ts quoteConversions: never an invoice before its quotation). */
+export const invoiceOfQuote=(invoice:Pick<InvoiceFact,'date'|'customerId'>,quote:Pick<QuoteFact,'date'|'customerId'>)=>!!quote.date&&invoice.date>=quote.date&&(!invoice.customerId||invoice.customerId===quote.customerId);
+/** Whether an invoice of a quotation of a kept opportunity is customer service's alone («بالكامل»): the quotation and the invoice dated on or
+ *  after the day of the decision, and the invoice received after it. The decision never changes a document the system already held, so a
+ *  finished month (or any figure already confirmed) stays as it was. */
+export function keptSale(item:Pick<CaseFact,'held'|'routedAt'>,quote:Pick<QuoteFact,'date'>,invoice:Pick<InvoiceFact,'date'|'importedAt'>){
+ if(!item.held||!item.routedAt)return false;
+ const day=riyadhDayOf(item.routedAt),decided=Date.parse(item.routedAt),received=Date.parse(invoice.importedAt);
+ return !!day&&quote.date>=day&&invoice.date>=day&&Number.isFinite(decided)&&Number.isFinite(received)&&received>=decided;
+}
+/** Every invoice customer service earns, once, in the highest category it reaches. A quotation an invoice names decides «بالكامل» (keptSale)
+ * and «بالمشاركة» (any other time an opportunity customer service registered was open), whatever the ERP salesperson; a support contact
+ * decides «بالمساندة» for a sale of that customer no later than `supportDays` after the contact's day. A return goes to the category of its
+ * quotation with a negative value and is not counted as an invoice; an ERP return naming no quotation follows the customer's full sales
+ * (fullReturns). */
 export function attributeSales(input:{cases:readonly CaseFact[];quotes:readonly QuoteFact[];invoices:readonly InvoiceFact[];contacts:readonly SupportContactFact[];supportDays:number}):AttributedInvoice[]{
- const quoteCase=new Map<string,CaseFact>();
- for(const q of input.quotes){const key=quotationRefKey(q.ref);if(!key)continue;const item=caseOfQuote(q,input.cases);if(item)quoteCase.set(key,item);}
+ const byRef=new Map<string,{quote:QuoteFact;item:CaseFact}[]>();
+ for(const q of input.quotes){const key=quotationRefKey(q.ref);if(!key)continue;const item=caseOfQuote(q,input.cases);if(!item)continue;const list=byRef.get(key);if(list)list.push({quote:q,item});else byRef.set(key,[{quote:q,item}]);}
  const out=new Map<string,AttributedInvoice>();
+ const order=(a:CaseFact,b:CaseFact)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id);
  for(const invoice of input.invoices){
-  const found=invoice.refs.map(ref=>quoteCase.get(ref)).filter((item):item is CaseFact=>!!item);
+  const found=[...new Set(invoice.refs)].flatMap(ref=>byRef.get(ref)||[]).filter(match=>invoiceOfQuote(invoice,match.quote));
   if(!found.length)continue;
-  const ordered=[...new Set(found)].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
-  const held=ordered.find(item=>item.held),item=held||ordered[0];
-  out.set(invoice.id,{id:invoice.id,source:invoice.source,number:invoice.number,date:invoice.date,type:invoice.type,category:held?'full':'shared',memberId:held?held.ownerId:item.registrarId,caseId:item.id,
+  const kept=found.filter(match=>keptSale(match.item,match.quote,invoice)).map(match=>match.item).sort(order)[0];
+  const item=kept||found.map(match=>match.item).sort(order)[0];
+  out.set(invoice.id,{id:invoice.id,source:invoice.source,number:invoice.number,date:invoice.date,type:invoice.type,category:kept?'full':'shared',memberId:kept?kept.ownerId:item.registrarId,caseId:item.id,
    value:cents(invoice.type==='return'?-Math.abs(invoice.value):invoice.value),customerId:invoice.customerId,repId:invoice.repId});
  }
+ for(const entry of fullReturns(input.invoices,out))out.set(entry.id,entry);
  const byCustomer=new Map<string,SupportContactFact[]>();
  for(const c of input.contacts){if(!c.customerId)continue;const list=byCustomer.get(c.customerId);if(list)list.push(c);else byCustomer.set(c.customerId,[c]);}
  for(const invoice of input.invoices){
@@ -183,6 +203,33 @@ export function attributeSales(input:{cases:readonly CaseFact[];quotes:readonly 
   if(match)out.set(invoice.id,{id:invoice.id,source:invoice.source,number:invoice.number,date:invoice.date,type:'sale',category:'support',memberId:match.c.handlerId,caseId:null,value:cents(invoice.value),customerId:invoice.customerId,repId:invoice.repId});
  }
  return [...out.values()].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+}
+/** ERP returns repeat no quotation number, so a return of a full customer-service sale would otherwise stay in the ERP salesperson's
+ *  achievement while its sale left it. A return naming no quotation, of a customer whose code names it, dated on or after one of that
+ *  customer's full sales, follows them («بالكامل», to whoever kept the last one before it), whole, while the full sales up to its day
+ *  (less the returns already following them) cover it; a return beyond that stays where it was, so no return lowers anybody below what
+ *  they were credited. Each document once: one already attributed is never taken. */
+export function fullReturns(invoices:readonly InvoiceFact[],attributed:ReadonlyMap<string,AttributedInvoice>):AttributedInvoice[]{
+ const full=new Map<string,AttributedInvoice[]>();
+ for(const a of attributed.values()){if(a.category!=='full'||!a.customerId)continue;const list=full.get(a.customerId);if(list)list.push(a);else full.set(a.customerId,[a]);}
+ if(!full.size)return [];
+ const candidates=new Map<string,InvoiceFact[]>();
+ for(const i of invoices){if(i.source!=='erp'||i.type!=='return'||i.refs.length||!i.customerId||attributed.has(i.id)||!full.has(i.customerId))continue;const list=candidates.get(i.customerId);if(list)list.push(i);else candidates.set(i.customerId,[i]);}
+ const out:AttributedInvoice[]=[];
+ for(const [customerId,returns] of candidates){
+  type Step={day:string;rank:number;id:string;sale?:AttributedInvoice;ret?:InvoiceFact};
+  const steps:Step[]=[...full.get(customerId)!.map(sale=>({day:sale.date,rank:0,id:sale.id,sale})),...returns.map(ret=>({day:ret.date,rank:1,id:ret.id,ret}))]
+   .sort((a,b)=>a.day.localeCompare(b.day)||a.rank-b.rank||a.id.localeCompare(b.id));
+  let pool=0,last:AttributedInvoice|undefined;
+  for(const step of steps){
+   if(step.sale){pool=cents(pool+step.sale.value);if(step.sale.type==='sale')last=step.sale;continue;}
+   const ret=step.ret!,value=cents(Math.abs(ret.value));
+   if(!last||value<=0||value>pool)continue;
+   pool=cents(pool-value);
+   out.push({id:ret.id,source:ret.source,number:ret.number,date:ret.date,type:'return',category:'full',memberId:last.memberId,caseId:last.caseId,value:-value,customerId,repId:ret.repId});
+  }
+ }
+ return out;
 }
 /** The documents that leave every target achievement, the company counter and the evaluation: the full customer-service sales. */
 export const fullSalesIds=(attributed:readonly AttributedInvoice[])=>new Set(attributed.filter(a=>a.category==='full').map(a=>a.id));

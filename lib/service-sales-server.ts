@@ -6,7 +6,7 @@ import {z} from 'zod';
 import {context,CRMError} from './crm-server';
 import type {Member,Row} from './crm';
 import {memberCanAccessRegion} from './regions';
-import {activeServiceCase,canReadService,heldStage,isServiceRole,serviceCandidates,serviceClosedAt,serviceContacts,servicePermissions,serviceState,type ServiceCase} from './customer-service';
+import {activeServiceCase,canReadService,isServiceRole,serviceCandidates,serviceClosedAt,serviceLossReason,servicePermissions,serviceState,type ServiceCase} from './customer-service';
 import {customerVisits} from './customer-visits';
 import {isSalesRequest,isOpen} from './crm';
 import {customerErpCodes,customerCodeKey,uniqueCustomerCodes} from './customer-identity';
@@ -44,7 +44,7 @@ const inReach=(me:Member,customer:Row|undefined)=>!!customer&&customer.kind==='c
 export type LeadReference={kind:LeadRefKind;id:string;source:string;label:string;customerId:string;customerName:string;/** Why it cannot be started now ('' when it can). */blocked:string};
 const STARTED='بدأت فرصة جديدة من هذا السجل من قبل.';
 const OPEN_CASE='للعميل فرصة مفتوحة لدى خدمة العملاء أو المبيعات؛ تابعها بدل بدء فرصة جديدة.';
-/** Whether an opportunity was already started from this record (any state: a record starts one opportunity). */
+/** Whether an opportunity was already started from this record (any state: a lost opportunity, a request or a complaint starts one). */
 const startedFrom=(c:Pick<Context,'serviceCases'>,kind:LeadRefKind,id:string)=>c.serviceCases.some(item=>item.leadRefKind===kind&&item.leadRefId===id);
 /** The record an opportunity is started from, as this reader may read it, with the source the system fills in. 404 for a record the
  *  reader may not read (or that is not there), 409 for one that cannot start an opportunity (not lost, has bought, the wrong kind). */
@@ -54,7 +54,9 @@ export async function resolveLeadReference(c:Context,kind:LeadRefKind,id:string)
  const finish=(customerId:string,label:string):LeadReference=>{
   const customer=customers.get(customerId);
   if(!inReach(c.me,customer))throw new CRMError('العميل غير متاح لك.',404);
-  const blocked=startedFrom(c,kind,id)?STARTED:activeServiceCase(customerId,c)?OPEN_CASE:'';
+  // A record starts one opportunity, except a customer who has not bought: started again once the opportunity it started closed (the
+  // list «عملاء منقطعون عن الشراء 90 يومًا» offers it again then), never while one of the customer is open.
+  const blocked=kind!=='customer'&&startedFrom(c,kind,id)?STARTED:activeServiceCase(customerId,c)?OPEN_CASE:'';
   return {kind,id,source,label,customerId,customerName:text(customer!.data.name),blocked};
  };
  if(kind==='opportunity'){
@@ -102,7 +104,7 @@ export async function intakeLead(c:Context,raw:unknown,present:boolean,customerI
 export type LostRow={id:string;number:number|null;customerId:string;customerName:string;lossReason:string;lostAt:string;holderName:string;registrarName:string};
 export type DormantRow={id:string;name:string;code:string;city:string;phone:string;repName:string;lastPurchase:string};
 /** The loss reason of a lost opportunity: the stage customer service recorded, or the contact that closed it with sales. */
-function lossReasonOf(item:ServiceCase,all:Row[]){if(item.status==='service')return text(heldStage(item)?.lossReason);const contact=serviceContacts(item,all)[0];return text(contact?.data.lossReason);}
+const lossReasonOf=(item:ServiceCase,all:Row[])=>serviceLossReason(item,all);
 /** GET /api/service-leads?list=lost|dormant&q=: the lists of «مصادر الفرص», what the reader may start an opportunity on, newest first. */
 export async function leadList(c:Context,list:LeadList,query:string){
  const q=query.trim().toLowerCase().slice(0,60),match=(...values:unknown[])=>!q||values.some(value=>text(value).toLowerCase().includes(q));
@@ -112,7 +114,9 @@ export async function leadList(c:Context,list:LeadList,query:string){
   for(const item of c.serviceCases){
    const customer=customers.get(item.customerId);
    if(!inReach(c.me,customer)||serviceState(item,c.all,c.members)!=='lost'||startedFrom(c,'opportunity',item.id)||activeServiceCase(item.customerId,c))continue;
-   const row={id:item.id,number:caseNumber(item),customerId:item.customerId,customerName:text(customer!.data.name),lossReason:lossReasonOf(item,c.all),lostAt:serviceClosedAt(item,c.all)||item.updatedAt,holderName:name(item.assignedTo),registrarName:name(item.creatorId)};
+   // The customer and the loss reason are what winning them back needs; who held and registered it only for one the reader may read.
+   const own=canReadService(item,c);
+   const row={id:item.id,number:caseNumber(item),customerId:item.customerId,customerName:text(customer!.data.name),lossReason:lossReasonOf(item,c.all),lostAt:serviceClosedAt(item,c.all)||item.updatedAt,holderName:own?name(item.assignedTo):'',registrarName:own?name(item.creatorId):''};
    if(match(row.number,row.customerName,row.lossReason,row.holderName,row.registrarName))rows.push(row);
   }
   rows.sort((a,b)=>b.lostAt.localeCompare(a.lostAt)||a.id.localeCompare(b.id));
@@ -166,7 +170,8 @@ export function caseFacts(cases:readonly ServiceCase[],all:Row[],members:readonl
  const customers=new Map(all.filter(row=>row.kind==='customer').map(row=>[row.id,row]));
  return cases.map(item=>({id:item.id,number:caseNumber(item),customerId:item.customerId,customerName:text(customers.get(item.customerId)?.data.name),registrarId:item.creatorId,
   ownerId:item.status==='service'?text(item.assignedTo):text(item.assignedTo),held:item.status==='service'&&!!item.assignedTo,route:item.route==='service'||item.route==='sales'?item.route:null,
-  approved:!!item.data.approvedAt,createdAt:item.createdAt,state:serviceState(item,all,[...members]),closedAt:serviceClosedAt(item,all),leadGroup:item.leadGroup||null,leadSource:item.leadSource||null,leadNote:text(item.leadNote)}));
+  approved:!!item.data.approvedAt,createdAt:item.createdAt,state:serviceState(item,all,[...members]),closedAt:serviceClosedAt(item,all),leadGroup:item.leadGroup||null,leadSource:item.leadSource||null,leadNote:text(item.leadNote),
+  routedAt:item.route==='service'?text(item.routedAt):''}));
 }
 type ServiceRaw={id:string;customerId:string;status:string;creatorId:string;serviceManagerId:string|null;salesManagerId:string|null;assignedTo:string|null;supervisorId:string|null;data:string;createdAt:string;updatedAt:string;version:number;
  leadGroup:string|null;leadSource:string|null;leadRefKind:string|null;leadRefId:string|null;leadNote:string;route:string|null;routedBy:string|null;routedAt:string|null};
@@ -176,6 +181,14 @@ type RecordRaw={id:string;kind:string;parentId:string|null;assignedTo:string;bra
 const decodeRecords=(rows:RecordRaw[])=>{const found:Row[]=[];for(const row of rows){try{found.push({...row,kind:row.kind as Row['kind'],data:JSON.parse(row.data)});}catch{/* left out */}}return found;};
 /** Everything the attribution reads, company-wide and whoever asks (a figure of a member never depends on the reader). */
 export type SalesFacts={cases:CaseFact[];quotes:QuoteFact[];invoices:InvoiceFact[];contacts:SupportContactFact[];serviceCases:ServiceCase[];records:Row[];support:SupportRow[]};
+type ErpRaw={id:string;reference:string;date:string;document_type:'sale'|'return';rep_id:string;customer_code:string;total_cents:number;refs:string|null;created_at:string};
+const ERP_COLUMNS="id,reference,date,document_type,rep_id,customer_code,total_cents,json_extract(data,'$.quotationRefs') AS refs,created_at";
+/** The attribution's reads. `heldOnly` (what every achievement asks, lib/service-sales-server.ts serviceSalesExclusion): nothing at all when
+ *  customer service keeps no opportunity; otherwise only the customers it keeps one of, their opportunities and quotations, the documents
+ *  naming one of those quotations and the ERP returns (fullReturns). The full read (the dashboard, the evaluation, the role tasks) adds
+ *  every opportunity, every sales document and the support contacts. The two decide «بالكامل» from the same facts: a full sale needs a
+ *  quotation of a kept opportunity's customer, which both read. An ERP code is matched to a customer as everywhere (uniqueCustomerCodes:
+ *  a code two customers carry names nobody unless a mapping chose one) from every customer's code alone (light rows, no record parsed). */
 async function loadSalesFacts(db:D1Database,members:readonly Member[],options:{heldOnly?:boolean}={}):Promise<SalesFacts|null>{
  const held=(await db.prepare(`SELECT ${SERVICE_COLUMNS} FROM crm_service_cases WHERE route='service'`).all<ServiceRaw>()).results;
  if(options.heldOnly&&!held.length)return null;
@@ -183,10 +196,12 @@ async function loadSalesFacts(db:D1Database,members:readonly Member[],options:{h
   ?(await db.prepare(`SELECT ${SERVICE_COLUMNS} FROM crm_service_cases WHERE customer_id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify([...new Set(held.map(row=>row.customerId))])).all<ServiceRaw>()).results
   :(await db.prepare(`SELECT ${SERVICE_COLUMNS} FROM crm_service_cases ORDER BY created_at,id`).all<ServiceRaw>()).results);
  const customerIds=JSON.stringify([...new Set(serviceCases.map(item=>item.customerId))]);
- // The customers (every one: an ERP code counts only when one customer holds it), the contacts of the cases, and the quotations of their
- // customers (an ERP quotation's parent is its customer; a quotation of a mold request sits two or three levels below).
- const [customers,contacts,quoteRows,identity]=await Promise.all([
-  db.prepare("SELECT id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version FROM crm_records WHERE kind='customer'").all<RecordRaw>(),
+ // The customers of the opportunities (whole: their names, regions and branches), every customer's ERP code (one column), the contacts of
+ // the opportunities, and the quotations of their customers (an ERP quotation's parent is its customer; a quotation of a mold request sits
+ // two or three levels below).
+ const [customers,codeRows,contacts,quoteRows,identity]=await Promise.all([
+  db.prepare("SELECT id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version FROM crm_records WHERE kind='customer' AND id IN (SELECT value FROM json_each(?))").bind(customerIds).all<RecordRaw>(),
+  db.prepare("SELECT id,json_extract(data,'$.code') AS code FROM crm_records WHERE kind='customer' AND json_type(data,'$.code')='text'").all<{id:string;code:string}>(),
   db.prepare("SELECT id,kind,parent_id AS parentId,assigned_to AS assignedTo,branch,data,created_at AS createdAt,updated_at AS updatedAt,version FROM crm_records WHERE kind='activity' AND json_extract(data,'$.serviceCaseId') IN (SELECT id FROM crm_service_cases WHERE customer_id IN (SELECT value FROM json_each(?)))").bind(customerIds).all<RecordRaw>(),
   db.prepare(`SELECT q.id,json_extract(q.data,'$.number') AS number,json_extract(q.data,'$.date') AS date,json_extract(q.data,'$.status') AS status,COALESCE(json_extract(q.data,'$.total'),0) AS total,
    CASE WHEN p1.kind='customer' THEN p1.id WHEN p2.kind='customer' THEN p2.id WHEN p3.kind='customer' THEN p3.id ELSE '' END AS customerId
@@ -197,22 +212,23 @@ async function loadSalesFacts(db:D1Database,members:readonly Member[],options:{h
  const customerRows=decodeRecords(customers.results),records=[...customerRows,...decodeRecords(contacts.results)];
  const quotes:QuoteFact[]=quoteRows.results.filter(row=>row.status!=='draft'&&row.customerId&&quotationRefKey(row.number)).map(row=>({id:row.id,ref:quotationRefKey(row.number)!,customerId:row.customerId,date:text(row.date).slice(0,10),total:Number(row.total)||0}));
  const refs=new Set(quotes.map(q=>q.ref));
- const codes=uniqueCustomerCodes(customerRows,identity?.mappings||[]),customerOfCode=(code:string)=>{const matches=codes.get(customerCodeKey(code))||[];return matches.length===1?matches[0].id:'';};
- // The sales documents: those that name a quotation of these customers (for «بالكامل» and «بالمشاركة»), and, beyond the held-only read, every
- // document (for «بالمساندة» and the customers that came back).
- const erp=(await db.prepare(options.heldOnly
-  ?"SELECT id,reference,date,document_type,rep_id,customer_code,total_cents,json_extract(data,'$.quotationRefs') AS refs FROM crm_erp_sales WHERE json_array_length(data,'$.quotationRefs')>0"
-  :"SELECT id,reference,date,document_type,rep_id,customer_code,total_cents,json_extract(data,'$.quotationRefs') AS refs FROM crm_erp_sales").all<{id:string;reference:string;date:string;document_type:'sale'|'return';rep_id:string;customer_code:string;total_cents:number;refs:string|null}>()).results;
- const invoices:InvoiceFact[]=[];
+ const codeHolders=codeRows.results.map(row=>({id:row.id,kind:'customer' as const,parentId:null,assignedTo:'',branch:'',data:{code:row.code},createdAt:'',updatedAt:'',version:0}) as Row);
+ const codes=uniqueCustomerCodes(codeHolders,identity?.mappings||[]),customerOfCode=(code:string)=>{const matches=codes.get(customerCodeKey(code))||[];return matches.length===1?matches[0].id:'';};
+ // The sales documents: held-only, those that name a quotation of these customers and the ERP returns of these customers; otherwise every one.
+ const erp=options.heldOnly
+  ?(await db.prepare(`SELECT ${ERP_COLUMNS} FROM crm_erp_sales WHERE json_array_length(data,'$.quotationRefs')>0 OR document_type='return'`).all<ErpRaw>()).results
+  :(await db.prepare(`SELECT ${ERP_COLUMNS} FROM crm_erp_sales`).all<ErpRaw>()).results;
+ const caseCustomers=new Set(serviceCases.map(item=>item.customerId)),invoices:InvoiceFact[]=[];
  for(const row of erp){
   let named:string[]=[];try{named=storedQuotationRefs(JSON.parse(row.refs||'[]'));}catch{named=[];}
-  if(options.heldOnly&&!named.some(ref=>refs.has(ref)))continue;
-  invoices.push({id:row.id,source:'erp',number:row.reference,date:row.date,type:row.document_type==='return'?'return':'sale',customerId:customerOfCode(row.customer_code),repId:row.rep_id,value:Number(row.total_cents)/100,refs:named.filter(ref=>refs.has(ref))});
+  const type=row.document_type==='return'?'return':'sale',customerId=customerOfCode(row.customer_code);
+  if(options.heldOnly&&!named.some(ref=>refs.has(ref))&&!(type==='return'&&!named.length&&caseCustomers.has(customerId)))continue;
+  invoices.push({id:row.id,source:'erp',number:row.reference,date:row.date,type,customerId,repId:row.rep_id,value:Number(row.total_cents)/100,refs:named,importedAt:text(row.created_at)});
  }
  let support:SupportRow[]=[],supportContacts:SupportContactFact[]=[];
  if(!options.heldOnly){
-  for(const row of (await db.prepare("SELECT id,reference,date,rep_id,customer_id,total_cents FROM crm_sales WHERE status='confirmed'").all<{id:string;reference:string;date:string;rep_id:string;customer_id:string;total_cents:number}>()).results)
-   invoices.push({id:row.id,source:'crm',number:row.reference,date:row.date,type:row.total_cents<0?'return':'sale',customerId:row.customer_id,repId:row.rep_id,value:Number(row.total_cents)/100,refs:[]});
+  for(const row of (await db.prepare("SELECT id,reference,date,rep_id,customer_id,total_cents,created_at FROM crm_sales WHERE status='confirmed'").all<{id:string;reference:string;date:string;rep_id:string;customer_id:string;total_cents:number;created_at:string}>()).results)
+   invoices.push({id:row.id,source:'crm',number:row.reference,date:row.date,type:row.total_cents<0?'return':'sale',customerId:row.customer_id,repId:row.rep_id,value:Number(row.total_cents)/100,refs:[],importedAt:text(row.created_at)});
   support=await loadAllSupport(db);
   supportContacts=support.flatMap(row=>{const result=row.data.result;if(row.data.status==='cancelled'||!result||!(SUPPORT_SALES_OUTCOMES as readonly string[]).includes(result.outcome))return [];const handler=text(result.by||row.data.handlerId);return handler&&result.at?[{requestId:row.id,customerId:row.data.customerId,handlerId:handler,at:result.at}]:[];});
  }
@@ -241,6 +257,14 @@ export async function loadConversionFacts(db:D1Database,members:readonly Member[
  const attributed=attributeSales({cases:facts.cases,quotes:facts.quotes,invoices:facts.invoices,contacts:[],supportDays:0});
  const invoiced=new Set(attributed.filter(a=>a.caseId&&a.type==='sale'&&a.value>0).map(a=>a.caseId as string));
  return closed.map(item=>({caseId:item.id,customerId:item.customerId,memberId:creditedMember(item),closedAt:item.closedAt,won:item.state==='won',invoiced:invoiced.has(item.id)}));
+}
+
+/** The opportunities the reader may read (lib/customer-service.ts canReadService), from the facts already loaded: the customers there are
+ *  those of the opportunities, which is all canReadService looks at. */
+function readableCases(c:Pick<Context,'me'|'members'>,facts:SalesFacts|null):Set<string>{
+ if(!facts)return new Set();
+ const reader={me:c.me,members:c.members,all:facts.records,serviceCases:facts.serviceCases};
+ return new Set(facts.serviceCases.filter(item=>canReadService(item,reader)).map(item=>item.id));
 }
 
 // ------------------------------------------------------------------------------------------------------------- D. role tasks
@@ -273,11 +297,18 @@ function taskReach(me:Member,members:readonly Member[]):Set<string>|null{
  if(me.role==='customer_service')return new Set([me.id]);
  return new Set();
 }
+/** Whether the reader may see a task: one of a member they follow (taskReach), on an opportunity they may read (canReadService: an
+ *  administrator in their regions too), or their own task on a customer of their regions and branch (a support handler is not on the
+ *  opportunity itself but wrote on its customer's request). */
+function taskVisible(c:Pick<Context,'me'|'members'>,facts:SalesFacts|null,readable:ReadonlySet<string>){
+ const reach=taskReach(c.me,c.members),customers=new Map((facts?.records||[]).filter(row=>row.kind==='customer').map(row=>[row.id,row])),cases=new Map((facts?.serviceCases||[]).map(item=>[item.id,item]));
+ return (t:RoleTaskFact)=>(!reach||reach.has(t.memberId))&&(readable.has(t.caseId)||t.memberId===c.me.id&&inReach(c.me,customers.get(cases.get(t.caseId)?.customerId||'')));
+}
 /** GET /api/service-role-tasks: the tasks the reader follows, open first, then those recorded in the last 30 days. */
 export async function roleTasksView(c:Context,now:string){
  if(!leadReader(c.me.role))throw new CRMError('تسجيل دور خدمة العملاء متاح لخدمة العملاء ومدير النظام.',403);
- const reach=taskReach(c.me,c.members),name=nameOf(c.members),since=Date.parse(now)-30*86400000;
- const tasks=(await loadRoleTasks(c.db,c.members)).filter(t=>(!reach||reach.has(t.memberId))&&(!t.doneAt||Date.parse(t.doneAt)>=since))
+ const name=nameOf(c.members),since=Date.parse(now)-30*86400000,facts=await loadSalesFacts(c.db,c.members),visible=taskVisible(c,facts,readableCases(c,facts));
+ const tasks=(await loadRoleTasks(c.db,c.members,facts)).filter(t=>visible(t)&&(!t.doneAt||Date.parse(t.doneAt)>=since))
   .map(t=>({...t,memberName:name(t.memberId),doneByName:name(t.doneBy),hours:Math.round(roleTaskHours(t.closedAt,t.doneAt||now)*10)/10,targetHours:ROLE_TASK_HOURS,late:t.doneAt?roleTaskHours(t.closedAt,t.doneAt)>ROLE_TASK_HOURS:roleTaskLate(t.closedAt,now),canRecord:!t.doneAt&&(t.memberId===c.me.id||c.me.role==='admin')}))
   .sort((a,b)=>Number(!!a.doneAt)-Number(!!b.doneAt)||Number(b.late)-Number(a.late)||a.closedAt.localeCompare(b.closedAt));
  const open=tasks.filter(t=>!t.doneAt),mine=open.filter(t=>t.memberId===c.me.id).length,late=open.filter(t=>t.memberId!==c.me.id&&t.late).length;
@@ -289,9 +320,8 @@ export async function recordRoleTask(c:Context,body:unknown,now:string){
  if(!leadReader(c.me.role))throw new CRMError('تسجيل دور خدمة العملاء متاح لخدمة العملاء ومدير النظام.',403);
  const input=taskPostSchema.parse(body),parsed=roleTaskSchema.safeParse({roles:input.roles,note:input.note});
  if(!parsed.success)throw new CRMError(parsed.error.issues.map(issue=>issue.message).join(' • '),400);
- const task=(await loadRoleTasks(c.db,c.members)).find(t=>t.caseId===input.caseId);
- if(!task)throw new CRMError('المهمة غير متاحة.',404);
- const reach=taskReach(c.me,c.members);if(reach&&!reach.has(task.memberId))throw new CRMError('المهمة غير متاحة.',404);
+ const facts=await loadSalesFacts(c.db,c.members),task=(await loadRoleTasks(c.db,c.members,facts)).find(t=>t.caseId===input.caseId);
+ if(!task||!taskVisible(c,facts,readableCases(c,facts))(task))throw new CRMError('المهمة غير متاحة.',404);
  if(task.memberId!==c.me.id&&c.me.role!=='admin')throw new CRMError('يسجّل الدور ممثل خدمة العملاء المكلّف بالمهمة.',403);
  if(task.doneAt)return {ok:true,caseId:task.caseId,alreadyDone:true};
  const roles=[...new Set(parsed.data.roles)],mutation=crypto.randomUUID();
@@ -329,9 +359,13 @@ export async function performanceView(c:Context,month:string,now:string){
  const rows=servicePerformance({members:visible,cases,quotes,attributed,invoices,contacts,tasks},month,now);
  const teams=groups.map(g=>{const own=rows.filter(r=>g.members.some(m=>m.id===r.memberId));return {managerId:g.managerId,managerName:g.managerName,rows:own,total:performanceTotal(own,g.managerName)};});
  const ids=new Set(visible.map(m=>m.id)),name=nameOf(c.members),number=new Map(cases.map(o=>[o.id,o.number]));
+ // The figures are the members' whatever the reader (a sales manager reads every team's, question 3); the customer of an opportunity,
+ // its owner and the words of its source only when the reader may read that opportunity (lib/customer-service.ts canReadService: the
+ // reader's regions, the branch for all but an administrator, and no member of sales on one customer service keeps).
+ const readable=readableCases(c,facts);
  const invoiceRows=attributed.filter(a=>a.date.slice(0,7)===month&&ids.has(a.memberId)).map(a=>({date:a.date,number:a.number,type:a.type,category:a.category,memberName:name(a.memberId),value:a.value,caseNumber:a.caseId?number.get(a.caseId)??null:null}));
- const opportunities=cases.filter(o=>riyadhMonth(o.createdAt)===month&&ids.has(o.registrarId)).map(o=>({number:o.number,customerName:o.customerName,registrarName:name(o.registrarId),ownerName:o.held?name(o.ownerId):'',leadGroup:o.leadGroup,leadSource:o.leadSource,leadNote:o.leadNote,
-  route:o.held?'service':o.route==='sales'||o.approved?'sales':'',state:o.state,createdAt:o.createdAt}));
+ const opportunities=cases.filter(o=>riyadhMonth(o.createdAt)===month&&ids.has(o.registrarId)).map(o=>{const shown=readable.has(o.id);return {number:o.number,customerName:shown?o.customerName:'',hidden:!shown,registrarName:name(o.registrarId),ownerName:o.held&&shown?name(o.ownerId):'',leadGroup:o.leadGroup,leadSource:o.leadSource,leadNote:shown?o.leadNote:'',
+  route:o.held?'service':o.route==='sales'||o.approved?'sales':'',state:o.state,createdAt:o.createdAt};});
  return {generatedAt:now,month,supportDays,note:performanceNote,teams,invoices:invoiceRows,opportunities};
 }
 const stateWords:Record<string,[string,string]>={pending_approval:['بانتظار اعتماد خدمة العملاء','Awaiting customer service approval'],returned:['مطلوب تعديل','Changes requested'],pending_assignment:['بانتظار تكليف المبيعات','Awaiting sales assignment'],
@@ -350,7 +384,7 @@ export function performanceWorkbook(view:PerformanceView,language:'ar'|'en'){
  const invoices:BookCell[][]=[[say('التاريخ','Date'),say('رقم الفاتورة','Invoice number'),say('النوع','Type'),say('الفئة','Category'),say('العضو','Member'),say('القيمة قبل الضريبة','Value before tax'),say('رقم الفرصة','Opportunity number')],
   ...view.invoices.map(i=>[i.date,i.number,i.type==='return'?say('مرتجع','Return'):say('فاتورة مبيعات','Sales invoice'),say(salesCategoryLabels[i.category],salesCategoryLabelsEn[i.category]),i.memberName,i.value,i.caseNumber===null?'':'#'+i.caseNumber])];
  const opportunities:BookCell[][]=[[say('رقم الفرصة','Opportunity number'),say('العميل','Customer'),say('سجّلها','Registered by'),say('مصدر الفرصة','Opportunity source'),say('قرار الاعتماد','Approval decision'),say('المسؤول من خدمة العملاء','Customer-service owner'),say('الحالة','State'),say('التسجيل','Registered')],
-  ...view.opportunities.map(o=>[o.number===null?'':'#'+o.number,o.customerName,o.registrarName,language==='en'?leadLabelEn(o.leadGroup,o.leadSource,o.leadNote):leadLabel(o.leadGroup,o.leadSource,o.leadNote),o.route==='service'?say('تتولاها خدمة العملاء','Customer service takes it'):o.route==='sales'?say('تمرير لمدير المبيعات','Pass to the sales manager'):say('بانتظار القرار','Awaiting decision'),o.ownerName,say(...(stateWords[o.state]||[o.state,o.state])),riyadhDayOf(o.createdAt)])];
+  ...view.opportunities.map(o=>[o.number===null?'':'#'+o.number,o.hidden?say('غير متاح لك','Not available to you'):o.customerName,o.registrarName,language==='en'?leadLabelEn(o.leadGroup,o.leadSource,o.leadNote):leadLabel(o.leadGroup,o.leadSource,o.leadNote),o.route==='service'?say('تتولاها خدمة العملاء','Customer service takes it'):o.route==='sales'?say('تمرير لمدير المبيعات','Pass to the sales manager'):say('بانتظار القرار','Awaiting decision'),o.ownerName,say(...(stateWords[o.state]||[o.state,o.state])),riyadhDayOf(o.createdAt)])];
  const rtl=language!=='en';
  return {fileName:'Yourrest-service-performance-'+view.month+'.xlsx',bytes:xlsxBook([
   {name:say('الملخص','Summary'),rows:summary,rightToLeft:rtl,headerRows:[2],noteRows:[1],widths:[22,22,...performanceColumns.map(()=>14)]},
