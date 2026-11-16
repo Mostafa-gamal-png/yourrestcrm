@@ -1,5 +1,5 @@
 'use client';
-import {can,pageAllowed} from '@/lib/permissions';
+import {can,hubTabsOf} from '@/lib/permissions';
 import {salesScopeMemberIds} from '@/lib/access';
 import {lineCents} from '@/lib/decimal-money';
 import {submitJson} from '@/lib/client-submit';
@@ -25,7 +25,7 @@ import TargetsOverviewCard from './targets-overview';
 import KpiEvidencePanel from './kpi-evidence-panel';
 import ErpCollectionsImport from './erp-collections-import';
 import {targetsOverview} from '@/lib/targets-overview';
-import {HUB_TABS,initialHubTab,rememberHubTab,forgetHubTab,type HubTab} from '@/lib/targets-hub';
+import {initialHubTab,rememberHubTab,forgetHubTab,hubTabToShow,correctHubTabAddress,type HubTab} from '@/lib/targets-hub';
 import './targets-hub.css';
 import {type KpiData} from '@/lib/kpis';
 import {targetsCsvHeaders,targetsCsvRows,performanceCsvHeaders,performanceCsvRows} from '@/lib/targets-export';
@@ -52,11 +52,16 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
  const [staff,setStaff]=useState('all'),[query,setQuery]=useState(''),[status,setStatus]=useState('confirmed'),[branchChoice,setBranchChoice]=useState('__all__'),[summaryProduct,setSummaryProduct]=useState(targetProducts[0].id),[snapshot,setSnapshot]=useState<{key:string;data:Payload}|null>(null),[failure,setFailure]=useState<{key:string;message:string}|null>(null),[revision,setRevision]=useState(0),[page,setPage]=useState(1),[editor,setEditor]=useState<Sale|'new'|null>(null),[voiding,setVoiding]=useState<Sale|null>(null),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[voidError,setVoidError]=useState('');
  const summarySection=useRef<HTMLElement>(null),targetsSection=useRef<HTMLElement>(null),performanceSection=useRef<HTMLElement>(null);
  // «المستهدفات والنتائج في مكان واحد» (2026-11-11): the targets page is one hub of five tabs sharing the month; a tab is shown only to whoever
- // may use it today (the sales tab follows «المبيعات»), and a reload returns to the same tab (lib/targets-hub.ts).
- const hubTabs:HubTab[]=combined?HUB_TABS.filter(tab=>tab!=='sales'||pageAllowed(me,'sales')):[];
- const [hubChoice,setHubChoice]=useState<HubTab>(()=>initialHubTab(me.id)),hubTab:HubTab=hubTabs.includes(hubChoice)?hubChoice:'results';
- const chooseTab=(tab:HubTab)=>{setHubChoice(tab);rememberHubTab(me.id,tab);};
+ // may use it today (the sales tab follows «المبيعات»; since 2026-11-16 a tab the administrator hid from the member is not, lib/permissions.ts
+ // hubTabsOf), and a reload returns to the same tab (lib/targets-hub.ts). A tab the address or the browser names that the member does not
+ // have opens the first tab shown, and the address then names that one.
+ const hubTabs=useMemo<HubTab[]>(()=>combined?hubTabsOf(me):[],[combined,me]);
+ const [hubChoice,setHubChoice]=useState<HubTab>(()=>initialHubTab(me.id)),shownTab=hubTabToShow(hubChoice,hubTabs),hubTab:HubTab=shownTab??'results';
+ const chooseTab=(tab:HubTab)=>{if(!hubTabs.includes(tab))return;setHubChoice(tab);rememberHubTab(me.id,tab);};
  useEffect(()=>combined?()=>forgetHubTab():undefined,[combined]);
+ useEffect(()=>{if(combined&&shownTab&&shownTab!==hubChoice)correctHubTabAddress(shownTab);},[combined,shownTab,hubChoice]);
+ // The evaluation (kpis) is asked for only while one of the tabs it feeds shows; the server leaves it out otherwise (app/api/sales).
+ const evaluationTabs=hubTabs.some(tab=>tab==='results'||tab==='collection'||tab==='quotes');
  const salesView=mode==='sales'||hubTab==='sales',[collectionsImportOpen,setCollectionsImportOpen]=useState(false);
  // «عروض الأسعار»: where the ERP quotations import mounts (app/erp-quotes-import.tsx, built separately): after the merge, its button
  // «استيراد عروض الأسعار من ERP» goes here (and its dialog beside the other imports at the end of this component).
@@ -64,10 +69,10 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
  // The sales page draws its list as before; in the hub the same list is the «رفع المبيعات» tab's panel.
  const SalesFrame=combined?'div':React.Fragment,salesFrameProps=combined?{role:'tabpanel',id:'targets-hub-panel','aria-labelledby':'targets-hub-tab-sales',className:'targets-hub-panel'}:{};
  const identityKey=JSON.stringify([me.id,me.role,me.regionScope||'all',me.branch,me.supervisorId||'',me.authVersion||0]);
- const requestKey=JSON.stringify([identityKey,month,mode,revision]);
+ const requestKey=JSON.stringify([identityKey,month,mode,revision,evaluationTabs]),withKpis=combined&&!futureMonth&&evaluationTabs;
  // Old responses never render while month or authorized identity is changing.
  const payload=authorized&&snapshot?.key===requestKey?snapshot.data:null,error=failure?.key===requestKey?failure.message:'',loading=!payload&&!error;
- useEffect(()=>{if(!authorized)return;const controller=new AbortController();setFailure(null);api<Payload>(undefined,month,controller.signal,combined&&!futureMonth).then(data=>{if(!controller.signal.aborted)setSnapshot({key:requestKey,data});}).catch(e=>{if(!controller.signal.aborted)setFailure({key:requestKey,message:e.message});});return()=>controller.abort();},[requestKey,month,combined,futureMonth,authorized]);
+ useEffect(()=>{if(!authorized)return;const controller=new AbortController();setFailure(null);api<Payload>(undefined,month,controller.signal,withKpis).then(data=>{if(!controller.signal.aborted)setSnapshot({key:requestKey,data});}).catch(e=>{if(!controller.signal.aborted)setFailure({key:requestKey,message:e.message});});return()=>controller.abort();},[requestKey,month,withKpis,authorized]);
  useEffect(()=>{setEditor(null);setVoiding(null);setImportOpen(false);setQuotesImportOpen(false);setErpView(null);setStaff('all');setBranchChoice('__all__');setSummaryProduct(targetProducts[0].id);},[identityKey]);
  useEffect(()=>setPage(1),[month,staff,query,status]);
  const refresh=()=>{setRevision(n=>n+1);void onRefresh();};
@@ -96,7 +101,8 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
  const exportTargets=()=>{if(!payload)return;csv('Yourrest-targets-'+month+'.csv',targetsCsvHeaders,targetsCsvRows(payload.targets,members,month,t,hiddenFromTargets));};
  const exportPerformance=()=>{if(futureMonth||!branchKpis)return;csv('Yourrest-kpis-'+month+'.csv',performanceCsvHeaders,performanceCsvRows(filteredKpiPeople,month,t,language));};
  const scrollTo=(section:React.RefObject<HTMLElement|null>)=>section.current?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
- const summaryDetails=(id:string)=>{selectStaff(id);if(futureMonth)chooseTab('targets');window.requestAnimationFrame(()=>scrollTo(futureMonth?targetsSection:performanceSection));};
+ // A month not begun yet has no evaluation: «تفاصيل» opens the person's targets on «المستهدفات والأوزان» when that tab shows.
+ const summaryDetails=(id:string)=>{selectStaff(id);const toTargets=futureMonth&&hubTabs.includes('targets');if(toTargets)chooseTab('targets');window.requestAnimationFrame(()=>scrollTo(toTargets?targetsSection:performanceSection));};
  async function cancelSale(){if(!voiding||busy)return;setBusy(true);setVoidError('');try{await api({action:'void',id:voiding.id,version:voiding.version,reason});setVoiding(null);toast.success(t('تم إلغاء البيع'));refresh();}catch(e){setVoidError(messageOf(e));}finally{setBusy(false);}}
  if(!authorized)return <section className="sales-workspace"><div className="sales-state" role="alert">{t('هذه الصفحة متاحة للمشرف ومدير المبيعات فقط')}</div></section>;
  // The hub's filters: under the gauges on «نتائج الأداء» (as in the owner's picture), above the content on the other tabs.
@@ -126,8 +132,8 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
     <div className="targets-hub-tabs" role="tablist" aria-label={say('أقسام المستهدفات والتقييم','Targets and evaluation sections')}>{hubTabs.map(tab=>{const [Icon,ar,en]=({results:[ChartNoAxesCombined,'نتائج الأداء','Performance results'],sales:[ShoppingCart,'رفع المبيعات','Sales upload'],collection:[Wallet,'التحصيل','Collection'],quotes:[FileText,'عروض الأسعار','Quotations'],targets:[Target,'المستهدفات والأوزان','Targets & weights']} as const)[tab];return <button key={tab} type="button" role="tab" id={'targets-hub-tab-'+tab} aria-controls="targets-hub-panel" aria-selected={hubTab===tab} className={'targets-hub-tab'+(hubTab===tab?' is-active':'')} onClick={()=>chooseTab(tab)}><Icon size={17} aria-hidden="true"/>{say(ar,en)}</button>;})}</div></div>
    <label className="field targets-hub-month"><span>{say('شهر المستهدفات والأداء','Targets and performance month')}</span><input type="month" value={month} required onChange={e=>{if(e.target.value)onMonthChange(e.target.value);}}/></label>
   </header>}
-  {combined&&hubTab!=='results'&&hubToolbar}
-  {loading?<div className="sales-state"><Loader2 className="spin"/>{t('جارٍ تحميل البيانات…')}</div>:error?<div className="form-error" role="alert">{t(error)} <button className="text-button" onClick={refresh}>{t('إعادة المحاولة')}</button></div>:payload&&<>
+  {combined&&shownTab&&hubTab!=='results'&&hubToolbar}
+  {combined&&!shownTab?<div className="sales-state targets-hub-empty" role="status">{say('لا توجد تبويبات متاحة لحسابك في هذه الصفحة. راجع مدير النظام.','No tab of this page is available to your account. Ask the administrator.')}</div>:loading?<div className="sales-state"><Loader2 className="spin"/>{t('جارٍ تحميل البيانات…')}</div>:error?<div className="form-error" role="alert">{t(error)} <button className="text-button" onClick={refresh}>{t('إعادة المحاولة')}</button></div>:payload&&<>
   {salesView?<SalesFrame {...salesFrameProps}>
    <div className="sales-metrics"><Metric label="صافي المبيعات" value={money(total)} note="ر.س · قبل الضريبة" icon={TrendingUp}/><Metric label="فواتير مسجلة" value={String(invoices.length)} icon={ReceiptText}/><Metric label="عملاء اشتروا" value={String(new Set(invoices.map(s=>s.customerId)).size)} icon={Users}/><Metric label="متوسط قيمة الفاتورة" value={invoices.length?money(total/invoices.length):'—'} note="ر.س · قبل الضريبة" icon={Target}/></div>
    <section className="panel"><div className="panel-heading"><h2>{t('سجل المبيعات')} <span className="inline-count">{sales.length}</span></h2><span className="muted">{t('صافي القيمة بعد الخصم وقبل الضريبة')}</span></div>{!sales.length?<div className="sales-state"><ReceiptText size={32}/><h3>{t('لا توجد مبيعات مطابقة في هذا الشهر')}</h3></div>:<><Table><TableHeader><TableRow>{['التاريخ','مرجع البيع','العميل','المندوب','الأصناف','الصافي · ر.س','الحالة',''].map(h=><TableHead key={h}>{t(h)}</TableHead>)}</TableRow></TableHeader><TableBody>{sales.slice((currentPage-1)*25,currentPage*25).map(s=><TableRow key={s.id}><TableCell className="numeric">{s.date}</TableCell><TableCell><strong>{s.reference}</strong><small>{s.branch}{s.source==='erp'?' · ERP':''}{s.documentType==='return'?' · '+say('مردود مبيعات','Sales return'):''}</small></TableCell><TableCell>{records.some(r=>r.id===s.customerId)?<button className="text-button" onClick={()=>onCustomer(s.customerId)}>{s.customerName}</button>:s.customerName}</TableCell><TableCell>{members.find(m=>m.id===s.repId)?.name||'—'}</TableCell><TableCell><small>{Array.from(new Set(s.items.map(i=>i.product))).map(t).join(' · ')}</small></TableCell><TableCell className="numeric"><strong>{money(s.totalCents/100)}</strong></TableCell><TableCell><span className={'badge '+(s.status==='confirmed'?'won':'lost')}>{t(s.status==='confirmed'?'مسجل':'ملغى')}</span>{s.voidReason&&<small>{s.voidReason}</small>}</TableCell><TableCell><div className="row-actions"><button title={t('تفاصيل البيع')} onClick={()=>s.source==='erp'?setErpView(s):setEditor(s)}>{s.source==='erp'?<ReceiptText size={17}/>:<Pencil size={17}/>}</button>{s.source!=='erp'&&s.status==='confirmed'&&can(me,'sales','delete')&&voidTeam.has(s.repId)&&<button title={t('إلغاء البيع')} onClick={()=>{setVoiding(s);setReason('');setVoidError('');}}><Ban size={17}/></button>}</div></TableCell></TableRow>)}</TableBody></Table>{pages>1&&<div className="table-paging"><button className="btn subtle small" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>{t('السابق')}</button><span>{currentPage} / {pages}</span><button className="btn subtle small" disabled={currentPage===pages} onClick={()=>setPage(currentPage+1)}>{t('التالي')}</button></div>}</>}</section>
@@ -147,8 +153,8 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
   {editor&&payload&&<SaleEditor key={editor==='new'?'new':editor.id} initial={editor==='new'?undefined:editor} me={me} members={members} records={records} onCustomerCreated={onCustomerCreated} onClose={()=>setEditor(null)} onSaved={()=>{setEditor(null);toast.success(t('تم حفظ البيع'));refresh();}}/>}
 
   {quotesImportOpen&&canImportQuotes&&<ErpQuotesImport key={identityKey} onClose={()=>setQuotesImportOpen(false)} onImported={onRefresh}/>}
-  {importOpen&&<ErpSalesImport key={identityKey} onClose={()=>setImportOpen(false)} onImported={async()=>{const data=await api<Payload>(undefined,month,undefined,combined&&!futureMonth);setSnapshot({key:requestKey,data});setFailure(null);}}/>}
-  {collectionsImportOpen&&canImportCollections&&<ErpCollectionsImport key={identityKey+':'+month} month={month} onClose={()=>setCollectionsImportOpen(false)} onImported={async()=>{const data=await api<Payload>(undefined,month,undefined,combined&&!futureMonth);setSnapshot({key:requestKey,data});setFailure(null);}}/>}
+  {importOpen&&<ErpSalesImport key={identityKey} onClose={()=>setImportOpen(false)} onImported={async()=>{const data=await api<Payload>(undefined,month,undefined,withKpis);setSnapshot({key:requestKey,data});setFailure(null);}}/>}
+  {collectionsImportOpen&&canImportCollections&&<ErpCollectionsImport key={identityKey+':'+month} month={month} onClose={()=>setCollectionsImportOpen(false)} onImported={async()=>{const data=await api<Payload>(undefined,month,undefined,withKpis);setSnapshot({key:requestKey,data});setFailure(null);}}/>}
   {erpView&&payload&&<Dialog open onOpenChange={open=>{if(!open)setErpView(null);}}><DialogContent className="crm-dialog sales-editor" dir={direction()}><DialogTitle>{say('فاتورة ERP','ERP invoice')} · {erpView.reference}</DialogTitle><DialogDescription>{say('بيانات مستوردة من تقرير ERP للعرض فقط. القيم قبل الضريبة وبعد الخصم.','Imported ERP record. Read only. Values are after discount and before VAT.')}</DialogDescription><p>{erpView.date} · {erpView.customerName} · {members.find(m=>m.id===erpView.repId)?.name}</p>{erpView.documentType==='return'&&<p>{say('مردود مبيعات — يُخصم من الكمية والقيمة المحققة.','Sales return — deducted from achieved quantity and value.')}</p>}<div className="table-scroll"><table><thead><tr><th>{t('الصنف')}</th><th>{t('المواصفات')}</th><th>{t('الكمية')}</th></tr></thead><tbody>{erpView.items.map((item,index)=><tr key={index}><td>{t(item.product)}</td><td>{item.description}</td><td dir="ltr">{quantityNumber(item.quantity)}</td></tr>)}</tbody></table></div><p><strong>{say('صافي المبيعات','Net sales')}: {money(erpView.totalCents/100)} {t('ر.س')}</strong></p><button className="btn subtle" onClick={()=>setErpView(null)}>{t('إغلاق')}</button></DialogContent></Dialog>}
   <AlertDialog open={!!voiding&&!!payload} onOpenChange={open=>{if(!open&&!busy)setVoiding(null);}}><AlertDialogContent dir={direction()}><AlertDialogTitle>{t('إلغاء البيع')} · {voiding?.reference}</AlertDialogTitle><AlertDialogDescription>{t('سيبقى السجل محفوظًا، وتُستبعد قيمته من المبيعات والتقييم.')}</AlertDialogDescription><VoiceField label="سبب الإلغاء" marked multiline value={reason} onChange={setReason} disabled={busy} contextKey="sale-void" inputProps={{maxLength:500}}/>{voidError&&<div className="form-error">{t(voidError)}</div>}<AlertDialogFooter><AlertDialogCancel disabled={busy}>{t('رجوع')}</AlertDialogCancel><button className="btn danger" disabled={busy||!reason.trim()} onClick={cancelSale}>{busy?<Loader2 className="spin" size={17}/>:<Ban size={17}/>} {t('تأكيد الإلغاء')}</button></AlertDialogFooter></AlertDialogContent></AlertDialog>
  </section>;

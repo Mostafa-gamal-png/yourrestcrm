@@ -30,7 +30,7 @@
 // request id makes a retried import return its first answer without writing twice.
 import {env} from 'cloudflare:workers';
 import {z} from 'zod';
-import {context,CRMError,accessGuard,requireSalesWorkspace,requirePages,requireCell} from './crm-server';
+import {context,CRMError,accessGuard,requireSalesWorkspace,requirePages,requireCell,requireHubTabs} from './crm-server';
 import {salesMemberIds} from './sales';
 import {regionScope,memberCanAccessRegion} from './regions';
 import {type Member} from './crm';
@@ -52,8 +52,10 @@ export const ERP_QUOTES_AUDIT_ACTION='استيراد عروض أسعار ERP';
 const ADD_LABEL='إضافة عرض سعر من ملف ERP',UPDATE_LABEL='تحديث من ملف ERP';
 
 /** Whoever may import ERP sales (the targets page, beside «استيراد مبيعات ERP»: the role, «المبيعات» not hidden, «استيراد» on) AND may
- *  add a quotation («عروض الأسعار» not hidden, «إضافة» on): the role first (403), a hidden screen 404, a cell switched off 403. */
-export function requireErpQuotesImport(me:Member){requireSalesWorkspace(me);requirePages(me,'sales');requirePages(me,'quote');requireCell(me,'sales','import');requireCell(me,'quote','add');}
+ *  add a quotation («عروض الأسعار» not hidden, «إضافة» on): the role first (403), a hidden screen 404, a cell switched off 403. Its button
+ *  is on the hub's tab «عروض الأسعار» only (app/sales-workspace.tsx quotesImportSlot): closed (404) when that tab, or «المستهدفات وتقييم
+ *  الأداء» itself, is hidden from the member (2026-11-16). */
+export function requireErpQuotesImport(me:Member){requireSalesWorkspace(me);requirePages(me,'sales');requirePages(me,'quote');requireHubTabs(me,'quotes');requireCell(me,'sales','import');requireCell(me,'quote','add');}
 function eligible(c:Context){const ids=salesMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>m.role==='rep'&&m.active&&ids.has(m.id));}
 const snapshot=(m:Member)=>[m.id,m.role,m.branch,m.supervisorId||'',regionScope(m),m.active,m.authVersion||0];
 async function state(c:Context){

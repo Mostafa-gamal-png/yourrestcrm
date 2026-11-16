@@ -92,7 +92,7 @@
     "targets-sales": {
       "about": "Sales, targets, KPIs and their evidence (the Targets page, «أهدافي», the gauge, /api/sales, /api/targets, /api/kpis, /api/kpi-evidence).",
       "sources": ["app/sales-workspace.tsx", "app/targets-workspace.tsx", "app/targets-performance-summary.tsx", "app/targets-performance-summary.css", "app/targets-performance.css", "app/my-targets.tsx", "app/my-targets.css", "app/target-gauge.tsx", "app/target-gauge.css", "app/kpi-performance.tsx", "app/kpi-evidence-editor.tsx", "app/kpi-evidence-editor.css", "app/api/sales/route.ts", "app/api/targets/**", "app/api/kpis/**", "app/api/kpi-evidence/**", "lib/sales.ts", "lib/targets.ts", "lib/targets-server.ts", "lib/targets-performance-summary.ts", "lib/targets-export.ts", "lib/targets-history.ts", "lib/own-targets.ts", "lib/own-targets-server.ts", "lib/kpis.ts", "lib/kpis-server.ts", "lib/quotation-refs.ts", "lib/kpi-evidence.ts", "lib/kpi-evidence-server.ts", "lib/kpi-history-server.ts", "lib/sales-coverage.ts", "lib/kpi-baseline.ts", "tests/targets-*.mjs", "tests/sales-*.mjs", "tests/kpi-*.mjs", "tests/ui-refresh*.mjs", "app/targets-overview.tsx", "app/targets-hub.css", "app/kpi-evidence-panel.tsx", "app/erp-collections-import.tsx", "app/erp-collections-import.css", "lib/targets-overview.ts", "lib/targets-hub.ts", "lib/erp-collections.ts", "lib/erp-collections-server.ts", "lib/erp-office-employees.ts", "tests/erp-collections*.mjs", "lib/new-customers.ts"],
-      "tests": ["tests/targets-attainment-http.mjs", "tests/targets-audit-browser.mjs", "tests/targets-decisions-http.mjs", "tests/targets-decisions-browser.mjs", "tests/sales-date-boundaries.mjs", "tests/kpi-evidence-browser.mjs", "tests/ui-refresh-browser.mjs", "tests/app-browser-workflows.mjs", "tests/erp-sales-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/targets-hub-browser.mjs", "tests/erp-collections-http.mjs", "tests/quote-conversion-http.mjs", "tests/quote-conversion-browser.mjs", "tests/sales-coverage-http.mjs", "tests/sales-coverage-browser.mjs", "tests/erp-office-employees-http.mjs", "tests/erp-office-employees-browser.mjs", "tests/new-customers-erp-http.mjs", "tests/erp-sales-replace-http.mjs", "tests/kpi-effective-visits-http.mjs", "tests/kpi-effective-visits-browser.mjs", "tests/kpi-leave-months-http.mjs", "tests/kpi-leave-months-browser.mjs"]
+      "tests": ["tests/targets-attainment-http.mjs", "tests/targets-audit-browser.mjs", "tests/targets-decisions-http.mjs", "tests/targets-decisions-browser.mjs", "tests/sales-date-boundaries.mjs", "tests/kpi-evidence-browser.mjs", "tests/ui-refresh-browser.mjs", "tests/app-browser-workflows.mjs", "tests/erp-sales-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/targets-hub-browser.mjs", "tests/erp-collections-http.mjs", "tests/quote-conversion-http.mjs", "tests/quote-conversion-browser.mjs", "tests/sales-coverage-http.mjs", "tests/sales-coverage-browser.mjs", "tests/erp-office-employees-http.mjs", "tests/erp-office-employees-browser.mjs", "tests/new-customers-erp-http.mjs", "tests/erp-sales-replace-http.mjs", "tests/kpi-effective-visits-http.mjs", "tests/kpi-effective-visits-browser.mjs", "tests/kpi-leave-months-http.mjs", "tests/kpi-leave-months-browser.mjs", "tests/targets-tabs-http.mjs", "tests/targets-tabs-browser.mjs"]
     },
     "competitors": {
       "about": "Competitors: the workspace, the competitor fields of a visit and the attachments (/api/visit-files).",
@@ -105,9 +105,9 @@
       "tests": ["tests/member-regions-browser.mjs", "tests/customer-edit-browser.mjs", "tests/app-browser-workflows.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs"]
     },
     "permissions": {
-      "about": "«الصلاحيات» per member (migration 0020): the matrix, «انسخ الصلاحيات من» and «عرض بيانات الفريق بالكامل» in the team form. The rules and the server checks are lib/permissions*.ts (shared: every route reads them). Hidden screens answer 404, switched-off actions 403.",
+      "about": "«الصلاحيات» per member (migration 0020): the matrix, «انسخ الصلاحيات من» and «عرض بيانات الفريق بالكامل» in the team form. The rules and the server checks are lib/permissions*.ts (shared: every route reads them). Hidden screens answer 404, switched-off actions 403; since 2026-11-16 also the tabs of the targets page («نتائج الأداء»، «التحصيل»، «عروض الأسعار»، «المستهدفات والأوزان»), whose requests answer 404 once hidden (tests/targets-tabs*.mjs).",
       "sources": ["app/member-permissions.tsx", "app/member-permissions.css", "tests/permissions*.mjs"],
-      "tests": ["tests/permissions-http.mjs", "tests/permissions-browser.mjs", "tests/member-regions-browser.mjs", "tests/server-authorization.mjs"]
+      "tests": ["tests/permissions-http.mjs", "tests/permissions-browser.mjs", "tests/member-regions-browser.mjs", "tests/server-authorization.mjs", "tests/targets-tabs-http.mjs", "tests/targets-tabs-browser.mjs"]
     },
     "app-update-android": {
       "about": "The Android app version and its update (app/app-update.tsx, /api/app-update, the published APKs); the tracking gate asks for the update.",
@@ -225,6 +225,8 @@
     "tests/erp-quotes-browser.mjs": 45,
     "default-gate": 300,
     "tests/targets-hub-browser.mjs": 120,
+    "tests/targets-tabs-http.mjs": 20,
+    "tests/targets-tabs-browser.mjs": 175,
     "tests/erp-collections-http.mjs": 25,
     "tests/quote-conversion-http.mjs": 25,
     "tests/quote-conversion-browser.mjs": 40,

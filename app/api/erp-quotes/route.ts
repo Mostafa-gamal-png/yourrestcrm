@@ -5,7 +5,7 @@ import {erpQuotesConfiguration,importErpQuotes,requireErpQuotesImport} from '@/l
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
 // «استيراد عروض الأسعار من ERP» (lib/erp-quotes-server.ts): the session first (401), then whoever may import ERP sales and add a quotation
-// (the sales workspace; «المبيعات» or «عروض الأسعار» hidden: 404; «استيراد» on «المبيعات» or «إضافة» on «عروض الأسعار» off: 403), all before the file is read. The body is bounded like the ERP
+// (the sales workspace; «المبيعات» or «عروض الأسعار» hidden, or since 2026-11-16 the targets page's tab «عروض الأسعار» or the page itself: 404; «استيراد» on «المبيعات» or «إضافة» on «عروض الأسعار» off: 403), all before the file is read. The body is bounded like the ERP
 // sales import's (a 5 MB file as base64).
 const permitted=async()=>{const c=await context();requireErpQuotesImport(c.me);return c;};
 function errorResponse(error:unknown){if(error instanceof z.ZodError)return Response.json({error:error.issues.map(issue=>issue.message).join(' • ')},{status:400,headers:noStore});return replyError(error);}

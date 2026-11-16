@@ -4,6 +4,83 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The targets page's tabs hidden per member: «نتائج الأداء»، «التحصيل»، «عروض الأسعار»، «المستهدفات والأوزان» (2026-11-16, not released yet, no migration)
+
+- **Asked.** Item 6 of the GSCO comparison list, approved by the owner: «تمام كمل البند السادس وارفع لما الفحص يخلص». The item: «إخفاء تبويبات
+  صفحة المستهدفات لكل حساب لوحده (النتائج، التحصيل، العروض)، زي مفاتيح إخفاء الأقسام في GSCO.» GSCO 2.13.58 (`lib/crm/section-access.ts`
+  of GSCO 2.13.74: the parts `performance.results`, `performance.collection`, `performance.quotations` and `performance.targets`, a hidden
+  part answered 404 `SECTION_HIDDEN_STATUS`, «a part goes with its page; a page with no part left goes», the sales tab following the
+  sales section).
+- **What Yourrest already had** (verified in the code before the change): «الصلاحيات» per member (2026-11-09/10, `lib/permissions.ts`,
+  migration 0020): a «استعراض» per screen (hidden: not in the menus, its requests 404 «هذا الجزء غير متاح لحسابك. راجع مدير النظام.»,
+  never 401/403), restrict-only, the administrator never hidden from, «انسخ الصلاحيات من», a «صلاحيات» history entry with before and
+  after; its row «المستهدفات وتقييم الأداء» hid the whole page only. The hub (2026-11-11, `lib/targets-hub.ts`, `app/sales-workspace.tsx`):
+  five tabs; «رفع المبيعات» followed «استعراض» of «المبيعات»; the other four were shown to every role whose targets page is the hub (the
+  administrator, a sales manager, a supervisor); `?tab=` and the browser remembered the tab, a tab not shown fell back to «نتائج الأداء».
+- **What it does now.**
+  - **The switches** (`app/member-permissions.tsx`): under the row «المستهدفات وتقييم الأداء» of the matrix, a row for each of «تبويب
+    «نتائج الأداء»»، «تبويب «التحصيل»»، «تبويب «عروض الأسعار»» and «تبويب «المستهدفات والأوزان»», «استعراض» only («—» in the other
+    columns). The screen's «الكل» covers them; while the screen's own «استعراض» is off they are disabled with «الشاشة مخفية، فتُخفى
+    تبويباتها معها» (their values kept); the screen's row says «لكل تبويب من تبويبات الصفحة «استعراض» خاص به في الصفوف التالية. «رفع
+    المبيعات» يتبع «استعراض» في «المبيعات». إذا أُخفيت كل التبويبات ولم يظهر «رفع المبيعات» أُخفيت الصفحة كلها.» Saved with «حفظ
+    الصلاحيات» like every other switch.
+  - **Which tabs, for whom.** The four GSCO has a switch for: the three the owner named, and «المستهدفات والأوزان» (GSCO's
+    `performance.targets`). «رفع المبيعات» gets none: as in GSCO it follows «استعراض» of «المبيعات», which already hides it. A switch
+    exists for a sales manager and a supervisor (the roles whose targets page is the hub); the administrator has «—» (never hidden from); a
+    representative («أهدافي» has no tabs) and customer service (no targets page) have no tab row.
+  - **Restrict-only, nothing hidden by default.** A switch only hides what the role sees today; nobody is changed until the administrator
+    saves. **Storage**: no migration (21, `0020_member_permissions.sql` the last): the hidden tabs are kept in the member's existing row,
+    among the hidden screens, as `targets.results`, `targets.collection`, `targets.quotes` and `targets.targets` (`HUB_TAB_KEYS`,
+    `lib/targets-hub.ts`), normalised to the role on every read and save (`normalizePermissions`), so a forged value grants nothing and is
+    dropped for a role without the hub. A row saved before reads as it was. The release before this one ignores the four keys (tried with
+    its own `lib/permissions.ts`: every tab shows, and a save from it drops them).
+  - **The page** (`app/sales-workspace.tsx`, `hubTabsOf`, `hubTabToShow`): a hidden tab is not drawn nor mounted; a `?tab=` or a tab the
+    browser remembers that the member does not have opens the first tab shown, the address then names it (`correctHubTabAddress`) and the
+    browser's memory is kept for when the tab is shown again; the evaluation (`/api/sales?kpis=1`) is not asked for while «نتائج الأداء»،
+    «التحصيل» and «عروض الأسعار» are all hidden; in a month not begun «تفاصيل» stays on «نتائج الأداء» when «المستهدفات والأوزان» is hidden.
+  - **The server** (`requireHubTabs` in `lib/crm-server.ts`, `hubTabsBlocked` in `lib/permissions.ts`): the requests that serve only a
+    hidden tab answer 404 «هذا الجزء غير متاح لحسابك. راجع مدير النظام.» (as a hidden screen, never 401/403): `POST /api/kpis` («نتائج
+    الأداء»), `GET`/`POST /api/kpi-evidence/import` («التحصيل»), `GET`/`POST /api/erp-quotes` («عروض الأسعار»: its button is on that tab
+    only), `POST /api/targets` and `GET /api/targets/history` («المستهدفات والأوزان»). Shared requests stay open while one of their tabs
+    shows: `GET`/`POST /api/kpi-evidence` («بيانات المؤشرات», opened from the three evaluation tabs) closes only when the three are hidden;
+    `GET /api/sales` (every tab and the «المبيعات» page) keeps answering 200 and leaves the evaluation out (`kpis: null`) when the three
+    evaluation tabs are hidden. `GET /api/targets` («أهدافي» of a representative) is unchanged. A tab's request is also closed when the page
+    itself is hidden (a part goes with its page), which newly closes `/api/erp-quotes` for a member whose «المستهدفات وتقييم الأداء» is
+    hidden (no screen of theirs offered it).
+  - **Every tab hidden.** While «رفع المبيعات» shows (the role has «المبيعات» and it is not hidden) the page stays with that one tab.
+    Otherwise, as GSCO's «a page with no part left goes», the page is hidden as if its «استعراض» were off (`hubTabsAllHidden` in
+    `lib/access.ts`, read by `pageHidden` and `resolveCRMPage`): not in the sidebar nor the phone's menus, an old link opens the first screen
+    the member has, its requests answer 404 (`/api/sales` too, both its screens being gone). If such a page were still open it says «لا توجد
+    تبويبات متاحة لحسابك في هذه الصفحة. راجع مدير النظام.»
+  - **Copy, audit, export.** «انسخ الصلاحيات من» copies the hidden tabs to a sales manager or a supervisor; to a role without the hub they
+    are listed as not copied («المستهدفات وتقييم الأداء · عروض الأسعار · استعراض»). Every save is the same «صلاحيات» history entry with
+    before and after (the tabs in `hidden`). The permissions have no export.
+- **Differences from GSCO, and why.** GSCO keeps hidden parts in a table of their own (`user_hidden_sections`); Yourrest keeps them in the
+  existing permissions row, so no migration and one save, version and audit as for every switch. GSCO's matrix has per-part action cells
+  (`manage_kpis` on its results, imports on collection and quotations, `manage_targets` on its targets); Yourrest keeps «تحرير» and «تصدير»
+  of «المستهدفات وتقييم الأداء» for the whole page as before (adding cells per tab was not asked). GSCO lets the quotations save through its
+  sales section because its sales tab feeds invoices there; Yourrest's ERP quotations import is only on «عروض الأسعار», so hiding that tab
+  closes it. GSCO hides the tab bar when one part is left; Yourrest keeps the one tab drawn. Reading the targets stays open in both (the
+  results use them): Yourrest's `/api/sales` still carries the targets and the sales to a member whose «نتائج الأداء» or «المستهدفات
+  والأوزان» is hidden while another tab needs them.
+- **Tested.** `tests/targets-tabs.mjs` (new, default gate, 207 checks: the switches per role, restrict-only and a forged access,
+  nothing hidden by default, an old row, the order, the copy, the tab drawn in place of a hidden one from the address and the browser,
+  every tab hidden, the shared requests; then the routes on SQLite, each tab, the shared ones, every tab, the screen hidden, a supervisor,
+  the audit), `tests/targets-tabs-http.mjs` (new, built release, 134: 401 with no session on every route and on the save, the role
+  refusals as before, the administrator only saves, each tab's routes 404 and the others as before, another manager untouched,
+  `/api/sales?kpis=1` 200 without the evaluation, 404 once «المبيعات» goes too, 409 stale, the history entries),
+  `tests/targets-tabs-browser.mjs` (new, Chromium, 119: the matrix rows and their switches, the save, the supervisor's hub, `?tab=` and the
+  remembered tab, every tab hidden and the page gone from the sidebar and the phone's «More», phone 320 and 360, tablet upright and on its
+  side, desktop, Arabic and English with no Arabic left but names, nothing scrolling sideways; screenshots); updated because the matrix
+  and the hub legitimately changed: `tests/permissions-ui.mjs` (102: the supervisor's and the administrator's rows now include the four
+  tab rows, and the new rows' checks) and `tests/targets-performance-ui.mjs` (213: the hub with tabs hidden). A mutation check: taking the
+  check out of `POST /api/kpis`, or the page-with-no-tab rule out of `pageHidden`, fails `tests/targets-tabs.mjs`. The release gates
+  (`node scripts/gates.mjs --full`, permissions being shared): 101 passed, 1 not stable (`mold-salesmen-http`: «23 hours after the last
+  full and nothing changed: nothing sent», 7 sends for 6, a timing check of the products application's salesmen list, nothing of the
+  targets page; passed when rerun alone by the gates and once more alone after), 4 skipped (the owner's ERP files); the default gate
+  200/200 with TypeScript and ESLint (0 errors; the run counted one warning more than the 160 of the baseline, an unused import of the
+  new unit test, removed after: 160 warnings, the unit test passing again); `tests/msa-wording.mjs` passed.
+
 ## Leave months do not count against a representative: the customers' comparison over the last three worked months (2026-11-15, not released yet, no migration)
 
 - **Asked.** Item 5 of the GSCO comparison list, approved by the owner: «تمام كمل البند الخامس وارفع لما الفحص يخلص». The item: «الإجازات

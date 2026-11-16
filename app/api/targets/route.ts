@@ -1,8 +1,9 @@
 import {readJsonBody} from '@/lib/crm-server';
 import {z} from 'zod';
-import {context,checkOrigin,CRMError,replyError,requirePages,requireCell} from '@/lib/crm-server';
-/** «الصلاحيات»: «المستهدفات وتقييم الأداء» closed when hidden; a save is its «تحرير». */
-const targetsPage=async(load:'identity'|'customers',edit=false)=>{const c=await context({load});requirePages(c.me,'targets');if(edit)requireCell(c.me,'targets','edit');return c;};
+import {context,checkOrigin,CRMError,replyError,requirePages,requireCell,requireHubTabs} from '@/lib/crm-server';
+/** «الصلاحيات»: «المستهدفات وتقييم الأداء» closed when hidden; a save is its «تحرير», made on «المستهدفات والأوزان» only, so closed (404)
+ *  when that tab is hidden from the member (2026-11-16). The read is a representative's «أهدافي», which has no tabs. */
+const targetsPage=async(load:'identity'|'customers',edit=false)=>{const c=await context({load});requirePages(c.me,'targets');if(edit){requireHubTabs(c.me,'targets');requireCell(c.me,'targets','edit');}return c;};
 import {saveTargetSet} from '@/lib/targets-server';
 import {ownTargets,ownTargetsMonth} from '@/lib/own-targets-server';
 export const dynamic='force-dynamic';
