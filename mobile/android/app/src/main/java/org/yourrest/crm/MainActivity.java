@@ -86,7 +86,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
             }
             @Override public void onPageStarted(WebView view,String url,Bitmap icon){speech.invalidate();pageNonce="";mapsHandoff=null;if(!RouteRules.trusted(url)){view.stopLoading();return;}super.onPageStarted(view,url,icon);}
             @Override public void onPageFinished(WebView view,String url){
-                if(RouteRules.trusted(url)&&RouteRules.trusted(view.getUrl())){pageNonce=UUID.randomUUID().toString();installBridge();CookieManager.getInstance().flush();}
+                if(RouteRules.trusted(url)&&RouteRules.trusted(view.getUrl())){pageNonce=UUID.randomUUID().toString();installBridge();CookieManager.getInstance().flush();rememberLanguage();}
             }
             @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error){handler.cancel();}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
@@ -121,9 +121,17 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
             if(url.startsWith("https://"))new AlertDialog.Builder(this).setMessage("فتح رابط التنزيل في المتصفح؟ قد يطلب تسجيل الدخول.").setPositiveButton("فتح",(dialog,which)->external(Uri.parse(url))).setNegativeButton("إلغاء",null).show();
             else new AlertDialog.Builder(this).setMessage("لتنزيل الملف استخدم صفحة CRM في المتصفح.").setPositiveButton("حسنًا",null).show();
         });
-        String requested=requestedCase(getIntent());
-        web.loadUrl(RouteRules.ORIGIN+"/"+(requested==null?"":"#service-case="+requested));
-        getIntent().removeExtra(ServiceAlerts.EXTRA_CASE);
+        String requested=requestedCase(getIntent()),nearby=NearbyCustomers.requestedCustomer(getIntent());
+        web.loadUrl(RouteRules.ORIGIN+"/"+(requested!=null?"#service-case="+requested:nearby!=null?NearbyRules.openFragment(nearby):""));
+        getIntent().removeExtra(ServiceAlerts.EXTRA_CASE);getIntent().removeExtra(NearbyCustomers.EXTRA);
+    }
+    /** The language the person chose in the CRM page (its own localStorage «yr-language»), for the notices the app words itself. */
+    private void rememberLanguage(){
+        if(web==null||!RouteRules.trusted(web.getUrl()))return;
+        web.evaluateJavascript("(()=>{try{return localStorage.getItem('yr-language')}catch(e){return null}})()",value->{
+            String language=NearbyRules.pageLanguage(value);
+            if(language!=null)getSharedPreferences("native",0).edit().putString("language",language).apply();
+        });
     }
     /** A tapped notification names a request; only the app's own action and a plain identifier are accepted. */
     private String requestedCase(Intent intent){
@@ -134,10 +142,18 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
     @Override protected void onNewIntent(Intent intent){
         super.onNewIntent(intent);setIntent(intent);
         String id=requestedCase(intent);intent.removeExtra(ServiceAlerts.EXTRA_CASE);
-        if(id==null||web==null)return;
+        String nearby=NearbyCustomers.requestedCustomer(intent);intent.removeExtra(NearbyCustomers.EXTRA);
+        if(web==null)return;
         // A running page is told directly (it never replaces unsaved work); a page that is not ready loads with the request in its address.
-        if(!pageNonce.isEmpty()&&RouteRules.trusted(web.getUrl()))web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:open-service-case',{detail:{id:"+JSONObject.quote(id)+"}}))",null);
-        else web.loadUrl(RouteRules.ORIGIN+"/?notification="+System.currentTimeMillis()+"#service-case="+id);
+        boolean ready=!pageNonce.isEmpty()&&RouteRules.trusted(web.getUrl());
+        if(id!=null){
+            if(ready)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:open-service-case',{detail:{id:"+JSONObject.quote(id)+"}}))",null);
+            else web.loadUrl(RouteRules.ORIGIN+"/?notification="+System.currentTimeMillis()+"#service-case="+id);
+        }else if(nearby!=null){
+            // «تنبيه المصانع القريبة»: the page opens «خريطة المصانع» on the nearest customer it names, the same way.
+            if(ready)web.evaluateJavascript("window.dispatchEvent(new CustomEvent('yourrest:open-nearby-customer',{detail:{id:"+JSONObject.quote(nearby)+"}}))",null);
+            else web.loadUrl(RouteRules.ORIGIN+"/?notification="+System.currentTimeMillis()+NearbyRules.openFragment(nearby));
+        }
     }
     private String external(Uri uri){
         if(MapsLauncher.destination(uri.toString())!=null)return launchMaps(uri.toString());
@@ -388,7 +404,7 @@ public final class MainActivity extends Activity implements RouteTracker.Listene
         super.onSaveInstanceState(out);
         if(designSave!=null){out.putString(SAVE_FOLDER,designSave.file.getParentFile().getName());out.putString(SAVE_NAME,designSave.file.getName());out.putString(SAVE_TYPE,designSave.mime);}
     }
-    @Override protected void onPause(){resumed=false;RouteTracker.get(this).removeListener(this);CookieManager.getInstance().flush();super.onPause();}
+    @Override protected void onPause(){rememberLanguage();resumed=false;RouteTracker.get(this).removeListener(this);CookieManager.getInstance().flush();super.onPause();}
     @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
     /** The save picker's copy is dropped only when the app is really closing; when Android recreates the activity the next one takes it
      *  back (onSaveInstanceState), and otherwise the day-old cleanup removes it. */

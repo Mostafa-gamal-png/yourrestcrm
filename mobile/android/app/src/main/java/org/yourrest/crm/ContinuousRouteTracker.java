@@ -188,7 +188,7 @@ final class ContinuousRouteTracker {
     }
     void serviceReady(){if(!canResume()){halt();return;}if(!collectionAuthorized()){pauseForAuthorization();return;}if(!ContinuousPolicy.inWindow(System.currentTimeMillis())){windowPaused();return;}tracking=true;store.put("collecting","1");starting=false;error="";RouteTracker.Reply reply=startReply;startReply=null;finish(reply,null);}
     /** Scheduled pauses retain enrollment/outbox and do not invent a gap, visit exit or day end. */
-    void windowPaused(){tracking=false;store.put("collecting","0");starting=false;error="";RouteTracker.Reply reply=startReply;startReply=null;finish(reply,null);}
+    void windowPaused(){NearbyCustomers.get(context).suspend();tracking=false;store.put("collecting","0");starting=false;error="";RouteTracker.Reply reply=startReply;startReply=null;finish(reply,null);}
     void resumeFromActivity(){if(canResume()&&RouteLocationService.current==null&&MainActivity.resumed){try{context.startForegroundService(new Intent(context,RouteLocationService.class).setAction(RouteLocationService.CONTINUOUS));}catch(RuntimeException denied){backgroundStartDenied();}}}
     void startupFailed(){worker.execute(()->{starting=false;halt();error="تعذر بدء تسجيل الخلفية؛ افتح التطبيق وراجع أذونات الموقع";RouteTracker.Reply reply=startReply;startReply=null;finish(reply,error);});}
     void backgroundStartDenied(){error="لم يسمح النظام ببدء التسجيل في الخلفية؛ افتح التطبيق لاستئنافه";changed();}
@@ -214,7 +214,7 @@ final class ContinuousRouteTracker {
             return RouteRules.directionsUrl(canResume()&&(tracking||!ContinuousPolicy.inWindow(System.currentTimeMillis())),member,store.get("memberId"),stop,currentStopId(),latitude,longitude,destination.optDouble("latitude",Double.NaN),destination.optDouble("longitude",Double.NaN));}
     }
     void onFix(Location value){
-        final Location fix=new Location(value);final long callback=System.currentTimeMillis();
+        final Location fix=new Location(value);final long callback=System.currentTimeMillis();String nearbyMember=null,nearbyScope=null;
         try{synchronized(store){if(!ContinuousPolicy.canCapture(fix.getTime(),callback)){main.post(()->{RouteLocationService service=RouteLocationService.current;if(service!=null)service.refreshWindow();});return;}if(!tracking||!enabled())return;
             if(!canResume()){store.gap("permission_denied",callback);halt();error="توقف التسجيل بسبب تغيير أذونات النظام";changed();return;}
             if(!collectionAuthorized()){pauseForAuthorization();changed();return;}
@@ -225,7 +225,11 @@ final class ContinuousRouteTracker {
             store.point(new JSONObject().put("id",UUID.randomUUID().toString()).put("capturedAt",RouteRules.iso(captured)).put("latitude",fix.getLatitude()).put("longitude",fix.getLongitude()).put("accuracy",fix.getAccuracy()).put("stopId",optional(bound)),captured);
             store.put("lastFixAt",RouteRules.iso(captured));store.put("accuracy",Float.toString(fix.getAccuracy()));
             if(error.startsWith("خدمة الموقع")||error.startsWith("بانتظار")||error.contains("مساحة نقاط خط السير")||error.startsWith("تعذر حفظ الموقع الجديد"))error="";
-        }if(System.currentTimeMillis()-lastFlush>=15000)scheduleSync();changed();}
+            nearbyMember=store.get("memberId");nearbyScope=store.get("regionScope");
+        }
+        // «تنبيه المصانع القريبة» reads the fix the tracking has just stored; it never holds or fails the tracking.
+        if(nearbyMember!=null)NearbyCustomers.get(context).onFix(fix,nearbyMember,nearbyScope);
+        if(System.currentTimeMillis()-lastFlush>=15000)scheduleSync();changed();}
         catch(Exception failure){error=message(failure);changed();}
     }
     private JSONObject ensureDay(String date)throws Exception{
@@ -271,9 +275,9 @@ final class ContinuousRouteTracker {
         long last=Math.max(ContinuousPolicy.windowStart(System.currentTimeMillis()),store.number("lastCaptured"));if(last==0)last=store.number("enrolledAt");if(System.currentTimeMillis()-last>120000){store.gap("gps_unavailable",System.currentTimeMillis());error="بانتظار موقع حديث؛ الفترة غير المؤكدة تظهر في التقرير";}scheduleSync();
     }
     void providerUnavailable(){if(tracking&&ContinuousPolicy.inWindow(System.currentTimeMillis())){store.gap("gps_unavailable",System.currentTimeMillis());error="خدمة الموقع غير متاحة؛ فعّلها من إعدادات الجهاز";changed();}}
-    void serviceDestroyed(){if(tracking){tracking=false;store.put("collecting","0");if(ContinuousPolicy.inWindow(System.currentTimeMillis())){store.gap("service_stopped",System.currentTimeMillis());error="انقطع تسجيل الموقع؛ الفترة غير المسجلة تظهر في التقرير";}changed();}}
+    void serviceDestroyed(){NearbyCustomers.get(context).suspend();if(tracking){tracking=false;store.put("collecting","0");if(ContinuousPolicy.inWindow(System.currentTimeMillis())){store.gap("service_stopped",System.currentTimeMillis());error="انقطع تسجيل الموقع؛ الفترة غير المسجلة تظهر في التقرير";}changed();}}
     private void halt(){tracking=false;store.put("collecting","0");main.post(()->context.stopService(new Intent(context,RouteLocationService.class)));}
-    private void disable(boolean clear){synchronized(store){generation++;store.put("enabled","0");forgetAuthorization();}RouteWindowSchedule.cancel(context);halt();}
+    private void disable(boolean clear){synchronized(store){generation++;store.put("enabled","0");forgetAuthorization();}NearbyCustomers.get(context).clear();RouteWindowSchedule.cancel(context);halt();}
     void logout(RouteTracker.Reply reply){synchronized(store){store.put("loggedOut","1");disable(false);store.put("stopId","");store.put("selectedAt","");store.put("bindAt","");store.put("destination","");}
         final long expected=generation;
         worker.execute(()->{synchronized(store){
