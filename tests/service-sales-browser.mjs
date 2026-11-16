@@ -134,6 +134,8 @@ try {
       await field.waitFor();
       const options = await field.locator('select option').allInnerTexts();
       ok(options.includes(say('واتساب', 'WhatsApp')) && options.includes(say('توصية من عميل', 'Customer referral')), tag + ': «مصدر الفرصة» offers the sources customer service brings in');
+      // Asked by the form's own checks after the others (a browser's own «required» stopped the form before «نتيجة التواصل» was shown).
+      eq([await field.locator('select').getAttribute('required'), await field.locator('select').getAttribute('aria-required')], [null, 'true'], tag + ': the source is marked as required and checked by the form, not by the browser');
       if (inEnglish) await english(field, tag + ' (the source field)');
       await noSideways(page, tag + ' (new opportunity form)');
       await shot(page, 'csales-' + tag + '-lead-field');

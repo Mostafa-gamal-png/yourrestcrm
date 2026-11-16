@@ -177,7 +177,7 @@ try {
     await group.locator('.sk-card[data-member="cs1"] .sk-card-head').click();
     const table = group.locator('.sk-card[data-member="cs1"] .sk-table');
     await table.waitFor();
-    check(await table.locator('tbody tr.sk-row').count(), 8, 'cs1\'s card opens onto her eight figures');
+    check(await table.locator('tbody tr.sk-row').count(), 9, 'cs1\'s card opens onto her nine figures (since 2026-11-16 «نسبة الفرص المتحولة إلى مبيعات»)');
     await table.locator('tr[data-figure="support_response"] .sk-toggle').click();
     await eventually(async () => await group.locator('.sk-items[data-figure="support_response"] li').count() === 2, 'the cases arrive');
     ok((await group.locator('.sk-items[data-figure="support_response"]').innerText()).includes(NAMES[0]), 'with the customers\' names');
@@ -246,15 +246,15 @@ try {
     check(await sums.allInnerTexts().then(texts => texts.map(text => text.replace(/\s+/g, ' ').trim())), ['مجموع الأوزان 100 / 100', 'مجموع الأوزان 100 / 100'], 'both cards\' weights add up to 100');
     const weight = name => dialog.getByLabel(name + ' · الوزن', {exact: true});
     await weight('تقييم العميل').fill('5');
-    ok((await dialog.locator('.form-error').innerText()).includes('95'), 'a total of 95 is refused, saying so');
+    ok((await dialog.locator('.form-error').innerText()).includes('97'), 'a total of 97 is refused, saying so (customer rating 8 -> 5 with the weights since 2026-11-16)');
     check(await dialog.getByRole('button', {name: 'حفظ الإعدادات', exact: true}).isDisabled(), true, 'and saving is shut');
-    await weight('جودة الأداء').fill('20');
+    await weight('جودة الأداء').fill('16');
     check([await dialog.locator('.form-error').count(), await dialog.getByRole('button', {name: 'حفظ الإعدادات', exact: true}).isDisabled()], [0, false], 'back to 100: the error goes and saving opens');
     await shot(owner, 'service-kpi-settings');
     await dialog.getByRole('button', {name: 'حفظ الإعدادات', exact: true}).click();
     await dialog.waitFor({state: 'detached'});
     const saved = (await rowsOf('service_kpi_settings'))[0];
-    check([saved.version, saved.data.rep.customer_rating.weight, saved.data.rep.audit_quality.weight], [2, 5, 20], 'saved as the new version');
+    check([saved.version, saved.data.rep.customer_rating.weight, saved.data.rep.audit_quality.weight], [2, 5, 16], 'saved as the new version');
     const after = await api('owner', SEPT);
     ok(scoreOf(after, 'cs1') !== scoreOf(before, 'cs1'), 'and cs1\'s score moved with the weights');
     await eventually(async () => (await group.locator('.sk-card[data-member="cs1"] .sk-score').innerText()).trim() === scoreOf(after, 'cs1').toFixed(1), 'the page shows the new score');
