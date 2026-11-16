@@ -26,10 +26,13 @@ const manifest={schemaVersion:1,packageName:report.package,versionName,versionCo
   'لا يتكرر تنبيه المصنع نفسه في اليوم نفسه، والضغط على الإشعار يفتح «خريطة المصانع» على أقرب مصنع.',
   'لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي.'
  ],en:[
-  'Nearby factories: when you come within 1 km of factories you are responsible for that have had no visit for 60 days or more, one notification lists them, nearest first, during the location recording hours.',
+  'Nearby factories: within 1 km of factories you are responsible for that have had no visit for 60 days or more, one notification lists them, nearest first, during location recording hours.',
   'The same factory is not notified twice in a day; tapping the notification opens the factory map on the nearest one.',
   'The update asks for no new permission; your data and the visits saved on the phone stay as they are.'
  ]},publishedAt:new Date().toISOString()};
+// The update screen shows at most 5 notes of at most 200 characters each (lib/app-update.ts notes): a longer note would be cut.
+for(const note of [...manifest.releaseNotes.ar,...manifest.releaseNotes.en])if(note.length>200)throw Error('A release note is longer than 200 characters ('+note.length+'): '+note.slice(0,40)+'…');
+if(manifest.releaseNotes.ar.length>5||manifest.releaseNotes.en.length>5)throw Error('More than 5 release notes');
 const serialized=JSON.stringify(manifest,null,2)+'\n';
 fs.mkdirSync(path.join(root,'public/downloads'),{recursive:true});
 fs.writeFileSync(path.join(root,'public/downloads',name),bytes);
