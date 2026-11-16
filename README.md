@@ -46,4 +46,11 @@ Playwright browser tests with `YR_BROWSER_EXECUTABLE` and `CODEX_PRIMARY_RUNTIME
   that links the earlier requests, `portable/mold-import.mjs` (`--compare`, then `--dry-run`, then `--apply`)
 
 Configuration is read from a private `settings.cjs` kept outside the release (template: `settings.example.cjs`,
-environment template: `.env.example`). No credentials, database or signing key are part of this repository.
+environment template: `.env.example`). No credentials, database, signing key or customer data are part of this repository.
+
+The initial data snapshot (`migration/initial.json`) and the uploaded source archives held real customer data and were removed
+on 2026-11-16 with the owner's approval; `.gitignore` keeps them out. A first installation (`node setup.cjs` on the host) is
+empty with its owner: `node setup.cjs --owner-email=name@yourrest.org [--owner-name=...]`. To start from existing data, restore a
+backup (`docs/PRODUCTION-BACKUP-AR.md`), or place an initial data file and its SHA-256 by hand in `migration/initial.json` and
+`migration/initial.sha256` on the host and run `node setup.cjs` (the checksum is verified first). Tests use a made-up seed
+(`tests/fixtures/made-up-seed.js`).

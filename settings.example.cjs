@@ -1,7 +1,8 @@
 // Template only: contains no secrets and is NOT read by the application.
 //
-// On the hosting account, `node setup.cjs` creates the real `settings.cjs` next to `app.cjs` on first run,
-// generates a fresh random YR_AUTH_SECRET, and creates the private data folders. Use this file as a
+// On the hosting account, `node setup.cjs --owner-email=name@yourrest.org` creates the real `settings.cjs` next to
+// `app.cjs` on first run, generates a fresh random YR_AUTH_SECRET, creates the private data folders and an empty
+// database with its owner (the repository and the package carry no customer data). Use this file as a
 // reference for every supported key, or to prepare settings by hand.
 //
 // Rules enforced at startup (see portable/config.cjs):
