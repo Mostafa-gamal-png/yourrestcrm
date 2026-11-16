@@ -83,7 +83,8 @@ const freePort = async () => { const probe = createServer(); await new Promise(r
 /** Computed fields a newer release may add to its answers (see the comparison after the update). */
 // Fields a release adds to what an API returns (absent before it): _lastPurchase (60-day filter), access and permissions («الصلاحيات»: me.access, and what is saved for each member on the administrator's team page), trash:edit (2026-11-10: «المحذوفات» joined the supervisor's and the representative's permission cells).
 // inactive (2026-11-15, leave months: «أهدافي» says whether the closed month is out of the representative's evaluation).
-const NEW_COMPUTED = ['_lastPurchase', 'access', 'permissions', 'trash:edit', 'inactive'];
+// soldByDay (2026-11-16, GSCO list item 8: «أهدافي» carries the representative's quantities of each day for «مبيعات اليوم قصاد مستهدف اليوم»).
+const NEW_COMPUTED = ['_lastPurchase', 'access', 'permissions', 'trash:edit', 'inactive', 'soldByDay'];
 const stable = value => JSON.stringify(value, (key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
 /** One installed site, laid out like the hosting account. */
