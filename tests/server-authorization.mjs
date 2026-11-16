@@ -30,7 +30,7 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/crm', '/api/customer-edits', '/api/customer-edits?customerId=x', '/api/team-today', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import'];
+  const protectedGets = ['/api/crm', '/api/customer-edits', '/api/customer-edits?customerId=x', '/api/team-today', '/api/nearby-customers', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import'];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   // The customer's signing link (2026-11-10) is public by design, but opens only with a valid token: without one, one neutral page or
@@ -89,6 +89,8 @@ try {
     '/api/reviews/pending': expect(['mgr', 'mgrw', 'sup'], 200, 403),
     // «فريقي اليوم» (2026-11-10): the roles that open «تقرير يوم المندوب»; a representative and customer service are refused.
     '/api/team-today': expect(management, 200, 403),
+    // «تنبيه المصانع القريبة» (2026-11-16): the representative's own list for the Android app; every other role is refused.
+    '/api/nearby-customers': expect(reps, 200, 403),
     // «طلبات تعديل بيانات العميل» (2026-11-15): every member reads the list their role gives them (what they decide, their own requests).
     '/api/customer-edits': expect(everyone, 200, 0),
     '/api/customer-edits?customerId=x': expect(everyone, 200, 0)

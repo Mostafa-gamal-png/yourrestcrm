@@ -4,6 +4,64 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «تنبيه المصانع القريبة»: one grouped notice on the representative's phone within 1 km of their factories with no visit for 60 days (2026-11-16, not released yet, no migration, Android 1.0.13 (14))
+
+- **Asked.** Item 7 of the GSCO comparison list: «تنبيه بالمصانع القريبة اللي محتاجة زيارة، على طريقة تنبيه المشاريع القريبة المجمّع في GSCO
+  (أندرويد 1.4.8).» The approved proposal («تمام كمل كل البنود وارفع لما الفحص يخلص»): for the **representative only**, in the **Android
+  app**, **one grouped notification** when the phone is within **1 km** of customers **they are responsible for** that **have not been visited
+  for 60 days or more** and **have a saved location on the map**; **the same factory is not notified more than once a day**.
+- **What Yourrest already had** (verified in the code before the change): customers with a saved location read by «خريطة المصانع»
+  (`customerCoordinates`, `lib/customer-location.ts`) and their responsible member (`assigned_to`); visits as «الزيارات» records of type
+  «زيارة» dated by their day (`lib/kpis.ts`, `lib/team-today-server.ts`); the representative's continuous route tracking in the app
+  (`ContinuousRouteTracker`, 06:00–18:00 Riyadh, not Friday, precise and background location and notifications already granted); a
+  background poller for customer-service requests (`ServiceAlerts`, 1.0.11) with the WebView's session cookie. **No 60-day rule on visits**:
+  «عملاء واقفين» (2026-11-10) is «لم يشترِ منذ 60 يومًا» (`lib/customer-last-purchase.ts`: purchases, status «نشط», and 60 days still
+  counting as recent), so it could not be reused; this rule is new, with the owner's approved wording (60 days or more: 60 in, 59 out).
+- **The server** (`lib/nearby-customers.ts`, `lib/nearby-customers-server.ts`, `GET /api/nearby-customers`): the signed-in representative
+  only (401 without a session; 403 «تنبيه المصانع القريبة متاح لحساب المندوب فقط.» for every other role; 404 «هذا الجزء غير متاح لحسابك.
+  راجع مدير النظام.» when «العملاء» is hidden from them; GET only; `no-store`; read-only). One SQLite statement reads the account (GSCO's actor
+  sentinel: active, a representative, the same sign-in version and regions, else 403 «تغيّرت صلاحيات حسابك. سجّل الدخول من جديد.») and the
+  customers assigned to it with the day of each one's latest visit: any member's visit counts (the customer is what needs the visit), also a
+  visit under its request or machine (up to four levels, as `lib/customer-visits.ts` walks them), dated by its own day, else the Riyadh day it
+  was stored; a call, a WhatsApp or an e-mail is not a visit; deleted customers and visits are in «المحذوفات» and never read; Yourrest has no
+  customer merge. Listed: in the representative's regions, a location the map reads, a name, and the latest visit 60 days before today in
+  Riyadh or earlier, or none. Each row: `{id, name, latitude, longitude, daysSinceVisit}` (`null`: never visited) — no phone, e-mail, contact,
+  code, address or note. The answer: `{schemaVersion: 1, memberId, memberRole: 'rep', regionScope, serverTime, expiresAt (+10 min),
+  refreshAfterSeconds: 300, customers}`, by id; more than 2000 is refused whole (503 «تعذّر تحديث قائمة المصانع القريبة كاملة. حاول
+  لاحقًا.»), never cut.
+- **The app 1.0.13 (14)** (`NearbyRules`, `NearbyCustomers`, `NearbyApi`; `ContinuousRouteTracker` hands over each fix it has just stored;
+  `MainActivity` opens the tap and reads the page's language): fixes of the tracking hours, precise to 75 m, under a minute old, not mock; a
+  customer is near when the fix itself is within 1000 m (haversine; 999 m in, 1001 m out) at two fixes 15 s apart; every customer confirmed
+  at the same fix in one notification, nearest first; 30 s between notifications; once a customer per Riyadh day, saved per member (ids and
+  days only) before the notice shows. The list is asked at the first fix, every 5 minutes, and again just before a notice unless it came in
+  the last minute (a customer visited or reassigned meanwhile is not told); a list of another account or region, expired, over 2000 or with
+  a row it cannot read is not used; a failure is retried after a minute; 401/403/404 drop it, take the shown notices away and wait 5 minutes;
+  logout and an account or region change clear it; the 18:00 pause suspends it. Channel «المصانع القريبة»; «مصنع قريب منك بحاجة إلى زيارة» /
+  «مصنعان قريبان منك…» / «3 مصانع قريبة منك…» / «11 مصنعًا قريبًا منك…», each line «<name> — على بعد 420 م · آخر زيارة قبل 75 يومًا» or «لم
+  تُسجَّل له زيارة»; the lock screen «يورست: مصانع قريبة بحاجة إلى زيارة» only; English when the person chose English in the CRM page; gone
+  after 10 minutes or at 18:00. A tap opens «خريطة المصانع» on the nearest customer (`#nearby=<id>` on a cold start, the event
+  `yourrest:open-nearby-customer` on a running page, never replacing a screen with unsaved work: «اقتربت من مصنع بحاجة إلى زيارة. أنهِ ما بين
+  يديك ثم افتحه من «خريطة المصانع».»); a member whose map is hidden gets the customer's card. **No permission added**: existing installs
+  grant nothing new. Release notes (Arabic and English) in `scripts/publish-android-release.mjs`.
+- **Differences from GSCO, and why.** GSCO 1.4.8 enters at 500 m and re-arms after a certain exit (800 m), with no daily limit; Yourrest
+  uses the owner's 1 km and once a customer per Riyadh day (GSCO's own rule before 1.4.4), so there is no exit radius. GSCO adds the fix's
+  accuracy to the distance; Yourrest takes the fix's own distance (the owner's number, 999 m in and 1001 m out) and ignores fixes less
+  precise than 75 m. GSCO's catalog is the representative's open projects; Yourrest's is their customers with no visit for 60 days and a
+  location. GSCO always re-checks the list before a notice; Yourrest re-checks unless the list arrived in the last minute. GSCO's group
+  opens the project map; Yourrest opens the factory map on the nearest customer (one customer: the same). GSCO's notice is Arabic only;
+  Yourrest's follows the language the person chose in the page.
+- **Tests.** `tests/nearby-customers.mjs` (new, default gate, 83 checks), `tests/nearby-customers-android.mjs` (new, default gate, JDK 17+:
+  `NearbyRulesCheck` 287 checks, the real `NearbyCustomers` on Android stand-ins 72 checks, 21 checks of its own),
+  `tests/nearby-customers-http.mjs` (new, built release, 30), `tests/nearby-customers-browser.mjs` (new, Chromium at 320 and 360 px, a
+  tablet upright and on its side and a desktop, Arabic and English, 102, screenshots), `tests/server-authorization.mjs` (the route among the
+  anonymous 401s and in the role matrix); `tests/msa-wording.mjs` now reads the Android app's Java strings too. Mutations: 8 of the server
+  rule (61 days, no region, no assignee, the UTC day, a cut list, own visits only, direct children only, no sentinel) and 12 of the app (1001 m,
+  accuracy added, no daily rule, no debounce, no cooldown, no re-check, no cancel on a refusal, showing before saving, no identity check, a
+  muted channel ignored, English ignored, no restore after a restart) each fail a test. The whole main source also compiles with `javac
+  --release 17` against the pinned Android 35 framework jar the build uses (no new warning). The release gates (`node scripts/gates.mjs --full`, `app/crm-app.tsx` being shared): 102 passed, 2 not stable (each failed in the pool and passed when rerun alone by the gates: `mold-requests-browser`, a Playwright strict-mode locator that met three `h3` headings of the signing sheet 11 s in; `service-queue-browser`, a supervisor's delegation that did not reach the database within its wait under the pool's load; neither touches the nearby notice), 4 skipped (the owner's ERP files); the default gate 202/202 with TypeScript (0 errors) and ESLint (0 errors, the 160 warnings of the baseline); `tests/msa-wording.mjs` passed.
+- **Not run here:** the APK build and signing (GitHub, `.github/workflows/android.yml`), a real phone (GPS, the notification shade, Doze,
+  battery savers), the route against the live site.
+
 ## The targets page's tabs hidden per member: «نتائج الأداء»، «التحصيل»، «عروض الأسعار»، «المستهدفات والأوزان» (2026-11-16, not released yet, no migration)
 
 - **Asked.** Item 6 of the GSCO comparison list, approved by the owner: «تمام كمل البند السادس وارفع لما الفحص يخلص». The item: «إخفاء تبويبات

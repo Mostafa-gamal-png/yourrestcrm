@@ -1,5 +1,5 @@
 // The application's Arabic is Modern Standard Arabic (the owner, 2026-11-11: «الكلام فى التطبيق بالفصحى مش مصرى عامى»), without a build:
-// every Arabic string literal of app/, lib/, portable/ and components/ (and the JSX text between tags), the Arabic keys of
+// every Arabic string literal of app/, lib/, portable/, components/ and the Android app's Java (and the JSX text between tags), the Arabic keys of
 // lib/locales/en.json and the Arabic of lib/app-update-release.json are read, comments left out (they quote the owner's words), and none
 // may hold a word of Egyptian colloquial (مش، اللي، دلوقتي، عايز، إزاي، تاني، ينفعش، بتاع، لسه، علشان، كده، إيه، اللينك ... and the
 // colloquial verb forms: the future «هيتبعت»، the progressive «بيوقّع»، the passive «اتعدّل»، the negation «ما اتحفظش»). A string kept as it
@@ -126,7 +126,7 @@ function* sources(dir) {
   for (const entry of fs.readdirSync(path.join(root, dir), {withFileTypes: true})) {
     const relative = path.join(dir, entry.name);
     if (entry.isDirectory()) { if (entry.name !== 'node_modules') yield* sources(relative); continue; }
-    if (/\.(tsx?|mts|mjs|cjs|js)$/.test(entry.name) && !/\.d\.ts$/.test(entry.name)) yield relative;
+    if (/\.(tsx?|mts|mjs|cjs|js|java)$/.test(entry.name) && !/\.d\.ts$/.test(entry.name)) yield relative;
   }
 }
 
@@ -139,7 +139,8 @@ const consider = (file, text, line) => {
   if (ALLOWED.has(text)) return;
   found.push(file + ':' + line + '  [' + hits.join(', ') + ']  ' + text.slice(0, 220));
 };
-for (const dir of ['app', 'lib', 'portable', 'components']) {
+// The Android app's own words (its notices and dialogs, since 2026-11-16: «تنبيه المصانع القريبة»): Java string literals read the same way.
+for (const dir of ['app', 'lib', 'portable', 'components', 'mobile/android/app/src/main/java']) {
   for (const file of sources(dir)) {
     files++;
     const source = fs.readFileSync(path.join(root, file), 'utf8');

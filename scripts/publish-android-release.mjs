@@ -22,13 +22,13 @@ const manifest={schemaVersion:1,packageName:report.package,versionName,versionCo
  apkUrl:`https://crm.yourrest.org/downloads/${name}`,sizeBytes:bytes.length,sha256,
  certificateSha256,
  releaseNotes:{ar:[
-  'اختيار كل أنواع ملفات التصميم من التطبيق عند إرفاقها بطلب القالب (DWG وDXF وSTEP وSTL وSolidWorks وNC1 وAI وPSD وZIP وغيرها).',
-  'فتح ملفات التصميم وحفظها داخل التطبيق بجلسة دخولك، من غير المتصفح ومن غير تسجيل دخول جديد.',
-  'تبقى بياناتك والزيارات المحفوظة على الجهاز كما هي بعد التحديث.'
+  'تنبيه المصانع القريبة: عند اقترابك لمسافة كيلومتر من مصانع مسؤول عنها لم تُسجَّل لها زيارة منذ 60 يومًا أو أكثر، يصلك إشعار واحد يجمعها، الأقرب أولًا، في ساعات تسجيل الموقع.',
+  'لا يتكرر تنبيه المصنع نفسه في اليوم نفسه، والضغط على الإشعار يفتح «خريطة المصانع» على أقرب مصنع.',
+  'لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي.'
  ],en:[
-  'Choose every design file type from the app when attaching it to a mold request (DWG, DXF, STEP, STL, SolidWorks, NC1, AI, PSD, ZIP and more).',
-  'Open and save design files inside the app with your signed-in session, without the browser or signing in again.',
-  'Your data and the visits saved on the phone stay as they are after the update.'
+  'Nearby factories: when you come within 1 km of factories you are responsible for that have had no visit for 60 days or more, one notification lists them, nearest first, during the location recording hours.',
+  'The same factory is not notified twice in a day; tapping the notification opens the factory map on the nearest one.',
+  'The update asks for no new permission; your data and the visits saved on the phone stay as they are.'
  ]},publishedAt:new Date().toISOString()};
 const serialized=JSON.stringify(manifest,null,2)+'\n';
 fs.mkdirSync(path.join(root,'public/downloads'),{recursive:true});
