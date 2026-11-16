@@ -16,6 +16,7 @@ import {
  START_OPPORTUNITY_EVENT,type LeadDraft,type LeadList,type LeadRefKind,type LeadStart,type PerformanceRow,type RoutingFacts
 } from '@/lib/service-sales';
 import VoiceField from './voice-field';
+import './service-report.css';
 import './service-sales.css';
 
 type Say=(ar:string,en:string)=>string;
@@ -36,13 +37,13 @@ export function LeadSourceField({value,onChange,locked,problem,disabled}:{value:
   <div className="lead-source-locked"><b>{say(leadGroups.system,leadGroupsEn.system)} · {say(systemLeadSources[locked.kind],systemLeadSourcesEn[locked.kind])}</b><small>{say('السجل','Record')}: {locked.label} · {say('يحدده النظام ولا يُعدَّل','Set by the system and cannot be changed')}</small></div></div>;
  return <div className="field full lead-source-field" data-lead-source>
   <label className="lead-source-select"><span>{say('المصدر','Source')} <b>*</b></span>
-   <select value={value.source} disabled={disabled} required aria-invalid={!!problem} onChange={event=>onChange({group:'service',source:event.target.value,note:event.target.value===LEAD_OTHER?value.note:''})}>
+   <select value={value.source} disabled={disabled} aria-required="true" aria-invalid={!!problem} aria-describedby={problem?'visit-lead-source-problem':undefined} onChange={event=>onChange({group:'service',source:event.target.value,note:event.target.value===LEAD_OTHER?value.note:''})}>
     <option value="">{say('اختر مصدر الفرصة','Choose the opportunity source')}</option>
     <optgroup label={say(leadGroups.service,leadGroupsEn.service)}>{serviceLeadSources.map(source=><option key={source} value={source}>{sourceText(source,say)}</option>)}</optgroup>
    </select></label>
-  {value.source===LEAD_OTHER&&<VoiceField className="lead-source-note" label={say('اكتب مصدر الفرصة','Type the opportunity source')} required value={value.note} disabled={disabled} contextKey="lead-source-note" onChange={note=>onChange({...value,note})} inputProps={{maxLength:LEAD_NOTE_MAX,minLength:3}}/>}
+  {value.source===LEAD_OTHER&&<VoiceField className="lead-source-note" label={say('اكتب مصدر الفرصة','Type the opportunity source')} marked value={value.note} disabled={disabled} contextKey="lead-source-note" onChange={note=>onChange({...value,note})} inputProps={{maxLength:LEAD_NOTE_MAX}}/>}
   <small className="form-note">{say('المصادر «من بيانات النظام» تُملأ تلقائيًا عند بدء الفرصة من «مصادر الفرص» أو من طلب التواصل أو الشكوى.','Sources from the system data are filled in automatically when the opportunity is started from «Opportunity sources», a contact request or a complaint.')}</small>
-  {problem&&<span className="field-problem" role="alert">{t(problem)}</span>}
+  {problem&&<small className="field-problem" role="alert" id="visit-lead-source-problem" data-field-problem>{t(problem)}</small>}
  </div>;
 }
 type Reference={kind:LeadRefKind;id:string;source:string;label:string;customerId:string;customerName:string;blocked:string};
@@ -68,7 +69,7 @@ export function ServiceLeadsPanel({me}:{me:Member}){
  useEffect(()=>{if(open)void load(list,'');},[open,list,load]);
  if(!leadReader(me.role))return null;
  const starter=leadStarter(me.role);
- return <details className="panel service-report service-leads" data-service-leads open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
+ return <details className="panel service-sales-panel service-leads" data-service-leads open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary><UserRoundSearch size={18} aria-hidden="true"/>{say('مصادر الفرص','Opportunity sources')}</summary>
   {open&&<div className="service-report-body">
    <div className="service-leads-tabs" role="tablist">{(['lost','dormant'] as LeadList[]).map(key=><button key={key} type="button" role="tab" aria-selected={list===key} className={'followup-list-filter'+(list===key?' selected':'')} onClick={()=>{setList(key);setQuery('');}}>{say(leadListLabels[key],leadListLabelsEn[key])}</button>)}</div>
@@ -157,7 +158,7 @@ export function ServicePerformancePanel({me}:{me:Member}){
  const load=useCallback(async(which:string)=>{setLoading(true);setError('');try{setData(await getJson<PerformanceAnswer>('/api/service-performance?month='+encodeURIComponent(which),language));}catch(failure){setError(messageOf(failure));setData(null);}finally{setLoading(false);}},[language]);
  useEffect(()=>{if(open)void load(month);},[open,month,load]);
  if(!performanceAllowed(me.role))return null;
- return <details className="panel service-report service-performance" data-service-performance open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
+ return <details className="panel service-sales-panel service-performance" data-service-performance open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary><ClipboardCheck size={18} aria-hidden="true"/>{say('أداء خدمة العملاء','Customer-service performance')}</summary>
   {open&&<div className="service-report-body">
    <div className="service-report-head"><label className="field service-report-month"><span>{say('الشهر','Month')}</span><input type="month" value={month} max={currentMonth()} required onChange={event=>{if(event.target.value)setMonth(event.target.value);}}/></label>{data?.canExport&&can(me,'service-reports','export')&&<PerformanceExport month={month} say={say} language={language}/>}</div>
