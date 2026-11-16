@@ -112,8 +112,8 @@ await counted('route and lists',async()=>{
  plan=planOf('c1');
  saved=await post(body('c1',plan.source.id,{salesStage:'',lossReason:'',nextAction:'إرسال عرض جديد',nextDate:'2026-12-03',result:'العميل مستعد لعرض جديد'}));
  plan=planOf('c1');eq([plan.source.id,plan.closed,plan.recontact,plan.nextDate,plan.stage],[saved.id,false,false,'2026-12-03',''],'executed on its day: the line goes on with the new step');
- // Lost again without a date: closed.
- saved=await post(body('c1',plan.source.id,{date:'2026-11-30'}));eq(planOf('c1').closed,true,'lost again without a re-contact: closed');
+ // Lost again without a date: closed. A minute later (two follow-ups of the same instant would be ordered by their random ids).
+ clock+=60000;saved=await post(body('c1',plan.source.id,{date:'2026-11-30'}));eq(planOf('c1').closed,true,'lost again without a re-contact: closed');
 });
 
 eq(fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).length,21,'no new migration (21)');
