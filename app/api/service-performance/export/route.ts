@@ -1,4 +1,5 @@
-import {context,CRMError,replyError,requireCell,requirePages} from '@/lib/crm-server';
+import {context,CRMError,replyError,requirePages} from '@/lib/crm-server';
+import {can,cellRefusalText} from '@/lib/permissions';
 import {performanceView,performanceWorkbook,requestedMonth} from '@/lib/service-sales-server';
 import {performanceAllowed} from '@/lib/service-sales';
 export const dynamic='force-dynamic';
@@ -10,7 +11,8 @@ export async function GET(req:Request){try{
  const c=await context({load:'identity'});
  if(!performanceAllowed(c.me.role))throw new CRMError('أداء خدمة العملاء متاح لمدير النظام ومدير المبيعات ومدير خدمة العملاء وممثل خدمة العملاء لنفسه.',403);
  requirePages(c.me,'activity');
- requireCell(c.me,'service-reports','export');
+ // «تقارير خدمة العملاء · تصدير»: the role's (the administrator, the sales manager, the customer-service manager) unless switched off for the member.
+ if(!can(c.me,'service-reports','export'))throw new CRMError(cellRefusalText('service-reports','export'),403);
  const url=new URL(req.url),now=new Date().toISOString(),month=requestedMonth(url,now),language=url.searchParams.get('lang')==='en'?'en':'ar';
  const file=performanceWorkbook(await performanceView(c,month,now),language);
  return new Response(file.bytes,{headers:{...noStore,'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="'+file.fileName+'"','X-Content-Type-Options':'nosniff'}});

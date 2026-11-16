@@ -13,8 +13,9 @@ import {can} from '@/lib/permissions';
 import {
  LEAD_OTHER,LEAD_NOTE_MAX,ROLE_NOTE_MIN,ROUTING_NOT_ELIGIBLE,OPEN_SALES_WARNING,leadGroups,leadGroupsEn,leadListLabels,leadListLabelsEn,leadReader,leadStartLabels,leadStartLabelsEn,leadStarter,performanceAllowed,performanceColumns,performanceNote,performanceNoteEn,
  roleBasisLabels,roleBasisLabelsEn,routingReasonLabels,routingReasonLabelsEn,serviceLeadSources,serviceLeadSourcesEn,serviceRoleOptions,serviceRoleOptionsEn,systemLeadSources,systemLeadSourcesEn,leadLabel,leadLabelEn,
- type LeadList,type LeadRefKind,type PerformanceRow,type RoutingFacts
+ START_OPPORTUNITY_EVENT,type LeadDraft,type LeadList,type LeadRefKind,type LeadStart,type PerformanceRow,type RoutingFacts
 } from '@/lib/service-sales';
+import VoiceField from './voice-field';
 import './service-sales.css';
 
 type Say=(ar:string,en:string)=>string;
@@ -25,26 +26,21 @@ const postJson=<T,>(url:string,body:unknown,language:string)=>submitJson<T>(url,
 const dayOf=(iso:string)=>iso?new Date(Date.parse(iso)+3*3600000).toISOString().slice(0,10):'—';
 
 // ------------------------------------------------------------------------------------------------ «مصدر الفرصة»
-export type LeadDraft={group:'service'|'system';source:string;note:string;refKind?:LeadRefKind|null;refId?:string|null};
-/** An opportunity started from a record: what the system fills in and locks. */
-export type LeadStart={kind:LeadRefKind;id:string;customerId:string;source:string;label:string};
-export const START_OPPORTUNITY_EVENT='yourrest:start-opportunity';
 /** Asks the page to open «فرصة جديدة» on the record's customer with its source filled in (app/crm-app.tsx listens). */
 export const startOpportunity=(start:LeadStart)=>{window.dispatchEvent(new CustomEvent<LeadStart>(START_OPPORTUNITY_EVENT,{detail:start}));};
-export const leadFromStart=(start:LeadStart|null|undefined):LeadDraft=>start?{group:'system',source:start.source,note:'',refKind:start.kind,refId:start.id}:{group:'service',source:'',note:''};
 const sourceText=(source:string,say:Say)=>say(source,serviceLeadSourcesEn[source]||source);
 /** The field of the new-opportunity form: a source customer service brought in, or the system's source locked when started from a record. */
 export function LeadSourceField({value,onChange,locked,problem,disabled}:{value:LeadDraft;onChange:(next:LeadDraft)=>void;locked?:LeadStart|null;problem?:string;disabled?:boolean}){
  const [say]=useSay();
- if(locked)return <div className="field full lead-source-field" data-lead-locked><span>{say('مصدر الفرصة','Opportunity source')}</span>
+ if(locked)return <div className="field full lead-source-field" data-lead-locked><span className="sr-only">{say('مصدر الفرصة','Opportunity source')}</span>
   <div className="lead-source-locked"><b>{say(leadGroups.system,leadGroupsEn.system)} · {say(systemLeadSources[locked.kind],systemLeadSourcesEn[locked.kind])}</b><small>{say('السجل','Record')}: {locked.label} · {say('يحدده النظام ولا يُعدَّل','Set by the system and cannot be changed')}</small></div></div>;
  return <div className="field full lead-source-field" data-lead-source>
-  <label className="lead-source-select"><span>{say('مصدر الفرصة','Opportunity source')} <b>*</b></span>
+  <label className="lead-source-select"><span>{say('المصدر','Source')} <b>*</b></span>
    <select value={value.source} disabled={disabled} required aria-invalid={!!problem} onChange={event=>onChange({group:'service',source:event.target.value,note:event.target.value===LEAD_OTHER?value.note:''})}>
     <option value="">{say('اختر مصدر الفرصة','Choose the opportunity source')}</option>
     <optgroup label={say(leadGroups.service,leadGroupsEn.service)}>{serviceLeadSources.map(source=><option key={source} value={source}>{sourceText(source,say)}</option>)}</optgroup>
    </select></label>
-  {value.source===LEAD_OTHER&&<label className="lead-source-note"><span>{say('اكتب مصدر الفرصة','Type the opportunity source')} <b>*</b></span><input value={value.note} maxLength={LEAD_NOTE_MAX} disabled={disabled} required minLength={3} onChange={event=>onChange({...value,note:event.target.value})}/></label>}
+  {value.source===LEAD_OTHER&&<VoiceField className="lead-source-note" label={say('اكتب مصدر الفرصة','Type the opportunity source')} required value={value.note} disabled={disabled} contextKey="lead-source-note" onChange={note=>onChange({...value,note})} inputProps={{maxLength:LEAD_NOTE_MAX,minLength:3}}/>}
   <small className="form-note">{say('المصادر «من بيانات النظام» تُملأ تلقائيًا عند بدء الفرصة من «مصادر الفرص» أو من طلب التواصل أو الشكوى.','Sources from the system data are filled in automatically when the opportunity is started from «Opportunity sources», a contact request or a complaint.')}</small>
   {problem&&<span className="field-problem" role="alert">{t(problem)}</span>}
  </div>;
@@ -77,7 +73,7 @@ export function ServiceLeadsPanel({me}:{me:Member}){
   {open&&<div className="service-report-body">
    <div className="service-leads-tabs" role="tablist">{(['lost','dormant'] as LeadList[]).map(key=><button key={key} type="button" role="tab" aria-selected={list===key} className={'followup-list-filter'+(list===key?' selected':'')} onClick={()=>{setList(key);setQuery('');}}>{say(leadListLabels[key],leadListLabelsEn[key])}</button>)}</div>
    <p className="service-report-note">{list==='lost'?say('الفرص المفقودة التي لم تبدأ منها فرصة جديدة بعد، الأحدث أولًا. لا يظهر عميل له فرصة مفتوحة.','Lost opportunities no new opportunity has been started from yet, newest first. A customer with an open opportunity is not shown.'):say('عملاء نطاقك الذين مضى على آخر شراء لهم أكثر من 90 يومًا، الأقرب انقطاعًا أولًا.','Customers of your scope whose last purchase is more than 90 days old, the most recent first.')}</p>
-   <form className="service-leads-search" role="search" onSubmit={event=>{event.preventDefault();void load(list,query);}}><label className="field"><span>{say('بحث بالاسم أو الرقم','Search by name or number')}</span><input value={query} onChange={event=>setQuery(event.target.value)} maxLength={60}/></label><button type="submit" className="btn subtle small"><Search size={16} aria-hidden="true"/>{say('بحث','Search')}</button></form>
+   <form className="service-leads-search" role="search" onSubmit={event=>{event.preventDefault();void load(list,query);}}><label className="field"><span>{say('بحث بالاسم أو الرقم','Search by name or number')}</span><input type="search" value={query} onChange={event=>setQuery(event.target.value)} maxLength={60}/></label><button type="submit" className="btn subtle small"><Search size={16} aria-hidden="true"/>{say('بحث','Search')}</button></form>
    {loading?<Loader2 className="spin"/>:error?<div className="form-error" role="alert">{t(error)} <button type="button" className="text-button" onClick={()=>void load(list,query)}>{say('إعادة المحاولة','Retry')}</button></div>:data&&(data.rows.length===0?<p className="muted">{say('لا توجد عناصر في هذه القائمة','Nothing in this list')}</p>:<>
     <p className="muted">{say('المعروض','Showing')} {data.rows.length} / {data.total}</p>
     <ul className="service-leads-list">{data.list==='lost'?(data.rows as LostRow[]).map(row=><li key={row.id} data-lead-row={row.id}><div><b>{row.number!==null?'#'+row.number+' · ':''}{row.customerName}</b><small>{say('تاريخ الفقد','Lost on')} {dayOf(row.lostAt)}{row.lossReason?' · '+t(row.lossReason):''}{row.holderName?' · '+row.holderName:''}</small></div>{starter&&<StartOpportunityButton kind="opportunity" id={row.id} me={me}/>}</li>)
@@ -118,7 +114,7 @@ export function HeldStageForm({current,busy,onSave}:{current:string;busy:boolean
   <p className="form-note">{say('هذه الفرصة لدى خدمة العملاء: تسجّل تواصلك بزر «تسجيل تواصل»، وتحدّث مرحلة البيع هنا حتى الفوز أو الفقد.','This opportunity is with customer service: record your contacts with «Record a contact» and update the sales stage here until it is won or lost.')}</p>
   <label className="field"><span>{say('مرحلة البيع','Sales stage')}</span><select value={stage} onChange={event=>setStage(event.target.value)}><option value="">{say('اختر','Choose')}</option>{Object.entries(stageLabels).map(([key,label])=><option key={key} value={key}>{t(label)}</option>)}</select></label>
   {stage==='lost'&&<label className="field"><span>{say('سبب الفقد','Loss reason')} <b>*</b></span><select value={reason} onChange={event=>setReason(event.target.value)}><option value="">{say('اختر','Choose')}</option>{followupLossReasons.map(item=><option key={item} value={item}>{t(item)}</option>)}</select></label>}
-  <label className="field"><span>{say('ملاحظة (اختياري)','Note (optional)')}</span><input value={note} maxLength={1000} onChange={event=>setNote(event.target.value)}/></label>
+  <VoiceField label={say('ملاحظة (اختياري)','Note (optional)')} value={note} onChange={setNote} contextKey="held-stage-note" inputProps={{maxLength:1000}}/>
   <button type="button" className="btn primary" disabled={busy||!ready} onClick={()=>onSave({stage,lossReason:stage==='lost'?reason:'',stageNote:note})}><CheckCircle2 size={17} aria-hidden="true"/>{say('حفظ مرحلة البيع','Save the sales stage')}</button>
  </div>;
 }
@@ -148,7 +144,7 @@ function RoleTaskForm({task,say,language,onDone,onCancel}:{task:RoleTask;say:Say
  async function save(){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await postJson('/api/service-role-tasks',{caseId:task.caseId,roles,note,requestId:key.current},language);await onDone();}catch(failure){setError(messageOf(failure));key.current=crypto.randomUUID();}finally{lock.current=false;setBusy(false);}}
  return <div className="role-task-form" data-role-task-form><fieldset disabled={busy}><legend>{say('دور خدمة العملاء','Customer-service role')}</legend>
   <div className="role-task-options">{serviceRoleOptions.map(option=><label key={option}><input type="checkbox" checked={roles.includes(option)} onChange={event=>setRoles(current=>event.target.checked?[...current,option]:current.filter(item=>item!==option))}/>{say(option,serviceRoleOptionsEn[option])}</label>)}</div>
-  <label className="field"><span>{say('ملاحظة دور خدمة العملاء (10 أحرف على الأقل)','Customer-service role note (at least 10 characters)')}</span><textarea value={note} maxLength={1000} rows={3} onChange={event=>setNote(event.target.value)}/></label>
+  <VoiceField label={say('ملاحظة دور خدمة العملاء (10 أحرف على الأقل)','Customer-service role note (at least 10 characters)')} multiline value={note} onChange={setNote} contextKey={'role-task:'+task.caseId} inputProps={{maxLength:1000}}/>
   <div className="service-button-row"><button type="button" className="btn subtle small" onClick={onCancel}>{say('إلغاء','Cancel')}</button><button type="button" className="btn primary small" disabled={!roles.length||note.trim().length<ROLE_NOTE_MIN} onClick={()=>void save()}>{busy?<Loader2 size={16} className="spin" aria-hidden="true"/>:<CheckCircle2 size={16} aria-hidden="true"/>}{say('حفظ الدور','Save the role')}</button></div>
  </fieldset>{error&&<div className="form-error" role="alert">{t(error)}</div>}</div>;
 }

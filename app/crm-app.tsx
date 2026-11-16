@@ -1,6 +1,7 @@
 'use client';
 import {lineCents} from '@/lib/decimal-money';
-import {RoleTasksPanel,ServiceLeadsPanel,ServicePerformancePanel,START_OPPORTUNITY_EVENT,type LeadStart} from './service-sales';
+import {RoleTasksPanel,ServiceLeadsPanel,ServicePerformancePanel} from './service-sales';
+import {START_OPPORTUNITY_EVENT,type LeadStart} from '@/lib/service-sales';
 import {submitJson,SubmitError} from '@/lib/client-submit';
 import {saveOfflineSnapshot,loadOfflineSnapshot,augmentOfflineSnapshot,subscribeOffline,lockOfflineSession,offlineSessionGeneration,offlineOwner,type OfflineSnapshot} from '@/lib/offline-store';
 import {offlineSubmit,flushOutbox} from '@/lib/offline-submit';

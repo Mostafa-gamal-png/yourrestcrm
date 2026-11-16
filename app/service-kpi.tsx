@@ -199,7 +199,7 @@ export function problemText(problem:string,say:Say){
   [/^ساعات المهل/,'Time limits must be between half an hour and 500 working hours'],[/^مهلة الشكوى كاملة/,'The whole-complaint limit must be between 1 and 5000 working hours'],
   [/^هدف كل مؤشر/,'Each target must be between 1 and 100'],[/^وزن كل مؤشر/,'Each weight must be a whole number from 0 to 100'],[/^الحد الأدنى للحالات/,'The least number of cases must be a whole number from 0 to 1000'],
   [/^درجة كل معيار تدقيق/,'Each audit criterion is worth a whole number from 1 to 100'],[/^حد «ناجح»/,'The pass threshold must be above the coaching threshold'],
-  [/^حجم العينة/,'The suggested sample is between 0 and 20'],[/^أيام الانتظار/,'The days to wait before closing are between 0 and 30']];
+  [/^حجم العينة/,'The suggested sample is between 0 and 20'],[/^أيام الانتظار/,'The days to wait before closing are between 0 and 30'],[/^مدة احتساب مبيعات المساندة/,'The support-sales window must be a whole number of days from 1 to 365']];
  const found=known.find(([pattern])=>pattern.test(problem));
  return found?say(problem,found[1]):t(problem);
 }

@@ -71,6 +71,12 @@ export function serviceLeadProblem(lead:Partial<Pick<LeadInput,'group'|'source'|
  if(lead.source===LEAD_OTHER&&String(lead.note||'').trim().length<3)return LEAD_MESSAGES.otherShort;
  return '';
 }
+/** The field of the new-opportunity form, and an opportunity started from a record (what the system fills in and locks). The page asks
+ *  for «فرصة جديدة» on the record's customer with START_OPPORTUNITY_EVENT (app/crm-app.tsx listens). */
+export type LeadDraft={group:'service'|'system';source:string;note:string;refKind?:LeadRefKind|null;refId?:string|null};
+export type LeadStart={kind:LeadRefKind;id:string;customerId:string;source:string;label:string};
+export const START_OPPORTUNITY_EVENT='yourrest:start-opportunity';
+export const leadFromStart=(start:LeadStart|null|undefined):LeadDraft=>start?{group:'system',source:start.source,note:'',refKind:start.kind,refId:start.id}:{group:'service',source:'',note:''};
 /** How a stored lead reads: «من جهد خدمة العملاء · واتساب»; a case registered before this release has none: «غير محدد». */
 export function leadLabel(group:string|null|undefined,source:string|null|undefined,note?:string|null){
  if(!group||!source)return LEAD_UNSPECIFIED;

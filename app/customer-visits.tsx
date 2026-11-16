@@ -27,8 +27,8 @@ import {visitPlaceView} from '@/lib/visit-place';
 import './visit-mobile.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
 import {opportunityProblems,type OpportunityField} from '@/lib/opportunity-entry';
-import {serviceLeadProblem} from '@/lib/service-sales';
-import {LeadSourceField,leadFromStart,type LeadDraft,type LeadStart} from './service-sales';
+import {serviceLeadProblem,leadFromStart,type LeadDraft,type LeadStart} from '@/lib/service-sales';
+import {LeadSourceField} from './service-sales';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 type VisitForm = VisitData & CompetitorInput & { type: string; requestedProducts: string[]; salesStage: string; strength: string; customerNeeds: string; nextAction: string; nextDate: string; responsibleId: string };
 function Pick({ value, onChange, options, label, disabled = false }: {
