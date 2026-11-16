@@ -25,6 +25,12 @@
 //   tab is not drawn, the address and the browser's memory cannot open it, and the requests that serve only it answer 404 like a hidden
 //   screen's (hubTabsBlocked; lib/crm-server.ts requireHubTabs). «رفع المبيعات» follows «المبيعات». Every tab hidden and «المبيعات»
 //   not shown: the screen goes too (lib/access.ts hubTabsAllHidden).
+// - «تقارير خدمة العملاء» (the owner, 2026-11-16, item 3 of the GSCO list, GSCO 2.13.77 export_service_reports: «صلاحية جديدة «تصدير تقارير
+//   خدمة العملاء»، شغالة تلقائيًا للمالك والإدارة ومدير المبيعات ومدير خدمة العملاء، ويقدر المالك يقفلها لأي حساب»): a row with «تصدير»
+//   only, the «تصدير Excel» of the two monthly reports. Its ceiling is the roles the reports open for (the administrator, the sales manager,
+//   the customer-service manager: lib/service-report.ts serviceReportAllowed), on by default for each, restrict-only like every other cell,
+//   so the administrator may switch it off for any account, another administrator's included; no migration (a cell never saved is on).
+//   The reports have no screen of their own (they sit on «الزيارات» and «الشكاوى»), so the row has no «استعراض» (`part` says why).
 // Shared by the server (lib/crm-server.ts context(), the routes) and the page (nav, buttons, the matrix in the member form).
 import {canUseSalesWorkspace,canViewPage,hubTabsAllHidden,trashScope} from './access';
 import {HIDEABLE_HUB_TABS,HUB_TAB_KEYS,HUB_TAB_NAMES,HUB_TABS,hubTabKey,isHubTabKey,type HideableHubTab,type HubTab,type HubTabKey} from './targets-hub';
@@ -39,14 +45,16 @@ export const MATRIX_COLUMNS:readonly {key:MatrixColumn;ar:string;en:string}[]=[
 /** The words of a refusal: «غير مسموح لك ب<الإجراء> في <الشاشة>». */
 const actionNouns:Record<PermissionAction,readonly [string,string]>={add:['الإضافة','add'],edit:['التعديل','edit'],delete:['الحذف','delete'],export:['التصدير','export'],import:['الاستيراد','import']};
 
-export type PermissionScreen='dashboard'|'customer'|'map'|'activity'|'complaints'|'service-kpi'|'followup'|'mold-requests'|'journeys'|'quote'|'sales'|'competitors'|'targets'|'team'|'trash';
+export type PermissionScreen='dashboard'|'customer'|'map'|'activity'|'complaints'|'service-kpi'|'service-reports'|'followup'|'mold-requests'|'journeys'|'quote'|'sales'|'competitors'|'targets'|'team'|'trash';
 type Text={ar:string;en:string};
 /** One action of one screen: what it gates (shown on the cell), the roles that can do it today (its ceiling), and a note. A grantable cell
  *  (grantable:true, the «حذف» cells) exists for every role that has the screen; its roles are those it is ON for by default (the
  *  administrator), without the roles that have the screen but nothing it could delete (customer service on «الزيارات»: their service requests are
  *  never deleted, so no cell that does nothing), and roleNote says, for a role, what granting it does for that role. */
 export type MatrixCell=Text&{roles:readonly string[];grantable?:true;without?:readonly string[];note?:Text;roleNote?:Partial<Record<string,Text>>};
-export type MatrixRow=Text&{screen:PermissionScreen;cells:Partial<Record<PermissionAction,MatrixCell>>;roleNote?:Partial<Record<string,Text>>};
+export type MatrixRow=Text&{screen:PermissionScreen;cells:Partial<Record<PermissionAction,MatrixCell>>;roleNote?:Partial<Record<string,Text>>;
+ /** A row that is part of other screens, not a screen of its own: it has no «استعراض», and this says where it shows. */
+ part?:Text};
 const ALL=['admin','manager','supervisor','rep','customer_service','customer_service_manager'] as const;
 const SALES=['admin','manager','supervisor','rep'] as const,MANAGEMENT=['admin','manager','supervisor'] as const,SERVICE=['admin','customer_service','customer_service_manager'] as const;
 /** «حذف»: off by default except for the administrator; whoever it is granted to deletes only what they may edit (their own scope). */
@@ -83,6 +91,9 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  }},
  {screen:'service-kpi',ar:'تقييم خدمة العملاء',en:'Customer-service evaluation',cells:{
   edit:{ar:'حفظ مراجعة شهرية وإعدادات التقييم',en:'Save a monthly review and the evaluation settings',roles:['admin','customer_service_manager']},
+ }},
+ {screen:'service-reports',ar:'تقارير خدمة العملاء',en:'Customer-service reports',part:{ar:'التقرير الشهري لطلبات خدمة العملاء في «الزيارات»، والتقرير الشهري للشكاوى في «الشكاوى» (ولمدير المبيعات في «الزيارات»)؛ لا شاشة مستقلة لهما، ويُخفيان بإخفاء الشاشة التي تعرضهما.',en:'The monthly customer-service report is on «Visits» and the monthly complaints report on «Complaints» (for a sales manager, on «Visits»); they have no screen of their own and are hidden with the screen that shows them.'},cells:{
+  export:{ar:'«تصدير Excel» للتقرير الشهري لطلبات خدمة العملاء وللتقرير الشهري للشكاوى (الملخص وزمن المراحل والتفاصيل)',en:'«Export to Excel» of the monthly customer-service and complaints reports (summary, stage times and details)',roles:['admin','manager','customer_service_manager']},
  }},
  {screen:'followup',ar:'المتابعات',en:'Follow-ups',cells:{
   add:{ar:'تسجيل متابعة',en:'Record a follow-up',roles:SALES},

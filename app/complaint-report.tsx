@@ -1,11 +1,13 @@
 'use client';
-import {useState} from 'react';
+import {useState,type ReactNode} from 'react';
 import {BarChart3} from 'lucide-react';
 import {submitJson} from '@/lib/client-submit';
 import {getLanguage,t,useLanguage} from '@/lib/i18n';
 import {closureOutcomes,closureOutcomesEn,complaintCategories,complaintCategoriesEn,complaintChannels,complaintChannelsEn,complaintSeverities,complaintSeveritiesEn,complaintStatusLabels,complaintStatusLabelsEn,resolutionOutcomes,resolutionOutcomesEn} from '@/lib/complaints';
 import {complaintReportAllowed,type ComplaintReport,type ComplaintReportRow} from '@/lib/complaint-report';
-import type {ReportTiming} from '@/lib/report-timing';
+import {complaintReportFlow,complaintReportStages,complaintReportTiles} from '@/lib/service-report-view';
+import {can} from '@/lib/permissions';
+import {ServiceReportExportButton} from './service-report';
 import type {Member} from '@/lib/crm';
 import './service-report.css';
 
@@ -24,13 +26,14 @@ function Breakdown({title,heading,rows,name,say}:{title:string;heading:string;ro
 }
 
 /** The figures, from a report already in hand; no state, so every wording and number can be checked on its own. */
-export function ComplaintReportView({report,say,onMonth}:{report:ComplaintReport;say:Say;onMonth?:(month:string)=>void}){
- const stages:[string,ReportTiming][]=[[say('المراجعة','Review'),report.timing.review],[say('التكليف','Assignment'),report.timing.assignment],[say('أول تواصل بعد التكليف','First contact after assignment'),report.timing.firstContact],[say('الحل من التكليف','Resolution from assignment'),report.timing.resolution],[say('تأكيد الإغلاق','Closure confirmation'),report.timing.closure],[say('من التسجيل إلى الإغلاق','Registration to closure'),report.timing.registrationToClosure]];
+/** The tiles, the flow and the stage rows are lib/service-report-export.ts's, which the Excel file writes too. `actions`: the export button. */
+export function ComplaintReportView({report,say,onMonth,actions}:{report:ComplaintReport;say:Say;onMonth?:(month:string)=>void;actions?:ReactNode}){
+ const stages=complaintReportStages(report,say);
  const months=[...new Set([report.month,...report.months])].sort().reverse();
- const kpis:[string,string][]=[[say('الشكاوى','Complaints'),String(report.total)],[say('مفتوحة','Open'),String(report.open)],[say('مغلقة','Closed'),String(report.closed)],[say('ملغاة','Cancelled'),String(report.cancelled)],[say('نسبة رضا العميل','Customer satisfaction'),percent(report.satisfactionRate)],[say('مفتوحة وتجاوزت هدفها','Open past target'),String(report.openOverTarget)],[say('أهمية عالية','High severity'),String(report.high)],[say('عملاء بأكثر من شكوى','Customers with more than one'),String(report.repeatCustomers)]];
- const flow:[string,number][]=[[say('أُعيدت للتعديل','Returned for correction'),report.flow.returned],[say('أُعيدت إلى المندوب','Sent back to the representative'),report.flow.sentBack],[say('أُعيد تكليفها','Reassigned'),report.flow.reassigned],[say('أُعيد فتحها','Reopened'),report.flow.reopened]];
+ const kpis=complaintReportTiles(report,say).map(([text,value]):[string,string]=>[text,String(value)]);
+ const flow=complaintReportFlow(report,say);
  return <div className="service-report-body complaint-report-body">
-  <label className="field service-report-month"><span>{say('الشهر','Month')}</span><select value={report.month} onChange={event=>onMonth?.(event.target.value)}>{months.map(month=><option key={month} value={month}>{month}</option>)}</select></label>
+  <div className="service-report-head"><label className="field service-report-month"><span>{say('الشهر','Month')}</span><select value={report.month} onChange={event=>onMonth?.(event.target.value)}>{months.map(month=><option key={month} value={month}>{month}</option>)}</select></label>{actions}</div>
   <div className="service-report-kpis">{kpis.map(([text,value])=><div key={text} className="service-report-kpi"><b>{value}</b><span>{text}</span></div>)}</div>
   {report.total===0?<p className="muted">{say('لا شكاوى في هذا الشهر ضمن نطاقك.','No complaints this month in your scope.')}</p>:<>
    <Breakdown title={say('بحسب التصنيف','By category')} heading={say('التصنيف','Category')} rows={report.byCategory} name={key=>label(complaintCategories,complaintCategoriesEn,key,say)} say={say}/>
@@ -49,7 +52,7 @@ export function ComplaintReportView({report,say,onMonth}:{report:ComplaintReport
  </div>;
 }
 
-function ComplaintReportPanel(){
+function ComplaintReportPanel({canExport}:{canExport:boolean}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const [data,setData]=useState<ComplaintReport|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  // Fetched on opening and on choosing a month, never in the background.
@@ -63,12 +66,12 @@ function ComplaintReportPanel(){
   <summary><BarChart3 size={18} aria-hidden="true"/> {say('التقرير الشهري للشكاوى','Monthly complaints report')}</summary>
   {loading&&!data&&<p role="status">{say('جارٍ تحميل التقرير','Loading the report')}</p>}
   {error&&<div className="form-error" role="alert">{error} <button type="button" className="text-button" onClick={()=>void fetchReport(data?.month)}>{say('إعادة المحاولة','Retry')}</button></div>}
-  {data&&<div aria-busy={loading}><ComplaintReportView report={data} say={say} onMonth={month=>void fetchReport(month)}/></div>}
+  {data&&<div aria-busy={loading}><ComplaintReportView report={data} say={say} onMonth={month=>void fetchReport(month)} actions={canExport?<ServiceReportExportButton key={data.month} kind="complaints" month={data.month} say={say} language={language}/>:null}/></div>}
  </details>;
 }
 
 /** At the top of the Complaints page for customer-service managers and administrators, and of the Visits page for sales managers; nobody else gets it. */
-export function ComplaintReportSection({me}:{me:Pick<Member,'role'>}){
+export function ComplaintReportSection({me}:{me:Pick<Member,'role'|'access'>}){
  if(!complaintReportAllowed(me.role))return null;
- return <ComplaintReportPanel/>;
+ return <ComplaintReportPanel canExport={can(me,'service-reports','export')}/>;
 }

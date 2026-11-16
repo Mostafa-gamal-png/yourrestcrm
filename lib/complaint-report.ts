@@ -24,9 +24,11 @@ export type ComplaintReport={
 };
 /** Administrators, sales managers and customer-service managers; each sees only the complaints they may already read. */
 export const complaintReportAllowed=(role:string)=>role==='admin'||role==='manager'||role==='customer_service_manager';
-const monthOf=(row:ComplaintRow)=>riyadhDate(row.createdAt).slice(0,7);
+/** The month (Riyadh) a complaint was registered in: the month the report (and its Excel export) files it under. */
+export const complaintMonthOf=(row:Pick<ComplaintRow,'createdAt'>)=>riyadhDate(row.createdAt).slice(0,7);
+const monthOf=complaintMonthOf;
 /** The dispatch the holder received last before `at`: an assignment, a delegation, a reassignment, a return from customer service or a reopening. */
-const dispatchBefore=(data:ComplaintData,at:string)=>[data.assignedAt,data.delegatedAt,data.reassignedAt,data.rejectedAt,data.reopenedAt].filter(stamp=>!!stamp&&stamp<=at).sort().at(-1)||'';
+export const complaintDispatchBefore=(data:ComplaintData,at:string)=>[data.assignedAt,data.delegatedAt,data.reassignedAt,data.rejectedAt,data.reopenedAt].filter(stamp=>!!stamp&&stamp<=at).sort().at(-1)||'';
 function tally(groups:Map<string,ComplaintReportRow>,key:string,open:boolean,closed:boolean,satisfied:boolean){
  const row=groups.get(key)||{key,total:0,open:0,closed:0,satisfied:0,satisfactionRate:null};
  row.total++;if(open)row.open++;if(closed)row.closed++;if(satisfied)row.satisfied++;
@@ -69,9 +71,9 @@ export function complaintReport(c:ComplaintContext,month:string,now:string=new D
   // dispatch they had received; the resolution standing now from the dispatch before it; the closure from that resolution.
   if(data.forwardedAt&&data.submittedAt)review.push(workingHoursBetween(data.submittedAt,data.forwardedAt));
   if(data.forwardedAt&&data.assignedAt)assignment.push(workingHoursBetween(data.forwardedAt,data.assignedAt));
-  const first=[...(data.updates||[])].sort((a,b)=>a.at.localeCompare(b.at))[0],firstDispatch=first?dispatchBefore(data,first.at):'';
+  const first=[...(data.updates||[])].sort((a,b)=>a.at.localeCompare(b.at))[0],firstDispatch=first?complaintDispatchBefore(data,first.at):'';
   if(first&&firstDispatch)firstContact.push(workingHoursBetween(firstDispatch,first.at));
-  const resolvedDispatch=data.resolution?dispatchBefore(data,data.resolution.at):'';
+  const resolvedDispatch=data.resolution?complaintDispatchBefore(data,data.resolution.at):'';
   if(data.resolution&&resolvedDispatch)resolution.push(workingHoursBetween(resolvedDispatch,data.resolution.at));
   if(isClosed&&data.closure&&data.resolution){closure.push(workingHoursBetween(data.resolution.at,data.closure.at));life.push(workingHoursBetween(row.createdAt,data.closure.at));}
   if(isOpen){const assignee=c.members.find(member=>member.id===data.assigneeId);if(complaintProgress(data,assignee?.role||'',now).late)openOver++;}

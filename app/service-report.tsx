@@ -1,10 +1,12 @@
 'use client';
-import {useState} from 'react';
-import {BarChart3} from 'lucide-react';
+import {useRef,useState,type ReactNode} from 'react';
+import {BarChart3,FileSpreadsheet,Loader2} from 'lucide-react';
 import {submitJson} from '@/lib/client-submit';
 import {getLanguage,t,useLanguage} from '@/lib/i18n';
-import {serviceSources,serviceStatusLabels} from '@/lib/customer-service';
-import {serviceReportAllowed,type ReportTiming,type ServiceReport} from '@/lib/service-report';
+import {serviceStatusLabels} from '@/lib/customer-service';
+import {serviceReportAllowed,type ServiceReport} from '@/lib/service-report';
+import {contactTypeText,serviceReportFileName,serviceReportStages,serviceReportTiles,type ServiceReportKind} from '@/lib/service-report-view';
+import {can} from '@/lib/permissions';
 import type {Member} from '@/lib/crm';
 import './service-report.css';
 
@@ -13,16 +15,17 @@ const hours=(value:number|null,say:Say)=>value===null?'—':value.toFixed(1)+' '
 const percent=(value:number|null)=>value===null?'—':value+'%';
 const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message' in error&&typeof error.message==='string'?error.message:'';
 
-/** The figures, from a report already in hand; no state, so every wording and number can be checked on its own. */
-export function ServiceReportView({report,say,onMonth}:{report:ServiceReport;say:Say;onMonth?:(month:string)=>void}){
- const stages:[string,ReportTiming][]=[[say('الاعتماد','Approval'),report.timing.approval],[say('التكليف','Assignment'),report.timing.assignment],[say('أول تواصل بعد التكليف','First contact after assignment'),report.timing.firstContact],[say('من التسجيل إلى أول تواصل','Registration to first contact'),report.timing.totalToFirstContact]];
+/** The figures, from a report already in hand; no state, so every wording and number can be checked on its own. The tiles and the stage
+ *  rows are lib/service-report-export.ts's, which the Excel file writes too. `actions`: the export button, beside the month. */
+export function ServiceReportView({report,say,onMonth,actions}:{report:ServiceReport;say:Say;onMonth?:(month:string)=>void;actions?:ReactNode}){
+ const stages=serviceReportStages(report,say);
  const months=[...new Set([report.month,...report.months])].sort().reverse();
  return <div className="service-report-body">
-  <label className="field service-report-month"><span>{say('الشهر','Month')}</span><select value={report.month} onChange={event=>onMonth?.(event.target.value)}>{months.map(month=><option key={month} value={month}>{month}</option>)}</select></label>
-  <div className="service-report-kpis">{[[say('الطلبات','Requests'),String(report.total)],[say('مفتوحة','Open'),String(report.open)],[say('فاز','Won'),String(report.won)],[say('فُقد','Lost'),String(report.lost)],[say('نسبة الفوز','Win rate'),percent(report.winRate)],[say('مفتوحة وتجاوزت هدفها','Open past target'),String(report.openOverTarget)]].map(([label,value])=><div key={label} className="service-report-kpi"><b>{value}</b><span>{label}</span></div>)}</div>
+  <div className="service-report-head"><label className="field service-report-month"><span>{say('الشهر','Month')}</span><select value={report.month} onChange={event=>onMonth?.(event.target.value)}>{months.map(month=><option key={month} value={month}>{month}</option>)}</select></label>{actions}</div>
+  <div className="service-report-kpis">{serviceReportTiles(report,say).map(([label,value])=><div key={label} className="service-report-kpi"><b>{String(value)}</b><span>{label}</span></div>)}</div>
   {report.total===0?<p className="muted">{say('لا طلبات في هذا الشهر ضمن نطاقك.','No requests this month in your scope.')}</p>:<>
-   <h3>{say('بحسب قناة التواصل','By channel')}</h3>
-   <table className="service-report-table"><thead><tr>{[say('القناة','Channel'),say('الطلبات','Requests'),say('فاز','Won'),say('فُقد','Lost'),say('مفتوح','Open'),say('نسبة الفوز','Win rate')].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{report.bySource.map(row=><tr key={row.source}><td>{t(serviceSources[row.source]||row.source)}</td><td>{row.total}</td><td>{row.won}</td><td>{row.lost}</td><td>{row.open}</td><td>{percent(row.winRate)}</td></tr>)}</tbody></table>
+   <h3>{say('بحسب نوع التواصل','By contact type')}</h3>
+   <table className="service-report-table" data-report-contact-types><thead><tr>{[say('نوع التواصل','Contact type'),say('الطلبات','Requests'),say('فاز','Won'),say('فُقد','Lost'),say('مفتوح','Open'),say('نسبة الفوز','Win rate')].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{report.byContactType.map(row=><tr key={row.type}><td>{contactTypeText(row.type,say)}</td><td>{row.total}</td><td>{row.won}</td><td>{row.lost}</td><td>{row.open}</td><td>{percent(row.winRate)}</td></tr>)}</tbody></table>
    <h3>{say('الحالة الحالية','Current state')}</h3>
    <div className="service-report-states">{Object.entries(report.byState).map(([state,count])=><span key={state} className="service-queue-chip">{t(serviceStatusLabels[state]||state)}: {count}</span>)}</div>
    <h3>{say('زمن كل مرحلة بساعات العمل','Time per stage, in working hours')}</h3>
@@ -33,7 +36,24 @@ export function ServiceReportView({report,say,onMonth}:{report:ServiceReport;say
  </div>;
 }
 
-function ServiceReportPanel(){
+/** «تصدير Excel» of the report on screen, for its month (the owner, 2026-11-16, item 3 of the GSCO list): the server builds the workbook
+ *  (GET /api/service-report/export) from what the reader may read; shown only while «تقارير خدمة العملاء · تصدير» is on for the member. */
+export function ServiceReportExportButton({kind,month,say,language}:{kind:ServiceReportKind;month:string;say:Say;language:string}){
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),lock=useRef(false);
+ async function run(){
+  if(lock.current)return;lock.current=true;setBusy(true);setError('');
+  try{
+   const response=await fetch('/api/service-report/export?kind='+kind+'&month='+encodeURIComponent(month)+'&lang='+(language==='en'?'en':'ar'),{cache:'no-store'});
+   if(!response.ok){let text='';try{text=((await response.json()) as {error?:string}).error||'';}catch{text='';}throw new Error(text);}
+   const name=/filename="([^"]+)"/.exec(response.headers.get('content-disposition')||'')?.[1]||serviceReportFileName(kind,month);
+   const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(failure){setError(messageOf(failure)||say('تعذر تصدير التقرير. أعد المحاولة.','Could not export the report. Retry.'));}
+  finally{lock.current=false;setBusy(false);}
+ }
+ return <span className="service-report-export" data-report-export={kind}><button type="button" className="btn subtle small" disabled={busy} onClick={()=>void run()}>{busy?<Loader2 size={16} className="spin" aria-hidden="true"/>:<FileSpreadsheet size={16} aria-hidden="true"/>}{busy?say('جارٍ التصدير…','Exporting…'):say('تصدير Excel','Export to Excel')}</button>{error&&<span className="form-error" role="alert">{t(error)}</span>}</span>;
+}
+
+function ServiceReportPanel({canExport}:{canExport:boolean}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const [data,setData]=useState<ServiceReport|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  // Fetched on opening and on choosing a month, never in the background.
@@ -47,12 +67,12 @@ function ServiceReportPanel(){
   <summary><BarChart3 size={18} aria-hidden="true"/> {say('التقرير الشهري لطلبات خدمة العملاء','Monthly customer-service report')}</summary>
   {loading&&!data&&<p role="status">{say('جارٍ تحميل التقرير','Loading the report')}</p>}
   {error&&<div className="form-error" role="alert">{error} <button type="button" className="text-button" onClick={()=>void fetchReport(data?.month)}>{say('إعادة المحاولة','Retry')}</button></div>}
-  {data&&<div aria-busy={loading}><ServiceReportView report={data} say={say} onMonth={month=>void fetchReport(month)}/></div>}
+  {data&&<div aria-busy={loading}><ServiceReportView report={data} say={say} onMonth={month=>void fetchReport(month)} actions={canExport?<ServiceReportExportButton key={data.month} kind="requests" month={data.month} say={say} language={language}/>:null}/></div>}
  </details>;
 }
 
 /** Shown at the top of the Visits page to the people who run customer service and sales; nobody else gets it. */
-export function ServiceReportSection({me}:{me:Pick<Member,'role'>}){
+export function ServiceReportSection({me}:{me:Pick<Member,'role'|'access'>}){
  if(!serviceReportAllowed(me.role))return null;
- return <ServiceReportPanel/>;
+ return <ServiceReportPanel canExport={can(me,'service-reports','export')}/>;
 }
