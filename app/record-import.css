@@ -1,0 +1,20 @@
+.record-import-dialog{max-width:900px!important}
+.record-import-body{display:grid;gap:14px;min-width:0}
+.record-import-actions{display:flex;flex-wrap:wrap;gap:10px}
+.record-import-file{cursor:pointer}.record-import-file[aria-disabled=true]{opacity:.6;pointer-events:none}
+.record-import-summary{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--muted);font-size:13px;min-width:0}
+.record-import-summary p{margin:0;line-height:1.8;overflow-wrap:anywhere}
+.record-import-done{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--foreground)}
+.record-import-summary dl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0}
+.record-import-summary dl>div{min-width:0;padding:8px 10px;border-radius:8px;background:var(--card)}
+.record-import-summary dt{font-size:12px;line-height:1.6;color:var(--muted-foreground)}.record-import-summary dd{margin:3px 0 0;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.record-import-note{font-size:12px;color:var(--muted-foreground)}
+.record-import-rows{max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px}
+.record-import-rows table{width:100%;border-collapse:collapse;font-size:13px}
+.record-import-rows th{position:sticky;top:0;z-index:1;padding:8px 10px!important;text-align:start!important}
+.record-import-rows td{padding:8px 10px!important;border-top:1px solid var(--border);vertical-align:top;line-height:1.7;overflow-wrap:anywhere}
+.record-import-rows td small{display:block;color:var(--muted-foreground)}
+.record-import-refused{background:#f9ecef;color:#ad576b}.record-import-new,.record-import-changed{background:#e8f5ee;color:#327a59}
+.dark .record-import-refused{background:#442a35;color:#f4bdcc}.dark .record-import-new,.dark .record-import-changed{background:#244936;color:#a0e0be}
+@media(max-width:600px){.record-import-summary dl{grid-template-columns:repeat(2,minmax(0,1fr))}.record-import-actions .btn{flex:1 1 100%}.record-import-rows th:nth-child(1),.record-import-rows td:nth-child(1){width:52px}.record-import-rows table{font-size:12px}}
+.targets-import-row,.followups-import-row{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px}

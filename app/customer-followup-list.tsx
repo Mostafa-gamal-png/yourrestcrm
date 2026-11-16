@@ -9,11 +9,14 @@ import {customerFollowupPlans,followupTypes,isCustomerFollowup,canExecuteCustome
 import {SupportButton,type SupportBinding} from './support-panel';
 import './rep-record-lists.css';
 import './followup-recontact.css';
+import RecordImportButton from './record-import';
 
-type Props={records:Row[];members:Member[];query:string;staff:string;stage:string;onNew:(customerId:string,sourceId:string)=>void;onOpen:(row:Row)=>void;onCustomer:(id:string)=>void;onDelete?:(row:Row)=>void;canDelete?:(row:Row)=>boolean;support?:SupportBinding};
+type Props={records:Row[];members:Member[];query:string;staff:string;stage:string;onNew:(customerId:string,sourceId:string)=>void;onOpen:(row:Row)=>void;onCustomer:(id:string)=>void;onDelete?:(row:Row)=>void;canDelete?:(row:Row)=>boolean;support?:SupportBinding;
+ /** «استيراد المتابعات من Excel» (app/record-import.tsx): given to whoever may record a follow-up (the route checks the same); reloads after. */
+ onImported?:()=>void|Promise<void>};
 type Plan=ReturnType<typeof customerFollowupPlans>[number];
 
-export function CustomerFollowupsPage({records,members,query,staff,stage,onNew,onOpen,onCustomer,onDelete,canDelete,support}:Props){
+export function CustomerFollowupsPage({records,members,query,staff,stage,onNew,onOpen,onCustomer,onDelete,canDelete,support,onImported}:Props){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
  const [tab,setTab]=useState('open'),[page,setPage]=useState(1),day=today();
  const plans=customerFollowupPlans(records).filter(p=>(staff==='all'||p.responsibleId===staff)&&(stage==='all'||p.stage===stage)&&(!query||[p.customer.data.name,p.customer.data.code,p.customer.data.phone,p.nextAction,p.source.data.result].join(' ').toLowerCase().includes(query.toLowerCase())));
@@ -26,6 +29,7 @@ export function CustomerFollowupsPage({records,members,query,staff,stage,onNew,o
  const statusText=(p:Plan)=>({closed:say('مغلقة','Closed'),incomplete:say('حدد الخطوة القادمة','Set the next step'),overdue:say('متأخرة','Overdue'),today:say('اليوم','Today'),upcoming:say('قادمة','Upcoming')})[status(p)];
  const repName=(id:string)=>members.find(m=>m.id===id)?.name||'';
  return <div className="customer-followups-workspace rep-followup-workspace">
+  {onImported&&<div className="followups-import-row no-print"><RecordImportButton kind="followups" onImported={onImported}/></div>}
   <section className="panel">
    <div className="panel-heading followup-list-heading">
     <div className="followup-list-filters" role="group" aria-label={t('عرض المتابعات')}>

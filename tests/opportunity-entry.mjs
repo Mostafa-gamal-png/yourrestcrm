@@ -133,9 +133,12 @@ ok(/اكتب نتيجة المتابعة في 3 أحرف على الأقل/.test
 // evidence); a restoration from «المحذوفات» puts back what was deleted. A new path that writes visits must be added here, knowingly.
 const sources=['app','lib'].flatMap(dir=>fs.readdirSync(dir,{recursive:true}).filter(name=>/\.tsx?$/.test(name)).map(name=>path.join(dir,name)));
 const writers=sources.filter(file=>/INSERT[^;`]{0,60}INTO crm_records[^;`]{0,200}'(activity|opportunity)'/.test(fs.readFileSync(file,'utf8'))).sort();
-eq(writers,['app/api/customer-followups/route.ts','app/api/followups/route.ts','app/api/visits/route.ts'],'the routes that insert visits or opportunities by name');
+// «استيراد المتابعات من Excel» (2026-11-16, GSCO list item 8) executes follow-ups (never a new visit or opportunity) with the follow-up's own
+// rule (customerFollowupSchema, an open line that canExecuteCustomerFollowup accepts), as POST /api/customer-followups does.
+eq(writers,['app/api/customer-followups/route.ts','app/api/followups/route.ts','app/api/visits/route.ts','lib/record-import-server.ts'],'the routes that insert visits or opportunities by name');
+{const importer=fs.readFileSync('lib/record-import-server.ts','utf8');ok(importer.includes("visitWorkflow:'followup-v1'")&&importer.includes('customerFollowupSchema.safeParse')&&importer.includes('canExecuteCustomerFollowup(current)')&&importer.includes("if(type==='visit')refuse("),'the follow-ups import writes follow-ups only, by the follow-up\'s rule, never a visit');}
 ok(/kind==='activity'/.test(fs.readFileSync('app/api/crm/route.ts','utf8'))&&/requireLegacyVisit\(body\.data/.test(fs.readFileSync('app/api/crm/route.ts','utf8')),'/api/crm writes only an earlier kind of visit (requireLegacyVisit refuses a new one\'s fields)');
-for(const file of sources.filter(name=>/import|erp-|kpi-evidence|trash/.test(name)))ok(!/INSERT[^;`]{0,60}INTO crm_records[^;`]{0,200}'(activity|opportunity)'/.test(fs.readFileSync(file,'utf8')),'no visit or opportunity written by '+file);
+for(const file of sources.filter(name=>/import|erp-|kpi-evidence|trash/.test(name)&&name!=='lib/record-import-server.ts'))ok(!/INSERT[^;`]{0,60}INTO crm_records[^;`]{0,200}'(activity|opportunity)'/.test(fs.readFileSync(file,'utf8')),'no visit or opportunity written by '+file);
 ok(fs.readFileSync('app/api/visits/route.ts','utf8').includes('if(!old){const problem=opportunityProblem(data,c.me.role)'),'the visit route asks the rule of a new visit only');
 ok(fs.readFileSync('app/api/customer-service/route.ts','utf8').includes("if(action!=='edit'){const problem=opportunityProblem(registration,c.me.role)"),'the customer-service route asks it of a new registration or contact only');
 
