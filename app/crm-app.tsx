@@ -186,6 +186,8 @@ export default function CRM() {
     const tracking=useServiceTracking({me,records}),complaints=useComplaints({me,records}),[complaintDialog,setComplaintDialog]=useState<{kind:'register'}|{kind:'detail';id:string}|null>(null);
     // A request named by a notification or a link, opened once the account's data is in hand.
     const pendingServiceCase=useRef('');
+    // A customer named by the Android app's «تنبيه المصانع القريبة» notification (lib/nearby-customers.ts), opened once the data is in hand.
+    const pendingNearby=useRef('');
     const [followupEditor,setFollowupEditor]=useState<{initial?:Row;customerId?:string;key:string}|null>(null);
     const [visitEditor, setVisitEditor] = useState<{
         initial?: Row;
@@ -286,6 +288,26 @@ export default function CRM() {
         window.addEventListener('yourrest:open-service-case',open);
         return()=>window.removeEventListener('yourrest:open-service-case',open);
     },[go]);
+    // «تنبيه المصانع القريبة» (lib/nearby-customers.ts): a tapped notification opens «خريطة المصانع» on the nearest customer it names (the
+    // customer's card when the map is hidden from the member). The id is only a hint: the customer opens only if this member's data has it,
+    // and a screen with unsaved work is never replaced underneath the person.
+    const openNearby=useCallback((id:string)=>{
+        const d=snapshotRef.current;if(!d)return;
+        if(editorOpenRef.current){toast.info(getLanguage()==='ar'?'اقتربت من مصنع بحاجة إلى زيارة. أنهِ ما بين يديك ثم افتحه من «خريطة المصانع».':'You are near a factory that needs a visit. Finish what you are doing, then open it from the factory map.');return;}
+        if(pageAllowed(d.me,'map')){go('map');setMapFocusId(id);return;}
+        if(d.records.some(r=>r.id===id&&r.kind==='customer')){setFollowupEditor(null);setVisitEditor(null);setDetailTab('info');setRawDetailId(id);}
+    },[go]);
+    useEffect(()=>{
+        const open=(event:Event)=>{
+            const id=(event as CustomEvent<{id?:unknown}>).detail?.id;
+            if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(id))return;
+            if(!snapshotRef.current||!me){pendingNearby.current=id;return;}
+            openNearby(id);
+        };
+        window.addEventListener('yourrest:open-nearby-customer',open);
+        return()=>window.removeEventListener('yourrest:open-nearby-customer',open);
+    },[openNearby,me]);
+    useEffect(()=>{if(!me||!snapshotRef.current||!pendingNearby.current)return;const id=pendingNearby.current;pendingNearby.current='';openNearby(id);},[me,openNearby]);
     const createdCustomer=useCallback(async(id:string)=>{
         let d=await refreshLocal();let customer=d?.records.find(r=>r.id===id&&r.kind==='customer');
         if(!customer){await load();d=snapshotRef.current;customer=d?.records.find(r=>r.id===id&&r.kind==='customer');}
@@ -295,7 +317,7 @@ export default function CRM() {
     useEffect(()=>{const query=window.matchMedia('(max-width: 1023px)');const update=()=>{setCompactNavigation(query.matches);if(!query.matches)setMobileAccountOpen(false);};update();query.addEventListener('change',update);return()=>query.removeEventListener('change',update);},[]);
     useEffect(()=>{const update=()=>setOffline(navigator.onLine===false);update();window.addEventListener('online',update);window.addEventListener('offline',update);return()=>{window.removeEventListener('online',update);window.removeEventListener('offline',update);};},[]);
     useEffect(() => { const after = () => setPrintQuote(null); window.addEventListener('afterprint', after); return () => window.removeEventListener('afterprint', after); }, []);
-    useEffect(() => { load(); const hash = window.location.hash.slice(1), link = /^service-case=([A-Za-z0-9_-]{1,200})$/.exec(hash); if (link) { pendingServiceCase.current = link[1]; window.history.replaceState(null, '', '#activity'); } const v = link ? 'activity' : hash === 'factory' ? 'customer' : (hash === 'opportunity'||hash === 'service') ? 'activity' : hash; if (v==='reports'||nav.some(n => n[0] === v))
+    useEffect(() => { load(); const hash = window.location.hash.slice(1), link = /^service-case=([A-Za-z0-9_-]{1,200})$/.exec(hash), nearby = /^nearby=([A-Za-z0-9_-]{1,200})$/.exec(hash); if (link) { pendingServiceCase.current = link[1]; window.history.replaceState(null, '', '#activity'); } if (nearby) { pendingNearby.current = nearby[1]; window.history.replaceState(null, '', '#map'); } const v = link ? 'activity' : nearby ? 'map' : hash === 'factory' ? 'customer' : (hash === 'opportunity'||hash === 'service') ? 'activity' : hash; if (v==='reports'||nav.some(n => n[0] === v))
         setView(v); }, [load]);
     useEffect(() => { const context = (document as Document & { modelContext?: ModelContext }).modelContext; if (!context?.registerTool)
         return; const lifecycle = new AbortController(); for (const tool of [{ name: 'read_crm_summary', title: 'قراءة ملخص يورست', description: 'Read the currently authorized CRM totals without modifying data.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true }, execute: async (input: Record<string, unknown>) => { if (!input || Object.keys(input).length)
