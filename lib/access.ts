@@ -1,4 +1,5 @@
 import type {Member,Row} from './crm';
+import {HUB_TAB_KEYS} from './targets-hub';
 /** «عرض بيانات الفريق بالكامل» (lib/permissions.ts): a supervisor or a sales manager the administrator switched it on for. */
 export const viewsWholeTeam=(me:Member)=>(me.role==='supervisor'||me.role==='manager')&&me.access?.viewAll===true;
 
@@ -31,12 +32,21 @@ export function trashScope(role:string):'all'|'own'|null{return role==='admin'?'
 export const RETIRED_PAGES:ReadonlySet<string>=new Set(['quote']);
 export const pageRetired=(view:string)=>RETIRED_PAGES.has(view);
 
+/** «المستهدفات وتقييم الأداء» left with no tab (the owner, 2026-11-16, as GSCO's «A page with no part left goes»): the administrator hid
+ *  every tab of its hub from this member (lib/targets-hub.ts HUB_TAB_KEYS among the hidden) and «رفع المبيعات» does not show either (the
+ *  role has no «المبيعات» or it is hidden). The screen is then hidden as if its «استعراض» were off (lib/permissions.ts pageHidden): not in
+ *  the menus, an old link opens the first screen, its requests answer 404. Never for the administrator, nor for a role whose targets screen
+ *  is not the hub (a representative's «أهدافي» has no tabs). */
+export function hubTabsAllHidden(role:string,hidden:readonly string[]){
+ return role!=='admin'&&canUseSalesWorkspace(role)&&canViewPage(role,'targets')&&HUB_TAB_KEYS.every(key=>hidden.includes(key))&&(!canViewPage(role,'sales')||hidden.includes('sales'));
+}
+
 /** Preserve old bookmarks without granting access to a management workspace. A screen the administrator hid from the member (hidden,
  *  lib/permissions.ts) is not opened either: the first screen the member has, «الزيارات» when it is not hidden. trashOpen: whether the
  *  member has «المحذوفات» now (lib/permissions.ts pageAllowed(me,'trash')); without it, the role's own (the administrator, the sales manager). */
 export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=[],trashOpen=trashScope(role)!==null){
  const page=view==='factory'?'customer':['opportunity','service'].includes(view)?'activity':view==='reports'&&canUseSalesWorkspace(role)?'targets':view;
- const shown=(screen:string)=>!pageRetired(screen)&&canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen));
+ const shown=(screen:string)=>!pageRetired(screen)&&canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen)&&(screen!=='targets'||!hubTabsAllHidden(role,hidden)));
  if(shown(page))return page;
  return ['activity','dashboard','customer','map','followup','mold-requests','complaints','targets','journeys','quote','sales','competitors','service-kpi','trash','team'].find(shown)||'activity';
 }

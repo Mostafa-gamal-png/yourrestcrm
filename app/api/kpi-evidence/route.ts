@@ -1,7 +1,8 @@
 import {z} from 'zod';
-import {context,checkOrigin,CRMError,readJsonBody,replyError,requirePages,requireCell} from '@/lib/crm-server';
-/** «الصلاحيات»: part of «المستهدفات وتقييم الأداء» (closed when hidden); a save is its «تحرير». */
-const targetsPage=async(edit=false)=>{const c=await context();requirePages(c.me,'targets');if(edit)requireCell(c.me,'targets','edit');return c;};
+import {context,checkOrigin,CRMError,readJsonBody,replyError,requirePages,requireCell,requireHubTabs} from '@/lib/crm-server';
+/** «الصلاحيات»: part of «المستهدفات وتقييم الأداء» (closed when hidden); a save is its «تحرير». «بيانات المؤشرات» opens from «نتائج
+ *  الأداء»، «التحصيل» and «عروض الأسعار»: closed (404) only when the three tabs are hidden from the member (2026-11-16). */
+const targetsPage=async(edit=false)=>{const c=await context();requirePages(c.me,'targets');requireHubTabs(c.me,'results','collection','quotes');if(edit)requireCell(c.me,'targets','edit');return c;};
 import {getKpiEvidenceOptions,saveKpiEvidence} from '@/lib/kpi-evidence-server';
 export const dynamic='force-dynamic';
 function errorResponse(error:unknown){const response=error instanceof z.ZodError?Response.json({error:error.issues.map(issue=>issue.message).join(' • ')},{status:400}):replyError(error);response.headers.set('cache-control','private, no-store');return response;}

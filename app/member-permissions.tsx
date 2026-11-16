@@ -6,14 +6,17 @@
 // administrator, and grantable to any member whose role has the screen (within what they may edit; customer service: «—»); «المحذوفات» shows
 // for a supervisor or a representative with its note (2026-11-10: it comes with «حذف», their own deletions only). Under the table «صلاحيات عامة»: «عرض بيانات الفريق بالكامل». The administrator only; saved on its own
 // («حفظ الصلاحيات», POST /api/crm {action:'permissions'}) with its version, so the member form's own save is unchanged.
-import {useMemo,useRef,useState} from 'react';
+// The tabs of «المستهدفات وتقييم الأداء» (the owner, 2026-11-16, GSCO 2.13.58): a row each under the screen's row («نتائج الأداء»،
+// «التحصيل»، «عروض الأسعار»، «المستهدفات والأوزان»), «استعراض» only, for a role whose targets screen is the hub (the administrator: «—»);
+// the screen's «الكل» covers them, and while the screen's own «استعراض» is off they go with it (disabled, their values kept).
+import {Fragment,useMemo,useRef,useState} from 'react';
 import {Loader2,ShieldCheck,Copy,RefreshCw} from 'lucide-react';
 import {toast} from 'sonner';
 import {submitJson,SubmitError} from '@/lib/client-submit';
 import {useLanguage,getLanguage} from '@/lib/i18n';
 import {roles,type Member} from '@/lib/crm';
 import {canViewPage} from '@/lib/access';
-import {GENERAL_PERMISSIONS,MATRIX_COLUMNS,PERMISSION_ACTIONS,PERMISSION_MATRIX,cellCeiling,cellFixed,cellKey,copyPermissions,normalizePermissions,permissionKeyText,viewAllAvailable,type MatrixRow,type StoredPermissions} from '@/lib/permissions';
+import {GENERAL_PERMISSIONS,HUB_TAB_ROWS,MATRIX_COLUMNS,PERMISSION_ACTIONS,PERMISSION_MATRIX,cellCeiling,cellFixed,cellKey,copyPermissions,hubTabCeiling,normalizePermissions,permissionKeyText,viewAllAvailable,type HiddenKey,type MatrixRow,type StoredPermissions} from '@/lib/permissions';
 import './member-permissions.css';
 
 type Saved=StoredPermissions&{version:number};
@@ -31,10 +34,16 @@ export function MemberPermissionsEditor({member,members,roleChanged,onSaved}:{me
  const browsable=(row:MatrixRow)=>!admin&&canViewPage(role,row.screen);
  const changeable=(row:MatrixRow)=>PERMISSION_ACTIONS.filter(action=>cellCeiling(role,row.screen,action)&&!cellFixed(role,cellKey(row.screen,action)));
  const shown=(row:MatrixRow)=>!draft.hidden.includes(row.screen);
- const allOn=(row:MatrixRow)=>(!browsable(row)||shown(row))&&changeable(row).every(action=>draft.cells[cellKey(row.screen,action)]);
+ // The hub's tab rows (none for a role whose targets screen is not the hub); their switches exist for every such role but the administrator.
+ const tabRows=hubTabCeiling(role)?HUB_TAB_ROWS:[],tabSwitches=admin?[]:tabRows;
+ const tabShown=(key:HiddenKey)=>!draft.hidden.includes(key);
+ const tabsOf=(row:MatrixRow)=>row.screen==='targets'?tabSwitches:[];
+ const allOn=(row:MatrixRow)=>(!browsable(row)||shown(row))&&changeable(row).every(action=>draft.cells[cellKey(row.screen,action)])&&tabsOf(row).every(tab=>tabShown(tab.key));
  const setCell=(key:string,on:boolean)=>setDraft(current=>({...current,cells:{...current.cells,[key]:on}}));
- const setShown=(row:MatrixRow,on:boolean)=>setDraft(current=>({...current,hidden:on?current.hidden.filter(screen=>screen!==row.screen):[...current.hidden.filter(screen=>screen!==row.screen),row.screen]}));
- const setRow=(row:MatrixRow,on:boolean)=>setDraft(current=>{const cells={...current.cells};for(const action of changeable(row))cells[cellKey(row.screen,action)]=on;const hidden=browsable(row)?on?current.hidden.filter(screen=>screen!==row.screen):[...current.hidden.filter(screen=>screen!==row.screen),row.screen]:current.hidden;return{...current,cells,hidden};});
+ const setHidden=(hidden:HiddenKey[],key:HiddenKey,on:boolean)=>on?hidden.filter(item=>item!==key):[...hidden.filter(item=>item!==key),key];
+ const setShown=(key:HiddenKey,on:boolean)=>setDraft(current=>({...current,hidden:setHidden(current.hidden,key,on)}));
+ const setRow=(row:MatrixRow,on:boolean)=>setDraft(current=>{const cells={...current.cells};for(const action of changeable(row))cells[cellKey(row.screen,action)]=on;let hidden=browsable(row)?setHidden(current.hidden,row.screen,on):current.hidden;for(const tab of tabsOf(row))hidden=setHidden(hidden,tab.key,on);return{...current,cells,hidden};});
+ const targetsShown=!draft.hidden.includes('targets');
  const sources=members.filter(other=>other.id!==member.id&&!other.readOnly&&!!other.permissions);
  function copy(id:string){
   setCopyFrom(id);const source=sources.find(other=>other.id===id);if(!source?.permissions)return;
@@ -76,17 +85,27 @@ export function MemberPermissionsEditor({member,members,roleChanged,onSaved}:{me
   <div className="member-permissions-scroll">
    <table className="permission-matrix" data-permission-matrix>
     <thead><tr><th scope="col">{say('الشاشة','Screen')}</th><th scope="col">{say('الكل','All')}</th>{MATRIX_COLUMNS.map(column=><th scope="col" key={column.key}>{column[lang]}</th>)}</tr></thead>
-    <tbody>{rows.map(row=>{const free=changeable(row).length>0||browsable(row);return <tr key={row.screen} data-matrix-row={row.screen}>
+    <tbody>{rows.map(row=>{const free=changeable(row).length>0||browsable(row);return <Fragment key={row.screen}><tr data-matrix-row={row.screen}>
      <th scope="row">{row[lang]}{row.roleNote?.[role]&&<small className="permission-row-note" data-row-note>{row.roleNote[role]![lang]}</small>}</th>
      <td>{free?box(allOn(row),roleChanged,say('الكل · ','All · ')+row[lang],on=>setRow(row,on)):none(say('لا شيء يتغيّر هنا','Nothing to change here'))}</td>
      {MATRIX_COLUMNS.map(column=>{
-      if(column.key==='browse')return <td key="browse" data-cell={'browse:'+row.screen}>{browsable(row)?box(shown(row),roleChanged,column[lang]+' · '+row[lang],on=>setShown(row,on)):none(admin?say('يرى مدير النظام كل الشاشات','An administrator sees every screen'):say('الشاشة ليست من عمل الدور','Not this role\'s screen'))}</td>;
+      if(column.key==='browse')return <td key="browse" data-cell={'browse:'+row.screen}>{browsable(row)?box(shown(row),roleChanged,column[lang]+' · '+row[lang],on=>setShown(row.screen,on)):none(admin?say('يرى مدير النظام كل الشاشات','An administrator sees every screen'):say('الشاشة ليست من عمل الدور','Not this role\'s screen'))}</td>;
       const cell=row.cells[column.key],key=cellKey(row.screen,column.key);
       if(!cell||!cellCeiling(role,row.screen,column.key))return <td key={column.key} data-cell={key}>{none(cell?say('ليس من عمل الدور','Not this role\'s'):say('هذا الإجراء غير موجود في الشاشة','No such action on this screen'))}</td>;
       const note=[cell.note,cell.roleNote?.[role]].filter((text):text is {ar:string;en:string}=>!!text).map(text=>text[lang]).join(' ');
       return <td key={column.key} data-cell={key} title={cell[lang]+(note?' — '+note:'')}>{box(!!draft.cells[key],cellFixed(role,key)||roleChanged,column[lang]+' · '+row[lang],on=>setCell(key,on))}{note&&<span className="permission-star" aria-hidden="true">*</span>}</td>;
      })}
-    </tr>;})}</tbody>
+    </tr>
+    {row.screen==='targets'&&tabRows.map(tab=>{
+     const label=row[lang]+' · '+tab[lang],gone=say('الشاشة مخفية، فتُخفى تبويباتها معها','The screen is hidden, so its tabs are hidden with it'),locked=roleChanged||!targetsShown;
+     const tabBox=(text:string)=>admin?none(say('يرى مدير النظام كل الشاشات','An administrator sees every screen')):<span title={targetsShown?undefined:gone}>{box(tabShown(tab.key),locked,text,on=>setShown(tab.key,on))}</span>;
+     return <tr key={tab.key} className="permission-tab-row" data-matrix-row={tab.key}>
+      <th scope="row"><span className="permission-tab-name"><span className="permission-tab-mark" aria-hidden="true">↲</span>{say('تبويب ','Tab ')}«{tab[lang]}»</span>{!admin&&!targetsShown&&<small className="permission-row-note" data-row-note>{gone}</small>}</th>
+      <td>{admin?none(say('لا شيء يتغيّر هنا','Nothing to change here')):tabBox(say('الكل · ','All · ')+label)}</td>
+      {MATRIX_COLUMNS.map(column=><td key={column.key} data-cell={(column.key==='browse'?'browse:':column.key+':')+tab.key}>{column.key==='browse'?tabBox(column[lang]+' · '+label):none(say('هذا الإجراء غير موجود في التبويب','No such action on this tab'))}</td>)}
+     </tr>;
+    })}
+    </Fragment>;})}</tbody>
    </table>
   </div>
   <p className="member-permissions-foot">{say('«—» تعني أن الإجراء غير موجود في الشاشة أو ليس من عمل الدور. تُغلق الصلاحيات ما يفعله الدور حاليًا فقط، ولا تضيف إليه، عدا «حذف»: مغلق افتراضيًا لكل الأدوار عدا مدير النظام، ويمكنك فتحه لأي مستخدم (يحذف ما يمكنه تعديله فقط). «*» عليه ملاحظة: مرّر المؤشر فوق الخانة. يُغلق التصدير بإخفاء زر الصفحة (يُنشأ الملف على الجهاز).','«—» means the action is not on the screen or not the role\'s. Permissions only take away what the role does today; they never add to it, except «Delete»: off by default for every role but the administrator, and it can be granted to any member (they delete only what they may edit). «*» has a note: hover the cell. Export is closed by hiding the page\'s button (the file is made on the device).')}</p>

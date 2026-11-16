@@ -8,7 +8,8 @@ import {regionRecords,regionMembers,regionScope,memberCanAccessRegion} from './r
 import {canReadSalesRecord,canUseSalesWorkspace,recordAuthorId,canManageMasterRecord,canEditCustomerDetails,canEditMachineRecord} from './access';
 import { scopeRecords, type Row, type Member } from './crm';
 import {loadContextRecords,type ContextLoad} from './crm-context-records';
-import {memberAccess,cellRefused,cellRefusalText,pagesBlocked,PAGE_HIDDEN_TEXT,type PermissionAction,type PermissionScreen} from './permissions';
+import {memberAccess,cellRefused,cellRefusalText,pagesBlocked,hubTabsBlocked,PAGE_HIDDEN_TEXT,type PermissionAction,type PermissionScreen} from './permissions';
+import type {HubTab} from './targets-hub';
 export class CRMError extends Error { constructor(message:string,public status=400){super(message);} }
 export function database(){if(!env.DB)throw new CRMError('تعذر الاتصال بقاعدة البيانات. أعد المحاولة.',503);return env.DB;}
 export async function context(options:ContextLoad={}){
@@ -108,6 +109,9 @@ export function accessGuard(c:GuardContext,record?:Row|null,options:GuardOptions
 /** A request of these screens, when the administrator hid them from the member (lib/permissions.ts pagesBlocked): 404, never 401/403,
  *  which would lock the page's offline session. */
 export function requirePages(me:Member,...screens:PermissionScreen[]){if(pagesBlocked(me,screens))throw new CRMError(PAGE_HIDDEN_TEXT,404);}
+/** A request that serves only these tabs of «المستهدفات وتقييم الأداء» (the owner, 2026-11-16), when the administrator hid every one of
+ *  them from the member (lib/permissions.ts hubTabsBlocked): the same 404 as a hidden screen's, after the screen's own requirePages. */
+export function requireHubTabs(me:Member,...tabs:HubTab[]){if(hubTabsBlocked(me,tabs))throw new CRMError(PAGE_HIDDEN_TEXT,404);}
 /** An action the administrator switched off for the member (within what the role can do; other roles meet the routes' own checks): 403. */
 export function requireCell(me:Member,screen:PermissionScreen,action:PermissionAction){if(cellRefused(me,screen,action))throw new CRMError(cellRefusalText(screen,action),403);}
 export function requireSalesWorkspace(me:Member){if(!canUseSalesWorkspace(me.role))throw new CRMError('هذه الصفحة متاحة للمشرف ومدير المبيعات فقط',403);}

@@ -2,6 +2,7 @@ import {readJsonBody} from '@/lib/crm-server';
 import {canonicalInvoiceReference} from '@/lib/invoice-reference';
 import {erpInvoiceKey,readErpSales} from '@/lib/erp-sales-server';
 import {requireSalesWorkspace,requirePages,requireCell} from '@/lib/crm-server';
+import {hubTabsBlocked} from '@/lib/permissions';
 import {regionScope,memberCanAccessRegion} from '@/lib/regions';
 import {kpiData} from '@/lib/kpis-server';
 import {targetState} from '@/lib/targets-server';
@@ -31,7 +32,9 @@ export async function GET(req:Request){try{
  const hiddenFromTargets=hiddenAdminIds(targets,members,salesForPerformance),hidden=new Set(hiddenFromTargets);
  const individualPerformance=members.map(m=>repPerformance(m,month,reportRecords,salesForPerformance));
  const performance=members.map(m=>{const activity=effectiveSet<ActivityTargets>(targets,'activity',m.id),quantity=effectiveSet(targets,'sales',m.id),sourceMemberIds=activity?.computed?activity.teamMemberIds||[]:[m.id],salesSourceMemberIds=quantity?.computed?quantity.teamMemberIds||[]:[m.id];return {...repPerformance(m,month,reportRecords,salesForPerformance,sourceMemberIds,salesSourceMemberIds),sourceMemberIds,salesSourceMemberIds,teamRollup:!!quantity?.computed,activityTeamRollup:!!activity?.computed,activityTargetsKnown:!m.readOnly&&!activity?.incomplete,activityTargetsDefault:!activity,activityTargets:activity?.data||defaultActivityTargets,activitySource:activity?.computed?null:activity?.month||null,attainment:quantityAttainment(m.id,targets,salesForPerformance)};}).filter(p=>!hidden.has(p.member.id)&&(['rep','manager','supervisor'].includes(p.member.role)||p.contacts||p.invoices||targets.sets.some(s=>s.scopeId===p.member.id)));
- const kpis=new URL(req.url).searchParams.get('kpis')==='1'?await kpiData(c,month,performance,targets):null;
+ // The evaluation (kpis=1) feeds «نتائج الأداء»، «التحصيل» and «عروض الأسعار» of the targets page: not computed nor sent when the three are
+ // hidden from the member (2026-11-16, lib/permissions.ts hubTabsBlocked; the screen hidden counts), while the rest serves the other tabs.
+ const kpis=new URL(req.url).searchParams.get('kpis')==='1'&&!hubTabsBlocked(c.me,['results','collection','quotes'])?await kpiData(c,month,performance,targets):null;
  return Response.json({sales,targets,performance,individualPerformance,members,kpis,hiddenFromTargets},{headers:{'Cache-Control':'no-store'}});
 }catch(e){return errorResponse(e);}}
 export async function POST(req:Request){try{

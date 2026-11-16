@@ -567,6 +567,16 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/targets-tabs-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/targets-tabs-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/team-home-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

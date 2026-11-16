@@ -1,6 +1,7 @@
 import {readJsonBody} from '@/lib/crm-server';
 import {z} from 'zod';
-import {context,checkOrigin,CRMError,replyError,requirePages,requireCell} from '@/lib/crm-server';
+import {context,checkOrigin,CRMError,replyError,requirePages,requireCell,requireHubTabs} from '@/lib/crm-server';
 import {saveKpi} from '@/lib/kpis-server';
 export const dynamic='force-dynamic';
-export async function POST(req:Request){try{checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');const c=await context({load:'identity'});requirePages(c.me,'targets');requireCell(c.me,'targets','edit');return Response.json(await saveKpi(c,body));}catch(e){if(e instanceof z.ZodError)return Response.json({error:e.issues.map(i=>i.message).join(' • ')},{status:400});return replyError(e);}}
+// «تقييم الأداء» of «نتائج الأداء» only: closed (404) when that tab is hidden from the member (2026-11-16, lib/permissions.ts hubTabsBlocked).
+export async function POST(req:Request){try{checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');const c=await context({load:'identity'});requirePages(c.me,'targets');requireHubTabs(c.me,'results');requireCell(c.me,'targets','edit');return Response.json(await saveKpi(c,body));}catch(e){if(e instanceof z.ZodError)return Response.json({error:e.issues.map(i=>i.message).join(' • ')},{status:400});return replyError(e);}}

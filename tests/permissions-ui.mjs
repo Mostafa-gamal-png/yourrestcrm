@@ -33,7 +33,7 @@ const isBox=(html,key)=>/type="checkbox"/.test(cell(html,key)),isNone=(html,key)
 
 // A supervisor never saved: every cell of the role on but «حذف»; the rows are the screens the role has or acts on, in the navigation's order.
 let sup=person('sup','supervisor',saved('supervisor',{},0)),html=render(sup);
-eq(rows(html),['dashboard','customer','map','activity','followup','mold-requests','journeys','quote','sales','competitors','targets','trash'],'the supervisor\'s screens («المحذوفات» since 2026-11-10: it comes with «حذف»)');
+eq(rows(html),['dashboard','customer','map','activity','followup','mold-requests','journeys','quote','sales','competitors','targets','targets.results','targets.collection','targets.quotes','targets.targets','trash'],'the supervisor\'s screens («المحذوفات» since 2026-11-10: it comes with «حذف»), the targets page\'s four tabs under it since 2026-11-16');
 const rowNote=(html,screen)=>{const start=html.indexOf('data-matrix-row="'+screen+'"'),row=html.slice(start,html.indexOf('</tr>',start));return (/data-row-note="true">([^<]*)</.exec(row)||[])[1]||'';};
 eq([isBox(html,'browse:trash'),isChecked(html,'browse:trash'),isBox(html,'trash:edit'),isChecked(html,'trash:edit'),rowNote(html,'trash')],[true,true,true,true,'لمن لديه «حذف»: ما حذفه هو فقط'],'«المحذوفات» for a supervisor: «استعراض» and «تحرير» on (restrict-only), and the note');
 ok(cell(html,'trash:edit').includes('ما دام «حذف» في شاشة السجل مفتوحًا له'),'«تحرير» says restoring needs the record\'s «حذف»');
@@ -64,7 +64,7 @@ ok(!/checked=""/.test(allBox(html,'sales'))&&!/checked=""/.test(allBox(html,'com
 ok(/data-permission="viewAll"><input type="checkbox" checked=""/.test(html),'viewAll saved on');
 // The administrator: nothing to hide (browse «—»), team cells on and fixed, other cells may be switched off.
 const owner=person('owner','admin',saved('admin',{cells:{'customer:delete':false}}));html=render(owner,[owner,sup]);
-eq(rows(html),[...P.PERMISSION_SCREENS],'the administrator: every screen');
+eq(rows(html),[...P.PERMISSION_SCREENS.flatMap(screen=>screen==='targets'?[screen,...P.HUB_TAB_ROWS.map(row=>row.key)]:[screen])],'the administrator: every screen (and the targets page\'s tabs, «—»)');
 eq([isNone(html,'browse:team'),isNone(html,'browse:dashboard'),isChecked(html,'team:edit'),isDisabled(html,'team:edit'),isDisabled(html,'team:add'),isChecked(html,'customer:delete'),isDisabled(html,'customer:delete')],[true,true,true,true,true,false,false],'never locked out, other cells free');
 eq(['activity:delete','followup:delete','quote:delete','sales:delete'].map(key=>isChecked(html,key)),[true,true,true,true],'the administrator\'s «حذف» ticked by default');
 ok(html.includes('يرى مدير النظام كل الشاشات دائمًا'),'and told why');
@@ -82,6 +82,31 @@ eq(rows(html),['customer','activity','complaints','mold-requests'],'customer ser
 eq([isNone(html,'browse:customer'),isBox(html,'customer:edit'),isBox(html,'browse:complaints')],[true,true,true],'customer service: the customer row is only its edit');
 eq([isNone(html,'customer:delete'),isNone(html,'activity:delete')],[true,true],'customer service: «—» for deleting (no customers screen; their service requests are never deleted)');
 eq(isNone(render(person('csm','customer_service_manager',saved('customer_service_manager',{cells:{'activity:delete':true}},1))),'activity:delete'),true,'the customer-service manager too, whatever was sent');
+// The targets page's tabs (the owner, 2026-11-16, GSCO 2.13.58): a row each under «المستهدفات وتقييم الأداء», «استعراض» only.
+html=render(person('sup','supervisor',saved('supervisor',{},0)));
+for(const key of ['targets.results','targets.collection','targets.quotes','targets.targets']){
+ eq([isBox(html,'browse:'+key),isChecked(html,'browse:'+key),isDisabled(html,'browse:'+key)],[true,true,false],'supervisor never saved: «استعراض» of '+key+' shown, ticked, free');
+ eq(['add','edit','delete','export','import'].map(action=>isNone(html,action+':'+key)),[true,true,true,true,true],key+': «—» for every other action');
+ ok(cell(html,'add:'+key).includes('هذا الإجراء غير موجود في التبويب'),key+': and why');
+}
+const tabHead=(html,key)=>{const start=html.indexOf('<th',html.indexOf('data-matrix-row="'+key+'"'));return html.slice(start,html.indexOf('</th>',start));};
+eq(['targets.results','targets.collection','targets.quotes','targets.targets'].map(key=>tabHead(html,key).replace(/<[^>]+>/g,'').replace('↲','')),['تبويب «نتائج الأداء»','تبويب «التحصيل»','تبويب «عروض الأسعار»','تبويب «المستهدفات والأوزان»'],'each row named as its tab');
+ok(rowNote(html,'targets').startsWith('لكل تبويب من تبويبات الصفحة «استعراض» خاص به')&&rowNote(html,'targets').includes('«رفع المبيعات» يتبع «استعراض» في «المبيعات»')&&rowNote(html,'targets').includes('أُخفيت الصفحة كلها'),'the screen\'s note: one «استعراض» per tab, «رفع المبيعات» follows «المبيعات», every tab hidden hides the page');
+ok(/type="checkbox"[^>]*checked=""/.test(allBox(html,'targets')),'«الكل» of the screen checked while its tabs show');
+html=render(person('sup','supervisor',saved('supervisor',{hidden:['targets.collection','targets.targets']})));
+eq(['targets.results','targets.collection','targets.quotes','targets.targets'].map(key=>isChecked(html,'browse:'+key)),[true,false,true,false],'saved values shown: «التحصيل» and «المستهدفات والأوزان» hidden');
+ok(!/checked=""/.test(allBox(html,'targets')),'«الكل» of the screen unchecked while one of its tabs is hidden');
+ok(!/checked=""/.test(allBox(html,'targets.collection'))&&/checked=""/.test(allBox(html,'targets.results')),'«الكل» of a tab row is its «استعراض»');
+// The screen hidden: its tabs go with it (disabled, their values kept, the note says why).
+html=render(person('sup','supervisor',saved('supervisor',{hidden:['targets','targets.quotes']})));
+eq(['targets.results','targets.quotes'].map(key=>[isChecked(html,'browse:'+key),isDisabled(html,'browse:'+key)]),[[true,true],[false,true]],'the screen hidden: the tabs disabled, their values kept');
+eq(rowNote(html,'targets.results'),'الشاشة مخفية، فتُخفى تبويباتها معها','and the note says why');
+// A sales manager: the same four; a representative and customer service: none (no hub); the administrator: «—».
+eq(rows(render(person('mgr','manager',saved('manager',{},0)))).filter(key=>key.startsWith('targets.')),['targets.results','targets.collection','targets.quotes','targets.targets'],'a sales manager: the four tabs');
+eq(rows(render(person('rep1','rep',saved('rep',{},0)))).filter(key=>key.startsWith('targets.')),[],'a representative: no tab row («أهدافي» has none)');
+eq(rows(render(person('csm','customer_service_manager',saved('customer_service_manager',{},0)))).filter(key=>key.startsWith('targets.')),[],'customer service: none');
+html=render(person('owner','admin',saved('admin',{hidden:['targets.results']})));
+eq([isNone(html,'browse:targets.results'),isNone(html,'browse:targets.quotes'),cell(html,'browse:targets.results').includes('يرى مدير النظام كل الشاشات')],[true,true,true],'the administrator: «—», nothing hidden');
 // «انسخ الصلاحيات من»: the other members (not the edited one), each with their role.
 const mgr=person('mgr','manager',saved('manager',{cells:{'quote:delete':false,'activity:delete':true},hidden:['trash','competitors'],viewAll:true}));
 html=render(sup,[sup,mgr,owner,{...person('old','rep',undefined),readOnly:true}]);
@@ -93,11 +118,16 @@ html=render({...sup,permissions:{version:sup.permissions.version,...copied.store
 eq([isChecked(html,'quote:delete'),isChecked(html,'activity:delete'),isChecked(html,'browse:competitors'),isChecked(html,'sales:import')],[false,true,false,true],'the copy: quote delete off, the granted visit delete copied, competitors hidden, the rest as the manager');
 eq([...copied.skipped],['customer:import','targets:edit'],'skipped: what the supervisor cannot hold (a delete cell is copied: the supervisor has the screen; «المحذوفات» too since 2026-11-10)');
 eq(isChecked(html,'browse:trash'),false,'the manager\'s hidden «المحذوفات» copied');
+// A hidden tab copied to a supervisor; to a representative it is skipped and named.
+const tabsSource=person('mgr','manager',saved('manager',{hidden:['targets.quotes']}));
+html=render({...sup,permissions:{version:sup.permissions.version,...P.copyPermissions({role:'manager',stored:P.normalizePermissions('manager',tabsSource.permissions)},'supervisor').stored}},[sup,tabsSource]);
+eq([isChecked(html,'browse:targets.quotes'),isChecked(html,'browse:targets.results')],[false,true],'the copy: «عروض الأسعار» hidden as the manager\'s');
+eq([...P.copyPermissions({role:'manager',stored:P.normalizePermissions('manager',tabsSource.permissions)},'rep').skipped.filter(key=>key.startsWith('browse:')).map(key=>P.permissionKeyText(key))],['المستهدفات وتقييم الأداء · عروض الأسعار · استعراض'],'to a representative: skipped and named');
 // A role changed in the form and not yet saved: every switch waits.
 html=render(sup,[sup],true);
 ok(html.includes('احفظ المستخدم أولًا')&&isDisabled(html,'sales:add'),'a changed role: save the member first');
 // English.
 language='en';html=render(sup,[sup,mgr]);
-for(const text of ['Permissions','Screen','All','View','Add','Edit','Delete','Export','Import','Copy permissions from','General permissions','View the whole team','Save permissions','Customers','Daily route'])ok(html.includes(text),'English: '+text);
+for(const text of ['Permissions','Screen','All','View','Add','Edit','Delete','Export','Import','Copy permissions from','General permissions','View the whole team','Save permissions','Customers','Daily route','Tab «Performance results»','Tab «Collection»','Tab «Quotations»','Tab «Targets &amp; weights»','Each tab of the page has its own «View»','No such action on this tab'])ok(html.includes(text),'English: '+text);
 ok(!/[؀-ۿ]{3,}/.test(html.replace(/اسم [a-z0-9]+|مدير المبيعات|مشرف المبيعات/g,'')),'no Arabic left in the English matrix but the members\' names');
 console.log(JSON.stringify({ok:true,checks}));

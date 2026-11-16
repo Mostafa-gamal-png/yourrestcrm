@@ -28,3 +28,9 @@
 .member-permissions-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .member-permissions-actions .btn{min-height:44px}
 @media(max-width:767px){.member-permissions-actions{flex-direction:column;align-items:stretch}}
+/* The tabs of «المستهدفات وتقييم الأداء» (2026-11-16): a row each under the screen's row, indented, «استعراض» only. */
+.permission-tab-row th,.permission-tab-row td{background:color-mix(in srgb,var(--muted) 45%,transparent);border-top-style:dashed}
+.permission-tab-row th{padding-inline-start:14px;font-weight:400}
+.permission-tab-name{display:inline-flex;align-items:baseline;gap:5px;overflow-wrap:break-word;min-width:0}
+.permission-tab-mark{color:var(--muted-foreground);flex-shrink:0}
+[dir=ltr] .permission-tab-mark{display:inline-block;transform:scaleX(-1)}

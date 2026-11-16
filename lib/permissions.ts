@@ -17,8 +17,17 @@
 // - «المحذوفات» (the owner, 2026-11-10): besides the administrator (all) and the sales manager (their own), whoever has a «حذف» cell on
 //   (TRASH_DELETE_CELLS) sees their own deletions there and restores one while the record's own cell is still on (trashScopeOf,
 //   trashRestoreCellOff; the scope is the deletion's: lib/trash-server.ts). Nothing new is granted: the page follows the «حذف» grant.
+// - The tabs of «المستهدفات وتقييم الأداء» (the owner, 2026-11-16, item 6 of the GSCO list: «إخفاء تبويبات صفحة المستهدفات لكل حساب
+//   لوحده (النتائج، التحصيل، العروض)، زي مفاتيح إخفاء الأقسام في GSCO»; GSCO 2.13.58 performance.*): «نتائج الأداء»، «التحصيل»، «عروض
+//   الأسعار» and «المستهدفات والأوزان» each have a «استعراض» of their own under the screen's row, for every role whose targets screen is
+//   the hub (a sales manager, a supervisor; never the administrator; a representative's «أهدافي» has no tabs). Restrict-only and off
+//   nowhere by default; stored among the hidden screens as 'targets.<tab>' (HUB_TAB_KEYS, lib/targets-hub.ts), no migration. A hidden
+//   tab is not drawn, the address and the browser's memory cannot open it, and the requests that serve only it answer 404 like a hidden
+//   screen's (hubTabsBlocked; lib/crm-server.ts requireHubTabs). «رفع المبيعات» follows «المبيعات». Every tab hidden and «المبيعات»
+//   not shown: the screen goes too (lib/access.ts hubTabsAllHidden).
 // Shared by the server (lib/crm-server.ts context(), the routes) and the page (nav, buttons, the matrix in the member form).
-import {canViewPage,trashScope} from './access';
+import {canUseSalesWorkspace,canViewPage,hubTabsAllHidden,trashScope} from './access';
+import {HIDEABLE_HUB_TABS,HUB_TAB_KEYS,HUB_TAB_NAMES,HUB_TABS,hubTabKey,isHubTabKey,type HideableHubTab,type HubTab,type HubTabKey} from './targets-hub';
 
 export const PERMISSION_ACTIONS=['add','edit','delete','export','import'] as const;
 export type PermissionAction=typeof PERMISSION_ACTIONS[number];
@@ -47,6 +56,9 @@ const repOwnContacts:Text={ar:'للمندوب: زياراته ومتابعاته
 /** «المحذوفات» of a supervisor or a representative: it comes with «حذف» (trashScopeOf). */
 const trashOwn:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط',en:'For whoever has «Delete»: only what they deleted themselves'};
 const trashOwnRestore:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط، ما دام «حذف» في شاشة السجل مفتوحًا له، وفي حدود ما يمكنه حذفه.',en:'For whoever has «Delete»: only what they deleted themselves, while «Delete» of the record\'s screen is on for them, and within what they may delete.'};
+
+/** Under «المستهدفات وتقييم الأداء» for a role whose targets screen is the hub: what its tab rows do. */
+const hubTabsNote:Text={ar:'لكل تبويب من تبويبات الصفحة «استعراض» خاص به في الصفوف التالية. «رفع المبيعات» يتبع «استعراض» في «المبيعات». إذا أُخفيت كل التبويبات ولم يظهر «رفع المبيعات» أُخفيت الصفحة كلها.',en:'Each tab of the page has its own «View» in the rows below. «Sales upload» follows «View» of «Sales». With every tab hidden and «Sales upload» not shown, the whole page is hidden.'};
 
 /** The rows: Yourrest's screens in the order of the navigation (app/crm-app.tsx nav), each action mapped to the capability it gates. */
 export const PERMISSION_MATRIX:readonly MatrixRow[]=[
@@ -99,7 +111,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   import:{ar:'استيراد مبيعات ERP',en:'Import ERP sales',roles:MANAGEMENT},
  }},
  {screen:'competitors',ar:'المنافسين',en:'Competitors',cells:{}},
- {screen:'targets',ar:'المستهدفات وتقييم الأداء',en:'Targets & performance',cells:{
+ {screen:'targets',ar:'المستهدفات وتقييم الأداء',en:'Targets & performance',roleNote:{manager:hubTabsNote,supervisor:hubTabsNote},cells:{
   edit:{ar:'تعديل المستهدفات والأوزان وتقييم الأداء وبيانات المؤشرات',en:'Edit targets, weights, the evaluation and the indicators\' data',roles:['admin','manager']},
   export:{ar:'تصدير المستهدفات والتقييم (CSV)',en:'Export targets and the evaluation (CSV)',roles:MANAGEMENT},
  }},
@@ -112,6 +124,13 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  }},
 ];
 export const PERMISSION_SCREENS:readonly PermissionScreen[]=PERMISSION_MATRIX.map(row=>row.screen);
+/** What may be hidden from a member: a screen, or a tab of the targets hub ('targets.<tab>'). */
+export type HiddenKey=PermissionScreen|HubTabKey;
+/** The tab rows under «المستهدفات وتقييم الأداء» in the matrix: «استعراض» only. */
+export const HUB_TAB_ROWS:readonly ({tab:HideableHubTab;key:HubTabKey}&Text)[]=HIDEABLE_HUB_TABS.map(tab=>({tab,key:hubTabKey(tab),...HUB_TAB_NAMES[tab]}));
+/** Whether the role's targets screen is the hub of tabs (the administrator, a sales manager, a supervisor): the ceiling of a tab's switch,
+ *  which exists for a member of such a role but the administrator (nothing is hidden from an administrator). */
+export const hubTabCeiling=(role:string)=>canUseSalesWorkspace(role)&&canViewPage(role,'targets');
 export const permissionRow=(screen:string)=>PERMISSION_MATRIX.find(row=>row.screen===screen);
 export const cellKey=(screen:PermissionScreen,action:PermissionAction)=>`${screen}:${action}`;
 /** Every cell of the table, as stored keys. */
@@ -155,7 +174,7 @@ export const cellFixed=(role:string,key:string)=>role==='admin'&&ADMIN_FIXED.has
 /** What is saved for a member, normalised to the member's role: every cell of the role's ceiling with its value (a cell never saved takes
  *  cellDefault; a grantable cell off by default is on only when saved true, any other cell is on unless saved false), the screens hidden
  *  among those the role has (none for an administrator) and «عرض بيانات الفريق بالكامل» where it exists. */
-export type StoredPermissions={cells:Record<string,boolean>;hidden:PermissionScreen[];viewAll:boolean};
+export type StoredPermissions={cells:Record<string,boolean>;hidden:HiddenKey[];viewAll:boolean};
 export function normalizePermissions(role:string,input:{cells?:unknown;hidden?:unknown;viewAll?:unknown}|null|undefined):StoredPermissions{
  const raw=input&&typeof input.cells==='object'&&input.cells!==null&&!Array.isArray(input.cells)?input.cells as Record<string,unknown>:{};
  const cells:Record<string,boolean>={};
@@ -164,7 +183,8 @@ export function normalizePermissions(role:string,input:{cells?:unknown;hidden?:u
   const key=cellKey(row.screen,action);cells[key]=cellFixed(role,key)||(cellDefault(role,row.screen,action)?raw[key]!==false:raw[key]===true);
  }
  const wanted=new Set(Array.isArray(input?.hidden)?input.hidden.filter((value):value is string=>typeof value==='string'):[]);
- const hidden=role==='admin'?[]:PERMISSION_SCREENS.filter(screen=>wanted.has(screen)&&pageCeiling(role,screen));
+ // The screens first, then the hub's tabs (in their order), each once; a tab only for a role whose targets screen is the hub.
+ const hidden:HiddenKey[]=role==='admin'?[]:[...PERMISSION_SCREENS.filter(screen=>wanted.has(screen)&&pageCeiling(role,screen)),...hubTabCeiling(role)?HUB_TAB_KEYS.filter(key=>wanted.has(key)):[]];
  return{cells,hidden,viewAll:viewAllAvailable(role)&&input?.viewAll===true};
 }
 /** The saved row as the database holds it: the cells, with viewAll among them, in `permissions`; the hidden screens in `hidden`. */
@@ -178,7 +198,7 @@ export function decodePermissions(row:{permissions?:string|null;hidden?:string|n
 /** What applies to a member, sent with the member to the page (me.access) and held by the server for the request (c.me.access):
  *  version (0 without a saved row), the cells switched off (within the ceiling; without a saved row the grantable cells off by default),
  *  the hidden screens, and viewAll. */
-export type MemberAccess={version:number;off:string[];hidden:PermissionScreen[];viewAll:boolean};
+export type MemberAccess={version:number;off:string[];hidden:HiddenKey[];viewAll:boolean};
 export function memberAccess(role:string,row:{permissions?:string|null;hidden?:string|null;version?:number|null}|null|undefined):MemberAccess{
  const stored=normalizePermissions(role,row?decodePermissions(row):null);
  return{version:row?Number(row.version)||0:0,off:Object.entries(stored.cells).filter(([,on])=>!on).map(([key])=>key),hidden:stored.hidden,viewAll:stored.viewAll};
@@ -203,8 +223,9 @@ export function cellRefused(me:Who,screen:PermissionScreen,action:PermissionActi
 }
 /** Whether the member may do this action now: within the role's ceiling and not switched off. */
 export const can=(me:Who|null|undefined,screen:PermissionScreen,action:PermissionAction)=>!!me&&cellCeiling(me.role,screen,action)&&!cellRefused(me,screen,action);
-/** Whether the administrator hid this screen from the member (never from an administrator). */
-export const pageHidden=(me:Who|null|undefined,screen:string)=>!!me&&me.role!=='admin'&&!!me.access?.hidden.includes(screen as PermissionScreen);
+/** Whether the administrator hid this screen from the member (never from an administrator); «المستهدفات وتقييم الأداء» also when every tab
+ *  of its hub is hidden and «رفع المبيعات» does not show (lib/access.ts hubTabsAllHidden). */
+export const pageHidden=(me:Who|null|undefined,screen:string)=>!!me&&me.role!=='admin'&&(!!me.access?.hidden.includes(screen as PermissionScreen)||screen==='targets'&&hubTabsAllHidden(me.role,me.access?.hidden||[]));
 /** Whether the screen shows for the member: the role has it, it is not hidden, and «المحذوفات» only for whom trashScopeOf gives it. */
 export const pageAllowed=(me:Who|null|undefined,screen:string)=>!!me&&canViewPage(me.role,screen)&&!pageHidden(me,screen)&&(screen!=='trash'||trashScopeOf(me)!==null);
 
@@ -230,6 +251,23 @@ export function trashRestoreCellOff(me:Who,record:{kind?:string;data?:Record<str
  const cell=recordCell(String(record.kind||''),'delete',record)||['customer','delete'] as [PermissionScreen,PermissionAction];
  return can(me,cell[0],cell[1])?null:cell;
 }
+/** Whether a tab of the targets hub is closed to the member: «رفع المبيعات» unless «المبيعات» shows; any other tab when the screen is
+ *  hidden or the administrator hid the tab (never from an administrator). A role without the hub has none of its tabs. */
+export function hubTabHidden(me:Who|null|undefined,tab:HubTab){
+ if(!me||!hubTabCeiling(me.role))return true;
+ if(tab==='sales')return !pageAllowed(me,'sales');
+ return me.role!=='admin'&&(pageHidden(me,'targets')||!!me.access?.hidden.includes(hubTabKey(tab)));
+}
+/** The tabs the member sees on «المستهدفات وتقييم الأداء», in the owner's order (none without the hub, or with the screen hidden). */
+export const hubTabsOf=(me:Who|null|undefined):HubTab[]=>!me||!pageAllowed(me,'targets')?[]:HUB_TABS.filter(tab=>!hubTabHidden(me,tab));
+/** A request that serves only these tabs (each the data of its own tab, or shared by them) is closed when every one of them is closed to the
+ *  member and one of them by a switch: the same 404 as a hidden screen's, so hiding one tab never breaks another that shares the request.
+ *  A role without the hub is answered by the routes' own role checks, as before. */
+export function hubTabsBlocked(me:Who,tabs:readonly HubTab[]){
+ if(me.role==='admin'||!hubTabCeiling(me.role))return false;
+ return tabs.every(tab=>hubTabHidden(me,tab))&&(pageHidden(me,'targets')||tabs.some(tab=>tab==='sales'?pageHidden(me,'sales'):!!me.access?.hidden.includes(hubTabKey(tab))));
+}
+
 /** A request that belongs to these screens is closed only when one of them was hidden and every one of them is hidden or not the role's,
  *  so hiding one screen never breaks another that shares the request (GSCO sectionBlocksRequest). */
 export function pagesBlocked(me:Who,screens:readonly PermissionScreen[]){return screens.some(screen=>pageHidden(me,screen))&&screens.every(screen=>pageHidden(me,screen)||!canViewPage(me.role,screen));}
@@ -241,9 +279,10 @@ export function cellRefusalText(screen:PermissionScreen,action:PermissionAction,
 }
 
 /** «انسخ الصلاحيات من»: the target takes the source's value of every cell of the target's ceiling (off where the source's role does not
- *  have it; a «حذف» cell is copied whenever the target's role has the screen), the source's hidden screens the target's role has, and viewAll
- *  where the target's role has it. What the source has that the
- *  target's role cannot hold is skipped and listed (cell keys, 'browse:<screen>' for a hidden screen, 'viewAll'). */
+ *  have it; a «حذف» cell is copied whenever the target's role has the screen), the source's hidden screens the target's role has, the
+ *  source's hidden tabs of the targets hub when the target's targets screen is the hub too (2026-11-16), and viewAll where the target's
+ *  role has it. What the source has that the target's role cannot hold is skipped and listed (cell keys, 'browse:<screen>' for a hidden
+ *  screen, 'browse:targets.<tab>' for a hidden tab, 'viewAll'). */
 export function copyPermissions(source:{role:string;stored:StoredPermissions},targetRole:string):{stored:StoredPermissions;skipped:string[]}{
  const cells:Record<string,boolean>={},skipped:string[]=[];
  for(const row of PERMISSION_MATRIX)for(const action of PERMISSION_ACTIONS){
@@ -251,13 +290,15 @@ export function copyPermissions(source:{role:string;stored:StoredPermissions},ta
   if(cellCeiling(targetRole,row.screen,action))cells[key]=cellFixed(targetRole,key)||value;
   else if(value)skipped.push(key);
  }
- const hidden=source.stored.hidden.filter(screen=>{const kept=targetRole!=='admin'&&pageCeiling(targetRole,screen);if(!kept)skipped.push('browse:'+screen);return kept;});
+ const hidden=source.stored.hidden.filter(key=>{const kept=targetRole!=='admin'&&(isHubTabKey(key)?hubTabCeiling(targetRole):pageCeiling(targetRole,key));if(!kept)skipped.push('browse:'+key);return kept;});
  const viewAll=source.stored.viewAll&&viewAllAvailable(targetRole);if(source.stored.viewAll&&!viewAll)skipped.push('viewAll');
  return{stored:normalizePermissions(targetRole,{cells,hidden,viewAll}),skipped};
 }
 /** The words of a skipped key, for the note under «انسخ الصلاحيات من». */
 export function permissionKeyText(key:string,language:'ar'|'en'='ar'){
  if(key==='viewAll')return GENERAL_PERMISSIONS.viewAll[language];
+ const tab=key.startsWith('browse:')?HUB_TAB_ROWS.find(row=>'browse:'+row.key===key):undefined;
+ if(tab)return permissionRow('targets')![language]+' · '+tab[language]+' · '+MATRIX_COLUMNS[0][language];
  const [screen,action]=key.split(':') as [string,string],row=permissionRow(key.startsWith('browse:')?action:screen);
  if(!row)return key;
  const column=MATRIX_COLUMNS.find(item=>item.key===(key.startsWith('browse:')?'browse':action));
