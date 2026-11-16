@@ -1567,5 +1567,7 @@
   "تغيّرت البيانات بعد المعاينة؛ اعرض الملف مرة أخرى": "The data changed after the preview; preview the file again",
   "تغيّرت البيانات أو الصلاحيات أثناء الاستيراد؛ لم يُحفظ شيء. اعرض الملف مرة أخرى.": "The data or permissions changed during the import; nothing was saved. Preview the file again.",
   "هذا الإجراء متاح لفريق المبيعات فقط": "This action is available to the sales team only",
-  "أقصى حجم لملف الاستيراد 2 ميجابايت.": "The import file may be 2 MB at most."
+  "أقصى حجم لملف الاستيراد 2 ميجابايت.": "The import file may be 2 MB at most.",
+  "تقييم السلوك من الإدارة": "Conduct assessment by management",
+  "مدير المبيعات خارج التقييم، فلا تُحدَّد له مستهدفات العملاء والزيارات.": "The sales manager is outside the evaluation, so no customer and visit targets are set for them."
 }

@@ -7,7 +7,7 @@ import {regionScope,regionScopeSql,memberCanAccessRegion} from './regions';
 import {monthSchema,salesReadMemberIds,type Sale,type SaleRow} from './sales';
 import {visitCustomer} from './customer-visits';
 import {targetState} from './targets-server';
-import {effectiveSet} from './targets';
+import {effectiveSet,roleOutOfEvaluation} from './targets';
 import {readErpSales,readSalesCoverage,type ErpSaleRow} from './erp-sales-server';
 import {salesCoverageStatus} from './sales-coverage';
 import {kpiPeriod} from './kpis';
@@ -20,7 +20,9 @@ type InvoiceRecord=InvoiceOption&{version:number;regionScope:string;customerCode
 const decode=(row:EvidenceRow):KpiEvidence=>({memberId:row.member_id,month:row.month,input:kpiEvidenceInputSchema.parse(JSON.parse(row.input)),version:row.version,updatedAt:row.updated_at,updatedBy:row.author||row.updated_by,salesRevision:row.sales_revision,scopeKey:row.scope_key,cutoff:row.cutoff});
 function target(c:Context,memberId:string){
  requireSalesWorkspace(c.me);
- const member=c.regionalMembers.find(m=>m.id===memberId&&salesReadMemberIds(c.members,c.me).has(m.id)&&['rep','manager','supervisor'].includes(m.role));
+ // «بيانات المؤشرات» serve the evaluation: never the sales manager's (lib/targets.ts roleOutOfEvaluation, 2026-11-16), answered as any
+ // member out of it.
+ const member=c.regionalMembers.find(m=>m.id===memberId&&salesReadMemberIds(c.members,c.me).has(m.id)&&['rep','manager','supervisor'].includes(m.role)&&!roleOutOfEvaluation(m.role));
  if(!member)throw new CRMError('عضو الفريق غير متاح ضمن صلاحيتك.',404);
  return member;
 }

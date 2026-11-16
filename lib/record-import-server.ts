@@ -21,7 +21,7 @@ import {regionScope} from './regions';
 import {salesReadMemberIds} from './sales';
 import {salesScopeMemberIds,recordAuthorId} from './access';
 import {activeServiceCase} from './customer-service';
-import {targetProducts,activityFields,quantityTargetsSchema,activityTargetsSchema,targetMonthClosed,CLOSED_MONTH_MESSAGE,riyadhMonth,type QuantityTargets,type ActivityTargets} from './targets';
+import {targetProducts,activityFields,quantityTargetsSchema,activityTargetsSchema,targetMonthClosed,CLOSED_MONTH_MESSAGE,riyadhMonth,roleOutOfEvaluation,SALES_MANAGER_ACTIVITY_MESSAGE,SALES_MANAGER_ACTIVITY_ENGLISH,type QuantityTargets,type ActivityTargets} from './targets';
 import {customerFollowupSchema,customerHasQuotation,latestCustomerContact,followupClosed,canExecuteCustomerFollowup} from './customer-followups';
 import {customerPlanSource,customerPlanSources,visitRequest} from './customer-visits';
 import {readRecontact,RECONTACT_MESSAGES} from './followup-recontact';
@@ -120,7 +120,8 @@ async function planTargets(c:Context,rows:ImportRow[],present:Set<string>,L:Say)
    if(anyActivity&&activityValues.some(v=>v===null))refuse(L('اكتب العملاء الجدد والعملاء المستردين والزيارات الفعلية معًا، أو اتركها فارغة.','Write new customers, reactivated customers and actual visits together, or leave them empty.'));
    if(anyActivity&&activityValues.some(v=>v===undefined||!Number.isInteger(v)||(v as number)<1||(v as number)>1000000))refuse(L('مستهدفات العملاء والزيارات أعداد صحيحة من 1 إلى 1000000.','Customer and visit targets are whole numbers from 1 to 1000000.'));
    if(anyProduct&&['manager','supervisor'].includes(member!.role))refuse(L('مستهدف المبيعات للمدير والمشرف يُحسب تلقائيًا من إجمالي مستهدفات الفريق.','Managers’ and supervisors’ sales targets are calculated automatically from their teams’ total targets.'));
-   if(anyActivity&&member!.role==='manager')refuse(L('مستهدفات العملاء والزيارات لمدير المبيعات تُحسب تلقائيًا من فريقه.','A sales manager\'s customer and visit targets are calculated from their team.'));
+   // The sales manager is out of the evaluation and of the customer and visit targets (lib/targets.ts roleOutOfEvaluation, 2026-11-16).
+   if(anyActivity&&roleOutOfEvaluation(member!.role))refuse(L(SALES_MANAGER_ACTIVITY_MESSAGE,SALES_MANAGER_ACTIVITY_ENGLISH));
    seen.set(key,row.row);
    if(!anyProduct&&!anyActivity){view('empty',L('لا قيم في الصف؛ لم يتغير شيء.','No values in the row; nothing changes.'));continue;}
    const rowWrites:TargetWrite[]=[];let unchanged=0;

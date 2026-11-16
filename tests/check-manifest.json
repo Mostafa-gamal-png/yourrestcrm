@@ -247,6 +247,16 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/kpi-sales-manager-gaps-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/kpi-sales-manager-gaps-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/record-import-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"

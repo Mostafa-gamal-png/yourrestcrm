@@ -126,7 +126,9 @@ await responseJson(await evidenceApi.POST(jsonRequest('/api/kpi-evidence',first)
 const replayed=await evidence();eq(replayed.evidenceRevision,revision,'Response-loss retry does not increment the global revision');eq(replayed.evidence.version,version);
 await saveEvidence('rep2',input('rep2'));
 const assessmentInput={reviewed:10,correct:9,review_note:'Synthetic reviewed sample',conduct:Object.fromEntries(conductKeys.map(key=>[key,{score:80,note:'Synthetic management review'}]))};
-for(const memberId of ['rep','rep2','sup','manager'])await responseJson(await assessmentApi.POST(jsonRequest('/api/kpis',{memberId,month,version:0,requestId:crypto.randomUUID(),input:assessmentInput})),200);
+for(const memberId of ['rep','rep2','sup'])await responseJson(await assessmentApi.POST(jsonRequest('/api/kpis',{memberId,month,version:0,requestId:crypto.randomUUID(),input:assessmentInput})),200);
+// The sales manager is not assessed (2026-11-16, item 2 of the GSCO list): refused as a member out of the evaluation.
+await responseJson(await assessmentApi.POST(jsonRequest('/api/kpis',{memberId:'manager',month,version:0,requestId:crypto.randomUUID(),input:assessmentInput})),404);
 data=await read();
 for(const [id,numerator,denominator,score] of [['collection',10000,20000,50],['recovered',1,2,50],['retention',1,2,50],['orders',1,2,50]]){
  const m=metric(data,id);eq([m.numerator,m.denominator,m.score,m.status],[numerator,denominator,score,'scored'],'Real combined KPI metric '+id);
@@ -149,8 +151,9 @@ eq(data.sales.some(row=>['other','west'].includes(row.repId)),false,'Supervisor 
 for(const [id,numerator,denominator,score] of [['collection',20000,30000,66.67],['recovered',2,3,66.67],['retention',1,2,50],['orders',2,3,66.67]]){
  const m=metric(data,id,'sup');eq([m.numerator,m.denominator,m.score],[numerator,denominator,score],'Supervisor aggregates actual evidence for '+id);
 }
-const managed=await read('manager');eq(person(managed,'manager').salesSourceMemberIds.slice().sort(),['rep','rep2']);
-for(const id of ['collection','recovered','retention','orders'])eq(metric(managed,id,'manager').score,metric(data,id,'sup').score,'Manager and supervisor share the same scoped sales team '+id);
+// The sales manager opens the evaluation on his team, without a row of his own (2026-11-16); the team reads the same as the supervisor reads it.
+const managed=await read('manager');eq(person(managed,'manager'),undefined,'The sales manager is not a person of the evaluation');eq(managed.kpis.people.map(row=>row.member.id).sort(),['other','rep','rep2','sup'],'His scope as before, without himself');
+for(const id of ['collection','recovered','retention','orders'])eq(metric(managed,id,'sup').score,metric(data,id,'sup').score,'The sales manager and the supervisor read the same supervisor\'s '+id);
 eq(managed.kpis.people.some(row=>row.member.id==='west'),false,'Manager never receives the western-region representative');
 await read('rep',403);await read(null,401);
 

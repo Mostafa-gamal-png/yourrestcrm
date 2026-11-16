@@ -77,7 +77,8 @@ try {
   await rate('sup2', 'w1', 'negative');
   data = await kpis();
   eq([positive(data).slice(0, 3), positive(data, 'rep2').slice(0, 3)], [[75, 3, 4], [0, 0, 1]], 'rep1 unchanged; rep2 a real zero from their own supervisor');
-  eq(positive(data, 'mgr').slice(0, 3).concat(positive(data, 'mgr')[5]), [60, 3, 5, 1], 'the sales manager\'s roll-up: both teams');
+  // Since 2026-11-16 (item 2 of the GSCO list) the sales manager is not a person of the evaluation: no roll-up of his is served.
+  eq(data.kpis.people.some(p => p.member.id === 'mgr'), false, 'the sales manager is not in the evaluation');
   const supView = await kpis('sup'), sup2View = await kpis('sup2');
   eq([supView.kpis.people.some(p => p.member.id === 'rep2'), sup2View.kpis.people.some(p => p.member.id === 'rep1')], [false, false], 'each supervisor reads their own team\'s indicator only');
   eq([positive(supView).slice(0, 3), positive(sup2View, 'rep2').slice(0, 3)], [[75, 3, 4], [0, 0, 1]], 'and reads the same numbers as the sales manager');

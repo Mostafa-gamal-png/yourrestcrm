@@ -71,3 +71,19 @@
 .kpi-baseline-note{display:grid;gap:4px;margin:12px 0 0;padding:10px 12px;border-radius:8px;background:var(--muted);color:var(--muted-foreground);font-size:13px;line-height:1.8;overflow-wrap:anywhere}.kpi-baseline-note bdi{color:var(--foreground);font-weight:600}
 /* The sentence of a person out of the evaluation, its title on a line of its own (a phone gave the title a column one word wide). */
 .info-line.kpi-inactive-line{display:block}.info-line.kpi-inactive-line strong{display:block}
+/* What completes the evaluation (2026-11-16, item 2 of the GSCO list): the missing indicators with their weights under a score in the
+   comparison, the checklist on a person's page, and the box «المطلوب لاكتمال التقييم» above the comparison. */
+.kpi-score-cell{display:grid;gap:4px;justify-items:start;min-width:0}
+.kpi-missing-list{display:block;font-size:12px;line-height:1.7;color:#8a5d14;max-width:260px;white-space:normal;overflow-wrap:anywhere}
+.kpi-missing-list bdi,.kpi-gap-list bdi{font-variant-numeric:tabular-nums;font-weight:700}
+.kpi-gap-list{margin:4px 0 0;padding-inline-start:20px;display:grid;gap:4px;list-style:disc;line-height:1.8}
+.kpi-gap-list li{overflow-wrap:anywhere;min-width:0}
+.kpi-gaps-summary{padding:16px 18px;display:grid;gap:6px;border-color:#e4d397;background:#fffcf0;min-width:0}
+.kpi-gaps-summary h3{margin:0;font-size:16px;font-weight:700;line-height:1.6;color:#765b16}
+.kpi-gaps-summary .kpi-gaps-hint{margin:0;font-size:12px;line-height:1.7;color:var(--muted-foreground)}
+.kpi-gaps-summary .kpi-gap-list{font-size:13px;color:var(--foreground)}
+.kpi-gap-people{color:var(--muted-foreground)}
+.dark .kpi-missing-list{color:#f1cc86}
+.dark .kpi-gaps-summary{background:#2c2618;border-color:#7c6538}
+.dark .kpi-gaps-summary h3{color:#f1cc86}
+@media(max-width:640px){.kpi-gaps-summary{padding:12px 14px}.kpi-gap-list{padding-inline-start:16px}}

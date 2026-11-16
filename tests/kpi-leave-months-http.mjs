@@ -66,7 +66,8 @@ try {
 
   // August 2025: the representative on leave is out of the evaluation, on every view; the others are not.
   let data = await kpis('mgr', '2025-08');
-  eq(['rep1', 'rep2', 'rep4', 'sup', 'mgr'].map(id => person(data, id).inactive), [true, false, true, false, false], 'August: rep1 (leave) and rep4 (not started) out; rep2 (a customer added by hand on 1 August, Riyadh), the supervisor and the manager evaluated');
+  // The sales manager is not a person of the evaluation since 2026-11-16 (item 2 of the GSCO list).
+  eq(['rep1', 'rep2', 'rep4', 'sup', 'mgr'].map(id => person(data, id)?.inactive), [true, false, true, false, undefined], 'August: rep1 (leave) and rep4 (not started) out; rep2 (a customer added by hand on 1 August, Riyadh) and the supervisor evaluated; the sales manager not in the evaluation');
   eq([person(data, 'rep1').summary.total, person(data, 'rep1').summary.inactive], [null, true], 'no score while out');
   data = await kpis('sup', '2025-08');
   eq(data.kpis.people.map(p => p.member.id).sort(), ['rep1', 'rep2', 'rep4', 'sup'], 'the supervisor reads their team only');
@@ -86,8 +87,8 @@ try {
   ok(retention.reason.endsWith(' ' + SENTENCE), 'the reason names the months: ' + retention.reason);
   eq([recovered.numerator, recovered.status, recovered.baseline?.skipped], [1, 'scored', ['2025-08']], 'D recovered; A bought in July, a compared month');
   eq([metric(data, 'rep4', 'retention').baseline, metric(data, 'rep4', 'recovered').status, metric(data, 'rep4', 'recovered').reason], [undefined, 'not_applicable', NEW_HISTORY], 'rep4 (new in September): no month skipped, recovered not yet');
-  eq(['rep2', 'sup', 'mgr'].map(id => metric(data, id, 'retention').baseline), [undefined, undefined, undefined], 'rep2, the supervisor\'s and the manager\'s roll-ups: nothing skipped');
-  eq(['sup', 'mgr'].map(id => person(data, id).inactive), [false, false], 'never marked');
+  eq(['rep2', 'sup'].map(id => metric(data, id, 'retention').baseline), [undefined, undefined], 'rep2 and the supervisor\'s roll-up: nothing skipped');
+  eq([person(data, 'sup').inactive, person(data, 'mgr')], [false, undefined], 'the supervisor never marked; the sales manager not in the evaluation');
   data = await kpis('sup', '2025-11');
   eq(metric(data, 'rep1', 'retention').baseline, {months: ['2025-07', '2025-09', '2025-10'], skipped: ['2025-08']}, 'the supervisor reads the same');
 

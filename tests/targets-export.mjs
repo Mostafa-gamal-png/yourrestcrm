@@ -16,7 +16,7 @@ function load(file, require) { const exports = {}; vm.runInNewContext(ts.transpi
 function library(file) { if (cache.has(file)) return cache.get(file); const result = load(file, name => name.startsWith('.') ? library(path.join(path.dirname(file), name) + '.ts') : nativeRequire(name)); cache.set(file, result); return result; }
 const {targetsCsvRows, performanceCsvRows, targetScopeName, targetsCsvHeaders, performanceCsvHeaders} = library('lib/targets-export.ts');
 const {shownAchievement} = library('lib/targets-performance-summary.ts');
-const {targetProducts, defaultActivityTargets} = library('lib/targets.ts'), {operationalIndicators, kpiSummary, metric} = library('lib/kpis.ts');
+const {targetProducts, defaultActivityTargets} = library('lib/targets.ts'), {operationalIndicators, kpiSummary, metric, conductKeys} = library('lib/kpis.ts');
 const dictionary = JSON.parse(fs.readFileSync('lib/locales/en.json', 'utf8'));
 let checks = 0;
 // Values made inside the vm realm are compared as plain data.
@@ -57,7 +57,10 @@ const of = (scope, kind) => rows.filter(row => row[1] === scope && row[2] === ki
 eq(of('الفرع بالكامل · الرئيسي', 'مستهدفات الأصناف').map(row => row[4]), [60, 12, 0, 0, 0, 0, 0, 0], 'the branch target with its quantities');
 eq(of('كل المناديب', 'أوزان التقييم').map(row => [row[4], row[5]]), [40, 20, 10, 10, 10, 5, 5, 0].map(w => [w, '2026-10']), 'the weights with the month they are effective from');
 eq(of('مندوب أول', 'مستهدفات العملاء والزيارات').map(row => row[4]), [3, 2, 40], 'a saved activity target');
-eq(of('مدير المبيعات', 'مستهدفات العملاء والزيارات').map(row => [row[4], row[5]]), [[13, 'محسوب من الفريق'], [7, 'محسوب من الفريق'], [360, 'محسوب من الفريق']], 'the manager computed from the team');
+// The sales manager is out of the evaluation and of the customer and visit targets (2026-11-16, item 2 of the GSCO list): the page lists
+// none for him, so neither does the file (the computed set the state still carries is left out); his products target stays computed.
+eq(of('مدير المبيعات', 'مستهدفات العملاء والزيارات'), [], 'the sales manager: no customer and visit targets');
+eq(of('مدير المبيعات', 'مستهدفات الأصناف').map(row => row[5]), targetProducts.map(() => 'محسوب من الفريق'), 'the sales manager: his products target computed from the team');
 // The page lists the administrator, the supervisor and the deactivated representative with the defaults: so does the file.
 for (const name of ['مدير النظام', 'المشرف', 'مندوب معطل']) {
   if (name === 'مندوب معطل') { eq(of(name, 'مستهدفات العملاء والزيارات').length, 0, 'a deactivated person with nothing saved is not on the page, nor in the file'); continue; }
@@ -89,9 +92,10 @@ const line = name => kpiRows.find(row => row[1] === name && row[2] === 'درجة
 // 80 on every applicable indicator: 80 x 95 / 100 = 76 points of an applicable 95 → 80 / 100.
 eq(line('مندوب أول').slice(3), [95, 80, 76, 'الوزن الذي تم تقييمه: 95 / 95%'], 'complete: the score, the points and the weight as the page shows them');
 // Missing data is not a zero (the owner, 2026-11-14): 16.67 points ÷ the 25% that has data = 66.67, with the share and what is missing.
-const missingNames = operationalIndicators.slice(1).map(i => i.name);
+// Since 2026-11-16 (item 2 of the GSCO list) each with its weight, and the five conduct indicators as one when all are missing.
+const missingNames = [...operationalIndicators.slice(1).filter(i => !conductKeys.includes(i.id)).map(i => i.name + ' (' + i.weight + '%)'), 'تقييم السلوك من الإدارة (10%)'];
 eq(line('المشرف').slice(3), [100, 66.67, 16.67, 'غير مكتمل · الدرجة محسوبة من البيانات الموجودة فقط: 25% من الوزن · بيانات ناقصة: ' + missingNames.join('، ') + ' · الوزن الذي تم تقييمه: 25 / 100%'], 'incomplete: the score from the data there is, «غير مكتمل», the share of the weight and the missing indicators');
-eq(performanceCsvRows([partial], '2026-11', en, 'en').at(-1)[6].startsWith('Incomplete · The score is calculated from the available data only: 25% of the weight · Missing data: ' + en(operationalIndicators[1].name) + ', '), true, 'the same in English');
+eq(performanceCsvRows([partial], '2026-11', en, 'en').at(-1)[6].startsWith('Incomplete · The score is calculated from the available data only: 25% of the weight · Missing data: ' + en(operationalIndicators[1].name) + ' (20%), '), true, 'the same in English');
 const quiet = {...make('rep1', full), summary: {...kpiSummary(operationalIndicators.map(i => metric(i.id, 80, 'سبب')), true)}};
 eq(performanceCsvRows([quiet], '2026-11', ar).at(-1).slice(3), [100, '', '', 'بلا نشاط في هذا الشهر – خارج التقييم'], 'out of the evaluation: the sentence, no score and no points');
 eq(performanceCsvRows([quiet], '2026-11', en, 'en').at(-1)[6], 'No activity this month – excluded from the evaluation', 'and in English');

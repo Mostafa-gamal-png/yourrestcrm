@@ -189,7 +189,9 @@ try {
   // The sales manager, desktop, Arabic.
   const sm = await open('sm');
   await ready(sm);
-  check(await gauges(sm, 'مدير المبيعات'), [(Math.round((31 / 55 * 40 + 10 / 17 * 20) / 60 * 10000) / 100) + '%', '56.36%'], 'the manager\'s card: weighted 57.18%, product 31/55 written 56.36% (two decimals, as beside it)');
+  // The sales manager is out of the evaluation since 2026-11-16 (item 2 of the GSCO list): no card of his in «ملخص المناديب»; his roll-up
+  // (57.18% weighted, 31/55 and 10/17) is still checked from the answer above, and his products target in the export below.
+  check(await card(sm, 'مدير المبيعات').count(), 0, 'no summary card for the sales manager');
   check(await gauges(sm, 'المشرف أحمد'), ['66.67%', '66.67%'], 'the supervisor\'s card: 20/30 written 66.67%, not 66.666667%');
   check(await gauges(sm, 'مندوب أول'), ['66.67%', '50%'], 'rep1\'s card');
   check(await card(sm, 'مندوب أول').locator('.targets-summary-total strong').innerText(), '64.26 / 100', 'rep1\'s overall score on the card');

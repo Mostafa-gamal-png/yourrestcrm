@@ -34,6 +34,16 @@ export const riyadhMonth=(now:Date=new Date())=>riyadhMonthFormat.format(now).sl
 export const CLOSED_MONTH_MESSAGE='انتهى هذا الشهر؛ تعديل مستهدفاته لمدير النظام فقط';
 export const targetMonthClosed=(month:string,now:Date=new Date())=>month<riyadhMonth(now);
 export const canEditTargetMonth=(role:string,month:string,now:Date=new Date())=>role==='admin'||!targetMonthClosed(month,now);
+/** The sales manager is not evaluated and does not sell (the owner, 2026-11-16, item 2 of the GSCO list, as GSCO 2.13.76: «مدير المبيعات
+ *  يخرج من «مقارنة أداء المندوبين» ومن التقييم ومن مستهدفات النشاط، حتى لو له كود موظف أو تقييمات قديمة»): never a person of the evaluation
+ *  (lib/kpis-server.ts kpiData and saveKpi, «بيانات المؤشرات»), its comparison, summary cards, export and picker, nor of the customer and
+ *  visit targets (their table, card and export, and their save), whatever ERP employee code is mapped to him or assessment row he has from
+ *  before: those rows are kept as they are, only not read. His products target (computed from his team) stays on «المستهدفات والأوزان».
+ *  He still opens these screens and evaluates his team. The role alone decides, so it holds for every viewer. */
+export const roleOutOfEvaluation=(role:string|null|undefined)=>role==='manager';
+/** Why a customer and visit target is not saved for the sales manager (the targets page's save and the Excel import). */
+export const SALES_MANAGER_ACTIVITY_MESSAGE='مدير المبيعات خارج التقييم، فلا تُحدَّد له مستهدفات العملاء والزيارات.';
+export const SALES_MANAGER_ACTIVITY_ENGLISH='The sales manager is outside the evaluation, so no customer and visit targets are set for them.';
 /** The administrator does not sell: left out of the targets tables, cards, distribution and exports of a month unless they have a
  *  target of their own effective that month (products or customers and visits) or a confirmed sale (CRM or ERP) in it, so nothing
  *  that counts disappears. Never part of a team roll-up (managerTeam follows managers, supervisors and representatives only). */

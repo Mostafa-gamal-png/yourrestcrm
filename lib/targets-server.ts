@@ -2,7 +2,7 @@ import {regionScope} from './regions';
 import {kpiPeriod} from './kpis';
 import {context,CRMError,accessGuard} from './crm-server';
 import {salesReadMemberIds,salesReportingRecords,type Sale} from './sales';
-import {type TargetKind,type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets,targetMonthClosed,CLOSED_MONTH_MESSAGE} from './targets';
+import {type TargetKind,type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets,roleOutOfEvaluation,SALES_MANAGER_ACTIVITY_MESSAGE,targetMonthClosed,CLOSED_MONTH_MESSAGE} from './targets';
 import {TARGET_HISTORY_PAGE,TARGET_HISTORY_MAX_OFFSET,targetHistoryEntry,type TargetHistory} from './targets-history';
 import {readErpSales} from './erp-sales-server';
 type Context=Awaited<ReturnType<typeof context>>;
@@ -28,6 +28,8 @@ export async function saveTargetSet(c:Context,body:unknown){
  if(p.kind!=='weights'){
   if(p.kind==='sales'&&p.scopeId.startsWith('branch:')){const branch=p.scopeId.slice(7);if(!c.members.some(m=>m.branch===branch)&&!c.all.some(r=>r.kind==='customer'&&r.branch===branch))throw new CRMError('الفرع غير موجود',404);}
   else if(!c.members.some(m=>m.id===p.scopeId&&m.active&&['admin','manager','supervisor','rep'].includes(m.role)))throw new CRMError('حدد مستخدمًا مفعّلًا',400);
+  // The sales manager is out of the evaluation and of the customer and visit targets (lib/targets.ts roleOutOfEvaluation, 2026-11-16).
+  else if(p.kind==='activity'&&c.members.some(m=>m.id===p.scopeId&&roleOutOfEvaluation(m.role)))throw new CRMError(SALES_MANAGER_ACTIVITY_MESSAGE);
   else if(c.members.some(m=>m.id===p.scopeId&&(m.role==='manager'||p.kind==='sales'&&m.role==='supervisor')))throw new CRMError('مستهدف المبيعات للمدير والمشرف يُحسب تلقائيًا من إجمالي مستهدفات الفريق.');
  }
  const canonical=JSON.stringify({...p,data,requestId:undefined}),mutation='target-set:'+c.me.id+':'+p.requestId;

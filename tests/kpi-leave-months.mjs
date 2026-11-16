@@ -240,10 +240,11 @@ await counted('routes',async()=>{
  eq([metricOf(data,'rep1','recovered').numerator,metricOf(data,'rep1','recovered').status],[1,'scored'],'D recovered, A not');
  eq(metricOf(data,'rep3','retention').baseline,{months:['2025-06','2025-07','2025-10'],skipped:['2025-08','2025-09']},'rep3 (August and September): June, July and October');
  eq([metricOf(data,'rep4','retention').baseline,metricOf(data,'rep4','recovered').status],[undefined,'not_applicable'],'rep4 (new in September): August ordinary, recovered not yet');
- eq([metricOf(data,'rep2','retention').baseline,metricOf(data,'sup','retention').baseline,metricOf(data,'mgr','retention').baseline],[undefined,undefined,undefined],'rep2, the supervisor\'s and the manager\'s roll-ups: no month skipped');
+ // The sales manager is no longer a person of the evaluation (2026-11-16, item 2 of the GSCO list); his roll-up is still tried in part 2.
+ eq([metricOf(data,'rep2','retention').baseline,metricOf(data,'sup','retention').baseline,person(data,'mgr')],[undefined,undefined,undefined],'rep2 and the supervisor\'s roll-up: no month skipped; the sales manager is not in the evaluation');
  // August 2025.
  data=await read('mgr','2025-08');
- eq(['rep1','rep2','rep3','rep4','sup','mgr'].map(id=>person(data,id)?.inactive),[true,false,true,true,false,false],'August: rep1, rep3 and rep4 (not started yet) out of the evaluation; rep2 (a visit, and a customer added by hand), the supervisor and the manager not');
+ eq(['rep1','rep2','rep3','rep4','sup','mgr'].map(id=>person(data,id)?.inactive),[true,false,true,true,false,undefined],'August: rep1, rep3 and rep4 (not started yet) out of the evaluation; rep2 (a visit, and a customer added by hand) and the supervisor not; the sales manager is not a person of the evaluation (2026-11-16)');
  eq(['rep1','rep3'].map(id=>person(data,id).summary.total),[null,null],'no score for those out');
  data=await read('sup','2025-08');
  eq(data.kpis.people.map(p=>p.member.id).sort(),['rep1','rep2','rep3','rep4','sup'],'the supervisor reads their team only');eq(person(data,'rep1').inactive,true,'and sees the same mark');

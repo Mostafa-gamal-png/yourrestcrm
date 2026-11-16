@@ -110,8 +110,9 @@ try {
   check(reps, {nour: [{name: 'مندوب باء'}, 'rep1', 'rep1', M + '-01'], hand: [{employeeId: 'E1', name: 'اسم آخر'}, 'rep1', 'rep1', M + '-01'], office: [{name: 'مبيعات مكتب'}, 'rep1', 'rep1', M + '-01'], fajr: [null, 'rep2', 'rep2', M + '-01']}, 'kept as erpRep (spaces collapsed); nobody reassigned; dates kept');
   check(await numbers(), {rep1: 1, rep2: 2}, 'rep1: hand only (nour goes to the file\'s representative, office sales never count); rep2: fajr and nour');
   payload = await kpi();
-  const team = payload.kpis.people.find(p => p.member.id === 'sm');
-  check([!!team, team?.activityTeamRollup, team?.metrics.find(m => m.id === 'new_customers').numerator], [true, true, 3], 'the sales manager\'s team counts each customer once');
+  // Since 2026-11-16 (item 2 of the GSCO list) the sales manager is not a person of the evaluation, so no team roll-up of his is served;
+  // the team's customers are each counted once, for the representative they belong to.
+  check([payload.kpis.people.some(p => p.member.id === 'sm'), ['rep1', 'rep2'].reduce((sum, id) => sum + metric(payload, id).numerator, 0)], [false, 3], 'no row for the sales manager; the team\'s three customers counted once');
 
   // ---- the same file again: nothing changes, refused as before
   body = (await post({action: 'preview', fileName: 'Customer2.xlsx', base64: file2})).json();

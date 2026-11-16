@@ -15,7 +15,7 @@ import {salesCoverageStatus} from './sales-coverage';
 import {readKpiEvidenceRows,readSalesRevision} from './kpi-evidence-server';
 import {evidenceScopeKey,type KpiEvidenceContext} from './kpi-evidence';
 import {readKpiPurchaseHistory,isKpiIssuedQuote,isValidKpiConversion} from './kpi-history-server';
-import {effectiveSet,defaultActivityTargets,type ActivityTargets,type TargetState} from './targets';
+import {effectiveSet,defaultActivityTargets,roleOutOfEvaluation,type ActivityTargets,type TargetState} from './targets';
 import {erpRepResolver,resolveErpRep} from './new-customers';
 import {chosenEntryRatings} from './supervisor-reviews-server';
 type Context=Awaited<ReturnType<typeof context>>;
@@ -52,7 +52,9 @@ export async function kpiData(c:Context,month:string,performance:KpiPerformance[
  const assignedTo=new Map<string,string>();for(const row of evidenceRows)for(const link of row.input.quotations)assignedTo.set(link.quoteId,row.memberId);
  const monthQuotes=records.filter(row=>row.kind==='quote'&&isKpiIssuedQuote(row,month)).flatMap(row=>{const customer=visitCustomer(row,c.all);if(!customer||!c.regionCustomerIds.has(customer.id))return[];const repId=assignedTo.get(row.id)||recordAuthorId(row,c.members)||'';return repId?[{row,repId,customerName:String(customer.data.name||'')}]:[];});
  const quoteNumber=(row:Row)=>String(row.kind==='quote'?row.data.number||'':row.data.visitNumber||'');
- const people=performance.filter(p=>allowed.has(p.member.id)).map(p=>{
+ // The sales manager is never a person of the evaluation (lib/targets.ts roleOutOfEvaluation, 2026-11-16), whatever his ERP code or old
+ // assessment: his rows stay stored and are only not read here.
+ const people=performance.filter(p=>allowed.has(p.member.id)&&!roleOutOfEvaluation(p.member.role)).map(p=>{
   const r=assessmentRows.results.find(row=>row.member_id===p.member.id&&c.regionalMembers.some(m=>m.id===p.member.id));
   const assessment:KpiAssessment|null=r?{memberId:r.member_id,month:r.month,input:kpiInputSchema.parse(JSON.parse(r.input)),version:r.version,updatedBy:r.author||'',updatedAt:r.updated_at}:null;
   const ids=[...new Set(p.salesSourceMemberIds)].filter(id=>allowed.has(id)),idSet=new Set(ids);
@@ -97,7 +99,7 @@ const saveSchema=z.object({memberId:z.string().min(1).max(200),month:monthSchema
 export async function saveKpi(c:Context,body:unknown){
  if(!['admin','manager'].includes(c.me.role))throw new CRMError('تقييم الإدارة متاح لمدير النظام ومدير المبيعات فقط',403);
  const p=saveSchema.parse(body);if(p.month>today().slice(0,7))throw new CRMError('لا يمكن تقييم شهر قادم');
- if(!salesReadMemberIds(c.members,c.me).has(p.memberId)||!c.regionalMembers.some(m=>m.id===p.memberId&&['admin','manager','supervisor','rep'].includes(m.role)))throw new CRMError('حدد عضوًا متاحًا ضمن صلاحيتك للتقييم',404);
+ if(!salesReadMemberIds(c.members,c.me).has(p.memberId)||!c.regionalMembers.some(m=>m.id===p.memberId&&['admin','manager','supervisor','rep'].includes(m.role)&&!roleOutOfEvaluation(m.role)))throw new CRMError('حدد عضوًا متاحًا ضمن صلاحيتك للتقييم',404);
  const mutation='kpi:'+c.me.id+':'+p.requestId,canonical=JSON.stringify({...p,requestId:undefined}),replay=async()=>{const r=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(mutation).first<{detail:string}>();if(!r)return false;if(r.detail!==canonical)throw new CRMError('طلب التقييم محفوظ ببيانات مختلفة. أعد فتح التقييم.',409);return true;};
  if(await replay())return{ok:true};
  const old=await c.db.prepare('SELECT version FROM crm_kpi_assessments WHERE member_id=? AND month=?').bind(p.memberId,p.month).first<{version:number}>();

@@ -69,3 +69,5 @@
 /* A customers-and-visits target that comes from the defaults of lib/targets.ts (nothing saved this month or carried from an earlier one). */
 .target-default-tag{display:inline-block;margin-inline-start:6px;padding:1px 7px;border-radius:5px;background:var(--muted);color:var(--muted-foreground);font-size:11px;font-weight:400;vertical-align:middle;white-space:nowrap}
 td .target-default-tag,dd .target-default-tag{display:inline-block;margin-top:0}
+/* The sales manager's card on «المستهدفات والأوزان»: why it has no customer and visit targets (2026-11-16, item 2 of the GSCO list). */
+.target-card-out{margin:0;font-size:13px;line-height:1.7;overflow-wrap:anywhere}

@@ -167,7 +167,8 @@ await counted('routes',async()=>{
  data=await read();
  eq([positive(data).score,positive(data).waiting],[75,1],'rep1 unchanged by the other team\'s supervisor');
  eq([positive(data,'rep2').score,positive(data,'rep2').denominator],[0,1],'rep2: the evaluation of their own supervisor, a real zero');
- eq([positive(data,'mgr').numerator,positive(data,'mgr').denominator,positive(data,'mgr').waiting],[3,5,1],'the sales manager\'s roll-up: both teams');
+ // Since 2026-11-16 (item 2 of the GSCO list) the sales manager is not a person of the evaluation: no roll-up of his is served.
+ eq(data.kpis.people.some(p=>p.member.id==='mgr'),false,'the sales manager is not in the evaluation (his team\'s visits count for its representatives)');
  eq([positive(data,'sup').status,positive(data,'sup2').status],['not_applicable','not_applicable'],'a supervisor\'s activity indicators are personal: no visits of their own');
  // A call evaluated «فعالة» does not count: it is not a visit.
  await rate('owner','call1','effective');

@@ -16,7 +16,7 @@ import { salesProducts, salesTotals, type Sale, type SaleItem, type repPerforman
 import type { LucideIcon } from 'lucide-react';
 import TargetsWorkspace from './targets-workspace';
 import TargetsPerformanceSummary from './targets-performance-summary';
-import {targetProducts,quantityNumber,type TargetState,type ActivityTargets,type quantityAttainment} from '@/lib/targets';
+import {targetProducts,quantityNumber,roleOutOfEvaluation,type TargetState,type ActivityTargets,type quantityAttainment} from '@/lib/targets';
 import VisitCustomerPicker from './visit-customer-picker';
 import KpiPerformanceView from './kpi-performance';
 import {regionScope} from '@/lib/regions';
@@ -79,9 +79,12 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
  const refresh=()=>{setRevision(n=>n+1);void onRefresh();};
  const members=payload?.members||[],voidTeam=salesScopeMemberIds(members,me),branches=Array.from(new Set([...(payload?.targets.branches||[]),...members.map(member=>member.branch),...(payload?.kpis?.people||[]).map(person=>person.member.branch)])).filter(Boolean);
  // The administrators the server leaves out of this month's targets (no target or sale of theirs): not offered in the targets page's picker.
- const hiddenFromTargets=payload?.hiddenFromTargets||[],staffOptions=combined?members.filter(member=>!hiddenFromTargets.includes(member.id)):members;
+ // The sales manager is out of the evaluation (lib/targets.ts roleOutOfEvaluation, 2026-11-16): not offered on the three tabs it feeds
+ // («نتائج الأداء»، «التحصيل»، «عروض الأسعار»), which then open on the team; «المستهدفات والأوزان» keeps his products target.
+ const evaluationView=combined&&(hubTab==='results'||hubTab==='collection'||hubTab==='quotes'),offered=(member:Member)=>!(evaluationView&&roleOutOfEvaluation(member.role));
+ const hiddenFromTargets=payload?.hiddenFromTargets||[],staffOptions=combined?members.filter(member=>!hiddenFromTargets.includes(member.id)&&offered(member)):members;
  const branch=branchChoice==='__all__'||branches.includes(branchChoice)?branchChoice:'__all__';
- const selectedStaff=staff==='all'||members.some(member=>member.id===staff&&(!combined||branch==='__all__'||member.branch===branch))?staff:'all';
+ const selectedStaff=staff==='all'||members.some(member=>member.id===staff&&offered(member)&&(!combined||branch==='__all__'||member.branch===branch))?staff:'all';
  useEffect(()=>{if(payload&&staff!==selectedStaff)setStaff(selectedStaff);},[payload,staff,selectedStaff]);
  const selectStaff=(id:string)=>{const member=members.find(member=>member.id===id);if(combined&&branch!=='__all__'&&member&&member.branch!==branch)setBranchChoice(branches.includes(member.branch)?member.branch:'__all__');setStaff(id);};
  const selectBranch=(next:string)=>{if(next!=='__all__'&&!branches.includes(next))return;setBranchChoice(next);if(next!=='__all__'&&staff!=='all'&&!members.some(member=>member.id===staff&&member.branch===next))setStaff('all');};
@@ -90,7 +93,7 @@ export default function SalesWorkspace({mode,records,me,onRefresh,onCustomer,onC
  // Filter displayed people only. Their server-calculated team rollups stay intact.
  const branchKpis=useMemo(()=>payload?.kpis?{...payload.kpis,people:payload.kpis.people.filter(person=>branch==='__all__'||person.member.branch===branch)}:null,[payload,branch]);
  const filteredKpiPeople=(branchKpis?.people||[]).filter(person=>(selectedStaff==='all'||person.member.id===selectedStaff)&&(!query||[person.member.name,person.member.branch].join(' ').toLowerCase().includes(query.toLowerCase())));
- const filteredFuturePeople=(payload?.performance||[]).filter(person=>(branch==='__all__'||person.member.branch===branch)&&(selectedStaff==='all'||person.member.id===selectedStaff)&&(!query||[person.member.name,person.member.branch].join(' ').toLowerCase().includes(query.toLowerCase())));
+ const filteredFuturePeople=(payload?.performance||[]).filter(person=>!roleOutOfEvaluation(person.member.role)&&(branch==='__all__'||person.member.branch===branch)&&(selectedStaff==='all'||person.member.id===selectedStaff)&&(!query||[person.member.name,person.member.branch].join(' ').toLowerCase().includes(query.toLowerCase())));
  // «تحقيق المستهدف — الشركة والفروع»: for whoever reads every branch's targets (the administrator or a sales manager over every region,
  // as the branch targets themselves: lib/targets-server.ts); for the month only, whatever representative is chosen below it.
  const overviewAllowed=combined&&['admin','manager'].includes(me.role)&&regionScope(me)==='all';
