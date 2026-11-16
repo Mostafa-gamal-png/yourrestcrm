@@ -1,0 +1,7 @@
+.followup-recontact{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0;margin:0;padding:12px;border:1px solid var(--border);border-radius:10px}
+.followup-recontact legend{padding:0 6px;font-size:13px;font-weight:600}
+.followup-recontact .form-note{grid-column:1/-1;margin:0}
+.followup-recontact input[type=date]{direction:ltr}
+.rep-recontact-chip{background:#f9ecef;color:#ad576b}.dark .rep-recontact-chip{background:#442a35;color:#f4bdcc}
+@media(max-width:600px){.followup-recontact{grid-template-columns:1fr;padding:10px}}
+.rep-desktop-records .rep-recontact-chip{display:table;margin-top:4px}

@@ -8,6 +8,7 @@ import {type Row,type Member,today,stageLabels} from '@/lib/crm';
 import {visitCustomer} from '@/lib/customer-visits';
 import {CustomerReviewNotes} from './supervisor-reviews';
 import {latestCustomerContact,customerHasQuotation,followupTypes,invoiceOutcomes,followupLossReasons,followupClosed,canExecuteCustomerFollowup} from '@/lib/customer-followups';
+import {recontactPlanned} from '@/lib/followup-recontact';
 import VoiceField from './voice-field';
 import CompetitorFields,{emptyCompetitorInput,type CompetitorInput} from './competitor-fields';
 import type {UploadState} from './upload-status';
@@ -18,6 +19,7 @@ import {FollowupPlace,useFollowupPlace} from './followup-place';
 import {SubmitError,definiteSubmitRejection} from '@/lib/client-submit';
 import {offlineSubmit,uploadOfflineVisitFile} from '@/lib/offline-submit';
 import './visit-mobile.css';
+import './followup-recontact.css';
 import {escapeBelongsToOpenPopup} from '@/lib/dialog-escape';
 
 // No option of these lists is empty: an empty value comes only from Radix's hidden form select, which reports '' when the value it is given is
@@ -27,13 +29,15 @@ function Pick({value,onChange,options,label}:{value:string;onChange:(value:strin
 export {CustomerFollowupsPage} from './customer-followup-list';
 type Props={initial?:Row;customerId?:string;records:Row[];me:Member;onClose:()=>void;onSaved:(queued?:boolean)=>Promise<void>};
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
-type FollowupData={[field:string]:unknown;type:string;date:string;result:string;salesStage:string;invoiceOutcome:string;nextAction:string;nextDate:string;lossReason:string;lossDetails:string;competitorObservation:CompetitorInput|null;hasQuotation?:boolean;hasCompetitor?:boolean};
+type FollowupData={[field:string]:unknown;type:string;date:string;result:string;salesStage:string;invoiceOutcome:string;nextAction:string;nextDate:string;lossReason:string;lossDetails:string;recontactDate:string;recontactAction:string;recontact?:boolean;competitorObservation:CompetitorInput|null;hasQuotation?:boolean;hasCompetitor?:boolean};
 export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClose,onSaved}:Props){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
  const currentSource=(id:string)=>{const source=latestCustomerContact(id,records),intake=records.find(r=>r.id===id)?.data._serviceIntake;return intake?.createdAt&&source&&source.createdAt<intake.createdAt?undefined:source;};
  const seedCustomer=initial?visitCustomer(initial,records)?.id:seed,seedSource=seedCustomer?currentSource(seedCustomer):undefined;
  const [customerId]=useState(seedCustomer||''),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState('');
- const defaults=(source?:Row,id=seedCustomer)=>({type:'visit',date:today(),result:'',salesStage:source?.data.salesStage||source?.data.stage||'',invoiceOutcome:source?.data.invoiceOutcome||'pending',nextAction:source?.data.nextAction||records.find(r=>r.id===id)?.data._serviceIntake?.nextAction||'',nextDate:today(),lossReason:'',lossDetails:'',competitorObservation:null});
+ // A lost follow-up kept for a re-contact (lib/followup-recontact.ts) starts the next one at no stage: what the customer says now decides it.
+ const reopening=(source?:Row)=>!!source&&recontactPlanned(source.data);
+ const defaults=(source?:Row,id=seedCustomer)=>({type:'visit',date:today(),result:'',salesStage:reopening(source)?'':source?.data.salesStage||source?.data.stage||'',invoiceOutcome:reopening(source)?'pending':source?.data.invoiceOutcome||'pending',recontactDate:'',recontactAction:'',nextAction:source?.data.nextAction||records.find(r=>r.id===id)?.data._serviceIntake?.nextAction||'',nextDate:today(),lossReason:'',lossDetails:'',competitorObservation:null});
  const [source]=useState(seedSource);
  const [data,setData]=useState<FollowupData>(initial?initial.data:defaults(seedSource)),[retryPending,setRetryPending]=useState(false);const lock=useRef(false),attempt=useRef<string|null>(null),savedReceipt=useRef(false),uploadLock=useRef(false),uploadVersion=useRef(0);
  const [uploadState,setUploadState]=useState<UploadState|null>(null),uploadAttempt=useRef<{file:File;context:string;key:string}|null>(null);
@@ -45,7 +49,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
  const journeyStopId=useAutomaticJourney({customerId,type:data.type,date:data.date,enabled:!initial&&canExecuteCustomerFollowup(source)&&!isServiceRole(me.role)});
  // A follow-up that is a visit is recorded where the customer is, like any visit; the other kinds have no place.
  const place=useFollowupPlace({enabled:!initial&&!isServiceRole(me.role),customer,type:data.type,role:me.role});
- const [dirty,setDirty]=useState(false),[confirmLeave,setConfirmLeave]=useState(false),[salesOpen,setSalesOpen]=useState(!!seedSource&&followupClosed(seedSource.data.salesStage));
+ const [dirty,setDirty]=useState(false),[confirmLeave,setConfirmLeave]=useState(false),[salesOpen,setSalesOpen]=useState(!!seedSource&&followupClosed(seedSource.data.salesStage)&&!reopening(seedSource));
  const titleRef=useRef<HTMLHeadingElement>(null),errorRef=useRef<HTMLDivElement>(null),keepRef=useRef<HTMLButtonElement>(null),invalidFrame=useRef<number|null>(null);
  useEffect(()=>{if(hasQuotation)setSalesOpen(true);},[hasQuotation]);
  useEffect(()=>{if(error)errorRef.current?.focus();},[error]);
@@ -56,7 +60,8 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
  function requestClose(){if(busy||uploading||uploadLock.current)return;if((dirty||retryPending)&&!savedReceipt.current)setConfirmLeave(true);else onClose();}
  function revealInvalid(event:React.FormEvent<HTMLFormElement>){const target=event.target as HTMLElement;for(let element:HTMLElement|null=target;element;element=element.parentElement){if(element instanceof HTMLDetailsElement){element.open=true;if(element.classList.contains('visit-sales-details'))setSalesOpen(true);}}if(invalidFrame.current!==null)return;invalidFrame.current=requestAnimationFrame(()=>{invalidFrame.current=null;target.focus();target.scrollIntoView({block:'center',behavior:'smooth'});});}
 
- function stageChanged(stage:string){if(savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData(d=>({...d,salesStage:stage,invoiceOutcome:followupClosed(stage)?d.invoiceOutcome:'pending'}));}
+ // Leaving «تم الفقد» drops a re-contact typed for it (only a lost follow-up keeps one).
+ function stageChanged(stage:string){if(savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData(d=>({...d,salesStage:stage,invoiceOutcome:followupClosed(stage)?d.invoiceOutcome:'pending',...(stage==='lost'?{}:{recontactDate:'',recontactAction:''})}));}
  function changeCompetitor(patch:Partial<CompetitorInput>){if(initial||savedReceipt.current||retryPending||lock.current||uploadLock.current)return;setDirty(true);setData(previous=>({...previous,competitorObservation:{...(previous.competitorObservation||emptyCompetitorInput()),...patch}}));}
  async function uploadCompetitor(file:File,retry=false){
   if(initial||savedReceipt.current||retryPending||lock.current||uploadLock.current)return;
@@ -78,7 +83,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
   lock.current=true;setBusy(true);setError('');
   try{
    if(!savedReceipt.current){
-    if(!attempt.current){const stopId=journeyStopId();attempt.current=JSON.stringify({customerId,customerVersion:customer?.version,sourceId:source?.id,sourceVersion:source?.version,data:{...data,...(place.wants&&place.fix?place.fix:{}),...(stopId?{journeyStopId:stopId}:{})},createKey:crypto.randomUUID()});}
+    if(!attempt.current){const stopId=journeyStopId();attempt.current=JSON.stringify({customerId,customerVersion:customer?.version,sourceId:source?.id,sourceVersion:source?.version,data:{...data,...(data.salesStage==='lost'?{}:{recontactDate:'',recontactAction:''}),...(place.wants&&place.fix?place.fix:{}),...(stopId?{journeyStopId:stopId}:{})},createKey:crypto.randomUUID()});}
     const result=await offlineSubmit('/api/customer-followups',attempt.current,{me,language,label:customer?.data.name||say('متابعة','Follow-up'),kind:'followup'});
     if(result.ok!==true||typeof result.id!=='string'||!result.id)throw new SubmitError(say('الخادم لم يؤكد حفظ المتابعة. أعد المحاولة بنفس البيانات.','The server did not confirm the follow-up. Retry with the same entries.'),200,result);
     savedReceipt.current=true;setRetryPending(false);setDirty(false);
@@ -92,7 +97,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
  }
  return <Dialog open onOpenChange={open=>{if(!open)requestClose();}}><DialogContent className="crm-dialog followup-record-dialog mobile-record-dialog" dir={direction()} showCloseButton={!busy&&!uploading} onOpenAutoFocus={event=>{event.preventDefault();titleRef.current?.focus();}} onEscapeKeyDown={event=>{if(busy||uploading||escapeBelongsToOpenPopup(event))event.preventDefault();}} onInteractOutside={event=>{if(busy||uploading)event.preventDefault();}}>
   <header className="visit-dialog-heading"><DialogTitle ref={titleRef} tabIndex={-1}>{t(initial?'تفاصيل المتابعة':'تنفيذ المتابعة')}</DialogTitle><DialogDescription className="sr-only">{t('نتيجة التواصل والخطوة القادمة للعميل')}</DialogDescription></header>
-  {initial?<><div className="visit-form-scroll"><div className="followup-customer-strip">{customer?.data.name}</div><dl className="followup-detail-grid">{[['نوع المتابعة',t(followupTypes[data.type])],['تاريخ المتابعة المنفذة',data.date],['ما نتيجة المتابعة؟',data.result],['مرحلة البيع بعد المتابعة',t(stageLabels[data.salesStage])],...(data.hasQuotation?[['هل تحوّل عرض السعر إلى فاتورة؟',t(invoiceOutcomes[data.invoiceOutcome])]]:[]),['الإجراء القادم',data.nextAction||'—'],['موعد المتابعة القادمة',data.nextDate||'—'],...(data.lossReason?[['سبب الفقد',t(data.lossReason)],['تفاصيل سبب الفقد',data.lossDetails||'—']]:[])].map(([label,value])=><div key={label}><dt>{t(label)}</dt><dd>{value}</dd></div>)}</dl>{data.hasCompetitor&&<CompetitorFields value={{...emptyCompetitorInput(),...data}} records={records} customerId={customerId} identityKey={me.id} readOnly onChange={()=>{}}/>}</div><footer className="visit-save-bar"><div className="form-footer"><button type="button" className="btn subtle" onClick={onClose}>{t('إغلاق')}</button></div></footer></>:<form onSubmit={save} onInvalidCapture={revealInvalid} className="visit-entry-form">
+  {initial?<><div className="visit-form-scroll"><div className="followup-customer-strip">{customer?.data.name}</div><dl className="followup-detail-grid">{[['نوع المتابعة',t(followupTypes[data.type])],['تاريخ المتابعة المنفذة',data.date],['ما نتيجة المتابعة؟',data.result],['مرحلة البيع بعد المتابعة',t(stageLabels[data.salesStage])],...(data.hasQuotation?[['هل تحوّل عرض السعر إلى فاتورة؟',t(invoiceOutcomes[data.invoiceOutcome])]]:[]),...(data.recontact?[['الإجراء عند إعادة التواصل',data.nextAction||'—'],['موعد إعادة التواصل',data.nextDate||'—']]:[['الإجراء القادم',data.nextAction||'—'],['موعد المتابعة القادمة',data.nextDate||'—']]),...(data.lossReason?[['سبب الفقد',t(data.lossReason)],['تفاصيل سبب الفقد',data.lossDetails||'—']]:[])].map(([label,value])=><div key={label}><dt>{t(label)}</dt><dd>{value}</dd></div>)}</dl>{data.hasCompetitor&&<CompetitorFields value={{...emptyCompetitorInput(),...data}} records={records} customerId={customerId} identityKey={me.id} readOnly onChange={()=>{}}/>}</div><footer className="visit-save-bar"><div className="form-footer"><button type="button" className="btn subtle" onClick={onClose}>{t('إغلاق')}</button></div></footer></>:<form onSubmit={save} onInvalidCapture={revealInvalid} className="visit-entry-form">
    <fieldset disabled={busy||uploading||savedReceipt.current||retryPending} className="visit-form-scroll min-w-0">
     <div className="followup-customer-strip">{customer?.data.name}</div>
     {!customer&&<p className="form-error" role="alert">{say('العميل غير متاح. أغلق النافذة وحدّث قائمة المتابعات.','The customer is unavailable. Close this form and refresh the follow-up list.')}</p>}
@@ -110,7 +115,11 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
     <details className="visit-sales-details" open={salesOpen} onToggle={event=>setSalesOpen(event.currentTarget.open)}><summary><span>{say('مرحلة البيع وتفاصيل إضافية','Sales stage & more')}</span><span className="badge">{t(stageLabels[data.salesStage])||say('اختياري','Optional')}</span></summary><div className="form-grid visit-extended-fields">
      {hasQuotation&&<label className="field"><span>{t('هل تحوّل عرض السعر إلى فاتورة؟')}</span><Pick label="هل تحوّل عرض السعر إلى فاتورة؟" value={data.invoiceOutcome} onChange={value=>{if(savedReceipt.current||retryPending||lock.current)return;setDirty(true);setData(previous=>({...previous,invoiceOutcome:value,salesStage:value==='invoiced'?'won':value==='lost'?'lost':followupClosed(previous.salesStage)?'quoted':previous.salesStage}));}} options={invoiceOutcomes}/></label>}
      <label className="field"><span>{t('مرحلة البيع بعد المتابعة')}</span><Pick label="مرحلة البيع بعد المتابعة" value={data.salesStage} onChange={stageChanged} options={hasQuotation?Object.fromEntries(Object.entries(stageLabels).filter(([id])=>!followupClosed(id)||id===data.salesStage)):stageLabels}/></label>
-     {data.salesStage==='lost'&&<><label className="field"><span>{t('سبب الفقد')} <b>*</b></span><Pick label="اختر سبب الفقد" value={data.lossReason} onChange={value=>change('lossReason',value)} options={Object.fromEntries(followupLossReasons.map(reason=>[reason,reason]))}/></label><VoiceField label="تفاصيل سبب الفقد" value={data.lossDetails} onChange={value=>change('lossDetails',value)} required={data.lossReason==='أخرى'} multiline/></>}
+     {data.salesStage==='lost'&&<><label className="field"><span>{t('سبب الفقد')} <b>*</b></span><Pick label="اختر سبب الفقد" value={data.lossReason} onChange={value=>change('lossReason',value)} options={Object.fromEntries(followupLossReasons.map(reason=>[reason,reason]))}/></label><VoiceField label="تفاصيل سبب الفقد" value={data.lossDetails} onChange={value=>change('lossDetails',value)} required={data.lossReason==='أخرى'} multiline/>
+      <fieldset className="full followup-recontact" data-recontact><legend>{say('إعادة التواصل (اختياري)','Re-contact (optional)')}</legend><p className="form-note">{say('حدد موعدًا لإعادة التواصل مع هذا العميل والإجراء حينها؛ تعود المتابعة في يومها ضمن «اليوم والمتأخرة». اتركهما فارغين لإغلاق المتابعة.','Set a date to contact this customer again and what to do then; the follow-up comes back on that day under «Today & overdue». Leave both empty to close the follow-up.')}</p>
+       <VoiceField label="الإجراء عند إعادة التواصل" value={data.recontactAction||''} onChange={value=>change('recontactAction',value)} required={!!data.recontactDate}/>
+       <label className="field"><span>{t('موعد إعادة التواصل')}{data.recontactAction?<> <b>*</b></>:null}</span><input type="date" data-recontact-date min={data.date>today()?data.date:today()} required={!!(data.recontactAction||'').trim()} value={data.recontactDate||''} onChange={event=>change('recontactDate',event.target.value)}/></label>
+      </fieldset></>}
      <label className="field"><span>{t('تاريخ المتابعة المنفذة')} <b>*</b></span><input type="date" required max={today()} value={data.date} onChange={event=>change('date',event.target.value)}/></label>
      {hasQuotation&&data.invoiceOutcome==='invoiced'&&<p className="form-note full">{me.role==='rep'?say('اطلب من المشرف تسجيل الفاتورة لاحتساب المبيعات.','Ask your supervisor to record the invoice to count the sale.'):say('سجّل الفاتورة في المبيعات لاحتسابها في الأداء.','Record the invoice in Sales to include it in performance.')}</p>}
     </div></details>

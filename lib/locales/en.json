@@ -1549,5 +1549,14 @@
   "رفض طلب تعديل بيانات العميل": "Customer details edit rejected",
   "إلغاء طلب تعديل بيانات العميل": "Customer details edit request cancelled",
   "لا توجد ثلاثة أشهر عمل فيها المندوب خلال الأشهر الاثني عشر السابقة، فلا توجد فترة مقارنة للعملاء. الأشهر التي تغطيها مبيعات ERP الكاملة بلا زيارات ولا متابعات ولا مبيعات (إجازة أو انقطاع) لا تُحتسب.": "There are not three months worked by the representative in the previous twelve months, so there is no period to compare customers with. Months covered by complete ERP sales without visits, follow-ups or sales (leave or absence) are not counted.",
-  "لا يوجد قبل أشهر المقارنة شهر عمل فيه المندوب ولا شراء سابق لعملائه، فلا يمكن إثبات عميل مسترد. يبدأ احتساب المؤشر بعد أربعة أشهر من أول شهر عمل فيه.": "Before the compared months there is no month the representative worked and no earlier purchase of their customers, so no reactivated customer can be established. The indicator starts four months after the first month they worked."
+  "لا يوجد قبل أشهر المقارنة شهر عمل فيه المندوب ولا شراء سابق لعملائه، فلا يمكن إثبات عميل مسترد. يبدأ احتساب المؤشر بعد أربعة أشهر من أول شهر عمل فيه.": "Before the compared months there is no month the representative worked and no earlier purchase of their customers, so no reactivated customer can be established. The indicator starts four months after the first month they worked.",
+  "موعد إعادة التواصل": "Re-contact date",
+  "الإجراء عند إعادة التواصل": "Re-contact action",
+  "إعادة التواصل": "Re-contact",
+  "موعد إعادة التواصل للمتابعة المفقودة فقط (مرحلة «تم الفقد»).": "A re-contact date is for a lost follow-up only (stage «Lost»).",
+  "اكتب الإجراء عند إعادة التواصل وموعده معًا، أو اتركهما فارغين.": "Write the re-contact action and its date together, or leave both empty.",
+  "أدخل موعد إعادة التواصل تاريخًا صحيحًا.": "Enter the re-contact date as a valid date.",
+  "موعد إعادة التواصل لا يسبق تاريخ المتابعة المنفذة.": "The re-contact date cannot precede the completed follow-up date.",
+  "موعد إعادة التواصل لا يكون في الماضي.": "The re-contact date cannot be in the past.",
+  "الإجراء عند إعادة التواصل طويل جدًا (1000 حرف على الأكثر).": "The re-contact action is too long (1000 characters at most)."
 }
