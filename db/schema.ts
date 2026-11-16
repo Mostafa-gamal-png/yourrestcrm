@@ -53,7 +53,7 @@ export const serviceCases=sqliteTable('crm_service_cases',{
  // Migration 0021: the lead source and the routing at approval (CHECK constraints in the SQL).
  leadGroup:text('lead_group'),leadSource:text('lead_source'),leadRefKind:text('lead_ref_kind'),leadRefId:text('lead_ref_id'),leadNote:text('lead_note').notNull().default(''),
  route:text('route'),routedBy:text('routed_by').references(()=>members.id),routedAt:text('routed_at')
-},t=>[index('crm_service_customer').on(t.customerId),index('crm_service_creator').on(t.creatorId),index('crm_service_status').on(t.status),index('crm_service_cases_lead_ref').on(t.leadRefKind,t.leadRefId)]);
+},t=>[index('crm_service_customer').on(t.customerId),index('crm_service_creator').on(t.creatorId),index('crm_service_status').on(t.status),index('crm_service_cases_lead_ref').on(t.leadRefKind,t.leadRefId)]); // and crm_service_cases_held (customer_id) WHERE route='service', partial, in the SQL
 // Migration 0021: the role customer service recorded at the closing of an opportunity it took part in (one row per case, once recorded).
 export const serviceRoleTasks=sqliteTable('crm_service_role_tasks',{
  caseId:text('case_id').primaryKey().references(()=>serviceCases.id,{onDelete:'restrict'}),outcome:text('outcome').notNull(),memberId:text('member_id').notNull().references(()=>members.id,{onDelete:'restrict'}),

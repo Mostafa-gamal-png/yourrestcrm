@@ -25,6 +25,9 @@ ALTER TABLE crm_service_cases ADD COLUMN routed_at TEXT;
 --> statement-breakpoint
 CREATE INDEX crm_service_cases_lead_ref ON crm_service_cases(lead_ref_kind,lead_ref_id);
 --> statement-breakpoint
+-- The opportunities customer service keeps: every achievement reads them first to leave out their sales, so the probe is an index.
+CREATE INDEX crm_service_cases_held ON crm_service_cases(customer_id) WHERE route='service';
+--> statement-breakpoint
 CREATE TABLE crm_service_role_tasks (
  case_id TEXT PRIMARY KEY NOT NULL REFERENCES crm_service_cases(id) ON DELETE RESTRICT,
  outcome TEXT NOT NULL CHECK(outcome IN ('won','lost')),
