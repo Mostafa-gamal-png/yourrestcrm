@@ -7,6 +7,8 @@ import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {initializeDatabase} from '../portable/initialize.mjs';
 import {upgradeExistingDatabase} from '../portable/upgrade.mjs';
+// Made-up initial data (fictional customers, 05000000.. phones, example.com): the real one is not in the repository.
+import {madeUpSnapshot, writeSeed} from './fixtures/made-up-seed.js';
 const root=path.resolve(import.meta.dirname,'..'),work=fs.mkdtempSync(path.join(os.tmpdir(),'yourrest-upgrade-'));
 let checks=0;
 const check=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
@@ -15,7 +17,8 @@ function fixture(name){
  const parent=path.join(work,name),appRoot=path.join(parent,'app'),migrations=path.join(appRoot,'release/drizzle'),data=path.join(parent,'private-data'),filename=path.join(data,'database.sqlite');
  fs.mkdirSync(migrations,{recursive:true,mode:0o700});fs.mkdirSync(data,{mode:0o700});
  for(const file of fs.readdirSync(path.join(root,'drizzle')).filter(name=>name.endsWith('.sql')&&name<'0011'))fs.copyFileSync(path.join(root,'drizzle',file),path.join(migrations,file));
- const options={filename,migrations,appRoot,seed:path.join(root,'migration/initial.json'),checksum:path.join(root,'migration/initial.sha256')};
+ const seed=path.join(parent,'made-up-seed.json'),checksum=path.join(parent,'made-up-seed.sha256');writeSeed(madeUpSnapshot(migrations).snapshot,seed,checksum);
+ const options={filename,migrations,appRoot,seed,checksum};
  initializeDatabase(options);
  const db=new DatabaseSync(filename);db.exec("INSERT INTO crm_journey_stops(id,member_id,date,customer_id,region_scope,snapshot,selected_at,state,data) SELECT 'preserve-journey','owner','2026-09-30',id,'all','{}','2026-09-30T09:00:00.000Z','en_route','{\"gaps\":[],\"events\":[]}' FROM crm_records WHERE kind='customer' LIMIT 1; UPDATE crm_members SET target=987654 WHERE id='owner'; CREATE TABLE test_existing_session(token_hash TEXT PRIMARY KEY,value TEXT); INSERT INTO test_existing_session VALUES('existing','preserve');");db.close();
  return options;
@@ -23,7 +26,7 @@ function fixture(name){
 function appendCurrent(f){fs.copyFileSync(path.join(root,'drizzle/0011_mobile_route_days.sql'),path.join(f.migrations,'0011_mobile_route_days.sql'));}
 function counts(filename){const db=new DatabaseSync(filename,{readOnly:true});try{return {records:db.prepare('SELECT COUNT(*) n FROM crm_records').get().n,session:db.prepare('SELECT * FROM test_existing_session').all(),target:db.prepare("SELECT target FROM crm_members WHERE id='owner'").get().target,journey:db.prepare('SELECT id,data FROM crm_journey_stops').all(),ledger:db.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n};}finally{db.close();}}
 try{
- const f=fixture('success'),before=counts(f.filename);appendCurrent(f);
+ const f=fixture('success'),before=counts(f.filename);check(before.records>0&&before.journey.length===1,true,'the made-up seed has customers and the journey stop of one');appendCurrent(f);
  const result=await upgradeExistingDatabase(f);check(result.upgraded,true);check(result.migrations,12);check(fs.statSync(result.backup).mode&0o777,0o600);check(fs.statSync(path.dirname(result.backup)).mode&0o777,0o700);
  check(counts(result.backup),before,'backup retains the pre-upgrade state');
  check(counts(f.filename),{...before,ledger:12},'existing business data and sessions preserved');

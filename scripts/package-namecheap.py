@@ -1,17 +1,17 @@
 from pathlib import Path
-import hashlib, html, json, shutil, zipfile, os, re
+import hashlib, html, json, shutil, sys, zipfile, os, re
 
+# python3 scripts/package-namecheap.py [archive.zip]: by default ../Yourrest-CRM-Namecheap.zip staged in ../namecheap-upload.
 source = Path(__file__).resolve().parent.parent
-stage = source.parent / 'namecheap-upload'
-archive = source.parent / 'Yourrest-CRM-Namecheap.zip'
+archive = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else source.parent / 'Yourrest-CRM-Namecheap.zip'
+stage = source.parent / 'namecheap-upload' if len(sys.argv) <= 1 else archive.with_name(archive.stem + '-stage')
 if stage.exists(): shutil.rmtree(stage)
 stage.mkdir(mode=0o700)
 shutil.copytree(source/'dist/standalone', stage/'release')
 shutil.copy2(source/'portable/launcher.cjs', stage/'app.cjs')
 shutil.copy2(source/'portable/setup.cjs', stage/'setup.cjs')
-(stage/'migration').mkdir(mode=0o700)
-for name in ['initial.json','initial.sha256']:
-    shutil.copy2(source/'migration'/name, stage/'migration'/name)
+# No initial data: the package carries no customer record (the owner, 2026-11-16). A first installation is empty with
+# its owner (node setup.cjs --owner-email=...), or loads an initial data file the administrator places in migration/.
 (stage/'package.json').write_text(json.dumps({'name':'yourrest-crm','version':'1.0.0','private':True,'engines':{'node':'>=22.16.0'},'scripts':{'setup':'node setup.cjs','start':'node app.cjs'}}, indent=2)+'\n')
 guide = (source/'docs/NAMECHEAP-AR.md').read_text()
 (stage/'README-AR.txt').write_text(guide)
@@ -69,7 +69,7 @@ if (source/'docs/offline-browser-screenshots').is_dir():
     shutil.copytree(source/'docs/offline-browser-screenshots',code/'docs/offline-browser-screenshots',ignore=shutil.ignore_patterns('failure.png'))
 if (source/'docs/rebuild-browser-screenshots').is_dir():
     shutil.copytree(source/'docs/rebuild-browser-screenshots',code/'docs/rebuild-browser-screenshots',ignore=shutil.ignore_patterns('failure.png'))
-(code/'README.md').write_text('# Yourrest CRM — Namecheap\n\nIndependent email OTP edition. See ../START-HERE.html for deployment.\n\nNode >=22.16; install locked dependencies with pnpm, then pnpm build.\nThe runnable build is dist/standalone. Keep settings and production data outside the release.\nNo production credentials or runtime database are bundled.\n\nMigrations are append-only SQL files applied by portable/initialize.mjs. Startup applies pending migrations only to a recognized existing database after a private schema backup through portable/upgrade.mjs. Do not edit applied files. Migration0009 contains a manually managed authorization trigger. Migration0010 contains manually managed journey tables and indexes. Migration0011 adds continuous mobile workday tables. Preserve these when maintaining the schema. The installation ledger is authoritative, not the original Drizzle generation journal.\n\nRegression tests: node tests/crm-regression.mjs; node tests/email-auth.mjs; node tests/email-auth-ui.mjs; node tests/portable-storage.mjs; node tests/portable-local-mail.mjs; node tests/portable-hosting.mjs; node tests/portable-installer.mjs; node tests/namecheap-http.mjs (after build).\nThe package-install test accepts the absolute ZIP path and requires unzip; it changes only a temporary copy.\n')
+(code/'README.md').write_text('# Yourrest CRM — Namecheap\n\nIndependent email OTP edition. See ../START-HERE.html for deployment.\n\nNode >=22.16; install locked dependencies with pnpm, then pnpm build.\nThe runnable build is dist/standalone. Keep settings and production data outside the release.\nNo production credentials, runtime database or customer data are bundled: a first installation is empty with its owner (node setup.cjs --owner-email=name@yourrest.org) unless an initial data file is placed in migration/ by hand.\n\nMigrations are append-only SQL files applied by portable/initialize.mjs. Startup applies pending migrations only to a recognized existing database after a private schema backup through portable/upgrade.mjs. Do not edit applied files. Migration0009 contains a manually managed authorization trigger. Migration0010 contains manually managed journey tables and indexes. Migration0011 adds continuous mobile workday tables. Preserve these when maintaining the schema. The installation ledger is authoritative, not the original Drizzle generation journal.\n\nRegression tests: node tests/crm-regression.mjs; node tests/email-auth.mjs; node tests/email-auth-ui.mjs; node tests/portable-storage.mjs; node tests/portable-local-mail.mjs; node tests/portable-hosting.mjs; node tests/portable-installer.mjs; node tests/namecheap-http.mjs (after build).\nThe package-install test accepts the absolute ZIP path and requires unzip; it changes only a temporary copy.\n')
 with (code/'README.md').open('a') as readme:
     readme.write('\nActivity map checks: node tests/customer-map-activity.mjs; node tests/customer-map-ui.mjs; node tests/map-workspace-ui.mjs.\nMobile navigation checks: node tests/mobile-navigation-ui.mjs; node tests/pwa-install-ui.mjs.\nRep customer creation checks: node tests/rep-customer-create.mjs; node tests/rep-customer-ui.mjs.\nOwn targets checks: node tests/own-targets.mjs; node tests/my-targets-ui.mjs.\nJourney checks: node tests/journeys.mjs; node tests/journey-ui.mjs; node tests/startup-upgrade.mjs. The PWA reports GPS gaps explicitly and does not guarantee background location on locked devices.\nMobile app checks: node tests/pwa-foundation.mjs; node tests/pwa-install-ui.mjs.\nThe optional tests/pwa-browser.mjs needs Playwright with a Chromium binary and openssl; browser/device installation was not verified in the release environment.\n')
 with (code/'README.md').open('a') as readme:
@@ -98,7 +98,6 @@ with (code/'README.md').open('a') as readme:
     readme.write('\nEarlier follow-ups: standalone creation controls removed. Execute only open scheduled prior customer contacts; fixed customer, saved previous-source link, stale-source and absent-plan rejection. No new migration or Android build. See docs/UPDATE-FOLLOWUPS-AR.txt.\n')
 with (code/'README.md').open('a') as readme:
     readme.write('\nEarlier rebuild: Android1.0.6/code7 + complete server. See docs/UPDATE-REBUILD-AR.txt and docs/REBUILD-VERIFICATION.json. Foreground visit GPS is independent of background enrollment; Directions opens immediately while recording is acknowledged separately. Request/location waits are bounded, cold-account loading preserves native enrollment, old evidence keeps immutable captured bindings, and new visits do not infer a stale stop. Same-owner scope changes with pending old-scope evidence halt and preserve the queue. Update server and install the same-signed APK over the existing app. No new server migration. Run node scripts/test-rebuild.mjs for broad local regressions; native, built HTTP, browser, load and package reports retain their exact environment limits.\n')
-shutil.copytree(source/'migration',code/'migration')
 shutil.copy2(source/'README.md',code/'README.md')
 with (code/'README.md').open('a') as readme:
     readme.write('\nCompetitors workspace: management-only, sourced from authorized visit records, with normalized-name grouping, search, customer/contact history and protected quote attachments. New observations use the existing visit form; no new table or migration. See docs/COMPETITORS-BROWSER-VERIFICATION.json and tests/competitors.mjs, tests/competitors-ui.mjs, tests/competitors-browser.mjs.\n')
@@ -118,6 +117,9 @@ files=sorted(p for p in stage.rglob('*') if p.is_file())
 for p in files:
     if p.is_symlink() or p.name in ['settings.cjs','.env'] or p.suffix in ['.sqlite','.db','.pem','.p12','.jks','.keystore']:
         raise RuntimeError('Unexpected runtime/private file: '+str(p))
+    relative=p.relative_to(stage).as_posix()
+    if p.name in ['initial.json','initial.sha256'] or relative.startswith(('migration/','source/migration/')) or re.search(r'-(Revised|Full)-Source-.*\.zip$',p.name):
+        raise RuntimeError('Customer data must not be packaged: '+relative)
 manifest=''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(stage).as_posix()+'\n' for p in files)
 (stage/'PACKAGE-CONTENTS.sha256').write_text(manifest)
 temporary = archive.with_suffix('.zip.tmp')
