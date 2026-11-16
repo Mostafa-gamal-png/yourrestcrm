@@ -67,18 +67,21 @@ const won={...held,data:{...held.data,serviceStages:[{stage:'quoted',lossReason:
 eq([C.serviceState(won,[customer],members),C.serviceClosedAt(won,[customer]),C.heldStage(won).stage],['won','2026-11-09T06:00:00.000Z','won'],'its last stage closes it, at the moment it was recorded');
 eq([C.servicePermissions(held,ctx('cs2')).work,C.servicePermissions(held,ctx('owner')).work,C.servicePermissions(held,ctx('cs')).work,C.servicePermissions(held,ctx('csm')).work,C.servicePermissions(won,ctx('cs2')).work],[true,true,false,false,false],'only its owner (or the administrator) works on it, and not once it closed');
 eq([C.canReadService(held,ctx('rep')),C.canReadService(held,ctx('sm')),C.servicePermissions(held,ctx('sm')).followup],[false,false,false],'no member of sales reads it or writes on it');
+const lostHeld={...held,data:{...held.data,serviceStages:[{stage:'lost',lossReason:'شروط الدفع ',note:'',by:'cs2',at:'2026-11-09T06:00:00.000Z'}]}};
+const lostContact={id:'a1',kind:'activity',parentId:'c1',assignedTo:'rep',branch:'الرئيسي',data:{serviceCaseId:'k2',salesStage:'lost',lossReason:'السعر'},createdAt:'2026-11-10T06:00:00.000Z',updatedAt:'2026-11-10T06:00:00.000Z',version:1};
+eq([C.serviceLossReason(lostHeld,[customer]),C.serviceLossReason({...held,id:'k2',status:'assigned'},[customer,lostContact]),C.serviceLossReason(held,[customer])],['شروط الدفع','السعر',''],'the loss reason: the stage customer service recorded on one it keeps, else the contact that closed it (the monthly report and its Excel read it)');
 const pending={...held,status:'pending_approval',assignedTo:null,data:{participants:['cs','csm']}};
 eq(C.serviceCandidates(pending,ctx('csm'),'keep').map(x=>x.id),['cs','csm','cs2'],'a customer-service manager gives it to the registrar (first), himself or his team, in the customer\'s branch');
 eq(C.serviceCandidates(pending,ctx('owner'),'keep').map(x=>x.id),['cs','csm','cs2','csx'],'the administrator to any customer-service member of the branch');
 
 // ---- C. attribution
-const kase=(id,o)=>({id,number:Number(id.replace(/\D/g,''))||null,customerId:'c1',customerName:'مصنع',registrarId:'cs',ownerId:'',held:false,route:null,approved:true,createdAt:'2026-11-01T06:00:00.000Z',state:'assigned',closedAt:'',leadGroup:'service',leadSource:'واتساب',leadNote:'',...o});
-const cases=[kase('k1',{held:true,ownerId:'cs2',route:'service',closedAt:'2026-11-20T06:00:00.000Z'}),kase('k2',{customerId:'c2',registrarId:'cs',route:'sales',createdAt:'2026-10-01T06:00:00.000Z'})];
+const kase=(id,o)=>({id,number:Number(id.replace(/\D/g,''))||null,customerId:'c1',customerName:'مصنع',registrarId:'cs',ownerId:'',held:false,route:null,approved:true,createdAt:'2026-11-01T06:00:00.000Z',state:'assigned',closedAt:'',leadGroup:'service',leadSource:'واتساب',leadNote:'',routedAt:'',...o});
+const cases=[kase('k1',{held:true,ownerId:'cs2',route:'service',closedAt:'2026-11-20T06:00:00.000Z',routedAt:'2026-11-01T07:00:00.000Z'}),kase('k2',{customerId:'c2',registrarId:'cs',route:'sales',createdAt:'2026-10-01T06:00:00.000Z'})];
 eq([S.caseOfQuote({customerId:'c1',date:'2026-11-01'},cases)?.id,S.caseOfQuote({customerId:'c1',date:'2026-10-31'},cases)?.id,S.caseOfQuote({customerId:'c1',date:'2026-11-20'},cases)?.id,S.caseOfQuote({customerId:'c1',date:'2026-11-21'},cases)?.id,S.caseOfQuote({customerId:'c2',date:'2030-01-01'},cases)?.id],['k1',null,'k1',null,'k2'],'a quotation belongs to the opportunity open on its day (registered on, won or lost on, both included; an open one has no end)');
 const later=[...cases,kase('k3',{createdAt:'2026-11-20T09:00:00.000Z'})];
 eq(S.caseOfQuote({customerId:'c1',date:'2026-11-20'},later)?.id,'k3','on a day one closed and another opened, the later one');
 const quotes=[{id:'q1',ref:'Qut-1',customerId:'c1',date:'2026-11-03',total:1000},{id:'q2',ref:'Qut-2',customerId:'c2',date:'2026-11-03',total:500},{id:'q3',ref:'Qut-3',customerId:'c1',date:'2026-09-01',total:900}];
-const inv=(id,o)=>({id,source:'erp',number:'INV-'+id,date:'2026-11-10',type:'sale',customerId:'c1',repId:'rep',value:100,refs:[],...o});
+const inv=(id,o)=>({id,source:'erp',number:'INV-'+id,date:'2026-11-10',type:'sale',customerId:'c1',repId:'rep',value:100,refs:[],importedAt:'2026-12-31T00:00:00.000Z',...o});
 const invoices=[inv('e1',{refs:['Qut-1'],value:1000}),inv('e2',{refs:['Qut-2'],customerId:'c2',value:500}),inv('e3',{refs:['Qut-1'],type:'return',value:-200}),inv('e4',{refs:['Qut-3'],value:900}),inv('e5',{refs:['Qut-1','Qut-2'],value:50}),
  inv('s1',{customerId:'c3',date:'2026-12-01',value:70}),inv('s2',{customerId:'c3',date:'2026-12-02',value:80}),inv('s3',{customerId:'c3',date:'2026-12-01',type:'return',value:-10}),inv('s4',{customerId:'c3',date:'2026-10-01',value:60})];
 const contacts=[{requestId:'r1',customerId:'c3',handlerId:'cs',at:'2026-10-02T08:00:00.000Z'},{requestId:'r2',customerId:'c3',handlerId:'cs2',at:'2026-10-03T08:00:00.000Z'}];
@@ -93,6 +96,33 @@ eq(S.attributeSales({cases,quotes,invoices:[inv('w1',{customerId:'c3',date:'2026
 eq([...S.fullSalesIds(attributed)].sort(),['e1','e3','e5'],'the full customer-service sales: their invoices and returns');
 eq(S.withoutFullSales([{id:'e1'},{id:'e2'},{id:'x'}],S.fullSalesIds(attributed)).map(s=>s.id),['e2','x'],'what every achievement reads: the list without them');
 eq(S.withoutFullSales([{id:'e1'}],null).map(s=>s.id),['e1'],'nothing kept by customer service: the list as it was');
+// ---- the review of 2026-11-16: a later decision never reclassifies; an invoice matches its quotation by customer and date; returns
+// The opportunity was registered on 2026-10-20 and kept on 2026-11-03: a quotation the representative issued (10-25) and invoiced (10-28)
+// while it waited for approval stays his, in a closed month and after; only a quotation and an invoice from the decision on are full.
+const late=kase('k20',{customerId:'c20',createdAt:'2026-10-20T08:00:00.000Z',held:true,ownerId:'cs2',route:'service',routedAt:'2026-11-03T09:00:00.000Z'});
+const lateQuotes=[{id:'q20',ref:'Qut-500',customerId:'c20',date:'2026-10-25',total:1000},{id:'q21',ref:'Qut-501',customerId:'c20',date:'2026-11-04',total:1000},{id:'q22',ref:'Qut-502',customerId:'c20',date:'2026-11-03',total:1000}];
+const lateInv=(id,o)=>inv(id,{customerId:'c20',...o});
+const lateView=S.attributeSales({cases:[late],quotes:lateQuotes,invoices:[
+ lateInv('l1',{refs:['Qut-500'],date:'2026-10-28',importedAt:'2026-10-29T06:00:00.000Z'}),lateInv('l2',{refs:['Qut-500'],date:'2026-11-05'}),lateInv('l3',{refs:['Qut-501'],date:'2026-11-05'}),
+ lateInv('l4',{refs:['Qut-502'],date:'2026-11-03',importedAt:'2026-11-03T08:00:00.000Z'}),lateInv('l5',{refs:['Qut-502'],date:'2026-11-03',importedAt:'2026-11-03T10:00:00.000Z'})],contacts:[],supportDays:60}).map(a=>[a.id,a.category]);
+eq(lateView,[['l1','shared'],['l4','shared'],['l5','full'],['l2','shared'],['l3','full']],'kept later: a quotation from before the decision stays the representative\'s (shared), in its month and after; the quotation and invoice of the decision\'s day are full only when the invoice reached the system after it');
+eq([S.keptSale({held:true,routedAt:''},{date:'2026-11-05'},{date:'2026-11-05',importedAt:'2026-12-01T00:00:00.000Z'}),S.keptSale({held:false,routedAt:'2026-11-03T09:00:00.000Z'},{date:'2026-11-05'},{date:'2026-11-05',importedAt:'2026-12-01T00:00:00.000Z'}),S.keptSale({held:true,routedAt:'2026-11-03T09:00:00.000Z'},{date:'2026-11-05'},{date:'2026-11-05',importedAt:''})],[false,false,false],'no decision, not kept, or an invoice of unknown arrival: never full');
+// An invoice of another customer naming the kept quotation by mistake, and one dated before the quotation, sell nothing of it.
+const keptCase=kase('k30',{customerId:'cA',createdAt:'2026-10-20T08:00:00.000Z',held:true,ownerId:'cs',route:'service',routedAt:'2026-10-20T09:00:00.000Z'});
+const keptQuote={id:'q30',ref:'Qut-600',customerId:'cA',date:'2026-10-25',total:1000};
+eq(S.attributeSales({cases:[keptCase],quotes:[keptQuote],invoices:[inv('o1',{customerId:'cB',refs:['Qut-600'],date:'2026-10-28',value:5000}),inv('o2',{customerId:'cA',refs:['Qut-600'],date:'2026-10-21',value:5000}),inv('o3',{customerId:'',refs:['Qut-600'],date:'2026-10-28',value:400}),inv('o4',{customerId:'cA',refs:['Qut-600'],date:'2026-10-25',value:300})],contacts:[],supportDays:60}).map(a=>[a.id,a.category]),
+ [['o4','full'],['o3','full']],'another customer\'s invoice and one dated before the quotation are not its sale; one whose code names no single customer is matched by the number, and the day of the quotation counts');
+eq([S.invoiceOfQuote({date:'2026-10-25',customerId:''},{date:'2026-10-25',customerId:'cA'}),S.invoiceOfQuote({date:'2026-10-24',customerId:'cA'},{date:'2026-10-25',customerId:'cA'}),S.invoiceOfQuote({date:'2026-10-26',customerId:'cB'},{date:'2026-10-25',customerId:'cA'}),S.invoiceOfQuote({date:'2026-10-26',customerId:'cA'},{date:'',customerId:'cA'})],[true,false,false,false],'invoiceOfQuote');
+// The ERP return of a full sale repeats no quotation number: it follows the full sales of its customer, up to what they left out.
+const rsale=inv('r0',{customerId:'cA',refs:['Qut-600'],date:'2026-10-28',value:5000});
+const returnsOf=(...extra)=>S.attributeSales({cases:[keptCase],quotes:[keptQuote],invoices:[rsale,...extra],contacts:[],supportDays:60}).filter(a=>a.type==='return').map(a=>[a.id,a.category,a.memberId,a.caseId,a.value]);
+eq(returnsOf(inv('r1',{customerId:'cA',type:'return',date:'2026-10-29',value:-5000})),[['r1','full','cs','k30',-5000]],'the return of the full sale, naming no quotation, is full too: the representative is not charged with it');
+eq(returnsOf(inv('r1',{customerId:'cA',type:'return',date:'2026-10-29',value:-3000}),inv('r2',{customerId:'cA',type:'return',date:'2026-10-30',value:-2500}),inv('r3',{customerId:'cA',type:'return',date:'2026-10-31',value:-1500}),inv('r4',{customerId:'cA',type:'return',date:'2026-11-01',value:-600})).map(r=>[r[0],r[4]]),
+ [['r1',-3000],['r3',-1500]],'up to the 5000 left out: 3000, then 2500 does not fit the 2000 left (it stays with the representative), 1500 does, 600 no more');
+eq(returnsOf(inv('r5',{customerId:'cA',type:'return',date:'2026-10-27',value:-100}),inv('r6',{customerId:'cB',type:'return',date:'2026-10-29',value:-100}),inv('r7',{customerId:'',type:'return',date:'2026-10-29',value:-100}),inv('r8',{customerId:'cA',type:'return',date:'2026-10-29',value:-100,refs:['Qut-999']}),inv('r9',{customerId:'cA',type:'return',date:'2026-10-29',value:-100,source:'crm'})),[],
+ 'never one before the first full sale, of another customer, of no single customer, naming a quotation, or a manual return');
+eq(S.attributeSales({cases:[keptCase],quotes:[keptQuote],invoices:[rsale,inv('r10',{customerId:'cA',refs:['Qut-600'],type:'return',date:'2026-10-29',value:-4000}),inv('r11',{customerId:'cA',type:'return',date:'2026-10-30',value:-1000}),inv('r12',{customerId:'cA',type:'return',date:'2026-10-31',value:-1})],contacts:[],supportDays:60}).map(a=>[a.id,a.category,a.value]),
+ [['r0','full',5000],['r10','full',-4000],['r11','full',-1000]],'a return naming the quotation counts first; each document once');
 eq([S.FULL_SALES_LINE,S.salesCategoryLabels.full,S.salesCategoryLabels.shared,S.salesCategoryLabels.support],['منها مبيعات خدمة العملاء بالكامل','مبيعات بالكامل','مبيعات بالمشاركة','مبيعات بالمساندة'],'the words of the line and the categories');
 
 // ---- D. the role task
@@ -104,7 +134,7 @@ eq([S.roleTaskSchema.safeParse({roles:[],note:'x'.repeat(10)}).success,S.roleTas
 
 // ---- E. the dashboard
 const perfMembers=[{id:'cs',name:'أ',role:'customer_service',supervisorId:'csm'},{id:'cs2',name:'ب',role:'customer_service',supervisorId:'csm'}];
-const perfCases=[kase('k1',{held:true,ownerId:'cs2',route:'service',createdAt:'2026-11-01T06:00:00.000Z'}),kase('k2',{customerId:'c2',route:'sales',createdAt:'2026-11-02T06:00:00.000Z',leadGroup:'system',leadSource:'شكوى'}),kase('k4',{customerId:'c4',approved:false,route:null,createdAt:'2026-11-03T06:00:00.000Z',leadGroup:null,leadSource:null})];
+const perfCases=[kase('k1',{held:true,ownerId:'cs2',route:'service',createdAt:'2026-11-01T06:00:00.000Z',routedAt:'2026-11-01T07:00:00.000Z'}),kase('k2',{customerId:'c2',route:'sales',createdAt:'2026-11-02T06:00:00.000Z',leadGroup:'system',leadSource:'شكوى'}),kase('k4',{customerId:'c4',approved:false,route:null,createdAt:'2026-11-03T06:00:00.000Z',leadGroup:null,leadSource:null})];
 const tasks=[{caseId:'k9',memberId:'cs',closedAt:'2026-11-03T06:00:00.000Z',doneAt:''},{caseId:'k8',memberId:'cs',closedAt:'2026-11-10T06:00:00.000Z',doneAt:'2026-11-10T09:00:00.000Z'}];
 const rows=S.servicePerformance({members:perfMembers,cases:perfCases,quotes,attributed:S.attributeSales({cases:perfCases,quotes,invoices,contacts,supportDays:60}),invoices,contacts,tasks},'2026-11','2026-11-16T06:00:00.000Z');
 const a=rows.find(r=>r.memberId==='cs'),b=rows.find(r=>r.memberId==='cs2');

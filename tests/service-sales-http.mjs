@@ -40,8 +40,9 @@ try {
   for (const [id, code] of [['c-new', ''], ['c-dorm', 'C-DORM'], ['c-buy', 'C-BUY'], ['c-lost', 'C-LOST'], ['c-sup', 'C-SUP'], ['c-cmp', 'C-CMP'], ['c-never', 'C-NEVER'], ['c-two', 'C-TWO']])
     await insert(id, 'customer', null, id === 'c-two' ? 'rep2' : 'rep', {name: 'مصنع ' + id, region: 'الشرقية', city: 'الدمام', code, phone: '0500000001', branch: 'الرئيسي', assignedTo: 'rep', ...point}, ago(400));
   await app.db.prepare('INSERT INTO crm_erp_imports(id,actor_id,fingerprint,file_name,result,created_at) VALUES(?,?,?,?,?,?)').bind('erp-import-1', 'owner', 'fp-1', 'synthetic.xlsx', '{}', now).run();
+  // An ERP document received now: created_at is the moment of the import (a kept opportunity's sale is one received after the decision).
   const erp = (id, rep, code, date, cents, refs = [], type = 'sale') => app.db.prepare("INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) VALUES(?,?,'h','m',?,?,?,?,?,'الرئيسي','all',?,'عميل اصطناعي',?,?,'erp-import-1','owner',?)")
-    .bind(id, 'doc-' + id, 'INV-' + id, type, date, 'E-' + rep, rep, code, JSON.stringify({items: [{product: 'قوالب البلوك المتحركة', quantity: type === 'return' ? -1 : 2, unitPrice: Math.abs(cents) / 200}], discount: 0, ...(refs.length ? {quotationRefs: refs} : {})}), cents, now).run();
+    .bind(id, 'doc-' + id, 'INV-' + id, type, date, 'E-' + rep, rep, code, JSON.stringify({items: [{product: 'قوالب البلوك المتحركة', quantity: type === 'return' ? -1 : 2, unitPrice: Math.abs(cents) / 200}], discount: 0, ...(refs.length ? {quotationRefs: refs} : {})}), cents, new Date().toISOString()).run();
   await erp('old-dorm', 'rep', 'C-DORM', dayAgo(120), 10000);
   await erp('old-buy', 'rep', 'C-BUY', dayAgo(10), 10000);
   const kase = (id, customerId, status, data = {}, extra = {}) => app.db.prepare('INSERT INTO crm_service_cases(id,customer_id,status,creator_id,service_manager_id,sales_manager_id,assigned_to,supervisor_id,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?)')
