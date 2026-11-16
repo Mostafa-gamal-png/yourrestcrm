@@ -7,6 +7,7 @@ import type {OwnTargets} from '@/lib/own-targets';
 import {t,useLanguage} from '@/lib/i18n';
 import {activityFields,quantityNumber,targetProducts} from '@/lib/targets';
 import TargetGauge from './target-gauge';
+import {DaySalesPanel} from './today-sales';
 import './my-targets.css';
 
 /** lib/kpis.ts INACTIVE_TEXT, written here so this page does not load the evaluation's code (tests/kpi-leave-months.mjs checks they agree). */
@@ -29,7 +30,14 @@ export function MyTargetDetails({data}:{data:OwnTargets}){
    const row=data.sales.products.find(item=>item.product===product.id),quantity=row?.quantity??null,actual=row?.actualQuantity??null,remaining=row?.remainingQuantity??null,achievement=row?.achievement??null;
    return <article key={product.id} className="my-target-product"><h3>{t(product.name)}</h3><TargetGauge compact value={achievement} label={labels.achievement+' · '+t(product.name)} emptyLabel={!data.sales.actualsAvailable?say('لم يبدأ الشهر بعد','The month has not started'):quantity===null?say('لم يُحدد مستهدف','No target set'):quantity===0?say('المستهدف صفر','Target is zero'):say('البيانات غير مكتملة','Incomplete data')}/><dl className="my-target-product-values"><div><dt>{labels.actual}</dt><dd>{actual===null?'—':quantityNumber(actual)} <small>{t(product.unit)}</small></dd></div><div><dt>{labels.target}</dt><dd className={quantity===null?'my-targets-unset':undefined}>{quantity===null?t('غير محدد'):quantityNumber(quantity)} <small>{t(product.unit)}</small></dd></div></dl><p className="my-target-product-remaining">{labels.remaining}: <bdi>{remaining===null?'—':quantityNumber(remaining)}</bdi> {t(product.unit)}</p></article>;
   })}</div>
- </section><section className="panel my-targets-panel" aria-labelledby="my-activity-targets-title"><header><div><h2 id="my-activity-targets-title">{say('مستهدفات العملاء والزيارات','Customer and visit targets')}</h2><p>{activitySource}</p></div></header><dl className="my-activity-targets">{activityFields.map(([key,label])=><div key={key}><dt>{t(label)}</dt><dd>{quantityNumber(data.activity[key])}</dd></div>)}</dl></section></div>;
+ </section>{data.sales.actualsAvailable&&data.sales.soldByDay&&<OwnDaySales data={data}/>}<section className="panel my-targets-panel" aria-labelledby="my-activity-targets-title"><header><div><h2 id="my-activity-targets-title">{say('مستهدفات العملاء والزيارات','Customer and visit targets')}</h2><p>{activitySource}</p></div></header><dl className="my-activity-targets">{activityFields.map(([key,label])=><div key={key}><dt>{t(label)}</dt><dd>{quantityNumber(data.activity[key])}</dd></div>)}</dl></section></div>;
+}
+
+/** «مبيعات اليوم قصاد مستهدف اليوم» on the representative's own page: their quantities of each day (GET /api/targets, quantities only) against the
+ *  day's share of their month's target (lib/daily-target.ts). */
+function OwnDaySales({data}:{data:OwnTargets}){
+ const targets=new Map(data.sales.products.map(product=>[product.product,product.quantity] as const)),byDay=data.sales.soldByDay||{};
+ return <DaySalesPanel key={data.month} month={data.month} targets={targets} headingId="my-day-sales-heading" soldOn={date=>{const day=byDay[date];return {quantities:new Map(Object.entries(day||{})),documents:day?1:0};}}/>;
 }
 
 export default function MyTargets({me,month,onMonthChange}:Props){

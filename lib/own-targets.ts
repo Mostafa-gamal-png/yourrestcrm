@@ -16,6 +16,9 @@ export type OwnTargets = {
  month:string;
  inactive:boolean;
  member:{id:string;name:string};
- sales:{products:OwnProductTarget[];sourceMonth:string|null;actualsAvailable:boolean};
+ sales:{products:OwnProductTarget[];sourceMonth:string|null;actualsAvailable:boolean;
+  /** «مبيعات اليوم قصاد مستهدف اليوم» (lib/daily-target.ts): the quantities sold each day of the month (only the days with a confirmed
+   *  document of theirs, CRM or ERP, returns deducted), by product; present while the month's actuals are. Quantities only. */
+  soldByDay?:Record<string,Record<string,number>>};
  activity:ActivityTargets & {sourceMonth:string|null;isDefault:boolean};
 };

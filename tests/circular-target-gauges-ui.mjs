@@ -21,6 +21,7 @@ const targets=library('lib/targets.ts'),dictionary=JSON.parse(fs.readFileSync('l
 function imports(name){
  if(name==='react')return React;if(name==='react/jsx-runtime')return jsx;
  if(name==='./target-gauge')return {__esModule:true,default:Gauge};
+ if(name==='./today-sales')return load('app/today-sales.tsx',imports);
  if(name==='@/lib/i18n')return {useLanguage:()=>({language}),t:value=>language==='en'?(dictionary[value]||value):value};
  if(name==='lucide-react')return new Proxy({},{get:()=>()=>null});
  if(name.startsWith('@/lib/'))return library(name.replace('@/','')+'.ts');
