@@ -1,5 +1,6 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {StartOpportunityButton} from './service-sales';
 import {CheckCircle2,Clock3,LifeBuoy,Loader2,MessageCircle,PhoneCall} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
@@ -226,7 +227,8 @@ function contactFacts(label:string,labelEn:string,contact:{outcome:string;note:s
 }
 
 /** One request: who asked and why, where it stands, what each stage recorded, and what the reader may do with it. */
-export function SupportSheet({entry,onClose,onChanged}:{entry:SupportEntry;onClose:()=>void;onChanged:()=>Promise<void>}){
+/** me: the reader, for «فرصة جديدة من هذا الطلب» (customer service only, app/service-sales.tsx). */
+export function SupportSheet({entry,onClose,onChanged,me}:{entry:SupportEntry;onClose:()=>void;onChanged:()=>Promise<void>;me?:Pick<Member,'role'>}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const action=useAction(onChanged),returned=entry.status==='returned'&&!!entry.result;
  const [outcome,setOutcome]=useState(returned?entry.result!.outcome:''),[note,setNote]=useState(returned?entry.result!.note:''),[nextDate,setNextDate]=useState(returned?entry.result!.nextDate:''),[way,setWay]=useState('call');
@@ -274,6 +276,7 @@ export function SupportSheet({entry,onClose,onChanged}:{entry:SupportEntry;onClo
   <div className="service-detail"><div className="service-status"><span className="badge pending">{stateText(entry,say)}</span>{entry.late&&<span className="support-chip-static" data-kind="late">{say('متأخر','Late')}</span>}</div>
    <TrackingSheetSteps item={trackedSupport(entry)} caption/>
    <dl className="service-facts">{facts.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+   <StartOpportunityButton kind={entry.origin==='missed_visit'?'missed_visit':'support'} id={entry.id} me={me}/>
    <fieldset disabled={action.busy} className="service-actions">
     {p.take&&<div className="service-button-row"><button type="button" className="btn primary" onClick={()=>perform({action:'take'})}>{say('تولّي التواصل','Take this contact')}</button></div>}
     {handing&&entry.candidates.length>0&&<div className="service-routing">

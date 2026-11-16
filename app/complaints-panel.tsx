@@ -1,5 +1,6 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {StartOpportunityButton} from './service-sales';
 import {CheckCircle2,Clock3,Loader2,MessageCircle,MessageSquareWarning,PhoneCall,Search} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
@@ -218,7 +219,8 @@ export function ComplaintRegisterDialog({me,records,complaints,onClose,onSaved,o
 
 type Moment={id:string;at:string;title:string;actor:string;text:string;kind:'event'|'update'|'note'};
 /** One complaint: the report, where it stands, its story, and what the reader may do with it. */
-export function ComplaintSheet({entry,onClose,onChanged}:{entry:ComplaintEntry;onClose:()=>void;onChanged:()=>Promise<void>}){
+/** me: the reader, for «فرصة جديدة من هذه الشكوى» (customer service only, app/service-sales.tsx). */
+export function ComplaintSheet({entry,onClose,onChanged,me}:{entry:ComplaintEntry;onClose:()=>void;onChanged:()=>Promise<void>;me?:Pick<Member,'role'>}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const action=useAction(onChanged),{run}=action;
  const [target,setTarget]=useState(entry.suggestedId||entry.candidates[0]?.id||''),[note,setNote]=useState(''),[text,setText]=useState(''),[channel,setChannel]=useState('call'),[date,setDate]=useState(today()),[outcome,setOutcome]=useState(''),[rating,setRating]=useState(0),[reason,setReason]=useState(''),[editing,setEditing]=useState(false),[report,setReport]=useState<Report>({channel:entry.channel,category:entry.category,severity:entry.severity,description:entry.description,demand:entry.demand,reference:entry.reference,contactName:entry.contactName,contactPhone:entry.contactPhone,contactWhatsapp:entry.contactWhatsapp,contactEmail:entry.contactEmail});
@@ -265,7 +267,7 @@ export function ComplaintSheet({entry,onClose,onChanged}:{entry:ComplaintEntry;o
    <div className="service-status"><span className="badge pending">{stateText(entry,say)}</span>{entry.severity==='high'&&<span className="support-chip-static" data-kind="escalated">{say('أهمية عالية','High')}</span>}{entry.late&&<span className="support-chip-static" data-kind="late">{say('متأخر','Late')}</span>}</div>
    {!editing&&<TrackingSheetSteps item={trackedComplaint(entry)}/>}
    {editing?<fieldset disabled={action.busy} className="support-form complaint-form"><ReportFields value={report} onChange={setReport} say={say}/><div className="service-button-row"><button type="button" className="btn primary" disabled={report.description.trim().length<10||!!contactProblem(report,say)} onClick={()=>perform({action:'edit',...report,description:report.description.trim(),demand:report.demand.trim(),reference:report.reference.trim(),contactName:report.contactName.trim(),contactPhone:report.contactPhone.trim(),contactWhatsapp:report.contactWhatsapp.trim(),contactEmail:report.contactEmail.trim()})}><CheckCircle2 size={16} aria-hidden="true"/>{say('حفظ وإعادة الإرسال','Save and resend')}</button><button type="button" className="btn subtle" onClick={()=>setEditing(false)}>{say('رجوع','Back')}</button></div></fieldset>
-   :<dl className="service-facts">{facts.map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>}
+   :<><dl className="service-facts">{facts.map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl><StartOpportunityButton kind="complaint" id={entry.id} me={me}/></>}
    {!editing&&<fieldset disabled={action.busy} className="service-actions">
     {p.edit&&<div className="service-button-row"><button type="button" className="btn subtle" onClick={()=>setEditing(true)}>{say('تعديل الشكوى','Correct the complaint')}</button></div>}
     {p.notify&&<div className="service-routing complaint-notify">{whatsappUrl(entry.contactWhatsapp)?<><NotifyLink url={whatsappUrl(entry.contactWhatsapp,messageFor(entry))} say={say} onOpen={()=>perform({action:'notify'})}/><p className="form-note">{say('تُفتح الرسالة في واتساب لتراجعها وترسلها من هاتفك، ويُسجَّل في سير الشكوى أنها فُتحت.','The message opens in WhatsApp for you to review and send from your phone, and the complaint\'s story records that it was opened.')}</p></>:<p className="form-note">{say('لا رقم واتساب صالح للعميل في هذه الشكوى.','The complaint has no valid WhatsApp number for the customer.')}{p.edit?' '+say('أضف رقمًا من «تعديل الشكوى».','Add one from "Correct the complaint".'):''}</p>}</div>}

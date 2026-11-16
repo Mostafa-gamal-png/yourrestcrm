@@ -35,7 +35,8 @@ const tagText=(tag:string,say:Say)=>({
  answered:say('أُجيب','Answered'),close:say('أُغلقت','Closed'),reject:say('أُعيدت إلى المندوب','Sent back to the representative'),held:say('ثبت الإغلاق','The closure held'),reopened:say('أُعيد فتحها','Reopened'),
  forward:say('أُحيلت من أول مرة','Passed review first time'),return:say('أُعيدت للتعديل','Returned for correction'),approved:say('اعتُمد من أول مرة','Approved first time'),resubmitted:say('أُعيد للتعديل قبل الاعتماد','Returned before approval'),
  fix:say('تعديل شكوى','Complaint to correct'),confirm:say('تأكيد إغلاق','Closure to confirm'),support:say('مساندة','Assistance'),missed:say('زيارة مفقودة','Missed visit'),open:say('مفتوح','Open'),
- rating:say('تقييم العميل','Customer rating'),first:say('أول شكوى للعميل','First complaint of the customer'),repeat:say('متكررة','Repeat'),member:say('درجة','Score'),pass:say('ناجح','Pass'),coach:say('يحتاج تدريبًا','Needs coaching'),fail:say('راسب','Fail')
+ rating:say('تقييم العميل','Customer rating'),first:say('أول شكوى للعميل','First complaint of the customer'),repeat:say('متكررة','Repeat'),member:say('درجة','Score'),pass:say('ناجح','Pass'),coach:say('يحتاج تدريبًا','Needs coaching'),fail:say('راسب','Fail'),
+ won:say('تم البيع','Sold'),lost_invoiced:say('مفقودة وارتبطت بها فاتورة','Lost, with a linked invoice'),lost:say('مفقودة','Lost')
 } as Record<string,string>)[tag]||tag;
 function itemValue(metricKey:string,item:KpiItemOut,say:Say){
  if(item.value===null)return '';
@@ -234,6 +235,7 @@ function SettingsDialog({data,say,onClose,onSaved}:{data:ServiceKpiResponse;say:
     <label className="field"><span>{say('حد «يحتاج تدريبًا» من','Needs coaching from')}</span><input type="number" min={1} max={99} value={draft.audit.coach} onChange={event=>change(copy=>{copy.audit.coach=num(event.target.value);})}/></label>
     <label className="field"><span>{say('حجم العينة المقترحة لكل ممثل','Suggested sample per representative')}</span><input type="number" min={0} max={20} value={draft.audit.sample} onChange={event=>change(copy=>{copy.audit.sample=num(event.target.value);})}/></label>
     <label className="field"><span>{say('أيام الانتظار قبل إقفال الشهر','Days to wait before closing a month')}</span><input type="number" min={0} max={30} value={draft.closeGraceDays} onChange={event=>change(copy=>{copy.closeGraceDays=num(event.target.value);})}/></label>
+    <label className="field"><span>{say('مدة احتساب مبيعات المساندة (أيام)','Support-sales window (days)')}</span><input type="number" min={1} max={365} step={1} value={draft.supportSalesDays} onChange={event=>change(copy=>{copy.supportSalesDays=num(event.target.value);})}/></label>
    </div>
   </fieldset>
   {problem&&<div className="form-error" role="alert">{problemText(problem,say)}</div>}
