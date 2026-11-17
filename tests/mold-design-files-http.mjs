@@ -30,7 +30,7 @@ import {asBefore} from '../scripts/lib/mold-before.mjs';
 
 const members = [
   {id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'smw', role: 'manager', region: 'western'},
-  {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'},
+  {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'},
   {id: 'rep2', role: 'rep', sup: 'sm', region: 'eastern'}, {id: 'csm', role: 'customer_service_manager', sup: 'sm'}, {id: 'cs', role: 'customer_service', sup: 'csm'},
 ];
 let checks = 0;

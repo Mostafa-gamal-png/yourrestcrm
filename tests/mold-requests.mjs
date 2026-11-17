@@ -84,7 +84,7 @@ const specs = {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2
 
 // ---- the request body (§2)
 const customer = {crmNumber: 27, name: 'مصنع زايد للطابوق', address: 'الدمام', city: 'Damam - الدمام'};
-const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', email: 'name@yourrest.org'};
+const salesman = {crmMemberId: 'mem-1', name: 'أنور عبد الحكيم', email: 'name@yourrest.org'};
 {
   const body = moldRequestBody({id: 'rec-9f3a', requestedAt: '2026-10-29T10:15:00+03:00', customer, salesman, specs});
   eq(Object.keys(body), ['crmRequestId', 'requestedAt', 'customer', 'salesman', 'specs'], 'the contract keys, no legacy number for a new request');

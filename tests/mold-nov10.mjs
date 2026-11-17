@@ -53,7 +53,7 @@ const lib = await import(path.join(out, 'lib/mold-requests.mjs'));
 
 const at = '2026-11-10T09:00:00+03:00';
 const customer = {crmNumber: 27, name: 'مصنع زايد للطابوق', address: 'الدمام', city: 'Damam - الدمام'};
-const salesman = {crmMemberId: 'mem-1', name: 'أحمد عبد العزيز', email: 'name@yourrest.org'};
+const salesman = {crmMemberId: 'mem-1', name: 'أنور عبد الحكيم', email: 'name@yourrest.org'};
 const specs = {description: 'قالب بلوك 20 سم', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''};
 const request = extra => ({id: 'mr-00000000-0000-4000-8000-000000000001', requestedAt: at, customer, salesman, specs, ...extra});
 

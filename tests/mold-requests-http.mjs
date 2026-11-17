@@ -51,7 +51,7 @@ import {asBefore} from '../scripts/lib/mold-before.mjs';
 const members = [
   {id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'},
   {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'sup2', role: 'supervisor', sup: 'sm'},
-  {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}, {id: 'rep2', role: 'rep', sup: 'sup2'},
+  {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'}, {id: 'rep2', role: 'rep', sup: 'sup2'},
   {id: 'csm', role: 'customer_service_manager', sup: 'sm'}, {id: 'cs', role: 'customer_service', sup: 'csm'},
 ];
 const roleOf = (who, roster = members) => roster.find(member => member.id === who)?.role;
@@ -123,7 +123,7 @@ try {
   check(sent.customer, {crmNumber: await number('east1'), name: 'مصنع east1', address: 'حي الصناعية', city: 'Damam - الدمام', erpCode: 'ERP-east1'}, 'the customer by its Yourrest number with its code (since 2026-11-14), never its phone or email; one of the sheet\'s cities as the sheet writes it');
   check(JSON.parse((await stored(first)).data).erpWithCrm, true, 'the request is marked to send its customer\'s code, so every retry sends the same bytes');
   check(JSON.parse((await stored(first)).data).customer.city, 'Damam - الدمام', 'and stored that way, so a resend sends the same bytes');
-  check(sent.salesman, {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, 'the representative');
+  check(sent.salesman, {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'}, 'the representative');
   ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+03:00$/.test(sent.requestedAt), 'requestedAt in Riyadh time with its offset');
   ok(mock.state.calls.every(call => call.signed || call.route === ''), 'every call was signed with the shared secret');
   check((await app.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE record_id=? AND action='mold-request:create'").bind(first).first()).n, 1, 'audited');
@@ -322,7 +322,7 @@ try {
 
   // ---- 2026-11-03: a request asked for before the payment existed is resent exactly as first sent: 200 created:false
   const riyadhNow = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00', older = 'mr-' + crypto.randomUUID(), olderAt = new Date().toISOString();
-  const olderData = {requestedAt: riyadhNow(), customer: {crmNumber: await number('east2'), name: 'مصنع east2', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs: {...specs, designUrl: 'https://drive.google.com/x', description: 'asked before payment'}};
+  const olderData = {requestedAt: riyadhNow(), customer: {crmNumber: await number('east2'), name: 'مصنع east2', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'}, specs: {...specs, designUrl: 'https://drive.google.com/x', description: 'asked before payment'}};
   await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east2',?,'send',?,'rep',?,?,1)").bind(older, JSON.stringify(olderData), olderAt, olderAt, olderAt).run();
   body = await (await post('rep', {action: 'resend', id: older})).json();
   const olderFirst = mock.state.calls.findLast(call => call.route === 'requests').body;
@@ -655,7 +655,7 @@ try {
   const now = new Date().toISOString(), id = 'mr-' + crypto.randomUUID(), sentRequests = () => mock.state.calls.filter(call => call.route === 'requests').length;
   await restarted.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('r1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع r1', region: 'الشرقية', city: 'الدمام', code: 'ERP-r1'}), now, now).run();
   const crmNumber = (await restarted.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='r1'").first()).number;
-  const data = {requestedAt: '2026-11-01T10:00:00+03:00', customer: {crmNumber, name: 'مصنع r1', address: '', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs};
+  const data = {requestedAt: '2026-11-01T10:00:00+03:00', customer: {crmNumber, name: 'مصنع r1', address: '', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'}, specs};
   await restarted.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,attempts,first_failed_at,next_attempt_at,last_error,created_by,created_at,updated_at,version) VALUES(?,'rep','r1',?,'send',1,?,?,?,'rep',?,?,1)")
     .bind(id, JSON.stringify(data), now, now, JSON.stringify({code: 'network', http: 0, at: now}), now, now).run();
   const before = sentRequests();
@@ -1063,12 +1063,12 @@ try {
 
     // (e) an older request (before this release: no signature) is resent byte for byte; no signature asked on resend or cancel
     const old = 'mr-' + crypto.randomUUID(), crmNumber = (await signApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='s1'").first()).number;
-    const oldData = {requestedAt: '2026-11-03T09:00:00+03:00', customer: {crmNumber, name: 'مصنع s1', address: '', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs: {...specs, designUrl: ''}, payment: 'cash'};
+    const oldData = {requestedAt: '2026-11-03T09:00:00+03:00', customer: {crmNumber, name: 'مصنع s1', address: '', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'}, specs: {...specs, designUrl: ''}, payment: 'cash'};
     await signApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,attempts,first_failed_at,next_attempt_at,last_attempt_at,last_error,created_by,created_at,updated_at,version) VALUES(?,'rep','s1',?,'send',1,?,NULL,?,?,'rep',?,?,1)")
       .bind(old, JSON.stringify(oldData), now, now, JSON.stringify({code: 'network', http: 0, at: now}), now, now).run();
     res = await raw('rep', {action: 'resend', id: old}); body = await res.json();
     const resent = callsOf('requests').findLast(call => call.body.includes(old)).body;
-    check([res.status, body.send.kind, body.request.signature, resent], [200, 'ok', null, JSON.stringify({crmRequestId: old, requestedAt: oldData.requestedAt, customer: {crmNumber, name: 'مصنع s1', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs: {description: specs.description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, notes: 'أول طلب'}, payment: 'cash'})],
+    check([res.status, body.send.kind, body.request.signature, resent], [200, 'ok', null, JSON.stringify({crmRequestId: old, requestedAt: oldData.requestedAt, customer: {crmNumber, name: 'مصنع s1', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'}, specs: {description: specs.description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR099-9', quantity: 1, notes: 'أول طلب'}, payment: 'cash'})],
       'an older request: resent without a signature asked, its body exactly as before');
     check((await raw('rep', {action: 'cancel', id: old, version: (await stored(old)).version, reason: 'تجربة'})).status, 200, 'and cancelled without one');
     check((await raw('rep', {action: 'resend', id: signed.id})).status, 409, 'a signed request with nothing waiting: resend as before (nothing to send)');
@@ -1412,7 +1412,7 @@ try {
 // change the customer (a change of what was signed). The customers list sent to production is unchanged.
 {
   const roster = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager', region: 'eastern'}, {id: 'smW', role: 'manager', region: 'western'},
-    {id: 'sup', role: 'supervisor', sup: 'sm', region: 'eastern'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}, {id: 'repW', role: 'rep', sup: 'smW', region: 'western'},
+    {id: 'sup', role: 'supervisor', sup: 'sm', region: 'eastern'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'}, {id: 'repW', role: 'rep', sup: 'smW', region: 'western'},
     {id: 'csm', role: 'customer_service_manager', sup: 'sm', region: 'eastern'}, {id: 'cs', role: 'customer_service', sup: 'csm', region: 'eastern'}];
   const freeMock = await startProductsMock({requestRefs: true});
   const freeApp = await bootBuiltApp({members: roster}, {env: {YR_PRODUCTS_API_URL: freeMock.url, YR_PRODUCTS_SECRET: freeMock.state.secret, NODE_EXTRA_CA_CERTS: freeMock.ca}});
@@ -1627,7 +1627,7 @@ try {
     // A request stored before (a linked customer's code in its data, no mark, no mold number, an older city), sent once as it was: its
     // resend is byte for byte the same, never re-checked, and its view has the older city and no mold number.
     const old = 'mr-' + crypto.randomUUID(), oldAt = new Date().toISOString();
-    const oldData = {requestedAt: '2026-11-10T10:00:00+03:00', customer: {crmNumber, name: 'مصنع c1', address: 'عنوان c1', city: 'الخبر', erpCode: 'C-101'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'}, specs: {...specs, moldNo: ''}, payment: 'cash'};
+    const oldData = {requestedAt: '2026-11-10T10:00:00+03:00', customer: {crmNumber, name: 'مصنع c1', address: 'عنوان c1', city: 'الخبر', erpCode: 'C-101'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'}, specs: {...specs, moldNo: ''}, payment: 'cash'};
     await cityApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','c1',?,'send',?,'rep',?,?,1)").bind(old, JSON.stringify(oldData), oldAt, oldAt, oldAt).run();
     res = await raw({action: 'resend', id: old}); body = await res.json();
     const oldFirst = sentCalls().filter(call => call.body.includes(old)).at(-1).body;

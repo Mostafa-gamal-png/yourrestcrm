@@ -107,7 +107,7 @@ const manualFresh=manualInput('MANUAL-FRESH');await manualPost(manualFresh);chec
 // Use real SQLite for all identity/transaction races; never touch production data.
 const rename=(id,name)=>sql.prepare('UPDATE crm_members SET name=? WHERE id=?').run(name,id);
 member('auto-rep','rep');rename('auto-rep','إسلام مصطفى حسين شلبي');
-member('auto-other','rep');rename('auto-other','أحمد عبد العزيز محمد');
+member('auto-other','rep');rename('auto-other','أنور عبد الحكيم محمد');
 const autoBody=(reference,employeeName='إسلام مصطفى حسين شلبي',extra={})=>input([row({reference,date:'2024-03-12',employeeId:'employee-'+reference,employeeName})],extra);
 const employee=(preview,id)=>preview.employees.find(e=>e.employeeId===id);
 user('sup');
@@ -121,7 +121,7 @@ check(sql.prepare("SELECT rep_id FROM crm_erp_employee_mappings WHERE employee_i
 check(sql.prepare("SELECT rep_id FROM crm_erp_sales WHERE reference='AUTO-NAME'").get().rep_id,'auto-rep');
 preview=await post(body);check(preview.summary.duplicateCount,1);check(preview.summary.autoMatchedCount,0);check(employee(preview,'employee-AUTO-NAME').mappingSource,'saved');
 // A saved employee ID survives differing names; explicit choices override it.
-body=input([row({reference:'AUTO-SAVED-PRIORITY',employeeId:'employee-AUTO-NAME',employeeName:'أحمد عبد العزيز محمد'})]);preview=await post(body);
+body=input([row({reference:'AUTO-SAVED-PRIORITY',employeeId:'employee-AUTO-NAME',employeeName:'أنور عبد الحكيم محمد'})]);preview=await post(body);
 check(preview.documents[0].repId,'auto-rep');check(preview.employees[0].mappingSource,'saved');
 body.employeeMappings=[{employeeId:'employee-AUTO-NAME',repId:'auto-other'}];preview=await post(body);
 check(preview.documents[0].repId,'auto-other');check(preview.employees[0].mappingSource,'selected');check(preview.summary.autoMatchedCount,0);

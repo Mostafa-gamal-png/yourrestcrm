@@ -35,7 +35,7 @@ import {withSignature} from '../scripts/lib/signature-png.mjs';
 import {signRequest} from '../scripts/lib/signature-pad.mjs';
 
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
-const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}];
+const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'}];
 const screenshots = process.env.YR_MOLD_SCREENSHOT_DIR ? path.resolve(process.env.YR_MOLD_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-mold-design-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
 let checks = 0, browser;

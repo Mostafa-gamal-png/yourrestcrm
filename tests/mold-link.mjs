@@ -23,7 +23,7 @@ const {holds, CONFIRMED, LEFT_OUT} = createRequire(import.meta.url)(script);
 // ---- the owner's list, and the reading of names it was confirmed with
 eq([CONFIRMED.map(item => item.order), LEFT_OUT], [[2, 17, 23, 37, 57], [1]], 'the five salesmen confirmed by their first order, the head office left out');
 eq(new Set(CONFIRMED.map(item => item.member)).size, 5, 'five different members');
-ok(holds('عبدالرحمن سالم محمود فؤاد', 'عبد الرحمن سالم') && holds('احمد عبدالعزيز سالم حسن', 'أحمد عبد العزيز') && holds('إسلام محمود شلبى حسن', 'إسلام شلبي'), 'the CRM name holds the sheet\'s words (spaces in عبد, أ/ا, ي/ى, any order)');
+ok(holds('عبدالرحمن سالم محمود فؤاد', 'عبد الرحمن سالم') && holds('انور عبدالحكيم سالم حسن', 'أنور عبد الحكيم') && holds('إسلام محمود شلبى حسن', 'إسلام شلبي'), 'the CRM name holds the sheet\'s words (spaces in عبد, أ/ا, ي/ى, any order)');
 ok(!holds('أحمد سمير حسن', 'أحمد مجدي') && !holds('أحمد مجدي', ''), 'a first name alone is not enough; an empty name holds nothing');
 
 // ---- a hosting account
@@ -38,7 +38,7 @@ for (const file of fs.readdirSync('drizzle').filter(name => name.endsWith('.sql'
 const now = '2026-11-01T08:00:00.000Z';
 const member = (id, name, role = 'rep', active = 1) => db.prepare("INSERT INTO crm_members(id,user_id,email,name,role,branch,active,target,created_at,region_scope) VALUES(?,?,?,?,?,'الرئيسي',?,0,?,'eastern')").run(id, 'u-' + id, id.slice(0, 8) + '@yourrest.org', name, role, active, now);
 const [A, B, C, D, E] = CONFIRMED.map(item => item.member);
-member('owner', 'مالك سري', 'admin'); member(A, 'أحمد عبدالعزيز سالم حسن'); member(B, 'عبدالرحمن سالم محمود فؤاد'); member(C, 'إسلام محمود شلبى حسن'); member(D, 'أحمد مجدي سالم حسن'); member(E, 'محمد عطيه سالم حسن');
+member('owner', 'مالك سري', 'admin'); member(A, 'أنور عبدالحكيم سالم حسن'); member(B, 'عبدالرحمن سالم محمود فؤاد'); member(C, 'إسلام محمود شلبى حسن'); member(D, 'أحمد مجدي سالم حسن'); member(E, 'محمد عطيه سالم حسن');
 for (let n = 1; n <= 60; n++) db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,'owner','الرئيسي',?,?,?,1,'fixture')").run('c' + n, JSON.stringify({name: 'مصنع سري ' + n, city: 'الدمام', address: 'حي', code: 'E-' + n}), now, now);
 db.close();
 // MOLD_LINK_TEST_OPS=<folder> runs the same checks on another copy of the release's operations files (the one live on the account).
@@ -48,7 +48,7 @@ const settings = extra => fs.writeFileSync(path.join(app, 'settings.cjs'), 'modu
 settings({});
 const specs = {description: '200*400*27.5TH MM OPEN', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: 'YR001-1', quantity: 1, designUrl: 'https://drive.google.com/d/1', notes: ''};
 const row = (legacyOrderNo, salesmanName, extra = {}) => ({legacyOrderNo, requestedAt: '2026-04-19T13:45:47+03:00', customer: {crmNumber: legacyOrderNo, nameRaw: 'اسم من الشيت'}, salesmanName, specs: {...specs, ...extra}, production: {}, dataIssues: []});
-const ROWS = [row(1, 'المركز الرئيسي'), row(2, 'أحمد عبد العزيز'), row(3, 'أحمد عبد العزيز'), row(17, 'عبد الرحمن سالم'), row(23, 'إسلام شلبي'), row(37, 'أحمد مجدي'), row(40, 'المركز الرئيسي'), row(57, 'محمد عطية'), row(58, ' محمد  عطية ', {designUrl: 'YR001-1'})];
+const ROWS = [row(1, 'المركز الرئيسي'), row(2, 'أنور عبد الحكيم'), row(3, 'أنور عبد الحكيم'), row(17, 'عبد الرحمن سالم'), row(23, 'إسلام شلبي'), row(37, 'أحمد مجدي'), row(40, 'المركز الرئيسي'), row(57, 'محمد عطية'), row(58, ' محمد  عطية ', {designUrl: 'YR001-1'})];
 const products = path.join(home, 'public_html', 'products', 'private'), sourceFile = path.join(products, 'mold-requests-source.json');
 fs.mkdirSync(products, {recursive: true});
 const source = rows => fs.writeFileSync(sourceFile, JSON.stringify({requests: rows}));
@@ -125,7 +125,7 @@ try {
   eq(result.last, 'MOLD LINK APPLIED: ROWS 9: LEFT OUT (HEAD OFFICE) 2, LINKED 6, FAILED 1', 'one verdict line');
   const rows = saved();
   eq(rows.map(item => [item.legacy, item.member, item.customer]), [[2, A, 'c2'], [17, B, 'c17'], [23, C, 'c23'], [37, D, 'c37'], [57, E, 'c57'], [58, E, 'c58']], 'each order under its confirmed member and its customer by Yourrest number');
-  eq(JSON.parse(rows[0].data).salesman, {crmMemberId: A, name: 'أحمد عبدالعزيز سالم حسن', email: A.slice(0, 8) + '@yourrest.org'}, 'the CRM member\'s own name and email are sent');
+  eq(JSON.parse(rows[0].data).salesman, {crmMemberId: A, name: 'أنور عبدالحكيم سالم حسن', email: A.slice(0, 8) + '@yourrest.org'}, 'the CRM member\'s own name and email are sent');
   eq([JSON.parse(rows[5].data).specs.designUrl, mock.state.byOrder.get(58).crmRequestId], ['', 'mr-legacy-58'], 'a mold code in the design column is not kept as a link; production linked its order');
   ok(!NAMES.test(result.stdout + result.stderr), 'no names in the output of the link either');
   eq([mock.state.byOrder.get(1).crmRequestId, mock.state.byOrder.get(40).crmRequestId], [null, null], 'the head office\'s orders are not linked');

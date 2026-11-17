@@ -25,7 +25,7 @@ import {signatureInput, signaturePng} from '../scripts/lib/signature-png.mjs';
 import * as rules from '../portable/mold-rules.mjs';
 
 if (!existsSync(new URL('../dist/standalone/app.cjs', import.meta.url))) throw new Error('Run the build first: this test boots the built release.');
-const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}, {id: 'rep2', role: 'rep', sup: 'sm', region: 'eastern'}];
+const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'}, {id: 'rep2', role: 'rep', sup: 'sm', region: 'eastern'}];
 let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');

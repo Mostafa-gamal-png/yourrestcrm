@@ -23,7 +23,7 @@ eq(difference('أحمد مجدي', 'احمد مجدى'), {kind: 'spelling', need
 eq(difference('محمد عطية', 'محمد عطيه'), {kind: 'spelling', needs: ['ta']}, 'ة/ه');
 eq(difference('إسلام شلبي', 'إسلام شلبي محمد'), {kind: 'more_words_in_crm', extraWords: 1, sameStart: true}, 'a longer name in the CRM');
 eq(difference('عبد الرحمن تامر', 'عبدالرحمن تامر السيد'), {kind: 'more_words_in_crm', extraWords: 1, sameStart: true}, 'longer, with عبد joined');
-eq(difference('أحمد عبد العزيز محمد', 'احمد عبدالعزيز'), {kind: 'fewer_words_in_crm', missingWords: 1}, 'a shorter name in the CRM');
+eq(difference('أنور عبد الحكيم محمد', 'انور عبدالحكيم'), {kind: 'fewer_words_in_crm', missingWords: 1}, 'a shorter name in the CRM');
 eq(difference('أحمد مجدي', 'أحمد سمير'), {kind: 'first_word_only'}, 'the first name only');
 eq(difference('المركز الرئيسي', 'Ahmed'), null, 'not close');
 

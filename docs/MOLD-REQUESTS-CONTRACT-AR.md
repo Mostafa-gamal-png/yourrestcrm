@@ -42,7 +42,7 @@
   "legacyOrderNo": 12,
   "requestedAt": "2026-10-29T10:15:00+03:00",
   "customer": { "crmNumber": 27, "name": "مصنع زايد للطابوق", "address": "الدمام", "city": "Damam - الدمام" },
-  "salesman": { "crmMemberId": "mem-1", "name": "أحمد عبد العزيز", "email": "name@yourrest.org" },
+  "salesman": { "crmMemberId": "mem-1", "name": "أنور عبد الحكيم", "email": "name@yourrest.org" },
   "specs": {
     "description": "200*400*27.5TH MM OPEN",
     "core": "open", "vibrators": 2, "model": "old", "halfBlock": "none",

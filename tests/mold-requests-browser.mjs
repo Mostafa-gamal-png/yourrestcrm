@@ -47,7 +47,7 @@ import {asBefore} from '../scripts/lib/mold-before.mjs';
 const require = createRequire(import.meta.url), {chromium} = require('playwright');
 const members = [
   {id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'},
-  {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}, {id: 'csm', role: 'customer_service_manager', sup: 'sm'}
+  {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'}, {id: 'csm', role: 'customer_service_manager', sup: 'sm'}
 ];
 const screenshots = process.env.YR_MOLD_SCREENSHOT_DIR ? path.resolve(process.env.YR_MOLD_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-mold-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
@@ -638,7 +638,7 @@ try {
   // ---- 5b. «رابط التصميم» is no longer asked for (the owner, 2026-11-03): an older request keeps its own link, shown read-only on its
   //  sheet and in the edit of a request never sent; the form sends none, so the link stays as stored and goes with the edit.
   const linkedId = 'mr-' + crypto.randomUUID(), linkedAt = new Date().toISOString(), east1Number = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number;
-  const linkedData = {requestedAt: '2026-11-02T10:00:00+03:00', customer: {crmNumber: east1Number, name: 'مصنع east1', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'},
+  const linkedData = {requestedAt: '2026-11-02T10:00:00+03:00', customer: {crmNumber: east1Number, name: 'مصنع east1', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'},
     specs: {description: 'older, with a design link', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: 'https://drive.google.com/older-design', notes: ''}, payment: 'cash'};
   // Saved by the earlier release and never sent yet (its next try far away): still the representative's to edit.
   await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east1',?,'send','2099-01-01T00:00:00.000Z','rep',?,?,1)").bind(linkedId, JSON.stringify(linkedData), linkedAt, linkedAt).run();
@@ -761,7 +761,7 @@ try {
   await sheet(quoteRep).waitFor({state: 'detached'});
   // Yesterday's request (2026-11-04, the CRM asked for a number then), sent with its number only: production marks it missing
   const yesterday = 'mr-' + crypto.randomUUID(), at = new Date().toISOString(), crmNumber = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number;
-  const yesterdayData = {requestedAt: '2026-11-04T16:00:00+03:00', customer: {crmNumber, name: 'مصنع east1', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'},
+  const yesterdayData = {requestedAt: '2026-11-04T16:00:00+03:00', customer: {crmNumber, name: 'مصنع east1', address: 'حي الصناعية', city: 'Damam - الدمام'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'},
     specs: {description: 'YESTERDAY WITH A NUMBER', core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash', quoteNo: 'Q-2026-0099'};
   await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east1',?,'send',?,'rep',?,?,1)").bind(yesterday, JSON.stringify(yesterdayData), at, at, at).run();
   await quoteRep.locator('.mold-heading-tools button').first().click();
@@ -1000,7 +1000,7 @@ try {
     const NO_NUMBER = 'لم يأخذ رقمًا بعد (يأخذه عند اعتماد الإنتاج)';
     const sendStored = async (id, description) => {
       const at = new Date().toISOString(), crmNumber = (await app.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='east1'").first()).number;
-      const data = {requestedAt: '2026-11-05T12:00:00+03:00', customer: {crmNumber, name: 'مصنع east1', address: 'حي الصناعية', city: 'الدمام'}, salesman: {crmMemberId: 'rep', name: 'أحمد عبد العزيز', email: 'rep@yourrest.org'},
+      const data = {requestedAt: '2026-11-05T12:00:00+03:00', customer: {crmNumber, name: 'مصنع east1', address: 'حي الصناعية', city: 'الدمام'}, salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'},
         specs: {description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity: 1, designUrl: '', notes: ''}, payment: 'cash'};
       await app.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','east1',?,'send',?,'rep',?,?,1)").bind(id, JSON.stringify(data), at, at, at).run();
       await repApi('/api/mold-requests');

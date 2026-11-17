@@ -22,7 +22,7 @@ import {startProductsMock} from '../scripts/lib/products-mock.mjs';
 import {signaturePng} from '../scripts/lib/signature-png.mjs';
 
 if (!existsSync(new URL('../dist/standalone/app.cjs', import.meta.url))) throw new Error('Run pnpm build first: this test boots the built release.');
-const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'},
+const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'},
   {id: 'rep2', role: 'rep', sup: 'sm', region: 'eastern'}, {id: 'csm', role: 'customer_service_manager', sup: 'sm'}, {id: 'cs', role: 'customer_service', sup: 'csm'}];
 let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
@@ -105,7 +105,7 @@ try {
   check([deleted.status, deleted.json().error], [409, 'لا تُحذف النسخة الموقّعة من الطلب ما دام التوقيع الذي عليها هو توقيع الطلب.'], 'a signed copy the signature names is not deleted');
   // Audited by the representative.
   const audits = (await app.db.prepare("SELECT action,actor FROM crm_audit WHERE record_id=? AND action LIKE 'mold-design:signed-copy%' ORDER BY created_at").bind(deviceId).all()).results;
-  check([audits.filter(row => row.action === 'mold-design:signed-copy').length, audits.filter(row => row.action === 'mold-design:signed-copy-skipped').length, [...new Set(audits.map(row => row.actor))]], [2, 2, ['أحمد عبد العزيز']], 'each copy and each PDF without one is audited');
+  check([audits.filter(row => row.action === 'mold-design:signed-copy').length, audits.filter(row => row.action === 'mold-design:signed-copy-skipped').length, [...new Set(audits.map(row => row.actor))]], [2, 2, ['أنور عبد الحكيم']], 'each copy and each PDF without one is audited');
 
   // A page loaded before (a signature without its block): no copy, as before.
   answer = await create('rep', {signature: {signer: 'م. خالد', png: signaturePng().toString('base64')}});
@@ -150,7 +150,7 @@ try {
   check(page.status, 200, 'the page opens without a session');
   ok(page.text.includes('مصنع الشرق للطابوق') && page.text.includes('تصميم اللينك.pdf') && page.text.includes('صورة اللينك.png'), 'it shows the customer and the files');
   ok(/<meta name="robots" content="[^"]*noindex/.test(page.text), 'not indexed');
-  check([page.text.includes('YR-C-'), page.text.includes('أحمد عبد العزيز'), page.text.includes('0551234567')], [false, false, false], 'nothing internal: no Yourrest code, no representative, no phone');
+  check([page.text.includes('YR-C-'), page.text.includes('أنور عبد الحكيم'), page.text.includes('0551234567')], [false, false, false], 'nothing internal: no Yourrest code, no representative, no phone');
   const listed = (await fileRows(linkId)).filter(row => row.name === 'تصميم اللينك.pdf')[0];
   let file = await anonymous('/sign/m/' + token + '/file/' + listed.id);
   check([file.status, file.headers['content-type'], /^inline/.test(file.headers['content-disposition']), sha(file.bytes)], [200, 'application/pdf', true, sha(linkPdf)], 'its PDF opens inline through the token');

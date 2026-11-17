@@ -25,7 +25,7 @@ import {signaturePng} from '../scripts/lib/signature-png.mjs';
 import {DAMAGED_PDF, JPEG_WIDE, makePdf, signaturePagePng} from '../scripts/lib/signed-document-fixtures.mjs';
 
 if (!existsSync(new URL('../dist/standalone/app.cjs', import.meta.url))) throw new Error('Run the build first: this test boots the built release.');
-const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أحمد عبد العزيز'}];
+const members = [{id: 'owner', role: 'admin'}, {id: 'sm', role: 'manager'}, {id: 'sup', role: 'supervisor', sup: 'sm'}, {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'أنور عبد الحكيم'}];
 let checks = 0;
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
@@ -123,7 +123,7 @@ try {
   check([pages.length, pages.map(page => page.getRotation().angle), pages.map(images)], [7, [0, 0, 0, 0, 90, 0, 0], [0, 0, 0, 0, 0, 1, 1]], 'the file: 7 pages, the design\'s turned page kept, the picture a page, the signature page last');
   check(Math.round(pages[6].getSize().width), 595, 'the signature page A4');
   const audit = await app.db.prepare("SELECT actor,detail FROM crm_audit WHERE record_id=? AND action='mold-design:signed-document'").bind(deviceId).first();
-  check([audit.actor, JSON.parse(audit.detail).pages, JSON.parse(audit.detail).name], ['أحمد عبد العزيز', 7, 'طلب القالب - موقّع.pdf'], 'audited by the representative');
+  check([audit.actor, JSON.parse(audit.detail).pages, JSON.parse(audit.detail).name], ['أنور عبد الحكيم', 7, 'طلب القالب - موقّع.pdf'], 'audited by the representative');
 
   // A document listed with another count of pages than the file has: no single file, the per-file copies instead, said so.
   answer = await create({signature: signature([part(quote2, 'quote', 'pdf', 'Q-77.pdf', 2), part(design3, 'design', 'pdf', 'تصميم.pdf', 4)], {seen: [sha(quote2), sha(design3)]})});
