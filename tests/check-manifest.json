@@ -292,6 +292,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/service-sales-decisions-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/service-sales-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

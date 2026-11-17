@@ -17,7 +17,8 @@ const members = [
   {id: 'sup', role: 'supervisor', sup: 'mgr', name: 'المشرف'}, {id: 'rep', role: 'rep', sup: 'sup', name: 'المندوب أحمد'},
   {id: 'csm', role: 'customer_service_manager', sup: 'mgr', name: 'مدير خدمة العملاء'}, {id: 'cs', role: 'customer_service', sup: 'csm', name: 'ممثلة الخدمة'},
   // A customer-service team that does not report to the sales manager (the owner's decision 3: he reads his own teams only).
-  {id: 'csm2', role: 'customer_service_manager', name: 'مدير خدمة العملاء الثاني'}, {id: 'cs3', role: 'customer_service', sup: 'csm2', name: 'ممثل الفريق الثاني'}
+  {id: 'csm2', role: 'customer_service_manager', name: 'مدير خدمة العملاء الثاني'}, {id: 'cs3', role: 'customer_service', sup: 'csm2', name: 'ممثل الفريق الثاني'},
+  {id: 'mgr2', role: 'manager', name: 'مدير مبيعات بلا فريق'}
 ];
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-csales-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
@@ -27,7 +28,7 @@ const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, m
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const SIZES = [['phone-320', {width: 320, height: 720}, true], ['phone-360', {width: 360, height: 800}, true], ['tablet-upright', {width: 768, height: 1024}, true], ['tablet-side', {width: 1024, height: 768}, true], ['desktop', {width: 1280, height: 900}, false]];
 // What people wrote stays as written in English too: the members' and the customers' names, the source a person typed.
-const NAMES = /تواصلت مع العميل حتى أكد الطلب|مصنع [^\n·|،,]*|مدير النظام|مدير المبيعات|مدير خدمة العملاء الثاني|ممثل الفريق الثاني|مدير خدمة العملاء|ممثلة الخدمة|المندوب أحمد|المشرف/g;
+const NAMES = /تواصلت مع العميل حتى أكد الطلب|مصنع [^\n·|،,]*|مدير النظام|مدير مبيعات بلا فريق|مدير المبيعات|مدير خدمة العملاء الثاني|ممثل الفريق الثاني|مدير خدمة العملاء|ممثلة الخدمة|المندوب أحمد|المشرف/g;
 const arabicLeft = text => text.replace(NAMES, '').match(/[؀-ۿ][^\n]{0,40}/)?.[0] || '';
 
 try {
@@ -112,7 +113,11 @@ try {
     await leads.getByRole('tab', {name: say('عملاء منقطعون عن الشراء 90 يومًا', 'Customers who have not bought for 90 days')}).click();
     await leads.locator('[data-lead-row="cust-dorm"]').waitFor();
     ok(true, tag + ': the dormant customer is listed');
-    ok((await leads.locator('[data-lead-row="cust-won-' + tag + '"]').innerText()).includes(say('لم يشترِ من قبل', 'Never bought')), tag + ': and one who never bought, after it (the owner\'s decision 4)');
+    ok((await leads.locator('[data-lead-row="cust-won-' + tag + '"][data-never-bought="1"]').innerText()).includes(say('لم يشترِ من قبل', 'Never bought')), tag + ': and one who never bought, after it, marked (the owner\'s decision 4)');
+    ok((await leads.locator('[data-dormant-counts]').innerText()).includes(say('لم يشتروا من قبل', 'Never bought before')), tag + ': with the counts by kind');
+    if (inEnglish) await english(leads.locator('[data-dormant-counts]'), tag + ' (the counts)');
+    await noSideways(page, tag + ' (the dormant list)');
+    await shot(page, 'csales-' + tag + '-dormant-list');
     await leads.getByRole('tab', {name: say('فرص مفقودة للاسترداد', 'Lost opportunities to win back')}).click();
     await leads.locator('[data-lead-row="case-lost"] [data-lead-start] button').click();
     const dialog = page.locator('.customer-visit-dialog');
@@ -184,10 +189,23 @@ try {
     await managerView.locator('[data-performance-team]').first().waitFor();
     eq(await managerView.locator('[data-performance-team]').evaluateAll(list => list.map(item => item.getAttribute('data-performance-team'))), ['csm'], tag + ': the sales manager reads the team of the customer-service manager under him, not another');
     ok(!(await managerView.innerText()).includes('ممثل الفريق الثاني'), tag + ': nor any member of another team');
+    ok((await managerView.locator('[data-performance-reach]').innerText()).includes(say('تظهر هنا فرق خدمة العملاء التي يتبعك مديروها فقط.', 'Only the customer-service teams whose managers report to you are shown here.')), tag + ': and says so');
     if (inEnglish) await english(managerView, tag + ' (the sales manager\'s «أداء خدمة العملاء»)');
     await noSideways(page, tag + ' (the sales manager\'s performance)');
     await managerView.scrollIntoViewIfNeeded();
     await shot(page, 'csales-' + tag + '-manager-performance');
+    await close(page);
+    // ---- a sales manager no customer-service team reports to: an empty answer and words, not an error
+    page = await open('mgr2', {english: inEnglish, viewport, touch, hash: '#activity'});
+    const lonely = page.locator('[data-service-performance]');
+    await lonely.locator('summary').click();
+    await lonely.locator('[data-performance-no-team]').waitFor();
+    ok((await lonely.locator('[data-performance-no-team]').innerText()).includes(say('لا يتبعك فريق خدمة عملاء', 'No customer-service team reports to you')), tag + ': «لا يتبعك فريق خدمة عملاء»');
+    eq(await lonely.locator('[data-performance-export]').count(), 0, tag + ': and nothing to export');
+    if (inEnglish) await english(lonely, tag + ' (no team)');
+    await noSideways(page, tag + ' (a sales manager with no team)');
+    await lonely.locator('[data-performance-no-team]').scrollIntoViewIfNeeded();
+    await shot(page, 'csales-' + tag + '-manager-no-team');
     await close(page);
     // ---- «رفع المبيعات»: the ERP total and the line under it
     page = await open('mgr', {english: inEnglish, viewport, touch, hash: '#targets', search: '?tab=sales'});

@@ -36,6 +36,17 @@ const ok=(value,message)=>{assert.ok(value,message);checks++;};
 // ---- the owner's four decisions (2026-11-17, as in GSCO and Trade), each in one place
 eq([K.CONVERSION_TARGET,S.SUPPORT_SALES_DAYS,S.SALES_MANAGER_SEES_ALL_SERVICE_TEAMS,S.DORMANT_LIST_INCLUDES_NEVER_BOUGHT],[100,30,false,true],'1 target 100%, 2 thirty days, 3 the sales manager sees only his own customer-service teams, 4 a customer who never bought is listed');
 eq([K.DEFAULT_SERVICE_KPI_SETTINGS.rep.conversion,K.DEFAULT_SERVICE_KPI_SETTINGS.supportSalesDays],[{target:100,weight:15,min:3},30],'the evaluation and the setting read them');
+// A follow-up of update-cs-sales-20261116 (as GSCO 2.13.79): its placeholders, saved before the revision, read the owner's figures; values set by
+// hand, and anything saved from now on (the server stamps the revision), stay; a closed month keeps its certificate.
+eq([K.PLACEHOLDER_CONVERSION_TARGET,K.PLACEHOLDER_SUPPORT_SALES_DAYS,K.SERVICE_KPI_SETTINGS_REVISION,K.DEFAULT_SERVICE_KPI_SETTINGS.revision],[50,60,2,2],'the placeholders and the revision');
+const v78=JSON.parse(JSON.stringify(K.DEFAULT_SERVICE_KPI_SETTINGS));delete v78.revision;v78.rep.conversion.target=50;v78.supportSalesDays=60;
+const moved=K.normalizeSettings(v78),kept=K.normalizeSettings({...v78,revision:2}),byHand=K.normalizeSettings({...v78,rep:{...v78.rep,conversion:{...v78.rep.conversion,target:70}},supportSalesDays:45}),closedCard=K.normalizeSettings(v78,'certificate');
+eq([moved.rep.conversion.target,moved.supportSalesDays,moved.revision],[100,30,2],'saved under update-cs-sales with its placeholders: 50% reads 100%, 60 days read 30');
+eq([kept.rep.conversion.target,kept.supportSalesDays],[50,60],'saved with the revision (from now on): 50% and 60 days are the administrator\'s choice and stay');
+eq([byHand.rep.conversion.target,byHand.supportSalesDays],[70,45],'a target and a window set by hand stay');
+eq([closedCard.rep.conversion.target,closedCard.supportSalesDays,'revision' in closedCard],[50,60,false],'a closed month\'s certificate keeps what it was closed with');
+eq([S.performanceReach('admin'),S.performanceReach('manager'),S.performanceReach('customer_service_manager'),S.performanceReach('customer_service')],['all','reporting','team','self'],'whose figures each reader of «أداء خدمة العملاء» reaches (decision 3)');
+eq([S.PERFORMANCE_NO_TEAM,S.PERFORMANCE_NO_TEAM_EN],['لا يتبعك فريق خدمة عملاء','No customer-service team reports to you'],'a sales manager with no team: words, not an error');
 
 // ---- A. «مصدر الفرصة»
 eq(S.serviceLeadSources,['اتصال وارد','واتساب','الموقع الإلكتروني','مواقع التواصل الاجتماعي','توصية من عميل','اتصال تسويقي','معرض أو فعالية','أخرى'],'the sources customer service brings in, GSCO\'s list');
@@ -177,6 +188,8 @@ eq([three.numerator,three.denominator,Math.round(three.actual*10)/10,three.targe
 eq(Math.round(three.points*100)/100,10,'so it earns 10 of its 15 points');
 const all=card([fact('a','2026-11-03T06:00:00.000Z',true),fact('b','2026-11-04T06:00:00.000Z',false,true),fact('c','2026-11-05T06:00:00.000Z',true)]);
 eq([all.actual,all.achieved,all.points],[100,1,15],'every closing converted: 100% of the target, the whole 15');
+const none=card([fact('a','2026-11-03T06:00:00.000Z',false),fact('b','2026-11-04T06:00:00.000Z',false),fact('c','2026-11-05T06:00:00.000Z',false)]);
+eq([none.actual,none.achieved,none.points,none.measured],[0,0,0,true],'none converted: none of the 15, still measured');
 eq(three.items.map(i=>i.tag),['won','lost_invoiced','lost'],'each case says why');
 eq(card(undefined).denominator,0,'an input without the facts: no cases');
 
