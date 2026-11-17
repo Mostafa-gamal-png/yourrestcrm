@@ -54,11 +54,22 @@ export type ServiceKpiSettings={
  audit:{criteria:Record<AuditCriterion,number>;pass:number;coach:number;sample:number};
  /** A month may be closed once it has been over for this many days. */
  closeGraceDays:number;
- /** The days after a support contact in which the customer's purchase counts as «مبيعات بالمساندة» (lib/service-sales.ts, 2026-11-16). */
+ /** The days after a support contact in which the customer's purchase counts as «مبيعات بالمساندة» (lib/service-sales.ts, 2026-11-16; 30 by
+  *  default since the owner's decision of 2026-11-17). */
  supportSalesDays:number;
+ /** The revision the server stamps on every save (SERVICE_KPI_SETTINGS_REVISION, since 2026-11-17). Settings saved before it may still
+  *  hold a placeholder of update-cs-sales-20261116 (PLACEHOLDER_CONVERSION_TARGET, PLACEHOLDER_SUPPORT_SALES_DAYS). */
+ revision?:number;
 };
-/** «نسبة الفرص المتحولة إلى مبيعات»: its target is 100% (the owner's decision 1, 2026-11-17, as in GSCO and Trade); set here only. */
+/** «نسبة الفرص المتحولة إلى مبيعات»: its target is 100% (the owner's decision 1, 2026-11-17, as in GSCO 2.13.79 and Trade): full marks only
+ *  when every counted opportunity converted, and the attainment falls in a straight line below it (share ÷ 100); set here only. */
 export const CONVERSION_TARGET=100;
+/** What update-cs-sales-20261116 shipped before the owner decided: the conversion target 50 and the support-sales window 60 days. Live
+ *  settings saved before SERVICE_KPI_SETTINGS_REVISION that still hold them read the owner's figures (normalizeSettings). */
+export const PLACEHOLDER_CONVERSION_TARGET=50;
+export const PLACEHOLDER_SUPPORT_SALES_DAYS=60;
+/** Stamped by the server on every save of the settings (app/api/service-kpi/route.ts). Below 2 the settings may hold the placeholders. */
+export const SERVICE_KPI_SETTINGS_REVISION=2;
 export const CONVERSION_WEIGHT=15;
 export const CONVERSION_MIN_CASES=3;
 /** The representative's weights before «نسبة الفرص المتحولة إلى مبيعات» (the defaults then). */
@@ -82,7 +93,8 @@ export const DEFAULT_SERVICE_KPI_SETTINGS:ServiceKpiSettings={
  manager:{team_average:{target:85,weight:25,min:1},review_timing:{target:90,weight:15,min:5},life_timing:{target:95,weight:15,min:5},team_rating:{target:90,weight:10,min:5},team_support_response:{target:90,weight:10,min:5},team_quality:{target:90,weight:10,min:3},backlog:{target:95,weight:10,min:0},repeat_complaints:{target:95,weight:5,min:5}},
  audit:{criteria:{greeting:10,understanding:15,accuracy:20,ownership:15,communication:15,resolution:15,closing:10},pass:90,coach:80,sample:3},
  closeGraceDays:5,
- supportSalesDays:SUPPORT_SALES_DAYS
+ supportSalesDays:SUPPORT_SALES_DAYS,
+ revision:SERVICE_KPI_SETTINGS_REVISION
 };
 
 const isObject=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -90,9 +102,14 @@ const num=(value:unknown,fallback:number)=>typeof value==='number'&&Number.isFin
 /** Settings as stored or sent, filled in from the defaults wherever a value is missing; it may still be invalid (see `settingsProblem`). */
 /** Settings saved before «نسبة الفرص المتحولة إلى مبيعات» make room for it (2026-11-16): still the old defaults -> the new defaults; weights the
  *  administrator changed -> scaled to 85 in whole numbers, the new indicator 15. A closed month's certificate (`certificate`) keeps its card as it
- *  was: the new indicator joins with weight 0. Settings already holding it are read as they are. */
+ *  was: the new indicator joins with weight 0. Settings already holding it are read as they are.
+ *  The owner's decisions (2026-11-17, as GSCO 2.13.79): live settings saved before SERVICE_KPI_SETTINGS_REVISION that still hold a placeholder
+ *  of update-cs-sales-20261116 take the owner's figure: the conversion target 50 -> 100, the support-sales window 60 -> 30 days. A value the
+ *  administrator set to anything else stays, and once he saves (the server stamps the revision) whatever he chose stays, 50 or 60 included.
+ *  A certificate keeps what it was closed with. Live settings are returned with the current revision. */
 export function normalizeSettings(raw:unknown,mode:'live'|'certificate'='live'):ServiceKpiSettings{
  const d=DEFAULT_SERVICE_KPI_SETTINGS,source:Record<string,unknown>=isObject(raw)?{...raw}:{},pick=(value:unknown):Record<string,unknown>=>isObject(value)?value:{};
+ const placeholders=mode==='live'&&!(Number(source.revision)>=SERVICE_KPI_SETTINGS_REVISION);
  const savedRep=pick(source.rep),old=REP_METRICS.filter(key=>key!=='conversion');
  if(isObject(source.rep)&&!isObject(savedRep.conversion)&&old.every(key=>isObject(savedRep[key]))){
   const weights:Record<string,number>=Object.fromEntries(old.map(key=>[key,num(pick(savedRep[key]).weight,0)]));
@@ -107,13 +124,16 @@ export function normalizeSettings(raw:unknown,mode:'live'|'certificate'='live'):
  };
  const hours=pick(source.hours),life=pick(source.life),audit=pick(source.audit),criteria=pick(audit.criteria),weights={} as Record<AuditCriterion,number>;
  for(const key of AUDIT_CRITERIA)weights[key]=num(criteria[key],d.audit.criteria[key]);
+ const rep=metrics(REP_METRICS,d.rep,source.rep),supportSalesDays=num(source.supportSalesDays,d.supportSalesDays),revision=num(source.revision,0);
+ if(placeholders&&rep.conversion.target===PLACEHOLDER_CONVERSION_TARGET)rep.conversion={...rep.conversion,target:CONVERSION_TARGET};
  return {
   hours:{support:num(hours.support,d.hours.support),missed:num(hours.missed,d.hours.missed),closure:num(hours.closure,d.hours.closure),review:num(hours.review,d.hours.review)},
   life:{normal:num(life.normal,d.life.normal),high:num(life.high,d.life.high)},
-  rep:metrics(REP_METRICS,d.rep,source.rep),manager:metrics(MANAGER_METRICS,d.manager,source.manager),
+  rep,manager:metrics(MANAGER_METRICS,d.manager,source.manager),
   audit:{criteria:weights,pass:num(audit.pass,d.audit.pass),coach:num(audit.coach,d.audit.coach),sample:num(audit.sample,d.audit.sample)},
   closeGraceDays:num(source.closeGraceDays,d.closeGraceDays),
-  supportSalesDays:num(source.supportSalesDays,d.supportSalesDays)
+  supportSalesDays:placeholders&&supportSalesDays===PLACEHOLDER_SUPPORT_SALES_DAYS?d.supportSalesDays:supportSalesDays,
+  ...(mode==='live'?{revision:SERVICE_KPI_SETTINGS_REVISION}:revision?{revision}:{})
  };
 }
 /** What is wrong with the settings, in words for the person who typed them; empty when they are fine. */

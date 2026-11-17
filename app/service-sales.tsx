@@ -13,7 +13,8 @@ import {can} from '@/lib/permissions';
 import {
  LEAD_OTHER,LEAD_NOTE_MAX,ROLE_NOTE_MIN,ROUTING_NOT_ELIGIBLE,OPEN_SALES_WARNING,leadGroups,leadGroupsEn,leadListLabels,leadListLabelsEn,leadReader,leadStartLabels,leadStartLabelsEn,leadStarter,performanceAllowed,performanceColumns,performanceNote,performanceNoteEn,
  roleBasisLabels,roleBasisLabelsEn,routingReasonLabels,routingReasonLabelsEn,serviceLeadSources,serviceLeadSourcesEn,serviceRoleOptions,serviceRoleOptionsEn,systemLeadSources,systemLeadSourcesEn,leadLabel,leadLabelEn,
- START_OPPORTUNITY_EVENT,type LeadDraft,type LeadList,type LeadRefKind,type LeadStart,type PerformanceRow,type RoutingFacts
+ PERFORMANCE_NO_TEAM,PERFORMANCE_NO_TEAM_EN,PERFORMANCE_NO_TEAM_HELP,PERFORMANCE_NO_TEAM_HELP_EN,PERFORMANCE_REPORTING_NOTE,PERFORMANCE_REPORTING_NOTE_EN,
+ START_OPPORTUNITY_EVENT,type LeadDraft,type LeadList,type LeadRefKind,type LeadStart,type PerformanceReach,type PerformanceRow,type RoutingFacts
 } from '@/lib/service-sales';
 import VoiceField from './voice-field';
 import './service-report.css';
@@ -61,24 +62,28 @@ export function StartOpportunityButton({kind,id,me,small=true}:{kind:LeadRefKind
 
 // ------------------------------------------------------------------------------------------------ «مصادر الفرص»
 type LostRow={id:string;number:number|null;customerId:string;customerName:string;lossReason:string;lostAt:string;holderName:string;registrarName:string};
-type DormantRow={id:string;name:string;code:string;city:string;phone:string;repName:string;lastPurchase:string};
-type LeadAnswer={list:LeadList;total:number;rows:(LostRow|DormantRow)[]};
+type DormantRow={id:string;name:string;code:string;city:string;phone:string;repName:string;lastPurchase:string;neverBought?:boolean};
+type LeadAnswer={list:LeadList;total:number;rows:(LostRow|DormantRow)[];page?:number;pageSize?:number;lapsed?:number;never?:number};
+/** «مصادر الفرص». Since the owner's decision of 2026-11-17 (as GSCO 2.13.79) «عملاء منقطعون عن الشراء 90 يومًا» also holds the customers who
+ *  never bought, after the others and marked «لم يشترِ من قبل», with their counts, a page of 300 at a time. */
 export function ServiceLeadsPanel({me}:{me:Member}){
- const [say,language]=useSay(),[open,setOpen]=useState(false),[list,setList]=useState<LeadList>('lost'),[query,setQuery]=useState(''),[data,setData]=useState<LeadAnswer|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
- const load=useCallback(async(which:LeadList,q:string)=>{setLoading(true);setError('');try{setData(await getJson<LeadAnswer>('/api/service-leads?list='+which+'&q='+encodeURIComponent(q),language));}catch(failure){setError(messageOf(failure));setData(null);}finally{setLoading(false);}},[language]);
- useEffect(()=>{if(open)void load(list,'');},[open,list,load]);
+ const [say,language]=useSay(),[open,setOpen]=useState(false),[list,setList]=useState<LeadList>('lost'),[query,setQuery]=useState(''),[asked,setAsked]=useState(''),[page,setPage]=useState(1),[data,setData]=useState<LeadAnswer|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
+ const load=useCallback(async(which:LeadList,q:string,at:number)=>{setLoading(true);setError('');try{setData(await getJson<LeadAnswer>('/api/service-leads?list='+which+'&q='+encodeURIComponent(q)+(which==='dormant'&&at>1?'&page='+at:''),language));}catch(failure){setError(messageOf(failure));setData(null);}finally{setLoading(false);}},[language]);
+ useEffect(()=>{if(open)void load(list,asked,page);},[open,list,asked,page,load]);
  if(!leadReader(me.role))return null;
- const starter=leadStarter(me.role);
+ const starter=leadStarter(me.role),pageSize=data?.pageSize||0,pages=data&&pageSize?Math.max(1,Math.ceil(data.total/pageSize)):1,first=pageSize?(Math.min(page,pages)-1)*pageSize:0;
  return <details className="panel service-sales-panel service-leads" data-service-leads open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary><UserRoundSearch size={18} aria-hidden="true"/>{say('مصادر الفرص','Opportunity sources')}</summary>
   {open&&<div className="service-report-body">
-   <div className="service-leads-tabs" role="tablist">{(['lost','dormant'] as LeadList[]).map(key=><button key={key} type="button" role="tab" aria-selected={list===key} className={'followup-list-filter'+(list===key?' selected':'')} onClick={()=>{setList(key);setQuery('');}}>{say(leadListLabels[key],leadListLabelsEn[key])}</button>)}</div>
+   <div className="service-leads-tabs" role="tablist">{(['lost','dormant'] as LeadList[]).map(key=><button key={key} type="button" role="tab" aria-selected={list===key} className={'followup-list-filter'+(list===key?' selected':'')} onClick={()=>{setList(key);setQuery('');setAsked('');setPage(1);}}>{say(leadListLabels[key],leadListLabelsEn[key])}</button>)}</div>
    <p className="service-report-note">{list==='lost'?say('الفرص المفقودة التي لم تبدأ منها فرصة جديدة بعد، الأحدث أولًا. لا يظهر عميل له فرصة مفتوحة.','Lost opportunities no new opportunity has been started from yet, newest first. A customer with an open opportunity is not shown.'):say('عملاء نطاقك الذين مضى على آخر شراء لهم أكثر من 90 يومًا، الأقرب انقطاعًا أولًا، ثم من لم يشترِ من قبل.','Customers of your scope whose last purchase is more than 90 days old, the most recent first, then those who never bought.')}</p>
-   <form className="service-leads-search" role="search" onSubmit={event=>{event.preventDefault();void load(list,query);}}><label className="field"><span>{say('بحث بالاسم أو الرقم','Search by name or number')}</span><input type="search" value={query} onChange={event=>setQuery(event.target.value)} maxLength={60}/></label><button type="submit" className="btn subtle small"><Search size={16} aria-hidden="true"/>{say('بحث','Search')}</button></form>
-   {loading?<Loader2 className="spin"/>:error?<div className="form-error" role="alert">{t(error)} <button type="button" className="text-button" onClick={()=>void load(list,query)}>{say('إعادة المحاولة','Retry')}</button></div>:data&&(data.rows.length===0?<p className="muted">{say('لا توجد عناصر في هذه القائمة','Nothing in this list')}</p>:<>
-    <p className="muted">{say('المعروض','Showing')} {data.rows.length} / {data.total}</p>
+   <form className="service-leads-search" role="search" onSubmit={event=>{event.preventDefault();setPage(1);setAsked(query.trim());if(asked===query.trim()&&page===1)void load(list,query.trim(),1);}}><label className="field"><span>{say('بحث بالاسم أو الرقم','Search by name or number')}</span><input type="search" value={query} onChange={event=>setQuery(event.target.value)} maxLength={60}/></label><button type="submit" className="btn subtle small"><Search size={16} aria-hidden="true"/>{say('بحث','Search')}</button></form>
+   {data?.list==='dormant'&&typeof data.lapsed==='number'&&<div className="service-leads-counts" data-dormant-counts><span className="badge pending">{say('انقطعوا عن الشراء','Stopped buying')}: {data.lapsed}</span><span className="badge">{say('لم يشتروا من قبل','Never bought before')}: {data.never??0}</span></div>}
+   {loading?<Loader2 className="spin"/>:error?<div className="form-error" role="alert">{t(error)} <button type="button" className="text-button" onClick={()=>void load(list,asked,page)}>{say('إعادة المحاولة','Retry')}</button></div>:data&&(data.rows.length===0?<p className="muted">{say('لا توجد عناصر في هذه القائمة','Nothing in this list')}</p>:<>
+    <p className="muted">{say('المعروض','Showing')} {pageSize&&data.total>data.rows.length?(first+1)+'–'+(first+data.rows.length):data.rows.length} / {data.total}</p>
     <ul className="service-leads-list">{data.list==='lost'?(data.rows as LostRow[]).map(row=><li key={row.id} data-lead-row={row.id}><div><b>{row.number!==null?'#'+row.number+' · ':''}{row.customerName}</b><small>{say('تاريخ الفقد','Lost on')} {dayOf(row.lostAt)}{row.lossReason?' · '+t(row.lossReason):''}{row.holderName?' · '+row.holderName:''}</small></div>{starter&&<StartOpportunityButton kind="opportunity" id={row.id} me={me}/>}</li>)
-     :(data.rows as DormantRow[]).map(row=><li key={row.id} data-lead-row={row.id}><div><b>{row.name}</b><small>{[row.code,row.city,row.repName].filter(Boolean).join(' · ')}{' · '}{row.lastPurchase?say('آخر شراء','Last purchase')+' '+row.lastPurchase:say('لم يشترِ من قبل','Never bought')}</small></div>{starter&&<StartOpportunityButton kind="customer" id={row.id} me={me}/>}</li>)}</ul></>)}
+     :(data.rows as DormantRow[]).map(row=><li key={row.id} data-lead-row={row.id} data-never-bought={row.lastPurchase?undefined:'1'}><div><b>{row.name}</b><small>{[row.code,row.city,row.repName].filter(Boolean).join(' · ')}{' · '}{row.lastPurchase?say('آخر شراء','Last purchase')+' '+row.lastPurchase:<span className="badge">{say('لم يشترِ من قبل','Never bought')}</span>}</small></div>{starter&&<StartOpportunityButton kind="customer" id={row.id} me={me}/>}</li>)}</ul></>)}
+   {data?.list==='dormant'&&pages>1&&<div className="service-leads-pages" data-dormant-pages><button type="button" className="btn subtle small" disabled={loading||page<=1} onClick={()=>setPage(current=>Math.max(1,current-1))}>{say('السابق','Previous')}</button><span>{Math.min(page,pages)} / {pages}</span><button type="button" className="btn subtle small" disabled={loading||page>=pages} onClick={()=>setPage(current=>Math.min(pages,current+1))}>{say('التالي','Next')}</button></div>}
   </div>}
  </details>;
 }
@@ -151,7 +156,7 @@ function RoleTaskForm({task,say,language,onDone,onCancel}:{task:RoleTask;say:Say
 }
 
 // ------------------------------------------------------------------------------------------------ «أداء خدمة العملاء»
-type PerformanceAnswer={month:string;supportDays:number;canExport:boolean;teams:{managerId:string;managerName:string;rows:PerformanceRow[];total:PerformanceRow}[]};
+type PerformanceAnswer={month:string;supportDays:number;canExport:boolean;reach?:PerformanceReach;teams:{managerId:string;managerName:string;rows:PerformanceRow[];total:PerformanceRow}[]};
 const currentMonth=()=>new Date(Date.now()+3*3600000).toISOString().slice(0,7);
 export function ServicePerformancePanel({me}:{me:Member}){
  const [say,language]=useSay(),[open,setOpen]=useState(false),[month,setMonth]=useState(currentMonth),[data,setData]=useState<PerformanceAnswer|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
@@ -161,9 +166,11 @@ export function ServicePerformancePanel({me}:{me:Member}){
  return <details className="panel service-sales-panel service-performance" data-service-performance open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary><ClipboardCheck size={18} aria-hidden="true"/>{say('أداء خدمة العملاء','Customer-service performance')}</summary>
   {open&&<div className="service-report-body">
-   <div className="service-report-head"><label className="field service-report-month"><span>{say('الشهر','Month')}</span><input type="month" value={month} max={currentMonth()} required onChange={event=>{if(event.target.value)setMonth(event.target.value);}}/></label>{data?.canExport&&can(me,'service-reports','export')&&<PerformanceExport month={month} say={say} language={language}/>}</div>
+   <div className="service-report-head"><label className="field service-report-month"><span>{say('الشهر','Month')}</span><input type="month" value={month} max={currentMonth()} required onChange={event=>{if(event.target.value)setMonth(event.target.value);}}/></label>{data?.canExport&&data.teams.length>0&&can(me,'service-reports','export')&&<PerformanceExport month={month} say={say} language={language}/>}</div>
    <p className="service-report-note">{say(performanceNote,performanceNoteEn)}</p>
-   {loading?<Loader2 className="spin"/>:error?<div className="form-error" role="alert">{t(error)}</div>:data&&(data.teams.length===0?<p className="muted">{say('لا يوجد أعضاء في خدمة العملاء','No customer-service members')}</p>:data.teams.map(team=><section key={team.managerId||'none'} className="performance-team" data-performance-team={team.managerId||'none'}>
+   {/* The owner's decision 3 (2026-11-17, as GSCO 2.13.79): a sales manager sees only the customer-service teams whose managers report to him. */}
+   {data?.reach==='reporting'&&data.teams.length>0&&<p className="service-report-note" data-performance-reach>{say(PERFORMANCE_REPORTING_NOTE,PERFORMANCE_REPORTING_NOTE_EN)}</p>}
+   {loading?<Loader2 className="spin"/>:error?<div className="form-error" role="alert">{t(error)}</div>:data&&(data.teams.length===0?(data.reach==='reporting'?<div className="performance-empty" data-performance-no-team><b>{say(PERFORMANCE_NO_TEAM,PERFORMANCE_NO_TEAM_EN)}</b><p className="muted">{say(PERFORMANCE_NO_TEAM_HELP,PERFORMANCE_NO_TEAM_HELP_EN)}</p></div>:<p className="muted">{say('لا يوجد أعضاء في خدمة العملاء','No customer-service members')}</p>):data.teams.map(team=><section key={team.managerId||'none'} className="performance-team" data-performance-team={team.managerId||'none'}>
     <h3>{team.managerName||say('بدون مدير خدمة عملاء','No customer-service manager')}</h3>
     <div className="table-scroll"><table className="service-report-table performance-table"><thead><tr><th>{say('العضو','Member')}</th>{performanceColumns.map(col=><th key={col.key}>{say(col.ar,col.en)}</th>)}</tr></thead>
      <tbody>{[...team.rows,team.total].map((row,index)=><tr key={(row.memberId||'total')+index} className={row===team.total?'total':''}><td>{row===team.total?say('الإجمالي','Total'):row.memberName}</td>{performanceColumns.map(col=><td key={col.key} className="numeric">{String(col.value(row))}</td>)}</tr>)}</tbody></table></div>

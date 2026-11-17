@@ -21,3 +21,6 @@
 .performance-team{display:grid;gap:6px;min-width:0}.performance-team h3{margin:4px 0 0}.performance-table td:first-child{min-width:110px}.performance-table td.numeric{font-variant-numeric:tabular-nums}.performance-table tr.total td{font-weight:700;border-top:2px solid var(--border)}
 .performance-team .table-scroll{overflow-x:auto;max-width:100%}.performance-sources{margin:0;font-size:13px;overflow-wrap:anywhere}
 .sales-service-line{margin:8px 0 0;padding:8px 12px;border-radius:12px;background:var(--muted);font-size:14px;overflow-wrap:anywhere}.sales-service-line small{color:var(--muted-foreground)}
+/* «عملاء منقطعون عن الشراء 90 يومًا» since 2026-11-17: the counts by kind and the pages; «أداء خدمة العملاء» for a sales manager with no team. */
+.service-leads-counts{display:flex;flex-wrap:wrap;gap:6px}.service-leads-pages{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}.service-leads-pages .btn{min-height:44px}
+.service-leads-list small .badge{margin-inline-start:2px}.performance-empty{display:grid;gap:4px;padding:12px;border:1px dashed var(--border);border-radius:12px}.performance-empty p{margin:0;overflow-wrap:anywhere}
