@@ -159,7 +159,7 @@
   "typicalSeconds": {
     "about": "Serial seconds measured on this 4-CPU machine (2026-11-05); the pool starts the longest first. The latest output/gates/*/summary.json overrides these.",
     "tests/mold-requests-browser.mjs": 199,
-    "tests/mold-filters-browser.mjs": 60,
+    "tests/mold-filters-browser.mjs": 90,
     "tests/kpi-leave-months-browser.mjs": 135,
     "tests/kpi-sales-manager-gaps-browser.mjs": 120,
     "tests/kpi-sales-manager-gaps-http.mjs": 20,
