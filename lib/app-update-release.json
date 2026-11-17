@@ -1,24 +1,26 @@
 {
   "schemaVersion": 1,
   "packageName": "org.yourrest.crm",
-  "versionName": "1.0.13",
-  "versionCode": 14,
-  "minimumVersionCode": 14,
-  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.13-14.apk",
-  "sizeBytes": 291661,
-  "sha256": "bed79eb51cca83cc484c9b5c91c7f613bf57d5e5596d3c77b63564ba3b89e7e6",
+  "versionName": "1.0.14",
+  "versionCode": 15,
+  "minimumVersionCode": 15,
+  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.14-15.apk",
+  "sizeBytes": 308045,
+  "sha256": "e1f90d1ba7392d665c2fc4f996260c0396506c9732ace4e65e1e89efb743fc09",
   "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
   "releaseNotes": {
     "ar": [
-      "تنبيه المصانع القريبة: عند اقترابك لمسافة كيلومتر من مصانع مسؤول عنها لم تُسجَّل لها زيارة منذ 60 يومًا أو أكثر، يصلك إشعار واحد يجمعها، الأقرب أولًا، في ساعات تسجيل الموقع.",
-      "لا يتكرر تنبيه المصنع نفسه في اليوم نفسه، والضغط على الإشعار يفتح «خريطة المصانع» على أقرب مصنع.",
+      "شكوى تنتظرك: يصلك إشعار بكل شكوى عميل عليك الدور فيها، للمراجعة أو التعديل أو التكليف أو التفويض أو التواصل والحل أو تأكيد الإغلاق، والشكاوى عالية الأهمية أولًا.",
+      "الضغط على الإشعار يفتح الشكوى نفسها، ويختفي الإشعار بعد فتحها أو حين لا تعود تنتظرك.",
+      "فحص في الخلفية كل 15 دقيقة من 6 صباحًا إلى 6 مساءً بتوقيت السعودية عدا الجمعة، ولو كان تسجيل خط السير متوقفًا، لتنبيهات الشكاوى وطلبات خدمة العملاء.",
       "لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي."
     ],
     "en": [
-      "Nearby factories: within 1 km of factories you are responsible for that have had no visit for 60 days or more, one notification lists them, nearest first, during location recording hours.",
-      "The same factory is not notified twice in a day; tapping the notification opens the factory map on the nearest one.",
+      "A complaint is waiting for you: a notification for each customer complaint whose step is yours (review, correction, assignment, delegation, contact and resolution, closure), high importance first.",
+      "Tapping it opens that complaint; the notification goes once you open it or it no longer waits for you.",
+      "A background check every 15 minutes, 6 am to 6 pm Saudi time except Friday, even with route tracking off, for complaint and customer-service request alerts.",
       "The update asks for no new permission; your data and the visits saved on the phone stay as they are."
     ]
   },
-  "publishedAt": "2026-11-16T08:16:34.257Z"
+  "publishedAt": "2026-11-17T11:29:19.342Z"
 }
