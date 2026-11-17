@@ -4,6 +4,38 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The owner's four decisions for customer service in the sales process (2026-11-17, not released yet: update-cs-decisions-20261117 after update-cs-sales-20261116, no migration, no Android change)
+
+- **Asked.** The owner decided the four open questions of item 5 of the GSCO list, as in GSCO and Trade, and they ship as a follow-up of
+  update-cs-sales-20261116 (deployed with the provisional values), matching GSCO 2.13.79 (source e729ff4, tests e1073bf): «نسبة الفرص المتحولة
+  إلى مبيعات» against 100%; a support sale within 30 days of the contact; the sales manager sees only the customer-service teams that report
+  to him; «عملاء منقطعون عن الشراء 90 يومًا» includes the customers who never bought.
+- **1 and 2.** `CONVERSION_TARGET` = 100 (full marks only when every counted opportunity converted, linear below; weight 15 and 3 cases
+  stay) and `SUPPORT_SALES_DAYS` = 30. *Saved settings:* the server stamps `revision: 2` (`SERVICE_KPI_SETTINGS_REVISION`) on every save
+  (`app/api/service-kpi/route.ts`, the field accepted from the page); `normalizeSettings` reads live settings without it that hold exactly a
+  placeholder of update-cs-sales (`PLACEHOLDER_CONVERSION_TARGET` 50, `PLACEHOLDER_SUPPORT_SALES_DAYS` 60) as the owner's figure; a value set
+  by hand stays, anything saved from now on stays (50 and 60 included), and a closed month keeps its certificate.
+- **3.** `SALES_MANAGER_SEES_ALL_SERVICE_TEAMS` = false and `performanceReach` (`all`, `reporting`, `team`, `self`): a sales manager's
+  «أداء خدمة العملاء», Excel file and API carry only the customer-service managers whose «مدير المبيعات المستلم» he is and their members;
+  with none, an empty answer and «لا يتبعك فريق خدمة عملاء» / "No customer-service team reports to you" (no export button), not an error;
+  with some, «تظهر هنا فرق خدمة العملاء التي يتبعك مديروها فقط.». The administrator reads every team. `performanceTeams` was the one place
+  that read every team (the role tasks are not the sales manager's; «اعتماد وإحالة» is unchanged).
+- **4.** `DORMANT_LIST_INCLUDES_NEVER_BOUGHT` = true: the list adds the customers who never bought after the lapsed ones, by name, marked «لم يشترِ
+  من قبل» / "Never bought", with the counts «انقطعوا عن الشراء» and «لم يشتروا من قبل», the same branch scope and search, 300 a page
+  (`?page=`, «السابق» and «التالي»). The source a system lead from such a customer fills in stays «عميل منقطع عن الشراء 90 يومًا» (stored).
+- **Rollback.** No migration (22). Going back to update-cs-sales with the code alone works: it reads the saved settings as they are.
+- **Tests.** New: `service-sales-decisions-http` (48 checks; on f907fcf 17 of them fail): update-cs-sales's database state (the placeholders
+  read 100% and 30 days on the evaluation and the dashboard, values set by hand stay, a month closed under it keeps 50%, the administrator's
+  save from now on stays and is stamped, a page of update-cs-sales saves too), two sales managers and their teams in the API and the Excel
+  file with nothing of the other's, one with no team, the administrator; the dormant list with 301 customers who never bought, a page at a
+  time, searched, outside the branch. Updated: `service-sales` (77), `service-kpi` (216), `service-kpi-ui` (140), `service-sales-http`
+  (114), `service-sales-review-http` (49: two sales managers' teams; a contact 30 days old makes a support sale, 31 not),
+  `service-sales-browser` (382, 110 screenshots: the never-bought mark and counts, the sales manager's own team and its note, a sales manager
+  with no team). Guide: section 9-ظ.
+- **Run** against a build of 4c58e58, one by one: the release-build and browser tests of the customer-service and targets-sales areas,
+  with `service-kpi-http` and `service-kpi-browser` (50 files, all passed; `erp-sales-browser` not run: it needs the owner's ERP file) and
+  `service-sales-browser` by hand (382); the default gate 212/212 (TypeScript 0 errors; ESLint 0 errors, 165 warnings as before).
+
 ## Customer service in the sales process: the lead source, «اعتماد وإحالة», «تسجيل دور خدمة العملاء», «أداء خدمة العملاء», full customer-service sales out of every achievement (2026-11-16, not released yet, migration 0021, no Android change)
 
 - **Asked.** Item 5 of the GSCO comparison list (GSCO 2.13.78), approved by the owner: «تمام موافق ابدأ» (publishing waits for «ارفع»). The item:
@@ -42,7 +74,7 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   85, closed months unchanged; the setting «مدة احتساب مبيعات المساندة (أيام)».
 - **Provisional answers (GSCO's):** target 50% (`CONVERSION_TARGET`), 60 days (`SUPPORT_SALES_DAYS` and the setting), the sales manager reads
   every customer-service team (`SALES_MANAGER_SEES_ALL_SERVICE_TEAMS`), the dormant list leaves out never-bought customers
-  (`DORMANT_LIST_INCLUDES_NEVER_BOUGHT`).
+  (`DORMANT_LIST_INCLUDES_NEVER_BOUGHT`). The owner decided them on 2026-11-17: the follow-up release in the entry above.
 - **Migration** `drizzle/0021_service_sales_process.sql`: eight nullable columns on `crm_service_cases` (lead_group, lead_source,
   lead_ref_kind, lead_ref_id, lead_note default '', route, routed_by, routed_at; CHECKs), two indexes, and `crm_service_role_tasks`. Schema
   21 -> 22. A code-only rollback after it does not start (the previous release refuses a newer migration history); the way back is the
