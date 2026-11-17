@@ -4,6 +4,29 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The filters of «طلبات تصنيع القوالب»: «الحالة», «واقف عند», «المندوب», the days and a wide «بحث» (2026-11-17, not released yet, no migration, no server change, no Android change)
+
+- **Asked.** The owner sent a picture of the filter bar of the products application's orders list: «ضيف الفلاتر دى فى طلبات القوالب
+  ماعدا المصدر لان المصدر عندك واحد». So every filter of the picture but «المصدر» (the CRM is the only source).
+- **Before.** The list had one search box (customer, description, mold number, order number, requester; a plain lower-case match) and the
+  «أعادتها المالية» toggle (2026-11-10).
+- **Now** (`lib/mold-filters.ts`, pure; `MoldFilterPanel` in `app/mold-requests.tsx`), over the list already loaded, AND between them and with
+  «أعادتها المالية»: «الحالة» (what a card says: not in production yet, each reason it waits in the CRM, the link off, returned by finance,
+  production's statuses, cancelled in production, cancelled, and «المفتوحة (لم تُسلَّم)» as the products application has it); «واقف عند»
+  (production's `waitingStep`: the sales manager, production, finance, manufacturing, delivery; the manufacturing stage reached; «بانتظار
+  اعتمادك» for the sales manager); «المندوب» (the requester, only when the list holds more than one); «من تاريخ» / «إلى تاريخ» (the Riyadh
+  day of `requestedAt`, both included, a reversed range turned round); «بحث» (customer name, ERP and Yourrest codes, requester, description,
+  mold number, serial, production order number, every word, through `normalizeMapSearch`). Only the choices the list holds are offered.
+  «يظهر n من m» and «مسح الفلاتر» once one is set. The card's chip and its line now read their words from the same file, so a choice reads
+  as the card. «طلبات بانتظار اعتمادي» is unchanged.
+- **Mended with it.** A card's customer name was squeezed to a letter a line beside a long chip at 320 px (the chip wraps under it now); the
+  page's own title stayed Arabic in English (`lib/locales/en.json` gains «طلبات تصنيع القوالب» = "Mold requests", a key only).
+- **Tests.** New: `mold-filters` (default gate, 169 checks) and `mold-filters-browser` (browser gate, 163 checks: the computer in Arabic and
+  English, then 320, 360, a tablet both ways and the computer in each language, and a representative at 360; the squeezed-name check failed
+  before the mending). Re-run unchanged and passing: `mold-requests`, `mold-nov10`, `mold-design-files-ui`, `dictation-coverage`,
+  `msa-wording`, `test-areas`, and the browser tests `mold-requests-browser`, `mold-nov10-browser`, `mold-design-files-browser`,
+  `mold-sign-link-browser`, `mold-pdf-view-browser`, `pwa-browser`. Guide: section 9-ظ.
+
 ## Customer service in the sales process: the lead source, «اعتماد وإحالة», «تسجيل دور خدمة العملاء», «أداء خدمة العملاء», full customer-service sales out of every achievement (2026-11-16, not released yet, migration 0021, no Android change)
 
 - **Asked.** Item 5 of the GSCO comparison list (GSCO 2.13.78), approved by the owner: «تمام موافق ابدأ» (publishing waits for «ارفع»). The item:
