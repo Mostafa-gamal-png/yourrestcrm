@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Small-20261116.zip","sha256":"6b3bb1175e1e99bfc604bb0589f80fd39401aacb972616f9e553d7bfe9f25068","stage":"yourrest-crm-update-small-20261116","helper":"yourrest-activate-update-small.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-MoldFilters-20261117.zip","sha256":"991c45279a1b7004cd91d755e25392c37dd47abca91f8d439f89c5ccbee569cc","stage":"yourrest-crm-update-mold-filters-20261117","helper":"yourrest-activate-update-mold-filters.cjs"}
