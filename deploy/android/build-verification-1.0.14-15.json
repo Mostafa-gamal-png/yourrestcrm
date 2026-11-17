@@ -1,0 +1,21 @@
+{
+  "package": "org.yourrest.crm",
+  "versionCode": 15,
+  "versionName": "1.0.14",
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkSha256": "e1f90d1ba7392d665c2fc4f996260c0396506c9732ace4e65e1e89efb743fc09",
+  "apkBytes": 308045,
+  "sourceSha256": "adee4bf4045e2bed8969155bd880941828402ec7b024730834f5ee666ab04047",
+  "buildConfigSha256": "c29289060ca3190888a92459fe95c6e6ed479dad69eb842bcffb95419776bd1b",
+  "build": "Standalone OSS AAPT2, javac, D8, apksig; no proprietary SDK",
+  "deviceTested": false,
+  "toolSha256": {
+    "android-all-15-robolectric-12650502.jar": "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b",
+    "aapt2-linux.jar": "ffb7b7d419c7341dd013f2f87bfb0148f8bff0a2a47c222f54935b3b8f233605",
+    "r8-8.9.35.jar": "204b2fc2b0f4e888dc0ef748b58090def1bf4185068d36abbb94841dbc7107a8",
+    "apksig-8.9.2.jar": "c070ed1394629d74641aa0906f60b2ffa1ee77e6366a1f93437f59717b1aeb89"
+  },
+  "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
+  "signerCheckedWith": "apksigner verify --print-certs"
+}
