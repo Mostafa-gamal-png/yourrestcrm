@@ -15,7 +15,9 @@ const require = createRequire(import.meta.url), {chromium} = require(process.env
 const members = [
   {id: 'owner', role: 'admin', name: 'مدير النظام'}, {id: 'mgr', role: 'manager', name: 'مدير المبيعات'},
   {id: 'sup', role: 'supervisor', sup: 'mgr', name: 'المشرف'}, {id: 'rep', role: 'rep', sup: 'sup', name: 'المندوب أحمد'},
-  {id: 'csm', role: 'customer_service_manager', sup: 'mgr', name: 'مدير خدمة العملاء'}, {id: 'cs', role: 'customer_service', sup: 'csm', name: 'ممثلة الخدمة'}
+  {id: 'csm', role: 'customer_service_manager', sup: 'mgr', name: 'مدير خدمة العملاء'}, {id: 'cs', role: 'customer_service', sup: 'csm', name: 'ممثلة الخدمة'},
+  // A customer-service team that does not report to the sales manager (the owner's decision 3: he reads his own teams only).
+  {id: 'csm2', role: 'customer_service_manager', name: 'مدير خدمة العملاء الثاني'}, {id: 'cs3', role: 'customer_service', sup: 'csm2', name: 'ممثل الفريق الثاني'}
 ];
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-csales-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
@@ -25,7 +27,7 @@ const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, m
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const SIZES = [['phone-320', {width: 320, height: 720}, true], ['phone-360', {width: 360, height: 800}, true], ['tablet-upright', {width: 768, height: 1024}, true], ['tablet-side', {width: 1024, height: 768}, true], ['desktop', {width: 1280, height: 900}, false]];
 // What people wrote stays as written in English too: the members' and the customers' names, the source a person typed.
-const NAMES = /تواصلت مع العميل حتى أكد الطلب|مصنع [^\n·|،,]*|مدير النظام|مدير المبيعات|مدير خدمة العملاء|ممثلة الخدمة|المندوب أحمد|المشرف/g;
+const NAMES = /تواصلت مع العميل حتى أكد الطلب|مصنع [^\n·|،,]*|مدير النظام|مدير المبيعات|مدير خدمة العملاء الثاني|ممثل الفريق الثاني|مدير خدمة العملاء|ممثلة الخدمة|المندوب أحمد|المشرف/g;
 const arabicLeft = text => text.replace(NAMES, '').match(/[؀-ۿ][^\n]{0,40}/)?.[0] || '';
 
 try {
@@ -110,6 +112,7 @@ try {
     await leads.getByRole('tab', {name: say('عملاء منقطعون عن الشراء 90 يومًا', 'Customers who have not bought for 90 days')}).click();
     await leads.locator('[data-lead-row="cust-dorm"]').waitFor();
     ok(true, tag + ': the dormant customer is listed');
+    ok((await leads.locator('[data-lead-row="cust-won-' + tag + '"]').innerText()).includes(say('لم يشترِ من قبل', 'Never bought')), tag + ': and one who never bought, after it (the owner\'s decision 4)');
     await leads.getByRole('tab', {name: say('فرص مفقودة للاسترداد', 'Lost opportunities to win back')}).click();
     await leads.locator('[data-lead-row="case-lost"] [data-lead-start] button').click();
     const dialog = page.locator('.customer-visit-dialog');
@@ -173,6 +176,18 @@ try {
     await noSideways(page, tag + ' (performance)');
     await performance.scrollIntoViewIfNeeded();
     await shot(page, 'csales-' + tag + '-performance');
+    await close(page);
+    // ---- the sales manager reads the customer-service teams under him only (the owner's decision 3)
+    page = await open('mgr', {english: inEnglish, viewport, touch, hash: '#activity'});
+    const managerView = page.locator('[data-service-performance]');
+    await managerView.locator('summary').click();
+    await managerView.locator('[data-performance-team]').first().waitFor();
+    eq(await managerView.locator('[data-performance-team]').evaluateAll(list => list.map(item => item.getAttribute('data-performance-team'))), ['csm'], tag + ': the sales manager reads the team of the customer-service manager under him, not another');
+    ok(!(await managerView.innerText()).includes('ممثل الفريق الثاني'), tag + ': nor any member of another team');
+    if (inEnglish) await english(managerView, tag + ' (the sales manager\'s «أداء خدمة العملاء»)');
+    await noSideways(page, tag + ' (the sales manager\'s performance)');
+    await managerView.scrollIntoViewIfNeeded();
+    await shot(page, 'csales-' + tag + '-manager-performance');
     await close(page);
     // ---- «رفع المبيعات»: the ERP total and the line under it
     page = await open('mgr', {english: inEnglish, viewport, touch, hash: '#targets', search: '?tab=sales'});

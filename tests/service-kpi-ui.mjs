@@ -114,7 +114,7 @@ ok(!leadHtml.includes('ممثلون بلا مدير')&&!leadHtml.includes('فر�
 const opened=page(kpi('owner',{},{detail:'cs1'}),'ar',{detail:'cs1'});
 ok(opened.includes('class="service-report-table sk-table"'),'the opened card shows its table');
 for(const label of Object.values(K.repMetricLabels))ok(opened.includes(label),'the table names the figure «'+label+'»');
-ok(opened.includes('90%')&&opened.includes('95%')&&opened.includes('98%')&&opened.includes('50%')&&opened.includes('>13<')&&opened.includes('>15<')&&opened.includes('>8<'),'with the targets and weights of the sheet (2026-11-16: 13, 9 and 8, and the opportunities\' 15 at 50%)');
+ok(opened.includes('90%')&&opened.includes('95%')&&opened.includes('98%')&&opened.includes('100%')&&opened.includes('>13<')&&opened.includes('>15<')&&opened.includes('>8<'),'with the targets and weights of the sheet (2026-11-16: 13, 9 and 8, and the opportunities\' 15 at 100%, the owner\'s decision of 2026-11-17)');
 const cardHtml=(card,over={})=>{language='ar';return html(React.createElement(CardView,{card,role:'rep',say:sayFor('ar'),open:true,onToggle:noop,nameOf:id=>id,loading:false,...over}));};
 const itemized=cardHtml(kpi('owner',{},{detail:'cs1'}).groups[0].reps.find(c=>c.memberId==='cs1'),{defaultOpen:'closure_timing'});
 eq(count(itemized,'<li data-ok='),3,'a figure opened shows its cases: A\'s closure, B\'s send-back and B\'s closure');
