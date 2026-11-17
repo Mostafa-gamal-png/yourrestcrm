@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-MoldFilters-20261117.zip","sha256":"991c45279a1b7004cd91d755e25392c37dd47abca91f8d439f89c5ccbee569cc","stage":"yourrest-crm-update-mold-filters-20261117","helper":"yourrest-activate-update-mold-filters.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Android1014-20261117.zip","sha256":"b15ab60045f2f88de424079dca40e55ae2024c144567057e80467372783e6749","stage":"yourrest-crm-update-android-1014-20261117","helper":"yourrest-activate-update-android-1014.cjs"}
