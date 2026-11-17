@@ -9,7 +9,7 @@
 .mold-card{display:grid;gap:8px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);text-align:start;cursor:pointer;min-width:0;color:inherit;font:inherit}
 .mold-card:hover,.mold-card:focus-visible{border-color:var(--primary)}
 .mold-card[data-sending=waiting],.mold-card[data-sending=rejected]{border-color:#d4a53a}.mold-card[data-status=cancelled]{opacity:.75}
-.mold-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.mold-card header strong{font-size:16px;overflow-wrap:anywhere}
+.mold-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:6px 8px;flex-wrap:wrap}.mold-card header strong{font-size:16px;overflow-wrap:anywhere;flex:1 1 9em;min-width:0}
 .mold-card p{margin:0;font-size:14px;overflow-wrap:anywhere}
 .mold-card-facts{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted-foreground)}.mold-card-facts b{color:var(--foreground)}
 .mold-card-sending{font-size:13px;font-weight:600;color:#8a5a00}.mold-card-sending[data-state=off]{color:#34385a}.mold-card-sending[data-state=rejected]{color:#7a2c1f}
@@ -186,3 +186,19 @@
 .mold-returned-badge>svg{flex-shrink:0;margin-top:3px}.mold-card[data-returned]{border-color:#d98a6a}
 .mold-returned-filter{justify-self:start;min-height:44px}.mold-returned-filter[data-active]{border-color:#d98a6a;background:#fbeee6;color:#7a2c1f}
 .dark .mold-returned,.dark .mold-returned-badge,.dark .mold-returned-filter[data-active]{background:#3a2016;color:#f6c9b5}.dark .mold-returned small[data-corrected]{color:#9be0bd}
+/* The filters above the list (2026-11-17): «الحالة»، «واقف عند»، «المندوب» and the two days on one row on a computer (each as wide as
+   the others), two a row on a phone of 320 px (the two days always side by side), and «بحث» the whole width under them; «أعادتها
+   المالية», the count and «مسح الفلاتر» last. A card's chip goes under the customer's name when both do not fit (a long English chip at
+   320 px had squeezed the name to a letter a line). */
+.mold-filters{display:grid;gap:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card);min-width:0}
+.mold-filter-fields{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;min-width:0}
+.mold-filters .mold-filter{flex:1 1 120px;min-width:0;max-width:none;width:auto;gap:6px;margin:0}
+.mold-filters .mold-filter>span:first-child{font-size:13px;font-weight:600;color:var(--muted-foreground)}
+.mold-filters .mold-filter>select,.mold-filters .mold-filter>input{width:100%;min-width:0;max-width:none;min-height:44px;height:auto;margin:0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:15px;text-overflow:ellipsis}
+.mold-filters .mold-filter>input[type=date]{direction:ltr;font-variant-numeric:tabular-nums}
+.mold-filter-dates{display:flex;gap:10px;flex:2 1 250px;min-width:0}
+.mold-filters .mold-filter-search{flex:1 1 100%}
+.mold-filters .mold-search{min-width:0}
+.mold-filter-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
+.mold-filter-count{font-size:14px;color:var(--muted-foreground)}
+.mold-filter-clear{display:inline-flex;align-items:center;gap:6px;min-height:44px}

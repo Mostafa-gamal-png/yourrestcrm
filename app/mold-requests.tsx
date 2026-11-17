@@ -1,6 +1,6 @@
 'use client';
 import React,{useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
-import {BadgeCheck,Hourglass,Loader2,Lock,Paperclip,PenLine,RefreshCw,Search,Send,TriangleAlert,Undo2,Wrench} from 'lucide-react';
+import {BadgeCheck,Hourglass,Loader2,Lock,Paperclip,PenLine,RefreshCw,Search,Send,TriangleAlert,Undo2,Wrench,X} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
@@ -13,6 +13,7 @@ import MoldCustomerFields,{moldCustomerByErpCode,type MoldCustomerText} from './
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import {MoldSigningStep,noteServerTime} from './mold-signature';
 import {viewerFilesFromRequest,type MoldViewerFile} from '@/lib/mold-document-view';
+import {MOLD_FILTER_TEXT,MOLD_NO_FILTERS,filterMoldRequests,moldCardStatus,moldFilterChoices,moldFilterCount,moldSendingKey,moldSendingLabel,type MoldFilters} from '@/lib/mold-filters';
 import {MoldSignLinkPanel,MoldSigningNotes,SignLinkLine,rememberSignLink} from './mold-sign-link';
 import './mold-requests.css';
 
@@ -21,10 +22,8 @@ const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message
 const stamp=(iso:string|null|undefined)=>iso?new Date(iso).toLocaleString('en-GB',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'}):'—';
 const day=(value:string|null|undefined)=>value?value.slice(0,10):'—';
 /** Where the request is: the step it waits at (since the approval chain), else production's status; the sales manager reads «waiting
- * for you» on what they can approve. */
-// Cancelled in the CRM reads «cancelled» at once, even while the cancellation still waits to reach production (its sending state says so).
-const statusText=(view:MoldRequestView,say:Say)=>view.can.approve?say('بانتظار اعتمادك','Waiting for your approval')
- :view.cancelled?say('ملغى','Cancelled'):view.remote?.status==='cancelled'?say('أُلغي في تطبيق الإنتاج','Cancelled in production'):view.remote?.waitingStep?say(...moldWaitingNames[view.remote.waitingStep]):view.remote?say(...moldStatusNames[view.remote.status]):say('لم يصل للإنتاج بعد','Not in production yet');
+ * for you» on what they can approve. The words live in lib/mold-filters.ts, so «الحالة» and «واقف عند» offer them as the card says them. */
+const statusText=(view:MoldRequestView,say:Say)=>say(...moldCardStatus(view));
 const waitingSince=(view:MoldRequestView,say:Say)=>!view.cancelled&&view.remote?.waitingSince&&!['done','cancelled'].includes(view.remote.waitingStep||'')?say('من ','Since ')+stamp(view.remote.waitingSince):'';
 /** Production marks the request as having neither a quotation file nor a PO file while finance has not approved it (quoteOrPoMissing,
  *  2026-11-05): «ناقص ملف عرض السعر / الـ PO». hint: on the request's sheet, who attaches it (the requester below, while editable; else
@@ -37,7 +36,7 @@ const heldTexts=(sending:MoldRequestView['sending'])=>sending.held?moldHeldTexts
 /** The state a page of this release shows: a request kept for a file (sending.held) as such, else the state the server gives (one every
  *  page knows). */
 const shownState=(sending:MoldRequestView['sending'])=>heldTexts(sending)?sending.held==='free_customer'?'needs_update':sending.held==='customer_signature'?'needs_signature':'needs_file':sending.state;
-const sendingName=(sending:MoldRequestView['sending'],linkReady:boolean):[string,string]=>heldTexts(sending)?.name||moldSendingNames[linkReady?sending.state:'off'];
+const sendingName=(sending:MoldRequestView['sending'],linkReady:boolean):[string,string]=>moldSendingLabel(moldSendingKey(sending,linkReady)||'waiting');
 /** «وقّع العميل: <signer> · <time>» (2026-11-04), with the image through the CRM when it is given (the request's sheet), once the image
  *  reached production (state sent). Before that the request says where the signature stands instead: on its way («التوقيع لسه ما وصلش
  *  للإنتاج»), stopped (the resend starts it again) or refused for good (cancel and ask again with a new signature). */
@@ -184,14 +183,17 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
 export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const {data,error,loading,refresh}=useMoldRequests(me);
- const [openId,setOpenId]=useState<string|null>(null),[creating,setCreating]=useState(false),[query,setQuery]=useState(''),[onlyReturned,setOnlyReturned]=useState(false);
+ const [openId,setOpenId]=useState<string|null>(null),[creating,setCreating]=useState(false),[filters,setFilters]=useState<MoldFilters>(MOLD_NO_FILTERS);
  // A request «طلبات بانتظار اعتمادي» shows the sales manager that their own list does not (customer service's, say: 2026-11-03), read
  // from the server when opened from there, while it waits for them.
  const [approverView,setApproverView]=useState<MoldRequestView|null>(null);
  const customers=useMemo(()=>records.filter(row=>row.kind==='customer'),[records]);
- // «أعادتها المالية» (2026-11-10): how many finance sent back, and the list narrowed to them (offered while there is one).
- const returnedCount=useMemo(()=>(data?.requests||[]).filter(view=>view.returned).length,[data]),returnedOnly=onlyReturned&&returnedCount>0;
- const list=useMemo(()=>{const needle=query.trim().toLowerCase();return (data?.requests||[]).filter(view=>(!returnedOnly||!!view.returned)&&(!needle||[view.customerName,view.specs.description,view.specs.moldNo,String(view.remote?.orderNo||''),view.memberName].some(text=>String(text||'').toLowerCase().includes(needle))));},[data,query,returnedOnly]);
+ // The filters (2026-11-17: «الحالة»، «واقف عند»، «المندوب»، the days and «بحث»; with «أعادتها المالية» of 2026-11-10: how many finance
+ // sent back, offered while there is one), over the list already loaded: what is offered and what is in force (lib/mold-filters.ts).
+ const requests=useMemo(()=>data?.requests||[],[data]),linkReady=!!data?.linkReady;
+ const choices=useMemo(()=>moldFilterChoices(requests,linkReady,filters),[requests,linkReady,filters]);
+ const returnedCount=useMemo(()=>requests.filter(view=>view.returned).length,[requests]);
+ const list=useMemo(()=>filterMoldRequests(requests,choices.filters,linkReady),[requests,choices.filters,linkReady]);
  const open=data?.requests.find(view=>view.id===openId)||(approverView?.id===openId?approverView:null);
  const listed=useMemo(()=>new Set((data?.requests||[]).map(view=>view.id)),[data]);
  const openPending=useCallback(async(id:string)=>{
@@ -221,14 +223,39 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
   </div>}
   {showPending&&<MoldPendingList pending={data!.pending!} ownList={listed} say={say} onOpen={openPending} onChanged={changed}/>}
   {!showPending&&<>
-  {!!returnedCount&&<button type="button" className="btn subtle mold-returned-filter" aria-pressed={returnedOnly} data-active={returnedOnly||undefined} onClick={()=>setOnlyReturned(previous=>!previous)}><Undo2 size={15} aria-hidden="true"/>{say(...MOLD_RETURNED_TEXT.filter)} <span className="mold-count">{returnedCount}</span></button>}
-  {!!data?.requests.length&&<label className="mold-search"><Search size={16} aria-hidden="true"/><input type="search" value={query} onChange={event=>setQuery(event.target.value)} placeholder={say('ابحث بالعميل أو الوصف أو رقم أمر الإنتاج','Search by customer, description or order')}/></label>}
+  {!!requests.length&&<MoldFilterPanel filters={filters} choices={choices} returnedCount={returnedCount} shown={list.length} total={requests.length} onChange={setFilters} say={say}/>}
   {data&&!list.length&&<p className="empty mold-empty">{data.requests.length?say('لا نتائج','No results'):say('لا توجد طلبات تصنيع قوالب بعد.','No mold requests yet.')}</p>}
   {!data&&!error&&<p className="empty"><Loader2 className="spin" size={16}/> {say('جارٍ التحميل…','Loading…')}</p>}
   <div className="mold-list">{list.map(view=><MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} unsent={uploading.filter(upload=>upload.moldId===view.id&&upload.phase==='failed').length} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
   </>}
   {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} current={data?.pending?.items.find(item=>item.inCrm&&item.crmRequestId===open.id)||null} linkReady={!!data?.linkReady} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>{setOpenId(null);setApproverView(null);}} onChanged={changed}/>}
   {creating&&<MoldRequestDialog customers={customers} uploads={uploads} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
+ </section>;
+}
+
+/** The filters above the list (2026-11-17), as the products application's orders list has them but «المصدر» (the CRM is the only
+ *  source): «الحالة»، «واقف عند»، «المندوب» (only when the list holds more than one requester), «من تاريخ» / «إلى تاريخ» and a wide
+ *  «بحث»; under them «أعادتها المالية» (2026-11-10), how many are shown, and «مسح الفلاتر» once a filter is set. The selects show the
+ *  filters in force (a choice a refresh made meaningless reads «all»); the days and the words as typed. */
+function MoldFilterPanel({filters,choices,returnedCount,shown,total,onChange,say}:{filters:MoldFilters;choices:ReturnType<typeof moldFilterChoices>;returnedCount:number;shown:number;total:number;onChange:(next:MoldFilters)=>void;say:Say}){
+ const set=(key:Exclude<keyof MoldFilters,'returned'>)=>(event:React.ChangeEvent<HTMLInputElement|HTMLSelectElement>)=>onChange({...filters,[key]:event.target.value});
+ const text=MOLD_FILTER_TEXT,inForce=choices.filters;
+ return <section className="mold-filters" aria-label={say(...text.panel)}>
+  <div className="mold-filter-fields">
+   <label className="field mold-filter" data-filter="status"><span>{say(...text.status)}</span><select value={inForce.status} onChange={set('status')}><option value="">{say(...text.allStatuses)}</option>{choices.statuses.map(option=><option key={option.key} value={option.key}>{say(...option.label)}</option>)}</select></label>
+   <label className="field mold-filter" data-filter="step"><span>{say(...text.step)}</span><select value={inForce.step} onChange={set('step')}><option value="">{say(...text.allSteps)}</option>{choices.steps.map(option=><option key={option.key} value={option.key}>{say(...option.label)}</option>)}</select></label>
+   {choices.members.length>1&&<label className="field mold-filter" data-filter="member"><span>{say(...text.member)}</span><select value={inForce.member} onChange={set('member')}><option value="">{say(...text.allMembers)}</option>{choices.members.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label>}
+   <div className="mold-filter-dates">
+    <label className="field mold-filter" data-filter="from"><span>{say(...text.from)}</span><input type="date" value={filters.from} onChange={set('from')}/></label>
+    <label className="field mold-filter" data-filter="to"><span>{say(...text.to)}</span><input type="date" value={filters.to} onChange={set('to')}/></label>
+   </div>
+   <label className="field mold-filter mold-filter-search" data-filter="query"><span>{say(...text.search)}</span><span className="mold-search"><Search size={16} aria-hidden="true"/><input type="search" value={filters.query} onChange={set('query')} placeholder={say(...text.placeholder)}/></span></label>
+  </div>
+  {(!!returnedCount||!!choices.active)&&<div className="mold-filter-actions">
+   {!!returnedCount&&<button type="button" className="btn subtle mold-returned-filter" aria-pressed={inForce.returned} data-active={inForce.returned||undefined} onClick={()=>onChange({...filters,returned:!inForce.returned})}><Undo2 size={15} aria-hidden="true"/>{say(...MOLD_RETURNED_TEXT.filter)} <span className="mold-count">{returnedCount}</span></button>}
+   {!!choices.active&&<><span className="mold-filter-count" role="status">{moldFilterCount(shown,total,say)}</span>
+    <button type="button" className="btn subtle mold-filter-clear" onClick={()=>onChange(MOLD_NO_FILTERS)}><X size={15} aria-hidden="true"/>{say(...text.clear)}</button></>}
+  </div>}
  </section>;
 }
 
