@@ -19,8 +19,8 @@ import {loadAllComplaints} from './complaint-rows';
 import {quotationRefKey,storedQuotationRefs} from './quotation-refs';
 import {xlsxBook,type BookCell} from './xlsx-write';
 import {
- DORMANT_DAYS,LEAD_LIST_LIMIT,LEAD_OTHER,ROLE_TASK_HOURS,SALES_MANAGER_SEES_ALL_SERVICE_TEAMS,SUPPORT_SALES_DAYS,SUPPORT_SALES_OUTCOMES,
- attributeSales,creditedMember,dormantCustomer,dormantListed,fullSalesIds,leadInputSchema,leadLabel,leadLabelEn,leadReader,performanceAllowed,performanceColumns,performanceNote,performanceNoteEn,performanceTotal,
+ DORMANT_DAYS,LEAD_LIST_LIMIT,LEAD_OTHER,ROLE_TASK_HOURS,SUPPORT_SALES_DAYS,SUPPORT_SALES_OUTCOMES,
+ attributeSales,creditedMember,performanceReach,dormantCustomer,dormantListed,fullSalesIds,leadInputSchema,leadLabel,leadLabelEn,leadReader,performanceAllowed,performanceColumns,performanceNote,performanceNoteEn,performanceTotal,
  riyadhDayOf,roleTaskHours,roleTaskLate,roleTaskSchema,roleTaskTarget,routingEligible,routingReasons,salesCategoryLabels,salesCategoryLabelsEn,serviceLeadProblem,servicePerformance,systemLeadSources,
  type CaseFact,type InvoiceFact,type Lead,type LeadList,type LeadRefKind,type PerformanceMember,type QuoteFact,type RoleTaskFact,type RoutingFacts,type SupportContactFact
 } from './service-sales';
@@ -102,11 +102,16 @@ export async function intakeLead(c:Context,raw:unknown,present:boolean,customerI
  return {group:'service',source:input.source,note:input.source===LEAD_OTHER?input.note:'',refKind:null,refId:null};
 }
 export type LostRow={id:string;number:number|null;customerId:string;customerName:string;lossReason:string;lostAt:string;holderName:string;registrarName:string};
-export type DormantRow={id:string;name:string;code:string;city:string;phone:string;repName:string;lastPurchase:string};
+export type DormantRow={id:string;name:string;code:string;city:string;phone:string;repName:string;lastPurchase:string;/** «لم يشترِ من قبل» (since 2026-11-17). */neverBought:boolean};
 /** The loss reason of a lost opportunity: the stage customer service recorded, or the contact that closed it with sales. */
 const lossReasonOf=(item:ServiceCase,all:Row[])=>serviceLossReason(item,all);
-/** GET /api/service-leads?list=lost|dormant&q=: the lists of «مصادر الفرص», what the reader may start an opportunity on, newest first. */
-export async function leadList(c:Context,list:LeadList,query:string){
+/** The page of «عملاء منقطعون عن الشراء 90 يومًا» asked for (`page`, from 1): anything that is not a whole number from 1 to 100000 reads the first. */
+export function requestedPage(value:string|null){const page=Number(value||1);return Number.isInteger(page)&&page>=1&&page<=100000?page:1;}
+/** GET /api/service-leads?list=lost|dormant&q=&page=: the lists of «مصادر الفرص», what the reader may start an opportunity on, newest first.
+ *  «عملاء منقطعون عن الشراء 90 يومًا» (the owner's decision 4, 2026-11-17, as GSCO 2.13.79) also lists the customers who never bought, after
+ *  those whose last purchase is older than 90 days, each marked «لم يشترِ من قبل»; the same branch and regions and the same search; counted
+ *  in full by kind and read LEAD_LIST_LIMIT (300) rows a page. */
+export async function leadList(c:Context,list:LeadList,query:string,page=1){
  const q=query.trim().toLowerCase().slice(0,60),match=(...values:unknown[])=>!q||values.some(value=>text(value).toLowerCase().includes(q));
  const customers=new Map(c.all.filter(row=>row.kind==='customer').map(row=>[row.id,row])),name=nameOf(c.members);
  if(list==='lost'){
@@ -122,16 +127,18 @@ export async function leadList(c:Context,list:LeadList,query:string){
   rows.sort((a,b)=>b.lostAt.localeCompare(a.lostAt)||a.id.localeCompare(b.id));
   return {list,total:rows.length,rows:rows.slice(0,LEAD_LIST_LIMIT)};
  }
- const last=await readLastPurchases(c.db,c.all),today=riyadhToday(),rows:DormantRow[]=[];
+ const last=await readLastPurchases(c.db,c.all),today=riyadhToday(),lapsed:DormantRow[]=[],never:DormantRow[]=[];
  for(const customer of customers.values()){
   if(!inReach(c.me,customer)||activeServiceCase(customer.id,c))continue;
   const lastPurchase=last.get(customer.id)||'';
   if(!dormantListed(lastPurchase,today))continue;
-  const row={id:customer.id,name:text(customer.data.name),code:text(customer.data.code),city:text(customer.data.city),phone:text(customer.data.phone||customer.data.phone2),repName:name(customer.assignedTo),lastPurchase};
-  if(match(row.name,row.code,row.city,row.phone,row.repName))rows.push(row);
+  const row={id:customer.id,name:text(customer.data.name),code:text(customer.data.code),city:text(customer.data.city),phone:text(customer.data.phone||customer.data.phone2),repName:name(customer.assignedTo),lastPurchase,neverBought:!lastPurchase};
+  if(match(row.name,row.code,row.city,row.phone,row.repName))(lastPurchase?lapsed:never).push(row);
  }
- rows.sort((a,b)=>b.lastPurchase.localeCompare(a.lastPurchase)||a.name.localeCompare(b.name,'ar')||a.id.localeCompare(b.id));
- return {list,total:rows.length,rows:rows.slice(0,LEAD_LIST_LIMIT),days:DORMANT_DAYS};
+ lapsed.sort((a,b)=>b.lastPurchase.localeCompare(a.lastPurchase)||a.name.localeCompare(b.name,'ar')||a.id.localeCompare(b.id));
+ never.sort((a,b)=>a.name.localeCompare(b.name,'ar')||a.id.localeCompare(b.id));
+ const rows=[...lapsed,...never],from=(page-1)*LEAD_LIST_LIMIT;
+ return {list,total:rows.length,lapsed:lapsed.length,never:never.length,page,pageSize:LEAD_LIST_LIMIT,rows:rows.slice(from,from+LEAD_LIST_LIMIT),days:DORMANT_DAYS};
 }
 
 // ------------------------------------------------------------------------------------------------------------- B. routing at approval
@@ -336,14 +343,17 @@ export async function recordRoleTask(c:Context,body:unknown,now:string){
 }
 
 // ------------------------------------------------------------------------------------------------------------- E. the dashboard
-/** The members a reader sees, grouped by customer-service manager: an administrator (and the sales manager, question 3) every team, a
- *  customer-service manager his own team and himself, a member himself. Members with no customer-service manager form the last group. */
+/** The members a reader sees, grouped by customer-service manager (performanceReach): an administrator every team, and the members with no
+ *  customer-service manager as the last group; a sales manager only the customer-service teams that report to him (the owner's decision 3,
+ *  as GSCO 2.13.79): the customer-service managers whose «مدير المبيعات المستلم» (supervisor_id) he is, each with the members who report to
+ *  that manager, none otherwise; a customer-service manager his own team and himself; a member himself. */
 export function performanceTeams(me:Member,members:readonly Member[]):{managerId:string;managerName:string;members:PerformanceMember[]}[]{
  const service=members.filter(m=>isServiceRole(m.role)&&(m.active||m.id===me.id));
  const asMember=(m:Member):PerformanceMember=>({id:m.id,name:m.name,role:m.role,supervisorId:m.supervisorId||''});
- if(me.role==='customer_service')return [{managerId:me.supervisorId||'',managerName:members.find(m=>m.id===me.supervisorId)?.name||'',members:[asMember(me)]}];
- const all=me.role==='admin'||me.role==='manager'&&SALES_MANAGER_SEES_ALL_SERVICE_TEAMS;
- const managers=me.role==='customer_service_manager'?[me]:service.filter(m=>m.role==='customer_service_manager'&&(all||m.supervisorId===me.id));
+ const reach=performanceReach(me.role);
+ if(reach==='self')return [{managerId:me.supervisorId||'',managerName:members.find(m=>m.id===me.supervisorId)?.name||'',members:[asMember(me)]}];
+ const all=reach==='all';
+ const managers=reach==='team'?[me]:service.filter(m=>m.role==='customer_service_manager'&&(all||m.supervisorId===me.id));
  const groups=managers.map(m=>({managerId:m.id,managerName:m.name,members:[asMember(m),...service.filter(x=>x.role==='customer_service'&&x.supervisorId===m.id).map(asMember)]}));
  if(all){const orphans=service.filter(x=>x.role==='customer_service'&&!managers.some(m=>m.id===x.supervisorId)).map(asMember);if(orphans.length)groups.push({managerId:'',managerName:'',members:orphans});}
  return groups;
@@ -352,21 +362,24 @@ export type PerformanceView=Awaited<ReturnType<typeof performanceView>>;
 /** GET /api/service-performance?month=: the dashboard, read-only. No target and no achievement percentage (the owner's decision). */
 export async function performanceView(c:Context,month:string,now:string){
  if(!performanceAllowed(c.me.role))throw new CRMError('أداء خدمة العملاء متاح لمدير النظام ومدير المبيعات ومدير خدمة العملاء وممثل خدمة العملاء لنفسه.',403);
- const supportDays=await readSupportSalesDays(c.db),facts=await loadSalesFacts(c.db,c.members);
+ const groups=performanceTeams(c.me,c.members),visible=groups.flatMap(g=>g.members),reach=performanceReach(c.me.role);
+ const supportDays=await readSupportSalesDays(c.db);
+ // A sales manager no customer-service team reports to: an empty answer, and nothing else is read.
+ if(!visible.length)return {generatedAt:now,month,supportDays,note:performanceNote,reach,teams:[],invoices:[],opportunities:[]};
+ const facts=await loadSalesFacts(c.db,c.members);
  const cases=facts?.cases||[],quotes=facts?.quotes||[],invoices=facts?.invoices||[],contacts=facts?.contacts||[];
  const attributed=attributeSales({cases,quotes,invoices,contacts,supportDays}),tasks=await loadRoleTasks(c.db,c.members,facts);
- const groups=performanceTeams(c.me,c.members),visible=groups.flatMap(g=>g.members);
  const rows=servicePerformance({members:visible,cases,quotes,attributed,invoices,contacts,tasks},month,now);
  const teams=groups.map(g=>{const own=rows.filter(r=>g.members.some(m=>m.id===r.memberId));return {managerId:g.managerId,managerName:g.managerName,rows:own,total:performanceTotal(own,g.managerName)};});
  const ids=new Set(visible.map(m=>m.id)),name=nameOf(c.members),number=new Map(cases.map(o=>[o.id,o.number]));
- // The figures are the members' whatever the reader (a sales manager reads every team's, question 3); the customer of an opportunity,
+ // The figures are the members' whatever the reader (a sales manager reads his own customer-service teams'); the customer of an opportunity,
  // its owner and the words of its source only when the reader may read that opportunity (lib/customer-service.ts canReadService: the
  // reader's regions, the branch for all but an administrator, and no member of sales on one customer service keeps).
  const readable=readableCases(c,facts);
  const invoiceRows=attributed.filter(a=>a.date.slice(0,7)===month&&ids.has(a.memberId)).map(a=>({date:a.date,number:a.number,type:a.type,category:a.category,memberName:name(a.memberId),value:a.value,caseNumber:a.caseId?number.get(a.caseId)??null:null}));
  const opportunities=cases.filter(o=>riyadhMonth(o.createdAt)===month&&ids.has(o.registrarId)).map(o=>{const shown=readable.has(o.id);return {number:o.number,customerName:shown?o.customerName:'',hidden:!shown,registrarName:name(o.registrarId),ownerName:o.held&&shown?name(o.ownerId):'',leadGroup:o.leadGroup,leadSource:o.leadSource,leadNote:shown?o.leadNote:'',
   route:o.held?'service':o.route==='sales'||o.approved?'sales':'',state:o.state,createdAt:o.createdAt};});
- return {generatedAt:now,month,supportDays,note:performanceNote,teams,invoices:invoiceRows,opportunities};
+ return {generatedAt:now,month,supportDays,note:performanceNote,reach,teams,invoices:invoiceRows,opportunities};
 }
 const stateWords:Record<string,[string,string]>={pending_approval:['بانتظار اعتماد خدمة العملاء','Awaiting customer service approval'],returned:['مطلوب تعديل','Changes requested'],pending_assignment:['بانتظار تكليف المبيعات','Awaiting sales assignment'],
  with_supervisor:['لدى مشرف المبيعات','With sales supervisor'],assigned:['قيد متابعة المبيعات','Sales follow-up in progress'],service:['لدى خدمة العملاء','With customer service'],won:['تم الفوز','Won'],lost:['تم الفقد','Lost']};

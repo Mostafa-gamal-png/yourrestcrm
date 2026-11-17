@@ -1,9 +1,9 @@
 // Customer service in the sales process (the owner, 2026-11-16, item 5 of the GSCO list, after GSCO 2.13.78), pure and without a build:
 // «مصدر الفرصة» (the sources, the problems, the words), the routing at approval (who may keep it and why, the 90-day boundary), the opportunity
 // customer service keeps (its state, its closing, who works on it, who it may be given to), the sales attribution (full > shared > support,
-// the window of a quotation, the 60-day support window, a return), the full customer-service sales out of a list, the role task (who, the 24
+// the window of a quotation, the support window (30 days by default), a return), the full customer-service sales out of a list, the role task (who, the 24
 // working hours, the form), «أداء خدمة العملاء» (the rows, the team line, the customers who came back), the evaluation's new indicator (weight
-// 15, 3 cases at least, target 50, saved weights made room for, a closed month kept) and the four provisional answers. Made-up records only.
+// 15, 3 cases at least, target 100, saved weights made room for, a closed month kept) and the owner's four decisions. Made-up records only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,9 +33,20 @@ let checks=0;
 const eq=(actual,expected,message)=>{assert.deepEqual(actual===undefined?undefined:JSON.parse(JSON.stringify(actual)),expected,message);checks++;};
 const ok=(value,message)=>{assert.ok(value,message);checks++;};
 
-// ---- the four questions the owner has not answered: GSCO 2.13.78's provisional choices, each in one place
-eq([K.CONVERSION_TARGET,S.SUPPORT_SALES_DAYS,S.SALES_MANAGER_SEES_ALL_SERVICE_TEAMS,S.DORMANT_LIST_INCLUDES_NEVER_BOUGHT],[50,60,true,false],'Q1 target 50%, Q2 60 days, Q3 the sales manager sees every team, Q4 a customer who never bought is not listed');
-eq([K.DEFAULT_SERVICE_KPI_SETTINGS.rep.conversion,K.DEFAULT_SERVICE_KPI_SETTINGS.supportSalesDays],[{target:50,weight:15,min:3},60],'the evaluation and the setting read them');
+// ---- the owner's four decisions (2026-11-17, as in GSCO and Trade), each in one place
+eq([K.CONVERSION_TARGET,S.SUPPORT_SALES_DAYS,S.SALES_MANAGER_SEES_ALL_SERVICE_TEAMS,S.DORMANT_LIST_INCLUDES_NEVER_BOUGHT],[100,30,false,true],'1 target 100%, 2 thirty days, 3 the sales manager sees only his own customer-service teams, 4 a customer who never bought is listed');
+eq([K.DEFAULT_SERVICE_KPI_SETTINGS.rep.conversion,K.DEFAULT_SERVICE_KPI_SETTINGS.supportSalesDays],[{target:100,weight:15,min:3},30],'the evaluation and the setting read them');
+// A follow-up of update-cs-sales-20261116 (as GSCO 2.13.79): its placeholders, saved before the revision, read the owner's figures; values set by
+// hand, and anything saved from now on (the server stamps the revision), stay; a closed month keeps its certificate.
+eq([K.PLACEHOLDER_CONVERSION_TARGET,K.PLACEHOLDER_SUPPORT_SALES_DAYS,K.SERVICE_KPI_SETTINGS_REVISION,K.DEFAULT_SERVICE_KPI_SETTINGS.revision],[50,60,2,2],'the placeholders and the revision');
+const v78=JSON.parse(JSON.stringify(K.DEFAULT_SERVICE_KPI_SETTINGS));delete v78.revision;v78.rep.conversion.target=50;v78.supportSalesDays=60;
+const moved=K.normalizeSettings(v78),kept=K.normalizeSettings({...v78,revision:2}),byHand=K.normalizeSettings({...v78,rep:{...v78.rep,conversion:{...v78.rep.conversion,target:70}},supportSalesDays:45}),closedCard=K.normalizeSettings(v78,'certificate');
+eq([moved.rep.conversion.target,moved.supportSalesDays,moved.revision],[100,30,2],'saved under update-cs-sales with its placeholders: 50% reads 100%, 60 days read 30');
+eq([kept.rep.conversion.target,kept.supportSalesDays],[50,60],'saved with the revision (from now on): 50% and 60 days are the administrator\'s choice and stay');
+eq([byHand.rep.conversion.target,byHand.supportSalesDays],[70,45],'a target and a window set by hand stay');
+eq([closedCard.rep.conversion.target,closedCard.supportSalesDays,'revision' in closedCard],[50,60,false],'a closed month\'s certificate keeps what it was closed with');
+eq([S.performanceReach('admin'),S.performanceReach('manager'),S.performanceReach('customer_service_manager'),S.performanceReach('customer_service')],['all','reporting','team','self'],'whose figures each reader of «أداء خدمة العملاء» reaches (decision 3)');
+eq([S.PERFORMANCE_NO_TEAM,S.PERFORMANCE_NO_TEAM_EN],['لا يتبعك فريق خدمة عملاء','No customer-service team reports to you'],'a sales manager with no team: words, not an error');
 
 // ---- A. «مصدر الفرصة»
 eq(S.serviceLeadSources,['اتصال وارد','واتساب','الموقع الإلكتروني','مواقع التواصل الاجتماعي','توصية من عميل','اتصال تسويقي','معرض أو فعالية','أخرى'],'the sources customer service brings in, GSCO\'s list');
@@ -51,7 +62,7 @@ eq([S.leadLabelEn(null,null),S.leadLabelEn('service','واتساب'),S.leadLabel
 // ---- B. routing
 const today='2026-11-16';
 eq([S.dormantSince(today),S.dormantCustomer('2026-08-18',today),S.dormantCustomer('2026-08-17',today),S.dormantCustomer('',today),S.dormantCustomer(null,today),S.dormantCustomer('2026-11-15',today)],['2026-08-18',false,true,true,true,false],'90 days ago still buys; 91 days ago, or never, has not bought');
-eq([S.dormantListed('2026-08-17',today),S.dormantListed('2026-08-18',today),S.dormantListed('',today)],[true,false,false],'the list: a buyer of before only (question 4)');
+eq([S.dormantListed('2026-08-17',today),S.dormantListed('2026-08-18',today),S.dormantListed('',today),S.dormantListed(null,today)],[true,false,true,true],'the list: a buyer of before 90 days, and one who never bought (decision 4)');
 eq([S.routingEligible({unlinked:false,dormant:false,serviceEffort:false}),S.routingEligible({unlinked:true,dormant:false,serviceEffort:false}),S.routingEligible({unlinked:false,dormant:true,serviceEffort:false}),S.routingEligible({unlinked:false,dormant:false,serviceEffort:true})],[false,true,true,true],'customer service keeps it only for a customer without an ERP code, one who has not bought, or its own lead');
 eq(S.routingReasons({unlinked:true,dormant:true,serviceEffort:false}),['unlinked','dormant'],'the reasons, in order');
 eq([S.routeLabels.sales,S.routeLabels.service,S.OPEN_SALES_WARNING],['تمرير لمدير المبيعات','تتولاها خدمة العملاء','تنبيه: للعميل فرصة مفتوحة لدى المبيعات'],'the two choices and the warning, in the owner\'s words');
@@ -93,6 +104,7 @@ ok(!attributed.some(a=>a.id==='s3'||a.id==='s4'),'support: never a return, never
 const window=S.attributeSales({cases,quotes,invoices:[inv('w1',{customerId:'c3',date:'2026-12-02'}),inv('w2',{customerId:'c3',date:'2026-12-03'})],contacts:[contacts[1]],supportDays:60}).map(a=>a.id);
 eq(window,['w1'],'the 60th day after the contact counts, the 61st does not');
 eq(S.attributeSales({cases,quotes,invoices:[inv('w1',{customerId:'c3',date:'2026-12-02'})],contacts:[contacts[1]],supportDays:30}).length,0,'the window follows the setting');
+eq(S.attributeSales({cases,quotes,invoices:[inv('d30',{customerId:'c3',date:'2026-11-02'}),inv('d31',{customerId:'c3',date:'2026-11-03'})],contacts:[contacts[1]],supportDays:S.SUPPORT_SALES_DAYS}).map(a=>[a.id,a.category]),[['d30','support']],'by default (30 days, decision 2): the 30th day after the contact of 3 October counts, the 31st does not');
 eq([...S.fullSalesIds(attributed)].sort(),['e1','e3','e5'],'the full customer-service sales: their invoices and returns');
 eq(S.withoutFullSales([{id:'e1'},{id:'e2'},{id:'x'}],S.fullSalesIds(attributed)).map(s=>s.id),['e2','x'],'what every achievement reads: the list without them');
 eq(S.withoutFullSales([{id:'e1'}],null).map(s=>s.id),['e1'],'nothing kept by customer service: the list as it was');
@@ -158,7 +170,7 @@ eq(K.REP_METRICS.reduce((n,key)=>n+d.rep[key].weight,0),100,'the card adds up to
 eq([K.repMetricLabels.conversion,K.repMetricLabelsEn.conversion],['نسبة الفرص المتحولة إلى مبيعات','Opportunities turned into sales'],'its name');
 const legacy={...JSON.parse(JSON.stringify(d)),rep:Object.fromEntries(K.REP_METRICS.filter(k=>k!=='conversion').map(k=>[k,{...d.rep[k],weight:K.LEGACY_REP_WEIGHTS[k]}]))};delete legacy.supportSalesDays;
 const live=K.normalizeSettings(legacy);
-eq([K.REP_METRICS.map(k=>live.rep[k].weight),live.supportSalesDays,K.settingsProblem(live)],[[13,13,13,13,9,8,8,8,15],60,''],'settings saved with the old defaults: the new defaults, valid');
+eq([K.REP_METRICS.map(k=>live.rep[k].weight),live.supportSalesDays,K.settingsProblem(live)],[[13,13,13,13,9,8,8,8,15],30,''],'settings saved with the old defaults: the new defaults, valid (the window 30 days)');
 const custom={...legacy,rep:{...legacy.rep,support_response:{...legacy.rep.support_response,weight:30},closure_timing:{...legacy.rep.closure_timing,weight:0}}};
 const scaled=K.normalizeSettings(custom);
 eq([K.REP_METRICS.map(k=>scaled.rep[k].weight),K.REP_METRICS.reduce((n,k)=>n+scaled.rep[k].weight,0),K.settingsProblem(scaled)],[[26,0,13,13,9,8,8,8,15],100,''],'weights the administrator changed: kept in proportion over 85, the new one 15');
@@ -172,7 +184,12 @@ const card=conversions=>K.serviceKpiMonth(input(conversions),'2026-11','2026-11-
 const two=card([fact('a','2026-11-03T06:00:00.000Z',true),fact('b','2026-11-04T06:00:00.000Z',false)]);
 eq([two.denominator,two.enough,two.measured],[2,false,false],'two cases: not enough (3 at least), neither raises nor lowers the score');
 const three=card([fact('a','2026-11-03T06:00:00.000Z',true),fact('b','2026-11-04T06:00:00.000Z',false,true),fact('c','2026-11-05T06:00:00.000Z',false),fact('x','2026-10-30T06:00:00.000Z',true),fact('y','2026-11-05T06:00:00.000Z',true,false,'other')]);
-eq([three.numerator,three.denominator,Math.round(three.actual*10)/10,three.target,three.weight,three.measured,Math.round(three.achieved*1000)/1000],[2,3,66.7,50,15,true,1],'three of the member\'s closings in the month: won or lost with an invoice count as converted; 66.7% of a 50% target');
+eq([three.numerator,three.denominator,Math.round(three.actual*10)/10,three.target,three.weight,three.measured,Math.round(three.achieved*1000)/1000],[2,3,66.7,100,15,true,0.667],'three of the member\'s closings in the month: won or lost with an invoice count as converted; 66.7% of a 100% target (decision 1)');
+eq(Math.round(three.points*100)/100,10,'so it earns 10 of its 15 points');
+const all=card([fact('a','2026-11-03T06:00:00.000Z',true),fact('b','2026-11-04T06:00:00.000Z',false,true),fact('c','2026-11-05T06:00:00.000Z',true)]);
+eq([all.actual,all.achieved,all.points],[100,1,15],'every closing converted: 100% of the target, the whole 15');
+const none=card([fact('a','2026-11-03T06:00:00.000Z',false),fact('b','2026-11-04T06:00:00.000Z',false),fact('c','2026-11-05T06:00:00.000Z',false)]);
+eq([none.actual,none.achieved,none.points,none.measured],[0,0,0,true],'none converted: none of the 15, still measured');
 eq(three.items.map(i=>i.tag),['won','lost_invoiced','lost'],'each case says why');
 eq(card(undefined).denominator,0,'an input without the facts: no cases');
 

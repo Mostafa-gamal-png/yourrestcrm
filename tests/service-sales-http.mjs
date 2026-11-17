@@ -65,7 +65,9 @@ try {
   let response = await get('cs', '/api/service-leads?list=lost');
   eq([response.status, response.headers['cache-control'], response.json().rows.map(r => [r.id, r.customerName, r.lossReason])], [200, 'no-store', [['case-lost', 'مصنع c-lost', 'السعر أعلى من المنافس']]], 'customer service: the lost opportunity of its branch, with its loss reason');
   response = await get('cs', '/api/service-leads?list=dormant');
-  eq(response.json().rows.map(r => [r.id, r.lastPurchase]), [['c-dorm', dayAgo(120)]], 'the dormant list: bought 120 days ago; not the one that bought 10 days ago, not one that never bought (question 4), not one with an open opportunity');
+  const dormant = response.json().rows;
+  eq([dormant[0].id, dormant[0].lastPurchase, dormant.some(r => r.id === 'c-buy')], ['c-dorm', dayAgo(120), false], 'the dormant list: bought 120 days ago, first; not the one that bought 10 days ago');
+  eq(dormant.slice(1).map(r => [r.id, r.lastPurchase]).sort(), ['c-cmp', 'c-lost', 'c-never', 'c-new', 'c-sup', 'c-two'].map(id => [id, '']), 'then every customer of the branch who never bought (the owner\'s decision 4), none with an open opportunity');
   eq((await get('owner', '/api/service-leads?list=dormant')).status, 200, 'the administrator reads the lists too');
   eq((await get('cs', '/api/service-leads?kind=opportunity&id=case-lost')).json().reference, {kind: 'opportunity', id: 'case-lost', source: 'فرصة مفقودة سابقة', label: '#70 · مصنع c-lost', customerId: 'c-lost', customerName: 'مصنع c-lost', blocked: ''}, 'the record a new opportunity starts from, with the source the system fills in');
   eq([(await get('cs', '/api/service-leads?kind=customer&id=c-buy')).status, (await get('cs', '/api/service-leads?kind=customer&id=c-buy')).json().error], [409, 'العميل اشترى خلال 90 يومًا؛ لا يُبدأ له مصدر «عميل منقطع عن الشراء».'], 'a customer who bought within 90 days: 409');
@@ -202,7 +204,7 @@ try {
   eq(response.json().canExport, false, 'a customer-service member does not export (the cell is not his role\'s)');
   const team = (await perf('csm')).json().teams;
   eq([team.length, team[0].rows.map(r => r.memberId).sort(), team[0].total.sales.full.value], [1, ['cs', 'cs2', 'csh', 'csm'].sort(), 1800], 'the customer-service manager: his team and himself, with the team line');
-  eq([(await perf('mgr')).json().teams.length, (await perf('owner')).json().teams.length], [1, 1], 'the sales manager (question 3) and the administrator read every team');
+  eq([(await perf('mgr')).json().teams.map(t => t.managerId), (await perf('owner')).json().teams.map(t => t.managerId)], [['csm'], ['csm']], 'the sales manager reads the customer-service team under him (the owner\'s decision 3), the administrator every team');
   const exported = (who, query = '?month=' + month) => get(who, '/api/service-performance/export' + query);
   eq((await exported(null)).status, 401, 'export, anonymous: 401');
   eq([(await exported('cs')).status, (await exported('cs')).json().error], [403, 'غير مسموح لك بالتصدير في تقارير خدمة العملاء. راجع مدير النظام.'], 'a member without the export cell: 403');
@@ -219,17 +221,17 @@ try {
   const kpi = (await get('csm', '/api/service-kpi?month=' + month)).json();
   const card = kpi.groups.find(g => g.managerId === 'csm').reps.find(r => r.memberId === 'cs');
   const conversion = card.metrics.find(x => x.key === 'conversion');
-  eq([conversion.weight, conversion.min, conversion.target, conversion.denominator, conversion.numerator, conversion.enough], [15, 3, 50, 1 + (dayAgo(2).slice(0, 7) === month ? 1 : 0), 1, false], '«نسبة الفرص المتحولة إلى مبيعات»: weight 15, at least 3 cases, target 50; the won one converted (and the lost one of the month not), not enough cases yet');
-  eq(kpi.settings.supportSalesDays, 60, 'the support-sales window: 60 days by default');
+  eq([conversion.weight, conversion.min, conversion.target, conversion.denominator, conversion.numerator, conversion.enough], [15, 3, 100, 1 + (dayAgo(2).slice(0, 7) === month ? 1 : 0), 1, false], '«نسبة الفرص المتحولة إلى مبيعات»: weight 15, at least 3 cases, target 100 (the owner\'s decision 1); the won one converted (and the lost one of the month not), not enough cases yet');
+  eq([kpi.settings.supportSalesDays, kpi.settings.rep.conversion.target], [30, 100], 'the support-sales window: 30 days by default (decision 2); the indicator\'s target 100');
   const save = settings => post('owner', '/api/service-kpi', {action: 'settings', requestId: crypto.randomUUID(), version: kpi.settingsVersion, settings});
   const {supportSalesDays, ...older} = kpi.settings;
   eq((await save({...kpi.settings, supportSalesDays: 0})).json().error, 'مدة احتساب مبيعات المساندة بالأيام عدد صحيح من 1 إلى 365', 'a window of 0 days: refused');
-  eq((await save({...kpi.settings, supportSalesDays: 30})).status, 200, 'the administrator sets 30 days');
-  eq((await get('csm', '/api/service-kpi?month=' + month)).json().settings.supportSalesDays, 30, 'kept');
+  eq((await save({...kpi.settings, supportSalesDays: 45})).status, 200, 'the administrator sets 45 days');
+  eq((await get('csm', '/api/service-kpi?month=' + month)).json().settings.supportSalesDays, 45, 'kept');
   const second = (await get('csm', '/api/service-kpi?month=' + month)).json();
   eq((await post('owner', '/api/service-kpi', {action: 'settings', requestId: crypto.randomUUID(), version: second.settingsVersion, settings: older})).status, 200, 'a page of before saves without the field');
-  eq([(await get('csm', '/api/service-kpi?month=' + month)).json().settings.supportSalesDays, supportSalesDays], [30, 60], 'and the saved window is kept');
-  eq((await perf('cs')).json().supportDays, 30, 'the dashboard reads it');
+  eq([(await get('csm', '/api/service-kpi?month=' + month)).json().settings.supportSalesDays, supportSalesDays], [45, 30], 'and the saved window is kept');
+  eq((await perf('cs')).json().supportDays, 45, 'the dashboard reads it');
   eq((await post('csm', '/api/service-kpi', {action: 'settings', requestId: crypto.randomUUID(), version: 0, settings: kpi.settings})).status, 403, 'only the administrator changes the settings');
 
   console.log(JSON.stringify({ok: true, checks, scope: 'customer service in the sales process on the built release: the leads, the routing, the opportunity customer service keeps, the full customer-service sales out of every achievement, the role task, the dashboard and its Excel, the evaluation', realBrowser: false}));

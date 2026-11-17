@@ -10,7 +10,9 @@
 // 5. the monthly report and its Excel keep the loss reason of an opportunity customer service kept;
 // 6. a customer who has not bought is started again once the opportunity started from it closed;
 // 7. «فرص مفقودة للاسترداد»: the people on another member's opportunity are not named;
-// and the representative's own page («مستهدفي») does not count a full customer-service sale as their work.
+// and the representative's own page («مستهدفي») does not count a full customer-service sale as their work. Then the owner's decisions of
+// 2026-11-17: a sales manager reads the customer-service teams under him only (figures, rows and the Excel file), and an interested contact
+// makes a support sale for 30 days, not 31.
 // Synthetic isolated fixtures only: temporary SQLite, made-up members, customers and documents.
 import assert from 'node:assert/strict';
 import {inflateRawSync} from 'node:zlib';
@@ -22,7 +24,8 @@ const members = [
   {id: 'sup', role: 'supervisor', sup: 'mgr', name: 'المشرف'}, {id: 'rep', role: 'rep', sup: 'sup', name: 'المندوب الأول'}, {id: 'rep2', role: 'rep', sup: 'mgr', name: 'المندوب الثاني'},
   {id: 'rep3', role: 'rep', sup: 'sup', name: 'المندوب الثالث'},
   {id: 'csm', role: 'customer_service_manager', sup: 'mgr', name: 'مدير خدمة العملاء'}, {id: 'cs', role: 'customer_service', sup: 'csm', name: 'ممثلة الخدمة'},
-  {id: 'cs2', role: 'customer_service', sup: 'csm', name: 'ممثل الخدمة الثاني'}
+  {id: 'cs2', role: 'customer_service', sup: 'csm', name: 'ممثل الخدمة الثاني'},
+  {id: 'csm2', role: 'customer_service_manager', sup: 'mgrw', name: 'مدير خدمة العملاء الثاني'}, {id: 'cs3', role: 'customer_service', sup: 'csm2', name: 'ممثل الفريق الثاني'}
 ];
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
@@ -42,7 +45,7 @@ try {
   const insert = (id, kind, parent, assigned, data, when = ago(3)) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,'الرئيسي',?,?,?,1,'fixture')").bind(id, kind, parent, assigned, JSON.stringify(data), when, when).run();
   const point = {location: '24.7136000, 46.6753000', latitude: 24.7136, longitude: 46.6753};
   const customer = (id, code, rep = 'rep') => insert(id, 'customer', null, rep, {name: 'مصنع ' + id, region: 'الشرقية', city: 'الدمام', code, phone: '0500000001', branch: 'الرئيسي', assignedTo: rep, ...point}, ago(400));
-  for (const [id, code, rep] of [['c-late', 'C-LATE'], ['c-same', 'C-SAME'], ['c-held', ''], ['c-other', 'C-OTH', 'rep2'], ['c-k', 'C-K'], ['c-dorm', 'C-DORM'], ['c-lost', 'C-LOST'], ['c-own', 'C-OWN', 'rep3']]) await customer(id, code, rep);
+  for (const [id, code, rep] of [['c-late', 'C-LATE'], ['c-same', 'C-SAME'], ['c-held', ''], ['c-other', 'C-OTH', 'rep2'], ['c-k', 'C-K'], ['c-dorm', 'C-DORM'], ['c-lost', 'C-LOST'], ['c-own', 'C-OWN', 'rep3'], ['c-team2', 'C-T2'], ['c-s30', 'C-S30'], ['c-s31', 'C-S31']]) await customer(id, code, rep);
   await app.db.prepare('INSERT INTO crm_erp_imports(id,actor_id,fingerprint,file_name,result,created_at) VALUES(?,?,?,?,?,?)')
     .bind('erp-import-1', 'owner', 'fp-1', 'synthetic.xlsx', JSON.stringify({coverage: {complete: true, from: prevMonth + '-01', to: prevLast, months: [], partialMonths: [], repIds: ['rep3'], allReps: false, importerId: 'owner', importer: 'مدير النظام', at: ago(1), importId: 'erp-import-1'}}), ago(1)).run();
   // An ERP document, received now (created_at is the moment of the import).
@@ -135,6 +138,13 @@ try {
   const reference = (await get('cs2', '/api/service-leads?kind=opportunity&id=case-lost')).json().reference;
   eq(Object.keys(reference).sort(), ['blocked', 'customerId', 'customerName', 'id', 'kind', 'label', 'source'], 'starting from it names no person either');
 
+  // ---- the owner's decision 2: an interested contact makes a support sale for 30 days, not 31
+  const supportRow = (id, customerId, days) => insert(id, 'support', null, 'rep', {kind: 'support', customerId, origin: 'rep', status: 'done', requestedBy: 'rep', requestedAt: ago(days + 1), repId: 'rep', note: 'متابعة', channel: 'any', handlerId: 'cs', handlerAt: ago(days + 1), handlerBy: 'cs', result: {outcome: 'reached_interested', note: 'مهتم', nextDate: '', by: 'cs', at: ago(days)}, events: []}, ago(days + 1));
+  await supportRow('support-30', 'c-s30', 30); await supportRow('support-31', 'c-s31', 31);
+  await erp('inv-s30', 'rep', 'C-S30', day, 40000); await erp('inv-s31', 'rep', 'C-S31', day, 40000);
+  // Another customer-service team, under the other sales manager (mgrw), with an opportunity of its own.
+  eq((await create('cs3', 'c-team2', {group: 'service', source: 'واتساب'})).status, 200, 'the other team registers an opportunity');
+
   // ---- 3. the dashboard, its Excel and the role tasks follow what the reader may read
   const names = view => view.opportunities.filter(o => o.customerName).map(o => o.customerName).sort();
   const perf = async who => (await get(who, '/api/service-performance?month=' + month)).json();
@@ -143,10 +153,17 @@ try {
   const kept = asMgr.opportunities.filter(o => o.route === 'service');
   eq([kept.length > 0, kept.every(o => !o.customerName && !o.ownerName && o.hidden), asMgr.opportunities.filter(o => o.customerName).every(o => o.route === 'sales')], [true, true, true], 'the sales manager reads no customer, nor who keeps it, of an opportunity customer service keeps; only of one passed to him');
   eq([names(asMgrw), names(asAdminw)], [[], []], 'nor does a reader of another region (a sales manager, an administrator)');
-  eq([asMgr.teams.map(t => t.total.opportunities), asMgrw.teams.map(t => t.total.kept)], [asOwner.teams.map(t => t.total.opportunities), asOwner.teams.map(t => t.total.kept)], 'the figures of every team are the same for all (question 3)');
+  eq([asOwner.teams.map(t => t.managerId).sort(), asMgr.teams.map(t => t.managerId), asMgrw.teams.map(t => t.managerId)], [['csm', 'csm2'], ['csm'], ['csm2']], 'the administrator reads every team; each sales manager the customer-service team under him only (the owner\'s decision 3)');
+  eq([asMgr.teams[0].total, asMgrw.teams[0].total], [asOwner.teams.find(t => t.managerId === 'csm').total, asOwner.teams.find(t => t.managerId === 'csm2').total], 'with the figures the administrator reads for that team');
+  const ofTeam2 = view => [view.opportunities.some(o => o.registrarName === 'ممثل الفريق الثاني'), view.teams.some(t => t.rows.some(r => r.memberId === 'cs3'))];
+  eq([ofTeam2(asMgr), ofTeam2(asMgrw), ofTeam2(asOwner)], [[false, false], [true, true], [true, true]], 'no row or opportunity of another team: the other team\'s belong to its own sales manager');
+  const supportSales = asOwner.invoices.filter(i => i.category === 'support').map(i => i.number);
+  eq([supportSales.includes('INV-inv-s30'), supportSales.includes('INV-inv-s31'), asOwner.supportDays], [true, false, 30], 'a support sale within 30 days of an interested contact; not after 31 (the owner\'s decision 2)');
   const exportText = async who => { const file = await get(who, '/api/service-performance/export?month=' + month); eq(file.status, 200, who + ' downloads the Excel file'); return zipText(file.bytes); };
-  ok(!(await exportText('mgrw')).includes('مصنع c-held') && !(await exportText('mgr')).includes('مصنع c-held'), 'nor in the Excel file');
-  ok((await exportText('owner')).includes('مصنع c-held'), 'which the administrator\'s carries');
+  const [mgrFile, mgrwFile, ownerFile] = [await exportText('mgr'), await exportText('mgrw'), await exportText('owner')];
+  ok(!mgrwFile.includes('مصنع c-held') && !mgrFile.includes('مصنع c-held'), 'nor in the Excel file');
+  ok(ownerFile.includes('مصنع c-held'), 'which the administrator\'s carries');
+  eq([mgrFile.includes('ممثل الفريق الثاني'), mgrFile.includes('مدير خدمة العملاء الثاني'), mgrwFile.includes('ممثل الفريق الثاني'), ownerFile.includes('ممثل الفريق الثاني')], [false, false, true, true], 'the sales manager\'s Excel file has no figure or row of another team');
   eq((await stage('cs', heldId, {stage: 'lost', lossReason: 'السعر أعلى من المنافس'})).status, 200, 'the kept opportunity is lost: a role task for its owner');
   const tasks = async who => (await get(who, '/api/service-role-tasks')).json().tasks.map(t => t.caseId);
   ok((await tasks('owner')).includes(heldId) && (await tasks('cs')).includes(heldId) && (await tasks('csm')).includes(heldId), 'the administrator, the owner and the manager see it');

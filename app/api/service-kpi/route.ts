@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requirePages,requireCell} from '@/lib/crm-server';
 import type {Member} from '@/lib/crm';
 import {memberCanAccessRegion,regionScope} from '@/lib/regions';
-import {AUDIT_CRITERIA,AUDIT_DELETE_DAYS,AUDIT_NOTE_MAX,KPI_MONTH,MANAGER_METRICS,REP_METRICS,SERVICE_AUDIT_KIND,SERVICE_KPI_MONTH_KIND,SERVICE_KPI_SETTINGS_ID,SERVICE_KPI_SETTINGS_KIND,auditResult,auditTotal,closedMonthFor,kpiActions,kpiManagerOf,kpiMonthOf,monthCertificate,monthCloseProblem,monthRowId,normalizeSettings,serviceKpiAllowed,serviceKpiMonth,serviceKpiView,settingsProblem,type ServiceAuditData,type ServiceKpiMonthData} from '@/lib/service-kpi';
+import {AUDIT_CRITERIA,AUDIT_DELETE_DAYS,AUDIT_NOTE_MAX,KPI_MONTH,MANAGER_METRICS,REP_METRICS,SERVICE_AUDIT_KIND,SERVICE_KPI_MONTH_KIND,SERVICE_KPI_SETTINGS_ID,SERVICE_KPI_SETTINGS_KIND,SERVICE_KPI_SETTINGS_REVISION,auditResult,auditTotal,closedMonthFor,kpiActions,kpiManagerOf,kpiMonthOf,monthCertificate,monthCloseProblem,monthRowId,normalizeSettings,serviceKpiAllowed,serviceKpiMonth,serviceKpiView,settingsProblem,type ServiceAuditData,type ServiceKpiMonthData} from '@/lib/service-kpi';
 import {loadAuditRow,loadMonthRows,loadServiceKpiInput,loadSettings} from '@/lib/service-kpi-rows';
 import {loadComplaint} from '@/lib/complaint-rows';
 import {loadConversionFacts} from '@/lib/service-sales-server';
@@ -46,7 +46,9 @@ const settingsShape=z.object({
  audit:z.object({criteria:z.object(Object.fromEntries(AUDIT_CRITERIA.map(key=>[key,finite]))).strict(),pass:finite,coach:finite,sample:finite}).strict(),
  closeGraceDays:finite,
  // 2026-11-16: «مدة احتساب مبيعات المساندة»; a page opened before it sends none and keeps the saved value (or the default).
- supportSalesDays:finite.optional()
+ supportSalesDays:finite.optional(),
+ // 2026-11-17: the page sends back the revision it read; the server stamps the current one itself on every save.
+ revision:z.number().int().min(1).max(1000).optional()
 }).strict();
 const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('audit'),requestId,repId:idText,month:monthSchema,date:z.union([day,z.literal('')]).default(''),refType:z.enum(['complaint','support','service','']).default(''),refId:z.string().max(200).default(''),scores:marks,
@@ -126,7 +128,9 @@ export async function POST(req:Request){try{
   statements.push(c.db.prepare(`UPDATE crm_records SET data=?,updated_at=?,version=version+1,mutation_id=? WHERE id=? AND version=? AND kind='${SERVICE_AUDIT_KIND}' AND ${guards.join(' AND ')}`).bind(JSON.stringify(data),now,mutation,id,found.version,...args));
  }else if(input.action==='settings'){
   if(!admin)throw new CRMError('تعديل الإعدادات لمدير النظام فقط',403);
-  const settings=normalizeSettings({...input.settings,supportSalesDays:input.settings.supportSalesDays??(await loadSettings(c.db)).settings.supportSalesDays}),problem=settingsProblem(settings);
+  // Saved by the administrator, so the conversion target and the support-sales window in it are his choice from now on: the current revision is
+  // stamped before they are read, and no placeholder of update-cs-sales-20261116 is moved (lib/service-kpi.ts normalizeSettings).
+  const settings=normalizeSettings({...input.settings,revision:SERVICE_KPI_SETTINGS_REVISION,supportSalesDays:input.settings.supportSalesDays??(await loadSettings(c.db)).settings.supportSalesDays}),problem=settingsProblem(settings);
   if(problem)throw new CRMError(problem,400);
   id=SERVICE_KPI_SETTINGS_ID;extra.version=input.version+1;
   if(input.version===0){
