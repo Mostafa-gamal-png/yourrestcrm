@@ -336,7 +336,8 @@ export async function recordRoleTask(c:Context,body:unknown,now:string){
 }
 
 // ------------------------------------------------------------------------------------------------------------- E. the dashboard
-/** The members a reader sees, grouped by customer-service manager: an administrator (and the sales manager, question 3) every team, a
+/** The members a reader sees, grouped by customer-service manager: an administrator every team; a sales manager the customer-service
+ *  managers he supervises and their members (the owner's decision 3: SALES_MANAGER_SEES_ALL_SERVICE_TEAMS is false); a
  *  customer-service manager his own team and himself, a member himself. Members with no customer-service manager form the last group. */
 export function performanceTeams(me:Member,members:readonly Member[]):{managerId:string;managerName:string;members:PerformanceMember[]}[]{
  const service=members.filter(m=>isServiceRole(m.role)&&(m.active||m.id===me.id));
@@ -359,7 +360,7 @@ export async function performanceView(c:Context,month:string,now:string){
  const rows=servicePerformance({members:visible,cases,quotes,attributed,invoices,contacts,tasks},month,now);
  const teams=groups.map(g=>{const own=rows.filter(r=>g.members.some(m=>m.id===r.memberId));return {managerId:g.managerId,managerName:g.managerName,rows:own,total:performanceTotal(own,g.managerName)};});
  const ids=new Set(visible.map(m=>m.id)),name=nameOf(c.members),number=new Map(cases.map(o=>[o.id,o.number]));
- // The figures are the members' whatever the reader (a sales manager reads every team's, question 3); the customer of an opportunity,
+ // The figures are the members' whatever the reader (a sales manager reads his own customer-service teams'); the customer of an opportunity,
  // its owner and the words of its source only when the reader may read that opportunity (lib/customer-service.ts canReadService: the
  // reader's regions, the branch for all but an administrator, and no member of sales on one customer service keeps).
  const readable=readableCases(c,facts);

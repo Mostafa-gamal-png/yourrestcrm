@@ -57,8 +57,8 @@ export type ServiceKpiSettings={
  /** The days after a support contact in which the customer's purchase counts as «مبيعات بالمساندة» (lib/service-sales.ts, 2026-11-16). */
  supportSalesDays:number;
 };
-/** «نسبة الفرص المتحولة إلى مبيعات»: question 1 of the owner's four is its target, provisionally 50% (GSCO 2.13.78's); set here only. */
-export const CONVERSION_TARGET=50;
+/** «نسبة الفرص المتحولة إلى مبيعات»: its target is 100% (the owner's decision 1, 2026-11-17, as in GSCO and Trade); set here only. */
+export const CONVERSION_TARGET=100;
 export const CONVERSION_WEIGHT=15;
 export const CONVERSION_MIN_CASES=3;
 /** The representative's weights before «نسبة الفرص المتحولة إلى مبيعات» (the defaults then). */

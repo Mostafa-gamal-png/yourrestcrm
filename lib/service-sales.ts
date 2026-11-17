@@ -20,14 +20,15 @@ import {quotationRefKey} from './quotation-refs';
  * D. «تسجيل دور خدمة العملاء» when an opportunity customer service took part in is won or lost.
  * E. «أداء خدمة العملاء», for follow-up only: no target (the owner's decision). */
 
-// ---- The four questions the owner has not answered yet (GSCO 2.13.78's provisional choices, each set here and nowhere else):
-/** 1. The target of «نسبة الفرص المتحولة إلى مبيعات» is CONVERSION_TARGET in lib/service-kpi.ts (50%). */
-/** 2. The default of the support-sales window, in days; the administrator changes it in «تقييم خدمة العملاء» › الإعدادات (supportSalesDays). */
-export const SUPPORT_SALES_DAYS=60;
-/** 3. Whether the sales manager reads every customer-service team in «أداء خدمة العملاء» (GSCO: yes, reading only). */
-export const SALES_MANAGER_SEES_ALL_SERVICE_TEAMS=true;
-/** 4. Whether «عملاء منقطعون عن الشراء 90 يومًا» lists customers who never bought (GSCO: no: a customer with no purchase is not listed). */
-export const DORMANT_LIST_INCLUDES_NEVER_BOUGHT=false;
+// ---- The owner's four decisions (2026-11-17, the same as in GSCO and Trade), each set here and nowhere else:
+/** 1. The target of «نسبة الفرص المتحولة إلى مبيعات» is CONVERSION_TARGET in lib/service-kpi.ts: 100%. */
+/** 2. The default of the support-sales window: 30 days; the administrator changes it in «تقييم خدمة العملاء» › الإعدادات (supportSalesDays). */
+export const SUPPORT_SALES_DAYS=30;
+/** 3. Whether the sales manager reads every customer-service team in «أداء خدمة العملاء»: no, only the customer-service managers he
+ *  supervises and their members (lib/service-sales-server.ts performanceTeams). */
+export const SALES_MANAGER_SEES_ALL_SERVICE_TEAMS=false;
+/** 4. Whether «عملاء منقطعون عن الشراء 90 يومًا» lists customers who never bought: yes, after those whose last purchase is older. */
+export const DORMANT_LIST_INCLUDES_NEVER_BOUGHT=true;
 
 export const DORMANT_DAYS=90;
 export const LEAD_OTHER='أخرى';
@@ -109,7 +110,7 @@ const addDays=(day:string,days:number)=>{const t=Date.parse(day+'T00:00:00Z');re
 export const dormantSince=(today:string,days=DORMANT_DAYS)=>addDays(today,-days);
 /** A customer is dormant with no purchase since `dormantSince`, or none at all. */
 export const dormantCustomer=(lastPurchase:string|null|undefined,today:string,days=DORMANT_DAYS)=>!lastPurchase||lastPurchase<dormantSince(today,days);
-/** Whether «عملاء منقطعون عن الشراء 90 يومًا» lists this customer (question 4 decides about a customer who never bought). */
+/** Whether «عملاء منقطعون عن الشراء 90 يومًا» lists this customer (the owner's decision 4 about a customer who never bought: listed). */
 export const dormantListed=(lastPurchase:string|null|undefined,today:string,days=DORMANT_DAYS)=>lastPurchase?lastPurchase<dormantSince(today,days):DORMANT_LIST_INCLUDES_NEVER_BOUGHT;
 /** The words on a case customer service keeps. */
 export const SERVICE_OWNED_LABEL='لدى خدمة العملاء';
