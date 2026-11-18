@@ -14,23 +14,42 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   quotations and collections mapping, mold requests with the customer's signature and the products application's salesmen list, support
   requests, complaints, customer-service requests and the visit place. Every rule reads `isFieldRole`/`FIELD_ROLES_SQL`; a guard in
   `tests/marketing-role.mjs` lists each literal `'rep'` left in `lib/` and `app/` with its reason. The one difference: they correct every
-  customer of their branch in their regions **directly** (no approval request; the customer's history records who and when), never another
-  branch's, another region's, the responsible member or branch, nor delete a customer («حذف عميل» has no cell for the role; the server
-  refuses it too). Machines: their own customers', as a representative.
+  customer of their branch in their regions **directly** (no approval request; the customer's history records who, when and every changed
+  field before and after, as «تعديل مسؤول التسويق لبيانات العميل», `customer-edit:direct`). Another branch's customer of their regions, and
+  any change of a customer's region, go through an edit request exactly as a representative's (their supervisor first, then the sales
+  manager; the whole edit in one request; `marketingCorrectionWaits`). Never another region's customer, the responsible member or branch,
+  nor a deletion («حذف عميل» has no cell for the role; the server refuses it too). Machines: their own customers', as a representative.
 - **Classifications** (`lib/customer-classification.ts`, in the customer's JSON data; «تصنيف العميل» untouched): «تصنيف الفرصة»
   `opportunityGrade` A مرتفعة / B متوسطة / C ضعيفة / D مستبعدة with the owner's descriptions, «ملاحظات التصنيف» `gradeNotes` (up to 1000),
   «حجم المصنع» `factorySize` A كبير / B متوسط / C صغير / D متوقف, «اهتمام العميل» `customerInterest` technical فني / price سعري / service
-  خدمي / trust الثقة. The size is suggested from the registered machines (the sum of the machine records' «العدد» under the customer): 5 or
+  خدمي / trust الثقة. The size is suggested from the machine count, which never adds the sheet's machines to those registered one by one
+  (the machines registered one by one when there are any, else the sheet's imported group, else the customer's own sheet count): 5 or
   more A (the owner's table said «أكثر من 5»; asked to confirm), 3–4 B, 1–2 C, none nothing; a stored value always wins; D by hand only;
   «اعتماد المقترح» stores the suggestion. Set by the marketing officer (their branch), the supervisor (their team; it waits in their request
-  for the sales manager, as their corrections do), the sales manager and the administrator; a representative reads them on their own
-  customers only (GET /api/crm sends nothing of the others'), customer service reads them; anyone else's change and an unknown value are
-  refused by the server; a save that does not carry them keeps them. On «العملاء»: the form's fields, the sheet, marks on rows and cards, a
+  for the sales manager, as their corrections do), the sales manager and the administrator; anyone else's change is refused naming who
+  sets them, an unknown value is refused, `null` is empty, and a save that does not carry them keeps them. A representative reads them on
+  their own customers only, a marketing officer on their branch's only, customer service reads them: for any other customer GET /api/crm
+  sends none of the four and marks it `_classificationHidden`, so the page draws no mark, no suggested size and no summary for it and
+  leaves it out of every classification filter that is set («غير محدد» included). On «العملاء»: the form's fields, the sheet, marks on rows and cards, a
   filter for each (the size as shown: stored else suggested) and four columns in the customers' CSV export. The ERP customers import is
   unchanged (its file has no such columns).
 - **Mended with it.** The filter bar wraps instead of pushing a tablet on its side sideways when the three selects are in it.
-- **Tests.** New: `marketing-role` (default gate, 192 checks), `customer-classification` (default gate, 148), `marketing-role-http`
-  (release-build, 114) and `marketing-role-browser` (browser, 120: 320, 360, tablet both ways and desktop, Arabic and English). Harnesses
+- **Review of 2026-11-18** (an independent review; each defect proved by a probe, each now held by a test that failed before the fix):
+  going back to the previous release erases the four on any save of the customer there (the guide said they stay unread: corrected, with
+  what is lost, a read-only `sqlite3` export of the four, and the steps before going back: decide the waiting requests that carry a
+  classification and change every marketing officer's role, since the previous release refuses to save such a member, 400);
+  a representative saw a size suggested from another's machines and matched «غير محدد» and the size filter for customers whose
+  classifications are not theirs (now hidden with a marker); a marketing officer was refused another branch's customer (now a request) and
+  changed a region directly (now a request); `gradeNotes: null` was refused as «too long» (now empty); the direct correction was recorded
+  only as «تعديل» (now with its fields before and after); the size suggestion added the sheet's group to the machines registered one by
+  one (now one or the other); a marketing officer read the four of another branch's customers (now hidden); the refusal said «يمكنك
+  الاطلاع عليها فقط» to people who cannot (now it names who sets them). A marketing officer's customer saved on the device with its
+  classifications, whose role then changes, stays on the device with the reason (tried; it already did).
+- **Tests.** New: `marketing-role` (default gate, 241 checks), `customer-classification` (default gate, 179), `marketing-rollback`
+  (default gate, 48: the previous release d753f7f from git and this one on one SQLite; the guide's export command through bash to a
+  stand-in sqlite3 and its query run with node:sqlite), `marketing-role-http` (release-build, 133) and `marketing-role-browser` (browser,
+  146: 320, 360, tablet both ways and desktop, Arabic and English); `offline-outbox-browser` gained the marketing officer whose role
+  changes with a classified customer on the device (64). Harnesses
   with stand-in requires given the real `lib/roles.ts` (nine tests), the independent projection of `context-performance` and marketing cases
   in `tracking-gate`, `tracking-companion`, `native-tracking-ui`, `my-targets-ui` and `role-ui`. Guide: section 9-أأ.
 
