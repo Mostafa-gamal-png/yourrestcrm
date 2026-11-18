@@ -4,6 +4,43 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The owner's correction of the classifications: the opportunity's grade A to D, a computed factory size (2026-11-18, not released yet, no migration, no Android change)
+
+- **Asked.** The owner, after update-marketing-20261118: «تصنيف الفرصة ده موجود بالفعل بس هيزيد / تصنيف حجم المصنع ده بيتحسب من عدد
+  ماكينات المتسجلة داخل المصنع / وهو هيدخل التصنيف العميل بناء على اهتماماته».
+- **«تصنيف الفرصة» is the opportunity's «قوة الفرصة»** (`strength` of a visit and of a customer-service opportunity,
+  `lib/opportunity-strength.ts`), grown to the owner's four levels. The stored values keep their meaning, so nothing is rewritten: `strong`
+  «A · مرتفعة», `medium` «B · متوسطة», `weak` «C · ضعيفة», and a new `excluded` «D · مستبعدة», each with the owner's description (shown
+  under the field of the visit form once chosen). The visit schema (`lib/crm.ts`) and the service-opportunity schema
+  (`lib/customer-service.ts`) take D; the lists, the visits CSV, the service opportunity's details and its queue chip write A to D in both
+  languages; the customer-service queue orders A, B, C, an opportunity with no grade, then D (`STRENGTH_ORDER`); the visits list has a new
+  «قوة الفرصة» filter beside «مرحلة البيع» (`filterVisitRows`, shared by the table and its CSV). No KPI or report reads `strength`.
+- **The customer-level grade and notes are retired** (`opportunityGrade`, `gradeNotes`): gone from the form, the sheet, the marks, the
+  filters and the export. Nothing stored is erased: every save of a customer carries them, and a stored `factorySize`, exactly as stored,
+  whatever it sends (`carryRetiredClassification`; never a refusal, so a page or a device queue of the previous release is not refused for
+  them); a new customer (the form, the device queue, the customers import) gets none; an edit request of the previous release that
+  carries one applies its other fields only.
+- **«حجم المصنع» is computed, never chosen** (`computedFactorySize`): D «متوقف» when the customer's status is «خامل» (read as the map
+  reads it: `mapActivity`, spacing and the English «Inactive» of an import), whatever its machines; else from the machines by the
+  no-double-count rule (registered one by one, else the sheet's group, else the sheet count): 5 or more A, 3–4 B, 1–2 C, none «غير محدد».
+  A stored `factorySize` is never read; «اعتماد المقترح» and the manual choice are gone. Nothing else marks a stopped factory here: «لم
+  يشترِ منذ 60 يومًا» is about our sales to an active customer, a lost or excluded opportunity about one deal. Shown on the row, the card,
+  the sheet and (read only, with its reason) the form, filtered as «حجم المصنع (محسوب من الماكينات)» and written in the export; shown to
+  every reader of the customer, being computed from what they all read (its machines and status).
+- **«اهتمام العميل»** stays entered by hand by the same roles; its refusal now names it («اهتمام العميل يحدده مسؤول التسويق لعملاء فرعه،
+  والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.»), and it is still hidden from a representative for another's customer and from a
+  marketing officer for another branch's.
+- **Going back** to update-marketing-20261118 (`tests/marketing-rollback.mjs`, guide 9-أب): nothing of the customer's classifications is
+  lost (this release never wrote the retired three, and kept what was stored); a D stays on its visits and opportunities, which the
+  previous release shows without words («غير مسجلة», the code `excluded` on the queue chip), ranks as ungraded, and refuses to save while
+  it keeps D (400 «Invalid input»); the guide gives a read-only `sqlite3` listing of them.
+- **Tests.** `customer-classification` (default gate, 149 checks), `marketing-role` (default gate, 239), `marketing-rollback` (default
+  gate, 45: the previous release 0d35aa6 from git and this one on one SQLite; the guide's two commands through bash to a stand-in sqlite3,
+  their queries run with node:sqlite), `offline-forms-ui` (default gate, 174: D in the visit form and its description), `marketing-role-http`
+  (release-build, 151: D on a visit and on a service opportunity, the queue's order) and `marketing-role-browser` (browser, 174: the visits
+  filter and a visit graded D in its form at 360 and on a desktop, in Arabic and English). `lib/opportunity-strength.ts` joins the shared
+  list of `tests/test-areas.json`, and `lib/customer-map-activity.ts` the classifications' area.
+
 ## The role «مسؤول تسويق» and three customer classifications (2026-11-18, not released yet, no migration, no Android change)
 
 - **Asked.** The owner: «فيه وظيفة جديدة مسؤول تسويق، الموظف مهمته الاساسية تحديث بيانات العملاء، بيضيف التصنيفات دى ... بالاضافة بيشتغل
