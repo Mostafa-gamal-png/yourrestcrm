@@ -6,8 +6,10 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const store = new Map();
 const window = {localStorage: {getItem: key => store.has(key) ? store.get(key) : null, setItem: (key, value) => { store.set(key, String(value)); }}};
-const exports = {};
-vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/tracking-companion.ts', 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText, {exports, window, Number, String});
+const exports = {}, compile = file => ts.transpileModule(fs.readFileSync(file, 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText;
+// The field roles (a representative or a marketing officer, 2026-11-18) are the real lib/roles.ts.
+const roles = {};vm.runInNewContext(compile('lib/roles.ts'), {exports: roles, Object});
+vm.runInNewContext(compile('lib/tracking-companion.ts'), {exports, window, Number, String, require: name => name === './roles' ? roles : {}});
 const {companionDecision, readCompanionMemory, writeCompanionMemory, COMPANION_MEMORY_MS} = exports;
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message); checks++; };
@@ -32,6 +34,9 @@ eq(decide({windowOpen: false, rememberedAt: now + 60_000}), no(), 'A memory from
 eq(decide({windowOpen: false, rememberedAt: null}), no(), 'A device that never was a companion is gated as before');
 // Never for anyone else, a browser, or before the server has answered.
 for (const role of ['admin', 'manager', 'supervisor', 'customer_service', undefined]) eq(decide({role, serverDay: {id: 'phone-day', endedAt: null}}), no(), 'Not for role ' + role);
+// A marketing officer works with the representatives' app (lib/roles.ts): a companion exactly as a representative.
+eq(decide({role: 'marketing', serverDay: {id: 'phone-day', endedAt: null}}), yes(), 'A marketing officer\'s second device is a companion as a representative\'s');
+eq(decide({role: 'marketing', serverDay: {id: 'own-day', endedAt: null}, ownDayId: 'own-day'}), no(), 'A marketing officer\'s recording phone is not a companion');
 eq(decide({native: false, serverDay: {id: 'phone-day', endedAt: null}}), no(), 'A browser is never a companion');
 eq(decide({serverKnown: false, serverDay: {id: 'phone-day', endedAt: null}}), no(), 'No decision before the server answers');
 

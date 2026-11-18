@@ -25,8 +25,10 @@ function load(filename){
   if(name==='lucide-react')return new Proxy({},{get:()=>()=>null});
   if(name.startsWith('@/components/'))return new Proxy({},{get:()=>pass});
   if(name.endsWith('.css'))return {};
-  if(name.startsWith('@/'))return load(name.slice(2)+'.ts');
-  if(name.startsWith('.'))return load(path.join(path.dirname(filename),name)+'.ts');
+  // A component (the classification marks of 2026-11-18, app/customer-classification-fields.tsx) is a .tsx file.
+  const source=base=>fs.existsSync(path.join(root,base+'.ts'))?base+'.ts':base+'.tsx';
+  if(name.startsWith('@/'))return load(source(name.slice(2)));
+  if(name.startsWith('.'))return load(source(path.join(path.dirname(filename),name)));
   return nativeRequire(name);
  };
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,filename),'utf8'),{compilerOptions:compiler}).outputText,{exports,require,Intl,console});return exports;

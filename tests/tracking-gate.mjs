@@ -8,7 +8,9 @@ const compiler = {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022
 function load(file, require) { const exports = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {compilerOptions: compiler}).outputText, {exports, require, console, Date, Intl}); return exports; }
 const native = load('lib/native-tracking.ts', () => ({}));
 const update = load('lib/app-update.ts', name => name === './native-tracking' ? native : {});
-const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : name === './app-update' ? update : {});
+// The field roles (a representative or a marketing officer, 2026-11-18) are the real lib/roles.ts.
+const roles = load('lib/roles.ts', () => ({}));
+const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : name === './app-update' ? update : name === './roles' ? roles : {});
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message); checks++; };
 
@@ -28,6 +30,10 @@ for (const role of ['admin', 'manager', 'supervisor', 'customer_service', 'custo
   eq(decide({role, device: device({continuousConsent: false, enrolled: false, backgroundPermission: 'denied'})}), {status: 'allowed'}, 'Other roles are not gated even on a broken phone: ' + role);
 }
 eq(decide({active: 0, native: false, device: null}), {status: 'allowed'}, 'A deactivated representative sees the account error, not a tracking screen');
+// A marketing officer works in the field like a representative (lib/roles.ts): gated the same way.
+eq(decide({role: 'marketing', native: false, device: null}), blocked('browser'), 'A marketing officer in a browser is blocked like a representative');
+eq(decide({role: 'marketing'}), {status: 'allowed'}, 'A marketing officer with a fully set-up phone works');
+eq(decide({role: 'marketing', device: device({backgroundPermission: 'denied'})}).status, 'blocked', 'A marketing officer without background location is blocked like a representative');
 eq(decide({role: undefined, active: undefined, native: false, device: null}), {status: 'allowed'}, 'While the CRM is still loading the member, nothing is blocked');
 
 // Browser, iPhone, PWA: no native collector exists.

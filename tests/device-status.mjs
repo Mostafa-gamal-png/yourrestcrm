@@ -11,7 +11,8 @@ const nodeRequire = createRequire(import.meta.url);
 function load(file, require) { const exports = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {compilerOptions: compiler}).outputText, {exports, require, console, Date, Intl, setTimeout, clearTimeout, fetch: globalThis.fetch, AbortController}); return exports; }
 const text = load('lib/tracker-text.ts', () => ({}));
 const native = load('lib/native-tracking.ts', () => ({}));
-const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : {});
+const roles = load('lib/roles.ts', () => ({}));
+const gate = load('lib/tracking-gate.ts', name => name === './native-tracking' ? native : name === './roles' ? roles : {});
 const status = load('lib/device-status.ts', name => name === 'zod' ? nodeRequire('zod') : name === './tracker-text' ? text : {});
 let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message); checks++; };

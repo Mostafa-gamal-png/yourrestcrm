@@ -8,6 +8,7 @@ import React from 'react';
 import * as jsx from 'react/jsx-runtime';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
+import {createRequire} from 'node:module';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 let checks=0;
 const check=(a,b,message)=>{assert.deepEqual(a,b,message);checks++;};
@@ -19,7 +20,10 @@ const recordIndexModule=(()=>{const exports={};vm.runInNewContext(ts.transpileMo
 function moduleFrom(filename,require,extra=''){
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,filename),'utf8')+extra,{compilerOptions:compiler}).outputText,{exports,require,crypto:globalThis.crypto,console,structuredClone,window:{},setTimeout,clearTimeout});return exports;
 }
-const access=moduleFrom('lib/access.ts',()=>({}));
+// The field roles (a representative or a marketing officer, 2026-11-18) and the customer classifications are the real modules.
+const roles=moduleFrom('lib/roles.ts',()=>({}));
+const classification=moduleFrom('lib/customer-classification.ts',name=>name==='zod'?createRequire(import.meta.url)('zod'):{});
+const access=moduleFrom('lib/access.ts',name=>name==='./roles'?roles:{});
 const mapSearch=moduleFrom('lib/customer-map-search.ts',()=>({}));
 const wording=moduleFrom('lib/service-wording.ts',name=>name==='./customer-service'?{isServiceRole:role=>role==='customer_service'||role==='customer_service_manager'}:{});
 const i18n={t:value=>value,useLanguage:()=>({language:'ar'}),direction:()=> 'rtl',getLanguage:()=> 'ar'};
@@ -27,6 +31,8 @@ function mockedRequire(name){
  if(name==='react')return React;
  if(name==='react/jsx-runtime')return jsx;
  if(name==='@/lib/access')return access;
+ if(name==='@/lib/roles')return roles;
+ if(name==='@/lib/customer-classification')return classification;
  if(name==='@/lib/service-wording')return wording;
  if(name==='@/lib/customer-map-search')return mapSearch;
  if(name==='@/lib/i18n')return i18n;
@@ -40,12 +46,14 @@ function mockedRequire(name){
 const {NavMenu}=moduleFrom('app/crm-app.tsx',mockedRequire,'\nexport {NavMenu};\n');
 const {default:Picker}=moduleFrom('app/visit-customer-picker.tsx',mockedRequire);
 const pages=[['activity','الزيارات'],['complaints','الشكاوى'],['followup','المتابعات'],['journeys','تقرير يوم المندوب'],['targets','المستهدفات وتقييم الأداء'],['sales','المبيعات'],['quote','عروض الأسعار'],['reports','تقييم أداء المناديب'],['customer','العملاء'],['map','خريطة المصانع'],['team','الفريق والصلاحيات'],['dashboard','لوحة المتابعة']];
-for(const role of ['rep','supervisor','manager','admin','customer_service','customer_service_manager','unknown']){
+// A marketing officer (lib/roles.ts) has a representative's menu, «مستهدفي» included.
+for(const role of ['rep','marketing','supervisor','manager','admin','customer_service','customer_service_manager','unknown']){
  const html=renderToStaticMarkup(React.createElement(NavMenu,{view:'activity',role,go:noop}));
- for(const [id,label] of pages){const expected=role==='rep'?['customer','map','activity','followup','targets'].includes(id):role.startsWith('customer_service')?id==='activity'||id==='complaints':id==='quote'?false:role==='admin'?id!=='reports':['manager','supervisor'].includes(role)?!['team','reports','complaints'].includes(id):false;check(html.includes('>'+(role==='rep'&&id==='targets'?'مستهدفي':role.startsWith('customer_service')&&id==='activity'?'الفرص':label)+'<'),expected,role+' navigation '+id);}
+ const field=role==='rep'||role==='marketing';
+ for(const [id,label] of pages){const expected=field?['customer','map','activity','followup','targets'].includes(id):role.startsWith('customer_service')?id==='activity'||id==='complaints':id==='quote'?false:role==='admin'?id!=='reports':['manager','supervisor'].includes(role)?!['team','reports','complaints'].includes(id):false;check(html.includes('>'+(field&&id==='targets'?'مستهدفي':role.startsWith('customer_service')&&id==='activity'?'الفرص':label)+'<'),expected,role+' navigation '+id);}
 }
 // Customer service picks an existing customer only (the owner, 2026-11-07): no «إضافة عميل» in the opportunity form's picker.
-for(const role of ['rep','supervisor','manager','admin','customer_service','customer_service_manager']){
+for(const role of ['rep','marketing','supervisor','manager','admin','customer_service','customer_service_manager']){
  const html=renderToStaticMarkup(React.createElement(Picker,{customers:[],value:'',me:{id:'test',role,branch:'الرئيسي',regionScope:'eastern'},disabled:false,locked:false,onChange:noop,onCreated:noop,onCreating:noop,onSaving:noop}));
  const creates=!role.startsWith('customer_service');
  check(html.includes('<button'),creates,role+' customer creation button');
