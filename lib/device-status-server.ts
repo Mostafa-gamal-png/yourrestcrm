@@ -3,6 +3,7 @@ import {salesScopeMemberIds} from './access';
 import {regionScope,regionScopesOverlap} from './regions';
 import {cleanStatusText,deviceReportSchema,type DeviceReport,type DeviceStatusPublic} from './device-status';
 import type {TrackingOverview} from './tracking-coverage';
+import {isFieldRole} from './roles';
 
 /** Two reports from one phone closer than this are the client misbehaving, not news. */
 export const DEVICE_REPORT_MIN_GAP_MS=30_000;
@@ -27,7 +28,7 @@ export async function saveDeviceReport(db:Db,memberId:string,report:DeviceReport
 /** Active representatives the caller may see: the same people, region and hierarchy rules as the daily report. */
 export function trackingMembers(c:ScopeContext):Member[]{
  const scope=salesScopeMemberIds(c.members,c.me,{read:true});
- return c.members.filter(m=>m.role==='rep'&&!!m.active&&scope.has(m.id)&&(m.id===c.me.id||regionScopesOverlap(regionScope(m),regionScope(c.me))));
+ return c.members.filter(m=>isFieldRole(m.role)&&!!m.active&&scope.has(m.id)&&(m.id===c.me.id||regionScopesOverlap(regionScope(m),regionScope(c.me))));
 }
 
 type DeviceRow={memberId:string;reportedAt:string;data:string};

@@ -16,7 +16,7 @@ export type TrackingKind='opportunity'|'complaint'|'support';
 export type TrackingSide='service'|'sales'|'done';
 export type TrackingStepId='registered'|'contact'|'approval'|'review'|'assignment'|'delegation'|'first_contact'|'follow_up'|'resolution'|'closure'|'finished';
 export type TrackingStep={id:TrackingStepId;state:'done'|'current'|'upcoming';/** The current step is waiting for the registrar to correct and resend. */returned:boolean};
-export type TrackingHolderRole='service_manager'|'registrar'|'sales_manager'|'supervisor'|'rep'|'sales'|'admin'|'service_owner';
+export type TrackingHolderRole='service_manager'|'registrar'|'sales_manager'|'supervisor'|'rep'|'marketing'|'sales'|'admin'|'service_owner';
 export type TrackingFilter='all'|'late'|'service'|'sales'|'finished';
 export const trackingFilters:TrackingFilter[]=['all','late','service','sales','finished'];
 export const trackingFilterLabels:Record<TrackingFilter,Pair>={all:['الكل','All'],late:['متأخرة','Late'],service:['عند خدمة العملاء','With customer service'],sales:['عند المبيعات','With sales'],finished:['منتهية (30 يومًا)','Finished (30 days)']};
@@ -26,7 +26,7 @@ export const trackingStepLabels:Record<TrackingStepId,Pair>={
 };
 export const trackingHolderLabels:Record<TrackingHolderRole,Pair>={
  service_manager:['مدير خدمة العملاء','customer-service manager'],registrar:['خدمة العملاء','customer service'],sales_manager:['مدير المبيعات','sales manager'],supervisor:['مشرف المبيعات','sales supervisor'],
- rep:['مندوب المبيعات','sales representative'],sales:['مسؤول المبيعات','sales owner'],admin:['مدير النظام','administrator'],
+ rep:['مندوب المبيعات','sales representative'],marketing:['مسؤول تسويق','marketing officer'],sales:['مسؤول المبيعات','sales owner'],admin:['مدير النظام','administrator'],
  // An opportunity customer service keeps (2026-11-16): its customer-service owner holds it.
  service_owner:['المسؤول من خدمة العملاء','customer-service owner']
 };
@@ -94,7 +94,7 @@ export function trackingSteps(kind:TrackingKind,stage:string,delegated:boolean):
 }
 
 const holderOf=(stage:string,names:{serviceManager:string;registrar:string;salesManager:string;assignee:string},assigneeRole:string):TrackingItem['holder']=>{
- const sales:TrackingHolderRole=assigneeRole==='supervisor'?'supervisor':assigneeRole==='rep'?'rep':'sales';
+ const sales:TrackingHolderRole=assigneeRole==='supervisor'?'supervisor':assigneeRole==='rep'?'rep':assigneeRole==='marketing'?'marketing':'sales';
  switch(stage){
   // Nobody to hold the review means an administrator does.
   case 'approval':case 'review':return {name:names.serviceManager,role:names.serviceManager?'service_manager':'admin'};

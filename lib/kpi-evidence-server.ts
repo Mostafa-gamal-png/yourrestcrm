@@ -14,6 +14,7 @@ import {salesCoverageStatus} from './sales-coverage';
 import {kpiPeriod} from './kpis';
 import {uniqueCustomerCodes,customerCodeKey,isKpiIssuedQuote} from './kpi-history-server';
 import {kpiEvidenceInputSchema,evidenceScopeKey,type KpiEvidence,type KpiEvidenceOptions,type QuoteOption,type InvoiceOption} from './kpi-evidence';
+import {isFieldRole} from './roles';
 
 type Context=Awaited<ReturnType<typeof context>>;
 type EvidenceRow={member_id:string;month:string;input:string;version:number;updated_at:string;updated_by:string;author?:string;sales_revision:number;scope_key:string;cutoff:string};
@@ -23,7 +24,7 @@ function target(c:Context,memberId:string){
  requireSalesWorkspace(c.me);
  // «بيانات المؤشرات» serve the evaluation: never the sales manager's (lib/targets.ts roleOutOfEvaluation, 2026-11-16), answered as any
  // member out of it.
- const member=c.regionalMembers.find(m=>m.id===memberId&&salesReadMemberIds(c.members,c.me).has(m.id)&&['rep','manager','supervisor'].includes(m.role)&&!roleOutOfEvaluation(m.role));
+ const member=c.regionalMembers.find(m=>m.id===memberId&&salesReadMemberIds(c.members,c.me).has(m.id)&&(isFieldRole(m.role)||['manager','supervisor'].includes(m.role))&&!roleOutOfEvaluation(m.role));
  if(!member)throw new CRMError('عضو الفريق غير متاح ضمن صلاحيتك.',404);
  return member;
 }
@@ -35,7 +36,7 @@ export async function readSalesRevision(c:Context){
 }
 export async function readEvidenceRevision(c:Context){const row=await c.db.prepare("SELECT revision FROM crm_kpi_evidence_state WHERE id='company'").first<{revision:number}>();if(!row)throw new CRMError('تحديث قاعدة بيانات المؤشرات غير مكتمل.',503);return row.revision;}
 export async function readKpiEvidenceRows(c:Context,month:string):Promise<KpiEvidence[]>{
- requireSalesWorkspace(c.me);const selected=monthSchema.parse(month),allowed=salesReadMemberIds(c.members,c.me,true),regional=new Set(c.regionalMembers.filter(m=>m.role==='rep').map(m=>m.id));
+ requireSalesWorkspace(c.me);const selected=monthSchema.parse(month),allowed=salesReadMemberIds(c.members,c.me,true),regional=new Set(c.regionalMembers.filter(m=>isFieldRole(m.role)).map(m=>m.id));
  const rows=(await c.db.prepare('SELECT e.*,m.name AS author FROM crm_kpi_evidence e LEFT JOIN crm_members m ON m.id=e.updated_by WHERE e.month=?').bind(selected).all<EvidenceRow>()).results;
  return rows.filter(row=>allowed.has(row.member_id)&&regional.has(row.member_id)).map(decode);
 }
@@ -73,7 +74,7 @@ export const memberSnapshotsGate=`NOT EXISTS(SELECT 1 FROM json_each(?) expected
 const recordSnapshotsGate=`NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN crm_records actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.version IS NOT json_extract(expected.value,'$[1]'))`;
 
 export async function getKpiEvidenceOptions(c:Context,memberId:string,month:string):Promise<KpiEvidenceOptions>{
- const selected=monthSchema.parse(month),member=target(c,memberId),period=periodFor(selected),computed=member.role!=='rep';
+ const selected=monthSchema.parse(month),member=target(c,memberId),period=periodFor(selected),computed=!isFieldRole(member.role);
  const [salesRevision,evidenceRevision,rows,coverageEntries]=await Promise.all([readSalesRevision(c),readEvidenceRevision(c),readKpiEvidenceRows(c,selected),readSalesCoverage(c)]);
  let sourceMemberIds=[member.id];
  if(computed){
@@ -98,7 +99,7 @@ const saveSchema=z.object({memberId:z.string().min(1).max(200),month:monthSchema
 export async function saveKpiEvidence(c:Context,body:unknown){
  if(!['admin','manager'].includes(c.me.role))throw new CRMError('بيانات المؤشرات متاحة للتعديل لمدير النظام ومدير المبيعات فقط.',403);
  const p=saveSchema.parse(body),member=target(c,p.memberId);
- if(member.role!=='rep')throw new CRMError('اختر مندوبًا؛ بيانات المدير والمشرف محسوبة من الفريق.',400);
+ if(!isFieldRole(member.role))throw new CRMError('اختر مندوبًا؛ بيانات المدير والمشرف محسوبة من الفريق.',400);
  if(p.month>today().slice(0,7))throw new CRMError('لا يمكن اعتماد بيانات شهر قادم.',400);
  const mutation='kpi-evidence:'+c.me.id+':'+p.requestId,canonical=JSON.stringify({...p,requestId:undefined});
  const replay=async()=>{const row=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(mutation).first<{detail:string}>();if(!row)return false;if(row.detail!==canonical)throw new CRMError('الطلب محفوظ ببيانات مختلفة. حدّث الصفحة.',409);return true;};

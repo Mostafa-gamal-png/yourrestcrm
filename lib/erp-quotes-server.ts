@@ -39,6 +39,7 @@ import {isIdentityAdmin} from './customer-identity-server';
 import {isOfficeEmployee} from './erp-sales';
 import {readErpQuotesTable,parseErpQuotes,planErpQuotes,employeeKey,sha256,ErpQuotesError,ERP_QUOTES_MAX_BYTES,ERP_QUOTE_REASONS,type ErpQuotePlanEntry,type ErpQuotesFile} from './erp-quotes';
 import {ERP_OFFICE_CHOICE,ERP_OFFICE_SETTING,ERP_OFFICE_AUDIT_ACTION,officeById,officeNameOnly,applyOfficeChanges,readOfficeRow,officeUnchanged,writeOfficeList} from './erp-office-employees';
+import {FIELD_ROLES_SQL,isFieldRole} from './roles';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const namespace='yourrest-industries';
@@ -56,7 +57,7 @@ const ADD_LABEL='إضافة عرض سعر من ملف ERP',UPDATE_LABEL='تحد�
  *  is on the hub's tab «عروض الأسعار» only (app/sales-workspace.tsx quotesImportSlot): closed (404) when that tab, or «المستهدفات وتقييم
  *  الأداء» itself, is hidden from the member (2026-11-16). */
 export function requireErpQuotesImport(me:Member){requireSalesWorkspace(me);requirePages(me,'sales');requirePages(me,'quote');requireHubTabs(me,'quotes');requireCell(me,'sales','import');requireCell(me,'quote','add');}
-function eligible(c:Context){const ids=salesMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>m.role==='rep'&&m.active&&ids.has(m.id));}
+function eligible(c:Context){const ids=salesMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>isFieldRole(m.role)&&m.active&&ids.has(m.id));}
 const snapshot=(m:Member)=>[m.id,m.role,m.branch,m.supervisorId||'',regionScope(m),m.active,m.authVersion||0];
 async function state(c:Context){
  const revision=await c.db.prepare('SELECT revision FROM crm_erp_import_state WHERE id=?').bind(namespace).first<{revision:number}>();
@@ -110,7 +111,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
   employeeReps.set(id,choice.repId);sources.set(id,'selected');
  }
  // A unique full name among every representative (hidden or inactive ones included, so a namesake keeps it ambiguous), as the sales import.
- const roster=c.members.filter(m=>m.role==='rep'),byName=new Map<string,Member[]>();
+ const roster=c.members.filter(m=>isFieldRole(m.role)),byName=new Map<string,Member[]>();
  for(const m of roster){const k=nameKey(m.name);if(k)byName.set(k,[...(byName.get(k)||[]),m]);}
  let nameRoster:unknown[]|null=null;
  for(const [id,names] of fileEmployees){
@@ -203,7 +204,7 @@ export async function importErpQuotes(c:Context,body:unknown){
  const args:(string|number|null)[]=[...guard.args,namespace,prepared.saved.revision,...officeGate.args];
  gate+=` AND NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN crm_members actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.role IS NOT json_extract(expected.value,'$[1]') OR actual.branch IS NOT json_extract(expected.value,'$[2]') OR COALESCE(actual.supervisor_id,'') IS NOT json_extract(expected.value,'$[3]') OR actual.region_scope IS NOT json_extract(expected.value,'$[4]') OR actual.active IS NOT json_extract(expected.value,'$[5]') OR actual.auth_version IS NOT json_extract(expected.value,'$[6]'))`;
  args.push(JSON.stringify([...prepared.reps.values()].map(snapshot)));
- if(prepared.nameRoster){gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep')=?";args.push(prepared.nameRoster.length);}
+ if(prepared.nameRoster){gate+=` AND (SELECT COUNT(*) FROM crm_members WHERE role IN ${FIELD_ROLES_SQL})=?`;args.push(prepared.nameRoster.length);}
  gate+=` AND NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN crm_records actual ON actual.id=json_extract(expected.value,'$[0]') WHERE actual.id IS NULL OR actual.version IS NOT json_extract(expected.value,'$[1]'))`;
  args.push(JSON.stringify(updates.map(p=>[p.recordId,p.version])));
  gate+=' AND NOT EXISTS(SELECT 1 FROM crm_records WHERE id IN (SELECT value FROM json_each(?)))';

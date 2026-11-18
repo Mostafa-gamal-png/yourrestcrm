@@ -5,6 +5,7 @@ import {salesReadMemberIds,salesReportingRecords,type Sale} from './sales';
 import {type TargetKind,type TargetSet,type TargetState,targetSaveSchema,quantityTargetsSchema,productWeightsSchema,activityTargetsSchema,withManagerTargets,roleOutOfEvaluation,SALES_MANAGER_ACTIVITY_MESSAGE,targetMonthClosed,CLOSED_MONTH_MESSAGE} from './targets';
 import {TARGET_HISTORY_PAGE,TARGET_HISTORY_MAX_OFFSET,targetHistoryEntry,type TargetHistory} from './targets-history';
 import {readErpSales} from './erp-sales-server';
+import {FIELD_ROLES_SQL,isFieldRole} from './roles';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function targetState(c:Context,month:string,sales:Sale[]=[]):Promise<TargetState>{
  const roleAllowed=salesReadMemberIds(c.members,c.me,true),allowed=new Set(c.regionalMembers.filter(m=>roleAllowed.has(m.id)).map(m=>m.id)),global=regionScope(c.me)==='all',manage=['admin','manager'].includes(c.me.role);
@@ -27,7 +28,7 @@ export async function saveTargetSet(c:Context,body:unknown){
  if(p.kind==='weights'&&p.scopeId!=='company')throw new CRMError('نطاق الأوزان غير صحيح');
  if(p.kind!=='weights'){
   if(p.kind==='sales'&&p.scopeId.startsWith('branch:')){const branch=p.scopeId.slice(7);if(!c.members.some(m=>m.branch===branch)&&!c.all.some(r=>r.kind==='customer'&&r.branch===branch))throw new CRMError('الفرع غير موجود',404);}
-  else if(!c.members.some(m=>m.id===p.scopeId&&m.active&&['admin','manager','supervisor','rep'].includes(m.role)))throw new CRMError('حدد مستخدمًا مفعّلًا',400);
+  else if(!c.members.some(m=>m.id===p.scopeId&&m.active&&(['admin','manager','supervisor'].includes(m.role)||isFieldRole(m.role))))throw new CRMError('حدد مستخدمًا مفعّلًا',400);
   // The sales manager is out of the evaluation and of the customer and visit targets (lib/targets.ts roleOutOfEvaluation, 2026-11-16).
   else if(p.kind==='activity'&&c.members.some(m=>m.id===p.scopeId&&roleOutOfEvaluation(m.role)))throw new CRMError(SALES_MANAGER_ACTIVITY_MESSAGE);
   else if(c.members.some(m=>m.id===p.scopeId&&(m.role==='manager'||p.kind==='sales'&&m.role==='supervisor')))throw new CRMError('مستهدف المبيعات للمدير والمشرف يُحسب تلقائيًا من إجمالي مستهدفات الفريق.');
@@ -45,7 +46,8 @@ export async function saveTargetSet(c:Context,body:unknown){
  const sourceArgs=inherited?[p.kind,p.scopeId,inherited.month,inherited.version,p.kind,p.scopeId,inherited.month,p.month]:[p.kind,p.scopeId,p.month];
  const permission=accessGuard(c),actorGate=permission.sql;
  const memberScope=p.kind!=='weights'&&!p.scopeId.startsWith('branch:');
- const scopeGate=memberScope?(p.kind==='sales'?" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role IN ('admin','rep') AND region_scope=? AND role=? AND COALESCE(supervisor_id,'')=?)":" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND active=1 AND role IN ('admin','supervisor','rep') AND region_scope=? AND role=? AND COALESCE(supervisor_id,'')=?)"):'';
+ // A marketing officer has a representative's targets (lib/roles.ts).
+ const scopeGate=memberScope?(p.kind==='sales'?` AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND active=1 AND (role='admin' OR role IN ${FIELD_ROLES_SQL}) AND region_scope=? AND role=? AND COALESCE(supervisor_id,'')=?)`:` AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND active=1 AND (role IN ('admin','supervisor') OR role IN ${FIELD_ROLES_SQL}) AND region_scope=? AND role=? AND COALESCE(supervisor_id,'')=?)`):'';
  const member=c.members.find(m=>m.id===p.scopeId);const gateArgs=memberScope?[...permission.args,p.scopeId,regionScope(member!),member!.role,member!.supervisorId||'']:permission.args;
  const now=new Date().toISOString(),json=JSON.stringify(data);
  // What this save replaces: this month's set (read at the version the write is gated on), the set carried from an earlier month

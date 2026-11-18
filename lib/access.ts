@@ -1,5 +1,6 @@
 import type {Member,Row} from './crm';
 import {HUB_TAB_KEYS} from './targets-hub';
+import {isFieldRole,isMarketingRole} from './roles';
 /** «عرض بيانات الفريق بالكامل» (lib/permissions.ts): a supervisor or a sales manager the administrator switched it on for. */
 export const viewsWholeTeam=(me:Member)=>(me.role==='supervisor'||me.role==='manager')&&me.access?.viewAll===true;
 
@@ -7,7 +8,8 @@ export const viewsWholeTeam=(me:Member)=>(me.role==='supervisor'||me.role==='man
 export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'].includes(role);
 export function canViewPage(role:string,view:string){
  // «المحذوفات» here is the role's ceiling (the matrix offers its «استعراض» and «تحرير»); who has it now is lib/permissions.ts trashScopeOf.
- if(role==='rep')return ['customer','map','activity','followup','targets','mold-requests','trash'].includes(view);
+ // A marketing officer (lib/roles.ts) has a representative's pages.
+ if(isFieldRole(role))return ['customer','map','activity','followup','targets','mold-requests','trash'].includes(view);
  // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
  // The customer-service evaluation has one for the manager and the administrator; a representative meets theirs on the Complaints page.
  // Mold requests are for every role (the owner, 2026-11-01), customer service included.
@@ -56,7 +58,8 @@ export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=
  *  lib/permissions.ts); every write, assignment and commit check keeps the team as the role defines it (read omitted). */
 export function salesScopeMemberIds(members:Member[],me:Member,options:{activeOnly?:boolean;read?:boolean}={}){
  const wide=!!options.read&&viewsWholeTeam(me);
- const scoped=members.filter(member=>member.id===me.id||me.role==='admin'||wide&&['admin','manager','supervisor','rep'].includes(member.role)||me.role==='manager'&&['supervisor','rep'].includes(member.role)||me.role==='supervisor'&&member.role==='rep'&&member.supervisorId===me.id);
+ // A marketing officer is in a team as a representative is (lib/roles.ts): under their supervisor, and in the sales manager's.
+ const scoped=members.filter(member=>member.id===me.id||me.role==='admin'||wide&&(['admin','manager','supervisor'].includes(member.role)||isFieldRole(member.role))||me.role==='manager'&&(member.role==='supervisor'||isFieldRole(member.role))||me.role==='supervisor'&&isFieldRole(member.role)&&member.supervisorId===me.id);
  return new Set(scoped.filter(member=>!options.activeOnly||!!member.active).map(member=>member.id));
 }
 
@@ -84,13 +87,14 @@ export function salesRecordAccess(members:Member[],me:Member){
   canRead(row:Row){
    if(row.kind==='customer'||row.kind==='factory')return !['customer_service','customer_service_manager'].includes(me.role);
    if(me.role==='admin')return true;
-   if(row.kind==='quote'&&!canUseSalesWorkspace(me.role)||!['manager','supervisor','rep'].includes(me.role))return false;
+   if(row.kind==='quote'&&!canUseSalesWorkspace(me.role)||!['manager','supervisor'].includes(me.role)&&!isFieldRole(me.role))return false;
    const id=author(row);return !!id&&readable.has(id);
   },
   readOnly(row:Row){if(readable===team||['customer','factory'].includes(row.kind))return false;const id=author(row);return !!id&&!team.has(id);},
-  canManageMaster(row:Row){return me.role==='rep'&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo));},
-  canEditCustomerDetails(row:Row){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);},
-  canEditMachine(row:Row){return row.kind==='factory'&&(me.role==='rep'?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo)));},
+  canManageMaster(row:Row){return isFieldRole(me.role)&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo));},
+  canEditCustomerDetails(row:Row){return customerDetailsEditable(row,me,team);},
+  canEditMachine(row:Row){return row.kind==='factory'&&(isFieldRole(me.role)?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||team.has(row.assignedTo)));},
+  canClassify(row:Row){return customerClassifiable(row,me,team);},
  };
 }
 
@@ -99,17 +103,29 @@ export function canReadSalesRecord(row:Row,members:Member[],me:Member,options:{r
  if(['customer','factory'].includes(row.kind))return !['customer_service','customer_service_manager'].includes(me.role);
  if(me.role==='admin')return true;
  if(row.kind==='quote'&&!canUseSalesWorkspace(me.role))return false;
- if(!['manager','supervisor','rep'].includes(me.role))return false;
+ if(!['manager','supervisor'].includes(me.role)&&!isFieldRole(me.role))return false;
  const author=recordAuthorId(row,members);
  return !!author&&salesScopeMemberIds(members,me,options).has(author);
 }
 
 /** A machine belongs to its customer's responsible member: a representative adds and corrects the machines of their own customers (never deletes them), the sales roles those of their team. */
-export function canEditMachineRecord(row:Row,members:Member[],me:Member){return row.kind==='factory'&&(me.role==='rep'?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||salesScopeMemberIds(members,me).has(row.assignedTo)));}
+export function canEditMachineRecord(row:Row,members:Member[],me:Member){return row.kind==='factory'&&(isFieldRole(me.role)?row.assignedTo===me.id:canUseSalesWorkspace(me.role)&&(me.role==='admin'||salesScopeMemberIds(members,me).has(row.assignedTo)));}
 
 /** Regional reps may edit customer details; assignment and deletion remain restricted by the route. */
-export function canManageMasterRecord(row:Row,members:Member[],me:Member){return me.role==='rep'&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||salesScopeMemberIds(members,me).has(row.assignedTo));}
+export function canManageMasterRecord(row:Row,members:Member[],me:Member){return isFieldRole(me.role)&&row.kind==='customer'||canUseSalesWorkspace(me.role)&&(me.role==='admin'||salesScopeMemberIds(members,me).has(row.assignedTo));}
 
 /** The regional address book is shared; correcting it does not grant routing or history rights. */
 /** Customer service (since 2026-11-07) corrects the customers of its branch, like a representative; callers apply the region boundary. */
-export function canEditCustomerDetails(row:Row,members:Member[],me:Member){return row.kind==='customer'&&(['rep','manager','admin'].includes(me.role)||me.role==='supervisor'&&salesScopeMemberIds(members,me).has(row.assignedTo)||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);}
+/** A marketing officer (the owner, 2026-11-18) corrects every customer of their branch, directly (lib/roles.ts); callers apply the region
+ *  boundary. A representative corrects any customer of their regions through a request (lib/customer-edit-requests.ts). */
+function customerDetailsEditable(row:Row,me:Member,team:ReadonlySet<string>){
+ return row.kind==='customer'&&(me.role==='rep'||['manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||isMarketingRole(me.role)&&row.branch===me.branch||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);
+}
+export function canEditCustomerDetails(row:Row,members:Member[],me:Member){return customerDetailsEditable(row,me,salesScopeMemberIds(members,me));}
+/** «تصنيف الفرصة» and the other classifications of a customer (lib/customer-classification.ts, the owner, 2026-11-18): set by the marketing
+ *  officer (every customer of their branch), the supervisor (their team's customers, as their corrections: through the sales manager's
+ *  approval), the sales manager and the administrator; callers apply the region boundary. A representative and customer service read them. */
+function customerClassifiable(row:Pick<Row,'kind'|'assignedTo'|'branch'>,me:Member,team:ReadonlySet<string>){
+ return row.kind==='customer'&&(['manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||isMarketingRole(me.role)&&row.branch===me.branch);
+}
+export function canClassifyCustomer(row:Pick<Row,'kind'|'assignedTo'|'branch'>,members:Member[],me:Member){return customerClassifiable(row,me,salesScopeMemberIds(members,me));}

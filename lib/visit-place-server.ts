@@ -2,6 +2,7 @@ import {CRMError,type context} from './crm-server';
 import {type Row} from './crm';
 import type {JourneyStop} from './journeys';
 import {visitPlaceCheck,visitPlaceMessage} from './visit-place';
+import {isFieldRole} from './roles';
 type Context=Awaited<ReturnType<typeof context>>;
 type PlaceData={type?:string;latitude?:unknown;longitude?:unknown;locationAccuracy?:unknown;[key:string]:unknown};
 export type VisitPlaceDecision={
@@ -26,7 +27,7 @@ export async function enforceVisitPlace(c:Context,customer:Row,data:PlaceData,op
  const stop=options.stop,arrived=!!stop&&stop.customerId===customer.id&&stop.memberId===options.memberId&&!!stop.data.arrivalAt&&!stop.data.departureAt&&!stop.closedAt;
  const result=visitPlaceCheck(customer.data,{latitude:data.latitude,longitude:data.longitude,accuracy:data.locationAccuracy},{journeyArrived:arrived});
  if(result.ok)return {distance:result.distance,outside:false,adopt:result.reason==='no_customer_location'&&!String(customer.data.location||'').trim()};
- if(c.me.role!=='rep')return {distance:result.distance,outside:result.reason==='far',adopt:false};
+ if(!isFieldRole(c.me.role))return {distance:result.distance,outside:result.reason==='far',adopt:false};
  // The refusal is kept on the customer, once for every ten minutes of trying, for those who read that customer's history.
  const bucket=Math.floor(Date.parse(options.now)/600000);
  await c.db.prepare('INSERT OR IGNORE INTO crm_audit (id,record_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)').bind(`visit-place-${c.me.id}-${customer.id}-${bucket}`,customer.id,c.me.name,'محاولة تسجيل زيارة بعيدة عن العميل',`على بعد ${Math.round(result.distance)} متر والمسموح ${Math.round(result.allowed)} متر`,options.now).run();

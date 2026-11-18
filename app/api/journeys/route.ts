@@ -13,6 +13,7 @@ import {salesScopeMemberIds,recordAuthorId} from '@/lib/access';
 import {journeyDate,initialJourneyData,applyJourneyPoint,closeJourney,journeyGap,journeySegments,projectJourneyWindow,journeyRecordingBoundary,closeJourneyAtWindowEnd,JOURNEY_REPLAY_MS,JOURNEY_GAP_MS,type JourneyPoint,type JourneyStop} from '@/lib/journeys';
 import {journeyColumns,decodeJourney,canReadJourney,ownJourney,activeJourney,journeyGuard,journeyLinkedTimingStatement,requireJourneyReport,type JourneyRow} from '@/lib/journeys-server';
 import {trackingWindowOpen,trackingWindowStatus} from '@/lib/tracking-window';
+import {isFieldRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v);
 const identifier=z.string().min(1).max(150).regex(/^[a-zA-Z0-9_-]+$/);
@@ -88,7 +89,7 @@ export async function POST(req:Request){try{
  }
  if(action==='gap'&&stop.data.events.length>=2000)throw new CRMError('انتهت سعة أحداث خط السير. اختر العميل من جديد.',429);
  const reason=action==='end'?z.enum(['manual_end','day_end','contact_type_changed','date_changed']).default('manual_end').parse(body.reason):z.enum(['permission_denied','gps_unavailable','app_hidden','hidden','offline','tracking_paused','buffer_expired']).parse(body.reason);
- if(action==='end'&&c.me.role==='rep'&&['manual_end','day_end'].includes(reason))throw new CRMError('تسجيل خط السير يعمل تلقائيًا للمندوب ولا يمكن إيقافه يدويًا.',403);
+ if(action==='end'&&isFieldRole(c.me.role)&&['manual_end','day_end'].includes(reason))throw new CRMError('تسجيل خط السير يعمل تلقائيًا للمندوب ولا يمكن إيقافه يدويًا.',403);
  if(stop.closedAt)return response(stop,now);
  if(action==='gap'&&!trackingWindowOpen(now))return response(stop,now);
  const bounded=projectJourneyWindow(stop,now),next=bounded.closedAt?bounded:stop.date<date?closeJourney(stop,journeyRecordingBoundary(stop),'day_ended'):action==='end'?closeJourney(stop,now,reason):journeyGap(stop,now,reason),gate='EXISTS (SELECT 1 FROM crm_journey_stops WHERE id=? AND version=? AND mutation_id=?)',args=[stop.id,stop.version+1,mutation];

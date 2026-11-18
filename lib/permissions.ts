@@ -55,12 +55,16 @@ export type MatrixCell=Text&{roles:readonly string[];grantable?:true;without?:re
 export type MatrixRow=Text&{screen:PermissionScreen;cells:Partial<Record<PermissionAction,MatrixCell>>;roleNote?:Partial<Record<string,Text>>;
  /** A row that is part of other screens, not a screen of its own: it has no «استعراض», and this says where it shows. */
  part?:Text};
-const ALL=['admin','manager','supervisor','rep','customer_service','customer_service_manager'] as const;
-const SALES=['admin','manager','supervisor','rep'] as const,MANAGEMENT=['admin','manager','supervisor'] as const,SERVICE=['admin','customer_service','customer_service_manager'] as const;
+// «مسؤول تسويق» (lib/roles.ts) has a representative's cells, «حذف عميل» excepted (it never deletes a customer).
+const ALL=['admin','manager','supervisor','rep','marketing','customer_service','customer_service_manager'] as const;
+const SALES=['admin','manager','supervisor','rep','marketing'] as const,MANAGEMENT=['admin','manager','supervisor'] as const,SERVICE=['admin','customer_service','customer_service_manager'] as const;
 /** «حذف»: off by default except for the administrator; whoever it is granted to deletes only what they may edit (their own scope). */
 const DEFAULT_ON=['admin'] as const;
 const deleteScope:Text={ar:'مغلقة افتراضيًا لكل الأدوار عدا مدير النظام، ويمكنك فتحها لأي مستخدم. يحذف السجلات التي يمكنه تعديلها فقط (فريقه ومناطقه)، ولا يوسّع «عرض بيانات الفريق بالكامل» الحذف.',en:'Off by default for every role but the administrator; it can be granted to any member. They delete only the records they may edit (their team and regions); «View the whole team\'s data» never widens deleting.'};
 const repOwnContacts:Text={ar:'للمندوب: زياراته ومتابعاته هو فقط (التي سجّلها)، لعملاء مناطقه.',en:'For a representative: only their own visits and follow-ups (recorded by them), of customers in their regions.'};
+const marketingOwnContacts:Text={ar:'لمسؤول التسويق: زياراته ومتابعاته هو فقط (التي سجّلها)، لعملاء مناطقه.',en:'For a marketing officer: only their own visits and follow-ups (recorded by them), of customers in their regions.'};
+/** «العملاء · تحرير» of a marketing officer: what differs from a representative. */
+const marketingCustomerEdit:Text={ar:'لمسؤول التسويق: يعدّل بيانات كل عملاء فرعه في مناطقه مباشرةً دون انتظار موافقة، ويحدد تصنيفاتهم (تصنيف الفرصة وحجم المصنع واهتمام العميل)، ولا يغيّر المندوب المسؤول ولا الفرع. ماكينات العميل لعملائه هو فقط كالمندوب.',en:'For a marketing officer: edits the details of every customer of their branch in their regions directly, without waiting for approval, and sets their classifications (opportunity grade, factory size, customer interest); never changes the responsible member or the branch. A customer\'s machines only for their own customers, as a representative.'};
 /** «المحذوفات» of a supervisor or a representative: it comes with «حذف» (trashScopeOf). */
 const trashOwn:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط',en:'For whoever has «Delete»: only what they deleted themselves'};
 const trashOwnRestore:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط، ما دام «حذف» في شاشة السجل مفتوحًا له، وفي حدود ما يمكنه حذفه.',en:'For whoever has «Delete»: only what they deleted themselves, while «Delete» of the record\'s screen is on for them, and within what they may delete.'};
@@ -73,8 +77,8 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'dashboard',ar:'لوحة المتابعة',en:'Dashboard',cells:{}},
  {screen:'customer',ar:'العملاء',en:'Customers',cells:{
   add:{ar:'إضافة عميل جديد (من صفحة العملاء والخريطة ونموذج الزيارة)',en:'Add a new customer (customers page, map, visit form)',roles:SALES},
-  edit:{ar:'تعديل بيانات العميل، وإضافة وتعديل وحذف ماكيناته',en:'Edit a customer\'s details, and add, edit or delete its machines',roles:ALL},
-  delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاؤه هو فقط (المسؤول عنهم)، ولا يُحذف عميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: only the customers assigned to them, never one with visits, machines, sales or a route.'}}},
+  edit:{ar:'تعديل بيانات العميل، وإضافة وتعديل وحذف ماكيناته',en:'Edit a customer\'s details, and add, edit or delete its machines',roles:ALL,roleNote:{marketing:marketingCustomerEdit}},
+  delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاؤه هو فقط (المسؤول عنهم)، ولا يُحذف عميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: only the customers assigned to them, never one with visits, machines, sales or a route.'}},without:['marketing']},
   export:{ar:'تصدير العملاء (CSV) من صفحة العملاء والخريطة',en:'Export customers (CSV) from the customers page and the map',roles:MANAGEMENT},
   import:{ar:'«استيراد من ERP» واستيراد العملاء والماكينات',en:'«Import from ERP» and the customers and machines imports',roles:['admin','manager']},
  }},
@@ -82,7 +86,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'activity',ar:'الزيارات',en:'Visits',cells:{
   add:{ar:'تسجيل زيارة جديدة (ولخدمة العملاء: تسجيل طلب/فرصة جديدة)',en:'Record a new visit (customer service: register a new request)',roles:ALL},
   edit:{ar:'تعديل زيارة محفوظة (ولخدمة العملاء: تعديل الطلب قبل اعتماده)',en:'Edit a saved visit (customer service: edit a request before approval)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
-  delete:{ar:'حذف زيارة',en:'Delete a visit',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts},without:['customer_service','customer_service_manager']},
+  delete:{ar:'حذف زيارة',en:'Delete a visit',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts,marketing:marketingOwnContacts},without:['customer_service','customer_service_manager']},
   export:{ar:'تصدير الزيارات (CSV)',en:'Export visits (CSV)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
  }},
  {screen:'complaints',ar:'الشكاوى',en:'Complaints',cells:{
@@ -98,7 +102,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'followup',ar:'المتابعات',en:'Follow-ups',cells:{
   add:{ar:'تسجيل متابعة',en:'Record a follow-up',roles:SALES},
   edit:{ar:'تعديل متابعة محفوظة',en:'Edit a saved follow-up',roles:MANAGEMENT},
-  delete:{ar:'حذف متابعة',en:'Delete a follow-up',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts}},
+  delete:{ar:'حذف متابعة',en:'Delete a follow-up',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts,marketing:marketingOwnContacts}},
  }},
  {screen:'mold-requests',ar:'طلبات تصنيع القوالب',en:'Mold requests',cells:{
   add:{ar:'طلب تصنيع قالب جديد',en:'Request a new mold',roles:ALL},
@@ -130,8 +134,8 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   add:{ar:'إضافة مستخدم',en:'Add a member',roles:['admin']},
   edit:{ar:'تعديل مستخدم وصلاحياته',en:'Edit a member and their permissions',roles:['admin']},
  }},
- {screen:'trash',ar:'المحذوفات',en:'Deleted records',roleNote:{supervisor:trashOwn,rep:trashOwn},cells:{
-  edit:{ar:'استرجاع سجل محذوف',en:'Restore a deleted record',roles:['admin','manager','supervisor','rep'],roleNote:{manager:{ar:'لمدير المبيعات: ما حذفه هو فقط.',en:'For a sales manager: only what they deleted themselves.'},supervisor:trashOwnRestore,rep:trashOwnRestore}},
+ {screen:'trash',ar:'المحذوفات',en:'Deleted records',roleNote:{supervisor:trashOwn,rep:trashOwn,marketing:trashOwn},cells:{
+  edit:{ar:'استرجاع سجل محذوف',en:'Restore a deleted record',roles:['admin','manager','supervisor','rep','marketing'],roleNote:{manager:{ar:'لمدير المبيعات: ما حذفه هو فقط.',en:'For a sales manager: only what they deleted themselves.'},supervisor:trashOwnRestore,rep:trashOwnRestore,marketing:trashOwnRestore}},
  }},
 ];
 export const PERMISSION_SCREENS:readonly PermissionScreen[]=PERMISSION_MATRIX.map(row=>row.screen);

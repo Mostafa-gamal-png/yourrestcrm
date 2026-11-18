@@ -17,6 +17,7 @@ import {intakeLead,routingFactsOf} from '@/lib/service-sales-server';
 import {ROUTING_NOT_ELIGIBLE,SERVICE_OWNED_REFUSED,routingEligible,type Lead} from '@/lib/service-sales';
 import {stages} from '@/lib/crm';
 import {followupLossReasons} from '@/lib/customer-followups';
+import {isFieldRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 type Context=Awaited<ReturnType<typeof context>>;
 type RegistrationData=Omit<z.infer<typeof schemas.activity>,'type'|'visitWorkflow'|'customerStage'>&{type:'visit'|'call'|'email'|'whatsapp'|'website'|'social';visitWorkflow?:string;customerStage?:string};
@@ -81,7 +82,7 @@ export async function POST(req:Request){try{
   else lead=await intakeLead(c,body.lead,leadPresent,customer.id);
  }else{
   const found=c.serviceCases.find(s=>s.id===body.id);if(!found||!canReadService(found,c))throw new CRMError('الطلب غير متاح',403);item=found;id=item.id;customer=c.all.find(r=>r.id===item.customerId)!;
-  if(['rep','supervisor','manager'].includes(c.me.role)&&item.assignedTo){const assignee=c.members.find(m=>m.id===item.assignedTo);if(assignee)requireMember(assignee);}
+  if((isFieldRole(c.me.role)||['supervisor','manager'].includes(c.me.role))&&item.assignedTo){const assignee=c.members.find(m=>m.id===item.assignedTo);if(assignee)requireMember(assignee);}
   // A manager gaining visibility through a current reporting line must still own it at commit.
   if(c.me.role==='customer_service_manager'){const creator=c.members.find(m=>m.id===item.creatorId);if(creator)requireMember(creator);}
   if(body.version!==item.version)throw new CRMError('تغيّر الطلب. حدّث البيانات قبل إعادة المحاولة.',409);

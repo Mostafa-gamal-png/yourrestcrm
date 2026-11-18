@@ -20,6 +20,7 @@ import {readSalesRevision,readEvidenceRevision,memberSnapshot,memberSnapshotsGat
 import {riyadhMonth,targetMonthClosed} from './targets';
 import {parseCollectionStatement,summarizeCollections,collectionNameKey,collectionPercent,CollectionStatementError,COLLECTION_FILE_MAX_BYTES,type CollectionGroup} from './erp-collections';
 import {ERP_OFFICE_CHOICE,ERP_OFFICE_SETTING,ERP_OFFICE_AUDIT_ACTION,officeByName,applyOfficeChanges,readOfficeRow,officeUnchanged,writeOfficeList,type OfficeEmployeeList} from './erp-office-employees';
+import {isFieldRole} from './roles';
 
 type Context=Awaited<ReturnType<typeof context>>;
 export const COLLECTION_IMPORT_ACTION='استيراد كشف تحصيل ERP';
@@ -43,7 +44,7 @@ type Planned=CollectionRepPreview&{member:Member;old:EvidenceRow|null;input:KpiE
 async function sha256(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');}
 const riyadhDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'});
 /** The representatives whose evidence this account may write (the same as saving it by hand: lib/kpi-evidence-server.ts). */
-function eligible(c:Context){const ids=salesReadMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>m.role==='rep'&&ids.has(m.id));}
+function eligible(c:Context){const ids=salesReadMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>isFieldRole(m.role)&&ids.has(m.id));}
 function permitted(c:Context){
  requireSalesWorkspace(c.me);
  if(!['admin','manager'].includes(c.me.role))throw new CRMError('بيانات المؤشرات متاحة للتعديل لمدير النظام ومدير المبيعات فقط.',403);
@@ -72,7 +73,7 @@ async function nameMappings(c:Context,input:Input,keys:Set<string>){
  const result=new Map<string,{repId:string;source:CollectionMappingSource}>(),eligibleIds=new Set(eligible(c).map(m=>m.id));
  const chosen=new Map<string,string>();
  for(const mapping of input.mappings){const key=collectionNameKey(mapping.name);if(!keys.has(key))continue;if(chosen.has(key)&&chosen.get(key)!==mapping.repId)throw new CRMError('تكرار في اختيارات الربط؛ حدّث المعاينة');if(!eligibleIds.has(mapping.repId))throw new CRMError('ربط المندوب خارج نطاق فريقك أو منطقتك',403);chosen.set(key,mapping.repId);}
- const byName=new Map<string,Member[]>();for(const m of c.members.filter(m=>m.role==='rep')){const key=collectionNameKey(m.name);if(key)byName.set(key,[...(byName.get(key)||[]),m]);}
+ const byName=new Map<string,Member[]>();for(const m of c.members.filter(m=>isFieldRole(m.role))){const key=collectionNameKey(m.name);if(key)byName.set(key,[...(byName.get(key)||[]),m]);}
  const [erpRows,employeeRows,previous]=await Promise.all([
   c.db.prepare("SELECT DISTINCT json_extract(data,'$.employeeName') AS employee_name,employee_id,rep_id FROM crm_erp_sales").all<{employee_name:string;employee_id:string;rep_id:string}>(),
   c.db.prepare('SELECT employee_id,rep_id FROM crm_erp_employee_mappings').all<{employee_id:string;rep_id:string}>(),

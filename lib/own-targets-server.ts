@@ -13,6 +13,7 @@ import {evidenceScopeKey,kpiEvidenceInputSchema} from './kpi-evidence';
 import {readSalesRevision} from './kpi-evidence-server';
 import {readKpiPurchaseHistory} from './kpi-history-server';
 import {serviceSalesExclusion} from './service-sales-server';
+import {isFieldRole} from './roles';
 
 type Context=Awaited<ReturnType<typeof context>>;
 type TargetRow={kind:'sales'|'activity';month:string;data:string};
@@ -72,7 +73,7 @@ export function ownTargetsMonth(req:Request){
 }
 
 export async function ownTargets(c:Context,month:string):Promise<OwnTargets>{
- if(c.me.role!=='rep')throw new CRMError('عرض المستهدف الشخصي متاح للمندوب فقط.',403);
+ if(!isFieldRole(c.me.role))throw new CRMError('عرض المستهدف الشخصي متاح للمندوب فقط.',403);
  const selectedMonth=monthSchema.parse(month);
  // Bind identity from the authenticated context. Never load company, branch or team rows.
  const rows=(await c.db.prepare("SELECT kind,month,data FROM crm_target_sets WHERE scope_id=? AND kind IN ('sales','activity') AND month<=? ORDER BY month DESC")

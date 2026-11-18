@@ -1,3 +1,4 @@
+import {isFieldRole} from './roles';
 import {nativeScheduleSupported,type NativeTrackingState} from './native-tracking';
 
 /** A representative may use the CRM only while route tracking is active on the
@@ -88,8 +89,9 @@ export function missingRequirements(device:GateDevice):GateRequirement[]{
 export function trackingGateDecision(input:GateInput):GateDecision{
  // A deactivated account and an unknown member (the CRM is still loading) are never gated here.
  if(input.active!==1)return {status:'allowed'};
- // Only a representative is subject to this gate (the mandatory app version, for everyone, is app/tracking-gate.tsx's own check).
- if(input.role!=='rep')return {status:'allowed'};
+ // Only a representative (or a marketing officer, lib/roles.ts) is subject to this gate (the mandatory app version, for everyone, is
+ // app/tracking-gate.tsx's own check).
+ if(!isFieldRole(input.role))return {status:'allowed'};
  if(!input.native)return {status:'blocked',reason:'browser',missing:[]};
  const device=input.device;
  if(!device){

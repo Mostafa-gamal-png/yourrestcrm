@@ -1,5 +1,5 @@
 import {readJsonBody,isRecord} from '@/lib/crm-server';
-import {canUseSalesWorkspace,salesScopeMemberIds,recordAuthorId} from '@/lib/access';
+import {canUseSalesWorkspace,salesScopeMemberIds,recordAuthorId,canClassifyCustomer} from '@/lib/access';
 import {activeServiceCase,serviceHistoryLocked,isServiceRole,serviceVisitRecords,canReadService,serviceCustomerAddRefused} from '@/lib/customer-service';
 import {serviceQueue} from '@/lib/service-queue';
 import {requireSalesRole} from '@/lib/crm-server';
@@ -20,6 +20,8 @@ import {deleteCapture,rootCustomer} from '@/lib/trash-server';
 import {customerCodeKey,erpCodeTaken,ERP_CODE_LOCKED} from '@/lib/customer-identity';
 import {proposeCustomerEdit,decideCustomerEdit,customerEditHistoryEntry,type CustomerEditApproval} from '@/lib/customer-edit-requests-server';
 import {proposesCustomerEdit} from '@/lib/customer-edit-requests';
+import {changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
+import {isFieldRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
@@ -30,7 +32,7 @@ export async function GET(){try{
  const readScope=salesScopeMemberIds(c.members,c.me,{read:true});
  const names=new Set(c.members.filter(m=>readScope.has(m.id)&&c.members.every(other=>other.name!==m.name||readScope.has(other.id))).map(m=>m.name));
  const masterIds=new Set(c.visible.filter(r=>['customer','factory'].includes(r.kind)).map(r=>r.id)),activityIds=new Set(c.visible.filter(r=>r.kind==='activity').map(r=>r.id));
- const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حذف','استرجاع سجل','"+PERMISSIONS_AUDIT_ACTION+"','مراجعة المشرف لزيارة أو متابعة','مراجعة المشرف لتقرير اليوم','قراءة مراجعة المشرف','حفظ متابعة','visit-receipt','service-receipt','support-receipt','complaint-receipt','service-kpi-receipt','crm-create-receipt','mold-request-receipt') AND action NOT LIKE 'mold-request:%' AND action NOT LIKE 'service:%' AND action NOT LIKE 'support:%' AND action NOT LIKE 'complaint:%' AND action NOT LIKE 'service-kpi:%' ORDER BY created_at DESC LIMIT 500").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(c.me.role==='rep'?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor))).map(customerEditHistoryEntry);
+ const audits=(await c.db.prepare("SELECT id,record_id AS recordId,actor,action,detail,created_at AS createdAt FROM crm_audit WHERE action NOT IN ('حذف','استرجاع سجل','"+PERMISSIONS_AUDIT_ACTION+"','مراجعة المشرف لزيارة أو متابعة','مراجعة المشرف لتقرير اليوم','قراءة مراجعة المشرف','حفظ متابعة','visit-receipt','service-receipt','support-receipt','complaint-receipt','service-kpi-receipt','crm-create-receipt','mold-request-receipt') AND action NOT LIKE 'mold-request:%' AND action NOT LIKE 'service:%' AND action NOT LIKE 'support:%' AND action NOT LIKE 'complaint:%' AND action NOT LIKE 'service-kpi:%' ORDER BY created_at DESC LIMIT 500").all<AuditEntry>()).results.filter(a=>ids.has(a.recordId)&&(isFieldRole(c.me.role)?activityIds.has(a.recordId):c.me.role==='admin'||!masterIds.has(a.recordId)||names.has(a.actor))).map(customerEditHistoryEntry);
  // The administrator's team page edits each member's permissions and copies them («انسخ الصلاحيات من»): what is saved for every member.
  const saved=c.me.role==='admin'&&regionScope(c.me)==='all'?await readMemberPermissions(c.db,c.members):null;
  const projectMember=(member:typeof c.me)=>({...member,userId:undefined,target:canUseSalesWorkspace(c.me.role)?member.target:undefined,...(c.me.role==='admin'&&regionScope(c.me)==='all'?{editToken:memberEditToken(member),permissions:saved?.get(member.id)}:{})});
@@ -68,7 +70,7 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
  if(body.action==='member'){
   if(c.me.role!=='admin'||regionScope(c.me)!=='all')throw new CRMError('إدارة المستخدمين متاحة لمدير النظام فقط',403);
   requireCell(c.me,'team',isRecord(body.data)&&body.data.id?'edit':'add');
-  const m=z.object({id:z.string().optional(),name:z.string().trim().min(1).max(100),email:z.string({required_error:memberEmailError,invalid_type_error:memberEmailError}).transform(normalizeMemberEmail).pipe(z.string().email(memberEmailError).max(200,memberEmailError)),role:z.enum(['admin','manager','supervisor','rep','customer_service_manager','customer_service']),branch:z.string().trim().min(1).max(100),supervisorId:z.string().default(''),regionScope:z.union([z.string(),z.array(z.string().max(40)).max(10)]).default('all').transform(canonicalRegionScope).refine(v=>v.length>0,'اختر منطقة البيانات المسموح بها'),active:z.coerce.number().int().min(0).max(1),target:z.coerce.number().finite().min(0).max(1000000000)}).parse(body.data);
+  const m=z.object({id:z.string().optional(),name:z.string().trim().min(1).max(100),email:z.string({required_error:memberEmailError,invalid_type_error:memberEmailError}).transform(normalizeMemberEmail).pipe(z.string().email(memberEmailError).max(200,memberEmailError)),role:z.enum(['admin','manager','supervisor','rep','marketing','customer_service_manager','customer_service']),branch:z.string().trim().min(1).max(100),supervisorId:z.string().default(''),regionScope:z.union([z.string(),z.array(z.string().max(40)).max(10)]).default('all').transform(canonicalRegionScope).refine(v=>v.length>0,'اختر منطقة البيانات المسموح بها'),active:z.coerce.number().int().min(0).max(1),target:z.coerce.number().finite().min(0).max(1000000000)}).parse(body.data);
   if(!m.email.endsWith('@yourrest.org'))throw new CRMError('استخدم بريد الشركة @yourrest.org');
   if(m.id==='owner'&&(m.role!=='admin'||!m.active||m.regionScope!=='all'))throw new CRMError('لا يمكن تعطيل مدير النظام الأساسي أو تغيير دوره');
   if(m.supervisorId&&(m.supervisorId===m.id||!c.members.find(x=>x.id===m.supervisorId&&(m.role==='customer_service'?['customer_service_manager']:m.role==='customer_service_manager'?['manager']:['supervisor','manager','admin']).includes(x.role))))throw new CRMError('اختر مشرفًا صحيحًا');
@@ -96,12 +98,15 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
  // Customer detail edits are regional; reps cannot reassign or edit commercial records. Deleting is «حذف» (lib/permissions.ts): off by
  // default for everyone but the administrator and grantable to any member; a representative it was granted to deletes a customer of their
  // regions, or a visit or follow-up they recorded (recordDeleteGuard), never a machine, a quotation or an old follow-up thread.
- const repCustomerDelete=c.me.role==='rep'&&kind==='customer'&&body.action==='delete'&&!!body.id;
- const repCustomerCreate=c.me.role==='rep'&&kind==='customer'&&body.action==='save'&&!body.id&&!body.parentId;
- const repCustomerEdit=c.me.role==='rep'&&kind==='customer'&&body.action==='save'&&!!body.id&&!body.parentId;
+ // A marketing officer (lib/roles.ts) passes here as a representative does; their corrections are written directly (not proposeCustomerEdit),
+ // and a customer's deletion is refused by its cell (none for the role) and by recordDeleteGuard.
+ const field=isFieldRole(c.me.role);
+ const repCustomerDelete=field&&kind==='customer'&&body.action==='delete'&&!!body.id;
+ const repCustomerCreate=field&&kind==='customer'&&body.action==='save'&&!body.id&&!body.parentId;
+ const repCustomerEdit=field&&kind==='customer'&&body.action==='save'&&!!body.id&&!body.parentId;
  // A representative also adds and corrects the machines of their own customers (never deletes them); the ownership is checked below and again at commit.
- const repMachineSave=c.me.role==='rep'&&kind==='factory'&&body.action==='save';
- if(c.me.role==='rep'&&['customer','factory','opportunity','quote'].includes(kind)&&!repCustomerCreate&&!repCustomerEdit&&!repMachineSave&&!repCustomerDelete)throw new CRMError('يمكنك إضافة عميل جديد وتسجيل الزيارات والمتابعات؛ تعديل بيانات العملاء متاح للإدارة فقط',403);
+ const repMachineSave=field&&kind==='factory'&&body.action==='save';
+ if(field&&['customer','factory','opportunity','quote'].includes(kind)&&!repCustomerCreate&&!repCustomerEdit&&!repMachineSave&&!repCustomerDelete)throw new CRMError('يمكنك إضافة عميل جديد وتسجيل الزيارات والمتابعات؛ تعديل بيانات العملاء متاح للإدارة فقط',403);
  if(repCustomerCreate&&!body.createKey)throw new CRMError('تعذر تحديد عملية إضافة العميل. أعد فتح النموذج ثم حاول مرة أخرى.');
  const genericCreateKey=kind!=='activity'&&body.action==='save'&&!body.id&&body.createKey?z.string().uuid().parse(body.createKey):null;
  const genericId=genericCreateKey?'crm-'+c.me.id+'-'+genericCreateKey:'';
@@ -215,10 +220,16 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
   customerRoutingChanged=!old||data.assignedTo!==old.assignedTo||data.branch!==old.branch||data.region!==(old.data.region||'');
   if(customerRoutingChanged){
    const routing=schemas.customer.pick({assignedTo:true,branch:true}).safeParse(data);if(!routing.success)throw new CRMError(routing.error.issues.map(x=>x.message).join(' • '));
-   if(!c.members.find(m=>m.id===data.assignedTo&&m.active&&(['admin','manager','supervisor','rep'].includes(m.role)||old?.assignedTo===m.id||serviceCustomerCreate&&m.id===c.me.id)))throw new CRMError('حدد المندوب المسؤول');
+   if(!c.members.find(m=>m.id===data.assignedTo&&m.active&&(['admin','manager','supervisor'].includes(m.role)||isFieldRole(m.role)||old?.assignedTo===m.id||serviceCustomerCreate&&m.id===c.me.id)))throw new CRMError('حدد المندوب المسؤول');
    const member=c.members.find(m=>m.id===data.assignedTo)!;if(!memberCanAccessRegion(member,data.region))throw new CRMError('منطقة العميل لا تطابق صلاحية المندوب المسؤول',400);if(regionScope(c.me)!=='all'&&!c.regionalMembers.some(m=>m.id===member.id))throw new CRMError('المندوب خارج نطاق منطقتك',403);if(!['admin','manager'].includes(member.role)&&member.branch!==data.branch)throw new CRMError('فرع يورست المسؤول عن المصنع يجب أن يطابق فرع المندوب');
   }
   assignedTo=data.assignedTo;branch=data.branch;
+  // The classifications (lib/customer-classification.ts, the owner, 2026-11-18): a save that does not carry one keeps the stored one; a change
+  // is refused unless the member may classify this customer (lib/access.ts canClassifyCustomer: the marketing officer for their branch, the
+  // supervisor for their team, the sales manager and the administrator), within their regions (checked above). A representative's or
+  // customer service's save never changes them, so their requests never carry them; a supervisor's change waits in their request as the rest.
+  keepAbsentClassification(data,inputData,old?.data);
+  if(changedClassification(old?.data,data).length&&!canClassifyCustomer({kind:'customer',assignedTo:data.assignedTo,branch:data.branch},c.members,c.me))throw new CRMError(CLASSIFICATION_REFUSED,403);
  }
  if(kind==='factory'){
   // The machine's place in the factory and its number are no longer asked for: what an earlier save recorded stays as it was, and a new machine has neither.

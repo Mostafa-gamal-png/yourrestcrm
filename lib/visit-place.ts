@@ -1,5 +1,6 @@
 import {distanceMeters} from './journeys';
 import {customerCoordinates} from './customer-location';
+import {isFieldRole} from './roles';
 
 /** A visit is recorded where the customer is: the phone's point may be this far from the customer's own point. */
 export const VISIT_PLACE_METERS=300;
@@ -62,7 +63,7 @@ export function visitPlaceView(input:{customer:(Located&{name?:unknown})|undefin
   return {status:'near',blocked:false,message:say(`أنت عند العميل (على بعد ${meters} م).`,`You are at the customer (${meters} m away).`),distance:result.distance};
  }
  const name=String(customer.name||''),meters=String(Math.round(result.distance)),accuracy=String(Math.round(result.accuracy));
- if(role==='rep')return {status:result.reason,blocked:true,message:visitPlaceMessage(result,name,language),distance:result.distance};
+ if(isFieldRole(role))return {status:result.reason,blocked:true,message:visitPlaceMessage(result,name,language),distance:result.distance};
  return {status:result.reason,blocked:false,distance:result.distance,message:result.reason==='far'
   ?say(`أنت على بعد ${meters} متر من موقع العميل؛ تُحفظ الزيارة وتُوسم «سُجّلت بعيدًا عن العميل».`,`You are ${meters} meters from the customer; the visit is saved and marked as recorded away from the customer.`)
   :say(`دقة الموقع ضعيفة (±${accuracy} متر)؛ تُحفظ الزيارة دون تأكيد قربك من العميل.`,`The location accuracy is weak (±${accuracy} meters); the visit is saved without confirming that you are at the customer.`)};

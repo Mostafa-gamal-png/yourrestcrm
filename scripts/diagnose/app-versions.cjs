@@ -30,7 +30,8 @@ function run(now = Date.now()) {
         const at = Date.parse(device.reported_at);
         if (!report.newestReportOfVersion[version] || at > Date.parse(report.newestReportOfVersion[version])) report.newestReportOfVersion[version] = new Date(at).toISOString();
       }
-      if (member.role !== 'rep') continue;
+      // A marketing officer uses the representatives' Android app (lib/roles.ts).
+      if (member.role !== 'rep' && member.role !== 'marketing') continue;
       const reps = report.representatives;
       reps.total++;
       if (!device) { reps.noAndroidReport++; continue; }

@@ -11,6 +11,7 @@ import {omit} from './omit';
 import {quotationRefs,storedQuotationRefs,MAX_QUOTATION_REFS} from './quotation-refs';
 import {coveragePeriod,filePeriod,periodMonths,salesCoverageEntrySchema,type SalesCoverageEntry} from './sales-coverage';
 import {ERP_OFFICE_CHOICE,ERP_OFFICE_SETTING,ERP_OFFICE_AUDIT_ACTION,officeById,officeNameOnly,officeIdKey,applyOfficeChanges,readOfficeRow,officeUnchanged,writeOfficeList} from './erp-office-employees';
+import {FIELD_ROLES_SQL,isFieldRole} from './roles';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const namespace='yourrest-industries';
@@ -74,7 +75,8 @@ async function hash(value:string){const bytes=await crypto.subtle.digest('SHA-25
 export async function erpInvoiceKey(reference:string,date:string){return hash(JSON.stringify([namespace,'invoice','sale',date.slice(0,4),canonicalInvoiceReference(reference)]));}
 async function signature(value:string){if(!/^[a-f0-9]{64,}$/i.test(env.YR_AUTH_SECRET||''))throw new CRMError('خدمة الاستيراد غير مهيأة. تواصل مع مدير النظام.',503);const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(env.YR_AUTH_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode('yourrest-erp-preview:'+value))),b=>b.toString(16).padStart(2,'0')).join('');}
 function safeEqual(a:string,b:string){if(a.length!==b.length)return false;let difference=0;for(let n=0;n<a.length;n++)difference|=a.charCodeAt(n)^b.charCodeAt(n);return difference===0;}
-function eligible(c:Context){const ids=salesMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>m.role==='rep'&&ids.has(m.id));}
+// A marketing officer's sales count as a representative's (lib/roles.ts): mapped, listed and checked with them.
+function eligible(c:Context){const ids=salesMemberIds(c.members,c.me);return c.regionalMembers.filter(m=>isFieldRole(m.role)&&ids.has(m.id));}
 function snapshot(m:Member){return [m.id,m.role,m.branch,m.supervisorId||'',regionScope(m),m.active,m.authVersion||0,m.name];}
 async function state(c:Context){const revision=await c.db.prepare('SELECT revision FROM crm_erp_import_state WHERE id=?').bind(namespace).first<{revision:number}>();if(!revision)throw new CRMError('تحديث قاعدة بيانات استيراد المبيعات غير مكتمل.',503);const employees=(await c.db.prepare('SELECT employee_id AS employeeId,rep_id AS repId FROM crm_erp_employee_mappings ORDER BY employee_id').all<{employeeId:string;repId:string}>()).results;const categories=(await c.db.prepare('SELECT category,product FROM crm_erp_category_mappings ORDER BY category').all<{category:string;product:string}>()).results;const office=await readOfficeRow(c.db);return {revision:revision.revision,employees,categories,office};}
 export async function erpSalesConfiguration(c:Context){requireSalesWorkspace(c.me);const members=eligible(c),ids=new Set(members.map(m=>m.id)),saved=await state(c);// The employees marked «مبيعات مكتب (مستبعد)» come as mappings to ERP_OFFICE_CHOICE, to every importer (an ERP number and the name the
@@ -125,7 +127,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  for(const key of officeSources.keys())for(const id of [...employeeMap.keys()])if(officeIdKey(id)===key){employeeMap.delete(id);mappingSources.delete(id);}
  // Include every rep when checking uniqueness. A hidden or inactive namesake must
  // not make an ambiguous identity look unique inside the uploader's team.
- const nameRoster=c.members.filter(m=>m.role==='rep'),nameCandidates=new Map<string,Member[]>(),erpNames=new Map<string,Set<string>>();
+ const nameRoster=c.members.filter(m=>isFieldRole(m.role)),nameCandidates=new Map<string,Member[]>(),erpNames=new Map<string,Set<string>>();
  for(const member of nameRoster){const key=employeeNameKey(member.name);if(key)nameCandidates.set(key,[...(nameCandidates.get(key)||[]),member]);}
  // All rows participate, even office/blank rows sharing an employee ID. A mixed
  // ERP identity needs explicit review rather than an inferred assignment.
@@ -152,7 +154,7 @@ async function prepare(c:Context,input:Input,bytes:Uint8Array){
  // ERP_REPLACE: the file replaces what is saved for its period only for an importer who reaches every active representative (a sales
  // manager or the administrator; never a supervisor, whose import stays exactly what it was) and only when the page asked for it. A saved
  // invoice is touched only when its representative is an active one of the importer's and its region is the importer's.
- const activeReps=c.members.filter(m=>m.role==='rep'&&m.active).map(m=>m.id);
+ const activeReps=c.members.filter(m=>isFieldRole(m.role)&&m.active).map(m=>m.id);
  const wholeCompany=input.wholeCompany&&c.me.role!=='supervisor'&&activeReps.every(id=>allowed.has(id));
  const reachable=(row:StoredRow)=>allowed.has(row.rep_id)&&regionScopeAdmits(regionScope(c.me),row.region_scope);
  const savedView=(row:StoredRow)=>({repId:row.rep_id,repName:c.members.find(m=>m.id===row.rep_id)?.name||'',totalCents:row.total_cents});
@@ -316,7 +318,7 @@ export async function importErpSales(c:Context,body:unknown){
  const args:(string|number|null)[]=[...guard.args,namespace,prepared.saved.revision,...officeGate.args];
  for(const member of usedReps.values()){gate+=" AND EXISTS(SELECT 1 FROM crm_members WHERE id=? AND role=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=? AND active=? AND auth_version=? AND name=?)";args.push(...snapshot(member));}
  // A coverage that speaks for every representative holds only while the active representatives are those the preview read.
- if(coverage?.allReps){gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep' AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role='rep' AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))";args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));}
+ if(coverage?.allReps){gate+=` AND (SELECT COUNT(*) FROM crm_members WHERE role IN ${FIELD_ROLES_SQL} AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role IN ${FIELD_ROLES_SQL} AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))`;args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));}
  // ERP_REPLACE holds only while every saved invoice it changes is as the preview read it (another import moves the revision anyway; this
  // also refuses a row changed some other way) and while the active representatives are those the importer was found to reach.
  const touched=[...replacing.map(d=>d.saved!),...removing.map(r=>r.saved)];
@@ -325,13 +327,13 @@ export async function importErpSales(c:Context,body:unknown){
    WHERE actual.id IS NULL OR actual.content_hash IS NOT json_extract(expected.value,'$[1]') OR actual.mapped_hash IS NOT json_extract(expected.value,'$[2]')
     OR actual.rep_id IS NOT json_extract(expected.value,'$[3]') OR actual.region_scope IS NOT json_extract(expected.value,'$[4]'))`;
   args.push(JSON.stringify(touched.map(row=>[row.document_key,row.content_hash,row.mapped_hash,row.rep_id,row.region_scope])));
-  gate+=" AND (SELECT COUNT(*) FROM crm_members WHERE role='rep' AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role='rep' AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))";args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));
+  gate+=` AND (SELECT COUNT(*) FROM crm_members WHERE role IN ${FIELD_ROLES_SQL} AND active=1)=? AND NOT EXISTS(SELECT 1 FROM crm_members WHERE role IN ${FIELD_ROLES_SQL} AND active=1 AND id NOT IN (SELECT value FROM json_each(?)))`;args.push(prepared.activeReps.length,JSON.stringify(prepared.activeReps));
  }
  if(prepared.nameRosterSnapshot){
   // Recheck the complete name-matching roster at the same atomic claim as sales.
   // One JSON parameter avoids SQLite's bind limit; indexed IDs check old rows,
   // while the count also catches newly inserted/promoted duplicate-name reps.
-  gate+=` AND (SELECT COUNT(*) FROM crm_members WHERE role='rep')=? AND NOT EXISTS(
+  gate+=` AND (SELECT COUNT(*) FROM crm_members WHERE role IN ${FIELD_ROLES_SQL})=? AND NOT EXISTS(
    SELECT 1 FROM json_each(?) AS expected LEFT JOIN crm_members AS actual ON actual.id=json_extract(expected.value,'$[0]')
    WHERE actual.id IS NULL OR actual.role IS NOT json_extract(expected.value,'$[1]')
     OR actual.branch IS NOT json_extract(expected.value,'$[2]') OR COALESCE(actual.supervisor_id,'') IS NOT json_extract(expected.value,'$[3]')
@@ -395,7 +397,7 @@ export async function readErpSales(c:Context,month:string,options:{serviceFull?:
 }
 /** Reps receive only their product quantities; no invoice, customer, price or colleague data. */
 export async function readOwnErpSales(c:Context,month:string):Promise<{date:string;items:{product:string;quantity:number}[]}[]>{
- if(c.me.role!=='rep')throw new CRMError('هذا العرض خاص بالمندوب',403);
+ if(!isFieldRole(c.me.role))throw new CRMError('هذا العرض خاص بالمندوب',403);
  const scope=regionScopeSql('region_scope',c.me),rows=(await c.db.prepare('SELECT id,data,date FROM crm_erp_sales WHERE rep_id=? AND date>=? AND date<=? AND '+scope.sql).bind(c.me.id,month+'-01',month+'-31',...scope.args).all<{id:string;data:string;date:string}>()).results;
  // The full customer-service sales are not the representative's achievement (2026-11-16).
  const excluded=await serviceSalesExclusion(c);

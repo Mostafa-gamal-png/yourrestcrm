@@ -7,6 +7,7 @@ import {buildTrackingCoverage,type TrackingCoverage,type TrackingOverview} from 
 import {coverageLabel,phoneBrief,riyadhStamp} from '@/lib/tracking-coverage-text';
 import release from '@/lib/app-update-release.json';
 import './team-tracking.css';
+import {isFieldRole} from '@/lib/roles';
 
 type State={status:'loading'|'ready'|'error';byMember:Map<string,TrackingCoverage>};
 const Data=createContext<State>({status:'loading',byMember:new Map()});
@@ -31,7 +32,7 @@ export function TeamTrackingData({enabled,children}:{enabled:boolean;children:Re
 
 export function TeamTrackingCell({member}:{member:Member}){
  const {language}=useLanguage(),state=useContext(Data),entry=state.byMember.get(member.id);
- if(member.role!=='rep'||!member.active)return <span className="team-tracking-none">—</span>;
+ if(!isFieldRole(member.role)||!member.active)return <span className="team-tracking-none">—</span>;
  if(state.status==='loading')return <span className="team-tracking-none" aria-busy="true">…</span>;
  if(!entry)return <span className="team-tracking-none">—</span>;
  return <div className="team-tracking" data-status={entry.status} data-member={member.id}>

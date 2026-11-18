@@ -4,6 +4,7 @@ import type {Member} from '@/lib/crm';
 import {buildDeviceReport,createDeviceReporter,detectDeviceClass,postDeviceStatus,type DeviceClass,type DeviceReporter} from '@/lib/device-status';
 import {trackingGateDecision} from '@/lib/tracking-gate';
 import {useJourneyTracker} from './journey-tracker';
+import {isFieldRole} from '@/lib/roles';
 
 const noSubscription=()=>()=>{};
 const currentDeviceClass=():DeviceClass=>detectDeviceClass(navigator.userAgent,navigator.platform,navigator.maxTouchPoints);
@@ -12,7 +13,7 @@ const currentDeviceClass=():DeviceClass=>detectDeviceClass(navigator.userAgent,n
  * has no GPS. It runs for a blocked representative too, and it never affects what the person can do. */
 export default function DeviceStatusReporter({me}:{me:Member|null}){
  const {gate}=useJourneyTracker(),deviceClass=useSyncExternalStore(noSubscription,currentDeviceClass,()=>'other' as DeviceClass);
- const memberId=me?.role==='rep'&&me.active===1?me.id:'';
+ const memberId=me&&isFieldRole(me.role)&&me.active===1?me.id:'';
  // A companion device (a tablet beside the phone that records the route) does not report: the recording phone's report stands.
  const report=useMemo(()=>memberId&&!gate.companion?buildDeviceReport(trackingGateDecision({role:'rep',active:1,...gate}),gate,deviceClass):null,[memberId,gate,deviceClass]);
  const reporter=useRef<DeviceReporter|null>(null);

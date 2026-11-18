@@ -3,6 +3,7 @@ import {customerPlanSource} from './customer-visits';
 import {followupClosed} from './customer-followups';
 import {memberCanAccessRegion,regionScope} from './regions';
 import {salesScopeMemberIds} from './access';
+import {isFieldRole} from './roles';
 import {riyadhDate,visitResult} from './visits';
 import {workingHoursBetween} from './working-hours';
 
@@ -179,7 +180,7 @@ export type SupportReader={me:Member;admin:boolean;service:boolean;lead:boolean;
 /** What the reader is, and whose records their team covers; built once per request. */
 export function supportReader(c:{me:Member;members:Member[]}):SupportReader{
  const role=c.me.role;
- return {me:c.me,admin:role==='admin',service:role==='customer_service',lead:role==='customer_service_manager',manager:role==='manager',supervisor:role==='supervisor',rep:role==='rep',sales:role==='rep'||role==='supervisor'||role==='manager',team:salesScopeMemberIds(c.members,c.me)};
+ return {me:c.me,admin:role==='admin',service:role==='customer_service',lead:role==='customer_service_manager',manager:role==='manager',supervisor:role==='supervisor',rep:isFieldRole(role),sales:isFieldRole(role)||role==='supervisor'||role==='manager',team:salesScopeMemberIds(c.members,c.me)};
 }
 /** Whether this customer-service manager reviews the request: it was routed to them, or they manage the member who submitted it, or nobody manages that member. */
 function reviews(data:SupportData,reader:SupportReader,members:Member[]){
@@ -238,7 +239,7 @@ export function supportPermissions(row:SupportRow,customer:Row,reader:SupportRea
   return:status==='submitted'&&reviewer,
   allocate:status==='pending_assignment'&&(admin||reader.manager&&data.salesManagerId===me),
   reassign:status==='assigned'&&(admin||reader.manager&&data.salesManagerId===me),
-  delegate:status==='assigned'&&reader.supervisor&&(data.assigneeId===me||!!assignee&&assignee.role==='rep'&&assignee.supervisorId===me),
+  delegate:status==='assigned'&&reader.supervisor&&(data.assigneeId===me||!!assignee&&isFieldRole(assignee.role)&&assignee.supervisorId===me),
   resolve:status==='assigned'&&(holder||admin),
   reject:status==='resolved'&&closer,
   close:status==='resolved'&&closer,
@@ -254,8 +255,8 @@ export function supportCandidates(row:SupportRow,customer:Row,c:{me:Member;membe
  let found:Member[];
  if(action==='assign'){const staff=supportStaff(customer,c.members);found=[...staff.reps,...staff.leads].filter(member=>member.id!==row.data.handlerId);}
  else if(action==='forward')found=c.members.filter(member=>member.role==='manager'&&fits(member)&&(admin||member.id===me.supervisorId));
- else if(action==='delegate')found=c.members.filter(member=>member.role==='rep'&&fits(member)&&member.branch===customer.branch&&member.supervisorId===me.id&&member.id!==row.data.assigneeId);
- else found=c.members.filter(member=>['rep','supervisor'].includes(member.role)&&fits(member)&&member.branch===customer.branch&&(admin||team.has(member.id))&&(action==='allocate'||member.id!==row.data.assigneeId));
+ else if(action==='delegate')found=c.members.filter(member=>isFieldRole(member.role)&&fits(member)&&member.branch===customer.branch&&member.supervisorId===me.id&&member.id!==row.data.assigneeId);
+ else found=c.members.filter(member=>(isFieldRole(member.role)||member.role==='supervisor')&&fits(member)&&member.branch===customer.branch&&(admin||team.has(member.id))&&(action==='allocate'||member.id!==row.data.assigneeId));
  // The customer's own representative first, then by name.
  return found.sort((a,b)=>Number(b.id===customer.assignedTo)-Number(a.id===customer.assignedTo)||a.name.localeCompare(b.name)).map(member=>({id:member.id,name:member.name,role:member.role}));
 }

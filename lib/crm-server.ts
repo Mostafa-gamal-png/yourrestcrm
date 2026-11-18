@@ -10,6 +10,7 @@ import { scopeRecords, type Row, type Member } from './crm';
 import {loadContextRecords,type ContextLoad} from './crm-context-records';
 import {memberAccess,cellRefused,cellRefusalText,pagesBlocked,hubTabsBlocked,PAGE_HIDDEN_TEXT,type PermissionAction,type PermissionScreen} from './permissions';
 import type {HubTab} from './targets-hub';
+import {FIELD_ROLES_SQL,isFieldRole,isMarketingRole} from './roles';
 export class CRMError extends Error { constructor(message:string,public status=400){super(message);} }
 export function database(){if(!env.DB)throw new CRMError('تعذر الاتصال بقاعدة البيانات. أعد المحاولة.',503);return env.DB;}
 export async function context(options:ContextLoad={}){
@@ -36,8 +37,8 @@ export function assertRecordMutation(c:GuardContext,record:Row){
  const serviceCustomer=record.kind==='customer'&&isServiceRole(c.me.role)&&record.branch===c.me.branch;
  if(!root||!memberCanAccessRegion(c.me,root.data.region)||!serviceCustomer&&!canReadSalesRecord(record,c.members,c.me))throw new CRMError('السجل خارج نطاق صلاحيتك',403);
 }
-/** Appending a contact is allowed for reps; rewriting/deleting saved records is not. */
-export function requireRecordEdit(me:Member){if(me.role==='rep')throw new CRMError('تعديل السجلات وحذفها متاح للإدارة فقط. يمكنك تسجيل زيارة أو متابعة جديدة.',403);}
+/** Appending a contact is allowed for reps (and marketing officers, lib/roles.ts); rewriting/deleting saved records is not. */
+export function requireRecordEdit(me:Member){if(isFieldRole(me.role))throw new CRMError('تعديل السجلات وحذفها متاح للإدارة فقط. يمكنك تسجيل زيارة أو متابعة جديدة.',403);}
 /** restoring: the record is being put back from «المحذوفات» (lib/trash-server.ts) and is not there yet, so the commit cannot find its own row
  *  (its absence is the restoration's own gate); every other check, in the code and at commit, is the same. */
 type GuardOptions={restoring?:boolean};
@@ -45,13 +46,14 @@ type GuardOptions={restoring?:boolean};
 export function recordEditGuard(c:GuardContext,record:Row,options:GuardOptions={}){requireRecordEdit(c.me);return accessGuard(c,record,options);}
 /** Master edits need team ownership in addition to the regional visit-selection scope. */
 export function masterMutationGuard(c:GuardContext,record:Row,options:GuardOptions={}){
- if(c.me.role==='rep'&&record.kind==='factory'){if(!canEditMachineRecord(record,c.members,c.me))throw new CRMError('ماكينات العميل يسجّلها مسؤوله فقط',403);return accessGuard(c,record,options);}
+ if(isFieldRole(c.me.role)&&record.kind==='factory'){if(!canEditMachineRecord(record,c.members,c.me))throw new CRMError('ماكينات العميل يسجّلها مسؤوله فقط',403);return accessGuard(c,record,options);}
  if(!canManageMasterRecord(record,c.members,c.me))throw new CRMError('تعديل بيانات العميل متاح للمسؤول وفريقه فقط',403);
+ if(isMarketingRole(c.me.role)&&record.kind==='customer')return marketingCustomerGuard(c,record);
  if(c.me.role==='rep'&&record.kind==='customer')return accessGuard(c,record,options);
  const permission=recordEditGuard(c,record,options);
  if(c.me.role!=='admin'&&record.assignedTo!==c.me.id){
-  if(c.me.role==='supervisor'){permission.sql+=" AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND role='rep' AND supervisor_id=?)";permission.args.push(record.assignedTo,c.me.id);}
-  else{permission.sql+=" AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND role IN ('rep','supervisor'))";permission.args.push(record.assignedTo);}
+  if(c.me.role==='supervisor'){permission.sql+=` AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND role IN ${FIELD_ROLES_SQL} AND supervisor_id=?)`;permission.args.push(record.assignedTo,c.me.id);}
+  else{permission.sql+=` AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND (role IN ${FIELD_ROLES_SQL} OR role='supervisor'))`;permission.args.push(record.assignedTo);}
  }
  return permission;
 }
@@ -67,6 +69,8 @@ export function masterMutationGuard(c:GuardContext,record:Row,options:GuardOptio
  *  restoring (the owner, 2026-11-10): a supervisor or a representative restores one of their deletions from «المحذوفات» within this same
  *  scope, as it is now (lib/trash-server.ts); the record is the deletion's snapshot, so the conditions on its own row are the insert's. */
 export function recordDeleteGuard(c:GuardContext,record:Row,options:GuardOptions={}){
+ // A marketing officer never deletes a customer (the owner, 2026-11-18; lib/permissions.ts has no «حذف عميل» for the role): refused here too.
+ if(isMarketingRole(c.me.role)&&['customer','factory'].includes(record.kind))throw new CRMError(MARKETING_NO_CUSTOMER_DELETE,403);
  if(c.me.role==='rep'&&record.kind==='customer'){
   // The owner, 2026-11-09: a representative granted «حذف» on «العملاء» deletes only the customers assigned to them (never another
   // representative's customer of the same regions). The commit re-checks the assignment (a restoration inserts the assignee checked here).
@@ -74,14 +78,26 @@ export function recordDeleteGuard(c:GuardContext,record:Row,options:GuardOptions
   const permission=masterMutationGuard(c,record,options);if(!options.restoring){permission.sql+=' AND EXISTS (SELECT 1 FROM crm_records own WHERE own.id=? AND own.assigned_to=?)';permission.args.push(record.id,c.me.id);}return permission;
  }
  if(['customer','factory'].includes(record.kind))return masterMutationGuard(c,record,options);
- if(c.me.role==='rep'){
+ if(isFieldRole(c.me.role)){
   if(record.kind!=='activity'||recordAuthorId(record,c.members)!==c.me.id)throw new CRMError('يمكنك حذف زياراتك ومتابعاتك أنت فقط',403);
   return accessGuard(c,record,options);
  }
  return recordEditGuard(c,record,options);
 }
+export const MARKETING_NO_CUSTOMER_DELETE='حذف العملاء غير متاح لمسؤول التسويق.';
+export const MARKETING_OTHER_BRANCH='يعدّل مسؤول التسويق بيانات عملاء فرعه فقط.';
+/** A marketing officer's direct correction of a customer (lib/roles.ts): any customer of their branch in their regions, never its routing
+ *  (the route refuses that before). The commit re-checks the member (accessGuard: role, branch, regions, permissions' version), the
+ *  customer's version and that the customer is still of the officer's branch. */
+function marketingCustomerGuard(c:GuardContext,record:Row){
+ if(record.branch!==c.me.branch)throw new CRMError(MARKETING_OTHER_BRANCH,403);
+ const permission=accessGuard(c,record);
+ permission.sql+=" AND EXISTS (SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND branch=?)";permission.args.push(record.id,c.me.branch);
+ return permission;
+}
 /** Unchanged customer routing can be retained even when its old assignee is no longer eligible. */
 export function customerDetailMutationGuard(c:GuardContext,record:Row){
+ if(isMarketingRole(c.me.role)&&record.kind==='customer')return marketingCustomerGuard(c,record);
  if(!canEditCustomerDetails(record,c.members,c.me))throw new CRMError('تعديل بيانات العميل متاح للمسؤول وفريقه فقط',403);
  // Customer service corrects details within the customers it can see (its branch in its regions, checked again in accessGuard), as a representative does.
  return c.me.role==='manager'||isServiceRole(c.me.role)?accessGuard(c,record):masterMutationGuard(c,record);
@@ -99,8 +115,8 @@ export function accessGuard(c:GuardContext,record?:Row|null,options:GuardOptions
   if(!['customer','factory'].includes(record.kind)&&c.me.role!=='admin'){
    const author=recordAuthorId(record,c.members)!;
    if(author!==c.me.id){
-    if(c.me.role==='supervisor'){sql+=" AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND role='rep' AND supervisor_id=?)";args.push(author,c.me.id);}
-    else if(c.me.role==='manager'){sql+=" AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND role IN ('supervisor','rep'))";args.push(author);}
+    if(c.me.role==='supervisor'){sql+=` AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND role IN ${FIELD_ROLES_SQL} AND supervisor_id=?)`;args.push(author,c.me.id);}
+    else if(c.me.role==='manager'){sql+=` AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND (role='supervisor' OR role IN ${FIELD_ROLES_SQL}))`;args.push(author);}
    }
   }
  }

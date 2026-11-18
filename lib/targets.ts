@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {salesProducts,monthSchema,type Sale} from './sales';
 import {type Member} from './crm';
+import {isFieldRole} from './roles';
 export const targetProducts=salesProducts.map(name=>({id:name,name,unit:name==='خدمات صيانة'?'خدمة':name.startsWith('قوالب')?'قالب':name.startsWith('قطع')?'قطعة':'ماكينة'}));
 const quantityFormat=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
 export const quantityNumber=(v:number)=>quantityFormat.format(v);
@@ -54,7 +55,7 @@ export function hiddenAdminIds(state:TargetState,members:Pick<Member,'id'|'role'
 export function managerTeam(manager:Member,members:Member[],includeInactive:Set<string>=new Set()){
  if(!['manager','supervisor'].includes(manager.role))return[];
  const visited=new Set([manager.id]),queue=[manager.id],team:Member[]=[];
- while(queue.length){const parent=queue.shift()!;for(const child of members){if(child.supervisorId!==parent||visited.has(child.id)||!['manager','supervisor','rep'].includes(child.role)||manager.role==='supervisor'&&(parent!==manager.id||child.role!=='rep'))continue;visited.add(child.id);if(['manager','supervisor'].includes(child.role))queue.push(child.id);if((child.active||includeInactive.has(child.id))&&child.role!=='manager')team.push(child);}}
+ while(queue.length){const parent=queue.shift()!;for(const child of members){if(child.supervisorId!==parent||visited.has(child.id)||!['manager','supervisor'].includes(child.role)&&!isFieldRole(child.role)||manager.role==='supervisor'&&(parent!==manager.id||!isFieldRole(child.role)))continue;visited.add(child.id);if(['manager','supervisor'].includes(child.role))queue.push(child.id);if((child.active||includeInactive.has(child.id))&&child.role!=='manager')team.push(child);}}
  return team;
 }
 export function withManagerTargets(state:TargetState,members:Member[],recordedMemberIds:string[]=[],eligibleIds?:Set<string>):TargetState{
@@ -62,7 +63,7 @@ export function withManagerTargets(state:TargetState,members:Member[],recordedMe
  const leaders=members.filter(m=>['manager','supervisor'].includes(m.role));
  const sets=state.sets.filter(s=>!leaders.some(m=>m.id===s.scopeId&&(s.kind==='sales'||m.role==='manager'&&s.kind==='activity')));
  for(const leader of leaders){
-  const activityTeam=managerTeam(leader,members,includeInactive).filter(m=>!eligibleIds||eligibleIds.has(m.id)||recordedMemberIds.includes(m.id)),salesTeam=activityTeam.filter(m=>m.role==='rep'),teamMemberIds=salesTeam.map(m=>m.id);
+  const activityTeam=managerTeam(leader,members,includeInactive).filter(m=>!eligibleIds||eligibleIds.has(m.id)||recordedMemberIds.includes(m.id)),salesTeam=activityTeam.filter(m=>isFieldRole(m.role)),teamMemberIds=salesTeam.map(m=>m.id);
   const products=targetProducts.map(p=>{const quantities=salesTeam.map(m=>effectiveSet<QuantityTargets>(state,'sales',m.id)?.data.products.find(r=>r.product===p.id)?.quantity??null);return{product:p.id,quantity:!quantities.length||quantities.some(q=>q===null)?null:Math.round(quantities.reduce<number>((n,q)=>n+q!,0)*1000000)/1000000};});
   const base={scopeId:leader.id,month:state.month,version:0,updatedAt:'',computed:true,teamMemberIds};
   sets.push({...base,kind:'sales',data:{products}});

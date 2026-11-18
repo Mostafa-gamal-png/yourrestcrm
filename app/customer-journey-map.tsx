@@ -11,11 +11,12 @@ import {trackingWindowOpen} from '@/lib/tracking-window';
 import {waitForDirectionsStep} from '@/lib/directions-attempt';
 import {directionsProblem} from '@/lib/directions-problem';
 import CustomerMap from './customer-map';
+import {isFieldRole} from '@/lib/roles';
 
 type Props={customers:Row[];me:Member;focusId?:string|null;filters?:ReactNode;scopeKey:string};
 type ReadyLink={customerId:string;href:string;target:'_self'|'_blank';version:number};
 type RecordingNotice={customerId:string;version:number;href:string;text:string;error?:boolean};
-const canNavigate=(me:Member)=>me.active===1&&['rep','supervisor','manager','admin'].includes(me.role);
+const canNavigate=(me:Member)=>me.active===1&&(isFieldRole(me.role)||['supervisor','manager','admin'].includes(me.role));
 
 /** Directions opens only the selected, currently scoped customer destination.
  * Recording is a separate acknowledged operation: an unavailable GPS service or

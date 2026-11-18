@@ -6,6 +6,7 @@ import {t,useLanguage} from '@/lib/i18n';
 import {money,roles,type Member} from '@/lib/crm';
 import {type KpiData,type KpiMetric} from '@/lib/kpis';
 import KpiEvidenceEditor from './kpi-evidence-editor';
+import {isFieldRole} from '@/lib/roles';
 
 type Props={kind:'collection'|'quotes';data:KpiData;people:KpiData['people'];identityKey:string;onSaved:()=>void;
  /** Buttons above the list: the collections import in «التحصيل»; in «عروض الأسعار», where the ERP quotations import mounts (importSlot). */
@@ -20,7 +21,7 @@ export default function KpiEvidencePanel({kind,data,people,identityKey,onSaved,a
  const metric=(person:KpiData['people'][number],id:KpiMetric['id'])=>person.metrics.find(m=>m.id===id);
  const points=(m:KpiMetric|undefined,weight:number)=>m?.status==='not_applicable'?say('لا ينطبق','Not applicable'):m?.points==null?'—':money(m.points)+' / '+weight;
  const ratio=(m:KpiMetric|undefined)=>m?.status==='not_applicable'?say('لا ينطبق','Not applicable'):m?.numerator==null||m.denominator==null?say('غير مكتمل','Incomplete'):m.numerator+' / '+m.denominator+(m.score===null?'':' · '+money(m.score)+'%');
- const button=(person:KpiData['people'][number])=>person.member.role==='rep'?<button type="button" className="btn subtle small" onClick={()=>setMember(person.member)}><FileCheck2 size={15}/>{data.canManage&&!person.member.readOnly?say('استكمال بيانات المؤشرات','Complete KPI evidence'):say('عرض بيانات المؤشرات','View KPI evidence')}</button>:<small className="muted">{say('محسوب من الفريق','Calculated from the team')}</small>;
+ const button=(person:KpiData['people'][number])=>isFieldRole(person.member.role)?<button type="button" className="btn subtle small" onClick={()=>setMember(person.member)}><FileCheck2 size={15}/>{data.canManage&&!person.member.readOnly?say('استكمال بيانات المؤشرات','Complete KPI evidence'):say('عرض بيانات المؤشرات','View KPI evidence')}</button>:<small className="muted">{say('محسوب من الفريق','Calculated from the team')}</small>;
  const heading=kind==='collection'?say('التحصيل الشهري لكل مندوب','Monthly collection by representative'):say('عروض الأسعار في التقييم','Quotations in the evaluation');
  return <section className="panel kpi-evidence-panel" aria-labelledby={'kpi-evidence-panel-'+kind}>
   <div className="panel-heading kpi-evidence-panel-heading"><div><h3 id={'kpi-evidence-panel-'+kind}>{kind==='collection'?<Wallet size={19}/>:<FileText size={19}/>}{heading}</h3><p className="muted">{kind==='collection'?say('المحصل ÷ المستحق من بيانات التحصيل المعتمدة لكل مندوب؛ النتيجة بحد أقصى 100%.','Collected ÷ due from each representative\'s approved collection data; capped at 100%.'):say('عروض الشهر المسندة لكل مندوب، والمحوَّل منها إلى مبيعات: عرض يذكر رقمَه عمودُ «الوصف» في فاتورة بيع من ERP، أو ربطته الإدارة بفاتورة في «بيانات المؤشرات».','The month\'s quotations assigned to each representative and those converted to sales: a quotation whose number the «Description» column of an ERP sales invoice names, or that management linked to an invoice in the KPI evidence.')}</p></div>{actions&&<div className="kpi-evidence-panel-actions">{actions}</div>}</div>
@@ -29,7 +30,7 @@ export default function KpiEvidencePanel({kind,data,people,identityKey,onSaved,a
    if(kind==='collection'){const m=metric(person,'collection');return <TableRow key={person.member.id}>{name}<TableCell className="numeric">{cents(m?.denominator??null)}</TableCell><TableCell className="numeric">{cents(m?.numerator??null)}</TableCell><TableCell className="numeric">{m?.score==null?say('غير مكتمل','Incomplete'):money(m.score)+'%'}</TableCell><TableCell className="numeric">{points(m,20)}</TableCell><TableCell>{button(person)}</TableCell></TableRow>;}
    const quotes=metric(person,'quotes'),orders=metric(person,'orders'),known=orders?.denominator!=null;
    // A representative's converted quotations, each with the invoice number(s) that converted it; a team row shows its counts only.
-   const converted=person.member.role==='rep'?(person.quotations||[]).filter(q=>q.converted):[];
+   const converted=isFieldRole(person.member.role)?(person.quotations||[]).filter(q=>q.converted):[];
    const label=(ar:string,en:string)=>({'data-label':say(ar,en)});
    const rate=orders?.status==='not_applicable'?say('لا ينطبق','Not applicable'):orders?.score==null?say('غير مكتمل','Incomplete'):money(orders.score)+'%';
    return <React.Fragment key={person.member.id}><TableRow>{name}<TableCell className="numeric" {...label('تحويل الفرص إلى عروض','Opportunities to quotations')}>{ratio(quotes)}</TableCell><TableCell className="numeric" {...label('عروض الشهر','Quotations this month')}>{known?orders!.denominator:'—'}</TableCell><TableCell className="numeric" {...label('المحوَّلة إلى مبيعات','Converted to sales')}>{known?orders!.numerator:'—'}</TableCell><TableCell className="numeric" {...label('نسبة التحويل','Conversion rate')}>{rate}</TableCell><TableCell className="numeric" {...label('النقاط','Points')}>{points(quotes,3)} · {points(orders,3)}</TableCell><TableCell className="kpi-quotes-action">{button(person)}</TableCell></TableRow>

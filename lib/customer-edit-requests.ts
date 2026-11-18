@@ -1,4 +1,5 @@
 import type {Member} from './crm';
+import {CLASSIFICATION_CHOICE_FIELDS,CLASSIFICATION_TEXT} from './customer-classification';
 
 /** «طلبات تعديل بيانات العميل» (the owner, 2026-11-15, item 4 of the GSCO comparison list, after GSCO 2.13.55 and 2.13.73 on its projects):
  *  a correction of a customer's details by a representative, a supervisor or customer service no longer changes the customer: it becomes a
@@ -13,7 +14,10 @@ import type {Member} from './crm';
  *  lib/customer-edit-requests-server.ts. This file is pure, shared by the page, the server and the tests. */
 
 /** The fields a request may change, in the order the form shows them. Anything else is never part of a request. */
-export const CUSTOMER_EDIT_FIELDS=['name','region','customerType','customerKind','customerStatus','category','phone','contact','city','location','shortAddress','address','email','contact2','phone2','email2','machineCount','machineTypes','supplier','notes'] as const;
+/** The classifications (lib/customer-classification.ts, 2026-11-18) are among them for the supervisor, the only member who sends a request
+ *  and may set them (their team's customers); a representative's or customer service's save that changes one is refused before a request
+ *  is made (app/api/crm/route.ts), so their requests never carry them. */
+export const CUSTOMER_EDIT_FIELDS=['name','region','customerType','customerKind','opportunityGrade','gradeNotes','factorySize','customerInterest','customerStatus','category','phone','contact','city','location','shortAddress','address','email','contact2','phone2','email2','machineCount','machineTypes','supplier','notes'] as const;
 export type CustomerEditField=typeof CUSTOMER_EDIT_FIELDS[number];
 /** Held with «location»: the point and how it was captured travel with the text, never apart. */
 export const LOCATION_DETAILS=['latitude','longitude','locationSource','locationCapturedAt','locationAccuracy'] as const;
@@ -24,13 +28,16 @@ export const CUSTOMER_EDIT_LOCKED=['code','assignedTo','branch','sourceFile','so
 
 export const CUSTOMER_EDIT_FIELD_TEXT:Record<CustomerEditField,[string,string]>={
  name:['اسم المصنع','Factory name'],region:['المنطقة','Region'],customerType:['تصنيف العميل','Customer classification'],customerKind:['نوع العميل','Customer type'],
+ ...CLASSIFICATION_TEXT,
  customerStatus:['حالة العميل','Customer status'],category:['فئة المصنع','Factory category'],phone:['الجوال','Mobile'],contact:['مسؤول التواصل','Contact person'],
  city:['المدينة','City'],location:['اللوكيشن','Location'],shortAddress:['العنوان الوطني المختصر','Short national address'],address:['العنوان','Address'],
  email:['بريد المسؤول الأول','First contact email'],contact2:['اسم المسؤول الثاني','Second contact name'],phone2:['جوال المسؤول الثاني','Second contact mobile'],
  email2:['بريد المسؤول الثاني','Second contact email'],machineCount:['عدد الماكينات في الشيت','Machine count in the sheet'],machineTypes:['أنواع الماكينات في الشيت','Machine types in the sheet'],
  supplier:['مورد القوالب والقطع','Molds and parts supplier'],notes:['ملاحظات المصنع','Factory notes']
 };
-/** Fields whose stored value is one of the application's own words (shown translated in English); the others are what people typed. */
+/** Fields whose stored value is one of the application's own words (shown translated in English); the others are what people typed. The
+ *  classifications' values are codes, shown with their words (lib/customer-classification.ts classificationLabel). */
+export const CUSTOMER_EDIT_CODE_FIELDS:ReadonlySet<string>=new Set(CLASSIFICATION_CHOICE_FIELDS);
 export const CUSTOMER_EDIT_WORD_FIELDS:ReadonlySet<string>=new Set(['region','customerType','customerKind','customerStatus','category']);
 
 export type CustomerEditStage='supervisor'|'sales_manager';

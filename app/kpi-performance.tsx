@@ -15,6 +15,7 @@ import {operationalAxes,operationalIndicators,conductKeys,emptyKpiInput,kpiInput
 import {KpiGapsSummary,KpiIncompleteBadge,KpiMissingList,KpiPartialNotice,evaluatedFirst} from './targets-performance-summary';
 import {monthList} from '@/lib/sales-coverage';
 import VoiceField from './voice-field';
+import {isFieldRole} from '@/lib/roles';
 
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
 export default function KpiPerformanceView({data,staff,query,members,onSelect,onSaved,identityKey=''}:{data:KpiData;staff:string;query:string;members:Member[];onSelect:(id:string)=>void;onSaved:()=>void;identityKey?:string}){
@@ -41,7 +42,7 @@ export default function KpiPerformanceView({data,staff,query,members,onSelect,on
   {people.some(person=>person.summary.excludedWeight>0)&&<p className="target-note">{say('تُحسب الدرجة من أوزان المؤشرات المنطبقة فقط.','The score uses only the weights of applicable indicators.')}</p>}
  </section></>:<>
   <div className="kpi-person-heading"><div><h2>{selected.member.name}</h2><p className="muted">{t(roles[selected.member.role])} · {selected.member.branch}</p></div><div className="kpi-evidence-actions">
-   {selected.member.role==='rep'&&<button className="btn subtle" onClick={()=>setEvidenceMember(selected.member)}><FileCheck2 size={17}/>{say(data.canManage&&!selected.member.readOnly?'استكمال بيانات المؤشرات':'عرض بيانات المؤشرات',data.canManage&&!selected.member.readOnly?'Complete KPI evidence':'View KPI evidence')}</button>}
+   {isFieldRole(selected.member.role)&&<button className="btn subtle" onClick={()=>setEvidenceMember(selected.member)}><FileCheck2 size={17}/>{say(data.canManage&&!selected.member.readOnly?'استكمال بيانات المؤشرات':'عرض بيانات المؤشرات',data.canManage&&!selected.member.readOnly?'Complete KPI evidence':'View KPI evidence')}</button>}
    {data.canManage&&!selected.member.readOnly&&<button className="btn primary" onClick={()=>setEditing(selected)}><Pencil size={17}/>{t('تقييم الإدارة وتدقيق البيانات')}</button>}
   </div></div>
   {selected.teamRollup&&<p className="info-line">{t('فريق المبيعات المحتسب')}: {selected.salesSourceMemberIds.map(id=>members.find(m=>m.id===id)?.name||'').filter(Boolean).join(say('، ',', '))||t('لم يُربط فريق')} · {say('بيانات المؤشرات من مناديب الفريق','KPI evidence comes from team reps')}{selected.member.role==='supervisor'&&<span> · {t('مؤشرات النشاط للمشرف شخصية')}</span>}</p>}

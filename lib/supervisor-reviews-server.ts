@@ -8,6 +8,7 @@ import {journeyDate} from './journeys';
 import {today,type Member,type Row} from './crm';
 import type {JourneyContext} from './journeys-server';
 import {CHOSEN_RATINGS,CUSTOMER_NOTES_LIMIT,DAY_REVIEW_ACTION,ENTRY_REVIEW_ACTION,REVIEW_INBOX_DAYS,REVIEW_INBOX_LIMIT,REVIEW_PENDING_DAYS,REVIEW_READ_ACTION,REVIEW_TEXT_MAX,canWriteReviews,reviewPendingDates,reviewPendingRole,sortReviewPending,type ReviewPending,dayReadId,dayReadIdSql,entryRatingOf,entryReadId,entryReadIdSql,reviewTextProblem,reviewerRoles,reviewsMadeCounts,saleEntry,saleEntrySql,type ChosenRating,type CustomerNote,type CustomerNotes,type DayReview,type EntryRating,type EntryReview,type ReportReviews,type ReviewInbox,type ReviewInboxItem,type ReviewMadeDay,type ReviewMadeEntry,type ReviewsMade} from './supervisor-reviews';
+import {FIELD_ROLES_SQL,isFieldRole} from './roles';
 
 /** Server side of the supervisor's notes (lib/supervisor-reviews.ts). Who writes, and on what, follows «تقرير يوم المندوب» exactly
  * (GET /api/journeys): the administrator, a sales manager or a supervisor (active), on a visit or contact the report lists for them (an
@@ -83,8 +84,8 @@ function dayReviewableMember(c:JourneyContext,memberId:string,date:string){
 /** At commit: the member is still in the writer's team (the same reporting-line rule as accessGuard's author check). */
 function memberGate(me:Member,memberId:string):{sql:string;args:(string|number)[]}{
  if(me.role==='admin')return{sql:'EXISTS (SELECT 1 FROM crm_members WHERE id=? AND id<>?)',args:[memberId,me.id]};
- if(me.role==='supervisor')return{sql:"EXISTS (SELECT 1 FROM crm_members WHERE id=? AND id<>? AND role='rep' AND supervisor_id=?)",args:[memberId,me.id,me.id]};
- return{sql:"EXISTS (SELECT 1 FROM crm_members WHERE id=? AND id<>? AND role IN ('supervisor','rep'))",args:[memberId,me.id]};
+ if(me.role==='supervisor')return{sql:`EXISTS (SELECT 1 FROM crm_members WHERE id=? AND id<>? AND role IN ${FIELD_ROLES_SQL} AND supervisor_id=?)`,args:[memberId,me.id,me.id]};
+ return{sql:`EXISTS (SELECT 1 FROM crm_members WHERE id=? AND id<>? AND (role='supervisor' OR role IN ${FIELD_ROLES_SQL}))`,args:[memberId,me.id]};
 }
 
 /** The evaluation chosen on the note's last save, from its audit row (the review row's mutation_id is that row's id). */
@@ -125,7 +126,7 @@ export async function reportReviews(c:JourneyContext,date:string,memberId:string
  * administrator does not get it (403), nor whoever GET /api/reviews refuses (the route's own checks). */
 export async function reviewPending(c:JourneyContext,now=new Date().toISOString()):Promise<ReviewPending>{
  if(!reviewPendingRole(c.me.role))throw new CRMError(REVIEW_MESSAGES.pendingRole,403);
- const representatives=new Set(c.members.filter(member=>member.role==='rep').map(member=>member.id));
+ const representatives=new Set(c.members.filter(member=>isFieldRole(member.role)).map(member=>member.id));
  const waiting=reviewableOf(c,reportActivitiesOn(c,new Set(reviewPendingDates(journeyDate(now))),'all')).filter(activity=>representatives.has(activity.author));
  const reviewed=new Set(waiting.length?(await c.db.prepare('SELECT activity_id AS activityId FROM crm_daily_entry_reviews WHERE activity_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(waiting.map(activity=>activity.row.id))).all<{activityId:string}>()).results.map(row=>row.activityId):[]);
  const lines=new Map<string,{memberId:string;date:string;pending:number}>();

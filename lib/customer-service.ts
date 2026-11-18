@@ -5,6 +5,7 @@ import {salesScopeMemberIds,canReadSalesRecord} from './access';
 import {riyadhDate} from './visits';
 import {visitOrder,visitProducts} from './customer-visits';
 import {customerAddressFields} from './customer-fields';
+import {isFieldRole} from './roles';
 
 export const serviceRoles=['customer_service','customer_service_manager'];
 export const isServiceRole=(role:string)=>serviceRoles.includes(role);
@@ -48,7 +49,7 @@ export function serviceHistoryLocked(record:Row,c:ServiceContext){const item=c.s
 export function canReadService(item:ServiceCase,c:ServiceContext){
  const customer=c.all.find(r=>r.kind==='customer'&&r.id===item.customerId);if(!customer||!memberCanAccessRegion(c.me,customer.data.region))return false;
  if(c.me.role==='admin')return true;
- if(['rep','supervisor','manager'].includes(c.me.role)){
+ if(isFieldRole(c.me.role)||['supervisor','manager'].includes(c.me.role)){
   const team=salesScopeMemberIds(c.members,c.me);
   return !!item.assignedTo&&team.has(item.assignedTo)||c.me.role==='manager'&&item.salesManagerId===c.me.id;
  }
@@ -64,12 +65,12 @@ export function serviceCandidates(item:ServiceCase,c:ServiceContext,action:'appr
  // administrator any of them; a customer-service manager himself and his own team. The member who registered it is offered first.
  if(action==='keep'){const found=c.members.filter(m=>m.active&&isServiceRole(m.role)&&m.branch===customer.branch&&memberCanAccessRegion(m,customer.data.region)&&(c.me.role==='admin'||m.id===c.me.id||m.role==='customer_service'&&m.supervisorId===c.me.id));return [...found.filter(m=>m.id===item.creatorId),...found.filter(m=>m.id!==item.creatorId)];}
  // Moving a case (re-assignment, or a supervisor delegating again) never offers the member who already holds it.
- return c.members.filter(m=>m.active&&memberCanAccessRegion(m,customer.data.region)&&(action==='approve'?m.role==='manager'&&(c.me.role==='admin'||m.id===c.me.supervisorId):['rep','supervisor'].includes(m.role)&&m.branch===customer.branch&&(c.me.role==='admin'||team.has(m.id))&&(action!=='delegate'||m.role==='rep'&&m.supervisorId===c.me.id)&&(action==='assign'||m.id!==item.assignedTo)));
+ return c.members.filter(m=>m.active&&memberCanAccessRegion(m,customer.data.region)&&(action==='approve'?m.role==='manager'&&(c.me.role==='admin'||m.id===c.me.supervisorId):(isFieldRole(m.role)||m.role==='supervisor')&&m.branch===customer.branch&&(c.me.role==='admin'||team.has(m.id))&&(action!=='delegate'||isFieldRole(m.role)&&m.supervisorId===c.me.id)&&(action==='assign'||m.id!==item.assignedTo)));
 }
 /** The people a case passes through; a reader inside this chain may see what the others wrote on it. */
 export function serviceChainIds(item:ServiceCase){return [item.creatorId,item.serviceManagerId,item.salesManagerId,item.supervisorId,item.assignedTo].filter((id):id is string=>!!id);}
 export function servicePermissions(item:ServiceCase,c:ServiceContext){const state=serviceState(item,c.all,c.members),closed=state==='won'||state==='lost',admin=c.me.role==='admin',pending=['pending_approval','returned'].includes(item.status),manager=c.me.role==='customer_service_manager'&&(item.serviceManagerId===c.me.id||c.members.some(m=>m.id===item.creatorId&&m.active&&m.supervisorId===c.me.id)),assignee=c.members.find(m=>m.id===item.assignedTo),held=item.status==='assigned'&&!closed;return{edit:pending&&(admin||item.creatorId===c.me.id&&isServiceRole(c.me.role)),approve:item.status==='pending_approval'&&(admin||manager),assign:item.status==='pending_assignment'&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id),// A supervisor hands a case to one of their representatives, whether it sits with the supervisor or with another of their representatives.
- delegate:held&&c.me.role==='supervisor'&&(item.assignedTo===c.me.id||assignee?.role==='rep'&&assignee.supervisorId===c.me.id),// Only the sales manager the case was routed to, or an administrator, moves a held case to someone else.
+ delegate:held&&c.me.role==='supervisor'&&(item.assignedTo===c.me.id||isFieldRole(assignee?.role)&&assignee?.supervisorId===c.me.id),// Only the sales manager the case was routed to, or an administrator, moves a held case to someone else.
  reassign:held&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id),seen:held&&item.assignedTo===c.me.id,
  // An opportunity customer service keeps: its owner (or an administrator) records its contacts and stages; nobody of sales writes on it.
  work:item.status==='service'&&!closed&&(admin||item.assignedTo===c.me.id&&isServiceRole(c.me.role)),followup:['assigned','with_supervisor'].includes(state)&&!isServiceRole(c.me.role)&&(admin||c.me.role==='manager'&&item.salesManagerId===c.me.id||item.assignedTo===c.me.id),note:canReadService(item,c)};}

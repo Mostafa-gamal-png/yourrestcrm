@@ -2,6 +2,7 @@ import type {Member,Row} from './crm';
 import {canReadService,isServiceRole,serviceState,type ServiceCase} from './customer-service';
 import {canReadSupport,isOpenSupport,supportReader,type SupportOpportunity,type SupportRow} from './support';
 import {salesScopeMemberIds} from './access';
+import {isFieldRole} from './roles';
 
 /** «طلب مساندة» from inside an opportunity (the owner, 2026-11-16, item 3 of the GSCO list, after GSCO 2.13.77 commit 2ba1beb: «طلب مساندة جوه
  * الفرصة يفتح طلب في «التواصل مع العملاء» بمدده وتصعيده. الزرار يظهر للمندوب على كل فرصه المفتوحة. لو العميل مش مربوط بالدليل، تظهر رسالة
@@ -31,7 +32,7 @@ export type OpportunitySupportCheck={
 };
 export type OpportunitySupportRefusal={status:403|404;error:string};
 /** Who may ask from an opportunity: an administrator or a sales member (customer service is the one asked, never the one asking). */
-export const mayAskFromOpportunity=(role:string)=>role==='admin'||role==='manager'||role==='supervisor'||role==='rep';
+export const mayAskFromOpportunity=(role:string)=>role==='admin'||role==='manager'||role==='supervisor'||isFieldRole(role);
 /** The opportunity as a support request keeps it: the case, its request number and what the customer asked for. */
 export function supportOpportunityOf(item:ServiceCase):SupportOpportunity{
  const number=item.data.registration?.visitNumber;

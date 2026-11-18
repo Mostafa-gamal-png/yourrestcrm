@@ -1,4 +1,5 @@
 import type {Member,Row} from './crm';
+import {isFieldRole} from './roles';
 
 // ---- The representative of the ERP customers file (`data.erpRep`, lib/erp-customer-extras.ts) as a CRM member. Kept here, without the
 // ERP upload parser (lib/erp-sales.ts), because the KPI reads load this and never the parser.
@@ -11,7 +12,7 @@ export type ErpRepResolver={byEmployee:Map<string,string>;byName:Map<string,stri
  * imports) and the representatives by their full name, as the ERP sales import matches them (normalized, never partial or similar). */
 export function erpRepResolver(mappings:{employeeId:string;repId:string}[],members:Pick<Member,'id'|'name'|'role'>[]):ErpRepResolver{
  const byName=new Map<string,string[]>();
- for(const member of members){if(member.role!=='rep')continue;const key=nameKey(String(member.name||''));if(key)byName.set(key,[...(byName.get(key)||[]),member.id]);}
+ for(const member of members){if(!isFieldRole(member.role))continue;const key=nameKey(String(member.name||''));if(key)byName.set(key,[...(byName.get(key)||[]),member.id]);}
  return {byEmployee:new Map(mappings.map(mapping=>[normalize(mapping.employeeId),mapping.repId])),byName};
 }
 /** Whom a stored `erpRep` names: 'office' («مبيعات مكتب», never counted), a member (by the employee number's mapping, else by a full name

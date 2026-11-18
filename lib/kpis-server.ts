@@ -19,6 +19,7 @@ import {readKpiPurchaseHistory,isKpiIssuedQuote,isValidKpiConversion} from './kp
 import {effectiveSet,defaultActivityTargets,roleOutOfEvaluation,type ActivityTargets,type TargetState} from './targets';
 import {erpRepResolver,resolveErpRep} from './new-customers';
 import {chosenEntryRatings} from './supervisor-reviews-server';
+import {isFieldRole} from './roles';
 type Context=Awaited<ReturnType<typeof context>>;
 export async function kpiData(c:Context,month:string,performance:KpiPerformance[],targets?:TargetState):Promise<KpiData>{
  const period=kpiPeriod(month),allowed=salesReadMemberIds(c.members,c.me,true);
@@ -102,7 +103,7 @@ const saveSchema=z.object({memberId:z.string().min(1).max(200),month:monthSchema
 export async function saveKpi(c:Context,body:unknown){
  if(!['admin','manager'].includes(c.me.role))throw new CRMError('تقييم الإدارة متاح لمدير النظام ومدير المبيعات فقط',403);
  const p=saveSchema.parse(body);if(p.month>today().slice(0,7))throw new CRMError('لا يمكن تقييم شهر قادم');
- if(!salesReadMemberIds(c.members,c.me).has(p.memberId)||!c.regionalMembers.some(m=>m.id===p.memberId&&['admin','manager','supervisor','rep'].includes(m.role)&&!roleOutOfEvaluation(m.role)))throw new CRMError('حدد عضوًا متاحًا ضمن صلاحيتك للتقييم',404);
+ if(!salesReadMemberIds(c.members,c.me).has(p.memberId)||!c.regionalMembers.some(m=>m.id===p.memberId&&(['admin','manager','supervisor'].includes(m.role)||isFieldRole(m.role))&&!roleOutOfEvaluation(m.role)))throw new CRMError('حدد عضوًا متاحًا ضمن صلاحيتك للتقييم',404);
  const mutation='kpi:'+c.me.id+':'+p.requestId,canonical=JSON.stringify({...p,requestId:undefined}),replay=async()=>{const r=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=?').bind(mutation).first<{detail:string}>();if(!r)return false;if(r.detail!==canonical)throw new CRMError('طلب التقييم محفوظ ببيانات مختلفة. أعد فتح التقييم.',409);return true;};
  if(await replay())return{ok:true};
  const old=await c.db.prepare('SELECT version FROM crm_kpi_assessments WHERE member_id=? AND month=?').bind(p.memberId,p.month).first<{version:number}>();

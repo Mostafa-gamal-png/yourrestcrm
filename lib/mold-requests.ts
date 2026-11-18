@@ -326,7 +326,7 @@ export function moldOrderNoText(source:{orderNo:number|null}|null|undefined,say:
 }
 
 /** Every role has the page and asks (the owner, 2026-11-01: «الكل بيعمل طلب», customer service too). */
-export const MOLD_ROLES=['rep','supervisor','manager','admin','customer_service','customer_service_manager'];
+export const MOLD_ROLES=['rep','marketing','supervisor','manager','admin','customer_service','customer_service_manager'];
 export const canUseMoldRequests=(role:string)=>MOLD_ROLES.includes(role);
 export const canCreateMoldRequest=(me:Member)=>canUseMoldRequests(me.role);
 /** «الصلاحيات» (lib/permissions.ts): the page offers no edit or cancellation the administrator switched off (the route refuses them too). */
@@ -345,7 +345,7 @@ function customerRegion(c:Reader,customerId:string):{found:boolean;region?:unkno
  if(!regions){regions=new Map(c.all.filter(record=>record.kind==='customer').map(record=>[record.id,record.data.region]));customerRegions.set(c.all,regions);}
  return regions.has(customerId)?{found:true,region:regions.get(customerId)}:{found:false};
 }
-const SALES_TEAM_ROLES=['supervisor','rep'];
+const SALES_TEAM_ROLES=['supervisor','rep','marketing'];
 /** The sales manager whose team a member belongs to (the owner, 2026-11-03: «يبان للمندوب طلباته بس ومدير المبيعات طلباته وطلبات
  *  فريقه»): a sales manager is their own; a supervisor or representative belongs to the first sales manager up their «المشرف» chain
  *  (supervisorId), at any depth through supervisors and representatives (a representative under a supervisor under the manager). ''

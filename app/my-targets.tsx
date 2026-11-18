@@ -9,6 +9,7 @@ import {activityFields,quantityNumber,targetProducts} from '@/lib/targets';
 import TargetGauge from './target-gauge';
 import {DaySalesPanel} from './today-sales';
 import './my-targets.css';
+import {isFieldRole} from '@/lib/roles';
 
 /** lib/kpis.ts INACTIVE_TEXT, written here so this page does not load the evaluation's code (tests/kpi-leave-months.mjs checks they agree). */
 const INACTIVE_TEXT='بلا نشاط في هذا الشهر – خارج التقييم';
@@ -47,11 +48,11 @@ export default function MyTargets({me,month,onMonthChange}:Props){
  const requestKey=JSON.stringify([me.id,me.role,me.authVersion,me.regionScope,me.branch,me.supervisorId,month,revision]);
  useEffect(()=>{
   const controller=new AbortController();setState({key:requestKey,phase:'loading'});
-  if(me.role!=='rep')return()=>controller.abort();
+  if(!isFieldRole(me.role))return()=>controller.abort();
   void submitJson<OwnTargets>('/api/targets?month='+encodeURIComponent(month),{cache:'no-store',signal:controller.signal},{language}).then(body=>{if(body.member?.id!==me.id||body.month!==month)throw new Error('تعذر تحميل المستهدفات');return body as OwnTargets;}).then(data=>{if(!controller.signal.aborted)setState({key:requestKey,phase:'ready',data});}).catch(error=>{if(!controller.signal.aborted)setState({key:requestKey,phase:'error',error:error instanceof Error?error.message:''});});
   return()=>controller.abort();
  },[requestKey]);
- if(me.role!=='rep')return null;
+ if(!isFieldRole(me.role))return null;
  const current=state.key===requestKey?state:null,loading=!current||current.phase==='loading';
  const error=current?.phase==='error'?(current.error==='تعذر تحميل المستهدفات'?say('تعذر تحميل المستهدفات. حاول مرة أخرى.','Could not load your targets. Please try again.'):t(current.error||say('تعذر تحميل المستهدفات.','Could not load your targets.'))):'';
  return <section className="my-targets"><div className="my-targets-toolbar"><label className="field"><span><CalendarDays size={16}/>{t('الشهر')}</span><input type="month" value={month} required aria-label={say('شهر مستهدفي','My targets month')} onChange={event=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value))onMonthChange(event.target.value);}}/></label><div className="my-targets-owner"><Target size={18}/><strong>{me.name}</strong><span><LockKeyhole size={14}/>{say('للعرض فقط','Read only')}</span></div><button className="btn subtle" disabled={loading} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={17}/>{say('تحديث أدائي','Refresh progress')}</button></div>

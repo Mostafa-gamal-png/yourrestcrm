@@ -481,7 +481,7 @@ export function moldDesignFileCheck(name, bytes, category = 'design') {
 // design-files exactly like a design image, without category; the request's data names it (signature: {signer, signedAt, fileId}) and the
 // requests body never carries it (moldRequestBody builds from explicit fields).
 /** The roles whose new request (or changing edit before its first send) needs the customer's signature. */
-export const MOLD_SIGNATURE_ROLES = Object.freeze(['rep', 'supervisor', 'manager']);
+export const MOLD_SIGNATURE_ROLES = Object.freeze(['rep', 'marketing', 'supervisor', 'manager']);
 /** @param {unknown} role */
 export const moldSignatureRequired = role => typeof role === 'string' && MOLD_SIGNATURE_ROLES.includes(role);
 /** The name of who signed for the customer, in characters (after moldText). */

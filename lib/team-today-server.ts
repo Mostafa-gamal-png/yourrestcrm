@@ -9,11 +9,12 @@ import {mobileReportDays} from './mobile-route-server';
 import {REVIEW_INBOX_DAYS,entryReadIdSql,dayReadIdSql} from './supervisor-reviews';
 import {trackingWindowStart,trackingWorkingDay} from './tracking-window';
 import {dayStart,sortTeamToday,teamTodayTotals,type TeamToday,type TeamTodayRow} from './team-today';
+import {isFieldRole} from './roles';
 
 /** GET /api/team-today (lib/team-today.ts): today's row for each member of the reader's «تقرير يوم المندوب», read with the day report's
  * own rules and scope (salesScopeMemberIds {read}, the regions, canReadJourney, canReadMobileDay), so a row never says more than the
  * reader's day report of that member would. Names, counts and times only: no customer, place or note text. */
-const SALES_ROLES=['admin','manager','supervisor','rep'];
+const SALES_ROLES=['admin','manager','supervisor','rep','marketing'];
 /** When an activity was recorded: the device's time for one saved offline (offlineRecordedAt), else when the server stored it. */
 const recordedAt=(row:Row)=>typeof row.data.offlineRecordedAt==='string'&&Number.isFinite(Date.parse(row.data.offlineRecordedAt))?row.data.offlineRecordedAt:row.createdAt;
 
@@ -47,11 +48,11 @@ export async function readTeamToday(c:JourneyContext,now=new Date().toISOString(
  // hierarchy), and another active sales member of the scope only on a day they did something; never the reader.
  const tracked=new Set([...days.map(day=>day.memberId),...stops.map(stop=>stop.memberId)]);
  const people:Member[]=trackingMembers(c).filter(member=>member.id!==c.me.id);
- for(const member of c.members)if(member.id!==c.me.id&&member.role!=='rep'&&SALES_ROLES.includes(member.role)&&!!member.active&&scope.has(member.id)&&(tally.has(member.id)||tracked.has(member.id)))people.push(member);
+ for(const member of c.members)if(member.id!==c.me.id&&!isFieldRole(member.role)&&SALES_ROLES.includes(member.role)&&!!member.active&&scope.has(member.id)&&(tally.has(member.id)||tracked.has(member.id)))people.push(member);
  const rows:TeamTodayRow[]=[];
  for(const member of people){
   const entry=tally.get(member.id),movement=tracked.has(member.id)?firstMovement(member.id):null;
-  if(member.role!=='rep'&&!entry&&!movement)continue;
+  if(!isFieldRole(member.role)&&!entry&&!movement)continue;
   rows.push({memberId:member.id,name:member.name,role:member.role,visits:entry?.visits||0,contacts:entry?.contacts||0,...dayStart(movement,entry?.first),unreadNotes:0});
  }
  // The notes on each one's work not marked «قرأت», over the window their own card shows (lib/supervisor-reviews-server.ts reviewInbox).

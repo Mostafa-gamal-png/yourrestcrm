@@ -11,7 +11,7 @@ const headers={'Cache-Control':'no-store'};
 export async function POST(req:Request){try{
  checkOrigin(req);
  const c=await context({load:'identity'});
- if(!['admin','manager','supervisor','rep','customer_service','customer_service_manager'].includes(c.me.role))throw new CRMError('ليس لديك صلاحية إضافة عميل',403);
+ if(!['admin','manager','supervisor','rep','marketing','customer_service','customer_service_manager'].includes(c.me.role))throw new CRMError('ليس لديك صلاحية إضافة عميل',403);
  const point=input.parse(parseJsonBody(await readRequestText(req,2048)));
  // Do not send coordinates to a third party until the server integration is configured.
  if(!env.YR_NATIONAL_ADDRESS_API_KEY?.trim())return Response.json({status:'not_configured'},{headers});

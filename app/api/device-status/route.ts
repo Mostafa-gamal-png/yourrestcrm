@@ -4,6 +4,7 @@ import {journeyDate} from '@/lib/journeys';
 import {requireJourneyReport} from '@/lib/journeys-server';
 import {deviceReportSchema} from '@/lib/device-status';
 import {DEVICE_REPORT_MIN_GAP_MS,normalizeDeviceReport,saveDeviceReport,trackingOverview} from '@/lib/device-status-server';
+import {isFieldRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>!Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value);
 /** A representative's phone reports its own tracking state. Nothing else can write here. */
@@ -11,7 +12,7 @@ export async function POST(req:Request){try{
  checkOrigin(req);await requireSession();
  const body=await readJsonBody(req);if(JSON.stringify(body).length>4000)throw new CRMError('حجم الطلب كبير');
  const c=await context({load:'identity'});
- if(c.me.role!=='rep')throw new CRMError('حالة الجهاز تخص المندوبين فقط',403);
+ if(!isFieldRole(c.me.role))throw new CRMError('حالة الجهاز تخص المندوبين فقط',403);
  const report=deviceReportSchema.parse(body),now=new Date().toISOString();
  const outcome=await saveDeviceReport(c.db,c.me.id,normalizeDeviceReport(report,Date.parse(now)),now);
  if(outcome==='throttled')return Response.json({error:'تقارير الجهاز متقاربة جدًا'},{status:429,headers:{'Retry-After':String(Math.ceil(DEVICE_REPORT_MIN_GAP_MS/1000)),'Cache-Control':'no-store'}});

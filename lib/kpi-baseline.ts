@@ -1,6 +1,7 @@
 import type {Row} from './crm';
 import {addMonths,monthList} from './sales-coverage';
 import {handAddedDay} from './new-customers';
+import {isFieldRole} from './roles';
 
 /** Leave and absence in the evaluation (the owner, 2026-11-15: «الإجازات تتحسب في التقييم (GSCO 2.13.50): الأيام اللي المندوب كان فيها في
  *  إجازة ما تتحسبش ضده»), as the company's other CRM (GSCO 2.13.50 and 2.13.51) does it: nobody records a leave, it is read from the data.
@@ -45,7 +46,7 @@ export function workedMonths(work:ReadonlyMap<string,ReadonlySet<string>>,ids:It
 }
 /** «بلا نشاط في هذا الشهر – خارج التقييم»: a representative only, a closed month only (its cutoff before today), its sales known complete
  *  (the ERP imports cover it, or «بيانات المؤشرات» confirmed it), and no work in it. */
-export const outOfEvaluation=(role:string,month:string,cutoff:string,today:string,salesComplete:boolean,worked:ReadonlySet<string>)=>role==='rep'&&cutoff<today&&salesComplete&&!worked.has(month);
+export const outOfEvaluation=(role:string,month:string,cutoff:string,today:string,salesComplete:boolean,worked:ReadonlySet<string>)=>isFieldRole(role)&&cutoff<today&&salesComplete&&!worked.has(month);
 
 /** What the customers' comparison of a month stands on.
  *  status: ready (three months to compare with), missing (months whose complete sales are needed: `missing`), none (fewer than three

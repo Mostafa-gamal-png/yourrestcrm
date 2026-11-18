@@ -36,6 +36,6 @@ export function withSignature(role, body) {
   let out = body;
   if (['approve', 'approve-order'].includes(out.action) && !Object.hasOwn(out, 'termsAccepted')) out = {...out, termsAccepted: true};
   if (['create', 'update'].includes(out.action) && out.payment === 'deferred' && !Object.hasOwn(out, 'paymentTerms')) out = {...out, paymentTerms: TEST_PAYMENT_TERMS};
-  if (!['rep', 'supervisor', 'manager'].includes(role) || !['create', 'update'].includes(out.action) || Object.hasOwn(out, 'signature')) return out;
+  if (!['rep', 'marketing', 'supervisor', 'manager'].includes(role) || !['create', 'update'].includes(out.action) || Object.hasOwn(out, 'signature')) return out;
   return {...out, signature: signatureInput()};
 }

@@ -1,6 +1,7 @@
 import type {Member,Row} from './crm';
 import {canReadService,serviceContacts,servicePermissions,serviceState,type ServiceCase,type ServiceContext} from './customer-service';
 import {workingHoursBetween} from './working-hours';
+import {isFieldRole} from './roles';
 
 /** What a sales reader (administrator, manager, supervisor or representative) needs about each customer-service
  * case they may read: the brief, where it stands, who must act next and whether that stage is late. It never carries
@@ -66,8 +67,8 @@ function ownerFor(item:ServiceCase,stage:QueueStage):string|null{
 function above(me:Member,owner:Member|undefined){
  if(!owner||owner.id===me.id)return false;
  if(me.role==='admin')return true;
- if(me.role==='manager')return ['supervisor','rep'].includes(owner.role);
- if(me.role==='supervisor')return owner.role==='rep'&&owner.supervisorId===me.id;
+ if(me.role==='manager')return owner.role==='supervisor'||isFieldRole(owner.role);
+ if(me.role==='supervisor')return isFieldRole(owner.role)&&owner.supervisorId===me.id;
  return false;
 }
 /** Entries first by what the reader must do, then the late ones, the strongest opportunities, the oldest. */
@@ -92,7 +93,7 @@ export function serviceQueue(c:QueueContext,now:string=new Date().toISOString())
   const permissions=servicePermissions(item,c),ownerId=ownerFor(item,stage),mine=item.assignedTo===c.me.id;
   if(approver&&!(stage==='approval'&&permissions.approve))continue;
   const awaiting:QueueAwaiting=stage==='approval'&&permissions.approve?'approve':stage==='assignment'&&permissions.assign?'assign':stage==='delegation'&&mine?'delegate':stage==='first_contact'&&mine?'first_contact':null;
-  const currentRep=member(customer.assignedTo),currentRepId=currentRep&&['rep','supervisor'].includes(currentRep.role)?currentRep.id:'';
+  const currentRep=member(customer.assignedTo),currentRepId=currentRep&&(isFieldRole(currentRep.role)||currentRep.role==='supervisor')?currentRep.id:'';
   entries.push({
    id:item.id,customerId:customer.id,customerName:String(customer.data.name||''),customerPhone:String(customer.data.phone||''),customerCity:String(customer.data.city||''),customerRegion:String(customer.data.region||''),customerVersion:customer.version,
    source:String(item.data.source||''),products:Array.isArray(item.data.products)?item.data.products.map(String):[],strength:String(item.data.strength||''),needs:String(item.data.needs||''),nextAction:String(contacts[0]?.data.nextAction??item.data.nextAction??''),nextDate:String(contacts[0]?.data.nextDate??item.data.nextDate??''),
@@ -114,7 +115,7 @@ export function serviceQueue(c:QueueContext,now:string=new Date().toISOString())
 export type QueueGroupId='mine'|'late'|'new'|'active'|'closed';
 export function queueGroups(entries:ServiceQueueEntry[],role:string):{id:QueueGroupId;entries:ServiceQueueEntry[]}[]{
  const open=entries.filter(entry=>entry.stage!=='closed'),closed=entries.filter(entry=>entry.stage==='closed');
- if(role==='rep'){
+ if(isFieldRole(role)){
   const fresh=open.filter(entry=>entry.awaiting==='first_contact');
   return [{id:'new',entries:fresh},{id:'active',entries:open.filter(entry=>!fresh.includes(entry))},{id:'closed',entries:closed}];
  }

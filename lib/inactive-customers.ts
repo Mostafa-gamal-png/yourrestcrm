@@ -3,6 +3,7 @@ import {salesScopeMemberIds} from './access';
 import {pageAllowed} from './permissions';
 import {isServiceRole} from './customer-service';
 import {inactiveCustomer} from './customer-last-purchase';
+import {isFieldRole} from './roles';
 
 /** «عملاء واقفين» (the owner, 2026-11-10, item 3: «فلتر «لم يشترِ منذ 60 يومًا» يتحول لتنبيه يوصل لكل مندوب بعملائه اللي وقفوا، ومشرفه يشوف
  * العدد»). A customer is «واقف» exactly as the customers page's filter «لم يشترِ منذ 60 يومًا» lists it (inactiveCustomer: status «نشط»
@@ -11,12 +12,12 @@ import {inactiveCustomer} from './customer-last-purchase';
  * administrator, a sales manager or a supervisor count per member of their team («عرض بيانات الفريق بالكامل» widens it, read only, as
  * everywhere: salesScopeMemberIds {read}); customer service, or anyone whose «العملاء» screen is hidden, gets nothing. */
 export type InactiveAlertMode='own'|'team'|null;
-const SALES_ROLES=['admin','manager','supervisor','rep'];
+const SALES_ROLES=['admin','manager','supervisor','rep','marketing'];
 const TEAM_ROLES=['admin','manager','supervisor'];
 
 export function inactiveAlertMode(me:Pick<Member,'role'|'access'>|null|undefined):InactiveAlertMode{
  if(!me||isServiceRole(me.role)||!pageAllowed(me,'customer'))return null;
- if(me.role==='rep')return 'own';
+ if(isFieldRole(me.role))return 'own';
  return TEAM_ROLES.includes(me.role)?'team':null;
 }
 

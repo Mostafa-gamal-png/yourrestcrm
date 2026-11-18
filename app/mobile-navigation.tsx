@@ -11,6 +11,7 @@ import {QueueBadge} from './service-queue';
 import {InactiveCustomersBadge} from './inactive-customers';
 import type {ServiceQueueEntry} from '@/lib/service-queue';
 import './mobile-navigation.css';
+import {isFieldRole} from '@/lib/roles';
 
 const pages=[
  {id:'customer',ar:'العملاء',en:'Customers',Icon:Building2},
@@ -71,7 +72,7 @@ export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccou
  const primary=allowed.length<=5?allowed:core.length<=5?core:core.slice(0,4);
  const overflow=allowed.filter(page=>!primary.some(item=>item.id===page.id));
  const overflowActive=overflow.some(page=>page.id===view);
- const label=(page:typeof pages[number])=>page.id==='targets'&&me.role==='rep'?say('مستهدفي','My targets'):serviceText(me.role,say(page.ar,page.en));
+ const label=(page:typeof pages[number])=>page.id==='targets'&&isFieldRole(me.role)?say('مستهدفي','My targets'):serviceText(me.role,say(page.ar,page.en));
  const navigate=(id:string)=>{if(!pageAllowed(me,id))return;setMoreOpen(false);onAccountOpenChange(false);onNavigate(id);if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'auto'});};
  if(!allowed.length)return null;
  return <>

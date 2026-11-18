@@ -1,3 +1,4 @@
+import {isFieldRole} from './roles';
 /** A representative may carry two devices (a tablet beside the work phone). One of them records the route; the other is a
  * companion that may use the CRM without recording, as long as the route is being recorded by the other device. This module
  * decides that from what the server reports for today's route day and what this device reports about itself; it never reads
@@ -24,7 +25,7 @@ export type CompanionInput={
 export type CompanionDecision={companion:boolean;remember:boolean};
 
 export function companionDecision(input:CompanionInput):CompanionDecision{
- if(input.role!=='rep'||!input.native||!input.serverKnown)return {companion:false,remember:false};
+ if(!isFieldRole(input.role)||!input.native||!input.serverKnown)return {companion:false,remember:false};
  const other=!!input.serverDay&&input.serverDay.id!==input.ownDayId;
  if(input.windowOpen){
   // During working hours only a day being recorded right now by another device makes this one a companion.

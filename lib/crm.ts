@@ -5,9 +5,10 @@ import {salesRecordAccess} from './access';
 import type {MemberAccess} from './permissions';
 import {customerAddressFields} from './customer-fields';
 import {isCustomerKind} from './customer-options';
+import {CLASSIFICATION_FIELDS,classificationSchemaFields} from './customer-classification';
 export const stages = ['new','specs','technical','quoted','negotiation','won','lost'] as const;
 export const stageLabels:Record<string,string> = {new:'تحديد الاحتياج',specs:'جمع المواصفات',technical:'مراجعة فنية',quoted:'عرض سعر',negotiation:'تفاوض',won:'تم الفوز',lost:'تم الفقد'};
-export const roles:Record<string,string> = {admin:'مدير النظام',manager:'مدير المبيعات',supervisor:'مشرف المبيعات',rep:'مندوب المبيعات',customer_service_manager:'مدير خدمة العملاء',customer_service:'ممثل خدمة العملاء'};
+export const roles:Record<string,string> = {admin:'مدير النظام',manager:'مدير المبيعات',supervisor:'مشرف المبيعات',rep:'مندوب المبيعات',marketing:'مسؤول تسويق',customer_service_manager:'مدير خدمة العملاء',customer_service:'ممثل خدمة العملاء'};
 export type Kind = 'customer'|'factory'|'opportunity'|'activity'|'quote';
 export type Row = {id:string;kind:Kind;parentId:string|null;assignedTo:string;branch:string;data:any;createdAt:string;updatedAt:string;version:number};
 export type AuditEntry = {id:string;recordId:string;actor:string;action:string;detail:string;createdAt:string};
@@ -37,7 +38,7 @@ export const customerKindField=z.string({invalid_type_error:customerKindRefused}
 /** A quotation item's ERP code, category and unit (lib/erp-quotes.ts): optional, kept by an edit that sends them back (the form does). */
 const itemExtra=z.string().trim().max(250).optional();
 export const schemas={
- customer:z.object({name:required,code:short,city:short,region:short,address:short,...customerAddressFields,contact:short,phone:short,email:z.union([z.string().email(),z.literal('')]).default(''),contact2:short,phone2:short,email2:z.union([z.string().email(),z.literal('')]).default(''),customerType:short,customerKind:customerKindField.optional(),customerStatus:short,machineCount:z.coerce.number().int().min(0).max(100000).nullable().optional(),machineTypes:short,supplier:short,category:short,sourceFile:short,sourceRow:z.number().int().positive().optional(),sourceKey:short,sourceHash:short,notes,branch:required,assignedTo:required}),
+ customer:z.object({name:required,code:short,city:short,region:short,address:short,...customerAddressFields,contact:short,phone:short,email:z.union([z.string().email(),z.literal('')]).default(''),contact2:short,phone2:short,email2:z.union([z.string().email(),z.literal('')]).default(''),customerType:short,customerKind:customerKindField.optional(),...classificationSchemaFields,customerStatus:short,machineCount:z.coerce.number().int().min(0).max(100000).nullable().optional(),machineTypes:short,supplier:short,category:short,sourceFile:short,sourceRow:z.number().int().positive().optional(),sourceKey:short,sourceHash:short,notes,branch:required,assignedTo:required}),
  factory:z.object({name:required,recordType:z.enum(['machine','group']).default('machine'),quantity:z.coerce.number().int().min(0).max(100000).nullable().default(1),machineBrand:short,machineModel:short,machineType:z.enum(['stationary','mobile','unknown']).default('unknown'),modelCondition:z.enum(['','new','old']).default(''),bushingCondition:z.enum(['','new','old']).default(''),boardDimensions:short,notes,sourceMachineTypes:short,sourceMachineCount:z.number().int().min(0).nullable().optional(),sourceFile:short,sourceRow:z.number().int().positive().optional(),sourceKey:short,sourceHash:short}).superRefine((v,c)=>{if(v.recordType==='machine'&&(!v.machineBrand||!(v.machineModel||v.modelCondition)))c.addIssue({code:'custom',message:'أدخل الشركة المصنعة واختر الموديل جديد أم قديم'});}),
  opportunity:z.object({responsibleId:short,hasRequest:z.boolean().default(true),followupTitle:short,followupStatus:z.enum(['open','closed']).default('open'),moldType:short,product:short,dimensions:short,cavities:z.coerce.number().int().min(0).max(10000).default(0),quantity:positive.int(),requiredAt:optionalDate,value:amount.nullable().default(null),stage:z.enum(stages),nextAction:short,nextDate:optionalDate,technicalStatus:z.enum(['pending','approved']).default('pending'),technicalNotes:notes,technicalBy:short,technicalAt:short,lossReason:short,orderRef:short,closedAt:optionalDate,notes}).superRefine((v,c)=>{
  if(v.hasRequest&&(!v.moldType||!v.product||!v.dimensions))c.addIssue({code:'custom',message:'أدخل نوع القالب والمنتج والأبعاد المطلوبة'});
@@ -66,6 +67,10 @@ export function scopeRecords(all:Row[],members:Member[],me:Member){
    if(data._stageVisitId&&!ids.has(data._stageVisitId))delete data._stageVisitId;
    if(!access.canEditCustomerDetails(row))data._masterReadOnly=true;
    if(!access.canManageMaster(row))data._masterRoutingReadOnly=true;
+   // The classifications (lib/customer-classification.ts): set only where lib/access.ts canClassifyCustomer allows; a representative reads
+   // them on the customers assigned to them only.
+   if(!access.canClassify(row))data._classificationReadOnly=true;
+   if(me.role==='rep'&&row.assignedTo!==me.id)for(const field of CLASSIFICATION_FIELDS)delete data[field];
   }
   if(row.kind==='factory'&&!access.canEditMachine(row))data._masterReadOnly=true;
   // Read through «عرض بيانات الفريق بالكامل» only: shown, never edited or deleted from the page (the routes refuse it too).

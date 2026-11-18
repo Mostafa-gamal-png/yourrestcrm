@@ -18,6 +18,7 @@ import {z} from 'zod';
 import {context,CRMError,accessGuard,requirePages,requireCell,requireSalesRole} from './crm-server';
 import {today,scopeRecords,type Member,type Row} from './crm';
 import {regionScope} from './regions';
+import {isFieldRole} from './roles';
 import {salesReadMemberIds} from './sales';
 import {salesScopeMemberIds,recordAuthorId} from './access';
 import {activeServiceCase} from './customer-service';
@@ -41,7 +42,7 @@ export type RecordImportAnswer={ok:true;kind:RecordImportKind;action:'preview'|'
  /** The rows saved (a commit). */
  written?:number;alreadySaved?:boolean;closedMonths?:string[]};
 
-const SALES_ROLES=['admin','manager','supervisor','rep'];
+const SALES_ROLES=['admin','manager','supervisor','rep','marketing'];
 const sha256=async(value:string|Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(value))),b=>b.toString(16).padStart(2,'0')).join('');
 /** A UUID made from text (the same text always gives the same id). */
 const uuidOf=async(text:string)=>{const h=await sha256(text);return h.slice(0,8)+'-'+h.slice(8,12)+'-4'+h.slice(13,16)+'-'+((parseInt(h[16],16)&3)|8).toString(16)+h.slice(17,20)+'-'+h.slice(20,32);};
@@ -185,7 +186,7 @@ async function planFollowups(c:Context,rows:ImportRow[],L:Say):Promise<Planned<F
    const email=importText(cells.email).toLowerCase();let performer=me;
    if(email&&email!==me.email.trim().toLowerCase()){
     const member=byEmail.get(email);if(!member)refuse(L('لا يوجد عضو بهذا البريد في الفريق: ','No team member has this email: ')+importText(cells.email));
-    if(me.role==='rep')refuse(L('لا يمكنك تسجيل متابعة باسم عضو آخر.','You cannot record a follow-up for another member.'));
+    if(isFieldRole(me.role))refuse(L('لا يمكنك تسجيل متابعة باسم عضو آخر.','You cannot record a follow-up for another member.'));
     if(!writable.has(member!.id)||!SALES_ROLES.includes(member!.role))refuse(L('العضو خارج نطاق فريقك أو حسابه معطل.','The member is outside your team or their account is disabled.'));
     performer=member!;
    }
@@ -291,10 +292,10 @@ export async function recordImportTemplate(c:Context,kind:RecordImportKind,optio
  let rows:string[][]=[];
  if(kind==='targets'){
   const month=options.month&&/^\d{4}-(0[1-9]|1[0-2])$/.test(options.month)?options.month:riyadhMonth();
-  const members=targetMembers(c).filter(m=>m.role==='rep'||m.role==='supervisor').sort((a,b)=>a.name.localeCompare(b.name,'ar')),sets=await targetSetsOf(c,members.map(m=>m.id),month);
+  const members=targetMembers(c).filter(m=>isFieldRole(m.role)||m.role==='supervisor').sort((a,b)=>a.name.localeCompare(b.name,'ar')),sets=await targetSetsOf(c,members.map(m=>m.id),month);
   rows=members.map(m=>{
    const sales=effective(sets,'sales',m.id,month),activity=effective(sets,'activity',m.id,month);
-   const products=m.role==='rep'&&sales?quantityTargetsSchema.parse(JSON.parse(sales.data)).products:[],values=activity?activityTargetsSchema.parse(JSON.parse(activity.data)):null;
+   const products=isFieldRole(m.role)&&sales?quantityTargetsSchema.parse(JSON.parse(sales.data)).products:[],values=activity?activityTargetsSchema.parse(JSON.parse(activity.data)):null;
    return columns.map(col=>col.key==='month'?month:col.key==='email'?m.email:col.key==='name'?m.name:col.key.startsWith('p:')?String(products.find(p=>p.product===col.key.slice(2))?.quantity??''):values&&(col.key in values)?String(values[col.key as keyof ActivityTargets]):'');
   });
   return {fileName:'Yourrest-targets-template-'+month+'.xlsx',bytes:xlsxWorkbook({name:recordImportSheet(kind,options.language),rows:[header,notes,...rows],widths:columns.map(col=>col.width),rightToLeft:!en,headerRow:0,noteRow:1})};
@@ -303,7 +304,7 @@ export async function recordImportTemplate(c:Context,kind:RecordImportKind,optio
  // record for them; the columns the person fills are left empty.
  const plans=customerPlanSources(c.visible),writable=salesScopeMemberIds(c.members,c.me,{activeOnly:true});
  const open=c.visible.filter(r=>r.kind==='customer').flatMap(customer=>{const source=plans.get(customer.id);return source&&canExecuteCustomerFollowup(source)?[{customer,source}]:[];}).sort((a,b)=>String(a.source.data.nextDate).localeCompare(String(b.source.data.nextDate))||String(a.customer.data.name).localeCompare(String(b.customer.data.name),'ar')).slice(0,RECORD_IMPORT_MAX_ROWS);
- rows=open.map(({customer,source})=>{const author=recordAuthorId(source,c.members),owner=author&&author!==c.me.id&&writable.has(author)&&c.me.role!=='rep'?c.members.find(m=>m.id===author):undefined;return columns.map(col=>col.key==='customerCode'?String(customer.data.internalCode||customer.data.code||''):col.key==='customerName'?String(customer.data.name||''):col.key==='email'?owner?.email||'':'');});
+ rows=open.map(({customer,source})=>{const author=recordAuthorId(source,c.members),owner=author&&author!==c.me.id&&writable.has(author)&&!isFieldRole(c.me.role)?c.members.find(m=>m.id===author):undefined;return columns.map(col=>col.key==='customerCode'?String(customer.data.internalCode||customer.data.code||''):col.key==='customerName'?String(customer.data.name||''):col.key==='email'?owner?.email||'':'');});
  return {fileName:'Yourrest-followups-template-'+today()+'.xlsx',bytes:xlsxWorkbook({name:recordImportSheet(kind,options.language),rows:[header,notes,...rows],widths:columns.map(col=>col.width),rightToLeft:!en,headerRow:0,noteRow:1})};
 }
 export {TARGET_COLUMNS,FOLLOWUP_COLUMNS};

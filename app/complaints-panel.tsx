@@ -15,6 +15,7 @@ import {hoursText} from './service-queue';
 import {TrackingSheetSteps} from './service-tracking';
 import VoiceField from './voice-field';
 import './complaints-panel.css';
+import {isFieldRole} from '@/lib/roles';
 
 type Say=(ar:string,en:string)=>string;
 export type ComplaintsData={generatedAt:string;complaints:ComplaintEntry[];counts:{complaints:number;open:number;badge:number}};
@@ -122,7 +123,7 @@ export function ComplaintsList({data,me,mode,onOpen,onChanged}:{data:ComplaintsD
  if(mode==='panel'&&!groups.length)return null;
  const total=Math.max(data?.counts.complaints??0,data?.complaints.length??0),openCount=data?.counts.open??0;
  const cut=data&&total>data.complaints.length?say('تُعرض '+data.complaints.length+' من أصل '+total+' شكوى، ما ينتظرك أولًا.','Showing '+data.complaints.length+' of '+total+' complaints, what waits for you first.'):'';
- const intro=me.role==='customer_service'?say('ما سجّلته أنت وزملاؤك في منطقتك، وأين وصلت كل شكوى.','What you and your colleagues registered in your region, and where each complaint stands.'):me.role==='customer_service_manager'?say('شكاوى فريقك: راجعها وأحلها إلى المبيعات وتابع حلها حتى الإغلاق.','Your team\'s complaints: review them, hand them to sales and follow them to closure.'):me.role==='admin'?say('كل الشكاوى وأين وصلت.','Every complaint and where it stands.'):me.role==='rep'?say('الشكاوى المكلَّف بها: تواصل مع العميل وسجّل ما فعلت ثم الحل.','The complaints assigned to you: contact the customer, record what you did, then the resolution.'):say('شكاوى العملاء التي أُحيلت إليك أو يحملها فريقك.','Customer complaints handed to you or held by your team.');
+ const intro=me.role==='customer_service'?say('ما سجّلته أنت وزملاؤك في منطقتك، وأين وصلت كل شكوى.','What you and your colleagues registered in your region, and where each complaint stands.'):me.role==='customer_service_manager'?say('شكاوى فريقك: راجعها وأحلها إلى المبيعات وتابع حلها حتى الإغلاق.','Your team\'s complaints: review them, hand them to sales and follow them to closure.'):me.role==='admin'?say('كل الشكاوى وأين وصلت.','Every complaint and where it stands.'):isFieldRole(me.role)?say('الشكاوى المكلَّف بها: تواصل مع العميل وسجّل ما فعلت ثم الحل.','The complaints assigned to you: contact the customer, record what you did, then the resolution.'):say('شكاوى العملاء التي أُحيلت إليك أو يحملها فريقك.','Customer complaints handed to you or held by your team.');
  return <section className={mode==='page'?'complaints-page':'complaints-panel panel'} aria-label={say('شكاوى العملاء','Customer complaints')} data-role={me.role} dir={language==='en'?'ltr':'rtl'}>
   <div className="support-heading"><div><h2><MessageSquareWarning size={18} aria-hidden="true"/> {say('شكاوى العملاء','Customer complaints')}</h2><p>{intro}</p></div><span className="support-count" title={say('الشكاوى المفتوحة','Open complaints')}>{openCount}</span></div>
   {cut&&<p className="support-cut" role="note">{cut}</p>}
@@ -252,7 +253,7 @@ export function ComplaintSheet({entry,onClose,onChanged,me}:{entry:ComplaintEntr
   ...(entry.notifiedAt?[[say('إبلاغ العميل','Customer told'),say('فُتحت رسالة واتساب للعميل','WhatsApp message opened for the customer')+' · '+(entry.notifiedByName||'—')+' · '+stamp(entry.notifiedAt)] as [string,React.ReactNode]]:[]),
   [say('مدير خدمة العملاء','Customer-service manager'),entry.serviceManagerName||say('بلا مدير: تنتظر مدير النظام','None: waits for an administrator')],
   ...(entry.salesManagerName?[[say('مدير المبيعات','Sales manager'),entry.salesManagerName] as [string,React.ReactNode]]:[]),
-  ...(entry.assigneeName?[[say('يحملها','Held by'),entry.assigneeName+(entry.assigneeRole?' · '+t(roles[entry.assigneeRole]):'')+(entry.supervisorName&&entry.assigneeRole==='rep'?' · '+say('المشرف: ','Supervisor: ')+entry.supervisorName:'')] as [string,React.ReactNode]]:[]),
+  ...(entry.assigneeName?[[say('يحملها','Held by'),entry.assigneeName+(entry.assigneeRole?' · '+t(roles[entry.assigneeRole]):'')+(entry.supervisorName&&isFieldRole(entry.assigneeRole)?' · '+say('المشرف: ','Supervisor: ')+entry.supervisorName:'')] as [string,React.ReactNode]]:[]),
   ...(entry.assignmentNote?[[say('ملاحظة التكليف','Assignment note'),entry.assignmentNote] as [string,React.ReactNode]]:[]),
   ...(entry.returnNote&&entry.status==='returned'?[[say('سبب الإعادة للتعديل','Why it was returned'),entry.returnNote] as [string,React.ReactNode]]:[]),
   ...(entry.rejectReason&&entry.status==='assigned'?[[say('أُعيدت إلى المندوب لأن','Returned to the representative because'),entry.rejectReason] as [string,React.ReactNode]]:[]),

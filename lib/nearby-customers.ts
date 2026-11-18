@@ -60,6 +60,7 @@ export function nearbyCustomer(customer:Pick<Row,'id'|'kind'|'assignedTo'|'data'
  return {id:customer.id,name:name.slice(0,200),latitude:point.latitude,longitude:point.longitude,daysSinceVisit:last?daysBetween(last,today):null};
 }
 
+/** memberRole: always 'rep', the field role the Android app checks (a marketing officer included: lib/roles.ts trackingRole). */
 export type NearbyCatalog={schemaVersion:1;memberId:string;memberRole:'rep';regionScope:string;serverTime:string;expiresAt:string;refreshAfterSeconds:number;customers:NearbyCustomer[]};
 /** The answer of GET /api/nearby-customers. `rows` are the reader's customers, each with the day of its latest visit. Ordered by id; a
  *  list longer than the limit is refused (the app would otherwise keep alerting on customers that left it). */

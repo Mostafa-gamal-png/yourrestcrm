@@ -26,6 +26,7 @@ import {
 } from './service-sales';
 import {loadSettings} from './service-kpi-rows';
 import type {ConversionFact} from './service-kpi';
+import {isFieldRole} from './roles';
 
 type Context=Awaited<ReturnType<typeof context>>;
 const text=(value:unknown)=>value===null||value===undefined?'':String(value);
@@ -146,7 +147,7 @@ export type SalesWarning={kind:'visit'|'request';stage:string;ownerName:string;d
 /** Open opportunities of the customer with sales: the latest visit or follow-up of a sales member (outside this case) at an open stage,
  *  and its open mold requests. A warning only: it decides nothing. */
 export function openSalesWarnings(c:Pick<Context,'all'|'members'>,item:ServiceCase):SalesWarning[]{
- const name=nameOf(c.members),sales=(id:unknown)=>['rep','supervisor','manager'].includes(c.members.find(member=>member.id===id)?.role||'');
+ const name=nameOf(c.members),sales=(id:unknown)=>{const role=c.members.find(member=>member.id===id)?.role||'';return isFieldRole(role)||['supervisor','manager'].includes(role);};
  const warnings:SalesWarning[]=[];
  const latest=customerVisits(item.customerId,c.all).find(row=>row.data.serviceCaseId!==item.id&&sales(row.data.performedBy||row.data.responsibleId||row.assignedTo)&&!!row.data.salesStage);
  if(latest&&!['won','lost'].includes(latest.data.salesStage))warnings.push({kind:'visit',stage:text(latest.data.salesStage),ownerName:name(text(latest.data.performedBy||latest.data.responsibleId||latest.assignedTo)),date:text(latest.data.date)});

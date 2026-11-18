@@ -2,10 +2,11 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {AlertCircle,Check,FilePenLine,Loader2,Undo2,X} from 'lucide-react';
 import {toast} from 'sonner';
-import {t,useLanguage} from '@/lib/i18n';
+import {getLanguage,t,useLanguage} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
 import VoiceField from './voice-field';
-import {CUSTOMER_EDITS_CHANGED,CUSTOMER_EDITS_FOCUS_MS,CUSTOMER_EDITS_INTERVAL_MS,CUSTOMER_EDIT_FIELD_TEXT,CUSTOMER_EDIT_WORD_FIELDS,REJECT_REASON_MAX,customerEditStatusText,rejectReason,validCustomerEditList,type CustomerEditChange,type CustomerEditList,type CustomerEditRequest} from '@/lib/customer-edit-requests';
+import {classificationLabel,type ClassificationChoiceField} from '@/lib/customer-classification';
+import {CUSTOMER_EDITS_CHANGED,CUSTOMER_EDITS_FOCUS_MS,CUSTOMER_EDITS_INTERVAL_MS,CUSTOMER_EDIT_CODE_FIELDS,CUSTOMER_EDIT_FIELD_TEXT,CUSTOMER_EDIT_WORD_FIELDS,REJECT_REASON_MAX,customerEditStatusText,rejectReason,validCustomerEditList,type CustomerEditChange,type CustomerEditList,type CustomerEditRequest} from '@/lib/customer-edit-requests';
 import './customer-edit-requests.css';
 
 /** «طلبات تعديل بيانات العميل» (lib/customer-edit-requests.ts, GET /api/customer-edits, POST /api/crm {action:'customer-edit'}). On the
@@ -51,6 +52,7 @@ function useCustomerEdits(customerId:string|null,offline:boolean,poll:boolean){
 function ChangeValue({change,side}:{change:CustomerEditChange;side:'before'|'after'}){
  const value=change[side];
  if(!value)return <span className="cer-empty">—</span>;
+ if(CUSTOMER_EDIT_CODE_FIELDS.has(change.field))return <bdi dir="auto">{classificationLabel(change.field as ClassificationChoiceField,value,getLanguage())}</bdi>;
  return <bdi dir={change.field==='location'||change.field==='shortAddress'?'ltr':'auto'}>{CUSTOMER_EDIT_WORD_FIELDS.has(change.field)?t(value):value}</bdi>;
 }
 

@@ -6,18 +6,19 @@ import {activeJourney,ownJourney,canReadJourney,journeyGuard,journeyLinkedTiming
 import {mobileDayExpiry,mobileDayStart,mobileReplayableStop,replayMobileInterruptedStop,mobilePublicDay,mobileApplyPoint,mobileGap,mobileDayHeardAt,type MobileRoutePoint,type MobileRouteStoredDay} from '@/lib/mobile-route';
 import {mobileContext,mobileColumns,decodeMobileDay,mobileData,ownMobileDay,mobileGuard,mobileDayQuiet,type MobileDayRow} from '@/lib/mobile-route-server';
 import {trackingWindowOpen,trackingWindowEnd,trackingWindowStatus,trackingWorkingDay} from '@/lib/tracking-window';
+import {isFieldRole,trackingRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 const identifier=z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/),iso=z.string().datetime({offset:true});
 const pointSchema=z.object({id:identifier,capturedAt:iso,latitude:z.number().finite().min(-90).max(90),longitude:z.number().finite().min(-180).max(180),accuracy:z.number().finite().min(0).max(10000),stopId:identifier.nullable()}).strict().refine(p=>p.latitude!==0||p.longitude!==0,'إحداثيات غير صالحة');
-async function response(c:Awaited<ReturnType<typeof context>>,day:MobileRouteStoredDay|null,now:string,extra:Record<string,unknown>={}){const active=await activeJourney(c,now);return Response.json({memberId:c.me.id,memberRole:c.me.role,regionScope:regionScope(c.me),day:day?mobilePublicDay(day,now):null,activeStop:active&&!active.closedAt?active:null,serverTime:now,trackingWindow:trackingWindowStatus(now),...extra},{headers:{'Cache-Control':'no-store'}});}
+async function response(c:Awaited<ReturnType<typeof context>>,day:MobileRouteStoredDay|null,now:string,extra:Record<string,unknown>={}){const active=await activeJourney(c,now);return Response.json({memberId:c.me.id,memberRole:trackingRole(c.me.role),regionScope:regionScope(c.me),day:day?mobilePublicDay(day,now):null,activeStop:active&&!active.closedAt?active:null,serverTime:now,trackingWindow:trackingWindowStatus(now),...extra},{headers:{'Cache-Control':'no-store'}});}
 // A representative's app refuses to enroll while this answers with another device's day. An open day whose collector has
 // gone quiet is therefore not reported to a representative, so a new or reinstalled app can take the day over. Other roles
 // (the manual tracker of supervisors and managers) are answered exactly as before.
-export async function GET(){try{const c=await mobileContext();requireSalesRole(c.me);const now=new Date().toISOString(),row=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at DESC,id DESC LIMIT 1').bind(c.me.id,journeyDate(now),regionScope(c.me)).first<MobileDayRow>(),day=row?decodeMobileDay(row):null;return response(c,day&&c.me.role==='rep'&&!day.endedAt&&await mobileDayQuiet(c.db,day,now)?null:day,now);}catch(e){return replyError(e);}}
+export async function GET(){try{const c=await mobileContext();requireSalesRole(c.me);const now=new Date().toISOString(),row=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? ORDER BY started_at DESC,id DESC LIMIT 1').bind(c.me.id,journeyDate(now),regionScope(c.me)).first<MobileDayRow>(),day=row?decodeMobileDay(row):null;return response(c,day&&isFieldRole(c.me.role)&&!day.endedAt&&await mobileDayQuiet(c.db,day,now)?null:day,now);}catch(e){return replyError(e);}}
 export async function POST(req:Request){try{
  checkOrigin(req);const body=await readJsonBody(req);if(JSON.stringify(body).length>40000)throw new CRMError('حجم بيانات الموقع كبير');const c=await mobileContext(body);requireSalesRole(c.me);const now=new Date().toISOString(),date=journeyDate(now),deviceId=z.string().uuid().parse(body.deviceId),action=z.enum(['begin','samples','end','gap']).parse(body.action),mutation=crypto.randomUUID();
  if(action==='begin'){
-  if(body.continuous===true&&c.me.role!=='rep')throw new CRMError('التسجيل المستمر مخصص للمندوبين.',403);
+  if(body.continuous===true&&!isFieldRole(c.me.role))throw new CRMError('التسجيل المستمر مخصص للمندوبين.',403);
   const requestedDate=body.date===undefined?date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v).parse(body.date),historical=requestedDate<date;
   const capturedStart=body.startedAt===undefined?(body.date===undefined?now:mobileDayStart(requestedDate)):new Date(iso.parse(body.startedAt)).toISOString(),expiry=mobileDayExpiry(requestedDate);
   // Legacy continuous collectors anchor at midnight; retain their eligible daytime
@@ -70,7 +71,7 @@ export async function POST(req:Request){try{
   const saved=await c.db.batch(statements);if(saved[insertIndex]?.meta.changes!==1)throw new CRMError('تغير يوم التتبع أو صلاحياتك، أو وصلت للحد اليومي. أعد المحاولة.',409);return response(c,day,now);
  }
  const day=await ownMobileDay(c,identifier.parse(body.dayId),deviceId),permission=mobileGuard(c,day);
- if(action==='end'&&c.me.role==='rep')throw new CRMError('تسجيل خط السير يعمل تلقائيًا للمندوب ولا يمكن إيقافه يدويًا.',403);
+ if(action==='end'&&isFieldRole(c.me.role))throw new CRMError('تسجيل خط السير يعمل تلقائيًا للمندوب ولا يمكن إيقافه يدويًا.',403);
  if(action==='samples'){
   const incoming=z.array(pointSchema).min(1).max(50).parse(body.points);if(new Set(incoming.map(p=>p.id)).size!==incoming.length)throw new CRMError('تكرار رقم عينة الموقع');const times=incoming.map(p=>new Date(p.capturedAt).toISOString());if(new Set(times).size!==times.length)throw new CRMError('تكرار وقت عينة الموقع');
   const ignoredIds:string[]=[],placeholders=incoming.map(()=>'?').join(','),existing=(await c.db.prepare(`SELECT point_id AS id,captured_at AS capturedAt,latitude,longitude,accuracy,stop_id AS stopId FROM crm_mobile_route_points WHERE day_id=? AND (point_id IN (${placeholders}) OR captured_at IN (${placeholders}))`).bind(day.id,...incoming.map(p=>p.id),...times).all<MobileRoutePoint>()).results,points:MobileRoutePoint[]=[];
