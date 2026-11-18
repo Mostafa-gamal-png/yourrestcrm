@@ -5,10 +5,13 @@
 // cells, never «حذف عميل»), who corrects and who classifies which customer, and a guard over the sources: every remaining literal 'rep'
 // of lib/ and app/ is listed here with the reason it stays a representative's alone (a new check written for 'rep' fails it until it is
 // decided for the marketing officer too). 2. POST /api/crm and GET /api/crm on an isolated in-memory SQLite (the real migrations): the
-// marketing officer corrects another representative's customer of their branch directly (no request), never another branch's, another
-// region's, the routing or a deletion; the classifications by role (a representative and customer service refused, a supervisor's waiting
-// in their request, the sales manager's and the administrator's direct), an unknown value refused, a save without them keeping them, a new
-// customer saved on the device carrying them, the team screen's member of the new role. Synthetic people and customers only; no network.
+// marketing officer corrects another representative's customer of their branch directly (no request; the history keeps every changed
+// field before and after), another branch's customer of their regions and any change of a customer's region through a request as a
+// representative's (the review of 2026-11-18), never another region's, the routing or a deletion; the classifications by role (a
+// representative and customer service refused, a supervisor's waiting in their request, the sales manager's and the administrator's
+// direct), an unknown value refused, null empty, a save without them keeping them, hidden (with a marker) from a representative for
+// another's customer and from a marketing officer for another branch's, a new customer saved on the device carrying them, the team
+// screen's member of the new role. Synthetic people and customers only; no network.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -86,8 +89,13 @@ eq([...access.salesScopeMemberIds(members,{...byId('sup'),access:{version:1,off:
 const C=(id,assignedTo,branch='الرئيسي')=>({id,kind:'customer',parentId:null,assignedTo,branch,data:{name:id,region:'الشرقية'},createdAt:'',updatedAt:'',version:1});
 const customers={own:C('own','mkt'),rep:C('c-rep','rep'),rep2:C('c-rep2','rep2'),sup:C('c-sup','sup'),jeddah:C('c-jeddah','mktJ','جدة'),mgr:C('c-mgr','mgr')};
 const matrix=(fn,who)=>Object.fromEntries(Object.entries(customers).map(([key,row])=>[key,fn(row,members,byId(who))]));
-eq(matrix(access.canEditCustomerDetails,'mkt'),{own:true,rep:true,rep2:true,sup:true,jeddah:false,mgr:true},'a marketing officer corrects every customer of their branch, whoever it is assigned to; never another branch\'s');
-eq(matrix(access.canEditCustomerDetails,'mktJ'),{own:false,rep:false,rep2:false,sup:false,jeddah:true,mgr:false},'the officer of Jeddah: Jeddah\'s only');
+eq(matrix(access.canEditCustomerDetails,'mkt'),{own:true,rep:true,rep2:true,sup:true,jeddah:true,mgr:true},'a marketing officer corrects every customer of their regions, as a representative (another branch\'s through a request: the review of 2026-11-18)');
+eq(matrix(access.canEditCustomerDetails,'mktJ'),{own:true,rep:true,rep2:true,sup:true,jeddah:true,mgr:true},'the officer of Jeddah too');
+// What waits (lib/customer-edit-requests.ts marketingCorrectionWaits): another branch's customer, or a change of the customer's region.
+const mkt=byId('mkt'),regionOf=region=>({...customers.rep,data:{...customers.rep.data,region}});
+eq([editRules.marketingCorrectionWaits(mkt,customers.rep,'الشرقية'),editRules.marketingCorrectionWaits(mkt,customers.rep,' الشرقية '),editRules.marketingCorrectionWaits(mkt,customers.jeddah,'الشرقية'),editRules.marketingCorrectionWaits(mkt,customers.rep,'الوسطى'),editRules.marketingCorrectionWaits(mkt,customers.rep,'')],[false,false,true,true,true],'a marketing officer: their branch\'s customer directly; another branch\'s, or a new region (or none), waits');
+eq([editRules.marketingCorrectionWaits(mkt,regionOf(undefined),''),editRules.marketingCorrectionWaits(mkt,regionOf(undefined),undefined),editRules.marketingCorrectionWaits(mkt,regionOf(undefined),'الشرقية')],[false,false,true],'no region before and none after is no change; one set where there was none is');
+eq(['rep','supervisor','manager','admin','customer_service'].map(role=>editRules.marketingCorrectionWaits({role,branch:'الرئيسي'},customers.jeddah,'الوسطى')),[false,false,false,false,false],'the rule is the marketing officer\'s alone (the others have their own)');
 eq(matrix(access.canEditCustomerDetails,'rep'),{own:true,rep:true,rep2:true,sup:true,jeddah:true,mgr:true},'a representative proposes a correction for any customer of their regions, as before');
 eq(matrix(access.canClassifyCustomer,'mkt'),{own:true,rep:true,rep2:true,sup:true,jeddah:false,mgr:true},'a marketing officer classifies every customer of their branch');
 eq(matrix(access.canClassifyCustomer,'sup'),{own:true,rep:true,rep2:false,sup:true,jeddah:true,mgr:false},'a supervisor classifies their team\'s customers only');
@@ -101,7 +109,11 @@ eq(access.canEditMachineRecord({id:'m',kind:'factory',parentId:'c-rep',assignedT
 const visitOf=author=>({id:'v-'+author,kind:'activity',parentId:'own',assignedTo:'mkt',branch:'الرئيسي',data:{performedBy:author},createdAt:'',updatedAt:'',version:1});
 eq(['mkt','sup','mgr','owner','rep','sup2','mkt2'].map(who=>access.canReadSalesRecord(visitOf('mkt'),members,byId(who))),[true,true,true,true,false,false,false],'a marketing officer\'s visit: theirs, their supervisor\'s, the sales manager\'s; never a colleague\'s');
 const view=access.salesRecordAccess(members,byId('mkt'));
-eq([view.canClassify(customers.rep),view.canClassify(customers.jeddah),view.canEditCustomerDetails(customers.jeddah)],[true,false,false],'the projection says the same');
+eq([view.canClassify(customers.rep),view.canClassify(customers.jeddah),view.canEditCustomerDetails(customers.jeddah)],[true,false,true],'the projection says the same');
+// Whose classifications a reader does not read (lib/customer-classification.ts classificationHiddenFrom).
+eq(['own','rep','jeddah'].map(key=>classification.classificationHiddenFrom(byId('mkt'),customers[key])),[false,false,true],'a marketing officer: another branch\'s');
+eq(['own','rep','jeddah'].map(key=>classification.classificationHiddenFrom(byId('rep'),customers[key])),[true,false,true],'a representative: every customer not assigned to them');
+eq(['sup','mgr','owner','cs','csm','mktJ'].map(who=>classification.classificationHiddenFrom(byId(who),customers.rep)),[false,false,false,false,false,true],'nobody else\'s are hidden, but the Jeddah officer\'s of the main branch');
 
 // What GET /api/crm sends: markers, and a representative never reads another's classifications.
 const classified={opportunityGrade:'A',gradeNotes:'طلب عرض سعر',factorySize:'B',customerInterest:'price'};
@@ -109,10 +121,12 @@ const rows=[{...customers.rep,data:{...customers.rep.data,...classified}},{...cu
 const projected=(who)=>Object.fromEntries(crmLib.scopeRecords(rows,members,byId(who)).map(row=>[row.id,row.data]));
 let p=projected('mkt');
 eq([p['c-rep']._masterReadOnly,p['c-rep']._classificationReadOnly,p['c-rep'].opportunityGrade],[undefined,undefined,'A'],'a marketing officer: their branch\'s customer is open to them, with its classifications');
-eq([p['c-jeddah']._masterReadOnly,p['c-jeddah']._classificationReadOnly,p['c-jeddah'].factorySize],[true,true,'B'],'another branch\'s: read only, classifications shown');
+eq([p['c-jeddah']._masterReadOnly,p['c-jeddah']._classificationReadOnly,p['c-jeddah']._classificationHidden],[undefined,true,true],'another branch\'s: open to a request, its classifications hidden (the review of 2026-11-18)');
+eq(Object.keys(classified).filter(key=>key in p['c-jeddah']),[],'none of the four reaches a marketing officer for another branch\'s customer');
+eq([p['c-rep']._classificationHidden,p['own']._classificationHidden],[undefined,undefined],'their branch\'s carry no marker');
 p=projected('rep');
-eq([p['c-rep'].opportunityGrade,p['c-rep']._classificationReadOnly,p['own'].opportunityGrade,p['own'].gradeNotes],['A',true,undefined,undefined],'a representative reads the classifications of their own customers only, read only');
-eq(Object.keys(classified).every(key=>!(key in p['c-jeddah'])),true,'nothing of another\'s customer\'s classifications reaches a representative');
+eq([p['c-rep'].opportunityGrade,p['c-rep']._classificationReadOnly,p['c-rep']._classificationHidden,p['own'].opportunityGrade,p['own'].gradeNotes,p['own']._classificationHidden],['A',true,undefined,undefined,undefined,true],'a representative reads the classifications of their own customers only, read only; another\'s is marked hidden');
+eq(Object.keys(classified).every(key=>!(key in p['c-jeddah']))&&p['c-jeddah']._classificationHidden,true,'nothing of another\'s customer\'s classifications reaches a representative');
 p=projected('sup');
 eq([p['c-rep']._classificationReadOnly,p['own']._classificationReadOnly,p['c-jeddah']._classificationReadOnly],[undefined,undefined,undefined],'a supervisor classifies their team\'s customers (the marketing officers\' included)');
 eq(projected('mgr')['c-jeddah'].customerInterest,'price','the sales manager reads them all');
@@ -127,6 +141,7 @@ eq(permissions.can({role:'marketing',access:permissions.memberAccess('marketing'
 eq(permissions.trashScopeOf({role:'marketing',access:permissions.memberAccess('marketing',{permissions:JSON.stringify({'activity:delete':true}),hidden:'[]',version:2})}),'own','«المحذوفات» with «حذف زيارة», their own deletions');
 eq(permissions.trashScopeOf({role:'marketing',access:permissions.memberAccess('marketing',null)}),null,'none by default');
 ok(permissions.permissionRow('customer').cells.edit.roleNote.marketing.ar.includes('مباشرةً'),'the matrix explains the direct correction for the role');
+ok(permissions.permissionRow('customer').cells.edit.roleNote.marketing.ar.includes('عميل فرع آخر أو تغيير منطقة العميل طلبٌ ينتظر الموافقة'),'and what waits for approval (the review of 2026-11-18)');
 ok(!ARABIC.test(permissions.permissionRow('customer').cells.edit.roleNote.marketing.en),'and in English');
 eq(permissions.viewAllAvailable('marketing'),false,'no «عرض بيانات الفريق بالكامل»');
 eq(permissions.copyPermissions({role:'rep',stored:permissions.normalizePermissions('rep',{cells:{'customer:delete':true}})},'marketing').skipped,['customer:delete'],'copying a representative\'s «حذف عميل» to a marketing officer is skipped and named');
@@ -137,7 +152,11 @@ eq(editRules.directCustomerEditRole('marketing'),false,'and decides none');
 for(const field of classification.CLASSIFICATION_FIELDS)ok(editRules.CUSTOMER_EDIT_FIELDS.includes(field),field+' can travel in a supervisor\'s request');
 eq(editRules.customerEditProposal({name:'x',opportunityGrade:'B'},{name:'x',opportunityGrade:'A',factorySize:'D'}).fields,['opportunityGrade','factorySize'],'a change of classification is a request field');
 eq(editRules.CUSTOMER_EDIT_CODE_FIELDS.has('factorySize'),true,'shown with its words in the list of requests');
-eq(editRules.activeSupervisorOf('mkt',members),undefined,'nothing of a marketing officer waits for a supervisor');
+eq(editRules.activeSupervisorOf('mkt',members)?.id,'sup','a marketing officer\'s request (another branch\'s customer, a new region) waits for their supervisor first, as a representative\'s');
+eq(editRules.firstStage('mkt',members),'supervisor','its first stage');
+eq(editRules.activeSupervisorOf('mkt',members.map(member=>member.id==='sup'?{...member,active:0}:member)),undefined,'with no active supervisor it goes to the sales manager');
+eq(editRules.CUSTOMER_EDIT_HISTORY[editRules.DIRECT_EDIT],'تعديل مسؤول التسويق لبيانات العميل','the history\'s words for a marketing officer\'s direct correction');
+ok(en[editRules.CUSTOMER_EDIT_HISTORY[editRules.DIRECT_EDIT]]&&!ARABIC.test(en[editRules.CUSTOMER_EDIT_HISTORY[editRules.DIRECT_EDIT]]),'and in English');
 
 // Mold requests and the products application's salesmen.
 eq(mold.canUseMoldRequests('marketing'),true,'a marketing officer files mold requests');
@@ -173,7 +192,8 @@ eq(gate.trackingGateDecision({role:'marketing',active:1,native:false}).status,'b
 eq(companion.companionDecision({role:'marketing',native:true,ownDayId:null,serverDay:{id:'d',endedAt:null},serverKnown:true,windowOpen:true,rememberedAt:null,now:Date.now()}).companion,true,'a second device of a marketing officer is a companion');
 
 // The classifications' words and the server's refusals in English, with no Arabic left.
-for(const text of [classification.CLASSIFICATION_REFUSED,classification.GRADE_REFUSED,classification.SIZE_REFUSED,classification.INTEREST_REFUSED,classification.GRADE_NOTES_TOO_LONG])ok(en[text]&&!ARABIC.test(en[text]),'English for: '+text);
+eq(classification.CLASSIFICATION_REFUSED,'تصنيفات العميل يحددها مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.','the refusal names who sets them, and claims no reading the refused member may not have (the review of 2026-11-18)');
+for(const text of [classification.CLASSIFICATION_REFUSED,classification.GRADE_REFUSED,classification.SIZE_REFUSED,classification.INTEREST_REFUSED,classification.GRADE_NOTES_TOO_LONG,classification.GRADE_NOTES_REFUSED])ok(en[text]&&!ARABIC.test(en[text]),'English for: '+text);
 const server=fs.readFileSync(path.join(root,'lib/crm-server.ts'),'utf8');
 for(const name of ['MARKETING_NO_CUSTOMER_DELETE','MARKETING_OTHER_BRANCH']){const text=server.match(new RegExp('export const '+name+"='([^']+)'"))[1];ok(en[text]&&!ARABIC.test(en[text]),'English for: '+text);}
 
@@ -182,11 +202,7 @@ for(const name of ['MARKETING_NO_CUSTOMER_DELETE','MARKETING_OTHER_BRANCH']){con
 const KEEP=[
  ['lib/roles.ts','',"the field roles' own definition"],
  ['lib/crm-server.ts',"c.me.role==='rep'&&record.kind==='customer'","after the marketing officer's own guard (marketingCustomerGuard, and the refused deletion) above it"],
- ['lib/crm.ts',"me.role==='rep'&&row.assignedTo!==me.id",'a representative reads the classifications of their own customers only'],
- ['lib/access.ts',"me.role==='rep'||",'a representative corrects any customer of their regions through a request; the marketing officer is bound to their branch on the same line'],
- ['lib/customer-edit-requests.ts',"['rep','supervisor','customer_service','customer_service_manager']",'who sends a request: a marketing officer edits directly'],
- ['lib/customer-edit-requests.ts',"requester.role!=='rep'",'only a representative\'s request waits for a supervisor; a marketing officer sends none'],
- ['lib/customer-edit-requests-server.ts',"ce_rq.role='rep'",'the same rule as activeSupervisorOf, at commit'],
+ ['lib/customer-edit-requests.ts',"['rep','supervisor','customer_service','customer_service_manager']",'who always sends a request: a marketing officer\'s waits only by marketingCorrectionWaits'],
  ['lib/service-tracking.ts',"assigneeRole==='rep'?'rep'",'the holder\'s words: a marketing officer has their own on the same line'],
  ['lib/service-tracking.ts',"'supervisor'|'rep'|",'the holder roles: marketing on the same line'],
  ['lib/nearby-customers.ts',"memberRole:'rep'",'the role the Android app checks for every field member'],
@@ -202,9 +218,6 @@ const KEEP=[
  ['app/device-status-reporter.tsx',"trackingGateDecision({role:'rep'",'the device report is built for a field member (memberId is a field member\'s only)'],
  ['app/team-today.tsx',"row.role!=='rep'",'the role under the name for everyone but a representative: a marketing officer\'s is shown'],
  ['app/crm-app.tsx',"role: 'rep', branch",'a new member\'s first choice in the team form'],
- ['app/crm-app.tsx',"data-customer-edit-note>{me?.role==='rep'",'the note of a request going to the supervisor first: a representative\'s only'],
- ['app/crm-app.tsx',"me?.role==='rep'&&form.row.assignedTo!==me.id",'a representative reads the classifications of their own customers only'],
- ['app/crm-app.tsx',"me?.role === 'rep' && detail.assignedTo !== me.id",'the same, on the customer\'s sheet'],
 ];
 const files=dir=>fs.readdirSync(path.join(root,dir),{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?files(path.join(dir,entry.name)):/\.(ts|tsx)$/.test(entry.name)?[path.join(dir,entry.name)]:[]);
 const unexplained=[];
@@ -216,7 +229,7 @@ for(const file of [...files('lib'),...files('app')]){
 }
 eq(unexplained,[],'every literal \'rep\' of lib/ and app/ is decided for the marketing officer (lib/roles.ts) or listed with its reason');
 const sqlRep=[...files('lib'),...files('app')].flatMap(file=>fs.readFileSync(path.join(root,file),'utf8').split('\n').filter(line=>/role\s*=\s*'rep'|role IN \('rep'/.test(line)).map(line=>file+': '+line.trim().slice(0,100)));
-eq(sqlRep.map(line=>line.split(':')[0]),['lib/customer-edit-requests-server.ts'],'no SQL names the representative alone but the request\'s supervisor step');
+eq(sqlRep,[],'no SQL names the representative alone (the request\'s supervisor step reads every field member: FIELD_ROLES_SQL)');
 
 // ---- 2. The routes on a real SQLite with the real migrations.
 const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
@@ -252,14 +265,27 @@ let saved=await post('mkt',edit('c-rep2',{phone:'0512345678',city:'الخبر',n
 eq([saved.ok,saved.id,saved.pendingApproval],[true,'c-rep2',undefined],'saved directly: no approval waits');
 eq([row('c-rep2').data.phone,row('c-rep2').data.city,row('c-rep2').data.notes,row('c-rep2').version],['0512345678','الخبر','تحديث التسويق',before.version+1],'the customer changed at once');
 eq(waiting('c-rep2').length,0,'nothing waits for a supervisor or the sales manager');
-eq(audits('c-rep2','تعديل').map(a=>a.actor),['اسم mkt'],'the customer\'s history records who changed it (and when: created_at)');
+eq(audits('c-rep2','تعديل').length,0,'not as a plain «تعديل»');
+let direct=audits('c-rep2',editRules.DIRECT_EDIT);
+eq(direct.map(a=>a.actor),['اسم mkt'],'the customer\'s history records who changed it (and when: created_at)');
+let held=JSON.parse(direct[0].detail);
+eq([held.v,held.by,held.customerName,[...held.fields].sort()],[1,'mkt','مصنع c-rep2',['city','notes','phone']],'and what: the changed fields (the review of 2026-11-18)');
+eq([held.base.phone,held.values.phone,held.base.city,held.values.city,held.base.notes,held.values.notes],['0500000000','0512345678','الدمام','الخبر','','تحديث التسويق'],'each with what it held and what it holds');
 eq([row('c-rep2').assigned_to,row('c-rep2').branch,row('c-rep2').data.code],['rep2','الرئيسي','ERP-c-rep2'],'the routing and the ERP code stay');
 await post('mkt',edit('c-sup',{city:'القطيف'}));eq(row('c-sup').data.city,'القطيف','a supervisor\'s customer of the branch too');
 await post('mkt',edit('c-mkt',{city:'الجبيل'}));eq(row('c-mkt').data.city,'الجبيل','their own customer');
 // The limits: another branch, another region, the routing, a deletion, a stale version, another site.
+// Another branch's customer of their regions (the review of 2026-11-18: it was refused): a request, as a representative's.
 before=JSON.stringify(raw('c-jeddah'));
-eq((await post('mkt',edit('c-jeddah',{city:'جدة'}),403)).error,'يعدّل مسؤول التسويق بيانات عملاء فرعه فقط.','another branch\'s customer: refused');
-eq(JSON.stringify(raw('c-jeddah')),before,'and unchanged');
+const other=await post('mkt',edit('c-jeddah',{city:'جدة'}));
+eq([other.pendingApproval,other.approvalStage],[true,'supervisor'],'another branch\'s customer: a request, to their supervisor first');
+eq(JSON.stringify(raw('c-jeddah')),before,'the customer unchanged while it waits');
+eq(waiting('c-jeddah').map(w=>[w.requestedBy,w.stage,w.fields]),[['mkt','supervisor',['city']]],'the request holds the city only');
+await post('mgr',{action:'customer-edit',decision:'approve',id:other.requestId},403);
+eq((await post('sup',{action:'customer-edit',decision:'approve',id:other.requestId})).stage,'sales_manager','their supervisor passes it on');
+eq((await post('mgr',{action:'customer-edit',decision:'approve',id:other.requestId})).status,'approved','the sales manager approves');
+eq(row('c-jeddah').data.city,'جدة','applied');
+eq(audits('c-jeddah',editRules.DIRECT_EDIT).length,0,'no direct correction is recorded for it');
 await post('mkt',edit('c-west',{city:'جدة'}),404);
 await post('mkt',edit('c-rep',{assignedTo:'mkt'}),403);await post('mkt',edit('c-rep',{branch:'جدة'}),403);
 eq(row('c-rep').assigned_to,'rep','the routing never moves');
@@ -285,6 +311,13 @@ for(const [field,bad,message] of [['opportunityGrade','E','اختر تصنيف �
  eq((await post('mkt',edit('c-rep2',{[field]:bad}),400)).error,message,'refused: '+field+' '+JSON.stringify(bad).slice(0,12));
 }
 await post('mkt',edit('c-rep2',{opportunityGrade:' C ',gradeNotes:'  ملاحظة  '}));eq([row('c-rep2').data.opportunityGrade,row('c-rep2').data.gradeNotes],['C','ملاحظة'],'trimmed before it is checked');
+direct=audits('c-rep2',editRules.DIRECT_EDIT);held=JSON.parse(direct.at(-1).detail);
+eq([held.fields.sort(),held.base.opportunityGrade,held.values.opportunityGrade],[['gradeNotes','opportunityGrade'],'A','C'],'a classification set directly is recorded with its before and after');
+// null is no value (the review of 2026-11-18: «gradeNotes: null» was refused as «too long»), as an empty text is; another type is refused.
+await post('mkt',edit('c-rep2',{gradeNotes:null}));eq('gradeNotes' in row('c-rep2').data,false,'gradeNotes null: emptied');
+await post('mkt',edit('c-rep2',{opportunityGrade:null,customerInterest:null}));eq(['opportunityGrade','customerInterest'].some(field=>field in row('c-rep2').data),false,'a choice null: emptied');
+eq((await post('mkt',edit('c-rep2',{gradeNotes:5}),400)).error,classification.GRADE_NOTES_REFUSED,'a number is no note');
+await post('mkt',edit('c-rep2',{opportunityGrade:'C',gradeNotes:'ملاحظة',customerInterest:'technical'}));
 // A save that does not carry them keeps them (a page opened before them, a representative's view without them).
 await post('mkt',{...edit('c-rep2'),data:without(edit('c-rep2').data,['opportunityGrade','gradeNotes','customerInterest']),});
 eq([row('c-rep2').data.opportunityGrade,row('c-rep2').data.customerInterest],['C','technical'],'absent fields keep the stored values');
@@ -317,14 +350,35 @@ await post('mkt',edit('c-jeddah',{opportunityGrade:'A'}),403);eq(row('c-jeddah')
 // What each reads (GET /api/crm).
 let data=await read('rep');
 const repSees=id=>data.records.find(record=>record.id===id)?.data;
-eq([repSees('c-rep').opportunityGrade,repSees('c-rep')._classificationReadOnly],['B',true],'a representative reads their own customer\'s classifications, read only');
-eq(['opportunityGrade','gradeNotes','factorySize','customerInterest'].some(field=>field in repSees('c-rep2')),false,'and nothing of another\'s');
+eq([repSees('c-rep').opportunityGrade,repSees('c-rep')._classificationReadOnly,repSees('c-rep')._classificationHidden],['B',true,undefined],'a representative reads their own customer\'s classifications, read only');
+eq([['opportunityGrade','gradeNotes','factorySize','customerInterest'].some(field=>field in repSees('c-rep2')),repSees('c-rep2')._classificationHidden],[false,true],'and nothing of another\'s, which is marked hidden');
 data=await read('mkt');
-eq([repSees('c-rep2').opportunityGrade,repSees('c-rep2')._classificationReadOnly,repSees('c-jeddah')._classificationReadOnly,repSees('c-jeddah')._masterReadOnly],['C',undefined,true,true],'a marketing officer: their branch open, another branch read only');
+eq([repSees('c-rep2').opportunityGrade,repSees('c-rep2')._classificationReadOnly,repSees('c-rep2')._classificationHidden,repSees('c-jeddah')._classificationReadOnly,repSees('c-jeddah')._masterReadOnly,repSees('c-jeddah')._classificationHidden],['C',undefined,undefined,true,undefined,true],'a marketing officer: their branch open; another branch open to a request, its classifications hidden');
+eq(['opportunityGrade','gradeNotes','factorySize','customerInterest'].filter(field=>field in repSees('c-jeddah')),[],'none of another branch\'s four reach them (stored: B)');
 eq(data.me.role,'marketing','the page knows the role');
-eq(data.audits.every(audit=>!['c-rep2','c-sup'].includes(audit.recordId)||audit.action!=='تعديل'),true,'the recent changes of a field member list their visits only, as a representative\'s');
+eq(data.audits.every(audit=>!['c-rep2','c-sup','c-mkt','c-jeddah'].includes(audit.recordId)),true,'the recent changes of a field member list their visits only, as a representative\'s');
 data=await read('mgr');
-ok(data.audits.some(audit=>audit.recordId==='c-rep2'&&audit.action==='تعديل'&&audit.actor==='اسم mkt'),'the sales manager reads the marketing officer\'s correction in the history');
+const directSeen=data.audits.filter(audit=>audit.recordId==='c-rep2'&&audit.actor==='اسم mkt');
+ok(directSeen.length>=1&&directSeen.every(audit=>audit.action===editRules.CUSTOMER_EDIT_HISTORY[editRules.DIRECT_EDIT]&&audit.detail==='مصنع c-rep2'&&Array.isArray(audit.changes)),'the sales manager reads the marketing officer\'s corrections in the history, by name, with their changes');
+eq(directSeen.flatMap(audit=>audit.changes).find(change=>change.field==='phone'),{field:'phone',before:'0500000000',after:'0512345678'},'the first one\'s phone, before and after');
+// A save built from what the page read (the marker with it) keeps the hidden classifications and stores no marker.
+const pageRow=(await read('mkt')).records.find(record=>record.id==='c-jeddah');
+const fromPage=await post('mkt',{action:'save',kind:'customer',id:'c-jeddah',version:pageRow.version,editKey:crypto.randomUUID(),data:{...pageRow.data,assignedTo:pageRow.assignedTo,branch:pageRow.branch,phone:'0577777777'}});
+eq(waiting('c-jeddah').find(request=>request.id===fromPage.requestId).fields,['phone'],'the request from the page asks for the phone only');
+await post('sup',{action:'customer-edit',decision:'approve',id:fromPage.requestId});await post('mgr',{action:'customer-edit',decision:'approve',id:fromPage.requestId});
+eq([row('c-jeddah').data.phone,row('c-jeddah').data.opportunityGrade,Object.keys(row('c-jeddah').data).filter(key=>key.startsWith('_classification'))],['0577777777','B',[]],'approved: the phone changed, the classification kept, no marker stored');
+// A change of the customer's region waits too (the review of 2026-11-18: it was written at once), as one whole edit.
+const regionsLib=await lib('regions');
+sql.prepare("UPDATE crm_members SET region_scope=? WHERE id IN ('mkt','rep')").run(regionsLib.canonicalRegionScope(['eastern','central']));
+before=JSON.stringify(raw('c-rep'));
+const moved=await post('mkt',edit('c-rep',{region:'الوسطى',city:'الرياض'}));
+eq([moved.pendingApproval,moved.approvalStage],[true,'supervisor'],'a new region: a request, to the supervisor first');
+eq(JSON.stringify(raw('c-rep')),before,'nothing changes while it waits: not the region, not the city with it');
+eq(waiting('c-rep').map(request=>[...request.fields].sort()),[['city','region']],'the request carries the whole edit');
+eq(audits('c-rep',editRules.DIRECT_EDIT).length,0,'nothing is written directly');
+await post('mkt',{action:'customer-edit',decision:'cancel',id:moved.requestId});
+await post('mkt',edit('c-rep',{city:'الرياض'}));eq([row('c-rep').data.city,row('c-rep').data.region],['الرياض','الشرقية'],'the same region: direct, as before');
+sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id IN ('mkt','rep')").run();
 
 // A new customer: a marketing officer's own, classified; saved on the device first (the offline queue replays the same body).
 const createKey=crypto.randomUUID(),capturedAt=new Date(Date.now()-60_000).toISOString().replace(/\.\d+Z$/,'.000Z');

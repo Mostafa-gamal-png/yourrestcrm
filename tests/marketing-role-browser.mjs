@@ -4,8 +4,11 @@
 // Arabic and in English: the three filters («تصنيف الفرصة»، «حجم المصنع»، «اهتمام العميل») narrow the list, the customer's sheet shows
 // the classifications with the size suggested from the registered machines, the form offers the fields with their help, «اعتماد
 // المقترح» and «متوقف» by hand, and saves directly (no «إرسال التعديل للموافقة»); nothing scrolls sideways, every field and filter is inside
-// the screen, and no Arabic is left in English but the data. A representative reads them read only on their own customer and not at
-// all on another's. The administrator sees the marks on the desktop table. Screenshots for the report. Synthetic fixtures only.
+// the screen, and no Arabic is left in English but the data. The review of 2026-11-18: the machines are counted once (the sheet's group
+// beside the machines registered one by one), another branch's customer shows the marketing officer nothing of its classifications and
+// its correction goes for approval, a representative sees no mark, no suggested size and no filter match for another's customer, and the
+// history shows a marketing officer's direct correction field by field (Arabic and English). A representative reads them read only on
+// their own customer. The administrator sees the marks on the desktop table. Screenshots for the report. Synthetic fixtures only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,7 +22,8 @@ const members = [
   {id: 'owner', role: 'admin', name: 'مدير النظام'}, {id: 'mgr', role: 'manager', name: 'مدير المبيعات'},
   {id: 'sup', role: 'supervisor', sup: 'mgr', region: 'eastern', name: 'المشرف سالم'},
   {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'المندوب أحمد'},
-  {id: 'mkt', role: 'marketing', sup: 'sup', region: 'eastern', name: 'مسؤولة التسويق ريم'}
+  {id: 'mkt', role: 'marketing', sup: 'sup', region: 'eastern', name: 'مسؤولة التسويق ريم'},
+  {id: 'repj', role: 'rep', sup: 'sup', region: 'eastern', branch: 'جدة', name: 'مندوب جدة'}
 ];
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-marketing-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
@@ -27,15 +31,22 @@ let checks = 0, browser, app;
 const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const SIZES = {'phone-320': {width: 320, height: 700}, 'phone-360': {width: 360, height: 800}, 'tablet-upright': {width: 768, height: 1024}, 'tablet-sideways': {width: 1024, height: 768}, desktop: {width: 1280, height: 900}};
-const HOPE = 'مصنع الأمل للبلوك', LIGHT = 'مصنع النور', OWN = 'مصنع التسويق';
+const HOPE = 'مصنع الأمل للبلوك', LIGHT = 'مصنع النور', OWN = 'مصنع التسويق', DAWN = 'مصنع الشروق', SEA = 'مصنع البحر';
 
 try {
   app = await bootBuiltApp({members}, {tls: true});
   const now = new Date().toISOString();
-  const insert = (id, kind, parent, assigned, data) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,'الرئيسي',?,?,?,1,'fixture')").bind(id, kind, parent, assigned, JSON.stringify(data), now, now).run();
-  const customer = (id, name, assigned, data = {}) => insert(id, 'customer', null, assigned, {name, branch: 'الرئيسي', assignedTo: assigned, region: 'الشرقية', city: 'الدمام', customerStatus: 'نشط', phone: '0551234567', contact: 'أبو فهد', location: '26.43, 50.03', code: 'ERP-' + id, ...data});
-  await customer('c1', HOPE, 'rep');
-  await insert('m1', 'factory', 'c1', 'rep', {name: 'خط البلوك', recordType: 'machine', quantity: 2, machineBrand: 'Besser', modelCondition: 'new', machineType: 'stationary'});
+  const insert = (id, kind, parent, assigned, data, branch = 'الرئيسي') => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,?,?,?,?,1,'fixture')").bind(id, kind, parent, assigned, branch, JSON.stringify(data), now, now).run();
+  const customer = (id, name, assigned, data = {}, branch = 'الرئيسي') => insert(id, 'customer', null, assigned, {name, branch, assignedTo: assigned, region: 'الشرقية', city: 'الدمام', customerStatus: 'نشط', phone: '0551234567', contact: 'أبو فهد', location: '26.43, 50.03', code: 'ERP-' + id, ...data}, branch);
+  const machine = (id, parent, assigned, quantity, extra = {}) => insert(id, 'factory', parent, assigned, {name: 'خط ' + id, recordType: 'machine', quantity, machineBrand: 'Besser', modelCondition: 'new', machineType: 'stationary', ...extra});
+  // Two machines in the sheet, imported as its group (app/api/machines/import), and the same two registered one by one: two, never four.
+  await customer('c1', HOPE, 'rep', {machineCount: 2});
+  await machine('m1', 'c1', 'rep', 2, {name: 'خط البلوك'});
+  await machine('c1:source-machines-v1', 'c1', 'rep', 2, {name: 'ماكينات الشيت', recordType: 'group', machineType: 'unknown'});
+  // The supervisor's customer, three machines and nothing stored for its size; another branch's (Jeddah's), classified.
+  await customer('c4', DAWN, 'sup', {opportunityGrade: 'C', customerInterest: 'service'});
+  for (const n of [1, 2, 3]) await machine('m4-' + n, 'c4', 'sup', 1);
+  await customer('c5', SEA, 'repj', {opportunityGrade: 'A', factorySize: 'B', customerInterest: 'price', gradeNotes: 'سرية لفرع جدة'}, 'جدة');
   await customer('c2', LIGHT, 'rep', {opportunityGrade: 'A', gradeNotes: 'طلب عرض سعر', factorySize: 'D', customerInterest: 'price'});
   await customer('c3', OWN, 'mkt', {opportunityGrade: 'C', customerInterest: 'trust'});
   const stored = async id => JSON.parse((await app.db.prepare('SELECT data FROM crm_records WHERE id=?').bind(id).first()).data);
@@ -85,15 +96,21 @@ try {
   await pick(page, 'تصنيف الفرصة', 'A · مرتفعة');
   check(await shownNames(page), [LIGHT], 'by grade: only the A customer');
   await pick(page, 'تصنيف الفرصة', 'كل تصنيفات الفرصة');
+  await pick(page, 'تصنيف الفرصة', 'غير محدد');
+  check(await shownNames(page), [HOPE], 'not graded: another branch\'s customer is in no filter (its classifications are not theirs to read)');
+  await pick(page, 'تصنيف الفرصة', 'كل تصنيفات الفرصة');
   await pick(page, 'حجم المصنع', 'C · صغير');
-  check(await shownNames(page), [HOPE], 'by size: the size suggested from two machines counts');
+  check(await shownNames(page), [HOPE], 'by size: the size suggested from two machines counts (the sheet\'s two are not added)');
+  await pick(page, 'حجم المصنع', 'B · متوسط');
+  check(await shownNames(page), [DAWN], 'B: three machines suggest it; another branch\'s stored B is not shown');
   await pick(page, 'حجم المصنع', 'D · متوقف');
   check(await shownNames(page), [LIGHT], '«متوقف» stored by hand');
   await pick(page, 'حجم المصنع', 'كل أحجام المصانع');
   await pick(page, 'اهتمام العميل', 'غير محدد');
   check(await shownNames(page), [HOPE], 'no interest set');
   await page.getByRole('button', {name: 'مسح الفلاتر', exact: true}).click();
-  check((await shownNames(page)).length, 3, 'cleared: every customer');
+  check((await shownNames(page)).sort(), [DAWN, HOPE, LIGHT, OWN, SEA].sort(), 'cleared: every customer');
+  check(await page.locator('.customer-mobile-card').filter({has: page.locator('h3', {hasText: SEA})}).locator('[data-classification-badges] .badge').count(), 0, 'another branch\'s customer: no mark on its card');
   check(await page.locator('.customer-mobile-card').filter({has: page.locator('h3', {hasText: LIGHT})}).locator('[data-classification-badges] .badge').allInnerTexts(), ['الفرصة: A · مرتفعة', 'الحجم: D · متوقف', 'الاهتمام: سعري'], 'the card carries the marks');
   let sheet = await openSheet(page, HOPE);
   const summary = sheet.locator('[data-classification-summary]');
@@ -123,6 +140,26 @@ try {
   const data = await stored('c1');
   check([data.opportunityGrade, data.gradeNotes, data.factorySize, data.customerInterest], ['B', 'القرار بعد زيارة المدير', 'C', 'technical'], 'stored on the customer at once');
   await page.locator('.crm-master-dialog').waitFor({state: 'hidden'});
+  await closeAll(page);
+  await page.context().close();
+
+  // ---- 1b. Another branch's customer (Jeddah's): nothing of its classifications, and the correction goes for approval as a representative's.
+  page = await open('mkt');
+  sheet = await openSheet(page, SEA);
+  check(await sheet.locator('[data-classification-summary]').count(), 0, 'another branch\'s customer: no classification on the sheet');
+  check(await page.evaluate(async () => { const reply = await fetch('/api/crm', {cache: 'no-store'}); const data = (await reply.json()).records.find(record => record.id === 'c5').data; return [Object.keys(data).filter(key => ['opportunityGrade', 'gradeNotes', 'factorySize', 'customerInterest'].includes(key)), data._classificationHidden]; }), [[], true], 'none sent to the page, the customer marked hidden');
+  dialog = await openForm(page, sheet);
+  check([await dialog.locator('[data-classification-editor]').count(), await dialog.locator('[data-classification-readonly]').count(), await dialog.locator('[data-customer-edit-note]').count()], [0, 0, 1], 'the form: no classification, the note that the edit waits for approval');
+  check(await dialog.locator('button[type=submit]').innerText().then(text => text.includes('إرسال التعديل للموافقة')), true, 'the button sends a request');
+  await dialog.getByRole('textbox', {name: 'الجوال', exact: true}).fill('0559998877');
+  await noSideways(page, 'the other branch\'s form, 360');
+  await shot(page, 'marketing-other-branch-form-ar-360');
+  const asked = page.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'POST');
+  await dialog.locator('button[type=submit]').click();
+  const request = await (await asked).json();
+  check([request.ok, request.pendingApproval, request.approvalStage], [true, true, 'supervisor'], 'sent to their supervisor');
+  const sea = await stored('c5');
+  check([sea.phone, sea.opportunityGrade, sea.gradeNotes, '_classificationHidden' in sea], ['0551234567', 'A', 'سرية لفرع جدة', false], 'the customer unchanged while it waits; its classifications kept, no marker stored');
   await closeAll(page);
   await page.context().close();
 
@@ -169,6 +206,20 @@ try {
   await closeAll(page);
   sheet = await openSheet(page, OWN);
   check(await sheet.locator('[data-classification-summary]').count(), 0, 'another\'s customer (the marketing officer\'s): no classification shown');
+  await closeAll(page);
+  // The supervisor's customer with three machines: no mark, no size suggested from them, and in no classification filter.
+  check(await page.locator('.customer-mobile-card').filter({has: page.locator('h3', {hasText: DAWN})}).locator('[data-classification-badges] .badge').count(), 0, 'another\'s customer: no mark on the card, not even a suggested size');
+  sheet = await openSheet(page, DAWN);
+  check(await sheet.locator('[data-classification-summary]').count(), 0, 'nor on the sheet');
+  await closeAll(page);
+  await openFilters(page);
+  await pick(page, 'تصنيف الفرصة', 'غير محدد');
+  check(await shownNames(page), [], '«غير محدد» lists none of the customers whose classifications are not theirs');
+  await pick(page, 'تصنيف الفرصة', 'كل تصنيفات الفرصة');
+  await pick(page, 'حجم المصنع', 'B · متوسط');
+  check(await shownNames(page), [], 'nor does a size suggested from another\'s machines');
+  await pick(page, 'حجم المصنع', 'كل أحجام المصانع');
+  check((await shownNames(page)).length, 5, 'no filter: every customer');
   check(await page.evaluate(async () => { const reply = await fetch('/api/crm', {cache: 'no-store'}); const data = await reply.json(); return Object.keys(data.records.find(record => record.id === 'c3').data).filter(key => ['opportunityGrade', 'gradeNotes', 'factorySize', 'customerInterest'].includes(key)); }), [], 'nor sent to the representative\'s page');
   await closeAll(page);
   await page.context().close();
@@ -182,6 +233,23 @@ try {
   check(await shownNames(page), [HOPE], 'the administrator filters too');
   await noSideways(page, 'the administrator\'s table');
   await shot(page, 'owner-customers-desktop-ar');
+  await page.getByRole('button', {name: 'مسح الفلاتر', exact: true}).click();
+  // The history: the marketing officer's direct correction of section 1, field by field, before and after.
+  for (const english of [false, true]) {
+    if (english) { await page.context().close(); page = await open('owner', {viewport: SIZES.desktop, inApp: false, english}); }
+    sheet = await openSheet(page, HOPE, english);
+    await sheet.getByRole('tab', {name: english ? 'Change log' : 'سجل التغييرات', exact: true}).click();
+    const entry = sheet.locator('.audit-item[data-audit-action="direct"]').first();
+    await entry.waitFor();
+    check(await entry.locator('strong').first().innerText(), (english ? 'Marketing officer\'s edit of the customer details' : 'تعديل مسؤول التسويق لبيانات العميل') + ' · ' + HOPE, 'the history names the direct correction, ' + (english ? 'en' : 'ar'));
+    check(await entry.locator('[data-customer-edit-field]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-customer-edit-field')).sort()), ['customerInterest', 'factorySize', 'gradeNotes', 'opportunityGrade'], 'every field it changed');
+    check(await entry.locator('[data-customer-edit-field="opportunityGrade"] .cer-after').innerText().then(text => text.replace(/\s+/g, ' ').trim()), english ? 'After B · Medium' : 'بعد B · متوسطة', 'with its words, before and after');
+    check(await entry.locator('[data-customer-edit-field="opportunityGrade"] .cer-before').innerText().then(text => text.replace(/\s+/g, ' ').trim()), english ? 'Before —' : 'قبل —', 'nothing before');
+    if (english) await noArabic(entry.locator('.cer-changes'), 'the history\'s changes, en');
+    await allInside(entry.locator('dt, dd'), 'the history, ' + (english ? 'en' : 'ar'));
+    await shot(page, 'owner-history-direct-' + (english ? 'en' : 'ar'));
+    await closeAll(page);
+  }
   await page.context().close();
 
   check(errors, [], 'no page error');

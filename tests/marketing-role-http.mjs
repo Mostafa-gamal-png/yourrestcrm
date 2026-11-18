@@ -1,10 +1,12 @@
 // «مسؤول تسويق» (lib/roles.ts, the owner, 2026-11-18) and the customer classifications (lib/customer-classification.ts) over real HTTP
 // against the BUILT release (run `pnpm build` first): the team screen adds a member of the new role (the administrator only); the marketing
-// officer corrects another representative's customer of their branch and region directly (no approval request; the history names them),
-// never another branch's, another region's, the routing or a deletion (not even when «حذف عميل» is sent for them); the classifications:
-// a representative and customer service refused (and a representative's request never carries them), a supervisor's waiting for the sales
-// manager, the sales manager's and the administrator's direct, an unknown value refused; a representative reads them on their own
-// customers only; otherwise the officer is a representative: every route a representative opens answers them the same, a visit and its
+// officer corrects another representative's customer of their branch and region directly (no approval request; the history names them
+// and every changed field before and after), another branch's customer of their regions and a change of a customer's region through a
+// request to their supervisor as a representative's (the review of 2026-11-18), never another region's, the routing or a deletion (not
+// even when «حذف عميل» is sent for them); the classifications: a representative and customer service refused (and a representative's
+// request never carries them), a supervisor's waiting for the sales manager, the sales manager's and the administrator's direct, an
+// unknown value refused, null empty; a representative reads them on their own customers only, a marketing officer on their branch's only
+// (the others marked hidden); otherwise the officer is a representative: every route a representative opens answers them the same, a visit and its
 // follow-up are recorded, a saved visit is not theirs to edit, their own targets, the nearby customers and the day's route tell the
 // Android app «rep», their phone reports its tracking state, and the products application's salesmen list names them. Synthetic fixtures
 // only: temporary SQLite, mocked mail, a stand-in products server; no production data.
@@ -21,6 +23,7 @@ const members = [
   {id: 'rep2', role: 'rep', sup: 'sup2', region: 'eastern', name: 'المندوب خالد'},
   {id: 'mkt', role: 'marketing', sup: 'sup', region: 'eastern', name: 'مسؤولة التسويق ريم'},
   {id: 'mktj', role: 'marketing', sup: 'sup', region: 'eastern', branch: 'جدة', name: 'مسؤول تسويق جدة'},
+  {id: 'mktc', role: 'marketing', sup: 'sup', region: 'central,eastern', name: 'مسؤول تسويق المنطقتين'},
   {id: 'csm', role: 'customer_service_manager', sup: 'mgr', name: 'مدير خدمة العملاء'},
   {id: 'cs', role: 'customer_service', sup: 'csm', name: 'خدمة العملاء'}
 ];
@@ -28,7 +31,8 @@ let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const until = async (condition, what, ms = 25_000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 250)); } throw new Error('timed out waiting for ' + what); };
-const REFUSED = 'تصنيفات العميل يحددها مسؤول التسويق والمشرف لعملاء فريقه ومدير المبيعات ومدير النظام. يمكنك الاطلاع عليها فقط.';
+const REFUSED = 'تصنيفات العميل يحددها مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.';
+const DIRECT = 'تعديل مسؤول التسويق لبيانات العميل';
 const FIELDS = ['opportunityGrade', 'gradeNotes', 'factorySize', 'customerInterest'];
 const riyadhClock = () => new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).format(new Date());
 while (riyadhClock() >= '23:57') await new Promise(resolve => setTimeout(resolve, 20000));
@@ -40,7 +44,7 @@ try {
   const where = {location: '26.4373410, 50.0344990', latitude: 26.437341, longitude: 50.034499};
   const insert = (id, assigned, data, branch = 'الرئيسي', region = 'الشرقية') => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,'customer',NULL,?,?,?,?,?,1)")
     .bind(id, assigned, branch, JSON.stringify({name: 'مصنع ' + id, region, city: 'الدمام', code: 'ERP-' + id, phone: '0500000000', contact: 'المسؤول', ...where}), stamp, stamp).run();
-  await insert('c1', 'rep1', {}); await insert('c2', 'rep2', {}); await insert('cm', 'mkt', {}); await insert('cj', 'mktj', {}, 'جدة'); await insert('cw', 'rep1', {}, 'الرئيسي', 'الغربية');
+  await insert('c1', 'rep1', {}); await insert('c2', 'rep2', {}); await insert('cm', 'mkt', {}); await insert('cj', 'mktj', {}, 'جدة'); await insert('cw', 'rep1', {}, 'الرئيسي', 'الغربية'); await insert('cr', 'mktc', {});
   const session = {};
   for (const member of members) session[member.id] = app.as(await app.login(member.id));
   const anonymous = app.as(null);
@@ -73,13 +77,29 @@ try {
   let after = await stored('c2');
   eq([after.data.phone, after.data.notes, after.version, after.assigned_to, after.data.code], ['0512345678', 'تحديث التسويق', before.version + 1, 'rep2', 'ERP-c2'], 'the customer changed at once; its representative and ERP code stay');
   eq((await waiting('c2')).length, 0, 'no request waits for anyone');
-  const history = (await page('mgr')).audits.filter(audit => audit.recordId === 'c2' && audit.action === 'تعديل');
-  eq([history.length, history[0].actor, typeof history[0].createdAt], [1, 'مسؤولة التسويق ريم', 'string'], 'the customer\'s history names who and when');
+  const history = (await page('mgr')).audits.filter(audit => audit.recordId === 'c2' && audit.actor === 'مسؤولة التسويق ريم');
+  eq([history.length, history[0].action, history[0].detail, typeof history[0].createdAt], [1, DIRECT, 'مصنع c2', 'string'], 'the customer\'s history names who and when');
+  eq(history[0].changes.sort((a, b) => a.field.localeCompare(b.field)), [{field: 'notes', before: '', after: 'تحديث التسويق'}, {field: 'phone', before: '0500000000', after: '0512345678'}], 'and what changed, before and after (the review of 2026-11-18)');
   eq((await send('mkt', await edit('c1', {city: 'الخبر'}))).pendingApproval, undefined, 'their own supervisor\'s representative\'s customer: directly too');
   // The limits.
+  // Another branch's customer of their regions: a request to their supervisor first, as a representative's (the review of 2026-11-18).
   before = await stored('cj');
-  eq((await send('mkt', await edit('cj', {city: 'جدة'}), 403)).error, 'يعدّل مسؤول التسويق بيانات عملاء فرعه فقط.', 'another branch\'s customer: refused');
-  eq(await stored('cj'), before, 'and unchanged');
+  answer = await send('mkt', await edit('cj', {city: 'جدة'}));
+  eq([answer.pendingApproval, answer.approvalStage], [true, 'supervisor'], 'another branch\'s customer: a request, to their supervisor');
+  eq(await stored('cj'), before, 'unchanged while it waits');
+  const supList = (await (await session.sup('/api/customer-edits')).json()).requests.find(request => request.id === answer.requestId);
+  eq([supList?.canDecide, supList?.changes], [true, [{field: 'city', before: 'الدمام', after: 'جدة'}]], 'the supervisor reads it and decides it');
+  eq((await send('sup', {action: 'customer-edit', decision: 'approve', id: answer.requestId})).stage, 'sales_manager', 'passed on');
+  eq((await send('mgr', {action: 'customer-edit', decision: 'approve', id: answer.requestId})).status, 'approved', 'approved');
+  eq((await stored('cj')).data.city, 'جدة', 'applied');
+  // A change of the customer's region: a request too, as a whole edit; the same region is direct.
+  before = await stored('cr');
+  answer = await send('mktc', await edit('cr', {region: 'الوسطى', city: 'الرياض'}));
+  eq([answer.pendingApproval, answer.approvalStage], [true, 'supervisor'], 'a new region waits for the supervisor');
+  eq(await stored('cr'), before, 'not the region, not the city with it, while it waits');
+  eq((await waiting('cr')).map(request => [...request.fields].sort()), [['city', 'region']], 'one request for the whole edit');
+  await send('mktc', {action: 'customer-edit', decision: 'cancel', id: answer.requestId});
+  eq((await send('mktc', await edit('cr', {city: 'الخبر'}))).pendingApproval, undefined, 'the same region: direct');
   await send('mkt', await edit('cw', {city: 'جدة'}), 404);
   await send('mkt', await edit('c2', {assignedTo: 'mkt'}), 403);
   await send('mkt', await edit('c2', {branch: 'جدة'}), 403);
@@ -98,6 +118,9 @@ try {
   eq((await waiting('c2')).length, 0, 'with no request');
   for (const [field, bad] of [['opportunityGrade', 'E'], ['factorySize', 'كبير'], ['customerInterest', 'cheap'], ['gradeNotes', 'س'.repeat(1001)]]) await send('mkt', await edit('c2', {[field]: bad}), 400);
   eq((await stored('c2')).data.opportunityGrade, 'A', 'an unknown value changes nothing');
+  await send('mkt', await edit('c2', {gradeNotes: null}));
+  eq('gradeNotes' in (await stored('c2')).data, false, 'notes sent as null are emptied (the review of 2026-11-18: «too long»)');
+  await send('mkt', await edit('c2', {gradeNotes: 'طلب عرض سعر'}));
   eq((await send('rep1', await edit('c1', {opportunityGrade: 'B'}), 403)).error, REFUSED, 'a representative cannot set one');
   eq((await send('cs', await edit('c1', {customerInterest: 'price'}), 403)).error, REFUSED, 'nor customer service');
   answer = await send('rep1', await edit('c2', {city: 'الخبر'}));
@@ -118,7 +141,9 @@ try {
   // What a representative reads.
   const repPage = await page('rep1'), seen = id => repPage.records.find(record => record.id === id)?.data;
   eq([seen('c1').opportunityGrade, seen('c1')._classificationReadOnly], ['B', true], 'a representative reads their own customer\'s, read only');
-  eq(FIELDS.some(field => field in seen('c2')), false, 'and nothing of another\'s');
+  eq([FIELDS.some(field => field in seen('c2')), seen('c2')._classificationHidden], [false, true], 'and nothing of another\'s, marked hidden');
+  const marketingPage = await page('mkt'), theirs = id => marketingPage.records.find(record => record.id === id)?.data;
+  eq([theirs('c2').opportunityGrade, theirs('c2')._classificationHidden, FIELDS.some(field => field in theirs('cj')), theirs('cj')._classificationHidden, theirs('cj')._masterReadOnly], ['A', undefined, false, true, undefined], 'a marketing officer: their branch\'s read and set; another branch\'s hidden, open to a request');
 
   // ---- Otherwise a representative: the same answers on every door a representative knows (the representative holding the same
   // «حذف زيارة» the officer was given above, so «المحذوفات» opens for both).

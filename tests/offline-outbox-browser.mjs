@@ -54,5 +54,26 @@ try{browser=await chromium.launch({headless:true,executablePath:process.env.YR_B
  eq([csServiceJob?.status,csServiceJob?.httpStatus,csServiceJob?.message],['blocked',424,'أكمل رفع العميل المرتبط أولًا.'],'Its opportunity waits behind it, not lost');
  eq(attempts.filter(x=>x.url==='/api/customer-service'&&x.raw.includes(csRequestId)).length,0,'The opportunity on a refused customer is never sent');eq(writes.has(csCustomerKey),false,'Nothing written for the refused customer');
  for(const job of [csCustomerJob,csServiceJob])await page.evaluate(({id,me})=>offline.archiveOfflineJob(id,me),{id:job.id,me:csMe});eq((await page.evaluate(me=>offline.listOutbox(me),csMe)).length,0,'Both archive for review');eq((await page.evaluate(me=>offline.listOfflineArchive(me),csMe)).filter(job=>[csCustomerJob.id,csServiceJob.id].includes(job.id)).length,2,'Archived entries keep the typed data');refuse=null;
+ // A marketing officer's new customer carrying its classifications (lib/customer-classification.ts), queued on the device; the account then
+ // becomes a representative's (the review of 2026-11-18). The entry stays on the device for review: first because the permissions changed
+ // since it was recorded, then, retried as the representative, with the server's refusal of the classifications (a representative sets
+ // none). Nothing is written, the typed classifications are kept, and it can be archived for review.
+ const mktMe={...me,id:'mkt-1',email:'mkt1@example.test',name:'Marketing One',role:'marketing'},classificationRefusal='تصنيفات العميل يحددها مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.';
+ snapshot={me:mktMe,records:[],members:[mktMe],audits:[]};await page.evaluate(s=>offline.saveOfflineSnapshot(s),snapshot);
+ await context.setOffline(true);const mktKey=crypto.randomUUID();
+ const mktCustomer=await page.evaluate(async({body,me})=>offline.offlineSubmit('/api/crm',body,{me,label:'Marketing factory',kind:'customer'}),{body:JSON.stringify({action:'save',kind:'customer',createKey:mktKey,data:{name:'Marketing factory',assignedTo:mktMe.id,branch:mktMe.branch,region:'western',opportunityGrade:'A',gradeNotes:'Decision maker asked for a quote',factorySize:'B',customerInterest:'price'}}),me:mktMe});ok(mktCustomer.queued,'The marketing officer\'s classified customer kept on the device');
+ const demoted={...mktMe,role:'rep',authVersion:mktMe.authVersion+1};snapshot={me:demoted,records:[],members:[demoted],audits:[]};
+ await context.setOffline(false);await page.evaluate(me=>offline.flushOutbox(me),mktMe);
+ let mktJob=(await page.evaluate(me=>offline.listOutbox(me),demoted)).find(job=>job.localId===mktCustomer.id);
+ eq([mktJob?.status,mktJob?.httpStatus,mktJob?.message],['blocked',403,'تغيّرت صلاحيات الحساب. راجع الإدخالات ثم أعد محاولة رفع كل سجل.'],'The role changed: the classified customer stays on the device for review');
+ eq(attempts.filter(x=>x.raw.includes(mktKey)).length,0,'Nothing sent under the old permissions');
+ refuse={url:'/api/crm',status:403,error:classificationRefusal};
+ await page.evaluate(({id,me})=>offline.retryOutbox(id,me),{id:mktJob.id,me:demoted});
+ mktJob=(await page.evaluate(me=>offline.listOutbox(me),demoted)).find(job=>job.localId===mktCustomer.id);
+ eq([mktJob?.status,mktJob?.httpStatus,mktJob?.message],['blocked',403,classificationRefusal],'Retried as a representative: refused for its classifications, still on the device with the server\'s reason');
+ eq(attempts.filter(x=>x.url==='/api/crm'&&x.raw.includes(mktKey)).length,1,'Sent once, on the retry');
+ eq([JSON.parse(mktJob.body).data.opportunityGrade,JSON.parse(mktJob.body).data.gradeNotes],['A','Decision maker asked for a quote'],'The typed classifications are kept');
+ eq(writes.has(mktKey),false,'Nothing written');
+ await page.evaluate(({id,me})=>offline.archiveOfflineJob(id,me),{id:mktJob.id,me:demoted});eq((await page.evaluate(me=>offline.listOfflineArchive(me),demoted)).some(job=>job.id===mktJob.id),true,'Archived for review with its data');refuse=null;
  console.log(JSON.stringify({ok:true,checks,realBrowser:true,coverage:'IndexedDB durability, blob reload, offline customer dependencies, exact-once receipt, uncertain retry, conflicts, tab lease, owner isolation, logout generation'}));
 }catch(error){console.error(error);process.exitCode=1;}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(temp,{recursive:true,force:true});}
