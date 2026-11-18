@@ -1,5 +1,6 @@
-// «مسؤول تسويق» (the owner, 2026-11-18: «فيه وظيفة جديدة مسؤول تسويق ... بيشتغل زى المندوب»; lib/roles.ts) and the three customer
-// classifications it sets (lib/customer-classification.ts), without a build. 1. The rules, on the real modules: the role is a field role
+// «مسؤول تسويق» (the owner, 2026-11-18: «فيه وظيفة جديدة مسؤول تسويق ... بيشتغل زى المندوب»; lib/roles.ts) and the customer
+// classifications (lib/customer-classification.ts, as the owner corrected them the same day: «اهتمام العميل» set by hand, the size
+// computed, the opportunity grade on each visit), without a build. 1. The rules, on the real modules: the role is a field role
 // everywhere a representative is named (pages, team and supervisor, tracking and the Android app's role, targets and evaluation, mold
 // requests and the products application's salesmen, support and complaints, the visit place), the permissions matrix (a representative's
 // cells, never «حذف عميل»), who corrects and who classifies which customer, and a guard over the sources: every remaining literal 'rep'
@@ -7,11 +8,13 @@
 // decided for the marketing officer too). 2. POST /api/crm and GET /api/crm on an isolated in-memory SQLite (the real migrations): the
 // marketing officer corrects another representative's customer of their branch directly (no request; the history keeps every changed
 // field before and after), another branch's customer of their regions and any change of a customer's region through a request as a
-// representative's (the review of 2026-11-18), never another region's, the routing or a deletion; the classifications by role (a
+// representative's (the review of 2026-11-18), never another region's, the routing or a deletion; «اهتمام العميل» by role (a
 // representative and customer service refused, a supervisor's waiting in their request, the sales manager's and the administrator's
-// direct), an unknown value refused, null empty, a save without them keeping them, hidden (with a marker) from a representative for
-// another's customer and from a marketing officer for another branch's, a new customer saved on the device carrying them, the team
-// screen's member of the new role. Synthetic people and customers only; no network.
+// direct), an unknown value refused, null empty, a save without it keeping it; the retired grade, notes and size never set by hand and
+// what the release before stored carried untouched by every save (a marketing officer's, a manager's with null, a representative's
+// request, an old request approved now); hidden (with a marker) from a representative for another's customer and from a marketing officer
+// for another branch's; a new customer saved on the device with its interest and none of the retired values; the team screen's member of
+// the new role. Synthetic people and customers only; no network.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -150,7 +153,7 @@ eq(permissions.copyPermissions({role:'rep',stored:permissions.normalizePermissio
 eq(['marketing','rep','supervisor','customer_service','manager','admin'].map(editRules.proposesCustomerEdit),[false,true,true,true,false,false],'a marketing officer never sends a request');
 eq(editRules.directCustomerEditRole('marketing'),false,'and decides none');
 for(const field of classification.CLASSIFICATION_FIELDS)ok(editRules.CUSTOMER_EDIT_FIELDS.includes(field),field+' can travel in a supervisor\'s request');
-eq(editRules.customerEditProposal({name:'x',opportunityGrade:'B'},{name:'x',opportunityGrade:'A',factorySize:'D'}).fields,['opportunityGrade','factorySize'],'a change of classification is a request field');
+eq(editRules.customerEditProposal({name:'x',customerInterest:'price'},{name:'x',customerInterest:'trust'}).fields,['customerInterest'],'a change of the interest is a request field');
 eq(editRules.CUSTOMER_EDIT_CODE_FIELDS.has('factorySize'),true,'shown with its words in the list of requests');
 eq(editRules.activeSupervisorOf('mkt',members)?.id,'sup','a marketing officer\'s request (another branch\'s customer, a new region) waits for their supervisor first, as a representative\'s');
 eq(editRules.firstStage('mkt',members),'supervisor','its first stage');
@@ -192,8 +195,8 @@ eq(gate.trackingGateDecision({role:'marketing',active:1,native:false}).status,'b
 eq(companion.companionDecision({role:'marketing',native:true,ownDayId:null,serverDay:{id:'d',endedAt:null},serverKnown:true,windowOpen:true,rememberedAt:null,now:Date.now()}).companion,true,'a second device of a marketing officer is a companion');
 
 // The classifications' words and the server's refusals in English, with no Arabic left.
-eq(classification.CLASSIFICATION_REFUSED,'تصنيفات العميل يحددها مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.','the refusal names who sets them, and claims no reading the refused member may not have (the review of 2026-11-18)');
-for(const text of [classification.CLASSIFICATION_REFUSED,classification.GRADE_REFUSED,classification.SIZE_REFUSED,classification.INTEREST_REFUSED,classification.GRADE_NOTES_TOO_LONG,classification.GRADE_NOTES_REFUSED])ok(en[text]&&!ARABIC.test(en[text]),'English for: '+text);
+eq(classification.CLASSIFICATION_REFUSED,'اهتمام العميل يحدده مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.','the refusal names who sets the interest (the one classification entered by hand), and claims no reading the refused member may not have');
+for(const text of [classification.CLASSIFICATION_REFUSED,classification.INTEREST_REFUSED])ok(en[text]&&!ARABIC.test(en[text]),'English for: '+text);
 const server=fs.readFileSync(path.join(root,'lib/crm-server.ts'),'utf8');
 for(const name of ['MARKETING_NO_CUSTOMER_DELETE','MARKETING_OTHER_BRANCH']){const text=server.match(new RegExp('export const '+name+"='([^']+)'"))[1];ok(en[text]&&!ARABIC.test(en[text]),'English for: '+text);}
 
@@ -248,7 +251,7 @@ const user=id=>{globalThis.testUser=id?{userId:'u-'+id,email:id+'@yourrest.org',
 const crm=await import(pathToFileURL(path.join(out,'app/api/crm/route.mjs')));
 const raw=id=>sql.prepare('SELECT * FROM crm_records WHERE id=?').get(id),row=id=>({...raw(id),data:JSON.parse(raw(id).data)});
 const customer=(id,assignedTo,extra={},region='الشرقية',branch='الرئيسي')=>{const data={name:'مصنع '+id,region,assignedTo,branch,location:'26.437341, 50.034499',phone:'0500000000',city:'الدمام',code:'ERP-'+id,...extra};sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,'customer',NULL,?,?,?,?,?,1)").run(id,assignedTo,branch,JSON.stringify(data),now,now);};
-customer('c-rep','rep');customer('c-rep2','rep2');customer('c-sup','sup');customer('c-mkt','mkt');customer('c-jeddah','mktJ',{},'الشرقية','جدة');customer('c-west','mktW',{},'الغربية');
+customer('c-rep','rep');customer('c-rep2','rep2');customer('c-old','rep2',{opportunityGrade:'B',gradeNotes:'ملاحظة من الإصدار السابق',factorySize:'A',customerInterest:'price'});customer('c-sup','sup');customer('c-mkt','mkt');customer('c-jeddah','mktJ',{},'الشرقية','جدة');customer('c-west','mktW',{},'الغربية');
 const machine=(id,parent,assignedTo,quantity,recordType='machine')=>sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,'factory',?,?,'الرئيسي',?,?,?,1)").run(id,parent,assignedTo,JSON.stringify({name:id,recordType,quantity,machineBrand:'X',modelCondition:'new'}),now,now);
 machine('m1','c-rep','rep',2);machine('m2','c-rep','rep',null);
 const request=(body,origin='https://test.invalid')=>new Request('https://test.invalid/api/crm',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body)});
@@ -300,63 +303,76 @@ await post('mkt',{action:'save',kind:'opportunity',id:null,parentId:'c-rep',data
 await post('mkt',{action:'save',kind:'factory',parentId:'c-mkt',data:{name:'خط ١',recordType:'machine',quantity:1,machineBrand:'X',modelCondition:'new'}});
 await post('mkt',{action:'save',kind:'factory',parentId:'c-rep2',data:{name:'خط ٢',recordType:'machine',quantity:1,machineBrand:'X',modelCondition:'new'}},403);
 
-// The classifications.
-const values={opportunityGrade:'A',gradeNotes:'صاحب القرار طلب عرض سعر',factorySize:'B',customerInterest:'technical'};
-await post('mkt',edit('c-rep2',values));
-eq(['opportunityGrade','gradeNotes','factorySize','customerInterest'].map(field=>row('c-rep2').data[field]),['A','صاحب القرار طلب عرض سعر','B','technical'],'a marketing officer sets the four directly');
-eq(waiting('c-rep2').length,0,'with no request');
-await post('mkt',edit('c-rep2',{factorySize:'D'}));eq(row('c-rep2').data.factorySize,'D','«متوقف» by hand');
-await post('mkt',edit('c-rep2',{factorySize:''}));eq('factorySize' in row('c-rep2').data,false,'emptied: nothing stored (the suggestion shows again)');
-for(const [field,bad,message] of [['opportunityGrade','E','اختر تصنيف الفرصة من القائمة: A أو B أو C أو D'],['opportunityGrade','a','اختر تصنيف الفرصة من القائمة: A أو B أو C أو D'],['factorySize','كبير','اختر حجم المصنع من القائمة: A أو B أو C أو D'],['customerInterest','cheap','اختر اهتمام العميل من القائمة: فني أو سعري أو خدمي أو الثقة'],['customerInterest',3,'اختر اهتمام العميل من القائمة: فني أو سعري أو خدمي أو الثقة'],['gradeNotes','س'.repeat(1001),'ملاحظات التصنيف طويلة؛ الحد الأقصى 1000 حرف.']]){
- eq((await post('mkt',edit('c-rep2',{[field]:bad}),400)).error,message,'refused: '+field+' '+JSON.stringify(bad).slice(0,12));
-}
-await post('mkt',edit('c-rep2',{opportunityGrade:' C ',gradeNotes:'  ملاحظة  '}));eq([row('c-rep2').data.opportunityGrade,row('c-rep2').data.gradeNotes],['C','ملاحظة'],'trimmed before it is checked');
+// The classifications, as the owner corrected them (2026-11-18): «اهتمام العميل» entered by hand; the customer-level grade, its notes and a
+// size stored by the release before are retired and carried exactly as stored by every save (the size is computed, the grade is each
+// visit's «قوة الفرصة»).
+const RETIRED=['opportunityGrade','gradeNotes','factorySize'],OLD=['B','ملاحظة من الإصدار السابق','A'];
+const retired=id=>RETIRED.map(field=>row(id).data[field]);
+await post('mkt',edit('c-rep2',{customerInterest:'technical'}));
+eq([row('c-rep2').data.customerInterest,waiting('c-rep2').length],['technical',0],'a marketing officer sets the interest directly, with no request');
 direct=audits('c-rep2',editRules.DIRECT_EDIT);held=JSON.parse(direct.at(-1).detail);
-eq([held.fields.sort(),held.base.opportunityGrade,held.values.opportunityGrade],[['gradeNotes','opportunityGrade'],'A','C'],'a classification set directly is recorded with its before and after');
-// null is no value (the review of 2026-11-18: «gradeNotes: null» was refused as «too long»), as an empty text is; another type is refused.
-await post('mkt',edit('c-rep2',{gradeNotes:null}));eq('gradeNotes' in row('c-rep2').data,false,'gradeNotes null: emptied');
-await post('mkt',edit('c-rep2',{opportunityGrade:null,customerInterest:null}));eq(['opportunityGrade','customerInterest'].some(field=>field in row('c-rep2').data),false,'a choice null: emptied');
-eq((await post('mkt',edit('c-rep2',{gradeNotes:5}),400)).error,classification.GRADE_NOTES_REFUSED,'a number is no note');
-await post('mkt',edit('c-rep2',{opportunityGrade:'C',gradeNotes:'ملاحظة',customerInterest:'technical'}));
-// A save that does not carry them keeps them (a page opened before them, a representative's view without them).
-await post('mkt',{...edit('c-rep2'),data:without(edit('c-rep2').data,['opportunityGrade','gradeNotes','customerInterest']),});
-eq([row('c-rep2').data.opportunityGrade,row('c-rep2').data.customerInterest],['C','technical'],'absent fields keep the stored values');
-// A representative: read only. A save that changes one is refused; a correction that leaves them keeps them out of its request.
-eq((await post('rep',edit('c-rep',{opportunityGrade:'A'}),403)).error,classification.CLASSIFICATION_REFUSED,'a representative cannot set a classification');
-await post('rep',edit('c-rep2',{factorySize:'A'}),403);
+eq([held.fields,held.base.customerInterest,held.values.customerInterest],[['customerInterest'],'','technical'],'recorded with its before and after');
+await post('mkt',edit('c-rep2',{factorySize:'D',opportunityGrade:'A',gradeNotes:'تصنيف جديد'}));
+eq(RETIRED.filter(field=>field in row('c-rep2').data),[],'no size, grade or notes by hand: what a save sends for them is not stored (none was)');
+eq(JSON.parse(audits('c-rep2',editRules.DIRECT_EDIT).at(-1).detail).fields,[],'and the history shows no change of them');
+// What the release before stored survives every save untouched.
+eq(retired('c-old'),OLD,'(stored by the release before)');
+await post('mkt',edit('c-old',{phone:'0512121212',factorySize:'C',opportunityGrade:'D',gradeNotes:''}));
+eq([row('c-old').data.phone,...retired('c-old')],['0512121212',...OLD],'a marketing officer\'s save: the old grade, notes and size untouched, whatever it sends');
+await post('mkt',{...edit('c-old'),data:without(edit('c-old').data,RETIRED)});
+eq(retired('c-old'),OLD,'a save that sends none of them keeps them');
+await post('mgr',edit('c-old',{city:'الخبر',factorySize:null,opportunityGrade:null,gradeNotes:null}));
+eq([row('c-old').data.city,...retired('c-old')],['الخبر',...OLD],'the sales manager\'s, sending null for them: untouched');
+await post('owner',edit('c-old',{factorySize:'كبير',opportunityGrade:5,gradeNotes:'س'.repeat(3000)}));
+eq(retired('c-old'),OLD,'values that are no longer checked are neither refused nor stored');
+let sent=await post('rep',edit('c-old',{phone:'0599999990',opportunityGrade:'A',factorySize:'B'}));
+eq([sent.pendingApproval,waiting('c-old')[0].fields],[true,['phone']],'a representative\'s request carries the phone only (not refused for them either)');
+await post('sup',{action:'customer-edit',decision:'approve',id:sent.requestId});await post('mgr',{action:'customer-edit',decision:'approve',id:sent.requestId});
+eq([row('c-old').data.phone,...retired('c-old')],['0599999990',...OLD],'approved: the phone, and the old values untouched');
+// A request sent by the release before that carries a retired field: approving it now applies its other fields only.
+const legacyKey=crypto.randomUUID(),legacyId='customer-edit:sup:'+legacyKey,current=row('c-old');
+const legacy={v:1,requestedBy:'sup',key:legacyKey,customerId:'c-old',customerName:current.data.name,stage:'sales_manager',fields:['opportunityGrade','phone'],values:{opportunityGrade:'C',phone:'0533333333'},base:{opportunityGrade:'B',phone:current.data.phone},baseVersion:current.version,fingerprint:'legacy'};
+sql.prepare("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)").run(legacyId,'c-old','اسم sup','customer-edit:request',JSON.stringify(legacy),now);
+eq((await post('mgr',{action:'customer-edit',decision:'approve',id:legacyId})).status,'approved','a waiting request of the release before is approved');
+eq([row('c-old').data.phone,...retired('c-old')],['0533333333',...OLD],'its phone applies; its grade does not (retired), and nothing else moves');
+// The interest: who may set it, its values, null and absence.
+eq((await post('rep',edit('c-rep',{customerInterest:'price'}),403)).error,classification.CLASSIFICATION_REFUSED,'a representative cannot set the interest');
+await post('rep',edit('c-rep2',{customerInterest:'price'}),403);
+await post('cs',edit('c-rep',{customerInterest:'price'}),403);
 eq(waiting('c-rep').length+waiting('c-rep2').length,0,'and nothing waits');
-let sent=await post('rep',edit('c-rep2',{phone:'0599999999'}));
-eq([sent.pendingApproval,waiting('c-rep2')[0].fields],[true,['phone']],'a representative\'s correction carrying the stored classifications asks for the phone only');
+eq((await post('mkt',edit('c-rep2',{customerInterest:'cheap'}),400)).error,classification.INTEREST_REFUSED,'an unknown interest is refused');
+await post('mkt',edit('c-rep2',{customerInterest:null}));eq('customerInterest' in row('c-rep2').data,false,'null: emptied');
+await post('mkt',edit('c-rep2',{customerInterest:' technical '}));eq(row('c-rep2').data.customerInterest,'technical','trimmed before it is checked');
+await post('mkt',{...edit('c-rep2'),data:without(edit('c-rep2').data,['customerInterest'])});eq(row('c-rep2').data.customerInterest,'technical','a save without it keeps it');
+sent=await post('rep',edit('c-rep2',{phone:'0599999999'}));
+eq([sent.pendingApproval,waiting('c-rep2')[0].fields],[true,['phone']],'a representative\'s correction carrying the stored interest asks for the phone only');
 await post('rep',{action:'customer-edit',decision:'cancel',id:sent.requestId});
 sent=await post('rep',{...edit('c-rep2',{phone:'0588888888'}),data:without(edit('c-rep2',{phone:'0588888888'}).data,classification.CLASSIFICATION_FIELDS)});
 eq(waiting('c-rep2')[0].fields,['phone'],'nor when it carries none (what a representative reads of another\'s customer)');
 await post('rep',{action:'customer-edit',decision:'cancel',id:sent.requestId});
-// Customer service: read only.
-await post('cs',edit('c-rep',{customerInterest:'price'}),403);
-// A supervisor: their team's customers, the change waiting in their request as every correction of theirs; the sales manager approves it.
-sent=await post('sup',edit('c-rep',{opportunityGrade:'B',factorySize:'A',customerInterest:'service'}));
-eq([sent.pendingApproval,sent.approvalStage,row('c-rep').data.opportunityGrade],[true,'sales_manager',undefined],'a supervisor\'s classification waits for the sales manager');
-eq(waiting('c-rep')[0].fields.sort(),['customerInterest','factorySize','opportunityGrade'],'the request carries it');
+sent=await post('sup',edit('c-rep',{customerInterest:'service'}));
+eq([sent.pendingApproval,sent.approvalStage,row('c-rep').data.customerInterest],[true,'sales_manager',undefined],'a supervisor\'s interest waits for the sales manager');
+eq(waiting('c-rep')[0].fields,['customerInterest'],'the request carries it');
 eq((await post('mgr',{action:'customer-edit',decision:'approve',id:sent.requestId})).status,'approved','the sales manager approves');
-eq(['opportunityGrade','factorySize','customerInterest'].map(field=>row('c-rep').data[field]),['B','A','service'],'applied');
-await post('sup',edit('c-rep2',{opportunityGrade:'D'}),403);
-eq(row('c-rep2').data.opportunityGrade,'C','another team\'s customer: refused');
-// The sales manager and the administrator: directly.
-await post('mgr',edit('c-jeddah',{opportunityGrade:'B'}));eq(row('c-jeddah').data.opportunityGrade,'B','the sales manager, directly');
+eq(row('c-rep').data.customerInterest,'service','applied');
+await post('sup',edit('c-rep2',{customerInterest:'trust'}),403);
+eq(row('c-rep2').data.customerInterest,'technical','another team\'s customer: refused');
+await post('mgr',edit('c-jeddah',{customerInterest:'price'}));eq(row('c-jeddah').data.customerInterest,'price','the sales manager, directly');
 await post('owner',edit('c-west',{customerInterest:'trust'}));eq(row('c-west').data.customerInterest,'trust','the administrator, directly');
 eq([waiting('c-jeddah').length,waiting('c-west').length],[0,0],'neither waits');
-await post('mkt',edit('c-jeddah',{opportunityGrade:'A'}),403);eq(row('c-jeddah').data.opportunityGrade,'B','a marketing officer never classifies another branch\'s customer');
+await post('mkt',edit('c-jeddah',{customerInterest:'service'}),403);eq(row('c-jeddah').data.customerInterest,'price','a marketing officer never sets another branch\'s customer\'s interest');
 
 // What each reads (GET /api/crm).
 let data=await read('rep');
 const repSees=id=>data.records.find(record=>record.id===id)?.data;
-eq([repSees('c-rep').opportunityGrade,repSees('c-rep')._classificationReadOnly,repSees('c-rep')._classificationHidden],['B',true,undefined],'a representative reads their own customer\'s classifications, read only');
-eq([['opportunityGrade','gradeNotes','factorySize','customerInterest'].some(field=>field in repSees('c-rep2')),repSees('c-rep2')._classificationHidden],[false,true],'and nothing of another\'s, which is marked hidden');
+eq([repSees('c-rep').customerInterest,repSees('c-rep')._classificationReadOnly,repSees('c-rep')._classificationHidden],['service',true,undefined],'a representative reads their own customer\'s interest, read only');
+eq([classification.CLASSIFICATION_FIELDS.some(field=>field in repSees('c-rep2')),repSees('c-rep2')._classificationHidden,classification.CLASSIFICATION_FIELDS.some(field=>field in repSees('c-old'))],[false,true,false],'and nothing of another\'s (the retired values neither), which is marked hidden');
 data=await read('mkt');
-eq([repSees('c-rep2').opportunityGrade,repSees('c-rep2')._classificationReadOnly,repSees('c-rep2')._classificationHidden,repSees('c-jeddah')._classificationReadOnly,repSees('c-jeddah')._masterReadOnly,repSees('c-jeddah')._classificationHidden],['C',undefined,undefined,true,undefined,true],'a marketing officer: their branch open; another branch open to a request, its classifications hidden');
-eq(['opportunityGrade','gradeNotes','factorySize','customerInterest'].filter(field=>field in repSees('c-jeddah')),[],'none of another branch\'s four reach them (stored: B)');
+eq([repSees('c-rep2').customerInterest,repSees('c-rep2')._classificationReadOnly,repSees('c-rep2')._classificationHidden,repSees('c-jeddah')._classificationReadOnly,repSees('c-jeddah')._masterReadOnly,repSees('c-jeddah')._classificationHidden],['technical',undefined,undefined,true,undefined,true],'a marketing officer: their branch open; another branch open to a request, its classifications hidden');
+eq(classification.CLASSIFICATION_FIELDS.filter(field=>field in repSees('c-jeddah')),[],'none of another branch\'s reach them (stored: price)');
+eq(retired('c-old'),RETIRED.map(field=>repSees('c-old')[field]),'the retired values travel with their branch\'s customer, unchanged (the page shows none)');
 eq(data.me.role,'marketing','the page knows the role');
-eq(data.audits.every(audit=>!['c-rep2','c-sup','c-mkt','c-jeddah'].includes(audit.recordId)),true,'the recent changes of a field member list their visits only, as a representative\'s');
+eq(data.audits.every(audit=>!['c-rep2','c-sup','c-mkt','c-jeddah','c-old'].includes(audit.recordId)),true,'the recent changes of a field member list their visits only, as a representative\'s');
 data=await read('mgr');
 const directSeen=data.audits.filter(audit=>audit.recordId==='c-rep2'&&audit.actor==='اسم mkt');
 ok(directSeen.length>=1&&directSeen.every(audit=>audit.action===editRules.CUSTOMER_EDIT_HISTORY[editRules.DIRECT_EDIT]&&audit.detail==='مصنع c-rep2'&&Array.isArray(audit.changes)),'the sales manager reads the marketing officer\'s corrections in the history, by name, with their changes');
@@ -366,7 +382,7 @@ const pageRow=(await read('mkt')).records.find(record=>record.id==='c-jeddah');
 const fromPage=await post('mkt',{action:'save',kind:'customer',id:'c-jeddah',version:pageRow.version,editKey:crypto.randomUUID(),data:{...pageRow.data,assignedTo:pageRow.assignedTo,branch:pageRow.branch,phone:'0577777777'}});
 eq(waiting('c-jeddah').find(request=>request.id===fromPage.requestId).fields,['phone'],'the request from the page asks for the phone only');
 await post('sup',{action:'customer-edit',decision:'approve',id:fromPage.requestId});await post('mgr',{action:'customer-edit',decision:'approve',id:fromPage.requestId});
-eq([row('c-jeddah').data.phone,row('c-jeddah').data.opportunityGrade,Object.keys(row('c-jeddah').data).filter(key=>key.startsWith('_classification'))],['0577777777','B',[]],'approved: the phone changed, the classification kept, no marker stored');
+eq([row('c-jeddah').data.phone,row('c-jeddah').data.customerInterest,Object.keys(row('c-jeddah').data).filter(key=>key.startsWith('_classification'))],['0577777777','price',[]],'approved: the phone changed, the interest kept, no marker stored');
 // A change of the customer's region waits too (the review of 2026-11-18: it was written at once), as one whole edit.
 const regionsLib=await lib('regions');
 sql.prepare("UPDATE crm_members SET region_scope=? WHERE id IN ('mkt','rep')").run(regionsLib.canonicalRegionScope(['eastern','central']));
@@ -380,15 +396,17 @@ await post('mkt',{action:'customer-edit',decision:'cancel',id:moved.requestId});
 await post('mkt',edit('c-rep',{city:'الرياض'}));eq([row('c-rep').data.city,row('c-rep').data.region],['الرياض','الشرقية'],'the same region: direct, as before');
 sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id IN ('mkt','rep')").run();
 
-// A new customer: a marketing officer's own, classified; saved on the device first (the offline queue replays the same body).
+// A new customer: a marketing officer's own, with its interest; saved on the device first (the offline queue replays the same body). A
+// body of the release before (with a grade, notes and a size) is saved without them.
 const createKey=crypto.randomUUID(),capturedAt=new Date(Date.now()-60_000).toISOString().replace(/\.\d+Z$/,'.000Z');
-saved=await post('mkt',{action:'save',kind:'customer',createKey,offline:{memberId:'mkt',capturedAt},data:{name:'مصنع التسويق الجديد',region:'الشرقية',city:'الدمام',phone:'0501231234',customerKind:'مصنع',opportunityGrade:'B',factorySize:'D',customerInterest:'trust',gradeNotes:'قيد الدراسة',branch:'آخر',assignedTo:'rep'}});
+const newBody={action:'save',kind:'customer',createKey,offline:{memberId:'mkt',capturedAt},data:{name:'مصنع التسويق الجديد',region:'الشرقية',city:'الدمام',phone:'0501231234',customerKind:'مصنع',opportunityGrade:'B',factorySize:'D',customerInterest:'trust',gradeNotes:'قيد الدراسة',branch:'آخر',assignedTo:'rep'}};
+saved=await post('mkt',newBody);
 const fresh=row(saved.id);
-eq([fresh.assigned_to,fresh.branch,fresh.data.opportunityGrade,fresh.data.factorySize,fresh.data.customerInterest,fresh.data.gradeNotes,fresh.data.offlineRecordedAt],['mkt','الرئيسي','B','D','trust','قيد الدراسة',capturedAt],'saved on the device: the marketing officer\'s own, with its classifications and the device\'s time');
-eq((await post('mkt',{action:'save',kind:'customer',createKey,offline:{memberId:'mkt',capturedAt},data:{name:'مصنع التسويق الجديد',region:'الشرقية',city:'الدمام',phone:'0501231234',customerKind:'مصنع',opportunityGrade:'B',factorySize:'D',customerInterest:'trust',gradeNotes:'قيد الدراسة',branch:'آخر',assignedTo:'rep'}})).alreadySaved,true,'the queue\'s replay is one customer');
-eq((await post('rep',{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'مصنع مندوب جديد',region:'الشرقية',city:'الدمام',phone:'0501231299',opportunityGrade:'A'}},403)).error,classification.CLASSIFICATION_REFUSED,'a representative\'s new customer cannot carry a classification');
-saved=await post('rep',{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'مصنع مندوب جديد',region:'الشرقية',city:'الدمام',phone:'0501231299',opportunityGrade:'',factorySize:''}});
-eq(['opportunityGrade','factorySize'].some(field=>field in row(saved.id).data),false,'empty ones are no classification');
+eq([fresh.assigned_to,fresh.branch,fresh.data.customerInterest,fresh.data.offlineRecordedAt,RETIRED.filter(field=>field in fresh.data)],['mkt','الرئيسي','trust',capturedAt,[]],'saved on the device: the marketing officer\'s own, with its interest and the device\'s time; no retired value on a new customer');
+eq((await post('mkt',newBody)).alreadySaved,true,'the queue\'s replay is one customer');
+eq((await post('rep',{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'مصنع مندوب جديد',region:'الشرقية',city:'الدمام',phone:'0501231299',customerInterest:'price'}},403)).error,classification.CLASSIFICATION_REFUSED,'a representative\'s new customer cannot carry an interest');
+saved=await post('rep',{action:'save',kind:'customer',createKey:crypto.randomUUID(),data:{name:'مصنع مندوب جديد',region:'الشرقية',city:'الدمام',phone:'0501231299',opportunityGrade:'A',factorySize:'B',customerInterest:''}});
+eq(classification.CLASSIFICATION_FIELDS.filter(field=>field in row(saved.id).data),[],'a grade or a size of an old page is no refusal and is not stored; an empty interest is none');
 
 // The team screen: a member of the new role, under a supervisor.
 const memberBody={name:'مسؤول تسويق تجريبي',email:'new.marketing@yourrest.org',role:'marketing',branch:'الرئيسي',supervisorId:'sup',regionScope:['eastern'],active:1,target:0};

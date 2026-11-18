@@ -3,10 +3,12 @@
 // officer corrects another representative's customer of their branch and region directly (no approval request; the history names them
 // and every changed field before and after), another branch's customer of their regions and a change of a customer's region through a
 // request to their supervisor as a representative's (the review of 2026-11-18), never another region's, the routing or a deletion (not
-// even when «حذف عميل» is sent for them); the classifications: a representative and customer service refused (and a representative's
-// request never carries them), a supervisor's waiting for the sales manager, the sales manager's and the administrator's direct, an
-// unknown value refused, null empty; a representative reads them on their own customers only, a marketing officer on their branch's only
-// (the others marked hidden); otherwise the officer is a representative: every route a representative opens answers them the same, a visit and its
+// even when «حذف عميل» is sent for them); the classifications as the owner corrected them the same day: «اهتمام العميل» by hand (a
+// representative and customer service refused, a representative's request never carrying it, a supervisor's waiting for the sales
+// manager, the sales manager's and the administrator's direct, an unknown value refused, null empty), no grade, notes or size by hand,
+// and what the release before stored kept untouched by every save; a representative reads the interest on their own customers only, a
+// marketing officer on their branch's only (the others marked hidden); «قوة الفرصة» D on a visit and on a customer-service opportunity,
+// and the queue's order; otherwise the officer is a representative: every route a representative opens answers them the same, a visit and its
 // follow-up are recorded, a saved visit is not theirs to edit, their own targets, the nearby customers and the day's route tell the
 // Android app «rep», their phone reports its tracking state, and the products application's salesmen list names them. Synthetic fixtures
 // only: temporary SQLite, mocked mail, a stand-in products server; no production data.
@@ -31,9 +33,9 @@ let checks = 0;
 const eq = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const until = async (condition, what, ms = 25_000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 250)); } throw new Error('timed out waiting for ' + what); };
-const REFUSED = 'تصنيفات العميل يحددها مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.';
+const REFUSED = 'اهتمام العميل يحدده مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.';
 const DIRECT = 'تعديل مسؤول التسويق لبيانات العميل';
-const FIELDS = ['opportunityGrade', 'gradeNotes', 'factorySize', 'customerInterest'];
+const FIELDS = ['opportunityGrade', 'gradeNotes', 'factorySize', 'customerInterest'], RETIRED = FIELDS.slice(0, 3), OLD = ['B', 'ملاحظة من الإصدار السابق', 'A'];
 const riyadhClock = () => new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).format(new Date());
 while (riyadhClock() >= '23:57') await new Promise(resolve => setTimeout(resolve, 20000));
 const mock = await startProductsMock({salesmen: true});
@@ -43,8 +45,10 @@ try {
   const tomorrow = new Date(Date.parse(day + 'T12:00:00Z') + 86_400_000).toISOString().slice(0, 10);
   const where = {location: '26.4373410, 50.0344990', latitude: 26.437341, longitude: 50.034499};
   const insert = (id, assigned, data, branch = 'الرئيسي', region = 'الشرقية') => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,'customer',NULL,?,?,?,?,?,1)")
-    .bind(id, assigned, branch, JSON.stringify({name: 'مصنع ' + id, region, city: 'الدمام', code: 'ERP-' + id, phone: '0500000000', contact: 'المسؤول', ...where}), stamp, stamp).run();
+    .bind(id, assigned, branch, JSON.stringify({name: 'مصنع ' + id, region, city: 'الدمام', code: 'ERP-' + id, phone: '0500000000', contact: 'المسؤول', ...where, ...data}), stamp, stamp).run();
   await insert('c1', 'rep1', {}); await insert('c2', 'rep2', {}); await insert('cm', 'mkt', {}); await insert('cj', 'mktj', {}, 'جدة'); await insert('cw', 'rep1', {}, 'الرئيسي', 'الغربية'); await insert('cr', 'mktc', {});
+  // A customer the release before classified by hand (update-marketing-20261118).
+  await insert('co', 'rep2', {opportunityGrade: 'B', gradeNotes: 'ملاحظة من الإصدار السابق', factorySize: 'A', customerInterest: 'price'});
   const session = {};
   for (const member of members) session[member.id] = app.as(await app.login(member.id));
   const anonymous = app.as(null);
@@ -111,39 +115,52 @@ try {
   await send('mkt', {action: 'delete', kind: 'customer', id: 'cm', version: (await stored('cm')).version}, 403);
   ok(await stored('cm'), 'their own customer stays');
 
-  // ---- The classifications.
-  await send('mkt', await edit('c2', {opportunityGrade: 'A', gradeNotes: 'طلب عرض سعر', factorySize: 'B', customerInterest: 'technical'}));
+  // ---- The classifications, as the owner corrected them (2026-11-18): «اهتمام العميل» by hand; the grade, notes and size the release
+  // before stored are carried untouched (the size is computed, the grade is each visit's «قوة الفرصة»).
+  await send('mkt', await edit('c2', {customerInterest: 'technical'}));
   let data = (await stored('c2')).data;
-  eq(FIELDS.map(field => data[field]), ['A', 'طلب عرض سعر', 'B', 'technical'], 'the marketing officer sets the four directly');
-  eq((await waiting('c2')).length, 0, 'with no request');
-  for (const [field, bad] of [['opportunityGrade', 'E'], ['factorySize', 'كبير'], ['customerInterest', 'cheap'], ['gradeNotes', 'س'.repeat(1001)]]) await send('mkt', await edit('c2', {[field]: bad}), 400);
-  eq((await stored('c2')).data.opportunityGrade, 'A', 'an unknown value changes nothing');
-  await send('mkt', await edit('c2', {gradeNotes: null}));
-  eq('gradeNotes' in (await stored('c2')).data, false, 'notes sent as null are emptied (the review of 2026-11-18: «too long»)');
-  await send('mkt', await edit('c2', {gradeNotes: 'طلب عرض سعر'}));
-  eq((await send('rep1', await edit('c1', {opportunityGrade: 'B'}), 403)).error, REFUSED, 'a representative cannot set one');
+  eq([data.customerInterest, (await waiting('c2')).length], ['technical', 0], 'the marketing officer sets the interest directly, with no request');
+  await send('mkt', await edit('c2', {opportunityGrade: 'A', gradeNotes: 'طلب عرض سعر', factorySize: 'B'}));
+  data = (await stored('c2')).data;
+  eq(RETIRED.filter(field => field in data), [], 'no grade, notes or size by hand: what a save sends for them is not stored');
+  await send('mkt', await edit('c2', {customerInterest: 'cheap'}), 400);
+  eq((await stored('c2')).data.customerInterest, 'technical', 'an unknown interest changes nothing');
+  await send('mkt', await edit('c2', {customerInterest: null}));
+  eq('customerInterest' in (await stored('c2')).data, false, 'null: emptied');
+  await send('mkt', await edit('c2', {customerInterest: 'technical'}));
+  const old = async () => { const value = (await stored('co')).data; return RETIRED.map(field => value[field]); };
+  eq(await old(), OLD, '(stored by the release before)');
+  await send('mkt', await edit('co', {phone: '0512121212', opportunityGrade: 'D', gradeNotes: '', factorySize: 'C'}));
+  eq([(await stored('co')).data.phone, ...await old()], ['0512121212', ...OLD], 'a marketing officer\'s save leaves the old grade, notes and size untouched, whatever it sends');
+  await send('mgr', await edit('co', {city: 'الخبر', opportunityGrade: null, gradeNotes: null, factorySize: null}));
+  eq([(await stored('co')).data.city, ...await old()], ['الخبر', ...OLD], 'the sales manager\'s, with null for them: untouched');
+  answer = await send('rep1', await edit('co', {phone: '0599999990', factorySize: 'A'}));
+  eq([answer.pendingApproval, (await waiting('co'))[0].fields], [true, ['phone']], 'a representative\'s request carries the phone only');
+  await send('sup', {action: 'customer-edit', decision: 'approve', id: answer.requestId}); await send('mgr', {action: 'customer-edit', decision: 'approve', id: answer.requestId});
+  eq([(await stored('co')).data.phone, ...await old()], ['0599999990', ...OLD], 'approved: the phone, and the old values untouched');
+  eq((await send('rep1', await edit('c1', {customerInterest: 'price'}), 403)).error, REFUSED, 'a representative cannot set the interest');
   eq((await send('cs', await edit('c1', {customerInterest: 'price'}), 403)).error, REFUSED, 'nor customer service');
   answer = await send('rep1', await edit('c2', {city: 'الخبر'}));
-  eq([answer.pendingApproval, (await waiting('c2'))[0].fields], [true, ['city']], 'a representative\'s correction never carries them');
+  eq([answer.pendingApproval, (await waiting('c2'))[0].fields], [true, ['city']], 'a representative\'s correction never carries it');
   await send('rep1', {action: 'customer-edit', decision: 'cancel', id: answer.requestId});
-  answer = await send('sup', await edit('c1', {opportunityGrade: 'B', factorySize: 'D', customerInterest: 'service'}));
-  eq([answer.pendingApproval, answer.approvalStage, (await stored('c1')).data.opportunityGrade], [true, 'sales_manager', undefined], 'a supervisor\'s classification waits for the sales manager');
+  answer = await send('sup', await edit('c1', {customerInterest: 'service'}));
+  eq([answer.pendingApproval, answer.approvalStage, (await stored('c1')).data.customerInterest], [true, 'sales_manager', undefined], 'a supervisor\'s interest waits for the sales manager');
   const list = (await (await session.mgr('/api/customer-edits')).json()).requests.find(request => request.id === answer.requestId);
-  eq(list.changes.map(change => change.field).sort(), ['customerInterest', 'factorySize', 'opportunityGrade'], 'the sales manager reads what it asks');
+  eq(list.changes.map(change => change.field), ['customerInterest'], 'the sales manager reads what it asks');
   eq((await send('mgr', {action: 'customer-edit', decision: 'approve', id: answer.requestId})).status, 'approved', 'and approves it');
-  data = (await stored('c1')).data;
-  eq([data.opportunityGrade, data.factorySize, data.customerInterest], ['B', 'D', 'service'], 'applied');
-  eq((await send('sup', await edit('c2', {opportunityGrade: 'D'}), 403)).error, REFUSED, 'another team\'s customer: refused');
-  await send('mgr', await edit('cj', {opportunityGrade: 'C'})); eq((await stored('cj')).data.opportunityGrade, 'C', 'the sales manager: directly');
+  eq((await stored('c1')).data.customerInterest, 'service', 'applied');
+  eq((await send('sup', await edit('c2', {customerInterest: 'trust'}), 403)).error, REFUSED, 'another team\'s customer: refused');
+  await send('mgr', await edit('cj', {customerInterest: 'price'})); eq((await stored('cj')).data.customerInterest, 'price', 'the sales manager: directly');
   await send('owner', await edit('cw', {customerInterest: 'trust'})); eq((await stored('cw')).data.customerInterest, 'trust', 'the administrator: directly');
   eq((await waiting('cj')).length + (await waiting('cw')).length, 0, 'neither waits');
-  await send('mkt', await edit('cj', {opportunityGrade: 'A'}), 403);
-  // What a representative reads.
+  await send('mkt', await edit('cj', {customerInterest: 'service'}), 403);
+  // What a representative and a marketing officer read.
   const repPage = await page('rep1'), seen = id => repPage.records.find(record => record.id === id)?.data;
-  eq([seen('c1').opportunityGrade, seen('c1')._classificationReadOnly], ['B', true], 'a representative reads their own customer\'s, read only');
-  eq([FIELDS.some(field => field in seen('c2')), seen('c2')._classificationHidden], [false, true], 'and nothing of another\'s, marked hidden');
+  eq([seen('c1').customerInterest, seen('c1')._classificationReadOnly], ['service', true], 'a representative reads their own customer\'s interest, read only');
+  eq([FIELDS.some(field => field in seen('c2')), seen('c2')._classificationHidden, FIELDS.some(field => field in seen('co'))], [false, true, false], 'and nothing of another\'s (the old values neither), marked hidden');
   const marketingPage = await page('mkt'), theirs = id => marketingPage.records.find(record => record.id === id)?.data;
-  eq([theirs('c2').opportunityGrade, theirs('c2')._classificationHidden, FIELDS.some(field => field in theirs('cj')), theirs('cj')._classificationHidden, theirs('cj')._masterReadOnly], ['A', undefined, false, true, undefined], 'a marketing officer: their branch\'s read and set; another branch\'s hidden, open to a request');
+  eq(RETIRED.map(field => theirs('co')[field]), OLD, 'the old values travel with their branch\'s customer, unchanged (nothing shows them)');
+  eq([theirs('c2').customerInterest, theirs('c2')._classificationHidden, FIELDS.some(field => field in theirs('cj')), theirs('cj')._classificationHidden, theirs('cj')._masterReadOnly], ['technical', undefined, false, true, undefined], 'a marketing officer: their branch\'s read and set; another branch\'s hidden, open to a request');
 
   // ---- Otherwise a representative: the same answers on every door a representative knows (the representative holding the same
   // «حذف زيارة» the officer was given above, so «المحذوفات» opens for both).
@@ -162,9 +179,13 @@ try {
   eq(mine.records.filter(record => record.kind === 'customer').map(record => record.id).sort(), (await page('rep1')).records.filter(record => record.kind === 'customer').map(record => record.id).sort(), 'the regional directory of a representative of the same regions');
   eq(mine.members.map(member => member.id), ['mkt'], 'their own team is themselves');
   // A visit (a call), its follow-up, and no editing of what is saved.
-  const visit = await send('mkt', {createKey: crypto.randomUUID(), customerId: 'c2', customerVersion: (await stored('c2')).version, timingMode: 'automatic', elapsedMilliseconds: 5000, data: {type: 'call', summary: 'تعريف بمنتجات الشركة', result: 'العميل مهتم بالعرض', nextAction: 'إرسال المواصفات', nextDate: tomorrow, ...where, locationSource: 'device', locationCapturedAt: stamp, locationAccuracy: 10}}, 200, '/api/visits');
+  // «قوة الفرصة» D «مستبعدة» (lib/opportunity-strength.ts, the owner, 2026-11-18: the opportunity's grade A to D).
+  const callData = {type: 'call', summary: 'تعريف بمنتجات الشركة', result: 'العميل مرتبط بمورده', nextAction: 'إرسال المواصفات', nextDate: tomorrow, ...where, locationSource: 'device', locationCapturedAt: stamp, locationAccuracy: 10};
+  await send('mkt', {createKey: crypto.randomUUID(), customerId: 'c2', customerVersion: (await stored('c2')).version, timingMode: 'automatic', elapsedMilliseconds: 5000, data: {...callData, strength: 'D'}}, 400, '/api/visits');
+  const visit = await send('mkt', {createKey: crypto.randomUUID(), customerId: 'c2', customerVersion: (await stored('c2')).version, timingMode: 'automatic', elapsedMilliseconds: 5000, data: {...callData, strength: 'excluded'}}, 200, '/api/visits');
   const saved = await app.db.prepare('SELECT id,version,data FROM crm_records WHERE id=?').bind(visit.id).first();
-  eq(JSON.parse(saved.data).performedBy, 'mkt', 'a visit recorded by the marketing officer');
+  eq([JSON.parse(saved.data).performedBy, JSON.parse(saved.data).strength], ['mkt', 'excluded'], 'a visit recorded by the marketing officer, graded D (a code letter is not a value: 400)');
+  eq((await page('mgr')).records.find(record => record.id === visit.id)?.data.strength, 'excluded', 'and read back so');
   await send('mkt', {createKey: crypto.randomUUID(), customerId: 'c2', customerVersion: (await stored('c2')).version, sourceId: visit.id, sourceVersion: saved.version, data: {type: 'call', date: day, result: 'تحدثت مع العميل', salesStage: 'specs', invoiceOutcome: 'pending', nextAction: 'زيارة للمصنع', nextDate: tomorrow}}, 200, '/api/customer-followups');
   ok(((await app.db.prepare("SELECT COUNT(*) n FROM crm_records WHERE kind='activity' AND json_extract(data,'$.performedBy')='mkt'").first()).n) >= 2, 'and its follow-up');
   await send('mkt', {createKey: crypto.randomUUID(), id: visit.id, version: saved.version, customerId: 'c2', data: {type: 'call', summary: 'تعديل', result: 'تمت', date: day}}, 403, '/api/visits');
@@ -185,6 +206,16 @@ try {
   await send('mkt', report, 200, '/api/device-status');
   await send('sup', report, 403, '/api/device-status');
   ok((await (await session.sup('/api/device-status')).json()).members.some(member => member.memberId === 'mkt' || member.id === 'mkt'), 'the supervisor\'s tracking list names their marketing officer');
+
+  // ---- A customer-service opportunity graded D, and the order of the queue: A, B, C, no grade, D (lib/opportunity-strength.ts).
+  const registration = grade => ({type: 'call', summary: 'تسجيل فرصة من خدمة العملاء', result: 'متابعة العميل', salesStage: 'new', strength: grade, requestedProducts: ['قوالب البلوك المتحركة'], nextAction: 'اتصال بالعميل', nextDate: tomorrow, ...where, locationSource: 'device', locationCapturedAt: stamp, locationAccuracy: 12, customerNeeds: 'يسأل عن القوالب'});
+  const register = async (customerId, grade, status = 200) => { const reply = await session.cs('/api/customer-service', {method: 'POST', body: {action: 'create', requestId: crypto.randomUUID(), customerId, customerVersion: (await stored(customerId)).version, registration: registration(grade), elapsedMilliseconds: 2200}}); eq(reply.status, status, 'customer service registers ' + grade + ' -> ' + reply.text.slice(0, 200)); return reply.json(); };
+  await register('cw', 'X', 400);
+  const dCase = await register('cm', 'excluded'), aCase = await register('cr', 'strong');
+  const caseStrength = (await app.db.prepare('SELECT data FROM crm_service_cases WHERE id=?').bind(dCase.id).first()).data;
+  eq(JSON.parse(caseStrength).strength, 'excluded', 'a customer-service opportunity graded D is stored so (an unknown grade: 400)');
+  const ownerQueue = (await page('owner')).serviceQueue.filter(entry => [dCase.id, aCase.id].includes(entry.id));
+  eq(ownerQueue.map(entry => [entry.id, entry.strength]), [[aCase.id, 'strong'], [dCase.id, 'excluded']], 'the queue lists A before D');
 
   // ---- The products application's salesmen.
   await until(() => mock.state.calls.some(call => call.route === 'salesmen' && JSON.parse(call.body).salesmen.some(entry => entry.crmMemberId === 'mkt')), 'the salesmen list naming the marketing officer');

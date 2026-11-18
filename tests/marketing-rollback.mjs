@@ -1,14 +1,14 @@
-// Going back from «مسؤول تسويق» and the customer classifications (lib/roles.ts, lib/customer-classification.ts, the owner, 2026-11-18) to
-// the release before them (update-rep-search-20261118, commit d753f7f), as docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md 9-أأ «الرجوع إلى
-// الإصدار السابق» says (the review of 2026-11-18: the guide said the fields stay unread; they are erased by any save of the customer
-// there). One in-memory SQLite with the real migrations (22 in both: no migration), read and written by this release's POST/GET
-// /api/crm and by the previous release's, in turn. What this release writes (the four fields set directly by a marketing officer, a
-// supervisor's request carrying one, a marketing officer's direct correction in the history, a member of the role) is read by the
-// previous release: a save of the customer there erases the four for good, an approval there drops the request's classification, the
-// history shows the raw code, the role has no page there and its member cannot even be saved from the team screen. The guide's steps
-// hold: its export command (run with node:sqlite: the machine has no sqlite3) lists every classified customer with its codes and the
-// four values, read only; and a role changed to a representative's before going back works there as a representative.
-// The previous release's sources come from git (`git archive d753f7f`), or from a tree given as the first argument. Synthetic data only.
+// Going back from the owner's correction of the classifications (2026-11-18: «تصنيف الفرصة ده موجود بالفعل بس هيزيد / تصنيف حجم المصنع ده
+// بيتحسب من عدد ماكينات المتسجلة داخل المصنع / وهو هيدخل التصنيف العميل بناء على اهتماماته») to the release live before it
+// (update-marketing-20261118, commit 0d35aa6), as docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md 9-أب «الرجوع إلى الإصدار السابق» says. One
+// in-memory SQLite with the real migrations (22 in both: no migration), read and written in turn by both releases' POST/GET /api/crm and
+// POST /api/visits. The customer-level grade, notes and size the previous release stored survive this release's saves untouched and read
+// there as before; «اهتمام العميل» is the same field in both. A visit's «قوة الفرصة» D (`excluded`), which only this release writes: the
+// previous release sends it to the page but has no words for it (the visits list «غير مسجلة», the queue's chip the code itself, ranked as
+// no grade), refuses to save that visit while it keeps D (400) and saves it once another grade is chosen; its service-opportunity form
+// refuses D too. The guide's export of 9-أأ (the release before) still lists every classified customer: run with node:sqlite (the machine
+// has no sqlite3), and handed by bash to a stand-in sqlite3 exactly as written. The previous release's sources come from git
+// (`git archive 0d35aa6`), or from a tree given as the first argument. Synthetic data only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +17,7 @@ import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import ts from 'typescript';
 
-const PREVIOUS = 'd753f7f';
+const PREVIOUS = '0d35aa6';
 const root = process.cwd(), runtime = path.join(root, '.sites-runtime');
 fs.mkdirSync(runtime, {recursive: true});
 const work = fs.mkdtempSync(path.join(runtime, 'marketing-rollback-'));
@@ -81,93 +81,98 @@ sql.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('company','u-owner')")
 const user = id => { globalThis.testUser = id ? {userId: 'u-' + id, email: id + '@yourrest.org', fullName: id} : null; };
 const raw = id => sql.prepare('SELECT * FROM crm_records WHERE id=?').get(id), row = id => ({...raw(id), data: JSON.parse(raw(id).data)});
 const request = body => new Request('https://test.invalid/api/crm', {method: 'POST', headers: {origin: 'https://test.invalid', 'content-type': 'application/json'}, body: JSON.stringify(body)});
-const current = await loader(root, 'current').route('crm'), before = loader(previous, 'previous'), old = await before.route('crm');
+const now2 = loader(root, 'current'), before = loader(previous, 'previous');
+const current = await now2.route('crm'), old = await before.route('crm'), currentVisits = await now2.route('visits'), oldVisits = await before.route('visits');
 const post = async (crm, who, body, status = 200) => { user(who); const res = await crm.POST(request(body)), data = await res.json(); eq(res.status, status, who + ' ' + JSON.stringify(body).slice(0, 120) + ' -> ' + JSON.stringify(data).slice(0, 200)); return data; };
 const read = async (crm, who) => { user(who); const res = await crm.GET(); return {status: res.status, body: await res.json()}; };
 const edit = (id, extra = {}) => { const value = row(id); return {action: 'save', kind: 'customer', id, version: value.version, editKey: crypto.randomUUID(), data: {...value.data, assignedTo: value.assigned_to, branch: value.branch, ...extra}}; };
+
+// ---- The previous release (live) writes the customer-level classifications, as it lets the marketing officer.
 const FIELDS = ['opportunityGrade', 'gradeNotes', 'factorySize', 'customerInterest'];
 const four = id => FIELDS.map(field => row(id).data[field]);
-
-// ---- This release writes.
 const created = {};
 for (const [key, name] of [['rep', 'مصنع المندوب'], ['mkt', 'مصنع التسويق'], ['plain', 'مصنع بلا تصنيف']]) {
-  created[key] = (await post(current, 'mgr', {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region: 'الشرقية', city: 'الدمام', phone: '0500000000', location: '26.437341, 50.034499', branch: 'الرئيسي', assignedTo: key === 'mkt' ? 'mkt' : 'rep'}})).id;
+  created[key] = (await post(old, 'mgr', {action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name, region: 'الشرقية', city: 'الدمام', phone: '0500000000', location: '26.437341, 50.034499', branch: 'الرئيسي', assignedTo: key === 'mkt' ? 'mkt' : 'rep'}})).id;
 }
 const [cRep, cMkt, cPlain] = [created.rep, created.mkt, created.plain];
-await post(current, 'mkt', edit(cRep, {opportunityGrade: 'A', gradeNotes: 'صاحب القرار، طلب "عرض سعر"\nوزيارة ثانية', factorySize: 'D', customerInterest: 'price'}));
-await post(current, 'mkt', edit(cMkt, {opportunityGrade: 'B', factorySize: 'C', customerInterest: 'trust'}));
-eq([four(cRep), four(cMkt)], [['A', 'صاحب القرار، طلب "عرض سعر"\nوزيارة ثانية', 'D', 'price'], ['B', undefined, 'C', 'trust']], 'this release stores the four on the customer');
-const waitingRequest = await post(current, 'sup', edit(cMkt, {opportunityGrade: 'A', phone: '0522222222'}));
-eq([waitingRequest.pendingApproval, waitingRequest.approvalStage], [true, 'sales_manager'], 'a supervisor\'s request carrying a classification waits for the sales manager');
-eq(sql.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE action='customer-edit:direct'").get().n, 2, 'the marketing officer\'s two direct corrections are in the history');
+const NOTES = 'صاحب القرار، طلب "عرض سعر"\nوزيارة ثانية';
+await post(old, 'mkt', edit(cRep, {opportunityGrade: 'A', gradeNotes: NOTES, factorySize: 'D', customerInterest: 'price'}));
+await post(old, 'mkt', edit(cMkt, {opportunityGrade: 'B', factorySize: 'C', customerInterest: 'trust'}));
+eq([four(cRep), four(cMkt)], [['A', NOTES, 'D', 'price'], ['B', undefined, 'C', 'trust']], 'the previous release stores the four on the customer');
 
-// ---- The guide's export, before going back: the one command it gives, run here with node:sqlite (no sqlite3 on this machine).
-const guide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8');
-const section = guide.slice(guide.indexOf('## 9-أأ.'), guide.indexOf('\n## 10.'));
-ok(section.includes('**الرجوع إلى الإصدار السابق'), 'the guide has the way back in its section');
-ok(!section.includes('يترك الحقول في بيانات العملاء دون قراءة'), 'and no longer says the fields are only left unread');
-const commands = [...section.matchAll(/^sqlite3 .+$/mg)].map(match => match[0]);
-eq(commands.length, 1, 'one sqlite3 command');
-const command = commands[0];
-ok(/^sqlite3 -readonly -header -csv \S+ ".+" > customer-classifications\.csv$/.test(command), 'read only, with a header, as CSV, into one file: ' + command.slice(0, 80));
-const query = command.match(/ "(.+)" > /)[1];
-ok(/^SELECT /.test(query) && !/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|PRAGMA)\b/i.test(query), 'a SELECT and nothing that writes');
-ok(!/["`\\]|\$\(|\$\{|\$[A-Za-z_]/.test(query), 'nothing the shell would expand or end inside the double quotes');
-// The command as a shell reads it: a stand-in sqlite3 on the PATH writes the arguments it was given into the file the command names.
+// ---- This release: every save carries the grade, the notes and the size untouched; the interest is the same field.
+await post(current, 'mgr', edit(cRep, {phone: '0511111111'}));
+await post(current, 'mkt', edit(cRep, {city: 'الخبر', opportunityGrade: 'C', factorySize: 'A', gradeNotes: ''}));
+eq([row(cRep).data.phone, row(cRep).data.city, ...four(cRep)], ['0511111111', 'الخبر', 'A', NOTES, 'D', 'price'], 'this release\'s saves leave the three exactly as the previous release stored them, whatever they send');
+await post(current, 'mkt', edit(cMkt, {customerInterest: 'service'}));
+eq(four(cMkt), ['B', undefined, 'C', 'service'], 'the interest changes as in the previous release');
+// ---- Back in the previous release: everything reads as it left it, and its own saves keep it.
+let page = await read(old, 'mgr');
+eq(FIELDS.map(field => page.body.records.find(record => record.id === cRep).data[field]), ['A', NOTES, 'D', 'price'], 'the previous release reads the grade, the notes and the size it stored');
+await post(old, 'mgr', edit(cRep, {phone: '0522222222'}));
+eq(four(cRep), ['A', NOTES, 'D', 'price'], 'and its saves keep them (its schema knows them)');
+
+// The guide's commands as a shell reads them: a stand-in sqlite3 on the PATH writes the arguments it was given into the file named.
 const shell = path.join(work, 'shell'), stub = path.join(shell, 'bin', 'sqlite3');
 fs.mkdirSync(path.dirname(stub), {recursive: true});
 fs.writeFileSync(stub, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));\n', {mode: 0o755});
-execFileSync('bash', ['-c', command], {cwd: shell, env: {...process.env, PATH: path.dirname(stub) + path.delimiter + process.env.PATH}});
-eq(JSON.parse(fs.readFileSync(path.join(shell, 'customer-classifications.csv'), 'utf8')), ['-readonly', '-header', '-csv', '/home/ACCOUNT/yourrest-crm-data/database.sqlite', query], 'bash hands sqlite3 the query exactly, into customer-classifications.csv');
+const asShellRuns = (command, file) => { execFileSync('bash', ['-c', command], {cwd: shell, env: {...process.env, PATH: path.dirname(stub) + path.delimiter + process.env.PATH}}); return JSON.parse(fs.readFileSync(path.join(shell, file), 'utf8')); };
+const readOnlyQuery = (command, file) => {
+  ok(new RegExp('^sqlite3 -readonly -header -csv \\S+ ".+" > ' + file.replace('.', '\\.') + '$').test(command), 'read only, with a header, as CSV, into ' + file + ': ' + command.slice(0, 80));
+  const query = command.match(/ "(.+)" > /)[1];
+  ok(/^SELECT /.test(query) && !/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|PRAGMA)\b/i.test(query), 'a SELECT and nothing that writes');
+  ok(!/["`\\]|\$\(|\$\{|\$[A-Za-z_]/.test(query), 'nothing the shell would expand or end inside the double quotes');
+  eq(asShellRuns(command, file), ['-readonly', '-header', '-csv', '/home/ACCOUNT/yourrest-crm-data/database.sqlite', query], 'bash hands sqlite3 the query exactly, into ' + file);
+  return query;
+};
+
+// ---- A visit's «قوة الفرصة» D (`excluded`): only this release writes it.
+const stamp = '2026-11-10T07:00:00.000Z';
+const visitData = {visitWorkflow: 'customer-v1', type: 'call', date: '2026-11-10', summary: 'تعريف بمنتجات الشركة', result: 'العميل مرتبط بمورده', nextAction: 'متابعة بعد شهر', nextDate: '2099-12-10', salesStage: 'new', strength: 'excluded', requestedProducts: [], hasCompetitor: false, competitorName: '', competitorNotes: '', performedBy: 'rep', responsibleId: 'rep', recordedByEmail: 'rep@yourrest.org', location: '26.437341, 50.034499', latitude: 26.437341, longitude: 50.034499, locationSource: 'device', locationCapturedAt: stamp, locationAccuracy: 5, startedAt: stamp, endedAt: stamp, customerNeeds: ''};
+sql.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES('v-d','activity',?,'rep','الرئيسي',?,?,?,1)").run(cRep, JSON.stringify(visitData), stamp, stamp);
+const visitRequest = body => new Request('https://test.invalid/api/visits', {method: 'POST', headers: {origin: 'https://test.invalid', 'content-type': 'application/json'}, body: JSON.stringify(body)});
+const saveVisit = async (route, who, data, status) => { user(who); const visit = row('v-d'), res = await route.POST(visitRequest({createKey: crypto.randomUUID(), id: 'v-d', version: visit.version, customerId: cRep, customerVersion: row(cRep).version, timingMode: 'automatic', data})), body = await res.json(); eq(res.status, status, who + ' saves the visit -> ' + JSON.stringify(body).slice(0, 200)); return body; };
+await saveVisit(currentVisits, 'mgr', {...visitData, summary: 'مراجعة المدير'}, 200);
+eq([row('v-d').data.strength, row('v-d').data.summary], ['excluded', 'مراجعة المدير'], 'this release edits it and keeps D');
+// A customer-service opportunity with D, and one with another grade.
+for (const [id, grade] of [['case-d', 'excluded'], ['case-b', 'medium']]) sql.prepare("INSERT INTO crm_service_cases(id,customer_id,status,creator_id,data,created_at,updated_at,version,mutation_id) VALUES(?,?,'pending_approval','rep',?,?,?,1,'fixture')").run(id, cMkt, JSON.stringify({source: 'call', products: [], strength: grade, needs: 'احتياج', nextAction: 'اتصال', nextDate: '2099-12-10'}), stamp, stamp);
+// The guide's listing of the D, before going back.
+const correctionGuide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8'), correctionSection = correctionGuide.slice(correctionGuide.indexOf('## 9-أب.'), correctionGuide.indexOf('\n## 10.'));
+const dCommands = [...correctionSection.matchAll(/^sqlite3 .+$/mg)].map(match => match[0]);
+eq(dCommands.length, 1, 'the way back lists the D with one sqlite3 command');
+const dQuery = readOnlyQuery(dCommands[0], 'excluded-opportunities.csv');
+eq(sql.prepare(dQuery).all().map(line => ({...line})), [{source: 'service', record_id: 'case-d', visit_number: null, customer: 'مصنع التسويق', day: '2026-11-10'}, {source: 'visit', record_id: 'v-d', visit_number: row('v-d').data.visitNumber, customer: 'مصنع المندوب', day: '2026-11-10'}], 'it lists the visit and the service opportunity with D, and nothing else');
+page = await read(old, 'mgr');
+eq(page.body.records.find(record => record.id === 'v-d').data.strength, 'excluded', 'the previous release sends D to the page as stored');
+const oldStrength = await before.lib('customer-visits'), oldQueue = await before.lib('service-queue'), oldService = await before.lib('customer-service');
+eq([oldStrength.strengthLabels.excluded, oldStrength.strengthLabels.strong], [undefined, 'قوية'], 'but has no words for it: its visits list writes «غير مسجلة» and its queue\'s chip the code itself');
+const entry = (id, strength) => ({id, awaiting: null, late: false, strength, stageSince: id});
+eq(oldQueue.sortQueue([entry('1-d', 'excluded'), entry('2-none', ''), entry('3-c', 'weak'), entry('4-a', 'strong')]).map(item => item.id), ['4-a', '3-c', '1-d', '2-none'], 'its queue ranks D as no grade (after C, by age with the ungraded)');
+const refused = await saveVisit(oldVisits, 'mgr', {...row('v-d').data, summary: 'تعديل في الإصدار السابق'}, 400);
+ok(typeof refused.error === 'string' && refused.error.length > 0, 'the previous release refuses to save a visit that keeps D: ' + refused.error);
+eq([row('v-d').data.strength, row('v-d').data.summary], ['excluded', 'مراجعة المدير'], 'nothing is written');
+await saveVisit(oldVisits, 'mgr', {...row('v-d').data, strength: 'weak', summary: 'تعديل في الإصدار السابق'}, 200);
+eq([row('v-d').data.strength, row('v-d').data.summary], ['weak', 'تعديل في الإصدار السابق'], 'once another grade is chosen it saves');
+const oldIntake = oldService.serviceIntakeSchemaForDay(), intakeStrength = (oldIntake.shape || oldIntake._def.schema.shape).strength;
+eq([intakeStrength.safeParse('excluded').success, intakeStrength.safeParse('weak').success], [false, true], 'its customer-service opportunity form refuses D too');
+const NEW_REFUSAL = refused.error;
+
+// ---- The guide.
+const guide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8');
+const section = guide.slice(guide.indexOf('## 9-أأ.'), guide.indexOf('\n## 9-أب.'));
+const correction = guide.slice(guide.indexOf('## 9-أب.'), guide.indexOf('\n## 10.'));
+ok(guide.includes('## 9-أب.') && correction.includes('**الرجوع إلى الإصدار السابق (update-marketing-20261118).**'), 'the guide has the way back from this release');
+ok(correction.includes('«قوة الفرصة»') && correction.includes('`excluded`') && correction.includes(NEW_REFUSAL), 'it names the D and the refusal the previous release answers with: ' + NEW_REFUSAL);
+ok(section.includes('**الرجوع إلى الإصدار السابق (update-rep-search-20261118).**'), 'and keeps the way back of the release before');
+// The export of 9-أأ, the one sqlite3 command of the chapter, on the classifications the previous release stored.
+const commands = [...section.matchAll(/^sqlite3 .+$/mg)].map(match => match[0]);
+eq(commands.length, 1, 'one sqlite3 command in 9-أأ');
+const command = commands[0];
+const query = readOnlyQuery(command, 'customer-classifications.csv');
 const exported = sql.prepare(query).all();
 eq(Object.keys(exported[0]), ['customer_id', 'yourrest_code', 'erp_code', 'name', 'opportunity_grade', 'grade_notes', 'factory_size', 'customer_interest'], 'its columns');
 eq(exported.map(line => ({...line})), [cMkt, cRep].sort().map(id => ({customer_id: id, yourrest_code: sql.prepare("SELECT printf('YR-C-%06d',number) AS code FROM crm_customer_numbers WHERE customer_id=?").get(id).code, erp_code: '', name: row(id).data.name, opportunity_grade: row(id).data.opportunityGrade ?? null, grade_notes: row(id).data.gradeNotes ?? null, factory_size: row(id).data.factorySize ?? null, customer_interest: row(id).data.customerInterest ?? null})), 'every classified customer with its codes and the four values (a customer with none is not listed)');
 ok(exported.every(line => /^YR-C-\d{6}$/.test(line.yourrest_code)), 'the Yourrest code as the page writes it');
 ok(!exported.some(line => line.customer_id === cPlain), 'nothing for a customer with no classification');
 
-// ---- The marketing member in the previous release, before its role is changed.
-let page = await read(old, 'mkt');
-eq(page.status, 200, 'the previous release answers the marketing member');
-const oldAccess = await before.lib('access');
-eq(['customer', 'map', 'activity', 'followup', 'targets', 'mold-requests'].filter(view => oldAccess.canViewPage('marketing', view)), [], 'but gives the role no page');
-const team = (await read(old, 'owner')).body.members.find(entry => entry.id === 'mkt');
-const memberSave = extra => ({action: 'member', memberSnapshot: team.editToken, data: {id: 'mkt', name: 'اسم mkt', email: 'mkt@yourrest.org', role: 'marketing', branch: 'الرئيسي', supervisorId: 'sup', regionScope: 'eastern', active: 1, target: 0, ...extra}});
-ok(/Invalid enum value/.test((await post(old, 'owner', memberSave({}), 400)).error), 'its administrator cannot save the member there (role unknown: 400)');
-ok(/Invalid enum value/.test((await post(old, 'owner', memberSave({active: 0}), 400)).error), 'not even to deactivate them');
-eq({...sql.prepare("SELECT role,active FROM crm_members WHERE id='mkt'").get()}, {role: 'marketing', active: 1}, 'so the guide says: change the role before going back');
-
-// ---- The history and the classifications in the previous release.
-const directLines = audits => audits.filter(audit => audit.action === 'customer-edit:direct');
-const ownerDirect = directLines((await read(old, 'owner')).body.audits);
-eq([ownerDirect.length, Array.isArray(JSON.parse(ownerDirect[0].detail).fields)], [2, true], 'a direct correction reads there as its code with its JSON (the administrator), as the guide says');
-page = await read(old, 'mgr');
-eq(directLines(page.body.audits).length, 0, 'the sales manager does not see them while their author\'s role is unknown there');
-eq(FIELDS.map(field => page.body.records.find(record => record.id === cRep).data[field]), four(cRep), 'its page receives the four with the customer\'s data (it has no field to draw them)');
-const repOld = (await read(old, 'rep')).body.records.find(record => record.id === cMkt).data;
-eq(FIELDS.map(field => repOld[field]), four(cMkt), 'to every reader, a representative for another\'s customer too (the guide says so)');
-eq(four(cRep)[0], 'A', 'reading there erases nothing');
-// A save of the customer there erases the four for good.
-await post(old, 'mgr', edit(cRep, {phone: '0511111111'}));
-eq([row(cRep).data.phone, four(cRep)], ['0511111111', [undefined, undefined, undefined, undefined]], 'a save of the customer in the previous release erases the four');
-// The supervisor's request approved there: its other fields only.
-const approved = await post(old, 'mgr', {action: 'customer-edit', decision: 'approve', id: waitingRequest.requestId});
-eq([approved.status, row(cMkt).data.phone, row(cMkt).data.opportunityGrade], ['approved', '0522222222', undefined], 'a waiting request approved there applies its other fields and drops the classification (and the save erases the rest)');
-eq(four(cMkt), [undefined, undefined, undefined, undefined], 'the customer\'s four are gone with it');
-// Back to this release: nothing comes back by itself; the export holds them.
-const back = await read(current, 'mgr');
-eq(FIELDS.some(field => field in back.body.records.find(record => record.id === cRep).data), false, 'coming back to this release does not bring them back');
-eq(exported.find(line => line.customer_id === cRep).opportunity_grade, 'A', 'the export taken before going back still has them');
-
-// ---- The guide's step: the role changed to a representative's in this release, before going back.
-const currentTeam = (await read(current, 'owner')).body.members.find(entry => entry.id === 'mkt');
-await post(current, 'owner', {action: 'member', memberSnapshot: currentTeam.editToken, data: {id: 'mkt', name: 'اسم mkt', email: 'mkt@yourrest.org', role: 'rep', branch: 'الرئيسي', supervisorId: 'sup', regionScope: ['eastern'], active: 1, target: 0}});
-eq(sql.prepare("SELECT role FROM crm_members WHERE id='mkt'").get().role, 'rep', 'this release changes the role');
-eq(directLines((await read(old, 'mgr')).body.audits).length, 2, 'the sales manager then reads the history lines there too (by their code)');
-page = await read(old, 'mkt');
-eq([page.status, page.body.me.role, oldAccess.canViewPage(page.body.me.role, 'customer')], [200, 'rep', true], 'the previous release then serves them as a representative');
-ok(page.body.records.some(record => record.id === cMkt), 'with their customers');
-const oldTeam = (await read(old, 'owner')).body.members.find(entry => entry.id === 'mkt');
-await post(old, 'owner', {action: 'member', memberSnapshot: oldTeam.editToken, data: {id: 'mkt', name: 'اسم mkt', email: 'mkt@yourrest.org', role: 'rep', branch: 'الرئيسي', supervisorId: 'sup', regionScope: 'eastern', active: 0, target: 0}});
-eq(sql.prepare("SELECT active FROM crm_members WHERE id='mkt'").get().active, 0, 'and their administrator can save (here: deactivate) them there');
-
-console.log(JSON.stringify({ok: true, checks, previous: process.argv[2] ? 'argument' : PREVIOUS, realSqlite: true, sqlite3Cli: false, productionDataUsed: false}));
+console.log(JSON.stringify({ok: true, checks, previous: process.argv[2] ? 'argument' : PREVIOUS, refusal: NEW_REFUSAL, realSqlite: true, sqlite3Cli: false, productionDataUsed: false}));

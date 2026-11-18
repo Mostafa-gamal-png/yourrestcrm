@@ -95,5 +95,18 @@ eq(explicitNeed.state.data.salesStage,'new');eq(explicitNeed.state.data.strength
 named(explicitNeed.render(),'Pick').find(n=>n.props.label==='مرحلة البيع').props.onChange('__unset');
 named(explicitNeed.render(),'Pick').find(n=>n.props.label==='قوة الفرصة').props.onChange('__unset');
 eq(explicitNeed.state.data.salesStage,'');eq(explicitNeed.state.data.strength,'');
+// «قوة الفرصة» A to D (the owner, 2026-11-18, lib/opportunity-strength.ts): the four in order, D «مستبعدة» among them, the chosen grade's
+// meaning under the field, and D sent as `excluded`.
+const gradePick=()=>named(explicitNeed.render(),'Pick').find(n=>n.props.label==='قوة الفرصة');
+eq(gradePick().props.options.map(([value,label])=>[value,label]),[['__unset','غير محددة'],['strong','A · مرتفعة'],['medium','B · متوسطة'],['weak','C · ضعيفة'],['excluded','D · مستبعدة']],'the form offers A to D, after «غير محددة»');
+const gradeHelp=()=>nodes(explicitNeed.render(),node=>node.props?.['data-strength-help']!==undefined).map(node=>[node.props['data-strength-help'],text(node)]);
+eq(gradeHelp(),[],'no help while no grade is chosen');
+gradePick().props.onChange('excluded');eq(explicitNeed.state.data.strength,'excluded');
+eq(gradeHelp(),[['excluded','رفض التعامل لارتباطه الكامل بالمورد']],'D: its meaning under the field');
+gradePick().props.onChange('strong');eq(gradeHelp(),[['strong','اهتمام بالمنتج وصاحب القرار متفاعل وطلب عرض سعر']],'A: its own');
+gradePick().props.onChange('__unset');
+const excludedVisit=setup(visitFile,'CustomerVisitDialog');excludedVisit.render();
+named(excludedVisit.render(),'Pick').find(n=>n.props.label==='قوة الفرصة').props.onChange('excluded');
+ready(excludedVisit);await excludedVisit.submit();eq(excludedVisit.calls[0].body.data.strength,'excluded','the visit is sent with D');
 const existingNeed=setup(visitFile,'CustomerVisitDialog',{initial:{...oldVisit,data:{...oldVisit.data,strength:'strong',requestedProducts:['خلاطات البلوك']}}});existingNeed.render();eq(existingNeed.state.data.salesStage,'new');eq(existingNeed.state.data.strength,'strong');eq(existingNeed.state.data.requestedProducts,['خلاطات البلوك']);
 console.log(JSON.stringify({ok:true,checks,scope:'Real offline visit, service registration, followup and inline customer form contracts; durable receipt vs server ACK, storage failure, double tap, pending source, required GPS, private blob references, AR/EN',realBrowser:false,realDevice:false}));

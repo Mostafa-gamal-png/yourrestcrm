@@ -1,15 +1,19 @@
-// The classifications of a customer (the owner, 2026-11-18, with «مسؤول تسويق»; lib/customer-classification.ts), without a build:
-// «تصنيف الفرصة» A to D with their help and «ملاحظات التصنيف», «حجم المصنع» suggested from the machine count (0 to 6 machines; a
-// stored value always wins; D «متوقف» never suggested; the machines registered one by one, else the sheet's, never both), «اهتمام
-// العميل»; the schema of a customer (unknown values refused with their message, null empty, trimmed, absent kept), what a save keeps and
-// what it changes, the words in Arabic and English (no Arabic left in English), the filters of «العملاء» (a customer hidden from the
-// reader in none that is set), the card and the sheet drawn on the server, and the fields a supervisor's request may carry. Pure rules
-// on the real modules; no network, no real data.
+// The classifications of a customer and the opportunity's grade (the owner, 2026-11-18, with «مسؤول تسويق», as he corrected them the same
+// day: «تصنيف الفرصة ده موجود بالفعل بس هيزيد / تصنيف حجم المصنع ده بيتحسب من عدد ماكينات المتسجلة داخل المصنع / وهو هيدخل التصنيف العميل
+// بناء على اهتماماته»), without a build: «قوة الفرصة» A to D (lib/opportunity-strength.ts: the three stored values keep their meaning and
+// `excluded` is D; the words and help; the order of the customer-service queue; the schemas of a visit and of a service opportunity; the
+// visits list's filter), «حجم المصنع» computed (lib/customer-classification.ts: the machines registered one by one, else the sheet's,
+// never both; 5 or more A, 3–4 B, 1–2 C, none «غير محدد»; D from the status «خامل»; a stored size never read), «اهتمام العميل» by hand
+// (unknown values refused, null empty, absent kept), the retired customer-level grade, notes and size carried exactly as stored, the
+// words in Arabic and English (no Arabic left in English), the two filters of «العملاء» (a customer whose interest is hidden from the
+// reader in no interest filter that is set), and the card, the sheet and the form drawn on the server. Pure rules on the real modules;
+// no network, no real data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
+
 
 const root=process.cwd(),runtime=path.join(root,'.sites-runtime');
 fs.mkdirSync(runtime,{recursive:true});
@@ -32,46 +36,68 @@ function compile(relative){
  code=code.replace(/^import\s+(['"])[^'"]+\.css\1;?$/mg,'');
  fs.writeFileSync(dest,code);
 }
-compile('lib/crm.ts');compile('lib/customer-edit-requests.ts');
+compile('lib/crm.ts');compile('lib/customer-edit-requests.ts');compile('lib/opportunity-strength.ts');compile('lib/service-queue.ts');compile('lib/visit-list.ts');compile('lib/customer-service.ts');
 const C=await import(pathToFileURL(path.join(out,'lib/customer-classification.mjs')));
 const {schemas}=await import(pathToFileURL(path.join(out,'lib/crm.mjs')));
 const edits=await import(pathToFileURL(path.join(out,'lib/customer-edit-requests.mjs')));
 let checks=0;
-const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;};
+const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;},ok=(value,message)=>{assert.ok(value,message);checks++;};
 const ARABIC=/[؀-ۿ]/;
+const strength=await import(pathToFileURL(path.join(out,'lib/opportunity-strength.mjs')));
+const queue=await import(pathToFileURL(path.join(out,'lib/service-queue.mjs')));
+const visitList=await import(pathToFileURL(path.join(out,'lib/visit-list.mjs')));
+const service=await import(pathToFileURL(path.join(out,'lib/customer-service.mjs')));
+const en=JSON.parse(fs.readFileSync(path.join(root,'lib/locales/en.json'),'utf8'));
 
-// ---- The lists, as the owner gave them.
-eq(C.OPPORTUNITY_GRADES.map(item=>[item.value,item.ar,item.helpAr]),[
- ['A','مرتفعة','اهتمام بالمنتج وصاحب القرار متفاعل وطلب عرض سعر'],
- ['B','متوسطة','يوجد اهتمام ولكن القرار مؤجل ويحتاج إلى دراسة'],
- ['C','ضعيفة','اهتمام محدود ولا توجد نية'],
- ['D','مستبعدة','رفض التعامل لارتباطه الكامل بالمورد'],
-],'«تصنيف الفرصة»: A to D with their help');
-eq(C.FACTORY_SIZES.map(item=>[item.value,item.ar]),[['A','كبير'],['B','متوسط'],['C','صغير'],['D','متوقف']],'«حجم المصنع»');
+// ---- «قوة الفرصة»: the owner's «تصنيف الفرصة», A to D, on each visit and service opportunity.
+eq(strength.OPPORTUNITY_STRENGTHS.map(item=>[item.value,item.code,item.ar,item.helpAr]),[
+ ['strong','A','مرتفعة','اهتمام بالمنتج وصاحب القرار متفاعل وطلب عرض سعر'],
+ ['medium','B','متوسطة','يوجد اهتمام ولكن القرار مؤجل ويحتاج إلى دراسة'],
+ ['weak','C','ضعيفة','اهتمام محدود ولا توجد نية'],
+ ['excluded','D','مستبعدة','رفض التعامل لارتباطه الكامل بالمورد'],
+],'A to D with the owner\'s descriptions: the three stored values keep their meaning, `excluded` is the new D');
+eq([...strength.STRENGTH_VALUES],['strong','medium','weak','excluded'],'the stored values');
+eq(strength.strengthLabels,{strong:'A · مرتفعة',medium:'B · متوسطة',weak:'C · ضعيفة',excluded:'D · مستبعدة'},'the words every list, chip and export writes, A to D in order');
+eq(Object.keys(strength.strengthLabels),['strong','medium','weak','excluded'],'offered in that order');
+eq(['strong','medium','weak','excluded','','X',null].map(value=>strength.strengthLabel(value,'en')),['A · High','B · Medium','C · Low','D · Excluded','','',''],'in English; nothing for no grade or an unknown value');
+eq(strength.strengthHelp('excluded','en'),'Refused to deal with us, being fully tied to their supplier','the help in English');
+for(const [value,label] of Object.entries(strength.strengthLabels))eq([!!en[label],ARABIC.test(en[label]||''),en[label]],[true,false,strength.strengthLabel(value,'en')],'the page translates '+label);
+for(const item of strength.OPPORTUNITY_STRENGTHS)eq(ARABIC.test(item.en+item.helpEn),false,'English without Arabic: '+item.value);
+// The customer-service queue: A, B, C, an opportunity with no grade, then D.
+eq(['strong','medium','weak','','excluded','X',undefined].map(strength.strengthRank),[0,1,2,3,4,3,3],'the rank of each grade (no grade, or one not known, between C and D)');
+const entry=(id,value,extra={})=>({id,awaiting:null,late:false,strength:value,stageSince:'2026-11-01',...extra});
+eq(queue.sortQueue([entry('d','excluded'),entry('none',''),entry('c','weak'),entry('a','strong'),entry('b','medium')]).map(item=>item.id),['a','b','c','none','d'],'the queue: A, B, C, no grade, D');
+eq(queue.sortQueue([entry('d','excluded',{awaiting:'assign'}),entry('a','strong'),entry('late-d','excluded',{late:true})]).map(item=>item.id),['d','late-d','a'],'what the reader must do and lateness still come first');
+eq(queue.sortQueue([entry('d2','excluded',{stageSince:'2026-11-03'}),entry('d1','excluded',{stageSince:'2026-11-02'})]).map(item=>item.id),['d1','d2'],'two D: the older first');
+// The schemas of a visit (POST /api/visits, /api/crm) and of a service opportunity (POST /api/customer-service).
+const shapeOf=schema=>schema.shape||schema._def.schema.shape;
+const visit=value=>shapeOf(schemas.activity).strength.safeParse(value);
+eq(['strong','medium','weak','excluded','',undefined].map(value=>visit(value).success&&visit(value).data),['strong','medium','weak','excluded','',undefined],'a visit takes A to D or no grade');
+eq(['X','D','مستبعدة','Excluded'].map(value=>visit(value).success),[false,false,false,false],'and nothing else (the code letter and the words are not values)');
+const intake=shapeOf(service.serviceIntakeSchemaForDay()).strength;
+eq(['strong','medium','weak','excluded'].map(value=>intake.safeParse(value).success),[true,true,true,true],'a customer-service opportunity takes A to D');
+eq([intake.safeParse('').success,intake.safeParse('X').success],[false,false],'and must have one');
+// The visits list's filter (lib/visit-list.ts, the table and its CSV).
+const act=(id,value,day)=>({id,kind:'activity',parentId:null,assignedTo:'rep',branch:'الرئيسي',data:{type:'call',date:'2026-11-'+day,strength:value},createdAt:'2026-11-'+day+'T08:00:00.000Z',updatedAt:'',version:1});
+const visits=[act('v-a','strong','10'),act('v-d','excluded','11'),act('v-none','','12'),act('v-c','weak','13'),act('v-odd','X','14')];
+const listed=filter=>visitList.filterVisitRows(visits,{strength:filter}).map(row=>row.id).sort();
+eq([listed('excluded'),listed('strong'),listed('none'),listed('all').length],[['v-d'],['v-a'],['v-none','v-odd'],5],'D alone; A alone; no grade (an unknown value counts as none); every visit');
+eq(visitList.filterVisitRows(visits,{}).length,5,'no strength given: every visit, as before');
+eq([strength.matchesStrength('excluded','excluded'),strength.matchesStrength('excluded','none'),strength.matchesStrength(undefined,'none'),strength.matchesStrength('weak','all')],[true,false,true,true],'matchesStrength');
+
+// ---- The lists of the customer's classifications.
+eq(C.FACTORY_SIZES.map(item=>[item.value,item.ar,item.helpAr]),[['A','كبير','5 ماكينات أو أكثر'],['B','متوسط','من 3 إلى 4 ماكينات'],['C','صغير','من ماكينة إلى ماكينتين'],['D','متوقف','حالة العميل «خامل»']],'«حجم المصنع»: from the machines, D from the status');
 eq(C.CUSTOMER_INTERESTS.map(item=>[item.value,item.ar,item.helpAr]),[
  ['technical','فني','الجودة والأداء: مقارنة فنية'],
  ['price','سعري','السعر هو الحاسم: عرض سعر تنافسي'],
  ['service','خدمي','سرعة التوريد والصيانة وخدمات ما بعد البيع'],
  ['trust','الثقة','بناء علاقة مع العميل وعرض عملاء تعاملوا معنا'],
 ],'«اهتمام العميل»: one of four');
-eq([...C.CLASSIFICATION_FIELDS],['opportunityGrade','gradeNotes','factorySize','customerInterest'],'the four stored fields');
-for(const item of [...C.OPPORTUNITY_GRADES,...C.FACTORY_SIZES,...C.CUSTOMER_INTERESTS]){eq(ARABIC.test(item.en)||ARABIC.test(item.helpEn),false,'English without Arabic: '+item.en);eq(!!item.en&&!!item.helpEn,true,'English given: '+item.value);}
-for(const [field,[ar,en]] of [...Object.entries(C.CLASSIFICATION_TEXT),...Object.entries(C.CLASSIFICATION_ALL_TEXT)])eq([ARABIC.test(ar),ARABIC.test(en)],[true,false],'the words of '+field);
-eq(C.CLASSIFICATION_TEXT.customerType,undefined,'«تصنيف العميل» (customerType) is not one of them: it stays as it was');
+eq([[...C.CLASSIFICATION_FIELDS],[...C.RETIRED_CLASSIFICATION_FIELDS],[...C.MANUAL_CLASSIFICATION_FIELDS],[...C.CLASSIFICATION_FILTER_FIELDS]],[['opportunityGrade','gradeNotes','factorySize','customerInterest'],['opportunityGrade','gradeNotes','factorySize'],['customerInterest'],['factorySize','customerInterest']],'stored, retired, set by hand, filtered');
+for(const item of [...C.FACTORY_SIZES,...C.CUSTOMER_INTERESTS]){eq(ARABIC.test(item.en)||ARABIC.test(item.helpEn),false,'English without Arabic: '+item.en);eq(!!item.en&&!!item.helpEn,true,'English given: '+item.value);}
+for(const [field,[ar,en]] of [...Object.entries(C.CLASSIFICATION_TEXT),...Object.entries(C.CLASSIFICATION_ALL_TEXT),['computed',C.COMPUTED_SIZE_TEXT]])eq([ARABIC.test(ar),ARABIC.test(en)],[true,false],'the words of '+field);
+eq(C.COMPUTED_SIZE_TEXT,['حجم المصنع (محسوب من الماكينات)','Factory size (computed from the machines)'],'the size is named as computed');
 
-// ---- The size the machines suggest: 0 to 6 machines.
-eq([0,1,2,3,4,5,6].map(C.suggestedFactorySize),['','C','C','B','B','A','A'],'0 none, 1–2 C صغير, 3–4 B متوسط, 5 or more A كبير');
-eq([-1,NaN,Infinity,100].map(C.suggestedFactorySize),['','','','A'],'nothing for a count that is not one; a large count is A');
-eq([0,1,2,3,4,5,6,1000].some(count=>C.suggestedFactorySize(count)==='D'),false,'D «متوقف» is never suggested');
-// A stored value always wins, D included; a value that is not a size never does.
-eq(C.effectiveFactorySize('',3),{value:'B',suggested:true},'nothing stored: the suggestion, marked');
-eq(C.effectiveFactorySize(undefined,6),{value:'A',suggested:true},'absent: the suggestion');
-eq(C.effectiveFactorySize('C',6),{value:'C',suggested:false},'a stored size wins over 6 machines');
-eq(C.effectiveFactorySize('D',6),{value:'D',suggested:false},'«متوقف» stored by hand wins');
-eq(C.effectiveFactorySize('A',0),{value:'A',suggested:false},'a stored size with no machine');
-eq(C.effectiveFactorySize('',0),{value:'',suggested:false},'no machine and nothing stored: no size');
-eq(C.effectiveFactorySize('X',2),{value:'C',suggested:true},'a stored value that is not a size is not a size');
-eq(C.effectiveFactorySize(' B ',0),{value:'B',suggested:false},'a stored value is read trimmed');
 // The machines a customer has (the review of 2026-11-18: the sheet's machines reach the CRM twice, as the customer's «عدد الماكينات في
 // الشيت» and, once imported, as the group record `<customer>:source-machines-v1` with the same count; the machines registered one by one
 // afterwards are mostly among them). The count never adds them: the machines registered one by one when there is any, else the sheet's
@@ -98,105 +124,105 @@ eq(C.customerMachineCount('c6',records),{count:0,source:'none'},'none at all');
 eq([C.customerMachineCount('c7',records,0),C.customerMachineCount('c8',records,'4'),C.customerMachineCount('c8',records,-1)],[{count:0,source:'sheet'},{count:0,source:'none'},{count:0,source:'none'}],'a sheet count of 0 is a count; text or a negative is none');
 eq(Object.fromEntries(C.customerMachineCounts(records)),{c1:{count:3,source:'machines'},c2:{count:7,source:'machines'},c3:{count:4,source:'sheet'},c4:{count:5,source:'sheet'},c5:{count:2,source:'machines'},c6:{count:0,source:'none'},c7:{count:0,source:'sheet'},c8:{count:0,source:'none'}},'every customer\'s in one pass, the same counts, the sheet count read from the customer');
 eq([...C.customerMachineCounts([factory('x','gone',{recordType:'machine',quantity:2})])],[['gone',{count:2,source:'machines'}]],'machines of a customer the list does not hold are still counted');
-eq(C.registeredMachineCount('c5',records,3),2,'the number alone, as the suggestion reads it');
-eq([C.suggestedFactorySize(C.registeredMachineCount('c4',records,5)),C.suggestedFactorySize(C.registeredMachineCount('c5',records,3))],['A','C'],'the sheet\'s five suggest «كبير»; the two registered «صغير» (the double count would have said «كبير»)');
+eq(C.registeredMachineCount('c5',records,3),2,'the number alone, as the size reads it');
+eq([C.sizeFromMachines(C.registeredMachineCount('c4',records,5)),C.sizeFromMachines(C.registeredMachineCount('c5',records,3))],['A','C'],'the sheet\'s five give «كبير»; the two registered «صغير» (the double count would have said «كبير»)');
 eq(C.NO_MACHINES,{count:0,source:'none'},'the count of a customer with no entry');
 
-// ---- The schema of a customer (POST /api/crm, the imports): unknown values refused with their message.
+
+// ---- «حجم المصنع», computed: never chosen, a stored value never read.
+eq([0,1,2,3,4,5,6].map(C.sizeFromMachines),['','C','C','B','B','A','A'],'0 «غير محدد», 1–2 C صغير, 3–4 B متوسط, 5 or more A كبير');
+eq([-1,NaN,Infinity,100].map(C.sizeFromMachines),['','','','A'],'nothing for a count that is not one; a large count is A');
+const machines=(count,source='machines')=>({count,source});
+eq(C.computedFactorySize({customerStatus:'خامل'},machines(6)),{value:'D',from:'status'},'D «متوقف» from the status «خامل», whatever the machines');
+eq(['خامل',' خامل ','خامل','Inactive','inactive'].map(status=>C.computedFactorySize({customerStatus:status},machines(2)).value),['D','D','D','D','D'],'read as the map reads the status: spaces, Unicode forms, the English of an import');
+eq(['نشط','نصف نشط','','غير معروف',undefined,5].map(status=>C.computedFactorySize({customerStatus:status},machines(3)).value),['B','B','B','B','B','B'],'any other status (none, unknown): from the machines');
+eq(C.computedFactorySize({customerStatus:'نشط'},machines(0,'none')),{value:'',from:'none'},'no machines: «غير محدد»');
+eq(C.computedFactorySize({customerStatus:'نصف نشط'},machines(5,'sheet')),{value:'A',from:'machines'},'the sheet\'s count when nothing is registered one by one');
+eq([C.computedFactorySize({factorySize:'A'},machines(0,'none')).value,C.computedFactorySize({factorySize:'D'},machines(2)).value,C.computedFactorySize({factorySize:'C',customerStatus:'نشط'},machines(6)).value],['','C','A'],'a stored factorySize is never read (an A with no machine, a D with two, a C with six)');
+eq(C.computedFactorySize(null,2),{value:'C',from:'machines'},'a bare number and no data');
+eq([C.stoppedStatus('خامل'),C.stoppedStatus('نصف نشط'),C.stoppedStatus('')],[true,false,false],'stoppedStatus');
+eq('effectiveFactorySize' in C||'suggestedFactorySize' in C,false,'no stored or suggested size left to read');
+
+// ---- The schema of a customer (POST /api/crm, the imports).
 const base={name:'مصنع الاختبار',region:'الشرقية',branch:'الرئيسي',assignedTo:'rep'};
 const parse=data=>schemas.customer.safeParse({...base,...data});
-for(const [field,values] of [['opportunityGrade',['','A','B','C','D']],['factorySize',['','A','B','C','D']],['customerInterest',['','technical','price','service','trust']]])
- for(const value of values)eq(parse({[field]:value}).data?.[field],value,'accepted: '+field+' '+JSON.stringify(value));
-eq(parse({opportunityGrade:' A ',customerInterest:'  price'}).data,{...parse({}).data,opportunityGrade:'A',customerInterest:'price'},'trimmed before it is checked');
-for(const field of C.CLASSIFICATION_FIELDS)eq(field in parse({}).data,false,'optional: a save without '+field+' carries nothing (the route keeps the stored one)');
-const refusals={opportunityGrade:C.GRADE_REFUSED,factorySize:C.SIZE_REFUSED,customerInterest:C.INTEREST_REFUSED};
-for(const [field,message] of Object.entries(refusals))for(const bad of ['a','E','AB','A B','مرتفعة','كبير','Technical','x'.repeat(300),5,true,['A'],{value:'A'}]){
- const result=parse({[field]:bad});
- eq([result.success,result.error?.issues.map(issue=>issue.message)],[false,[message]],'refused with its message: '+field+' '+JSON.stringify(bad).slice(0,20));
-}
-eq(['technical','price','service','trust'].map(value=>parse({opportunityGrade:value}).success),[false,false,false,false],'an interest is not a grade');
-eq(parse({factorySize:'technical'}).success,false,'nor a size');
-eq(parse({gradeNotes:'س'.repeat(1000)}).data.gradeNotes.length,1000,'notes up to 1000');
-eq(parse({gradeNotes:'  ملاحظة  '}).data.gradeNotes,'ملاحظة','notes trimmed');
-eq(parse({gradeNotes:'س'.repeat(1001)}).error.issues.map(issue=>issue.message),[C.GRADE_NOTES_TOO_LONG],'over 1000 refused');
-eq(parse({gradeNotes:7}).error.issues.map(issue=>issue.message),[C.GRADE_NOTES_REFUSED],'notes are text, said so');
-// null is no value (the review of 2026-11-18: «gradeNotes: null» was refused as «too long», a choice null as not on the list).
-eq(['opportunityGrade','gradeNotes','factorySize','customerInterest'].map(field=>parse({[field]:null}).data?.[field]),['','','',''],'null is empty for each of the four');
-const keptNull={name:'x',opportunityGrade:null,gradeNotes:null};const nulled=parse(keptNull).data;C.keepAbsentClassification(nulled,keptNull,{name:'x',opportunityGrade:'A',gradeNotes:'ملاحظة',factorySize:'B'});
-eq([nulled.opportunityGrade,nulled.gradeNotes,nulled.factorySize],[undefined,undefined,'B'],'a save that sends null empties that one and keeps the others');
-eq(parse({customerType:'جملة',opportunityGrade:'B'}).data.customerType,'جملة','«تصنيف العميل» untouched beside them');
+for(const value of ['','technical','price','service','trust'])eq(parse({customerInterest:value}).data?.customerInterest,value,'accepted: customerInterest '+JSON.stringify(value));
+eq(parse({customerInterest:'  price'}).data.customerInterest,'price','trimmed before it is checked');
+eq('customerInterest' in parse({}).data,false,'optional: a save without it carries nothing (the route keeps the stored one)');
+eq(parse({customerInterest:null}).data.customerInterest,'','null is empty');
+for(const bad of ['a','Technical','سعري','x'.repeat(300),5,true,['price'],{value:'price'}])eq([parse({customerInterest:bad}).success,parse({customerInterest:bad}).error?.issues.map(issue=>issue.message)],[false,[C.INTEREST_REFUSED]],'refused with its message: '+JSON.stringify(bad).slice(0,20));
+// The retired three: whatever comes passes the schema (a page or a device queue of the release that had them is not refused for them);
+// the route then puts back exactly what is stored.
+for(const [field,value] of [['opportunityGrade','E'],['opportunityGrade',5],['gradeNotes','س'.repeat(5000)],['gradeNotes',null],['factorySize','كبير'],['factorySize',{x:1}]])eq(parse({[field]:value}).success,true,'the retired '+field+' never refuses a save: '+JSON.stringify(value).slice(0,20));
+const stored={name:'x',opportunityGrade:'A',gradeNotes:'ملاحظة قديمة',factorySize:'D',customerInterest:'price'};
+let data={name:'x',opportunityGrade:'B',gradeNotes:'',factorySize:'A',customerInterest:'trust'};
+eq(C.carryRetiredClassification(data,stored),{name:'x',opportunityGrade:'A',gradeNotes:'ملاحظة قديمة',factorySize:'D',customerInterest:'trust'},'a save carries the retired three exactly as stored, whatever it sends');
+data={name:'x'};eq(C.carryRetiredClassification(data,stored),{name:'x',opportunityGrade:'A',gradeNotes:'ملاحظة قديمة',factorySize:'D'},'a save that sends none keeps them');
+data={name:'x',opportunityGrade:'A',factorySize:'B'};eq(C.carryRetiredClassification(data,{name:'x'}),{name:'x'},'a customer that had none gets none');
+data={name:'x',opportunityGrade:'A',gradeNotes:'n',factorySize:'B'};eq(C.carryRetiredClassification(data,undefined),{name:'x'},'nor does a new customer');
+data={name:'x'};eq(C.carryRetiredClassification(data,{opportunityGrade:' b ',factorySize:7}),{name:'x',opportunityGrade:' b ',factorySize:7},'kept as stored, even an odd value, untouched');
 
-// ---- What a save keeps and changes.
-const stored={name:'x',opportunityGrade:'A',gradeNotes:'ملاحظة',factorySize:'D',customerInterest:'price'};
-let data={name:'x'};C.keepAbsentClassification(data,{name:'x'},stored);
-eq(data,stored,'a save that does not carry them keeps every stored one');
-data={name:'x',opportunityGrade:'B'};C.keepAbsentClassification(data,{name:'x',opportunityGrade:'B'},stored);
-eq(data,{...stored,opportunityGrade:'B'},'one carried changes that one only');
-data={name:'x',opportunityGrade:'',factorySize:''};C.keepAbsentClassification(data,{name:'x',opportunityGrade:'',factorySize:''},stored);
-eq(data,{name:'x',gradeNotes:'ملاحظة',customerInterest:'price'},'an emptied one is removed (the size suggestion shows again)');
-data={name:'x',opportunityGrade:'',factorySize:''};C.keepAbsentClassification(data,{name:'x',opportunityGrade:'',factorySize:''},undefined);
-eq(data,{name:'x'},'a new customer with empty ones stores none');
-eq(C.changedClassification(stored,{...stored}),[],'nothing changed');
-eq(C.changedClassification(undefined,{name:'x'}),[],'a new customer without them changes nothing');
-eq(C.changedClassification(undefined,{opportunityGrade:''}),[],'empty is nothing');
-eq(C.changedClassification(stored,{...stored,gradeNotes:'أخرى',factorySize:undefined}),['gradeNotes','factorySize'],'the changed ones, absent counting as empty');
-eq(C.withoutClassification(stored),{name:'x'},'what a representative reads of another\'s customer');
-// A supervisor's request carries them; the edit requests show their words.
-eq(edits.customerEditProposal({name:'x'},{name:'x',factorySize:'B',customerInterest:'trust'}).fields,['factorySize','customerInterest'],'a request holds the changed classifications');
-eq(edits.CUSTOMER_EDIT_FIELD_TEXT.opportunityGrade,['تصنيف الفرصة','Opportunity grade'],'named in the list of requests');
+// ---- What a save keeps and changes of the interest.
+data={name:'x'};C.keepAbsentClassification(data,{name:'x'},stored);eq(data.customerInterest,'price','a save that does not carry the interest keeps the stored one');
+data={name:'x',customerInterest:'service'};C.keepAbsentClassification(data,{name:'x',customerInterest:'service'},stored);eq(data.customerInterest,'service','one carried changes it');
+data={name:'x',customerInterest:''};C.keepAbsentClassification(data,{name:'x',customerInterest:''},stored);eq('customerInterest' in data,false,'an emptied one is removed');
+eq(C.changedClassification(stored,{...stored,opportunityGrade:'B',gradeNotes:'',factorySize:'A'}),[],'the retired three are never a change a member makes');
+eq(C.changedClassification(stored,{...stored,customerInterest:'trust'}),['customerInterest'],'the interest is');
+eq(C.changedClassification(undefined,{customerInterest:''}),[],'empty is nothing');
+eq(C.withoutClassification(stored),{name:'x'},'what a reader without them gets');
+eq(edits.customerEditProposal({name:'x'},{name:'x',customerInterest:'trust'}).fields,['customerInterest'],'a supervisor\'s request holds a changed interest');
+eq(edits.CUSTOMER_EDIT_FIELD_TEXT.opportunityGrade,['تصنيف الفرصة','Opportunity grade'],'a request sent before the correction still names its fields');
 
 // ---- The words.
-eq(['A','B','C','D'].map(value=>C.classificationLabel('opportunityGrade',value)),['A · مرتفعة','B · متوسطة','C · ضعيفة','D · مستبعدة'],'the grades in Arabic');
+eq(['A','B','C','D'].map(value=>C.classificationLabel('factorySize',value)),['A · كبير','B · متوسط','C · صغير','D · متوقف'],'the sizes in Arabic');
 eq(['A','B','C','D'].map(value=>C.classificationLabel('factorySize',value,'en')),['A · Large','B · Medium','C · Small','D · Stopped'],'the sizes in English');
 eq(['technical','price','service','trust'].map(value=>C.classificationLabel('customerInterest',value,'en')),['Technical','Price','Service','Trust'],'the interests in English');
-eq(C.classificationLabel('opportunityGrade',''),'','nothing for nothing');
-eq(C.classificationLabel('opportunityGrade','Z'),'Z','an unknown value as it is (never stored)');
-eq(C.classificationHelp('opportunityGrade','D','en'),'Refused to deal with us, being fully tied to their supplier','the help in English');
+eq([C.classificationLabel('customerInterest',''),C.classificationLabel('customerInterest','Z')],['','Z'],'nothing for nothing; an unknown value as it is');
 eq(C.classificationHelp('customerInterest','nope'),'','no help for an unknown value');
 
-// ---- The filters of «العملاء».
-const row=data=>data;
+// ---- The filters of «العملاء»: the computed size and the interest.
 const filter=patch=>({...C.NO_CLASSIFICATION_FILTER,...patch});
-eq(C.classificationFiltersSet(C.NO_CLASSIFICATION_FILTER),0,'none set');
-eq(C.classificationFiltersSet(filter({opportunityGrade:'A',customerInterest:'none'})),2,'two set');
-const sample=[[{opportunityGrade:'A',customerInterest:'price'},0],[{opportunityGrade:'B',factorySize:'D'},6],[{},4],[{},0],[{factorySize:'C'},6]];
-const pick=patch=>sample.map(([data,machines],index)=>C.matchesClassification(row(data),machines,filter(patch))?index:null).filter(index=>index!==null);
-eq(pick({}),[0,1,2,3,4],'no filter: everyone');
-eq(pick({opportunityGrade:'A'}),[0],'by grade');
-eq(pick({opportunityGrade:'none'}),[2,3,4],'not graded');
-eq(pick({factorySize:'B'}),[2],'by size: the suggested one counts (4 machines)');
-eq(pick({factorySize:'A'}),[],'a stored size wins over the machines (6 machines stored D, stored C)');
-eq(pick({factorySize:'D'}),[1],'«متوقف»');
-eq(pick({factorySize:'none'}),[0,3],'no size: nothing stored and no machine');
+eq(C.NO_CLASSIFICATION_FILTER,{factorySize:'all',customerInterest:'all'},'two filters');
+eq([C.classificationFiltersSet(C.NO_CLASSIFICATION_FILTER),C.classificationFiltersSet(filter({factorySize:'A',customerInterest:'none'}))],[0,2],'how many are set');
+const hidden={name:'c-rep2',customerStatus:'نشط',[C.CLASSIFICATION_HIDDEN]:true};
+const sample=[[{customerInterest:'price',factorySize:'A'},machines(0,'none')],[{customerStatus:'خامل',factorySize:'A'},machines(6)],[{},machines(4)],[{},machines(0,'none')],[{customerInterest:'trust'},machines(2,'sheet')],[hidden,machines(3)]];
+const pick=patch=>sample.map(([data,count],index)=>C.matchesClassification(data,count,filter(patch))?index:null).filter(index=>index!==null);
+eq(pick({}),[0,1,2,3,4,5],'no filter: everyone');
+eq(pick({factorySize:'A'}),[],'A: nobody (a stored A is not read; six machines of a «خامل» customer are D)');
+eq(pick({factorySize:'D'}),[1],'D: the «خامل» customer');
+eq(pick({factorySize:'B'}),[2,5],'B: four machines, and three of a customer whose interest is hidden (the size is computed from what everyone reads)');
+eq(pick({factorySize:'C'}),[4],'C: the sheet\'s two');
+eq(pick({factorySize:'none'}),[0,3],'«غير محدد»: no machine and an active status');
 eq(pick({customerInterest:'price'}),[0],'by interest');
-eq(pick({opportunityGrade:'B',factorySize:'D'}),[1],'together');
-eq(pick({opportunityGrade:'A',customerInterest:'trust'}),[],'together, nothing');
-// A customer whose classifications the reader may not read (the server's marker, lib/crm.ts scopeRecords; the review of 2026-11-18): in no
-// filter that is set, «غير محدد» included, and never by a size suggested from the machines it does have.
-const hidden={name:'c-rep2',[C.CLASSIFICATION_HIDDEN]:true};
-eq(C.CLASSIFICATION_HIDDEN,'_classificationHidden','the marker');
-eq([C.classificationHidden(hidden),C.classificationHidden({name:'x'}),C.classificationHidden(null),C.classificationHidden({[C.CLASSIFICATION_HIDDEN]:'true'})],[true,false,false,false],'read only when it is true itself');
-eq(C.matchesClassification(hidden,6,C.NO_CLASSIFICATION_FILTER),true,'no filter: listed as every customer');
-for(const patch of [{opportunityGrade:'none'},{factorySize:'none'},{customerInterest:'none'},{factorySize:'A'},{factorySize:'C'},{opportunityGrade:'A'},{customerInterest:'price'}])
- eq([1,3,6].map(machines=>C.matchesClassification(hidden,machines,filter(patch))),[false,false,false],'hidden: out of '+JSON.stringify(patch));
-const marked={...hidden};C.hideClassification(marked);
-eq(marked,hidden,'hideClassification: the marker and none of the four');
-const shown={name:'x',opportunityGrade:'A',gradeNotes:'ملاحظة',factorySize:'D',customerInterest:'price'};C.hideClassification(shown);
-eq(shown,{name:'x',[C.CLASSIFICATION_HIDDEN]:true},'it removes the four from what is sent');
+eq(pick({customerInterest:'none'}),[1,2,3],'no interest: the hidden customer is not listed');
+eq(pick({customerInterest:'trust',factorySize:'C'}),[4],'together');
+eq([C.classificationHidden(hidden),C.classificationHidden({name:'x'}),C.classificationHidden(null),C.classificationHidden({[C.CLASSIFICATION_HIDDEN]:'true'})],[true,false,false,false],'the marker, read only when it is true itself');
+const marked={name:'x',opportunityGrade:'A',gradeNotes:'n',factorySize:'D',customerInterest:'price'};C.hideClassification(marked);
+eq(marked,{name:'x',[C.CLASSIFICATION_HIDDEN]:true},'hideClassification removes the four and marks the customer');
 
-// ---- The customer's card and sheet (app/customer-classification-fields.tsx), drawn on the server: nothing for a hidden customer, the
-// machines named as the count says them (registered one by one, or in the sheet), in Arabic agreement and in English.
+// ---- The card, the sheet and the form (app/customer-classification-fields.tsx), drawn on the server.
 compile('app/customer-classification-fields.tsx');
 const fields=await import(pathToFileURL(path.join(out,'app/customer-classification-fields.mjs')));
 const React=await import('react'),{renderToStaticMarkup}=await import('react-dom/server');
 // Drawn on the server, a page is in Arabic (lib/i18n.ts's server snapshot); the English words are tried in the browser test.
-const draw=(component,props)=>renderToStaticMarkup(React.createElement(fields[component],props)).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
-for(const component of ['CustomerClassificationBadges','CustomerClassificationSummary'])
- eq(draw(component,{data:hidden,machines:{count:3,source:'machines'}}),'',component+': nothing of a hidden customer, not a size suggested from its 3 machines');
-eq(draw('CustomerClassificationBadges',{data:{name:'x'},machines:{count:3,source:'machines'}}).includes('B'),true,'a customer the reader may read: its suggested size');
-const editorText=machines=>draw('CustomerClassificationEditor',{data:{name:'x'},machines,editable:true,onChange:()=>{}});
+const html=(component,props)=>renderToStaticMarkup(React.createElement(fields[component],props));
+const words=markup=>markup.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+const editor=html('CustomerClassificationEditor',{data:{name:'x',opportunityGrade:'A',gradeNotes:'سرية',factorySize:'A'},machines:machines(2),editable:true,onChange:()=>{}});
+eq([editor.includes('data-classification="factorySize"'),editor.includes('data-classification="opportunityGrade"'),editor.includes('textarea'),words(editor).includes('اعتماد المقترح')],[false,false,false,false],'the form: no choice of size, no grade, no notes, no «اعتماد المقترح»');
+eq([editor.includes('data-classification="customerInterest"'),(editor.match(/name="classification-customerInterest"/g)||[]).length],[true,5],'the interest is chosen (not set and four)');
+ok(words(editor).includes('حجم المصنع (محسوب من الماكينات) C · صغير ماكينتان مسجلتان'),'the computed size, with why: '+words(editor).slice(0,120));
+eq([words(editor).includes('سرية'),editor.includes('data-computed-size="C"')],[false,true],'the retired notes are not shown; the stored A is not the size');
+const stopped=words(html('CustomerClassificationEditor',{data:{name:'x',customerStatus:'خامل'},machines:machines(6),editable:true,onChange:()=>{}}));
+ok(stopped.includes('D · متوقف حالة العميل «خامل»'),'a «خامل» customer: D, from its status');
 const said=[[1,'machines','ماكينة واحدة مسجلة'],[2,'machines','ماكينتان مسجلتان'],[3,'machines','3 ماكينات مسجلة'],[10,'machines','10 ماكينات مسجلة'],[11,'machines','11 ماكينة مسجلة'],[1,'sheet','ماكينة واحدة في الشيت'],[2,'sheet','ماكينتان في الشيت'],[5,'sheet','5 ماكينات في الشيت'],[12,'sheet','12 ماكينة في الشيت']];
-for(const [count,source,words] of said)eq(editorText({count,source}).includes('المقترح من عدد الماكينات ('+words+')'),true,'the suggestion names its count: '+words);
-eq(editorText({count:0,source:'none'}).includes('لا توجد ماكينات مسجلة ولا عدد في الشيت لاقتراح الحجم'),true,'none: chosen by hand');
+for(const [count,source,text] of said)ok(words(html('CustomerClassificationSummary',{data:{name:'x'},machines:{count,source}})).includes(text),'the size names its count: '+text);
+ok(words(html('CustomerClassificationSummary',{data:{name:'x'},machines:machines(0,'none')})).includes('غير محدد لا توجد ماكينات مسجلة ولا عدد في الشيت'),'none: «غير محدد» and why');
+const readOnly=html('CustomerClassificationEditor',{data:{name:'x',customerInterest:'trust'},machines:machines(3),editable:false,onChange:()=>{}});
+eq([readOnly.includes('data-classification-readonly'),readOnly.includes('<input'),words(readOnly).includes('الثقة'),words(readOnly).includes('يحدد اهتمام العميل مسؤول التسويق')],[true,false,true,true],'read only: no field, the interest and who sets it');
+const hiddenSummary=words(html('CustomerClassificationSummary',{data:hidden,machines:machines(3)}));
+eq([hiddenSummary.includes('B · متوسط'),hiddenSummary.includes('اهتمام العميل')],[true,false],'a customer whose interest is hidden: its computed size, no interest');
+eq(words(html('CustomerClassificationBadges',{data:hidden,machines:machines(3)})),'الحجم: B · متوسط','its card: the size only');
+eq(words(html('CustomerClassificationBadges',{data:{customerInterest:'price',factorySize:'A',opportunityGrade:'A'},machines:machines(1)})),'الحجم: C · صغير الاهتمام: سعري','a card: the computed size and the interest, nothing of the retired grade or size');
+eq(html('CustomerClassificationBadges',{data:{factorySize:'A'},machines:machines(0,'none')}),'','nothing to mark: no card mark at all');
 
 console.log(JSON.stringify({ok:true,checks}));
