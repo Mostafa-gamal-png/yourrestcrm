@@ -26,7 +26,6 @@ fs.mkdirSync(screenshots, {recursive: true});
 let checks = 0, browser, app;
 const errors = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
-const ok = (value, message) => { assert.ok(value, message); checks++; };
 const SIZES = {'phone-320': {width: 320, height: 700}, 'phone-360': {width: 360, height: 800}, 'tablet-upright': {width: 768, height: 1024}, 'tablet-sideways': {width: 1024, height: 768}, desktop: {width: 1280, height: 900}};
 const HOPE = 'مصنع الأمل للبلوك', LIGHT = 'مصنع النور', OWN = 'مصنع التسويق';
 
