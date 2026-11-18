@@ -2,6 +2,7 @@ import type {Member,Row} from './crm';
 import {canReadService,serviceContacts,servicePermissions,serviceState,type ServiceCase,type ServiceContext} from './customer-service';
 import {workingHoursBetween} from './working-hours';
 import {isFieldRole} from './roles';
+import {strengthRank} from './opportunity-strength';
 
 /** What a sales reader (administrator, manager, supervisor or representative) needs about each customer-service
  * case they may read: the brief, where it stands, who must act next and whether that stage is late. It never carries
@@ -34,7 +35,7 @@ export type ServiceQueueEntry={
  createdAt:string;updatedAt:string;version:number;
 };
 type QueueContext=ServiceContext&{visible:Row[]};
-const STRENGTH_ORDER:Record<string,number>={strong:0,medium:1,weak:2};
+// «قوة الفرصة»: A, B, C, an opportunity with no grade yet, then D (lib/opportunity-strength.ts STRENGTH_ORDER).
 const latest=(...values:(string|undefined)[])=>values.filter((value):value is string=>!!value).sort().at(-1)||'';
 
 /** The stage a case is in and since when, from facts the case already carries. */
@@ -73,7 +74,7 @@ function above(me:Member,owner:Member|undefined){
 }
 /** Entries first by what the reader must do, then the late ones, the strongest opportunities, the oldest. */
 export function sortQueue(entries:ServiceQueueEntry[]){
- return [...entries].sort((a,b)=>Number(!!b.awaiting)-Number(!!a.awaiting)||Number(b.late)-Number(a.late)||(STRENGTH_ORDER[a.strength]??3)-(STRENGTH_ORDER[b.strength]??3)||a.stageSince.localeCompare(b.stageSince)||a.id.localeCompare(b.id));
+ return [...entries].sort((a,b)=>Number(!!b.awaiting)-Number(!!a.awaiting)||Number(b.late)-Number(a.late)||strengthRank(a.strength)-strengthRank(b.strength)||a.stageSince.localeCompare(b.stageSince)||a.id.localeCompare(b.id));
 }
 /** The number shown on the Visits entry in the navigation. */
 export const serviceQueueBadge=(entries:ServiceQueueEntry[])=>entries.filter(entry=>entry.awaiting||entry.escalated).length;

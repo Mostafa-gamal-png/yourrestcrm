@@ -111,3 +111,8 @@
 .dark .visit-place[data-state=near],.dark .visit-place[data-state=journey]{border-color:#2d6b45;background:#17301f;color:#9be0bb}
 .dark .visit-place[data-state=far],.dark .visit-place[data-state=uncertain]{border-color:#7a3a33;background:#3a1d1a;color:#ffb9ad}
 .dark .visit-place[data-state=far][data-blocked=false],.dark .visit-place[data-state=uncertain][data-blocked=false]{border-color:#7a6320;background:#33290f;color:#e7c77c}
+
+/* «قوة الفرصة» A to D (lib/opportunity-strength.ts): the chosen grade's meaning under the field. */
+.field>.strength-help{font-size:12px;line-height:1.6;color:var(--muted-foreground);overflow-wrap:anywhere}
+/* The visits list's «قوة الفرصة» filter joins the bar's filters: its wrapper only names it (app/crm-app.tsx). */
+.strength-filter{display:contents}

@@ -123,9 +123,10 @@ function customerDetailsEditable(row:Row,me:Member,team:ReadonlySet<string>){
  return row.kind==='customer'&&(isFieldRole(me.role)||['manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);
 }
 export function canEditCustomerDetails(row:Row,members:Member[],me:Member){return customerDetailsEditable(row,me,salesScopeMemberIds(members,me));}
-/** «تصنيف الفرصة» and the other classifications of a customer (lib/customer-classification.ts, the owner, 2026-11-18): set by the marketing
- *  officer (every customer of their branch), the supervisor (their team's customers, as their corrections: through the sales manager's
- *  approval), the sales manager and the administrator; callers apply the region boundary. A representative and customer service read them. */
+/** «اهتمام العميل», the one classification of a customer entered by hand (lib/customer-classification.ts, the owner, 2026-11-18; the size
+ *  is computed and the opportunity grade is each visit's «قوة الفرصة»): set by the marketing officer (every customer of their branch), the
+ *  supervisor (their team's customers, as their corrections: through the sales manager's approval), the sales manager and the
+ *  administrator; callers apply the region boundary. A representative (their own customers) and customer service read it. */
 function customerClassifiable(row:Pick<Row,'kind'|'assignedTo'|'branch'>,me:Member,team:ReadonlySet<string>){
  return row.kind==='customer'&&(['manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||isMarketingRole(me.role)&&row.branch===me.branch);
 }

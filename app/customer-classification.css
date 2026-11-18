@@ -5,26 +5,22 @@
 .classification-choice .customer-choice>span{flex-direction:column;align-items:flex-start;justify-content:flex-start;text-align:start;gap:2px;padding:9px 11px}
 .classification-choice .customer-choice>span>b{font-weight:600}
 .classification-choice .customer-choice>span>small{font-size:12px;font-weight:400;color:var(--muted-foreground);line-height:1.6}
-.classification-suggestion{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13px;background:var(--muted);border-radius:8px;padding:10px 12px;min-width:0}
-.classification-suggestion>span{min-width:0;overflow-wrap:anywhere}
-.classification-suggestion>small{flex-basis:100%;color:var(--muted-foreground);font-size:12px}
 .classification-summary dl{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin:0}
 .classification-summary dl>div{min-width:0;border-bottom:1px solid var(--border);padding-bottom:10px}
 .classification-summary dt{font-size:12px;color:var(--muted-foreground);margin-bottom:4px}
 .classification-summary dd{margin:0;font-size:14px;overflow-wrap:anywhere}
 .classification-summary dd strong{display:block;font-weight:600}
 .classification-summary dd small{display:block;font-size:12px;color:var(--muted-foreground);line-height:1.6}
-.classification-notes{white-space:pre-wrap}
 .classification-sheet{margin:14px 0;display:grid;gap:10px}
+/* The computed size in the form: one line of the summary, never a choice. */
+.classification-summary.classification-computed{display:block;margin:0}
+.classification-summary.classification-computed>div{min-width:0;background:var(--muted);border-radius:8px;padding:10px 12px}
 .classification-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;min-width:0}
 .classification-badges .badge{white-space:normal;overflow-wrap:anywhere;font-size:12px;padding:2px 7px}
-.classification-badges .classification-grade.grade-A{background:#e8f5ee;color:#327a59}
-.classification-badges .classification-grade.grade-D{background:#f9ecef;color:#ad576b}
-.classification-badges .classification-size.suggested{border:1px dashed var(--border);background:transparent}
+.classification-badges .classification-size.size-D{background:#f9ecef;color:#ad576b}
+.dark .classification-badges .classification-size.size-D{background:#3d2229;color:#f0b3c1}
 @media (max-width:600px){.classification-summary dl{grid-template-columns:1fr}.classification-section{padding:10px}}
-.dark .classification-badges .classification-grade.grade-A{background:#1e3a2d;color:#9fd9bc}
-.dark .classification-badges .classification-grade.grade-D{background:#3d2229;color:#f0b3c1}
-/* The three filters of «العملاء» join the bar's filters: the bar wraps them rather than pushing the page sideways (a tablet on its side). */
+/* The two filters of «العملاء» join the bar's filters: the bar wraps them rather than pushing the page sideways (a tablet on its side). */
 .filters:has(>.classification-filter){flex-wrap:wrap;min-width:0}
 .filterbar:has(.classification-filter){align-items:flex-start}
 /* Each filter's wrapper only names it: the select itself is the bar's item, sized as the region's. */

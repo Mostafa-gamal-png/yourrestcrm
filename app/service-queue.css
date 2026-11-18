@@ -18,3 +18,6 @@
 .dark .service-queue-card .service-queue-note{background:#2d2a1d;color:#e3dcc0}.dark .service-queue-banner{background:#3a1f19;border-color:#a45a49;color:#f7d4cb}
 @media (max-width:640px){.service-queue-cards{grid-template-columns:1fr}.service-queue-actions .btn{flex:1}}
 .team-role-warning{display:block;margin-top:3px;font-size:12px;line-height:1.5;color:#8f2f19;font-weight:600}.dark .team-role-warning{color:#f7c2b6}
+
+/* «D · مستبعدة» (lib/opportunity-strength.ts): last in the queue, and quieter. */
+.service-queue-chip[data-kind=excluded]{background:#f1e9ec;color:#8a4a5c}.dark .service-queue-chip[data-kind=excluded]{background:#3d2229;color:#e3b4c2}

@@ -45,7 +45,7 @@ function QueueCard({entry,me,say,onOpen,onVisit}:{entry:ServiceQueueEntry;me:Mem
    <span className="badge pending">{stage?t(stage):say(STAGE_TEXT[entry.stage][0],STAGE_TEXT[entry.stage][1])}</span></header>
   <div className="service-queue-meta">
    {entry.source&&<span className="service-queue-chip">{t(serviceSources[entry.source]||entry.source)}</span>}
-   {entry.strength&&<span className="service-queue-chip" data-kind={entry.strength==='strong'?'strong':undefined}>{t(strengthLabels[entry.strength]||entry.strength)}</span>}
+   {entry.strength&&<span className="service-queue-chip" data-kind={entry.strength==='strong'?'strong':entry.strength==='excluded'?'excluded':undefined}>{t(strengthLabels[entry.strength]||entry.strength)}</span>}
    {entry.stage!=='closed'&&entry.stage!=='follow_up'&&<span className="service-queue-chip"><Clock3 size={12} aria-hidden="true"/> {hoursText(entry.stageHours,say)}</span>}
    {entry.late&&<span className="service-queue-chip" data-kind="late">{say('متأخر عن هدف '+entry.targetHours+' ساعات عمل','Late against a '+entry.targetHours+'-working-hour target')}</span>}
    {entry.escalated&&<span className="service-queue-chip" data-kind="escalated">{say('تأخر عند '+(entry.assignedName||entry.salesManagerName),'Late with '+(entry.assignedName||entry.salesManagerName))}</span>}

@@ -20,7 +20,7 @@ import {deleteCapture,rootCustomer} from '@/lib/trash-server';
 import {customerCodeKey,erpCodeTaken,ERP_CODE_LOCKED} from '@/lib/customer-identity';
 import {proposeCustomerEdit,decideCustomerEdit,customerEditHistoryEntry,type CustomerEditApproval} from '@/lib/customer-edit-requests-server';
 import {proposesCustomerEdit,marketingCorrectionWaits,customerEditProposal,DIRECT_EDIT,type CustomerEditDirect} from '@/lib/customer-edit-requests';
-import {changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
+import {carryRetiredClassification,changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
 import {isFieldRole,isMarketingRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 export async function GET(){try{
@@ -224,10 +224,14 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
    const member=c.members.find(m=>m.id===data.assignedTo)!;if(!memberCanAccessRegion(member,data.region))throw new CRMError('منطقة العميل لا تطابق صلاحية المندوب المسؤول',400);if(regionScope(c.me)!=='all'&&!c.regionalMembers.some(m=>m.id===member.id))throw new CRMError('المندوب خارج نطاق منطقتك',403);if(!['admin','manager'].includes(member.role)&&member.branch!==data.branch)throw new CRMError('فرع يورست المسؤول عن المصنع يجب أن يطابق فرع المندوب');
   }
   assignedTo=data.assignedTo;branch=data.branch;
-  // The classifications (lib/customer-classification.ts, the owner, 2026-11-18): a save that does not carry one keeps the stored one; a change
-  // is refused unless the member may classify this customer (lib/access.ts canClassifyCustomer: the marketing officer for their branch, the
-  // supervisor for their team, the sales manager and the administrator), within their regions (checked above). A representative's or
-  // customer service's save never changes them, so their requests never carry them; a supervisor's change waits in their request as the rest.
+  // The classifications (lib/customer-classification.ts, the owner, 2026-11-18, as he corrected them the same day). The retired three
+  // (opportunityGrade, gradeNotes, factorySize: the grade is the opportunity's «قوة الفرصة» now and the size is computed) are carried
+  // exactly as stored, whatever the save sends (nothing shows or edits them). «اهتمام العميل»: a save that does not carry it keeps the
+  // stored one; a change is refused unless the member may classify this customer (lib/access.ts canClassifyCustomer: the marketing officer
+  // for their branch, the supervisor for their team, the sales manager and the administrator), within their regions (checked above). A
+  // representative's or customer service's save never changes it, so their requests never carry it; a supervisor's change waits in their
+  // request as the rest.
+  carryRetiredClassification(data,old?.data);
   keepAbsentClassification(data,inputData,old?.data);
   if(changedClassification(old?.data,data).length&&!canClassifyCustomer({kind:'customer',assignedTo:data.assignedTo,branch:data.branch},c.members,c.me))throw new CRMError(CLASSIFICATION_REFUSED,403);
  }

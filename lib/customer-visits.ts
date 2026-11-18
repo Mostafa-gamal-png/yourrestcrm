@@ -1,7 +1,8 @@
 import {type Row,type Member,isSalesRequest,scopeRecords} from './crm';
 import {planTracked} from './followup-recontact';
 export const visitProducts=['قوالب البلوك المتحركة','قوالب البلوك الثابتة','لمامة البلوك','ماكينة إنتاج البلوكة المتحركة','قطع غيار المكائن المتحركة','خلاطات البلوك','خلاطات الخرسانة الجاهزة'];
-export const strengthLabels:Record<string,string>={weak:'ضعيفة',medium:'متوسطة',strong:'قوية'};
+// «قوة الفرصة» A to D (the owner, 2026-11-18): lib/opportunity-strength.ts.
+export {strengthLabels} from './opportunity-strength';
 // A lookup by id for each records array, kept while the array lives, so the two helpers below cost one lookup per step instead of
 // a scan of every record (they run once per visit in lists of thousands). Records arrays are snapshots that are never changed in
 // place; the length check still rebuilds the lookup if one ever grows or shrinks. The first record of an id wins, as with find().

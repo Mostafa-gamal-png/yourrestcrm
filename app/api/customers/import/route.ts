@@ -6,6 +6,7 @@ import {z} from 'zod';
 import {database,context,accessGuard,checkOrigin,requireSession,CRMError,replyError,requireCell} from '@/lib/crm-server';
 import {schemas} from '@/lib/crm';
 import {coordinatesFromText} from '@/lib/customer-location';
+import {carryRetiredClassification} from '@/lib/customer-classification';
 export const dynamic='force-dynamic';
 // The one-time service path imports only the explicitly configured source hash.
 // Without both environment values, only a signed-in CRM administrator can use it.
@@ -27,7 +28,8 @@ export async function POST(req:Request){try{
  for(const source of input.rows){
   const parsed=schemas.customer.safeParse({...source.data,assignedTo:owner.id,branch:owner.branch,sourceFile:input.sourceFile,sourceHash:input.sourceHash});
   if(!parsed.success)throw new CRMError(`الصف ${source.data.sourceRow}: ${parsed.error.issues.map(i=>i.message).join(' • ')}`);
-  const data=parsed.data;const point=coordinatesFromText(data.location);if(!point)throw new CRMError(`إحداثيات الصف ${data.sourceRow} غير صالحة`);
+  // The retired classifications (lib/customer-classification.ts) are never written to a new customer, whatever the file carries.
+  const data=carryRetiredClassification(parsed.data,undefined);const point=coordinatesFromText(data.location);if(!point)throw new CRMError(`إحداثيات الصف ${data.sourceRow} غير صالحة`);
   data.latitude=point.latitude;data.longitude=point.longitude;
   if(!data.sourceKey||source.id!=='yr-import-'+data.sourceKey.slice(0,32)||!/^[a-f0-9]{64}$/.test(data.sourceKey))throw new CRMError('بصمة السجل غير صحيحة');
   statements.push(db.prepare("INSERT OR IGNORE INTO crm_records (id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) SELECT ?,'customer',NULL,?,?,?,?,?,1,? WHERE "+permission.sql).bind(source.id,owner.id,owner.branch,JSON.stringify(data),now,now,mutation,...permission.args));

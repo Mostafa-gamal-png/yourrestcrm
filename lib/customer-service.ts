@@ -6,6 +6,7 @@ import {riyadhDate} from './visits';
 import {visitOrder,visitProducts} from './customer-visits';
 import {customerAddressFields} from './customer-fields';
 import {isFieldRole} from './roles';
+import {STRENGTH_VALUES} from './opportunity-strength';
 
 export const serviceRoles=['customer_service','customer_service_manager'];
 export const isServiceRole=(role:string)=>serviceRoles.includes(role);
@@ -29,7 +30,7 @@ export type ServiceCase={id:string;customerId:string;status:string;creatorId:str
 export type ServiceContext={me:Member;members:Member[];all:Row[];serviceCases:ServiceCase[]};
 const required=z.string().trim().min(1,'هذا الحقل مطلوب').max(250);
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'اختر موعد المتابعة').refine(v=>Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'التاريخ غير صالح');
-export function serviceIntakeSchemaForDay(recordedDay?:string){return z.object({source:z.enum(['visit','call','email','whatsapp','website','social']),products:z.array(z.string().refine(p=>[...visitProducts,'خدمات صيانة'].includes(p),'اختر الصنف من القائمة')).min(1,'اختر صنفًا واحدًا على الأقل').max(8),strength:z.enum(['weak','medium','strong']),needs:z.string().trim().min(3,'اكتب احتياج العميل').max(4000),nextAction:required,nextDate:date.refine(v=>v>=(recordedDay||today()),'موعد المتابعة يجب أن يكون يوم التسجيل أو لاحقًا')}).strict();}
+export function serviceIntakeSchemaForDay(recordedDay?:string){return z.object({source:z.enum(['visit','call','email','whatsapp','website','social']),products:z.array(z.string().refine(p=>[...visitProducts,'خدمات صيانة'].includes(p),'اختر الصنف من القائمة')).min(1,'اختر صنفًا واحدًا على الأقل').max(8),strength:z.enum(STRENGTH_VALUES),needs:z.string().trim().min(3,'اكتب احتياج العميل').max(4000),nextAction:required,nextDate:date.refine(v=>v>=(recordedDay||today()),'موعد المتابعة يجب أن يكون يوم التسجيل أو لاحقًا')}).strict();}
 export const serviceIntakeSchema=serviceIntakeSchemaForDay();
 export const serviceCustomerSchema=z.object({name:required,contact:z.string().trim().max(250).default(''),phone:z.string().trim().min(1,'أدخل رقم التواصل').max(100),city:z.string().trim().max(250).default(''),region:z.string().trim().max(250).default(''),address:z.string().trim().max(250).default(''),customerType:z.string().trim().max(250).default(''),customerKind:customerKindField.default(''),customerStatus:z.string().trim().max(250).default(''),category:z.string().trim().max(250).default(''),...customerAddressFields}).strict();
 const contactIndexes=new WeakMap<Row[],Map<string,Row[]>>();

@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { type Row, type Member, isSalesRequest, money, today, stageLabels } from '@/lib/crm';
 import { visitCustomer, visitRequest, customerVisits, strengthLabels, visitProducts } from '@/lib/customer-visits';
+import { strengthHelp } from '@/lib/opportunity-strength';
 import { mapsLink } from '@/lib/customer-location';
 import { contactTypes, visitPurposes, visitResult, formatVisitTime} from '@/lib/visits';
 import {isServiceRole,serviceStatusLabels} from '@/lib/customer-service';
@@ -84,7 +85,7 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
             </article></li>;
         })}</ol>{requests.length > 0 && <details className="previous-requests"><summary>{t("طلبات القوالب وعروض الأسعار (")}{t(requests.length)})</summary>{t(requests.map(r => { const linked = visits.filter(v => visitRequest(v, records)?.id === r.id), quotes = records.filter(q => q.kind === 'quote' && q.parentId === r.id); return <article key={r.id}><strong>{r.data.moldType} · {t(stageLabels[r.data.stage])} · {r.data.value == null ? t('غير مسعّر') : t(money(r.data.value)) + t(' ر.س')}</strong><small>{linked.length ? t(`${linked.length} زيارة مرتبطة`) : tw('طلب قالب سابق — لا توجد زيارة مسجلة')}{r.data.lossReason ? t(' · ') + r.data.lossReason : t('')}</small>{onNew && <button type="button" className="text-button" onClick={() => onNew(r)}>{tw("تسجيل زيارة لهذا الطلب")}</button>}{t(quotes.map(q => <button type="button" className="text-button" key={q.id} onClick={() => onQuote?.(q.id)}>{q.data.number} · {t(money(q.data.total))}{t(" ر.س")}</button>))}</article>; }))}</details>}</section>;
 }
-export function VisitsPage({ records, members, query, staff, stage, onOpen, onNew, onCustomer, onWorkflow, workflow, onWorkflowFilter, canEdit = true, onDelete, canDelete, support, role }: {
+export function VisitsPage({ records, members, query, staff, stage, strength = 'all', onOpen, onNew, onCustomer, onWorkflow, workflow, onWorkflowFilter, canEdit = true, onDelete, canDelete, support, role }: {
     support?: SupportBinding;
     /** The reader's role: customer service reads the list as its opportunities. */
     role?: string;
@@ -93,6 +94,8 @@ export function VisitsPage({ records, members, query, staff, stage, onOpen, onNe
     query: string;
     staff: string;
     stage: string;
+    /** «قوة الفرصة» of the visits list's filter (lib/opportunity-strength.ts). */
+    strength?: string;
     workflow: string;
     onWorkflowFilter: (value:string)=>void;
     onWorkflow: (id:string) => void;
@@ -108,7 +111,7 @@ export function VisitsPage({ records, members, query, staff, stage, onOpen, onNe
     const tw=(text:string)=>t(serviceText(role,text));
     const [page, setPage] = useState(1);
     const lostQuotes = useMemo(() => stage === 'quoted' ? lostQuoteVisitIds(records) : undefined, [records, stage]);
-    const rows = filterVisitRows(records,{query,staff,stage,workflow,lostQuotes});
+    const rows = filterVisitRows(records,{query,staff,stage,strength,workflow,lostQuotes});
     const pages = Math.max(1, Math.ceil(rows.length / 30)), current = Math.min(page, pages);
     return <section className="panel">{records.some(r=>r.data.serviceIntakeId)&&<div className="panel-heading followup-list-heading"><div className="followup-list-filters" role="group" aria-label={t('حالة الاعتماد والتكليف')}>{[['all','كل الزيارات'],['mine','بانتظار إجرائي'],...Object.entries(serviceStatusLabels),['assistance','طلبات المساعدة']].map(([id,label])=><button key={id} className={'followup-list-filter '+(workflow===id?'selected':'')} aria-pressed={workflow===id} onClick={()=>{onWorkflowFilter(id);setPage(1);}}>{tw(label)}</button>)}</div></div>}<div className="panel-heading"><h2>{tw("سجل الزيارات ")}<span className="inline-count">{t(rows.length)}</span></h2><span className="muted">{tw("كل زيارة مرتبطة بالعميل وسجله السابق")}</span></div>{rows.length ? <><VisitsTable onDelete={onDelete} canDelete={canDelete} role={role} rows={rows.slice((current - 1) * 30, current * 30)} customerFor={r => visitCustomer(r, records)} onOpen={id => { const r = records.find(r => r.id === id); if (r)
         onOpen(r); }} onEdit={onOpen} onCustomer={onCustomer} canEdit={canEdit} showPlace={canEdit} expanded members={members} onWorkflow={onWorkflow} support={support} lostQuotes={lostQuotes}/><div className="table-paging"><button className="btn subtle small" disabled={current === 1} onClick={() => setPage(current - 1)}>{t("السابق")}</button><span>{t(current)} / {t(pages)}</span><button className="btn subtle small" disabled={current === pages} onClick={() => setPage(current + 1)}>{t("التالي")}</button></div></> : <div className="followup-empty"><History size={30}/><h3>{query ? t('لا توجد نتائج مطابقة') : tw('لا توجد زيارات مسجلة')}</h3><button className="btn primary" onClick={onNew}><Plus size={18}/>{tw("زيارة جديدة")}</button></div>}</section>;
@@ -272,7 +275,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
                 <summary><span>{say('تفاصيل البيع والأصناف','Sales & products')}</span><span className="badge">{t(stageLabels[data.salesStage])||say('اختياري','Optional')}</span></summary>
                 <div className="form-grid visit-extended-fields">
                   <label className="field"><span>{t('مرحلة البيع')}</span><Pick value={data.salesStage||'__unset'} onChange={value=>change('salesStage',value==='__unset'?'':value)} label="مرحلة البيع" options={[[ '__unset',say('غير محددة','Not specified')],...Object.entries(stageLabels)]} disabled={service||readOnly}/></label>
-                  <label className="field"><span>{t('قوة الفرصة')}{service?' *':''}</span><Pick value={data.strength||'__unset'} onChange={value=>change('strength',value==='__unset'?'':value)} label="قوة الفرصة" options={[[ '__unset',say('غير محددة','Not specified')],...Object.entries(strengthLabels)]} disabled={readOnly}/></label>
+                  <label className="field"><span>{t('قوة الفرصة')}{service?' *':''}</span><Pick value={data.strength||'__unset'} onChange={value=>change('strength',value==='__unset'?'':value)} label="قوة الفرصة" options={[[ '__unset',say('غير محددة','Not specified')],...Object.entries(strengthLabels)]} disabled={readOnly}/>{strengthHelp(data.strength)&&<small className="strength-help" data-strength-help={data.strength}>{say(strengthHelp(data.strength),strengthHelp(data.strength,'en'))}</small>}</label>
                   <fieldset className="full requested-products"><legend>{t('الأصناف المطلوبة')}</legend><div>{productOptions.map(product=><label key={product}><input type="checkbox" checked={data.requestedProducts.includes(product)} onChange={event=>change('requestedProducts',event.target.checked?[...data.requestedProducts,product]:data.requestedProducts.filter((value:string)=>value!==product))}/>{t(product)}</label>)}</div>{initial&&data.requestedProducts.some((product:string)=>!visitProducts.includes(product))&&<p className="muted">{t('أصناف مسجلة سابقًا: ')}{t(data.requestedProducts.filter((product:string)=>!visitProducts.includes(product)).join('، '))}</p>}</fieldset>
                   <CompetitorFields value={data} records={records} members={members} customerId={customerId} identityKey={me.id} disabled={busy||uploading||savingCustomer||creatingCustomer||savedReceipt.current||retryPending} readOnly={readOnly} uploading={uploading} uploadState={uploadAttempt.current?.context===competitorContext.current||data.competitorFileId?uploadState:null} onUploadRetry={()=>{const retry=uploadAttempt.current;if(retry)void upload(retry.file,true);}} onChange={patch=>{if(readOnly||savedReceipt.current||retryPending||saveLock.current||uploadLock.current)return;setDirty(true);setData(previous=>({...previous,...patch}));}} onUpload={upload}/>
                   <VoiceField label={t('احتياج العميل')} value={data.customerNeeds||''} onChange={value=>change('customerNeeds',value)} multiline/>

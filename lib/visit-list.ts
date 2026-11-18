@@ -1,6 +1,7 @@
 import {type Row} from './crm';
 import {visitOrder} from './customer-visits';
 import {matchesServiceFilter} from './customer-service';
+import {matchesStrength} from './opportunity-strength';
 /** Shared by the visit table and CSV so search, status and order stay identical. */
 const customerIndex=(records:Row[])=>{const indexed=new Map<string,Row>();for(const row of records)if(!indexed.has(row.id))indexed.set(row.id,row);return indexed;};
 const customerFinder=(indexed:Map<string,Row>)=>(row:Row|undefined)=>{for(let i=0;row&&i<5;i++){if(row.kind==='customer')return row;row=row.parentId!==null&&row.parentId!==undefined?indexed.get(row.parentId):undefined;}return undefined;};
@@ -28,13 +29,14 @@ export function lostQuoteVisitIds(records:Row[]){
  }
  return lost;
 }
-export function filterVisitRows(records:Row[],{query='',staff='all',stage='all',workflow='all',lostQuotes:known}:{query?:string;staff?:string;stage?:string;workflow?:string;lostQuotes?:Set<string>}){
+/** strength: «قوة الفرصة» A to D, 'none' for a visit with no grade, 'all' (lib/opportunity-strength.ts matchesStrength). */
+export function filterVisitRows(records:Row[],{query='',staff='all',stage='all',strength='all',workflow='all',lostQuotes:known}:{query?:string;staff?:string;stage?:string;strength?:string;workflow?:string;lostQuotes?:Set<string>}){
  const term=query.trim().toLowerCase();
  // The customer of each visit, found through one index instead of a scan of every record per visit.
  const customerOf=customerFinder(term?customerIndex(records):new Map());
  // «عرض سعر» also brings the quotations lost afterwards.
  const lostQuotes=stage==='quoted'?known||lostQuoteVisitIds(records):undefined;
- const rows=records.filter(r=>r.kind==='activity'&&r.data.visitWorkflow!=='followup-v1'&&matchesServiceFilter(r,workflow)&&(staff==='all'||(r.data.performedBy||r.data.responsibleId)===staff)&&(stage==='all'||r.data.salesStage===stage||!!lostQuotes?.has(r.id))&&(!term||[customerOf(r)?.data.name,r.data.summary,r.data.result,r.data.customerNeeds,r.data.competitorName,r.data.visitNumber,...(r.data.requestedProducts||[])].join(' ').toLowerCase().includes(term)));
+ const rows=records.filter(r=>r.kind==='activity'&&r.data.visitWorkflow!=='followup-v1'&&matchesServiceFilter(r,workflow)&&(staff==='all'||(r.data.performedBy||r.data.responsibleId)===staff)&&(stage==='all'||r.data.salesStage===stage||!!lostQuotes?.has(r.id))&&matchesStrength(r.data.strength,strength)&&(!term||[customerOf(r)?.data.name,r.data.summary,r.data.result,r.data.customerNeeds,r.data.competitorName,r.data.visitNumber,...(r.data.requestedProducts||[])].join(' ').toLowerCase().includes(term)));
  // Each visit's order key once, not twice per comparison; the stable sort keeps the same order.
  const keyed=rows.map(row=>({row,order:visitOrder(row)}));
  return keyed.sort((a,b)=>b.order.localeCompare(a.order)).map(item=>item.row);
