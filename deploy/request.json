@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Android1014-20261117.zip","sha256":"b15ab60045f2f88de424079dca40e55ae2024c144567057e80467372783e6749","stage":"yourrest-crm-update-android-1014-20261117","helper":"yourrest-activate-update-android-1014.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-RepSearch-20261118.zip","sha256":"6dd219c86f7eb06203f48450b6e14eda5a0a425cbf3b78fa2443b28603d3566c","stage":"yourrest-crm-update-rep-search-20261118","helper":"yourrest-activate-update-rep-search.cjs"}
