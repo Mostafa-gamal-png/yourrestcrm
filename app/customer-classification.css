@@ -24,3 +24,8 @@
 @media (max-width:600px){.classification-summary dl{grid-template-columns:1fr}.classification-section{padding:10px}}
 .dark .classification-badges .classification-grade.grade-A{background:#1e3a2d;color:#9fd9bc}
 .dark .classification-badges .classification-grade.grade-D{background:#3d2229;color:#f0b3c1}
+/* The three filters of «العملاء» join the bar's filters: the bar wraps them rather than pushing the page sideways (a tablet on its side). */
+.filters:has(>.classification-filter){flex-wrap:wrap;min-width:0}
+.filterbar:has(.classification-filter){align-items:flex-start}
+/* Each filter's wrapper only names it: the select itself is the bar's item, sized as the region's. */
+.classification-filter{display:contents}
