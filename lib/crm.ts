@@ -5,7 +5,7 @@ import {salesRecordAccess} from './access';
 import type {MemberAccess} from './permissions';
 import {customerAddressFields} from './customer-fields';
 import {isCustomerKind} from './customer-options';
-import {CLASSIFICATION_FIELDS,classificationSchemaFields} from './customer-classification';
+import {classificationHiddenFrom,classificationSchemaFields,hideClassification} from './customer-classification';
 export const stages = ['new','specs','technical','quoted','negotiation','won','lost'] as const;
 export const stageLabels:Record<string,string> = {new:'تحديد الاحتياج',specs:'جمع المواصفات',technical:'مراجعة فنية',quoted:'عرض سعر',negotiation:'تفاوض',won:'تم الفوز',lost:'تم الفقد'};
 export const roles:Record<string,string> = {admin:'مدير النظام',manager:'مدير المبيعات',supervisor:'مشرف المبيعات',rep:'مندوب المبيعات',marketing:'مسؤول تسويق',customer_service_manager:'مدير خدمة العملاء',customer_service:'ممثل خدمة العملاء'};
@@ -68,9 +68,10 @@ export function scopeRecords(all:Row[],members:Member[],me:Member){
    if(!access.canEditCustomerDetails(row))data._masterReadOnly=true;
    if(!access.canManageMaster(row))data._masterRoutingReadOnly=true;
    // The classifications (lib/customer-classification.ts): set only where lib/access.ts canClassifyCustomer allows; a representative reads
-   // them on the customers assigned to them only.
+   // them on the customers assigned to them only, a marketing officer on their branch's only: elsewhere they are removed and the customer
+   // marked (_classificationHidden), so the page shows nothing of them, not even a size suggested from the machines.
    if(!access.canClassify(row))data._classificationReadOnly=true;
-   if(me.role==='rep'&&row.assignedTo!==me.id)for(const field of CLASSIFICATION_FIELDS)delete data[field];
+   if(classificationHiddenFrom(me,row))hideClassification(data);
   }
   if(row.kind==='factory'&&!access.canEditMachine(row))data._masterReadOnly=true;
   // Read through «عرض بيانات الفريق بالكامل» only: shown, never edited or deleted from the page (the routes refuse it too).

@@ -3,7 +3,8 @@ import {CRMError,accessGuard,requireCell,type context} from './crm-server';
 import {can} from './permissions';
 import {memberCanAccessRegion} from './regions';
 import type {Row} from './crm';
-import {CUSTOMER_EDITS_RECENT_DAYS,CUSTOMER_EDIT_FIELDS,CUSTOMER_EDIT_HISTORY,activeSupervisorOf,applyCustomerEdit,customerEditChanges,customerEditFingerprint,customerEditProposal,directCustomerEditRole,firstStage,liveStage,rejectReason,staleFields,type CustomerEditField,type CustomerEditHeld,type CustomerEditList,type CustomerEditRequest,type CustomerEditStage,type CustomerEditStatus} from './customer-edit-requests';
+import {FIELD_ROLES_SQL} from './roles';
+import {CUSTOMER_EDITS_RECENT_DAYS,CUSTOMER_EDIT_FIELDS,CUSTOMER_EDIT_HISTORY,DIRECT_EDIT,type CustomerEditChange,activeSupervisorOf,applyCustomerEdit,customerEditChanges,customerEditFingerprint,customerEditProposal,directCustomerEditRole,firstStage,liveStage,rejectReason,staleFields,type CustomerEditField,type CustomerEditHeld,type CustomerEditList,type CustomerEditRequest,type CustomerEditStage,type CustomerEditStatus} from './customer-edit-requests';
 
 /** Server side of «طلبات تعديل بيانات العميل» (lib/customer-edit-requests.ts). Everything is kept in crm_audit, append-only, as
  *  «المحذوفات» keeps its deletions and restorations (no migration):
@@ -29,7 +30,7 @@ const supervisorRowId=(id:string)=>'customer-edit-supervisor:'+id,decisionRowId=
 const pendingSql=(q:string)=>`NOT EXISTS (SELECT 1 FROM crm_audit ce_end WHERE ce_end.id='customer-edit-decision:'||${q}.id)`;
 const supervisorPassedSql=(q:string)=>`EXISTS (SELECT 1 FROM crm_audit ce_sup WHERE ce_sup.id='customer-edit-supervisor:'||${q}.id)`;
 /** The same rule as liveStage (lib/customer-edit-requests.ts), at commit. */
-const awaitingSupervisorSql=(q:string)=>`(json_extract(${q}.detail,'$.stage')='supervisor' AND NOT ${supervisorPassedSql(q)} AND EXISTS (SELECT 1 FROM crm_members ce_rq JOIN crm_members ce_sv ON ce_sv.id=ce_rq.supervisor_id WHERE ce_rq.id=json_extract(${q}.detail,'$.requestedBy') AND ce_rq.role='rep' AND ce_sv.role='supervisor' AND ce_sv.active=1))`;
+const awaitingSupervisorSql=(q:string)=>`(json_extract(${q}.detail,'$.stage')='supervisor' AND NOT ${supervisorPassedSql(q)} AND EXISTS (SELECT 1 FROM crm_members ce_rq JOIN crm_members ce_sv ON ce_sv.id=ce_rq.supervisor_id WHERE ce_rq.id=json_extract(${q}.detail,'$.requestedBy') AND ce_rq.role IN ${FIELD_ROLES_SQL} AND ce_sv.role='supervisor' AND ce_sv.active=1))`;
 const supervisedBySql=(q:string)=>`EXISTS (SELECT 1 FROM crm_members ce_mine WHERE ce_mine.id=json_extract(${q}.detail,'$.requestedBy') AND ce_mine.supervisor_id=?)`;
 
 export const CUSTOMER_EDIT_TEXT={
@@ -198,7 +199,17 @@ export async function decideCustomerEdit(c:Context,body:Record<string,unknown>,s
 }
 
 /** «سجل التغييرات» of a customer (GET /api/crm): a step of a request reads as words and the customer's name, never its fields or reason. */
-export function customerEditHistoryEntry<T extends {action:string;detail:string}>(entry:T):T{
+export function customerEditHistoryEntry<T extends {action:string;detail:string}>(entry:T):T&{changes?:CustomerEditChange[]}{
  const label=CUSTOMER_EDIT_HISTORY[entry.action];
- return label?{...entry,action:label,detail:textOf(parseObject(entry.detail)?.customerName)}:entry;
+ if(!label)return entry;
+ const detail=parseObject(entry.detail),customerName=textOf(detail?.customerName);
+ // A marketing officer's direct correction (route.ts, DIRECT_EDIT) reads with its fields, before and after, as a request's changes do.
+ if(entry.action===DIRECT_EDIT){const direct=parseDirect(detail);return {...entry,action:label,detail:customerName,changes:direct?customerEditChanges(direct,null):[]};}
+ return {...entry,action:label,detail:customerName};
+}
+function parseDirect(detail:Record<string,unknown>|null):Pick<CustomerEditHeld,'fields'|'values'|'base'>|null{
+ if(!detail||!Array.isArray(detail.fields)||!detail.values||typeof detail.values!=='object'||!detail.base||typeof detail.base!=='object')return null;
+ const fields=detail.fields.filter((field):field is CustomerEditField=>(CUSTOMER_EDIT_FIELDS as readonly unknown[]).includes(field));
+ const base:Record<string,string>={};for(const [key,value] of Object.entries(detail.base as Record<string,unknown>))if(typeof value==='string')base[key]=value;
+ return {fields,values:detail.values as Record<string,unknown>,base};
 }

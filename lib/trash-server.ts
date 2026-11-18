@@ -24,7 +24,7 @@ type Pointer={id:string;field:'_visitPlan'|'_stageVisitId';value:unknown};
 export type TrashSnapshot={kind:Kind;deletedBy:string;record:Row;codeMappings:string[];capture:boolean;journeyLinks:string[];pointers:Pointer[];customerNumber:number|null;erpCodeAliases:string[]|null;customer:{id:string;name:string;region:string}|null};
 const KINDS=['customer','factory','opportunity','activity','quote'];
 /** Fields the context adds when it reads a record (lib/crm-context-records.ts) or a page adds when it shows one: never stored. */
-const COMPUTED_FIELDS=['internalCode','_erpCodeAliases','_lastPurchase','_masterReadOnly','_masterRoutingReadOnly','_readOnly','_serviceIntake','_serviceWorkflow'];
+const COMPUTED_FIELDS=['internalCode','_erpCodeAliases','_lastPurchase','_masterReadOnly','_masterRoutingReadOnly','_classificationReadOnly','_classificationHidden','_readOnly','_serviceIntake','_serviceWorkflow'];
 const text=(value:unknown)=>typeof value==='string'?value:typeof value==='number'?String(value):'';
 const strings=(value:unknown)=>Array.isArray(value)?value.filter((item):item is string=>typeof item==='string'&&item.length>0):[];
 

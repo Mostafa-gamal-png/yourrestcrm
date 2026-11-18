@@ -116,10 +116,11 @@ export function canManageMasterRecord(row:Row,members:Member[],me:Member){return
 
 /** The regional address book is shared; correcting it does not grant routing or history rights. */
 /** Customer service (since 2026-11-07) corrects the customers of its branch, like a representative; callers apply the region boundary. */
-/** A marketing officer (the owner, 2026-11-18) corrects every customer of their branch, directly (lib/roles.ts); callers apply the region
- *  boundary. A representative corrects any customer of their regions through a request (lib/customer-edit-requests.ts). */
+/** A representative corrects any customer of their regions through a request (lib/customer-edit-requests.ts); so does a marketing officer
+ *  (lib/roles.ts), who corrects the customers of their own branch directly (the owner, 2026-11-18; another branch's, or a change of
+ *  region, waits as a representative's: lib/customer-edit-requests.ts marketingCorrectionWaits). Callers apply the region boundary. */
 function customerDetailsEditable(row:Row,me:Member,team:ReadonlySet<string>){
- return row.kind==='customer'&&(me.role==='rep'||['manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||isMarketingRole(me.role)&&row.branch===me.branch||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);
+ return row.kind==='customer'&&(isFieldRole(me.role)||['manager','admin'].includes(me.role)||me.role==='supervisor'&&team.has(row.assignedTo)||['customer_service','customer_service_manager'].includes(me.role)&&row.branch===me.branch);
 }
 export function canEditCustomerDetails(row:Row,members:Member[],me:Member){return customerDetailsEditable(row,me,salesScopeMemberIds(members,me));}
 /** «تصنيف الفرصة» and the other classifications of a customer (lib/customer-classification.ts, the owner, 2026-11-18): set by the marketing

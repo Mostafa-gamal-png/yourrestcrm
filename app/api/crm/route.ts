@@ -19,9 +19,9 @@ import {readLastPurchases,withLastPurchase} from '@/lib/customer-last-purchase-s
 import {deleteCapture,rootCustomer} from '@/lib/trash-server';
 import {customerCodeKey,erpCodeTaken,ERP_CODE_LOCKED} from '@/lib/customer-identity';
 import {proposeCustomerEdit,decideCustomerEdit,customerEditHistoryEntry,type CustomerEditApproval} from '@/lib/customer-edit-requests-server';
-import {proposesCustomerEdit} from '@/lib/customer-edit-requests';
+import {proposesCustomerEdit,marketingCorrectionWaits,customerEditProposal,DIRECT_EDIT,type CustomerEditDirect} from '@/lib/customer-edit-requests';
 import {changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
-import {isFieldRole} from '@/lib/roles';
+import {isFieldRole,isMarketingRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
@@ -256,13 +256,17 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
   else if(parent?.data.technicalStatus!=='approved')throw new CRMError('يجب اعتماد مواصفات القالب فنيًا قبل إنشاء عرض السعر');
   data.number=old?.data.number||`YR-${today().slice(0,4)}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;Object.assign(data,quoteTotals(data.items,data.discount,data.taxRate));
  }
- const permission=kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
+ // A marketing officer's correction of another branch's customer (in their regions), or one that changes a customer's region, waits as
+ // a representative's (lib/customer-edit-requests.ts marketingCorrectionWaits), gated as a representative's is: the member as they are and
+ // the customer at the version they read (accessGuard). Their own branch's other corrections are written directly (marketingCustomerGuard).
+ const marketingWaits=kind==='customer'&&!!old&&body.action==='save'&&!approval&&marketingCorrectionWaits(c.me,old,data.region);
+ const permission=marketingWaits?accessGuard(c,old):kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
  // The ERP code checked above, again at the commit: no other customer took it meanwhile (the plain spelling: upper case, no spaces around).
  if(takenCodeKey){permission.sql+=" AND NOT EXISTS (SELECT 1 FROM crm_records WHERE kind='customer' AND id<>? AND upper(trim(CAST(json_extract(data,'$.code') AS TEXT)))=?)";permission.args.push(old?.id||genericId,takenCodeKey);}
  // «طلبات تعديل بيانات العميل» (the owner, 2026-11-15): a representative's, a supervisor's or customer service's correction of a customer
  // has passed every check of a direct edit as that member; only the write waits, as a request (lib/customer-edit-requests-server.ts),
  // gated by this same commit guard. The administrator and the sales manager write directly, and approve requests (approval).
- if(kind==='customer'&&old&&body.action==='save'&&!approval&&proposesCustomerEdit(c.me.role))return await proposeCustomerEdit(c,{old,data,key:body.editKey,permission,now});
+ if(kind==='customer'&&old&&body.action==='save'&&!approval&&(proposesCustomerEdit(c.me.role)||marketingWaits))return await proposeCustomerEdit(c,{old,data,key:body.editKey,permission,now});
  if(approval){if(kind!=='customer'||!old)throw new CRMError('عملية غير صحيحة');permission.sql+=' AND '+approval.guard.sql;permission.args.push(...approval.guard.args);}
  // ERP source references may belong to several factories. The immutable CRM
  // number is allocated by the database; ambiguous ERP identities require review.
@@ -284,8 +288,11 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
   stmts.push(c.db.prepare(`UPDATE crm_records SET data=json_set(data,'$.technicalStatus','pending','$.technicalBy','','$.technicalAt','','$.stage',CASE WHEN json_extract(data,'$.stage') IN ('quoted','negotiation') THEN 'technical' ELSE json_extract(data,'$.stage') END),updated_at=?,version=version+1 WHERE parent_id=? AND kind='opportunity' AND json_extract(data,'$.stage') NOT IN ('won','lost') AND ${gate}`).bind(now,id,id,revision,mutation));
  }
  if(syncFollowup)stmts.push(c.db.prepare(`UPDATE crm_records SET data=json_set(data,'$.nextAction',?,'$.nextDate',?),updated_at=?,version=version+1 WHERE id=? AND version=? AND json_extract(data,'$.stage') NOT IN ('won','lost') AND ${gate}`).bind(data.nextAction,data.nextDate,now,parent!.id,parent!.version,id,revision,mutation));
- const detail=kind==='opportunity'?`${data.moldType} • ${data.stage}`:data.name||data.summary||data.number||kind;
- stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),id,c.me.name,old?'تعديل':'إضافة',detail,now,id,revision,mutation));
+ // A marketing officer's direct correction of a customer is recorded with what it changed, before and after (review of 2026-11-18): the
+ // customer's history reads it as a request's changes (customer-edit-requests-server.ts customerEditHistoryEntry).
+ const direct=kind==='customer'&&!!old&&!approval&&isMarketingRole(c.me.role);
+ const detail=direct?JSON.stringify({v:1,by:c.me.id,customerName:String(data.name||''),...customerEditProposal(old!.data,data)} satisfies CustomerEditDirect):kind==='opportunity'?`${data.moldType} • ${data.stage}`:data.name||data.summary||data.number||kind;
+ stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),id,c.me.name,direct?DIRECT_EDIT:old?'تعديل':'إضافة',detail,now,id,revision,mutation));
  if(genericCreateKey)stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(genericReceiptId,id,c.me.name,'crm-create-receipt',genericFingerprint,now,id,revision,mutation));
  if(approval)stmts.push(...approval.statements(gate,[id,revision,mutation],now));
  const result=await c.db.batch(stmts);if(result[0].meta.changes!==1&&approval)await approval.refused();if(result[0].meta.changes!==1&&genericCreateKey){const repeated=await replayCreate();if(repeated)return repeated;}if(result[0].meta.changes!==1&&createKey){const replay=await c.db.prepare("SELECT id,data,version FROM crm_records WHERE id=? AND kind='activity' AND parent_id=? AND json_extract(data,'$.performedBy')=?").bind(id,parentId,c.me.id).first<{id:string;data:string;version:number}>();if(replay)return replayReply({...replay,data:JSON.parse(String(replay.data))},'_creationRequest');}if(result[0].meta.changes!==1)throw new CRMError('تم تحديث السجل بالتزامن. أعد تحميل البيانات.',409);

@@ -87,8 +87,10 @@ export function recordDeleteGuard(c:GuardContext,record:Row,options:GuardOptions
 export const MARKETING_NO_CUSTOMER_DELETE='حذف العملاء غير متاح لمسؤول التسويق.';
 export const MARKETING_OTHER_BRANCH='يعدّل مسؤول التسويق بيانات عملاء فرعه فقط.';
 /** A marketing officer's direct correction of a customer (lib/roles.ts): any customer of their branch in their regions, never its routing
- *  (the route refuses that before). The commit re-checks the member (accessGuard: role, branch, regions, permissions' version), the
- *  customer's version and that the customer is still of the officer's branch. */
+ *  (the route refuses that before). Another branch's customer, or a change of its region, is a request instead (the route sends it to
+ *  proposeCustomerEdit, gated as a representative's: lib/customer-edit-requests.ts marketingCorrectionWaits), so a write that reaches
+ *  this guard for another branch is refused. The commit re-checks the member (accessGuard: role, branch, regions, permissions' version),
+ *  the customer's version and that the customer is still of the officer's branch. */
 function marketingCustomerGuard(c:GuardContext,record:Row){
  if(record.branch!==c.me.branch)throw new CRMError(MARKETING_OTHER_BRANCH,403);
  const permission=accessGuard(c,record);

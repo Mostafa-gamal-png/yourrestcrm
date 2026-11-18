@@ -3,14 +3,21 @@
 // fields of the customer's form, what its sheet shows and the small marks of its row and card. Who may set them is the server's decision
 // (lib/access.ts canClassifyCustomer, POST /api/crm); the page draws the fields read only for everyone else.
 import {useLanguage} from '@/lib/i18n';
-import {CLASSIFICATION_TEXT,CUSTOMER_INTERESTS,FACTORY_SIZES,GRADE_NOTES_MAX,OPPORTUNITY_GRADES,classificationHelp,classificationLabel,classificationValue,effectiveFactorySize,suggestedFactorySize,type ClassificationChoiceField} from '@/lib/customer-classification';
+import {CLASSIFICATION_TEXT,CUSTOMER_INTERESTS,FACTORY_SIZES,GRADE_NOTES_MAX,OPPORTUNITY_GRADES,classificationHelp,classificationHidden,classificationLabel,classificationValue,effectiveFactorySize,suggestedFactorySize,type ClassificationChoiceField,type MachineCount} from '@/lib/customer-classification';
 import VoiceField from './voice-field';
 import './customer-classification.css';
 
 type Data=Record<string,unknown>;
 type Say=(ar:string,en:string)=>string;
 const CHOICES={opportunityGrade:OPPORTUNITY_GRADES,factorySize:FACTORY_SIZES,customerInterest:CUSTOMER_INTERESTS};
-const machineText=(count:number,say:Say)=>count===1?say('ماكينة واحدة مسجلة','1 registered machine'):count===2?say('ماكينتان مسجلتان','2 registered machines'):count>=3&&count<=10?say(count+' ماكينات مسجلة',count+' registered machines'):say(count+' ماكينة مسجلة',count+' registered machines');
+/** «ماكينتان مسجلتان», «3 ماكينات في الشيت» …: the number with where it comes from (the machines registered one by one, or the sheet). */
+function machineText(machines:MachineCount,say:Say){
+ const n=machines.count,registered=machines.source==='machines';
+ if(n===1)return registered?say('ماكينة واحدة مسجلة','1 registered machine'):say('ماكينة واحدة في الشيت','1 machine in the sheet');
+ if(n===2)return registered?say('ماكينتان مسجلتان','2 registered machines'):say('ماكينتان في الشيت','2 machines in the sheet');
+ const noun=n>=3&&n<=10?'ماكينات':'ماكينة';
+ return registered?say(n+' '+noun+' مسجلة',n+' registered machines'):say(n+' '+noun+' في الشيت',n+' machines in the sheet');
+}
 
 function ChoiceGroup({field,value,disabled,onChange}:{field:ClassificationChoiceField;value:string;disabled:boolean;onChange:(value:string)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar,[ar,en]=CLASSIFICATION_TEXT[field];
@@ -22,17 +29,17 @@ function ChoiceGroup({field,value,disabled,onChange}:{field:ClassificationChoice
 
 /** The fields of the customer's form. editable: the member may set them for this customer (else they are shown, read only, when there is
  *  anything to show). machines: the customer's registered machines, for the suggested size. */
-export function CustomerClassificationEditor({data,machines,editable,disabled=false,contextKey='',onChange}:{data:Data;machines:number;editable:boolean;disabled?:boolean;contextKey?:string;onChange:(key:string,value:string)=>void}){
+export function CustomerClassificationEditor({data,machines,editable,disabled=false,contextKey='',onChange}:{data:Data;machines:MachineCount;editable:boolean;disabled?:boolean;contextKey?:string;onChange:(key:string,value:string)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
- if(!editable)return <section className="classification-section full" data-classification-readonly><h3>{say('تصنيفات التسويق','Marketing classifications')}</h3><CustomerClassificationSummary data={data} machines={machines} bare/><p className="form-note">{say('يحدد التصنيفات مسؤول التسويق والمشرف لعملاء فريقه ومدير المبيعات ومدير النظام.','The marketing officer, the supervisor for their team’s customers, the sales manager and the administrator set the classifications.')}</p></section>;
- const size=classificationValue(data,'factorySize'),suggestion=suggestedFactorySize(machines);
+ if(!editable)return <section className="classification-section full" data-classification-readonly><h3>{say('تصنيفات التسويق','Marketing classifications')}</h3><CustomerClassificationSummary data={data} machines={machines} bare/><p className="form-note">{say('يحدد التصنيفات مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.','The classifications are set by the marketing officer for their branch’s customers, the supervisor for their team’s customers, the sales manager and the administrator.')}</p></section>;
+ const size=classificationValue(data,'factorySize'),suggestion=suggestedFactorySize(machines.count);
  return <section className="classification-section full" data-classification-editor><h3>{say('تصنيفات التسويق','Marketing classifications')}</h3><div className="form-grid">
   <ChoiceGroup field="opportunityGrade" value={classificationValue(data,'opportunityGrade')} disabled={disabled} onChange={value=>onChange('opportunityGrade',value)}/>
   <VoiceField label={say('ملاحظات التصنيف','Classification notes')} value={classificationValue(data,'gradeNotes')} onChange={value=>onChange('gradeNotes',value)} multiline full rows={2} disabled={disabled} contextKey={contextKey+':gradeNotes'} inputProps={{maxLength:GRADE_NOTES_MAX}}/>
   <ChoiceGroup field="factorySize" value={size} disabled={disabled} onChange={value=>onChange('factorySize',value)}/>
   <div className="classification-suggestion full" data-size-suggestion={suggestion||'none'}>
-   {suggestion?<><span>{say('المقترح من عدد الماكينات (','Suggested from the machines (')+machineText(machines,say)+say('): ','): ')}<strong>{classificationLabel('factorySize',suggestion,language)}</strong></span>{size!==suggestion&&<button type="button" className="btn subtle small" disabled={disabled} onClick={()=>onChange('factorySize',suggestion)}>{say('اعتماد المقترح','Confirm the suggestion')}</button>}</>
-    :<span>{say('لا توجد ماكينات مسجلة لاقتراح الحجم؛ اختره يدويًا.','No registered machines to suggest a size; choose it by hand.')}</span>}
+   {suggestion?<><span>{say('المقترح من عدد الماكينات (','Suggested from the machine count (')+machineText(machines,say)+say('): ','): ')}<strong>{classificationLabel('factorySize',suggestion,language)}</strong></span>{size!==suggestion&&<button type="button" className="btn subtle small" disabled={disabled} onClick={()=>onChange('factorySize',suggestion)}>{say('اعتماد المقترح','Confirm the suggestion')}</button>}</>
+    :<span>{say('لا توجد ماكينات مسجلة ولا عدد في الشيت لاقتراح الحجم؛ اختره يدويًا.','No registered machines and no sheet count to suggest a size; choose it by hand.')}</span>}
    {!size&&suggestion&&<small>{say('يظهر الحجم المقترح للعميل حتى يُعتمد أو يُختار غيره.','The suggested size shows for the customer until it is confirmed or another is chosen.')}</small>}
    <small>{say('«متوقف» يُختار يدويًا فقط.','«Stopped» is chosen by hand only.')}</small>
   </div>
@@ -42,9 +49,11 @@ export function CustomerClassificationEditor({data,machines,editable,disabled=fa
 
 /** What the customer's sheet shows: each classification with its words and help, the size marked when it is only suggested. bare: no
  *  heading (inside the form). */
-export function CustomerClassificationSummary({data,machines,bare=false}:{data:Data;machines:number;bare?:boolean}){
+export function CustomerClassificationSummary({data,machines,bare=false}:{data:Data;machines:MachineCount;bare?:boolean}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
- const size=effectiveFactorySize(data.factorySize,machines),notes=classificationValue(data,'gradeNotes');
+ // The reader may not read this customer's classifications: nothing, not even a suggested size.
+ if(classificationHidden(data))return null;
+ const size=effectiveFactorySize(data.factorySize,machines.count),notes=classificationValue(data,'gradeNotes');
  const row=(field:ClassificationChoiceField,value:string,extra='')=><div key={field} data-classification-value={field}><dt>{say(...CLASSIFICATION_TEXT[field])}</dt><dd>{value?<><strong>{classificationLabel(field,value,language)}{extra}</strong><small>{classificationHelp(field,value,language)}</small></>:<span className="muted">{say('غير محدد','Not set')}</span>}</dd></div>;
  return <section className={bare?'classification-summary':'classification-summary classification-sheet'} data-classification-summary>{!bare&&<h3>{say('تصنيفات التسويق','Marketing classifications')}</h3>}<dl>
   {row('opportunityGrade',classificationValue(data,'opportunityGrade'))}
@@ -55,9 +64,10 @@ export function CustomerClassificationSummary({data,machines,bare=false}:{data:D
 }
 
 /** The small marks on a customer's row and card: the grade, the size (suggested ones marked) and the interest, when set. */
-export function CustomerClassificationBadges({data,machines}:{data:Data;machines:number}){
+export function CustomerClassificationBadges({data,machines}:{data:Data;machines:MachineCount}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
- const grade=classificationValue(data,'opportunityGrade'),size=effectiveFactorySize(data.factorySize,machines),interest=classificationValue(data,'customerInterest');
+ if(classificationHidden(data))return null;
+ const grade=classificationValue(data,'opportunityGrade'),size=effectiveFactorySize(data.factorySize,machines.count),interest=classificationValue(data,'customerInterest');
  if(!grade&&!size.value&&!interest)return null;
  return <span className="classification-badges" data-classification-badges>
   {grade&&<span className={'badge classification-grade grade-'+grade}>{say('الفرصة: ','Opportunity: ')}{classificationLabel('opportunityGrade',grade,language)}</span>}

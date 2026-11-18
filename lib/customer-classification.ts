@@ -51,20 +51,24 @@ export const CLASSIFICATION_ALL_TEXT:Record<ClassificationChoiceField,[string,st
 export const GRADE_NOTES_MAX=1000;
 
 /** The server's refusals (POST /api/crm), shown translated on the page (lib/locales/en.json). */
-export const CLASSIFICATION_REFUSED='تصنيفات العميل يحددها مسؤول التسويق والمشرف لعملاء فريقه ومدير المبيعات ومدير النظام. يمكنك الاطلاع عليها فقط.';
+/** Who sets them, without saying the reader may read them: a representative reads none of another's customers (review of 2026-11-18). */
+export const CLASSIFICATION_REFUSED='تصنيفات العميل يحددها مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه، ومدير المبيعات، ومدير النظام.';
 export const GRADE_REFUSED='اختر تصنيف الفرصة من القائمة: A أو B أو C أو D';
 export const SIZE_REFUSED='اختر حجم المصنع من القائمة: A أو B أو C أو D';
 export const INTEREST_REFUSED='اختر اهتمام العميل من القائمة: فني أو سعري أو خدمي أو الثقة';
 export const GRADE_NOTES_TOO_LONG='ملاحظات التصنيف طويلة؛ الحد الأقصى 1000 حرف.';
+export const GRADE_NOTES_REFUSED='اكتب ملاحظات التصنيف نصًا.';
 
-const choice=(values:readonly string[],message:string)=>z.string({invalid_type_error:message}).trim().refine(value=>value===''||values.includes(value),message);
+/** null is an emptied field (a form or a client that clears with null), never a value of its own. */
+const emptied=<T extends z.ZodTypeAny>(schema:T)=>z.preprocess(value=>value===null?'':value,schema.optional());
+const choice=(values:readonly string[],message:string)=>emptied(z.string({invalid_type_error:message}).trim().refine(value=>value===''||values.includes(value),message));
 /** The fields of lib/crm.ts schemas.customer: optional, so a page opened before them (or a form that does not offer them) sends none and
- *  the stored ones stay (app/api/crm/route.ts keepAbsentClassification). An unknown value is refused, never stored. */
+ *  the stored ones stay (app/api/crm/route.ts keepAbsentClassification); null is empty. An unknown value is refused, never stored. */
 export const classificationSchemaFields={
- opportunityGrade:choice(OPPORTUNITY_GRADES.map(item=>item.value),GRADE_REFUSED).optional(),
- gradeNotes:z.string({invalid_type_error:GRADE_NOTES_TOO_LONG}).trim().max(GRADE_NOTES_MAX,GRADE_NOTES_TOO_LONG).optional(),
- factorySize:choice(FACTORY_SIZES.map(item=>item.value),SIZE_REFUSED).optional(),
- customerInterest:choice(CUSTOMER_INTERESTS.map(item=>item.value),INTEREST_REFUSED).optional(),
+ opportunityGrade:choice(OPPORTUNITY_GRADES.map(item=>item.value),GRADE_REFUSED),
+ gradeNotes:emptied(z.string({invalid_type_error:GRADE_NOTES_REFUSED}).trim().max(GRADE_NOTES_MAX,GRADE_NOTES_TOO_LONG)),
+ factorySize:choice(FACTORY_SIZES.map(item=>item.value),SIZE_REFUSED),
+ customerInterest:choice(CUSTOMER_INTERESTS.map(item=>item.value),INTEREST_REFUSED),
 };
 
 const text=(value:unknown)=>typeof value==='string'?value.trim():'';
@@ -86,28 +90,61 @@ export function keepAbsentClassification(data:Record<string,unknown>,sent:Record
 export const changedClassification=(before:Record<string,unknown>|null|undefined,after:Record<string,unknown>)=>CLASSIFICATION_FIELDS.filter(field=>classificationValue(before,field)!==classificationValue(after,field));
 /** The data without the classifications (a representative's view of a customer that is not theirs). */
 export function withoutClassification<T extends Record<string,unknown>>(data:T):T{const copy={...data};for(const field of CLASSIFICATION_FIELDS)delete copy[field];return copy;}
+/** The marker GET /api/crm puts on a customer whose classifications the reader may not read (lib/crm.ts scopeRecords: a representative's
+ *  view of another member's customer, a marketing officer's view of another branch's): the server sends none of the four, and the page
+ *  then shows no mark, no suggested size and leaves the customer out of every classification filter that is set. */
+export const CLASSIFICATION_HIDDEN='_classificationHidden';
+export const classificationHidden=(data:Record<string,unknown>|null|undefined)=>data?.[CLASSIFICATION_HIDDEN]===true;
+/** The classifications a reader does not read (review of 2026-11-18): a representative's of a customer not assigned to them, a marketing
+ *  officer's of another branch's customer. lib/crm.ts scopeRecords removes them and marks the customer (CLASSIFICATION_HIDDEN), so the
+ *  page draws no badge and no suggested size for it and leaves it out of the three classification filters (matchesClassification). */
+export function classificationHiddenFrom(me:{id:string;role:string;branch:string},customer:{assignedTo:string;branch:string}){
+ return me.role==='rep'&&customer.assignedTo!==me.id||me.role==='marketing'&&customer.branch!==me.branch;
+}
+export function hideClassification(data:Record<string,unknown>){for(const field of CLASSIFICATION_FIELDS)delete data[field];data[CLASSIFICATION_HIDDEN]=true;}
 
 type MachineRow={kind:string;parentId:string|null;data:Record<string,unknown>|null|undefined};
-/** What one machine record adds: its «العدد»; a single machine with no number counts one, a group of machines (from a sheet) with no
- *  number counts nothing, since its size is not known. */
-function machineQuantity(record:MachineRow){
- const quantity=record.data?.quantity;
- if(typeof quantity==='number'&&Number.isFinite(quantity)&&quantity>=0)return Math.floor(quantity);
- return record.data?.recordType==='group'?0:1;
+/** A customer's machines and where the number comes from. The sheet's machines reach the CRM twice: as the customer's own
+ *  «عدد الماكينات في الشيت» (data.machineCount) and, once imported (app/api/machines/import), as one group record
+ *  `<customer>:source-machines-v1` carrying the same count; the machines a representative registers one by one afterwards are usually
+ *  among them. So the count never adds the two (review of 2026-11-18): the machines registered one by one when there is any (each its
+ *  «العدد», a machine with no number counting one), else the sheet's groups (their «العدد», a group of unknown size counting nothing),
+ *  else the customer's own sheet count, else none. */
+export type MachineCount={count:number;source:'machines'|'sheet'|'none'};
+type Tally={machines:number;hasMachine:boolean;groups:number;hasGroup:boolean};
+const whole=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=0?Math.floor(value):null;
+function add(tally:Tally,record:MachineRow){
+ const quantity=whole(record.data?.quantity);
+ if(record.data?.recordType==='group'){tally.hasGroup=true;tally.groups+=quantity??0;}
+ else{tally.hasMachine=true;tally.machines+=quantity??1;}
 }
-/** The number of a customer's registered machines: the sum of «العدد» of its machine records (records of kind factory whose parent is the
- *  customer, as «العملاء والماكينات» lists them under it). */
-export function registeredMachineCount(customerId:string,records:Iterable<MachineRow>){
- let count=0;
- for(const record of records)if(record.kind==='factory'&&record.parentId===customerId)count+=machineQuantity(record);
- return count;
+function counted(tally:Tally|undefined,sheetCount:unknown):MachineCount{
+ if(tally?.hasMachine)return {count:tally.machines,source:'machines'};
+ if(tally?.hasGroup)return {count:tally.groups,source:'sheet'};
+ const sheet=whole(sheetCount);
+ return sheet===null?{count:0,source:'none'}:{count:sheet,source:'sheet'};
 }
-/** Every customer's count in one pass (the customers page filters thousands of customers). */
-export function registeredMachineCounts(records:Iterable<MachineRow>){
- const counts=new Map<string,number>();
- for(const record of records)if(record.kind==='factory'&&record.parentId)counts.set(record.parentId,(counts.get(record.parentId)||0)+machineQuantity(record));
+const emptyTally=():Tally=>({machines:0,hasMachine:false,groups:0,hasGroup:false});
+/** One customer's: its machine records (kind factory, parent the customer) and its own sheet count. */
+export function customerMachineCount(customerId:string,records:Iterable<MachineRow>,sheetCount?:unknown):MachineCount{
+ const tally=emptyTally();let any=false;
+ for(const record of records)if(record.kind==='factory'&&record.parentId===customerId){add(tally,record);any=true;}
+ return counted(any?tally:undefined,sheetCount);
+}
+/** Every customer's in one pass (the customers page filters thousands of customers); the sheet count read from the customer records. */
+export function customerMachineCounts(records:Iterable<MachineRow&{id?:string}>):Map<string,MachineCount>{
+ const tallies=new Map<string,Tally>(),sheets=new Map<string,unknown>();
+ for(const record of records){
+  if(record.kind==='customer'&&record.id)sheets.set(record.id,record.data?.machineCount);
+  else if(record.kind==='factory'&&record.parentId){let tally=tallies.get(record.parentId);if(!tally)tallies.set(record.parentId,tally=emptyTally());add(tally,record);}
+ }
+ const counts=new Map<string,MachineCount>();
+ for(const id of new Set([...sheets.keys(),...tallies.keys()]))counts.set(id,counted(tallies.get(id),sheets.get(id)));
  return counts;
 }
+export const NO_MACHINES:MachineCount={count:0,source:'none'};
+/** The number only (as the size suggestion reads it). */
+export const registeredMachineCount=(customerId:string,records:Iterable<MachineRow>,sheetCount?:unknown)=>customerMachineCount(customerId,records,sheetCount).count;
 /** «حجم المصنع» the machines suggest: 5 or more A «كبير», 3 to 4 B «متوسط», 1 to 2 C «صغير», none nothing. D «متوقف» is never suggested. */
 export function suggestedFactorySize(machines:number):FactorySize|''{
  if(!Number.isFinite(machines)||machines<1)return '';
@@ -139,6 +176,8 @@ export type ClassificationFilter={opportunityGrade:string;factorySize:string;cus
 export const NO_CLASSIFICATION_FILTER:ClassificationFilter={opportunityGrade:'all',factorySize:'all',customerInterest:'all'};
 export const classificationFiltersSet=(filter:ClassificationFilter)=>CLASSIFICATION_CHOICE_FIELDS.filter(field=>filter[field]!=='all').length;
 export function matchesClassification(data:Record<string,unknown>,machines:number,filter:ClassificationFilter){
+ // A customer whose classifications the reader may not read is in no classification filter that is set (not even «غير محدد»).
+ if(classificationHidden(data))return classificationFiltersSet(filter)===0;
  for(const field of CLASSIFICATION_CHOICE_FIELDS){
   const wanted=filter[field];if(wanted==='all')continue;
   const value=field==='factorySize'?effectiveFactorySize(data.factorySize,machines).value:classificationValue(data,field);

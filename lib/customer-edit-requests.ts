@@ -1,5 +1,6 @@
 import type {Member} from './crm';
 import {CLASSIFICATION_CHOICE_FIELDS,CLASSIFICATION_TEXT} from './customer-classification';
+import {isFieldRole,isMarketingRole} from './roles';
 
 /** «طلبات تعديل بيانات العميل» (the owner, 2026-11-15, item 4 of the GSCO comparison list, after GSCO 2.13.55 and 2.13.73 on its projects):
  *  a correction of a customer's details by a representative, a supervisor or customer service no longer changes the customer: it becomes a
@@ -58,13 +59,22 @@ export type CustomerEditList={me:string;waiting:number;requests:CustomerEditRequ
 /** The administrator and the sales manager edit a customer directly and decide requests; whoever else could edit one sends a request. */
 export const directCustomerEditRole=(role:string)=>role==='admin'||role==='manager';
 export const proposesCustomerEdit=(role:string)=>['rep','supervisor','customer_service','customer_service_manager'].includes(role);
+/** A marketing officer (lib/roles.ts) corrects their own branch's customers directly; their correction waits, as a representative's, when
+ *  the customer is another branch's (in their regions), or when it changes the customer's region (the region is routing, as for a
+ *  representative): the whole edit is then a request (review of 2026-11-18). nextRegion: the region the save would store. */
+export function marketingCorrectionWaits(me:Pick<Member,'role'|'branch'>,customer:{branch:string;data?:Record<string,unknown>|null},nextRegion:unknown){
+ if(!isMarketingRole(me.role))return false;
+ const region=(value:unknown)=>typeof value==='string'?value.trim():'';
+ return customer.branch!==me.branch||region(nextRegion)!==region(customer.data?.region);
+}
 
 type Who=Pick<Member,'id'|'role'|'active'|'supervisorId'>;
 /** The requester's supervisor while they hold a request: the member the requester's account names, while that member is an active
- *  supervisor. A representative linked straight to a sales manager or the administrator, or to nobody, has none. */
+ *  supervisor. A representative (or a marketing officer, lib/roles.ts) linked straight to a sales manager or the administrator, or to
+ *  nobody, has none. */
 export function activeSupervisorOf(requesterId:string,members:readonly Who[]):Who|undefined{
  const requester=members.find(member=>member.id===requesterId);
- if(!requester||requester.role!=='rep'||!requester.supervisorId)return undefined;
+ if(!requester||!isFieldRole(requester.role)||!requester.supervisorId)return undefined;
  return members.find(member=>member.id===requester.supervisorId&&member.role==='supervisor'&&!!member.active);
 }
 /** Where a new request goes: a representative with an active supervisor to the supervisor, anyone else to the sales manager. */
@@ -140,8 +150,14 @@ export const CUSTOMER_EDIT_HISTORY:Record<string,string>={
  'customer-edit:supervisor-approved':'موافقة المشرف على تعديل بيانات العميل',
  'customer-edit:approved':'الموافقة على تعديل بيانات العميل',
  'customer-edit:rejected':'رفض طلب تعديل بيانات العميل',
- 'customer-edit:cancelled':'إلغاء طلب تعديل بيانات العميل'
+ 'customer-edit:cancelled':'إلغاء طلب تعديل بيانات العميل',
+ // A marketing officer's direct correction (review of 2026-11-18): the history lists its fields with before and after (DIRECT_EDIT).
+ 'customer-edit:direct':'تعديل مسؤول التسويق لبيانات العميل'
 };
+/** The audit action of a marketing officer's direct correction; its detail holds what customerEditProposal finds (the fields, their new
+ *  values and what they held), with who and the customer's name. */
+export const DIRECT_EDIT='customer-edit:direct';
+export type CustomerEditDirect={v:1;by:string;customerName:string;fields:CustomerEditField[];values:CustomerEditValues;base:Record<string,string>};
 
 const string=(value:unknown):value is string=>typeof value==='string';
 /** A list from GET /api/customer-edits the page may show. */

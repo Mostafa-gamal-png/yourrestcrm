@@ -56,6 +56,17 @@ function ChangeValue({change,side}:{change:CustomerEditChange;side:'before'|'aft
  return <bdi dir={change.field==='location'||change.field==='shortAddress'?'ltr':'auto'}>{CUSTOMER_EDIT_WORD_FIELDS.has(change.field)?t(value):value}</bdi>;
 }
 
+/** A correction's fields, each with what it held and what it holds (or asks for): a request's (RequestItem) and a marketing officer's direct
+ *  correction in the customer's «سجل التغييرات» (app/crm-app.tsx, the audit's `changes`). */
+export function CustomerEditChanges({changes,before,after}:{changes:readonly CustomerEditChange[];before:readonly [string,string];after:readonly [string,string]}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en);
+ if(!changes.length)return null;
+ return <dl className="cer-changes">{changes.map(change=>{const [ar,en]=CUSTOMER_EDIT_FIELD_TEXT[change.field]||[change.field,change.field];return <div key={change.field} data-customer-edit-field={change.field}>
+  <dt>{say(ar,en)}</dt>
+  <dd><span className="cer-before"><span className="cer-side">{say(...before)}</span><ChangeValue change={change} side="before"/></span><span className="cer-after"><span className="cer-side">{say(...after)}</span><ChangeValue change={change} side="after"/></span></dd>
+ </div>;})}</dl>;
+}
+
 function RequestItem({request,showCustomer,offline,onOpenCustomer,onChanged}:{request:CustomerEditRequest;showCustomer:boolean;offline:boolean;onOpenCustomer?:(customerId:string)=>void;onChanged?:()=>void}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en);
  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[rejecting,setRejecting]=useState(false),[note,setNote]=useState('');
@@ -80,10 +91,7 @@ function RequestItem({request,showCustomer,offline,onOpenCustomer,onChanged}:{re
   </div>
   <p className="cer-meta">{request.mine?say('طلبك','Your request'):<>{say('أرسله','Sent by')} <bdi>{request.requestedByName}</bdi></>} · <time dateTime={request.createdAt} dir="auto">{stamp(request.createdAt,language)}</time></p>
   {request.supervisorName&&<p className="cer-meta" data-customer-edit-supervisor>{say('وافق المشرف','Approved by the supervisor')}: <bdi>{request.supervisorName}</bdi></p>}
-  {request.changes.length>0&&<dl className="cer-changes">{request.changes.map(change=>{const [ar,en]=CUSTOMER_EDIT_FIELD_TEXT[change.field]||[change.field,change.field];return <div key={change.field} data-customer-edit-field={change.field}>
-   <dt>{say(ar,en)}</dt>
-   <dd><span className="cer-before"><span className="cer-side">{say('الحالي','Current')}</span><ChangeValue change={change} side="before"/></span><span className="cer-after"><span className="cer-side">{say('المطلوب','Requested')}</span><ChangeValue change={change} side="after"/></span></dd>
-  </div>;})}</dl>}
+  <CustomerEditChanges changes={request.changes} before={['الحالي','Current']} after={['المطلوب','Requested']}/>
   {request.stale&&<p className="cer-alert" role="status" data-customer-edit-stale><AlertCircle size={15} aria-hidden/>{decides?say('تغيرت البيانات نفسها بعد إرسال الطلب، فلا يمكن اعتماده. ارفضه ليعيد صاحبه إرساله على البيانات الحالية.','The same details changed after the request was sent, so it cannot be approved. Reject it so its sender can resend it on the current details.'):say('تغيرت البيانات نفسها بعد إرسال الطلب. ألغِه وأرسله من جديد على البيانات الحالية.','The same details changed after the request was sent. Cancel it and send it again on the current details.')}</p>}
   {request.status==='rejected'&&<p className="cer-reason" data-customer-edit-reason><strong>{say('سبب الرفض','Reason for rejection')}{request.decidedByName?<> (<bdi>{request.decidedByName}</bdi>)</>:''}:</strong> <bdi dir="auto">{request.note}</bdi></p>}
   {request.status!=='pending'&&request.status!=='rejected'&&request.decidedByName&&<p className="cer-meta">{request.status==='approved'?say('وافق','Approved by'):say('ألغاه','Cancelled by')} <bdi>{request.decidedByName}</bdi> · <time dateTime={request.decidedAt||''} dir="auto">{stamp(request.decidedAt,language)}</time></p>}
