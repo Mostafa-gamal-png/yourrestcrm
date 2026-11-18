@@ -1,0 +1,38 @@
+تحديث يورست CRM — 2026-11-18، اسم الحزمة: update-rep-search-20261118
+
+الحزمة تخص crm.yourrest.org فقط. تُرفع بعد حزمة update-android-1014-20261117، وتشمل كل ما قبلها.
+دون ترحيل ودون تغيير في بنية قاعدة البيانات (تبقى على 22 ترحيلًا). تطبيق أندرويد لا يتغير في هذه الحزمة (يبقى 1.0.14).
+لا تشغّل setup.cjs ولا تنسخ الملفات فوق التطبيق الحالي ولا تعدّل settings.cjs أو مجلد البيانات yourrest-crm-data.
+
+== بحث المندوب في الزيارات والمتابعات ==
+- مربع «بحث في السجلات» يظهر للمندوب في «الزيارات» و«المتابعات» كما في «العملاء».
+- يبحث في زيارات المندوب ومتابعاته فقط: باسم العميل أو رقمه أو نتيجة التواصل أو الإجراء التالي.
+- الخريطة والمستهدفات بلا بحث للمندوب كما كانت. لا تغيير في الخادم.
+
+خطوات الرفع (الحزمة update-rep-search-20261118)
+------------------------------------------------------
+لا ترحيل في هذه الحزمة: القاعدة تبقى على 22 ترحيلًا.
+
+1. نسخة احتياطية لليوم: إن كانت هذه أول حزمة لليوم يأخذها المُفعِّل بنفسه في الخطوة 4، وإن سبقتها حزمة في اليوم نفسه يعيد استعمال نسختها. لا تنفذ شيئًا هنا.
+
+2. والتطبيق يعمل، ارفع الحزمة وفكّها داخل:
+/home/youriedx/yourrest-crm-update-rep-search-20261118
+يجب أن يظهر مجلد release والملف yourrest-activate-update-rep-search.cjs مباشرة داخل هذا المسار. (مجلد جديد؛ لا تفكّ فوق أي مجلد قديم.)
+
+3. افحص الحزمة دون إيقاف التطبيق:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-rep-search-20261118/yourrest-activate-update-rep-search.cjs --check
+يجب أن يظهر PACKAGE AND CONFIGURATION: READY. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله.
+
+4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-rep-search-20261118/yourrest-activate-update-rep-search.cjs
+
+5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-rep-search-20261118/yourrest-activate-update-rep-search.cjs --verify
+النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 22.
+
+6. بعد النجاح: بلّغ المناديب بتحديث الصفحة أو الضغط على «أعد التحميل» في التطبيق.
+
+إذا ظهر STOP أو أي خطأ: احتفظ بالناتج للمراجعة. لا تحذف ملفات الحالة أو القفل ولا تكرر التبديل قبل المراسلة.
+
+== الرجوع للنسخة السابقة ==
+دون ترحيل، فالرجوع بالكود فقط (إلى update-android-1014-20261117). لا تتغير أي بيانات؛ يختفي مربع البحث من «الزيارات» و«المتابعات» للمندوب.
