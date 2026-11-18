@@ -1,0 +1,52 @@
+تحديث يورست CRM — 2026-11-18، اسم الحزمة: update-marketing-20261118
+
+الحزمة تخص crm.yourrest.org فقط. تُرفع بعد حزمة update-rep-search-20261118، وتشمل كل ما قبلها.
+دون ترحيل ودون تغيير في بنية قاعدة البيانات (تبقى على 22 ترحيلًا). تطبيق أندرويد لا يتغير في هذه الحزمة (يبقى 1.0.14)، ويعمل مسؤول التسويق عليه كما يعمل المندوب.
+لا تشغّل setup.cjs ولا تنسخ الملفات فوق التطبيق الحالي ولا تعدّل settings.cjs أو مجلد البيانات yourrest-crm-data.
+
+== وظيفة «مسؤول تسويق» ==
+- دور جديد في «الفريق والصلاحيات». يعمل مثل المندوب تمامًا: الزيارات والمتابعات والخريطة ومستهدفه وتقييمه وتطبيق أندرويد وطلبات القوالب.
+- يعدّل بيانات عملاء فرعه في مناطقه مباشرة، دون اعتماد المشرف ومدير المبيعات، ويُسجَّل كل تعديل في «سجل التغييرات» بالحقول قبل التعديل وبعده.
+- تعديله لعميل فرع آخر في مناطقه، أو أي تعديل يغيّر منطقة العميل، يمر بطلب التعديل نفسه الذي يمر به المندوب (المشرف ثم مدير المبيعات).
+- لا يحذف عميلًا، ولا يغيّر المسؤول عنه، ولا يعدّل مكائن عملاء غيره.
+
+== تصنيفات العميل الثلاثة ==
+- «تصنيف الفرصة»: A مرتفعة، B متوسطة، C ضعيفة، D مستبعدة، ومعها «ملاحظات التصنيف».
+- «حجم المصنع»: A كبير (5 مكائن فأكثر)، B متوسط (3 إلى 4)، C صغير (1 إلى 2)، D متوقف (غير نشط، يُختار يدويًا فقط). يقترح النظام الحجم من عدد المكائن المسجلة، ويُعتمد المقترح بزر «اعتماد المقترح»، والقيمة المحفوظة تتقدم دائمًا.
+- «اهتمام العميل»: فني، سعري، خدمي، الثقة.
+- يحددها مسؤول التسويق لعملاء فرعه، والمشرف لعملاء فريقه (بطلب ينتظر مدير المبيعات كأي تعديل للمشرف)، ومدير المبيعات، ومدير النظام. المندوب يراها لعملائه فقط دون تعديل.
+- في صفحة العملاء: فلتر لكل تصنيف، وتظهر التصنيفات في ملف تصدير العملاء.
+
+خطوات الرفع (الحزمة update-marketing-20261118)
+------------------------------------------------------
+لا ترحيل في هذه الحزمة: القاعدة تبقى على 22 ترحيلًا.
+
+1. نسخة احتياطية لليوم: إن كانت هذه أول حزمة لليوم يأخذها المُفعِّل بنفسه في الخطوة 4، وإن سبقتها حزمة في اليوم نفسه يعيد استعمال نسختها. لا تنفذ شيئًا هنا.
+
+2. والتطبيق يعمل، ارفع الحزمة وفكّها داخل:
+/home/youriedx/yourrest-crm-update-marketing-20261118
+يجب أن يظهر مجلد release والملف yourrest-activate-update-marketing.cjs مباشرة داخل هذا المسار. (مجلد جديد؛ لا تفكّ فوق أي مجلد قديم.)
+
+3. افحص الحزمة دون إيقاف التطبيق:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-marketing-20261118/yourrest-activate-update-marketing.cjs --check
+يجب أن يظهر PACKAGE AND CONFIGURATION: READY. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله.
+
+4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-marketing-20261118/yourrest-activate-update-marketing.cjs
+
+5. عند ظهور START APP IN CPANEL اضغط Start App، ثم:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-marketing-20261118/yourrest-activate-update-marketing.cjs --verify
+النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 22.
+
+6. بعد النجاح: بلّغ الجميع بتحديث أي صفحة CRM مفتوحة. لإضافة مسؤول تسويق: «الفريق والصلاحيات» ← إضافة مستخدم أو تعديله ← الدور «مسؤول تسويق»، مع الفرع والمناطق والمشرف كما للمندوب.
+
+إذا ظهر STOP أو أي خطأ: احتفظ بالناتج للمراجعة. لا تحذف ملفات الحالة أو القفل ولا تكرر التبديل قبل المراسلة.
+
+== الرجوع للنسخة السابقة (update-rep-search-20261118) — اقرأه قبل أي رجوع ==
+دون ترحيل، فالرجوع بالكود فقط. لكن الإصدار السابق لا يعرف التصنيفات ولا دور «مسؤول تسويق»:
+1. ما يضيع: أي حفظ لعميل في الإصدار السابق (تعديله، أو الموافقة على طلب تعديل له) يمسح تصنيفاته الأربعة (تصنيف الفرصة، وملاحظاته، وحجم المصنع، واهتمام العميل) من ذلك العميل نهائيًا، والعودة لهذا الإصدار بعدها لا تعيدها.
+2. قبل الرجوع صدّر التصنيفات بأمر للقراءة فقط (لا يغيّر شيئًا، والتطبيق يعمل)، بعد وضع مسار قاعدة البيانات كما في YR_DATABASE_PATH في settings.cjs مكان المسار المكتوب:
+sqlite3 -readonly -header -csv /home/youriedx/yourrest-crm-data/database.sqlite "SELECT r.id AS customer_id, printf('YR-C-%06d',n.number) AS yourrest_code, json_extract(r.data,'$.code') AS erp_code, json_extract(r.data,'$.name') AS name, json_extract(r.data,'$.opportunityGrade') AS opportunity_grade, json_extract(r.data,'$.gradeNotes') AS grade_notes, json_extract(r.data,'$.factorySize') AS factory_size, json_extract(r.data,'$.customerInterest') AS customer_interest FROM crm_records r LEFT JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.kind='customer' AND (json_extract(r.data,'$.opportunityGrade') IS NOT NULL OR json_extract(r.data,'$.gradeNotes') IS NOT NULL OR json_extract(r.data,'$.factorySize') IS NOT NULL OR json_extract(r.data,'$.customerInterest') IS NOT NULL) ORDER BY r.id" > customer-classifications.csv
+3. قبل الرجوع احسم طلبات التعديل المنتظرة التي تحمل تصنيفًا (وافق عليها أو ارفضها في هذا الإصدار).
+4. قبل الرجوع غيّر دور كل «مسؤول تسويق» إلى «مندوب المبيعات» من «الفريق والصلاحيات»: الإصدار السابق لا يعرض له أي صفحة، ويرفض حفظه من شاشة الفريق.
+ثم أعد المجلد القديم الذي حفظه المُفعِّل كما في التراجع المعتاد.
