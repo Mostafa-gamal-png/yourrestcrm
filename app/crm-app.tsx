@@ -383,7 +383,8 @@ export default function CRM() {
     const canAddMachineTo=(customer:Row)=>customer.kind==='customer'&&!!me&&can(me,'customer','edit')&&!customer.data._readOnly&&!customer.data._masterReadOnly&&(me.role==='rep'?customer.assignedTo===me.id:salesWorkspace&&!customer.data._masterRoutingReadOnly);
     const regionalDirectory=me?.role==='rep'&&['customer','map'].includes(view);
     const effectiveStaffFilter=me?.role==='rep'?'all':staffFilter;
-    const canSearch=me?.role!=='rep'||view==='customer';
+    // A representative searches Clients, and since 2026-11-18 their own visits and follow-ups too (the owner: «عايز المناديب يقدروا يعملوا بحث على العملاء فى الزيارات والمتابعات»).
+    const canSearch=me?.role!=='rep'||['customer','activity','followup'].includes(view);
     const searchQuery=canSearch?q:'';
     // Customer service corrects a customer's details like a representative (the owner, 2026-11-07): the customers of its branch in its regions, as the
     // server allows (their rows arrive read only for everything else); never routing, delete, machines or commercial records.

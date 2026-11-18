@@ -118,7 +118,7 @@ for(const locale of ['ar','en'])for(const compactNavigation of [true,false]){
  for(const view of ['customer','map','activity','followup','targets']){
   const h=harness({me,members:[me],records:ownRecords,loading:false,view,compactNavigation,q:view==='customer'?'':'unmatched hidden query',staffFilter:'stale-user'});let tree=h.render();
   const workspace=byClass(tree,'workspace');
-  eq(nodes(workspace,node=>node.type==='input'&&node.props.type==='search').length,view==='customer'?1:0,context+' '+view+' permits rep general search only on Clients');
+  eq(nodes(workspace,node=>node.type==='input'&&node.props.type==='search').length,['customer','activity','followup'].includes(view)?1:0,context+' '+view+' permits rep general search on Clients, Visits and Follow-ups only');
   eq(nodes(workspace,deniedAction).length,0,context+' '+view+' has no root export/edit/delete controls');
   eq(!!child(tree,MobileNavigation),compactNavigation,context+' chooses expected navigation branch');
   if(view==='customer'){
@@ -140,13 +140,15 @@ for(const locale of ['ar','en'])for(const compactNavigation of [true,false]){
    button(tree,tr('إضافة عميل')).props.onClick();eq(h.state.form.kind,'customer',context+' rep retains new customer creation');eq(h.state.form.row,undefined,context+' rep customer action creates a new row');
   }
   if(view==='activity'){
-   const visits=child(tree,VisitsPage);eq(visits.props.query,'',context+' visit list ignores stale search');eq(visits.props.canEdit,false,context+' visit table inherits no-edit permission');
+   const visits=child(tree,VisitsPage);eq(visits.props.query,'unmatched hidden query',context+' visit list receives the rep search');
+   {const search=nodes(byClass(tree,'workspace'),node=>node.type==='input'&&node.props.type==='search')[0];search.props.onChange({target:{value:ownCustomer.data.name}});tree=h.render();eq(child(tree,VisitsPage).props.query,ownCustomer.data.name,context+' rep searches visits by customer name');search.props.onChange({target:{value:'unmatched hidden query'}});tree=h.render();}eq(visits.props.canEdit,false,context+' visit table inherits no-edit permission');
    visits.props.onOpen(ownVisit);tree=h.render();eq(child(tree,CustomerVisitDialog).props.initial.id,ownVisit.id,context+' View details opens own existing visit');
    child(tree,CustomerVisitDialog).props.onClose();tree=h.render();child(tree,VisitsPage).props.onNew();tree=h.render();eq(child(tree,CustomerVisitDialog).props.initial,undefined,context+' visit list still creates new visits');
    child(tree,CustomerVisitDialog).props.onClose();tree=h.render();child(tree,VisitsPage).props.onOpen(ownFollowup);tree=h.render();eq(child(tree,CustomerFollowupDialog).props.initial.id,ownFollowup.id,context+' followup entry in visits opens its reader');
   }
   if(view==='followup'){
-   const followups=child(tree,CustomerFollowupsPage);eq(followups.props.query,'',context+' followup list ignores stale search');
+   const followups=child(tree,CustomerFollowupsPage);eq(followups.props.query,'unmatched hidden query',context+' followup list receives the rep search');
+   {const search=nodes(byClass(tree,'workspace'),node=>node.type==='input'&&node.props.type==='search')[0];search.props.onChange({target:{value:ownCustomer.data.name}});tree=h.render();eq(child(tree,CustomerFollowupsPage).props.query,ownCustomer.data.name,context+' rep searches follow-ups by customer name');search.props.onChange({target:{value:'unmatched hidden query'}});tree=h.render();}
    followups.props.onOpen(ownFollowup);tree=h.render();eq(child(tree,CustomerFollowupDialog).props.initial.id,ownFollowup.id,context+' followup history opens existing details');
    child(tree,CustomerFollowupDialog).props.onClose();tree=h.render();child(tree,CustomerFollowupsPage).props.onNew(ownCustomer.id,ownFollowup.id);tree=h.render();eq(child(tree,CustomerFollowupDialog).props.initial,undefined,context+' followup page retains create action');eq(child(tree,CustomerFollowupDialog).props.customerId,ownCustomer.id,context+' followup create is seeded correctly');
   }
@@ -229,4 +231,4 @@ for(const locale of ['ar','en']){
  child(tree,MobileNavigation).props.onNavigate('activity');eq(h.state.view,'activity','Rep mobile tabs work after administrative session expiry');
 }
 
-console.log(JSON.stringify({ok:true,checks,type:'real CRM controlled interactions: rep Clients detail search with full results, no general search elsewhere, no export or visit edits, authorized customer correction, permitted readers and creation, manager controls, short customer creation, guarded discard, validation and offline notice; Arabic/English compact and desktop branches',realBrowser:false,network:false}));
+console.log(JSON.stringify({ok:true,checks,type:'real CRM controlled interactions: rep search on Clients (full results), Visits and Follow-ups, no general search elsewhere, no export or visit edits, authorized customer correction, permitted readers and creation, manager controls, short customer creation, guarded discard, validation and offline notice; Arabic/English compact and desktop branches',realBrowser:false,network:false}));

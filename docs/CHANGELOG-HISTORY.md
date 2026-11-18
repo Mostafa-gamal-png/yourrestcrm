@@ -4,6 +4,12 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The representative searches visits and follow-ups (2026-11-18, update-rep-search-20261118 after update-android-1014-20261117)
+
+- **Asked.** The owner: «عايز المناديب يقدروا يعملوا بحث على العملاء فى الزيارات والمتابعات».
+- **Done.** The record search box («بحث في السجلات») now shows for a representative on «الزيارات» and «المتابعات» as well as «العملاء» (`canSearch` in `app/crm-app.tsx`). It filters the representative's own records the server already sends: visits by customer name, code, contact result and needs (`filterVisitRows`), follow-ups by customer name, code, phone and next action. The map and the targets page still show no search for a representative. Nothing changed on the server.
+- **Tests.** `tests/rep-mobile-shell.mjs` (the search shows on the three pages and reaches both lists, Arabic and English, phone and desktop: 726 checks) and `tests/app-browser-workflows.mjs` (a representative in Chromium finds a visit by customer name and none for a name that is not theirs, and the follow-ups page offers the search, at 360 px with nothing running off the screen).
+
 ## The filters of «طلبات تصنيع القوالب»: «الحالة», «واقف عند», «المندوب», the days and a wide «بحث» (2026-11-17, not released yet, no migration, no server change, no Android change)
 
 - **Asked.** The owner sent a picture of the filter bar of the products application's orders list: «ضيف الفلاتر دى فى طلبات القوالب
