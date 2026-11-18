@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-RepSearch-20261118.zip","sha256":"6dd219c86f7eb06203f48450b6e14eda5a0a425cbf3b78fa2443b28603d3566c","stage":"yourrest-crm-update-rep-search-20261118","helper":"yourrest-activate-update-rep-search.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Marketing-20261118.zip","sha256":"182326aefd49bd3ab90304642033bf7de538da97e4228c733580ef57ff079c40","stage":"yourrest-crm-update-marketing-20261118","helper":"yourrest-activate-update-marketing.cjs"}
