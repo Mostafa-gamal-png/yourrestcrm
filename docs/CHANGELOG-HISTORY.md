@@ -4,6 +4,36 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The role «مسؤول تسويق» and three customer classifications (2026-11-18, not released yet, no migration, no Android change)
+
+- **Asked.** The owner: «فيه وظيفة جديدة مسؤول تسويق، الموظف مهمته الاساسية تحديث بيانات العملاء، بيضيف التصنيفات دى ... بالاضافة بيشتغل
+  زى المندوب»; the proposal approved with «تمام دوس».
+- **The role** (`marketing`, «مسؤول تسويق» / "Marketing officer", `lib/roles.ts`). A representative everywhere a representative is named:
+  the pages, a supervisor over them and the sales manager's team, mandatory tracking and the Android app (the installed 1.0.14 is told
+  `memberRole: "rep"` by `/api/mobile-route` and `/api/nearby-customers`, `trackingRole`), their own targets and evaluation, the ERP sales,
+  quotations and collections mapping, mold requests with the customer's signature and the products application's salesmen list, support
+  requests, complaints, customer-service requests and the visit place. Every rule reads `isFieldRole`/`FIELD_ROLES_SQL`; a guard in
+  `tests/marketing-role.mjs` lists each literal `'rep'` left in `lib/` and `app/` with its reason. The one difference: they correct every
+  customer of their branch in their regions **directly** (no approval request; the customer's history records who and when), never another
+  branch's, another region's, the responsible member or branch, nor delete a customer («حذف عميل» has no cell for the role; the server
+  refuses it too). Machines: their own customers', as a representative.
+- **Classifications** (`lib/customer-classification.ts`, in the customer's JSON data; «تصنيف العميل» untouched): «تصنيف الفرصة»
+  `opportunityGrade` A مرتفعة / B متوسطة / C ضعيفة / D مستبعدة with the owner's descriptions, «ملاحظات التصنيف» `gradeNotes` (up to 1000),
+  «حجم المصنع» `factorySize` A كبير / B متوسط / C صغير / D متوقف, «اهتمام العميل» `customerInterest` technical فني / price سعري / service
+  خدمي / trust الثقة. The size is suggested from the registered machines (the sum of the machine records' «العدد» under the customer): 5 or
+  more A (the owner's table said «أكثر من 5»; asked to confirm), 3–4 B, 1–2 C, none nothing; a stored value always wins; D by hand only;
+  «اعتماد المقترح» stores the suggestion. Set by the marketing officer (their branch), the supervisor (their team; it waits in their request
+  for the sales manager, as their corrections do), the sales manager and the administrator; a representative reads them on their own
+  customers only (GET /api/crm sends nothing of the others'), customer service reads them; anyone else's change and an unknown value are
+  refused by the server; a save that does not carry them keeps them. On «العملاء»: the form's fields, the sheet, marks on rows and cards, a
+  filter for each (the size as shown: stored else suggested) and four columns in the customers' CSV export. The ERP customers import is
+  unchanged (its file has no such columns).
+- **Mended with it.** The filter bar wraps instead of pushing a tablet on its side sideways when the three selects are in it.
+- **Tests.** New: `marketing-role` (default gate, 192 checks), `customer-classification` (default gate, 148), `marketing-role-http`
+  (release-build, 114) and `marketing-role-browser` (browser, 120: 320, 360, tablet both ways and desktop, Arabic and English). Harnesses
+  with stand-in requires given the real `lib/roles.ts` (nine tests), the independent projection of `context-performance` and marketing cases
+  in `tracking-gate`, `tracking-companion`, `native-tracking-ui`, `my-targets-ui` and `role-ui`. Guide: section 9-أأ.
+
 ## The representative searches visits and follow-ups (2026-11-18, update-rep-search-20261118 after update-android-1014-20261117)
 
 - **Asked.** The owner: «عايز المناديب يقدروا يعملوا بحث على العملاء فى الزيارات والمتابعات».
