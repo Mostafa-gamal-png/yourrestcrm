@@ -4,6 +4,49 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «الإدخالات الواقفة على الجهاز»: delete a stuck entry, duplicates and records no longer available (2026-11-19, no migration, no Android change)
+
+- **Asked.** The owner, through the GSCO session, 2026-11-19: port GSCO 2.13.84 «الإدخالات الواقفة على الجهاز» (a follow-up refused
+  with 409 because it was saved twice, which the representative could not get rid of) and the sync fix of 2.13.81. GSCO's «الفرصة» is the
+  visit or contact a follow-up continues here (`sourceId`), its «المشروع» the customer; «تحتاج مراجعة» is the outbox's `blocked`. Rules in
+  `lib/offline-review.ts` (pure), screen in `app/offline-status.tsx`. Guide 9-أز.
+- **«حذف هذا الإدخال من الجهاز»** for an entry that needs review, on the list or in the local archive (never one waiting or being sent):
+  «سيُحذف هذا الإدخال من هذا الجهاز ولن يُرسل إلى الخادم. لا يمكن التراجع عن ذلك.», then what goes with it, listed: every entry that
+  needs it however far (a visit, follow-up, opportunity or attachment on a new customer kept on the device, an entry naming a deleted
+  attachment, a follow-up on an opportunity on the device; waiting, held or archived) and the attachments only the deleted entries name
+  (the photo or PDF lives in its entry's `blob`). One IndexedDB transaction (`deleteOfflineEntry`); refused while the sync's lease
+  (`sync-lease`) is held in any tab or one of them is being sent (the button is disabled with «الحذف غير متاح أثناء المزامنة…»), and when
+  what goes with it changed after it was shown. Nothing is asked of the server. The drain now reads each entry again before sending it,
+  and one with nothing to send (every entry held, none to release) asks nothing of the server and takes no lease.
+  «أرشفة للمراجعة» is unchanged (a copy kept unsent; deleting removes it; an archived entry may be deleted too).
+- **Duplicates (409).** «يبدو أن هذه المتابعة مسجلة بالفعل: متابعة على الفرصة نفسها بتاريخ <day>. إن كانت مكررة فاحذفها من الجهاز.»
+  (and the visit's, the opportunity's, the customer's, the attachment's, and «… على الخادم» with no day), from the server's `DUPLICATE`, the
+  routes' «already saved» words, or, for a follow-up, the member's own follow-up on the same opportunity in the device's copy; the day from
+  the server, else from that copy. The server's own message stays under it («رد الخادم: …»).
+- **No longer available.** «لم تعد الفرصة متاحة لك (أُغلقت أو نُقلت أو حُذفت)، لذلك لا يمكن إرسال هذا الإدخال. يمكنك حذفه من الجهاز.» and
+  «لم يعد العميل متاحًا لك (نُقل أو حُذف)، …», from `CUSTOMER_UNAVAILABLE`/`OPPORTUNITY_UNAVAILABLE`, from each route's own refusal at its
+  status (`UNAVAILABLE_REFUSALS`, held to the routes by the default-gate test), or from a 404/410.
+- **A new customer that needs review:** «تعديل موقع العميل» (the customer form's own location fields; checked by the server's rules on the
+  phone first, then the same entry sent again with its key and recording time; what waited behind it follows), and, within 50 m of a
+  customer the same member registered and sees, «فتح العميل الموجود», which opens that customer's sheet (`yourrest:open-customer`).
+- **Sync fix (GSCO 2.13.81).** Only the server's own refusal holds an entry for review: a 4xx (not 408/429) whose body is JSON with
+  `error`, or a redirect to the sign-in page (`isServerRefusal`; `SubmitError.invalidResponse` marks a body that is not JSON). A proxy or
+  host page (an HTML 404 or 413, a 401/403 page) is retried, on a job and on the account check that opens each sync (which no longer holds
+  every entry and locks the device for it). At the start of a sync, once the server confirmed the same account, entries held with the
+  device's own words for such an answer (`NOT_SERVER_ANSWER`) or with «sign in again», and those waiting (424) behind entries no longer held,
+  go back to the queue.
+- **Server.** `CRMError` carries extra fields beside `error`; `POST /api/customer-followups` alone adds `code` (`DUPLICATE` with
+  `duplicate:{id,date}`, only ever one of the member's own visible follow-ups or this request key's; `CUSTOMER_UNAVAILABLE`,
+  `OPPORTUNITY_UNAVAILABLE`); its words and statuses are unchanged. The other routes are unchanged.
+- **Tests.** `tests/offline-stuck-entries.mjs` (default gate, 134), `tests/offline-stuck-entries-http.mjs` (release build, 15),
+  `tests/offline-stuck-entries-browser.mjs` (browser after the build, 87: Arabic and English, 320, 360, tablet both ways, desktop). Not tried
+  on a real phone, in the real Android app, or behind a real proxy.
+- **Rollback** to update-android-1015-20261119: code only, nothing changes on the server. What was deleted stays deleted (it never reached
+  the server); a held entry keeps an extra `answer` the previous release ignores and shows with the server's message alone, without the
+  delete, the location edit or «فتح العميل الموجود» (retry and archive remain); the old weakness returns (a non-JSON 4xx holds an entry
+  until retried; what waited behind a fixed entry does not follow it by itself). A page of this release left open against the previous
+  server reads duplicates from the device's copy and «no longer available» from the routes' words.
+
 ## Android 1.0.15 (16): no more white screen, and the camera in photo fields (2026-11-19, no migration, no site change)
 
 - **Asked.** The owner, 2026-11-19: a new Huawei tablet without Google services (no Play Store, no Chrome; Huawei's own WebView, usually
