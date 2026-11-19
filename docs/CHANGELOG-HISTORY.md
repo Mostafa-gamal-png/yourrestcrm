@@ -33,6 +33,7 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   التغييرات» (English in `lib/locales/en.json`); their ids are the add's and the delete's receipts.
 - **Tests.** `tests/mold-photos.mjs` (default gate, 144), `tests/mold-photos-http.mjs` (release build, 71),
   `tests/mold-photos-browser.mjs` (browser, 56; Arabic and English at 320, 360, a tablet both ways and a computer),
+  `tests/mold-photos-rollback.mjs` (default gate, 27: the previous release on this release's photos, its backup and restore),
   `tests/production-backup.mjs` (a photo deleted during a backup, 87), `tests/server-authorization.mjs` (the routes).
 - **Rollback.** To update-orders-20261119: code only, nothing is changed or deleted. The previous release keeps the rows and the bytes,
   backs them up and restores them, shows none of them (it lists no visit file by customer), and serves one only to whoever knows its id
