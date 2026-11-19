@@ -144,7 +144,7 @@ eq(V.offlineReview({kind:'plan',url:'/api/daily-plans',body:'{}',localId:'x',sta
 // ---- 6. The routes on an isolated database.
 const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');
 const migrations=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort();
-eq(migrations.at(-1),'0022_daily_plans.sql','the newest migration');
+eq(migrations.filter(name=>name<='0022_daily_plans.sql').at(-1),'0022_daily_plans.sql','the plans\' migration (a later release\'s 0023 and 0024, the work areas, applied after it)');
 for(const name of migrations)sql.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));
 class Statement{constructor(q,a=[]){this.q=q;this.a=a;}bind(...a){return new Statement(this.q,a);}async run(){const r=sql.prepare(this.q).run(...this.a);return{meta:{changes:Number(r.changes)}};}async all(){return{results:sql.prepare(this.q).all(...this.a)};}async first(){return sql.prepare(this.q).get(...this.a)||null;}}
 let race=null;
