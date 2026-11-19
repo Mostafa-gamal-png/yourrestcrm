@@ -8,8 +8,9 @@ export const viewsWholeTeam=(me:Member)=>(me.role==='supervisor'||me.role==='man
 export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'].includes(role);
 export function canViewPage(role:string,view:string){
  // «المحذوفات» here is the role's ceiling (the matrix offers its «استعراض» and «تحرير»); who has it now is lib/permissions.ts trashScopeOf.
- // A marketing officer (lib/roles.ts) has a representative's pages.
- if(isFieldRole(role))return ['customer','map','activity','followup','targets','mold-requests','trash'].includes(view);
+ // A marketing officer (lib/roles.ts) has a representative's pages. «خطط المناديب» (lib/daily-plans.ts): «خطة الغد» for a field member,
+ // the team's plans for the administrator, a sales manager and a supervisor.
+ if(isFieldRole(role))return ['customer','map','activity','followup','targets','mold-requests','trash','plans'].includes(view);
  // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
  // The customer-service evaluation has one for the manager and the administrator; a representative meets theirs on the Complaints page.
  // Mold requests are for every role (the owner, 2026-11-01), customer service included.
@@ -17,7 +18,7 @@ export function canViewPage(role:string,view:string){
  if(!canUseSalesWorkspace(role))return false;
  if(view==='trash')return true;
  if(view==='team'||view==='complaints'||view==='service-kpi')return role==='admin';
- return ['dashboard','customer','map','activity','followup','competitors','journeys','quote','sales','targets','mold-requests'].includes(view);
+ return ['dashboard','customer','map','activity','followup','competitors','journeys','plans','quote','sales','targets','mold-requests'].includes(view);
 }
 
 /** «المحذوفات» (2026-11-09, widened 2026-11-10): by role, the administrator sees and restores every deletion and the sales manager those they
@@ -50,7 +51,7 @@ export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=
  const page=view==='factory'?'customer':['opportunity','service'].includes(view)?'activity':view==='reports'&&canUseSalesWorkspace(role)?'targets':view;
  const shown=(screen:string)=>!pageRetired(screen)&&canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen)&&(screen!=='targets'||!hubTabsAllHidden(role,hidden)));
  if(shown(page))return page;
- return ['activity','dashboard','customer','map','followup','mold-requests','complaints','targets','journeys','quote','sales','competitors','service-kpi','trash','team'].find(shown)||'activity';
+ return ['activity','dashboard','customer','map','followup','mold-requests','complaints','targets','journeys','quote','sales','competitors','service-kpi','trash','team','plans'].find(shown)||'activity';
 }
 
 /** Reporting history includes inactive members; assignment selectors can request activeOnly. read: a place that only READS may widen to

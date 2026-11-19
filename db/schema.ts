@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, unique } from 'drizzle-orm/sqlite-core';
 export const settings = sqliteTable('crm_settings', { id: text('id').primaryKey(), ownerId: text('owner_id').notNull() });
 export const members = sqliteTable('crm_members', {
  id: text('id').primaryKey(), userId: text('user_id'), email: text('email').notNull(), name: text('name').notNull(), role: text('role').notNull(), branch: text('branch').notNull(), supervisorId: text('supervisor_id'), regionScope: text('region_scope').notNull().default('all'), active: integer('active').notNull().default(1), target: integer('target').notNull().default(0), authVersion: integer('auth_version').notNull().default(1), createdAt: text('created_at').notNull()
@@ -60,6 +60,22 @@ export const serviceRoleTasks=sqliteTable('crm_service_role_tasks',{
  basis:text('basis').notNull(),closedAt:text('closed_at').notNull(),roles:text('roles').notNull(),note:text('note').notNull(),
  doneBy:text('done_by').notNull().references(()=>members.id,{onDelete:'restrict'}),doneAt:text('done_at').notNull(),mutationId:text('mutation_id').notNull()
 },t=>[index('crm_service_role_tasks_member').on(t.memberId,t.doneAt)]);
+// «خطة الغد» / «خطط المناديب» (migration 0022, lib/daily-plans.ts): a member's plan of a day, its stops, and one note per reviewer and day.
+export const dailyPlans=sqliteTable('crm_daily_plans',{
+ id:text('id').primaryKey(),memberId:text('member_id').notNull().references(()=>members.id,{onDelete:'restrict'}),date:text('date').notNull(),status:text('status').notNull(),
+ version:integer('version').notNull().default(1),firstSentAt:text('first_sent_at'),firstSentSource:text('first_sent_source'),late:integer('late').notNull().default(0),
+ sentAt:text('sent_at'),receivedAt:text('received_at'),reviewedBy:text('reviewed_by').references(()=>members.id,{onDelete:'restrict'}),reviewedAt:text('reviewed_at'),
+ returnReason:text('return_reason').notNull().default(''),mutationId:text('mutation_id').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull()
+},t=>[unique().on(t.memberId,t.date),index('crm_daily_plans_date_status').on(t.date,t.status)]);
+export const dailyPlanStops=sqliteTable('crm_daily_plan_stops',{
+ id:text('id').primaryKey(),planId:text('plan_id').notNull().references(()=>dailyPlans.id,{onDelete:'cascade'}),position:integer('position').notNull(),customerId:text('customer_id').notNull(),
+ kind:text('kind').notNull(),plannedTime:text('planned_time').notNull().default(''),note:text('note').notNull().default(''),addedBy:text('added_by').notNull().references(()=>members.id,{onDelete:'restrict'}),
+ supervisorState:text('supervisor_state').notNull().default(''),editedBy:text('edited_by').references(()=>members.id,{onDelete:'restrict'}),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull()
+},t=>[index('crm_daily_plan_stops_plan').on(t.planId,t.position)]);
+export const dailyPlanNotes=sqliteTable('crm_daily_plan_notes',{
+ memberId:text('member_id').notNull().references(()=>members.id,{onDelete:'restrict'}),date:text('date').notNull(),reviewerId:text('reviewer_id').notNull().references(()=>members.id,{onDelete:'restrict'}),
+ note:text('note').notNull(),version:integer('version').notNull().default(1),mutationId:text('mutation_id').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull()
+},t=>[primaryKey({columns:[t.memberId,t.date,t.reviewerId]})]);
 
 // The auth revocation trigger is defined explicitly in append-only migration 0009.
 export const authChallenges=sqliteTable('auth_challenges',{

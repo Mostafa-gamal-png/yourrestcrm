@@ -41,6 +41,8 @@ export const LIST_EXPORTS={
  followups:{ar:'المتابعات',en:'Follow-ups',file:'followups',screen:'followup',cell:'followup',via:'client'},
  'mold-requests':{ar:'طلبات تصنيع القوالب',en:'Mold requests',file:'mold-requests',screen:'mold-requests',cell:'mold-requests',via:'client'},
  journeys:{ar:'تقرير يوم المندوب',en:'Daily route',file:'day-report',screen:'journeys',cell:'journeys',via:'client'},
+ // «خطط المناديب» (lib/daily-plans.ts): the plans of a period the page asks of GET /api/daily-plans?from=&to= and writes (app/daily-plans.tsx).
+ plans:{ar:'خطط المناديب',en:'Representatives\' plans',file:'daily-plans',screen:'plans',cell:'plans',via:'client'},
  sales:{ar:'المبيعات',en:'Sales',file:'sales',screen:'sales',cell:'sales',via:'client'},
  kpis:{ar:'نتائج الأداء والتقييم',en:'Performance results',file:'performance-results',screen:'targets',cell:'targets',tab:'results',via:'client'},
  collection:{ar:'التحصيل',en:'Collection',file:'collection',screen:'targets',cell:'targets',tab:'collection',via:'client'},

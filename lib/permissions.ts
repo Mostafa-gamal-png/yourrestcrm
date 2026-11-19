@@ -38,6 +38,12 @@
 //   on by default. «لوحة المتابعة»، «المحذوفات» and the map export nothing (as GSCO's overview, bin and map; the map draws no list, and
 //   the customers' CSV it was written for was never on its screen). What each cell exports is lib/list-export.ts. No migration (a cell
 //   never saved is on).
+// - «خطط المناديب» (the owner, 2026-11-19, the port of GSCO 2.13.83 «خطة الغد / خطط المناديب», lib/daily-plans.ts, migration 0022): a
+//   screen of its own («خطة الغد» for a representative or a marketing officer) with the owner's three permissions: «إعداد خطة اليوم»
+//   («إضافة»: the representative and the marketing officer prepare and send their own plan), «مراجعة خطط المناديب» («تحرير»: the
+//   supervisor, the sales manager and the administrator approve, approve with edits, return and note) and «تصدير خطط المناديب إلى Excel»
+//   («تصدير»: the same three). Restrict-only like every cell, on by default, no migration for the cells (a cell never saved is on). The
+//   administrator holds no «إعداد خطة اليوم» (they prepare no plan of their own), the one cell of the table that is not theirs.
 // Shared by the server (lib/crm-server.ts context(), the routes) and the page (nav, buttons, the matrix in the member form).
 import {canUseSalesWorkspace,canViewPage,hubTabsAllHidden,trashScope} from './access';
 import {HIDEABLE_HUB_TABS,HUB_TAB_KEYS,HUB_TAB_NAMES,HUB_TABS,hubTabKey,isHubTabKey,type HideableHubTab,type HubTab,type HubTabKey} from './targets-hub';
@@ -52,7 +58,7 @@ export const MATRIX_COLUMNS:readonly {key:MatrixColumn;ar:string;en:string}[]=[
 /** The words of a refusal: «غير مسموح لك ب<الإجراء> في <الشاشة>». */
 const actionNouns:Record<PermissionAction,readonly [string,string]>={add:['الإضافة','add'],edit:['التعديل','edit'],delete:['الحذف','delete'],export:['التصدير','export'],import:['الاستيراد','import']};
 
-export type PermissionScreen='dashboard'|'customer'|'map'|'activity'|'complaints'|'service-kpi'|'service-reports'|'followup'|'mold-requests'|'journeys'|'quote'|'sales'|'competitors'|'targets'|'team'|'trash';
+export type PermissionScreen='dashboard'|'customer'|'map'|'activity'|'complaints'|'service-kpi'|'service-reports'|'followup'|'mold-requests'|'journeys'|'plans'|'quote'|'sales'|'competitors'|'targets'|'team'|'trash';
 type Text={ar:string;en:string};
 /** One action of one screen: what it gates (shown on the cell), the roles that can do it today (its ceiling), and a note. A grantable cell
  *  (grantable:true, the «حذف» cells) exists for every role that has the screen; its roles are those it is ON for by default (the
@@ -76,6 +82,8 @@ const marketingCustomerEdit:Text={ar:'لمسؤول التسويق: يعدّل ب
 const trashOwn:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط',en:'For whoever has «Delete»: only what they deleted themselves'};
 const trashOwnRestore:Text={ar:'لمن لديه «حذف»: ما حذفه هو فقط، ما دام «حذف» في شاشة السجل مفتوحًا له، وفي حدود ما يمكنه حذفه.',en:'For whoever has «Delete»: only what they deleted themselves, while «Delete» of the record\'s screen is on for them, and within what they may delete.'};
 
+/** «خطط المناديب» of a representative or a marketing officer: their own plan only («خطة الغد»). */
+const planOwnNote:Text={ar:'خطته هو فقط («خطة الغد»)، ويرى قرار المشرف وملاحظته.',en:'Their own plan only («Tomorrow\'s plan»), with the supervisor\'s decision and note.'};
 /** Under «المستهدفات وتقييم الأداء» for a role whose targets screen is the hub: what its tab rows do. */
 const hubTabsNote:Text={ar:'لكل تبويب من تبويبات الصفحة «استعراض» خاص به في الصفوف التالية. «رفع المبيعات» يتبع «استعراض» في «المبيعات». إذا أُخفيت كل التبويبات ولم يظهر «رفع المبيعات» أُخفيت الصفحة كلها.',en:'Each tab of the page has its own «View» in the rows below. «Sales upload» follows «View» of «Sales». With every tab hidden and «Sales upload» not shown, the whole page is hidden.'};
 
@@ -123,6 +131,11 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
  {screen:'journeys',ar:'تقرير يوم المندوب',en:'Daily route',cells:{
   add:{ar:'كتابة «النتيجة» و«الإجراء المطلوب» على عمل الفريق',en:'Write «Result» and «Action required» on the team\'s work',roles:MANAGEMENT},
   export:{ar:'تصدير تقرير يوم المندوب (Excel)',en:'Export the daily route report (Excel)',roles:MANAGEMENT},
+ }},
+ {screen:'plans',ar:'خطط المناديب',en:'Representatives\' plans',roleNote:{rep:planOwnNote,marketing:planOwnNote},cells:{
+  add:{ar:'إعداد خطة اليوم',en:'Prepare the day\'s plan',roles:['rep','marketing'],note:{ar:'خطة اليوم التالي وإرسالها للمشرف قبل الساعة 22:00 (ما يُرسل بعدها يُقبل ويُعلَّم «متأخرة»). لا تمنع الخطة تسجيل أي زيارة أو تواصل.',en:'The next day\'s plan, sent to the supervisor before 22:00 (one sent later is accepted and marked late). The plan never stops a visit or contact from being recorded.'}},
+  edit:{ar:'مراجعة خطط المناديب',en:'Review the representatives\' plans',roles:MANAGEMENT,note:{ar:'اعتماد، واعتماد مع تعديل، وإعادة للمندوب مع السبب، وملاحظة واحدة لكل مراجع على يوم المندوب؛ على خطط فريقه فقط.',en:'Approve, approve with edits, return with a reason, and one note per reviewer on the representative\'s day; their own team\'s plans only.'}},
+  export:{ar:'تصدير خطط المناديب إلى Excel',en:'Export the representatives\' plans to Excel',roles:MANAGEMENT},
  }},
  {screen:'quote',ar:'عروض الأسعار',en:'Quotations',cells:{
   add:{ar:'إضافة عرض سعر ومواصفات قالب',en:'Add a quotation and mold specifications',roles:MANAGEMENT},
