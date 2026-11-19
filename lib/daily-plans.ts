@@ -122,11 +122,13 @@ export function planText(value:unknown,min:number,max:number):string|null{
 }
 const ID=/^[A-Za-z0-9_:.@-]{1,200}$/;
 /** The stops a write sends, checked: the list and each stop's shape (the customers are checked by the server against what the writer sees).
- *  The problem's index is the stop's (0-based), -1 for the list. */
+ *  A stop's id names one stop: the same id twice is refused (a stop a reviewer added or changed, sent once as it is and once changed, would
+ *  otherwise be changed under its «أضافها المشرف» without the member's lock or the customer check seeing it: memberLockProblems reads one
+ *  copy, memberStops writes the other). The problem's index is the stop's (0-based), -1 for the list. */
 export function parsePlanStops(value:unknown,{min=1}:{min?:number}={}):{ok:true;stops:PlanStopInput[]}|{ok:false;problem:'list'|'count'|'customer'|'kind'|'time'|'note';index:number}{
  if(!Array.isArray(value))return {ok:false,problem:'list',index:-1};
  if(value.length<min||value.length>PLAN_MAX_STOPS)return {ok:false,problem:'count',index:-1};
- const stops:PlanStopInput[]=[];
+ const stops:PlanStopInput[]=[],ids=new Set<string>();
  for(const [index,raw] of value.entries()){
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return {ok:false,problem:'list',index};
   const item=raw as Record<string,unknown>,keys=Object.keys(item);
@@ -136,6 +138,7 @@ export function parsePlanStops(value:unknown,{min=1}:{min?:number}={}):{ok:true;
   const time=planTime(item.time);if(time===null)return {ok:false,problem:'time',index};
   const note=planText(item.note,0,PLAN_STOP_NOTE_MAX);if(note===null)return {ok:false,problem:'note',index};
   if(item.id!==undefined&&item.id!==null&&item.id!==''&&(typeof item.id!=='string'||!ID.test(item.id)))return {ok:false,problem:'list',index};
+  if(typeof item.id==='string'&&item.id){if(ids.has(item.id))return {ok:false,problem:'list',index};ids.add(item.id);}
   stops.push({...(typeof item.id==='string'&&item.id?{id:item.id}:{}),customerId:item.customerId,kind:item.kind,time,note});
  }
  return {ok:true,stops};
