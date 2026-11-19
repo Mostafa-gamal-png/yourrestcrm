@@ -174,7 +174,9 @@ export default function CustomerMoldPhotos({customerId,offline=false,onChanged}:
     <img src={moldPhotoSrc(photo.id)} alt="" loading="lazy" decoding="async"/>
    </button>
   </li>)}</ul>}
-  <div className="mold-photos-status" role="status" aria-live="polite">
+  {/* role="status" is already a polite live region; an explicit aria-live would keep the whole customer sheet visible to assistive
+      technology behind a modal form opened over it (Radix hides the rest of the page with aria-hidden, which keeps every [aria-live]). */}
+  <div className="mold-photos-status" role="status">
    {current&&<p><Loader2 className="spin" size={14} aria-hidden="true"/> {current.phase==='preparing'?say('جارٍ تجهيز الصورة '+position+' من '+queue.length+'…','Preparing photo '+position+' of '+queue.length+'…'):say('جارٍ رفع الصورة '+position+' من '+queue.length+(current.percent!==null?' ('+current.percent+'%)':'')+'…','Uploading photo '+position+' of '+queue.length+(current.percent!==null?' ('+current.percent+'%)':'')+'…')}</p>}
    {notice&&<p>{notice}</p>}
   </div>
