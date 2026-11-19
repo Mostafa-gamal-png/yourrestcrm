@@ -402,6 +402,16 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/mold-photos-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/mold-photos-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/mold-requests-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

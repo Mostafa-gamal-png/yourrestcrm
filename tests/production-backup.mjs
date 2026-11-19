@@ -118,6 +118,24 @@ try{
  const removed=path.join(work,'backup-request-removed');
  check((await duringCopy(removedKey,async()=>{await db.prepare("DELETE FROM crm_mold_requests WHERE id='mr-2'").run();await objects.delete(removedKey);},removed)).objects,3);
  const removedDb=new DatabaseSync(path.join(removed,'database.sqlite'),{readOnly:true});check([removedDb.prepare("SELECT COUNT(*) n FROM crm_mold_design_files WHERE id='mdf-4'").get().n,removedDb.prepare("SELECT COUNT(*) n FROM crm_mold_requests WHERE id='mr-2'").get().n],[0,1]);removedDb.close();
+ // A customer's mold photo (lib/mold-photos.ts: a row of crm_visit_files whose key starts with mold-photo/) deleted while a backup runs:
+ // its row goes, then its bytes (lib/mold-photos-server.ts deleteMoldPhoto). The backup leaves that photo out and still verifies and
+ // restores; a photo kept is copied; a photo whose row still names missing bytes fails the backup, as any missing object does.
+ const visitFile=(id,key,bytes)=>db.prepare("INSERT INTO crm_visit_files(id,object_key,customer_id,name,content_type,size,uploaded_by,created_at) VALUES(?,?,'factory','mold-photo-2026-11-19.jpg','image/jpeg',?,'rep','2026-11-19')").bind(id,key,bytes.length).run();
+ const keptPhoto='mold-photo/kept-'+'a'.repeat(64),keptBytes=Buffer.from([255,216,255,224,1,2,3]),gonePhoto='mold-photo/gone-'+'b'.repeat(64),goneBytes=Buffer.from([255,216,255,224,9]);
+ await objects.put(keptPhoto,keptBytes);await visitFile('mold-photo-kept',keptPhoto,keptBytes);
+ await objects.put(gonePhoto,goneBytes);await visitFile('mold-photo-gone',gonePhoto,goneBytes);
+ const photoRaced=path.join(work,'backup-photo-deleted');
+ check((await duringCopy(gonePhoto,async()=>{await db.prepare("DELETE FROM crm_visit_files WHERE id='mold-photo-gone'").run();await objects.delete(gonePhoto);},photoRaced)).objects,4);
+ check((await verifyBackup({directory:photoRaced,appRoot})).objects,4);
+ check([(await fs.readdir(path.join(photoRaced,'objects'))).includes(hash(gonePhoto)),(await fs.readdir(path.join(photoRaced,'objects'))).includes(hash(keptPhoto))],[false,true]);
+ const photoDb=new DatabaseSync(path.join(photoRaced,'database.sqlite'),{readOnly:true});check(photoDb.prepare("SELECT id FROM crm_visit_files WHERE id LIKE 'mold-photo-%' ORDER BY id").all().map(row=>row.id),['mold-photo-kept']);photoDb.close();
+ check((await restoreBackup({directory:photoRaced,destination:path.join(work,'photo-restored'),appRoot})).objects,4);
+ await objects.delete(keptPhoto);await rejects(()=>createBackup({config,appRoot,destination:path.join(work,'backup-photo-missing')}));await rejects(()=>fs.stat(path.join(work,'backup-photo-missing')));
+ // A competitor's offer missing meanwhile is never let go, even under the same conditions (only mold photos and design files are).
+ await db.prepare("DELETE FROM crm_visit_files WHERE id='mold-photo-kept'").run();
+ const offerKey='competitor/raced',offerBytes=Buffer.from('%PDF-raced');await objects.put(offerKey,offerBytes);await visitFile('competitor-raced',offerKey,offerBytes);
+ await rejects(()=>duringCopy(offerKey,async()=>{await db.prepare("DELETE FROM crm_visit_files WHERE id='competitor-raced'").run();await objects.delete(offerKey);},path.join(work,'backup-offer-raced')));
  // A design object missing while its row still names it fails the backup, as any missing object does.
  await objects.delete('mold-design/mr-1/mdf-1/a');await rejects(()=>createBackup({config,appRoot,destination:path.join(work,'backup-design-missing')}));await rejects(()=>fs.stat(path.join(work,'backup-design-missing')));
  await objects.put('mold-design/mr-1/mdf-1/a',Buffer.from('%PDF-design'));

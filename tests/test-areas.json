@@ -99,6 +99,11 @@
       "sources": ["app/customer-machines.tsx", "app/api/machines/**", "lib/machines.ts", "tests/machines*.mjs"],
       "tests": ["tests/machines-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/marketing-role-browser.mjs"]
     },
+    "mold-photos": {
+      "about": "«صور القالب» of a customer (2026-11-19): the section of the customer's sheet (app/customer-mold-photos.tsx, drawn by app/crm-app.tsx, shared), GET/POST /api/mold-photos and POST /api/mold-photos/delete, their rules (lib/mold-photos.ts: who adds as for the machines, who sees as for the customer, who deletes) and server (lib/mold-photos-server.ts), and the shrinking on the device (lib/image-shrink.ts). The photos are rows of crm_visit_files, so the competitors' offers' route refuses them (lib/followups-server.ts, app/api/visit-files: the visits area's) and the backup leaves out one deleted while it runs (portable/backup-core.mjs, its default-gate test tests/production-backup.mjs).",
+      "sources": ["app/customer-mold-photos.tsx", "app/customer-mold-photos.css", "app/api/mold-photos/**", "lib/mold-photos.ts", "lib/mold-photos-server.ts", "lib/image-shrink.ts", "tests/mold-photos*.mjs"],
+      "tests": ["tests/mold-photos-http.mjs", "tests/mold-photos-browser.mjs", "tests/server-authorization.mjs", "tests/visit-files-http.mjs"]
+    },
     "map": {
       "about": "The customers map and the journey map (Leaflet, the Kingdom layer, directions, map search).",
       "sources": ["app/customer-map.tsx", "app/customer-map.css", "app/customer-journey-map.tsx", "app/kingdom-layer.ts", "app/kingdom-map.css", "lib/customer-map-activity.ts", "lib/customer-map-search.ts", "lib/customer-directions.ts", "lib/directions-attempt.ts", "lib/directions-problem.ts", "tests/*map*.mjs"],
@@ -167,6 +172,8 @@
     "tests/mold-filters-browser.mjs": 90,
     "tests/mold-orders-browser.mjs": 98,
     "tests/mold-orders-http.mjs": 62,
+    "tests/mold-photos-browser.mjs": 60,
+    "tests/mold-photos-http.mjs": 52,
     "tests/marketing-role-browser.mjs": 100,
     "tests/marketing-role-http.mjs": 56,
     "tests/kpi-leave-months-browser.mjs": 135,
