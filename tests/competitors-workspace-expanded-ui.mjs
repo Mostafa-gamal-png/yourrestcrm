@@ -109,6 +109,8 @@ function harness(initialRecords = records) {
       if (name === '@/lib/i18n') return i18n;
       if (name.endsWith('.css')) return {};
       if (name.startsWith('@/lib/')) return library(name.slice(2) + '.ts');
+      // «تصدير Excel» (2026-11-19) is tried in tests/list-export*.mjs.
+      if (name === './export-excel-button') return {ExportExcelButton: () => null};
       throw Error('Unexpected UI dependency ' + name);
     },
   });

@@ -40,7 +40,7 @@ function harness(initialRecords=records){
  const hooksReact={...React,useMemo:fn=>fn(),useState(initial){const index=cursor++;if(!hooks[index])hooks[index]={value:typeof initial==='function'?initial():initial};return [hooks[index].value,value=>{hooks[index].value=typeof value==='function'?value(hooks[index].value):value;}];},useRef(value){const index=cursor++;if(!hooks[index])hooks[index]={current:value};return hooks[index];}};
  const exports={};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,'app/competitors-workspace.tsx'),'utf8'),{compilerOptions:compiler}).outputText,{exports,console,Intl,requestAnimationFrame:fn=>fn(),require:name=>{
-  if(name==='react')return hooksReact;if(name==='react/jsx-runtime')return jsx;if(name==='lucide-react')return icons;if(name==='@/lib/i18n')return i18n;if(name.endsWith('.css'))return {};if(name.startsWith('@/lib/'))return library(name.slice(2)+'.ts');throw Error('Unexpected UI dependency '+name);
+  if(name==='react')return hooksReact;if(name==='react/jsx-runtime')return jsx;if(name==='lucide-react')return icons;if(name==='@/lib/i18n')return i18n;if(name.endsWith('.css'))return {};if(name.startsWith('@/lib/'))return library(name.slice(2)+'.ts');if(name==='./export-excel-button')return {ExportExcelButton:()=>null};throw Error('Unexpected UI dependency '+name);
  }});
  const render=()=>{cursor=0;tree=exports.default(props);return renderToStaticMarkup(tree);};
  const find=predicate=>descendants(tree,predicate);
