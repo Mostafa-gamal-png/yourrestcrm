@@ -26,6 +26,12 @@
 .mold-photo-viewer figure img{display:block;max-width:100%;max-height:min(68vh,calc(100dvh - 230px));width:auto;height:auto;object-fit:contain}
 .mold-photo-viewer-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .mold-photo-viewer-actions .mold-photo-delete{margin-inline-start:auto}
+/* A finger on any touch screen, a tablet wide enough for the computer's layout too (the sheet and the dialogs are drawn outside .app-shell,
+   so app/touch-comfort.css does not reach them). */
+@media (pointer:coarse){
+ .mold-photos .btn.small,.mold-photos .text-button,.mold-photo-viewer .btn.small,.mold-photo-viewer .icon-button{min-height:44px}
+ .mold-photo-viewer .icon-button{min-width:44px}
+}
 @media (max-width:767px){
  .mold-photos{padding:12px}
  .mold-photos .btn.small,.mold-photo-viewer .btn.small,.mold-photo-viewer .icon-button{min-height:44px}
