@@ -4,7 +4,22 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
-## The owner's correction of the classifications: the opportunity's grade A to D, a computed factory size (2026-11-18, not released yet, no migration, no Android change)
+## The sales manager's mold list holds every request they approve (2026-11-19, no migration, no Android change)
+
+- **Asked.** The sales manager filtered «طلبات القوالب» for the current month and found fewer than expected. A read-only count of the
+  live data (`scripts/diagnose/mold-month.cjs`, counts only) found 8 CRM requests in November, 7 in his list: the eighth was made from
+  the administrator's account; he approved it from «طلبات بانتظار اعتمادي», but since 2026-11-03 his list held his team's requests only.
+  The owner: «تمام عدّلها وارفع لما الفحص يخلص».
+- **The rule.** `canReadMoldRequest` for a sales manager: their own, their team's within their regions, and every request
+  `moldApprovesRequest` gives them (customer service's, the administrator's, a representative's in no sales manager's team, a team whose
+  manager cannot approve it now), so the filters of «كل الطلبات» count them. Never another active manager's team's within that manager's
+  regions. Seeing is not changing: editing, cancelling and the files stay with whoever asked (`moldPermissions`, the design-file routes).
+- **Not covered.** Requests entered directly in the products application never reach the CRM's list (the products application gives the
+  CRM only those waiting at the sales step); showing them needs a read route there.
+- **Tests.** `tests/mold-requests.mjs` (the sales manager's list is exactly what he approves; not another manager's team; not outside his
+  regions), `tests/diagnose-mold-month.mjs`.
+
+## The owner's correction of the classifications: the opportunity's grade A to D, a computed factory size (2026-11-18, released as update-classification-20261118, no migration, no Android change)
 
 - **Asked.** The owner, after update-marketing-20261118: «تصنيف الفرصة ده موجود بالفعل بس هيزيد / تصنيف حجم المصنع ده بيتحسب من عدد
   ماكينات المتسجلة داخل المصنع / وهو هيدخل التصنيف العميل بناء على اهتماماته».

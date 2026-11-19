@@ -566,15 +566,17 @@ const salesman = {crmMemberId: 'mem-1', name: 'أنور عبد الحكيم', em
   const asked = (memberId, customerId = 'east') => ({memberId, customerId});
   const reads = (who, rows, ids) => rows.map(([memberId, customerId]) => lib.canReadMoldRequest(asked(memberId, customerId), reader(who, ids)));
   const everyone = [['sm'], ['repA'], ['repD'], ['supA'], ['repDeep'], ['repB'], ['sm2'], ['rep3'], ['cs'], ['csm'], ['owner'], ['orphan'], ['loopRep']];
-  same(reads('sm', everyone), [true, true, true, true, true, false, false, false, false, false, false, false, false],
-    'the sales manager\'s list: his own and his team\'s (direct, under a supervisor, deeper); not another manager\'s team in the same region, customer service, the administrator or an orphan');
+  const approves = (who, rows, ids) => rows.map(([memberId, customerId]) => lib.moldApprovesRequest(asked(memberId, customerId), reader(who, ids)));
+  same(reads('sm', everyone), [true, true, true, true, true, false, false, false, true, true, true, true, true],
+    'the sales manager\'s list: his own and his team\'s (direct, under a supervisor, deeper), and since 2026-11-19 every request he approves (customer service, the administrator, an orphan, a cycle); not another manager\'s team in the same region');
+  same(reads('sm', everyone), approves('sm', everyone), 'his list is exactly what he approves (the owner, 2026-11-19: the filters of «كل الطلبات» count what he approved)');
+  same(reads('sm', [['cs', 'west'], ['owner', 'west']]), [false, false], 'customer service\'s or the administrator\'s request outside his regions: not in his list');
   same(reads('sm', [['sm', 'west'], ['repA', 'west']]), [true, false], 'his own always; his team\'s only within his regions');
-  same(reads('sm2', everyone), [false, false, false, false, false, true, true, false, false, false, false, false, false], 'the other manager of the same region: his own team only');
+  same(reads('sm2', everyone), [false, false, false, false, false, true, true, false, true, true, true, true, true], 'the other manager of the same region: his own team, and what he approves too (customer service\'s, the administrator\'s, an orphan\'s), never the first manager\'s team');
   same(reads('repA', everyone), [false, true, false, false, false, false, false, false, false, false, false, false, false], 'a representative: his own only');
   same(reads('supA', everyone), [false, true, false, true, false, false, false, false, false, false, false, false, false], 'a supervisor (unchanged): his own and his representatives\'');
   same(reads('csm', everyone), [false, false, false, false, false, false, false, false, true, true, false, false, false], 'the customer-service manager (unchanged): his own and his team\'s');
   same(reads('owner', everyone).every(Boolean), true, 'the administrator (unchanged): all');
-  const approves = (who, rows, ids) => rows.map(([memberId, customerId]) => lib.moldApprovesRequest(asked(memberId, customerId), reader(who, ids)));
   same(approves('sm', everyone), [true, true, true, true, true, false, false, false, true, true, true, true, true],
     'what he approves («طلبات بانتظار اعتمادي»): his own and his team\'s, and every request whose requester is in no sales manager\'s team (customer service, the administrator, an orphan, a cycle); not another manager\'s team\'s, nor another manager\'s own');
   same(approves('sm2', [['cs'], ['owner'], ['repB'], ['repA']]), [true, true, true, false], 'both managers of the region approve customer service\'s and the administrator\'s; each his own team\'s');
@@ -602,7 +604,7 @@ const salesman = {crmMemberId: 'mem-1', name: 'أنور عبد الحكيم', em
   // A request for a customer not in the CRM (customerId '', 2026-11-09) has no region: its requester's regions stand for it, in the same
   // one place (moldRequestInRegion) for the list, the approval and the single approver.
   const unlinked = memberId => [memberId, ''];
-  same(reads('sm', [unlinked('repA'), unlinked('repB'), unlinked('sm'), unlinked('cs')], []), [true, false, true, false], 'the sales manager\'s list: his team\'s unlinked requests (his region through the requester\'s), not another team\'s or customer service\'s');
+  same(reads('sm', [unlinked('repA'), unlinked('repB'), unlinked('sm'), unlinked('cs')], []), [true, false, true, true], 'the sales manager\'s list: his team\'s unlinked requests (his region through the requester\'s), not another team\'s; customer service\'s, which he approves, since 2026-11-19');
   same(approves('sm', [unlinked('repA'), unlinked('cs'), unlinked('owner'), unlinked('repB'), unlinked('ghost')], []), [true, true, true, false, false], 'what he approves: his team\'s, and customer service\'s and the administrator\'s (all regions) whose regions share his; never a requester no longer listed');
   same(['sm2', 'smAll'].map(who => lib.moldApprovesRequest(asked('cs', ''), reader(who, []))), [true, true], 'the other manager of the region, and a manager of every region, approve customer service\'s too');
   same(['smWest', 'smWest2', 'sm'].map(who => lib.moldApprovesRequest(asked('repAway', ''), withRecords(who, []))), [true, true, false], 'a western representative of the eastern manager\'s team: his request goes to the western managers (his manager does not share his region)');

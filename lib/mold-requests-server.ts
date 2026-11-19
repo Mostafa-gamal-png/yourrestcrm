@@ -656,8 +656,8 @@ export async function moldPendingFor(c:PendingReader,link:Config,{force=false}:{
  return {items:pulled.items.filter(shown).map(item=>{const signature=signatureOf(item.crmRequestId);return {...item,paymentTerms:termsOf(item),inCrm:!!item.crmRequestId&&own.has(item.crmRequestId),...moldPendingFiles(item,signature),signature,signatureDelivered:!!signature&&item.designFiles.some(file=>file.crmFileId===signature.fileId)};}),error:pulled.error,at:pulled.at,...(pulled.unreadable?{unreadable:pulled.unreadable}:{})};
 }
 /** Whether a reader may open one request (GET ?id=, its sheet, and its files by id): every request their list shows
- * (canReadMoldRequest); and for the sales manager one that their list does not show but «طلبات بانتظار اعتمادي» shows them now (customer
- * service's, say), so they read what they approve, only while it is listed there and production's list could be had (a list kept from
+ * (canReadMoldRequest, which since 2026-11-19 holds every request a sales manager approves); and for the sales manager one that their
+ * list does not show but «طلبات بانتظار اعتمادي» shows them now (none since then; kept as the guard it was), only while it is listed there and production's list could be had (a list kept from
  * before a failed call may name a request that has moved on). The approval and its withdrawal go by moldApprovesRequest itself. */
 export async function canOpenMoldRequest(row:Pick<MoldRequestRow,'id'|'memberId'|'customerId'>,c:PendingReader,link:Config){
  if(canReadMoldRequest(row,c))return true;

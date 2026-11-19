@@ -71,7 +71,7 @@ function askedCustomer(c:Awaited<ReturnType<typeof reader>>,input:{customerId?:s
 /** The requests the reader may see, with their status pulled once (one call for all of them, or for the one asked for by ?id=), each
  * with its design files (the CRM's and production's). quotePo: production's update of 2026-11-03 is known to be live (learned from any
  * answer, this page's pulls included), so the form asks for the quotation's or PO's file (one at least, 2026-11-05; no number). The list is the reader's own
- * (canReadMoldRequest: the sales manager's and their team's for a sales manager); ?id= also opens, for the sales manager, a request
+ * (canReadMoldRequest: for a sales manager their own, their team's and, since 2026-11-19, every request they approve); ?id= also opens, for the sales manager, a request
  * «طلبات بانتظار اعتمادي» shows them now without their list doing so (canOpenMoldRequest: customer service's, say). refs=1: this
  * release's page, which names a pending item by its requestRef or crmRequestId; without it (a page loaded before) the waiting list keeps
  * the items production has numbered only (moldPendingForOldPage). */
@@ -446,7 +446,7 @@ export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';
  }else{
   const row=await loadMoldRequest(c.db,input.id),approval=input.action==='approve'||input.action==='withdraw';
   // A sales manager approves, or withdraws, exactly the requests «طلبات بانتظار اعتمادي» lists for them (moldApprovesRequest: customer
-  // service's too, which their list does not show); anyone else reaches only what they may read (and is refused below).
+  // service's too, which their list shows since 2026-11-19); anyone else reaches only what they may read (and is refused below).
   if(!row||!(approval&&canApproveMoldRequests(c.me)?moldApprovesRequest(row,c):canReadMoldRequest(row,c)))throw new CRMError('الطلب غير متاح',404);
   const files=await loadMoldDesignFiles(c.db,'request_id=?',[row.id]),allowed=moldPermissions(row,c.me,files,moldApprovesRequest(row,c));rowId=row.id;
   if(approval){

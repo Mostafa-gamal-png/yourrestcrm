@@ -15,7 +15,7 @@
 // production holds it: its production manager adds and corrects them there. Before the update nothing of it is asked, shown or sent.
 // Who sees which request (the owner, 2026-11-03): the representative their own only, the sales manager their own and their team's
 // (canReadMoldRequest, moldTeamManagerId); what the sales manager approves (moldApprovesRequest) also takes customer service's and the
-// administrator's requests in their regions, shown in «طلبات بانتظار اعتمادي» only. «رابط التصميم» is no longer asked for (the owner,
+// administrator's requests in their regions, shown in «طلبات بانتظار اعتمادي» and, since 2026-11-19, in «كل الطلبات» too. «رابط التصميم» is no longer asked for (the owner,
 // 2026-11-03): a new request has none; an older request keeps its own, shown read-only and sent as it was.
 // The customer signs a new request on the representative's phone or tablet before it is sent (the owner, 2026-11-04), for the sales roles
 // only (moldSignatureRequired): the signature is a PNG kept as one of the request's design files, named by the request's data (signature),
@@ -379,13 +379,15 @@ export function moldRequestInRegion(row:Pick<MoldRequestRow,'memberId'|'customer
 }
 /** Who sees which request in the list: everyone their own. A representative nothing more. A supervisor their representatives', a
  *  customer-service manager their team's, within their regions; the administrator all. The sales manager their team's (moldTeamManagerId)
- *  within their regions (the owner, 2026-11-03): no longer another manager's team's, customer service's or the administrator's, even
- *  those they approve (moldApprovesRequest: those show in «طلبات بانتظار اعتمادي» only, and open from there: canOpenMoldRequest in
- *  lib/mold-requests-server.ts). */
+ *  within their regions (the owner, 2026-11-03), and since 2026-11-19 every request they approve too (moldApprovesRequest: customer
+ *  service's, the administrator's, a representative's in no sales manager's team, a team whose manager cannot approve it now), so that the
+ *  filters of «كل الطلبات» count what they approved (the owner: «تمام عدّلها», after a request of the administrator's that the sales
+ *  manager approved was missing from his month). Never another active manager's team's within that manager's regions. Seeing is not
+ *  changing: editing, cancelling and the files stay with whoever asked (moldPermissions). */
 export function canReadMoldRequest(row:Pick<MoldRequestRow,'memberId'|'customerId'>,c:Reader){
  if(c.me.role==='admin'||row.memberId===c.me.id)return true;
  const inRegion=moldRequestInRegion(row,c.me,c,{reader:true});
- if(c.me.role==='manager')return inRegion&&moldTeamManagerId(row.memberId,c.members)===c.me.id;
+ if(c.me.role==='manager')return inRegion&&(moldTeamManagerId(row.memberId,c.members)===c.me.id||moldApprovesRequest(row,c));
  if(c.me.role==='supervisor')return inRegion&&salesScopeMemberIds(c.members,c.me).has(row.memberId);
  if(c.me.role==='customer_service_manager')return inRegion&&c.members.some(member=>member.id===row.memberId&&SERVICE_ROLES.includes(member.role)&&member.supervisorId===c.me.id);
  return false;
