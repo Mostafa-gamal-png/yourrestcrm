@@ -13,6 +13,12 @@
 #   mold-link  {"mode": "mold-link", "dryRun": true}: scripts/mold-link/legacy-link.cjs links the earlier mold requests to CRM requests
 #           with what the owner confirmed (the Yourrest code, the salesmen listed in it); with dryRun it only says what it would link,
 #           the database read-only and production not called. The app keeps running.
+#   streets  {"mode": "streets", "apply": false, "regions": [{"id": "eastern-1", "south": 26.35, "west": 50.05, "north": 26.55, "east": 50.2}, ...]}:
+#           the local street data of «خريطة المصانع» (docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md 9-أك). Here, on the runner: osmium-tool from
+#           apt, OpenStreetMap's GCC extract from Geofabrik (its md5 checked), scripts/streets/build-street-data.mjs cutting the regions into
+#           ONE file; then that file and portable/import-street-data.mjs go to the account, which imports it into the live database (a dry
+#           run unless apply is true; the app keeps running) and removes the file. The regions are those scripts/diagnose/street-regions.cjs
+#           proposes (mode diagnose), boxes on the 0.05° grid; the release with migration 0024 must be live first (the tool refuses before).
 # scripts/deploy-cpanel.mjs uploads through the API and runs scripts/hosting-deploy.sh on the account through a temporary cron line.
 # Claude pushes a deploy request only after the owner said so. Settings > Secrets and variables > Actions > Repository secrets:
 #   CPANEL_API_TOKEN   cPanel > Security > Manage API Tokens > Create (the only one needed)
@@ -29,7 +35,7 @@ on:
       mode:
         description: "check = unpack and --check only (the app keeps running); deploy = stop, switch, start, verify; verify = --verify only"
         type: choice
-        options: [check, deploy, verify, diagnose, backup, prune, mold-link]
+        options: [check, deploy, verify, diagnose, backup, prune, mold-link, streets]
         default: check
         required: true
 
@@ -88,8 +94,22 @@ jobs:
           if mode == "backup":
               with open(os.environ["GITHUB_OUTPUT"], "a") as out: out.write("mode=backup\n")
               print("Request: backup"); sys.exit(0)
+          if mode == "streets":
+              regions, apply = r.get("regions"), r.get("apply")
+              if not isinstance(apply, bool): stop("apply: false (a dry run: say what would be written) or true (write)")
+              if not isinstance(regions, list) or not 1 <= len(regions) <= 30: stop("regions: 1 to 30 boxes, as scripts/diagnose/street-regions.cjs proposes them")
+              grid = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v * 100 - round(v * 100)) < 1e-6
+              lines, ids = [], set()
+              for g in regions:
+                  if not isinstance(g, dict) or set(g) != {"id", "south", "west", "north", "east"} or not re.fullmatch(r"[a-z][a-z0-9-]{1,30}", str(g.get("id", ""))) or g["id"] in ids: stop("regions: each {id, south, west, north, east}, ids of small letters, digits and -, each once")
+                  if not all(grid(g[k]) for k in ("south", "west", "north", "east")) or not (16 <= g["south"] < g["north"] <= 32.3 and 34.4 <= g["west"] < g["east"] <= 55.7): stop(f"region {g['id']}: on the 0.01° grid, inside Saudi Arabia")
+                  ids.add(g["id"]); lines.append(f"--region {g['id']}:{g['south']:.2f},{g['west']:.2f},{g['north']:.2f},{g['east']:.2f}")
+              listed = os.path.join(os.environ["RUNNER_TEMP"], "streets-regions.txt")
+              with open(listed, "w") as f: f.write(" ".join(lines))
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out: out.write(f"mode=streets\napply={'true' if apply else 'false'}\nregions={listed}\n")
+              print(f"Request: streets, {len(lines)} regions{'' if apply else ' (dry run)'}"); sys.exit(0)
           package, sha, stage, helper = (str(r.get(k, "")) for k in ("package", "sha256", "stage", "helper"))
-          if mode not in ("check", "deploy", "verify"): stop("mode: check, deploy, verify, diagnose, backup, prune or mold-link")
+          if mode not in ("check", "deploy", "verify"): stop("mode: check, deploy, verify, diagnose, backup, prune, mold-link or streets")
           if not re.fullmatch(r"yourrest-crm-[a-z0-9-]+", stage): stop("stage: yourrest-crm-<name>-<date>, as the update guide names the folder")
           if not re.fullmatch(r"yourrest-activate-[a-z0-9-]+\.cjs", helper): stop("helper: yourrest-activate-<name>.cjs, as the update guide names it")
           if not re.fullmatch(r"deploy/packages/[A-Za-z0-9._-]+\.zip", package) or not os.path.isfile(package): stop("package: a zip committed under deploy/packages/")
@@ -101,6 +121,22 @@ jobs:
               out.write(f"mode={mode}\npackage={package}\nsha256={sha}\nstage={stage}\nhelper={helper}\n")
           print(f"Request: {mode} {package} ({sha[:12]}) into {stage}")
           EOF
+      # streets: the one street data file, built here (the hosting account has no osmium and is close to its file limit).
+      - name: Build the street data file
+        if: steps.request.outputs.mode == 'streets'
+        env:
+          REGIONS: ${{ steps.request.outputs.regions }}
+          APPLY: ${{ steps.request.outputs.apply }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 3 -o gcc-states-latest.osm.pbf https://download.geofabrik.de/asia/gcc-states-latest.osm.pbf
+          curl -fsSL --retry 3 -o gcc-states-latest.osm.pbf.md5 https://download.geofabrik.de/asia/gcc-states-latest.osm.pbf.md5
+          md5sum -c gcc-states-latest.osm.pbf.md5
+          # shellcheck disable=SC2046
+          node "$GITHUB_WORKSPACE/scripts/streets/build-street-data.mjs" --pbf gcc-states-latest.osm.pbf --out streets.json.gz $(cat "$REGIONS") --work osm-work > build.json
+          node -e 'const b=JSON.parse(require("fs").readFileSync("build.json","utf8"));console.log(`::notice title=street data::${b.rows} cells, ${b.streets} streets, ${b.bytes} bytes, ${b.dataset}, sha256 ${b.sha256}`);require("fs").writeFileSync("streets.json",JSON.stringify({sha256:b.sha256,apply:process.argv[1]==="true"}))' "$APPLY"
       - name: Run it on the hosting account through cPanel
         env:
           CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
@@ -119,4 +155,5 @@ jobs:
           if [ "$MODE" = backup ]; then node scripts/deploy-cpanel.mjs --mode backup --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
           if [ "$MODE" = prune ]; then node scripts/deploy-cpanel.mjs --mode prune --list "$LIST" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
           if [ "$MODE" = mold-link ]; then node scripts/deploy-cpanel.mjs --mode mold-link --list "$LIST" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
+          if [ "$MODE" = streets ]; then node scripts/deploy-cpanel.mjs --mode streets --list "$RUNNER_TEMP/streets.json" --file "$RUNNER_TEMP/streets.json.gz" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"; exit; fi
           node scripts/deploy-cpanel.mjs --mode "$MODE" --package "$PACKAGE" --sha256 "$SHA" --stage "$STAGE" --helper "$HELPER" --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
