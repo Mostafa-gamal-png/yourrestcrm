@@ -1,1 +1,1 @@
-{"mode":"diagnose","script":"scripts/diagnose/mold-month.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-MoldList-20261119.zip","sha256":"976b8316c79137a42f6f45e09e57755efb6f3723107b7685224b89be94bc2164","stage":"yourrest-crm-update-mold-list-20261119","helper":"yourrest-activate-update-mold-list.cjs"}
