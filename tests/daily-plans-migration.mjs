@@ -12,6 +12,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {pathToFileURL} from 'node:url';
+import ts from 'typescript';
 import {initializeDatabase,inspectInitializedDatabase} from '../portable/initialize.mjs';
 import {upgradeExistingDatabase} from '../portable/upgrade.mjs';
 
@@ -154,5 +157,36 @@ fs.copyFileSync(down.filename,again.filename);
 eq((await upgradeExistingDatabase(again)).migrations,23,'the release can be applied again');
 eq(read(again.filename,db=>PLAN_TABLES.map(name=>db.prepare(`SELECT COUNT(*) n FROM "${name}"`).get().n)),[0,0,0],'with empty plan tables');
 eq(read(again.filename,schema),afterSchema,'and the same schema as the first upgrade');
+
+// ---- 5. the entries kept on the devices (review 2026-11-19). The database goes back, the devices' outboxes do not: a «خطة يوم …» entry
+// (kind 'plan') read by the previous release's own code (its sources from git, `git archive 1b6b818`, the release before 0022) is a visit
+// without a customer on the member's device, its send to a route the previous server does not have (an HTML 404) is not the server's
+// refusal (the entry waits and the outbox stops at it, lib/offline-submit.ts), and a waiting entry cannot be deleted there; the guide says
+// to send or delete those entries before going back.
+{
+ const PREVIOUS='1b6b818',tree=path.join(work,'previous-release-sources'),runtime=path.join(root,'.sites-runtime');fs.mkdirSync(runtime,{recursive:true});const out=fs.mkdtempSync(path.join(runtime,'plans-previous-'));
+ process.on('exit',()=>fs.rmSync(out,{recursive:true,force:true}));
+ fs.mkdirSync(tree);execFileSync('tar',['-x','-C',tree],{input:execFileSync('git',['archive','--format=tar',PREVIOUS,'lib','app'],{cwd:root,maxBuffer:256*1024*1024})});
+ eq(fs.existsSync(path.join(tree,'lib/daily-plans.ts')),false,'the previous release has no daily plans');
+ const compiled=new Set();
+ const compile=relative=>{if(compiled.has(relative))return;compiled.add(relative);const src=path.join(tree,relative),dest=path.join(out,relative.replace(/\.tsx?$/,'.mjs'));fs.mkdirSync(path.dirname(dest),{recursive:true});
+  const code=ts.transpileModule(fs.readFileSync(src,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from (['"])([^'"]+)\1/g,(match,q,imp)=>{if(!imp.startsWith('.')&&!imp.startsWith('@/'))return match;let source=imp.startsWith('@/')?imp.slice(2):path.relative(tree,path.resolve(path.dirname(src),imp));if(!/\.tsx?$/.test(source))source+=fs.existsSync(path.join(tree,source+'.ts'))?'.ts':'.tsx';compile(source);return 'from '+JSON.stringify(path.join(out,source.replace(/\.tsx?$/,'.mjs')));});
+  fs.writeFileSync(dest,code);};
+ for(const file of ['lib/offline-store.ts','lib/offline-review.ts','lib/client-submit.ts','lib/offline-submit.ts'])compile(file);
+ const load=name=>import(pathToFileURL(path.join(out,name)));
+ const [store,review,client,submit]=await Promise.all(['lib/offline-store.mjs','lib/offline-review.mjs','lib/client-submit.mjs','lib/offline-submit.mjs'].map(load));
+ // The entry as this release's offlineSubmit writes it for «إرسال للمشرف» (lib/offline-submit.ts).
+ const key='11111111-1111-4111-8111-111111111111',at='2026-11-19T18:50:00.000Z';
+ const entry={id:'rep:plan:'+key,ownerId:'rep',owner:{id:'rep',stamp:'s'},kind:'plan',label:'خطة يوم 2026-11-20',status:'pending',message:'',createdAt:at,capturedAt:at,localId:'daily-plan-'+key,url:'/api/daily-plans',body:JSON.stringify({action:'send',date:'2026-11-20',stops:[{customerId:'c1',kind:'visit',time:'',note:''}],baseVersion:null,requestId:key,offline:{memberId:'rep',capturedAt:at}}),fingerprint:'f',language:'ar',attempts:0};
+ const row=store.offlineProjection(entry,{id:'rep',email:'rep@yourrest.org',branch:'الرئيسي'});
+ eq([row?.kind,row?.parentId??null,row?.data.performedBy,row?.data.date],['activity',null,'rep','2026-11-19'],'the previous release shows a plan entry as a visit of the member without a customer');
+ const realFetch=globalThis.fetch;globalThis.fetch=async()=>new Response('<!DOCTYPE html><html><body>404</body></html>',{status:404,headers:{'content-type':'text/html'}});
+ let answer;try{await client.submitJson('/api/daily-plans',{method:'POST',body:entry.body},{language:'ar'});}catch(error){answer=error;}finally{globalThis.fetch=realFetch;}
+ eq([answer?.status,answer?.invalidResponse,submit.isServerRefusal(answer)],[404,true,false],'its send gets the previous server\'s HTML 404, which is not a refusal: the entry waits and the outbox stops at it');
+ eq([review.deletableOfflineEntry(entry),review.deletableOfflineEntry({...entry,status:'blocked'})],[false,true],'and a waiting entry cannot be deleted there');
+ const guide=fs.readFileSync(path.join(root,'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'),'utf8'),section=guide.slice(guide.indexOf('## 9-أي.'),guide.indexOf('\n## 10.'));
+ const warning=section.slice(section.indexOf('**قبل الرجوع (3 أو 4): خطط محفوظة على الأجهزة.**'));
+ eq(section.includes('**قبل الرجوع (3 أو 4): خطط محفوظة على الأجهزة.**')&&warning.includes('«خطة يوم …»')&&warning.includes('في انتظار الاتصال')&&warning.includes('قبل إيقاف التطبيق للرجوع'),true,'the guide says to send or delete the plans kept on the devices before going back');
+}
 
 console.log(JSON.stringify({ok:true,checks}));

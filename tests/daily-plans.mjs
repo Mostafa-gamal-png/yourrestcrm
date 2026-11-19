@@ -60,6 +60,7 @@ eq(R.parsePlanStops([stop('c1'),stop('c2','call',{time:'١٠:٠٠',note:'  عر�
 for(const [value,problem,label] of [[[],'count','no stop'],[Array.from({length:31},()=>stop('c1')),'count','31 stops'],['x','list','not a list'],[[stop('c1',' visit')],'kind','a wrong kind'],[[stop('c 1')],'customer','a wrong customer id'],[[stop('c1','email')],'kind','email is not a plan kind'],[[stop('c1','visit',{time:'25:00'})],'time','a wrong time'],[[stop('c1','visit',{note:'ن'.repeat(301)})],'note','a note of 301 characters'],[[stop('c1','visit',{note:'a\u0001'})],'note','a control character'],[[{...stop('c1'),extra:1}],'list','an unknown key']])
  eq(R.parsePlanStops(value).problem,problem,label+' is refused');
 eq(R.parsePlanStops([],{min:0}).ok,true,'a draft may be empty');
+eq(R.parsePlanStops([stop('c1','visit',{id:'s1'}),stop('c2','call',{id:'s1'})]),{ok:false,problem:'list',index:1},'the same stop id twice is refused (review 2026-11-19: it changed a reviewer\'s stop past the lock)');
 eq(R.parsePlanStops(Array.from({length:30},()=>stop('c1'))).ok,true,'30 stops are accepted');
 const stored=(id,customerId,kind,supervisorState='',position=1)=>({id,position,customerId,kind,time:'',note:'',addedBy:supervisorState==='added'?'sup':'rep1',supervisorState,editedBy:supervisorState?'sup':null,createdAt:'t'});
 const existing=[stored('s1','c1','visit','',1),stored('s2','c2','call','added',2),stored('s3','c3','visit','edited',3),stored('s4','c4','visit','removed',4)];
@@ -237,6 +238,12 @@ const wire=item=>({id:item.id,customerId:item.customerId,kind:item.kind,time:ite
 eq((await send('rep1',D,[wire(own2),wire(added4)],5,{},403)).error,'لا يمكنك حذف محطة أضافها المشرف أو عدّلها، ولا تغييرها.','deleting the edited stop is refused');
 await send('rep1',D,[{...wire(edited1),time:'11:00'},wire(own2),wire(added4)],5,{},403);
 await send('rep1',D,[wire(edited1),wire(own2),wire(added4),wire(removed3)],5,{},403);
+// A reviewer's stop sent twice by its id, once changed (to a customer of another region) and once as it is: refused, nothing changes
+// (before the review of 2026-11-19 the lock read the second copy and the first was written under «أضافها المشرف», its customer unchecked).
+const stopsNow=()=>sql.prepare("SELECT id,customer_id,kind,note,supervisor_state,added_by FROM crm_daily_plan_stops WHERE plan_id='daily-plan:rep1:'||? ORDER BY position").all(D);
+const beforeTwice=stopsNow();
+eq((await send('rep1',D,[{...wire(added4),customerId:'cW',kind:'visit',note:'غيّرها المندوب'},wire(added4),wire(edited1),wire(own2)],5,{},400)).error,'بيانات الخطة غير صحيحة.','a stop sent twice by its id is refused');
+eq(stopsNow(),beforeTwice,'the reviewer\'s stop is as the reviewer left it');
 at('2026-11-18 23:10');
 saved=await send('rep1',D,[wire(added4),wire(edited1),wire(own2),stop('c2','visit')],5);
 eq([saved.plan.state,saved.plan.late,saved.plan.firstSentAt,saved.plan.stops.map(item=>[item.position,item.customerId,item.kind,item.supervisorState])],['sent',false,'2026-11-18T18:30:00.000Z',[[1,'c4','call','added'],[2,'c1','visit','edited'],[3,'c2','call',''],[4,'c2','visit',''],[5,'c3','whatsapp','removed']]],'sent again after 22:00: still on time (the first send decides), the reviewer\'s stops kept');
@@ -274,6 +281,20 @@ eq(sql.prepare('SELECT COUNT(*) n FROM crm_daily_plan_notes').get().n,2,'two not
 at('2026-11-20 09:00');
 await review('sup','approve','rep1',D,6,{},409);await send('rep1',D,[stop('c1')],6,{},409);
 await review('sup','note','rep1',D,undefined,{note:'بعد اليوم',noteVersion:2});
+// A request written just before midnight and sent again after it (a lost answer, the device's outbox) answers from its receipt, not «انتهى
+// يوم هذه الخطة» (review 2026-11-19: the day was checked before the receipt); a new request on the ended day is still refused.
+const M='2026-11-23';// Monday.
+at(M+' 23:59');
+const lateSend={action:'send',date:M,stops:[stop('c1')],baseVersion:null,requestId:crypto.randomUUID()};
+saved=await post('rep1',lateSend);
+eq([saved.plan.state,saved.plan.version,saved.plan.late],['sent',1,true],'today\'s plan sent at 23:59: late');
+const approval={action:'approve',memberId:'rep1',date:M,baseVersion:1,requestId:crypto.randomUUID()};
+eq((await post('sup',approval)).plan.state,'approved','approved at 23:59');
+at('2026-11-24 00:01');
+eq([(await post('rep1',lateSend)).plan.version,(await post('sup',approval)).plan.state],[2,'approved'],'both sent again after midnight answer from their receipts');
+eq(sql.prepare("SELECT action FROM crm_audit WHERE record_id='daily-plan:rep1:'||? ORDER BY created_at,id").all(M).map(row=>row.action),['daily-plan:send','daily-plan:approve'],'each written once');
+await send('rep1',M,[stop('c2')],2,{},409);await review('sup','return','rep1',M,2,{reason:'بعد انتهاء اليوم'},409);
+at('2026-11-20 09:00');
 // The export: the reviewer's team over a range; at most 31 days; never a field member.
 let exported=await get('sup',{from:'2026-11-19',to:'2026-11-21'});
 eq(exported.plans.map(item=>[item.memberId,item.date,item.state]),[['mk1','2026-11-19','sent'],['rep1','2026-11-19','sent'],['mk1','2026-11-21','sent']],'the plans of the range (the working days without one up to today too)');
@@ -286,6 +307,16 @@ eq((await inbox('sup')).role,'none','its card is gone');
 sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('rep1','{}','[\"plans\"]',2,'owner',?)").run(created);
 await get('rep1',{date:D},404);await send('rep1','2026-11-21',[stop('c1')],null,{},404);
 eq((await inbox('rep1')).role,'none','a hidden screen has no card');
+// A member the administrator exempted (the screen hidden: rep1; «إعداد خطة اليوم» off: mk1) cannot send a plan, so the reviewer is never
+// told they have not sent one, the list does not mark them past the deadline and the export has no day without a plan for them (review
+// 2026-11-19: they were named every night); the plans they sent are read as before.
+sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('mk1',?,'[]',2,'owner',?)").run(JSON.stringify({'plans:add':false}),created);
+at('2026-11-21 22:30');
+eq((await inbox('mgr')).missing,{date:'2026-11-22',names:['اسم rep2','اسم west']},'the sales manager\'s card after Saturday\'s deadline: only those asked for a plan');
+eq((await get('mgr',{date:'2026-11-22'})).rows.map(row=>[row.memberId,row.overdue]).sort(),[['mk1',false],['rep1',false],['rep2',true],['west',true]],'the list marks only them past the deadline');
+eq((await get('mgr',{from:'2026-11-21',to:'2026-11-21'})).plans.map(item=>[item.memberId,item.state]).sort(),[['mk1','sent'],['rep2','sent'],['west','missing']],'the export: the plans sent, and a day without a plan only for whom is asked for one');
+eq((await get('mgr',{date:'2026-11-19',memberId:'rep1'})).state,'sent','a plan the exempted member sent is read as before');
+
 // GET /api/crm keeps the plans' audit rows out of its recent changes.
 const snapshot=await call(crm.GET,{as:'owner',url:'https://test.invalid/api/crm'});
 eq(snapshot.audits.filter(item=>String(item.action).startsWith('daily-plan:')).length,0,'no plan in the recent changes');
