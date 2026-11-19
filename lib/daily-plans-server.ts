@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {CRMError,accessGuard} from './crm-server';
-import {can,pageAllowed} from './permissions';
+import {can,memberAccess,pageAllowed} from './permissions';
 import {salesScopeMemberIds,recordAuthorId} from './access';
 import {memberCanAccessRegion,regionScope,regionScopesOverlap} from './regions';
 import {visitCustomer} from './customer-visits';
@@ -57,6 +57,16 @@ function reviewerGate(me:Member,memberId:string):{sql:string;args:string[]}{
  return {sql:`EXISTS (SELECT 1 FROM crm_members WHERE id=? AND id<>? AND role IN ${FIELD_ROLES_SQL})`,args:[memberId,me.id]};
 }
 
+/** The members of a team who are asked for a plan now: active, a field member, with the screen shown and «إعداد خطة اليوم» on in their
+ *  saved permissions (lib/permissions.ts). One the administrator exempted (the screen hidden, the cell off) cannot send one, so they are
+ *  never «لم يرسلوا خطتهم» on the reviewer's card, «تجاوز آخر موعد للإرسال» on the list, or a working day without a plan in the export;
+ *  the plans they did send are read and reviewed as before. */
+async function planPreparers(db:D1Database,team:readonly Member[]):Promise<Set<string>>{
+ const asked=team.filter(member=>preparesPlans(member));if(!asked.length)return new Set();
+ const rows=(await db.prepare('SELECT member_id AS memberId,permissions,hidden,version FROM crm_member_permissions WHERE member_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(asked.map(member=>member.id))).all<{memberId:string;permissions:string;hidden:string;version:number}>()).results;
+ const saved=new Map(rows.map(row=>[row.memberId,row]));
+ return new Set(asked.filter(member=>{const who={...member,access:memberAccess(member.role,saved.get(member.id)??null)};return pageAllowed(who,'plans')&&can(who,'plans','add');}).map(member=>member.id));
+}
 async function readPlans(db:D1Database,pairs:readonly [string,string][]):Promise<Map<string,PlanRow>>{
  if(!pairs.length)return new Map();
  const ids=[...new Set(pairs.map(([member,date])=>planId(member,date)))];
@@ -143,8 +153,8 @@ export async function readPlanList(c:JourneyContext,date:string,now=new Date().t
  if(!reviewsPlans(c.me))throw new CRMError(PLAN_MESSAGES.reviewRole,403);
  const team=planTeam(c,{read:true}),plans=await readPlans(c.db,team.map(member=>[member.id,date]));
  const members=team.filter(member=>member.active||plans.has(planId(member.id,date)));
- const views=await planViews(c,members.map(member=>[member.id,date]),now),overdue=Date.parse(now)>=Date.parse(planDeadline(date))&&isPlanWorkingDay(date);
- const rows:PlanListRow[]=views.map((view,index)=>({memberId:view.memberId,name:view.memberName,role:members[index].role,state:view.state,version:view.version,late:view.late,overdue:view.state==='missing'&&overdue,firstSentAt:view.firstSentAt,reviewedByName:view.reviewedByName,counts:view.counts,notes:view.notes.length}));
+ const views=await planViews(c,members.map(member=>[member.id,date]),now),overdue=Date.parse(now)>=Date.parse(planDeadline(date))&&isPlanWorkingDay(date),asked=await planPreparers(c.db,members);
+ const rows:PlanListRow[]=views.map((view,index)=>({memberId:view.memberId,name:view.memberName,role:members[index].role,state:view.state,version:view.version,late:view.late,overdue:view.state==='missing'&&overdue&&asked.has(view.memberId),firstSentAt:view.firstSentAt,reviewedByName:view.reviewedByName,counts:view.counts,notes:view.notes.length}));
  const rank=(row:PlanListRow)=>row.state==='sent'?0:row.overdue?1:row.state==='returned'?2:row.state==='missing'?3:4;
  rows.sort((a,b)=>rank(a)-rank(b)||a.name.localeCompare(b.name,'ar')||a.memberId.localeCompare(b.memberId));
  return {ok:true,date,deadline:planDeadline(date),workingDay:isPlanWorkingDay(date),rows,serverTime:now};
@@ -157,8 +167,8 @@ export async function readPlanExport(c:JourneyContext,from:string,to:string,now=
  if(!planDay(from)||!planDay(to)||from>to||(Date.parse(to)-Date.parse(from))/86_400_000>=PLAN_EXPORT_MAX_DAYS)throw new CRMError(PLAN_MESSAGES.range,400);
  const team=planTeam(c,{read:true}),days:string[]=[];for(let date=from;date<=to;date=addDays(date,1))days.push(date);
  const asked=team.flatMap(member=>days.map(date=>[member.id,date] as [string,string]));
- const plans=await readPlans(c.db,asked);
- const pairs=asked.filter(([memberId,date])=>{const plan=plans.get(planId(memberId,date));return plan&&plan.status!=='draft'||team.find(member=>member.id===memberId)?.active&&isPlanWorkingDay(date)&&date<=journeyDate(now);});
+ const plans=await readPlans(c.db,asked),preparers=await planPreparers(c.db,team);
+ const pairs=asked.filter(([memberId,date])=>{const plan=plans.get(planId(memberId,date));return plan&&plan.status!=='draft'||preparers.has(memberId)&&isPlanWorkingDay(date)&&date<=journeyDate(now);});
  pairs.sort((a,b)=>a[1].localeCompare(b[1])||(team.find(m=>m.id===a[0])?.name||'').localeCompare(team.find(m=>m.id===b[0])?.name||'','ar'));
  return {ok:true,from,to,plans:await planViews(c,pairs,now)};
 }
@@ -178,7 +188,8 @@ export async function readPlanInbox(c:Pick<JourneyContext,'db'|'me'|'members'>,n
   const pending=rows.filter(row=>row.status==='sent').slice(0,50).map(row=>({memberId:row.memberId,name:names.get(row.memberId)||'',date:row.date,late:!!Number(row.late),firstSentAt:row.firstSentAt,version:Number(row.version)}));
   const date=Date.parse(now)>=Date.parse(planDeadline(next))?next:isPlanWorkingDay(today)?today:'';
   const sent=new Set(rows.filter(row=>row.date===date).map(row=>row.memberId));
-  const missing=date?team.filter(member=>!sent.has(member.id)).map(member=>member.name).sort((a,b)=>a.localeCompare(b,'ar')):[];
+  const asked=date?await planPreparers(c.db,team):new Set<string>();
+  const missing=date?team.filter(member=>asked.has(member.id)&&!sent.has(member.id)).map(member=>member.name).sort((a,b)=>a.localeCompare(b,'ar')):[];
   return {ok:true,serverTime:now,role:'reviewer',pending,...(date?{missing:{date,names:missing}}:{})};
  }
  return {ok:true,serverTime:now,role:'none'};

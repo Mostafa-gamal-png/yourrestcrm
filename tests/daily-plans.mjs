@@ -307,6 +307,16 @@ eq((await inbox('sup')).role,'none','its card is gone');
 sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('rep1','{}','[\"plans\"]',2,'owner',?)").run(created);
 await get('rep1',{date:D},404);await send('rep1','2026-11-21',[stop('c1')],null,{},404);
 eq((await inbox('rep1')).role,'none','a hidden screen has no card');
+// A member the administrator exempted (the screen hidden: rep1; «إعداد خطة اليوم» off: mk1) cannot send a plan, so the reviewer is never
+// told they have not sent one, the list does not mark them past the deadline and the export has no day without a plan for them (review
+// 2026-11-19: they were named every night); the plans they sent are read as before.
+sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('mk1',?,'[]',2,'owner',?)").run(JSON.stringify({'plans:add':false}),created);
+at('2026-11-21 22:30');
+eq((await inbox('mgr')).missing,{date:'2026-11-22',names:['اسم rep2','اسم west']},'the sales manager\'s card after Saturday\'s deadline: only those asked for a plan');
+eq((await get('mgr',{date:'2026-11-22'})).rows.map(row=>[row.memberId,row.overdue]).sort(),[['mk1',false],['rep1',false],['rep2',true],['west',true]],'the list marks only them past the deadline');
+eq((await get('mgr',{from:'2026-11-21',to:'2026-11-21'})).plans.map(item=>[item.memberId,item.state]).sort(),[['mk1','sent'],['rep2','sent'],['west','missing']],'the export: the plans sent, and a day without a plan only for whom is asked for one');
+eq((await get('mgr',{date:'2026-11-19',memberId:'rep1'})).state,'sent','a plan the exempted member sent is read as before');
+
 // GET /api/crm keeps the plans' audit rows out of its recent changes.
 const snapshot=await call(crm.GET,{as:'owner',url:'https://test.invalid/api/crm'});
 eq(snapshot.audits.filter(item=>String(item.action).startsWith('daily-plan:')).length,0,'no plan in the recent changes');
