@@ -232,14 +232,16 @@ export async function writeMemberPlan(c:JourneyContext,body:unknown,receivedAt=n
  if(!preparesPlans(c.me))throw new CRMError(PLAN_MESSAGES.role,403);
  const parsed=memberSchema.safeParse(body);if(!parsed.success)throw new CRMError(PLAN_MESSAGES.invalid,400);
  const p=parsed.data,today=journeyDate(receivedAt),problem=planDateProblem(p.date,today);
- if(problem==='past')throw new CRMError(PLAN_MESSAGES.past,409);
- if(problem)throw new CRMError(PLAN_MESSAGES.date,400);
  const capture=p.action==='send'?offlineCapture(body as Record<string,unknown>,c.me.id,receivedAt):null;
  const sent=checkedStops(p.stops,p.action==='send'?1:0);
  const id=planId(c.me.id,p.date),mutation=PLAN_AUDIT_PREFIX+c.me.id+':'+p.requestId;
  const request={action:p.action,memberId:c.me.id,date:p.date,baseVersion:p.baseVersion,stops:canonical(sent)};
  const answer=async():Promise<Answer>=>({ok:true,id,plan:(await planViews(c,[[c.me.id,p.date]],new Date().toISOString()))[0]});
+ // The receipt first: a request that was written, sent again after its day ended (a lost answer retried after midnight, the device's
+ // outbox), answers with the plan as it is, never «انتهى يوم هذه الخطة».
  const replay=await receiptOf(c,mutation,request,answer,PLAN_MESSAGES.conflict);if(replay)return replay;
+ if(problem==='past')throw new CRMError(PLAN_MESSAGES.past,409);
+ if(problem)throw new CRMError(PLAN_MESSAGES.date,400);
  const plan=(await readPlans(c.db,[[c.me.id,p.date]])).get(id),existing=plan?(await readStops(c.db,[id])).get(id)||[]:[];
  if((plan?.version??null)!==p.baseVersion)throw new CRMError(PLAN_MESSAGES.conflict,409);
  if(!memberMayEdit(plan?.status??null))throw new CRMError(PLAN_MESSAGES.approved,409);
@@ -296,12 +298,13 @@ export async function writeReviewerPlan(c:JourneyContext,body:unknown,at=new Dat
   if(results[0].meta.changes!==1){const again=await receiptOf(c,mutation,request,answer,PLAN_MESSAGES.noteConflict);if(again)return again;throw new CRMError(PLAN_MESSAGES.noteConflict,409);}
   return answer();
  }
- if(p.date<today)throw new CRMError(PLAN_MESSAGES.past,409);
  const sent=p.action==='approve_edited'?checkedStops(p.stops,1):[];
  const reason=p.action==='return'?planText(p.reason,PLAN_REASON_MIN,PLAN_REASON_MAX):'';
  if(reason===null)throw new CRMError(PLAN_MESSAGES.reason,400);
  const request={action:p.action,memberId:p.memberId,date:p.date,baseVersion:p.baseVersion,...(p.action==='approve_edited'?{stops:canonical(sent)}:{}),...(p.action==='return'?{reason}:{})};
+ // The receipt before the day's check, as the member's (a decision written at 23:59 and sent again after midnight answers from it).
  const replay=await receiptOf(c,mutation,request,answer,PLAN_MESSAGES.conflict);if(replay)return replay;
+ if(p.date<today)throw new CRMError(PLAN_MESSAGES.past,409);
  const plan=(await readPlans(c.db,[[p.memberId,p.date]])).get(id);
  if(!plan||plan.status==='draft')throw new CRMError(PLAN_MESSAGES.notSent,409);
  if(plan.version!==p.baseVersion)throw new CRMError(PLAN_MESSAGES.conflict,409);

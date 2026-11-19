@@ -281,6 +281,20 @@ eq(sql.prepare('SELECT COUNT(*) n FROM crm_daily_plan_notes').get().n,2,'two not
 at('2026-11-20 09:00');
 await review('sup','approve','rep1',D,6,{},409);await send('rep1',D,[stop('c1')],6,{},409);
 await review('sup','note','rep1',D,undefined,{note:'بعد اليوم',noteVersion:2});
+// A request written just before midnight and sent again after it (a lost answer, the device's outbox) answers from its receipt, not «انتهى
+// يوم هذه الخطة» (review 2026-11-19: the day was checked before the receipt); a new request on the ended day is still refused.
+const M='2026-11-23';// Monday.
+at(M+' 23:59');
+const lateSend={action:'send',date:M,stops:[stop('c1')],baseVersion:null,requestId:crypto.randomUUID()};
+saved=await post('rep1',lateSend);
+eq([saved.plan.state,saved.plan.version,saved.plan.late],['sent',1,true],'today\'s plan sent at 23:59: late');
+const approval={action:'approve',memberId:'rep1',date:M,baseVersion:1,requestId:crypto.randomUUID()};
+eq((await post('sup',approval)).plan.state,'approved','approved at 23:59');
+at('2026-11-24 00:01');
+eq([(await post('rep1',lateSend)).plan.version,(await post('sup',approval)).plan.state],[2,'approved'],'both sent again after midnight answer from their receipts');
+eq(sql.prepare("SELECT action FROM crm_audit WHERE record_id='daily-plan:rep1:'||? ORDER BY created_at,id").all(M).map(row=>row.action),['daily-plan:send','daily-plan:approve'],'each written once');
+await send('rep1',M,[stop('c2')],2,{},409);await review('sup','return','rep1',M,2,{reason:'بعد انتهاء اليوم'},409);
+at('2026-11-20 09:00');
 // The export: the reviewer's team over a range; at most 31 days; never a field member.
 let exported=await get('sup',{from:'2026-11-19',to:'2026-11-21'});
 eq(exported.plans.map(item=>[item.memberId,item.date,item.state]),[['mk1','2026-11-19','sent'],['rep1','2026-11-19','sent'],['mk1','2026-11-21','sent']],'the plans of the range (the working days without one up to today too)');
