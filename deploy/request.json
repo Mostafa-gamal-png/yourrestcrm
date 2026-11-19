@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-FollowupPicker-20261119.zip","sha256":"cd81b8ee2f4d46bb30a58cda71d8913c6877bd7e5dce8029ef5274965ff4f701","stage":"yourrest-crm-update-followup-picker-20261119","helper":"yourrest-activate-update-followup-picker.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-ListExport-20261119.zip","sha256":"ac090c4be2d0b7ca190c94c960e13797412c29cc1dd080224966065b711fb676","stage":"yourrest-crm-update-list-export-20261119","helper":"yourrest-activate-update-list-export.cjs"}
