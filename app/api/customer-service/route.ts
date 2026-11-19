@@ -3,6 +3,7 @@ import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {prepareNewContact} from '@/lib/followups-server';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {riyadhDate} from '@/lib/visits';
+import {isMoldPhotoId} from '@/lib/mold-photos';
 import {prepareCustomerLocation} from '@/lib/customer-fields';
 import {z} from 'zod';
 import {accessGuard,context,checkOrigin,requireSession,CRMError,replyError,requireCell} from '@/lib/crm-server';
@@ -151,7 +152,7 @@ export async function POST(req:Request){try{
   if(!registration.result)throw new CRMError('سجّل نتيجة الزيارة قبل إنهائها');
   if(registration.hasCompetitor&&!registration.competitorName)throw new CRMError('اكتب اسم المنافس');
   if(!registration.hasCompetitor)Object.assign(registration,{competitorName:'',competitorNotes:'',competitorFileId:'',competitorFileName:''});
-  if(registration.competitorFileId){const file=await c.db.prepare('SELECT customer_id,name,uploaded_by FROM crm_visit_files WHERE id=?').bind(registration.competitorFileId).first<{customer_id:string;name:string;uploaded_by:string}>();if(!file||file.customer_id!==customer.id||file.uploaded_by!==c.me.id&&previous?.competitorFileId!==registration.competitorFileId)throw new CRMError('ملف المنافس لا يتبع هذا العميل',403);registration.competitorFileName=file.name;}
+  if(registration.competitorFileId){const file=isMoldPhotoId(registration.competitorFileId)?null:await c.db.prepare('SELECT customer_id,name,uploaded_by FROM crm_visit_files WHERE id=?').bind(registration.competitorFileId).first<{customer_id:string;name:string;uploaded_by:string}>();if(!file||file.customer_id!==customer.id||file.uploaded_by!==c.me.id&&previous?.competitorFileId!==registration.competitorFileId)throw new CRMError('ملف المنافس لا يتبع هذا العميل',403);registration.competitorFileName=file.name;}
   prepareNewContact(registration,c,now,undefined,old);registration.date=date;registration.responsibleId=action==='edit'?item.creatorId:c.me.id;registration.requestId='';delete registration.requestSnapshot;delete registration.customerStage;Object.assign(registration,offlineEvidence(offline,old?.data));
   const intake=serviceIntakeSchemaForDay(offline?date:undefined).parse({source:registration.type,products:registration.requestedProducts,strength:registration.strength,needs:registration.customerNeeds||registration.summary,nextAction:registration.nextAction,nextDate:registration.nextDate});
   if(action==='contact')data.registrations=[...(data.registrations||[]),{id:'service-visit-'+requestId,registration,createdAt:now}];

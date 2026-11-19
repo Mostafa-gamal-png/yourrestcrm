@@ -4,6 +4,42 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «صور القالب»: photos of the customer's mold in the customer's data (2026-11-19, no migration, no Android change)
+
+- **Asked.** The owner: «عايز فى بيانات العميل ان ارفع صورة للقالب», then «اكتر من صورة».
+- **The section.** «صور القالب» in the customer's sheet (the «البيانات» tab, under the classifications, `app/customer-mold-photos.tsx`):
+  squares with the count out of 20, a tap opens one large with the previous, the next, who added it and when; «إضافة صور» is an input of
+  images (`accept="image/*"`, several at once, no `capture`), so a phone's browser offers the camera and the gallery. The Android app
+  1.0.14 opens Android's document picker for it (the gallery and files, no camera): taking the camera there needs a new build.
+- **Space.** Each photo is shrunk on the device first (`lib/image-shrink.ts`: longest side 1600 pixels, JPEG 0.8, lowered to 0.7 and 0.6
+  and then smaller sizes down to 800 pixels until it is 400 KB or less; drawing it again drops the camera's metadata, its place among it).
+  The server takes a JPEG, PNG or WEBP by its bytes only, 2 MB at most, 20 a customer (the 21st refused, the count checked at the commit
+  too), two uploads at a time (429, the page retries).
+- **Storage, no migration.** Rows of `crm_visit_files` with ids `mold-photo-<sha256>` and object keys `mold-photo/…` in `env.FILES`, so
+  the backups copy and restore them as every visit file; the stored name is the server's (`mold-photo-<day>.jpg`), never the browser's.
+  `/api/visit-files` and the visit forms never take a mold photo as a competitor's offer (`canAccessVisitFile`, the customer-service
+  route). `portable/backup-core.mjs` leaves out a photo deleted while a backup runs (as a deleted design file); a photo whose row names
+  missing bytes still fails the backup.
+- **Who.** Adds: exactly who adds and corrects that customer's machines (`moldPhotoAddRefusal`, the `customer:edit` cell): a
+  representative and a marketing officer their own customers (a marketing officer of their branch), a supervisor and a sales manager their
+  team's, the administrator all, never customer service; «عرض بيانات الفريق بالكامل» does not widen it; the commit re-checks the member,
+  their permissions' version and the customer's version (`masterMutationGuard`). Sees: whoever sees the customer (what `GET /api/crm`
+  gives them, customer service its branch's), 404 otherwise; the uploader's name only to whoever reads that member's name. Deletes:
+  whoever added it and the administrator, after a confirmation; final (the bytes go; «المحذوفات» holds records, not files).
+- **Routes.** `GET /api/mold-photos?customerId=` (the list, `no-store`), `GET /api/mold-photos?id=` (the image, inline, `nosniff`,
+  `private, max-age=86400`), `POST /api/mold-photos?customerId=&key=<uuid>` (multipart `file`, 2 MB + 64 KB body, two minutes; the same
+  key again answers the saved photo, after a delete `deleted:true`, with other bytes 409), `POST /api/mold-photos/delete {id}`.
+- **History.** «إضافة صورة للقالب · عدد صور القالب: n» and «حذف صورة من صور القالب · عدد صور القالب: n» on the customer in «سجل
+  التغييرات» (English in `lib/locales/en.json`); their ids are the add's and the delete's receipts.
+- **Tests.** `tests/mold-photos.mjs` (default gate, 144), `tests/mold-photos-http.mjs` (release build, 71),
+  `tests/mold-photos-browser.mjs` (browser, 56; Arabic and English at 320, 360, a tablet both ways and a computer),
+  `tests/mold-photos-rollback.mjs` (default gate, 27: the previous release on this release's photos, its backup and restore),
+  `tests/production-backup.mjs` (a photo deleted during a backup, 87), `tests/server-authorization.mjs` (the routes).
+- **Rollback.** To update-orders-20261119: code only, nothing is changed or deleted. The previous release keeps the rows and the bytes,
+  backs them up and restores them, shows none of them (it lists no visit file by customer), and serves one only to whoever knows its id
+  through its `/api/visit-files?id=` (a download, by the competitors' offers' rule); `/api/mold-photos` answers 404; the history lines stay
+  (in Arabic on its English screen). Coming forward again shows the photos as they were.
+
 ## «كل الطلبات» shows the mold requests that exist only in the products application (2026-11-19, no migration, no Android change)
 
 - **Asked.** The filters of «طلبات القوالب» still left out the requests that exist only in the products application: entered there

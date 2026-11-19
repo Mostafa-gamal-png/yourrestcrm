@@ -1,0 +1,41 @@
+/* «صور القالب» in the customer's sheet (app/customer-mold-photos.tsx): squares that fill the sheet's width at any size (a phone of
+   320 pixels shows three a row), a large view that fits the screen, and touch targets of 44 pixels on a phone. */
+.mold-photos{min-width:0;margin:16px 0;border:1px solid var(--border);border-radius:10px;padding:14px;display:grid;gap:10px}
+.mold-photos>header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
+.mold-photos h3{font-size:15px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;min-width:0}
+.mold-photos h3 .inline-count{margin:0;font-size:12px}
+.mold-photos-note{margin:0;font-size:13px;color:var(--muted-foreground);line-height:1.8;overflow-wrap:anywhere}
+.mold-photos-error{margin:0;font-size:13px;color:var(--destructive);line-height:1.8;overflow-wrap:anywhere}
+.mold-photos-error .text-button{padding:2px 4px}
+.mold-photos-status:empty{display:none}
+.mold-photos-status p{margin:0;font-size:13px;color:var(--muted-foreground);display:flex;align-items:center;gap:6px;flex-wrap:wrap;overflow-wrap:anywhere}
+.mold-photos-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(84px,30%),1fr));gap:8px;min-width:0}
+.mold-photos-grid li{min-width:0}
+.mold-photos-grid button{display:block;width:100%;aspect-ratio:1;padding:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--muted)}
+.mold-photos-grid button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.mold-photos-grid img{display:block;width:100%;height:100%;object-fit:cover}
+.mold-photos-failed{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.mold-photos-failed li{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;padding:8px 10px;border-radius:8px;background:var(--muted);min-width:0}
+.mold-photos-failed li>span:first-child{min-width:0;overflow-wrap:anywhere;flex:1 1 180px}
+.mold-photos-failed-actions{display:flex;gap:6px;flex-wrap:wrap}
+.mold-photo-viewer{max-width:min(960px,calc(100vw - 24px))!important;width:calc(100vw - 24px)!important;max-height:calc(100dvh - 24px)!important;padding:14px!important;gap:10px!important}
+.mold-photo-viewer-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.mold-photo-viewer-bar [data-slot=dialog-title]{font-size:17px!important;padding:0!important;min-width:0;overflow-wrap:anywhere}
+.mold-photo-viewer [data-slot=dialog-description]{margin:0!important;font-size:13px;overflow-wrap:anywhere}
+.mold-photo-viewer figure{margin:0;display:grid;place-items:center;background:#1d2128;border-radius:8px;min-height:160px;min-width:0;overflow:hidden}
+.mold-photo-viewer figure img{display:block;max-width:100%;max-height:min(68vh,calc(100dvh - 230px));width:auto;height:auto;object-fit:contain}
+.mold-photo-viewer-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mold-photo-viewer-actions .mold-photo-delete{margin-inline-start:auto}
+/* A finger on any touch screen, a tablet wide enough for the computer's layout too (the sheet and the dialogs are drawn outside .app-shell,
+   so app/touch-comfort.css does not reach them). */
+@media (pointer:coarse){
+ .mold-photos .btn.small,.mold-photos .text-button,.mold-photo-viewer .btn.small,.mold-photo-viewer .icon-button{min-height:44px}
+ .mold-photo-viewer .icon-button{min-width:44px}
+}
+@media (max-width:767px){
+ .mold-photos{padding:12px}
+ .mold-photos .btn.small,.mold-photo-viewer .btn.small,.mold-photo-viewer .icon-button{min-height:44px}
+ .mold-photo-viewer .icon-button{min-width:44px}
+ .mold-photo-viewer-actions .btn{flex:1 1 auto}
+ .mold-photo-viewer-actions .mold-photo-delete{margin-inline-start:0}
+}

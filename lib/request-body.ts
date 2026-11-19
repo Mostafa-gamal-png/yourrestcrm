@@ -13,12 +13,13 @@ export class RequestBodyError extends Error {
 // (MOLD_SIGNATURE_PAGE_BASE64_MAX, 1 398 104 characters), and the documents it lists (20 at most, about 600 bytes each): 2 330 000 and
 // 2 300 000.
 // /api/trash (a restoration, 2026-11-09): an entry's id and a request id, under 300 bytes: 2 000.
+// /api/mold-photos/delete (a mold photo deleted, 2026-11-19): one photo id of 75 characters: 2 000.
 // /api/reviews: the supervisor's «النتيجة» and «الإجراء المطلوب», 2 000 characters each (lib/supervisor-reviews.ts), 3 bytes a character
 // plus the keys: 14 000. /api/review-inbox: «قرأت» names one note since 2026-11-15, but a page loaded before may still send its former
 // «قرأت الكل» on at most 50 notes of kind, id (200) and version, which is read and refused with its reason: 16 000.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
- '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':2_330_000,'/api/mold-sign':2_300_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/service-kpi':32_000,
+ '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':2_330_000,'/api/mold-sign':2_300_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/mold-photos/delete':2_000,'/api/service-kpi':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
  '/api/kpis':60_000,'/api/reviews':14_000,'/api/review-inbox':16_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
  '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,'/api/erp-quotes':7_500_000,
@@ -27,8 +28,9 @@ export function jsonRequestLimit(request:Request){
  return jsonLimits[new URL(request.url).pathname.replace(/\/$/,'')]??450_000;
 }
 // File uploads: 11 MB and 120 seconds by default (visit files, 10 MB). A mold design file is up to 25 MiB (MOLD_DESIGN_MAX_BYTES in
-// portable/mold-rules.mjs) plus its form fields, and may take five minutes from a phone on a slow line.
-const formLimits:Record<string,{bytes:number;ms:number}>={'/api/mold-requests/design-files':{bytes:25*1024*1024+64*1024,ms:300_000}};
+// portable/mold-rules.mjs) plus its form fields, and may take five minutes from a phone on a slow line. A mold photo (2026-11-19) is at most
+// 2 MiB after the device shrank it (MOLD_PHOTO_FORM_BYTES in lib/mold-photos.ts): the photo and its framing, two minutes.
+const formLimits:Record<string,{bytes:number;ms:number}>={'/api/mold-requests/design-files':{bytes:25*1024*1024+64*1024,ms:300_000},'/api/mold-photos':{bytes:2*1024*1024+64*1024,ms:120_000}};
 const formLimit=(request:Request)=>formLimits[new URL(request.url).pathname.replace(/\/$/,'')]??{bytes:11*1024*1024,ms:120_000};
 export const formRequestLimit=(request:Request)=>formLimit(request).bytes;
 

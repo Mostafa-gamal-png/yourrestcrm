@@ -6,6 +6,7 @@ import {isSalesRequest,type Row,type schemas} from './crm';
 import type {z} from 'zod';
 import {coordinatesFromText,type LocationFields} from './customer-location';
 import {durationSeconds,durationNeedsReview,riyadhDate,visitResult} from './visits';
+import {isMoldPhotoId} from './mold-photos';
 type Context=Awaited<ReturnType<typeof context>>;
 export type OpportunityData=z.infer<typeof schemas.opportunity>&Record<string,unknown>;
 export type ContactData=LocationFields&{startedAt?:string;endedAt?:string;result?:string;outcome?:string;performedBy?:string;recordedByEmail?:string;visitNumber?:number;durationSeconds?:number|null;durationReview?:boolean;date?:string;responsibleId?:string}&Record<string,unknown>;
@@ -67,9 +68,10 @@ export function validateVisitLocation(data:ContactData,old?:Row){
  data.latitude=point.latitude;data.longitude=point.longitude;
 }
 
-/** Customer access alone never grants access to another recorder's uploaded files. */
+/** Customer access alone never grants access to another recorder's uploaded files. A mold photo (lib/mold-photos.ts, a row of the same
+ *  table) is never a competitor's offer: it is served and attached only by /api/mold-photos, under its own rule. */
 export function canAccessVisitFile(c:Context,file:{id:string;customer_id:string;uploaded_by:string}){
- if(!c.regionCustomerIds.has(file.customer_id))return false;
+ if(isMoldPhotoId(file.id)||!c.regionCustomerIds.has(file.customer_id))return false;
  if(c.me.role==='admin')return true;
  if(!isServiceRole(c.me.role))return salesScopeMemberIds(c.members,c.me).has(file.uploaded_by)||c.visible.some(r=>r.kind==='activity'&&r.data.competitorFileId===file.id);
  if(file.uploaded_by===c.me.id&&c.regionalRecords.some(r=>r.id===file.customer_id&&r.branch===c.me.branch))return true;

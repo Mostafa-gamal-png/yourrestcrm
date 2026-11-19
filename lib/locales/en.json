@@ -1633,5 +1633,19 @@
   "تسجيل تواصل": "Record a contact",
   "مصدر الفرصة": "Opportunity source",
   "المسؤول من خدمة العملاء": "Customer-service owner",
-  "طلبات تصنيع القوالب": "Mold requests"
+  "طلبات تصنيع القوالب": "Mold requests",
+  "صور القالب": "Mold photos",
+  "الصورة غير متاحة": "Photo unavailable",
+  "إضافة صور القالب متاحة لمن يسجّل ماكينات هذا العميل.": "Adding mold photos is open to whoever records this customer's machines.",
+  "حذف الصورة متاح لمن أضافها ولمدير النظام.": "A photo is deleted by whoever added it, or by the administrator.",
+  "اختر صورة للقالب.": "Choose a photo of the mold.",
+  "الصور المقبولة: JPG، PNG، WEBP.": "Accepted photos: JPG, PNG, WEBP.",
+  "حجم الصورة أكبر من 2 ميجابايت بعد تصغيرها. اختر صورة أصغر.": "The photo is larger than 2 MB after shrinking. Choose a smaller photo.",
+  "الحد 20 صورة للقالب لكل عميل. احذف صورة أولًا.": "The limit is 20 mold photos per customer. Delete a photo first.",
+  "رفع الصور مشغول مؤقتًا. أعد المحاولة بعد لحظات.": "Photo uploads are busy for a moment. Retry shortly.",
+  "رُفعت هذه الصورة من قبل ببيانات مختلفة. اختر الصورة مرة أخرى.": "This photo was uploaded before with different data. Choose the photo again.",
+  "بيانات رفع الصورة غير صحيحة.": "The photo upload data is not valid.",
+  "إضافة صورة للقالب": "Mold photo added",
+  "حذف صورة من صور القالب": "Mold photo deleted",
+  "عدد صور القالب: {0}": "Mold photos now: {0}"
 }
