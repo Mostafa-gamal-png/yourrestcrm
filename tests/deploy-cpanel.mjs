@@ -413,6 +413,14 @@ console.log(JSON.stringify(apply ? {ok: true, mode: 'apply', rowsWritten: 300, r
     check([bad.code, lines(bad.output).at(-1)], [2, 'STREETS STOP: the request needs the file\'s sha256 and apply true or false'], 'a request without its fields stops before the tool');
     check(s.cron, [], 'and no cron line stays');
   }
+  // Review 2026-11-19: when cron never started the run, the request was deleted but the uploaded street data file stayed in
+  // yourrest-deploy (the account is close to its file limit, and the guide says nothing stays). It goes with the request nobody took.
+  {
+    const s = cpanel({cronRuns: false});
+    await assert.rejects(s.run('streets', {streets: new Blob(['x']), streetsRequest: new Blob([JSON.stringify({sha256: 'a'.repeat(64), apply: false})]), streetsFile: new Blob(['made-up street data']), stage: 'ignored', helper: 'ignored'}), /did not start the run in 6 minutes/); checks++;
+    check([s.cron, fs.existsSync(path.join(s.home, 'yourrest-deploy', 'request')), fs.existsSync(path.join(s.home, 'yourrest-deploy', 'streets.json.gz'))], [[], false, false], 'no line, no request and no street data file stay behind');
+    ok(s.logs.includes('the street data file nobody used was deleted'), 'the deletion is said');
+  }
   {
     const s = cpanel();
     await assert.rejects(s.run('streets', {streets: new Blob(['x']), streetsRequest: new Blob(['{}'])}), /streets needs the import tool, its request and the street data file/); checks++;
