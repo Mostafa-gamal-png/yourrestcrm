@@ -14,7 +14,7 @@ import CompetitorFields,{emptyCompetitorInput,type CompetitorInput} from './comp
 import type {UploadState} from './upload-status';
 import {useAutomaticJourney,JourneyFormNotice} from './journey-tracker';
 import {isServiceRole} from '@/lib/customer-service';
-import {FollowupDateField} from './visit-fields';
+import {FollowupDatePicker} from './followup-date-picker';
 import {FollowupPlace,useFollowupPlace} from './followup-place';
 import {SubmitError,definiteSubmitRejection} from '@/lib/client-submit';
 import {offlineSubmit,uploadOfflineVisitFile} from '@/lib/offline-submit';
@@ -28,10 +28,12 @@ import {isFieldRole} from '@/lib/roles';
 // فاتورة؟»), and that '' reset the stage and the outcome to what they were (found 2026-11-16 by tests/today-sales-recontact-import-browser.mjs).
 function Pick({value,onChange,options,label}:{value:string;onChange:(value:string)=>void;options:Record<string,string>;label:string}){return <Select dir={direction()} value={value||undefined} onValueChange={next=>{if(next)onChange(next);}}><SelectTrigger className="pick" aria-label={t(label)}><SelectValue placeholder={t(label)}/></SelectTrigger><SelectContent>{Object.entries(options).map(([id,text])=><SelectItem key={id} value={id}>{t(text)}</SelectItem>)}</SelectContent></Select>;}
 export {CustomerFollowupsPage} from './customer-followup-list';
-type Props={initial?:Row;customerId?:string;records:Row[];me:Member;onClose:()=>void;onSaved:(queued?:boolean)=>Promise<void>};
+type Props={initial?:Row;customerId?:string;records:Row[];me:Member;
+ /** The team's names, for «اختيار موعد المتابعة» when the customer is another member's (a supervisor's follow-up for a representative). */
+ members?:Member[];onClose:()=>void;onSaved:(queued?:boolean)=>Promise<void>};
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
 type FollowupData={[field:string]:unknown;type:string;date:string;result:string;salesStage:string;invoiceOutcome:string;nextAction:string;nextDate:string;lossReason:string;lossDetails:string;recontactDate:string;recontactAction:string;recontact?:boolean;competitorObservation:CompetitorInput|null;hasQuotation?:boolean;hasCompetitor?:boolean};
-export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClose,onSaved}:Props){
+export function CustomerFollowupDialog({initial,customerId:seed,records,me,members,onClose,onSaved}:Props){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
  const currentSource=(id:string)=>{const source=latestCustomerContact(id,records),intake=records.find(r=>r.id===id)?.data._serviceIntake;return intake?.createdAt&&source&&source.createdAt<intake.createdAt?undefined:source;};
  const seedCustomer=initial?visitCustomer(initial,records)?.id:seed,seedSource=seedCustomer?currentSource(seedCustomer):undefined;
@@ -111,7 +113,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,onClo
      <FollowupPlace place={place} busy={busy||uploading||retryPending}/>
      <VoiceField label="ما نتيجة المتابعة؟" value={data.result} onChange={value=>change('result',value)} required multiline/>
     </div></section>
-    {!closed&&<section className="visit-form-section"><h3>{say('الخطوة التالية','Next step')}</h3><div className="form-grid"><VoiceField label="الإجراء القادم" value={data.nextAction} onChange={value=>change('nextAction',value)} required/><FollowupDateField value={data.nextDate} min={data.date} onChange={value=>change('nextDate',value)}/></div></section>}
+    {!closed&&<section className="visit-form-section"><h3>{say('الخطوة التالية','Next step')}</h3><div className="form-grid"><VoiceField label="الإجراء القادم" value={data.nextAction} onChange={value=>change('nextAction',value)} required/><FollowupDatePicker value={data.nextDate} min={data.date} onChange={value=>change('nextDate',value)} records={records} customerId={customerId} me={me} members={members} grid={!isServiceRole(me.role)}/></div></section>}
     <section className="visit-form-section"><CompetitorFields value={observation} records={records} customerId={customerId} identityKey={me.id} disabled={busy||uploading||savedReceipt.current||retryPending} uploading={uploading} uploadState={uploadAttempt.current?.context===competitorContext.current||observation.competitorFileId?uploadState:null} onUploadRetry={()=>{const retry=uploadAttempt.current;if(retry)void uploadCompetitor(retry.file,true);}} toggleLabel={say('تسجيل منافس في هذه المتابعة','Record a competitor in this follow-up')} onChange={changeCompetitor} onUpload={uploadCompetitor}/></section>
     <details className="visit-sales-details" open={salesOpen} onToggle={event=>setSalesOpen(event.currentTarget.open)}><summary><span>{say('مرحلة البيع وتفاصيل إضافية','Sales stage & more')}</span><span className="badge">{t(stageLabels[data.salesStage])||say('اختياري','Optional')}</span></summary><div className="form-grid visit-extended-fields">
      {hasQuotation&&<label className="field"><span>{t('هل تحوّل عرض السعر إلى فاتورة؟')}</span><Pick label="هل تحوّل عرض السعر إلى فاتورة؟" value={data.invoiceOutcome} onChange={value=>{if(savedReceipt.current||retryPending||lock.current)return;setDirty(true);setData(previous=>({...previous,invoiceOutcome:value,salesStage:value==='invoiced'?'won':value==='lost'?'lost':followupClosed(previous.salesStage)?'quoted':previous.salesStage}));}} options={invoiceOutcomes}/></label>}

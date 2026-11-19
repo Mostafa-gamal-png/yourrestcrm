@@ -52,12 +52,12 @@
     "visits": {
       "about": "Visits and the visit place: the Visits page, its form and table, deleting a visit, recording offline, and the place check (lib/visit-place*.ts, /api/visits).",
       "sources": ["app/customer-visits.tsx", "app/visits-table.tsx", "app/visit-fields.tsx", "app/visit-place-status.tsx", "app/visit-customer-picker.tsx", "app/visit-mobile.css", "app/rep-record-lists.css", "app/api/visits/**", "lib/visit-place.ts", "lib/visit-place-server.ts", "lib/visit-location.ts", "lib/visit-list.ts", "lib/offline-server.ts", "lib/dialog-escape.ts", "lib/service-wording.ts", "tests/visit-*.mjs", "tests/admin-delete*.mjs", "tests/offline-*.mjs", "lib/opportunity-entry.ts", "tests/opportunity-entry*.mjs"],
-      "tests": ["tests/visit-place-http.mjs", "tests/visit-place-browser.mjs", "tests/admin-delete-browser.mjs", "tests/offline-browser.mjs", "tests/offline-outbox-browser.mjs", "tests/dictation-browser.mjs", "tests/app-browser-workflows.mjs", "tests/support-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/perf-budget-browser.mjs", "tests/namecheap-http.mjs", "tests/production-load.mjs", "tests/server-authorization.mjs", "tests/opportunity-entry-http.mjs", "tests/opportunity-entry-browser.mjs", "tests/offline-stuck-entries-browser.mjs"]
+      "tests": ["tests/visit-place-http.mjs", "tests/visit-place-browser.mjs", "tests/admin-delete-browser.mjs", "tests/offline-browser.mjs", "tests/offline-outbox-browser.mjs", "tests/dictation-browser.mjs", "tests/app-browser-workflows.mjs", "tests/support-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/perf-budget-browser.mjs", "tests/namecheap-http.mjs", "tests/production-load.mjs", "tests/server-authorization.mjs", "tests/opportunity-entry-http.mjs", "tests/opportunity-entry-browser.mjs", "tests/offline-stuck-entries-browser.mjs", "tests/followup-date-picker-browser.mjs"]
     },
     "followups": {
       "about": "Follow-ups and customer follow-ups (the «متابعة» page, follow-ups that are visits, /api/customer-followups, /api/followups).",
       "sources": ["app/customer-followups.tsx", "app/customer-followup-list.tsx", "app/followup-place.tsx", "app/followups.tsx", "app/api/customer-followups/**", "app/api/followups/**", "lib/customer-followups.ts", "lib/daily-followups.ts", "lib/followups-server.ts", "tests/*followup*.mjs"],
-      "tests": ["tests/visit-place-http.mjs", "tests/offline-outbox-browser.mjs", "tests/supervisor-reviews-complete-browser.mjs", "tests/app-browser-workflows.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/followup-recontact-http.mjs", "tests/today-sales-recontact-import-browser.mjs", "tests/offline-stuck-entries-http.mjs", "tests/offline-stuck-entries-browser.mjs"]
+      "tests": ["tests/visit-place-http.mjs", "tests/offline-outbox-browser.mjs", "tests/supervisor-reviews-complete-browser.mjs", "tests/app-browser-workflows.mjs", "tests/mobile-comfort-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/followup-recontact-http.mjs", "tests/today-sales-recontact-import-browser.mjs", "tests/offline-stuck-entries-http.mjs", "tests/offline-stuck-entries-browser.mjs", "tests/followup-date-picker-browser.mjs"]
     },
     "trash": {
       "about": "«المحذوفات» (2026-11-09; since 2026-11-10 also for whoever has a «حذف» cell on: their own deletions, lib/permissions.ts trashScopeOf): the deleted records page, GET/POST /api/trash (the list and the restoration, from the «حذف» history entries) and lib/trash*.ts; what a deletion records for it lives in app/api/crm (shared).",
@@ -98,6 +98,11 @@
       "about": "A customer's machines (app/customer-machines.tsx, lib/machines.ts, /api/machines/import).",
       "sources": ["app/customer-machines.tsx", "app/api/machines/**", "lib/machines.ts", "tests/machines*.mjs"],
       "tests": ["tests/machines-browser.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs", "tests/marketing-role-browser.mjs"]
+    },
+    "followup-date-picker": {
+      "about": "«اختيار موعد المتابعة» (GSCO 2.13.84, 2026-11-19): the picker of the next follow-up date (app/followup-date-picker.tsx and its CSS) in the new visit (app/customer-visits.tsx), the follow-up executed (app/customer-followups.tsx) and an opportunity's specifications (app/crm-app.tsx, shared), and its pure rules (lib/followup-day-picker.ts: the 14 Riyadh days, the counts of the customer's representative, full and off days, haversine nearness, single-linkage areas, the suggestion, the words). The plain field behind «تاريخ آخر» is FollowupDateField of app/visit-fields.tsx (the visits area's); the date's checks are the forms' own (tests/opportunity-entry-browser.mjs).",
+      "sources": ["app/followup-date-picker.tsx", "app/followup-date-picker.css", "lib/followup-day-picker.ts", "tests/followup-date-picker*.mjs"],
+      "tests": ["tests/followup-date-picker-browser.mjs", "tests/opportunity-entry-browser.mjs", "tests/today-sales-recontact-import-browser.mjs"]
     },
     "mold-photos": {
       "about": "«صور القالب» of a customer (2026-11-19): the section of the customer's sheet (app/customer-mold-photos.tsx, drawn by app/crm-app.tsx, shared), GET/POST /api/mold-photos and POST /api/mold-photos/delete, their rules (lib/mold-photos.ts: who adds as for the machines, who sees as for the customer, who deletes) and server (lib/mold-photos-server.ts), and the shrinking on the device (lib/image-shrink.ts). The photos are rows of crm_visit_files, so the competitors' offers' route refuses them (lib/followups-server.ts, app/api/visit-files: the visits area's) and the backup leaves out one deleted while it runs (portable/backup-core.mjs, its default-gate test tests/production-backup.mjs).",
@@ -177,6 +182,7 @@
     "tests/mold-filters-browser.mjs": 90,
     "tests/mold-orders-browser.mjs": 98,
     "tests/mold-orders-http.mjs": 62,
+    "tests/followup-date-picker-browser.mjs": 75,
     "tests/mold-photos-browser.mjs": 60,
     "tests/mold-photos-http.mjs": 52,
     "tests/marketing-role-browser.mjs": 100,

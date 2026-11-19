@@ -12,7 +12,8 @@ import { contactTypes, visitPurposes, visitResult, formatVisitTime} from '@/lib/
 import {isServiceRole,serviceStatusLabels} from '@/lib/customer-service';
 import {filterVisitRows,lostQuoteVisitIds} from '@/lib/visit-list';
 import LanguageSwitch from './language-switch';
-import VisitFields, {FollowupDateField,type VisitLocationState,type VisitData,type VisitValue} from './visit-fields';
+import VisitFields, {type VisitLocationState,type VisitData,type VisitValue} from './visit-fields';
+import {FollowupDatePicker} from './followup-date-picker';
 import {submitJson,SubmitError,definiteSubmitRejection} from '@/lib/client-submit';
 import {offlineSubmit,uploadOfflineVisitFile} from '@/lib/offline-submit';
 import VoiceField from './voice-field';
@@ -269,7 +270,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
                 <VisitPlaceStatus view={place}/>
               </div></section>
               <section className="visit-form-section"><h3>{say('الخطوة التالية','Next step')}</h3><div className="form-grid">
-                <VoiceField label={t('الإجراء القادم')} value={data.nextAction||''} required={!!initial} marked onChange={value=>change('nextAction',value)} problem={problems.nextAction?tw(problems.nextAction):''} inputProps={{id:'visit-next-action'}}/><FollowupDateField id="visit-next-date" required={!!initial} problem={problems.nextDate?tw(problems.nextDate):''} value={data.nextDate||''} onChange={value=>change('nextDate',value)}/>
+                <VoiceField label={t('الإجراء القادم')} value={data.nextAction||''} required={!!initial} marked onChange={value=>change('nextAction',value)} problem={problems.nextAction?tw(problems.nextAction):''} inputProps={{id:'visit-next-action'}}/><FollowupDatePicker id="visit-next-date" required={!!initial} problem={problems.nextDate?tw(problems.nextDate):''} value={data.nextDate||''} onChange={value=>change('nextDate',value)} records={records} customerId={customerId} me={me} members={members} grid={!service&&!readOnly}/>
               </div></section>
               <details className="visit-sales-details" open={salesOpen} onToggle={event=>setSalesOpen(event.currentTarget.open)}>
                 <summary><span>{say('تفاصيل البيع والأصناف','Sales & products')}</span><span className="badge">{t(stageLabels[data.salesStage])||say('اختياري','Optional')}</span></summary>
