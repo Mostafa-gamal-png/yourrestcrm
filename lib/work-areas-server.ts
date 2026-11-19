@@ -224,8 +224,13 @@ async function readCapped(response:Response){
 }
 /** «Busy» answers (502 «at capacity» too) and no answer at all (a network failure or the 30-second limit) pause that service. */
 export const OVERPASS_BUSY_STATUSES:ReadonlySet<number>=new Set([429,502,503,504]);
-async function callOverpass(url:string,box:BBox):Promise<Fetched>{
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),overpass.timeoutMs);
+/** A call waits at most the service's limit and never past the answer's deadline (review 2026-11-19: each call took the full 30 seconds
+ *  whatever was left, so two silent services kept one answer about a minute, past the page's own one-minute wait, and a request queued
+ *  behind it waited past its own deadline). A call cut by the deadline is not the service's silence: it is not paused, and the box comes on
+ *  a later visit («later»). */
+async function callOverpass(url:string,box:BBox,deadline:number):Promise<Fetched>{
+ const left=deadline-Date.now(),byDeadline=left<overpass.timeoutMs;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Math.max(1,Math.min(overpass.timeoutMs,left)));
  calls++;
  try{
   const response=await overpass.fetcher(url,{method:'POST',headers:{'User-Agent':overpass.userAgent,Accept:'application/json','Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'},body:'data='+encodeURIComponent(overpassQuery(box)),redirect:'error',cache:'no-store',signal:controller.signal});
@@ -234,7 +239,10 @@ async function callOverpass(url:string,box:BBox):Promise<Fetched>{
   const raw=await readCapped(response);if(raw===null)return {ok:false,reason:'too_large'};
   let data:unknown;try{data=JSON.parse(raw);}catch{return {ok:false,reason:'json'};}
   return parseOverpassStreets(data);
- }catch{pausedUntil.set(url,Date.now()+OVERPASS_PAUSE_MS);return {ok:false,reason:'network'};}
+ }catch{
+  if(byDeadline&&controller.signal.aborted)return {ok:false,reason:'later'};
+  pausedUntil.set(url,Date.now()+OVERPASS_PAUSE_MS);return {ok:false,reason:'network'};
+ }
  finally{clearTimeout(timer);}
 }
 /** The services in order, skipping paused ones, until one gives a complete answer (or the answer's time is up). */
@@ -243,7 +251,7 @@ async function askInTurn(box:BBox,deadline:number):Promise<Fetched>{
  for(const url of overpass.urls){
   if(paused(url))continue;
   if(Date.now()>=deadline)return {ok:false,reason:'later'};
-  last=await callOverpass(url,box);
+  last=await callOverpass(url,box,deadline);
   if(last.ok)return last;
  }
  return last;

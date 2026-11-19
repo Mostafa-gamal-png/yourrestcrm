@@ -133,6 +133,18 @@ S.resetOverpassState();asked=[];S.configureOverpass({fetcher:async url=>{asked.p
 eq([(await S.fetchStreets('net',queryBox,deadline())).reason,S.overpassState().paused.length],['network',2],'no answer at all (a network failure) pauses too');
 S.resetOverpassState();asked=[];S.configureOverpass({fetcher:(url,init)=>{asked.push(url);return new Promise((_,reject)=>init.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError'))));}});
 eq([(await S.fetchStreets('silent',queryBox,deadline())).reason,S.overpassState().paused.length],['network',2],'silence until the time limit pauses the service');
+{
+ // Review 2026-11-19: a call took the service's whole limit whatever was left of the answer's budget, so two silent services kept one
+ // answer twice the limit (30 + 30 s against a 45-second budget and the page's 60-second wait), and a request queued behind it waited
+ // past its own deadline. The held clock follows the real time spent waiting here.
+ S.resetOverpassState();asked=[];
+ S.configureOverpass({timeoutMs:1000,fetcher:(url,init)=>{asked.push(url);const t0=RealDate.now();return new Promise((_,reject)=>init.signal.addEventListener('abort',()=>{held+=RealDate.now()-t0;reject(new DOMException('aborted','AbortError'));}));}});
+ const start=RealDate.now(),budget=held+1200,timed=promise=>promise.then(result=>({result,ms:RealDate.now()-start}));
+ const [first,queued]=await Promise.all([timed(S.fetchStreets('budget-a',queryBox,budget)),timed(S.fetchStreets('budget-b',queryBox,budget))]);
+ eq([first.result.reason,queued.result.reason,asked,S.overpassState().paused],['later','later',[one,two],[one]],'the first service silent for its whole limit is paused; the second is cut at the deadline, not paused; the queued request ends at its deadline');
+ ok(first.ms<1950&&queued.ms<1950,'both answered by the 1.2-second budget, not after two full limits of 1 second ('+first.ms+' and '+queued.ms+' ms)');
+ S.configureOverpass({timeoutMs:200});
+}
 S.resetOverpassState();asked=[];S.configureOverpass({fetcher:reply(500)});
 eq([(await S.fetchStreets('err',queryBox,deadline())).reason,S.overpassState().paused],['http_500',[]],'another error is not a pause');
 S.resetOverpassState();asked=[];S.configureOverpass({fetcher:async url=>url===one?(asked.push(url),new Response('busy',{status:502})):reply(200)(url)});
