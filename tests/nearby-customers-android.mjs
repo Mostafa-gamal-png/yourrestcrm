@@ -75,7 +75,7 @@ const manifest = fs.readFileSync(path.join(root, 'mobile/android/app/src/main/An
 eq([...manifest.matchAll(/uses-permission android:name="android\.permission\.([A-Z_]+)"/g)].map(match => match[1]).sort(),
   ['ACCESS_BACKGROUND_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'ACCESS_NETWORK_STATE', 'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_LOCATION', 'INTERNET', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'REQUEST_INSTALL_PACKAGES'], 'no permission is added');
 const gradle = fs.readFileSync(path.join(root, 'mobile/android/app/build.gradle'), 'utf8');
-eq([gradle.match(/versionCode\s+(\d+)/)?.[1], gradle.match(/versionName\s+'([^']+)'/)?.[1]], ['15', '1.0.14'], 'the app is 1.0.14 (15): 1.0.13 brought the notice, 1.0.14 the complaint alerts');
+eq([gradle.match(/versionCode\s+(\d+)/)?.[1], gradle.match(/versionName\s+'([^']+)'/)?.[1]], ['16', '1.0.15'], 'the app is 1.0.15 (16): 1.0.13 brought the notice, 1.0.14 the complaint alerts, 1.0.15 the failure panel and the camera');
 // The page opens what the tap names: «#nearby=<id>» and the event (app/crm-app.tsx).
 const page = fs.readFileSync(path.join(root, 'app/crm-app.tsx'), 'utf8');
 ok(page.includes("window.addEventListener('yourrest:open-nearby-customer',open)") && page.includes('/^nearby=([A-Za-z0-9_-]{1,200})$/'), 'the page handles the event and the address');

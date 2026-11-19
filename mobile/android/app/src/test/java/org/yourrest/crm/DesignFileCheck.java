@@ -366,8 +366,10 @@ public final class DesignFileCheck {
         Path manifestPath=source.resolve("../../../../AndroidManifest.xml");
         org.w3c.dom.Document manifest=DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(manifestPath.toFile());
         NodeList providers=manifest.getElementsByTagName("provider");
-        check(providers.getLength()==1,"One provider, well-formed manifest");
-        Element declared=(Element)providers.item(0);
+        // 1.0.15 adds the camera's own provider (CameraPhotoProvider, checked by CameraPhotoRulesCheck); the design files keep theirs.
+        Set<String> providerNames=new TreeSet<>();Element declared=null;
+        for(int i=0;i<providers.getLength();i++){Element element=(Element)providers.item(i);providerNames.add(element.getAttribute("android:name"));if(".DesignFileProvider".equals(element.getAttribute("android:name")))declared=element;}
+        check(providerNames.equals(new TreeSet<>(Arrays.asList(".DesignFileProvider",".CameraPhotoProvider")))&&providers.getLength()==2&&declared!=null,"The design files' provider and the camera's, nothing else; well-formed manifest");
         String auth=declared.getAttribute("android:authorities");
         check(".DesignFileProvider".equals(declared.getAttribute("android:name"))&&authority.group(1).equals(auth),"The manifest names the provider with the same literal authority");
         check(!auth.contains("${"),"No manifest placeholder: tools/build-oss.py links the manifest as written");

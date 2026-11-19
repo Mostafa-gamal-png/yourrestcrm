@@ -99,8 +99,9 @@ ok(manifest.includes('<service android:name=".AlertCheckJob" android:permission=
 eq([...manifest.matchAll(/uses-permission android:name="android\.permission\.([A-Z_]+)"/g)].map(match => match[1]).sort(),
   ['ACCESS_BACKGROUND_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'ACCESS_NETWORK_STATE', 'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_LOCATION', 'INTERNET', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'REQUEST_INSTALL_PACKAGES'], 'no permission is added');
 const gradle = fs.readFileSync(path.join(root, 'mobile/android/app/build.gradle'), 'utf8');
-eq([gradle.match(/versionCode\s+(\d+)/)?.[1], gradle.match(/versionName\s+'([^']+)'/)?.[1]], ['15', '1.0.14'], 'the app is 1.0.14 (15)');
-// The release notes the publish script writes: at most five of at most 200 characters, in both languages.
+eq([gradle.match(/versionCode\s+(\d+)/)?.[1], gradle.match(/versionName\s+'([^']+)'/)?.[1]], ['16', '1.0.15'], 'the app is 1.0.15 (16): 1.0.14 brought the complaint alerts, 1.0.15 keeps them (tests/webview-load-android.mjs checks what it adds)');
+// The release notes the publish script writes: at most five of at most 200 characters, in both languages. They describe the release
+// being published (1.0.15 since 2026-11-19: tests/webview-load-android.mjs checks what they say).
 const publish = fs.readFileSync(path.join(root, 'scripts/publish-android-release.mjs'), 'utf8');
 const notesBlock = publish.slice(publish.indexOf('releaseNotes:{ar:['), publish.indexOf(']},publishedAt'));
 const [arBlock, enBlock] = notesBlock.split('],en:[');
@@ -109,7 +110,6 @@ const ar = notes(arBlock), en = notes(enBlock);
 ok(ar.length >= 1 && ar.length <= 5 && en.length === ar.length, 'one to five notes, as many in English as in Arabic');
 ok([...ar, ...en].every(note => note.length <= 200), 'every note fits the update screen (200 characters)');
 ok(ar.every(note => /[؀-ۿ]/.test(note)) && en.every(note => !/[؀-ۿ]/.test(note)), 'Arabic notes and English notes');
-ok(ar.some(note => note.includes('شكوى')) && ar.some(note => note.includes('15 دقيقة')) && en.some(note => note.includes('15 minutes')), 'the notes name the complaint alerts and the background check');
 // The page opens what the tap names: «#complaint=<id>» and the event (app/crm-app.tsx).
 const page = fs.readFileSync(path.join(root, 'app/crm-app.tsx'), 'utf8');
 ok(page.includes("window.addEventListener('yourrest:open-complaint',open)") && page.includes('/^complaint=([A-Za-z0-9_-]{1,200})$/'), 'the page handles the event and the address');

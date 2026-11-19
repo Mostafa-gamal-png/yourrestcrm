@@ -22,15 +22,15 @@ const manifest={schemaVersion:1,packageName:report.package,versionName,versionCo
  apkUrl:`https://crm.yourrest.org/downloads/${name}`,sizeBytes:bytes.length,sha256,
  certificateSha256,
  releaseNotes:{ar:[
-  'شكوى تنتظرك: يصلك إشعار بكل شكوى عميل عليك الدور فيها، للمراجعة أو التعديل أو التكليف أو التفويض أو التواصل والحل أو تأكيد الإغلاق، والشكاوى عالية الأهمية أولًا.',
-  'الضغط على الإشعار يفتح الشكوى نفسها، ويختفي الإشعار بعد فتحها أو حين لا تعود تنتظرك.',
-  'فحص في الخلفية كل 15 دقيقة من 6 صباحًا إلى 6 مساءً بتوقيت السعودية عدا الجمعة، ولو كان تسجيل خط السير متوقفًا، لتنبيهات الشكاوى وطلبات خدمة العملاء.',
-  'لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي.'
+  'لا شاشة بيضاء بعد اليوم: إذا تعذّر عرض صفحة النظام يظهر السبب، مثل انقطاع الإنترنت أو خطأ في تاريخ الجهاز أو قِدم محرك عرض الصفحات، مع زر «إعادة المحاولة».',
+  'تعرض الشاشة نفسها معلومات للدعم الفني (محرك العرض وأندرويد والجهاز والتطبيق والخطأ)، فتكفي صورة واحدة منها لمعرفة السبب.',
+  'في حقول الصور، مثل «صور القالب»، يمكنك الآن التقاط صورة بالكاميرا مباشرة، أو اختيار الصور من المعرض والملفات كما كان.',
+  'لا يطلب التحديث أذونات جديدة (ولا إذن الكاميرا)، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي.'
  ],en:[
-  'A complaint is waiting for you: a notification for each customer complaint whose step is yours (review, correction, assignment, delegation, contact and resolution, closure), high importance first.',
-  'Tapping it opens that complaint; the notification goes once you open it or it no longer waits for you.',
-  'A background check every 15 minutes, 6 am to 6 pm Saudi time except Friday, even with route tracking off, for complaint and customer-service request alerts.',
-  'The update asks for no new permission; your data and the visits saved on the phone stay as they are.'
+  'No more white screen: when the system page cannot be shown, the app says why (no internet, a wrong device date, an old page engine) with a «Try again» button.',
+  'The same screen lists details for technical support (the page engine, Android, the device, the app and the error), so one screenshot is enough.',
+  'Photo fields such as the mold photos can now take a photo with the camera, or pick photos from the gallery and files as before.',
+  'The update asks for no new permission (not even the camera); your data and the visits saved on the phone stay as they are.'
  ]},publishedAt:new Date().toISOString()};
 // The update screen shows at most 5 notes of at most 200 characters each (lib/app-update.ts notes): a longer note would be cut.
 for(const note of [...manifest.releaseNotes.ar,...manifest.releaseNotes.en])if(note.length>200)throw Error('A release note is longer than 200 characters ('+note.length+'): '+note.slice(0,40)+'…');

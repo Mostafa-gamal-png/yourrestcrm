@@ -745,6 +745,11 @@
       "file": "tests/visit-place-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
+    },
+    {
+      "file": "tests/webview-load-probe-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser (Playwright with Chromium) and a JDK 17+; serves public/ itself, no independent build"
     }
   ]
 }

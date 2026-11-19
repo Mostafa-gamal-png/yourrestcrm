@@ -129,6 +129,11 @@
       "sources": ["app/member-permissions.tsx", "app/member-permissions.css", "tests/permissions*.mjs"],
       "tests": ["tests/permissions-http.mjs", "tests/permissions-browser.mjs", "tests/member-regions-browser.mjs", "tests/server-authorization.mjs", "tests/targets-tabs-http.mjs", "tests/targets-tabs-browser.mjs"]
     },
+    "android-webview": {
+      "about": "The Android app 1.0.15's watchdog (2026-11-19, a white screen on a Huawei tablet): the probe it asks a page whether anything shows (mobile/android LoadFailureRules.PROBE), tried in Chromium on public/'s offline pages. The rest of mobile/** is the default gate's (tests/webview-load-android.mjs).",
+      "sources": ["mobile/android/app/src/main/java/org/yourrest/crm/LoadFailureRules.java", "tests/webview-load*.mjs"],
+      "tests": ["tests/webview-load-probe-browser.mjs"]
+    },
     "app-update-android": {
       "about": "The Android app version and its update (app/app-update.tsx, /api/app-update, the published APKs); the tracking gate asks for the update.",
       "sources": ["app/app-update.tsx", "app/app-update.css", "app/api/app-update/**", "lib/app-update.ts", "lib/app-update-release.json", "public/app-update.json", "public/downloads/**", "tests/app-update*.mjs"],
