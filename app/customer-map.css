@@ -130,8 +130,12 @@
 .cm-legend-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:2px 7px;min-width:0}
 .cm-legend-keys{border-top:1px solid var(--border)}
 .cm-legend-keys>span,.cm-street-toggle{display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.5;min-height:34px;color:var(--foreground)}
-.cm-street-toggle{cursor:pointer;min-height:44px;padding-inline:2px}
-.cm-street-toggle input{width:16px;height:16px;margin:0;flex:none;accent-color:#7e22ce}
+.cm-legend .cm-street-toggle{cursor:pointer;min-height:44px;padding:0 2px;border:0;border-radius:5px;background:transparent;font:inherit;font-size:12px}
+/* A pressed switch: the box is filled and ticked. */
+.cm-legend .cm-toggle-box{position:relative;width:16px;height:16px;flex:none;border-radius:4px;border:2px solid #7e22ce;background:var(--card);box-shadow:none}
+.cm-legend .cm-street-toggle[aria-pressed=true]{font-weight:inherit;text-decoration:none}
+.cm-street-toggle[aria-pressed=true] .cm-toggle-box{background:#7e22ce}
+.cm-street-toggle[aria-pressed=true] .cm-toggle-box::after{content:'';position:absolute;inset-inline-start:3px;top:0;width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .cm-legend-note{display:flex;flex-direction:column;gap:1px;padding:4px 2px 5px;font-size:12px;line-height:1.6;color:var(--muted-foreground);text-align:start;overflow-wrap:anywhere;border-bottom:1px solid var(--border)}
 .cm-legend .cm-key-incomplete,.cm-selected-missing .cm-key-incomplete{width:12px;height:12px;border-radius:50%;background:var(--card);border:3px solid #facc15;box-shadow:0 0 0 1px #713f12;flex:none}
 .cm-legend .cm-key-street{width:18px;height:4px;border-radius:2px;background:#7e22ce;box-shadow:none}

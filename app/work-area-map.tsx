@@ -44,8 +44,10 @@ export function useWorkArea(repId:string,online:boolean,reload:number):WorkAreaS
   if(!key)return;
   const ctl=new AbortController(),rep=encodeURIComponent(repId),keep=(patch:Omit<Loaded,'key'>)=>{if(!ctl.signal.aborted)setLoaded(l=>({...(l.key===key?l:{key}),...patch}));};
   readJson<WorkAreaView>('/api/work-areas?member='+rep,ctl.signal,validWorkAreaView).then(view=>keep({view})).catch(e=>keep({areaError:e instanceof Error&&e.message?e.message:WORK_AREA_TEXT.failed[0]}));
-  const timer=setTimeout(()=>ctl.abort(),60_000);
-  readJson<WorkAreaStreets>('/api/work-area-streets?member='+rep,ctl.signal,validWorkAreaStreets).then(streets=>keep({streets})).catch(()=>keep({streetsFailed:true})).finally(()=>clearTimeout(timer));
+  // The streets wait a minute at most: then they are «تعذر تحميل الشوارع الآن.» (leaving the map aborts both, and nothing is kept).
+  const streetsCtl=new AbortController(),stopStreets=()=>streetsCtl.abort(),timer=setTimeout(stopStreets,60_000);
+  ctl.signal.addEventListener('abort',stopStreets,{once:true});
+  readJson<WorkAreaStreets>('/api/work-area-streets?member='+rep,streetsCtl.signal,validWorkAreaStreets).then(streets=>keep({streets})).catch(()=>keep({streetsFailed:true})).finally(()=>clearTimeout(timer));
   return()=>{clearTimeout(timer);ctl.abort();};
  },[key,repId]);
  const current=loaded.key===key?loaded:{key} as Loaded;

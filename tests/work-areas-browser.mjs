@@ -101,10 +101,10 @@ const inside = async (page, selector, label, {sideways = false} = {}) => check(a
   await rep.locator('.cm-selected-card .cm-close').click();
   await noSideways(rep, 'rep 360');await inside(rep, '[data-map-legend]', 'rep 360 legend');await clear(rep, 'rep 360');await tall(rep, '[data-street-toggle]', 'rep 360 street switch');
   await shot(rep, 'rep-app-360-area');
-  await rep.locator('[data-street-toggle] input').check();
+  await rep.locator('[data-street-toggle]').click();
   check(await rep.evaluate(() => localStorage.getItem('yourrest.map.hideStreets')), '1', '«إخفاء علامات الشوارع» kept on the device');
   await rep.reload();await rep.locator('.cm-shell').waitFor();await legend(rep).waitFor();
-  check(await rep.locator('[data-street-toggle] input').isChecked(), true, 'and still on after a reload');
+  check(await rep.locator('[data-street-toggle]').getAttribute('aria-pressed'), 'true', 'and still on after a reload');
   ok(!(await areaLines(rep).innerText()).includes('جزء شارع بلا عملاء'), 'hidden marks are not counted under the map');
   await rep.context().setOffline(true);
   await areaLines(rep).filter({hasText: 'الشوارع غير متاحة دون اتصال.'}).waitFor();
