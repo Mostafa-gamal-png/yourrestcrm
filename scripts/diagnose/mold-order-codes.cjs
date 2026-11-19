@@ -18,11 +18,14 @@ const filled = value => typeof value === 'string' ? value.trim().length > 0 : va
 function report(db) {
   const lastSync = db.prepare("SELECT detail, created_at AS at FROM crm_audit WHERE record_id='mold-customers' AND action='mold-customers:sync' ORDER BY created_at DESC LIMIT 1").get();
   const syncDetail = parse(lastSync?.detail) || {};
-  const rows = db.prepare('SELECT id, customer_id, data, remote, created_at, cancelled_at FROM crm_mold_requests WHERE remote IS NOT NULL').all();
+  const rows = db.prepare('SELECT id, customer_id, data, accepted, remote, created_at, cancelled_at FROM crm_mold_requests WHERE remote IS NOT NULL').all();
+  // The list as the CRM builds it (lib/mold-customers-server.ts moldCustomerList): every customer with a Yourrest number; erpCode is its data.code.
+  const listed = db.prepare("SELECT r.data FROM crm_records r JOIN crm_customer_numbers n ON n.customer_id=r.id WHERE r.kind='customer'").all().map(row => parse(row.data) || {}).filter(data => filled(data.name));
+  const withCode = listed.filter(data => typeof data.code === 'string' && data.code.trim().length > 0 && data.code.trim().length <= 50).length;
   const orders = ORDERS.map(orderNo => {
     const matches = rows.filter(row => Number(parse(row.remote)?.orderNo) === orderNo);
     return {orderNo, crmRequests: matches.length, requests: matches.map(row => {
-      const data = parse(row.data) || {}, asked = data.customer || {};
+      const data = parse(row.data) || {}, asked = data.customer || {}, accepted = (parse(row.accepted) || {}).customer || {};
       const record = row.customer_id ? db.prepare("SELECT id, data, updated_at FROM crm_records WHERE id=? AND kind='customer'").get(row.customer_id) : undefined;
       const customer = parse(record?.data) || {};
       const number = record ? db.prepare('SELECT number FROM crm_customer_numbers WHERE customer_id=?').get(record.id)?.number : undefined;
@@ -33,6 +36,7 @@ function report(db) {
         requestNamesCrmCustomer: !!row.customer_id,
         requestCarriesYourrestNumber: filled(asked.crmNumber),
         requestCarriesErpCode: filled(asked.erpCode),
+        acceptedByProductionWithErpCode: filled(accepted.erpCode),
         customerStillInCrm: !!record,
         customerHasYourrestNumber: number !== undefined && number !== null,
         requestNumberMatchesCustomer: number !== undefined && number !== null && Number(asked.crmNumber) === Number(number),
@@ -45,9 +49,10 @@ function report(db) {
     })};
   });
   const verdict = orders.map(order => `ORDER ${order.orderNo}: ${order.crmRequests} CRM REQUEST(S)` + order.requests.map(r =>
-    `; REQUEST ${r.requestedDay}${r.cancelled ? ' CANCELLED' : ''}: NAMES CRM CUSTOMER ${r.requestNamesCrmCustomer ? 'YES' : 'NO'}, CARRIES NUMBER ${r.requestCarriesYourrestNumber ? 'YES' : 'NO'}, CARRIES ERP CODE ${r.requestCarriesErpCode ? 'YES' : 'NO'}; CUSTOMER IN CRM ${r.customerStillInCrm ? 'YES' : 'NO'}, HAS NUMBER ${r.customerHasYourrestNumber ? 'YES' : 'NO'}${r.customerHasYourrestNumber ? ' (SAME AS REQUEST ' + (r.requestNumberMatchesCustomer ? 'YES' : 'NO') + ')' : ''}, HAS ERP CODE NOW ${r.customerHasErpCodeNow ? 'YES' : 'NO'}, IN SENT LIST ${r.customerInSentList ? 'YES' : 'NO'}, CHANGED ${r.customerChangedAt || '-'}${r.changedAfterLastSend ? ' (AFTER LAST SEND)' : ''}`).join('')).join('\n')
+    `; REQUEST ${r.requestedDay}${r.cancelled ? ' CANCELLED' : ''}: NAMES CRM CUSTOMER ${r.requestNamesCrmCustomer ? 'YES' : 'NO'}, CARRIES NUMBER ${r.requestCarriesYourrestNumber ? 'YES' : 'NO'}, CARRIES ERP CODE ${r.requestCarriesErpCode ? 'YES' : 'NO'}, ACCEPTED BY PRODUCTION WITH ERP CODE ${r.acceptedByProductionWithErpCode ? 'YES' : 'NO'}; CUSTOMER IN CRM ${r.customerStillInCrm ? 'YES' : 'NO'}, HAS NUMBER ${r.customerHasYourrestNumber ? 'YES' : 'NO'}${r.customerHasYourrestNumber ? ' (SAME AS REQUEST ' + (r.requestNumberMatchesCustomer ? 'YES' : 'NO') + ')' : ''}, HAS ERP CODE NOW ${r.customerHasErpCodeNow ? 'YES' : 'NO'}, IN SENT LIST ${r.customerInSentList ? 'YES' : 'NO'}, CHANGED ${r.customerChangedAt || '-'}${r.changedAfterLastSend ? ' (AFTER LAST SEND)' : ''}`).join('')).join('\n')
+    + `\nLIST NOW: ${listed.length} CUSTOMERS, ${withCode} WITH AN ERP CODE`
     + `\nLAST CUSTOMER LIST SENT: ${lastSync?.at || 'never'} (${syncDetail.count ?? '?'} customers, ${syncDetail.mode || '?'})`;
-  return {mode: 'mold-order-codes', readOnly: true, lastCustomerListSent: lastSync ? {at: lastSync.at, count: syncDetail.count ?? null, mode: syncDetail.mode ?? null, received: syncDetail.received ?? null, updated: syncDetail.updated ?? null} : null, orders, verdict};
+  return {mode: 'mold-order-codes', readOnly: true, listNow: {customers: listed.length, withErpCode: withCode}, lastCustomerListSent: lastSync ? {at: lastSync.at, count: syncDetail.count ?? null, mode: syncDetail.mode ?? null, received: syncDetail.received ?? null, updated: syncDetail.updated ?? null} : null, orders, verdict};
 }
 
 function run() {
