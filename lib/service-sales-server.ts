@@ -111,8 +111,9 @@ export function requestedPage(value:string|null){const page=Number(value||1);ret
 /** GET /api/service-leads?list=lost|dormant&q=&page=: the lists of «مصادر الفرص», what the reader may start an opportunity on, newest first.
  *  «عملاء منقطعون عن الشراء 90 يومًا» (the owner's decision 4, 2026-11-17, as GSCO 2.13.79) also lists the customers who never bought, after
  *  those whose last purchase is older than 90 days, each marked «لم يشترِ من قبل»; the same branch and regions and the same search; counted
- *  in full by kind and read LEAD_LIST_LIMIT (300) rows a page. */
-export async function leadList(c:Context,list:LeadList,query:string,page=1){
+ *  in full by kind and read LEAD_LIST_LIMIT (300) rows a page. `limit` (2026-11-19, «تصدير Excel», app/api/list-export): the rows of a page;
+ *  the export asks every row of the same list and search (Infinity), the page as before. */
+export async function leadList(c:Context,list:LeadList,query:string,page=1,limit=LEAD_LIST_LIMIT){
  const q=query.trim().toLowerCase().slice(0,60),match=(...values:unknown[])=>!q||values.some(value=>text(value).toLowerCase().includes(q));
  const customers=new Map(c.all.filter(row=>row.kind==='customer').map(row=>[row.id,row])),name=nameOf(c.members);
  if(list==='lost'){
@@ -126,7 +127,7 @@ export async function leadList(c:Context,list:LeadList,query:string,page=1){
    if(match(row.number,row.customerName,row.lossReason,row.holderName,row.registrarName))rows.push(row);
   }
   rows.sort((a,b)=>b.lostAt.localeCompare(a.lostAt)||a.id.localeCompare(b.id));
-  return {list,total:rows.length,rows:rows.slice(0,LEAD_LIST_LIMIT)};
+  return {list,total:rows.length,rows:rows.slice(0,limit)};
  }
  const last=await readLastPurchases(c.db,c.all),today=riyadhToday(),lapsed:DormantRow[]=[],never:DormantRow[]=[];
  for(const customer of customers.values()){
@@ -138,8 +139,8 @@ export async function leadList(c:Context,list:LeadList,query:string,page=1){
  }
  lapsed.sort((a,b)=>b.lastPurchase.localeCompare(a.lastPurchase)||a.name.localeCompare(b.name,'ar')||a.id.localeCompare(b.id));
  never.sort((a,b)=>a.name.localeCompare(b.name,'ar')||a.id.localeCompare(b.id));
- const rows=[...lapsed,...never],from=(page-1)*LEAD_LIST_LIMIT;
- return {list,total:rows.length,lapsed:lapsed.length,never:never.length,page,pageSize:LEAD_LIST_LIMIT,rows:rows.slice(from,from+LEAD_LIST_LIMIT),days:DORMANT_DAYS};
+ const rows=[...lapsed,...never],from=Number.isFinite(limit)?(page-1)*limit:0;
+ return {list,total:rows.length,lapsed:lapsed.length,never:never.length,page,pageSize:LEAD_LIST_LIMIT,rows:rows.slice(from,from+limit),days:DORMANT_DAYS};
 }
 
 // ------------------------------------------------------------------------------------------------------------- B. routing at approval

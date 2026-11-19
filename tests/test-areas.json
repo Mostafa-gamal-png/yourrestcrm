@@ -129,6 +129,11 @@
       "sources": ["app/region-picker.tsx", "lib/member-edit.ts", "tests/member*.mjs", "tests/region*.mjs"],
       "tests": ["tests/member-regions-browser.mjs", "tests/customer-edit-browser.mjs", "tests/app-browser-workflows.mjs", "tests/namecheap-http.mjs", "tests/server-authorization.mjs"]
     },
+    "list-export": {
+      "about": "«تصدير Excel» from every page that shows a list (2026-11-19, GSCO 2.13.80): the registry and the rule of who exports (lib/list-export.ts), the column builders of each page (lib/list-export-columns.ts, -mold, -service, -sales), the button (app/export-excel-button.tsx), the server's export of the lists it cuts (app/api/list-export), the writer's date cells (lib/xlsx-write.ts). The pages that carry a button stay in their own areas.",
+      "sources": ["lib/list-export.ts", "lib/list-export-columns.ts", "lib/list-export-mold.ts", "lib/list-export-service.ts", "lib/list-export-sales.ts", "lib/xlsx-write.ts", "app/export-excel-button.tsx", "app/export-excel-button.css", "app/api/list-export/**", "tests/list-export*.mjs"],
+      "tests": ["tests/list-export-http.mjs", "tests/list-export-browser.mjs", "tests/server-authorization.mjs"]
+    },
     "permissions": {
       "about": "«الصلاحيات» per member (migration 0020): the matrix, «انسخ الصلاحيات من» and «عرض بيانات الفريق بالكامل» in the team form. The rules and the server checks are lib/permissions*.ts (shared: every route reads them). Hidden screens answer 404, switched-off actions 403; since 2026-11-16 also the tabs of the targets page («نتائج الأداء»، «التحصيل»، «عروض الأسعار»، «المستهدفات والأوزان»), whose requests answer 404 once hidden (tests/targets-tabs*.mjs).",
       "sources": ["app/member-permissions.tsx", "app/member-permissions.css", "tests/permissions*.mjs"],
@@ -225,6 +230,8 @@
     "tests/service-sales-decisions-http.mjs": 45,
     "tests/service-sales-browser.mjs": 150,
     "tests/service-report-export-http.mjs": 30,
+    "tests/list-export-http.mjs": 83,
+    "tests/list-export-browser.mjs": 153,
     "tests/support-opportunity-http.mjs": 30,
     "tests/complaint-alerts-http.mjs": 25,
     "tests/dictation-browser.mjs": 50,

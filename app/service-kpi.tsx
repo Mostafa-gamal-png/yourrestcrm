@@ -9,6 +9,8 @@ import {AUDIT_CRITERIA,AUDIT_NOTE_MAX,DEFAULT_SERVICE_KPI_SETTINGS,MANAGER_METRI
 import './service-report.css';
 import './service-kpi.css';
 import VoiceField from './voice-field';
+import {ExportExcelButton} from './export-excel-button';
+import {serviceKpiTables} from '@/lib/list-export-service';
 
 type Say=(ar:string,en:string)=>string;
 const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message' in error&&typeof (error as {message:unknown}).message==='string'?(error as {message:string}).message:'';
@@ -290,6 +292,7 @@ export function ServiceKpiView({data,error,loading,month,detail,say,busy,actionE
    {data&&<MonthSelect data={data} value={month} onChange={onMonth} say={say}/>}
    {data?.me.canAudit&&<button type="button" className="btn primary" onClick={()=>setSeed({repId:'',refType:'',refId:''})}><Plus size={17} aria-hidden="true"/>{say('تدقيق جديد','New audit')}</button>}
    {data?.me.canSettings&&<button type="button" className="btn subtle" onClick={()=>setSettingsOpen(true)}><Settings2 size={17} aria-hidden="true"/>{say('إعدادات التقييم','Evaluation settings')}</button>}
+   {data&&<ExportExcelButton page="service-kpi" day={data.month} disabled={loading} build={lang=>serviceKpiTables(data,lang)}/>}
   </div>
   {error&&<div className="form-error" role="alert">{t(error)} <button type="button" className="text-button" onClick={onRetry}>{say('إعادة المحاولة','Retry')}</button></div>}
   {actionError&&<div className="form-error" role="alert">{t(actionError)}</div>}

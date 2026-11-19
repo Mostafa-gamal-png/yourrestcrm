@@ -31,6 +31,13 @@
 //   the customer-service manager: lib/service-report.ts serviceReportAllowed), on by default for each, restrict-only like every other cell,
 //   so the administrator may switch it off for any account, another administrator's included; no migration (a cell never saved is on).
 //   The reports have no screen of their own (they sit on «الزيارات» and «الشكاوى»), so the row has no «استعراض» (`part` says why).
+// - «تصدير Excel» from every page that shows a list (the owner, 2026-11-19, through the GSCO session, GSCO 2.13.80 «زر «تصدير Excel» في
+//   كل صفحة تعرض بيانات … ولكل صفحة مفتاح «تصدير» خاص بها»): a «تصدير» cell on every screen with a list that had none («المتابعات»،
+//   «الشكاوى»، «تقييم خدمة العملاء»، «طلبات تصنيع القوالب»، «تقرير يوم المندوب»، «المنافسين»، «الفريق والصلاحيات»), restrict-only like every
+//   cell: its ceiling the roles that open the screen except the representative and the marketing officer (who never export, as before),
+//   on by default. «لوحة المتابعة»، «المحذوفات» and the map export nothing (as GSCO's overview, bin and map; the map draws no list, and
+//   the customers' CSV it was written for was never on its screen). What each cell exports is lib/list-export.ts. No migration (a cell
+//   never saved is on).
 // Shared by the server (lib/crm-server.ts context(), the routes) and the page (nav, buttons, the matrix in the member form).
 import {canUseSalesWorkspace,canViewPage,hubTabsAllHidden,trashScope} from './access';
 import {HIDEABLE_HUB_TABS,HUB_TAB_KEYS,HUB_TAB_NAMES,HUB_TABS,hubTabKey,isHubTabKey,type HideableHubTab,type HubTab,type HubTabKey} from './targets-hub';
@@ -79,7 +86,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   add:{ar:'إضافة عميل جديد (من صفحة العملاء والخريطة ونموذج الزيارة)',en:'Add a new customer (customers page, map, visit form)',roles:SALES},
   edit:{ar:'تعديل بيانات العميل، وإضافة وتعديل وحذف ماكيناته',en:'Edit a customer\'s details, and add, edit or delete its machines',roles:ALL,roleNote:{marketing:marketingCustomerEdit}},
   delete:{ar:'حذف عميل',en:'Delete a customer',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:{ar:'للمندوب: عملاؤه هو فقط (المسؤول عنهم)، ولا يُحذف عميل له زيارات أو ماكينات أو مبيعات أو خط سير.',en:'For a representative: only the customers assigned to them, never one with visits, machines, sales or a route.'}},without:['marketing']},
-  export:{ar:'تصدير العملاء (CSV) من صفحة العملاء والخريطة',en:'Export customers (CSV) from the customers page and the map',roles:MANAGEMENT},
+  export:{ar:'تصدير العملاء (Excel وCSV) من صفحة العملاء',en:'Export customers (Excel and CSV) from the customers page',roles:MANAGEMENT},
   import:{ar:'«استيراد من ERP» واستيراد العملاء والماكينات',en:'«Import from ERP» and the customers and machines imports',roles:['admin','manager']},
  }},
  {screen:'map',ar:'خريطة المصانع',en:'Factory map',cells:{}},
@@ -87,14 +94,16 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   add:{ar:'تسجيل زيارة جديدة (ولخدمة العملاء: تسجيل طلب/فرصة جديدة)',en:'Record a new visit (customer service: register a new request)',roles:ALL},
   edit:{ar:'تعديل زيارة محفوظة (ولخدمة العملاء: تعديل الطلب قبل اعتماده)',en:'Edit a saved visit (customer service: edit a request before approval)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
   delete:{ar:'حذف زيارة',en:'Delete a visit',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts,marketing:marketingOwnContacts},without:['customer_service','customer_service_manager']},
-  export:{ar:'تصدير الزيارات (CSV)',en:'Export visits (CSV)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
+  export:{ar:'تصدير قوائم صفحة الزيارات: الزيارات (Excel وCSV)، و«التواصل مع العملاء» و«تتبع الطلبات والشكاوى» و«مصادر الفرص» والشكاوى المعروضة فيها (Excel)',en:'Export the lists of the visits page: the visits (Excel and CSV), and «Customer contact», «Request and complaint tracking», «Opportunity sources» and the complaints shown there (Excel)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
  }},
  {screen:'complaints',ar:'الشكاوى',en:'Complaints',cells:{
   add:{ar:'تسجيل شكوى',en:'Register a complaint',roles:SERVICE},
   edit:{ar:'تعديل الشكوى (لمن سجّلها قبل حلها)',en:'Edit a complaint (its registrar, before it is resolved)',roles:SERVICE},
+  export:{ar:'تصدير الشكاوى (Excel)',en:'Export the complaints (Excel)',roles:SERVICE},
  }},
  {screen:'service-kpi',ar:'تقييم خدمة العملاء',en:'Customer-service evaluation',cells:{
   edit:{ar:'حفظ مراجعة شهرية وإعدادات التقييم',en:'Save a monthly review and the evaluation settings',roles:['admin','customer_service_manager']},
+  export:{ar:'تصدير تقييم خدمة العملاء (Excel)',en:'Export the customer-service evaluation (Excel)',roles:['admin','customer_service_manager']},
  }},
  {screen:'service-reports',ar:'تقارير خدمة العملاء',en:'Customer-service reports',part:{ar:'التقرير الشهري لطلبات خدمة العملاء في «الزيارات»، والتقرير الشهري للشكاوى في «الشكاوى» (ولمدير المبيعات في «الزيارات»)؛ لا شاشة مستقلة لهما، ويُخفيان بإخفاء الشاشة التي تعرضهما.',en:'The monthly customer-service report is on «Visits» and the monthly complaints report on «Complaints» (for a sales manager, on «Visits»); they have no screen of their own and are hidden with the screen that shows them.'},cells:{
   export:{ar:'«تصدير Excel» للتقرير الشهري لطلبات خدمة العملاء وللتقرير الشهري للشكاوى (الملخص وزمن المراحل والتفاصيل)',en:'«Export to Excel» of the monthly customer-service and complaints reports (summary, stage times and details)',roles:['admin','manager','customer_service_manager']},
@@ -103,14 +112,17 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   add:{ar:'تسجيل متابعة',en:'Record a follow-up',roles:SALES},
   edit:{ar:'تعديل متابعة محفوظة',en:'Edit a saved follow-up',roles:MANAGEMENT},
   delete:{ar:'حذف متابعة',en:'Delete a follow-up',roles:DEFAULT_ON,grantable:true,note:deleteScope,roleNote:{rep:repOwnContacts,marketing:marketingOwnContacts}},
+  export:{ar:'تصدير المتابعات (Excel)',en:'Export the follow-ups (Excel)',roles:MANAGEMENT},
  }},
  {screen:'mold-requests',ar:'طلبات تصنيع القوالب',en:'Mold requests',cells:{
   add:{ar:'طلب تصنيع قالب جديد',en:'Request a new mold',roles:ALL},
   edit:{ar:'تعديل طلب لم يُرسل للإنتاج',en:'Edit a request not yet sent to production',roles:ALL},
   delete:{ar:'إلغاء طلب',en:'Cancel a request',roles:ALL},
+  export:{ar:'تصدير طلبات تصنيع القوالب (Excel)',en:'Export the mold requests (Excel)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},
  }},
  {screen:'journeys',ar:'تقرير يوم المندوب',en:'Daily route',cells:{
   add:{ar:'كتابة «النتيجة» و«الإجراء المطلوب» على عمل الفريق',en:'Write «Result» and «Action required» on the team\'s work',roles:MANAGEMENT},
+  export:{ar:'تصدير تقرير يوم المندوب (Excel)',en:'Export the daily route report (Excel)',roles:MANAGEMENT},
  }},
  {screen:'quote',ar:'عروض الأسعار',en:'Quotations',cells:{
   add:{ar:'إضافة عرض سعر ومواصفات قالب',en:'Add a quotation and mold specifications',roles:MANAGEMENT},
@@ -122,17 +134,20 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   add:{ar:'تسجيل بيع',en:'Record a sale',roles:MANAGEMENT},
   edit:{ar:'تعديل بيع مسجل',en:'Edit a recorded sale',roles:MANAGEMENT},
   delete:{ar:'إلغاء بيع',en:'Void a sale',roles:DEFAULT_ON,grantable:true,note:deleteScope},
-  export:{ar:'تصدير المبيعات (CSV)',en:'Export sales (CSV)',roles:MANAGEMENT},
+  export:{ar:'تصدير المبيعات (Excel وCSV)',en:'Export sales (Excel and CSV)',roles:MANAGEMENT},
   import:{ar:'استيراد مبيعات ERP',en:'Import ERP sales',roles:MANAGEMENT},
  }},
- {screen:'competitors',ar:'المنافسين',en:'Competitors',cells:{}},
+ {screen:'competitors',ar:'المنافسين',en:'Competitors',cells:{
+  export:{ar:'تصدير المنافسين وسجل التواصل معهم (Excel)',en:'Export the competitors and their contact log (Excel)',roles:MANAGEMENT},
+ }},
  {screen:'targets',ar:'المستهدفات وتقييم الأداء',en:'Targets & performance',roleNote:{manager:hubTabsNote,supervisor:hubTabsNote},cells:{
   edit:{ar:'تعديل المستهدفات والأوزان وتقييم الأداء وبيانات المؤشرات',en:'Edit targets, weights, the evaluation and the indicators\' data',roles:['admin','manager']},
-  export:{ar:'تصدير المستهدفات والتقييم (CSV)',en:'Export targets and the evaluation (CSV)',roles:MANAGEMENT},
+  export:{ar:'تصدير المستهدفات والتقييم (Excel وCSV)، والتحصيل وعروض الأسعار (Excel)',en:'Export targets and the evaluation (Excel and CSV), and the collection and quotations (Excel)',roles:MANAGEMENT},
  }},
  {screen:'team',ar:'الفريق والصلاحيات',en:'Team and permissions',cells:{
   add:{ar:'إضافة مستخدم',en:'Add a member',roles:['admin']},
   edit:{ar:'تعديل مستخدم وصلاحياته',en:'Edit a member and their permissions',roles:['admin']},
+  export:{ar:'تصدير قائمة الفريق (Excel)',en:'Export the team list (Excel)',roles:['admin']},
  }},
  {screen:'trash',ar:'المحذوفات',en:'Deleted records',roleNote:{supervisor:trashOwn,rep:trashOwn,marketing:trashOwn},cells:{
   edit:{ar:'استرجاع سجل محذوف',en:'Restore a deleted record',roles:['admin','manager','supervisor','rep','marketing'],roleNote:{manager:{ar:'لمدير المبيعات: ما حذفه هو فقط.',en:'For a sales manager: only what they deleted themselves.'},supervisor:trashOwnRestore,rep:trashOwnRestore,marketing:trashOwnRestore}},

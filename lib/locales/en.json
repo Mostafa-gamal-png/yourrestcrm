@@ -133,6 +133,8 @@
   "تسجيل الخروج": "Sign out",
   "تسجيل زيارة": "Log a visit",
   "تصدير": "Export",
+  "اختر القائمة المطلوب تصديرها.": "Choose the list to export.",
+  "تصدير القوائم غير متاح لحسابك.": "Exporting lists is not available for your account.",
   "تصنيف النتيجة للتقارير": "Classify the outcome for reporting",
   "تعديل المستخدم": "Edit user",
   "تعذر الاتصال بقاعدة البيانات. أعد المحاولة.": "Could not connect to the database. Please try again.",

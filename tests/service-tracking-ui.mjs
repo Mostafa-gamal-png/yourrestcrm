@@ -33,6 +33,8 @@ function load(filename) {
     if (name === 'react/jsx-runtime') return jsx;
     if (name === '@/lib/i18n') return i18n;
     if (name.startsWith('@/lib/')) return library(name.replace('@/', '') + '.ts');
+    // «تصدير Excel» (2026-11-19) is tried in tests/list-export*.mjs; this file runs the components without React's renderer.
+    if (name === './export-excel-button') return {ExportExcelButton: () => null};
     if (name.startsWith('./') && !name.endsWith('.css') && fs.existsSync(path.join(root, 'app', name.slice(2) + '.tsx'))) return load('app/' + name.slice(2) + '.tsx');
     return mock;
   }, console, Date, Intl, crypto, URL, Promise, setTimeout, clearTimeout, window: undefined, navigator: undefined});

@@ -4,11 +4,13 @@ import {Clock3,Flag,LifeBuoy,MessageSquareWarning,Route,Sparkles} from 'lucide-r
 import {t,useLanguage,getLanguage} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {closureOutcomes,closureOutcomesEn,complaintCategories,complaintCategoriesEn,type ComplaintEntry} from '@/lib/complaints';
+import {complaintCategories,complaintCategoriesEn,type ComplaintEntry} from '@/lib/complaints';
 import {supportActions,supportActionsEn,supportOutcomes,supportOutcomesEn,type SupportEntry} from '@/lib/support';
-import {filterTracking,trackingCounts,trackingFilterLabels,trackingFilters,trackingHolderLabels,trackingItems,trackingOpportunityOutcomes,trackingStageLabel,trackingStageText,trackingStepLabels,type TrackedCase,type TrackingFilter,type TrackingItem} from '@/lib/service-tracking';
+import {filterTracking,trackingCounts,trackingFilterLabels,trackingFilters,trackingHolderLabels,trackingItems,trackingOpportunityOutcomes,trackingStageLabel,trackingStepLabels,type TrackedCase,type TrackingFilter,type TrackingItem} from '@/lib/service-tracking';
 import {hoursText} from './service-queue';
 import './service-tracking.css';
+import {ExportExcelButton} from './export-excel-button';
+import {trackingOutcomeText,trackingTable} from '@/lib/list-export-service';
 
 type Say=(ar:string,en:string)=>string;
 /** The board shows this many cards until the member asks for the rest. */
@@ -69,12 +71,7 @@ export function TrackingSheetSteps({item,caption=false}:{item:TrackingItem;capti
 }
 
 const supportOutcomeText=(key:string,say:Say)=>say(supportOutcomes[key]||key,supportOutcomesEn[key]||key);
-function outcomeText(item:TrackingItem,say:Say){
- if(item.outcome==='cancelled')return pair(trackingStageText,'cancelled',say);
- if(item.kind==='support')return supportOutcomes[item.outcome]?supportOutcomeText(item.outcome,say):pair(trackingStageText,'closed',say);
- if(item.kind==='opportunity')return trackingOpportunityOutcomes[item.outcome]?say(...trackingOpportunityOutcomes[item.outcome]):pair(trackingStageText,'closed',say);
- return closureOutcomes[item.outcome]?say(closureOutcomes[item.outcome],closureOutcomesEn[item.outcome]||item.outcome):pair(trackingStageText,'closed',say);
-}
+const outcomeText=(item:TrackingItem,say:Say)=>trackingOutcomeText(item,say);
 const LAST_KIND:Record<string,[string,string]>={contact:['تواصل','Contact'],update:['تحديث','Update'],note:['ملاحظة','Note']};
 /** The steps of an assistance request that the card tells, newest last: the few most recent. */
 const TRAIL_VISIBLE=3;
@@ -113,7 +110,7 @@ export function TrackingBoardView({items,filter,onFilter,expanded,onExpand,role,
   <div className="tracking-heading"><div>
    <h2><Route size={18} aria-hidden="true"/> {manager?say('متابعة ما سجّله فريقك وما سجّلته','Tracking what your team and you registered'):say('متابعة ما سجّلته','Tracking what you registered')}</h2>
    <p>{say('الفرص التي سلّمتها للمبيعات والشكاوى التي سجّلتها وطلبات المساندة والزيارات المفقودة التي تولّيتها: أين وصلت، ومن يحملها الآن، ومنذ متى، وما سُجّل في كل مرحلة. الأرقام للمتابعة فقط ولا تدخل في التقييم.','The opportunities handed to sales, the complaints registered and the assistance requests and missed visits taken: where each stands, who holds it now, since when, and what each stage recorded. The figures are for follow-up only and feed no evaluation.')}</p>
-  </div></div>
+  </div>{loaded&&items.length>0&&<ExportExcelButton page="service-board" small build={lang=>[trackingTable(shown,lang,t)]}/>}</div>
   <div className="tracking-tabs" role="group" aria-label={say('تصنيف المتابعة','Tracking filter')}>
    {trackingFilters.map(id=><button key={id} type="button" className="tracking-tab" data-filter={id} data-late-tab={id==='late'&&counts.late>0?'true':undefined} aria-pressed={filter===id} onClick={()=>onFilter(id)}>{say(trackingFilterLabels[id][0],trackingFilterLabels[id][1])} <span className="tracking-count">{counts[id]}</span></button>)}
   </div>

@@ -81,6 +81,67 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   own and the date it sets is the same `nextDate`, so the previous release shows its plain date field (with its shortcuts) and reads every
   saved date as before; entries queued on a device by this release upload to it unchanged. Coming forward again shows the grid as it was.
 
+## «تصدير Excel» from every page that shows a list (2026-11-19, no migration, no Android change)
+
+- **Asked.** The owner, through the GSCO session: port GSCO 2.13.80 («زر «تصدير Excel» في كل صفحة تعرض بيانات … الملف يحمل التصفية
+  الحالية للصفحة وكل الصفوف المطابقة، بلغة الصفحة»، one export switch per page). Yourrest's permission table has one row per screen, so
+  each screen has one «تصدير» cell and every list shown on it follows that cell.
+- **What a file holds.** What the page shows after its filters and search, every matching row (never only the page of 25), within the
+  reader's scope: the rows the page already read (`GET /api/crm` and each page's own request). The three lists the server cuts on the
+  screen are built by the server with the page's own reading (`GET /api/list-export?page=complaints|support|service-leads`:
+  `complaintQueue`, `supportQueue` + `missedVisits`, `leadList` with every row). One `.xlsx` named `Yourrest-<page>-<day>.xlsx` (a monthly
+  list names its month), right to left in Arabic, headers in the page's language, the header bold and frozen, numbers as number cells, days
+  and moments as real date cells in Riyadh time (`lib/xlsx-write.ts` `{date}`, `excelSerial`, formats 164/165), everything else inline
+  text (never a formula), at most 20,000 rows a sheet with a note when cut. Complaints and assistance requests never carry what was
+  written in them (description, demand, notes), as in GSCO.
+- **Who** (`mayExportList`, `lib/list-export.ts`; the server answers by the same rule): the screen shows for the member, its tab of the
+  targets hub too, and the screen's «تصدير» cell is on; a representative and a marketing officer never export (as before). New restrict-only
+  cells, on by default within their ceiling (the roles that open the screen, never a field role): «المتابعات»، «الشكاوى»، «تقييم خدمة
+  العملاء»، «طلبات تصنيع القوالب»، «تقرير يوم المندوب»، «المنافسين»، «الفريق والصلاحيات». GSCO keeps the supervisor, the representative and
+  the customer-service employee closed until the owner opens them; Yourrest cannot grant above a role and already let the supervisor and
+  customer service export the visits, so the new cells are on for them and the administrator closes them per account.
+
+| Page or tab | Before | Now | Built by | Scope and filters | Cell |
+|---|---|---|---|---|---|
+| Dashboard | — | — (GSCO's overview: none) | — | — | — |
+| Customers | CSV | CSV («تصدير CSV») + Excel | browser | search, region, representative, classifications, «عملاء واقفين» | customer:export |
+| Factory map | no button (CSV code never on its screen) | — (GSCO's map: none) | — | — | — |
+| Visits (customer service: requests) | CSV | CSV + Excel, same columns | browser | `filterVisitRows` | activity:export |
+| Visits: «التواصل مع العملاء» | — | Excel (requests, missed visits) | server | every row | activity:export |
+| Visits: «تتبع الطلبات والشكاوى» | — | Excel | browser | the chosen filter, every item | activity:export |
+| Visits: «مصادر الفرص» | — | Excel | server | the chosen list and its search, every page | activity:export |
+| Visits: complaints of a sales member | — | Excel | server | every row | activity:export |
+| Visits: monthly report, «أداء خدمة العملاء» | Excel | unchanged | server | — | service-reports:export |
+| Complaints | monthly report Excel | + the list in Excel | server | every row (the page holds 300) | complaints:export |
+| Customer-service evaluation | — | Excel (cards, indicators, audits) | browser | the chosen month | service-kpi:export |
+| Follow-ups | — | Excel | browser | the chosen tab with search, representative, stage | followup:export |
+| Mold requests | — | Excel | browser | «كل الطلبات» with its filters | mold-requests:export |
+| Daily route | — | Excel (stops, contacts) | browser | the chosen day and member; contact types by the screen's names | journeys:export |
+| Sales (and the hub's tab) | CSV | CSV («تصدير CSV») + Excel, same columns | browser | month, status, representative, search | sales:export |
+| Performance results / Collection / Quotations / Targets and weights | CSV (results, targets) | CSV where it was + Excel on all four | browser | branch, representative, search | targets:export, tab shown |
+| My targets (representative) | — | — (never exports) | — | — | — |
+| Competitors | — | Excel (competitors, contact log) | browser | region, period, search | competitors:export |
+| Team and permissions | — | Excel | browser | every member | team:export (administrator) |
+| Deleted records | — | — (GSCO's bin: none) | — | — | — |
+
+- **CSV kept.** Every CSV stays with its columns and rows (the visits, customers and sales CSV are now written from the very columns
+  Excel is, so the two files cannot differ); its button reads «تصدير CSV» beside «تصدير Excel». GSCO replaced CSV by Excel only on
+  «التقارير البيعية», a page Yourrest does not have.
+- **The server's doors** (`app/api/list-export/route.ts`): no session 401; a list other than the three 400; a representative or a
+  marketing officer 403; «مصادر الفرص» to a sales role 403 with its words; the screen hidden 404 (complaints on «الشكاوى» for the roles with
+  that page, else «الزيارات»); the cell off 403; a lead list that is not one 400. `private, no-store`, `nosniff`, the counts in
+  `X-Export-Rows`/`-Total`/`-Capped`. It writes nothing; unlike GSCO no audit line is written (most files are made in the browser from data
+  it already holds, which a server line could not attest).
+- **Shared words.** The complaints, assistance and tracking panels and the day report now read their state words from
+  `lib/list-export-service.ts` and `lib/journeys.ts`, so a file says what a card says.
+- **Tests.** `tests/list-export.mjs` (default gate, 173), `tests/list-export-http.mjs` (release build, 143), `tests/list-export-browser.mjs`
+  (browser, 1060: every button at 320, 360, a tablet both ways and a computer, Arabic and English, no button for a representative or a
+  closed cell, the CSV still downloading); updated `tests/permissions.mjs`, `tests/server-authorization.mjs`,
+  `tests/targets-performance-ui.mjs`, and stand-ins of the button in five UI harnesses.
+- **Rollback.** To the release before: code only, nothing to undo in the data (an export writes nothing). The CSV buttons read «تصدير»
+  again, every «تصدير Excel» goes, `/api/list-export` answers 404. New cells the administrator closed stay in the saved row and the previous
+  release ignores them, but a member's permissions saved again in it drop them, so they are on again after coming forward: check them.
+
 ## Android 1.0.15 (16): no more white screen, and the camera in photo fields (2026-11-19, no migration, no site change)
 
 - **Asked.** The owner, 2026-11-19: a new Huawei tablet without Google services (no Play Store, no Chrome; Huawei's own WebView, usually

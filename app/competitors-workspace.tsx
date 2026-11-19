@@ -7,6 +7,8 @@ import {buildCompetitors,filterCompetitors,buildCompetitorProfile,scopeCompetito
 import {contactTypes,visitResult} from '@/lib/visits';
 import {t,useLanguage} from '@/lib/i18n';
 import './competitors-workspace.css';
+import {ExportExcelButton} from './export-excel-button';
+import {competitorTables} from '@/lib/list-export-columns';
 
 type Props={records:Row[];members:Member[];onCustomer:(id:string)=>void;onVisit:(row:Row)=>void;onNew:(competitorName?:string,customerId?:string)=>void;onRefresh:()=>Promise<void>|void};
 type ProfileTab='overview'|'customers'|'quotes'|'observations';
@@ -46,7 +48,7 @@ export default function CompetitorsWorkspace({records,members,onCustomer,onVisit
   if(next!==undefined){event.preventDefault();setTab(profileTabs[next]);tabButtons.current[next]?.focus();}
  }
  return <section className={'competitors-workspace'+(selected?' has-selection':'')} dir={language==='ar'?'rtl':'ltr'} aria-label={say('المنافسون','Competitors')}>
-  <header className="competitors-toolbar"><div className="competitors-intro"><h2>{say('المنافسون','Competitors')} <span className="inline-count">{scoped.length}</span></h2></div><div className="competitors-actions"><button type="button" className="icon-button" aria-label={say('تحديث المنافسين','Refresh competitors')} disabled={refreshing} onClick={refresh}><RefreshCw size={18} className={refreshing?'spin':undefined}/></button><button type="button" className="btn primary" onClick={()=>onNew()}><Plus size={17}/>{say('تسجيل منافس في زيارة','Record a competitor in a visit')}</button></div></header>
+  <header className="competitors-toolbar"><div className="competitors-intro"><h2>{say('المنافسون','Competitors')} <span className="inline-count">{scoped.length}</span></h2></div><div className="competitors-actions">{!!entries.length&&<ExportExcelButton page="competitors" build={lang=>competitorTables(filtered,lang,t)}/>}<button type="button" className="icon-button" aria-label={say('تحديث المنافسين','Refresh competitors')} disabled={refreshing} onClick={refresh}><RefreshCw size={18} className={refreshing?'spin':undefined}/></button><button type="button" className="btn primary" onClick={()=>onNew()}><Plus size={17}/>{say('تسجيل منافس في زيارة','Record a competitor in a visit')}</button></div></header>
   {refreshError&&<div className="form-error competitors-refresh-error" role="alert">{say('تعذّر تحديث البيانات. حاول مرة أخرى.','Could not refresh data. Please try again.')} <button type="button" className="text-button" disabled={refreshing} onClick={refresh}>{say('إعادة المحاولة','Retry')}</button></div>}
   {!!entries.length&&<details className="competitors-scope"><summary><SlidersHorizontal size={16}/><span>{say('النطاق والفترة','Region and period')}</span><small>{scopeLabel}{from||through?<> · <bdi>{from||'…'} — {through||'…'}</bdi></>:null}</small></summary><div className="competitors-scope-fields">
    <label className="field" htmlFor="competitors-region"><span>{say('المنطقة','Region')}</span><select id="competitors-region" value={activeRegion} onChange={event=>{setRegion(event.target.value);setSelectedKey(null);}}><option value="">{say('كل المناطق','All regions')}</option>{regions.map(item=><option key={item.key} value={item.key}>{t(item.region)}</option>)}</select></label>
