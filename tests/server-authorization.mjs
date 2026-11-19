@@ -30,7 +30,7 @@ try {
 
   // 1. Anonymous callers: 401 for every protected route, with an empty body AND a plausible body.
   const anonymous = app.as(null);
-  const protectedGets = ['/api/list-export?page=complaints', '/api/list-export?page=support', '/api/list-export?page=service-leads&list=lost', '/api/service-leads?list=lost', '/api/service-leads?kind=customer&id=x', '/api/service-routing?id=x', '/api/service-role-tasks', '/api/service-performance', '/api/service-performance/export', '/api/complaints/alerts', '/api/service-report/export?kind=requests', '/api/service-report/export?kind=complaints', '/api/support/opportunity?id=x', '/api/record-import?kind=targets', '/api/record-import?kind=followups', '/api/crm', '/api/customer-edits', '/api/customer-edits?customerId=x', '/api/team-today', '/api/nearby-customers', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import', '/api/mold-photos?customerId=x', '/api/mold-photos?id=mold-photo-' + 'a'.repeat(64)];
+  const protectedGets = ['/api/daily-plans?date=' + day, '/api/daily-plans/inbox', '/api/list-export?page=complaints', '/api/list-export?page=support', '/api/list-export?page=service-leads&list=lost', '/api/service-leads?list=lost', '/api/service-leads?kind=customer&id=x', '/api/service-routing?id=x', '/api/service-role-tasks', '/api/service-performance', '/api/service-performance/export', '/api/complaints/alerts', '/api/service-report/export?kind=requests', '/api/service-report/export?kind=complaints', '/api/support/opportunity?id=x', '/api/record-import?kind=targets', '/api/record-import?kind=followups', '/api/crm', '/api/customer-edits', '/api/customer-edits?customerId=x', '/api/team-today', '/api/nearby-customers', '/api/sales?month=' + month, '/api/targets?month=' + month, '/api/customer-service', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-file?id=x&file=y', '/api/mold-requests/design-file?order=1&file=y', '/api/device-status', '/api/kpi-evidence?memberId=rep1&month=' + month, '/api/customer-identities', '/api/sales/import', '/api/erp-quotes', '/api/visit-files?id=x', '/api/service-report', '/api/service-queue/alerts', '/api/support', '/api/complaints', '/api/complaint-report', '/api/service-kpi?month=' + month, '/api/trash', '/api/reviews?date=' + day, '/api/review-inbox', '/api/reviews/made?date=' + day, '/api/reviews/customer?customerId=x', '/api/reviews/pending', '/api/kpi-evidence/import', '/api/mold-photos?customerId=x', '/api/mold-photos?id=mold-photo-' + 'a'.repeat(64)];
   for (const url of protectedGets) check((await anonymous(url)).status, 401, 'anonymous GET ' + url);
   check((await anonymous('/api/app-update')).status, 200, 'update metadata is public by design');
   // The customer's signing link (2026-11-10) is public by design, but opens only with a valid token: without one, one neutral page or
@@ -42,7 +42,7 @@ try {
   }
   check((await anonymous('/api/mold-sign', {method: 'POST', body: {requestId: crypto.randomUUID(), token: forged, key: '0'.repeat(32), signer: 'عميل', png: 'AAAA', block: 'AAAA', blockAt: new Date().toISOString(), consent: true}})).json(), {error: gone, gone: true}, 'anonymous signing with a forged token: the neutral answer');
   check((await anonymous('/api/mold-sign', {method: 'POST', headers: {Origin: 'https://evil.example'}, body: {}})).status, 403, 'signing from another origin: refused');
-  const posts = ['/api/service-role-tasks', '/api/record-import', '/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import', '/api/erp-quotes', '/api/trash', '/api/reviews', '/api/review-inbox', '/api/kpi-evidence/import', '/api/mold-photos?customerId=x&key=' + crypto.randomUUID(), '/api/mold-photos/delete'];
+  const posts = ['/api/daily-plans', '/api/service-role-tasks', '/api/record-import', '/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import', '/api/erp-quotes', '/api/trash', '/api/reviews', '/api/review-inbox', '/api/kpi-evidence/import', '/api/mold-photos?customerId=x&key=' + crypto.randomUUID(), '/api/mold-photos/delete'];
   for (const url of posts) {
     check((await anonymous(url, {method: 'POST', body: {}})).status, 401, 'anonymous empty POST ' + url);
     check((await anonymous(url, {method: 'POST', body: {createKey: crypto.randomUUID(), requestId: crypto.randomUUID(), action: 'save', kind: 'customer', sourceHash: 'a'.repeat(64), rows: []}})).status, 401, 'anonymous shaped POST ' + url);
@@ -117,7 +117,11 @@ try {
     // «استيراد المستهدفات والمتابعات من قوالب Excel» (2026-11-16, GSCO list item 8): the targets template for whoever edits targets (the
     // administrator and the sales managers), the follow-ups template for whoever records follow-ups (the sales roles, not customer service).
     '/api/record-import?kind=targets': expect(['owner', 'mgr', 'mgrw'], 200, 403),
-    '/api/record-import?kind=followups': expect([...management, ...reps], 200, 403)
+    '/api/record-import?kind=followups': expect([...management, ...reps], 200, 403),
+    // «خطة الغد» / «خطط المناديب» (2026-11-19): a representative reads their own plan, a reviewer the list of their team; customer service
+    // has no plans (403); every member's card answers (role "none" for customer service).
+    ['/api/daily-plans?date=' + day]: expect([...management, ...reps], 200, 403),
+    '/api/daily-plans/inbox': expect(everyone, 200, 0)
   };
   for (const [url, byRole] of Object.entries(getMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url)).status, byRole[id], `GET ${url} as ${id}`);
   // KPI evidence is read per member; ask each management role about a member inside its own scope.
@@ -148,12 +152,16 @@ try {
     '/api/trash': expect(['owner', 'mgr', 'mgrw'], 400, 404),
     '/api/reviews': expect(management, 400, 403),
     '/api/review-inbox': expect(everyone, 400, 0),
-    '/api/service-role-tasks': expect(['owner', 'csm', 'cs'], 400, 403)
+    '/api/service-role-tasks': expect(['owner', 'csm', 'cs'], 400, 403),
+    // An empty body is a reviewer's decision: a reviewer passes the role and fails validation (400); a representative and customer service 403.
+    '/api/daily-plans': expect(management, 400, 403)
   };
   // The imports (2026-11-16): the kind decides the rights before the file is read (an empty body is an unknown kind: 400 for everyone).
   for (const [kind, allowed] of [['targets', ['owner', 'mgr', 'mgrw']], ['followups', [...management, ...reps]]]) for (const id of everyone) check((await app.as(sessions[id])('/api/record-import', {method: 'POST', body: {kind}})).status, allowed.includes(id) ? 400 : 403, `POST /api/record-import ${kind} as ${id}`);
   for (const id of everyone) check((await app.as(sessions[id])('/api/record-import', {method: 'POST', body: {}})).status, 400, 'POST /api/record-import without a kind as ' + id);
   for (const [url, byRole] of Object.entries(postMatrix)) for (const id of everyone) check((await app.as(sessions[id])(url, {method: 'POST', body: {}})).status, byRole[id], `POST ${url} as ${id}`);
+  // A send of «خطة الغد» without its fields: a representative passes the role (400); a reviewer and customer service are refused (403).
+  for (const id of everyone) check((await app.as(sessions[id])('/api/daily-plans', {method: 'POST', body: {action: 'send'}})).status, reps.includes(id) ? 400 : 403, 'POST /api/daily-plans send as ' + id);
   // A decision on a customer edit request (POST /api/crm {action:'customer-edit'}): every signed-in member reaches the request's own checks
   // (customer service cancels its own requests): a malformed one is 400 and an unknown one 404 for all; anonymous 401.
   for (const id of everyone) {

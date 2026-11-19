@@ -775,6 +775,16 @@
       "file": "tests/webview-load-probe-browser.mjs",
       "gate": "browser",
       "reason": "requires browser (Playwright with Chromium) and a JDK 17+; serves public/ itself, no independent build"
+    },
+    {
+      "file": "tests/daily-plans-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/daily-plans-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
     }
   ]
 }

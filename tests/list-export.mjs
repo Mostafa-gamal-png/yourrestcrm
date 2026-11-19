@@ -84,9 +84,9 @@ for(const key of ['customer:export','activity:export','sales:export','targets:ex
 // ---- 4. who may export what
 const who=(role,access)=>({role,access});
 const EXPECT={
- admin:['customers','visits','support','service-board','service-leads','complaints','service-kpi','followups','mold-requests','journeys','sales','kpis','collection','quotations','targets','competitors','team'],
- manager:['customers','visits','support','service-board','service-leads','complaints','followups','mold-requests','journeys','sales','kpis','collection','quotations','targets','competitors'],
- supervisor:['customers','visits','support','service-board','service-leads','complaints','followups','mold-requests','journeys','sales','kpis','collection','quotations','targets','competitors'],
+ admin:['customers','visits','support','service-board','service-leads','complaints','service-kpi','followups','mold-requests','journeys','plans','sales','kpis','collection','quotations','targets','competitors','team'],
+ manager:['customers','visits','support','service-board','service-leads','complaints','followups','mold-requests','journeys','plans','sales','kpis','collection','quotations','targets','competitors'],
+ supervisor:['customers','visits','support','service-board','service-leads','complaints','followups','mold-requests','journeys','plans','sales','kpis','collection','quotations','targets','competitors'],
  rep:[],marketing:[],
  customer_service:['visits','support','service-board','service-leads','complaints','mold-requests'],
  customer_service_manager:['visits','support','service-board','service-leads','complaints','service-kpi','mold-requests'],
@@ -94,7 +94,7 @@ const EXPECT={
 for(const role of ROLES)eq(L.LIST_EXPORT_PAGES.filter(page=>L.mayExportList(who(role),page)),EXPECT[role],'with nothing saved, '+role+' exports what the screens it opens show (a representative and a marketing officer nothing)');
 eq([L.listExportPlace('admin','complaints'),L.listExportPlace('customer_service','complaints'),L.listExportPlace('manager','complaints'),L.listExportPlace('supervisor','complaints')],[{screen:'complaints',cell:'complaints'},{screen:'complaints',cell:'complaints'},{screen:'activity',cell:'activity'},{screen:'activity',cell:'activity'}],'the complaints follow «الشكاوى» for the roles with that page, «الزيارات» for the sales members who meet them there');
 const access=(off=[],hidden=[])=>({version:3,off,hidden,viewAll:false});
-eq(L.LIST_EXPORT_PAGES.filter(page=>L.mayExportList(who('manager',access(['activity:export'])),page)),['customers','followups','mold-requests','journeys','sales','kpis','collection','quotations','targets','competitors'],'«الزيارات · تصدير» closed: every list of the visits page goes, the complaints a sales manager meets there too');
+eq(L.LIST_EXPORT_PAGES.filter(page=>L.mayExportList(who('manager',access(['activity:export'])),page)),['customers','followups','mold-requests','journeys','plans','sales','kpis','collection','quotations','targets','competitors'],'«الزيارات · تصدير» closed: every list of the visits page goes, the complaints a sales manager meets there too');
 eq(L.LIST_EXPORT_PAGES.filter(page=>L.mayExportList(who('manager',access(['customer:export'])),page)).includes('customers'),false,'«العملاء · تصدير» closed: the customers\' list');
 eq(L.LIST_EXPORT_PAGES.filter(page=>L.mayExportList(who('supervisor',access([],['targets.collection','targets.quotes'])),page)).filter(page=>['kpis','collection','quotations','targets'].includes(page)),['kpis','targets'],'a hidden tab of the targets hub exports nothing');
 eq(L.LIST_EXPORT_PAGES.filter(page=>L.mayExportList(who('supervisor',access([],['followup','competitors'])),page)).filter(page=>['followups','competitors'].includes(page)),[],'a hidden screen exports nothing');

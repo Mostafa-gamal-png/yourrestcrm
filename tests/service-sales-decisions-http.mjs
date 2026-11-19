@@ -34,7 +34,8 @@ try {
   const fmt = d => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(d);
   const day = fmt(new Date()), month = day.slice(0, 7), ago = n => new Date(Date.now() - n * 86400000).toISOString(), dayAgo = n => fmt(new Date(Date.now() - n * 86400000));
   const monthsBack = n => { const [y, m] = month.split('-').map(Number), t = new Date(Date.UTC(y, m - 1 - n, 15)); return t.toISOString().slice(0, 7); };
-  const migrations = (await app.db.prepare('SELECT count(*) AS n FROM yr_schema_migrations').first()).n;
+  // A later release's 0022 (the daily plans, 2026-11-19) is left out of the count: this release's own are the 22 up to 0021.
+  const migrations = (await app.db.prepare("SELECT count(*) AS n FROM yr_schema_migrations WHERE name<='0021_service_sales_process.sql'").first()).n;
   eq(migrations, 22, 'the database is update-cs-sales\'s: 22 migrations, no new one');
   const insert = (id, kind, parent, assigned, data, when = ago(3), branch = 'الرئيسي') => app.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,?,?,?,?,1,?)').bind(id, kind, parent, assigned, branch, JSON.stringify(data), when, when, 'fixture').run();
   const point = {location: '24.7136000, 46.6753000', latitude: 24.7136, longitude: 46.6753};
