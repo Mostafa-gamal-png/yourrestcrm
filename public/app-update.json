@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
   "packageName": "org.yourrest.crm",
-  "versionName": "1.0.14",
-  "versionCode": 15,
-  "minimumVersionCode": 15,
-  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.14-15.apk",
-  "sizeBytes": 308045,
-  "sha256": "e1f90d1ba7392d665c2fc4f996260c0396506c9732ace4e65e1e89efb743fc09",
+  "versionName": "1.0.15",
+  "versionCode": 16,
+  "minimumVersionCode": 16,
+  "apkUrl": "https://crm.yourrest.org/downloads/yourrest-crm-android-v1.0.15-16.apk",
+  "sizeBytes": 344909,
+  "sha256": "98a2634fad62b5c1a0f4565373071de71a6755e8d096176c7b8337fcc059f786",
   "certificateSha256": "1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50",
   "releaseNotes": {
     "ar": [
-      "شكوى تنتظرك: يصلك إشعار بكل شكوى عميل عليك الدور فيها، للمراجعة أو التعديل أو التكليف أو التفويض أو التواصل والحل أو تأكيد الإغلاق، والشكاوى عالية الأهمية أولًا.",
-      "الضغط على الإشعار يفتح الشكوى نفسها، ويختفي الإشعار بعد فتحها أو حين لا تعود تنتظرك.",
-      "فحص في الخلفية كل 15 دقيقة من 6 صباحًا إلى 6 مساءً بتوقيت السعودية عدا الجمعة، ولو كان تسجيل خط السير متوقفًا، لتنبيهات الشكاوى وطلبات خدمة العملاء.",
-      "لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي."
+      "لا شاشة بيضاء بعد اليوم: إذا تعذّر عرض صفحة النظام يظهر السبب، مثل انقطاع الإنترنت أو خطأ في تاريخ الجهاز أو قِدم محرك عرض الصفحات، مع زر «إعادة المحاولة».",
+      "تعرض الشاشة نفسها معلومات للدعم الفني (محرك العرض وأندرويد والجهاز والتطبيق والخطأ)، فتكفي صورة واحدة منها لمعرفة السبب.",
+      "في حقول الصور، مثل «صور القالب»، يمكنك الآن التقاط صورة بالكاميرا مباشرة، أو اختيار الصور من المعرض والملفات كما كان.",
+      "لا يطلب التحديث أذونات جديدة (ولا إذن الكاميرا)، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي."
     ],
     "en": [
-      "A complaint is waiting for you: a notification for each customer complaint whose step is yours (review, correction, assignment, delegation, contact and resolution, closure), high importance first.",
-      "Tapping it opens that complaint; the notification goes once you open it or it no longer waits for you.",
-      "A background check every 15 minutes, 6 am to 6 pm Saudi time except Friday, even with route tracking off, for complaint and customer-service request alerts.",
-      "The update asks for no new permission; your data and the visits saved on the phone stay as they are."
+      "No more white screen: when the system page cannot be shown, the app says why (no internet, a wrong device date, an old page engine) with a «Try again» button.",
+      "The same screen lists details for technical support (the page engine, Android, the device, the app and the error), so one screenshot is enough.",
+      "Photo fields such as the mold photos can now take a photo with the camera, or pick photos from the gallery and files as before.",
+      "The update asks for no new permission (not even the camera); your data and the visits saved on the phone stay as they are."
     ]
   },
-  "publishedAt": "2026-11-17T11:29:19.342Z"
+  "publishedAt": "2026-11-19T13:55:26.042Z"
 }
