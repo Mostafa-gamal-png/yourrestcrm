@@ -121,7 +121,8 @@ const R = {
   for (const key of ['sales', 'production', 'admin', 'manufacturing', 'delivery']) check(lib.moldStepLabel('step:' + key), mold.moldWaitingNames[key], 'the step as the card names it: ' + key);
   check(['', 'nothing', 'status:cancelled', 'status:', 'sending:sent', 'step:done', 'step:cancelled', 'stage:roof', 'toString', 'constructor'].map(key => [lib.moldStatusLabel(key), lib.moldStepLabel(key)]), Array(10).fill([null, null]), 'a choice this page does not know has no words');
   for (const pair of [...lib.MOLD_STATUS_FILTERS.map(lib.moldStatusLabel), ...lib.MOLD_STEP_FILTERS.map(lib.moldStepLabel), ...Object.values(lib.MOLD_FILTER_TEXT)]) ok(/[؀-ۿ]/.test(pair[0]) && !/[؀-ۿ]/.test(pair[1]), 'Arabic and English, no Arabic in the English: ' + pair[1]);
-  check(Object.values(lib.MOLD_FILTER_TEXT).map(ar), ['تصفية طلبات القوالب', 'الحالة', 'كل الحالات', 'المفتوحة (لم تُسلَّم)', 'واقف عند', 'كل المراحل', 'المندوب', 'كل المندوبين', 'من تاريخ', 'إلى تاريخ', 'بحث', 'عميل، مندوب، وصف، سريال، رقم أمر...', 'مسح الفلاتر'], 'the panel\'s words, as the owner\'s picture has them («كل المندوبين» as the CRM writes it)');
+  // «المصدر» (2026-11-19): offered once the list holds the products application's requests too (tests/mold-orders.mjs).
+  check(Object.values(lib.MOLD_FILTER_TEXT).map(ar), ['تصفية طلبات القوالب', 'الحالة', 'كل الحالات', 'المفتوحة (لم تُسلَّم)', 'واقف عند', 'كل المراحل', 'المندوب', 'كل المندوبين', 'المصدر', 'كل المصادر', 'من تاريخ', 'إلى تاريخ', 'بحث', 'عميل، مندوب، وصف، سريال، رقم أمر...', 'مسح الفلاتر'], 'the panel\'s words, as the owner\'s picture has them («كل المندوبين» as the CRM writes it; «المصدر» since 2026-11-19)');
   check([lib.moldFilterCount(3, 10, (a) => a), lib.moldFilterCount(3, 10, (a, b) => b)], ['يظهر 3 من 10', 'Showing 3 of 10'], 'how many are shown');
 }
 
@@ -222,7 +223,8 @@ const R = {
   const noneReturned = lib.moldFilterChoices([R.design, R.making], true, {...lib.MOLD_NO_FILTERS, returned: true});
   check([noneReturned.filters.returned, noneReturned.active], [false, 0], '«أعادتها المالية» with nothing returned: not in force (its button is not shown)');
   check(lib.moldFilterChoices(all, true, {...lib.MOLD_NO_FILTERS, query: 'x', status: 'open', step: 'approve', from: '2026-11-01'}).active, 4, 'each one set counts');
-  check(lib.moldFilterChoices([], true, lib.MOLD_NO_FILTERS), {statuses: [], steps: [], members: [], filters: lib.MOLD_NO_FILTERS, active: 0}, 'an empty list offers nothing');
+  check(lib.moldFilterChoices([], true, lib.MOLD_NO_FILTERS), {statuses: [], steps: [], members: [], sources: [], filters: lib.MOLD_NO_FILTERS, active: 0}, 'an empty list offers nothing');
+  check(lib.moldFilterChoices(all, true, lib.MOLD_NO_FILTERS).sources.map(option => option.key), ['crm'], 'the CRM\'s requests alone: one source, so no «المصدر»');
   const off = lib.moldFilterChoices([R.waiting], false, lib.MOLD_NO_FILTERS);
   check(off.statuses.map(option => option.key), ['open', 'local', 'sending:off'], 'the link off: the choice the card shows');
 }
