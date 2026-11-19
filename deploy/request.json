@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-WorkAreas-20261119.zip","sha256":"e2da718ce67a1e1af0a168efd8645bdc2e8b0d2ed8c97836f4a6144ac6e9b8a3","stage":"yourrest-crm-update-work-areas-20261119","helper":"yourrest-activate-update-work-areas.cjs"}
+{"mode":"diagnose","script":"scripts/diagnose/street-regions.cjs"}
