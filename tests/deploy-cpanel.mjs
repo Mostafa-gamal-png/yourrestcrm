@@ -381,6 +381,66 @@ try {
     check([s.calls, s.uploads], [[], []], 'no request: refused before any call');
   }
 
+  // ---- 12f. the street data (2026-11-19, «بيانات شوارع محلية»): ONE data file, the import tool and its request are uploaded; the account
+  // runs the tool on the live database named by settings.cjs, a dry run or --apply as the request says, with the file's sha256; the data
+  // file is removed after the run whatever happened; the app neither stopped nor started
+  {
+    const s = cpanel({selector: true});
+    fs.writeFileSync(path.join(s.home, 'yourrest-crm', 'settings.cjs'), 'module.exports={};');
+    // A pretend tool, a module as the real one is (uploaded as import-street-data.mjs).
+    const tool = new Blob([`import fs from 'node:fs'; import path from 'node:path'; const args = process.argv.slice(2);
+fs.writeFileSync(path.join(process.env.HOME, 'tool-args.json'), JSON.stringify(args));
+const file = args[args.indexOf('--file') + 1];
+if (!fs.existsSync(file)) { console.log(JSON.stringify({ok: false, error: 'no file'})); process.exit(1); }
+if (args[args.indexOf('--sha256') + 1] !== '${'a'.repeat(64)}') { console.log(JSON.stringify({ok: false, error: 'The street data file does not match the expected sha256.'})); process.exit(1); }
+const apply = args.includes('--apply'), regions = [{id: 'eastern-1', region: 'eastern-1', cells: 300}];
+console.log(JSON.stringify(apply ? {ok: true, mode: 'apply', rowsWritten: 300, regions, lockMs: 40, file: {dataset: 'osm:test'}} : {ok: true, mode: 'dry-run', rows: 300, wouldWrite: regions, file: {dataset: 'osm:test'}}));
+`]);
+    const request = (apply, sha256 = 'a'.repeat(64)) => new Blob([JSON.stringify({sha256, apply})]);
+    const data = new Blob([Buffer.from('made-up street data')]);
+    const dry = await s.run('streets', {streets: tool, streetsRequest: request(false), streetsFile: data, stage: 'ignored', helper: 'ignored'});
+    check([dry.code, lines(dry.output).at(-1)], [0, 'STREETS DRY RUN: 300 CELLS (eastern-1 300) DATASET osm:test'], 'a dry run: the tool says what it would write');
+    check(s.uploads, ['hosting-deploy.sh', 'hosting-cron.sh', 'import-street-data.mjs', 'streets.json', 'streets.json.gz'], 'the two scripts, the tool, its request and the ONE data file are uploaded, no package');
+    const used = JSON.parse(fs.readFileSync(path.join(s.home, 'tool-args.json'), 'utf8'));
+    check([used[used.indexOf('--settings') + 1].endsWith('/yourrest-crm/settings.cjs'), used.includes('--apply'), used[used.indexOf('--sha256') + 1]], [true, false, 'a'.repeat(64)], 'the live settings, no --apply, the sha256 of the request');
+    check(fs.existsSync(path.join(s.home, 'yourrest-deploy', 'streets.json.gz')), false, 'the data file is removed after the run');
+    check(fs.existsSync(path.join(s.home, 'selector.log')), false, 'the app is neither stopped nor started');
+    const applied = await s.run('streets', {streets: tool, streetsRequest: request(true), streetsFile: data, stage: 'ignored', helper: 'ignored'});
+    check([applied.code, lines(applied.output).at(-1)], [0, 'STREETS IMPORTED: 300 CELLS (eastern-1 300) LOCK 40 MS DATASET osm:test'], 'apply: imported, with the lock\'s time');
+    const wrong = await s.run('streets', {streets: tool, streetsRequest: request(true, 'b'.repeat(64)), streetsFile: data, stage: 'ignored', helper: 'ignored'});
+    check([wrong.code, lines(wrong.output).at(-1), fs.existsSync(path.join(s.home, 'yourrest-deploy', 'streets.json.gz'))], [1, 'STREETS STOP: The street data file does not match the expected sha256.', false], 'a refusal of the tool comes back with its reason, and the file is removed too');
+    const bad = await s.run('streets', {streets: tool, streetsRequest: new Blob(['{"apply":"yes"}']), streetsFile: data, stage: 'ignored', helper: 'ignored'});
+    check([bad.code, lines(bad.output).at(-1)], [2, 'STREETS STOP: the request needs the file\'s sha256 and apply true or false'], 'a request without its fields stops before the tool');
+    check(s.cron, [], 'and no cron line stays');
+  }
+  {
+    const s = cpanel();
+    await assert.rejects(s.run('streets', {streets: new Blob(['x']), streetsRequest: new Blob(['{}'])}), /streets needs the import tool, its request and the street data file/); checks++;
+    check([s.calls, s.uploads], [[], []], 'no data file: refused before any call');
+  }
+  // The workflow's own check of a streets request (.github/workflows/deploy.yml, step «Read and check the request»), run as GitHub runs it.
+  {
+    const workflow = fs.readFileSync(path.join(root, '.github/workflows/deploy.yml'), 'utf8');
+    const python = /python3 - <<'EOF'\n([\s\S]*?)\n {10}EOF/.exec(workflow)[1].split('\n').map(line => line.replace(/^ {10}/, '')).join('\n');
+    const ask = request => {
+      const dir = fs.mkdtempSync(path.join(temp, 'request-')), output = path.join(dir, 'output');
+      fs.mkdirSync(path.join(dir, 'deploy'));fs.writeFileSync(path.join(dir, 'deploy', 'request.json'), JSON.stringify(request));fs.writeFileSync(output, '');
+      const run = spawnSync('python3', ['-I', '-c', python], {cwd: dir, env: {...process.env, GITHUB_OUTPUT: output, RUNNER_TEMP: dir, IN_MODE: ''}, encoding: 'utf8'});
+      const outputs = Object.fromEntries(fs.readFileSync(output, 'utf8').trim().split('\n').filter(Boolean).map(line => line.split('=')));
+      return {status: run.status, said: (run.stdout + run.stderr).trim(), outputs, regions: outputs.regions ? fs.readFileSync(outputs.regions, 'utf8') : ''};
+    };
+    const good = ask({mode: 'streets', apply: false, regions: [{id: 'eastern-1', south: 26.35, west: 50.05, north: 26.55, east: 50.2}, {id: 'central-1', south: 24.65, west: 46.6, north: 24.8, east: 46.75}]});
+    check([good.status, good.outputs.mode, good.outputs.apply, good.regions], [0, 'streets', 'false', '--region eastern-1:26.35,50.05,26.55,50.20 --region central-1:24.65,46.60,24.80,46.75'], 'a streets request: the regions become the build tool\'s arguments, a dry run');
+    for (const [request, reason] of [
+      [{mode: 'streets', regions: [{id: 'a1', south: 26, west: 50, north: 26.1, east: 50.1}]}, 'apply:'],
+      [{mode: 'streets', apply: true, regions: []}, 'regions: 1 to 30'],
+      [{mode: 'streets', apply: true, regions: [{id: 'a1', south: 26.005, west: 50, north: 26.1, east: 50.1}]}, 'on the 0.01° grid'],
+      [{mode: 'streets', apply: true, regions: [{id: 'a1', south: 40, west: 50, north: 40.1, east: 50.1}]}, 'inside Saudi Arabia'],
+      [{mode: 'streets', apply: true, regions: [{id: 'A; rm', south: 26, west: 50, north: 26.1, east: 50.1}]}, 'ids of small letters'],
+      [{mode: 'streets', apply: true, regions: [{id: 'a1', south: 26, west: 50, north: 26.1, east: 50.1, x: 1}]}, 'each {id, south, west, north, east}'],
+    ]) { const refused = ask(request); check([refused.status, refused.said.includes(reason), refused.outputs.mode], [1, true, undefined], 'refused: ' + reason); }
+  }
+
   // ---- 13. what this side refuses before calling cPanel
   for (const [extra, pattern] of [[{mode: 'install'}, /mode must be/], [{stage: '../yourrest-crm'}, /stage must be a plain file name/], [{helper: 'a/b.cjs'}, /helper must be/], [{run: 'x y'}, /run must be/], [{sha256: 'abc'}, /sha256 must be/], [{zip: null}, /package is needed/], [{user: 'me@example.com'}, /account name/]]) {
     const s = cpanel();

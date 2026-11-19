@@ -19,6 +19,9 @@ export const env={
  // The production application's mold requests API (docs/MOLD-REQUESTS-CONTRACT-AR.md): server-side only, never sent to a browser.
  get YR_PRODUCTS_API_URL(){return process.env.YR_PRODUCTS_API_URL;},
  get YR_PRODUCTS_SECRET(){return process.env.YR_PRODUCTS_SECRET;},
+ // Optional: the Overpass API services for the work areas' streets (lib/work-areas-server.ts), HTTPS, separated by commas; without it
+ // the public ones. Read on the server only.
+ get YR_OVERPASS_URL(){return process.env.YR_OVERPASS_URL;},
  get DB(){return database();},
  get FILES(){return objects();},
  get YR_SEND_OTP(){return configuredLocalMailer();},

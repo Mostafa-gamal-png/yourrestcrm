@@ -44,6 +44,11 @@
 //   supervisor, the sales manager and the administrator approve, approve with edits, return and note) and «تصدير خطط المناديب إلى Excel»
 //   («تصدير»: the same three). Restrict-only like every cell, on by default, no migration for the cells (a cell never saved is on). The
 //   administrator holds no «إعداد خطة اليوم» (they prepare no plan of their own), the one cell of the table that is not theirs.
+// - «رسم مناطق عمل المناديب» (the owner, 2026-11-19, the port of GSCO 2.13.81 manage_work_areas, lib/work-areas.ts, migration 0023): the
+//   «تحرير» of «خريطة المصانع», drawing, editing and deleting a representative's work area. Its ceiling is the administrator and the sales
+//   manager, on by default for both, restrict-only like every cell (GSCO also lets its owner open it for a supervisor; here a cell cannot
+//   reach beyond its ceiling, so a supervisor reads his representatives' areas and draws none); never a representative, a marketing officer
+//   or customer service. No migration for the cell (a cell never saved is on).
 // Shared by the server (lib/crm-server.ts context(), the routes) and the page (nav, buttons, the matrix in the member form).
 import {canUseSalesWorkspace,canViewPage,hubTabsAllHidden,trashScope} from './access';
 import {HIDEABLE_HUB_TABS,HUB_TAB_KEYS,HUB_TAB_NAMES,HUB_TABS,hubTabKey,isHubTabKey,type HideableHubTab,type HubTab,type HubTabKey} from './targets-hub';
@@ -97,7 +102,9 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   export:{ar:'تصدير العملاء (Excel وCSV) من صفحة العملاء',en:'Export customers (Excel and CSV) from the customers page',roles:MANAGEMENT},
   import:{ar:'«استيراد من ERP» واستيراد العملاء والماكينات',en:'«Import from ERP» and the customers and machines imports',roles:['admin','manager']},
  }},
- {screen:'map',ar:'خريطة المصانع',en:'Factory map',cells:{}},
+ {screen:'map',ar:'خريطة المصانع',en:'Factory map',cells:{
+  edit:{ar:'رسم مناطق عمل المناديب',en:'Draw representatives\' work areas',roles:['admin','manager'],note:{ar:'رسم منطقة عمل المندوب على الخريطة وتعديلها وحذفها، لمناديب فريقه في مناطقه. بلا منطقة مرسومة تكون المنطقة 500 م حول عملاء المندوب.',en:'Draw, edit and delete a representative\'s work area on the map, for the representatives of their team in their regions. Without a drawn area the area is 500 m around the representative\'s customers.'}},
+ }},
  {screen:'activity',ar:'الزيارات',en:'Visits',cells:{
   add:{ar:'تسجيل زيارة جديدة (ولخدمة العملاء: تسجيل طلب/فرصة جديدة)',en:'Record a new visit (customer service: register a new request)',roles:ALL},
   edit:{ar:'تعديل زيارة محفوظة (ولخدمة العملاء: تعديل الطلب قبل اعتماده)',en:'Edit a saved visit (customer service: edit a request before approval)',roles:['admin','manager','supervisor','customer_service','customer_service_manager']},

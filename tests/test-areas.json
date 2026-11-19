@@ -112,7 +112,7 @@
     "map": {
       "about": "The customers map and the journey map (Leaflet, the Kingdom layer, directions, map search).",
       "sources": ["app/customer-map.tsx", "app/customer-map.css", "app/customer-journey-map.tsx", "app/kingdom-layer.ts", "app/kingdom-map.css", "lib/customer-map-activity.ts", "lib/customer-map-search.ts", "lib/customer-directions.ts", "lib/directions-attempt.ts", "lib/directions-problem.ts", "tests/*map*.mjs"],
-      "tests": ["tests/app-browser-workflows.mjs", "tests/pwa-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/location-picker-browser.mjs", "tests/daily-report-browser.mjs"]
+      "tests": ["tests/app-browser-workflows.mjs", "tests/pwa-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/location-picker-browser.mjs", "tests/daily-report-browser.mjs", "tests/work-areas-browser.mjs"]
     },
     "targets-sales": {
       "about": "Sales, targets, KPIs and their evidence (the Targets page, «أهدافي», the gauge, /api/sales, /api/targets, /api/kpis, /api/kpi-evidence).",
@@ -133,6 +133,11 @@
       "about": "«خطة الغد» / «خطط المناديب» (2026-11-19, GSCO 2.13.83, migration 0022): the rules (lib/daily-plans.ts), the server and its two routes (lib/daily-plans-server.ts, app/api/daily-plans), the pages, the reminder card and the day report's panel (app/daily-plans.tsx), the Excel file (lib/list-export-plans.ts), the migration and its down file. The day report, the menu, the outbox and the permissions they plug into stay in their own areas (or the shared list).",
       "sources": ["app/daily-plans.tsx", "app/daily-plans.css", "app/api/daily-plans/**", "lib/daily-plans.ts", "lib/daily-plans-server.ts", "lib/list-export-plans.ts", "drizzle/0022_daily_plans.sql", "drizzle/rollback/**", "tests/daily-plans*.mjs"],
       "tests": ["tests/daily-plans-http.mjs", "tests/daily-plans-browser.mjs", "tests/server-authorization.mjs"]
+    },
+    "work-areas": {
+      "about": "«خريطة المصانع»'s work areas and streets with no customer (2026-11-19, GSCO 2.13.81 and 2.13.82, migrations 0023 and 0024): the geometry and the streets (lib/work-area-geometry.ts, lib/work-area-streets.ts, lib/work-area-editor.ts), the rules and the server with its two routes (lib/work-areas.ts, lib/work-areas-server.ts, app/api/work-areas, app/api/work-area-streets), the map's layers and tools (app/work-area-map.tsx), the local street data's import tool, its builder and the read-only proposal of its regions (portable/import-street-data.mjs, scripts/streets, scripts/diagnose/street-regions.cjs). The map itself and the permissions they plug into stay in their own areas; the down files are under drizzle/rollback/ (the daily-plans area).",
+      "sources": ["app/work-area-map.tsx", "app/api/work-areas/**", "app/api/work-area-streets/**", "lib/work-area*.ts", "drizzle/0023_work_areas.sql", "drizzle/0024_local_streets.sql", "portable/import-street-data.mjs", "scripts/streets/**", "scripts/diagnose/street-regions.cjs", "tests/work-areas*.mjs", "tests/street-data.mjs", "tests/diagnose-street-regions.mjs"],
+      "tests": ["tests/work-areas-http.mjs", "tests/work-areas-browser.mjs", "tests/server-authorization.mjs"]
     },
     "list-export": {
       "about": "«تصدير Excel» from every page that shows a list (2026-11-19, GSCO 2.13.80): the registry and the rule of who exports (lib/list-export.ts), the column builders of each page (lib/list-export-columns.ts, -mold, -service, -sales), the button (app/export-excel-button.tsx), the server's export of the lists it cuts (app/api/list-export), the writer's date cells (lib/xlsx-write.ts). The pages that carry a button stay in their own areas.",

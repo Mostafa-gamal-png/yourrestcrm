@@ -66,7 +66,11 @@ export type KpiSummary=ReturnType<typeof kpiSummary>;
  *  person needs (the customers whose responsible is one of sourceMemberIds). The place is the location, the short address or the address. */
 export const qualityFields=[['name','الاسم'],['region','المنطقة'],['city','المدينة'],['phone','الهاتف'],['contact','اسم المسؤول'],['customerKind','نوع العميل'],['place','الموقع']] as const;
 const filled=(value:unknown)=>typeof value==='string'?value.trim()!=='':typeof value==='number'&&Number.isFinite(value);
-export function customerFilledFields(data:Record<string,unknown>|null|undefined){const d=data||{};return qualityFields.filter(([key])=>key==='place'?filled(d.location)||filled(d.shortAddress)||filled(d.address)||(filled(d.latitude)&&filled(d.longitude)):filled(d[key])).length;}
+export function customerFilledFields(data:Record<string,unknown>|null|undefined){return qualityFields.length-customerMissingFields(data).length;}
+/** The fields of the seven a customer record still lacks, in the order above, by the same test as the score (blanks and spaces count as
+ *  missing). «خريطة المصانع» (the owner, 2026-11-19, GSCO 2.13.81): a pin of a customer missing any of them is yellow and its card names
+ *  them (lib/work-areas.ts). */
+export function customerMissingFields(data:Record<string,unknown>|null|undefined):(typeof qualityFields)[number][0][]{const d=data||{};return qualityFields.filter(([key])=>!(key==='place'?filled(d.location)||filled(d.shortAddress)||filled(d.address)||(filled(d.latitude)&&filled(d.longitude)):filled(d[key]))).map(([key])=>key);}
 export const QUALITY_REASON='عملاء المندوب المسندون إليه في النظام: الحقول المكتملة ÷ (عدد العملاء × 7). الحقول السبعة: الاسم، والمنطقة، والمدينة، والهاتف، واسم المسؤول، ونوع العميل، والموقع (اللوكيشن أو العنوان المختصر أو العنوان). يُحسب تلقائيًا من بيانات العملاء الحالية، ولا ينطبق على من ليس له عملاء.';
 /** «نسبة الزيارات الفعالة» (the owner, 2026-11-15: «موافق تمام», relayed from the GSCO conversation; it replaces the rule of 2026-11-14,
  *  which read the customer's stage): each visit of the month counts by the supervisor's evaluation of it, read exactly as the notes read it
