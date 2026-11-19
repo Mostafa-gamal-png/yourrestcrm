@@ -38,6 +38,8 @@ try{
  await db.prepare('INSERT INTO crm_settings(id,owner_id) VALUES(?,?)').bind('company','opaque-owner').run();
 
  const created=new Date().toISOString(),day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),month=day.slice(0,7);
+ // Whether the pages' pinned clock, Math.min(today 13:00 Riyadh, two minutes ago), is inside the route-recording window: Riyadh, 6 a.m. to 6 p.m., not Friday.
+ const pinnedAt=Math.min(Date.parse(day+'T10:00:00Z'),Date.now()-120000),pinnedParts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Riyadh',weekday:'short',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(pinnedAt)).map(part=>[part.type,part.value])),recordingWindowOpen=pinnedParts.weekday!=='Fri'&&Number(pinnedParts.hour)>=6&&Number(pinnedParts.hour)<18;
  for(const member of [{id:'manager',name:'QA manager',role:'manager',scope:'western',supervisor:null,active:1},{id:'supervisor',name:'QA supervisor',role:'supervisor',scope:'western',supervisor:'manager',active:1},{id:'rep2',name:'QA other rep',role:'rep',scope:'western',supervisor:'supervisor',active:1},{id:'east',name:'QA eastern rep',role:'rep',scope:'eastern',supervisor:null,active:1},{id:'blocked',name:'QA activation account',role:'rep',scope:'western',supervisor:'supervisor',active:0}]){
   await db.prepare('INSERT INTO crm_members(id,user_id,email,name,role,branch,supervisor_id,active,target,created_at,region_scope) VALUES(?,?,?,?,?,?,?,?,0,?,?)').bind(member.id,'opaque-'+member.id,member.id+'@yourrest.org',member.name,member.role,'Main',member.supervisor,member.active,created,member.scope).run();
  }
@@ -203,7 +205,10 @@ try{
    }
   }
   check(mapsUrl.hostname,'www.google.com');check(mapsUrl.pathname,'/maps/dir/');check(mapsUrl.searchParams.get('destination'),'21.5,39.2','Correct selected customer destination');check(mapsUrl.searchParams.get('travelmode'),'driving');check(await page.getByRole('link',{name:'فتح Google Maps',exact:true}).getAttribute('href'),mapsUrl.href,'Same destination remains retryable');
-  await page.locator('.cm-selected-card').getByRole('alert').filter({hasText:'لم يتم تأكيد تسجيل الرحلة'}).waitFor();checks++;await shot(page,label+'-map-directions');
+  // The pinned clock (below) is the server's day, so after midnight and on a Friday it is outside the route-recording window (lib/tracking-window.ts): directions still open, and the card says recording is paused instead of trying to record (2026-11-20 00:30 Riyadh).
+  if(recordingWindowOpen)await page.locator('.cm-selected-card').getByRole('alert').filter({hasText:'لم يتم تأكيد تسجيل الرحلة'}).waitFor();
+  else await page.locator('.cm-selected-card').getByText('تسجيل خط السير يعمل من 6 صباحًا إلى 6 مساءً بتوقيت السعودية ماعدا الجمعة',{exact:false}).waitFor();
+  checks++;await shot(page,label+'-map-directions');
  }
  // The field visit saved above opened today's stop at this customer (useAutomaticJourney), and directions to a customer whose stop is
  // open reuse it without any tracking request. Close it as a departure would and reopen the app, so the tap has to record a new stop.
