@@ -1,8 +1,16 @@
 export type UploadProgress={phase:'uploading'|'processing';loaded:number;total:number|null;percent:number|null};
 type SubmitOptions={language?:string;timeout?:number;onUploadProgress?:(progress:UploadProgress)=>void};
+/** invalidResponse: the answer was not JSON (a page of a proxy or of the host, an HTML 404 or 413): never the server's own refusal. */
 export class SubmitError extends Error{
- constructor(message:string,public status:number=0,public body:Record<string,unknown>|null=null){super(message);this.name='SubmitError';}
+ constructor(message:string,public status:number=0,public body:Record<string,unknown>|null=null,public invalidResponse=false){super(message);this.name='SubmitError';}
 }
+/** The device's own words, Arabic and English, for an answer that was not the server's: one that is not JSON (`session` for a 401 or 403,
+ *  `invalid` otherwise) and a refusal without its error (`unsaved`). An entry kept on the device is sent again for them (lib/offline-submit.ts). */
+export const NOT_SERVER_ANSWER={
+ session:['تعذر تأكيد جلسة الدخول أو الصلاحية. سجّل الدخول مرة أخرى ثم أعد المحاولة.','Your session or permission could not be confirmed. Sign in again and retry.'],
+ invalid:['الخادم لم يرجع نتيجة صالحة. احتفظ بالبيانات وأعد المحاولة بعد التأكد من الاتصال.','The server returned an invalid response. Keep your entries and retry after checking connectivity.'],
+ unsaved:['تعذر حفظ البيانات. أعد المحاولة.','The record could not be saved. Retry.']
+} as const;
 export const isJsonObject=(value:unknown):value is Record<string,unknown>=>typeof value==='object'&&value!==null&&!Array.isArray(value);
 /** Only a canonical API rejection proves that the submitted write was rejected. */
 export function definiteSubmitRejection(error:unknown){
@@ -23,11 +31,11 @@ export async function submitJson<T=Record<string,unknown>>(url:string,init:Reque
   const response=await (onUploadProgress&&typeof XMLHttpRequest!=='undefined'?uploadResponse(url,init,controller.signal,onUploadProgress):fetch(url,{...init,signal:controller.signal}));
   if(response.redirected&&response.url&&new URL(response.url,typeof window!=='undefined'?window.location?.origin:'https://crm.yourrest.org').pathname.startsWith('/login'))throw new SubmitError(say('انتهت جلسة الدخول. سجّل الدخول مرة أخرى ثم أعد المحاولة.','Your session ended. Sign in again and retry.'),401);
   let result:unknown;try{result=await response.json();}catch{
-   if(response.status===401||response.status===403)throw new SubmitError(say('تعذر تأكيد جلسة الدخول أو الصلاحية. سجّل الدخول مرة أخرى ثم أعد المحاولة.','Your session or permission could not be confirmed. Sign in again and retry.'),response.status);
-   throw new SubmitError(say('الخادم لم يرجع نتيجة صالحة. احتفظ بالبيانات وأعد المحاولة بعد التأكد من الاتصال.','The server returned an invalid response. Keep your entries and retry after checking connectivity.'),response.status);
+   if(response.status===401||response.status===403)throw new SubmitError(say(...NOT_SERVER_ANSWER.session),response.status,null,true);
+   throw new SubmitError(say(...NOT_SERVER_ANSWER.invalid),response.status,null,true);
   }
   const fields=isJsonObject(result)?result:null;
-  if(!response.ok){const message=typeof fields?.error==='string'&&fields.error.trim()?fields.error:say('تعذر حفظ البيانات. أعد المحاولة.','The record could not be saved. Retry.');throw new SubmitError(message,response.status,fields);}
+  if(!response.ok){const message=typeof fields?.error==='string'&&fields.error.trim()?fields.error:say(...NOT_SERVER_ANSWER.unsaved);throw new SubmitError(message,response.status,fields);}
   if(!fields||fields.ok===false)throw new SubmitError(say('الخادم لم يؤكد الحفظ. احتفظ بالبيانات وأعد المحاولة.','The server did not confirm the save. Keep your entries and retry.'),response.status);
    return result as T;
  }catch(error){

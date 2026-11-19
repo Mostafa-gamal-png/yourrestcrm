@@ -10,7 +10,7 @@ import {customerFollowupSchema,customerHasQuotation,latestCustomerContact,follow
 import {prepareJourneyVisitLink} from '@/lib/journeys-server';
 import {validateVisitLocation,type ContactData} from '@/lib/followups-server';
 import {enforceVisitPlace,adoptCustomerPlace} from '@/lib/visit-place-server';
-import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
+import {offlineCapture,offlineEvidence,unavailableRefusal,duplicateRefusal,ownFollowupOnSource} from '@/lib/offline-server';
 import {riyadhDate} from '@/lib/visits';
 import {today} from '@/lib/crm';
 import {readRecontact} from '@/lib/followup-recontact';
@@ -19,22 +19,26 @@ type FollowupData=Omit<z.infer<typeof customerFollowupSchema>,'competitorObserva
 export async function POST(req:Request){try{
  checkOrigin(req);await requireSession();const body=await readJsonBody(req);if(JSON.stringify(body).length>20000)throw new CRMError('حجم البيانات كبير');
  const key=z.string().uuid().parse(body.createKey),id='customer-followup-'+key,c=await context({load:'customer-graph',customerId:body.customerId,recordIds:[id]}),now=new Date().toISOString(),mutation=crypto.randomUUID();
- requireSalesRole(c.me);const customer=c.visible.find(r=>r.kind==='customer'&&r.id===body.customerId);if(!customer)throw new CRMError('اختر العميل',403);
+ requireSalesRole(c.me);const customer=c.visible.find(r=>r.kind==='customer'&&r.id===body.customerId);if(!customer)throw unavailableRefusal('اختر العميل',403,'customer');
  const offline=offlineCapture(body,c.me.id,now),occurredAt=offline?.capturedAt||now;
  const existing=c.all.find(r=>r.id===id);if(existing&&!c.visible.some(r=>r.id===id))throw new CRMError('المتابعة غير متاحة',404);
  const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(body))))).map(n=>n.toString(16).padStart(2,'0')).join('');
  const receipt=await c.db.prepare('SELECT detail FROM crm_audit WHERE id=? AND record_id=?').bind('customer-followup-save-'+c.me.id+':'+key,id).first<{detail:string}>();
- if(receipt){if(receipt.detail===fingerprint)return Response.json({ok:true,id,alreadySaved:true});throw new CRMError('تم حفظ هذه المتابعة بالفعل. افتح تسجيل متابعة جديدة.',409);}
+ if(receipt){if(receipt.detail===fingerprint)return Response.json({ok:true,id,alreadySaved:true});throw duplicateRefusal('تم حفظ هذه المتابعة بالفعل. افتح تسجيل متابعة جديدة.',existing);}
+ // A follow-up refused because the opportunity moved on: when the member's own follow-up on the same opportunity is why, it is a follow-up
+ // saved twice (an entry kept on the device sent after the same one was saved online), and the refusal names it (lib/offline-server.ts).
+ const movedOn=(message:string)=>{const twin=ownFollowupOnSource(c,customer.id,body.sourceId,id);return twin?duplicateRefusal(message,twin):new CRMError(message,409);};
  // «الصلاحيات»: recording a follow-up (after a replay has answered above).
  requireCell(c.me,'followup','add');
- if(body.customerVersion!==customer.version)throw new CRMError('تغيّرت بيانات العميل أو متابعته الأخيرة. حدّث البيانات ثم أعد المحاولة.',409);
+ if(body.customerVersion!==customer.version)throw movedOn('تغيّرت بيانات العميل أو متابعته الأخيرة. حدّث البيانات ثم أعد المحاولة.');
  const service=activeServiceCase(customer.id,c),previousSource=latestCustomerContact(customer.id,c.visible),currentSource=service?.status==='assigned'&&previousSource&&previousSource.createdAt<service.createdAt?undefined:previousSource;
  const projectedSource=body.sourceId?c.visible.find(r=>r.id===body.sourceId&&['activity','opportunity'].includes(r.kind)):currentSource;const source=projectedSource?c.all.find(r=>r.id===projectedSource.id):undefined;
- if(body.sourceId&&(!source||visitCustomer(source,c.all)?.id!==customer.id))throw new CRMError('المتابعة لا تتبع هذا العميل',403);
- if(!source||!canExecuteCustomerFollowup(source))throw new CRMError('المتابعة تتطلب زيارة سابقة بها إجراء قادم وموعد متابعة.',400);
- if(!currentSource||currentSource.id!==source.id)throw new CRMError('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.',409);
- if(source&&body.sourceVersion!==source.version)throw new CRMError('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.',409);
- if(service?.status==='assigned'&&source&&source.createdAt<service.createdAt)throw new CRMError('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.',409);
+ if(body.sourceId&&(!source||visitCustomer(source,c.all)?.id!==customer.id))throw unavailableRefusal('المتابعة لا تتبع هذا العميل',403,'opportunity');
+ // The opportunity it continues was closed since (won, lost, its plan ended): no longer one to follow.
+ if(!source||!canExecuteCustomerFollowup(source)){const message='المتابعة تتطلب زيارة سابقة بها إجراء قادم وموعد متابعة.';throw body.sourceId&&source?unavailableRefusal(message,400,'opportunity'):new CRMError(message,400);}
+ if(!currentSource||currentSource.id!==source.id)throw movedOn('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.');
+ if(source&&body.sourceVersion!==source.version)throw movedOn('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.');
+ if(service?.status==='assigned'&&source&&source.createdAt<service.createdAt)throw movedOn('تغيّرت المتابعة السابقة. حدّث البيانات ثم أعد المحاولة.');
  const {competitorObservation,recontactDate,recontactAction,...input}=customerFollowupSchema.parse(body.data),hasQuotation=customerHasQuotation(customer.id,c.visible,service?.status==='assigned'?service:undefined)||input.type==='quote'||input.salesStage==='quoted';
  if(offline&&input.date>riyadhDate(occurredAt))throw new CRMError('تاريخ المتابعة لا يمكن أن يكون بعد يوم تسجيلها على الجهاز.');
  if(hasQuotation&&input.salesStage==='won'&&input.invoiceOutcome!=='invoiced')throw new CRMError('أكد تحوّل عرض السعر إلى فاتورة عند إغلاق البيع');

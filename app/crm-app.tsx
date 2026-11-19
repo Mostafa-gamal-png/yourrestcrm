@@ -8,6 +8,7 @@ import {offlineSubmit,flushOutbox} from '@/lib/offline-submit';
 import {sameSnapshot} from '@/lib/same-snapshot';
 import {isOfflineLogoutPending,finishPendingOfflineLogout} from '@/lib/offline-auth';
 import OfflineStatus from './offline-status';
+import {OPEN_CUSTOMER_EVENT} from '@/lib/offline-review';
 import {t,useLanguage,direction,getLanguage} from "@/lib/i18n";
 import React, { useEffect, useMemo, useState, useCallback, useRef, useDeferredValue } from 'react';
 import {MessageSquareWarning, Gauge, MapPinned, LayoutDashboard, Factory, Users, Shapes, ClipboardList, FileText, ShieldCheck, Plus, Search, ChevronLeft, CalendarDays, Clock, RefreshCw, Download, Printer, Pencil, Trash2, CheckCircle2, Target, BriefcaseBusiness, Loader2, Layers, Building2, X, SlidersHorizontal, Wrench, Upload, ArchiveRestore} from 'lucide-react';
@@ -322,6 +323,18 @@ export default function CRM() {
         return()=>window.removeEventListener('yourrest:open-nearby-customer',open);
     },[openNearby,me]);
     useEffect(()=>{if(!me||!snapshotRef.current||!pendingNearby.current)return;const id=pendingNearby.current;pendingNearby.current='';openNearby(id);},[me,openNearby]);
+    // «فتح العميل الموجود» of a new customer kept on the device (app/offline-status.tsx): the customer's sheet, only if this member's data holds it;
+    // a screen with unsaved work is never replaced underneath the person.
+    useEffect(()=>{
+        const open=(event:Event)=>{
+            const id=(event as CustomEvent<{id?:unknown}>).detail?.id,d=snapshotRef.current;
+            if(typeof id!=='string'||!d||!d.records.some(r=>r.id===id&&r.kind==='customer'))return;
+            if(editorOpenRef.current){toast.info(getLanguage()==='ar'?'أنهِ ما بين يديك ثم افتح العميل من قائمة العملاء.':'Finish what you are doing, then open the customer from the customers list.');return;}
+            setFollowupEditor(null);setVisitEditor(null);setDetailTab('info');setRawDetailId(id);
+        };
+        window.addEventListener(OPEN_CUSTOMER_EVENT,open);
+        return()=>window.removeEventListener(OPEN_CUSTOMER_EVENT,open);
+    },[]);
     // «شكوى تنتظرك» (the owner, 2026-11-16, GSCO list item 3; Android 1.0.14): a tapped notification opens the complaint where this member
     // meets complaints («الشكاوى», or «الزيارات» for the sales team). The id is only a hint: the sheet opens only if this member's complaints
     // hold it (lib/complaints.ts decides), and a screen with unsaved work is never replaced underneath the person.

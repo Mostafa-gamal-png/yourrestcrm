@@ -6,3 +6,30 @@
 .offline-complete .field>span{font-size:13px;font-weight:600}
 .offline-complete select,.offline-complete input{width:100%;min-height:44px;min-width:0}
 .offline-complete>.btn{justify-self:start;min-height:44px}
+/* An entry that needs review: why (offlineReview), the customer at the same place, the location editor and «حذف هذا الإدخال من الجهاز». */
+.offline-review-note{margin-block:8px;padding:9px 11px;border-radius:9px;border:1px solid #e8c87c;background:#fff7e6;color:#5c3b00;font-size:13px;line-height:1.75;overflow-wrap:anywhere}
+.offline-sync-server{font-weight:600}
+.offline-sync-notice{margin:0;font-size:13px;color:#1f6b3a}
+.offline-sync-notice:not(:empty){margin-block:4px 8px}
+.offline-same-place{display:grid;gap:8px;margin-block:8px;padding:10px;border:1px solid var(--border,#dbe2e8);border-radius:10px;background:var(--card,#fff)}
+.offline-same-place>p{margin:0;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.offline-same-place>.btn{justify-self:start;min-height:44px}
+.offline-place{display:grid;gap:10px;margin-block:8px;padding:10px;border:1px solid var(--border,#dbe2e8);border-radius:10px;min-width:0}
+.offline-place .customer-auto-location{min-width:0;padding:10px}
+/* Inside the dialog the location's title and its two buttons share a narrow card: they wrap under each other instead of running out. */
+.offline-place .customer-auto-location-heading{flex-wrap:wrap}
+.offline-place .customer-auto-location-actions{justify-content:flex-start;min-width:0;max-width:100%}
+.offline-place .customer-auto-location-actions>button{flex-shrink:1;max-width:100%;white-space:normal;text-align:start}
+.offline-entry-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.offline-entry-actions>.btn{min-height:44px}
+.offline-delete-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px}
+.offline-delete-row>.text-button{min-height:44px}
+.offline-delete-row>.text-button.danger{color:var(--destructive)}
+.offline-delete-reason{font-size:12px;color:var(--muted-foreground,#5b6470);line-height:1.6}
+.offline-delete-confirm{display:grid;gap:8px;margin-top:8px;padding:10px;border:1px solid color-mix(in oklab,var(--destructive) 45%,var(--border,#dbe2e8));border-radius:10px;background:color-mix(in oklab,var(--destructive) 6%,var(--card,#fff))}
+.offline-delete-confirm>p{margin:0;font-size:13px;line-height:1.7}
+.offline-delete-list{margin:0;padding-inline-start:18px;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.offline-delete-confirm .btn.danger{background:var(--destructive);border-color:var(--destructive);color:#fff}
+.offline-delete-confirm .btn.danger:disabled{opacity:.55}
+.dark .offline-review-note{background:#33281b;border-color:#7a5a22;color:#ffe1ab}
+.dark .offline-sync-notice{color:#9fe0b4}

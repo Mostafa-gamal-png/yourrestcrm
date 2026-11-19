@@ -11,7 +11,8 @@ import {loadContextRecords,type ContextLoad} from './crm-context-records';
 import {memberAccess,cellRefused,cellRefusalText,pagesBlocked,hubTabsBlocked,PAGE_HIDDEN_TEXT,type PermissionAction,type PermissionScreen} from './permissions';
 import type {HubTab} from './targets-hub';
 import {FIELD_ROLES_SQL,isFieldRole,isMarketingRole} from './roles';
-export class CRMError extends Error { constructor(message:string,public status=400){super(message);} }
+/** extra: words a refusal carries beside its message (a code, the record a duplicate repeats: lib/offline-server.ts); never `error`. */
+export class CRMError extends Error { constructor(message:string,public status=400,public extra?:Record<string,unknown>){super(message);} }
 export function database(){if(!env.DB)throw new CRMError('تعذر الاتصال بقاعدة البيانات. أعد المحاولة.',503);return env.DB;}
 export async function context(options:ContextLoad={}){
  const user=await getApplicationUser();if(!user)throw new CRMError('سجّل الدخول للوصول إلى التطبيق.',401);
@@ -25,7 +26,7 @@ export async function context(options:ContextLoad={}){
  if(!['identity','mobile','customer-graph','directory'].includes(options.load||'')){const state=await readCustomerIdentityState(db);if(!state)throw new CRMError('تحديث أكواد العملاء غير مكتمل.',503);customerIdentityState=state;}
  const {all,serviceCases}=await loadContextRecords(db,me,options,members),regionalRecords=regionRecords(all,me),regionalMembers=regionMembers(members,me),regionCustomerIds=new Set(regionalRecords.filter(r=>r.kind==='customer').map(r=>r.id));return{db,user,me,members,all,serviceCases,customerIdentityState,regionalRecords,regionalMembers,regionCustomerIds,visible:scopeRecords(regionalRecords,members,me)};
 }
-export function replyError(error:unknown){if(error instanceof CRMError||error instanceof RequestBodyError)return Response.json({error:error.message},{status:error.status,...(error instanceof RequestBodyError?{headers:{'Cache-Control':'no-store','Connection':'close'}}:{})});console.error('CRM request failed',error);return Response.json({error:'تعذر إتمام العملية. بياناتك المدخلة لم تُمسح؛ حاول مرة أخرى.'},{status:500});}
+export function replyError(error:unknown){if(error instanceof CRMError||error instanceof RequestBodyError)return Response.json({...(error instanceof CRMError?error.extra:undefined),error:error.message},{status:error.status,...(error instanceof RequestBodyError?{headers:{'Cache-Control':'no-store','Connection':'close'}}:{})});console.error('CRM request failed',error);return Response.json({error:'تعذر إتمام العملية. بياناتك المدخلة لم تُمسح؛ حاول مرة أخرى.'},{status:500});}
 export function checkOrigin(req:Request){const origin=req.headers.get('origin');if(!env.YR_APP_ORIGIN||origin!==env.YR_APP_ORIGIN||req.headers.get('sec-fetch-site')==='cross-site')throw new CRMError('طلب غير مسموح',403);}
 /** Reject anonymous callers before any request body is read or validated, so they always receive 401 rather than a validation error. Token-authorized import routes call this only when no source token is presented. */
 export async function requireSession(){if(!await getApplicationUser())throw new CRMError('سجّل الدخول للوصول إلى التطبيق.',401);}

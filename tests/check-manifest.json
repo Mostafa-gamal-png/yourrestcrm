@@ -472,6 +472,16 @@
       "reason": "requires browser"
     },
     {
+      "file": "tests/offline-stuck-entries-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/offline-stuck-entries-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/open-cached-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

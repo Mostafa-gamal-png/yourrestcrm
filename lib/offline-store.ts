@@ -1,13 +1,19 @@
 import type {AuditEntry,Member,Row} from './crm';
+import {deletableOfflineEntry,offlineDeletion,offlineDeletionRefusalText,type OfflineDeletionRefusal} from './offline-review';
 
 export type OfflineSnapshot={me:Member;records:Row[];members:Member[];audits:AuditEntry[];[key:string]:unknown};
 export type OfflineKind='customer'|'visit'|'followup'|'service'|'file';
 export type OfflineOwner={id:string;stamp:string};
-export type OfflineJob={id:string;ownerId:string;owner:OfflineOwner;kind:OfflineKind;label:string;status:'pending'|'syncing'|'blocked';message:string;createdAt:string;capturedAt:string;localId:string;url:string;body?:string;wireBody?:string;fingerprint:string;language:string;httpStatus?:number;blob?:Blob;fileName?:string;customerId?:string;uploadKey?:string;archivedAt?:string;attempts:number};
+/** What the server said beside its message when it sent an entry back for review (lib/offline-review.ts offlineAnswerOf): a known code and
+ *  the member's own record the entry repeats. */
+export type OfflineAnswer={code?:string;duplicate?:{id?:string;date?:string}};
+export type OfflineJob={id:string;ownerId:string;owner:OfflineOwner;kind:OfflineKind;label:string;status:'pending'|'syncing'|'blocked';message:string;createdAt:string;capturedAt:string;localId:string;url:string;body?:string;wireBody?:string;fingerprint:string;language:string;httpStatus?:number;blob?:Blob;fileName?:string;customerId?:string;uploadKey?:string;archivedAt?:string;answer?:OfflineAnswer;attempts:number};
 export type OfflineReceipt={id:string;ownerId:string;ownerStamp:string;fingerprint:string;localId:string;result:Record<string,unknown>;projection?:Row;createdAt:string};
 type Session={key:'session';ownerId:string;stamp:string;epoch:string};
 export const OFFLINE_EVENT='yourrest:offline-change';
 const DATABASE='yourrest-offline-v1',SESSION_EPOCH='yr-offline-session-epoch-v1',LOGOUT_KEY='yr-offline-pending-logout-v1';
+/** The cross-tab lease a sync holds while it sends (lib/offline-submit.ts): nothing is deleted from the device under it. */
+export const SYNC_LEASE_KEY='sync-lease';
 function sessionEpoch(){try{return typeof window==='undefined'?null:window.localStorage.getItem(SESSION_EPOCH)||'initial';}catch{return null;}}
 function logoutPending(){try{return typeof window==='undefined'||window.localStorage.getItem(LOGOUT_KEY)!==null;}catch{return true;}}
 let database:Promise<IDBDatabase>|undefined,channel:BroadcastChannel|undefined,locked=false,generation=0;
@@ -43,6 +49,36 @@ export async function listOutbox(me:Member):Promise<OfflineJob[]>{const owner=aw
 /** Rejected entries may be set aside explicitly, but their captured data are never deleted. */
 export async function listOfflineArchive(me:Member):Promise<OfflineJob[]>{const owner=await unlockedOfflineOwner();if(!owner||owner.id!==me.id)return[];return(await readOfflineStore<OfflineJob[]>('outbox')).filter(job=>job.ownerId===me.id&&!!job.archivedAt).sort((a,b)=>String(b.archivedAt).localeCompare(String(a.archivedAt)));}
 export async function archiveOfflineJob(id:string,me:Member){const owner=await requireOfflineOwner(me),db=await offlineDB(),tx=db.transaction(['meta','outbox'],'readwrite'),done=idbDone(tx);let rejected=false;const session=tx.objectStore('meta').get('session');session.onsuccess=()=>{if(session.result?.ownerId!==owner.id||session.result?.stamp!==owner.stamp||session.result?.epoch!==sessionEpoch()||logoutPending()){tx.abort();return;}const request=tx.objectStore('outbox').get(id);request.onsuccess=()=>{const job=request.result as OfflineJob|undefined;if(!job||job.ownerId!==owner.id||job.status!=='blocked'){rejected=true;return;}tx.objectStore('outbox').put({...job,archivedAt:new Date().toISOString()});};};await done;if(rejected)throw new Error('يمكن أرشفة الإدخالات التي تحتاج إلى مراجعة فقط. لا تزال الإدخالات المعلّقة في انتظار تأكيد الخادم.');offlineChanged();}
+/** A deletion the device refused (lib/offline-review.ts offlineDeletionRefusalText says it in the member's language). */
+export class OfflineDeletionError extends Error{constructor(public reason:OfflineDeletionRefusal){super(offlineDeletionRefusalText(reason));this.name='OfflineDeletionError';}}
+/** «حذف هذا الإدخال من الجهاز» (the owner, 2026-11-19, GSCO 2.13.84): an entry of this member that needs review, on the list or in the local
+ *  archive, is removed from the device with what goes with it (lib/offline-review.ts offlineDeletion: the entries that need it and the
+ *  attachments only they name, the photo or PDF itself kept inside its entry), all in one transaction, and is never sent. Refused while a
+ *  sync holds its lease or sends one of them, and when what would go differs from `confirmed`, what the member was shown. Nothing is asked
+ *  of the server and no receipt is touched. Returns the ids removed. */
+export async function deleteOfflineEntry(id:string,me:Member,confirmed:string[]){
+ const owner=await requireOfflineOwner(me),db=await offlineDB(),tx=db.transaction(['meta','outbox'],'readwrite'),done=idbDone(tx),meta=tx.objectStore('meta'),outbox=tx.objectStore('outbox');
+ let refusal:OfflineDeletionRefusal|undefined,removed:string[]=[];
+ const session=meta.get('session');
+ session.onsuccess=()=>{
+  if(session.result?.ownerId!==owner.id||session.result?.stamp!==owner.stamp||session.result?.epoch!==sessionEpoch()||logoutPending()){tx.abort();return;}
+  const lease=meta.get(SYNC_LEASE_KEY);
+  lease.onsuccess=()=>{
+   if(lease.result&&lease.result.expires>Date.now()){refusal='syncing';return;}
+   const all=outbox.getAll();
+   all.onsuccess=()=>{
+    const plan=offlineDeletion(id,(all.result as OfflineJob[]).filter(job=>job.ownerId===owner.id));
+    if(!plan||!deletableOfflineEntry(plan.root)){refusal='not-review';return;}
+    const ids=[plan.root.id,...plan.also.map(item=>item.job.id)];
+    if([plan.root,...plan.also.map(item=>item.job)].some(job=>job.status==='syncing')){refusal='syncing';return;}
+    if(ids.length!==confirmed.length||ids.some(entry=>!confirmed.includes(entry))){refusal='changed';return;}
+    for(const entry of ids)outbox.delete(entry);
+    removed=ids;
+   };
+  };
+ };
+ await done;if(refusal)throw new OfflineDeletionError(refusal);offlineChanged();return removed;
+}
 export function offlineProjection(job:OfflineJob,me:Member):Row|undefined{if(job.kind==='file'||!job.body)return;const body=JSON.parse(job.body),data=body.data||body.registration||{},stamp=job.capturedAt,date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(stamp));const projected={...data,...(job.kind==='customer'?{_createdBy:me.id}:{date:job.kind==='followup'?(data.date||date):date,performedBy:me.id,responsibleId:me.id,recordedByEmail:me.email,visitWorkflow:job.kind==='followup'?'followup-v1':job.kind==='service'?'service-intake-v1':'customer-v1',...(job.kind==='followup'?{summary:'متابعة العميل',sourceId:body.sourceId||''}:{}),...(job.kind==='service'?{serviceIntakeId:job.localId}:{})}),_offlineState:job.status,_offlineQueueId:job.id,...(job.kind==='customer'?{}:{_masterReadOnly:true,_readOnly:true})};return{id:job.kind==='service'?'intake-'+job.localId:job.localId,kind:job.kind==='customer'?'customer':'activity',parentId:job.kind==='customer'?null:body.customerId,assignedTo:job.kind==='customer'?(data.assignedTo||me.id):me.id,branch:data.branch||me.branch,data:projected,createdAt:stamp,updatedAt:stamp,version:1};}
 export async function augmentOfflineSnapshot(snapshot:OfflineSnapshot):Promise<OfflineSnapshot>{const owner=await unlockedOfflineOwner();if(!owner||owner.id!==snapshot.me.id||owner.stamp!==offlineOwner(snapshot.me).stamp)return snapshot;const jobs=await listOutbox(snapshot.me),receipts=await readOfflineStore<OfflineReceipt[]>('receipts'),rows=new Map(snapshot.records.map(row=>[row.id,row]));for(const receipt of receipts)if(receipt.ownerId===owner.id&&receipt.ownerStamp===owner.stamp&&receipt.projection&&!rows.has(receipt.projection.id))rows.set(receipt.projection.id,receipt.projection);for(const job of jobs){if(job.owner.stamp!==owner.stamp)continue;const row=offlineProjection(job,snapshot.me);if(row&&!rows.has(row.id))rows.set(row.id,row);}return{...snapshot,records:[...rows.values()]};}
 /** Receipt and queue deletion commit together; a crash can never lose an unacknowledged entry. */
