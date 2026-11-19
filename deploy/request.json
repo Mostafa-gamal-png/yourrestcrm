@@ -1,1 +1,1 @@
-{"mode":"diagnose","script":"scripts/diagnose/mold-order-codes.cjs","run":2}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Android1015-20261119.zip","sha256":"e6e3e31ffe4828cb620ece0029fdacc735ba953e1446990380bb1da99d74b5b8","stage":"yourrest-crm-update-android-1015-20261119","helper":"yourrest-activate-update-android-1015.cjs"}
