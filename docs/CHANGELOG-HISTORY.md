@@ -4,6 +4,60 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «خريطة المصانع»: yellow pins, the representatives' work areas, streets with no customer, and local street data (2026-11-19, migrations 0023 and 0024, no Android change)
+
+- **Asked.** The owner, 2026-11-19 (relayed from the GSCO session): port GSCO 2.13.81 «خريطة المشاريع» and 2.13.82 «بيانات شوارع محلية».
+  A GSCO project is a customer/factory here and the map is «خريطة المصانع». Shared rules `lib/work-areas.ts`; geometry and streets
+  `lib/work-area-geometry.ts`, `lib/work-area-streets.ts` (GSCO's files, so the cells and the stored street form are GSCO's); server
+  `lib/work-areas-server.ts` with `app/api/work-areas` and `app/api/work-area-streets`; layers and tools `app/work-area-map.tsx`, placed by
+  `app/customer-map.tsx`. Guide 9-أك.
+- **Skipped as already present.** The sync fix for answers that are not JSON (ported in «الإدخالات الواقفة على الجهاز», same day), the
+  «الخريطة» button of the representative's bottom bar (`app/mobile-navigation.tsx` had it), and the day report's card names (Yourrest's cards
+  name every type from `JOURNEY_CONTACT_TEXT`, nine types, else «تواصل»; never a stored key).
+- **Yellow pin.** A customer missing any of the seven fields of «دقة واكتمال البيانات» (`qualityFields` in `lib/kpis.ts`, the evaluation's
+  own test; new `customerMissingFields`, from which `customerFilledFields` now counts) gets a yellow ring with a dark brown edge AROUND its
+  activity colour (Yourrest's choice: the activity colours stay the map's key and filter); a group's ring is yellow when one of it is. The
+  selected customer's card says «بيانات ناقصة: …» with the fields' names. The legend gains «بيانات ناقصة», «شارع بلا عملاء», «منطقة العمل»,
+  the area's lines and «إخفاء علامات الشوارع» (kept on the device); on a short map it scrolls inside its box, never over the search.
+- **Work area.** A field member's (representative or marketing officer) area: the one the sales manager drew (`crm_work_areas`), else 500 m
+  around each of the customers assigned to them (`assigned_to`) with a map point in the Kingdom, «خامل» ones left out (Yourrest's reading of
+  «open projects»), among the reader's regions; touching disks form groups, the 12 biggest looked up.
+- **Streets with no customer.** Pieces (≤150 m) of primary to residential streets inside the area with no customer of the company within 50 m
+  (any status, any region: a dormant factory is still a factory on that street; GSCO leaves closed projects out) are purple; only lines and
+  street names reach the page. Streets come from the server only: the local data when every cell of the box was imported (ready, dated by
+  the import, no Overpass), else the 30-day cache, else Overpass (one request at a time, 30 s each, 45 s per answer, 3 new boxes per answer).
+  A service answering 429, 502, 503 or 504, or not at all, pauses two minutes; the next one is tried. Optional `YR_OVERPASS_URL` (up to four
+  HTTPS services, commas); default overpass-api.de then overpass.private.coffee.
+- **Permission.** «خريطة المصانع · تحرير» = «رسم مناطق عمل المناديب» (GSCO's manage_work_areas): ceiling the administrator and the sales
+  manager, on by default, restrict-only (GSCO's owner may open it for a supervisor; Yourrest's table cannot reach beyond a role, so the
+  supervisor reads his representatives' areas and draws none); never a field member or customer service. Reading: a field member himself;
+  a supervisor, a sales manager, the administrator the active field members of their team (wider with «عرض بيانات الفريق بالكامل») whose
+  regions meet theirs; customer service 403; the map hidden 404. Drawing in the map's «فلترة» panel: tap to add corners, drag, tap a corner
+  to delete it, save; edit; delete in two steps; checked as GSCO's (3–200 corners, inside the Kingdom, no crossing sides, 2,500 m² to 40 km²,
+  15 km a side). Versioned (409), a retry saves nothing twice, one audit row per save or delete (`work-area:save|delete`, kept out of GET
+  /api/crm's recent changes). Body limit 24 000 bytes.
+- **Local street data.** `crm_osm_street_local`, one row per 0.01° cell, written only by `portable/import-street-data.mjs` (shipped as
+  `release/operations/import-street-data.mjs`; dry run by default, `--apply` in one transaction, `--verify`, `--remove`, `--settings`;
+  refuses another application's database, one before 0024, another system's file or sha256). Built off the host (no osmium there, close to its
+  file limit: ONE file travels) by `scripts/streets/build-street-data.mjs` from Geofabrik's GCC extract. The regions come from the live pins
+  by `scripts/diagnose/street-regions.cjs` (read-only; counts and 0.05° boxes only, no name, id or point). A new `streets` mode of the deploy
+  workflow builds the file on the runner and imports it on the host (dry run unless `apply`), removing the file after. Not run: the data
+  itself is not imported (needs the live regions and the owner's approval).
+- **Migrations, 25 in all (additive only):** `0023_work_areas.sql` (`crm_work_areas`, `crm_osm_street_cache` and its index) and
+  `0024_local_streets.sql` (`crm_osm_street_local` and its unique cell index). No existing table or row changes. Package:
+  `--schema-baseline 23 --new-migration 0023_work_areas.sql --new-migration 0024_local_streets.sql --verify-route /api/work-areas=401
+  --verify-route /api/work-area-streets=401`; `--verify` must say «MIGRATIONS: 25».
+- **Rollback.** Before the first start: the previous release folder. After it, code only does not start (by design). Keeping the data: stop,
+  back up, run `drizzle/rollback/0024_local_streets.down.sql` then `drizzle/rollback/0023_work_areas.down.sql` (each one transaction; 0023's
+  refuses while 0024 is recorded; the drawn areas, the cache, the local streets and the `work-area:%` audit rows go; the schema is then
+  exactly the 23-migration one), then the previous release. Or the schema backup `before-0023_work_areas-*.sqlite` (everything after lost).
+- **Tests.** Default gate: `tests/work-areas.mjs` (191 checks), `tests/work-areas-migration.mjs` (126), `tests/street-data.mjs` (65),
+  `tests/diagnose-street-regions.mjs` (10). Release-build: `tests/work-areas-http.mjs` (66, Overpass a local stand-in). Browser:
+  `tests/work-areas-browser.mjs` (146: 320/360/tablet both ways/desktop, Arabic and English, the Android app simulated). Updated:
+  `tests/permissions.mjs`, `tests/permissions-ui.mjs`, `tests/customer-map-ui.mjs`, `tests/server-authorization.mjs`,
+  `tests/deploy-cpanel.mjs` (134, was 116), `tests/daily-plans.mjs`, `tests/daily-plans-migration.mjs` (count their own release's migrations).
+  No test contacts Geofabrik or Overpass.
+
 ## «خطة الغد» / «خطط المناديب»: the next day's plan, its review and its completion (2026-11-19, migration 0022, no Android change)
 
 - **Asked.** The owner, 2026-11-19: port GSCO 2.13.83 «خطة الغد / خطط المناديب» with the owner's decisions. Rules in `lib/daily-plans.ts`
