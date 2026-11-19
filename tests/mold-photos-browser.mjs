@@ -78,7 +78,7 @@ try {
   }
   const still = page => page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
   const settle = page => page.evaluate(async () => { await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
-  const shot = async (page, label) => { await page.locator('.crm-sheet [data-mold-photos]').first().scrollIntoViewIfNeeded().catch(() => {}); await settle(page); await page.screenshot({path: path.join(screenshots, label + '.png'), fullPage: false}); };
+  const shot = async (page, label) => { await page.locator('.crm-sheet [data-mold-photos]').first().scrollIntoViewIfNeeded().catch(() => {}); await page.evaluate(() => Promise.all([...document.querySelectorAll('.mold-photos img, .mold-photo-viewer img')].filter(image => image.complete && image.naturalWidth).map(image => image.decode().catch(() => {})))); await settle(page); await page.waitForTimeout(400); await page.screenshot({path: path.join(screenshots, label + '.png'), fullPage: false}); };
   const noSideways = async (page, label) => check(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, label + ': no horizontal scrolling');
   const noSidewaysIn = async (locator, label) => check(await locator.evaluate(node => node.scrollWidth > node.clientWidth + 1), false, label + ': nothing wider than its box');
   // In the sheet, which scrolls up and down: nothing past the screen's sides. In a dialog: nothing past any edge.
@@ -235,6 +235,10 @@ try {
     page = await open('mgr', {viewport, english});
     section = await openSheet(page, FULL, english);
     check([await section.locator('.mold-photos-grid button').count(), await section.getByRole('button', {name: english ? 'Add photos' : 'إضافة صور'}).isDisabled(), await section.locator('[data-mold-photos-full]').innerText()], [20, true, english ? 'The limit is reached: 20 photos per customer. Delete a photo to add another.' : 'اكتمل الحد: 20 صورة لكل عميل. احذف صورة لإضافة غيرها.'], label + ': twenty, and no more can be added');
+    // Every square is drawn once on screen (each asks the server for its photo, lazily).
+    await section.scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => { const images = [...document.querySelectorAll('.mold-photos-grid img')]; images.forEach(image => { image.loading = 'eager'; }); return images.length === 20 && images.every(image => image.complete && image.naturalWidth > 0); }, null, {timeout: 40000});
+    check(await loaded(section), true, label + ': the twenty squares are drawn');
     if (english) await noArabic(section, label);
     await noSideways(page, label); await noSidewaysIn(page.locator('.crm-sheet'), label + ' sheet');
     await allInside(section.locator('button:visible').first(), label + ' add button');

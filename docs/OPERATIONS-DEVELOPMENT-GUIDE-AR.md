@@ -983,7 +983,7 @@ sqlite3 -readonly -header -csv /home/ACCOUNT/yourrest-crm-data/database.sqlite "
 | `lib/followups-server.ts` و`app/api/customer-service/route.ts` | صورة القالب ليست عرض منافس |
 | `portable/backup-core.mjs` | النسخة الاحتياطية تترك صورة حُذفت أثناءها |
 
-**الاختبارات:** `tests/mold-photos.mjs` (البوابة الافتراضية: 144 فحصًا بلا بناء)، و`tests/mold-photos-http.mjs` (بوابة الإصدار: 71 فحصًا)، و`tests/mold-photos-browser.mjs` (بوابة المتصفح: 54 فحصًا، بالعربية والإنجليزية على 320 و360 والتابلت بالطول والعرض والكمبيوتر)، و`tests/production-backup.mjs` (صورة تُحذف أثناء النسخة الاحتياطية، 87 فحصًا)، و`tests/server-authorization.mjs` (المساران للمجهول 401، ومن موقع آخر 403). أُضيفت منطقة `mold-photos` في `tests/test-areas.json`، والاختباران في `tests/check-manifest.json` و`tests/CHECKS.md`.
+**الاختبارات:** `tests/mold-photos.mjs` (البوابة الافتراضية: 144 فحصًا بلا بناء)، و`tests/mold-photos-http.mjs` (بوابة الإصدار: 71 فحصًا)، و`tests/mold-photos-browser.mjs` (بوابة المتصفح: 56 فحصًا، بالعربية والإنجليزية على 320 و360 والتابلت بالطول والعرض والكمبيوتر)، و`tests/production-backup.mjs` (صورة تُحذف أثناء النسخة الاحتياطية، 87 فحصًا)، و`tests/server-authorization.mjs` (المساران للمجهول 401، ومن موقع آخر 403). أُضيفت منطقة `mold-photos` في `tests/test-areas.json`، والاختباران في `tests/check-manifest.json` و`tests/CHECKS.md`.
 
 **لم يُجرَّب** على هاتف حقيقي ولا في تطبيق أندرويد الحقيقي (المتصفح يحاكي الهاتف وجسر التطبيق)، ولا صورة HEIC من آيفون (لا يقرؤها كل متصفح: تُرفض في الجهاز بـ«تعذر قراءة هذا الملف صورةً على هذا الجهاز…»). ولم يُضف «عدد صور القالب» إلى تصدير العملاء: يحتاج قراءة الصور مع كل العملاء في `GET /api/crm`، فليس تغييرًا صغيرًا.
 
