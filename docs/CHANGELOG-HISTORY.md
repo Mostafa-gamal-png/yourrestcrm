@@ -4,6 +4,36 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «كل الطلبات» shows the mold requests that exist only in the products application (2026-11-19, no migration, no Android change)
+
+- **Asked.** The filters of «طلبات القوالب» still left out the requests that exist only in the products application: entered there
+  directly, or from the old workbook and never linked to a CRM request. The CRM saw them only in «طلبات بانتظار اعتمادي» while they
+  waited for the sales manager, and they vanished after the approval. The products application added a read route of its own, `orders`
+  (2026-11-19, its schema unchanged).
+- **The route.** `POST ?route=orders`, signed like the others, body `{}` or `{"cursor": …}`, answer `{"requests": [...], "next": …}`:
+  every request with `crmRequestId` null (`source` "manual" or "legacy"; waiting, cancelled and delivered), newest asked for first, up to
+  500 a page; each item the pending item's fields with the status object's. Read by `moldOrderItem` (`portable/mold-rules.mjs`).
+- **The server.** `pullProductionOrders` reads every page (ten at most, 15 s for the whole pull), leaves out and counts an item that
+  cannot be read (a CRM request that slipped in is left out uncounted, one listed twice is shown once), keeps the result a minute like the
+  waiting list (one pull at a time), keeps the last copy with the reason on a failure, and treats a 404 (or a 400 naming only "route") as
+  the route missing: nothing shown, remembered ten minutes. Only a page of this release asks (`GET /api/mold-requests?refs=1&orders=1`);
+  a page loaded before, and `?id=`, get nothing of them, and nothing is stored in the database.
+- **Who sees which.** `canReadMoldOrder`: the CRM's one rule (`canReadMoldRequest`) on the salesman production names
+  (`salesman.crmMemberId`) and the customer as the CRM finds it (`moldOrderCustomers`: its Yourrest number, else its ERP code when exactly
+  one CRM customer carries it now, else none). The administrator all; a representative only those production names him on (never
+  another's); a supervisor his representatives'; a customer-service manager his team's; a sales manager his own, his team's in his regions
+  and every one he would approve; an order whose customer is not found, a manager of every region only.
+- **The page.** The orders among the CRM's requests by the day asked for; their cards marked «مسجّل في تطبيق المنتجات · للعرض فقط» or
+  «من الشيت القديم · للعرض فقط»; a read-only sheet (no edit, cancel, attach, delete, resend or approve; the sales manager approves from
+  «طلبات بانتظار اعتمادي» as before) opened without asking the server; every filter counts them, «المندوب» names an unknown salesman by
+  production's name, and «المصدر» («الـCRM»، «تطبيق المنتجات»، «الشيت القديم») is offered once the list holds more than one source.
+  Quiet notes when production's list could not be had; for the administrator, how many items could not be read and a list cut short.
+- **Files.** `/api/mold-requests/design-file?ref=…&file=…` serves an order's file to whoever may read the order; anything else as before.
+- **Tests.** `tests/mold-orders.mjs` (default gate, 96), `tests/mold-orders-http.mjs` (release build, 48), `tests/mold-orders-browser.mjs`
+  (browser, 101), `tests/mold-filters.mjs` updated for «المصدر» (172). The stand-in production API gained the route (`orders`,
+  `setOrders`, `setOrdersPageSize`, `registerLegacy`, `addRawOrder`; 404 unknown_route while off).
+- **Rollback.** To update-mold-list-20261119: code only, no data changes; «كل الطلبات» is again the CRM's requests alone.
+
 ## The sales manager's mold list holds every request they approve (2026-11-19, no migration, no Android change)
 
 - **Asked.** The sales manager filtered «طلبات القوالب» for the current month and found fewer than expected. A read-only count of the
