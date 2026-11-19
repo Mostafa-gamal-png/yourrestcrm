@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Marketing-20261118.zip","sha256":"182326aefd49bd3ab90304642033bf7de538da97e4228c733580ef57ff079c40","stage":"yourrest-crm-update-marketing-20261118","helper":"yourrest-activate-update-marketing.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Classification-20261118.zip","sha256":"669b52ac478504b1f348b89c6de6ee8e2f16a4a0f7a2f25c448e371c48bc3438","stage":"yourrest-crm-update-classification-20261118","helper":"yourrest-activate-update-classification.cjs"}
