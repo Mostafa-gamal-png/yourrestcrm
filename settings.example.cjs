@@ -36,4 +36,9 @@ module.exports = {
   // keeps in its private crm-integration.php. Without both, requests are saved in the CRM and wait; nothing is sent.
   // YR_PRODUCTS_API_URL: 'https://yourrest.org/products/crm-api.php',
   // YR_PRODUCTS_SECRET: '',
+
+  // Optional: other Overpass API services for the streets of the representatives' work areas on «خريطة المصانع» (HTTPS, up to four,
+  // separated by commas, tried in order). Without it the server asks overpass-api.de, then overpass.private.coffee, only for a place with
+  // no imported street data (portable/import-street-data.mjs).
+  // YR_OVERPASS_URL: 'https://overpass-api.de/api/interpreter',
 };

@@ -19,11 +19,13 @@ export class RequestBodyError extends Error {
 // «قرأت الكل» on at most 50 notes of kind, id (200) and version, which is read and refused with its reason: 16 000.
 // /api/daily-plans (lib/daily-plans.ts, 2026-11-19): a plan of at most 30 stops, each a customer id and a stop id (200 each), a kind, a time
 // and a note of 300 characters (3 bytes each) with the keys, about 1 500 bytes a stop, or a reviewer's reason (500) or note (1 000): 60 000.
+// /api/work-areas (a drawn work area, lib/work-areas-server.ts, 2026-11-19): at most 201 corners [longitude, latitude] of about 25 bytes
+// each, a representative's id (200), a version and a request id: 24 000.
 const jsonLimits:Record<string,number>={
  '/api/crm':450_000,'/api/visits':270_000,'/api/followups':240_000,
  '/api/customer-followups':60_000,'/api/customer-service':54_000,'/api/support':24_000,'/api/complaints':32_000,'/api/mold-requests':2_330_000,'/api/mold-sign':2_300_000,'/api/mold-requests/design-files/delete':2_000,'/api/trash':2_000,'/api/mold-photos/delete':2_000,'/api/service-kpi':32_000,
  '/api/journeys':90_000,'/api/mobile-route':120_000,'/api/targets':90_000,
- '/api/kpis':60_000,'/api/reviews':14_000,'/api/review-inbox':16_000,'/api/daily-plans':60_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
+ '/api/kpis':60_000,'/api/reviews':14_000,'/api/review-inbox':16_000,'/api/daily-plans':60_000,'/api/work-areas':24_000,'/api/sales':300_000,'/api/sales/import':7_500_000,
  '/api/customers/import':1_200_000,'/api/machines/import':3_000,'/api/erp-customers':2_000_000,'/api/erp-quotes':7_500_000,
 };
 export function jsonRequestLimit(request:Request){

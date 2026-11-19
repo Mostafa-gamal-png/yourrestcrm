@@ -1,9 +1,13 @@
 'use client';
 import {useLanguage} from '@/lib/i18n';
-import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import type * as Leaflet from 'leaflet';
 import {MapPin,Maximize,Loader2,SlidersHorizontal,List,X,Search,Navigation,Building2} from 'lucide-react';
-import {type Row} from '@/lib/crm';
+import {type Member,type Row} from '@/lib/crm';
+import {t} from '@/lib/i18n';
+import {isFieldRole} from '@/lib/roles';
+import {customerMissing,mapColors,missingText,readHideStreets,workAreaLines,workAreaOutline,writeHideStreets,WORK_AREA_TEXT,type StreetSegment} from '@/lib/work-areas';
+import {useAreaEditor,useWorkArea,useWorkAreaLayers,useWorkAreaReps,WorkAreaDrawBar,WorkAreaSection,type MapRefs} from './work-area-map';
 import {customerCoordinates} from '@/lib/customer-location';
 import {customerDirectionsLink} from '@/lib/customer-directions';
 import {searchMapCustomers} from '@/lib/customer-map-search';
@@ -15,12 +19,29 @@ import './customer-map.css';
 
 type ActivityKey=(typeof activityOptions)[number]['key'];
 type PanelTab='filters'|'customers';
-type Props={customers:Row[];onOpen?:(id:string)=>void;onVisit?:(id:string)=>void;onDirections?:(id:string,signal:AbortSignal)=>Promise<boolean>;directionsReady?:{customerId:string;href:string;target:'_self'|'_blank'}|null;recordingNotice?:{customerId:string;text:string;error?:boolean}|null;navigationError?:{customerId:string;text:string}|null;focusId?:string|null;filters?:ReactNode;actions?:ReactNode;scopeKey?:string};
+/** me, online, staffId: «خريطة المصانع»'s work areas (lib/work-areas.ts): whose area shows (a field member's own; for a manager the one chosen
+ *  in the panel, else the representative of the «المندوب» filter), and nothing of it without a connection. */
+type Props={customers:Row[];me?:Member;online?:boolean;staffId?:string;onOpen?:(id:string)=>void;onVisit?:(id:string)=>void;onDirections?:(id:string,signal:AbortSignal)=>Promise<boolean>;directionsReady?:{customerId:string;href:string;target:'_self'|'_blank'}|null;recordingNotice?:{customerId:string;text:string;error?:boolean}|null;navigationError?:{customerId:string;text:string}|null;focusId?:string|null;filters?:ReactNode;actions?:ReactNode;scopeKey?:string};
 
-export default function CustomerMap({customers,onDirections,directionsReady,recordingNotice,navigationError,focusId,filters,scopeKey=''}:Props){
+export default function CustomerMap({customers,me,online=true,staffId='',onDirections,directionsReady,recordingNotice,navigationError,focusId,filters,scopeKey=''}:Props){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en,dir=language==='ar'?'rtl':'ltr';
- const shell=useRef<HTMLElement>(null),container=useRef<HTMLDivElement>(null),panel=useRef<HTMLElement>(null),panelScroll=useRef<HTMLDivElement>(null),map=useRef<Leaflet.Map|null>(null),leaflet=useRef<typeof Leaflet|null>(null),layer=useRef<Leaflet.LayerGroup|null>(null),firstFit=useRef(false),focused=useRef(''),returnFocus=useRef<HTMLElement|null>(null),searchInput=useRef<HTMLInputElement>(null),searchResults=useRef<HTMLDivElement>(null),selectedCard=useRef<HTMLElement>(null),focusSelected=useRef(false),directionAttempt=useRef(0),directionAbort=useRef<AbortController|null>(null),latestCustomers=useRef(customers);latestCustomers.current=customers;
+ const shell=useRef<HTMLElement>(null),container=useRef<HTMLDivElement>(null),panel=useRef<HTMLElement>(null),panelScroll=useRef<HTMLDivElement>(null),map=useRef<Leaflet.Map|null>(null),leaflet=useRef<typeof Leaflet|null>(null),layer=useRef<Leaflet.LayerGroup|null>(null),rings=useRef<Leaflet.LayerGroup|null>(null),firstFit=useRef(false),focused=useRef(''),returnFocus=useRef<HTMLElement|null>(null),searchInput=useRef<HTMLInputElement>(null),searchResults=useRef<HTMLDivElement>(null),selectedCard=useRef<HTMLElement>(null),focusSelected=useRef(false),directionAttempt=useRef(0),directionAbort=useRef<AbortController|null>(null),latestCustomers=useRef(customers);latestCustomers.current=customers;
  const [ready,setReady]=useState(false),[failed,setFailed]=useState(false),[tileFailed,setTileFailed]=useState(false),[tilesLoaded,setTilesLoaded]=useState(false),[panelOpen,setPanelOpen]=useState(false),[tab,setTab]=useState<PanelTab>('customers'),[active,setActive]=useState<string|null>(null),[groupIds,setGroupIds]=useState<string[]>([]),[shown,setShown]=useState(40),[activity,setActivity]=useState<ActivityKey|'all'>('all'),[query,setQuery]=useState(''),[searchOpen,setSearchOpen]=useState(false),[highlighted,setHighlighted]=useState(-1),[directionsBusy,setDirectionsBusy]=useState(false),[directionsError,setDirectionsError]=useState('');
+ // «خريطة المصانع» (2026-11-19, GSCO 2.13.81): the work area and its streets with no customer, and the manager's drawing tools.
+ const field=!!me&&isFieldRole(me.role),areaAuto=useRef(true),areaFitted=useRef('');
+ const reps=useWorkAreaReps(!!me&&!field&&online,[me?.id,me?.role,me?.access?.version,scopeKey].join(':'));
+ const [areaPick,setAreaPick]=useState(''),[areaReload,setAreaReload]=useState(0),[editing,setEditing]=useState(false),[areaNotice,setAreaNotice]=useState<{rep:string;text:readonly [string,string]}|null>(null),[hideStreets,setHideStreets]=useState(()=>readHideStreets());
+ const areaRep=!me?'':field?me.id:reps.some(r=>r.id===areaPick)?areaPick:reps.some(r=>r.id===staffId)?staffId:'';
+ const work=useWorkArea(areaRep,online,areaReload),outline=useMemo(()=>work.area?workAreaOutline(work.area):null,[work.area]);
+ const refs:MapRefs=useMemo(()=>({map,leaflet,ready}),[ready]);
+ const raise=useCallback(()=>{layer.current?.eachLayer(l=>(l as Leaflet.CircleMarker).bringToFront?.());},[]);
+ const streetLabel=useCallback((s:StreetSegment)=>{const name=language==='en'?s.name_en||s.name:s.name||s.name_en;return WORK_AREA_TEXT.noCustomer[language==='ar'?0:1]+(name?' — '+name:'');},[language]);
+ useWorkAreaLayers(refs,outline,work.streets?.segments??null,!editing,!hideStreets,streetLabel,raise);
+ // Drawing starts with the panel and any open search closed: the map takes the taps.
+ const onEditing=useCallback((value:boolean)=>{setEditing(value);if(value){setPanelOpen(false);setSearchOpen(false);}},[]);
+ const editor=useAreaEditor(refs,areaRep,work.view,language,useCallback((message:readonly [string,string])=>{setAreaNotice({rep:areaRep,text:message});setAreaReload(n=>n+1);},[areaRep]),onEditing);
+ const areaLines=[...(areaNotice&&areaNotice.rep===areaRep?[say(...areaNotice.text)]:[]),...workAreaLines(work,online,hideStreets,language).map(line=>t(line))];
+ const toggleStreets=(hidden:boolean)=>{setHideStreets(hidden);writeHideStreets(hidden);};
  const visible=useMemo(()=>customers.filter(row=>activity==='all'||mapActivity(row).key===activity),[customers,activity]);
  const points=useMemo(()=>visible.map(row=>({row,point:customerCoordinates(row.data)})).filter(item=>item.point!==null),[visible]);
  const selected=visible.find(row=>row.id===active);
@@ -31,7 +52,8 @@ export default function CustomerMap({customers,onDirections,directionsReady,reco
  const group=groupIds.length?visible.filter(row=>groupIds.includes(row.id)):[];
  const list=group.length?group:visible;
  const counts=useMemo(()=>Object.fromEntries(activityOptions.map(option=>[option.key,customers.filter(row=>mapActivity(row).key===option.key).length])),[customers]);
- const pointKey=points.map(({row,point})=>JSON.stringify([row.id,point!.latitude,point!.longitude,row.data.name,row.data.customerStatus])).join('|');
+ // The missing fields too: a customer whose data was completed loses its yellow ring at once.
+ const pointKey=points.map(({row,point})=>JSON.stringify([row.id,point!.latitude,point!.longitude,row.data.name,row.data.customerStatus,customerMissing(row.data)])).join('|');
  const customerKey=visible.map(row=>row.id).join('|');
  const latestPoints=useRef(points);latestPoints.current=points;
  const activityLabel=(row:Row)=>{const value=mapActivity(row);return value.key==='unknown'&&value.rawLabel?value.rawLabel:language==='ar'?value.labelAr:value.labelEn;};
@@ -79,39 +101,54 @@ export default function CustomerMap({customers,onDirections,directionsReady,reco
   void import('leaflet').then(mod=>{
    if(!alive||!container.current)return;
    const L=mod.default||mod;leaflet.current=L;
-   const m=L.map(container.current,{preferCanvas:true,center:[24,45],zoom:5,minZoom:5,maxZoom:19,maxBounds:kingdomBounds,maxBoundsViscosity:1,zoomControl:false});map.current=m;
+   // A wider tap tolerance so a finger finds a pin or a street line.
+   const m=L.map(container.current,{preferCanvas:true,renderer:L.canvas({tolerance:6}),center:[24,45],zoom:5,minZoom:5,maxZoom:19,maxBounds:kingdomBounds,maxBoundsViscosity:1,zoomControl:false});map.current=m;
+   // The map follows a newly shown work area until the person moves it.
+   const moved=()=>{areaAuto.current=false;};container.current.addEventListener('pointerdown',moved);container.current.addEventListener('wheel',moved,{passive:true});
    L.control.zoom({position:'bottomleft',zoomInTitle:say('تكبير','Zoom in'),zoomOutTitle:say('تصغير','Zoom out')}).addTo(m);
    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'}).on('tileerror',()=>{if(alive)setTileFailed(true);}).on('tileload',()=>{if(alive)setTilesLoaded(true);}).addTo(m);
    addKingdomLayer(L,m);
    layer.current=L.layerGroup().addTo(m);
+   // The dark edge of a yellow ring: a layer of its own, never tapped.
+   rings.current=L.layerGroup().addTo(m);
    resize=new ResizeObserver(()=>m.invalidateSize({pan:false}));resize.observe(container.current);setReady(true);
   }).catch(()=>{if(alive)setFailed(true);});
-  return()=>{alive=false;resize?.disconnect();map.current?.remove();map.current=null;layer.current=null;};
+  return()=>{alive=false;resize?.disconnect();map.current?.remove();map.current=null;layer.current=null;rings.current=null;};
  },[]);
  useEffect(()=>{
   if(!ready||!leaflet.current||!layer.current)return;
-  const L=leaflet.current;layer.current.clearLayers();
+  const L=leaflet.current;layer.current.clearLayers();rings.current?.clearLayers();
   const groups=new Map<string,typeof points>();
   for(const item of points){const point=item.point!;const key=point.latitude.toFixed(7)+','+point.longitude.toFixed(7);groups.set(key,[...(groups.get(key)||[]),item]);}
   for(const items of groups.values()){
    const point=items[0].point!,rows=items.map(item=>item.row),summary=groupMapActivities(rows);
    const title=items.length>1?say(`${items.length} عملاء في نفس الموقع`,`${items.length} customers at this location`):`${rows[0].data.name} · ${activityLabel(rows[0])}`;
    let marker:Leaflet.Marker|Leaflet.CircleMarker;
+   // A customer whose data is incomplete («دقة واكتمال البيانات», lib/work-areas.ts) has a yellow ring with a dark edge around its activity
+   // colour; in a group of several, the group's ring is yellow when one of them is. While a work area is drawn the pins take no tap.
+   const incomplete=rows.some(row=>customerMissing(row.data).length>0);
    if(items.length===1){
     // A canvas renderer keeps the imported directory light on phones.
-    marker=L.circleMarker([point.latitude,point.longitude],{radius:7,color:'#fff',weight:2,fillColor:summary.color,fillOpacity:.95}).addTo(layer.current);
+    if(incomplete&&rings.current)L.circleMarker([point.latitude,point.longitude],{radius:10.5,color:mapColors.incompleteBorder,weight:1.5,fill:false,interactive:false}).addTo(rings.current);
+    marker=L.circleMarker([point.latitude,point.longitude],incomplete?{radius:8,color:mapColors.incomplete,weight:4,fillColor:summary.color,fillOpacity:.95,interactive:!editing}:{radius:7,color:'#fff',weight:2,fillColor:summary.color,fillOpacity:.95,interactive:!editing}).addTo(layer.current);
    }else{
-    const pin=document.createElement('span');pin.className='cm-pin cm-pin-group';
+    const pin=document.createElement('span');pin.className='cm-pin cm-pin-group'+(incomplete?' is-incomplete':'');
     if(summary.counts.length>1){let offset=0;pin.style.background='conic-gradient('+summary.counts.map(item=>{const start=offset;offset+=item.count/summary.total*100;return `${item.color} ${start}% ${offset}%`;}).join(',')+')';}else pin.style.background=summary.color;
     const center=document.createElement('span');center.textContent=String(items.length);pin.appendChild(center);
-    marker=L.marker([point.latitude,point.longitude],{icon:L.divIcon({className:'cm-map-marker',html:pin,iconSize:[30,30],iconAnchor:[15,15]}),keyboard:true,title,alt:title}).addTo(layer.current);
+    marker=L.marker([point.latitude,point.longitude],{icon:L.divIcon({className:'cm-map-marker',html:pin,iconSize:[30,30],iconAnchor:[15,15]}),keyboard:!editing,interactive:!editing,title,alt:title}).addTo(layer.current);
    }
    const tip=document.createElement('span');tip.dir=dir;tip.textContent=rows.map(row=>`${row.data.name} · ${activityLabel(row)}`).join('\n');tip.className='cm-tooltip';marker.bindTooltip(tip,{direction:'top'});
    marker.on('click',()=>{const currentRows=rows.flatMap(row=>{const current=latestCustomers.current.find(item=>item.id===row.id);return current?[current]:[];});if(currentRows.length===1){setGroupIds([]);select(currentRows[0]);}else if(currentRows.length){directionAbort.current?.abort();directionAbort.current=null;directionAttempt.current++;setDirectionsBusy(false);setDirectionsError('');setGroupIds(currentRows.map(row=>row.id));setActive(null);setShown(40);showPanel('customers');}});
   }
   if(!firstFit.current&&points.length){firstFit.current=true;fit();}
   // Markers can change without re-creating the map or resetting the user's viewport.
- },[ready,pointKey,language]);
+ },[ready,pointKey,language,editing]);
+ // A work area shown for the first time (or for another representative) is fitted once, unless the person moved the map or a customer is open.
+ useEffect(()=>{
+  const m=map.current,L=leaflet.current;if(!ready||!m||!L||!outline?.length||!areaRep||areaFitted.current===areaRep)return;
+  areaFitted.current=areaRep;
+  if(areaAuto.current&&!active&&!focusId)m.fitBounds(L.latLngBounds(outline.flat()),{padding:[35,35],maxZoom:15});
+ },[ready,outline,areaRep,active,focusId]);
  useEffect(()=>{if(!ready||!focusId||focused.current===scopeKey+':'+focusId)return;const row=customers.find(item=>item.id===focusId);if(!row)return;focused.current=scopeKey+':'+focusId;if(activity!=='all'&&mapActivity(row).key!==activity)setActivity('all');setGroupIds([]);select(row,true);},[ready,focusId,scopeKey,customers]);
  useEffect(()=>{for(const [selector,ar,en] of [['.leaflet-control-zoom-in','تكبير','Zoom in'],['.leaflet-control-zoom-out','تصغير','Zoom out']]){const button=container.current?.querySelector(selector);button?.setAttribute('title',say(ar,en));button?.setAttribute('aria-label',say(ar,en));}},[ready,language]);
  function badge(row:Row){const value=mapActivity(row);return <span className="cm-activity-badge" data-activity={value.key}><i style={{background:value.color}}/>{activityLabel(row)}</span>;}
@@ -122,7 +159,12 @@ export default function CustomerMap({customers,onDirections,directionsReady,reco
    {!ready&&<div className="cm-message">{failed?say('تعذر تحميل الخريطة. البحث والعملاء ما زالوا متاحين.','Map unavailable. Search and the customer list are still available.'):<><Loader2 className="spin"/>{say('جارٍ تحميل الخريطة...','Loading map...')}</>}</div>}
    {tileFailed&&!tilesLoaded&&ready&&<div className="cm-warning" role="status">{say('خلفية الخريطة غير متاحة الآن. مواقع العملاء والاتجاهات ما زالت متاحة.','Map tiles are unavailable. Customer markers and directions remain available.')}</div>}
    {ready&&!points.length&&<div className="cm-empty-map" role="status">{say('لا توجد إحداثيات مطابقة للفلترة.','No mapped locations match these filters.')}<button type="button" onClick={()=>showPanel('customers')}>{say('عرض العملاء','View customers')}</button></div>}
-   {!selected&&!panelOpen&&!suggestionsOpen&&<div className="cm-legend" aria-label={say('درجة نشاط العميل','Customer activity')}>{activityOptions.map(option=><button type="button" key={option.key} aria-pressed={activity===option.key} onClick={()=>setActivityFilter(activity===option.key?'all':option.key)}><i style={{background:option.color}}/>{categoryLabel(option)}</button>)}</div>}
+   {!selected&&!panelOpen&&!suggestionsOpen&&!editing&&<div className="cm-legend" role="group" aria-label={say(...WORK_AREA_TEXT.legend)} data-map-legend>
+    {areaLines.length>0&&<div className="cm-legend-note" role="status" data-work-area-lines>{areaLines.map((line,i)=><span key={i}>{line}</span>)}</div>}
+    <div className="cm-legend-row" role="group" aria-label={say('درجة نشاط العميل','Customer activity')}>{activityOptions.map(option=><button type="button" key={option.key} aria-pressed={activity===option.key} onClick={()=>setActivityFilter(activity===option.key?'all':option.key)}><i style={{background:option.color}}/>{categoryLabel(option)}</button>)}</div>
+    <div className="cm-legend-row cm-legend-keys"><span data-legend-key="incomplete"><i className="cm-key-incomplete" aria-hidden="true"/>{say(...WORK_AREA_TEXT.incomplete)}</span>{work.active&&<><span data-legend-key="street"><i className="cm-key-street" aria-hidden="true"/>{say(...WORK_AREA_TEXT.street)}</span><span data-legend-key="area"><i className="cm-key-area" aria-hidden="true"/>{say(...WORK_AREA_TEXT.area)}</span><label className="cm-street-toggle" data-street-toggle><input type="checkbox" checked={hideStreets} onChange={event=>toggleStreets(event.target.checked)}/><span>{say(...WORK_AREA_TEXT.hideStreets)}</span></label></>}</div>
+   </div>}
+   <WorkAreaDrawBar editor={editor} language={language}/>
   </div>
   <div className="cm-search-area">
    <div className="cm-search-box" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setSearchOpen(false);}}>
@@ -139,14 +181,15 @@ export default function CustomerMap({customers,onDirections,directionsReady,reco
   <aside id="customer-map-panel" ref={panel} className={'cm-panel'+(panelOpen?' is-open':'')} tabIndex={-1} aria-label={panelTitle} aria-hidden={!panelOpen?true:undefined} inert={!panelOpen?true:undefined}>
    <header className="cm-panel-header"><div><strong>{panelTitle}</strong><small>{say(`${visible.length} عميل · ${points.length} على الخريطة`,`${visible.length} customers · ${points.length} mapped`)}</small></div><button type="button" className="cm-close" onClick={()=>setPanelOpen(false)} aria-label={say('العودة للخريطة','Back to map')}><X size={21}/></button></header>
    <div className="cm-panel-scroll" ref={panelScroll}>
-    {tab==='filters'&&<div className="cm-filter-pane"><div className="cm-external-filters">{filters}</div><fieldset className="cm-activity-filter"><legend>{say('درجة نشاط العميل','Customer activity')}</legend><label><input type="radio" name="map-activity" value="all" checked={activity==='all'} onChange={()=>setActivityFilter('all')}/><span>{say('كل العملاء','All customers')}</span><b>{customers.length}</b></label>{activityOptions.map(option=><label key={option.key}><input type="radio" name="map-activity" value={option.key} checked={activity===option.key} onChange={()=>setActivityFilter(option.key)}/><i style={{background:option.color}}/><span>{categoryLabel(option)}</span><b>{counts[option.key]}</b></label>)}</fieldset><button type="button" className="btn primary cm-apply" onClick={()=>{fit();setPanelOpen(false);}}>{say('عرض النتائج على الخريطة','Show results on map')}</button></div>}
+    {tab==='filters'&&<div className="cm-filter-pane"><div className="cm-external-filters">{filters}</div><fieldset className="cm-activity-filter"><legend>{say('درجة نشاط العميل','Customer activity')}</legend><label><input type="radio" name="map-activity" value="all" checked={activity==='all'} onChange={()=>setActivityFilter('all')}/><span>{say('كل العملاء','All customers')}</span><b>{customers.length}</b></label>{activityOptions.map(option=><label key={option.key}><input type="radio" name="map-activity" value={option.key} checked={activity===option.key} onChange={()=>setActivityFilter(option.key)}/><i style={{background:option.color}}/><span>{categoryLabel(option)}</span><b>{counts[option.key]}</b></label>)}</fieldset>{!!me&&!field&&online&&<WorkAreaSection reps={reps} value={areaRep} onChange={id=>{setAreaPick(id);setAreaNotice(null);areaAuto.current=true;areaFitted.current='';if(id)setPanelOpen(false);}} view={work.view} editor={{...editor,start:mode=>{editor.start(mode);setPanelOpen(false);}}} lines={areaLines} language={language} disabled={editing}/>}<button type="button" className="btn primary cm-apply" onClick={()=>{fit();setPanelOpen(false);}}>{say('عرض النتائج على الخريطة','Show results on map')}</button></div>}
     {tab==='customers'&&<>{!!(group.length||visible.length>points.length)&&<div className="cm-list-summary">{group.length?<><strong>{say(`${group.length} عملاء في نفس الموقع`,`${group.length} customers at this location`)}</strong><button type="button" onClick={()=>setGroupIds([])}>{say('عرض الكل','Show all')}</button></>:<>{visible.length>points.length&&<small>{say(`${visible.length-points.length} بدون إحداثيات`,`${visible.length-points.length} without coordinates`)}</small>}</>}</div>}{list.slice(0,shown).map(row=><article key={row.id} className={'cm-customer'+(row.id===active?' is-selected':'')}><button type="button" className="cm-customer-select" onClick={()=>select(row,true)}><span className="cm-customer-top"><strong>{row.data.name}</strong>{badge(row)}</span><span className="cm-customer-meta">{[row.data.code,row.data.region,row.data.city].filter(Boolean).join(' · ')}</span>{!customerCoordinates(row.data)&&<span className="cm-customer-place"><MapPin size={13}/>{say('موقع العميل غير مسجل','Customer location not recorded')}</span>}</button></article>)}{!list.length&&<p className="cm-list-empty">{say('لا يوجد عملاء مطابقون. غيّر الفلترة.','No matching customers. Change the filters.')}</p>}{shown<list.length&&<button type="button" className="btn subtle cm-load-more" onClick={()=>setShown(value=>value+40)}>{say(`عرض المزيد (${list.length-shown})`,`Show more (${list.length-shown})`)}</button>}</>}
    </div>
   </aside>
-  {selected&&!panelOpen&&!suggestionsOpen&&<section ref={selectedCard} tabIndex={-1} className="cm-selected-card" aria-label={say('العميل المحدد','Selected customer')}>
+  {selected&&!panelOpen&&!suggestionsOpen&&!editing&&<section ref={selectedCard} tabIndex={-1} className="cm-selected-card" aria-label={say('العميل المحدد','Selected customer')}>
    <div className="cm-selected-heading"><Building2 size={22} aria-hidden="true"/><h2>{selected.data.name}</h2><button type="button" className="cm-close" aria-label={say('إغلاق بطاقة العميل','Close customer card')} onClick={()=>clearSelection(false)}><X size={20}/></button></div>
    <div className="cm-selected-meta">{badge(selected)}{selected.data.code&&<span className="cm-selected-code" title={String(selected.data.code)}>{say('رقم ','Code ')}<bdi>{selected.data.code}</bdi></span>}</div>
    <p className="cm-selected-location"><MapPin size={15} aria-hidden="true"/><span>{[selected.data.region,selected.data.city,selected.data.address].filter(Boolean).join(' · ')||say('العنوان غير مسجل','Address not recorded')}</span></p>
+   {customerMissing(selected.data).length>0&&<p className="cm-selected-missing" data-customer-missing><i className="cm-key-incomplete" aria-hidden="true"/><span><strong>{say(...WORK_AREA_TEXT.incomplete)}: </strong>{missingText(customerMissing(selected.data),language)}</span></p>}
    {readyLink?<><a className="btn primary cm-directions" href={readyLink.href} target={readyLink.target} rel="noopener noreferrer"><Navigation size={18}/>{say('فتح Google Maps','Open Google Maps')}</a></>:<button type="button" className="btn primary cm-directions" disabled={!selectedPoint||!onDirections||directionsBusy} onClick={directions}>{directionsBusy?<Loader2 size={18} className="spin"/>:<Navigation size={18}/>}<span>{!selectedPoint?say('موقع العميل غير مسجل','Customer location not recorded'):directionsBusy?say('جارٍ تأكيد الرحلة…','Confirming trip…'):say('الاتجاهات','Directions')}</span></button>}
    {recordingNotice?.customerId===selected.id&&<p className={recordingNotice.error?'cm-directions-error':'cm-directions-ready'} role={recordingNotice.error?'alert':'status'}>{recordingNotice.text}</p>}
    {navigationError?.customerId===selected.id&&<p className="cm-directions-error" role="alert">{navigationError.text}</p>}

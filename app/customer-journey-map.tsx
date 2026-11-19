@@ -13,7 +13,7 @@ import {directionsProblem} from '@/lib/directions-problem';
 import CustomerMap from './customer-map';
 import {isFieldRole} from '@/lib/roles';
 
-type Props={customers:Row[];me:Member;focusId?:string|null;filters?:ReactNode;scopeKey:string};
+type Props={customers:Row[];me:Member;focusId?:string|null;filters?:ReactNode;scopeKey:string;online?:boolean;staffId?:string};
 type ReadyLink={customerId:string;href:string;target:'_self'|'_blank';version:number};
 type RecordingNotice={customerId:string;version:number;href:string;text:string;error?:boolean};
 const canNavigate=(me:Member)=>me.active===1&&(isFieldRole(me.role)||['supervisor','manager','admin'].includes(me.role));
@@ -92,5 +92,5 @@ export default function CustomerJourneyMap(props:Props){
    return true;
   }catch(error){if(signal.aborted)return false;throw error;}finally{signal.removeEventListener('abort',aborted);locked.current=false;}
  }
- return <CustomerMap customers={props.customers} focusId={props.focusId} filters={props.filters} scopeKey={props.scopeKey} onDirections={canNavigate(props.me)?directions:undefined} directionsReady={directionsReady} recordingNotice={recordingNotice} navigationError={navigationError}/>;
+ return <CustomerMap customers={props.customers} me={props.me} online={props.online} staffId={props.staffId} focusId={props.focusId} filters={props.filters} scopeKey={props.scopeKey} onDirections={canNavigate(props.me)?directions:undefined} directionsReady={directionsReady} recordingNotice={recordingNotice} navigationError={navigationError}/>;
 }

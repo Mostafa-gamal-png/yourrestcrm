@@ -123,3 +123,34 @@
 @media(max-width:370px){.cm-control{padding-inline:9px}.cm-map-count{max-width:60px;white-space:normal;text-align:center;line-height:1.4}.cm-search-box{gap:6px}.cm-search-clear{min-width:38px}.cm-legend{gap:0 5px}}
 @media(max-height:560px){.cm-selected-card{max-height:calc(100% - 132px);bottom:17px}.cm-panel{top:120px;bottom:12px}.cm-panel-header{padding-block:6px}}
 @media(prefers-reduced-motion:reduce){.cm-panel{transition:none}}
+/* «خريطة المصانع» (2026-11-19, GSCO 2.13.81): the colour key, the work area's lines and the street switch in the legend; the yellow ring of a
+   customer with missing data; the work area's section in the filter panel and the drawing bar over the map. */
+/* Never over the search and the toolbar: on a short map the key scrolls inside its own box. */
+.cm-legend{flex-direction:column;align-items:stretch;justify-content:flex-start;padding:3px 9px;max-height:max(96px,calc(var(--cm-map-height) - 150px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.cm-legend-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:2px 7px;min-width:0}
+.cm-legend-keys{border-top:1px solid var(--border)}
+.cm-legend-keys>span,.cm-street-toggle{display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.5;min-height:34px;color:var(--foreground)}
+.cm-street-toggle{cursor:pointer;min-height:44px;padding-inline:2px}
+.cm-street-toggle input{width:16px;height:16px;margin:0;flex:none;accent-color:#7e22ce}
+.cm-legend-note{display:flex;flex-direction:column;gap:1px;padding:4px 2px 5px;font-size:12px;line-height:1.6;color:var(--muted-foreground);text-align:start;overflow-wrap:anywhere;border-bottom:1px solid var(--border)}
+.cm-legend .cm-key-incomplete,.cm-selected-missing .cm-key-incomplete{width:12px;height:12px;border-radius:50%;background:var(--card);border:3px solid #facc15;box-shadow:0 0 0 1px #713f12;flex:none}
+.cm-legend .cm-key-street{width:18px;height:4px;border-radius:2px;background:#7e22ce;box-shadow:none}
+.cm-legend .cm-key-area{width:18px;height:0;border-radius:0;border-top:2px dashed #4c1d95;background:none;box-shadow:none}
+.cm-pin.is-incomplete{border-color:#facc15;box-shadow:0 0 0 1.5px #713f12,0 1px 5px #13284070}
+.cm-street-tip{display:block;max-width:240px;white-space:normal;text-align:start;font-family:Tahoma,Arial,sans-serif;line-height:1.7}
+.cm-selected-missing{display:flex;align-items:flex-start;gap:7px;margin:-4px 0 12px;padding:6px 9px;border-radius:9px;background:#fef9c3;color:#5c3310;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.cm-selected-missing .cm-key-incomplete{margin-top:3px}
+.cm-area-section{display:grid;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);min-width:0}
+.cm-area-section h3{font-size:14px;font-weight:700}
+.cm-area-field{display:grid;gap:6px;font-size:13px;min-width:0}
+.cm-area-field select{width:100%;min-width:0;min-height:44px;font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--input);border-radius:8px;background:var(--card);color:var(--foreground)}
+.cm-area-line{font-size:12px;line-height:1.7;color:var(--muted-foreground);overflow-wrap:anywhere}
+.cm-area-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.cm-area-actions .btn{flex:1 1 auto;min-height:44px;min-width:0;white-space:normal;text-align:center;padding-inline:12px}
+.cm-area-bar{position:absolute;inset-inline-start:14px;bottom:23px;width:min(460px,calc(100% - 28px));display:grid;gap:8px;padding:12px 14px;border:1px solid var(--border);border-radius:16px;background:var(--card);box-shadow:0 5px 25px #15203829;z-index:4}
+.cm-area-bar>p{margin:0;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.cm-area-bar [data-work-area-corners]{font-weight:700;white-space:nowrap}
+.cm-canvas .work-area-vertex{background:#fff;border:3px solid #4c1d95;border-radius:50%;box-shadow:0 1px 4px #13284070;cursor:grab}
+.work-area-vertex-popup{display:flex}
+.work-area-vertex-delete{min-height:40px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:#b43636;font:inherit;font-size:13px;cursor:pointer}
+@media(max-width:850px){.cm-area-bar{inset-inline:10px;bottom:24px;width:auto;max-width:460px}.cm-legend{padding:2px 7px}}
