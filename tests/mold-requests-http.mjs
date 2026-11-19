@@ -605,10 +605,11 @@ try {
   check((await create('cs', 'other1')).status, 404, 'not for another branch\'s customer');
   check([(await create('sup', 'east1')).status, (await create('owner', 'other1', {city: 'Damam - الدمام', customer: {erpCode: 'O-1'}})).status], [200, 200], 'a supervisor and the administrator ask too (other1 has no code and its city, «الخبر», is not the sheet\'s: both chosen)');
   check([(await ids('csm')).length, (await ids('cs')).length, (await ids('rep2')).length], [1, 1, 0], 'the customer-service manager sees their team\'s, customer service their own, another representative none');
-  // Who sees which (the owner, 2026-11-03): the sales manager's list is his own and his team's (the supervisor's request is in it); customer
-  // service's and the administrator's are not (they wait in «طلبات بانتظار اعتمادي»: the last section of this file).
+  // Who sees which (the owner, 2026-11-03): the sales manager's list is his own and his team's (the supervisor's request is in it); and
+  // since 2026-11-19 every request he approves too (customer service's and the administrator's in his regions, which also wait in
+  // «طلبات بانتظار اعتمادي»: the last section of this file), so the filters of «كل الطلبات» count them.
   const smIds = await ids('sm');
-  check([smIds.includes(body.request.id), (await list('owner')).requests.filter(item => ['sup', 'owner'].includes(item.memberId)).every(item => smIds.includes(item.id) === (item.memberId === 'sup'))], [false, true], 'the sales manager\'s list: his team\'s (the supervisor\'s), not customer service\'s nor the administrator\'s');
+  check([smIds.includes(body.request.id), (await list('owner')).requests.filter(item => ['sup', 'owner'].includes(item.memberId)).every(item => smIds.includes(item.id))], [true, true], 'the sales manager\'s list: his team\'s (the supervisor\'s), and customer service\'s and the administrator\'s, which he approves (2026-11-19)');
   check((await post('cs', {action: 'approve', id: body.request.id})).status, 403, 'customer service does not approve');
 
   // ---- production unreachable: saved, waiting, tried again on the timetable, resent by hand
@@ -912,13 +913,13 @@ try {
     const waiting = async who => (await pendingOf(who)).items.map(item => item.crmRequestId || 'order:' + item.orderNo).sort();
     const sorted = (...ids) => ids.sort();
 
-    check([await mine('smE'), await mine('smE2'), await mine('smW')], [sorted(rE.id, rD.id, rSm.id), [rE2.id], []], 'each manager\'s list: his own and his team\'s (under a supervisor, or directly); never the other manager\'s team in the same region, customer service\'s, the administrator\'s or an orphan\'s');
+    check([await mine('smE'), await mine('smE2'), await mine('smW')], [sorted(rE.id, rD.id, rSm.id, rCs.id, rOwner.id, rOrphan.id), sorted(rE2.id, rCs.id, rOwner.id, rOrphan.id), [rWest.id]], 'each manager\'s list: his own and his team\'s (under a supervisor, or directly), and since 2026-11-19 every request he approves (customer service\'s, the administrator\'s, an orphan\'s in his regions); never the other manager\'s team in the same region');
     check([await mine('repE'), await mine('supE'), await mine('csm'), (await mine('owner')).length], [[rE.id], [rE.id], [rCs.id], 8], 'a representative his own only; the supervisor, the customer-service manager and the administrator as before');
     check(await waiting('smE'), sorted(rE.id, rD.id, rSm.id, rCs.id, rOwner.id, rOrphan.id, 'order:' + manual.orderNo), '«طلبات بانتظار اعتمادي» for smE: his own, his team\'s, customer service\'s, the administrator\'s and the orphan\'s in his region, and the one registered in production; not the other team\'s, nor the west\'s');
     check(await waiting('smE2'), sorted(rE2.id, rCs.id, rOwner.id, rOrphan.id, 'order:' + manual.orderNo), 'for smE2 (the same region): his team\'s and the same requests of no team; not smE\'s team\'s');
     check(await waiting('smW'), [rWest.id], 'for the western manager: the west\'s request of no team only');
     const csItem = (await pendingOf('smE')).items.find(item => item.crmRequestId === rCs.id);
-    check([csItem.inCrm, (await list('smE')).requests.some(item => item.id === rCs.id)], [true, false], 'customer service\'s request: the CRM\'s own, in his waiting list but not in his list');
+    check([csItem.inCrm, (await list('smE')).requests.some(item => item.id === rCs.id)], [true, true], 'customer service\'s request: the CRM\'s own, in his waiting list and, since 2026-11-19, in his list too');
 
     // The approver's sheet: what his list shows, and a request his waiting list shows him now; nothing else.
     const sheet = async (who, id) => { const res = await as(who)('/api/mold-requests?id=' + id); return [res.status, res.status === 200 ? res.json().requests[0].can.approve : null]; };
@@ -941,7 +942,7 @@ try {
     check([teamMock.row(rE2.id).approvals.sales, teamMock.row(rE.id).approvals.sales, teamMock.row(rCs.id).approvals.sales], [null, null, null], 'nothing approved at production');
     let res = await post('smE', {action: 'approve', id: rCs.id}), body = await res.json();
     check([res.status, body.request.remote.waitingStep, body.request.can.withdraw, !!teamMock.row(rCs.id).approvals.sales], [200, 'production', true, true], 'smE approves customer service\'s request from its sheet');
-    check([await sheet('smE', rCs.id), await download('smE', 'id=' + rCs.id + '&file=' + csFile.fileId)], [[404, null], 404], 'approved, it is no longer his to open (his list never held it)');
+    check([await sheet('smE', rCs.id), await download('smE', 'id=' + rCs.id + '&file=' + csFile.fileId)], [[200, false], 200], 'approved, it stays in his list and opens (every request he approves, 2026-11-19), with nothing more to approve');
     res = await post('smE', {action: 'withdraw', id: rCs.id}); body = await res.json();
     check([res.status, body.request.remote.waitingStep, await sheet('smE', rCs.id)], [200, 'sales', [200, true]], 'his approval withdrawn from the sheet he approved on: waiting for the managers again, open again');
     check([(await post('smE2', {action: 'approve-order', orderNo: teamMock.row(rCs.id).orderNo})).status, (await post('smE2', {action: 'approve', id: rE2.id})).status, (await post('smE', {action: 'approve-order', orderNo: teamMock.row(rD.id).orderNo})).status, (await post('smE', {action: 'approve', id: rSm.id})).status],
@@ -965,7 +966,7 @@ try {
     const rLeft = await ask('repE2', 'e2', 'smE2\'s team, before he left');
     await teamApp.db.prepare("UPDATE crm_members SET active=0 WHERE id='smE2'").run();
     await post('smE', {action: 'approve-order', orderNo: 999999});
-    check([(await waiting('smE')).includes(rLeft.id), (await mine('smE')).includes(rLeft.id)], [true, false], 'smE2 deactivated: his team\'s request waits for smE (not in smE\'s list)');
+    check([(await waiting('smE')).includes(rLeft.id), (await mine('smE')).includes(rLeft.id)], [true, true], 'smE2 deactivated: his team\'s request waits for smE, and is in smE\'s list too (he approves it, 2026-11-19)');
     res = await post('smE', {action: 'approve', id: rLeft.id}); body = await res.json();
     check([res.status, body.request.remote.waitingStep, !!teamMock.row(rLeft.id).approvals.sales], [200, 'production', true], 'and smE approves it');
   } finally { await teamApp.stop(); await teamMock.stop(); }

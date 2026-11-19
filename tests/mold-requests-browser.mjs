@@ -698,7 +698,12 @@ try {
   await sheet(serviceManager).waitFor({state: 'detached'});
   await serviceManager.locator('.mold-tabs button', {hasText: 'كل الطلبات'}).click();
   await serviceManager.locator('.mold-card').first().waitFor();
-  check(await serviceManager.locator('.mold-card', {hasText: 'طلب خدمة العملاء'}).count(), 0, 'and it is not in his list (his own and his team\'s)');
+  check(await serviceManager.locator('.mold-card', {hasText: 'طلب خدمة العملاء'}).count(), 1, 'and since 2026-11-19 it is in his list too (every request he approves), so the filters of «كل الطلبات» count it');
+  await serviceManager.locator('.mold-card', {hasText: 'طلب خدمة العملاء'}).click();
+  await sheet(serviceManager).waitFor();
+  check([await sheet(serviceManager).getByRole('button', {name: 'تعديل الطلب'}).count(), await sheet(serviceManager).getByRole('button', {name: 'إلغاء الطلب'}).count()], [0, 0], 'he sees it, and neither edits nor cancels it (whoever asked does)');
+  await serviceManager.keyboard.press('Escape');
+  await sheet(serviceManager).waitFor({state: 'detached'});
   await serviceManager.context().close();
 
   // ---- 6. 2026-11-03 (production's second update) as it stands since 2026-11-05: the quotation's or PO's FILE, no number. Before the
