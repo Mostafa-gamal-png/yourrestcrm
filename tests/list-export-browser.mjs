@@ -40,7 +40,7 @@ const ARABIC = /[؀-ۿ]/;
 try {
   app = await bootBuiltApp({members}, {tls: true});
   const now = new Date().toISOString(), earlier = new Date(Date.now() - 30 * 3600000).toISOString();
-  const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date()), month = day.slice(0, 7);
+  const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Riyadh'}).format(new Date());
   const insert = (id, kind, parent, assigned, data, when = earlier) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,'الرئيسي',?,?,?,1,'fixture')").bind(id, kind, parent, assigned, JSON.stringify(data), when, when).run();
   const customer = (id, name) => insert(id, 'customer', null, 'rep', {name, branch: 'الرئيسي', assignedTo: 'rep', region: 'الوسطى', city: 'الرياض', customerStatus: 'نشط', phone: '0551234567', contact: 'م', code: 'ERP-' + id, location: '24.7136000, 46.6753000', latitude: 24.7136, longitude: 46.6753});
   await customer('k1', 'مصنع النور'); await customer('k2', 'مصنع الريان'); await customer('k3', 'مصنع القمة');

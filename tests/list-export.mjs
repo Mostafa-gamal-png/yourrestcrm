@@ -162,7 +162,7 @@ const plans=F.customerFollowupPlans(records),history=records.filter(r=>F.isCusto
 }
 
 // ---- 9. the customer-service lists
-const say=(ar,en)=>ar;
+const say=ar=>ar;
 {
  const complaint={id:'cm1',customerId:'c1',customerName:'مصنع النور',customerPhone:'0500000001',customerCity:'الدمام',customerRegion:'الشرقية',status:'assigned',stage:'first_contact',stageSince:'2026-11-18T06:00:00.000Z',stageHours:5.25,targetHours:4,late:true,awaiting:'contact',channel:'call',category:'product_quality',severity:'high',description:'PRIVATE-DESCRIPTION',demand:'PRIVATE-DEMAND',complaintNumber:12,registrarName:'خدمة',serviceManagerName:'مدير الخدمة',salesManagerName:'مدير المبيعات',supervisorName:'المشرف',assigneeName:'المندوب',createdAt:'2026-11-17T06:00:00.000Z',updatedAt:'2026-11-18T06:00:00.000Z',resolution:null,closure:{outcome:'satisfied',note:'PRIVATE-NOTE',at:'2026-11-19T06:00:00.000Z',by:'x',byName:'y',rating:5}};
  const table=S.complaintsTable([complaint],'ar');
