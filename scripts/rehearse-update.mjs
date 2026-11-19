@@ -85,8 +85,8 @@ const freePort = async () => { const probe = createServer(); await new Promise(r
 // inactive (2026-11-15, leave months: «أهدافي» says whether the closed month is out of the representative's evaluation).
 // service-reports:export (2026-11-16, GSCO 2.13.77: the new «تصدير» cell of «تقارير خدمة العملاء»). soldByDay (2026-11-16, GSCO list item 8: «أهدافي» carries the representative's quantities of each day for «مبيعات اليوم قصاد مستهدف اليوم»).
 // The «تصدير» cells of 2.13.80's Excel export (2026-11-19): complaints, service-kpi, followup, mold-requests, journeys, competitors, team;
-// and the row «خطط المناديب» of 2.13.83 (2026-11-19): plans:add, plans:edit, plans:export.
-const NEW_COMPUTED = ['_lastPurchase', 'access', 'permissions', 'trash:edit', 'inactive', 'soldByDay', 'service-reports:export', '_classificationReadOnly', '_classificationHidden', 'complaints:export', 'service-kpi:export', 'followup:export', 'mold-requests:export', 'journeys:export', 'competitors:export', 'team:export', 'plans:add', 'plans:edit', 'plans:export'];
+// and the row «خطط المناديب» of 2.13.83 (2026-11-19): plans:add, plans:edit, plans:export; and «رسم مناطق عمل المناديب» of 2.13.81 (2026-11-19): map:edit.
+const NEW_COMPUTED = ['_lastPurchase', 'access', 'permissions', 'trash:edit', 'inactive', 'soldByDay', 'service-reports:export', '_classificationReadOnly', '_classificationHidden', 'complaints:export', 'service-kpi:export', 'followup:export', 'mold-requests:export', 'journeys:export', 'competitors:export', 'team:export', 'plans:add', 'plans:edit', 'plans:export', 'map:edit'];
 const stable = value => JSON.stringify(value, (key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
 /** One installed site, laid out like the hosting account. */
