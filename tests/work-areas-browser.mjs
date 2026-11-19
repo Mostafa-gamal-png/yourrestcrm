@@ -179,6 +179,25 @@ const inside = async (page, selector, label, {sideways = false} = {}) => check(a
     if (viewport.width < 1100) await tall(manager, '.cm-area-bar button', 'manager drawing ' + tag);
     if (english) check(await arabicLeft(manager, '.cm-area-bar'), [], 'manager ' + tag + ': the drawing bar has no Arabic left');
     await shot(manager, 'manager-drawing-' + tag);
+    if (viewport.width < 1100) {
+      // Review 2026-11-19: a corner was a 22 px target and its «حذف النقطة» button 40 px high on a touch screen, and on a 320 px phone the
+      // search and the toolbar left 44 px of map above the drawing bar, where a corner's button opened under them, out of reach. While
+      // drawing they step aside: the map is free from its top to the drawing bar, a finger adds a corner there, the corner takes 44 px,
+      // and so does the button that deletes it, which a finger reaches.
+      check(await manager.locator('.cm-search-box, .cm-map-controls').evaluateAll(items => items.filter(item => item.getBoundingClientRect().height > 0).length), 0, 'manager drawing ' + tag + ': the search and the toolbar step aside');
+      const free = await manager.evaluate(() => { const map = document.querySelector('.cm-canvas').getBoundingClientRect(), top = Math.max(map.top, ...[...document.querySelectorAll('.cm-search-box, .cm-map-controls')].map(item => item.getBoundingClientRect().bottom)), bottom = document.querySelector('.cm-area-bar').getBoundingClientRect().top; return {x: map.left + map.width / 2, y: (top + bottom) / 2, height: bottom - top}; });
+      ok(free.height >= 150, 'manager drawing ' + tag + ': at least 150 px of map free above the drawing bar (' + Math.round(free.height) + ')');
+      await manager.touchscreen.tap(free.x, free.y);
+      await manager.locator('.work-area-vertex').first().waitFor();
+      const corner = await manager.locator('.work-area-vertex').first().boundingBox();
+      ok(corner.width >= 44 && corner.height >= 44, 'manager drawing ' + tag + ': a corner is a 44 px target (' + Math.round(corner.width) + ' x ' + Math.round(corner.height) + ')');
+      await manager.touchscreen.tap(corner.x + corner.width / 2, corner.y + corner.height / 2);
+      await manager.locator('.work-area-vertex-delete').waitFor();
+      await tall(manager, '.work-area-vertex-delete', 'manager drawing ' + tag + ', «حذف النقطة»');await inside(manager, '.work-area-vertex-delete', 'manager drawing ' + tag + ', «حذف النقطة»');
+      if (english) check(await arabicLeft(manager, '.work-area-vertex-popup'), [], 'manager ' + tag + ': «Delete point» has no Arabic left');
+      await manager.locator('.work-area-vertex-delete').tap();
+      check(await manager.locator('[data-work-area-corners]').innerText(), english ? 'Corners: 0' : 'عدد النقاط: 0', 'manager drawing ' + tag + ': the corner is deleted by a finger');
+    }
     await manager.context().close();
   }
   check(errors, [], 'no page error');

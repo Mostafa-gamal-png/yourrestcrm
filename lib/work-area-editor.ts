@@ -25,7 +25,8 @@ export function createAreaEditor(L:typeof Leaflet,map:Leaflet.Map,options:AreaEd
  function render(){
   group.clearLayers();group.addLayer(shape);group.addLayer(open);outline();
   points.forEach((p,i)=>{
-   const corner=L.marker(p,{draggable:true,keyboard:true,title:options.cornerLabel+' '+(i+1),alt:options.cornerLabel+' '+(i+1),icon:L.divIcon({className:'work-area-vertex',iconSize:[22,22],iconAnchor:[11,11]})});
+   // A 44 px target for a finger around the 22 px ring that is drawn (app/customer-map.css .work-area-vertex::after).
+   const corner=L.marker(p,{draggable:true,keyboard:true,title:options.cornerLabel+' '+(i+1),alt:options.cornerLabel+' '+(i+1),icon:L.divIcon({className:'work-area-vertex',iconSize:[44,44],iconAnchor:[22,22]})});
    corner.on('drag',()=>{const at=corner.getLatLng();points[i]=[at.lat,at.lng];outline();});
    corner.on('dragend',changed);
    // Built from DOM nodes with textContent only.

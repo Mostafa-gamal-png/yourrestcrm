@@ -153,7 +153,7 @@ export default function CustomerMap({customers,me,online=true,staffId='',onDirec
  useEffect(()=>{for(const [selector,ar,en] of [['.leaflet-control-zoom-in','تكبير','Zoom in'],['.leaflet-control-zoom-out','تصغير','Zoom out']]){const button=container.current?.querySelector(selector);button?.setAttribute('title',say(ar,en));button?.setAttribute('aria-label',say(ar,en));}},[ready,language]);
  function badge(row:Row){const value=mapActivity(row);return <span className="cm-activity-badge" data-activity={value.key}><i style={{background:value.color}}/>{activityLabel(row)}</span>;}
  const panelTitle=tab==='filters'?say('فلترة الخريطة','Map filters'):say('العملاء','Customers');
- return <section ref={shell} className={'cm-shell'+(selected&&!panelOpen&&!suggestionsOpen?' has-selection':'')} dir={dir} aria-label={say('خريطة العملاء ونشاطهم','Customer activity map')}>
+ return <section ref={shell} className={'cm-shell'+(selected&&!panelOpen&&!suggestionsOpen?' has-selection':'')+(editing?' is-drawing':'')} dir={dir} aria-label={say('خريطة العملاء ونشاطهم','Customer activity map')}>
   <div className="cm-map-area">
    <div ref={container} className="cm-canvas" aria-label={say('خريطة مواقع المصانع','Factory locations map')}/>
    {!ready&&<div className="cm-message">{failed?say('تعذر تحميل الخريطة. البحث والعملاء ما زالوا متاحين.','Map unavailable. Search and the customer list are still available.'):<><Loader2 className="spin"/>{say('جارٍ تحميل الخريطة...','Loading map...')}</>}</div>}
