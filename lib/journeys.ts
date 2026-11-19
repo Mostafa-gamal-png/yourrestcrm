@@ -15,6 +15,13 @@ export type JourneyReportStop=JourneyStop & {memberName:string;points:JourneyPoi
 export type JourneyReportData={date:string;memberId:string;members:{id:string;name:string;role:string;active:number}[];stops:JourneyReportStop[];communications:JourneyCommunication[];mobileDays?:MobileRouteReportDay[];daily?:DailyReportEnhancement;tracking?:TrackingCoverage[];serverTime:string};
 const journeyDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'});
 export function journeyDate(at:string|number=Date.now()){return journeyDay.format(new Date(at));}
+/** The state of a stop as the report's card says it (app/journey-report.tsx, and its «تصدير Excel», lib/list-export-columns.ts). */
+export const JOURNEY_STATE_TEXT:Record<JourneyStop['state'],readonly [string,string]>={en_route:['في الطريق','En route'],onsite:['تم رصد الوصول','Arrival detected'],completed:['تم رصد المغادرة','Departure detected'],interrupted:['سجل غير مكتمل','Incomplete record']};
+/** The kind of a contact as «تواصل بدون خط سير مرتبط» names it (the page and its «تصدير Excel» read it here; GSCO 2.13.80 fixed its
+ *  export writing the stored keys instead). */
+export const JOURNEY_CONTACT_TEXT:Record<string,readonly [string,string]>={visit:['زيارة','Visit'],call:['اتصال','Call'],email:['بريد إلكتروني','Email'],whatsapp:['واتساب','WhatsApp'],website:['عن طريق الويبسايت','Website'],social:['مواقع التواصل الاجتماعي','Social media'],quote:['عرض سعر','Quotation'],meeting:['اجتماع','Meeting'],followup:['متابعة','Follow-up']};
+/** The state the card shows: a stop of an earlier day never closed is an incomplete record. */
+export const journeyStopState=(stop:Pick<JourneyStop,'state'|'date'|'closedAt'>,day:string):JourneyStop['state']=>stop.date!==day&&!stop.closedAt?'interrupted':stop.state;
 export function initialJourneyData(at:string):JourneyData{return{arrivalAt:null,departureAt:null,durationSeconds:null,durationUncertain:false,observedSeconds:0,gaps:[],events:[{type:'selected',at}]};}
 export function distanceMeters(a:Coordinates,b:Coordinates){const rad=Math.PI/180,dlat=(b.latitude-a.latitude)*rad,dlon=(b.longitude-a.longitude)*rad,h=Math.sin(dlat/2)**2+Math.cos(a.latitude*rad)*Math.cos(b.latitude*rad)*Math.sin(dlon/2)**2;return 6371000*2*Math.atan2(Math.sqrt(h),Math.sqrt(Math.max(0,1-h)));}
 export function implausibleJourneyJump(a:JourneyPoint,b:JourneyPoint){const seconds=(Date.parse(b.capturedAt)-Date.parse(a.capturedAt))/1000;return seconds>0&&distanceMeters(a,b)-a.accuracy-b.accuracy>seconds*100;}

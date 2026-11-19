@@ -14,6 +14,8 @@ import {TrackingSheetSteps} from './service-tracking';
 import VoiceField from './voice-field';
 import './support-panel.css';
 import {isFieldRole} from '@/lib/roles';
+import {ExportExcelButton} from './export-excel-button';
+import {supportStateText} from '@/lib/list-export-service';
 
 type Say=(ar:string,en:string)=>string;
 export type SupportData={generatedAt:string;requests:SupportEntry[];missed:MissedEntry[];counts:{requests:number;missed:number;badge:number}};
@@ -26,9 +28,8 @@ const outcomeText=(key:string,say:Say)=>say(supportOutcomes[key]||key,supportOut
 const channelText=(key:string,say:Say)=>say(supportChannels[key]||supportChannels.any,supportChannelsEn[key]||supportChannelsEn.any);
 const wayText=(key:string,say:Say)=>say(supportResolutionChannels[key]||supportResolutionChannels.other,supportResolutionChannelsEn[key]||supportResolutionChannelsEn.other);
 const actionText=(key:string,say:Say)=>say(supportActions[key]||key,supportActionsEn[key]||key);
-const STATE_TEXT:Record<string,[string,string]>={waiting:['بانتظار التولّي','Waiting to be taken'],in_progress:['قيد التواصل','In contact'],submitted:['بانتظار مراجعة المدير','Waiting for the manager\'s review'],returned:['مطلوب تعديل','Needs correction'],pending_assignment:['بانتظار تكليف المبيعات','Waiting for sales assignment'],resolved:['بانتظار إغلاق خدمة العملاء','Waiting for customer-service closure'],done:['تم التواصل','Contacted'],cancelled:['أُلغي','Cancelled']};
 /** Where the request stands, in words: its state, refined while sales holds it. */
-const stateText=(entry:SupportEntry,say:Say)=>entry.state==='assigned'?(entry.stage==='delegation'?say('لدى مشرف المبيعات','With the sales supervisor'):say('بانتظار تواصل المندوب','Waiting for the representative\'s contact')):say(...(STATE_TEXT[entry.state]||STATE_TEXT.waiting));
+const stateText=(entry:SupportEntry,say:Say)=>supportStateText(entry,say);
 /** What the chip beside a visit says to the sales member who asked: the stage the request is in. */
 const CHIP_TEXT:Record<string,[string,string]>={waiting:['بانتظار خدمة العملاء','Waiting for customer service'],in_progress:['خدمة العملاء تتواصل','Customer service is in contact'],submitted:['قيد مراجعة خدمة العملاء','Under customer-service review'],returned:['قيد مراجعة خدمة العملاء','Under customer-service review'],pending_assignment:['بانتظار تكليف المبيعات','Waiting for sales assignment'],assigned:['لدى المبيعات','With sales'],resolved:['بانتظار إغلاق خدمة العملاء','Waiting for customer-service closure']};
 /** What the main button of a card offers: the step the reader is asked to take. */
@@ -186,6 +187,7 @@ export function SupportPanel({data,me,onOpen,onChanged}:{data:SupportData|null;m
  const intro=staff?say('طلبات المساندة من المبيعات والزيارات المفقودة في نطاقك. ما ترفعه يمر على مدير خدمة العملاء ثم مدير المبيعات ويعود إليك للإغلاق.','Assistance requests from sales and missed visits in your scope. What you submit goes through the customer-service manager and the sales manager and comes back to you to close.'):isFieldRole(me.role)?say('طلباتك لخدمة العملاء وردودها وما أُسند إليك منها.','Your requests to customer service, their replies and what was assigned to you.'):me.role==='manager'?say('طلبات فريقك لخدمة العملاء وردودها وما أُحيل إليك منها لتكليف مندوب.','Your team\'s requests to customer service, their replies and what was handed to you to assign.'):say('طلبات فريقك لخدمة العملاء وردودها وما أُسند إليك منها.','Your team\'s requests to customer service, their replies and what was assigned to you.');
  return <section className="support-panel panel" aria-label={staff?say('التواصل مع العملاء','Customer contact'):say('مساندة خدمة العملاء','Customer-service assistance')} data-role={me.role} dir={language==='en'?'ltr':'rtl'}>
   <div className="support-heading"><div><h2><LifeBuoy size={18} aria-hidden="true"/> {staff?say('التواصل مع العملاء','Customer contact'):say('مساندة خدمة العملاء','Customer-service assistance')}</h2><p>{intro}</p></div><span className="support-count">{count}</span></div>
+  <ExportExcelButton page="support" me={me} small row/>
   {action.error&&<div className="form-error" role="alert">{t(action.error)}</div>}
   {cut.length>0&&<p className="support-cut" role="note">{cut.join(' ')}</p>}
   {groups.map(group=>{

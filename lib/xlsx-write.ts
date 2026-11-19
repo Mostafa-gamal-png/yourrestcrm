@@ -1,7 +1,10 @@
 // A minimal .xlsx writer for the import templates (lib/record-import-server.ts): one sheet, text cells only (inline strings, so nothing a
 // person typed is ever read as a formula), a header row frozen and bold, column widths, right-to-left for Arabic. The archive is stored
 // (not compressed), which every spreadsheet program opens and lib/erp-sales.ts readWorkbookSheets reads back. No dependency; pure.
-const encoder=new TextEncoder();
+// Made on first use, not when the module loads: the page imports this module (lib/list-export.ts) and a test harness may load it where
+// TextEncoder is not a global.
+let textEncoder:TextEncoder|null=null;
+const encoder={encode:(text:string)=>(textEncoder??=new TextEncoder()).encode(text)};
 const CRC_TABLE=(()=>{const table=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xedb88320^(c>>>1):c>>>1;table[n]=c>>>0;}return table;})();
 export function crc32(bytes:Uint8Array){let c=0xffffffff;for(const byte of bytes)c=CRC_TABLE[(c^byte)&0xff]^(c>>>8);return (c^0xffffffff)>>>0;}
 /** XML text: the five entities, and characters XML 1.0 cannot hold are dropped. */
@@ -50,9 +53,26 @@ export function xlsxWorkbook(sheet:SheetSpec):Uint8Array<ArrayBuffer>{
 }
 
 /** One sheet of a workbook with several (the owner, 2026-11-16, GSCO list item 3: «تصدير Excel» of the customer-service reports, three
- *  sheets). A cell is text (an inline string, never read as a formula), a finite number (a number cell, so a spreadsheet sums it), or
- *  empty (null, undefined or ''). headerRows are bold, noteRows grey italic; the first header row is frozen. */
-export type BookCell=string|number|null|undefined;
+ *  sheets). A cell is text (an inline string, never read as a formula), a finite number (a number cell, so a spreadsheet sums it), a date
+ *  ({date}, since 2026-11-19: a date cell), or empty (null, undefined or ''). headerRows are bold, noteRows grey italic; the first header row is frozen. */
+export type BookCell=string|number|BookDate|null|undefined;
+/** A day ('YYYY-MM-DD') or a moment on the wall clock ('YYYY-MM-DD HH:mm', 'YYYY-MM-DD HH:mm:ss'; the caller has already moved it to Riyadh
+ *  time) written as a real date cell (the serial number Excel counts days by, shown yyyy-mm-dd or yyyy-mm-dd hh:mm), so a spreadsheet sorts
+ *  and filters it as a date (the owner, 2026-11-19, «تصدير Excel من كل صفحة فيها قائمة»: dates as dates). One that is not a real day is
+ *  written as the text it is. */
+export type BookDate={date:string};
+const DATE_CELL=/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/;
+/** The serial number of a day or a wall-clock moment (days since 1899-12-30, the fraction the time of day), and whether it has a time;
+ *  null when the text is not a real day between 1900 and 9999 or the time is not one. */
+export function excelSerial(text:string):{serial:number;time:boolean}|null{
+ const match=DATE_CELL.exec(text);if(!match)return null;
+ const [year,month,day,hour,minute,second]=match.slice(1).map(part=>part===undefined?undefined:Number(part));
+ if(year!<1900||month!<1||month!>12||day!<1||day!>31)return null;
+ const at=Date.UTC(year!,month!-1,day!);if(new Date(at).getUTCDate()!==day)return null;
+ if(hour!==undefined&&(hour>23||minute!>59||(second??0)>59))return null;
+ const fraction=hour===undefined?0:(hour*3600+minute!*60+(second??0))/86400;
+ return {serial:Math.round((at/86400000+25569+fraction)*1e8)/1e8,time:hour!==undefined};
+}
 export type BookSheet={name:string;rows:readonly (readonly BookCell[])[];widths?:readonly number[];rightToLeft?:boolean;headerRows?:readonly number[];noteRows?:readonly number[]};
 /** Excel refuses a sheet name longer than 31 characters, one holding any of : \ / ? * [ ], and two sheets of the same name. */
 export function bookSheetName(name:string,index:number,taken:Set<string>){
@@ -60,10 +80,15 @@ export function bookSheetName(name:string,index:number,taken:Set<string>){
  for(let n=2;taken.has(clean.toLowerCase());n++)clean=clean.slice(0,31-String(n).length-1)+' '+n;
  taken.add(clean.toLowerCase());return clean;
 }
-const bookStyles='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><i/><sz val="10"/><color rgb="FF6B7280"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="49" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="49" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>';
-function bookCell(value:BookCell,ref:string,header:boolean,note:boolean){
+const bookStyles='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd hh:mm"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><i/><sz val="10"/><color rgb="FF6B7280"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="7"><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="49" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="49" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>';
+function bookCell(value:BookCell,ref:string,header:boolean,note:boolean):string{
  if(value===null||value===undefined||value==='')return '';
  if(typeof value==='number')return Number.isFinite(value)?'<c r="'+ref+'" s="'+(header?4:3)+'"><v>'+value+'</v></c>':'';
+ if(typeof value==='object'){
+  const date=typeof value.date==='string'?value.date.trim():'',serial=date?excelSerial(date):null;
+  if(!serial)return date?bookCell(date,ref,header,note):'';
+  return '<c r="'+ref+'" s="'+(serial.time?6:5)+'"><v>'+serial.serial+'</v></c>';
+ }
  return '<c r="'+ref+'" t="inlineStr" s="'+(header?1:note?2:0)+'"><is><t xml:space="preserve">'+xmlText(String(value))+'</t></is></c>';
 }
 /** A workbook of one or more sheets, each written as xlsxWorkbook writes its one (stored archive, inline text, right to left for Arabic). */

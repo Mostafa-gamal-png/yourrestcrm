@@ -16,6 +16,8 @@ import {viewerFilesFromRequest,type MoldViewerFile} from '@/lib/mold-document-vi
 import {MOLD_FILTER_TEXT,MOLD_NO_FILTERS,filterMoldRequests,isMoldOrder,moldCardStatus,moldFilterChoices,moldFilterCount,moldMergeOrders,moldSendingKey,moldSendingLabel,type MoldFilters} from '@/lib/mold-filters';
 import {MoldSignLinkPanel,MoldSigningNotes,SignLinkLine,rememberSignLink} from './mold-sign-link';
 import './mold-requests.css';
+import {ExportExcelButton} from './export-excel-button';
+import {moldTables} from '@/lib/list-export-mold';
 
 type Say=(ar:string,en:string)=>string;
 const messageOf=(error:unknown)=>typeof error==='object'&&error!==null&&'message' in error&&typeof (error as {message:unknown}).message==='string'?(error as {message:string}).message:'';
@@ -254,6 +256,7 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  return <section className="mold-page" dir={direction()}>
   <div className="mold-heading"><div><p>{say('يصل الطلب لتطبيق الإنتاج تلقائيًا، وتظهر هنا مراحل التصنيع حتى التسليم.','Requests reach the production application automatically; production stages show here until delivery.')}</p></div>
    <div className="mold-heading-tools"><button type="button" className="btn subtle" onClick={()=>void refresh()} disabled={loading} aria-label={say('تحديث','Refresh')}>{loading?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>}</button>
+    {!showPending&&<ExportExcelButton page="mold-requests" me={me} disabled={!data} build={lang=>moldTables(list,linkReady,lang)}/>}
     {data?.canCreate&&<button type="button" className="btn primary mold-new" onClick={()=>setCreating(true)}><Wrench size={16} aria-hidden="true"/>{say('طلب تصنيع قالب','Request a mold')}</button>}</div></div>
   {data&&!data.linkReady&&<p className="mold-banner" data-kind="off" role="status"><Lock size={16} aria-hidden="true"/>{say('الربط مع الإنتاج غير مفعَّل. الطلبات تُحفظ هنا وتنتظر الإرسال.','The production link is off. Requests are saved here and wait to be sent.')}</p>}
   {data?.statusError&&<p className="mold-banner" data-kind="stale" role="status"><TriangleAlert size={16} aria-hidden="true"/>{say('تعذّر تحديث المراحل الآن','Stages could not be refreshed now')}: {moldErrorText(data.statusError.code,say)}. {say('المعروض آخر حالة معروفة، ويُحدَّث عند الفتح التالي.','Showing the last known status; it refreshes next time.')}</p>}

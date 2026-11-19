@@ -10,6 +10,8 @@ import {SupportButton,type SupportBinding} from './support-panel';
 import './rep-record-lists.css';
 import './followup-recontact.css';
 import RecordImportButton from './record-import';
+import {ExportExcelButton} from './export-excel-button';
+import {followupTables,type FollowupTab} from '@/lib/list-export-columns';
 
 type Props={records:Row[];members:Member[];query:string;staff:string;stage:string;onNew:(customerId:string,sourceId:string)=>void;onOpen:(row:Row)=>void;onCustomer:(id:string)=>void;onDelete?:(row:Row)=>void;canDelete?:(row:Row)=>boolean;support?:SupportBinding;
  /** «استيراد المتابعات من Excel» (app/record-import.tsx): given to whoever may record a follow-up (the route checks the same); reloads after. */
@@ -36,6 +38,7 @@ export function CustomerFollowupsPage({records,members,query,staff,stage,onNew,o
      {[['open','المفتوحة'],['due','اليوم والمتأخرة'],['upcoming','القادمة'],['closed','المغلقة'],['history','سجل المتابعات']].map(([id,label])=><button type="button" key={id} className={'followup-list-filter '+(tab===id?'selected':'')} onClick={()=>setTab(id)} aria-pressed={tab===id}>{t(label)}</button>)}
     </div>
     <span className="muted">{count} {t('متابعة')}</span>
+    <ExportExcelButton page="followups" small build={lang=>followupTables({tab:tab as FollowupTab,plans:shown,history,records,members,day},lang,t)}/>
    </div>
    {!count?<div className="followup-empty"><CheckCircle2 size={30}/><h3>{t(query?'لا توجد نتائج مطابقة':tab==='due'?'لا توجد متابعات مستحقة':tab==='history'?'لا توجد متابعات مسجلة بعد':'لا توجد متابعات في هذا القسم')}</h3></div>:<>
     <div className="rep-mobile-records" aria-label={tab==='history'?t('سجل المتابعات'):t('متابعات العملاء')}>

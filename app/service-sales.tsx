@@ -19,6 +19,7 @@ import {
 import VoiceField from './voice-field';
 import './service-report.css';
 import './service-sales.css';
+import {ExportExcelButton} from './export-excel-button';
 
 type Say=(ar:string,en:string)=>string;
 const useSay=():[Say,string]=>{const {language}=useLanguage();return [(ar,en)=>language==='en'?en:ar,language];};
@@ -78,6 +79,7 @@ export function ServiceLeadsPanel({me}:{me:Member}){
    <div className="service-leads-tabs" role="tablist">{(['lost','dormant'] as LeadList[]).map(key=><button key={key} type="button" role="tab" aria-selected={list===key} className={'followup-list-filter'+(list===key?' selected':'')} onClick={()=>{setList(key);setQuery('');setAsked('');setPage(1);}}>{say(leadListLabels[key],leadListLabelsEn[key])}</button>)}</div>
    <p className="service-report-note">{list==='lost'?say('الفرص المفقودة التي لم تبدأ منها فرصة جديدة بعد، الأحدث أولًا. لا يظهر عميل له فرصة مفتوحة.','Lost opportunities no new opportunity has been started from yet, newest first. A customer with an open opportunity is not shown.'):say('عملاء نطاقك الذين مضى على آخر شراء لهم أكثر من 90 يومًا، الأقرب انقطاعًا أولًا، ثم من لم يشترِ من قبل.','Customers of your scope whose last purchase is more than 90 days old, the most recent first, then those who never bought.')}</p>
    <form className="service-leads-search" role="search" onSubmit={event=>{event.preventDefault();setPage(1);setAsked(query.trim());if(asked===query.trim()&&page===1)void load(list,query.trim(),1);}}><label className="field"><span>{say('بحث بالاسم أو الرقم','Search by name or number')}</span><input type="search" value={query} onChange={event=>setQuery(event.target.value)} maxLength={60}/></label><button type="submit" className="btn subtle small"><Search size={16} aria-hidden="true"/>{say('بحث','Search')}</button></form>
+   {data&&data.list===list&&data.total>0&&<ExportExcelButton page="service-leads" me={me} small row params={{list,q:asked}} disabled={loading}/>}
    {data?.list==='dormant'&&typeof data.lapsed==='number'&&<div className="service-leads-counts" data-dormant-counts><span className="badge pending">{say('انقطعوا عن الشراء','Stopped buying')}: {data.lapsed}</span><span className="badge">{say('لم يشتروا من قبل','Never bought before')}: {data.never??0}</span></div>}
    {loading?<Loader2 className="spin"/>:error?<div className="form-error" role="alert">{t(error)} <button type="button" className="text-button" onClick={()=>void load(list,asked,page)}>{say('إعادة المحاولة','Retry')}</button></div>:data&&(data.rows.length===0?<p className="muted">{say('لا توجد عناصر في هذه القائمة','Nothing in this list')}</p>:<>
     <p className="muted">{say('المعروض','Showing')} {pageSize&&data.total>data.rows.length?(first+1)+'–'+(first+data.rows.length):data.rows.length} / {data.total}</p>

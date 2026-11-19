@@ -1,0 +1,7 @@
+/* «تصدير Excel» (app/export-excel-button.tsx): a button that keeps its words on one line and never pushes the row wider than the screen;
+   its message wraps under it. */
+.list-export{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;max-width:100%;min-width:0}
+.list-export .list-export-action{white-space:nowrap;min-height:44px;max-width:100%}
+.list-export .list-export-action.small{min-height:40px}
+.list-export .list-export-error{flex-basis:100%;min-width:0;overflow-wrap:anywhere}
+.list-export-row{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin:0 0 10px;min-width:0}

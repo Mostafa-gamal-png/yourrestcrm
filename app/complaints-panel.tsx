@@ -7,7 +7,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {t,useLanguage,direction,getLanguage} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson} from '@/lib/client-submit';
 import {roles,today,type Member,type Row} from '@/lib/crm';
-import {COMPLAINT_DEMAND_MAX,COMPLAINT_TEXT_MAX,canRegisterComplaint,closureOutcomes,closureOutcomesEn,complaintActions,complaintActionsEn,complaintCategories,complaintCategoriesEn,complaintChannels,complaintChannelsEn,complaintGroups,complaintSeverities,complaintSeveritiesEn,complaintStatusLabels,complaintStatusLabelsEn,complaintsOfCustomer,isOpenComplaint,resolutionOutcomes,resolutionOutcomesEn,type ComplaintEntry,type ComplaintGroupId} from '@/lib/complaints';
+import {COMPLAINT_DEMAND_MAX,COMPLAINT_TEXT_MAX,canRegisterComplaint,closureOutcomes,closureOutcomesEn,complaintActions,complaintActionsEn,complaintCategories,complaintCategoriesEn,complaintChannels,complaintChannelsEn,complaintGroups,complaintSeverities,complaintSeveritiesEn,complaintsOfCustomer,isOpenComplaint,resolutionOutcomes,resolutionOutcomesEn,type ComplaintEntry,type ComplaintGroupId} from '@/lib/complaints';
 import {contactLinks} from '@/lib/support';
 import {trackedComplaint} from '@/lib/service-tracking';
 import {complaintMessage,complaintMessageParts,validContactNumber,whatsappNumber,whatsappUrl} from '@/lib/whatsapp';
@@ -16,6 +16,8 @@ import {TrackingSheetSteps} from './service-tracking';
 import VoiceField from './voice-field';
 import './complaints-panel.css';
 import {isFieldRole} from '@/lib/roles';
+import {ExportExcelButton} from './export-excel-button';
+import {complaintStateText} from '@/lib/list-export-service';
 
 type Say=(ar:string,en:string)=>string;
 export type ComplaintsData={generatedAt:string;complaints:ComplaintEntry[];counts:{complaints:number;open:number;badge:number}};
@@ -29,7 +31,7 @@ const actionText=(key:string,say:Say)=>label(complaintActions,complaintActionsEn
 const resolutionText=(key:string,say:Say)=>label(resolutionOutcomes,resolutionOutcomesEn,key,say);
 const closureText=(key:string,say:Say)=>label(closureOutcomes,closureOutcomesEn,key,say);
 /** Where the complaint stands, in words: the status, refined while the representative holds it. */
-const stateText=(entry:ComplaintEntry,say:Say)=>entry.status==='assigned'?(entry.stage==='delegation'?say('لدى مشرف المبيعات','With the sales supervisor'):entry.stage==='first_contact'?say('بانتظار أول تواصل من المندوب','Waiting for the representative\'s first contact'):say('قيد الحل مع المندوب','Being resolved by the representative')):label(complaintStatusLabels,complaintStatusLabelsEn,entry.status,say);
+const stateText=(entry:ComplaintEntry,say:Say)=>complaintStateText(entry,say);
 const askText=(entry:ComplaintEntry,say:Say)=>entry.awaiting==='review'?say('مراجعة الشكوى','Review the complaint'):entry.awaiting==='fix'?say('تعديل وإعادة الإرسال','Correct and resend'):entry.awaiting==='assign'?say('تكليف مندوب','Assign a representative'):entry.awaiting==='delegate'?say('تفويض مندوب','Delegate to a representative'):entry.awaiting==='contact'?say('تسجيل التواصل','Record the contact'):entry.awaiting==='resolve'?say('تسجيل الحل','Record the resolution'):entry.awaiting==='close'?say('تأكيد الإغلاق','Confirm the closure'):say('التفاصيل','Details');
 
 /** The complaints of the signed-in member, loaded beside the page and refreshed with it and every ten minutes. */
@@ -126,6 +128,7 @@ export function ComplaintsList({data,me,mode,onOpen,onChanged}:{data:ComplaintsD
  const intro=me.role==='customer_service'?say('ما سجّلته أنت وزملاؤك في منطقتك، وأين وصلت كل شكوى.','What you and your colleagues registered in your region, and where each complaint stands.'):me.role==='customer_service_manager'?say('شكاوى فريقك: راجعها وأحلها إلى المبيعات وتابع حلها حتى الإغلاق.','Your team\'s complaints: review them, hand them to sales and follow them to closure.'):me.role==='admin'?say('كل الشكاوى وأين وصلت.','Every complaint and where it stands.'):isFieldRole(me.role)?say('الشكاوى المكلَّف بها: تواصل مع العميل وسجّل ما فعلت ثم الحل.','The complaints assigned to you: contact the customer, record what you did, then the resolution.'):say('شكاوى العملاء التي أُحيلت إليك أو يحملها فريقك.','Customer complaints handed to you or held by your team.');
  return <section className={mode==='page'?'complaints-page':'complaints-panel panel'} aria-label={say('شكاوى العملاء','Customer complaints')} data-role={me.role} dir={language==='en'?'ltr':'rtl'}>
   <div className="support-heading"><div><h2><MessageSquareWarning size={18} aria-hidden="true"/> {say('شكاوى العملاء','Customer complaints')}</h2><p>{intro}</p></div><span className="support-count" title={say('الشكاوى المفتوحة','Open complaints')}>{openCount}</span></div>
+  {data&&total>0&&<ExportExcelButton page="complaints" me={me} small row/>}
   {cut&&<p className="support-cut" role="note">{cut}</p>}
   {!data&&<p className="form-note" role="status">{say('جارٍ تحميل الشكاوى','Loading complaints')}</p>}
   {data&&!groups.length&&<p className="form-note complaints-empty">{say('لا شكاوى.','No complaints.')}</p>}
