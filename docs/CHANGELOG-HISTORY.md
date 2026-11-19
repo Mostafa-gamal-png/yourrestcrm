@@ -4,6 +4,42 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Android 1.0.15 (16): no more white screen, and the camera in photo fields (2026-11-19, no migration, no site change)
+
+- **Asked.** The owner, 2026-11-19: a new Huawei tablet without Google services (no Play Store, no Chrome; Huawei's own WebView, usually
+  `com.huawei.webview`) installed the APK and showed only a white screen. Until 1.0.14 `MainActivity` handled no failure of the main page
+  (`onReceivedSslError` only cancelled), so every failure ended on a blank page. Approved as 1.0.15 (versionCode 16), with the camera for
+  «صور القالب».
+- **The panel** (`LoadFailurePanel`, a native view over the WebView, not a page): the reason in Arabic, or English when the person chose
+  English in the CRM page, «إعادة المحاولة», and the facts for support (the WebView package, its version and Chromium, Android and API
+  level, maker and model, the app's version, the technical error, the page without query or fragment, the device's clock with its offset),
+  selectable. Cases (`LoadFailureRules`, `LoadWatch`, pure): a main-frame `onReceivedError` on the CRM's address (no connection; a failed
+  handshake is worded as security); `onReceivedSslError` on the CRM's address while its page is not up (the device's date and time; the
+  handshake is still cancelled, never allowed; the primary error and the certificate's days are listed); a main-frame 5xx (offline: the
+  connection's words; 4xx stays the site's); `onRenderProcessGone` (returns true, the WebView is dropped and made again: a system stop
+  quietly once a minute, a crash with the panel); a page that never came up (asked every second while in front by an ES5 probe: text, or a
+  picture or control with a size, in a document of the CRM's own origin only; blank 20 s after `onPageFinished` or 60 s after the start; the panel goes if the page appears within two
+  minutes); an engine older than Chromium **111**, before anything loads, naming the package, with «المتابعة رغم ذلك»; no WebView at all.
+- **111** is the site's build target: vinext on Vite 8 without a `build.target` of its own takes Vite's `baseline-widely-available`
+  (chrome111, edge111, firefox114, safari16.4), vinext's `build.cssTarget` is chrome111, and Tailwind CSS 4.2 uses `oklch()` and
+  `color-mix()`. The version is read from the user agent's `Chrome/<major>` (Huawei's carries it), else from Google's package version;
+  Huawei's own package numbering (`12.0.0.300`) is never read as Chromium, and an unknown version is left to the watchdog.
+- **Left to the site:** the service worker's offline shell answers a failed navigation, so WebView reports no error and no panel shows; the
+  shell counts as up once its script draws it (tried in Chromium on `public/`).
+- **The camera.** An input that takes a JPEG (`image/*`, `image/jpeg`, `.jpg`/`.jpeg`, any type) asks «التقاط صورة بالكاميرا» or
+  «اختيار من الملفات أو المعرض» (the picker as before, several at once); `capture` opens the camera at once; the Excel imports, PDF-only and
+  PNG-only inputs keep the picker alone. Android's camera app (`ACTION_IMAGE_CAPTURE`) writes one photo into
+  `cache/camera-photos/photo-<UTC>-<8 hex>.jpg` through `content://org.yourrest.crm.camera/photo/<name>`, served by `CameraPhotoProvider` (a
+  minimal provider of the app's own, there being no AndroidX `FileProvider`: not exported, per-URI grants, that folder and name shape only,
+  `r`/`w`/`wt`/`rw`/`rwt`, no insert, update or delete); the grant is revoked before the page gets the photo; photos are kept a day.
+  **No CAMERA permission** (declaring it would require a runtime grant before `ACTION_IMAGE_CAPTURE`), no storage permission.
+- **Tests.** `tests/webview-load-android.mjs` (default gate, JDK 17+): `LoadFailureRulesCheck` (243), `CameraPhotoRulesCheck` (152),
+  the probe run in JavaScript on stand-in documents, the real `CameraPhotoProvider` on Android stand-ins (`tests/fixtures/native-camera`,
+  52), and the earlier checks that guard `MainActivity` and the manifest (`DesignFileCheck` now expects the two providers);
+  `tests/webview-load-probe-browser.mjs` (browser gate, no build). `tests/complaint-alerts-android.mjs` and
+  `tests/nearby-customers-android.mjs` expect 1.0.15 (16). Not tried on a device or emulator (none here): a real WebView of any maker, the
+  failures on a phone, the panel's look, a camera app writing through the provider, the upload from the WebView.
+
 ## «صور القالب»: photos of the customer's mold in the customer's data (2026-11-19, no migration, no Android change)
 
 - **Asked.** The owner: «عايز فى بيانات العميل ان ارفع صورة للقالب», then «اكتر من صورة».
