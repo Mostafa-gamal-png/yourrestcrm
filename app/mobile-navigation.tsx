@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Building2,MapPinned,ClipboardList,CalendarDays,Target,LayoutDashboard,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
+import {Building2,MapPinned,ClipboardList,CalendarCheck,CalendarDays,Target,LayoutDashboard,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {pageAllowed} from '@/lib/permissions';
 import {roles,type Member} from '@/lib/crm';
@@ -24,6 +24,7 @@ const pages=[
  {id:'service-kpi',ar:'تقييم الخدمة',en:'Service evaluation',Icon:Gauge},
  {id:'dashboard',ar:'لوحة المتابعة',en:'Dashboard',Icon:LayoutDashboard},
  {id:'journeys',ar:'تقرير يوم المندوب',en:'Daily route',Icon:MapPinned},
+ {id:'plans',ar:'خطط المناديب',en:'Representatives\' plans',Icon:CalendarCheck},
  {id:'sales',ar:'المبيعات',en:'Sales',Icon:BriefcaseBusiness},
  {id:'competitors',ar:'المنافسين',en:'Competitors',Icon:Users},
  {id:'team',ar:'الفريق والصلاحيات',en:'Team & permissions',Icon:ShieldCheck},
@@ -33,7 +34,8 @@ const pages=[
 /** Pages that never take a slot of the bottom bar from the pages it already shows: when every other page fits in the bar, they
  * are reached from «المزيد» beside them (a representative keeps the same five tabs and gets a sixth, «المزيد»; the owner, 2026-11-03). */
 // «المحذوفات» (2026-11-09) is reached from «المزيد» too.
-const secondary=new Set<string>(['mold-requests','trash']);
+// «خطط المناديب» (2026-11-19, «خطة الغد» for a representative) too: the reminder card on every page opens it.
+const secondary=new Set<string>(['mold-requests','trash','plans']);
 
 type Props={me:Member;view:string;onNavigate:(view:string)=>void;accountOpen:boolean;onAccountOpenChange:(open:boolean)=>void;blocked?:boolean;queue?:ServiceQueueEntry[];extra?:number;/** What waits for the reader on the complaints page, when they have one. */complaints?:number;/** «عملاء واقفين»: a representative's own (app/inactive-customers.tsx). */customers?:number};
 
@@ -72,7 +74,7 @@ export default function MobileNavigation({me,view,onNavigate,accountOpen,onAccou
  const primary=allowed.length<=5?allowed:core.length<=5?core:core.slice(0,4);
  const overflow=allowed.filter(page=>!primary.some(item=>item.id===page.id));
  const overflowActive=overflow.some(page=>page.id===view);
- const label=(page:typeof pages[number])=>page.id==='targets'&&isFieldRole(me.role)?say('مستهدفي','My targets'):serviceText(me.role,say(page.ar,page.en));
+ const label=(page:typeof pages[number])=>page.id==='targets'&&isFieldRole(me.role)?say('مستهدفي','My targets'):page.id==='plans'&&isFieldRole(me.role)?say('خطة الغد','Tomorrow\'s plan'):serviceText(me.role,say(page.ar,page.en));
  const navigate=(id:string)=>{if(!pageAllowed(me,id))return;setMoreOpen(false);onAccountOpenChange(false);onNavigate(id);if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'auto'});};
  if(!allowed.length)return null;
  return <>

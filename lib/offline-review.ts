@@ -131,6 +131,8 @@ export function offlineReview(job:Pick<OfflineJob,'kind'|'url'|'body'|'localId'|
  if(code===OFFLINE_REFUSAL.opportunityUnavailable)return {kind:'unavailable',target:'opportunity'};
  const known=UNAVAILABLE_REFUSALS.find(item=>item.url===job.url&&item.status===status&&item.error===job.message);
  if(known)return {kind:'unavailable',target:known.target};
+ // A plan names no single customer: its refusal is said in the server's own words.
+ if(job.kind==='plan')return null;
  if(status===404||status===410)return {kind:'unavailable',target:'customer'};
  if(status!==409)return null;
  const rows=confirmed(records),named=job.answer?.duplicate;
@@ -154,22 +156,24 @@ export function offlineReviewText(review:OfflineReview,kind:OfflineKind,language
   visit:[`يبدو أن هذه الزيارة مسجلة بالفعل: زيارة للعميل نفسه بتاريخ ${date}. إن كانت مكررة فاحذفها من الجهاز.`,`This visit seems to be recorded already: a visit to the same customer dated ${date}. If it is a duplicate, delete it from the device.`],
   service:[`يبدو أن هذه الفرصة مسجلة بالفعل: فرصة للعميل نفسه بتاريخ ${date}. إن كانت مكررة فاحذفها من الجهاز.`,`This opportunity seems to be recorded already: an opportunity for the same customer dated ${date}. If it is a duplicate, delete it from the device.`],
   customer:[`يبدو أن هذا العميل مسجل بالفعل: عميل سجّلته بتاريخ ${date}. إن كان مكررًا فاحذفه من الجهاز.`,`This customer seems to be registered already: a customer you registered on ${date}. If it is a duplicate, delete it from the device.`],
-  file:['يبدو أن هذا المرفق مرفوع بالفعل. إن كان مكررًا فاحذفه من الجهاز.','This attachment seems to be uploaded already. If it is a duplicate, delete it from the device.']
+  file:['يبدو أن هذا المرفق مرفوع بالفعل. إن كان مكررًا فاحذفه من الجهاز.','This attachment seems to be uploaded already. If it is a duplicate, delete it from the device.'],
+  plan:['يبدو أن هذه الخطة مرسلة بالفعل. إن كانت مكررة فاحذفها من الجهاز.','This plan seems to be sent already. If it is a duplicate, delete it from the device.']
  };
  const undated:Record<OfflineKind,[string,string]>={
   followup:['يبدو أن هذه المتابعة مسجلة بالفعل: متابعة على الفرصة نفسها محفوظة على الخادم. إن كانت مكررة فاحذفها من الجهاز.','This follow-up seems to be recorded already: a follow-up on the same opportunity is saved on the server. If it is a duplicate, delete it from the device.'],
   visit:['يبدو أن هذه الزيارة مسجلة بالفعل على الخادم. إن كانت مكررة فاحذفها من الجهاز.','This visit seems to be recorded already on the server. If it is a duplicate, delete it from the device.'],
   service:['يبدو أن هذه الفرصة مسجلة بالفعل على الخادم. إن كانت مكررة فاحذفها من الجهاز.','This opportunity seems to be recorded already on the server. If it is a duplicate, delete it from the device.'],
   customer:['يبدو أن هذا العميل مسجل بالفعل على الخادم. إن كان مكررًا فاحذفه من الجهاز.','This customer seems to be registered already on the server. If it is a duplicate, delete it from the device.'],
-  file:dated.file
+  file:dated.file,
+  plan:dated.plan
  };
- const [ar,en]=(date&&kind!=='file'?dated:undated)[kind];
- return {text:say(language,ar,en),...(date&&kind!=='file'?{date}:{})};
+ const [ar,en]=(date&&kind!=='file'&&kind!=='plan'?dated:undated)[kind];
+ return {text:say(language,ar,en),...(date&&kind!=='file'&&kind!=='plan'?{date}:{})};
 }
 
 /** The kind of an entry as the list names it (customer service records opportunities, not visits: lib/service-wording.ts). */
 export function offlineEntryNoun(kind:OfflineKind,language?:string){
- const nouns:Record<OfflineKind,[string,string]>={customer:['عميل جديد','New customer'],visit:['زيارة','Visit'],followup:['متابعة','Follow-up'],service:['فرصة','Opportunity'],file:['مرفق','Attachment']};
+ const nouns:Record<OfflineKind,[string,string]>={customer:['عميل جديد','New customer'],visit:['زيارة','Visit'],followup:['متابعة','Follow-up'],service:['فرصة','Opportunity'],file:['مرفق','Attachment'],plan:['خطة اليوم','Day plan']};
  return say(language,...nouns[kind]);
 }
 

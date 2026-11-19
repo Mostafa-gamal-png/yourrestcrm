@@ -20,7 +20,8 @@ const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);c
 const throws=(fn,pattern,message)=>{assert.throws(fn,pattern,message);checks++;};
 
 const NEW='0021_service_sales_process.sql';
-const all=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort(),before=all.filter(name=>name<NEW);
+// A later release's 0022 (the daily plans, 2026-11-19) is left out: this is 0021's own check, on the schema it was made for.
+const all=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort().filter(name=>name<=NEW),before=all.filter(name=>name<NEW);
 eq([all.length,all.at(-1),before.length,before.at(-1)],[22,NEW,21,'0020_member_permissions.sql'],'twenty-two migrations, the newest the customer-service sales process; the live release has 21');
 const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const fixture=(name,names)=>{

@@ -35,7 +35,8 @@ if (!previous) {
   execFileSync('tar', ['-x', '-C', previous], {input: archive});
 }
 ok(fs.existsSync(path.join(previous, 'app/api/crm/route.ts')), 'the previous release\'s sources');
-const migrations = tree => fs.readdirSync(path.join(tree, 'drizzle')).filter(name => name.endsWith('.sql')).sort();
+// A later release's 0022 (the daily plans, 2026-11-19) is left out: these are the two releases' own migrations, up to 0021.
+const migrations = tree => fs.readdirSync(path.join(tree, 'drizzle')).filter(name => name.endsWith('.sql') && name <= '0021_service_sales_process.sql').sort();
 eq(migrations(previous), migrations(root), 'no migration between the two releases: going back is the code only');
 
 globalThis.testEnv = {YR_APP_ORIGIN: 'https://test.invalid', YR_AUTH_SECRET: 'a'.repeat(64)};

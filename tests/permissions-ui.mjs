@@ -33,7 +33,7 @@ const isBox=(html,key)=>/type="checkbox"/.test(cell(html,key)),isNone=(html,key)
 
 // A supervisor never saved: every cell of the role on but «حذف»; the rows are the screens the role has or acts on, in the navigation's order.
 let sup=person('sup','supervisor',saved('supervisor',{},0)),html=render(sup);
-eq(rows(html),['dashboard','customer','map','activity','followup','mold-requests','journeys','quote','sales','competitors','targets','targets.results','targets.collection','targets.quotes','targets.targets','trash'],'the supervisor\'s screens («المحذوفات» since 2026-11-10: it comes with «حذف»), the targets page\'s four tabs under it since 2026-11-16');
+eq(rows(html),['dashboard','customer','map','activity','followup','mold-requests','journeys','plans','quote','sales','competitors','targets','targets.results','targets.collection','targets.quotes','targets.targets','trash'],'the supervisor\'s screens («المحذوفات» since 2026-11-10: it comes with «حذف»), the targets page\'s four tabs under it since 2026-11-16');
 const rowNote=(html,screen)=>{const start=html.indexOf('data-matrix-row="'+screen+'"'),row=html.slice(start,html.indexOf('</tr>',start));return (/data-row-note="true">([^<]*)</.exec(row)||[])[1]||'';};
 eq([isBox(html,'browse:trash'),isChecked(html,'browse:trash'),isBox(html,'trash:edit'),isChecked(html,'trash:edit'),rowNote(html,'trash')],[true,true,true,true,'لمن لديه «حذف»: ما حذفه هو فقط'],'«المحذوفات» for a supervisor: «استعراض» and «تحرير» on (restrict-only), and the note');
 ok(cell(html,'trash:edit').includes('ما دام «حذف» في شاشة السجل مفتوحًا له'),'«تحرير» says restoring needs the record\'s «حذف»');
@@ -71,7 +71,7 @@ ok(html.includes('يرى مدير النظام كل الشاشات دائمًا'
 ok(!html.includes('data-permission="viewAll"'),'no viewAll switch for an administrator (they see everything)');
 // A representative and customer service: only their screens; no general switch.
 html=render(person('rep1','rep',saved('rep',{},0)));
-eq(rows(html),['customer','map','activity','followup','mold-requests','targets','trash'],'the representative\'s screens («المحذوفات» with «حذف»)');
+eq(rows(html),['customer','map','activity','followup','mold-requests','plans','targets','trash'],'the representative\'s screens («المحذوفات» with «حذف»; «خطط المناديب» since 2026-11-19)');
 eq([isBox(html,'browse:trash'),isBox(html,'trash:edit'),rowNote(html,'trash')],[true,true,'لمن لديه «حذف»: ما حذفه هو فقط'],'the representative: «المحذوفات» switches and the note');
 eq([isBox(html,'customer:add'),isNone(html,'customer:export'),isNone(html,'activity:edit'),isNone(html,'targets:edit')],[true,true,true,true],'a representative adds customers, never exports them nor edits a saved visit');
 eq(['customer:delete','activity:delete','followup:delete'].map(key=>[isBox(html,key),isChecked(html,key)]),[[true,false],[true,false],[true,false]],'a representative: «حذف» grantable on customers, visits and follow-ups, unticked');

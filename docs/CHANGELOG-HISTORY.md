@@ -4,6 +4,65 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «خطة الغد» / «خطط المناديب»: the next day's plan, its review and its completion (2026-11-19, migration 0022, no Android change)
+
+- **Asked.** The owner, 2026-11-19: port GSCO 2.13.83 «خطة الغد / خطط المناديب» with the owner's decisions. Rules in `lib/daily-plans.ts`
+  (pure), server in `lib/daily-plans-server.ts` and `app/api/daily-plans` (+ `/inbox`), screens in `app/daily-plans.tsx`. Guide 9-أي.
+- **The plan.** A representative or a marketing officer (`isFieldRole`) prepares the next working day's plan (Thursday's is Saturday's):
+  1 to 30 stops, each a visit, a call or a WhatsApp contact on a customer of their regions, in order, with an optional time (HH:MM, Arabic
+  digits read) and note (300). «حفظ مسودة» keeps a draft the reviewers read as «لم تُرسل»; «إرسال للمشرف» sends it. Today (late) to 7 days
+  ahead; a past day is closed (409). The plan never blocks recording: no other route reads it.
+- **Deadline.** 22:00 Riyadh on the day before the plan's day (`planDeadline`); sent at 22:00:00 or later it is accepted and marked
+  «متأخرة», decided by the FIRST send (`first_sent_at`): a plan sent on time, returned and sent again after 22:00 stays on time.
+- **Offline.** «إرسال» goes through the device's outbox (`lib/offline-submit.ts`, new kind `plan`, which projects no record): without a
+  network it waits on the device and goes when the connection is back with the time it was pressed; the server takes the device's clock
+  when it is at most a minute after its receipt (`offlineCapture` refuses later) and at most 48 hours before it (else the receipt), as
+  `first_sent_source` 'device'/'server' (`planSentAt`). What the member types is kept on the device as they type, and the last copy of the
+  plan shows without a network.
+- **Review.** The supervisor reviews their representatives' plans; the sales manager may take part (their team as the role defines it),
+  never required; the administrator everyone; «عرض بيانات الفريق بالكامل» widens reading only; regions must meet; nobody reviews their own.
+  «اعتماد» (a sent plan), «اعتماد مع تعديل» (sent or approved: the edits apply at once, a stop the reviewer adds is «أضافها المشرف», one
+  they change «عدّلها المشرف», one of the member's they take out stays «حذفها المشرف» and counts nowhere; a change of nothing is refused),
+  «إعادة للمندوب» with a reason (3 to 500). One note per reviewer and day (`crm_daily_plan_notes`, with a plan or without). The member
+  edits and sends while not approved, and can never delete or change a stop a reviewer added or edited, nor bring back one taken out
+  (403, `memberLockProblems`).
+- **Completion.** Computed at every read from the member's visits and contacts of that day (as the day report reads them): each activity, in
+  the order recorded, closes the first open stop of the same customer and kind («تمت»); then what is left closes one of the same customer
+  of another kind («تمت بطريقة تواصل أخرى»); one activity closes one stop; an activity on a customer the plan does not name is «خارج
+  الخطة», another contact with a planned customer «تواصل إضافي مع عميل في الخطة».
+- **Screens.** A new screen «خطط المناديب» («خطة الغد» for a field member), after «تقرير يوم المندوب» in the side menu and in «المزيد» on a
+  phone (the five bottom tabs unchanged). The plan of the member and day on screen sits above the day's review in «تقرير يوم المندوب»,
+  with the same actions. A reminder card on every page (`GET /api/daily-plans/inbox`, every 5 minutes): the member's next day's plan not
+  sent from 16:00 of the deadline day, late after 22:00, returned with its reason; the reviewer's plans waiting and, after the deadline, who
+  has not sent. New lines are announced once on the open page and, in a browser that allows it, by the device's notification («not sent»
+  from 20:00 only). The Android app shows the same page (card and notice while it is open) without a new APK; a phone notification while the
+  app is closed needs a new APK and was not done.
+- **Permissions.** A row «خطط المناديب» with the owner's three names: «إعداد خطة اليوم» (add; representative and marketing officer),
+  «مراجعة خطط المناديب» (edit; supervisor, sales manager, administrator), «تصدير خطط المناديب إلى Excel» (export; the same three); restrict-only,
+  on by default. The administrator holds no «إعداد خطة اليوم». Customer service has no plans (403).
+- **Excel** (`lib/list-export-plans.ts`, the list-export pattern): a period (at most 31 days) of the reviewer's team, three sheets
+  «الخطط», «المحطات», «خارج الخطة», in the page's language.
+- **Concurrency and receipts.** Every write names the version it was made on (`baseVersion`; another is 409); the commit re-checks the
+  writer, the member still in the reviewer's team and the customers. The audit row `daily-plan:<action>` is the request's receipt (a retry
+  after a cut connection answers with the plan and writes nothing twice); these rows are kept out of GET /api/crm's recent changes. Body
+  limit 60 000 bytes.
+- **Migration 0022 (`drizzle/0022_daily_plans.sql`), 23 migrations:** additive only, three new empty tables: `crm_daily_plans` (one per
+  member and day: status, version, first send and its source, late, sends, reviewer, reason), `crm_daily_plan_stops` (position, customer,
+  kind, time, note, who added it, the reviewer's state, who edited it; deleted with its plan) and `crm_daily_plan_notes` (one per member,
+  day and reviewer). No existing table or row changes. Package: `--schema-baseline 22 --new-migration 0022_daily_plans.sql --verify-route
+  /api/daily-plans=401 --verify-route /api/daily-plans/inbox=401`; `--verify` must say «MIGRATIONS: 23».
+- **Rollback.** Before the first start: the previous release folder. After it, code only does not start (the previous release refuses a
+  newer migration ledger, by design). Keeping the data written since: stop the app, back up, run the down migration
+  `drizzle/rollback/0022_daily_plans.down.sql` (one transaction: drops the three tables, every plan lost; deletes the `daily-plan:%` audit
+  rows; removes 0022 from the ledger; the schema is then exactly the 22-migration one), then the previous release. Or the schema backup
+  `before-0022_daily_plans-*.sqlite` with the previous release (everything after the update lost).
+- **Tests.** `tests/daily-plans.mjs` (219 checks) and `tests/daily-plans-migration.mjs` (119) in the default gate; `tests/daily-plans-http.mjs`
+  (82, release-build); `tests/daily-plans-browser.mjs` (69, browser). Updated for the new migration and screen:
+  `tests/offline-stuck-entries.mjs`, `tests/service-sales-migration.mjs`, `tests/service-sales-decisions-http.mjs`,
+  `tests/marketing-rollback.mjs`, `tests/mold-photos-rollback.mjs` (each counts its own release's migrations), `tests/permissions.mjs`,
+  `tests/permissions-ui.mjs`, `tests/list-export.mjs`, `tests/mobile-navigation-ui.mjs`, `tests/mobile-route-stops.mjs`,
+  `tests/server-authorization.mjs`.
+
 ## «الإدخالات الواقفة على الجهاز»: delete a stuck entry, duplicates and records no longer available (2026-11-19, no migration, no Android change)
 
 - **Asked.** The owner, through the GSCO session, 2026-11-19: port GSCO 2.13.84 «الإدخالات الواقفة على الجهاز» (a follow-up refused
