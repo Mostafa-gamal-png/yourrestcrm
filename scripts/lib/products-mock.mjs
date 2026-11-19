@@ -72,6 +72,15 @@
 // No real account, network or secret is used.
 // (2026-11-12: the `salesmen` route of yourrest-products#54 only with the option {salesmen: true} or setSalesmen(true); without it, 400
 // invalid_payload fields ['route'] as the products application before that release answers.)
+// (2026-11-19: the `orders` route, read-only, only with the option {orders: true} or setOrders(true); without it, 404 unknown_route as the
+// products application before its release answers. Body {} or {"cursor": <next>}; answer {"requests": [...], "next": null | "<cursor>"},
+// newest requestedAt first, ordersPageSize a page (500 as production; setOrdersPageSize for the tests), a cursor it did not give 400
+// invalid_payload fields ['cursor']. It lists every request with no crmRequestId that is not deleted: registered here (source manual) or
+// from the old workbook and never linked (an imported row, source legacy), waiting, cancelled and delivered alike; never a CRM request.
+// Each item is the pending item's fields (with customer.erpCode, the quotation's and PO's part and the payment's terms whatever the
+// switches) and the status object's (requestRef always), times ISO with +03:00; salesman.crmMemberId the stored one, else the salesman of
+// the `salesmen` list with exactly that name, else "". registerManual takes the salesman's id, the customer's ERP code and the time asked;
+// registerLegacy adds an old workbook row; addRawOrder lists a value as it is (an item the CRM cannot read).)
 import {createServer} from 'node:https';
 import {createHash, createHmac, randomUUID, timingSafeEqual} from 'node:crypto';
 import {moldImageSize} from '../../portable/mold-rules.mjs';
@@ -237,12 +246,12 @@ const same = (row, p) => COLUMNS.every(column => { const a = row[column] ?? null
  * @param {{secret?: string, now?: () => number, quotePo?: boolean, requestRefs?: boolean}} options quotePo: start as the application after its
  *  update of 2026-11-03; requestRefs: start as the application of the new numbering (the second message of 2026-11-05)
  */
-export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false, nov10 = false, signedFlag = false, salesmen = false} = {}) {
+export async function startProductsMock({secret = 'mock-shared-secret-for-tests-0123456789abcdef', now = () => Date.now(), quotePo = false, requestRefs = false, freeCustomers = false, nov10 = false, signedFlag = false, salesmen = false, orders = false} = {}) {
   const work = mkdtempSync(path.join(os.tmpdir(), 'yr-products-mock-'));
   const key = path.join(work, 'key.pem'), cert = path.join(work, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], {stdio: 'ignore'});
   // deletedFileIds: every crmFileId whose file was deleted (design-file-delete, or removeFile), never taken again (crm_file_id_used).
-  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), fileAnswers: [], signedFlag, lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers, nov10, salesmenRoute: salesmen, salesmen: new Map()};
+  const state = {secret, down: false, notConfigured: false, delayMs: 0, rows: new Map(), byOrder: new Map(), nextOrder: 92, calls: [], badSignatures: 0, customers: new Map(), nextFile: 501, answers: new Map(), deletedFileIds: new Set(), fileAnswers: [], signedFlag, lose: new Map(), quotePo, refs: requestRefs, byRef: new Map(), freeCustomers, nov10, salesmenRoute: salesmen, salesmen: new Map(), ordersRoute: orders, ordersPageSize: 500, ordersToken: randomUUID().replace(/-/g, ''), rawOrders: []};
   // This application's own reading of a request and of a file: before or after its update of 2026-11-03 (state.quotePo), and before or
   // after its new numbering (state.refs).
   const statusObject = row => statusObjectOf(row, state.quotePo, state.refs, state.freeCustomers, state.nov10), designEntry = file => designEntryOf(file, state.quotePo);
@@ -495,6 +504,38 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
       payment: row.payment ?? null, revision: row.revision, ...quotePoPart(row, state.quotePo), ...nov10Part(row, state.nov10)}))}};
   }
 
+  /** A time as the orders route writes it: ISO with Riyadh's offset (+03:00); null for none. */
+  const riyadhOf = value => { const at = Date.parse(value ?? ''); return Number.isFinite(at) ? new Date(at + 3 * 3600_000).toISOString().slice(0, 19) + '+03:00' : null; };
+  /** The orders route (2026-11-19): one item, the pending item's fields and the status object's. */
+  function orderItem(row) {
+    // The status object's customer (crmNumber, name, erpCode) gives way to the pending item's (with address and city); no crmRequestId.
+    const status = statusObjectOf(row, true, true, state.freeCustomers, true);
+    delete status.customer; delete status.crmRequestId;
+    const salesmanId = row.salesmanId || [...state.salesmen.values()].find(entry => entry.name === row.salesmanName && row.salesmanName)?.crmMemberId || '';
+    return {...status, requestRef: row.requestRef, orderNo: row.orderNo, crmRequestId: null, source: row.source === 'import' ? 'legacy' : 'manual',
+      requestedAt: riyadhOf(row.requestedAt), waitingSince: riyadhOf(row.waitingSince), enteredBy: row.source === 'manual' ? row.createdBy : null,
+      customer: {crmNumber: row.customerNo ?? null, name: row.customerName ?? '', address: row.customerAddress ?? '', city: row.customerCity ?? '', erpCode: row.customerErpCode ?? ''},
+      salesman: {crmMemberId: salesmanId, name: row.salesmanName ?? ''},
+      specs: {description: row.description, core: row.core, vibrators: row.vibrators, model: row.model, halfBlock: row.halfBlock, moldWidth: row.moldWidth, gelbaSize: row.gelbaSize, moldNo: row.moldNo, quantity: row.quantity, designUrl: row.designUrl, notes: row.notes},
+      payment: row.payment ?? null, updatedAt: riyadhOf(row.updatedAt)};
+  }
+  /** A page's cursor, as only this application gives it (any other text is refused). */
+  const cursorOf = offset => 'p' + offset + '.' + createHmac('sha256', state.ordersToken).update(String(offset)).digest('hex').slice(0, 16);
+  function ordersRoute(body) {
+    const cursor = body.cursor ?? null;
+    let offset = 0;
+    if (cursor !== null) {
+      const match = typeof cursor === 'string' ? /^p(\d{1,9})\.[0-9a-f]{16}$/.exec(cursor) : null;
+      if (!match || cursorOf(Number(match[1])) !== cursor) throw new ApiError('invalid_payload', 400, 'The cursor is not valid.', ['cursor']);
+      offset = Number(match[1]);
+    }
+    const rows = [...state.byRef.values()].filter(row => row.crmRequestId === null && ['manual', 'import'].includes(row.source) && !row.deleted)
+      .sort((a, b) => (Date.parse(b.requestedAt ?? '') || 0) - (Date.parse(a.requestedAt ?? '') || 0));
+    const all = [...rows.map(orderItem), ...state.rawOrders.map(value => structuredClone(value))];
+    const page = all.slice(offset, offset + state.ordersPageSize), next = offset + state.ordersPageSize < all.length ? cursorOf(offset + state.ordersPageSize) : null;
+    return {status: 200, body: {requests: page, next}};
+  }
+
   const server = createServer({key: readFileSync(key), cert: readFileSync(cert)}, async (req, res) => {
     if (state.down) { req.socket.destroy(); return; }
     const parts = [];
@@ -508,8 +549,10 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     if (state.delayMs) await new Promise(resolve => setTimeout(resolve, state.delayMs));
     try {
       if (req.method !== 'POST') throw new ApiError('method_not_allowed', 405, 'Use POST.');
+      // The orders route exists only after its release (option orders, setOrders): before, 404 unknown_route.
+      if (route === 'orders' && !state.ordersRoute) throw new ApiError('unknown_route', 404, 'Unknown route.');
       // The salesmen route exists only after its release (option salesmen, setSalesmen): before, it is an unknown route like any other.
-      if (!['requests', 'status', 'cancel', 'approval', 'pending', 'customers', 'design-files', 'design-file-delete', 'design-file', ...(state.salesmenRoute ? ['salesmen'] : [])].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
+      if (!['requests', 'status', 'cancel', 'approval', 'pending', 'customers', 'design-files', 'design-file-delete', 'design-file', ...(state.salesmenRoute ? ['salesmen'] : []), ...(state.ordersRoute ? ['orders'] : [])].includes(route)) throw new ApiError('invalid_payload', 400, 'Unknown route.', ['route']);
       if (state.notConfigured) throw new ApiError('not_configured', 503, 'The integration secret is not configured.');
       const timestamp = String(req.headers['x-yr-timestamp'] || ''), signature = String(req.headers['x-yr-signature'] || '');
       if (!/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) throw new ApiError('invalid_signature', 401, 'Missing or malformed signature headers.');
@@ -537,7 +580,7 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
         res.writeHead(200, {'Content-Type': file.type, 'Content-Length': String(file.bytes.length), 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(file.name.toWellFormed())});
         res.end(file.bytes); return;
       }
-      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'customers' ? customers(body) : route === 'salesmen' ? salesmenRoute(body)
+      const result = route === 'requests' ? upsert(body) : route === 'status' ? status(body) : route === 'approval' ? approval(body) : route === 'pending' ? pending() : route === 'orders' ? ordersRoute(body) : route === 'customers' ? customers(body) : route === 'salesmen' ? salesmenRoute(body)
         : route === 'design-file-delete' ? deleteDesign(body) : cancel(body);
       reply(result.status, result.body);
     } catch (error) {
@@ -556,13 +599,28 @@ export async function startProductsMock({secret = 'mock-shared-secret-for-tests-
     /** Historical rows of the sheet, as the production app imports them (orderNo 1..n, source import, not linked). */
     seedLegacy(count) { for (let n = 1; n <= count; n++) created({crmRequestId: null, orderNo: n, source: 'import', stages: blankStages(), approvals: {...noApprovals(), legacy: true}, cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 1, updatedAt: null, waitingStep: 'manufacturing', waitingSince: '2026-04-19T13:45:47+03:00', ...Object.fromEntries(COLUMNS.map(c => [c, null]))}); },
     /** A request registered directly in the products application (source manual, no crmRequestId), waiting for the sales manager. */
-    registerManual({customerNo = null, customerName = 'مصنع مسجّل في الإنتاج', salesmanName = 'مندوب', createdBy = 'staff@yourrest.org', description = 'manual mold', quantity = 1, payment = null, quoteNo = null, poNo = null} = {}) {
+    registerManual({customerNo = null, customerName = 'مصنع مسجّل في الإنتاج', salesmanName = 'مندوب', createdBy = 'staff@yourrest.org', description = 'manual mold', quantity = 1, payment = null, quoteNo = null, poNo = null, salesmanId = '', customerErpCode = null, requestedAt = null, customerCity = 'الدمام', customerAddress = '', moldNo = ''} = {}) {
       const row = {crmRequestId: null, orderNo: state.refs ? null : state.nextOrder++, source: 'manual', createdBy, stages: blankStages(), approvals: noApprovals(), cancelled: false, delivered: false, deliveryDate: null, moldSerial: null, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null,
-        ...Object.fromEntries(COLUMNS.map(c => [c, null])), requestedAt: new Date(now()).toISOString(), customerNo, customerName, customerAddress: '', customerCity: 'الدمام', salesmanId: '', salesmanName, salesmanEmail: '',
-        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: '', payment, quoteNo, poNo};
+        ...Object.fromEntries(COLUMNS.map(c => [c, null])), requestedAt: requestedAt ? new Date(requestedAt).toISOString() : new Date(now()).toISOString(), customerNo, customerName, customerAddress, customerCity, salesmanId, salesmanName, salesmanEmail: '', customerErpCode,
+        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'two', moldWidth: 1380, gelbaSize: 795, moldNo, quantity, designUrl: null, notes: '', payment, quoteNo, poNo};
       created(row); touch(row);
       return row;
     },
+    /** A request of the old workbook never linked to a CRM request (source import, read as "legacy" by the orders route): the approvals
+     *  of a historical request (none needed), delivered or not, with its customer, salesman and time asked. */
+    registerLegacy({customerNo = null, customerName = 'مصنع من الشيت', customerErpCode = null, salesmanName = 'مندوب قديم', salesmanId = '', requestedAt = '2026-10-20T06:00:00.000Z', description = 'sheet mold', quantity = 1, moldSerial = null, delivered = true, deliveryDate = '2026-10-25', orderNo = null, customerCity = 'Riyadh - الرياض'} = {}) {
+      const row = {crmRequestId: null, orderNo, source: 'import', stages: blankStages(), approvals: {...noApprovals(), legacy: true}, cancelled: false, delivered, deliveryDate: delivered ? deliveryDate : null, moldSerial, productionDate: null, revision: 0, updatedAt: null, waitingStep: null, waitingSince: null,
+        ...Object.fromEntries(COLUMNS.map(c => [c, null])), requestedAt: new Date(requestedAt).toISOString(), customerNo, customerName, customerAddress: '', customerCity, salesmanId, salesmanName, salesmanEmail: '', customerErpCode,
+        description, core: 'open', vibrators: 2, model: 'old', halfBlock: 'none', moldWidth: 1380, gelbaSize: 795, moldNo: '', quantity, designUrl: null, notes: '', payment: 'cash'};
+      created(row); touch(row);
+      return row;
+    },
+    /** The application before (false) or after (true) its release of the orders route (2026-11-19), at once. */
+    setOrders(on = true) { state.ordersRoute = !!on; },
+    /** How many items a page of the orders route holds (500 as production). */
+    setOrdersPageSize(size) { state.ordersPageSize = size; },
+    /** A value listed by the orders route as it is, after the requests (an item the CRM cannot read, a CRM request that should not be there). */
+    addRawOrder(value) { state.rawOrders.push(value); },
     /** The production manager edits a request in the products application (by its crmRequestId, or the orderNo of one registered there):
      *  its columns change (customerName, salesmanName, quantity, description…); the CRM's first data stays the original a retry is
      *  compared with, and pending lists the edited data. The approvals stay as they are. */

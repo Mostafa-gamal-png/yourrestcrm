@@ -6,14 +6,14 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_RETURNED_TEXT,moldReturnedName,type MoldReturned,MOLD_PAYMENT_TERMS_REQUIRED_TEXT,MOLD_PAYMENT_TERMS_TITLE,MOLD_TERMS_ACCEPT_TEXT,MOLD_TERMS_ACCEPTED_TEXT,moldPaymentTermsNames,type MoldPaymentTerms,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,MOLD_CUSTOMER_TEXT,MOLD_CITY_TEXT,MOLD_MOLD_NO_TEXT,moldCityText,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_ORDER_TEXT,moldOrdersUnreadableText,type MoldOrderView,MOLD_RETURNED_TEXT,moldReturnedName,type MoldReturned,MOLD_PAYMENT_TERMS_REQUIRED_TEXT,MOLD_PAYMENT_TERMS_TITLE,MOLD_TERMS_ACCEPT_TEXT,MOLD_TERMS_ACCEPTED_TEXT,moldPaymentTermsNames,type MoldPaymentTerms,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,MOLD_CUSTOMER_TEXT,MOLD_CITY_TEXT,MOLD_MOLD_NO_TEXT,moldCityText,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_SHEET_CITIES,MOLD_USUAL,moldAddress,moldCancelReasonUsed,moldCity,moldCustomerName,moldErpCode,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
 import MoldCustomerFields,{moldCustomerByErpCode,type MoldCustomerText} from './mold-customer-fields';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import {MoldSigningStep,noteServerTime} from './mold-signature';
 import {viewerFilesFromRequest,type MoldViewerFile} from '@/lib/mold-document-view';
-import {MOLD_FILTER_TEXT,MOLD_NO_FILTERS,filterMoldRequests,moldCardStatus,moldFilterChoices,moldFilterCount,moldSendingKey,moldSendingLabel,type MoldFilters} from '@/lib/mold-filters';
+import {MOLD_FILTER_TEXT,MOLD_NO_FILTERS,filterMoldRequests,isMoldOrder,moldCardStatus,moldFilterChoices,moldFilterCount,moldMergeOrders,moldSendingKey,moldSendingLabel,type MoldFilters} from '@/lib/mold-filters';
 import {MoldSignLinkPanel,MoldSigningNotes,SignLinkLine,rememberSignLink} from './mold-sign-link';
 import './mold-requests.css';
 
@@ -24,7 +24,7 @@ const day=(value:string|null|undefined)=>value?value.slice(0,10):'—';
 /** Where the request is: the step it waits at (since the approval chain), else production's status; the sales manager reads «waiting
  * for you» on what they can approve. The words live in lib/mold-filters.ts, so «الحالة» and «واقف عند» offer them as the card says them. */
 const statusText=(view:MoldRequestView,say:Say)=>say(...moldCardStatus(view));
-const waitingSince=(view:MoldRequestView,say:Say)=>!view.cancelled&&view.remote?.waitingSince&&!['done','cancelled'].includes(view.remote.waitingStep||'')?say('من ','Since ')+stamp(view.remote.waitingSince):'';
+const waitingSince=(view:Pick<MoldRequestView,'cancelled'|'remote'>,say:Say)=>!view.cancelled&&view.remote?.waitingSince&&!['done','cancelled'].includes(view.remote.waitingStep||'')?say('من ','Since ')+stamp(view.remote.waitingSince):'';
 /** Production marks the request as having neither a quotation file nor a PO file while finance has not approved it (quoteOrPoMissing,
  *  2026-11-05): «ناقص ملف عرض السعر / الـ PO». hint: on the request's sheet, who attaches it (the requester below, while editable; else
  *  the representative or the production manager). The numbers are not shown any more (production no longer shows them). */
@@ -75,8 +75,9 @@ export function useMoldRequests(me:Member|null){
   const current=++generation.current;setLoading(true);
   // refs=1: this page names the waiting list's items by requestRef or crmRequestId, so it gets every item, numbered by production or not
   // yet (the products update of 2026-11-05); a page loaded before asks without it and gets only the numbered ones (moldPendingForOldPage).
-  // The server's clock with each list (2026-11-10): the moment a signature's block prints is the server's.
-  try{const next=await submitJson<MoldRequestsAnswer>('/api/mold-requests?refs=1',{cache:'no-store'},{language:getLanguage()});noteServerTime(next.generatedAt);if(current===generation.current){setData(next);setError('');}}
+  // The server's clock with each list (2026-11-10): the moment a signature's block prints is the server's. orders=1 (2026-11-19): with the
+  // list, the reader's requests that exist only in the products application (read-only).
+  try{const next=await submitJson<MoldRequestsAnswer>('/api/mold-requests?refs=1&orders=1',{cache:'no-store'},{language:getLanguage()});noteServerTime(next.generatedAt);if(current===generation.current){setData(next);setError('');}}
   catch(failure){if(current===generation.current)setError(messageOf(failure));}
   finally{if(current===generation.current)setLoading(false);}
  },[identity]);
@@ -112,7 +113,7 @@ function useMoldAction(onDone:(view:MoldRequestView|null)=>void,onRefused?:(view
 }
 
 /** The seven stages in order, each with the date it was finished when production gave one (§3). */
-export function MoldStages({view,say}:{view:MoldRequestView;say:Say}){
+export function MoldStages({view,say}:{view:Pick<MoldRequestView,'remote'|'cancelled'>;say:Say}){
  const stages=view.remote?.stages;
  return <ol className="mold-stages" aria-label={say('مراحل التصنيع','Production stages')}>{MOLD_STAGES.map((key,index)=>{
   const stage=stages?.[key],done=!!stage?.done;
@@ -179,6 +180,42 @@ function MoldCard({view,linkReady,unsent,onOpen,say}:{view:MoldRequestView;linkR
  </button>;
 }
 
+/** A request that exists only in the products application (2026-11-19): its card, as a CRM request's reads (where it waits, the
+ *  customer, the description, the order number, the quantity, the stages, the salesman, the files), marked by where it came from and that
+ *  it is read-only; it opens the read-only sheet (MoldOrderSheet), nothing else. */
+function MoldOrderCard({order,onOpen,say}:{order:MoldOrderView;onOpen:()=>void;say:Say}){
+ const remote=order.remote,cancelled=remote.status==='cancelled',designs=order.designFiles.length,documents=order.quoteFiles.length+order.poFiles.length;
+ return <button type="button" className="mold-card mold-order-card" data-source={order.source} data-status={remote.status} data-returned={order.returned?'':undefined} onClick={onOpen}>
+  <header><strong>{order.customerName||'—'}</strong><span className="mold-chip" data-status={remote.status} data-step={remote.waitingStep||undefined}>{say(...moldCardStatus(order))}</span></header>
+  <p className="mold-card-origin" data-source={order.source}><Lock size={13} aria-hidden="true"/><span>{say(...MOLD_ORDER_TEXT.badge[order.source])}</span></p>
+  {waitingSince(order,say)&&<small className="mold-card-since"><Hourglass size={13} aria-hidden="true"/>{waitingSince(order,say)}</small>}
+  {order.returned&&<p className="mold-returned-badge"><Undo2 size={13} aria-hidden="true"/><span><b>{say(...MOLD_RETURNED_TEXT.badge)}</b>: <span dir="auto">{order.returned.reason}</span></span></p>}
+  {(!!order.customerErpCode||order.crmNumber===null)&&<p className="mold-card-customer">{!!order.customerErpCode&&<span>{say(...MOLD_CUSTOMER_TEXT.code)}: <bdi dir="ltr">{order.customerErpCode}</bdi></span>}{order.crmNumber===null&&<span className="mold-not-in-crm">{say(...MOLD_CUSTOMER_TEXT.notInCrm)}</span>}</p>}
+  <p dir="auto">{order.specs.description}</p>
+  <div className="mold-card-facts">
+   <span>{say('رقم أمر الإنتاج','Production order')}: <b data-order={remote.orderNo??undefined}>{moldOrderNoText(remote,say,{cancelled})}</b></span>
+   <span>{say('الكمية','Quantity')}: <b>{order.specs.quantity??'—'}</b></span>
+   <span>{say('المراحل','Stages')}: <b>{remote.stagesDone+'/'+remote.stagesTotal}</b></span>
+   <span>{say(...MOLD_ORDER_TEXT.salesman)}: <bdi>{order.memberName||'—'}</bdi></span>
+   {order.paymentTerms&&<span className="mold-payment-terms">{say('الدفع','Payment')}: <b>{say(...moldPaymentNames.deferred)} · {termsText(order.paymentTerms,say)}</b></span>}
+   {!!designs&&<span className="mold-card-files"><Paperclip size={13} aria-hidden="true"/>{say('ملفات التصميم','Design files')}: <b>{designs}</b></span>}
+   {!!documents&&<span className="mold-card-files" data-category="quote-po"><Paperclip size={13} aria-hidden="true"/>{say('ملفات عرض السعر والـ PO','Quotation and PO files')}: <b>{documents}</b></span>}
+  </div>
+  {order.quotePo?.missing&&<QuotePoMissing say={say}/>}
+ </button>;
+}
+/** The notes above «كل الطلبات» about the products application's requests (2026-11-19): its list could not be had now (the last copy
+ *  shown, with its time, or none: the CRM's requests alone); for the administrator, how many could not be read, and that the list was cut. */
+function MoldOrdersNotes({orders,say}:{orders:NonNullable<MoldRequestsAnswer['orders']>;say:Say}){
+ if(!orders.error&&!orders.unreadable&&!orders.truncated)return null;
+ return <div className="mold-orders-notes" role="status">
+  {orders.error&&<p className="mold-orders-note" data-kind="stale"><TriangleAlert size={14} aria-hidden="true"/><span>{orders.items.length&&orders.at?say(...MOLD_ORDER_TEXT.stale)+' ('+stamp(orders.at)+').':say(...MOLD_ORDER_TEXT.unavailable)}</span></p>}
+  {!!orders.unreadable&&<p className="mold-orders-note" data-kind="unreadable"><TriangleAlert size={14} aria-hidden="true"/><span>{moldOrdersUnreadableText(orders.unreadable,say)}</span></p>}
+  {orders.truncated&&<p className="mold-orders-note" data-kind="truncated"><TriangleAlert size={14} aria-hidden="true"/><span>{say(...MOLD_ORDER_TEXT.truncated)}</span></p>}
+ </div>;
+}
+
+const NO_ORDERS:MoldOrderView[]=[];
 /** The page: the requests the reader may see, the button to ask for a mold, the link's state. */
 export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
@@ -191,9 +228,13 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
  // The filters (2026-11-17: «الحالة»، «واقف عند»، «المندوب»، the days and «بحث»; with «أعادتها المالية» of 2026-11-10: how many finance
  // sent back, offered while there is one), over the list already loaded: what is offered and what is in force (lib/mold-filters.ts).
  const requests=useMemo(()=>data?.requests||[],[data]),linkReady=!!data?.linkReady;
- const choices=useMemo(()=>moldFilterChoices(requests,linkReady,filters),[requests,linkReady,filters]);
- const returnedCount=useMemo(()=>requests.filter(view=>view.returned).length,[requests]);
- const list=useMemo(()=>filterMoldRequests(requests,choices.filters,linkReady),[requests,choices.filters,linkReady]);
+ // The requests that exist only in the products application (2026-11-19, read-only), among the CRM's by the day they were asked for, so
+ // every filter counts them.
+ const orders=data?.orders?.items||NO_ORDERS,entries=useMemo(()=>moldMergeOrders(requests,orders),[requests,orders]);
+ const choices=useMemo(()=>moldFilterChoices(entries,linkReady,filters),[entries,linkReady,filters]);
+ const returnedCount=useMemo(()=>entries.filter(view=>view.returned).length,[entries]);
+ const list=useMemo(()=>filterMoldRequests(entries,choices.filters,linkReady),[entries,choices.filters,linkReady]);
+ const [orderId,setOrderId]=useState<string|null>(null),openOrder=orderId?orders.find(order=>order.id===orderId)||null:null;
  const open=data?.requests.find(view=>view.id===openId)||(approverView?.id===openId?approverView:null);
  const listed=useMemo(()=>new Set((data?.requests||[]).map(view=>view.id)),[data]);
  const openPending=useCallback(async(id:string)=>{
@@ -223,20 +264,25 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
   </div>}
   {showPending&&<MoldPendingList pending={data!.pending!} ownList={listed} say={say} onOpen={openPending} onChanged={changed}/>}
   {!showPending&&<>
-  {!!requests.length&&<MoldFilterPanel filters={filters} choices={choices} returnedCount={returnedCount} shown={list.length} total={requests.length} onChange={setFilters} say={say}/>}
-  {data&&!list.length&&<p className="empty mold-empty">{data.requests.length?say('لا نتائج','No results'):say('لا توجد طلبات تصنيع قوالب بعد.','No mold requests yet.')}</p>}
+  {/* The products application's requests (2026-11-19): a quiet note when its list could not be had now (the last copy, or none), and for
+      the administrator, how many could not be read and a list cut at its last page. */}
+  {data?.orders&&<MoldOrdersNotes orders={data.orders} say={say}/>}
+  {!!entries.length&&<MoldFilterPanel filters={filters} choices={choices} returnedCount={returnedCount} shown={list.length} total={entries.length} onChange={setFilters} say={say}/>}
+  {data&&!list.length&&<p className="empty mold-empty">{entries.length?say('لا نتائج','No results'):say('لا توجد طلبات تصنيع قوالب بعد.','No mold requests yet.')}</p>}
   {!data&&!error&&<p className="empty"><Loader2 className="spin" size={16}/> {say('جارٍ التحميل…','Loading…')}</p>}
-  <div className="mold-list">{list.map(view=><MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} unsent={uploading.filter(upload=>upload.moldId===view.id&&upload.phase==='failed').length} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
+  <div className="mold-list">{list.map(view=>isMoldOrder(view)?<MoldOrderCard key={view.id} order={view} say={say} onOpen={()=>setOrderId(view.id)}/>
+   :<MoldCard key={view.id} view={view} linkReady={!!data?.linkReady} unsent={uploading.filter(upload=>upload.moldId===view.id&&upload.phase==='failed').length} say={say} onOpen={()=>setOpenId(view.id)}/>)}</div>
   </>}
+  {openOrder&&<MoldOrderSheet key={openOrder.id} order={openOrder} approver={approver} statusAt={data?.orders?.at||null} onClose={()=>setOrderId(null)} say={say}/>}
   {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} current={data?.pending?.items.find(item=>item.inCrm&&item.crmRequestId===open.id)||null} linkReady={!!data?.linkReady} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>{setOpenId(null);setApproverView(null);}} onChanged={changed}/>}
   {creating&&<MoldRequestDialog customers={customers} uploads={uploads} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
  </section>;
 }
 
-/** The filters above the list (2026-11-17), as the products application's orders list has them but «المصدر» (the CRM is the only
- *  source): «الحالة»، «واقف عند»، «المندوب» (only when the list holds more than one requester), «من تاريخ» / «إلى تاريخ» and a wide
- *  «بحث»; under them «أعادتها المالية» (2026-11-10), how many are shown, and «مسح الفلاتر» once a filter is set. The selects show the
- *  filters in force (a choice a refresh made meaningless reads «all»); the days and the words as typed. */
+/** The filters above the list (2026-11-17), as the products application's orders list has them: «الحالة»، «واقف عند»، «المندوب» (only
+ *  when the list holds more than one requester), «المصدر» (2026-11-19: only when it holds more than one source), «من تاريخ» / «إلى تاريخ»
+ *  and a wide «بحث»; under them «أعادتها المالية» (2026-11-10), how many are shown, and «مسح الفلاتر» once a filter is set. The selects
+ *  show the filters in force (a choice a refresh made meaningless reads «all»); the days and the words as typed. */
 function MoldFilterPanel({filters,choices,returnedCount,shown,total,onChange,say}:{filters:MoldFilters;choices:ReturnType<typeof moldFilterChoices>;returnedCount:number;shown:number;total:number;onChange:(next:MoldFilters)=>void;say:Say}){
  const set=(key:Exclude<keyof MoldFilters,'returned'>)=>(event:React.ChangeEvent<HTMLInputElement|HTMLSelectElement>)=>onChange({...filters,[key]:event.target.value});
  const text=MOLD_FILTER_TEXT,inForce=choices.filters;
@@ -245,6 +291,8 @@ function MoldFilterPanel({filters,choices,returnedCount,shown,total,onChange,say
    <label className="field mold-filter" data-filter="status"><span>{say(...text.status)}</span><select value={inForce.status} onChange={set('status')}><option value="">{say(...text.allStatuses)}</option>{choices.statuses.map(option=><option key={option.key} value={option.key}>{say(...option.label)}</option>)}</select></label>
    <label className="field mold-filter" data-filter="step"><span>{say(...text.step)}</span><select value={inForce.step} onChange={set('step')}><option value="">{say(...text.allSteps)}</option>{choices.steps.map(option=><option key={option.key} value={option.key}>{say(...option.label)}</option>)}</select></label>
    {choices.members.length>1&&<label className="field mold-filter" data-filter="member"><span>{say(...text.member)}</span><select value={inForce.member} onChange={set('member')}><option value="">{say(...text.allMembers)}</option>{choices.members.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label>}
+   {/* «المصدر» (2026-11-19): offered once the list holds more than one source (the CRM's, the products application's, the old workbook's). */}
+   {choices.sources.length>1&&<label className="field mold-filter" data-filter="source"><span>{say(...text.source)}</span><select value={inForce.source} onChange={set('source')}><option value="">{say(...text.allSources)}</option>{choices.sources.map(option=><option key={option.key} value={option.key}>{say(...option.label)}</option>)}</select></label>}
    <div className="mold-filter-dates">
     <label className="field mold-filter" data-filter="from"><span>{say(...text.from)}</span><input type="date" value={filters.from} onChange={set('from')}/></label>
     <label className="field mold-filter" data-filter="to"><span>{say(...text.to)}</span><input type="date" value={filters.to} onChange={set('to')}/></label>
@@ -368,6 +416,21 @@ function changeRefusedNotice(view:Pick<MoldRequestView,'sending'|'unconfirmed'>,
    :say('المواصفات المعروضة آخر ما قبله الإنتاج من الـCRM؛ بعدها يعدّلها مدير الإنتاج فقط.','The specifications shown are the last production accepted from the CRM; since then only the production manager edits them.'));
 }
 
+/** What was asked for, as a request's sheet lists it: the specifications, an older request's own design link (no longer asked for since
+ *  2026-11-03: shown read-only, nothing for one without), the notes, how the customer pays (nothing for a request asked for before
+ *  2026-11-03) and a deferred payment's terms (2026-11-10). The CRM's sheet and a products application request's (2026-11-19) alike. */
+function specsRows(specs:MoldSpecs,payment:MoldPayment|null,terms:MoldPaymentTerms|null|undefined,say:Say):[string,React.ReactNode][]{
+ return [
+  [say('الوصف','Description'),<span dir="auto" key="d">{specs.description}</span>],[say('العلب','Core'),say(MOLD_CORES[specs.core as keyof typeof MOLD_CORES]||specs.core,specs.core)],[say('الرجاجات','Vibrators'),specs.vibrators],
+  [say('الموديل','Model'),say(MOLD_MODELS[specs.model as keyof typeof MOLD_MODELS]||specs.model,specs.model)],[say('بلوكة النص','Half block'),say(MOLD_HALF_BLOCKS[specs.halfBlock as keyof typeof MOLD_HALF_BLOCKS]||specs.halfBlock,specs.halfBlock)],
+  [say('عرض القالب (مم)','Mold width (mm)'),specs.moldWidth],[say('مقاس الجلب','Gelba size'),specs.gelbaSize],[say('رقم القالب','Mold no.'),specs.moldNo||'—'],[say('الكمية','Quantity'),specs.quantity],
+  ...(specs.designUrl?[[say('رابط التصميم','Design link'),<a key="u" href={specs.designUrl} target="_blank" rel="noopener noreferrer" dir="ltr">{say('فتح الرابط','Open link')}</a>] as [string,React.ReactNode]]:[]),
+  [say('ملاحظات','Notes'),<span dir="auto" key="n">{specs.notes||'—'}</span>],
+  ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment])] as [string,React.ReactNode]]:[]),
+  ...(payment==='deferred'&&terms?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(terms,say)] as [string,React.ReactNode]]:[]),
+ ];
+}
+
 /** One request: where production is, what was asked for, what waits to be sent, and the representative's actions while allowed (an
  *  edit only while it has certainly never reached production: once sent, the production manager edits it in the products application).
  *  The sales manager approves from here what production lists now (current, from «طلبات بانتظار اعتمادي»: the customer, salesman and
@@ -413,18 +476,9 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
   [say('تاريخ الطلب','Requested'),stamp(view.requestedAt)],[say('مقدّم الطلب','Requested by'),view.memberName],
   ...(approving?[[say('المندوب','Salesman'),current!.salesman.name||'—'] as [string,React.ReactNode]]:[]),
  ];
- const asked:[string,React.ReactNode][]=[
-  [say('الوصف','Description'),<span dir="auto" key="d">{specs.description}</span>],[say('العلب','Core'),say(MOLD_CORES[specs.core as keyof typeof MOLD_CORES]||specs.core,specs.core)],[say('الرجاجات','Vibrators'),specs.vibrators],
-  [say('الموديل','Model'),say(MOLD_MODELS[specs.model as keyof typeof MOLD_MODELS]||specs.model,specs.model)],[say('بلوكة النص','Half block'),say(MOLD_HALF_BLOCKS[specs.halfBlock as keyof typeof MOLD_HALF_BLOCKS]||specs.halfBlock,specs.halfBlock)],
-  [say('عرض القالب (مم)','Mold width (mm)'),specs.moldWidth],[say('مقاس الجلب','Gelba size'),specs.gelbaSize],[say('رقم القالب','Mold no.'),specs.moldNo||'—'],[say('الكمية','Quantity'),specs.quantity],
-  // «رابط التصميم» is no longer asked for (2026-11-03): an older request's own link is still shown, read-only; nothing for one without.
-  ...(specs.designUrl?[[say('رابط التصميم','Design link'),<a key="u" href={specs.designUrl} target="_blank" rel="noopener noreferrer" dir="ltr">{say('فتح الرابط','Open link')}</a>] as [string,React.ReactNode]]:[]),
-  [say('ملاحظات','Notes'),<span dir="auto" key="n">{specs.notes||'—'}</span>],
-  // How the customer pays: the CRM's own (or, approving, production's now); nothing for a request asked for before 2026-11-03.
-  ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment])] as [string,React.ReactNode]]:[]),
-  // How a deferred payment is paid (2026-11-10): production's when approving from its listing, else the CRM's own.
-  ...(payment==='deferred'&&(approving?current!.paymentTerms:view.paymentTerms)?[[say(...MOLD_PAYMENT_TERMS_TITLE),termsText(approving?current!.paymentTerms:view.paymentTerms,say)] as [string,React.ReactNode]]:[]),
- ];
+ // How the customer pays: the CRM's own (or, approving, production's now); nothing for a request asked for before 2026-11-03. How a
+ // deferred payment is paid (2026-11-10): production's when approving from its listing, else the CRM's own.
+ const asked=specsRows(specs,payment,approving?current!.paymentTerms:view.paymentTerms,say);
  // What the customer reads before signing on the device from the sheet (2026-11-10): the same as the form's signing summary.
  // Text (2026-11-11): the signature page prints it as the screen shows it.
  const signingSummary:[string,string][]=[[say('العميل','Customer'),view.customerName],
@@ -492,7 +546,7 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
 }
 
 /** The three approvals in order, each with when it was given (and, for the sales manager's, by whom); none for a historical request. */
-function MoldApprovals({view,say}:{view:MoldRequestView;say:Say}){
+function MoldApprovals({view,say}:{view:Pick<MoldRequestView,'remote'>;say:Say}){
  const approvals=view.remote?.approvals;
  if(!approvals?.required)return null;
  return <ol className="mold-approvals" aria-label={say('الاعتمادات','Approvals')}>{(['sales','production','admin'] as const).map(step=>{
@@ -500,6 +554,46 @@ function MoldApprovals({view,say}:{view:MoldRequestView;say:Say}){
   return <li key={step} data-done={!!given}><BadgeCheck size={15} aria-hidden="true"/><span>{say('اعتماد ','Approval: ')+say(...moldApprovalNames[step])}</span>
    <small>{given?say('تم','Done')+(given.at?' · '+stamp(given.at):'')+(step==='sales'&&approvals.sales?.by?' · '+approvals.sales.by:'')+(step==='sales'&&approvals.sales?.termsAccepted?' · '+say(...MOLD_TERMS_ACCEPTED_TEXT):''):say('لم يتم بعد','Not yet')}</small></li>;
  })}</ol>;
+}
+
+/** A request that exists only in the products application (2026-11-19), read-only: where it came from and that it is changed there (the
+ *  sales manager approves one waiting for him from «طلبات بانتظار اعتمادي»), cancelled there, the quotation's or PO's file missing, finance's
+ *  return, where it waits, the approvals, the stages, the facts (order number, production status, serial, dates, delivery, the customer's
+ *  codes and address, the salesman, who entered it), the specifications and payment as production holds them now, and its files through the
+ *  CRM by its requestRef. Nothing is asked of the server when it opens: the list brought it whole. */
+function MoldOrderSheet({order,approver,statusAt,onClose,say}:{order:MoldOrderView;approver:boolean;statusAt:string|null;onClose:()=>void;say:Say}){
+ const remote=order.remote,cancelled=remote.status==='cancelled';
+ const facts:[string,React.ReactNode][]=[
+  [say('رقم أمر الإنتاج','Production order'),moldOrderNoText(remote,say,{cancelled})],[say('حالة الإنتاج','Production status'),say(...moldStatusNames[remote.status])],
+  [say('السريال','Serial'),remote.moldSerial?<bdi dir="ltr" className="mold-serial" key="s">{remote.moldSerial}</bdi>:'—'],[say('تاريخ الإنتاج','Production date'),day(remote.productionDate)],
+  [say('التسليم','Delivery'),remote.delivered?say('سُلِّم','Delivered')+' · '+day(remote.deliveryDate):say('لم يُسلَّم','Not delivered')],
+  [say('كود يورست','Yourrest code'),order.crmNumber===null?<span className="mold-not-in-crm" key="y">{say(...MOLD_CUSTOMER_TEXT.notInCrm)}</span>:'YR-C-'+String(order.crmNumber).padStart(6,'0')],
+  ...(order.customerErpCode?[[say(...MOLD_CUSTOMER_TEXT.code),<bdi dir="ltr" key="e">{order.customerErpCode}</bdi>] as [string,React.ReactNode]]:[]),
+  ...(order.customerAddress?[[say('عنوان التسليم','Delivery address'),<span dir="auto" key="a">{order.customerAddress}</span>] as [string,React.ReactNode]]:[]),
+  ...(order.customerCity?[[say(...MOLD_CITY_TEXT.label),<span dir="auto" key="c">{moldCityText(order.customerCity,say)}</span>] as [string,React.ReactNode]]:[]),
+  [say('تاريخ الطلب','Requested'),stamp(order.requestedAt||null)],[say(...MOLD_ORDER_TEXT.salesman),<bdi key="m">{order.memberName||'—'}</bdi>],
+  ...(order.enteredBy?[[say(...MOLD_ORDER_TEXT.enteredBy),<bdi key="b">{order.enteredBy}</bdi>] as [string,React.ReactNode]]:[]),
+ ];
+ return <Sheet open onOpenChange={open=>{if(!open)onClose();}}>
+  <SheetContent side={direction()==='rtl'?'left':'right'} className="mold-sheet mold-order-sheet" dir={direction()} data-source={order.source}>
+   <SheetTitle>{order.customerName||'—'}</SheetTitle>
+   <SheetDescription>{say(...moldCardStatus(order))+' · '+say('مراحل منتهية','stages done')+' '+remote.stagesDone+'/'+remote.stagesTotal}</SheetDescription>
+   <p className="mold-banner mold-order-readonly" data-kind="order" data-source={order.source}><Lock size={16} aria-hidden="true"/><span>{say(...MOLD_ORDER_TEXT.readOnly[order.source])}{approver&&!cancelled&&remote.waitingStep==='sales'?' '+say(...MOLD_ORDER_TEXT.approveThere):''}</span></p>
+   {cancelled&&<p className="mold-banner" data-kind="cancelled">{say(...MOLD_ORDER_TEXT.cancelled)}</p>}
+   {order.quotePo?.missing&&<QuotePoMissing say={say} hint="production"/>}
+   {order.returned&&<ReturnedNote returned={order.returned} hint={say(...MOLD_ORDER_TEXT.returned)} say={say}/>}
+   {remote.waitingStep&&!cancelled&&<p className="mold-waiting" data-step={remote.waitingStep}><Hourglass size={15} aria-hidden="true"/><strong>{say(...moldWaitingNames[remote.waitingStep])}</strong>{waitingSince(order,say)&&<span>{waitingSince(order,say)}</span>}</p>}
+   <MoldApprovals view={order} say={say}/>
+   <MoldStages view={order} say={say}/>
+   <p className="mold-updated">{say('آخر تحديث للحالة','Status last updated')}: {stamp(remote.updatedAt||statusAt)}</p>
+   <dl className="mold-facts">{facts.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
+   <h3 className="mold-subtitle">{say('المواصفات','Specifications')}</h3>
+   <p className="mold-specs-note" data-source="production">{say(...MOLD_ORDER_TEXT.specs)}</p>
+   <dl className="mold-facts">{specsRows(order.specs,order.payment,order.paymentTerms,say).map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
+   <MoldPendingDesignFiles files={order.designFiles} say={say}/>
+   {(['quote','po'] as const).map(category=><MoldPendingDesignFiles key={category} category={category} files={category==='quote'?order.quoteFiles:order.poFiles} say={say}/>)}
+  </SheetContent>
+ </Sheet>;
 }
 
 /** The form's fields. «رابط التصميم» is not one of them any more (the owner, 2026-11-03): a new request carries none, and an older

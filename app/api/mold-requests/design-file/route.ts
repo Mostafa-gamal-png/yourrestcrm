@@ -11,6 +11,10 @@
 //  production approves), and a file that item lists (moldPendingQuery names the item so). ?order=<orderNo>&file=: the same for an item
 //  production has numbered, as a page loaded before this release links it (and this release for an older application's item without a
 //  requestRef); the number is read against the list as it is now, never kept.
+// ?ref=<requestRef>&file=<fileId> also names a request that exists only in the products application (the `orders` route, 2026-11-19:
+//  entered there, or from the old workbook): whoever may read it (moldOrderFor: the CRM's rule, canReadMoldRequest, on its salesman and
+//  its customer, as «كل الطلبات» lists it), any file it lists. Such a request is looked for first; else the sales manager's pending rule
+//  above, unchanged (anyone else: 403 as before).
 // A file is any of the request's: a design file, or (since production's update of 2026-11-03) the quotation's or the PO's, named by its
 //  fileId whichever list it is in.
 // &inline=1 opens a PDF or an image in the browser; anything else always downloads, as plain bytes (an SVG or a drawing is never rendered).
@@ -20,7 +24,7 @@ import {context,CRMError,replyError,requirePages} from '@/lib/crm-server';
 import {callProducts} from '@/portable/mold-client.mjs';
 import {moldContentDisposition,moldDesignContentType,MOLD_ID,MOLD_REQUEST_REF} from '@/portable/mold-rules.mjs';
 import {canApproveMoldRequests,canUseMoldRequests,moldDesignFilesView,moldErrorText,moldListedFiles,type MoldDesignFile,type MoldDesignFileRow} from '@/lib/mold-requests';
-import {canOpenMoldRequest,loadMoldDesignFiles,loadMoldRequest,moldPendingFor,moldQuotePoSupported,productsLink} from '@/lib/mold-requests-server';
+import {canOpenMoldRequest,loadMoldDesignFiles,loadMoldRequest,moldOrderFor,moldPendingFor,moldQuotePoSupported,productsLink} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 // Each file is held whole in memory (up to 25 MiB: production's answer, or the CRM's copy as the object store reads it) until the
@@ -71,6 +75,8 @@ async function answer(req:Request):Promise<Response>{try{
  if(!/^[A-Za-z0-9_-]{1,64}$/.test(key)||[id,order,crm,ref].filter(value=>value!==null).length!==1)throw new CRMError('حدد الملف');
  const link=productsLink();
  let entry:MoldDesignFile|undefined,own:MoldDesignFileRow|undefined;
+ // ?ref= may name a request that exists only in the products application (2026-11-19), when the reader may read it.
+ const productionOrder=ref!==null&&MOLD_REQUEST_REF.test(ref)?await moldOrderFor(c,link,ref):null;
  if(id!==null){
   const row=await loadMoldRequest(c.db,id);
   if(!row||!await canOpenMoldRequest(row,c,link))throw new CRMError('الملف غير متاح',404);
@@ -80,6 +86,10 @@ async function answer(req:Request):Promise<Response>{try{
   own=shown.source==='crm'?files.find(file=>file.id===shown.crmFileId):undefined;
   entry=shown.fileId===null?undefined:moldListedFiles(row.remote).find(file=>String(file.fileId)===shown.fileId);
   if(!entry&&!(own?.objectKey&&env.FILES))throw new CRMError(own?'نسخة الملف في الـCRM غير موجودة ولم يصل للإنتاج بعد':'الملف غير متاح',404);
+ }else if(productionOrder){
+  // A request that exists only in the products application, one the reader may read: a file it lists, or none.
+  entry=[...productionOrder.designFiles,...productionOrder.quoteFiles,...productionOrder.poFiles].find(file=>String(file.fileId)===key);
+  if(!entry)throw new CRMError('الملف غير متاح',404);
  }else{
   if(!canApproveMoldRequests(c.me))throw new CRMError('ملفات الطلبات بانتظار الاعتماد لمدير المبيعات',403);
   const orderNo=Number(order);

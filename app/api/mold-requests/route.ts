@@ -12,7 +12,7 @@ import type {MoldFileCategory} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
 import {customerCodeKey,uniqueCustomerCodes} from '@/lib/customer-identity';
 import {isServiceRole} from '@/lib/customer-service';
-import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldNov10Known,moldRequestRefKnown,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,releaseMoldRequest,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
+import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,moldOrdersFor,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldNov10Known,moldRequestRefKnown,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,releaseMoldRequest,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
 
 // «الصلاحيات»: the page's own requests, closed when the administrator hid it (lib/permissions.ts).
@@ -75,15 +75,20 @@ function askedCustomer(c:Awaited<ReturnType<typeof reader>>,input:{customerId?:s
  * «طلبات بانتظار اعتمادي» shows them now without their list doing so (canOpenMoldRequest: customer service's, say). refs=1: this
  * release's page, which names a pending item by its requestRef or crmRequestId; without it (a page loaded before) the waiting list keeps
  * the items production has numbered only (moldPendingForOldPage). */
+/** orders=1 (this release's page, 2026-11-19): with the list, the reader's requests that exist only in the products application (entered
+ * there, or from the old workbook), read-only (moldOrdersFor: production's `orders` route, kept a minute; the CRM's rule on its salesman
+ * and customer). A page loaded before asks without it and gets nothing of them, nor is production asked for them; ?id= never. */
 export async function GET(req:Request){try{
- const c=await reader(),link=productsLink(),url=new URL(req.url),id=url.searchParams.get('id'),refs=url.searchParams.get('refs')==='1';
+ const c=await reader(),link=productsLink(),url=new URL(req.url),id=url.searchParams.get('id'),refs=url.searchParams.get('refs')==='1',withOrders=!id&&url.searchParams.get('orders')==='1';
  keepMoldRetrying();void sendDueMoldRequests(c.db,{link}).catch(()=>{});
  const one=id?await loadMoldRequest(c.db,id):null;
  const rows=id?(one&&await canOpenMoldRequest(one,c,link)?[one]:[]):(await loadMoldRequests(c.db)).filter(row=>canReadMoldRequest(row,c));
  if(id&&!rows.length)throw new CRMError('الطلب غير متاح',404);
  const statusError=await pullMoldStatuses(c.db,rows,{link}),files=await moldDesignFilesByRequest(c.db,rows.map(row=>row.id)),reasons=await moldViewReasons(c.db,rows,c.me);
- const listed=id?null:await pendingFor(c,link),pending=refs?listed:moldPendingForOldPage(listed),quotePo=await moldQuotePoSupported(c.db);
- const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>moldRequestView(row,c.me,c.members,link.ok,files.get(row.id),reasons.get(row.id),quotePo,moldApprovesRequest(row,c))),statusError,canCreate:canCreateMoldRequest(c.me)&&!cellRefused(c.me,'mold-requests','add'),pending,quotePo,signatureRequired:moldSignatureRequired(c.me.role)};
+ // The waiting list and production's own orders are asked for together (each a call to production, each kept a minute).
+ const [listed,orders]=await Promise.all([id?null:pendingFor(c,link),withOrders?moldOrdersFor(c,link):undefined]);
+ const pending=refs?listed:moldPendingForOldPage(listed),quotePo=await moldQuotePoSupported(c.db);
+ const answer:MoldRequestsAnswer={generatedAt:new Date().toISOString(),linkReady:link.ok,linkProblem:link.ok?'':link.reason,requests:rows.map(row=>moldRequestView(row,c.me,c.members,link.ok,files.get(row.id),reasons.get(row.id),quotePo,moldApprovesRequest(row,c))),statusError,canCreate:canCreateMoldRequest(c.me)&&!cellRefused(c.me,'mold-requests','add'),pending,quotePo,signatureRequired:moldSignatureRequired(c.me.role),...(orders!==undefined?{orders}:{})};
  return Response.json(answer,{headers:{'Cache-Control':'no-store'}});
 }catch(e){return replyError(e);}}
 

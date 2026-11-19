@@ -3,7 +3,7 @@
 // the design files), and the bytes sent are the bytes signed. The secret is never returned, logged or put in an error. Used by the
 // server and the import tool.
 import {createHash, createHmac} from 'node:crypto';
-import {MOLD_BODY_LIMIT, MOLD_CUSTOMERS_BODY_LIMIT, MOLD_SALESMEN_BODY_LIMIT, moldSalesmenAnswer, MOLD_TIMEOUT_MS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_LINE_LIMIT, MOLD_DESIGN_TIMEOUT_MS, moldDesignContentType, moldDesignFileEntry, moldDispositionName, moldStatusObject, readMoldAnswer} from './mold-rules.mjs';
+import {MOLD_BODY_LIMIT, MOLD_CUSTOMERS_BODY_LIMIT, MOLD_SALESMEN_BODY_LIMIT, moldOrdersNext, moldSalesmenAnswer, MOLD_TIMEOUT_MS, MOLD_DESIGN_MAX_BYTES, MOLD_DESIGN_LINE_LIMIT, MOLD_DESIGN_TIMEOUT_MS, moldDesignContentType, moldDesignFileEntry, moldDispositionName, moldStatusObject, readMoldAnswer} from './mold-rules.mjs';
 
 /** X-YR-Signature: lower-case hex HMAC-SHA256 of "<timestamp>\n<METHOD>\n<route>\n<sha256-hex(body as sent)>" with the secret. */
 export function moldSignature(secret, timestamp, method, route, body) {
@@ -28,7 +28,7 @@ export function moldConfig(source) {
   return {ok: true, url: parsed.href, secret};
 }
 
-const routes = new Set(['requests', 'status', 'cancel', 'approval', 'pending', 'customers', 'salesmen', 'design-files', 'design-file-delete', 'design-file']);
+const routes = new Set(['requests', 'status', 'cancel', 'approval', 'pending', 'orders', 'customers', 'salesmen', 'design-files', 'design-file-delete', 'design-file']);
 /** How long a call may take: 120 seconds for the routes that carry a file (its upload, its download), 10 for the others (the customers
  *  route passes its own 60). */
 export const moldRouteTimeout = route => ['design-files', 'design-file'].includes(route) ? MOLD_DESIGN_TIMEOUT_MS : MOLD_TIMEOUT_MS;
@@ -37,6 +37,8 @@ function wellFormed(route, json) {
   if (!json || typeof json !== 'object') return false;
   if (route === 'status') return Array.isArray(json.requests) && Array.isArray(json.unknown);
   if (route === 'pending') return Array.isArray(json.requests);
+  // The orders route (2026-11-19): the page's requests and the cursor of the next page (null, or absent, on the last).
+  if (route === 'orders') return Array.isArray(json.requests) && moldOrdersNext(json.next) !== undefined;
   if (route === 'customers') return ['received', 'inserted', 'updated', 'deactivated', 'activeCustomers'].every(key => Number.isInteger(json[key]));
   // The salesmen route (2026-11-12): the five counts and deactivatedIds (lib/mold-salesmen-server.ts).
   if (route === 'salesmen') return !!moldSalesmenAnswer(json);
@@ -69,7 +71,7 @@ async function readCapped(response, limit) {
  * name from Content-Disposition, made safe to show).
  * @typedef {{kind: 'ok'|'locked'|'not_found'|'rejected'|'retry', code: string, fields: string[], http: number, reason?: string, json?: any, request?: any, file?: {bytes: Buffer, contentType: string, name: string}}} MoldCallAnswer
  * @param {{ok: true, url: string, secret: string} | {ok: false, reason: string}} config
- * @param {'requests'|'status'|'cancel'|'approval'|'pending'|'customers'|'salesmen'|'design-files'|'design-file-delete'|'design-file'} route
+ * @param {'requests'|'status'|'cancel'|'approval'|'pending'|'orders'|'customers'|'salesmen'|'design-files'|'design-file-delete'|'design-file'} route
  * @param {object | Uint8Array} payload
  * @param {{fetch?: typeof globalThis.fetch, now?: () => number, timeoutMs?: number}} [options]
  * @returns {Promise<MoldCallAnswer>}

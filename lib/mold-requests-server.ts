@@ -25,9 +25,10 @@ import {env} from 'cloudflare:workers';
 import {database} from './crm-server';
 import {regionScope} from './regions';
 import {moldConfig,callProducts} from '@/portable/mold-client.mjs';
-import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPaymentTerms,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,moldFreeCustomersAnswered,moldSignedFlagAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY} from '@/portable/mold-rules.mjs';
-import {canApproveMoldRequests,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldFreeCustomer,moldHeldFor,MOLD_FREE_CUSTOMER,moldHasQuotePo,moldListedFiles,moldNeverSent,moldPendingFiles,moldRemoteOlder,moldSignatureOf,moldSignedOutputOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
-import type {Member} from './crm';
+import {moldRequestBody,moldDesignFileBody,moldNextAttempt,moldPaymentTerms,moldPendingItem,moldStatusObject,moldAnswerNotStored,moldQuotePoAnswered,moldFreeCustomersAnswered,moldSignedFlagAnswered,riyadhIso,MOLD_STATUS_BATCH,MOLD_PRODUCTION_ONLY,moldOrderItem,moldOrdersNext,moldOrdersRouteMissing,MOLD_ORDERS_MAX_PAGES} from '@/portable/mold-rules.mjs';
+import {canApproveMoldRequests,canReadMoldOrder,canReadMoldRequest,moldApprovesRequest,moldFileCategory,moldFreeCustomer,moldHeldFor,MOLD_FREE_CUSTOMER,moldHasQuotePo,moldListedFiles,moldNeverSent,moldOrderCustomers,moldOrderView,moldPendingFiles,moldRemoteOlder,moldSignatureOf,moldSignedOutputOf,type MoldDesignFile,type MoldDesignFileRow,type MoldError,type MoldOrderItem,type MoldOrderView,type MoldOrdersAnswer,type MoldPendingAnswer,type MoldPendingItem,type MoldRemote,type MoldRequestData,type MoldRequestRow} from './mold-requests';
+import type {Member,Row} from './crm';
+import type {CustomerCodeMapping} from './customer-identity';
 
 type Config=ReturnType<typeof moldConfig>;
 /** Read on every use, so a change of the private settings needs no rebuild; the secret stays in this module's caller only. */
@@ -677,4 +678,83 @@ export async function pullPendingApprovals({link=productsLink(),now=()=>new Date
  const raw=answer.json!.requests as unknown[],items=raw.map(item=>moldPendingItem(item) as MoldPendingItem|null).filter((item):item is MoldPendingItem=>!!item),unreadable=raw.length-items.length;
  pendingCache={at,items,unreadable};pendingFailure=null;
  return {items,error:null,at,unreadable};
+}
+
+/** The requests that exist only in the products application (the owner, 2026-11-19: «كل الطلبات» shows them, read-only, so the filters
+ *  count them): production's `orders` route, every page of it (MOLD_ORDERS_MAX_PAGES at most, within MOLD_ORDERS_DEADLINE_MS), each item
+ *  read by moldOrderItem (one that cannot be read is left out and counted; a CRM request is never one), kept a minute like the waiting
+ *  list so opening the page does not ask production each time (one pull at a time: a page opened meanwhile waits for it). A failed pull
+ *  keeps the last copy (shown with its time and a note), and waits half a minute before the next. A products application without the route
+ *  (404, or its 400 naming "route": before its release, or rolled back) is remembered for MOLD_ORDERS_MISSING_MS and shows nothing: the
+ *  page is as it was. Nothing of it is stored in the database. */
+export const MOLD_ORDERS_MISSING_MS=10*60_000;
+/** How long one pull may take, every page together (each call's own limit is what is left of it, 10 seconds at most). */
+export const MOLD_ORDERS_DEADLINE_MS=15_000;
+type OrdersCopy={at:string;items:MoldOrderItem[];unreadable:number;truncated:boolean};
+let ordersCache:OrdersCopy|null=null,ordersFailure:MoldError|null=null,ordersMissingAt:string|null=null,ordersPulling:Promise<ProductionOrders>|null=null;
+export function forgetProductionOrders(){ordersCache=null;ordersFailure=null;ordersMissingAt=null;}
+/** missing: the products application has no `orders` route (or the link is off): nothing to show. */
+export type ProductionOrders={items:MoldOrderItem[];error:MoldError|null;at:string|null;unreadable:number;truncated:boolean;missing:boolean};
+export async function pullProductionOrders({link=productsLink(),now=()=>new Date().toISOString(),fetch,force=false}:{link?:Config;now?:()=>string;fetch?:typeof globalThis.fetch;force?:boolean}={}):Promise<ProductionOrders>{
+ const none:ProductionOrders={items:[],error:null,at:null,unreadable:0,truncated:false,missing:true};
+ if(!link.ok)return none;
+ const at=now(),age=(since:string)=>Date.parse(at)-Date.parse(since);
+ const kept=():ProductionOrders=>({items:ordersCache?.items||[],error:ordersFailure,at:ordersCache?.at||null,unreadable:ordersCache?.unreadable||0,truncated:ordersCache?.truncated||false,missing:false});
+ if(!force&&ordersMissingAt&&age(ordersMissingAt)<MOLD_ORDERS_MISSING_MS)return none;
+ // A failure since the copy was taken says the copy is behind: it is shown with the failure until the next try.
+ if(!force&&ordersFailure&&age(ordersFailure.at)<MOLD_STATUS_TTL_MS/2)return kept();
+ if(!force&&ordersCache&&!ordersFailure&&age(ordersCache.at)<MOLD_STATUS_TTL_MS)return kept();
+ if(ordersPulling)return ordersPulling;
+ const pulling=(async():Promise<ProductionOrders>=>{
+  try{
+   const started=Date.now(),items:MoldOrderItem[]=[],seen=new Set<string>(),cursors=new Set<string>();
+   let unreadable=0,truncated=false,cursor:string|null=null;
+   for(let page=0;;page++){
+    if(page>=MOLD_ORDERS_MAX_PAGES){truncated=true;break;}
+    const left=MOLD_ORDERS_DEADLINE_MS-(Date.now()-started);
+    if(left<=0){ordersFailure={code:'timeout',http:0,at};return kept();}
+    const answer=await callProducts(link,'orders',cursor===null?{}:{cursor},{...(fetch?{fetch}:{}),timeoutMs:Math.min(10_000,Math.max(1000,left))});
+    if(answer.kind!=='ok'){
+     if(moldOrdersRouteMissing(answer)){ordersMissingAt=at;ordersCache=null;ordersFailure=null;return none;}
+     ordersFailure={code:answer.code,http:answer.http||0,at};return kept();
+    }
+    for(const raw of answer.json!.requests as unknown[]){
+     // A CRM request is never listed here (its own row holds it); one that slipped in is not counted as unreadable.
+     if(raw&&typeof raw==='object'&&typeof (raw as {crmRequestId?:unknown}).crmRequestId==='string')continue;
+     const item=moldOrderItem(raw) as MoldOrderItem|null;
+     if(!item){unreadable++;continue;}
+     // A request listed on two pages (one added while the pages were read) is shown once.
+     if(seen.has(item.requestRef))continue;
+     seen.add(item.requestRef);items.push(item);
+    }
+    const next=moldOrdersNext(answer.json!.next);
+    if(next===null||next===undefined)break;
+    // The same cursor twice would read the same pages for ever: not the contract's answer.
+    if(cursors.has(next)){ordersFailure={code:'bad_response',http:200,at};return kept();}
+    cursors.add(next);cursor=next;
+   }
+   ordersCache={at,items,unreadable,truncated};ordersFailure=null;ordersMissingAt=null;
+   return {items,error:null,at,unreadable,truncated,missing:false};
+  }catch{ordersFailure={code:'bad_response',http:0,at};return kept();}
+ })();
+ ordersPulling=pulling;
+ try{return await pulling;}finally{if(ordersPulling===pulling)ordersPulling=null;}
+}
+type OrdersReader={me:Member;members:Member[];regionCustomerIds:Set<string>;all:Row[];customerIdentityState:{mappings:CustomerCodeMapping[]}};
+/** The reader's requests that exist only in the products application (MoldOrdersAnswer), each that the CRM's rule gives them
+ *  (canReadMoldOrder on its salesman and its customer as the CRM finds it, moldOrderCustomers); null when there is nothing to show (the
+ *  link off, or no `orders` route: the page as it was). How many could not be read, and a list cut at its last page, for the
+ *  administrator only (whose list holds them all). Never throws: the CRM's own list never waits on it beyond the pull's deadline. */
+export async function moldOrdersFor(c:OrdersReader,link:Config):Promise<MoldOrdersAnswer|null>{
+ if(!link.ok)return null;
+ const pulled=await pullProductionOrders({link});
+ if(pulled.missing)return null;
+ const customerOf=moldOrderCustomers(c.all,c.customerIdentityState.mappings),admin=c.me.role==='admin';
+ const items:MoldOrderView[]=pulled.items.flatMap(order=>{const customerId=customerOf(order.customer);return canReadMoldOrder(order,customerId,c)?[moldOrderView(order,c.members)]:[];});
+ return {items,error:pulled.error,at:pulled.at,...(admin&&pulled.unreadable?{unreadable:pulled.unreadable}:{}),...(admin&&pulled.truncated?{truncated:true}:{})};
+}
+/** One of the reader's orders by its requestRef (its files' downloads, app/api/mold-requests/design-file), as moldOrdersFor lists it now;
+ *  null when the reader may not read it, or it is not listed. */
+export async function moldOrderFor(c:OrdersReader,link:Config,requestRef:string){
+ return (await moldOrdersFor(c,link))?.items.find(item=>item.requestRef===requestRef)||null;
 }

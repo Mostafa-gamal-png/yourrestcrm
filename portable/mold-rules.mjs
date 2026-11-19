@@ -13,6 +13,8 @@
 // Since 2026-11-14 (the owner: «خلي المدينة ورقم القالب إجباري والطلب يتبعت بكود erp»): a new request (and the edit of one never sent)
 // needs its city, one of the sheet's (moldCity), its mold number (validateMoldSpecs moldNoRequired) and the customer's code; the code of a
 // CRM customer goes with its crmNumber for a request stored with data.erpWithCrm (MOLD_SEND_ERP_WITH_CRM_CUSTOMER, moldSendsErpWithCrm).
+// Since 2026-11-19: the `orders` route (yourrest-products), the requests that exist only in the products application (entered there,
+// "manual", or from the old workbook and never linked to a CRM request, "legacy"), read-only: moldOrderItem, moldOrdersRouteMissing.
 
 /** The seven production stages in their fixed order, shown by their English names as in the production sheet (§3). */
 export const MOLD_STAGES = ['laserCutting', 'box', 'coreConnector', 'lowerMold', 'tempershoe', 'alignment', 'paint'];
@@ -931,6 +933,60 @@ export function moldPendingItem(value) {
     payment: moldPayment(value.payment), revision: wholeOrNull(value.revision), designFiles: designFilesOf(value.designFiles) || [],
     ...quotePoOf(value), ...nov10Of(value),
   };
+}
+
+/** The `orders` route (yourrest-products, 2026-11-19): every request production holds that did not come from the CRM (crmRequestId
+ *  null): registered in the products application (source "manual") or from the old workbook and never linked to a CRM request ("legacy");
+ *  waiting, cancelled and delivered alike, deleted ones not. Read-only: approvals stay on pending and approval, files on design-file. */
+export const MOLD_ORDER_SOURCES = Object.freeze(['manual', 'legacy']);
+/** How many pages of `orders` one pull reads at most (500 items each): 5000 requests; a list longer than that is shown cut (truncated). */
+export const MOLD_ORDERS_MAX_PAGES = 10;
+/** The longest cursor the CRM sends back (production's own text, opaque); a longer one, or one that is not text, is not a page to ask for. */
+export const MOLD_ORDERS_CURSOR_MAX = 1024;
+/** A time of `orders` as the screen reads it: ISO with its offset as production sends it, or a Riyadh wall time without one
+ *  ("YYYY-MM-DD HH:MM[:SS]", the message's words) made ISO with +03:00, so the days of the filters are Riyadh's either way; null otherwise. */
+export function moldOrderTime(value) {
+  const text = dateOrNull(value);
+  if (!text) return null;
+  const naive = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(:\d{2})?$/.exec(text);
+  const iso = naive ? naive[1] + 'T' + naive[2] + (naive[3] || ':00') + '+03:00' : text;
+  return Number.isFinite(Date.parse(iso)) ? iso : null;
+}
+/**
+ * One request of the `orders` route, as the CRM reads it: the pending item's fields (moldPendingItem: the customer, the salesman, the
+ * specifications, the payment and the files as production holds them now) and the status object's (moldStatusObject: status, editable,
+ * serial, stages, delivery, where it waits, approvals, returned...), with its source ("manual" or "legacy"). It must carry its requestRef
+ * (the route's own items always do; it names the request in the CRM and its files' downloads) and no crmRequestId; null otherwise. A CRM
+ * request is never one (the caller leaves such an item out without counting it as unreadable).
+ * @param {any} value
+ */
+export function moldOrderItem(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (value.crmRequestId !== null && value.crmRequestId !== undefined) return null;
+  if (!MOLD_ORDER_SOURCES.includes(value.source)) return null;
+  const requestRef = moldRequestRef(value.requestRef);
+  if (!requestRef) return null;
+  // The pending reader takes "crm" or "manual": read as one registered in production, then given its own source back.
+  const item = moldPendingItem({...value, crmRequestId: null, source: 'manual'});
+  const status = moldStatusObject({...value, crmRequestId: null}, {manual: true});
+  if (!item || !status) return null;
+  return {
+    ...item, requestRef, source: /** @type {'manual'|'legacy'} */ (value.source), enteredBy: textOf(value.enteredBy, 190) || null,
+    requestedAt: moldOrderTime(value.requestedAt), waitingSince: moldOrderTime(value.waitingSince),
+    status: status.status, editable: status.editable, moldSerial: status.moldSerial, productionDate: status.productionDate, stages: status.stages,
+    stagesDone: status.stagesDone, stagesTotal: status.stagesTotal, delivered: status.delivered, deliveryDate: status.deliveryDate,
+    updatedAt: status.updatedAt, waitingStep: status.waitingStep, approvals: status.approvals,
+  };
+}
+/** Whether an answer of `orders` says the route is not there (the products application before its release of 2026-11-19, or one rolled
+ *  back): 404 whatever its code (unknown_route, not_found, a web server's page), or 400 invalid_payload naming only the field "route" (as
+ *  that application answers an unknown route, like `salesmen` before its release). The page then works as before, with no orders. */
+export const moldOrdersRouteMissing = answer => !!answer && (answer.http === 404 || answer.kind === 'rejected' && answer.code === 'invalid_payload' && Array.isArray(answer.fields) && answer.fields.length === 1 && answer.fields[0] === 'route');
+/** The cursor of the next page as production gave it: a text of 1 to MOLD_ORDERS_CURSOR_MAX characters, or null for the last page;
+ *  undefined for anything else (a reply that is not the contract's). */
+export function moldOrdersNext(value) {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'string' && value.length >= 1 && value.length <= MOLD_ORDERS_CURSOR_MAX ? value : undefined;
 }
 
 /**

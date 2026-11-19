@@ -45,9 +45,14 @@
 // while it names it. A request whose requester chose the link instead of the pad (data.awaitsSignature) is kept in the CRM, not sent,
 // until the customer signs (moldHeldFor 'customer_signature' «بانتظار توقيع العميل»), then sent by itself. moldSigningView says how far
 // the signing is (the link sent and its expiry, the copies made, the files that got none and why).
+// The requests that exist only in the products application (the owner, 2026-11-19: entered there, or from the old workbook and never
+// linked to a CRM request): production's `orders` route lists them, read-only, and «كل الطلبات» shows each reader those the CRM's one rule
+// gives them (canReadMoldOrder: canReadMoldRequest on the salesman production names and the customer as the CRM knows it), so the filters
+// count them; nothing of them is stored, edited or approved here (approval stays in «طلبات بانتظار اعتمادي»).
 import {cellRefused} from './permissions';
 import type {SignedDocPart} from './mold-signed-document';
-import type {Member} from './crm';
+import type {Member,Row} from './crm';
+import {customerCodeKey,uniqueCustomerCodes,type CustomerCodeMapping} from './customer-identity';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope,regionScopesOverlap} from './regions';
 import {MOLD_PAYMENT_TERMS,MOLD_TERMS_ACCEPT,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG,MOLD_CITY_REQUIRED,MOLD_MOLD_NO_REQUIRED,MOLD_SHEET_CITIES} from '@/portable/mold-rules.mjs';
@@ -290,7 +295,31 @@ export function moldPendingForOldPage(pending:MoldPendingAnswer|null):MoldPendin
  *  (one at least) and their files. */
 export type MoldRequestsAnswer={generatedAt:string;linkReady:boolean;linkProblem:string;requests:MoldRequestView[];statusError:MoldError|null;canCreate:boolean;pending:MoldPendingAnswer|null;quotePo:boolean;
  /** The reader's new request, or changing edit, needs the customer's signature (a sales role, 2026-11-04). */
- signatureRequired:boolean};
+ signatureRequired:boolean;
+ /** The requests that exist only in the products application (2026-11-19, moldOrdersFor), for a page that asks for them (?orders=1):
+  *  null when there are none to show (the production link off, or a products application without the `orders` route); absent when not
+  *  asked (a page loaded before this release, or ?id=). */
+ orders?:MoldOrdersAnswer|null};
+/** Where a request that exists only in the products application came from (the `orders` route, 2026-11-19): registered there ("manual"),
+ *  or from the old workbook and never linked to a CRM request ("legacy"). */
+export type MoldOrderSource='manual'|'legacy';
+/** One request of the `orders` route as portable/mold-rules.mjs moldOrderItem reads it: the pending item's fields (as production holds
+ *  them now) and the status object's. */
+export type MoldOrderItem=Omit<MoldPendingItem,'source'|'crmRequestId'|'requestRef'>&{source:MoldOrderSource;crmRequestId:null;requestRef:string;
+ status:MoldStatusName;editable:boolean;moldSerial:string|null;productionDate:string|null;stages:Record<string,{done:boolean;at:string|null}>;stagesDone:number;stagesTotal:number;
+ delivered:boolean;deliveryDate:string|null;updatedAt:string|null;waitingStep:MoldWaitingStep|null;approvals:MoldApprovals|null};
+/** One such request as a reader receives it: read-only (cancelled is never the CRM's, sending is always 'sent', nothing may be done), in the
+ *  shape the filters of «كل الطلبات» read (lib/mold-filters.ts), with production's data in remote. id: 'order:' and its requestRef (never
+ *  a CRM request's id); memberId: the CRM member production names as its salesman ('' when it names none the CRM knows), memberName that
+ *  member's name, else production's; its files downloaded through the CRM by its requestRef (?ref=…&file=…). */
+export type MoldOrderView={id:string;source:MoldOrderSource;requestRef:string;memberId:string;memberName:string;salesmanName:string;enteredBy:string|null;
+ customerName:string;customerAddress:string;customerCity:string;crmNumber:number|null;customerErpCode:string;requestedAt:string;specs:MoldSpecs;payment:MoldPayment|null;paymentTerms:MoldPaymentTerms|null;
+ cancelled:false;sending:{state:'sent'};can:{approve:false};remote:MoldRemote;returned:MoldReturned|null;quotePo:MoldQuotePoView|null;
+ designFiles:MoldPendingDesignFile[];quoteFiles:MoldPendingDesignFile[];poFiles:MoldPendingDesignFile[]};
+/** The reader's orders (moldOrdersFor in lib/mold-requests-server.ts). error: the last pull failed (the items are the last copy pulled, or
+ *  none); at: when the items were pulled. unreadable and truncated for the administrator only: how many of production's items could not be
+ *  read, and that the list stopped at MOLD_ORDERS_MAX_PAGES pages. */
+export type MoldOrdersAnswer={items:MoldOrderView[];error:MoldError|null;at:string|null;unreadable?:number;truncated?:boolean};
 /** How often the sales manager's open page asks for the waiting list again. */
 export const MOLD_PENDING_REFRESH_MS=3*60_000;
 /** Whether a request the sales manager approved from their list waits for them again: production lists it at the sales step since a
@@ -412,6 +441,45 @@ export function moldApprovingManagerId(row:Pick<MoldRequestRow,'memberId'|'custo
  const owner=moldTeamManagerId(row.memberId,c.members),manager=owner?c.members.find(member=>member.id===owner):undefined;
  if(!manager||!manager.active)return '';
  return moldRequestInRegion(row,manager,c)?owner:'';
+}
+/** The CRM customer of a request that exists only in the products application (2026-11-19): by its Yourrest number (the customer whose
+ *  record carries it, crm_customer_numbers), else by its ERP code when exactly one CRM customer carries that code now (uniqueCustomerCodes
+ *  over the customers' codes and the code mappings, as the mold route links a typed code: a code a customer only had before names nobody),
+ *  else none (''): its region is then its salesman's (moldRequestInRegion). Answers a lookup, the records read once. */
+export function moldOrderCustomers(records:readonly Row[],mappings:CustomerCodeMapping[]=[]){
+ const numbers=new Map<number,string>();
+ for(const record of records)if(record.kind==='customer'){const number=yourrestNumber(record.data.internalCode);if(number!==null&&!numbers.has(number))numbers.set(number,record.id);}
+ let codes:Map<string,Row[]>|null=null;
+ return (customer:{crmNumber:number|null;erpCode?:string})=>{
+  if(customer.crmNumber!==null){const id=numbers.get(customer.crmNumber);if(id)return id;}
+  const key=customerCodeKey(customer.erpCode||'');
+  if(!key)return '';
+  codes??=uniqueCustomerCodes(records as Row[],mappings);
+  const found=codes.get(key)||[];
+  return found.length===1?found[0].id:'';
+ };
+}
+/** Who sees a request that exists only in the products application (2026-11-19): the CRM's one rule (canReadMoldRequest) on what it
+ *  says, as if production's salesman (salesman.crmMemberId: a CRM member's id, or '') had asked for it for its customer as the CRM knows it
+ *  (moldOrderCustomers). The administrator: all. A representative: only those production names them on. A supervisor: their
+ *  representatives'. A customer-service manager: their team's. A sales manager: their own and their team's within their regions, and every
+ *  one they would approve (one whose salesman is in no sales manager's team, or none the CRM knows: by its customer's region, or, with no
+ *  customer found, only a manager of every region). Never another rep's. */
+export const canReadMoldOrder=(order:{salesman:{crmMemberId:string}},customerId:string,c:Reader)=>canReadMoldRequest({memberId:order.salesman.crmMemberId,customerId},c);
+/** A request that exists only in the products application as a reader receives it (MoldOrderView): read-only, its data and status as
+ *  production lists them now, its files downloaded through the CRM by its requestRef. */
+export function moldOrderView(order:MoldOrderItem,members:readonly Pick<Member,'id'|'name'>[]):MoldOrderView{
+ const member=order.salesman.crmMemberId?members.find(item=>item.id===order.salesman.crmMemberId):undefined;
+ const remote:MoldRemote={crmRequestId:'',orderNo:order.orderNo,requestRef:order.requestRef,status:order.status,editable:order.editable,moldSerial:order.moldSerial,productionDate:order.productionDate,stages:order.stages,
+  stagesDone:order.stagesDone,stagesTotal:order.stagesTotal,delivered:order.delivered,deliveryDate:order.deliveryDate,updatedAt:order.updatedAt,revision:order.revision,waitingStep:order.waitingStep,waitingSince:order.waitingSince,approvals:order.approvals,
+  ...(order.quoteOrPoMissing!==undefined?{quoteNo:order.quoteNo||'',poNo:order.poNo||'',quoteOrPoMissing:order.quoteOrPoMissing}:{}),
+  customer:{crmNumber:order.customer.crmNumber,name:order.customer.name,erpCode:order.customer.erpCode||''},
+  ...(order.paymentTerms!==undefined?{paymentTerms:order.paymentTerms}:{}),...(order.returned!==undefined?{returned:order.returned}:{})};
+ return {id:'order:'+order.requestRef,source:order.source,requestRef:order.requestRef,memberId:member?member.id:'',memberName:member?.name||order.salesman.name,salesmanName:order.salesman.name,enteredBy:order.enteredBy,
+  customerName:order.customer.name,customerAddress:order.customer.address,customerCity:order.customer.city,crmNumber:order.customer.crmNumber,customerErpCode:order.customer.erpCode||'',
+  requestedAt:order.requestedAt||'',specs:order.specs,payment:order.payment,paymentTerms:order.payment==='deferred'&&order.paymentTerms&&Object.hasOwn(MOLD_PAYMENT_TERMS,order.paymentTerms)?order.paymentTerms:null,
+  cancelled:false,sending:{state:'sent'},can:{approve:false},remote,returned:order.returned&&order.status!=='cancelled'?order.returned:null,
+  quotePo:order.quoteOrPoMissing!==undefined?{missing:order.quoteOrPoMissing===true}:null,...moldPendingFiles(order)};
 }
 /** An answer older than the status stored (a lower revision; one without a revision is never older): answers can cross, and an older
  *  one must not bring back approvals production has since undone. The SQL twin is newerRemote in lib/mold-requests-server.ts. */
@@ -758,6 +826,22 @@ export const MOLD_RETURNED_TEXT={badge:['أعادتها المالية','Returne
  manager:['أعادته المالية؛ راجع السبب قبل اعتماده من جديد.','Finance returned it; read the reason before approving it again.'] as [string,string],
  filter:['أعادتها المالية','Returned by finance'] as [string,string],save:['حفظ وإعادة الإرسال للإنتاج','Save and resend to production'] as [string,string],
  dialog:['أعادت المالية الطلب. عدّله وأعد إرساله؛ وأي تغيير فيما وقّع عليه العميل يتطلب توقيعًا جديدًا.','Finance returned the request. Correct it and send it again; any change to what the customer signed needs a new signature.'] as [string,string]};
+/** The words of a request that exists only in the products application (2026-11-19): its card's mark (where it came from, and that it is
+ *  read-only), its sheet's note, and the notes above «كل الطلبات» when production's list could not be had or read whole. */
+export const MOLD_ORDER_TEXT={
+ badge:{manual:['مسجّل في تطبيق المنتجات · للعرض فقط','Registered in the products application · view only'],legacy:['من الشيت القديم · للعرض فقط','From the old workbook · view only']} as Record<MoldOrderSource,[string,string]>,
+ readOnly:{manual:['سُجّل هذا الطلب في تطبيق المنتجات مباشرة، ويظهر هنا للاطلاع فقط: تعديله وإلغاؤه وملفاته من تطبيق المنتجات.','This request was registered directly in the products application and is shown here to read only: it is edited, cancelled and given its files there.'],
+  legacy:['طلب قديم من شيت الإنتاج غير مرتبط بطلب في الـCRM، ويظهر هنا للاطلاع فقط.','An old request from the production workbook, not linked to a CRM request, shown here to read only.']} as Record<MoldOrderSource,[string,string]>,
+ approveThere:['اعتماده من «طلبات بانتظار اعتمادي».','Approve it from «Waiting for my approval».'] as [string,string],
+ returned:['بانتظار تعديله في تطبيق المنتجات ثم اعتماد مدير المبيعات من جديد.','Waiting for its correction in the products application, then the sales manager\'s approval again.'] as [string,string],
+ cancelled:['أُلغي الطلب في تطبيق الإنتاج.','The request was cancelled in the production application.'] as [string,string],
+ specs:['بيانات الطلب كما في تطبيق المنتجات الآن.','The request\'s data as it is now in the products application.'] as [string,string],
+ salesman:['المندوب','Salesman'] as [string,string],enteredBy:['سجّله في الإنتاج','Entered in production by'] as [string,string],
+ stale:['تعذّر تحديث طلبات تطبيق المنتجات الآن؛ المعروض آخر نسخة معروفة','The products application\'s requests could not be refreshed now; showing the last known copy'] as [string,string],
+ unavailable:['تعذّر جلب طلبات تطبيق المنتجات الآن؛ تظهر طلبات الـCRM وحدها.','The products application\'s requests could not be fetched now; only the CRM\'s requests are shown.'] as [string,string],
+ truncated:['قائمة تطبيق المنتجات أطول مما يُقرأ مرة واحدة؛ تظهر أحدث طلباتها فقط.','The products application\'s list is longer than one read takes; only its newest requests are shown.'] as [string,string]};
+/** How many of production's orders could not be read (the administrator's note). */
+export const moldOrdersUnreadableText=(count:number,say:(ar:string,en:string)=>string)=>say('يوجد '+count+' طلب من تطبيق المنتجات تعذّرت قراءته ولا يظهر هنا؛ أبلغ مدير الإنتاج.',count+' request(s) of the products application could not be read and are not shown; tell the production manager.');
 /** «أعادته المالية (<name>): <reason> · <time>»: the name only when it says more than «finance» (an e-mail, a person). */
 export const moldReturnedName=(returned:Pick<MoldReturned,'name'>)=>{const name=(returned.name||'').trim();return name&&!/^(finance|المالية)$/i.test(name)?name:'';};
 /** Why a PDF got no signed copy, in the representative's words: «لم يوضع التوقيع داخل <file>: …». */

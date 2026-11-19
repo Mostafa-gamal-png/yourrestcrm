@@ -202,3 +202,15 @@
 .mold-filter-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
 .mold-filter-count{font-size:14px;color:var(--muted-foreground)}
 .mold-filter-clear{display:inline-flex;align-items:center;gap:6px;min-height:44px}
+/* The requests that exist only in the products application (2026-11-19): read-only cards marked by where they came from, the sheet's note,
+   and the quiet notes above the list. */
+.mold-order-card{border-style:dashed}
+.mold-card .mold-card-origin{display:flex;align-items:flex-start;gap:5px;margin:0;font-size:12.5px;font-weight:600;line-height:1.5;color:#4b2a85;overflow-wrap:anywhere}
+.mold-card-origin>svg{flex-shrink:0;margin-top:3px}.mold-card .mold-card-origin[data-source=legacy]{color:#5d4a2a}
+.mold-banner[data-kind=order]{background:#f1eafc;color:#3d2470}.mold-banner[data-kind=order][data-source=legacy]{background:#f3eee4;color:#4e3d20}
+.mold-banner[data-kind=order]>svg{flex-shrink:0;margin-top:4px}
+.mold-orders-notes{display:grid;gap:4px}
+.mold-orders-note{display:flex;align-items:flex-start;gap:6px;margin:0;font-size:12.5px;line-height:1.6;color:var(--muted-foreground);overflow-wrap:anywhere}
+.mold-orders-note>svg{flex-shrink:0;margin-top:3px;color:#8a5a00}
+.dark .mold-card-origin{color:#d9c8ff}.dark .mold-card-origin[data-source=legacy]{color:#e8d7b4}
+.dark .mold-banner[data-kind=order]{background:#2c2342;color:#e1d4ff}.dark .mold-banner[data-kind=order][data-source=legacy]{background:#352d1e;color:#eadcc0}
