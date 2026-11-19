@@ -1,7 +1,8 @@
 /* Mold manufacturing requests: the list, one request's sheet with its seven stages, and the request form. */
 .mold-page{display:grid;gap:14px;margin-bottom:18px;min-width:0}
 .mold-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}.mold-heading h2{margin:0;font-size:20px}.mold-heading p{margin:0;color:var(--muted-foreground);font-size:14px;line-height:1.6}
-.mold-heading-tools{display:flex;align-items:center;gap:8px}.mold-new{display:inline-flex;align-items:center;gap:6px;min-height:44px}
+/* The tools wrap: «تصدير Excel» (2026-11-19) joined «تحديث» and «طلب تصنيع قالب», and on a 320 px phone the row no longer fits on one line. */
+.mold-heading-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;max-width:100%}.mold-new{display:inline-flex;align-items:center;gap:6px;min-height:44px}
 .mold-banner{display:flex;align-items:flex-start;gap:8px;margin:0;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.6}
 .mold-banner[data-kind=off]{background:#eef0f6;color:#34385a}.mold-banner[data-kind=stale]{background:#f5e9c8;color:#6a4a0e}.mold-banner[data-kind=cancelled]{background:#f3e3e0;color:#7a2c1f}.mold-banner[data-kind=restored]{background:#e2f1e8;color:#1d5236}
 .mold-search{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:0 10px;background:var(--background);min-height:44px}.mold-search input{flex:1;min-width:0;border:0;background:transparent;font-size:16px;outline:none}
