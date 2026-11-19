@@ -61,5 +61,26 @@ eq(createHash('sha256').update(fs.readFileSync(file)).digest('hex'), before, 'th
 // The limits: past 40 000 cells or 30 regions, the rest are listed and not suggested.
 const many = report({customers: Array.from({length: 40}, (_, i) => ({latitude: 17 + i * 0.35, longitude: 42 + (i % 7) * 1.7, location: '', region: 'الجنوبية'})), areas: []});
 eq([many.regions.length, many.suggested.regions, many.regions.filter(r => !r.fits).length], [40, 30, 10], 'thirty regions at most');
+// Review 2026-11-19: two groups one empty tile apart got overlapping boxes, which the build tool's read-back and the import tool refuse
+// («Regions … overlap»), so the proposal could not be built as it was. Overlapping boxes are now joined; the proposal builds.
+{
+  const {streetFileFromFeatures} = await import('../scripts/streets/build-street-data.mjs');
+  const {readStreetFile} = await import('../portable/import-street-data.mjs');
+  const zlib = await import('node:zlib');
+  const builds = proposal => {
+    const {data} = streetFileFromFeatures({regions: proposal.requestRegions.map(r => ({...r, name: r.id})), features: {}, system: 'yourrest-crm', dataset: 'osm:test', source: null});
+    const out = path.join(folder, 'proposal-' + checks + '.json.gz');fs.writeFileSync(out, zlib.gzipSync(Buffer.from(JSON.stringify(data))));
+    return readStreetFile(out).regions.map(r => r.id);
+  };
+  const point = (latitude, longitude) => ({latitude, longitude, location: '', region: 'الشرقية'});
+  const gap = report({customers: [point(26.401, 50.101), point(26.511, 50.101)], areas: []});
+  eq(gap.regions.map(r => [r.id, r.points, r.tiles, r.south, r.west, r.north, r.east, r.cells]), [['eastern-1', 2, 2, 26.35, 50.05, 26.6, 50.2, 375]], 'two groups one empty tile apart: one region, not two that overlap');
+  eq(builds(gap), ['eastern-1'], 'and the proposal builds');
+  // An L of tiles and a lone point inside its box (not touching it), and a group two tiles away (boxes that only touch are kept apart).
+  const shape = report({customers: [point(26.401, 50.101), point(26.451, 50.101), point(26.501, 50.101), point(26.501, 50.151), point(26.501, 50.201), point(26.401, 50.201), point(26.401, 50.351)], areas: []});
+  eq(shape.regions.map(r => [r.points, r.south, r.west, r.north, r.east]), [[6, 26.35, 50.05, 26.6, 50.3], [1, 26.35, 50.3, 26.5, 50.45]], 'a group inside another\'s box is joined to it; boxes that only touch stay apart');
+  eq(builds(shape), ['eastern-1', 'eastern-2'], 'and that proposal builds too');
+  eq(shape.suggested.cells, shape.regions.reduce((n, r) => n + r.cells, 0), 'no cell is counted twice');
+}
 function ok(value, message) { assert.ok(value, message); checks++; }
 console.log(JSON.stringify({ok: true, checks}));
