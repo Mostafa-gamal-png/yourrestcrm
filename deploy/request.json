@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-ListExport-20261119.zip","sha256":"ac090c4be2d0b7ca190c94c960e13797412c29cc1dd080224966065b711fb676","stage":"yourrest-crm-update-list-export-20261119","helper":"yourrest-activate-update-list-export.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-DailyPlans-20261119.zip","sha256":"ca79f7ebcc2a471ee01b35e6443cede4afefc0f4fcd7b81ac6288ceefc929b7e","stage":"yourrest-crm-update-daily-plans-20261119","helper":"yourrest-activate-update-daily-plans.cjs"}
