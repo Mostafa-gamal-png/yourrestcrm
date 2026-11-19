@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Orders-20261119.zip","sha256":"dd6a135d74607c1e4be8e5e7a37a2d7c22c963c3ecc5df4c8ebd44c8e0efd120","stage":"yourrest-crm-update-orders-20261119","helper":"yourrest-activate-update-orders.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-MoldPhotos-20261119.zip","sha256":"f8469e6a7f417339074d46f0ae7f208581c2fd68b3a356eafcd8900112e0b7c5","stage":"yourrest-crm-update-mold-photos-20261119","helper":"yourrest-activate-update-mold-photos.cjs"}
