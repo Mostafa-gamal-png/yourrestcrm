@@ -4,6 +4,40 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «اختيار موعد المتابعة»: the next 14 days with the representative's follow-ups and how near they are (2026-11-19, no migration, no Android change)
+
+- **Asked.** The owner, through the GSCO session, 2026-11-19: port GSCO 2.13.84 «شاشة اختيار موعد المتابعة», no migration.
+- **Where.** The next follow-up date of «زيارة جديدة» and of editing a visit (`app/customer-visits.tsx`), of «تنفيذ المتابعة»
+  (`app/customer-followups.tsx`, now given `members`) and of an opportunity's specifications (`app/crm-app.tsx`) is
+  `FollowupDatePicker` (`app/followup-date-picker.tsx`/`.css`). Customer service (it does not see the representatives' follow-ups) and a
+  visit shown read-only keep the plain field with its «اليوم», «بكرة», «بعد 3 أيام». Left as they were: the optional re-contact date of a
+  lost follow-up, the completion field of a saved entry in «حالة الحفظ» (`app/offline-status.tsx`), customer service's «الموعد الذي يطلبه
+  العميل».
+- **The grid.** The 14 Riyadh days from tomorrow, 7 a row (5 under 336 px), each with the short weekday, day/month and how many follow-ups
+  the customer's representative already has: the weekly day off (Friday, `WORKING_WEEKDAYS`) grey «إجازة» and never suggested; more than
+  5 «ممتلئ», a warning only («هذا اليوم ممتلئ: 6 متابعات (الحد 5). يمكنك اختياره رغم ذلك.»); «📍 N قريبة» for those within 2 km of this
+  customer's pin; «متفرق» for 3 areas or more. A follow-up is a plan of the follow-ups page (`customerFollowupPlans`: open, or lost with a
+  re-contact date, with a next action and a real date), counted for the customer's `assignedTo`; the customer being visited is left out
+  wherever its plan stands (counted once); a supervisor reads the representative's, by name.
+- **Rules** (`lib/followup-day-picker.ts`, pure): haversine on a 6371 km sphere; near 2 km or less, far over 5 km; an area is a
+  single-linkage chain of 2 km; «الأنسب» is the most near ones, then the fewest areas, then the earliest, among days neither full nor off,
+  else the lightest day, else none; a chosen day says scattered («متابعاتك في هذا اليوم متفرقة في 3 مناطق، منها واحدة قريبة من هذا
+  العميل.»), else near («يوم مناسب: لديك متابعات قريبة من هذا العميل.»), else far with the most common city of that day (Yourrest keeps the
+  city, not GSCO's district; then the region) and the nearest distance («… في الخبر، بعيدًا عن هذا العميل (12 كم).»), else nothing. A
+  customer without a pin: counts only. «هذا العميل» for GSCO's «هذا المشروع»; Latin digits for GSCO's «٥»; Arabic number agreement.
+- **Behaviour.** «تاريخ آخر» opens the same date field (its checks unchanged) and focuses it; the field stays open while the value is not
+  one of the 14 days (empty, today, later) or the form shows its problem. A radio group (one tab stop; the arrows follow the reading
+  direction; Home, End), each day named for a screen reader; what the day means in a `role="status"`. Worked out on the device from its
+  records, offline included.
+- **Tests.** `tests/followup-date-picker.mjs` (default gate, 101: distances, areas, Riyadh days across midnight, a month, a year and a leap
+  day, what counts, full/off, the suggestion's order, the verdicts, the words in both languages, the component drawn by React);
+  `tests/followup-date-picker-browser.mjs` (browser, 108: the visit and the follow-up saved with a day chosen, offline, no pin, a supervisor,
+  the keyboard, 320, 360, a tablet both ways and a computer in Arabic and English, no sideways scroll, every day 40 px wide at least).
+  Registered in check-manifest, test-areas (area `followup-date-picker`; also in the visits and follow-ups areas) and CHECKS.
+- **Rollback.** To update-android-1015-20261119 (or earlier): code only, nothing is changed or deleted; the picker stores nothing of its
+  own and the date it sets is the same `nextDate`, so the previous release shows its plain date field (with its shortcuts) and reads every
+  saved date as before; entries queued on a device by this release upload to it unchanged. Coming forward again shows the grid as it was.
+
 ## Android 1.0.15 (16): no more white screen, and the camera in photo fields (2026-11-19, no migration, no site change)
 
 - **Asked.** The owner, 2026-11-19: a new Huawei tablet without Google services (no Play Store, no Chrome; Huawei's own WebView, usually
