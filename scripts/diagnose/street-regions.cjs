@@ -3,7 +3,8 @@
 // database knows where Yourrest's customers are, so this runs on the hosting account (deploy.yml, mode diagnose) and proposes the regions
 // for scripts/streets/build-street-data.mjs: the customers' map points (as the map reads them: latitude and longitude, or coordinates in the
 // location text) and the drawn work areas' boxes are put on a grid of 0.05° tiles (about 5.5 km); tiles that touch form a group; each group's
-// box, grown by one tile on every side, is a proposed region on the 0.01° grid. It prints counts and those boxes only: no name, no code, no
+// box, grown by one tile on every side, is a proposed region on the 0.01° grid (boxes that would overlap are joined into one: the
+// build and import tools refuse overlapping regions). It prints counts and those boxes only: no name, no code, no
 // customer id and no point finer than a 0.05° tile (the run's log on GitHub is public for a public repository). The regions are sorted by
 // the points they hold, and the first ones that fit the import tool's limits (portable/import-street-data.mjs: 30 regions, 40 000 cells, a
 // region of 20 000 cells at most) are the suggestion, with the share of the points they cover. Nothing is written.
@@ -71,13 +72,30 @@ function report({customers, areas}) {
   }
   const groups = new Map();
   for (const [key, entry] of tiles) { const root = find(key); groups.set(root, [...(groups.get(root) || []), entry]); }
-  const regions = [...groups.values()].map(members => {
-    const ys = members.map(m => m.tile[0]), xs = members.map(m => m.tile[1]);
-    const box = {south: (Math.min(...ys) - 1) * TILE, west: (Math.min(...xs) - 1) * TILE, north: (Math.max(...ys) + 2) * TILE, east: (Math.max(...xs) + 2) * TILE};
-    const points = members.reduce((n, m) => n + m.points, 0), tally = {};
+  const boxes = [...groups.values()].map(members => {
+    const ys = members.map(m => m.tile[0]), xs = members.map(m => m.tile[1]), tally = {};
     for (const m of members) for (const [region, n] of Object.entries(m.regions)) tally[region] = (tally[region] || 0) + n;
+    return {box: {south: (Math.min(...ys) - 1) * TILE, west: (Math.min(...xs) - 1) * TILE, north: (Math.max(...ys) + 2) * TILE, east: (Math.max(...xs) + 2) * TILE},
+      points: members.reduce((n, m) => n + m.points, 0), drawnAreaTiles: members.reduce((n, m) => n + m.areas, 0), tiles: members.length, tally};
+  });
+  // Two groups one empty tile apart (or one inside the other's box) would get overlapping boxes, which the build and import tools refuse
+  // (review 2026-11-19): such boxes are joined into one, again until no two overlap.
+  const overlap = (a, b) => a.south < b.north && b.south < a.north && a.west < b.east && b.west < a.east;
+  for (let joined = true; joined;) {
+    joined = false;
+    outer: for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      if (!overlap(a.box, b.box)) continue;
+      const tally = {...a.tally};
+      for (const [region, n] of Object.entries(b.tally)) tally[region] = (tally[region] || 0) + n;
+      boxes[i] = {box: {south: Math.min(a.box.south, b.box.south), west: Math.min(a.box.west, b.box.west), north: Math.max(a.box.north, b.box.north), east: Math.max(a.box.east, b.box.east)},
+        points: a.points + b.points, drawnAreaTiles: a.drawnAreaTiles + b.drawnAreaTiles, tiles: a.tiles + b.tiles, tally};
+      boxes.splice(j, 1);joined = true;break outer;
+    }
+  }
+  const regions = boxes.map(({box, points, drawnAreaTiles, tiles, tally}) => {
     const main = Object.entries(tally).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || 'drawn';
-    return {salesRegion: main, points, drawnAreaTiles: members.reduce((n, m) => n + m.areas, 0), tiles: members.length,
+    return {salesRegion: main, points, drawnAreaTiles, tiles,
       south: degrees(box.south), west: degrees(box.west), north: degrees(box.north), east: degrees(box.east), cells: (box.north - box.south) * (box.east - box.west)};
   }).sort((a, b) => b.points - a.points || b.drawnAreaTiles - a.drawnAreaTiles || a.south - b.south || a.west - b.west);
   const numbered = {}, suggested = [];

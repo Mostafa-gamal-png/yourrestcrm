@@ -133,6 +133,18 @@ S.resetOverpassState();asked=[];S.configureOverpass({fetcher:async url=>{asked.p
 eq([(await S.fetchStreets('net',queryBox,deadline())).reason,S.overpassState().paused.length],['network',2],'no answer at all (a network failure) pauses too');
 S.resetOverpassState();asked=[];S.configureOverpass({fetcher:(url,init)=>{asked.push(url);return new Promise((_,reject)=>init.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError'))));}});
 eq([(await S.fetchStreets('silent',queryBox,deadline())).reason,S.overpassState().paused.length],['network',2],'silence until the time limit pauses the service');
+{
+ // Review 2026-11-19: a call took the service's whole limit whatever was left of the answer's budget, so two silent services kept one
+ // answer twice the limit (30 + 30 s against a 45-second budget and the page's 60-second wait), and a request queued behind it waited
+ // past its own deadline. The held clock follows the real time spent waiting here.
+ S.resetOverpassState();asked=[];
+ S.configureOverpass({timeoutMs:1000,fetcher:(url,init)=>{asked.push(url);const t0=RealDate.now();return new Promise((_,reject)=>init.signal.addEventListener('abort',()=>{held+=RealDate.now()-t0;reject(new DOMException('aborted','AbortError'));}));}});
+ const start=RealDate.now(),budget=held+1200,timed=promise=>promise.then(result=>({result,ms:RealDate.now()-start}));
+ const [first,queued]=await Promise.all([timed(S.fetchStreets('budget-a',queryBox,budget)),timed(S.fetchStreets('budget-b',queryBox,budget))]);
+ eq([first.result.reason,queued.result.reason,asked,S.overpassState().paused],['later','later',[one,two],[one]],'the first service silent for its whole limit is paused; the second is cut at the deadline, not paused; the queued request ends at its deadline');
+ ok(first.ms<1950&&queued.ms<1950,'both answered by the 1.2-second budget, not after two full limits of 1 second ('+first.ms+' and '+queued.ms+' ms)');
+ S.configureOverpass({timeoutMs:200});
+}
 S.resetOverpassState();asked=[];S.configureOverpass({fetcher:reply(500)});
 eq([(await S.fetchStreets('err',queryBox,deadline())).reason,S.overpassState().paused],['http_500',[]],'another error is not a pause');
 S.resetOverpassState();asked=[];S.configureOverpass({fetcher:async url=>url===one?(asked.push(url),new Response('busy',{status:502})):reply(200)(url)});
@@ -273,6 +285,36 @@ eq((await get('rep1',{})).area.source,'fallback','back to the default');
 eq(sql.prepare("SELECT action,record_id,actor FROM crm_audit WHERE action LIKE 'work-area:%' ORDER BY created_at,rowid").all().map(r=>[r.action,r.record_id,r.actor]),[['work-area:save','work-area:rep1','اسم mgr'],['work-area:save','work-area:rep1','اسم owner'],['work-area:delete','work-area:rep1','اسم mgr']],'one audit row per save and delete, none for a retry');
 const detail=JSON.parse(sql.prepare("SELECT detail FROM crm_audit WHERE action='work-area:save' ORDER BY rowid LIMIT 1 OFFSET 1").get().detail);
 eq([detail.before,detail.after],[{vertices:4,area_km2:km2(polygon),version:1},{vertices:4,area_km2:km2(square(26.44,50.11,0.008)),version:2}],'before and after, the shape\'s size only');
+// Review 2026-11-19: the versions began again at 1 after a delete, so a page still holding the deleted area's version saved over the area
+// drawn since (no 409), and a save or a delete sent again after a lost answer met another area (a 500 from the audit's key). Now a new area
+// continues after the last deleted version, and a request's audit row (its receipt) answers it as done whatever happened since.
+{
+ const areaRow=()=>sql.prepare("SELECT version,updated_by,polygon FROM crm_work_areas WHERE member_id='rep1'").get();
+ const A1=square(26.43,50.1,0.009),B1=square(26.44,50.11,0.007),C1=square(26.45,50.12,0.006);
+ eq((await post('mgr',{action:'save',rep_id:'rep1',polygon:A1,version:null})).version,3,'a new area after the deleted version 2 is version 3');
+ const stalePage=(await get('mgr',{member:'rep1'})).area.version;
+ await post('owner',{action:'delete',rep_id:'rep1',version:3});
+ eq((await post('owner',{action:'save',rep_id:'rep1',polygon:B1,version:null})).version,4,'drawn again: version 4');
+ const before=areaRow();
+ await post('mgr',{action:'save',rep_id:'rep1',polygon:C1,version:stalePage},409);
+ await post('mgr',{action:'delete',rep_id:'rep1',version:stalePage},409);
+ eq(areaRow(),before,'a page still holding the deleted area\'s version neither saves over nor deletes the area drawn since');
+ const lostDelete=crypto.randomUUID();
+ eq((await post('owner',{action:'delete',rep_id:'rep1',version:4,request_id:lostDelete})).ok,true,'deleted (its answer lost)');
+ eq((await post('mgr',{action:'save',rep_id:'rep1',polygon:A1,version:null})).version,5,'another area drawn meanwhile: version 5');
+ const drawn=areaRow();
+ eq(await post('owner',{action:'delete',rep_id:'rep1',version:4,request_id:lostDelete}),{ok:true,rep_id:'rep1',version:null,repeated:true},'the delete sent again is done, not a second delete');
+ eq(areaRow(),drawn,'and the area drawn since is still there');
+ const lostSave=crypto.randomUUID();
+ eq((await post('mgr',{action:'save',rep_id:'rep1',polygon:B1,version:5,request_id:lostSave})).version,6,'saved (its answer lost)');
+ await post('owner',{action:'delete',rep_id:'rep1',version:6});
+ eq(await post('mgr',{action:'save',rep_id:'rep1',polygon:B1,version:5,request_id:lostSave}),{ok:true,rep_id:'rep1',version:6,repeated:true},'the save sent again after the area was deleted is done, not drawn again');
+ eq(areaRow(),undefined,'nothing was drawn again');
+ await post('mgr',{action:'delete',rep_id:'rep1',version:6,request_id:lostSave},409);
+ const audits=()=>sql.prepare("SELECT COUNT(*) n FROM crm_audit WHERE action LIKE 'work-area:%'").get().n,count=audits();
+ await post('mgr',{action:'save',rep_id:'rep1',polygon:A1,version:null,request_id:lostDelete},409);
+ eq([audits(),areaRow()],[count,undefined],'a receipt of another request is a conflict, and writes nothing');
+}
 // The commit re-checks the representative: one moved to another region meanwhile is not drawn for.
 sql.prepare("UPDATE crm_members SET region_scope='western' WHERE id='rep2'").run();
 await post('mgrE',{action:'save',rep_id:'rep2',polygon,version:null},403);

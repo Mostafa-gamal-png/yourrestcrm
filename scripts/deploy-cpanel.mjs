@@ -192,7 +192,11 @@ export async function deploy(given, deps) {
   } finally {
     // Whatever happened: no request waits for a later minute, and no cron line stays behind.
     try {
-      if ((await list(dir)).some(entry => entry.file === 'request')) { await unlink('request'); log('the request nobody took was deleted'); }
+      if ((await list(dir)).some(entry => entry.file === 'request')) {
+        await unlink('request'); log('the request nobody took was deleted');
+        // A streets run that never started leaves its data file too (a run that started removes it itself, whatever happens).
+        if (c.mode === 'streets' && (await list(dir)).some(entry => entry.file === STREETS_FILE)) { await unlink(STREETS_FILE); log('the street data file nobody used was deleted'); }
+      }
     } catch (error) { log(`could not check for a request left behind (${error.message})`); }
     try {
       for (const row of await ourLines()) await api2('Cron', 'remove_line', row.linekey ? {linekey: row.linekey} : {line: String(row.commandnumber ?? row.count)}, 'removing the cron line');

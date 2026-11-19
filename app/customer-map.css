@@ -154,7 +154,12 @@
 .cm-area-bar{position:absolute;inset-inline-start:14px;bottom:23px;width:min(460px,calc(100% - 28px));display:grid;gap:8px;padding:12px 14px;border:1px solid var(--border);border-radius:16px;background:var(--card);box-shadow:0 5px 25px #15203829;z-index:4}
 .cm-area-bar>p{margin:0;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
 .cm-area-bar [data-work-area-corners]{font-weight:700;white-space:nowrap}
-.cm-canvas .work-area-vertex{background:#fff;border:3px solid #4c1d95;border-radius:50%;box-shadow:0 1px 4px #13284070;cursor:grab}
+/* A corner: a 44 px target for a finger (lib/work-area-editor.ts) around the 22 px ring that is drawn. */
+.cm-canvas .work-area-vertex{background:transparent;border:0;border-radius:50%;cursor:grab}
+.cm-canvas .work-area-vertex::after{content:'';position:absolute;inset:11px;box-sizing:border-box;background:#fff;border:3px solid #4c1d95;border-radius:50%;box-shadow:0 1px 4px #13284070}
+/* While a work area is drawn the map takes the taps: the search and the toolbar step aside (on a 320 px phone they left 44 px of map
+   between them and the drawing bar, and a corner's «حذف النقطة» opened under them, out of a finger's reach). */
+.cm-shell.is-drawing .cm-search-area{display:none}
 .work-area-vertex-popup{display:flex}
-.work-area-vertex-delete{min-height:40px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:#b43636;font:inherit;font-size:13px;cursor:pointer}
+.work-area-vertex-delete{min-height:44px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:#b43636;font:inherit;font-size:13px;cursor:pointer}
 @media(max-width:850px){.cm-area-bar{inset-inline:10px;bottom:24px;width:auto;max-width:460px}.cm-legend{padding:2px 7px}}

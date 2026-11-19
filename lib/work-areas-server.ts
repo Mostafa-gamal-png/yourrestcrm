@@ -122,6 +122,10 @@ const postBody=z.discriminatedUnion('action',[
 ]);
 type StoredRow={member_id:string;polygon:string;vertices:number;area_m2:number;version:number;mutation_id:string};
 
+/** The highest version a representative's area ever had, read from the audit rows of its deletions (a deleted area's row is gone, its
+ *  version is in the row of the delete). A new area continues after it, so a page that still holds the deleted area's version can never
+ *  save over, or delete, the area drawn since (review 2026-11-19: the versions began again at 1 after a delete). */
+const lastDeletedVersion=`COALESCE((SELECT MAX(CAST(json_extract(detail,'$.before.version') AS INTEGER)) FROM crm_audit WHERE record_id=? AND action='${WORK_AREA_AUDIT_PREFIX}delete' AND json_valid(detail)),0)`;
 /** Saving is versioned (null for the first area) and audited once; resending the same request after a lost answer saves nothing twice. The
  *  commit re-checks the writer (accessGuard: role, branch, regions, supervisor, permissions' version) and the representative. */
 export async function workAreasPost(c:Ctx,body:unknown){
@@ -130,6 +134,14 @@ export async function workAreasPost(c:Ctx,body:unknown){
  const parsed=postBody.safeParse(body);if(!parsed.success)throw new CRMError(WORK_AREA_MESSAGES.invalid,400);
  const p=parsed.data;
  const rep=targetRep(c,p.rep_id,true);
+ // A request that went through already (its answer was lost) is done, whatever happened to the area since: its audit row is its receipt,
+ // written in the same transaction. Sent again it writes nothing, never a second save or a delete of another area drawn meanwhile.
+ const receipt=await c.db.prepare('SELECT action,record_id,detail FROM crm_audit WHERE id=?').bind(workAreaReceipt(p.request_id)).first<{action:string;record_id:string;detail:string}>();
+ if(receipt){
+  if(receipt.action!==WORK_AREA_AUDIT_PREFIX+p.action||receipt.record_id!==WORK_AREA_AUDIT_PREFIX+rep.id)throw new CRMError(WORK_AREA_MESSAGES.conflict,409,{code:'WORK_AREA_CONFLICT'});
+  const after=(json(receipt.detail)?.after??null) as {version?:unknown}|null,version=p.action==='save'&&Number.isInteger(after?.version)?Number(after!.version):null;
+  return {ok:true,rep_id:rep.id,version,repeated:true};
+ }
  const existing=await c.db.prepare('SELECT member_id,polygon,vertices,area_m2,version,mutation_id FROM crm_work_areas WHERE member_id=?').bind(rep.id).first<StoredRow>();
  const before=existing?{vertices:Number(existing.vertices),area_km2:km2(Number(existing.area_m2)),version:Number(existing.version)}:null;
  const guard=accessGuard({me:c.me,members:c.members,all:[]}),target=repGate(rep),gate=guard.sql+' AND '+target.sql,gateArgs=[...guard.args,...target.args],stamp=new Date().toISOString();
@@ -140,22 +152,21 @@ export async function workAreasPost(c:Ctx,body:unknown){
   const check=checkWorkAreaPolygon(p.polygon);
   if(!check.ok)throw new CRMError(check.error,400);
   if((existing?Number(existing.version):null)!==p.version)throw new CRMError(WORK_AREA_MESSAGES.conflict,409,{code:'WORK_AREA_CONFLICT'});
-  const polygon=JSON.stringify(ringToGeoJson(check.ring)),version=(existing?Number(existing.version):0)+1;
+  const polygon=JSON.stringify(ringToGeoJson(check.ring));
+  const deleted=existing?0:Number((await c.db.prepare(`SELECT ${lastDeletedVersion} AS v`).bind(WORK_AREA_AUDIT_PREFIX+rep.id).first<{v:number}>())?.v??0);
+  const version=(existing?Number(existing.version):deleted)+1;
+  // A new area takes the version after the last deleted one; a delete committed meanwhile (a newer deleted version) refuses it (409).
   const write=existing
    ?c.db.prepare(`UPDATE crm_work_areas SET polygon=?,vertices=?,area_m2=?,updated_by=?,updated_at=?,version=version+1,mutation_id=? WHERE member_id=? AND version=? AND ${gate}`)
      .bind(polygon,check.ring.length,check.areaM2,c.me.id,stamp,p.request_id,rep.id,Number(existing.version),...gateArgs)
-   :c.db.prepare(`INSERT INTO crm_work_areas(member_id,polygon,vertices,area_m2,updated_by,updated_at,version,mutation_id) SELECT ?,?,?,?,?,?,1,? WHERE NOT EXISTS (SELECT 1 FROM crm_work_areas WHERE member_id=?) AND ${gate}`)
-     .bind(rep.id,polygon,check.ring.length,check.areaM2,c.me.id,stamp,p.request_id,rep.id,...gateArgs);
+   :c.db.prepare(`INSERT INTO crm_work_areas(member_id,polygon,vertices,area_m2,updated_by,updated_at,version,mutation_id) SELECT ?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM crm_work_areas WHERE member_id=?) AND ${lastDeletedVersion}<? AND ${gate}`)
+     .bind(rep.id,polygon,check.ring.length,check.areaM2,c.me.id,stamp,version,p.request_id,rep.id,WORK_AREA_AUDIT_PREFIX+rep.id,version,...gateArgs);
   const results=await c.db.batch([write,audit('save',{before,after:{vertices:check.ring.length,area_km2:km2(check.areaM2),version}},{sql:'EXISTS (SELECT 1 FROM crm_work_areas WHERE member_id=? AND mutation_id=? AND version=?)',args:[rep.id,p.request_id,version]})]);
   if(!results[0].meta.changes)throw new CRMError(WORK_AREA_MESSAGES.changed,409,{code:'WORK_AREA_CONFLICT'});
   return {ok:true,rep_id:rep.id,version};
  }
- if(!existing){
-  // A delete that already went through (its answer was lost) is done, not an error.
-  const done=await c.db.prepare('SELECT 1 AS done FROM crm_audit WHERE id=? AND action=? AND record_id=?').bind(workAreaReceipt(p.request_id),WORK_AREA_AUDIT_PREFIX+'delete',WORK_AREA_AUDIT_PREFIX+rep.id).first<{done:number}>();
-  if(done)return {ok:true,rep_id:rep.id,version:null,repeated:true};
-  throw new CRMError(WORK_AREA_MESSAGES.noArea,404);
- }
+ // (A delete that already went through, its answer lost, was answered above by its receipt.)
+ if(!existing)throw new CRMError(WORK_AREA_MESSAGES.noArea,404);
  if(Number(existing.version)!==p.version)throw new CRMError(WORK_AREA_MESSAGES.conflict,409,{code:'WORK_AREA_CONFLICT'});
  const results=await c.db.batch([
   c.db.prepare(`DELETE FROM crm_work_areas WHERE member_id=? AND version=? AND ${gate}`).bind(rep.id,Number(existing.version),...gateArgs),
@@ -213,8 +224,13 @@ async function readCapped(response:Response){
 }
 /** «Busy» answers (502 «at capacity» too) and no answer at all (a network failure or the 30-second limit) pause that service. */
 export const OVERPASS_BUSY_STATUSES:ReadonlySet<number>=new Set([429,502,503,504]);
-async function callOverpass(url:string,box:BBox):Promise<Fetched>{
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),overpass.timeoutMs);
+/** A call waits at most the service's limit and never past the answer's deadline (review 2026-11-19: each call took the full 30 seconds
+ *  whatever was left, so two silent services kept one answer about a minute, past the page's own one-minute wait, and a request queued
+ *  behind it waited past its own deadline). A call cut by the deadline is not the service's silence: it is not paused, and the box comes on
+ *  a later visit («later»). */
+async function callOverpass(url:string,box:BBox,deadline:number):Promise<Fetched>{
+ const left=deadline-Date.now(),byDeadline=left<overpass.timeoutMs;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Math.max(1,Math.min(overpass.timeoutMs,left)));
  calls++;
  try{
   const response=await overpass.fetcher(url,{method:'POST',headers:{'User-Agent':overpass.userAgent,Accept:'application/json','Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'},body:'data='+encodeURIComponent(overpassQuery(box)),redirect:'error',cache:'no-store',signal:controller.signal});
@@ -223,7 +239,10 @@ async function callOverpass(url:string,box:BBox):Promise<Fetched>{
   const raw=await readCapped(response);if(raw===null)return {ok:false,reason:'too_large'};
   let data:unknown;try{data=JSON.parse(raw);}catch{return {ok:false,reason:'json'};}
   return parseOverpassStreets(data);
- }catch{pausedUntil.set(url,Date.now()+OVERPASS_PAUSE_MS);return {ok:false,reason:'network'};}
+ }catch{
+  if(byDeadline&&controller.signal.aborted)return {ok:false,reason:'later'};
+  pausedUntil.set(url,Date.now()+OVERPASS_PAUSE_MS);return {ok:false,reason:'network'};
+ }
  finally{clearTimeout(timer);}
 }
 /** The services in order, skipping paused ones, until one gives a complete answer (or the answer's time is up). */
@@ -232,7 +251,7 @@ async function askInTurn(box:BBox,deadline:number):Promise<Fetched>{
  for(const url of overpass.urls){
   if(paused(url))continue;
   if(Date.now()>=deadline)return {ok:false,reason:'later'};
-  last=await callOverpass(url,box);
+  last=await callOverpass(url,box,deadline);
   if(last.ok)return last;
  }
  return last;
