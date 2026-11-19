@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Android1015-20261119.zip","sha256":"e6e3e31ffe4828cb620ece0029fdacc735ba953e1446990380bb1da99d74b5b8","stage":"yourrest-crm-update-android-1015-20261119","helper":"yourrest-activate-update-android-1015.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-StuckEntries-20261119.zip","sha256":"86e2c69ecc0deb55b5c66187556223b95d2bfca991780a24d9e5013cab56e868","stage":"yourrest-crm-update-stuck-entries-20261119","helper":"yourrest-activate-update-stuck-entries.cjs"}
