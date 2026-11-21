@@ -20,6 +20,7 @@ const STAYS_TYPED = [
   {file: 'app/competitor-fields.tsx', snippet: "type=\"text\"", reason: 'the competitor name is chosen from earlier names (a suggestion list); the notes beside it are dictated'},
   {file: 'app/customer-entry-fields.tsx', snippet: 'ABCD1234', reason: 'the short national address is a code'},
   {file: 'app/customer-entry-fields.tsx', snippet: "'اللوكيشن (خط العرض، خط الطول)'", reason: 'coordinates: dictating digits makes more errors than it saves, and the point is taken from the device or the map'},
+  {file: 'app/customer-capacity.tsx', snippet: 'inputMode="numeric"', reason: '«عدد القوالب المستخدمة» is a whole number: digits are typed, dictating them makes more errors than it saves; the two texts beside it are dictated (2026-11-21)'},
   {file: 'app/email-login.tsx', snippet: 'placeholder="name"', reason: 'sign-in: the name field takes the account name typed as the mail provider shows it'},
   {file: 'app/email-login.tsx', snippet: 'autoComplete="one-time-code"', reason: 'sign-in: a numeric code'},
   {file: 'app/kpi-evidence-editor.tsx', snippet: 'name="due"', reason: 'an amount in riyals: digits are typed, dictating them makes more errors than it saves'},

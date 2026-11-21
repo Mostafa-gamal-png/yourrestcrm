@@ -13,6 +13,10 @@
  .rep-record-next{display:flex;align-items:flex-start;gap:8px;margin-top:10px;padding:9px 10px;background:var(--muted);border-radius:9px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
  .rep-record-next>svg{flex:none;margin-top:3px;color:var(--primary)}
  .rep-record-next>div{min-width:0}
+ /* «موعد احتياج القوالب المتوقع» of a visit (lib/customer-capacity.ts), when it has one. */
+ .rep-record-mold-need{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;line-height:1.7;color:var(--muted-foreground);overflow-wrap:anywhere}
+ .rep-record-mold-need>svg{flex:none;color:var(--primary)}
+ .rep-record-mold-need bdi{color:var(--foreground);font-weight:600}
  .rep-record-next p{font-size:14px;margin:2px 0 0;line-height:1.7;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
  .rep-record-next.is-overdue>div>span{color:#ac344d}
  .dark .rep-record-next.is-overdue>div>span{color:#ffa5b9}

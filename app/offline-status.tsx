@@ -15,7 +15,7 @@ import VoiceField from './voice-field';
 import './offline-status.css';
 
 const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&typeof e.message==='string'?e.message:'';
-type JobFields={name?:string;summary?:string;result?:string;nextAction?:string;nextDate?:string;customerNeeds?:string;location?:string;competitorName?:string;competitorNotes?:string;competitorFileName?:string;competitorObservation?:JobFields};
+type JobFields={name?:string;summary?:string;result?:string;nextAction?:string;nextDate?:string;customerNeeds?:string;moldNeedBy?:string;location?:string;competitorName?:string;competitorNotes?:string;competitorFileName?:string;competitorObservation?:JobFields};
 type JobPayload={customerId?:string;data?:JobFields;registration?:JobFields};
 const riyadhDay=(value:string)=>{const at=Date.parse(value);return Number.isFinite(at)?new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at)):'';};
 /** A queued new visit or contact the server sent back for lacking its result or next step (lib/opportunity-entry.ts): the member adds
@@ -122,6 +122,7 @@ export default function OfflineStatus({me,offline}:{me:Member;offline:boolean}){
   [say('المنافس','Competitor'),observation.competitorName],
   [say('ملاحظات المنافس','Competitor notes'),observation.competitorNotes],
   [say('الاحتياج','Customer needs'),data.customerNeeds],
+  [say('موعد احتياج القوالب المتوقع','Expected mold need date'),data.moldNeedBy],
   [say('الموقع','Location'),data.location],
   [say('المرفق','Attachment'),job.fileName||observation.competitorFileName],
  ].filter(([,value])=>typeof value==='string'&&value.trim());}

@@ -96,5 +96,26 @@ ok(text(managerDirectory.desktop).includes('إدارة الماكينات ('),'M
 const many=Array.from({length:51},(_,i)=>({...customer,id:'factory-'+i}));
 ({tree,cards}=render({customers:many,page:2}));eq(cards.length,1,'Existing pagination limits mobile rendering');eq(cards[0].props['aria-label'],customer.data.name,'Second page renders expected card');btn(tree,'السابق').props.onClick();eq(pages.at(-1),1,'Mobile directory keeps previous-page navigation');
 eq(render({customers:[]}).cards.length,0,'Empty filtered scope removes cards');
+// «الطاقة الإنتاجية والاحتياج» (app/customer-capacity.tsx, 2026-11-21) on the card, seen without opening anything: the registered machines
+// counted and grouped, the entered fields; the sheet's count and types said once (on the card while no machine is registered, else in the
+// collapsed «بيانات الماكينات» beside the registered ones); the desktop row adds only what its «الماكينات حسب الشيت» column does not say.
+const expand=tree=>!tree||typeof tree!=='object'?tree:Array.isArray(tree)?tree.map(expand):typeof tree.type==='function'?expand(tree.type(tree.props)):{...tree,props:{...tree.props,children:expand(tree.props?.children)}};
+const capacity=tree=>nodes(expand(tree),n=>n.props?.['data-customer-capacity']);
+const items=tree=>capacity(tree).flatMap(block=>nodes(block,n=>n.props?.['data-capacity-item']).map(n=>text(n)));
+const machinesText=tree=>text(cls(tree,'customer-mobile-machine-content')[0]);
+card=render().cards[0];
+eq(items(card),['عدد الماكينات1','أنواع الماكيناتغير محدد ×1'],'a registered machine: its count and its group on the card');
+ok(machinesText(card).includes('العدد في الشيت: 2')&&machinesText(card).includes('Type A'),'and the sheet\'s 2 and types still in the collapsed machine data (they differ)');
+const entered={...customer,data:{...customer.data,moldsInUse:12,productionCapacity:'5000 بلكة يوميًا',annualDemand:'40 قالبًا'}};
+card=render({customers:[entered],records:[entered]}).cards[0];
+eq(items(card),['عدد الماكينات2 · حسب الشيت','أنواع الماكيناتType A · حسب الشيت','عدد القوالب المستخدمة12','الطاقة الإنتاجية5000 بلكة يوميًا','حجم الطلب السنوي40 قالبًا'],'no machine registered: the sheet\'s, marked, and the three entered fields');
+eq([machinesText(card).includes('العدد في الشيت'),machinesText(card).includes('Type A')],[false,false],'the collapsed machine data does not say the sheet\'s again');
+card=render({customers:[{...customer,data:{...customer.data,machineCount:undefined,machineTypes:''}}],records:[]}).cards[0];
+eq(capacity(card).length,0,'nothing to say: no block');
+let row=nodes(render({customers:[entered],records:[entered,machine]}).tree,n=>typeof n.type==='function'&&n.type.name==='CustomerRows')[0];
+eq(items(row.type(row.props)),['عدد الماكينات1','أنواع الماكيناتغير محدد ×1','عدد القوالب المستخدمة12','الطاقة الإنتاجية5000 بلكة يوميًا','حجم الطلب السنوي40 قالبًا'],'the desktop row: the registered machines and the entered fields');
+row=nodes(render({customers:[entered],records:[entered]}).tree,n=>typeof n.type==='function'&&n.type.name==='CustomerRows')[0];
+eq(items(row.type(row.props)),['عدد القوالب المستخدمة12','الطاقة الإنتاجية5000 بلكة يوميًا','حجم الطلب السنوي40 قالبًا'],'the desktop row beside its sheet column: the sheet\'s count and types not said twice');
+language='en';eq(items(render({customers:[entered],records:[entered,machine]}).cards[0]),['Machines1','Machine typesUnspecified ×1','Molds in use12','Production capacity5000 بلكة يوميًا','Annual demand40 قالبًا'],'in English (the entered texts as typed)');language='ar';
 language='en';({tree,cards}=render());card=cards[0];eq(tree.props.dir,'ltr','English directory is LTR');ok(btn(card,'New visit')&&btn(card,'Map')&&btn(card,'Details'),'Primary mobile controls translate');ok(text(card).includes('Active')&&text(card).includes('Machine details'),'Activity and collapsed heading translate');
 console.log(JSON.stringify({ok:true,checks,type:'Mobile customer callbacks, authorization presentation, phone safety, activity, pagination, Arabic/English',realBrowser:false}));

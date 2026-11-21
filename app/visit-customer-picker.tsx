@@ -16,6 +16,7 @@ import VoiceField from './voice-field';
 import ErpCodeReadOnly from './erp-code-readonly';
 import './customer-picker-mobile.css';
 import {isFieldRole} from '@/lib/roles';
+import {otherContactsSearch} from '@/lib/customer-contacts';
 
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
 const label = (r: Row) => [r.data.name, r.data.internalCode, r.data.code, r.data.region].filter(Boolean).join(' · ');
@@ -53,8 +54,8 @@ export default function VisitCustomerPicker({ customers, value, me, disabled, lo
     const canCreate = !me.readOnly && (isFieldRole(me.role) || ['supervisor', 'manager', 'admin'].includes(me.role)) && can(me, 'customer', 'add'), service = ['customer_service', 'customer_service_manager'].includes(me.role);
     const searchIndex = useMemo(() => customers.map(customer => ({
         customer,
-        text: normalize([customer.data.name, customer.data.internalCode, customer.data.code, customer.data.region, customer.data.city, customer.data.contact, customer.data.phone, customer.data.phone2].filter(Boolean).join(' ')),
-        phones: [customer.data.phone, customer.data.phone2].filter(Boolean).flatMap(phoneSearchValues),
+        text: normalize([customer.data.name, customer.data.internalCode, customer.data.code, customer.data.region, customer.data.city, customer.data.contact, customer.data.contact2, customer.data.phone, customer.data.phone2, ...otherContactsSearch(customer.data)].filter(Boolean).join(' ')),
+        phones: [customer.data.phone, customer.data.phone2, ...otherContactsSearch(customer.data)].filter(Boolean).flatMap(phoneSearchValues),
     })), [customers]);
     const matches = useMemo(() => {
         const normalized = normalize(query), terms = normalized.split(/\s+/).filter(Boolean);

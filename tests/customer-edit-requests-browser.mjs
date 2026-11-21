@@ -70,7 +70,7 @@ try {
   const dialog = rep.locator('[role=dialog]').filter({has: rep.locator('form')});await dialog.waitFor();
   check((await dialog.locator('[data-customer-edit-note]').innerText()).trim(), 'لا يظهر تعديلك على العميل قبل الموافقة عليه: يصل الطلب إلى مشرفك أولًا ثم إلى مدير المبيعات، أو إلى مدير المبيعات مباشرةً إن لم يكن لك مشرف.', 'the form says the edit waits');
   check([await dialog.getByRole('button', {name: 'إرسال التعديل للموافقة', exact: true}).count(), await dialog.getByRole('button', {name: /^حفظ /}).count()], [1, 0], 'the button sends it for approval');
-  await dialog.getByRole('textbox', {name: 'الجوال', exact: true}).fill('0559999999');
+  await dialog.getByRole('textbox', {name: 'جوال المسؤول 1', exact: true}).fill('0559999999');
   await dialog.locator('label.voice-field').filter({has: rep.locator('span', {hasText: /^المدينة$/})}).locator('input').fill('الخبر');
   await noSideways(rep, 'the representative\'s form, 360 px');
   await shot(rep, 'rep-form-ar-360');

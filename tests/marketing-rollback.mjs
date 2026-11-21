@@ -138,7 +138,7 @@ eq([row('v-d').data.strength, row('v-d').data.summary], ['excluded', 'مراجع
 // A customer-service opportunity with D, and one with another grade.
 for (const [id, grade] of [['case-d', 'excluded'], ['case-b', 'medium']]) sql.prepare("INSERT INTO crm_service_cases(id,customer_id,status,creator_id,data,created_at,updated_at,version,mutation_id) VALUES(?,?,'pending_approval','rep',?,?,?,1,'fixture')").run(id, cMkt, JSON.stringify({source: 'call', products: [], strength: grade, needs: 'احتياج', nextAction: 'اتصال', nextDate: '2099-12-10'}), stamp, stamp);
 // The guide's listing of the D, before going back.
-const correctionGuide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8'), correctionSection = correctionGuide.slice(correctionGuide.indexOf('## 9-أب.'), correctionGuide.indexOf('\n## 10.'));
+const correctionGuide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8'), correctionSection = correctionGuide.slice(correctionGuide.indexOf('## 9-أب.'), correctionGuide.indexOf('\n## ', correctionGuide.indexOf('## 9-أب.')));
 const dCommands = [...correctionSection.matchAll(/^sqlite3 .+$/mg)].map(match => match[0]);
 eq(dCommands.length, 1, 'the way back lists the D with one sqlite3 command');
 const dQuery = readOnlyQuery(dCommands[0], 'excluded-opportunities.csv');
@@ -161,7 +161,7 @@ const NEW_REFUSAL = refused.error;
 // ---- The guide.
 const guide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8');
 const section = guide.slice(guide.indexOf('## 9-أأ.'), guide.indexOf('\n## 9-أب.'));
-const correction = guide.slice(guide.indexOf('## 9-أب.'), guide.indexOf('\n## 10.'));
+const correction = guide.slice(guide.indexOf('## 9-أب.'), guide.indexOf('\n## ', guide.indexOf('## 9-أب.')));
 ok(guide.includes('## 9-أب.') && correction.includes('**الرجوع إلى الإصدار السابق (update-marketing-20261118).**'), 'the guide has the way back from this release');
 ok(correction.includes('«قوة الفرصة»') && correction.includes('`excluded`') && correction.includes(NEW_REFUSAL), 'it names the D and the refusal the previous release answers with: ' + NEW_REFUSAL);
 ok(section.includes('**الرجوع إلى الإصدار السابق (update-rep-search-20261118).**'), 'and keeps the way back of the release before');

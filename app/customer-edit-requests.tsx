@@ -6,7 +6,7 @@ import {getLanguage,t,useLanguage} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
 import VoiceField from './voice-field';
 import {classificationLabel,type ClassificationChoiceField} from '@/lib/customer-classification';
-import {CUSTOMER_EDITS_CHANGED,CUSTOMER_EDITS_FOCUS_MS,CUSTOMER_EDITS_INTERVAL_MS,CUSTOMER_EDIT_CODE_FIELDS,CUSTOMER_EDIT_FIELD_TEXT,CUSTOMER_EDIT_WORD_FIELDS,REJECT_REASON_MAX,customerEditStatusText,rejectReason,validCustomerEditList,type CustomerEditChange,type CustomerEditList,type CustomerEditRequest} from '@/lib/customer-edit-requests';
+import {CUSTOMER_EDITS_CHANGED,CUSTOMER_EDITS_FOCUS_MS,CUSTOMER_EDITS_INTERVAL_MS,CUSTOMER_EDIT_CODE_FIELDS,CUSTOMER_EDIT_FIELD_TEXT,CUSTOMER_EDIT_WORD_FIELDS,REJECT_REASON_MAX,customerEditStatusText,editValueText,rejectReason,validCustomerEditList,type CustomerEditChange,type CustomerEditList,type CustomerEditRequest} from '@/lib/customer-edit-requests';
 import './customer-edit-requests.css';
 
 /** «طلبات تعديل بيانات العميل» (lib/customer-edit-requests.ts, GET /api/customer-edits, POST /api/crm {action:'customer-edit'}). On the
@@ -53,6 +53,8 @@ function ChangeValue({change,side}:{change:CustomerEditChange;side:'before'|'aft
  const value=change[side];
  if(!value)return <span className="cer-empty">—</span>;
  if(CUSTOMER_EDIT_CODE_FIELDS.has(change.field))return <bdi dir="auto">{classificationLabel(change.field as ClassificationChoiceField,value,getLanguage())}</bdi>;
+ // The contacts' roles and the contacts beyond the second (lib/customer-contacts.ts): their words, not their keys or JSON.
+ if(['contactTitle','contactTitle2','contacts'].includes(change.field))return <bdi dir="auto">{editValueText(change.field,value,getLanguage()==='en'?'en':'ar')}</bdi>;
  return <bdi dir={change.field==='location'||change.field==='shortAddress'?'ltr':'auto'}>{CUSTOMER_EDIT_WORD_FIELDS.has(change.field)?t(value):value}</bdi>;
 }
 

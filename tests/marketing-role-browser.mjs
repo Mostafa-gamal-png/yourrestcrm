@@ -175,7 +175,7 @@ try {
   dialog = await openForm(page, sheet);
   check([await dialog.locator('[data-classification-editor]').count(), await dialog.locator('[data-classification-readonly]').count(), await dialog.locator('[data-classification-readonly] input').count(), await dialog.locator('[data-customer-edit-note]').count()], [0, 1, 0, 1], 'the form: the computed size read only, no field, the note that the edit waits for approval');
   check(await dialog.locator('button[type=submit]').innerText().then(text => text.includes('إرسال التعديل للموافقة')), true, 'the button sends a request');
-  await dialog.getByRole('textbox', {name: 'الجوال', exact: true}).fill('0559998877');
+  await dialog.getByRole('textbox', {name: 'جوال المسؤول 1', exact: true}).fill('0559998877');
   await noSideways(page, 'the other branch\'s form, 360');
   await shot(page, 'marketing-other-branch-form-ar-360');
   const asked = page.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'POST');

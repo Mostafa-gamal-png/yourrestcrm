@@ -19,7 +19,10 @@ import {readLastPurchases,withLastPurchase} from '@/lib/customer-last-purchase-s
 import {deleteCapture,rootCustomer} from '@/lib/trash-server';
 import {customerCodeKey,erpCodeTaken,ERP_CODE_LOCKED} from '@/lib/customer-identity';
 import {proposeCustomerEdit,decideCustomerEdit,customerEditHistoryEntry,type CustomerEditApproval} from '@/lib/customer-edit-requests-server';
-import {proposesCustomerEdit,marketingCorrectionWaits,customerEditProposal,DIRECT_EDIT,type CustomerEditDirect} from '@/lib/customer-edit-requests';
+import {proposesCustomerEdit,marketingCorrectionWaits,customerEditProposal,DIRECT_EDIT,CAPACITY_EDIT,type CustomerEditDirect} from '@/lib/customer-edit-requests';
+import {capacityEditIsDirect,keepAbsentCapacity,withCapacityOnly} from '@/lib/customer-capacity';
+import {CUSTOMER_DECORATIONS} from '@/lib/crm-context-records';
+import {keepAbsentContacts} from '@/lib/customer-contacts';
 import {carryRetiredClassification,changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
 import {isFieldRole,isMarketingRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
@@ -233,6 +236,12 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
   // request as the rest.
   carryRetiredClassification(data,old?.data);
   keepAbsentClassification(data,inputData,old?.data);
+  // «الطاقة الإنتاجية والاحتياج» (lib/customer-capacity.ts, 2026-11-21): a save that does not carry one of the three entered fields (a page or a
+  // device queue of the release before) keeps the stored value; an empty one removes it.
+  keepAbsentCapacity(data,inputData,old?.data);
+  // «المسؤولون» (lib/customer-contacts.ts, 2026-11-21): the roles and the contacts beyond the second, kept when a save does not carry them;
+  // a second left empty with others after it takes the first of them.
+  keepAbsentContacts(data,inputData,old?.data);
   if(changedClassification(old?.data,data).length&&!canClassifyCustomer({kind:'customer',assignedTo:data.assignedTo,branch:data.branch},c.members,c.me))throw new CRMError(CLASSIFICATION_REFUSED,403);
  }
  if(kind==='factory'){
@@ -264,13 +273,20 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
  // a representative's (lib/customer-edit-requests.ts marketingCorrectionWaits), gated as a representative's is: the member as they are and
  // the customer at the version they read (accessGuard). Their own branch's other corrections are written directly (marketingCustomerGuard).
  const marketingWaits=kind==='customer'&&!!old&&body.action==='save'&&!approval&&marketingCorrectionWaits(c.me,old,data.region);
- const permission=marketingWaits?accessGuard(c,old):kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
+ // «الطاقة الإنتاجية والاحتياج» (lib/customer-capacity.ts, the owner, 2026-11-21): a representative's or a marketing officer's correction that
+ // would wait, but changes only the three entered fields (what a request would hold: customerEditProposal) of a customer assigned to them, is
+ // written directly: the stored customer with those three fields over it and nothing else of the save, gated as their correction is (the
+ // member as they are, the customer at the version read: accessGuard) and on the customer being still theirs at the commit.
+ const capacityDirect=kind==='customer'&&!!old&&body.action==='save'&&!approval&&(proposesCustomerEdit(c.me.role)||marketingWaits)&&capacityEditIsDirect(c.me,old,customerEditProposal(old.data,data).fields);
+ if(capacityDirect){const stored={...old!.data};for(const key of CUSTOMER_DECORATIONS)delete stored[key];const next=withCapacityOnly(stored,data);for(const key of Object.keys(data))delete data[key];Object.assign(data,next);}
+ const capacityGuard=()=>{const guard=accessGuard(c,old);guard.sql+=" AND EXISTS (SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND assigned_to=?)";guard.args.push(old!.id,c.me.id);return guard;};
+ const permission=capacityDirect?capacityGuard():marketingWaits?accessGuard(c,old):kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
  // The ERP code checked above, again at the commit: no other customer took it meanwhile (the plain spelling: upper case, no spaces around).
  if(takenCodeKey){permission.sql+=" AND NOT EXISTS (SELECT 1 FROM crm_records WHERE kind='customer' AND id<>? AND upper(trim(CAST(json_extract(data,'$.code') AS TEXT)))=?)";permission.args.push(old?.id||genericId,takenCodeKey);}
  // «طلبات تعديل بيانات العميل» (the owner, 2026-11-15): a representative's, a supervisor's or customer service's correction of a customer
  // has passed every check of a direct edit as that member; only the write waits, as a request (lib/customer-edit-requests-server.ts),
  // gated by this same commit guard. The administrator and the sales manager write directly, and approve requests (approval).
- if(kind==='customer'&&old&&body.action==='save'&&!approval&&(proposesCustomerEdit(c.me.role)||marketingWaits))return await proposeCustomerEdit(c,{old,data,key:body.editKey,permission,now});
+ if(kind==='customer'&&old&&body.action==='save'&&!approval&&!capacityDirect&&(proposesCustomerEdit(c.me.role)||marketingWaits))return await proposeCustomerEdit(c,{old,data,key:body.editKey,permission,now});
  if(approval){if(kind!=='customer'||!old)throw new CRMError('عملية غير صحيحة');permission.sql+=' AND '+approval.guard.sql;permission.args.push(...approval.guard.args);}
  // ERP source references may belong to several factories. The immutable CRM
  // number is allocated by the database; ambiguous ERP identities require review.
@@ -294,9 +310,10 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
  if(syncFollowup)stmts.push(c.db.prepare(`UPDATE crm_records SET data=json_set(data,'$.nextAction',?,'$.nextDate',?),updated_at=?,version=version+1 WHERE id=? AND version=? AND json_extract(data,'$.stage') NOT IN ('won','lost') AND ${gate}`).bind(data.nextAction,data.nextDate,now,parent!.id,parent!.version,id,revision,mutation));
  // A marketing officer's direct correction of a customer is recorded with what it changed, before and after (review of 2026-11-18): the
  // customer's history reads it as a request's changes (customer-edit-requests-server.ts customerEditHistoryEntry).
- const direct=kind==='customer'&&!!old&&!approval&&isMarketingRole(c.me.role);
+ // A direct update of «الطاقة الإنتاجية والاحتياج» (capacityDirect) is recorded the same way, as CAPACITY_EDIT.
+ const direct=kind==='customer'&&!!old&&!approval&&(isMarketingRole(c.me.role)||capacityDirect);
  const detail=direct?JSON.stringify({v:1,by:c.me.id,customerName:String(data.name||''),...customerEditProposal(old!.data,data)} satisfies CustomerEditDirect):kind==='opportunity'?`${data.moldType} • ${data.stage}`:data.name||data.summary||data.number||kind;
- stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),id,c.me.name,direct?DIRECT_EDIT:old?'تعديل':'إضافة',detail,now,id,revision,mutation));
+ stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(crypto.randomUUID(),id,c.me.name,capacityDirect?CAPACITY_EDIT:direct?DIRECT_EDIT:old?'تعديل':'إضافة',detail,now,id,revision,mutation));
  if(genericCreateKey)stmts.push(c.db.prepare(`INSERT INTO crm_audit (id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE ${gate}`).bind(genericReceiptId,id,c.me.name,'crm-create-receipt',genericFingerprint,now,id,revision,mutation));
  if(approval)stmts.push(...approval.statements(gate,[id,revision,mutation],now));
  const result=await c.db.batch(stmts);if(result[0].meta.changes!==1&&approval)await approval.refused();if(result[0].meta.changes!==1&&genericCreateKey){const repeated=await replayCreate();if(repeated)return repeated;}if(result[0].meta.changes!==1&&createKey){const replay=await c.db.prepare("SELECT id,data,version FROM crm_records WHERE id=? AND kind='activity' AND parent_id=? AND json_extract(data,'$.performedBy')=?").bind(id,parentId,c.me.id).first<{id:string;data:string;version:number}>();if(replay)return replayReply({...replay,data:JSON.parse(String(replay.data))},'_creationRequest');}if(result[0].meta.changes!==1)throw new CRMError('تم تحديث السجل بالتزامن. أعد تحميل البيانات.',409);

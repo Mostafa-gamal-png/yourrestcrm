@@ -39,6 +39,8 @@ function commonRequire(name){
  if(name==='./my-targets')return {__esModule:true,default:MyTargets};
  if(name==='./region-picker')return load('app/region-picker.tsx',commonRequire);
  if(name==='./erp-code-readonly')return load('app/erp-code-readonly.tsx',commonRequire);
+ // The customer form's sections and contacts (2026-11-21): loaded, so the form's structure is what the test reads (their components are not run).
+ if(name==='./customer-form')return load('app/customer-form.tsx',commonRequire);
  if(name==='./support-panel')return new Proxy({useSupport:()=>({data:null,refresh:async()=>{},byCustomer:{},canRequest:()=>false,badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='./complaints-panel')return new Proxy({useComplaints:()=>({data:null,refresh:async()=>{},forCustomer:()=>[],badge:0})},{get:(target,key)=>target[key]||pass});
  if(name==='@/components/ui/sidebar')return new Proxy({useSidebar:()=>({setOpenMobile:noop})},{get:(target,key)=>target[key]||pass});
@@ -79,20 +81,35 @@ for(const locale of ['ar','en']){
  tree=h.render();nodes(tree,node=>node.type===MobileNavigation)[0].props.onNavigate('activity');eq(h.state.filtersOpen,false,'Page change collapses filters');
  tree=h.render();filters=byClass(tree,'mobile-friendly-filters');eq(nodes(filters,node=>node.props?.label===tr('المندوب')).length,0,'Rep visit filters also hide staff');ok(nodes(filters,node=>node.props?.label===tr('مرحلة البيع')).length===1,'Rep can filter own visit sales stage');
  h.state.view='customer';tree=h.render();button(tree,tr('إضافة عميل')).props.onClick();tree=h.render();
- let form=nodes(tree,node=>node.type==='form')[0],extra=byClass(form,'customer-extra-fields');
- eq(h.state.form.kind,'customer','Directory action opens customer creation');eq(extra.props.open,false,'Rep optional customer fields start collapsed');eq(text(nodes(extra,node=>node.type==='summary')[0]),locale==='ar'?'بيانات إضافية للعميل':'Additional customer details','Optional fields summary localized');
- const insideOptional=new Set(nodes(extra,()=>true)),labels=nodes(form,node=>node.type==='label');
+ // The customer form of 2026-11-21 (app/customer-form.tsx): six numbered sections, every earlier field kept, nothing under «بيانات إضافية».
+ let form=nodes(tree,node=>node.type==='form')[0];
+ eq(h.state.form.kind,'customer','Directory action opens customer creation');
+ eq(byClass(form,'customer-extra-fields'),undefined,'Nothing is hidden under «بيانات إضافية للعميل» any more');
+ const sections=nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerFormSection');
+ eq(sections.map(node=>node.props.step),[1,2,3,4,5,6],'Six numbered sections, in order');
+ eq(sections.map(node=>node.props.title[0]),['المصنع','المسؤولون','الموقع','التصنيف والمسؤولية','الطاقة والاحتياج','ملاحظات'],'Their titles');
+ eq(sections.filter(node=>node.props.wide).map(node=>node.props.step),[5,6],'Capacity and notes span both columns on a computer');
+ const inSection=step=>new Set(nodes(sections[step-1],()=>true));
+ const labels=nodes(form,node=>node.type==='label');
  const name=labels.find(node=>text(node).startsWith(tr('اسم المصنع'))),nameInput=nodes(name,node=>node.type==='input')[0];
- eq(nameInput.props.required,true,'Factory name stays required');eq(insideOptional.has(name),false,'Required factory name remains immediately visible');
- const region=nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerRegionField')[0];eq(insideOptional.has(region),false,'Region stays outside optional details');
- const regionField=region.type(region.props);eq(regionField.props.disabled,true,'Rep cannot change assigned region');const selectedRegion=nodes(regionField,node=>node.type==='input'&&node.props.type==='radio'&&node.props.checked);eq(selectedRegion.map(node=>node.props.value).join(','),'الغربية','Assigned region remains visible');
- const phone=labels.find(node=>text(node)===tr('الجوال'));eq(nodes(phone,node=>node.type==='input')[0].props.type,'tel','Phone uses the dial keyboard hint');eq(insideOptional.has(phone),false,'Phone stays in short customer form');
- // The ERP code is read-only for everyone (2026-11-12): shown as text inside the optional details, never an input; a new customer has none.
+ eq(nameInput.props.required,true,'Factory name stays required');ok(inSection(1).has(name),'The factory name is in «المصنع»');
+ const choices=nodes(form,node=>Array.isArray(node.props?.only)&&typeof node.props.onChange==='function');
+ eq(choices.map(node=>[...node.props.only]),[['customerKind','category'],['customerType','customerStatus']],'The kind and the category under «المصنع», the classification and the status under «التصنيف والمسؤولية»');
+ eq(h.state.form.data.customerStatus,'نشط','A new customer starts «نشط»');
+ // A representative of one region chooses none: the region is read in the heading, «حسب صلاحيتك».
+ eq(nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerRegionField').length,0,'A rep of one region has no region picker');
+ const heading=byClass(form,'customer-form-heading');ok(text(heading).includes(tr('الغربية'))&&text(heading).includes(locale==='ar'?'حسب صلاحيتك':'By your access'),'The region in the heading: '+text(heading));
+ ok(text(heading).includes(locale==='ar'?'كود يورست يُنشأ تلقائيًا بعد الحفظ، وكود ERP يظهر عند التعديل':'The Yourrest code is assigned automatically after saving; the ERP code shows when editing'),'A new customer: its codes come later');
+ // The contacts: the editor of «المسؤولون» holds the primary (the customer's own contact, phone and email).
+ const contactsEditor=nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerContactsEditor')[0];
+ ok(contactsEditor&&inSection(2).has(contactsEditor),'The contacts\' editor is «المسؤولون»');
+ eq([contactsEditor.props.data.contact,contactsEditor.props.data.phone,contactsEditor.props.data.email],['','',''],'It starts from the customer\'s own (empty) contact');
+ // The ERP code is read-only for everyone (2026-11-12): never an input; a new customer has none yet.
  eq(labels.some(node=>text(node).startsWith(locale==='ar'?'كود العميل في ERP':'Customer ERP code')),false,'No ERP code input in the customer form');
- const code=nodes(form,node=>typeof node.type==='function'&&node.type.name==='ErpCodeReadOnly')[0];ok(insideOptional.has(code),'The ERP code stays visible inside optional details');
- const codeShown=code.type(code.props);eq(nodes(codeShown,node=>['input','textarea','select'].includes(node.type)).length,0,'The ERP code cannot be typed');
- eq(text(nodes(codeShown,node=>node.props?.className==='erp-code-readonly-value')[0]),locale==='ar'?'لا يوجد كود ERP':'No ERP code','A new customer has no ERP code');
- eq(text(nodes(codeShown,node=>node.props?.className==='erp-code-readonly-note')[0]),locale==='ar'?'يُحدَّث من ملف عملاء ERP فقط':'Updated from the ERP customers file only','The note says where the code comes from');
+ eq(nodes(form,node=>typeof node.type==='function'&&node.type.name==='ErpCodeReadOnly').length,0,'A new customer shows no ERP code');
+ for(const [label,step] of [['المدينة',3],['العنوان',3],['مورد القوالب والقطع',5],['عدد الماكينات في الشيت',5],['أنواع الماكينات في الشيت',5],['ملاحظات المصنع',6]]){const found=labels.find(node=>text(node).startsWith(tr(label)));ok(found&&inSection(step).has(found),label+' is in section '+step);}
+ const location=nodes(form,node=>typeof node.props?.onPendingChange==='function')[0];eq([location.props.compact,inSection(3).has(location)],[true,true],'The location is one line in «الموقع»');
+ const capacity=nodes(form,node=>node.props&&'directNote' in node.props);eq([capacity.length,capacity.every(node=>inSection(5).has(node))],[1,true],'The capacity in «الطاقة والاحتياج»');
  eq(labels.some(node=>text(node).includes(tr('المندوب المسؤول'))),false,'Rep form exposes no assignment override');
  nameInput.props.onChange({target:{value:'مصنع جديد'}});eq(h.state.formDirty,true,'Changing input marks unsaved customer draft');tree=h.render();form=nodes(tree,node=>node.type==='form')[0];button(form,tr('إلغاء')).props.onClick();
  eq(h.state.discardForm,true,'Cancel requests explicit discard confirmation');eq(h.state.form.data.name,'مصنع جديد','Cancel retains the entire draft');
@@ -208,7 +225,7 @@ for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager',
   h.state.me={...actor,role:'supervisor'};tree=h.render();eq(child(tree,ErpCustomersImport),undefined,'Losing the role unmounts the import dialog');eq(child(tree,MobileNavigation).props.blocked,false,'Losing the role immediately unlocks mobile navigation even before effects run');
   h.state.me=actor;h.state.erpCustomersOpen=false;h.state.view='activity';tree=h.render();eq(button(tree,locale==='ar'?'استيراد من ERP':'Import from ERP'),undefined,'The import action is on the customers page only');h.state.view='customer';tree=h.render();}
  if(role==='customer_service_manager')continue;
- child(tree,CustomerMachines).props.onEdit(customer);tree=h.render();const internal=nodes(tree,node=>node.type==='input'&&node.props.value==='YR-C-000123')[0];ok(internal,'Customer editor displays permanent Yourrest code');eq(internal.props.readOnly,true,'Permanent code is not editable');eq(internal.props.onChange,undefined,'Permanent code has no mutation callback');
+ child(tree,CustomerMachines).props.onEdit(customer);tree=h.render();const codes=byClass(tree,'customer-form-codes');ok(codes&&text(codes).includes('YR-C-000123'),'Customer editor displays permanent Yourrest code in its heading');eq(nodes(tree,node=>['input','textarea'].includes(node.type)&&node.props.value==='YR-C-000123').length,0,'Permanent code is text, never an input');
  // The ERP code is read-only for every role, the administrator with every region too (2026-11-12): text, never an input.
  eq(nodes(tree,node=>['input','textarea'].includes(node.type)&&node.props.value==='ERP-456').length,0,'The ERP code is not an input for '+role);
  const erpNode=nodes(tree,node=>typeof node.type==='function'&&node.type.name==='ErpCodeReadOnly')[0],erp=erpNode.type(erpNode.props);

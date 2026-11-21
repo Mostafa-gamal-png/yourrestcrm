@@ -4,7 +4,7 @@ import {can} from './permissions';
 import {memberCanAccessRegion} from './regions';
 import type {Row} from './crm';
 import {FIELD_ROLES_SQL} from './roles';
-import {CUSTOMER_EDITS_RECENT_DAYS,CUSTOMER_EDIT_FIELDS,CUSTOMER_EDIT_HISTORY,DIRECT_EDIT,type CustomerEditChange,activeSupervisorOf,applyCustomerEdit,customerEditChanges,customerEditFingerprint,customerEditProposal,directCustomerEditRole,firstStage,liveStage,rejectReason,staleFields,type CustomerEditField,type CustomerEditHeld,type CustomerEditList,type CustomerEditRequest,type CustomerEditStage,type CustomerEditStatus} from './customer-edit-requests';
+import {CUSTOMER_EDITS_RECENT_DAYS,CUSTOMER_EDIT_FIELDS,CUSTOMER_EDIT_HISTORY,DIRECT_EDIT,CAPACITY_EDIT,type CustomerEditChange,activeSupervisorOf,applyCustomerEdit,customerEditChanges,customerEditFingerprint,customerEditProposal,directCustomerEditRole,firstStage,liveStage,rejectReason,staleFields,type CustomerEditField,type CustomerEditHeld,type CustomerEditList,type CustomerEditRequest,type CustomerEditStage,type CustomerEditStatus} from './customer-edit-requests';
 
 /** Server side of «طلبات تعديل بيانات العميل» (lib/customer-edit-requests.ts). Everything is kept in crm_audit, append-only, as
  *  «المحذوفات» keeps its deletions and restorations (no migration):
@@ -204,7 +204,8 @@ export function customerEditHistoryEntry<T extends {action:string;detail:string}
  if(!label)return entry;
  const detail=parseObject(entry.detail),customerName=textOf(detail?.customerName);
  // A marketing officer's direct correction (route.ts, DIRECT_EDIT) reads with its fields, before and after, as a request's changes do.
- if(entry.action===DIRECT_EDIT){const direct=parseDirect(detail);return {...entry,action:label,detail:customerName,changes:direct?customerEditChanges(direct,null):[]};}
+ // A representative's or a marketing officer's direct update of «الطاقة الإنتاجية والاحتياج» (CAPACITY_EDIT) reads the same way.
+ if(entry.action===DIRECT_EDIT||entry.action===CAPACITY_EDIT){const direct=parseDirect(detail);return {...entry,action:label,detail:customerName,changes:direct?customerEditChanges(direct,null):[]};}
  return {...entry,action:label,detail:customerName};
 }
 function parseDirect(detail:Record<string,unknown>|null):Pick<CustomerEditHeld,'fields'|'values'|'base'>|null{
