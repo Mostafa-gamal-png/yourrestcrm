@@ -11,7 +11,7 @@ type Context=Awaited<ReturnType<typeof context>>;
 export type OpportunityData=z.infer<typeof schemas.opportunity>&Record<string,unknown>;
 export type ContactData=LocationFields&{startedAt?:string;endedAt?:string;result?:string;outcome?:string;performedBy?:string;recordedByEmail?:string;visitNumber?:number;durationSeconds?:number|null;durationReview?:boolean;date?:string;responsibleId?:string}&Record<string,unknown>;
 export function requireLegacyVisit(data:unknown,old?:Row){
- const keys=['visitWorkflow','responsibleId','customerStage','salesStage','strength','requestedProducts','hasCompetitor','competitorName','competitorNotes','competitorFileId','competitorFileName','customerNeeds','requestId','requestSnapshot'];
+ const keys=['visitWorkflow','responsibleId','customerStage','salesStage','strength','requestedProducts','hasCompetitor','competitorName','competitorNotes','competitorFileId','competitorFileName','customerNeeds','moldNeedBy','requestId','requestSnapshot'];
  const fields:Record<string,unknown>=isRecord(data)?data:{};
  if(old?.data.visitWorkflow||keys.some(k=>{const value=fields[k];return Array.isArray(value)?value.length>0:!!value;}))throw new CRMError('استخدم قسم الزيارات لحفظ بيانات الزيارة والعميل.',400);
 }

@@ -13,6 +13,7 @@ import {prepareJourneyVisitLink} from '@/lib/journeys-server';
 import {offlineCapture,offlineEvidence} from '@/lib/offline-server';
 import {enforceVisitPlace,adoptCustomerPlace} from '@/lib/visit-place-server';
 import {opportunityProblem} from '@/lib/opportunity-entry';
+import {keepMoldNeed} from '@/lib/customer-capacity';
 export const dynamic='force-dynamic';
 type VisitData=Omit<z.infer<typeof schemas.activity>,'customerStage'>&{customerStage?:string}&ContactData;
 export async function POST(req:Request){try{
@@ -47,6 +48,9 @@ export async function POST(req:Request){try{
  if(!old){const problem=opportunityProblem(data,c.me.role);if(problem)throw new CRMError(problem);}
  if(!data.nextAction||!data.nextDate)throw new CRMError('الإجراء القادم وموعد المتابعة مطلوبان');
  if((!old||data.nextDate!==old.data.nextDate)&&data.nextDate<(offline?visitDate:today()))throw new CRMError('موعد المتابعة يجب أن يكون يوم التسجيل أو لاحقًا');
+ // «موعد احتياج القوالب المتوقع» (lib/customer-capacity.ts, 2026-11-21): optional; as «موعد المتابعة», a day set or changed is the day of
+ // recording or later (the day the entry was recorded for one queued on the device); a save that does not carry it keeps the stored day.
+ const moldNeedProblem=keepMoldNeed(data,isRecord(body.data)?body.data:undefined,old?.data,offline?visitDate:today());if(moldNeedProblem)throw new CRMError(moldNeedProblem);
  // A contact does not imply a buying need; sales fields are explicitly optional.
  if(data.hasCompetitor&&!data.competitorName)throw new CRMError('اكتب اسم المنافس');
  if(!data.hasCompetitor){data.competitorName='';data.competitorNotes='';data.competitorFileId='';data.competitorFileName='';}

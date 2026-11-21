@@ -1697,5 +1697,11 @@
   "منطقة العمل صغيرة جدًا.": "The work area is too small.",
   "مساحة منطقة العمل تتجاوز 40 كم².": "The work area is larger than 40 km².",
   "تعذر إتمام الطلب. حاول مرة أخرى.": "The request could not be completed. Try again.",
-  "رسم مناطق عمل المناديب": "Draw representatives' work areas"
+  "رسم مناطق عمل المناديب": "Draw representatives' work areas",
+  "موعد احتياج القوالب المتوقع": "Expected mold need date",
+  "موعد احتياج القوالب المتوقع يجب أن يكون يوم التسجيل أو لاحقًا": "The expected mold need date must be the day of recording or later",
+  "اكتب عدد القوالب المستخدمة رقمًا صحيحًا من 0 إلى 10000.": "Enter the molds in use as a whole number from 0 to 10,000.",
+  "اكتب الطاقة الإنتاجية نصًا قصيرًا لا يزيد على 100 حرف.": "Enter the production capacity as a short text of no more than 100 characters.",
+  "اكتب حجم الطلب السنوي نصًا قصيرًا لا يزيد على 100 حرف.": "Enter the annual demand as a short text of no more than 100 characters.",
+  "تحديث الطاقة الإنتاجية والاحتياج": "Capacity and demand updated"
 }

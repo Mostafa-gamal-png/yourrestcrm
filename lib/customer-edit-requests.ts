@@ -1,6 +1,7 @@
 import type {Member} from './crm';
 import {CLASSIFICATION_CHOICE_FIELDS,CLASSIFICATION_TEXT} from './customer-classification';
 import {isFieldRole,isMarketingRole} from './roles';
+import {CAPACITY_TEXT} from './customer-capacity';
 
 /** «طلبات تعديل بيانات العميل» (the owner, 2026-11-15, item 4 of the GSCO comparison list, after GSCO 2.13.55 and 2.13.73 on its projects):
  *  a correction of a customer's details by a representative, a supervisor or customer service no longer changes the customer: it becomes a
@@ -18,8 +19,11 @@ import {isFieldRole,isMarketingRole} from './roles';
 /** The classifications (lib/customer-classification.ts, 2026-11-18) are among them for the supervisor, the only member who sends a request
  *  and may set them (their team's customers); a representative's or customer service's save that changes one is refused before a request
  *  is made (app/api/crm/route.ts), so their requests never carry them. */
-export const CUSTOMER_EDIT_FIELDS=['name','region','customerType','customerKind','opportunityGrade','gradeNotes','factorySize','customerInterest','customerStatus','category','phone','contact','city','location','shortAddress','address','email','contact2','phone2','email2','machineCount','machineTypes','supplier','notes'] as const;
+export const CUSTOMER_EDIT_FIELDS=['name','region','customerType','customerKind','opportunityGrade','gradeNotes','factorySize','customerInterest','customerStatus','category','phone','contact','city','location','shortAddress','address','email','contact2','phone2','email2','machineCount','machineTypes','moldsInUse','productionCapacity','annualDemand','supplier','notes'] as const;
 export type CustomerEditField=typeof CUSTOMER_EDIT_FIELDS[number];
+/** «الطاقة الإنتاجية والاحتياج» (lib/customer-capacity.ts, 2026-11-21): the three entered fields travel in a request like the others; a
+ *  representative's or a marketing officer's change of them ONLY, on a customer assigned to them, is saved directly instead (capacityEditIsDirect,
+ *  app/api/crm/route.ts), recorded in the history as CAPACITY_EDIT with its fields before and after. */
 /** Held with «location»: the point and how it was captured travel with the text, never apart. */
 export const LOCATION_DETAILS=['latitude','longitude','locationSource','locationCapturedAt','locationAccuracy'] as const;
 /** Never changed by a request, whatever the sender's role (the ERP code: the owner, 2026-11-12, for everyone; the routing: only the
@@ -34,6 +38,7 @@ export const CUSTOMER_EDIT_FIELD_TEXT:Record<CustomerEditField,[string,string]>=
  city:['المدينة','City'],location:['اللوكيشن','Location'],shortAddress:['العنوان الوطني المختصر','Short national address'],address:['العنوان','Address'],
  email:['بريد المسؤول الأول','First contact email'],contact2:['اسم المسؤول الثاني','Second contact name'],phone2:['جوال المسؤول الثاني','Second contact mobile'],
  email2:['بريد المسؤول الثاني','Second contact email'],machineCount:['عدد الماكينات في الشيت','Machine count in the sheet'],machineTypes:['أنواع الماكينات في الشيت','Machine types in the sheet'],
+ moldsInUse:CAPACITY_TEXT.moldsInUse,productionCapacity:CAPACITY_TEXT.productionCapacity,annualDemand:CAPACITY_TEXT.annualDemand,
  supplier:['مورد القوالب والقطع','Molds and parts supplier'],notes:['ملاحظات المصنع','Factory notes']
 };
 /** Fields whose stored value is one of the application's own words (shown translated in English); the others are what people typed. The
@@ -152,11 +157,16 @@ export const CUSTOMER_EDIT_HISTORY:Record<string,string>={
  'customer-edit:rejected':'رفض طلب تعديل بيانات العميل',
  'customer-edit:cancelled':'إلغاء طلب تعديل بيانات العميل',
  // A marketing officer's direct correction (review of 2026-11-18): the history lists its fields with before and after (DIRECT_EDIT).
- 'customer-edit:direct':'تعديل مسؤول التسويق لبيانات العميل'
+ 'customer-edit:direct':'تعديل مسؤول التسويق لبيانات العميل',
+ // A representative's or a marketing officer's direct update of «الطاقة الإنتاجية والاحتياج» on their own customer (2026-11-21): the same
+ // detail as DIRECT_EDIT, read with its fields before and after.
+ 'customer-edit:capacity':'تحديث الطاقة الإنتاجية والاحتياج'
 };
 /** The audit action of a marketing officer's direct correction; its detail holds what customerEditProposal finds (the fields, their new
  *  values and what they held), with who and the customer's name. */
 export const DIRECT_EDIT='customer-edit:direct';
+/** The audit action of a direct capacity update (lib/customer-capacity.ts capacityEditIsDirect); its detail is a CustomerEditDirect. */
+export const CAPACITY_EDIT='customer-edit:capacity';
 export type CustomerEditDirect={v:1;by:string;customerName:string;fields:CustomerEditField[];values:CustomerEditValues;base:Record<string,string>};
 
 const string=(value:unknown):value is string=>typeof value==='string';
