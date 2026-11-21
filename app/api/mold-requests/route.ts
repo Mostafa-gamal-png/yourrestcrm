@@ -5,12 +5,11 @@ import {env} from 'cloudflare:workers';
 import {context,accessGuard,checkOrigin,requireSession,readJsonBody,CRMError,replyError,requirePages,requireCell} from '@/lib/crm-server';
 import {validateMoldSpecs,moldApprovalBody,MOLD_ID,MOLD_REQUEST_REF,moldApprovalRefusal,moldCancelReasonUsed,moldPayment,moldQuotePoNumber,moldStatusObject,moldRequestCity,moldSignatureBytes,moldSignatureCheck,moldSignatureRequired,moldSigner,moldSignatureBlockAt,moldSignatureBlockBytes,moldSignatureBlockCheck,moldSignatureSeen,moldSignaturePageBytes,moldSignaturePageCheck,moldSignedDocumentCategory,moldSignedDocumentParts,moldPaymentTerms,MOLD_PAYMENT_TERMS_REQUIRED,MOLD_PAYMENT_TERMS_REFRESH,MOLD_PAYMENT_TERMS_CASH,MOLD_TERMS_ACCEPT,MOLD_LIMITS,MOLD_PAYMENT_REQUIRED,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,MOLD_SIGNATURE_BAD,MOLD_SIGNATURE_REQUIRED,MOLD_SIGNER_MAX,MOLD_SIGNER_MIN,MOLD_SIGNER_REQUIRED,moldAddress,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,moldCustomerName,moldErpCode,moldErpCodeText,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG,moldCity,MOLD_CITY_REQUIRED,moldSendsErpWithCrm} from '@/portable/mold-rules.mjs';
 import {callProducts} from '@/portable/mold-client.mjs';
-import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldHeldFor,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSignableFile,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldPaymentTerms,type MoldRequestData,type MoldRequestsAnswer,type MoldSignatureData} from '@/lib/mold-requests';
+import {canApproveMoldRequests,canCreateMoldRequest,canReadMoldRequest,canUseMoldRequests,moldApprovalWaitsFor,moldApprovesRequest,moldDesignCount,moldDesignMayBeRemote,moldDesignRefused,moldDesignStopped,moldEditable,moldErrorText,moldHeldFor,moldNeverSent,moldPermissions,moldPendingForOldPage,moldRequestView,moldSameCustomerTyped,moldSignableFile,moldSignatureOf,yourrestNumber,MOLD_SAME_REASON_TEXT,type MoldPayment,type MoldPaymentTerms,type MoldRequestData,type MoldRequestsAnswer,type MoldSignatureData} from '@/lib/mold-requests';
 import {dropOldCopies,makeSignedCopies,makeSignedDocument,newSignLink,signLinkUrl} from '@/lib/mold-sign-server';
 import type {SignedDocPart} from '@/lib/mold-signed-document';
 import type {MoldFileCategory} from '@/lib/mold-requests';
 import {regionScope} from '@/lib/regions';
-import {customerCodeKey,uniqueCustomerCodes} from '@/lib/customer-identity';
 import {isServiceRole} from '@/lib/customer-service';
 import {canOpenMoldRequest,forgetPendingApprovals,keepMoldRetrying,moldOrdersFor,loadMoldDesignFiles,loadMoldRequest,loadMoldRequests,moldCancelReasons,moldDesignFilesByRequest,moldPendingFor as pendingFor,moldNov10Known,moldRequestRefKnown,moldQuotePoSupported,moldViewReasons,noteMoldQuotePo,productsLink,pullMoldStatuses,releaseMoldRequest,requestedNow,sendDueMoldRequests,sendMoldDesignFile,sendMoldRequest,sendDueMoldDesignFiles,storeMoldRemote,MOLD_DESIGN_REFUSED_SQL,MOLD_DESIGN_STOPPED_SQL,MOLD_NEVER_SENT_SQL,type SendOutcome} from '@/lib/mold-requests-server';
 export const dynamic='force-dynamic';
@@ -23,48 +22,47 @@ const askable=(c:Awaited<ReturnType<typeof reader>>,customerId:string)=>isServic
  ?c.regionalRecords.find(row=>row.id===customerId&&row.kind==='customer'&&row.branch===c.me.branch)
  :c.visible.find(row=>row.id===customerId&&row.kind==='customer');
 
-/** The customer a create or an edit names (the owner, 2026-11-09: the customer typed, name and ERP code, with the CRM's customers as
- *  suggestions): customerId, one of the CRM's customers the reader may ask for (askable), as before, with the ERP code typed (customer.
- *  erpCode, up to 50 characters) or else the customer's own; or customer {name, erpCode}, a customer typed. A typed ERP code that names
- *  exactly one customer of the CRM (uniqueCustomerCodes over every customer's current code and the CRM's code mappings, as the CRM
- *  matches ERP codes: a code a customer only had before names nobody) that the reader may ask for and that has a Yourrest number links the request to it, the server deciding whatever
- *  the page thought; any other is a customer not in the CRM (crmNumber null), its name (1..200) and ERP code (1..50, moldErpCode)
- *  required, each refused by its field (customer.name, customer.erpCode). keep: the edit's own customer, kept even when the reader may no
- *  longer ask for it. Answers the customer row (null when not in the CRM) and the request's customer data without its address. */
+/** The customer a create or an edit names. Since the owner's decision of 2026-11-21 (a request had reached production under another
+ *  factory, the one CRM customer whose ERP code was the code typed: «انا قلتلك الخانة دى للكتابة فقط وايا يكن يتكتب فيها صح او خطأ يروح
+ *  انت مالك تصحح ليه») the customer is what is typed, customer {name, erpCode}, and nothing else: its name (1..200, moldCustomerName) and
+ *  ERP code (1..50, moldErpCode: trimmed, Arabic-Indic digits as plain ones) required, each refused by its field (customer.name,
+ *  customer.erpCode), stored unlinked (no customer row, crmNumber null) and sent to production exactly so. The code is never looked up
+ *  among the CRM's customers or its code mappings (until that day a code naming exactly one customer the reader may ask for linked the
+ *  request to it, and production received that customer's name and Yourrest number), and a customerId sent beside what is typed (a page
+ *  of the release before, which linked by the code on the device) is not taken: what is typed goes. The edit of a request stored linked
+ *  keeps its link before this is asked (the update: moldSameCustomerTyped). customerId alone, with nothing typed, is a page loaded before
+ *  2026-11-09, where the customer was chosen from a list: one of the CRM's customers the reader may ask for (askable), as before (keep:
+ *  the edit's own customer, kept even when the reader may no longer ask for it). Answers the customer row (null when not linked) and the
+ *  request's customer data without its address. */
 type AskedCustomer={row:Row|null;customer:{crmNumber:number|null;name:string;city:string;erpCode?:string};address:string;fields:Record<string,string>};
 const NO_CUSTOMER='اكتب اسم العميل وكود العميل';
 /** requireCode (2026-11-14, the owner: «الطلب يتبعت بكود erp»): a new request and the edit of one never sent carry the customer's code; a
- *  linked customer chosen by its id (a page loaded before 2026-11-09 sends only that) with none typed takes its own, and one with neither
- *  is refused by the field customer.erpCode. The city the answer carries is the customer's own as the sheet writes it (moldRequestCity):
- *  what a page loaded before the city's field gets (askedCity). */
+ *  customer chosen by its id alone (a page loaded before 2026-11-09) takes its own, and one without is refused by the field
+ *  customer.erpCode. The city the answer carries is that customer's own as the sheet writes it (moldRequestCity): what a page loaded
+ *  before the city's field gets (askedCity); a customer typed has none (the city is chosen). */
 function askedCustomer(c:Awaited<ReturnType<typeof reader>>,input:{customerId?:string;customer?:unknown},keep?:{customerId:string},requireCode=false):AskedCustomer{
  const typed=input.customer&&typeof input.customer==='object'&&!Array.isArray(input.customer)?input.customer as {name?:unknown;erpCode?:unknown}:null;
- const code=typed&&typed.erpCode!==undefined&&typed.erpCode!==null&&typed.erpCode!==''?moldErpCode(typed.erpCode):null;
  const linkedTo=(row:Row,erpCode:string,fields:Record<string,string>={}):AskedCustomer=>{
   const crmNumber=yourrestNumber(row.data.internalCode);
   if(!crmNumber)throw new CRMError('كود يورست للعميل غير متاح. حدّث الصفحة.',409);
   const name=String(row.data.name||'').trim();
   if(!name||[...name].length>MOLD_LIMITS.customerName)throw new CRMError('اسم العميل أطول من '+MOLD_LIMITS.customerName+' حرفًا؛ اختصره من صفحة العميل أولًا',409);
-  // The ERP code a linked request carries (sent with it since 2026-11-14, moldSendsErpWithCrm): the one typed, else the customer's own when it fits.
+  // The ERP code a linked request carries (sent with it since 2026-11-14, moldSendsErpWithCrm): the customer's own when it fits.
   const own=moldErpCodeText(row.data.code),shown=erpCode||([...own].length<=MOLD_LIMITS.erpCode?own:'');
   return {row,customer:{crmNumber,name,city:moldRequestCity(row.data.city),...(shown?{erpCode:shown}:{})},address:String(row.data.address||''),fields};
  };
- if(input.customerId!==undefined){
+ // A page loaded before 2026-11-09: a customer chosen from a list by its id, nothing typed.
+ if(!typed&&input.customerId!==undefined){
   const row=askable(c,input.customerId)||(keep&&keep.customerId===input.customerId?c.all.find(record=>record.id===input.customerId&&record.kind==='customer'):undefined);
   if(!row)throw new CRMError('اختر عميلًا من العملاء المتاحين لك',404);
-  const linked=linkedTo(row,code&&!code.error?code.erpCode:'',code?.error==='long'?{'customer.erpCode':MOLD_ERP_CODE_LONG}:{});
-  if(requireCode&&!linked.customer.erpCode&&!linked.fields['customer.erpCode'])linked.fields={...linked.fields,'customer.erpCode':MOLD_ERP_CODE_REQUIRED};
+  const linked=linkedTo(row,'');
+  if(requireCode&&!linked.customer.erpCode)linked.fields={...linked.fields,'customer.erpCode':MOLD_ERP_CODE_REQUIRED};
   return linked;
  }
  if(!typed)throw Object.assign(new CRMError(NO_CUSTOMER,400),{fields:{customer:NO_CUSTOMER}});
- const name=moldCustomerName(typed.name),erp=code||moldErpCode('');
+ // What is typed, as typed (2026-11-21): never looked up, never linked.
+ const name=moldCustomerName(typed.name),erp=moldErpCode(typed.erpCode);
  const fields:Record<string,string>={...(name.error?{'customer.name':name.error==='required'?MOLD_CUSTOMER_NAME_REQUIRED:MOLD_CUSTOMER_NAME_LONG}:{}),...(erp.error?{'customer.erpCode':erp.error==='required'?MOLD_ERP_CODE_REQUIRED:MOLD_ERP_CODE_LONG}:{})};
- // The ERP code names one customer of the CRM the reader may ask for: linked to it (its registered name, its Yourrest number).
- if(!erp.error){
-  const found=uniqueCustomerCodes(c.all,c.customerIdentityState.mappings).get(customerCodeKey(erp.erpCode))||[];
-  const row=found.length===1?askable(c,found[0].id):undefined;
-  if(row&&yourrestNumber(row.data.internalCode))return linkedTo(row,erp.erpCode);
- }
  return {row:null,customer:{crmNumber:null,name:name.name,city:'',erpCode:erp.erpCode},address:'',fields};
 }
 
@@ -420,9 +418,10 @@ export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';
   SELECT ?,?,?,?,'image',?,?,?,?,?,'send',?,1,?,'design' WHERE EXISTS(SELECT 1 FROM crm_mold_requests WHERE id=? AND mutation_id=?)`).bind(fileId,requestRow,c.me.id,file.name,file.contentType,file.bytes.length,file.sha256,objectKey,now,now,mutation,requestRow,mutation);
  if(input.action==='create'){
   if(!canCreateMoldRequest(c.me))throw new CRMError('طلبات تصنيع القوالب غير متاحة لهذا الدور',403);
-  // The customer (2026-11-09): one of the CRM's (chosen, or named by its ERP code alone), or one not in the CRM (its name and ERP code).
+  // The customer (2026-11-09) as typed, its name and ERP code (since 2026-11-21 never linked by the code: askedCustomer); one of the CRM's
+  // only from a page loaded before 2026-11-09 (chosen by its id, nothing typed).
   const asked=askedCustomer(c,input,undefined,true),customer=asked.row,name=asked.customer.name;
-  // The city (2026-11-14): chosen from the sheet's; a page loaded before sends none and gets the linked customer's own when it is one.
+  // The city (2026-11-14): chosen from the sheet's; a page loaded before sends none and gets the chosen customer's own when it is one.
   const town=askedCity(input.city,asked.customer.city,true);
   // The sales roles' new request carries the customer's signature (2026-11-04); customer service's and the administrator's may, checked alike.
   // Or (2026-11-10) the link the customer signs from, chosen instead of the pad: the request waits for it (awaitsSignature).
@@ -486,19 +485,22 @@ export async function POST(req:Request){let objectKey='',blockKey='',pageKey='';
   if(input.action==='update'){
    // The request's own design link (an older request's) stays exactly as stored.
    const signed=await readSignature(input.signature);
-   // The customer (2026-11-09): none sent (a page loaded before) keeps the request's; else as a create names it, the request's own
-   // customer kept even when the editor may no longer ask for it. Another customer of the CRM, a link made or undone, or (not in the CRM)
-   // another name or ERP code is a change of what the customer signed; so is, since 2026-11-14, a linked customer's code (sent with it).
+   // The customer (2026-11-09): none sent (a page loaded before) keeps the request's; else as a create names it (since 2026-11-21 as
+   // typed, never linked by the code). A request stored linked keeps its link only while the edit names its own customer (its customerId)
+   // with the name and ERP code it was stored with (moldSameCustomerTyped: the two fields left as they were); anything else typed is the
+   // customer typed, unlinked. A link undone, or (not linked) another name or ERP code, is a change of what the customer signed.
    // 2026-11-14: the edit of a request never sent needs the customer's code, its city and its mold number like a new one; the correction of
    // one finance returned (sent before) does not, and keeps its stored city when none is chosen.
-   const strict=!correcting;
-   const asked=input.customerId===undefined&&input.customer===undefined?null:askedCustomer(c,input,{customerId:row.customerId},strict);
+   const strict=!correcting,typedCustomer=input.customer!==undefined;
+   const keepsLink=typedCustomer&&!!row.customerId&&input.customerId===row.customerId&&moldSameCustomerTyped(input.customer,row.data.customer);
+   const asked=input.customerId===undefined&&!typedCustomer||keepsLink?null:askedCustomer(c,input,{customerId:row.customerId},strict);
    const before=row.data.customer,customerId=asked?asked.row?.id||'':row.customerId;
    const swapped=!!asked&&(customerId!==row.customerId||!asked.row&&(asked.customer.name!==before.name||(asked.customer.erpCode||'')!==(before.erpCode||'')));
    // The city: none sent (a page loaded before) keeps the stored one when it is one of the sheet's (another of the CRM's customers: its own).
    const town=askedCity(input.city,swapped&&asked!.row?asked!.customer.city:before.city||'',strict);
    // None sent (a page loaded before) for a linked request stored without a code: the customer's own, as a create from such a page gets it.
-   const ownCode=(()=>{if(asked||before.erpCode||!strict||!row.customerId)return '';const own=moldErpCodeText(c.all.find(record=>record.id===row.customerId&&record.kind==='customer')?.data.code);return [...own].length<=MOLD_LIMITS.erpCode?own:'';})();
+   // Never once the code's field was sent (2026-11-21): what is typed, an empty code refused.
+   const ownCode=(()=>{if(asked||typedCustomer||before.erpCode||!strict||!row.customerId)return '';const own=moldErpCodeText(c.all.find(record=>record.id===row.customerId&&record.kind==='customer')?.data.code);return [...own].length<=MOLD_LIMITS.erpCode?own:'';})();
    const codeMissing:Record<string,string>=strict&&!(asked?asked.customer.erpCode:before.erpCode||ownCode)&&!asked?.fields['customer.erpCode']?{'customer.erpCode':MOLD_ERP_CODE_REQUIRED}:{};
    // The delivery address (2026-11-09): the request's own, changed for it alone; none sent (a page loaded before) keeps the stored one.
    const place=askedAddress(input.address===undefined&&swapped&&!asked!.row?'':input.address,before.address||'');

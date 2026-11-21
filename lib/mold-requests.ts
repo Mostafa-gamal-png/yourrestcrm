@@ -34,10 +34,15 @@
 // quotation's or PO's file first); the first file of the missing kind releases it when nothing else is missing.
 // A customer not in the CRM (the owner, 2026-11-09: «لو فيه عميل مش موجود فى النظام طلب القالب ميقفش»، «المندوب يكتب الكود والكود المطلوب
 // كود erp»، «يتبعت بكود ERP بس»): the form takes the customer's name and ERP code as typed, with the CRM's customers as suggestions. A
-// request for one of the CRM's customers (chosen, or found by its ERP code alone) is linked as before (customerId, its Yourrest number);
+// request for one of the CRM's customers (chosen, or found by its ERP code alone) was linked as before (customerId, its Yourrest number);
 // any other is stored unlinked (customerId '', data.customer.crmNumber null, data.customer.erpCode) and goes to production with the name
 // and ERP code only, once production's application takes such a customer (moldFreeCustomerHeld, sending.held 'free_customer'). Who sees
 // an unlinked request, and which sales manager approves it, goes by its requester's regions (moldRequestInRegion).
+// Typed only (the owner, 2026-11-21, after a request reached production under another factory whose ERP code was the one typed: «انا
+// قلتلك الخانة دى للكتابة فقط وايا يكن يتكتب فيها صح او خطأ يروح انت مالك تصحح ليه»): nothing typed is looked up among the CRM's
+// customers any more, by the form or the server, so every new request is stored unlinked with the name and code exactly as typed (trimmed,
+// Arabic-Indic digits of the code as plain ones) and goes so to production. A request stored linked before keeps its link, its display and
+// its approval; its edit keeps the link while its two fields say what was stored (moldSameCustomerTyped), and goes as typed otherwise.
 // The customer's signature inside the request's PDFs, and a link the customer signs from (the owner, 2026-11-10: «عايز توقيع العميل فى
 // طلبات القوالب داخل pdf التصميم او عرض السعر او po»، «امكانية ارسال لينك بالpdf طلب القالب للتوقيع عليه»): when the customer signs (on
 // the device as before, or from the link), every PDF of the request's design, quotation and PO files the customer saw gets a signed copy
@@ -55,7 +60,7 @@ import type {Member,Row} from './crm';
 import {customerCodeKey,uniqueCustomerCodes,type CustomerCodeMapping} from './customer-identity';
 import {salesScopeMemberIds} from './access';
 import {memberCanAccessRegion,regionScope,regionScopesOverlap} from './regions';
-import {MOLD_PAYMENT_TERMS,MOLD_TERMS_ACCEPT,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG,MOLD_CITY_REQUIRED,MOLD_MOLD_NO_REQUIRED,MOLD_SHEET_CITIES} from '@/portable/mold-rules.mjs';
+import {MOLD_PAYMENT_TERMS,MOLD_TERMS_ACCEPT,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,MOLD_CATEGORY_MAX_FILES,MOLD_PRODUCTION_ONLY,MOLD_PRODUCTION_ONLY_TEXT,moldNeverSent as neverSent,moldQuotePoAnswered,moldSignatureRequired,MOLD_QUOTE_FILE_CATEGORIES,MOLD_ADDRESS_REQUIRED,MOLD_ADDRESS_LONG,MOLD_CUSTOMER_NAME_REQUIRED,MOLD_CUSTOMER_NAME_LONG,MOLD_ERP_CODE_REQUIRED,MOLD_ERP_CODE_LONG,MOLD_CITY_REQUIRED,MOLD_MOLD_NO_REQUIRED,MOLD_SHEET_CITIES,moldCustomerName,moldErpCode} from '@/portable/mold-rules.mjs';
 
 export {MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_PAYMENTS,MOLD_WAITING_STEPS,moldSignatureRequired};
 /** The customer's signature as the request's data names it (2026-11-04): who signed for the customer, when (the CRM's UTC time), and
@@ -548,7 +553,16 @@ export function moldHeldFor(row:Pick<MoldRequestRow,'outbox'|'accepted'|'remote'
  *  request is not cancelled. Its requester corrects it from the CRM (the same requests route, as a correction) until the sales manager
  *  approves it again (production then clears returned). */
 export const moldReturnedNow=(row:Pick<MoldRequestRow,'cancelledAt'|'remote'>)=>!row.cancelledAt&&!!row.remote?.returned&&row.remote.status!=='cancelled';
-/** A request for a customer not in the CRM (2026-11-09): its data carries no Yourrest number. */
+/** Whether the customer an edit sends is the one a request linked to a CRM customer was stored with (2026-11-21): its name and ERP code as
+ *  stored, compared as the form and the server read what is typed (moldCustomerName, moldErpCode). Only then does the edit keep the link
+ *  (app/api/mold-requests/route.ts, app/mold-requests.tsx); anything else typed goes as typed, unlinked, since nothing typed is looked up
+ *  among the CRM's customers any more (the owner, 2026-11-21: «الخانة دى للكتابة فقط»). */
+export function moldSameCustomerTyped(typed:unknown,stored:{name:string;erpCode?:string}){
+ if(!typed||typeof typed!=='object'||Array.isArray(typed))return false;
+ const {name,erpCode}=typed as {name?:unknown;erpCode?:unknown};
+ return moldCustomerName(name).name===moldCustomerName(stored.name).name&&moldErpCode(erpCode).erpCode===moldErpCode(stored.erpCode||'').erpCode;
+}
+/** A request whose data carries no Yourrest number (2026-11-09: a customer not in the CRM; since 2026-11-21 every new request, typed only). */
 export const moldFreeCustomer=(data:{customer?:{crmNumber?:unknown}}|null|undefined)=>!!data?.customer&&data.customer.crmNumber===null;
 /** The error code a request for a customer not in the CRM keeps while production's application does not take one yet (lib/mold-requests-
  *  server.ts sendMoldRequest): not a failure, nothing refused for good. */
@@ -856,13 +870,17 @@ export function moldNotSignedText(name:string,reason:string,say:(ar:string,en:st
 export const MOLD_CUSTOMER_TEXT={
  nameRequired:[MOLD_CUSTOMER_NAME_REQUIRED,'Enter the customer name'] as [string,string],nameLong:[MOLD_CUSTOMER_NAME_LONG,'The customer name is up to 200 characters'] as [string,string],
  erpRequired:[MOLD_ERP_CODE_REQUIRED,'Enter the customer code'] as [string,string],erpLong:[MOLD_ERP_CODE_LONG,'The customer code is up to 50 characters'] as [string,string],
- free:['عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود العميل','A customer not in the CRM: the request goes to production with the name and customer code'] as [string,string],
+ /** Since 2026-11-21 (typed only) every new request: what is typed goes as typed, never linked by its code. */
+ free:['يُرسل الطلب إلى الإنتاج باسم العميل وكوده كما كُتبا تمامًا، دون ربطه بعميل في الـCRM','The request goes to production with the customer name and code exactly as typed, without linking it to a CRM customer'] as [string,string],
  /** «كود العميل» (the owner, 2026-11-14: «سميه كود العميل بس»): the customer's ERP code, required for every new request (and the edit of one
   *  never sent) since that day. */
  code:['كود العميل','Customer code'] as [string,string],
  erpHint:['مطلوب لكل طلب؛ وهو كود العميل في نظام ERP','Required for every request: the customer\'s code in the ERP'] as [string,string],
+ /** The edit of a request stored linked to a CRM customer before 2026-11-21, its two fields unchanged. */
  linked:['مرتبط بالعميل','Linked to the customer'] as [string,string],
- notInCrm:['غير مسجل في الـCRM','Not in the CRM'] as [string,string]};
+ /** A request with no Yourrest number (crmNumber null): since 2026-11-21 every new one, whose customer may well be in the CRM, so it says
+  *  the request is not linked to one (it said «غير مسجل في الـCRM» before). */
+ notInCrm:['غير مرتبط بعميل في الـCRM','Not linked to a CRM customer'] as [string,string]};
 /** The customer's signature in the representative's words (2026-11-04): the step, the pad, its refusals, the sheet's line. */
 export const MOLD_SIGNATURE_TEXT={title:['توقيع العميل','Customer signature'] as [string,string],signed:['وقّع العميل','Signed by the customer'] as [string,string],
  signer:['اسم الموقّع','Name of the person signing'] as [string,string],clear:['مسح','Clear'] as [string,string],confirm:['تأكيد وإرسال','Confirm and send'] as [string,string],
