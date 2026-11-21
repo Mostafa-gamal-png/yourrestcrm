@@ -4,6 +4,57 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «الطاقة الإنتاجية والاحتياج» on the customer's card, «موعد احتياج القوالب المتوقع» on a visit, and the customer form in six sections with several contacts (2026-11-21, no migration, no Android change)
+
+- **Asked.** The owner, 2026-11-21: «كنت محتاج خانه فيها - عدد المكائن (تتحسب) - نوع المكائن (تتجمع) - عدد القوالب المستخدمه (المندوب
+  بيدخلها او المسوق) - الطاقه الإنتاجية … - حجم الطلب السنوي … الحجات دى تتشاف من بره فى كرت العميل - موعد احتياج القوالب المتوقع دى فى
+  تفاصيل الزيارة / البيانات دى كلها اختيارى»; the same day he approved a redesigned customer form («الداتا اللى فى الفورم القديمة كلها مهمة»).
+  Guide 9-أم.
+- **The card.** Five items, each only when it has a value, on the phone's card, the desktop row of «العملاء والماكينات», the customer's
+  sheet and the visit form's customer details (`app/customer-capacity.tsx`, `lib/customer-capacity.ts`): «عدد الماكينات» (the registered
+  machines' «العدد», by `customerMachineCount`, never added to the sheet's; the sheet's with «حسب الشيت» when none is registered),
+  «أنواع الماكينات» (grouped by «نوع الماكينة», an unknown type by its manufacturer: «QGM ×3 · ثابتة ×2 · متحركة ×1»), and three entered
+  fields in the customer's data: «عدد القوالب المستخدمة» (`moldsInUse`, 0..10000, Arabic digits read), «الطاقة الإنتاجية»
+  (`productionCapacity`) and «حجم الطلب السنوي» (`annualDemand`), short texts up to 100 characters. The sheet's count and types are not
+  said twice (the collapsed machine data and the sheet's grid drop them while the block shows them; the desktop row leaves them to its
+  sheet column).
+- **Who saves them.** Whoever edits the customer today. A representative's or a marketing officer's change of the three ALONE on a customer
+  assigned to them is saved directly (`capacityEditIsDirect`; POST /api/crm writes the stored customer with the three and nothing else,
+  gated on the member and on the customer still being theirs; history «تحديث الطاقة الإنتاجية والاحتياج», `customer-edit:capacity`, with
+  before and after); with another field, or on a colleague's customer, the whole edit is a request as before, the three in it. A save that
+  does not carry them keeps them. The «العملاء · تحرير» cell restricts it as before; its notes say so. The form's button says «حفظ العميل»
+  while only the three changed.
+- **The visit.** «موعد احتياج القوالب المتوقع» (`moldNeedBy`), optional, under «تفاصيل البيع والأصناف» (not on a customer-service
+  opportunity): set or changed it is the day of recording or later (a queued entry: its own day), a stored day is kept by an edit that does
+  not carry it or leaves it; shown in the visit's history, sheet, card, expanded table, the day report and the device's saved entries; a
+  column of the visits' export; refused on the older entry point.
+- **The form.** «عميل جديد» / «تعديل بيانات العميل», the region and the codes under the title (no code input, no disabled region buttons;
+  a member of several regions chooses it in section 4), six numbered sections — 1 «المصنع», 2 «المسؤولون», 3 «الموقع» (the place as one
+  line «تم تحديد موقعك الحالي · الدقة 8 م · الآن» or «الموقع المحفوظ», «تغيير الموقع» opening the earlier choices), 4 «التصنيف والمسؤولية»
+  («نشط» by default for a new customer), 5 «الطاقة والاحتياج», 6 «ملاحظات» — two columns from 1024 px, one below, nothing under «بيانات
+  إضافية», «حفظ العميل» in the sticky bar. Every field of the earlier form is kept with its rules. The visit's quick «عميل جديد» is
+  unchanged.
+- **Several contacts.** A name, a role (مدير المصنع، المالك، المشتريات، مسؤول الإنتاج، المحاسب، أخرى; stored as a key), a mobile and an email
+  each; up to ten; «حذف», «اجعله الأساسي». Kept where every reader already looks (`lib/customer-contacts.ts`): the primary in
+  `contact`/`phone`/`email` (+ `contactTitle`), the second in «المسؤول الثاني» `contact2`/`phone2`/`email2` (+ `contactTitle2`), the third
+  onward in `contacts`. A contact with nothing in it dropped; an unknown role, a bad email or more than ten refused; a save without them
+  keeps them; a representative's change of contacts is a request as every correction of theirs. The searches find the others; the sheet
+  lists every contact with call, WhatsApp and email; the customers' export adds the roles and «مسؤولون إضافيون».
+- **Found and mended on the way:** the direct save first wrote the context's `internalCode` and `_erpCodeAliases` into the customer's data
+  (the HTTP test caught it; `CUSTOMER_DECORATIONS` are left out).
+- **Tests.** Unit, in the default gate (230/230): `customer-capacity` 129 and `customer-contacts` 83 checks, new;
+  `rep-mobile-shell` 728, `rep-customer-ui` 140, `ui-save-submission` 114, `customer-directory-mobile` 56, `role-ui`,
+  `customer-map-search` and `dictation-coverage` updated. After the build: `customer-capacity-http` 104 and `customer-contacts-http` 65;
+  in Chromium `customer-capacity-browser` 91 and `customer-form-browser` 207; the earlier browser tests follow the form
+  (`customer-edit-browser` 87, `customer-edit-requests-browser` 53, `customer-kind-browser` 16, `erp-customers-browser` 115,
+  `location-picker-browser` 81, `marketing-role-browser` 174, `ui-refresh-browser` 115, `app-browser-workflows` 214,
+  `dictation-browser` 46). The full run (`gates.mjs --full`): 136 passed, 4 skipped (the owner's ERP files), `dictation-browser`
+  failed twice (it asked a microphone of the molds count, a number typed like the other counts: it lists it now, 46 alone) and the
+  default gate failed in the pool on `marketing-rollback` and `mold-photos-rollback`, which read their guide section to «## 10.» and
+  took this one's sqlite3 command as theirs (they and `daily-plans-migration` read to the next section now; 230/230 after).
+- **Going back** with the code only: the release before drops the new fields from any customer it saves (and `moldNeedBy` from a visit it
+  edits): export them first (the read-only command in guide 9-أم). Analysis of the code; not tried.
+
 ## Mold requests: the customer's name and code typed only, never linked by the code (2026-11-21, no migration, no Android change)
 
 - **Asked.** A request reached production under another factory: the representative typed a customer's name and a code, the code was
