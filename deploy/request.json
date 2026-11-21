@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-MoldTyped-20261121.zip","sha256":"fa4077376b699264d0577a6ca2942d1fd196543ba5e93383cd829b1e217001dc","stage":"yourrest-crm-update-mold-typed-20261121","helper":"yourrest-activate-update-mold-typed.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-CustomerForm-20261121.zip","sha256":"d74a7cc3c022b763e4c4c3bfdb4c750b77cc4af912d4f177ce225cc344fb6971","stage":"yourrest-crm-update-customer-form-20261121","helper":"yourrest-activate-update-customer-form.cjs"}
