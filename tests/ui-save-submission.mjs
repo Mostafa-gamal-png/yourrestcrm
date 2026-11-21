@@ -67,7 +67,8 @@ const event=()=>({preventDefault:noop,nativeEvent:{submitter:null}});
 for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager','admin']){
  language=locale;
  const actor={...me,role},editable={...customer,data:{...customer.data,_masterReadOnly:false}},requests=[],pending=[];
- const opened={kind:'customer',row:editable,data:{...editable.data,phone:'0550000000'},parentId:''};
+ // The phone is in the contacts' editor since the customer form of 2026-11-21: the sheet's machine count, a plain field of the form, is edited here.
+ const opened={kind:'customer',row:editable,data:{...editable.data,phone:'0550000000',machineCount:5},parentId:''};
  const h=harness('app/crm-app.tsx',{view:'customer',records:[editable],members:[actor],me:actor,loading:false,form:opened},{},{navigator:{onLine:true},fetch:async(url,config)=>{
   if(config.method==='POST'){requests.push(JSON.parse(config.body));return new Promise(resolve=>pending.push(resolve));}
   return response(200,{me:actor,members:[actor],records:[editable],audits:[]});
@@ -79,7 +80,7 @@ for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager',
  const originalDraft=h.state.form;
  button(form,locale==='en'?dictionary['إلغاء']:'إلغاء').props.onClick();
  const retainedWhileSaving=h.state.form===originalDraft;
- nodes(form,node=>node.type==='input'&&node.props.value==='0550000000')[0].props.onChange({target:{value:'0559999999'}});
+ nodes(form,node=>node.type==='input'&&node.props.type==='number'&&String(node.props.value)==='5')[0].props.onChange({target:{value:'9'}});
  tree=h.render();form=nodes(tree,node=>node.type==='form')[0];
  const saveButton=nodes(form,node=>node.type==='button'&&node.props.type==='submit')[0];
  // Settle the request before asserting so a failing regression cannot leave timers alive.
@@ -87,14 +88,14 @@ for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager',
  await Promise.all([first,second]);
  eq(activeCount,1,role+' '+locale+': repeated submit starts only one request before re-render');
  eq(retainedWhileSaving,true,'Pending form cannot be dismissed through a stale callback');
- eq(h.state.form.data.phone,'0550000000','Stale edit callback cannot change the pending draft');
+ eq(h.state.form.data.machineCount,5,'Stale edit callback cannot change the pending draft');
  eq(saveButton.props.disabled,true,'Pending save button disabled');
  eq(saveButton.props['aria-busy'],true,'Saving is exposed to assistive technology');
  eq(text(saveButton),originalLabel,'Original save label retained during loading');
  eq(nodes(form,node=>node.type==='fieldset'&&node.props.disabled).length,1,'Pending form fields are disabled');
  eq(h.state.busy,false,'Validation failure releases loading state');
  eq(h.state.formError,'Server validation message','Server validation is visible unchanged');
- eq(h.state.form.data.phone,'0550000000','Failed save preserves customer edits');
+ eq([h.state.form.data.phone,h.state.form.data.machineCount],['0550000000',5],'Failed save preserves customer edits');
  const retry=nodes(h.render(),node=>node.type==='form')[0].props.onSubmit(event());
  eq(requests.length,2,'Lock releases for an explicit retry');
  eq(JSON.stringify(requests[1]),JSON.stringify(requests[0]),'Retry retains version, assignment and submitted values');

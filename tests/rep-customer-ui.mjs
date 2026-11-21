@@ -80,8 +80,9 @@ for(const view of ['customer','map']){
  tree=h.render();const form=nodes(tree,node=>node.type==='form')[0];
  eq(nodes(form,node=>node.type==='label'&&text(node).includes('فرع يورست المسؤول')).length,0,'Rep has no editable branch field');
  eq(nodes(form,node=>node.type==='label'&&text(node).includes('المندوب المسؤول')).length,0,'Rep has no assignee selector');
- const region=nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerRegionField')[0];
- const fieldset=region.type(region.props);eq(fieldset.props.disabled,true,'Assigned region is disabled');eq(nodes(fieldset,node=>node.type==='input'&&node.props.checked)[0].props.value,'الغربية','Disabled region shows own region');
+ // The customer form of 2026-11-21: a representative of one region chooses none; the form's heading reads it («حسب صلاحيتك»).
+ eq(nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerRegionField').length,0,'Assigned region is not a choice');
+ const regionLine=nodes(form,node=>node.props?.['data-customer-form-region']!==undefined)[0];ok(regionLine&&text(regionLine).includes('الغربية')&&text(regionLine).includes('حسب صلاحيتك'),'The heading shows own region');
  ok(nodes(form,node=>node.type?.name==='CustomerLocationFields').length===1,'Shared automatic location component is available in main creation');
  if(view==='customer'){
   h.state.form=null;tree=h.render();const directory=nodes(tree,node=>typeof node.props?.onAddMachine==='function'&&typeof node.props?.onEdit==='function')[0];
@@ -134,7 +135,8 @@ for(const [role,regionScope] of [['rep','western'],['manager','western'],['manag
  eq(h.state.form.data.assignedTo,'global-admin',role+' editor preserves omitted current assignee');
  eq(h.state.form.data.branch,imported.branch,role+' editor preserves canonical branch');
  const form=nodes(tree,node=>node.type==='form')[0];
- if(role==='manager')eq(nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerRegionField')[0].props.disabled,true,'Detail-only manager cannot select a routing region change, including all-region manager');
+ // The customer form of 2026-11-21: a customer whose routing is not the reader's offers no region choice (the heading reads it).
+ if(role==='manager')eq(nodes(form,node=>typeof node.type==='function'&&node.type.name==='CustomerRegionField').length,0,'Detail-only manager cannot select a routing region change, including all-region manager');
  const routing=nodes(form,node=>node.type==='label'&&['المندوب المسؤول','فرع يورست المسؤول'].includes(text(node.props.children?.[0])));
  if(role==='rep')eq(routing.length,0,'Rep cannot change routing');
  else{

@@ -105,7 +105,7 @@ function crmRequire(name){
  if(name==='@/lib/customer-service')return {isServiceRole:role=>role.startsWith('customer_service')};
  if(name==='@/lib/record-index')return recordIndexModule;
  if(name==='@/lib/customer-visits')return {customerVisitDue:()=>[],customerPlanSources:()=>new Map(),visitCustomer:r=>r?.kind==='customer'?r:records.find(c=>c.id===r?.parentId),visitRequest:()=>undefined,strengthLabels:{}};
- if(name==='@/lib/regions')return {regionScope:m=>m.regionScope,regionLabel:()=> 'الغربية',regionValue:()=> 'الغربية'};
+ if(name==='@/lib/regions')return {regionScope:m=>m.regionScope,regionLabel:()=> 'الغربية',regionValue:()=> 'الغربية',scopeRegions:scope=>scope==='all'?['northern','southern','western','eastern','central']:String(scope||'').split(',').filter(Boolean)};
  if(name==='./customer-machines')return {__esModule:true,default:props=>{captured.directory=props;return React.createElement('section',{'data-directory-count':props.customers.length},props.customers.map(r=>r.data.name).join(' · '));}};
  if(name==='./customer-journey-map')return {__esModule:true,default:props=>{captured.map=props;return React.createElement('section',{'data-map-count':props.customers.length},props.filters,props.actions,props.customers.map(r=>r.data.name).join(' · '));}};
  if(name==='./journey-report')return {__esModule:true,default:props=>{captured.journey=props;return React.createElement('section',{'data-journey-report':'true'});}};
