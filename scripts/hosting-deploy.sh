@@ -11,10 +11,6 @@
 #           say what it would remove: a dry run)
 #   mold-link  link the earlier mold requests with what the owner confirmed (scripts/mold-link/legacy-link.cjs), or only say what it
 #           would link (yourrest-deploy/mold-link.json says which); the app keeps running
-#   streets  import the one street data file uploaded as yourrest-deploy/streets.json.gz into the live database with the uploaded
-#           import tool (portable/import-street-data.mjs): a dry run, or --apply when yourrest-deploy/streets.json says so, the file's
-#           sha256 checked first; the app keeps running (the database is in WAL mode, the lock lasts well under a second); the data file is
-#           removed after the run, whatever happened, so nothing stays among the account's files
 # Every STOP from the activator ends the run with the activator's own output; nothing is retried, deleted or restored here. One thing is
 # put back: when the activator stops BEFORE the switch, the app this script stopped through the selector is started again, unchanged.
 set -euo pipefail
@@ -147,20 +143,6 @@ case "$MODE" in
     # The tool checks the owner's confirmed list against the live data before anything; a dry run opens the database read-only and
     # calls nobody; a link calls production first and saves each accepted order once. A stop links nothing and ends with its reason.
     "$NODE" "$HOME/yourrest-deploy/$HELPER" "$HOME/yourrest-deploy/mold-link.json"
-    ;;
-  streets)
-    # The request names the file's sha256 and whether to write; the tool refuses another application's database, one before migration
-    # 0024, another system's file and a file whose sha256 differs, and writes nothing on a dry run.
-    DATA="$HOME/yourrest-deploy/streets.json.gz"
-    trap 'rm -f "$DATA"' EXIT
-    [ -f "$DATA" ] || { echo "STREETS STOP: the street data file was not uploaded"; exit 2; }
-    args=$("$NODE" -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(!/^[0-9a-f]{64}$/.test(r.sha256||"")||typeof r.apply!=="boolean")process.exit(1);console.log("--sha256 "+r.sha256+(r.apply?" --apply":""))' "$HOME/yourrest-deploy/streets.json") || { echo "STREETS STOP: the request needs the file's sha256 and apply true or false"; exit 2; }
-    out=$(mktemp); trap 'rm -f "$DATA" "$out"' EXIT
-    # shellcheck disable=SC2086
-    set +e; "$NODE" --no-warnings "$HOME/yourrest-deploy/$HELPER" --settings "$HOME/$APP_ROOT/settings.cjs" --file "$DATA" $args > "$out" 2>&1; code=$?; set -e
-    cat "$out"
-    "$NODE" -e 'let r;try{r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));}catch{console.log("STREETS STOP: the tool gave no answer");process.exit(0);}if(!r.ok){console.log("STREETS STOP: "+r.error);process.exit(0);}const n=r.mode==="apply"?r.rowsWritten:r.rows,regions=(r.mode==="apply"?r.regions:r.wouldWrite).map(x=>(x.region||x.id)+" "+x.cells).join(", ");console.log((r.mode==="apply"?"STREETS IMPORTED: ":"STREETS DRY RUN: ")+n+" CELLS ("+regions+")"+(r.mode==="apply"?" LOCK "+r.lockMs+" MS":"")+" DATASET "+r.file.dataset)' "$out"
-    exit "$code"
     ;;
   *) echo "DEPLOY STOP: unknown mode $MODE"; exit 2;;
 esac

@@ -6,11 +6,11 @@ import {t} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
 import {checkWorkAreaPolygon,ringToGeoJson,type LatLng} from '@/lib/work-area-geometry';
 import {createAreaEditor,type AreaEditor} from '@/lib/work-area-editor';
-import {mapColors,validWorkAreaReps,validWorkAreaStreets,validWorkAreaView,WORK_AREA_TEXT,type StreetSegment,type WorkAreaRep,type WorkAreaState,type WorkAreaStreets,type WorkAreaView} from '@/lib/work-areas';
+import {mapColors,validWorkAreaReps,validWorkAreaView,WORK_AREA_TEXT,type WorkAreaRep,type WorkAreaState,type WorkAreaView} from '@/lib/work-areas';
 
-/** «خريطة المصانع» (the owner, 2026-11-19: the port of GSCO 2.13.81): the representative's work area (dashed) and the streets in it with no
- * customer (purple) on the factory map, the manager's choice of representative and the drawing tools. The rules are lib/work-areas.ts; the
- * routes GET /api/work-areas, GET /api/work-area-streets and POST /api/work-areas. Kept apart from customer-map.tsx, which only places them. */
+/** «خريطة المصانع» (the owner, 2026-11-19: the port of GSCO 2.13.81): the representative's work area (dashed) on the factory map, the
+ * manager's choice of representative and the drawing tools. The rules are lib/work-areas.ts; the routes GET and POST /api/work-areas. Kept
+ * apart from customer-map.tsx, which only places them. (The purple streets with no customer were removed on 2026-11-21.) */
 type Language='ar'|'en';
 type Pair=readonly [string,string];
 export type MapRefs={map:RefObject<Leaflet.Map|null>;leaflet:RefObject<typeof Leaflet|null>;ready:boolean};
@@ -35,45 +35,30 @@ export function useWorkAreaReps(enabled:boolean,key:string){
  return enabled&&loaded.key===key?loaded.reps:[];
 }
 
-type Loaded={key:string;view?:WorkAreaView;streets?:WorkAreaStreets;areaError?:string;streetsFailed?:boolean};
-/** The area and its streets for one representative. The area answers at once; the streets may wait for OpenStreetMap (up to a minute). */
+type Loaded={key:string;view?:WorkAreaView;areaError?:string};
+/** The area of one representative (GET /api/work-areas?member=); nothing without a connection. Leaving the map aborts the request. */
 export function useWorkArea(repId:string,online:boolean,reload:number):WorkAreaState&{view:WorkAreaView|null}{
  const key=repId&&online?repId+'#'+reload:'';
  const [loaded,setLoaded]=useState<Loaded>({key:''});
  useEffect(()=>{
   if(!key)return;
-  const ctl=new AbortController(),rep=encodeURIComponent(repId),keep=(patch:Omit<Loaded,'key'>)=>{if(!ctl.signal.aborted)setLoaded(l=>({...(l.key===key?l:{key}),...patch}));};
-  readJson<WorkAreaView>('/api/work-areas?member='+rep,ctl.signal,validWorkAreaView).then(view=>keep({view})).catch(e=>keep({areaError:e instanceof Error&&e.message?e.message:WORK_AREA_TEXT.failed[0]}));
-  // The streets wait a minute at most: then they are «تعذر تحميل الشوارع الآن.» (leaving the map aborts both, and nothing is kept).
-  const streetsCtl=new AbortController(),stopStreets=()=>streetsCtl.abort(),timer=setTimeout(stopStreets,60_000);
-  ctl.signal.addEventListener('abort',stopStreets,{once:true});
-  readJson<WorkAreaStreets>('/api/work-area-streets?member='+rep,streetsCtl.signal,validWorkAreaStreets).then(streets=>keep({streets})).catch(()=>keep({streetsFailed:true})).finally(()=>clearTimeout(timer));
-  return()=>{clearTimeout(timer);ctl.abort();};
+  const ctl=new AbortController(),keep=(patch:Omit<Loaded,'key'>)=>{if(!ctl.signal.aborted)setLoaded({key,...patch});};
+  readJson<WorkAreaView>('/api/work-areas?member='+encodeURIComponent(repId),ctl.signal,validWorkAreaView).then(view=>keep({view})).catch(e=>keep({areaError:e instanceof Error&&e.message?e.message:WORK_AREA_TEXT.failed[0]}));
+  return()=>ctl.abort();
  },[key,repId]);
  const current=loaded.key===key?loaded:{key} as Loaded;
- return {active:!!key,view:current.view??null,area:current.view?.area??current.streets?.area??null,streets:current.streets??null,areaError:current.areaError??'',streetsFailed:!!current.streetsFailed,loading:!!key&&!current.streets&&!current.streetsFailed};
+ return {active:!!key,view:current.view??null,area:current.view?.area??null,areaError:current.areaError??''};
 }
 
-/** Draws the outline (the drawn polygon, or the outer edge of the disks around the pins) and the empty streets, under the pins (raise puts
- * the pins back on top after every redraw: one canvas, what is drawn last answers a tap first). */
-export function useWorkAreaLayers(refs:MapRefs,outline:LatLng[][]|null,segments:StreetSegment[]|null,showOutline:boolean,showStreets:boolean,label:(s:StreetSegment)=>string,raise:()=>void){
+/** Draws the outline (the drawn polygon, or the outer edge of the disks around the pins) under the pins (raise puts the pins back on top
+ * after every redraw: one canvas, what is drawn last answers a tap first). */
+export function useWorkAreaLayers(refs:MapRefs,outline:LatLng[][]|null,showOutline:boolean,raise:()=>void){
  const {map,leaflet,ready}=refs;
  useEffect(()=>{
   const m=map.current,L=leaflet.current;if(!ready||!m||!L||!showOutline||!outline?.length)return;
   const group=L.layerGroup(outline.map(line=>L.polyline(line,{color:mapColors.area,weight:2,opacity:.9,dashArray:'6 6',interactive:false}))).addTo(m);raise();
   return()=>{group.remove();};
  },[ready,map,leaflet,outline,showOutline,raise]);
- useEffect(()=>{
-  const m=map.current,L=leaflet.current;if(!ready||!m||!L||!showStreets||!segments?.length)return;
-  const group=L.layerGroup().addTo(m);
-  for(const s of segments){
-   const line=L.polyline(s.points,{color:mapColors.street,weight:5,opacity:.85,lineCap:'round'});
-   // Built with textContent only: a street's name comes from OpenStreetMap.
-   const tip=document.createElement('span');tip.className='cm-street-tip';tip.textContent=label(s);line.bindTooltip(tip,{sticky:true});line.addTo(group);
-  }
-  raise();
-  return()=>{group.remove();};
- },[ready,map,leaflet,segments,showStreets,label,raise]);
 }
 
 export type EditorMode='view'|'draw'|'edit';

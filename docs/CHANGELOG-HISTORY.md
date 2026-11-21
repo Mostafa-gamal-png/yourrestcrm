@@ -4,6 +4,39 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «خريطة المصانع»: the purple streets removed (2026-11-21, no migration: 25 kept, no Android change)
+
+- **Asked.** The owner, 2026-11-21: «جزء الشوارع البنفسجية متعملوش هنا ملوش لازمة». Everything else of «خريطة المصانع» stays exactly as
+  it was: the yellow pin for missing data, the representatives' work areas (drawn by the sales manager, else 500 m around the
+  representative's customers), the permission cell `map:edit` «رسم مناطق عمل المناديب», `GET`/`POST /api/work-areas` with the same answers
+  (`clusters` included, which a page of the previous release still checks). Guide 9-أك (its «تحديث 2026-11-21»).
+- **Removed from the map.** The purple street lines and their tooltip, the legend's «شارع بلا عملاء» key, the «إخفاء علامات الشوارع» button
+  and its device setting (`yourrest.map.hideStreets` is read by nothing now and does no harm where a device kept it), every streets message
+  under the legend («جارٍ تحميل الشوارع…», «تعذر تحميل الشوارع الآن.», «الشوارع غير متاحة دون اتصال.», the piece count, partial, stale,
+  too large, the 12 biggest groups). The tiles' OpenStreetMap credit stays (it is the map's; the streets added none). Under the legend: the
+  area line, or «لا توجد منطقة عمل…» (now from the area's own answer), or the server's refusal; nothing offline (as the area is not asked).
+- **Removed from the server.** `app/api/work-area-streets` (it now answers exactly as an address the app never had: 404, Next's not-found
+  page, with or without a session, GET or POST), `lib/work-area-streets.ts`, the Overpass client, the 30-day cache, the local-cells reader,
+  `companyPins`, the geometry only the streets used (`splitPolyline`, `polylineMetres`, `pointPolylineMetres`, `areaWithinLimits`,
+  `NEAR_PROJECT_METRES`, `SEGMENT_METRES`), and the optional setting `YR_OVERPASS_URL` (`portable/runtime.mjs`, `settings.example.cjs`,
+  `.env.example`, `cloudflare-env.d.ts`, now byte for byte as before 2026-11-19). The live `settings.cjs` never had the key, and the settings
+  check (`portable/config.cjs`) accepts any `YR_*` string, so a settings file with or without it starts as before.
+- **Removed tools.** `portable/import-street-data.mjs` (no longer shipped in `release/operations/`), `scripts/streets/build-street-data.mjs`,
+  `scripts/diagnose/street-regions.cjs`, and the `streets` mode of `.github/workflows/deploy.yml`, `scripts/deploy-cpanel.mjs` and
+  `scripts/hosting-deploy.sh` (the three files are as they were before that mode; every other mode unchanged; the workflow now refuses a
+  streets request, the 2026-11-19 dry run still in `deploy/request.json` included, with «mode: check, deploy, verify, diagnose, backup,
+  prune or mold-link»). `deploy/request.json` is left as it is (changing it is a deploy request).
+- **Migrations unchanged.** None added, edited or removed: 0023 and 0024 are applied on the live database and the release check refuses a
+  different history. `crm_osm_street_cache` and `crm_osm_street_local` stay in the schema, unused: nothing reads or writes them (a test
+  scans the sources), and the work areas do not depend on them. The down files stay as they are.
+- **Release.** `--schema-baseline 25`, no `--new-migration`; keep `--verify-route /api/work-areas=401`; drop
+  `--verify-route /api/work-area-streets=401` (to prove it gone: `--verify-route /api/work-area-streets=404`). Going back to
+  update-work-areas-20261119 with the code alone works (the same 25 migrations); its streets then read the two tables again.
+- **Tests.** Removed: `tests/street-data.mjs` (65) and `tests/diagnose-street-regions.mjs` (15). `tests/work-areas.mjs` 161 (was 218: the
+  streets' parts out; the legend's lines and the sources scan in), `tests/work-areas-migration.mjs` 126 (unchanged), `tests/deploy-cpanel.mjs`
+  121 (was 134: the streets mode refused), `tests/work-areas-http.mjs` 66 (the streets route answers as an unknown one), browser
+  `tests/work-areas-browser.mjs` 200 (no street key, switch, word or request at any size, in both languages, online or offline).
+
 ## «خريطة المصانع»: yellow pins, the representatives' work areas, streets with no customer, and local street data (2026-11-19, migrations 0023 and 0024, no Android change)
 
 - **Asked.** The owner, 2026-11-19 (relayed from the GSCO session): port GSCO 2.13.81 «خريطة المشاريع» and 2.13.82 «بيانات شوارع محلية».
