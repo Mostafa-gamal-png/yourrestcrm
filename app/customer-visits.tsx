@@ -32,8 +32,10 @@ import {opportunityProblems,type OpportunityField} from '@/lib/opportunity-entry
 import {serviceLeadProblem,leadFromStart,type LeadDraft,type LeadStart} from '@/lib/service-sales';
 import {LeadSourceField} from './service-sales';
 import {isFieldRole} from '@/lib/roles';
+import {MOLD_NEED_TEXT,moldNeedDay} from '@/lib/customer-capacity';
+import {CustomerCapacity} from './customer-capacity';
 const messageOf = (e: unknown) => typeof e === 'object' && e !== null && 'message' in e && typeof e.message === 'string' ? e.message : '';
-type VisitForm = VisitData & CompetitorInput & { type: string; requestedProducts: string[]; salesStage: string; strength: string; customerNeeds: string; nextAction: string; nextDate: string; responsibleId: string };
+type VisitForm = VisitData & CompetitorInput & { type: string; requestedProducts: string[]; salesStage: string; strength: string; customerNeeds: string; moldNeedBy?: string; nextAction: string; nextDate: string; responsibleId: string };
 function Pick({ value, onChange, options, label, disabled = false }: {
     value: string;
     onChange: (v: string) => void;
@@ -78,6 +80,7 @@ export function CustomerVisitHistory({ customer, records, onVisit, onNew, onQuot
                     <div><dt>{t("موعد المتابعة")}</dt><dd>{v.data.nextDate || '—'}</dd></div>
                     <div className="full"><dt>{t("الإجراء القادم")}</dt><dd>{v.data.nextAction || '—'}</dd></div>
                     {v.data.customerNeeds && <div className="full"><dt>{t("احتياج العميل")}</dt><dd>{v.data.customerNeeds}</dd></div>}
+                    {moldNeedDay(v.data) && <div data-mold-need={moldNeedDay(v.data)}><dt>{t(MOLD_NEED_TEXT[0])}</dt><dd><bdi>{moldNeedDay(v.data)}</bdi></dd></div>}
                 </dl>
                 {v.data.requestSnapshot?.lossReason && <p>{t('سبب فقد الطلب')}: {v.data.requestSnapshot.lossReason}</p>}
                 {v.data.recordedByEmail && <small className="visit-history-recorder"><bdi>{v.data.recordedByEmail}</bdi></small>}
@@ -256,6 +259,7 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
               <div className="visit-context-disclosures">
                 <details className="visit-context-details"><summary>{t('بيانات العميل')}</summary><div className="visit-context-body">
                   <div className="customer-card-grid">{Object.entries({'المنطقة / المدينة':[customer.data.region,customer.data.city].filter(Boolean).join(' · '),'تصنيف العميل':customer.data.customerType,'نوع العميل':customer.data.customerKind,'مسؤول التواصل':customer.data.contact||customer.data.contact2,'رقم التواصل':customer.data.phone||customer.data.phone2,'حالة التعامل / السحب':customer.data.customerStatus,'الماكينات':customer.data.machineTypes||'','عدد الماكينات':customer.data.machineCount??''}).map(([label,value])=><div key={label}><span>{t(label)}</span><strong>{t(String(value||'غير مسجل'))}</strong></div>)}</div>
+                  <CustomerCapacity customerId={customer.id} data={customer.data} machines={records.filter(record=>record.kind==='factory'&&record.parentId===customer.id)} variant="card"/>
                   {customer.data.notes&&<p>{customer.data.notes}</p>}<button type="button" className="text-button" onClick={()=>requestLeave(()=>onOpenCustomer(customer.id))}>{say('فتح بطاقة العميل','Open customer card')}</button>
                 </div></details>
                 <details className="visit-context-details"><summary><History size={16}/>{tw('سجل الزيارات')} <span className="count-badge">{customerVisits(customer.id,records).length}</span></summary><div className="visit-context-body"><CustomerVisitHistory key={customer.id} customer={customer} records={records} role={me.role} canEdit={!isFieldRole(me.role)} onVisit={row=>requestLeave(()=>onOpenVisit(row))} onNew={customer.data._readOnly&&!isServiceRole(me.role)?undefined:row=>requestLeave(()=>onNewVisit(customer.id,row))} onQuote={id=>requestLeave(()=>onOpenQuote(id))}/></div></details>
@@ -280,6 +284,9 @@ export function CustomerVisitDialog({ initial, competitorName: seedCompetitorNam
                   <fieldset className="full requested-products"><legend>{t('الأصناف المطلوبة')}</legend><div>{productOptions.map(product=><label key={product}><input type="checkbox" checked={data.requestedProducts.includes(product)} onChange={event=>change('requestedProducts',event.target.checked?[...data.requestedProducts,product]:data.requestedProducts.filter((value:string)=>value!==product))}/>{t(product)}</label>)}</div>{initial&&data.requestedProducts.some((product:string)=>!visitProducts.includes(product))&&<p className="muted">{t('أصناف مسجلة سابقًا: ')}{t(data.requestedProducts.filter((product:string)=>!visitProducts.includes(product)).join('، '))}</p>}</fieldset>
                   <CompetitorFields value={data} records={records} members={members} customerId={customerId} identityKey={me.id} disabled={busy||uploading||savingCustomer||creatingCustomer||savedReceipt.current||retryPending} readOnly={readOnly} uploading={uploading} uploadState={uploadAttempt.current?.context===competitorContext.current||data.competitorFileId?uploadState:null} onUploadRetry={()=>{const retry=uploadAttempt.current;if(retry)void upload(retry.file,true);}} onChange={patch=>{if(readOnly||savedReceipt.current||retryPending||saveLock.current||uploadLock.current)return;setDirty(true);setData(previous=>({...previous,...patch}));}} onUpload={upload}/>
                   <VoiceField label={t('احتياج العميل')} value={data.customerNeeds||''} onChange={value=>change('customerNeeds',value)} multiline/>
+                  {/* «موعد احتياج القوالب المتوقع» (lib/customer-capacity.ts): optional; the day of recording or later for a new visit (the server's rule
+                      for a day set or changed); a customer-service opportunity does not carry it. */}
+                  {!service&&<label className="field visit-mold-need"><span>{say(...MOLD_NEED_TEXT)}</span><input id="visit-mold-need" type="date" value={data.moldNeedBy||''} min={initial?undefined:today()} onChange={event=>change('moldNeedBy',event.target.value)} data-mold-need-input/><small className="muted">{say('اختياري: متى يتوقع العميل أن يحتاج القوالب.','Optional: when the customer expects to need the molds.')}</small></label>}
                 </div>
               </details>
             </fieldset>

@@ -1,0 +1,26 @@
+/* «الطاقة الإنتاجية والاحتياج» (app/customer-capacity.tsx): five short items, each a label and its value, wrapping inside the card or the cell
+   and never pushing it sideways (a manufacturer's long name, a long free text). No text under 12px (app/touch-comfort.css's rule). */
+.customer-capacity{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0 0;min-width:0;font-size:13px;line-height:1.6}
+.customer-capacity>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 5px;min-width:0;max-width:100%}
+.customer-capacity dt{color:var(--muted-foreground);font-size:12px;white-space:nowrap}
+.customer-capacity dt::after{content:':'}
+.customer-capacity dd{margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.customer-capacity .capacity-source{font-weight:400;color:var(--muted-foreground);font-size:12px}
+/* The phone's card: under the name and the marks, before the contact line. */
+.customer-capacity-card{margin:2px 0 10px;padding:8px 10px;background:var(--muted);border-radius:10px}
+/* The desktop row: under the customer's name, its codes and its marks. */
+.customer-capacity-row{margin:4px 0 0;font-size:12px}
+.customer-capacity-row dd{font-weight:500}
+/* The sheet: a heading and two columns, one on a phone. */
+.customer-capacity-sheet{margin:14px 0;display:grid;gap:10px}
+.customer-capacity-sheet>h3{font-size:15px;font-weight:600;margin:0}
+.customer-capacity-sheet .customer-capacity{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin:0;font-size:14px}
+.customer-capacity-sheet .customer-capacity>div{display:block;border-bottom:1px solid var(--border);padding-bottom:10px}
+.customer-capacity-sheet .customer-capacity dt{display:block;margin-bottom:4px;white-space:normal}
+.customer-capacity-sheet .customer-capacity dt::after{content:none}
+/* The form's section, as «تصنيفات التسويق» beside it. */
+.capacity-section{min-width:0;border:1px solid var(--border);border-radius:10px;padding:14px;display:grid;gap:10px}
+.capacity-section>h3{font-size:15px;font-weight:600;margin:0}
+.capacity-section>.form-grid{margin:0}
+.capacity-section .customer-capacity-form{margin:0;padding:10px 12px;background:var(--muted);border-radius:8px}
+@media (max-width:600px){.customer-capacity-sheet .customer-capacity{grid-template-columns:1fr}.capacity-section{padding:10px}}
