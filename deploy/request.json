@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-NoStreets-20261121.zip","sha256":"4936f2861100639fa92f0d51b06cf3451d07f3af531d8ae070c233c967c6bd4e","stage":"yourrest-crm-update-no-streets-20261121","helper":"yourrest-activate-update-no-streets.cjs"}
+{"mode":"diagnose","script":"scripts/diagnose/mold-free-customers.cjs"}
