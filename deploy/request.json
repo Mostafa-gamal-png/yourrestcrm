@@ -1,1 +1,1 @@
-{"mode":"diagnose","script":"scripts/diagnose/mold-free-customers.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-MoldTyped-20261121.zip","sha256":"fa4077376b699264d0577a6ca2942d1fd196543ba5e93383cd829b1e217001dc","stage":"yourrest-crm-update-mold-typed-20261121","helper":"yourrest-activate-update-mold-typed.cjs"}
