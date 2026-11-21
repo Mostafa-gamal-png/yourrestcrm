@@ -140,7 +140,7 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   export:{ar:'تصدير تقرير يوم المندوب (Excel)',en:'Export the daily route report (Excel)',roles:MANAGEMENT},
  }},
  {screen:'plans',ar:'خطط المناديب',en:'Representatives\' plans',roleNote:{rep:planOwnNote,marketing:planOwnNote},cells:{
-  add:{ar:'إعداد خطة اليوم',en:'Prepare the day\'s plan',roles:['rep','marketing'],note:{ar:'خطة اليوم التالي وإرسالها للمشرف قبل الساعة 22:00 (ما يُرسل بعدها يُقبل ويُعلَّم «متأخرة»). لا تمنع الخطة تسجيل أي زيارة أو تواصل.',en:'The next day\'s plan, sent to the supervisor before 22:00 (one sent later is accepted and marked late). The plan never stops a visit or contact from being recorded.'}},
+  add:{ar:'إعداد خطة اليوم',en:'Prepare the day\'s plan',roles:['rep','marketing'],note:{ar:'خطة اليوم التالي وإرسالها للمشرف قبل الساعة 22:00، وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت (ما يُرسل بعد الموعد يُقبل ويُعلَّم «متأخرة»). لا تمنع الخطة تسجيل أي زيارة أو تواصل.',en:'The next day\'s plan, sent to the supervisor before 22:00, and Saturday\'s before midnight between Friday and Saturday (one sent later is accepted and marked late). The plan never stops a visit or contact from being recorded.'}},
   edit:{ar:'مراجعة خطط المناديب',en:'Review the representatives\' plans',roles:MANAGEMENT,note:{ar:'اعتماد، واعتماد مع تعديل، وإعادة للمندوب مع السبب، وملاحظة واحدة لكل مراجع على يوم المندوب؛ على خطط فريقه فقط.',en:'Approve, approve with edits, return with a reason, and one note per reviewer on the representative\'s day; their own team\'s plans only.'}},
   export:{ar:'تصدير خطط المناديب إلى Excel',en:'Export the representatives\' plans to Excel',roles:MANAGEMENT},
  }},

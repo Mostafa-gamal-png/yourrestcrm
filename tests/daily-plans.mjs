@@ -1,5 +1,5 @@
 // «خطة الغد» / «خطط المناديب» (lib/daily-plans*.ts, migration 0022; GSCO 2.13.83 with the owner's decisions), without a build: the rules
-// (the 22:00 deadline and «متأخرة», the next working day, the device's clock within its bounds, the stops' shape, the stops a reviewer
+// (the 22:00 deadline, Saturday's at midnight at the end of Friday (2026-11-21), and «متأخرة», the next working day, the device's clock within its bounds, the stops' shape, the stops a reviewer
 // added, changed or took out locked for the member, the completion of a stop by the member's visits and contacts with one activity closing
 // one stop, «خارج الخطة», the reminder lines and their notices), the three permission cells and the screen, the Excel tables, the outbox's
 // plan entry; then the routes GET/POST /api/daily-plans and GET /api/daily-plans/inbox on an isolated in-memory SQLite (the route modules
@@ -39,8 +39,17 @@ const load=name=>import(pathToFileURL(path.join(out,name)));
 const R=await load('lib/daily-plans.mjs'),P=await load('lib/permissions.mjs'),A=await load('lib/access.mjs'),L=await load('lib/list-export.mjs'),X=await load('lib/list-export-plans.mjs'),S=await load('lib/offline-store.mjs'),V=await load('lib/offline-review.mjs'),B=await load('lib/request-body.mjs');
 
 // ---- 1. The days and the deadline.
-eq(R.planDeadline('2026-11-21'),'2026-11-20T19:00:00.000Z','the plan of a day is due at 22:00 Riyadh the day before');
-eq([R.planLate('2026-11-20T18:59:59.999Z','2026-11-21'),R.planLate('2026-11-20T19:00:00.000Z','2026-11-21'),R.planLate('2026-11-21T06:00:00.000Z','2026-11-21')],[false,true,true],'21:59:59 is on time; 22:00 and the next morning are late');
+eq(R.planDeadline('2026-11-19'),'2026-11-18T19:00:00.000Z','the plan of a day is due at 22:00 Riyadh the day before (Thursday\'s: Wednesday 22:00)');
+eq([R.planLate('2026-11-18T18:59:59.000Z','2026-11-19'),R.planLate('2026-11-18T18:59:59.999Z','2026-11-19'),R.planLate('2026-11-18T19:00:00.000Z','2026-11-19'),R.planLate('2026-11-19T06:00:00.000Z','2026-11-19')],[false,false,true,true],'a normal day, to the second: 21:59:59 is on time; 22:00:00 and the next morning are late');
+// Saturday's plan, whose day before is Friday (the day off): due at midnight at the end of Friday (the owner, 2026-11-21: «اخر معاد الجمعة
+// قبل 12 باليل»); every other day keeps 22:00.
+const week=['2026-11-22','2026-11-23','2026-11-24','2026-11-25','2026-11-26','2026-11-27','2026-11-28'];// Sunday to Saturday
+eq(week.map(day=>new RealDate(day+'T12:00:00Z').getUTCDay()),[0,1,2,3,4,5,6],'the week of the test, Sunday to Saturday');
+eq(week.map(day=>[R.planDeadlineHour(day),R.planDeadline(day)]),[[22,'2026-11-21T19:00:00.000Z'],[22,'2026-11-22T19:00:00.000Z'],[22,'2026-11-23T19:00:00.000Z'],[22,'2026-11-24T19:00:00.000Z'],[22,'2026-11-25T19:00:00.000Z'],[22,'2026-11-26T19:00:00.000Z'],[24,'2026-11-27T21:00:00.000Z']],'only Saturday\'s plan is due at midnight (Saturday 00:00 Riyadh); Sunday\'s is due on Saturday at 22:00');
+eq(R.planDeadline('2026-11-21'),'2026-11-20T21:00:00.000Z','the plan of Saturday 21 November: due at Saturday 00:00 Riyadh, the end of Friday');
+eq([R.planLate('2026-11-20T19:00:00.000Z','2026-11-21'),R.planLate('2026-11-20T19:30:00.000Z','2026-11-21'),R.planLate('2026-11-20T20:59:59.000Z','2026-11-21'),R.planLate('2026-11-20T20:59:59.999Z','2026-11-21'),R.planLate('2026-11-20T21:00:00.000Z','2026-11-21'),R.planLate('2026-11-21T06:00:00.000Z','2026-11-21')],[false,false,false,false,true,true],'a Friday deadline, to the second: Friday 22:00, 22:30 and 23:59:59 are on time; Saturday 00:00:00 and the morning are late');
+eq([R.planDeadline('2026-12-31'),R.planDeadline('2027-01-02'),R.planDeadline('2027-01-03')],['2026-12-30T19:00:00.000Z','2027-01-01T21:00:00.000Z','2027-01-02T19:00:00.000Z'],'across the end of a year: Thursday 31 December at 22:00 the day before; Saturday 2 January at the end of Friday 1 January; Sunday at 22:00');
+eq([R.planDeadlineWords('2026-11-21'),R.planDeadlineWords('2026-11-19'),R.planDeadlineWords('2026-11-22')],[['منتصف الليل بين الجمعة والسبت','midnight between Friday and Saturday'],['الساعة 22:00','22:00'],['الساعة 22:00','22:00']],'the deadline in words, Arabic and English');
 eq(['2026-11-17','2026-11-18','2026-11-19','2026-11-20','2026-11-21'].map(R.nextPlanDay),['2026-11-18','2026-11-19','2026-11-21','2026-11-21','2026-11-22'],'the next working day: Thursday\'s plan is Saturday\'s (Friday off)');
 eq([R.isPlanWorkingDay('2026-11-20'),R.isPlanWorkingDay('2026-11-21'),R.isPlanWorkingDay('2026-02-30')],[false,true,false],'Friday is not a working day; a day that does not exist neither');
 eq(['2026-11-18','2026-11-19','2026-11-25','2026-11-26','2026-11-17','2026-02-30','2026-11-18x',null].map(day=>R.planDateProblem(day,'2026-11-18')),[null,null,null,'far','past','invalid','invalid','invalid'],'today (late) to seven days ahead; a past, far or false day refused');
@@ -98,6 +107,12 @@ eq(keys(memberInbox({}),'2026-11-18 15:59'),[],'before 16:00 on the day before: 
 eq(keys(memberInbox({}),'2026-11-18 16:00'),['due:2026-11-19'],'from 16:00: due');
 eq(keys(memberInbox({}),'2026-11-17 18:00'),[],'two days before: nothing');
 eq(keys(memberInbox({}),'2026-11-18 22:00'),['late:2026-11-19'],'from 22:00: late');
+eq(keys(memberInbox({}),'2026-11-18 21:59'),['due:2026-11-19'],'at 21:59: due, not late');
+// Saturday's plan on Friday: «not sent yet» from 16:00 until midnight, late from Saturday 00:00.
+const saturdayInbox=next=>({ok:true,serverTime:'',role:'member',next:{date:'2026-11-21',state:'missing',late:false,deadline:R.planDeadline('2026-11-21'),version:null,returnReason:'',reviewedByName:'',...next},today:null});
+eq(['2026-11-20 15:59','2026-11-20 16:00','2026-11-20 22:00','2026-11-20 22:30','2026-11-20 23:59','2026-11-21 00:00'].map(wall=>keys(saturdayInbox({}),wall)),[[],['due:2026-11-21'],['due:2026-11-21'],['due:2026-11-21'],['due:2026-11-21'],['late:2026-11-21']],'Saturday\'s plan: due on Friday from 16:00 through 22:00, 22:30 and 23:59; late at Saturday 00:00');
+eq(['2026-11-20T23:59:59+03:00','2026-11-21T00:00:00+03:00'].map(moment=>R.planReminderLines(saturdayInbox({}),RealDate.parse(moment)).map(line=>line.tone)),[['due'],['late']],'to the second: 23:59:59 due, 00:00:00 late');
+eq(R.planNoticeStep(R.planReminderLines(saturdayInbox({}),RealDate.parse('2026-11-20T22:30:00+03:00')),[],RealDate.parse('2026-11-20T22:30:00+03:00')).announce.map(line=>line.key),['due:2026-11-21'],'the device\'s notice at Friday 22:30: «not sent yet», not «late»');
 eq(keys(memberInbox({state:'draft'}),'2026-11-18 21:00'),['due:2026-11-19'],'a draft is not sent');
 eq(keys(memberInbox({state:'sent'}),'2026-11-18 21:00'),[],'sent: nothing');
 eq(keys(memberInbox({state:'returned',version:3}),'2026-11-18 10:00'),['returned:2026-11-19:3'],'returned: at any hour');
@@ -117,7 +132,8 @@ eq([R.rememberedPlanNotices(null),R.rememberedPlanNotices('{'),R.rememberedPlanN
 const ROLES=['admin','manager','supervisor','rep','marketing','customer_service','customer_service_manager'];
 eq(ROLES.map(role=>A.canViewPage(role,'plans')),[true,true,true,true,true,false,false],'the screen: the sales team');
 eq(ROLES.map(role=>['add','edit','export'].map(action=>P.cellCeiling(role,'plans',action))),[[false,true,true],[false,true,true],[false,true,true],[true,false,false],[true,false,false],[false,false,false],[false,false,false]],'«إعداد خطة اليوم» for the field roles; «مراجعة خطط المناديب» and «تصدير خطط المناديب إلى Excel» for the three reviewers');
-eq(P.permissionRow('plans').cells.add.ar,'إعداد خطة اليوم','the owner\'s three names');eq(P.permissionRow('plans').cells.edit.ar,'مراجعة خطط المناديب','');eq(P.permissionRow('plans').cells.export.ar,'تصدير خطط المناديب إلى Excel','');
+eq(P.permissionRow('plans').cells.add.ar,'إعداد خطة اليوم','the owner\'s three names');
+eq([P.permissionRow('plans').cells.add.note.ar.includes('قبل الساعة 22:00، وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت'),P.permissionRow('plans').cells.add.note.en.includes('before 22:00, and Saturday\'s before midnight between Friday and Saturday')],[true,true],'the cell\'s note names both deadlines');eq(P.permissionRow('plans').cells.edit.ar,'مراجعة خطط المناديب','');eq(P.permissionRow('plans').cells.export.ar,'تصدير خطط المناديب إلى Excel','');
 for(const role of ROLES)for(const action of ['add','edit','export'])eq(P.can({role,access:P.memberAccess(role,null)},'plans',action),P.cellCeiling(role,'plans',action),role+' plans:'+action+' on by default within the ceiling');
 const offRep={role:'rep',access:P.memberAccess('rep',{permissions:JSON.stringify({'plans:add':false}),hidden:'[]',version:2})};
 eq([P.can(offRep,'plans','add'),P.cellRefused(offRep,'plans','add')],[false,true],'switched off: refused');
@@ -252,7 +268,7 @@ saved=await send('mk1',D,[stop('c1','call')],null);
 eq([saved.plan.state,saved.plan.late,saved.plan.firstSentSource],['sent',true,'server'],'a marketing officer\'s plan sent at 23:10 is accepted and late');
 // The device's clock: captured at 21:50, received the next morning → on time; 49 hours old → the receipt; ahead or another member → refused.
 at('2026-11-21 08:00');
-const S2='2026-11-21';// Saturday; its deadline is Friday 22:00.
+const S2='2026-11-21';// Saturday; its deadline is midnight at the end of Friday (Saturday 00:00).
 await send('rep2',S2,[stop('c1')],null,{offline:{memberId:'rep1',capturedAt:'2026-11-20T18:50:00.000Z'}},403);
 await send('rep2',S2,[stop('c1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-21T05:02:00.000Z'}},400);
 saved=await send('rep2',S2,[stop('c1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-20T18:50:00.000Z'}});
@@ -299,6 +315,28 @@ at('2026-11-20 09:00');
 let exported=await get('sup',{from:'2026-11-19',to:'2026-11-21'});
 eq(exported.plans.map(item=>[item.memberId,item.date,item.state]),[['mk1','2026-11-19','sent'],['rep1','2026-11-19','sent'],['mk1','2026-11-21','sent']],'the plans of the range (the working days without one up to today too)');
 await get('sup',{from:'2026-11-01',to:'2026-12-02'},400);await get('sup',{from:'2026-11-21',to:'2026-11-19'},400);await get('rep1',{from:'2026-11-19',to:'2026-11-19'},403);
+// Saturday's deadline is midnight at the end of Friday (the owner, 2026-11-21): the cards and the list at Friday 22:30 and at Saturday
+// 00:00, and the late flag to the second by the server's clock.
+{
+ const F='2026-11-27',SA='2026-11-28';// a Friday (the day off) and its Saturday
+ at(F+' 22:30');
+ const card=await inbox('rep1');
+ eq([card.next,card.today],[{date:SA,state:'missing',late:false,deadline:'2026-11-27T21:00:00.000Z',version:null,returnReason:'',reviewedByName:''},null],'Friday 22:30: the member\'s card has Saturday\'s plan, due at Saturday 00:00');
+ eq(R.planReminderLines(card,held).map(line=>line.key),['due:'+SA],'Friday 22:30: «not sent yet», not late');
+ eq((await inbox('sup2')).missing,undefined,'Friday 22:30: the reviewer is told of nobody (before 2026-11-21 he was, from 22:00)');
+ eq((await get('sup2',{date:SA})).rows.map(row=>[row.memberId,row.overdue]),[['rep2',false]],'and the list marks nobody past the deadline');
+ held=RealDate.parse(F+'T23:59:59+03:00');
+ saved=await send('rep1',SA,[stop('c1')],null);
+ eq([saved.plan.late,saved.plan.firstSentAt,saved.plan.deadline],[false,'2026-11-27T20:59:59.000Z','2026-11-27T21:00:00.000Z'],'sent at Friday 23:59:59: on time');
+ held=RealDate.parse(SA+'T00:00:00+03:00');
+ saved=await send('mk1',SA,[stop('c1','call')],null);
+ eq([saved.plan.late,saved.plan.firstSentAt],[true,'2026-11-27T21:00:00.000Z'],'sent at Saturday 00:00:00: late');
+ eq(R.planReminderLines(await inbox('rep2'),held).map(line=>line.key),['missing-today:'+SA],'Saturday 00:00: the member who has not sent it is told it is late');
+ eq((await inbox('sup2')).missing,{date:SA,names:['اسم rep2']},'and the reviewer is told who has not sent it');
+ eq((await get('sup2',{date:SA})).rows.map(row=>[row.memberId,row.overdue]),[['rep2',true]],'the list marks him past the deadline');
+ eq((await get('sup',{date:SA})).rows.map(row=>[row.memberId,row.state,row.late]),[['mk1','sent',true],['rep1','sent',false]],'the supervisor\'s list: each plan late or on time as its first send decided');
+ at('2026-11-20 09:00');
+}
 // Switched off and hidden: the cell refuses with its words; a hidden screen answers 404.
 sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('sup',?,'[]',2,'owner',?)").run(JSON.stringify({'plans:edit':false,'plans:export':false}),created);
 eq((await review('sup','note','rep1',D,undefined,{note:'محاولة',noteVersion:3},403)).error,'غير مسموح لك بالتعديل في خطط المناديب. راجع مدير النظام.','«مراجعة خطط المناديب» off');
@@ -316,6 +354,22 @@ eq((await inbox('mgr')).missing,{date:'2026-11-22',names:['اسم rep2','اسم 
 eq((await get('mgr',{date:'2026-11-22'})).rows.map(row=>[row.memberId,row.overdue]).sort(),[['mk1',false],['rep1',false],['rep2',true],['west',true]],'the list marks only them past the deadline');
 eq((await get('mgr',{from:'2026-11-21',to:'2026-11-21'})).plans.map(item=>[item.memberId,item.state]).sort(),[['mk1','sent'],['rep2','sent'],['west','missing']],'the export: the plans sent, and a day without a plan only for whom is asked for one');
 eq((await get('mgr',{date:'2026-11-19',memberId:'rep1'})).state,'sent','a plan the exempted member sent is read as before');
+
+// A plan sent before 2026-11-21 keeps the late flag its first send was given (crm_daily_plans.late, decided once): west's plan of Saturday
+// 21 November, first sent at Friday 22:30 and stored late under the 22:00 rule, stays late though the midnight rule would call that send on
+// time: read, in the list and the export, and once returned and sent again.
+{
+ const day='2026-11-21',firstSent='2026-11-20T19:30:00.000Z',id='daily-plan:west:'+day;
+ sql.prepare("INSERT INTO crm_daily_plans(id,member_id,date,status,version,first_sent_at,first_sent_source,late,sent_at,received_at,reviewed_by,reviewed_at,return_reason,mutation_id,created_at,updated_at) VALUES(?,'west',?,'sent',1,?,'server',1,?,?,NULL,NULL,'','before-2026-11-21',?,?)").run(id,day,firstSent,firstSent,firstSent,firstSent,firstSent);
+ sql.prepare("INSERT INTO crm_daily_plan_stops(id,plan_id,position,customer_id,kind,planned_time,note,added_by,supervisor_state,edited_by,created_at,updated_at) VALUES('west-stop-1',?,1,'cW','visit','','','west','',NULL,?,?)").run(id,firstSent,firstSent);
+ const stored=await get('west',{date:day});
+ eq([stored.state,stored.late,stored.firstSentAt,stored.deadline,R.planLate(stored.firstSentAt,day)],['sent',true,firstSent,'2026-11-20T21:00:00.000Z',false],'read today: late as stored, though the midnight rule would call that send on time');
+ eq([(await get('mgr',{date:day})).rows.find(row=>row.memberId==='west').late,(await get('mgr',{from:day,to:day})).plans.find(item=>item.memberId==='west').late],[true,true],'the list and the export say late');
+ const returned=await review('mgr','return','west',day,1,{reason:'أضف اتصالًا بالعميل'});
+ eq(returned.plan.state,'returned','returned by the sales manager');
+ saved=await send('west',day,[wire(returned.plan.stops[0]),stop('cW','call')],2);
+ eq([saved.plan.state,saved.plan.late,saved.plan.firstSentAt],['sent',true,firstSent],'sent again: still late, the first send decides');
+}
 
 // GET /api/crm keeps the plans' audit rows out of its recent changes.
 const snapshot=await call(crm.GET,{as:'owner',url:'https://test.invalid/api/crm'});

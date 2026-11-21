@@ -4,6 +4,32 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «خطة الغد»: Saturday's plan due at midnight at the end of Friday (2026-11-21, no migration, no Android change)
+
+- **Asked.** The owner, 2026-11-21: «اخر معاد الجمعة قبل 12 باليل». Friday is the day off, so Thursday's plan is Saturday's, and it was due
+  Friday 22:00. Now the plan whose day before is a Friday (Saturday's) is due at Saturday 00:00:00 Riyadh, the end of Friday
+  (`planDeadlineHour` 24, `PLAN_FRIDAY_DEADLINE_HOUR`): sent at Friday 23:59:59 it is on time, at 00:00:00 late. Every other day stays 22:00
+  (Sunday's: Saturday 22:00). Guide 9-أي (ب-1).
+- **Everything that reads `planDeadline` follows:** the «متأخرة» flag at the first send, «آخر موعد للإرسال» on the screen (for Saturday's
+  plan the words before the time: «منتصف الليل بين الجمعة والسبت (21 نوفمبر، 00:00)»; the time now formatted with `hourCycle: 'h23'`, so no
+  browser writes it «24:00»), the reminder card (the member: «خطة الغد لم تُرسل بعد» until midnight, «الخطة متأخرة» from Saturday 00:00; the
+  reviewer: «مناديب لم يرسلوا خطتهم» from Saturday 00:00, no longer from Friday 22:00), «تجاوز آخر موعد للإرسال» in the reviewer's list,
+  the device's notice, and the Excel column «آخر موعد للإرسال» (Saturday 00:00).
+- **The texts that said 22:00** now say both, in Arabic and English: the member's page introduction, the note of the cell «إعداد خطة اليوم»,
+  and the card's body for Saturday's plan («أرسلها للمشرف قبل منتصف الليل بين الجمعة والسبت.» / "send it to your supervisor before midnight
+  between Friday and Saturday."; `planDeadlineWords`, `PLAN_DEADLINE_TEXT`).
+- **Also mended (found by the new browser check):** in English the reviewer's card «Representatives who have not sent their plan» joined the
+  names with the Arabic comma «،»; it now uses ", " (Arabic keeps «، »).
+- **Stored plans keep their flag.** `crm_daily_plans.late` is decided at the first send and never worked out again, so a Saturday plan sent on
+  a Friday between 22:00 and 23:59 before this release stays «متأخرة», also once returned and sent again. `docs/UPDATE-2026-11-19-DAILY-PLANS-AR.txt`
+  stays as shipped.
+- **Tests.** `tests/daily-plans.mjs` 280 (was 241): the deadline of each day of a week, to the second on a normal day and on a Friday
+  deadline, across a year's end, the words; the cards at Friday 15:59 to 23:59:59 and Saturday 00:00; the device's notice; the cell's note;
+  the routes at Friday 22:30 and Saturday 00:00 (cards, list, sends at 23:59:59 and 00:00:00) and a plan stored late before the change.
+  `tests/daily-plans-http.mjs` 104 (was 82): two more boots of the release at Friday 22:30 and Saturday 00:00. `tests/daily-plans-browser.mjs`
+  196: the card and the plan at Friday 22:30 at 320, 360, tablet both ways and desktop in both languages, and at Saturday 00:00 the
+  late card and the supervisor's card and list.
+
 ## «خريطة المصانع»: the purple streets removed (2026-11-21, no migration: 25 kept, no Android change)
 
 - **Asked.** The owner, 2026-11-21: «جزء الشوارع البنفسجية متعملوش هنا ملوش لازمة». Everything else of «خريطة المصانع» stays exactly as
