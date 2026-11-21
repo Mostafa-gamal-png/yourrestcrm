@@ -161,8 +161,8 @@ try{
  eq(await sheet.getByRole('button',{name:/^إضافة ماكينة/}).count(),0,'Rep cannot add machine to retained administrator customer');
  await sheet.getByRole('button',{name:'تعديل',exact:true}).click();
  const dialog=page.locator('[role=dialog]').filter({has:page.locator('form')});await dialog.waitFor();
- await dialog.getByRole('textbox',{name:'الجوال',exact:true}).fill('0501111111');
- await dialog.getByRole('button',{name:'تحديث من موقعي الحالي',exact:true}).click();
+ await dialog.getByRole('textbox',{name:'جوال المسؤول 1',exact:true}).fill('0501111111');
+ await dialog.getByRole('button',{name:'تغيير الموقع',exact:true}).click();await dialog.getByRole('button',{name:'تحديث من موقعي الحالي',exact:true}).click();
  await eventually(async()=>!(await dialog.locator('button[type=submit]').isDisabled()),'GPS lookup releases save');
  await dialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('24.7123, 46.6123');
  // Since 2026-11-15 (lib/customer-edit-requests.ts) the representative's correction is sent for approval: their supervisor first, then the
@@ -219,11 +219,12 @@ try{
  eq(await managerDialog.getByRole('textbox',{name:'فرع يورست المسؤول',exact:true}).inputValue(),'Main','Manager sees original branch');
  ok(!!(await managerDialog.getByRole('textbox',{name:'المندوب المسؤول',exact:true}).inputValue()),'Retained assignee label does not disappear');
  eq(await managerDialog.getByRole('combobox',{name:'المندوب المسؤول',exact:true}).count(),0,'Manager cannot reroute retained customer with a selector');
- eq(await managerDialog.getByRole('radio',{name:'الغربية',exact:true}).isChecked(),true,'Manager sees original region');
- for(const radio of await managerDialog.locator('.customer-region-field input[type=radio]').all())eq(await radio.isDisabled(),true,'All-region manager cannot change retained customer routing region');
- eq(await managerDialog.getByRole('textbox',{name:'الجوال',exact:true}).inputValue(),'0501111111','Manager sees representative saved phone');
- await managerDialog.getByRole('textbox',{name:'الجوال',exact:true}).fill('0502222222');
- await managerDialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('24.7134, 46.6134');
+ // The customer form of 2026-11-21: the region is read in the form's heading; a retained customer's offers no choice.
+ ok((await managerDialog.locator('[data-customer-form-region]').innerText()).includes('الغربية'),'Manager sees original region');
+ eq(await managerDialog.locator('.customer-region-field input[type=radio]:not([disabled])').count(),0,'All-region manager cannot change retained customer routing region');
+ eq(await managerDialog.getByRole('textbox',{name:'جوال المسؤول 1',exact:true}).inputValue(),'0501111111','Manager sees representative saved phone');
+ await managerDialog.getByRole('textbox',{name:'جوال المسؤول 1',exact:true}).fill('0502222222');
+ await managerDialog.getByRole('button',{name:'تغيير الموقع',exact:true}).click();await managerDialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('24.7134, 46.6134');
  await snapshot(managerPage,'manager-customer-edit-routing-read-only');
  const managerSave=managerPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/crm'&&r.request().method()==='POST');
  await managerDialog.getByRole('button',{name:/^حفظ /}).click();eq((await managerSave).status(),200,'Manager actual form save accepted');await managerDialog.waitFor({state:'detached'});
@@ -252,8 +253,8 @@ try{
  await serviceSheet.getByRole('button',{name:'تعديل',exact:true}).click();
  const serviceDialog=servicePage.locator('[role=dialog]').filter({has:servicePage.locator('form')});await serviceDialog.waitFor();
  for(const label of ['فرع يورست المسؤول','المندوب المسؤول']){eq(await serviceDialog.getByRole('textbox',{name:label,exact:true}).count(),0,'Customer service form has no '+label);eq(await serviceDialog.getByRole('combobox',{name:label,exact:true}).count(),0,'Customer service form has no selector for '+label);}
- eq(await serviceDialog.getByRole('textbox',{name:'الجوال',exact:true}).inputValue(),'0502222222','Customer service sees the saved phone');
- await serviceDialog.getByRole('textbox',{name:'الجوال',exact:true}).fill('0504444444');await serviceDialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('21.6, 39.3');
+ eq(await serviceDialog.getByRole('textbox',{name:'جوال المسؤول 1',exact:true}).inputValue(),'0502222222','Customer service sees the saved phone');
+ await serviceDialog.getByRole('textbox',{name:'جوال المسؤول 1',exact:true}).fill('0504444444');await serviceDialog.getByRole('button',{name:'تغيير الموقع',exact:true}).click();await serviceDialog.getByRole('textbox',{name:'اللوكيشن (خط العرض، خط الطول)',exact:true}).fill('21.6, 39.3');
  await snapshot(servicePage,'customer-service-customer-edit');
  const serviceSave=servicePage.waitForResponse(r=>new URL(r.url()).pathname==='/api/crm'&&r.request().method()==='POST');
  await serviceDialog.getByRole('button',{name:'إرسال التعديل للموافقة',exact:true}).click();const serviceReply=await serviceSave;eq(serviceReply.status(),200,'Customer service actual form save accepted');await serviceDialog.waitFor({state:'detached'});

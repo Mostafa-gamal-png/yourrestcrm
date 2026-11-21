@@ -70,10 +70,10 @@ try {
   await page.locator('.crm-sheet').getByRole('button', {name: 'تعديل', exact: true}).click();
   const dialog = page.locator('.crm-master-dialog');
   await dialog.locator('fieldset.customer-choice-field').first().waitFor();
-  check((await groups(dialog)).slice(0, 2), [
-    {legend: 'تصنيف العميل', choices: ['دوليون', 'مميزون', 'جملة', 'قطاعي', 'تجاري', 'خدمات'], checked: ['خدمات']},
-    {legend: 'نوع العميل', choices: ['مصنع', 'مؤسسة', 'شركة', 'محل تجاري'], checked: ['مصنع']}
-  ], 'the edit form: «تصنيف العميل» with its stored «خدمات», then «نوع العميل»');
+  check((await groups(dialog)).filter(group => /^(تصنيف العميل|نوع العميل|Customer classification|Customer type)$/.test(group.legend)), [
+    {legend: 'نوع العميل', choices: ['مصنع', 'مؤسسة', 'شركة', 'محل تجاري'], checked: ['مصنع']},
+    {legend: 'تصنيف العميل', choices: ['دوليون', 'مميزون', 'جملة', 'قطاعي', 'تجاري', 'خدمات'], checked: ['خدمات']}
+  ], 'the edit form: «نوع العميل» (under «المصنع» since 2026-11-21), and «تصنيف العميل» with its stored «خدمات»');
   const kindGroup = dialog.locator('fieldset.customer-choice-field').filter({has: page.locator('legend', {hasText: /^نوع العميل$/})});
   await kindGroup.scrollIntoViewIfNeeded();
   await noSideways(page, 'the edit form');
@@ -92,9 +92,9 @@ try {
   check([(await sheetValues(page))['تصنيف العميل'], (await sheetValues(page))['نوع العميل']], ['جملة', '—'], 'a customer with no type: «—»');
   await page.locator('.crm-sheet').getByRole('button', {name: 'تعديل', exact: true}).click();
   await dialog.locator('fieldset.customer-choice-field').first().waitFor();
-  check((await groups(dialog)).slice(0, 2), [
-    {legend: 'تصنيف العميل', choices: ['دوليون', 'مميزون', 'جملة', 'قطاعي', 'تجاري'], checked: ['جملة']},
-    {legend: 'نوع العميل', choices: ['مصنع', 'مؤسسة', 'شركة', 'محل تجاري'], checked: []}
+  check((await groups(dialog)).filter(group => /^(تصنيف العميل|نوع العميل|Customer classification|Customer type)$/.test(group.legend)), [
+    {legend: 'نوع العميل', choices: ['مصنع', 'مؤسسة', 'شركة', 'محل تجاري'], checked: []},
+    {legend: 'تصنيف العميل', choices: ['دوليون', 'مميزون', 'جملة', 'قطاعي', 'تجاري'], checked: ['جملة']}
   ], 'another customer: no «خدمات», no type chosen yet');
   await dialog.getByRole('button', {name: 'إلغاء', exact: true}).click();
   await dialog.waitFor({state: 'hidden'});
@@ -105,9 +105,9 @@ try {
   await fresh.getByRole('button', {name: 'إضافة مصنع', exact: true}).first().click();
   const newDialog = fresh.locator('.crm-master-dialog');
   await newDialog.locator('fieldset.customer-choice-field').first().waitFor();
-  check((await groups(newDialog)).slice(0, 2).map(group => [group.legend, group.choices, group.checked]), [
-    ['تصنيف العميل', ['دوليون', 'مميزون', 'جملة', 'قطاعي', 'تجاري'], []],
-    ['نوع العميل', ['مصنع', 'مؤسسة', 'شركة', 'محل تجاري'], []]
+  check((await groups(newDialog)).filter(group => /^(تصنيف العميل|نوع العميل|Customer classification|Customer type)$/.test(group.legend)).map(group => [group.legend, group.choices, group.checked]), [
+    ['نوع العميل', ['مصنع', 'مؤسسة', 'شركة', 'محل تجاري'], []],
+    ['تصنيف العميل', ['دوليون', 'مميزون', 'جملة', 'قطاعي', 'تجاري'], []]
   ], 'a new customer: five classifications, the four types, nothing chosen');
   await newDialog.locator('fieldset.customer-choice-field').first().scrollIntoViewIfNeeded();
   await noSideways(fresh, 'the new-customer form');
@@ -125,13 +125,13 @@ try {
   await english.locator('.crm-sheet').getByRole('button', {name: 'Edit', exact: true}).click();
   const enDialog = english.locator('.crm-master-dialog');
   await enDialog.locator('fieldset.customer-choice-field').first().waitFor();
-  const enGroups = (await groups(enDialog)).slice(0, 2);
+  const enGroups = (await groups(enDialog)).filter(group => /^(تصنيف العميل|نوع العميل|Customer classification|Customer type)$/.test(group.legend));
   check(enGroups, [
-    {legend: 'Customer classification', choices: ['International', 'Premium', 'Wholesale', 'Retail', 'Commercial', 'Services'], checked: ['خدمات']},
-    {legend: 'Customer type', choices: ['Factory', 'Establishment', 'Company', 'Retail shop'], checked: ['محل تجاري']}
+    {legend: 'Customer type', choices: ['Factory', 'Establishment', 'Company', 'Retail shop'], checked: ['محل تجاري']},
+    {legend: 'Customer classification', choices: ['International', 'Premium', 'Wholesale', 'Retail', 'Commercial', 'Services'], checked: ['خدمات']}
   ], 'English form: the two groups, «Services» still chosen for this customer');
   ok(enGroups.every(group => !/[؀-ۿ]/.test(group.legend + group.choices.join(''))), 'no Arabic left in the two groups');
-  await enDialog.locator('fieldset.customer-choice-field').nth(1).scrollIntoViewIfNeeded();
+  await enDialog.locator('fieldset.customer-choice-field').first().scrollIntoViewIfNeeded();
   await noSideways(english, 'the English form');
   await shot(english, 'customer-kind-form-en');
   await english.context().close();

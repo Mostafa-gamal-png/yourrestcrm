@@ -71,7 +71,9 @@ try {
     await page.locator('.mobile-navigation-sheet').waitFor({state: 'detached'});
     await page.locator('.page-heading').waitFor();
   };
-  const addCustomer = async page => { await page.locator('.heading-actions').getByRole('button', {name: /^(إضافة عميل|إضافة مصنع)$/}).click(); const dialog = page.locator('.crm-master-dialog'); await dialog.waitFor(); return dialog; };
+  // The customer form of 2026-11-21 shows the place as one line; «تغيير الموقع» opens the same choices as before, which this test drives.
+  const showChoices = async dialog => { await dialog.locator('.customer-location-change').click(); await dialog.locator('.customer-location-modes').waitFor(); };
+  const addCustomer = async page => { await page.locator('.heading-actions').getByRole('button', {name: /^(إضافة عميل|إضافة مصنع)$/}).click(); const dialog = page.locator('.crm-master-dialog'); await dialog.waitFor(); await showChoices(dialog); return dialog; };
   const labelled = (scope, label) => scope.locator('label.field').filter({has: scope.page().locator('span').filter({hasText: new RegExp('^' + label + '( \\*)?$')})}).locator('input,textarea').first();
   const placeField = scope => scope.getByRole('textbox', {name: LOCATION, exact: true});
   // The source choice is a group of real radio buttons drawn as the app's other choices: the label is what a person taps.
@@ -243,6 +245,8 @@ try {
   await admin.locator('.heading-actions button').last().click();
   dialog = admin.locator('.crm-master-dialog');
   await dialog.waitFor();
+  check(await dialog.locator('.customer-location-change').innerText(), 'Change location', 'English: «Change location»');
+  await showChoices(dialog);
   check([await chosen(dialog, 'My current location'), await chosen(dialog, 'Another location')], [true, false], 'English: the same two choices');
   await mode(dialog, 'Another location').click();
   await dialog.getByRole('textbox', {name: 'Location (latitude, longitude)', exact: true}).fill('abc');

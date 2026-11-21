@@ -358,9 +358,8 @@ try {
     await sheet.getByRole('button', {name: /^(تعديل|Edit)$/}).first().click();
     const form = page.locator('[role=dialog]').filter({has: page.locator('form')});
     await form.waitFor();
-    const extra = form.locator('.customer-extra-fields');
-    if (!await extra.evaluate(node => node.open)) await extra.locator('summary').click();
-    const field = form.locator('.erp-code-readonly');
+    // Since the customer form of 2026-11-21 the codes are in the form's heading (nothing under «بيانات إضافية»).
+    const field = form.locator('[data-customer-form-codes] .erp-code-readonly');
     await field.scrollIntoViewIfNeeded();
     check(await form.locator('input, textarea').evaluateAll(items => items.filter(item => item.value === '12').length), 0, label + ': the ERP code is no input');
     await shot(page, 'customer-erp-code-readonly-' + label);
@@ -401,10 +400,8 @@ try {
   await rep.getByRole('button', {name: 'إضافة عميل', exact: true}).first().click();
   const repForm = rep.locator('[role=dialog]').filter({has: rep.locator('form')});
   await repForm.waitFor();
-  const repExtra = repForm.locator('.customer-extra-fields');
-  if (!await repExtra.evaluate(node => node.open)) await repExtra.locator('summary').click();
-  check([(await repForm.locator('.erp-code-readonly-value').innerText()).trim(), (await repForm.locator('.erp-code-readonly-note').innerText()).trim(), await repForm.getByRole('textbox', {name: /كود العميل في ERP/}).count()], ['لا يوجد كود ERP', 'يُحدَّث من ملف عملاء ERP فقط', 0], 'a new customer: «لا يوجد كود ERP» and no ERP code field');
-  await repForm.locator('.erp-code-readonly').scrollIntoViewIfNeeded();
+  // The customer form of 2026-11-21: a new customer's heading says the codes come later; no ERP code to read or type.
+  check([(await repForm.locator('.customer-form-heading').innerText()).includes('كود يورست يُنشأ تلقائيًا بعد الحفظ، وكود ERP يظهر عند التعديل'), await repForm.locator('.erp-code-readonly').count(), await repForm.getByRole('textbox', {name: /كود العميل في ERP/}).count()], [true, 0, 0], 'a new customer: its codes come later, and no ERP code field');
   check(await rep.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'phone: the new-customer form does not scroll sideways');
   await shot(rep, 'customer-erp-code-new-phone-ar');
   await rep.context().close();
