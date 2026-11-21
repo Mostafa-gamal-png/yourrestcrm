@@ -56,7 +56,9 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   different history. `crm_osm_street_cache` and `crm_osm_street_local` stay in the schema, unused: nothing reads or writes them (a test
   scans the sources), and the work areas do not depend on them. The down files stay as they are.
 - **Release.** `--schema-baseline 25`, no `--new-migration`; keep `--verify-route /api/work-areas=401`; drop
-  `--verify-route /api/work-area-streets=401` (to prove it gone: `--verify-route /api/work-area-streets=404`). Going back to
+  `--verify-route /api/work-area-streets=401`, and do not declare it `=404`: the rehearsal (`scripts/rehearse-update.mjs`) takes a declared
+  route as new (404 before) or carried (the same answer before), and the live release answers it 401; `tests/work-areas-http.mjs` proves the
+  404 on the built release. No change to the rehearsal or its `NEW_COMPUTED` (`map:edit` stays). Going back to
   update-work-areas-20261119 with the code alone works (the same 25 migrations); its streets then read the two tables again.
 - **Tests.** Removed: `tests/street-data.mjs` (65) and `tests/diagnose-street-regions.mjs` (15). `tests/work-areas.mjs` 161 (was 218: the
   streets' parts out; the legend's lines and the sources scan in), `tests/work-areas-migration.mjs` 126 (unchanged), `tests/deploy-cpanel.mjs`
