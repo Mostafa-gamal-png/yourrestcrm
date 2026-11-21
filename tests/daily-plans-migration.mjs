@@ -186,7 +186,7 @@ eq(read(again.filename,schema),afterSchema,'and the same schema as the first upg
  let answer;try{await client.submitJson('/api/daily-plans',{method:'POST',body:entry.body},{language:'ar'});}catch(error){answer=error;}finally{globalThis.fetch=realFetch;}
  eq([answer?.status,answer?.invalidResponse,submit.isServerRefusal(answer)],[404,true,false],'its send gets the previous server\'s HTML 404, which is not a refusal: the entry waits and the outbox stops at it');
  eq([review.deletableOfflineEntry(entry),review.deletableOfflineEntry({...entry,status:'blocked'})],[false,true],'and a waiting entry cannot be deleted there');
- const guide=fs.readFileSync(path.join(root,'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'),'utf8'),section=guide.slice(guide.indexOf('## 9-أي.'),guide.indexOf('\n## 10.'));
+ const guide=fs.readFileSync(path.join(root,'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'),'utf8'),section=guide.slice(guide.indexOf('## 9-أي.'),guide.indexOf('\n## ',guide.indexOf('## 9-أي.')));
  const warning=section.slice(section.indexOf('**قبل الرجوع (3 أو 4): خطط محفوظة على الأجهزة.**'));
  eq(section.includes('**قبل الرجوع (3 أو 4): خطط محفوظة على الأجهزة.**')&&warning.includes('«خطة يوم …»')&&warning.includes('في انتظار الاتصال')&&warning.includes('قبل إيقاف التطبيق للرجوع'),true,'the guide says to send or delete the plans kept on the devices before going back');
 }

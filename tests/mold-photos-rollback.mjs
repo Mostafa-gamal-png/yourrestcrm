@@ -142,7 +142,7 @@ const image = await photos.GET(request('/api/mold-photos?id=' + ids[0]));
 eq([image.status, Buffer.from(new Uint8Array(await image.arrayBuffer())).equals(Buffer.from(first))], [200, true], 'with their bytes');
 
 // ---- The guide says so.
-const guide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8'), section = guide.slice(guide.indexOf('## 9-أه.'), guide.indexOf('\n## 10.'));
+const guide = fs.readFileSync(path.join(root, 'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), 'utf8'), section = guide.slice(guide.indexOf('## 9-أه.'), guide.indexOf('\n## ', guide.indexOf('## 9-أه.')));
 ok(section.includes('**الرجوع إلى الإصدار السابق (update-orders-20261119).**') && section.includes('`/api/visit-files?id=`') && section.includes('بـ404'), 'the guide has the way back from this release');
 ok(!/^sqlite3 /m.test(section), 'and no command to run');
 
