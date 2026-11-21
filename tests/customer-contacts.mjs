@@ -38,7 +38,6 @@ const C=await load('lib/customer-contacts.ts');
 const {schemas}=await load('lib/crm.ts');
 const edits=await load('lib/customer-edit-requests.ts');
 const mapSearch=await load('lib/customer-map-search.ts');
-const en=JSON.parse(fs.readFileSync(path.join(root,'lib/locales/en.json'),'utf8'));
 const ARABIC=/[؀-ۿ]/;
 let checks=0;
 const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);checks++;},ok=(value,message)=>{assert.ok(value,message);checks++;};

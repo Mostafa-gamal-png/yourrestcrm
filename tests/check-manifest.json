@@ -102,6 +102,26 @@
       "reason": "requires browser; requires independent build"
     },
     {
+      "file": "tests/customer-form-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/customer-contacts-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
+      "file": "tests/customer-capacity-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/customer-capacity-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/customer-edit-requests-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"
