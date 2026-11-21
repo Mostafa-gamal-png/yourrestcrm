@@ -36,8 +36,11 @@ async function makePdf(label) {
   return Buffer.from(await doc.save());
 }
 
-const mock = await startProductsMock();
+const mock = await startProductsMock({freeCustomers: true});
 const app = await bootBuiltApp({members}, {tls: true, env: {YR_PRODUCTS_API_URL: mock.url, YR_PRODUCTS_SECRET: mock.state.secret, NODE_EXTRA_CA_CERTS: mock.ca}});
+// Since 2026-11-21 every new request is typed only (crmNumber null): production takes such a customer (its schema 20, and the live CRM
+// learned it from production's answers), so the CRM knows it from the start, as the live site does.
+await app.db.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('mold-free-customers',?)").bind(new Date().toISOString()).run();
 try {
   const now = new Date().toISOString();
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')")
@@ -70,14 +73,16 @@ try {
   const sheet = page => page.locator('.mold-sheet');
   const fill = async (dialog, file) => {
     await dialog.locator('.mold-customer-field[data-field="name"] input').fill('مصنع الشرق');
-    await dialog.locator('.mold-customer-field[data-field="code"] input').fill('ERP-east1'); // typed, no suggestions (2026-11-14): the ERP code links the request
-    await dialog.locator('.mold-customer-chosen').waitFor();
+    await dialog.locator('.mold-customer-field[data-field="code"] input').fill('ERP-east1'); // typed only (2026-11-21): a CRM customer's code links nothing
+    await dialog.locator('.mold-customer-free').waitFor();
+    await dialog.locator('.mold-address textarea').fill('حي الصناعية'); // typed: never filled in from a CRM customer (2026-11-21)
+    await dialog.locator('select[data-field="city"]').selectOption('Damam - الدمام');
     await dialog.locator('label.mold-field', {hasText: 'وصف القالب'}).locator('input').fill('200*400*27.5TH MM OPEN');
     for (const text of ['مفتوح', 'موديل قديم', 'بدون بلوكة نص']) await dialog.locator('.mold-choice label', {hasText: text}).click();
     await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
     await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
     await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
-    await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city is filled in from the customer's «الدمام»)
+    await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city chosen with the address)
     await dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first().locator('label', {hasText: 'نقدي'}).click();
     const picker = dialog.locator('.mold-design-picker[data-category="design"]');
     await picker.locator('input[type=file]').setInputFiles(file);
@@ -108,7 +113,9 @@ try {
   check(await rep.evaluate(() => navigator.clipboard.readText()), url, '«نسخ الرابط» puts it on the clipboard');
   ok(await panel.getByRole('button', {name: 'نُسخ الرابط'}).isVisible(), 'and says so');
   const whatsapp = await panel.locator('a', {hasText: 'إرسال واتساب'}).getAttribute('href');
-  ok(whatsapp.startsWith('https://wa.me/966551234567?text=') && decodeURIComponent(whatsapp).includes(url), 'WhatsApp on the customer\'s mobile with the link');
+  // A request typed only (2026-11-21) is linked to no CRM customer, so no mobile of one is put in: WhatsApp opens with the link and the
+  // representative picks the chat (a request stored linked before still opens its customer's mobile).
+  ok(whatsapp.startsWith('https://wa.me/?text=') && decodeURIComponent(whatsapp).includes(url), 'WhatsApp with the link, no CRM customer\'s mobile (typed only)');
   await until(async () => (await sheet(rep).locator('.mold-sending').innerText()).includes('بانتظار توقيع العميل'), 'the request waits for the customer\'s signature once its file is up');
   await noOverflow(rep, 'the sheet with the link at 360 px');
   await panel.scrollIntoViewIfNeeded();
