@@ -4,6 +4,38 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Mold requests: the customer's name and code typed only, never linked by the code (2026-11-21, no migration, no Android change)
+
+- **Asked.** A request reached production under another factory: the representative typed a customer's name and a code, the code was
+  the ERP code of another CRM customer, and the form (`moldCustomerByErpCode`) and the server (`askedCustomer`: `uniqueCustomerCodes`
+  over the customers' codes and the code mappings) linked the request to that customer: «مرتبط بالعميل …», its address and city filled
+  in, and production received its name and Yourrest number instead of the name typed. The owner: «انا قلتلك الخانة دى للكتابة فقط وايا
+  يكن يتكتب فيها صح او خطأ يروح انت مالك تصحح ليه». Guide 9-أل.
+- **Now.** «اسم العميل» and «كود العميل» are typed only and go to production exactly as typed (trimmed, Arabic-Indic digits of the code as
+  plain ones). The form looks no code up (`moldCustomerByErpCode` and the address and city fill-in are gone; the note reads «يُرسل الطلب
+  إلى الإنتاج باسم العميل وكوده كما كُتبا تمامًا، دون ربطه بعميل في الـCRM»); the signing summary has no «كود يورست» row. The server stores
+  a new request with the name and code typed, `customer_id` '' and `crmNumber: null`, and does not take a `customerId` sent beside them (a
+  page of the release before linked by the code on the device); `customerId` alone (a page loaded before 2026-11-09) is unchanged. The body
+  production gets is `customer: {crmNumber: null, name, address, city, erpCode}`, the shape its application takes since schema 20 (it
+  fills a code from the CRM's customers list only by a Yourrest number); it is sent once the CRM knows production takes it
+  (`mold-free-customers`, learned on the live site: an unlinked request reached production on 2026-11-14), else it waits as since
+  2026-11-09. The label of a request with no Yourrest number is «غير مرتبط بعميل في الـCRM» / "Not linked to a CRM customer" (was «غير
+  مسجل في الـCRM» / "Not in the CRM").
+- **Requests stored linked** keep their link, display, approval and bytes. Editing one never sent keeps the link only while both fields
+  say what was stored (`moldSameCustomerTyped` in `lib/mold-requests.ts`, the same on the device and the server, which also needs the
+  request's own `customerId`); anything else typed is the customer typed, unlinked (a change of what the customer signed). One stored
+  linked without a code (before 2026-11-14) loses its link when its code is typed.
+- **What a typed request means** (the rules of 2026-11-09, unchanged): it is seen and approved by its requester's regions, not a
+  customer's (`moldRequestInRegion`: the requester's team sales manager while active and sharing a region, else every sales manager
+  sharing one); the customers list sent to production is unchanged; the sign link's WhatsApp opens with no CRM customer's mobile; exports
+  and filters show the name and code typed and no Yourrest number.
+- **Tests.** `tests/mold-requests.mjs` 595 (was 591); `tests/mold-requests-http.mjs` 448 (a name typed with another customer's code
+  stored and sent as typed against the stand-in production, a `customerId` beside it not taken, the kept link of an edit and when it goes);
+  `tests/mold-requests-browser.mjs` 279 (no link and no fill-in from a code, the summary, sheet and card, the request reaching the stand-in
+  as typed, the owner's case at 320 and 360 px, a tablet upright and on its side and a desktop, in Arabic and English, no overflow); and the
+  forms of `tests/mold-design-files-browser.mjs` (77), `tests/mold-nov10-browser.mjs` (32), `tests/mold-pdf-view-browser.mjs` (95) and
+  `tests/mold-sign-link-browser.mjs` (34) type the customer, its address and city, with the stand-in taking a typed customer.
+
 ## «خطة الغد»: Saturday's plan due at midnight at the end of Friday (2026-11-21, no migration, no Android change)
 
 - **Asked.** The owner, 2026-11-21: «اخر معاد الجمعة قبل 12 باليل». Friday is the day off, so Thursday's plan is Saturday's, and it was due

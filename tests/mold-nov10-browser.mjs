@@ -39,8 +39,11 @@ async function makePdf(label) {
   return Buffer.from(await doc.save());
 }
 
-const mock = await startProductsMock({nov10: true});
+const mock = await startProductsMock({freeCustomers: true, nov10: true});
 const app = await bootBuiltApp({members}, {tls: true, env: {YR_PRODUCTS_API_URL: mock.url, YR_PRODUCTS_SECRET: mock.state.secret, NODE_EXTRA_CA_CERTS: mock.ca}});
+// Since 2026-11-21 every new request is typed only (crmNumber null): production takes such a customer (its schema 20, and the live CRM
+// learned it from production's answers), so the CRM knows it from the start, as the live site does.
+await app.db.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('mold-free-customers',?)").bind(new Date().toISOString()).run();
 try {
   const now = new Date().toISOString();
   await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,?,'الرئيسي',?,?,?,1,'fixture')")
@@ -93,14 +96,16 @@ try {
   await rep.locator('.mold-new').click();
   const dialog = rep.locator('.mold-dialog');
   await dialog.locator('.mold-customer-field[data-field="name"] input').fill('مصنع الشرق');
-  await dialog.locator('.mold-customer-field[data-field="code"] input').fill('ERP-east1'); // typed, no suggestions (2026-11-14): the ERP code links the request
-  await dialog.locator('.mold-customer-chosen').waitFor();
+  await dialog.locator('.mold-customer-field[data-field="code"] input').fill('ERP-east1'); // typed only (2026-11-21): a CRM customer's code links nothing
+  await dialog.locator('.mold-customer-free').waitFor();
+  await dialog.locator('.mold-address textarea').fill('حي الصناعية'); // typed: never filled in from a CRM customer (2026-11-21)
+  await dialog.locator('select[data-field="city"]').selectOption('Damam - الدمام');
   await dialog.locator('label.mold-field', {hasText: 'وصف القالب'}).locator('input').fill(DESCRIPTION);
   for (const text of ['مفتوح', 'موديل قديم', 'بدون بلوكة نص']) await dialog.locator('.mold-choice label', {hasText: text}).click();
   await dialog.locator('.mold-choice', {hasText: 'عدد الرجاجات'}).locator('label', {hasText: '2'}).click();
   await dialog.locator('label.mold-field', {hasText: 'عرض القالب'}).locator('.mold-usual button', {hasText: '1380'}).click();
   await dialog.locator('label.mold-field', {hasText: 'مقاس الجلب'}).locator('.mold-usual button', {hasText: '795'}).click();
-  await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city is filled in from the customer's «الدمام»)
+  await dialog.locator('label.mold-field', {hasText: 'رقم القالب'}).locator('input').fill('YR-14'); // required since 2026-11-14 (the city chosen with the address)
   const payment = dialog.locator('.mold-choice', {hasText: 'طريقة الدفع'}).first();
   await payment.locator('label', {hasText: 'نقدي'}).click();
   check(await dialog.locator('.mold-payment-terms-choice').count(), 0, 'cash: no terms asked');

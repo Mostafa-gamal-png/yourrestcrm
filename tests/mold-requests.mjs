@@ -459,7 +459,7 @@ const salesman = {crmMemberId: 'mem-1', name: 'أنور عبد الحكيم', em
     same(lib.moldRequestView(freeRow({data: {...free, designRequired: true}, lastError: {code: 'free_customer', at: after, notStored: true}}), me, [], true).sending.held, 'design_file', 'a request without its design file says so first (attaching it is the requester\'s to do)');
     const say = language => (ar, en) => language === 'en' ? en : ar;
     same([lib.moldHeldTexts.free_customer.name, lib.moldErrorText('free_customer', say('en')), lib.moldFieldNames['customer.erpCode'], lib.MOLD_CUSTOMER_TEXT.notInCrm, lib.MOLD_CUSTOMER_TEXT.free[0]],
-      [['بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)', 'Waiting for the production application update (a customer without a Yourrest code)'], 'Waiting for the production application update (a customer without a Yourrest code)', ['كود العميل', 'Customer code'], ['غير مسجل في الـCRM', 'Not in the CRM'], 'عميل غير موجود في الـCRM: سيُرسل الطلب إلى الإنتاج بالاسم وكود العميل'], 'the words: the hold, production\'s field, the sheet\'s and the form\'s');
+      [['بانتظار تحديث تطبيق الإنتاج (عميل بلا كود يورست)', 'Waiting for the production application update (a customer without a Yourrest code)'], 'Waiting for the production application update (a customer without a Yourrest code)', ['كود العميل', 'Customer code'], ['غير مرتبط بعميل في الـCRM', 'Not linked to a CRM customer'], 'يُرسل الطلب إلى الإنتاج باسم العميل وكوده كما كُتبا تمامًا، دون ربطه بعميل في الـCRM'], 'the words: the hold, production\'s field, the sheet\'s and the form\'s (since 2026-11-21: typed only)');
     const texts = [rules.MOLD_CUSTOMER_NAME_REQUIRED, rules.MOLD_CUSTOMER_NAME_LONG, rules.MOLD_ERP_CODE_REQUIRED, rules.MOLD_ERP_CODE_LONG, 'اكتب اسم العميل وكود العميل', rules.MOLD_CITY_REQUIRED, rules.MOLD_MOLD_NO_REQUIRED];
     same([texts.filter(text => typeof dictionary[text] !== 'string'), [lib.MOLD_CUSTOMER_TEXT.nameRequired, lib.MOLD_CUSTOMER_TEXT.nameLong, lib.MOLD_CUSTOMER_TEXT.erpRequired, lib.MOLD_CUSTOMER_TEXT.erpLong].map(([ar, en]) => dictionary[ar] === en)], [[], [true, true, true, true]], 'every refusal has its English pair, the form\'s the same as the server\'s');
     same(texts.filter(text => !readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8').includes(text) && !Object.values(rules).includes(text)), [], 'and the server says them');
@@ -496,6 +496,25 @@ const salesman = {crmMemberId: 'mem-1', name: 'أنور عبد الحكيم', em
     same([dictionary['اختر المدينة'], dictionary['اكتب رقم القالب'], dictionary['اكتب كود العميل']], ['Choose the city', 'Enter the mold number', 'Enter the customer code'], 'the server\'s refusals have their English pairs');
     const route = readFileSync(path.join(root, 'app/api/mold-requests/route.ts'), 'utf8');
     same([/data\.erpWithCrm|erpWithCrm:true/.test(route), /moldSendsErpWithCrm\(customer\)/.test(route), readFileSync(path.join(root, 'lib/mold-requests-server.ts'), 'utf8').includes("erpWithCrm:row.data.erpWithCrm===true")], [true, true, true], 'the mark is set when a request is stored or edited, and read when it is sent');
+  }
+  // ---- 2026-11-21 (the owner, after a request reached production under another factory whose ERP code was the one typed: «انا قلتلك الخانة
+  // دى للكتابة فقط وايا يكن يتكتب فيها صح او خطأ يروح انت مالك تصحح ليه»): the customer is typed only. Nothing typed is looked up among the
+  // CRM's customers, by the form or the server; a typed request's body is the name and code as typed; an edit keeps a stored link only
+  // while its two fields say what was stored (moldSameCustomerTyped).
+  {
+    const same21 = lib.moldSameCustomerTyped, stored = {name: 'مصنع النور', erpCode: '117'};
+    same([same21({name: 'مصنع النور', erpCode: '117'}, stored), same21({name: '  مصنع   النور ', erpCode: ' ١١٧ '}, stored), same21({name: 'مصنع النور', erpCode: '\u200f117\u200e'}, stored),
+      same21({name: 'مصنع الريان للطوب', erpCode: '117'}, stored), same21({name: 'مصنع النور', erpCode: '118'}, stored), same21({name: 'مصنع النور', erpCode: ''}, stored), same21({name: '', erpCode: '117'}, stored),
+      same21({name: 'مصنع', erpCode: ''}, {name: 'مصنع'}), same21({name: 'مصنع'}, {name: 'مصنع', erpCode: ''}), same21(null, stored), same21('مصنع النور', stored), same21([], stored), same21({name: 42, erpCode: 117}, stored)],
+      [true, true, true, false, false, false, false, true, true, false, false, false, false], 'the stored customer kept only while both fields say what was stored, compared as typed text is read (spaces, Arabic-Indic digits, invisible marks); another name or code, or anything else, is not it');
+    // A typed name with a code another CRM customer has (the case of 2026-11-21): the body carries the name and code as typed, no Yourrest number.
+    const typed = {...data, customer: {crmNumber: null, name: 'مصنع الريان للطوب', address: 'المنطقة الصناعية', city: 'Jeddah - جده', erpCode: '117'}, payment: 'cash'};
+    same(moldRequestBody({id: 'mr-typed', ...typed}).customer, {crmNumber: null, name: 'مصنع الريان للطوب', address: 'المنطقة الصناعية', city: 'Jeddah - جده', erpCode: '117'}, 'a typed request: the name and code exactly as typed, crmNumber null (production takes them as they are)');
+    const source = file => readFileSync(path.join(root, file), 'utf8');
+    const route = source('app/api/mold-requests/route.ts'), form = source('app/mold-requests.tsx'), fields = source('app/mold-customer-fields.tsx');
+    same([/uniqueCustomerCodes|customerCodeKey|customerIdentityState/.test(route), /moldCustomerByErpCode|customerErpCodes|customerCodeKey/.test(form + fields), /customers=\{customers\}[^>]*editing=|MoldRequestDialog customers/.test(form), /linked\.data\.(address|city)/.test(form)],
+      [false, false, false, false], 'no code is looked up: the route reads no customer code or code mapping, the form matches no customer by its code and fills no address or city from one');
+    same([route.includes('moldSameCustomerTyped(input.customer,row.data.customer)'), form.includes('moldSameCustomerTyped({name:customerText.name,erpCode:customerText.code}')], [true, true], 'the server and the form keep a stored link by the same rule');
   }
   // ---- the customer's signature (the owner, 2026-11-04): who needs it, the checks, the body unchanged, the view, the pending item, the words
   {

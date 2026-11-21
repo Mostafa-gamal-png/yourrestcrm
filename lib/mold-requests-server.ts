@@ -18,6 +18,10 @@
 // application reads crmNumber as optional and would store the request without its ERP code, silently. Until then, and should production
 // still refuse it for its missing Yourrest number, it waits in the CRM (error free_customer, never final), tried again every 6 hours, on
 // its requester's resend, and at once when the update is learned.
+// Since 2026-11-21 (the owner: «الخانة دى للكتابة فقط») every new request is of that shape: the name and ERP code exactly as typed, never
+// linked to a CRM customer by its code, so its body is customer {crmNumber: null, name, address, city, erpCode} (moldRequestBody), which
+// production's application stores as typed (it fills a customer's ERP code from the CRM's customers list only by a Yourrest number, and
+// this body has none). A request stored linked before keeps its crmNumber and goes byte for byte as before.
 // A request whose requester chose to send the customer a link to sign from (2026-11-10: data.awaitsSignature) is kept the same way as one
 // waiting for a file, until the customer signs (MOLD_HELD_FOR_SQL 'customer_signature', after the files' reasons); the signing (from the
 // link, or on the device from the request's sheet) sends it at once (lib/mold-sign-server.ts).

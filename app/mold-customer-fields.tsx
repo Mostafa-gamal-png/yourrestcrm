@@ -1,9 +1,7 @@
 'use client';
 import React,{useId,useRef} from 'react';
 import {CheckCircle2,Info} from 'lucide-react';
-import type {Row} from '@/lib/crm';
-import {customerCodeKey,customerErpCodes} from '@/lib/customer-identity';
-import {MOLD_CUSTOMER_TEXT,yourrestNumber} from '@/lib/mold-requests';
+import {MOLD_CUSTOMER_TEXT} from '@/lib/mold-requests';
 import VoiceField from './voice-field';
 
 type Say=(ar:string,en:string)=>string;
@@ -11,42 +9,31 @@ type Field='name'|'code';
 /** What is typed in the two fields: the customer's name and ERP code (the owner, 2026-11-09: «اسم العميل بيتكتب نص»، «المندوب يكتب الكود
  *  والكود المطلوب كود erp»). */
 export type MoldCustomerText={name:string;code:string};
+/** The CRM customer a request being edited was stored with (its name and ERP code as stored), while the two fields still say exactly
+ *  that; null for every other case. */
+export type MoldKeptCustomer={name:string;code:string};
 
-/** A code as the identity tables compare it (customerCodeKey: Arabic-Indic digits as plain ones, upper case), without spaces. */
-const codeKey=(value:unknown)=>customerCodeKey(value).replace(/\s+/g,'');
 /** The ERP code as the ERP writes it (2026-11-09: «والأرقام فيه أرقام إنجليزية»): Arabic-Indic and Persian digits typed become plain ones. */
 const englishDigits=(value:string)=>value.replace(/[٠-٩]/g,digit=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit))).replace(/[۰-۹]/g,digit=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)));
-/** The ERP code a customer's request is filled with when it is chosen: its own ('' for none). */
-export const moldCustomerErpCode=(row:Row)=>String(row.data.code??'').trim();
-
-type Entry={row:Row;erp:string[];usable:boolean};
-const entriesOf=(customers:Row[]):Entry[]=>customers.map(row=>({row,erp:customerErpCodes(row).map(codeKey),usable:!!yourrestNumber(String(row.data.internalCode||''))}));
-/** The one customer the typed ERP code names (its current code: one it only had before names nobody), when exactly one of the reader's customers has it and
- *  it has a Yourrest number: the request is then linked to it as if it were chosen (the server decides the same way, over every customer
- *  and the CRM's code mappings). null otherwise: a customer not in the CRM. */
-export function moldCustomerByErpCode(customers:Row[],code:string):Row|null{
- const key=codeKey(code);
- if(!key)return null;
- const found=entriesOf(customers).filter(entry=>entry.erp.includes(key));
- return found.length===1&&found[0].usable?found[0].row:null;
-}
-/** The mold request form's customer: «اسم العميل» (free text, dictated, required) and «كود العميل» (its ERP code) side by side (stacked on a narrow phone),
- *  both typed, with no suggestions (the owner, 2026-11-14: «خلى ادخال اسم ورقم العميل كتابة من غير اقتراحات»; suggestions from the CRM's
- *  customers came 2026-11-09). `linked` is the customer the request is linked to: the request's own when editing, else the one customer
- *  of the reader's whose current ERP code is the one typed (moldCustomerByErpCode), said as «مرتبط بالعميل <name> · YR-C-…»; with none,
- *  what is typed is a customer not in the CRM, said so under the fields (the request goes to production with the name and ERP code). The
- *  ERP code, labelled «كود العميل» (the owner, 2026-11-14: «سميه كود العميل بس»), is required for every new request since that day
- *  (its hint says so; the form and the server refuse one without it). Typing in either field lets an earlier link go (onChoose(null)),
- *  keeping the text. Typing freely is never blocked. */
-export default function MoldCustomerFields({chosenId,linked,text,onText,onChoose,errors={},say}:{chosenId:string;linked:Row|null;text:MoldCustomerText;onText:(text:MoldCustomerText)=>void;onChoose:(row:Row|null)=>void;errors?:{name?:string;code?:string;customer?:string};say:Say}){
+/** The mold request form's customer: «اسم العميل» (free text, dictated, required) and «كود العميل» (its ERP code) side by side (stacked on a
+ *  narrow phone), both typed, with no suggestions (the owner, 2026-11-14: «خلى ادخال اسم ورقم العميل كتابة من غير اقتراحات»), and since
+ *  2026-11-21 typed only (the owner, after a request reached production under another factory: «انا قلتلك الخانة دى للكتابة فقط وايا يكن
+ *  يتكتب فيها صح او خطأ يروح انت مالك تصحح ليه»). What is typed goes to production exactly as typed (trimmed, Arabic-Indic digits of the
+ *  code as plain ones): the CRM no longer looks the code up among its customers, so nothing typed links the request to a CRM customer,
+ *  fills its address or city, or gives it a Yourrest number (until that day the one customer whose current ERP code was the one typed
+ *  was linked, by the form and by the server, and production received that customer's name and number instead of the name typed). The
+ *  server decides the same way (app/api/mold-requests/route.ts askedCustomer). `kept` is the one exception: the edit of a request stored
+ *  linked to a CRM customer before 2026-11-21 keeps that link while both fields still say what was stored, said as «مرتبط بالعميل <name> ·
+ *  كود العميل: …»; typing anything else in either field lets it go, and the request then goes with what is typed (back to the stored text,
+ *  the link is kept again). The ERP code, labelled «كود العميل» (the owner, 2026-11-14: «سميه كود العميل بس»), is required for every new
+ *  request since that day (its hint says so; the form and the server refuse one without it). Typing freely is never blocked. */
+export default function MoldCustomerFields({kept,text,onText,errors={},say}:{kept:MoldKeptCustomer|null;text:MoldCustomerText;onText:(text:MoldCustomerText)=>void;errors?:{name?:string;code?:string;customer?:string};say:Say}){
  const id=useId(),nameInput=useRef<HTMLInputElement|HTMLTextAreaElement>(null);
- const type=(field:Field,value:string)=>{onText({...text,[field]:value});if(chosenId)onChoose(null);};
+ const type=(field:Field,value:string)=>onText({...text,[field]:value});
  const describedBy=(field:Field)=>[errors[field]?id+'-'+field+'-error':'',errors.customer?id+'-error':'',field==='code'?id+'-hint':''].filter(Boolean).join(' ')||undefined;
  const fieldProps=(field:Field)=>({'aria-invalid':!!errors[field]||!!errors.customer||undefined,'aria-describedby':describedBy(field),autoComplete:'off'});
  const typed=!!(text.name.trim()||text.code.trim());
- // The linked customer's ERP code, not its Yourrest code (the owner, 2026-11-14: «خلي كود ERP يظهر بدل كود يورست»): its own, else the one typed.
- const linkedErp=linked?moldCustomerErpCode(linked)||englishDigits(text.code.trim()):'';
- return <div className="mold-customer-fields" aria-invalid={!!(errors.name||errors.code||errors.customer)} data-linked={linked?'true':typed?'false':undefined}>
+ return <div className="mold-customer-fields" aria-invalid={!!(errors.name||errors.code||errors.customer)} data-linked={kept?'true':typed?'false':undefined}>
   <div className="mold-customer-inputs">
    <div className="mold-customer-field" data-field="name" aria-invalid={!!(errors.name||errors.customer)||undefined}>
     <VoiceField label={say('اسم العميل','Customer name')} value={text.name} onChange={value=>type('name',value)} contextKey="mold-customer" inputRef={nameInput}
@@ -60,11 +47,11 @@ export default function MoldCustomerFields({chosenId,linked,text,onText,onChoose
     {errors.code&&<small className="field-error" id={id+'-code-error'}>{errors.code}</small>}
    </div>
   </div>
-  {/* Linked to one of the CRM's customers (named by its ERP code): its name, ERP code and city; production still identifies it by its
-      Yourrest number, which the reader does not need to see (2026-11-14). */}
-  {linked&&<p className="mold-customer-chosen" role="status"><span><CheckCircle2 size={16} aria-hidden="true"/>{say(...MOLD_CUSTOMER_TEXT.linked)} <bdi dir="auto">{String(linked.data.name||'')}</bdi><small>{linkedErp?<>{say(...MOLD_CUSTOMER_TEXT.code)}: <bdi dir="ltr">{linkedErp}</bdi></>:null}{linkedErp&&linked.data.city?' · ':null}{linked.data.city?<bdi>{String(linked.data.city)}</bdi>:null}</small></span></p>}
-  {/* Anything else typed is a customer not in the CRM: the request goes to production with the name and ERP code (never blocked). */}
-  {!linked&&typed&&<p className="mold-customer-free" role="status"><Info size={16} aria-hidden="true"/><span>{say(...MOLD_CUSTOMER_TEXT.free)}</span></p>}
+  {/* The edit of a request stored linked to a CRM customer (before 2026-11-21), its two fields unchanged: the link it keeps, by the name
+      and ERP code it was stored with (never its Yourrest code, 2026-11-14). */}
+  {kept&&<p className="mold-customer-chosen" role="status"><span><CheckCircle2 size={16} aria-hidden="true"/>{say(...MOLD_CUSTOMER_TEXT.linked)} <bdi dir="auto">{kept.name}</bdi><small>{kept.code?<>{say(...MOLD_CUSTOMER_TEXT.code)}: <bdi dir="ltr">{kept.code}</bdi></>:null}</small></span></p>}
+  {/* Anything typed goes to production exactly as typed (2026-11-21), never linked by its code (never blocked). */}
+  {!kept&&typed&&<p className="mold-customer-free" role="status"><Info size={16} aria-hidden="true"/><span>{say(...MOLD_CUSTOMER_TEXT.free)}</span></p>}
   {errors.customer&&<small className="field-error" id={id+'-error'}>{errors.customer}</small>}
  </div>;
 }

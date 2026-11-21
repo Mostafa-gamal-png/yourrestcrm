@@ -6,10 +6,10 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {useLanguage,direction,getLanguage,t} from '@/lib/i18n';
 import {definiteSubmitRejection,submitJson,SubmitError} from '@/lib/client-submit';
 import type {Member,Row} from '@/lib/crm';
-import {MOLD_ORDER_TEXT,moldOrdersUnreadableText,type MoldOrderView,MOLD_RETURNED_TEXT,moldReturnedName,type MoldReturned,MOLD_PAYMENT_TERMS_REQUIRED_TEXT,MOLD_PAYMENT_TERMS_TITLE,MOLD_TERMS_ACCEPT_TEXT,MOLD_TERMS_ACCEPTED_TEXT,moldPaymentTermsNames,type MoldPaymentTerms,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,MOLD_CUSTOMER_TEXT,MOLD_CITY_TEXT,MOLD_MOLD_NO_TEXT,moldCityText,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSendingNames,moldStatusNames,moldWaitingNames,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
+import {MOLD_ORDER_TEXT,moldOrdersUnreadableText,type MoldOrderView,MOLD_RETURNED_TEXT,moldReturnedName,type MoldReturned,MOLD_PAYMENT_TERMS_REQUIRED_TEXT,MOLD_PAYMENT_TERMS_TITLE,MOLD_TERMS_ACCEPT_TEXT,MOLD_TERMS_ACCEPTED_TEXT,moldPaymentTermsNames,type MoldPaymentTerms,MOLD_STAGES,MOLD_STAGE_NAMES,MOLD_CORES,MOLD_MODELS,MOLD_HALF_BLOCKS,MOLD_ADDRESS_TEXT,MOLD_DESIGN_FILE_PICKER_TITLE,MOLD_DESIGN_FILE_REQUIRED_TEXT,MOLD_PENDING_REFRESH_MS,MOLD_QUOTE_FILE_REQUIRED_TEXT,MOLD_QUOTE_PO_MISSING_ATTACH,MOLD_QUOTE_PO_MISSING_OTHERS,MOLD_QUOTE_PO_MISSING_PRODUCTION,MOLD_QUOTE_PO_MISSING_TEXT,MOLD_SAME_REASON_TEXT,MOLD_SIGNATURE_TEXT,moldApprovalNames,moldChangeRefused,moldErrorText,moldFieldNames,moldHeldTexts,MOLD_CUSTOMER_TEXT,MOLD_CITY_TEXT,MOLD_MOLD_NO_TEXT,moldCityText,moldOrderNoText,moldPaymentNames,moldPendingUnreadableText,moldPendingAgain,moldPendingKey,moldPendingTarget,moldRestoredText,moldSameCustomerTyped,moldSendingNames,moldStatusNames,moldWaitingNames,type MoldFileCategory,type MoldPayment,type MoldPendingAnswer,type MoldRequestView,type MoldRequestsAnswer,type MoldSignature,type MoldSpecs} from '@/lib/mold-requests';
 import {MOLD_CATEGORY_MAX_FILES,MOLD_LIMITS,MOLD_SHEET_CITIES,MOLD_USUAL,moldAddress,moldCancelReasonUsed,moldCity,moldCustomerName,moldErpCode,moldPayment,validateMoldSpecs} from '@/portable/mold-rules.mjs';
 import VoiceField from './voice-field';
-import MoldCustomerFields,{moldCustomerByErpCode,type MoldCustomerText} from './mold-customer-fields';
+import MoldCustomerFields,{type MoldCustomerText,type MoldKeptCustomer} from './mold-customer-fields';
 import {MoldDesignFiles,MoldDesignPicker,MoldPendingDesignFiles,designNeedsWarning,pendingFilesApprovedNote,designUploadQueue,designUsed,designWarningText,revealCentered,type DesignChoice,type DesignUpload,type DesignUploadQueue} from './mold-design-files';
 import {MoldSigningStep,noteServerTime} from './mold-signature';
 import {viewerFilesFromRequest,type MoldViewerFile} from '@/lib/mold-document-view';
@@ -278,7 +278,7 @@ export function MoldRequestsPage({me,records}:{me:Member;records:Row[]}){
   </>}
   {openOrder&&<MoldOrderSheet key={openOrder.id} order={openOrder} approver={approver} statusAt={data?.orders?.at||null} onClose={()=>setOrderId(null)} say={say}/>}
   {open&&<MoldRequestSheet key={open.id+':'+open.version} view={open} current={data?.pending?.items.find(item=>item.inCrm&&item.crmRequestId===open.id)||null} linkReady={!!data?.linkReady} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} statusAt={open.remoteAt} customers={customers} uploads={uploads} uploading={uploading} onClose={()=>{setOpenId(null);setApproverView(null);}} onChanged={changed}/>}
-  {creating&&<MoldRequestDialog customers={customers} uploads={uploads} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
+  {creating&&<MoldRequestDialog uploads={uploads} quotePo={!!data?.quotePo} signs={!!data?.signatureRequired} onClose={()=>setCreating(false)} onSaved={view=>{setCreating(false);void refresh();if(view)setOpenId(view.id);}}/>}
  </section>;
 }
 
@@ -543,7 +543,7 @@ function MoldRequestSheet({view:initial,current,linkReady,quotePo=false,signs=fa
     {reasonError&&<p className="form-error mold-reason-error" role="alert">{reasonError}</p>}
     <div className="mold-actions"><button type="submit" className="btn danger" disabled={action.busy}>{say('تأكيد الإلغاء','Confirm cancellation')}</button><button type="button" className="btn subtle" onClick={()=>setCancelling(false)}>{say('رجوع','Back')}</button></div>
    </form>}
-   {editing&&<MoldRequestDialog customers={customers} editing={view} uploads={uploads} quotePo={quotePo} signs={signs} used={{design:designUsed(view,mine),quote:designUsed(view,mine,'quote'),po:designUsed(view,mine,'po')}} onClose={()=>setEditing(false)} onSaved={next=>{setEditing(false);if(next)setView(next);onChanged();}} onRefused={next=>{setView(next);onChanged();}}/>}
+   {editing&&<MoldRequestDialog editing={view} uploads={uploads} quotePo={quotePo} signs={signs} used={{design:designUsed(view,mine),quote:designUsed(view,mine,'quote'),po:designUsed(view,mine,'po')}} onClose={()=>setEditing(false)} onSaved={next=>{setEditing(false);if(next)setView(next);onChanged();}} onRefused={next=>{setView(next);onChanged();}}/>}
   </SheetContent>
  </Sheet>;
 }
@@ -606,12 +606,11 @@ const blank:Record<string,string>={description:'',core:'',vibrators:'',model:'',
  *  quotation and PO numbers are not on the form any more (2026-11-05): a request that has some keeps them as stored. */
 const asForm=(specs:MoldSpecs,payment:MoldPayment|null,paymentTerms:MoldPaymentTerms|null=null)=>({...Object.fromEntries(Object.entries(blank).map(([key])=>[key,specs[key as keyof MoldSpecs]===null||specs[key as keyof MoldSpecs]===undefined?'':String(specs[key as keyof MoldSpecs])])),payment:payment||'',paymentTerms:payment==='deferred'&&paymentTerms||''});
 
-/** Whether an edit changes the customer (2026-11-09): another of the CRM's customers, or one linked or unlinked; for a customer not in the
- *  CRM, its name or ERP code (compared as stored: moldCustomerName, moldErpCode). A linked customer's code typed anew is a change too
- *  since 2026-11-14 (it goes to production with the request). */
+/** Whether an edit changes the customer (2026-11-09): for a request stored linked to a CRM customer, its link let go (since 2026-11-21 by
+ *  typing anything else than what was stored in either field: the request then goes as typed, unlinked); for one not linked, its name or
+ *  ERP code (compared as stored: moldCustomerName, moldErpCode). The server decides the same way. */
 function customerChanges(editing:MoldRequestView,linkedId:string,name:string,code:string){
- // A linked customer's code is sent with it since 2026-11-14 (moldSendsErpWithCrm): a code typed anew is a change too.
- if(editing.customerId||linkedId){const typed=moldErpCode(code).erpCode;return linkedId!==editing.customerId||!!typed&&typed!==(editing.customerErpCode||'');}
+ if(editing.customerId)return linkedId!==editing.customerId;
  return moldCustomerName(name).name!==editing.customerName||moldErpCode(code).erpCode!==(editing.customerErpCode||'');
 }
 /** Whether an edit changes what the customer signed (2026-11-04): the specifications (an older request's own design link stays as it is),
@@ -644,15 +643,15 @@ async function seenPdfs(choices:DesignChoice[]){
  *  and uploaded first once the request is saved (the server keeps the request until one arrives, then sends it and its files). Every new
  *  request needs at least one design file too (2026-11-08, every role; the customer's signature does not count), and so does the edit of
  *  a request asked for under that rule (designRequired) that has none yet: refused the same way, before the signing step. The delivery
- *  address (2026-11-09) sits under the customer: filled in from the customer's registered address when one is chosen (again when another
- *  is), from the request's own when editing; changed for this request only, required, up to 300 characters, and read by the customer
- *  before signing. The customer is typed (the owner, 2026-11-09), its name and ERP code, with no suggestions (2026-11-14;
- *  MoldCustomerFields). Typing an ERP code exactly one of the CRM's customers has links the request to it (customerId; its address
- *  filled in, when none is typed yet); anything else is a customer not in the CRM, sent with the name and ERP code (both required then).
- *  The address is asked for always. The edit of a request never sent changes the customer the same way (a change of what was signed). */
-function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{customers:Row[];editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
+ *  address (2026-11-09) sits under the customer: typed for a new request, the request's own when editing; changed for this request only,
+ *  required, up to 300 characters, and read by the customer before signing. The customer is typed (the owner, 2026-11-09), its name and
+ *  ERP code, with no suggestions (2026-11-14; MoldCustomerFields), and since 2026-11-21 typed only (the owner: «الخانة دى للكتابة فقط»):
+ *  the request goes to production with the name and ERP code exactly as typed (both required), never linked to a CRM customer by its
+ *  code, its address and city never filled in from one. The edit of a request stored linked before keeps its link while the two fields
+ *  say what was stored (moldSameCustomerTyped, as the server decides); anything else typed is a change of what was signed. */
+function MoldRequestDialog({editing,uploads,used={},quotePo=false,signs=false,onClose,onSaved,onRefused}:{editing?:MoldRequestView;uploads:DesignUploadQueue;used?:Partial<Record<MoldFileCategory,number>>;quotePo?:boolean;signs?:boolean;onClose:()=>void;onSaved:(view:MoldRequestView|null)=>void;onRefused?:(view:MoldRequestView)=>void}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
- const [chosenId,setChosenId]=useState(editing?.customerId||''),[address,setAddress]=useState(editing?.customerAddress||''),
+ const [address,setAddress]=useState(editing?.customerAddress||''),
   // The city (2026-11-14): one of the sheet's; an older request's city that is not one of them is chosen again.
   [city,setCity]=useState(()=>moldCity(editing?.customerCity||'').city),[customerText,setCustomerText]=useState<MoldCustomerText>({name:editing?.customerName||'',code:editing?.customerErpCode||''}),[form,setForm]=useState<Record<string,string>>(editing?asForm(editing.specs,editing.payment,editing.paymentTerms):blank),[shown,setShown]=useState<Record<string,string>>({});
  // A refusal that carries the request as it now stands (it was sent meanwhile): counted, so the signing step gives way to the form, which
@@ -677,21 +676,12 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
  // What the customer reads at the signing step (2026-11-10, «يوقع داخل pdf»): the request's files already uploaded (an edit) and those
  // chosen in the form, still on the device, the quotation's and PO's first, then the design's (MoldDocumentViewer orders them).
  const signingDocuments=():MoldViewerFile[]=>[...(editing?viewerFilesFromRequest(editing.designFiles):[]),...ready.map(choice=>({key:'local:'+choice.key,name:choice.name,category:choice.category,kind:choice.kind||'other',file:choice.file}))];
- // The customer the request is linked to: the one chosen (or, editing, the request's own, which the page may not list), else the one the
- // ERP code names alone; none: a customer not in the CRM.
- const kept=useMemo<Row|null>(()=>editing?.customerId&&editing.crmNumber!==null?{id:editing.customerId,kind:'customer',parentId:null,assignedTo:'',branch:'',data:{name:editing.customerName,internalCode:'YR-C-'+String(editing.crmNumber).padStart(6,'0'),code:editing.customerErpCode},createdAt:'',updatedAt:'',version:0} as unknown as Row:null,[editing]);
- const chosen=chosenId?customers.find(row=>row.id===chosenId)||(kept?.id===chosenId?kept:null):null;
- const linked=chosen||moldCustomerByErpCode(customers,customerText.code),linkedId=linked?.id||'';
- // Linked by its ERP code (typed, 2026-11-14: no suggestions): its registered address fills the address when none is typed yet, or
- // replaces one filled in the same way for another customer (a code corrected); an address typed for the request is kept.
- const lastLinked=useRef(linkedId),autoFilled=useRef<string|null>(null);
- // The city the same way (2026-11-14): the linked customer's own when it is one of the sheet's (moldCity, as moldRequestCity maps it).
- const autoCity=useRef<string|null>(null);
- useEffect(()=>{if(linkedId&&linkedId!==lastLinked.current&&linked){
-  if(linked.data.address&&(!address.trim()||address===autoFilled.current)){const next=String(linked.data.address);autoFilled.current=next;setAddress(next);setShown(previous=>{if(!('address' in previous))return previous;const rest={...previous};delete rest.address;return rest;});}
-  const own=moldCity(String(linked.data.city||'')).city;
-  if(own&&(!city||city===autoCity.current)){autoCity.current=own;setCity(own);setShown(previous=>{if(!('city' in previous))return previous;const rest={...previous};delete rest.city;return rest;});}
- }lastLinked.current=linkedId;},[linkedId,linked,address,city]);
+ // The customer is typed only (2026-11-21): nothing typed links the request to a CRM customer, fills its address or its city. The one
+ // link there is: the edit of a request stored linked before, kept while both fields say exactly what was stored (moldSameCustomerTyped,
+ // as the server decides); typing anything else lets it go, and the request goes as typed.
+ const storedLink=!!editing?.customerId&&editing.crmNumber!==null;
+ const linked:MoldKeptCustomer|null=storedLink&&moldSameCustomerTyped({name:customerText.name,erpCode:customerText.code},{name:editing!.customerName,erpCode:editing!.customerErpCode})?{name:editing!.customerName,code:editing!.customerErpCode||''}:null;
+ const linkedId=linked?editing!.customerId:'';
  const clear=(key:string)=>setShown(previous=>{if(!(key in previous))return previous;const next={...previous};delete next[key];return next;});
  const set=(key:string,value:string)=>{setForm(previous=>({...previous,[key]:value}));clear(key);};
  const errors={...shown,...action.fields};
@@ -713,8 +703,8 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    ...(designRequired&&!hasDesign&&!designs.some(choice=>!choice.refusal)?{designFile:say(...MOLD_DESIGN_FILE_REQUIRED_TEXT)}:{}),
    // The delivery address (2026-11-09): required, up to 300 characters as the server counts.
    ...(place.error?{address:say(...MOLD_ADDRESS_TEXT[place.error])}:{}),
-   // The customer (2026-11-09): a linked one needs nothing more (its ERP code, if typed, up to 50 characters); one not in the CRM its
-   // name and ERP code, as the server counts them.
+   // The customer (2026-11-09): its name and ERP code, as the server counts them; a stored link kept by an edit (its fields as stored)
+   // needs nothing more than its code (none asked of the correction of a request finance returned).
    ...(!linked&&typedName.error?{'customer.name':say(...MOLD_CUSTOMER_TEXT[typedName.error==='required'?'nameRequired':'nameLong'])}:{}),
    ...(typedCode.error==='long'||(strict||!linked)&&typedCode.error?{'customer.erpCode':say(...MOLD_CUSTOMER_TEXT[typedCode.error==='required'?'erpRequired':'erpLong'])}:{})};
   if(Object.keys(errors).length){setShown(errors);return;}
@@ -725,7 +715,7 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   setAsking(false);
   // The files go once the request is saved (each with its own requestId, kept for retries), the request's own change first.
   const specs={...checked.specs};delete specs.designUrl;
-  // The customer: the linked one by its id (with the ERP code typed, if any), or the name and ERP code of one not in the CRM.
+  // The customer as typed (2026-11-21), with the request's own customerId only while its stored link is kept (the server keeps it then).
   const customer={...(linkedId?{customerId:linkedId}:{}),customer:{name:typedName.name,erpCode:typedCode.erpCode}};
   // The city as the sheet writes it (2026-11-14); a correction with none chosen sends none and keeps its stored one.
   const where=town.city?{city:town.city}:{};
@@ -733,12 +723,12 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
   // What the customer reads before signing: the customer, the mold and how they pay: the request's data the signature covers (its files
   // may change later without a new signature, so they are not part of it; no number since 2026-11-05).
   const choose=(names:Record<string,string>,value:string)=>say(names[value]||value,value);
-  // The customer as it goes (2026-11-09): the linked one's registered name, or the name typed; its ERP code when there is one.
+  // The customer as it goes (2026-11-09): the name as stored for a kept link, else the name typed; its ERP code. No Yourrest code (since
+  // 2026-11-21 a new request has none: the customer reads the name and code that go to production, as the link's page shows them).
   // As text (2026-11-11): the signature page prints it as the screen shows it.
-  const customerName=linked?String(linked.data.name||''):typedName.name;
+  const customerName=linked?linked.name:typedName.name;
   const summary:[string,string][]=[[say('العميل','Customer'),customerName],
    ...(typedCode.erpCode?[[say(...MOLD_CUSTOMER_TEXT.code),typedCode.erpCode] as [string,string]]:[]),
-   ...(!linked?[[say('كود يورست','Yourrest code'),say(...MOLD_CUSTOMER_TEXT.notInCrm)] as [string,string]]:[]),
    [say('العنوان','Address'),place.address],...(town.city?[[say(...MOLD_CITY_TEXT.label),moldCityText(town.city,say)] as [string,string]]:[]),[say('الوصف','Description'),String(specs.description||'')],
    [say('الكمية','Quantity'),String(specs.quantity??'')],[say('العلب','Core'),choose(MOLD_CORES,String(specs.core||''))],[say('الموديل','Model'),choose(MOLD_MODELS,String(specs.model||''))],
    ...(payment?[[say('الدفع','Payment'),say(...moldPaymentNames[payment as MoldPayment])] as [string,string]]:[]),
@@ -778,17 +768,16 @@ function MoldRequestDialog({customers,editing,uploads,used={},quotePo=false,sign
    <form className="mold-form" onSubmit={submit} noValidate hidden={!!signing}>
     {correcting&&<ReturnedNote returned={editing!.returned!} say={say}/>}
     {/* The customer as typed, name and ERP code, with no suggestions (the owner, 2026-11-14: «خلى ادخال اسم ورقم العميل كتابة من غير
-        اقتراحات»); an ERP code one of the CRM's customers has links the request to it; a customer not in the CRM never blocks the request. */}
-    <MoldCustomerFields chosenId={chosen?chosenId:''} linked={linked} text={customerText} say={say}
+        اقتراحات»), typed only since 2026-11-21 («الخانة دى للكتابة فقط»): sent as typed, never linked by its code, never blocked. */}
+    <MoldCustomerFields kept={linked} text={customerText} say={say}
      errors={{name:errors['customer.name']&&t(errors['customer.name']),code:errors['customer.erpCode']&&t(errors['customer.erpCode']),customer:errors.customer&&t(errors.customer)}}
-     onText={next=>{setCustomerText(next);clear('customer');clear('customer.name');clear('customer.erpCode');}}
-     onChoose={row=>{if(!row){setChosenId('');return;}setChosenId(row.id);setAddress(String(row.data.address||''));clear('address');}}/>
-    {/* The delivery address (2026-11-09), asked for always: filled in from the linked customer's registered address, typed for another. */}
+     onText={next=>{setCustomerText(next);clear('customer');clear('customer.name');clear('customer.erpCode');}}/>
+    {/* The delivery address (2026-11-09), asked for always: typed for the request (since 2026-11-21 never filled in from a CRM customer). */}
     <div className="mold-address" aria-invalid={!!errors.address}>
      <VoiceField label={say('العنوان','Address')} value={address} onChange={value=>{setAddress(value);clear('address');}} multiline rows={2} contextKey={'mold-address:'+(editing?.id||'new')} inputProps={{dir:'auto',autoComplete:'street-address','aria-invalid':!!errors.address||undefined}}/>
      {errors.address&&<small className="field-error">{t(errors.address)}</small>}</div>
-    {/* The city (the owner, 2026-11-14: «خلي المدينة … إجباري»): one of the production sheet's, filled in from the linked customer's own
-        when it is one of them; required. */}
+    {/* The city (the owner, 2026-11-14: «خلي المدينة … إجباري»): one of the production sheet's, chosen; required (since 2026-11-21 never
+        filled in from a CRM customer). */}
     <label className="mold-field mold-city" aria-invalid={!!errors.city}>{say(...MOLD_CITY_TEXT.label)}
      <select value={city} onChange={event=>{setCity(event.target.value);clear('city');}} aria-invalid={!!errors.city||undefined} data-field="city">
       <option value="">{say(...MOLD_CITY_TEXT.choose)}</option>
