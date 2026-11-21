@@ -22,6 +22,7 @@ import {proposeCustomerEdit,decideCustomerEdit,customerEditHistoryEntry,type Cus
 import {proposesCustomerEdit,marketingCorrectionWaits,customerEditProposal,DIRECT_EDIT,CAPACITY_EDIT,type CustomerEditDirect} from '@/lib/customer-edit-requests';
 import {capacityEditIsDirect,keepAbsentCapacity,withCapacityOnly} from '@/lib/customer-capacity';
 import {CUSTOMER_DECORATIONS} from '@/lib/crm-context-records';
+import {keepAbsentContacts} from '@/lib/customer-contacts';
 import {carryRetiredClassification,changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
 import {isFieldRole,isMarketingRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
@@ -238,6 +239,9 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
   // «الطاقة الإنتاجية والاحتياج» (lib/customer-capacity.ts, 2026-11-21): a save that does not carry one of the three entered fields (a page or a
   // device queue of the release before) keeps the stored value; an empty one removes it.
   keepAbsentCapacity(data,inputData,old?.data);
+  // «المسؤولون» (lib/customer-contacts.ts, 2026-11-21): the roles and the contacts beyond the second, kept when a save does not carry them;
+  // a second left empty with others after it takes the first of them.
+  keepAbsentContacts(data,inputData,old?.data);
   if(changedClassification(old?.data,data).length&&!canClassifyCustomer({kind:'customer',assignedTo:data.assignedTo,branch:data.branch},c.members,c.me))throw new CRMError(CLASSIFICATION_REFUSED,403);
  }
  if(kind==='factory'){

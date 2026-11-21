@@ -2,6 +2,7 @@ import type {Member} from './crm';
 import {CLASSIFICATION_CHOICE_FIELDS,CLASSIFICATION_TEXT} from './customer-classification';
 import {isFieldRole,isMarketingRole} from './roles';
 import {CAPACITY_TEXT} from './customer-capacity';
+import {contactsText,contactTitleLabel,type CustomerContact} from './customer-contacts';
 
 /** «طلبات تعديل بيانات العميل» (the owner, 2026-11-15, item 4 of the GSCO comparison list, after GSCO 2.13.55 and 2.13.73 on its projects):
  *  a correction of a customer's details by a representative, a supervisor or customer service no longer changes the customer: it becomes a
@@ -19,7 +20,7 @@ import {CAPACITY_TEXT} from './customer-capacity';
 /** The classifications (lib/customer-classification.ts, 2026-11-18) are among them for the supervisor, the only member who sends a request
  *  and may set them (their team's customers); a representative's or customer service's save that changes one is refused before a request
  *  is made (app/api/crm/route.ts), so their requests never carry them. */
-export const CUSTOMER_EDIT_FIELDS=['name','region','customerType','customerKind','opportunityGrade','gradeNotes','factorySize','customerInterest','customerStatus','category','phone','contact','city','location','shortAddress','address','email','contact2','phone2','email2','machineCount','machineTypes','moldsInUse','productionCapacity','annualDemand','supplier','notes'] as const;
+export const CUSTOMER_EDIT_FIELDS=['name','region','customerType','customerKind','opportunityGrade','gradeNotes','factorySize','customerInterest','customerStatus','category','phone','contact','contactTitle','city','location','shortAddress','address','email','contact2','contactTitle2','phone2','email2','contacts','machineCount','machineTypes','moldsInUse','productionCapacity','annualDemand','supplier','notes'] as const;
 export type CustomerEditField=typeof CUSTOMER_EDIT_FIELDS[number];
 /** «الطاقة الإنتاجية والاحتياج» (lib/customer-capacity.ts, 2026-11-21): the three entered fields travel in a request like the others; a
  *  representative's or a marketing officer's change of them ONLY, on a customer assigned to them, is saved directly instead (capacityEditIsDirect,
@@ -37,7 +38,7 @@ export const CUSTOMER_EDIT_FIELD_TEXT:Record<CustomerEditField,[string,string]>=
  customerStatus:['حالة العميل','Customer status'],category:['فئة المصنع','Factory category'],phone:['الجوال','Mobile'],contact:['مسؤول التواصل','Contact person'],
  city:['المدينة','City'],location:['اللوكيشن','Location'],shortAddress:['العنوان الوطني المختصر','Short national address'],address:['العنوان','Address'],
  email:['بريد المسؤول الأول','First contact email'],contact2:['اسم المسؤول الثاني','Second contact name'],phone2:['جوال المسؤول الثاني','Second contact mobile'],
- email2:['بريد المسؤول الثاني','Second contact email'],machineCount:['عدد الماكينات في الشيت','Machine count in the sheet'],machineTypes:['أنواع الماكينات في الشيت','Machine types in the sheet'],
+ email2:['بريد المسؤول الثاني','Second contact email'],contactTitle:['صفة المسؤول الأول','First contact\'s role'],contactTitle2:['صفة المسؤول الثاني','Second contact\'s role'],contacts:['مسؤولون إضافيون','Additional contacts'],machineCount:['عدد الماكينات في الشيت','Machine count in the sheet'],machineTypes:['أنواع الماكينات في الشيت','Machine types in the sheet'],
  moldsInUse:CAPACITY_TEXT.moldsInUse,productionCapacity:CAPACITY_TEXT.productionCapacity,annualDemand:CAPACITY_TEXT.annualDemand,
  supplier:['مورد القوالب والقطع','Molds and parts supplier'],notes:['ملاحظات المصنع','Factory notes']
 };
@@ -94,7 +95,17 @@ export function liveStage(held:Pick<CustomerEditHeld,'stage'|'requestedBy'>,supe
 export function editText(value:unknown):string{
  if(value===null||value===undefined)return '';
  if(typeof value==='number')return Number.isFinite(value)?String(value):'';
+ // The contacts beyond the second (lib/customer-contacts.ts) are a list, compared and kept as its JSON; none is empty.
+ if(Array.isArray(value))return value.length?JSON.stringify(value):'';
+ if(typeof value==='object')return JSON.stringify(value);
  return String(value);
+}
+/** A request's value as a reader sees it: the contacts as one line, a contact's role by its words, anything else as it is. */
+export function editValueText(field:string,value:string,language:'ar'|'en'='ar'):string{
+ if(!value)return '';
+ if(field==='contactTitle'||field==='contactTitle2')return contactTitleLabel(value,language)||value;
+ if(field==='contacts'){try{const list=JSON.parse(value);return Array.isArray(list)?contactsText(list as CustomerContact[],language):value;}catch{return value;}}
+ return value;
 }
 /** What a save changes, read field by field from what was stored and what the save would store (both after the server's own
  *  normalisation): only those fields, with what they held. «location» carries its point and capture details. */

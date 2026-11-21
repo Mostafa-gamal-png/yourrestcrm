@@ -62,8 +62,11 @@ function prepare(row: Row): Prepared {
     if (known) return known;
     const data = row.data && typeof row.data === 'object' ? row.data : {};
     const name = text(data.name), codes = [text(data.internalCode), text(data.code)].filter(Boolean), code = codes.join(' ');
-    const phones = [...phoneVariants(data.phone), ...phoneVariants(data.phone2)];
-    const fields = [name, code, phones.join(' '), [text(data.contact), text(data.contact2)].filter(Boolean).join(' '), text(data.city), text(data.region), text(data.address), text(data.shortAddress)];
+    // The contacts beyond the second (data.contacts, lib/customer-contacts.ts) are found by their names and phones too. Read here without
+    // importing that module: this one stays free of imports (tests/customer-map-search.mjs runs it alone).
+    const others = Array.isArray(data.contacts) ? (data.contacts as unknown[]).filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object').map(entry => ({ name: text(entry.name), phone: text(entry.phone) })) : [];
+    const phones = [...phoneVariants(data.phone), ...phoneVariants(data.phone2), ...others.flatMap(contact => phoneVariants(contact.phone))];
+    const fields = [name, code, phones.join(' '), [text(data.contact), text(data.contact2), ...others.map(contact => text(contact.name))].filter(Boolean).join(' '), text(data.city), text(data.region), text(data.address), text(data.shortAddress)];
     const nonemptyFields = fields.filter(Boolean);
     const result = { name, codes, code, phones, fields, nonemptyFields, words: nonemptyFields.flatMap(field => field.split(' ')), nameWords: name.split(' ') };
     prepared.set(row, result);
