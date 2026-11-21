@@ -13,14 +13,17 @@ const messageOf=(e:unknown)=>typeof e==='object'&&e!==null&&'message' in e&&type
 export type CustomerData = { [field: string]: unknown; name?: string; code?: string; region?: string; city?: string; contact?: string; phone?: string; address?: string; location?: string; shortAddress?: string; customerType?: string; customerKind?: string; customerStatus?: string; category?: string };
 export type CustomerDataUpdate = (current:CustomerData) => CustomerData;
 type AddressResult = {status:'found'|'not_configured'|'not_found'|'unavailable'|'ambiguous';shortAddress?:string;address?:string;city?:string;message?:string};
-export function CustomerClassificationFields({data,onChange,disabled=false}:{data:CustomerData;onChange:(key:string,value:string)=>void;disabled?:boolean}){
+type ChoiceKey='customerType'|'customerKind'|'customerStatus'|'category';
+/** The four choices of a customer. only: the ones a part of the form shows (the customer form puts the kind and the category under «المصنع»
+ *  and the classification and the status under «التصنيف والمسؤولية»; the visit's quick customer shows all four). */
+export function CustomerClassificationFields({data,onChange,disabled=false,only}:{data:CustomerData;onChange:(key:string,value:string)=>void;disabled?:boolean;only?:readonly ChoiceKey[]}){
  useLanguage();
  return <>{([
   ['customerType','تصنيف العميل',customerTypes],
   ['customerKind','نوع العميل',customerKinds],
   ['customerStatus','حالة العميل',customerStatuses],
   ['category','فئة المصنع',factoryCategories],
- ] as const).map(([key,label,choices])=>{
+ ] as const).filter(([key])=>!only||only.includes(key)).sort(([a],[b])=>only?only.indexOf(a)-only.indexOf(b):0).map(([key,label,choices])=>{
   // A value no longer offered (the retired «خدمات», an imported text) stays shown and chosen for this customer only.
   const values=choicesWithCurrent(choices,data[key]);
   return <fieldset className="customer-choice-field full" key={key} disabled={disabled}><legend>{t(label)}</legend><div className="customer-choice-grid">{values.map(value=><label className="customer-choice" key={value}><input type="radio" name={'customer-choice-'+key} value={value} checked={data[key]===value} onChange={event=>{if(event.target.checked)onChange(key,value);}}/><span>{t(value)}</span></label>)}</div></fieldset>;
@@ -33,12 +36,15 @@ const byHand={latitude:null,longitude:null,locationSource:undefined,locationCapt
 
 /** A new customer's location: the phone's current position by default, or another place typed or chosen on a map.
  * Existing records are never relocated on open. */
-export default function CustomerLocationFields({data,editing=false,disabled=false,onUpdate,onPendingChange}:{data:CustomerData;editing?:boolean;disabled?:boolean;onUpdate:(update:CustomerDataUpdate)=>void;onPendingChange?:(pending:boolean)=>void}){
+/** compact (the customer form of 2026-11-21): the place is one line («تم تحديد موقعك الحالي · الدقة 8 م · الآن», the saved place, or none
+ *  yet) with «تغيير الموقع», which opens the same choices as before (the phone's position, another place typed or chosen on the map); the
+ *  short national address and every message stay shown. */
+export default function CustomerLocationFields({data,editing=false,disabled=false,compact=false,onUpdate,onPendingChange}:{data:CustomerData;editing?:boolean;disabled?:boolean;compact?:boolean;onUpdate:(update:CustomerDataUpdate)=>void;onPendingChange?:(pending:boolean)=>void}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en;
  const sourceGroup='customer-location-source-'+useId();
  const [mode,setMode]=useState<'device'|'manual'>('device');
  const [phase,setPhase]=useState<'idle'|'locating'|'address'|'done'|'error'>('idle');
- const [locationError,setLocationError]=useState(''),[addressStatus,setAddressStatus]=useState<AddressResult['status']|''>(''),[pickerOpen,setPickerOpen]=useState(false);
+ const [locationError,setLocationError]=useState(''),[addressStatus,setAddressStatus]=useState<AddressResult['status']|''>(''),[pickerOpen,setPickerOpen]=useState(false),[choicesOpen,setChoicesOpen]=useState(false),[openedAt]=useState(()=>Date.now());
  const ownedAddress=useRef<Record<string,string>>({}),lookedUp=useRef(String(data.location||''));
  const runRef=useRef(0),abortRef=useRef<AbortController|null>(null),dataRef=useRef(data),updateRef=useRef(onUpdate),pendingRef=useRef(onPendingChange),disabledRef=useRef(disabled);
  dataRef.current=data;updateRef.current=onUpdate;pendingRef.current=onPendingChange;disabledRef.current=disabled;
@@ -130,7 +136,9 @@ export default function CustomerLocationFields({data,editing=false,disabled=fals
  const pending=phase==='locating'||phase==='address';
  const addressUnavailable=!!addressStatus&&addressStatus!=='found';
  const typed=String(data.location||''),typedPoint=coordinatesFromText(typed),typedInvalid=manual&&typed.trim()!==''&&!typedPoint;
- return <section className="customer-auto-location full" aria-label={say('موقع العميل والعنوان الوطني','Customer location and national address')} aria-busy={pending}>
+ const collapsed=compact&&!choicesOpen;
+ return <section className={'customer-auto-location full'+(compact?' compact':'')} aria-label={say('موقع العميل والعنوان الوطني','Customer location and national address')} aria-busy={pending}>
+  {collapsed?<LocationLine data={data} editing={editing} pending={pending} disabled={disabled} openedAt={openedAt} say={say} onChange={()=>setChoicesOpen(true)}/>:<>
   <div className="customer-auto-location-heading"><span><MapPin size={17}/>{say(manual?'موقع العميل':'موقع الجهاز الحالي',manual?'Customer location':'Current device location')}</span>
    <div className="customer-auto-location-actions">
     {manual&&<button type="button" className="btn subtle small" onClick={()=>setPickerOpen(true)} disabled={disabled}><MapPinned size={15}/>{say('اختيار على الخريطة','Choose on the map')}</button>}
@@ -140,12 +148,32 @@ export default function CustomerLocationFields({data,editing=false,disabled=fals
   {!editing&&<fieldset className="customer-choice-field customer-location-modes" disabled={disabled}>
    <legend className="sr-only">{say('مصدر موقع العميل','Source of the customer location')}</legend>
    <div className="customer-choice-grid">{(['device','manual'] as const).map(value=><label className="customer-choice" key={value}><input type="radio" name={sourceGroup} value={value} checked={mode===value} onChange={event=>{if(event.target.checked)chooseMode(value);}}/><span>{value==='device'?<LocateFixed size={16}/>:<MapPinned size={16}/>}{value==='device'?say('موقعي الحالي','My current location'):say('موقع آخر','Another location')}</span></label>)}</div>
-  </fieldset>}
+  </fieldset>}</>}
   <div className="form-grid">
-   <label className="field"><span>{say('اللوكيشن (خط العرض، خط الطول)','Location (latitude, longitude)')}</span><input readOnly={!manual} disabled={disabled} dir="ltr" value={data.location||''} placeholder={manual?'21.5, 39.2':say('يتحدد تلقائيًا من الجهاز','Captured from this device')} aria-label={say('اللوكيشن (خط العرض، خط الطول)','Location (latitude, longitude)')} aria-invalid={typedInvalid||undefined} onChange={manual?event=>{const location=event.target.value;onUpdate(current=>({...current,location,...byHand}));}:undefined} onBlur={manual?lookAtTyped:undefined}/></label>
-   <label className="field"><span>{say('العنوان الوطني المختصر','Short national address')}</span><input value={data.shortAddress||''} onChange={event=>{const value=event.target.value.toUpperCase().replace(/\s/g,'');delete ownedAddress.current.shortAddress;onUpdate(current=>({...current,shortAddress:value}));}} disabled={disabled} dir="ltr" autoCapitalize="characters" autoComplete="off" maxLength={8} pattern="[A-Za-z]{4}[0-9]{4}" placeholder="ABCD1234" aria-label={say('العنوان الوطني المختصر','Short national address')}/></label>
+   {!collapsed&&<label className="field"><span>{say('اللوكيشن (خط العرض، خط الطول)','Location (latitude, longitude)')}</span><input readOnly={!manual} disabled={disabled} dir="ltr" value={data.location||''} placeholder={manual?'21.5, 39.2':say('يتحدد تلقائيًا من الجهاز','Captured from this device')} aria-label={say('اللوكيشن (خط العرض، خط الطول)','Location (latitude, longitude)')} aria-invalid={typedInvalid||undefined} onChange={manual?event=>{const location=event.target.value;onUpdate(current=>({...current,location,...byHand}));}:undefined} onBlur={manual?lookAtTyped:undefined}/></label>}
+   <label className={'field'+(collapsed?' full':'')}><span>{say('العنوان الوطني المختصر','Short national address')}</span><input value={data.shortAddress||''} onChange={event=>{const value=event.target.value.toUpperCase().replace(/\s/g,'');delete ownedAddress.current.shortAddress;onUpdate(current=>({...current,shortAddress:value}));}} disabled={disabled} dir="ltr" autoCapitalize="characters" autoComplete="off" maxLength={8} pattern="[A-Za-z]{4}[0-9]{4}" placeholder="ABCD1234" aria-label={say('العنوان الوطني المختصر','Short national address')}/></label>
   </div>
-  {pending?<p className="customer-location-status" role="status"><Loader2 className="spin" size={15}/>{phase==='locating'?say('جارٍ تحديد الموقع…','Getting your location…'):say('جارٍ جلب العنوان الوطني…','Looking up the national address…')}</p>:locationError?<p className="customer-location-error" role="alert">{t(locationError)}{!editing&&mode==='device'&&<> {say('أو اختر «موقع آخر» لتحديد مكان العميل بنفسك.','Or choose “Another location” to set the customer\'s place yourself.')}</>}</p>:typedInvalid?<p className="customer-location-error" role="alert">{say('اكتب الإحداثيات هكذا: 26.4373, 50.0344. أو الصق رابط خرائط كاملًا فيه الإحداثيات.','Enter coordinates like 26.4373, 50.0344, or paste a full maps link that contains them.')}</p>:addressUnavailable?<p className="customer-location-status" role="status">{say('تم تحديد الموقع؛ العنوان المختصر غير متاح. أدخله يدويًا.','Location ready; short address unavailable. Enter it manually.')}</p>:!editing&&mode==='manual'&&typedPoint?<p className="customer-location-status" role="status">{say('سيُحفظ الموقع الذي حددته.','The location you set will be saved.')}</p>:!editing&&data.location?<p className="customer-location-status" role="status">{say('تم تحديد الموقع تلقائيًا.','Location captured automatically.')}</p>:null}
+  {pending?<p className="customer-location-status" role="status"><Loader2 className="spin" size={15}/>{phase==='locating'?say('جارٍ تحديد الموقع…','Getting your location…'):say('جارٍ جلب العنوان الوطني…','Looking up the national address…')}</p>:locationError?<p className="customer-location-error" role="alert">{t(locationError)}{collapsed?<> {say('أو اختر «تغيير الموقع» لتحديد مكان العميل بنفسك.','Or choose “Change location” to set the customer\'s place yourself.')}</>:!editing&&mode==='device'&&<> {say('أو اختر «موقع آخر» لتحديد مكان العميل بنفسك.','Or choose “Another location” to set the customer\'s place yourself.')}</>}</p>:typedInvalid?<p className="customer-location-error" role="alert">{say('اكتب الإحداثيات هكذا: 26.4373, 50.0344. أو الصق رابط خرائط كاملًا فيه الإحداثيات.','Enter coordinates like 26.4373, 50.0344, or paste a full maps link that contains them.')}</p>:addressUnavailable?<p className="customer-location-status" role="status">{say('تم تحديد الموقع؛ العنوان المختصر غير متاح. أدخله يدويًا.','Location ready; short address unavailable. Enter it manually.')}</p>:!editing&&mode==='manual'&&typedPoint?<p className="customer-location-status" role="status">{say('سيُحفظ الموقع الذي حددته.','The location you set will be saved.')}</p>:!editing&&data.location?<p className="customer-location-status" role="status">{say('تم تحديد الموقع تلقائيًا.','Location captured automatically.')}</p>:null}
+  {collapsed&&<small className="customer-location-hint">{say('سجّل الموقع وأنت داخل المصنع، أو اختر «تغيير الموقع» لتحديده على الخريطة.','Record the location while inside the factory, or choose «Change location» to set it on the map.')}</small>}
   {pickerOpen&&<LocationPicker initial={typedPoint} region={String(data.region||'')} onClose={()=>setPickerOpen(false)} onPick={point=>{setPickerOpen(false);void applyPoint(point,{location:asText(point),...byHand});}}/>}
  </section>;
+}
+
+const lineTime=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+/** The one line of the compact location: what the place is and how it was taken, and «تغيير الموقع». */
+/** «الآن» for a position taken since the form opened (openedAt), else its time of day. */
+function LocationLine({data,editing,pending,disabled,openedAt,say,onChange}:{data:CustomerData;editing:boolean;pending:boolean;disabled:boolean;openedAt:number;say:(ar:string,en:string)=>string;onChange:()=>void}){
+ const location=String(data.location||'').trim(),device=data.locationSource==='device'&&!editing;
+ const accuracy=typeof data.locationAccuracy==='number'&&Number.isFinite(data.locationAccuracy)?Math.round(data.locationAccuracy):null;
+ const at=typeof data.locationCapturedAt==='string'?Date.parse(data.locationCapturedAt):NaN;
+ const when=Number.isFinite(at)?(at>=openedAt-60000?say('الآن','now'):lineTime.format(new Date(at))):'';
+ const [title,detail]=pending?[say('جارٍ تحديد موقعك الحالي…','Getting your current location…'),'']
+  :!location?[say('لم يُحدَّد موقع المصنع بعد','The factory’s location is not set yet'),'']
+  :device?[say('تم تحديد موقعك الحالي','Your current location is set'),[accuracy!==null?say('الدقة '+accuracy+' م','Accuracy '+accuracy+' m'):'',when].filter(Boolean).join(' · ')]
+  :[editing?say('الموقع المحفوظ','The saved location'):say('تم تحديد موقع المصنع','The factory’s location is set'),location];
+ return <div className="customer-location-line" data-location-line={pending?'pending':!location?'none':device?'device':'set'}>
+  <span className="customer-location-dot" aria-hidden="true"><MapPin size={18}/></span>
+  <span className="customer-location-text"><b>{title}</b>{detail&&<small dir={detail===location?'ltr':undefined}>{detail}</small>}</span>
+  <button type="button" className="text-button customer-location-change" onClick={onChange} disabled={disabled}>{say('تغيير الموقع','Change location')}</button>
+ </div>;
 }

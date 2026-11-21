@@ -3,6 +3,7 @@
 // customer's card, its desktop row and its sheet (each item only when it has a value), and the section of the customer's form where the
 // three entered items are written. Who may save them, and when it is saved directly, is the server's decision (POST /api/crm).
 import {t,useLanguage} from '@/lib/i18n';
+import type {ReactNode} from 'react';
 import VoiceField from './voice-field';
 import {CAPACITY_SECTION_TEXT,CAPACITY_TEXT,CAPACITY_TEXT_MAX,FROM_SHEET_TEXT,capacityItems,customerCapacity,type CapacityItemKey,type CustomerCapacity as Capacity} from '@/lib/customer-capacity';
 import './customer-capacity.css';
@@ -31,20 +32,22 @@ export function CustomerCapacity({customerId,data,machines,variant='card',sheetB
  return variant==='sheet'?<section className="customer-capacity-sheet" data-capacity-summary><h3>{say(...CAPACITY_SECTION_TEXT)}</h3>{list}</section>:list;
 }
 
-/** The section of the customer's form: the computed machines (read only, for a saved customer) and the three entered fields, each optional.
- *  directNote: said when the reader's change of these three alone is saved directly (their own customer, as a representative or a marketing
- *  officer whose other corrections wait for approval). */
-export function CustomerCapacityFields({customerId,data,machines,disabled=false,contextKey,directNote=false,onChange}:{customerId?:string;data:Data;machines:Iterable<MachineRow>;disabled?:boolean;contextKey:string;directNote?:boolean;onChange:(key:string,value:string)=>void}){
+/** The fields of «الطاقة والاحتياج» in the customer's form (its section 5, app/customer-form.tsx): the computed machines (read only, for a
+ *  saved customer), the three entered fields, each optional, then `children` (the form's own «مورد القوالب والقطع» and the sheet's count and
+ *  types), and the notes. directNote: said when the reader's change of these three alone is saved directly (their own customer, as a
+ *  representative or a marketing officer whose other corrections wait for approval). */
+export function CustomerCapacityFields({customerId,data,machines,disabled=false,contextKey,directNote=false,onChange,children}:{customerId?:string;data:Data;machines:Iterable<MachineRow>;disabled?:boolean;contextKey:string;directNote?:boolean;onChange:(key:string,value:string)=>void;children?:ReactNode}){
  const {language}=useLanguage(),say:Say=(ar,en)=>language==='en'?en:ar;
  const text=(key:string)=>data[key]===null||data[key]===undefined?'':String(data[key]);
- return <section className="capacity-section full" data-capacity-editor><h3>{say(...CAPACITY_SECTION_TEXT)}</h3>
+  return <div className="capacity-fields full" data-capacity-editor>
   {customerId&&<CustomerCapacity customerId={customerId} data={data} machines={machines} variant="form" only={['machineCount','machineTypes']}/>}
   <div className="form-grid">
    <label className="field"><span>{say(...CAPACITY_TEXT.moldsInUse)}</span><input type="text" inputMode="numeric" dir="ltr" autoComplete="off" maxLength={12} disabled={disabled} value={text('moldsInUse')} placeholder="0" onChange={event=>onChange('moldsInUse',event.target.value)} data-capacity-field="moldsInUse"/></label>
    <VoiceField label={say(...CAPACITY_TEXT.productionCapacity)} value={text('productionCapacity')} onChange={value=>onChange('productionCapacity',value)} disabled={disabled} contextKey={contextKey+':productionCapacity'} inputProps={{maxLength:CAPACITY_TEXT_MAX,placeholder:say('مثال: 5000 بلكة يوميًا','e.g. 5,000 blocks a day')}}/>
    <VoiceField label={say(...CAPACITY_TEXT.annualDemand)} value={text('annualDemand')} onChange={value=>onChange('annualDemand',value)} disabled={disabled} contextKey={contextKey+':annualDemand'} inputProps={{maxLength:CAPACITY_TEXT_MAX,placeholder:say('مثال: 40 قالبًا في السنة','e.g. 40 molds a year')}}/>
+   {children}
   </div>
-  <p className="form-note">{say('كل ما في هذا القسم اختياري. يُحسب عدد الماكينات وأنواعها من الماكينات المسجلة للعميل.','Everything in this section is optional. The machine count and types are computed from the customer’s registered machines.')}</p>
+  <p className="form-note">{say('عدد الماكينات وأنواعها على كارت العميل يُحسبان تلقائيًا من الماكينات المسجلة للعميل، وأرقام الشيت تظهر إن لم تُسجَّل ماكينات.','The machine count and types on the customer’s card are computed from the customer’s registered machines; the sheet’s figures show when no machine is registered.')}</p>
   {directNote&&<p className="form-note capacity-direct-note" data-capacity-direct-note>{say('يُحفظ تحديث هذا القسم وحده مباشرةً لأنك مسؤول هذا العميل، دون انتظار الموافقة. وإذا عدّلت معه بيانات أخرى أُرسل التعديل كله للموافقة.','Updating this section alone is saved directly, without waiting for approval, because you are responsible for this customer. If you change other details with it, the whole edit is sent for approval.')}</p>}
- </section>;
+ </div>;
 }

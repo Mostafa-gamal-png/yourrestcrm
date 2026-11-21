@@ -18,9 +18,8 @@
 .customer-capacity-sheet .customer-capacity>div{display:block;border-bottom:1px solid var(--border);padding-bottom:10px}
 .customer-capacity-sheet .customer-capacity dt{display:block;margin-bottom:4px;white-space:normal}
 .customer-capacity-sheet .customer-capacity dt::after{content:none}
-/* The form's section, as «تصنيفات التسويق» beside it. */
-.capacity-section{min-width:0;border:1px solid var(--border);border-radius:10px;padding:14px;display:grid;gap:10px}
-.capacity-section>h3{font-size:15px;font-weight:600;margin:0}
-.capacity-section>.form-grid{margin:0}
-.capacity-section .customer-capacity-form{margin:0;padding:10px 12px;background:var(--muted);border-radius:8px}
-@media (max-width:600px){.customer-capacity-sheet .customer-capacity{grid-template-columns:1fr}.capacity-section{padding:10px}}
+/* The fields of the form's section «الطاقة والاحتياج» (app/customer-form.tsx): the computed machines above, the fields in the section's grid. */
+.capacity-fields{min-width:0;display:grid;gap:10px}
+.capacity-fields>.form-grid{margin:0}
+.capacity-fields .customer-capacity-form{margin:0;padding:10px 12px;background:var(--muted);border-radius:8px}
+@media (max-width:600px){.customer-capacity-sheet .customer-capacity{grid-template-columns:1fr}}

@@ -1,0 +1,62 @@
+/* The customer form of 2026-11-21 (app/customer-form.tsx, app/crm-app.tsx): six numbered sections, two columns on a computer, one on a phone or
+   a tablet; nothing pushes the dialog sideways at 320 px; no text under 12px; every control at least 44px to the finger (touch-comfort). */
+.crm-dialog.crm-master-dialog.customer-form-dialog{max-width:1040px!important}
+.customer-form{min-width:0;display:grid;gap:14px}
+.customer-form-heading{display:grid;gap:4px;font-size:13px;color:var(--muted-foreground);line-height:1.7;min-width:0}
+.customer-form-heading p{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0;overflow-wrap:anywhere}
+.customer-form-heading strong{color:var(--foreground);font-weight:600}
+.customer-form-heading .badge{font-size:12px}
+.customer-form-codes{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;min-width:0}
+.customer-form-codes bdi{color:var(--foreground);font-weight:600}
+/* The ERP code in the heading: one line, «كود ERP: 77» and where it comes from (app/erp-code-readonly.tsx, its words kept). */
+.customer-form-codes .erp-code-readonly{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin:0;min-width:0}
+.customer-form-codes .erp-code-readonly>span:first-child{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.customer-form-codes .erp-code-readonly-value{margin:0;min-height:0;padding:0;border:0;background:transparent;font-size:13px;color:var(--muted-foreground)}
+.customer-form-codes .erp-code-readonly-value bdi{color:var(--foreground);font-weight:600}
+.customer-form-sections{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;min-width:0}
+.customer-form-section{min-width:0;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--card);display:grid;align-content:start;gap:4px}
+.customer-form-section>h3{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0;font-size:16px;font-weight:700;min-width:0}
+.customer-form-section>h3>small{flex-basis:auto;margin-inline-start:auto;font-size:12px;font-weight:400;color:var(--muted-foreground)}
+.customer-form-step{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--primary) 14%,var(--card));color:var(--primary);font-size:13px;font-weight:700;flex:none}
+.customer-form-section>.form-grid{margin:10px 0 0;gap:14px 14px}
+.customer-form-hint{display:block;font-size:12px;line-height:1.7;color:var(--muted-foreground)}
+@media(min-width:1024px){
+ .customer-form-sections{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .customer-form-section.wide{grid-column:1/-1}
+ .customer-form-section:not(.wide)>.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+/* «المسؤولون»: one card per contact, the primary marked. */
+.customer-contacts{min-width:0;display:grid;gap:10px}
+.customer-contact{min-width:0;margin:0;border:1px solid var(--border);border-radius:10px;padding:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.customer-contact.primary{border-color:color-mix(in srgb,var(--primary) 45%,var(--border));background:color-mix(in srgb,var(--primary) 4%,var(--card))}
+.customer-contact>.full,.customer-contact>.customer-contact-top{grid-column:1/-1}
+.customer-contact-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px;min-width:0}
+.customer-contact-top strong{display:inline-flex;align-items:center;gap:6px;font-size:14px}
+.customer-contact-primary{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;background:var(--primary);color:var(--primary-foreground);font-size:12px;font-weight:600}
+.customer-contact-actions{display:inline-flex;flex-wrap:wrap;gap:2px 12px}
+.customer-contact-actions .text-button{display:inline-flex;align-items:center;gap:4px;min-height:44px;font-size:13px}
+.customer-contact-actions .text-button.danger{color:var(--destructive)}
+.customer-contact-add{display:flex;align-items:center;justify-content:center;gap:6px;min-height:46px;width:100%;border:1px dashed color-mix(in srgb,var(--primary) 55%,var(--border));border-radius:10px;background:transparent;color:var(--primary);font-weight:600}
+.customer-contact-add:disabled{opacity:.5}
+@media(max-width:600px){.customer-contact{grid-template-columns:minmax(0,1fr);padding:10px}}
+/* «الموقع» as one line, «تغيير الموقع» opening the earlier choices (app/customer-entry-fields.tsx compact). */
+.customer-auto-location.compact{border:0;padding:0;background:transparent}
+.customer-location-line{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--primary) 35%,var(--border));border-radius:10px;background:color-mix(in srgb,var(--primary) 5%,var(--card))}
+.customer-location-line[data-location-line=none]{border-color:var(--border);background:var(--muted)}
+.customer-location-dot{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--primary);color:var(--primary-foreground);flex:none}
+.customer-location-text{display:grid;min-width:0;flex:1;line-height:1.5}
+.customer-location-text b{font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.customer-location-text small{font-size:12px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.customer-location-change{flex:none;min-height:44px;font-weight:600}
+.customer-location-hint{display:block;margin-top:6px;font-size:12px;line-height:1.7;color:var(--muted-foreground)}
+/* «المسؤولون» in the customer's sheet. */
+.customer-contacts-sheet{margin:14px 0;display:grid;gap:10px}
+.customer-contacts-sheet>h3{font-size:15px;font-weight:600;margin:0}
+.customer-contacts-sheet ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.customer-contacts-sheet li{min-width:0;border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:grid;gap:6px}
+.customer-contacts-sheet-name{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+.customer-contacts-sheet-name strong{overflow-wrap:anywhere}
+.customer-contacts-sheet-name small{font-size:12px;color:var(--muted-foreground)}
+.customer-contacts-sheet-phone{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;min-width:0}
+.customer-contacts-sheet-phone .btn{min-height:44px}
+.customer-contacts-sheet-email{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--primary);min-height:44px;overflow-wrap:anywhere;min-width:0}
