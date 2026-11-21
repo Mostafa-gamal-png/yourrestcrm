@@ -168,7 +168,8 @@ try {
   // «تاريخ آخر»: the date field as it was, focused.
   await picker(dialog).getByRole('button', {name: 'تاريخ آخر', exact: true}).click();
   check(await page.evaluate(() => document.activeElement?.id), 'visit-next-date', '«تاريخ آخر» opens the date field and puts the cursor in it');
-  const later = addDays(TODAY, 20);
+  // 20 days ahead, or 21 when that is a Friday (the day off adds its notice to the status; 2026-11-21 + 20 = Friday 11 December).
+  const later = weekday(addDays(TODAY, 20)) === 5 ? addDays(TODAY, 21) : addDays(TODAY, 20);
   await dialog.locator('#visit-next-date').fill(later);
   s = await state(dialog);
   check([s.days.filter(item => item.checked).length, s.field, s.status], [0, true, 'الموعد المختار: ' + title(later)], 'a date after the 14 days: no day checked, the field stays open');
