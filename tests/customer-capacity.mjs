@@ -181,7 +181,7 @@ eq([C.moldNeedDay({moldNeedBy:'2027-01-05'}),C.moldNeedDay({moldNeedBy:5}),C.mol
 const crmRoute=fs.readFileSync(path.join(root,'app/api/crm/route.ts'),'utf8'),visitsRoute=fs.readFileSync(path.join(root,'app/api/visits/route.ts'),'utf8'),legacy=fs.readFileSync(path.join(root,'lib/followups-server.ts'),'utf8');
 ok(/keepAbsentClassification\(data,inputData,old\?\.data\);\s*\/\/[^\n]*\n[^\n]*\n\s*keepAbsentCapacity\(data,inputData,old\?\.data\);/.test(crmRoute),'POST /api/crm keeps the three a save does not carry');
 ok(crmRoute.includes('capacityEditIsDirect(c.me,old,customerEditProposal(old.data,data).fields)')&&crmRoute.includes("!capacityDirect&&(proposesCustomerEdit(c.me.role)||marketingWaits))return await proposeCustomerEdit("),'the direct capacity save decided before a request is made');
-ok(crmRoute.includes("kind='customer' AND assigned_to=?)\"")&&crmRoute.includes('withCapacityOnly(old!.data,data)'),'written as the stored customer with the three, gated on the customer being still theirs');
+ok(crmRoute.includes("kind='customer' AND assigned_to=?)\"")&&crmRoute.includes('withCapacityOnly(stored,data)')&&crmRoute.includes('for(const key of CUSTOMER_DECORATIONS)delete stored[key]'),'written as the stored customer with the three, gated on the customer being still theirs');
 ok(visitsRoute.includes('keepMoldNeed(data,isRecord(body.data)?body.data:undefined,old?.data,offline?visitDate:today())'),'POST /api/visits keeps the day and judges a new one against the day of recording');
 ok(/'customerNeeds','moldNeedBy','requestId'/.test(legacy),'the older entry point (POST /api/crm activity) refuses the field, as every field of the visits page');
 

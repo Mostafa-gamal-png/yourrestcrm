@@ -21,6 +21,7 @@ import {customerCodeKey,erpCodeTaken,ERP_CODE_LOCKED} from '@/lib/customer-ident
 import {proposeCustomerEdit,decideCustomerEdit,customerEditHistoryEntry,type CustomerEditApproval} from '@/lib/customer-edit-requests-server';
 import {proposesCustomerEdit,marketingCorrectionWaits,customerEditProposal,DIRECT_EDIT,CAPACITY_EDIT,type CustomerEditDirect} from '@/lib/customer-edit-requests';
 import {capacityEditIsDirect,keepAbsentCapacity,withCapacityOnly} from '@/lib/customer-capacity';
+import {CUSTOMER_DECORATIONS} from '@/lib/crm-context-records';
 import {carryRetiredClassification,changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
 import {isFieldRole,isMarketingRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
@@ -273,7 +274,7 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
  // written directly: the stored customer with those three fields over it and nothing else of the save, gated as their correction is (the
  // member as they are, the customer at the version read: accessGuard) and on the customer being still theirs at the commit.
  const capacityDirect=kind==='customer'&&!!old&&body.action==='save'&&!approval&&(proposesCustomerEdit(c.me.role)||marketingWaits)&&capacityEditIsDirect(c.me,old,customerEditProposal(old.data,data).fields);
- if(capacityDirect){const next=withCapacityOnly(old!.data,data);for(const key of Object.keys(data))delete data[key];Object.assign(data,next);}
+ if(capacityDirect){const stored={...old!.data};for(const key of CUSTOMER_DECORATIONS)delete stored[key];const next=withCapacityOnly(stored,data);for(const key of Object.keys(data))delete data[key];Object.assign(data,next);}
  const capacityGuard=()=>{const guard=accessGuard(c,old);guard.sql+=" AND EXISTS (SELECT 1 FROM crm_records WHERE id=? AND kind='customer' AND assigned_to=?)";guard.args.push(old!.id,c.me.id);return guard;};
  const permission=capacityDirect?capacityGuard():marketingWaits?accessGuard(c,old):kind==='customer'&&old&&(!customerRoutingChanged||serviceCustomerEdit)?customerDetailMutationGuard(c,old):['customer','factory'].includes(kind)&&(old||parent)?masterMutationGuard(c,(old||parent)!):old?recordEditGuard(c,old):accessGuard(c,parent);if(kind==='customer'&&customerRoutingChanged){const assignee=c.members.find(m=>m.id===assignedTo)!;permission.sql+=' AND EXISTS (SELECT 1 FROM crm_members WHERE id=? AND active=1 AND region_scope=? AND role=? AND branch=?)';permission.args.push(assignee.id,regionScope(assignee),assignee.role,assignee.branch);}
  // The ERP code checked above, again at the commit: no other customer took it meanwhile (the plain spelling: upper case, no spaces around).

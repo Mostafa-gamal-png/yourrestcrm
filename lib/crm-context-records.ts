@@ -12,6 +12,9 @@ const recordColumns=`id,kind,parent_id AS parentId,assigned_to AS assignedTo,bra
 const serviceColumns='id,customer_id AS customerId,status,creator_id AS creatorId,service_manager_id AS serviceManagerId,sales_manager_id AS salesManagerId,assigned_to AS assignedTo,supervisor_id AS supervisorId,data,created_at AS createdAt,updated_at AS updatedAt,version,lead_group AS leadGroup,lead_source AS leadSource,lead_ref_kind AS leadRefKind,lead_ref_id AS leadRefId,lead_note AS leadNote,route,routed_by AS routedBy,routed_at AS routedAt';
 type RecordRow=Omit<Row,'data'>&{data:string;internalCode?:string|null;erpCodeAliases?:string|null};
 type ServiceRow=Omit<ServiceCase,'data'>&{data:string};
+/** What decode adds to a customer's data from other tables (never stored in crm_records.data): a write built from a context's record
+ *  (app/api/crm/route.ts's direct capacity save) leaves them out. */
+export const CUSTOMER_DECORATIONS=['internalCode','_erpCodeAliases'] as const;
 const decode=<T extends {data:string;kind?:string;internalCode?:string|null;erpCodeAliases?:string|null}>(rows:T[])=>rows.map(row=>{
  const {internalCode,erpCodeAliases,...record}=row;
  return {...record,data:{...JSON.parse(row.data),...(row.kind==='customer'?{internalCode:internalCode||'',_erpCodeAliases:JSON.parse(erpCodeAliases||'[]')}:{})}};
