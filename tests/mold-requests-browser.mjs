@@ -1102,7 +1102,6 @@ try {
     await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('east3','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')")
       .bind(JSON.stringify({name: 'مصنع east3', region: 'الشرقية', city: 'الدمام', address: LONG_ADDRESS, phone: '0551234567', code: 'ERP-east3', branch: 'الرئيسي', assignedTo: 'rep'}), now, now).run();
     const registeredBefore = (await app.db.prepare("SELECT data,version FROM crm_records WHERE id='east1'").first());
-    const choose = chooseCustomer;
     const addressPhone = await open('rep', {viewport: PHONE, touch: true});
     await goMoldsAnywhere(addressPhone);
     await addressPhone.locator('button.mold-new').click();

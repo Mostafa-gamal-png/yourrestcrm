@@ -1442,7 +1442,7 @@ try {
     const listOf = async who => (await (await as(who)('/api/mold-requests?refs=1')).json());
     const until = async (condition, what) => { for (let n = 0; n < 120; n++) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 250)); } throw new Error('timed out waiting for ' + what); };
     const known = async () => !!(await freeApp.db.prepare("SELECT 1 AS k FROM crm_settings WHERE id='mold-free-customers'").first());
-    const f1 = await number('f1'), f4 = await number('f4');
+    const f1 = await number('f1');
 
     // (a) linked by choice, from a page loaded before 2026-11-09 only (customerId alone, nothing typed), as before: its own ERP code
     let res = await ask('rep', {customerId: 'f1'}), body = await res.json();
