@@ -90,7 +90,8 @@ try {
   // How the customer pays is chosen with every request (2026-11-03). save: the save alone (kept for its design file since 2026-11-08);
   // create: a request as the release before saved it, sent (asBefore).
   // A page of this release also sends the city and the customer's code (2026-11-14): given in `extra` as city and customer (never specs'
-  // keys); without them the request is asked as a page loaded before asks it (the linked customer's own city and code).
+  // keys); without them the request is asked as a page loaded before 2026-11-09 asks it (customerId alone: that customer's own city and
+  // code). A page of this release sends the customer typed, never customerId (2026-11-21: its own section near the end).
   const save = (who, customerId, {city, customer: typed, ...extra} = {}, ...payment) => post(who, {action: 'create', customerId, ...(typed ? {customer: typed} : {}), ...(city !== undefined ? {city} : {}), specs: {...specs, ...extra}, payment: payment.length ? payment[0] : 'cash'});
   const create = async (who, ...rest) => asBefore(app.db, body => post(who, body), await save(who, ...rest));
   const upload = uploader(as);
@@ -165,9 +166,9 @@ try {
   check((await post('sup', {action: 'update', payment: 'cash', id: first, version: 1, specs})).status, 403, 'only the representative who asked may change it');
 
   // ---- a customer name up to 200 characters, as production and the customers list take it
-  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('long1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع ' + 'ط'.repeat(190), region: 'الشرقية', city: 'الخبر'}), now, now).run();
-  // Since 2026-11-14 its city is chosen from the sheet's (its own, «الخبر», is not one) and its code typed.
-  res = await create('rep', 'long1', {description: 'long name', city: 'Damam - الدمام', customer: {erpCode: 'L-1'}});
+  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('long1','customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع ' + 'ط'.repeat(190), region: 'الشرقية', city: 'الخبر', code: 'L-1'}), now, now).run();
+  // Since 2026-11-14 its city is chosen from the sheet's (its own, «الخبر», is not one); chosen by its id (its own code).
+  res = await create('rep', 'long1', {description: 'long name', city: 'Damam - الدمام'});
   body = await res.json();
   const long = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body).customer;
   check([res.status, body.send.kind, [...long.name].length, long.city], [200, 'ok', 195, 'Damam - الدمام'], 'a 195-character customer name is asked for and sent whole; the city chosen');
@@ -596,14 +597,14 @@ try {
   check([JSON.parse(mock.state.calls.findLast(call => call.route === 'approval').body).crmRequestId, body.request.remote.waitingStep, body.request.can.withdraw], [fifth.id, 'production', true], 'the CRM\'s own request goes by its crmRequestId, and the CRM keeps its new status');
 
   // ---- everyone asks: customer service from its branch's customers, a supervisor, the administrator
-  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('other1','customer',NULL,'rep2','فرع آخر',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع other1', region: 'الشرقية', city: 'الخبر'}), now, now).run();
+  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES('other1','customer',NULL,'rep2','فرع آخر',?,?,?,1,'fixture')").bind(JSON.stringify({name: 'مصنع other1', region: 'الشرقية', city: 'الخبر', code: 'O-1'}), now, now).run();
   res = await create('cs', 'west1', {halfBlock: 'three'});
   body = await res.json();
   check([res.status, body.request.memberId, body.request.can.edit, body.request.can.cancel], [200, 'cs', false, true], 'customer service asks for a customer of its branch (sent: no edit, cancel as before)');
   const fromService = JSON.parse(mock.state.calls.findLast(call => call.route === 'requests').body);
   check([fromService.salesman, fromService.specs.halfBlock], [{crmMemberId: 'cs', name: 'cs', email: 'cs@yourrest.org'}, 'three'], 'under its own name; three half blocks');
   check((await create('cs', 'other1')).status, 404, 'not for another branch\'s customer');
-  check([(await create('sup', 'east1')).status, (await create('owner', 'other1', {city: 'Damam - الدمام', customer: {erpCode: 'O-1'}})).status], [200, 200], 'a supervisor and the administrator ask too (other1 has no code and its city, «الخبر», is not the sheet\'s: both chosen)');
+  check([(await create('sup', 'east1')).status, (await create('owner', 'other1', {city: 'Damam - الدمام'})).status], [200, 200], 'a supervisor and the administrator ask too (other1\'s city, «الخبر», is not the sheet\'s: chosen)');
   check([(await ids('csm')).length, (await ids('cs')).length, (await ids('rep2')).length], [1, 1, 0], 'the customer-service manager sees their team\'s, customer service their own, another representative none');
   // Who sees which (the owner, 2026-11-03): the sales manager's list is his own and his team's (the supervisor's request is in it); and
   // since 2026-11-19 every request he approves too (customer service's and the administrator's in his regions, which also wait in
@@ -1403,9 +1404,12 @@ try {
 }
 
 // ---- 2026-11-09 (the owner: «لو فيه عميل مش موجود فى النظام طلب القالب ميقفش»، «المندوب يكتب الكود والكود المطلوب كود erp»، «يتبعت بكود
-// ERP بس»): the customer is typed, name and ERP code. One of the CRM's customers, chosen (customerId) or named by an ERP code exactly one
-// of the reader's customers has as its current code (a code it only had before names nobody since 2026-11-12), is linked as before, its body byte for byte the same (the ERP code kept in the
-// data only). Any other is a customer not in the CRM: stored unlinked (customer_id '', crmNumber null), its name, ERP code and address
+// ERP بس»): the customer is typed, name and ERP code. Since 2026-11-21 (the owner: «الخانة دى للكتابة فقط وايا يكن يتكتب فيها صح او خطأ
+// يروح») typed only: an ERP code that one of the CRM's customers has links nothing (until then it linked the request to that customer, and
+// production received its name and Yourrest number instead of the name typed), and a customerId sent beside what is typed is not taken.
+// Only a page loaded before 2026-11-09 (customerId alone, nothing typed) still names one of the CRM's customers, as before; the edit of a
+// request stored linked keeps its link while it names its own customer with the name and code stored. Every typed customer is stored
+// unlinked (customer_id '', crmNumber null), its name, ERP code and address
 // required, each refused by its field; sent with crmNumber null and the ERP code only once production's application is known to take it
 // (learned from any answer whose customer carries erpCode): today's application would drop the ERP code silently. Until then it waits,
 // said so, tried again every 6 hours and on resend (the resend asks production what it runs first); production's refusal for its missing
@@ -1440,26 +1444,32 @@ try {
     const known = async () => !!(await freeApp.db.prepare("SELECT 1 AS k FROM crm_settings WHERE id='mold-free-customers'").first());
     const f1 = await number('f1'), f4 = await number('f4');
 
-    // (a) linked by choice: as before (a page loaded before sends customerId alone), the ERP code kept in the data, never sent
-    let res = await ask('rep', {customerId: 'f1', customer: {name: 'أي اسم', erpCode: ''}}), body = await res.json();
+    // (a) linked by choice, from a page loaded before 2026-11-09 only (customerId alone, nothing typed), as before: its own ERP code
+    let res = await ask('rep', {customerId: 'f1'}), body = await res.json();
     const chosen = body.request.id;
     check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName, body.request.customerErpCode, await dataOf(chosen).then(data => data.customer)],
-      [200, 'f1', f1, 'مصنع f1', 'ERP-146', {crmNumber: f1, name: 'مصنع f1', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: 'ERP-146'}], 'chosen: linked, its registered name, its own ERP code kept in the request\'s data, the city chosen');
+      [200, 'f1', f1, 'مصنع f1', 'ERP-146', {crmNumber: f1, name: 'مصنع f1', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: 'ERP-146'}], 'chosen by its id (a page loaded before): linked, its registered name, its own ERP code, the city chosen');
     res = await upload(chosen, 'رسم.pdf', pdf('chosen'));
     check([(await res.json()).request.sending.state, sentOf(chosen).at(-1).customer], ['sent', {crmNumber: f1, name: 'مصنع f1', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: 'ERP-146'}], 'its body carries the customer\'s code with its Yourrest number (2026-11-14, confirmed by the products team)');
     res = await raw('rep', {action: 'create', customerId: 'f1', specs, payment: 'cash'}); body = await res.json();
     check([res.status, body.request.customerId, body.request.customerAddress], [200, 'f1', 'عنوان f1'], 'a page loaded before (customerId alone, no address): as before');
     check((await ask('rep', {customerId: 'w1'})).status, 404, 'a customer the reader may not ask for: 404 as before');
+    // A customerId beside what is typed (a page of the release before 2026-11-21, which linked by the code on the device): not taken, what
+    // is typed goes, the city and address as sent (none of f1's).
+    res = await ask('rep', {customerId: 'f1', customer: {name: 'مصنع الريان للطوب', erpCode: 'ERP-146'}}); body = await res.json();
+    check([res.status, body.request.customerId, body.request.crmNumber, (await stored(body.request.id)).customer_id, await dataOf(body.request.id).then(data => data.customer), (await dataOf(body.request.id)).erpWithCrm],
+      [200, '', null, '', {crmNumber: null, name: 'مصنع الريان للطوب', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: 'ERP-146'}, undefined], 'customerId f1 beside a typed name and f1\'s own code: stored as typed, unlinked, no Yourrest number (2026-11-21)');
+    check([(await ask('rep', {customerId: 'w1', customer: {name: 'مصنع w1', erpCode: 'ERP-W1'}})).status, (await ask('rep', {customerId: 'nobody', customer: {name: 'مصنع', erpCode: 'Z-1'}})).status], [200, 200], 'beside what is typed, a customerId the reader may not ask for, or none at all, is not looked at either');
 
-    // (b) linked by its ERP code alone (Arabic-Indic digits, any case), the server deciding
-    for (const [erpCode, id, crmNumber, kept] of [[' erp-١٤٦ ', 'f1', f1, 'erp-146'], ['new-4', 'f4', f4, 'new-4']]) {
-      res = await ask('rep', {customer: {name: 'اسم مكتوب', erpCode}}); body = await res.json();
-      check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName, (await dataOf(body.request.id)).customer.erpCode, (await stored(body.request.id)).customer_id], [200, id, crmNumber, 'مصنع ' + id, kept, id], 'ERP code ' + erpCode.trim() + ': linked to the one customer that has it, by the server');
+    // (b) never linked by its ERP code (2026-11-21): the code of one of the reader's customers (the case the owner saw: a name typed, the
+    // code another factory's), Arabic-Indic digits, any case, shared, outside the reader's customers, or one a customer had before: the
+    // request is stored exactly as typed, its name and code (trimmed, digits as plain ones), no customer, no Yourrest number.
+    for (const [erpCode, kept] of [['ERP-146', 'ERP-146'], [' erp-١٤٦ ', 'erp-146'], ['new-4', 'new-4'], ['DUP-1', 'DUP-1'], ['ERP-W1', 'ERP-W1'], ['OLD-9', 'OLD-9']]) {
+      res = await ask('rep', {customer: {name: ' اسم   مكتوب ', erpCode}}); body = await res.json();
+      check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName, body.request.customerErpCode, (await dataOf(body.request.id)).customer, (await stored(body.request.id)).customer_id],
+        [200, '', null, 'اسم مكتوب', kept, {crmNumber: null, name: 'اسم مكتوب', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: kept}, ''], 'ERP code ' + erpCode.trim() + ': stored as typed, never linked');
     }
-    for (const [erpCode, why] of [['DUP-1', 'two customers share it'], ['ERP-W1', 'its customer is outside the reader\'s customers'], ['OLD-9', 'only a code f4 had before: it names nobody (2026-11-12)']]) {
-      res = await ask('rep', {customer: {name: 'اسم مكتوب', erpCode}}); body = await res.json();
-      check([res.status, body.request.customerId, body.request.crmNumber, body.request.customerName], [200, '', null, 'اسم مكتوب'], erpCode + ': not linked (' + why + ')');
-    }
+    check((await freeApp.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE action='mold-request:create' AND json_extract(detail,'$.notInCrm') IS NOT 1 AND created_at>=?").bind(now).first()).n, 2, 'of the requests asked so far only the two chosen by their id alone (a page loaded before) are linked');
 
     // (c) a customer not in the CRM: what is required, refused by its field, nothing saved
     const NAME = 'اكتب اسم العميل', ERP = 'اكتب كود العميل', ADDRESS = 'اكتب عنوان التسليم', CITY = 'اختر المدينة', NO_CUSTOMER = 'اكتب اسم العميل وكود العميل';
@@ -1517,6 +1527,15 @@ try {
     res = await ask('rep', {customer: {name: 'مصنع جديد', erpCode: 'N-1'}}); body = await res.json();
     res = await upload(body.request.id, 'رسم جديد.pdf', pdf('new')); const fresh = (await res.json()).request;
     check([fresh.sending.state, sentOf(fresh.id).at(-1).customer], ['sent', {crmNumber: null, name: 'مصنع جديد', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: 'N-1'}], 'a new one: sent at once');
+    // The owner's case (2026-11-21): a name typed with the ERP code of another of the CRM's customers (f1's) reaches production as typed:
+    // the body production receives and what it stores carry the name and code typed, no Yourrest number, nothing of f1.
+    res = await ask('rep', {customer: {name: 'مصنع الريان للطوب', erpCode: ' ERP-١٤٦ '}, address: 'جدة، طريق الميناء', city: 'Jeddah - جده'}); body = await res.json();
+    const typedOther = body.request.id;
+    res = await upload(typedOther, 'رسم الريان.pdf', pdf('typed with another customer\'s code'));
+    const typedSent = sentOf(typedOther).at(-1);
+    check([(await res.json()).request.sending.state, typedSent.customer, Object.keys(typedSent.customer), freeMock.row(typedOther).customerName, freeMock.row(typedOther).customerErpCode, freeMock.row(typedOther).customerNo ?? null, freeMock.row(typedOther).customerAddress],
+      ['sent', {crmNumber: null, name: 'مصنع الريان للطوب', address: 'جدة، طريق الميناء', city: 'Jeddah - جده', erpCode: 'ERP-146'}, ['crmNumber', 'name', 'address', 'city', 'erpCode'], 'مصنع الريان للطوب', 'ERP-146', null, 'جدة، طريق الميناء'],
+      'a name typed with another customer\'s code: production receives and stores the name and code typed, crmNumber null; nothing of f1 (its name, address or city)');
 
     // (g) «طلبات بانتظار اعتمادي», the approvals by crmRequestId and by requestRef, the design file, status and resend: by the request
     const pendingOf = async who => (await listOf(who)).pending.items;
@@ -1545,7 +1564,7 @@ try {
     res = await raw('rep', {action: 'resend', id: refused}); body = await res.json();
     check([body.send.kind, body.request.sending.state, freeMock.row(refused).customerErpCode], ['ok', 'sent', 'R-1'], 'a resend once production takes it: sent');
 
-    // (i) the edit of one never sent changes its customer: a change of what was signed; to one of the CRM's, it is linked
+    // (i) the edit of one never sent changes its customer: a change of what was signed; to a CRM customer's code it is still as typed
     freeMock.setFreeCustomers(false);
     await freeApp.db.prepare("DELETE FROM crm_settings WHERE id='mold-free-customers'").run();
     res = await ask('rep', {customer: {name: 'مصنع للتعديل', erpCode: 'E-1'}}); body = await res.json();
@@ -1562,8 +1581,35 @@ try {
     check([res.status, body.request.customerName, body.request.customerErpCode, body.request.customerId, (await dataOf(draft)).customer], [200, 'مصنع معدّل', 'E-2', '', {crmNumber: null, name: 'مصنع معدّل', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: 'E-2'}], 'signed again: saved with the new name and code');
     check([body.request.sending.held, sentOf(draft).length], ['free_customer', 0], 'still waiting for production\'s update');
     res = await edit({customer: {name: 'مصنع معدّل', erpCode: 'ERP-146'}}); body = await res.json();
-    check([res.status, body.request.customerId, body.request.crmNumber, (await stored(draft)).customer_id, (await dataOf(draft)).customer.name, (await dataOf(draft)).customer.erpCode], [200, 'f1', f1, 'f1', 'مصنع f1', 'ERP-146'], 'an ERP code of one of the CRM\'s customers: linked now');
-    check([body.request.sending.state, sentOf(draft).at(-1).customer], ['sent', {crmNumber: f1, name: 'مصنع f1', address: 'مخزن جدة', city: 'Damam - الدمام', erpCode: 'ERP-146'}], 'linked: sent at once as any linked request, whatever production runs (its code with it, 2026-11-14; a page loaded before: the linked customer\'s city)');
+    check([res.status, body.request.customerId, body.request.crmNumber, (await stored(draft)).customer_id, (await dataOf(draft)).customer], [200, '', null, '', {crmNumber: null, name: 'مصنع معدّل', address: 'مخزن جدة', city: 'Jeddah - جده', erpCode: 'ERP-146'}], 'an ERP code of one of the CRM\'s customers typed in the edit: still the name and code typed, never linked (2026-11-21)');
+    check([body.request.sending.held, sentOf(draft).length], ['free_customer', 0], 'and it waits like any typed request while production\'s update is not known');
+    ({version} = await stored(draft));
+    res = await edit({customerId: 'f1', customer: {name: 'مصنع f1', erpCode: 'ERP-146'}}); body = await res.json();
+    check([res.status, body.request.customerId, body.request.crmNumber, (await dataOf(draft)).customer.name], [200, '', null, 'مصنع f1'], 'nor by a customerId beside it (a page of the release before): a request never linked is not linked by its edit');
+
+    // (i2) a request stored linked before 2026-11-21, never sent: its edit keeps the link only while it names its own customer with the
+    // name and code it was stored with (the form's two fields left as they were); anything else typed is the customer typed, unlinked.
+    const linkedData = {requestedAt: '2026-11-20T10:00:00+03:00', customer: {crmNumber: f1, name: 'مصنع f1', address: 'عنوان f1', city: 'Jeddah - جده', erpCode: 'ERP-146'}, erpWithCrm: true,
+      salesman: {crmMemberId: 'rep', name: 'أنور عبد الحكيم', email: 'rep@yourrest.org'}, specs, payment: 'cash'};
+    const storedLinked = async () => { const id = 'mr-' + crypto.randomUUID(), at = new Date().toISOString(); await freeApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','f1',?,'send','2099-01-01T00:00:00.000Z','rep',?,?,1)").bind(id, JSON.stringify(linkedData), at, at).run(); return id; };
+    const editStored = (id, extra) => raw('rep', {action: 'update', id, version: 1, address: 'عنوان f1', city: 'Jeddah - جده', specs: {...specs, quantity: 2}, payment: 'cash', ...extra});
+    const keptId = await storedLinked();
+    res = await editStored(keptId, {customerId: 'f1', customer: {name: ' مصنع  f1 ', erpCode: 'ERP-١٤٦'}}); body = await res.json();
+    check([res.status, body.request.customerId, body.request.crmNumber, (await stored(keptId)).customer_id, (await dataOf(keptId)).customer, (await dataOf(keptId)).erpWithCrm, body.request.specs.quantity],
+      [200, 'f1', f1, 'f1', linkedData.customer, true, 2], 'its own customer with the name and code stored (as typed text is read): the link kept, the customer as stored, the other change saved');
+    check([body.request.sending.state, sentOf(keptId).at(-1)?.customer], ['sent', linkedData.customer], 'and it goes as a linked request does, its Yourrest number and code');
+    for (const [extra, what] of [[{customerId: 'f1', customer: {name: 'مصنع الريان للطوب', erpCode: 'ERP-146'}}, 'another name with its own customerId'], [{customerId: 'f1', customer: {name: 'مصنع f1', erpCode: 'ERP-147'}}, 'another code'],
+      [{customerId: 'f4', customer: {name: 'مصنع f1', erpCode: 'ERP-146'}}, 'another customerId (a page of the release before, linked by the code on the device)'], [{customer: {name: 'مصنع f1', erpCode: 'ERP-146'}}, 'what was stored, without its customerId (the link let go on the device)']]) {
+      const id = await storedLinked();
+      res = await editStored(id, extra); body = await res.json();
+      check([res.status, body.request.customerId, body.request.crmNumber, (await stored(id)).customer_id, (await dataOf(id)).customer, (await dataOf(id)).erpWithCrm, body.request.sending.held],
+        [200, '', null, '', {crmNumber: null, name: extra.customer.name, address: 'عنوان f1', city: 'Jeddah - جده', erpCode: extra.customer.erpCode}, undefined, 'free_customer'], what + ': the customer typed, unlinked, kept until production takes it');
+    }
+    // One stored linked without a code (before 2026-11-14).
+    const noCodeId = await storedLinked();
+    await freeApp.db.prepare("UPDATE crm_mold_requests SET data=json_remove(data,'$.customer.erpCode','$.erpWithCrm') WHERE id=?").bind(noCodeId).run();
+    res = await editStored(noCodeId, {customerId: 'f1', customer: {name: 'مصنع f1', erpCode: ''}}); body = await res.json();
+    check([res.status, body.fields, (await stored(noCodeId)).version], [400, {'customer.erpCode': 'اكتب كود العميل'}, 1], 'kept with no code sent: the code asked for (never filled in from the customer once the field was sent), nothing saved');
 
     // (j) the customers list sent to production is unchanged: the CRM's customers only, as before
     await as('owner')('/api/crm');
@@ -1585,6 +1631,8 @@ try {
   const cityApp = await bootBuiltApp({members}, {env: {YR_PRODUCTS_API_URL: cityMock.url, YR_PRODUCTS_SECRET: cityMock.state.secret, NODE_EXTRA_CA_CERTS: cityMock.ca}});
   try {
     const session = await cityApp.login('rep'), as = cityApp.as(session), now = new Date().toISOString();
+    // Production's application takes a customer typed (learned on the live site from its answers): a typed request goes at once.
+    await cityApp.db.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('mold-free-customers',?)").bind(now).run();
     const fixture = (id, data) => cityApp.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,'customer',NULL,'rep','الرئيسي',?,?,?,1,'fixture')").bind(id, JSON.stringify({name: 'مصنع ' + id, region: 'الشرقية', address: 'عنوان ' + id, ...data}), now, now).run();
     await fixture('c1', {city: 'الرياض', code: 'C-101'}); await fixture('c2', {city: 'الخبر', code: 'C-102'});
     const crmNumber = (await cityApp.db.prepare("SELECT number FROM crm_customer_numbers WHERE customer_id='c1'").first()).number;
@@ -1598,14 +1646,14 @@ try {
     for (const [extra, fields, what] of [
       [{city: ''}, {city: 'اختر المدينة'}, 'no city'], [{city: 'الخبر'}, {city: 'اختر المدينة'}, 'a city not of the sheet\'s'], [{city: 'Dubai'}, {city: 'اختر المدينة'}, 'anything else'],
       [{specs: {...specs, moldNo: ''}}, {'specs.moldNo': 'اكتب رقم القالب'}, 'no mold number'], [{specs: {...specs, moldNo: '   '}}, {'specs.moldNo': 'اكتب رقم القالب'}, 'a blank mold number'],
-      [{customer: {name: 'مصنع c1', erpCode: ''}, customerId: 'c1'}, {'customer.erpCode': 'اكتب كود العميل'}, 'a CRM customer chosen with no code, and none of its own'],
+      [{customer: {name: 'مصنع c1', erpCode: ''}, customerId: 'c1'}, {'customer.erpCode': 'اكتب كود العميل'}, 'a CRM customer\'s id beside a name typed with no code (its own code not taken: 2026-11-21)'],
       [{customer: {name: 'مصنع خارجي', erpCode: ''}}, {'customer.erpCode': 'اكتب كود العميل'}, 'a customer not in the CRM with no code'],
       [{city: '', specs: {...specs, moldNo: ''}, customer: {name: 'مصنع خارجي', erpCode: ''}}, {city: 'اختر المدينة', 'specs.moldNo': 'اكتب رقم القالب', 'customer.erpCode': 'اكتب كود العميل'}, 'all three at once']]) {
-      if (what.startsWith('a CRM customer chosen')) await cityApp.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code','') WHERE id='c1'").run();
+      if (what.startsWith('a CRM customer\'s id')) await cityApp.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code','') WHERE id='c1'").run();
       const res = await raw(form(extra)), body = await res.json();
       const named = Object.fromEntries(Object.entries(body.fields || {}).map(([key, value]) => [key === 'moldNo' ? 'specs.moldNo' : key, value]));
       check([res.status, named], [400, fields], what + ': refused by its field');
-      if (what.startsWith('a CRM customer chosen')) await cityApp.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code','C-101') WHERE id='c1'").run();
+      if (what.startsWith('a CRM customer\'s id')) await cityApp.db.prepare("UPDATE crm_records SET data=json_set(data,'$.code','C-101') WHERE id='c1'").run();
     }
     check([await count(), sentCalls().length], [before, calls], 'nothing saved and nothing sent');
     // A page loaded before (no city): a linked customer whose city is one of the sheet's gets it; one whose city is not is refused.
@@ -1613,14 +1661,15 @@ try {
     check([res.status, body.request.customerCity, JSON.parse((await stored(body.request.id)).data).customer.city], [200, 'Riyadh - الرياض', 'Riyadh - الرياض'], 'a page loaded before: the linked customer\'s own city as the sheet writes it');
     res = await raw({action: 'create', customerId: 'c2', specs: {...specs, moldNo: 'YR-16'}, payment: 'cash'}); body = await res.json();
     check([res.status, body.fields?.city], [400, 'اختر المدينة'], 'a page loaded before for a customer whose city is not the sheet\'s: refused, nothing guessed');
-    // Saved with the three, released by its design file: the body carries the city chosen, the mold number and the code with crmNumber.
+    // Saved with the three, released by its design file: the body carries the city chosen, the mold number and the code. The name and code
+    // typed are those of the CRM's c1: as typed all the same (2026-11-21), no Yourrest number.
     res = await raw(form({city: 'Damam - الدمام'})); body = await res.json();
     const id = body.request.id;
-    check([res.status, body.request.customerCity, body.request.customerErpCode, body.request.crmNumber, JSON.parse((await stored(id)).data).erpWithCrm], [200, 'Damam - الدمام', 'C-101', crmNumber, true], 'linked by its code, the city chosen (not its own), marked to send its code');
+    check([res.status, body.request.customerCity, body.request.customerErpCode, body.request.crmNumber, body.request.customerId, JSON.parse((await stored(id)).data).erpWithCrm], [200, 'Damam - الدمام', 'C-101', null, '', undefined], 'c1\'s code typed: as typed, never linked, the city chosen (not c1\'s)');
     res = await uploader(() => as)(id, 'رسم.pdf', pdf('city'));
     check((await res.json()).request.sending.state, 'sent', 'its design file sends it');
     const sent = sentCalls().filter(call => call.body.includes(id)).map(call => JSON.parse(call.body));
-    check([sent.at(-1).customer, sent.at(-1).specs.moldNo, cityMock.row(id).customerErpCode, cityMock.row(id).customerCity], [{crmNumber, name: 'مصنع c1', address: 'مخزن الرياض', city: 'Damam - الدمام', erpCode: 'C-101'}, 'YR-14', 'C-101', 'Damam - الدمام'], 'the body: the city chosen, the mold number, the code beside the Yourrest number; production stores them');
+    check([sent.at(-1).customer, sent.at(-1).specs.moldNo, cityMock.row(id).customerErpCode, cityMock.row(id).customerCity, cityMock.row(id).customerNo ?? null], [{crmNumber: null, name: 'مصنع c1', address: 'مخزن الرياض', city: 'Damam - الدمام', erpCode: 'C-101'}, 'YR-14', 'C-101', 'Damam - الدمام', null], 'the body: the name and code typed, the city chosen, the mold number, no Yourrest number; production stores them');
     const firstBody = sentCalls().filter(call => call.body.includes(id)).at(-1).body;
     await cityApp.db.prepare("UPDATE crm_mold_requests SET outbox='send',next_attempt_at=? WHERE id=?").bind(new Date(Date.now() - 1000).toISOString(), id).run();
     res = await raw({action: 'resend', id}); body = await res.json();
@@ -1639,13 +1688,14 @@ try {
     // An older request never sent: its edit asks for the new fields (each by its field); given, it is saved with them and marked.
     const unsent = 'mr-' + crypto.randomUUID();
     await cityApp.db.prepare("INSERT INTO crm_mold_requests(id,member_id,customer_id,data,outbox,next_attempt_at,created_by,created_at,updated_at,version) VALUES(?,'rep','c1',?,'send','2099-01-01T00:00:00.000Z','rep',?,?,1)").bind(unsent, JSON.stringify({...oldData, specs: {...specs, moldNo: '', description: 'older, never sent'}}), oldAt, oldAt).run();
+    // Its edit names its own customer with the name and code stored (the form's two fields left as they were): the link is kept.
     const edit = extra => raw({action: 'update', id: unsent, version: 1, customerId: 'c1', customer: {name: 'مصنع c1', erpCode: 'C-101'}, address: 'عنوان c1', specs: {...specs, moldNo: '', description: 'older, never sent'}, payment: 'cash', ...extra});
     res = await edit({}); body = await res.json();
     const editFields = Object.fromEntries(Object.entries(body.fields || {}).map(([key, value]) => [key === 'moldNo' ? 'specs.moldNo' : key, value]));
     check([res.status, editFields, (await stored(unsent)).version], [400, {city: 'اختر المدينة', 'specs.moldNo': 'اكتب رقم القالب'}, 1], 'its edit: the city (its own, «الخبر», is not the sheet\'s) and the mold number asked for, nothing saved');
     res = await edit({city: 'Riyadh - الرياض', specs: {...specs, moldNo: 'YR-17', description: 'older, never sent'}}); body = await res.json();
     const edited = JSON.parse((await stored(unsent)).data);
-    check([res.status, edited.customer.city, edited.specs.moldNo, edited.erpWithCrm, body.request.customerCity], [200, 'Riyadh - الرياض', 'YR-17', true, 'Riyadh - الرياض'], 'given: saved with them, its code to go with it (it never reached production)');
+    check([res.status, edited.customer.city, edited.specs.moldNo, edited.erpWithCrm, body.request.customerCity, (await stored(unsent)).customer_id, edited.customer.crmNumber], [200, 'Riyadh - الرياض', 'YR-17', true, 'Riyadh - الرياض', 'c1', crmNumber], 'given: saved with them, still linked to c1, its code to go with it (it never reached production)');
   } finally { await cityApp.stop(); await cityMock.stop(); }
 }
 
