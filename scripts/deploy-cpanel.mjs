@@ -11,15 +11,13 @@
 //   node scripts/deploy-cpanel.mjs --mode backup --run <id>   (a verified backup now, then the daily backup cron line, added once)
 //   node scripts/deploy-cpanel.mjs --mode prune --list <prune.json> --run <id>   (old copies removed by scripts/prune/old-copies.cjs)
 //   node scripts/deploy-cpanel.mjs --mode mold-link --list <mold-link.json> --run <id>   (scripts/mold-link/legacy-link.cjs, dry run or link)
-//   node scripts/deploy-cpanel.mjs --mode streets --list <streets.json> --file <streets.json.gz> --run <id>   (the street data file, ONE file,
-//        and portable/import-street-data.mjs: a dry run, or --apply when the request says so; the app keeps running)
 //
 // The account comes from CPANEL_HOST, CPANEL_USER and CPANEL_API_TOKEN.
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-export const WORK = 'yourrest-deploy', APP_ROOT = 'yourrest-crm', SCRIPTS = ['hosting-deploy.sh', 'hosting-cron.sh'], DIAGNOSE = 'diagnose.cjs', PRUNE = 'prune.cjs', PRUNE_LIST = 'prune.json', MOLD_LINK = 'mold-link.cjs', MOLD_LINK_REQUEST = 'mold-link.json', STREETS = 'import-street-data.mjs', STREETS_REQUEST = 'streets.json', STREETS_FILE = 'streets.json.gz';
+export const WORK = 'yourrest-deploy', APP_ROOT = 'yourrest-crm', SCRIPTS = ['hosting-deploy.sh', 'hosting-cron.sh'], DIAGNOSE = 'diagnose.cjs', PRUNE = 'prune.cjs', PRUNE_LIST = 'prune.json', MOLD_LINK = 'mold-link.cjs', MOLD_LINK_REQUEST = 'mold-link.json';
 export const CRON_COMMAND = `/bin/bash $HOME/${WORK}/hosting-cron.sh >/dev/null 2>&1`;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, RUN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/, STALE_RUNNING_MS = 2 * 3600_000;
 
@@ -53,11 +51,10 @@ export function accountHints(user, token) {
 }
 
 function checkConfig(c) {
-  if (!['check', 'deploy', 'verify', 'diagnose', 'backup', 'prune', 'mold-link', 'streets'].includes(c.mode)) throw new DeployError('mode must be check, deploy, verify, diagnose, backup, prune, mold-link or streets');
+  if (!['check', 'deploy', 'verify', 'diagnose', 'backup', 'prune', 'mold-link'].includes(c.mode)) throw new DeployError('mode must be check, deploy, verify, diagnose, backup, prune or mold-link');
   if (c.mode === 'diagnose' && !c.diagnose) throw new DeployError('diagnose needs the check script');
   if (c.mode === 'prune' && (!c.prune || !c.pruneList)) throw new DeployError('prune needs the tool and its list');
   if (c.mode === 'mold-link' && (!c.moldLink || !c.moldLinkRequest)) throw new DeployError('mold-link needs the tool and its request');
-  if (c.mode === 'streets' && (!c.streets || !c.streetsRequest || !c.streetsFile)) throw new DeployError('streets needs the import tool, its request and the street data file');
   if (!c.user || !c.token) throw new DeployError('CPANEL_USER and CPANEL_API_TOKEN are needed');
   if (!/^[a-z][a-z0-9]{0,31}$/.test(c.user)) throw new DeployError('CPANEL_USER must be the cPanel account name (small letters and digits)');
   for (const [label, value] of [['stage', c.stage], ['helper', c.helper]]) if (!NAME.test(value ?? '')) throw new DeployError(`${label} must be a plain file name`);
@@ -87,8 +84,6 @@ export async function deploy(given, deps) {
   if (c.mode === 'prune') Object.assign(c, {stage: 'none', helper: PRUNE});
   // A mold-link run carries the link tool and its request (a dry run or not); hosting-deploy.sh runs the tool with the request.
   if (c.mode === 'mold-link') Object.assign(c, {stage: 'none', helper: MOLD_LINK});
-  // A streets run carries the import tool, its request (dry run or apply, the file's sha256) and the one street data file.
-  if (c.mode === 'streets') Object.assign(c, {stage: 'none', helper: STREETS});
   checkConfig(c);
   const packaged = c.mode === 'check' || c.mode === 'deploy';
   const {fetch, sleep, log, out = () => {}, now = Date.now, pollMs = 10_000, claimMs = 6 * 60_000, runMs = 45 * 60_000} = deps;
@@ -152,7 +147,7 @@ export async function deploy(given, deps) {
     await upload(home, [[c.zipName, c.zip]], 'the upload of the package');
     log(`uploaded ${c.zipName} (${Math.round(c.zip.size / 1024 / 1024)} MB)`);
   }
-  await upload(dir, [...SCRIPTS.map(name => [name, c.scripts[name]]), ...(c.mode === 'diagnose' ? [[DIAGNOSE, c.diagnose]] : []), ...(c.mode === 'prune' ? [[PRUNE, c.prune], [PRUNE_LIST, c.pruneList]] : []), ...(c.mode === 'mold-link' ? [[MOLD_LINK, c.moldLink], [MOLD_LINK_REQUEST, c.moldLinkRequest]] : []), ...(c.mode === 'streets' ? [[STREETS, c.streets], [STREETS_REQUEST, c.streetsRequest], [STREETS_FILE, c.streetsFile]] : [])], 'the upload of the scripts');
+  await upload(dir, [...SCRIPTS.map(name => [name, c.scripts[name]]), ...(c.mode === 'diagnose' ? [[DIAGNOSE, c.diagnose]] : []), ...(c.mode === 'prune' ? [[PRUNE, c.prune], [PRUNE_LIST, c.pruneList]] : []), ...(c.mode === 'mold-link' ? [[MOLD_LINK, c.moldLink], [MOLD_LINK_REQUEST, c.moldLinkRequest]] : [])], 'the upload of the scripts');
 
   // 2. The request, then the cron line that runs it. The request goes last: a line left from before must not find half of it.
   const output = [];
@@ -192,11 +187,7 @@ export async function deploy(given, deps) {
   } finally {
     // Whatever happened: no request waits for a later minute, and no cron line stays behind.
     try {
-      if ((await list(dir)).some(entry => entry.file === 'request')) {
-        await unlink('request'); log('the request nobody took was deleted');
-        // A streets run that never started leaves its data file too (a run that started removes it itself, whatever happens).
-        if (c.mode === 'streets' && (await list(dir)).some(entry => entry.file === STREETS_FILE)) { await unlink(STREETS_FILE); log('the street data file nobody used was deleted'); }
-      }
+      if ((await list(dir)).some(entry => entry.file === 'request')) { await unlink('request'); log('the request nobody took was deleted'); }
     } catch (error) { log(`could not check for a request left behind (${error.message})`); }
     try {
       for (const row of await ourLines()) await api2('Cron', 'remove_line', row.linekey ? {linekey: row.linekey} : {line: String(row.commandnumber ?? row.count)}, 'removing the cron line');
@@ -221,14 +212,14 @@ export async function deploy(given, deps) {
 }
 
 // What the hosting account said that matters at a glance: one annotation, since the session that asked reads annotations first.
-const KEY_LINE = /STOP|READY|VERIFIED|SWITCHED|SELECTOR|START APP|STARTED|STOPPED|MIGRATIONS|DATABASE|CUSTOMER CODES|LOGIN HTTP|ANONYMOUS|BACKUP|CHECKPOINT|UNPACKED|ATTEMPT|PRUNE|REMOVE|ALREADY GONE|MOLD LINK|STREET/;
+const KEY_LINE = /STOP|READY|VERIFIED|SWITCHED|SELECTOR|START APP|STARTED|STOPPED|MIGRATIONS|DATABASE|CUSTOMER CODES|LOGIN HTTP|ANONYMOUS|BACKUP|CHECKPOINT|UNPACKED|ATTEMPT|PRUNE|REMOVE|ALREADY GONE|MOLD LINK/;
 const annotation = text => text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 
 async function main() {
   const args = new Map();
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i += 2) {
-    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>, --mode diagnose --script <file> --run <id>, --mode backup --run <id>, --mode prune --list <prune.json> --run <id>, --mode streets --list <streets.json> --file <streets.json.gz> --run <id>, or --mode mold-link --list <mold-link.json> --run <id>`);
+    if (!argv[i].startsWith('--') || argv[i + 1] === undefined) throw new DeployError(`usage: --mode check|deploy|verify --package <zip> --sha256 <hex> --stage <folder> --helper <file> --run <id>, --mode diagnose --script <file> --run <id>, --mode backup --run <id>, --mode prune --list <prune.json> --run <id>, or --mode mold-link --list <mold-link.json> --run <id>`);
     args.set(argv[i].slice(2), argv[i + 1]);
   }
   const mode = args.get('mode'), pkg = args.get('package'), packaged = mode === 'check' || mode === 'deploy';
@@ -243,9 +234,6 @@ async function main() {
     pruneList: mode === 'prune' ? await fs.openAsBlob(args.get('list')) : null,
     moldLink: mode === 'mold-link' ? await fs.openAsBlob(path.join(scriptsDir, 'mold-link', 'legacy-link.cjs')) : null,
     moldLinkRequest: mode === 'mold-link' ? await fs.openAsBlob(args.get('list')) : null,
-    streets: mode === 'streets' ? await fs.openAsBlob(path.join(scriptsDir, '..', 'portable', 'import-street-data.mjs')) : null,
-    streetsRequest: mode === 'streets' ? await fs.openAsBlob(args.get('list')) : null,
-    streetsFile: mode === 'streets' ? await fs.openAsBlob(args.get('file')) : null,
   }, {
     fetch, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
     log: line => console.log(`::notice title=deploy::${annotation(line)}`), out: line => console.log(line),

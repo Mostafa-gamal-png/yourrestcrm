@@ -5,7 +5,11 @@
 // the device at 21:45 is on time by the device's clock; a send repeated after a cut connection writes nothing twice; a stale version is 409;
 // the supervisor approves, approves with edits, returns, and the representative cannot delete or change the supervisor's stops; the sales
 // manager takes part; one note per reviewer and day; the export; the reminder cards; GET /api/crm without the plans' audit rows, and the
-// day report and the notes of the previous releases answering as before. Synthetic fixtures only: temporary SQLite, mocked mail.
+// day report and the notes of the previous releases answering as before. Then Saturday's deadline, midnight at the end of Friday (the owner,
+// 2026-11-21), on two more boots of the release: at Friday 22:30 the member's card has Saturday's plan due at Saturday 00:00 and not late, the
+// reviewer is told of nobody, a plan sent now is on time; at Saturday 00:00 the member's card says late, the reviewer is told who has not
+// sent it, and a plan made on the device at Friday 23:59:59 is on time while one made at Saturday 00:00:00 is late. Synthetic fixtures only:
+// temporary SQLite, mocked mail.
 import assert from 'node:assert/strict';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 
@@ -114,7 +118,51 @@ try {
   eq((await session.sup2('/api/journeys?date=' + W + '&memberId=rep2')).status, 200, 'the day report answers as before');
   eq((await session.sup2('/api/reviews?date=' + W + '&memberId=rep2')).status, 200, 'and its notes');
   eq((await session.rep1('/api/review-inbox')).status, 200, 'and the notes card');
-  console.log(JSON.stringify({ok: true, checks}));
 } finally {
   await app.stop();
 }
+
+// ---- Saturday's deadline: midnight at the end of Friday (2026-11-21). The coming Friday 22:30 Riyadh (19:30 UTC), then the Saturday 00:00
+// after it (21:00 UTC); each a release booted with its server's clock there (the clock runs on from the boot).
+let friday = Date.parse(riyadh(Date.now()) + 'T19:30:00.000Z');
+while (new Date(friday).getUTCDay() !== 5 || friday < Date.now()) friday += 86400000;
+const SA = riyadh(friday + 3 * 3600000), midnight = new Date(friday + 90 * 60000).toISOString(), FR = riyadh(friday);
+async function bootAt(at, run) {
+  const shifted = await bootBuiltApp({members}, {env: {NODE_OPTIONS: '--import ' + new URL('../scripts/lib/shifted-clock.mjs', import.meta.url).href, TEST_CLOCK_OFFSET_MS: String(at - Date.now())}});
+  try {
+    const stamp = new Date().toISOString();
+    for (const [id, name] of [['c1', 'مصنع الشرق'], ['c2', 'مصنع الخليج']]) await shifted.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id, 'customer', null, 'rep1', 'الرئيسي', JSON.stringify({name, region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03'}), stamp, stamp).run();
+    const calls = {};
+    for (const id of ['rep1', 'mk1', 'sup']) calls[id] = shifted.as(await shifted.login(id));
+    const json = async (response, status, label) => { eq(response.status, status, label + ' -> ' + response.text.slice(0, 300)); return response.json(); };
+    const send = async (who, body, status = 200) => (await json(await calls[who]('/api/daily-plans', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'send', date: SA, stops: [{customerId: 'c1', kind: 'visit', time: '', note: ''}], baseVersion: null, ...body}}), status, 'send as ' + who)).plan;
+    const box = async who => json(await calls[who]('/api/daily-plans/inbox'), 200, 'inbox of ' + who);
+    const list = async () => (await json(await calls.sup('/api/daily-plans?date=' + SA), 200, 'the list of ' + SA)).rows.map(row => [row.memberId, row.state, row.late, row.overdue]).sort();
+    await run({send, box, list});
+  } finally {
+    await shifted.stop();
+  }
+}
+await bootAt(friday, async ({send, box, list}) => {
+  const card = await box('rep1');
+  eq([card.next, card.today], [{date: SA, state: 'missing', late: false, deadline: midnight, version: null, returnReason: '', reviewedByName: ''}, null], 'Friday 22:30: Saturday\'s plan, due at Saturday 00:00 Riyadh');
+  eq(Date.parse(card.next.deadline) > friday + 5 * 60000, true, 'Friday 22:30: not past its deadline, so the card says «not sent yet», not late');
+  eq(Object.hasOwn(await box('sup'), 'missing'), false, 'the reviewer is told of nobody before midnight');
+  eq(await list(), [['mk1', 'missing', false, false], ['rep1', 'missing', false, false]], 'the list marks nobody past the deadline');
+  const plan = await send('rep1', {});
+  eq([plan.state, plan.late, plan.firstSentSource, plan.deadline], ['sent', false, 'server', midnight], 'sent at Friday 22:30: on time (it was late under the 22:00 rule)');
+});
+await bootAt(friday + 90 * 60000, async ({send, box, list}) => {
+  const card = await box('rep1');
+  eq([card.today?.date, card.today?.state, card.next?.date], [SA, 'missing', riyadh(friday + 27 * 3600000)], 'Saturday 00:00: today is Saturday, its plan not sent; the next is Sunday\'s');
+  eq(Date.parse(card.today.deadline) <= friday + 90 * 60000, true, 'past its deadline: the member\'s card says Saturday\'s plan is late');
+  eq((await box('sup')).missing, {date: SA, names: ['المندوب أحمد', 'مسؤول التسويق']}, 'the reviewer is told who has not sent it');
+  eq(await list(), [['mk1', 'missing', false, true], ['rep1', 'missing', false, true]], 'the list marks both past the deadline');
+  const onTime = new Date(Date.parse(FR + 'T20:59:59.000Z')).toISOString(), late = new Date(Date.parse(FR + 'T21:00:00.000Z')).toISOString();
+  let plan = await send('mk1', {offline: {memberId: 'mk1', capturedAt: onTime}});
+  eq([plan.late, plan.firstSentAt, plan.firstSentSource], [false, onTime, 'device'], 'made on the device at Friday 23:59:59: on time');
+  plan = await send('rep1', {offline: {memberId: 'rep1', capturedAt: late}});
+  eq([plan.late, plan.firstSentAt, plan.firstSentSource], [true, late, 'device'], 'made on the device at Saturday 00:00:00: late');
+  eq((await box('sup')).missing, {date: SA, names: []}, 'both sent: nobody is named');
+});
+console.log(JSON.stringify({ok: true, checks, friday: {FR, SA}}));

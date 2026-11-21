@@ -6,7 +6,9 @@
 // opens with the previous release, and the two down migrations (drizzle/rollback/0024_local_streets.down.sql, then 0023_work_areas.down.sql)
 // leave exactly the 23-migration schema with every row written since the update but the work areas' own, after which the previous release
 // opens it with nothing pending and the release can be applied again. 0023's down refuses while 0024 is still recorded, and changes nothing.
-// The down files are never read as migrations. Synthetic data only.
+// The down files are never read as migrations. Since 2026-11-21 (the purple streets removed) nothing of the application reads or writes the
+// street cache of 0023 and the local streets of 0024, but both migrations stay as they were applied on the live database: this checks them
+// unchanged. Synthetic data only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

@@ -1,19 +1,16 @@
-// «خريطة المصانع» (app/customer-map.tsx, app/work-area-map.tsx, the port of GSCO 2.13.81 and 2.13.82) in a real Chromium against the BUILT
-// release (run the build first), Overpass played by a local stand-in the server asks (YR_OVERPASS_URL) and OpenStreetMap's tiles by a flat
-// picture (nothing leaves this machine). A representative in the Android app on a 360 px phone: the colour key with «بيانات ناقصة»، «شارع بلا
-// عملاء» and «منطقة العمل», his estimated area (500 m around his two customers that are not «خامل») and its count of street pieces with no
-// customer, the card of a customer whose data is incomplete naming what is missing, «إخفاء علامات الشوارع» kept on the device after a reload,
-// and without a connection «الشوارع غير متاحة دون اتصال.». The sales manager on a computer: chooses the representative in the panel, draws an
-// area of four corners on the map, saves it (the database holds it), sees it described, deletes it in two steps. The supervisor reads the area
-// and has no drawing tools. Every screen at 320 and 360 px phones, a tablet upright and on its side and a computer, in Arabic and in English (no
-// Arabic left but the names), without sideways scrolling, the colour key inside the screen, every button of the area at least 44 px high on a
-// touch screen. Screenshots for the report. Synthetic fixtures only: temporary SQLite, mocked sendmail.
+// «خريطة المصانع» (app/customer-map.tsx, app/work-area-map.tsx, the port of GSCO 2.13.81) in a real Chromium against the BUILT release (run
+// the build first), OpenStreetMap's tiles played by a flat picture (nothing leaves this machine). A representative in the Android app on a
+// 360 px phone: the colour key with «بيانات ناقصة» and «منطقة العمل», his estimated area (500 m around his two customers that are not «خامل»),
+// the card of a customer whose data is incomplete naming what is missing, and no purple street anywhere (removed on 2026-11-21: no street
+// key, no «إخفاء علامات الشوارع», no request for streets, no word of them, online or offline). The sales manager on a computer: chooses the
+// representative in the panel, draws an area of four corners on the map, saves it (the database holds it), sees it described, deletes it in
+// two steps. The supervisor reads the area and has no drawing tools. Every screen at 320 and 360 px phones, a tablet upright and on its side
+// and a computer, in Arabic and in English (no Arabic left but the names), without sideways scrolling, the colour key inside the screen, every
+// button of the area at least 44 px high on a touch screen. Screenshots for the report. Synthetic fixtures only: temporary SQLite, mocked sendmail.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createServer} from 'node:http';
-import {once} from 'node:events';
 import {createRequire} from 'node:module';
 import {bootBuiltApp} from '../scripts/lib/built-app.mjs';
 import {installNativeBridge} from '../scripts/lib/native-bridge.mjs';
@@ -26,26 +23,14 @@ const NAMES = ['المشرف سالم', 'المندوب أحمد', 'مسؤول �
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-work-areas-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
 let checks = 0, browser, app;
-const errors = [];
+const errors = [], streetRequests = [];
 const check = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks++; };
 const ok = (value, message) => { assert.ok(value, message); checks++; };
 const SIZES = {phone320: {width: 320, height: 640}, phone360: {width: 360, height: 800}, tabletUp: {width: 768, height: 1024}, tabletSide: {width: 1024, height: 768}, desktop: {width: 1280, height: 900}};
 const TILE = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e8efe6"/><path d="M0 0H256V256" fill="none" stroke="#c9d6c5"/></svg>';
 
-// The stand-in for Overpass: streets beside the customers and across empty land around them.
-const asked = [];
-const lines = [[[26.42973, 50.096], [26.42973, 50.104]], [[26.4335, 50.0985], [26.4335, 50.1015]], [[26.427, 50.097], [26.436, 50.106]]];
-const overpass = createServer((request, response) => {
-  request.resume();request.on('end', () => {
-    asked.push(request.headers['user-agent']);
-    response.writeHead(200, {'Content-Type': 'application/json'});
-    response.end(JSON.stringify({version: 0.6, elements: lines.map((line, i) => ({type: 'way', id: i + 1, tags: {highway: 'residential', name: 'شارع الاختبار ' + (i + 1), 'name:en': 'Test street ' + (i + 1)}, geometry: line.map(([lat, lon]) => ({lat, lon}))}))}));
-  });
-});
-overpass.listen(0, '127.0.0.1');await once(overpass, 'listening');
-
 try {
-  app = await bootBuiltApp({members}, {tls: true, env: {YR_OVERPASS_URL: 'http://127.0.0.1:' + overpass.address().port + '/api/interpreter'}});
+  app = await bootBuiltApp({members}, {tls: true});
   const now = new Date().toISOString();
   const insert = (id, assignedTo, data) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,'الرئيسي',?,?,?,1,'fixture')").bind(id, 'customer', null, assignedTo, JSON.stringify({branch: 'الرئيسي', assignedTo, ...data}), now, now).run();
   await insert('c1', 'rep1', {name: 'مصنع الشرق', region: 'الشرقية', city: 'الدمام', phone: '0551111111', contact: 'م', customerKind: 'مصنع', customerStatus: 'نشط', latitude: 26.43, longitude: 50.1});
@@ -63,6 +48,7 @@ try {
     const page = await context.newPage();
     page.setDefaultTimeout(25000);
     page.on('pageerror', error => errors.push(memberId + ': ' + error.message));
+    page.on('request', request => { if (/work-area-streets|overpass/i.test(request.url())) streetRequests.push(request.url()); });
     if (inApp) await installNativeBridge(page, {memberId, regionScope: 'eastern'});
     await page.goto(app.origin + '/#map');
     if (english) await page.waitForFunction(() => document.documentElement.lang === 'en');
@@ -82,16 +68,16 @@ const inside = async (page, selector, label, {sideways = false} = {}) => check(a
   // The colour key never covers the search box or the toolbar (on a short map it scrolls inside its box).
   const clear = async (page, label) => check(await page.evaluate(() => { const key = document.querySelector('[data-map-legend]')?.getBoundingClientRect(), bar = [...document.querySelectorAll('.cm-search-box, .cm-map-controls')].map(item => item.getBoundingClientRect()); return !!key && bar.some(box => key.top < box.bottom && key.bottom > box.top && key.left < box.right && key.right > box.left); }), false, label + ': the colour key leaves the search and the toolbar uncovered');
   const areaLines = page => page.locator('[data-work-area-lines]');
+  // Nothing of the streets on the map: no key, no switch, no word (Arabic or English; the tiles' «OpenStreetMap» credit stays).
+  const noStreets = async (page, label) => check(await page.evaluate(() => [document.querySelectorAll('[data-legend-key="street"], [data-street-toggle], .cm-street-toggle, .cm-key-street, .cm-street-tip').length, /الشوارع|شارع|\bstreets?\b/i.test(document.querySelector('.cm-shell')?.innerText || '')]), [0, false], label + ': no street key, switch or word');
 
   // ---- 1. The representative in the Android app on a 360 px phone.
   const rep = await open('rep1', {inApp: true});
-  await areaLines(rep).filter({hasText: 'جزء شارع بلا عملاء'}).waitFor();
-  const repLines = await areaLines(rep).innerText();
-  ok(repLines.includes('منطقة تقديرية: 500 م حول عملاء المندوب (2)'), 'his estimated area: 500 m around his two customers that are not «خامل»');
-  ok(/\d+ جزء شارع بلا عملاء/.test(repLines), 'the count of street pieces with no customer');
-  check(await legend(rep).locator('[data-legend-key]').evaluateAll(items => items.map(item => item.getAttribute('data-legend-key'))), ['incomplete', 'street', 'area'], 'the colour key: missing data, street with no customer, work area');
+  await areaLines(rep).filter({hasText: 'منطقة تقديرية'}).waitFor();
+  check(await areaLines(rep).innerText(), 'منطقة تقديرية: 500 م حول عملاء المندوب (2)', 'his estimated area: 500 m around his two customers that are not «خامل», and nothing more');
+  check(await legend(rep).locator('[data-legend-key]').evaluateAll(items => items.map(item => item.getAttribute('data-legend-key'))), ['incomplete', 'area'], 'the colour key: missing data and the work area');
   ok((await legend(rep).innerText()).includes('بيانات ناقصة'), 'named in Arabic');
-  check(asked.length > 0 && asked.every(agent => /^Yourrest-CRM/.test(agent)), true, 'the streets were asked by the server only');
+  await noStreets(rep, 'rep 360');
   await rep.locator('.cm-search-box input').fill('مصنع الخليج');
   await rep.locator('.cm-search-result').first().click();
   const missing = rep.locator('[data-customer-missing]');
@@ -99,16 +85,16 @@ const inside = async (page, selector, label, {sideways = false} = {}) => check(a
   check(await missing.innerText(), 'بيانات ناقصة: المدينة، الهاتف، اسم المسؤول، نوع العميل', 'the card names what is missing, as the evaluation counts it');
   await shot(rep, 'rep-app-360-incomplete-card');
   await rep.locator('.cm-selected-card .cm-close').click();
-  await noSideways(rep, 'rep 360');await inside(rep, '[data-map-legend]', 'rep 360 legend');await clear(rep, 'rep 360');await tall(rep, '[data-street-toggle]', 'rep 360 street switch');
+  await noSideways(rep, 'rep 360');await inside(rep, '[data-map-legend]', 'rep 360 legend');await clear(rep, 'rep 360');
   await shot(rep, 'rep-app-360-area');
-  await rep.locator('[data-street-toggle]').click();
-  check(await rep.evaluate(() => localStorage.getItem('yourrest.map.hideStreets')), '1', '«إخفاء علامات الشوارع» kept on the device');
-  await rep.reload();await rep.locator('.cm-shell').waitFor();await legend(rep).waitFor();
-  check(await rep.locator('[data-street-toggle]').getAttribute('aria-pressed'), 'true', 'and still on after a reload');
-  ok(!(await areaLines(rep).innerText()).includes('جزء شارع بلا عملاء'), 'hidden marks are not counted under the map');
+  // A device that kept the old switch («إخفاء علامات الشوارع») on: nothing reads it any more.
+  await rep.evaluate(() => localStorage.setItem('yourrest.map.hideStreets', '1'));
+  await rep.reload();await rep.locator('.cm-shell').waitFor();await areaLines(rep).filter({hasText: 'منطقة تقديرية'}).waitFor();
+  await noStreets(rep, 'rep 360 after a reload with the old switch kept');
   await rep.context().setOffline(true);
-  await areaLines(rep).filter({hasText: 'الشوارع غير متاحة دون اتصال.'}).waitFor();
-  checks++;
+  await rep.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await rep.waitForTimeout(500);
+  await noStreets(rep, 'rep 360 offline');
   await rep.context().setOffline(false);
   await rep.context().close();
 
@@ -118,7 +104,10 @@ const inside = async (page, selector, label, {sideways = false} = {}) => check(a
   await panel();
   check(await mgr.locator('[data-work-area-rep] option').evaluateAll(options => options.map(option => option.value)), ['', 'rep1', 'mk1'], 'the representatives of his team, with or without customers, by name');
   await mgr.locator('[data-work-area-rep] select').selectOption('rep1');
-  await areaLines(mgr).filter({hasText: 'جزء شارع بلا عملاء'}).waitFor();
+  await areaLines(mgr).filter({hasText: 'منطقة تقديرية'}).waitFor();
+  check(await areaLines(mgr).innerText(), 'منطقة تقديرية: 500 م حول عملاء المندوب (2)', 'the representative\'s estimated area under the legend');
+  check(await mgr.locator('[data-work-area-section] .cm-area-line').evaluateAll(items => items.map(item => item.textContent)), ['منطقة تقديرية: 500 م حول عملاء المندوب (2)'], 'and in the panel (closed once the representative is chosen), nothing about streets');
+  await noStreets(mgr, 'manager desktop');
   await shot(mgr, 'manager-desktop-area');
   await panel();
   await mgr.locator('[data-work-area-draw]').click();
@@ -156,16 +145,15 @@ const inside = async (page, selector, label, {sideways = false} = {}) => check(a
   for (const [label, viewport] of Object.entries(SIZES)) for (const english of [false, true]) {
     const tag = label + (english ? '-en' : '-ar');
     const page = await open('rep1', {viewport, english, inApp: true});
-    await areaLines(page).filter({hasText: english ? 'street pieces with no customer' : 'جزء شارع بلا عملاء'}).waitFor();
-    await noSideways(page, 'rep ' + tag);await inside(page, '[data-map-legend]', 'rep ' + tag + ' legend');await clear(page, 'rep ' + tag);
-    if (viewport.width < 1100) await tall(page, '[data-street-toggle]', 'rep ' + tag);
-    if (english) { check(await arabicLeft(page, '[data-map-legend]'), [], 'rep ' + tag + ': the legend has no Arabic left'); ok((await legend(page).innerText()).includes('Missing data') && (await legend(page).innerText()).includes('Hide street marks'), 'rep ' + tag + ': the key in English'); }
+    await areaLines(page).filter({hasText: english ? 'Estimated area' : 'منطقة تقديرية'}).waitFor();
+    await noSideways(page, 'rep ' + tag);await inside(page, '[data-map-legend]', 'rep ' + tag + ' legend');await clear(page, 'rep ' + tag);await noStreets(page, 'rep ' + tag);
+    if (english) { check(await arabicLeft(page, '[data-map-legend]'), [], 'rep ' + tag + ': the legend has no Arabic left'); ok((await legend(page).innerText()).includes('Missing data') && (await legend(page).innerText()).includes('Work area'), 'rep ' + tag + ': the key in English'); }
     await shot(page, 'rep-' + tag);
     await page.context().close();
     const manager = await open('mgr', {viewport, english});
     await manager.locator('.cm-map-controls .cm-control').first().click();
     await manager.locator('[data-work-area-rep] select').selectOption('rep1');
-    await areaLines(manager).filter({hasText: english ? 'street pieces with no customer' : 'جزء شارع بلا عملاء'}).waitFor();
+    await areaLines(manager).filter({hasText: english ? 'Estimated area' : 'منطقة تقديرية'}).waitFor();
     await manager.locator('.cm-map-controls .cm-control').first().click();
     await manager.locator('[data-work-area-draw]').waitFor();
     await noSideways(manager, 'manager panel ' + tag);await inside(manager, '[data-work-area-section] button, [data-work-area-section] select', 'manager panel ' + tag, {sideways: true});
@@ -201,9 +189,9 @@ const inside = async (page, selector, label, {sideways = false} = {}) => check(a
     await manager.context().close();
   }
   check(errors, [], 'no page error');
+  check(streetRequests, [], 'no page asked for streets');
   console.log(JSON.stringify({ok: true, checks, screenshots}));
 } finally {
   await browser?.close();
   await app?.stop();
-  overpass.close();
 }

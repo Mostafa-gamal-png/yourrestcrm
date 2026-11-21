@@ -116,7 +116,9 @@ export const customerIdentityState=sqliteTable('crm_customer_identity_state',{id
 export const customerCodeMappings=sqliteTable('crm_customer_code_mappings',{
  codeKey:text('code_key').primaryKey(),customerId:text('customer_id').notNull().references(()=>records.id,{onDelete:'restrict'}),version:integer('version').notNull().default(1),updatedBy:text('updated_by').notNull(),updatedAt:text('updated_at').notNull()
 });
-// «خريطة المصانع» (migration 0023, lib/work-areas-server.ts): a field member's drawn work area, and OpenStreetMap's answer kept per 0.01° box.
+// «خريطة المصانع» (migration 0023, lib/work-areas-server.ts): a field member's drawn work area, and OpenStreetMap's answer kept per 0.01° box
+// for the purple streets, which were removed on 2026-11-21: crm_osm_street_cache (and crm_osm_street_local of 0024) stay, unused, because the
+// migrations are applied on the live database; nothing reads or writes them.
 export const workAreas=sqliteTable('crm_work_areas',{
  memberId:text('member_id').primaryKey().references(()=>members.id,{onDelete:'restrict'}),polygon:text('polygon').notNull(),vertices:integer('vertices').notNull(),areaM2:real('area_m2').notNull(),
  updatedBy:text('updated_by').notNull().references(()=>members.id,{onDelete:'restrict'}),updatedAt:text('updated_at').notNull(),version:integer('version').notNull().default(1),mutationId:text('mutation_id').notNull()
@@ -125,7 +127,7 @@ export const osmStreetCache=sqliteTable('crm_osm_street_cache',{
  bboxKey:text('bbox_key').primaryKey(),south:real('south').notNull(),west:real('west').notNull(),north:real('north').notNull(),east:real('east').notNull(),
  ways:text('ways').notNull(),wayCount:integer('way_count').notNull(),fetchedAt:text('fetched_at').notNull()
 },t=>[index('crm_osm_street_cache_fetched').on(t.fetchedAt)]);
-// «بيانات شوارع محلية» (migration 0024, portable/import-street-data.mjs): the imported streets, one row per 0.01° cell.
+// «بيانات شوارع محلية» (migration 0024): the imported streets, one row per 0.01° cell; unused since 2026-11-21 (its import tool was removed).
 export const osmStreetLocal=sqliteTable('crm_osm_street_local',{
  bboxKey:text('bbox_key').primaryKey(),cellLat:integer('cell_lat').notNull(),cellLng:integer('cell_lng').notNull(),south:real('south').notNull(),west:real('west').notNull(),north:real('north').notNull(),east:real('east').notNull(),
  ways:text('ways').notNull(),wayCount:integer('way_count').notNull(),region:text('region').notNull(),dataset:text('dataset').notNull(),importedAt:text('imported_at').notNull()

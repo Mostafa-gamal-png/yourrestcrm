@@ -1,7 +1,8 @@
 /** «خطة الغد» and «خطط المناديب» (the owner, 2026-11-19: the port of GSCO 2.13.83 «خطة الغد / خطط المناديب» with the owner's decisions;
  * migration 0022). A representative or a marketing officer (lib/roles.ts isFieldRole) prepares the plan of the next working day: stops,
  * each a visit, a call or a WhatsApp contact on a customer, in order, with an optional time and note. It is sent to the supervisor before
- * 22:00 Riyadh of the day before the plan's day; sent later it is accepted and marked «متأخرة» (decided by its first send). The
+ * 22:00 Riyadh of the day before the plan's day, and Saturday's before midnight at the end of Friday (the owner, 2026-11-21); sent later it
+ * is accepted and marked «متأخرة» (decided by its first send). The
  * supervisor (or the sales manager, who may take part but is not required, or the administrator) approves it, approves it with edits
  * (applied at once and shown as edited; the member can no longer change or delete what the reviewer added or changed) or returns it with a
  * reason. A stop is «تمت» by itself once the member records a visit or contact of the same kind on that customer that day, «تمت بطريقة
@@ -11,8 +12,12 @@
 import {isFieldRole} from './roles';
 import {WORKING_WEEKDAYS} from './working-hours';
 
-/** The deadline: 22:00 on the day before the plan's day, Riyadh time (UTC+03:00 all year, no daylight saving). */
-export const PLAN_DEADLINE_HOUR=22;
+/** The deadline: 22:00 on the day before the plan's day, Riyadh time (UTC+03:00 all year, no daylight saving). When that day before is a
+ *  Friday (the weekly day off: the plan is Saturday's, prepared on Thursday), midnight at the end of that Friday, Saturday 00:00:00 (the
+ *  owner, 2026-11-21: «اخر معاد الجمعة قبل 12 باليل»): sent at Friday 23:59:59 it is on time, at 00:00:00 it is late. planDeadline. */
+export const PLAN_DEADLINE_HOUR=22,PLAN_FRIDAY_DEADLINE_HOUR=24;
+/** The deadline in words, for the screens, the reminder card and the device's notice («قبل …» / «before …» put before it). */
+export const PLAN_DEADLINE_TEXT={normal:['الساعة 22:00','22:00'],friday:['منتصف الليل بين الجمعة والسبت','midnight between Friday and Saturday']} as const;
 const RIYADH_OFFSET_MS=3*3600_000,DAY_MS=86_400_000;
 /** A plan has at most 30 stops; a stop's note at most 300 characters; a return's reason 3 to 500; a reviewer's note 2 to 1000. */
 export const PLAN_MAX_STOPS=30,PLAN_STOP_NOTE_MAX=300,PLAN_REASON_MIN=3,PLAN_REASON_MAX=500,PLAN_NOTE_MIN=2,PLAN_NOTE_MAX=1000;
@@ -83,9 +88,16 @@ export const riyadhHourOf=(at:string|number|Date)=>new Date((at instanceof Date?
 export const isPlanWorkingDay=(day:string)=>!!planDay(day)&&WORKING_WEEKDAYS.includes(new Date(day+'T00:00:00Z').getUTCDay());
 /** The day a member prepares now: the next working day after today (Thursday's is Saturday's: Friday is the weekly day off). */
 export function nextPlanDay(today:string){let day=addDays(today,1);for(let guard=0;guard<7&&!isPlanWorkingDay(day);guard++)day=addDays(day,1);return day;}
-/** The deadline of the plan of `day`: 22:00 Riyadh on the day before, as an instant (ISO). */
-export const planDeadline=(day:string)=>new Date(Date.parse(addDays(day,-1)+'T00:00:00Z')+PLAN_DEADLINE_HOUR*3600_000-RIYADH_OFFSET_MS).toISOString();
-/** Late: first sent at or after the deadline (sent at 21:59:59 is on time; at 22:00:00 it is late). */
+const FRIDAY=5;
+/** The hour of the deadline of the plan of `day`, on the day before: 22, or 24 (midnight at its end) when the day before is a Friday. */
+export const planDeadlineHour=(day:string)=>new Date(addDays(day,-1)+'T00:00:00Z').getUTCDay()===FRIDAY?PLAN_FRIDAY_DEADLINE_HOUR:PLAN_DEADLINE_HOUR;
+/** The deadline of the plan of `day`: 22:00 Riyadh on the day before (Saturday's: Saturday 00:00, the end of Friday), as an instant (ISO). */
+export const planDeadline=(day:string)=>new Date(Date.parse(addDays(day,-1)+'T00:00:00Z')+planDeadlineHour(day)*3600_000-RIYADH_OFFSET_MS).toISOString();
+/** The words of the deadline of the plan of `day` (PLAN_DEADLINE_TEXT). */
+export const planDeadlineWords=(day:string)=>planDeadlineHour(day)===PLAN_FRIDAY_DEADLINE_HOUR?PLAN_DEADLINE_TEXT.friday:PLAN_DEADLINE_TEXT.normal;
+/** Late: first sent at or after the deadline (sent at 21:59:59 is on time; at 22:00:00 it is late; Saturday's plan sent at Friday 23:59:59
+ *  is on time, at Saturday 00:00:00 late). The flag is stored at the first send (crm_daily_plans.late) and never worked out again, so a
+ *  plan sent before 2026-11-21 keeps the flag the 22:00 rule gave it. */
 export const planLate=(sentAt:string,day:string)=>Date.parse(sentAt)>=Date.parse(planDeadline(day));
 /** Whether a day may be planned now (today included, sent late, up to PLAN_AHEAD_DAYS ahead): the problem, or null. */
 export function planDateProblem(day:unknown,today:string):'invalid'|'past'|'far'|null{
@@ -271,8 +283,9 @@ export const validPlanInbox=(value:unknown):value is PlanInbox=>{
 
 // ---- the reminder cards (app/daily-plans.tsx PlanInboxCard)
 export type PlanReminderLine={key:string;tone:'due'|'late'|'returned'|'approved'|'pending'|'missing';date:string;memberId?:string};
-/** What the cards say now. A member: the next day's plan returned (always), not sent from 16:00 (late after 22:00), today's not sent
- *  (a working day); a reviewer: each plan waiting for them, and after 22:00 who of their team has not sent the next day's plan. The
+/** What the cards say now. A member: the next day's plan returned (always), not sent from 16:00 (late from its deadline: 22:00, or for
+ *  Saturday's plan midnight at the end of Friday), today's not sent (a working day); a reviewer: each plan waiting for them, and after the
+ *  deadline who of their team has not sent the next day's plan (the server decides: lib/daily-plans-server.ts readPlanInbox). The
  *  notification keys name the plan and its version, so each is announced once. */
 export function planReminderLines(inbox:PlanInbox|null,now:string|number=Date.now()):PlanReminderLine[]{
  if(!inbox)return [];

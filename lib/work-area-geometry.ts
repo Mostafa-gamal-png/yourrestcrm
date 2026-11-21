@@ -1,6 +1,6 @@
-/** «خريطة المصانع» (the owner, 2026-11-19: the port of GSCO 2.13.81 and 2.13.82): the geometry behind the representatives' work areas and
- * the streets with no customer. Pure functions shared by the page and the server, with no dependency on the rest of the application (the same
- * file as GSCO's lib/crm/work-area-geometry.ts, with Yourrest's words).
+/** «خريطة المصانع» (the owner, 2026-11-19: the port of GSCO 2.13.81): the geometry behind the representatives' work areas. Pure functions
+ * shared by the page and the server, with no dependency on the rest of the application (GSCO's lib/crm/work-area-geometry.ts, with Yourrest's
+ * words; the parts only the purple streets with no customer used were removed with them on 2026-11-21).
  * Points are [latitude, longitude]. Distances are in metres on a local flat projection (equirectangular around the area), which is exact to
  * well under a metre at the size of a work area (a few kilometres). */
 export type LatLng=[number,number];
@@ -16,10 +16,6 @@ export const SAUDI_BOUNDS:BBox={south:16,west:34.4,north:32.3,east:55.7};
 export const WORK_AREA_LIMITS={minVertices:3,maxVertices:200,minAreaM2:2500,maxAreaKm2:40,maxSideKm:15} as const;
 /** The fallback area: 500 m around each pin of the representative's own customers (lib/work-areas-server.ts says which). */
 export const FALLBACK_BUFFER_METRES=500;
-/** A street piece is «empty» when no customer pin of the company lies this close to it. */
-export const NEAR_PROJECT_METRES=50;
-/** Street pieces are cut to at most this length (so about 100 to 150 m each). */
-export const SEGMENT_METRES=150;
 
 const EARTH=6371008.8,RAD=Math.PI/180;
 const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
@@ -44,11 +40,6 @@ export function pointSegmentMetres(p:LatLng,a:LatLng,b:LatLng){
  const t=len?Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/len)):0;
  return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));
 }
-export function polylineMetres(line:readonly LatLng[]){let n=0;for(let i=1;i<line.length;i++)n+=metresBetween(line[i-1],line[i]);return n;}
-export function pointPolylineMetres(p:LatLng,line:readonly LatLng[]){
- if(line.length===1)return metresBetween(p,line[0]);
- let best=Infinity;for(let i=1;i<line.length;i++)best=Math.min(best,pointSegmentMetres(p,line[i-1],line[i]));return best;
-}
 
 function dedupe(points:readonly LatLng[]){const seen=new Set<string>(),out:LatLng[]=[];for(const p of points){if(!finite(p?.[0])||!finite(p?.[1]))continue;const key=roundCoordinate(p[0])+','+roundCoordinate(p[1]);if(!seen.has(key)){seen.add(key);out.push([p[0],p[1]]);}}return out;}
 
@@ -65,9 +56,9 @@ export function pinDisks(points:readonly LatLng[],metres=FALLBACK_BUFFER_METRES,
  return {rings:dedupe(points).map(p=>circle(p,metres,steps))};
 }
 
-/** The disks grouped for the street lookup: disks that touch or overlap form one group (one box asked of OpenStreetMap), so a representative
- * whose customers are spread over a city still gets the streets near each of them. A group wider than `maxSideKm` is cut into square tiles by
- * its pins, so every group's box stays within the lookup's limits. Biggest groups first. */
+/** The disks grouped: disks that touch or overlap form one group. A group wider than `maxSideKm` is cut into square tiles by its pins.
+ * Biggest groups first. Only their number is used now: GET /api/work-areas reports it as the area's `clusters` (an answer a page of the
+ * previous release still checks); the street lookup that asked one box of OpenStreetMap per group was removed on 2026-11-21. */
 export function pinClusters(points:readonly LatLng[],metres=FALLBACK_BUFFER_METRES,maxSideKm=10):LatLng[][]{
  const unique=dedupe(points);if(!unique.length)return [];
  const f=plane(mean(unique.map(p=>p[0]))),xy=unique.map(p=>f.xy(p)),link=2*metres;
@@ -189,14 +180,9 @@ export function ringToGeoJson(ring:readonly LatLng[]):GeoJsonPolygon{
  const coordinates=ring.map(([lat,lng])=>[roundCoordinate(lng),roundCoordinate(lat)]);
  return {type:'Polygon',coordinates:[[...coordinates,coordinates[0]]]};
 }
-/** Whether an area is small enough to look up its streets: the same caps as a drawn area. */
-export function areaWithinLimits(area:Area){
- const box=bboxOf(area);if(!box)return false;const sides=bboxSidesKm(box);
- return sides.height<=WORK_AREA_LIMITS.maxSideKm&&sides.width<=WORK_AREA_LIMITS.maxSideKm&&areaM2(area)<=WORK_AREA_LIMITS.maxAreaKm2*1e6;
-}
 
-/** The parts of a line inside the area (and outside `exclude`, when given). Each line segment is cut where it crosses an edge, a piece is kept
- * when its middle is inside, and pieces that follow each other are joined (so a street through overlapping disks stays one piece). */
+/** The parts of a line inside the area (and outside `exclude`, when given): areaOutline cuts each circle of the disks where it enters another.
+ * Each line segment is cut where it crosses an edge, a piece is kept when its middle is inside, and pieces that follow each other are joined. */
 export function clipPolyline(line:readonly LatLng[],area:Area,exclude?:Area):LatLng[][]{
  if(line.length<2||!area.rings.length)return [];
  const f:Plane=plane(mean(area.rings.flat().map(p=>p[0])));
@@ -226,22 +212,4 @@ export function clipPolyline(line:readonly LatLng[],area:Area,exclude?:Area):Lat
   }
  }
  return pieces;
-}
-
-/** A line cut into equal pieces of at most `metres` each (so a 400 m street gives three pieces of about 133 m). */
-export function splitPolyline(line:readonly LatLng[],metres=SEGMENT_METRES):LatLng[][]{
- if(line.length<2)return [];
- const total=polylineMetres(line);if(!(total>0))return [];
- const count=Math.max(1,Math.ceil(total/metres)),step=total/count,out:LatLng[][]=[];
- let piece:LatLng[]=[line[0]],walked=0,target=step;
- for(let i=1;i<line.length;i++){
-  const a=line[i-1],b=line[i],len=metresBetween(a,b);
-  while(out.length<count-1&&walked+len>=target&&len>0){
-   const t=(target-walked)/len,cut:LatLng=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
-   piece.push(cut);out.push(piece);piece=[cut];target+=step;
-  }
-  piece.push(b);walked+=len;
- }
- out.push(piece);
- return out.filter(p=>p.length>=2);
 }

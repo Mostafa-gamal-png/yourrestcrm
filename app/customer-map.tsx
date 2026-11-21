@@ -6,7 +6,7 @@ import {MapPin,Maximize,Loader2,SlidersHorizontal,List,X,Search,Navigation,Build
 import {type Member,type Row} from '@/lib/crm';
 import {t} from '@/lib/i18n';
 import {isFieldRole} from '@/lib/roles';
-import {customerMissing,mapColors,missingText,readHideStreets,workAreaLines,workAreaOutline,writeHideStreets,WORK_AREA_TEXT,type StreetSegment} from '@/lib/work-areas';
+import {customerMissing,mapColors,missingText,workAreaLines,workAreaOutline,WORK_AREA_TEXT} from '@/lib/work-areas';
 import {useAreaEditor,useWorkArea,useWorkAreaLayers,useWorkAreaReps,WorkAreaDrawBar,WorkAreaSection,type MapRefs} from './work-area-map';
 import {customerCoordinates} from '@/lib/customer-location';
 import {customerDirectionsLink} from '@/lib/customer-directions';
@@ -27,21 +27,19 @@ export default function CustomerMap({customers,me,online=true,staffId='',onDirec
  const {language}=useLanguage(),say=(ar:string,en:string)=>language==='ar'?ar:en,dir=language==='ar'?'rtl':'ltr';
  const shell=useRef<HTMLElement>(null),container=useRef<HTMLDivElement>(null),panel=useRef<HTMLElement>(null),panelScroll=useRef<HTMLDivElement>(null),map=useRef<Leaflet.Map|null>(null),leaflet=useRef<typeof Leaflet|null>(null),layer=useRef<Leaflet.LayerGroup|null>(null),rings=useRef<Leaflet.LayerGroup|null>(null),firstFit=useRef(false),focused=useRef(''),returnFocus=useRef<HTMLElement|null>(null),searchInput=useRef<HTMLInputElement>(null),searchResults=useRef<HTMLDivElement>(null),selectedCard=useRef<HTMLElement>(null),focusSelected=useRef(false),directionAttempt=useRef(0),directionAbort=useRef<AbortController|null>(null),latestCustomers=useRef(customers);latestCustomers.current=customers;
  const [ready,setReady]=useState(false),[failed,setFailed]=useState(false),[tileFailed,setTileFailed]=useState(false),[tilesLoaded,setTilesLoaded]=useState(false),[panelOpen,setPanelOpen]=useState(false),[tab,setTab]=useState<PanelTab>('customers'),[active,setActive]=useState<string|null>(null),[groupIds,setGroupIds]=useState<string[]>([]),[shown,setShown]=useState(40),[activity,setActivity]=useState<ActivityKey|'all'>('all'),[query,setQuery]=useState(''),[searchOpen,setSearchOpen]=useState(false),[highlighted,setHighlighted]=useState(-1),[directionsBusy,setDirectionsBusy]=useState(false),[directionsError,setDirectionsError]=useState('');
- // «خريطة المصانع» (2026-11-19, GSCO 2.13.81): the work area and its streets with no customer, and the manager's drawing tools.
+ // «خريطة المصانع» (2026-11-19, GSCO 2.13.81): the work area and the manager's drawing tools (the purple streets were removed on 2026-11-21).
  const field=!!me&&isFieldRole(me.role),areaAuto=useRef(true),areaFitted=useRef('');
  const reps=useWorkAreaReps(!!me&&!field&&online,[me?.id,me?.role,me?.access?.version,scopeKey].join(':'));
- const [areaPick,setAreaPick]=useState(''),[areaReload,setAreaReload]=useState(0),[editing,setEditing]=useState(false),[areaNotice,setAreaNotice]=useState<{rep:string;text:readonly [string,string]}|null>(null),[hideStreets,setHideStreets]=useState(()=>readHideStreets());
+ const [areaPick,setAreaPick]=useState(''),[areaReload,setAreaReload]=useState(0),[editing,setEditing]=useState(false),[areaNotice,setAreaNotice]=useState<{rep:string;text:readonly [string,string]}|null>(null);
  const areaRep=!me?'':field?me.id:reps.some(r=>r.id===areaPick)?areaPick:reps.some(r=>r.id===staffId)?staffId:'';
  const work=useWorkArea(areaRep,online,areaReload),outline=useMemo(()=>work.area?workAreaOutline(work.area):null,[work.area]);
  const refs:MapRefs=useMemo(()=>({map,leaflet,ready}),[ready]);
  const raise=useCallback(()=>{layer.current?.eachLayer(l=>(l as Leaflet.CircleMarker).bringToFront?.());},[]);
- const streetLabel=useCallback((s:StreetSegment)=>{const name=language==='en'?s.name_en||s.name:s.name||s.name_en;return WORK_AREA_TEXT.noCustomer[language==='ar'?0:1]+(name?' — '+name:'');},[language]);
- useWorkAreaLayers(refs,outline,work.streets?.segments??null,!editing,!hideStreets,streetLabel,raise);
+ useWorkAreaLayers(refs,outline,!editing,raise);
  // Drawing starts with the panel and any open search closed: the map takes the taps.
  const onEditing=useCallback((value:boolean)=>{setEditing(value);if(value){setPanelOpen(false);setSearchOpen(false);}},[]);
  const editor=useAreaEditor(refs,areaRep,work.view,language,useCallback((message:readonly [string,string])=>{setAreaNotice({rep:areaRep,text:message});setAreaReload(n=>n+1);},[areaRep]),onEditing);
- const areaLines=[...(areaNotice&&areaNotice.rep===areaRep?[say(...areaNotice.text)]:[]),...workAreaLines(work,online,hideStreets,language).map(line=>t(line))];
- const toggleStreets=(hidden:boolean)=>{setHideStreets(hidden);writeHideStreets(hidden);};
+ const areaLines=[...(areaNotice&&areaNotice.rep===areaRep?[say(...areaNotice.text)]:[]),...workAreaLines(work,online,language).map(line=>t(line))];
  const visible=useMemo(()=>customers.filter(row=>activity==='all'||mapActivity(row).key===activity),[customers,activity]);
  const points=useMemo(()=>visible.map(row=>({row,point:customerCoordinates(row.data)})).filter(item=>item.point!==null),[visible]);
  const selected=visible.find(row=>row.id===active);
@@ -101,7 +99,7 @@ export default function CustomerMap({customers,me,online=true,staffId='',onDirec
   void import('leaflet').then(mod=>{
    if(!alive||!container.current)return;
    const L=mod.default||mod;leaflet.current=L;
-   // A wider tap tolerance so a finger finds a pin or a street line.
+   // A wider tap tolerance so a finger finds a pin.
    const m=L.map(container.current,{preferCanvas:true,renderer:L.canvas({tolerance:6}),center:[24,45],zoom:5,minZoom:5,maxZoom:19,maxBounds:kingdomBounds,maxBoundsViscosity:1,zoomControl:false});map.current=m;
    // The map follows a newly shown work area until the person moves it.
    const moved=()=>{areaAuto.current=false;};container.current.addEventListener('pointerdown',moved);container.current.addEventListener('wheel',moved,{passive:true});
@@ -162,7 +160,7 @@ export default function CustomerMap({customers,me,online=true,staffId='',onDirec
    {!selected&&!panelOpen&&!suggestionsOpen&&!editing&&<div className="cm-legend" role="group" aria-label={say(...WORK_AREA_TEXT.legend)} data-map-legend>
     {areaLines.length>0&&<div className="cm-legend-note" role="status" data-work-area-lines>{areaLines.map((line,i)=><span key={i}>{line}</span>)}</div>}
     <div className="cm-legend-row" role="group" aria-label={say('درجة نشاط العميل','Customer activity')}>{activityOptions.map(option=><button type="button" key={option.key} aria-pressed={activity===option.key} onClick={()=>setActivityFilter(activity===option.key?'all':option.key)}><i style={{background:option.color}}/>{categoryLabel(option)}</button>)}</div>
-    <div className="cm-legend-row cm-legend-keys"><span data-legend-key="incomplete"><i className="cm-key-incomplete" aria-hidden="true"/>{say(...WORK_AREA_TEXT.incomplete)}</span>{work.active&&<><span data-legend-key="street"><i className="cm-key-street" aria-hidden="true"/>{say(...WORK_AREA_TEXT.street)}</span><span data-legend-key="area"><i className="cm-key-area" aria-hidden="true"/>{say(...WORK_AREA_TEXT.area)}</span><button type="button" className="cm-street-toggle" data-street-toggle aria-pressed={hideStreets} onClick={()=>toggleStreets(!hideStreets)}><i className="cm-toggle-box" aria-hidden="true"/><span>{say(...WORK_AREA_TEXT.hideStreets)}</span></button></>}</div>
+    <div className="cm-legend-row cm-legend-keys"><span data-legend-key="incomplete"><i className="cm-key-incomplete" aria-hidden="true"/>{say(...WORK_AREA_TEXT.incomplete)}</span>{work.active&&<span data-legend-key="area"><i className="cm-key-area" aria-hidden="true"/>{say(...WORK_AREA_TEXT.area)}</span>}</div>
    </div>}
    <WorkAreaDrawBar editor={editor} language={language}/>
   </div>

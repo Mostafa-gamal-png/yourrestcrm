@@ -13,7 +13,7 @@ import {memberCanAccessRegion} from '@/lib/regions';
 import type {Member,Row} from '@/lib/crm';
 import {ACTIVITY_TYPE_TEXT} from '@/lib/supervisor-reviews';
 import {planTables} from '@/lib/list-export-plans';
-import {ACTIVITY_PLACE_TEXT,PLAN_AHEAD_DAYS,PLAN_INBOX_FOCUS_MS,PLAN_INBOX_INTERVAL_MS,PLAN_LATE_TEXT,PLAN_MAX_STOPS,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REASON_MAX,PLAN_REASON_MIN,PLAN_STATE_TEXT,PLAN_STOP_NOTE_MAX,STOP_COMPLETION_TEXT,STOP_KINDS,STOP_KIND_TEXT,SUPERVISOR_STATE_TEXT,addDays,isPlanWorkingDay,lockedForMember,memberMayEdit,nextPlanDay,planDateProblem,planDeadline,planNoticeStep,planNoticeStorageKey,planReminderLines,rememberedPlanNotices,reviewsPlans,riyadhDayOf,validPlanExport,validPlanInbox,validPlanList,validPlanView,type PlanInbox,type PlanList,type PlanReminderLine,type PlanState,type PlanStopView,type PlanView,type StopKind,type SupervisorState} from '@/lib/daily-plans';
+import {ACTIVITY_PLACE_TEXT,PLAN_AHEAD_DAYS,PLAN_FRIDAY_DEADLINE_HOUR,PLAN_INBOX_FOCUS_MS,PLAN_INBOX_INTERVAL_MS,PLAN_LATE_TEXT,PLAN_MAX_STOPS,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REASON_MAX,PLAN_REASON_MIN,PLAN_STATE_TEXT,PLAN_STOP_NOTE_MAX,STOP_COMPLETION_TEXT,STOP_KINDS,STOP_KIND_TEXT,SUPERVISOR_STATE_TEXT,addDays,isPlanWorkingDay,lockedForMember,memberMayEdit,nextPlanDay,planDateProblem,planDeadline,planDeadlineHour,planDeadlineWords,planNoticeStep,planNoticeStorageKey,planReminderLines,rememberedPlanNotices,reviewsPlans,riyadhDayOf,validPlanExport,validPlanInbox,validPlanList,validPlanView,type PlanInbox,type PlanList,type PlanReminderLine,type PlanState,type PlanStopView,type PlanView,type StopKind,type SupervisorState} from '@/lib/daily-plans';
 import {ExportExcelButton} from './export-excel-button';
 import VoiceField from './voice-field';
 import './daily-plans.css';
@@ -35,12 +35,20 @@ function dayLabel(date:string,language:string){
  if(!format){format=new Intl.DateTimeFormat(locale,{calendar:'gregory',numberingSystem:'latn',timeZone:'UTC',weekday:'long',day:'numeric',month:'long'});dayFormats.set(locale,format);}
  return format.format(new Date(at));
 }
-/** A moment on Riyadh's wall clock («20 نوفمبر، 21:40»). */
+/** A moment on Riyadh's wall clock («20 نوفمبر، 21:40»). hourCycle h23, not hour12:false: a browser that reads hour12:false as h24 for
+ *  ar-SA would write Saturday's deadline (midnight) as «24:00» of the next day. */
 function stamp(value:string|null|undefined,language:string){
  if(!value||!Number.isFinite(Date.parse(value)))return '—';
  const locale=language==='en'?'en-GB':'ar-SA';let format=clockFormats.get(locale);
- if(!format){format=new Intl.DateTimeFormat(locale,{calendar:'gregory',numberingSystem:'latn',timeZone:'Asia/Riyadh',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});clockFormats.set(locale,format);}
+ if(!format){format=new Intl.DateTimeFormat(locale,{calendar:'gregory',numberingSystem:'latn',timeZone:'Asia/Riyadh',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});clockFormats.set(locale,format);}
  return format.format(new Date(value));
+}
+/** «آخر موعد للإرسال» of the plan of `date`: the moment, and for Saturday's plan (due at midnight between Friday and Saturday, the owner
+ *  2026-11-21) the words before it, so that «00:00» of Saturday is read as the end of Friday. One element (no nested span: the meta line
+ *  lays its spans out as flex boxes). */
+function DeadlineMoment({date,deadline,language}:{date:string;deadline:string;language:string}){
+ const moment=stamp(deadline,language),friday=planDeadlineHour(date)===PLAN_FRIDAY_DEADLINE_HOUR;
+ return <time dateTime={deadline} dir="auto" data-plan-deadline-words={friday?'':undefined}>{friday?pair(planDeadlineWords(date),language)+' ('+moment+')':moment}</time>;
 }
 const errorText=(error:unknown,fallback:string)=>error instanceof Error&&error.message?t(error.message):fallback;
 /** This browser's storage, which a private window or a full disk may refuse. */
@@ -185,7 +193,7 @@ function NotesView({plan}:{plan:PlanView}){
 function PlanMeta({plan}:{plan:PlanView}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en);
  return <div className="plan-meta">
-  {plan.firstSentAt?<span><Send size={14} aria-hidden/>{say('أُرسلت','Sent')} <time dateTime={plan.firstSentAt} dir="auto">{stamp(plan.firstSentAt,language)}</time>{plan.firstSentSource==='device'?' · '+say('بوقت الجهاز','by the device\'s clock'):''}</span>:plan.state!=='draft'&&<span><Clock size={14} aria-hidden/>{say('آخر موعد للإرسال','Send deadline')} <time dateTime={plan.deadline} dir="auto">{stamp(plan.deadline,language)}</time></span>}
+  {plan.firstSentAt?<span><Send size={14} aria-hidden/>{say('أُرسلت','Sent')} <time dateTime={plan.firstSentAt} dir="auto">{stamp(plan.firstSentAt,language)}</time>{plan.firstSentSource==='device'?' · '+say('بوقت الجهاز','by the device\'s clock'):''}</span>:plan.state!=='draft'&&<span><Clock size={14} aria-hidden/>{say('آخر موعد للإرسال','Send deadline')} <DeadlineMoment date={plan.date} deadline={plan.deadline} language={language}/></span>}
   {plan.reviewedAt&&<span><CheckCheck size={14} aria-hidden/>{plan.state==='returned'?say('أعادها','Returned by'):say('اعتمدها','Approved by')} {plan.reviewedByName} · <time dateTime={plan.reviewedAt} dir="auto">{stamp(plan.reviewedAt,language)}</time></span>}
  </div>;
 }
@@ -250,7 +258,7 @@ function MemberPlans({me,records,offline,initialDate}:{me:Member;records:readonl
  const days=[...isPlanWorkingDay(now)?[now]:[],next,...Array.from({length:PLAN_AHEAD_DAYS},(_,index)=>addDays(now,index+1)).filter(day=>day!==next&&isPlanWorkingDay(day)).slice(0,2)];
  const state:PlanState=plan?.state||'missing';
  return <section className="daily-plans member" data-daily-plans="member">
-  <p className="plan-intro">{say('رتّب زياراتك واتصالاتك وتواصل الواتساب ليوم العمل التالي وأرسلها للمشرف قبل الساعة 22:00. الخطة لا تمنعك من تسجيل أي زيارة أو تواصل.','Arrange your visits, calls and WhatsApp contacts for the next working day and send them to your supervisor before 22:00. The plan never stops you from recording any visit or contact.')}</p>
+  <p className="plan-intro">{say('رتّب زياراتك واتصالاتك وتواصل الواتساب ليوم العمل التالي وأرسلها للمشرف قبل الساعة 22:00، وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت. الخطة لا تمنعك من تسجيل أي زيارة أو تواصل.','Arrange your visits, calls and WhatsApp contacts for the next working day and send them to your supervisor before 22:00; Saturday\'s plan before midnight between Friday and Saturday. The plan never stops you from recording any visit or contact.')}</p>
   <div className="plan-days" role="group" aria-label={say('يوم الخطة','Plan day')}>{days.map(day=><button type="button" key={day} className={'plan-day'+(day===date?' chosen':'')} aria-pressed={day===date} data-plan-day={day} onClick={()=>setDate(day)}><CalendarDays size={15} aria-hidden/>{day===now?say('اليوم','Today'):dayLabel(day,language)}</button>)}
    <label className="plan-field plan-date-field"><span>{say('يوم آخر','Another day')}</span><input type="date" value={date} min={addDays(now,-30)} max={addDays(now,PLAN_AHEAD_DAYS)} onChange={event=>{if(event.target.value)setDate(event.target.value);}}/></label></div>
   <article className={'plan-card own state-'+state} data-plan-card={me.id+':'+date}>
@@ -308,7 +316,7 @@ function MemberPlanForm({me,date,plan,records,offline,onPlan}:{me:Member;date:st
   finally{setBusy('');}
  };
  return <>
-  {!plan?.firstSentAt&&<p className="plan-deadline" data-plan-deadline><Clock size={15} aria-hidden/>{say('آخر موعد للإرسال','Send deadline')}: <time dateTime={planDeadline(date)} dir="auto">{stamp(planDeadline(date),language)}</time>{openedAt>=Date.parse(planDeadline(date))?' · '+say('ما يُرسل الآن يُقبل ويُعلَّم «متأخرة».','Sent now, it is accepted and marked late.'):''}</p>}
+  {!plan?.firstSentAt&&<p className="plan-deadline" data-plan-deadline><Clock size={15} aria-hidden/>{say('آخر موعد للإرسال','Send deadline')}: <DeadlineMoment date={date} deadline={planDeadline(date)} language={language}/>{openedAt>=Date.parse(planDeadline(date))?' · '+say('ما يُرسل الآن يُقبل ويُعلَّم «متأخرة».','Sent now, it is accepted and marked late.'):''}</p>}
   {editable?<>
    {plan&&!draftOnly&&!editing&&<><PlanSummary plan={plan}/><StopsView plan={plan}/><div className="plan-actions"><button type="button" className="btn subtle" data-plan-member-edit onClick={()=>setEditing(true)}><Pencil size={16} aria-hidden/>{say('تعديل الخطة','Edit the plan')}</button></div></>}
    {(draftOnly||editing)&&<><StopsEditor stops={stops} onChange={change} customers={customers} names={names} mode="member" disabled={!!busy}/>
@@ -404,12 +412,12 @@ async function deviceNotice(title:string,body:string,tag:string,language:string)
 function lineText(line:PlanReminderLine,inbox:PlanInbox,language:string):{title:string;body:string}{
  const say=(ar:string,en:string)=>selectText(language,ar,en),day=dayLabel(line.date,language);
  switch(line.tone){
-  case 'due':return {title:say('خطة الغد لم تُرسل بعد','Tomorrow\'s plan is not sent yet'),body:say(`خطة يوم ${day}: أرسلها للمشرف قبل الساعة 22:00.`,`The plan of ${day}: send it to your supervisor before 22:00.`)};
+  case 'due':{const by=planDeadlineWords(line.date);return {title:say('خطة الغد لم تُرسل بعد','Tomorrow\'s plan is not sent yet'),body:say(`خطة يوم ${day}: أرسلها للمشرف قبل ${by[0]}.`,`The plan of ${day}: send it to your supervisor before ${by[1]}.`)};}
   case 'late':return {title:say('الخطة متأخرة','The plan is late'),body:say(`خطة يوم ${day} لم تُرسل وتجاوزت آخر موعد. أرسلها الآن؛ تُقبل وتُعلَّم «متأخرة».`,`The plan of ${day} was not sent and is past the deadline. Send it now; it is accepted and marked late.`)};
   case 'returned':{const target=inbox.next?.date===line.date?inbox.next:inbox.today;return {title:say('أُعيدت خطتك للتعديل','Your plan was returned for changes'),body:say(`خطة يوم ${day}`,`The plan of ${day}`)+(target?.reviewedByName?' · '+target.reviewedByName:'')+(target?.returnReason?': '+target.returnReason:'')};}
   case 'approved':return {title:say('اعتُمدت خطتك','Your plan was approved'),body:say(`خطة يوم ${day}`,`The plan of ${day}`)};
   case 'pending':{const item=inbox.pending?.find(entry=>entry.memberId===line.memberId&&entry.date===line.date);return {title:say('خطة بانتظار اعتمادك','A plan waits for your approval'),body:(item?.name||'')+' · '+say(`خطة يوم ${day}`,`the plan of ${day}`)+(item?.late?' · '+pair(PLAN_LATE_TEXT,language):'')};}
-  default:return {title:say('مناديب لم يرسلوا خطتهم','Representatives who have not sent their plan'),body:say(`خطة يوم ${day}: `,`The plan of ${day}: `)+(inbox.missing?.names.join('، ')||'')};
+  default:return {title:say('مناديب لم يرسلوا خطتهم','Representatives who have not sent their plan'),body:say(`خطة يوم ${day}: `,`The plan of ${day}: `)+(inbox.missing?.names.join(say('، ',', '))||'')};
  }
 }
 /** «خطة الغد» / «خطط تنتظر اعتمادك»: what waits for the member (the next day's plan not sent from 16:00, late, returned; today's not sent)

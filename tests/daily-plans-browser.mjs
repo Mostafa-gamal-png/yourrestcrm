@@ -5,8 +5,11 @@
 // time «إرسال» was pressed. The supervisor on a computer: the list of the team, «اعتماد مع تعديل» adding a stop, the note, the Excel file
 // (three sheets); «تقرير يوم المندوب» carries the day's plan. The representative sees the approved plan and, once it is returned, the
 // supervisor's stop locked (no delete). Every screen at 320 and 360 px phones, a tablet upright and on its side and a computer, in Arabic and
-// in English (no Arabic left but the names), without sideways scrolling, every button at least 44 px high on a touch screen. Screenshots
-// for the report. Synthetic fixtures only: temporary SQLite, mocked sendmail.
+// in English (no Arabic left but the names), without sideways scrolling, every button at least 44 px high on a touch screen. Then Saturday's
+// deadline, midnight at the end of Friday (the owner, 2026-11-21), on two more boots of the release: at Friday 22:30 the representative's
+// card and plan say «before midnight between Friday and Saturday» and nothing is late, at every size and in both languages, and the
+// supervisor's list marks nobody past the deadline; at Saturday 00:00 the representative's card says the plan is late and the supervisor's
+// card and list name who has not sent it. Screenshots for the report. Synthetic fixtures only: temporary SQLite, mocked sendmail.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -31,7 +34,8 @@ const riyadh = at => new Date(at + 3 * 3600000).toISOString().slice(0, 10);
 // The coming Wednesday 20:30 Riyadh (17:30 UTC); D is its Thursday, S the Saturday after (Friday is off).
 let wednesday = Date.parse(riyadh(Date.now()) + 'T17:30:00.000Z');
 while (new Date(wednesday).getUTCDay() !== 3 || wednesday < Date.now()) wednesday += 86400000;
-const offset = wednesday - Date.now(), W = riyadh(wednesday), D = riyadh(wednesday + 86400000), S = riyadh(wednesday + 3 * 86400000);
+let offset = wednesday - Date.now();
+const W = riyadh(wednesday), D = riyadh(wednesday + 86400000), S = riyadh(wednesday + 3 * 86400000);
 const pageNow = () => Date.now() + offset;
 
 try {
@@ -180,8 +184,75 @@ try {
     await shot(reviewer, `plans-supervisor-${lang}-${label}`);
     await reviewer.context().close();
   }
+  // ---- 5. Saturday's deadline (2026-11-21): midnight at the end of Friday. The server and the pages at the coming Friday 22:30 Riyadh (19:30
+  // UTC), then at the Saturday 00:00 after it; each a release booted with its own clock and the same made-up customers.
+  let friday = Date.parse(riyadh(Date.now()) + 'T19:30:00.000Z');
+  while (new Date(friday).getUTCDay() !== 5 || friday < Date.now()) friday += 86400000;
+  const SAT = riyadh(friday + 3 * 3600000);
+  const reboot = async at => {
+    await app.stop();
+    offset = at - Date.now();
+    app = await bootBuiltApp({members}, {tls: true, env: {NODE_OPTIONS: '--import ' + new URL('../scripts/lib/shifted-clock.mjs', import.meta.url).href, TEST_CLOCK_OFFSET_MS: String(offset)}});
+    for (const [id, name, phone] of [['c1', 'مصنع الشرق', '0551111111'], ['c2', 'مصنع الخليج', '0552222222'], ['c3', 'مصنع الدمام', '0553333333']])
+      await insert(id, 'customer', null, 'rep1', {name, branch: 'الرئيسي', assignedTo: 'rep1', region: 'الشرقية', city: 'الدمام', customerStatus: 'نشط', phone, contact: 'م', location: '26.43, 50.03'});
+  };
+  await reboot(friday);
+  for (const [label, viewport] of Object.entries(SIZES)) for (const english of [false, true]) {
+    const lang = english ? 'en' : 'ar', tag = 'Friday 22:30 ' + label + ' ' + lang;
+    const page = await open('rep1', {viewport, english, hash: '#customer', inApp: true});
+    const card = page.locator('[data-plan-inbox="member"]');
+    await card.waitFor();
+    check(await card.locator('[data-plan-inbox-line]').evaluateAll(items => items.map(item => item.dataset.planInboxLine)), ['due'], tag + ': the card says «not sent yet», not late');
+    ok((await card.innerText()).includes(english ? 'send it to your supervisor before midnight between Friday and Saturday.' : 'أرسلها للمشرف قبل منتصف الليل بين الجمعة والسبت.'), tag + ': the card names midnight between Friday and Saturday');
+    ok(!(await card.innerText()).includes('22:00'), tag + ': and not 22:00');
+    await noSideways(page, tag + ', the card');
+    if (viewport.width < 1100) await tall(page, '[data-plan-inbox] button', tag + ', the card');
+    if (english) check(await arabicLeft(page, '[data-plan-inbox]'), [], tag + ': the card has no Arabic left');
+    if (label === 'phone360') await shot(page, `plans-friday-card-${lang}-${label}`);
+    await card.locator('[data-plan-inbox-line="due"] button').click();
+    await page.locator('[data-plan-deadline]').waitFor();
+    check(await page.locator(`[data-plan-day="${SAT}"]`).getAttribute('aria-pressed'), 'true', tag + ': the card opens Saturday\'s plan');
+    const deadline = await page.locator('[data-plan-deadline]').innerText();
+    ok(deadline.includes(english ? 'midnight between Friday and Saturday' : 'منتصف الليل بين الجمعة والسبت') && deadline.includes('00:00') && !deadline.includes('22:00') && !deadline.includes('24:00') && !(english ? /late/i : /متأخرة/).test(deadline), tag + ': «' + deadline + '»');
+    ok((await page.locator('.plan-intro').innerText()).includes(english ? 'Saturday\'s plan before midnight between Friday and Saturday' : 'وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت'), tag + ': the page names Saturday\'s deadline');
+    // Each «آخر موعد للإرسال» of the plan (its line and the form's) is one element of plain text, not a flex box that would set its pieces
+    // apart: the words, then the moment in brackets.
+    check(await page.locator('[data-plan-deadline-words]').evaluateAll(items => items.map(item => [/flex|grid/.test(getComputedStyle(item).display), item.children.length, /^(منتصف الليل بين الجمعة والسبت|midnight between Friday and Saturday) \(\d{1,2} \S+[،,] 00:00\)$/.test(item.textContent)])), [[false, 0, true], [false, 0, true]], tag + ': the deadline written «words (day, 00:00)» as plain text');
+    await noSideways(page, tag + ', the plan');
+    if (viewport.width < 1100) await tall(page, '.daily-plans .btn, .daily-plans .plan-day', tag + ', the plan');
+    if (english) check(await arabicLeft(page, '[data-daily-plans]'), [], tag + ': the plan has no Arabic left');
+    await shot(page, `plans-friday-rep-${lang}-${label}`);
+    await page.context().close();
+  }
+  for (const english of [false, true]) {
+    const reviewer = await open('sup', {viewport: SIZES.desktop, english});
+    await reviewer.locator('[data-plan-row="rep1"]').waitFor();
+    check(await reviewer.locator('.plan-overdue').count(), 0, 'Friday 22:30, the supervisor ' + (english ? 'en' : 'ar') + ': nobody is past the deadline yet');
+    await reviewer.context().close();
+  }
+  await reboot(friday + 90 * 60000);
+  for (const english of [false, true]) {
+    const lang = english ? 'en' : 'ar';
+    const rep0 = await open('rep1', {viewport: SIZES.phone360, english, hash: '#customer', inApp: true});
+    await rep0.locator('[data-plan-inbox-line="late"]').waitFor();
+    ok((await rep0.locator('[data-plan-inbox="member"]').innerText()).includes(english ? 'The plan is late' : 'الخطة متأخرة'), 'Saturday 00:00, ' + lang + ': the card says Saturday\'s plan is late');
+    await noSideways(rep0, 'Saturday 00:00 representative ' + lang);
+    await shot(rep0, `plans-saturday-card-${lang}-phone360`);
+    await rep0.context().close();
+    const reviewer = await open('sup', {viewport: SIZES.desktop, english, hash: '#customer'});
+    const missing = reviewer.locator('[data-plan-inbox-line="missing"]');
+    await missing.waitFor();
+    ok((await missing.innerText()).includes('المندوب أحمد') && (await missing.innerText()).includes('مسؤول التسويق'), 'Saturday 00:00, ' + lang + ': the supervisor\'s card names who has not sent it');
+    if (english) check(await arabicLeft(reviewer, '[data-plan-inbox]'), [], 'Saturday 00:00: the supervisor\'s card has no Arabic left');
+    await shot(reviewer, `plans-saturday-supervisor-card-${lang}-desktop`);
+    await missing.locator('button').click();
+    await reviewer.locator('[data-plan-row="rep1"]').waitFor();
+    check(await reviewer.locator('.plan-overdue').count(), 2, 'Saturday 00:00, ' + lang + ': the card opens Saturday\'s list, both past the deadline');
+    await shot(reviewer, `plans-saturday-supervisor-${lang}-desktop`);
+    await reviewer.context().close();
+  }
   check(errors, [], 'no page error');
-  console.log(JSON.stringify({ok: true, checks, screenshots, days: {W, D, S}}));
+  console.log(JSON.stringify({ok: true, checks, screenshots, days: {W, D, S, friday: riyadh(friday), saturday: SAT}}));
 } finally {
   await browser?.close();
   await app?.stop();
