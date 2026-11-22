@@ -95,7 +95,9 @@ try {
   ok(!(await get('owner', '/api/crm')).audits.some(row => String(row.action).startsWith('work-area:')), 'none in GET /api/crm\'s recent changes');
   // The two street tables stay in the database (migrations 0023 and 0024 are applied), and nothing of the application wrote to them.
   const count = async table => Number((await app.db.prepare('SELECT COUNT(*) AS n FROM ' + table).first()).n);
-  eq([Number((await app.db.prepare('SELECT COUNT(*) AS n FROM yr_schema_migrations').first()).n), await count('crm_osm_street_cache'), await count('crm_osm_street_local')], [25, 0, 0], '25 migrations; the two street tables kept, empty');
+  // A later release's 0025 (the plans' targets, 2026-11-22) is applied after them: the ledger holds 0023 and 0024 among every migration.
+  const recorded = (await app.db.prepare('SELECT name FROM yr_schema_migrations ORDER BY name').all()).results.map(row => row.name);
+  eq([recorded.filter(name => name === '0023_work_areas.sql' || name === '0024_local_streets.sql'), recorded.length === fs.readdirSync(path.join(process.cwd(), 'drizzle')).filter(name => /^\d+.*\.sql$/.test(name)).length, await count('crm_osm_street_cache'), await count('crm_osm_street_local')], [['0023_work_areas.sql', '0024_local_streets.sql'], true, 0, 0], '0023 and 0024 recorded with every migration; the two street tables kept, empty');
   console.log(JSON.stringify({ok: true, checks}));
 } finally {
   await app.stop();
