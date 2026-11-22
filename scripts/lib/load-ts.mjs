@@ -10,7 +10,7 @@ import ts from 'typescript';
 
 const folders=[];
 process.on('exit',()=>{for(const folder of folders)fs.rmSync(folder,{recursive:true,force:true});});
-export function createLoader(prefix,{replace={}}={}){
+export function createLoader(prefix,{replace={},jsonImports=false}={}){
  const root=process.cwd(),runtime=path.join(root,'.sites-runtime');
  fs.mkdirSync(runtime,{recursive:true});
  const out=fs.mkdtempSync(path.join(runtime,prefix+'-')),seen=new Set();
@@ -32,8 +32,9 @@ export function createLoader(prefix,{replace={}}={}){
    else if(!/\.(tsx?|mts)$/.test(source))source+=fs.existsSync(path.join(root,source+'.ts'))?'.ts':'.tsx';
    compile(source);return 'from '+JSON.stringify(path.join(out,source.replace(/\.(tsx?|mts)$/,'.mjs')));
   });
-  // A dynamic import of a JSON file (the English dictionary) needs its attribute in Node.
-  code=code.replace(/import\((['"])([^'"]+\.json)\1\)/g,(match,q,imp)=>{
+  // A dynamic import of a JSON file (the English dictionary) needs its attribute in Node; off by default so the text stays the one the
+  // other tests load (the coverage report merges the runs of an identical text).
+  if(jsonImports)code=code.replace(/import\((['"])([^'"]+\.json)\1\)/g,(match,q,imp)=>{
    const source=imp.startsWith('@/')?imp.slice(2):path.relative(root,path.resolve(path.dirname(src),imp));
    const target=path.join(out,source);fs.mkdirSync(path.dirname(target),{recursive:true});fs.copyFileSync(path.join(root,source),target);
    return 'import('+JSON.stringify(target)+',{with:{type:"json"}})';

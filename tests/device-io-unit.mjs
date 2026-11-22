@@ -37,7 +37,7 @@ ok(S.speechErrorMessage('speech_weird','en').startsWith('Could not start dictati
 function harness({native=false,engine=true,protocol=1,supported=true,ctor}={}){
  const h={engines:[],calls:[],texts:[],errors:[],ends:0,resolvers:[]};
  const win=new EventTarget();globalThis.window=win;setUA(native?NATIVE:'Mozilla/5.0 Chrome');
- class Engine{constructor(){if(ctor)ctor();this.aborted=0;this.started=0;h.engines.push(this);}start(){this.started++;if(h.startThrows)throw h.startThrows;}abort(){this.aborted++;}}
+ class Engine{constructor(){if(ctor)ctor();this.aborted=0;this.started=0;h.engines.push(this);}start(){this.started++;if(h.startThrows)throw h.startThrows;}abort(){this.aborted++;if(h.abortThrows)throw new Error('abort failed');}}
  if(engine)win.SpeechRecognition=Engine;
  if(native){win.__yourrestNative={speechProtocol:protocol,speechSupported:supported,request:(method,payload)=>{h.calls.push({method,payload});if(method==='speechCancel')return Promise.resolve({});return new Promise((resolve,reject)=>{h.resolvers.push({resolve,reject,payload});});}};}
  h.win=win;h.start=(language='ar-SA')=>S.startSpeech({language,onText:t=>h.texts.push(t),onError:c=>h.errors.push(c),onEnd:()=>h.ends++});
@@ -94,6 +94,15 @@ for(const [label,result] of [['null',null],['an array',[]],['text',  'x'],['anot
 {const h=harness({native:true});h.start();await settle();h.win.__yourrestNativeGeneration=5;const r=h.resolvers[0];r.resolve({sessionId:r.payload.sessionId,cancelled:false,text:'x'});await settle();eq([h.texts,h.ends],[[],1],'the session changed while listening: nothing delivered');}
 {const h=harness({native:true,protocol:0,engine:false});h.start();await settle();eq(h.errors,['speech_upgrade'],'an old app');}
 {const h=harness({native:true,supported:false,engine:false});h.start();await settle();eq(h.errors,['speech_unsupported'],'an app that cannot dictate');}
+// changes of session at the awkward moments
+{const h=harness();h.abortThrows=true;h.start();await settle();h.result([fin('x')]);eq([h.texts,h.ends],[['x'],1],'an engine that fails to abort cannot break the end of a session');}
+{const h=harness();h.start();await settle();h.win.__yourrestNativeGeneration=7;h.engines[0].onresult({resultIndex:0,results:[fin('late')]});eq([h.texts,h.ends,h.errors],[[],1,[]],'a result after the session changed is dropped');}
+{const h=harness();h.start();await settle();h.win.__yourrestNativeGeneration=7;h.engines[0].onerror({error:'network'});eq([h.errors,h.ends],[[],1],'an error after the session changed is dropped');}
+{const h=harness();h.start();await settle();h.win.__yourrestNativeGeneration=7;h.engines[0].onend();eq([h.errors,h.ends],[[],1],'the end of the engine after the session changed');}
+{const h=harness();h.start();h.win.__yourrestNativeGeneration=7;await settle();eq([h.engines.length,h.ends,h.errors],[0,1,[]],'the session changed while availability was being read: no engine is made');}
+{const h=harness({native:true});h.start();h.win.__yourrestNativeGeneration=7;await settle();eq([h.calls.length,h.ends,h.errors],[0,1,[]],'the same in the app: the recogniser is never asked');}
+{const h=harness({native:true});h.start();await settle();h.win.__yourrestNativeGeneration=7;h.resolvers[0].reject(new Error('speech_failed'));await settle();eq([h.errors,h.ends],[[],1],'an app error after the session changed is not shown');}
+{const h=harness({native:true});h.start();await settle();h.win.__yourrestNativeScope='other-member';h.resolvers[0].resolve(null);await settle();eq([h.texts,h.errors,h.ends],[[],[],1],'an answer after the member changed is dropped, even an invalid one');}
 eq(timerCount(),0,'no timer left after the dictation tests');
 
 // ===== 2. photos

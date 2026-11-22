@@ -53,9 +53,16 @@ globalThis.window=new EventTarget();
  globalThis.localStorage={getItem(){throw new Error('blocked');},setItem(){throw new Error('blocked');}};L.setLanguage('en');eq(L.getLanguage(),'en','blocked storage never blocks the switch');L.setLanguage('ar');
  globalThis.localStorage=ls;
 }
+{ // a dictionary that cannot be fetched: the page stays Arabic and a later choice tries again
+ globalThis.document=fakeDocument();globalThis.localStorage=store();
+ const L=await createLoader('small-i18n-fail').load('lib/i18n.ts');
+ L.setLanguage('en');await settle();eq([L.getLanguage(),document.documentElement.lang],['ar','ar'],'English is not applied while its dictionary is missing');
+ await rejects(L.loadEnglish(),undefined,'the failure is reported to a caller');await rejects(L.loadEnglish(),undefined,'and a second call tries again instead of keeping the failed promise');
+ L.setLanguage('en');await settle();eq(L.getLanguage(),'ar','choosing English again retries and still stays Arabic');
+}
 { // the real dictionary is downloaded on demand
  globalThis.document=fakeDocument();const ls=store();globalThis.localStorage=ls;
- const L=await createLoader('small-i18n-lazy').load('lib/i18n.ts');
+ const L=await createLoader('small-i18n-lazy',{jsonImports:true}).load('lib/i18n.ts');
  const en=JSON.parse(fs.readFileSync('lib/locales/en.json','utf8'));
  eq(L.translateText('كل الفروع','en'),'كل الفروع','not downloaded yet');
  L.setLanguage('en');eq(L.getLanguage(),'ar','English waits for its dictionary: the page stays Arabic for a moment');await settle();await L.loadEnglish();await settle();
@@ -64,12 +71,12 @@ globalThis.window=new EventTarget();
 }
 { // choosing English and Arabic again before the download ends: the last choice wins
  globalThis.document=fakeDocument();globalThis.localStorage=store();
- const L=await createLoader('small-i18n-race').load('lib/i18n.ts');
+ const L=await createLoader('small-i18n-race',{jsonImports:true}).load('lib/i18n.ts');
  L.setLanguage('en');L.setLanguage('ar');await settle();await L.loadEnglish();await settle();eq(L.getLanguage(),'ar','the last choice wins');
 }
 { // a saved English choice starts the download with the page
  globalThis.document=fakeDocument();globalThis.localStorage=store({'yr-language':'en'});
- const L=await createLoader('small-i18n-saved').load('lib/i18n.ts');await settle();await L.loadEnglish();eq(L.translateText('كل الفروع','en')!=='كل الفروع',true,'the dictionary was fetched at load');
+ const L=await createLoader('small-i18n-saved',{jsonImports:true}).load('lib/i18n.ts');await settle();await L.loadEnglish();eq(L.translateText('كل الفروع','en')!=='كل الفروع',true,'the dictionary was fetched at load');
 }
 
 // ===== 2. release freshness
@@ -110,6 +117,35 @@ delete globalThis.window;
  {const f=fx({scripts:[H],manifest:{assets:[{url:'/offline-app/assets/new.js'}]}});await f.c.check(true);eq(f.c.snapshot().freshness,'stale','the shell: its script is not in the manifest any more');}
  for(const [label,opts] of [['a bad status',{manifestStatus:500}],['a throw',{manifestThrows:true}],['no assets list',{manifest:{}}],['not an object',{manifest:null}]]){const f=fx({scripts:[H],...opts});await f.c.check(true);eq(f.c.snapshot().freshness,'unknown','the manifest could not be read: '+label);}
  {const f=fx();await f.c.reload();eq([f.activated,f.reloads],[1,1],'reload gives a waiting worker its turn, then reloads');f.activateThrows=true;await f.c.reload();eq([f.activated,f.reloads],[2,2],'a worker that fails never blocks the reload');}
+}
+
+// the freshness controller of the page (buildFreshness): window, document, fetch and the service worker as stand-ins, the clock fixed
+{
+ const F2=await createLoader('small-fresh-page').load('lib/build-freshness.ts');
+ const realNow=Date.now,realTimeout=globalThis.setTimeout;let clock=9_000_000,reloads=0;Date.now=()=>clock;
+ const win=new EventTarget(),doc=new EventTarget();doc.visibilityState='visible';doc.scripts=[{src:'https://crm.example.test/_next/static/a.js'}];
+ win.location={origin:'https://crm.example.test',reload(){reloads++;}};const intervals=[];win.setInterval=(cb,ms)=>{intervals.push({cb,ms});return intervals.length;};win.clearInterval=id=>{intervals[id-1]=null;};
+ globalThis.window=win;globalThis.document=doc;
+ const posted=[];let waiting=null,updated=0;const sw=Object.assign(new EventTarget(),{getRegistration:async()=>registration});let registration={update:async()=>{updated++;},get waiting(){return waiting;}};
+ Object.defineProperty(globalThis,'navigator',{value:{onLine:true,serviceWorker:sw},configurable:true,writable:true});
+ const fetches=[];let status=200;globalThis.fetch=async(url,init)=>{fetches.push([url,init]);return {status,json:async()=>({})};};
+ const c=F2.buildFreshness();ok(c===F2.buildFreshness(),'one controller for the page');
+ const stop=c.subscribe(()=>{});await settle();
+ eq([fetches[0][0],fetches[0][1].method,fetches[0][1].cache,fetches[0][1].credentials],['/_next/static/a.js?release-check','HEAD','no-store','same-origin'],'the script is asked at an address of its own, so its cached copy is kept');ok(fetches[0][1].signal instanceof AbortSignal,'with a time limit');
+ eq([c.snapshot().freshness,c.snapshot().checkedAt,intervals.at(-1).ms],['current',9_000_000,600000],'current, a ten-minute timer');
+ doc.visibilityState='hidden';doc.dispatchEvent(new Event('visibilitychange'));clock+=70_000;await settle();eq(fetches.length,1,'a hidden page does not check');
+ doc.visibilityState='visible';clock+=60_000;doc.dispatchEvent(new Event('visibilitychange'));await settle();eq(fetches.length,2,'returning after a minute away checks');
+ status=404;await c.check(true);eq(c.snapshot().freshness,'stale','the script is gone: a newer release');
+ intervals.at(-1).cb();await settle();eq(fetches.length>=4,true,'the timer asks too');
+ // reload: no registration, nothing waiting, a waiting worker
+ globalThis.setTimeout=(cb)=>realTimeout(cb,0);
+ registration=undefined;await c.reload();eq(reloads,1,'no registration: reloads');
+ registration={update:async()=>{updated++;},waiting:null};await c.reload();eq([reloads,updated],[2,1],'nothing waiting: reloads');
+ registration={update:async()=>{updated++;},waiting:{postMessage:m=>posted.push(m)}};const reloaded=c.reload();await settle();sw.dispatchEvent(new Event('controllerchange'));await reloaded;eq([posted,reloads],[[{type:'yourrest-activate-update'}],3],'a waiting worker is asked to take over, then the page reloads');
+ const nav=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:true,writable:true});await c.reload();eq(reloads,4,'a browser without service workers just reloads');
+ globalThis.setTimeout=realTimeout;Date.now=realNow;stop();
+ Object.defineProperty(globalThis,'navigator',{value:{onLine:false},configurable:true,writable:true});const offline=F2.createBuildFreshness?F2.createBuildFreshness:null;ok(offline,'the factory is exported');
+ delete globalThis.window;delete globalThis.document;delete globalThis.fetch;
 }
 
 // ===== 3. install worker, theme, snapshot, dialog

@@ -122,4 +122,32 @@ for(const badState of [null,'x',[],{phase:'nope',installedVersionCode:10,install
 {const f=fixture({native:false});await f.controller.download();await f.controller.install();eq(f.calls,[],'no actions in a browser');}
 {const f=fixture({protocol:0});f.controller.subscribe(()=>{});await settle();eq(f.state().legacyStarted,false,'legacy download not started');f.controller.legacyDownloadStarted();eq(f.state().legacyStarted,true,'legacy download remembered');}
 {const f=fixture();f.controller.subscribe(()=>{});const a=f.controller.check(true),b=f.controller.check(true);await Promise.all([a,b]);await settle();ok(f.fetches<=2,'overlapping checks share one run');}
+
+// ---- 5. the controller of the page (lib/app-update.ts appUpdateController): real window, document and fetch stand-ins
+{
+ const U2=await createLoader('app-update-unit-page').load('lib/app-update.ts');
+ const win=new EventTarget(),doc=new EventTarget();doc.visibilityState='visible';
+ const intervals=[];win.setInterval=(cb,ms)=>{intervals.push({cb,ms});return intervals.length;};win.clearInterval=id=>{intervals[id-1]=null;};
+ globalThis.window=win;globalThis.document=doc;Object.defineProperty(globalThis,'navigator',{value:{userAgent:'Mozilla/5.0 YourrestCRM-Android/1',onLine:true},configurable:true,writable:true});
+ const bridgeCalls=[];win.__yourrestNative={updateProtocol:1,request:async method=>{bridgeCalls.push(method);return nativeState('available');}};
+ const fetches=[];let releaseResponse={ok:true,json:async()=>release()},headStatus=200,headThrows=false;
+ globalThis.fetch=async(url,init)=>{fetches.push([url,init]);if(init.method==='HEAD'){if(headThrows)throw Error('net');return {ok:headStatus>=200&&headStatus<300,status:headStatus};}return releaseResponse;};
+ const c=U2.appUpdateController();ok(c===U2.appUpdateController(),'one controller survives page remounts');
+ eq(c.snapshot().native,true,'native by the user agent');
+ const stop=c.subscribe(()=>{});await settle();
+ const rel=fetches.find(f=>f[0]==='/api/app-update');eq([rel[1].cache,rel[1].credentials,rel[1].headers],['no-store','same-origin',{Accept:'application/json'}],'the served release is read fresh, with the session, as JSON');ok(rel[1].signal instanceof AbortSignal,'with a time limit');
+ const head=fetches.find(f=>f[1].method==='HEAD');eq([head[0],head[1].cache,head[1].credentials,head[1].redirect],['/downloads/yourrest-crm-android-v1.0.16-17.apk','no-store','omit','manual'],'the apk is asked with HEAD, no cookie, no redirect followed');
+ eq([c.snapshot().requiredVersionCode,c.snapshot().apkReachable,c.snapshot().phase],[17,true,'available'],'the requirement and the native state');
+ eq(intervals.at(-1).ms,900000,'a 15-minute timer on the window');const before=fetches.length;doc.visibilityState='hidden';intervals.at(-1).cb();await settle();eq(fetches.length,before,'the timer does nothing while the page is hidden');
+ doc.visibilityState='visible';intervals.at(-1).cb();await settle();ok(fetches.length>before,'and checks when it is shown');
+ // events of the page
+ win.dispatchEvent(new CustomEvent('yourrest:app-update',{detail:nativeState('downloading',{progress:30})}));eq([c.snapshot().phase,c.snapshot().progress],['downloading',30],'the app\'s event reaches the controller');
+ const n=fetches.length;doc.dispatchEvent(new Event('visibilitychange'));await settle();ok(fetches.length>n,'returning to the page checks');
+ // a release that cannot be read, and an apk that does not answer
+ for(const [label,status,reachable] of [['405 is not a missing file',405,true],['501 is not a missing file',501,true],['404 is missing',404,false],['500 is missing',500,false]]){headStatus=status;await c.check(true);await settle();eq(c.snapshot().apkReachable,reachable,'HEAD '+label);}
+ headStatus=200;headThrows=true;await c.check(true);await settle();eq(c.snapshot().apkReachable,false,'no answer is "not reachable"');headThrows=false;
+ releaseResponse={ok:false,json:async()=>({})};await c.check(true);await settle();eq([c.snapshot().requiredVersionCode,c.snapshot().phase],[null,'available'],'a release the server refused to give: the requirement is cleared, the app\'s own state stays');
+ releaseResponse={ok:true,json:async()=>{throw Error('bad json');}};await c.check(true);await settle();eq(c.snapshot().requiredVersionCode,null,'unreadable JSON clears it too');
+ stop();
+}
 report();
