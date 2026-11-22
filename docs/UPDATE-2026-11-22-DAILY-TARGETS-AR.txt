@@ -1,0 +1,58 @@
+تحديث يورست CRM — 2026-11-22، اسم الحزمة: update-daily-targets-20261122
+
+الحزمة تخص crm.yourrest.org فقط. تُرفع بعد حزمة update-customer-form-20261121، وتشمل كل ما قبلها.
+فيها ترحيل جديد واحد 0025_daily_plan_targets.sql يضيف جدولًا ولا يغيّر جدولًا قائمًا (تصبح القاعدة 26 ترحيلًا). تطبيق أندرويد لا يتغير في هذه الحزمة (يبقى 1.0.15).
+لا تشغّل setup.cjs ولا تنسخ الملفات فوق التطبيق الحالي ولا تعدّل settings.cjs أو مجلد البيانات yourrest-crm-data.
+
+== GSCO 2.13.85 ليورست بطلب المالك 2026-11-22 («تمام خلصه وارفع») ==
+- «خطة الغد» من المتابعات فقط: متابعات يوم الخطة بضغطة، وقائمة المتابعات المتأخرة (بحث، الأقدم أولًا) مع «إضافة إلى خطة الغد» و«ترحيل إلى تاريخ…» لعدة متابعات معًا (حتى 30 يومًا)، و«تغيير الموعد» لكل محطة. المحطات القديمة تبقى معروضة.
+- مستهدف الغد: «فرص بيع جديدة سأسجلها» و«عملاء جدد سأضيفهم» (من 0 إلى 50، إجباريان)، والمحقق يُحسب تلقائيًا في يوم الخطة، ولا يدخل في تقييم الأداء. المشرف يعدّلهما ويُعلَّم التعديل.
+- «ترحيل جماعي: N متابعة» يظهر للمشرف في «مراجعة يوم المندوب».
+- سبب الخسارة «أخرى»: «اذكر سبب الخسارة» إجباري من 3 إلى 200 حرف.
+- المسار الجديد POST /api/crm/opportunity-next-dates.
+
+خطوات الرفع (الحزمة update-daily-targets-20261122)
+------------------------------------------------------
+1. نسخة احتياطية لليوم: إن كانت هذه أول حزمة لليوم يأخذها المُفعِّل بنفسه في الخطوة 4، وإن سبقتها حزمة في اليوم نفسه يعيد استعمال نسختها. والتطبيق نفسه يأخذ نسخة من القاعدة قبل الترحيل (schema-backups). لا تنفذ شيئًا هنا.
+
+2. والتطبيق يعمل، ارفع الحزمة وفكّها داخل:
+/home/youriedx/yourrest-crm-update-daily-targets-20261122
+يجب أن يظهر مجلد release والملف yourrest-activate-update-daily-targets.cjs مباشرة داخل هذا المسار. (مجلد جديد؛ لا تفكّ فوق أي مجلد قديم.)
+
+3. افحص الحزمة دون إيقاف التطبيق:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-daily-targets-20261122/yourrest-activate-update-daily-targets.cjs --check
+يجب أن يظهر PACKAGE AND CONFIGURATION: READY، وسطر SCHEMA CHANGE: 0025_daily_plan_targets.sql WILL BE APPLIED. إن ظهر STOP فلا تكمل، واحتفظ بالناتج وأرسله.
+
+4. عند الجاهزية، اضغط Stop App لتطبيق يورست فقط، ثم نفّذ:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-daily-targets-20261122/yourrest-activate-update-daily-targets.cjs
+
+5. عند ظهور START APP IN CPANEL اضغط Start App (أول تشغيل يطبّق الترحيل بعد نسخة القاعدة الخاصة، فقد يأخذ ثواني أكثر)، ثم:
+cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node /home/youriedx/yourrest-crm-update-daily-targets-20261122/yourrest-activate-update-daily-targets.cjs --verify
+النجاح النهائي: DEPLOYMENT VERIFIED، وقبله MIGRATIONS: 26 و MIGRATION APPLIED: 0025_daily_plan_targets.sql و /api/crm/opportunity-next-dates: 405.
+إن ظهر MIGRATION_NOT_APPLIED_START_APP_FIRST فاضغط Start App أولًا ثم أعد --verify.
+
+6. بعد النجاح: بلّغ الجميع بتحديث أي صفحة CRM مفتوحة (الصفحة القديمة لا تحفظ خطة بلا مستهدف: «حُدّث التطبيق؛ أعد تحميل الصفحة.»).
+
+إذا ظهر STOP أو أي خطأ: احتفظ بالناتج للمراجعة. لا تحذف ملفات الحالة أو القفل ولا تسترجع بيانات قديمة ولا تكرر التبديل قبل المراسلة.
+
+التراجع (لا تنفذه قبل المراسلة)
+هذا التحديث يضيف ترحيلًا: الإصدار القديم يرفض قاعدة فيها ترحيل أحدث. لذلك للتراجع ثلاث حالات.
+- أ) التطبيق لم يعمل بعد Start App والقاعدة ما زالت على 25 ترحيلًا: أوقف التطبيق، ثم أعد المجلد القديم الذي حفظه المُفعِّل:
+  cd /home/youriedx/yourrest-crm && mv release release-failed-20261122-daily-targets && mv /home/youriedx/yourrest-update-daily-targets-activation-20261122-XXXXXX/old-release release
+  (استبدل XXXXXX بالاسم الذي طبعه المُفعِّل في سطر ACTIVATION CHECKPOINT) ثم Start App. البيانات لم تتغير.
+- ب) الترحيل تمّ وتريد العودة مع الإبقاء على كل ما سُجّل بعد التحديث ما عدا مستهدفات الخطط:
+  1) Stop App.
+  2) ترحيل الرجوع (معاملة واحدة: إن ظهر أي خطأ فلا يتغير شيء):
+     cd /home/youriedx && /opt/alt/alt-nodejs22/root/usr/bin/node -e "const {DatabaseSync}=require('node:sqlite');const fs=require('node:fs');const db=new DatabaseSync(process.argv[1]);db.exec('PRAGMA foreign_keys=ON');db.exec(fs.readFileSync(process.argv[2],'utf8'));db.close();" /home/youriedx/yourrest-crm-data/database.sqlite /home/youriedx/yourrest-crm/release/drizzle/rollback/0025_daily_plan_targets.down.sql
+     (نفّذه قبل إعادة المجلد القديم، لأن الملف في مجلد الإصدار الجديد.) تعود القاعدة إلى 25 ترحيلًا مطابقة للإصدار السابق. المواعيد المرحّلة تبقى مرحّلة.
+  3) أعد المجلد القديم كما في (أ)، ثم Start App.
+- ج) العودة الكاملة إلى القاعدة كما كانت قبل الترحيل. كل ما سُجّل في الـCRM بعد التحديث يضيع، فتواصل قبل التنفيذ:
+  1) Stop App ثم أعد المجلد القديم كما في (أ).
+  2) cd /home/youriedx/yourrest-crm-data && ls schema-backups
+     mv database.sqlite database.sqlite.migrated-daily-targets
+     mv database.sqlite-wal database.sqlite-wal.migrated-daily-targets
+     mv database.sqlite-shm database.sqlite-shm.migrated-daily-targets
+     cp schema-backups/before-0025_daily_plan_targets-XXXXXX.sqlite database.sqlite && chmod 600 database.sqlite
+     (إن قالت mv إن ملف -wal أو -shm غير موجود فلا مشكلة. لا تحذف الملفات التي أُزيحت.)
+  3) Start App. تعود القاعدة إلى 25 ترحيلًا.
+بعد التراجع: يعود إصدار update-customer-form-20261121؛ تختفي المستهدفات وقائمة المتأخرة والترحيل الجماعي. خطة حُفظت على جهاز بهذا الإصدار يرفضها الإصدار السابق فتبقى إدخالًا يحذفه المندوب من «الإدخالات المحفوظة على الجهاز» ويعيد خطته.
