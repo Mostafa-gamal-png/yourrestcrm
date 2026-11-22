@@ -9,7 +9,6 @@
 // the route is missing, nothing secret). Synthetic data only.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import {readFileSync} from 'node:fs';
 import {request as httpsRequest} from 'node:https';
@@ -78,7 +77,10 @@ eq(moldSalesmenAnswer({...answer, inserted: -1}), null, 'a negative count: not t
 eq(moldSalesmenAnswer({...answer, activeSalesmen: '2'}), null, 'a count as text: not the contract\'s answer');
 
 // ---- lib/mold-salesmen.ts and lib/mold-salesmen-server.ts, transpiled as the build sees them
-const root = process.cwd(), out = fs.mkdtempSync(path.join(os.tmpdir(), 'yr-mold-salesmen-')), compiled = new Set();
+// Transpiled into .sites-runtime (as the other unit tests are) so the coverage measure (scripts/coverage/) sees these two modules.
+const root = process.cwd(), runtime = path.join(root, '.sites-runtime');
+fs.mkdirSync(runtime, {recursive: true});
+const out = fs.mkdtempSync(path.join(runtime, 'mold-salesmen-')), compiled = new Set();
 process.on('exit', () => fs.rmSync(out, {recursive: true, force: true}));
 const stubs = {'./crm-server': 'export function database(){return globalThis.testDb;}', './mold-requests-server': 'export function productsLink(){return globalThis.testLink;}'};
 for (const [name, source] of Object.entries(stubs)) fs.writeFileSync(path.join(out, name.slice(2) + '.stub.mjs'), source);
