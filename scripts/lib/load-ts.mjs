@@ -30,6 +30,12 @@ export function createLoader(prefix,{replace={}}={}){
    else if(!/\.(tsx?|mts)$/.test(source))source+=fs.existsSync(path.join(root,source+'.ts'))?'.ts':'.tsx';
    compile(source);return 'from '+JSON.stringify(path.join(out,source.replace(/\.(tsx?|mts)$/,'.mjs')));
   });
+  // A dynamic import of a JSON file (the English dictionary) needs its attribute in Node.
+  code=code.replace(/import\((['"])([^'"]+\.json)\1\)/g,(match,q,imp)=>{
+   const source=imp.startsWith('@/')?imp.slice(2):path.relative(root,path.resolve(path.dirname(src),imp));
+   const target=path.join(out,source);fs.mkdirSync(path.dirname(target),{recursive:true});fs.copyFileSync(path.join(root,source),target);
+   return 'import('+JSON.stringify(target)+',{with:{type:"json"}})';
+  });
   code=code.replace(/^import\s+(['"])[^'"]+\.css\1;?$/mg,'');
   fs.writeFileSync(dest,code);
  }
