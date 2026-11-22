@@ -20,25 +20,30 @@ type Props={
  records:Row[];customerId?:string;me:Member;members?:Member[];
  /** false: the date field alone, as before (customer service, which does not see the representatives' follow-ups; a visit read only). */
  grid?:boolean;
+ /** «خطة الغد» (2026-11-22): the latest day the field takes (the bulk «ترحيل» reaches 30 days), and the customers of several follow-ups moved
+  *  together (each left out of every day; a day they would make full is full). */
+ max?:string;moving?:readonly string[];
 };
 
-export function FollowupDatePicker({value,onChange,min,required=true,problem='',id,label,records,customerId,me,members=[],grid=true}:Props){
+export function FollowupDatePicker({value,onChange,min,max,required=true,problem='',id,label,records,customerId,me,members=[],grid=true,moving}:Props){
  const {language}=useLanguage(),lang=language==='en'?'en':'ar',say=(ar:string,en:string)=>lang==='en'?en:ar;
  const own=useId(),fieldId=id||'followup-date-'+own.replace(/[^a-zA-Z0-9_-]/g,''),labelId=fieldId+'-picker-label';
  const day=today();
  const customer=customerId?records.find(row=>row.id===customerId&&row.kind==='customer'):undefined;
  // The customer's representative (the follow-ups page's «المندوب المسؤول»); before a customer is chosen, whoever records.
  const ownerId=customer?.assignedTo||me.id,ownerName=ownerId===me.id?'':members.find(member=>member.id===ownerId)?.name||say('المندوب المسؤول','the responsible representative');
- const view=useMemo(()=>grid?pickerView(records,{ownerId,customer,today:day}):null,[grid,records,ownerId,customer,day]);
+ const movingKey=(moving||[]).join('|');
+ // eslint-disable-next-line react-hooks/exhaustive-deps -- movingKey names the customers moved
+ const view=useMemo(()=>grid?pickerView(records,{ownerId,customer,today:day,moving:moving||[]}):null,[grid,records,ownerId,customer,day,movingKey]);
  const [manualOpen,setManualOpen]=useState(false);
  const input=useRef<HTMLInputElement>(null),cells=useRef<HTMLDivElement>(null),focusOther=useRef(false);
  // «تاريخ آخر» opens the date field and puts the cursor in it.
  useEffect(()=>{if(manualOpen&&focusOther.current){focusOther.current=false;input.current?.focus();}},[manualOpen]);
- const field=(extra:{label?:string;marked?:boolean;shortcuts?:boolean}={})=><FollowupDateField id={fieldId} value={value} onChange={onChange} min={min} required={required} problem={problem} inputRef={input} {...(label&&extra.label===undefined?{label}:{})} {...extra}/>;
+ const field=(extra:{label?:string;marked?:boolean;shortcuts?:boolean}={})=><FollowupDateField id={fieldId} value={value} onChange={onChange} min={min} max={max} required={required} problem={problem} inputRef={input} {...(label&&extra.label===undefined?{label}:{})} {...extra}/>;
  if(!view)return field();
  const words=pickerWords(lang,ownerName,day),best=view.best,hasPin=!!view.here;
  const inGrid=view.days.some(item=>item.date===value),open=manualOpen||!inGrid||!!problem;
- const usable=(item:PickerDay)=>!min||item.date>=min;
+ const usable=(item:PickerDay)=>(!min||item.date>=min)&&(!max||item.date<=max);
  const tabbable=(inGrid?view.days.find(item=>item.date===value&&usable(item)):undefined)||view.days.find(usable);
  const chosen=viewDay(view,value),verdict=chosen?words.verdict(dayVerdict(chosen)):'';
  function choose(date:string){onChange(date);setManualOpen(false);}

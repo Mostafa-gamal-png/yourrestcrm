@@ -20,6 +20,7 @@ const STAYS_TYPED = [
   {file: 'app/competitor-fields.tsx', snippet: "type=\"text\"", reason: 'the competitor name is chosen from earlier names (a suggestion list); the notes beside it are dictated'},
   {file: 'app/customer-entry-fields.tsx', snippet: 'ABCD1234', reason: 'the short national address is a code'},
   {file: 'app/customer-entry-fields.tsx', snippet: "'اللوكيشن (خط العرض، خط الطول)'", reason: 'coordinates: dictating digits makes more errors than it saves, and the point is taken from the device or the map'},
+  {file: 'app/daily-plans.tsx', snippet: 'inputMode="numeric" maxLength={3}', reason: '«المستهدف في يوم الخطة»: two whole numbers from 0 to 50, typed (2026-11-22, GSCO 2.13.85); the notes of the plan are dictated'},
   {file: 'app/customer-capacity.tsx', snippet: 'inputMode="numeric"', reason: '«عدد القوالب المستخدمة» is a whole number: digits are typed, dictating them makes more errors than it saves; the two texts beside it are dictated (2026-11-21)'},
   {file: 'app/email-login.tsx', snippet: 'placeholder="name"', reason: 'sign-in: the name field takes the account name typed as the mail provider shows it'},
   {file: 'app/email-login.tsx', snippet: 'autoComplete="one-time-code"', reason: 'sign-in: a numeric code'},

@@ -37,12 +37,17 @@ try {
   const insert = (id, kind, parent, assigned, data) => app.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id, kind, parent, assigned, 'الرئيسي', JSON.stringify(data), now, now).run();
   for (const [id, name] of [['c1', 'مصنع الشرق'], ['c2', 'مصنع الخليج'], ['c3', 'مصنع الدمام']]) await insert(id, 'customer', null, 'rep1', {name, region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03'});
   await insert('cW', 'customer', null, 'rep1', {name: 'مصنع الغرب', region: 'الغربية', city: 'جدة', location: '21.5, 39.2'});
+  // Since 2026-11-22 (GSCO 2.13.85) a new stop is one of the member's follow-ups: each customer has an open one (recorded three days before).
+  await insert('m3', 'customer', null, 'mk1', {name: 'مصنع التسويق', region: 'الشرقية', city: 'الخبر', location: '26.3, 50.2'});
+  const before = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+  for (const [id, owner] of [['c1', 'rep1'], ['c2', 'rep1'], ['c3', 'rep1'], ['m3', 'mk1']]) await insert('f-' + id, 'activity', id, owner, {type: 'call', date: before, summary: 'متابعة سابقة', result: 'تمت', performedBy: owner, responsibleId: owner, nextAction: 'متابعة العرض', nextDate: D, visitWorkflow: 'customer-v1'});
   const session = {};
   for (const member of members) session[member.id] = app.as(await app.login(member.id));
   const anonymous = app.as(null);
   const json = async (response, status, label) => { eq(response.status, status, label + ' -> ' + response.text.slice(0, 300)); return response.json(); };
   const get = async (who, query, status = 200) => json(await session[who]('/api/daily-plans?' + new URLSearchParams(query)), status, 'GET ' + JSON.stringify(query) + ' as ' + who);
-  const post = async (who, body, status = 200) => json(await session[who]('/api/daily-plans', {method: 'POST', body: {requestId: crypto.randomUUID(), ...body}}), status, 'POST ' + body.action + ' as ' + who);
+  // A page of 2026-11-22 sends the day's targets with every save and send (zero each here).
+  const post = async (who, body, status = 200) => json(await session[who]('/api/daily-plans', {method: 'POST', body: {requestId: crypto.randomUUID(), ...(['save', 'send'].includes(body.action) && !('targets' in body) ? {targets: {opportunities: 0, customers: 0}} : {}), ...body}}), status, 'POST ' + body.action + ' as ' + who);
   const inbox = async who => json(await session[who]('/api/daily-plans/inbox'), 200, 'inbox of ' + who);
   const stop = (customerId, kind = 'visit', extra = {}) => ({customerId, kind, time: '', note: '', ...extra});
   const wire = item => ({id: item.id, customerId: item.customerId, kind: item.kind, time: item.time, note: item.note});
@@ -67,8 +72,8 @@ try {
   await post('rep1', {action: 'send', date: D, stops, baseVersion: null}, 409);
   // The marketing officer's plan made on the device at 21:45 and received now: on time by the device's clock.
   const captured = new Date(Date.parse(W + 'T18:45:00.000Z')).toISOString();
-  await post('mk1', {action: 'send', date: D, stops: [stop('c3', 'whatsapp')], baseVersion: null, offline: {memberId: 'rep1', capturedAt: captured}}, 403);
-  plan = (await post('mk1', {action: 'send', date: D, stops: [stop('c3', 'whatsapp')], baseVersion: null, offline: {memberId: 'mk1', capturedAt: captured}})).plan;
+  await post('mk1', {action: 'send', date: D, stops: [stop('m3', 'whatsapp')], baseVersion: null, offline: {memberId: 'rep1', capturedAt: captured}}, 403);
+  plan = (await post('mk1', {action: 'send', date: D, stops: [stop('m3', 'whatsapp')], baseVersion: null, offline: {memberId: 'mk1', capturedAt: captured}})).plan;
   eq([plan.late, plan.firstSentAt, plan.firstSentSource], [false, captured, 'device'], 'on time by the device\'s clock');
   // Who reads whom.
   for (const who of ['sup', 'mgr', 'owner']) eq((await get(who, {date: D, memberId: 'rep1'})).state, 'sent', who + ' reads it');
@@ -131,11 +136,15 @@ async function bootAt(at, run) {
   const shifted = await bootBuiltApp({members}, {env: {NODE_OPTIONS: '--import ' + new URL('../scripts/lib/shifted-clock.mjs', import.meta.url).href, TEST_CLOCK_OFFSET_MS: String(at - Date.now())}});
   try {
     const stamp = new Date().toISOString();
-    for (const [id, name] of [['c1', 'مصنع الشرق'], ['c2', 'مصنع الخليج']]) await shifted.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id, 'customer', null, 'rep1', 'الرئيسي', JSON.stringify({name, region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03'}), stamp, stamp).run();
+    for (const [id, name, owner] of [['c1', 'مصنع الشرق', 'rep1'], ['c2', 'مصنع الخليج', 'rep1'], ['m1', 'مصنع التسويق', 'mk1']]) {
+      await shifted.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind(id, 'customer', null, owner, 'الرئيسي', JSON.stringify({name, region: 'الشرقية', city: 'الدمام', location: '26.43, 50.03'}), stamp, stamp).run();
+      // Its open follow-up (a new stop is one since 2026-11-22).
+      await shifted.db.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').bind('f-' + id, 'activity', id, owner, 'الرئيسي', JSON.stringify({type: 'call', date: stamp.slice(0, 10), summary: 'متابعة سابقة', result: 'تمت', performedBy: owner, responsibleId: owner, nextAction: 'متابعة العرض', nextDate: SA, visitWorkflow: 'customer-v1'}), stamp, stamp).run();
+    }
     const calls = {};
     for (const id of ['rep1', 'mk1', 'sup']) calls[id] = shifted.as(await shifted.login(id));
     const json = async (response, status, label) => { eq(response.status, status, label + ' -> ' + response.text.slice(0, 300)); return response.json(); };
-    const send = async (who, body, status = 200) => (await json(await calls[who]('/api/daily-plans', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'send', date: SA, stops: [{customerId: 'c1', kind: 'visit', time: '', note: ''}], baseVersion: null, ...body}}), status, 'send as ' + who)).plan;
+    const send = async (who, body, status = 200) => (await json(await calls[who]('/api/daily-plans', {method: 'POST', body: {requestId: crypto.randomUUID(), action: 'send', date: SA, targets: {opportunities: 0, customers: 0}, stops: [{customerId: who === 'mk1' ? 'm1' : 'c1', kind: 'visit', time: '', note: ''}], baseVersion: null, ...body}}), status, 'send as ' + who)).plan;
     const box = async who => json(await calls[who]('/api/daily-plans/inbox'), 200, 'inbox of ' + who);
     const list = async () => (await json(await calls.sup('/api/daily-plans?date=' + SA), 200, 'the list of ' + SA)).rows.map(row => [row.memberId, row.state, row.late, row.overdue]).sort();
     await run({send, box, list});

@@ -129,3 +129,47 @@
  .plan-actions .btn{flex:1 1 140px}
 }
 .plan-voice{margin:0;min-width:0}
+/* 2026-11-22 (GSCO 2.13.85): the follow-ups of the plan, «المتابعات المتأخرة», «تغيير الموعد», «المستهدف في يوم الخطة» and «ترحيل جماعي». */
+.plan-add{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.plan-late{display:grid;gap:8px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--card);min-width:0}
+.plan-late-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.plan-late-head small{color:var(--muted-foreground);flex:1;min-width:0}
+.plan-late-tools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.plan-check{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-size:14px;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.plan-check input,.plan-late-row input{width:20px;height:20px;flex-shrink:0;accent-color:var(--primary)}
+.plan-late-list{list-style:none;margin:0;padding:0;display:grid;gap:6px;min-width:0}
+.plan-late-row{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border);border-radius:10px;padding:10px;min-height:44px;cursor:pointer;min-width:0}
+.plan-late-row.selected{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 6%,var(--card))}
+.plan-late-text{display:grid;gap:3px;min-width:0;flex:1}
+.plan-late-text b{overflow-wrap:anywhere}
+.plan-late-text small{font-size:12px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.plan-late-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.plan-late-move,.plan-reschedule-panel{display:grid;gap:8px;border-top:1px solid var(--border);padding-top:8px;min-width:0}
+.plan-reschedule{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.plan-alert{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.7;background:#fff3df;color:#8a6420;overflow-wrap:anywhere}
+.dark .plan-alert{background:#3a2f17;color:#f3cf8a}
+.plan-bulk-report{display:grid;gap:4px;padding:8px 10px;border-radius:8px;font-size:13px;background:#e8f5ee;color:#2f7453;overflow-wrap:anywhere;min-width:0}
+.plan-bulk-report.partial{background:#fff3df;color:#8a6420}
+.plan-bulk-report ul{margin:0;padding-inline-start:18px}
+.dark .plan-bulk-report{background:#1f3a2d;color:#9fdcbc}
+.dark .plan-bulk-report.partial{background:#3a2f17;color:#f3cf8a}
+.plan-targets{display:grid;gap:8px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;min-width:0}
+.plan-targets-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.plan-targets h4{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;margin:0}
+.plan-target-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
+.plan-target{display:grid;gap:4px;min-width:0}
+.plan-target input{width:100%;max-width:140px}
+.plan-target-value{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:0;font-size:13px;color:var(--muted-foreground)}
+.plan-target-value b{font-size:16px;color:var(--foreground)}
+.plan-target-was,.plan-target-actual{font-size:12px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.plan-target-actual{color:var(--primary);font-weight:600}
+.plan-target-lines{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0;font-size:13px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.plan-target-lines b{color:var(--foreground)}
+.plan-bulk-moves{font-size:13px;min-width:0}
+.plan-bulk-moves summary{display:inline-flex;align-items:center;gap:6px;min-height:36px;cursor:pointer;font-weight:600;color:var(--primary)}
+.plan-bulk-moves ul{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px}
+.plan-bulk-moves li{border-top:1px solid var(--border);padding-top:4px;overflow-wrap:anywhere}
+.plan-bulk-dates{color:var(--muted-foreground)}
+.plan-row-targets,.plan-row-bulk{flex-basis:100%;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-foreground);overflow-wrap:anywhere;min-width:0}
+@media(pointer:coarse),(max-width:1100px){.plan-bulk-moves summary{min-height:44px}}
+@media(max-width:420px){.plan-target-grid{grid-template-columns:minmax(0,1fr)}}
