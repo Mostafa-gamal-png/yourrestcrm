@@ -100,6 +100,17 @@ const sheetXml=rows=>'<worksheet><sheetData>'+rows.map(r=>'<row>'+r.map(v=>'<c t
 const xlsx=sheets=>zipSync({'[Content_Types].xml':strToU8('<?xml version="1.0"?><Types/>'),'xl/workbook.xml':strToU8('<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+sheets.map((s,i)=>'<sheet name="S'+i+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>'),'xl/_rels/workbook.xml.rels':strToU8('<Relationships>'+sheets.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'</Relationships>'),...Object.fromEntries(sheets.map((s,i)=>['xl/worksheets/sheet'+(i+1)+'.xml',strToU8(sheetXml(s))]))});
 eq(C.parseCollectionStatement(xlsx([[HEADERS,...base]])).rows.map(r=>[r.accountNo,r.periodDebit]),[['1101',5000],['1102',10000]],'the .xlsx form');
 refuses(xlsx([[HEADERS,...base],[HEADERS]]),/ورقة Excel واحدة/,'two sheets: refused');
+// The rest of the reader's refusals and tolerances
+eq(C.parseCollectionStatement(utf16(html(base),{bom:false})).rows,parsed.rows,'UTF-16LE without a byte-order mark (the ERP\'s «<» and a zero byte)');
+refuses(utf8(html([row('1','x'.repeat(1001),'م','','0','0','0','0','0','0')])),/قيمة خلية في كشف الحساب أطول من المسموح/,'a cell over 1000 characters');
+refuses(utf8('<TABLE><TR><TD><script>x</script></TD></TR></TABLE>'),/محتوى غير مسموح/,'a script in the file');
+refuses(utf8('<TABLE>'+'<TR><TD>x</TD></TR>'.repeat(5011)+'</TABLE>'),/الحد الأقصى لكشف الحساب 5000 حساب/,'more rows than a statement can have: refused before they are read');
+refuses(utf8(html(base,{headers:HEADERS.filter(h=>h!=='المحصل')})),/ينقصه عمود مطلوب: المحصل/,'a missing column is named');
+refuses(utf8(html(base,{headers:[...HEADERS,'حركة الفترة مدين']})),/عمود مكرر في كشف الحساب: حركة الفترة مدين/,'a duplicated column');
+refuses(new Uint8Array(C.COLLECTION_FILE_MAX_BYTES+1).fill(0x20),/2 ميجابايت/,'over 2 MB');
+refuses(new Uint8Array([0x50,0x4b,0x03,0x04,1,2,3,4,5,6]),/./,'«PK» bytes that are not a workbook: the workbook reader\'s refusal, as the statement\'s');
+eq(C.parseCollectionStatement(utf8(html([base[0],['','','','','','','','','',''],HEADERS,base[1]]))).rows.map(r=>r.accountNo),['1101','1102'],'an empty row and a header repeated on a printed page are skipped');
+refuses(utf8(html([['','','','','','','','','','']])),/لا يحتوي حسابات قابلة للقراءة/,'nothing but empty rows: no account');
 // Grouping and the rate
 const acc=(no,rep,collector,[pd,pc,d,c,cd,cc])=>({rowNumber:Number(no),accountNo:no,accountName:'حساب '+no,rep,collector,previousDebit:pd,previousCredit:pc,periodDebit:d,periodCredit:c,currentDebit:cd,currentCredit:cc});
 const accounts=[acc('1','Ahmed Ali','',[0,0,100,50,50,0]),acc('2','AHMED  ALI','',[0,0,100,100,0,0]),acc('3','‏مندوب ألف‎','',[0,0,10,0,10,0]),acc('4','','مندوب ألف',[0,500,100,0,0,400]),acc('5','مبيعات المكتب','',[0,0,7,7,0,0]),acc('6','مندوب ألف','',[0,0,10,0,5,0])];
@@ -260,6 +271,22 @@ eq([evidence('rep2','2026-10').input.history,evidence('rep2','2026-10').input.qu
 eq([evidence('rep1','2026-10').input.history.complete,evidence('rep1','2026-10').input.quotationsComplete],[true,true],'the member\'s own scope: the confirmations are kept');
 ok(JSON.parse(sql.prepare("SELECT detail FROM crm_audit WHERE record_id='kpi-collection-import' ORDER BY created_at DESC,rowid DESC").get().detail).closedMonth,'the import line of a finished month says so');
 
+// The size limit of the request, an unreadable earlier import line, an ERP mapping by employee number, an amount over the limit
+await refusal(S.importErpCollections(manager,body({base64:'A'.repeat(Math.ceil(C.COLLECTION_FILE_MAX_BYTES/3)*4)})),413,/2 ميجابايت/,'one byte over 2 MB once decoded: 413');
+sql.prepare("INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES('broken-line','kpi-collection-import','x','x','not json','2026-11-16T09:00:00.000Z')").run();
+sql.prepare("INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) VALUES('s2','k2','h','m','INV-2','sale','2026-11-03','E-55','rep1','الرئيسي','eastern','C1','عميل',?,100,'erp-1','admin','2026-11-03')").run(JSON.stringify({employeeName:'خالد',items:[]}));
+sql.prepare("INSERT INTO crm_erp_employee_mappings(employee_id,rep_id,updated_by,updated_at) VALUES('E-55','rep1','admin','2026-11-03')").run();
+const big=[row('2001','كبير ١','خالد','','0','0','9999999999.99','0','9999999999.99','0'),row('2002','كبير ٢','خالد','','0','0','9999999999.99','0','9999999999.99','0')];
+const extra=await S.importErpCollections(manager,body({base64:file([...changed,...big])}));
+eq((({status,repId,mappingSource})=>[status,repId,mappingSource])(extra.names.find(n=>n.name==='خالد')),['mapped','rep1','erp'],'a name of the ERP sales whose employee number is mapped: that representative (an unreadable earlier line suggests nothing)');
+eq((({status,reason})=>[status,reason])(extra.reps.find(r=>r.repId==='rep1')),['invalid','المبلغ يتجاوز الحد المسموح'],'two accounts that together pass the limit: not written');
+// A database that fails while saving: the error, and nothing written
+const changed2=changed.map(r=>r[0]==='1101'?row('1101','مصنع ١','مندوب ألف','','1000','0','500','960','540','0'):r);
+const lostPreview=await S.importErpCollections(manager,body({base64:file(changed2)}));
+race=()=>{throw new Error('the connection was lost');};
+let lost;try{await S.importErpCollections(manager,body({base64:file(changed2),action:'commit',requestId:crypto.randomUUID(),planDigest:lostPreview.planDigest,replaceConfirmed:true}));}catch(e){lost=e;}
+eq([lost?.message,evidence('rep1').version],['the connection was lost',2],'the failure is thrown as it is (no answer of a request never saved), nothing written');
+
 // «مبيعات مكتب (مستبعد)» chosen for a name
 const OFFICE=O.ERP_OFFICE_CHOICE,officeRow=()=>sql.prepare("SELECT owner_id FROM crm_settings WHERE id=?").get(O.ERP_OFFICE_SETTING)?.owner_id??null;
 await refusal(S.importErpCollections(manager,body({base64:file(changed),mappings:[{name:'أحمد الغربي',repId:OFFICE}]})),403,/خارج نطاق فريقك أو منطقتك/,'marking a name that belongs to a representative out of the manager\'s regions: refused, as remapping it would be');
@@ -285,6 +312,11 @@ const markAgain=await S.importErpCollections(manager,body({base64:file(changed),
 race=()=>{sql.prepare("UPDATE crm_settings SET owner_id=? WHERE id=?").run(O.serializeOfficeList({employees:[{employeeId:'',employeeName:'آخر',by:'admin',at:'t'}]}),O.ERP_OFFICE_SETTING);};
 await refusal(S.importErpCollections(manager,body({base64:file(changed),mappings:[{name:'مجهول',repId:OFFICE}],action:'commit',requestId:crypto.randomUUID(),planDigest:markAgain.planDigest})),409,/تغيّرت بيانات المؤشرات أو الصلاحيات أثناء الاعتماد/,'the marks changed after the preview: refused');
 eq(O.parseOfficeList(officeRow()).employees.map(e=>e.employeeName),['آخر'],'and the other change is kept as it is');
+// A mark saved together with evidence written: one transaction
+const both=changed.map(r=>r[0]==='1103'?row('1103','مصنع ٣','مندوب باء','','0','0','1,300.00','1300','0','0'):r);
+const bothPreview=await S.importErpCollections(manager,body({base64:file(both),mappings:[{name:'مجهول',repId:OFFICE}]}));
+const bothDone=await S.importErpCollections(manager,body({base64:file(both),mappings:[{name:'مجهول',repId:OFFICE}],action:'commit',requestId:crypto.randomUUID(),planDigest:bothPreview.planDigest,replaceConfirmed:true}));
+eq([bothDone.writtenCount,bothDone.officeMarked,evidence('rep2').input.collection.collectedCents,O.parseOfficeList(officeRow()).employees.map(e=>e.employeeName).sort()],[1,1,130000,['آخر','مجهول'].sort()],'the mark and rep2\'s new collection saved together');
 // A name marked by employee number in the ERP sales import is changed there only
 const list=O.applyOfficeChanges(O.parseOfficeList(officeRow()),{markIds:[{employeeId:'E-77',employeeName:'سعيد'}]},'admin','2026-11-16');
 sql.prepare("UPDATE crm_settings SET owner_id=? WHERE id=?").run(O.serializeOfficeList(list),O.ERP_OFFICE_SETTING);
