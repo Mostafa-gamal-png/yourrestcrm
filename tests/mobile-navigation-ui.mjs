@@ -85,12 +85,23 @@ for(const role of Object.keys(allowed)){
 // «المحذوفات» with «حذف» (the owner, 2026-11-10): a representative or a supervisor granted a «حذف» cell has it in «المزيد»; without one, or
 // with it hidden, not; the bottom bar stays the same.
 {const P=library('lib/permissions.ts'),grantedMe=(role,cells,hidden=[])=>({...me,role,access:P.memberAccess(role,{permissions:JSON.stringify(cells),hidden:JSON.stringify(hidden),version:1})});
- for(const [label,member,expected] of [['rep, «حذف» on visits',grantedMe('rep',{'activity:delete':true}),['customer','map','activity','followup','targets','plans','mold-requests','trash']],['rep, no «حذف»',grantedMe('rep',{}),['customer','map','activity','followup','targets','plans','mold-requests']],['rep, «حذف» on but «المحذوفات» hidden',grantedMe('rep',{'activity:delete':true},['trash']),['customer','map','activity','followup','targets','plans','mold-requests']],['supervisor, «حذف» on quotations',grantedMe('supervisor',{'quote:delete':true}),['customer','map','activity','followup','targets','dashboard','journeys','plans','sales','competitors','mold-requests','trash']],['supervisor, only «إلغاء بيع»',grantedMe('supervisor',{'sales:delete':true}),['customer','map','activity','followup','targets','dashboard','journeys','plans','sales','competitors','mold-requests']]]){
+ for(const [label,member,expected] of [['rep, «حذف» on visits',grantedMe('rep',{'activity:delete':true}),['customer','map','activity','followup','targets','my-plan','plans','mold-requests','trash']],['rep, no «حذف»',grantedMe('rep',{}),['customer','map','activity','followup','targets','my-plan','plans','mold-requests']],['rep, «حذف» on but «المحذوفات» hidden',grantedMe('rep',{'activity:delete':true},['trash']),['customer','map','activity','followup','targets','my-plan','plans','mold-requests']],['rep, «خطط المناديب» hidden (and «خطتي» with it)',grantedMe('rep',{},['plans']),['customer','map','activity','followup','targets','mold-requests']],['rep, «إعداد خطة اليوم» off (no «خطتي»)',grantedMe('rep',{'plans:add':false}),['customer','map','activity','followup','targets','plans','mold-requests']],['supervisor, «حذف» on quotations',grantedMe('supervisor',{'quote:delete':true}),['customer','map','activity','followup','targets','dashboard','journeys','plans','sales','competitors','mold-requests','trash']],['supervisor, only «إلغاء بيع»',grantedMe('supervisor',{'sales:delete':true}),['customer','map','activity','followup','targets','dashboard','journeys','plans','sales','competitors','mold-requests']]]){
   const h=harness('app/mobile-navigation.tsx',{me:member,view:'activity',onNavigate:noop,accountOpen:false,onAccountOpenChange:noop});let tree=h.render();
   eq(nodes(tree,node=>node.type==='button'&&!!node.props['data-page']).map(node=>node.props['data-page']),expected,label+': its pages');
   eq(pageIds(tree),['customer','map','activity','followup',...(member.role==='rep'?['targets']:[])],label+': the bottom bar unchanged');
   if(expected.includes('trash')){tabs(tree).find(node=>!node.props['data-page']).props.onClick();tree=h.render();eq(nodes(tree,node=>node.type==='button'&&node.props['data-page']==='trash'&&!node.props.className?.includes('mobile-tab')).length,1,label+': «المحذوفات» in «المزيد»');}
  }}
+// «خطتي» (2026-11-22, GSCO 2.13.86): first in the representative's «المزيد», before «خطة الغد» and mold requests; the bar keeps its five tabs.
+for(const locale of ['ar','en']){
+ language=locale;const navigated=[],h=harness('app/mobile-navigation.tsx',{me,view:'activity',onNavigate:value=>navigated.push(value),accountOpen:false,onAccountOpenChange:noop});let tree=h.render();
+ eq(pageIds(tree),['customer','map','activity','followup','targets'],locale+': the bar is unchanged');
+ tabs(tree).find(node=>node.props['aria-haspopup']==='dialog').props.onClick();tree=h.render();
+ const overflow=nodes(tree,node=>node.type==='button'&&!!node.props['data-page']&&!node.props.className?.includes('mobile-tab'));
+ eq(overflow.map(node=>node.props['data-page']),['my-plan','plans','mold-requests'],locale+': «خطتي» first in «المزيد»');
+ eq(overflow.map(text),locale==='ar'?['خطتي','خطة الغد','طلبات تصنيع القوالب']:['My plan','Tomorrow\'s plan','Mold requests'],locale+': their labels');
+ overflow[0].props.onClick();eq(navigated.at(-1),'my-plan',locale+': a tap opens «خطتي»');
+}
+language='ar';
 // Exercise real focus listeners: bar hides for editable fields even without visualViewport.
 class FakeElement{constructor(editing=false){this.editing=editing;this.isContentEditable=false;this.isConnected=true;this.focused=0;}matches(){return this.editing;}focus(){this.focused++;}}
 const events=new Map(),document={activeElement:new FakeElement(),addEventListener:(name,callback)=>events.set(name,callback),removeEventListener:name=>events.delete(name)};

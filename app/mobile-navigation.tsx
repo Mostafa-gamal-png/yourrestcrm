@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Building2,MapPinned,ClipboardList,CalendarCheck,CalendarDays,Target,LayoutDashboard,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
+import {Building2,MapPinned,ClipboardList,CalendarCheck,CalendarDays,ListChecks,Target,LayoutDashboard,BriefcaseBusiness,ShieldCheck,Users,Ellipsis,ChevronLeft,MessageSquareWarning,Gauge,Wrench,ArchiveRestore,X} from 'lucide-react';
 import {Sheet,SheetContent,SheetTitle,SheetDescription} from '@/components/ui/sheet';
 import {pageAllowed} from '@/lib/permissions';
 import {roles,type Member} from '@/lib/crm';
@@ -24,6 +24,8 @@ const pages=[
  {id:'service-kpi',ar:'تقييم الخدمة',en:'Service evaluation',Icon:Gauge},
  {id:'dashboard',ar:'لوحة المتابعة',en:'Dashboard',Icon:LayoutDashboard},
  {id:'journeys',ar:'تقرير يوم المندوب',en:'Daily route',Icon:MapPinned},
+ // «خطتي» (2026-11-22, GSCO 2.13.86): a field member's plan of today, first in «المزيد», before «خطة الغد».
+ {id:'my-plan',ar:'خطتي',en:'My plan',Icon:ListChecks},
  {id:'plans',ar:'خطط المناديب',en:'Representatives\' plans',Icon:CalendarCheck},
  {id:'sales',ar:'المبيعات',en:'Sales',Icon:BriefcaseBusiness},
  {id:'competitors',ar:'المنافسين',en:'Competitors',Icon:Users},
@@ -35,7 +37,8 @@ const pages=[
  * are reached from «المزيد» beside them (a representative keeps the same five tabs and gets a sixth, «المزيد»; the owner, 2026-11-03). */
 // «المحذوفات» (2026-11-09) is reached from «المزيد» too.
 // «خطط المناديب» (2026-11-19, «خطة الغد» for a representative) too: the reminder card on every page opens it.
-const secondary=new Set<string>(['mold-requests','trash','plans']);
+// «خطتي» (2026-11-22) too, first of them: the home card «خطة اليوم» opens it as well; the bar keeps its five tabs and «المزيد».
+const secondary=new Set<string>(['mold-requests','trash','plans','my-plan']);
 
 type Props={me:Member;view:string;onNavigate:(view:string)=>void;accountOpen:boolean;onAccountOpenChange:(open:boolean)=>void;blocked?:boolean;queue?:ServiceQueueEntry[];extra?:number;/** What waits for the reader on the complaints page, when they have one. */complaints?:number;/** «عملاء واقفين»: a representative's own (app/inactive-customers.tsx). */customers?:number};
 

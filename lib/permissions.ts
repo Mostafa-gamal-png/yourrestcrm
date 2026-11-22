@@ -143,8 +143,8 @@ export const PERMISSION_MATRIX:readonly MatrixRow[]=[
   export:{ar:'تصدير تقرير يوم المندوب (Excel)',en:'Export the daily route report (Excel)',roles:MANAGEMENT},
  }},
  {screen:'plans',ar:'خطط المناديب',en:'Representatives\' plans',roleNote:{rep:planOwnNote,marketing:planOwnNote},cells:{
-  add:{ar:'إعداد خطة اليوم',en:'Prepare the day\'s plan',roles:['rep','marketing'],note:{ar:'خطة اليوم التالي وإرسالها للمشرف قبل الساعة 22:00، وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت (ما يُرسل بعد الموعد يُقبل ويُعلَّم «متأخرة»). لا تمنع الخطة تسجيل أي زيارة أو تواصل.',en:'The next day\'s plan, sent to the supervisor before 22:00, and Saturday\'s before midnight between Friday and Saturday (one sent later is accepted and marked late). The plan never stops a visit or contact from being recorded.'}},
-  edit:{ar:'مراجعة خطط المناديب',en:'Review the representatives\' plans',roles:MANAGEMENT,note:{ar:'اعتماد، واعتماد مع تعديل، وإعادة للمندوب مع السبب، وملاحظة واحدة لكل مراجع على يوم المندوب؛ على خطط فريقه فقط.',en:'Approve, approve with edits, return with a reason, and one note per reviewer on the representative\'s day; their own team\'s plans only.'}},
+  add:{ar:'إعداد خطة اليوم',en:'Prepare the day\'s plan',roles:['rep','marketing'],note:{ar:'خطة اليوم التالي وإرسالها للمشرف قبل الساعة 12:00 منتصف الليل الذي يبدأ به يوم الخطة (ما يُرسل بعد الموعد يُقبل ويُعلَّم «متأخرة»)، و«خطتي» لتنفيذ خطة اليوم. لا تمنع الخطة تسجيل أي زيارة أو تواصل.',en:'The next day\'s plan, sent to the supervisor before 12:00 midnight, when the plan\'s day begins (one sent later is accepted and marked late), and «My plan» to carry out today\'s. The plan never stops a visit or contact from being recorded.'}},
+  edit:{ar:'مراجعة خطط المناديب',en:'Review the representatives\' plans',roles:MANAGEMENT,note:{ar:'اعتماد، واعتماد مع تعديل، وإعادة للمندوب مع السبب، وملاحظة واحدة لكل مراجع على يوم المندوب؛ على خطط فريقه فقط. المشرف حتى منتصف الليل الذي يبدأ به يوم الخطة (بعده «غير معتمدة»)، ومدير المبيعات حتى نهاية يومها وتعديلاته له.',en:'Approve, approve with edits, return with a reason, and one note per reviewer on the representative\'s day; their own team\'s plans only. The supervisor until the midnight that begins the plan\'s day (then «Not approved»), the sales manager until its day ends, their edits theirs.'}},
   export:{ar:'تصدير خطط المناديب إلى Excel',en:'Export the representatives\' plans to Excel',roles:MANAGEMENT},
  }},
  {screen:'quote',ar:'عروض الأسعار',en:'Quotations',cells:{
@@ -279,8 +279,9 @@ export const can=(me:Who|null|undefined,screen:PermissionScreen,action:Permissio
 /** Whether the administrator hid this screen from the member (never from an administrator); «المستهدفات وتقييم الأداء» also when every tab
  *  of its hub is hidden and «رفع المبيعات» does not show (lib/access.ts hubTabsAllHidden). */
 export const pageHidden=(me:Who|null|undefined,screen:string)=>!!me&&me.role!=='admin'&&(!!me.access?.hidden.includes(screen as PermissionScreen)||screen==='targets'&&hubTabsAllHidden(me.role,me.access?.hidden||[]));
-/** Whether the screen shows for the member: the role has it, it is not hidden, and «المحذوفات» only for whom trashScopeOf gives it. */
-export const pageAllowed=(me:Who|null|undefined,screen:string)=>!!me&&canViewPage(me.role,screen)&&!pageHidden(me,screen)&&(screen!=='trash'||trashScopeOf(me)!==null);
+/** Whether the screen shows for the member: the role has it, it is not hidden, and «المحذوفات» only for whom trashScopeOf gives it. «خطتي»
+ *  (2026-11-22): a field member's own plan of today, with «خطط المناديب» shown and «إعداد خطة اليوم» on. */
+export const pageAllowed=(me:Who|null|undefined,screen:string):boolean=>screen==='my-plan'?!!me&&canViewPage(me.role,'my-plan')&&pageAllowed(me,'plans')&&can(me,'plans','add'):!!me&&canViewPage(me.role,screen)&&!pageHidden(me,screen)&&(screen!=='trash'||trashScopeOf(me)!==null);
 
 /** «المحذوفات» (the owner, 2026-11-10): the «حذف» cells whose deletions reach it (a deletion of /api/crm writes the «حذف» entry the page reads,
  *  lib/trash.ts). «إلغاء بيع» is not one: a voided sale stays in «المبيعات» with its reason (app/api/sales: status void, an «إلغاء بيع» entry). */

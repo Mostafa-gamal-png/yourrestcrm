@@ -14,7 +14,7 @@ import {memberFollowups,parseTargets,sameTargets,hasTarget,NO_TARGETS,TARGET_MES
 import {bulkAuditRange,bulkMoveOf} from './followup-next-dates-server';
 import {queuedBeforeRelease,rulesSince} from './release-gate';
 import type {JourneyContext} from './journeys-server';
-import {PLAN_EXPORT_MAX_DAYS,PLAN_MESSAGES,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REASON_MAX,PLAN_REASON_MIN,PLAN_AHEAD_DAYS,addDays,isPlanWorkingDay,memberLockProblems,memberMayEdit,memberStops,nextPlanDay,parsePlanStops,planCompletion,planDateProblem,planDay,planDeadline,planLate,planSentAt,planText,preparesPlans,reviewerMayApprove,reviewerMayEdit,reviewerMayReturn,reviewerStops,reviewsPlans,type PlanActivity,type PlanCounts,type PlanExport,type PlanInbox,type PlanInboxDay,type PlanList,type PlanListRow,type PlanNoteView,type PlanState,type PlanStatus,type PlanStopInput,type PlanView,type StoredStop,type SupervisorState} from './daily-plans';
+import {PLAN_EXPORT_MAX_DAYS,PLAN_MESSAGES,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REASON_MAX,PLAN_REASON_MIN,PLAN_AHEAD_DAYS,addDays,isPlanSalesManager,isPlanWorkingDay,managerLockProblem,memberLockProblems,memberMayEdit,memberStops,nextPlanDay,parsePlanStops,planCompletion,planDateProblem,planDay,planDeadline,planEditTrail,planLate,planReviewClosed,planSentAt,planText,planUnapproved,preparesPlans,removedBackProblems,reviewerChanges,reviewerMayApprove,reviewerMayEdit,reviewerMayReturn,reviewerStops,reviewsPlans,stopMark,type PlanActivity,type PlanCounts,type PlanEditTrail,type PlanEdits,type PlanExport,type PlanInbox,type PlanInboxDay,type PlanInboxEdit,type PlanList,type PlanListRow,type PlanNoteView,type PlanState,type PlanStatus,type PlanStopInput,type PlanView,type StoredStop,type SupervisorState} from './daily-plans';
 
 /** Server side of «خطة الغد» and «خطط المناديب» (lib/daily-plans.ts, migration 0022). Who:
  * - the member (a representative or a marketing officer, lib/roles.ts) prepares, saves and sends their OWN plan («خطط المناديب · إضافة»);
@@ -25,7 +25,13 @@ import {PLAN_EXPORT_MAX_DAYS,PLAN_MESSAGES,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REAS
  * writer's role, region, supervisor and permissions unchanged, accessGuard; for a reviewer the member still in their team; the customers
  * still there) and audited in crm_audit with an action 'daily-plan:…' (kept out of GET /api/crm's recent changes): the audit row is the
  * request's receipt, so a retry answers with the plan as it is and the same key with other contents is 409. The plan never blocks the
- * recording of visits and contacts: no other route reads it. */
+ * recording of visits and contacts: no other route reads it.
+ * Since 2026-11-22 (the port of GSCO 2.13.86, no migration): the deadline is 12:00 midnight at the start of the plan's day for the member
+ * and for the supervisor's review; after it a supervisor neither approves, edits nor returns (409) and the plan reads «غير معتمدة», while the
+ * sales manager (lib/daily-plans.ts isPlanSalesManager) acts until the plan's day ends. Who decided each stop and the targets is written in
+ * the review's own audit line (`after.edits`) and read back with the plan (readTrails, planEditTrail): the member never changes what either
+ * reviewer decided, the supervisor never changes what the sales manager decided, and each change by the sales manager reaches the member and
+ * their supervisor on the reminder card and the device (readPlanInbox). */
 
 const ID=/^[A-Za-z0-9_:.@-]{1,200}$/;
 const identifier=z.string().regex(ID);
@@ -94,6 +100,19 @@ async function readTargets(db:D1Database,planIds:readonly string[]):Promise<Map<
  return out;
 }
 const noTargets:StoredTargets={targets:NO_TARGETS,edited:false,rep:null};
+/** The audit actions of a reviewer's decision on a plan (each one's detail holds `after.edits` since 2026-11-22). */
+export const PLAN_REVIEW_ACTIONS=['approve','approve_edited','return'].map(action=>PLAN_AUDIT_PREFIX+action);
+const noTrail=():PlanEditTrail=>({marks:new Map(),targets:null,managerDecided:false,manager:null});
+/** Who decided what on these plans (lib/daily-plans.ts planEditTrail), from their review lines in crm_audit (by record_id, oldest first). */
+export async function readTrails(db:D1Database,planIds:readonly string[]):Promise<Map<string,PlanEditTrail>>{
+ const out=new Map<string,PlanEditTrail>();if(!planIds.length)return out;
+ const rows=(await db.prepare('SELECT record_id AS recordId,action,actor,detail,created_at AS createdAt FROM crm_audit WHERE record_id IN (SELECT value FROM json_each(?)) AND action IN (SELECT value FROM json_each(?)) ORDER BY created_at,id')
+  .bind(JSON.stringify([...new Set(planIds)]),JSON.stringify(PLAN_REVIEW_ACTIONS)).all<{recordId:string;action:string;actor:string;detail:string;createdAt:string}>()).results;
+ const lines=new Map<string,{action:string;at:string;actorName:string;detail:unknown}[]>();
+ for(const row of rows){let detail:unknown=null;try{detail=JSON.parse(row.detail);}catch{detail=null;}const list=lines.get(row.recordId)||[];list.push({action:row.action,at:row.createdAt,actorName:row.actor||'',detail});lines.set(row.recordId,list);}
+ for(const [id,list] of lines)out.set(id,planEditTrail(list));
+ return out;
+}
 /** When a record was made, for the day it counts on: the device's time of one saved on the device, else the server's. A request of a mold
  *  written by a visit ('visit-request-<key>') takes its visit's ('customer-visit-<key>'), which carries the device's time. */
 function madeAt(row:Row,byId:ReadonlyMap<string,Row>){
@@ -166,6 +185,7 @@ const emptyCounts:PlanCounts={stops:0,done:0,doneOther:0,open:0,removed:0,outsid
 async function planViews(c:JourneyContext,pairs:readonly [string,string][],now:string):Promise<PlanView[]>{
  const today=journeyDate(now),plans=await readPlans(c.db,pairs);
  const stops=await readStops(c.db,[...plans.values()].map(plan=>plan.id)),notes=await readNotes(c.db,pairs),targets=await readTargets(c.db,[...plans.values()].map(plan=>plan.id));
+ const trails=await readTrails(c.db,[...plans.values()].filter(plan=>plan.status!=='draft').map(plan=>plan.id)),manager=isPlanSalesManager(c.me);
  // The achieved numbers from the plan's day on, and the bulk moves, per day asked.
  const byDate=new Map<string,string[]>();for(const [memberId,date] of pairs){const list=byDate.get(date)||[];list.push(memberId);byDate.set(date,list);}
  const actuals=new Map<string,{opportunities:number;customers:number}>(),moves=new Map<string,PlanBulkMove[]>();
@@ -187,16 +207,21 @@ async function planViews(c:JourneyContext,pairs:readonly [string,string][],now:s
   const outcome=new Map(completion.stops.map(stop=>[stop.id,stop]));
   const noteRows=(notes.get(memberId+'|'+date)||[]).map(row=>({reviewerId:row.reviewerId,reviewerName:names.get(row.reviewerId)||'',note:row.note,version:row.version,updatedAt:row.updatedAt}) satisfies PlanNoteView);
   const status=plan?.status??null,state:PlanState=plan?plan.status:'missing',future=planDateProblem(date,today);
-  const goal=(plan?targets.get(plan.id):undefined)||noTargets;
-  const plannable=future===null,editable=reader.writeTeam&&can(c.me,'plans','edit')&&date>=today;
+  const goal=(plan?targets.get(plan.id):undefined)||noTargets,trail=(plan?trails.get(plan.id):undefined)||noTrail();
+  // GSCO 2.13.86: a supervisor until midnight at the start of the plan's day, the sales manager until it ends; the sales manager's targets stay
+  // theirs even when set back to the member's own numbers.
+  const closed=planReviewClosed(date,now),managerTargets=trail.targets==='manager',targetsEdited=goal.edited||managerTargets;
+  const plannable=future===null,editable=reader.writeTeam&&can(c.me,'plans','edit')&&date>=today&&(manager||!closed);
   return {ok:true,memberId,memberName:member?.name||'',date,applies,id:plan?.id??null,state,status,version:plan?.version??null,late:!!plan?.late,deadline:planDeadline(date),
    firstSentAt:plan?.firstSentAt??null,firstSentSource:plan?.firstSentSource??null,sentAt:plan?.sentAt??null,reviewedByName:plan?.reviewedBy?names.get(plan.reviewedBy)||'':'',reviewedAt:plan?.reviewedAt??null,returnReason:plan?.returnReason||'',updatedAt:plan?.updatedAt??null,
-   stops:planStops.map(stop=>{const done=outcome.get(stop.id);return {id:stop.id,position:stop.position,customerId:stop.customerId,customerName:customers.get(stop.customerId)?.data.name||'',kind:stop.kind,time:stop.time,note:stop.note,addedBy:stop.addedBy,addedByName:names.get(stop.addedBy)||'',supervisorState:stop.supervisorState,editedByName:stop.editedBy?names.get(stop.editedBy)||'':'',completion:done?.state||'open',activityId:done?.activityId??null,activityType:done?.activityType??null,doneAt:done?.at??null};}),
+   stops:planStops.map(stop=>{const done=outcome.get(stop.id);return {id:stop.id,position:stop.position,customerId:stop.customerId,customerName:customers.get(stop.customerId)?.data.name||'',kind:stop.kind,time:stop.time,note:stop.note,addedBy:stop.addedBy,addedByName:names.get(stop.addedBy)||'',supervisorState:stop.supervisorState,editedByName:stop.editedBy?names.get(stop.editedBy)||'':'',completion:done?.state||'open',activityId:done?.activityId??null,activityType:done?.activityType??null,doneAt:done?.at??null,mark:stopMark(stop.supervisorState,trail.marks.get(stop.id))};}),
    activities:completion.activities.filter(item=>item.place!=='planned').map(item=>({id:item.id,customerId:item.customerId,customerName:customers.get(item.customerId)?.data.name||'',type:item.type,at:item.at,place:item.place as 'outside'|'extra'})),
    counts:plan?completion.counts:{...emptyCounts,outside:completion.counts.outside,extra:completion.counts.extra},notes:reader.own||reader.reviewer?noteRows:[],
-   targets:goal.targets,targetsEdited:goal.edited,repTargets:goal.rep,actual:plan?actuals.get(memberId+'|'+date)??null:null,bulkMoves:moves.get(memberId+'|'+date)||[],
+   targets:goal.targets,targetsEdited,repTargets:goal.rep,actual:plan?actuals.get(memberId+'|'+date)??null:null,bulkMoves:moves.get(memberId+'|'+date)||[],
+   targetsEditedBy:managerTargets?'manager':goal.edited?'supervisor':null,managerEdit:trail.manager?{byName:trail.manager.byName,at:trail.manager.at,version:trail.manager.version,decision:trail.manager.decision}:null,
+   managerDecided:trail.managerDecided,unapproved:planUnapproved({state,date},today),reviewClosed:closed,salesManager:manager,
    canEdit:reader.own&&applies&&preparesPlans(c.me)&&can(c.me,'plans','add')&&memberMayEdit(status)&&plannable,
-   canApprove:editable&&reviewerMayApprove(status),canReviewEdit:editable&&reviewerMayEdit(status),canReturn:editable&&reviewerMayReturn(status),
+   canApprove:editable&&reviewerMayApprove(status),canReviewEdit:editable&&reviewerMayEdit(status),canReturn:editable&&reviewerMayReturn(status)&&(manager||!trail.managerDecided),
    canNote:reader.writeTeam&&can(c.me,'plans','edit')&&date<=addDays(today,PLAN_AHEAD_DAYS),myNote:noteRows.find(note=>note.reviewerId===c.me.id)||null,serverTime:now} satisfies PlanView;
  });
 }
@@ -216,8 +241,10 @@ export async function readPlanList(c:JourneyContext,date:string,now=new Date().t
  const members=team.filter(member=>member.active||plans.has(planId(member.id,date)));
  const views=await planViews(c,members.map(member=>[member.id,date]),now),overdue=Date.parse(now)>=Date.parse(planDeadline(date))&&isPlanWorkingDay(date),asked=await planPreparers(c.db,members);
  const rows:PlanListRow[]=views.map((view,index)=>({memberId:view.memberId,name:view.memberName,role:members[index].role,state:view.state,version:view.version,late:view.late,overdue:view.state==='missing'&&overdue&&asked.has(view.memberId),firstSentAt:view.firstSentAt,reviewedByName:view.reviewedByName,counts:view.counts,notes:view.notes.length,
-  targets:view.targets,targetsEdited:view.targetsEdited,actual:view.actual,bulkMoves:view.bulkMoves.length}));
- const rank=(row:PlanListRow)=>row.state==='sent'?0:row.overdue?1:row.state==='returned'?2:row.state==='missing'?3:4;
+  targets:view.targets,targetsEdited:view.targetsEdited,actual:view.actual,bulkMoves:view.bulkMoves.length,
+  unapproved:!!view.unapproved,targetsEditedBy:view.targetsEditedBy??null,managerEdited:!!view.managerEdit}));
+ // A plan «غير معتمدة» (its day begun) no longer waits for approval.
+ const rank=(row:PlanListRow)=>row.state==='sent'&&!row.unapproved?0:row.overdue?1:row.state==='returned'?2:row.state==='missing'?3:4;
  rows.sort((a,b)=>rank(a)-rank(b)||a.name.localeCompare(b.name,'ar')||a.memberId.localeCompare(b.memberId));
  return {ok:true,date,deadline:planDeadline(date),workingDay:isPlanWorkingDay(date),rows,serverTime:now};
 }
@@ -235,24 +262,36 @@ export async function readPlanExport(c:JourneyContext,from:string,to:string,now=
  return {ok:true,from,to,plans:await planViews(c,pairs,now)};
 }
 
-/** GET /api/daily-plans/inbox (the reminder cards). Reads plans only, never the records. */
+/** GET /api/daily-plans/inbox (the reminder cards). Reads plans and their review lines only, never the records. Since 2026-11-22 (GSCO
+ *  2.13.86): a supervisor's plans waiting are those whose window is still open (a later day than today), the sales manager's every one up to
+ *  today; the member hears of the sales manager's edits of their approved plans of today and the next seven days, and a supervisor of every
+ *  change by a sales manager to a plan of the members who report to them (never of their own changes). */
 export async function readPlanInbox(c:Pick<JourneyContext,'db'|'me'|'members'>,now=new Date().toISOString()):Promise<PlanInbox>{
  const today=journeyDate(now),next=nextPlanDay(today),names=new Map(c.members.map(member=>[member.id,member.name]));
  if(isServiceRole(c.me.role)||!pageAllowed(c.me,'plans'))return {ok:true,serverTime:now,role:'none'};
  const summary=(date:string,plan:PlanRow|undefined):PlanInboxDay=>({date,state:plan?plan.status:'missing',late:!!plan?.late,deadline:planDeadline(date),version:plan?.version??null,returnReason:plan?.returnReason||'',reviewedByName:plan?.reviewedBy?names.get(plan.reviewedBy)||'':''});
+ const editsOf=async(plans:readonly PlanRow[],keep:(edit:PlanInboxEdit)=>boolean):Promise<PlanInboxEdit[]>=>{
+  const trails=await readTrails(c.db,plans.map(plan=>plan.id)),out:PlanInboxEdit[]=[];
+  for(const plan of plans){const edit=trails.get(plan.id)?.manager;if(edit){const item={memberId:plan.memberId,name:names.get(plan.memberId)||'',date:plan.date,at:edit.at,byName:edit.byName,version:edit.version,decision:edit.decision};if(edit.byId!==c.me.id&&keep(item))out.push(item);}}
+  return out.slice(0,50);
+ };
  if(preparesPlans(c.me)&&can(c.me,'plans','add')){
-  const plans=await readPlans(c.db,[[c.me.id,today],[c.me.id,next]]);
-  return {ok:true,serverTime:now,role:'member',next:summary(next,plans.get(planId(c.me.id,next))),today:isPlanWorkingDay(today)?summary(today,plans.get(planId(c.me.id,today))):null};
+  const days=Array.from({length:PLAN_AHEAD_DAYS+1},(_,index)=>addDays(today,index));
+  const plans=await readPlans(c.db,days.map(date=>[c.me.id,date]));
+  const edits=await editsOf([...plans.values()].filter(plan=>plan.status!=='draft').sort((a,b)=>a.date.localeCompare(b.date)),edit=>edit.decision==='edit');
+  return {ok:true,serverTime:now,role:'member',next:summary(next,plans.get(planId(c.me.id,next))),today:isPlanWorkingDay(today)?summary(today,plans.get(planId(c.me.id,today))):null,edits};
  }
  if(reviewsPlans(c.me)&&can(c.me,'plans','edit')){
-  const team=planTeam(c).filter(member=>member.active);
+  const team=planTeam(c).filter(member=>member.active),manager=isPlanSalesManager(c.me);
   const rows=team.length?(await c.db.prepare(`SELECT ${planColumns} FROM crm_daily_plans WHERE member_id IN (SELECT value FROM json_each(?)) AND date>=? AND status IN ('sent','approved','approved_edited','returned') ORDER BY date,first_sent_at,id`).bind(JSON.stringify(team.map(member=>member.id)),today).all<PlanRow>()).results:[];
-  const pending=rows.filter(row=>row.status==='sent').slice(0,50).map(row=>({memberId:row.memberId,name:names.get(row.memberId)||'',date:row.date,late:!!Number(row.late),firstSentAt:row.firstSentAt,version:Number(row.version)}));
+  const pending=rows.filter(row=>row.status==='sent'&&(manager||!planReviewClosed(row.date,now))).slice(0,50).map(row=>({memberId:row.memberId,name:names.get(row.memberId)||'',date:row.date,late:!!Number(row.late),firstSentAt:row.firstSentAt,version:Number(row.version)}));
+  const direct=new Set(team.filter(member=>member.supervisorId===c.me.id).map(member=>member.id));
+  const edits=await editsOf(rows.filter(row=>direct.has(row.memberId)).map(row=>({...row,version:Number(row.version)})),()=>true);
   const date=Date.parse(now)>=Date.parse(planDeadline(next))?next:isPlanWorkingDay(today)?today:'';
   const sent=new Set(rows.filter(row=>row.date===date).map(row=>row.memberId));
   const asked=date?await planPreparers(c.db,team):new Set<string>();
   const missing=date?team.filter(member=>asked.has(member.id)&&!sent.has(member.id)).map(member=>member.name).sort((a,b)=>a.localeCompare(b,'ar')):[];
-  return {ok:true,serverTime:now,role:'reviewer',pending,...(date?{missing:{date,names:missing}}:{})};
+  return {ok:true,serverTime:now,role:'reviewer',pending,...(date?{missing:{date,names:missing}}:{}),salesManager:manager,edits};
  }
  return {ok:true,serverTime:now,role:'none'};
 }
@@ -349,19 +388,28 @@ export async function writeMemberPlan(c:JourneyContext,body:unknown,receivedAt=n
  if((plan?.version??null)!==p.baseVersion)throw new CRMError(PLAN_MESSAGES.conflict,409);
  if(!memberMayEdit(plan?.status??null))throw new CRMError(PLAN_MESSAGES.approved,409);
  if(p.action==='save'&&plan&&plan.status!=='draft')throw new CRMError(PLAN_MESSAGES.sentNoDraft,409);
- if(memberLockProblems(existing,sent).length)throw new CRMError(PLAN_MESSAGES.locked,403);
- const stored=plan?(await readTargets(c.db,[id])).get(id)||noTargets:noTargets;
- if(asked&&stored.edited&&!sameTargets(asked,stored.targets))throw new CRMError(TARGET_MESSAGES.fixed,403);
+ // What a reviewer decided stays theirs: the stops (by their ids), a follow-up taken out (not brought back as a new stop on its customer,
+ // GSCO 2.13.86 review A1) and the targets (the sales manager's even set back to the member's own numbers); the message names who decided.
+ const trail=plan&&plan.status!=='draft'?(await readTrails(c.db,[id])).get(id)||noTrail():noTrail();
+ const lockProblems=memberLockProblems(existing,sent);
+ if(lockProblems.length)throw new CRMError(lockProblems.some(stopId=>trail.marks.get(stopId)?.by==='manager')?PLAN_MESSAGES.lockedManager:PLAN_MESSAGES.locked,403);
+ const back=removedBackProblems(existing,sent);if(back.length)throw new CRMError(PLAN_MESSAGES.removedBack,403,{stop:back[0]});
+ const stored=plan?(await readTargets(c.db,[id])).get(id)||noTargets:noTargets,managerTargets=trail.targets==='manager';
+ if(asked&&(stored.edited||managerTargets)&&!sameTargets(asked,stored.targets))throw new CRMError(managerTargets?PLAN_MESSAGES.targetsFixedManager:TARGET_MESSAGES.fixed,403);
  // A stop the member adds or changes is checked against what they see; the locked ones were checked when the reviewer wrote them.
  const lockedIds=new Set(existing.filter(stop=>stop.supervisorState!=='').map(stop=>stop.id));
  const checked=checkCustomers(c,sent.filter(stop=>!stop.id||!lockedIds.has(stop.id)),c.me);
  if(rules)checkFollowupStops(c,existing,sent,c.me.id,today);
  const stops=memberStops(existing,sent,c.me.id,receivedAt,()=>crypto.randomUUID());
- const sending=p.action==='send',sentAt=sending?planSentAt(capture,receivedAt):null,first=sending&&!plan?.firstSentAt;
+ // The device's time of a send kept on the device stands within its bounds, unless it was before the deadline and reached the server more
+ // than two hours after it (GSCO 2.13.86 review A8: then the server's time, «متأخرة»).
+ const sending=p.action==='send',sentAt=sending?planSentAt(capture,receivedAt,p.date):null,first=sending&&!plan?.firstSentAt;
  // A change of the targets of a plan already sent, sent again after the deadline, makes it late (GSCO 2.13.85: «تغيير المستهدف بعد الموعد
  // يجعل الخطة متأخرة»); a returned plan is the reviewer's request and stays as it was. The stops keep Yourrest's rule: the first send decides.
  const targetsMoved=!!asked&&!!plan?.firstSentAt&&plan.status!=='returned'&&sending&&!sameTargets(asked,stored.targets)&&planLate(sentAt!.at,p.date);
- const firstSentAt=plan?.firstSentAt??(first?sentAt!.at:null),firstSource=plan?.firstSentSource??(first?sentAt!.source:null),late=targetsMoved?1:plan?.firstSentAt?plan.late:first?Number(planLate(sentAt!.at,p.date)):0;
+ // A returned plan sent again after the deadline is late (GSCO 2.13.86 review A7: the supervisor's window has closed by then).
+ const resentLate=sending&&plan?.status==='returned'&&planLate(sentAt!.at,p.date);
+ const firstSentAt=plan?.firstSentAt??(first?sentAt!.at:null),firstSource=plan?.firstSentSource??(first?sentAt!.source:null),late=targetsMoved||resentLate?1:plan?.firstSentAt?plan.late:first?Number(planLate(sentAt!.at,p.date)):0;
  const status:PlanStatus=sending?'sent':'draft';
  const guard=accessGuard(c),customers=customerGate(checked),gate=guard.sql+' AND '+customers.sql,gateArgs=[...guard.args,...customers.args];
  const write=plan
@@ -370,9 +418,9 @@ export async function writeMemberPlan(c:JourneyContext,body:unknown,receivedAt=n
   :c.db.prepare(`INSERT INTO crm_daily_plans(id,member_id,date,status,version,first_sent_at,first_sent_source,late,sent_at,received_at,reviewed_by,reviewed_at,return_reason,mutation_id,created_at,updated_at) SELECT ?,?,?,?,1,?,?,?,?,?,NULL,NULL,'',?,?,? WHERE ${gate} ON CONFLICT DO NOTHING`)
     .bind(id,c.me.id,p.date,status,firstSentAt,firstSource,late,sending?sentAt!.at:null,sending?receivedAt:null,mutation,receivedAt,receivedAt,...gateArgs);
  const written={sql:'EXISTS (SELECT 1 FROM crm_daily_plans WHERE id=? AND mutation_id=?)',args:[id,mutation]};
- const detail={request,before:plan?{status:plan.status,version:plan.version,targets:stored.targets}:null,after:{status,version:(plan?.version??0)+1,late:!!late,firstSentAt,firstSentSource:firstSource,stops:stops.length,...(asked?{targets:asked}:{}),...(targetsMoved?{lateTargets:true}:{})},offline:capture?{capturedAt:capture.capturedAt,source:sentAt?.source}:null,...(rules?{}:{legacyRules:true})};
+ const detail={request,before:plan?{status:plan.status,version:plan.version,targets:stored.targets}:null,after:{status,version:(plan?.version??0)+1,late:!!late,firstSentAt,firstSentSource:firstSource,stops:stops.length,...(asked?{targets:asked}:{}),...(targetsMoved?{lateTargets:true}:{}),...(resentLate?{lateResend:true}:{})},offline:capture?{capturedAt:capture.capturedAt,source:sentAt?.source,...(sentAt?.crossed?{crossedDeadline:true}:{})}:null,...(rules?{}:{legacyRules:true})};
  // The member's targets (a page of this release only); a reviewer's are never changed here (refused above when they differ).
- const keep=asked&&!stored.edited?[targetsStatement(c,id,mutation,{targets:asked,edited:false,rep:null},receivedAt)]:[];
+ const keep=asked&&!stored.edited&&!managerTargets?[targetsStatement(c,id,mutation,{targets:asked,edited:false,rep:null},receivedAt)]:[];
  let results:D1Result[];
  try{results=await c.db.batch([write,...replaceStops(c,id,mutation,stops,receivedAt),...keep,auditStatement(c,mutation,id,p.action,detail,receivedAt,written)]);}
  catch(error){const again=await receiptOf(c,mutation,request,answer,PLAN_MESSAGES.conflict);if(again)return again;throw error;}
@@ -418,15 +466,26 @@ export async function writeReviewerPlan(c:JourneyContext,body:unknown,at=new Dat
  const request={action:p.action,memberId:p.memberId,date:p.date,baseVersion:p.baseVersion,...(p.action==='approve_edited'?{stops:canonical(sent),...(wanted?{targets:wanted}:{})}:{}),...(p.action==='return'?{reason}:{})};
  // The receipt before the day's check, as the member's (a decision written at 23:59 and sent again after midnight answers from it).
  const replay=await receiptOf(c,mutation,request,answer,PLAN_MESSAGES.conflict);if(replay)return replay;
+ // The sales manager until the plan's day ends (the day's check above), a supervisor until midnight at its start (GSCO 2.13.86): then the
+ // plan stays «غير معتمدة».
+ const manager=isPlanSalesManager(c.me);
  if(p.date<today)throw new CRMError(PLAN_MESSAGES.past,409);
+ if(!manager&&planReviewClosed(p.date,at))throw new CRMError(PLAN_MESSAGES.reviewClosed,409);
  const plan=(await readPlans(c.db,[[p.memberId,p.date]])).get(id);
  if(!plan||plan.status==='draft')throw new CRMError(PLAN_MESSAGES.notSent,409);
  if(plan.version!==p.baseVersion)throw new CRMError(PLAN_MESSAGES.conflict,409);
+ const trail=(await readTrails(c.db,[id])).get(id)||noTrail();
  let status:PlanStatus,stops:StoredStop[]|null=null,checked:string[]=[],nextTargets:StoredTargets|null=null;
+ let changes={added:[] as string[],edited:[] as string[],removed:[] as string[],order:false},targetsChanged=false;
  if(p.action==='approve'){if(!reviewerMayApprove(plan.status))throw new CRMError(PLAN_MESSAGES.cannotApprove,409);status='approved';}
  else if(p.action==='approve_edited'){
   if(!reviewerMayEdit(plan.status))throw new CRMError(PLAN_MESSAGES.cannotEdit,409);
   const existing=(await readStops(c.db,[id])).get(id)||[],known=new Map(existing.map(stop=>[stop.id,stop]));
+  // The supervisor keeps what the sales manager decided as it is: their stops (in their place), a follow-up they took out, their targets.
+  if(!manager){
+   const problem=managerLockProblem(existing,sent,trail);
+   if(problem)throw new CRMError(problem==='fixed'?PLAN_MESSAGES.managerStopFixed:problem==='removed'?PLAN_MESSAGES.managerRemovedBack:PLAN_MESSAGES.managerStopOrder,400);
+  }
   // The reviewer's own additions and changes are checked against what they see and the member's regions; a stop sent back as it was is not.
   checked=checkCustomers(c,sent.filter(stop=>{const before=stop.id?known.get(stop.id):undefined;return !before||before.supervisorState==='removed'||before.customerId!==stop.customerId;}),member);
   // The reviewer adds follow-ups only, as the member does (2026-11-22): no customer without a follow-up of the member.
@@ -434,20 +493,31 @@ export async function writeReviewerPlan(c:JourneyContext,body:unknown,at=new Dat
   const result=reviewerStops(existing,sent,c.me.id,at,()=>crypto.randomUUID());
   // The targets: a change is marked and the member's own values kept; set back to them, the mark goes.
   const current=(await readTargets(c.db,[id])).get(id)||noTargets;
-  let targetsChanged=false;
+  if(!manager&&trail.targets==='manager'&&wanted&&!sameTargets(wanted,current.targets))throw new CRMError(PLAN_MESSAGES.managerTargetsFixed,400);
   if(wanted&&!sameTargets(wanted,current.targets)){
    const original=current.edited&&current.rep?current.rep:current.targets,edited=!sameTargets(wanted,original);
    targetsChanged=true;nextTargets={targets:wanted,edited,rep:edited?original:null};
   }
   if(!result.changed&&!targetsChanged)throw new CRMError(PLAN_MESSAGES.unchanged,400);
-  stops=result.stops;status='approved_edited';
- }else{if(!reviewerMayReturn(plan.status))throw new CRMError(PLAN_MESSAGES.cannotEdit,409);status='returned';}
+  stops=result.stops;status='approved_edited';changes=reviewerChanges(existing,result.stops);
+ }else{
+  if(!reviewerMayReturn(plan.status))throw new CRMError(PLAN_MESSAGES.cannotEdit,409);
+  // A plan the sales manager approved, edited or returned is theirs to send back (GSCO 2.13.86 review A9).
+  if(!manager&&trail.managerDecided)throw new CRMError(PLAN_MESSAGES.managerDecidedReturn,409);
+  status='returned';
+ }
  const customers=customerGate(checked);
  const gate=guard.sql+' AND '+team.sql+' AND '+customers.sql,gateArgs=[...guard.args,...team.args,...customers.args];
+ // The sales manager's edit of a plan already approved keeps the approval with its approver and time (their edit shows apart: managerEdit).
+ const keepApproval=manager&&p.action==='approve_edited'&&(plan.status==='approved'||plan.status==='approved_edited')&&!!plan.reviewedBy;
  const write=c.db.prepare(`UPDATE crm_daily_plans SET status=?,version=version+1,reviewed_by=?,reviewed_at=?,return_reason=?,mutation_id=?,updated_at=? WHERE id=? AND version=? AND status=? AND ${gate}`)
-  .bind(status,c.me.id,at,p.action==='return'?reason:'',mutation,at,id,plan.version,plan.status,...gateArgs);
+  .bind(status,keepApproval?plan.reviewedBy:c.me.id,keepApproval?plan.reviewedAt||at:at,p.action==='return'?reason:'',mutation,at,id,plan.version,plan.status,...gateArgs);
  const written={sql:'EXISTS (SELECT 1 FROM crm_daily_plans WHERE id=? AND mutation_id=?)',args:[id,mutation]};
- const detail={request,before:{status:plan.status,version:plan.version},after:{status,version:plan.version+1,...(stops?{stops:stops.length}:{}),...(nextTargets?{targets:nextTargets.targets,targetsEdited:nextTargets.edited,repTargets:nextTargets.rep}:{})}};
+ // Who decided what in this write (read back by readTrails): `changed` is what the member and their supervisor hear of when the sales manager
+ // made it (the stops, their order, the targets, or a return).
+ const stopsChanged=changes.added.length+changes.edited.length+changes.removed.length>0||changes.order;
+ const edits:PlanEdits={by:manager?'manager':'supervisor',byId:c.me.id,...changes,targets:targetsChanged,changed:stopsChanged||targetsChanged||p.action==='return'};
+ const detail={request,before:{status:plan.status,version:plan.version},after:{status,version:plan.version+1,...(stops?{stops:stops.length}:{}),...(nextTargets?{targets:nextTargets.targets,targetsEdited:nextTargets.edited,repTargets:nextTargets.rep}:{}),edits}};
  let results:D1Result[];
  try{results=await c.db.batch([write,...stops?replaceStops(c,id,mutation,stops,at):[],...nextTargets?[targetsStatement(c,id,mutation,nextTargets,at)]:[],auditStatement(c,mutation,id,p.action,detail,at,written)]);}
  catch(error){const again=await receiptOf(c,mutation,request,answer,PLAN_MESSAGES.conflict);if(again)return again;throw error;}

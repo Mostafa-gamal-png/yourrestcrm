@@ -1,5 +1,6 @@
 // «خطة الغد» / «خطط المناديب» (lib/daily-plans*.ts, migration 0022; GSCO 2.13.83 with the owner's decisions), without a build: the rules
-// (the 22:00 deadline, Saturday's at midnight at the end of Friday (2026-11-21), and «متأخرة», the next working day, the device's clock within its bounds, the stops' shape, the stops a reviewer
+// (the deadline at midnight at the start of the plan's day since 2026-11-22 (GSCO 2.13.86; 22:00 before, Saturday's at midnight since 2026-11-21), the supervisor's window, «غير معتمدة»
+// and «متأخرة», the next working day, the device's clock within its bounds and its two hours of grace, the stops' shape, the stops a reviewer
 // added, changed or took out locked for the member, the completion of a stop by the member's visits and contacts with one activity closing
 // one stop, «خارج الخطة», the reminder lines and their notices), the three permission cells and the screen, the Excel tables, the outbox's
 // plan entry; then the routes GET/POST /api/daily-plans and GET /api/daily-plans/inbox on an isolated in-memory SQLite (the route modules
@@ -39,17 +40,31 @@ const load=name=>import(pathToFileURL(path.join(out,name)));
 const R=await load('lib/daily-plans.mjs'),P=await load('lib/permissions.mjs'),A=await load('lib/access.mjs'),L=await load('lib/list-export.mjs'),X=await load('lib/list-export-plans.mjs'),S=await load('lib/offline-store.mjs'),V=await load('lib/offline-review.mjs'),B=await load('lib/request-body.mjs');
 
 // ---- 1. The days and the deadline.
-eq(R.planDeadline('2026-11-19'),'2026-11-18T19:00:00.000Z','the plan of a day is due at 22:00 Riyadh the day before (Thursday\'s: Wednesday 22:00)');
-eq([R.planLate('2026-11-18T18:59:59.000Z','2026-11-19'),R.planLate('2026-11-18T18:59:59.999Z','2026-11-19'),R.planLate('2026-11-18T19:00:00.000Z','2026-11-19'),R.planLate('2026-11-19T06:00:00.000Z','2026-11-19')],[false,false,true,true],'a normal day, to the second: 21:59:59 is on time; 22:00:00 and the next morning are late');
-// Saturday's plan, whose day before is Friday (the day off): due at midnight at the end of Friday (the owner, 2026-11-21: «اخر معاد الجمعة
-// قبل 12 باليل»); every other day keeps 22:00.
+// Since 2026-11-22 (GSCO 2.13.86): every plan is due at 12:00 midnight Riyadh at the start of its day (22:00 of the day before until then;
+// Saturday's at midnight at the end of Friday since 2026-11-21, which is now every day's rule).
+eq(R.planDeadline('2026-11-19'),'2026-11-18T21:00:00.000Z','the plan of a day is due at midnight Riyadh at its start (Thursday\'s: Thursday 00:00, the end of Wednesday)');
+eq([R.planLate('2026-11-18T19:00:00.000Z','2026-11-19'),R.planLate('2026-11-18T20:59:59.000Z','2026-11-19'),R.planLate('2026-11-18T20:59:59.999Z','2026-11-19'),R.planLate('2026-11-18T21:00:00.000Z','2026-11-19'),R.planLate('2026-11-19T06:00:00.000Z','2026-11-19')],[false,false,false,true,true],'a normal day, to the second: 22:00 and 23:59:59 the evening before are on time; 00:00:00 and the morning are late');
 const week=['2026-11-22','2026-11-23','2026-11-24','2026-11-25','2026-11-26','2026-11-27','2026-11-28'];// Sunday to Saturday
 eq(week.map(day=>new RealDate(day+'T12:00:00Z').getUTCDay()),[0,1,2,3,4,5,6],'the week of the test, Sunday to Saturday');
-eq(week.map(day=>[R.planDeadlineHour(day),R.planDeadline(day)]),[[22,'2026-11-21T19:00:00.000Z'],[22,'2026-11-22T19:00:00.000Z'],[22,'2026-11-23T19:00:00.000Z'],[22,'2026-11-24T19:00:00.000Z'],[22,'2026-11-25T19:00:00.000Z'],[22,'2026-11-26T19:00:00.000Z'],[24,'2026-11-27T21:00:00.000Z']],'only Saturday\'s plan is due at midnight (Saturday 00:00 Riyadh); Sunday\'s is due on Saturday at 22:00');
-eq(R.planDeadline('2026-11-21'),'2026-11-20T21:00:00.000Z','the plan of Saturday 21 November: due at Saturday 00:00 Riyadh, the end of Friday');
+eq(week.map(R.planDeadline),['2026-11-21T21:00:00.000Z','2026-11-22T21:00:00.000Z','2026-11-23T21:00:00.000Z','2026-11-24T21:00:00.000Z','2026-11-25T21:00:00.000Z','2026-11-26T21:00:00.000Z','2026-11-27T21:00:00.000Z'],'every day of the week is due at midnight at its start (21:00 UTC the day before), Saturday\'s too');
+eq(R.PLAN_DEADLINE_HOUR,24,'the hour is counted on the day before: 24 is its end');
+eq(R.planDeadline('2026-11-21'),'2026-11-20T21:00:00.000Z','the plan of Saturday 21 November: due at Saturday 00:00 Riyadh, the end of Friday (as since 2026-11-21)');
 eq([R.planLate('2026-11-20T19:00:00.000Z','2026-11-21'),R.planLate('2026-11-20T19:30:00.000Z','2026-11-21'),R.planLate('2026-11-20T20:59:59.000Z','2026-11-21'),R.planLate('2026-11-20T20:59:59.999Z','2026-11-21'),R.planLate('2026-11-20T21:00:00.000Z','2026-11-21'),R.planLate('2026-11-21T06:00:00.000Z','2026-11-21')],[false,false,false,false,true,true],'a Friday deadline, to the second: Friday 22:00, 22:30 and 23:59:59 are on time; Saturday 00:00:00 and the morning are late');
-eq([R.planDeadline('2026-12-31'),R.planDeadline('2027-01-02'),R.planDeadline('2027-01-03')],['2026-12-30T19:00:00.000Z','2027-01-01T21:00:00.000Z','2027-01-02T19:00:00.000Z'],'across the end of a year: Thursday 31 December at 22:00 the day before; Saturday 2 January at the end of Friday 1 January; Sunday at 22:00');
-eq([R.planDeadlineWords('2026-11-21'),R.planDeadlineWords('2026-11-19'),R.planDeadlineWords('2026-11-22')],[['منتصف الليل بين الجمعة والسبت','midnight between Friday and Saturday'],['الساعة 22:00','22:00'],['الساعة 22:00','22:00']],'the deadline in words, Arabic and English');
+eq([R.planDeadline('2026-12-31'),R.planDeadline('2027-01-01'),R.planDeadline('2027-01-02'),R.planDeadline('2027-01-03')],['2026-12-30T21:00:00.000Z','2026-12-31T21:00:00.000Z','2027-01-01T21:00:00.000Z','2027-01-02T21:00:00.000Z'],'across the end of a year: the plan of 1 January is due at the midnight that ends 31 December');
+eq([R.planDeadline('2028-03-01'),R.planDeadline('2028-02-29')],['2028-02-29T21:00:00.000Z','2028-02-28T21:00:00.000Z'],'a leap day: the plan of 1 March 2028 is due at the end of 29 February');
+eq([R.planDeadlineWords('2026-11-21'),R.planDeadlineWords('2026-11-19'),R.planDeadlineWords('2026-11-22'),R.planDeadlineWords('2026-11-23')],[['منتصف الليل بين الجمعة والسبت','midnight between Friday and Saturday'],['منتصف الليل بين الأربعاء والخميس','midnight between Wednesday and Thursday'],['منتصف الليل بين السبت والأحد','midnight between Saturday and Sunday'],['منتصف الليل بين الأحد والاثنين','midnight between Sunday and Monday']],'the deadline in words, Arabic and English: the midnight between the eve and the plan\'s day');
+eq(R.planDeadlineWords('x'),['منتصف الليل','midnight'],'a day that cannot be read: midnight, without days');
+// The supervisor's window (GSCO 2.13.86): until the deadline; the sales manager's until the plan's day ends; the 23:00 reminder.
+eq([R.planReviewClosed('2026-11-23','2026-11-22T20:59:59.999Z'),R.planReviewClosed('2026-11-23','2026-11-22T21:00:00.000Z'),R.planReviewClosed('2026-11-23',RealDate.parse('2026-11-23T09:00:00Z'))],[false,true,true],'the supervisor\'s window closes at the plan\'s midnight, to the millisecond (an instant as text or as a number)');
+eq([R.planDayEnd('2026-11-23'),R.planDayOver('2026-11-23','2026-11-23T20:59:59.999Z'),R.planDayOver('2026-11-23','2026-11-23T21:00:00.000Z')],['2026-11-23T21:00:00.000Z',false,true],'the plan\'s day ends at the next midnight: the sales manager acts until then');
+eq(R.planReviewReminderStart('2026-11-23'),'2026-11-22T20:00:00.000Z','the supervisor\'s reminder starts at 23:00 Riyadh on the eve');
+eq([R.PLAN_NOTICE_FROM_HOUR,R.PLAN_REVIEW_REMINDER_HOUR,R.PLAN_REMINDER_FROM_HOUR,R.PLAN_LATE_SYNC_GRACE_MS,R.PLAN_MANAGER_NOTICE_SLOT_MS],[22,23,16,7200000,600000],'the member\'s notice from 22:00, the supervisor\'s at 23:00, the card from 16:00; two hours of grace; ten minutes a notice of the sales manager');
+// «غير معتمدة»: sent or returned, and the plan's day has begun (today or before), never stored.
+eq([['sent','2026-11-23','2026-11-22'],['sent','2026-11-23','2026-11-23'],['returned','2026-11-23','2026-11-23'],['approved','2026-11-23','2026-11-23'],['approved_edited','2026-11-22','2026-11-23'],['draft','2026-11-23','2026-11-23'],['missing','2026-11-23','2026-11-24'],['sent','2026-11-22','2026-11-23']].map(([state,date,today])=>R.planUnapproved({state,date},today)),[false,true,true,false,false,false,false,true],'«غير معتمدة» from the plan\'s day on, for a plan sent or returned only');
+eq([R.planUnapproved(null,'2026-11-23'),R.planUnapproved({state:'sent',date:''},'2026-11-23')],[false,false],'no plan, no day: not «غير معتمدة»');
+// The sales manager of the plans: a reviewer whose role is the sales manager or the administrator.
+eq(['admin','manager','supervisor','rep','marketing','customer_service'].map(role=>R.isPlanSalesManager({role,active:1})),[true,true,false,false,false,false],'the sales manager and the administrator act as the sales manager; a supervisor does not');
+eq([R.isPlanSalesManager({role:'manager',active:0}),R.isPlanSalesManager(null)],[false,false],'an inactive account, or none, is not');
 eq(['2026-11-17','2026-11-18','2026-11-19','2026-11-20','2026-11-21'].map(R.nextPlanDay),['2026-11-18','2026-11-19','2026-11-21','2026-11-21','2026-11-22'],'the next working day: Thursday\'s plan is Saturday\'s (Friday off)');
 eq([R.isPlanWorkingDay('2026-11-20'),R.isPlanWorkingDay('2026-11-21'),R.isPlanWorkingDay('2026-02-30')],[false,true,false],'Friday is not a working day; a day that does not exist neither');
 eq(['2026-11-18','2026-11-19','2026-11-25','2026-11-26','2026-11-17','2026-02-30','2026-11-18x',null].map(day=>R.planDateProblem(day,'2026-11-18')),[null,null,null,'far','past','invalid','invalid','invalid'],'today (late) to seven days ahead; a past, far or false day refused');
@@ -61,6 +76,17 @@ eq(R.planSentAt({capturedAt:'2026-11-19T18:50:00.000Z',receivedAt:received},rece
 eq(R.planSentAt({capturedAt:'2026-11-18T07:59:00.000Z',receivedAt:received},received).source,'server','more than 48 hours old: the receipt');
 eq(R.planSentAt({capturedAt:'2026-11-18T08:00:00.000Z',receivedAt:received},received).source,'device','exactly 48 hours: the device');
 eq(R.planSentAt({capturedAt:'2026-11-20T08:01:01.000Z',receivedAt:received},received).source,'server','more than a minute ahead: the receipt');
+// The two hours of grace (GSCO 2.13.86 review A8): a send made on the device before the plan's midnight that reaches the server more than two
+// hours after it counts at the receipt (late); within the two hours its time stands. The plan of 23 November is due at 2026-11-22T21:00Z.
+const sent=(captured,receipt,day='2026-11-23')=>R.planSentAt({capturedAt:captured,receivedAt:receipt},receipt,day);
+eq(sent('2026-11-22T20:30:00.000Z','2026-11-22T22:30:00.000Z'),{at:'2026-11-22T20:30:00.000Z',source:'device'},'made at 23:30, received at 01:30: the device\'s time (on time)');
+eq(sent('2026-11-22T20:30:00.000Z','2026-11-22T23:00:00.000Z'),{at:'2026-11-22T20:30:00.000Z',source:'device'},'received exactly two hours after midnight (02:00): still the device\'s time');
+eq(sent('2026-11-22T20:30:00.000Z','2026-11-22T23:00:00.001Z'),{at:'2026-11-22T23:00:00.001Z',source:'server',crossed:true},'one millisecond past the two hours: the receipt, late');
+eq(R.planLate(sent('2026-11-22T20:30:00.000Z','2026-11-23T05:00:00.000Z').at,'2026-11-23'),true,'received the next morning: late');
+eq(sent('2026-11-22T21:30:00.000Z','2026-11-23T05:00:00.000Z'),{at:'2026-11-22T21:30:00.000Z',source:'device'},'made after midnight already: the device\'s time stands (it is late either way)');
+eq(sent('2026-11-22T10:00:00.000Z','2026-11-22T20:00:00.000Z'),{at:'2026-11-22T10:00:00.000Z',source:'device'},'received before midnight: the device\'s time');
+eq(sent('2026-11-20T20:30:00.000Z','2026-11-21T00:00:00.000Z','2026-11-21'),{at:'2026-11-21T00:00:00.000Z',source:'server',crossed:true},'Saturday\'s plan made on Friday 23:30 and received at 03:00: the receipt, late');
+eq(R.planSentAt({capturedAt:'2026-11-22T20:30:00.000Z',receivedAt:'2026-11-23T05:00:00.000Z'},'2026-11-23T05:00:00.000Z','not a day'),{at:'2026-11-22T20:30:00.000Z',source:'device'},'without a day that can be read: the earlier rule');
 
 // ---- 2. The stops.
 eq(['','09:30',' ٠٩:٣٠ ','۲۳:۵۹','24:00','9:30','09:60',7,undefined].map(R.planTime),['','09:30','09:30','23:59',null,null,null,null,''],'a time: empty or HH:MM, Arabic digits read');
@@ -106,8 +132,8 @@ const keys=(value,wall)=>R.planReminderLines(value,RealDate.parse(wall.replace('
 eq(keys(memberInbox({}),'2026-11-18 15:59'),[],'before 16:00 on the day before: nothing');
 eq(keys(memberInbox({}),'2026-11-18 16:00'),['due:2026-11-19'],'from 16:00: due');
 eq(keys(memberInbox({}),'2026-11-17 18:00'),[],'two days before: nothing');
-eq(keys(memberInbox({}),'2026-11-18 22:00'),['late:2026-11-19'],'from 22:00: late');
-eq(keys(memberInbox({}),'2026-11-18 21:59'),['due:2026-11-19'],'at 21:59: due, not late');
+// Since 2026-11-22 every day is due at midnight: «not sent yet» from 16:00 until 23:59:59, late from 00:00.
+eq(['2026-11-18 21:59','2026-11-18 22:00','2026-11-18 23:59','2026-11-19 00:00'].map(wall=>keys(memberInbox({}),wall)),[['due:2026-11-19'],['due:2026-11-19'],['due:2026-11-19'],['late:2026-11-19']],'due through 22:00 and 23:59, late at midnight');
 // Saturday's plan on Friday: «not sent yet» from 16:00 until midnight, late from Saturday 00:00.
 const saturdayInbox=next=>({ok:true,serverTime:'',role:'member',next:{date:'2026-11-21',state:'missing',late:false,deadline:R.planDeadline('2026-11-21'),version:null,returnReason:'',reviewedByName:'',...next},today:null});
 eq(['2026-11-20 15:59','2026-11-20 16:00','2026-11-20 22:00','2026-11-20 22:30','2026-11-20 23:59','2026-11-21 00:00'].map(wall=>keys(saturdayInbox({}),wall)),[[],['due:2026-11-21'],['due:2026-11-21'],['due:2026-11-21'],['due:2026-11-21'],['late:2026-11-21']],'Saturday\'s plan: due on Friday from 16:00 through 22:00, 22:30 and 23:59; late at Saturday 00:00');
@@ -120,12 +146,32 @@ eq(keys(memberInbox({state:'approved_edited',version:4}),'2026-11-18 21:00'),['a
 eq(keys(memberInbox({state:'sent'},{date:'2026-11-18',state:'missing',late:false,deadline:'',version:null}),'2026-11-18 08:00'),['missing-today:2026-11-18'],'today\'s plan never sent');
 const reviewer={ok:true,serverTime:'',role:'reviewer',pending:[{memberId:'rep1',name:'أ',date:'2026-11-19',late:true,firstSentAt:null,version:2}],missing:{date:'2026-11-19',names:['ب','ج']}};
 eq(keys(reviewer,'2026-11-18 22:30'),['pending:rep1:2026-11-19:2','missing:2026-11-19:2'],'the reviewer: each plan waiting, and who has not sent');
+// The supervisor's reminder at 23:00 (GSCO 2.13.86): one line for each day whose plans still wait, from 23:00 until midnight; never for the
+// sales manager (no window), never after midnight.
+const twoWaiting={...reviewer,pending:[...reviewer.pending,{memberId:'rep2',name:'د',date:'2026-11-19',late:false,firstSentAt:null,version:1}]};
+eq(['2026-11-18 22:59','2026-11-18 23:00','2026-11-18 23:59','2026-11-19 00:00'].map(wall=>keys(twoWaiting,wall).filter(key=>key.startsWith('closing'))),[[],['closing:2026-11-19'],['closing:2026-11-19'],[]],'the closing reminder: from 23:00 to 23:59, one line for the day');
+eq(R.planReminderLines(twoWaiting,RealDate.parse('2026-11-18T23:10:00+03:00')).find(line=>line.tone==='closing').count,2,'it counts the plans still waiting');
+eq(keys({...twoWaiting,salesManager:true},'2026-11-18 23:30').filter(key=>key.startsWith('closing')),[],'the sales manager has no closing reminder');
+// The sales manager's changes: the member hears of an edit of an approved plan (one line for each ten minutes; that version's approval line
+// is not repeated); a supervisor hears of every change to a plan of those who report to them.
+const edit=(extra={})=>({memberId:'rep1',name:'أ',date:'2026-11-19',at:'2026-11-19T06:03:00.000Z',byName:'مدير',version:5,decision:'edit',...extra});
+eq(keys({...memberInbox({state:'approved_edited',version:5}),edits:[edit()]},'2026-11-19 09:10'),['manager:2026-11-19:'+Math.floor(RealDate.parse('2026-11-19T06:03:00.000Z')/600000)],'the member: the sales manager\'s edit, not «اعتُمدت خطتك» again for the same version');
+eq(keys({...memberInbox({state:'approved_edited',version:6}),edits:[edit()]},'2026-11-19 09:10').length,2,'a later version (another reviewer) keeps its approval line');
+eq(keys({...memberInbox({state:'approved',version:5}),edits:[edit({decision:'approve'})]},'2026-11-19 09:10'),['approved:2026-11-19:5'],'an approval by the sales manager is told by the approval line');
+eq([R.managerNoticeSlot('2026-11-19T06:00:00.000Z'),R.managerNoticeSlot('2026-11-19T06:09:59.999Z'),R.managerNoticeSlot('2026-11-19T06:10:00.000Z'),R.managerNoticeSlot('x')],[String(RealDate.parse('2026-11-19T06:00:00Z')/600000),String(RealDate.parse('2026-11-19T06:00:00Z')/600000),String(RealDate.parse('2026-11-19T06:10:00Z')/600000),'0'],'the saves of ten minutes share a slot (one notice)');
+const reviewerEdits={...reviewer,pending:[],missing:undefined,edits:[edit({decision:'approve'}),edit({memberId:'rep2',name:'د',decision:'return'})]};
+eq(keys(reviewerEdits,'2026-11-19 09:10').map(key=>key.split(':').slice(0,3).join(':')),['manager:rep1:2026-11-19','manager:rep2:2026-11-19'],'the supervisor hears of every change by the sales manager, member by member');
+eq(R.validPlanInbox(reviewerEdits),true,'an inbox with the sales manager\'s changes is valid');
+eq([R.validPlanInbox({...reviewerEdits,edits:[{...edit(),decision:'other'}]}),R.validPlanInbox({...reviewerEdits,edits:'x'}),R.validPlanInbox({...reviewerEdits,salesManager:'yes'})],[false,false,false],'a change of an unknown kind, a list that is not one, a flag that is not one: refused');
 const lines=R.planReminderLines(memberInbox({}),RealDate.parse('2026-11-18T19:00:00+03:00'));
-eq(R.planNoticeStep(lines,null,RealDate.parse('2026-11-18T19:00:00+03:00')),{announce:[],remember:[]},'a due plan before 20:00 is not announced (and not remembered)');
-const step=R.planNoticeStep(lines,[],RealDate.parse('2026-11-18T20:00:00+03:00'));
-eq([step.announce.map(line=>line.key),step.remember],[['due:2026-11-19'],['due:2026-11-19']],'from 20:00 it is announced once');
-eq(R.planNoticeStep(lines,step.remember,RealDate.parse('2026-11-18T20:30:00+03:00')).announce,[],'and not again');
-eq(R.planNoticeStep(lines,null,RealDate.parse('2026-11-18T20:30:00+03:00')).announce,[],'a browser that remembers nothing announces nothing at first');
+eq(R.planNoticeStep(lines,null,RealDate.parse('2026-11-18T19:00:00+03:00')),{announce:[],remember:[]},'a due plan before 22:00 is not announced (and not remembered)');
+eq(R.planNoticeStep(lines,[],RealDate.parse('2026-11-18T21:59:00+03:00')).announce,[],'at 21:59 not yet (GSCO 2.13.86: the notice from 22:00, two hours before midnight)');
+const step=R.planNoticeStep(lines,[],RealDate.parse('2026-11-18T22:00:00+03:00'));
+eq([step.announce.map(line=>line.key),step.remember],[['due:2026-11-19'],['due:2026-11-19']],'from 22:00 it is announced once');
+eq(R.planNoticeStep(lines,step.remember,RealDate.parse('2026-11-18T22:30:00+03:00')).announce,[],'and not again');
+eq(R.planNoticeStep(lines,null,RealDate.parse('2026-11-18T22:30:00+03:00')).announce,[],'a browser that remembers nothing announces nothing at first');
+const closingLines=R.planReminderLines(twoWaiting,RealDate.parse('2026-11-18T23:05:00+03:00'));
+eq(R.planNoticeStep(closingLines,['pending:rep1:2026-11-19:2','pending:rep2:2026-11-19:1','missing:2026-11-19:2'],RealDate.parse('2026-11-18T23:05:00+03:00')).announce.map(line=>line.key),['closing:2026-11-19'],'the 23:00 reminder is announced once on the device');
 eq([R.rememberedPlanNotices(null),R.rememberedPlanNotices('{'),R.rememberedPlanNotices('[1,"a"]')],[null,null,['a']],'what the browser remembers');
 
 // ---- 5. The permissions, the screen, the export, the outbox.
@@ -133,7 +179,8 @@ const ROLES=['admin','manager','supervisor','rep','marketing','customer_service'
 eq(ROLES.map(role=>A.canViewPage(role,'plans')),[true,true,true,true,true,false,false],'the screen: the sales team');
 eq(ROLES.map(role=>['add','edit','export'].map(action=>P.cellCeiling(role,'plans',action))),[[false,true,true],[false,true,true],[false,true,true],[true,false,false],[true,false,false],[false,false,false],[false,false,false]],'«إعداد خطة اليوم» for the field roles; «مراجعة خطط المناديب» and «تصدير خطط المناديب إلى Excel» for the three reviewers');
 eq(P.permissionRow('plans').cells.add.ar,'إعداد خطة اليوم','the owner\'s three names');
-eq([P.permissionRow('plans').cells.add.note.ar.includes('قبل الساعة 22:00، وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت'),P.permissionRow('plans').cells.add.note.en.includes('before 22:00, and Saturday\'s before midnight between Friday and Saturday')],[true,true],'the cell\'s note names both deadlines');eq(P.permissionRow('plans').cells.edit.ar,'مراجعة خطط المناديب','');eq(P.permissionRow('plans').cells.export.ar,'تصدير خطط المناديب إلى Excel','');
+eq([P.permissionRow('plans').cells.add.note.ar.includes('قبل الساعة 12:00 منتصف الليل الذي يبدأ به يوم الخطة'),P.permissionRow('plans').cells.add.note.en.includes('before 12:00 midnight, when the plan\'s day begins'),P.permissionRow('plans').cells.add.note.ar.includes('22:00')],[true,true,false],'the cell\'s note names the midnight deadline (2026-11-22), no 22:00 left');
+eq([P.permissionRow('plans').cells.edit.note.ar.includes('ومدير المبيعات حتى نهاية يومها'),P.permissionRow('plans').cells.edit.note.en.includes('the sales manager until its day ends')],[true,true],'the review cell\'s note names the two windows');eq(P.permissionRow('plans').cells.edit.ar,'مراجعة خطط المناديب','');eq(P.permissionRow('plans').cells.export.ar,'تصدير خطط المناديب إلى Excel','');
 for(const role of ROLES)for(const action of ['add','edit','export'])eq(P.can({role,access:P.memberAccess(role,null)},'plans',action),P.cellCeiling(role,'plans',action),role+' plans:'+action+' on by default within the ceiling');
 const offRep={role:'rep',access:P.memberAccess('rep',{permissions:JSON.stringify({'plans:add':false}),hidden:'[]',version:2})};
 eq([P.can(offRep,'plans','add'),P.cellRefused(offRep,'plans','add')],[false,true],'switched off: refused');
@@ -150,7 +197,13 @@ eq(R.validPlanView(view),true,'a plan view is valid');
 let tables=X.planTables([view],'ar');
 eq(tables.map(table=>[table.name[0],table.rows.length]),[['الخطط',1],['المحطات',1],['خارج الخطة',1]],'three sheets');
 eq([tables[0].rows[0][0],tables[0].rows[0][2],tables[0].rows[0][3],tables[0].rows[0][5],tables[0].rows[0][11]],['المندوب أحمد','معتمدة مع تعديل','نعم','ساعة الجهاز',1],'the plan row in Arabic');
-eq([tables[1].rows[0][3],tables[1].rows[0][4],tables[1].rows[0][7],tables[1].rows[0][8]],['=مصنع','زيارة','عدّلها المشرف · المشرف','تمت'],'the stop row (a name that looks like a formula stays text)');
+eq([tables[1].rows[0][3],tables[1].rows[0][4],tables[1].rows[0][7],tables[1].rows[0][8],tables[1].rows[0][9]],['=مصنع','زيارة','عدّلها المشرف · المشرف','المشرف','تمت'],'the stop row (a name that looks like a formula stays text), with who changed the stop (a plan of a server before 2026-11-22: the supervisor)');
+// GSCO 2.13.86: the sales manager's marks and «غير معتمدة» in the file.
+{const byManager={...view,unapproved:true,targetsEditedBy:'manager',targetsEdited:true,managerEdit:{byName:'مدير',at:'2026-11-19T06:00:00.000Z',version:5,decision:'edit'},stops:view.stops.map(stop=>({...stop,mark:{by:'manager',kind:'edited'}}))};
+ const t2=X.planTables([byManager],'ar'),head=t2[0].header,cell=name=>t2[0].rows[0][head.indexOf(name)];
+ eq([t2[0].rows[0][2],cell('عدّل المشرف المستهدف'),cell('عدّل مدير المبيعات المستهدف'),cell('عدّل مدير المبيعات الخطة')],['غير معتمدة','لا','نعم','نعم'],'the plan row: «غير معتمدة», the targets and the plan changed by the sales manager');
+ eq([t2[1].rows[0][7],t2[1].rows[0][8]],['عدّلها مدير المبيعات · المشرف','مدير المبيعات'],'the stop row names the sales manager');
+ const t3=X.planTables([byManager],'en');eq([t3[0].rows[0][2],t3[1].rows[0][8]],['Not approved','The sales manager'],'and in English');}
 tables=X.planTables([view],'en');
 eq([tables[0].header[0],tables[0].rows[0][2],tables[1].rows[0][4],tables[2].rows[0][5]],['Representative','Approved with edits','Visit','Outside the plan'],'and in English');
 ok(L.listWorkbook(tables,'en').bytes.length>1000,'the workbook is written');
@@ -194,7 +247,7 @@ const send=(as,date,stops,baseVersion,extra={},status)=>post(as,{action:'send',d
 const review=(as,action,memberId,date,baseVersion,extra={},status)=>post(as,{action,memberId,date,baseVersion,...extra},status);
 const inbox=as=>call(inboxRoute.GET,{as,url:'https://test.invalid/api/daily-plans/inbox'});
 const audits=()=>sql.prepare("SELECT action FROM crm_audit WHERE action LIKE 'daily-plan:%' ORDER BY created_at,id").all().map(row=>row.action);
-const D='2026-11-19';// Thursday; the deadline is Wednesday 2026-11-18 22:00 Riyadh.
+const D='2026-11-19';// Thursday; the deadline is midnight at its start (the end of Wednesday 2026-11-18, Riyadh), since 2026-11-22.
 
 at('2026-11-18 20:00');
 // Nobody signed in, another origin, customer service.
@@ -206,8 +259,8 @@ await get('cs',{date:D},403);await post('cs',{action:'send',date:D,stops:[stop('
 eq((await inbox('cs')).role,'none','customer service has no plans');
 // The member's own plan, empty.
 let mine=await get('rep1',{date:D});
-eq([mine.state,mine.version,mine.canEdit,mine.canApprove,mine.deadline,mine.applies],['missing',null,true,false,'2026-11-18T19:00:00.000Z',true],'nothing yet; the member may prepare it');
-eq((await inbox('rep1')).next,{date:D,state:'missing',late:false,deadline:'2026-11-18T19:00:00.000Z',version:null,returnReason:'',reviewedByName:''},'the reminder sees the next day missing');
+eq([mine.state,mine.version,mine.canEdit,mine.canApprove,mine.deadline,mine.applies],['missing',null,true,false,'2026-11-18T21:00:00.000Z',true],'nothing yet; the member may prepare it');
+eq((await inbox('rep1')).next,{date:D,state:'missing',late:false,deadline:'2026-11-18T21:00:00.000Z',version:null,returnReason:'',reviewedByName:''},'the reminder sees the next day missing');
 // Who prepares: not a reviewer, not another member's plan, not a customer outside the regions, not a past or far day.
 await send('sup',D,[stop('c1')],null,{},403);
 await send('rep1',D,[stop('cW')],null,{},403);await send('rep1',D,[stop('nothing')],null,{},403);
@@ -269,17 +322,21 @@ eq((await send('rep1',D,[{...wire(added4),customerId:'cW',kind:'visit',note:'غ�
 eq(stopsNow(),beforeTwice,'the reviewer\'s stop is as the reviewer left it');
 at('2026-11-18 23:10');
 saved=await send('rep1',D,[wire(added4),wire(edited1),wire(own2),stop('c2','visit')],5);
-eq([saved.plan.state,saved.plan.late,saved.plan.firstSentAt,saved.plan.stops.map(item=>[item.position,item.customerId,item.kind,item.supervisorState])],['sent',false,'2026-11-18T18:30:00.000Z',[[1,'c4','call','added'],[2,'c1','visit','edited'],[3,'c2','call',''],[4,'c2','visit',''],[5,'c3','whatsapp','removed']]],'sent again after 22:00: still on time (the first send decides), the reviewer\'s stops kept');
-// Late: the marketing officer sends after the deadline.
+eq([saved.plan.state,saved.plan.late,saved.plan.firstSentAt,saved.plan.stops.map(item=>[item.position,item.customerId,item.kind,item.supervisorState])],['sent',false,'2026-11-18T18:30:00.000Z',[[1,'c4','call','added'],[2,'c1','visit','edited'],[3,'c2','call',''],[4,'c2','visit',''],[5,'c3','whatsapp','removed']]],'sent again at 23:10, before midnight: still on time (the first send decides), the reviewer\'s stops kept');
+// Late: the marketing officer sends after the deadline (midnight).
+at('2026-11-19 00:10');
 saved=await send('mk1',D,[stop('m1','call')],null);
-eq([saved.plan.state,saved.plan.late,saved.plan.firstSentSource],['sent',true,'server'],'a marketing officer\'s plan sent at 23:10 is accepted and late');
+eq([saved.plan.state,saved.plan.late,saved.plan.firstSentSource],['sent',true,'server'],'a marketing officer\'s plan sent at 00:10 is accepted and late');
 // The device's clock: captured at 21:50, received the next morning → on time; 49 hours old → the receipt; ahead or another member → refused.
-at('2026-11-21 08:00');
+// Since 2026-11-22 (GSCO 2.13.86 review A8) a send made before midnight keeps the device's time only when it reaches the server within two
+// hours of the midnight: received at Saturday 01:30, on time; received in the morning, the receipt (tests/daily-plans-midnight.mjs).
+at('2026-11-21 01:30');
 const S2='2026-11-21';// Saturday; its deadline is midnight at the end of Friday (Saturday 00:00).
+saved=await send('rep2',S2,[stop('r1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-20T18:50:00.000Z'}});
+eq([saved.plan.late,saved.plan.firstSentAt,saved.plan.firstSentSource],[false,'2026-11-20T18:50:00.000Z','device'],'made on the device at 21:50 Friday, received at Saturday 01:30: on time by the device\'s clock');
+at('2026-11-21 08:00');
 await send('rep2',S2,[stop('r1')],null,{offline:{memberId:'rep1',capturedAt:'2026-11-20T18:50:00.000Z'}},403);
 await send('rep2',S2,[stop('r1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-21T05:02:00.000Z'}},400);
-saved=await send('rep2',S2,[stop('r1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-20T18:50:00.000Z'}});
-eq([saved.plan.late,saved.plan.firstSentAt,saved.plan.firstSentSource],[false,'2026-11-20T18:50:00.000Z','device'],'made on the device at 21:50 Friday, received Saturday morning: on time by the device\'s clock');
 saved=await send('mk1',S2,[stop('m1')],null,{offline:{memberId:'mk1',capturedAt:'2026-11-19T04:00:00.000Z'}});
 eq([saved.plan.late,saved.plan.firstSentSource],[true,'server'],'a device time more than 48 hours old is not trusted: the receipt, late');
 // Completion on the plan's day, read by the supervisor.
@@ -312,11 +369,13 @@ at(M+' 23:59');
 const lateSend={action:'send',date:M,stops:[stop('c1')],baseVersion:null,requestId:crypto.randomUUID()};
 saved=await post('rep1',lateSend);
 eq([saved.plan.state,saved.plan.version,saved.plan.late],['sent',1,true],'today\'s plan sent at 23:59: late');
+// The supervisor's window for today's plan closed at its midnight (GSCO 2.13.86); the sales manager approves until the day ends.
+eq((await review('sup','approve','rep1',M,1,{},409)).error,R.PLAN_MESSAGES.reviewClosed,'the supervisor at 23:59 of the plan\'s day: refused');
 const approval={action:'approve',memberId:'rep1',date:M,baseVersion:1,requestId:crypto.randomUUID()};
-eq((await post('sup',approval)).plan.state,'approved','approved at 23:59');
+eq((await post('mgr',approval)).plan.state,'approved','approved by the sales manager at 23:59');
 at('2026-11-24 00:01');
-eq([(await post('rep1',lateSend)).plan.version,(await post('sup',approval)).plan.state],[2,'approved'],'both sent again after midnight answer from their receipts');
-eq(sql.prepare("SELECT action FROM crm_audit WHERE record_id='daily-plan:rep1:'||? ORDER BY created_at,id").all(M).map(row=>row.action),['daily-plan:send','daily-plan:approve'],'each written once');
+eq([(await post('rep1',lateSend)).plan.version,(await post('mgr',approval)).plan.state],[2,'approved'],'both sent again after midnight answer from their receipts');
+eq(sql.prepare("SELECT action FROM crm_audit WHERE record_id='daily-plan:rep1:'||? ORDER BY created_at,id").all(M).map(row=>row.action).sort(),['daily-plan:approve','daily-plan:send'],'each written once (the same second: in the order of their ids)');
 await send('rep1',M,[stop('c2')],2,{},409);await review('sup','return','rep1',M,2,{reason:'بعد انتهاء اليوم'},409);
 at('2026-11-20 09:00');
 // The export: the reviewer's team over a range; at most 31 days; never a field member.
@@ -357,8 +416,8 @@ eq((await inbox('rep1')).role,'none','a hidden screen has no card');
 // told they have not sent one, the list does not mark them past the deadline and the export has no day without a plan for them (review
 // 2026-11-19: they were named every night); the plans they sent are read as before.
 sql.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('mk1',?,'[]',2,'owner',?)").run(JSON.stringify({'plans:add':false}),created);
-at('2026-11-21 22:30');
-eq((await inbox('mgr')).missing,{date:'2026-11-22',names:['اسم rep2','اسم west']},'the sales manager\'s card after Saturday\'s deadline: only those asked for a plan');
+at('2026-11-22 00:30');
+eq((await inbox('mgr')).missing,{date:'2026-11-22',names:['اسم rep2','اسم west']},'the sales manager\'s card after Sunday\'s deadline (midnight): only those asked for a plan');
 eq((await get('mgr',{date:'2026-11-22'})).rows.map(row=>[row.memberId,row.overdue]).sort(),[['mk1',false],['rep1',false],['rep2',true],['west',true]],'the list marks only them past the deadline');
 eq((await get('mgr',{from:'2026-11-21',to:'2026-11-21'})).plans.map(item=>[item.memberId,item.state]).sort(),[['mk1','sent'],['rep2','sent'],['west','missing']],'the export: the plans sent, and a day without a plan only for whom is asked for one');
 eq((await get('mgr',{date:'2026-11-19',memberId:'rep1'})).state,'sent','a plan the exempted member sent is read as before');
@@ -367,6 +426,7 @@ eq((await get('mgr',{date:'2026-11-19',memberId:'rep1'})).state,'sent','a plan t
 // 21 November, first sent at Friday 22:30 and stored late under the 22:00 rule, stays late though the midnight rule would call that send on
 // time: read, in the list and the export, and once returned and sent again.
 {
+ at('2026-11-21 22:30');
  const day='2026-11-21',firstSent='2026-11-20T19:30:00.000Z',id='daily-plan:west:'+day;
  sql.prepare("INSERT INTO crm_daily_plans(id,member_id,date,status,version,first_sent_at,first_sent_source,late,sent_at,received_at,reviewed_by,reviewed_at,return_reason,mutation_id,created_at,updated_at) VALUES(?,'west',?,'sent',1,?,'server',1,?,?,NULL,NULL,'','before-2026-11-21',?,?)").run(id,day,firstSent,firstSent,firstSent,firstSent,firstSent);
  sql.prepare("INSERT INTO crm_daily_plan_stops(id,plan_id,position,customer_id,kind,planned_time,note,added_by,supervisor_state,edited_by,created_at,updated_at) VALUES('west-stop-1',?,1,'cW','visit','','','west','',NULL,?,?)").run(id,firstSent,firstSent);
@@ -374,7 +434,7 @@ eq((await get('mgr',{date:'2026-11-19',memberId:'rep1'})).state,'sent','a plan t
  eq([stored.state,stored.late,stored.firstSentAt,stored.deadline,R.planLate(stored.firstSentAt,day)],['sent',true,firstSent,'2026-11-20T21:00:00.000Z',false],'read today: late as stored, though the midnight rule would call that send on time');
  eq([(await get('mgr',{date:day})).rows.find(row=>row.memberId==='west').late,(await get('mgr',{from:day,to:day})).plans.find(item=>item.memberId==='west').late],[true,true],'the list and the export say late');
  const returned=await review('mgr','return','west',day,1,{reason:'أضف اتصالًا بالعميل'});
- eq(returned.plan.state,'returned','returned by the sales manager');
+ eq(returned.plan.state,'returned','returned by the sales manager on the plan\'s day');
  saved=await send('west',day,[wire(returned.plan.stops[0]),stop('cW','call')],2);
  eq([saved.plan.state,saved.plan.late,saved.plan.firstSentAt],['sent',true,firstSent],'sent again: still late, the first send decides');
 }

@@ -1,8 +1,8 @@
 // «خطة الغد» / «خطط المناديب» (lib/daily-plans*.ts, migration 0022) over real HTTP against the BUILT release (`npm run build` first), its clock
-// set to a Wednesday at 23:00 Riyadh (scripts/lib/shifted-clock.mjs), after the 22:00 deadline of Thursday's plan: every route with no
-// session (401), with a role that has no right (customer service 403, another team 403, a representative reviewing 403, a hidden screen 404,
-// a switched-off cell 403 with its words) and with the right role; a representative's plan sent now is late, a marketing officer's made on
-// the device at 21:45 is on time by the device's clock; a send repeated after a cut connection writes nothing twice; a stale version is 409;
+// set to a Wednesday at 23:00 Riyadh (scripts/lib/shifted-clock.mjs), before the deadline of Thursday's plan (midnight at its start since
+// 2026-11-22, GSCO 2.13.86; 22:00 before): every route with no session (401), with a role that has no right (customer service 403, another
+// team 403, a representative reviewing 403, a hidden screen 404, a switched-off cell 403 with its words) and with the right role; a
+// representative's plan sent now is on time (it was late under the 22:00 rule), a marketing officer's made on the device at 21:45 too; a send repeated after a cut connection writes nothing twice; a stale version is 409;
 // the supervisor approves, approves with edits, returns, and the representative cannot delete or change the supervisor's stops; the sales
 // manager takes part; one note per reviewer and day; the export; the reminder cards; GET /api/crm without the plans' audit rows, and the
 // day report and the notes of the previous releases answering as before. Then Saturday's deadline, midnight at the end of Friday (the owner,
@@ -58,13 +58,13 @@ try {
   eq((await session.rep1('/api/daily-plans', {method: 'POST', body: {action: 'send'}, headers: {Origin: 'https://evil.example'}})).status, 403, 'another origin');
   // Customer service: no plans at all.
   for (const who of ['cs', 'csm']) { await get(who, {date: D}, 403); await post(who, {action: 'send', date: D, stops: [stop('c1')], baseVersion: null}, 403); eq((await inbox(who)).role, 'none', who + ' has no card'); }
-  // The representative's plan, sent at 23:00: accepted and late.
+  // The representative's plan, sent at 23:00: on time (the deadline is midnight since 2026-11-22; tests/daily-plans-midnight-http.mjs).
   eq((await get('rep1', {date: D})).state, 'missing', 'nothing yet');
-  eq((await inbox('rep1')).next, {date: D, state: 'missing', late: false, deadline: new Date(Date.parse(W + 'T19:00:00.000Z')).toISOString(), version: null, returnReason: '', reviewedByName: ''}, 'the card: Thursday\'s plan missing, past its deadline');
+  eq((await inbox('rep1')).next, {date: D, state: 'missing', late: false, deadline: new Date(Date.parse(W + 'T21:00:00.000Z')).toISOString(), version: null, returnReason: '', reviewedByName: ''}, 'the card: Thursday\'s plan missing, due at midnight');
   await post('rep1', {action: 'send', date: D, stops: [stop('cW')], baseVersion: null}, 403);
   const requestId = crypto.randomUUID(), stops = [stop('c1'), stop('c2', 'call', {time: '10:00', note: 'عرض السعر'})];
   let plan = (await post('rep1', {action: 'send', date: D, stops, baseVersion: null, requestId})).plan;
-  eq([plan.state, plan.version, plan.late, plan.firstSentSource, plan.stops.map(item => [item.customerName, item.kind])], ['sent', 1, true, 'server', [['مصنع الشرق', 'visit'], ['مصنع الخليج', 'call']]], 'sent after 22:00: accepted and marked late');
+  eq([plan.state, plan.version, plan.late, plan.firstSentSource, plan.stops.map(item => [item.customerName, item.kind])], ['sent', 1, false, 'server', [['مصنع الشرق', 'visit'], ['مصنع الخليج', 'call']]], 'sent at 23:00, before midnight: on time');
   // The same send again (an answer lost on a cut connection): the same plan, nothing written twice.
   eq((await post('rep1', {action: 'send', date: D, stops, baseVersion: null, requestId})).plan.version, 1, 'the repeated send answers from its receipt');
   eq(Number((await app.db.prepare("SELECT COUNT(*) n FROM crm_audit WHERE action='daily-plan:send'").first()).n), 1, 'one send written');
@@ -78,7 +78,7 @@ try {
   // Who reads whom.
   for (const who of ['sup', 'mgr', 'owner']) eq((await get(who, {date: D, memberId: 'rep1'})).state, 'sent', who + ' reads it');
   await get('sup2', {date: D, memberId: 'rep1'}, 403); await get('rep2', {date: D, memberId: 'rep1'}, 403);
-  eq((await get('sup', {date: D})).rows.map(row => [row.memberId, row.state, row.late]), [['rep1', 'sent', true], ['mk1', 'sent', false]], 'the supervisor\'s list');
+  eq((await get('sup', {date: D})).rows.map(row => [row.memberId, row.state, row.late]), [['rep1', 'sent', false], ['mk1', 'sent', false]], 'the supervisor\'s list');
   eq((await get('owner', {date: D})).rows.length, 3, 'the administrator: every field member');
   const card = await inbox('sup');
   eq([card.role, card.pending.map(item => item.memberId).sort()], ['reviewer', ['mk1', 'rep1']], 'the supervisor\'s card lists both plans');
@@ -100,8 +100,10 @@ try {
   const mine = await get('rep1', {date: D}), added = mine.stops.find(item => item.supervisorState === 'added'), own = mine.stops.find(item => !item.supervisorState);
   eq((await post('rep1', {action: 'send', date: D, stops: [wire(own)], baseVersion: 4}, 403)).error, 'لا يمكنك حذف محطة أضافها المشرف أو عدّلها، ولا تغييرها.', 'deleting the supervisor\'s stop is refused');
   await post('rep1', {action: 'send', date: D, stops: [wire(own), {...wire(added), time: '12:00'}], baseVersion: 4}, 403);
-  plan = (await post('rep1', {action: 'send', date: D, stops: [wire(added), wire(own), stop('c2', 'whatsapp')], baseVersion: 4})).plan;
-  eq([plan.state, plan.late, plan.stops.map(item => [item.customerId, item.supervisorState])], ['sent', true, [['c3', 'added'], ['c1', ''], ['c2', ''], ['c2', 'removed']]], 'sent again with the supervisor\'s stop kept');
+  // The follow-up the supervisor took out does not come back as a new stop (2026-11-22, GSCO 2.13.86 review A1).
+  eq((await post('rep1', {action: 'send', date: D, stops: [wire(added), wire(own), stop('c2', 'whatsapp')], baseVersion: 4}, 403)).error, 'حذف المشرف أو مدير المبيعات هذه المتابعة من الخطة؛ لا يمكن إعادتها.', 'bringing back the follow-up the supervisor took out is refused');
+  plan = (await post('rep1', {action: 'send', date: D, stops: [wire(added), wire(own)], baseVersion: 4})).plan;
+  eq([plan.state, plan.late, plan.stops.map(item => [item.customerId, item.supervisorState])], ['sent', false, [['c3', 'added'], ['c1', ''], ['c2', 'removed']]], 'sent again with the supervisor\'s stop kept');
   // The note: one per reviewer and day.
   await post('sup', {action: 'note', memberId: 'rep1', date: D, note: 'خطة متوازنة', noteVersion: null});
   await post('sup', {action: 'note', memberId: 'rep1', date: D, note: 'ثانية', noteVersion: null}, 409);

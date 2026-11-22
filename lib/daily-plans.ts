@@ -1,8 +1,10 @@
 /** «خطة الغد» and «خطط المناديب» (the owner, 2026-11-19: the port of GSCO 2.13.83 «خطة الغد / خطط المناديب» with the owner's decisions;
  * migration 0022). A representative or a marketing officer (lib/roles.ts isFieldRole) prepares the plan of the next working day: stops,
  * each a visit, a call or a WhatsApp contact on a customer, in order, with an optional time and note. It is sent to the supervisor before
- * 22:00 Riyadh of the day before the plan's day, and Saturday's before midnight at the end of Friday (the owner, 2026-11-21); sent later it
- * is accepted and marked «متأخرة» (decided by its first send). The
+ * 12:00 midnight Riyadh at the start of the plan's day (since 2026-11-22, the port of GSCO 2.13.86; 22:00 of the day before until then, and
+ * Saturday's already at midnight at the end of Friday since 2026-11-21); sent later it is accepted and marked «متأخرة» (decided by its first
+ * send). The supervisor approves, edits or returns it until the same midnight; then it stays «غير معتمدة» and only the sales manager acts on
+ * it until its day ends (his edits are marked as his: nobody else changes them). The
  * supervisor (or the sales manager, who may take part but is not required, or the administrator) approves it, approves it with edits
  * (applied at once and shown as edited; the member can no longer change or delete what the reviewer added or changed) or returns it with a
  * reason. A stop is «تمت» by itself once the member records a visit or contact of the same kind on that customer that day, «تمت بطريقة
@@ -13,12 +15,19 @@ import {isFieldRole} from './roles';
 import {WORKING_WEEKDAYS} from './working-hours';
 import {NO_TARGETS,type PlanBulkMove,type PlanTargets} from './daily-plan-followups';
 
-/** The deadline: 22:00 on the day before the plan's day, Riyadh time (UTC+03:00 all year, no daylight saving). When that day before is a
- *  Friday (the weekly day off: the plan is Saturday's, prepared on Thursday), midnight at the end of that Friday, Saturday 00:00:00 (the
- *  owner, 2026-11-21: «اخر معاد الجمعة قبل 12 باليل»): sent at Friday 23:59:59 it is on time, at 00:00:00 it is late. planDeadline. */
-export const PLAN_DEADLINE_HOUR=22,PLAN_FRIDAY_DEADLINE_HOUR=24;
-/** The deadline in words, for the screens, the reminder card and the device's notice («قبل …» / «before …» put before it). */
-export const PLAN_DEADLINE_TEXT={normal:['الساعة 22:00','22:00'],friday:['منتصف الليل بين الجمعة والسبت','midnight between Friday and Saturday']} as const;
+/** The deadline: 12:00 midnight Riyadh time (UTC+03:00 all year, no daylight saving) at the start of the plan's day, for every day (GSCO
+ *  2.13.86, the owner 2026-11-21: «خلى الخطة المشرف يعتمدها قبل 12 مش 10»): the plan of Sunday is due at Sunday 00:00:00, sent at Saturday
+ *  23:59:59 it is on time, at 00:00:00 it is late. Until 2026-11-22 it was 22:00 of the day before, except Saturday's plan, due at midnight
+ *  at the end of Friday since 2026-11-21 («اخر معاد الجمعة قبل 12 باليل»): that rule is now every day's, so Saturday's plan keeps its
+ *  deadline. The hour is counted on the day before the plan's day (24 = its end). planDeadline. */
+export const PLAN_DEADLINE_HOUR=24;
+/** The names of the week's days (Sunday first, as Date.getUTCDay counts), for the words of the deadline. */
+export const PLAN_WEEKDAY_TEXT:readonly (readonly [string,string])[]=[['الأحد','Sunday'],['الاثنين','Monday'],['الثلاثاء','Tuesday'],['الأربعاء','Wednesday'],['الخميس','Thursday'],['الجمعة','Friday'],['السبت','Saturday']];
+/** The supervisor's reminder of the plans still waiting for them: 23:00 Riyadh on the eve, one hour before their window closes (GSCO 2.13.86). */
+export const PLAN_REVIEW_REMINDER_HOUR=23;
+/** A send kept on the device before the deadline that reaches the server more than two hours after it counts at the server's time («متأخرة»;
+ *  GSCO 2.13.86 review A8): within the two hours, the device's time stands. */
+export const PLAN_LATE_SYNC_GRACE_MS=2*3600_000;
 const RIYADH_OFFSET_MS=3*3600_000,DAY_MS=86_400_000;
 /** A plan has at most 30 stops; a stop's note at most 300 characters; a return's reason 3 to 500; a reviewer's note 2 to 1000. */
 export const PLAN_MAX_STOPS=30,PLAN_STOP_NOTE_MAX=300,PLAN_REASON_MIN=3,PLAN_REASON_MAX=500,PLAN_NOTE_MIN=2,PLAN_NOTE_MAX=1000;
@@ -30,8 +39,11 @@ export const PLAN_AHEAD_DAYS=7;
 export const PLAN_OFFLINE_MAX_AGE_MS=48*3600_000,PLAN_CLOCK_SKEW_MS=60_000;
 /** The export covers at most 31 days. */
 export const PLAN_EXPORT_MAX_DAYS=31;
-/** The reminder card shows the next day's plan from 16:00 Riyadh while it is not sent; the device's notification comes from 20:00. */
-export const PLAN_REMINDER_FROM_HOUR=16,PLAN_NOTICE_FROM_HOUR=20;
+/** The reminder card shows the next day's plan from 16:00 Riyadh while it is not sent; the device's notification comes from 22:00, two hours
+ *  before the midnight deadline (GSCO 2.13.86; 20:00 before). */
+export const PLAN_REMINDER_FROM_HOUR=16,PLAN_NOTICE_FROM_HOUR=22;
+/** The sales manager's saves of one plan within ten minutes are one notice for the member and their supervisor (GSCO 2.13.86 review A12). */
+export const PLAN_MANAGER_NOTICE_SLOT_MS=10*60_000;
 /** The cards ask again every 5 minutes while the page is in front, and when it comes back to the front at most once a minute. */
 export const PLAN_INBOX_INTERVAL_MS=5*60_000,PLAN_INBOX_FOCUS_MS=60_000;
 
@@ -51,6 +63,10 @@ export const PLAN_STATE_TEXT:Record<PlanState,readonly [string,string]>={
  approved:['معتمدة','Approved'],approved_edited:['معتمدة مع تعديل','Approved with edits'],returned:['أُعيدت للمندوب','Returned to the representative']
 };
 export const PLAN_LATE_TEXT=['متأخرة','Late'] as const;
+/** «غير معتمدة» (GSCO 2.13.86): a plan sent (or returned) and not approved by midnight at the start of its day stays the member's plan,
+ *  shown so to everyone; nothing is sent about it. Derived from the clock (the plan's day has begun), never stored. */
+export const PLAN_UNAPPROVED_TEXT=['غير معتمدة','Not approved'] as const;
+export const planUnapproved=(plan:{state:PlanState|null|undefined;date:string}|null|undefined,today:string)=>!!plan&&(plan.state==='sent'||plan.state==='returned')&&!!plan.date&&plan.date<=today;
 /** The member edits and sends while the plan is not approved; the reviewer approves a sent plan, edits a sent or approved one, returns
  *  a sent or approved one. */
 export const memberMayEdit=(status:PlanStatus|null)=>status===null||status==='draft'||status==='sent'||status==='returned';
@@ -67,6 +83,12 @@ export type ActivityPlace='planned'|'outside'|'extra';
 export const ACTIVITY_PLACE_TEXT:Record<Exclude<ActivityPlace,'planned'>,readonly [string,string]>={outside:['خارج الخطة','Outside the plan'],extra:['تواصل إضافي مع عميل في الخطة','Additional contact with a planned customer']};
 export type SupervisorState=''|'added'|'edited'|'removed';
 export const SUPERVISOR_STATE_TEXT:Record<Exclude<SupervisorState,''>,readonly [string,string]>={added:['أضافها المشرف','Added by the supervisor'],edited:['عدّلها المشرف','Edited by the supervisor'],removed:['حذفها المشرف','Removed by the supervisor']};
+/** Who decided a stop or the targets (GSCO 2.13.86): the supervisor (any reviewer before 2026-11-22) or the sales manager. */
+export type PlanEditor='supervisor'|'manager';
+export const MANAGER_STATE_TEXT:Record<Exclude<SupervisorState,''>,readonly [string,string]>={added:['أضافها مدير المبيعات','Added by the sales manager'],edited:['عدّلها مدير المبيعات','Edited by the sales manager'],removed:['حذفها مدير المبيعات','Removed by the sales manager']};
+/** The mark of a stop a reviewer decided, by who decided it last (purple for the sales manager on the screens). */
+export const stopMarkText=(state:Exclude<SupervisorState,''>,by:PlanEditor|null|undefined)=>by==='manager'?MANAGER_STATE_TEXT[state]:SUPERVISOR_STATE_TEXT[state];
+export const TARGETS_EDITED_TEXT:Record<PlanEditor,readonly [string,string]>={supervisor:['عدّل المشرف المستهدف','The supervisor changed the targets'],manager:['عدّل مدير المبيعات المستهدف','The sales manager changed the targets']};
 /** What the member may not change or delete: what a reviewer added, changed or took out. */
 export const lockedForMember=(state:SupervisorState)=>state!=='';
 
@@ -74,6 +96,13 @@ export const lockedForMember=(state:SupervisorState)=>state!=='';
 export const preparesPlans=(member:{role:string;active?:number|boolean}|null|undefined)=>!!member&&isFieldRole(member.role)&&member.active!==0&&member.active!==false;
 export const PLAN_REVIEWER_ROLES=['admin','manager','supervisor'] as const;
 export const reviewsPlans=(member:{role:string;active?:number|boolean}|null|undefined)=>!!member&&(PLAN_REVIEWER_ROLES as readonly string[]).includes(member.role)&&member.active!==0&&member.active!==false;
+/** «مدير المبيعات» of the plans (GSCO 2.13.86: an account that reviews plans whose role is the sales manager, the owner or a system manager):
+ *  here the sales manager (manager) and the administrator (admin) who review plans («خطط المناديب · تحرير», which every reviewer's write
+ *  asks). Not bound by the supervisor's midnight: they act on the plans of their team until the end of the plan's day, approved or not, and
+ *  what they decide is theirs (the supervisor and the member never change it). Their team is the reviewers' own (planTeam: every field
+ *  member of the regions they cover; «عرض بيانات الفريق بالكامل» widens reading only). */
+export const PLAN_MANAGER_ROLES=['manager','admin'] as const;
+export const isPlanSalesManager=(member:{role:string;active?:number|boolean}|null|undefined)=>reviewsPlans(member)&&(PLAN_MANAGER_ROLES as readonly string[]).includes(member!.role);
 
 // ---- days and the deadline
 /** A real calendar day 'YYYY-MM-DD', or ''. */
@@ -89,28 +118,42 @@ export const riyadhHourOf=(at:string|number|Date)=>new Date((at instanceof Date?
 export const isPlanWorkingDay=(day:string)=>!!planDay(day)&&WORKING_WEEKDAYS.includes(new Date(day+'T00:00:00Z').getUTCDay());
 /** The day a member prepares now: the next working day after today (Thursday's is Saturday's: Friday is the weekly day off). */
 export function nextPlanDay(today:string){let day=addDays(today,1);for(let guard=0;guard<7&&!isPlanWorkingDay(day);guard++)day=addDays(day,1);return day;}
-const FRIDAY=5;
-/** The hour of the deadline of the plan of `day`, on the day before: 22, or 24 (midnight at its end) when the day before is a Friday. */
-export const planDeadlineHour=(day:string)=>new Date(addDays(day,-1)+'T00:00:00Z').getUTCDay()===FRIDAY?PLAN_FRIDAY_DEADLINE_HOUR:PLAN_DEADLINE_HOUR;
-/** The deadline of the plan of `day`: 22:00 Riyadh on the day before (Saturday's: Saturday 00:00, the end of Friday), as an instant (ISO). */
-export const planDeadline=(day:string)=>new Date(Date.parse(addDays(day,-1)+'T00:00:00Z')+planDeadlineHour(day)*3600_000-RIYADH_OFFSET_MS).toISOString();
-/** The words of the deadline of the plan of `day` (PLAN_DEADLINE_TEXT). */
-export const planDeadlineWords=(day:string)=>planDeadlineHour(day)===PLAN_FRIDAY_DEADLINE_HOUR?PLAN_DEADLINE_TEXT.friday:PLAN_DEADLINE_TEXT.normal;
-/** Late: first sent at or after the deadline (sent at 21:59:59 is on time; at 22:00:00 it is late; Saturday's plan sent at Friday 23:59:59
- *  is on time, at Saturday 00:00:00 late). The flag is stored at the first send (crm_daily_plans.late) and never worked out again, so a
- *  plan sent before 2026-11-21 keeps the flag the 22:00 rule gave it. */
+/** The deadline of the plan of `day`: 12:00 midnight Riyadh at the start of that day (the end of the day before), as an instant (ISO): the
+ *  plan of 2026-11-23 is due at 2026-11-22T21:00:00.000Z. */
+export const planDeadline=(day:string)=>new Date(Date.parse(addDays(day,-1)+'T00:00:00Z')+PLAN_DEADLINE_HOUR*3600_000-RIYADH_OFFSET_MS).toISOString();
+/** The words of the deadline of the plan of `day`, so that «00:00» of the plan's day reads as the end of the day before: «منتصف الليل بين
+ *  السبت والأحد» / "midnight between Saturday and Sunday" (Saturday's plan: «بين الجمعة والسبت», as since 2026-11-21). */
+export function planDeadlineWords(day:string):readonly [string,string]{
+ const weekday=new Date(day+'T00:00:00Z').getUTCDay();
+ if(!Number.isInteger(weekday))return ['منتصف الليل','midnight'];
+ const eve=PLAN_WEEKDAY_TEXT[(weekday+6)%7],own=PLAN_WEEKDAY_TEXT[weekday];
+ return ['منتصف الليل بين '+eve[0]+' و'+own[0],'midnight between '+eve[1]+' and '+own[1]];
+}
+/** Late: first sent at or after the deadline (the plan of Sunday sent at Saturday 23:59:59 is on time; at Sunday 00:00:00 it is late). The
+ *  flag is stored at the first send (crm_daily_plans.late) and never worked out again, so a plan sent before 2026-11-22 keeps the flag the
+ *  22:00 rule gave it. A returned plan sent again after the deadline is late too (writeMemberPlan). */
 export const planLate=(sentAt:string,day:string)=>Date.parse(sentAt)>=Date.parse(planDeadline(day));
+/** The supervisor's window (GSCO 2.13.86): they approve, edit or return the plan of `day` until its deadline; at it the window closes. */
+export const planReviewClosed=(day:string,now:string|number)=>(typeof now==='number'?now:Date.parse(now))>=Date.parse(planDeadline(day));
+/** 23:00 Riyadh on the eve: from then until midnight the supervisor is reminded of the plans still waiting for them. */
+export const planReviewReminderStart=(day:string)=>new Date(Date.parse(planDeadline(day))-(PLAN_DEADLINE_HOUR-PLAN_REVIEW_REMINDER_HOUR)*3600_000).toISOString();
+/** The end of the plan's day (midnight at its end): the sales manager acts on the plan until then, not after. */
+export const planDayEnd=(day:string)=>planDeadline(addDays(day,1));
+export const planDayOver=(day:string,now:string|number)=>(typeof now==='number'?now:Date.parse(now))>=Date.parse(planDayEnd(day));
 /** Whether a day may be planned now (today included, sent late, up to PLAN_AHEAD_DAYS ahead): the problem, or null. */
 export function planDateProblem(day:unknown,today:string):'invalid'|'past'|'far'|null{
  const value=planDay(day);if(!value)return 'invalid';
  if(value<today)return 'past';
  return value>addDays(today,PLAN_AHEAD_DAYS)?'far':null;
 }
-/** When a send reached the supervisor: the device's clock for a send kept on the device (within the bounds), else the server's receipt. */
-export function planSentAt(capture:{capturedAt:string;receivedAt:string}|null,receivedAt:string):{at:string;source:'device'|'server'}{
+/** When a send reached the supervisor: the device's clock for a send kept on the device (within the bounds), else the server's receipt.
+ *  With the plan's `day` (GSCO 2.13.86 review A8): a send kept on the device before the deadline that reaches the server more than two hours
+ *  after it (PLAN_LATE_SYNC_GRACE_MS) counts at the server's receipt, so it is late (`crossed`); within the two hours its time stands. */
+export function planSentAt(capture:{capturedAt:string;receivedAt:string}|null,receivedAt:string,day?:string):{at:string;source:'device'|'server';crossed?:true}{
  if(!capture)return {at:receivedAt,source:'server'};
  const captured=Date.parse(capture.capturedAt),received=Date.parse(receivedAt);
  if(!Number.isFinite(captured)||!Number.isFinite(received)||captured>received+PLAN_CLOCK_SKEW_MS||received-captured>PLAN_OFFLINE_MAX_AGE_MS)return {at:receivedAt,source:'server'};
+ if(day&&planDay(day)){const deadline=Date.parse(planDeadline(day));if(captured<deadline&&received-deadline>PLAN_LATE_SYNC_GRACE_MS)return {at:receivedAt,source:'server',crossed:true};}
  return {at:new Date(captured).toISOString(),source:'device'};
 }
 
@@ -201,6 +244,87 @@ export function reviewerStops(existing:readonly StoredStop[],sent:readonly PlanS
  return {stops:[...kept,...removed.map((stop,index)=>({...stop,position:kept.length+index+1}))],changed};
 }
 
+// ---- who decided what (GSCO 2.13.86): the supervisor or the sales manager, read from the plan's own review lines
+/** What a reviewer's «اعتماد مع تعديل» changed, by stop id (the ids after the write: a stop a reviewer adds gets its id on the server). */
+export function reviewerChanges(existing:readonly StoredStop[],after:readonly StoredStop[]):{added:string[];edited:string[];removed:string[];order:boolean}{
+ const before=new Map(existing.map(stop=>[stop.id,stop])),live=existing.filter(stop=>stop.supervisorState!=='removed');
+ const added:string[]=[],edited:string[]=[],removed:string[]=[];
+ for(const stop of after){
+  const was=before.get(stop.id);
+  if(!was){if(stop.supervisorState!=='removed')added.push(stop.id);continue;}
+  if(stop.supervisorState==='removed'){if(was.supervisorState!=='removed')removed.push(stop.id);continue;}
+  if(!sameStop(was,stop))edited.push(stop.id);
+ }
+ const kept=after.filter(stop=>stop.supervisorState!=='removed'&&before.has(stop.id)).map(stop=>stop.id),wasOrder=live.map(stop=>stop.id).filter(id=>kept.includes(id));
+ return {added,edited,removed,order:JSON.stringify(kept)!==JSON.stringify(wasOrder)};
+}
+/** One reviewer's write as its audit line records it since 2026-11-22 (crm_audit detail.after.edits): who (the sales manager or the
+ *  supervisor, and their id), the stops they added, edited and took out, whether they moved stops or changed the targets, and `changed`: a
+ *  change the member and their supervisor hear of when the sales manager made it (the stops, their order, the targets, or a return). */
+export type PlanEdits={by:PlanEditor;byId:string;added:string[];edited:string[];removed:string[];order:boolean;targets:boolean;changed:boolean};
+/** A review line as the server reads it: its action ('approve' | 'approve_edited' | 'return'), time, writer's name and stored detail. */
+export type PlanReviewLine={action:string;at:string;actorName:string;detail:unknown};
+export type StopMark={by:PlanEditor;kind:Exclude<SupervisorState,''>};
+/** The sales manager's latest change of a plan (for the notices): who, when, the plan's version it made, and what it was: an approval
+ *  (with or without edits) of a plan that waited, an edit of a plan already approved, or a return. */
+export type PlanManagerEdit={byId:string;byName:string;at:string;version:number;decision:'approve'|'edit'|'return'};
+export type PlanEditTrail={marks:Map<string,StopMark>;targets:PlanEditor|null;managerDecided:boolean;manager:PlanManagerEdit|null};
+const textArray=(value:unknown)=>Array.isArray(value)?value.filter((item):item is string=>typeof item==='string'):[];
+/** The trail of a plan's review lines, oldest first: the last line that touched a stop (or the targets) decides whose it is; a stop the same
+ *  person added and then edited stays «added» by them. A line written before 2026-11-22 (no `edits`) names nobody: its stops stay the
+ *  supervisor's, as they always read. `managerDecided`: the sales manager approved, edited or returned the plan at least once. */
+export function planEditTrail(lines:readonly PlanReviewLine[]):PlanEditTrail{
+ const trail:PlanEditTrail={marks:new Map(),targets:null,managerDecided:false,manager:null};
+ for(const line of lines){
+  const detail=line.detail&&typeof line.detail==='object'?line.detail as {before?:{status?:unknown};after?:{version?:unknown;edits?:unknown}}:null;
+  const edits=detail?.after?.edits&&typeof detail.after.edits==='object'?detail.after.edits as Partial<PlanEdits>:null;
+  if(!edits)continue;
+  const by:PlanEditor=edits.by==='manager'?'manager':'supervisor';
+  for(const kind of ['added','edited','removed'] as const)for(const id of textArray(edits[kind])){
+   const was=trail.marks.get(id);trail.marks.set(id,{by,kind:kind==='edited'&&was?.by===by&&was.kind==='added'?'added':kind});
+  }
+  if(edits.targets===true)trail.targets=by;
+  if(by!=='manager')continue;
+  trail.managerDecided=true;
+  if(edits.changed===true){
+   const action=line.action.replace(/^daily-plan:/,''),approved=detail?.before?.status==='approved'||detail?.before?.status==='approved_edited';
+   trail.manager={byId:typeof edits.byId==='string'?edits.byId:'',byName:line.actorName||'',at:line.at,version:Number(detail?.after?.version)||0,decision:action==='return'?'return':action==='approve_edited'&&approved?'edit':'approve'};
+  }
+ }
+ return trail;
+}
+/** The mark a stop shows: none for the member's own; else who decided it last and what (a stop the sales manager edited after the supervisor
+ *  added it reads «عدّلها مدير المبيعات»); the stored state decides for the supervisor, as before 2026-11-22. */
+export function stopMark(state:SupervisorState,mark:StopMark|undefined):StopMark|null{
+ if(!state)return null;
+ if(mark?.by!=='manager')return {by:'supervisor',kind:state};
+ return {by:'manager',kind:state==='removed'?'removed':mark.kind==='removed'?state:mark.kind};
+}
+/** The slot of a notice of the sales manager's change: the ten minutes it falls in (one notice for the saves of those ten minutes). */
+export const managerNoticeSlot=(at:string)=>{const time=Date.parse(at);return Number.isFinite(time)?String(Math.floor(time/PLAN_MANAGER_NOTICE_SLOT_MS)):'0';};
+/** The supervisor's refusals of what the sales manager decided (GSCO 2.13.86; null when the write keeps it): every stop the sales manager
+ *  added or edited sent back as it is, none they took out brought back on its customer, their stops in the same place among the stops that
+ *  stay, their targets as they are. */
+export function managerLockProblem(existing:readonly StoredStop[],sent:readonly PlanStopInput[],trail:Pick<PlanEditTrail,'marks'>):'fixed'|'removed'|'order'|null{
+ const managers=existing.filter(stop=>stop.supervisorState!==''&&trail.marks.get(stop.id)?.by==='manager');
+ const live=existing.filter(stop=>stop.supervisorState!=='removed'),known=new Set(live.map(stop=>stop.id));
+ for(const stop of managers.filter(stop=>stop.supervisorState!=='removed')){const again=sent.find(item=>item.id===stop.id);if(!again||!sameStop(again,stop))return 'fixed';}
+ const gone=new Set(managers.filter(stop=>stop.supervisorState==='removed').map(stop=>stop.customerId));
+ if(sent.some(item=>!(item.id&&known.has(item.id))&&gone.has(item.customerId)))return 'removed';
+ const common=live.map(stop=>stop.id).filter(id=>sent.some(item=>item.id===id)),order=sent.map(item=>item.id||'').filter(id=>common.includes(id));
+ for(const stop of managers.filter(stop=>stop.supervisorState!=='removed')){
+  const was=new Set(common.slice(0,common.indexOf(stop.id))),now=order.slice(0,order.indexOf(stop.id));
+  if(now.length!==was.size||now.some(id=>!was.has(id)))return 'order';
+ }
+ return null;
+}
+/** The member's write may not bring back, as a new stop, a follow-up a reviewer took out of the plan (its customer; GSCO 2.13.86 review A1):
+ *  the ids of the new stops that do. */
+export function removedBackProblems(existing:readonly StoredStop[],sent:readonly PlanStopInput[]):number[]{
+ const live=new Set(existing.filter(stop=>stop.supervisorState!=='removed').map(stop=>stop.id)),gone=new Set(existing.filter(stop=>stop.supervisorState==='removed').map(stop=>stop.customerId));
+ return sent.flatMap((stop,index)=>!(stop.id&&live.has(stop.id))&&gone.has(stop.customerId)?[index]:[]);
+}
+
 // ---- completion
 export type PlanActivity={id:string;customerId:string;type:string;at:string};
 export type StopOutcome={id:string;state:StopCompletion;activityId:string|null;activityType:string|null;at:string|null};
@@ -236,7 +360,9 @@ export function planCompletion(stops:readonly Pick<StoredStop,'id'|'position'|'c
 }
 
 // ---- what the routes answer (GET /api/daily-plans)
-export type PlanStopView={id:string;position:number;customerId:string;customerName:string;kind:StopKind;time:string;note:string;addedBy:string;addedByName:string;supervisorState:SupervisorState;editedByName:string;completion:StopCompletion;activityId:string|null;activityType:string|null;doneAt:string|null};
+export type PlanStopView={id:string;position:number;customerId:string;customerName:string;kind:StopKind;time:string;note:string;addedBy:string;addedByName:string;supervisorState:SupervisorState;editedByName:string;completion:StopCompletion;activityId:string|null;activityType:string|null;doneAt:string|null;
+ /** Who decided the stop last and what (null for the member's own stop; absent from a server before 2026-11-22: the supervisor's). */
+ mark?:StopMark|null};
 export type PlanActivityView={id:string;customerId:string;customerName:string;type:string;at:string;place:Exclude<ActivityPlace,'planned'>};
 export type PlanNoteView={reviewerId:string;reviewerName:string;note:string;version:number;updatedAt:string};
 /** The achieved numbers of the plan's day (lib/daily-plans-server.ts planActuals): counted from the records, never typed. */
@@ -247,10 +373,19 @@ export type PlanView={ok:true;memberId:string;memberName:string;date:string;appl
   *  the member's own values in `repTargets`; `actual` from the plan's day on (null before it, or with no plan); `bulkMoves` the follow-ups the
   *  member moved with the bulk «ترحيل» from this day's plan. A server before 2026-11-22 sends none of them (withTargets). */
  targets:PlanTargets;targetsEdited:boolean;repTargets:PlanTargets|null;actual:PlanActual|null;bulkMoves:PlanBulkMove[];
+ /** GSCO 2.13.86 (2026-11-22; absent from a server before): who changed the targets last (`targetsEdited` is also true when the sales manager
+  *  set them back to the member's own numbers: still theirs); the sales manager's latest change; whether they ever decided on the plan (the
+  *  supervisor no longer returns it); «غير معتمدة» (sent, not approved, its day begun); the supervisor's window closed (its midnight);
+  *  whether the reader is the sales manager of the plans. */
+ targetsEditedBy?:PlanEditor|null;managerEdit?:PlanManagerEditView|null;managerDecided?:boolean;unapproved?:boolean;reviewClosed?:boolean;salesManager?:boolean;
  /** What the reader may do now. */
  canEdit:boolean;canApprove:boolean;canReviewEdit:boolean;canReturn:boolean;canNote:boolean;myNote:PlanNoteView|null;serverTime:string};
+/** The sales manager's latest change as the page shows it (never their id). */
+export type PlanManagerEditView={byName:string;at:string;version:number;decision:PlanManagerEdit['decision']};
 export type PlanListRow={memberId:string;name:string;role:string;state:PlanState;version:number|null;late:boolean;overdue:boolean;firstSentAt:string|null;reviewedByName:string;counts:PlanCounts;notes:number;
- targets?:PlanTargets;targetsEdited?:boolean;actual?:PlanActual|null;bulkMoves?:number};
+ targets?:PlanTargets;targetsEdited?:boolean;actual?:PlanActual|null;bulkMoves?:number;
+ /** GSCO 2.13.86: «غير معتمدة», who changed the targets, and whether the sales manager changed the plan. */
+ unapproved?:boolean;targetsEditedBy?:PlanEditor|null;managerEdited?:boolean};
 /** A plan read from a server before 2026-11-22 (after a rollback) has no targets: none set, not edited, nothing achieved or moved. */
 export function withTargets<T extends PlanView|null>(plan:T):T{
  if(!plan)return plan;
@@ -262,9 +397,15 @@ export type PlanExport={ok:true;from:string;to:string;plans:PlanView[]};
 /** GET /api/daily-plans/inbox: for a member who prepares plans, the next day's plan and today's, and what a reviewer decided lately; for a
  *  reviewer, the sent plans waiting for them and how many of their team have not sent the next day's plan after the deadline. */
 export type PlanInboxDay={date:string;state:PlanState;late:boolean;deadline:string;version:number|null;returnReason:string;reviewedByName:string};
+/** A change by the sales manager the reader hears of (GSCO 2.13.86): the member, of their own plan edited after it was approved (an approval
+ *  or a return is told by its own line); a supervisor, of every change to a plan of the members who report to them, never their own. */
+export type PlanInboxEdit={memberId:string;name:string;date:string;at:string;byName:string;version:number;decision:PlanManagerEdit['decision']};
 export type PlanInbox={ok:true;serverTime:string;role:'member'|'reviewer'|'none';
  next?:PlanInboxDay;today?:PlanInboxDay|null;
- pending?:{memberId:string;name:string;date:string;late:boolean;firstSentAt:string|null;version:number}[];missing?:{date:string;names:string[]}};
+ pending?:{memberId:string;name:string;date:string;late:boolean;firstSentAt:string|null;version:number}[];missing?:{date:string;names:string[]};
+ /** GSCO 2.13.86 (absent from a server before 2026-11-22): the reviewer is the sales manager (no midnight window, so no closing reminder),
+  *  and the sales manager's changes the reader hears of. */
+ salesManager?:boolean;edits?:PlanInboxEdit[]};
 
 const text=(value:unknown)=>typeof value==='string';
 const nullableText=(value:unknown)=>value===null||text(value);
@@ -284,6 +425,7 @@ export const validPlanView=(value:unknown):value is PlanView=>{
 };
 export const validPlanList=(value:unknown):value is PlanList=>!!value&&typeof value==='object'&&(value as PlanList).ok===true&&text((value as PlanList).date)&&Array.isArray((value as PlanList).rows)&&(value as PlanList).rows.every(row=>!!row&&text(row.memberId)&&text(row.name)&&isState(row.state)&&typeof row.late==='boolean'&&typeof row.overdue==='boolean'&&validCounts(row.counts)&&count(row.notes));
 export const validPlanExport=(value:unknown):value is PlanExport=>!!value&&typeof value==='object'&&(value as PlanExport).ok===true&&Array.isArray((value as PlanExport).plans)&&(value as PlanExport).plans.every(validPlanView);
+const validInboxEdit=(value:unknown)=>!!value&&typeof value==='object'&&['memberId','name','date','at','byName'].every(key=>text((value as Record<string,unknown>)[key]))&&Number.isInteger((value as PlanInboxEdit).version)&&['approve','edit','return'].includes((value as PlanInboxEdit).decision);
 const validInboxDay=(value:unknown)=>!!value&&typeof value==='object'&&text((value as PlanInboxDay).date)&&isState((value as PlanInboxDay).state)&&typeof (value as PlanInboxDay).late==='boolean';
 export const validPlanInbox=(value:unknown):value is PlanInbox=>{
  if(!value||typeof value!=='object')return false;
@@ -292,18 +434,25 @@ export const validPlanInbox=(value:unknown):value is PlanInbox=>{
  if(inbox.next!==undefined&&!validInboxDay(inbox.next))return false;
  if(inbox.today!==undefined&&inbox.today!==null&&!validInboxDay(inbox.today))return false;
  if(inbox.pending!==undefined&&!(Array.isArray(inbox.pending)&&inbox.pending.every(item=>!!item&&text(item.memberId)&&text(item.name)&&text(item.date)&&typeof item.late==='boolean')))return false;
+ if(inbox.edits!==undefined&&!(Array.isArray(inbox.edits)&&inbox.edits.every(validInboxEdit)))return false;
+ if(inbox.salesManager!==undefined&&typeof inbox.salesManager!=='boolean')return false;
  return inbox.missing===undefined||!!inbox.missing&&text(inbox.missing.date)&&Array.isArray(inbox.missing.names)&&inbox.missing.names.every(text);
 };
 
 // ---- the reminder cards (app/daily-plans.tsx PlanInboxCard)
-export type PlanReminderLine={key:string;tone:'due'|'late'|'returned'|'approved'|'pending'|'missing';date:string;memberId?:string};
-/** What the cards say now. A member: the next day's plan returned (always), not sent from 16:00 (late from its deadline: 22:00, or for
- *  Saturday's plan midnight at the end of Friday), today's not sent (a working day); a reviewer: each plan waiting for them, and after the
- *  deadline who of their team has not sent the next day's plan (the server decides: lib/daily-plans-server.ts readPlanInbox). The
- *  notification keys name the plan and its version, so each is announced once. */
+export type PlanReminderLine={key:string;tone:'due'|'late'|'returned'|'approved'|'pending'|'missing'|'closing'|'manager';date:string;memberId?:string;
+ /** 'closing': how many plans of that day still wait for the supervisor. */count?:number};
+/** What the cards say now. A member: the next day's plan returned (always), not sent from 16:00 (late from its deadline: midnight at the start
+ *  of its day), today's not sent (a working day), the sales manager's edit of their approved plan (GSCO 2.13.86: one line for each ten
+ *  minutes of their saves; the approval line of that version is not repeated); a reviewer: each plan waiting for them (a supervisor: only
+ *  the plans whose window is still open, the server decides), from 23:00 one line for each day whose plans still wait before the window
+ *  closes at midnight (not for the sales manager, who has no window), each change by the sales manager to a plan of the members who report
+ *  to them, and after the deadline who of their team has not sent the plan (lib/daily-plans-server.ts readPlanInbox). A plan «غير معتمدة»
+ *  makes no line. The notification keys name the plan and its version (or the ten minutes), so each is announced once. */
 export function planReminderLines(inbox:PlanInbox|null,now:string|number=Date.now()):PlanReminderLine[]{
  if(!inbox)return [];
  const at=typeof now==='number'?now:Date.parse(now),hour=riyadhHourOf(at),day=riyadhDayOf(at),lines:PlanReminderLine[]=[];
+ const edits=inbox.edits||[];
  if(inbox.role==='member'){
   const next=inbox.next,current=inbox.today;
   if(current&&(current.state==='missing'||current.state==='draft'))lines.push({key:'missing-today:'+current.date,tone:'late',date:current.date});
@@ -314,17 +463,23 @@ export function planReminderLines(inbox:PlanInbox|null,now:string|number=Date.no
    else if(next.state==='missing'||next.state==='draft'){
     if(overdue)lines.push({key:'late:'+next.date,tone:'late',date:next.date});
     else if(day===addDays(next.date,-1)&&hour>=PLAN_REMINDER_FROM_HOUR)lines.push({key:'due:'+next.date,tone:'due',date:next.date});
-   }else if(next.state==='approved'||next.state==='approved_edited')lines.push({key:'approved:'+next.date+':'+next.version,tone:'approved',date:next.date});
+   }else if((next.state==='approved'||next.state==='approved_edited')&&!edits.some(edit=>edit.date===next.date&&edit.version===next.version&&edit.decision==='edit'))lines.push({key:'approved:'+next.date+':'+next.version,tone:'approved',date:next.date});
   }
+  for(const edit of edits)if(edit.decision==='edit')lines.push({key:'manager:'+edit.date+':'+managerNoticeSlot(edit.at),tone:'manager',date:edit.date});
  }else if(inbox.role==='reviewer'){
   for(const item of inbox.pending||[])lines.push({key:'pending:'+item.memberId+':'+item.date+':'+item.version,tone:'pending',date:item.date,memberId:item.memberId});
+  if(!inbox.salesManager){
+   const waiting=new Map<string,number>();for(const item of inbox.pending||[])waiting.set(item.date,(waiting.get(item.date)||0)+1);
+   for(const [date,count] of waiting)if(at>=Date.parse(planReviewReminderStart(date))&&!planReviewClosed(date,at))lines.push({key:'closing:'+date,tone:'closing',date,count});
+  }
+  for(const edit of edits)lines.push({key:'manager:'+edit.memberId+':'+edit.date+':'+managerNoticeSlot(edit.at),tone:'manager',date:edit.date,memberId:edit.memberId});
   if(inbox.missing?.names.length)lines.push({key:'missing:'+inbox.missing.date+':'+inbox.missing.names.length,tone:'missing',date:inbox.missing.date});
  }
  return lines;
 }
 /** Which lines a device notification announces: the ones not announced before in this browser (kept per member, at most 100 keys), and
- *  only those worth a notification (a due plan from 20:00, a late or returned plan, a plan waiting for the reviewer); the first check in a
- *  browser that remembers nothing announces nothing (the card shows them). */
+ *  only those worth a notification (a due plan from 22:00, a late or returned plan, a plan waiting for the reviewer, the supervisor's 23:00
+ *  reminder, a change by the sales manager); the first check in a browser that remembers nothing announces nothing (the card shows them). */
 export const PLAN_NOTICE_REMEMBER=100;
 export const planNoticeStorageKey=(memberId:string)=>'yourrest.daily-plans.seen:'+memberId;
 export function rememberedPlanNotices(raw:string|null|undefined):string[]|null{
@@ -356,6 +511,15 @@ export const PLAN_MESSAGES={
  sentNoDraft:'أُرسلت الخطة؛ عدّلها ثم أرسلها مرة أخرى.',
  approved:'الخطة معتمدة؛ لا يمكنك تعديلها. اطلب من المشرف إعادتها إليك إذا احتجت إلى تعديلها.',
  locked:'لا يمكنك حذف محطة أضافها المشرف أو عدّلها، ولا تغييرها.',
+ lockedManager:'لا يمكنك حذف محطة أضافها مدير المبيعات أو عدّلها، ولا تغييرها.',
+ removedBack:'حذف المشرف أو مدير المبيعات هذه المتابعة من الخطة؛ لا يمكن إعادتها.',
+ targetsFixedManager:'عدّل مدير المبيعات المستهدف؛ لا يمكن تغييره.',
+ reviewClosed:'انتهت مهلة المشرف لاعتماد الخطة أو تعديلها أو إعادتها عند الساعة 12:00 منتصف الليل؛ تبقى الخطة «غير معتمدة»، ويتصرف فيها مدير المبيعات وحده حتى نهاية يومها.',
+ managerStopFixed:'أضاف مدير المبيعات هذه المحطة أو عدّلها؛ لا يمكن للمشرف تغييرها أو حذفها.',
+ managerRemovedBack:'حذف مدير المبيعات هذه المتابعة من الخطة؛ لا يمكن للمشرف إعادتها.',
+ managerStopOrder:'رتّب مدير المبيعات محطاته في هذه الخطة؛ لا يمكن للمشرف تغيير موضعها.',
+ managerTargetsFixed:'عدّل مدير المبيعات المستهدف؛ لا يمكن للمشرف تغييره.',
+ managerDecidedReturn:'اعتمد مدير المبيعات هذه الخطة أو عدّلها أو أعادها؛ القرار له، ولا يمكن للمشرف إعادتها إلى المندوب.',
  notSent:'لم تُرسل خطة لهذا اليوم بعد.',
  cannotApprove:'يُعتمد ما أُرسل ولم يُعتمد بعد. حدّث الصفحة.',
  cannotEdit:'لا يمكن تعديل الخطة الآن. حدّث الصفحة.',

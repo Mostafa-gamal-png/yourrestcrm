@@ -4,6 +4,40 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Daily plans: midnight deadline, the supervisor's window, «غير معتمدة», the sales manager's edits, and «خطتي» (2026-11-22, no migration, no Android change)
+
+- **Asked.** The owner, 2026-11-22: port GSCO 2.13.86 (GSCO's owner, 2026-11-21: «خلى الخطة المشرف يعتمدها قبل 12 مش 10», «تعديل المشرف
+  ميقدرش المندوب يعدله مدير المبيعات هو اللى يعدله», «سيب متابعاتى زى مهى وخلى فيه شاشة لخطتى … يضغط على كل عنصر مطلوب يفتح المتابعة
+  بتاعته»), keeping every Yourrest difference (Friday off; the representative's bar العملاء، الخريطة، الزيارات، المتابعات، مستهدفي، المزيد;
+  «خطة الغد» and mold requests in «المزيد»; no «حسابي» tab). Guide 9-أس.
+- **Midnight for every day.** A plan is due at 12:00 midnight Riyadh at the start of its day (`PLAN_DEADLINE_HOUR` 24 of the day before; 22:00
+  until now). Yourrest's Saturday rule of 2026-11-21 (midnight between Friday and Saturday) becomes every day's, so Saturday's deadline is
+  unchanged. The screens write it «منتصف الليل بين السبت والأحد (23 نوفمبر، 00:00)». A returned plan sent again after midnight is late; a send
+  made on the device before midnight keeps the device's time only when it arrives within two hours of it (`PLAN_LATE_SYNC_GRACE_MS`).
+- **The supervisor's window, «غير معتمدة».** The supervisor approves, edits or returns until that midnight; after it 409 with its words, and
+  the plan reads «غير معتمدة» everywhere (derived, never stored, no notice); the reviewer's day note stays open.
+- **The sales manager** (`isPlanSalesManager`: a reviewer whose role is manager or admin; GSCO's sales_manager/admin/owner) acts on their
+  team's plans until the plan's day ends, approved or not; editing an approved plan keeps the approval. Who decided each stop and the targets
+  is written in the review's audit line (`after.edits`) and read back (`planEditTrail`); no table. Their marks are purple. The member never
+  changes what either reviewer decided (stops, a follow-up removed — not even as a new stop on the customer —, targets, the sales manager's
+  even set back to the member's numbers); the supervisor never changes the sales manager's stops, their place, a follow-up they removed, their
+  targets, nor returns a plan they decided. Yourrest's notes are per reviewer, so the sales manager's comment is never overwritten.
+- **Reminders.** The member's device notice from 22:00 (20:00 before; the card still from 16:00); the supervisor's «خطط تنتظر اعتمادك» only
+  while the window is open, and from 23:00 a closing line; the sales manager's changes for the member (an edit of an approved plan) and the
+  member's direct supervisor, one notice per ten minutes, never to the sales manager themselves.
+- **«خطتي»** (`app/my-plan.tsx`, `lib/my-plan.ts`): today's plan in order with its state on top; a tap opens the customer's follow-up form
+  (the «المتابعات» checks), a done stop is marked «تمت» and opens the customer, a customer gone says so; the targets beside the achieved;
+  offline from the device's copy; turns at Riyadh midnight, never yesterday's plan. **Yourrest decision:** first in «المزيد» (before «خطة
+  الغد»), in the desktop menu, and the new home card «خطة اليوم» on the representative's first page opens it; «المتابعات» unchanged.
+- **Excel.** «غير معتمدة» in the status; «من عدّلها» on the stops; «عدّل مدير المبيعات المستهدف», «عدّل مدير المبيعات الخطة», «آخر تعديل من
+  مدير المبيعات» after «ترحيل جماعي».
+- **Not ported.** GSCO 2.13.86's ERP invoice unit conversion (wood/steel): Yourrest's ERP sales import (`lib/erp-sales.ts`) converts no units.
+- **Release.** No migration, no route: `--schema-baseline 26`, «MIGRATIONS: 26». Back with the code only: the 22:00 rule again for new sends,
+  the sales manager's marks read as the supervisor's, «خطتي» gone; stored late flags stay.
+- **Tests.** New `tests/daily-plans-midnight.mjs` (160), `tests/daily-plans-midnight-http.mjs` (65, release build), `tests/my-plan-browser.mjs`
+  (72, browser); updated `tests/daily-plans.mjs` (316), `tests/daily-plan-followups.mjs` (145), `tests/mobile-navigation-ui.mjs` (251),
+  `tests/daily-plans-http.mjs` (106), `tests/daily-plans-browser.mjs` (199).
+
 ## «خطة الغد»: follow-ups only, the late ones and their bulk move, «تغيير الموعد», the day's targets, and «أخرى» named (2026-11-22, migration 0025, no Android change)
 
 - **Asked.** The owner, 2026-11-22: port GSCO 2.13.85 (GSCO's owner, 2026-11-21: «خلى يقدر يضيف متابعات اليوم مع امكانية تغيير معاد وترحيل
