@@ -173,3 +173,20 @@
 .plan-row-targets,.plan-row-bulk{flex-basis:100%;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-foreground);overflow-wrap:anywhere;min-width:0}
 @media(pointer:coarse),(max-width:1100px){.plan-bulk-moves summary{min-height:44px}}
 @media(max-width:420px){.plan-target-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* 2026-11-22 (GSCO 2.13.86): «غير معتمدة», the supervisor's window, and the sales manager's marks in purple (in both themes). */
+.plan-chip.state-unapproved{background:#fff3df;color:#8a6420}
+.dark .plan-chip.state-unapproved{background:#3a2f17;color:#f3cf8a}
+.plan-chip.supervisor.manager{background:#efe9fb;color:#5b3aa6}
+.dark .plan-chip.supervisor.manager{background:#2d2445;color:#d9ccf7}
+.plan-stop.by-manager,.plan-edit-stop.manager{border-color:#b9a6e6;box-shadow:inset 4px 0 0 #7a5cc8}
+[dir="rtl"] .plan-stop.by-manager,[dir="rtl"] .plan-edit-stop.manager{box-shadow:inset -4px 0 0 #7a5cc8}
+.plan-review-window,.plan-alert-note,.plan-manager-note{margin:0;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.7;overflow-wrap:anywhere;min-width:0}
+.plan-review-window,.plan-alert-note{background:#fff3df;color:#8a6420}
+.dark .plan-review-window,.dark .plan-alert-note{background:#3a2f17;color:#f3cf8a}
+.plan-review-window.manager,.plan-manager-note{background:#efe9fb;color:#5b3aa6}
+.dark .plan-review-window.manager,.dark .plan-manager-note{background:#2d2445;color:#d9ccf7}
+.plan-meta-manager{color:#5b3aa6}
+.dark .plan-meta-manager{color:#d9ccf7}
+.plan-row-manager{flex-basis:100%;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#5b3aa6;overflow-wrap:anywhere;min-width:0}
+.dark .plan-row-manager{color:#d9ccf7}
