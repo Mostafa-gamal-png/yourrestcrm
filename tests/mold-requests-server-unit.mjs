@@ -262,6 +262,33 @@ try {
   const returned = sql.prepare("SELECT actor,detail FROM crm_audit WHERE record_id='mr-fin' AND action='mold-request:returned'").all();
   eq([returned.length, returned[0].actor, JSON.parse(returned[0].detail).reason, JSON.parse(returned[0].detail).label], [1, S.MOLD_PRODUCTION_ACTOR, 'ناقص ختم العميل على عرض السعر', 'أعادته المالية'], 'finance\'s return audited once, with its reason, however often it is pulled');
 
+  // ---- the approvals chain: a deferred payment with its terms, finance returns it, the representative corrects it, a lost answer
+  insert('mr-chain', {d: data(linked, {payment: 'deferred', paymentTerms: 'advance_before_shipping'})});
+  eq((await send('mr-chain')).kind, 'ok', 'a deferred request, the update of 2026-11-10 known');
+  eq([row('mr-chain').data.termsSent, mock.row('mr-chain').paymentTerms], [true, 'advance_before_shipping'], 'sent with its agreed terms, and the CRM keeps that it did (every resend the same bytes)');
+  mock.approve('mr-chain', 'sales'); mock.approve('mr-chain', 'production'); mock.financeReturn('mr-chain', 'الدفعة المقدمة غير واضحة');
+  jump += 61_000; await S.pullMoldStatuses(DB, [row2('mr-chain')], {link, force: true});
+  const lib = await import(path.join(out, 'lib/mold-requests.mjs'));
+  eq([lib.moldReturnedNow(row2('mr-chain')), row('mr-chain').remote.returned.reason, row('mr-chain').remote.waitingStep], [true, 'الدفعة المقدمة غير واضحة', 'sales'], 'finance returned it with its reason: it waits for the sales manager again');
+  sql.prepare("UPDATE crm_mold_requests SET data=json_set(data,'$.specs.quantity',2),outbox='send',next_attempt_at=? WHERE id='mr-chain'").run(iso());
+  outcome = await send('mr-chain');
+  const corrected = mock.row('mr-chain');
+  eq([outcome.kind, corrected.quantity, corrected.paymentTerms, typeof corrected.returned.correctedAt, row('mr-chain').data.termsSent], ['ok', 2, 'advance_before_shipping', 'string', true], 'the representative\'s correction taken by production, its terms kept');
+  const correctedAt = corrected.returned.correctedAt, orderNo = corrected.orderNo;
+  sql.prepare("UPDATE crm_mold_requests SET outbox='send',next_attempt_at=? WHERE id='mr-chain'").run(iso());
+  mock.loseNext('requests');
+  outcome = await send('mr-chain');
+  eq([outcome.kind, row('mr-chain').outbox], ['retry', 'send'], 'the same correction sent again and its answer lost: tried again on the timetable');
+  due('mr-chain');
+  eq([(await send('mr-chain')).kind, mock.row('mr-chain').returned.correctedAt, mock.row('mr-chain').orderNo, [...mock.state.rows.keys()].filter(id => id === 'mr-chain').length], ['ok', correctedAt, orderNo, 1], 'sent again after the cut: production takes it as a repeat (one request, nothing corrected twice, the same number)');
+  insert('mr-cut');
+  mock.loseNext('requests');
+  eq((await send('mr-cut')).kind, 'retry', 'a new request whose answer was lost');
+  const cutOrder = mock.row('mr-cut').orderNo;
+  ok(!row('mr-cut').last_error.notStored, 'it may have reached production: no longer editable');
+  due('mr-cut');
+  eq([(await send('mr-cut')).kind, mock.row('mr-cut').orderNo, calls('requests') > 0], ['ok', cutOrder, true], 'sent again: the same request at production, never a second one');
+
   // ---- the sales manager's waiting list within his regions
   mock.registerManual({customerNo: factoryNo, customerName: 'مصنع تجريبي'});
   mock.registerManual({customerNo: factoryNo + 50, customerName: 'مصنع خارج المنطقة'});
