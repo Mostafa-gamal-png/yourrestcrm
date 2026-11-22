@@ -41,7 +41,7 @@ const ar=value=>value,en=value=>'EN:'+value;
 eq(Object.keys(own),[],'lib/own-targets.ts is types only: it loads and exports nothing at run time');
 
 // ---------------------------------------------------------------------------------------------------- lib/kpi-gaps.ts
-const ids=K.operationalIndicators.map(i=>i.id),weightOf=id=>K.operationalIndicators.find(i=>i.id===id).weight;
+const ids=K.operationalIndicators.map(i=>i.id);
 const conduct=[...K.conductKeys];
 eq(K.operationalIndicators.reduce((n,i)=>n+i.weight,0),100,'the eighteen indicators weigh 100 together');
 const none=G.kpiMissing();
