@@ -494,5 +494,23 @@ await counted('the server reads the device time',async()=>{
  eq(V.duplicateRefusal('x').extra,{code:'DUPLICATE'},'a duplicate whose record is not named');
 });
 
+// Found by an independent mutation review (2026-11-22): a send that fails on the network stops the sync, so a later entry never overtakes
+// an earlier one; and a member never completes another member's entry kept on the same device (its body stays as it was).
+await counted('order after a failure, and another member\'s entry',async()=>{
+ await fresh();tick();await submit('visit',K(160));tick();await submit('visit',K(161));navigator.onLine=true;
+ afterCheck(()=>html(503));
+ eq(await O.flushOutbox(rep),{synced:0,blocked:0,pending:2},'the first send fails on the network: nothing more is sent in this sync');
+ eq([posts().length,job('rep-1:visit:'+K(161)).attempts],[1,0],'the second entry was not tried before the first');
+ eq((await O.flushOutbox(rep)).synced,2,'the next sync sends both, in order');
+ eq(posts().slice(1).map(call=>JSON.parse(call.body).createKey),[K(160),K(161)],'the earlier one first');
+ await fresh();tick();await submit('visit',K(162));navigator.onLine=true;
+ afterCheck(()=>json({error:'أدخل نتيجة الزيارة والإجراء التالي.'},400));await O.flushOutbox(rep);
+ const before=job('rep-1:visit:'+K(162));eq(before.status,'blocked','held for review');
+ storage.map.set(LOGOUT,'1');await S.lockOfflineSession();storage.map.delete(LOGOUT);
+ await S.saveOfflineSnapshot(snapshotOf(peer));server.member=peer;
+ await rejects(O.completeOfflineEntry('rep-1:visit:'+K(162),peer,{result:'من عضو آخر'}),/السجل غير متاح لهذا الحساب/,'another member cannot complete it');
+ eq([job('rep-1:visit:'+K(162)).body,job('rep-1:visit:'+K(162)).fingerprint],[before.body,before.fingerprint],'and its kept body is untouched');
+});
+
 eq(idb.stats.callbackErrors,[],'no storage callback threw');
 console.log(JSON.stringify({ok:true,checks,counts,realBrowser:false,network:'stand-in server (request key once)',storage:'scripts/lib/fake-browser-storage.mjs',clock:'fixed'}));
