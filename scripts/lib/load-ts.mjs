@@ -8,11 +8,13 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
 
+const folders=[];
+process.on('exit',()=>{for(const folder of folders)fs.rmSync(folder,{recursive:true,force:true});});
 export function createLoader(prefix,{replace={}}={}){
  const root=process.cwd(),runtime=path.join(root,'.sites-runtime');
  fs.mkdirSync(runtime,{recursive:true});
  const out=fs.mkdtempSync(path.join(runtime,prefix+'-')),seen=new Set();
- process.on('exit',()=>fs.rmSync(out,{recursive:true,force:true}));
+ folders.push(out);
  const stubs=new Map();
  for(const [name,code] of Object.entries(replace)){const file=path.join(out,'stub-'+stubs.size+'.mjs');fs.writeFileSync(file,code);stubs.set(name,file);}
  function compile(relative){
