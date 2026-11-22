@@ -25,7 +25,8 @@ const eq=(actual,expected,message)=>{assert.deepEqual(actual,expected,message);c
 const throws=(fn,pattern,message)=>{assert.throws(fn,pattern,message);checks++;};
 
 const NEW=['0023_work_areas.sql','0024_local_streets.sql'],DOWN=['0024_local_streets.down.sql','0023_work_areas.down.sql'].map(name=>path.join(root,'drizzle','rollback',name));
-const all=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort(),before=all.filter(name=>name<NEW[0]);
+// A later release's 0025 (the plans' targets, 2026-11-22) is left out: this is 0023 and 0024's own check, on the schema they were made for.
+const all=fs.readdirSync(path.join(root,'drizzle')).filter(name=>/^\d+.*\.sql$/.test(name)).sort().filter(name=>name<=NEW[1]),before=all.filter(name=>name<NEW[0]);
 eq([all.length,all.slice(-2),before.length,before.at(-1)],[25,NEW,23,'0022_daily_plans.sql'],'twenty-five migrations, the newest the work areas and the local streets; the live release has 23');
 eq(DOWN.map(file=>fs.existsSync(file)),[true,true],'the down migrations ship beside them, in drizzle/rollback/');
 const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
