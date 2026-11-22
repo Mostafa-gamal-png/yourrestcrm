@@ -12,6 +12,7 @@ import {isSalesRequest,type Member,type Row} from './crm';
 import {handAddedDay} from './new-customers';
 import {memberFollowups,parseTargets,sameTargets,hasTarget,NO_TARGETS,TARGET_MESSAGES,type PlanBulkMove,type PlanTargets} from './daily-plan-followups';
 import {bulkAuditRange,bulkMoveOf} from './followup-next-dates-server';
+import {queuedBeforeRelease,rulesSince} from './release-gate';
 import type {JourneyContext} from './journeys-server';
 import {PLAN_EXPORT_MAX_DAYS,PLAN_MESSAGES,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REASON_MAX,PLAN_REASON_MIN,PLAN_AHEAD_DAYS,addDays,isPlanWorkingDay,memberLockProblems,memberMayEdit,memberStops,nextPlanDay,parsePlanStops,planCompletion,planDateProblem,planDay,planDeadline,planLate,planSentAt,planText,preparesPlans,reviewerMayApprove,reviewerMayEdit,reviewerMayReturn,reviewerStops,reviewsPlans,type PlanActivity,type PlanCounts,type PlanExport,type PlanInbox,type PlanInboxDay,type PlanList,type PlanListRow,type PlanNoteView,type PlanState,type PlanStatus,type PlanStopInput,type PlanView,type StoredStop,type SupervisorState} from './daily-plans';
 
@@ -300,10 +301,8 @@ function auditStatement(c:JourneyContext,mutation:string,recordId:string,action:
  *  without `targets` comes from a page loaded before: refused («حُدّث التطبيق؛ أعد تحميل الصفحة.», 409), unless it is a send the device's
  *  outbox kept from before this release was installed (its device time earlier than planRulesSince: the later of the release day and this
  *  server's start, so a restart by the host only widens the window), which keeps the earlier rules and the plan's targets as they are. */
-export const PLAN_RULES_RELEASED='2026-11-22T00:00:00.000Z';
-const serverStarted=new Date().toISOString();
-export const planRulesSince=()=>Date.parse(serverStarted)>Date.parse(PLAN_RULES_RELEASED)?serverStarted:PLAN_RULES_RELEASED;
-export const legacyPlanSaveAllowed=(capturedAt:string|null|undefined)=>!!capturedAt&&Date.parse(capturedAt)<Date.parse(planRulesSince());
+export const planRulesSince=rulesSince;
+export const legacyPlanSaveAllowed=queuedBeforeRelease;
 /** The stops a writer adds (an id the plan does not hold, one taken out by a reviewer, or a customer changed) must be follow-ups of the plan's
  *  member: a customer of theirs with an open follow-up (lib/daily-plan-followups.ts memberFollowups, what «خطة الغد» offers). */
 function checkFollowupStops(c:JourneyContext,existing:readonly StoredStop[],sent:readonly PlanStopInput[],memberId:string,today:string){

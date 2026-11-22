@@ -1,5 +1,6 @@
 // «استيراد المستهدفات والمتابعات من قوالب Excel» (the owner, 2026-11-16, item 8 of the GSCO comparison list; the rules of each kind in
 // lib/record-import.ts). GET /api/record-import gives the template, filled with what the reader may import (their people and the month's
+import {LOSS_MESSAGES,lossDetailProblem} from './loss-reason-other';
 // targets in force; their customers whose follow-up is open); POST reads the uploaded file on the server (lib/erp-sales.ts readWorkbookSheets)
 // and either previews it (writes nothing) or imports it.
 // - Rights: the targets as editing them on the targets page (the administrator or a sales manager, «تحرير» on «المستهدفات وتقييم الأداء»,
@@ -206,6 +207,9 @@ async function planFollowups(c:Context,rows:ImportRow[],L:Say):Promise<Planned<F
    const parsed=customerFollowupSchema.safeParse({type,date,result:cells.result||'',salesStage:stage||'',invoiceOutcome:hasQuotation?(stage==='won'?'invoiced':stage==='lost'?'lost':'pending'):'pending',nextAction:closed?'':cells.nextAction||'',nextDate:closed?'':nextDate||'',lossReason:stage==='lost'?lossReason||'':'',lossDetails:stage==='lost'?cells.lossDetails||'':'',recontactDate:'',recontactAction:''});
    if(!parsed.success)refuse(parsed.error.issues.map(issue=>L(issue.message,SCHEMA_EN[issue.message]||'A value is missing or not valid.')).join(' • '));
    const input=parsed.data!;
+   // «أخرى»: its details name the reason in 3 to 200 characters (2026-11-22, lib/loss-reason-other.ts), as the follow-up form asks.
+   const lossProblem=input.salesStage==='lost'?lossDetailProblem(input.lossReason,input.lossDetails):'';
+   if(lossProblem)refuse(L(lossProblem,lossProblem===LOSS_MESSAGES.required?'Write the loss reason when choosing “Other”.':'Write the loss reason in 3 to 200 characters.'));
    const recontact=readRecontact({date:importDay(cells.recontactDate||'')??cells.recontactDate,action:cells.recontactAction},input.salesStage,input.date,day);
    if(recontact&&'error' in recontact)refuse(L(recontact.error,RECONTACT_EN[recontact.error]||'The re-contact date is not valid.'));
    if(!current||!canExecuteCustomerFollowup(current))refuse(L('لا توجد متابعة مفتوحة لهذا العميل؛ تحتاج زيارة سابقة فيها إجراء قادم وموعد متابعة.','This customer has no open follow-up; it needs a previous contact with a next action and date.'));

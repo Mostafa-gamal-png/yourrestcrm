@@ -1,4 +1,6 @@
 import {loadAuthorizedVisitAttachment,visitAttachmentWriteGuard} from '@/lib/visit-file-access';
+import {lossDetailProblem} from '@/lib/loss-reason-other';
+import {queuedBeforeRelease} from '@/lib/release-gate';
 import {readJsonBody,isRecord} from '@/lib/crm-server';
 import {activeServiceCase} from '@/lib/customer-service';
 import {requireSalesRole,requireCell} from '@/lib/crm-server';
@@ -44,6 +46,10 @@ export async function POST(req:Request){try{
  if(hasQuotation&&input.salesStage==='won'&&input.invoiceOutcome!=='invoiced')throw new CRMError('أكد تحوّل عرض السعر إلى فاتورة عند إغلاق البيع');
  if(hasQuotation&&input.invoiceOutcome==='invoiced'&&input.salesStage!=='won'||hasQuotation&&input.invoiceOutcome==='lost'&&input.salesStage!=='lost'||hasQuotation&&input.salesStage==='lost'&&input.invoiceOutcome!=='lost')throw new CRMError('نتيجة عرض السعر يجب أن تطابق مرحلة البيع');
  if(!hasQuotation&&input.invoiceOutcome!=='pending')throw new CRMError('لا يوجد عرض سعر مسجل لهذا العميل');
+ // «أخرى»: «اذكر سبب الخسارة» in 3 to 200 characters (2026-11-22, GSCO 2.13.85; lib/loss-reason-other.ts); an entry the device kept from before
+ // the update keeps the earlier rule (something written), so it never sticks.
+ const lossProblem=input.salesStage==='lost'?lossDetailProblem(input.lossReason,input.lossDetails):'';
+ if(lossProblem&&!queuedBeforeRelease(offline?.capturedAt))throw new CRMError(lossProblem);
  const closed=followupClosed(input.salesStage),request=visitRequest(source,c.visible)||(source?.kind==='opportunity'?source:undefined);
  // «موعد إعادة التواصل» (lib/followup-recontact.ts): a lost follow-up may keep a re-contact date and its action; no other stage takes one. The day
  // it may not precede: today in Riyadh, or the day an entry queued on the device was recorded.

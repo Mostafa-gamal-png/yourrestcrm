@@ -9,6 +9,7 @@ import {classificationHiddenFrom,classificationSchemaFields,hideClassification} 
 import {STRENGTH_VALUES} from './opportunity-strength';
 import {capacitySchemaFields} from './customer-capacity';
 import {contactSchemaFields} from './customer-contacts';
+import {freeLossReasonProblem} from './loss-reason-other';
 export const stages = ['new','specs','technical','quoted','negotiation','won','lost'] as const;
 export const stageLabels:Record<string,string> = {new:'تحديد الاحتياج',specs:'جمع المواصفات',technical:'مراجعة فنية',quoted:'عرض سعر',negotiation:'تفاوض',won:'تم الفوز',lost:'تم الفقد'};
 export const roles:Record<string,string> = {admin:'مدير النظام',manager:'مدير المبيعات',supervisor:'مشرف المبيعات',rep:'مندوب المبيعات',marketing:'مسؤول تسويق',customer_service_manager:'مدير خدمة العملاء',customer_service:'ممثل خدمة العملاء'};
@@ -52,6 +53,8 @@ export const schemas={
  if((v.hasRequest?!['won','lost'].includes(v.stage):v.followupStatus==='open')&&(!v.nextAction||!v.nextDate))c.addIssue({code:'custom',message:'المتابعة المفتوحة تحتاج الإجراء القادم وموعد المتابعة'});
  if(v.hasRequest&&v.stage==='won'&&(!v.orderRef||v.value===null||!v.closedAt))c.addIssue({code:'custom',message:'الفوز يحتاج مرجع الطلب والقيمة النهائية وتاريخ الإغلاق'});
  if(v.hasRequest&&v.stage==='lost'&&(!v.lossReason||!v.closedAt))c.addIssue({code:'custom',message:'حدد سبب الفقد وتاريخ الإغلاق'});
+ // «أخرى» as an opportunity's free-text reason names it: «أخرى: <النص>», 3 to 200 characters (2026-11-22, GSCO 2.13.85; lib/loss-reason-other.ts).
+ if(v.stage==='lost'&&freeLossReasonProblem(v.lossReason))c.addIssue({code:'custom',message:freeLossReasonProblem(v.lossReason)});
  if(v.technicalStatus==='approved'&&!v.technicalNotes)c.addIssue({code:'custom',message:'أضف ملاحظات الاعتماد الفني'});
  }),
  activity:z.object({visitWorkflow:z.literal('customer-v1').optional(),responsibleId:short,customerStage:short,salesStage:z.union([z.enum(stages),z.literal('')]).optional(),strength:z.union([z.enum(STRENGTH_VALUES),z.literal('')]).optional(),requestedProducts:z.array(z.string().trim().min(1).max(250)).max(30).default([]),hasCompetitor:z.boolean().default(false),competitorName:short,competitorNotes:notes,competitorFileId:short,competitorFileName:short,customerNeeds:notes,moldNeedBy:optionalDate.optional(),requestId:short,requestSnapshot:z.record(z.unknown()).optional(),type:z.enum(['visit','call','email','whatsapp']),date,summary:required,result:short,outcome:z.enum(['pending','effective','followup','noresponse']).default('pending'),nextAction:short,nextDate:optionalDate,notes,location:short,latitude:z.number().nullable().optional(),longitude:z.number().nullable().optional(),locationSource:z.enum(['device']).optional(),locationCapturedAt:timestamp,locationAccuracy:z.number().finite().min(0).optional(),startedAt:timestamp,endedAt:timestamp,visitNumber:z.number().int().positive().optional(),durationSeconds:z.number().int().min(0).nullable().optional(),durationReview:z.boolean().optional(),performedBy:short,recordedByEmail:short}),

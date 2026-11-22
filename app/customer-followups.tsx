@@ -1,5 +1,6 @@
 'use client';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
+import {LOSS_DETAIL_MAX,LOSS_MESSAGES,LOSS_OTHER,lossDetailProblem} from '@/lib/loss-reason-other';
 import {Loader2,CheckCircle2} from 'lucide-react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
@@ -82,6 +83,9 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,membe
   e.preventDefault();if(lock.current||initial||uploadLock.current)return;
   if(!savedReceipt.current&&!retryPending&&!customer){setError(say('العميل غير متاح. أعد فتح المتابعة من قائمته.','The customer is unavailable. Reopen the follow-up from the list.'));return;}
   if(!savedReceipt.current&&!retryPending&&!canExecuteCustomerFollowup(source)){setError('افتح الزيارة السابقة وحدد الإجراء القادم وموعد المتابعة أولًا.');return;}
+  // «أخرى»: «اذكر سبب الخسارة» in 3 to 200 characters, checked here too, so an entry kept on the device is never refused later (lib/loss-reason-other.ts).
+  const lossProblem=!savedReceipt.current&&!retryPending&&data.salesStage==='lost'?lossDetailProblem(data.lossReason,data.lossDetails):'';
+  if(lossProblem){setError(t(lossProblem));return;}
   if(!savedReceipt.current&&!retryPending&&place.wants&&(!place.fix||place.view.blocked)){setError(place.view.message||place.error||say('انتظر تحديد موقع الجهاز أو اضغط تحديث موقع الجهاز.','Wait for the device location, or tap Refresh device location.'));return;}
   lock.current=true;setBusy(true);setError('');
   try{
@@ -118,7 +122,7 @@ export function CustomerFollowupDialog({initial,customerId:seed,records,me,membe
     <details className="visit-sales-details" open={salesOpen} onToggle={event=>setSalesOpen(event.currentTarget.open)}><summary><span>{say('مرحلة البيع وتفاصيل إضافية','Sales stage & more')}</span><span className="badge">{t(stageLabels[data.salesStage])||say('اختياري','Optional')}</span></summary><div className="form-grid visit-extended-fields">
      {hasQuotation&&<label className="field"><span>{t('هل تحوّل عرض السعر إلى فاتورة؟')}</span><Pick label="هل تحوّل عرض السعر إلى فاتورة؟" value={data.invoiceOutcome} onChange={value=>{if(savedReceipt.current||retryPending||lock.current)return;setDirty(true);setData(previous=>({...previous,invoiceOutcome:value,salesStage:value==='invoiced'?'won':value==='lost'?'lost':followupClosed(previous.salesStage)?'quoted':previous.salesStage}));}} options={invoiceOutcomes}/></label>}
      <label className="field"><span>{t('مرحلة البيع بعد المتابعة')}</span><Pick label="مرحلة البيع بعد المتابعة" value={data.salesStage} onChange={stageChanged} options={hasQuotation?Object.fromEntries(Object.entries(stageLabels).filter(([id])=>!followupClosed(id)||id===data.salesStage)):stageLabels}/></label>
-     {data.salesStage==='lost'&&<><label className="field"><span>{t('سبب الفقد')} <b>*</b></span><Pick label="اختر سبب الفقد" value={data.lossReason} onChange={value=>change('lossReason',value)} options={Object.fromEntries(followupLossReasons.map(reason=>[reason,reason]))}/></label><VoiceField label="تفاصيل سبب الفقد" value={data.lossDetails} onChange={value=>change('lossDetails',value)} required={data.lossReason==='أخرى'} multiline/>
+     {data.salesStage==='lost'&&<><label className="field"><span>{t('سبب الفقد')} <b>*</b></span><Pick label="اختر سبب الفقد" value={data.lossReason} onChange={value=>change('lossReason',value)} options={Object.fromEntries(followupLossReasons.map(reason=>[reason,reason]))}/></label>{data.lossReason===LOSS_OTHER?<div data-loss-other><VoiceField label={LOSS_MESSAGES.label} value={data.lossDetails} onChange={value=>change('lossDetails',value)} required multiline inputProps={{maxLength:LOSS_DETAIL_MAX}}/><small className="form-note" data-loss-other-hint>{say('من 3 إلى 200 حرف.','3 to 200 characters.')}</small></div>:<VoiceField label="تفاصيل سبب الفقد" value={data.lossDetails} onChange={value=>change('lossDetails',value)} multiline/>}
       <fieldset className="full followup-recontact" data-recontact><legend>{say('إعادة التواصل (اختياري)','Re-contact (optional)')}</legend><p className="form-note">{say('حدد موعدًا لإعادة التواصل مع هذا العميل والإجراء حينها؛ تعود المتابعة في يومها ضمن «اليوم والمتأخرة». اتركهما فارغين لإغلاق المتابعة.','Set a date to contact this customer again and what to do then; the follow-up comes back on that day under «Today & overdue». Leave both empty to close the follow-up.')}</p>
        <VoiceField label="الإجراء عند إعادة التواصل" value={data.recontactAction||''} onChange={value=>change('recontactAction',value)} required={!!data.recontactDate}/>
        <label className="field"><span>{t('موعد إعادة التواصل')}{data.recontactAction?<> <b>*</b></>:null}</span><input type="date" data-recontact-date min={data.date>today()?data.date:today()} required={!!(data.recontactAction||'').trim()} value={data.recontactDate||''} onChange={event=>change('recontactDate',event.target.value)}/></label>
