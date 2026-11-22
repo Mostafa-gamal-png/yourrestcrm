@@ -31,7 +31,7 @@
     },
     "mold-customers": {
       "about": "The CRM's customer list and its salesmen list sent to the products application (lib/mold-customers-server.ts and lib/mold-salesmen-server.ts, started from /api/crm and the ERP import) and the hosting tools of the mold link.",
-      "sources": ["lib/mold-customers-hook.ts", "lib/mold-customers-server.ts", "lib/mold-salesmen.ts", "lib/mold-salesmen-server.ts", "portable/mold-salesmen.mjs", "tests/mold-salesmen*.mjs", "portable/mold-import.mjs", "scripts/mold-link/**", "tests/mold-customers*.mjs", "tests/mold-import.mjs", "tests/mold-link.mjs"],
+      "sources": ["lib/mold-customers-hook.ts", "lib/mold-customers-server.ts", "tests/mold-customers-server-unit.mjs", "lib/mold-salesmen.ts", "lib/mold-salesmen-server.ts", "portable/mold-salesmen.mjs", "tests/mold-salesmen*.mjs", "portable/mold-import.mjs", "scripts/mold-link/**", "tests/mold-customers*.mjs", "tests/mold-import.mjs", "tests/mold-link.mjs"],
       "tests": ["tests/mold-customers-http.mjs", "tests/mold-salesmen-http.mjs", "tests/mold-requests-http.mjs", "tests/erp-customers-http.mjs", "tests/marketing-role-http.mjs"]
     },
     "erp": {
