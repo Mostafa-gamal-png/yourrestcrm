@@ -812,6 +812,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/daily-plan-followups-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
+    },
+    {
       "file": "tests/work-areas-http.mjs",
       "gate": "release-build",
       "reason": "requires independent build"

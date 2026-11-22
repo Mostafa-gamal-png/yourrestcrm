@@ -42,7 +42,7 @@ try {
   }
   check((await anonymous('/api/mold-sign', {method: 'POST', body: {requestId: crypto.randomUUID(), token: forged, key: '0'.repeat(32), signer: 'عميل', png: 'AAAA', block: 'AAAA', blockAt: new Date().toISOString(), consent: true}})).json(), {error: gone, gone: true}, 'anonymous signing with a forged token: the neutral answer');
   check((await anonymous('/api/mold-sign', {method: 'POST', headers: {Origin: 'https://evil.example'}, body: {}})).status, 403, 'signing from another origin: refused');
-  const posts = ['/api/work-areas', '/api/daily-plans', '/api/service-role-tasks', '/api/record-import', '/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import', '/api/erp-quotes', '/api/trash', '/api/reviews', '/api/review-inbox', '/api/kpi-evidence/import', '/api/mold-photos?customerId=x&key=' + crypto.randomUUID(), '/api/mold-photos/delete'];
+  const posts = ['/api/work-areas', '/api/daily-plans', '/api/crm/opportunity-next-dates', '/api/service-role-tasks', '/api/record-import', '/api/crm', '/api/sales', '/api/targets', '/api/kpis', '/api/visits', '/api/followups', '/api/customer-followups', '/api/customer-service', '/api/support', '/api/complaints', '/api/service-kpi', '/api/journeys', '/api/mobile-route', '/api/mold-requests', '/api/mold-requests/design-files', '/api/mold-requests/design-files/delete', '/api/device-status', '/api/kpi-evidence', '/api/visit-files', '/api/customer-identities', '/api/erp-customers', '/api/customer-address', '/api/customers/import', '/api/machines/import', '/api/sales/import', '/api/erp-quotes', '/api/trash', '/api/reviews', '/api/review-inbox', '/api/kpi-evidence/import', '/api/mold-photos?customerId=x&key=' + crypto.randomUUID(), '/api/mold-photos/delete'];
   for (const url of posts) {
     check((await anonymous(url, {method: 'POST', body: {}})).status, 401, 'anonymous empty POST ' + url);
     check((await anonymous(url, {method: 'POST', body: {createKey: crypto.randomUUID(), requestId: crypto.randomUUID(), action: 'save', kind: 'customer', sourceHash: 'a'.repeat(64), rows: []}})).status, 401, 'anonymous shaped POST ' + url);
@@ -158,6 +158,8 @@ try {
     '/api/service-role-tasks': expect(['owner', 'csm', 'cs'], 400, 403),
     // An empty body is a reviewer's decision: a reviewer passes the role and fails validation (400); a representative and customer service 403.
     '/api/daily-plans': expect(management, 400, 403),
+    // «إضافة إلى خطة الغد» / «ترحيل إلى تاريخ…» (2026-11-22): the sales team (an empty body fails validation: 400); customer service 403.
+    '/api/crm/opportunity-next-dates': expect([...management, ...reps], 400, 403),
     // Drawing a work area: «رسم مناطق عمل المناديب» (the administrator and the sales managers) pass and fail validation (400); a supervisor,
     // a representative and customer service are refused (403) whatever they send.
     '/api/work-areas': expect(['owner', 'mgr', 'mgrw'], 400, 403)

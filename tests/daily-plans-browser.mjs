@@ -22,7 +22,7 @@ const require = createRequire(import.meta.url), {chromium} = require(process.env
 const members = [{id: 'owner', role: 'admin', name: 'مدير النظام'}, {id: 'mgr', role: 'manager', name: 'مدير المبيعات'},
   {id: 'sup', role: 'supervisor', sup: 'mgr', region: 'eastern', name: 'المشرف سالم'}, {id: 'rep1', role: 'rep', sup: 'sup', region: 'eastern', name: 'المندوب أحمد'},
   {id: 'mk1', role: 'marketing', sup: 'sup', region: 'eastern', name: 'مسؤول التسويق'}];
-const NAMES = ['المشرف سالم', 'المندوب أحمد', 'مسؤول التسويق', 'مدير المبيعات', 'مدير النظام', 'مصنع الشرق', 'مصنع الخليج', 'مصنع الدمام', 'خطة متوازنة', 'أضف مصنع الخليج زيارة'];
+const NAMES = ['المشرف سالم', 'المندوب أحمد', 'مسؤول التسويق', 'مدير المبيعات', 'مدير النظام', 'مصنع الشرق', 'مصنع الخليج', 'مصنع الدمام', 'خطة متوازنة', 'أضف مصنع الخليج زيارة', 'متابعة العرض', 'الدمام'];
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-daily-plans-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
 let checks = 0, browser, app;
@@ -44,6 +44,9 @@ try {
   const insert = (id, kind, parent, assignedTo, data) => app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version,mutation_id) VALUES(?,?,?,?,'الرئيسي',?,?,?,1,'fixture')").bind(id, kind, parent, assignedTo, JSON.stringify(data), now, now).run();
   for (const [id, name, phone] of [['c1', 'مصنع الشرق', '0551111111'], ['c2', 'مصنع الخليج', '0552222222'], ['c3', 'مصنع الدمام', '0553333333']])
     await insert(id, 'customer', null, 'rep1', {name, branch: 'الرئيسي', assignedTo: 'rep1', region: 'الشرقية', city: 'الدمام', customerStatus: 'نشط', phone, contact: 'م', location: '26.43, 50.03'});
+  // Since 2026-11-22 (GSCO 2.13.85) the plan's stops are the member's follow-ups: c1 and c2 are due on Thursday, c3 on Saturday.
+  const followups = async () => { for (const [id, date] of [['c1', D], ['c2', D], ['c3', S]]) await insert('f-' + id, 'activity', id, 'rep1', {type: 'call', date: W, summary: 'متابعة سابقة', result: 'تمت', performedBy: 'rep1', responsibleId: 'rep1', recordedByEmail: 'rep1@yourrest.org', nextAction: 'متابعة العرض', nextDate: date, visitWorkflow: 'customer-v1'}); };
+  await followups();
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1', '--disable-dev-shm-usage']});
   async function open(memberId, {viewport = SIZES.phone360, english = false, hash = '#plans', inApp = false} = {}) {
     const touch = viewport.width < 1100;
@@ -67,14 +70,9 @@ try {
   const tall = async (page, selector, label) => check(await page.locator(selector).evaluateAll(items => items.filter(item => { const box = item.getBoundingClientRect(); return box.height && box.height < 44; }).map(item => item.textContent.trim().slice(0, 30))), [], label + ': every button at least 44 px high');
   const arabicLeft = async (page, selector) => { let words = await page.locator(selector).innerText(); for (const name of [...NAMES].sort((a, b) => b.length - a.length)) words = words.split(name).join(''); return (words.match(/[؀-ۿ]+/g) || []).slice(0, 8); };
   const plan = async (memberId, date) => { const row = await app.db.prepare('SELECT status,late,first_sent_source AS source,version FROM crm_daily_plans WHERE member_id=? AND date=?').bind(memberId, date).first(); return row ? {...row} : null; };
-  const addStop = async (page, query, id, kind) => {
-    await page.locator('[data-plan-add]').click();
-    const row = page.locator('[data-plan-edit-stop]').last();
-    await row.locator('input[type=search]').fill(query);
-    await row.locator(`[data-plan-pick="${id}"]`).click();
-    if (kind) await row.locator('.plan-kind').filter({hasText: kind}).click();
-    return row;
-  };
+  // «إضافة متابعات الغد (N)» adds the follow-ups due on the plan's day; the targets are typed (required to send).
+  const addDue = async page => { await page.locator('[data-plan-due]').click(); return page.locator('[data-plan-edit-stop]'); };
+  const targets = async (page, opportunities, customers) => { await page.locator('[data-plan-target="opportunities"] input').fill(opportunities); await page.locator('[data-plan-target="customers"] input').fill(customers); };
 
   // ---- 1. The representative in the Android app on a 360 px phone: the card, the plan, the send.
   const rep = await open('rep1', {hash: '#customer', inApp: true});
@@ -89,9 +87,12 @@ try {
   check(await rep.locator(`[data-plan-day="${D}"]`).getAttribute('aria-pressed'), 'true', 'the card opens Thursday\'s plan');
   await rep.locator('[data-plan-deadline]').waitFor();
   check([await rep.locator('h1').count(), (await rep.locator('.page-heading h1').innerText()).trim()], [1, 'خطة الغد'], 'the representative\'s screen is «خطة الغد»');
-  await addStop(rep, 'الشرق', 'c1');
-  const second = await addStop(rep, 'الخليج', 'c2', 'اتصال');
+  const added = await addDue(rep);
+  check(await added.locator('[data-plan-customer]').evaluateAll(items => items.map(item => item.dataset.planCustomer)), ['c1', 'c2'], 'the two follow-ups due on Thursday added with one tap');
+  const second = added.nth(1);
+  await second.locator('.plan-kind').filter({hasText: 'اتصال'}).click();
   await second.locator('input[type=time]').fill('10:30');
+  await targets(rep, '٠', '1');
   await noSideways(rep, 'the representative\'s plan, 360 px');
   await tall(rep, '.daily-plans .btn, .daily-plans .icon-button, .daily-plans .plan-day', 'the plan editor');
   await shot(rep, 'plans-rep-editor-ar-360');
@@ -105,7 +106,8 @@ try {
   await rep.locator('[data-plan-add]').waitFor();
   await rep.context().setOffline(true);
   await rep.evaluate(() => window.dispatchEvent(new Event('offline')));
-  await addStop(rep, 'الدمام', 'c3', 'واتساب');
+  (await addDue(rep)).first().locator('.plan-kind').filter({hasText: 'واتساب'}).click();
+  await targets(rep, '0', '0');
   await rep.locator('[data-plan-send]').click();
   await rep.locator('[data-plan-queued="pending"]').waitFor();
   check(await plan('rep1', S), null, 'nothing reached the server offline');
@@ -125,10 +127,13 @@ try {
   await sup.locator('[data-plan-row="rep1"]').click();
   const detail = sup.locator(`[data-plan-card="rep1:${D}"]`);
   await detail.locator('[data-plan-edit]').click();
-  await addStop(sup, 'الدمام', 'c3', 'زيارة');
+  // The supervisor adds nothing since 2026-11-22: he changes the second stop to a visit and the targets.
+  await detail.locator('[data-plan-edit-stop="2"] .plan-kind').filter({hasText: 'زيارة'}).click();
+  await detail.locator('[data-plan-targets="edit"] [data-plan-target="opportunities"] input').fill('2');
   await detail.locator('[data-plan-save-edit]').click();
   await detail.locator('[data-plan-state="approved_edited"]').waitFor();
-  check(await detail.locator('[data-plan-stop]').evaluateAll(items => items.map(item => [item.querySelector('.plan-stop-title strong').textContent, !!item.querySelector('.plan-chip.supervisor')])), [['مصنع الشرق', false], ['مصنع الخليج', false], ['مصنع الدمام', true]], 'the added stop shows as the supervisor\'s');
+  check(await detail.locator('[data-plan-stop]').evaluateAll(items => items.map(item => [item.querySelector('.plan-stop-title strong').textContent, !!item.querySelector('.plan-chip.supervisor')])), [['مصنع الشرق', false], ['مصنع الخليج', true]], 'the changed stop shows as the supervisor\'s');
+  ok((await detail.locator('[data-plan-target-lines]').innerText()).includes('عدّل المشرف المستهدف'), 'the targets changed by the supervisor are marked');
   await sup.locator(`[data-plan-card="rep1:${D}"] [data-plan-note-input] textarea`).fill('خطة متوازنة');
   await sup.locator(`[data-plan-card="rep1:${D}"] [data-plan-note-save]`).click();
   // Saved: the reviewer's own note comes back with its «آخر حفظ» line.
@@ -195,6 +200,7 @@ try {
     app = await bootBuiltApp({members}, {tls: true, env: {NODE_OPTIONS: '--import ' + new URL('../scripts/lib/shifted-clock.mjs', import.meta.url).href, TEST_CLOCK_OFFSET_MS: String(offset)}});
     for (const [id, name, phone] of [['c1', 'مصنع الشرق', '0551111111'], ['c2', 'مصنع الخليج', '0552222222'], ['c3', 'مصنع الدمام', '0553333333']])
       await insert(id, 'customer', null, 'rep1', {name, branch: 'الرئيسي', assignedTo: 'rep1', region: 'الشرقية', city: 'الدمام', customerStatus: 'نشط', phone, contact: 'م', location: '26.43, 50.03'});
+    await followups();
   };
   await reboot(friday);
   for (const [label, viewport] of Object.entries(SIZES)) for (const english of [false, true]) {
