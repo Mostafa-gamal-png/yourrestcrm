@@ -222,7 +222,8 @@ try {
     check(await page.locator(`[data-plan-day="${SAT}"]`).getAttribute('aria-pressed'), 'true', tag + ': the card opens Saturday\'s plan');
     const deadline = await page.locator('[data-plan-deadline]').innerText();
     ok(deadline.includes(english ? 'midnight between Friday and Saturday' : 'منتصف الليل بين الجمعة والسبت') && deadline.includes('00:00') && !deadline.includes('22:00') && !deadline.includes('24:00') && !(english ? /late/i : /متأخرة/).test(deadline), tag + ': «' + deadline + '»');
-    ok((await page.locator('.plan-intro').innerText()).includes(english ? 'Saturday\'s plan before midnight between Friday and Saturday' : 'وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت'), tag + ': the page names Saturday\'s deadline');
+    // Since 2026-11-22 (GSCO 2.13.86) every plan is due at the midnight that begins its day: the page says so once, for every day.
+    ok((await page.locator('.plan-intro').innerText()).includes(english ? 'before 12:00 midnight, when the plan\'s day begins' : 'قبل الساعة 12:00 منتصف الليل الذي يبدأ به يوم الخطة'), tag + ': the page names the midnight deadline');
     // Each «آخر موعد للإرسال» of the plan (its line and the form's) is one element of plain text, not a flex box that would set its pieces
     // apart: the words, then the moment in brackets.
     check(await page.locator('[data-plan-deadline-words]').evaluateAll(items => items.map(item => [/flex|grid/.test(getComputedStyle(item).display), item.children.length, /^(منتصف الليل بين الجمعة والسبت|midnight between Friday and Saturday) \(\d{1,2} \S+[،,] 00:00\)$/.test(item.textContent)])), [[false, 0, true], [false, 0, true]], tag + ': the deadline written «words (day, 00:00)» as plain text');
