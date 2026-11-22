@@ -28,7 +28,7 @@ fs.writeFileSync(path.join(out,'auth.mjs'),`export async function getApplication
 function compile(relative){
  if(seen.has(relative))return;seen.add(relative);
  const src=path.join(root,relative),dest=path.join(out,relative.replace(/\.tsx?$/,'.mjs'));fs.mkdirSync(path.dirname(dest),{recursive:true});
- let code=ts.transpileModule(fs.readFileSync(src,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+ let code=ts.transpileModule(fs.readFileSync(src,'utf8'),{fileName:relative,compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  code=code.replace(/from (['"])([^'"]+)\1/g,(match,q,imp)=>{
   if(imp==='cloudflare:workers')return 'from '+JSON.stringify(path.join(out,'env.mjs'));
   if(imp==='@/app/application-auth')return 'from '+JSON.stringify(path.join(out,'auth.mjs'));
