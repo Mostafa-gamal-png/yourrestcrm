@@ -9,8 +9,9 @@ export const canUseSalesWorkspace=(role:string)=>['admin','manager','supervisor'
 export function canViewPage(role:string,view:string){
  // «المحذوفات» here is the role's ceiling (the matrix offers its «استعراض» and «تحرير»); who has it now is lib/permissions.ts trashScopeOf.
  // A marketing officer (lib/roles.ts) has a representative's pages. «خطط المناديب» (lib/daily-plans.ts): «خطة الغد» for a field member,
- // the team's plans for the administrator, a sales manager and a supervisor.
- if(isFieldRole(role))return ['customer','map','activity','followup','targets','mold-requests','trash','plans'].includes(view);
+ // the team's plans for the administrator, a sales manager and a supervisor. «خطتي» (2026-11-22, GSCO 2.13.86): a field member's plan of today
+ // in its order, part of the same screen (hidden with it: lib/permissions.ts pageAllowed, resolveCRMPage).
+ if(isFieldRole(role))return ['customer','map','activity','followup','targets','mold-requests','trash','plans','my-plan'].includes(view);
  // Customer complaints have a page of their own for customer service and administrators; sales members meet them on the Visits page.
  // The customer-service evaluation has one for the manager and the administrator; a representative meets theirs on the Complaints page.
  // Mold requests are for every role (the owner, 2026-11-01), customer service included.
@@ -49,7 +50,8 @@ export function hubTabsAllHidden(role:string,hidden:readonly string[]){
  *  member has «المحذوفات» now (lib/permissions.ts pageAllowed(me,'trash')); without it, the role's own (the administrator, the sales manager). */
 export function resolveCRMPage(role:string,view:string,hidden:readonly string[]=[],trashOpen=trashScope(role)!==null){
  const page=view==='factory'?'customer':['opportunity','service'].includes(view)?'activity':view==='reports'&&canUseSalesWorkspace(role)?'targets':view;
- const shown=(screen:string)=>!pageRetired(screen)&&canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen)&&(screen!=='targets'||!hubTabsAllHidden(role,hidden)));
+ // «خطتي» belongs to «خطط المناديب»: hidden with it.
+ const shown=(screen:string)=>!pageRetired(screen)&&canViewPage(role,screen)&&(screen!=='trash'||trashOpen)&&(role==='admin'||!hidden.includes(screen==='my-plan'?'plans':screen)&&(screen!=='targets'||!hubTabsAllHidden(role,hidden)));
  if(shown(page))return page;
  return ['activity','dashboard','customer','map','followup','mold-requests','complaints','targets','journeys','quote','sales','competitors','service-kpi','trash','team','plans'].find(shown)||'activity';
 }

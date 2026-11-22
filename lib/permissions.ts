@@ -279,8 +279,9 @@ export const can=(me:Who|null|undefined,screen:PermissionScreen,action:Permissio
 /** Whether the administrator hid this screen from the member (never from an administrator); «المستهدفات وتقييم الأداء» also when every tab
  *  of its hub is hidden and «رفع المبيعات» does not show (lib/access.ts hubTabsAllHidden). */
 export const pageHidden=(me:Who|null|undefined,screen:string)=>!!me&&me.role!=='admin'&&(!!me.access?.hidden.includes(screen as PermissionScreen)||screen==='targets'&&hubTabsAllHidden(me.role,me.access?.hidden||[]));
-/** Whether the screen shows for the member: the role has it, it is not hidden, and «المحذوفات» only for whom trashScopeOf gives it. */
-export const pageAllowed=(me:Who|null|undefined,screen:string)=>!!me&&canViewPage(me.role,screen)&&!pageHidden(me,screen)&&(screen!=='trash'||trashScopeOf(me)!==null);
+/** Whether the screen shows for the member: the role has it, it is not hidden, and «المحذوفات» only for whom trashScopeOf gives it. «خطتي»
+ *  (2026-11-22): a field member's own plan of today, with «خطط المناديب» shown and «إعداد خطة اليوم» on. */
+export const pageAllowed=(me:Who|null|undefined,screen:string):boolean=>screen==='my-plan'?!!me&&canViewPage(me.role,'my-plan')&&pageAllowed(me,'plans')&&can(me,'plans','add'):!!me&&canViewPage(me.role,screen)&&!pageHidden(me,screen)&&(screen!=='trash'||trashScopeOf(me)!==null);
 
 /** «المحذوفات» (the owner, 2026-11-10): the «حذف» cells whose deletions reach it (a deletion of /api/crm writes the «حذف» entry the page reads,
  *  lib/trash.ts). «إلغاء بيع» is not one: a voided sale stays in «المبيعات» with its reason (app/api/sales: status void, an «إلغاء بيع» entry). */

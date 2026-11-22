@@ -1,0 +1,45 @@
+/* «خطتي» and the home card «خطة اليوم» (2026-11-22, GSCO 2.13.86): the theme's colours, logical properties, 320 px first. */
+.my-plan{display:grid;gap:12px;min-width:0}
+.my-plan-banner,.my-plan-section{display:grid;gap:8px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--card);min-width:0}
+.my-plan-banner.tone-green{border-color:#9fd1b7}
+.my-plan-banner.tone-amber{border-color:#e7c98c}
+.my-plan-banner.tone-red{border-color:color-mix(in oklab,var(--destructive) 55%,var(--border))}
+.my-plan-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}
+.my-plan-head>div{display:grid;gap:2px;min-width:0}
+.my-plan-head h2{display:flex;align-items:center;gap:8px;margin:0;font-size:18px;font-weight:700}
+.my-plan-head small{font-size:13px;color:var(--muted-foreground)}
+.my-plan-head .btn{flex:none}
+.my-plan-note{margin:0;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.plan-chip.my-plan-status.tone-green{background:#e8f5ee;color:#2f7453}
+.plan-chip.my-plan-status.tone-amber{background:#fff3df;color:#8a6420}
+.plan-chip.my-plan-status.tone-blue{background:color-mix(in srgb,var(--primary) 14%,var(--card));color:var(--primary)}
+.plan-chip.my-plan-status.tone-red{background:color-mix(in oklab,var(--destructive) 14%,var(--card));color:var(--destructive)}
+.dark .plan-chip.my-plan-status.tone-green{background:#1f3a2d;color:#9fdcbc}
+.dark .plan-chip.my-plan-status.tone-amber{background:#3a2f17;color:#f3cf8a}
+.my-plan-section h3{display:flex;align-items:center;gap:6px;margin:0;font-size:15px;font-weight:700}
+.my-plan-stops{list-style:none;margin:0;padding:0;display:grid;gap:8px;min-width:0}
+.my-plan-stop{display:grid;gap:6px;min-width:0}
+.my-plan-stop-main{display:flex;align-items:flex-start;gap:10px;width:100%;min-width:0;min-height:44px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--foreground);font:inherit;text-align:start;cursor:pointer}
+.my-plan-stop-main:hover{border-color:var(--primary)}
+.my-plan-stop-main:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.my-plan-stop.completion-done .my-plan-stop-main,.my-plan-stop.completion-done_other .my-plan-stop-main{background:color-mix(in srgb,var(--muted) 60%,var(--card))}
+.my-plan-stop-body{display:grid;gap:4px;flex:1;min-width:0}
+.my-plan-stop-body strong{overflow-wrap:anywhere}
+.my-plan-stop-what{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:13px;color:var(--muted-foreground)}
+.my-plan-stop-note{font-size:12px;color:var(--muted-foreground);white-space:pre-wrap;overflow-wrap:anywhere}
+.my-plan-stop-badges{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.plan-chip.queued{background:color-mix(in srgb,var(--primary) 12%,var(--card));color:var(--primary)}
+.my-plan-stop-go{flex:none;display:inline-flex;align-items:center;gap:2px;align-self:center;max-width:96px;color:var(--primary);font-size:12px;font-weight:600;text-align:center}
+.my-plan-targets p{margin:0;font-size:14px;overflow-wrap:anywhere}
+.my-plan-actions{display:grid;gap:8px}
+.my-plan-home{display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:56px;margin-block-end:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--foreground);font:inherit;text-align:start;cursor:pointer}
+.my-plan-home.tone-green{border-color:#9fd1b7}
+.my-plan-home.tone-amber{border-color:#e7c98c}
+.my-plan-home:hover{border-color:var(--primary)}
+.my-plan-home:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.my-plan-home>svg{flex:none;color:var(--primary)}
+.my-plan-home-text{display:grid;gap:2px;flex:1;min-width:0}
+.my-plan-home-text strong{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:14px;overflow-wrap:anywhere}
+.my-plan-home-text small{font-size:12px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.my-plan-home-open{flex:none;display:inline-flex;align-items:center;gap:2px;color:var(--primary);font-size:12px;font-weight:600}
+@media(max-width:380px){.my-plan-stop-main{padding:10px;gap:8px}.my-plan-stop-go{max-width:72px}.my-plan-home-open{max-width:72px;text-align:center}}
