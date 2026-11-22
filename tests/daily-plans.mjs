@@ -175,6 +175,11 @@ sql.prepare("INSERT INTO crm_settings(id,owner_id) VALUES('company','u-owner')")
 const record=(id,kind,parent,assigned,data,when=created)=>sql.prepare('INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?,?,1)').run(id,kind,parent,assigned,'الرئيسي',JSON.stringify(data),when,when);
 for(const [id,name] of [['c1','مصنع الشرق'],['c2','مصنع الخليج'],['c3','مصنع الدمام'],['c4','مصنع الجبيل']])record(id,'customer',null,'rep1',{name,region:'الشرقية',city:'الدمام',location:'26.43, 50.03'});
 record('cW','customer',null,'west',{name:'مصنع الغرب',region:'الغربية',city:'جدة',location:'21.5, 39.2'});
+// Since 2026-11-22 (GSCO 2.13.85) a new stop is one of the member's follow-ups: each customer has an open one, recorded on 2026-11-16 (a day
+// before every plan day this file tries, so it closes no stop).
+record('m1','customer',null,'mk1',{name:'مصنع التسويق',region:'الشرقية',city:'الخبر',location:'26.3, 50.2'});record('r1','customer',null,'rep2',{name:'مصنع المندوب الثاني',region:'الشرقية',city:'الخبر',location:'26.3, 50.2'});
+for(const [id,owner] of [['m1','mk1'],['r1','rep2'],['cW','west']])record('f-'+id,'activity',id,owner,{type:'call',date:'2026-11-16',summary:'متابعة سابقة',result:'تمت',performedBy:owner,responsibleId:owner,nextAction:'متابعة العرض',nextDate:'2026-11-19',visitWorkflow:'customer-v1'},'2026-11-16T07:00:00.000Z');
+for(const id of ['c1','c2','c3','c4'])record('f-'+id,'activity',id,'rep1',{type:'call',date:'2026-11-16',summary:'متابعة سابقة',result:'تمت',performedBy:'rep1',responsibleId:'rep1',nextAction:'متابعة العرض',nextDate:'2026-11-19',visitWorkflow:'customer-v1'},'2026-11-16T07:00:00.000Z');
 const user=id=>{globalThis.testUser=id?{userId:'u-'+id,email:id+'@yourrest.org',fullName:id}:null;};
 const plans=await load('app/api/daily-plans/route.mjs'),inboxRoute=await load('app/api/daily-plans/inbox/route.mjs'),crm=await load('app/api/crm/route.mjs');
 const call=async(handler,{as,body,url='https://test.invalid/api/daily-plans',origin='https://test.invalid'},status=200)=>{
@@ -182,7 +187,9 @@ const call=async(handler,{as,body,url='https://test.invalid/api/daily-plans',ori
  const response=await handler(request),data=await response.json();eq(response.status,status,(as||'anonymous')+' '+url+' '+JSON.stringify(body||'').slice(0,160)+' -> '+JSON.stringify(data).slice(0,300));return data;
 };
 const get=(as,query,status)=>call(plans.GET,{as,url:'https://test.invalid/api/daily-plans?'+new URLSearchParams(query)},status);
-const post=(as,body,status)=>call(plans.POST,{as,body:{requestId:crypto.randomUUID(),...body}},status);
+// A page of 2026-11-22 always sends the day's targets with a save or a send (zero each, unless a check says otherwise).
+const TARGETS={opportunities:0,customers:0};
+const post=(as,body,status)=>call(plans.POST,{as,body:{requestId:crypto.randomUUID(),...((body.action==='save'||body.action==='send')&&!('targets' in body)?{targets:TARGETS}:{}),...body}},status);
 const send=(as,date,stops,baseVersion,extra={},status)=>post(as,{action:'send',date,stops,baseVersion,...extra},status);
 const review=(as,action,memberId,date,baseVersion,extra={},status)=>post(as,{action,memberId,date,baseVersion,...extra},status);
 const inbox=as=>call(inboxRoute.GET,{as,url:'https://test.invalid/api/daily-plans/inbox'});
@@ -264,20 +271,21 @@ at('2026-11-18 23:10');
 saved=await send('rep1',D,[wire(added4),wire(edited1),wire(own2),stop('c2','visit')],5);
 eq([saved.plan.state,saved.plan.late,saved.plan.firstSentAt,saved.plan.stops.map(item=>[item.position,item.customerId,item.kind,item.supervisorState])],['sent',false,'2026-11-18T18:30:00.000Z',[[1,'c4','call','added'],[2,'c1','visit','edited'],[3,'c2','call',''],[4,'c2','visit',''],[5,'c3','whatsapp','removed']]],'sent again after 22:00: still on time (the first send decides), the reviewer\'s stops kept');
 // Late: the marketing officer sends after the deadline.
-saved=await send('mk1',D,[stop('c1','call')],null);
+saved=await send('mk1',D,[stop('m1','call')],null);
 eq([saved.plan.state,saved.plan.late,saved.plan.firstSentSource],['sent',true,'server'],'a marketing officer\'s plan sent at 23:10 is accepted and late');
 // The device's clock: captured at 21:50, received the next morning → on time; 49 hours old → the receipt; ahead or another member → refused.
 at('2026-11-21 08:00');
 const S2='2026-11-21';// Saturday; its deadline is midnight at the end of Friday (Saturday 00:00).
-await send('rep2',S2,[stop('c1')],null,{offline:{memberId:'rep1',capturedAt:'2026-11-20T18:50:00.000Z'}},403);
-await send('rep2',S2,[stop('c1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-21T05:02:00.000Z'}},400);
-saved=await send('rep2',S2,[stop('c1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-20T18:50:00.000Z'}});
+await send('rep2',S2,[stop('r1')],null,{offline:{memberId:'rep1',capturedAt:'2026-11-20T18:50:00.000Z'}},403);
+await send('rep2',S2,[stop('r1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-21T05:02:00.000Z'}},400);
+saved=await send('rep2',S2,[stop('r1')],null,{offline:{memberId:'rep2',capturedAt:'2026-11-20T18:50:00.000Z'}});
 eq([saved.plan.late,saved.plan.firstSentAt,saved.plan.firstSentSource],[false,'2026-11-20T18:50:00.000Z','device'],'made on the device at 21:50 Friday, received Saturday morning: on time by the device\'s clock');
-saved=await send('mk1',S2,[stop('c1')],null,{offline:{memberId:'mk1',capturedAt:'2026-11-19T04:00:00.000Z'}});
+saved=await send('mk1',S2,[stop('m1')],null,{offline:{memberId:'mk1',capturedAt:'2026-11-19T04:00:00.000Z'}});
 eq([saved.plan.late,saved.plan.firstSentSource],[true,'server'],'a device time more than 48 hours old is not trusted: the receipt, late');
 // Completion on the plan's day, read by the supervisor.
 at('2026-11-19 18:00');
-const visit=(id,by,customer,type,time,extra={})=>record(id,'activity',customer,by,{type,date:D,summary:'تعريف',result:'تمت',performedBy:by,responsibleId:by,recordedByEmail:by+'@yourrest.org',...extra},'2026-11-19T'+time+':00.000Z');
+// Every visit carries its next step (Yourrest's rule), so its customer keeps an open follow-up for the plans of later days.
+const visit=(id,by,customer,type,time,extra={})=>record(id,'activity',customer,by,{type,date:D,summary:'تعريف',result:'تمت',performedBy:by,responsibleId:by,recordedByEmail:by+'@yourrest.org',nextAction:'متابعة',nextDate:'2026-11-23',...extra},'2026-11-19T'+time+':00.000Z');
 visit('v1','rep1','c1','visit','06:00');visit('v2','rep1','c4','whatsapp','07:00');visit('v3','rep1','c3','visit','08:00');visit('v4','rep1','c2','call','09:00');visit('v5','rep1','c2','call','10:00');visit('v6','rep2','c1','visit','06:30');
 current=await get('sup',{date:D,memberId:'rep1'});
 eq(current.stops.map(item=>[item.customerId,item.kind,item.completion,item.activityId]),[['c4','call','done_other','v2'],['c1','visit','done','v1'],['c2','call','done','v4'],['c2','visit','done_other','v5'],['c3','whatsapp','removed',null]],'the visits and contacts of the day close the stops, one each');
@@ -329,7 +337,7 @@ await get('sup',{from:'2026-11-01',to:'2026-12-02'},400);await get('sup',{from:'
  saved=await send('rep1',SA,[stop('c1')],null);
  eq([saved.plan.late,saved.plan.firstSentAt,saved.plan.deadline],[false,'2026-11-27T20:59:59.000Z','2026-11-27T21:00:00.000Z'],'sent at Friday 23:59:59: on time');
  held=RealDate.parse(SA+'T00:00:00+03:00');
- saved=await send('mk1',SA,[stop('c1','call')],null);
+ saved=await send('mk1',SA,[stop('m1','call')],null);
  eq([saved.plan.late,saved.plan.firstSentAt],[true,'2026-11-27T21:00:00.000Z'],'sent at Saturday 00:00:00: late');
  eq(R.planReminderLines(await inbox('rep2'),held).map(line=>line.key),['missing-today:'+SA],'Saturday 00:00: the member who has not sent it is told it is late');
  eq((await inbox('sup2')).missing,{date:SA,names:['اسم rep2']},'and the reviewer is told who has not sent it');

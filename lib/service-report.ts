@@ -1,4 +1,5 @@
 import {canReadService,serviceContacts,serviceLossReason,serviceState,type ServiceCase,type ServiceContext} from './customer-service';
+import {lossReasonGroup} from './loss-reason-other';
 import {caseProgress,SERVICE_TARGET_HOURS} from './service-queue';
 import {workingHoursBetween} from './working-hours';
 import {riyadhDate} from './visits';
@@ -46,7 +47,7 @@ export function serviceReport(c:ServiceContext,month:string,now:string=new Date(
   byState[state]=(byState[state]||0)+1;
   const type=serviceContactType(item),row=types.get(type)||{type,total:0,won:0,lost:0,open:0,winRate:null};
   row.total++;
-  if(state==='won'){won++;row.won++;}else if(state==='lost'){lost++;row.lost++;const reason=serviceLossReason(item,c.all)||'غير محدد';reasons.set(reason,(reasons.get(reason)||0)+1);}else{open++;row.open++;}
+  if(state==='won'){won++;row.won++;}else if(state==='lost'){lost++;row.lost++;const reason=lossReasonGroup(serviceLossReason(item,c.all))||'غير محدد';reasons.set(reason,(reasons.get(reason)||0)+1);}else{open++;row.open++;}
   types.set(type,row);
   const approvedAt=item.data.approvedAt,assignedAt=item.data.assignedAt;
   if(approvedAt)approval.push(workingHoursBetween(item.createdAt,approvedAt));

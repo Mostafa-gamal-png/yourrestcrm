@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {AlertCircle,ArrowDown,ArrowUp,BellRing,CalendarCheck,CalendarDays,CheckCheck,ClipboardCheck,Clock,Loader2,MessageSquareText,Pencil,Plus,RefreshCw,Save,Search,Send,Trash2,Undo2,Users,X} from 'lucide-react';
+import {AlertCircle,ArrowDown,ArrowUp,BellRing,CalendarCheck,CalendarClock,CalendarDays,CheckCheck,ClipboardCheck,Clock,ListChecks,Loader2,MessageSquareText,Pencil,Plus,RefreshCw,Save,Search,Send,Target,Trash2,Undo2,Users,X} from 'lucide-react';
 import {toast} from 'sonner';
 import {t,useLanguage} from '@/lib/i18n';
 import {submitJson} from '@/lib/client-submit';
@@ -9,12 +9,13 @@ import {listOutbox,subscribeOffline,type OfflineJob} from '@/lib/offline-store';
 import {can,pageAllowed} from '@/lib/permissions';
 import {isNativeTrackingApp} from '@/lib/native-tracking';
 import {isFieldRole} from '@/lib/roles';
-import {memberCanAccessRegion} from '@/lib/regions';
 import type {Member,Row} from '@/lib/crm';
 import {ACTIVITY_TYPE_TEXT} from '@/lib/supervisor-reviews';
 import {planTables} from '@/lib/list-export-plans';
-import {ACTIVITY_PLACE_TEXT,PLAN_AHEAD_DAYS,PLAN_FRIDAY_DEADLINE_HOUR,PLAN_INBOX_FOCUS_MS,PLAN_INBOX_INTERVAL_MS,PLAN_LATE_TEXT,PLAN_MAX_STOPS,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REASON_MAX,PLAN_REASON_MIN,PLAN_STATE_TEXT,PLAN_STOP_NOTE_MAX,STOP_COMPLETION_TEXT,STOP_KINDS,STOP_KIND_TEXT,SUPERVISOR_STATE_TEXT,addDays,isPlanWorkingDay,lockedForMember,memberMayEdit,nextPlanDay,planDateProblem,planDeadline,planDeadlineHour,planDeadlineWords,planNoticeStep,planNoticeStorageKey,planReminderLines,rememberedPlanNotices,reviewsPlans,riyadhDayOf,validPlanExport,validPlanInbox,validPlanList,validPlanView,type PlanInbox,type PlanList,type PlanReminderLine,type PlanState,type PlanStopView,type PlanView,type StopKind,type SupervisorState} from '@/lib/daily-plans';
+import {BULK_MESSAGES,NO_TARGETS,TARGET_KEYS,TARGET_MESSAGES,TARGET_TEXT,addToPlanText,bulkLastDay,bulkMovesTitle,bulkParts,bulkSummary,dueButtonText,followupsDueOn,hasTarget,lateLabel,memberFollowups,overdueFollowups,planTargetValid,readTarget,searchFollowups,stopsNeeded,stopsToAdd,targetFigure,targetLine,targetsProblem,toggleAll,toggleOne,validNextDateAnswer,visibleFollowups,type NextDateResult,type PlanBulkMove,type PlanFollowup,type PlanTargets} from '@/lib/daily-plan-followups';
+import {ACTIVITY_PLACE_TEXT,PLAN_AHEAD_DAYS,PLAN_FRIDAY_DEADLINE_HOUR,PLAN_INBOX_FOCUS_MS,PLAN_INBOX_INTERVAL_MS,PLAN_LATE_TEXT,PLAN_MAX_STOPS,PLAN_NOTE_MAX,PLAN_NOTE_MIN,PLAN_REASON_MAX,PLAN_REASON_MIN,PLAN_STATE_TEXT,PLAN_STOP_NOTE_MAX,STOP_COMPLETION_TEXT,STOP_KINDS,STOP_KIND_TEXT,SUPERVISOR_STATE_TEXT,addDays,isPlanWorkingDay,lockedForMember,memberMayEdit,nextPlanDay,planDateProblem,planDeadline,planDeadlineHour,planDeadlineWords,planDay,planNoticeStep,planNoticeStorageKey,planReminderLines,rememberedPlanNotices,reviewsPlans,riyadhDayOf,validPlanExport,validPlanInbox,validPlanList,validPlanView,withTargets,type PlanInbox,type PlanList,type PlanReminderLine,type PlanState,type PlanStopView,type PlanView,type StopKind,type SupervisorState} from '@/lib/daily-plans';
 import {ExportExcelButton} from './export-excel-button';
+import {FollowupDatePicker} from './followup-date-picker';
 import VoiceField from './voice-field';
 import './daily-plans.css';
 
@@ -76,11 +77,11 @@ function usePlanView(memberId:string,date:string,own:boolean){
    if(controller.signal.aborted)return;
    if(!validPlanView(body))throw new Error(say('تعذر تحميل الخطة.','Could not load the plan.'));
    if(own)store(cacheKey(memberId,date),JSON.stringify(body));
-   setState({key,plan:body,error:'',cached:false});
+   setState({key,plan:withTargets(body),error:'',cached:false});
   }).catch(error=>{
    if(controller.signal.aborted||error?.name==='AbortError')return;
    let cached:PlanView|null=null;
-   if(own){try{const value:unknown=JSON.parse(stored(cacheKey(memberId,date))||'null');cached=validPlanView(value)?value:null;}catch{cached=null;}}
+   if(own){try{const value:unknown=JSON.parse(stored(cacheKey(memberId,date))||'null');cached=validPlanView(value)?withTargets(value):null;}catch{cached=null;}}
    setState({key,plan:cached,error:errorText(error,say('تعذر تحميل الخطة.','Could not load the plan.')),cached:!!cached});
   });
   return()=>controller.abort();
@@ -89,7 +90,7 @@ function usePlanView(memberId:string,date:string,own:boolean){
  // While a new answer is on its way, the last plan of the same member and day stays on screen.
  const same=state.key.slice(0,state.key.lastIndexOf('|'))===memberId+'|'+date;
  const current=state.key===key?{...state,loading:false}:{key,plan:same?state.plan:null,error:'',cached:false,loading:true};
- const setPlan=useCallback((plan:PlanView)=>{if(own)store(cacheKey(plan.memberId,plan.date),JSON.stringify(plan));plansChanged();setState({key:plan.memberId+'|'+plan.date+'|'+revision,plan,error:'',cached:false});},[own,revision]);
+ const setPlan=useCallback((plan:PlanView)=>{if(own)store(cacheKey(plan.memberId,plan.date),JSON.stringify(plan));plansChanged();setState({key:plan.memberId+'|'+plan.date+'|'+revision,plan:withTargets(plan),error:'',cached:false});},[own,revision]);
  return {...current,reload:()=>setRevision(value=>value+1),setPlan};
 }
 
@@ -104,60 +105,181 @@ function usePlanPost(){
    const answer=await submitJson<{ok:true;plan:unknown}>('/api/daily-plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:last.current.id})},{language});
    last.current=null;
    if(!validPlanView(answer.plan))throw new Error(selectText(language,'الخادم لم يؤكد الحفظ. أعد المحاولة.','The server did not confirm the save. Try again.'));
-   return answer.plan;
+   return withTargets(answer.plan);
   }finally{setBusy('');}
  },[language]);
  return {post,busy};
-}
-
-// ---- the customer picker of a stop
-const normalize=(value:string)=>value.normalize('NFKD').replace(/[ً-ٰٟـ]/g,'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).toLowerCase().trim();
-const customerText=(row:Row)=>normalize([row.data.name,row.data.internalCode,row.data.code,row.data.city,row.data.phone,row.data.phone2,row.data.contact].filter(Boolean).join(' '));
-function CustomerPick({customers,value,name,disabled,onChange,label}:{customers:readonly Row[];value:string;name:string;disabled:boolean;onChange:(id:string)=>void;label:string}){
- const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en);
- const [query,setQuery]=useState(''),[open,setOpen]=useState(!value);
- const index=useMemo(()=>customers.map(row=>({row,text:customerText(row)})),[customers]);
- const terms=normalize(query).split(/\s+/).filter(Boolean),matches=terms.length?index.filter(entry=>terms.every(term=>entry.text.includes(term))).slice(0,6).map(entry=>entry.row):[];
- if(value&&!open)return <div className="plan-customer-chosen"><strong data-plan-customer={value}>{name||say('عميل غير متاح','Customer not available')}</strong>{!disabled&&<button type="button" className="btn subtle small" onClick={()=>{setOpen(true);setQuery('');}}><Pencil size={14} aria-hidden/>{say('تغيير','Change')}</button>}</div>;
- return <div className="plan-customer-search">
-  <label className="plan-field"><span>{label} <b aria-hidden="true">*</b></span><span className="plan-search-input"><Search size={16} aria-hidden/><input type="search" value={query} disabled={disabled} autoComplete="off" enterKeyHint="search" placeholder={say('اكتب اسم العميل أو رقمه أو جواله','Type the customer\'s name, code or mobile')} aria-label={label} onChange={event=>setQuery(event.target.value)}/></span></label>
-  {terms.length>0&&<ul className="plan-customer-matches" role="listbox" aria-label={say('العملاء المطابقون','Matching customers')}>{matches.length?matches.map(row=><li key={row.id}><button type="button" role="option" aria-selected={row.id===value} data-plan-pick={row.id} onClick={()=>{onChange(row.id);setOpen(false);setQuery('');}}><strong>{row.data.name}</strong><small>{[row.data.internalCode,row.data.code&&'ERP: '+row.data.code,row.data.city].filter(Boolean).join(' · ')}</small></button></li>):<li className="plan-muted">{say('لا يوجد عميل مطابق في مناطقك.','No matching customer in your regions.')}</li>}</ul>}
-  {value&&<button type="button" className="btn subtle small" onClick={()=>setOpen(false)}><X size={14} aria-hidden/>{say('إبقاء العميل المختار','Keep the chosen customer')}</button>}
- </div>;
 }
 
 // ---- the editor of the stops
 type EditStop={key:string;id?:string;customerId:string;kind:StopKind;time:string;note:string;state:SupervisorState};
 const fromView=(stops:readonly PlanStopView[]):EditStop[]=>stops.filter(stop=>stop.supervisorState!=='removed').map(stop=>({key:stop.id,id:stop.id,customerId:stop.customerId,kind:stop.kind,time:stop.time,note:stop.note,state:stop.supervisorState}));
 const wireStops=(stops:readonly EditStop[])=>stops.map(stop=>({...(stop.id?{id:stop.id}:{}),customerId:stop.customerId,kind:stop.kind,time:stop.time,note:stop.note.trim()}));
-const validDraft=(value:unknown):value is {baseVersion:number|null;stops:EditStop[];savedAt:string}=>!!value&&typeof value==='object'&&Array.isArray((value as {stops:unknown}).stops)&&(value as {stops:unknown[]}).stops.every(stop=>!!stop&&typeof stop==='object'&&typeof (stop as EditStop).key==='string'&&typeof (stop as EditStop).customerId==='string'&&(STOP_KINDS as readonly unknown[]).includes((stop as EditStop).kind));
+const validDraft=(value:unknown):value is {baseVersion:number|null;stops:EditStop[];targets?:unknown;savedAt:string}=>!!value&&typeof value==='object'&&Array.isArray((value as {stops:unknown}).stops)&&(value as {stops:unknown[]}).stops.every(stop=>!!stop&&typeof stop==='object'&&typeof (stop as EditStop).key==='string'&&typeof (stop as EditStop).customerId==='string'&&(STOP_KINDS as readonly unknown[]).includes((stop as EditStop).kind));
+const draftTargets=(value:unknown):PlanTargets|null=>{if(!value||typeof value!=='object')return null;const raw=value as Record<string,unknown>,one=(v:unknown)=>typeof v==='number'?v:null;return {opportunities:one(raw.opportunities),customers:one(raw.customers)};};
+/** A follow-up stop of the plan (2026-11-22): every new stop is one of the member's follow-ups, so its customer is fixed; the note starts as
+ *  the follow-up's next action. */
+const followupStop=(item:PlanFollowup):EditStop=>({key:crypto.randomUUID(),customerId:item.customerId,kind:'visit',time:'',note:item.nextAction.slice(0,PLAN_STOP_NOTE_MAX),state:''});
 
-/** mode 'member': a stop a reviewer added or changed is shown, never changed or deleted (it may move in the order); mode 'reviewer': every
- *  stop is editable (one of the member's taken out is kept as «حذفها المشرف» by the server). */
-function StopsEditor({stops,onChange,customers,names,mode,disabled}:{stops:EditStop[];onChange:(stops:EditStop[])=>void;customers:readonly Row[];names:ReadonlyMap<string,string>;mode:'member'|'reviewer';disabled:boolean}){
+/** mode 'member': a stop a reviewer added or changed is shown, never changed or deleted (it may move in the order); the member's own stops
+ *  carry «تغيير الموعد» of their follow-up (`reschedule`). mode 'reviewer': every stop is editable but its customer (one of the member's taken
+ *  out is kept as «حذفها المشرف» by the server). New stops come from the member's follow-ups only (2026-11-22): no free «إضافة محطة». */
+function StopsEditor({stops,onChange,names,mode,disabled,reschedule}:{stops:EditStop[];onChange:(stops:EditStop[])=>void;names:ReadonlyMap<string,string>;mode:'member'|'reviewer';disabled:boolean;reschedule?:(stop:EditStop)=>React.ReactNode}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en);
  const update=(key:string,patch:Partial<EditStop>)=>onChange(stops.map(stop=>stop.key===key?{...stop,...patch}:stop));
  const move=(index:number,by:number)=>{const next=[...stops],[item]=next.splice(index,1);next.splice(index+by,0,item);onChange(next);};
  return <div className="plan-editor">
-  {!stops.length&&<p className="plan-muted">{say('لا توجد محطات بعد. أضف أول زيارة أو اتصال أو تواصل واتساب.','No stops yet. Add the first visit, call or WhatsApp contact.')}</p>}
+  {!stops.length&&<p className="plan-muted" data-plan-empty>{mode==='member'?say('لم تُضف متابعات بعد. أضف متابعات يوم الخطة أو اختر من المتابعات المتأخرة، وحدّد المستهدف.','No follow-ups yet. Add the plan day\'s follow-ups or choose from the late ones, and set the targets.'):say('لا توجد متابعات في هذه الخطة؛ المستهدف وحده.','This plan has no follow-ups; the targets alone.')}</p>}
   <ol className="plan-edit-list">{stops.map((stop,index)=>{
    const locked=mode==='member'&&lockedForMember(stop.state);
    return <li key={stop.key} className={'plan-edit-stop'+(locked?' locked':'')} data-plan-edit-stop={index+1} data-plan-locked={locked?'yes':undefined}>
     <div className="plan-stop-head"><span className="plan-number">{index+1}</span>{stop.state&&stop.state!=='removed'&&<span className="plan-chip supervisor">{pair(SUPERVISOR_STATE_TEXT[stop.state],language)}</span>}
      <span className="plan-stop-tools"><button type="button" className="icon-button" disabled={disabled||index===0} aria-label={say('نقل المحطة لأعلى','Move the stop up')} onClick={()=>move(index,-1)}><ArrowUp size={17} aria-hidden/></button><button type="button" className="icon-button" disabled={disabled||index===stops.length-1} aria-label={say('نقل المحطة لأسفل','Move the stop down')} onClick={()=>move(index,1)}><ArrowDown size={17} aria-hidden/></button>{!locked&&<button type="button" className="icon-button danger" disabled={disabled} aria-label={say('حذف المحطة','Delete the stop')} data-plan-remove={index+1} onClick={()=>onChange(stops.filter(item=>item.key!==stop.key))}><Trash2 size={17} aria-hidden/></button>}</span></div>
     {locked?<p className="plan-locked-note">{say('أضافها المشرف أو عدّلها: لا يمكنك تغييرها أو حذفها.','Added or edited by the supervisor: you cannot change or delete it.')}</p>:null}
-    <CustomerPick customers={customers} value={stop.customerId} name={names.get(stop.customerId)||''} disabled={disabled||locked} label={say('العميل','Customer')} onChange={customerId=>update(stop.key,{customerId})}/>
+    <p className="plan-customer-chosen"><strong data-plan-customer={stop.customerId}>{names.get(stop.customerId)||say('عميل غير متاح','Customer not available')}</strong></p>
     <fieldset className="plan-kinds" disabled={disabled||locked}><legend>{say('النوع','Kind')}</legend><div>{STOP_KINDS.map(kind=><label key={kind} className={'plan-kind'+(stop.kind===kind?' chosen':'')}><input type="radio" name={'kind-'+stop.key} value={kind} checked={stop.kind===kind} onChange={()=>update(stop.key,{kind})}/><span>{pair(STOP_KIND_TEXT[kind],language)}</span></label>)}</div></fieldset>
     <div className="plan-stop-extra">
      <label className="plan-field"><span>{say('الوقت (اختياري)','Time (optional)')}</span><input type="time" value={stop.time} disabled={disabled||locked} onChange={event=>update(stop.key,{time:event.target.value})}/></label>
      <VoiceField className="plan-voice" label={say('ملاحظة (اختيارية)','Note (optional)')} value={stop.note} disabled={disabled||locked} contextKey={'plan-stop-'+stop.key} onChange={note=>update(stop.key,{note})} inputProps={{maxLength:PLAN_STOP_NOTE_MAX}}/>
     </div>
+    {mode==='member'&&!locked&&reschedule?reschedule(stop):null}
    </li>;
   })}</ol>
-  <button type="button" className="btn subtle" disabled={disabled||stops.length>=PLAN_MAX_STOPS} data-plan-add onClick={()=>onChange([...stops,{key:crypto.randomUUID(),customerId:'',kind:'visit',time:'',note:'',state:''}])}><Plus size={17} aria-hidden/>{say('إضافة محطة','Add a stop')}</button>
  </div>;
 }
-const stopsProblem=(stops:readonly EditStop[],say:(ar:string,en:string)=>string)=>!stops.length?say('أضف محطة واحدة على الأقل.','Add one stop at least.'):stops.some(stop=>!stop.customerId)?say('اختر العميل في كل محطة.','Choose the customer of every stop.'):'';
+const stopsProblem=(stops:readonly EditStop[],targets:PlanTargets,say:(ar:string,en:string)=>string)=>!stops.length&&!hasTarget(targets)?say(TARGET_MESSAGES.empty,'Add one follow-up at least or set a target above zero before sending.'):'';
+
+/** «المستهدف في يوم الخطة» (2026-11-22, GSCO 2.13.85 decision c): the new sales opportunities the member will record and the new customers
+ *  they will add on the plan's day, whole numbers 0 to 50 (Arabic digits read), required to send; the achieved numbers beside them from that
+ *  day on; a reviewer's change marked, with what the member had (decision d). A value typed that is not one is -1 for the form's check. */
+function TargetsCard({targets,repTargets,edited,actual,editable,onChange}:{targets:PlanTargets;repTargets:PlanTargets|null;edited:boolean;actual:{opportunities:number;customers:number}|null|undefined;editable:boolean;onChange?:(targets:PlanTargets)=>void}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),lang=language==='en'?'en':'ar';
+ const [text,setText]=useState(()=>({opportunities:targets.opportunities===null?'':String(targets.opportunities),customers:targets.customers===null?'':String(targets.customers)}));
+ const typed=(key:keyof PlanTargets,value:string)=>{setText(old=>({...old,[key]:value}));const read=readTarget(value);onChange?.({...targets,[key]:read===null?null:Number.isNaN(read)?-1:read});};
+ const wrong=(key:keyof PlanTargets)=>editable&&text[key].trim()!==''&&!planTargetValid(readTarget(text[key]));
+ return <section className="plan-targets" aria-label={say('المستهدف في يوم الخطة','The plan day\'s targets')} data-plan-targets={editable?'edit':'read'}>
+  <div className="plan-targets-head"><h4><Target size={17} aria-hidden/>{say('المستهدف في يوم الخطة','The plan day\'s targets')}</h4>{edited&&<span className="plan-chip supervisor" data-targets-edited>{say('عدّل المشرف المستهدف','The supervisor changed the targets')}</span>}</div>
+  {editable&&<p className="plan-muted">{say('ما تنوي تحقيقه في يوم الخطة؛ مطلوب قبل الإرسال ويمكن أن يكون صفرًا (الحد 50).','What you mean to achieve on the plan\'s day; required before sending and it may be zero (at most 50).')}</p>}
+  <div className="plan-target-grid">{TARGET_KEYS.map(key=><div key={key} className="plan-target" data-plan-target={key}>
+   {editable?<label className="plan-field"><span>{pair(TARGET_TEXT[key].field,language)} <b aria-hidden="true">*</b></span><input inputMode="numeric" maxLength={3} value={text[key]} aria-invalid={wrong(key)||undefined} placeholder="0" onChange={event=>typed(key,event.target.value)}/></label>
+    :<p className="plan-target-value"><span>{pair(TARGET_TEXT[key].short,language)}</span><b>{targets[key]===null?say('لم يُحدَّد','Not set'):targets[key]}</b></p>}
+   {wrong(key)&&<small className="plan-error" role="alert">{say(TARGET_MESSAGES.range,'The target is a whole number from 0 to 50.')}</small>}
+   {edited&&repTargets&&repTargets[key]!==targets[key]&&<small className="plan-target-was">{say('كان عند المندوب','The representative had')}: {repTargets[key]===null?say('لم يُحدَّد','Not set'):repTargets[key]}</small>}
+   {actual&&<small className="plan-target-actual" data-target-actual={actual[key]}>{targetLine(targets[key],actual[key],lang)}</small>}
+  </div>)}</div>
+ </section>;
+}
+/** The targets beside the achieved numbers, one line each (a plan as a reviewer reads it, and the member's plan they no longer edit). */
+function TargetsLine({plan}:{plan:PlanView}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),lang=language==='en'?'en':'ar';
+ if(plan.state==='missing'||plan.targets.opportunities===null&&plan.targets.customers===null&&!plan.actual)return null;
+ return <p className="plan-target-lines" data-plan-target-lines>{TARGET_KEYS.map(key=><span key={key} data-target-line={key}><b>{pair(TARGET_TEXT[key].short,language)}:</b> {targetLine(plan.targets[key],plan.actual?.[key],lang)}</span>)}{plan.targetsEdited&&<span className="plan-chip supervisor" data-targets-edited>{say('عدّل المشرف المستهدف','The supervisor changed the targets')}</span>}</p>;
+}
+/** «ترحيل جماعي: N متابعة» for the reviewer (GSCO 2.13.85 review B5): each follow-up the member moved from this day's plan, old date → new. */
+function BulkMovesList({moves}:{moves:readonly PlanBulkMove[]}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),lang=language==='en'?'en':'ar';
+ if(!moves.length)return null;
+ return <details className="plan-bulk-moves" data-bulk-moves={moves.length}>
+  <summary><CalendarClock size={15} aria-hidden/>{bulkMovesTitle(moves.length,lang)}</summary>
+  <ul>{moves.map(move=><li key={move.recordId+':'+move.at}><b>{move.customerName||say('عميل غير متاح','Customer not available')}</b> <span className="plan-bulk-dates" dir="auto">{move.from?dayLabel(move.from,language):'—'} {lang==='en'?'→':'←'} {dayLabel(move.to,language)}</span></li>)}</ul>
+ </details>;
+}
+
+/** POST /api/crm/opportunity-next-dates in parts of 200 (lib/followup-next-dates-server.ts): online only, an answer for each follow-up; the
+ *  page's records are read again after it, so the lists and the day load show the new dates. */
+function useNextDates({date,offline,onRefresh}:{date:string;offline:boolean;onRefresh?:()=>Promise<void>}){
+ const {language}=useLanguage(),[busy,setBusy]=useState(false),running=useRef(false);
+ const move=useCallback(async(chosen:readonly PlanFollowup[],next:string,purpose:'plan'|'reschedule'):Promise<NextDateResult[]|null>=>{
+  const say=(ar:string,en:string)=>selectText(language,ar,en);
+  if(offline||typeof navigator!=='undefined'&&navigator.onLine===false){toast.error(say(BULK_MESSAGES.offline,'Bulk actions need a network connection; no date was changed.'));return null;}
+  if(next>bulkLastDay(today())){toast.error(say(BULK_MESSAGES.far,'Follow-ups can be moved up to 30 days from today only.'));return null;}
+  if(running.current)return null;
+  running.current=true;setBusy(true);const results:NextDateResult[]=[];
+  try{for(const part of bulkParts(chosen)){const answer=await submitJson<unknown>('/api/crm/opportunity-next-dates',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({request_id:crypto.randomUUID(),next_date:next,purpose,plan_date:date,items:part.map(item=>({id:item.id,version:item.version}))})},{language});
+   if(!validNextDateAnswer(answer))throw new Error(say('الخادم لم يؤكد الحفظ. أعد المحاولة.','The server did not confirm the save. Try again.'));results.push(...answer.results);}}
+  catch(failure){toast.error(errorText(failure,say('تعذر الحفظ. أعد المحاولة.','Could not save. Try again.')));}
+  finally{running.current=false;setBusy(false);}
+  if(results.length&&onRefresh)await onRefresh().catch(()=>{});
+  return results;
+ },[date,offline,onRefresh,language]);
+ return {move,busy};
+}
+
+/** «تغيير الموعد» of one follow-up of the member's plan: the day-load picker of 2026-11-19; another day than the plan's takes the stop out of
+ *  the plan, after the member reads it on the button. In Yourrest a representative edits no saved visit, so it goes through the same route
+ *  as «ترحيل إلى تاريخ…» (one follow-up, the same 30 days). */
+function RescheduleStop({item,planDate,me,members,records,offline,busy,onSave}:{item:PlanFollowup;planDate:string;me:Member;members:readonly Member[];records:readonly Row[];offline:boolean;busy:boolean;onSave:(item:PlanFollowup,next:string)=>Promise<boolean>}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),now=today(),last=bulkLastDay(now);
+ const [open,setOpen]=useState(false),[value,setValue]=useState('');
+ if(!open)return <div className="plan-reschedule"><button type="button" className="btn subtle small" data-plan-reschedule-open={item.customerId} onClick={()=>{setValue(item.nextDate>=now?item.nextDate:planDate);setOpen(true);}}><CalendarClock size={15} aria-hidden/>{say('تغيير الموعد','Change the date')}</button>
+  <small className="plan-muted">{say('موعد المتابعة الحالي','Current follow-up date')}: {dayLabel(item.nextDate,language)}</small></div>;
+ const leaving=!!value&&value!==planDate,valid=!!planDay(value)&&value>=now&&value<=last;
+ return <div className="plan-reschedule-panel" data-plan-reschedule={item.customerId}>
+  <p className="plan-muted">{say('موعد المتابعة الحالي','Current follow-up date')}: <b>{dayLabel(item.nextDate,language)}</b></p>
+  <FollowupDatePicker id={'plan-reschedule-'+item.customerId} value={value} onChange={setValue} min={now} max={last} records={records as Row[]} customerId={item.customerId} me={me} members={members as Member[]}/>
+  {value>last&&<p className="plan-error" role="alert">{say(BULK_MESSAGES.far,'Follow-ups can be moved up to 30 days from today only.')}</p>}
+  {leaving&&valid&&<p className="plan-alert" role="note" data-plan-leaving><AlertCircle size={15} aria-hidden/>{say(`سيُنقل الموعد إلى ${dayLabel(value,'ar')} وتخرج المتابعة من خطة يوم ${dayLabel(planDate,'ar')}.`,`The date moves to ${dayLabel(value,'en')} and the follow-up leaves the plan of ${dayLabel(planDate,'en')}.`)}</p>}
+  <div className="plan-actions"><button type="button" className="btn primary small" disabled={busy||offline||!valid||value===item.nextDate} data-plan-reschedule-save onClick={async()=>{if(await onSave(item,value))setOpen(false);}}>{busy?<Loader2 size={15} className="spin" aria-hidden/>:<CalendarClock size={15} aria-hidden/>}{leaving?say('نقل الموعد وإخراجها من الخطة','Move the date and take it out of the plan'):say('حفظ الموعد','Save the date')}</button><button type="button" className="btn subtle small" disabled={busy} onClick={()=>setOpen(false)}>{say('إلغاء','Cancel')}</button></div>
+  {offline&&<p className="plan-muted">{say('تغيير الموعد يحتاج اتصالًا بالشبكة.','Changing the date needs a network connection.')}</p>}
+ </div>;
+}
+
+/** «المتابعات المتأخرة» (GSCO 2.13.85 decision b): the member's late follow-ups, oldest first, searched by the customer's name, code or city, a
+ *  page of 30 at a time (smooth with 300 and more on a phone), with checkboxes; «تحديد الكل» takes every result of the search, not only the
+ *  rows shown. «إضافة إلى خطة الغد» moves the chosen ones to the plan's day and adds them (decision a); «ترحيل إلى تاريخ…» moves them to one
+ *  day chosen with the day load (at most 30 days ahead). Both need a connection. */
+function OverduePicker({items,planDate,inPlan,room,offline,busy,me,members,records,onAdd,onMove,onClose}:{items:readonly PlanFollowup[];planDate:string;inPlan:ReadonlySet<string>;room:number;offline:boolean;busy:boolean;me:Member;members:readonly Member[];records:readonly Row[];
+ onAdd:(chosen:readonly PlanFollowup[])=>Promise<NextDateResult[]|null>;onMove:(chosen:readonly PlanFollowup[],date:string)=>Promise<NextDateResult[]|null>;onClose:()=>void}){
+ const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),lang=language==='en'?'en':'ar',now=today(),last=bulkLastDay(now);
+ const [query,setQuery]=useState(''),[selected,setSelected]=useState<ReadonlySet<string>>(()=>new Set<string>()),[pages,setPages]=useState(1);
+ const [moving,setMoving]=useState(false),[moveDate,setMoveDate]=useState(''),[report,setReport]=useState<{done:number;failures:{id:string;name:string;text:string}[]}|null>(null);
+ const found=useMemo(()=>searchFollowups(items,query),[items,query]);
+ const shown=visibleFollowups(found,pages),chosen=items.filter(item=>selected.has(item.id)),need=stopsNeeded(chosen,inPlan);
+ const allFound=found.length>0&&found.every(item=>selected.has(item.id)),blocked=offline||busy,tooFar=!!planDay(moveDate)&&moveDate>last;
+ async function run(job:Promise<NextDateResult[]|null>,names:ReadonlyMap<string,string>){
+  const results=await job;if(!results)return;
+  const summary=bulkSummary(results);
+  setReport({done:summary.done,failures:summary.failures.map(failure=>({id:failure.id,name:names.get(failure.id)||'',text:failure.text}))});
+  setSelected(old=>{const next=new Set(old);for(const id of summary.doneIds)next.delete(id);return next;});
+  if(summary.done)setMoving(false);
+ }
+ const names=()=>new Map(chosen.map(item=>[item.id,item.customerName] as const));
+ return <div className="plan-late" data-plan-overdue={items.length}>
+  <div className="plan-late-head"><b>{say('المتابعات المتأخرة','Late follow-ups')}</b><small>{say('الأقدم أولًا','Oldest first')} · {items.length}</small><button type="button" className="icon-button" aria-label={say('إغلاق القائمة','Close the list')} onClick={onClose}><X size={17} aria-hidden/></button></div>
+  <label className="plan-search-input"><Search size={16} aria-hidden/><input type="search" value={query} autoComplete="off" enterKeyHint="search" aria-label={say('ابحث في المتابعات المتأخرة','Search the late follow-ups')} placeholder={say('اسم العميل أو رمزه أو مدينته','The customer\'s name, code or city')} onChange={event=>{setQuery(event.target.value);setPages(1);}}/></label>
+  <div className="plan-late-tools">
+   <label className="plan-check"><input type="checkbox" checked={allFound} disabled={!found.length} data-overdue-all onChange={()=>setSelected(toggleAll(selected,found))}/><span>{query.trim()?say('تحديد كل نتائج البحث','Select every search result'):say('تحديد الكل','Select all')} ({found.length})</span></label>
+   <span className="plan-muted" data-overdue-selected={chosen.length}>{say('المحدد','Selected')}: <b>{chosen.length}</b></span>
+  </div>
+  {offline&&<p className="plan-alert" role="status" data-bulk-offline><AlertCircle size={15} aria-hidden/>{say(BULK_MESSAGES.offline,'Bulk actions need a network connection; no date was changed.')}</p>}
+  <ul className="plan-late-list">{shown.map(item=><li key={item.id}><label className={'plan-late-row'+(selected.has(item.id)?' selected':'')} data-overdue-row={item.customerId}>
+   <input type="checkbox" checked={selected.has(item.id)} onChange={()=>setSelected(toggleOne(selected,item.id))} aria-label={item.customerName}/>
+   <span className="plan-late-text"><b>{item.customerName||say('عميل غير متاح','Customer not available')}</b>
+    {(item.customerCode||item.erpCode)&&<small dir="auto">{[item.customerCode,item.erpCode&&'ERP: '+item.erpCode].filter(Boolean).join(' · ')}</small>}
+    <small className="plan-late-action">{say('الإجراء القادم','Next action')}: {item.nextAction}</small>
+    <span className="plan-late-meta"><span className={'plan-chip '+(item.daysLate?'late':'kind')} data-days-late={item.daysLate}>{item.daysLate?lateLabel(item.daysLate,lang):say('مستحقة اليوم','Due today')}</span><small>{dayLabel(item.nextDate,language)}</small>{item.area&&<small>{item.area}</small>}{inPlan.has(item.customerId)&&<span className="plan-chip supervisor">{say('عميلها في الخطة','Its customer is in the plan')}</span>}</span>
+   </span></label></li>)}</ul>
+  {!found.length&&<p className="plan-muted">{items.length?say('لا توجد متابعات مطابقة للبحث.','No follow-up matches the search.'):say('لا توجد متابعات متأخرة.','No late follow-ups.')}</p>}
+  {found.length>shown.length&&<button type="button" className="btn subtle" data-overdue-more={found.length-shown.length} onClick={()=>setPages(n=>n+1)}>{say('عرض المزيد','Show more')} ({found.length-shown.length})</button>}
+  {chosen.length>0&&!moving&&<>
+   <div className="plan-actions"><button type="button" className="btn primary" disabled={blocked||need>room} data-overdue-add onClick={()=>void run(onAdd(chosen),names())}>{busy?<Loader2 size={16} className="spin" aria-hidden/>:<Plus size={16} aria-hidden/>}{pair(addToPlanText(planDate,now),language)} ({chosen.length})</button>
+    <button type="button" className="btn subtle" disabled={blocked} data-overdue-move-open onClick={()=>{setMoving(true);setReport(null);}}><CalendarClock size={16} aria-hidden/>{say('ترحيل إلى تاريخ…','Move to a date…')}</button></div>
+   <p className={need>room?'plan-error':'plan-muted'}>{need>room?say(BULK_MESSAGES.room,'The plan has no room for every chosen follow-up; choose fewer or use «Move to a date…».'):say('يُنقل موعد المتابعات المحددة إلى يوم الخطة وتُضاف إليها.','The chosen follow-ups move to the plan\'s day and are added to it.')}</p>
+  </>}
+  {moving&&chosen.length>0&&<div className="plan-late-move" data-overdue-move>
+   <b>{say('ترحيل المتابعات المحددة إلى تاريخ','Move the chosen follow-ups to a date')} ({chosen.length})</b>
+   <FollowupDatePicker id="plan-bulk-date" label={say('التاريخ الجديد','The new date')} value={moveDate} onChange={setMoveDate} min={now} max={last} records={records as Row[]} customerId={chosen.length===1?chosen[0].customerId:undefined} moving={chosen.map(item=>item.customerId)} me={me} members={members as Member[]}/>
+   <p className={tooFar?'plan-error':'plan-muted'} data-bulk-limit={last}>{say(BULK_MESSAGES.far,'Follow-ups can be moved up to 30 days from today only.')}</p>
+   {moveDate===planDate&&<p className="plan-muted">{say('هذا يوم الخطة: تُضاف المتابعات إلى الخطة أيضًا.','This is the plan\'s day: the follow-ups are added to the plan too.')}</p>}
+   <div className="plan-actions"><button type="button" className="btn primary" disabled={blocked||!planDay(moveDate)||moveDate<now||tooFar||moveDate===planDate&&need>room} data-overdue-move onClick={()=>void run(onMove(chosen,moveDate),names())}>{busy?<Loader2 size={16} className="spin" aria-hidden/>:<CalendarClock size={16} aria-hidden/>}{say('ترحيل','Move')} ({chosen.length})</button>
+    <button type="button" className="btn subtle" disabled={busy} onClick={()=>setMoving(false)}>{say('إلغاء','Cancel')}</button></div>
+  </div>}
+  {report&&<div className={'plan-bulk-report'+(report.failures.length?' partial':'')} role="status" data-bulk-report={report.done+'/'+(report.done+report.failures.length)}>
+   <b>{say('تغيّر الموعد','Date changed')}: {report.done} / {report.done+report.failures.length}</b>
+   {report.failures.length>0&&<><span>{say('تعذر تغيير موعد هذه المتابعات:','These follow-ups could not be moved:')}</span><ul>{report.failures.map(failure=><li key={failure.id}><b>{failure.name||say('عميل غير متاح','Customer not available')}</b> — {t(failure.text)}</li>)}</ul></>}
+  </div>}
+ </div>;
+}
 
 // ---- reading a plan
 function StopsView({plan}:{plan:PlanView}){
@@ -199,21 +321,24 @@ function PlanMeta({plan}:{plan:PlanView}){
 }
 
 /** A reviewer's decisions on a plan: «اعتماد», «اعتماد مع تعديل» (the editor), «إعادة للمندوب» with a reason, and the one note on the day. */
-function ReviewActions({plan,customers,names,onSaved}:{plan:PlanView;customers:readonly Row[];names:ReadonlyMap<string,string>;onSaved:(plan:PlanView)=>void}){
+function ReviewActions({plan,names,onSaved}:{plan:PlanView;names:ReadonlyMap<string,string>;onSaved:(plan:PlanView)=>void}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),{post,busy}=usePlanPost();
  const [mode,setMode]=useState<'idle'|'edit'|'return'>('idle'),[stops,setStops]=useState<EditStop[]>([]),[reason,setReason]=useState(''),[note,setNote]=useState(plan.myNote?.note||''),[error,setError]=useState('');
+ // The reviewer may change the targets in «اعتماد مع تعديل» (GSCO 2.13.85 decision d): the change is marked for the member.
+ const [targets,setTargets]=useState<PlanTargets>(plan.targets),targetsChanged=targets.opportunities!==plan.targets.opportunities||targets.customers!==plan.targets.customers;
  const run=async(label:string,body:Record<string,unknown>,done:string)=>{setError('');try{const saved=await post(label,body);onSaved(saved);setMode('idle');toast.success(done);}catch(failure){setError(errorText(failure,say('تعذر الحفظ. أعد المحاولة.','Could not save. Try again.')));}};
  const base={memberId:plan.memberId,date:plan.date,baseVersion:plan.version};
  if(!plan.canApprove&&!plan.canReviewEdit&&!plan.canReturn&&!plan.canNote)return null;
  return <div className="plan-review" data-plan-review>
   {mode==='idle'&&(plan.canApprove||plan.canReviewEdit||plan.canReturn)&&<div className="plan-actions">
    {plan.canApprove&&<button type="button" className="btn primary" disabled={!!busy} data-plan-approve onClick={()=>void run('approve',{action:'approve',...base},say('اعتُمدت الخطة','The plan was approved'))}>{busy==='approve'?<Loader2 size={16} className="spin" aria-hidden/>:<CheckCheck size={16} aria-hidden/>}{say('اعتماد','Approve')}</button>}
-   {plan.canReviewEdit&&<button type="button" className="btn subtle" disabled={!!busy} data-plan-edit onClick={()=>{setStops(fromView(plan.stops));setMode('edit');setError('');}}><Pencil size={16} aria-hidden/>{say('اعتماد مع تعديل','Approve with edits')}</button>}
+   {plan.canReviewEdit&&<button type="button" className="btn subtle" disabled={!!busy} data-plan-edit onClick={()=>{setStops(fromView(plan.stops));setTargets(plan.targets);setMode('edit');setError('');}}><Pencil size={16} aria-hidden/>{say('اعتماد مع تعديل','Approve with edits')}</button>}
    {plan.canReturn&&<button type="button" className="btn subtle" disabled={!!busy} data-plan-return onClick={()=>{setReason('');setMode('return');setError('');}}><Undo2 size={16} aria-hidden/>{say('إعادة للمندوب','Return to the representative')}</button>}
   </div>}
   {mode==='edit'&&<div className="plan-review-edit"><p className="plan-muted">{say('تعديلاتك تُطبَّق فور الاعتماد وتظهر للمندوب على أنها من المشرف، ولا يستطيع تغييرها أو حذفها.','Your edits apply when you approve and show to the representative as the supervisor\'s; they cannot change or delete them.')}</p>
-   <StopsEditor stops={stops} onChange={setStops} customers={customers} names={names} mode="reviewer" disabled={!!busy}/>
-   <div className="plan-actions"><button type="button" className="btn primary" disabled={!!busy} data-plan-save-edit onClick={()=>{const problem=stopsProblem(stops,say);if(problem){setError(problem);return;}void run('edit',{action:'approve_edited',...base,stops:wireStops(stops)},say('اعتُمدت الخطة مع تعديلاتك','The plan was approved with your edits'));}}>{busy==='edit'?<Loader2 size={16} className="spin" aria-hidden/>:<CheckCheck size={16} aria-hidden/>}{say('اعتماد مع التعديلات','Approve with the edits')}</button><button type="button" className="btn subtle" disabled={!!busy} onClick={()=>{setMode('idle');setError('');}}>{say('إلغاء','Cancel')}</button></div></div>}
+   <StopsEditor stops={stops} onChange={setStops} names={names} mode="reviewer" disabled={!!busy}/>
+   <TargetsCard targets={targets} repTargets={plan.repTargets} edited={plan.targetsEdited} actual={null} editable onChange={setTargets}/>
+   <div className="plan-actions"><button type="button" className="btn primary" disabled={!!busy} data-plan-save-edit onClick={()=>{const problem=(targetsChanged?targetsProblem(targets,true):'')||stopsProblem(stops,targets,say);if(problem){setError(t(problem));return;}void run('edit',{action:'approve_edited',...base,stops:wireStops(stops),...(targetsChanged?{targets}:{})},say('اعتُمدت الخطة مع تعديلاتك','The plan was approved with your edits'));}}>{busy==='edit'?<Loader2 size={16} className="spin" aria-hidden/>:<CheckCheck size={16} aria-hidden/>}{say('اعتماد مع التعديلات','Approve with the edits')}</button><button type="button" className="btn subtle" disabled={!!busy} onClick={()=>{setMode('idle');setError('');}}>{say('إلغاء','Cancel')}</button></div></div>}
   {mode==='return'&&<div className="plan-review-return"><div data-plan-reason><VoiceField className="plan-voice" label={say('سبب الإعادة','Reason for returning')} marked multiline rows={3} value={reason} disabled={!!busy} contextKey={'plan-return-'+plan.memberId+plan.date} onChange={setReason} inputProps={{maxLength:PLAN_REASON_MAX}}/></div>
    <div className="plan-actions"><button type="button" className="btn primary" disabled={!!busy} data-plan-send-return onClick={()=>{if(reason.trim().length<PLAN_REASON_MIN){setError(say(`اكتب سبب الإعادة (${PLAN_REASON_MIN} أحرف على الأقل).`,`Write the reason (${PLAN_REASON_MIN} characters at least).`));return;}void run('return',{action:'return',...base,reason:reason.trim()},say('أُعيدت الخطة للمندوب','The plan was returned to the representative'));}}>{busy==='return'?<Loader2 size={16} className="spin" aria-hidden/>:<Undo2 size={16} aria-hidden/>}{say('إعادة للمندوب','Return to the representative')}</button><button type="button" className="btn subtle" disabled={!!busy} onClick={()=>{setMode('idle');setError('');}}>{say('إلغاء','Cancel')}</button></div></div>}
   {plan.canNote&&mode==='idle'&&<div className="plan-my-note"><div data-plan-note-input><VoiceField className="plan-voice" label={say('ملاحظتك على يوم المندوب','Your note on the representative\'s day')} multiline rows={2} value={note} disabled={!!busy} contextKey={'plan-note-'+plan.memberId+plan.date} onChange={setNote} inputProps={{maxLength:PLAN_NOTE_MAX}}/></div>
@@ -224,7 +349,7 @@ function ReviewActions({plan,customers,names,onSaved}:{plan:PlanView;customers:r
 
 /** One plan as a reviewer reads it (the plans page and «تقرير يوم المندوب»): the state, the stops with what became of them, the visits and
  *  contacts outside it, the notes and the reviewer's actions. */
-function PlanCard({plan,customers,names,onSaved,heading}:{plan:PlanView;customers:readonly Row[];names:ReadonlyMap<string,string>;onSaved:(plan:PlanView)=>void;heading?:string}){
+function PlanCard({plan,names,onSaved,heading}:{plan:PlanView;names:ReadonlyMap<string,string>;onSaved:(plan:PlanView)=>void;heading?:string}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en);
  return <article className={'plan-card state-'+plan.state} data-plan-card={plan.memberId+':'+plan.date}>
   <header><h3>{heading||say('خطة يوم','Plan of')+' '+dayLabel(plan.date,language)}</h3><PlanStateChip state={plan.state} late={plan.late}/></header>
@@ -232,19 +357,20 @@ function PlanCard({plan,customers,names,onSaved,heading}:{plan:PlanView;customer
   {plan.state==='missing'&&<p className="plan-missing" data-plan-missing>{isPlanWorkingDay(plan.date)?say('لم يُرسل المندوب خطة لهذا اليوم.','The representative sent no plan for this day.'):say('لم تُرسل خطة لهذا اليوم (ليس يوم عمل).','No plan was sent for this day (not a working day).')}</p>}
   {plan.state==='returned'&&plan.returnReason&&<p className="plan-return-reason" data-plan-return-reason><b>{say('سبب الإعادة','Reason for returning')}:</b> {plan.returnReason}</p>}
   <PlanSummary plan={plan}/>
+  <TargetsLine plan={plan}/>
+  <BulkMovesList moves={plan.bulkMoves}/>
   <StopsView plan={plan}/>
   <OutsideView plan={plan}/>
   <NotesView plan={plan}/>
-  <ReviewActions key={plan.memberId+'|'+plan.date+'|'+plan.version+'|'+(plan.myNote?.version||0)} plan={plan} customers={customers} names={names} onSaved={onSaved}/>
+  <ReviewActions key={plan.memberId+'|'+plan.date+'|'+plan.version+'|'+(plan.myNote?.version||0)} plan={plan} names={names} onSaved={onSaved}/>
  </article>;
 }
 
 const customerNames=(records:readonly Row[])=>new Map(records.filter(row=>row.kind==='customer').map(row=>[row.id,String(row.data.name||'')]));
-const planCustomers=(records:readonly Row[],member:Member|undefined)=>records.filter(row=>row.kind==='customer'&&!row.data._offlineState&&!row.data._offlineAcknowledged&&(!member||memberCanAccessRegion(member,row.data.region)));
 
 // ---- the member: «خطة الغد»
 const jobDate=(job:OfflineJob)=>{try{return String(JSON.parse(job.body||'{}').date||'');}catch{return '';}};
-function MemberPlans({me,records,offline,initialDate}:{me:Member;records:readonly Row[];offline:boolean;initialDate?:string}){
+function MemberPlans({me,records,members,offline,initialDate,onRefresh}:{me:Member;records:readonly Row[];members:readonly Member[];offline:boolean;initialDate?:string;onRefresh?:()=>Promise<void>}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),now=today(),next=nextPlanDay(now);
  const [date,setDate]=useState(()=>initialDate&&planDateProblem(initialDate,now)===null?initialDate:next);
  const view=usePlanView(me.id,date,true),plan=view.plan,[jobs,setJobs]=useState<OfflineJob[]>([]),pending=useRef(0),reload=useRef(view.reload);
@@ -258,7 +384,7 @@ function MemberPlans({me,records,offline,initialDate}:{me:Member;records:readonl
  const days=[...isPlanWorkingDay(now)?[now]:[],next,...Array.from({length:PLAN_AHEAD_DAYS},(_,index)=>addDays(now,index+1)).filter(day=>day!==next&&isPlanWorkingDay(day)).slice(0,2)];
  const state:PlanState=plan?.state||'missing';
  return <section className="daily-plans member" data-daily-plans="member">
-  <p className="plan-intro">{say('رتّب زياراتك واتصالاتك وتواصل الواتساب ليوم العمل التالي وأرسلها للمشرف قبل الساعة 22:00، وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت. الخطة لا تمنعك من تسجيل أي زيارة أو تواصل.','Arrange your visits, calls and WhatsApp contacts for the next working day and send them to your supervisor before 22:00; Saturday\'s plan before midnight between Friday and Saturday. The plan never stops you from recording any visit or contact.')}</p>
+  <p className="plan-intro">{say('رتّب متابعاتك ليوم العمل التالي (زيارة أو اتصال أو واتساب) وحدّد المستهدف، وأرسل الخطة للمشرف قبل الساعة 22:00، وخطة يوم السبت قبل منتصف الليل بين الجمعة والسبت. الخطة لا تمنعك من تسجيل أي زيارة أو تواصل.','Arrange your follow-ups for the next working day (a visit, a call or WhatsApp), set the targets, and send the plan to your supervisor before 22:00; Saturday\'s plan before midnight between Friday and Saturday. The plan never stops you from recording any visit or contact.')}</p>
   <div className="plan-days" role="group" aria-label={say('يوم الخطة','Plan day')}>{days.map(day=><button type="button" key={day} className={'plan-day'+(day===date?' chosen':'')} aria-pressed={day===date} data-plan-day={day} onClick={()=>setDate(day)}><CalendarDays size={15} aria-hidden/>{day===now?say('اليوم','Today'):dayLabel(day,language)}</button>)}
    <label className="plan-field plan-date-field"><span>{say('يوم آخر','Another day')}</span><input type="date" value={date} min={addDays(now,-30)} max={addDays(now,PLAN_AHEAD_DAYS)} onChange={event=>{if(event.target.value)setDate(event.target.value);}}/></label></div>
   <article className={'plan-card own state-'+state} data-plan-card={me.id+':'+date}>
@@ -268,32 +394,68 @@ function MemberPlans({me,records,offline,initialDate}:{me:Member;records:readonl
    {plan&&<PlanMeta plan={plan}/>}
    {plan?.state==='returned'&&<p className="plan-return-reason" data-plan-return-reason><b>{say('أعادها','Returned by')} {plan.reviewedByName}:</b> {plan.returnReason}</p>}
    {jobs.map(job=><p key={job.id} className={job.status==='blocked'?'plan-error':'plan-queued'} data-plan-queued={job.status} role={job.status==='blocked'?'alert':'status'}>{job.status==='blocked'?<>{say('لم تُرسل الخطة المحفوظة على الجهاز:','The plan kept on the device was not sent:')} {t(job.message)}</>:<>{say('الخطة محفوظة على الجهاز بانتظار الاتصال، بوقت','The plan is kept on the device waiting for the connection, with the time')} <time dateTime={job.capturedAt} dir="auto">{stamp(job.capturedAt,language)}</time></>}</p>)}
-   {(!view.loading||plan)&&<MemberPlanForm key={date+'|'+(plan?.version??'none')+'|'+(view.cached?'device':'server')} me={me} date={date} plan={plan} records={records} offline={offline} onPlan={view.setPlan}/>}
+   {(!view.loading||plan)&&<MemberPlanForm key={date+'|'+(plan?.version??'none')+'|'+(view.cached?'device':'server')} me={me} members={members} date={date} plan={plan} records={records} offline={offline} onPlan={view.setPlan} onRefresh={onRefresh}/>}
    {plan&&<NotesView plan={{...plan,myNote:null}}/>}
   </article>
  </section>;
 }
 /** The member's own plan of one day: the editor while they may change it (kept on the device as they type, restored while it was made on
- *  the version the server still has), or the plan as it is with what became of each stop. */
-function MemberPlanForm({me,date,plan,records,offline,onPlan}:{me:Member;date:string;plan:PlanView|null;records:readonly Row[];offline:boolean;onPlan:(plan:PlanView)=>void}){
+ *  the version the server still has), or the plan as it is with what became of each stop. Since 2026-11-22 (GSCO 2.13.85) the stops are the
+ *  member's follow-ups only: those due on the plan's day with one tap («إضافة متابعات الغد»), the late ones chosen from «المتابعات
+ *  المتأخرة» (moved to the plan's day, or moved to another date with «ترحيل إلى تاريخ…»), each with «تغيير الموعد»; and the day's targets. */
+function MemberPlanForm({me,members,date,plan,records,offline,onPlan,onRefresh}:{me:Member;members:readonly Member[];date:string;plan:PlanView|null;records:readonly Row[];offline:boolean;onPlan:(plan:PlanView)=>void;onRefresh?:()=>Promise<void>}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),now=today();
- const customers=useMemo(()=>planCustomers(records,me),[records,me]),names=useMemo(()=>customerNames(records),[records]);
+ const names=useMemo(()=>customerNames(records),[records]);
  const restored=useMemo(()=>{
   let draft:unknown=null;try{draft=JSON.parse(stored(draftKey(me.id,date))||'null');}catch{draft=null;}
-  return validDraft(draft)&&draft.baseVersion===(plan?.version??null)?draft.stops:null;
+  return validDraft(draft)&&draft.baseVersion===(plan?.version??null)?{stops:draft.stops,targets:draftTargets(draft.targets)}:null;
  // eslint-disable-next-line react-hooks/exhaustive-deps -- read once for this day and version (the parent's key)
  },[]);
- const [stops,setStops]=useState<EditStop[]>(()=>restored||(plan?fromView(plan.stops):[]));
- const [editing,setEditing]=useState(!!restored),[busy,setBusy]=useState(''),[error,setError]=useState(''),[openedAt]=useState(()=>Date.now());
+ const [stops,setStops]=useState<EditStop[]>(()=>restored?.stops||(plan?fromView(plan.stops):[]));
+ // The targets: once a reviewer changed them they are theirs, and the member's unsaved values give way (GSCO 2.13.85 review A6).
+ const [typedTargets,setTypedTargets]=useState<PlanTargets>(()=>restored?.targets||plan?.targets||NO_TARGETS);
+ const targets=plan?.targetsEdited?plan.targets:typedTargets;
+ const [editing,setEditing]=useState(!!restored),[busy,setBusy]=useState(''),[error,setError]=useState(''),[openedAt]=useState(()=>Date.now()),[picking,setPicking]=useState(false);
  const request=useRef<{id:string;payload:string}|null>(null);
  useEffect(()=>{if(!restored)store(draftKey(me.id,date),null);},[restored,me.id,date]);
  const editable=plan?plan.canEdit:can(me,'plans','add')&&planDateProblem(date,now)===null;
  const draftOnly=!plan||plan.state==='missing'||plan.state==='draft',removed=plan?.stops.filter(stop=>stop.supervisorState==='removed')||[];
- const change=(next:EditStop[])=>{setStops(next);setEditing(true);setError('');store(draftKey(me.id,date),JSON.stringify({baseVersion:plan?.version??null,stops:next,savedAt:new Date().toISOString()}));};
+ const keep=(next:{stops?:EditStop[];targets?:PlanTargets})=>{const value={baseVersion:plan?.version??null,stops:next.stops??stops,targets:next.targets??targets,savedAt:new Date().toISOString()};store(draftKey(me.id,date),JSON.stringify(value));};
+ const change=(next:EditStop[])=>{setStops(next);setEditing(true);setError('');keep({stops:next});};
+ const changeTargets=(next:PlanTargets)=>{setTypedTargets(next);setEditing(true);setError('');keep({targets:next});};
+ // The member's follow-ups (lib/daily-plan-followups.ts): due on the plan's day, and late; one stop per customer, at most PLAN_MAX_STOPS.
+ const followups=useMemo(()=>memberFollowups(records as Row[],me.id,today()),[records,me.id]);
+ const byCustomer=useMemo(()=>new Map(followups.map(item=>[item.customerId,item])),[followups]);
+ const inPlan=new Set(stops.map(stop=>stop.customerId)),room=Math.max(0,PLAN_MAX_STOPS-stops.length);
+ const due=followupsDueOn(followups,date).filter(item=>!inPlan.has(item.customerId)),overdue=useMemo(()=>overdueFollowups(followups,date,today()),[followups,date]);
+ const {move,busy:moving}=useNextDates({date,offline,onRefresh});
+ const addStops=(list:readonly PlanFollowup[])=>{if(list.length)change([...stops,...list.map(followupStop)]);};
+ const addDue=()=>{const list=stopsToAdd(due,inPlan,room);if(!list.length){toast.error(say('وصلت الخطة إلى الحد الأعلى للمحطات.','The plan has reached its most stops.'));return;}addStops(list);toast.success(say('أُضيفت المتابعات المستحقة إلى الخطة','The due follow-ups were added to the plan')+' ('+list.length+')');};
+ const addFromList=async(chosen:readonly PlanFollowup[])=>{
+  if(stopsNeeded(chosen,inPlan)>room){toast.error(say(BULK_MESSAGES.room,'The plan has no room for every chosen follow-up; choose fewer or use «Move to a date…».'));return null;}
+  const results=await move(chosen,date,'plan');if(!results)return null;
+  const done=new Set(bulkSummary(results).doneIds);addStops(stopsToAdd(chosen.filter(item=>done.has(item.id)),inPlan,room));
+  return results;
+ };
+ const moveFromList=async(chosen:readonly PlanFollowup[],next:string)=>{
+  if(next===date&&stopsNeeded(chosen,inPlan)>room){toast.error(say(BULK_MESSAGES.room,'The plan has no room for every chosen follow-up; choose fewer or use «Move to a date…».'));return null;}
+  const results=await move(chosen,next,'reschedule');if(!results)return null;
+  if(next===date){const done=new Set(bulkSummary(results).doneIds);addStops(stopsToAdd(chosen.filter(item=>done.has(item.id)),inPlan,room));}
+  return results;
+ };
+ /** «تغيير الموعد» of one stop's follow-up: another day than the plan's takes the stop out of the plan. */
+ const reschedule=async(item:PlanFollowup,next:string)=>{
+  const results=await move([item],next,'reschedule');if(!results)return false;
+  const summary=bulkSummary(results);
+  if(!summary.done){setError(t(summary.failures[0]?.text||say('تعذر الحفظ. أعد المحاولة.','Could not save. Try again.')));return false;}
+  if(next!==date){change(stops.filter(stop=>stop.customerId!==item.customerId));toast.success(say('نُقل موعد المتابعة وخرجت المحطة من الخطة؛ احفظ الخطة أو أرسلها.','The follow-up\'s date was moved and the stop left the plan; save or send the plan.'));}
+  else toast.success(say('حُفظ موعد المتابعة','The follow-up date was saved'));
+  return true;
+ };
  const keyOf=(body:Record<string,unknown>)=>{const payload=JSON.stringify(body);if(request.current?.payload!==payload)request.current={id:crypto.randomUUID(),payload};return request.current.id;};
  const send=async()=>{
-  const problem=stopsProblem(stops,say);if(problem){setError(problem);return;}
-  const body={action:'send',date,stops:wireStops(stops),baseVersion:plan?.version??null};
+  const problem=targetsProblem(targets,true)||stopsProblem(stops,targets,say);if(problem){setError(t(problem));return;}
+  const body={action:'send',date,stops:wireStops(stops),baseVersion:plan?.version??null,targets};
   setBusy('send');setError('');
   try{
    const result=await offlineSubmit<{plan?:unknown}>('/api/daily-plans',JSON.stringify({...body,requestId:keyOf(body)}),{me,language,label:say('خطة يوم ','Plan of ')+date,kind:'plan'});
@@ -305,8 +467,9 @@ function MemberPlanForm({me,date,plan,records,offline,onPlan}:{me:Member;date:st
   finally{setBusy('');}
  };
  const saveDraft=async()=>{
-  if(offline){store(draftKey(me.id,date),JSON.stringify({baseVersion:plan?.version??null,stops,savedAt:new Date().toISOString()}));toast.info(say('حُفظت المسودة على هذا الجهاز.','The draft is kept on this device.'));return;}
-  const body={action:'save',date,stops:wireStops(stops.filter(stop=>stop.customerId)),baseVersion:plan?.version??null};
+  const problem=targetsProblem(targets,false);if(problem){setError(t(problem));return;}
+  if(offline){keep({});toast.info(say('حُفظت المسودة على هذا الجهاز.','The draft is kept on this device.'));return;}
+  const body={action:'save',date,stops:wireStops(stops.filter(stop=>stop.customerId)),baseVersion:plan?.version??null,targets};
   setBusy('save');setError('');
   try{
    const answer=await submitJson<{plan:unknown}>('/api/daily-plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:keyOf(body)})},{language});
@@ -315,18 +478,25 @@ function MemberPlanForm({me,date,plan,records,offline,onPlan}:{me:Member;date:st
   }catch(failure){setError(errorText(failure,say('تعذر حفظ المسودة. أعد المحاولة.','Could not save the draft. Try again.')));}
   finally{setBusy('');}
  };
+ const rescheduleOf=(stop:EditStop)=>{const item=byCustomer.get(stop.customerId);return item?<RescheduleStop item={item} planDate={date} me={me} members={members} records={records} offline={offline} busy={moving} onSave={reschedule}/>:null;};
  return <>
   {!plan?.firstSentAt&&<p className="plan-deadline" data-plan-deadline><Clock size={15} aria-hidden/>{say('آخر موعد للإرسال','Send deadline')}: <DeadlineMoment date={date} deadline={planDeadline(date)} language={language}/>{openedAt>=Date.parse(planDeadline(date))?' · '+say('ما يُرسل الآن يُقبل ويُعلَّم «متأخرة».','Sent now, it is accepted and marked late.'):''}</p>}
   {editable?<>
-   {plan&&!draftOnly&&!editing&&<><PlanSummary plan={plan}/><StopsView plan={plan}/><div className="plan-actions"><button type="button" className="btn subtle" data-plan-member-edit onClick={()=>setEditing(true)}><Pencil size={16} aria-hidden/>{say('تعديل الخطة','Edit the plan')}</button></div></>}
-   {(draftOnly||editing)&&<><StopsEditor stops={stops} onChange={change} customers={customers} names={names} mode="member" disabled={!!busy}/>
-    {removed.length>0&&<p className="plan-muted">{say('حذف المشرف','The supervisor removed')}: {removed.map(stop=>stop.customerName||say('عميل غير متاح','Customer not available')).join('، ')}</p>}
+   {plan&&!draftOnly&&!editing&&<><PlanSummary plan={plan}/><TargetsLine plan={plan}/><StopsView plan={plan}/><div className="plan-actions"><button type="button" className="btn subtle" data-plan-member-edit onClick={()=>setEditing(true)}><Pencil size={16} aria-hidden/>{say('تعديل الخطة','Edit the plan')}</button></div></>}
+   {(draftOnly||editing)&&<><StopsEditor stops={stops} onChange={change} names={names} mode="member" disabled={!!busy||moving} reschedule={rescheduleOf}/>
+    <div className="plan-add" data-plan-add>
+     <button type="button" className="btn subtle" disabled={!!busy||!due.length||!room} data-plan-due={due.length} onClick={addDue}><CalendarCheck size={16} aria-hidden/>{pair(dueButtonText(date,now),language)} ({due.length})</button>
+     <button type="button" className={'btn '+(picking?'primary':'subtle')} disabled={!overdue.length} aria-expanded={picking} data-plan-overdue-count={overdue.length} onClick={()=>setPicking(value=>!value)}><ListChecks size={16} aria-hidden/>{say('المتابعات المتأخرة','Late follow-ups')} ({overdue.length})</button>
+    </div>
+    {picking&&overdue.length>0&&<OverduePicker key={date} items={overdue} planDate={date} inPlan={inPlan} room={room} offline={offline} busy={moving} me={me} members={members} records={records} onAdd={addFromList} onMove={moveFromList} onClose={()=>setPicking(false)}/>}
+    <TargetsCard key={(plan?.version??'none')+':'+(plan?.targetsEdited?'edited':'own')} targets={targets} repTargets={plan?.repTargets||null} edited={!!plan?.targetsEdited} actual={date<=now?plan?.actual:null} editable={!plan?.targetsEdited} onChange={changeTargets}/>
+    {removed.length>0&&<p className="plan-muted">{say('حذف المشرف','The supervisor removed')}: {removed.map(stop=>stop.customerName||say('عميل غير متاح','Customer not available')).join(say('، ',', '))}</p>}
     <div className="plan-actions sticky">
-     <button type="button" className="btn primary" disabled={!!busy||!stops.length} data-plan-send onClick={()=>void send()}>{busy==='send'?<Loader2 size={16} className="spin" aria-hidden/>:<Send size={16} aria-hidden/>}{draftOnly?say('إرسال للمشرف','Send to the supervisor'):say('إرسال التعديل للمشرف','Send the change to the supervisor')}</button>
-     {draftOnly&&<button type="button" className="btn subtle" disabled={!!busy} data-plan-save-draft onClick={()=>void saveDraft()}>{busy==='save'?<Loader2 size={16} className="spin" aria-hidden/>:<Save size={16} aria-hidden/>}{say('حفظ مسودة','Save a draft')}</button>}
-     {editing&&plan&&!draftOnly&&<button type="button" className="btn subtle" disabled={!!busy} onClick={()=>{store(draftKey(me.id,date),null);setStops(fromView(plan.stops));setEditing(false);setError('');}}>{say('إلغاء التعديل','Cancel the change')}</button>}
+     <button type="button" className="btn primary" disabled={!!busy||moving||!stops.length&&!hasTarget(targets)} data-plan-send onClick={()=>void send()}>{busy==='send'?<Loader2 size={16} className="spin" aria-hidden/>:<Send size={16} aria-hidden/>}{draftOnly?say('إرسال للمشرف','Send to the supervisor'):say('إرسال التعديل للمشرف','Send the change to the supervisor')}</button>
+     {draftOnly&&<button type="button" className="btn subtle" disabled={!!busy||moving} data-plan-save-draft onClick={()=>void saveDraft()}>{busy==='save'?<Loader2 size={16} className="spin" aria-hidden/>:<Save size={16} aria-hidden/>}{say('حفظ مسودة','Save a draft')}</button>}
+     {editing&&plan&&!draftOnly&&<button type="button" className="btn subtle" disabled={!!busy} onClick={()=>{store(draftKey(me.id,date),null);setStops(fromView(plan.stops));setTypedTargets(plan.targets);setEditing(false);setError('');}}>{say('إلغاء التعديل','Cancel the change')}</button>}
     </div></>}
-  </>:plan&&<><PlanSummary plan={plan}/><StopsView plan={plan}/><OutsideView plan={plan}/>{plan.state!=='missing'&&!memberMayEdit(plan.status)&&<p className="plan-muted">{say('الخطة معتمدة. إذا احتجت إلى تعديلها فاطلب من المشرف إعادتها إليك.','The plan is approved. If you need to change it, ask your supervisor to return it to you.')}</p>}{plan.state==='missing'&&<p className="plan-muted">{say('لا خطة لهذا اليوم.','No plan for this day.')}</p>}</>}
+  </>:plan&&<><PlanSummary plan={plan}/><TargetsLine plan={plan}/><StopsView plan={plan}/><OutsideView plan={plan}/>{plan.state!=='missing'&&!memberMayEdit(plan.status)&&<p className="plan-muted">{say('الخطة معتمدة. إذا احتجت إلى تعديلها فاطلب من المشرف إعادتها إليك.','The plan is approved. If you need to change it, ask your supervisor to return it to you.')}</p>}{plan.state==='missing'&&<p className="plan-muted">{say('لا خطة لهذا اليوم.','No plan for this day.')}</p>}</>}
   {error&&<p className="plan-error" role="alert"><AlertCircle size={15} aria-hidden/>{error}</p>}
  </>;
 }
@@ -372,6 +542,8 @@ function ReviewerPlans({me,records,members,initialDate,initialMemberId}:{me:Memb
      <span className="plan-row-name"><strong>{row.name}</strong>{row.firstSentAt&&<small>{say('أُرسلت','Sent')} <time dateTime={row.firstSentAt} dir="auto">{stamp(row.firstSentAt,language)}</time></small>}{row.overdue&&<small className="plan-overdue">{say('تجاوز آخر موعد للإرسال','Past the send deadline')}</small>}</span>
      <PlanStateChip state={row.state} late={row.late}/>
      {row.state!=='missing'&&<span className="plan-row-counts">{row.counts.done+row.counts.doneOther}/{row.counts.stops}</span>}
+     {row.targets&&(row.targets.opportunities!==null||row.targets.customers!==null)&&<small className="plan-row-targets" data-row-targets>{pair(TARGET_TEXT.opportunities.short,language)} {targetFigure(row.targets.opportunities,row.actual?.opportunities)} · {pair(TARGET_TEXT.customers.short,language)} {targetFigure(row.targets.customers,row.actual?.customers)}{row.targetsEdited?' · '+say('عدّل المشرف المستهدف','The supervisor changed the targets'):''}</small>}
+     {!!row.bulkMoves&&<small className="plan-row-bulk" data-row-bulk={row.bulkMoves}><CalendarClock size={13} aria-hidden/>{bulkMovesTitle(row.bulkMoves,language==='en'?'en':'ar')}</small>}
     </button></li>)}</ul>}
    </div>
    <div className="plan-detail-wrap">{memberId?<PlanDetail key={memberId+':'+date} me={me} memberId={memberId} date={date} records={records} members={members} onSaved={()=>setRevision(value=>value+1)}/>:<p className="plan-muted plan-pick-hint">{say('اختر مندوبًا لعرض خطته.','Choose a representative to see their plan.')}</p>}</div>
@@ -380,17 +552,17 @@ function ReviewerPlans({me,records,members,initialDate,initialMemberId}:{me:Memb
 }
 function PlanDetail({me,memberId,date,records,members,onSaved,heading}:{me:Member;memberId:string;date:string;records:readonly Row[];members:readonly Member[];onSaved?:()=>void;heading?:string}){
  const {language}=useLanguage(),say=(ar:string,en:string)=>selectText(language,ar,en),view=usePlanView(memberId,date,false);
- const member=members.find(item=>item.id===memberId),customers=useMemo(()=>planCustomers(records,member),[records,member]),names=useMemo(()=>customerNames(records),[records]);
+ const names=useMemo(()=>customerNames(records),[records]);void members;
  void me;
  if(view.loading&&!view.plan)return <p className="plan-muted" role="status"><Loader2 size={15} className="spin" aria-hidden/>{say('جارٍ تحميل الخطة…','Loading the plan…')}</p>;
  if(!view.plan)return view.error?<p className="plan-error" role="alert"><AlertCircle size={15} aria-hidden/>{view.error}<button type="button" className="btn subtle small" onClick={view.reload}>{say('إعادة المحاولة','Try again')}</button></p>:null;
- return <PlanCard plan={view.plan} customers={customers} names={names} heading={heading||(view.plan.memberName+' · '+dayLabel(view.plan.date,language))} onSaved={plan=>{view.setPlan(plan);onSaved?.();}}/>;
+ return <PlanCard plan={view.plan} names={names} heading={heading||(view.plan.memberName+' · '+dayLabel(view.plan.date,language))} onSaved={plan=>{view.setPlan(plan);onSaved?.();}}/>;
 }
 
 /** The page «خطط المناديب» («خطة الغد» for a member who prepares plans). */
-export default function DailyPlansPage({me,records,members,offline,initialDate,initialMemberId}:{me:Member;records:readonly Row[];members:readonly Member[];offline:boolean;initialDate?:string;initialMemberId?:string}){
+export default function DailyPlansPage({me,records,members,offline,initialDate,initialMemberId,onRefresh}:{me:Member;records:readonly Row[];members:readonly Member[];offline:boolean;initialDate?:string;initialMemberId?:string;onRefresh?:()=>Promise<void>}){
  if(!pageAllowed(me,'plans'))return null;
- return isFieldRole(me.role)?<MemberPlans key={me.id+':'+(me.authVersion||0)} me={me} records={records} offline={offline} initialDate={initialDate}/>:reviewsPlans(me)?<ReviewerPlans key={me.id+':'+(me.authVersion||0)} me={me} records={records} members={members} initialDate={initialDate} initialMemberId={initialMemberId}/>:null;
+ return isFieldRole(me.role)?<MemberPlans key={me.id+':'+(me.authVersion||0)} me={me} records={records} members={members} offline={offline} initialDate={initialDate} onRefresh={onRefresh}/>:reviewsPlans(me)?<ReviewerPlans key={me.id+':'+(me.authVersion||0)} me={me} records={records} members={members} initialDate={initialDate} initialMemberId={initialMemberId}/>:null;
 }
 
 /** On «تقرير يوم المندوب» (app/journey-report.tsx): the plan of the field member and day on screen, with the reviewer's actions. */

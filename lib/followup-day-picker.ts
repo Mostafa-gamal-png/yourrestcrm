@@ -63,11 +63,12 @@ export function areaCount(points:Coordinates[],linkKm=NEAR_KM):number{
 const text=(value:unknown)=>typeof value==='string'?value.trim():'';
 /** The follow-ups of one representative (customerFollowupPlans: open or kept for a re-contact, with a next action and a real date), the
  *  customer being visited left out. */
-export function ownerFollowups(records:Row[],ownerId:string,excludeCustomerId?:string):PickerFollowup[]{
+export function ownerFollowups(records:Row[],ownerId:string,excludeCustomerId?:string|readonly string[]):PickerFollowup[]{
  if(!ownerId)return [];
+ const excluded=new Set(typeof excludeCustomerId==='string'?[excludeCustomerId]:excludeCustomerId||[]);
  return customerFollowupPlans(records).flatMap(plan=>{
   const date=calendarDay(plan.nextDate);
-  if(plan.closed||plan.responsibleId!==ownerId||plan.customer.id===excludeCustomerId||!date||!plan.nextAction.trim())return [];
+  if(plan.closed||plan.responsibleId!==ownerId||excluded.has(plan.customer.id)||!date||!plan.nextAction.trim())return [];
   const data=plan.customer.data||{};
   return [{customerId:plan.customer.id,date,point:customerCoordinates(data),city:text(data.city),region:text(data.region)}];
  });
@@ -113,11 +114,16 @@ export function dayVerdict(day:PickerDay):DayVerdict{
 }
 /** Everything the picker draws for a customer of a representative: the 14 days, the suggestion and the follow-ups by day (for a day chosen
  *  outside the grid). `customer` absent (none chosen yet, or one being created): the counts of `ownerId` only. */
-export function pickerView(records:Row[],{ownerId,customer,today}:{ownerId:string;customer?:Row;today:string}):PickerView{
+export function pickerView(records:Row[],{ownerId,customer,today,moving=[]}:{ownerId:string;customer?:Row;today:string;
+ /** «ترحيل إلى تاريخ…» of «خطة الغد» (2026-11-22, GSCO 2.13.85): several follow-ups moved to one day together. Their customers are left out
+  *  of every day (as the customer being visited), and a day is full, and never the suggestion, when they would make it full: more than 5
+  *  with them all. */
+ moving?:readonly string[]}):PickerView{
  const here=customer?customerCoordinates(customer.data||{}):null;
  const byDate=new Map<string,PickerFollowup[]>();
- for(const item of ownerFollowups(records,ownerId,customer?.id)){const list=byDate.get(item.date);if(list)list.push(item);else byDate.set(item.date,[item]);}
- const days=pickerDates(today).map(date=>dayStats(date,byDate.get(date)||[],here));
+ for(const item of ownerFollowups(records,ownerId,[...(customer?[customer.id]:[]),...moving])){const list=byDate.get(item.date);if(list)list.push(item);else byDate.set(item.date,[item]);}
+ const adding=moving.length>1?moving.length:0;
+ const days=pickerDates(today).map(date=>{const day=dayStats(date,byDate.get(date)||[],here);return adding?{...day,full:day.count+adding>FULL_DAY_LIMIT}:day;});
  return {today,here,days,best:bestDay(days),byDate};
 }
 /** A day of the view, inside the grid or not ('' and a date that is not real: null). */

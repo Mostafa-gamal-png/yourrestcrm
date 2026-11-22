@@ -76,6 +76,11 @@ export const dailyPlanNotes=sqliteTable('crm_daily_plan_notes',{
  memberId:text('member_id').notNull().references(()=>members.id,{onDelete:'restrict'}),date:text('date').notNull(),reviewerId:text('reviewer_id').notNull().references(()=>members.id,{onDelete:'restrict'}),
  note:text('note').notNull(),version:integer('version').notNull().default(1),mutationId:text('mutation_id').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull()
 },t=>[primaryKey({columns:[t.memberId,t.date,t.reviewerId]})]);
+// «المستهدف في يوم الخطة» (migration 0025, lib/daily-plan-followups.ts): a plan's two targets, the reviewer's change marked with the member's own values kept.
+export const dailyPlanTargets=sqliteTable('crm_daily_plan_targets',{
+ planId:text('plan_id').primaryKey().references(()=>dailyPlans.id,{onDelete:'cascade'}),targetOpportunities:integer('target_opportunities'),targetCustomers:integer('target_customers'),
+ repTargetOpportunities:integer('rep_target_opportunities'),repTargetCustomers:integer('rep_target_customers'),targetsEdited:integer('targets_edited').notNull().default(0),updatedAt:text('updated_at').notNull()
+});
 
 // The auth revocation trigger is defined explicitly in append-only migration 0009.
 export const authChallenges=sqliteTable('auth_challenges',{
