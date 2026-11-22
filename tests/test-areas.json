@@ -107,7 +107,7 @@
     },
     "mold-photos": {
       "about": "«صور القالب» of a customer (2026-11-19): the section of the customer's sheet (app/customer-mold-photos.tsx, drawn by app/crm-app.tsx, shared), GET/POST /api/mold-photos and POST /api/mold-photos/delete, their rules (lib/mold-photos.ts: who adds as for the machines, who sees as for the customer, who deletes) and server (lib/mold-photos-server.ts), and the shrinking on the device (lib/image-shrink.ts). The photos are rows of crm_visit_files, so the competitors' offers' route refuses them (lib/followups-server.ts, app/api/visit-files: the visits area's) and the backup leaves out one deleted while it runs (portable/backup-core.mjs, its default-gate test tests/production-backup.mjs).",
-      "sources": ["app/customer-mold-photos.tsx", "app/customer-mold-photos.css", "app/api/mold-photos/**", "lib/mold-photos.ts", "lib/mold-photos-server.ts", "lib/image-shrink.ts", "tests/mold-photos*.mjs"],
+      "sources": ["app/customer-mold-photos.tsx", "app/customer-mold-photos.css", "app/api/mold-photos/**", "lib/mold-photos.ts", "lib/mold-photos-server.ts", "lib/image-shrink.ts", "tests/mold-photos*.mjs", "tests/mold-photos-unit.mjs"],
       "tests": ["tests/mold-photos-http.mjs", "tests/mold-photos-browser.mjs", "tests/server-authorization.mjs", "tests/visit-files-http.mjs"]
     },
     "map": {
