@@ -127,6 +127,12 @@ await refusal(apply({requestId:crypto.randomUUID()}),409,/تغيّرت بيان�
 eq([count('crm_audit'),data('k1').code,count('crm_records',"kind='customer'")],[0,'',6],'nothing written');
 manager=await as('manager');
 const fresh=await S.importErpCustomers(manager,body());
+// A row given a customer that is not one of its candidates: refused before anything is written
+await refusal(S.importErpCustomers(manager,body({action:'apply',requestId:crypto.randomUUID(),snapshot:fresh.snapshot,adds:1,choices:[{row:5,customerId:'k1'}]})),400,/العميل المختار للسطر 5 ليس من المرشحين/,'a customer that is not among the row\'s candidates');
+// A database that fails while saving: the error as it is, nothing written
+race=()=>{throw new Error('the connection was lost');};
+let lost;try{await S.importErpCustomers(manager,body({action:'apply',requestId:crypto.randomUUID(),snapshot:fresh.snapshot,adds:1}));}catch(e){lost=e;}
+eq([lost?.message,count('crm_audit'),data('k1').code],['the connection was lost',0,''],'a failed save: its error, nothing written');
 
 // The apply
 const result=await S.importErpCustomers(manager,body({action:'apply',requestId,snapshot:fresh.snapshot,adds:1,clearCodes:true,clearSnapshot:fresh.clearSnapshot,regions:[{row:6,region:'الوسطى'}]}));

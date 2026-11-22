@@ -175,6 +175,9 @@ await refusal(commit({previewToken:beforeRace.previewToken}),409,/تغيّرت �
 eq([count('crm_records',"kind='quote'"),count('crm_erp_imports'),count('crm_erp_employee_mappings'),revision()],[0,0,1,before+1],'nothing written');
 manager=await as('manager');
 const fresh=await S.importErpQuotes(manager,body({employeeMappings:choices}));
+race=()=>{throw new Error('the connection was lost');};
+let lost;try{await S.importErpQuotes(manager,body({employeeMappings:choices,action:'commit',requestId:crypto.randomUUID(),previewToken:fresh.previewToken}));}catch(e){lost=e;}
+eq([lost?.message,count('crm_records',"kind='quote'"),count('crm_erp_imports')],['the connection was lost',0,0],'a database that fails while saving: its error, nothing written');
 const result=await S.importErpQuotes(manager,body({employeeMappings:choices,action:'commit',requestId,previewToken:fresh.previewToken}));
 eq(result,{ok:true,importId:'erp-quotes-import-'+requestId,addedCount:4,updatedCount:0,unchangedCount:0,editedCount:0,excludedCount:1,refusedCount:4,mappingsSaved:2},'the import: four quotes added, two mappings saved');
 const saved=sql.prepare("SELECT id,parent_id,assigned_to,branch,data,version FROM crm_records WHERE kind='quote' ORDER BY json_extract(data,'$.number')").all().map(r=>({...r,data:JSON.parse(r.data)}));

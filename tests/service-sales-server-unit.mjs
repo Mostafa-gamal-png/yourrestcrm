@@ -169,12 +169,22 @@ eq(await S.intakeLead(cs,{group:'system',refKind:'customer',refId:'c-dorm'},true
 await refusal(S.intakeLead(cs,{group:'system',refKind:'customer',refId:'c-dorm',source:'واتساب'},true,'c-dorm'),400,/يحدده النظام/,'another source written for a system lead');
 await refusal(S.intakeLead(cs,{group:'system',refKind:'opportunity',refId:'case-lost'},true,'c-dorm'),400,/اختر عميل السجل/,'the record of another customer');
 
+// A support request and a complaint as the record an opportunity starts from (and the support contact behind a sale)
+cust('c-sup','C-SUP','مصنع طلب تواصل');cust('c-cmp','','مصنع شكوى');
+insert('support-1','support',null,'rep',{kind:'support',customerId:'c-sup',origin:'rep',status:'done',requestedBy:'rep',requestedAt:'2026-11-07T08:00:00.000Z',repId:'rep',note:'متابعة',channel:'any',handlerId:'cs',handlerAt:'2026-11-07T09:00:00.000Z',handlerBy:'cs',result:{outcome:'reached_interested',note:'مهتم',nextDate:'',by:'cs',at:'2026-11-08T08:00:00.000Z'},events:[]},'2026-11-07T08:00:00.000Z');
+insert('complaint-1','complaint',null,'cs',{kind:'complaint',customerId:'c-cmp',status:'closed',registrarId:'cs',serviceManagerId:'csm',salesManagerId:'',supervisorId:'',assigneeId:'',channel:'call',category:'quality',severity:'normal',description:'شكوى',demand:'',reference:'',contactName:'أحمد',contactPhone:'0500000002',complaintNumber:7,events:[]},'2026-11-07T08:00:00.000Z');
+erp('erp-sup','C-SUP','2026-11-10',20000);// ten days after the support contact: a support-assisted sale
+const cs2=await as('cs');
+eq((({kind,source,label,customerId,blocked})=>[kind,source,label,customerId,blocked])(await S.resolveLeadReference(cs2,'support','support-1')),['support',R.systemLeadSources.support,'مصنع طلب تواصل','c-sup',''],'a support request: its source and customer');
+await refusal(S.resolveLeadReference(cs2,'missed_visit','support-1'),409,/نوع الطلب لا يطابق مصدر الفرصة/,'a support request is not a missed visit');
+eq((({source,label,customerId})=>[source,label,customerId])(await S.resolveLeadReference(cs2,'complaint','complaint-1')),[R.systemLeadSources.complaint,'#7 · مصنع شكوى','c-cmp'],'a complaint: its number and customer');
+
 // The dashboard
 await refusal(as('rep').then(c=>S.performanceView(c,'2026-11','2026-11-16T09:00:00.000Z')),403,/أداء خدمة العملاء متاح/,'a representative: 403');
 eq(await S.performanceView(await as('mgr2'),'2026-11','2026-11-16T09:00:00.000Z'),{generatedAt:'2026-11-16T09:00:00.000Z',month:'2026-11',supportDays:30,note:R.performanceNote,reach:'reporting',teams:[],invoices:[],opportunities:[]},'a sales manager no team reports to: an empty answer');
 const view=await S.performanceView(admin,'2026-11','2026-11-16T09:00:00.000Z');
 eq([view.reach,view.teams.map(t=>[t.managerId,t.rows.map(r=>r.memberId)])],['all',[['csm',['csm','cs']],['',['csx']]]],'the administrator: every team');
-eq(view.invoices.map(i=>[i.number,i.type,i.category,i.memberName,i.value,i.caseNumber]),[['INV-erp-full','sale','full','ممثل أول',1150,72],['INV-erp-return','return','full','ممثل أول',-150,72]],'the full sale and the return that follows it, in the month, with their opportunity');
+eq(view.invoices.map(i=>[i.number,i.type,i.category,i.memberName,i.value,i.caseNumber]),[['INV-erp-full','sale','full','ممثل أول',1150,72],['INV-erp-return','return','full','ممثل أول',-150,72],['INV-erp-sup','sale','support','ممثل أول',200,null]],'the full sale and the return that follows it, with their opportunity, and a sale ten days after a support contact, credited to the handler');
 eq(view.opportunities.map(o=>[o.number,o.customerName,o.hidden,o.registrarName,o.route,o.state]).sort((a,b)=>a[0]-b[0]),[[71,'مصنع مفقود',false,'ممثل أول','','lost'],[72,'=HYPERLINK("x")',false,'ممثل أول','service','won'],[73,'مصنع له فرصة',false,'ممثل أول','','pending_approval']],'the opportunities registered in the month by the members shown');
 eq((await S.performanceView(admin,'2026-10','2026-11-16T09:00:00.000Z')).invoices,[],'another month: none of them');
 const mine=await S.performanceView(cs,'2026-11','2026-11-16T09:00:00.000Z');
