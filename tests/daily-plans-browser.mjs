@@ -88,7 +88,9 @@ try {
   await rep.locator('[data-plan-deadline]').waitFor();
   check([await rep.locator('h1').count(), (await rep.locator('.page-heading h1').innerText()).trim()], [1, 'خطة الغد'], 'the representative\'s screen is «خطة الغد»');
   const added = await addDue(rep);
-  check(await added.locator('[data-plan-customer]').evaluateAll(items => items.map(item => item.dataset.planCustomer)), ['c1', 'c2'], 'the two follow-ups due on Thursday added with one tap');
+  check(await added.locator('[data-plan-customer]').evaluateAll(items => items.map(item => item.dataset.planCustomer)), ['c2', 'c1'], 'the two follow-ups due on Thursday added with one tap (by the customer\'s name)');
+  await rep.locator('[data-plan-edit-stop="2"] .icon-button').first().click();// «نقل المحطة لأعلى»
+  check(await added.locator('[data-plan-customer]').evaluateAll(items => items.map(item => item.dataset.planCustomer)), ['c1', 'c2'], 'reordered');
   const second = added.nth(1);
   await second.locator('.plan-kind').filter({hasText: 'اتصال'}).click();
   await second.locator('input[type=time]').fill('10:30');

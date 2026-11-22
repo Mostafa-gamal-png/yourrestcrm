@@ -20,7 +20,7 @@ const require = createRequire(import.meta.url), {chromium} = require(process.env
 const members = [{id: 'owner', role: 'admin', name: 'مدير النظام'}, {id: 'mgr', role: 'manager', name: 'مدير المبيعات'},
   {id: 'sup', role: 'supervisor', sup: 'mgr', region: 'eastern', name: 'المشرف سالم'}, {id: 'rep1', role: 'rep', sup: 'sup', region: 'eastern', name: 'المندوب أحمد'}];
 // What the data holds (names, places, the follow-ups' next action): not the interface.
-const NAMES = ['المشرف سالم', 'المندوب أحمد', 'مدير المبيعات', 'مدير النظام', 'مصنع رقم', 'مصنع الغد', 'متابعة العرض', 'الدمام', 'الشرقية'];
+const NAMES = ['مصنع الغد الأول', 'مصنع الغد الثاني', 'الشمالي', 'الجنوبي', 'المشرف سالم', 'المندوب أحمد', 'مدير المبيعات', 'مدير النظام', 'مصنع رقم', 'مصنع الغد', 'متابعة العرض', 'الدمام', 'الشرقية'];
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-plan-followups-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
 let checks = 0, browser, app;
@@ -45,7 +45,8 @@ try {
     await insert('f-' + id, 'activity', id, {type: 'call', date: addDays(W, -60), summary: 'متابعة سابقة', result: 'تمت', performedBy: 'rep1', responsibleId: 'rep1', recordedByEmail: 'rep1@yourrest.org', nextAction: 'متابعة العرض', nextDate, visitWorkflow: 'customer-v1'});
   };
   // 350 late follow-ups (dated over the last 50 days) and two due on Thursday.
-  for (let i = 0; i < 350; i++) await followup('l' + String(i).padStart(3, '0'), 'مصنع رقم ' + String(i).padStart(3, '0'), addDays(W, -1 - (i % 50)));
+  // Ten «الشمالي» (l010 to l019) and ten «الجنوبي» (l300 to l309) for the search.
+  for (let i = 0; i < 350; i++) await followup('l' + String(i).padStart(3, '0'), 'مصنع رقم ' + String(i).padStart(3, '0') + (i >= 10 && i < 20 ? ' الشمالي' : i >= 300 && i < 310 ? ' الجنوبي' : ''), addDays(W, -1 - (i % 50)));
   await followup('d1', 'مصنع الغد الأول', D); await followup('d2', 'مصنع الغد الثاني', D);
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1', '--disable-dev-shm-usage']});
   async function open(memberId, {viewport = SIZES.phone360, english = false, hash = '#plans', inApp = false} = {}) {
@@ -89,11 +90,12 @@ try {
   ok(opened < 4000, 'the list of 350 opens in ' + opened + ' ms on the phone');
   const firstDates = await rep.locator('[data-overdue-row] .plan-late-meta small').evaluateAll(items => items.slice(0, 2).map(item => item.textContent));
   ok(firstDates.length === 2, 'each row says its date');
-  check(await rep.locator('[data-overdue-row] [data-days-late]').first().getAttribute('data-days-late'), '51', 'oldest first: 51 days late (to Thursday\'s plan: up to today, Wednesday)');
+  check(await rep.locator('[data-overdue-row] [data-days-late]').first().getAttribute('data-days-late'), '50', 'oldest first: 50 days late (counted to today, Wednesday)');
   await rep.locator('[data-overdue-more]').click();
   check(await rep.locator('[data-overdue-row]').count(), 60, '«عرض المزيد» shows 30 more');
-  await rep.locator('.plan-late input[type=search]').fill('رقم 01');
-  await rep.locator('[data-overdue-row]').nth(9).waitFor();
+  const rows = count => rep.waitForFunction(n => document.querySelectorAll('[data-overdue-row]').length === n, count);
+  await rep.locator('.plan-late input[type=search]').fill('الشمالي');
+  await rows(10);
   check(await rep.locator('[data-overdue-row]').count(), 10, 'the search: 10 follow-ups');
   await rep.locator('[data-overdue-all]').check();
   check(await rep.locator('[data-overdue-selected]').getAttribute('data-overdue-selected'), '10', '«تحديد كل نتائج البحث»: 10');
@@ -105,8 +107,8 @@ try {
   check(await rep.locator('[data-plan-edit-stop]').count(), 12, 'the ten moved to Thursday and added');
   check(await Promise.all(['l010', 'l015', 'l019'].map(nextOf)), [D, D, D], 'their date is Thursday on the server');
   // «ترحيل إلى تاريخ…»: three others to a day five days ahead.
-  await rep.locator('.plan-late input[type=search]').fill('رقم 30');
-  await rep.locator('[data-overdue-row]').nth(9).waitFor();
+  await rep.locator('.plan-late input[type=search]').fill('الجنوبي');
+  await rows(10);
   for (const row of ['l300', 'l301', 'l302']) await rep.locator(`[data-overdue-row="${row}"] input`).check();
   await rep.locator('[data-overdue-move-open]').click();
   await rep.locator('[data-overdue-move] [data-followup-picker]').waitFor();
@@ -126,7 +128,9 @@ try {
   await rep.context().setOffline(true);
   await rep.evaluate(() => window.dispatchEvent(new Event('offline')));
   await rep.locator('[data-bulk-offline]').waitFor();
-  check(await rep.locator('[data-overdue-move-open]').isDisabled(), true, 'offline: «ترحيل إلى تاريخ…» is off');
+  await rep.locator('[data-overdue-row] input').first().check();
+  check([await rep.locator('[data-overdue-add]').isDisabled(), await rep.locator('[data-overdue-move-open]').isDisabled()], [true, true], 'offline: «إضافة إلى خطة الغد» and «ترحيل إلى تاريخ…» are off');
+  await shot(rep, 'plan-followups-offline-ar-360');
   await rep.context().setOffline(false);
   await rep.evaluate(() => window.dispatchEvent(new Event('online')));
   await rep.locator('[data-plan-overdue-count]').click();
