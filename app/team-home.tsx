@@ -24,14 +24,14 @@ export default function TeamHome({me,members,customers,ownInactive,offline,onCus
  const teamToday=canUseSalesWorkspace(me.role)&&pageAllowed(me,'journeys');
  const pendingCard=reviewPendingRole(me.role)&&pageAllowed(me,'journeys');
  const own=mode==='own'?ownInactive:0;
- const edits=<CustomerEditInbox key={me.id+':'+(me.authVersion||0)} offline={offline} onOpenCustomer={onCustomer} onChanged={onChanged}/>;
+ const edits=<CustomerEditInbox key={'customer-edits:'+me.id+':'+(me.authVersion||0)} offline={offline} onOpenCustomer={onCustomer} onChanged={onChanged}/>;
  if(!own&&!team?.total&&!teamToday&&!pendingCard)return planCard?<>{planCard}{edits}</>:edits;
  return <div className="team-home no-print">
   {planCard}
-  {pendingCard&&<ReviewPendingCard key={me.id+':'+(me.authVersion||0)} me={me} offline={offline} onDayReport={onDayReport}/>}
+  {pendingCard&&<ReviewPendingCard key={'review-pending:'+me.id+':'+(me.authVersion||0)} me={me} offline={offline} onDayReport={onDayReport}/>}
   {edits}
   {own>0&&<OwnInactiveCard count={own} onOpen={()=>onCustomers(me.id)}/>}
   {!!team?.total&&<TeamInactiveCard data={team} onOpen={onCustomers}/>}
-  {teamToday&&<TeamTodayCard key={me.id+':'+(me.authVersion||0)} me={me} offline={offline} onDayReport={memberId=>onDayReport(memberId)}/>}
+  {teamToday&&<TeamTodayCard key={'team-today:'+me.id+':'+(me.authVersion||0)} me={me} offline={offline} onDayReport={memberId=>onDayReport(memberId)}/>}
  </div>;
 }
