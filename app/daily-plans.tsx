@@ -665,7 +665,9 @@ export function PlanInboxCard({me,offline=false,quiet=false,onOpen}:{me:Member;o
   document.addEventListener('visibilitychange',again);window.addEventListener('focus',again);window.addEventListener('online',again);window.addEventListener(PLANS_CHANGED,changed);
   return()=>{clearTimeout(first);clearInterval(timer);document.removeEventListener('visibilitychange',again);window.removeEventListener('focus',again);window.removeEventListener('online',again);window.removeEventListener(PLANS_CHANGED,changed);};
  },[applies,load]);
- const lines=planReminderLines(inbox).filter(line=>line.tone!=='approved');
+ // An approval and a change by the sales manager are told once (the toast and the device's notice) and marked on the plan; the card keeps what
+ // waits for the reader.
+ const lines=planReminderLines(inbox).filter(line=>line.tone!=='approved'&&line.tone!=='manager');
  if(!applies||quiet||!inbox||!lines.length)return null;
  const allow=async()=>{try{setPermission(await Notification.requestPermission() as 'default'|'granted'|'denied');}catch{setPermission('denied');}};
  const title=inbox.role==='member'?say('خطة يوم العمل','The working day\'s plan'):say('خطط المناديب','Representatives\' plans');
