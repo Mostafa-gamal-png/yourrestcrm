@@ -94,8 +94,11 @@ try {
   eq((await app.db.prepare("SELECT action,actor FROM crm_audit WHERE action LIKE 'work-area:%' ORDER BY created_at,rowid").all()).results.map(row => [row.action, row.actor]), [['work-area:save', 'مدير المبيعات'], ['work-area:delete', 'مدير المبيعات']], 'one audit row per save and delete');
   ok(!(await get('owner', '/api/crm')).audits.some(row => String(row.action).startsWith('work-area:')), 'none in GET /api/crm\'s recent changes');
   // The two street tables stay in the database (migrations 0023 and 0024 are applied), and nothing of the application wrote to them.
+  // Every migration of this release is applied (25 when this test was written; later releases add theirs), so the count is read from drizzle/.
   const count = async table => Number((await app.db.prepare('SELECT COUNT(*) AS n FROM ' + table).first()).n);
-  eq([Number((await app.db.prepare('SELECT COUNT(*) AS n FROM yr_schema_migrations').first()).n), await count('crm_osm_street_cache'), await count('crm_osm_street_local')], [25, 0, 0], '25 migrations; the two street tables kept, empty');
+  const shipped = fs.readdirSync(path.join(process.cwd(), 'drizzle')).filter(name => /^\d{4}_.+\.sql$/.test(name)).length;
+  ok(shipped >= 25, 'at least the 25 migrations of 2026-11-19 ship');
+  eq([Number((await app.db.prepare('SELECT COUNT(*) AS n FROM yr_schema_migrations').first()).n), await count('crm_osm_street_cache'), await count('crm_osm_street_local')], [shipped, 0, 0], 'every shipped migration applied; the two street tables kept, empty');
   console.log(JSON.stringify({ok: true, checks}));
 } finally {
   await app.stop();
