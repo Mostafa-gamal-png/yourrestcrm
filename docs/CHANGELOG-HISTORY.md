@@ -36,10 +36,10 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   free-text «أخرى» alone refused; the customer-service report groups «أخرى: …».
 - **Migration 0025 (`drizzle/0025_daily_plan_targets.sql`), 26 migrations:** one new table `crm_daily_plan_targets` (Yourrest's `crm_` prefix);
   additive only. Down: `drizzle/rollback/0025_daily_plan_targets.down.sql` (drops the table, takes 0025 out of the ledger; moved dates stay).
-  Package: `--schema-baseline 25 --new-migration 0025_daily_plan_targets.sql --verify-route /api/crm/opportunity-next-dates=401`.
+  Package: `--schema-baseline 25 --new-migration 0025_daily_plan_targets.sql --verify-route /api/crm/opportunity-next-dates=405`.
 - **Tests.** Default gate 233/233: new `tests/daily-plan-followups.mjs` (143), `tests/daily-plan-targets-migration.mjs` (132),
   `tests/loss-reason-other.mjs` (25); updated `tests/daily-plans.mjs` (280), `tests/work-areas.mjs` (161), `tests/work-areas-migration.mjs` (126),
-  `tests/dictation-coverage.mjs` (32). After the build: `tests/daily-plan-followups-http.mjs` (50, new), `tests/daily-plans-http.mjs` (104),
+  `tests/dictation-coverage.mjs` (32). After the build: `tests/daily-plan-followups-http.mjs` (51, new), `tests/daily-plans-http.mjs` (104),
   `tests/server-authorization.mjs` (1011). Chromium: `tests/daily-plan-followups-browser.mjs` (76, new: 350 late follow-ups, 320/360/tablet
   both ways/desktop, Arabic and English), `tests/daily-plans-browser.mjs` (199, was 196), `tests/followup-date-picker-browser.mjs` (108).
 - **Going back** with the code only does not start (a newer ledger); keeping the data: the down file, then the release before (guide 9-أن).

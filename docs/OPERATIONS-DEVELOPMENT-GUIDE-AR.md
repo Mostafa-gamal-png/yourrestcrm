@@ -1496,7 +1496,7 @@ sqlite3 -readonly -header -csv /home/ACCOUNT/yourrest-crm-data/database.sqlite "
 | `app/api/crm/route.ts` | سطور الترحيل خارج قائمة التغييرات |
 | `lib/loss-reason-other.ts`، `app/customer-followups.tsx`، `app/api/customer-followups/route.ts`، `lib/record-import-server.ts`، `lib/crm.ts`، `lib/service-report.ts` | «أخرى» |
 
-**ما يجب أن يجتازه الإصدار.** الحزمة فوق الإصدار المنشور (25 ترحيلًا): `--schema-baseline 25 --new-migration 0025_daily_plan_targets.sql`، مع `--verify-route /api/crm/opportunity-next-dates=401` (مسار جديد)؛ ويقول المُفعِّل عند `--verify` بعد أول Start «MIGRATIONS: 26». لا تغيير في `deploy/` ولا في المُفعِّل ولا خانات جديدة (لا `NEW_COMPUTED` جديد)، ولا تحديث أندرويد.
+**ما يجب أن يجتازه الإصدار.** الحزمة فوق الإصدار المنشور (25 ترحيلًا): `--schema-baseline 25 --new-migration 0025_daily_plan_targets.sql`، مع `--verify-route /api/crm/opportunity-next-dates=405` (مسار جديد بطريقة POST وحدها، فطلب GET المجهول الذي يرسله `--verify` يُجاب 405، وكان 404 قبل الإصدار)؛ ويقول المُفعِّل عند `--verify` بعد أول Start «MIGRATIONS: 26». لا تغيير في `deploy/` ولا في المُفعِّل ولا خانات جديدة (لا `NEW_COMPUTED` جديد)، ولا تحديث أندرويد.
 
 **الرجوع.**
 1. **قبل أول تشغيل للإصدار الجديد:** إعادة مجلد الإصدار السابق تكفي.
@@ -1510,7 +1510,7 @@ sqlite3 -readonly -header -csv /home/ACCOUNT/yourrest-crm-data/database.sqlite "
 
 **قبل الرجوع (3 أو 4):** خطة حُفظت على جهاز بهذا الإصدار (فيها `targets`) يرفضها الإصدار السابق (مفتاح غير معروف، 400) فتبقى إدخالًا يحتاج مراجعة يحذفه المندوب من «الإدخالات المحفوظة على الجهاز» (9-أز) ثم يعيد خطته بعد تحديث الصفحة؛ وصفحة هذا الإصدار المفتوحة تقرأ خطط الإصدار السابق (بلا مستهدف) «لم يُحدَّد» ولا تتعطل (`withTargets`)؛ والترحيل الجماعي غير موجود في الإصدار السابق (تحديث الصفحة يعيد شاشته).
 
-**الاختبارات:** `tests/daily-plan-followups.mjs` (143 فحصًا) و`tests/daily-plan-targets-migration.mjs` (130) و`tests/loss-reason-other.mjs` (25) (البوابة الافتراضية)، `tests/daily-plan-followups-http.mjs` (50، بعد البناء)، `tests/daily-plan-followups-browser.mjs` (76، المتصفح)؛ ومحدَّثة: `tests/daily-plans.mjs` و`tests/daily-plans-http.mjs` و`tests/daily-plans-browser.mjs` (الخطط بمتابعات ومستهدف)، `tests/work-areas.mjs` و`tests/work-areas-migration.mjs` (ترحيلاتها فقط)، `tests/dictation-coverage.mjs` (المستهدف رقم يُكتب)، `tests/server-authorization.mjs` (المسار الجديد).
+**الاختبارات:** `tests/daily-plan-followups.mjs` (143 فحصًا) و`tests/daily-plan-targets-migration.mjs` (130) و`tests/loss-reason-other.mjs` (25) (البوابة الافتراضية)، `tests/daily-plan-followups-http.mjs` (51، بعد البناء)، `tests/daily-plan-followups-browser.mjs` (76، المتصفح)؛ ومحدَّثة: `tests/daily-plans.mjs` و`tests/daily-plans-http.mjs` و`tests/daily-plans-browser.mjs` (الخطط بمتابعات ومستهدف)، `tests/work-areas.mjs` و`tests/work-areas-migration.mjs` (ترحيلاتها فقط)، `tests/dictation-coverage.mjs` (المستهدف رقم يُكتب)، `tests/server-authorization.mjs` (المسار الجديد).
 
 **ما لم يُعمل:** هاتف حقيقي وتطبيق أندرويد الحقيقي؛ GSCO «تغيير الموعد» بلا حد الثلاثين يومًا (هنا بالحد، انظر أ)؛ إعادة المندوب محطة حذفها المشرف.
 

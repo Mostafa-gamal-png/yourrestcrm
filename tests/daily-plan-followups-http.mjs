@@ -52,6 +52,7 @@ try {
   eq((await anonymous(URL, {method: 'POST', body: {}})).status, 401, 'no session: 401');
   eq((await session.rep1(URL, {method: 'POST', body: {}, headers: {Origin: 'https://evil.example'}})).status, 403, 'another site: 403');
   eq((await session.rep1(URL)).status, 405, 'GET: 405');
+  eq((await anonymous(URL)).status, 405, 'GET without a session: 405 (what the package\'s --verify-route probes: /api/crm/opportunity-next-dates=405)');
   eq((await session.rep1(URL, {method: 'PUT', body: {}})).status, 405, 'PUT: 405');
   for (const who of ['cs', 'csm']) await move(who, [item('1')], T, {}, 403);
   await app.db.prepare("INSERT INTO crm_member_permissions(member_id,permissions,hidden,version,updated_by,updated_at) VALUES('rep3',?,'[]',2,'owner',?)").bind(JSON.stringify({'plans:add': false}), now).run();
