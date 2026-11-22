@@ -197,7 +197,7 @@ const planUrl='https://test.invalid/api/daily-plans';
 const post=(as,data,status)=>call(plans.POST,{as,url:planUrl,body:{requestId:crypto.randomUUID(),...data}},status);
 const stop=(customerId,kind='visit')=>({customerId:'cust-'+customerId,kind,time:'',note:''});
 const get=(as,query,status)=>call(plans.GET,{as,url:planUrl+'?'+new URLSearchParams(query)},status);
-const P='2026-11-24';// Tuesday: due Monday 22:00.
+const P='2026-11-24';// Tuesday: due at the midnight between Monday and Tuesday (since 2026-11-22).
 // A page older than the targets (no `targets`) is refused; a send the device kept from before the update keeps the earlier rules.
 eq((await post('rep1',{action:'send',date:P,stops:[stop('1')],baseVersion:null},409)).error,R.PLAN_MESSAGES.pageOutdated,'a page loaded before the update: «حُدّث التطبيق؛ أعد تحميل الصفحة.»');
 eq((await post('rep1',{action:'save',date:P,stops:[stop('1')],baseVersion:null},409)).error,R.PLAN_MESSAGES.pageOutdated,'a draft of such a page too');
@@ -234,7 +234,7 @@ await post('sup',{action:'approve_edited',memberId:'rep1',date:W,baseVersion:6,s
 const V='2026-11-26';
 saved=await post('rep1',{action:'send',date:V,stops:[stop('2')],baseVersion:null,targets:{opportunities:1,customers:1}});
 eq(saved.plan.late,false,'sent on time');
-at('2026-11-25 22:30');
+at('2026-11-26 00:30');// past the plan's midnight (GSCO 2.13.86; 22:00 the day before until 2026-11-22)
 saved=await post('rep1',{action:'send',date:V,stops:[stop('2'),stop('6')].map((item,index)=>index===0?{...item,id:saved.plan.stops[0].id}:item),baseVersion:1,targets:{opportunities:1,customers:1}});
 eq(saved.plan.late,false,'a stop changed after the deadline: still on time (the first send decides, Yourrest\'s rule)');
 saved=await post('rep1',{action:'send',date:V,stops:saved.plan.stops.map(item=>({id:item.id,customerId:item.customerId,kind:item.kind,time:item.time,note:item.note})),baseVersion:2,targets:{opportunities:2,customers:1}});
@@ -271,11 +271,14 @@ const exported=await get('sup',{from:D,to:D});
 const sheet=X.planTables(exported.plans.filter(item=>item.memberId==='rep1'),'ar')[0];
 const column=name=>sheet.rows[0][sheet.header.indexOf(name)];
 eq(['مستهدف فرص البيع الجديدة','فرص البيع الجديدة المحققة','مستهدف العملاء الجدد','العملاء الجدد المحققون','عدّل المشرف المستهدف','مستهدف المندوب قبل التعديل','ترحيل جماعي'].map(column),[2,2,3,2,'لا','',5],'«الخطط»: the targets, the achieved, the supervisor\'s change and the bulk moves');
-eq(X.planTables(exported.plans.filter(item=>item.memberId==='rep1'),'en')[0].header.slice(-7),['Target: new sales opportunities','Achieved: new sales opportunities','Target: new customers','Achieved: new customers','Supervisor changed the targets','Representative\'s targets before the change','Bulk move'],'and in English');
+const enHeader=X.planTables(exported.plans.filter(item=>item.memberId==='rep1'),'en')[0].header,fromTargets=enHeader.indexOf('Target: new sales opportunities');
+eq(enHeader.slice(fromTargets,fromTargets+7),['Target: new sales opportunities','Achieved: new sales opportunities','Target: new customers','Achieved: new customers','Supervisor changed the targets','Representative\'s targets before the change','Bulk move'],'and in English');
+eq(enHeader.slice(-3),['Sales manager changed the targets','Sales manager changed the plan','Sales manager\'s last change'],'then the sales manager\'s columns (2026-11-22, GSCO 2.13.86)');
 const edited=X.planTables([{...exported.plans[0],targets:{opportunities:10,customers:2},targetsEdited:true,repTargets:{opportunities:50,customers:null}}],'ar')[0];
 eq([edited.rows[0][edited.header.indexOf('عدّل المشرف المستهدف')],edited.rows[0][edited.header.indexOf('مستهدف المندوب قبل التعديل')]],['نعم','50 / –'],'a change of the supervisor\'s, with what the member had');
 const older=X.planTables([{...exported.plans[0],targets:undefined,targetsEdited:undefined,repTargets:undefined,actual:undefined,bulkMoves:undefined}],'ar')[0];
-eq(older.rows[0].slice(-7),['','','','','لا','',0],'a plan from a server before the targets: empty cells');
+eq(older.rows[0].slice(fromTargets,fromTargets+7),['','','','','لا','',0],'a plan from a server before the targets: empty cells');
+eq(older.rows[0].slice(-3),['لا','لا',''],'and none of the sales manager\'s (a server before 2026-11-22 sends none)');
 // A plan read from a server before the targets: none set.
 eq(R.withTargets({...view,targets:undefined,targetsEdited:undefined,repTargets:undefined,actual:undefined,bulkMoves:undefined}).targets,{opportunities:null,customers:null},'withTargets reads an older server\'s plan as «لم يُحدَّد»');
 
