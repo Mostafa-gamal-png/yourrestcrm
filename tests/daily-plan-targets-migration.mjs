@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {initializeDatabase,inspectInitializedDatabase} from '../portable/initialize.mjs';
 import {upgradeExistingDatabase} from '../portable/upgrade.mjs';
 
@@ -150,6 +151,15 @@ eq(read(down.filename,db=>[db.prepare('PRAGMA foreign_key_check').all().length,d
 eq(inspectInitializedDatabase(down),{pending:[],migrations:25},'the release before opens it with nothing pending');
 eq(initializeDatabase(down).migrations,25,'and starts on it');
 eq(read(down.filename,db=>db.prepare("SELECT id,status FROM crm_daily_plans ORDER BY id").all().map(row=>[row.id,row.status])),[['daily-plan:rep:2026-11-23','sent'],['daily-plan:rep:2026-11-24','sent']],'its plans as they were, the one sent since included');
+// 4c'. the guide's own command (docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md, 9-أن), run as written on another copy, does the same.
+{
+ const guide=fs.readFileSync(path.join(root,'docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'),'utf8'),start=guide.indexOf('## 9-أن.'),section=guide.slice(start,guide.indexOf('\n## ',start+5));
+ const command=(/```bash\n\s*(node -e [^\n]+0025_daily_plan_targets\.down\.sql)\n/.exec(section)||[])[1];
+ eq(!!command,true,'the guide gives the down command of 0025');
+ const copy=path.join(work,'guide-down.sqlite');fs.copyFileSync(old.filename,copy);
+ execFileSync('bash',['-c',command.replace('/home/ACCOUNT/yourrest-crm-data/database.sqlite',copy).replace('/home/ACCOUNT/yourrest-crm/release/drizzle/rollback/0025_daily_plan_targets.down.sql',DOWN)]);
+ eq([read(copy,schema),read(copy,db=>db.prepare('SELECT COUNT(*) n FROM yr_schema_migrations').get().n)],[beforeSchema,25],'the guide\'s command leaves the release before\'s schema and ledger');
+}
 // 4d. the release applied again after the down migration: the table comes back empty.
 const again=fixture('again',all);fs.rmSync(path.dirname(again.filename),{recursive:true,force:true});fs.mkdirSync(path.dirname(again.filename),{mode:0o700});
 fs.copyFileSync(down.filename,again.filename);

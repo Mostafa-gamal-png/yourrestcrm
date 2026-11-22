@@ -4,6 +4,46 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## «خطة الغد»: follow-ups only, the late ones and their bulk move, «تغيير الموعد», the day's targets, and «أخرى» named (2026-11-22, migration 0025, no Android change)
+
+- **Asked.** The owner, 2026-11-22: port GSCO 2.13.85 (GSCO's owner, 2026-11-21: «خلى يقدر يضيف متابعات اليوم مع امكانية تغيير معاد وترحيل
+  المتابعات / المتابعات المتاخرة يختار منها … / جزء اضافة عميل وشروع للزيارة فى الخطة شيله وخليه عدد هو عايز يحققه بكره»), keeping every
+  Yourrest difference (Friday off; Saturday's plan due at midnight at the end of Friday, other days 22:00). Guide 9-أن.
+- **Mapping.** As the 2.13.83 and 2.13.84 ports: GSCO's «المشروع» is the customer, its «الفرصة» the customer's latest plan record (visit,
+  contact or request) that carries the next action and date; one follow-up per customer, so one stop per customer.
+- **Stops are follow-ups only.** No free «إضافة محطة» or customer search: «إضافة متابعات الغد (N)» adds the member's open follow-ups due on the
+  plan's day; «المتابعات المتأخرة (N)» (before the plan's day, not after today) is a searchable list, oldest first, 30 a page with «عرض المزيد»,
+  «تحديد الكل» of the search, «إضافة إلى خطة الغد» (moves them to the plan's day and adds them) and «ترحيل إلى تاريخ…» (one day, the day-load
+  picker now of several follow-ups, at most 30 days ahead); each stop's «تغيير الموعد» (another day takes it out after «سيُنقل الموعد إلى …
+  وتخرج المتابعة من خطة يوم …»). The server refuses a new stop (member's or reviewer's) on a customer without an open follow-up of the member
+  («تُضاف إلى الخطة المتابعات فقط…», 400); old stops stay as they are. The reviewer no longer adds stops.
+- **POST /api/crm/opportunity-next-dates** (`lib/followup-next-dates-server.ts`): 1..200 items (record id + version), today..30 days, one
+  answer each (moved, unchanged, conflict, not_found, unassigned, closed, service, no_action); a field member's own customers only, a
+  supervisor/manager/admin their team's (Yourrest's «عرض بيانات الفريق بالكامل» reads only: not_found); request_id replay answers from its
+  receipts, another body 409; yields every 25 items; never queued on the device; audit «ترحيل موعد المتابعة» kept out of GET /api/crm's changes.
+  **Yourrest decision:** a representative edits no saved visit here, so «تغيير الموعد» uses this route too (GSCO uses the opportunity form, with
+  no 30-day limit).
+- **Targets.** «فرص بيع جديدة سأسجلها» and «عملاء جدد سأضيفهم», 0..50 (Arabic digits read), required to send; a plan of targets alone is sent
+  when one is above zero. **Yourrest decision:** GSCO's «مشاريع جديدة» has no counterpart (its project is the customer, counted by the second),
+  so the first counts the requests of a mold (kind 'opportunity') the member recorded that day; the second the customers added by hand
+  (`handAddedDay`, never an ERP or sheet import). Achieved from the plan's Riyadh day in the plan, «خطط المناديب», the day report's panel and
+  Excel; not in the evaluation. The reviewer's change («اعتماد مع تعديل») is marked and locked for the member (403); a change of the targets
+  after the deadline makes a sent plan late (the stops keep Yourrest's first-send rule). A page without targets is 409 «حُدّث التطبيق؛ أعد تحميل
+  الصفحة.» unless a send kept on the device before the update (`lib/release-gate.ts`).
+- **«ترحيل جماعي: N متابعة»** for the supervisor in the list row and the plan card (also the day report's panel), each move old → new.
+- **«أخرى».** Already in Yourrest: the reason in the follow-up's list, «تفاصيل سبب الفقد» apart and required with it, grouped by the reason.
+  Added: «اذكر سبب الخسارة» in 3..200 characters (form, route — a device's entry from before accepted —, record import); an opportunity's
+  free-text «أخرى» alone refused; the customer-service report groups «أخرى: …».
+- **Migration 0025 (`drizzle/0025_daily_plan_targets.sql`), 26 migrations:** one new table `crm_daily_plan_targets` (Yourrest's `crm_` prefix);
+  additive only. Down: `drizzle/rollback/0025_daily_plan_targets.down.sql` (drops the table, takes 0025 out of the ledger; moved dates stay).
+  Package: `--schema-baseline 25 --new-migration 0025_daily_plan_targets.sql --verify-route /api/crm/opportunity-next-dates=401`.
+- **Tests.** Default gate 233/233: new `tests/daily-plan-followups.mjs` (143), `tests/daily-plan-targets-migration.mjs` (132),
+  `tests/loss-reason-other.mjs` (25); updated `tests/daily-plans.mjs` (280), `tests/work-areas.mjs` (161), `tests/work-areas-migration.mjs` (126),
+  `tests/dictation-coverage.mjs` (32). After the build: `tests/daily-plan-followups-http.mjs` (50, new), `tests/daily-plans-http.mjs` (104),
+  `tests/server-authorization.mjs` (1011). Chromium: `tests/daily-plan-followups-browser.mjs` (76, new: 350 late follow-ups, 320/360/tablet
+  both ways/desktop, Arabic and English), `tests/daily-plans-browser.mjs` (199, was 196), `tests/followup-date-picker-browser.mjs` (108).
+- **Going back** with the code only does not start (a newer ledger); keeping the data: the down file, then the release before (guide 9-أن).
+
 ## «الطاقة الإنتاجية والاحتياج» on the customer's card, «موعد احتياج القوالب المتوقع» on a visit, and the customer form in six sections with several contacts (2026-11-21, no migration, no Android change)
 
 - **Asked.** The owner, 2026-11-21: «كنت محتاج خانه فيها - عدد المكائن (تتحسب) - نوع المكائن (تتجمع) - عدد القوالب المستخدمه (المندوب
