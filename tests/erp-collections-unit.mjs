@@ -323,4 +323,18 @@ sql.prepare("UPDATE crm_settings SET owner_id=? WHERE id=?").run(O.serializeOffi
 await refusal(S.importErpCollections(manager,body({base64:file(changed),mappings:[{name:'سعيد',repId:'rep4'}]})),409,new RegExp(S.COLLECTION_OFFICE_ELSEWHERE.slice(0,20)),'a name marked by number in the ERP sales import cannot be mapped here');
 eq((({status,officeSource})=>[status,officeSource])((await S.importErpCollections(manager,body({base64:file(changed)}))).names.find(n=>n.name==='سعيد')),['office','sales'],'and is shown as marked there');
 
+// Found by an independent mutation review (2026-11-22): a name two representatives share is never mapped by that name, a name the ERP sales
+// give to two representatives is not mapped by them, and a representative of two names is due what both names are due.
+{
+ member('rep6','مندوب باء','rep','sup');// a second «مندوب باء»
+ for(const [id,rep] of [['s-k1','rep1'],['s-k2','rep2']])sql.prepare("INSERT INTO crm_erp_sales(id,document_key,content_hash,mapped_hash,reference,document_type,date,employee_id,rep_id,branch,region_scope,customer_code,customer_name,data,total_cents,import_id,created_by,created_at) VALUES(?,?,'h','m',?,'sale','2026-11-03',?,?,'الرئيسي','eastern','C1','عميل',?,100,'erp-1','admin','2026-11-03')").run(id,'key-'+id,'INV-'+id,'E-'+id,rep,JSON.stringify({employeeName:'خالد المزدوج'}));
+ const rows=[row('2201','مصنع أ','مندوب باء','','0','0','100','50','50','0'),row('2202','مصنع ب','خالد المزدوج','','0','0','200','100','100','0'),row('2203','مصنع ج','مندوب ألف','','0','0','300','100','200','0'),row('2204','مصنع د','نبيل الوسيط','','0','0','400','100','300','0')];
+ const ambiguous=await S.importErpCollections(await as('manager'),body({base64:file(rows),mappings:[{name:'نبيل الوسيط',repId:'rep1'}]}));
+ const source=Object.fromEntries(ambiguous.names.map(n=>[n.name,n.mappingSource]));
+ ok(source['مندوب باء']!=='name','two representatives of that name: not mapped by the name ('+source['مندوب باء']+')');
+ ok(source['خالد المزدوج']!=='erp','the ERP sales name two representatives: not mapped by them ('+source['خالد المزدوج']+')');
+ const one=ambiguous.reps.find(r=>r.repId==='rep1');
+ eq([one.names.slice().sort((a,b)=>a.localeCompare(b,'ar')),one.dueCents,one.collectedCents],[['مندوب ألف','نبيل الوسيط'].sort((a,b)=>a.localeCompare(b,'ar')),70000,20000],'a representative of two names: due and collected of both');
+}
+
 console.log(JSON.stringify({ok:true,checks,syntheticFixtures:true,productionDataUsed:false}));
