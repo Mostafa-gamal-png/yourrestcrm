@@ -19,8 +19,10 @@ const out = fs.mkdtempSync(path.join(runtime, 'mold-document-view-'));
 process.on('exit', () => fs.rmSync(out, {recursive: true, force: true}));
 const source = fs.readFileSync(path.join(root, 'lib/mold-document-view.ts'), 'utf8');
 ok(!/^import (?!type)/m.test(source), 'the rules import types only (nothing of the server, nothing of the browser)');
-fs.writeFileSync(path.join(out, 'view.mjs'), ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText);
-const view = await import(path.join(out, 'view.mjs'));
+// Written at its own path (lib/mold-document-view.mjs) so the coverage measure (scripts/coverage/) maps it back to the source.
+fs.mkdirSync(path.join(out, 'lib'), {recursive: true});
+fs.writeFileSync(path.join(out, 'lib/mold-document-view.mjs'), ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText);
+const view = await import(path.join(out, 'lib/mold-document-view.mjs'));
 const ar = (arabic) => arabic, en = (_arabic, english) => english;
 
 // ---- the order: quotation, PO, design; each category as attached
