@@ -5,11 +5,14 @@
 import {dayCell,exportTable,momentCell,numberCell,sayIn,textCell,yesNo,type ExportColumn,type ExportLanguage,type ExportTable} from './list-export';
 import {ACTIVITY_PLACE_TEXT,PLAN_LATE_TEXT,PLAN_STATE_TEXT,STOP_COMPLETION_TEXT,STOP_KIND_TEXT,SUPERVISOR_STATE_TEXT,type PlanActivityView,type PlanStopView,type PlanView} from './daily-plans';
 import {ACTIVITY_TYPE_TEXT} from './supervisor-reviews';
+import type {PlanTargets} from './daily-plan-followups';
 
 type StopRow={plan:PlanView;stop:PlanStopView};
 type ActivityRow={plan:PlanView;activity:PlanActivityView};
 const pair=(words:readonly [string,string],language:ExportLanguage)=>language==='en'?words[1]:words[0];
 
+const target=(value:number|null|undefined)=>value===null||value===undefined?'':numberCell(value);
+const repTargets=(value:PlanTargets)=>[value.opportunities??'–',value.customers??'–'].join(' / ');
 export function planTables(plans:readonly PlanView[],language:ExportLanguage):ExportTable[]{
  const say=sayIn(language);
  const planColumns:ExportColumn<PlanView>[]=[
@@ -30,7 +33,15 @@ export function planTables(plans:readonly PlanView[],language:ExportLanguage):Ex
   [STOP_COMPLETION_TEXT.removed[0],STOP_COMPLETION_TEXT.removed[1],plan=>numberCell(plan.counts.removed)],
   [ACTIVITY_PLACE_TEXT.outside[0],ACTIVITY_PLACE_TEXT.outside[1],plan=>numberCell(plan.counts.outside)],
   [ACTIVITY_PLACE_TEXT.extra[0],ACTIVITY_PLACE_TEXT.extra[1],plan=>numberCell(plan.counts.extra)],
-  ['ملاحظات المراجعين','Reviewers\' notes',plan=>textCell(plan.notes.map(note=>note.reviewerName+': '+note.note).join('\n'))]
+  ['ملاحظات المراجعين','Reviewers\' notes',plan=>textCell(plan.notes.map(note=>note.reviewerName+': '+note.note).join('\n'))],
+  // The day's targets and what was achieved (2026-11-22, the port of GSCO 2.13.85); a plan read from a server before it has none.
+  ['مستهدف فرص البيع الجديدة','Target: new sales opportunities',plan=>target(plan.targets?.opportunities)],
+  ['فرص البيع الجديدة المحققة','Achieved: new sales opportunities',plan=>numberCell(plan.actual?.opportunities??null)],
+  ['مستهدف العملاء الجدد','Target: new customers',plan=>target(plan.targets?.customers)],
+  ['العملاء الجدد المحققون','Achieved: new customers',plan=>numberCell(plan.actual?.customers??null)],
+  ['عدّل المشرف المستهدف','Supervisor changed the targets',plan=>plan.state==='missing'?'':yesNo(plan.targetsEdited===true,say)],
+  ['مستهدف المندوب قبل التعديل','Representative\'s targets before the change',plan=>plan.targetsEdited&&plan.repTargets?textCell(repTargets(plan.repTargets)):''],
+  ['ترحيل جماعي','Bulk move',plan=>numberCell(plan.bulkMoves?.length||0)]
  ];
  const stopColumns:ExportColumn<StopRow>[]=[
   ['المندوب','Representative',row=>textCell(row.plan.memberName)],

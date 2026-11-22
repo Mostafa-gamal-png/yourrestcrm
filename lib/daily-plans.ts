@@ -11,6 +11,7 @@
  * and the tests read the same rules here. */
 import {isFieldRole} from './roles';
 import {WORKING_WEEKDAYS} from './working-hours';
+import {NO_TARGETS,type PlanBulkMove,type PlanTargets} from './daily-plan-followups';
 
 /** The deadline: 22:00 on the day before the plan's day, Riyadh time (UTC+03:00 all year, no daylight saving). When that day before is a
  *  Friday (the weekly day off: the plan is Saturday's, prepared on Thursday), midnight at the end of that Friday, Saturday 00:00:00 (the
@@ -238,11 +239,24 @@ export function planCompletion(stops:readonly Pick<StoredStop,'id'|'position'|'c
 export type PlanStopView={id:string;position:number;customerId:string;customerName:string;kind:StopKind;time:string;note:string;addedBy:string;addedByName:string;supervisorState:SupervisorState;editedByName:string;completion:StopCompletion;activityId:string|null;activityType:string|null;doneAt:string|null};
 export type PlanActivityView={id:string;customerId:string;customerName:string;type:string;at:string;place:Exclude<ActivityPlace,'planned'>};
 export type PlanNoteView={reviewerId:string;reviewerName:string;note:string;version:number;updatedAt:string};
+/** The achieved numbers of the plan's day (lib/daily-plans-server.ts planActuals): counted from the records, never typed. */
+export type PlanActual={opportunities:number;customers:number};
 export type PlanView={ok:true;memberId:string;memberName:string;date:string;applies:boolean;id:string|null;state:PlanState;status:PlanStatus|null;version:number|null;late:boolean;deadline:string;firstSentAt:string|null;firstSentSource:'device'|'server'|null;sentAt:string|null;reviewedByName:string;reviewedAt:string|null;returnReason:string;updatedAt:string|null;
  stops:PlanStopView[];activities:PlanActivityView[];counts:PlanCounts;notes:PlanNoteView[];
+ /** The day's targets (2026-11-22, migration 0025): both null for a plan made before them; `targetsEdited` when a reviewer changed them, with
+  *  the member's own values in `repTargets`; `actual` from the plan's day on (null before it, or with no plan); `bulkMoves` the follow-ups the
+  *  member moved with the bulk «ترحيل» from this day's plan. A server before 2026-11-22 sends none of them (withTargets). */
+ targets:PlanTargets;targetsEdited:boolean;repTargets:PlanTargets|null;actual:PlanActual|null;bulkMoves:PlanBulkMove[];
  /** What the reader may do now. */
  canEdit:boolean;canApprove:boolean;canReviewEdit:boolean;canReturn:boolean;canNote:boolean;myNote:PlanNoteView|null;serverTime:string};
-export type PlanListRow={memberId:string;name:string;role:string;state:PlanState;version:number|null;late:boolean;overdue:boolean;firstSentAt:string|null;reviewedByName:string;counts:PlanCounts;notes:number};
+export type PlanListRow={memberId:string;name:string;role:string;state:PlanState;version:number|null;late:boolean;overdue:boolean;firstSentAt:string|null;reviewedByName:string;counts:PlanCounts;notes:number;
+ targets?:PlanTargets;targetsEdited?:boolean;actual?:PlanActual|null;bulkMoves?:number};
+/** A plan read from a server before 2026-11-22 (after a rollback) has no targets: none set, not edited, nothing achieved or moved. */
+export function withTargets<T extends PlanView|null>(plan:T):T{
+ if(!plan)return plan;
+ const targets=plan.targets&&typeof plan.targets==='object'?{opportunities:plan.targets.opportunities??null,customers:plan.targets.customers??null}:NO_TARGETS;
+ return {...plan,targets,targetsEdited:plan.targetsEdited===true,repTargets:plan.targetsEdited===true&&plan.repTargets?plan.repTargets:null,actual:plan.actual??null,bulkMoves:Array.isArray(plan.bulkMoves)?plan.bulkMoves:[]};
+}
 export type PlanList={ok:true;date:string;deadline:string;workingDay:boolean;rows:PlanListRow[];serverTime:string};
 export type PlanExport={ok:true;from:string;to:string;plans:PlanView[]};
 /** GET /api/daily-plans/inbox: for a member who prepares plans, the next day's plan and today's, and what a reviewer decided lately; for a
@@ -351,5 +365,7 @@ export const PLAN_MESSAGES={
  noteConflict:'تغيّرت ملاحظتك على هذا اليوم. حدّث الصفحة قبل الحفظ.',
  noteFuture:'لا يمكن كتابة ملاحظة على يوم بعد الأيام السبعة القادمة.',
  own:'لا تراجع خطتك أنت.',
+ followupsOnly:'تُضاف إلى الخطة المتابعات فقط؛ لم تعد إضافة عميل دون متابعة إلى الخطة متاحة.',
+ pageOutdated:'حُدّث التطبيق؛ أعد تحميل الصفحة.',
  range:`اختر فترة التصدير: من يوم إلى يوم، حتى ${PLAN_EXPORT_MAX_DAYS} يومًا.`
 } as const;
