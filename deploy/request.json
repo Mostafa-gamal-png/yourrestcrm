@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-SmallFixes-20261123.zip","sha256":"b520e12cc0d56a1d7240d57262d3cd0db82d0bdebe060eb92e8a7500055b6c8a","stage":"yourrest-crm-update-small-fixes-20261123","helper":"yourrest-activate-update-small-fixes.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-MyLocation-20261123.zip","sha256":"d2b31fcdcfe2f3a46d32b430b774eca352c6ed080cc648e18b4d6f8b53a9052b","stage":"yourrest-crm-update-my-location-20261123","helper":"yourrest-activate-update-my-location.cjs"}
