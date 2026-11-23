@@ -239,7 +239,7 @@ for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager',
 for(const locale of ['ar','en']){
  language=locale;const admin={...me,id:'owner',role:'admin',regionScope:'all'};
  const h=harness({me:admin,members:[admin],records,loading:false,view:'customer',compactNavigation:true},{
-  modules:{'@/lib/offline-store':{offlineSessionGeneration:()=>0,lockOfflineSession:async()=>{}},'@/lib/offline-auth':{isOfflineLogoutPending:()=>false}},
+  modules:{'@/lib/offline-store':{offlineSessionGeneration:()=>0,repairOfflineSessionEpoch:async()=>false,lockOfflineSession:async()=>{}},'@/lib/offline-auth':{isOfflineLogoutPending:()=>false}},
   globals:{navigator:{onLine:true},fetch:async()=>({ok:false,status:401,json:async()=>({error:'Session expired'})})},
  });
  let tree=h.render();button(tree,locale==='ar'?'استيراد من ERP':'Import from ERP').props.onClick();tree=h.render();eq(child(tree,MobileNavigation).props.blocked,true,'Open administrative dialog blocks underlying mobile navigation');
