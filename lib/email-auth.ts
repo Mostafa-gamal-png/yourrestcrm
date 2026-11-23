@@ -1,6 +1,6 @@
 /** Runtime-neutral email OTP. No email provider, network or platform identity trust here. */
 import {readRequestBytes} from './request-body';
-import {normalizeMemberEmail} from './member-email';
+import {latinCodeDigits,normalizeMemberEmail} from './member-email';
 export type EmailIdentity = {provider:'email-otp';memberId:string;memberVersion:number;userId:string;email:string;displayName:string;fullName:string};
 export type EmailAuthConfig = {
  origin:string; secret:string;
@@ -128,8 +128,9 @@ export async function handleEmailAuth(request:Request,action:string,db:D1Databas
    return json({ok:true,message:'إذا كان البريد مسجلًا ومفعّلًا، سيصلك رمز الدخول. يمكنك إعادة الطلب بعد دقيقة.'},200,permitted?{'Set-Cookie':cookie(challengeCookie,cid,600)}:preserve?{}:{'Set-Cookie':cookie(challengeCookie,'',0)});
   }
   const cid=readCookie(request.headers,challengeCookie);
-  if(!cid||typeof input.code!=='string'||!/^\d{6}$/.test(input.code))return json({error:invalidCode},400);
-  const codeHash=await digest(c,'code:'+cid+':'+input.code),attempt=randomToken(),token=randomToken(),hash=await digest(c,'session:'+token);
+  const code=typeof input.code==='string'?latinCodeDigits(input.code):'';
+  if(!cid||!/^\d{6}$/.test(code))return json({error:invalidCode},400);
+  const codeHash=await digest(c,'code:'+cid+':'+code),attempt=randomToken(),token=randomToken(),hash=await digest(c,'session:'+token);
   await db.batch([
    db.prepare('UPDATE auth_challenges SET attempts=attempts+1,attempt_id=? WHERE id=? AND ready=1 AND consumed=0 AND expires_at>? AND attempts<5').bind(attempt,cid,stamp),
    db.prepare('INSERT INTO auth_sessions (token_hash,user_id,user_version,email,challenge_id,created_at,expires_at) SELECT ?,u.id,u.auth_version,u.email,c.id,?,0 FROM auth_challenges c JOIN crm_members u ON u.id=c.user_id WHERE c.id=? AND c.attempt_id=? AND c.code_hash=? AND u.active=1 AND u.auth_version=c.user_version AND u.email=c.email').bind(hash,stamp,cid,attempt,codeHash),

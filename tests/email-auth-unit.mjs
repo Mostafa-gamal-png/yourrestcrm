@@ -8,8 +8,8 @@
 // 3. Asking for a code: the company domain only (marks and capitals of a paste taken out), the same answer for a member, an unknown address,
 //    an inactive one and a throttled one, padded to the same deadline; the code kept only as an HMAC bound to its challenge; one mail a
 //    minute and five an hour per address; ten requests a minute per client and a thousand for everyone; a delivery that fails or hangs.
-// 4. Verifying: six digits (spaces, marks and letters refused; a code typed in Arabic-Indic digits is not asserted either way: the screen drops
-//    such digits, app/email-login.tsx, an open question), five attempts, ten minutes, once, bound to the challenge in the cookie, the
+// 4. Verifying: six digits (spaces, marks and letters refused; Arabic-Indic and Persian digits read as the same digits, here and on the
+//    screen, app/email-login.tsx, since 2026-11-23), five attempts, ten minutes, once, bound to the challenge in the cookie, the
 //    member still active and unchanged; then the session cookie.
 // 5. The session, its refresh and the sign-out; an internal failure that says nothing; a code drawn without modulo bias.
 import assert from 'node:assert/strict';
@@ -42,7 +42,7 @@ function compile(relative){
 }
 const testEnv={};globalThis.testEnv=testEnv;
 const load=async relative=>{compile(relative);return import(pathToFileURL(path.join(out,relative.replace(/\.tsx?$/,'.mjs'))));};
-const A=await load('lib/email-auth.ts'),E=await load('lib/auth-environment.ts');
+const A=await load('lib/email-auth.ts'),E=await load('lib/auth-environment.ts'),M=await load('lib/member-email.ts');
 
 // Timers: the body's 10 s deadline is never reached; every other timer (delivery, padding) passes at once and is recorded.
 const waited=[],handles=new Map();let timerId=0;
@@ -236,6 +236,14 @@ await counted('verifying',async()=>{
  request=await begin('rep@yourrest.org');const fifth=mail.at(-1).code,bad=fifth==='111111'?'222222':'111111';
  for(let index=0;index<5;index++)await verify(request,bad);
  eq([(await verify(request,fifth)).status,challengeOf(request).attempts],[400,5],'after five wrong codes the right one is refused');
+ // Mended 2026-11-23 (found by the unit tests): a code typed in Arabic-Indic or Persian digits, as a phone's Arabic keyboard types it, is
+ // the same code (the screen reads it the same way, app/email-login.tsx latinCodeDigits); a space or a mark around it is still refused.
+ for(const [name,zero] of [['Arabic-Indic',0x660],['Persian',0x6f0]]){
+  const typedRequest=await begin('new@yourrest.org'),typed=mail.at(-1).code.replace(/\d/g,d=>String.fromCharCode(zero+Number(d)));
+  eq([(await verify(typedRequest,' '+typed)).status,challengeOf(typedRequest).attempts],[400,0],'in '+name+' digits with a space: refused, not counted');
+  eq((await verify(typedRequest,typed)).status,200,'in '+name+' digits: signs in');
+ }
+ eq(M.latinCodeDigits('١٢٣۴۵۶ab7'),'123456ab7','the screen\'s reading: the digits only, nothing else changed');
  // Ten minutes: the last millisecond and not the next.
  clock=NativeDate.parse('2026-11-23T07:00:00.000Z');
  const inTime=await begin('rep@yourrest.org'),inTimeCode=mail.at(-1).code;

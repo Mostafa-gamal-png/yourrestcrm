@@ -1092,11 +1092,13 @@ export function moldRequestCity(city) {
   return MOLD_SHEET_CITIES.includes(sheet) ? sheet : String(city ?? '');
 }
 
+/** The invisible marks a paste brings, dropped from a customer's name, address and city on the customers route (moldCustomerEntry). */
+const PASTE_MARKS = /[\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
 /**
  * One customer of the customers route from a CRM customer: its Yourrest number, name (required, 200), address (300), city (100) and,
  * since 2026-11-02, its ERP code (`erpCode`, «كود العميل في ERP», up to 50) when one is given: Arabic-Indic digits as ASCII digits (as
  * the ERP writes them, so production finds 146 by typing 146), control characters and invisible marks (direction marks, zero-width
- * characters, as a paste from an RTL sheet brings) dropped, '' when the customer has none (or a value
+ * characters, as a paste from an RTL sheet brings) dropped (from the name, the address and the city too, since 2026-11-23), '' when the customer has none (or a value
  * too long to be an ERP code, never cut), so production clears a code removed in the CRM. Without `erpCode` (a deleted customer, whose
  * code the deletion record does not keep) the field is left out and production keeps what it holds. null when it cannot be sent (no
  * number or no name).
@@ -1104,7 +1106,9 @@ export function moldRequestCity(city) {
  */
 export function moldCustomerEntry({crmNumber, name, address, city, erpCode, active = true}) {
   if (!isWhole(crmNumber) || crmNumber < 1 || crmNumber > 2147483647) return null;
-  const clean = (value, max) => { const text = moldText(String(value ?? '')); return text ? [...text].slice(0, max).join('') : ''; };
+  // The invisible marks a paste brings (direction marks, zero widths, the byte-order mark) are dropped from the name, the address and the
+  // city as from the ERP code (2026-11-23, found by the unit tests): two names that read the same were two names to production.
+  const clean = (value, max) => { const text = moldText(String(value ?? '').replace(PASTE_MARKS, '')); return text ? [...text].slice(0, max).join('') : ''; };
   const customerName = clean(name, 200);
   if (!customerName) return null;
   /** @type {{crmNumber: number, name: string, address?: string, city?: string, erpCode?: string, active: boolean}} */

@@ -100,6 +100,10 @@ const salesman = {crmMemberId: 'mem-1', name: 'أنور عبد الحكيم', em
   // Production takes a customer name up to 200 characters in both routes: any customer the list carries can be asked for.
   eq(MOLD_LIMITS.customerName, 200, 'the customer name limit is production\'s 200');
   for (const size of [161, 200]) eq(moldRequestBody({id: 'rec-1', requestedAt: 'x', customer: {...customer, name: 'م'.repeat(size)}, salesman, specs}).customer.name.length, size, 'a ' + size + '-character customer name is sent whole');
+  // Mended 2026-11-23 (found by the unit tests): the invisible marks a paste brings leave the name, the address and the city, so two names
+  // that read the same are one name to production; the letters, digits and spaces are kept as typed.
+  eq(moldCustomerEntry({crmNumber: 5, name: '\u200Fمصنع\u200E النور\u200B\uFEFF', address: 'شارع\u061C ١٢', city: '\u202Bجدة\u202C'}), {crmNumber: 5, name: 'مصنع النور', address: 'شارع ١٢', city: 'جدة', active: true}, 'direction marks, zero widths and the byte-order mark dropped; Arabic digits in an address kept');
+  eq(moldCustomerEntry({crmNumber: 5, name: '\u200F\u200E'}), null, 'a name of marks only is no name');
   const listed = moldCustomerEntry({crmNumber: 27, name: 'ن'.repeat(250)});
   eq(moldRequestBody({id: 'rec-1', requestedAt: 'x', customer: {...customer, name: listed.name}, salesman, specs}).customer.name, listed.name, 'the name the customers list sends is always accepted for a request');
   eq(moldRequestBody({id: 'r', requestedAt: 'x', customer: {crmNumber: 1, name: 'a', city: 'c'.repeat(101)}, salesman: {name: 'b', email: 'not-an-email'}, specs}).customer, {crmNumber: 1, name: 'a'}, 'an over-long optional city and a bad email are left out, never cut');

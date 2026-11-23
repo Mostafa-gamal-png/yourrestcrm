@@ -248,6 +248,11 @@ await counted('retried or held',async()=>{
  eq(await O.flushOutbox(rep),{synced:0,blocked:0,pending:0},'a 401 on a send: the device session closes, so nothing is listed');
  eq([job('rep-1:visit:'+K(64)).status,job('rep-1:visit:'+K(64)).httpStatus,job('rep-1:visit:'+K(65)).status,posts().length],['blocked',401,'pending',1],'the entry is held, the next one is not sent');
  eq([await S.loadOfflineSnapshot(),meta('session')],[null,undefined],'and nothing of the member is shown until they sign in again');
+ // Mended 2026-11-23 (found by the unit tests): the entry held by the 401 carries the server's words, not SIGN_IN_AGAIN, and stayed held
+ // after the same member signed in again. It goes back to the queue now, and the one behind it follows.
+ await S.lockOfflineSession();await S.saveOfflineSnapshot(snapshotOf(rep));
+ eq(await O.flushOutbox(rep),{synced:2,blocked:0,pending:0},'after the same member signs in again: the entry the 401 held is sent, then the next');
+ eq([job('rep-1:visit:'+K(64)),job('rep-1:visit:'+K(65))],[undefined,undefined],'both left the outbox');
 });
 
 await counted('the account at the start of a sync',async()=>{

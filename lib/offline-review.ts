@@ -74,12 +74,14 @@ export const SIGN_IN_AGAIN=['سجّل الدخول بنفس الحساب لإك�
 export const WAITS_FOR_CUSTOMER=['أكمل رفع العميل المرتبط أولًا.','Upload the linked customer first.'];
 export const WAITS_FOR_ATTACHMENT=['يحتاج مرفق عرض السعر إلى المراجعة قبل رفع السجل.','The quotation attachment needs review before this entry can upload.'];
 /** Which of the member's entries that need review go back to the queue: those held for an answer that was not the server's (`notAnswers`,
- *  the device's own words) or for an ended session, and those that waited (424) behind entries that no longer need review. An entry
+ *  the device's own words) or for an ended session (its words, or a 401 on its own send), and those that waited (424) behind entries that no longer need review. An entry
  *  waiting behind one still held, or behind an archived one, stays. `active` is the list (lib/offline-store.ts listOutbox), `all` with the
  *  archive. */
 export function stuckToRelease<T extends Entry&Pick<OfflineJob,'message'|'httpStatus'>>(active:T[],all:T[],notAnswers:readonly string[]):Set<string>{
  const held=(job:T)=>job.status==='blocked'&&!job.archivedAt;
- const released=new Set(active.filter(job=>held(job)&&(notAnswers.includes(job.message)||SIGN_IN_AGAIN.includes(job.message))).map(job=>job.id));
+ // A 401 on the entry's own send (2026-11-23, found by the unit tests) is the session that ended, never the entry: its words are the
+ // server's sign-in message, not SIGN_IN_AGAIN, so without its status it stayed held after the member signed in again.
+ const released=new Set(active.filter(job=>held(job)&&(notAnswers.includes(job.message)||SIGN_IN_AGAIN.includes(job.message)||job.httpStatus===401)).map(job=>job.id));
  for(let grew=true;grew;){
   grew=false;
   for(const job of active){

@@ -202,7 +202,10 @@ export async function importErpCollections(c:Context,body:unknown){
  }));
  const stateIndex=statements.length;
  statements.push(c.db.prepare("UPDATE crm_kpi_evidence_state SET revision=revision+1 WHERE id='company' AND "+gate).bind(...gateArgs));
- const claimed="EXISTS(SELECT 1 FROM crm_kpi_evidence_state WHERE id='company' AND revision=?)",claimArgs=[p.evidenceRevision+1];
+ // The claim is this request's own write: the first representative's row carries its mutation id only when this batch wrote it. (The
+ // revision alone was not enough: a hand save between the preview's read and this batch moves it to the same number, so the audit lines
+ // were written over nothing and replay() answered «saved».) The writes share one gate, so the first one written means all of them.
+ const claimed="EXISTS(SELECT 1 FROM crm_kpi_evidence WHERE member_id=? AND month=? AND mutation_id=?) AND EXISTS(SELECT 1 FROM crm_kpi_evidence_state WHERE id='company' AND revision=?)",claimArgs=[p.writes[0].repId,input.month,mutation,p.evidenceRevision+1];
  const reps=p.writes.map(w=>({memberId:w.repId,names:w.names,before:w.current,after:{dueCents:w.dueCents,collectedCents:w.collectedCents,reference:p.reference}}));
  const mappings=mappingsLine();
  statements.push(c.db.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE '+claimed).bind(mutation,'kpi-collection-import',c.me.name,COLLECTION_IMPORT_ACTION,JSON.stringify({fingerprint,fileName:input.fileName,fileSha256:fileHash,month:input.month,...(closedMonth?{closedMonth:true}:{}),counts:p.totals,reps,mappings,...(officeChanged?{office:p.officeChanges}:{}),result}),now,...claimArgs));

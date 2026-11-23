@@ -59,6 +59,11 @@ await counted('text',async()=>{
  eq(clean('  لا يوجد اتصال بالخادم  '),'لا يوجد اتصال بالخادم','Arabic kept, trimmed');
  for(const mark of ['‎','‏','‪','‫','‬','‭','‮','⁦','⁧','⁨','⁩','\u0000','\u0007','\t','\u001f','\u007f','\u0085','\u009f'])
   eq(clean('الموقع'+mark+'متوقف'),'الموقعمتوقف','taken out: U+'+mark.codePointAt(0).toString(16).padStart(4,'0'));
+ // Mended 2026-11-23 (found by the unit tests): the invisible marks a paste brings and the line and paragraph separators.
+ for(const mark of ['\u061c','\u200b','\u200c','\u200d','\u2028','\u2029','\u2060','\ufeff'])
+  eq(clean('الموقع'+mark+'متوقف'),'الموقعمتوقف','taken out: U+'+mark.codePointAt(0).toString(16).padStart(4,'0'));
+ eq(clean('ok\u2028x'),'okx','a line separator does not split the line it is in');
+ eq(clean('\u0627\u0644\u0645\u0648\u0642\u0639 ok'),'\u0627\u0644\u0645\u0648\u0642\u0639 ok','letters and spaces are kept');
  eq(clean('‮تم‬ الإرسال'),'تم الإرسال','an override that would reverse the line');
  eq(clean('الأول\r\nالثاني'),'الأول','only the first line');
  eq(clean('\nالثاني'),'','a first line that is empty is empty');

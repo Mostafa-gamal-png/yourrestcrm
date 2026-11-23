@@ -40,8 +40,10 @@ export const deviceReportSchema=z.object({
 export type DeviceReport=z.infer<typeof deviceReportSchema>;
 export type DeviceStatusPublic=DeviceReport&{reportedAt:string};
 
-/** Bidirectional overrides and control characters can make a status line read as something it is not. */
-const CONTROL=/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+/** Bidirectional overrides and control characters can make a status line read as something it is not; so can the invisible ones a paste
+ *  brings (the Arabic letter mark, the zero widths, the word joiner, the byte-order mark) and the line and paragraph separators, which the
+ *  first-line cut does not see (2026-11-23, found by the unit tests). */
+const CONTROL=/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
 export function cleanStatusText(value:unknown,max=240):string{return cleanTrackerText(value,'',max).replace(CONTROL,'').trim();}
 
 export function detectDeviceClass(userAgent:string,platform='',touchPoints=0):DeviceClass{

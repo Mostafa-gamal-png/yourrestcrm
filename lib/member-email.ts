@@ -7,3 +7,9 @@ export function normalizeMemberEmail(value: string): string {
 }
 
 export const memberEmailError = 'أدخل بريدًا إلكترونيًا صحيحًا، مثل name@yourrest.org';
+
+/** A sign-in code as typed (lib/email-auth.ts and app/email-login.tsx): Arabic-Indic and Persian digits, which a phone's Arabic keyboard
+ *  types, are read as the same digits (2026-11-23, found by the unit tests: the screen erased them and the server refused them). */
+export function latinCodeDigits(value: string): string {
+    return value.replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x660)).replace(/[\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) - 0x6f0));
+}

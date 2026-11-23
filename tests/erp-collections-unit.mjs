@@ -248,6 +248,18 @@ await refusal(S.importErpCollections(manager,body({base64:file(changed),action:'
 eq(count('crm_audit'),raceAudit,'no audit line either');
 eq([evidence('rep1').version,evidence('rep1').input.collection.collectedCents],[1,75000],'nothing written');
 manager=await as('manager');
+// A hand save of the evidence landed between the commit's reading and its batch (found by the unit tests, mended 2026-11-23): it moved the
+// revision to the very number this import would have set, and the import's audit lines were written over nothing, so the answer was
+// «saved» (replay()) and every repeat of the request said so too. Refused now, nothing written, and the same request id is no receipt.
+{
+ const before=await S.importErpCollections(manager,body({base64:file(changed)})),handRequest=crypto.randomUUID(),handAudit=count('crm_audit');
+ race=()=>{sql.prepare("UPDATE crm_kpi_evidence_state SET revision=revision+1 WHERE id='company'").run();};
+ const commit=()=>S.importErpCollections(manager,body({base64:file(changed),action:'commit',requestId:handRequest,planDigest:before.planDigest,replaceConfirmed:true}));
+ await refusal(commit(),409,/تغيّرت بيانات المؤشرات أو الصلاحيات أثناء الاعتماد/,'a hand save of the evidence while the commit was on its way: refused, not «saved»');
+ eq([count('crm_audit'),evidence('rep1').version,evidence('rep1').input.collection.collectedCents],[handAudit,1,75000],'no audit line and nothing written');
+ eq(sql.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE id LIKE ?").get('kpi-collection-import:manager:'+handRequest+'%').n,0,'so the same request again finds no receipt of a save that never was');
+ manager=await as('manager');
+}
 const fresh=await S.importErpCollections(manager,body({base64:file(changed)}));
 const replaced=await S.importErpCollections(manager,body({base64:file(changed),action:'commit',requestId:crypto.randomUUID(),planDigest:fresh.planDigest,replaceConfirmed:true}));
 eq([replaced.replaceCount,replaced.writtenCount,evidence('rep1').version,evidence('rep1').input.collection.collectedCents],[1,1,2,95000],'confirmed: the one replaced, its version moved');
