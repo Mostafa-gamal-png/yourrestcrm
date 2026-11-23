@@ -155,3 +155,7 @@
 .work-area-vertex-popup{display:flex}
 .work-area-vertex-delete{min-height:44px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:#b43636;font:inherit;font-size:13px;cursor:pointer}
 @media(max-width:850px){.cm-area-bar{inset-inline:10px;bottom:24px;width:auto;max-width:460px}.cm-legend{padding:2px 7px}}
+/* «موقعي» (2026-11-23): the button shows its state; the line under the buttons says where the dot is and how exact, or why it is not. */
+.cm-locate[data-my-location=shown]{color:#1a73e8;border-color:#1a73e8}
+.cm-locate-status{display:inline-block;align-self:flex-start;max-width:100%;margin:8px 0 0;padding:6px 11px;border-radius:12px;background:var(--card);box-shadow:0 2px 9px #15203812;font-size:12px;font-weight:600;line-height:1.7;color:var(--foreground);pointer-events:auto;overflow-wrap:anywhere}
+.cm-locate-status.is-problem{color:#a52828;background:#fff1f1}
