@@ -111,7 +111,8 @@ try {
 
   // ---- 3. Every size, in Arabic and in English.
   for (const english of [false, true]) for (const [size, viewport] of Object.entries(SIZES)) {
-    const tag = size + (english ? '-en' : '-ar'), page = await open('rep1', {viewport, english, inApp: viewport.width < 1100});
+    // The representative works in the Android app (a phone or a tablet); the computer is the supervisor's.
+    const tag = size + (english ? '-en' : '-ar'), page = await open(viewport.width < 1100 ? 'rep1' : 'sup', {viewport, english, inApp: viewport.width < 1100});
     await line(page).filter({hasText: english ? 'You are here' : 'أنت هنا'}).waitFor();
     await button(page).click();
     await page.waitForFunction(() => !document.querySelector('.leaflet-zoom-anim'));await page.waitForTimeout(400);
