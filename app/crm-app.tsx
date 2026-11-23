@@ -3,7 +3,7 @@ import {lineCents} from '@/lib/decimal-money';
 import {RoleTasksPanel,ServiceLeadsPanel,ServicePerformancePanel} from './service-sales';
 import {START_OPPORTUNITY_EVENT,type LeadStart} from '@/lib/service-sales';
 import {submitJson,SubmitError} from '@/lib/client-submit';
-import {saveOfflineSnapshot,loadOfflineSnapshot,augmentOfflineSnapshot,subscribeOffline,lockOfflineSession,offlineSessionGeneration,offlineOwner,type OfflineSnapshot} from '@/lib/offline-store';
+import {saveOfflineSnapshot,loadOfflineSnapshot,augmentOfflineSnapshot,subscribeOffline,lockOfflineSession,offlineSessionGeneration,offlineOwner,repairOfflineSessionEpoch,type OfflineSnapshot} from '@/lib/offline-store';
 import {offlineSubmit,flushOutbox} from '@/lib/offline-submit';
 import {sameSnapshot} from '@/lib/same-snapshot';
 import {isOfflineLogoutPending,finishPendingOfflineLogout} from '@/lib/offline-auth';
@@ -252,7 +252,10 @@ export default function CRM() {
     },[applySnapshot,clearSession]);
     /** True only when this call put the server's answer on screen (not the device copy, not a failure, not a later call's answer). */
     const loadFromServer = useCallback(async ():Promise<boolean> => {
-        const generation=++loadGeneration.current,sessionGeneration=offlineSessionGeneration();setError('');
+        const generation=++loadGeneration.current;
+        // A lock whose localStorage write failed is mended before the generation is read, so this load's save is kept (lib/offline-store.ts).
+        await repairOfflineSessionEpoch().catch(()=>false);if(generation!==loadGeneration.current)return false;
+        const sessionGeneration=offlineSessionGeneration();setError('');
         try{
             if(isOfflineLogoutPending()){await finishPendingOfflineLogout().catch(()=>{});clearSession();setError(getLanguage()==='ar'?'سجّل الدخول لفتح بياناتك.':'Sign in to open your data.');return false;}
             if(navigator.onLine===false){const cached=await refreshLocal();if(!cached)throw new Error(getLanguage()==='ar'?'افتح التطبيق وسجّل الدخول مرة بالإنترنت أولًا لتجهيز بياناتك للعمل بدون شبكة.':'Open the app and sign in online once to prepare offline data.');return false;}

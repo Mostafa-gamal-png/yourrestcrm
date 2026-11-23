@@ -176,6 +176,33 @@ await counted('device session',async()=>{
  await S.lockOfflineSession();
  await S.saveOfflineSnapshot(snapshotOf(rep,records));
  eq((await S.loadOfflineSnapshot())?.me.id,'rep-1','once localStorage works, a sign-out and an authorized save open it again');
+ // Mended 2026-11-23 (found by the unit tests): a lock whose localStorage write failed (the storage full) left the two epochs apart, and
+ // every save after it was refused until the next sign-out. Once the storage takes a write again, the repair gives it the lock's epoch.
+ {
+  const beforeLock=S.offlineSessionGeneration();
+  storage.refuseWrites(true);await S.lockOfflineSession();
+  const lockEpoch=meta('session-epoch').epoch;
+  eq([meta('session'),storage.map.get(EPOCH)===lockEpoch,await S.loadOfflineSnapshot()],[undefined,false,null],'a lock with the storage full: closed, the two epochs apart');
+  eq(await S.repairOfflineSessionEpoch(),false,'while the storage still refuses, nothing is repaired');
+  storage.refuseWrites(false);
+  await rejects(S.saveOfflineSnapshot(snapshotOf(rep,records)),S.OfflineStorageError,'space freed but not repaired: a save is still refused (the fault)');
+  eq(await S.repairOfflineSessionEpoch(),true,'repaired');
+  eq([storage.map.get(EPOCH),meta('session-epoch').epoch,meta('session'),await S.loadOfflineSnapshot()],[lockEpoch,lockEpoch,undefined,null],'the lock\'s epoch in both places, and the session still closed');
+  await rejects(S.saveOfflineSnapshot(snapshotOf(rep,records),beforeLock),/Offline session changed/,'a save begun before the lock is still refused');
+  await S.saveOfflineSnapshot(snapshotOf(rep,records));
+  eq([(await S.loadOfflineSnapshot())?.me.id,meta('session').epoch],['rep-1',lockEpoch],'the next authorized save is kept, without a sign-out');
+  eq(await S.repairOfflineSessionEpoch(),false,'with a session open, nothing to repair');
+  storage.map.set(EPOCH,'another-epoch');
+  eq([await S.repairOfflineSessionEpoch(),storage.map.get(EPOCH)],[false,'another-epoch'],'an open session under another epoch is never re-keyed by the repair');
+  storage.map.set(EPOCH,lockEpoch);
+  storage.refuseWrites(true);await S.lockOfflineSession();storage.refuseWrites(false);
+  storage.map.set(LOGOUT,'1');
+  eq([await S.repairOfflineSessionEpoch(),storage.map.get(EPOCH)],[false,lockEpoch],'nothing is repaired while a sign-out is pending');
+  storage.map.delete(LOGOUT);
+  eq(await S.repairOfflineSessionEpoch(),true,'and it is once the sign-in cleared it');
+  await S.saveOfflineSnapshot(snapshotOf(rep,records));
+  eq((await S.loadOfflineSnapshot())?.me.id,'rep-1','and the device works offline again');
+ }
 
  // Receipts: a projection the server's snapshot now holds is dropped, another member's is not touched.
  const receipt=(id,ownerId,projectionId)=>({id,ownerId,ownerStamp:'stamp',fingerprint:'f',localId:projectionId,result:{id:projectionId},projection:row(projectionId),createdAt:'2026-11-21T06:00:00.000Z'});

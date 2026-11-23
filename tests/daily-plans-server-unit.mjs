@@ -138,4 +138,15 @@ const moved=await call(nextDates.POST,{as:'rep1',url:'https://test.invalid/api/c
 eq(moved.results.map(result=>[result.id,result.status]),[['v-other','not_found']],'another representative\'s customer: not found, even for a visit of their own');
 eq(JSON.parse(sql.prepare("SELECT data FROM crm_records WHERE id='v-other'").get().data).nextDate,'2026-11-22','and the date did not move');
 
+// Mended 2026-11-23 (found by the mutation review): two review lines written in the same millisecond are read in the order they were written,
+// not by their random ids, so the last one decides who edited a stop last and which manager's change the member hears of.
+{
+ const plan='daily-plan-tie-check',at='2026-11-23T10:00:00.000Z',line=(id,actor,edits,version)=>sql.prepare('INSERT INTO crm_audit(id,record_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)').run(id,plan,actor,'daily-plan:approve_edited',JSON.stringify({before:{status:'approved'},after:{version,edits}}),at);
+ line('zz-first','مشرف',{by:'supervisor',added:['s1']},2);
+ line('mm-second','مدير أول',{by:'manager',byId:'m1',edited:['s1'],changed:true},3);
+ line('aa-third','مدير ثانٍ',{by:'manager',byId:'m2',removed:['s2'],changed:true},4);
+ const trail=(await PS.readTrails(DB,[plan])).get(plan);
+ eq([trail.marks.get('s1'),trail.marks.get('s2'),trail.manager.byId,trail.manager.byName,trail.manager.version],[{by:'manager',kind:'edited'},{by:'manager',kind:'removed'},'m2','مدير ثانٍ',4],'the order they were written: the supervisor\'s addition, the first manager\'s edit, then the second manager, who is the last');
+}
+
 console.log(JSON.stringify({ok:true,checks}));

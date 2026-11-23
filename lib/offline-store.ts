@@ -45,6 +45,21 @@ export async function saveOfflineSnapshot(snapshot:OfflineSnapshot,expectedGener
  await done;if(expectedGeneration!==offlineSessionGeneration()||logoutPending())return;locked=false;offlineChanged();
 }
 export async function loadOfflineSnapshot():Promise<OfflineSnapshot|null>{const owner=await unlockedOfflineOwner();if(!owner)return null;const stored=await readOfflineStore<{stamp:string;snapshot:OfflineSnapshot}|undefined>('snapshots',owner.id);return stored?.stamp===owner.stamp?stored.snapshot:null;}
+/** A lock whose write to localStorage failed (full or refused) left the device's two epochs apart, so every later save was refused until the
+ *  next sign-out (2026-11-23, found by the unit tests). Once localStorage takes a write again, it is given the lock's own epoch, and nothing
+ *  else: the session stays closed (no session is written here), a save begun before the lock still finds its epoch changed, and the next
+ *  authorized save begun after this is kept. Nothing is done while a sign-out is pending or while a session is open. Called before a load
+ *  captures its generation (app/crm-app.tsx). Returns whether it repaired. */
+export async function repairOfflineSessionEpoch():Promise<boolean>{
+ if(typeof window==='undefined'||logoutPending())return false;
+ const current=sessionEpoch();if(!current)return false;
+ const db=await offlineDB(),tx=db.transaction('meta','readonly'),meta=tx.objectStore('meta');
+ const [stored,session]=await Promise.all([idbRequest<{epoch?:string}|undefined>(meta.get('session-epoch')),idbRequest<Session|undefined>(meta.get('session'))]);
+ const epoch=stored?.epoch||'initial';
+ if(session||epoch===current||logoutPending()||sessionEpoch()!==current)return false;
+ try{window.localStorage.setItem(SESSION_EPOCH,epoch);}catch{return false;}
+ return sessionEpoch()===epoch;
+}
 export async function lockOfflineSession(){locked=true;generation++;const epoch=crypto.randomUUID();try{window.localStorage.setItem(SESSION_EPOCH,epoch);}catch{/* IndexedDB lock still closes this device session; reads fail closed without local storage. */}offlineChanged('locked');const db=await offlineDB(),tx=db.transaction('meta','readwrite'),done=idbDone(tx);tx.objectStore('meta').put({key:'session-epoch',epoch});tx.objectStore('meta').delete('session');await done;offlineChanged();}
 export async function listOutbox(me:Member):Promise<OfflineJob[]>{const owner=await unlockedOfflineOwner();if(!owner||owner.id!==me.id)return[];return(await readOfflineStore<OfflineJob[]>('outbox')).filter(job=>job.ownerId===me.id&&!job.archivedAt).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));}
 /** Rejected entries may be set aside explicitly, but their captured data are never deleted. */

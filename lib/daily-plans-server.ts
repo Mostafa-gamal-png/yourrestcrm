@@ -103,10 +103,12 @@ const noTargets:StoredTargets={targets:NO_TARGETS,edited:false,rep:null};
 /** The audit actions of a reviewer's decision on a plan (each one's detail holds `after.edits` since 2026-11-22). */
 export const PLAN_REVIEW_ACTIONS=['approve','approve_edited','return'].map(action=>PLAN_AUDIT_PREFIX+action);
 const noTrail=():PlanEditTrail=>({marks:new Map(),targets:null,managerDecided:false,manager:null});
-/** Who decided what on these plans (lib/daily-plans.ts planEditTrail), from their review lines in crm_audit (by record_id, oldest first). */
+/** Who decided what on these plans (lib/daily-plans.ts planEditTrail), from their review lines in crm_audit (by record_id, oldest first: two
+ *  lines of one millisecond in the order they were written, by rowid, not by their random ids, which picked the wrong last editor; mended
+ *  2026-11-23, found by the mutation review). */
 export async function readTrails(db:D1Database,planIds:readonly string[]):Promise<Map<string,PlanEditTrail>>{
  const out=new Map<string,PlanEditTrail>();if(!planIds.length)return out;
- const rows=(await db.prepare('SELECT record_id AS recordId,action,actor,detail,created_at AS createdAt FROM crm_audit WHERE record_id IN (SELECT value FROM json_each(?)) AND action IN (SELECT value FROM json_each(?)) ORDER BY created_at,id')
+ const rows=(await db.prepare('SELECT record_id AS recordId,action,actor,detail,created_at AS createdAt FROM crm_audit WHERE record_id IN (SELECT value FROM json_each(?)) AND action IN (SELECT value FROM json_each(?)) ORDER BY created_at,rowid')
   .bind(JSON.stringify([...new Set(planIds)]),JSON.stringify(PLAN_REVIEW_ACTIONS)).all<{recordId:string;action:string;actor:string;detail:string;createdAt:string}>()).results;
  const lines=new Map<string,{action:string;at:string;actorName:string;detail:unknown}[]>();
  for(const row of rows){let detail:unknown=null;try{detail=JSON.parse(row.detail);}catch{detail=null;}const list=lines.get(row.recordId)||[];list.push({action:row.action,at:row.createdAt,actorName:row.actor||'',detail});lines.set(row.recordId,list);}
