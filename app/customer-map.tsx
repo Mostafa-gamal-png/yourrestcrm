@@ -2,7 +2,7 @@
 import {useLanguage} from '@/lib/i18n';
 import {useCallback,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import type * as Leaflet from 'leaflet';
-import {MapPin,Maximize,Loader2,SlidersHorizontal,List,X,Search,Navigation,Building2} from 'lucide-react';
+import {MapPin,Maximize,Loader2,SlidersHorizontal,List,X,Search,Navigation,Building2,LocateFixed} from 'lucide-react';
 import {type Member,type Row} from '@/lib/crm';
 import {t} from '@/lib/i18n';
 import {isFieldRole} from '@/lib/roles';
@@ -15,6 +15,8 @@ import {mapActivity,activityOptions,groupMapActivities} from '@/lib/customer-map
 import {DIRECTIONS_START_TIMEOUT_MS,waitForDirectionsStep} from '@/lib/directions-attempt';
 import {kingdomBounds} from '@/lib/kingdom';
 import {addKingdomLayer} from './kingdom-layer';
+import {useMyLocation} from './my-location';
+import {MY_LOCATION_TEXT,myLocationLine} from '@/lib/my-location';
 import './customer-map.css';
 
 type ActivityKey=(typeof activityOptions)[number]['key'];
@@ -36,6 +38,8 @@ export default function CustomerMap({customers,me,online=true,staffId='',onDirec
  const refs:MapRefs=useMemo(()=>({map,leaflet,ready}),[ready]);
  const raise=useCallback(()=>{layer.current?.eachLayer(l=>(l as Leaflet.CircleMarker).bringToFront?.());},[]);
  useWorkAreaLayers(refs,outline,!editing,raise);
+ // «موقعي» (the owner, 2026-11-23): the device's own position, a blue dot with its accuracy circle (app/my-location.tsx).
+ const mine=useMyLocation(refs),mineLine=myLocationLine(mine.state,language);
  // Drawing starts with the panel and any open search closed: the map takes the taps.
  const onEditing=useCallback((value:boolean)=>{setEditing(value);if(value){setPanelOpen(false);setSearchOpen(false);}},[]);
  const editor=useAreaEditor(refs,areaRep,work.view,language,useCallback((message:readonly [string,string])=>{setAreaNotice({rep:areaRep,text:message});setAreaReload(n=>n+1);},[areaRep]),onEditing);
@@ -174,7 +178,8 @@ export default function CustomerMap({customers,me,online=true,staffId='',onDirec
       {!results.length&&<p role="status" className="cm-search-empty">{say('لا توجد نتائج. جرّب جزءًا من الاسم أو رقم الجوال.','No results. Try part of the name or phone number.')}</p>}
     </div>}
    </div>
-   <div className="cm-floating-toolbar"><div className="cm-map-controls"><button type="button" className="cm-control" onClick={()=>panelOpen&&tab==='filters'?setPanelOpen(false):showPanel('filters')} aria-controls="customer-map-panel" aria-expanded={panelOpen&&tab==='filters'}><SlidersHorizontal size={17}/><span>{say('فلترة','Filters')}</span>{activity!=='all'&&<i className="cm-filter-dot"/>}</button><button type="button" className="cm-control" onClick={()=>{setGroupIds([]);if(panelOpen&&tab==='customers')setPanelOpen(false);else showPanel('customers');}} aria-controls="customer-map-panel" aria-expanded={panelOpen&&tab==='customers'}><List size={17}/><span>{say('العملاء','Customers')}</span></button><button type="button" className="cm-control cm-fit" onClick={fit} disabled={!ready||!points.length} title={say('عرض جميع المواقع','Show all locations')} aria-label={say('عرض جميع المواقع','Show all locations')}><Maximize size={18}/></button></div><span className="cm-map-count">{points.length.toLocaleString('en-US')} {say('موقع','mapped')}</span></div>
+   <div className="cm-floating-toolbar"><div className="cm-map-controls"><button type="button" className="cm-control" onClick={()=>panelOpen&&tab==='filters'?setPanelOpen(false):showPanel('filters')} aria-controls="customer-map-panel" aria-expanded={panelOpen&&tab==='filters'}><SlidersHorizontal size={17}/><span>{say('فلترة','Filters')}</span>{activity!=='all'&&<i className="cm-filter-dot"/>}</button><button type="button" className="cm-control" onClick={()=>{setGroupIds([]);if(panelOpen&&tab==='customers')setPanelOpen(false);else showPanel('customers');}} aria-controls="customer-map-panel" aria-expanded={panelOpen&&tab==='customers'}><List size={17}/><span>{say('العملاء','Customers')}</span></button><button type="button" className="cm-control cm-fit" onClick={fit} disabled={!ready||!points.length} title={say('عرض جميع المواقع','Show all locations')} aria-label={say('عرض جميع المواقع','Show all locations')}><Maximize size={18}/></button><button type="button" className="cm-control cm-locate" onClick={mine.locate} disabled={!ready} title={say(...MY_LOCATION_TEXT.button)} aria-label={say(...MY_LOCATION_TEXT.button)} data-my-location={mine.state.status}>{mine.state.status==='locating'?<Loader2 size={18} className="spin"/>:<LocateFixed size={18}/>}</button></div><span className="cm-map-count">{points.length.toLocaleString('en-US')} {say('موقع','mapped')}</span></div>
+   {mineLine&&!editing&&<p className={'cm-locate-status'+(mine.state.status==='problem'?' is-problem':'')} role="status" data-my-location-line>{mineLine}</p>}
   </div>
   <aside id="customer-map-panel" ref={panel} className={'cm-panel'+(panelOpen?' is-open':'')} tabIndex={-1} aria-label={panelTitle} aria-hidden={!panelOpen?true:undefined} inert={!panelOpen?true:undefined}>
    <header className="cm-panel-header"><div><strong>{panelTitle}</strong><small>{say(`${visible.length} عميل · ${points.length} على الخريطة`,`${visible.length} customers · ${points.length} mapped`)}</small></div><button type="button" className="cm-close" onClick={()=>setPanelOpen(false)} aria-label={say('العودة للخريطة','Back to map')}><X size={21}/></button></header>
