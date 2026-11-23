@@ -835,6 +835,11 @@
       "file": "tests/work-areas-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/my-location-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
     }
   ]
 }
