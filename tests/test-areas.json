@@ -111,9 +111,9 @@
       "tests": ["tests/mold-photos-http.mjs", "tests/mold-photos-browser.mjs", "tests/server-authorization.mjs", "tests/visit-files-http.mjs"]
     },
     "map": {
-      "about": "The customers map and the journey map (Leaflet, the Kingdom layer, directions, map search).",
-      "sources": ["app/customer-map.tsx", "app/customer-map.css", "app/customer-journey-map.tsx", "app/kingdom-layer.ts", "app/kingdom-map.css", "lib/customer-map-activity.ts", "lib/customer-map-search.ts", "lib/customer-directions.ts", "lib/directions-attempt.ts", "lib/directions-problem.ts", "tests/*map*.mjs"],
-      "tests": ["tests/app-browser-workflows.mjs", "tests/pwa-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/location-picker-browser.mjs", "tests/daily-report-browser.mjs", "tests/work-areas-browser.mjs"]
+      "about": "The customers map and the journey map (Leaflet, the Kingdom layer, directions, map search, «موقعي» since 2026-11-23).",
+      "sources": ["app/customer-map.tsx", "app/customer-map.css", "app/my-location.tsx", "lib/my-location.ts", "tests/my-location*.mjs", "app/customer-journey-map.tsx", "app/kingdom-layer.ts", "app/kingdom-map.css", "lib/customer-map-activity.ts", "lib/customer-map-search.ts", "lib/customer-directions.ts", "lib/directions-attempt.ts", "lib/directions-problem.ts", "tests/*map*.mjs"],
+      "tests": ["tests/app-browser-workflows.mjs", "tests/pwa-browser.mjs", "tests/mobile-comfort-browser.mjs", "tests/location-picker-browser.mjs", "tests/daily-report-browser.mjs", "tests/work-areas-browser.mjs", "tests/my-location-browser.mjs"]
     },
     "targets-sales": {
       "about": "Sales, targets, KPIs and their evidence (the Targets page, «أهدافي», the gauge, /api/sales, /api/targets, /api/kpis, /api/kpi-evidence).",
