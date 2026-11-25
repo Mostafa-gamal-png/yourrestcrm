@@ -1,0 +1,8 @@
+.stuck-phones{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--destructive,#b42318);border-radius:12px;background:var(--card);padding:12px 14px;margin-bottom:12px;color:var(--foreground);max-width:100%;min-width:0}
+.stuck-phones-icon{flex-shrink:0;color:var(--destructive,#b42318);margin-top:2px}
+.stuck-phones-copy{flex:1;min-width:0}.stuck-phones-copy strong{font-size:14px;line-height:1.6}
+.stuck-phones-copy ul{margin:4px 0 0;padding-inline-start:18px;font-size:13px;line-height:1.7}
+.stuck-phones-copy li{overflow-wrap:anywhere}.stuck-phones-copy li small{display:block;color:var(--muted-foreground);font-size:12px}
+.stuck-phones-copy p{font-size:12px;line-height:1.65;margin:4px 0 0;color:var(--muted-foreground)}
+.map-page .stuck-phones{margin-bottom:0;flex-shrink:0}
+@media(max-width:600px){.stuck-phones{gap:8px;padding:10px 12px}.stuck-phones-copy strong{font-size:13px}}

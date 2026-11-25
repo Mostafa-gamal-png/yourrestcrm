@@ -840,6 +840,11 @@
       "file": "tests/my-location-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/stuck-phones-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
     }
   ]
 }

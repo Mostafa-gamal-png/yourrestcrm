@@ -36,7 +36,7 @@ function compile(relative){
  fs.writeFileSync(dest,code);
 }
 const load=async relative=>{compile(relative);return import(pathToFileURL(path.join(out,relative.replace(/\.tsx?$/,'.mjs'))));};
-const D=await load('lib/device-status.ts'),V=await load('lib/device-status-server.ts');
+const D=await load('lib/device-status.ts'),V=await load('lib/device-status-server.ts'),P=await load('lib/stuck-phones.ts');
 
 // Timers that follow the fixed clock.
 let timers=[],timerId=0;
@@ -245,6 +245,44 @@ await counted('server',async()=>{
  eq([first.memberId,first.lastPointAt,first.dayStartedAt,first.pointsOnDate,first.tripsOnDate,first.devices.length],['rep-a','2026-11-22T05:55:00.000Z',  '2026-11-22T05:00:00.000Z',4,1,2],'the newest point of either source, the day\'s start, its points and trips, and the phone\'s reports');
  eq([overview[1].lastPointAt,overview[1].pointsOnDate,overview[1].devices.length],[null,0,1],'a member with no point');
  eq(await V.trackingOverview({me:people.find(person=>person.id==='service'),members:people,db},'2026-11-22'),[],'nobody to show: nothing read');
+});
+
+// «هواتف متوقفة» (the owner, 2026-11-25, item 3; lib/stuck-phones.ts): since when a phone has been in a problem, and who is listed.
+await counted('stuck phones',async()=>{
+ const healthy=report(),blocked={...healthy,gate:'setup',missing:['enrollment'],enrolled:false,tracking:false},gps={...healthy,gate:'location_services',missing:['location_services']},paused={...healthy,gate:'ok',windowActive:true,enrolled:true,tracking:false};
+ eq([P.phoneProblem(healthy),P.phoneProblem(blocked),P.phoneProblem(gps),P.phoneProblem({...healthy,gate:'permission'}),P.phoneProblem({...healthy,gate:'bridge'}),P.phoneProblem({...healthy,gate:'upgrade'}),P.phoneProblem(paused)],[null,'setup','location_services','permission','bridge','upgrade','paused'],'the phone\'s own problems');
+ eq([P.phoneProblem({...blocked,platform:'browser'}),P.phoneProblem({...paused,windowActive:false}),P.phoneProblem({...paused,enrolled:false})],[null,null,null],'a browser, outside the window or not enabled: no phone problem');
+ const t=iso=>new NativeDate(iso).toISOString();
+ eq(P.problemSince(null,healthy,t('2026-11-22T06:00:00Z')),'','a phone that works has no problem start');
+ eq(P.problemSince(null,blocked,t('2026-11-22T06:00:00Z')),t('2026-11-22T06:00:00Z'),'the first report of a problem starts it now');
+ eq(P.problemSince({report:blocked,since:t('2026-11-22T05:00:00Z')},blocked,t('2026-11-22T06:00:00Z')),t('2026-11-22T05:00:00Z'),'the same problem keeps its start');
+ eq(P.problemSince({report:blocked,since:t('2026-11-22T05:00:00Z')},gps,t('2026-11-22T06:00:00Z')),t('2026-11-22T06:00:00Z'),'another problem starts again');
+ eq(P.problemSince({report:healthy,since:''},blocked,t('2026-11-22T06:00:00Z')),t('2026-11-22T06:00:00Z'),'after a working phone it starts now');
+ eq(P.problemSince({report:blocked,since:'garbage'},blocked,t('2026-11-22T06:00:00Z')),t('2026-11-22T06:00:00Z'),'an unreadable start is not kept');
+ eq(P.problemSince({report:blocked,since:t('2026-11-22T07:00:00Z')},blocked,t('2026-11-22T06:00:00Z')),t('2026-11-22T06:00:00Z'),'a start in the future is not kept');
+ const rowData=member=>JSON.parse(sql.prepare("SELECT data FROM crm_member_devices WHERE member_id=? AND platform='android-app'").get(member).data);
+ eq(await V.saveDeviceReport(db,'rep-b',blocked,t('2026-11-22T07:00:00Z')),'saved','a blocked phone reports');
+ eq(rowData('rep-b').problemSince,t('2026-11-22T07:00:00Z'),'the server writes since when');
+ eq(await V.saveDeviceReport(db,'rep-b',{...blocked,problemSince:t('2026-11-01T00:00:00Z')},t('2026-11-22T07:30:00Z')),'saved','the same problem reported again, the phone claiming another start');
+ eq(rowData('rep-b').problemSince,t('2026-11-22T07:00:00Z'),'the start stays the server\'s own, whatever the phone says');
+ eq((await V.readDeviceStatuses(db,['rep-b'])).get('rep-b')[0].problemSince,t('2026-11-22T07:00:00Z'),'and is read back with the report');
+ const people2=people,sup=people2.find(person=>person.id==='sup-1'),admin=people2.find(person=>person.id==='admin');
+ eq(await V.saveDeviceReport(db,'mkt',blocked,t('2026-11-22T07:45:00Z')),'saved','a marketing officer\'s phone is blocked a quarter of an hour later');
+ eq((await V.stuckPhoneAlerts({me:admin,members:people2,db},t('2026-11-22T08:00:00Z'))).map(p=>[p.memberId,p.problem,p.minutes]),[['rep-b','setup',60]],'the administrator: only a phone stopped for half an hour or more (60 minutes), not one of 15');
+ eq((await V.stuckPhoneAlerts({me:admin,members:people2,db},t('2026-11-22T08:20:00Z'))).map(p=>[p.memberId,p.minutes]),[['rep-b',80],['mkt',35]],'35 minutes later both, the longest first');
+ eq((await V.stuckPhoneAlerts({me:sup,members:people2,db},t('2026-11-22T08:20:00Z'))).map(p=>p.memberId),['mkt'],'a supervisor: only their own team in their region');
+ eq(await V.stuckPhoneAlerts({me:admin,members:people2,db},t('2026-11-22T16:00:00Z')),[],'after 6 pm Riyadh nothing is listed');
+ eq(await V.stuckPhoneAlerts({me:people2.find(person=>person.id==='service'),members:people2,db},t('2026-11-22T08:20:00Z')),[],'customer service sees nobody');
+ eq(await V.saveDeviceReport(db,'rep-b',healthy,t('2026-11-22T08:30:00Z')),'saved','the phone works again');
+ eq([rowData('rep-b').problemSince,(await V.stuckPhoneAlerts({me:admin,members:people2,db},t('2026-11-22T08:31:00Z'))).map(p=>p.memberId)],[undefined,['mkt']],'its start is cleared and it leaves the list');
+ const entry=(since,reportedAt,extra={})=>({memberId:'x',memberName:'س',devices:[{...blocked,...extra,reportedAt,problemSince:since}]});
+ eq(P.stuckPhones([entry(t('2026-11-21T10:00:00Z'),t('2026-11-22T03:10:00Z'))],t('2026-11-22T06:00:00Z'))[0].minutes,180,'blocked since yesterday: counted from today\'s 06:00 Riyadh');
+ eq(P.stuckPhones([entry(t('2026-11-21T10:00:00Z'),t('2026-11-21T10:00:00Z'))],t('2026-11-22T06:00:00Z')),[],'a last report from an earlier day is not news of today');
+ eq(P.stuckPhones([entry(t('2026-11-27T05:00:00Z'),t('2026-11-27T05:00:00Z'))],t('2026-11-27T07:00:00Z')),[],'Friday: nothing is listed');
+ eq(P.stuckPhones([entry(t('2026-11-22T05:00:00Z'),t('2026-11-22T05:00:00Z'),{platform:'browser'})],t('2026-11-22T06:00:00Z')),[],'a browser report is never a stopped phone');
+ eq(P.stuckPhones([entry('',t('2026-11-22T05:00:00Z'))],t('2026-11-22T06:00:00Z')),[],'no start, no alert');
+ eq(P.STUCK_AFTER_MS,30*60000,'half an hour');
+ for(const problem of ['setup','permission','location_services','bridge','upgrade','paused'])ok(/[؀-ۿ]/.test(P.phoneProblemText(problem,false))&&!/[؀-ۿ]/.test(P.phoneProblemText(problem,true)),'the problem '+problem+' in Arabic and in English');
 });
 
 console.log(JSON.stringify({ok:true,checks,counts,realBrowser:false,database:'SQLite in memory, every migration',clock:'fixed'}));

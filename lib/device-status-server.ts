@@ -4,6 +4,7 @@ import {regionScope,regionScopesOverlap} from './regions';
 import {cleanStatusText,deviceReportSchema,type DeviceReport,type DeviceStatusPublic} from './device-status';
 import type {TrackingOverview} from './tracking-coverage';
 import {isFieldRole} from './roles';
+import {problemSince,stuckPhones,type StuckPhone} from './stuck-phones';
 
 /** Two reports from one phone closer than this are the client misbehaving, not news. */
 export const DEVICE_REPORT_MIN_GAP_MS=30_000;
@@ -17,11 +18,16 @@ export function normalizeDeviceReport(report:DeviceReport,nowMs:number):DeviceRe
  return {...report,error:cleanStatusText(report.error),syncError:cleanStatusText(report.syncError),lastFixAt:Number.isFinite(fix)&&fix<=nowMs+5*60_000?new Date(fix).toISOString():''};
 }
 
-/** One atomic statement: the row is replaced only when the previous report is old enough. */
+/** One atomic statement: the row is replaced only when the previous report is old enough, and only if it is still the row read here (its
+ * version), so the problem's start (lib/stuck-phones.ts) is always counted from the report it follows. */
 export async function saveDeviceReport(db:Db,memberId:string,report:DeviceReport,now:string):Promise<'saved'|'throttled'>{
  const cutoff=new Date(Date.parse(now)-DEVICE_REPORT_MIN_GAP_MS).toISOString();
- const result=await db.prepare('INSERT INTO crm_member_devices(member_id,platform,app_version,reported_at,data,version) VALUES(?,?,?,?,?,1) ON CONFLICT(member_id,platform) DO UPDATE SET app_version=excluded.app_version,reported_at=excluded.reported_at,data=excluded.data,version=crm_member_devices.version+1 WHERE crm_member_devices.reported_at<=?')
-  .bind(memberId,report.platform,report.appVersion||null,now,JSON.stringify(report),cutoff).run();
+ const before=await db.prepare('SELECT data,version FROM crm_member_devices WHERE member_id=? AND platform=?').bind(memberId,report.platform).first<{data:string;version:number}>();
+ let previous:{report:DeviceReport;since:string}|null=null;
+ if(before){try{const {problemSince:since,...rest}=JSON.parse(before.data) as Record<string,unknown>;const parsed=deviceReportSchema.safeParse(rest);if(parsed.success)previous={report:parsed.data,since:typeof since==='string'?since:''};}catch{previous=null;}}
+ const since=problemSince(previous,report,now),data=JSON.stringify(since?{...report,problemSince:since}:report);
+ const result=await db.prepare('INSERT INTO crm_member_devices(member_id,platform,app_version,reported_at,data,version) VALUES(?,?,?,?,?,1) ON CONFLICT(member_id,platform) DO UPDATE SET app_version=excluded.app_version,reported_at=excluded.reported_at,data=excluded.data,version=crm_member_devices.version+1 WHERE crm_member_devices.reported_at<=? AND crm_member_devices.version=?')
+  .bind(memberId,report.platform,report.appVersion||null,now,data,cutoff,before?.version??0).run();
  return Number(result.meta?.changes??0)>0?'saved':'throttled';
 }
 
@@ -43,10 +49,11 @@ export async function readDeviceStatuses(db:Db,memberIds:string[]):Promise<Map<s
  const rows=(await db.prepare('SELECT member_id AS memberId,reported_at AS reportedAt,data FROM crm_member_devices WHERE member_id IN (SELECT value FROM json_each(?)) ORDER BY reported_at DESC,platform').bind(JSON.stringify(memberIds)).all<DeviceRow>()).results;
  const byMember=new Map<string,DeviceStatusPublic[]>();
  for(const row of rows){
-  let parsed:unknown;try{parsed=JSON.parse(row.data);}catch{continue;}
-  const report=deviceReportSchema.safeParse(parsed);
+  let parsed:Record<string,unknown>;try{parsed=JSON.parse(row.data);}catch{continue;}
+  if(!parsed||typeof parsed!=='object')continue;
+  const {problemSince:since,...rest}=parsed,report=deviceReportSchema.safeParse(rest);
   if(!report.success)continue;
-  byMember.set(row.memberId,[...(byMember.get(row.memberId)||[]),{...report.data,reportedAt:row.reportedAt}]);
+  byMember.set(row.memberId,[...(byMember.get(row.memberId)||[]),{...report.data,reportedAt:row.reportedAt,...(typeof since==='string'&&Number.isFinite(Date.parse(since))?{problemSince:since}:{})}]);
  }
  return byMember;
 }
@@ -70,4 +77,12 @@ export async function trackingOverview(c:ScopeContext&{db:Db},date:string):Promi
   pointsOnDate:Number(days.get(member.id)?.points||0)+Number(trips.get(member.id)?.points||0),
   tripsOnDate:Number(trips.get(member.id)?.trips||0)
  })).sort((a,b)=>a.memberName.localeCompare(b.memberName,'ar'));
+}
+
+/** «هواتف متوقفة» (lib/stuck-phones.ts): the representatives the caller already sees in the daily report whose phone has been stopped or
+ * blocked for half an hour or more, now, inside the working window. */
+export async function stuckPhoneAlerts(c:ScopeContext&{db:Db},now:string):Promise<StuckPhone[]>{
+ const members=trackingMembers(c);if(!members.length)return [];
+ const devices=await readDeviceStatuses(c.db,members.map(m=>m.id));
+ return stuckPhones(members.map(member=>({memberId:member.id,memberName:member.name,devices:devices.get(member.id)||[]})),now);
 }

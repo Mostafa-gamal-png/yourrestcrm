@@ -38,7 +38,8 @@ export const deviceReportSchema=z.object({
  syncError:z.string().max(400)
 }).strict();
 export type DeviceReport=z.infer<typeof deviceReportSchema>;
-export type DeviceStatusPublic=DeviceReport&{reportedAt:string};
+/** `problemSince` is the server's own (lib/stuck-phones.ts): since when the phone has reported the same problem; never sent by a phone. */
+export type DeviceStatusPublic=DeviceReport&{reportedAt:string;problemSince?:string};
 
 /** Bidirectional overrides and control characters can make a status line read as something it is not; so can the invisible ones a paste
  *  brings (the Arabic letter mark, the zero widths, the word joiner, the byte-order mark) and the line and paragraph separators, which the

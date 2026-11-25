@@ -3,7 +3,7 @@ import {context,checkOrigin,replyError,readJsonBody,requireSession,CRMError,requ
 import {journeyDate} from '@/lib/journeys';
 import {requireJourneyReport} from '@/lib/journeys-server';
 import {deviceReportSchema} from '@/lib/device-status';
-import {DEVICE_REPORT_MIN_GAP_MS,normalizeDeviceReport,saveDeviceReport,trackingOverview} from '@/lib/device-status-server';
+import {DEVICE_REPORT_MIN_GAP_MS,normalizeDeviceReport,saveDeviceReport,stuckPhoneAlerts,trackingOverview} from '@/lib/device-status-server';
 import {isFieldRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>!Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value);
@@ -23,6 +23,9 @@ export async function GET(req:Request){try{
  const c=await context({load:'identity'});requireJourneyReport(c);
  // «الصلاحيات»: read by «تقرير يوم المندوب» and «الفريق والصلاحيات»: closed when both are hidden.
  requirePages(c.me,'journeys','team');
- const requested=new URL(req.url).searchParams.get('date'),date=requested===null?journeyDate():dateSchema.parse(requested);
+ const params=new URL(req.url).searchParams;
+ // «هواتف متوقفة» (lib/stuck-phones.ts): asked every few minutes by the workspace of whoever reads the daily report.
+ if(params.get('alerts')==='1'){const now=new Date().toISOString();return Response.json({serverTime:now,stuck:await stuckPhoneAlerts(c,now)},{headers:{'Cache-Control':'no-store'}});}
+ const requested=params.get('date'),date=requested===null?journeyDate():dateSchema.parse(requested);
  return Response.json({date,serverTime:new Date().toISOString(),members:await trackingOverview(c,date)},{headers:{'Cache-Control':'no-store'}});
 }catch(error){if(error instanceof z.ZodError)return Response.json({error:'تاريخ غير صحيح'},{status:400});return replyError(error);}}

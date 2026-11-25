@@ -178,10 +178,10 @@ function DayReviewBlock({memberId,date,memberName,review,canReview,onSaved}:{mem
 function stored(key:string):string|null{try{return localStorage.getItem(key);}catch{return null;}}
 function store(key:string,value:string){try{localStorage.setItem(key,value);return true;}catch{return false;}}
 const notificationsSupported=()=>typeof window!=='undefined'&&'Notification' in window&&!isNativeTrackingApp();
-const notificationsGranted=()=>notificationsSupported()&&Notification.permission==='granted';
+export const notificationsGranted=()=>notificationsSupported()&&Notification.permission==='granted';
 /** The device's own notification of new notes, where the browser allows it (never inside the Android app, whose web view has none): through
  * the page's service worker when one is active (Chrome on a phone requires it), else the page's own Notification. One per note set (tag). */
-async function deviceNotice(title:string,body:string,tag:string,language:string){
+export async function deviceNotice(title:string,body:string,tag:string,language:string){
  if(!notificationsGranted())return;
  const options={body,tag,lang:language==='en'?'en':'ar',dir:(language==='en'?'ltr':'rtl') as NotificationDirection,icon:'/icons/yourrest-company-192.png',data:{url:'/'}};
  try{const registration=await navigator.serviceWorker?.getRegistration('/');if(registration?.active){await registration.showNotification(title,options);return;}}catch{/* fall back to the page's own notification */}
