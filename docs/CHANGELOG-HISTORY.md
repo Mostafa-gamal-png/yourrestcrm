@@ -4,6 +4,24 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Android 1.0.16 (17): a changed region or role no longer stops a representative (2026-11-25, no migration)
+
+- **Asked.** The owner, 2026-11-25, with a marketing officer's screenshot: «تغيرت أذونات الحساب؛ محفوظ على الجهاز 856 نقطة و67 انقطاع من
+  المنطقة السابقة», «تفعيل التتبع» did nothing and the system stayed closed. A read-only check of the live data
+  (`scripts/diagnose/tracking-scope.cjs`) showed the account made on 2026-11-19 with «كل المناطق» and later saved with the five regions
+  ticked one by one: another scope text for the app. Approved: «صلحه». Guide 9-أع.
+- **The phone.** `ContinuousRouteStore` version 3 adds `held_points`, `held_gaps` and `held_days`. A changed scope or role with evidence waiting
+  moves it unchanged, in one transaction, under the scope and owner it was captured with (`holdForChangedAccount`), and the tracker enrolls
+  the new scope at once (when it was enrolled and the account is still a representative). `drainHeld` uploads held evidence after the
+  outbox, three requests a pass, to days of its own scope with `held: true`; a refusal waits a day, a failure ends the pass, and neither
+  touches collection, the outbox or the account. The page shows the held counts with «تسجيل خط السير مستمر».
+- **The server.** A held begin makes a closed day of the captured scope only for a canonical scope the account already has a route day of;
+  held samples and gaps reach the account's own day on the same device whatever its scope, without customer bindings; the ordinary begin
+  still refuses another scope.
+- **The users screen.** Changing a tracked member's scope or tracking role while the phone reports waiting points answers
+  `MEMBER_TRACKING_PENDING` with the counts; «الحفظ رغم ذلك» saves.
+- **Not tried** on a phone or an emulator.
+
 ## Daily plans: midnight deadline, the supervisor's window, «غير معتمدة», the sales manager's edits, and «خطتي» (2026-11-22, no migration, no Android change)
 
 - **Asked.** The owner, 2026-11-22: port GSCO 2.13.86 (GSCO's owner, 2026-11-21: «خلى الخطة المشرف يعتمدها قبل 12 مش 10», «تعديل المشرف
