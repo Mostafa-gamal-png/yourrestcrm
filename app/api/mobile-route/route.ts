@@ -24,6 +24,9 @@ async function heldBegin(c:Awaited<ReturnType<typeof context>>,body:Record<strin
  const prior=await c.db.prepare('SELECT '+mobileColumns+' FROM crm_mobile_route_days WHERE id=?').bind(id).first<MobileDayRow>();
  if(prior){const saved=await ownHeldMobileDay(c,id,deviceId);if(saved.regionScope!==scope||saved.date!==requestedDate)throw new CRMError('يوم النقاط المحفوظة على الخادم لا يطابق منطقتها أو تاريخها',409);return response(c,saved,now);}
  if(!trackingWorkingDay(requestedDate))return response(c,null,now);
+ // A new held day is made for a past date only: today's evidence of an earlier scope waits for tomorrow, so no held day can sit beside
+ // today's day of the current scope (a day the phone already had today is found above by its create key).
+ if(requestedDate>=today)throw new CRMError('تُرفع نقاط اليوم من منطقة سابقة غدًا؛ تبقى محفوظة على الجهاز',425);
  if(!await c.db.prepare('SELECT 1 AS found FROM crm_mobile_route_days WHERE member_id=? AND region_scope=? LIMIT 1').bind(c.me.id,scope).first())throw new CRMError('لا يوجد خط سير سابق لهذه المنطقة على حسابك؛ تبقى النقاط محفوظة على الجهاز',403);
  const account=await c.db.prepare('SELECT created_at AS createdAt FROM crm_members WHERE id=?').bind(c.me.id).first<{createdAt:string}>();
  if(!account||!Number.isFinite(Date.parse(account.createdAt)))throw new CRMError('تعذر التحقق من تاريخ إنشاء الحساب',403);
@@ -31,7 +34,8 @@ async function heldBegin(c:Awaited<ReturnType<typeof context>>,body:Record<strin
  if(requestedDate<journeyDate(accountCreatedAt))throw new CRMError('يوم التتبع سابق لإنشاء الحساب',400);
  const captured=body.startedAt===undefined?mobileDayStart(requestedDate):new Date(iso.parse(body.startedAt)).toISOString();
  if(journeyDate(captured)!==requestedDate)throw new CRMError('وقت بدء التتبع خارج يوم التتبع',400);
- const expiry=mobileDayExpiry(requestedDate),end=requestedDate<today||now>=expiry?expiry:now;
+ // The day spans only the held evidence (the phone sends its first and last capture), inside the day's 06:00 to 18:00.
+ const until=body.endedAt===undefined?undefined:new Date(iso.parse(body.endedAt)).toISOString(),expiry=mobileDayExpiry(requestedDate),end=until&&until<expiry?until:expiry;
  const start=[captured,mobileDayStart(requestedDate),accountCreatedAt].sort().at(-1)!;
  if(start>=end)return response(c,null,now);
  const overlap='EXISTS (SELECT 1 FROM crm_mobile_route_days WHERE member_id=? AND date=? AND region_scope=? AND started_at<? AND (ended_at IS NULL OR ended_at>?))';

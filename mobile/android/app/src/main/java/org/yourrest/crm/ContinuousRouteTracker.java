@@ -78,7 +78,7 @@ final class ContinuousRouteTracker {
     JSONObject state(){
         JSONObject s=new JSONObject(),day=store.day(ContinuousPolicy.date(System.currentTimeMillis()));
         try{s.put("tracking",tracking).put("permission",RouteTracker.get(context).permission()?"granted":"denied")
-                .put("pendingCount",store.pendingCount()).put("pendingGapCount",store.pendingGapCount()).put("quarantinedCount",store.quarantinedCount()).put("quarantinedGapCount",store.quarantinedGapCount()).put("lastFixAt",optional(store.get("lastFixAt"))).put("accuracy",store.get("accuracy").isEmpty()?JSONObject.NULL:Double.parseDouble(store.get("accuracy")))
+                .put("pendingCount",store.pendingCount()).put("pendingGapCount",store.pendingGapCount()).put("quarantinedCount",store.quarantinedCount()+store.heldQuarantinedCount()).put("quarantinedGapCount",store.quarantinedGapCount()+store.heldQuarantinedGapCount()).put("lastFixAt",optional(store.get("lastFixAt"))).put("accuracy",store.get("accuracy").isEmpty()?JSONObject.NULL:Double.parseDouble(store.get("accuracy")))
                 .put("error",error.isEmpty()?JSONObject.NULL:error).put("syncError",syncError.isEmpty()?JSONObject.NULL:syncError).put("quarantineNotice",optional(quarantineNotice())).put("heldCount",store.heldCount()).put("heldGapCount",store.heldGapCount()).put("heldNotice",optional(heldNotice())).put("heldError",optional(heldError)).put("heldEvidenceSupported",true).put("dayId",day==null?JSONObject.NULL:day.opt("id"))
                 .put("date",ContinuousPolicy.date(System.currentTimeMillis())).put("memberId",optional(store.get("memberId"))).put("regionScope",optional(store.get("regionScope"))).put("enrolledRole",optional(store.get("memberRole"))).put("stopId",optional(currentStopId()))
                 .put("workHoursSupported",true).put("trackingWindowActive",ContinuousPolicy.inWindow(System.currentTimeMillis())).put("trackingWindowStart","06:00").put("trackingWindowEnd","18:00").put("trackingTimeZone","Asia/Riyadh").put("nextTrackingWindowAt",RouteRules.iso(ContinuousPolicy.nextStart(System.currentTimeMillis())))
@@ -88,7 +88,7 @@ final class ContinuousRouteTracker {
     void addCapabilities(JSONObject state){try{state.put("workHoursSupported",true).put("trackingWindowActive",ContinuousPolicy.inWindow(System.currentTimeMillis())).put("trackingWindowStart","06:00").put("trackingWindowEnd","18:00").put("trackingTimeZone","Asia/Riyadh").put("nextTrackingWindowAt",RouteRules.iso(ContinuousPolicy.nextStart(System.currentTimeMillis()))).put("continuousSupported",true).put("enrolled",enabled()).put("backgroundPermission",backgroundGranted(context)?"granted":(context.getSharedPreferences("native",0).getBoolean("backgroundAsked",false)?"denied":"prompt"))
             .put("heldCount",store.heldCount()).put("heldGapCount",store.heldGapCount()).put("heldNotice",optional(heldNotice())).put("heldError",optional(heldError)).put("heldEvidenceSupported",true);}catch(Exception ignored){}}
     /** Informational only: quarantine never sets the collection/control error or stops enrollment. */
-    private String quarantineNotice(){int points=store.quarantinedCount(),gaps=store.quarantinedGapCount();if(points+gaps==0)return "";return "بيانات قديمة ليوم الجمعة محفوظة على الجهاز ولا تُرفع: "+points+" نقطة و"+gaps+" انقطاع؛ تبقى محفوظة للمراجعة. تسجيل أيام العمل مستمر";}
+    private String quarantineNotice(){int points=store.quarantinedCount()+store.heldQuarantinedCount(),gaps=store.quarantinedGapCount()+store.heldQuarantinedGapCount();if(points+gaps==0)return "";return "بيانات قديمة ليوم الجمعة محفوظة على الجهاز ولا تُرفع: "+points+" نقطة و"+gaps+" انقطاع؛ تبقى محفوظة للمراجعة. تسجيل أيام العمل مستمر";}
     private static Object optional(String value){return value==null||value.isEmpty()?JSONObject.NULL:value;}
     private void changed(){RouteTracker.get(context).changed();}
     private void finish(RouteTracker.Reply reply,String problem){changed();if(reply!=null){JSONObject snapshot=state();main.post(()->reply.complete(snapshot,problem));}}
@@ -126,7 +126,7 @@ final class ContinuousRouteTracker {
             if(decision==AccountRecoveryPolicy.Decision.PRESERVE_BLOCKED||decision==AccountRecoveryPolicy.Decision.RESET_EMPTY){
                 // 1.0.16: a changed scope or role never stops the representative. Queued evidence moves, unchanged, to the held tables under
                 // the scope it was captured with (uploaded to days of that scope, never relabeled); the empty outbox enrolls again at once.
-                boolean resume=store.enabled()&&"rep".equals(response.optString("memberRole"));
+                boolean resume="rep".equals(response.optString("memberRole"))&&consent()&&RouteTracker.get(context).permission()&&backgroundGranted(context)&&!"1".equals(store.get("userStopped"));
                 disable(false);
                 if(decision==AccountRecoveryPolicy.Decision.PRESERVE_BLOCKED){if(!store.holdForChangedAccount())throw new RouteApi.Failure(403,"تعذر حفظ النقاط السابقة على الجهاز بمنطقتها؛ النقاط محفوظة. راجع الإدارة");}
                 else if(!store.resetEmptyContext())throw new Exception("ظهرت نقاط جديدة قبل مراجعة الأذونات؛ البيانات محفوظة");
@@ -252,7 +252,10 @@ final class ContinuousRouteTracker {
         long first=ContinuousPolicy.startTime(windowStart,RouteRules.millis(store.get("enrolledServerAt")),RouteRules.millis(store.get("startFloor:"+date)));
         final long expected=generation;final String owner=store.get("memberId");
         JSONObject response=api.call(new JSONObject().put("action","begin").put("createKey",store.key(date)).put("deviceId",deviceId).put("continuous",true).put("regionScope",store.get("regionScope")).put("date",date).put("startedAt",RouteRules.iso(first)));
-        verify(response,owner);checkCurrent(expected,owner);day=response.getJSONObject("day");if(!date.equals(day.optString("date")))throw new RouteApi.Failure(409,"تاريخ التسجيل غير مطابق");store.day(day);return day;
+verify(response,owner);checkCurrent(expected,owner);day=response.getJSONObject("day");if(!date.equals(day.optString("date")))throw new RouteApi.Failure(409,"تاريخ التسجيل غير مطابق");
+        // The server handed back a day a held group of this owner and scope belongs to (the scope or role came back while it was open): that
+        // evidence returns to the outbox before any new point reaches the day, so the day gets it in capture order.
+        synchronized(store){store.day(day);store.unholdInto(owner,store.get("regionScope"),date,day.optString("id"));}return day;
     }
     private void ensureCurrentWhenReady()throws Exception{if(!ContinuousPolicy.inWindow(System.currentTimeMillis()))return;String current=ContinuousPolicy.date(System.currentTimeMillis()),queued=store.firstDate();if(ContinuousPolicy.canCreateCurrentDay(queued,current))ensureDay(current);}
     private JSONObject request(String action,JSONObject day)throws Exception{return new JSONObject().put("action",action).put("dayId",day.getString("id")).put("deviceId",deviceId);}
@@ -262,6 +265,7 @@ final class ContinuousRouteTracker {
         final long expected=generation;final String owner=store.get("memberId");
         JSONObject auth=api.call(null);verify(auth,owner);checkCurrent(expected,owner);rememberAuthorization(auth,expected,owner);
         int expired=store.prune();if(expired>0)syncError="انتهت مهلة رفع بعض النقاط القديمة؛ الفترات غير المسجلة لا تُحسب كحركة مؤكدة";
+        try{
         for(int operations=0;operations<maxOperations;operations++){
             String date=store.firstDate();if(date==null)break;JSONObject day=ensureDay(date),gap;JSONArray batch;
             synchronized(store){gap=store.firstGap(date);batch=store.batch(date,gap==null?Long.MAX_VALUE:gap.getLong("at"));}
@@ -271,44 +275,49 @@ final class ContinuousRouteTracker {
         }
         synchronizeStop(auth);
         if(enabled())ensureCurrentWhenReady();
-        drainHeld(owner,expected,HELD_OPERATIONS);
         store.put("conflicts","0");
         if(expired==0)syncError="";
+        // Held evidence of an earlier scope is not held back by an outbox date that cannot upload, and never fails the outbox.
+        }finally{drainHeld(owner,expected,HELD_OPERATIONS);}
     }
     private void checkCurrent(long expected,String member)throws Exception{if(expected!=generation||!member.equals(store.get("memberId")))throw new Exception("تغير الحساب أو حالة التسجيل");}
     private void verifyDay(JSONObject response,JSONObject sent)throws Exception{JSONObject day=response.optJSONObject("day");if(day==null||!sent.optString("id").equals(day.optString("id"))||!sent.optString("date").equals(day.optString("date")))throw new RouteApi.Failure(409,"استجابة التسجيل لا تطابق اليوم المطلوب");}
     static final int HELD_OPERATIONS=3;
-    /** Evidence held from an earlier scope or role (1.0.16), a few requests each pass after the outbox, to days of its own scope. A refusal
-     * waits a day and a failure ends the pass: held evidence never stops collection, the outbox or the account, and only an acknowledgment
-     * deletes it. Only the owner it was captured for uploads it. */
+    /** Evidence held from an earlier scope or role (1.0.16), a few requests each pass, to days of its own scope. A refusal waits a day, a
+     * conflict is asked again (the third in a row waits a day) and any other failure ends the pass: held evidence never stops collection,
+     * the outbox or the account, and only an acknowledgment deletes it. Only the owner it was captured for uploads it. Never throws. */
     private void drainHeld(String owner,long expected,int operations){
         for(int operation=0;operation<operations;operation++){
-            long now=System.currentTimeMillis();String[] group=store.firstHeld(owner,now);
+            long now=System.currentTimeMillis();String[] group;
+            try{group=store.firstHeld(owner,now);}catch(RuntimeException unreadable){heldError=message(unreadable);return;}
             if(group==null){store.heldPrune();if(store.heldCount()+store.heldGapCount()==0)heldError="";return;}
-            String scope=group[0],date=group[1];
+            String key=group[0],scope=group[1],date=group[2];
             try{
                 checkCurrent(expected,owner);
-                JSONObject day=ensureHeldDay(scope,date,owner);
-                if(day==null){store.heldRefused(scope,date,owner,now);heldError="لم يقبل الخادم يوم "+date+" من المنطقة السابقة؛ نقاطه محفوظة على الجهاز وتُعاد المحاولة غدًا";continue;}
+                JSONObject day=ensureHeldDay(key,scope,date,owner);
+                if(day==null){store.heldRefused(key,now);heldError="لم يقبل الخادم يوم "+date+" من المنطقة السابقة الآن؛ نقاطه محفوظة على الجهاز وتُعاد المحاولة غدًا";continue;}
                 JSONObject gap;JSONArray batch;
-                synchronized(store){gap=store.heldFirstGap(scope,date);batch=store.heldBatch(scope,date,gap==null?Long.MAX_VALUE:gap.getLong("at"));}
-                if(batch.length()>0){JSONObject result=api.call(request("samples",day).put("held",true).put("points",batch));verifyHeld(result,owner,day);int deleted=store.heldAck(batch,result.optJSONArray("acknowledgedIds"));store.heldDay(scope,result.getJSONObject("day"));if(deleted==0)throw new Exception("لم يؤكد الخادم حفظ نقاط المنطقة السابقة؛ ستتم إعادة المحاولة");}
-                else if(gap!=null){JSONObject result=api.call(request("gap",day).put("held",true).put("reason",gap.getString("reason")).put("at",RouteRules.iso(gap.getLong("at"))).put("stopId",JSONObject.NULL));verifyHeld(result,owner,day);store.heldDay(scope,result.getJSONObject("day"));store.heldDeleteGap(gap.getLong("id"));}
+                synchronized(store){gap=store.heldFirstGap(key);batch=store.heldBatch(key,gap==null?Long.MAX_VALUE:gap.getLong("at"));}
+                if(batch.length()>0){JSONObject result=api.call(request("samples",day).put("held",true).put("points",batch));verifyHeld(result,owner,day);int deleted=store.heldAck(batch,result.optJSONArray("acknowledgedIds"));store.heldDay(key,result.getJSONObject("day"));if(deleted==0)throw new Exception("لم يؤكد الخادم حفظ نقاط المنطقة السابقة؛ ستتم إعادة المحاولة");}
+                else if(gap!=null){JSONObject result=api.call(request("gap",day).put("held",true).put("reason",gap.getString("reason")).put("at",RouteRules.iso(gap.getLong("at"))).put("stopId",JSONObject.NULL));verifyHeld(result,owner,day);store.heldDay(key,result.getJSONObject("day"));store.heldDeleteGap(gap.getLong("id"));}
                 heldError="";
             }catch(RouteApi.Failure failure){
-                if(TrackingFailurePolicy.heldRefused(failure.status)){store.heldRefused(scope,date,owner,now);heldError="لم يقبل الخادم نقاط "+date+" من المنطقة السابقة: "+message(failure)+" النقاط محفوظة على الجهاز وتُعاد المحاولة غدًا";continue;}
+                if(failure.status==409){store.heldConflict(key,now);heldError=message(failure);return;}
+                if(TrackingFailurePolicy.heldRefused(failure.status)){store.heldRefused(key,now);heldError="لم يقبل الخادم نقاط "+date+" من المنطقة السابقة: "+message(failure)+" النقاط محفوظة على الجهاز وتُعاد المحاولة غدًا";continue;}
                 heldError=message(failure);return;
             }catch(Exception failure){heldError=message(failure);return;}
         }
     }
-    private JSONObject ensureHeldDay(String scope,String date,String owner)throws Exception{
-        JSONObject day=store.heldDay(scope,date);if(day!=null)return day;
-        long first=ContinuousPolicy.windowStart(RouteRules.millis(date+"T12:00:00.000Z"));
-        JSONObject response=api.call(new JSONObject().put("action","begin").put("held",true).put("createKey",store.heldKey(scope,date,owner)).put("deviceId",deviceId).put("continuous",true).put("regionScope",scope).put("date",date).put("startedAt",RouteRules.iso(first)));
+    /** The server day of a held group: the day the outbox had (found again by its create key), or a closed day of the group's scope that
+     * spans only its own evidence, which the server makes for a past date only (today's waits a day). */
+    private JSONObject ensureHeldDay(String key,String scope,String date,String owner)throws Exception{
+        JSONObject day=store.heldDay(key);if(day!=null)return day;
+        long[] span=store.heldSpan(key);if(span==null)return null;
+        JSONObject response=api.call(new JSONObject().put("action","begin").put("held",true).put("createKey",key).put("deviceId",deviceId).put("continuous",true).put("regionScope",scope).put("date",date).put("startedAt",RouteRules.iso(span[0])).put("endedAt",RouteRules.iso(span[1]+1000)));
         if(!owner.equals(response.optString("memberId")))throw new RouteApi.Failure(403,"الحساب الحالي لا يطابق صاحب نقاط المنطقة السابقة");
         JSONObject result=response.optJSONObject("day");if(result==null)return null;
         if(!date.equals(result.optString("date"))||!scope.equals(result.optString("regionScope"))||!owner.equals(result.optString("memberId"))||!deviceId.equals(result.optString("deviceId")))throw new RouteApi.Failure(409,"يوم المنطقة السابقة على الخادم لا يطابق النقاط المحفوظة");
-        store.heldDay(scope,result);return result;
+        store.heldDay(key,result);return result;
     }
     private void verifyHeld(JSONObject response,String owner,JSONObject sent)throws Exception{if(!owner.equals(response.optString("memberId")))throw new RouteApi.Failure(403,"الحساب الحالي لا يطابق صاحب نقاط المنطقة السابقة");verifyDay(response,sent);}
     private String heldNotice(){int points=store.heldCount(),gaps=store.heldGapCount();if(points+gaps==0)return "";return "نقاط من منطقة سابقة لحسابك محفوظة على الجهاز وتُرفع على منطقتها: "+points+" نقطة و"+gaps+" انقطاع. تسجيل خط السير مستمر";}

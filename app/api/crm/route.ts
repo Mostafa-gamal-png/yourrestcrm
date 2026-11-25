@@ -97,7 +97,7 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
    if(isFieldRole(old.role)&&(regionScope(old)!==m.regionScope||trackingRole(old.role)!==trackingRole(m.role))&&body.confirmTrackingPending!==true){
     const device=await c.db.prepare("SELECT data FROM crm_member_devices WHERE member_id=? AND platform='android-app'").bind(old.id).first<{data:string}>();
     let points=0,gaps=0;try{const report=JSON.parse(device?.data||'{}');points=Math.max(0,Math.floor(Number(report.pendingCount)||0));gaps=Math.max(0,Math.floor(Number(report.pendingGapCount)||0));}catch{points=0;gaps=0;}
-    if(points+gaps>0)return Response.json({error:`حسب آخر تقرير من هاتف هذا المستخدم، عليه ${points} نقطة و${gaps} انقطاع من خط السير لم تُرفع بعد. إذا غيّرت المنطقة أو الدور الآن تُحفظ على الهاتف وتُرفع على المنطقة السابقة، ويستمر التسجيل على الجديدة (من إصدار التطبيق 1.0.16). الأفضل الانتظار حتى تُرفع، أو اختر «الحفظ رغم ذلك».`,code:'MEMBER_TRACKING_PENDING',pendingCount:points,pendingGapCount:gaps},{status:409});
+    if(points+gaps>0)return Response.json({error:`حسب آخر تقرير من هاتف هذا المستخدم، عليه ${points} نقطة و${gaps} انقطاع من خط السير لم تُرفع بعد. إذا غيّرت المنطقة أو الدور الآن تُحفظ على الهاتف وتُرفع على المنطقة السابقة، ويستمر التسجيل على الجديدة (من إصدار التطبيق 1.0.16)؛ وإذا لم يعد مندوبًا تبقى على الهاتف حتى يعود. الأفضل الانتظار حتى تُرفع، أو اختر «الحفظ رغم ذلك».`,code:'MEMBER_TRACKING_PENDING',pendingCount:points,pendingGapCount:gaps},{status:409});
    }
    if(old.userId&&old.email!==m.email.toLowerCase())throw new CRMError('لا يمكن تغيير بريد حساب مرتبط بتسجيل الدخول');
    // Guard the row again inside the write: another admin may save after context().

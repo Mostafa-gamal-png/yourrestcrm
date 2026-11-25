@@ -11,13 +11,21 @@ Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; ve
   (`scripts/diagnose/tracking-scope.cjs`) showed the account made on 2026-11-19 with «كل المناطق» and later saved with the five regions
   ticked one by one: another scope text for the app. Approved: «صلحه». Guide 9-أع.
 - **The phone.** `ContinuousRouteStore` version 3 adds `held_points`, `held_gaps` and `held_days`. A changed scope or role with evidence waiting
-  moves it unchanged, in one transaction, under the scope and owner it was captured with (`holdForChangedAccount`), and the tracker enrolls
-  the new scope at once (when it was enrolled and the account is still a representative). `drainHeld` uploads held evidence after the
-  outbox, three requests a pass, to days of its own scope with `held: true`; a refusal waits a day, a failure ends the pass, and neither
-  touches collection, the outbox or the account. The page shows the held counts with «تسجيل خط السير مستمر».
-- **The server.** A held begin makes a closed day of the captured scope only for a canonical scope the account already has a route day of;
-  held samples and gaps reach the account's own day on the same device whatever its scope, without customer bindings; the ordinary begin
-  still refuses another scope.
+  moves it unchanged, in one transaction, under the outbox day it belongs to (its create key) and the scope and owner it was captured with
+  (`holdForChangedAccount`), and the tracker enrolls the new scope at once for a consenting representative with the permissions granted.
+  `drainHeld` uploads held evidence after the outbox and whatever happened to it, three requests a pass, to days of its own scope with
+  `held: true`; a refusal waits a day, a conflict is asked again (the third waits a day), and none touches collection, the outbox or the
+  account. A held group of the open day the server hands back to the outbox returns to the outbox first (`unholdInto`). Friday evidence is
+  held as quarantined. The page shows the held counts with «تسجيل خط السير مستمر».
+- **The server.** A held begin finds the phone's earlier day by its create key, or makes a closed day of the captured scope for a past date
+  only, spanning the evidence's first to last capture, and only for a canonical scope the account already has a route day of (today's evidence
+  without a day waits for tomorrow, 425); held samples and gaps reach the account's own day on the same device whatever its scope, without
+  customer bindings; the ordinary begin still refuses another scope.
+- **Review.** An independent review (store and server tried on real SQLite) found: held groups keyed by scope and date that merged two holds
+  or two accounts, a held group stuck behind new points of the same open day, the automatic re-enrollment that rarely ran, Friday evidence
+  asked about every day, held days claiming 06:00, conflicts treated as refusals, held uploads waiting behind a stuck outbox date, the last
+  handled system stop forgotten, and held days of a former scope for today. All mended and tested; the held count is not yet in the device
+  report the office sees.
 - **The users screen.** Changing a tracked member's scope or tracking role while the phone reports waiting points answers
   `MEMBER_TRACKING_PENDING` with the counts; «الحفظ رغم ذلك» saves.
 - **Not tried** on a phone or an emulator.
