@@ -26,7 +26,7 @@ const manifest={schemaVersion:1,packageName:report.package,versionName,versionCo
   'النقاط التي لم تُرفع من المنطقة السابقة تبقى محفوظة على الهاتف وتُرفع على منطقتها السابقة، ويظهر عددها في التطبيق حتى تُرفع.',
   'لا يطلب التحديث أذونات جديدة، وتبقى بياناتك والزيارات المحفوظة على الجهاز كما هي.'
  ],en:[
-  'A change of your account\'s region or role no longer stops route recording or closes the system: recording continues on the new region at once.',
+  'A change of the region or role of your account no longer stops route recording or closes the system: recording continues on the new region at once.',
   'Points not yet uploaded from the earlier region stay on the phone and upload to that region; the app shows how many until they do.',
   'The update asks for no new permission; your data and the visits saved on the phone stay as they are.'
  ]},publishedAt:new Date().toISOString()};
