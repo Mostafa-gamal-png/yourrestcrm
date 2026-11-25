@@ -4,6 +4,17 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Account edits against a stand-in phone; tracking resumes after signing in again (2026-11-25, no migration)
+
+- **Asked.** Item 1 of the three the owner approved on 2026-11-25 («اعمل التلاتة»). Guide 9-أق.
+- **The test.** `tests/account-change-scenarios-http.mjs` drives the built release with a stand-in of app 1.0.16 and of the page
+  (`scripts/lib/phone-standin.mjs`, checked against the Java and the page it mirrors) through eight account edits: region (the five ticked
+  regions to «كل المناطق»), marketing officer, supervisor and back, a new supervisor, deactivated and reactivated, sign-out and another
+  representative on the phone, a region with nothing waiting, a day offline. Every point is stored once, in its own region.
+- **Found.** Every such edit ends the account's sessions (by design); the phone stops and keeps everything until the representative signs
+  in again. Where the region or role did not change, «تفعيل التتبع» then had to be pressed: the page now resumes a phone that holds the
+  same representative's enrollment (`app/journey-tracker.tsx`), and leaves the gate to ask when the phone refuses.
+
 ## Stopped phones alert, and Android releases tried before they are required (2026-11-25, no migration)
 
 - **Asked.** Items 3 and 2 of the three the owner approved on 2026-11-25 with «اعمل التلاتة». Guide 9-أف and 9-أص.

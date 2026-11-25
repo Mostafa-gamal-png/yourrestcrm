@@ -162,6 +162,11 @@
       "reason": "requires independent build"
     },
     {
+      "file": "tests/account-change-scenarios-http.mjs",
+      "gate": "release-build",
+      "reason": "requires independent build"
+    },
+    {
       "file": "tests/dictation-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"

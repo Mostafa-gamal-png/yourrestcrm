@@ -212,8 +212,15 @@ export function NativeJourneyTrackerProvider({me,children}:{me:Member|null;child
    if(state.memberId&&state.memberId!==member.current?.id){state=await nativeTrackingRequest('logout');if(generation.current!==epoch)return;}
    state=await reconcileAccount(state,epoch);if(generation.current!==epoch)return;
    if(enabled){window.__yourrestNativeScope=scope;applyNative(state,epoch);
-    if(member.current&&isFieldRole(member.current.role)&&state.continuousSupported&&nativeScheduleSupported(state)&&state.pendingGapCount!==null&&state.enrolled&&state.memberId===member.current.id&&state.permission==='granted'&&state.backgroundPermission==='granted'){
-     if(generation.current!==epoch||nativeTrackingGeneration()!==nativeEpoch)return;state=await nativeTrackingRequest('enroll',{memberId:member.current.id});if(generation.current!==epoch||nativeTrackingGeneration()!==nativeEpoch)return;applyNative(state,epoch);
+    // The phone holds this representative's enrollment: collecting (enrolled again, as before), or stopped without the representative
+    // asking for it (an ended session after an account edit or a sign-out, a system stop). Since 2026-11-25 (tests/account-change-scenarios-
+    // http.mjs found the second needing «تفعيل التتبع» after every edit of the account) the page resumes it as that button would; if the
+    // phone refuses (no consent, another device's day) nothing changes and the tracking gate asks as before.
+    if(member.current&&isFieldRole(member.current.role)&&state.continuousSupported&&nativeScheduleSupported(state)&&state.pendingGapCount!==null&&state.memberId===member.current.id&&state.permission==='granted'&&state.backgroundPermission==='granted'){
+     const resuming=!state.enrolled;
+     if(generation.current!==epoch||nativeTrackingGeneration()!==nativeEpoch)return;
+     try{state=await nativeTrackingRequest('enroll',{memberId:member.current.id});}catch(failure){if(!resuming)throw failure;state=await nativeTrackingRequest('status');}
+     if(generation.current!==epoch||nativeTrackingGeneration()!==nativeEpoch)return;applyNative(state,epoch);
     }
     try{apply(await request(undefined,state.stopId||undefined),epoch);}catch(failure){if((failure as Error&{status?:number}).status!==404)throw failure;apply(await request(),epoch);}}else delete window.__yourrestNativeScope;
   }catch(failure){failed(failure,epoch);}finally{if(generation.current===epoch)setLoading(false);}
