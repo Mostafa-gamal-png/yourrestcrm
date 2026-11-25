@@ -166,8 +166,13 @@ public class StoreDurabilityCheck {
   ok(h.unholdInto("owner-A","central",backDate,"day-open")==0&&h.unholdInto("owner-B","all",backDate,"day-open")==0&&h.unholdInto("owner-A","all",backDate,"another-day")==0,"Another scope, owner or server day takes nothing back");
   int moved=h.unholdInto("owner-A","all",backDate,"day-open");ok(moved>0&&h.heldCount()==before-moved&&h.count()==moved&&h.heldDay(back)==null,"The group returns, whole, to the outbox");
   ok(h.firstDate().equals(backDate)&&h.batch(backDate,Long.MAX_VALUE).length()==moved,"It uploads first, in capture order, through the outbox");
-  h.put("memberId","owner-A");h.put("regionScope","west");h.point(point("p5",d2+120000,null),d2+120000);ok(h.count()==moved+1,"Collection continues in the outbox after holding");
-  h.close();h=new ContinuousRouteStore(new Context(heldDir.getPath()));ok(h.heldCount()+h.heldQuarantinedCount()>0&&h.count()==moved+1,"Held evidence survives a process restart");h.close();
+  // A group whose begin answer was lost (no stored body) is found by the id its create key makes on the server ("mobile-<member>-<key>").
+  h.resetDay(backDate);h.put("memberId","owner-A");h.put("regionScope","south");String lostKey=h.key("2026-11-23");h.point(point("pl",RouteRules.millis("2026-11-23T08:00:00.000Z"),null),RouteRules.millis("2026-11-23T08:00:00.000Z"));
+  int outboxBefore=h.count();ok(h.holdForChangedAccount()&&h.heldDay(lostKey)==null,"A group held without a server day");
+  ok(h.unholdInto("owner-A","south","2026-11-23","mobile-owner-B-"+lostKey)==0,"Another member's day id takes nothing back");
+  ok(h.unholdInto("owner-A","south","2026-11-23","mobile-owner-A-"+lostKey)==1&&h.count()==1,"The group returns to the outbox by the day id its key makes");
+  h.put("memberId","owner-A");h.put("regionScope","west");h.point(point("p5",d2+120000,null),d2+120000);ok(h.count()==2,"Collection continues in the outbox after holding");
+  h.close();h=new ContinuousRouteStore(new Context(heldDir.getPath()));ok(h.heldCount()+h.heldQuarantinedCount()>0&&h.count()==2,"Held evidence survives a process restart");h.close();
   System.out.println("Production Java stores + real SQLite: "+checks+" checks passed (Android APIs adapted; no device claim)");
  }
 }

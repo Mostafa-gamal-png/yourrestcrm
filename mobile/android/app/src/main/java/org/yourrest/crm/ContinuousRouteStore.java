@@ -162,7 +162,8 @@ final class ContinuousRouteStore extends SQLiteOpenHelper {
     synchronized int unholdInto(String member,String scope,String date,String dayId){
         if(member.isEmpty()||scope.isEmpty()||dayId==null||dayId.isEmpty())return 0;
         java.util.List<String> keys=new java.util.ArrayList<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT create_key,body FROM held_days WHERE member=? AND scope=? AND date=?",new String[]{member,scope,date})){while(c.moveToNext()){try{if(dayId.equals(new JSONObject(c.getString(1)).optString("id")))keys.add(c.getString(0));}catch(Exception unknown){}}}
+        // The server names a day "mobile-<member>-<create key>": a group whose begin answer was lost (no stored body) is found by its key too.
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT create_key,body FROM held_days WHERE member=? AND scope=? AND date=?",new String[]{member,scope,date})){while(c.moveToNext()){String id="";try{id=new JSONObject(c.getString(1)).optString("id");}catch(Exception unknown){}if(dayId.equals(id)||dayId.equals("mobile-"+member+"-"+c.getString(0)))keys.add(c.getString(0));}}
         int moved=0;SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try{for(String key:keys){
             db.execSQL("INSERT OR IGNORE INTO points(id,captured,date,body,binding_known) SELECT id,captured,date,body,binding_known FROM held_points WHERE create_key=?",new Object[]{key});

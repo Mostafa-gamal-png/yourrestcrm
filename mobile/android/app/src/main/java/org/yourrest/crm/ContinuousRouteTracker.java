@@ -164,7 +164,7 @@ final class ContinuousRouteTracker {
                     store.put("memberId",member);store.put("regionScope",response.getString("regionScope"));store.put("enrolledAt",Long.toString(System.currentTimeMillis()));store.put("enrolledServerAt",response.getString("serverTime"));
                 }
                 store.put("memberRole",response.optString("memberRole"));
-                JSONObject current=response.optJSONObject("day");if(current!=null&&current.isNull("endedAt"))store.day(current);
+                JSONObject current=response.optJSONObject("day");if(current!=null&&current.isNull("endedAt"))adoptDay(member,current);
                 // Authorize foreground activation independently of historical uploads.
                 // The outbox keeps captured dates/bindings and is drained in bounded sync passes.
                 ensureCurrentWhenReady();
@@ -255,7 +255,7 @@ final class ContinuousRouteTracker {
 verify(response,owner);checkCurrent(expected,owner);day=response.getJSONObject("day");if(!date.equals(day.optString("date")))throw new RouteApi.Failure(409,"تاريخ التسجيل غير مطابق");
         // The server handed back a day a held group of this owner and scope belongs to (the scope or role came back while it was open): that
         // evidence returns to the outbox before any new point reaches the day, so the day gets it in capture order.
-        synchronized(store){store.day(day);store.unholdInto(owner,store.get("regionScope"),date,day.optString("id"));}return day;
+        adoptDay(owner,day);return day;
     }
     private void ensureCurrentWhenReady()throws Exception{if(!ContinuousPolicy.inWindow(System.currentTimeMillis()))return;String current=ContinuousPolicy.date(System.currentTimeMillis()),queued=store.firstDate();if(ContinuousPolicy.canCreateCurrentDay(queued,current))ensureDay(current);}
     private JSONObject request(String action,JSONObject day)throws Exception{return new JSONObject().put("action",action).put("dayId",day.getString("id")).put("deviceId",deviceId);}
@@ -277,17 +277,31 @@ verify(response,owner);checkCurrent(expected,owner);day=response.getJSONObject("
         if(enabled())ensureCurrentWhenReady();
         store.put("conflicts","0");
         if(expired==0)syncError="";
-        // Held evidence of an earlier scope is not held back by an outbox date that cannot upload, and never fails the outbox.
-        }finally{drainHeld(owner,expected,HELD_OPERATIONS);}
+        }catch(Exception outbox){
+            // Held evidence of an earlier scope is not held back by an outbox date that cannot upload, and never fails the outbox; after a lost
+            // network or session it waits for the next pass.
+            boolean unreachable=outbox instanceof java.io.IOException||outbox instanceof RouteApi.Failure&&TrackingFailurePolicy.authenticationRejected(((RouteApi.Failure)outbox).status);
+            if(!unreachable)drainHeld(owner,expected,HELD_OPERATIONS);
+            throw outbox;
+        }
+        drainHeld(owner,expected,HELD_OPERATIONS);
     }
     private void checkCurrent(long expected,String member)throws Exception{if(expected!=generation||!member.equals(store.get("memberId")))throw new Exception("تغير الحساب أو حالة التسجيل");}
     private void verifyDay(JSONObject response,JSONObject sent)throws Exception{JSONObject day=response.optJSONObject("day");if(day==null||!sent.optString("id").equals(day.optString("id"))||!sent.optString("date").equals(day.optString("date")))throw new RouteApi.Failure(409,"استجابة التسجيل لا تطابق اليوم المطلوب");}
+    /** The outbox takes a server day for a date: a held group of the same owner and scope that belongs to that day (the account came back to
+     * the scope or role while the day was open) returns to the outbox first, before the day is stored, so a failure leaves nothing adopted and
+     * no new point can reach the day ahead of the group's older ones. */
+    private void adoptDay(String owner,JSONObject day)throws Exception{synchronized(store){store.unholdInto(owner,store.get("regionScope"),day.getString("date"),day.optString("id"));store.day(day);}}
     static final int HELD_OPERATIONS=3;
     /** Evidence held from an earlier scope or role (1.0.16), a few requests each pass, to days of its own scope. A refusal waits a day, a
      * conflict is asked again (the third in a row waits a day) and any other failure ends the pass: held evidence never stops collection,
      * the outbox or the account, and only an acknowledgment deletes it. Only the owner it was captured for uploads it. Never throws. */
     private void drainHeld(String owner,long expected,int operations){
+        try{drainHeldPass(owner,expected,operations);}catch(Exception storage){if(expected==generation)heldError=message(storage);}
+    }
+    private void drainHeldPass(String owner,long expected,int operations){
         for(int operation=0;operation<operations;operation++){
+            if(expected!=generation)return;
             long now=System.currentTimeMillis();String[] group;
             try{group=store.firstHeld(owner,now);}catch(RuntimeException unreadable){heldError=message(unreadable);return;}
             if(group==null){store.heldPrune();if(store.heldCount()+store.heldGapCount()==0)heldError="";return;}

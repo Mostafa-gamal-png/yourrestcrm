@@ -108,6 +108,9 @@ export async function POST(req:Request){try{
  // A held request (app 1.0.16) writes to a day of the scope its evidence was captured with; its points and gaps carry no customer binding.
  const held=body.held===true,day=held?await ownHeldMobileDay(c,identifier.parse(body.dayId),deviceId):await ownMobileDay(c,identifier.parse(body.dayId),deviceId),permission=held?accessGuard(c):mobileGuard(c,day);
  if(held&&action==='end')throw new CRMError('يوم النقاط المحفوظة من منطقة سابقة مغلق.',400);
+ // Today's day of a former scope is written to only once it is closed (the phone's first day of the new scope closes it): held evidence can
+ // never keep a day of a scope the account no longer has running beside today's.
+ if(held&&day.regionScope!==regionScope(c.me)&&!day.endedAt&&day.date>=date)throw new CRMError('تُرفع نقاط اليوم من منطقة سابقة بعد بدء اليوم على المنطقة الجديدة أو غدًا؛ تبقى محفوظة على الجهاز',425);
  if(action==='end'&&isFieldRole(c.me.role))throw new CRMError('تسجيل خط السير يعمل تلقائيًا للمندوب ولا يمكن إيقافه يدويًا.',403);
  if(action==='samples'){
   const incoming=z.array(pointSchema).min(1).max(50).parse(body.points).map(point=>held?{...point,stopId:null}:point);if(new Set(incoming.map(p=>p.id)).size!==incoming.length)throw new CRMError('تكرار رقم عينة الموقع');const times=incoming.map(p=>new Date(p.capturedAt).toISOString());if(new Set(times).size!==times.length)throw new CRMError('تكرار وقت عينة الموقع');

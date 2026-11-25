@@ -351,6 +351,17 @@ const current=(await mp({action:'begin',deviceId:heldDevice,createKey:crypto.ran
 eq([current.regionScope,current.endedAt],[five,null],'the current scope\'s day opens beside the held one');
 eq(sql.prepare('SELECT COUNT(*) AS open FROM crm_mobile_route_days WHERE member_id=? AND ended_at IS NULL').get('held-rep').open,1,'one open day: held days never stay open (the earlier open day was closed by the new begin)');
 eq(sql.prepare('SELECT ended_at FROM crm_mobile_route_days WHERE id=?').get(firstDay.id).ended_at,'2026-11-19T15:00:00.000Z','the open day of 2026-11-19 is closed at its window end by today\'s begin');
+// Today's still-open day of a former scope takes no held evidence until the new scope's first day closes it.
+clock=NativeDate.parse('2026-11-25T05:00:00.000Z');member('held-today','rep','supervisor','all',1,'2026-11-20T05:00:00.000Z');user('held-today');
+const todayDevice=crypto.randomUUID(),todayKey=crypto.randomUUID(),openToday=(await mp({action:'begin',deviceId:todayDevice,createKey:todayKey,continuous:true,date:'2026-11-25',startedAt:'2026-11-24T21:00:00.000Z',regionScope:'all'})).day;
+advance(10*60000);sql.prepare('UPDATE crm_members SET region_scope=? WHERE id=?').run('eastern','held-today');
+eq((await mp({action:'begin',held:true,deviceId:todayDevice,createKey:todayKey,continuous:true,date:'2026-11-25',regionScope:'all'})).day.id,openToday.id,'the phone finds its open day of the former scope by its create key');
+eq((await mp({action:'samples',held:true,dayId:openToday.id,deviceId:todayDevice,points:[heldPoint('t-1','2026-11-25T05:05:00.000Z')]},425)).error.includes('بعد بدء اليوم على المنطقة الجديدة'),true,'an open day of a former scope today takes no held evidence');
+await mp({action:'gap',held:true,dayId:openToday.id,deviceId:todayDevice,reason:'gps_unavailable',at:'2026-11-25T05:06:00.000Z'},425);
+const eastern=(await mp({action:'begin',deviceId:todayDevice,createKey:crypto.randomUUID(),continuous:true,date:'2026-11-25',startedAt:'2026-11-24T21:00:00.000Z',regionScope:'eastern'})).day;
+eq([eastern.regionScope,sql.prepare('SELECT ended_at FROM crm_mobile_route_days WHERE id=?').get(openToday.id).ended_at],['eastern',iso()],'the new scope\'s first day closes the former one now');
+eq((await mp({action:'samples',held:true,dayId:openToday.id,deviceId:todayDevice,points:[heldPoint('t-1','2026-11-25T05:05:00.000Z')]})).acknowledgedIds,['t-1'],'then the held evidence reaches it');
+await mp({action:'samples',held:true,dayId:openToday.id,deviceId:todayDevice,points:[heldPoint('t-late','2026-11-25T05:20:00.000Z')]},400);
 eq(sql.prepare('PRAGMA foreign_key_check').all(),[]);
 console.log(JSON.stringify({suite:'mobile-route',checks,passed:true}));
 
