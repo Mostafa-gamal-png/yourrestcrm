@@ -153,6 +153,9 @@ for (const dir of ['app', 'lib', 'portable', 'components', 'mobile/android/app/s
 for (const [key] of Object.entries(JSON.parse(fs.readFileSync(path.join(root, 'lib/locales/en.json'), 'utf8')))) consider('lib/locales/en.json', key, 0);
 const release = JSON.parse(fs.readFileSync(path.join(root, 'lib/app-update-release.json'), 'utf8'));
 JSON.stringify(release, (key, value) => { if (typeof value === 'string') consider('lib/app-update-release.json', value, 0); return value; });
+// The pilots waiting for the owner's approval (lib/app-release-approval.ts) carry notes too.
+const pilots = JSON.parse(fs.readFileSync(path.join(root, 'lib/app-update-pilots.json'), 'utf8'));
+JSON.stringify(pilots, (key, value) => { if (typeof value === 'string') consider('lib/app-update-pilots.json', value, 0); return value; });
 
 // The scanner itself: it finds what it should and leaves the written language alone.
 ok(colloquialHits('اللينك ده مش شغال').length >= 3, 'the scanner finds the colloquial words');

@@ -2,8 +2,9 @@ import {isNativeTrackingApp,waitForNativeBridge} from './native-tracking';
 
 export type UpdatePhase='idle'|'checking'|'available'|'upToDate'|'downloading'|'ready'|'permissionRequired'|'installing'|'cancelled'|'error';
 /** `minimumVersionCode` is the oldest installed app allowed to work. The owner's rule (taken from GSCO, 2026-10-31: «مفيش حاجة اسمها تحديث
- * اختياري») makes it always the newest published version: scripts/publish-android-release.mjs writes it equal to `versionCode`, and
- * parseAppRelease reads it as `versionCode` whatever a manifest says, so no release can lower it. */
+ * اختياري») makes it always the newest SERVED version: scripts/publish-android-release.mjs writes it equal to `versionCode`, and
+ * parseAppRelease reads it as `versionCode` whatever a manifest says, so no release can lower it. Since 2026-11-25 a new release is first
+ * a pilot the owner tries on a real phone (lib/app-release-approval.ts): /api/app-update serves it, and so requires it, once approved. */
 export type AppRelease={schemaVersion:1;packageName:'org.yourrest.crm';versionName:string;versionCode:number;minimumVersionCode:number;apkUrl:string;sizeBytes:number;sha256:string;certificateSha256:string;releaseNotes:{ar:string[];en:string[]}};
 /** `required*` and `apkReachable` come from the last read of the served release (GET /api/app-update) and of its APK on this site, made on
  * every check whatever the app's update protocol; a failed read clears them (enforcedRequirement). */

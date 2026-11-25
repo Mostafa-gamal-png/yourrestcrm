@@ -156,9 +156,9 @@
       "tests": ["tests/webview-load-probe-browser.mjs"]
     },
     "app-update-android": {
-      "about": "The Android app version and its update (app/app-update.tsx, /api/app-update, the published APKs); the tracking gate asks for the update.",
-      "sources": ["app/app-update.tsx", "app/app-update.css", "app/api/app-update/**", "lib/app-update.ts", "lib/app-update-release.json", "public/app-update.json", "public/downloads/**", "tests/app-update*.mjs"],
-      "tests": ["tests/app-update-release.mjs", "tests/app-update-browser.mjs", "tests/tracking-gate-browser.mjs", "tests/server-authorization.mjs"]
+      "about": "The Android app version and its update (app/app-update.tsx, /api/app-update, the published APKs, the pilot the owner approves: app/app-release-pilot.tsx); the tracking gate asks for the update.",
+      "sources": ["app/app-update.tsx", "app/app-update.css", "app/api/app-update/**", "lib/app-update.ts", "lib/app-update-release.json", "public/app-update.json", "public/downloads/**", "tests/app-update*.mjs", "app/app-release-pilot.tsx", "app/app-release-pilot.css", "lib/app-release-approval.ts", "lib/app-update-pilots.json", "scripts/promote-android-pilot.mjs", "tests/app-release*.mjs"],
+      "tests": ["tests/app-update-release.mjs", "tests/app-update-browser.mjs", "tests/tracking-gate-browser.mjs", "tests/server-authorization.mjs", "tests/app-release-pilot-browser.mjs"]
     },
     "build-notice": {
       "about": "«يوجد تحديث للتطبيق، أعد التحميل» (app/build-notice.tsx, lib/build-freshness.ts).",
@@ -289,6 +289,7 @@
     "tests/app-update-browser.mjs": 3,
     "tests/offline-outbox-browser.mjs": 3,
     "tests/app-update-release.mjs": 1,
+    "tests/app-release-pilot-browser.mjs": 60,
     "tests/erp-sales-browser.mjs": 30,
     "tests/erp-quotes-http.mjs": 25,
     "tests/erp-quotes-browser.mjs": 45,

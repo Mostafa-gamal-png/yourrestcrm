@@ -40,8 +40,14 @@ function run(now = Date.now()) {
       if (age <= 24 * 3600_000) bump(reps.reportedLast24h, version);
       if (age <= 2 * 3600_000) bump(reps.reportedLast2h, version);
     }
+    // «اعتماد التحديث للجميع» (lib/app-release-approval.ts, since 2026-11-25): the version the owner approved after trying it, and when;
+    // never who. scripts/promote-android-pilot.mjs is run for this version only.
+    const approval = db.prepare("SELECT owner_id AS raw FROM crm_settings WHERE id = 'android-release-approval'").get();
+    let approved = null;
+    try { const value = approval ? JSON.parse(approval.raw) : null; if (value && Number.isSafeInteger(value.versionCode)) approved = {versionCode: value.versionCode, approvedAt: typeof value.approvedAt === 'string' ? value.approvedAt : null}; } catch { approved = {unreadable: true}; }
+    report.releaseApproval = approved;
     const reps = report.representatives, versions = Object.entries(reps.byVersion).map(([version, count]) => `${version}: ${count}`).join(', ');
-    report.verdict = `REPRESENTATIVES ${reps.total}: ${versions || 'no android report'}${reps.noAndroidReport ? `, NO ANDROID REPORT: ${reps.noAndroidReport}` : ''}`;
+    report.verdict = `REPRESENTATIVES ${reps.total}: ${versions || 'no android report'}${reps.noAndroidReport ? `, NO ANDROID REPORT: ${reps.noAndroidReport}` : ''}; APPROVED PILOT: ${approved ? (approved.versionCode ?? 'unreadable') : 'none'}`;
     return report;
   } finally { db.close(); }
 }

@@ -845,6 +845,11 @@
       "file": "tests/stuck-phones-browser.mjs",
       "gate": "browser",
       "reason": "requires browser; requires independent build"
+    },
+    {
+      "file": "tests/app-release-pilot-browser.mjs",
+      "gate": "browser",
+      "reason": "requires browser; requires independent build"
     }
   ]
 }

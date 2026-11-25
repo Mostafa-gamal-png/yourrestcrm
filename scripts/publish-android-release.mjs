@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const [apkPath,reportPath]=process.argv.slice(2);
+const [apkPath,reportPath]=process.argv.slice(2).filter(arg=>!arg.startsWith('--'));
 if(!apkPath||!reportPath)throw Error('Usage: node scripts/publish-android-release.mjs APK BUILD_VERIFICATION_JSON');
 const report=JSON.parse(fs.readFileSync(reportPath,'utf8'));
 const certificateSha256='1d49b33c2c3039c1c7f3849d91a7890e81616211df9a4958dc470584acc1ff50';
@@ -36,7 +36,19 @@ if(manifest.releaseNotes.ar.length>5||manifest.releaseNotes.en.length>5)throw Er
 const serialized=JSON.stringify(manifest,null,2)+'\n';
 fs.mkdirSync(path.join(root,'public/downloads'),{recursive:true});
 fs.writeFileSync(path.join(root,'public/downloads',name),bytes);
-fs.writeFileSync(path.join(root,'public/downloads/yourrest-crm-android.apk'),bytes);
-fs.writeFileSync(path.join(root,'public/app-update.json'),serialized);
-fs.writeFileSync(path.join(root,'lib/app-update-release.json'),serialized);
+// Since 2026-11-25 (item 2 of the three the owner approved with «اعمل التلاتة»: tried on a real phone first; lib/app-release-approval.ts)
+// a new release is published as a pilot: its file is on the site and lib/app-update-pilots.json lists it, while /api/app-update keeps
+// serving the approved release until the owner presses «اعتماد التحديث للجميع» in the workspace. The base files (lib/app-update-release.json,
+// public/app-update.json, the unversioned APK) change only with --base, for a release made mandatory at once.
+const base=JSON.parse(fs.readFileSync(path.join(root,'lib/app-update-release.json'),'utf8'));
+if(process.argv.includes('--base')){
+ fs.writeFileSync(path.join(root,'public/downloads/yourrest-crm-android.apk'),bytes);
+ fs.writeFileSync(path.join(root,'public/app-update.json'),serialized);
+ fs.writeFileSync(path.join(root,'lib/app-update-release.json'),serialized);
+}else{
+ if(versionCode<=base.versionCode)throw Error('A pilot must be newer than the base release ('+base.versionName+')');
+ const pilotsPath=path.join(root,'lib/app-update-pilots.json'),pilots=JSON.parse(fs.readFileSync(pilotsPath,'utf8')).filter(item=>item.versionCode!==versionCode&&item.versionCode>base.versionCode);
+ pilots.push(manifest);pilots.sort((a,b)=>a.versionCode-b.versionCode);
+ fs.writeFileSync(pilotsPath,JSON.stringify(pilots,null,2)+'\n');
+}
 console.log(JSON.stringify(manifest));

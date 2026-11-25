@@ -46,8 +46,17 @@ eq(report.activeMembers, 7, 'active members only');
 eq(report.representatives, {total: 5, byVersion: {'1.0.11': 1, '1.0.10': 2}, reportedLast24h: {'1.0.11': 1, '1.0.10': 1}, reportedLast2h: {'1.0.11': 1}, noAndroidReport: 2}, 'the representatives by version, by how recent, and without an Android report (a browser report is not one)');
 eq(report.byRole, {rep: {'1.0.11': 1, '1.0.10': 2, 'no android report': 2}, supervisor: {'1.0.11': 1}, manager: {'no android report': 1}}, 'every active member by role and version');
 eq(report.newestReportOfVersion, {'1.0.11': hoursAgo(1), '1.0.10': hoursAgo(3)}, 'the newest report of each version');
-eq(report.verdict, 'REPRESENTATIVES 5: 1.0.11: 1, 1.0.10: 2, NO ANDROID REPORT: 2', 'the verdict');
+eq(report.verdict, 'REPRESENTATIVES 5: 1.0.11: 1, 1.0.10: 2, NO ANDROID REPORT: 2; APPROVED PILOT: none', 'the verdict');
+eq(report.releaseApproval, null, 'no pilot approved yet');
 ok(!printed.includes('SECRET-NAME') && !printed.includes('@yourrest.org') && !/"r\d"|r-old|"s1"|"m1"/.test(printed), 'no name, email or member id is printed');
 eq(digest(), before, 'the database is unchanged');
+
+// The pilot the owner approved («اعتماد التحديث للجميع», lib/app-release-approval.ts): its version and when, never who.
+{const write = new DatabaseSync(file);write.prepare('INSERT INTO crm_settings(id,owner_id) VALUES(?,?)').run('android-release-approval', JSON.stringify({versionCode: 18, approvedBy: 'SECRET-OWNER-ID', approvedAt: hoursAgo(2)}));write.close();}
+const approved = run(now);
+eq(approved.releaseApproval, {versionCode: 18, approvedAt: hoursAgo(2)}, 'the approved version and when');
+ok(approved.verdict.endsWith('; APPROVED PILOT: 18') && !JSON.stringify(approved).includes('SECRET-OWNER-ID'), 'in the verdict, without the owner\'s id');
+{const write = new DatabaseSync(file);write.prepare('UPDATE crm_settings SET owner_id=? WHERE id=?').run('{not json', 'android-release-approval');write.close();}
+eq(run(now).releaseApproval, {unreadable: true}, 'a row that cannot be read is said so');
 
 console.log(JSON.stringify({ok: true, checks, realHostingTested: false}));

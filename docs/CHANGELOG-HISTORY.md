@@ -4,6 +4,20 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## Stopped phones alert, and Android releases tried before they are required (2026-11-25, no migration)
+
+- **Asked.** Items 3 and 2 of the three the owner approved on 2026-11-25 with «اعمل التلاتة». Guide 9-أف and 9-أص.
+- **Stopped phones.** `lib/stuck-phones.ts` reads why an Android phone is stopped from its latest report; the server keeps when the problem
+  began (`problemSince`, kept while it is the same problem; the save is guarded by the row's version). A phone stopped or blocked for 30
+  minutes or more inside today's working window shows to its readers (`GET /api/device-status?alerts=1`) on a card at the top of every page
+  (`app/stuck-phones-alert.tsx`), announced once per browser for the same start, by the page and the device's notice. The phone notice from
+  the Android app waits for the next APK.
+- **Pilot releases.** `scripts/publish-android-release.mjs` publishes a new build as a pilot (`lib/app-update-pilots.json`; `--base` for a
+  release made mandatory at once). `/api/app-update` serves the newest approved release (`lib/app-release-approval.ts`, one `crm_settings`
+  row, never moved back, compare-and-set); the owner's card (`app/app-release-pilot.tsx`, `/api/app-update/pilot`, owner only) downloads
+  the pilot and approves it after a second question. `scripts/promote-android-pilot.mjs` makes an approved pilot the base at the next
+  release; `scripts/diagnose/app-versions.cjs` reports the approved version.
+
 ## Android 1.0.16 (17): a changed region or role no longer stops a representative (2026-11-25, no migration)
 
 - **Asked.** The owner, 2026-11-25, with a marketing officer's screenshot: «تغيرت أذونات الحساب؛ محفوظ على الجهاز 856 نقطة و67 انقطاع من
